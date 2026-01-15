@@ -2,7 +2,7 @@ import { dialog } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { EPub } from 'epub2';
-import pdf from 'pdf-parse';
+import * as pdf from 'pdf-parse';
 import { dbBooks, Book } from '../database';
 
 export async function selectBookFile(): Promise<string | null> {
@@ -84,7 +84,7 @@ async function parseTxt(filePath: string): Promise<Partial<Book>> {
 
 async function parsePdf(filePath: string): Promise<Partial<Book>> {
   const dataBuffer = fs.readFileSync(filePath);
-  const data = await pdf(dataBuffer);
+  const data = await (pdf as any)(dataBuffer);
 
   return {
     title: data.info?.Title || path.basename(filePath, '.pdf'),
