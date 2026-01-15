@@ -8,10 +8,10 @@ interface ElectronAPI {
   // 数据库操作接口
   db: {
     getBooks: () => Promise<any[]>;                 // 获取所有书籍列表
-    getBookById: (id: number) => Promise<any>;      // 根据 ID 获取书籍
-    addBook: (book: any) => Promise<number>;        // 添加新书籍
-    updateBook: (id: number, data: any) => Promise<void>;  // 更新书籍信息
-    deleteBook: (id: number) => Promise<void>;      // 删除书籍
+    getBookById: (id: string) => Promise<any>;      // 根据 ID 获取书籍(UUID)
+    addBook: (book: any) => Promise<string>;        // 添加新书籍,返回 UUID
+    updateBook: (id: string, data: any) => Promise<void>;  // 更新书籍信息(UUID)
+    deleteBook: (id: string) => Promise<void>;      // 删除书籍(UUID)
   };
   // AI 服务接口
   ai: {
@@ -25,12 +25,12 @@ interface ElectronAPI {
   };
   // 书籍内容读取接口
   book: {
-    // 读取 TXT 文件指定页的内容
-    getTxtPage: (filePath: string, pageIndex: number) => Promise<{
-      content: string;      // 页面内容
-      totalPages: number;   // 总页数
-      currentPage: number;  // 当前页码
-    }>;
+    // 获取书籍的章节元数据列表(不含 content,用于目录导航)
+    getChapterMetadata: (bookId: string) => Promise<any[]>;
+    // 获取指定章节的完整内容(包含 content)
+    getChapter: (chapterId: string) => Promise<any>;
+    // 保存阅读进度
+    saveProgress: (bookId: string, chapterId: string) => Promise<void>;
   };
 }
 
@@ -42,10 +42,10 @@ const electronAPI: ElectronAPI = {
   // 数据库操作 - 与主进程的 IPC 处理器对应
   db: {
     getBooks: () => ipcRenderer.invoke('db:getBooks'),
-    getBookById: (id: number) => ipcRenderer.invoke('db:getBookById', id),
+    getBookById: (id: string) => ipcRenderer.invoke('db:getBookById', id),
     addBook: (book: any) => ipcRenderer.invoke('db:addBook', book),
-    updateBook: (id: number, data: any) => ipcRenderer.invoke('db:updateBook', id, data),
-    deleteBook: (id: number) => ipcRenderer.invoke('db:deleteBook', id),
+    updateBook: (id: string, data: any) => ipcRenderer.invoke('db:updateBook', id, data),
+    deleteBook: (id: string) => ipcRenderer.invoke('db:deleteBook', id),
   },
   // AI 服务
   ai: {
@@ -59,8 +59,9 @@ const electronAPI: ElectronAPI = {
   },
   // 书籍内容读取
   book: {
-    getTxtPage: (filePath: string, pageIndex: number) =>
-      ipcRenderer.invoke('book:getTxtPage', filePath, pageIndex),
+    getChapterMetadata: (bookId: string) => ipcRenderer.invoke('book:getChapterMetadata', bookId),
+    getChapter: (chapterId: string) => ipcRenderer.invoke('book:getChapter', chapterId),
+    saveProgress: (bookId: string, chapterId: string) => ipcRenderer.invoke('book:saveProgress', bookId, chapterId),
   },
 };
 

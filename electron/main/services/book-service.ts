@@ -1,9 +1,12 @@
+/**
+ * 书籍预处理服务
+ * 负责导入、预处理和管理电子书
+ */
 import { dialog } from 'electron';
 import fs from 'fs';
 import path from 'path';
-import { EPub } from 'epub2';
-import * as pdf from 'pdf-parse';
-import { dbBooks, Book } from '../database/index.js';
+import { dbBooks, dbChapters, Book, Chapter, ChapterMetadata } from '../database/index.js';
+import { ChapterRecognizer } from './chapter-recognizer.js';
 
 /**
  * 打开文件选择对话框,让用户选择电子书文件
@@ -18,7 +21,6 @@ export async function selectBookFile(): Promise<string | null> {
     ],
   });
 
-  // 用户取消选择或没有选择文件
   if (result.canceled || result.filePaths.length === 0) {
     return null;
   }
@@ -33,138 +35,199 @@ export async function selectBookFile(): Promise<string | null> {
  * @returns 返回导入的书籍信息
  */
 export async function importBook(filePath: string): Promise<Book> {
-  // 获取文件扩展名和文件名
   const ext = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath, ext);
+  const stats = fs.statSync(filePath);
 
-  // 初始化基础书籍数据
-  let bookData: Partial<Book> = {
+  // 创建书籍记录
+  const bookData: Omit<Book, 'id'> = {
     title: fileName,
-    file_path: filePath,
+    author: null,  // 作者信息（目前为空）
     file_type: ext.slice(1), // 去掉扩展名的点号
+    processing_status: 'pending',
+    processing_progress: 0,
+    total_chapters: 0,
+    total_characters: 0,
+    current_chapter_id: null,  // 明确使用 null 而不是 undefined
+    original_file_path: filePath,
+    file_size: stats.size,
+    cover_image: null,  // 明确使用 null 而不是 undefined
+    metadata: null  // 明确使用 null 而不是 undefined
+    // 注意：created_at 和 updated_at 由数据库自动生成，不需要手动设置
   };
 
+  const bookId = dbBooks.add(bookData as Book);
+  const book = dbBooks.getById(bookId)!;
+
+  // 异步开始预处理
+  preprocessBook(bookId).catch(error => {
+    console.error(`预处理书籍失败: ${book.title}`, error);
+    dbBooks.update(bookId, {
+      processing_status: 'failed',
+      processing_progress: 0
+    });
+  });
+
+  return book;
+}
+
+/**
+ * 预处理书籍内容
+ * @param bookId - 书籍ID (UUID)
+ */
+async function preprocessBook(bookId: string): Promise<void> {
   try {
-    // 根据文件类型调用相应的解析器
-    if (ext === '.epub') {
-      bookData = await parseEpub(filePath);
-    } else if (ext === '.txt') {
-      bookData = await parseTxt(filePath);
-    } else if (ext === '.pdf') {
-      bookData = await parsePdf(filePath);
+    const book = dbBooks.getById(bookId);
+    if (!book) throw new Error('书籍不存在');
+
+    // 更新状态为处理中
+    updateProgress(bookId, 'processing', 10);
+
+    // 根据文件类型处理
+    if (book.file_type === 'txt') {
+      await processTxtBook(book);
+    } else if (book.file_type === 'epub') {
+      await processEpubBook(book);
+    } else if (book.file_type === 'pdf') {
+      await processPdfBook(book);
     }
 
-    // 将书籍信息保存到数据库
-    const bookId = dbBooks.add(bookData as Book);
-    return dbBooks.getById(bookId)!;
+    // 标记处理完成
+    updateProgress(bookId, 'completed', 100);
+
   } catch (error) {
-    throw new Error(`导入失败: ${(error as Error).message}`);
+    console.error(`预处理失败:`, error);
+    updateProgress(bookId, 'failed', 0);
+    throw error;
   }
 }
 
 /**
- * 解析 EPUB 文件
- * 提取书籍元数据(标题、作者等)
- * @param filePath - EPUB 文件路径
- * @returns 返回提取的书籍信息
+ * 处理TXT文件
+ * @param book - 书籍对象
  */
-async function parseEpub(filePath: string): Promise<Partial<Book>> {
-  return new Promise((resolve, reject) => {
-    const epub = new EPub(filePath);
+async function processTxtBook(book: Book): Promise<void> {
+  // 读取文件内容
+  const content = fs.readFileSync(book.original_file_path!, 'utf-8');
+  updateProgress(book.id!, 'processing', 30);
 
-    // 错误处理
-    epub.on('error', reject);
+  // 识别章节
+  const chapterRecognizer = new ChapterRecognizer();
+  const chapterDataList = chapterRecognizer.recognize(content);
+  updateProgress(book.id!, 'processing', 60);
 
-    // 解析完成时提取元数据
-    epub.on('end', () => {
-      const metadata = epub.metadata;
-      const book: Partial<Book> = {
-        title: metadata.title || 'Unknown',
-        author: metadata.creator,
-        file_type: 'epub',
-      };
+  // 转换为数据库格式
+  const chapters: Omit<Chapter, 'id' | 'created_at'>[] = chapterDataList.map(ch => ({
+    book_id: book.id!,
+    chapter_index: ch.index,
+    title: ch.title,
+    content: ch.content,
+    character_count: ch.characterCount,
+    preview_text: ch.previewText
+  }));
 
-      // TODO: 提取封面图片
-      // TODO: 提取章节内容
+  // 批量插入章节
+  dbChapters.bulkInsert(chapters);
+  updateProgress(book.id!, 'processing', 90);
 
-      resolve(book);
-    });
-
-    // 开始解析
-    epub.parse();
+  // 更新书籍统计信息
+  const totalCharacters = chapters.reduce((sum, ch) => sum + ch.character_count, 0)
+  dbBooks.update(book.id!, {
+    total_chapters: chapters.length,
+    total_characters: totalCharacters,
   });
 }
 
 /**
- * 解析 TXT 文件
- * 简单计算文本长度来估算页数
- * @param filePath - TXT 文件路径
- * @returns 返回提取的书籍信息
+ * 处理EPUB文件(暂时简化处理)
+ * @param book - 书籍对象
  */
-async function parseTxt(filePath: string): Promise<Partial<Book>> {
-  // 读取文件内容
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const fileName = path.basename(filePath, '.txt');
+async function processEpubBook(book: Book): Promise<void> {
+  // TODO: 实现EPUB解析
+  // 目前先作为单章节处理
+  const chapters: Omit<Chapter, 'id' | 'created_at'>[] = [{
+    book_id: book.id!,
+    chapter_index: 1,
+    title: book.title,
+    content: 'EPUB解析功能待实现',
+    character_count: 0,
+    preview_text: ''
+  }];
 
-  return {
-    title: fileName,
-    file_type: 'txt',
-    // 粗略估算页数:每页 2000 字符
-    total_pages: Math.ceil(content.length / 2000),
-  };
+  dbChapters.bulkInsert(chapters);
+
+  dbBooks.update(book.id!, {
+    total_chapters: 1,
+    total_characters: 0,
+  });
 }
 
 /**
- * 解析 PDF 文件
- * 提取元数据和页数信息
- * @param filePath - PDF 文件路径
- * @returns 返回提取的书籍信息
+ * 处理PDF文件(暂时简化处理)
+ * @param book - 书籍对象
  */
-async function parsePdf(filePath: string): Promise<Partial<Book>> {
-  // 读取 PDF 文件
-  const dataBuffer = fs.readFileSync(filePath);
-  const data = await (pdf as any)(dataBuffer);
+async function processPdfBook(book: Book): Promise<void> {
+  // TODO: 实现PDF解析
+  const chapters: Omit<Chapter, 'id' | 'created_at'>[] = [{
+    book_id: book.id!,
+    chapter_index: 1,
+    title: book.title,
+    content: 'PDF解析功能待实现',
+    character_count: 0,
+    preview_text: ''
+  }];
 
-  return {
-    title: data.info?.Title || path.basename(filePath, '.pdf'),
-    author: data.info?.Author,
-    file_type: 'pdf',
-    total_pages: data.numpages,
-  };
+  dbChapters.bulkInsert(chapters);
+
+  dbBooks.update(book.id!, {
+    total_chapters: 1,
+    total_characters: 0,
+  });
 }
 
 /**
- * 读取 TXT 文件指定页的内容
- * 将文本按固定大小分页
- * @param filePath - TXT 文件路径
- * @param pageIndex - 页码索引(从 0 开始)
- * @param pageSize - 每页字符数,默认 2000
- * @returns 返回页面内容和分页信息
+ * 更新处理进度
+ * @param bookId - 书籍ID (UUID)
+ * @param status - 处理状态
+ * @param progress - 进度值 0-100
  */
-export function getTxtPageContent(
-  filePath: string,
-  pageIndex: number,
-  pageSize: number = 2000
-): {
-  content: string;
-  totalPages: number;
-  currentPage: number;
-} {
-  // 读取整个文件内容
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const totalPages = Math.ceil(content.length / pageSize);
+function updateProgress(
+  bookId: string,
+  status: Book['processing_status'],
+  progress: number
+): void {
+  dbBooks.update(bookId, {
+    processing_status: status,
+    processing_progress: progress
+  });
 
-  // 确保页码在有效范围内
-  const validPage = Math.max(0, Math.min(pageIndex, totalPages - 1));
+  // TODO: 发送进度更新事件到渲染进程
+  // 需要在main.ts中注册IPC通信后实现
+}
 
-  // 计算当前页的起始和结束位置
-  const startIndex = validPage * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, content.length);
-  const pageContent = content.substring(startIndex, endIndex);
+/**
+ * 获取书籍的章节元数据列表(不含 content,用于目录导航)
+ * @param bookId - 书籍ID (UUID)
+ * @returns 返回章节元数据数组
+ */
+export function getChapterMetadata(bookId: string): ChapterMetadata[] {
+  return dbChapters.getChapterMetadata(bookId);
+}
 
-  return {
-    content: pageContent,
-    totalPages,
-    currentPage: validPage,
-  };
+/**
+ * 获取指定章节的完整内容(包含 content)
+ * @param chapterId - 章节ID (UUID)
+ * @returns 返回完整章节对象
+ */
+export function getChapter(chapterId: string): Chapter | undefined {
+  return dbChapters.getById(chapterId);
+}
+
+/**
+ * 保存阅读进度
+ * @param bookId - 书籍ID (UUID)
+ * @param chapterId - 当前章节ID (UUID)
+ */
+export function saveReadingProgress(bookId: string, chapterId: string): void {
+  dbBooks.update(bookId, { current_chapter_id: chapterId });
 }

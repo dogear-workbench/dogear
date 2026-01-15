@@ -1,4 +1,4 @@
-import { Book, AIInteraction } from './types';
+import { Book, Chapter, ChapterMetadata, AIInteraction } from './types';
 
 /**
  * Electron 数据库操作封装
@@ -19,11 +19,11 @@ export const electronDB = {
 
   /**
    * 根据 ID 获取单本书籍
-   * @param id - 书籍 ID
+   * @param id - 书籍 ID (UUID)
    * @returns 返回书籍对象
    * @throws 在非 Electron 环境抛出错误
    */
-  getBookById: async (id: number): Promise<Book> => {
+  getBookById: async (id: string): Promise<Book> => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return window.electronAPI.db.getBookById(id);
     }
@@ -33,10 +33,10 @@ export const electronDB = {
   /**
    * 添加新书籍
    * @param book - 书籍对象
-   * @returns 返回新创建书籍的 ID
+   * @returns 返回新创建书籍的 ID (UUID)
    * @throws 在非 Electron 环境抛出错误
    */
-  addBook: async (book: Book): Promise<number> => {
+  addBook: async (book: Book): Promise<string> => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return window.electronAPI.db.addBook(book);
     }
@@ -45,11 +45,11 @@ export const electronDB = {
 
   /**
    * 更新书籍信息
-   * @param id - 书籍 ID
+   * @param id - 书籍 ID (UUID)
    * @param data - 包含更新字段的对象
    * @throws 在非 Electron 环境抛出错误
    */
-  updateBook: async (id: number, data: Partial<Book>): Promise<void> => {
+  updateBook: async (id: string, data: Partial<Book>): Promise<void> => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return window.electronAPI.db.updateBook(id, data);
     }
@@ -58,10 +58,10 @@ export const electronDB = {
 
   /**
    * 删除书籍
-   * @param id - 书籍 ID
+   * @param id - 书籍 ID (UUID)
    * @throws 在非 Electron 环境抛出错误
    */
-  deleteBook: async (id: number): Promise<void> => {
+  deleteBook: async (id: string): Promise<void> => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       return window.electronAPI.db.deleteBook(id);
     }
@@ -137,19 +137,37 @@ export const electronFile = {
  */
 export const electronBook = {
   /**
-   * 读取 TXT 文件指定页的内容
-   * @param filePath - TXT 文件路径
-   * @param pageIndex - 页码索引(从 0 开始)
-   * @returns 返回页面内容、总页数和当前页码
-   * @throws 在非 Electron 环境抛出错误
+   * 获取书籍的章节元数据列表(不含 content,用于目录导航)
+   * @param bookId - 书籍ID (UUID)
+   * @returns 返回章节元数据数组
    */
-  getTxtPage: async (filePath: string, pageIndex: number): Promise<{
-    content: string;      // 页面内容
-    totalPages: number;   // 总页数
-    currentPage: number;  // 当前页码
-  }> => {
+  getChapterMetadata: async (bookId: string): Promise<ChapterMetadata[]> => {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      return window.electronAPI.book.getTxtPage(filePath, pageIndex);
+      return window.electronAPI.book.getChapterMetadata(bookId);
+    }
+    throw new Error('Electron API not available');
+  },
+
+  /**
+   * 获取指定章节的完整内容(包含 content)
+   * @param chapterId - 章节ID (UUID)
+   * @returns 返回完整章节对象
+   */
+  getChapter: async (chapterId: string): Promise<Chapter> => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      return window.electronAPI.book.getChapter(chapterId);
+    }
+    throw new Error('Electron API not available');
+  },
+
+  /**
+   * 保存阅读进度
+   * @param bookId - 书籍ID (UUID)
+   * @param chapterId - 当前章节ID (UUID)
+   */
+  saveProgress: async (bookId: string, chapterId: string): Promise<void> => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      return window.electronAPI.book.saveProgress(bookId, chapterId);
     }
     throw new Error('Electron API not available');
   },

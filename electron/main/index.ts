@@ -79,7 +79,7 @@ ipcMain.handle('db:getBooks', () => {
 /**
  * 根据 ID 获取单本书籍信息
  */
-ipcMain.handle('db:getBookById', (_, id: number) => {
+ipcMain.handle('db:getBookById', (_, id: string) => {
   return dbBooks.getById(id);
 });
 
@@ -93,14 +93,14 @@ ipcMain.handle('db:addBook', (_, book) => {
 /**
  * 更新书籍信息
  */
-ipcMain.handle('db:updateBook', (_, id: number, data) => {
+ipcMain.handle('db:updateBook', (_, id: string, data) => {
   return dbBooks.update(id, data);
 });
 
 /**
  * 删除书籍
  */
-ipcMain.handle('db:deleteBook', (_, id: number) => {
+ipcMain.handle('db:deleteBook', (_, id: string) => {
   return dbBooks.delete(id);
 });
 
@@ -136,10 +136,22 @@ ipcMain.handle('file:importBook', async (_, filePath: string) => {
 
 // 书籍内容读取
 /**
- * 读取 TXT 文件指定页的内容
- * @param filePath - TXT 文件路径
- * @param pageIndex - 页码索引(从 0 开始)
+ * 获取书籍的章节元数据列表(不含 content,用于目录导航)
  */
-ipcMain.handle('book:getTxtPage', async (_, filePath: string, pageIndex: number) => {
-  return bookService.getTxtPageContent(filePath, pageIndex);
+ipcMain.handle('book:getChapterMetadata', async (_, bookId: string) => {
+  return bookService.getChapterMetadata(bookId);
+});
+
+/**
+ * 获取指定章节的完整内容(包含 content)
+ */
+ipcMain.handle('book:getChapter', async (_, chapterId: string) => {
+  return bookService.getChapter(chapterId);
+});
+
+/**
+ * 保存阅读进度
+ */
+ipcMain.handle('book:saveProgress', async (_, bookId: string, chapterId: string) => {
+  return bookService.saveReadingProgress(bookId, chapterId);
 });

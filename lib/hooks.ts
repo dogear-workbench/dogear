@@ -42,7 +42,7 @@ export function useBooks() {
   /**
    * 添加新书籍
    * @param book - 要添加的书籍对象
-   * @returns 返回新创建书籍的 ID
+   * @returns 返回新创建书籍的 ID (UUID)
    */
   const addBook = async (book: Book) => {
     const id = await electronDB.addBook(book);
@@ -53,9 +53,9 @@ export function useBooks() {
 
   /**
    * 删除书籍
-   * @param id - 要删除的书籍 ID
+   * @param id - 要删除的书籍 ID (UUID)
    */
-  const deleteBook = async (id: number) => {
+  const deleteBook = async (id: string) => {
     await electronDB.deleteBook(id);
     // 删除成功后重新加载列表
     await loadBooks();
@@ -68,10 +68,10 @@ export function useBooks() {
 /**
  * 单本书籍 Hook
  * 管理单本书籍的数据加载和更新操作
- * @param id - 书籍 ID
+ * @param id - 书籍 ID (UUID)
  * @returns 返回书籍数据、加载状态、错误信息和更新方法
  */
-export function useBook(id: number) {
+export function useBook(id: string) {
   // 书籍数据状态
   const [book, setBook] = useState<Book | null>(null);
   // 加载状态

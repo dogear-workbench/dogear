@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { v4 as uuidv4 } from 'uuid';
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -14,17 +15,56 @@ const __dirname = dirname(__filename);
  * 定义书籍对象的数据结构
  */
 export interface Book {
-  id?: number;                // 书籍唯一标识
-  title: string;              // 书名
-  author?: string;            // 作者
-  file_path: string;          // 文件路径
-  file_type: string;          // 文件类型(epub/txt/pdf)
-  total_pages?: number;       // 总页数
-  current_page?: number;      // 当前阅读页码
-  cover_image?: string;       // 封面图片路径
-  metadata?: string;          // 其他元数据(JSON 格式)
-  created_at?: string;        // 创建时间
-  updated_at?: string;        // 更新时间
+  id?: string;                           // 书籍唯一标识(UUID)
+  title: string;                         // 书名 (NOT NULL)
+  author: string | null;                 // 作者
+  file_type: string;                     // 文件类型(txt/epub/pdf) (NOT NULL)
+
+  // 预处理状态
+  processing_status: 'pending' | 'processing' | 'completed' | 'failed';  // 处理状态 (NOT NULL)
+  processing_progress: number;           // 处理进度 0-100 (默认值: 0)
+
+  // 阅读进度(基于章节)
+  current_chapter_id: string | null;     // 当前阅读的章节ID(UUID)
+
+  // 统计信息
+  total_chapters: number;                // 总章节数 (默认值: 0)
+  total_characters: number;              // 总字符数 (默认值: 0)
+
+  // 原始文件信息
+  original_file_path: string | null;     // 原始文件路径
+  file_size: number | null;              // 文件大小(字节)
+
+  cover_image: string | null;            // 封面图片路径
+  metadata: string | null;               // 其他元数据(JSON 格式)
+  created_at?: string;                   // 创建时间（数据库自动生成）
+  updated_at?: string;                   // 更新时间（数据库自动生成）
+}
+
+/**
+ * 章节数据接口
+ */
+export interface Chapter {
+  id?: string;                      // 章节唯一标识(UUID)
+  book_id: string;                  // 关联的书籍ID(UUID)
+  chapter_index: number;            // 章节序号
+  title: string;                    // 章节标题
+  content: string;                  // 章节完整内容
+  character_count: number;          // 字符数
+  preview_text: string;             // 预览文本
+  created_at?: string;              // 创建时间
+}
+
+/**
+ * 章节元数据接口(不含 content,用于列表展示)
+ */
+export interface ChapterMetadata {
+  id: string;                       // 章节唯一标识(UUID)
+  book_id: string;                  // 关联的书籍ID(UUID)
+  chapter_index: number;            // 章节序号
+  title: string;                    // 章节标题
+  character_count: number;          // 字符数
+  preview_text: string;             // 预览文本
 }
 
 /**
@@ -32,14 +72,14 @@ export interface Book {
  * 定义 AI 交互记录的数据结构
  */
 export interface AIInteraction {
-  id?: number;                // 交互记录唯一标识
-  book_id?: number;           // 关联的书籍 ID
+  id?: string;                       // 交互记录唯一标识(UUID)
+  book_id: string | null;            // 关联的书籍 ID(UUID)
   type: 'chat' | 'summarize' | 'qna';  // 交互类型
-  user_message?: string;      // 用户的消息
-  ai_response: string;        // AI 的回复
-  context_text?: string;      // 上下文文本
-  model_info?: string;        // 模型信息
-  created_at?: string;        // 交互时间
+  user_message: string | null;       // 用户的消息
+  ai_response: string;               // AI 的回复
+  context_text: string | null;       // 上下文文本
+  model_info: string | null;         // 模型信息
+  created_at?: string;               // 交互时间（数据库自动生成）
 }
 
 // ==================== 数据库初始化 ====================
@@ -76,10 +116,10 @@ export const dbBooks = {
 
   /**
    * 根据 ID 获取单本书籍
-   * @param id - 书籍 ID
+   * @param id - 书籍 ID (UUID)
    * @returns 返回书籍对象,如果不存在则返回 undefined
    */
-  getById: (id: number): Book | undefined => {
+  getById: (id: string): Book | undefined => {
     const stmt = db.prepare('SELECT * FROM books WHERE id = ?');
     return stmt.get(id) as Book | undefined;
   },
@@ -87,32 +127,47 @@ export const dbBooks = {
   /**
    * 添加新书籍
    * @param book - 书籍对象
-   * @returns 返回新插入记录的 ID
+   * @returns 返回新插入记录的 ID (UUID)
    */
-  add: (book: Book): number => {
+  add: (book: Book): string => {
+    // 生成新的 UUID
+    const newId = uuidv4();
+
     const stmt = db.prepare(`
-      INSERT INTO books (title, author, file_path, file_type, total_pages, current_page, cover_image, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO books (
+        id, title, author, file_type,
+        processing_status, processing_progress,
+        current_chapter_id,
+        total_chapters, total_characters,
+        original_file_path, file_size,
+        cover_image, metadata
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(
+    stmt.run(
+      newId,
       book.title,
-      book.author || null,
-      book.file_path,
+      book.author,  // 已经是 string | null，不需要 ||
       book.file_type,
-      book.total_pages || null,
-      book.current_page || 0,
-      book.cover_image || null,
-      book.metadata || null
+      book.processing_status,  // 已经是必需字段，不需要默认值
+      book.processing_progress,  // 已经是必需字段，不需要默认值
+      book.current_chapter_id,  // 已经是 string | null，不需要 ||
+      book.total_chapters,  // 已经是必需字段，不需要默认值
+      book.total_characters,  // 已经是必需字段，不需要默认值
+      book.original_file_path,  // 已经是 string | null，不需要 ||
+      book.file_size,  // 已经是 number | null，不需要 ||
+      book.cover_image,  // 已经是 string | null，不需要 ||
+      book.metadata  // 已经是 string | null，不需要 ||
     );
-    return result.lastInsertRowid as number;
+    return newId;
   },
 
   /**
    * 更新书籍信息
-   * @param id - 书籍 ID
+   * @param id - 书籍 ID (UUID)
    * @param book - 包含更新字段的对象
    */
-  update: (id: number, book: Partial<Book>): void => {
+  update: (id: string, book: Partial<Book>): void => {
     // 动态构建 SET 子句,只更新提供的字段
     const fields = Object.keys(book)
       .filter(k => k !== 'id' && k !== 'created_at')  // 排除不能更新的字段
@@ -132,11 +187,94 @@ export const dbBooks = {
   /**
    * 删除书籍
    * 由于外键级联约束,相关联的 AI 交互记录也会被删除
-   * @param id - 书籍 ID
+   * @param id - 书籍 ID (UUID)
    */
-  delete: (id: number): void => {
+  delete: (id: string): void => {
     const stmt = db.prepare('DELETE FROM books WHERE id = ?');
     stmt.run(id);
+  }
+};
+
+// ==================== 章节操作 ====================
+
+/**
+ * 章节数据库操作集合
+ * 提供对章节表的 CRUD 操作
+ */
+export const dbChapters = {
+  /**
+   * 获取书籍的章节元数据列表(不含 content,用于目录导航)
+   * @param bookId - 书籍ID (UUID)
+   * @returns 返回按章节序号排序的章节元数据数组
+   */
+  getChapterMetadata: (bookId: string): ChapterMetadata[] => {
+    const stmt = db.prepare(`
+      SELECT id, book_id, chapter_index, title, character_count, preview_text
+      FROM chapters
+      WHERE book_id = ?
+      ORDER BY chapter_index
+    `);
+    return stmt.all(bookId) as ChapterMetadata[];
+  },
+
+  /**
+   * 根据ID获取单个章节(完整内容)
+   * @param chapterId - 章节ID (UUID)
+   * @returns 返回完整章节对象,包含 content
+   */
+  getById: (chapterId: string): Chapter | undefined => {
+    const stmt = db.prepare('SELECT * FROM chapters WHERE id = ?');
+    return stmt.get(chapterId) as Chapter | undefined;
+  },
+
+  /**
+   * 根据章节序号获取章节(完整内容)
+   * @param bookId - 书籍ID (UUID)
+   * @param chapterIndex - 章节序号
+   * @returns 返回完整章节对象,包含 content
+   */
+  getByIndex: (bookId: string, chapterIndex: number): Chapter | undefined => {
+    const stmt = db.prepare(
+      'SELECT * FROM chapters WHERE book_id = ? AND chapter_index = ?'
+    );
+    return stmt.get(bookId, chapterIndex) as Chapter | undefined;
+  },
+
+  /**
+   * 批量插入章节
+   * @param chapters - 章节数组(不含 id)
+   */
+  bulkInsert: (chapters: Omit<Chapter, 'id' | 'created_at'>[]): void => {
+    const insert = db.prepare(`
+      INSERT INTO chapters (id, book_id, chapter_index, title, content, character_count, preview_text)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = db.transaction((chapters) => {
+      for (const chapter of chapters) {
+        const newId = uuidv4(); // 为每个章节生成 UUID
+        insert.run(
+          newId,
+          chapter.book_id,
+          chapter.chapter_index,
+          chapter.title,
+          chapter.content,
+          chapter.character_count,
+          chapter.preview_text
+        );
+      }
+    });
+
+    transaction(chapters);
+  },
+
+  /**
+   * 删除书籍的所有章节
+   * @param bookId - 书籍ID (UUID)
+   */
+  deleteByBookId: (bookId: string): void => {
+    const stmt = db.prepare('DELETE FROM chapters WHERE book_id = ?');
+    stmt.run(bookId);
   }
 };
 
@@ -149,10 +287,10 @@ export const dbBooks = {
 export const dbAI = {
   /**
    * 获取指定书籍的所有 AI 交互记录
-   * @param bookId - 书籍 ID
+   * @param bookId - 书籍 ID (UUID)
    * @returns 返回按创建时间倒序排列的交互记录数组
    */
-  getByBookId: (bookId: number): AIInteraction[] => {
+  getByBookId: (bookId: string): AIInteraction[] => {
     const stmt = db.prepare('SELECT * FROM ai_interactions WHERE book_id = ? ORDER BY created_at DESC');
     return stmt.all(bookId) as AIInteraction[];
   },
@@ -160,22 +298,25 @@ export const dbAI = {
   /**
    * 添加新的 AI 交互记录
    * @param interaction - AI 交互对象
-   * @returns 返回新插入记录的 ID
+   * @returns 返回新插入记录的 ID (UUID)
    */
-  add: (interaction: AIInteraction): number => {
+  add: (interaction: AIInteraction): string => {
+    const newId = uuidv4();
+
     const stmt = db.prepare(`
-      INSERT INTO ai_interactions (book_id, type, user_message, ai_response, context_text, model_info)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO ai_interactions (id, book_id, type, user_message, ai_response, context_text, model_info)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    const result = stmt.run(
-      interaction.book_id || null,
+    stmt.run(
+      newId,
+      interaction.book_id,  // 已经是 string | null，不需要 ||
       interaction.type,
-      interaction.user_message || null,
+      interaction.user_message,  // 已经是 string | null，不需要 ||
       interaction.ai_response,
-      interaction.context_text || null,
-      interaction.model_info || null
+      interaction.context_text,  // 已经是 string | null，不需要 ||
+      interaction.model_info  // 已经是 string | null，不需要 ||
     );
-    return result.lastInsertRowid as number;
+    return newId;
   }
 };
 

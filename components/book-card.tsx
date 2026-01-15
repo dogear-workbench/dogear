@@ -8,7 +8,7 @@ import Link from 'next/link';
 
 interface BookCardProps {
   book: Book;
-  onDelete?: (id: number) => void;
+  onDelete?: (id: string) => void;
 }
 
 export function BookCard({ book, onDelete }: BookCardProps) {

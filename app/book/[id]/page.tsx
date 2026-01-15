@@ -11,8 +11,7 @@ interface BookPageProps {
 
 export default function BookPage({ params }: BookPageProps) {
   const { id } = React.use(params);
-  const bookId = parseInt(id);
-  const { book, loading, error } = useBook(bookId);
+  const { book, loading, error } = useBook(id);
 
   if (loading) {
     return <div className="text-center py-8">加载中...</div>;
