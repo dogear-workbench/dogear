@@ -1,6 +1,10 @@
 # Electron Builder 配置文件
 # 用于将 Electron 应用打包为可执行文件
 
+# Electron 下载镜像配置（解决网络问题）
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/
+
 # 应用唯一标识符（反向域名格式）
 appId: com.dogear.app
 
@@ -15,20 +19,29 @@ directories:
 # 需要打包的文件和目录
 files:
   # Electron 主进程编译后的代码
-  - electron/**/*
-  # Next.js 构建输出的静态文件
-  - out/**/*
+  - dist/**/*
+  - electron/dist/**/*
+  # Next.js 构建输出（使用 SSR）
+  - .next/**/*
+  # Next.js 应用代码
+  - app/**/*
+  - public/**/*
+  - components.json
+  - tailwind.config.ts
+  - next.config.*.js
   # Node.js 依赖包
-  - node_modules/**
+  - node_modules/**/*
   # package.json 文件
   - package.json
 
 # Windows 平台打包配置
 win:
-  # 目标打包格式为 NSIS 安装程序
-  target: nsis
+  # 目标打包格式 - 仅打包目录（跳过安装程序和签名）
+  target:
+    - target: dir
+      arch: x64
   # Windows 应用图标（需要放在 build 目录下）
-  icon: build/icon.ico
+  # icon: build/icon.ico
 
 # macOS 平台打包配置
 mac:

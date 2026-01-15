@@ -1,6 +1,9 @@
 {
   "name": "dogear",
   "version": "0.1.0",
+  "description": "AI-powered eBook reader for EPUB and PDF files",
+  "author": "Dogear Team",
+  "main": "dist/main/index.js",
   "private": true,
   "type": "module",
   "scripts": {
