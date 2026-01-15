@@ -4,10 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    // 开发模式：同时启动 Next.js 开发服务器和 Electron 应用
+    "dev": "concurrently \"npm run dev:next\" \"npm run dev:electron\"",
+    // 启动 Next.js 开发服务器（端口 3000）
+    "dev:next": "next dev",
+    // 等待 Next.js 服务器启动后再启动 Electron
+    // 使用 wait-on 确保端口 3000 可用，设置开发环境变量
+    "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
+    // 构建 Next.js 应用为静态文件
+    "build:next": "next build",
+    // 编译 Electron 主进程 TypeScript 代码
+    "build:electron": "tsc -p tsconfig.electron.json",
+    // 完整构建：先构建 Next.js，再编译 Electron
+    "build": "npm run build:next && npm run build:electron",
+    // 使用 electron-builder 打包应用为可执行文件
+    "dist": "npm run build && electron-builder",
+    // 运行代码检查
+    "lint": "eslint ."
   },
   "dependencies": {
     "better-sqlite3": "^12.6.0",

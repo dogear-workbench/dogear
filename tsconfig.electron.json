@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    // 编译目标为 ES2020
+    "target": "ES2020",
+    // 使用 CommonJS 模块系统（Electron 主进程要求）
+    "module": "commonjs",
+    // 包含 ES2020 标准库
+    "lib": ["ES2020"],
+    // 输出目录为 dist 文件夹
+    "outDir": "./dist",
+    // 源代码根目录为 electron 文件夹
+    "rootDir": "./electron",
+    // 启用严格模式检查
+    "strict": true,
+    // 允许 ES 模块和 CommonJS 之间的互操作性
+    "esModuleInterop": true,
+    // 跳过库文件的类型检查（提升编译速度）
+    "skipLibCheck": true,
+    // 强制文件名大小写一致性
+    "forceConsistentCasingInFileNames": true,
+    // 允许导入 JSON 文件
+    "resolveJsonModule": true,
+    // 使用 Node.js 风格的模块解析
+    "moduleResolution": "node",
+    // 包含 Node.js 类型定义
+    "types": ["node"]
+  },
+  // 包含 electron 目录下的所有 TypeScript 文件
+  "include": ["electron/**/*"],
+  // 排除以下目录，避免编译不必要的文件
+  "exclude": ["node_modules", "app", "components", "lib", "public"]
+}
