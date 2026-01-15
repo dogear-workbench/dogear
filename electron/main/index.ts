@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { dbBooks, dbAI } from '../main/database';
 import * as bookService from './services/book-service';
+import * as aiService from './services/ai-service';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -64,13 +65,11 @@ ipcMain.handle('db:deleteBook', (_, id: number) => {
 });
 
 ipcMain.handle('ai:chat', async (_, messages) => {
-  // TODO: 实现 AI 聊天
-  return 'AI response placeholder';
+  return aiService.chat(messages);
 });
 
 ipcMain.handle('ai:summarize', async (_, text: string) => {
-  // TODO: 实现 AI 摘要
-  return 'Summary placeholder';
+  return aiService.summarize(text);
 });
 
 ipcMain.handle('file:select', async () => {
