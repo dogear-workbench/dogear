@@ -1,12 +1,31 @@
 'use client';
 
 import { useBooks } from '@/lib/hooks';
+import { electronFile } from '@/lib/electron';
 import { BookCard } from './book-card';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
+import { useState } from 'react';
 
 export function BookList() {
-  const { books, loading, error, deleteBook } = useBooks();
+  const { books, loading, error, deleteBook, reload } = useBooks();
+  const [importing, setImporting] = useState(false);
+
+  const handleImport = async () => {
+    try {
+      setImporting(true);
+      const filePath = await electronFile.selectFile();
+      if (filePath) {
+        await electronFile.importBook(filePath);
+        reload();
+      }
+    } catch (error) {
+      console.error('Import failed:', error);
+      alert(`导入失败: ${(error as Error).message}`);
+    } finally {
+      setImporting(false);
+    }
+  };
 
   if (loading) {
     return <div className="text-center py-8">加载中...</div>;
@@ -20,9 +39,9 @@ export function BookList() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">我的书架</h1>
-        <Button>
+        <Button onClick={handleImport} disabled={importing}>
           <Plus className="w-4 h-4 mr-2" />
-          导入书籍
+          {importing ? '导入中...' : '导入书籍'}
         </Button>
       </div>
 

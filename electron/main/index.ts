@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
 import { dbBooks, dbAI } from '../main/database';
+import * as bookService from './services/book-service';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -73,11 +74,9 @@ ipcMain.handle('ai:summarize', async (_, text: string) => {
 });
 
 ipcMain.handle('file:select', async () => {
-  // TODO: 实现文件选择
-  return null;
+  return bookService.selectBookFile();
 });
 
 ipcMain.handle('file:importBook', async (_, filePath: string) => {
-  // TODO: 实现书籍导入
-  return null;
+  return bookService.importBook(filePath);
 });
