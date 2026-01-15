@@ -1,6 +1,6 @@
-import { contextBridge, ipcRenderer } from 'electron';
+const { contextBridge, ipcRenderer } = require('electron');
 
-export interface ElectronAPI {
+interface ElectronAPI {
   db: {
     getBooks: () => Promise<any[]>;
     getBookById: (id: number) => Promise<any>;

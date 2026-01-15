@@ -1,15 +1,17 @@
 'use client';
 
+import React from 'react';
 import { useBook } from '@/lib/hooks';
 import { Reader } from '@/components/reader';
 import { notFound } from 'next/navigation';
 
 interface BookPageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export default function BookPage({ params }: BookPageProps) {
-  const bookId = parseInt(params.id);
+  const { id } = React.use(params);
+  const bookId = parseInt(id);
   const { book, loading, error } = useBook(bookId);
 
   if (loading) {

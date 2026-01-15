@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron';
+"use strict";
+const { contextBridge, ipcRenderer } = require('electron');
 const electronAPI = {
     db: {
         getBooks: () => ipcRenderer.invoke('db:getBooks'),

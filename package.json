@@ -7,10 +7,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "concurrently \"npm run dev:next\" \"npm run dev:electron\"",
+    "dev": "npm run build:electron && concurrently \"npm run dev:next\" \"npm run dev:electron\"",
     "dev:next": "next dev",
     "dev:electron": "wait-on http://localhost:3000 && cross-env NODE_ENV=development electron .",
     "build:next": "next build",
+    "dev:watch": "concurrently \"npm run dev:next\" \"npm run watch:electron\" \"npm run dev:electron\"",
+    "watch:electron": "tsc -p tsconfig.electron.json --watch",
     "build:electron": "tsc -p tsconfig.electron.json && xcopy /E /I /Y electron\\main\\database\\*.sql dist\\main\\database\\",
     "build": "npm run build:next && npm run build:electron",
     "dist": "npm run build && electron-builder",
