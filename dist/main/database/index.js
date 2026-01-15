@@ -1,23 +1,21 @@
-"use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.dbAI = exports.dbBooks = void 0;
-const better_sqlite3_1 = __importDefault(require("better-sqlite3"));
-const electron_1 = require("electron");
-const path_1 = __importDefault(require("path"));
-const fs_1 = __importDefault(require("fs"));
+import Database from 'better-sqlite3';
+import { app } from 'electron';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 // 读取 schema
-const schemaPath = path_1.default.join(__dirname, 'schema.sql');
-const schema = fs_1.default.readFileSync(schemaPath, 'utf-8');
+const schemaPath = path.join(__dirname, 'schema.sql');
+const schema = fs.readFileSync(schemaPath, 'utf-8');
 // 初始化数据库
-const userDataPath = electron_1.app.getPath('userData');
-const dbPath = path_1.default.join(userDataPath, 'dogear.db');
-const db = new better_sqlite3_1.default(dbPath);
+const userDataPath = app.getPath('userData');
+const dbPath = path.join(userDataPath, 'dogear.db');
+const db = new Database(dbPath);
 db.exec(schema);
 // 书籍操作
-exports.dbBooks = {
+export const dbBooks = {
     getAll: () => {
         const stmt = db.prepare('SELECT * FROM books ORDER BY created_at DESC');
         return stmt.all();
@@ -51,7 +49,7 @@ exports.dbBooks = {
     }
 };
 // AI 交互操作
-exports.dbAI = {
+export const dbAI = {
     getByBookId: (bookId) => {
         const stmt = db.prepare('SELECT * FROM ai_interactions WHERE book_id = ? ORDER BY created_at DESC');
         return stmt.all(bookId);
@@ -65,4 +63,4 @@ exports.dbAI = {
         return result.lastInsertRowid;
     }
 };
-exports.default = db;
+export default db;

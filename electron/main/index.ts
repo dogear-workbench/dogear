@@ -1,8 +1,13 @@
 import { app, BrowserWindow, ipcMain } from 'electron';
 import * as path from 'path';
-import { dbBooks, dbAI } from '../main/database';
-import * as bookService from './services/book-service';
-import * as aiService from './services/ai-service';
+import { dbBooks, dbAI } from '../main/database/index.js';
+import * as bookService from './services/book-service.js';
+import * as aiService from './services/ai-service.js';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const isDev = process.env.NODE_ENV === 'development';
 

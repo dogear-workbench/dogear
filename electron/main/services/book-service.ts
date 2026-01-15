@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { EPub } from 'epub2';
 import * as pdf from 'pdf-parse';
-import { dbBooks, Book } from '../database';
+import { dbBooks, Book } from '../database/index.js';
 
 export async function selectBookFile(): Promise<string | null> {
   const result = await dialog.showOpenDialog({

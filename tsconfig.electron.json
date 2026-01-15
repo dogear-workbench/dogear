@@ -3,7 +3,7 @@
     // 编译目标为 ES2020
     "target": "ES2020",
     // 使用 CommonJS 模块系统（Electron 主进程要求）
-    "module": "commonjs",
+    "module": "ES2020",
     // 包含 ES2020 标准库
     "lib": ["ES2020"],
     // 输出目录为 dist 文件夹
