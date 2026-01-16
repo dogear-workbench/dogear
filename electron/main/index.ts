@@ -1,10 +1,14 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+/**
+ * Electron 主进程入口
+ * 负责应用窗口管理和生命周期
+ */
+
+import { app, BrowserWindow } from 'electron';
 import * as path from 'path';
-import { dbBooks, dbAI } from '../main/database/index.js';
-import * as bookService from './services/book-service.js';
-import * as aiService from './services/ai-service.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
+import { registerAllHandlers } from './ipc/index.js';
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -46,8 +50,22 @@ function createWindow() {
   }
 }
 
+// ==================== 应用生命周期 ====================
+
 // 当 Electron 完成初始化时创建窗口
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  // 注册所有 IPC 处理器
+  registerAllHandlers();
+
+  // 初始化 Agent 管理器
+  const agentManager = getAgentManager({
+    maxWorkers: 4,
+    workerIdleTimeout: 60000,
+    taskRetryLimit: 2,
+    enableAutoCleanup: true
+  });
+  await agentManager.start();
+
   createWindow();
 
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
@@ -60,98 +78,16 @@ app.whenReady().then(() => {
 });
 
 // 当所有窗口都关闭时退出应用(在 macOS 上除外)
-app.on('window-all-closed', () => {
+app.on('window-all-closed', async () => {
   if (process.platform !== 'darwin') {
+    // 关闭 Agent 管理器
+    await shutdownAgentManager();
     app.quit();
   }
 });
 
-// ==================== IPC 通信处理器 ====================
-
-// 数据库相关操作
-/**
- * 获取所有书籍列表
- */
-ipcMain.handle('db:getBooks', () => {
-  return dbBooks.getAll();
-});
-
-/**
- * 根据 ID 获取单本书籍信息
- */
-ipcMain.handle('db:getBookById', (_, id: string) => {
-  return dbBooks.getById(id);
-});
-
-/**
- * 添加新书籍到数据库
- */
-ipcMain.handle('db:addBook', (_, book) => {
-  return dbBooks.add(book);
-});
-
-/**
- * 更新书籍信息
- */
-ipcMain.handle('db:updateBook', (_, id: string, data) => {
-  return dbBooks.update(id, data);
-});
-
-/**
- * 删除书籍
- */
-ipcMain.handle('db:deleteBook', (_, id: string) => {
-  return dbBooks.delete(id);
-});
-
-// AI 相关操作
-/**
- * AI 对话接口
- */
-ipcMain.handle('ai:chat', async (_, messages) => {
-  return aiService.chat(messages);
-});
-
-/**
- * AI 文本摘要接口
- */
-ipcMain.handle('ai:summarize', async (_, text: string) => {
-  return aiService.summarize(text);
-});
-
-// 文件相关操作
-/**
- * 打开文件选择对话框
- */
-ipcMain.handle('file:select', async () => {
-  return bookService.selectBookFile();
-});
-
-/**
- * 导入书籍文件
- */
-ipcMain.handle('file:importBook', async (_, filePath: string) => {
-  return bookService.importBook(filePath);
-});
-
-// 书籍内容读取
-/**
- * 获取书籍的章节元数据列表(不含 content,用于目录导航)
- */
-ipcMain.handle('book:getChapterMetadata', async (_, bookId: string) => {
-  return bookService.getChapterMetadata(bookId);
-});
-
-/**
- * 获取指定章节的完整内容(包含 content)
- */
-ipcMain.handle('book:getChapter', async (_, chapterId: string) => {
-  return bookService.getChapter(chapterId);
-});
-
-/**
- * 保存阅读进度
- */
-ipcMain.handle('book:saveProgress', async (_, bookId: string, chapterId: string) => {
-  return bookService.saveReadingProgress(bookId, chapterId);
+// 应用退出前清理
+app.on('before-quit', async () => {
+  // 关闭 Agent 管理器
+  await shutdownAgentManager();
 });

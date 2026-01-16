@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    // 编译目标为 ES2020
+    "target": "ES2020",
+    // preload 脚本必须使用 CommonJS,因为 Electron 的 preload 环境不支持 ESM
+    "module": "CommonJS",
+    // 模块解析
+    "moduleResolution": "node",
+    // 输出目录
+    "outDir": "./dist/preload",
+    // 源代码目录
+    "rootDir": "./electron/preload",
+    // 启用严格模式检查
+    "strict": true,
+    // 允许 ES 模块和 CommonJS 之间的互操作性
+    "esModuleInterop": true,
+    // 跳过库文件的类型检查（提升编译速度）
+    "skipLibCheck": true,
+    // 强制文件名大小写一致性
+    "forceConsistentCasingInFileNames": true,
+    // 允许导入 JSON 文件
+    "resolveJsonModule": true,
+    // 包含 Node.js 和 Electron 类型定义
+    "types": ["node"]
+  },
+  "include": ["electron/preload/**/*"],
+  "exclude": ["node_modules"]
+}

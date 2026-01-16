@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Book, Chapter, ChapterMetadata } from '@/lib/types';
+import { Book, Chapter, ChapterMetadata } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ChevronLeft, ChevronRight, List, X } from 'lucide-react';
 import Link from 'next/link';
-import { electronBook } from '@/lib/electron';
 
 interface ReaderProps {
   book: Book;
@@ -39,7 +38,7 @@ export function Reader({ book }: ReaderProps) {
   // 保存阅读进度
   useEffect(() => {
     if (currentChapter && book.id) {
-      electronBook.saveProgress(book.id!, currentChapter.id!);
+      window.electronAPI.book.saveProgress(book.id!, currentChapter.id!);
     }
   }, [currentChapter]);
 
@@ -70,7 +69,7 @@ export function Reader({ book }: ReaderProps) {
   const loadChapterMetadata = async () => {
     try {
       setLoading(true);
-      const metadataList = await electronBook.getChapterMetadata(book.id!);
+      const metadataList = await window.electronAPI.book.getChapterMetadata(book.id!);
       setChapterMetadata(metadataList);
     } catch (error) {
       console.error('加载章节列表失败:', error);
@@ -85,7 +84,7 @@ export function Reader({ book }: ReaderProps) {
   const loadChapter = async (chapterId: string) => {
     try {
       setLoading(true);
-      const chapter = await electronBook.getChapter(chapterId);
+      const chapter = await window.electronAPI.book.getChapter(chapterId);
       setCurrentChapter(chapter);
       // 滚动到顶部
       if (contentRef.current) {

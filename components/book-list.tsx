@@ -1,7 +1,6 @@
 'use client';
 
 import { useBooks } from '@/lib/hooks';
-import { electronFile } from '@/lib/electron';
 import { BookCard } from './book-card';
 import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
@@ -14,9 +13,9 @@ export function BookList() {
   const handleImport = async () => {
     try {
       setImporting(true);
-      const filePath = await electronFile.selectFile();
+      const filePath = await window.electronAPI.file.selectFile();
       if (filePath) {
-        await electronFile.importBook(filePath);
+        await window.electronAPI.file.importBook(filePath);
         reload();
       }
     } catch (error) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { Book } from '@/lib/types';
+import { Book } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BookOpen, Trash2 } from 'lucide-react';
