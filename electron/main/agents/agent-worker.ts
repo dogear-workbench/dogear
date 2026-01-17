@@ -19,6 +19,7 @@ import {
   AgentWorkerConfig
 } from './task-types.js';
 import { workerLogger, createTaskLogger } from './logger.js';
+import { executeChatSkill } from './skills/chat-skill.js';
 
 /**
  * Agent Worker 类
@@ -116,7 +117,7 @@ class AgentWorker {
       // 任务完成
       this.currentTask = null;
       taskLogger.info('任务完成');
-      this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, { result });
+      this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, result);
 
     } catch (error) {
       this.currentTask = null;
@@ -129,17 +130,29 @@ class AgentWorker {
   /**
    * 处理 AI 对话任务
    */
-  private async handleChatTask(task: AgentTask, taskLogger: any): Promise<string> {
+  private async handleChatTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload;
 
     taskLogger.debug('处理对话任务,消息数量:', payload.messages?.length);
 
-    // TODO: 集成 Claude Agent SDK 的对话功能
-    // 现在先返回一个模拟响应用于测试
-    await this.delay(1000); // 模拟处理时间
+    try {
+      // 调用 Chat Skill 执行真实的 AI 对话
+      const chatResult = await executeChatSkill({
+        messages: payload.messages || [],
+        context: payload.context
+      });
 
-    const lastMessage = payload.messages[payload.messages.length - 1]?.content || '';
-    return `这是对消息的模拟响应: "${lastMessage}"`;
+      taskLogger.info('对话任务完成,响应长度:', chatResult.response.length);
+
+      // 返回符合前端期望的数据结构
+      return {
+        response: chatResult.response,
+        timestamp: chatResult.timestamp
+      };
+    } catch (error) {
+      taskLogger.error('对话任务执行失败:', error);
+      throw error;
+    }
   }
 
   /**

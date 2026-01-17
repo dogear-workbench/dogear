@@ -200,6 +200,7 @@ export class AgentManager {
 
     try {
       // 创建 Worker 实例
+      // Worker 会自动继承主进程的 process.env (包括从 .env 加载的配置)
       const worker = new Worker(workerPath, {
         env: process.env
       });
