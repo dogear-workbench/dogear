@@ -16,6 +16,14 @@ export interface AgentTaskUpdate {
 }
 
 /**
+ * 会话消息
+ */
+export interface SessionMessage {
+  sessionId: string;
+  message: string;
+}
+
+/**
  * 数据库 API
  */
 export interface DatabaseAPI {
@@ -63,7 +71,39 @@ export interface AgentAPI {
     queuedTasks: number;
     activeTasks: number;
   }>;
+  getDetailedStatus: () => Promise<{
+    config: {
+      maxWorkers: number;
+      workerIdleTimeout: number;
+      taskRetryLimit: number;
+    };
+    workers: Array<{
+      workerId: string;
+      isReady: boolean;
+      currentTaskId: string | null;
+      lastActivity: number;
+      createdAt: number;
+      idleTime: number;
+    }>;
+    queuedTasks: Array<{
+      id: string;
+      type: string;
+      status: string;
+      createdAt: number;
+    }>;
+    summary: {
+      totalWorkers: number;
+      activeWorkers: number;
+      idleWorkers: number;
+      queuedTasksCount: number;
+    };
+  }>;
+  openMonitorWindow: () => Promise<{ success: boolean }>;
   onTaskUpdate: (callback: (update: AgentTaskUpdate) => void) => () => void;
+  onStreamChunk: (callback: (data: { taskId: string; chunk: string }) => void) => () => void;
+  onSessionMessage: (callback: (data: SessionMessage) => void) => () => void;
+  sendSessionMessage: (sessionId: string, message: { role: string; content: string }) => Promise<{ taskId: string }>;
+  closeSession: (sessionId: string) => Promise<{ taskId: string; success: boolean }>;
   removeTaskUpdateListener: (callback: (update: any) => void) => void;
 }
 

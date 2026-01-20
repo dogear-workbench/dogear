@@ -74,12 +74,39 @@ const agentAPI = {
   /** 获取状态 */
   getStatus: () => ipcRenderer.invoke('agent:getStatus'),
 
+  /** 获取详细状态 */
+  getDetailedStatus: () => ipcRenderer.invoke('agent:getDetailedStatus'),
+
+  /** 打开监控窗口 */
+  openMonitorWindow: () => ipcRenderer.invoke('agent:openMonitorWindow'),
+
   /** 监听任务更新事件 */
   onTaskUpdate: (callback: (update: any) => void) => {
     const listener = (_event: any, update: any) => callback(update);
     ipcRenderer.on('agent:taskUpdate', listener);
     return () => ipcRenderer.removeListener('agent:taskUpdate', listener);
   },
+
+  /** 监听流式消息块事件 */
+  onStreamChunk: (callback: (data: { taskId: string; chunk: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:streamChunk', listener);
+    return () => ipcRenderer.removeListener('agent:streamChunk', listener);
+  },
+
+  /** 监听会话消息事件 */
+  onSessionMessage: (callback: (data: { sessionId: string; message: string }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:sessionMessage', listener);
+    return () => ipcRenderer.removeListener('agent:sessionMessage', listener);
+  },
+
+  /** 向会话发送消息 */
+  sendSessionMessage: (sessionId: string, message: { role: string; content: string }) =>
+    ipcRenderer.invoke('agent:sendSessionMessage', sessionId, message),
+
+  /** 关闭会话 */
+  closeSession: (sessionId: string) => ipcRenderer.invoke('agent:closeSession', sessionId),
 
   /** 移除监听器 */
   removeTaskUpdateListener: (callback: (update: any) => void) => {

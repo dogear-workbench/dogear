@@ -3,7 +3,7 @@
 import { useBooks } from '@/lib/hooks';
 import { BookCard } from './book-card';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Plus, Activity } from 'lucide-react';
 import { useState } from 'react';
 
 export function BookList() {
@@ -26,6 +26,15 @@ export function BookList() {
     }
   };
 
+  // 打开 Agent 监控窗口
+  const handleOpenMonitor = async () => {
+    try {
+      await window.electronAPI.agent.openMonitorWindow();
+    } catch (error) {
+      console.error('打开监控窗口失败:', error);
+    }
+  };
+
   if (loading) {
     return <div className="text-center py-8">加载中...</div>;
   }
@@ -38,10 +47,16 @@ export function BookList() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">我的书架</h1>
-        <Button onClick={handleImport} disabled={importing}>
-          <Plus className="w-4 h-4 mr-2" />
-          {importing ? '导入中...' : '导入书籍'}
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleOpenMonitor} variant="outline">
+            <Activity className="w-4 h-4 mr-2" />
+            Agent 监控
+          </Button>
+          <Button onClick={handleImport} disabled={importing}>
+            <Plus className="w-4 h-4 mr-2" />
+            {importing ? '导入中...' : '导入书籍'}
+          </Button>
+        </div>
       </div>
 
       {books.length === 0 ? (

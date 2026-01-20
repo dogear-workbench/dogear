@@ -4,49 +4,306 @@
  *
  * 这是 Agent Worker 中使用的对话 Skill
  * 使用 @anthropic-ai/claude-agent-sdk 的 query 函数与 Claude 交互
+ *
+ * 核心概念：
+ * - 使用 query 的异步生成器创建一个持续会话
+ * - 通过 query.streamInput() 方法持续发送新消息
+ * - 会话期间保持同一个 query 实例，确保 session 连贯
  */
 
 import { createTaskLogger } from '../logger.js';
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  SDKUserMessage,
+} from '@anthropic-ai/claude-agent-sdk';
+import { randomUUID } from 'crypto';
+import { EventEmitter } from 'events';
 
 /**
- * 对话 Skill 参数
+ * 对话上下文
  */
-export interface ChatSkillParams {
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-  }>;
-  context?: {
-    bookId?: string;
-    chapterId?: string;
-    selectedText?: string;
-  };
+export interface ChatContext {
+  bookId?: string;
+  chapterId?: string;
+  selectedText?: string;
 }
 
 /**
- * 对话 Skill 结果
+ * 用户消息
  */
-export interface ChatSkillResult {
-  response: string;
-  timestamp: number;
+export interface UserMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string;
 }
 
 /**
- * 构建系统提示词
- * 根据上下文信息构建系统提示词
+ * 会话配置
  */
-function buildSystemPrompt(context?: ChatSkillParams['context']): string {
-  if (!context) {
-    return '你是一个帮助用户阅读和分析电子书的 AI 助手。';
+export interface ChatSessionConfig {
+  systemPrompt?: string;
+  context?: ChatContext;
+  onMessage?: (message: string) => void;
+  onError?: (error: string) => void;
+  onComplete?: (sessionId: string) => void;
+}
+
+/**
+ * 会话状态
+ */
+export enum SessionStatus {
+  IDLE = 'idle',           // 空闲，等待消息
+  PROCESSING = 'processing', // 处理中
+  CLOSED = 'closed'         // 已关闭
+}
+
+/**
+ * 持续对话会话类
+ *
+ * 核心思想：一个会话对应一个持续的 query 异步生成器
+ * 通过 streamInput 方法持续发送新消息到同一个会话
+ */
+export class ChatSession extends EventEmitter {
+  private query: Query | null = null;
+  private sessionId: string;
+  private status: SessionStatus = SessionStatus.IDLE;
+  private logger: any;
+  private config: ChatSessionConfig;
+  private isProcessing: boolean = false;
+  private isStarted: boolean = false;
+  // 消息通道：用于向迭代器推送新消息
+  private messageResolvers: Array<(msg: SDKUserMessage | null) => void> = [];
+  private pendingMessages: SDKUserMessage[] = [];
+  private messageQueue: UserMessage[] = [];
+
+  constructor(sessionId: string, config: ChatSessionConfig = {}) {
+    super();
+    this.sessionId = sessionId;
+    this.config = config;
+    this.logger = createTaskLogger(`chat-session-${sessionId.substring(0, 8)}`);
   }
 
-  const contextInfo = [];
-  if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
-  if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
-  if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
+  /**
+   * 获取会话 ID
+   */
+  getSessionId(): string {
+    return this.sessionId;
+  }
 
-  return `你是一个帮助用户阅读和分析电子书的 AI 助手。
+  /**
+   * 获取会话状态
+   */
+  getStatus(): SessionStatus {
+    return this.status;
+  }
+
+  /**
+   * 启动会话
+   * 创建持续的消息流迭代器和 query
+   */
+  async start(): Promise<void> {
+    if (this.query) {
+      this.logger.warn('会话已经启动');
+      return;
+    }
+
+    this.logger.info('启动聊天会话:', this.sessionId);
+
+    // 创建系统提示词
+    const systemPrompt = this.buildSystemPrompt();
+
+    // 创建持续的消息流
+    const messageStream = this.createMessageStream();
+
+    // 创建 query
+    this.query = query({
+      prompt: messageStream,
+      options: {
+        systemPrompt,
+      }
+    });
+
+    // 启动消息处理循环
+    this.processMessageLoop();
+
+    this.logger.info('聊天会话已启动');
+  }
+
+  /**
+   * 发送用户消息到会话
+   * 将消息推入异步迭代器通道
+   */
+  async sendMessage(message: UserMessage): Promise<void> {
+    if (this.status === SessionStatus.CLOSED) {
+      throw new Error('会话已关闭，无法发送消息');
+    }
+
+    this.logger.info('发送消息到会话:', message.content.substring(0, 50));
+
+    const sdkMessage = this.createSDKUserMessage(message);
+
+    // 如果有等待中的 resolver，立即解析
+    if (this.messageResolvers.length > 0) {
+      const resolve = this.messageResolvers.shift()!;
+      resolve(sdkMessage);
+    } else {
+      // 否则加入待处理队列
+      this.pendingMessages.push(sdkMessage);
+    }
+
+    this.status = SessionStatus.PROCESSING;
+  }
+
+  /**
+   * 处理消息循环
+   * 持续监听 query 的响应
+   */
+  private async processMessageLoop(): Promise<void> {
+    if (!this.query) {
+      return;
+    }
+
+    this.logger.info('启动消息处理循环');
+
+    try {
+      for await (const message of this.query) {
+        // 处理不同类型的消息
+        if (message.type === 'assistant') {
+          // 助手响应
+          const content = this.extractContent(message.message.content);
+          if (content) {
+            // 触发消息事件
+            this.emit('message', content);
+            if (this.config.onMessage) {
+              this.config.onMessage(content);
+            }
+          }
+        } else if (message.type === 'result') {
+          // 结果消息
+          if (message.subtype === 'success') {
+            this.logger.info('消息处理完成');
+            this.status = SessionStatus.IDLE;
+            if (this.config.onComplete) {
+              this.config.onComplete(this.sessionId);
+            }
+            this.emit('complete', this.sessionId);
+          } else {
+            // 错误
+            const errorMsg = message.errors?.join(', ') || '未知错误';
+            this.logger.error('对话错误:', errorMsg);
+            this.status = SessionStatus.IDLE;
+            if (this.config.onError) {
+              this.config.onError(errorMsg);
+            }
+            this.emit('error', errorMsg);
+          }
+        } else if (message.type === 'stream_event') {
+          // 流式事件
+          const content = this.extractStreamContent(message.event);
+          if (content) {
+            this.emit('chunk', content);
+          }
+        }
+      }
+    } catch (error) {
+      this.logger.error('消息处理循环错误:', error);
+      this.emit('error', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  /**
+   * 创建持续的消息流迭代器
+   * 这个迭代器会持续等待新消息，直到会话关闭
+   */
+  private async *createMessageStream(): AsyncGenerator<SDKUserMessage> {
+    this.logger.info('创建持续消息流');
+
+    while (this.status !== SessionStatus.CLOSED) {
+      // 如果有待处理的消息，立即返回
+      if (this.pendingMessages.length > 0) {
+        const msg = this.pendingMessages.shift()!;
+        this.logger.info('从队列中取出消息');
+        yield msg;
+        continue;
+      }
+
+      // 否则等待新消息
+      const msg = await new Promise<SDKUserMessage | null>((resolve) => {
+        this.messageResolvers.push(resolve);
+      });
+
+      if (msg === null) {
+        // null 表示会话关闭
+        this.logger.info('消息流结束');
+        break;
+      }
+
+      this.logger.info('收到新消息，产生到迭代器');
+      yield msg;
+    }
+  }
+
+  /**
+   * 创建 SDK 用户消息
+   */
+  private createSDKUserMessage(message: UserMessage): SDKUserMessage {
+    return {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: message.content
+      },
+      parent_tool_use_id: null,
+      session_id: this.sessionId,
+    };
+  }
+
+  /**
+   * 提取消息内容
+   */
+  private extractContent(content: string | unknown[]): string {
+    if (typeof content === 'string') {
+      return content;
+    }
+    if (Array.isArray(content)) {
+      return content
+        .map(block => {
+          if (typeof block === 'string') return block;
+          if (block && typeof block === 'object' && 'text' in block) {
+            return String(block.text);
+          }
+          return '';
+        })
+        .join('');
+    }
+    return '';
+  }
+
+  /**
+   * 提取流式内容
+   */
+  private extractStreamContent(event: any): string | null {
+    if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+      return event.delta.text;
+    }
+    return null;
+  }
+
+  /**
+   * 构建系统提示词
+   */
+  private buildSystemPrompt(): string {
+    const { context } = this.config;
+
+    if (!context) {
+      return '你是一个帮助用户阅读和分析电子书的 AI 助手。';
+    }
+
+    const contextInfo = [];
+    if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
+    if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
+    if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
+
+    return `你是一个帮助用户阅读和分析电子书的 AI 助手。
 
 当前上下文:
 ${contextInfo.join('\n')}
@@ -55,127 +312,90 @@ ${contextInfo.join('\n')}
 }
 
 /**
- * 执行对话 Skill
- * @param params 对话参数
- * @returns 对话结果
+ * 关闭会话
  */
-export async function executeChatSkill(params: ChatSkillParams): Promise<ChatSkillResult> {
-  const logger = createTaskLogger('chat-skill');
+async close(): Promise<void> {
+  this.logger.info('关闭会话:', this.sessionId);
+  this.status = SessionStatus.CLOSED;
 
-  logger.info('执行对话 Skill,消息数量:', params.messages.length);
-
-  try {
-    // 构建用户提示词(使用最后一条消息)
-    const lastMessage = params.messages[params.messages.length - 1];
-    if (!lastMessage || lastMessage.role !== 'user') {
-      throw new Error('最后一条消息必须是用户消息');
-    }
-
-    // 使用 Claude Agent SDK 的 query 函数
-    const agentQuery = query({
-      prompt: lastMessage.content,
-      options: {
-        systemPrompt: buildSystemPrompt(params.context),
-        // 可以根据需要添加其他选项
-        // model: 'claude-sonnet-4-5-20250929',
-        // temperature: 0.7,
-        // maxTokens: 2000,
-      }
-    });
-
-    // 收集所有消息,提取最终结果
-    let fullResponse = '';
-    for await (const message of agentQuery) {
-      if (message.type === 'assistant') {
-        // 累积助手响应
-        // message.message.content 可能是字符串或内容块数组
-        const content = message.message.content;
-        if (typeof content === 'string') {
-          fullResponse = content;
-        } else if (Array.isArray(content)) {
-          // 处理内容块数组 (例如 [{type: 'text', text: '...'}])
-          fullResponse = content
-            .map(block => {
-              if (typeof block === 'string') return block;
-              if (block.type === 'text') return block.text;
-              return '';
-            })
-            .join('');
-        }
-      } else if (message.type === 'result') {
-        // 任务完成
-        logger.info('对话任务完成');
-        break;
-      }
-    }
-
-    return {
-      response: fullResponse,
-      timestamp: Date.now()
-    };
-  } catch (error) {
-    logger.error('对话 Skill 执行失败:', error);
-    throw error;
+  // 通知消息流迭代器结束
+  while (this.messageResolvers.length > 0) {
+    const resolve = this.messageResolvers.shift()!;
+    resolve(null);
   }
+
+  this.pendingMessages = [];
+
+  // 触发关闭事件
+  this.emit('closed');
+
+  // 移除所有监听器
+  this.removeAllListeners();
+}
+
 }
 
 /**
- * 创建流式对话响应
- * @param params 对话参数
- * @returns 异步生成器,逐步产生响应
+ * 会话管理器
+ * 管理多个 ChatSession 实例
  */
-export async function* streamChatSkill(params: ChatSkillParams): AsyncGenerator<string, void, unknown> {
-  const logger = createTaskLogger('chat-skill-stream');
+export class ChatSessionManager {
+  private sessions: Map<string, ChatSession> = new Map();
+  private logger = createTaskLogger('chat-session-manager');
 
-  logger.info('执行流式对话 Skill');
+  /**
+   * 创建新会话
+   */
+  createSession(sessionId?: string, config?: ChatSessionConfig): ChatSession {
+    const id = sessionId || randomUUID();
+    this.logger.info('创建新会话:', id.substring(0, 8));
 
-  try {
-    const lastMessage = params.messages[params.messages.length - 1];
-    if (!lastMessage || lastMessage.role !== 'user') {
-      throw new Error('最后一条消息必须是用户消息');
+    const session = new ChatSession(id, config);
+    this.sessions.set(id, session);
+
+    return session;
+  }
+
+  /**
+   * 获取会话
+   */
+  getSession(sessionId: string): ChatSession | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  /**
+   * 关闭会话
+   */
+  async closeSession(sessionId: string): Promise<void> {
+    const session = this.sessions.get(sessionId);
+    if (session) {
+      await session.close();
+      this.sessions.delete(sessionId);
+      this.logger.info('会话已关闭:', sessionId.substring(0, 8));
     }
+  }
 
-    // 使用 Claude Agent SDK 的 query 函数(流式)
-    const agentQuery = query({
-      prompt: lastMessage.content,
-      options: {
-        systemPrompt: buildSystemPrompt(params.context),
-        includePartialMessages: true, // 启用部分消息
-      }
-    });
+  /**
+   * 关闭所有会话
+   */
+  async closeAll(): Promise<void> {
+    this.logger.info('关闭所有会话...');
+    const promises = Array.from(this.sessions.values()).map(s => s.close());
+    await Promise.all(promises);
+    this.sessions.clear();
+  }
 
-    // 流式输出
-    for await (const message of agentQuery) {
-      if (message.type === 'assistant') {
-        // 输出助手消息
-        // message.message.content 可能是字符串或内容块数组
-        const content = message.message.content || '';
-        if (typeof content === 'string') {
-          yield content;
-        } else if (Array.isArray(content)) {
-          // 处理内容块数组
-          const text = content
-            .map(block => {
-              if (typeof block === 'string') return block;
-              if (block.type === 'text') return block.text;
-              return '';
-            })
-            .join('');
-          yield text;
-        } else {
-          yield '';
-        }
-      } else if (message.type === 'stream_event') {
-        // 输出流式事件(部分消息)
-        // 这里可以根据需要处理流式事件
-        yield '';
-      } else if (message.type === 'result') {
-        // 完成
-        break;
-      }
-    }
-  } catch (error) {
-    logger.error('流式对话 Skill 执行失败:', error);
-    throw error;
+  /**
+   * 获取所有会话
+   */
+  getAllSessions(): ChatSession[] {
+    return Array.from(this.sessions.values());
+  }
+
+  /**
+   * 获取活跃会话数量
+   */
+  getActiveCount(): number {
+    return this.sessions.size;
   }
 }

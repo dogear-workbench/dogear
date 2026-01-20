@@ -5,7 +5,7 @@
  * 功能:
  * - 接收来自主进程的任务
  * - 使用 Claude Agent SDK 处理任务
- * - 可以启动子 Agent 处理细分任务
+ * - 支持持续对话会话模式
  * - 通过 MessagePort 返回结果
  */
 
@@ -16,10 +16,17 @@ import {
   AgentTask,
   TaskType,
   TaskStatus,
-  AgentWorkerConfig
+  AgentWorkerConfig,
+  ChatSessionPayload,
 } from './task-types.js';
 import { workerLogger, createTaskLogger } from './logger.js';
-import { executeChatSkill } from './skills/chat-skill.js';
+import {
+  ChatSession,
+  ChatSessionManager,
+  ChatSessionConfig,
+  type UserMessage,
+  type ChatContext,
+} from './skills/chat-skill.js';
 
 /**
  * Agent Worker 类
@@ -30,6 +37,11 @@ class AgentWorker {
   private messagePort: any = null;
   private isReady = false;
   private logger = workerLogger;
+  private enableStreaming: boolean = true;  // 是否启用流式输出
+
+  // 会话管理
+  private sessionManager = new ChatSessionManager();
+  private sessions: Map<string, ChatSession> = new Map();
 
   constructor(workerId: string) {
     this.workerId = workerId;
@@ -46,11 +58,6 @@ class AgentWorker {
     this.logger.info('正在初始化 Agent Worker...');
 
     try {
-      // TODO: 初始化 Claude Agent SDK
-      // SDK 会自动从环境变量读取 ANTHROPIC_API_KEY
-      // const sdk = await import('@anthropic-ai/claude-agent-sdk');
-      // this.anthropic = sdk.anthropic;
-
       this.isReady = true;
       this.sendMessage({
         type: 'ready',
@@ -77,7 +84,9 @@ class AgentWorker {
       return;
     }
 
-    if (this.currentTask) {
+    // 会话任务可以并行处理（每个会话独立）
+    // 普通任务需要串行处理
+    if (task.type !== TaskType.CHAT_SESSION && this.currentTask) {
       this.logger.warn('Worker 正在忙,拒绝任务:', task.id);
       this.sendTaskError(task.id, 'Worker 正在忙,请稍后再试');
       return;
@@ -94,9 +103,10 @@ class AgentWorker {
 
       // 根据任务类型分发处理
       switch (task.type) {
-        case TaskType.CHAT:
-          result = await this.handleChatTask(task, taskLogger);
-          break;
+        case TaskType.CHAT_SESSION:
+          // 会话任务不阻塞 Worker，可以立即返回
+          this.handleChatSessionTask(task, taskLogger);
+          return;  // 提前返回，不发送完成状态
 
         case TaskType.SUMMARIZE:
           result = await this.handleSummarizeTask(task, taskLogger);
@@ -128,31 +138,164 @@ class AgentWorker {
   }
 
   /**
-   * 处理 AI 对话任务
+   * 处理持续对话会话任务
+   *
+   * 这是核心方法：会话任务启动后会持续运行，直到被显式关闭
    */
-  private async handleChatTask(task: AgentTask, taskLogger: any): Promise<any> {
-    const payload = task.payload;
+  private async handleChatSessionTask(task: AgentTask, taskLogger: any) {
+    const payload = task.payload as ChatSessionPayload;
 
-    taskLogger.debug('处理对话任务,消息数量:', payload.messages?.length);
+    taskLogger.debug('处理会话任务,操作:', payload.action, '会话ID:', payload.sessionId?.substring(0, 8));
 
     try {
-      // 调用 Chat Skill 执行真实的 AI 对话
-      const chatResult = await executeChatSkill({
-        messages: payload.messages || [],
-        context: payload.context
-      });
+      switch (payload.action) {
+        case 'start':
+          await this.startChatSession(task, taskLogger);
+          break;
 
-      taskLogger.info('对话任务完成,响应长度:', chatResult.response.length);
+        case 'message':
+          await this.sendSessionMessage(task, taskLogger);
+          break;
 
-      // 返回符合前端期望的数据结构
-      return {
-        response: chatResult.response,
-        timestamp: chatResult.timestamp
-      };
+        case 'close':
+          await this.closeChatSession(task, taskLogger);
+          break;
+
+        default:
+          this.sendTaskError(task.id, `未知的会话操作: ${payload.action}`);
+      }
     } catch (error) {
-      taskLogger.error('对话任务执行失败:', error);
-      throw error;
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      taskLogger.error('会话任务执行失败:', errorMsg);
+      this.sendTaskError(task.id, errorMsg);
     }
+  }
+
+  /**
+   * 启动新的聊天会话
+   */
+  private async startChatSession(task: AgentTask, taskLogger: any) {
+    const payload = task.payload as ChatSessionPayload;
+    const context: ChatContext = payload.context || {};
+
+    taskLogger.info('启动新的聊天会话,上下文:', context);
+
+    // 创建会话配置
+    const config: ChatSessionConfig = {
+      context,
+      onMessage: (message: string) => {
+        // 当收到 AI 响应时，发送到主进程
+        this.sendMessage({
+          type: 'sessionMessage',
+          sessionId: task.id,
+          message
+        });
+      },
+      onError: (error: string) => {
+        taskLogger.error('会话错误:', error);
+        this.sendTaskError(task.id, error);
+      },
+      onComplete: (sessionId: string) => {
+        taskLogger.info('会话完成:', sessionId.substring(0, 8));
+      }
+    };
+
+    // 创建并启动会话
+    const session = this.sessionManager.createSession(task.id, config);
+
+    // 注册会话事件
+    session.on('message', (message: string) => {
+      this.sendMessage({
+        type: 'sessionMessage',
+        sessionId: task.id,
+        message
+      });
+    });
+
+    session.on('complete', () => {
+      // 单次对话完成，但会话继续保持
+    });
+
+    session.on('error', (error: string) => {
+      this.sendTaskError(task.id, error);
+    });
+
+    // 启动会话（创建 query 异步生成器）
+    await session.start();
+
+    // 保存会话
+    this.sessions.set(task.id, session);
+
+    // 通知主进程会话已启动
+    this.sendMessage({
+      type: 'sessionStarted',
+      sessionId: task.id
+    });
+
+    // 标记任务为完成（会话已创建，后续消息通过 sendSessionMessage 发送）
+    this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, {
+      sessionId: task.id,
+      action: 'started'
+    });
+
+    taskLogger.info('聊天会话已启动:', task.id);
+  }
+
+  /**
+   * 向现有会话发送消息
+   */
+  private async sendSessionMessage(task: AgentTask, taskLogger: any) {
+    const payload = task.payload as ChatSessionPayload;
+    const sessionId = payload.sessionId!;
+
+    taskLogger.info('向会话发送消息:', sessionId.substring(0, 8));
+
+    // 查找会话
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`会话不存在: ${sessionId}`);
+    }
+
+    // 发送消息到会话
+    if (payload.message) {
+      await session.sendMessage(payload.message as UserMessage);
+    }
+
+    // 标记任务为完成
+    this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, {
+      sessionId,
+      action: 'message_sent'
+    });
+  }
+
+  /**
+   * 关闭聊天会话
+   */
+  private async closeChatSession(task: AgentTask, taskLogger: any) {
+    const payload = task.payload as ChatSessionPayload;
+    const sessionId = payload.sessionId!;
+
+    taskLogger.info('关闭聊天会话:', sessionId.substring(0, 8));
+
+    // 关闭会话
+    await this.sessionManager.closeSession(sessionId);
+
+    // 从本地 map 移除
+    this.sessions.delete(sessionId);
+
+    // 通知主进程会话已关闭
+    this.sendMessage({
+      type: 'sessionClosed',
+      sessionId
+    });
+
+    // 标记任务为完成
+    this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, {
+      sessionId,
+      action: 'closed'
+    });
+
+    taskLogger.info('聊天会话已关闭:', sessionId.substring(0, 8));
   }
 
   /**
@@ -241,6 +384,27 @@ class AgentWorker {
   }
 
   /**
+   * 发送流式消息块
+   */
+  private sendStreamChunk(taskId: string, chunk: string) {
+    this.sendMessage({
+      type: 'taskStreamChunk',
+      taskId,
+      chunk
+    });
+  }
+
+  /**
+   * 发送流式消息结束信号
+   */
+  private sendStreamEnd(taskId: string) {
+    this.sendMessage({
+      type: 'taskStreamEnd',
+      taskId
+    });
+  }
+
+  /**
    * 发送任务错误
    */
   private sendTaskError(taskId: string, error: string) {
@@ -268,8 +432,13 @@ class AgentWorker {
   /**
    * 清理资源
    */
-  cleanup() {
+  async cleanup() {
     this.logger.info('清理 Worker 资源');
+
+    // 关闭所有会话
+    await this.sessionManager.closeAll();
+    this.sessions.clear();
+
     this.isReady = false;
     this.currentTask = null;
     this.messagePort = null;
@@ -323,10 +492,10 @@ if (parentPort) {
   });
 
   // 监听进程退出信号
-  parentPort.on('close', () => {
+  parentPort.on('close', async () => {
     workerLogger.info('主进程关闭连接');
     if (agentWorker) {
-      agentWorker.cleanup();
+      await agentWorker.cleanup();
       agentWorker = null;
     }
   });

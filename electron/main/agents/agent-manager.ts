@@ -7,6 +7,7 @@
  * - 任务队列管理
  * - 消息路由 (Worker <-> IPC)
  * - 错误处理和 Worker 崩溃恢复
+ * - 会话生命周期管理
  */
 
 import { Worker } from 'worker_threads';
@@ -14,6 +15,7 @@ import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import { EventEmitter } from 'events';
 import {
   AgentTask,
   TaskStatus,
@@ -46,6 +48,16 @@ interface WorkerWrapper {
 type TaskCallback = (taskId: string, status: TaskStatus, result?: any, error?: string) => void;
 
 /**
+ * 流式消息回调函数类型
+ */
+type StreamCallback = (taskId: string, chunk: string) => void;
+
+/**
+ * 会话消息回调函数类型
+ */
+type SessionMessageCallback = (sessionId: string, message: string) => void;
+
+/**
  * Agent 管理器配置
  */
 export interface AgentManagerConfig {
@@ -58,15 +70,20 @@ export interface AgentManagerConfig {
 /**
  * Agent 管理器类
  */
-export class AgentManager {
+export class AgentManager extends EventEmitter {
   private logger = mainLogger;
   private workers: Map<string, WorkerWrapper> = new Map();
   private taskQueue: AgentTask[] = [];
   private taskCallbacks: Map<string, TaskCallback[]> = new Map();
+  private streamCallbacks: Map<string, StreamCallback[]> = new Map();  // 流式消息回调
+  private sessionCallbacks: Map<string, SessionMessageCallback[]> = new Map();  // 会话消息回调
   private config: Required<AgentManagerConfig>;
   private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor(config: AgentManagerConfig = {}) {
+    // 调用父类 EventEmitter 的构造函数
+    super();
+
     this.config = {
       maxWorkers: config.maxWorkers ?? 4,
       workerIdleTimeout: config.workerIdleTimeout ?? 60000,
@@ -179,6 +196,23 @@ export class AgentManager {
       this.taskCallbacks.set(taskId, []);
     }
     this.taskCallbacks.get(taskId)!.push(callback);
+  }
+
+  /**
+   * 注册流式消息回调
+   */
+  registerStreamCallback(taskId: string, callback: StreamCallback) {
+    if (!this.streamCallbacks.has(taskId)) {
+      this.streamCallbacks.set(taskId, []);
+    }
+    this.streamCallbacks.get(taskId)!.push(callback);
+  }
+
+  /**
+   * 移除流式回调
+   */
+  unregisterStreamCallbacks(taskId: string) {
+    this.streamCallbacks.delete(taskId);
   }
 
   /**
@@ -336,6 +370,33 @@ export class AgentManager {
         this.handleTaskUpdate(workerId, message);
         break;
 
+      case 'taskStreamChunk':
+        // 处理流式消息块
+        this.handleStreamChunk(message.taskId, message.chunk);
+        break;
+
+      case 'taskStreamEnd':
+        // 处理流式消息结束
+        this.handleStreamEnd(message.taskId);
+        break;
+
+      case 'sessionMessage':
+        // 处理会话消息
+        this.handleSessionMessage(message.sessionId, message.message);
+        break;
+
+      case 'sessionStarted':
+        // 处理会话启动
+        this.logger.info('会话已启动:', message.sessionId.substring(0, 8));
+        this.emit('sessionStarted', message.sessionId);
+        break;
+
+      case 'sessionClosed':
+        // 处理会话关闭
+        this.logger.info('会话已关闭:', message.sessionId.substring(0, 8));
+        this.emit('sessionClosed', message.sessionId);
+        break;
+
       case 'pong':
         // 心跳响应,更新活动时间
         break;
@@ -366,6 +427,71 @@ export class AgentManager {
 
     // 通知回调
     this.notifyCallbacks(taskId, status, result, error);
+  }
+
+  /**
+   * 处理流式消息块
+   */
+  private handleStreamChunk(taskId: string, chunk: string) {
+    const callbacks = this.streamCallbacks.get(taskId);
+    if (callbacks) {
+      callbacks.forEach(callback => {
+        try {
+          callback(taskId, chunk);
+        } catch (error) {
+          this.logger.error('流式回调执行失败:', error);
+        }
+      });
+    }
+  }
+
+  /**
+   * 处理流式消息结束
+   * 清理流式回调,但不清理任务回调 (任务回调会在 taskUpdate 时清理)
+   */
+  private handleStreamEnd(taskId: string) {
+    this.logger.debug('流式消息结束:', taskId.substring(0, 8));
+    // 流式结束后清理回调,避免内存泄漏
+    this.streamCallbacks.delete(taskId);
+  }
+
+  /**
+   * 处理会话消息
+   */
+  private handleSessionMessage(sessionId: string, message: string) {
+    this.logger.debug('收到会话消息:', sessionId.substring(0, 8), message.substring(0, 50));
+
+    // 触发事件
+    this.emit('sessionMessage', sessionId, message);
+
+    // 通知回调
+    const callbacks = this.sessionCallbacks.get(sessionId);
+    if (callbacks) {
+      callbacks.forEach(callback => {
+        try {
+          callback(sessionId, message);
+        } catch (error) {
+          this.logger.error('会话消息回调执行失败:', error);
+        }
+      });
+    }
+  }
+
+  /**
+   * 注册会话消息回调
+   */
+  registerSessionCallback(sessionId: string, callback: SessionMessageCallback) {
+    if (!this.sessionCallbacks.has(sessionId)) {
+      this.sessionCallbacks.set(sessionId, []);
+    }
+    this.sessionCallbacks.get(sessionId)!.push(callback);
+  }
+
+  /**
+   * 移除会话消息回调
+   */
+  unregisterSessionCallbacks(sessionId: string) {
+    this.sessionCallbacks.delete(sessionId);
   }
 
   /**
@@ -449,9 +575,10 @@ export class AgentManager {
       }
     });
 
-    // 如果任务已完成,清理回调
+    // 如果任务已完成,清理回调和流式回调
     if (status === TaskStatus.COMPLETED || status === TaskStatus.FAILED || status === TaskStatus.CANCELLED) {
       this.taskCallbacks.delete(taskId);
+      this.streamCallbacks.delete(taskId);  // 同时清理流式回调
     }
   }
 
@@ -508,6 +635,46 @@ export class AgentManager {
       maxWorkers: this.config.maxWorkers,
       queuedTasks: this.taskQueue.length,
       activeTasks: Array.from(this.workers.values()).filter(w => w.currentTaskId !== null).length
+    };
+  }
+
+  /**
+   * 获取详细状态 (用于可视化监控)
+   * 包含所有 Worker 的详细信息和任务队列信息
+   */
+  getDetailedStatus() {
+    // 获取所有 Worker 的详细信息
+    const workersDetails = Array.from(this.workers.values()).map(wrapper => ({
+      workerId: wrapper.workerId,
+      isReady: wrapper.isReady,
+      currentTaskId: wrapper.currentTaskId,
+      lastActivity: wrapper.lastActivity,
+      createdAt: wrapper.createdAt,
+      idleTime: wrapper.currentTaskId === null ? Date.now() - wrapper.lastActivity : 0
+    }));
+
+    // 获取任务队列中的任务信息
+    const queuedTasksInfo = this.taskQueue.map(task => ({
+      id: task.id,
+      type: task.type,
+      status: task.status,
+      createdAt: task.createdAt
+    }));
+
+    return {
+      config: {
+        maxWorkers: this.config.maxWorkers,
+        workerIdleTimeout: this.config.workerIdleTimeout,
+        taskRetryLimit: this.config.taskRetryLimit
+      },
+      workers: workersDetails,
+      queuedTasks: queuedTasksInfo,
+      summary: {
+        totalWorkers: this.workers.size,
+        activeWorkers: workersDetails.filter(w => w.currentTaskId !== null).length,
+        idleWorkers: workersDetails.filter(w => w.currentTaskId === null && w.isReady).length,
+        queuedTasksCount: this.taskQueue.length
+      }
     };
   }
 }

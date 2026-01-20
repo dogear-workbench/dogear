@@ -1,22 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { TaskType } from '@/types/agents';
 
 /**
  * Agent 聊天组件
- * 可复用的聊天界面组件
+ * 使用持续会话模式，保持对话连贯性
  *
- * 使用场景:
- * - 在主窗口的任何页面中使用
- * - 在调试窗口中使用
- * - 作为其他组件的子组件
+ * 核心特性：
+ * - 组件挂载时启动会话
+ * - 通过 sendSessionMessage 发送消息到同一个会话
+ * - 组件卸载时关闭会话
  */
 
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp?: number;
+  isStreaming?: boolean;  // 是否正在流式输出中
 }
 
 interface AgentChatProps {
@@ -51,78 +52,143 @@ export function AgentChat({
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  // 会话 ID
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isSessionReady, setIsSessionReady] = useState(false);
 
-  // 调试:检查 API 是否可用
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 自动滚动到底部
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   useEffect(() => {
-    console.log('window.electronAPI:', window.electronAPI);
-    console.log('window.electronAPI.agent:', window.electronAPI?.agent);
-  }, []);
+    scrollToBottom();
+  }, [messages]);
+
+  // 启动会话
+  useEffect(() => {
+    const startSession = async () => {
+      try {
+        console.log('启动 Agent 会话...');
+
+        // 提交启动会话任务
+        const response = await window.electronAPI.agent.submitTask({
+          id: '',
+          type: TaskType.CHAT_SESSION,
+          payload: {
+            action: 'start',
+            context
+          },
+          status: 'pending' as any,
+          createdAt: Date.now()
+        });
+
+        const newSessionId = response.taskId;
+        setSessionId(newSessionId);
+        console.log('会话已启动:', newSessionId);
+
+        // 监听会话消息
+        const unsubscribeSessionMessage = window.electronAPI.agent.onSessionMessage((data) => {
+          if (data.sessionId === newSessionId) {
+            console.log('收到会话消息:', data.message);
+
+            // 更新最后一条助手消息
+            setMessages(prev => {
+              const updated = [...prev];
+              const lastIdx = updated.length - 1;
+
+              // 如果最后一条是助手消息且正在流式输出，追加内容
+              if (lastIdx >= 0 && updated[lastIdx].role === 'assistant' && updated[lastIdx].isStreaming) {
+                updated[lastIdx] = {
+                  ...updated[lastIdx],
+                  content: data.message,
+                  isStreaming: false // 收到完整消息，结束流式状态
+                };
+              } else {
+                // 添加新的助手消息
+                updated.push({
+                  role: 'assistant',
+                  content: data.message,
+                  timestamp: Date.now(),
+                  isStreaming: false
+                });
+              }
+
+              return updated;
+            });
+
+            setIsLoading(false);
+          }
+        });
+
+        // 监听会话启动确认
+        const unsubscribeTaskUpdate = window.electronAPI.agent.onTaskUpdate((update) => {
+          if (update.taskId === newSessionId && update.status === 'completed') {
+            console.log('会话准备就绪');
+            setIsSessionReady(true);
+          }
+        });
+
+        // 保存取消订阅函数
+        return () => {
+          unsubscribeSessionMessage();
+          unsubscribeTaskUpdate();
+        };
+      } catch (error) {
+        console.error('启动会话失败:', error);
+      }
+    };
+
+    const cleanupPromise = startSession();
+
+    // 组件卸载时关闭会话
+    return () => {
+      cleanupPromise.then(cleanup => {
+        if (cleanup && sessionId) {
+          console.log('关闭会话:', sessionId);
+          window.electronAPI.agent.closeSession(sessionId);
+        }
+      });
+    };
+  }, []); // 只在组件挂载时执行一次
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !sessionId || !isSessionReady) return;
 
     const userMessage = input;
     setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage, timestamp: Date.now() }]);
+
+    // 添加用户消息
+    setMessages(prev => [
+      ...prev,
+      { role: 'user', content: userMessage, timestamp: Date.now() }
+    ]);
+
+    // 添加一个空的助手消息占位，准备接收流式响应
+    setMessages(prev => [
+      ...prev,
+      {
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        isStreaming: true
+      }
+    ]);
+
     setIsLoading(true);
 
     try {
-      // 通过 Agent 系统发送消息
-      const response = await window.electronAPI.agent.submitTask({
-        id: '', // id 会在 Agent Manager 中生成
-        type: TaskType.CHAT,
-        payload: {
-          messages: [
-            {
-              role: 'user',
-              content: userMessage
-            }
-          ],
-          context // 传递上下文信息
-        },
-        status: 'pending' as any,
-        createdAt: Date.now()
-      });
-
-      const taskId = response.taskId;
-
-      // 监听任务更新
-      const unsubscribe = window.electronAPI.agent.onTaskUpdate((update) => {
-        if (update.taskId === taskId) {
-          if (update.status === 'completed' && update.result) {
-            // 任务完成,添加助手消息
-            setMessages(prev => [
-              ...prev,
-              {
-                role: 'assistant',
-                content: update.result.response || update.result.message || '',
-                timestamp: Date.now()
-              }
-            ]);
-            setIsLoading(false);
-            unsubscribe();
-          } else if (update.status === 'failed') {
-            // 任务失败
-            setMessages(prev => [
-              ...prev,
-              {
-                role: 'system',
-                content: `错误: ${update.error || '未知错误'}`,
-                timestamp: Date.now()
-              }
-            ]);
-            setIsLoading(false);
-            unsubscribe();
-          } else if (update.status === 'in_progress') {
-            // 任务进行中
-            console.log('任务进行中...');
-          }
-        }
+      // 发送消息到会话
+      await window.electronAPI.agent.sendSessionMessage(sessionId, {
+        role: 'user',
+        content: userMessage
       });
     } catch (error) {
       console.error('发送消息失败:', error);
       setMessages(prev => [
-        ...prev,
+        ...prev.slice(0, -1), // 移除占位消息
         {
           role: 'system',
           content: `错误: ${error instanceof Error ? error.message : String(error)}`,
@@ -164,10 +230,18 @@ export function AgentChat({
                   : 'bg-gray-100 text-gray-900 border border-gray-200'
               }`}
             >
-              <div className="text-xs font-medium mb-1 opacity-70 capitalize">
-                {message.role === 'user' ? '你' : message.role === 'system' ? '系统' : 'AI 助手'}
+              <div className="text-xs font-medium mb-1 opacity-70 capitalize flex items-center gap-2">
+                <span>{message.role === 'user' ? '你' : message.role === 'system' ? '系统' : 'AI 助手'}</span>
+                {message.isStreaming && (
+                  <span className="flex items-center">
+                    <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+                    <span className="text-xs opacity-70">思考中...</span>
+                  </span>
+                )}
               </div>
-              <div className="whitespace-pre-wrap break-words">{message.content}</div>
+              <div className="whitespace-pre-wrap break-words">
+                {message.content || (message.isStreaming && '...')}
+              </div>
               {message.timestamp && (
                 <div className="text-xs mt-2 opacity-50">
                   {new Date(message.timestamp).toLocaleTimeString()}
@@ -177,7 +251,7 @@ export function AgentChat({
           </div>
         ))}
 
-        {isLoading && (
+        {isLoading && messages.length > 0 && messages[messages.length - 1].role !== 'assistant' && (
           <div className="flex justify-start">
             <div className="bg-gray-100 border border-gray-200 rounded-lg p-3">
               <div className="flex space-x-2">
@@ -188,6 +262,7 @@ export function AgentChat({
             </div>
           </div>
         )}
+        <div ref={messagesEndRef} />
       </div>
 
       {/* 输入区域 */}
@@ -200,19 +275,20 @@ export function AgentChat({
             placeholder={placeholder}
             className="flex-1 border border-gray-300 rounded-lg p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
             rows={2}
-            disabled={isLoading}
+            disabled={isLoading || !isSessionReady}
           />
           <button
             onClick={handleSend}
-            disabled={isLoading || !input.trim()}
+            disabled={isLoading || !input.trim() || !isSessionReady}
             className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors self-end"
           >
             发送
           </button>
         </div>
         {showStatusHint && (
-          <div className="mt-2 text-xs text-gray-500">
-            通过 Agent 系统: 主窗口 → IPC → Agent Manager → Agent Worker → Chat Skill → SDK query → Claude
+          <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+            <span>会话模式: {sessionId ? `已连接 (${sessionId.substring(0, 8)}...)` : '连接中...'}</span>
+            {isSessionReady && <span className="text-green-600">● 就绪</span>}
           </div>
         )}
       </div>

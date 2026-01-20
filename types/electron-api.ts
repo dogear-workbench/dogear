@@ -65,9 +65,52 @@ export interface AgentAPI {
   /** 取消 Agent 任务 */
   cancelTask: (taskId: string) => Promise<{ success: boolean }>;
   /** 获取 Agent 状态 */
-  getStatus: () => Promise<any>;
+  getStatus: () => Promise<{
+    workers: number;
+    maxWorkers: number;
+    queuedTasks: number;
+    activeTasks: number;
+  }>;
+  /** 获取详细状态 */
+  getDetailedStatus: () => Promise<{
+    config: {
+      maxWorkers: number;
+      workerIdleTimeout: number;
+      taskRetryLimit: number;
+    };
+    workers: Array<{
+      workerId: string;
+      isReady: boolean;
+      currentTaskId: string | null;
+      lastActivity: number;
+      createdAt: number;
+      idleTime: number;
+    }>;
+    queuedTasks: Array<{
+      id: string;
+      type: string;
+      status: string;
+      createdAt: number;
+    }>;
+    summary: {
+      totalWorkers: number;
+      activeWorkers: number;
+      idleWorkers: number;
+      queuedTasksCount: number;
+    };
+  }>;
+  /** 打开监控窗口 */
+  openMonitorWindow: () => Promise<{ success: boolean }>;
   /** 监听任务更新事件,返回取消监听函数 */
   onTaskUpdate: (callback: (update: AgentTaskUpdate) => void) => () => void;
+  /** 监听流式消息块事件,返回取消监听函数 */
+  onStreamChunk: (callback: (data: { taskId: string; chunk: string }) => void) => () => void;
+  /** 监听会话消息事件,返回取消监听函数 */
+  onSessionMessage: (callback: (data: { sessionId: string; message: string }) => void) => () => void;
+  /** 向会话发送消息 */
+  sendSessionMessage: (sessionId: string, message: { role: string; content: string }) => Promise<{ taskId: string }>;
+  /** 关闭会话 */
+  closeSession: (sessionId: string) => Promise<{ taskId: string; success: boolean }>;
   /** 移除任务更新监听器 */
   removeTaskUpdateListener: (callback: (update: AgentTaskUpdate) => void) => void;
 }
@@ -107,4 +150,4 @@ declare global {
 // 导出类型,供其他模块使用
 export type { Book, Chapter, ChapterMetadata } from './books';
 export type { AIMessage } from './ai';
-export type { AgentTask, AgentTaskUpdate, TaskStatus, TaskType } from './agents';
+export type { AgentTask, AgentTaskUpdate, TaskStatus, TaskType, ChatSessionPayload } from './agents';

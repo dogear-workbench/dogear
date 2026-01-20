@@ -18,7 +18,7 @@ export enum TaskStatus {
  * 任务类型枚举
  */
 export enum TaskType {
-  CHAT = 'chat',                    // AI 对话
+  CHAT_SESSION = 'chat_session',    // AI 对话会话
   SUMMARIZE = 'summarize',          // 文本摘要
   ANALYZE_BOOK = 'analyze_book',    // 书籍分析
   READING_ASSIST = 'reading_assist' // 阅读辅助
@@ -48,6 +48,23 @@ export interface ChatTaskPayload {
     content: string;
   }>;
   context?: {
+    bookId?: string;
+    chapterId?: string;
+    selectedText?: string;
+  };
+}
+
+/**
+ * 持续对话会话任务负载
+ */
+export interface ChatSessionPayload {
+  action: 'start' | 'message' | 'close';  // 会话操作
+  sessionId?: string;                      // 会话 ID（start 时可选，message/close 时必需）
+  message?: {                              // 用户消息（action=message 时使用）
+    role: 'user' | 'assistant' | 'system';
+    content: string;
+  };
+  context?: {                              // 上下文信息（action=start 时使用）
     bookId?: string;
     chapterId?: string;
     selectedText?: string;
@@ -104,6 +121,11 @@ export type MainToWorkerMessage =
 export type WorkerToMainMessage =
   | { type: 'ready'; workerId: string }
   | { type: 'taskUpdate'; taskId: string; status: TaskStatus; result?: any; error?: string }
+  | { type: 'taskStreamChunk'; taskId: string; chunk: string }  // 流式消息块
+  | { type: 'taskStreamEnd'; taskId: string }  // 流式消息结束
+  | { type: 'sessionMessage'; sessionId: string; message: string }  // 会话消息
+  | { type: 'sessionStarted'; sessionId: string }  // 会话已启动
+  | { type: 'sessionClosed'; sessionId: string }  // 会话已关闭
   | { type: 'pong' }
   | { type: 'error'; error: string };
 
@@ -114,5 +136,15 @@ export interface AgentTaskUpdate {
   taskId: string;
   status: TaskStatus;
   result?: any;
+  error?: string;
+}
+
+/**
+ * 流式任务更新事件 (用于实时推送 AI 响应)
+ */
+export interface AgentStreamUpdate {
+  taskId: string;
+  type: 'chunk' | 'end' | 'error';
+  chunk?: string;  // 文本块
   error?: string;
 }
