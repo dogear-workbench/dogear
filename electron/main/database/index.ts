@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { app } from 'electron';
+import type BetterSqlite3 from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -34,6 +34,14 @@ export interface Book {
   // 原始文件信息
   original_file_path: string | null;     // 原始文件路径
   file_size: number | null;              // 文件大小(字节)
+
+  // 工作区相关 (v2 新增)
+  workspace_id?: string;                 // 工作区ID (默认值: 'default')
+  file_path?: string;                    // 工作区内的文件路径(相对于工作区)
+
+  // AI 分析状态 (v2 新增)
+  analysis_status?: 'none' | 'analyzing' | 'analyzed' | 'failed';  // 分析状态
+  analyzed_at?: number | null;           // 最后分析时间戳
 
   cover_image: string | null;            // 封面图片路径
   metadata: string | null;               // 其他元数据(JSON 格式)
@@ -82,21 +90,62 @@ export interface AIInteraction {
   created_at?: string;               // 交互时间（数据库自动生成）
 }
 
+/**
+ * 工作区接口 (v2 新增)
+ * 定义工作区的数据结构
+ */
+export interface Workspace {
+  id: string;                        // 工作区ID
+  name: string;                      // 工作区名称
+  path: string;                      // 工作区绝对路径
+  is_default: number;                // 是否为默认工作区 (0 或 1)
+  created_at: number;                // 创建时间戳
+}
+
 // ==================== 数据库初始化 ====================
 
-// 读取数据库 schema 定义文件
-const schemaPath = path.join(__dirname, 'schema.sql');
-const schema = fs.readFileSync(schemaPath, 'utf-8');
+// 数据库实例(延迟初始化)
+let db: BetterSqlite3.Database | null = null;
 
-// 获取用户数据目录(应用数据存储位置)
-const userDataPath = app.getPath('userData');
-const dbPath = path.join(userDataPath, 'dogear.db');
+/**
+ * 初始化数据库
+ * @param dbPath - 数据库文件路径(可选,默认使用 app.getPath('userData'))
+ */
+export async function initDatabase(dbPath?: string): Promise<BetterSqlite3.Database> {
+  if (db) {
+    return db;
+  }
 
-// 创建数据库连接
-const db = new Database(dbPath);
+  // 如果没有提供路径,使用 electron app 的用户数据目录
+  if (!dbPath) {
+    const { app } = await import('electron');
+    const userDataPath = app.getPath('userData');
+    dbPath = path.join(userDataPath, 'dogear.db');
+  }
 
-// 执行 schema,创建表和索引
-db.exec(schema);
+  // 读取数据库 schema 定义文件
+  const schemaPath = path.join(__dirname, 'schema.sql');
+  const schema = fs.readFileSync(schemaPath, 'utf-8');
+
+  // 创建数据库连接
+  db = new Database(dbPath);
+
+  // 执行 schema,创建表和索引
+  db.exec(schema);
+
+  return db;
+}
+
+/**
+ * 获取数据库实例
+ * @throws 如果数据库未初始化则抛出错误
+ */
+function getDb(): BetterSqlite3.Database {
+  if (!db) {
+    throw new Error('数据库未初始化,请先调用 initDatabase()');
+  }
+  return db;
+}
 
 // ==================== 书籍操作 ====================
 
@@ -110,7 +159,7 @@ export const dbBooks = {
    * @returns 返回按创建时间倒序排列的书籍数组
    */
   getAll: (): Book[] => {
-    const stmt = db.prepare('SELECT * FROM books ORDER BY created_at DESC');
+    const stmt = getDb().prepare('SELECT * FROM books ORDER BY created_at DESC');
     return stmt.all() as Book[];
   },
 
@@ -120,7 +169,7 @@ export const dbBooks = {
    * @returns 返回书籍对象,如果不存在则返回 undefined
    */
   getById: (id: string): Book | undefined => {
-    const stmt = db.prepare('SELECT * FROM books WHERE id = ?');
+    const stmt = getDb().prepare('SELECT * FROM books WHERE id = ?');
     return stmt.get(id) as Book | undefined;
   },
 
@@ -133,7 +182,7 @@ export const dbBooks = {
     // 生成新的 UUID
     const newId = uuidv4();
 
-    const stmt = db.prepare(`
+    const stmt = getDb().prepare(`
       INSERT INTO books (
         id, title, author, file_type,
         processing_status, processing_progress,
@@ -180,7 +229,7 @@ export const dbBooks = {
       .map(([, v]) => v);
 
     // 执行更新,自动更新 updated_at 字段
-    const stmt = db.prepare(`UPDATE books SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`);
+    const stmt = getDb().prepare(`UPDATE books SET ${fields}, updated_at = CURRENT_TIMESTAMP WHERE id = ?`);
     stmt.run(...values, id);
   },
 
@@ -190,7 +239,7 @@ export const dbBooks = {
    * @param id - 书籍 ID (UUID)
    */
   delete: (id: string): void => {
-    const stmt = db.prepare('DELETE FROM books WHERE id = ?');
+    const stmt = getDb().prepare('DELETE FROM books WHERE id = ?');
     stmt.run(id);
   }
 };
@@ -208,7 +257,7 @@ export const dbChapters = {
    * @returns 返回按章节序号排序的章节元数据数组
    */
   getChapterMetadata: (bookId: string): ChapterMetadata[] => {
-    const stmt = db.prepare(`
+    const stmt = getDb().prepare(`
       SELECT id, book_id, chapter_index, title, character_count, preview_text
       FROM chapters
       WHERE book_id = ?
@@ -223,7 +272,7 @@ export const dbChapters = {
    * @returns 返回完整章节对象,包含 content
    */
   getById: (chapterId: string): Chapter | undefined => {
-    const stmt = db.prepare('SELECT * FROM chapters WHERE id = ?');
+    const stmt = getDb().prepare('SELECT * FROM chapters WHERE id = ?');
     return stmt.get(chapterId) as Chapter | undefined;
   },
 
@@ -234,7 +283,7 @@ export const dbChapters = {
    * @returns 返回完整章节对象,包含 content
    */
   getByIndex: (bookId: string, chapterIndex: number): Chapter | undefined => {
-    const stmt = db.prepare(
+    const stmt = getDb().prepare(
       'SELECT * FROM chapters WHERE book_id = ? AND chapter_index = ?'
     );
     return stmt.get(bookId, chapterIndex) as Chapter | undefined;
@@ -245,12 +294,12 @@ export const dbChapters = {
    * @param chapters - 章节数组(不含 id)
    */
   bulkInsert: (chapters: Omit<Chapter, 'id' | 'created_at'>[]): void => {
-    const insert = db.prepare(`
+    const insert = getDb().prepare(`
       INSERT INTO chapters (id, book_id, chapter_index, title, content, character_count, preview_text)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
-    const transaction = db.transaction((chapters) => {
+    const transaction = getDb().transaction((chapters: Omit<Chapter, 'id' | 'created_at'>[]) => {
       for (const chapter of chapters) {
         const newId = uuidv4(); // 为每个章节生成 UUID
         insert.run(
@@ -273,7 +322,7 @@ export const dbChapters = {
    * @param bookId - 书籍ID (UUID)
    */
   deleteByBookId: (bookId: string): void => {
-    const stmt = db.prepare('DELETE FROM chapters WHERE book_id = ?');
+    const stmt = getDb().prepare('DELETE FROM chapters WHERE book_id = ?');
     stmt.run(bookId);
   }
 };
@@ -291,7 +340,7 @@ export const dbAI = {
    * @returns 返回按创建时间倒序排列的交互记录数组
    */
   getByBookId: (bookId: string): AIInteraction[] => {
-    const stmt = db.prepare('SELECT * FROM ai_interactions WHERE book_id = ? ORDER BY created_at DESC');
+    const stmt = getDb().prepare('SELECT * FROM ai_interactions WHERE book_id = ? ORDER BY created_at DESC');
     return stmt.all(bookId) as AIInteraction[];
   },
 
@@ -303,7 +352,7 @@ export const dbAI = {
   add: (interaction: AIInteraction): string => {
     const newId = uuidv4();
 
-    const stmt = db.prepare(`
+    const stmt = getDb().prepare(`
       INSERT INTO ai_interactions (id, book_id, type, user_message, ai_response, context_text, model_info)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
@@ -320,5 +369,56 @@ export const dbAI = {
   }
 };
 
-// 导出数据库实例,用于需要直接操作数据库的场景
-export default db;
+// ==================== 工作区操作 (v2 新增) ====================
+
+/**
+ * 工作区数据库操作集合
+ * 提供对工作区表的 CRUD 操作
+ */
+export const dbWorkspaces = {
+  /**
+   * 获取所有工作区
+   * @returns 返回工作区数组
+   */
+  getAll: (): Workspace[] => {
+    const stmt = getDb().prepare('SELECT * FROM workspaces ORDER BY is_default DESC, created_at DESC');
+    return stmt.all() as Workspace[];
+  },
+
+  /**
+   * 获取默认工作区
+   * @returns 返回默认工作区，如果不存在则返回 undefined
+   */
+  getDefault: (): Workspace | undefined => {
+    const stmt = getDb().prepare('SELECT * FROM workspaces WHERE is_default = 1 LIMIT 1');
+    return stmt.get() as Workspace | undefined;
+  },
+
+  /**
+   * 根据 ID 获取工作区
+   * @param id - 工作区 ID
+   * @returns 返回工作区对象
+   */
+  getById: (id: string): Workspace | undefined => {
+    const stmt = getDb().prepare('SELECT * FROM workspaces WHERE id = ?');
+    return stmt.get(id) as Workspace | undefined;
+  },
+
+  /**
+   * 添加新工作区
+   * @param workspace - 工作区对象
+   * @returns 返回新工作区 ID
+   */
+  add: (workspace: Omit<Workspace, 'id'>): string => {
+    const newId = uuidv4();
+    const stmt = getDb().prepare(`
+      INSERT INTO workspaces (id, name, path, is_default, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `);
+    stmt.run(newId, workspace.name, workspace.path, workspace.is_default, workspace.created_at);
+    return newId;
+  }
+};
+
+// 导出数据库实例获取函数,用于需要直接操作数据库的场景
+export default getDb;

@@ -104,6 +104,7 @@ export interface AgentWorkerConfig {
   workerId: string;              // Worker ID
   taskId?: string;               // 当前处理任务 ID (可选)
   messagePort?: any;             // 通信端口
+  dbPath?: string;               // 数据库路径 (可选,用于 Worker 线程)
 }
 
 /**
@@ -127,4 +128,6 @@ export type WorkerToMainMessage =
   | { type: 'sessionStarted'; sessionId: string }  // 会话已启动
   | { type: 'sessionClosed'; sessionId: string }  // 会话已关闭
   | { type: 'pong' }
-  | { type: 'error'; error: string };
+  | { type: 'error'; error: string }
+  // v2: 分析进度消息
+  | { type: 'analysisProgress'; bookId: string; toolName?: string; toolInput?: any; chapterSaved?: boolean; chapterTitle?: string; message?: string; status?: string };

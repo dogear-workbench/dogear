@@ -11,6 +11,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
 import { registerAllHandlers } from './ipc/index.js';
+import { initDatabase } from './database/index.js';
 
 // 加载 .env 配置
 config({ path: resolve(process.cwd(), '.env') });
@@ -176,6 +177,9 @@ export function sendToAgentMonitorWindow(channel: string, ...args: any[]) {
 
 // 当 Electron 完成初始化时创建窗口
 app.whenReady().then(async () => {
+  // 初始化数据库
+  await initDatabase();
+
   // 注册所有 IPC 处理器
   registerAllHandlers();
 

@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { dbBooks, dbChapters, Book, Chapter, ChapterMetadata } from '../database/index.js';
 import { ChapterRecognizer } from './chapter-recognizer.js';
+import * as workspaceService from './workspace-service.js';
 
 /**
  * 打开文件选择对话框,让用户选择电子书文件
@@ -59,6 +60,11 @@ export async function importBook(filePath: string): Promise<Book> {
   const bookId = dbBooks.add(bookData as Book);
   const book = dbBooks.getById(bookId)!;
 
+  // v2: 复制文件到工作区目录（异步，不阻塞返回）
+  copyFileToWorkspaceAsync(bookId, filePath).catch(error => {
+    console.error(`复制文件到工作区失败: ${book.title}`, error);
+  });
+
   // 异步开始预处理
   preprocessBook(bookId).catch(error => {
     console.error(`预处理书籍失败: ${book.title}`, error);
@@ -69,6 +75,35 @@ export async function importBook(filePath: string): Promise<Book> {
   });
 
   return book;
+}
+
+/**
+ * 复制文件到工作区目录（v2 新增）
+ * @param bookId - 书籍 ID
+ * @param sourcePath - 源文件路径
+ */
+async function copyFileToWorkspaceAsync(bookId: string, sourcePath: string): Promise<void> {
+  try {
+    // 复制文件到工作区
+    const relativePath = await workspaceService.copyBookToWorkspace(bookId, sourcePath);
+
+    // 更新数据库中的文件路径
+    dbBooks.update(bookId, { file_path: relativePath });
+
+    // 保存元数据到 meta.json
+    const stats = await fs.promises.stat(sourcePath);
+    await workspaceService.saveBookMeta(bookId, {
+      id: bookId,
+      title: path.basename(sourcePath, path.extname(sourcePath)),
+      importedAt: Date.now(),
+      importedFrom: sourcePath,
+      fileType: path.extname(sourcePath).slice(1),
+      fileSize: stats.size
+    });
+  } catch (error) {
+    console.error('复制文件到工作区失败:', error);
+    throw error;
+  }
 }
 
 /**

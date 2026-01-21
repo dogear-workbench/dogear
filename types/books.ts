@@ -28,6 +28,10 @@ export interface Book {
   original_file_path?: string;            // 原始文件路径
   file_size?: number;                     // 文件大小
 
+  // v2: AI 分析状态
+  analysis_status?: 'none' | 'analyzing' | 'analyzed' | 'failed';  // 分析状态
+  analyzed_at?: number;                   // 最后分析时间戳
+
   cover_image?: string;                   // 封面图片路径
   metadata?: string;                      // 其他元数据(JSON 格式)
   created_at?: string;                    // 创建时间
@@ -58,4 +62,31 @@ export interface ChapterMetadata {
   title: string;                          // 章节标题
   character_count: number;                // 字符数
   preview_text: string;                   // 预览文本
+}
+
+/**
+ * v2: 书籍分析结果接口（AI 生成的灵活结构）
+ */
+export interface BookAnalysis {
+  analyzedAt: number;                     // 分析时间戳
+  model: string;                          // 使用的模型
+  contentType: 'fiction' | 'non-fiction' | 'article' | 'reference' | 'other';  // 内容类型
+
+  // 以下是 AI 根据内容类型自由添加的字段
+  // 没有固定结构，完全由 AI 决定
+  [key: string]: any;
+}
+
+/**
+ * v2: 章节分析结果接口
+ */
+export interface ChapterAnalysis {
+  chapterId: string;                      // 章节 ID
+  chapterNumber: number;                  // 章节序号
+  title: string;                          // 章节标题
+  summary: string;                        // 章节摘要
+  analyzedAt: number;                     // 分析时间戳
+
+  // AI 可以根据内容添加其他字段
+  [key: string]: any;
 }

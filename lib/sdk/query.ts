@@ -4,8 +4,18 @@
  * 并添加 Dogear 特定的配置和类型
  */
 
-// 从 Claude Agent SDK 导入核心功能
-export { query } from '@anthropic-ai/claude-agent-sdk';
+import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  Options,
+  Query,
+  SDKMessage,
+  SDKUserMessage,
+  SDKAssistantMessage,
+  SDKResultMessage
+} from '@anthropic-ai/claude-agent-sdk';
+
+// 重新导出 query 函数
+export const query = sdkQuery;
 
 // 导出常用的类型
 export type {
@@ -15,7 +25,7 @@ export type {
   SDKUserMessage,
   SDKAssistantMessage,
   SDKResultMessage
-} from '@anthropic-ai/claude-agent-sdk';
+};
 
 /**
  * Dogear 特定的扩展配置
@@ -34,10 +44,10 @@ export interface DogearAgentOptions {
  * 创建带 Dogear 上下文的 Agent 查询
  * 这是一个便捷函数,用于在 Dogear 应用中使用 Agent SDK
  */
-export function createDogearAgent(
+export async function createDogearAgent(
   prompt: string,
   dogearOptions?: DogearAgentOptions,
-  agentOptions?: Parameters<typeof query>[0]['options']
+  agentOptions?: any
 ): Promise<Query> {
   // TODO: 将 Dogear 上下文注入到 system prompt 中
   const systemPrompt = dogearOptions?.context

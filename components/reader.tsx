@@ -3,8 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Book, Chapter, ChapterMetadata } from '@/types';
 import { Button } from '@/components/ui/button';
-import { ArrowLeft, ChevronLeft, ChevronRight, List, X } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, List, X, MessageSquare, Sparkles } from 'lucide-react';
 import Link from 'next/link';
+import { AgentChat } from '@/components/AgentChat';
+import { BookAnalysis } from '@/components/book-analysis';
 
 interface ReaderProps {
   book: Book;
@@ -17,6 +19,9 @@ export function Reader({ book }: ReaderProps) {
   const [currentChapter, setCurrentChapter] = useState<Chapter | null>(null);
   const [loading, setLoading] = useState(true);
   const [showSidebar, setShowSidebar] = useState(false);
+  const [showChatPanel, setShowChatPanel] = useState(false);  // 问答面板显示状态
+  const [showAnalysisPanel, setShowAnalysisPanel] = useState(false);  // 分析面板显示状态
+  const [bookData, setBookData] = useState<Book>(book);  // 用于刷新书籍数据
   const contentRef = useRef<HTMLDivElement>(null);
   const sidebarRef = useRef<HTMLDivElement>(null);
 
@@ -75,6 +80,16 @@ export function Reader({ book }: ReaderProps) {
       console.error('加载章节列表失败:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * 刷新书籍数据（分析完成后调用）
+   */
+  const refreshBookData = async () => {
+    if (book.id) {
+      const updatedBook = await window.electronAPI.db.getBookById(book.id);
+      setBookData(updatedBook);
     }
   };
 
@@ -191,6 +206,24 @@ export function Reader({ book }: ReaderProps) {
           >
             {showSidebar ? <X className="w-5 h-5" /> : <List className="w-5 h-5" />}
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowChatPanel(!showChatPanel)}
+            className={showChatPanel ? 'bg-primary/10' : ''}
+            title="AI 问答"
+          >
+            <MessageSquare className="w-5 h-5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowAnalysisPanel(!showAnalysisPanel)}
+            className={showAnalysisPanel ? 'bg-primary/10' : ''}
+            title="AI 分析"
+          >
+            <Sparkles className="w-5 h-5" />
+          </Button>
         </div>
         <h1 className="text-lg font-semibold truncate flex-1 mx-4">{book.title}</h1>
         <div className="text-sm text-muted-foreground">
@@ -255,6 +288,39 @@ export function Reader({ book }: ReaderProps) {
             ) : null}
           </div>
         </div>
+
+        {/* AI 问答面板 */}
+        {showChatPanel && (
+          <aside className="w-96 border-l overflow-hidden flex flex-col bg-background">
+            <AgentChat
+              context={{
+                bookId: book.id,
+                chapterId: currentChapter?.id,
+                selectedText: undefined,  // 可后续扩展选中文本功能
+              }}
+              placeholder="针对本章内容提问..."
+              showStatusHint={false}
+              initialMessages={
+                currentChapter
+                  ? [
+                      {
+                        role: 'system' as const,
+                        content: `正在阅读《${book.title}》- ${currentChapter.title}\n\n你可以针对本章内容向我提问。`,
+                        timestamp: Date.now(),
+                      },
+                    ]
+                  : []
+              }
+            />
+          </aside>
+        )}
+
+        {/* AI 分析面板 */}
+        {showAnalysisPanel && (
+          <aside className="w-96 border-l overflow-y-auto bg-background p-4">
+            <BookAnalysis book={bookData} onUpdate={refreshBookData} />
+          </aside>
+        )}
       </div>
 
       {/* 底部导航栏 */}

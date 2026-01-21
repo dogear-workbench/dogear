@@ -268,9 +268,17 @@ export class AgentManager extends EventEmitter {
 
       // 初始化 Worker
       this.workers.set(workerId, wrapper);
+      
+      // 获取数据库路径(从主进程传递给 Worker)
+      const { app } = await import('electron');
+      const dbPath = join(app.getPath('userData'), 'dogear.db');
+      
       this.sendMessageToWorker(workerId, {
         type: 'init',
-        config: { workerId }
+        config: { 
+          workerId,
+          dbPath  // 传递数据库路径给 Worker
+        }
       });
 
       return wrapper;

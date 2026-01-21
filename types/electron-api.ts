@@ -4,7 +4,7 @@
  * 统一管理所有 Electron 相关的类型定义
  */
 
-import { Book, Chapter, ChapterMetadata } from './books.js';
+import { Book, Chapter, ChapterMetadata, BookAnalysis, ChapterAnalysis } from './books.js';
 import { AIMessage } from './ai.js';
 import { AgentTask, AgentTaskUpdate } from './agents.js';
 
@@ -54,6 +54,37 @@ export interface BookAPI {
   getChapter: (chapterId: string) => Promise<Chapter>;
   /** 保存阅读进度 */
   saveProgress: (bookId: string, chapterId: string) => Promise<void>;
+
+  // v2: AI 分析相关接口
+  /** 分析书籍 */
+  analyze: (bookId: string) => Promise<{ taskId?: string; error?: string }>;
+  /** 获取书籍分析状态 */
+  getAnalysisStatus: (bookId: string) => Promise<{
+    status: 'none' | 'analyzing' | 'analyzed' | 'failed';
+    result: BookAnalysis | null;
+    error?: string;
+  }>;
+  /** 获取章节分析列表 */
+  getChapterAnalyses: (bookId: string) => Promise<{ analyses: ChapterAnalysis[]; error?: string }>;
+  /** 监听分析更新事件,返回取消监听函数 */
+  onAnalysisUpdate: (callback: (data: BookAnalysisUpdate) => void) => () => void;
+}
+
+/**
+ * 书籍分析更新事件数据
+ */
+export interface BookAnalysisUpdate {
+  bookId: string;
+  taskId?: string;
+  status?: string;
+  result?: any;
+  error?: string;
+  toolName?: string;
+  toolInput?: any;
+  chapterSaved?: boolean;
+  chapterTitle?: string;
+  message?: string;
+  statusMessage?: string;
 }
 
 /**

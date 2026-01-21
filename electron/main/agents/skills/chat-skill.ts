@@ -42,6 +42,7 @@ export interface UserMessage {
 export interface ChatSessionConfig {
   systemPrompt?: string;
   context?: ChatContext;
+  chapterContent?: string;  // 章节内容，用于书籍问答场景
   onMessage?: (message: string) => void;
   onError?: (error: string) => void;
   onComplete?: (sessionId: string) => void;
@@ -292,8 +293,31 @@ export class ChatSession extends EventEmitter {
    * 构建系统提示词
    */
   private buildSystemPrompt(): string {
-    const { context } = this.config;
+    const { context, chapterContent } = this.config;
 
+    // 如果有章节内容，构建基于书籍内容的系统提示词
+    if (chapterContent) {
+      // 限制内容长度，避免超过 token 限制
+      const maxContentLength = 15000;  // 约 4000-5000 tokens
+      const trimmedContent = chapterContent.length > maxContentLength
+        ? chapterContent.substring(0, maxContentLength) + '\n...(内容已截断)'
+        : chapterContent;
+
+      return `你是一个帮助用户阅读和分析电子书的 AI 助手。
+
+当前正在阅读的章节内容如下：
+---
+${trimmedContent}
+---
+
+请基于上述章节内容回答用户的问题。回答时：
+1. 直接引用章节中的内容来支持你的回答
+2. 如果问题涉及章节中没有的内容，请明确说明
+3. 可以对章节内容进行总结、解释或分析
+4. 用简洁清晰的语言回答`;
+    }
+
+    // 没有章节内容时的通用提示词
     if (!context) {
       return '你是一个帮助用户阅读和分析电子书的 AI 助手。';
     }

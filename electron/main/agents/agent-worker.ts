@@ -27,6 +27,8 @@ import {
   type UserMessage,
   type ChatContext,
 } from './skills/chat-skill.js';
+import { createBookAnalysisTools, BOOK_ANALYSIS_SYSTEM_PROMPT } from './tools/book-analysis-tools.js';
+import * as workspaceService from '../services/workspace-service.js';
 
 /**
  * Agent Worker 类
@@ -37,7 +39,12 @@ class AgentWorker {
   private messagePort: any = null;
   private isReady = false;
   private logger = workerLogger;
-  private enableStreaming: boolean = true;  // 是否启用流式输出
+
+  // v2: 工作区路径配置
+  private workspacePath: string = '';
+
+  // v2: MCP Server 配置
+  private bookAnalysisMcpServer: any = null;
 
   // 会话管理
   private sessionManager = new ChatSessionManager();
@@ -58,6 +65,22 @@ class AgentWorker {
     this.logger.info('正在初始化 Agent Worker...');
 
     try {
+      // 初始化数据库(如果提供了路径)
+      if (config.dbPath) {
+        const { initDatabase } = await import('../database/index.js');
+        initDatabase(config.dbPath);
+        this.logger.info('数据库已初始化:', config.dbPath);
+      }
+
+      // v2: 初始化工作区路径
+      const workspace = await workspaceService.getOrCreateDefaultWorkspace();
+      this.workspacePath = workspace.path;
+      this.logger.info('工作区路径:', this.workspacePath);
+
+      // v2: 创建 MCP Server
+      this.bookAnalysisMcpServer = createBookAnalysisTools(this.workspacePath);
+      this.logger.info('书籍分析 MCP Server 已创建');
+
       this.isReady = true;
       this.sendMessage({
         type: 'ready',
@@ -180,9 +203,26 @@ class AgentWorker {
 
     taskLogger.info('启动新的聊天会话,上下文:', context);
 
+    // 如果有 chapterId，获取章节内容作为上下文
+    let chapterContent: string | undefined;
+    if (context.chapterId) {
+      try {
+        // 动态导入数据库模块，避免循环依赖
+        const { dbChapters } = await import('../database/index.js');
+        const chapter = await dbChapters.getById(context.chapterId);
+        if (chapter) {
+          chapterContent = chapter.content;
+          taskLogger.info('已加载章节内容:', chapter.title, '字符数:', chapter.content?.length || 0);
+        }
+      } catch (error) {
+        taskLogger.error('获取章节内容失败:', error);
+      }
+    }
+
     // 创建会话配置
     const config: ChatSessionConfig = {
       context,
+      chapterContent,  // 传递章节内容
       onMessage: (message: string) => {
         // 当收到 AI 响应时，发送到主进程
         this.sendMessage({
@@ -314,25 +354,210 @@ class AgentWorker {
   }
 
   /**
-   * 处理书籍分析任务
+   * 处理书籍分析任务 (v2: 使用 MCP Server)
    */
   private async handleAnalyzeBookTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload;
+    const { bookId } = payload;
 
-    taskLogger.info('处理书籍分析任务:', payload.bookId);
+    taskLogger.info('处理书籍分析任务:', bookId);
 
-    // TODO: 这里可以启动子 Agent 进行更细粒度的分析
-    // 例如使用 SDK 的 Task 工具启动多个并行的分析任务
-    // await this.sdk.task.create({ ... });
+    // 首先更新数据库状态为"分析中"
+    try {
+      const { dbBooks } = await import('../database/index.js');
+      dbBooks.update(bookId, {
+        analysis_status: 'analyzing',
+        analyzed_at: Date.now()
+      });
+      taskLogger.info('数据库状态已更新为: analyzing');
+    } catch (error) {
+      taskLogger.error('更新数据库状态失败:', error);
+    }
 
-    await this.delay(2000);
+    // 更新文件系统中的状态
+    try {
+      await workspaceService.saveAnalysisStatus(bookId, {
+        analysisStatus: 'analyzing',
+        analyzedAt: Date.now()
+      });
+    } catch (error) {
+      taskLogger.error('更新文件系统状态失败:', error);
+    }
 
-    return {
-      bookId: payload.bookId,
-      summary: '这是一本关于...的书籍',
-      keywords: ['关键词1', '关键词2', '关键词3'],
-      structure: '书籍结构分析...'
-    };
+    // v2: 使用 Claude Agent SDK 的 query 函数进行书籍分析
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+
+    // 构建分析提示
+    const analysisPrompt = `请分析这本书（bookId: ${bookId}）。
+
+按以下步骤进行：
+1. 调用 GetBookInfo 获取书籍基本信息
+2. 调用 GetChapterList 获取章节列表
+3. 读取书籍文件内容（使用 Read 工具读取书籍文件）
+4. 根据内容类型判断（小说/技术书/文章等）
+5. 调用 SaveAnalysis 保存全书分析结果
+6. 对每个章节调用 SaveChapterAnalysis 保存章节分析（至少保存章节摘要）
+7. 调用 CompleteAnalysis 标记完成
+
+请使用中文进行分析。`;
+
+    try {
+      // 创建 query 实例
+      const agentQuery = query({
+        prompt: analysisPrompt,
+        options: {
+          // 允许访问工作区目录
+          additionalDirectories: [this.workspacePath],
+
+          // 内置工具
+          allowedTools: ['Read', 'Glob', 'Grep'],
+
+          // v2: 自定义 MCP Server（书籍分析工具）
+          mcpServers: {
+            'dogear-book-analysis': this.bookAnalysisMcpServer,
+          },
+
+          // 分析专用的 System Prompt
+          systemPrompt: BOOK_ANALYSIS_SYSTEM_PROMPT,
+
+          // 启用会话持久化
+          persistSession: true,
+
+          // Hooks - 让分析活动可见
+          hooks: {
+            PreToolUse: [{
+              hooks: [async (input: any) => {
+                const { tool_name, tool_input } = input;
+                taskLogger.debug('Agent 使用工具:', tool_name);
+
+                // 发送进度到主进程
+                this.sendMessage({
+                  type: 'analysisProgress',
+                  bookId,
+                  toolName: tool_name,
+                  toolInput: this.simplifyToolInput(tool_input)
+                });
+
+                return { continue: true };
+              }]
+            }],
+            PostToolUse: [{
+              hooks: [async (input: any) => {
+                const { tool_name, tool_input, result } = input;
+                taskLogger.debug('Agent 工具完成:', tool_name);
+
+                // 特殊处理章节保存进度
+                if (tool_name === 'SaveChapterAnalysis') {
+                  const title = tool_input?.title || '未知章节';
+                  this.sendMessage({
+                    type: 'analysisProgress',
+                    bookId,
+                    chapterSaved: true,
+                    chapterTitle: title
+                  });
+                }
+
+                // 检查工具执行结果是否有错误
+                if (result && typeof result === 'object' && 'isError' in result && result.isError) {
+                  taskLogger.warn(`工具 ${tool_name} 执行失败:`, result.content);
+                }
+
+                return { continue: true };
+              }]
+            }]
+          }
+        }
+      });
+
+      // 收集响应
+      let fullResponse = '';
+
+      for await (const message of agentQuery) {
+        if (message.type === 'assistant') {
+          // SDKMessage 类型中的 assistant 消息
+          const msg = message as any;
+          if (msg.message && msg.message.content) {
+            // 处理内容块
+            const content = msg.message.content;
+            if (Array.isArray(content)) {
+              for (const block of content) {
+                if (block.type === 'text') {
+                  const text = block.text;
+                  fullResponse += text;
+
+                  // 发送流式进度更新
+                  this.sendMessage({
+                    type: 'analysisProgress',
+                    bookId,
+                    message: text
+                  });
+                }
+              }
+            }
+          }
+        } else if (message.type === 'system') {
+          const subtype = (message as any).subtype;
+          taskLogger.debug('系统消息:', subtype);
+
+          // 发送系统状态更新
+          this.sendMessage({
+            type: 'analysisProgress',
+            bookId,
+            status: subtype
+          });
+        } else if (message.type === 'result') {
+          taskLogger.info('分析完成');
+        }
+      }
+
+      taskLogger.info('书籍分析完成');
+
+      // 分析成功，更新数据库状态为"已分析"
+      try {
+        const { dbBooks } = await import('../database/index.js');
+        dbBooks.update(bookId, {
+          analysis_status: 'analyzed',
+          analyzed_at: Date.now()
+        });
+        taskLogger.info('数据库状态已更新为: analyzed');
+      } catch (error) {
+        taskLogger.error('更新数据库状态失败:', error);
+      }
+
+      return {
+        bookId,
+        response: fullResponse || '分析完成',
+        completed: true,
+        analyzedAt: Date.now()
+      };
+
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      taskLogger.error('书籍分析失败:', errorMsg);
+
+      // 分析失败，更新数据库状态为"失败"
+      try {
+        const { dbBooks } = await import('../database/index.js');
+        dbBooks.update(bookId, {
+          analysis_status: 'failed',
+          analyzed_at: Date.now()
+        });
+
+        // 更新文件系统状态
+        await workspaceService.saveAnalysisStatus(bookId, {
+          analysisStatus: 'failed',
+          lastError: errorMsg
+        });
+      } catch (updateError) {
+        taskLogger.error('更新失败状态时出错:', updateError);
+      }
+
+      return {
+        bookId,
+        error: errorMsg,
+        completed: false
+      };
+    }
   }
 
   /**
@@ -384,24 +609,25 @@ class AgentWorker {
   }
 
   /**
-   * 发送流式消息块
+   * 简化工具输入，减少日志大小
+   * 截断过长的字符串，只保留关键信息
    */
-  private sendStreamChunk(taskId: string, chunk: string) {
-    this.sendMessage({
-      type: 'taskStreamChunk',
-      taskId,
-      chunk
-    });
-  }
+  private simplifyToolInput(input: any): any {
+    if (!input || typeof input !== 'object') {
+      return input;
+    }
 
-  /**
-   * 发送流式消息结束信号
-   */
-  private sendStreamEnd(taskId: string) {
-    this.sendMessage({
-      type: 'taskStreamEnd',
-      taskId
-    });
+    const result: any = {};
+    for (const [key, value] of Object.entries(input)) {
+      if (typeof value === 'string' && value.length > 100) {
+        result[key] = value.substring(0, 100) + '...';
+      } else if (Array.isArray(value) && value.length > 5) {
+        result[key] = `[${value.slice(0, 5)}... (共${value.length}项)]`;
+      } else {
+        result[key] = value;
+      }
+    }
+    return result;
   }
 
   /**

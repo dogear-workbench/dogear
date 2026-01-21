@@ -37,6 +37,35 @@ const bookAPI = {
 
   /** 保存阅读进度 */
   saveProgress: (bookId: string, chapterId: string) => ipcRenderer.invoke('book:saveProgress', bookId, chapterId),
+
+  // v2: AI 分析相关接口
+  /** 分析书籍 */
+  analyze: (bookId: string) => ipcRenderer.invoke('book:analyze', bookId),
+
+  /** 获取书籍分析状态 */
+  getAnalysisStatus: (bookId: string) => ipcRenderer.invoke('book:getAnalysisStatus', bookId),
+
+  /** 获取章节分析列表 */
+  getChapterAnalyses: (bookId: string) => ipcRenderer.invoke('book:getChapterAnalyses', bookId),
+
+  /** 监听分析更新事件 */
+  onAnalysisUpdate: (callback: (data: {
+    bookId: string;
+    taskId?: string;
+    status?: string;
+    result?: any;
+    error?: string;
+    toolName?: string;
+    toolInput?: any;
+    chapterSaved?: boolean;
+    chapterTitle?: string;
+    message?: string;
+    statusMessage?: string;
+  }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('book:analysisUpdate', listener);
+    return () => ipcRenderer.removeListener('book:analysisUpdate', listener);
+  },
 };
 
 /**

@@ -20,12 +20,29 @@ CREATE TABLE IF NOT EXISTS books (
   original_file_path TEXT,                      -- 原始文件路径
   file_size INTEGER,                            -- 文件大小(字节)
 
+  -- 工作区相关 (v2 新增)
+  workspace_id TEXT NOT NULL DEFAULT 'default', -- 工作区ID
+  file_path TEXT,                               -- 工作区内的文件路径(相对于工作区)
+
+  -- AI 分析状态 (v2 新增)
+  analysis_status TEXT DEFAULT 'none',          -- 分析状态: none/analyzing/analyzed/failed
+  analyzed_at INTEGER,                          -- 最后分析时间
+
   cover_image TEXT,                             -- 封面图片路径
   metadata TEXT,                                -- 其他元数据(JSON 格式)
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP, -- 创建时间
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, -- 更新时间
 
   FOREIGN KEY (current_chapter_id) REFERENCES chapters(id)
+);
+
+-- 工作区表 (v2 新增)
+CREATE TABLE IF NOT EXISTS workspaces (
+  id TEXT PRIMARY KEY,                          -- 工作区ID
+  name TEXT NOT NULL,                           -- 工作区名称
+  path TEXT NOT NULL UNIQUE,                    -- 工作区路径
+  is_default INTEGER DEFAULT 0,                 -- 是否为默认工作区
+  created_at INTEGER NOT NULL                   -- 创建时间
 );
 
 -- 章节表:存储书籍的章节内容
@@ -65,6 +82,8 @@ CREATE TABLE IF NOT EXISTS ai_interactions (
 -- 索引:用于优化查询性能
 CREATE INDEX IF NOT EXISTS idx_books_created ON books(created_at);              -- 按创建时间索引图书
 CREATE INDEX IF NOT EXISTS idx_books_processing_status ON books(processing_status); -- 按处理状态索引
+CREATE INDEX IF NOT EXISTS idx_books_workspace ON books(workspace_id);          -- v2: 按工作区索引
+CREATE INDEX IF NOT EXISTS idx_books_analysis_status ON books(analysis_status); -- v2: 按分析状态索引
 CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);          -- 按书籍ID索引章节
 CREATE INDEX IF NOT EXISTS idx_chapters_chapter_index ON chapters(book_id, chapter_index); -- 按书籍和章节序号索引
 CREATE INDEX IF NOT EXISTS idx_ai_book_id ON ai_interactions(book_id);         -- 按图书 ID 索引交互记录

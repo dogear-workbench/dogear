@@ -10,5 +10,8 @@
       "Skill(superpowers:writing-plans)",
       "Skill(superpowers:writing-plans:*)"
     ]
+  },
+  "enabledPlugins": {
+    "superpowers@superpowers-marketplace": true
   }
 }
