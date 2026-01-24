@@ -268,16 +268,43 @@ export class AgentManager extends EventEmitter {
 
       // 初始化 Worker
       this.workers.set(workerId, wrapper);
-      
-      // 获取数据库路径(从主进程传递给 Worker)
-      const { app } = await import('electron');
-      const dbPath = join(app.getPath('userData'), 'dogear.db');
+
+      // 获取数据库路径和工作区路径(从主进程传递给 Worker)
+      const path = await import('path');
+      const fs = await import('fs');
+
+      // 从当前文件位置向上找到项目根目录 (agents 目录 -> main 目录 -> electron 目录 -> 项目根目录)
+      const projectRoot = path.resolve(__dirname, '../../../');
+
+      // 数据库路径：项目根目录下的 data 文件夹
+      const dbDir = path.join(projectRoot, 'data');
+
+      // 确保 data 目录存在
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+
+      const dbPath = path.join(dbDir, 'dogear.db');
+
+      // 获取当前默认工作区路径（从数据库中读取，不自动创建）
+      let workspacePath: string;
+      const { dbWorkspaces } = await import('../database/index.js');
+      const defaultWorkspace = dbWorkspaces.getDefault();
+
+      if (!defaultWorkspace) {
+        // 如果没有设置默认工作区，使用临时路径，Worker 会报错提示用户先选择工作区
+        workspacePath = path.join(projectRoot, '.temp-workspace');
+        this.logger.warn('未设置默认工作区，Worker 可能无法正常工作');
+      } else {
+        workspacePath = defaultWorkspace.path;
+      }
       
       this.sendMessageToWorker(workerId, {
         type: 'init',
         config: { 
           workerId,
-          dbPath  // 传递数据库路径给 Worker
+          dbPath,  // 传递数据库路径给 Worker
+          workspacePath  // 传递工作区路径给 Worker
         }
       });
 

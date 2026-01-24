@@ -16,10 +16,19 @@ import * as workspaceService from '../../services/workspace-service.js';
 
 /**
  * 创建书籍分析专用 MCP Server
- * @param workspacePath - 工作区路径
+ * @param workspacePath - 工作区路径（用于直接构造路径，避免每次查询数据库）
  * @returns MCP Server 配置
  */
 export function createBookAnalysisTools(workspacePath: string) {
+  // 创建一个轻量级的 workspace 对象，用于传递给 service 函数
+  const workspace = {
+    id: 'current',
+    name: '当前工作区',
+    path: workspacePath,
+    is_default: 1,
+    created_at: Date.now()
+  };
+
   return createSdkMcpServer({
     name: 'dogear-book-analysis',
     version: '1.0.0',
@@ -41,14 +50,24 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
+            // 处理 analysis 参数：可能是对象或 JSON 字符串
+            let analysisData = args.analysis;
+            if (typeof analysisData === 'string') {
+              try {
+                analysisData = JSON.parse(analysisData);
+              } catch {
+                // 如果解析失败，保持原样
+              }
+            }
+
             // 使用 workspaceService 保存分析结果
-            await workspaceService.saveAnalysisResult(args.bookId, {
+            await workspaceService.saveAnalysisResult(workspace, args.bookId, {
               contentType: args.contentType,
-              ...args.analysis
+              ...(typeof analysisData === 'object' && analysisData !== null ? analysisData : {})
             });
 
             // 同时保存分析状态
-            await workspaceService.saveAnalysisStatus(args.bookId, {
+            await workspaceService.saveAnalysisStatus(workspace, args.bookId, {
               analysisStatus: 'analyzed',
               analyzedAt: Date.now()
             });
@@ -90,11 +109,21 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
-            await workspaceService.saveChapterAnalysis(args.bookId, args.chapterNumber, {
+            // 处理 analysis 参数：可能是对象或 JSON 字符串
+            let analysisData = args.analysis;
+            if (typeof analysisData === 'string') {
+              try {
+                analysisData = JSON.parse(analysisData);
+              } catch {
+                // 如果解析失败，保持原样
+              }
+            }
+
+            await workspaceService.saveChapterAnalysis(workspace, args.bookId, args.chapterNumber, {
               chapterId: args.chapterId,
               title: args.title,
               summary: args.summary,
-              ...args.analysis
+              ...(typeof analysisData === 'object' && analysisData !== null ? analysisData : {})
             });
 
             return {
@@ -129,10 +158,10 @@ export function createBookAnalysisTools(workspacePath: string) {
         async (args, extra) => {
           try {
             // 读取所有章节分析
-            const chapters = await workspaceService.loadChapterAnalyses(args.bookId);
+            const chapters = await workspaceService.loadChapterAnalyses(workspace, args.bookId);
 
             // 读取全书分析
-            const analysis = await workspaceService.loadAnalysisResult(args.bookId);
+            const analysis = await workspaceService.loadAnalysisResult(workspace, args.bookId);
 
             const summary = `✅ 分析完成！\n` +
               `📚 书籍ID: ${args.bookId}\n` +
@@ -170,7 +199,7 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
-            const analysis = await workspaceService.loadAnalysisResult(args.bookId);
+            const analysis = await workspaceService.loadAnalysisResult(workspace, args.bookId);
 
             if (!analysis) {
               return {
@@ -210,7 +239,7 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
-            const chapters = await workspaceService.loadChapterAnalyses(args.bookId);
+            const chapters = await workspaceService.loadChapterAnalyses(workspace, args.bookId);
 
             // 只返回摘要信息，不返回完整内容
             const summaries = chapters.map(ch => ({

@@ -253,10 +253,14 @@ export function registerAgentHandlers() {
    */
   ipcMain.handle('book:getAnalysisStatus', async (_, bookId: string) => {
     try {
-      const { loadAnalysisStatus } = await import('../services/workspace-service.js');
-      const status = await loadAnalysisStatus(bookId);
-      const { loadAnalysisResult } = await import('../services/workspace-service.js');
-      const result = await loadAnalysisResult(bookId);
+      const workspaceService = await import('../services/workspace-service.js');
+      const workspace = await workspaceService.getCurrentWorkspace();
+      if (!workspace) {
+        return { status: 'none', result: null, error: '未设置默认工作区' };
+      }
+
+      const status = await workspaceService.loadAnalysisStatus(workspace, bookId);
+      const result = await workspaceService.loadAnalysisResult(workspace, bookId);
 
       return {
         status: status?.analysisStatus || 'none',
@@ -273,8 +277,13 @@ export function registerAgentHandlers() {
    */
   ipcMain.handle('book:getChapterAnalyses', async (_, bookId: string) => {
     try {
-      const { loadChapterAnalyses } = await import('../services/workspace-service.js');
-      const analyses = await loadChapterAnalyses(bookId);
+      const workspaceService = await import('../services/workspace-service.js');
+      const workspace = await workspaceService.getCurrentWorkspace();
+      if (!workspace) {
+        return { analyses: [], error: '未设置默认工作区' };
+      }
+
+      const analyses = await workspaceService.loadChapterAnalyses(workspace, bookId);
       return { analyses };
     } catch (error) {
       console.error('获取章节分析失败:', error);
@@ -351,8 +360,19 @@ export function registerAgentHandlers() {
    */
   ipcMain.handle('book:getFilePath', async (_, bookId: string) => {
     try {
-      const { getBookFilePath } = await import('../services/workspace-service.js');
-      const filePath = await getBookFilePath(bookId);
+      const workspaceService = await import('../services/workspace-service.js');
+      const workspace = await workspaceService.getCurrentWorkspace();
+      if (!workspace) {
+        return { filePath: null, error: '未设置默认工作区' };
+      }
+
+      const { dbBooks } = await import('../database/index.js');
+      const book = dbBooks.getById(bookId);
+      if (!book) {
+        return { filePath: null, error: '书籍不存在' };
+      }
+
+      const filePath = await workspaceService.getBookFilePath(workspace, bookId, book.file_path);
       return { filePath };
     } catch (error) {
       console.error('获取书籍文件路径失败:', error);

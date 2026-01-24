@@ -43,6 +43,9 @@ class AgentWorker {
   // v2: 工作区路径配置
   private workspacePath: string = '';
 
+  // v2: 轻量级 workspace 对象（用于传递给 service 函数）
+  private workspace: any = null;
+
   // v2: MCP Server 配置
   private bookAnalysisMcpServer: any = null;
 
@@ -73,8 +76,16 @@ class AgentWorker {
       }
 
       // v2: 初始化工作区路径
-      const workspace = await workspaceService.getOrCreateDefaultWorkspace();
-      this.workspacePath = workspace.path;
+      // 使用配置传递的路径，避免在 Worker 中调用 electron.app
+      // 创建轻量级 workspace 对象用于传递给 service 函数
+      this.workspacePath = config.workspacePath || '';
+      this.workspace = {
+        id: 'current',
+        name: '当前工作区',
+        path: this.workspacePath,
+        is_default: 1,
+        created_at: Date.now()
+      };
       this.logger.info('工作区路径:', this.workspacePath);
 
       // v2: 创建 MCP Server
@@ -127,9 +138,10 @@ class AgentWorker {
       // 根据任务类型分发处理
       switch (task.type) {
         case TaskType.CHAT_SESSION:
-          // 会话任务不阻塞 Worker，可以立即返回
+          // 会话任务不阻塞 Worker,可以立即返回
+          this.currentTask = null;  // 立即清空,允许处理其他任务
           this.handleChatSessionTask(task, taskLogger);
-          return;  // 提前返回，不发送完成状态
+          return;  // 提前返回,不发送完成状态
 
         case TaskType.SUMMARIZE:
           result = await this.handleSummarizeTask(task, taskLogger);
@@ -223,6 +235,18 @@ class AgentWorker {
     const config: ChatSessionConfig = {
       context,
       chapterContent,  // 传递章节内容
+
+      // v2: 添加 MCP Server 配置，让调试窗口也能使用书籍分析工具
+      mcpServers: this.bookAnalysisMcpServer ? {
+        'dogear-book-analysis': this.bookAnalysisMcpServer,
+      } : undefined,
+
+      // 允许访问工作区目录
+      additionalDirectories: this.workspacePath ? [this.workspacePath] : undefined,
+
+      // 允许使用基础工具
+      allowedTools: ['Read', 'Glob', 'Grep'],
+
       onMessage: (message: string) => {
         // 当收到 AI 响应时，发送到主进程
         this.sendMessage({
@@ -362,24 +386,43 @@ class AgentWorker {
 
     taskLogger.info('处理书籍分析任务:', bookId);
 
-    // 首先更新数据库状态为"分析中"
+    // 获取书籍信息以确定文件路径
+    let bookInfo: any;
+    let bookFilePath: string;
     try {
       const { dbBooks } = await import('../database/index.js');
+      bookInfo = dbBooks.getById(bookId);
+      if (!bookInfo) {
+        throw new Error(`书籍不存在: ${bookId}`);
+      }
+
+      // 构建书籍文件路径 - 使用数据库中存储的 file_path（相对于工作区）
+      // file_path 格式: {bookId}/filename.ext
+      bookFilePath = await workspaceService.getBookFilePath(this.workspace, bookId, bookInfo.file_path);
+      taskLogger.info('书籍文件路径:', bookFilePath);
+
+      // 更新数据库状态为"分析中"
       dbBooks.update(bookId, {
         analysis_status: 'analyzing',
         analyzed_at: Date.now()
       });
       taskLogger.info('数据库状态已更新为: analyzing');
     } catch (error) {
-      taskLogger.error('更新数据库状态失败:', error);
+      taskLogger.error('获取书籍信息失败:', error);
+      throw error;
     }
 
     // 更新文件系统中的状态
+    // 先创建完整的目录结构（避免后续保存时 ENOENT 错误）
     try {
-      await workspaceService.saveAnalysisStatus(bookId, {
+      await workspaceService.getOrCreateBookDir(this.workspace, bookId);
+      taskLogger.info('书籍目录结构已创建');
+
+      await workspaceService.saveAnalysisStatus(this.workspace, bookId, {
         analysisStatus: 'analyzing',
         analyzedAt: Date.now()
       });
+      taskLogger.info('文件系统状态已更新为: analyzing');
     } catch (error) {
       taskLogger.error('更新文件系统状态失败:', error);
     }
@@ -388,24 +431,36 @@ class AgentWorker {
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
     // 构建分析提示
-    const analysisPrompt = `请分析这本书（bookId: ${bookId}）。
+    const analysisPrompt = `你需要分析这本书并保存分析结果。
 
-按以下步骤进行：
-1. 调用 GetBookInfo 获取书籍基本信息
+**书籍信息:**
+- bookId: ${bookId}
+- 书名: ${bookInfo.title}
+- 作者: ${bookInfo.author || '未知'}
+- 文件路径: ${bookFilePath}
+- 总章节数: ${bookInfo.total_chapters}
+
+**重要:你必须完成以下所有步骤,缺一不可:**
+
+1. 调用 GetBookInfo 获取书籍基本信息(验证数据)
 2. 调用 GetChapterList 获取章节列表
-3. 读取书籍文件内容（使用 Read 工具读取书籍文件）
-4. 根据内容类型判断（小说/技术书/文章等）
-5. 调用 SaveAnalysis 保存全书分析结果
-6. 对每个章节调用 SaveChapterAnalysis 保存章节分析（至少保存章节摘要）
-7. 调用 CompleteAnalysis 标记完成
+3. 使用 Read 工具读取书籍文件: ${bookFilePath}
+   - 如果文件很大,可以只读取前几章来判断类型
+4. 根据内容判断类型(fiction/non-fiction/article等)
+5. **必须调用 SaveAnalysis** 保存全书分析结果
+6. **必须对每个章节调用 SaveChapterAnalysis** 保存章节分析
+   - 至少保存章节标题和摘要
+7. **必须调用 CompleteAnalysis** 标记完成
 
-请使用中文进行分析。`;
+请使用中文进行分析。现在开始执行。`;
 
     try {
       // 创建 query 实例
       const agentQuery = query({
         prompt: analysisPrompt,
         options: {
+          permissionMode: "bypassPermissions",
+
           // 允许访问工作区目录
           additionalDirectories: [this.workspacePath],
 
@@ -544,7 +599,7 @@ class AgentWorker {
         });
 
         // 更新文件系统状态
-        await workspaceService.saveAnalysisStatus(bookId, {
+        await workspaceService.saveAnalysisStatus(this.workspace, bookId, {
           analysisStatus: 'failed',
           lastError: errorMsg
         });

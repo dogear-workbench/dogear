@@ -104,6 +104,8 @@ export interface AgentWorkerConfig {
   workerId: string;              // Worker ID
   taskId?: string;               // 当前处理任务 ID (可选)
   messagePort?: any;             // 通信端口
+  dbPath?: string;               // 数据库路径
+  workspacePath?: string;        // 工作区路径
 }
 
 /**

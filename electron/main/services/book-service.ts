@@ -33,9 +33,10 @@ export async function selectBookFile(): Promise<string | null> {
  * 导入电子书文件到数据库
  * 根据文件类型调用不同的解析器提取元数据
  * @param filePath - 电子书文件路径
+ * @param workspaceId - 工作区 ID（可选，默认为 'default'）
  * @returns 返回导入的书籍信息
  */
-export async function importBook(filePath: string): Promise<Book> {
+export async function importBook(filePath: string, workspaceId?: string): Promise<Book> {
   const ext = path.extname(filePath).toLowerCase();
   const fileName = path.basename(filePath, ext);
   const stats = fs.statSync(filePath);
@@ -53,7 +54,9 @@ export async function importBook(filePath: string): Promise<Book> {
     original_file_path: filePath,
     file_size: stats.size,
     cover_image: null,  // 明确使用 null 而不是 undefined
-    metadata: null  // 明确使用 null 而不是 undefined
+    metadata: null,  // 明确使用 null 而不是 undefined
+    file_path: undefined,  // 初始为 undefined，复制文件后更新为工作区相对路径
+    workspace_id: workspaceId || 'default'  // 使用传入的工作区 ID
     // 注意：created_at 和 updated_at 由数据库自动生成，不需要手动设置
   };
 
@@ -84,15 +87,21 @@ export async function importBook(filePath: string): Promise<Book> {
  */
 async function copyFileToWorkspaceAsync(bookId: string, sourcePath: string): Promise<void> {
   try {
+    // 获取当前工作区
+    const workspace = await workspaceService.getCurrentWorkspace();
+    if (!workspace) {
+      throw new Error('未设置默认工作区，请先选择工作区');
+    }
+
     // 复制文件到工作区
-    const relativePath = await workspaceService.copyBookToWorkspace(bookId, sourcePath);
+    const relativePath = await workspaceService.copyBookToWorkspace(workspace, bookId, sourcePath);
 
     // 更新数据库中的文件路径
     dbBooks.update(bookId, { file_path: relativePath });
 
     // 保存元数据到 meta.json
     const stats = await fs.promises.stat(sourcePath);
-    await workspaceService.saveBookMeta(bookId, {
+    await workspaceService.saveBookMeta(workspace, bookId, {
       id: bookId,
       title: path.basename(sourcePath, path.extname(sourcePath)),
       importedAt: Date.now(),

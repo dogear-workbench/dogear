@@ -109,18 +109,25 @@ let db: BetterSqlite3.Database | null = null;
 
 /**
  * 初始化数据库
- * @param dbPath - 数据库文件路径(可选,默认使用 app.getPath('userData'))
+ * @param dbPath - 数据库文件路径(可选,默认使用应用安装目录下的 data/dogear.db)
  */
 export async function initDatabase(dbPath?: string): Promise<BetterSqlite3.Database> {
   if (db) {
     return db;
   }
 
-  // 如果没有提供路径,使用 electron app 的用户数据目录
+  // 如果没有提供路径,使用项目根目录下的 data 文件夹
   if (!dbPath) {
-    const { app } = await import('electron');
-    const userDataPath = app.getPath('userData');
-    dbPath = path.join(userDataPath, 'dogear.db');
+    // 从当前文件位置向上找到项目根目录 (database 目录 -> main 目录 -> electron 目录 -> 项目根目录)
+    const projectRoot = path.resolve(__dirname, '../../../');
+    const dbDir = path.join(projectRoot, 'data');
+
+    // 确保 data 目录存在
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true });
+    }
+
+    dbPath = path.join(dbDir, 'dogear.db');
   }
 
   // 读取数据库 schema 定义文件
@@ -189,9 +196,10 @@ export const dbBooks = {
         current_chapter_id,
         total_chapters, total_characters,
         original_file_path, file_size,
+        workspace_id, file_path,
         cover_image, metadata
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newId,
@@ -205,6 +213,8 @@ export const dbBooks = {
       book.total_characters,  // 已经是必需字段，不需要默认值
       book.original_file_path,  // 已经是 string | null，不需要 ||
       book.file_size,  // 已经是 number | null，不需要 ||
+      book.workspace_id || 'default',  // workspace_id，默认为 'default'
+      book.file_path || null,  // file_path，可为 null
       book.cover_image,  // 已经是 string | null，不需要 ||
       book.metadata  // 已经是 string | null，不需要 ||
     );
@@ -417,6 +427,19 @@ export const dbWorkspaces = {
     `);
     stmt.run(newId, workspace.name, workspace.path, workspace.is_default, workspace.created_at);
     return newId;
+  },
+
+  /**
+   * 设置默认工作区
+   * @param id - 工作区 ID
+   */
+  setDefault: (id: string): void => {
+    const db = getDb();
+    const transaction = db.transaction(() => {
+      db.prepare('UPDATE workspaces SET is_default = 0').run();
+      db.prepare('UPDATE workspaces SET is_default = 1 WHERE id = ?').run(id);
+    });
+    transaction();
   }
 };
 

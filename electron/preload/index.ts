@@ -66,6 +66,15 @@ const bookAPI = {
     ipcRenderer.on('book:analysisUpdate', listener);
     return () => ipcRenderer.removeListener('book:analysisUpdate', listener);
   },
+
+  /** 根据文件路径获取书籍信息 */
+  getBookByFilePath: (filePath: string) => ipcRenderer.invoke('book:getBookByFilePath', filePath),
+
+  /** 获取书籍在工作区中的文件路径（绝对路径） */
+  getWorkspaceFilePath: (bookId: string) => ipcRenderer.invoke('book:getWorkspaceFilePath', bookId),
+
+  /** 在文件管理器中打开书籍所在目录 */
+  openInFolder: (bookId: string) => ipcRenderer.invoke('book:openInFolder', bookId),
 };
 
 /**
@@ -87,7 +96,30 @@ const fileAPI = {
   selectFile: () => ipcRenderer.invoke('file:select'),
 
   /** 导入书籍文件 */
-  importBook: (path: string) => ipcRenderer.invoke('file:importBook', path),
+  importBook: (path: string, workspaceId?: string) => ipcRenderer.invoke('file:importBook', path, workspaceId),
+
+  /** 在文件管理器中打开文件所在目录并选中文件 */
+  openInFolder: (filePath: string) => ipcRenderer.invoke('file:openInFolder', filePath),
+};
+
+/**
+ * 工作区操作 API
+ */
+const workspaceAPI = {
+  /** 获取所有工作区列表 */
+  getAll: () => ipcRenderer.invoke('workspace:getAll'),
+
+  /** 获取默认工作区 */
+  getDefault: () => ipcRenderer.invoke('workspace:getDefault'),
+
+  /** 打开文件夹选择对话框，创建新工作区 */
+  selectFolder: () => ipcRenderer.invoke('workspace:selectFolder'),
+
+  /** 设置默认工作区 */
+  setDefault: (workspaceId: string) => ipcRenderer.invoke('workspace:setDefault', workspaceId),
+
+  /** 获取工作区的文件结构 */
+  getFiles: (workspaceId: string) => ipcRenderer.invoke('workspace:getFiles', workspaceId),
 };
 
 /**
@@ -153,6 +185,7 @@ const electronAPI = {
   file: fileAPI,
   book: bookAPI,
   agent: agentAPI,
+  workspace: workspaceAPI,
 };
 
 /**

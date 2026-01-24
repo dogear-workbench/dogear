@@ -46,6 +46,12 @@ export interface ChatSessionConfig {
   onMessage?: (message: string) => void;
   onError?: (error: string) => void;
   onComplete?: (sessionId: string) => void;
+  // v2: MCP Server 配置（用于调试窗口分析功能）
+  mcpServers?: Record<string, any>;
+  // v2: 允许的工具列表
+  allowedTools?: string[];
+  // v2: 额外允许访问的目录
+  additionalDirectories?: string[];
 }
 
 /**
@@ -115,12 +121,33 @@ export class ChatSession extends EventEmitter {
     // 创建持续的消息流
     const messageStream = this.createMessageStream();
 
+    // 构建 query 配置
+    const queryOptions: Record<string, any> = {
+      systemPrompt,
+    };
+
+    // 添加 MCP Servers（如果配置了）
+    if (this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0) {
+      queryOptions.mcpServers = this.config.mcpServers;
+      this.logger.info('已配置 MCP Servers:', Object.keys(this.config.mcpServers));
+    }
+
+    // 添加允许的工具列表（如果配置了）
+    if (this.config.allowedTools) {
+      queryOptions.allowedTools = this.config.allowedTools;
+      this.logger.info('已配置允许的工具:', this.config.allowedTools);
+    }
+
+    // 添加额外目录（如果配置了）
+    if (this.config.additionalDirectories) {
+      queryOptions.additionalDirectories = this.config.additionalDirectories;
+      this.logger.info('已配置额外目录:', this.config.additionalDirectories);
+    }
+
     // 创建 query
     this.query = query({
       prompt: messageStream,
-      options: {
-        systemPrompt,
-      }
+      options: queryOptions
     });
 
     // 启动消息处理循环

@@ -41,7 +41,47 @@ export interface FileAPI {
   /** 打开文件选择对话框 */
   selectFile: () => Promise<string | null>;
   /** 导入书籍文件 */
-  importBook: (path: string) => Promise<Book>;
+  importBook: (path: string, workspaceId?: string) => Promise<Book>;
+  /** 在文件管理器中打开文件所在目录并选中文件 */
+  openInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+}
+
+/**
+ * 工作区接口
+ */
+export interface Workspace {
+  id: string;
+  name: string;
+  path: string;
+  is_default: number;
+  created_at: number;
+}
+
+/**
+ * 工作区文件节点
+ */
+export interface WorkspaceFileNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  ext?: string;
+  children?: WorkspaceFileNode[];
+}
+
+/**
+ * 工作区操作接口
+ */
+export interface WorkspaceAPI {
+  /** 获取所有工作区列表 */
+  getAll: () => Promise<{ workspaces: Workspace[]; error?: string }>;
+  /** 获取默认工作区 */
+  getDefault: () => Promise<Workspace | null>;
+  /** 打开文件夹选择对话框，创建新工作区 */
+  selectFolder: () => Promise<{ canceled?: boolean; workspace?: Workspace; existed?: boolean; error?: string }>;
+  /** 设置默认工作区 */
+  setDefault: (workspaceId: string) => Promise<{ success: boolean; error?: string }>;
+  /** 获取工作区的文件结构 */
+  getFiles: (workspaceId: string) => Promise<{ files: WorkspaceFileNode[]; error?: string }>;
 }
 
 /**
@@ -68,6 +108,12 @@ export interface BookAPI {
   getChapterAnalyses: (bookId: string) => Promise<{ analyses: ChapterAnalysis[]; error?: string }>;
   /** 监听分析更新事件,返回取消监听函数 */
   onAnalysisUpdate: (callback: (data: BookAnalysisUpdate) => void) => () => void;
+  /** 根据文件路径获取书籍信息 */
+  getBookByFilePath: (filePath: string) => Promise<Book | undefined>;
+  /** 获取书籍在工作区中的文件路径（绝对路径） */
+  getWorkspaceFilePath: (bookId: string) => Promise<{ path: string | null; error?: string }>;
+  /** 在文件管理器中打开书籍所在目录 */
+  openInFolder: (bookId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 /**
@@ -161,6 +207,8 @@ export interface ElectronAPI {
   book: BookAPI;
   /** Agent 任务操作 */
   agent: AgentAPI;
+  /** 工作区操作 */
+  workspace: WorkspaceAPI;
 }
 
 /**

@@ -1,0 +1,148 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { FolderOpen, Home, Loader2, Plus } from 'lucide-react';
+import type { Workspace } from '@/types/electron-api';
+
+interface WorkspaceSelectorProps {
+  onWorkspaceSelected: (workspace: Workspace) => void;
+}
+
+export function WorkspaceSelector({ onWorkspaceSelected }: WorkspaceSelectorProps) {
+  const [loading, setLoading] = useState(true);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
+
+  useEffect(() => {
+    loadWorkspaces();
+  }, []);
+
+  // 加载所有工作区列表
+  const loadWorkspaces = async () => {
+    try {
+      setLoading(true);
+      const result = await window.electronAPI.workspace.getAll();
+      if (result.workspaces && result.workspaces.length > 0) {
+        setWorkspaces(result.workspaces);
+        // 默认选中第一个工作区
+        setSelectedWorkspace(result.workspaces[0]);
+      }
+    } catch (error) {
+      console.error('加载工作区列表失败:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 选择新文件夹创建工作区
+  const handleSelectFolder = async () => {
+    try {
+      const result = await window.electronAPI.workspace.selectFolder();
+      if (result.workspace && !result.canceled) {
+        // 重新加载工作区列表
+        await loadWorkspaces();
+        setSelectedWorkspace(result.workspace);
+      }
+    } catch (error) {
+      console.error('选择工作区失败:', error);
+      alert(`选择工作区失败: ${(error as Error).message}`);
+    }
+  };
+
+  // 选择工作区
+  const handleSelectWorkspace = (workspace: Workspace) => {
+    setSelectedWorkspace(workspace);
+  };
+
+  // 进入选中的工作区
+  const handleEnterWorkspace = () => {
+    if (selectedWorkspace) {
+      onWorkspaceSelected(selectedWorkspace);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <Loader2 className="w-8 h-8 mx-auto animate-spin" />
+          <div className="text-muted-foreground">正在检查工作区...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // 没有任何工作区
+  if (workspaces.length === 0) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <div className="text-center space-y-6 max-w-md">
+          <div className="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
+            <FolderOpen className="w-8 h-8 text-primary" />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold mb-2">欢迎使用 Dogear</h2>
+            <p className="text-muted-foreground">请选择一个文件夹作为您的工作区，用于存放书籍和相关数据</p>
+          </div>
+          <Button onClick={handleSelectFolder} size="lg">
+            <FolderOpen className="w-4 h-4 mr-2" />
+            选择工作区文件夹
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // 有工作区，显示列表供选择
+  return (
+    <div className="h-screen flex items-center justify-center bg-background">
+      <div className="w-full max-w-2xl space-y-6 px-8">
+        <div className="text-center space-y-2">
+          <h2 className="text-2xl font-semibold">选择工作区</h2>
+          <p className="text-muted-foreground">选择一个工作区来管理您的书籍</p>
+        </div>
+
+        {/* 工作区列表 */}
+        <div className="border rounded-lg divide-y max-h-80 overflow-y-auto">
+          {workspaces.map((workspace) => (
+            <div
+              key={workspace.id}
+              onClick={() => handleSelectWorkspace(workspace)}
+              className={`p-4 cursor-pointer transition-colors flex items-center gap-3 ${
+                selectedWorkspace?.id === workspace.id
+                  ? 'bg-primary/10 border-l-4 border-l-primary'
+                  : 'hover:bg-muted/50'
+              }`}
+            >
+              <div className="w-10 h-10 bg-primary/10 rounded flex items-center justify-center">
+                <Home className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{workspace.name}</div>
+                <div className="text-sm text-muted-foreground truncate">{workspace.path}</div>
+              </div>
+              {workspace.is_default === 1 && (
+                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                  默认
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-3 justify-center">
+          <Button variant="outline" onClick={handleSelectFolder}>
+            <Plus className="w-4 h-4 mr-2" />
+            新建工作区
+          </Button>
+          <Button onClick={handleEnterWorkspace} disabled={!selectedWorkspace}>
+            <FolderOpen className="w-4 h-4 mr-2" />
+            进入工作区
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
