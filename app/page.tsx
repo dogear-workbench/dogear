@@ -313,13 +313,6 @@ export default function Home() {
               }}
               placeholder="我可以帮你分析书籍内容、回答问题..."
               showStatusHint={false}
-              initialMessages={[
-                  {
-                    role: 'system' as const,
-                    content: `欢迎使用 Dogear AI 助手！\n\n你可以选择左侧的书籍文件，我会帮你进行分析和问答。`,
-                    timestamp: Date.now(),
-                  },
-              ]}
             />
           </div>
         </section>

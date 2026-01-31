@@ -55,10 +55,10 @@ function createWindow() {
     // 开发环境:加载 Next.js 开发服务器
     mainWindow.loadURL('http://localhost:3000');
     // 打开开发者工具
-    mainWindow.webContents.openDevTools();
+    //mainWindow.webContents.openDevTools();
 
     // 创建调试窗口
-    createDebugWindow();
+    // createDebugWindow();
   } else {
     // 生产环境:加载构建后的静态文件
     mainWindow.loadFile(path.join(__dirname, '../../out/index.html'));

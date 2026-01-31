@@ -7,6 +7,16 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { getAgentManager } from '../agents/agent-manager.js';
 import { AgentTask, TaskType, ChatSessionPayload } from '../agents/task-types.js';
 import { sendToDebugWindow } from '../index.js';
+import {
+  getMainProcessSessionManager
+} from '../agents/main-process-session.js';
+import {
+  getQueryBasedSessionManager
+} from '../agents/query-based-session.js';
+import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
+import type { QueryBasedSessionConfig } from '../agents/query-based-session.js';
+import { createBookQATools } from '../agents/tools/book-qa-tools.js';
+import path from 'path';
 
 /**
  * 注册所有 Agent 相关的 IPC 处理器
@@ -377,6 +387,228 @@ export function registerAgentHandlers() {
     } catch (error) {
       console.error('获取书籍文件路径失败:', error);
       return { filePath: null, error: String(error) };
+    }
+  });
+
+  // ==================== 主进程会话 (v2) ====================
+  // 使用 SDK 的 v2 API 在主进程中直接创建会话
+  // 会话生命周期与程序相同，不受 Worker 管理影响
+
+  /**
+   * 创建主进程会话
+   */
+  ipcMain.handle('agent:createMainProcessSession', async (event, config: {
+    model?: string;
+    allowedTools?: string[];
+    context?: {
+      bookId?: string;
+      chapterId?: string;
+      selectedText?: string;
+    };
+  }) => {
+    try {
+      const sessionManager = getMainProcessSessionManager();
+
+      // 获取工作区路径
+      let workspacePath = '';
+      const { dbWorkspaces } = await import('../database/index.js');
+      const defaultWorkspace = dbWorkspaces.getDefault();
+      if (defaultWorkspace) {
+        workspacePath = defaultWorkspace.path;
+      }
+
+      // 创建会话
+      const session = sessionManager.createSession({
+        model: config.model,
+        allowedTools: config.allowedTools || ['Read', 'Glob', 'Grep'],
+        context: config.context,
+        workspacePath
+      });
+
+      // 启动会话
+      await session.start();
+
+      // 注册会话消息监听器，发送到前端
+      // 注意：sessionManager 的事件监听器在会话关闭时会自动清理
+      sessionManager.on('sessionMessage', (sessionId, message: ExtendedSessionMessage) => {
+        if (sessionId === session.getSessionId() && event.sender) {
+          event.sender.send('agent:mainProcessSessionMessage', {
+            sessionId,
+            message
+          });
+        }
+      });
+
+      return {
+        sessionId: session.getSessionId()
+      };
+    } catch (error) {
+      console.error('创建主进程会话失败:', error);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * 向主进程会话发送消息
+   */
+  ipcMain.handle('agent:sendMainProcessSessionMessage', async (_, sessionId: string, content: string) => {
+    try {
+      const sessionManager = getMainProcessSessionManager();
+      const session = sessionManager.getSession(sessionId);
+
+      if (!session) {
+        return { error: '会话不存在' };
+      }
+
+      await session.sendMessage(content);
+      return { success: true };
+    } catch (error) {
+      console.error('发送消息到主进程会话失败:', error);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * 关闭主进程会话
+   */
+  ipcMain.handle('agent:closeMainProcessSession', async (_, sessionId: string) => {
+    try {
+      const sessionManager = getMainProcessSessionManager();
+      sessionManager.closeSession(sessionId);
+      return { success: true };
+    } catch (error) {
+      console.error('关闭主进程会话失败:', error);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  // ==================== 基于 Query 的会话（支持 Skills）====================
+
+  /**
+   * 创建基于 Query 的会话（支持 Skills）
+   */
+  ipcMain.handle('agent:createQueryBasedSession', async (event, config: {
+    model?: string;
+    allowedTools?: string[];
+    context?: {
+      bookId?: string;
+      chapterId?: string;
+      selectedText?: string;
+    };
+    enableSkills?: boolean;        // 是否启用 Skill 功能
+    projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
+  }) => {
+    try {
+      const sessionManager = getQueryBasedSessionManager();
+
+      // 获取工作区路径
+      let workspacePath = '';
+      const { dbWorkspaces } = await import('../database/index.js');
+      const defaultWorkspace = dbWorkspaces.getDefault();
+      if (defaultWorkspace) {
+        workspacePath = defaultWorkspace.path;
+      }
+
+      // 构建 MCP Servers 配置
+      const mcpServers: Record<string, any> = {};
+
+      // 如果启用 Skills 或者提供了 bookId，添加 book-qa MCP tools
+      // book-qa skill 需要这些工具来搜索书籍内容
+      if ((config.enableSkills ?? true) && workspacePath) {
+        // 从 context 中获取 bookId，用于创建书籍问答工具
+        const bookId = config.context?.bookId;
+        const bookQATools = createBookQATools(workspacePath, bookId || '');
+        mcpServers['dogear-book-qa'] = bookQATools;
+        console.log('已添加 book-qa MCP tools, bookId:', bookId);
+      }
+
+      // 构建会话配置
+      const sessionConfig: QueryBasedSessionConfig = {
+        model: config.model,
+        allowedTools: config.allowedTools || ['Read', 'Glob', 'Grep'],
+        context: config.context,
+        workspacePath,
+        enableSkills: config.enableSkills ?? true,  // 默认启用 Skills
+        projectRoot: config.projectRoot,
+        mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined
+      };
+
+      // 创建会话
+      const session = sessionManager.createSession(sessionConfig);
+
+      // 启动会话
+      await session.start();
+
+      // 注册会话消息监听器，发送到前端
+      sessionManager.on('sessionMessage', (sessionId, message: ExtendedSessionMessage) => {
+        if (sessionId === session.getSessionId() && event.sender) {
+          event.sender.send('agent:queryBasedSessionMessage', {
+            sessionId,
+            message
+          });
+        }
+      });
+
+      // 注册会话完成监听器，发送完成消息到前端
+      sessionManager.on('sessionComplete', (sessionId, result) => {
+        if (sessionId === session.getSessionId() && event.sender) {
+          event.sender.send('agent:queryBasedSessionComplete', {
+            sessionId,
+            result
+          });
+        }
+      });
+
+      // 注册会话错误监听器
+      sessionManager.on('sessionError', (sessionId, message: ExtendedSessionMessage) => {
+        if (sessionId === session.getSessionId() && event.sender) {
+          event.sender.send('agent:queryBasedSessionMessage', {
+            sessionId,
+            message
+          });
+        }
+      });
+
+      return {
+        sessionId: session.getSessionId()
+      };
+    } catch (error) {
+      console.error('创建基于 Query 的会话失败:', error);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * 向基于 Query 的会话发送消息
+   */
+  ipcMain.handle('agent:sendQueryBasedSessionMessage', async (_, sessionId: string, content: string) => {
+    try {
+      const sessionManager = getQueryBasedSessionManager();
+      const session = sessionManager.getSession(sessionId);
+
+      if (!session) {
+        return { error: '会话不存在' };
+      }
+
+      await session.sendMessage(content);
+      return { success: true };
+    } catch (error) {
+      console.error('发送消息到基于 Query 的会话失败:', error);
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  /**
+   * 关闭基于 Query 的会话
+   */
+  ipcMain.handle('agent:closeQueryBasedSession', async (_, sessionId: string) => {
+    try {
+      const sessionManager = getQueryBasedSessionManager();
+      sessionManager.closeSession(sessionId);
+      return { success: true };
+    } catch (error) {
+      console.error('关闭基于 Query 的会话失败:', error);
+      return { error: error instanceof Error ? error.message : String(error) };
     }
   });
 }

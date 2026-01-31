@@ -75,6 +75,11 @@ const bookAPI = {
 
   /** 在文件管理器中打开书籍所在目录 */
   openInFolder: (bookId: string) => ipcRenderer.invoke('book:openInFolder', bookId),
+
+  // v3: 书籍问答相关接口
+  /** 跳转到指定章节位置（用于引用跳转） */
+  jumpToPosition: (chapterId: string, position?: { start: number; end: number }) =>
+    ipcRenderer.invoke('book:jumpToPosition', chapterId, position),
 };
 
 /**
@@ -176,6 +181,79 @@ const agentAPI = {
 };
 
 /**
+ * 主进程会话 API (v2)
+ * 使用 SDK 的 v2 API 在主进程中直接创建和管理会话
+ */
+const mainProcessSessionAPI = {
+  /** 创建主进程会话 */
+  createSession: (config: {
+    model?: string;
+    allowedTools?: string[];
+    context?: {
+      bookId?: string;
+      chapterId?: string;
+      selectedText?: string;
+    };
+  }) => ipcRenderer.invoke('agent:createMainProcessSession', config),
+
+  /** 向主进程会话发送消息 */
+  sendMessage: (sessionId: string, content: string) =>
+    ipcRenderer.invoke('agent:sendMainProcessSessionMessage', sessionId, content),
+
+  /** 关闭主进程会话 */
+  closeSession: (sessionId: string) =>
+    ipcRenderer.invoke('agent:closeMainProcessSession', sessionId),
+
+  /** 监听会话消息事件 */
+  onMessage: (callback: (data: { sessionId: string; message: any }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:mainProcessSessionMessage', listener);
+    return () => ipcRenderer.removeListener('agent:mainProcessSessionMessage', listener);
+  }
+};
+
+/**
+ * 基于 Query 的会话 API (支持 Skills)
+ * 使用 SDK 的 query 函数创建会话，支持加载 .claude/skills/ 目录
+ */
+const queryBasedSessionAPI = {
+  /** 创建基于 Query 的会话（支持 Skills） */
+  createSession: (config: {
+    model?: string;
+    allowedTools?: string[];
+    context?: {
+      bookId?: string;
+      chapterId?: string;
+      selectedText?: string;
+    };
+    enableSkills?: boolean;        // 是否启用 Skill 功能
+    projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
+  }) => ipcRenderer.invoke('agent:createQueryBasedSession', config),
+
+  /** 向会话发送消息 */
+  sendMessage: (sessionId: string, content: string) =>
+    ipcRenderer.invoke('agent:sendQueryBasedSessionMessage', sessionId, content),
+
+  /** 关闭会话 */
+  closeSession: (sessionId: string) =>
+    ipcRenderer.invoke('agent:closeQueryBasedSession', sessionId),
+
+  /** 监听会话消息事件 */
+  onMessage: (callback: (data: { sessionId: string; message: any }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:queryBasedSessionMessage', listener);
+    return () => ipcRenderer.removeListener('agent:queryBasedSessionMessage', listener);
+  },
+
+  /** 监听会话完成事件 */
+  onComplete: (callback: (data: { sessionId: string; result: any }) => void) => {
+    const listener = (_event: any, data: any) => callback(data);
+    ipcRenderer.on('agent:queryBasedSessionComplete', listener);
+    return () => ipcRenderer.removeListener('agent:queryBasedSessionComplete', listener);
+  }
+};
+
+/**
  * Electron API 实现
  * 通过 IPC 通信调用主进程的功能
  */
@@ -186,6 +264,8 @@ const electronAPI = {
   book: bookAPI,
   agent: agentAPI,
   workspace: workspaceAPI,
+  mainProcessSession: mainProcessSessionAPI,
+  queryBasedSession: queryBasedSessionAPI,
 };
 
 /**

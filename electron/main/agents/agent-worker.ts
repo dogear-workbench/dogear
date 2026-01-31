@@ -247,14 +247,8 @@ class AgentWorker {
       // 允许使用基础工具
       allowedTools: ['Read', 'Glob', 'Grep'],
 
-      onMessage: (message: string) => {
-        // 当收到 AI 响应时，发送到主进程
-        this.sendMessage({
-          type: 'sessionMessage',
-          sessionId: task.id,
-          message
-        });
-      },
+      // 注意：不再设置 onMessage 回调，改用 session.on('message') 事件
+      // 这样可以避免重复发送消息
       onError: (error: string) => {
         taskLogger.error('会话错误:', error);
         this.sendTaskError(task.id, error);
@@ -267,7 +261,7 @@ class AgentWorker {
     // 创建并启动会话
     const session = this.sessionManager.createSession(task.id, config);
 
-    // 注册会话事件
+    // 注册会话事件（只通过事件监听器发送消息，避免重复）
     session.on('message', (message: string) => {
       this.sendMessage({
         type: 'sessionMessage',

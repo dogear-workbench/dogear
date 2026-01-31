@@ -114,6 +114,10 @@ export interface BookAPI {
   getWorkspaceFilePath: (bookId: string) => Promise<{ path: string | null; error?: string }>;
   /** 在文件管理器中打开书籍所在目录 */
   openInFolder: (bookId: string) => Promise<{ success: boolean; error?: string }>;
+
+  // v3: 书籍问答相关接口
+  /** 跳转到指定章节位置（用于引用跳转） */
+  jumpToPosition: (chapterId: string, position?: { start: number; end: number }) => Promise<{ success: boolean; error?: string }>;
 }
 
 /**
@@ -193,6 +197,86 @@ export interface AgentAPI {
 }
 
 /**
+ * 扩展的会话消息类型
+ * 用于显示完整的 AI 操作（工具调用、思考过程等）
+ */
+export interface ExtendedSessionMessage {
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result';
+  content?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolOutput?: any;
+  toolUseId?: string;
+  status?: string;
+  error?: string;
+  timestamp: number;
+  // 引用信息（用于书籍问答）
+  citations?: Citation[];
+}
+
+/**
+ * 引用信息
+ * 用于标注答案来源，支持点击跳转到原文位置
+ */
+export interface Citation {
+  chapterId: string;
+  chapterTitle: string;
+  chapterNumber?: number;
+  position?: { start: number; end: number };
+  text?: string;  // 引用的文本片段
+}
+
+/**
+ * 主进程会话接口 (v2)
+ * 使用 SDK 的 v2 API 在主进程中直接创建和管理会话
+ */
+export interface MainProcessSessionAPI {
+  /** 创建主进程会话 */
+  createSession: (config: {
+    model?: string;
+    allowedTools?: string[];
+    context?: {
+      bookId?: string;
+      chapterId?: string;
+      selectedText?: string;
+    };
+  }) => Promise<{ sessionId?: string; error?: string }>;
+  /** 向主进程会话发送消息 */
+  sendMessage: (sessionId: string, content: string) => Promise<{ success?: boolean; error?: string }>;
+  /** 关闭主进程会话 */
+  closeSession: (sessionId: string) => Promise<{ success?: boolean; error?: string }>;
+  /** 监听会话消息事件,返回取消监听函数 */
+  onMessage: (callback: (data: { sessionId: string; message: ExtendedSessionMessage }) => void) => () => void;
+}
+
+/**
+ * 基于 Query 的会话接口 (支持 Skills)
+ * 使用 SDK 的 query 函数创建会话，支持加载 .claude/skills/ 目录
+ */
+export interface QueryBasedSessionAPI {
+  /** 创建基于 Query 的会话（支持 Skills） */
+  createSession: (config: {
+    model?: string;
+    allowedTools?: string[];
+    context?: {
+      bookId?: string;
+      chapterId?: string;
+      selectedText?: string;
+    };
+    enableSkills?: boolean;        // 是否启用 Skill 功能
+    projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
+  }) => Promise<{ sessionId?: string; error?: string }>;
+  /** 向会话发送消息 */
+  sendMessage: (sessionId: string, content: string) => Promise<{ success?: boolean; error?: string }>;
+  /** 关闭会话 */
+  closeSession: (sessionId: string) => Promise<{ success?: boolean; error?: string }>;
+  /** 监听会话消息事件,返回取消监听函数 */
+  onMessage: (callback: (data: { sessionId: string; message: ExtendedSessionMessage }) => void) => () => void;
+  /** 监听会话完成事件,返回取消监听函数 */
+  onComplete: (callback: (data: { sessionId: string; result: any }) => void) => () => void;
+}
+
+/**
  * Electron API 总接口
  * 定义通过 contextBridge 暴露给渲染进程的 API 接口
  */
@@ -209,6 +293,10 @@ export interface ElectronAPI {
   agent: AgentAPI;
   /** 工作区操作 */
   workspace: WorkspaceAPI;
+  /** 主进程会话操作 (v2) */
+  mainProcessSession: MainProcessSessionAPI;
+  /** 基于 Query 的会话操作 (支持 Skills) */
+  queryBasedSession: QueryBasedSessionAPI;
 }
 
 /**
