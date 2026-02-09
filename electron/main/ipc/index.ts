@@ -8,6 +8,7 @@ import { registerAIHandlers } from './ai.js';
 import { registerFileHandlers } from './files.js';
 import { registerAgentHandlers } from './agents.js';
 import { registerWorkspaceHandlers } from './workspaces.js';
+import { registerConversationHandlers } from './conversations.js';
 
 /**
  * 注册所有 IPC 处理器
@@ -18,4 +19,5 @@ export function registerAllHandlers() {
   registerFileHandlers();
   registerAgentHandlers();
   registerWorkspaceHandlers();
+  registerConversationHandlers();
 }

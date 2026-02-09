@@ -1,0 +1,11 @@
+{
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "database": "${workspaceFolder:dogear}/data/dogear.db",
+            "name": "dogear"
+        }
+    ],
+    "sqltools.useNodeRuntime": true
+}

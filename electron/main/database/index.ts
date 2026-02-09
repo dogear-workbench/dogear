@@ -102,6 +102,33 @@ export interface Workspace {
   created_at: number;                // 创建时间戳
 }
 
+/**
+ * 对话接口 (v3 新增)
+ * 定义对话会话的数据结构
+ */
+export interface Conversation {
+  id: string;                        // 对话唯一标识(UUID)
+  book_id: string;                   // 关联的书籍ID(UUID)
+  title: string;                     // 对话标题
+  model: string;                     // 使用的模型
+  sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
+  created_at: number;                // 创建时间戳
+  updated_at: number;                // 最后更新时间戳
+}
+
+/**
+ * 对话消息接口 (v3 新增)
+ * 定义对话消息的数据结构
+ */
+export interface ConversationMessage {
+  id: string;                        // 消息唯一标识(UUID)
+  conversation_id: string;           // 关联的对话ID(UUID)
+  role: 'user' | 'assistant' | 'system';  // 角色
+  content: string;                   // 消息内容
+  content_blocks?: string;           // 扩展内容块（JSON格式）
+  timestamp: number;                 // 消息时间戳
+}
+
 // ==================== 数据库初始化 ====================
 
 // 数据库实例(延迟初始化)
@@ -445,3 +472,173 @@ export const dbWorkspaces = {
 
 // 导出数据库实例获取函数,用于需要直接操作数据库的场景
 export default getDb;
+
+// ==================== 对话操作 (v3 新增) ====================
+
+/**
+ * 对话数据库操作集合
+ * 提供对对话表的 CRUD 操作
+ */
+export const dbConversations = {
+  /**
+   * 获取指定书籍的所有对话
+   * @param bookId - 书籍ID (UUID)
+   * @returns 返回按创建时间倒序排列的对话数组
+   */
+  getByBookId: (bookId: string): Conversation[] => {
+    const stmt = getDb().prepare('SELECT * FROM conversations WHERE book_id = ? ORDER BY updated_at DESC');
+    return stmt.all(bookId) as Conversation[];
+  },
+
+  /**
+   * 根据ID获取单个对话
+   * @param id - 对话ID (UUID)
+   * @returns 返回对话对象,如果不存在则返回 undefined
+   */
+  getById: (id: string): Conversation | undefined => {
+    const stmt = getDb().prepare('SELECT * FROM conversations WHERE id = ?');
+    return stmt.get(id) as Conversation | undefined;
+  },
+
+  /**
+   * 创建新对话
+   * @param bookId - 书籍ID (UUID)
+   * @param title - 对话标题
+   * @param model - 使用的模型
+   * @returns 返回新插入记录的 ID (UUID)
+   */
+  create: (bookId: string, title: string, model: string = 'claude-sonnet-4-5-20250929'): string => {
+    const newId = uuidv4();
+    const now = Date.now();
+
+    const stmt = getDb().prepare(`
+      INSERT INTO conversations (id, book_id, title, model, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(newId, bookId, title, model, now, now);
+    return newId;
+  },
+
+  /**
+   * 更新对话标题
+   * @param id - 对话ID (UUID)
+   * @param title - 新标题
+   */
+  updateTitle: (id: string, title: string): void => {
+    const stmt = getDb().prepare('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?');
+    stmt.run(title, Date.now(), id);
+  },
+
+  /**
+   * 更新 SDK session_id（用于 resume 功能）
+   * @param id - 对话ID (UUID)
+   * @param sdkSessionId - SDK 返回的 session_id
+   */
+  updateSdkSessionId: (id: string, sdkSessionId: string): void => {
+    const stmt = getDb().prepare('UPDATE conversations SET sdk_session_id = ?, updated_at = ? WHERE id = ?');
+    stmt.run(sdkSessionId, Date.now(), id);
+  },
+
+  /**
+   * 更新对话的最后更新时间
+   * @param id - 对话ID (UUID)
+   */
+  touch: (id: string): void => {
+    const stmt = getDb().prepare('UPDATE conversations SET updated_at = ? WHERE id = ?');
+    stmt.run(Date.now(), id);
+  },
+
+  /**
+   * 删除对话（级联删除相关消息）
+   * @param id - 对话ID (UUID)
+   */
+  delete: (id: string): void => {
+    const stmt = getDb().prepare('DELETE FROM conversations WHERE id = ?');
+    stmt.run(id);
+  }
+};
+
+// ==================== 对话消息操作 (v3 新增) ====================
+
+/**
+ * 对话消息数据库操作集合
+ * 提供对对话消息表的 CRUD 操作
+ */
+export const dbConversationMessages = {
+  /**
+   * 获取指定对话的所有消息
+   * @param conversationId - 对话ID (UUID)
+   * @returns 返回按时间戳升序排列的消息数组
+   */
+  getByConversationId: (conversationId: string): ConversationMessage[] => {
+    const stmt = getDb().prepare('SELECT * FROM conversation_messages WHERE conversation_id = ? ORDER BY timestamp ASC');
+    return stmt.all(conversationId) as ConversationMessage[];
+  },
+
+  /**
+   * 添加新消息
+   * @param message - 消息对象
+   * @returns 返回新插入记录的 ID (UUID)
+   */
+  add: (message: Omit<ConversationMessage, 'id'>): string => {
+    const newId = uuidv4();
+
+    const stmt = getDb().prepare(`
+      INSERT INTO conversation_messages (id, conversation_id, role, content, content_blocks, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newId,
+      message.conversation_id,
+      message.role,
+      message.content,
+      message.content_blocks || null,
+      message.timestamp
+    );
+
+    // 更新对话的最后更新时间
+    dbConversations.touch(message.conversation_id);
+
+    return newId;
+  },
+
+  /**
+   * 批量添加消息（用于恢复对话）
+   * @param messages - 消息数组
+   */
+  bulkAdd: (messages: Omit<ConversationMessage, 'id'>[]): void => {
+    const insert = getDb().prepare(`
+      INSERT INTO conversation_messages (id, conversation_id, role, content, content_blocks, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+
+    const transaction = getDb().transaction((msgs: Omit<ConversationMessage, 'id'>[]) => {
+      for (const message of msgs) {
+        const newId = uuidv4();
+        insert.run(
+          newId,
+          message.conversation_id,
+          message.role,
+          message.content,
+          message.content_blocks || null,
+          message.timestamp
+        );
+      }
+      // 更新对话的最后更新时间
+      if (msgs.length > 0) {
+        dbConversations.touch(msgs[0].conversation_id);
+      }
+    });
+
+    transaction(messages);
+  },
+
+  /**
+   * 删除对话的所有消息
+   * @param conversationId - 对话ID (UUID)
+   */
+  deleteByConversationId: (conversationId: string): void => {
+    const stmt = getDb().prepare('DELETE FROM conversation_messages WHERE conversation_id = ?');
+    stmt.run(conversationId);
+  }
+};

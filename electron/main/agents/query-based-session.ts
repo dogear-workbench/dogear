@@ -11,7 +11,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
-import type { SDKUserMessage, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKUserMessage, SDKMessage, SDKUserMessageReplay } from '@anthropic-ai/claude-agent-sdk';
 import { mainLogger } from './logger.js';
 import path from 'path';
 
@@ -37,13 +37,14 @@ export interface QueryBasedSessionConfig {
   // Skill 配置
   enableSkills?: boolean;            // 是否启用 Skill 功能（默认 false）
   projectRoot?: string;              // 项目根目录（用于查找 .claude/skills/）
+  resume?: string;                   // SDK session_id（用于恢复会话）
 }
 
 /**
  * 扩展的消息类型，用于向前端传递更丰富的信息
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user';
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -54,6 +55,10 @@ export interface ExtendedSessionMessage {
   timestamp: number;
   // 引用信息（用于书籍问答）
   citations?: any[];
+  // 是否为重放的历史消息（resume 时使用）
+  isReplay?: boolean;
+  // 消息 UUID（SDK 提供）
+  uuid?: string;
 }
 
 /**
@@ -70,6 +75,7 @@ enum SessionStatus {
  */
 export class QueryBasedSession extends EventEmitter {
   private sessionId: string;
+  private sdkSessionId: string | undefined;  // SDK 返回的 session_id（用于 resume）
   private query: Query | null = null;
   private logger = mainLogger;
   private config: QueryBasedSessionConfig;
@@ -79,6 +85,10 @@ export class QueryBasedSession extends EventEmitter {
   private messageResolvers: Array<(msg: SDKUserMessage | null) => void> = [];
   private pendingMessages: SDKUserMessage[] = [];
 
+  // 流式状态跟踪（用于日志和去重）
+  private isStreaming: boolean = false;
+  private streamEventCount: number = 0;
+
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
     this.sessionId = sessionId;
@@ -87,10 +97,17 @@ export class QueryBasedSession extends EventEmitter {
   }
 
   /**
-   * 获取会话 ID
+   * 获取会话 ID（本地 ID）
    */
   getSessionId(): string {
     return this.sessionId;
+  }
+
+  /**
+   * 获取 SDK 返回的 session_id（用于 resume）
+   */
+  getSdkSessionId(): string | undefined {
+    return this.sdkSessionId;
   }
 
   /**
@@ -102,7 +119,9 @@ export class QueryBasedSession extends EventEmitter {
       return;
     }
 
-    this.logger.info('启动基于 Query 的会话:', this.sessionId);
+    this.logger.info('=== 启动基于 Query 的会话 ===');
+    this.logger.info('sessionId:', this.sessionId);
+    this.logger.info('resume 模式:', !!this.config.resume, this.config.resume || '(新会话)');
 
     try {
       // 构建系统提示词
@@ -117,9 +136,9 @@ export class QueryBasedSession extends EventEmitter {
 
       // 构建 query 配置
       const queryOptions: Record<string, any> = {
-        model: this.config.model || 'claude-sonnet-4-5-20250929',
         systemPrompt,
         permissionMode: 'bypassPermissions',  // 主进程中可以绕过权限检查
+        includePartialMessages: true,  // ⭐ 启用流式消息事件（SDKPartialAssistantMessage）
       };
 
       // 配置工具列表
@@ -133,11 +152,11 @@ export class QueryBasedSession extends EventEmitter {
 
       queryOptions.allowedTools = allowedTools;
 
-      // // 配置 MCP Servers
-      // if (this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0) {
-      //   queryOptions.mcpServers = this.config.mcpServers;
-      //   this.logger.info('已配置 MCP Servers:', Object.keys(this.config.mcpServers));
-      // }
+      // 配置 MCP Servers
+      if (this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0) {
+        queryOptions.mcpServers = this.config.mcpServers;
+        this.logger.info('已配置 MCP Servers:', Object.keys(this.config.mcpServers));
+      }
 
       // 配置工作目录和设置源
       if (this.config.enableSkills && projectRoot) {
@@ -153,7 +172,51 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('已配置工作区目录:', this.config.workspacePath);
       }
 
-      this.logger.info('query配置', queryOptions);
+      // 配置 resume（恢复之前的会话）
+      if (this.config.resume) {
+        queryOptions.resume = this.config.resume;
+        this.logger.info('✅ 已配置 resume 会话:', this.config.resume);
+      } else {
+        this.logger.info('创建新会话（无 resume）');
+      }
+
+      // ==================== 请求配置详情 ====================
+      this.logger.info('╔════════════════════════════════════════════════════════════════╗');
+      this.logger.info('║                     AI 请求配置详情                             ║');
+      this.logger.info('╚════════════════════════════════════════════════════════════════╝');
+      this.logger.info('');
+      this.logger.info('📋 基础配置:');
+      this.logger.info('  • model:', queryOptions.model);
+      this.logger.info('  • resume:', queryOptions.resume || '(无 - 新会话)');
+      this.logger.info('  • permissionMode:', queryOptions.permissionMode);
+      this.logger.info('  • includePartialMessages:', queryOptions.includePartialMessages, '(流式事件)');
+      this.logger.info('');
+      this.logger.info('🔧 工具配置:');
+      this.logger.info('  • allowedTools:', JSON.stringify(queryOptions.allowedTools));
+      this.logger.info('  • disallowedTools:', queryOptions.disallowedTools || '(无)');
+      this.logger.info('');
+      this.logger.info('📁 目录配置:');
+      this.logger.info('  • cwd:', queryOptions.cwd || '(默认)');
+      this.logger.info('  • settingSources:', JSON.stringify(queryOptions.settingSources || []));
+      this.logger.info('  • additionalDirectories:', JSON.stringify(queryOptions.additionalDirectories || []));
+      this.logger.info('');
+      this.logger.info('🌐 MCP Servers:');
+      if (queryOptions.mcpServers && Object.keys(queryOptions.mcpServers).length > 0) {
+        for (const [name, server] of Object.entries(queryOptions.mcpServers)) {
+         this.logger.info(`  • ${name}`);
+        }
+      } else {
+        this.logger.info('  • (无)');
+      }
+      this.logger.info('');
+      this.logger.info('💬 系统提示词:');
+      this.logger.info('  • 长度:', systemPrompt.length, '字符');
+      this.logger.info('  • 内容预览:', systemPrompt.substring(0, 200) + (systemPrompt.length > 200 ? '...' : ''));
+      this.logger.info('');
+      this.logger.info('╔════════════════════════════════════════════════════════════════╗');
+      this.logger.info('║                  开始创建 query 实例                          ║');
+      this.logger.info('╚════════════════════════════════════════════════════════════════╝');
+      this.logger.info('');
 
       // 创建 query
       this.query = query({
@@ -162,7 +225,7 @@ export class QueryBasedSession extends EventEmitter {
       });
 
       this.status = SessionStatus.PROCESSING;
-      this.logger.info('基于 Query 的会话已启动');
+      this.logger.info('✅ 基于 Query 的会话已创建，开始处理消息流...');
 
       // 启动消息处理循环
       this.processMessageLoop();
@@ -185,7 +248,16 @@ export class QueryBasedSession extends EventEmitter {
       throw new Error('会话已关闭');
     }
 
-    this.logger.info('发送消息到会话:', content.substring(0, 50));
+    // ==================== 用户消息发送日志 ====================
+    this.logger.info('');
+    this.logger.info('╔════════════════════════════════════════════════════════════════╗');
+    this.logger.info('║                    发送用户消息到会话                          ║');
+    this.logger.info('╚════════════════════════════════════════════════════════════════╝');
+    this.logger.info('  Session ID:', this.sessionId);
+    this.logger.info('  消息长度:', content.length, '字符');
+    this.logger.info('  消息内容:', content);
+    this.logger.info('╚════════════════════════════════════════════════════════════════╝');
+    this.logger.info('');
 
     const sdkMessage: SDKUserMessage = {
       type: 'user',
@@ -215,21 +287,76 @@ export class QueryBasedSession extends EventEmitter {
       return;
     }
 
-    this.logger.info('开始处理消息流');
+    const resumeMode = !!this.config.resume;
+    this.logger.info('=== 开始处理消息流 ===');
+    this.logger.info('resume 模式:', resumeMode, resumeMode ? `session_id: ${this.config.resume}` : '');
+
+    let messageCount = 0;
+    let replayCount = 0;
 
     try {
       for await (const message of this.query) {
-        this.logger.debug('收到 Query 消息:', message.type);
+        messageCount++;
+
+        // 检查是否为重放消息
+        const isReplayMsg = message.type === 'user' && 'isReplay' in message && message.isReplay === true;
+        if (isReplayMsg) {
+          replayCount++;
+        }
+
+        // ==================== SDK 消息日志 ====================
+        if (message.type === 'stream_event') {
+          // 流式事件：只在开始和结束时输出日志
+          const eventType = message.event.type;
+
+          if (!this.isStreaming) {
+            // 流式开始
+            this.isStreaming = true;
+            this.streamEventCount = 0;
+            this.logger.info(`📨 [${messageCount}] ▶️ 流式输出开始...`);
+          }
+
+          this.streamEventCount++;
+
+          if (eventType === 'message_stop') {
+            // 流式结束
+            this.logger.info(`📨 [${messageCount}] ⏹️ 流式输出结束 (共 ${this.streamEventCount} 个事件)`);
+            this.isStreaming = false;
+          }
+        } else if (message.type === 'assistant' && !this.isStreaming && this.streamEventCount > 0) {
+          // 流式结束后的完整 assistant 消息（与流式内容重复）
+          // 只输出日志，不发送到前端
+          this.logger.info('');
+          this.logger.info(`📨 [${messageCount}] SDK 消息 [assistant] (流式后的完整消息，跳过发送)`);
+          this.logger.info('');
+          // 重置计数器
+          this.streamEventCount = 0;
+          continue;  // 跳过这条消息，不发送到前端
+        } else {
+          // 其他非流式消息：输出原始数据
+          this.logger.info('');
+          this.logger.info(`📨 [${messageCount}] SDK 消息 [${message.type}]${isReplayMsg ? ' (重放)' : ''}`);
+          this.logger.info('原始数据:', JSON.stringify(message, null, 2));
+          this.logger.info('');
+        }
 
         // 转换 SDK 消息为扩展消息格式
         const extendedMessage = this.convertSDKMessage(message);
         if (extendedMessage) {
+          // 非流式消息才输出转换结果
+          if (message.type !== 'stream_event') {
+            this.logger.info('✅ 转换结果:', JSON.stringify(extendedMessage));
+          }
           this.emit('message', extendedMessage);
         }
 
         // 处理结果消息（单次对话完成）
         if (message.type === 'result') {
-          this.logger.info('收到结果消息,子类型:', message.subtype);
+          this.logger.info('=== 收到结果消息 ===', {
+            subtype: message.subtype,
+            totalMessages: messageCount,
+            replayMessages: replayCount
+          });
           if (message.subtype === 'success') {
             this.emit('complete', message);
             this.status = SessionStatus.IDLE;
@@ -242,6 +369,11 @@ export class QueryBasedSession extends EventEmitter {
           }
         }
       }
+
+      this.logger.info('=== 消息流结束 ===', {
+        totalMessages: messageCount,
+        replayMessages: replayCount
+      });
     } catch (error) {
       this.logger.error('消息处理循环错误:', error);
       this.emit('error', {
@@ -257,6 +389,11 @@ export class QueryBasedSession extends EventEmitter {
    */
   private convertSDKMessage(sdkMessage: SDKMessage): ExtendedSessionMessage | null {
     const timestamp = Date.now();
+
+    // 流式消息不输出转换日志，减少日志噪音
+    if (sdkMessage.type !== 'stream_event') {
+      this.logger.info('🔄 转换消息:', sdkMessage.type);
+    }
 
     switch (sdkMessage.type) {
       case 'assistant': {
@@ -351,10 +488,53 @@ export class QueryBasedSession extends EventEmitter {
 
       case 'system': {
         // 系统消息
+        // 捕获 SDK 返回的 session_id（用于 resume）
+        if (sdkMessage.subtype === 'init' && sdkMessage.session_id) {
+          this.sdkSessionId = sdkMessage.session_id;
+          this.logger.info('收到 SDK session_id:', this.sdkSessionId);
+          // 发出 session_id 事件，让主进程保存到数据库
+          this.emit('session_init', { session_id: this.sdkSessionId });
+        }
         return {
           type: 'status',
           status: sdkMessage.subtype,
           timestamp
+        };
+      }
+
+      case 'user': {
+        // 用户消息（包括新消息和重放的历史消息）
+        const userMsg = sdkMessage as SDKUserMessage | SDKUserMessageReplay;
+        const isReplay = 'isReplay' in userMsg && userMsg.isReplay === true;
+
+        // 提取用户消息内容
+        const messageContent = userMsg.message.content;
+        let contentText = '';
+        if (typeof messageContent === 'string') {
+          contentText = messageContent;
+        } else if (Array.isArray(messageContent)) {
+          // 处理内容块数组
+          const textBlocks: string[] = [];
+          for (const block of messageContent) {
+            if (typeof block === 'string') {
+              textBlocks.push(block);
+            } else if (block && typeof block === 'object' && 'type' in block) {
+              if (block.type === 'text') {
+                textBlocks.push((block as { text: string }).text);
+              }
+            }
+          }
+          contentText = textBlocks.join('');
+        }
+
+        this.logger.info('收到用户消息:', isReplay ? '(重放)' : '(新)', contentText.substring(0, 50));
+
+        return {
+          type: 'user',
+          content: contentText,
+          timestamp,
+          isReplay,
+          uuid: 'uuid' in userMsg ? String(userMsg.uuid) : undefined
         };
       }
 

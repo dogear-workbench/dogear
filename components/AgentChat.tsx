@@ -24,6 +24,8 @@ interface Message {
   // 统一的内容块数组，按接收顺序存储所有内容
   // 可以是文本块、工具调用、思考等
   contentBlocks?: ContentBlock[];
+  // 内部标记：是否需要保存到数据库
+  needsSave?: boolean;
 }
 
 /**
@@ -31,7 +33,7 @@ interface Message {
  * 按照实际接收顺序存储和渲染
  */
 interface ContentBlock {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user';
   id?: string;
   content?: string;
   toolName?: string;
@@ -41,6 +43,8 @@ interface ContentBlock {
   error?: string;
   timestamp: number;
   citations?: Citation[];
+  // 是否为重放的历史消息（SDK resume 时使用）
+  isReplay?: boolean;
 }
 
 interface AgentChatProps {
@@ -60,6 +64,24 @@ interface AgentChatProps {
    * 是否显示状态提示
    */
   showStatusHint?: boolean;
+  /**
+   * 对话ID（用于恢复之前的对话）
+   */
+  conversationId?: string | null;
+  /**
+   * 消息更新回调（用于保存消息到数据库）
+   */
+  onMessagesUpdate?: (messages: Message[]) => void;
+  /**
+   * 是否使用 SDK 的 resume 功能（默认 true）
+   * - true: 使用 SDK resume，SDK 会自动重放历史消息
+   * - false: 从数据库加载历史消息，不使用 resume
+   */
+  useSdkResume?: boolean;
+  /**
+   * 是否显示重放的历史消息（仅当 useSdkResume=true 时有效）
+   */
+  showReplayMessages?: boolean;
 }
 
 /**
@@ -223,6 +245,25 @@ function ContentBlockItem({ block }: { block: ContentBlock }) {
       // result 类型不显示任何内容，只是标志消息结束
       return null;
 
+    case 'user':
+      // 用户消息（来自 SDK 重放）
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-blue-800 mb-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+            </svg>
+            {block.isReplay && <span className="text-xs text-blue-500">(历史)</span>}
+            用户消息
+          </div>
+          {block.content && (
+            <div className="text-sm text-blue-700 whitespace-pre-wrap">
+              {block.content}
+            </div>
+          )}
+        </div>
+      );
+
     case 'text':
     default:
       return block.content ? (
@@ -270,7 +311,11 @@ function CitationBadge({ citation }: { citation: Citation }) {
 export function AgentChat({
   context,
   placeholder = '输入消息...',
-  showStatusHint = true
+  showStatusHint = true,
+  conversationId,
+  onMessagesUpdate,
+  useSdkResume = true,
+  showReplayMessages = true
 }: AgentChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -278,6 +323,10 @@ export function AgentChat({
   // 会话 ID
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
+  // 历史消息加载状态
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  // SDK resume 状态
+  const [isResumeMode, setIsResumeMode] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -290,11 +339,180 @@ export function AgentChat({
     scrollToBottom();
   }, [messages]);
 
+  // 加载历史消息（当 conversationId 变化时）
+  useEffect(() => {
+    const loadHistory = async () => {
+      if (!conversationId) {
+        setMessages([]);
+        setHistoryLoaded(false);
+        setIsResumeMode(false);
+        return;
+      }
+
+      // 使用 SDK resume 模式时，从 SDK 的会话文件中读取历史消息
+      if (useSdkResume) {
+        console.log('使用 SDK resume 模式，从 SDK 会话文件加载历史...');
+
+        try {
+          // 获取对话信息，拿到 sdk_session_id
+          const convResult = await window.electronAPI.conversations.getById(conversationId);
+          const sdkSessionId = convResult.conversation?.sdk_session_id;
+
+          if (sdkSessionId) {
+            console.log('✅ 找到 sdk_session_id:', sdkSessionId);
+
+            // 从 SDK 的会话文件中读取历史消息
+            const historyResult = await window.electronAPI.queryBasedSession.getSdkSessionHistory(sdkSessionId);
+
+            if (historyResult.error) {
+              console.error('读取 SDK 会话历史失败:', historyResult.error);
+              return;
+            }
+
+            // 转换 SDK 历史消息格式到组件消息格式
+            const historyMessages: Message[] = historyResult.messages.map((msg) => {
+              const message: Message = {
+                role: msg.type === 'user' ? 'user' : 'assistant',
+                // content 可能是字符串或数组
+                content: '',
+                timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+                needsSave: false,  // 标记为不需要保存（从 SDK 加载的）
+              };
+
+              // 处理 content 数组或字符串
+              if (typeof msg.content === 'string') {
+                message.content = msg.content;
+              } else if (Array.isArray(msg.content)) {
+                // 将 SDK 的 content 数组转换为 contentBlocks
+                const blocks: ContentBlock[] = [];
+                let textContent = '';
+
+                for (const block of msg.content) {
+                  if (typeof block === 'string') {
+                    // 纯字符串块
+                    textContent += block;
+                    blocks.push({
+                      type: 'text',
+                      content: block,
+                      timestamp: Date.now()
+                    });
+                  } else if (block && typeof block === 'object') {
+                    if (block.type === 'text') {
+                      // 文本块
+                      textContent += block.text || '';
+                      blocks.push({
+                        type: 'text',
+                        content: block.text || '',
+                        timestamp: Date.now()
+                      });
+                    } else if (block.type === 'tool_use' || block.type === 'server_tool_use') {
+                      // 工具调用块
+                      blocks.push({
+                        type: 'tool_use',
+                        id: block.id,
+                        toolName: block.name,
+                        toolInput: block.input,
+                        timestamp: Date.now()
+                      });
+                    } else if (block.type === 'image' && block.source) {
+                      // 图片块（对于用户消息）
+                      textContent += '[图片]';
+                      blocks.push({
+                        type: 'text',
+                        content: '[图片]',
+                        timestamp: Date.now()
+                      });
+                    }
+                  }
+                }
+
+                message.content = textContent;
+                message.contentBlocks = blocks.length > 0 ? blocks : undefined;
+              }
+
+              return message;
+            });
+
+            setMessages(historyMessages);
+            setTimeout(() => {
+              setHistoryLoaded(true);
+            }, 100);
+
+            console.log(`✅ 已从 SDK 会话文件加载历史消息: ${historyMessages.length} 条`);
+          } else {
+            console.log('⚠️ 该对话没有 sdk_session_id，无法加载 SDK 历史消息');
+            setMessages([]);
+            setHistoryLoaded(true);
+          }
+        } catch (error) {
+          console.error('加载 SDK 会话历史失败:', error);
+          setMessages([]);
+          setHistoryLoaded(true);
+        }
+
+        setIsResumeMode(true);
+        return;
+      }
+
+      // 传统模式：从数据库加载历史消息
+      setIsResumeMode(false);
+
+      try {
+        // 先设置 historyLoaded 为 false，防止在加载期间保存消息
+        setHistoryLoaded(false);
+
+        const result = await window.electronAPI.conversations.getMessages(conversationId);
+        if (result.error) {
+          console.error('加载历史消息失败:', result.error);
+          return;
+        }
+
+        // 转换数据库消息格式到组件消息格式
+        const historyMessages: Message[] = result.messages.map((msg) => {
+          const message: Message = {
+            role: msg.role as 'user' | 'assistant',
+            content: msg.content,
+            timestamp: msg.timestamp,
+            needsSave: false,  // 标记为不需要保存（从数据库加载的）
+          };
+
+          // 解析 content_blocks
+          if (msg.content_blocks) {
+            try {
+              const blocks = JSON.parse(msg.content_blocks) as ContentBlock[];
+              message.contentBlocks = blocks;
+            } catch {
+              // 解析失败，忽略 content_blocks
+            }
+          }
+
+          return message;
+        });
+
+        setMessages(historyMessages);
+
+        // 延迟设置 historyLoaded，确保消息状态已更新
+        // 这样可以防止在加载过程中触发保存逻辑
+        setTimeout(() => {
+          setHistoryLoaded(true);
+        }, 100);
+
+        console.log('已从数据库加载历史消息:', historyMessages.length, '条');
+      } catch (error) {
+        console.error('加载历史消息失败:', error);
+      }
+    };
+
+    loadHistory();
+  }, [conversationId, useSdkResume]);
+
   // 启动会话
   useEffect(() => {
     const startSession = async () => {
       try {
-        console.log('启动基于 Query 的 Agent 会话...');
+        console.log('=== 启动基于 Query 的 Agent 会话 ===');
+        console.log('conversationId:', conversationId);
+        console.log('useSdkResume:', useSdkResume);
 
         // 自动确定项目根目录
         let projectRoot = '';
@@ -302,25 +520,50 @@ export function AgentChat({
           projectRoot = (window as any).process.cwd();
         }
 
+        // 如果有 conversationId，尝试获取 sdk_session_id 用于 resume
+        let sdkSessionId: string | undefined;
+        if (conversationId) {
+          try {
+            const convResult = await window.electronAPI.conversations.getById(conversationId);
+            console.log('getById 结果:', convResult);
+            if (convResult.conversation?.sdk_session_id) {
+              sdkSessionId = convResult.conversation.sdk_session_id;
+              console.log('✅ 找到 sdk_session_id，将 resume 会话:', sdkSessionId);
+            } else {
+              console.log('⚠️ 该对话没有 sdk_session_id，将创建新会话');
+            }
+          } catch (error) {
+            console.error('❌ 获取 sdk_session_id 失败:', error);
+          }
+        }
+
         const response = await window.electronAPI.queryBasedSession.createSession({
           model: 'claude-sonnet-4-5-20250929',
           allowedTools: ['Read', 'Glob', 'Grep'],
           context,
           enableSkills: true,  // 启用 Skills
-          projectRoot  // 留空让 SDK 自动查找
+          projectRoot,  // 留空让 SDK 自动查找
+          conversationId: conversationId || undefined,  // 传递 conversationId 用于保存 sdk_session_id
+          resume: sdkSessionId  // 使用 resume 恢复会话
         });
 
+        console.log('createSession 响应:', response);
+
         if (response.error) {
-          console.error('启动会话失败:', response.error);
+          console.error('❌ 启动会话失败:', response.error);
           return;
         }
 
         const newSessionId = response.sessionId!;
         setSessionId(newSessionId);
-        console.log('会话已启动:', newSessionId);
+        console.log('✅ 会话已启动:', {
+          sessionId: newSessionId,
+          mode: sdkSessionId ? '(resume)' : '(new)',
+          sdkMode: useSdkResume ? 'SDK模式' : '数据库模式'
+        });
         setIsSessionReady(true);
       } catch (error) {
-        console.error('启动会话失败:', error);
+        console.error('❌ 启动会话异常:', error);
       }
     };
 
@@ -333,7 +576,7 @@ export function AgentChat({
         window.electronAPI.queryBasedSession.closeSession(sessionId);
       }
     };
-  }, []); // 只在组件挂载时执行一次
+  }, [conversationId]); // 当 conversationId 变化时重启会话
 
   // 监听会话消息
   useEffect(() => {
@@ -343,41 +586,100 @@ export function AgentChat({
       if (data.sessionId !== sessionId) return;
 
       const extendedMsg = data.message;
-      console.log('收到会话消息:', extendedMsg);
+
+      // ==================== 前端消息接收日志 ====================
+      console.log('');
+      console.log('══════════════════════════════════════════════════════════════════');
+      console.log('📨 [前端] 收到会话消息');
+      console.log('══════════════════════════════════════════════════════════════════');
+      console.log('  Session ID:', data.sessionId?.substring(0, 8));
+      console.log('  消息类型:', extendedMsg.type);
+      console.log('  时间戳:', new Date(extendedMsg.timestamp || Date.now()).toISOString());
+      console.log('  内容:', extendedMsg.content ? extendedMsg.content.substring(0, 100) + (extendedMsg.content.length > 100 ? '...' : '') : '(无)');
+      if (extendedMsg.toolName) console.log('  工具名称:', extendedMsg.toolName);
+      if (extendedMsg.status) console.log('  状态:', extendedMsg.status);
+      if (extendedMsg.error) console.log('  错误:', extendedMsg.error);
+      if (extendedMsg.isReplay) console.log('  重放消息: 是');
+      console.log('══════════════════════════════════════════════════════════════════');
+      console.log('');
+
+      // 如果是重放消息且不显示重放消息，跳过
+      if (extendedMsg.isReplay && !showReplayMessages) {
+        console.log('⚠️  跳过重放消息（showReplayMessages=false）');
+        return;
+      }
 
       setMessages(prev => {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
 
+        console.log('🔄 [前端] 更新消息状态:');
+        console.log('  当前消息数:', updated.length);
+        console.log('  最后一条索引:', lastIdx);
+        console.log('  最后一条角色:', lastIdx >= 0 ? updated[lastIdx].role : 'N/A');
+        console.log('  最后一条流式状态:', lastIdx >= 0 ? updated[lastIdx].isStreaming : 'N/A');
+
+        // 处理用户消息
+        if (extendedMsg.type === 'user') {
+          const newUserMessage: Message = {
+            role: 'user',
+            content: extendedMsg.content || '',
+            timestamp: extendedMsg.timestamp || Date.now(),
+            needsSave: !extendedMsg.isReplay,  // 重放消息不需要保存到数据库
+          };
+          updated.push(newUserMessage);
+          setHistoryLoaded(true);  // 收到消息后标记历史已加载
+          return updated;
+        }
+
         if (lastIdx >= 0 && updated[lastIdx].role === 'assistant' && updated[lastIdx].isStreaming) {
           // 更新最后一条流式消息
+          console.log('  → 更新流式消息，追加内容块');
           const lastMsg = updated[lastIdx];
           const blocks = lastMsg.contentBlocks || [];
 
-          // 将收到的消息转换为内容块并追加
-          const newBlock: ContentBlock = {
-            type: extendedMsg.type,
-            content: extendedMsg.content,
-            toolName: extendedMsg.toolName,
-            toolInput: extendedMsg.toolInput,
-            toolOutput: extendedMsg.toolOutput,
-            status: extendedMsg.status,
-            error: extendedMsg.error,
-            timestamp: extendedMsg.timestamp || Date.now(),
-            citations: extendedMsg.citations,
-          };
+          // 对于文本类型，如果最后一个块也是 text，合并它们而不是创建新块
+          if (extendedMsg.type === 'text' && blocks.length > 0 && blocks[blocks.length - 1].type === 'text') {
+            // 合并到最后一个文本块
+            const lastBlock = blocks[blocks.length - 1];
+            const mergedBlock: ContentBlock = {
+              ...lastBlock,
+              content: (lastBlock.content || '') + (extendedMsg.content || ''),
+            };
+            updated[lastIdx] = {
+              ...lastMsg,
+              contentBlocks: [...blocks.slice(0, -1), mergedBlock],
+              content: (lastMsg.content || '') + (extendedMsg.content || ''),
+              isStreaming: extendedMsg.type !== 'result',
+            };
+          } else {
+            // 创建新块
+            const newBlock: ContentBlock = {
+              type: extendedMsg.type,
+              content: extendedMsg.content,
+              toolName: extendedMsg.toolName,
+              toolInput: extendedMsg.toolInput,
+              toolOutput: extendedMsg.toolOutput,
+              status: extendedMsg.status,
+              error: extendedMsg.error,
+              timestamp: extendedMsg.timestamp || Date.now(),
+              citations: extendedMsg.citations,
+              isReplay: extendedMsg.isReplay,
+            };
 
-          updated[lastIdx] = {
-            ...lastMsg,
-            contentBlocks: [...blocks, newBlock],
-            // 对于文本类型，同时更新 content 字段以保持兼容
-            content: extendedMsg.type === 'text'
-              ? (lastMsg.content || '') + (extendedMsg.content || '')
-              : lastMsg.content,
-            isStreaming: extendedMsg.type !== 'result'  // 收到结果时结束流式状态
-          };
+            updated[lastIdx] = {
+              ...lastMsg,
+              contentBlocks: [...blocks, newBlock],
+              // 对于文本类型，同时更新 content 字段以保持兼容
+              content: extendedMsg.type === 'text'
+                ? (lastMsg.content || '') + (extendedMsg.content || '')
+                : lastMsg.content,
+              isStreaming: extendedMsg.type !== 'result'  // 收到结果时结束流式状态
+            };
+          }
         } else {
           // 创建新的助手消息
+          console.log('  → 创建新的助手消息');
           const newBlock: ContentBlock = {
             type: extendedMsg.type,
             content: extendedMsg.content,
@@ -388,6 +690,7 @@ export function AgentChat({
             error: extendedMsg.error,
             timestamp: extendedMsg.timestamp || Date.now(),
             citations: extendedMsg.citations,
+            isReplay: extendedMsg.isReplay,
           };
 
           const newMessage: Message = {
@@ -395,7 +698,8 @@ export function AgentChat({
             content: extendedMsg.type === 'text' ? (extendedMsg.content || '') : '',
             timestamp: Date.now(),
             isStreaming: extendedMsg.type !== 'result',
-            contentBlocks: [newBlock]
+            contentBlocks: [newBlock],
+            needsSave: !extendedMsg.isReplay,  // 重放消息不需要保存
           };
           updated.push(newMessage);
         }
@@ -406,13 +710,14 @@ export function AgentChat({
       // 收到结果消息时结束加载状态
       if (extendedMsg.type === 'result') {
         setIsLoading(false);
+        setHistoryLoaded(true);  // 确保历史加载标记已设置
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [sessionId]);
+  }, [sessionId, showReplayMessages]);
 
   // 监听会话完成事件
   useEffect(() => {
@@ -445,17 +750,76 @@ export function AgentChat({
     };
   }, [sessionId]);
 
+  // 监听消息变化，保存完整的助手消息到数据库
+  useEffect(() => {
+    if (!conversationId || messages.length === 0) return;
+
+    const lastMessage = messages[messages.length - 1];
+
+    // 只保存非流式状态的消息（已完成），且是从数据库加载之后产生的消息
+    // 通过检查是否在加载历史消息完成之后产生的
+    if (lastMessage.role === 'assistant' && !lastMessage.isStreaming && historyLoaded) {
+      // 只保存有 needsSave 标志的消息（新消息）
+      // 从数据库加载的消息没有 needsSave 标志，不会被保存
+      if ('needsSave' in lastMessage && !lastMessage.needsSave) {
+        // 从数据库加载的消息，不需要保存
+        return;
+      }
+
+      // 保存助手消息到数据库
+      const saveMessage = async () => {
+        try {
+          await window.electronAPI.conversations.addMessage({
+            conversation_id: conversationId,
+            role: 'assistant',
+            content: lastMessage.content,
+            content_blocks: lastMessage.contentBlocks
+              ? JSON.stringify(lastMessage.contentBlocks)
+              : undefined,
+            timestamp: lastMessage.timestamp || Date.now()
+          });
+
+          // 通知父组件消息已更新
+          if (onMessagesUpdate) {
+            onMessagesUpdate(messages);
+          }
+        } catch (error) {
+          console.error('保存助手消息失败:', error);
+        }
+      };
+
+      // 使用防抖，避免频繁保存
+      const timeoutId = setTimeout(saveMessage, 500);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [messages, conversationId, onMessagesUpdate, historyLoaded]);
+
   const handleSend = async () => {
     if (!input.trim() || isLoading || !sessionId || !isSessionReady) return;
 
     const userMessage = input;
     setInput('');
 
+    // ==================== 前端发送消息日志 ====================
+    console.log('');
+    console.log('╔════════════════════════════════════════════════════════════════╗');
+    console.log('║                    [前端] 发送用户消息                          ║');
+    console.log('╚════════════════════════════════════════════════════════════════╝');
+    console.log('  Session ID:', sessionId?.substring(0, 8));
+    console.log('  消息长度:', userMessage.length, '字符');
+    console.log('  消息内容:', userMessage);
+    console.log('╚════════════════════════════════════════════════════════════════╝');
+    console.log('');
+
+    // 创建用户消息对象
+    const newUserMessage: Message = {
+      role: 'user',
+      content: userMessage,
+      timestamp: Date.now()
+    };
+
     // 添加用户消息
-    setMessages(prev => [
-      ...prev,
-      { role: 'user', content: userMessage, timestamp: Date.now() }
-    ]);
+    setMessages(prev => [...prev, newUserMessage]);
 
     // 添加一个空的助手消息占位，准备接收流式响应
     setMessages(prev => [
@@ -468,6 +832,20 @@ export function AgentChat({
         contentBlocks: []
       }
     ]);
+
+    // 如果有 conversationId，保存用户消息到数据库
+    if (conversationId) {
+      try {
+        await window.electronAPI.conversations.addMessage({
+          conversation_id: conversationId,
+          role: 'user',
+          content: userMessage,
+          timestamp: Date.now()
+        });
+      } catch (error) {
+        console.error('保存用户消息失败:', error);
+      }
+    }
 
     setIsLoading(true);
 

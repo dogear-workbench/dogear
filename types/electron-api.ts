@@ -201,7 +201,7 @@ export interface AgentAPI {
  * 用于显示完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user';
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -212,6 +212,10 @@ export interface ExtendedSessionMessage {
   timestamp: number;
   // 引用信息（用于书籍问答）
   citations?: Citation[];
+  // 是否为重放的历史消息（SDK resume 时使用）
+  isReplay?: boolean;
+  // 消息 UUID（SDK 提供）
+  uuid?: string;
 }
 
 /**
@@ -265,6 +269,8 @@ export interface QueryBasedSessionAPI {
     };
     enableSkills?: boolean;        // 是否启用 Skill 功能
     projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
+    conversationId?: string;       // 对话ID（用于保存 sdk_session_id）
+    resume?: string;               // SDK session_id（用于 resume）
   }) => Promise<{ sessionId?: string; error?: string }>;
   /** 向会话发送消息 */
   sendMessage: (sessionId: string, content: string) => Promise<{ success?: boolean; error?: string }>;
@@ -274,6 +280,84 @@ export interface QueryBasedSessionAPI {
   onMessage: (callback: (data: { sessionId: string; message: ExtendedSessionMessage }) => void) => () => void;
   /** 监听会话完成事件,返回取消监听函数 */
   onComplete: (callback: (data: { sessionId: string; result: any }) => void) => () => void;
+  /** 从 SDK 的会话文件中读取历史消息 */
+  getSdkSessionHistory: (sdkSessionId: string, projectPath?: string) => Promise<{
+    messages: Array<{
+      type: string;
+      role?: string;
+      content?: any;
+      timestamp?: string;
+      uuid?: string;
+    }>;
+    error?: string;
+  }>;
+  /** 获取所有 SDK 会话列表 */
+  getSdkSessions: (projectPath?: string) => Promise<{
+    sessions: Array<{
+      sessionId: string;
+      fullPath: string;
+      firstPrompt: string;
+      messageCount: number;
+      created: string;
+      modified: string;
+    }>;
+    error?: string;
+  }>;
+}
+
+/**
+ * 对话消息接口 (v3)
+ */
+export interface ConversationMessage {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  content_blocks?: string;
+  timestamp: number;
+}
+
+/**
+ * 对话接口 (v3)
+ */
+export interface Conversation {
+  id: string;
+  book_id: string;
+  title: string;
+  model: string;
+  sdk_session_id?: string;       // SDK 返回的 session_id（用于 resume 功能）
+  created_at: number;
+  updated_at: number;
+}
+
+/**
+ * 对话管理接口 (v3)
+ */
+export interface ConversationsAPI {
+  /** 获取书籍的所有对话 */
+  getByBookId: (bookId: string) => Promise<{ conversations: Conversation[]; error?: string }>;
+  /** 获取单个对话 */
+  getById: (conversationId: string) => Promise<{ conversation: Conversation | null; error?: string }>;
+  /** 创建新对话 */
+  create: (bookId: string, title?: string) => Promise<{ conversationId: string | null; error?: string }>;
+  /** 更新对话标题 */
+  updateTitle: (conversationId: string, title: string) => Promise<{ success: boolean; error?: string }>;
+  /** 删除对话 */
+  delete: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
+  /** 获取对话的所有消息 */
+  getMessages: (conversationId: string) => Promise<{ messages: ConversationMessage[]; error?: string }>;
+  /** 添加消息到对话 */
+  addMessage: (message: Omit<ConversationMessage, 'id'>) => Promise<{ messageId: string | null; error?: string }>;
+  /** 批量添加消息 */
+  addMessages: (messages: Omit<ConversationMessage, 'id'>[]) => Promise<{ success: boolean; error?: string }>;
+  /** 获取工作区中所有书籍及其对话 */
+  getBooksWithConversations: (workspaceId?: string) => Promise<{
+    booksWithConversations: Array<{
+      book: import('./books').Book;
+      conversations: Conversation[];
+    }>;
+    error?: string;
+  }>;
 }
 
 /**
@@ -297,6 +381,8 @@ export interface ElectronAPI {
   mainProcessSession: MainProcessSessionAPI;
   /** 基于 Query 的会话操作 (支持 Skills) */
   queryBasedSession: QueryBasedSessionAPI;
+  /** 对话管理操作 (v3) */
+  conversations: ConversationsAPI;
 }
 
 /**

@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { WorkspaceSelector } from '@/components/workspace-selector';
-import { FileTree } from '@/components/file-tree';
+import { BookConversationList, type BookNode, type Conversation } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink } from 'lucide-react';
@@ -36,10 +36,43 @@ export default function Home() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ status: 'idle' });
 
+  // 对话相关状态 (v3 新增)
+  const [bookNodes, setBookNodes] = useState<BookNode[]>([]);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  const [loadingConversations, setLoadingConversations] = useState(false);
+
   // 当工作区选中后加载文件列表
   useEffect(() => {
     if (workspace) {
       loadWorkspaceFiles();
+    }
+  }, [workspace]);
+
+  // 加载书籍和对话数据
+  const loadBooksWithConversations = async () => {
+    if (!workspace) return;
+
+    try {
+      setLoadingConversations(true);
+      const result = await window.electronAPI.conversations.getBooksWithConversations(workspace.id);
+
+      if (result.error) {
+        console.error('加载对话列表失败:', result.error);
+        return;
+      }
+
+      setBookNodes(result.booksWithConversations);
+    } catch (error) {
+      console.error('加载对话列表失败:', error);
+    } finally {
+      setLoadingConversations(false);
+    }
+  };
+
+  // 当工作区选中后加载对话列表
+  useEffect(() => {
+    if (workspace) {
+      loadBooksWithConversations();
     }
   }, [workspace]);
 
@@ -103,8 +136,9 @@ export default function Home() {
       if (filePath) {
         // 传递当前工作区 ID
         await window.electronAPI.file.importBook(filePath, workspace.id);
-        // 导入成功后刷新文件列表
+        // 导入成功后同时刷新文件列表和书籍对话列表
         loadWorkspaceFiles();
+        loadBooksWithConversations();
       }
     } catch (error) {
       console.error('导入失败:', error);
@@ -242,6 +276,78 @@ export default function Home() {
     }
   };
 
+  // ==================== 对话相关处理函数 (v3 新增) ====================
+
+  // 处理对话选择
+  const handleConversationSelect = useCallback(async (conversation: Conversation) => {
+    setSelectedConversation(conversation);
+
+    // 加载对应的书籍信息
+    try {
+      const book = await window.electronAPI.book.getBookByFilePath(conversation.book_id);
+      setSelectedBook(book || null);
+    } catch (error) {
+      console.error('获取书籍信息失败:', error);
+    }
+  }, []);
+
+  // 处理新增对话
+  const handleNewConversation = async (bookId: string) => {
+    try {
+      const result = await window.electronAPI.conversations.create(bookId);
+
+      if (result.error || !result.conversationId) {
+        alert(`创建对话失败: ${result.error || '未知错误'}`);
+        return;
+      }
+
+      // 重新加载对话列表
+      await loadBooksWithConversations();
+
+      // 选中新创建的对话
+      const newConversation = await window.electronAPI.conversations.getById(result.conversationId);
+      if (newConversation.conversation) {
+        handleConversationSelect(newConversation.conversation);
+      }
+    } catch (error) {
+      console.error('创建对话失败:', error);
+      alert(`创建对话失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  // 处理删除对话
+  const handleDeleteConversation = async (conversationId: string) => {
+    if (!confirm('确定要删除这个对话吗？此操作不可恢复。')) {
+      return;
+    }
+
+    try {
+      const result = await window.electronAPI.conversations.delete(conversationId);
+
+      if (result.error) {
+        alert(`删除失败: ${result.error}`);
+        return;
+      }
+
+      // 如果删除的是当前选中的对话，清除选中状态
+      if (selectedConversation?.id === conversationId) {
+        setSelectedConversation(null);
+      }
+
+      // 重新加载对话列表
+      await loadBooksWithConversations();
+    } catch (error) {
+      console.error('删除对话失败:', error);
+      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  // 处理消息更新（当有新消息保存时）
+  const handleMessagesUpdate = useCallback(async () => {
+    // 重新加载对话列表以更新时间戳
+    await loadBooksWithConversations();
+  }, []);
+
   // 如果没有工作区，显示工作区选择界面
   if (!workspace) {
     return <WorkspaceSelector onWorkspaceSelected={handleWorkspaceSelected} />;
@@ -285,15 +391,18 @@ export default function Home() {
             <h2 className="text-sm font-semibold">书籍列表</h2>
           </div>
           <div className="flex-1 overflow-hidden">
-            {loadingFiles ? (
+            {loadingConversations ? (
               <div className="h-full flex items-center justify-center">
                 <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
               </div>
             ) : (
-              <FileTree
-                files={files}
-                onFileSelect={handleFileSelect}
-                selectedFile={selectedFile?.path || null}
+              <BookConversationList
+                books={bookNodes}
+                selectedConversationId={selectedConversation?.id || null}
+                onConversationSelect={handleConversationSelect}
+                onNewConversation={handleNewConversation}
+                onDeleteConversation={handleDeleteConversation}
+                loading={loadingConversations}
               />
             )}
           </div>
@@ -307,10 +416,12 @@ export default function Home() {
           <div className="flex-1 overflow-hidden">
             <AgentChat
               context={{
-                bookId: undefined,
+                bookId: selectedBook?.id,
                 chapterId: undefined,
                 selectedText: undefined,
               }}
+              conversationId={selectedConversation?.id || null}
+              onMessagesUpdate={handleMessagesUpdate}
               placeholder="我可以帮你分析书籍内容、回答问题..."
               showStatusHint={false}
             />

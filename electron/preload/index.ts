@@ -250,7 +250,50 @@ const queryBasedSessionAPI = {
     const listener = (_event: any, data: any) => callback(data);
     ipcRenderer.on('agent:queryBasedSessionComplete', listener);
     return () => ipcRenderer.removeListener('agent:queryBasedSessionComplete', listener);
-  }
+  },
+
+  /** 从 SDK 的会话文件中读取历史消息 */
+  getSdkSessionHistory: (sdkSessionId: string, projectPath?: string) =>
+    ipcRenderer.invoke('agent:getSdkSessionHistory', sdkSessionId, projectPath),
+
+  /** 获取所有 SDK 会话列表 */
+  getSdkSessions: (projectPath?: string) =>
+    ipcRenderer.invoke('agent:getSdkSessions', projectPath)
+};
+
+/**
+ * 对话管理 API (v3)
+ * 管理书籍相关的对话和消息
+ */
+const conversationsAPI = {
+  /** 获取书籍的所有对话 */
+  getByBookId: (bookId: string) => ipcRenderer.invoke('conversations:getByBookId', bookId),
+
+  /** 获取单个对话 */
+  getById: (conversationId: string) => ipcRenderer.invoke('conversations:getById', conversationId),
+
+  /** 创建新对话 */
+  create: (bookId: string, title?: string) => ipcRenderer.invoke('conversations:create', bookId, title),
+
+  /** 更新对话标题 */
+  updateTitle: (conversationId: string, title: string) =>
+    ipcRenderer.invoke('conversations:updateTitle', conversationId, title),
+
+  /** 删除对话 */
+  delete: (conversationId: string) => ipcRenderer.invoke('conversations:delete', conversationId),
+
+  /** 获取对话的所有消息 */
+  getMessages: (conversationId: string) => ipcRenderer.invoke('conversations:getMessages', conversationId),
+
+  /** 添加消息到对话 */
+  addMessage: (message: any) => ipcRenderer.invoke('conversations:addMessage', message),
+
+  /** 批量添加消息 */
+  addMessages: (messages: any[]) => ipcRenderer.invoke('conversations:addMessages', messages),
+
+  /** 获取工作区中所有书籍及其对话 */
+  getBooksWithConversations: (workspaceId?: string) =>
+    ipcRenderer.invoke('conversations:getBooksWithConversations', workspaceId)
 };
 
 /**
@@ -266,6 +309,7 @@ const electronAPI = {
   workspace: workspaceAPI,
   mainProcessSession: mainProcessSessionAPI,
   queryBasedSession: queryBasedSessionAPI,
+  conversations: conversationsAPI,
 };
 
 /**

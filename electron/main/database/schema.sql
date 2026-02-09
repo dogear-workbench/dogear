@@ -88,3 +88,36 @@ CREATE INDEX IF NOT EXISTS idx_chapters_book_id ON chapters(book_id);          -
 CREATE INDEX IF NOT EXISTS idx_chapters_chapter_index ON chapters(book_id, chapter_index); -- 按书籍和章节序号索引
 CREATE INDEX IF NOT EXISTS idx_ai_book_id ON ai_interactions(book_id);         -- 按图书 ID 索引交互记录
 CREATE INDEX IF NOT EXISTS idx_ai_created ON ai_interactions(created_at);      -- 按创建时间索引交互记录
+
+-- ==================== 对话和消息表 (v3 新增) ====================
+
+-- 对话表:存储与书籍相关的对话会话
+CREATE TABLE IF NOT EXISTS conversations (
+  id TEXT PRIMARY KEY,                          -- 对话唯一标识(UUID)
+  book_id TEXT NOT NULL,                        -- 关联的书籍ID(UUID)
+  title TEXT NOT NULL,                          -- 对话标题（自动生成或用户自定义）
+  model TEXT NOT NULL DEFAULT 'claude-sonnet-4-5-20250929', -- 使用的模型
+  sdk_session_id TEXT,                          -- SDK 返回的 session_id（用于 resume 功能）
+  created_at INTEGER NOT NULL,                  -- 创建时间戳
+  updated_at INTEGER NOT NULL,                  -- 最后更新时间戳
+
+  FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+);
+
+-- 对话消息表:存储对话中的每条消息
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id TEXT PRIMARY KEY,                          -- 消息唯一标识(UUID)
+  conversation_id TEXT NOT NULL,                -- 关联的对话ID(UUID)
+  role TEXT NOT NULL,                           -- 角色: user/assistant/system
+  content TEXT NOT NULL,                        -- 消息内容
+  content_blocks TEXT,                          -- 扩展内容块（JSON格式，存储工具调用等信息）
+  timestamp INTEGER NOT NULL,                   -- 消息时间戳
+
+  FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+);
+
+-- 索引:对话和消息表
+CREATE INDEX IF NOT EXISTS idx_conversations_book_id ON conversations(book_id);      -- 按书籍ID索引对话
+CREATE INDEX IF NOT EXISTS idx_conversations_created ON conversations(created_at);  -- 按创建时间索引对话
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON conversation_messages(conversation_id); -- 按对话ID索引消息
+CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON conversation_messages(timestamp); -- 按时间戳索引消息
