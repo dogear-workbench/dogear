@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ChevronRight, ChevronDown, FolderOpen, MessageSquare, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, ChevronDown, FolderOpen, MessageSquare, Plus, Trash2, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Book } from '@/types';
 
@@ -13,6 +13,9 @@ export interface Conversation {
   book_id: string;
   title: string;
   model: string;
+  sdk_session_id?: string;
+  parent_conversation_id?: string;   // 分叉对话的父对话 ID（v4）
+  fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 UUID（v4）
   created_at: number;
   updated_at: number;
 }
@@ -39,6 +42,8 @@ interface BookConversationListProps {
   onDeleteConversation?: (conversationId: string) => void;
   /** 加载中状态 */
   loading?: boolean;
+  /** 切换展开状态回调（v4: 解决新增对话后收缩问题） */
+  onToggleExpand?: (bookId: string) => void;
 }
 
 interface BookTreeNodeProps {
@@ -47,6 +52,7 @@ interface BookTreeNodeProps {
   onConversationSelect?: (conversation: Conversation) => void;
   onNewConversation?: (bookId: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
+  onToggleExpand?: (bookId: string) => void;
   level?: number;
 }
 
@@ -60,11 +66,10 @@ function BookTreeNode({
   onConversationSelect,
   onNewConversation,
   onDeleteConversation,
+  onToggleExpand,
   level = 0
 }: BookTreeNodeProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  const { book, conversations } = bookNode;
+  const { book, conversations, expanded = false } = bookNode;
   const isBookSelected = expanded;
 
   // 生成对话标题（基于时间或第一条消息）
@@ -84,7 +89,9 @@ function BookTreeNode({
   };
 
   const handleBookClick = () => {
-    setExpanded(!expanded);
+    if (onToggleExpand) {
+      onToggleExpand(book.id!);
+    }
   };
 
   const handleNewConversation = (e: React.MouseEvent) => {
@@ -170,9 +177,16 @@ function BookTreeNode({
                   style={{ paddingLeft: `${level * 16 + 32}px` }}
                   onClick={() => handleConversationClick(conversation)}
                 >
-                  <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${
-                    isSelected ? 'text-blue-600' : 'text-muted-foreground'
-                  }`} />
+                  {/* v4: 分叉对话使用 GitBranch 图标 */}
+                  {conversation.parent_conversation_id ? (
+                    <GitBranch className={`w-3.5 h-3.5 flex-shrink-0 ${
+                      isSelected ? 'text-purple-600' : 'text-purple-400'
+                    }`} />
+                  ) : (
+                    <MessageSquare className={`w-3.5 h-3.5 flex-shrink-0 ${
+                      isSelected ? 'text-blue-600' : 'text-muted-foreground'
+                    }`} />
+                  )}
                   <span className={`text-sm flex-1 truncate ${
                     isSelected ? 'text-blue-700 dark:text-blue-300' : 'text-foreground'
                   }`}>
@@ -207,8 +221,11 @@ export function BookConversationList({
   onConversationSelect,
   onNewConversation,
   onDeleteConversation,
-  loading
+  loading,
+  onToggleExpand
 }: BookConversationListProps) {
+  console.log('📚 BookConversationList 渲染:', { booksLength: books.length, loading });
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -219,6 +236,7 @@ export function BookConversationList({
   }
 
   if (books.length === 0) {
+    console.log('⚠️ 书籍列表为空');
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
         <FolderOpen className="w-12 h-12 mb-4 opacity-50" />
@@ -238,6 +256,7 @@ export function BookConversationList({
           onConversationSelect={onConversationSelect}
           onNewConversation={onNewConversation}
           onDeleteConversation={onDeleteConversation}
+          onToggleExpand={onToggleExpand}
         />
       ))}
     </div>

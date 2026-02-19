@@ -5,7 +5,8 @@
 
 import { config } from 'dotenv';
 import { resolve } from 'path';
-import { app, BrowserWindow } from 'electron';
+import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
+const { app, BrowserWindow } = electron;
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -24,13 +25,13 @@ const __dirname = dirname(__filename);
 const isDev = process.env.NODE_ENV === 'development';
 
 // 主窗口实例
-let mainWindow: BrowserWindow | null = null;
+let mainWindow: BrowserWindowType | null = null;
 
 // 调试窗口实例(仅开发环境)
-let debugWindow: BrowserWindow | null = null;
+let debugWindow: BrowserWindowType | null = null;
 
 // Agent 监控窗口实例
-let agentMonitorWindow: BrowserWindow | null = null;
+let agentMonitorWindow: BrowserWindowType | null = null;
 
 /**
  * 创建 Electron 主窗口
@@ -104,7 +105,7 @@ function createDebugWindow() {
  * 获取调试窗口实例
  * 用于从其他模块发送消息到调试窗口
  */
-export function getDebugWindow(): BrowserWindow | null {
+export function getDebugWindow(): BrowserWindowType | null {
   return debugWindow;
 }
 
@@ -160,7 +161,7 @@ export function createAgentMonitorWindow() {
 /**
  * 获取 Agent 监控窗口实例
  */
-export function getAgentMonitorWindow(): BrowserWindow | null {
+export function getAgentMonitorWindow(): BrowserWindowType | null {
   return agentMonitorWindow;
 }
 

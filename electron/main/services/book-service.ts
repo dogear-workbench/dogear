@@ -2,7 +2,8 @@
  * 书籍预处理服务
  * 负责导入、预处理和管理电子书
  */
-import { dialog } from 'electron';
+import electron from 'electron';
+const { dialog } = electron;
 import fs from 'fs';
 import path from 'path';
 import { dbBooks, dbChapters, Book, Chapter, ChapterMetadata } from '../database/index.js';

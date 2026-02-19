@@ -3,7 +3,8 @@
  * 处理 Agent 任务提交、取消和状态查询相关的 IPC 请求
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
+const { ipcMain, BrowserWindow } = electron;
 import { getAgentManager } from '../agents/agent-manager.js';
 import { AgentTask, TaskType, ChatSessionPayload } from '../agents/task-types.js';
 import { sendToDebugWindow } from '../index.js';
@@ -19,6 +20,14 @@ import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
+import { fileURLToPath } from 'url';
+
+// 获取当前文件的路径 (ES Module 环境)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// 计算项目根目录（ipc -> main -> electron -> 项目根目录）
+const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 
 /**
  * 注册所有 Agent 相关的 IPC 处理器
@@ -502,6 +511,9 @@ export function registerAgentHandlers() {
     projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
     conversationId?: string;       // 对话ID（用于恢复会话）
     resume?: string;               // SDK session_id（用于 resume）
+    forkSession?: boolean;         // 是否创建分叉（v4 新增）
+    resumeSessionAt?: string;      // 截断到此 assistant UUID（v4 新增）
+    isForkNewConversation?: boolean; // true=分叉新对话, false=编辑重发（v4 新增）
   }) => {
     try {
       const sessionManager = getQueryBasedSessionManager();
@@ -536,7 +548,9 @@ export function registerAgentHandlers() {
         enableSkills: config.enableSkills ?? true,  // 默认启用 Skills
         projectRoot: config.projectRoot,
         mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-        resume: config.resume  // 传递 resume 参数
+        resume: config.resume,  // 传递 resume 参数
+        forkSession: config.forkSession,          // v4: 分叉参数
+        resumeSessionAt: config.resumeSessionAt,  // v4: 截断位置
       };
 
       // 创建会话
@@ -551,12 +565,23 @@ export function registerAgentHandlers() {
         console.log('SDK session_id:', data.session_id);
         console.log('conversationId:', config.conversationId);
         console.log('resume 参数:', config.resume);
+        console.log('forkSession:', config.forkSession);
+        console.log('isForkNewConversation:', config.isForkNewConversation);
 
         // 如果有 conversationId，保存 sdk_session_id 到数据库
         if (config.conversationId) {
-          const { dbConversations } = await import('../database/index.js');
-          dbConversations.updateSdkSessionId(config.conversationId, data.session_id);
-          console.log('✅ 已保存 sdk_session_id 到数据库');
+          if (config.forkSession && !config.isForkNewConversation) {
+            // 编辑重发模式：更新 conversation_branches 表中的 pending- 记录
+            // 不修改 conversations 表的 sdk_session_id，保护原始值
+            const { dbConversationBranches } = await import('../database/index.js');
+            dbConversationBranches.updatePendingSdkSessionId(config.conversationId, data.session_id);
+            console.log('✅ 已更新分支的 sdk_session_id（编辑重发模式）');
+          } else {
+            // 正常模式 或 分叉新对话模式：保存到 conversations 表
+            const { dbConversations } = await import('../database/index.js');
+            dbConversations.updateSdkSessionId(config.conversationId, data.session_id);
+            console.log('✅ 已保存 sdk_session_id 到数据库');
+          }
         }
 
         // 同时发送到前端
@@ -646,13 +671,27 @@ export function registerAgentHandlers() {
   /**
    * 获取 SDK 会话的存储目录
    * 格式: ~/.claude/projects/{normalized-project-path}/
+   *
+   * SDK 的路径规范化规则（根据实际观察）：
+   * - macOS/Linux: 正斜杠 / 替换为横线 -
+   *   例如: /Users/dream/dogear -> -Users-dream-dogear
+   * - Windows: 反斜杠 \ 替换为横线 -，冒号移除
+   *   例如: C:\Users\dream\dogear -> C-Users-dream-dogear
+   *
+   * 注意：保留大小写
    */
   async function getSdkSessionsDir(projectPath: string): Promise<string> {
-    // 规范化项目路径：将反斜杠替换为双横线，移除冒号
-    const normalized = projectPath
-      .replace(/\\/g, '--')  // Windows: C:\path → C--path
-      .replace(/:/g, '')      // 移除驱动器冒号: C: → C
-      .toLowerCase();
+    let normalized: string;
+
+    if (process.platform === 'win32') {
+      // Windows: 反斜杠替换为横线，移除冒号
+      normalized = projectPath
+        .replace(/\\/g, '-')    // C:\Users\dream -> C-Users-dream
+        .replace(/:/g, '');     // 移除驱动器冒号
+    } else {
+      // macOS/Linux: 正斜杠替换为横线
+      normalized = projectPath.replace(/\//g, '-');  // /Users/dream -> -Users-dream
+    }
 
     return path.join(os.homedir(), '.claude', 'projects', normalized);
   }
@@ -663,9 +702,11 @@ export function registerAgentHandlers() {
   ipcMain.handle('agent:getSdkSessionHistory', async (_, sdkSessionId: string, projectPath?: string) => {
     try {
       // 确定项目路径（用于定位会话存储目录）
-      const projectRoot = projectPath || process.cwd();
+      // SDK 的 cwd 可能是用户工作区路径（如 dist/books），也可能是项目根目录
+      // 需要在多个可能的路径中搜索 session 文件
+      const projectRoot = projectPath || PROJECT_ROOT;
       const sessionsDir = await getSdkSessionsDir(projectRoot);
-      const sessionFile = path.join(sessionsDir, `${sdkSessionId}.jsonl`);
+      let sessionFile = path.join(sessionsDir, `${sdkSessionId}.jsonl`);
 
       console.log('读取 SDK 会话历史:', {
         sdkSessionId,
@@ -674,10 +715,37 @@ export function registerAgentHandlers() {
         sessionFile
       });
 
-      // 检查文件是否存在
+      // 检查文件是否存在，如果不存在则搜索工作区目录
+      let fileFound = false;
       try {
         await fs.access(sessionFile);
+        fileFound = true;
       } catch {
+        // 文件不在项目根目录下，尝试搜索工作区路径
+        // SDK 的 cwd 设置为工作区路径时，session 文件会存在工作区对应的目录中
+        console.log('会话文件不在项目根目录，尝试搜索工作区目录...');
+        try {
+          const { dbWorkspaces } = await import('../database/index.js');
+          const defaultWorkspace = dbWorkspaces.getDefault();
+          if (defaultWorkspace?.path) {
+            const workspaceSessionsDir = await getSdkSessionsDir(defaultWorkspace.path);
+            const workspaceSessionFile = path.join(workspaceSessionsDir, `${sdkSessionId}.jsonl`);
+            console.log('尝试工作区路径:', workspaceSessionFile);
+            try {
+              await fs.access(workspaceSessionFile);
+              sessionFile = workspaceSessionFile;
+              fileFound = true;
+              console.log('✅ 在工作区目录找到会话文件');
+            } catch {
+              // 工作区目录也没有
+            }
+          }
+        } catch (e) {
+          console.warn('搜索工作区目录失败:', e);
+        }
+      }
+
+      if (!fileFound) {
         return { messages: [], error: '会话文件不存在' };
       }
 
@@ -691,6 +759,8 @@ export function registerAgentHandlers() {
         message?: any;
         timestamp?: string;
         uuid?: string;
+        isMeta?: boolean;  // 标记是否为元数据消息（如 skill 内容）
+        sourceToolUseID?: string;  // 关联的工具调用 ID
       }> = [];
 
       for (const line of lines) {
@@ -707,7 +777,9 @@ export function registerAgentHandlers() {
               type: parsed.type,
               message: parsed.message,
               timestamp: parsed.timestamp,
-              uuid: parsed.uuid
+              uuid: parsed.uuid,
+              isMeta: parsed.isMeta || false,  // 保留 isMeta 标记
+              sourceToolUseID: parsed.sourceToolUseID  // 保留关联的工具调用 ID
             });
           }
         } catch (e) {
@@ -722,6 +794,8 @@ export function registerAgentHandlers() {
         content?: any;
         timestamp?: string;
         uuid?: string;
+        isMeta?: boolean;  // 标记是否为元数据消息
+        sourceToolUseID?: string;  // 关联的工具调用 ID
       }> = [];
 
       // 当前正在合并的 assistant 消息
@@ -745,7 +819,9 @@ export function registerAgentHandlers() {
             role: msg.message.role,
             content: msg.message.content,
             timestamp: msg.timestamp,
-            uuid: msg.uuid
+            uuid: msg.uuid,
+            isMeta: msg.isMeta,  // 传递 isMeta 标记
+            sourceToolUseID: msg.sourceToolUseID  // 传递关联的工具调用 ID
           });
         }
         // 助手消息：可能与之前的 assistant 消息合并
@@ -795,7 +871,8 @@ export function registerAgentHandlers() {
    */
   ipcMain.handle('agent:getSdkSessions', async (_, projectPath?: string) => {
     try {
-      const projectRoot = projectPath || process.cwd();
+      // 使用计算好的项目根目录
+      const projectRoot = projectPath || PROJECT_ROOT;
       const sessionsDir = await getSdkSessionsDir(projectRoot);
       const indexPath = path.join(sessionsDir, 'sessions-index.json');
 

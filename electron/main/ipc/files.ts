@@ -3,7 +3,8 @@
  * 处理文件选择和书籍导入相关的 IPC 请求
  */
 
-import { ipcMain, shell } from 'electron';
+import electron from 'electron';
+const { ipcMain, shell } = electron;
 import * as bookService from '../services/book-service.js';
 
 /**

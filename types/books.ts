@@ -13,7 +13,7 @@ export interface Book {
   author?: string;                        // 作者
   file_type: string;                      // 文件类型(txt/epub/pdf)
 
-  // 预处理状态
+  // 处理状态
   processing_status: 'pending' | 'processing' | 'completed' | 'failed';  // 处理状态
   processing_progress?: number;           // 处理进度 0-100
 
@@ -26,10 +26,14 @@ export interface Book {
 
   // 原始文件信息
   original_file_path?: string;            // 原始文件路径
-  file_size?: number;                     // 文件大小
+  file_size?: number;                     // 文件大小(字节)
+
+  // v2: 工作区相关
+  workspace_id?: string;                  // 工作区ID (v2 新增)
+  file_path?: string;                     // 工作区内的文件路径 (v2 新增)
 
   // v2: AI 分析状态
-  analysis_status?: 'none' | 'analyzing' | 'analyzed' | 'failed';  // 分析状态
+  analysis_status?: 'none' | 'analyzing' | 'analyzed' | 'failed'; // 分析状态
   analyzed_at?: number;                   // 最后分析时间戳
 
   cover_image?: string;                   // 封面图片路径
@@ -72,7 +76,7 @@ export interface BookAnalysis {
   model: string;                          // 使用的模型
   contentType: 'fiction' | 'non-fiction' | 'article' | 'reference' | 'other';  // 内容类型
 
-  // 以下是 AI 根据内容类型自由添加的字段
+  // 以下是 AI 根据内容自由添加的字段
   // 没有固定结构，完全由 AI 决定
   [key: string]: any;
 }

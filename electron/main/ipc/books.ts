@@ -3,7 +3,8 @@
  * 处理数据库和书籍内容相关的 IPC 请求
  */
 
-import { ipcMain, shell } from 'electron';
+import electron from 'electron';
+const { ipcMain, shell } = electron;
 import { dbBooks } from '../database/index.js';
 import * as bookService from '../services/book-service.js';
 import * as workspaceService from '../services/workspace-service.js';

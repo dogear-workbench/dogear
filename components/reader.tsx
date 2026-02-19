@@ -300,17 +300,6 @@ export function Reader({ book }: ReaderProps) {
               }}
               placeholder="针对本章内容提问..."
               showStatusHint={false}
-              initialMessages={
-                currentChapter
-                  ? [
-                      {
-                        role: 'system' as const,
-                        content: `正在阅读《${book.title}》- ${currentChapter.title}\n\n你可以针对本章内容向我提问。`,
-                        timestamp: Date.now(),
-                      },
-                    ]
-                  : []
-              }
             />
           </aside>
         )}

@@ -3,7 +3,8 @@
  * 处理工作区选择、创建和查询相关的 IPC 请求
  */
 
-import { ipcMain, dialog } from 'electron';
+import electron from 'electron';
+const { ipcMain, dialog } = electron;
 import { dbWorkspaces, dbBooks } from '../database/index.js';
 
 /**

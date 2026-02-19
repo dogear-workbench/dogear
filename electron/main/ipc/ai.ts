@@ -3,7 +3,8 @@
  * 处理 AI 对话和文本摘要相关的 IPC 请求
  */
 
-import { ipcMain } from 'electron';
+import electron from 'electron';
+const { ipcMain } = electron;
 import * as aiService from '../services/ai-service.js';
 
 /**

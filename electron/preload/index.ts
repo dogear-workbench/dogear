@@ -228,6 +228,11 @@ const queryBasedSessionAPI = {
     };
     enableSkills?: boolean;        // 是否启用 Skill 功能
     projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
+    conversationId?: string;       // 对话ID（用于恢复会话）
+    resume?: string;               // SDK session_id（用于 resume）
+    forkSession?: boolean;         // 是否创建分叉（v4）
+    resumeSessionAt?: string;      // 截断到此 assistant UUID（v4）
+    isForkNewConversation?: boolean; // true=分叉新对话, false=编辑重发（v4）
   }) => ipcRenderer.invoke('agent:createQueryBasedSession', config),
 
   /** 向会话发送消息 */
@@ -279,6 +284,10 @@ const conversationsAPI = {
   updateTitle: (conversationId: string, title: string) =>
     ipcRenderer.invoke('conversations:updateTitle', conversationId, title),
 
+  /** 更新对话的 SDK session ID（分支切换时使用） */
+  updateSdkSessionId: (conversationId: string, sdkSessionId: string) =>
+    ipcRenderer.invoke('conversations:updateSdkSessionId', conversationId, sdkSessionId),
+
   /** 删除对话 */
   delete: (conversationId: string) => ipcRenderer.invoke('conversations:delete', conversationId),
 
@@ -293,7 +302,36 @@ const conversationsAPI = {
 
   /** 获取工作区中所有书籍及其对话 */
   getBooksWithConversations: (workspaceId?: string) =>
-    ipcRenderer.invoke('conversations:getBooksWithConversations', workspaceId)
+    ipcRenderer.invoke('conversations:getBooksWithConversations', workspaceId),
+
+  // ==================== v4 新增：分叉和分支 ====================
+
+  /** 创建分叉对话 */
+  createFork: (params: {
+    bookId: string;
+    title: string;
+    parentConversationId: string;
+    forkMessageSdkUuid: string;
+  }) => ipcRenderer.invoke('conversations:createFork', params),
+
+  /** 创建对话分支（编辑重发） */
+  createBranch: (params: {
+    conversationId: string;
+    forkPointSdkUuid: string;
+    sdkSessionId: string;
+  }) => ipcRenderer.invoke('conversations:createBranch', params),
+
+  /** 获取分支列表 */
+  getBranches: (conversationId: string, forkPointSdkUuid?: string) =>
+    ipcRenderer.invoke('conversations:getBranches', conversationId, forkPointSdkUuid),
+
+  /** 获取分支消息 */
+  getBranchMessages: (branchId: string) =>
+    ipcRenderer.invoke('conversations:getBranchMessages', branchId),
+
+  /** 添加分支消息 */
+  addBranchMessage: (message: any) =>
+    ipcRenderer.invoke('conversations:addBranchMessage', message)
 };
 
 /**

@@ -41,6 +41,29 @@ export default function Home() {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
 
+  // v4: 切换书籍展开状态（解决新增对话后收缩问题）
+  const handleToggleExpand = useCallback((bookId: string) => {
+    setBookNodes(prev => prev.map(node => {
+      if (node.book.id === bookId) {
+        return {
+          ...node,
+          expanded: !node.expanded,
+        };
+      }
+      return node;
+    }));
+  }, []);
+
+  // v4: 分叉/编辑重发相关状态
+  const [forkParams, setForkParams] = useState<{
+    sdkSessionIdToResume: string;
+    forkSession: boolean;
+    resumeSessionAt: string;
+    editedMessage?: string;
+    branchCount?: number;  // 分支总数（含原始），用于前端显示分支切换 UI
+    isForkNewConversation?: boolean; // true=分叉新对话, false/undefined=编辑重发
+  } | null>(null);
+
   // 当工作区选中后加载文件列表
   useEffect(() => {
     if (workspace) {
@@ -49,32 +72,48 @@ export default function Home() {
   }, [workspace]);
 
   // 加载书籍和对话数据
-  const loadBooksWithConversations = async () => {
+  const loadBooksWithConversations = useCallback(async () => {
     if (!workspace) return;
 
     try {
       setLoadingConversations(true);
       const result = await window.electronAPI.conversations.getBooksWithConversations(workspace.id);
 
+      console.log('📚 加载对话列表结果:', result);
+      console.log('  booksWithConversations 数量:', result.booksWithConversations?.length);
+
       if (result.error) {
         console.error('加载对话列表失败:', result.error);
         return;
       }
 
-      setBookNodes(result.booksWithConversations);
+      console.log('✅ 设置 bookNodes:', result.booksWithConversations);
+      // 合并保留 expanded 状态，避免刷新时书籍列表收缩
+      setBookNodes(prev => {
+        const expandedMap = new Map<string, boolean>();
+        for (const node of prev) {
+          if (node.book.id) {
+            expandedMap.set(node.book.id, node.expanded ?? false);
+          }
+        }
+        return result.booksWithConversations.map((item: any) => ({
+          ...item,
+          expanded: expandedMap.get(item.book.id) ?? false,
+        }));
+      });
     } catch (error) {
       console.error('加载对话列表失败:', error);
     } finally {
       setLoadingConversations(false);
     }
-  };
+  }, [workspace]);
 
   // 当工作区选中后加载对话列表
   useEffect(() => {
     if (workspace) {
       loadBooksWithConversations();
     }
-  }, [workspace]);
+  }, [workspace, loadBooksWithConversations]);
 
   const loadWorkspaceFiles = async () => {
     if (!workspace) return;
@@ -280,6 +319,8 @@ export default function Home() {
 
   // 处理对话选择
   const handleConversationSelect = useCallback(async (conversation: Conversation) => {
+    // v4: 切换对话时清除 forkParams，避免残留的 fork 模式
+    setForkParams(null);
     setSelectedConversation(conversation);
 
     // 加载对应的书籍信息
@@ -342,11 +383,124 @@ export default function Home() {
     }
   };
 
-  // 处理消息更新（当有新消息保存时）
-  const handleMessagesUpdate = useCallback(async () => {
-    // 重新加载对话列表以更新时间戳
-    await loadBooksWithConversations();
-  }, []);
+  // ==================== v4: 分叉和编辑重发 ====================
+
+  /**
+   * 处理对话分叉（创建独立新对话，纯分支）
+   * 从某条 assistant 消息处分叉，创建新对话，加载历史到分支点，等待用户输入
+   * 旧对话完整保留不变
+   */
+  const handleForkConversation = useCallback(async (params: {
+    parentConversationId: string;
+    forkMessageSdkUuid: string;
+  }) => {
+    try {
+      // 1. 获取父对话信息，拿到 sdk_session_id 和 book_id
+      const convResult = await window.electronAPI.conversations.getById(params.parentConversationId);
+      const parentConv = convResult.conversation;
+
+      if (!parentConv) {
+        console.error('父对话不存在');
+        return;
+      }
+
+      if (!parentConv.sdk_session_id) {
+        alert('该对话不支持分叉（缺少 SDK session）');
+        return;
+      }
+
+      // 2. 创建分叉对话记录（数据库中新增 conversations 记录，旧记录不动）
+      const forkResult = await window.electronAPI.conversations.createFork({
+        bookId: parentConv.book_id,
+        title: `分叉自: ${parentConv.title}`,
+        parentConversationId: params.parentConversationId,
+        forkMessageSdkUuid: params.forkMessageSdkUuid,
+      });
+
+      if (forkResult.error || !forkResult.conversationId) {
+        alert(`创建分叉对话失败: ${forkResult.error || '未知错误'}`);
+        return;
+      }
+
+      // 3. 设置 forkParams，让 AgentChat 以 fork 模式启动
+      // 纯分支：不传 editedMessage，fork 后只加载历史，等待用户输入
+      setForkParams({
+        sdkSessionIdToResume: parentConv.sdk_session_id,
+        forkSession: true,
+        resumeSessionAt: params.forkMessageSdkUuid,
+        isForkNewConversation: true, // 标记为分叉新对话（session_init 写 conversations 表）
+      });
+
+      // 4. 刷新对话列表（确保新对话出现在列表中）
+      await loadBooksWithConversations();
+
+      // 5. 展开分叉对话所在的书籍节点
+      setBookNodes(prev => prev.map(node => {
+        if (node.book.id === parentConv.book_id) {
+          return { ...node, expanded: true };
+        }
+        return node;
+      }));
+
+      // 6. 切换到新创建的分叉对话
+      const newConvResult = await window.electronAPI.conversations.getById(forkResult.conversationId);
+      if (newConvResult.conversation) {
+        setSelectedConversation(newConvResult.conversation);
+      }
+    } catch (error) {
+      console.error('分叉对话失败:', error);
+      alert(`分叉对话失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [loadBooksWithConversations]);
+
+  /**
+   * 处理编辑重发（在当前对话内原地替换）
+   * 截断消息到编辑点，使用 forkSession 重新发送，完成后显示分支切换
+   * 不创建新对话，不在左侧列表新增条目
+   */
+  const handleEditResend = useCallback(async (params: {
+    forkPointSdkUuid: string;
+    editedMessage: string;
+  }) => {
+    if (!selectedConversation?.id) return;
+
+    try {
+      // 1. 获取当前对话的 sdk_session_id
+      const convResult = await window.electronAPI.conversations.getById(selectedConversation.id);
+      const conv = convResult.conversation;
+
+      if (!conv?.sdk_session_id) {
+        alert('该对话不支持编辑重发（缺少 SDK session）');
+        return;
+      }
+
+      // 2. 创建分支记录（用于分支计数和切换）
+      await window.electronAPI.conversations.createBranch({
+        conversationId: selectedConversation.id,
+        forkPointSdkUuid: params.forkPointSdkUuid,
+        sdkSessionId: `pending-${Date.now()}`,  // 临时值，后续由 SDK session_init 事件更新
+      });
+
+      // 3. 查询该分叉点的分支数量（用于前端立即显示分支切换 UI）
+      const branchesResult = await window.electronAPI.conversations.getBranches(
+        selectedConversation.id, params.forkPointSdkUuid
+      );
+      const branchCount = (branchesResult.branches?.length || 0) + 1; // +1 算上原始版本
+
+      // 4. 设置 forkParams，让 AgentChat 在当前对话内以 fork 模式重启会话
+      // 不切换 selectedConversation，保持在当前对话
+      setForkParams({
+        sdkSessionIdToResume: conv.sdk_session_id,
+        forkSession: true,
+        resumeSessionAt: params.forkPointSdkUuid,
+        editedMessage: params.editedMessage,
+        branchCount,
+      });
+    } catch (error) {
+      console.error('编辑重发失败:', error);
+      alert(`编辑重发失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }, [selectedConversation?.id]);
 
   // 如果没有工作区，显示工作区选择界面
   if (!workspace) {
@@ -403,6 +557,7 @@ export default function Home() {
                 onNewConversation={handleNewConversation}
                 onDeleteConversation={handleDeleteConversation}
                 loading={loadingConversations}
+                onToggleExpand={handleToggleExpand}
               />
             )}
           </div>
@@ -421,9 +576,11 @@ export default function Home() {
                 selectedText: undefined,
               }}
               conversationId={selectedConversation?.id || null}
-              onMessagesUpdate={handleMessagesUpdate}
               placeholder="我可以帮你分析书籍内容、回答问题..."
               showStatusHint={false}
+              forkParams={forkParams}
+              onForkConversation={handleForkConversation}
+              onEditResend={handleEditResend}
             />
           </div>
         </section>

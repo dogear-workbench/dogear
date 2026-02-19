@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Citation } from '@/types/electron-api';
+import { ToolBlock } from './ToolBlock';
+import { Pencil, GitBranch, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
  * Agent 聊天组件 v2
@@ -22,10 +24,13 @@ interface Message {
   timestamp?: number;
   isStreaming?: boolean;  // 是否正在流式输出中
   // 统一的内容块数组，按接收顺序存储所有内容
-  // 可以是文本块、工具调用、思考等
   contentBlocks?: ContentBlock[];
-  // 内部标记：是否需要保存到数据库
-  needsSave?: boolean;
+  // SDK 消息 UUID（用于分叉定位，v4 新增）
+  sdkUuid?: string;
+  // 分支信息（v4 新增）
+  branchVersions?: number;   // 此分叉点的分支总数
+  currentBranch?: number;    // 当前显示的分支索引
+  forkPointSdkUuid?: string; // 用户消息上记录对应的分叉点 assistant UUID
 }
 
 /**
@@ -39,8 +44,10 @@ interface ContentBlock {
   toolName?: string;
   toolInput?: any;
   toolOutput?: any;
+  toolUseId?: string;  // 工具调用 ID，用于关联工具调用和结果
   status?: string;
   error?: string;
+  isError?: boolean;   // 工具执行是否出错
   timestamp: number;
   citations?: Citation[];
   // 是否为重放的历史消息（SDK resume 时使用）
@@ -69,10 +76,6 @@ interface AgentChatProps {
    */
   conversationId?: string | null;
   /**
-   * 消息更新回调（用于保存消息到数据库）
-   */
-  onMessagesUpdate?: (messages: Message[]) => void;
-  /**
    * 是否使用 SDK 的 resume 功能（默认 true）
    * - true: 使用 SDK resume，SDK 会自动重放历史消息
    * - false: 从数据库加载历史消息，不使用 resume
@@ -82,17 +85,57 @@ interface AgentChatProps {
    * 是否显示重放的历史消息（仅当 useSdkResume=true 时有效）
    */
   showReplayMessages?: boolean;
+  /**
+   * 分叉参数（v4 新增，用于 fork 模式启动会话）
+   */
+  forkParams?: {
+    sdkSessionIdToResume: string;
+    forkSession: boolean;
+    resumeSessionAt: string;
+    editedMessage?: string;
+    branchCount?: number;  // 分支总数（含原始版本），用于显示分支切换 UI
+    isForkNewConversation?: boolean; // true=分叉新对话, false/undefined=编辑重发
+  } | null;
+  /**
+   * 分叉对话回调（v4 新增，由 page.tsx 处理独立对话分叉）
+   */
+  onForkConversation?: (params: {
+    parentConversationId: string;
+    forkMessageSdkUuid: string;
+  }) => void;
+  /**
+   * 编辑重发回调（v4 新增，在当前对话内创建分支）
+   */
+  onEditResend?: (params: {
+    forkPointSdkUuid: string;
+    editedMessage: string;
+  }) => void;
 }
 
 /**
  * 消息渲染组件
  * 显示用户消息或 AI 消息（包含工具调用等）
+ * v4: 支持编辑重发和分叉按钮
  */
-function MessageItem({ message }: { message: Message }) {
+function MessageItem({
+  message,
+  messageIndex,
+  onEditResend,
+  onFork,
+  onSwitchBranch,
+}: {
+  message: Message;
+  messageIndex: number;
+  onEditResend?: (index: number, newContent: string) => void;
+  onFork?: (assistantSdkUuid: string) => void;
+  onSwitchBranch?: (sdkUuid: string, direction: 'prev' | 'next') => void;
+}) {
   const isUser = message.role === 'user';
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
 
   return (
-    <div className="w-full py-3 border-b border-gray-100 last:border-0">
+    <div className="w-full py-3 border-b border-gray-100 last:border-0 group">
       {isUser ? (
         // 用户消息
         <div className="flex items-start gap-3">
@@ -100,10 +143,77 @@ function MessageItem({ message }: { message: Message }) {
             <span className="text-white text-sm font-medium">你</span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm text-gray-900 whitespace-pre-wrap break-words">
-              {message.content}
-            </div>
-            {message.timestamp && (
+            {/* 分支切换 UI（用户消息+AI回复作为整体切换） */}
+            {message.branchVersions && message.branchVersions > 1 && (
+              <div className="flex items-center gap-1 mb-2 text-xs text-gray-500">
+                <button
+                  onClick={() => message.forkPointSdkUuid && onSwitchBranch?.(message.forkPointSdkUuid, 'prev')}
+                  disabled={(message.currentBranch ?? 0) <= 0}
+                  className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span className="font-mono">
+                  {(message.currentBranch ?? 0) + 1}/{message.branchVersions}
+                </span>
+                <button
+                  onClick={() => message.forkPointSdkUuid && onSwitchBranch?.(message.forkPointSdkUuid, 'next')}
+                  disabled={(message.currentBranch ?? 0) >= (message.branchVersions - 1)}
+                  className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            )}
+            {isEditing ? (
+              // 编辑模式
+              <div className="space-y-2">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  rows={3}
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      if (editContent.trim() && onEditResend) {
+                        onEditResend(messageIndex, editContent.trim());
+                      }
+                      setIsEditing(false);
+                    }}
+                    className="px-3 py-1 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    重新发送
+                  </button>
+                  <button
+                    onClick={() => { setIsEditing(false); setEditContent(message.content); }}
+                    className="px-3 py-1 bg-gray-200 text-gray-700 text-xs rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              // 显示模式
+              <div className="relative">
+                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words pr-8">
+                  {message.content}
+                </div>
+                {/* 编辑按钮 - hover 时显示 */}
+                {onEditResend && (
+                  <button
+                    onClick={() => { setEditContent(message.content); setIsEditing(true); }}
+                    className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-blue-600"
+                    title="编辑并重新发送"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                )}
+              </div>
+            )}
+            {!isEditing && message.timestamp && (
               <div className="text-xs text-gray-400 mt-1">
                 {new Date(message.timestamp).toLocaleTimeString()}
               </div>
@@ -125,7 +235,6 @@ function MessageItem({ message }: { message: Message }) {
                 ))}
               </div>
             ) : message.content ? (
-              // 兼容旧格式：直接显示文本内容
               <div className="text-sm text-gray-800 whitespace-pre-wrap break-words">
                 {message.content}
               </div>
@@ -143,11 +252,25 @@ function MessageItem({ message }: { message: Message }) {
               </div>
             )}
 
-            {message.timestamp && (
-              <div className="text-xs text-gray-400 mt-1">
-                {new Date(message.timestamp).toLocaleTimeString()}
-              </div>
-            )}
+            {/* 底部操作栏：时间戳 + 分叉按钮 */}
+            <div className="flex items-center gap-3 mt-1">
+              {message.timestamp && (
+                <div className="text-xs text-gray-400">
+                  {new Date(message.timestamp).toLocaleTimeString()}
+                </div>
+              )}
+              {/* 分叉按钮 - 只在非流式且有 sdkUuid 时显示 */}
+              {!message.isStreaming && message.sdkUuid && onFork && (
+                <button
+                  onClick={() => onFork(message.sdkUuid!)}
+                  className="flex items-center gap-1 text-xs text-gray-400 hover:text-purple-600 opacity-0 group-hover:opacity-100 transition-all"
+                  title="从此处创建分叉对话"
+                >
+                  <GitBranch size={12} />
+                  <span>分叉</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -162,47 +285,26 @@ function MessageItem({ message }: { message: Message }) {
 function ContentBlockItem({ block }: { block: ContentBlock }) {
   switch (block.type) {
     case 'tool_use':
+      // 使用新的 ToolBlock 组件，支持折叠和状态显示
+      // 根据是否有输出结果判断状态
+      const toolStatus = block.toolOutput !== undefined
+        ? (block.isError ? 'error' : 'success')
+        : 'running';
       return (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-amber-800 mb-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            调用工具: {block.toolName}
-          </div>
-          {block.toolInput && (
-            <pre className="text-xs bg-amber-100 rounded p-2 overflow-x-auto">
-              {JSON.stringify(block.toolInput, null, 2)}
-            </pre>
-          )}
-          {/* 显示工具调用中的引用信息 */}
-          {block.citations && block.citations.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {block.citations.map((citation, idx) => (
-                <CitationBadge key={idx} citation={citation} />
-              ))}
-            </div>
-          )}
-        </div>
+        <ToolBlock
+          toolName={block.toolName || '未知工具'}
+          toolInput={block.toolInput}
+          toolOutput={block.toolOutput}
+          toolUseId={block.toolUseId}
+          status={toolStatus}
+          isError={block.isError}
+          citations={block.citations}
+        />
       );
 
     case 'tool_result':
-      return (
-        <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-green-800 mb-1">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            工具执行完成
-          </div>
-          {block.toolOutput && typeof block.toolOutput === 'string' && (
-            <pre className="text-xs bg-green-100 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto">
-              {block.toolOutput}
-            </pre>
-          )}
-        </div>
-      );
+      // tool_result 不独立渲染，结果已整合到对应 tool_use 的 ToolBlock 中
+      return null;
 
     case 'status':
       return (
@@ -313,9 +415,11 @@ export function AgentChat({
   placeholder = '输入消息...',
   showStatusHint = true,
   conversationId,
-  onMessagesUpdate,
   useSdkResume = true,
-  showReplayMessages = true
+  showReplayMessages = true,
+  forkParams,
+  onForkConversation,
+  onEditResend: onEditResendProp,
 }: AgentChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -349,6 +453,17 @@ export function AgentChat({
         return;
       }
 
+      // fork 模式下跳过历史加载：
+      // 新对话的 sdk_session_id 尚未写入数据库，此时读取必然失败。
+      // fork 会话启动后，SDK 会通过 replay 消息流自动推送截断历史。
+      if (forkParams) {
+        console.log('🔀 Fork 模式，跳过 loadHistory，等待 SDK replay 消息流');
+        setMessages([]);
+        setHistoryLoaded(true);
+        setIsResumeMode(true);
+        return;
+      }
+
       // 使用 SDK resume 模式时，从 SDK 的会话文件中读取历史消息
       if (useSdkResume) {
         console.log('使用 SDK resume 模式，从 SDK 会话文件加载历史...');
@@ -370,68 +485,254 @@ export function AgentChat({
             }
 
             // 转换 SDK 历史消息格式到组件消息格式
-            const historyMessages: Message[] = historyResult.messages.map((msg) => {
-              const message: Message = {
-                role: msg.type === 'user' ? 'user' : 'assistant',
-                // content 可能是字符串或数组
-                content: '',
-                timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-                needsSave: false,  // 标记为不需要保存（从 SDK 加载的）
-              };
-
-              // 处理 content 数组或字符串
-              if (typeof msg.content === 'string') {
-                message.content = msg.content;
-              } else if (Array.isArray(msg.content)) {
-                // 将 SDK 的 content 数组转换为 contentBlocks
-                const blocks: ContentBlock[] = [];
-                let textContent = '';
-
+            // 第一步：收集所有 tool_result，建立 tool_use_id -> result 的映射
+            const toolResultMap = new Map<string, { content: any; isError: boolean }>();
+            for (const msg of historyResult.messages) {
+              if (msg.type === 'user' && Array.isArray(msg.content)) {
                 for (const block of msg.content) {
-                  if (typeof block === 'string') {
-                    // 纯字符串块
-                    textContent += block;
-                    blocks.push({
-                      type: 'text',
-                      content: block,
-                      timestamp: Date.now()
+                  if (block && typeof block === 'object' && block.type === 'tool_result') {
+                    const toolUseId = block.tool_use_id;
+                    // 处理 content，可能是字符串或数组
+                    let resultContent = block.content;
+                    if (Array.isArray(resultContent)) {
+                      // 如果是数组，提取文本内容
+                      resultContent = resultContent
+                        .map((item: any) => {
+                          if (typeof item === 'string') return item;
+                          if (item?.type === 'text') return item.text;
+                          return JSON.stringify(item);
+                        })
+                        .join('\n');
+                    }
+                    toolResultMap.set(toolUseId, {
+                      content: resultContent,
+                      isError: block.is_error || false
                     });
-                  } else if (block && typeof block === 'object') {
-                    if (block.type === 'text') {
-                      // 文本块
+                  }
+                }
+              }
+            }
+            console.log('工具结果映射:', toolResultMap.size, '个');
+
+            // 第二步：收集 isMeta 消息（skill 内容），建立 sourceToolUseID -> content 的映射
+            const skillContentMap = new Map<string, string>();
+            for (const msg of historyResult.messages) {
+              if (msg.isMeta && msg.sourceToolUseID && msg.type === 'user') {
+                // 提取 skill 内容
+                let skillContent = '';
+                if (Array.isArray(msg.content)) {
+                  for (const block of msg.content) {
+                    if (block?.type === 'text') {
+                      skillContent += block.text || '';
+                    }
+                  }
+                }
+                if (skillContent) {
+                  skillContentMap.set(msg.sourceToolUseID, skillContent);
+                }
+              }
+            }
+            console.log('Skill 内容映射:', skillContentMap.size, '个');
+
+            // 第三步：合并连续的 assistant 消息，跳过空的 user 消息
+            const historyMessages: Message[] = [];
+            let currentAssistantMessage: Message | null = null;
+
+            for (const msg of historyResult.messages) {
+              const isUser = msg.type === 'user';
+              const content = msg.content;
+
+              // 跳过 isMeta 消息（skill 内容已经在上面收集了）
+              if (msg.isMeta) {
+                continue;
+              }
+
+              // 检查是否为空消息或只包含 tool_result 的用户消息
+              let isEmpty = false;
+              let onlyToolResult = false;
+              if (isUser) {
+                if (!content || (Array.isArray(content) && content.length === 0)) {
+                  isEmpty = true;
+                } else if (Array.isArray(content)) {
+                  onlyToolResult = content.every((b: any) => b?.type === 'tool_result');
+                }
+              }
+
+              // 跳过空的用户消息和只包含 tool_result 的用户消息
+              if (isUser && (isEmpty || onlyToolResult)) {
+                continue;
+              }
+
+              if (isUser) {
+                // 用户消息：先保存之前的 assistant 消息
+                if (currentAssistantMessage) {
+                  historyMessages.push(currentAssistantMessage);
+                  currentAssistantMessage = null;
+                }
+
+                // 创建用户消息
+                let textContent = '';
+                if (typeof content === 'string') {
+                  textContent = content;
+                } else if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (typeof block === 'string') {
+                      textContent += block;
+                    } else if (block?.type === 'text') {
                       textContent += block.text || '';
-                      blocks.push({
-                        type: 'text',
-                        content: block.text || '',
-                        timestamp: Date.now()
-                      });
-                    } else if (block.type === 'tool_use' || block.type === 'server_tool_use') {
-                      // 工具调用块
-                      blocks.push({
-                        type: 'tool_use',
-                        id: block.id,
-                        toolName: block.name,
-                        toolInput: block.input,
-                        timestamp: Date.now()
-                      });
-                    } else if (block.type === 'image' && block.source) {
-                      // 图片块（对于用户消息）
-                      textContent += '[图片]';
-                      blocks.push({
-                        type: 'text',
-                        content: '[图片]',
-                        timestamp: Date.now()
-                      });
                     }
                   }
                 }
 
-                message.content = textContent;
-                message.contentBlocks = blocks.length > 0 ? blocks : undefined;
-              }
+                // 跳过空文本的用户消息
+                if (!textContent.trim()) {
+                  continue;
+                }
 
-              return message;
-            });
+                historyMessages.push({
+                  role: 'user',
+                  content: textContent,
+                  timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+
+                });
+              } else {
+                // assistant 消息：合并到当前的 assistant 消息中
+                const blocks: ContentBlock[] = [];
+                let textContent = '';
+
+                if (typeof content === 'string') {
+                  textContent = content;
+                  if (content) {
+                    blocks.push({
+                      type: 'text',
+                      content,
+                      timestamp: Date.now()
+                    });
+                  }
+                } else if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (typeof block === 'string') {
+                      textContent += block;
+                      blocks.push({
+                        type: 'text',
+                        content: block,
+                        timestamp: Date.now()
+                      });
+                    } else if (block && typeof block === 'object') {
+                      if (block.type === 'text') {
+                        textContent += block.text || '';
+                        if (block.text) {
+                          blocks.push({
+                            type: 'text',
+                            content: block.text || '',
+                            timestamp: Date.now()
+                          });
+                        }
+                      } else if (block.type === 'tool_use' || block.type === 'server_tool_use') {
+                        // 工具调用块 - 查找关联的结果
+                        const toolResult = toolResultMap.get(block.id);
+
+                        // 对于 Skill 工具，还要查找关联的 skill 内容
+                        let toolOutput = toolResult?.content;
+                        if (block.name === 'Skill' && skillContentMap.has(block.id)) {
+                          // 将 skill 内容作为工具输出的一部分
+                          const skillContent = skillContentMap.get(block.id);
+                          toolOutput = toolOutput
+                            ? `${toolOutput}\n\n--- Skill 内容 ---\n${skillContent}`
+                            : skillContent;
+                        }
+
+                        blocks.push({
+                          type: 'tool_use',
+                          id: block.id,
+                          toolName: block.name,
+                          toolInput: block.input,
+                          toolUseId: block.id,
+                          // 关联工具执行结果
+                          toolOutput: toolOutput,
+                          isError: toolResult?.isError || false,
+                          timestamp: Date.now()
+                        });
+                      } else if (block.type === 'image' && block.source) {
+                        textContent += '[图片]';
+                        blocks.push({
+                          type: 'text',
+                          content: '[图片]',
+                          timestamp: Date.now()
+                        });
+                      }
+                    }
+                  }
+                }
+
+                // v4: 提取 assistant 消息的 UUID
+                const assistantUuid = msg.uuid || undefined;
+
+                // 合并到当前的 assistant 消息，或创建新的
+                if (currentAssistantMessage) {
+                  // 合并内容块
+                  currentAssistantMessage.contentBlocks = [
+                    ...(currentAssistantMessage.contentBlocks || []),
+                    ...blocks
+                  ];
+                  currentAssistantMessage.content += textContent;
+                  // 更新 uuid（使用最后一个 assistant 消息的 uuid）
+                  if (assistantUuid) {
+                    currentAssistantMessage.sdkUuid = assistantUuid;
+                  }
+                } else {
+                  // 创建新的 assistant 消息
+                  currentAssistantMessage = {
+                    role: 'assistant',
+                    content: textContent,
+                    timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+  
+                    contentBlocks: blocks.length > 0 ? blocks : undefined,
+                    sdkUuid: assistantUuid,
+                  };
+                }
+              }
+            }
+
+            // 保存最后一个 assistant 消息
+            if (currentAssistantMessage) {
+              historyMessages.push(currentAssistantMessage);
+            }
+
+            // v4: 查询分支信息，恢复 branchVersions 和 currentBranch
+            if (conversationId) {
+              try {
+                const branchesResult = await window.electronAPI.conversations.getBranches(conversationId);
+                if (!branchesResult.error && branchesResult.branches.length > 0) {
+                  // 按 fork_point_sdk_uuid 分组统计分支数量
+                  const branchCountMap = new Map<string, number>();
+                  for (const branch of branchesResult.branches) {
+                    const count = branchCountMap.get(branch.fork_point_sdk_uuid) || 0;
+                    branchCountMap.set(branch.fork_point_sdk_uuid, count + 1);
+                  }
+
+                  // 为分叉点之后的用户消息设置分支信息
+                  // +1 因为原始版本本身也算一个版本
+                  for (let i = 0; i < historyMessages.length; i++) {
+                    const msg = historyMessages[i];
+                    if (msg.role === 'assistant' && msg.sdkUuid && branchCountMap.has(msg.sdkUuid)) {
+                      const versions = branchCountMap.get(msg.sdkUuid)! + 1;
+                      // 将分支信息设置到 forkPoint 后面的用户消息上
+                      // 这样切换时用户消息和AI回复一起切换
+                      if (i + 1 < historyMessages.length && historyMessages[i + 1].role === 'user') {
+                        historyMessages[i + 1].branchVersions = versions;
+                        historyMessages[i + 1].currentBranch = 0;
+                        historyMessages[i + 1].forkPointSdkUuid = msg.sdkUuid;
+                      }
+                    }
+                  }
+
+                  console.log('✅ 已恢复分支信息:', branchCountMap.size, '个分叉点');
+                }
+              } catch (error) {
+                console.warn('恢复分支信息失败（不影响正常使用）:', error);
+              }
+            }
 
             setMessages(historyMessages);
             setTimeout(() => {
@@ -473,7 +774,6 @@ export function AgentChat({
             role: msg.role as 'user' | 'assistant',
             content: msg.content,
             timestamp: msg.timestamp,
-            needsSave: false,  // 标记为不需要保存（从数据库加载的）
           };
 
           // 解析 content_blocks
@@ -504,7 +804,7 @@ export function AgentChat({
     };
 
     loadHistory();
-  }, [conversationId, useSdkResume]);
+  }, [conversationId, useSdkResume, forkParams]);
 
   // 启动会话
   useEffect(() => {
@@ -520,9 +820,19 @@ export function AgentChat({
           projectRoot = (window as any).process.cwd();
         }
 
-        // 如果有 conversationId，尝试获取 sdk_session_id 用于 resume
+        // v4: 判断是否为 fork 模式
         let sdkSessionId: string | undefined;
-        if (conversationId) {
+        let forkSessionFlag: boolean | undefined;
+        let resumeSessionAtFlag: string | undefined;
+
+        if (forkParams) {
+          // Fork 模式：使用父对话的 sdk_session_id + fork 参数
+          sdkSessionId = forkParams.sdkSessionIdToResume;
+          forkSessionFlag = true;
+          resumeSessionAtFlag = forkParams.resumeSessionAt;
+          console.log('🔀 Fork 模式启动:', { sdkSessionId, resumeSessionAt: resumeSessionAtFlag });
+        } else if (conversationId) {
+          // 正常 resume 模式
           try {
             const convResult = await window.electronAPI.conversations.getById(conversationId);
             console.log('getById 结果:', convResult);
@@ -541,10 +851,13 @@ export function AgentChat({
           model: 'claude-sonnet-4-5-20250929',
           allowedTools: ['Read', 'Glob', 'Grep'],
           context,
-          enableSkills: true,  // 启用 Skills
-          projectRoot,  // 留空让 SDK 自动查找
-          conversationId: conversationId || undefined,  // 传递 conversationId 用于保存 sdk_session_id
-          resume: sdkSessionId  // 使用 resume 恢复会话
+          enableSkills: true,
+          projectRoot,
+          conversationId: conversationId || undefined,
+          resume: sdkSessionId,
+          forkSession: forkSessionFlag,           // v4: 分叉参数
+          resumeSessionAt: resumeSessionAtFlag,   // v4: 截断位置
+          isForkNewConversation: forkParams?.isForkNewConversation, // v4: 区分分叉新对话/编辑重发
         });
 
         console.log('createSession 响应:', response);
@@ -562,6 +875,48 @@ export function AgentChat({
           sdkMode: useSdkResume ? 'SDK模式' : '数据库模式'
         });
         setIsSessionReady(true);
+
+        // v4: 编辑重发模式下，如果有 editedMessage，会话 ready 后自动发送
+        // 纯分叉新对话（isForkNewConversation=true）不自动发送，只加载历史等待用户输入
+        if (forkParams?.editedMessage && !forkParams?.isForkNewConversation && newSessionId) {
+          console.log('🔀 编辑重发模式: 自动发送编辑后的消息:', forkParams.editedMessage);
+          // 稍微延迟确保会话已完全初始化
+          setTimeout(async () => {
+            try {
+              // 先添加用户消息到 UI（附带分支信息，立即显示切换 UI）
+              const branchCount = forkParams.branchCount || 2; // 至少 原始+当前分支=2
+              setMessages(prev => [
+                ...prev,
+                {
+                  role: 'user',
+                  content: forkParams.editedMessage!,
+                  timestamp: Date.now(),
+                  branchVersions: branchCount,
+                  currentBranch: branchCount - 1,  // 当前是最新的分支
+                  forkPointSdkUuid: forkParams.resumeSessionAt,
+                },
+                {
+                  role: 'assistant',
+                  content: '',
+                  timestamp: Date.now(),
+                  isStreaming: true,
+                  contentBlocks: [],
+                }
+              ]);
+              setIsLoading(true);
+              await window.electronAPI.queryBasedSession.sendMessage(
+                newSessionId,
+                forkParams.editedMessage!
+              );
+            } catch (error) {
+              console.error('编辑重发模式自动发送失败:', error);
+            }
+          }, 500);
+        } else if (forkParams?.isForkNewConversation) {
+          // 纯分叉新对话：SDK fork 后会话文件中已包含截断历史，
+          // 历史消息会通过上面的 loadHistory useEffect 自动加载展示
+          console.log('🔀 纯分叉模式: 等待历史加载完成，用户自行输入新消息');
+        }
       } catch (error) {
         console.error('❌ 启动会话异常:', error);
       }
@@ -576,7 +931,7 @@ export function AgentChat({
         window.electronAPI.queryBasedSession.closeSession(sessionId);
       }
     };
-  }, [conversationId]); // 当 conversationId 变化时重启会话
+  }, [conversationId, forkParams]); // 当 conversationId 或 forkParams 变化时重启会话
 
   // 监听会话消息
   useEffect(() => {
@@ -619,13 +974,23 @@ export function AgentChat({
         console.log('  最后一条角色:', lastIdx >= 0 ? updated[lastIdx].role : 'N/A');
         console.log('  最后一条流式状态:', lastIdx >= 0 ? updated[lastIdx].isStreaming : 'N/A');
 
+        // v4: 处理 assistant_uuid 消息（将 uuid 关联到当前 assistant 消息）
+        if (extendedMsg.type === 'assistant_uuid') {
+          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              sdkUuid: extendedMsg.uuid,
+            };
+          }
+          return updated;
+        }
+
         // 处理用户消息
         if (extendedMsg.type === 'user') {
           const newUserMessage: Message = {
             role: 'user',
             content: extendedMsg.content || '',
             timestamp: extendedMsg.timestamp || Date.now(),
-            needsSave: !extendedMsg.isReplay,  // 重放消息不需要保存到数据库
           };
           updated.push(newUserMessage);
           setHistoryLoaded(true);  // 收到消息后标记历史已加载
@@ -637,6 +1002,26 @@ export function AgentChat({
           console.log('  → 更新流式消息，追加内容块');
           const lastMsg = updated[lastIdx];
           const blocks = lastMsg.contentBlocks || [];
+
+          // 问题1修复：tool_result 应该更新之前的 tool_use 块，而不是创建新块
+          if (extendedMsg.type === 'tool_result' && extendedMsg.toolUseId) {
+            // 查找对应的 tool_use 块
+            const toolUseIdx = blocks.findIndex(b => b.toolUseId === extendedMsg.toolUseId);
+            if (toolUseIdx >= 0) {
+              // 更新找到的 tool_use 块
+              const updatedBlocks = [...blocks];
+              updatedBlocks[toolUseIdx] = {
+                ...updatedBlocks[toolUseIdx],
+                toolOutput: extendedMsg.toolOutput,
+                isError: extendedMsg.isError,
+              };
+              updated[lastIdx] = {
+                ...lastMsg,
+                contentBlocks: updatedBlocks,
+              };
+              return updated;
+            }
+          }
 
           // 对于文本类型，如果最后一个块也是 text，合并它们而不是创建新块
           if (extendedMsg.type === 'text' && blocks.length > 0 && blocks[blocks.length - 1].type === 'text') {
@@ -650,9 +1035,40 @@ export function AgentChat({
               ...lastMsg,
               contentBlocks: [...blocks.slice(0, -1), mergedBlock],
               content: (lastMsg.content || '') + (extendedMsg.content || ''),
-              isStreaming: extendedMsg.type !== 'result',
+              isStreaming: true, // 文本类型继续保持流式状态
             };
           } else {
+            // tool_result 不作为独立块添加，结果已通过上面的逻辑整合到 tool_use 块中
+            if (extendedMsg.type === 'tool_result') {
+              console.log('⚠️ tool_result 未找到对应 tool_use，忽略:', extendedMsg.toolUseId);
+              return updated;
+            }
+
+            // tool_use 类型：查找同 toolUseId 的已有块并更新（统一逻辑，和历史加载一致）
+            if (extendedMsg.type === 'tool_use' && extendedMsg.toolUseId) {
+              const existingIdx = blocks.findIndex(
+                b => b.toolUseId === extendedMsg.toolUseId
+              );
+              if (existingIdx >= 0) {
+                // 更新已有块：只在有新 input 时覆盖（避免 progress 事件的 null 覆盖已有 input）
+                const existingBlock = blocks[existingIdx];
+                const updatedBlocks = [...blocks];
+                updatedBlocks[existingIdx] = {
+                  ...existingBlock,
+                  type: 'tool_use',
+                  toolName: extendedMsg.toolName || existingBlock.toolName,
+                  toolInput: extendedMsg.toolInput ?? existingBlock.toolInput,
+                  timestamp: extendedMsg.timestamp || Date.now(),
+                };
+                updated[lastIdx] = {
+                  ...lastMsg,
+                  contentBlocks: updatedBlocks,
+                  isStreaming: true,
+                };
+                return updated;
+              }
+            }
+
             // 创建新块
             const newBlock: ContentBlock = {
               type: extendedMsg.type,
@@ -660,8 +1076,10 @@ export function AgentChat({
               toolName: extendedMsg.toolName,
               toolInput: extendedMsg.toolInput,
               toolOutput: extendedMsg.toolOutput,
+              toolUseId: extendedMsg.toolUseId,
               status: extendedMsg.status,
               error: extendedMsg.error,
+              isError: extendedMsg.isError,
               timestamp: extendedMsg.timestamp || Date.now(),
               citations: extendedMsg.citations,
               isReplay: extendedMsg.isReplay,
@@ -678,6 +1096,11 @@ export function AgentChat({
             };
           }
         } else {
+          // tool_result 不应创建新的助手消息
+          if (extendedMsg.type === 'tool_result') {
+            return updated;
+          }
+
           // 创建新的助手消息
           console.log('  → 创建新的助手消息');
           const newBlock: ContentBlock = {
@@ -686,8 +1109,10 @@ export function AgentChat({
             toolName: extendedMsg.toolName,
             toolInput: extendedMsg.toolInput,
             toolOutput: extendedMsg.toolOutput,
+            toolUseId: extendedMsg.toolUseId,
             status: extendedMsg.status,
             error: extendedMsg.error,
+            isError: extendedMsg.isError,
             timestamp: extendedMsg.timestamp || Date.now(),
             citations: extendedMsg.citations,
             isReplay: extendedMsg.isReplay,
@@ -699,7 +1124,6 @@ export function AgentChat({
             timestamp: Date.now(),
             isStreaming: extendedMsg.type !== 'result',
             contentBlocks: [newBlock],
-            needsSave: !extendedMsg.isReplay,  // 重放消息不需要保存
           };
           updated.push(newMessage);
         }
@@ -750,49 +1174,305 @@ export function AgentChat({
     };
   }, [sessionId]);
 
-  // 监听消息变化，保存完整的助手消息到数据库
-  useEffect(() => {
-    if (!conversationId || messages.length === 0) return;
+  // ==================== v4: 编辑重发和分叉处理 ====================
 
-    const lastMessage = messages[messages.length - 1];
+  /**
+   * 编辑重发处理
+   * 截断消息到编辑点的 assistant 消息，然后在当前对话内重新发送
+   */
+  const handleEditResend = useCallback((messageIndex: number, newContent: string) => {
+    if (!conversationId) return;
 
-    // 只保存非流式状态的消息（已完成），且是从数据库加载之后产生的消息
-    // 通过检查是否在加载历史消息完成之后产生的
-    if (lastMessage.role === 'assistant' && !lastMessage.isStreaming && historyLoaded) {
-      // 只保存有 needsSave 标志的消息（新消息）
-      // 从数据库加载的消息没有 needsSave 标志，不会被保存
-      if ('needsSave' in lastMessage && !lastMessage.needsSave) {
-        // 从数据库加载的消息，不需要保存
-        return;
+    // 找到该用户消息前面最近的 assistant 消息的 sdkUuid 作为截断点
+    let targetAssistantUuid: string | undefined;
+    let targetAssistantIdx = -1;
+    for (let i = messageIndex - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && messages[i].sdkUuid) {
+        targetAssistantUuid = messages[i].sdkUuid;
+        targetAssistantIdx = i;
+        break;
+      }
+    }
+
+    if (!targetAssistantUuid || targetAssistantIdx < 0) {
+      console.warn('编辑的是第一条消息，无法使用 resumeSessionAt，暂不支持');
+      return;
+    }
+
+    // 截断消息：保留到 forkPoint assistant（含）
+    const truncatedMessages = messages.slice(0, targetAssistantIdx + 1);
+    setMessages(truncatedMessages);
+
+    // 通过 onEditResendProp 回调让父组件处理（设置 forkParams + 创建分支记录）
+    if (onEditResendProp) {
+      onEditResendProp({
+        forkPointSdkUuid: targetAssistantUuid,
+        editedMessage: newContent,
+      });
+    }
+  }, [conversationId, messages, onEditResendProp]);
+
+  /**
+   * 从某条 assistant 消息处分叉新对话
+   */
+  const handleFork = useCallback((assistantSdkUuid: string) => {
+    if (!conversationId || !onForkConversation) return;
+    onForkConversation({
+      parentConversationId: conversationId,
+      forkMessageSdkUuid: assistantSdkUuid,
+    });
+  }, [conversationId, onForkConversation]);
+
+  /**
+   * 从 SDK JSONL 历史中解析 forkPoint 之后的消息
+   * 复用的辅助函数，避免重复代码
+   */
+  const parseMessagesAfterForkPoint = (rawMessages: any[], forkPointUuid: string): Message[] => {
+    let foundForkPoint = false;
+    const afterMessages: Message[] = [];
+    let currentAssistantMsg: Message | null = null;
+
+    for (const msg of rawMessages) {
+      if (msg.isMeta) continue;
+
+      // 找到分叉点
+      if (!foundForkPoint) {
+        if (msg.type === 'assistant' && msg.uuid === forkPointUuid) {
+          foundForkPoint = true;
+        }
+        continue;
       }
 
-      // 保存助手消息到数据库
-      const saveMessage = async () => {
-        try {
-          await window.electronAPI.conversations.addMessage({
-            conversation_id: conversationId,
-            role: 'assistant',
-            content: lastMessage.content,
-            content_blocks: lastMessage.contentBlocks
-              ? JSON.stringify(lastMessage.contentBlocks)
-              : undefined,
-            timestamp: lastMessage.timestamp || Date.now()
-          });
-
-          // 通知父组件消息已更新
-          if (onMessagesUpdate) {
-            onMessagesUpdate(messages);
-          }
-        } catch (error) {
-          console.error('保存助手消息失败:', error);
+      // 分叉点之后的消息
+      const isUser = msg.type === 'user';
+      if (isUser) {
+        // 跳过只包含 tool_result 的用户消息
+        if (Array.isArray(msg.content)) {
+          const onlyToolResult = msg.content.every((b: any) => b?.type === 'tool_result');
+          if (onlyToolResult) continue;
         }
-      };
+        if (!msg.content || (Array.isArray(msg.content) && msg.content.length === 0)) continue;
 
-      // 使用防抖，避免频繁保存
-      const timeoutId = setTimeout(saveMessage, 500);
-      return () => clearTimeout(timeoutId);
+        if (currentAssistantMsg) {
+          afterMessages.push(currentAssistantMsg);
+          currentAssistantMsg = null;
+        }
+
+        let textContent = '';
+        if (typeof msg.content === 'string') {
+          textContent = msg.content;
+        } else if (Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (typeof block === 'string') textContent += block;
+            else if (block?.type === 'text') textContent += block.text || '';
+          }
+        }
+        if (!textContent.trim()) continue;
+
+        afterMessages.push({
+          role: 'user',
+          content: textContent,
+          timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+        });
+      } else {
+        // assistant 消息
+        let textContent = '';
+        const blocks: ContentBlock[] = [];
+        if (Array.isArray(msg.content)) {
+          for (const block of msg.content) {
+            if (typeof block === 'string') {
+              textContent += block;
+              blocks.push({ type: 'text', content: block, timestamp: Date.now() });
+            } else if (block?.type === 'text') {
+              textContent += block.text || '';
+              if (block.text) blocks.push({ type: 'text', content: block.text, timestamp: Date.now() });
+            } else if (block?.type === 'tool_use' || block?.type === 'server_tool_use') {
+              blocks.push({
+                type: 'tool_use',
+                id: block.id,
+                toolName: block.name,
+                toolInput: block.input,
+                toolUseId: block.id,
+                timestamp: Date.now(),
+              });
+            }
+          }
+        } else if (typeof msg.content === 'string') {
+          textContent = msg.content;
+          if (msg.content) blocks.push({ type: 'text', content: msg.content, timestamp: Date.now() });
+        }
+
+        if (currentAssistantMsg) {
+          currentAssistantMsg.contentBlocks = [...(currentAssistantMsg.contentBlocks || []), ...blocks];
+          currentAssistantMsg.content += textContent;
+          if (msg.uuid) currentAssistantMsg.sdkUuid = msg.uuid;
+        } else {
+          currentAssistantMsg = {
+            role: 'assistant',
+            content: textContent,
+            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+            contentBlocks: blocks.length > 0 ? blocks : undefined,
+            sdkUuid: msg.uuid || undefined,
+          };
+        }
+      }
     }
-  }, [messages, conversationId, onMessagesUpdate, historyLoaded]);
+    if (currentAssistantMsg) afterMessages.push(currentAssistantMsg);
+    return afterMessages;
+  };
+
+  /**
+   * 重建会话（切换分支后需要以新的 sdk_session_id resume）
+   * 关闭旧会话，创建新会话
+   */
+  const recreateSession = useCallback(async (targetSdkSessionId: string) => {
+    if (!conversationId) return;
+
+    // 关闭旧会话
+    if (sessionId) {
+      try {
+        await window.electronAPI.queryBasedSession.closeSession(sessionId);
+      } catch (e) {
+        console.warn('关闭旧会话失败（可忽略）:', e);
+      }
+    }
+
+    // 创建新会话，resume 选中的分支
+    let projectRoot = '';
+    if (typeof window !== 'undefined' && (window as any).process?.cwd) {
+      projectRoot = (window as any).process.cwd();
+    }
+    const response = await window.electronAPI.queryBasedSession.createSession({
+      model: 'claude-sonnet-4-5-20250929',
+      allowedTools: ['Read', 'Glob', 'Grep'],
+      context,
+      enableSkills: true,
+      projectRoot,
+      conversationId: conversationId || undefined,
+      resume: targetSdkSessionId,
+    });
+
+    if (!response.error && response.sessionId) {
+      setSessionId(response.sessionId);
+      setIsSessionReady(true);
+      console.log('✅ 分支切换后会话已重建:', response.sessionId);
+    }
+  }, [conversationId, sessionId, context]);
+
+  /**
+   * 获取原始对话的 sdk_session_id（不含分支）
+   * 对话的 sdk_session_id 保持不变（始终为原始值），分支 session 存在 branches 表中
+   */
+  const getOriginalSdkSessionId = useCallback(async (): Promise<string | null> => {
+    if (!conversationId) return null;
+    const convResult = await window.electronAPI.conversations.getById(conversationId);
+    return convResult.conversation?.sdk_session_id || null;
+  }, [conversationId]);
+
+  /**
+   * 分支切换
+   * 在原始版本和编辑分支之间切换
+   * sdkUuid 是分叉点 assistant 消息的 UUID（来自用户消息上的 forkPointSdkUuid）
+   *
+   * 设计原则：conversation.sdk_session_id 始终保持为原始值，不随分支切换而修改。
+   * 分支的 session ID 存储在 conversation_branches 表中。
+   * 切换分支时，关闭旧会话并创建新会话 resume 目标分支的 session。
+   */
+  const handleSwitchBranch = useCallback(async (sdkUuid: string, direction: 'prev' | 'next') => {
+    if (!conversationId) return;
+
+    // 找到分叉点 assistant 消息
+    const forkPointIdx = messages.findIndex(
+      m => m.role === 'assistant' && m.sdkUuid === sdkUuid
+    );
+    if (forkPointIdx < 0) return;
+
+    // 分支信息在 forkPoint 后面的用户消息上
+    const userMsgIdx = forkPointIdx + 1;
+    if (userMsgIdx >= messages.length || messages[userMsgIdx].role !== 'user') return;
+
+    const userMsg = messages[userMsgIdx];
+    const currentBranch = userMsg.currentBranch ?? 0;
+    const totalBranches = userMsg.branchVersions ?? 1;
+
+    const targetBranch = direction === 'prev'
+      ? Math.max(0, currentBranch - 1)
+      : Math.min(totalBranches - 1, currentBranch + 1);
+
+    if (targetBranch === currentBranch) return;
+
+    try {
+      // 保留分叉点及其之前的消息
+      const baseMessages = messages.slice(0, forkPointIdx + 1);
+
+      if (targetBranch === 0) {
+        // 切换回原始版本：conversation.sdk_session_id 就是原始 session（始终不变）
+        const originalSdkSessionId = await getOriginalSdkSessionId();
+        if (!originalSdkSessionId) return;
+
+        const historyResult = await window.electronAPI.queryBasedSession.getSdkSessionHistory(originalSdkSessionId);
+        if (historyResult.error) return;
+
+        const afterMessages = parseMessagesAfterForkPoint(historyResult.messages, sdkUuid);
+
+        if (afterMessages.length > 0 && afterMessages[0].role === 'user') {
+          afterMessages[0].branchVersions = totalBranches;
+          afterMessages[0].currentBranch = 0;
+          afterMessages[0].forkPointSdkUuid = sdkUuid;
+        }
+
+        setMessages([...baseMessages, ...afterMessages]);
+        // 重建会话 resume 原始 session
+        await recreateSession(originalSdkSessionId);
+      } else {
+        // 切换到某个分支版本
+        const branchesResult = await window.electronAPI.conversations.getBranches(
+          conversationId, sdkUuid
+        );
+
+        if (branchesResult.error || branchesResult.branches.length === 0) {
+          console.warn('未找到分支数据');
+          return;
+        }
+
+        // targetBranch 是 1-based（0=原始），branch_index 从 0 开始
+        const targetBranchRecord = branchesResult.branches.find(
+          b => b.branch_index === targetBranch - 1
+        );
+
+        if (!targetBranchRecord) {
+          console.warn('未找到目标分支:', targetBranch - 1);
+          return;
+        }
+
+        const branchSdkSessionId = targetBranchRecord.sdk_session_id;
+        if (branchSdkSessionId.startsWith('pending-')) {
+          console.warn('分支 SDK session ID 尚未更新，无法加载');
+          return;
+        }
+
+        const historyResult = await window.electronAPI.queryBasedSession.getSdkSessionHistory(branchSdkSessionId);
+        if (historyResult.error) {
+          console.warn('加载分支 SDK 历史失败:', historyResult.error);
+          return;
+        }
+
+        const afterMessages = parseMessagesAfterForkPoint(historyResult.messages, sdkUuid);
+
+        if (afterMessages.length > 0 && afterMessages[0].role === 'user') {
+          afterMessages[0].branchVersions = totalBranches;
+          afterMessages[0].currentBranch = targetBranch;
+          afterMessages[0].forkPointSdkUuid = sdkUuid;
+        }
+
+        setMessages([...baseMessages, ...afterMessages]);
+        // 重建会话 resume 选中分支的 session
+        await recreateSession(branchSdkSessionId);
+      }
+    } catch (error) {
+      console.error('切换分支失败:', error);
+    }
+  }, [conversationId, messages, recreateSession, getOriginalSdkSessionId]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading || !sessionId || !isSessionReady) return;
@@ -832,20 +1512,6 @@ export function AgentChat({
         contentBlocks: []
       }
     ]);
-
-    // 如果有 conversationId，保存用户消息到数据库
-    if (conversationId) {
-      try {
-        await window.electronAPI.conversations.addMessage({
-          conversation_id: conversationId,
-          role: 'user',
-          content: userMessage,
-          timestamp: Date.now()
-        });
-      } catch (error) {
-        console.error('保存用户消息失败:', error);
-      }
-    }
 
     setIsLoading(true);
 
@@ -888,9 +1554,20 @@ export function AgentChat({
           </div>
         )}
 
-        {messages.map((message, index) => (
-          <MessageItem key={index} message={message} />
-        ))}
+        {(() => {
+          // 仅最后一条用户消息可编辑重发，历史消息只读
+          const lastUserIdx = messages.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
+          return messages.map((message, index) => (
+            <MessageItem
+              key={index}
+              message={message}
+              messageIndex={index}
+              onEditResend={index === lastUserIdx ? handleEditResend : undefined}
+              onFork={handleFork}
+              onSwitchBranch={handleSwitchBranch}
+            />
+          ));
+        })()}
 
         <div ref={messagesEndRef} />
       </div>

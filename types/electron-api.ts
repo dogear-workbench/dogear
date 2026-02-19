@@ -201,7 +201,7 @@ export interface AgentAPI {
  * 用于显示完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid';
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -209,6 +209,8 @@ export interface ExtendedSessionMessage {
   toolUseId?: string;
   status?: string;
   error?: string;
+  // 工具执行是否出错（用于 tool_result 类型）
+  isError?: boolean;
   timestamp: number;
   // 引用信息（用于书籍问答）
   citations?: Citation[];
@@ -271,6 +273,9 @@ export interface QueryBasedSessionAPI {
     projectRoot?: string;          // 项目根目录（用于查找 .claude/skills/）
     conversationId?: string;       // 对话ID（用于保存 sdk_session_id）
     resume?: string;               // SDK session_id（用于 resume）
+    forkSession?: boolean;         // 是否创建分叉（v4）
+    resumeSessionAt?: string;      // 截断到此 assistant UUID（v4）
+    isForkNewConversation?: boolean; // true=分叉新对话, false=编辑重发（v4）
   }) => Promise<{ sessionId?: string; error?: string }>;
   /** 向会话发送消息 */
   sendMessage: (sessionId: string, content: string) => Promise<{ success?: boolean; error?: string }>;
@@ -288,6 +293,8 @@ export interface QueryBasedSessionAPI {
       content?: any;
       timestamp?: string;
       uuid?: string;
+      isMeta?: boolean;  // 标记是否为元数据消息（如 skill 内容）
+      sourceToolUseID?: string;  // 关联的工具调用 ID
     }>;
     error?: string;
   }>;
@@ -314,20 +321,49 @@ export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   content_blocks?: string;
+  sdk_uuid?: string;             // SDK 消息 UUID（v4 新增）
   timestamp: number;
 }
 
 /**
- * 对话接口 (v3)
+ * 对话接口 (v3, v4 扩展)
  */
 export interface Conversation {
   id: string;
   book_id: string;
   title: string;
   model: string;
-  sdk_session_id?: string;       // SDK 返回的 session_id（用于 resume 功能）
+  sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
+  parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
+  fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
   created_at: number;
   updated_at: number;
+}
+
+/**
+ * 对话分支接口 (v4 新增)
+ */
+export interface ConversationBranch {
+  id: string;
+  conversation_id: string;
+  fork_point_sdk_uuid: string;
+  branch_index: number;
+  sdk_session_id: string;
+  created_at: number;
+}
+
+/**
+ * 分支消息接口 (v4 新增)
+ */
+export interface BranchMessage {
+  id: string;
+  branch_id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  content_blocks?: string;
+  sdk_uuid?: string;
+  timestamp: number;
 }
 
 /**
@@ -342,6 +378,8 @@ export interface ConversationsAPI {
   create: (bookId: string, title?: string) => Promise<{ conversationId: string | null; error?: string }>;
   /** 更新对话标题 */
   updateTitle: (conversationId: string, title: string) => Promise<{ success: boolean; error?: string }>;
+  /** 更新对话的 SDK session ID（分支切换时使用） */
+  updateSdkSessionId: (conversationId: string, sdkSessionId: string) => Promise<{ success: boolean; error?: string }>;
   /** 删除对话 */
   delete: (conversationId: string) => Promise<{ success: boolean; error?: string }>;
   /** 获取对话的所有消息 */
@@ -356,6 +394,41 @@ export interface ConversationsAPI {
       book: import('./books').Book;
       conversations: Conversation[];
     }>;
+    error?: string;
+  }>;
+
+  // ==================== v4 新增：分叉和分支 ====================
+
+  /** 创建分叉对话 */
+  createFork: (params: {
+    bookId: string;
+    title: string;
+    parentConversationId: string;
+    forkMessageSdkUuid: string;
+  }) => Promise<{ conversationId: string | null; error?: string }>;
+
+  /** 创建对话分支（编辑重发） */
+  createBranch: (params: {
+    conversationId: string;
+    forkPointSdkUuid: string;
+    sdkSessionId: string;
+  }) => Promise<{ branchId: string | null; branchIndex: number; error?: string }>;
+
+  /** 获取分支列表 */
+  getBranches: (conversationId: string, forkPointSdkUuid?: string) => Promise<{
+    branches: ConversationBranch[];
+    error?: string;
+  }>;
+
+  /** 获取分支消息 */
+  getBranchMessages: (branchId: string) => Promise<{
+    messages: BranchMessage[];
+    error?: string;
+  }>;
+
+  /** 添加分支消息 */
+  addBranchMessage: (message: Omit<BranchMessage, 'id'>) => Promise<{
+    messageId: string | null;
     error?: string;
   }>;
 }

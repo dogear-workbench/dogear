@@ -112,6 +112,8 @@ export interface Conversation {
   title: string;                     // 对话标题
   model: string;                     // 使用的模型
   sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
+  parent_conversation_id?: string;   // 父对话ID（分叉对话时使用）
+  fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 SDK UUID
   created_at: number;                // 创建时间戳
   updated_at: number;                // 最后更新时间戳
 }
@@ -126,7 +128,36 @@ export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system';  // 角色
   content: string;                   // 消息内容
   content_blocks?: string;           // 扩展内容块（JSON格式）
+  sdk_uuid?: string;                 // SDK 消息 UUID（用于分叉定位）
   timestamp: number;                 // 消息时间戳
+}
+
+/**
+ * 对话分支接口 (v4 新增)
+ * 用于编辑重发时的分支版本管理
+ */
+export interface ConversationBranch {
+  id: string;                        // 分支唯一标识(UUID)
+  conversation_id: string;           // 所属对话ID
+  fork_point_sdk_uuid: string;       // 分叉点的 assistant 消息 SDK UUID
+  branch_index: number;              // 分支序号 (0=原始)
+  sdk_session_id: string;            // 此分支的 SDK session ID
+  created_at: number;                // 创建时间戳
+}
+
+/**
+ * 分支消息接口 (v4 新增)
+ * 存储分支中的消息
+ */
+export interface BranchMessage {
+  id: string;                        // 消息唯一标识(UUID)
+  branch_id: string;                 // 所属分支ID
+  conversation_id: string;           // 所属对话ID（冗余，方便查询）
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  content_blocks?: string;
+  sdk_uuid?: string;
+  timestamp: number;
 }
 
 // ==================== 数据库初始化 ====================
@@ -166,6 +197,46 @@ export async function initDatabase(dbPath?: string): Promise<BetterSqlite3.Datab
 
   // 执行 schema,创建表和索引
   db.exec(schema);
+
+  // ==================== v4 迁移：分叉和分支支持 ====================
+  // 给 conversations 表添加分叉字段
+  try { db.exec(`ALTER TABLE conversations ADD COLUMN parent_conversation_id TEXT`); } catch { /* 列已存在 */ }
+  try { db.exec(`ALTER TABLE conversations ADD COLUMN fork_message_sdk_uuid TEXT`); } catch { /* 列已存在 */ }
+  // 给 conversation_messages 表添加 sdk_uuid 字段
+  try { db.exec(`ALTER TABLE conversation_messages ADD COLUMN sdk_uuid TEXT`); } catch { /* 列已存在 */ }
+
+  // 创建分支表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS conversation_branches (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      fork_point_sdk_uuid TEXT NOT NULL,
+      branch_index INTEGER NOT NULL DEFAULT 0,
+      sdk_session_id TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_branches_conversation_id ON conversation_branches(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_branches_fork_point ON conversation_branches(conversation_id, fork_point_sdk_uuid);
+  `);
+
+  // 创建分支消息表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS branch_messages (
+      id TEXT PRIMARY KEY,
+      branch_id TEXT NOT NULL,
+      conversation_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      content_blocks TEXT,
+      sdk_uuid TEXT,
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (branch_id) REFERENCES conversation_branches(id) ON DELETE CASCADE,
+      FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_branch_messages_branch_id ON branch_messages(branch_id);
+    CREATE INDEX IF NOT EXISTS idx_branch_messages_timestamp ON branch_messages(timestamp);
+  `);
 
   return db;
 }
@@ -555,6 +626,32 @@ export const dbConversations = {
   delete: (id: string): void => {
     const stmt = getDb().prepare('DELETE FROM conversations WHERE id = ?');
     stmt.run(id);
+  },
+
+  /**
+   * 创建分叉对话（v4 新增）
+   * @param bookId - 书籍ID
+   * @param title - 对话标题（含来源标注）
+   * @param parentConversationId - 父对话ID
+   * @param forkMessageSdkUuid - 分叉点的 assistant 消息 SDK UUID
+   * @param model - 模型名称
+   * @returns 新对话 ID
+   */
+  createFork: (
+    bookId: string,
+    title: string,
+    parentConversationId: string,
+    forkMessageSdkUuid: string,
+    model: string = 'claude-sonnet-4-5-20250929'
+  ): string => {
+    const newId = uuidv4();
+    const now = Date.now();
+    const stmt = getDb().prepare(`
+      INSERT INTO conversations (id, book_id, title, model, parent_conversation_id, fork_message_sdk_uuid, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(newId, bookId, title, model, parentConversationId, forkMessageSdkUuid, now, now);
+    return newId;
   }
 };
 
@@ -584,8 +681,8 @@ export const dbConversationMessages = {
     const newId = uuidv4();
 
     const stmt = getDb().prepare(`
-      INSERT INTO conversation_messages (id, conversation_id, role, content, content_blocks, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO conversation_messages (id, conversation_id, role, content, content_blocks, sdk_uuid, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
     stmt.run(
       newId,
@@ -593,6 +690,7 @@ export const dbConversationMessages = {
       message.role,
       message.content,
       message.content_blocks || null,
+      message.sdk_uuid || null,
       message.timestamp
     );
 
@@ -608,8 +706,8 @@ export const dbConversationMessages = {
    */
   bulkAdd: (messages: Omit<ConversationMessage, 'id'>[]): void => {
     const insert = getDb().prepare(`
-      INSERT INTO conversation_messages (id, conversation_id, role, content, content_blocks, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO conversation_messages (id, conversation_id, role, content, content_blocks, sdk_uuid, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
 
     const transaction = getDb().transaction((msgs: Omit<ConversationMessage, 'id'>[]) => {
@@ -621,6 +719,7 @@ export const dbConversationMessages = {
           message.role,
           message.content,
           message.content_blocks || null,
+          message.sdk_uuid || null,
           message.timestamp
         );
       }
@@ -640,5 +739,135 @@ export const dbConversationMessages = {
   deleteByConversationId: (conversationId: string): void => {
     const stmt = getDb().prepare('DELETE FROM conversation_messages WHERE conversation_id = ?');
     stmt.run(conversationId);
+  }
+};
+
+// ==================== 对话分支操作 (v4 新增) ====================
+
+/**
+ * 对话分支数据库操作集合
+ * 用于编辑重发时的分支版本管理
+ */
+export const dbConversationBranches = {
+  /**
+   * 创建分支记录
+   */
+  create: (
+    conversationId: string,
+    forkPointSdkUuid: string,
+    branchIndex: number,
+    sdkSessionId: string
+  ): string => {
+    const newId = uuidv4();
+    const now = Date.now();
+    const stmt = getDb().prepare(`
+      INSERT INTO conversation_branches (id, conversation_id, fork_point_sdk_uuid, branch_index, sdk_session_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(newId, conversationId, forkPointSdkUuid, branchIndex, sdkSessionId, now);
+    return newId;
+  },
+
+  /**
+   * 获取指定对话在指定分叉点的所有分支
+   */
+  getByConversationAndForkPoint: (conversationId: string, forkPointSdkUuid: string): ConversationBranch[] => {
+    const stmt = getDb().prepare(
+      'SELECT * FROM conversation_branches WHERE conversation_id = ? AND fork_point_sdk_uuid = ? ORDER BY branch_index ASC'
+    );
+    return stmt.all(conversationId, forkPointSdkUuid) as ConversationBranch[];
+  },
+
+  /**
+   * 获取指定对话的所有分支
+   */
+  getByConversationId: (conversationId: string): ConversationBranch[] => {
+    const stmt = getDb().prepare(
+      'SELECT * FROM conversation_branches WHERE conversation_id = ? ORDER BY fork_point_sdk_uuid, branch_index ASC'
+    );
+    return stmt.all(conversationId) as ConversationBranch[];
+  },
+
+  /**
+   * 获取指定分叉点的下一个分支序号
+   */
+  getNextBranchIndex: (conversationId: string, forkPointSdkUuid: string): number => {
+    const stmt = getDb().prepare(
+      'SELECT MAX(branch_index) as max_index FROM conversation_branches WHERE conversation_id = ? AND fork_point_sdk_uuid = ?'
+    );
+    const result = stmt.get(conversationId, forkPointSdkUuid) as { max_index: number | null } | undefined;
+    return (result?.max_index ?? -1) + 1;
+  },
+
+  /**
+   * 将最新的 pending- session ID 更新为真实的 SDK session ID
+   * 编辑重发时，先创建 pending- 占位，SDK 初始化后回填真实值
+   */
+  updatePendingSdkSessionId: (conversationId: string, realSdkSessionId: string): void => {
+    // 找到该对话下最新的 pending- 记录并更新
+    const stmt = getDb().prepare(`
+      UPDATE conversation_branches
+      SET sdk_session_id = ?
+      WHERE id = (
+        SELECT id FROM conversation_branches
+        WHERE conversation_id = ? AND sdk_session_id LIKE 'pending-%'
+        ORDER BY created_at DESC
+        LIMIT 1
+      )
+    `);
+    stmt.run(realSdkSessionId, conversationId);
+  }
+};
+
+// ==================== 分支消息操作 (v4 新增) ====================
+
+/**
+ * 分支消息数据库操作集合
+ */
+export const dbBranchMessages = {
+  /**
+   * 添加分支消息
+   */
+  add: (message: Omit<BranchMessage, 'id'>): string => {
+    const newId = uuidv4();
+    const stmt = getDb().prepare(`
+      INSERT INTO branch_messages (id, branch_id, conversation_id, role, content, content_blocks, sdk_uuid, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run(
+      newId,
+      message.branch_id,
+      message.conversation_id,
+      message.role,
+      message.content,
+      message.content_blocks || null,
+      message.sdk_uuid || null,
+      message.timestamp
+    );
+    return newId;
+  },
+
+  /**
+   * 批量添加分支消息
+   */
+  bulkAdd: (messages: Omit<BranchMessage, 'id'>[]): void => {
+    const insert = getDb().prepare(`
+      INSERT INTO branch_messages (id, branch_id, conversation_id, role, content, content_blocks, sdk_uuid, timestamp)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const transaction = getDb().transaction((msgs: Omit<BranchMessage, 'id'>[]) => {
+      for (const msg of msgs) {
+        insert.run(uuidv4(), msg.branch_id, msg.conversation_id, msg.role, msg.content, msg.content_blocks || null, msg.sdk_uuid || null, msg.timestamp);
+      }
+    });
+    transaction(messages);
+  },
+
+  /**
+   * 获取指定分支的所有消息
+   */
+  getByBranchId: (branchId: string): BranchMessage[] => {
+    const stmt = getDb().prepare('SELECT * FROM branch_messages WHERE branch_id = ? ORDER BY timestamp ASC');
+    return stmt.all(branchId) as BranchMessage[];
   }
 };

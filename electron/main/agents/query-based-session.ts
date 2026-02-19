@@ -38,13 +38,15 @@ export interface QueryBasedSessionConfig {
   enableSkills?: boolean;            // 是否启用 Skill 功能（默认 false）
   projectRoot?: string;              // 项目根目录（用于查找 .claude/skills/）
   resume?: string;                   // SDK session_id（用于恢复会话）
+  forkSession?: boolean;             // 是否创建分叉（与 resume 配合使用）
+  resumeSessionAt?: string;          // 截断到此 assistant 消息的 SDK UUID
 }
 
 /**
  * 扩展的消息类型，用于向前端传递更丰富的信息
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid';
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -52,6 +54,8 @@ export interface ExtendedSessionMessage {
   toolUseId?: string;
   status?: string;
   error?: string;
+  // 工具执行是否出错（用于 tool_result 类型）
+  isError?: boolean;
   timestamp: number;
   // 引用信息（用于书籍问答）
   citations?: any[];
@@ -88,6 +92,10 @@ export class QueryBasedSession extends EventEmitter {
   // 流式状态跟踪（用于日志和去重）
   private isStreaming: boolean = false;
   private streamEventCount: number = 0;
+
+  // 工具输入累积器（解决流式传输时先显示空数据的问题）
+  // key: tool_use_id 或 content_block index, value: { name, input累积字符串 }
+  private pendingToolInputs: Map<string | number, { name: string; inputJson: string; toolUseId?: string }> = new Map();
 
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
@@ -158,18 +166,26 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('已配置 MCP Servers:', Object.keys(this.config.mcpServers));
       }
 
-      // 配置工作目录和设置源
-      if (this.config.enableSkills && projectRoot) {
-        queryOptions.cwd = projectRoot;
-        // 必须包含 'project' 才能加载 .claude/settings.json 和 skills
-        queryOptions.settingSources = ['user','project'];
-        this.logger.info('已配置 cwd 和 settingSources 以加载 Skills');
+      // 配置工作目录：cwd 使用用户选择的工作区路径，这样 agent 的工作上下文是用户的工作区
+      // 项目根目录放入 additionalDirectories，保持 skills 的加载能力
+      if (this.config.workspacePath) {
+        queryOptions.cwd = this.config.workspacePath;
+        this.logger.info('已配置 cwd 为用户工作区:', this.config.workspacePath);
       }
 
-      // 配置额外目录（工作区）
-      if (this.config.workspacePath) {
-        queryOptions.additionalDirectories = [this.config.workspacePath];
-        this.logger.info('已配置工作区目录:', this.config.workspacePath);
+      if (this.config.enableSkills && projectRoot) {
+        // 必须包含 'project' 才能加载 .claude/settings.json 和 skills
+        queryOptions.settingSources = ['user','project'];
+        // 将项目根目录加入 additionalDirectories，确保 skills 仍然可以被加载
+        const additionalDirs: string[] = [];
+        if (projectRoot !== this.config.workspacePath) {
+          additionalDirs.push(projectRoot);
+        }
+        if (additionalDirs.length > 0) {
+          queryOptions.additionalDirectories = additionalDirs;
+          this.logger.info('已配置 additionalDirectories（含项目根目录）:', additionalDirs);
+        }
+        this.logger.info('已配置 settingSources 以加载 Skills');
       }
 
       // 配置 resume（恢复之前的会话）
@@ -178,6 +194,18 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('✅ 已配置 resume 会话:', this.config.resume);
       } else {
         this.logger.info('创建新会话（无 resume）');
+      }
+
+      // 配置 forkSession（分叉会话）
+      if (this.config.forkSession) {
+        queryOptions.forkSession = true;
+        this.logger.info('✅ 已配置 forkSession: 将创建新的会话分支');
+      }
+
+      // 配置 resumeSessionAt（截断位置）
+      if (this.config.resumeSessionAt) {
+        queryOptions.resumeSessionAt = this.config.resumeSessionAt;
+        this.logger.info('✅ 已配置 resumeSessionAt:', this.config.resumeSessionAt);
       }
 
       // ==================== 请求配置详情 ====================
@@ -323,15 +351,6 @@ export class QueryBasedSession extends EventEmitter {
             this.logger.info(`📨 [${messageCount}] ⏹️ 流式输出结束 (共 ${this.streamEventCount} 个事件)`);
             this.isStreaming = false;
           }
-        } else if (message.type === 'assistant' && !this.isStreaming && this.streamEventCount > 0) {
-          // 流式结束后的完整 assistant 消息（与流式内容重复）
-          // 只输出日志，不发送到前端
-          this.logger.info('');
-          this.logger.info(`📨 [${messageCount}] SDK 消息 [assistant] (流式后的完整消息，跳过发送)`);
-          this.logger.info('');
-          // 重置计数器
-          this.streamEventCount = 0;
-          continue;  // 跳过这条消息，不发送到前端
         } else {
           // 其他非流式消息：输出原始数据
           this.logger.info('');
@@ -340,14 +359,17 @@ export class QueryBasedSession extends EventEmitter {
           this.logger.info('');
         }
 
-        // 转换 SDK 消息为扩展消息格式
-        const extendedMessage = this.convertSDKMessage(message);
-        if (extendedMessage) {
-          // 非流式消息才输出转换结果
-          if (message.type !== 'stream_event') {
-            this.logger.info('✅ 转换结果:', JSON.stringify(extendedMessage));
+        // 转换 SDK 消息为扩展消息格式（可能返回多个消息）
+        const extendedMessages = this.convertSDKMessage(message);
+        if (extendedMessages) {
+          const messages = Array.isArray(extendedMessages) ? extendedMessages : [extendedMessages];
+          for (const extendedMessage of messages) {
+            // 非流式消息才输出转换结果
+            if (message.type !== 'stream_event') {
+              this.logger.info('✅ 转换结果:', JSON.stringify(extendedMessage));
+            }
+            this.emit('message', extendedMessage);
           }
-          this.emit('message', extendedMessage);
         }
 
         // 处理结果消息（单次对话完成）
@@ -386,8 +408,9 @@ export class QueryBasedSession extends EventEmitter {
 
   /**
    * 转换 SDK 消息为扩展消息格式
+   * @returns 单个消息、消息数组（如包含工具结果）或 null
    */
-  private convertSDKMessage(sdkMessage: SDKMessage): ExtendedSessionMessage | null {
+  private convertSDKMessage(sdkMessage: SDKMessage): ExtendedSessionMessage | ExtendedSessionMessage[] | null {
     const timestamp = Date.now();
 
     // 流式消息不输出转换日志，减少日志噪音
@@ -398,10 +421,48 @@ export class QueryBasedSession extends EventEmitter {
     switch (sdkMessage.type) {
       case 'assistant': {
         // 助手消息，包含文本和工具调用
+        // 提取 assistant 消息的 UUID（用于分叉功能）
+        const assistantUuid = 'uuid' in sdkMessage ? String(sdkMessage.uuid) : undefined;
+
+        // ⚠️ 注意：在流式输出期间，SDK 会发送完整的 assistant 消息，
+        // 这些消息与流式内容重复，应该被跳过
+        if (this.isStreaming) {
+          // 流式输出期间，只处理 tool_use（流式事件中已经处理了文本）
+          const content = sdkMessage.message.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block && typeof block === 'object' && block.type === 'tool_use') {
+                this.emit('tool_use', {
+                  type: 'tool_use',
+                  toolName: block.name,
+                  toolInput: block.input,
+                  toolUseId: block.id,
+                  timestamp
+                } as ExtendedSessionMessage);
+              }
+            }
+          }
+
+          // 即使跳过文本，也需要将 assistant uuid 发送到前端（用于分叉定位）
+          if (assistantUuid) {
+            this.emit('message', {
+              type: 'assistant_uuid',
+              uuid: assistantUuid,
+              timestamp,
+            } as ExtendedSessionMessage);
+          }
+
+          // 返回 null 表示不发送此消息到前端
+          this.logger.info('⚠️  流式输出期间收到 assistant 消息，已跳过文本内容（避免重复显示）');
+          return null;
+        }
+
+        // 非流式模式下，正常处理 assistant 消息
         const message: ExtendedSessionMessage = {
           type: 'text',
           content: '',
-          timestamp
+          timestamp,
+          uuid: assistantUuid,  // 携带 assistant uuid
         };
 
         const content = sdkMessage.message.content;
@@ -437,6 +498,8 @@ export class QueryBasedSession extends EventEmitter {
       case 'stream_event': {
         // 流式事件
         const event = sdkMessage.event;
+
+        // 文本增量
         if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
           return {
             type: 'text',
@@ -444,25 +507,49 @@ export class QueryBasedSession extends EventEmitter {
             timestamp
           };
         }
+
+        // 思考内容增量
         if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
-          // 思考内容增量
           return {
             type: 'thinking',
             content: event.delta.thinking,
             timestamp
           };
         }
+
+        // 工具输入增量 - 累积 JSON 字符串
+        if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+          const index = event.index;
+          const pending = this.pendingToolInputs.get(index);
+          if (pending) {
+            pending.inputJson += event.delta.partial_json || '';
+          }
+          // 不立即发送消息，等待 content_block_stop
+          return null;
+        }
+
+        // 内容块开始
         if (event.type === 'content_block_start') {
           const block = event.content_block;
+          const index = event.index;
+
           if (block?.type === 'tool_use') {
+            // 工具调用开始 - 存储到累积器（含 toolUseId），先发送状态消息
+            this.pendingToolInputs.set(index, {
+              name: block.name,
+              inputJson: '',
+              toolUseId: block.id
+            });
+            // 发送 tool_use 块（无 input，前端显示为 running 状态）
             return {
               type: 'tool_use',
               toolName: block.name,
-              toolInput: block.input,
+              toolInput: null,  // input 尚未就绪，前端据此判断为 running
               toolUseId: block.id,
               timestamp
             };
           }
+
           if (block?.type === 'thinking') {
             // 思考块开始
             return {
@@ -472,15 +559,46 @@ export class QueryBasedSession extends EventEmitter {
             };
           }
         }
+
+        // 内容块结束 - 发送完整的工具调用
+        if (event.type === 'content_block_stop') {
+          const index = event.index;
+          const pending = this.pendingToolInputs.get(index);
+
+          if (pending) {
+            // 解析累积的 JSON
+            let toolInput = {};
+            try {
+              if (pending.inputJson) {
+                toolInput = JSON.parse(pending.inputJson);
+              }
+            } catch (e) {
+              this.logger.warn('解析工具输入 JSON 失败:', pending.inputJson);
+            }
+
+            // 清除累积器
+            this.pendingToolInputs.delete(index);
+
+            // 发送完整的工具调用消息（携带 toolUseId 以便前端关联 tool_result）
+            return {
+              type: 'tool_use',
+              toolName: pending.name,
+              toolInput: toolInput,
+              toolUseId: pending.toolUseId,
+              timestamp
+            };
+          }
+        }
+
         return null;
       }
 
       case 'tool_progress': {
-        // 工具执行进度
+        // 工具执行进度 - 统一用 tool_use 类型，前端通过 toolUseId 合并到已有块
         return {
-          type: 'status',
-          status: `正在执行工具: ${sdkMessage.tool_name}`,
+          type: 'tool_use',
           toolName: sdkMessage.tool_name,
+          toolInput: null,  // 进度事件无 input
           toolUseId: sdkMessage.tool_use_id,
           timestamp
         };
@@ -494,6 +612,8 @@ export class QueryBasedSession extends EventEmitter {
           this.logger.info('收到 SDK session_id:', this.sdkSessionId);
           // 发出 session_id 事件，让主进程保存到数据库
           this.emit('session_init', { session_id: this.sdkSessionId });
+          // ⚠️ init 消息不需要显示在界面上，只用于内部初始化
+          return null;
         }
         return {
           type: 'status',
@@ -503,13 +623,50 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       case 'user': {
-        // 用户消息（包括新消息和重放的历史消息）
+        // 用户消息（包括新消息、重放的历史消息、以及工具执行结果）
         const userMsg = sdkMessage as SDKUserMessage | SDKUserMessageReplay;
         const isReplay = 'isReplay' in userMsg && userMsg.isReplay === true;
+
+        // 跳过 isMeta 消息（skill 内容），避免将 skill 的 MD 内容当作用户输入显示
+        // isMeta 消息是 SDK 内部用于传递 skill 内容的，不应在前端显示为用户消息
+        if ('isMeta' in sdkMessage && (sdkMessage as any).isMeta) {
+          const sourceToolUseID = (sdkMessage as any).sourceToolUseID;
+          this.logger.info('⚠️ 跳过 isMeta 消息（skill 内容），sourceToolUseID:', sourceToolUseID);
+
+          // 提取 skill 内容，合并到对应工具调用的输出中
+          if (sourceToolUseID) {
+            let skillContent = '';
+            const metaContent = userMsg.message.content;
+            if (typeof metaContent === 'string') {
+              skillContent = metaContent;
+            } else if (Array.isArray(metaContent)) {
+              for (const block of metaContent) {
+                if (block && typeof block === 'object' && 'type' in block && block.type === 'text') {
+                  skillContent += (block as { text: string }).text || '';
+                }
+              }
+            }
+
+            // 将 skill 内容作为 tool_result 发送，关联到对应的 Skill 工具调用
+            if (skillContent) {
+              return {
+                type: 'tool_result',
+                toolUseId: sourceToolUseID,
+                toolOutput: skillContent,
+                isError: false,
+                timestamp,
+                isReplay,
+              };
+            }
+          }
+          return null;
+        }
 
         // 提取用户消息内容
         const messageContent = userMsg.message.content;
         let contentText = '';
+        const toolResults: ExtendedSessionMessage[] = [];
+
         if (typeof messageContent === 'string') {
           contentText = messageContent;
         } else if (Array.isArray(messageContent)) {
@@ -521,21 +678,64 @@ export class QueryBasedSession extends EventEmitter {
             } else if (block && typeof block === 'object' && 'type' in block) {
               if (block.type === 'text') {
                 textBlocks.push((block as { text: string }).text);
+              } else if (block.type === 'tool_result') {
+                // 提取工具执行结果
+                const toolResult = block as {
+                  type: 'tool_result';
+                  tool_use_id: string;
+                  content?: string | Array<{ type: string; text?: string }>;
+                  is_error?: boolean;
+                };
+                this.logger.info('收到工具执行结果:', toolResult.tool_use_id);
+
+                // 提取工具结果内容
+                let outputContent = '';
+                if (typeof toolResult.content === 'string') {
+                  outputContent = toolResult.content;
+                } else if (Array.isArray(toolResult.content)) {
+                  outputContent = toolResult.content
+                    .filter((c): c is { type: string; text: string } => c.type === 'text' && typeof c.text === 'string')
+                    .map(c => c.text)
+                    .join('\n');
+                }
+
+                toolResults.push({
+                  type: 'tool_result',
+                  toolUseId: toolResult.tool_use_id,
+                  toolOutput: outputContent,
+                  isError: toolResult.is_error || false,
+                  timestamp,
+                  isReplay
+                });
               }
             }
           }
           contentText = textBlocks.join('');
         }
 
-        this.logger.info('收到用户消息:', isReplay ? '(重放)' : '(新)', contentText.substring(0, 50));
+        // 收集所有要返回的消息
+        const messages: ExtendedSessionMessage[] = [...toolResults];
 
-        return {
-          type: 'user',
-          content: contentText,
-          timestamp,
-          isReplay,
-          uuid: 'uuid' in userMsg ? String(userMsg.uuid) : undefined
-        };
+        // 如果有用户文本内容，也添加用户消息
+        if (contentText) {
+          this.logger.info('收到用户消息:', isReplay ? '(重放)' : '(新)', contentText.substring(0, 50));
+          messages.push({
+            type: 'user',
+            content: contentText,
+            timestamp,
+            isReplay,
+            uuid: 'uuid' in userMsg ? String(userMsg.uuid) : undefined
+          });
+        }
+
+        // 返回所有消息（工具结果 + 用户文本）
+        if (messages.length === 0) {
+          return null;
+        } else if (messages.length === 1) {
+          return messages[0];
+        } else {
+          return messages;
+        }
       }
 
       default:
