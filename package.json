@@ -13,7 +13,7 @@
     "build:next": "next build",
     "dev:watch": "concurrently \"npm run dev:next\" \"npm run watch:electron\" \"npm run dev:electron\"",
     "watch:electron": "tsc -p tsconfig.electron.json --watch",
-    "build:electron": "tsc -p tsconfig.electron.json && cpy 'electron/main/database/*.sql' dist/main/database/",
+    "build:electron": "tsc -p tsconfig.electron.json && cpy \"electron/main/database/*.sql\" dist/main/database/",
     "build": "npm run build:next && npm run build:electron",
     "dist": "npm run build && electron-builder",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.39",
+    "@egoist/tipc": "^0.3.2",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tabs": "^1.1.13",
     "@types/uuid": "^10.0.0",
