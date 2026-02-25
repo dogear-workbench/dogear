@@ -1,5 +1,6 @@
 'use client';
 
+import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, Home, Loader2, Plus } from 'lucide-react';
@@ -22,7 +23,7 @@ export function WorkspaceSelector({ onWorkspaceSelected }: WorkspaceSelectorProp
   const loadWorkspaces = async () => {
     try {
       setLoading(true);
-      const result = await window.electronAPI.workspace.getAll();
+      const result = await client.getAll();
       if (result.workspaces && result.workspaces.length > 0) {
         setWorkspaces(result.workspaces);
         // 默认选中第一个工作区
@@ -38,7 +39,7 @@ export function WorkspaceSelector({ onWorkspaceSelected }: WorkspaceSelectorProp
   // 选择新文件夹创建工作区
   const handleSelectFolder = async () => {
     try {
-      const result = await window.electronAPI.workspace.selectFolder();
+      const result = await client.selectFolder();
       if (result.workspace && !result.canceled) {
         // 重新加载工作区列表
         await loadWorkspaces();

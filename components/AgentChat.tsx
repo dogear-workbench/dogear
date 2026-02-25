@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Citation } from '@/types/electron-api';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
 import { Pencil, GitBranch, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -383,10 +385,10 @@ function ContentBlockItem({ block }: { block: ContentBlock }) {
 function CitationBadge({ citation }: { citation: Citation }) {
   const handleClick = async () => {
     try {
-      await window.electronAPI.book.jumpToPosition(
-        citation.chapterId,
-        citation.position
-      );
+      await client.jumpToPosition({
+        chapterId: citation.chapterId,
+        position: citation.position,
+      });
     } catch (error) {
       console.error('跳转失败:', error);
     }  
@@ -470,14 +472,14 @@ export function AgentChat({
 
         try {
           // 获取对话信息，拿到 sdk_session_id
-          const convResult = await window.electronAPI.conversations.getById(conversationId);
+          const convResult = await client.getById({ conversationId });
           const sdkSessionId = convResult.conversation?.sdk_session_id;
 
           if (sdkSessionId) {
             console.log('✅ 找到 sdk_session_id:', sdkSessionId);
 
             // 从 SDK 的会话文件中读取历史消息
-            const historyResult = await window.electronAPI.queryBasedSession.getSdkSessionHistory(sdkSessionId);
+            const historyResult = await client.getSdkSessionHistory({ sdkSessionId });
 
             if (historyResult.error) {
               console.error('读取 SDK 会话历史失败:', historyResult.error);
@@ -702,7 +704,7 @@ export function AgentChat({
             // v4: 查询分支信息，恢复 branchVersions 和 currentBranch
             if (conversationId) {
               try {
-                const branchesResult = await window.electronAPI.conversations.getBranches(conversationId);
+                const branchesResult = await client.getBranches({ conversationId });
                 if (!branchesResult.error && branchesResult.branches.length > 0) {
                   // 按 fork_point_sdk_uuid 分组统计分支数量
                   const branchCountMap = new Map<string, number>();
@@ -762,7 +764,7 @@ export function AgentChat({
         // 先设置 historyLoaded 为 false，防止在加载期间保存消息
         setHistoryLoaded(false);
 
-        const result = await window.electronAPI.conversations.getMessages(conversationId);
+        const result = await client.getMessages({ conversationId });
         if (result.error) {
           console.error('加载历史消息失败:', result.error);
           return;
@@ -834,7 +836,7 @@ export function AgentChat({
         } else if (conversationId) {
           // 正常 resume 模式
           try {
-            const convResult = await window.electronAPI.conversations.getById(conversationId);
+            const convResult = await client.getById({ conversationId });
             console.log('getById 结果:', convResult);
             if (convResult.conversation?.sdk_session_id) {
               sdkSessionId = convResult.conversation.sdk_session_id;
@@ -847,7 +849,7 @@ export function AgentChat({
           }
         }
 
-        const response = await window.electronAPI.queryBasedSession.createSession({
+        const response = await client.createQueryBasedSession({
           model: 'claude-sonnet-4-5-20250929',
           allowedTools: ['Read', 'Glob', 'Grep'],
           context,
@@ -904,9 +906,9 @@ export function AgentChat({
                 }
               ]);
               setIsLoading(true);
-              await window.electronAPI.queryBasedSession.sendMessage(
-                newSessionId,
-                forkParams.editedMessage!
+              await client.sendQueryBasedSessionMessage({
+                sessionId: newSessionId,
+                content: forkParams.editedMessage!
               );
             } catch (error) {
               console.error('编辑重发模式自动发送失败:', error);
@@ -928,7 +930,7 @@ export function AgentChat({
     return () => {
       if (sessionId) {
         console.log('关闭会话:', sessionId);
-        window.electronAPI.queryBasedSession.closeSession(sessionId);
+        client.closeQueryBasedSession({ sessionId });
       }
     };
   }, [conversationId, forkParams]); // 当 conversationId 或 forkParams 变化时重启会话
@@ -937,7 +939,7 @@ export function AgentChat({
   useEffect(() => {
     if (!sessionId) return;
 
-    const unsubscribe = window.electronAPI.queryBasedSession.onMessage((data) => {
+    const unsubscribe = rendererEvents.queryBasedSessionMessage.listen((data) => {
       if (data.sessionId !== sessionId) return;
 
       const extendedMsg = data.message;
@@ -1147,7 +1149,7 @@ export function AgentChat({
   useEffect(() => {
     if (!sessionId) return;
 
-    const unsubscribe = window.electronAPI.queryBasedSession.onComplete((data) => {
+    const unsubscribe = rendererEvents.queryBasedSessionComplete.listen((data) => {
       if (data.sessionId !== sessionId) return;
 
       console.log('收到会话完成事件:', data);
@@ -1331,7 +1333,7 @@ export function AgentChat({
     // 关闭旧会话
     if (sessionId) {
       try {
-        await window.electronAPI.queryBasedSession.closeSession(sessionId);
+        await client.closeQueryBasedSession({ sessionId });
       } catch (e) {
         console.warn('关闭旧会话失败（可忽略）:', e);
       }
@@ -1342,7 +1344,7 @@ export function AgentChat({
     if (typeof window !== 'undefined' && (window as any).process?.cwd) {
       projectRoot = (window as any).process.cwd();
     }
-    const response = await window.electronAPI.queryBasedSession.createSession({
+    const response = await client.createQueryBasedSession({
       model: 'claude-sonnet-4-5-20250929',
       allowedTools: ['Read', 'Glob', 'Grep'],
       context,
@@ -1365,7 +1367,7 @@ export function AgentChat({
    */
   const getOriginalSdkSessionId = useCallback(async (): Promise<string | null> => {
     if (!conversationId) return null;
-    const convResult = await window.electronAPI.conversations.getById(conversationId);
+    const convResult = await client.getById({ conversationId });
     return convResult.conversation?.sdk_session_id || null;
   }, [conversationId]);
 
@@ -1410,7 +1412,7 @@ export function AgentChat({
         const originalSdkSessionId = await getOriginalSdkSessionId();
         if (!originalSdkSessionId) return;
 
-        const historyResult = await window.electronAPI.queryBasedSession.getSdkSessionHistory(originalSdkSessionId);
+        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: originalSdkSessionId });
         if (historyResult.error) return;
 
         const afterMessages = parseMessagesAfterForkPoint(historyResult.messages, sdkUuid);
@@ -1426,9 +1428,9 @@ export function AgentChat({
         await recreateSession(originalSdkSessionId);
       } else {
         // 切换到某个分支版本
-        const branchesResult = await window.electronAPI.conversations.getBranches(
-          conversationId, sdkUuid
-        );
+        const branchesResult = await client.getBranches({
+          conversationId, forkPointSdkUuid: sdkUuid
+        });
 
         if (branchesResult.error || branchesResult.branches.length === 0) {
           console.warn('未找到分支数据');
@@ -1451,7 +1453,7 @@ export function AgentChat({
           return;
         }
 
-        const historyResult = await window.electronAPI.queryBasedSession.getSdkSessionHistory(branchSdkSessionId);
+        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: branchSdkSessionId });
         if (historyResult.error) {
           console.warn('加载分支 SDK 历史失败:', historyResult.error);
           return;
@@ -1517,7 +1519,7 @@ export function AgentChat({
 
     try {
       // 发送消息到会话
-      await window.electronAPI.queryBasedSession.sendMessage(sessionId, userMessage);
+      await client.sendQueryBasedSessionMessage({ sessionId, content: userMessage });
     } catch (error) {
       console.error('发送消息失败:', error);
       setMessages(prev => [

@@ -5,6 +5,8 @@
  * 用于测试 Agent 框架的基础功能
  */
 
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { useState, useEffect, useCallback } from 'react';
 
 // 任务状态枚举
@@ -42,7 +44,7 @@ export default function AgentTest() {
 
   // 监听任务更新
   useEffect(() => {
-    const cleanup = window.electronAPI.agent.onTaskUpdate((update: TaskUpdate) => {
+    const cleanup = rendererEvents.agentTaskUpdate.listen((update: TaskUpdate) => {
       console.log('任务更新:', update);
       if (update.taskId === taskId) {
         setTaskStatus(update.status);
@@ -59,7 +61,7 @@ export default function AgentTest() {
   // 获取 Agent 状态
   const fetchAgentStatus = useCallback(async () => {
     try {
-      const status = await window.electronAPI.agent.getStatus();
+      const status = await client.getStatus();
       setAgentStatus(status);
     } catch (error) {
       console.error('获取 Agent 状态失败:', error);
@@ -110,7 +112,7 @@ export default function AgentTest() {
           break;
       }
 
-      const result = await window.electronAPI.agent.submitTask(task);
+      const result = await client.submitTask({ task });
       setTaskId(result.taskId);
       setTaskStatus(TaskStatus.PENDING);
       setTaskResult(null);
@@ -126,7 +128,7 @@ export default function AgentTest() {
     if (!taskId) return;
 
     try {
-      await window.electronAPI.agent.cancelTask(taskId);
+      await client.cancelTask({ taskId });
       setTaskStatus(TaskStatus.CANCELLED);
     } catch (error) {
       console.error('取消任务失败:', error);

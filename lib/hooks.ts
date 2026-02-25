@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Book } from '@/types';
+import { client } from '@/lib/client';
 
 /**
  * 书籍列表 Hook
@@ -28,7 +29,7 @@ export function useBooks() {
   const loadBooks = async () => {
     try {
       setLoading(true);
-      const data = await window.electronAPI.db.getBooks();
+      const data = await client.getBooks();
       setBooks(data);
       setError(null);
     } catch (err) {
@@ -44,7 +45,7 @@ export function useBooks() {
    * @returns 返回新创建书籍的 ID (UUID)
    */
   const addBook = async (book: Book) => {
-    const id = await window.electronAPI.db.addBook(book);
+    const id = await client.addBook({ book });
     // 添加成功后重新加载列表
     await loadBooks();
     return id;
@@ -55,7 +56,7 @@ export function useBooks() {
    * @param id - 要删除的书籍 ID (UUID)
    */
   const deleteBook = async (id: string) => {
-    await window.electronAPI.db.deleteBook(id);
+    await client.deleteBook({ id });
     // 删除成功后重新加载列表
     await loadBooks();
   };
@@ -90,7 +91,7 @@ export function useBook(id: string) {
   const loadBook = async () => {
     try {
       setLoading(true);
-      const data = await window.electronAPI.db.getBookById(id);
+      const data = await client.getBookById({ id });
       setBook(data);
       setError(null);
     } catch (err) {
@@ -106,7 +107,7 @@ export function useBook(id: string) {
    */
   const updateBook = async (data: Partial<Book>) => {
     if (book?.id) {
-      await window.electronAPI.db.updateBook(book.id, data);
+      await client.updateBook({ id: book.id, data });
       // 更新成功后重新加载数据
       await loadBook();
     }

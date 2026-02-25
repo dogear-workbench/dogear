@@ -1,5 +1,6 @@
 'use client';
 
+import { client } from '@/lib/client';
 import { useBooks } from '@/lib/hooks';
 import { BookCard } from './book-card';
 import { Button } from '@/components/ui/button';
@@ -13,9 +14,9 @@ export function BookList() {
   const handleImport = async () => {
     try {
       setImporting(true);
-      const filePath = await window.electronAPI.file.selectFile();
+      const filePath = await client.selectFile();
       if (filePath) {
-        await window.electronAPI.file.importBook(filePath);
+        await client.importBook({ filePath });
         reload();
       }
     } catch (error) {
@@ -29,7 +30,7 @@ export function BookList() {
   // 打开 Agent 监控窗口
   const handleOpenMonitor = async () => {
     try {
-      await window.electronAPI.agent.openMonitorWindow();
+      await client.openMonitorWindow();
     } catch (error) {
       console.error('打开监控窗口失败:', error);
     }

@@ -6,6 +6,8 @@ import { BookConversationList, type BookNode, type Conversation } from '@/compon
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink } from 'lucide-react';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
 import type { Book } from '@/types';
 
@@ -77,7 +79,7 @@ export default function Home() {
 
     try {
       setLoadingConversations(true);
-      const result = await window.electronAPI.conversations.getBooksWithConversations(workspace.id);
+      const result = await client.getBooksWithConversations({ workspaceId: workspace.id });
 
       console.log('📚 加载对话列表结果:', result);
       console.log('  booksWithConversations 数量:', result.booksWithConversations?.length);
@@ -120,7 +122,7 @@ export default function Home() {
 
     try {
       setLoadingFiles(true);
-      const result = await window.electronAPI.workspace.getFiles(workspace.id);
+      const result = await client.getFiles({ workspaceId: workspace.id });
       if (result.files) {
         setFiles(result.files);
       }
@@ -143,11 +145,11 @@ export default function Home() {
       // 如果文件节点有 bookId 属性（已导入的书籍），优先使用 bookId
       const bookId = (file as any).bookId;
       if (bookId) {
-        const book = await window.electronAPI.book.getBookByFilePath(bookId);
+        const book = await client.getBookByFilePath({ filePathOrBookId: bookId });
         setSelectedBook(book || null);
         // 获取工作区中的文件路径
         if (book) {
-          const pathResult = await window.electronAPI.book.getWorkspaceFilePath(bookId);
+          const pathResult = await client.getWorkspaceFilePath({ bookId });
           if (pathResult.path) {
             setWorkspaceFilePath(pathResult.path);
           }
@@ -171,10 +173,10 @@ export default function Home() {
 
     try {
       setImporting(true);
-      const filePath = await window.electronAPI.file.selectFile();
+      const filePath = await client.selectFile();
       if (filePath) {
         // 传递当前工作区 ID
-        await window.electronAPI.file.importBook(filePath, workspace.id);
+        await client.importBook({ filePath, workspaceId: workspace.id });
         // 导入成功后同时刷新文件列表和书籍对话列表
         loadWorkspaceFiles();
         loadBooksWithConversations();
@@ -190,7 +192,7 @@ export default function Home() {
   // 打开 Agent 监控窗口
   const handleOpenMonitor = async () => {
     try {
-      await window.electronAPI.agent.openMonitorWindow();
+      await client.openMonitorWindow();
     } catch (error) {
       console.error('打开监控窗口失败:', error);
     }
@@ -206,7 +208,7 @@ export default function Home() {
 
     try {
       setDeleting(true);
-      await window.electronAPI.db.deleteBook(selectedBook.id);
+      await client.deleteBook({ id: selectedBook.id });
       // 删除成功后清除选择并刷新
       setSelectedBook(null);
       setSelectedFile(null);
@@ -228,7 +230,7 @@ export default function Home() {
       setAnalysisProgress({ status: 'analyzing' });
 
       // 启动分析
-      const result = await window.electronAPI.book.analyze(selectedBook.id);
+      const result = await client.analyzeBook({ bookId: selectedBook.id });
 
       if (result.error) {
         setAnalysisProgress({ status: 'failed', error: result.error });
@@ -240,7 +242,7 @@ export default function Home() {
         setAnalysisProgress(prev => ({ ...prev, taskId: result.taskId }));
 
         // 注册分析进度监听
-        const unsubscribe = window.electronAPI.book.onAnalysisUpdate((data) => {
+        const unsubscribe = rendererEvents.analysisUpdate.listen((data) => {
           if (data.bookId === selectedBook.id) {
             setAnalysisProgress(prev => ({
               ...prev,
@@ -254,7 +256,7 @@ export default function Home() {
               setAnalysisProgress({ status: 'completed' });
               setAnalyzing(false);
               // 刷新书籍信息（非异步）
-              window.electronAPI.book.getBookByFilePath(selectedBook.id).then((updatedBook) => {
+              client.getBookByFilePath({ filePathOrBookId: selectedBook.id }).then((updatedBook) => {
                 setSelectedBook(updatedBook || null);
               });
               unsubscribe();
@@ -309,7 +311,7 @@ export default function Home() {
   const handleOpenInFolder = async () => {
     if (!selectedBook?.id) return;
     try {
-      await window.electronAPI.book.openInFolder(selectedBook.id);
+      await client.openBookInFolder({ bookId: selectedBook.id });
     } catch (error) {
       console.error('打开文件失败:', error);
     }
@@ -325,7 +327,7 @@ export default function Home() {
 
     // 加载对应的书籍信息
     try {
-      const book = await window.electronAPI.book.getBookByFilePath(conversation.book_id);
+      const book = await client.getBookByFilePath({ filePathOrBookId: conversation.book_id });
       setSelectedBook(book || null);
     } catch (error) {
       console.error('获取书籍信息失败:', error);
@@ -335,7 +337,7 @@ export default function Home() {
   // 处理新增对话
   const handleNewConversation = async (bookId: string) => {
     try {
-      const result = await window.electronAPI.conversations.create(bookId);
+      const result = await client.create({ bookId });
 
       if (result.error || !result.conversationId) {
         alert(`创建对话失败: ${result.error || '未知错误'}`);
@@ -346,7 +348,7 @@ export default function Home() {
       await loadBooksWithConversations();
 
       // 选中新创建的对话
-      const newConversation = await window.electronAPI.conversations.getById(result.conversationId);
+      const newConversation = await client.getById({ conversationId: result.conversationId });
       if (newConversation.conversation) {
         handleConversationSelect(newConversation.conversation);
       }
@@ -363,7 +365,7 @@ export default function Home() {
     }
 
     try {
-      const result = await window.electronAPI.conversations.delete(conversationId);
+      const result = await client.deleteConversation({ conversationId });
 
       if (result.error) {
         alert(`删除失败: ${result.error}`);
@@ -396,7 +398,7 @@ export default function Home() {
   }) => {
     try {
       // 1. 获取父对话信息，拿到 sdk_session_id 和 book_id
-      const convResult = await window.electronAPI.conversations.getById(params.parentConversationId);
+      const convResult = await client.getById({ conversationId: params.parentConversationId });
       const parentConv = convResult.conversation;
 
       if (!parentConv) {
@@ -410,7 +412,7 @@ export default function Home() {
       }
 
       // 2. 创建分叉对话记录（数据库中新增 conversations 记录，旧记录不动）
-      const forkResult = await window.electronAPI.conversations.createFork({
+      const forkResult = await client.createFork({
         bookId: parentConv.book_id,
         title: `分叉自: ${parentConv.title}`,
         parentConversationId: params.parentConversationId,
@@ -443,7 +445,7 @@ export default function Home() {
       }));
 
       // 6. 切换到新创建的分叉对话
-      const newConvResult = await window.electronAPI.conversations.getById(forkResult.conversationId);
+      const newConvResult = await client.getById({ conversationId: forkResult.conversationId });
       if (newConvResult.conversation) {
         setSelectedConversation(newConvResult.conversation);
       }
@@ -466,7 +468,7 @@ export default function Home() {
 
     try {
       // 1. 获取当前对话的 sdk_session_id
-      const convResult = await window.electronAPI.conversations.getById(selectedConversation.id);
+      const convResult = await client.getById({ conversationId: selectedConversation.id });
       const conv = convResult.conversation;
 
       if (!conv?.sdk_session_id) {
@@ -475,16 +477,16 @@ export default function Home() {
       }
 
       // 2. 创建分支记录（用于分支计数和切换）
-      await window.electronAPI.conversations.createBranch({
+      await client.createBranch({
         conversationId: selectedConversation.id,
         forkPointSdkUuid: params.forkPointSdkUuid,
         sdkSessionId: `pending-${Date.now()}`,  // 临时值，后续由 SDK session_init 事件更新
       });
 
       // 3. 查询该分叉点的分支数量（用于前端立即显示分支切换 UI）
-      const branchesResult = await window.electronAPI.conversations.getBranches(
-        selectedConversation.id, params.forkPointSdkUuid
-      );
+      const branchesResult = await client.getBranches({
+        conversationId: selectedConversation.id, forkPointSdkUuid: params.forkPointSdkUuid
+      });
       const branchCount = (branchesResult.branches?.length || 0) + 1; // +1 算上原始版本
 
       // 4. 设置 forkParams，让 AgentChat 在当前对话内以 fork 模式重启会话

@@ -1,5 +1,6 @@
 'use client';
 
+import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';
 
 /**
@@ -50,12 +51,10 @@ export default function AgentMonitorPage() {
   useEffect(() => {
     const loadStatus = async () => {
       try {
-        if (window.electronAPI?.agent?.getDetailedStatus) {
-          const detailedStatus = await window.electronAPI.agent.getDetailedStatus();
-          if (detailedStatus) {
-            setStatus(detailedStatus);
-            setLastUpdate(new Date());
-          }
+        const detailedStatus = await client.getDetailedStatus();
+        if (detailedStatus) {
+          setStatus(detailedStatus);
+          setLastUpdate(new Date());
         }
       } catch (error) {
         console.error('获取 Agent 详细状态失败:', error);

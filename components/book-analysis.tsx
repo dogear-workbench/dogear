@@ -8,6 +8,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Sparkles, AlertCircle, CheckCircle2, Loader2, BookOpen, FileText } from 'lucide-react';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 
 interface BookAnalysisPanelProps {
   book: Book;
@@ -34,7 +36,7 @@ export function BookAnalysis({ book, onUpdate }: BookAnalysisPanelProps) {
 
   // 监听分析进度事件
   useEffect(() => {
-    const unsubscribe = window.electronAPI.book.onAnalysisUpdate((data: BookAnalysisUpdate) => {
+    const unsubscribe = rendererEvents.analysisUpdate.listen((data: BookAnalysisUpdate) => {
       if (data.bookId === book.id) {
         if (data.toolName) {
           setCurrentStep(`正在执行: ${data.toolName}`);
@@ -65,13 +67,13 @@ export function BookAnalysis({ book, onUpdate }: BookAnalysisPanelProps) {
 
   const loadAnalysisStatus = async () => {
     try {
-      const statusData = await window.electronAPI.book.getAnalysisStatus(book.id!);
+      const statusData = await client.getAnalysisStatus({ bookId: book.id! });
       setAnalysisStatus(statusData.status);
       setAnalysisResult(statusData.result);
       setError(statusData.error || null);
 
       if (statusData.status === 'analyzed') {
-        const chaptersData = await window.electronAPI.book.getChapterAnalyses(book.id!);
+        const chaptersData = await client.getChapterAnalyses({ bookId: book.id! });
         setChapterAnalyses(chaptersData.analyses);
         setAnalyzedChapters(chaptersData.analyses.length);
       }
@@ -89,7 +91,7 @@ export function BookAnalysis({ book, onUpdate }: BookAnalysisPanelProps) {
     setCurrentStep('正在启动分析...');
 
     try {
-      const result = await window.electronAPI.book.analyze(book.id);
+      const result = await client.analyzeBook({ bookId: book.id });
       if (result.error) {
         setError(result.error);
         setLoading(false);
