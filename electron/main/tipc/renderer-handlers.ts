@@ -3,6 +3,7 @@
  * 用于 getRendererHandlers<T> 和 createEventHandlers<T> 的类型约束
  */
 import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
+import type { TaskStatus } from '../agents/task-types.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -27,7 +28,7 @@ export type RendererHandlers = {
   // Agent 任务状态更新
   agentTaskUpdate: (data: {
     taskId: string;
-    status: string;
+    status: TaskStatus;
     result?: unknown;
     error?: string;
   }) => void;

@@ -90,7 +90,7 @@ export function Reader({ book }: ReaderProps) {
   const refreshBookData = async () => {
     if (book.id) {
       const updatedBook = await client.getBookById({ id: book.id });
-      setBookData(updatedBook);
+      if (updatedBook) setBookData(updatedBook);
     }
   };
 
@@ -101,7 +101,7 @@ export function Reader({ book }: ReaderProps) {
     try {
       setLoading(true);
       const chapter = await client.getChapter({ chapterId });
-      setCurrentChapter(chapter);
+      setCurrentChapter(chapter ?? null);
       // 滚动到顶部
       if (contentRef.current) {
         contentRef.current.scrollTop = 0;

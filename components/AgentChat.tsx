@@ -909,7 +909,7 @@ export function AgentChat({
               await client.sendQueryBasedSessionMessage({
                 sessionId: newSessionId,
                 content: forkParams.editedMessage!
-              );
+              });
             } catch (error) {
               console.error('编辑重发模式自动发送失败:', error);
             }

@@ -3,6 +3,15 @@
 import { useEffect, useState } from 'react';
 import { AgentChat } from '@/components/AgentChat';
 
+// 局部类型声明：旧版调试 API（已从全局 preload 类型中移除）
+declare global {
+  interface Window {
+    electronDebug?: {
+      getAgentStatus: () => Promise<any>;
+    };
+  }
+}
+
 /**
  * 调试窗口页面
  * 开发阶段专用,用于测试和调试 Agent 功能

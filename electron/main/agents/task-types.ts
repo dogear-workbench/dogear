@@ -98,6 +98,38 @@ export interface ReadingAssistPayload {
 }
 
 /**
+ * 引用信息
+ * 用于标注答案来源，支持点击跳转到原文位置
+ */
+export interface Citation {
+  chapterId: string;
+  chapterTitle: string;
+  chapterNumber?: number;
+  position?: { start: number; end: number };
+  text?: string;
+}
+
+/**
+ * 扩展的会话消息类型
+ * 用于向前端传递完整的 AI 操作（工具调用、思考过程等）
+ */
+export interface ExtendedSessionMessage {
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid';
+  content?: string;
+  toolName?: string;
+  toolInput?: any;
+  toolOutput?: any;
+  toolUseId?: string;
+  status?: string;
+  error?: string;
+  isError?: boolean;               // 工具执行是否出错（用于 tool_result 类型）
+  timestamp: number;
+  citations?: Citation[];          // 引用信息（用于书籍问答）
+  isReplay?: boolean;              // 是否为重放的历史消息（SDK resume 时使用）
+  uuid?: string;                   // 消息 UUID（SDK 提供）
+}
+
+/**
  * Agent Worker 配置
  */
 export interface AgentWorkerConfig {

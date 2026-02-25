@@ -12,7 +12,7 @@ const __dirname = dirname(__filename);
 
 /**
  * 书籍数据接口
- * 定义书籍对象的数据结构
+ * 定义书籍对象的数据结构，与数据库表结构对应
  */
 export interface Book {
   id?: string;                           // 书籍唯一标识(UUID)

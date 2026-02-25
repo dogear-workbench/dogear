@@ -68,13 +68,13 @@ export function BookAnalysis({ book, onUpdate }: BookAnalysisPanelProps) {
   const loadAnalysisStatus = async () => {
     try {
       const statusData = await client.getAnalysisStatus({ bookId: book.id! });
-      setAnalysisStatus(statusData.status);
-      setAnalysisResult(statusData.result);
+      setAnalysisStatus(statusData.status as typeof analysisStatus);
+      setAnalysisResult(statusData.result as BookAnalysis | null);
       setError(statusData.error || null);
 
       if (statusData.status === 'analyzed') {
         const chaptersData = await client.getChapterAnalyses({ bookId: book.id! });
-        setChapterAnalyses(chaptersData.analyses);
+        setChapterAnalyses(chaptersData.analyses as ChapterAnalysis[]);
         setAnalyzedChapters(chaptersData.analyses.length);
       }
     } catch (err) {

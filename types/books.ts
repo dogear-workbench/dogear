@@ -10,23 +10,23 @@
 export interface Book {
   id?: string;                            // 书籍唯一标识(UUID)
   title: string;                          // 书名
-  author?: string;                        // 作者
+  author: string | null;                  // 作者
   file_type: string;                      // 文件类型(txt/epub/pdf)
 
   // 处理状态
   processing_status: 'pending' | 'processing' | 'completed' | 'failed';  // 处理状态
-  processing_progress?: number;           // 处理进度 0-100
+  processing_progress: number;            // 处理进度 0-100 (默认值: 0)
 
   // 阅读进度(基于章节)
-  current_chapter_id?: string;            // 当前阅读的章节ID(UUID)
+  current_chapter_id: string | null;      // 当前阅读的章节ID(UUID)
 
   // 统计信息
-  total_chapters?: number;                // 总章节数
-  total_characters?: number;              // 总字符数
+  total_chapters: number;                 // 总章节数 (默认值: 0)
+  total_characters: number;               // 总字符数 (默认值: 0)
 
   // 原始文件信息
-  original_file_path?: string;            // 原始文件路径
-  file_size?: number;                     // 文件大小(字节)
+  original_file_path: string | null;      // 原始文件路径
+  file_size: number | null;               // 文件大小(字节)
 
   // v2: 工作区相关
   workspace_id?: string;                  // 工作区ID (v2 新增)
@@ -34,10 +34,10 @@ export interface Book {
 
   // v2: AI 分析状态
   analysis_status?: 'none' | 'analyzing' | 'analyzed' | 'failed'; // 分析状态
-  analyzed_at?: number;                   // 最后分析时间戳
+  analyzed_at?: number | null;            // 最后分析时间戳
 
-  cover_image?: string;                   // 封面图片路径
-  metadata?: string;                      // 其他元数据(JSON 格式)
+  cover_image: string | null;             // 封面图片路径
+  metadata: string | null;                // 其他元数据(JSON 格式)
   created_at?: string;                    // 创建时间
   updated_at?: string;                    // 更新时间
 }

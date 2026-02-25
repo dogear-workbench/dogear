@@ -91,7 +91,7 @@ export const workspaceRouter = {
           .filter(book => book.workspace_id === input.workspaceId)
           .map(book => ({
             name: book.title,
-            path: book.id,
+            path: book.id!, // book.id 从数据库读出时必然有值
             type: 'file' as const,
             ext: '.' + (book.file_type || 'txt'),
             bookId: book.id,

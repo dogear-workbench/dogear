@@ -156,7 +156,7 @@ export const agentRouter = {
         const workspaceService = await import('../services/workspace-service.js');
         const workspace = await workspaceService.getCurrentWorkspace();
         if (!workspace) {
-          return { status: 'none', result: null, error: '未设置默认工作区' };
+          return { status: 'none' as const, result: null, error: '未设置默认工作区' };
         }
         const status = await workspaceService.loadAnalysisStatus(workspace, input.bookId);
         const result = await workspaceService.loadAnalysisResult(workspace, input.bookId);
@@ -166,7 +166,7 @@ export const agentRouter = {
         };
       } catch (error) {
         console.error('获取分析状态失败:', error);
-        return { status: 'none', result: null, error: String(error) };
+        return { status: 'none' as const, result: null, error: String(error) };
       }
     }),
 

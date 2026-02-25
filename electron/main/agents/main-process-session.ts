@@ -18,6 +18,10 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import { mainLogger } from './logger.js';
+import type { ExtendedSessionMessage } from './task-types.js';
+
+// 重新导出，保持现有导入路径兼容
+export type { ExtendedSessionMessage };
 
 /**
  * 会话上下文
@@ -41,21 +45,6 @@ export interface MainProcessSessionConfig {
   // Skill 配置
   enableSkills?: boolean;            // 是否启用 Skill 功能（默认 false）
   skillsCwd?: string;                // Skill 工作目录（.claude/skills 所在路径）
-}
-
-/**
- * 扩展的消息类型，用于向前端传递更丰富的信息
- */
-export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result';
-  content?: string;                  // 文本内容
-  toolName?: string;                 // 工具名称
-  toolInput?: any;                   // 工具输入
-  toolOutput?: any;                  // 工具输出
-  toolUseId?: string;                // 工具使用 ID
-  status?: string;                   // 状态信息
-  error?: string;                    // 错误信息
-  timestamp: number;                 // 时间戳
 }
 
 /**

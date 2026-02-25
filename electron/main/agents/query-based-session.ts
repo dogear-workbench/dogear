@@ -13,7 +13,11 @@ import { EventEmitter } from 'events';
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKUserMessage, SDKMessage, SDKUserMessageReplay } from '@anthropic-ai/claude-agent-sdk';
 import { mainLogger } from './logger.js';
+import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
+
+// 重新导出，保持现有导入路径兼容
+export type { ExtendedSessionMessage };
 
 /**
  * 会话上下文
@@ -40,29 +44,6 @@ export interface QueryBasedSessionConfig {
   resume?: string;                   // SDK session_id（用于恢复会话）
   forkSession?: boolean;             // 是否创建分叉（与 resume 配合使用）
   resumeSessionAt?: string;          // 截断到此 assistant 消息的 SDK UUID
-}
-
-/**
- * 扩展的消息类型，用于向前端传递更丰富的信息
- */
-export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid';
-  content?: string;
-  toolName?: string;
-  toolInput?: any;
-  toolOutput?: any;
-  toolUseId?: string;
-  status?: string;
-  error?: string;
-  // 工具执行是否出错（用于 tool_result 类型）
-  isError?: boolean;
-  timestamp: number;
-  // 引用信息（用于书籍问答）
-  citations?: any[];
-  // 是否为重放的历史消息（resume 时使用）
-  isReplay?: boolean;
-  // 消息 UUID（SDK 提供）
-  uuid?: string;
 }
 
 /**

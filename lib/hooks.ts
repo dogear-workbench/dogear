@@ -92,7 +92,7 @@ export function useBook(id: string) {
     try {
       setLoading(true);
       const data = await client.getBookById({ id });
-      setBook(data);
+      setBook(data ?? null);
       setError(null);
     } catch (err) {
       setError(err as Error);
