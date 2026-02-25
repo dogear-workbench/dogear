@@ -11,7 +11,7 @@ import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
-import { registerAllHandlers } from './ipc/index.js';
+import { registerTipcHandlers } from './tipc/index.js';
 import { initDatabase } from './database/index.js';
 
 // 加载 .env 配置
@@ -181,8 +181,8 @@ app.whenReady().then(async () => {
   // 初始化数据库
   await initDatabase();
 
-  // 注册所有 IPC 处理器
-  registerAllHandlers();
+  // 注册所有 IPC 处理器（通过 tipc）
+  registerTipcHandlers();
 
   // 初始化 Agent 管理器
   const agentManager = getAgentManager({
