@@ -62,6 +62,7 @@ interface AgentChatProps {
    */
   context?: {
     bookId?: string;
+    workspaceId?: string;   // v5: 工作区ID
     chapterId?: string;
     selectedText?: string;
   };
@@ -433,6 +434,8 @@ export function AgentChat({
   const [historyLoaded, setHistoryLoaded] = useState(false);
   // SDK resume 状态
   const [isResumeMode, setIsResumeMode] = useState(false);
+  // 默认工作区路径（用于定位 SDK 会话文件）
+  const [workspacePath, setWorkspacePath] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -444,6 +447,13 @@ export function AgentChat({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 获取默认工作区路径
+  useEffect(() => {
+    client.getDefault().then((ws) => {
+      if (ws?.path) setWorkspacePath(ws.path);
+    });
+  }, []);
 
   // 加载历史消息（当 conversationId 变化时）
   useEffect(() => {
@@ -479,7 +489,7 @@ export function AgentChat({
             console.log('✅ 找到 sdk_session_id:', sdkSessionId);
 
             // 从 SDK 的会话文件中读取历史消息
-            const historyResult = await client.getSdkSessionHistory({ sdkSessionId });
+            const historyResult = await client.getSdkSessionHistory({ sdkSessionId, projectPath: workspacePath || undefined });
 
             if (historyResult.error) {
               console.error('读取 SDK 会话历史失败:', historyResult.error);
@@ -1412,7 +1422,7 @@ export function AgentChat({
         const originalSdkSessionId = await getOriginalSdkSessionId();
         if (!originalSdkSessionId) return;
 
-        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: originalSdkSessionId });
+        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: originalSdkSessionId, projectPath: workspacePath || undefined });
         if (historyResult.error) return;
 
         const afterMessages = parseMessagesAfterForkPoint(historyResult.messages, sdkUuid);
@@ -1453,7 +1463,7 @@ export function AgentChat({
           return;
         }
 
-        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: branchSdkSessionId });
+        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: branchSdkSessionId, projectPath: workspacePath || undefined });
         if (historyResult.error) {
           console.warn('加载分支 SDK 历史失败:', historyResult.error);
           return;

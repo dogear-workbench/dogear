@@ -36,13 +36,16 @@ export const conversationsRouter = {
       }
     }),
 
+  // v5: 对话直接属于工作区，bookId 可选
   create: t.procedure
-    .input<{ bookId: string; title?: string }>()
+    .input<{ workspaceId: string; bookId?: string; title?: string }>()
     .action(async ({ input }) => {
       try {
-        const book = dbBooks.getById(input.bookId);
-        if (!book) return { conversationId: null, error: '书籍不存在' };
-        const conversationId = dbConversations.create(input.bookId, input.title || '新对话');
+        const conversationId = dbConversations.create(
+          input.workspaceId,
+          input.title || '新对话',
+          input.bookId
+        );
         return { conversationId, error: undefined };
       } catch (error) {
         console.error('创建对话失败:', error);
@@ -122,6 +125,19 @@ export const conversationsRouter = {
       }
     }),
 
+  // v5: 获取工作区下所有对话（平铺列表）
+  getByWorkspaceId: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const conversations = dbConversations.getByWorkspaceId(input.workspaceId);
+        return { conversations, error: undefined };
+      } catch (error) {
+        console.error('获取工作区对话列表失败:', error);
+        return { conversations: [], error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
   getBooksWithConversations: t.procedure
     .input<{ workspaceId?: string }>()
     .action(async ({ input }) => {
@@ -141,14 +157,17 @@ export const conversationsRouter = {
       }
     }),
 
+  // v5: createFork 接收 workspaceId，bookId 可选
   createFork: t.procedure
-    .input<{ bookId: string; title: string; parentConversationId: string; forkMessageSdkUuid: string }>()
+    .input<{ workspaceId: string; title: string; parentConversationId: string; forkMessageSdkUuid: string; bookId?: string }>()
     .action(async ({ input }) => {
       try {
-        const book = dbBooks.getById(input.bookId);
-        if (!book) return { conversationId: null, error: '书籍不存在' };
         const conversationId = dbConversations.createFork(
-          input.bookId, input.title, input.parentConversationId, input.forkMessageSdkUuid
+          input.workspaceId,
+          input.title,
+          input.parentConversationId,
+          input.forkMessageSdkUuid,
+          input.bookId
         );
         return { conversationId, error: undefined };
       } catch (error) {

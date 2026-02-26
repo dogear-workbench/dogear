@@ -108,7 +108,8 @@ export interface Workspace {
  */
 export interface Conversation {
   id: string;                        // 对话唯一标识(UUID)
-  book_id: string;                   // 关联的书籍ID(UUID)
+  book_id?: string;                  // 关联的书籍ID(UUID)，可选（v5: 对话与书籍解耦）
+  workspace_id: string;              // 关联的工作区ID（v5 新增）
   title: string;                     // 对话标题
   model: string;                     // 使用的模型
   sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
@@ -237,6 +238,22 @@ export async function initDatabase(dbPath?: string): Promise<BetterSqlite3.Datab
     CREATE INDEX IF NOT EXISTS idx_branch_messages_branch_id ON branch_messages(branch_id);
     CREATE INDEX IF NOT EXISTS idx_branch_messages_timestamp ON branch_messages(timestamp);
   `);
+
+  // ==================== v5 迁移：对话与书籍解耦 ====================
+  // 给 conversations 表添加 workspace_id 字段
+  try { db.exec(`ALTER TABLE conversations ADD COLUMN workspace_id TEXT`); } catch { /* 列已存在 */ }
+
+  // 为现有对话补充 workspace_id（从关联的 book 获取）
+  db.exec(`
+    UPDATE conversations
+    SET workspace_id = (
+      SELECT workspace_id FROM books WHERE books.id = conversations.book_id
+    )
+    WHERE workspace_id IS NULL AND book_id IS NOT NULL
+  `);
+
+  // 创建索引
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_conversations_workspace_id ON conversations(workspace_id)`);
 
   return db;
 }
@@ -562,6 +579,16 @@ export const dbConversations = {
   },
 
   /**
+   * 获取指定工作区的所有对话（v5 新增）
+   * @param workspaceId - 工作区ID
+   * @returns 返回按更新时间倒序排列的对话数组
+   */
+  getByWorkspaceId: (workspaceId: string): Conversation[] => {
+    const stmt = getDb().prepare('SELECT * FROM conversations WHERE workspace_id = ? ORDER BY updated_at DESC');
+    return stmt.all(workspaceId) as Conversation[];
+  },
+
+  /**
    * 根据ID获取单个对话
    * @param id - 对话ID (UUID)
    * @returns 返回对话对象,如果不存在则返回 undefined
@@ -572,21 +599,22 @@ export const dbConversations = {
   },
 
   /**
-   * 创建新对话
-   * @param bookId - 书籍ID (UUID)
+   * 创建新对话（v5: 对话直接属于工作区，bookId 可选）
+   * @param workspaceId - 工作区ID
    * @param title - 对话标题
+   * @param bookId - 书籍ID（可选）
    * @param model - 使用的模型
    * @returns 返回新插入记录的 ID (UUID)
    */
-  create: (bookId: string, title: string, model: string = 'claude-sonnet-4-5-20250929'): string => {
+  create: (workspaceId: string, title: string, bookId?: string, model: string = 'claude-sonnet-4-5-20250929'): string => {
     const newId = uuidv4();
     const now = Date.now();
 
     const stmt = getDb().prepare(`
-      INSERT INTO conversations (id, book_id, title, model, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO conversations (id, workspace_id, book_id, title, model, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(newId, bookId, title, model, now, now);
+    stmt.run(newId, workspaceId, bookId || null, title, model, now, now);
     return newId;
   },
 
@@ -629,28 +657,30 @@ export const dbConversations = {
   },
 
   /**
-   * 创建分叉对话（v4 新增）
-   * @param bookId - 书籍ID
+   * 创建分叉对话（v5: workspaceId 必填，bookId 可选）
+   * @param workspaceId - 工作区ID
    * @param title - 对话标题（含来源标注）
    * @param parentConversationId - 父对话ID
    * @param forkMessageSdkUuid - 分叉点的 assistant 消息 SDK UUID
+   * @param bookId - 书籍ID（可选）
    * @param model - 模型名称
    * @returns 新对话 ID
    */
   createFork: (
-    bookId: string,
+    workspaceId: string,
     title: string,
     parentConversationId: string,
     forkMessageSdkUuid: string,
+    bookId?: string,
     model: string = 'claude-sonnet-4-5-20250929'
   ): string => {
     const newId = uuidv4();
     const now = Date.now();
     const stmt = getDb().prepare(`
-      INSERT INTO conversations (id, book_id, title, model, parent_conversation_id, fork_message_sdk_uuid, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO conversations (id, workspace_id, book_id, title, model, parent_conversation_id, fork_message_sdk_uuid, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    stmt.run(newId, bookId, title, model, parentConversationId, forkMessageSdkUuid, now, now);
+    stmt.run(newId, workspaceId, bookId || null, title, model, parentConversationId, forkMessageSdkUuid, now, now);
     return newId;
   }
 };

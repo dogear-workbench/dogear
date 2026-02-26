@@ -171,15 +171,53 @@ async function searchInFullContent(
 
 /**
  * 创建书籍问答专用 MCP Server
+ * v5: 改为基于工作区加载，支持访问工作区下所有书籍
  * @param workspacePath - 工作区路径
- * @param bookId - 书籍 ID（当前要查询的书籍）
+ * @param workspaceId - 工作区 ID
  * @returns MCP Server 配置
  */
-export function createBookQATools(workspacePath: string, bookId: string) {
+export function createBookQATools(workspacePath: string, workspaceId: string) {
   return createSdkMcpServer({
     name: 'dogear-book-qa',
     version: '1.0.0',
     tools: [
+      // ========================================
+      // 工具 0: 列出工作区书籍（v5 新增）
+      // ========================================
+      tool(
+        'ListBooks',
+        '列出当前工作区中所有已导入的书籍\n' +
+        '返回书籍ID、书名、作者等信息，用于确定要搜索的书籍。\n' +
+        '在搜索书籍内容前，如果不确定要搜索哪本书，请先调用此工具。',
+        {},
+        async (_args, _extra) => {
+          try {
+            const { dbBooks } = await import('../../database/index.js');
+            const allBooks = dbBooks.getAll();
+            const books = allBooks.filter(b => b.workspace_id === workspaceId);
+
+            if (books.length === 0) {
+              return {
+                content: [{ type: 'text' as const, text: '当前工作区没有已导入的书籍。' }],
+              };
+            }
+
+            const list = books.map((b, i) =>
+              `${i + 1}. 《${b.title}》${b.author ? ` - ${b.author}` : ''}\n   ID: ${b.id}\n   章节数: ${b.total_chapters}, 字符数: ${b.total_characters}\n   分析状态: ${b.analysis_status || 'none'}`
+            ).join('\n\n');
+
+            return {
+              content: [{ type: 'text' as const, text: `📚 工作区书籍列表（共 ${books.length} 本）：\n\n${list}` }],
+            };
+          } catch (error) {
+            return {
+              content: [{ type: 'text' as const, text: `❌ 获取书籍列表失败: ${error}` }],
+              isError: true,
+            };
+          }
+        }
+      ),
+
       // ========================================
       // 工具 1: 搜索书籍内容（核心）
       // ========================================
@@ -191,9 +229,9 @@ export function createBookQATools(workspacePath: string, bookId: string) {
         '2. 如果摘要不够，再搜索章节全文\n' +
         '3. 返回按相关度排序的结果，包含章节信息和相关度分数\n\n' +
         '使用场景：回答任何关于书籍内容的问题时，首先调用此工具。\n\n' +
-        '注意：bookId 参数可选，如果不提供则使用当前会话关联的书籍。',
+        '注意：必须提供 bookId，可以通过 ListBooks 工具获取。',
         {
-          bookId: z.string().optional().describe('书籍ID（可选，不提供则使用当前书籍）'),
+          bookId: z.string().describe('书籍ID（通过 ListBooks 工具获取）'),
           query: z.string().describe('搜索查询（提取问题的关键概念，多个关键词用空格分隔）'),
           searchMode: z.enum(['summary', 'full', 'auto'])
             .default('auto')
@@ -204,8 +242,7 @@ export function createBookQATools(workspacePath: string, bookId: string) {
         },
         async (args, extra) => {
           try {
-            // 使用闭包中的 bookId，如果 args 中没有提供的话
-            const targetBookId = args.bookId ?? bookId;
+            const targetBookId = args.bookId;
 
             const keywords = extractKeywords(args.query);
 
@@ -446,25 +483,28 @@ export function createBookQATools(workspacePath: string, bookId: string) {
  * 书籍问答专用的 System Prompt（可选）
  * 用于在创建会话时提供额外的上下文
  */
-export const BOOK_QA_SYSTEM_PROMPT = `你是一个书籍阅读助手，正在帮助用户基于原文回答问题。
+export const BOOK_QA_SYSTEM_PROMPT = `你是一个智能阅读助手，可以帮助用户聊天和基于书籍原文回答问题。
 
 ## 核心原则
 
-1. **严格基于原文**：所有答案必须来自书籍原文
-2. **标注引用来源**：每个回答都要标注章节
+1. **严格基于原文**：涉及书籍内容的答案必须来自原文
+2. **标注引用来源**：每个基于书籍的回答都要标注章节
 3. **诚实面对未知**：找不到时明确说明，不要编造
+4. **自由对话**：用户也可以进行不涉及书籍的自由对话
 
 ## 可用工具
 
-1. **GetBookInfo** - 获取书籍基本信息
-2. **SearchBookContent** - 搜索书籍内容（核心工具）
-3. **GetCitationContext** - 获取详细的引用和上下文
-4. **RequestMoreInfo** - 请求用户提供更多信息
+1. **ListBooks** - 列出工作区中所有已导入的书籍
+2. **GetBookInfo** - 获取书籍基本信息
+3. **SearchBookContent** - 搜索书籍内容（核心工具）
+4. **GetCitationContext** - 获取详细的引用和上下文
+5. **RequestMoreInfo** - 请求用户提供更多信息
 
 ## 工作流程
 
-1. 收到问题后，首先调用 SearchBookContent 搜索相关内容
-2. 如果找到结果，使用 GetCitationContext 获取详细内容
-3. 基于原文回答，并标注引用来源 [章节标题]
-4. 如果找不到，调用 RequestMoreInfo 请求更多信息
+1. 如果用户的问题涉及书籍，先用 ListBooks 确认工作区中有哪些书籍
+2. 调用 SearchBookContent 搜索相关内容
+3. 如果找到结果，使用 GetCitationContext 获取详细内容
+4. 基于原文回答，并标注引用来源 [章节标题]
+5. 如果找不到，调用 RequestMoreInfo 请求更多信息
 `;

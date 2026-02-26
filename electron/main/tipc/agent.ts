@@ -17,6 +17,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
 import { fileURLToPath } from 'url';
+import electron from 'electron';
+const { app } = electron;
 
 // 获取当前文件的路径 (ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -26,16 +28,29 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 
 /**
+ * 获取 CLAUDE_CONFIG_DIR 路径
+ * 与 query-based-session.ts 中设置的 env.CLAUDE_CONFIG_DIR 保持一致
+ */
+export function getClaudeConfigDir(): string {
+  const appDir = app.isPackaged
+    ? path.dirname(app.getPath('exe'))  // 生产环境：exe 同级
+    : process.cwd();                     // 开发环境：项目根目录
+  return path.join(appDir, '.claude-history');
+}
+
+/**
  * 获取 SDK 会话的存储目录
+ * 路径规则与 CLI 内部一致：{CLAUDE_CONFIG_DIR}/projects/{normalized_path}
  */
 async function getSdkSessionsDir(projectPath: string): Promise<string> {
   let normalized: string;
   if (process.platform === 'win32') {
-    normalized = projectPath.replace(/\\/g, '-').replace(/:/g, '');
+    normalized = projectPath.replace(/\\/g, '-').replace(/:/g, '-');
   } else {
     normalized = projectPath.replace(/\//g, '-');
   }
-  return path.join(os.homedir(), '.claude', 'projects', normalized);
+  const configDir = getClaudeConfigDir();
+  return path.join(configDir, 'projects', normalized);
 }
 
 const t = tipc.create();
@@ -359,13 +374,13 @@ export const agentRouter = {
           workspacePath = defaultWorkspace.path;
         }
 
-        // 构建 MCP Servers 配置
+        // 构建 MCP Servers 配置（v5: 改为基于工作区加载所有书籍）
         const mcpServers: Record<string, any> = {};
         if ((input.enableSkills ?? true) && workspacePath) {
-          const bookId = input.context?.bookId;
-          const bookQATools = createBookQATools(workspacePath, bookId || '');
+          const currentWorkspaceId = defaultWorkspace?.id || 'default';
+          const bookQATools = createBookQATools(workspacePath, currentWorkspaceId);
           mcpServers['dogear-book-qa'] = bookQATools;
-          console.log('已添加 book-qa MCP tools, bookId:', bookId);
+          console.log('已添加 book-qa MCP tools, workspaceId:', currentWorkspaceId);
         }
 
         // 构建会话配置
@@ -473,7 +488,13 @@ export const agentRouter = {
     .input<{ sdkSessionId: string; projectPath?: string }>()
     .action(async ({ input }) => {
       try {
-        const projectRoot = input.projectPath || PROJECT_ROOT;
+        // 优先使用前端传入的路径，其次使用默认工作区路径，最后 fallback 到项目根目录
+        let projectRoot = input.projectPath;
+        if (!projectRoot) {
+          const { dbWorkspaces } = await import('../database/index.js');
+          const defaultWorkspace = dbWorkspaces.getDefault();
+          projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
+        }
         const sessionsDir = await getSdkSessionsDir(projectRoot);
         let sessionFile = path.join(sessionsDir, `${input.sdkSessionId}.jsonl`);
 
@@ -621,7 +642,13 @@ export const agentRouter = {
     .input<{ projectPath?: string }>()
     .action(async ({ input }) => {
       try {
-        const projectRoot = input.projectPath || PROJECT_ROOT;
+        // 优先使用前端传入的路径，其次使用默认工作区路径，最后 fallback 到项目根目录
+        let projectRoot = input.projectPath;
+        if (!projectRoot) {
+          const { dbWorkspaces } = await import('../database/index.js');
+          const defaultWorkspace = dbWorkspaces.getDefault();
+          projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
+        }
         const sessionsDir = await getSdkSessionsDir(projectRoot);
         const indexPath = path.join(sessionsDir, 'sessions-index.json');
 

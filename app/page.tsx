@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { WorkspaceSelector } from '@/components/workspace-selector';
-import { BookConversationList, type BookNode, type Conversation } from '@/components/BookConversationList';
+import { ConversationList, type Conversation } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink } from 'lucide-react';
@@ -38,23 +38,10 @@ export default function Home() {
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ status: 'idle' });
 
-  // 对话相关状态 (v3 新增)
-  const [bookNodes, setBookNodes] = useState<BookNode[]>([]);
+  // 对话相关状态 (v5: 对话直接属于工作区)
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
-
-  // v4: 切换书籍展开状态（解决新增对话后收缩问题）
-  const handleToggleExpand = useCallback((bookId: string) => {
-    setBookNodes(prev => prev.map(node => {
-      if (node.book.id === bookId) {
-        return {
-          ...node,
-          expanded: !node.expanded,
-        };
-      }
-      return node;
-    }));
-  }, []);
 
   // v4: 分叉/编辑重发相关状态
   const [forkParams, setForkParams] = useState<{
@@ -73,36 +60,20 @@ export default function Home() {
     }
   }, [workspace]);
 
-  // 加载书籍和对话数据
-  const loadBooksWithConversations = useCallback(async () => {
+  // v5: 加载工作区对话列表（平铺）
+  const loadConversations = useCallback(async () => {
     if (!workspace) return;
 
     try {
       setLoadingConversations(true);
-      const result = await client.getBooksWithConversations({ workspaceId: workspace.id });
-
-      console.log('📚 加载对话列表结果:', result);
-      console.log('  booksWithConversations 数量:', result.booksWithConversations?.length);
+      const result = await client.getByWorkspaceId({ workspaceId: workspace.id });
 
       if (result.error) {
         console.error('加载对话列表失败:', result.error);
         return;
       }
 
-      console.log('✅ 设置 bookNodes:', result.booksWithConversations);
-      // 合并保留 expanded 状态，避免刷新时书籍列表收缩
-      setBookNodes(prev => {
-        const expandedMap = new Map<string, boolean>();
-        for (const node of prev) {
-          if (node.book.id) {
-            expandedMap.set(node.book.id, node.expanded ?? false);
-          }
-        }
-        return result.booksWithConversations.map((item: any) => ({
-          ...item,
-          expanded: expandedMap.get(item.book.id) ?? false,
-        }));
-      });
+      setConversations(result.conversations || []);
     } catch (error) {
       console.error('加载对话列表失败:', error);
     } finally {
@@ -113,9 +84,9 @@ export default function Home() {
   // 当工作区选中后加载对话列表
   useEffect(() => {
     if (workspace) {
-      loadBooksWithConversations();
+      loadConversations();
     }
-  }, [workspace, loadBooksWithConversations]);
+  }, [workspace, loadConversations]);
 
   const loadWorkspaceFiles = async () => {
     if (!workspace) return;
@@ -179,7 +150,7 @@ export default function Home() {
         await client.importBook({ filePath, workspaceId: workspace.id });
         // 导入成功后同时刷新文件列表和书籍对话列表
         loadWorkspaceFiles();
-        loadBooksWithConversations();
+        loadConversations();
       }
     } catch (error) {
       console.error('导入失败:', error);
@@ -319,25 +290,31 @@ export default function Home() {
 
   // ==================== 对话相关处理函数 (v3 新增) ====================
 
-  // 处理对话选择
+  // 处理对话选择（v5: book_id 可选）
   const handleConversationSelect = useCallback(async (conversation: Conversation) => {
     // v4: 切换对话时清除 forkParams，避免残留的 fork 模式
     setForkParams(null);
     setSelectedConversation(conversation);
 
-    // 加载对应的书籍信息
-    try {
-      const book = await client.getBookByFilePath({ filePathOrBookId: conversation.book_id });
-      setSelectedBook(book || null);
-    } catch (error) {
-      console.error('获取书籍信息失败:', error);
+    // 如果对话有关联书籍，加载书籍信息
+    if (conversation.book_id) {
+      try {
+        const book = await client.getBookByFilePath({ filePathOrBookId: conversation.book_id });
+        setSelectedBook(book || null);
+      } catch (error) {
+        console.error('获取书籍信息失败:', error);
+        setSelectedBook(null);
+      }
+    } else {
+      setSelectedBook(null);
     }
   }, []);
 
-  // 处理新增对话
-  const handleNewConversation = async (bookId: string) => {
+  // v5: 新增对话（直接属于工作区，不需要 bookId）
+  const handleNewConversation = async () => {
+    if (!workspace) return;
     try {
-      const result = await client.create({ bookId });
+      const result = await client.create({ workspaceId: workspace.id });
 
       if (result.error || !result.conversationId) {
         alert(`创建对话失败: ${result.error || '未知错误'}`);
@@ -345,7 +322,7 @@ export default function Home() {
       }
 
       // 重新加载对话列表
-      await loadBooksWithConversations();
+      await loadConversations();
 
       // 选中新创建的对话
       const newConversation = await client.getById({ conversationId: result.conversationId });
@@ -378,7 +355,7 @@ export default function Home() {
       }
 
       // 重新加载对话列表
-      await loadBooksWithConversations();
+      await loadConversations();
     } catch (error) {
       console.error('删除对话失败:', error);
       alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
@@ -411,12 +388,13 @@ export default function Home() {
         return;
       }
 
-      // 2. 创建分叉对话记录（数据库中新增 conversations 记录，旧记录不动）
+      // 2. 创建分叉对话记录（v5: 传递 workspaceId）
       const forkResult = await client.createFork({
-        bookId: parentConv.book_id,
+        workspaceId: parentConv.workspace_id,
         title: `分叉自: ${parentConv.title}`,
         parentConversationId: params.parentConversationId,
         forkMessageSdkUuid: params.forkMessageSdkUuid,
+        bookId: parentConv.book_id,
       });
 
       if (forkResult.error || !forkResult.conversationId) {
@@ -434,17 +412,9 @@ export default function Home() {
       });
 
       // 4. 刷新对话列表（确保新对话出现在列表中）
-      await loadBooksWithConversations();
+      await loadConversations();
 
-      // 5. 展开分叉对话所在的书籍节点
-      setBookNodes(prev => prev.map(node => {
-        if (node.book.id === parentConv.book_id) {
-          return { ...node, expanded: true };
-        }
-        return node;
-      }));
-
-      // 6. 切换到新创建的分叉对话
+      // 5. 切换到新创建的分叉对话
       const newConvResult = await client.getById({ conversationId: forkResult.conversationId });
       if (newConvResult.conversation) {
         setSelectedConversation(newConvResult.conversation);
@@ -453,7 +423,7 @@ export default function Home() {
       console.error('分叉对话失败:', error);
       alert(`分叉对话失败: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, [loadBooksWithConversations]);
+  }, [loadConversations]);
 
   /**
    * 处理编辑重发（在当前对话内原地替换）
@@ -541,27 +511,20 @@ export default function Home() {
 
       {/* 主内容区域：三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：书籍列表 */}
+        {/* 左侧：对话列表（v5: 平铺列表） */}
         <aside className="w-64 border-r bg-muted/30 flex flex-col">
           <div className="p-3 border-b">
-            <h2 className="text-sm font-semibold">书籍列表</h2>
+            <h2 className="text-sm font-semibold">对话列表</h2>
           </div>
           <div className="flex-1 overflow-hidden">
-            {loadingConversations ? (
-              <div className="h-full flex items-center justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <BookConversationList
-                books={bookNodes}
-                selectedConversationId={selectedConversation?.id || null}
-                onConversationSelect={handleConversationSelect}
-                onNewConversation={handleNewConversation}
-                onDeleteConversation={handleDeleteConversation}
-                loading={loadingConversations}
-                onToggleExpand={handleToggleExpand}
-              />
-            )}
+            <ConversationList
+              conversations={conversations}
+              selectedConversationId={selectedConversation?.id || null}
+              onConversationSelect={handleConversationSelect}
+              onNewConversation={handleNewConversation}
+              onDeleteConversation={handleDeleteConversation}
+              loading={loadingConversations}
+            />
           </div>
         </aside>
 
@@ -574,6 +537,7 @@ export default function Home() {
             <AgentChat
               context={{
                 bookId: selectedBook?.id,
+                workspaceId: workspace?.id,
                 chapterId: undefined,
                 selectedText: undefined,
               }}
@@ -769,8 +733,8 @@ export default function Home() {
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <FileIcon className="w-12 h-12 mb-4 opacity-50" />
-                <p className="text-sm text-center">从左侧选择一本书籍</p>
-                <p className="text-xs mt-1">预览内容和分析结果</p>
+                <p className="text-sm text-center">导入书籍后可在此预览</p>
+                <p className="text-xs mt-1">书籍信息和 AI 分析结果</p>
               </div>
             )}
           </div>

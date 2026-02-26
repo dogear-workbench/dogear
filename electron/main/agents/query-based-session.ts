@@ -15,6 +15,7 @@ import type { SDKUserMessage, SDKMessage, SDKUserMessageReplay } from '@anthropi
 import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
+import { getClaudeConfigDir } from '../tipc/agent.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -189,6 +190,18 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('✅ 已配置 resumeSessionAt:', this.config.resumeSessionAt);
       }
 
+      // 配置自定义存储路径：将会话历史存储在程序同级目录下
+      // SDK 内部会根据 cwd 自动按工作区分子目录
+      const claudeConfigDir = getClaudeConfigDir();
+      queryOptions.env = {
+        ...process.env,
+        CLAUDE_CONFIG_DIR: claudeConfigDir,
+      };
+      this.logger.info('已配置 CLAUDE_CONFIG_DIR:', claudeConfigDir);
+      // 验证关键环境变量是否已注入（由 dotenv 在主进程入口加载）
+      this.logger.info('env 验证: ANTHROPIC_AUTH_TOKEN=', queryOptions.env.ANTHROPIC_AUTH_TOKEN ? '已设置' : '❌ 未设置');
+      this.logger.info('env 验证: ANTHROPIC_BASE_URL=', queryOptions.env.ANTHROPIC_BASE_URL || '❌ 未设置');
+
       // ==================== 请求配置详情 ====================
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');
       this.logger.info('║                     AI 请求配置详情                             ║');
@@ -206,6 +219,7 @@ export class QueryBasedSession extends EventEmitter {
       this.logger.info('');
       this.logger.info('📁 目录配置:');
       this.logger.info('  • cwd:', queryOptions.cwd || '(默认)');
+      this.logger.info('  • CLAUDE_CONFIG_DIR:', claudeConfigDir);
       this.logger.info('  • settingSources:', JSON.stringify(queryOptions.settingSources || []));
       this.logger.info('  • additionalDirectories:', JSON.stringify(queryOptions.additionalDirectories || []));
       this.logger.info('');
