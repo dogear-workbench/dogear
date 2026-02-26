@@ -9,7 +9,8 @@
       "Skill(superpowers:executing-plans:*)",
       "Skill(superpowers:writing-plans)",
       "Skill(superpowers:writing-plans:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm install:*)"
     ]
   },
   "enabledPlugins": {

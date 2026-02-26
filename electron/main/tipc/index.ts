@@ -7,6 +7,7 @@ import { fileRouter } from './file.js';
 import { workspaceRouter } from './workspace.js';
 import { agentRouter } from './agent.js';
 import { conversationsRouter } from './conversations.js';
+import { articleRouter } from './article.js';
 
 export const router = {
   ...dbRouter,
@@ -16,6 +17,7 @@ export const router = {
   ...workspaceRouter,
   ...agentRouter,
   ...conversationsRouter,
+  ...articleRouter,
 };
 
 export type Router = typeof router;

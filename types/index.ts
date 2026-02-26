@@ -14,3 +14,6 @@ export * from './agents.js';
 
 // Electron API 类型
 export * from './electron-api.js';
+
+// 文章相关类型
+export * from './article.js';

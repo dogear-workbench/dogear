@@ -5,11 +5,14 @@ import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList, type Conversation } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe } from 'lucide-react';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
 import type { Book } from '@/types';
+import type { ArticleMeta, Article } from '@/types/article';
+import { ArticleList } from '@/components/ArticleList';
+import { ArticlePreview } from '@/components/ArticlePreview';
 
 // 分析进度状态类型
 interface AnalysisProgress {
@@ -42,6 +45,15 @@ export default function Home() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [loadingConversations, setLoadingConversations] = useState(false);
+
+  // 文章相关状态
+  const [articles, setArticles] = useState<ArticleMeta[]>([]);
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [loadingArticles, setLoadingArticles] = useState(false);
+  const [loadingArticleDetail, setLoadingArticleDetail] = useState(false);
+  const [parsingArticle, setParsingArticle] = useState(false);
+  const [showArticleUrlInput, setShowArticleUrlInput] = useState(false);
+  const [articleUrlInput, setArticleUrlInput] = useState('');
 
   // v4: 分叉/编辑重发相关状态
   const [forkParams, setForkParams] = useState<{
@@ -288,6 +300,106 @@ export default function Home() {
     }
   };
 
+  // ==================== 文章相关处理函数 ====================
+
+  // 加载工作区文章列表
+  const loadArticles = useCallback(async () => {
+    if (!workspace) return;
+    try {
+      setLoadingArticles(true);
+      const result = await client.getArticles({ workspaceId: workspace.id });
+      setArticles(result.articles || []);
+    } catch (error) {
+      console.error('加载文章列表失败:', error);
+    } finally {
+      setLoadingArticles(false);
+    }
+  }, [workspace]);
+
+  // 当工作区选中后加载文章列表
+  useEffect(() => {
+    if (workspace) {
+      loadArticles();
+    }
+  }, [workspace, loadArticles]);
+
+  // 显示文章 URL 输入框
+  const handleImportArticle = () => {
+    setShowArticleUrlInput(true);
+    setArticleUrlInput('');
+  };
+
+  // 提交 URL 解析文章
+  const handleSubmitArticleUrl = async () => {
+    if (!workspace || !articleUrlInput.trim()) return;
+
+    try {
+      setParsingArticle(true);
+      const result = await client.parseArticle({ url: articleUrlInput.trim(), workspaceId: workspace.id });
+      if (result.error) {
+        alert(`解析失败: ${result.error}`);
+        return;
+      }
+      // 关闭输入框
+      setShowArticleUrlInput(false);
+      setArticleUrlInput('');
+      // 刷新文章列表
+      await loadArticles();
+      // 自动选中新解析的文章
+      if (result.article) {
+        handleArticleSelect(result.article);
+      }
+    } catch (error) {
+      console.error('解析文章失败:', error);
+      alert(`解析失败: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setParsingArticle(false);
+    }
+  };
+
+  // 选择文章，加载完整内容
+  const handleArticleSelect = useCallback(async (articleMeta: ArticleMeta) => {
+    if (!workspace) return;
+    try {
+      setLoadingArticleDetail(true);
+      // 清除书籍选中状态
+      setSelectedBook(null);
+      setSelectedFile(null);
+      const result = await client.getArticleDetail({ workspaceId: workspace.id, articleId: articleMeta.id });
+      if (result.error) {
+        console.error('获取文章详情失败:', result.error);
+        return;
+      }
+      setSelectedArticle(result.article || null);
+    } catch (error) {
+      console.error('获取文章详情失败:', error);
+    } finally {
+      setLoadingArticleDetail(false);
+    }
+  }, [workspace]);
+
+  // 删除文章
+  const handleDeleteArticle = async (articleId: string) => {
+    if (!workspace) return;
+    if (!confirm('确定要删除这篇文章吗？此操作不可恢复。')) return;
+
+    try {
+      const result = await client.deleteArticle({ workspaceId: workspace.id, articleId });
+      if (result.error) {
+        alert(`删除失败: ${result.error}`);
+        return;
+      }
+      // 如果删除的是当前选中的文章，清除选中状态
+      if (selectedArticle?.id === articleId) {
+        setSelectedArticle(null);
+      }
+      await loadArticles();
+    } catch (error) {
+      console.error('删除文章失败:', error);
+      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
   // ==================== 对话相关处理函数 (v3 新增) ====================
 
   // 处理对话选择（v5: book_id 可选）
@@ -502,6 +614,34 @@ export default function Home() {
               <RefreshCw className="w-4 h-4" />
             )}
           </Button>
+          {showArticleUrlInput ? (
+            <div className="flex items-center gap-1">
+              <input
+                type="url"
+                className="h-8 px-2 text-sm border rounded bg-background w-64 focus:outline-none focus:ring-1 focus:ring-ring"
+                placeholder="输入文章 URL..."
+                value={articleUrlInput}
+                onChange={(e) => setArticleUrlInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSubmitArticleUrl();
+                  if (e.key === 'Escape') { setShowArticleUrlInput(false); setArticleUrlInput(''); }
+                }}
+                disabled={parsingArticle}
+                autoFocus
+              />
+              <Button size="sm" onClick={handleSubmitArticleUrl} disabled={parsingArticle || !articleUrlInput.trim()}>
+                {parsingArticle ? <Loader2 className="w-4 h-4 animate-spin" /> : '解析'}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => { setShowArticleUrlInput(false); setArticleUrlInput(''); }} disabled={parsingArticle}>
+                取消
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" variant="outline" onClick={handleImportArticle}>
+              <Globe className="w-4 h-4 mr-2" />
+              导入文章
+            </Button>
+          )}
           <Button size="sm" onClick={handleImport} disabled={importing}>
             <Plus className="w-4 h-4 mr-2" />
             {importing ? '导入中...' : '导入书籍'}
@@ -511,8 +651,9 @@ export default function Home() {
 
       {/* 主内容区域：三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：对话列表（v5: 平铺列表） */}
+        {/* 左侧：对话列表 + 文章列表 */}
         <aside className="w-64 border-r bg-muted/30 flex flex-col">
+          {/* 对话列表区域 */}
           <div className="p-3 border-b">
             <h2 className="text-sm font-semibold">对话列表</h2>
           </div>
@@ -525,6 +666,23 @@ export default function Home() {
               onDeleteConversation={handleDeleteConversation}
               loading={loadingConversations}
             />
+          </div>
+
+          {/* 文章列表区域 */}
+          <div className="border-t">
+            <div className="p-3 border-b flex items-center justify-between">
+              <h2 className="text-sm font-semibold">文章</h2>
+              <span className="text-xs text-muted-foreground">{articles.length}</span>
+            </div>
+            <div className="max-h-48 overflow-y-auto">
+              <ArticleList
+                articles={articles}
+                selectedArticleId={selectedArticle?.id || null}
+                onArticleSelect={handleArticleSelect}
+                onDeleteArticle={handleDeleteArticle}
+                loading={loadingArticles}
+              />
+            </div>
           </div>
         </aside>
 
@@ -551,11 +709,13 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 右侧：书籍预览 */}
+        {/* 右侧：预览（书籍 or 文章） */}
         <aside className="w-96 border-l flex flex-col bg-background">
           <div className="p-3 border-b flex items-center justify-between">
-            <h2 className="text-sm font-semibold">书籍预览</h2>
-            {selectedBook && (
+            <h2 className="text-sm font-semibold">
+              {selectedArticle ? '文章预览' : '书籍预览'}
+            </h2>
+            {selectedBook && !selectedArticle && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -571,9 +731,12 @@ export default function Home() {
               </Button>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto p-4">
-            {selectedFile ? (
-              <div className="space-y-4">
+          <div className="flex-1 overflow-y-auto">
+            {/* 文章预览模式 */}
+            {selectedArticle ? (
+              <ArticlePreview article={selectedArticle} loading={loadingArticleDetail} />
+            ) : selectedFile ? (
+              <div className="p-4 space-y-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
                     <span className="text-xs text-muted-foreground">{selectedFile.ext?.slice(1).toUpperCase()}</span>
@@ -731,10 +894,10 @@ export default function Home() {
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
                 <FileIcon className="w-12 h-12 mb-4 opacity-50" />
-                <p className="text-sm text-center">导入书籍后可在此预览</p>
-                <p className="text-xs mt-1">书籍信息和 AI 分析结果</p>
+                <p className="text-sm text-center">导入书籍或文章后可在此预览</p>
+                <p className="text-xs mt-1">选择左侧文章或书籍查看详情</p>
               </div>
             )}
           </div>

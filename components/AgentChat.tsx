@@ -5,6 +5,7 @@ import { Citation } from '@/types/electron-api';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { Pencil, GitBranch, ChevronLeft, ChevronRight } from 'lucide-react';
 
 /**
@@ -238,9 +239,7 @@ function MessageItem({
                 ))}
               </div>
             ) : message.content ? (
-              <div className="text-sm text-gray-800 whitespace-pre-wrap break-words">
-                {message.content}
-              </div>
+              <MarkdownRenderer content={message.content} className="text-sm" />
             ) : null}
 
             {/* 流式输出状态 */}
@@ -372,9 +371,7 @@ function ContentBlockItem({ block }: { block: ContentBlock }) {
     case 'text':
     default:
       return block.content ? (
-        <div className="text-sm text-gray-800 whitespace-pre-wrap">
-          {block.content}
-        </div>
+        <MarkdownRenderer content={block.content} className="text-sm" />
       ) : null;
   }
 }

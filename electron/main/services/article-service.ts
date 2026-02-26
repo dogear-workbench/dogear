@@ -1,0 +1,218 @@
+/**
+ * 网络文章解析服务
+ * 负责抓取、解析、存储网络文章到工作区文件系统
+ */
+import { Readability } from '@mozilla/readability';
+import { parseHTML } from 'linkedom';
+import TurndownService from 'turndown';
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs/promises';
+import path from 'path';
+/** 文章元数据（存储在 meta.json） */
+export interface ArticleMeta {
+  id: string;
+  url: string;
+  title: string;
+  author: string | null;
+  siteName: string | null;
+  excerpt: string | null;
+  wordCount: number;
+  fetchedAt: number;
+  language: string | null;
+}
+
+/** 文章完整数据（meta + 正文内容） */
+export interface Article extends ArticleMeta {
+  content: string;
+}
+
+// Turndown 实例（HTML → Markdown 转换器）
+const turndown = new TurndownService({
+  headingStyle: 'atx',
+  codeBlockStyle: 'fenced',
+});
+
+/** 文章存储根目录名 */
+const ARTICLES_DIR = '.dogear/articles';
+
+/**
+ * 抓取并解析网络文章
+ * @param url - 文章 URL
+ * @returns 解析后的文章数据（meta + markdown 正文 + 原始 HTML）
+ */
+export async function fetchAndParseArticle(url: string): Promise<{
+  meta: ArticleMeta;
+  content: string;
+  rawHtml: string;
+}> {
+  // 1. 抓取 HTML
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
+  }
+  const html = await response.text();
+
+  // 2. 使用 linkedom 解析为 DOM
+  const { document } = parseHTML(html);
+
+  // 3. 预处理：移除隐藏样式（微信公众号等平台通过 JS 控制内容可见性，
+  //    静态解析时内容 div 带有 visibility:hidden/display:none，需要移除）
+  const hiddenElements = document.querySelectorAll('[style*="visibility: hidden"], [style*="visibility:hidden"], [style*="display: none"], [style*="display:none"]');
+  for (const el of hiddenElements) {
+    const style = (el.getAttribute('style') || '')
+      .replace(/visibility\s*:\s*hidden\s*;?/gi, '')
+      .replace(/opacity\s*:\s*0\s*;?/gi, '')
+      .replace(/display\s*:\s*none\s*;?/gi, '')
+      .trim();
+    if (style) {
+      el.setAttribute('style', style);
+    } else {
+      el.removeAttribute('style');
+    }
+  }
+
+  // 4. 预处理：懒加载图片（微信等平台用 data-src 代替 src 实现懒加载，
+  //    需要将 data-src 复制到 src，否则 Readability/Turndown 无法识别图片）
+  const lazyImages = document.querySelectorAll('img[data-src]');
+  for (const img of lazyImages) {
+    const dataSrc = img.getAttribute('data-src');
+    if (dataSrc) {
+      img.setAttribute('src', dataSrc);
+    }
+  }
+
+  // 5. 使用 Readability 提取正文
+  const reader = new Readability(document);
+  const article = reader.parse();
+  if (!article) {
+    throw new Error('无法解析文章内容，页面可能不是标准文章格式');
+  }
+
+  // 6. HTML 正文转 Markdown
+  const markdown = turndown.turndown(article.content || '');
+
+  // 7. 组装结果
+  const id = uuidv4();
+  const meta: ArticleMeta = {
+    id,
+    url,
+    title: article.title || '未知标题',
+    author: article.byline || null,
+    siteName: article.siteName || null,
+    excerpt: article.excerpt || null,
+    wordCount: article.textContent?.length || 0,
+    fetchedAt: Date.now(),
+    language: article.lang || null,
+  };
+
+  return { meta, content: markdown, rawHtml: html };
+}
+
+/**
+ * 保存文章到工作区文件系统
+ * @param workspacePath - 工作区绝对路径
+ * @param articleData - 解析后的文章数据
+ */
+export async function saveArticle(
+  workspacePath: string,
+  articleData: { meta: ArticleMeta; content: string; rawHtml: string }
+): Promise<void> {
+  const articleDir = path.join(workspacePath, ARTICLES_DIR, articleData.meta.id);
+
+  // 创建文章目录
+  await fs.mkdir(articleDir, { recursive: true });
+
+  // 写入 meta.json
+  await fs.writeFile(
+    path.join(articleDir, 'meta.json'),
+    JSON.stringify(articleData.meta, null, 2),
+    'utf-8'
+  );
+
+  // 写入 content.md（Markdown 正文）
+  await fs.writeFile(
+    path.join(articleDir, 'content.md'),
+    articleData.content,
+    'utf-8'
+  );
+
+  // 写入 raw.html（原始 HTML，便于后续重新解析）
+  await fs.writeFile(
+    path.join(articleDir, 'raw.html'),
+    articleData.rawHtml,
+    'utf-8'
+  );
+}
+
+/**
+ * 列出工作区下所有已保存的文章
+ * @param workspacePath - 工作区绝对路径
+ * @returns 文章元数据数组，按抓取时间倒序排列
+ */
+export async function listArticles(workspacePath: string): Promise<ArticleMeta[]> {
+  const articlesDir = path.join(workspacePath, ARTICLES_DIR);
+
+  try {
+    const entries = await fs.readdir(articlesDir, { withFileTypes: true });
+    const articles: ArticleMeta[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      try {
+        const metaPath = path.join(articlesDir, entry.name, 'meta.json');
+        const metaContent = await fs.readFile(metaPath, 'utf-8');
+        articles.push(JSON.parse(metaContent));
+      } catch {
+        // 跳过无法读取的目录
+        continue;
+      }
+    }
+
+    // 按抓取时间倒序排列
+    articles.sort((a, b) => b.fetchedAt - a.fetchedAt);
+    return articles;
+  } catch {
+    // 目录不存在时返回空数组
+    return [];
+  }
+}
+
+/**
+ * 获取单篇文章的完整数据
+ * @param workspacePath - 工作区绝对路径
+ * @param articleId - 文章 ID (UUID)
+ * @returns 文章完整数据（meta + 正文）
+ */
+export async function getArticle(
+  workspacePath: string,
+  articleId: string
+): Promise<Article> {
+  const articleDir = path.join(workspacePath, ARTICLES_DIR, articleId);
+
+  // 读取 meta.json
+  const metaContent = await fs.readFile(path.join(articleDir, 'meta.json'), 'utf-8');
+  const meta: ArticleMeta = JSON.parse(metaContent);
+
+  // 读取 content.md
+  const content = await fs.readFile(path.join(articleDir, 'content.md'), 'utf-8');
+
+  return { ...meta, content };
+}
+
+/**
+ * 删除文章
+ * @param workspacePath - 工作区绝对路径
+ * @param articleId - 文章 ID (UUID)
+ */
+export async function deleteArticle(
+  workspacePath: string,
+  articleId: string
+): Promise<void> {
+  const articleDir = path.join(workspacePath, ARTICLES_DIR, articleId);
+  await fs.rm(articleDir, { recursive: true, force: true });
+}
