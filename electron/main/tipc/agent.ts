@@ -12,6 +12,7 @@ import {
 import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
 import type { QueryBasedSessionConfig } from '../agents/query-based-session.js';
 import { createBookQATools } from '../agents/tools/book-qa-tools.js';
+import { createArticleTools } from '../agents/tools/article-tools.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import path from 'path';
 import fs from 'fs/promises';
@@ -381,6 +382,11 @@ export const agentRouter = {
           const bookQATools = createBookQATools(workspacePath, currentWorkspaceId);
           mcpServers['dogear-book-qa'] = bookQATools;
           console.log('已添加 book-qa MCP tools, workspaceId:', currentWorkspaceId);
+
+          // 注册文章阅读工具（ReadArticle / ListArticles）
+          const articleTools = createArticleTools(workspacePath);
+          mcpServers['dogear-article'] = articleTools;
+          console.log('已添加 article MCP tools');
         }
 
         // 构建会话配置

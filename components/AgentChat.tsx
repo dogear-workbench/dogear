@@ -6,7 +6,8 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { Pencil, GitBranch, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pencil, GitBranch, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import type { ArticleMeta, QuoteSnippet } from '@/types/article';
 
 /**
  * Agent 聊天组件 v2
@@ -114,6 +115,97 @@ interface AgentChatProps {
     forkPointSdkUuid: string;
     editedMessage: string;
   }) => void;
+  /**
+   * 引用的文章列表（显示为输入框上方的芯片）
+   */
+  referencedArticles?: ArticleMeta[];
+  /**
+   * 移除单篇引用文章回调（点芯片上的 x）
+   */
+  onRemoveReferencedArticle?: (articleId: string) => void;
+  /**
+   * 清空所有引用文章回调（发送消息后调用）
+   */
+  onClearReferencedArticles?: () => void;
+  /**
+   * 引用的文字片段列表（从文章预览中选中的文字）
+   */
+  quotedSnippets?: QuoteSnippet[];
+  /**
+   * 移除单条引用片段回调
+   */
+  onRemoveQuotedSnippet?: (snippetId: string) => void;
+  /**
+   * 清空所有引用片段回调（发送消息后调用）
+   */
+  onClearQuotedSnippets?: () => void;
+}
+
+/**
+ * 解析用户消息中的引用格式，返回引用信息和实际消息文本
+ * 严格匹配我们自己定义的格式，避免误解析
+ */
+interface ParsedArticleRef {
+  title: string;
+  articleId: string;
+  siteName?: string;
+}
+interface ParsedSnippetRef {
+  articleTitle: string;
+  text: string;
+}
+interface ParsedUserMessage {
+  articleRefs: ParsedArticleRef[];
+  snippetRefs: ParsedSnippetRef[];
+  userMessage: string;
+}
+
+function parseUserMessageReferences(content: string): ParsedUserMessage {
+  const result: ParsedUserMessage = { articleRefs: [], snippetRefs: [], userMessage: content };
+
+  // 尝试匹配 [引用文章] 区块
+  const articleBlockRegex = /^\[引用文章\] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n((?:- 《.+?》\(articleId: .+?\)(?:\s*-\s*.+?)?\n?)+)/;
+  const articleBlockMatch = content.match(articleBlockRegex);
+
+  if (articleBlockMatch) {
+    // 逐行解析文章引用
+    const articleLineRegex = /^- 《(.+?)》\(articleId: (.+?)\)(?:\s*-\s*(.+))?$/gm;
+    let lineMatch;
+    while ((lineMatch = articleLineRegex.exec(articleBlockMatch[1])) !== null) {
+      result.articleRefs.push({
+        title: lineMatch[1],
+        articleId: lineMatch[2],
+        siteName: lineMatch[3]?.trim() || undefined,
+      });
+    }
+    // 移除已解析的 [引用文章] 区块
+    content = content.slice(articleBlockMatch[0].length);
+  }
+
+  // 尝试匹配 [引用片段] 区块
+  const snippetBlockRegex = /^\[引用片段\]\n([\s\S]+?)(?=\n\n(?!\s*来自《)|$)/;
+  // 先去掉可能的前导换行
+  content = content.replace(/^\n+/, '');
+  const snippetBlockMatch = content.match(snippetBlockRegex);
+
+  if (snippetBlockMatch) {
+    // 逐条解析片段引用：来自《title》:\n> text
+    const snippetRegex = /来自《(.+?)》:\n> ([\s\S]+?)(?=\n\n来自《|$)/g;
+    let snippetMatch;
+    while ((snippetMatch = snippetRegex.exec(snippetBlockMatch[1])) !== null) {
+      result.snippetRefs.push({
+        articleTitle: snippetMatch[1],
+        text: snippetMatch[2].trim(),
+      });
+    }
+    // 移除已解析的 [引用片段] 区块
+    content = content.slice(snippetBlockMatch[0].length);
+  }
+
+  // 剩余的就是用户实际消息（去掉前导换行）
+  result.userMessage = content.replace(/^\n+/, '');
+
+  return result;
 }
 
 /**
@@ -200,22 +292,53 @@ function MessageItem({
                 </div>
               </div>
             ) : (
-              // 显示模式
-              <div className="relative">
-                <div className="text-sm text-gray-900 whitespace-pre-wrap break-words pr-8">
-                  {message.content}
-                </div>
-                {/* 编辑按钮 - hover 时显示 */}
-                {onEditResend && (
-                  <button
-                    onClick={() => { setEditContent(message.content); setIsEditing(true); }}
-                    className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-blue-600"
-                    title="编辑并重新发送"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                )}
-              </div>
+              // 显示模式：解析引用格式并渲染芯片
+              (() => {
+                const parsed = parseUserMessageReferences(message.content);
+                const hasRefs = parsed.articleRefs.length > 0 || parsed.snippetRefs.length > 0;
+                return (
+                  <div className="relative">
+                    {/* 引用芯片（只读，无关闭按钮） */}
+                    {hasRefs && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {parsed.articleRefs.map((ref, i) => (
+                          <span
+                            key={`article-${i}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded-full text-xs text-blue-700"
+                            title={ref.title}
+                          >
+                            <span className="max-w-[160px] truncate">{ref.title}</span>
+                            {ref.siteName && <span className="text-blue-400 flex-shrink-0">- {ref.siteName}</span>}
+                          </span>
+                        ))}
+                        {parsed.snippetRefs.map((ref, i) => (
+                          <span
+                            key={`snippet-${i}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                            title={`来自《${ref.articleTitle}》: ${ref.text}`}
+                          >
+                            <span className="max-w-[120px] truncate">{`"${ref.text}"`}</span>
+                            <span className="text-purple-400 flex-shrink-0">- {ref.articleTitle.length > 8 ? ref.articleTitle.slice(0, 8) + '...' : ref.articleTitle}</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="text-sm text-gray-900 whitespace-pre-wrap break-words pr-8">
+                      {parsed.userMessage}
+                    </div>
+                    {/* 编辑按钮 - hover 时显示 */}
+                    {onEditResend && (
+                      <button
+                        onClick={() => { setEditContent(message.content); setIsEditing(true); }}
+                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity p-1 text-gray-400 hover:text-blue-600"
+                        title="编辑并重新发送"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })()
             )}
             {!isEditing && message.timestamp && (
               <div className="text-xs text-gray-400 mt-1">
@@ -420,6 +543,12 @@ export function AgentChat({
   forkParams,
   onForkConversation,
   onEditResend: onEditResendProp,
+  referencedArticles = [],
+  onRemoveReferencedArticle,
+  onClearReferencedArticles,
+  quotedSnippets = [],
+  onRemoveQuotedSnippet,
+  onClearQuotedSnippets,
 }: AgentChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -1489,18 +1618,48 @@ export function AgentChat({
     const userMessage = input;
     setInput('');
 
+    // 构建实际发送的内容：如果有引用文章或片段，在消息前追加引用提示
+    let messageToSend = userMessage;
+    const prefixParts: string[] = [];
+
+    // 清理文本中的换行符，确保引用格式每条引用都在单行内，方便后续解析
+    const sanitize = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
+
+    // 整篇文章引用：只传 ID，agent 通过 ReadArticle tool 读取
+    if (referencedArticles.length > 0) {
+      const refLines = referencedArticles.map(a =>
+        `- 《${sanitize(a.title)}》(articleId: ${a.id})${a.siteName ? ` - ${sanitize(a.siteName)}` : ''}`
+      ).join('\n');
+      prefixParts.push(`[引用文章] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n${refLines}`);
+      onClearReferencedArticles?.();
+    }
+
+    // 文字片段引用：直接内联内容，不需要 agent 调 tool
+    if (quotedSnippets.length > 0) {
+      const snippetLines = quotedSnippets.map(s =>
+        `来自《${sanitize(s.articleTitle)}》:\n> ${sanitize(s.text)}`
+      ).join('\n\n');
+      prefixParts.push(`[引用片段]\n${snippetLines}`);
+      onClearQuotedSnippets?.();
+    }
+
+    if (prefixParts.length > 0) {
+      messageToSend = `${prefixParts.join('\n\n')}\n\n${userMessage}`;
+    }
+
     // ==================== 前端发送消息日志 ====================
     console.log('');
     console.log('╔════════════════════════════════════════════════════════════════╗');
     console.log('║                    [前端] 发送用户消息                          ║');
     console.log('╚════════════════════════════════════════════════════════════════╝');
     console.log('  Session ID:', sessionId?.substring(0, 8));
-    console.log('  消息长度:', userMessage.length, '字符');
-    console.log('  消息内容:', userMessage);
+    console.log('  消息长度:', messageToSend.length, '字符');
+    console.log('  引用文章数:', referencedArticles.length);
+    console.log('  用户消息:', userMessage);
     console.log('╚════════════════════════════════════════════════════════════════╝');
     console.log('');
 
-    // 创建用户消息对象
+    // 创建用户消息对象（UI 上只显示用户原始输入，不含引用提示前缀）
     const newUserMessage: Message = {
       role: 'user',
       content: userMessage,
@@ -1525,8 +1684,8 @@ export function AgentChat({
     setIsLoading(true);
 
     try {
-      // 发送消息到会话
-      await client.sendQueryBasedSessionMessage({ sessionId, content: userMessage });
+      // 发送消息到会话（包含引用提示）
+      await client.sendQueryBasedSessionMessage({ sessionId, content: messageToSend });
     } catch (error) {
       console.error('发送消息失败:', error);
       setMessages(prev => [
@@ -1583,6 +1742,48 @@ export function AgentChat({
 
       {/* 输入区域 */}
       <div className="border-t p-4 bg-gray-50">
+        {/* 引用芯片区域（整篇文章 + 文字片段） */}
+        {(referencedArticles.length > 0 || quotedSnippets.length > 0) && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {/* 蓝色芯片：整篇文章引用 */}
+            {referencedArticles.map(article => (
+              <span
+                key={article.id}
+                className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded-full text-xs text-blue-700"
+                title={article.title}
+              >
+                <span className="max-w-[160px] truncate">{article.title}</span>
+                {onRemoveReferencedArticle && (
+                  <button
+                    onClick={() => onRemoveReferencedArticle(article.id)}
+                    className="flex-shrink-0 p-0.5 rounded-full hover:bg-blue-200 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+            {/* 紫色芯片：文字片段引用 */}
+            {quotedSnippets.map(snippet => (
+              <span
+                key={snippet.id}
+                className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                title={`来自《${snippet.articleTitle}》: ${snippet.text}`}
+              >
+                <span className="max-w-[120px] truncate">{`"${snippet.text}"`}</span>
+                <span className="text-purple-400 flex-shrink-0">- {snippet.articleTitle.length > 8 ? snippet.articleTitle.slice(0, 8) + '...' : snippet.articleTitle}</span>
+                {onRemoveQuotedSnippet && (
+                  <button
+                    onClick={() => onRemoveQuotedSnippet(snippet.id)}
+                    className="flex-shrink-0 p-0.5 rounded-full hover:bg-purple-200 transition-colors"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flex space-x-2">
           <textarea
             value={input}

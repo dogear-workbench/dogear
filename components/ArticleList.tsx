@@ -1,6 +1,6 @@
 'use client';
 
-import { Globe, Trash2, FileText } from 'lucide-react';
+import { Globe, Trash2, FileText, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { ArticleMeta } from '@/types/article';
 
@@ -13,6 +13,10 @@ interface ArticleListProps {
   onArticleSelect: (article: ArticleMeta) => void;
   /** 删除文章回调 */
   onDeleteArticle: (articleId: string) => void;
+  /** 引用文章到对话回调 */
+  onReferenceArticle?: (article: ArticleMeta) => void;
+  /** 已引用的文章 ID 集合（用于高亮显示） */
+  referencedArticleIds?: Set<string>;
   /** 加载中状态 */
   loading: boolean;
 }
@@ -44,6 +48,8 @@ export function ArticleList({
   selectedArticleId,
   onArticleSelect,
   onDeleteArticle,
+  onReferenceArticle,
+  referencedArticleIds,
   loading,
 }: ArticleListProps) {
   if (loading) {
@@ -105,18 +111,40 @@ export function ArticleList({
               )}
             </div>
 
-            {/* 删除按钮 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive flex-shrink-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteArticle(article.id);
-              }}
-            >
-              <Trash2 className="w-3 h-3" />
-            </Button>
+            {/* 操作按钮组 */}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {/* 引用按钮 */}
+              {onReferenceArticle && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className={`h-6 w-6 p-0 transition-opacity flex-shrink-0 ${
+                    referencedArticleIds?.has(article.id)
+                      ? 'opacity-100 text-blue-600'
+                      : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-blue-600'
+                  }`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReferenceArticle(article);
+                  }}
+                  title={referencedArticleIds?.has(article.id) ? '已引用到对话' : '引用到对话'}
+                >
+                  <Quote className="w-3 h-3" />
+                </Button>
+              )}
+              {/* 删除按钮 */}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive flex-shrink-0"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteArticle(article.id);
+                }}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
           </div>
         );
       })}

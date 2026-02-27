@@ -19,3 +19,11 @@ export interface ArticleMeta {
 export interface Article extends ArticleMeta {
   content: string;               // Markdown 正文
 }
+
+/** 引用片段（用户从文章预览中选中的文字） */
+export interface QuoteSnippet {
+  id: string;                    // 唯一标识（用于列表 key 和移除）
+  articleId: string;             // 来源文章 ID
+  articleTitle: string;          // 来源文章标题
+  text: string;                  // 选中的文字内容
+}

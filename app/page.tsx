@@ -10,7 +10,7 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
 import type { Book } from '@/types';
-import type { ArticleMeta, Article } from '@/types/article';
+import type { ArticleMeta, Article, QuoteSnippet } from '@/types/article';
 import { ArticleList } from '@/components/ArticleList';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
@@ -54,6 +54,11 @@ export default function Home() {
   const [parsingArticle, setParsingArticle] = useState(false);
   const [showArticleUrlInput, setShowArticleUrlInput] = useState(false);
   const [articleUrlInput, setArticleUrlInput] = useState('');
+
+  // 引用文章状态（用于在对话中引用文章）
+  const [referencedArticles, setReferencedArticles] = useState<ArticleMeta[]>([]);
+  // 引用片段状态（用户从文章预览中选中的文字片段）
+  const [quotedSnippets, setQuotedSnippets] = useState<QuoteSnippet[]>([]);
 
   // v4: 分叉/编辑重发相关状态
   const [forkParams, setForkParams] = useState<{
@@ -400,6 +405,51 @@ export default function Home() {
     }
   };
 
+  // ==================== 文章引用处理函数 ====================
+
+  // 引用/取消引用文章到当前对话
+  const handleReferenceArticle = useCallback((article: ArticleMeta) => {
+    setReferencedArticles(prev => {
+      const exists = prev.some(a => a.id === article.id);
+      if (exists) {
+        // 已引用则取消引用
+        return prev.filter(a => a.id !== article.id);
+      } else {
+        // 未引用则添加
+        return [...prev, article];
+      }
+    });
+  }, []);
+
+  // 移除引用的文章（从芯片上点 x）
+  const handleRemoveReferencedArticle = useCallback((articleId: string) => {
+    setReferencedArticles(prev => prev.filter(a => a.id !== articleId));
+  }, []);
+
+  // 清空所有引用（发送消息后由 AgentChat 调用）
+  const handleClearReferencedArticles = useCallback(() => {
+    setReferencedArticles([]);
+  }, []);
+
+  // 从文章预览中引用选中的文字片段
+  const handleQuoteSnippet = useCallback((params: { articleId: string; articleTitle: string; text: string }) => {
+    const snippet: QuoteSnippet = {
+      id: `snippet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ...params,
+    };
+    setQuotedSnippets(prev => [...prev, snippet]);
+  }, []);
+
+  // 移除单条引用片段
+  const handleRemoveQuotedSnippet = useCallback((snippetId: string) => {
+    setQuotedSnippets(prev => prev.filter(s => s.id !== snippetId));
+  }, []);
+
+  // 清空所有引用片段（发送消息后由 AgentChat 调用）
+  const handleClearQuotedSnippets = useCallback(() => {
+    setQuotedSnippets([]);
+  }, []);
+
   // ==================== 对话相关处理函数 (v3 新增) ====================
 
   // 处理对话选择（v5: book_id 可选）
@@ -680,6 +730,8 @@ export default function Home() {
                 selectedArticleId={selectedArticle?.id || null}
                 onArticleSelect={handleArticleSelect}
                 onDeleteArticle={handleDeleteArticle}
+                onReferenceArticle={handleReferenceArticle}
+                referencedArticleIds={new Set(referencedArticles.map(a => a.id))}
                 loading={loadingArticles}
               />
             </div>
@@ -705,6 +757,12 @@ export default function Home() {
               forkParams={forkParams}
               onForkConversation={handleForkConversation}
               onEditResend={handleEditResend}
+              referencedArticles={referencedArticles}
+              onRemoveReferencedArticle={handleRemoveReferencedArticle}
+              onClearReferencedArticles={handleClearReferencedArticles}
+              quotedSnippets={quotedSnippets}
+              onRemoveQuotedSnippet={handleRemoveQuotedSnippet}
+              onClearQuotedSnippets={handleClearQuotedSnippets}
             />
           </div>
         </section>
@@ -734,7 +792,7 @@ export default function Home() {
           <div className="flex-1 overflow-y-auto">
             {/* 文章预览模式 */}
             {selectedArticle ? (
-              <ArticlePreview article={selectedArticle} loading={loadingArticleDetail} />
+              <ArticlePreview article={selectedArticle} loading={loadingArticleDetail} onQuoteSnippet={handleQuoteSnippet} />
             ) : selectedFile ? (
               <div className="p-4 space-y-4">
                 <div className="flex items-center gap-3">

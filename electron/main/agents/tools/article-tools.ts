@@ -1,0 +1,106 @@
+/**
+ * 文章阅读 MCP Server 工具
+ *
+ * 提供 ReadArticle 和 ListArticles 工具，允许 Agent 按需读取工作区中已保存的文章内容。
+ * 用于「引用文章」功能：用户在对话中引用文章后，Agent 通过此工具获取文章的 Markdown 正文。
+ */
+
+import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { z } from 'zod';
+import * as articleService from '../../services/article-service.js';
+
+/**
+ * 创建文章阅读专用 MCP Server
+ * @param workspacePath - 工作区路径
+ * @returns MCP Server 配置
+ */
+export function createArticleTools(workspacePath: string) {
+  return createSdkMcpServer({
+    name: 'dogear-article',
+    version: '1.0.0',
+    tools: [
+      // ========================================
+      // 工具 1: 读取文章内容
+      // ========================================
+      tool(
+        'ReadArticle',
+        '读取指定文章的完整 Markdown 内容和元数据。\n' +
+        '当用户引用了某篇文章时，使用此工具获取文章正文以便分析、总结或回答问题。\n' +
+        '返回的内容包括标题、作者、来源、原始 URL 和 Markdown 正文。',
+        {
+          articleId: z.string().describe('文章 ID（UUID 格式，从引用信息或 ListArticles 结果中获取）'),
+        },
+        async (args) => {
+          try {
+            const article = await articleService.getArticle(workspacePath, args.articleId);
+
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `📄 文章信息\n` +
+                      `标题: ${article.title}\n` +
+                      `作者: ${article.author || '未知'}\n` +
+                      `来源: ${article.siteName || '未知'}\n` +
+                      `URL: ${article.url}\n` +
+                      `字数: ${article.wordCount}\n` +
+                      `抓取时间: ${new Date(article.fetchedAt).toLocaleString('zh-CN')}\n\n` +
+                      `--- 正文 ---\n\n${article.content}`,
+              }],
+            };
+          } catch (error) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `读取文章失败: ${error}`,
+              }],
+              isError: true,
+            };
+          }
+        }
+      ),
+
+      // ========================================
+      // 工具 2: 列出工作区所有文章
+      // ========================================
+      tool(
+        'ListArticles',
+        '列出当前工作区中所有已保存的文章（仅元数据，不含正文）。\n' +
+        '用于查看有哪些文章可用，需要读取具体内容时请使用 ReadArticle 工具。',
+        {},
+        async () => {
+          try {
+            const articles = await articleService.listArticles(workspacePath);
+
+            if (articles.length === 0) {
+              return {
+                content: [{ type: 'text' as const, text: '当前工作区没有已保存的文章。' }],
+              };
+            }
+
+            const list = articles.map((a, i) =>
+              `${i + 1}. 《${a.title}》\n` +
+              `   ID: ${a.id}\n` +
+              `   来源: ${a.siteName || '未知'} | 作者: ${a.author || '未知'}\n` +
+              `   字数: ${a.wordCount} | 时间: ${new Date(a.fetchedAt).toLocaleString('zh-CN')}`
+            ).join('\n\n');
+
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `📰 工作区文章列表（共 ${articles.length} 篇）：\n\n${list}`,
+              }],
+            };
+          } catch (error) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `获取文章列表失败: ${error}`,
+              }],
+              isError: true,
+            };
+          }
+        }
+      ),
+    ],
+  });
+}
