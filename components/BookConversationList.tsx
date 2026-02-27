@@ -2,6 +2,7 @@
 
 import { MessageSquare, Plus, Trash2, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useConversationStore } from '@/stores/conversation-store';
 
 /**
  * 对话接口（v5: 对话直接属于工作区，book_id 可选）
@@ -24,21 +25,6 @@ export interface BookNode {
   book: { id?: string; title: string };
   conversations: Conversation[];
   expanded?: boolean;
-}
-
-interface ConversationListProps {
-  /** 对话列表（按 updated_at 倒序） */
-  conversations: Conversation[];
-  /** 当前选中的对话ID */
-  selectedConversationId?: string | null;
-  /** 选择对话回调 */
-  onConversationSelect?: (conversation: Conversation) => void;
-  /** 新增对话回调（不再需要 bookId） */
-  onNewConversation?: () => void;
-  /** 删除对话回调 */
-  onDeleteConversation?: (conversationId: string) => void;
-  /** 加载中状态 */
-  loading?: boolean;
 }
 
 /**
@@ -77,17 +63,20 @@ function getConversationTitle(conversation: Conversation): string {
 }
 
 /**
- * 对话列表组件（v5: 平铺列表，替代原来的 BookConversationList 树形结构）
+ * 对话列表组件（v5: 平铺列表）
+ * 直接从 store 获取数据，无需外部 props
  */
-export function ConversationList({
-  conversations,
-  selectedConversationId,
-  onConversationSelect,
-  onNewConversation,
-  onDeleteConversation,
-  loading,
-}: ConversationListProps) {
-  if (loading) {
+export function ConversationList() {
+  const conversations = useConversationStore((s) => s.conversations);
+  const selectedConversation = useConversationStore((s) => s.selectedConversation);
+  const loadingConversations = useConversationStore((s) => s.loadingConversations);
+  const selectConversation = useConversationStore((s) => s.selectConversation);
+  const newConversation = useConversationStore((s) => s.newConversation);
+  const deleteConversation = useConversationStore((s) => s.deleteConversation);
+
+  const selectedConversationId = selectedConversation?.id || null;
+
+  if (loadingConversations) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
@@ -104,7 +93,7 @@ export function ConversationList({
           variant="outline"
           size="sm"
           className="w-full justify-start gap-2"
-          onClick={() => onNewConversation?.()}
+          onClick={() => newConversation()}
         >
           <Plus className="w-4 h-4" />
           新建对话
@@ -131,7 +120,7 @@ export function ConversationList({
                   className={`flex items-center gap-2 py-2 px-3 mx-1 rounded cursor-pointer transition-colors group ${
                     isSelected ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-muted/30'
                   }`}
-                  onClick={() => onConversationSelect?.(conversation)}
+                  onClick={() => selectConversation(conversation)}
                 >
                   {/* 图标：分叉对话用 GitBranch，普通对话用 MessageSquare */}
                   {isFork ? (
@@ -163,7 +152,7 @@ export function ConversationList({
                     className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDeleteConversation?.(conversation.id);
+                      deleteConversation(conversation.id);
                     }}
                   >
                     <Trash2 className="w-3 h-3" />

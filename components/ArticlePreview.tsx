@@ -4,16 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Globe, User, Calendar, ExternalLink, FileText, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
-import type { Article } from '@/types/article';
-
-interface ArticlePreviewProps {
-  /** 文章完整数据（含正文），null 表示未选中 */
-  article: Article | null;
-  /** 加载中状态 */
-  loading: boolean;
-  /** 引用选中文字到对话回调 */
-  onQuoteSnippet?: (params: { articleId: string; articleTitle: string; text: string }) => void;
-}
+import { useArticleStore } from '@/stores/article-store';
+import { useReferenceStore } from '@/stores/reference-store';
 
 /**
  * 选中文字后的浮动引用按钮
@@ -48,9 +40,13 @@ function SelectionTooltip({
 
 /**
  * 文章内容预览组件
- * 展示文章元数据和 Markdown 正文
+ * 直接从 store 获取数据，无需外部 props
  */
-export function ArticlePreview({ article, loading, onQuoteSnippet }: ArticlePreviewProps) {
+export function ArticlePreview() {
+  const article = useArticleStore((s) => s.selectedArticle);
+  const loading = useArticleStore((s) => s.loadingArticleDetail);
+  const addQuotedSnippet = useReferenceStore((s) => s.addQuotedSnippet);
+
   // 浮动按钮状态
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null);
   const [selectedText, setSelectedText] = useState('');
@@ -58,10 +54,9 @@ export function ArticlePreview({ article, loading, onQuoteSnippet }: ArticlePrev
 
   /**
    * 监听鼠标抬起事件，检测文字选中
-   * 使用 mouseup 而非 selectionchange，确保选区稳定后再显示按钮
    */
   const handleMouseUp = useCallback(() => {
-    if (!onQuoteSnippet || !contentRef.current) return;
+    if (!contentRef.current) return;
 
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.rangeCount) {
@@ -94,13 +89,12 @@ export function ArticlePreview({ article, loading, onQuoteSnippet }: ArticlePrev
       top: rangeRect.top - containerRect.top - 36, // 在选区上方
       left: rangeRect.left - containerRect.left + rangeRect.width / 2 - 50, // 居中
     });
-  }, [onQuoteSnippet]);
+  }, []);
 
   /**
    * 点击其他区域时隐藏浮动按钮
    */
   const handleMouseDown = useCallback((e: MouseEvent) => {
-    // 如果点击的是浮动按钮本身，不隐藏（由按钮的 onMouseDown 处理）
     const target = e.target as HTMLElement;
     if (target.closest('[data-quote-tooltip]')) return;
 
@@ -117,9 +111,9 @@ export function ArticlePreview({ article, loading, onQuoteSnippet }: ArticlePrev
    * 处理引用操作
    */
   const handleQuote = useCallback(() => {
-    if (!article || !selectedText || !onQuoteSnippet) return;
+    if (!article || !selectedText) return;
 
-    onQuoteSnippet({
+    addQuotedSnippet({
       articleId: article.id,
       articleTitle: article.title,
       text: selectedText,
@@ -129,7 +123,7 @@ export function ArticlePreview({ article, loading, onQuoteSnippet }: ArticlePrev
     window.getSelection()?.removeAllRanges();
     setTooltipPos(null);
     setSelectedText('');
-  }, [article, selectedText, onQuoteSnippet]);
+  }, [article, selectedText, addQuotedSnippet]);
 
   // 切换文章时清除浮动按钮
   useEffect(() => {

@@ -7,7 +7,9 @@ import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Pencil, GitBranch, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import type { ArticleMeta, QuoteSnippet } from '@/types/article';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useConversationStore } from '@/stores/conversation-store';
+import { useReferenceStore } from '@/stores/reference-store';
 
 /**
  * Agent 聊天组件 v2
@@ -59,86 +61,14 @@ interface ContentBlock {
 }
 
 interface AgentChatProps {
-  /**
-   * 上下文信息(可选)
-   */
-  context?: {
-    bookId?: string;
-    workspaceId?: string;   // v5: 工作区ID
-    chapterId?: string;
-    selectedText?: string;
-  };
-  /**
-   * 占位符文本
-   */
+  /** 占位符文本 */
   placeholder?: string;
-  /**
-   * 是否显示状态提示
-   */
+  /** 是否显示状态提示 */
   showStatusHint?: boolean;
-  /**
-   * 对话ID（用于恢复之前的对话）
-   */
-  conversationId?: string | null;
-  /**
-   * 是否使用 SDK 的 resume 功能（默认 true）
-   * - true: 使用 SDK resume，SDK 会自动重放历史消息
-   * - false: 从数据库加载历史消息，不使用 resume
-   */
+  /** 是否使用 SDK 的 resume 功能（默认 true） */
   useSdkResume?: boolean;
-  /**
-   * 是否显示重放的历史消息（仅当 useSdkResume=true 时有效）
-   */
+  /** 是否显示重放的历史消息（仅当 useSdkResume=true 时有效） */
   showReplayMessages?: boolean;
-  /**
-   * 分叉参数（v4 新增，用于 fork 模式启动会话）
-   */
-  forkParams?: {
-    sdkSessionIdToResume: string;
-    forkSession: boolean;
-    resumeSessionAt: string;
-    editedMessage?: string;
-    branchCount?: number;  // 分支总数（含原始版本），用于显示分支切换 UI
-    isForkNewConversation?: boolean; // true=分叉新对话, false/undefined=编辑重发
-  } | null;
-  /**
-   * 分叉对话回调（v4 新增，由 page.tsx 处理独立对话分叉）
-   */
-  onForkConversation?: (params: {
-    parentConversationId: string;
-    forkMessageSdkUuid: string;
-  }) => void;
-  /**
-   * 编辑重发回调（v4 新增，在当前对话内创建分支）
-   */
-  onEditResend?: (params: {
-    forkPointSdkUuid: string;
-    editedMessage: string;
-  }) => void;
-  /**
-   * 引用的文章列表（显示为输入框上方的芯片）
-   */
-  referencedArticles?: ArticleMeta[];
-  /**
-   * 移除单篇引用文章回调（点芯片上的 x）
-   */
-  onRemoveReferencedArticle?: (articleId: string) => void;
-  /**
-   * 清空所有引用文章回调（发送消息后调用）
-   */
-  onClearReferencedArticles?: () => void;
-  /**
-   * 引用的文字片段列表（从文章预览中选中的文字）
-   */
-  quotedSnippets?: QuoteSnippet[];
-  /**
-   * 移除单条引用片段回调
-   */
-  onRemoveQuotedSnippet?: (snippetId: string) => void;
-  /**
-   * 清空所有引用片段回调（发送消息后调用）
-   */
-  onClearQuotedSnippets?: () => void;
 }
 
 /**
@@ -163,8 +93,8 @@ interface ParsedUserMessage {
 function parseUserMessageReferences(content: string): ParsedUserMessage {
   const result: ParsedUserMessage = { articleRefs: [], snippetRefs: [], userMessage: content };
 
-  // 尝试匹配 [引用文章] 区块
-  const articleBlockRegex = /^\[引用文章\] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n((?:- 《.+?》\(articleId: .+?\)(?:\s*-\s*.+?)?\n?)+)/;
+  // 匹配 [引用文章] 头部，贪婪捕获到第一个空行（\n\n）之前的全部内容
+  const articleBlockRegex = /^\[引用文章\] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n([\s\S]+?)(?=\n\n|$)/;
   const articleBlockMatch = content.match(articleBlockRegex);
 
   if (articleBlockMatch) {
@@ -182,8 +112,8 @@ function parseUserMessageReferences(content: string): ParsedUserMessage {
     content = content.slice(articleBlockMatch[0].length);
   }
 
-  // 尝试匹配 [引用片段] 区块
-  const snippetBlockRegex = /^\[引用片段\]\n([\s\S]+?)(?=\n\n(?!\s*来自《)|$)/;
+  // 匹配 [引用片段] 区块，空行后跟 "来自《" 说明还在区块内，否则区块结束
+  const snippetBlockRegex = /^\[引用片段\]\n([\s\S]+?)(?=\n\n(?!来自《)|$)/;
   // 先去掉可能的前导换行
   content = content.replace(/^\n+/, '');
   const snippetBlockMatch = content.match(snippetBlockRegex);
@@ -534,27 +464,33 @@ function CitationBadge({ citation }: { citation: Citation }) {
 }
 
 export function AgentChat({
-  context,
   placeholder = '输入消息...',
   showStatusHint = true,
-  conversationId,
   useSdkResume = true,
   showReplayMessages = true,
-  forkParams,
-  onForkConversation,
-  onEditResend: onEditResendProp,
-  referencedArticles = [],
-  onRemoveReferencedArticle,
-  onClearReferencedArticles,
-  quotedSnippets = [],
-  onRemoveQuotedSnippet,
-  onClearQuotedSnippets,
 }: AgentChatProps) {
+  // 从 store 获取状态
+  const bookId = useWorkspaceStore((s) => s.selectedBook?.id);
+  const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
+  const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
+  const forkParams = useConversationStore((s) => s.forkParams);
+  const forkConversation = useConversationStore((s) => s.forkConversation);
+  const editResendAction = useConversationStore((s) => s.editResend);
+  const referencedArticles = useReferenceStore((s) => s.referencedArticles);
+  const removeReferencedArticle = useReferenceStore((s) => s.removeReferencedArticle);
+  const clearReferencedArticles = useReferenceStore((s) => s.clearReferencedArticles);
+  const quotedSnippets = useReferenceStore((s) => s.quotedSnippets);
+  const removeQuotedSnippet = useReferenceStore((s) => s.removeQuotedSnippet);
+  const clearQuotedSnippets = useReferenceStore((s) => s.clearQuotedSnippets);
+
+  // 构建 context 对象
+  const context = { bookId, workspaceId, chapterId: undefined, selectedText: undefined };
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  // 会话 ID
+  // 会话 ID（同时用 ref 保持最新引用，避免 useEffect cleanup 闭包过期）
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
   // 历史消息加载状态
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -564,6 +500,11 @@ export function AgentChat({
   const [workspacePath, setWorkspacePath] = useState<string>('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 同步 sessionId 到 ref
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
 
   // 自动滚动到底部
   const scrollToBottom = () => {
@@ -946,6 +887,9 @@ export function AgentChat({
 
   // 启动会话
   useEffect(() => {
+    // 竞态保护：快速切换对话时，取消过时的异步操作结果
+    let cancelled = false;
+
     const startSession = async () => {
       try {
         console.log('=== 启动基于 Query 的 Agent 会话 ===');
@@ -973,6 +917,7 @@ export function AgentChat({
           // 正常 resume 模式
           try {
             const convResult = await client.getById({ conversationId });
+            if (cancelled) return; // 检查是否已被取消
             console.log('getById 结果:', convResult);
             if (convResult.conversation?.sdk_session_id) {
               sdkSessionId = convResult.conversation.sdk_session_id;
@@ -984,6 +929,8 @@ export function AgentChat({
             console.error('❌ 获取 sdk_session_id 失败:', error);
           }
         }
+
+        if (cancelled) return; // 在创建会话前再次检查
 
         const response = await client.createQueryBasedSession({
           model: 'claude-sonnet-4-5-20250929',
@@ -997,6 +944,16 @@ export function AgentChat({
           resumeSessionAt: resumeSessionAtFlag,   // v4: 截断位置
           isForkNewConversation: forkParams?.isForkNewConversation, // v4: 区分分叉新对话/编辑重发
         });
+
+        // 关键：异步操作完成后检查是否已被取消（用户已切换到其他对话）
+        if (cancelled) {
+          // 会话已创建但不再需要，立即关闭
+          if (response.sessionId) {
+            console.log('会话已创建但被取消（用户快速切换），关闭:', response.sessionId);
+            client.closeQueryBasedSession({ sessionId: response.sessionId });
+          }
+          return;
+        }
 
         console.log('createSession 响应:', response);
 
@@ -1020,6 +977,7 @@ export function AgentChat({
           console.log('🔀 编辑重发模式: 自动发送编辑后的消息:', forkParams.editedMessage);
           // 稍微延迟确保会话已完全初始化
           setTimeout(async () => {
+            if (cancelled) return; // 延迟执行前再次检查
             try {
               // 先添加用户消息到 UI（附带分支信息，立即显示切换 UI）
               const branchCount = forkParams.branchCount || 2; // 至少 原始+当前分支=2
@@ -1056,18 +1014,25 @@ export function AgentChat({
           console.log('🔀 纯分叉模式: 等待历史加载完成，用户自行输入新消息');
         }
       } catch (error) {
-        console.error('❌ 启动会话异常:', error);
+        if (!cancelled) {
+          console.error('❌ 启动会话异常:', error);
+        }
       }
     };
 
     startSession();
 
-    // 组件卸载时关闭会话
+    // 组件卸载或 conversationId/forkParams 变化时：标记取消 + 关闭旧会话
     return () => {
-      if (sessionId) {
-        console.log('关闭会话:', sessionId);
-        client.closeQueryBasedSession({ sessionId });
+      cancelled = true;
+      if (sessionIdRef.current) {
+        console.log('关闭会话:', sessionIdRef.current);
+        client.closeQueryBasedSession({ sessionId: sessionIdRef.current });
+        sessionIdRef.current = null;
       }
+      // 重置会话状态，避免残留的旧会话 ID 被后续操作使用
+      setSessionId(null);
+      setIsSessionReady(false);
     };
   }, [conversationId, forkParams]); // 当 conversationId 或 forkParams 变化时重启会话
 
@@ -1341,25 +1306,23 @@ export function AgentChat({
     const truncatedMessages = messages.slice(0, targetAssistantIdx + 1);
     setMessages(truncatedMessages);
 
-    // 通过 onEditResendProp 回调让父组件处理（设置 forkParams + 创建分支记录）
-    if (onEditResendProp) {
-      onEditResendProp({
-        forkPointSdkUuid: targetAssistantUuid,
-        editedMessage: newContent,
-      });
-    }
-  }, [conversationId, messages, onEditResendProp]);
+    // 通过 store action 处理（设置 forkParams + 创建分支记录）
+    editResendAction({
+      forkPointSdkUuid: targetAssistantUuid,
+      editedMessage: newContent,
+    });
+  }, [conversationId, messages, editResendAction]);
 
   /**
    * 从某条 assistant 消息处分叉新对话
    */
   const handleFork = useCallback((assistantSdkUuid: string) => {
-    if (!conversationId || !onForkConversation) return;
-    onForkConversation({
+    if (!conversationId) return;
+    forkConversation({
       parentConversationId: conversationId,
       forkMessageSdkUuid: assistantSdkUuid,
     });
-  }, [conversationId, onForkConversation]);
+  }, [conversationId, forkConversation]);
 
   /**
    * 从 SDK JSONL 历史中解析 forkPoint 之后的消息
@@ -1466,10 +1429,11 @@ export function AgentChat({
   const recreateSession = useCallback(async (targetSdkSessionId: string) => {
     if (!conversationId) return;
 
-    // 关闭旧会话
-    if (sessionId) {
+    // 使用 ref 获取最新的 sessionId，避免闭包过期
+    const currentSessionId = sessionIdRef.current;
+    if (currentSessionId) {
       try {
-        await client.closeQueryBasedSession({ sessionId });
+        await client.closeQueryBasedSession({ sessionId: currentSessionId });
       } catch (e) {
         console.warn('关闭旧会话失败（可忽略）:', e);
       }
@@ -1495,7 +1459,7 @@ export function AgentChat({
       setIsSessionReady(true);
       console.log('✅ 分支切换后会话已重建:', response.sessionId);
     }
-  }, [conversationId, sessionId, context]);
+  }, [conversationId, context]);
 
   /**
    * 获取原始对话的 sdk_session_id（不含分支）
@@ -1631,7 +1595,7 @@ export function AgentChat({
         `- 《${sanitize(a.title)}》(articleId: ${a.id})${a.siteName ? ` - ${sanitize(a.siteName)}` : ''}`
       ).join('\n');
       prefixParts.push(`[引用文章] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n${refLines}`);
-      onClearReferencedArticles?.();
+      clearReferencedArticles();
     }
 
     // 文字片段引用：直接内联内容，不需要 agent 调 tool
@@ -1640,7 +1604,7 @@ export function AgentChat({
         `来自《${sanitize(s.articleTitle)}》:\n> ${sanitize(s.text)}`
       ).join('\n\n');
       prefixParts.push(`[引用片段]\n${snippetLines}`);
-      onClearQuotedSnippets?.();
+      clearQuotedSnippets();
     }
 
     if (prefixParts.length > 0) {
@@ -1659,10 +1623,10 @@ export function AgentChat({
     console.log('╚════════════════════════════════════════════════════════════════╝');
     console.log('');
 
-    // 创建用户消息对象（UI 上只显示用户原始输入，不含引用提示前缀）
+    // 创建用户消息对象（存储完整内容含引用前缀，由 parseUserMessageReferences 解析渲染）
     const newUserMessage: Message = {
       role: 'user',
-      content: userMessage,
+      content: messageToSend,
       timestamp: Date.now()
     };
 
@@ -1753,14 +1717,12 @@ export function AgentChat({
                 title={article.title}
               >
                 <span className="max-w-[160px] truncate">{article.title}</span>
-                {onRemoveReferencedArticle && (
-                  <button
-                    onClick={() => onRemoveReferencedArticle(article.id)}
-                    className="flex-shrink-0 p-0.5 rounded-full hover:bg-blue-200 transition-colors"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
+                <button
+                  onClick={() => removeReferencedArticle(article.id)}
+                  className="flex-shrink-0 p-0.5 rounded-full hover:bg-blue-200 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </span>
             ))}
             {/* 紫色芯片：文字片段引用 */}
@@ -1772,14 +1734,12 @@ export function AgentChat({
               >
                 <span className="max-w-[120px] truncate">{`"${snippet.text}"`}</span>
                 <span className="text-purple-400 flex-shrink-0">- {snippet.articleTitle.length > 8 ? snippet.articleTitle.slice(0, 8) + '...' : snippet.articleTitle}</span>
-                {onRemoveQuotedSnippet && (
-                  <button
-                    onClick={() => onRemoveQuotedSnippet(snippet.id)}
-                    className="flex-shrink-0 p-0.5 rounded-full hover:bg-purple-200 transition-colors"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
+                <button
+                  onClick={() => removeQuotedSnippet(snippet.id)}
+                  className="flex-shrink-0 p-0.5 rounded-full hover:bg-purple-200 transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </span>
             ))}
           </div>

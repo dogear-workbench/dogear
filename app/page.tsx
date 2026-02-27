@@ -1,644 +1,65 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useEffect } from 'react';
 import { WorkspaceSelector } from '@/components/workspace-selector';
-import { ConversationList, type Conversation } from '@/components/BookConversationList';
+import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe } from 'lucide-react';
-import { client } from '@/lib/client';
-import { rendererEvents } from '@/lib/events';
-import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
-import type { Book } from '@/types';
-import type { ArticleMeta, Article, QuoteSnippet } from '@/types/article';
 import { ArticleList } from '@/components/ArticleList';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
-// 分析进度状态类型
-interface AnalysisProgress {
-  status: 'idle' | 'analyzing' | 'completed' | 'failed';
-  taskId?: string;
-  currentTool?: string;
-  message?: string;
-  chapterCount?: number;
-  currentChapter?: string;
-  error?: string;
-}
+// Zustand stores
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useArticleStore } from '@/stores/article-store';
+import { useAnalysisStore } from '@/stores/analysis-store';
 
 export default function Home() {
-  const [workspace, setWorkspace] = useState<Workspace | null>(null);
-  const [files, setFiles] = useState<WorkspaceFileNode[]>([]);
-  const [selectedFile, setSelectedFile] = useState<WorkspaceFileNode | null>(null);
-  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
-  const [loadingFiles, setLoadingFiles] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  // 工作区状态
+  const workspace = useWorkspaceStore((s) => s.workspace);
+  const selectedFile = useWorkspaceStore((s) => s.selectedFile);
+  const selectedBook = useWorkspaceStore((s) => s.selectedBook);
+  const workspaceFilePath = useWorkspaceStore((s) => s.workspaceFilePath);
+  const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
+  const importing = useWorkspaceStore((s) => s.importing);
+  const deleting = useWorkspaceStore((s) => s.deleting);
+  const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
+  const importBook = useWorkspaceStore((s) => s.importBook);
+  const deleteBook = useWorkspaceStore((s) => s.deleteBook);
+  const openBookInFolder = useWorkspaceStore((s) => s.openBookInFolder);
+  const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
 
-  // 工作区文件路径状态
-  const [workspaceFilePath, setWorkspaceFilePath] = useState<string | null>(null);
+  // 文章状态
+  const selectedArticle = useArticleStore((s) => s.selectedArticle);
+  const articles = useArticleStore((s) => s.articles);
+  const showArticleUrlInput = useArticleStore((s) => s.showArticleUrlInput);
+  const articleUrlInput = useArticleStore((s) => s.articleUrlInput);
+  const parsingArticle = useArticleStore((s) => s.parsingArticle);
+  const showUrlInput = useArticleStore((s) => s.showUrlInput);
+  const hideUrlInput = useArticleStore((s) => s.hideUrlInput);
+  const setArticleUrlInput = useArticleStore((s) => s.setArticleUrlInput);
+  const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
 
-  // 分析相关状态
-  const [analyzing, setAnalyzing] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ status: 'idle' });
+  // 分析状态
+  const analyzing = useAnalysisStore((s) => s.analyzing);
+  const analysisProgress = useAnalysisStore((s) => s.analysisProgress);
+  const analyzeBook = useAnalysisStore((s) => s.analyzeBook);
+  const resetForBook = useAnalysisStore((s) => s.resetForBook);
+  const cleanupAnalysis = useAnalysisStore((s) => s.cleanup);
 
-  // 对话相关状态 (v5: 对话直接属于工作区)
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
-  const [loadingConversations, setLoadingConversations] = useState(false);
-
-  // 文章相关状态
-  const [articles, setArticles] = useState<ArticleMeta[]>([]);
-  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
-  const [loadingArticles, setLoadingArticles] = useState(false);
-  const [loadingArticleDetail, setLoadingArticleDetail] = useState(false);
-  const [parsingArticle, setParsingArticle] = useState(false);
-  const [showArticleUrlInput, setShowArticleUrlInput] = useState(false);
-  const [articleUrlInput, setArticleUrlInput] = useState('');
-
-  // 引用文章状态（用于在对话中引用文章）
-  const [referencedArticles, setReferencedArticles] = useState<ArticleMeta[]>([]);
-  // 引用片段状态（用户从文章预览中选中的文字片段）
-  const [quotedSnippets, setQuotedSnippets] = useState<QuoteSnippet[]>([]);
-
-  // v4: 分叉/编辑重发相关状态
-  const [forkParams, setForkParams] = useState<{
-    sdkSessionIdToResume: string;
-    forkSession: boolean;
-    resumeSessionAt: string;
-    editedMessage?: string;
-    branchCount?: number;  // 分支总数（含原始），用于前端显示分支切换 UI
-    isForkNewConversation?: boolean; // true=分叉新对话, false/undefined=编辑重发
-  } | null>(null);
-
-  // 当工作区选中后加载文件列表
+  // 切换书籍时重置分析状态
   useEffect(() => {
-    if (workspace) {
-      loadWorkspaceFiles();
-    }
-  }, [workspace]);
+    resetForBook(selectedBook);
+  }, [selectedBook?.id, resetForBook]);
 
-  // v5: 加载工作区对话列表（平铺）
-  const loadConversations = useCallback(async () => {
-    if (!workspace) return;
-
-    try {
-      setLoadingConversations(true);
-      const result = await client.getByWorkspaceId({ workspaceId: workspace.id });
-
-      if (result.error) {
-        console.error('加载对话列表失败:', result.error);
-        return;
-      }
-
-      setConversations(result.conversations || []);
-    } catch (error) {
-      console.error('加载对话列表失败:', error);
-    } finally {
-      setLoadingConversations(false);
-    }
-  }, [workspace]);
-
-  // 当工作区选中后加载对话列表
+  // 清理分析事件监听器
   useEffect(() => {
-    if (workspace) {
-      loadConversations();
-    }
-  }, [workspace, loadConversations]);
-
-  const loadWorkspaceFiles = async () => {
-    if (!workspace) return;
-
-    try {
-      setLoadingFiles(true);
-      const result = await client.getFiles({ workspaceId: workspace.id });
-      if (result.files) {
-        setFiles(result.files);
-      }
-    } catch (error) {
-      console.error('加载工作区文件失败:', error);
-    } finally {
-      setLoadingFiles(false);
-    }
-  };
-
-  const handleWorkspaceSelected = (selectedWorkspace: Workspace) => {
-    setWorkspace(selectedWorkspace);
-  };
-
-  const handleFileSelect = useCallback(async (file: WorkspaceFileNode) => {
-    setSelectedFile(file);
-    setWorkspaceFilePath(null);
-    // 加载对应的书籍信息
-    try {
-      // 如果文件节点有 bookId 属性（已导入的书籍），优先使用 bookId
-      const bookId = (file as any).bookId;
-      if (bookId) {
-        const book = await client.getBookByFilePath({ filePathOrBookId: bookId });
-        setSelectedBook(book || null);
-        // 获取工作区中的文件路径
-        if (book) {
-          const pathResult = await client.getWorkspaceFilePath({ bookId });
-          if (pathResult.path) {
-            setWorkspaceFilePath(pathResult.path);
-          }
-        }
-      } else {
-        setSelectedBook(null);
-      }
-    } catch (error) {
-      console.error('获取书籍信息失败:', error);
-      setSelectedBook(null);
-    }
-  }, []);
-
-  const handleRefreshFiles = () => {
-    loadWorkspaceFiles();
-  };
-
-  // 导入书籍
-  const handleImport = async () => {
-    if (!workspace) return;
-
-    try {
-      setImporting(true);
-      const filePath = await client.selectFile();
-      if (filePath) {
-        // 传递当前工作区 ID
-        await client.importBook({ filePath, workspaceId: workspace.id });
-        // 导入成功后同时刷新文件列表和书籍对话列表
-        loadWorkspaceFiles();
-        loadConversations();
-      }
-    } catch (error) {
-      console.error('导入失败:', error);
-      alert(`导入失败: ${(error as Error).message}`);
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  // 打开 Agent 监控窗口
-  const handleOpenMonitor = async () => {
-    try {
-      await client.openMonitorWindow();
-    } catch (error) {
-      console.error('打开监控窗口失败:', error);
-    }
-  };
-
-  // 删除书籍
-  const handleDeleteBook = async () => {
-    if (!selectedBook || !selectedBook.id) return;
-
-    if (!confirm(`确定要删除《${selectedBook.title}》吗？此操作不可恢复。`)) {
-      return;
-    }
-
-    try {
-      setDeleting(true);
-      await client.deleteBook({ id: selectedBook.id });
-      // 删除成功后清除选择并刷新
-      setSelectedBook(null);
-      setSelectedFile(null);
-      loadWorkspaceFiles();
-    } catch (error) {
-      console.error('删除失败:', error);
-      alert(`删除失败: ${(error as Error).message}`);
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  // 开始分析书籍
-  const handleAnalyzeBook = async () => {
-    if (!selectedBook?.id) return;
-
-    try {
-      setAnalyzing(true);
-      setAnalysisProgress({ status: 'analyzing' });
-
-      // 启动分析
-      const result = await client.analyzeBook({ bookId: selectedBook.id });
-
-      if (result.error) {
-        setAnalysisProgress({ status: 'failed', error: result.error });
-        setAnalyzing(false);
-        return;
-      }
-
-      if (result.taskId) {
-        setAnalysisProgress(prev => ({ ...prev, taskId: result.taskId }));
-
-        // 注册分析进度监听
-        const unsubscribe = rendererEvents.analysisUpdate.listen((data) => {
-          if (data.bookId === selectedBook.id) {
-            setAnalysisProgress(prev => ({
-              ...prev,
-              currentTool: data.toolName,
-              message: data.message || data.statusMessage,
-              currentChapter: data.chapterTitle,
-            }));
-
-            // 检查是否完成
-            if (data.status === 'completed') {
-              setAnalysisProgress({ status: 'completed' });
-              setAnalyzing(false);
-              // 刷新书籍信息（非异步）
-              client.getBookByFilePath({ filePathOrBookId: selectedBook.id }).then((updatedBook) => {
-                setSelectedBook(updatedBook || null);
-              });
-              unsubscribe();
-            } else if (data.error) {
-              setAnalysisProgress({ status: 'failed', error: data.error });
-              setAnalyzing(false);
-              unsubscribe();
-            }
-          }
-        });
-
-        // 保存取消订阅函数到状态中，以便组件卸载时清理
-        (window as any).__analysisUnsubscribe = unsubscribe;
-      }
-    } catch (error) {
-      console.error('启动分析失败:', error);
-      setAnalysisProgress({ status: 'failed', error: (error as Error).message });
-      setAnalyzing(false);
-    }
-  };
-
-  // 清理监听器
-  useEffect(() => {
-    return () => {
-      if ((window as any).__analysisUnsubscribe) {
-        (window as any).__analysisUnsubscribe();
-        delete (window as any).__analysisUnsubscribe;
-      }
-    };
-  }, []);
-
-  // 重置分析进度当切换书籍时
-  useEffect(() => {
-    if (selectedBook) {
-      // 如果书籍已分析，显示已完成状态
-      if (selectedBook.analysis_status === 'analyzed') {
-        setAnalysisProgress({ status: 'completed' });
-      } else if (selectedBook.analysis_status === 'analyzing') {
-        setAnalysisProgress({ status: 'analyzing' });
-        setAnalyzing(true);
-      } else {
-        setAnalysisProgress({ status: 'idle' });
-        setAnalyzing(false);
-      }
-    } else {
-      setAnalysisProgress({ status: 'idle' });
-      setAnalyzing(false);
-    }
-  }, [selectedBook?.id]);
-
-  // 打开文件所在目录
-  const handleOpenInFolder = async () => {
-    if (!selectedBook?.id) return;
-    try {
-      await client.openBookInFolder({ bookId: selectedBook.id });
-    } catch (error) {
-      console.error('打开文件失败:', error);
-    }
-  };
-
-  // ==================== 文章相关处理函数 ====================
-
-  // 加载工作区文章列表
-  const loadArticles = useCallback(async () => {
-    if (!workspace) return;
-    try {
-      setLoadingArticles(true);
-      const result = await client.getArticles({ workspaceId: workspace.id });
-      setArticles(result.articles || []);
-    } catch (error) {
-      console.error('加载文章列表失败:', error);
-    } finally {
-      setLoadingArticles(false);
-    }
-  }, [workspace]);
-
-  // 当工作区选中后加载文章列表
-  useEffect(() => {
-    if (workspace) {
-      loadArticles();
-    }
-  }, [workspace, loadArticles]);
-
-  // 显示文章 URL 输入框
-  const handleImportArticle = () => {
-    setShowArticleUrlInput(true);
-    setArticleUrlInput('');
-  };
-
-  // 提交 URL 解析文章
-  const handleSubmitArticleUrl = async () => {
-    if (!workspace || !articleUrlInput.trim()) return;
-
-    try {
-      setParsingArticle(true);
-      const result = await client.parseArticle({ url: articleUrlInput.trim(), workspaceId: workspace.id });
-      if (result.error) {
-        alert(`解析失败: ${result.error}`);
-        return;
-      }
-      // 关闭输入框
-      setShowArticleUrlInput(false);
-      setArticleUrlInput('');
-      // 刷新文章列表
-      await loadArticles();
-      // 自动选中新解析的文章
-      if (result.article) {
-        handleArticleSelect(result.article);
-      }
-    } catch (error) {
-      console.error('解析文章失败:', error);
-      alert(`解析失败: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      setParsingArticle(false);
-    }
-  };
-
-  // 选择文章，加载完整内容
-  const handleArticleSelect = useCallback(async (articleMeta: ArticleMeta) => {
-    if (!workspace) return;
-    try {
-      setLoadingArticleDetail(true);
-      // 清除书籍选中状态
-      setSelectedBook(null);
-      setSelectedFile(null);
-      const result = await client.getArticleDetail({ workspaceId: workspace.id, articleId: articleMeta.id });
-      if (result.error) {
-        console.error('获取文章详情失败:', result.error);
-        return;
-      }
-      setSelectedArticle(result.article || null);
-    } catch (error) {
-      console.error('获取文章详情失败:', error);
-    } finally {
-      setLoadingArticleDetail(false);
-    }
-  }, [workspace]);
-
-  // 删除文章
-  const handleDeleteArticle = async (articleId: string) => {
-    if (!workspace) return;
-    if (!confirm('确定要删除这篇文章吗？此操作不可恢复。')) return;
-
-    try {
-      const result = await client.deleteArticle({ workspaceId: workspace.id, articleId });
-      if (result.error) {
-        alert(`删除失败: ${result.error}`);
-        return;
-      }
-      // 如果删除的是当前选中的文章，清除选中状态
-      if (selectedArticle?.id === articleId) {
-        setSelectedArticle(null);
-      }
-      await loadArticles();
-    } catch (error) {
-      console.error('删除文章失败:', error);
-      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  // ==================== 文章引用处理函数 ====================
-
-  // 引用/取消引用文章到当前对话
-  const handleReferenceArticle = useCallback((article: ArticleMeta) => {
-    setReferencedArticles(prev => {
-      const exists = prev.some(a => a.id === article.id);
-      if (exists) {
-        // 已引用则取消引用
-        return prev.filter(a => a.id !== article.id);
-      } else {
-        // 未引用则添加
-        return [...prev, article];
-      }
-    });
-  }, []);
-
-  // 移除引用的文章（从芯片上点 x）
-  const handleRemoveReferencedArticle = useCallback((articleId: string) => {
-    setReferencedArticles(prev => prev.filter(a => a.id !== articleId));
-  }, []);
-
-  // 清空所有引用（发送消息后由 AgentChat 调用）
-  const handleClearReferencedArticles = useCallback(() => {
-    setReferencedArticles([]);
-  }, []);
-
-  // 从文章预览中引用选中的文字片段
-  const handleQuoteSnippet = useCallback((params: { articleId: string; articleTitle: string; text: string }) => {
-    const snippet: QuoteSnippet = {
-      id: `snippet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      ...params,
-    };
-    setQuotedSnippets(prev => [...prev, snippet]);
-  }, []);
-
-  // 移除单条引用片段
-  const handleRemoveQuotedSnippet = useCallback((snippetId: string) => {
-    setQuotedSnippets(prev => prev.filter(s => s.id !== snippetId));
-  }, []);
-
-  // 清空所有引用片段（发送消息后由 AgentChat 调用）
-  const handleClearQuotedSnippets = useCallback(() => {
-    setQuotedSnippets([]);
-  }, []);
-
-  // ==================== 对话相关处理函数 (v3 新增) ====================
-
-  // 处理对话选择（v5: book_id 可选）
-  const handleConversationSelect = useCallback(async (conversation: Conversation) => {
-    // v4: 切换对话时清除 forkParams，避免残留的 fork 模式
-    setForkParams(null);
-    setSelectedConversation(conversation);
-
-    // 如果对话有关联书籍，加载书籍信息
-    if (conversation.book_id) {
-      try {
-        const book = await client.getBookByFilePath({ filePathOrBookId: conversation.book_id });
-        setSelectedBook(book || null);
-      } catch (error) {
-        console.error('获取书籍信息失败:', error);
-        setSelectedBook(null);
-      }
-    } else {
-      setSelectedBook(null);
-    }
-  }, []);
-
-  // v5: 新增对话（直接属于工作区，不需要 bookId）
-  const handleNewConversation = async () => {
-    if (!workspace) return;
-    try {
-      const result = await client.create({ workspaceId: workspace.id });
-
-      if (result.error || !result.conversationId) {
-        alert(`创建对话失败: ${result.error || '未知错误'}`);
-        return;
-      }
-
-      // 重新加载对话列表
-      await loadConversations();
-
-      // 选中新创建的对话
-      const newConversation = await client.getById({ conversationId: result.conversationId });
-      if (newConversation.conversation) {
-        handleConversationSelect(newConversation.conversation);
-      }
-    } catch (error) {
-      console.error('创建对话失败:', error);
-      alert(`创建对话失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  // 处理删除对话
-  const handleDeleteConversation = async (conversationId: string) => {
-    if (!confirm('确定要删除这个对话吗？此操作不可恢复。')) {
-      return;
-    }
-
-    try {
-      const result = await client.deleteConversation({ conversationId });
-
-      if (result.error) {
-        alert(`删除失败: ${result.error}`);
-        return;
-      }
-
-      // 如果删除的是当前选中的对话，清除选中状态
-      if (selectedConversation?.id === conversationId) {
-        setSelectedConversation(null);
-      }
-
-      // 重新加载对话列表
-      await loadConversations();
-    } catch (error) {
-      console.error('删除对话失败:', error);
-      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  };
-
-  // ==================== v4: 分叉和编辑重发 ====================
-
-  /**
-   * 处理对话分叉（创建独立新对话，纯分支）
-   * 从某条 assistant 消息处分叉，创建新对话，加载历史到分支点，等待用户输入
-   * 旧对话完整保留不变
-   */
-  const handleForkConversation = useCallback(async (params: {
-    parentConversationId: string;
-    forkMessageSdkUuid: string;
-  }) => {
-    try {
-      // 1. 获取父对话信息，拿到 sdk_session_id 和 book_id
-      const convResult = await client.getById({ conversationId: params.parentConversationId });
-      const parentConv = convResult.conversation;
-
-      if (!parentConv) {
-        console.error('父对话不存在');
-        return;
-      }
-
-      if (!parentConv.sdk_session_id) {
-        alert('该对话不支持分叉（缺少 SDK session）');
-        return;
-      }
-
-      // 2. 创建分叉对话记录（v5: 传递 workspaceId）
-      const forkResult = await client.createFork({
-        workspaceId: parentConv.workspace_id,
-        title: `分叉自: ${parentConv.title}`,
-        parentConversationId: params.parentConversationId,
-        forkMessageSdkUuid: params.forkMessageSdkUuid,
-        bookId: parentConv.book_id,
-      });
-
-      if (forkResult.error || !forkResult.conversationId) {
-        alert(`创建分叉对话失败: ${forkResult.error || '未知错误'}`);
-        return;
-      }
-
-      // 3. 设置 forkParams，让 AgentChat 以 fork 模式启动
-      // 纯分支：不传 editedMessage，fork 后只加载历史，等待用户输入
-      setForkParams({
-        sdkSessionIdToResume: parentConv.sdk_session_id,
-        forkSession: true,
-        resumeSessionAt: params.forkMessageSdkUuid,
-        isForkNewConversation: true, // 标记为分叉新对话（session_init 写 conversations 表）
-      });
-
-      // 4. 刷新对话列表（确保新对话出现在列表中）
-      await loadConversations();
-
-      // 5. 切换到新创建的分叉对话
-      const newConvResult = await client.getById({ conversationId: forkResult.conversationId });
-      if (newConvResult.conversation) {
-        setSelectedConversation(newConvResult.conversation);
-      }
-    } catch (error) {
-      console.error('分叉对话失败:', error);
-      alert(`分叉对话失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [loadConversations]);
-
-  /**
-   * 处理编辑重发（在当前对话内原地替换）
-   * 截断消息到编辑点，使用 forkSession 重新发送，完成后显示分支切换
-   * 不创建新对话，不在左侧列表新增条目
-   */
-  const handleEditResend = useCallback(async (params: {
-    forkPointSdkUuid: string;
-    editedMessage: string;
-  }) => {
-    if (!selectedConversation?.id) return;
-
-    try {
-      // 1. 获取当前对话的 sdk_session_id
-      const convResult = await client.getById({ conversationId: selectedConversation.id });
-      const conv = convResult.conversation;
-
-      if (!conv?.sdk_session_id) {
-        alert('该对话不支持编辑重发（缺少 SDK session）');
-        return;
-      }
-
-      // 2. 创建分支记录（用于分支计数和切换）
-      await client.createBranch({
-        conversationId: selectedConversation.id,
-        forkPointSdkUuid: params.forkPointSdkUuid,
-        sdkSessionId: `pending-${Date.now()}`,  // 临时值，后续由 SDK session_init 事件更新
-      });
-
-      // 3. 查询该分叉点的分支数量（用于前端立即显示分支切换 UI）
-      const branchesResult = await client.getBranches({
-        conversationId: selectedConversation.id, forkPointSdkUuid: params.forkPointSdkUuid
-      });
-      const branchCount = (branchesResult.branches?.length || 0) + 1; // +1 算上原始版本
-
-      // 4. 设置 forkParams，让 AgentChat 在当前对话内以 fork 模式重启会话
-      // 不切换 selectedConversation，保持在当前对话
-      setForkParams({
-        sdkSessionIdToResume: conv.sdk_session_id,
-        forkSession: true,
-        resumeSessionAt: params.forkPointSdkUuid,
-        editedMessage: params.editedMessage,
-        branchCount,
-      });
-    } catch (error) {
-      console.error('编辑重发失败:', error);
-      alert(`编辑重发失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }, [selectedConversation?.id]);
+    return () => cleanupAnalysis();
+  }, [cleanupAnalysis]);
 
   // 如果没有工作区，显示工作区选择界面
   if (!workspace) {
-    return <WorkspaceSelector onWorkspaceSelected={handleWorkspaceSelected} />;
+    return <WorkspaceSelector />;
   }
 
   return (
@@ -653,11 +74,11 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleOpenMonitor}>
+          <Button variant="outline" size="sm" onClick={openMonitorWindow}>
             <Activity className="w-4 h-4 mr-2" />
             Agent 监控
           </Button>
-          <Button variant="outline" size="sm" onClick={handleRefreshFiles} disabled={loadingFiles}>
+          <Button variant="outline" size="sm" onClick={() => loadWorkspaceFiles()} disabled={loadingFiles}>
             {loadingFiles ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
@@ -673,26 +94,26 @@ export default function Home() {
                 value={articleUrlInput}
                 onChange={(e) => setArticleUrlInput(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSubmitArticleUrl();
-                  if (e.key === 'Escape') { setShowArticleUrlInput(false); setArticleUrlInput(''); }
+                  if (e.key === 'Enter') submitArticleUrl();
+                  if (e.key === 'Escape') hideUrlInput();
                 }}
                 disabled={parsingArticle}
                 autoFocus
               />
-              <Button size="sm" onClick={handleSubmitArticleUrl} disabled={parsingArticle || !articleUrlInput.trim()}>
+              <Button size="sm" onClick={submitArticleUrl} disabled={parsingArticle || !articleUrlInput.trim()}>
                 {parsingArticle ? <Loader2 className="w-4 h-4 animate-spin" /> : '解析'}
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => { setShowArticleUrlInput(false); setArticleUrlInput(''); }} disabled={parsingArticle}>
+              <Button size="sm" variant="ghost" onClick={hideUrlInput} disabled={parsingArticle}>
                 取消
               </Button>
             </div>
           ) : (
-            <Button size="sm" variant="outline" onClick={handleImportArticle}>
+            <Button size="sm" variant="outline" onClick={showUrlInput}>
               <Globe className="w-4 h-4 mr-2" />
               导入文章
             </Button>
           )}
-          <Button size="sm" onClick={handleImport} disabled={importing}>
+          <Button size="sm" onClick={importBook} disabled={importing}>
             <Plus className="w-4 h-4 mr-2" />
             {importing ? '导入中...' : '导入书籍'}
           </Button>
@@ -708,14 +129,7 @@ export default function Home() {
             <h2 className="text-sm font-semibold">对话列表</h2>
           </div>
           <div className="flex-1 overflow-hidden">
-            <ConversationList
-              conversations={conversations}
-              selectedConversationId={selectedConversation?.id || null}
-              onConversationSelect={handleConversationSelect}
-              onNewConversation={handleNewConversation}
-              onDeleteConversation={handleDeleteConversation}
-              loading={loadingConversations}
-            />
+            <ConversationList />
           </div>
 
           {/* 文章列表区域 */}
@@ -725,15 +139,7 @@ export default function Home() {
               <span className="text-xs text-muted-foreground">{articles.length}</span>
             </div>
             <div className="max-h-48 overflow-y-auto">
-              <ArticleList
-                articles={articles}
-                selectedArticleId={selectedArticle?.id || null}
-                onArticleSelect={handleArticleSelect}
-                onDeleteArticle={handleDeleteArticle}
-                onReferenceArticle={handleReferenceArticle}
-                referencedArticleIds={new Set(referencedArticles.map(a => a.id))}
-                loading={loadingArticles}
-              />
+              <ArticleList />
             </div>
           </div>
         </aside>
@@ -745,24 +151,8 @@ export default function Home() {
           </div>
           <div className="flex-1 overflow-hidden">
             <AgentChat
-              context={{
-                bookId: selectedBook?.id,
-                workspaceId: workspace?.id,
-                chapterId: undefined,
-                selectedText: undefined,
-              }}
-              conversationId={selectedConversation?.id || null}
               placeholder="我可以帮你分析书籍内容、回答问题..."
               showStatusHint={false}
-              forkParams={forkParams}
-              onForkConversation={handleForkConversation}
-              onEditResend={handleEditResend}
-              referencedArticles={referencedArticles}
-              onRemoveReferencedArticle={handleRemoveReferencedArticle}
-              onClearReferencedArticles={handleClearReferencedArticles}
-              quotedSnippets={quotedSnippets}
-              onRemoveQuotedSnippet={handleRemoveQuotedSnippet}
-              onClearQuotedSnippets={handleClearQuotedSnippets}
             />
           </div>
         </section>
@@ -777,7 +167,7 @@ export default function Home() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={handleDeleteBook}
+                onClick={deleteBook}
                 disabled={deleting}
                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
               >
@@ -792,7 +182,7 @@ export default function Home() {
           <div className="flex-1 overflow-y-auto">
             {/* 文章预览模式 */}
             {selectedArticle ? (
-              <ArticlePreview article={selectedArticle} loading={loadingArticleDetail} onQuoteSnippet={handleQuoteSnippet} />
+              <ArticlePreview />
             ) : selectedFile ? (
               <div className="p-4 space-y-4">
                 <div className="flex items-center gap-3">
@@ -852,7 +242,7 @@ export default function Home() {
                             variant="ghost"
                             size="sm"
                             className="h-6 px-2"
-                            onClick={handleOpenInFolder}
+                            onClick={openBookInFolder}
                             title="在文件系统中打开"
                           >
                             <ExternalLink className="w-3 h-3" />
@@ -917,7 +307,7 @@ export default function Home() {
                       {!analyzing && analysisProgress.status !== 'completed' && (
                         <Button
                           size="sm"
-                          onClick={handleAnalyzeBook}
+                          onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
                           disabled={!selectedBook || selectedBook.processing_status !== 'completed'}
                           className="w-full"
                         >
@@ -931,7 +321,7 @@ export default function Home() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={handleAnalyzeBook}
+                          onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
                           className="w-full"
                         >
                           <RefreshCw className="w-4 h-4 mr-2" />
@@ -964,4 +354,3 @@ export default function Home() {
     </main>
   );
 }
-

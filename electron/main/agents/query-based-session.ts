@@ -850,12 +850,19 @@ ${contextInfo.join('\n')}
 
   /**
    * 关闭会话
+   * 调用 SDK Query 的 close() 方法优雅终止底层 CLI 子进程和 transport 流，
+   * 避免快速切换对话时产生 ERR_STREAM_WRITE_AFTER_END 错误。
    */
   close(): void {
     this.logger.info('关闭会话:', this.sessionId);
 
     if (this.query) {
-      // Query 没有 close 方法，只需设置状态
+      try {
+        // 调用 SDK Query 的 close() 终止底层进程和 transport
+        this.query.close();
+      } catch (e) {
+        this.logger.warn('关闭 Query 时出错（可忽略）:', e);
+      }
       this.query = null;
     }
 

@@ -2,24 +2,8 @@
 
 import { Globe, Trash2, FileText, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { ArticleMeta } from '@/types/article';
-
-interface ArticleListProps {
-  /** 文章元数据列表 */
-  articles: ArticleMeta[];
-  /** 当前选中的文章 ID */
-  selectedArticleId: string | null;
-  /** 选择文章回调 */
-  onArticleSelect: (article: ArticleMeta) => void;
-  /** 删除文章回调 */
-  onDeleteArticle: (articleId: string) => void;
-  /** 引用文章到对话回调 */
-  onReferenceArticle?: (article: ArticleMeta) => void;
-  /** 已引用的文章 ID 集合（用于高亮显示） */
-  referencedArticleIds?: Set<string>;
-  /** 加载中状态 */
-  loading: boolean;
-}
+import { useArticleStore } from '@/stores/article-store';
+import { useReferenceStore } from '@/stores/reference-store';
 
 /**
  * 获取相对时间文本
@@ -42,17 +26,22 @@ function getRelativeTime(timestamp: number): string {
 
 /**
  * 文章列表组件
+ * 直接从 store 获取数据，无需外部 props
  */
-export function ArticleList({
-  articles,
-  selectedArticleId,
-  onArticleSelect,
-  onDeleteArticle,
-  onReferenceArticle,
-  referencedArticleIds,
-  loading,
-}: ArticleListProps) {
-  if (loading) {
+export function ArticleList() {
+  const articles = useArticleStore((s) => s.articles);
+  const selectedArticle = useArticleStore((s) => s.selectedArticle);
+  const loadingArticles = useArticleStore((s) => s.loadingArticles);
+  const selectArticle = useArticleStore((s) => s.selectArticle);
+  const deleteArticle = useArticleStore((s) => s.deleteArticle);
+
+  const referencedArticles = useReferenceStore((s) => s.referencedArticles);
+  const toggleReferenceArticle = useReferenceStore((s) => s.toggleReferenceArticle);
+
+  const referencedArticleIds = new Set(referencedArticles.map((a) => a.id));
+  const selectedArticleId = selectedArticle?.id || null;
+
+  if (loadingArticles) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
         <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-2" />
@@ -81,7 +70,7 @@ export function ArticleList({
             className={`flex items-start gap-2 py-2 px-3 mx-1 rounded cursor-pointer transition-colors group ${
               isSelected ? 'bg-green-100 dark:bg-green-900/30' : 'hover:bg-muted/30'
             }`}
-            onClick={() => onArticleSelect(article)}
+            onClick={() => selectArticle(article)}
           >
             <Globe className={`w-4 h-4 flex-shrink-0 mt-0.5 ${
               isSelected ? 'text-green-600' : 'text-muted-foreground'
@@ -114,24 +103,22 @@ export function ArticleList({
             {/* 操作按钮组 */}
             <div className="flex items-center gap-0.5 flex-shrink-0">
               {/* 引用按钮 */}
-              {onReferenceArticle && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={`h-6 w-6 p-0 transition-opacity flex-shrink-0 ${
-                    referencedArticleIds?.has(article.id)
-                      ? 'opacity-100 text-blue-600'
-                      : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-blue-600'
-                  }`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onReferenceArticle(article);
-                  }}
-                  title={referencedArticleIds?.has(article.id) ? '已引用到对话' : '引用到对话'}
-                >
-                  <Quote className="w-3 h-3" />
-                </Button>
-              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-6 w-6 p-0 transition-opacity flex-shrink-0 ${
+                  referencedArticleIds.has(article.id)
+                    ? 'opacity-100 text-blue-600'
+                    : 'opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-blue-600'
+                }`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleReferenceArticle(article);
+                }}
+                title={referencedArticleIds.has(article.id) ? '已引用到对话' : '引用到对话'}
+              >
+                <Quote className="w-3 h-3" />
+              </Button>
               {/* 删除按钮 */}
               <Button
                 variant="ghost"
@@ -139,7 +126,7 @@ export function ArticleList({
                 className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive flex-shrink-0"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onDeleteArticle(article.id);
+                  deleteArticle(article.id);
                 }}
               >
                 <Trash2 className="w-3 h-3" />

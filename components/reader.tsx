@@ -294,11 +294,6 @@ export function Reader({ book }: ReaderProps) {
         {showChatPanel && (
           <aside className="w-96 border-l overflow-hidden flex flex-col bg-background">
             <AgentChat
-              context={{
-                bookId: book.id,
-                chapterId: currentChapter?.id,
-                selectedText: undefined,  // 可后续扩展选中文本功能
-              }}
               placeholder="针对本章内容提问..."
               showStatusHint={false}
             />

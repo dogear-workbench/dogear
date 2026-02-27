@@ -5,12 +5,10 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, Home, Loader2, Plus } from 'lucide-react';
 import type { Workspace } from '@/types/electron-api';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 
-interface WorkspaceSelectorProps {
-  onWorkspaceSelected: (workspace: Workspace) => void;
-}
-
-export function WorkspaceSelector({ onWorkspaceSelected }: WorkspaceSelectorProps) {
+export function WorkspaceSelector() {
+  const setWorkspaceToStore = useWorkspaceStore((s) => s.setWorkspace);
   const [loading, setLoading] = useState(true);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
@@ -59,7 +57,7 @@ export function WorkspaceSelector({ onWorkspaceSelected }: WorkspaceSelectorProp
   // 进入选中的工作区
   const handleEnterWorkspace = () => {
     if (selectedWorkspace) {
-      onWorkspaceSelected(selectedWorkspace);
+      setWorkspaceToStore(selectedWorkspace);
     }
   };
 
