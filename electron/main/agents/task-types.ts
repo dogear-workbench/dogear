@@ -114,7 +114,7 @@ export interface Citation {
  * 用于向前端传递完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request';
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -127,6 +127,12 @@ export interface ExtendedSessionMessage {
   citations?: Citation[];          // 引用信息（用于书籍问答）
   isReplay?: boolean;              // 是否为重放的历史消息（SDK resume 时使用）
   uuid?: string;                   // 消息 UUID（SDK 提供）
+  model?: string;                  // AI 使用的实际模型名称
+  // 权限请求相关字段（type='permission_request' 时使用）
+  permissionRequestId?: string;    // 请求 ID（用于回传结果）
+  permissionToolName?: string;     // 请求权限的工具名
+  permissionInput?: any;           // 工具输入参数
+  permissionDecisionReason?: string; // 权限请求原因说明
 }
 
 /**

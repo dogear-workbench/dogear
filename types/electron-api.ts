@@ -48,7 +48,7 @@ export interface BookAnalysisUpdate {
  * 用于显示完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request';
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -65,6 +65,13 @@ export interface ExtendedSessionMessage {
   isReplay?: boolean;
   // 消息 UUID（SDK 提供）
   uuid?: string;
+  // AI 使用的实际模型名称
+  model?: string;
+  // 权限请求相关字段（type='permission_request' 时使用）
+  permissionRequestId?: string;
+  permissionToolName?: string;
+  permissionInput?: any;
+  permissionDecisionReason?: string;
 }
 
 /**

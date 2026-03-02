@@ -433,6 +433,17 @@ export const agentRouter = {
           });
         });
 
+        // 注册权限请求事件转发（canUseTool 回调触发时）
+        session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown; decisionReason?: string }) => {
+          handlers.permissionRequest.send({
+            sessionId: session.getSessionId(),
+            requestId: data.requestId,
+            toolName: data.toolName,
+            toolInput: data.toolInput,
+            decisionReason: data.decisionReason,
+          });
+        });
+
         // 注册会话消息监听器
         sessionManager.on('sessionMessage', (sessionId: string, message: ExtendedSessionMessage) => {
           if (sessionId === session.getSessionId()) {
@@ -485,6 +496,72 @@ export const agentRouter = {
         return { success: true };
       } catch (error) {
         console.error('关闭基于 Query 的会话失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  // ── Query 会话运行时控制 ──────────────────────────────────
+
+  /** 中断当前 AI 执行 */
+  interruptQueryBasedSession: t.procedure
+    .input<{ sessionId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) return { error: '会话不存在' };
+        await session.interrupt();
+        return { success: true };
+      } catch (error) {
+        console.error('中断会话失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 更改权限模式 */
+  setPermissionMode: t.procedure
+    .input<{ sessionId: string; mode: string }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) return { error: '会话不存在' };
+        await session.setPermissionMode(input.mode);
+        return { success: true };
+      } catch (error) {
+        console.error('更改权限模式失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 响应权限确认请求（用户允许/拒绝工具执行） */
+  respondPermissionRequest: t.procedure
+    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny'; message?: string }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) return { error: '会话不存在' };
+        session.respondPermissionRequest(input.requestId, input.behavior, input.message);
+        return { success: true };
+      } catch (error) {
+        console.error('响应权限请求失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 设置思考 token 上限（0=禁用, null=默认） */
+  setMaxThinkingTokens: t.procedure
+    .input<{ sessionId: string; maxThinkingTokens: number | null }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) return { error: '会话不存在' };
+        await session.setMaxThinkingTokens(input.maxThinkingTokens);
+        return { success: true };
+      } catch (error) {
+        console.error('设置 thinking tokens 失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
       }
     }),

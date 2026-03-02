@@ -62,4 +62,13 @@ export type RendererHandlers = {
     sessionId: string;
     result: unknown;
   }) => void;
+
+  // 权限确认请求（SDK canUseTool 回调触发）
+  permissionRequest: (data: {
+    sessionId: string;
+    requestId: string;
+    toolName: string;
+    toolInput: unknown;
+    decisionReason?: string;
+  }) => void;
 };

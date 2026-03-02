@@ -79,6 +79,12 @@ export class QueryBasedSession extends EventEmitter {
   // key: tool_use_id 或 content_block index, value: { name, input累积字符串 }
   private pendingToolInputs: Map<string | number, { name: string; inputJson: string; toolUseId?: string }> = new Map();
 
+  // 权限请求等待队列：key=requestId, value={ resolver, originalInput }
+  private pendingPermissionRequests: Map<string, {
+    resolve: (result: { behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string }) => void;
+    input: Record<string, unknown>;  // 保存原始 input，allow 时需要回传
+  }> = new Map();
+
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
     this.sessionId = sessionId;
@@ -127,8 +133,8 @@ export class QueryBasedSession extends EventEmitter {
       // 构建 query 配置
       const queryOptions: Record<string, any> = {
         systemPrompt,
-        permissionMode: 'bypassPermissions',  // 主进程中可以绕过权限检查
-        includePartialMessages: true,  // ⭐ 启用流式消息事件（SDKPartialAssistantMessage）
+        permissionMode: 'default',  // 默认模式：通过 canUseTool 回调询问用户
+        includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
       };
 
       // 配置工具列表
@@ -201,6 +207,37 @@ export class QueryBasedSession extends EventEmitter {
       // 验证关键环境变量是否已注入（由 dotenv 在主进程入口加载）
       this.logger.info('env 验证: ANTHROPIC_AUTH_TOKEN=', queryOptions.env.ANTHROPIC_AUTH_TOKEN ? '已设置' : '❌ 未设置');
       this.logger.info('env 验证: ANTHROPIC_BASE_URL=', queryOptions.env.ANTHROPIC_BASE_URL || '❌ 未设置');
+
+      // 配置权限确认回调：当 permissionMode 为 default 时，SDK 会调用此回调
+      queryOptions.canUseTool = async (
+        toolName: string,
+        input: Record<string, unknown>,
+        options: { signal: AbortSignal; decisionReason?: string; toolUseID: string }
+      ) => {
+        const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        this.logger.info('权限确认请求:', { requestId, toolName, toolUseID: options.toolUseID, decisionReason: options.decisionReason });
+
+        // 发送权限请求事件到前端
+        this.emit('permissionRequest', {
+          requestId,
+          toolName,
+          toolInput: input,
+          decisionReason: options.decisionReason,
+        });
+
+        // 等待前端用户响应
+        return new Promise<{ behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string }>((resolve) => {
+          this.pendingPermissionRequests.set(requestId, { resolve, input });
+
+          // 如果 AbortSignal 被触发（如会话关闭），自动拒绝
+          options.signal.addEventListener('abort', () => {
+            if (this.pendingPermissionRequests.has(requestId)) {
+              this.pendingPermissionRequests.delete(requestId);
+              resolve({ behavior: 'deny', message: '操作已取消' });
+            }
+          });
+        });
+      };
 
       // ==================== 请求配置详情 ====================
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');
@@ -438,11 +475,12 @@ export class QueryBasedSession extends EventEmitter {
             }
           }
 
-          // 即使跳过文本，也需要将 assistant uuid 发送到前端（用于分叉定位）
+          // 即使跳过文本，也需要将 assistant uuid 和 model 发送到前端
           if (assistantUuid) {
             this.emit('message', {
               type: 'assistant_uuid',
               uuid: assistantUuid,
+              model: (sdkMessage.message as any).model,
               timestamp,
             } as ExtendedSessionMessage);
           }
@@ -458,6 +496,7 @@ export class QueryBasedSession extends EventEmitter {
           content: '',
           timestamp,
           uuid: assistantUuid,  // 携带 assistant uuid
+          model: (sdkMessage.message as any).model,  // 携带实际模型名称
         };
 
         const content = sdkMessage.message.content;
@@ -876,8 +915,77 @@ ${contextInfo.join('\n')}
 
     this.pendingMessages = [];
 
+    // 清理未完成的权限请求（自动拒绝）
+    for (const [, pending] of this.pendingPermissionRequests) {
+      pending.resolve({ behavior: 'deny', message: '会话已关闭' });
+    }
+    this.pendingPermissionRequests.clear();
+
     // 移除所有监听器
     this.removeAllListeners();
+  }
+
+  // ==================== 运行时控制方法 ====================
+
+  /**
+   * 中断当前执行
+   * 停止 AI 回复，将控制权返回给调用者
+   */
+  async interrupt(): Promise<void> {
+    if (!this.query) {
+      this.logger.warn('interrupt: 没有活跃的 query');
+      return;
+    }
+    this.logger.info('中断当前执行');
+    await this.query.interrupt();
+  }
+
+  /**
+   * 更改权限模式
+   * 即时生效，下一次工具调用就会使用新模式
+   */
+  async setPermissionMode(mode: string): Promise<void> {
+    if (!this.query) {
+      this.logger.warn('setPermissionMode: 没有活跃的 query');
+      return;
+    }
+    this.logger.info('更改权限模式:', mode);
+    await (this.query as any).setPermissionMode(mode);
+  }
+
+  /**
+   * 响应权限确认请求
+   * 由前端用户点击允许/拒绝后调用
+   */
+  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny', message?: string): void {
+    const pending = this.pendingPermissionRequests.get(requestId);
+    if (!pending) {
+      this.logger.warn('respondPermissionRequest: 找不到请求:', requestId);
+      return;
+    }
+    this.pendingPermissionRequests.delete(requestId);
+    this.logger.info('权限确认响应:', { requestId, behavior });
+
+    if (behavior === 'allow') {
+      // SDK 的 Zod schema 要求 allow 时必须传回 updatedInput（即原始 input）
+      pending.resolve({ behavior: 'allow', updatedInput: pending.input });
+    } else {
+      pending.resolve({ behavior: 'deny', message: message || '用户拒绝了此操作' });
+    }
+  }
+
+  /**
+   * 设置最大思考 token 数
+   * 0 = 禁用思考，null = 恢复默认（模型自动决定），正整数 = 固定预算
+   * 对于 Opus 4.6：非 0 值会强制使用 adaptive 模式
+   */
+  async setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void> {
+    if (!this.query) {
+      this.logger.warn('setMaxThinkingTokens: 没有活跃的 query');
+      return;
+    }
+    this.logger.info('设置 maxThinkingTokens:', maxThinkingTokens);
+    await this.query.setMaxThinkingTokens(maxThinkingTokens);
   }
 
   /**
