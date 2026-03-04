@@ -6,7 +6,7 @@ import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe } from 'lucide-react';
-import { ArticleList } from '@/components/ArticleList';
+import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
 // Zustand stores
@@ -31,7 +31,6 @@ export default function Home() {
 
   // 文章状态
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
-  const articles = useArticleStore((s) => s.articles);
   const showArticleUrlInput = useArticleStore((s) => s.showArticleUrlInput);
   const articleUrlInput = useArticleStore((s) => s.articleUrlInput);
   const parsingArticle = useArticleStore((s) => s.parsingArticle);
@@ -132,15 +131,9 @@ export default function Home() {
             <ConversationList />
           </div>
 
-          {/* 文章列表区域 */}
-          <div className="border-t">
-            <div className="p-3 border-b flex items-center justify-between">
-              <h2 className="text-sm font-semibold">文章</h2>
-              <span className="text-xs text-muted-foreground">{articles.length}</span>
-            </div>
-            <div className="max-h-48 overflow-y-auto">
-              <ArticleList />
-            </div>
+          {/* 工作区资源管理器 */}
+          <div className="border-t flex-1 flex flex-col overflow-hidden">
+            <WorkspaceExplorer />
           </div>
         </aside>
 
