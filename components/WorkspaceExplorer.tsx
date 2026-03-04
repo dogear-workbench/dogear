@@ -145,6 +145,9 @@ interface ExplorerNodeProps {
   onStartRename: (path: string, currentName: string) => void;
   onConfirmRename: (path: string, newName: string) => void;
   onCancelRename: () => void;
+  onRequestNewFolder?: (parentPath: string) => void;
+  onRequestMove?: (sourcePath: string) => void;
+  onRequestCopy?: (sourcePath: string) => void;
 }
 
 function ExplorerNode({
@@ -154,6 +157,9 @@ function ExplorerNode({
   onStartRename,
   onConfirmRename,
   onCancelRename,
+  onRequestNewFolder,
+  onRequestMove,
+  onRequestCopy,
 }: ExplorerNodeProps) {
   const expandedPaths = useWorkspaceStore(s => s.expandedPaths);
   const selectedFile = useWorkspaceStore(s => s.selectedFile);
@@ -225,18 +231,15 @@ function ExplorerNode({
   const handleDelete = () => deleteItem(node.path);
 
   const handleMoveTo = () => {
-    const target = window.prompt('输入目标文件夹路径:');
-    if (target) moveItem(node.path, target);
+    if (onRequestMove) onRequestMove(node.path);
   };
 
   const handleCopy = () => {
-    const target = window.prompt('输入目标文件夹路径:');
-    if (target) copyItem(node.path, target);
+    if (onRequestCopy) onRequestCopy(node.path);
   };
 
   const handleNewSubFolder = () => {
-    const name = window.prompt('输入文件夹名称:');
-    if (name) createFolder(node.path, name);
+    if (onRequestNewFolder) onRequestNewFolder(node.path);
   };
 
   const handleOpenInExplorer = () => openInExplorer(node.path);
@@ -381,6 +384,9 @@ function ExplorerNode({
           onStartRename={onStartRename}
           onConfirmRename={onConfirmRename}
           onCancelRename={onCancelRename}
+          onRequestNewFolder={onRequestNewFolder}
+          onRequestMove={onRequestMove}
+          onRequestCopy={onRequestCopy}
         />
       ))}
     </>
@@ -391,6 +397,11 @@ function ExplorerNode({
 
 export function WorkspaceExplorer() {
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+  // 新建文件夹：parentPath 表示在哪个目录下新建
+  const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
+  // 移动/复制目标输入
+  const [movingPath, setMovingPath] = useState<string | null>(null);
+  const [copyingPath, setCopyingPath] = useState<string | null>(null);
 
   const files = useWorkspaceStore(s => s.files);
   const loadWorkspaceFiles = useWorkspaceStore(s => s.loadWorkspaceFiles);
@@ -419,13 +430,28 @@ export function WorkspaceExplorer() {
 
   // 工具栏操作
   const handleNewFolder = useCallback(() => {
-    const name = window.prompt('输入文件夹名称:');
-    if (name) createFolder('.', name);
-  }, [createFolder]);
+    setCreatingFolderAt('.');
+  }, []);
 
   const handleRefresh = useCallback(() => {
     loadWorkspaceFiles();
   }, [loadWorkspaceFiles]);
+
+  // 子节点请求操作的回调
+  const handleRequestNewFolder = useCallback((parentPath: string) => {
+    setCreatingFolderAt(parentPath);
+  }, []);
+
+  const handleRequestMove = useCallback((sourcePath: string) => {
+    setMovingPath(sourcePath);
+  }, []);
+
+  const handleRequestCopy = useCallback((sourcePath: string) => {
+    setCopyingPath(sourcePath);
+  }, []);
+
+  const moveItem = useWorkspaceStore(s => s.moveItem);
+  const copyItem = useWorkspaceStore(s => s.copyItem);
 
   return (
     <div className="flex flex-col h-full">
@@ -477,6 +503,9 @@ export function WorkspaceExplorer() {
                 onStartRename={handleStartRename}
                 onConfirmRename={handleConfirmRename}
                 onCancelRename={handleCancelRename}
+                onRequestNewFolder={handleRequestNewFolder}
+                onRequestMove={handleRequestMove}
+                onRequestCopy={handleRequestCopy}
               />
             ))}
           </>
@@ -502,9 +531,59 @@ export function WorkspaceExplorer() {
                 onStartRename={handleStartRename}
                 onConfirmRename={handleConfirmRename}
                 onCancelRename={handleCancelRename}
+                onRequestNewFolder={handleRequestNewFolder}
+                onRequestMove={handleRequestMove}
+                onRequestCopy={handleRequestCopy}
               />
             ))}
           </>
+        )}
+
+        {/* 内联新建文件夹输入 */}
+        {creatingFolderAt !== null && (
+          <div className="flex items-center gap-1 px-3 py-1">
+            <FolderPlus className="w-4 h-4 shrink-0 text-blue-500" />
+            <InlineRenameInput
+              initialValue="新文件夹"
+              onConfirm={async (name) => {
+                await createFolder(creatingFolderAt, name);
+                setCreatingFolderAt(null);
+              }}
+              onCancel={() => setCreatingFolderAt(null)}
+            />
+          </div>
+        )}
+
+        {/* 内联移动目标输入 */}
+        {movingPath !== null && (
+          <div className="flex items-center gap-1 px-3 py-1 bg-muted/30">
+            <Move className="w-4 h-4 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground shrink-0">移动到:</span>
+            <InlineRenameInput
+              initialValue=""
+              onConfirm={async (target) => {
+                await moveItem(movingPath, target);
+                setMovingPath(null);
+              }}
+              onCancel={() => setMovingPath(null)}
+            />
+          </div>
+        )}
+
+        {/* 内联复制目标输入 */}
+        {copyingPath !== null && (
+          <div className="flex items-center gap-1 px-3 py-1 bg-muted/30">
+            <Copy className="w-4 h-4 shrink-0 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground shrink-0">复制到:</span>
+            <InlineRenameInput
+              initialValue=""
+              onConfirm={async (target) => {
+                await copyItem(copyingPath, target);
+                setCopyingPath(null);
+              }}
+              onCancel={() => setCopyingPath(null)}
+            />
+          </div>
         )}
 
         {/* 空状态 */}
