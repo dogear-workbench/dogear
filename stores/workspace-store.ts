@@ -33,6 +33,16 @@ interface WorkspaceState {
   openBookInFolder: () => Promise<void>;
   /** 打开 Agent 监控窗口 */
   openMonitorWindow: () => Promise<void>;
+
+  expandedPaths: string[];
+
+  createFolder: (parentPath: string, name: string) => Promise<void>;
+  renameItem: (itemPath: string, newName: string) => Promise<void>;
+  moveItem: (sourcePath: string, targetPath: string) => Promise<void>;
+  copyItem: (sourcePath: string, targetPath: string) => Promise<void>;
+  deleteItem: (itemPath: string) => Promise<void>;
+  toggleExpand: (path: string) => void;
+  openInExplorer: (itemPath: string) => Promise<void>;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -44,17 +54,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   loadingFiles: false,
   importing: false,
   deleting: false,
+  expandedPaths: [],
 
   setWorkspace: (workspace) => {
     set({ workspace });
     // 触发文件列表加载
     get().loadWorkspaceFiles();
-    // 触发对话和文章列表加载（延迟导入避免循环依赖）
+    // 触发对话列表加载（延迟导入避免循环依赖）
     import('./conversation-store').then(({ useConversationStore }) => {
       useConversationStore.getState().loadConversations();
-    });
-    import('./article-store').then(({ useArticleStore }) => {
-      useArticleStore.getState().loadArticles();
     });
   },
 
@@ -161,6 +169,96 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await client.openMonitorWindow();
     } catch (error) {
       console.error('打开监控窗口失败:', error);
+    }
+  },
+
+  createFolder: async (parentPath, name) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.createFolder({ workspaceId: workspace.id, parentPath, name });
+      if (result.error) { alert(`创建失败: ${result.error}`); return; }
+      await get().loadWorkspaceFiles();
+    } catch (error) {
+      console.error('创建文件夹失败:', error);
+      alert(`创建失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  renameItem: async (itemPath, newName) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.renameItem({ workspaceId: workspace.id, itemPath, newName });
+      if (result.error) { alert(`重命名失败: ${result.error}`); return; }
+      await get().loadWorkspaceFiles();
+    } catch (error) {
+      console.error('重命名失败:', error);
+      alert(`重命名失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  moveItem: async (sourcePath, targetPath) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.moveItem({ workspaceId: workspace.id, sourcePath, targetPath });
+      if (result.error) { alert(`移动失败: ${result.error}`); return; }
+      await get().loadWorkspaceFiles();
+    } catch (error) {
+      console.error('移动失败:', error);
+      alert(`移动失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  copyItem: async (sourcePath, targetPath) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.copyItem({ workspaceId: workspace.id, sourcePath, targetPath });
+      if (result.error) { alert(`复制失败: ${result.error}`); return; }
+      await get().loadWorkspaceFiles();
+    } catch (error) {
+      console.error('复制失败:', error);
+      alert(`复制失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  deleteItem: async (itemPath) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    if (!confirm('确定要删除吗？此操作不可恢复。')) return;
+    try {
+      const result = await client.deleteItem({ workspaceId: workspace.id, itemPath });
+      if (result.error) { alert(`删除失败: ${result.error}`); return; }
+      // 如果删除的是当前选中的文件，清除选中
+      const { selectedFile } = get();
+      if (selectedFile && selectedFile.path === itemPath) {
+        set({ selectedFile: null, selectedBook: null });
+      }
+      await get().loadWorkspaceFiles();
+    } catch (error) {
+      console.error('删除失败:', error);
+      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  },
+
+  toggleExpand: (nodePath) => {
+    const { expandedPaths } = get();
+    if (expandedPaths.includes(nodePath)) {
+      set({ expandedPaths: expandedPaths.filter(p => p !== nodePath) });
+    } else {
+      set({ expandedPaths: [...expandedPaths, nodePath] });
+    }
+  },
+
+  openInExplorer: async (itemPath) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      await client.openInExplorer({ workspaceId: workspace.id, itemPath });
+    } catch (error) {
+      console.error('打开文件管理器失败:', error);
     }
   },
 }));
