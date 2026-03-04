@@ -5,6 +5,12 @@
  */
 
 /**
+ * 权限模式（与 SDK 的 PermissionMode 保持一致）
+ * 前端无法直接导入 @anthropic-ai/claude-agent-sdk，因此在此重新定义
+ */
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'delegate' | 'dontAsk';
+
+/**
  * 工作区接口
  */
 export interface Workspace {
@@ -21,9 +27,19 @@ export interface Workspace {
 export interface WorkspaceFileNode {
   name: string;
   path: string;
-  type: 'file' | 'directory';
+  type: 'file' | 'directory' | 'article';
   ext?: string;
   children?: WorkspaceFileNode[];
+  /** 书籍 ID（type='file' 且为已导入书籍时存在） */
+  bookId?: string;
+  /** 文章专属字段（type='article' 时存在） */
+  articleMeta?: {
+    id: string;
+    url: string;
+    siteName: string | null;
+    fetchedAt: number;
+    wordCount: number;
+  };
 }
 
 /**
@@ -48,7 +64,14 @@ export interface BookAnalysisUpdate {
  * 用于显示完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request'
+    // Hook 事件类型
+    | 'session_start'       // SessionStart hook 触发
+    | 'session_end'         // SessionEnd hook 触发
+    | 'stop'                // Stop hook 触发
+    | 'tool_failure'        // PostToolUseFailure hook 触发
+    | 'notification'        // Notification hook 触发
+    | 'task_notification';  // 子代理任务通知
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -72,6 +95,23 @@ export interface ExtendedSessionMessage {
   permissionToolName?: string;
   permissionInput?: any;
   permissionDecisionReason?: string;
+  // SessionStart hook 相关字段
+  sessionStartSource?: 'startup' | 'resume' | 'clear' | 'compact';
+  // SessionEnd hook 相关字段
+  sessionEndReason?: string;
+  // Stop hook 相关字段
+  stopHookActive?: boolean;
+  // PostToolUseFailure hook 相关字段
+  failedToolName?: string;
+  failedToolError?: string;
+  // Notification hook 相关字段
+  notificationTitle?: string;
+  notificationMessage?: string;
+  notificationType?: string;
+  // 子代理任务通知相关字段
+  taskId?: string;
+  taskStatus?: string;
+  taskSummary?: string;
 }
 
 /**

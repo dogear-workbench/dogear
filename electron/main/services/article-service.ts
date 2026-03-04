@@ -8,6 +8,7 @@ import TurndownService from 'turndown';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import path from 'path';
+import type { WorkspaceFileNode } from '../types.js';
 /** 文章元数据（存储在 meta.json） */
 export interface ArticleMeta {
   id: string;
@@ -289,4 +290,123 @@ export async function deleteArticle(
 ): Promise<void> {
   const articleDir = path.join(workspacePath, ARTICLES_DIR, articleId);
   await fs.rm(articleDir, { recursive: true, force: true });
+}
+
+/**
+ * 递归扫描 .dogear/articles/ 目录，构建文章树
+ * - 含 meta.json 的目录识别为文章节点（显示标题而非 UUID）
+ * - 其他目录识别为分类文件夹
+ */
+export async function listArticleTree(workspacePath: string): Promise<WorkspaceFileNode[]> {
+  const articlesDir = path.join(workspacePath, ARTICLES_DIR);
+  return scanArticleDirectory(articlesDir, workspacePath);
+}
+
+async function scanArticleDirectory(dirPath: string, workspacePath: string): Promise<WorkspaceFileNode[]> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    const nodes: WorkspaceFileNode[] = [];
+
+    for (const entry of entries) {
+      // 跳过隐藏文件（如 .folders.json）和非目录
+      if (entry.name.startsWith('.') || !entry.isDirectory()) continue;
+
+      const fullPath = path.join(dirPath, entry.name);
+      const relativePath = path.relative(workspacePath, fullPath).replace(/\\/g, '/');
+
+      // 检查是否为文章目录（含 meta.json）
+      const metaPath = path.join(fullPath, 'meta.json');
+      try {
+        const metaContent = await fs.readFile(metaPath, 'utf-8');
+        const meta: ArticleMeta = JSON.parse(metaContent);
+        nodes.push({
+          name: meta.title,
+          path: relativePath,
+          type: 'article' as const,
+          articleMeta: {
+            id: meta.id,
+            url: meta.url,
+            siteName: meta.siteName,
+            fetchedAt: meta.fetchedAt,
+            wordCount: meta.wordCount,
+          },
+        });
+      } catch {
+        // 没有 meta.json → 是分类文件夹，递归扫描
+        const children = await scanArticleDirectory(fullPath, workspacePath);
+        nodes.push({
+          name: entry.name,
+          path: relativePath,
+          type: 'directory' as const,
+          children,
+        });
+      }
+    }
+
+    // 文件夹在前，文章在后；文章按 fetchedAt 倒序
+    nodes.sort((a, b) => {
+      if (a.type === 'directory' && b.type !== 'directory') return -1;
+      if (a.type !== 'directory' && b.type === 'directory') return 1;
+      if (a.type === 'article' && b.type === 'article') {
+        return (b.articleMeta?.fetchedAt || 0) - (a.articleMeta?.fetchedAt || 0);
+      }
+      return a.name.localeCompare(b.name, 'zh-CN');
+    });
+
+    return nodes;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 在 .dogear/articles/ 下创建分类文件夹
+ */
+export async function createArticleFolder(
+  workspacePath: string,
+  parentRelPath: string,
+  name: string
+): Promise<void> {
+  const parentAbsPath = path.join(workspacePath, parentRelPath);
+  const newFolderPath = path.join(parentAbsPath, name);
+  await fs.mkdir(newFolderPath, { recursive: true });
+}
+
+/**
+ * 移动文章或文件夹到目标分类文件夹
+ */
+export async function moveArticleItem(
+  workspacePath: string,
+  sourceRelPath: string,
+  targetFolderRelPath: string
+): Promise<void> {
+  const sourceAbsPath = path.join(workspacePath, sourceRelPath);
+  const targetFolderAbsPath = path.join(workspacePath, targetFolderRelPath);
+  const itemName = path.basename(sourceAbsPath);
+  const targetAbsPath = path.join(targetFolderAbsPath, itemName);
+  await fs.rename(sourceAbsPath, targetAbsPath);
+}
+
+/**
+ * 重命名文章分类文件夹
+ */
+export async function renameArticleFolder(
+  workspacePath: string,
+  folderRelPath: string,
+  newName: string
+): Promise<void> {
+  const oldAbsPath = path.join(workspacePath, folderRelPath);
+  const newAbsPath = path.join(path.dirname(oldAbsPath), newName);
+  await fs.rename(oldAbsPath, newAbsPath);
+}
+
+/**
+ * 删除文章分类文件夹（含内容）
+ */
+export async function deleteArticleFolder(
+  workspacePath: string,
+  folderRelPath: string
+): Promise<void> {
+  const absPath = path.join(workspacePath, folderRelPath);
+  await fs.rm(absPath, { recursive: true, force: true });
 }
