@@ -5,6 +5,9 @@ const { dialog } = electron;
 import { dbWorkspaces, dbBooks } from '../database/index.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
+import * as articleService from '../services/article-service.js';
+import * as workspaceFsService from '../services/workspace-fs-service.js';
+import type { WorkspaceFileNode } from '../types.js';
 
 const t = tipc.create();
 
@@ -86,21 +89,42 @@ export const workspaceRouter = {
         const workspace = dbWorkspaces.getById(input.workspaceId);
         if (!workspace) return { files: [], error: '工作区不存在' };
 
-        const allBooks = dbBooks.getAll();
-        const files = allBooks
-          .filter(book => book.workspace_id === input.workspaceId)
-          .map(book => ({
-            name: book.title,
-            path: book.id!, // book.id 从数据库读出时必然有值
-            type: 'file' as const,
-            ext: '.' + (book.file_type || 'txt'),
-            bookId: book.id,
-            originalFilePath: book.original_file_path,
-          }));
-        return { files };
+        // 1. 扫描文章树（.dogear/articles/）
+        const articleTree = await articleService.listArticleTree(workspace.path);
+
+        // 2. 扫描工作区普通文件（排除 .dogear）
+        const workspaceFiles = await workspaceFsService.scanWorkspaceFiles(workspace.path);
+
+        // 3. 为书籍目录附加 bookId 和书名
+        const allBooks = dbBooks.getAll().filter(b => b.workspace_id === input.workspaceId);
+        const booksByDir = new Map(allBooks.filter(b => b.id).map(b => [b.id!, b]));
+        attachBookIds(workspaceFiles, booksByDir);
+
+        // 4. 合并：文章树在前，普通文件在后
+        return { files: [...articleTree, ...workspaceFiles] };
       } catch (error) {
-        console.error('获取工作区文件失败:', error);
+        console.error('获取工作区文件树失败:', error);
         return { files: [], error: String(error) };
       }
     }),
 };
+
+/** 递归遍历文件树，为匹配 bookId 的目录附加 bookId 字段 */
+function attachBookIds(
+  nodes: WorkspaceFileNode[],
+  booksByDir: Map<string, any>
+): void {
+  for (const node of nodes) {
+    if (node.type === 'directory') {
+      const dirName = node.path.split('/')[0];
+      const book = booksByDir.get(dirName);
+      if (book) {
+        node.bookId = book.id;
+        node.name = book.title;
+      }
+      if (node.children) {
+        attachBookIds(node.children, booksByDir);
+      }
+    }
+  }
+}

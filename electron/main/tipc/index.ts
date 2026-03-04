@@ -8,6 +8,7 @@ import { workspaceRouter } from './workspace.js';
 import { agentRouter } from './agent.js';
 import { conversationsRouter } from './conversations.js';
 import { articleRouter } from './article.js';
+import { explorerRouter } from './explorer.js';
 
 export const router = {
   ...dbRouter,
@@ -18,6 +19,7 @@ export const router = {
   ...agentRouter,
   ...conversationsRouter,
   ...articleRouter,
+  ...explorerRouter,
 };
 
 export type Router = typeof router;
