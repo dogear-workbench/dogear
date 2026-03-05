@@ -168,7 +168,7 @@ function buildNodeMap(files: WorkspaceFileNode[]): {
     name: 'root',
     isFolder: true,
     childrenIds: [ARTICLES_SECTION_ID, FILES_SECTION_ID],
-    nodeType: 'directory',
+    nodeType: 'section-header',
   };
 
   return { nodeMap, articleCount, fileCount };
@@ -228,7 +228,8 @@ function NewFolderInput({ onConfirm, onCancel, indent }: NewFolderInputProps) {
 
   const handleBlur = () => {
     const trimmed = value.trim();
-    if (trimmed) {
+    // 如果用户没有修改默认名称，视为取消
+    if (trimmed && trimmed !== '新文件夹') {
       onConfirm(trimmed);
     } else {
       onCancel();
@@ -257,19 +258,15 @@ function NewFolderInput({ onConfirm, onCancel, indent }: NewFolderInputProps) {
 
 interface TreeItemRowProps {
   item: ItemInstance<FlatNode>;
-  nodeMap: Record<string, FlatNode>;
   articleCount: number;
   fileCount: number;
-  creatingFolderAt: string | null;
   onSetCreatingFolder: (parentPath: string | null) => void;
 }
 
 function TreeItemRow({
   item,
-  nodeMap,
   articleCount,
   fileCount,
-  creatingFolderAt,
   onSetCreatingFolder,
 }: TreeItemRowProps) {
   const data = item.getItemData();
@@ -720,10 +717,8 @@ export function WorkspaceExplorer() {
             <TreeItemRow
               key={item.getId()}
               item={item}
-              nodeMap={nodeMap}
               articleCount={articleCount}
               fileCount={fileCount}
-              creatingFolderAt={creatingFolderAt}
               onSetCreatingFolder={setCreatingFolderAt}
             />
           ))}

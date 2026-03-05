@@ -34,14 +34,11 @@ interface WorkspaceState {
   /** 打开 Agent 监控窗口 */
   openMonitorWindow: () => Promise<void>;
 
-  expandedPaths: string[];
-
   createFolder: (parentPath: string, name: string) => Promise<void>;
   renameItem: (itemPath: string, newName: string) => Promise<void>;
   moveItem: (sourcePath: string, targetPath: string) => Promise<void>;
   copyItem: (sourcePath: string, targetPath: string) => Promise<void>;
   deleteItem: (itemPath: string) => Promise<void>;
-  toggleExpand: (path: string) => void;
   openInExplorer: (itemPath: string) => Promise<void>;
 }
 
@@ -54,8 +51,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   loadingFiles: false,
   importing: false,
   deleting: false,
-  expandedPaths: [],
-
   setWorkspace: (workspace) => {
     set({ workspace });
     // 触发文件列表加载
@@ -240,15 +235,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (error) {
       console.error('删除失败:', error);
       alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  },
-
-  toggleExpand: (nodePath) => {
-    const { expandedPaths } = get();
-    if (expandedPaths.includes(nodePath)) {
-      set({ expandedPaths: expandedPaths.filter(p => p !== nodePath) });
-    } else {
-      set({ expandedPaths: [...expandedPaths, nodePath] });
     }
   },
 
