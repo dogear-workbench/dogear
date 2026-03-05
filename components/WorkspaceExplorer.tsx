@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Globe, Folder, FolderOpen, File, BookOpen,
   ChevronRight, ChevronDown, FolderPlus, RefreshCw,
-  Quote, Trash2, Pencil, Move, Copy, ExternalLink,
+  Quote, Trash2, Pencil, ExternalLink,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -16,6 +16,17 @@ import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { WorkspaceFileNode } from '@/types/electron-api';
 import type { ArticleMeta } from '@/types/article';
+
+import { useTree } from '@headless-tree/react';
+import {
+  syncDataLoaderFeature,
+  selectionFeature,
+  hotkeysCoreFeature,
+  dragAndDropFeature,
+  renamingFeature,
+  propMemoizationFeature,
+} from '@headless-tree/core';
+import type { ItemInstance, DragTarget } from '@headless-tree/core';
 
 // ---- 工具函数 ----
 
@@ -61,50 +72,150 @@ function buildArticleMeta(node: WorkspaceFileNode): ArticleMeta | null {
   };
 }
 
-/** 统计树中所有叶子节点（文件/文章）的总数 */
-function countNodes(nodes: WorkspaceFileNode[]): number {
-  let count = 0;
-  for (const node of nodes) {
-    if (node.type === 'file' || node.type === 'article') {
-      count++;
+// ---- FlatNode 数据模型 ----
+
+/** headless-tree 的扁平节点 */
+interface FlatNode {
+  id: string;
+  name: string;
+  isFolder: boolean;
+  childrenIds: string[];
+  nodeType: 'article' | 'file' | 'directory' | 'section-header';
+  originalNode?: WorkspaceFileNode;
+}
+
+// 虚拟根节点和分区头 ID
+const ROOT_ID = '__root__';
+const ARTICLES_SECTION_ID = '__articles__';
+const FILES_SECTION_ID = '__files__';
+
+/**
+ * 递归遍历 WorkspaceFileNode 树，构建扁平 Record
+ * 同时统计叶子节点（文章/文件）数量
+ */
+function buildNodeMap(files: WorkspaceFileNode[]): {
+  nodeMap: Record<string, FlatNode>;
+  articleCount: number;
+  fileCount: number;
+} {
+  const nodeMap: Record<string, FlatNode> = {};
+  let articleCount = 0;
+  let fileCount = 0;
+
+  // 分离文章区和文件区
+  const articleNodes = files.filter(f => isArticlePath(f.path));
+  const fileNodes = files.filter(f => !isArticlePath(f.path));
+
+  // 递归添加节点到 nodeMap
+  function addNode(node: WorkspaceFileNode): void {
+    const isDir = node.type === 'directory';
+    const childIds: string[] = [];
+    if (isDir && node.children) {
+      for (const child of node.children) {
+        childIds.push(child.path);
+        addNode(child);
+      }
     }
-    if (node.children) {
-      count += countNodes(node.children);
-    }
+    // 统计叶子节点
+    if (node.type === 'article') articleCount++;
+    if (node.type === 'file') fileCount++;
+
+    nodeMap[node.path] = {
+      id: node.path,
+      name: node.name,
+      isFolder: isDir,
+      childrenIds: childIds,
+      nodeType: node.type === 'article' ? 'article' : (isDir ? 'directory' : 'file'),
+      originalNode: node,
+    };
   }
-  return count;
+
+  // 构建文章区节点
+  const articleChildIds: string[] = [];
+  for (const node of articleNodes) {
+    articleChildIds.push(node.path);
+    addNode(node);
+  }
+
+  // 构建文件区节点
+  const fileChildIds: string[] = [];
+  for (const node of fileNodes) {
+    fileChildIds.push(node.path);
+    addNode(node);
+  }
+
+  // 文章分区头
+  nodeMap[ARTICLES_SECTION_ID] = {
+    id: ARTICLES_SECTION_ID,
+    name: '文章',
+    isFolder: true,
+    childrenIds: articleChildIds,
+    nodeType: 'section-header',
+  };
+
+  // 文件分区头
+  nodeMap[FILES_SECTION_ID] = {
+    id: FILES_SECTION_ID,
+    name: '文件',
+    isFolder: true,
+    childrenIds: fileChildIds,
+    nodeType: 'section-header',
+  };
+
+  // 虚拟根节点
+  nodeMap[ROOT_ID] = {
+    id: ROOT_ID,
+    name: 'root',
+    isFolder: true,
+    childrenIds: [ARTICLES_SECTION_ID, FILES_SECTION_ID],
+    nodeType: 'directory',
+  };
+
+  return { nodeMap, articleCount, fileCount };
 }
 
-// ---- 内联重命名输入框 ----
+/** 判断节点是否属于文章分区 */
+function isInArticleSection(itemId: string, nodeMap: Record<string, FlatNode>): boolean {
+  if (itemId === ARTICLES_SECTION_ID) return true;
+  const node = nodeMap[itemId];
+  if (!node) return false;
+  if (node.originalNode && isArticlePath(node.originalNode.path)) return true;
+  return false;
+}
 
-interface InlineRenameProps {
-  initialValue: string;
-  onConfirm: (newName: string) => void;
+/** 判断节点是否属于文件分区 */
+function isInFileSection(itemId: string, nodeMap: Record<string, FlatNode>): boolean {
+  if (itemId === FILES_SECTION_ID) return true;
+  const node = nodeMap[itemId];
+  if (!node) return false;
+  if (node.originalNode && !isArticlePath(node.originalNode.path)) return true;
+  return false;
+}
+
+// ---- 新建文件夹内联输入组件 ----
+
+interface NewFolderInputProps {
+  onConfirm: (name: string) => void;
   onCancel: () => void;
+  indent: number;
 }
 
-function InlineRenameInput({ initialValue, onConfirm, onCancel }: InlineRenameProps) {
-  const [value, setValue] = useState(initialValue);
+function NewFolderInput({ onConfirm, onCancel, indent }: NewFolderInputProps) {
+  const [value, setValue] = useState('新文件夹');
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // 聚焦并选中文件名（不含扩展名）
     if (inputRef.current) {
       inputRef.current.focus();
-      const dotIdx = initialValue.lastIndexOf('.');
-      if (dotIdx > 0) {
-        inputRef.current.setSelectionRange(0, dotIdx);
-      } else {
-        inputRef.current.select();
-      }
+      inputRef.current.select();
     }
-  }, [initialValue]);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       const trimmed = value.trim();
-      if (trimmed && trimmed !== initialValue) {
+      if (trimmed) {
         onConfirm(trimmed);
       } else {
         onCancel();
@@ -117,7 +228,7 @@ function InlineRenameInput({ initialValue, onConfirm, onCancel }: InlineRenamePr
 
   const handleBlur = () => {
     const trimmed = value.trim();
-    if (trimmed && trimmed !== initialValue) {
+    if (trimmed) {
       onConfirm(trimmed);
     } else {
       onCancel();
@@ -125,143 +236,153 @@ function InlineRenameInput({ initialValue, onConfirm, onCancel }: InlineRenamePr
   };
 
   return (
-    <input
-      ref={inputRef}
-      className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
-      value={value}
-      onChange={e => setValue(e.target.value)}
-      onKeyDown={handleKeyDown}
-      onBlur={handleBlur}
-    />
+    <div
+      className="flex items-center gap-1 py-1 pr-2"
+      style={{ paddingLeft: `${indent}px` }}
+    >
+      <FolderPlus className="w-4 h-4 shrink-0 text-blue-500" />
+      <input
+        ref={inputRef}
+        className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        onBlur={handleBlur}
+      />
+    </div>
   );
 }
 
-// ---- ExplorerNode 子组件 ----
+// ---- 树节点行渲染组件 ----
 
-interface ExplorerNodeProps {
-  node: WorkspaceFileNode;
-  level: number;
-  renamingPath: string | null;
-  onStartRename: (path: string, currentName: string) => void;
-  onConfirmRename: (path: string, newName: string) => void;
-  onCancelRename: () => void;
-  onRequestNewFolder?: (parentPath: string) => void;
-  onRequestMove?: (sourcePath: string) => void;
-  onRequestCopy?: (sourcePath: string) => void;
+interface TreeItemRowProps {
+  item: ItemInstance<FlatNode>;
+  nodeMap: Record<string, FlatNode>;
+  articleCount: number;
+  fileCount: number;
+  creatingFolderAt: string | null;
+  onSetCreatingFolder: (parentPath: string | null) => void;
 }
 
-function ExplorerNode({
-  node,
-  level,
-  renamingPath,
-  onStartRename,
-  onConfirmRename,
-  onCancelRename,
-  onRequestNewFolder,
-  onRequestMove,
-  onRequestCopy,
-}: ExplorerNodeProps) {
-  const expandedPaths = useWorkspaceStore(s => s.expandedPaths);
+function TreeItemRow({
+  item,
+  nodeMap,
+  articleCount,
+  fileCount,
+  creatingFolderAt,
+  onSetCreatingFolder,
+}: TreeItemRowProps) {
+  const data = item.getItemData();
+  const meta = item.getItemMeta();
+
+  // Store hooks
   const selectedFile = useWorkspaceStore(s => s.selectedFile);
   const selectedArticle = useArticleStore(s => s.selectedArticle);
-  const toggleExpand = useWorkspaceStore(s => s.toggleExpand);
   const selectFile = useWorkspaceStore(s => s.selectFile);
   const selectArticle = useArticleStore(s => s.selectArticle);
   const toggleReferenceArticle = useReferenceStore(s => s.toggleReferenceArticle);
   const deleteItem = useWorkspaceStore(s => s.deleteItem);
-  const moveItem = useWorkspaceStore(s => s.moveItem);
-  const copyItem = useWorkspaceStore(s => s.copyItem);
-  const createFolder = useWorkspaceStore(s => s.createFolder);
   const openInExplorer = useWorkspaceStore(s => s.openInExplorer);
 
-  const isExpanded = expandedPaths.includes(node.path);
-  const isRenaming = renamingPath === node.path;
+  const originalNode = data.originalNode;
 
   // 判断是否选中
   const isSelected =
-    (node.type === 'article' && selectedArticle?.id === node.articleMeta?.id) ||
-    (node.type !== 'article' && selectedFile?.path === node.path);
+    (data.nodeType === 'article' && originalNode?.articleMeta && selectedArticle?.id === originalNode.articleMeta.id) ||
+    (data.nodeType === 'file' && selectedFile?.path === originalNode?.path);
 
-  // 是否属于文章目录下的文件夹
-  const isArticleFolder = node.type === 'directory' && isArticlePath(node.path);
+  // ---- 分区头渲染 ----
+  if (data.nodeType === 'section-header') {
+    const count = data.id === ARTICLES_SECTION_ID ? articleCount : fileCount;
+    const isArticlesHeader = data.id === ARTICLES_SECTION_ID;
 
-  // 点击处理
-  const handleClick = useCallback(() => {
-    if (isRenaming) return;
-    if (node.type === 'article') {
-      const meta = buildArticleMeta(node);
-      if (meta) selectArticle(meta);
-    } else if (node.type === 'directory') {
-      toggleExpand(node.path);
-    } else if (node.type === 'file') {
-      selectFile(node);
-    }
-  }, [node, isRenaming, selectArticle, selectFile, toggleExpand]);
+    return (
+      <div
+        {...item.getProps()}
+        className={cn(
+          'flex items-center gap-1 py-1 px-3 cursor-pointer select-none',
+          'hover:bg-muted/50 transition-colors',
+          item.isFocused() && 'ring-1 ring-primary/30',
+        )}
+      >
+        {item.isExpanded()
+          ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" />
+          : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />
+        }
+        <span className="text-xs font-medium text-muted-foreground">{data.name}</span>
+        {count > 0 && (
+          <span className="text-xs text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 ml-1">
+            {count}
+          </span>
+        )}
+        {/* 文章分区的新建文件夹按钮 */}
+        {isArticlesHeader && (
+          <button
+            className="ml-auto p-0.5 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetCreatingFolder('.dogear/articles');
+            }}
+            title="新建文章文件夹"
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+    );
+  }
 
-  // 图标渲染
+  // ---- 普通节点渲染 ----
+  if (!originalNode) return null;
+
+  const isArticleFolder = data.nodeType === 'directory' && isArticlePath(originalNode.path);
+
+  // 图标
   const renderIcon = () => {
-    if (node.type === 'article') {
+    if (data.nodeType === 'article') {
       return <Globe className="w-4 h-4 shrink-0 text-green-500" />;
     }
-    if (node.type === 'directory') {
-      return isExpanded
+    if (data.nodeType === 'directory') {
+      return item.isExpanded()
         ? <FolderOpen className="w-4 h-4 shrink-0 text-blue-500" />
         : <Folder className="w-4 h-4 shrink-0 text-blue-500" />;
     }
-    // file 类型
-    if (isBookExt(node.ext)) {
+    if (isBookExt(originalNode.ext)) {
       return <BookOpen className="w-4 h-4 shrink-0 text-orange-500" />;
     }
     return <File className="w-4 h-4 shrink-0 text-muted-foreground" />;
   };
 
-  // 展开/折叠箭头
+  // 展开箭头
   const renderChevron = () => {
-    if (node.type !== 'directory') {
-      // 占位保持对齐
+    if (data.nodeType !== 'directory') {
       return <span className="w-4 h-4 shrink-0" />;
     }
-    return isExpanded
+    return item.isExpanded()
       ? <ChevronDown className="w-4 h-4 shrink-0 text-muted-foreground" />
       : <ChevronRight className="w-4 h-4 shrink-0 text-muted-foreground" />;
   };
 
   // 右键菜单操作
-  const handleRename = () => onStartRename(node.path, node.name);
-  const handleDelete = () => deleteItem(node.path);
-
-  const handleMoveTo = () => {
-    if (onRequestMove) onRequestMove(node.path);
-  };
-
-  const handleCopy = () => {
-    if (onRequestCopy) onRequestCopy(node.path);
-  };
-
-  const handleNewSubFolder = () => {
-    if (onRequestNewFolder) onRequestNewFolder(node.path);
-  };
-
-  const handleOpenInExplorer = () => openInExplorer(node.path);
-
+  const handleDelete = () => deleteItem(originalNode.path);
+  const handleOpenInExplorer = () => openInExplorer(originalNode.path);
   const handleQuoteToChat = () => {
-    const meta = buildArticleMeta(node);
-    if (meta) toggleReferenceArticle(meta);
+    const articleMeta = buildArticleMeta(originalNode);
+    if (articleMeta) toggleReferenceArticle(articleMeta);
+  };
+  const handleNewSubFolder = () => {
+    onSetCreatingFolder(originalNode.path);
   };
 
-  // 构建右键菜单内容
+  // 构建右键菜单
   const renderContextMenuContent = () => {
     // 文章节点
-    if (node.type === 'article') {
+    if (data.nodeType === 'article') {
       return (
         <ContextMenuContent>
           <ContextMenuItem onClick={handleQuoteToChat}>
             <Quote className="w-4 h-4" />
             引用到对话
-          </ContextMenuItem>
-          <ContextMenuItem onClick={handleMoveTo}>
-            <Move className="w-4 h-4" />
-            移动到...
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onClick={handleDelete}>
@@ -280,7 +401,7 @@ function ExplorerNode({
             <FolderPlus className="w-4 h-4" />
             新建子文件夹
           </ContextMenuItem>
-          <ContextMenuItem onClick={handleRename}>
+          <ContextMenuItem onClick={() => item.startRenaming()}>
             <Pencil className="w-4 h-4" />
             重命名
           </ContextMenuItem>
@@ -296,23 +417,15 @@ function ExplorerNode({
     // 普通文件/文件夹
     return (
       <ContextMenuContent>
-        {node.type === 'directory' && (
+        {data.nodeType === 'directory' && (
           <ContextMenuItem onClick={handleNewSubFolder}>
             <FolderPlus className="w-4 h-4" />
             新建文件夹
           </ContextMenuItem>
         )}
-        <ContextMenuItem onClick={handleRename}>
+        <ContextMenuItem onClick={() => item.startRenaming()}>
           <Pencil className="w-4 h-4" />
           重命名
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleMoveTo}>
-          <Move className="w-4 h-4" />
-          移动到...
-        </ContextMenuItem>
-        <ContextMenuItem onClick={handleCopy}>
-          <Copy className="w-4 h-4" />
-          复制
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem onClick={handleOpenInExplorer}>
@@ -328,105 +441,232 @@ function ExplorerNode({
     );
   };
 
-  return (
-    <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div
-            className={cn(
-              'flex items-center gap-1 py-1 pr-2 cursor-pointer select-none',
-              'hover:bg-muted/50 transition-colors',
-              isSelected && 'bg-primary/20',
-            )}
-            style={{ paddingLeft: `${level * 16 + 8}px` }}
-            onClick={handleClick}
-          >
-            {renderChevron()}
-            {renderIcon()}
+  // 缩进计算：level * indent（headless-tree 已设置 indent=16），加上基础 padding
+  const paddingLeft = meta.level * 16 + 8;
 
-            {isRenaming ? (
-              <InlineRenameInput
-                initialValue={node.name}
-                onConfirm={(newName) => onConfirmRename(node.path, newName)}
-                onCancel={onCancelRename}
-              />
-            ) : (
-              <div className="flex-1 min-w-0 ml-1">
-                <div className="text-sm truncate">{node.name}</div>
-                {/* 文章显示站点名和相对时间 */}
-                {node.type === 'article' && node.articleMeta && (
-                  <div className="text-xs text-muted-foreground truncate">
-                    {node.articleMeta.siteName && (
-                      <span>{node.articleMeta.siteName}</span>
-                    )}
-                    {node.articleMeta.siteName && node.articleMeta.fetchedAt && (
-                      <span> · </span>
-                    )}
-                    {node.articleMeta.fetchedAt && (
-                      <span>{getRelativeTime(node.articleMeta.fetchedAt)}</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </ContextMenuTrigger>
-        {renderContextMenuContent()}
-      </ContextMenu>
+  // 拖放目标高亮
+  const isDragTarget = item.isDragTarget() && item.isFolder();
 
-      {/* 递归渲染子节点 */}
-      {node.type === 'directory' && isExpanded && node.children?.map(child => (
-        <ExplorerNode
-          key={child.path}
-          node={child}
-          level={level + 1}
-          renamingPath={renamingPath}
-          onStartRename={onStartRename}
-          onConfirmRename={onConfirmRename}
-          onCancelRename={onCancelRename}
-          onRequestNewFolder={onRequestNewFolder}
-          onRequestMove={onRequestMove}
-          onRequestCopy={onRequestCopy}
+  // 渲染行内容
+  const rowContent = (
+    <div
+      {...item.getProps()}
+      className={cn(
+        'flex items-center gap-1 py-1 pr-2 cursor-pointer select-none',
+        'hover:bg-muted/50 transition-colors',
+        isSelected && 'bg-primary/20',
+        isDragTarget && 'bg-blue-500/20 ring-1 ring-blue-500/50',
+        item.isFocused() && 'ring-1 ring-primary/30',
+      )}
+      style={{ paddingLeft: `${paddingLeft}px` }}
+    >
+      {renderChevron()}
+      {renderIcon()}
+
+      {item.isRenaming() ? (
+        <input
+          {...item.getRenameInputProps()}
+          className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
         />
-      ))}
-    </>
+      ) : (
+        <div className="flex-1 min-w-0 ml-1">
+          <div className="text-sm truncate">{data.name}</div>
+          {/* 文章显示站点名和相对时间 */}
+          {data.nodeType === 'article' && originalNode.articleMeta && (
+            <div className="text-xs text-muted-foreground truncate">
+              {originalNode.articleMeta.siteName && (
+                <span>{originalNode.articleMeta.siteName}</span>
+              )}
+              {originalNode.articleMeta.siteName && originalNode.articleMeta.fetchedAt && (
+                <span> · </span>
+              )}
+              {originalNode.articleMeta.fetchedAt && (
+                <span>{getRelativeTime(originalNode.articleMeta.fetchedAt)}</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        {rowContent}
+      </ContextMenuTrigger>
+      {renderContextMenuContent()}
+    </ContextMenu>
   );
 }
 
 // ---- 主组件 ----
 
 export function WorkspaceExplorer() {
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  // 新建文件夹：parentPath 表示在哪个目录下新建
+  // 新建文件夹状态
   const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
-  // 移动/复制目标输入
-  const [movingPath, setMovingPath] = useState<string | null>(null);
-  const [copyingPath, setCopyingPath] = useState<string | null>(null);
 
+  // Store 状态
   const files = useWorkspaceStore(s => s.files);
   const loadWorkspaceFiles = useWorkspaceStore(s => s.loadWorkspaceFiles);
   const createFolder = useWorkspaceStore(s => s.createFolder);
   const renameItem = useWorkspaceStore(s => s.renameItem);
+  const moveItem = useWorkspaceStore(s => s.moveItem);
   const loadingFiles = useWorkspaceStore(s => s.loadingFiles);
+  const selectFile = useWorkspaceStore(s => s.selectFile);
+  const selectArticle = useArticleStore(s => s.selectArticle);
 
-  // 拆分文章区和文件区
-  const articleNodes = files.filter(f => isArticlePath(f.path));
-  const fileNodes = files.filter(f => !isArticlePath(f.path));
-  const totalCount = countNodes(files);
+  // 构建扁平节点映射
+  const { nodeMap, articleCount, fileCount } = useMemo(
+    () => buildNodeMap(files),
+    [files],
+  );
 
-  // 重命名操作
-  const handleStartRename = useCallback((path: string, _currentName: string) => {
-    setRenamingPath(path);
+  const totalCount = articleCount + fileCount;
+
+  // 用 ref 保持最新的 nodeMap 引用，供回调使用
+  const nodeMapRef = useRef(nodeMap);
+  nodeMapRef.current = nodeMap;
+
+  // 用 ref 保持最新的 store actions
+  const moveItemRef = useRef(moveItem);
+  moveItemRef.current = moveItem;
+  const renameItemRef = useRef(renameItem);
+  renameItemRef.current = renameItem;
+  const loadWorkspaceFilesRef = useRef(loadWorkspaceFiles);
+  loadWorkspaceFilesRef.current = loadWorkspaceFiles;
+  const selectFileRef = useRef(selectFile);
+  selectFileRef.current = selectFile;
+  const selectArticleRef = useRef(selectArticle);
+  selectArticleRef.current = selectArticle;
+
+  // 稳定的 dataLoader（不依赖 nodeMap 的变化重建 tree）
+  const dataLoader = useMemo(() => ({
+    getItem: (itemId: string) => {
+      return nodeMapRef.current[itemId] ?? {
+        id: itemId,
+        name: itemId,
+        isFolder: false,
+        childrenIds: [],
+        nodeType: 'file' as const,
+      };
+    },
+    getChildren: (itemId: string) => {
+      return nodeMapRef.current[itemId]?.childrenIds ?? [];
+    },
+  }), []);
+
+  // 稳定的回调
+  const handleDrop = useCallback((items: ItemInstance<FlatNode>[], target: DragTarget<FlatNode>) => {
+    const targetItem = target.item;
+    const targetData = targetItem.getItemData();
+    // 拖入文件夹
+    if (targetData.isFolder && targetData.originalNode) {
+      for (const draggedItem of items) {
+        const draggedData = draggedItem.getItemData();
+        if (draggedData.originalNode) {
+          moveItemRef.current(draggedData.originalNode.path, targetData.originalNode.path);
+        }
+      }
+    }
   }, []);
 
-  const handleConfirmRename = useCallback(async (path: string, newName: string) => {
-    setRenamingPath(null);
-    await renameItem(path, newName);
-  }, [renameItem]);
-
-  const handleCancelRename = useCallback(() => {
-    setRenamingPath(null);
+  const handleRename = useCallback((item: ItemInstance<FlatNode>, value: string) => {
+    const data = item.getItemData();
+    if (data.originalNode) {
+      renameItemRef.current(data.originalNode.path, value);
+    }
   }, []);
+
+  const handlePrimaryAction = useCallback((item: ItemInstance<FlatNode>) => {
+    const data = item.getItemData();
+    if (!data.originalNode) return;
+    if (data.nodeType === 'article') {
+      const articleMeta = buildArticleMeta(data.originalNode);
+      if (articleMeta) selectArticleRef.current(articleMeta);
+    } else if (data.nodeType === 'file') {
+      selectFileRef.current(data.originalNode);
+    }
+    // directory 的展开/折叠由 headless-tree 自动处理
+  }, []);
+
+  const canDrag = useCallback((items: ItemInstance<FlatNode>[]) => {
+    // 禁止拖拽分区头
+    return items.every(i => i.getItemData().nodeType !== 'section-header');
+  }, []);
+
+  const canDrop = useCallback((items: ItemInstance<FlatNode>[], target: DragTarget<FlatNode>) => {
+    const targetData = target.item.getItemData();
+
+    // 禁止放到分区头上
+    if (targetData.nodeType === 'section-header') return false;
+
+    // 禁止放到非文件夹上
+    if (!targetData.isFolder) return false;
+
+    // 禁止跨分区拖拽（文章区 ↔ 文件区）
+    const currentMap = nodeMapRef.current;
+    const targetInArticles = isInArticleSection(target.item.getId(), currentMap);
+    const targetInFiles = isInFileSection(target.item.getId(), currentMap);
+
+    for (const draggedItem of items) {
+      const draggedId = draggedItem.getId();
+      const draggedInArticles = isInArticleSection(draggedId, currentMap);
+      const draggedInFiles = isInFileSection(draggedId, currentMap);
+
+      // 跨分区检查
+      if (draggedInArticles && targetInFiles) return false;
+      if (draggedInFiles && targetInArticles) return false;
+
+      // 禁止拖入自身子级
+      if (target.item.isDescendentOf(draggedId)) return false;
+
+      // 禁止拖入自身
+      if (draggedId === target.item.getId()) return false;
+    }
+
+    return true;
+  }, []);
+
+  const canRename = useCallback((item: ItemInstance<FlatNode>) => {
+    const data = item.getItemData();
+    // 分区头不可重命名
+    if (data.nodeType === 'section-header') return false;
+    return true;
+  }, []);
+
+  // headless-tree 实例
+  const tree = useTree<FlatNode>({
+    rootItemId: ROOT_ID,
+    dataLoader,
+    indent: 16,
+    features: [
+      syncDataLoaderFeature,
+      selectionFeature,
+      hotkeysCoreFeature,
+      dragAndDropFeature,
+      renamingFeature,
+      propMemoizationFeature,
+    ],
+    canReorder: false,
+    openOnDropDelay: 800,
+    initialState: {
+      expandedItems: [ARTICLES_SECTION_ID, FILES_SECTION_ID],
+    },
+    isItemFolder: (item) => item.getItemData().isFolder,
+    getItemName: (item) => item.getItemData().name,
+    onDrop: handleDrop,
+    onRename: handleRename,
+    onPrimaryAction: handlePrimaryAction,
+    canDrag,
+    canDrop,
+    canRename,
+  });
+
+  // 当 files 变化时重建树
+  useEffect(() => {
+    tree.rebuildTree();
+  }, [files, tree]);
 
   // 工具栏操作
   const handleNewFolder = useCallback(() => {
@@ -437,21 +677,8 @@ export function WorkspaceExplorer() {
     loadWorkspaceFiles();
   }, [loadWorkspaceFiles]);
 
-  // 子节点请求操作的回调
-  const handleRequestNewFolder = useCallback((parentPath: string) => {
-    setCreatingFolderAt(parentPath);
-  }, []);
-
-  const handleRequestMove = useCallback((sourcePath: string) => {
-    setMovingPath(sourcePath);
-  }, []);
-
-  const handleRequestCopy = useCallback((sourcePath: string) => {
-    setCopyingPath(sourcePath);
-  }, []);
-
-  const moveItem = useWorkspaceStore(s => s.moveItem);
-  const copyItem = useWorkspaceStore(s => s.copyItem);
+  // 获取所有可见项
+  const items = tree.getItems();
 
   return (
     <div className="flex flex-col h-full">
@@ -488,102 +715,36 @@ export function WorkspaceExplorer() {
 
       {/* 可滚动的文件树区域 */}
       <div className="flex-1 overflow-y-auto">
-        {/* 文章区 */}
-        {articleNodes.length > 0 && (
-          <>
-            <div className="px-3 py-1 text-xs text-muted-foreground font-medium">
-              文章
-            </div>
-            {articleNodes.map(node => (
-              <ExplorerNode
-                key={node.path}
-                node={node}
-                level={0}
-                renamingPath={renamingPath}
-                onStartRename={handleStartRename}
-                onConfirmRename={handleConfirmRename}
-                onCancelRename={handleCancelRename}
-                onRequestNewFolder={handleRequestNewFolder}
-                onRequestMove={handleRequestMove}
-                onRequestCopy={handleRequestCopy}
-              />
-            ))}
-          </>
-        )}
+        <div {...tree.getContainerProps('工作区文件树')}>
+          {items.map((item) => (
+            <TreeItemRow
+              key={item.getId()}
+              item={item}
+              nodeMap={nodeMap}
+              articleCount={articleCount}
+              fileCount={fileCount}
+              creatingFolderAt={creatingFolderAt}
+              onSetCreatingFolder={setCreatingFolderAt}
+            />
+          ))}
 
-        {/* 分隔线（两个区域都有内容时显示） */}
-        {articleNodes.length > 0 && fileNodes.length > 0 && (
-          <div className="my-1 mx-3 border-t" />
-        )}
-
-        {/* 文件区 */}
-        {fileNodes.length > 0 && (
-          <>
-            <div className="px-3 py-1 text-xs text-muted-foreground font-medium">
-              文件
-            </div>
-            {fileNodes.map(node => (
-              <ExplorerNode
-                key={node.path}
-                node={node}
-                level={0}
-                renamingPath={renamingPath}
-                onStartRename={handleStartRename}
-                onConfirmRename={handleConfirmRename}
-                onCancelRename={handleCancelRename}
-                onRequestNewFolder={handleRequestNewFolder}
-                onRequestMove={handleRequestMove}
-                onRequestCopy={handleRequestCopy}
-              />
-            ))}
-          </>
-        )}
+          {/* 拖拽线 */}
+          <div
+            style={tree.getDragLineStyle()}
+            className="h-[2px] bg-blue-500 rounded pointer-events-none"
+          />
+        </div>
 
         {/* 内联新建文件夹输入 */}
         {creatingFolderAt !== null && (
-          <div className="flex items-center gap-1 px-3 py-1">
-            <FolderPlus className="w-4 h-4 shrink-0 text-blue-500" />
-            <InlineRenameInput
-              initialValue="新文件夹"
-              onConfirm={async (name) => {
-                await createFolder(creatingFolderAt, name);
-                setCreatingFolderAt(null);
-              }}
-              onCancel={() => setCreatingFolderAt(null)}
-            />
-          </div>
-        )}
-
-        {/* 内联移动目标输入 */}
-        {movingPath !== null && (
-          <div className="flex items-center gap-1 px-3 py-1 bg-muted/30">
-            <Move className="w-4 h-4 shrink-0 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground shrink-0">移动到:</span>
-            <InlineRenameInput
-              initialValue=""
-              onConfirm={async (target) => {
-                await moveItem(movingPath, target);
-                setMovingPath(null);
-              }}
-              onCancel={() => setMovingPath(null)}
-            />
-          </div>
-        )}
-
-        {/* 内联复制目标输入 */}
-        {copyingPath !== null && (
-          <div className="flex items-center gap-1 px-3 py-1 bg-muted/30">
-            <Copy className="w-4 h-4 shrink-0 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground shrink-0">复制到:</span>
-            <InlineRenameInput
-              initialValue=""
-              onConfirm={async (target) => {
-                await copyItem(copyingPath, target);
-                setCopyingPath(null);
-              }}
-              onCancel={() => setCopyingPath(null)}
-            />
-          </div>
+          <NewFolderInput
+            indent={8}
+            onConfirm={async (name) => {
+              await createFolder(creatingFolderAt, name);
+              setCreatingFolderAt(null);
+            }}
+            onCancel={() => setCreatingFolderAt(null)}
+          />
         )}
 
         {/* 空状态 */}
