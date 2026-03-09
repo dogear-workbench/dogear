@@ -1324,8 +1324,23 @@ export function AgentChat({
 
         if (cancelled) return; // 在创建会话前再次检查
 
+        // 检查 Profile 配置是否完整
+        const { useSettingsStore } = await import('@/stores/settings-store');
+        const { isProfileComplete } = await import('@/types/settings');
+        const settingsState = useSettingsStore.getState();
+        const activeId = settingsState.settings.ai.activeProfileId;
+        const activeProfile = settingsState.settings.profiles[activeId];
+        if (!activeProfile || !isProfileComplete(activeProfile)) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: '当前模型方案未配置完整，请先前往设置页面完成配置（API Key、Base URL、模型映射）。',
+            timestamp: Date.now(),
+            type: 'text',
+          }]);
+          return;
+        }
+
         const response = await client.createQueryBasedSession({
-          model: 'claude-sonnet-4-5-20250929',
           allowedTools: ['Read', 'Glob', 'Grep'],
           context,
           enableSkills: true,
@@ -1946,7 +1961,6 @@ export function AgentChat({
       projectRoot = (window as any).process.cwd();
     }
     const response = await client.createQueryBasedSession({
-      model: 'claude-sonnet-4-5-20250929',
       allowedTools: ['Read', 'Glob', 'Grep'],
       context,
       enableSkills: true,

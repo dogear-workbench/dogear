@@ -352,7 +352,6 @@ export const agentRouter = {
   // ── 基于 Query 的会话（支持 Skills）────────────────────────
   createQueryBasedSession: t.procedure
     .input<{
-      model?: string;
       allowedTools?: string[];
       context?: { bookId?: string; chapterId?: string; selectedText?: string };
       enableSkills?: boolean;
@@ -414,7 +413,6 @@ export const agentRouter = {
 
         // 构建会话配置
         const sessionConfig: QueryBasedSessionConfig = {
-          model: input.model,
           allowedTools: input.allowedTools || ['Read', 'Glob', 'Grep'],
           context: input.context,
           workspacePath,

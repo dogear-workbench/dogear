@@ -3,8 +3,6 @@
  * 负责应用窗口管理和生命周期
  */
 
-import { config } from 'dotenv';
-import { resolve } from 'path';
 import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
 const { app, BrowserWindow } = electron;
 import * as path from 'path';
@@ -13,9 +11,6 @@ import { dirname } from 'path';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
 import { registerTipcHandlers } from './tipc/index.js';
 import { initDatabase } from './database/index.js';
-
-// 加载 .env 配置
-config({ path: resolve(process.cwd(), '.env') });
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);

@@ -44,3 +44,7 @@ nul
 /.claude-history
 /data
 data/dogear.db
+/claude_code_doc_md
+
+# 应用配置目录（含 API Key 等敏感信息）
+.dogear/

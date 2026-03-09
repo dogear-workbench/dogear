@@ -21,6 +21,7 @@ import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
 import { getClaudeConfigDir } from '../tipc/agent.js';
+import { loadSettings, getActiveProfile, isProfileComplete } from '../services/settings-service.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -38,7 +39,6 @@ export interface SessionContext {
  * 会话配置
  */
 export interface QueryBasedSessionConfig {
-  model?: string;                    // 模型名称
   allowedTools?: string[];           // 允许的工具列表
   mcpServers?: Record<string, any>;  // MCP Server 配置
   systemPrompt?: string;             // 系统提示词
@@ -142,8 +142,29 @@ export class QueryBasedSession extends EventEmitter {
         systemPrompt,
         permissionMode: 'default',  // 默认模式：通过 canUseTool 回调询问用户
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
-        thinking: { type: 'adaptive' },  // Opus 4.6+ 自适应思考模式
       };
+
+      // 从 settings.json 读取 AI 配置（唯一配置源）
+      const appSettings = await loadSettings();
+      const activeProfile = getActiveProfile(appSettings);
+
+      // 校验 Profile 完整性
+      if (!isProfileComplete(activeProfile)) {
+        const errorMsg = `当前模型方案 "${activeProfile.name}" 配置不完整，请在设置页面完善 API Key、Base URL 和模型映射`;
+        this.logger.error(errorMsg);
+        this.emit('sessionError', { error: errorMsg });
+        return;
+      }
+
+      // 注入 thinking 和 effort
+      queryOptions.thinking = appSettings.ai.thinking;
+      queryOptions.effort = appSettings.ai.effort;
+
+      this.logger.info('已从 settings.json 加载 AI 配置:', {
+        thinking: appSettings.ai.thinking.type,
+        effort: appSettings.ai.effort,
+        profileName: activeProfile.name,
+      });
 
       // 配置工具列表
       let allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep'];
@@ -204,17 +225,28 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('✅ 已配置 resumeSessionAt:', this.config.resumeSessionAt);
       }
 
-      // 配置自定义存储路径：将会话历史存储在程序同级目录下
-      // SDK 内部会根据 cwd 自动按工作区分子目录
+      // 构建全新的 env 对象（不继承 process.env，完全从 settings Profile 构建）
       const claudeConfigDir = getClaudeConfigDir();
       queryOptions.env = {
-        ...process.env,
+        ANTHROPIC_AUTH_TOKEN: activeProfile.apiKey,
+        ANTHROPIC_BASE_URL: activeProfile.baseUrl,
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: activeProfile.haikuModel,
+        ANTHROPIC_DEFAULT_SONNET_MODEL: activeProfile.sonnetModel,
+        ANTHROPIC_DEFAULT_OPUS_MODEL: activeProfile.opusModel,
+        API_TIMEOUT_MS: String(activeProfile.apiTimeoutMs),
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: activeProfile.disableNonessentialTraffic ? '1' : '0',
         CLAUDE_CONFIG_DIR: claudeConfigDir,
       };
-      this.logger.info('已配置 CLAUDE_CONFIG_DIR:', claudeConfigDir);
-      // 验证关键环境变量是否已注入（由 dotenv 在主进程入口加载）
-      this.logger.info('env 验证: ANTHROPIC_AUTH_TOKEN=', queryOptions.env.ANTHROPIC_AUTH_TOKEN ? '已设置' : '❌ 未设置');
-      this.logger.info('env 验证: ANTHROPIC_BASE_URL=', queryOptions.env.ANTHROPIC_BASE_URL || '❌ 未设置');
+
+      this.logger.info('已从 settings Profile 构建 env:', {
+        profileName: activeProfile.name,
+        baseUrl: activeProfile.baseUrl,
+        haikuModel: activeProfile.haikuModel,
+        sonnetModel: activeProfile.sonnetModel,
+        opusModel: activeProfile.opusModel,
+        apiTimeoutMs: activeProfile.apiTimeoutMs,
+        claudeConfigDir,
+      });
 
       // 配置权限确认回调：当 permissionMode 为 default 时，SDK 会调用此回调
       // 使用 SDK 导出的 CanUseTool 类型签名
