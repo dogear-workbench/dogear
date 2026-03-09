@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import {
   Globe, Folder, FolderOpen, File, BookOpen,
   ChevronRight, ChevronDown, FolderPlus, RefreshCw,
@@ -444,53 +444,50 @@ function TreeItemRow({
   // 拖放目标高亮
   const isDragTarget = item.isDragTarget() && item.isFolder();
 
-  // 渲染行内容
-  const rowContent = (
-    <div
-      {...item.getProps()}
-      className={cn(
-        'flex items-center gap-1 py-1 pr-2 cursor-pointer select-none',
-        'hover:bg-muted/50 transition-colors',
-        isSelected && 'bg-primary/20',
-        isDragTarget && 'bg-blue-500/20 ring-1 ring-blue-500/50',
-        item.isFocused() && 'ring-1 ring-primary/30',
-      )}
-      style={{ paddingLeft: `${paddingLeft}px` }}
-    >
-      {renderChevron()}
-      {renderIcon()}
-
-      {item.isRenaming() ? (
-        <input
-          {...item.getRenameInputProps()}
-          className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
-        />
-      ) : (
-        <div className="flex-1 min-w-0 ml-1">
-          <div className="text-sm truncate">{data.name}</div>
-          {/* 文章显示站点名和相对时间 */}
-          {data.nodeType === 'article' && originalNode.articleMeta && (
-            <div className="text-xs text-muted-foreground truncate">
-              {originalNode.articleMeta.siteName && (
-                <span>{originalNode.articleMeta.siteName}</span>
-              )}
-              {originalNode.articleMeta.siteName && originalNode.articleMeta.fetchedAt && (
-                <span> · </span>
-              )}
-              {originalNode.articleMeta.fetchedAt && (
-                <span>{getRelativeTime(originalNode.articleMeta.fetchedAt)}</span>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  // 提取 headless-tree 的 props，分离 ref 以避免与 ContextMenuTrigger 冲突
+  const { ref: itemRef, ...itemProps } = item.getProps();
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>
-        {rowContent}
+      <ContextMenuTrigger
+        ref={itemRef}
+        className={cn(
+          'flex items-center gap-1 py-1 pr-2 cursor-pointer select-none',
+          'hover:bg-muted/50 transition-colors',
+          isSelected && 'bg-primary/20',
+          isDragTarget && 'bg-blue-500/20 ring-1 ring-blue-500/50',
+          item.isFocused() && 'ring-1 ring-primary/30',
+        )}
+        style={{ paddingLeft: `${paddingLeft}px` }}
+        {...itemProps}
+      >
+        {renderChevron()}
+        {renderIcon()}
+
+        {item.isRenaming() ? (
+          <input
+            {...item.getRenameInputProps()}
+            className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
+          />
+        ) : (
+          <div className="flex-1 min-w-0 ml-1">
+            <div className="text-sm truncate">{data.name}</div>
+            {/* 文章显示站点名和相对时间 */}
+            {data.nodeType === 'article' && originalNode.articleMeta && (
+              <div className="text-xs text-muted-foreground truncate">
+                {originalNode.articleMeta.siteName && (
+                  <span>{originalNode.articleMeta.siteName}</span>
+                )}
+                {originalNode.articleMeta.siteName && originalNode.articleMeta.fetchedAt && (
+                  <span> · </span>
+                )}
+                {originalNode.articleMeta.fetchedAt && (
+                  <span>{getRelativeTime(originalNode.articleMeta.fetchedAt)}</span>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </ContextMenuTrigger>
       {renderContextMenuContent()}
     </ContextMenu>
@@ -500,9 +497,6 @@ function TreeItemRow({
 // ---- 主组件 ----
 
 export function WorkspaceExplorer() {
-  // 新建文件夹状态
-  const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
-
   // Store 状态
   const files = useWorkspaceStore(s => s.files);
   const loadWorkspaceFiles = useWorkspaceStore(s => s.loadWorkspaceFiles);
@@ -511,6 +505,8 @@ export function WorkspaceExplorer() {
   const moveItem = useWorkspaceStore(s => s.moveItem);
   const loadingFiles = useWorkspaceStore(s => s.loadingFiles);
   const selectFile = useWorkspaceStore(s => s.selectFile);
+  const creatingFolderAt = useWorkspaceStore(s => s.creatingFolderAt);
+  const setCreatingFolderAt = useWorkspaceStore(s => s.setCreatingFolderAt);
   const selectArticle = useArticleStore(s => s.selectArticle);
 
   // 构建扁平节点映射
@@ -557,13 +553,24 @@ export function WorkspaceExplorer() {
   const handleDrop = useCallback((items: ItemInstance<FlatNode>[], target: DragTarget<FlatNode>) => {
     const targetItem = target.item;
     const targetData = targetItem.getItemData();
-    // 拖入文件夹
-    if (targetData.isFolder && targetData.originalNode) {
-      for (const draggedItem of items) {
-        const draggedData = draggedItem.getItemData();
-        if (draggedData.originalNode) {
-          moveItemRef.current(draggedData.originalNode.path, targetData.originalNode.path);
-        }
+    const targetId = targetItem.getId();
+
+    // 确定目标路径：分区头映射到对应根目录
+    let targetPath: string | null = null;
+    if (targetId === ARTICLES_SECTION_ID) {
+      targetPath = '.dogear/articles';
+    } else if (targetId === FILES_SECTION_ID) {
+      targetPath = '.';
+    } else if (targetData.isFolder && targetData.originalNode) {
+      targetPath = targetData.originalNode.path;
+    }
+
+    if (!targetPath) return;
+
+    for (const draggedItem of items) {
+      const draggedData = draggedItem.getItemData();
+      if (draggedData.originalNode) {
+        moveItemRef.current(draggedData.originalNode.path, targetPath);
       }
     }
   }, []);
@@ -594,17 +601,30 @@ export function WorkspaceExplorer() {
 
   const canDrop = useCallback((items: ItemInstance<FlatNode>[], target: DragTarget<FlatNode>) => {
     const targetData = target.item.getItemData();
+    const targetId = target.item.getId();
 
-    // 禁止放到分区头上
-    if (targetData.nodeType === 'section-header') return false;
+    // 虚拟根节点不可放置
+    if (targetId === ROOT_ID) return false;
+
+    // 分区头可以作为放置目标（代表移到该分区顶层）
+    if (targetData.nodeType === 'section-header') {
+      const currentMap = nodeMapRef.current;
+      for (const draggedItem of items) {
+        const draggedId = draggedItem.getId();
+        // 检查同分区
+        if (targetId === ARTICLES_SECTION_ID && !isInArticleSection(draggedId, currentMap)) return false;
+        if (targetId === FILES_SECTION_ID && !isInFileSection(draggedId, currentMap)) return false;
+      }
+      return true;
+    }
 
     // 禁止放到非文件夹上
     if (!targetData.isFolder) return false;
 
     // 禁止跨分区拖拽（文章区 ↔ 文件区）
     const currentMap = nodeMapRef.current;
-    const targetInArticles = isInArticleSection(target.item.getId(), currentMap);
-    const targetInFiles = isInFileSection(target.item.getId(), currentMap);
+    const targetInArticles = isInArticleSection(targetId, currentMap);
+    const targetInFiles = isInFileSection(targetId, currentMap);
 
     for (const draggedItem of items) {
       const draggedId = draggedItem.getId();
@@ -619,7 +639,7 @@ export function WorkspaceExplorer() {
       if (target.item.isDescendentOf(draggedId)) return false;
 
       // 禁止拖入自身
-      if (draggedId === target.item.getId()) return false;
+      if (draggedId === targetId) return false;
     }
 
     return true;
@@ -660,15 +680,62 @@ export function WorkspaceExplorer() {
     canRename,
   });
 
+  // 滚动容器 ref
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // 滚动位置保持：rebuildTree 会触发多轮异步渲染，
+  // 用 ref 保存目标 scrollTop，在每次渲染后恢复，直到树稳定
+  const pendingScrollTop = useRef<number | null>(null);
+  const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // 当 files 变化时重建树
-  useEffect(() => {
+  useLayoutEffect(() => {
+    // 记住当前滚动位置
+    pendingScrollTop.current = scrollRef.current?.scrollTop ?? 0;
     tree.rebuildTree();
   }, [files, tree]);
 
+  // 每次渲染后，如果有待恢复的滚动位置就恢复它
+  useLayoutEffect(() => {
+    if (pendingScrollTop.current !== null && scrollRef.current) {
+      scrollRef.current.scrollTop = pendingScrollTop.current;
+
+      // 重置清除定时器：等树完全停止渲染后再清除 pending 状态
+      if (scrollRestoreTimer.current) {
+        clearTimeout(scrollRestoreTimer.current);
+      }
+      scrollRestoreTimer.current = setTimeout(() => {
+        pendingScrollTop.current = null;
+        scrollRestoreTimer.current = null;
+      }, 200);
+    }
+  });
+
+  // 新建文件夹操作：展开目标文件夹并显示输入框
+  const handleSetCreatingFolder = useCallback((parentPath: string | null) => {
+    if (parentPath === null) {
+      setCreatingFolderAt(null);
+      return;
+    }
+    // 展开目标节点以确保输入框可见
+    for (const item of tree.getItems()) {
+      const itemId = item.getId();
+      const itemData = item.getItemData();
+      const shouldExpand =
+        (parentPath === '.dogear/articles' && itemId === ARTICLES_SECTION_ID) ||
+        (parentPath === '.' && itemId === FILES_SECTION_ID) ||
+        (itemData.originalNode?.path === parentPath && itemData.isFolder);
+      if (shouldExpand && !item.isExpanded()) {
+        item.expand();
+      }
+    }
+    setCreatingFolderAt(parentPath);
+  }, [tree]);
+
   // 工具栏操作
   const handleNewFolder = useCallback(() => {
-    setCreatingFolderAt('.');
-  }, []);
+    handleSetCreatingFolder('.');
+  }, [handleSetCreatingFolder]);
 
   const handleRefresh = useCallback(() => {
     loadWorkspaceFiles();
@@ -676,6 +743,55 @@ export function WorkspaceExplorer() {
 
   // 获取所有可见项
   const items = tree.getItems();
+
+  // 计算 NewFolderInput 的插入位置和缩进
+  const newFolderInsertInfo = useMemo(() => {
+    if (creatingFolderAt === null) return null;
+
+    // 查找目标父节点在扁平列表中的位置
+    let parentIndex = -1;
+    let parentLevel = 0;
+
+    // 处理特殊情况：在分区头创建（如 .dogear/articles）
+    // 或在 '.' (工作区根目录)创建
+    for (let i = 0; i < items.length; i++) {
+      const itemId = items[i].getId();
+      const itemData = items[i].getItemData();
+      const itemMeta = items[i].getItemMeta();
+
+      // 匹配分区头
+      if (creatingFolderAt === '.dogear/articles' && itemId === ARTICLES_SECTION_ID) {
+        parentIndex = i;
+        parentLevel = itemMeta.level;
+        break;
+      }
+      if (creatingFolderAt === '.' && itemId === FILES_SECTION_ID) {
+        parentIndex = i;
+        parentLevel = itemMeta.level;
+        break;
+      }
+      // 匹配具体文件夹路径
+      if (itemData.originalNode?.path === creatingFolderAt && itemData.isFolder) {
+        parentIndex = i;
+        parentLevel = itemMeta.level;
+        break;
+      }
+    }
+
+    if (parentIndex === -1) return null;
+
+    // 找到父节点最后一个子节点的位置（往后找，直到 level <= parentLevel）
+    let insertAfterIndex = parentIndex;
+    for (let i = parentIndex + 1; i < items.length; i++) {
+      if (items[i].getItemMeta().level <= parentLevel) break;
+      insertAfterIndex = i;
+    }
+
+    return {
+      insertAfterIndex,
+      indent: (parentLevel + 1) * 16 + 8,
+    };
+  }, [creatingFolderAt, items]);
 
   return (
     <div className="flex flex-col h-full">
@@ -711,16 +827,28 @@ export function WorkspaceExplorer() {
       </div>
 
       {/* 可滚动的文件树区域 */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div {...tree.getContainerProps('工作区文件树')}>
-          {items.map((item) => (
-            <TreeItemRow
-              key={item.getId()}
-              item={item}
-              articleCount={articleCount}
-              fileCount={fileCount}
-              onSetCreatingFolder={setCreatingFolderAt}
-            />
+          {items.map((item, index) => (
+            <React.Fragment key={item.getId()}>
+              <TreeItemRow
+                item={item}
+                articleCount={articleCount}
+                fileCount={fileCount}
+                onSetCreatingFolder={handleSetCreatingFolder}
+              />
+              {/* 在正确位置插入新建文件夹输入框 */}
+              {newFolderInsertInfo && index === newFolderInsertInfo.insertAfterIndex && (
+                <NewFolderInput
+                  indent={newFolderInsertInfo.indent}
+                  onConfirm={async (name) => {
+                    await createFolder(creatingFolderAt!, name);
+                    setCreatingFolderAt(null);
+                  }}
+                  onCancel={() => setCreatingFolderAt(null)}
+                />
+              )}
+            </React.Fragment>
           ))}
 
           {/* 拖拽线 */}
@@ -729,18 +857,6 @@ export function WorkspaceExplorer() {
             className="h-[2px] bg-blue-500 rounded pointer-events-none"
           />
         </div>
-
-        {/* 内联新建文件夹输入 */}
-        {creatingFolderAt !== null && (
-          <NewFolderInput
-            indent={8}
-            onConfirm={async (name) => {
-              await createFolder(creatingFolderAt, name);
-              setCreatingFolderAt(null);
-            }}
-            onCancel={() => setCreatingFolderAt(null)}
-          />
-        )}
 
         {/* 空状态 */}
         {files.length === 0 && !loadingFiles && (

@@ -1,12 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Citation } from '@/types/electron-api';
+import { Citation, type PermissionMode } from '@/types/electron-api';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { Pencil, GitBranch, ChevronLeft, ChevronRight, X, Brain, Shield, Check, ShieldAlert } from 'lucide-react';
+import { Pencil, GitBranch, ChevronLeft, ChevronRight, X, Brain, Shield, Check, ShieldAlert, ShieldCheck, Send, MessageSquare } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -51,7 +51,9 @@ interface Message {
  * 按照实际接收顺序存储和渲染
  */
 interface ContentBlock {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'permission_request';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'permission_request'
+    // Hook 事件类型
+    | 'session_start' | 'session_end' | 'stop' | 'tool_failure' | 'notification' | 'task_notification';
   id?: string;
   content?: string;
   toolName?: string;
@@ -70,7 +72,20 @@ interface ContentBlock {
   permissionToolName?: string;
   permissionInput?: any;
   permissionDecisionReason?: string;
-  permissionResolved?: 'allow' | 'deny';  // 用户已响应的状态
+  permissionResolved?: 'allow' | 'deny' | 'always_allow';  // 用户已响应的状态
+  permissionDenyMessage?: string;  // 用户自定义的拒绝理由
+  // Hook 事件相关字段
+  sessionStartSource?: string;           // SessionStart: 启动来源
+  sessionEndReason?: string;             // SessionEnd: 结束原因
+  stopHookActive?: boolean;              // Stop: 停止钩子激活
+  failedToolName?: string;               // PostToolUseFailure: 失败工具名
+  failedToolError?: string;              // PostToolUseFailure: 失败错误信息
+  notificationTitle?: string;            // Notification: 通知标题
+  notificationMessage?: string;          // Notification: 通知内容
+  notificationType?: string;             // Notification: 通知类型
+  taskId?: string;                       // 子代理任务 ID
+  taskStatus?: string;                   // 子代理任务状态
+  taskSummary?: string;                  // 子代理任务摘要
 }
 
 interface AgentChatProps {
@@ -189,7 +204,7 @@ function MessageItem({
   onFork?: (assistantSdkUuid: string) => void;
   onSwitchBranch?: (sdkUuid: string, direction: 'prev' | 'next') => void;
   sessionId?: string | null;
-  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny') => void;
+  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
 }) {
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
@@ -390,28 +405,28 @@ function ThinkingBlock({ block }: { block: ContentBlock }) {
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="rounded-lg border border-purple-200 bg-purple-50/50">
-        <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-50 transition-colors cursor-pointer">
+      <div className="rounded-lg border border-gray-200 bg-gray-50/50">
+        <CollapsibleTrigger className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-gray-100 transition-colors cursor-pointer">
           <ChevronRight
-            className={`w-3.5 h-3.5 text-purple-500 transition-transform duration-200 ${
+            className={`w-3.5 h-3.5 text-gray-400 transition-transform duration-200 ${
               isOpen ? 'rotate-90' : ''
             }`}
           />
           {!hasContent ? (
-            <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></div>
+            <div className="w-2 h-2 bg-gray-400 rounded-full animate-pulse" />
           ) : (
-            <Brain size={14} className="text-purple-500" />
+            <Brain size={14} className="text-gray-500" />
           )}
-          <span className="text-sm text-purple-700">
-            {hasContent ? '已深度思考' : '思考中...'}
+          <span className="text-sm text-gray-600">
+            {hasContent ? '已思考' : '思考中...'}
           </span>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
           {hasContent && (
             <div className="px-3 pb-3">
-              <div className="border-t border-purple-200 pt-2">
-                <div className="text-xs text-purple-700 whitespace-pre-wrap bg-purple-100/50 rounded p-2 max-h-60 overflow-y-auto">
+              <div className="border-t border-gray-200 pt-2">
+                <div className="text-sm text-gray-600 whitespace-pre-wrap bg-gray-100/50 rounded p-3 max-h-80 overflow-y-auto">
                   {block.content}
                 </div>
               </div>
@@ -434,9 +449,11 @@ function PermissionRequestCard({
 }: {
   block: ContentBlock;
   sessionId: string | null;
-  onResolved: (requestId: string, behavior: 'allow' | 'deny') => void;
+  onResolved: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
 }) {
   const isResolved = !!block.permissionResolved;
+  const [showDenyInput, setShowDenyInput] = useState(false);
+  const [denyMessage, setDenyMessage] = useState('');
 
   const handleAllow = async () => {
     if (!sessionId || !block.permissionRequestId || isResolved) return;
@@ -446,6 +463,17 @@ function PermissionRequestCard({
       behavior: 'allow',
     });
     onResolved(block.permissionRequestId, 'allow');
+  };
+
+  // 总是允许：allow 当前请求 + 切换到自动执行模式
+  const handleAlwaysAllow = async () => {
+    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    await client.respondPermissionRequest({
+      sessionId,
+      requestId: block.permissionRequestId,
+      behavior: 'allow',
+    });
+    onResolved(block.permissionRequestId, 'always_allow');
   };
 
   const handleDeny = async () => {
@@ -459,11 +487,22 @@ function PermissionRequestCard({
     onResolved(block.permissionRequestId, 'deny');
   };
 
+  // 带自定义消息的拒绝
+  const handleDenyWithMessage = async () => {
+    if (!sessionId || !block.permissionRequestId || isResolved || !denyMessage.trim()) return;
+    await client.respondPermissionRequest({
+      sessionId,
+      requestId: block.permissionRequestId,
+      behavior: 'deny',
+      message: denyMessage.trim(),
+    });
+    onResolved(block.permissionRequestId, 'deny', denyMessage.trim());
+  };
+
   // 格式化工具输入为简短摘要
   const formatToolInput = (input: any): string => {
     if (!input) return '';
     if (typeof input === 'string') return input;
-    // 对于常见工具，提取关键字段
     if (input.command) return input.command;
     if (input.file_path) return input.file_path;
     if (input.pattern) return input.pattern;
@@ -471,21 +510,32 @@ function PermissionRequestCard({
     return JSON.stringify(input, null, 2).substring(0, 200);
   };
 
+  // 已处理状态的显示文本
+  const resolvedText = () => {
+    switch (block.permissionResolved) {
+      case 'allow': return '已允许执行';
+      case 'always_allow': return '已允许执行（已切换自动模式）';
+      case 'deny': return '已拒绝执行';
+      default: return '';
+    }
+  };
+
+  // 已处理状态的边框/背景颜色
+  const resolvedStyle = () => {
+    if (!isResolved) return 'border-amber-300 bg-amber-50/50';
+    if (block.permissionResolved === 'deny') return 'border-red-200 bg-red-50/30';
+    return 'border-green-200 bg-green-50/30';  // allow 和 always_allow
+  };
+
   return (
-    <div className={`rounded-lg border-2 ${
-      isResolved
-        ? block.permissionResolved === 'allow'
-          ? 'border-green-200 bg-green-50/30'
-          : 'border-red-200 bg-red-50/30'
-        : 'border-amber-300 bg-amber-50/50'
-    } p-3`}>
+    <div className={`rounded-lg border-2 ${resolvedStyle()} p-3`}>
       <div className="flex items-center gap-2 mb-2">
-        <ShieldAlert size={16} className={isResolved ? 'text-gray-400' : 'text-amber-600'} />
+        {isResolved && block.permissionResolved !== 'deny'
+          ? <ShieldCheck size={16} className="text-green-500" />
+          : <ShieldAlert size={16} className={isResolved ? 'text-red-400' : 'text-amber-600'} />
+        }
         <span className={`text-sm font-medium ${isResolved ? 'text-gray-500' : 'text-amber-800'}`}>
-          {isResolved
-            ? block.permissionResolved === 'allow' ? '已允许执行' : '已拒绝执行'
-            : '请求执行权限'
-          }
+          {isResolved ? resolvedText() : '请求执行权限'}
         </span>
         <span className="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 font-mono">
           {block.permissionToolName}
@@ -506,23 +556,74 @@ function PermissionRequestCard({
         </div>
       )}
 
+      {/* 已拒绝时显示用户的拒绝理由 */}
+      {isResolved && block.permissionResolved === 'deny' && block.permissionDenyMessage && (
+        <div className="mb-1 text-xs text-red-600 bg-red-50 rounded p-2">
+          <MessageSquare size={10} className="inline mr-1" />
+          {block.permissionDenyMessage}
+        </div>
+      )}
+
       {/* 操作按钮 */}
       {!isResolved && (
-        <div className="flex items-center gap-2 mt-2">
-          <button
-            onClick={handleAllow}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors cursor-pointer"
-          >
-            <Check size={12} />
-            允许
-          </button>
-          <button
-            onClick={handleDeny}
-            className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors cursor-pointer"
-          >
-            <X size={12} />
-            拒绝
-          </button>
+        <div className="space-y-2 mt-2">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleAllow}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-green-600 rounded-md hover:bg-green-700 transition-colors cursor-pointer"
+            >
+              <Check size={12} />
+              允许
+            </button>
+            <button
+              onClick={handleAlwaysAllow}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-green-700 bg-green-100 border border-green-300 rounded-md hover:bg-green-200 transition-colors cursor-pointer"
+            >
+              <ShieldCheck size={12} />
+              总是允许
+            </button>
+            <button
+              onClick={handleDeny}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 border border-red-200 rounded-md hover:bg-red-100 transition-colors cursor-pointer"
+            >
+              <X size={12} />
+              拒绝
+            </button>
+            <button
+              onClick={() => setShowDenyInput(!showDenyInput)}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                showDenyInput
+                  ? 'text-amber-700 bg-amber-100 border border-amber-300'
+                  : 'text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              <Send size={12} />
+              拒绝并说明
+            </button>
+          </div>
+
+          {/* 用户输入拒绝理由 */}
+          {showDenyInput && (
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={denyMessage}
+                onChange={(e) => setDenyMessage(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && denyMessage.trim()) handleDenyWithMessage(); }}
+                placeholder="输入拒绝理由，AI 会根据你的说明调整..."
+                className="flex-1 text-xs border border-gray-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-400"
+                autoFocus
+              />
+              <button
+                onClick={handleDenyWithMessage}
+                disabled={!denyMessage.trim()}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-amber-500 rounded-md hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors cursor-pointer"
+              >
+                <Send size={12} />
+                发送
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -532,7 +633,7 @@ function PermissionRequestCard({
 function ContentBlockItem({ block, sessionId, onPermissionResolved }: {
   block: ContentBlock;
   sessionId?: string | null;
-  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny') => void;
+  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
 }) {
   switch (block.type) {
     case 'tool_use':
@@ -578,6 +679,92 @@ function ContentBlockItem({ block, sessionId, onPermissionResolved }: {
           onResolved={onPermissionResolved || (() => {})}
         />
       );
+
+    // ==================== Hook 事件渲染 ====================
+
+    case 'session_start': {
+      const sourceLabel: Record<string, string> = {
+        startup: '会话已启动',
+        resume: '会话已恢复',
+        clear: '会话已重新开始',
+        compact: '会话已压缩重启',
+      };
+      return (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-green-50 border border-green-200 text-xs text-green-700">
+          <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
+          {sourceLabel[block.sessionStartSource || ''] || '会话已启动'}
+        </div>
+      );
+    }
+
+    case 'session_end':
+      return (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-gray-100 border border-gray-200 text-xs text-gray-500">
+          <div className="w-1.5 h-1.5 bg-gray-400 rounded-full"></div>
+          会话已结束{block.sessionEndReason ? `（${block.sessionEndReason}）` : ''}
+        </div>
+      );
+
+    case 'stop':
+      return (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-amber-50 border border-amber-200 text-xs text-amber-700">
+          <div className="w-1.5 h-1.5 bg-amber-500 rounded-full"></div>
+          执行已停止
+        </div>
+      );
+
+    case 'tool_failure':
+      return (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-red-700 mb-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            工具执行失败
+            {block.failedToolName && (
+              <span className="text-xs px-1.5 py-0.5 bg-red-100 rounded font-mono">{block.failedToolName}</span>
+            )}
+          </div>
+          {block.failedToolError && (
+            <div className="text-xs text-red-600 bg-red-100/50 rounded p-2 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+              {block.failedToolError}
+            </div>
+          )}
+        </div>
+      );
+
+    case 'notification':
+      return (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-blue-700 mb-1">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+            {block.notificationTitle || '通知'}
+          </div>
+          {block.notificationMessage && (
+            <div className="text-xs text-blue-600">{block.notificationMessage}</div>
+          )}
+        </div>
+      );
+
+    case 'task_notification': {
+      // 根据任务状态设置颜色
+      const statusColors: Record<string, { bg: string; border: string; text: string; dot: string }> = {
+        completed: { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700', dot: 'bg-green-500' },
+        failed: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700', dot: 'bg-red-500' },
+        cancelled: { bg: 'bg-gray-100', border: 'border-gray-200', text: 'text-gray-600', dot: 'bg-gray-400' },
+      };
+      const colors = statusColors[block.taskStatus || ''] || { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', dot: 'bg-indigo-500' };
+      const statusLabels: Record<string, string> = { completed: '已完成', failed: '失败', cancelled: '已取消', in_progress: '进行中' };
+      return (
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md ${colors.bg} border ${colors.border} text-xs ${colors.text}`}>
+          <div className={`w-1.5 h-1.5 ${colors.dot} rounded-full`}></div>
+          <span>子任务 {block.taskId ? `[${block.taskId.substring(0, 8)}]` : ''} {statusLabels[block.taskStatus || ''] || block.taskStatus}</span>
+          {block.taskSummary && <span className="text-gray-500 ml-1">- {block.taskSummary}</span>}
+        </div>
+      );
+    }
 
     case 'error':
       return (
@@ -681,8 +868,9 @@ export function AgentChat({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [thinkingEnabled, setThinkingEnabled] = useState(true);
-  const [permissionMode, setPermissionMode] = useState<string>('bypassPermissions');
+  // 思考等级：关闭=0, 低=2000, 中=6000, 高=10000（默认）
+  const [thinkingLevel, setThinkingLevel] = useState<number>(10000);
+  const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
   // 会话 ID（同时用 ref 保持最新引用，避免 useEffect cleanup 闭包过期）
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -925,6 +1113,15 @@ export function AgentChat({
                           // 关联工具执行结果
                           toolOutput: toolOutput,
                           isError: toolResult?.isError || false,
+                          // 历史加载的工具块，有 output 说明已完成
+                          status: toolOutput !== undefined ? 'completed' : 'pending',
+                          timestamp: Date.now()
+                        });
+                      } else if (block.type === 'thinking') {
+                        // 思考块 - 历史加载时也渲染
+                        blocks.push({
+                          type: 'thinking',
+                          content: block.thinking || '',
                           timestamp: Date.now()
                         });
                       } else if (block.type === 'image' && block.source) {
@@ -1159,6 +1356,10 @@ export function AgentChat({
 
         const newSessionId = response.sessionId!;
         setSessionId(newSessionId);
+        // 同步后端初始权限模式到 UI
+        if (response.permissionMode) {
+          setPermissionMode(response.permissionMode as PermissionMode);
+        }
         console.log('✅ 会话已启动:', {
           sessionId: newSessionId,
           mode: sdkSessionId ? '(resume)' : '(new)',
@@ -1397,6 +1598,18 @@ export function AgentChat({
               timestamp: extendedMsg.timestamp || Date.now(),
               citations: extendedMsg.citations,
               isReplay: extendedMsg.isReplay,
+              // Hook 事件相关字段
+              sessionStartSource: extendedMsg.sessionStartSource,
+              sessionEndReason: extendedMsg.sessionEndReason,
+              stopHookActive: extendedMsg.stopHookActive,
+              failedToolName: extendedMsg.failedToolName,
+              failedToolError: extendedMsg.failedToolError,
+              notificationTitle: extendedMsg.notificationTitle,
+              notificationMessage: extendedMsg.notificationMessage,
+              notificationType: extendedMsg.notificationType,
+              taskId: extendedMsg.taskId,
+              taskStatus: extendedMsg.taskStatus,
+              taskSummary: extendedMsg.taskSummary,
             };
 
             updated[lastIdx] = {
@@ -1430,6 +1643,18 @@ export function AgentChat({
             timestamp: extendedMsg.timestamp || Date.now(),
             citations: extendedMsg.citations,
             isReplay: extendedMsg.isReplay,
+            // Hook 事件相关字段
+            sessionStartSource: extendedMsg.sessionStartSource,
+            sessionEndReason: extendedMsg.sessionEndReason,
+            stopHookActive: extendedMsg.stopHookActive,
+            failedToolName: extendedMsg.failedToolName,
+            failedToolError: extendedMsg.failedToolError,
+            notificationTitle: extendedMsg.notificationTitle,
+            notificationMessage: extendedMsg.notificationMessage,
+            notificationType: extendedMsg.notificationType,
+            taskId: extendedMsg.taskId,
+            taskStatus: extendedMsg.taskStatus,
+            taskSummary: extendedMsg.taskSummary,
           };
 
           const newMessage: Message = {
@@ -1523,6 +1748,29 @@ export function AgentChat({
 
         return updated;
       });
+    });
+
+    // 监听后端权限模式变更（双向同步）
+    const unsubPermission = rendererEvents.permissionModeChanged.listen((data) => {
+      if (data.sessionId !== sessionId) return;
+      console.log('🔄 权限模式已由后端变更:', data.mode);
+      setPermissionMode(data.mode as PermissionMode);
+    });
+
+    return () => {
+      unsubscribe();
+      unsubPermission();
+    };
+  }, [sessionId]);
+
+  // 监听 Agent 通知事件（Notification hook 触发的系统级通知）
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const unsubscribe = rendererEvents.agentNotification.listen((data) => {
+      if (data.sessionId !== sessionId) return;
+      console.log('🔔 收到 Agent 通知:', data);
+      // 未来可接入 Toast 组件展示通知
     });
 
     return () => {
@@ -1709,6 +1957,10 @@ export function AgentChat({
 
     if (!response.error && response.sessionId) {
       setSessionId(response.sessionId);
+      // 同步后端初始权限模式到 UI
+      if (response.permissionMode) {
+        setPermissionMode(response.permissionMode as PermissionMode);
+      }
       setIsSessionReady(true);
       console.log('✅ 分支切换后会话已重建:', response.sessionId);
     }
@@ -1733,8 +1985,45 @@ export function AgentChat({
    * 分支的 session ID 存储在 conversation_branches 表中。
    * 切换分支时，关闭旧会话并创建新会话 resume 目标分支的 session。
    */
+  // 权限模式名称映射
+  const modeLabels: Record<string, string> = {
+    'bypassPermissions': '自动执行',
+    'acceptEdits': '允许编辑',
+    'default': '需确认',
+    'plan': '仅规划',
+  };
+
+  // 在对话中插入模式切换通知
+  const insertModeChangeNotice = useCallback((newMode: string) => {
+    setMessages(prev => {
+      const updated = [...prev];
+      const lastIdx = updated.length - 1;
+      const noticeBlock: ContentBlock = {
+        type: 'status',
+        status: `权限模式已切换为「${modeLabels[newMode] || newMode}」`,
+        timestamp: Date.now(),
+      };
+      // 插入到当前 assistant 消息中，或创建新 assistant 消息
+      if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+        const lastMsg = updated[lastIdx];
+        updated[lastIdx] = {
+          ...lastMsg,
+          contentBlocks: [...(lastMsg.contentBlocks || []), noticeBlock],
+        };
+      } else {
+        updated.push({
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          contentBlocks: [noticeBlock],
+        });
+      }
+      return updated;
+    });
+  }, []);
+
   // 权限确认响应回调：更新消息中对应权限请求块的状态
-  const handlePermissionResolved = useCallback((requestId: string, behavior: 'allow' | 'deny') => {
+  const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => {
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;
       const hasTarget = msg.contentBlocks.some(b => b.permissionRequestId === requestId);
@@ -1743,12 +2032,20 @@ export function AgentChat({
         ...msg,
         contentBlocks: msg.contentBlocks.map(b =>
           b.permissionRequestId === requestId
-            ? { ...b, permissionResolved: behavior }
+            ? { ...b, permissionResolved: behavior, ...(denyMessage ? { permissionDenyMessage: denyMessage } : {}) }
             : b
         ),
       };
     }));
-  }, []);
+
+    // "总是允许"：切换到自动执行模式并插入通知
+    if (behavior === 'always_allow' && sessionId) {
+      setPermissionMode('bypassPermissions');
+      await client.setPermissionMode({ sessionId, mode: 'bypassPermissions' });
+      // 插入模式切换通知
+      insertModeChangeNotice('bypassPermissions');
+    }
+  }, [sessionId]);
 
   const handleSwitchBranch = useCallback(async (sdkUuid: string, direction: 'prev' | 'next') => {
     if (!conversationId) return;
@@ -2027,28 +2324,32 @@ export function AgentChat({
               rows={2}
               disabled={isLoading || !isSessionReady}
             />
-            {/* 思考模式切换按钮 — 通过 setMaxThinkingTokens 即时生效 */}
-            <button
-              onClick={async () => {
-                const newEnabled = !thinkingEnabled;
-                setThinkingEnabled(newEnabled);
-                if (sessionId) {
-                  await client.setMaxThinkingTokens({
-                    sessionId,
-                    maxThinkingTokens: newEnabled ? 2000 : 0, // null=默认(自适应), 0=禁用
-                  });
-                }
-              }}
-              className={`absolute right-2 bottom-2 p-1.5 rounded-md transition-colors ${
-                thinkingEnabled
-                  ? 'text-purple-600 bg-purple-50 hover:bg-purple-100'
-                  : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
-              }`}
-              title={thinkingEnabled ? '思考模式已开启' : '思考模式已关闭'}
-              type="button"
-            >
-              <Brain size={16} />
-            </button>
+            {/* 思考等级选择 — 通过 setMaxThinkingTokens 即时生效 */}
+            <div className="absolute right-2 bottom-2 flex items-center">
+              <Brain size={14} className={thinkingLevel > 0 ? 'text-blue-500' : 'text-gray-400'} />
+              <select
+                value={thinkingLevel}
+                onChange={async (e) => {
+                  const newLevel = Number(e.target.value);
+                  setThinkingLevel(newLevel);
+                  if (sessionId) {
+                    await client.setMaxThinkingTokens({
+                      sessionId,
+                      maxThinkingTokens: newLevel === 0 ? 0 : newLevel,
+                    });
+                  }
+                }}
+                className={`bg-transparent border-none text-xs cursor-pointer focus:outline-none pl-1 pr-0 py-0 ${
+                  thinkingLevel > 0 ? 'text-blue-600' : 'text-gray-400'
+                }`}
+                title="思考深度"
+              >
+                <option value={0}>关闭</option>
+                <option value={2000}>低</option>
+                <option value={6000}>中</option>
+                <option value={10000}>高</option>
+              </select>
+            </div>
           </div>
           {isLoading ? (
             <button
@@ -2080,10 +2381,11 @@ export function AgentChat({
             <select
               value={permissionMode}
               onChange={async (e) => {
-                const newMode = e.target.value;
+                const newMode = e.target.value as PermissionMode;
                 setPermissionMode(newMode);
                 if (sessionId) {
                   await client.setPermissionMode({ sessionId, mode: newMode });
+                  insertModeChangeNotice(newMode);
                 }
               }}
               className="bg-transparent border-none text-xs text-gray-600 cursor-pointer focus:outline-none hover:text-gray-900"

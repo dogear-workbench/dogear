@@ -71,4 +71,18 @@ export type RendererHandlers = {
     toolInput: unknown;
     decisionReason?: string;
   }) => void;
+
+  // Agent 通知事件（Notification hook 触发）
+  agentNotification: (data: {
+    sessionId: string;
+    title?: string;
+    message: string;
+    notificationType: string;
+  }) => void;
+
+  // 权限模式变更通知（后端→前端双向同步）
+  permissionModeChanged: (data: {
+    sessionId: string;
+    mode: string;
+  }) => void;
 };

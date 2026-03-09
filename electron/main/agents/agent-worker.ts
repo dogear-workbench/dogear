@@ -472,6 +472,17 @@ class AgentWorker {
           // 启用会话持久化
           persistSession: true,
 
+          // 子代理：章节分析器（可并行分析多个章节）
+          agents: {
+            'chapter-analyzer': {
+              description: '分析单个章节的内容，提取摘要和关键信息',
+              prompt: '你是一个章节分析器。分析给定的章节内容，输出结构化的分析结果。使用中文。',
+              model: 'haiku',
+              tools: ['Read', 'Glob', 'Grep'],
+              maxTurns: 3,
+            },
+          },
+
           // Hooks - 让分析活动可见
           hooks: {
             PreToolUse: [{
@@ -492,7 +503,7 @@ class AgentWorker {
             }],
             PostToolUse: [{
               hooks: [async (input: any) => {
-                const { tool_name, tool_input, result } = input;
+                const { tool_name, tool_input } = input;
                 taskLogger.debug('Agent 工具完成:', tool_name);
 
                 // 特殊处理章节保存进度
@@ -506,14 +517,52 @@ class AgentWorker {
                   });
                 }
 
-                // 检查工具执行结果是否有错误
-                if (result && typeof result === 'object' && 'isError' in result && result.isError) {
-                  taskLogger.warn(`工具 ${tool_name} 执行失败:`, result.content);
+                return { continue: true };
+              }]
+            }],
+            // 工具执行失败时记录错误（替代 PostToolUse 中的手动错误检查）
+            PostToolUseFailure: [{
+              hooks: [async (input: any) => {
+                const { tool_name, error } = input;
+                taskLogger.warn(`工具 ${tool_name} 执行失败:`, error);
+
+                this.sendMessage({
+                  type: 'analysisProgress',
+                  bookId,
+                  toolName: tool_name,
+                  status: 'tool_error',
+                  message: `工具 ${tool_name} 执行失败: ${error}`,
+                });
+
+                return { continue: true };
+              }]
+            }],
+            // 分析任务被停止时保存已完成的进度
+            Stop: [{
+              hooks: [async () => {
+                taskLogger.info('分析任务 Stop hook 触发，保存已完成进度');
+
+                this.sendMessage({
+                  type: 'analysisProgress',
+                  bookId,
+                  status: 'stopped',
+                  message: '分析已停止，已完成的进度已保存',
+                });
+
+                // 更新数据库状态为"失败"（分析被中断）
+                try {
+                  const { dbBooks } = await import('../database/index.js');
+                  dbBooks.update(bookId, {
+                    analysis_status: 'failed',
+                    analyzed_at: Date.now(),
+                  });
+                } catch (error) {
+                  taskLogger.error('保存停止状态失败:', error);
                 }
 
                 return { continue: true };
               }]
-            }]
+            }],
           }
         }
       });

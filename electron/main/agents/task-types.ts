@@ -114,7 +114,14 @@ export interface Citation {
  * 用于向前端传递完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request';
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request'
+    // Hook 事件类型
+    | 'session_start'       // SessionStart hook 触发
+    | 'session_end'         // SessionEnd hook 触发
+    | 'stop'                // Stop hook 触发
+    | 'tool_failure'        // PostToolUseFailure hook 触发
+    | 'notification'        // Notification hook 触发
+    | 'task_notification';  // 子代理任务通知
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -133,6 +140,23 @@ export interface ExtendedSessionMessage {
   permissionToolName?: string;     // 请求权限的工具名
   permissionInput?: any;           // 工具输入参数
   permissionDecisionReason?: string; // 权限请求原因说明
+  // SessionStart hook 相关字段
+  sessionStartSource?: 'startup' | 'resume' | 'clear' | 'compact';
+  // SessionEnd hook 相关字段
+  sessionEndReason?: string;
+  // Stop hook 相关字段
+  stopHookActive?: boolean;
+  // PostToolUseFailure hook 相关字段
+  failedToolName?: string;
+  failedToolError?: string;
+  // Notification hook 相关字段
+  notificationTitle?: string;
+  notificationMessage?: string;
+  notificationType?: string;
+  // 子代理任务通知相关字段
+  taskId?: string;
+  taskStatus?: string;
+  taskSummary?: string;
 }
 
 /**

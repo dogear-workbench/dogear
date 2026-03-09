@@ -13,6 +13,8 @@ interface WorkspaceState {
   loadingFiles: boolean;
   importing: boolean;
   deleting: boolean;
+  /** 正在创建文件夹的父路径（null 表示未在创建） */
+  creatingFolderAt: string | null;
 
   // --- Actions ---
   /** 设置工作区，触发 files/conversations/articles 加载 */
@@ -34,6 +36,8 @@ interface WorkspaceState {
   /** 打开 Agent 监控窗口 */
   openMonitorWindow: () => Promise<void>;
 
+  /** 设置正在创建文件夹的父路径 */
+  setCreatingFolderAt: (parentPath: string | null) => void;
   createFolder: (parentPath: string, name: string) => Promise<void>;
   renameItem: (itemPath: string, newName: string) => Promise<void>;
   moveItem: (sourcePath: string, targetPath: string) => Promise<void>;
@@ -51,6 +55,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   loadingFiles: false,
   importing: false,
   deleting: false,
+  creatingFolderAt: null,
+  setCreatingFolderAt: (parentPath) => set({ creatingFolderAt: parentPath }),
   setWorkspace: (workspace) => {
     set({ workspace });
     // 触发文件列表加载

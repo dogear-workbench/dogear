@@ -11,6 +11,7 @@ import {
 } from '../agents/query-based-session.js';
 import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
 import type { QueryBasedSessionConfig } from '../agents/query-based-session.js';
+import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
 import type { RendererHandlers } from './renderer-handlers.js';
@@ -361,6 +362,7 @@ export const agentRouter = {
       forkSession?: boolean;
       resumeSessionAt?: string;
       isForkNewConversation?: boolean;
+      agents?: Record<string, any>;  // 自定义子代理配置（可选）
     }>()
     .action(async ({ input, context }) => {
       try {
@@ -389,6 +391,27 @@ export const agentRouter = {
           console.log('已添加 article MCP tools');
         }
 
+        // 构建默认子代理配置
+        const agents: Record<string, any> = input.agents || {};
+        if (!agents['chapter-analyzer']) {
+          agents['chapter-analyzer'] = {
+            description: '分析书籍章节内容，提取摘要、关键概念和结构信息。适用于需要深入分析单个章节的场景。',
+            prompt: '你是一个章节分析专家。你的任务是深入分析给定的章节内容，提取关键信息、主题、概念和结构。请使用中文输出分析结果。',
+            model: 'haiku',
+            tools: ['Read', 'Glob', 'Grep'],
+            maxTurns: 5,
+          };
+        }
+        if (!agents['book-searcher']) {
+          agents['book-searcher'] = {
+            description: '在书籍中搜索特定内容，查找相关章节和段落。适用于用户提出关于书籍内容的问题时。',
+            prompt: '你是一个书籍内容搜索专家。你的任务是在书籍的章节中搜索与用户问题相关的内容，找到最相关的段落并提供引用。请使用中文回答。',
+            model: 'haiku',
+            tools: ['Read', 'Glob', 'Grep'],
+            maxTurns: 8,
+          };
+        }
+
         // 构建会话配置
         const sessionConfig: QueryBasedSessionConfig = {
           model: input.model,
@@ -401,6 +424,7 @@ export const agentRouter = {
           resume: input.resume,
           forkSession: input.forkSession,
           resumeSessionAt: input.resumeSessionAt,
+          agents: Object.keys(agents).length > 0 ? agents : undefined,
         };
 
         const session = sessionManager.createSession(sessionConfig);
@@ -444,6 +468,34 @@ export const agentRouter = {
           });
         });
 
+        // 注册 Notification hook 事件转发
+        session.on('notification', (data: { title?: string; message: string; notificationType: string }) => {
+          // 通过 tipc 发送到前端
+          handlers.agentNotification.send({
+            sessionId: session.getSessionId(),
+            title: data.title,
+            message: data.message,
+            notificationType: data.notificationType,
+          });
+
+          // 通过 Electron Notification API 发送系统桌面通知
+          const { Notification: ElectronNotification } = electron;
+          if (ElectronNotification.isSupported()) {
+            new ElectronNotification({
+              title: data.title || 'Dogear',
+              body: data.message,
+            }).show();
+          }
+        });
+
+        // 注册权限模式变更事件转发（后端→前端双向同步）
+        session.on('permissionModeChanged', (data: { mode: string }) => {
+          handlers.permissionModeChanged.send({
+            sessionId: session.getSessionId(),
+            mode: data.mode,
+          });
+        });
+
         // 注册会话消息监听器
         sessionManager.on('sessionMessage', (sessionId: string, message: ExtendedSessionMessage) => {
           if (sessionId === session.getSessionId()) {
@@ -465,7 +517,7 @@ export const agentRouter = {
           }
         });
 
-        return { sessionId: session.getSessionId() };
+        return { sessionId: session.getSessionId(), permissionMode: 'default' };
       } catch (error) {
         console.error('创建基于 Query 的会话失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
@@ -520,7 +572,7 @@ export const agentRouter = {
 
   /** 更改权限模式 */
   setPermissionMode: t.procedure
-    .input<{ sessionId: string; mode: string }>()
+    .input<{ sessionId: string; mode: PermissionMode }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();

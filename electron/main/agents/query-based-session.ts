@@ -11,7 +11,12 @@
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
-import type { SDKUserMessage, SDKMessage, SDKUserMessageReplay } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  SDKUserMessage, SDKMessage, SDKUserMessageReplay, CanUseTool, PermissionResult, PermissionMode,
+  AgentDefinition, HookEvent, HookCallbackMatcher,
+  SessionStartHookInput, SessionEndHookInput, StopHookInput,
+  PostToolUseFailureHookInput, NotificationHookInput,
+} from '@anthropic-ai/claude-agent-sdk';
 import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
@@ -45,6 +50,8 @@ export interface QueryBasedSessionConfig {
   resume?: string;                   // SDK session_id（用于恢复会话）
   forkSession?: boolean;             // 是否创建分叉（与 resume 配合使用）
   resumeSessionAt?: string;          // 截断到此 assistant 消息的 SDK UUID
+  // 子代理配置
+  agents?: Record<string, AgentDefinition>;  // 自定义子代理（通过 Task 工具调用）
 }
 
 /**
@@ -81,7 +88,7 @@ export class QueryBasedSession extends EventEmitter {
 
   // 权限请求等待队列：key=requestId, value={ resolver, originalInput }
   private pendingPermissionRequests: Map<string, {
-    resolve: (result: { behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string }) => void;
+    resolve: (result: PermissionResult) => void;
     input: Record<string, unknown>;  // 保存原始 input，allow 时需要回传
   }> = new Map();
 
@@ -135,6 +142,7 @@ export class QueryBasedSession extends EventEmitter {
         systemPrompt,
         permissionMode: 'default',  // 默认模式：通过 canUseTool 回调询问用户
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
+        thinking: { type: 'adaptive' },  // Opus 4.6+ 自适应思考模式
       };
 
       // 配置工具列表
@@ -209,11 +217,8 @@ export class QueryBasedSession extends EventEmitter {
       this.logger.info('env 验证: ANTHROPIC_BASE_URL=', queryOptions.env.ANTHROPIC_BASE_URL || '❌ 未设置');
 
       // 配置权限确认回调：当 permissionMode 为 default 时，SDK 会调用此回调
-      queryOptions.canUseTool = async (
-        toolName: string,
-        input: Record<string, unknown>,
-        options: { signal: AbortSignal; decisionReason?: string; toolUseID: string }
-      ) => {
+      // 使用 SDK 导出的 CanUseTool 类型签名
+      queryOptions.canUseTool = (async (toolName, input, options) => {
         const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         this.logger.info('权限确认请求:', { requestId, toolName, toolUseID: options.toolUseID, decisionReason: options.decisionReason });
 
@@ -226,7 +231,7 @@ export class QueryBasedSession extends EventEmitter {
         });
 
         // 等待前端用户响应
-        return new Promise<{ behavior: 'allow'; updatedInput: Record<string, unknown> } | { behavior: 'deny'; message: string }>((resolve) => {
+        return new Promise<PermissionResult>((resolve) => {
           this.pendingPermissionRequests.set(requestId, { resolve, input });
 
           // 如果 AbortSignal 被触发（如会话关闭），自动拒绝
@@ -237,7 +242,139 @@ export class QueryBasedSession extends EventEmitter {
             }
           });
         });
-      };
+      }) satisfies CanUseTool;
+
+      // ==================== 子代理配置 ====================
+      if (this.config.agents && Object.keys(this.config.agents).length > 0) {
+        queryOptions.agents = this.config.agents;
+        this.logger.info('已配置子代理:', Object.keys(this.config.agents));
+      }
+
+      // ==================== Hooks 配置 ====================
+      const hooks: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {};
+
+      // SessionStart Hook：会话启动时注入书籍上下文
+      hooks.SessionStart = [{
+        hooks: [async (input) => {
+          const { source, model } = input as SessionStartHookInput;
+          this.logger.info('SessionStart hook 触发:', { source, model });
+
+          // 发送事件到前端
+          this.emit('message', {
+            type: 'session_start',
+            sessionStartSource: source,
+            timestamp: Date.now(),
+          } as ExtendedSessionMessage);
+
+          // 根据来源构建上下文注入
+          let additionalContext = '';
+          const ctx = this.config.context;
+
+          if (source === 'startup') {
+            // 新会话启动：注入完整上下文
+            if (ctx?.bookId) additionalContext += `当前书籍 ID: ${ctx.bookId}\n`;
+            if (ctx?.chapterId) additionalContext += `当前章节 ID: ${ctx.chapterId}\n`;
+            if (ctx?.selectedText) additionalContext += `用户选中的文本: ${ctx.selectedText}\n`;
+          } else if (source === 'resume') {
+            if (ctx?.bookId) additionalContext = `会话已恢复。当前书籍 ID: ${ctx.bookId}`;
+          } else if (source === 'compact') {
+            additionalContext = '注意：会话已经过压缩，部分上下文可能丢失。';
+            if (ctx?.bookId) additionalContext += ` 当前书籍 ID: ${ctx.bookId}`;
+          }
+
+          return {
+            continue: true,
+            hookSpecificOutput: {
+              hookEventName: 'SessionStart' as const,
+              additionalContext: additionalContext || undefined,
+            },
+          };
+        }],
+      }];
+
+      // SessionEnd Hook：会话结束时清理资源
+      hooks.SessionEnd = [{
+        hooks: [async (input) => {
+          const { reason } = input as SessionEndHookInput;
+          this.logger.info('SessionEnd hook 触发:', reason);
+
+          this.emit('message', {
+            type: 'session_end',
+            sessionEndReason: reason,
+            timestamp: Date.now(),
+          } as ExtendedSessionMessage);
+
+          // 清理未完成的权限请求（安全检查，避免与 close() 重复）
+          for (const [, pending] of this.pendingPermissionRequests) {
+            pending.resolve({ behavior: 'deny', message: '会话已结束' });
+          }
+          this.pendingPermissionRequests.clear();
+
+          return { continue: true };
+        }],
+      }];
+
+      // Stop Hook：Agent 即将停止时通知前端
+      hooks.Stop = [{
+        hooks: [async (input) => {
+          const { stop_hook_active } = input as StopHookInput;
+          this.logger.info('Stop hook 触发:', { stop_hook_active });
+
+          this.emit('message', {
+            type: 'stop',
+            stopHookActive: stop_hook_active,
+            timestamp: Date.now(),
+          } as ExtendedSessionMessage);
+
+          return { continue: true };
+        }],
+      }];
+
+      // PostToolUseFailure Hook：工具执行失败时通知前端
+      hooks.PostToolUseFailure = [{
+        hooks: [async (input) => {
+          const { tool_name, error, tool_use_id } = input as PostToolUseFailureHookInput;
+          this.logger.warn('PostToolUseFailure hook:', tool_name, error);
+
+          this.emit('message', {
+            type: 'tool_failure',
+            failedToolName: tool_name,
+            failedToolError: error,
+            toolUseId: tool_use_id,
+            timestamp: Date.now(),
+          } as ExtendedSessionMessage);
+
+          return { continue: true };
+        }],
+      }];
+
+      // Notification Hook：Agent 通知推送到前端和系统
+      hooks.Notification = [{
+        hooks: [async (input) => {
+          const { message, title, notification_type } = input as NotificationHookInput;
+          this.logger.info('Notification hook:', title, message);
+
+          // 发射独立事件（用于系统级通知，如 Electron Notification）
+          this.emit('notification', {
+            title,
+            message,
+            notificationType: notification_type,
+          });
+
+          // 同时作为消息显示在对话中
+          this.emit('message', {
+            type: 'notification',
+            notificationTitle: title,
+            notificationMessage: message,
+            notificationType: notification_type,
+            timestamp: Date.now(),
+          } as ExtendedSessionMessage);
+
+          return { continue: true };
+        }],
+      }];
+
+      queryOptions.hooks = hooks;
 
       // ==================== 请求配置详情 ====================
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');
@@ -649,6 +786,27 @@ export class QueryBasedSession extends EventEmitter {
           // ⚠️ init 消息不需要显示在界面上，只用于内部初始化
           return null;
         }
+
+        // 子代理任务通知（使用 agents 配置后，SDK 会发送此消息）
+        if (sdkMessage.subtype === 'task_notification') {
+          const taskMsg = sdkMessage as any;
+          this.logger.info('子代理任务通知:', taskMsg.task_id, taskMsg.status);
+          return {
+            type: 'task_notification',
+            taskId: taskMsg.task_id,
+            taskStatus: taskMsg.status,
+            taskSummary: taskMsg.summary,
+            timestamp,
+          };
+        }
+
+        // Hook 相关的系统消息不需要显示在前端
+        if (sdkMessage.subtype === 'hook_started' ||
+            sdkMessage.subtype === 'hook_progress' ||
+            sdkMessage.subtype === 'hook_response') {
+          return null;
+        }
+
         return {
           type: 'status',
           status: sdkMessage.subtype,
@@ -944,13 +1102,15 @@ ${contextInfo.join('\n')}
    * 更改权限模式
    * 即时生效，下一次工具调用就会使用新模式
    */
-  async setPermissionMode(mode: string): Promise<void> {
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
     if (!this.query) {
       this.logger.warn('setPermissionMode: 没有活跃的 query');
       return;
     }
     this.logger.info('更改权限模式:', mode);
-    await (this.query as any).setPermissionMode(mode);
+    await this.query.setPermissionMode(mode);
+    // 通知前端权限模式已变更（双向同步）
+    this.emit('permissionModeChanged', { mode });
   }
 
   /**

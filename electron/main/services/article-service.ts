@@ -258,6 +258,37 @@ export async function listArticles(workspacePath: string): Promise<ArticleMeta[]
 }
 
 /**
+ * 在 articles 目录下递归搜索指定 ID 的文章目录
+ * 文章可能被移动到子文件夹中，不能假设固定路径
+ */
+async function findArticleDirById(dirPath: string, articleId: string): Promise<string | null> {
+  try {
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const fullPath = path.join(dirPath, entry.name);
+
+      if (entry.name === articleId) {
+        // 确认是文章目录（含 meta.json）
+        try {
+          await fs.access(path.join(fullPath, 'meta.json'));
+          return fullPath;
+        } catch {
+          // 目录名匹配但没有 meta.json，继续搜索子目录
+        }
+      }
+
+      // 递归搜索子目录
+      const found = await findArticleDirById(fullPath, articleId);
+      if (found) return found;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * 获取单篇文章的完整数据
  * @param workspacePath - 工作区绝对路径
  * @param articleId - 文章 ID (UUID)
@@ -267,7 +298,18 @@ export async function getArticle(
   workspacePath: string,
   articleId: string
 ): Promise<Article> {
-  const articleDir = path.join(workspacePath, ARTICLES_DIR, articleId);
+  const articlesRoot = path.join(workspacePath, ARTICLES_DIR);
+
+  // 先尝试直接路径（最常见情况），再递归搜索
+  let articleDir = path.join(articlesRoot, articleId);
+  try {
+    await fs.access(path.join(articleDir, 'meta.json'));
+  } catch {
+    // 直接路径不存在，递归搜索（文章可能已被移到子文件夹）
+    const found = await findArticleDirById(articlesRoot, articleId);
+    if (!found) throw new Error(`文章不存在: ${articleId}`);
+    articleDir = found;
+  }
 
   // 读取 meta.json
   const metaContent = await fs.readFile(path.join(articleDir, 'meta.json'), 'utf-8');
@@ -288,7 +330,18 @@ export async function deleteArticle(
   workspacePath: string,
   articleId: string
 ): Promise<void> {
-  const articleDir = path.join(workspacePath, ARTICLES_DIR, articleId);
+  const articlesRoot = path.join(workspacePath, ARTICLES_DIR);
+
+  // 先尝试直接路径，再递归搜索
+  let articleDir = path.join(articlesRoot, articleId);
+  try {
+    await fs.access(path.join(articleDir, 'meta.json'));
+  } catch {
+    const found = await findArticleDirById(articlesRoot, articleId);
+    if (!found) throw new Error(`文章不存在: ${articleId}`);
+    articleDir = found;
+  }
+
   await fs.rm(articleDir, { recursive: true, force: true });
 }
 
