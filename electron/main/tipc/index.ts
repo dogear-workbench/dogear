@@ -9,6 +9,7 @@ import { agentRouter } from './agent.js';
 import { conversationsRouter } from './conversations.js';
 import { articleRouter } from './article.js';
 import { explorerRouter } from './explorer.js';
+import { settingsRouter } from './settings.js';
 
 export const router = {
   ...dbRouter,
@@ -20,6 +21,7 @@ export const router = {
   ...conversationsRouter,
   ...articleRouter,
   ...explorerRouter,
+  ...settingsRouter,
 };
 
 export type Router = typeof router;

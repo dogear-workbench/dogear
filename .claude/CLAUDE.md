@@ -138,43 +138,15 @@ data/                   # SQLite 数据库文件
 
 ## 关键开发约定
 
-### 1. IPC 通信（@egoist/tipc）
+> IPC 通信、Agent 开发、前端组件、数据库的详细规则在 `.claude/rules/` 中按路径自动加载，此处只列全局约定。
 
-- **主进程端**：在 `electron/main/tipc/` 下定义路由 handler
-- **渲染层端**：通过 `lib/client.ts` 导出的 tipc 客户端调用
-- 新增 IPC 接口时，需同时更新 `types/electron-api.ts` 中的类型定义
-
-### 2. Agent 开发（@anthropic-ai/claude-agent-sdk）
-
-- **重要**：对于 Agent 相关功能，**必须先查询** `@anthropic-ai/claude-agent-sdk` 包中是否已有相关实现，不要自己重新创建
-  - `sdk.d.ts` — 主要接口和函数定义，大多数功能在此
-  - `cli.js` — 具体实现参考，不清楚接口用法时可查阅
-  - `sdk-tools.d.ts` — 工具类型和工具函数定义
-- Agent 架构：Agent Manager（Worker 线程池）→ Agent Worker → query-based-session
-- 工具定义在 `electron/main/agents/tools/`
-- 技能定义在 `electron/main/agents/skills/`
-
-### 3. 状态管理（Zustand 5）
+### 状态管理（Zustand 5）
 
 - Store 文件统一放在 `stores/` 目录
-- 现有 Store：analysis-store, article-store, conversation-store, reference-store, workspace-store
+- 现有 Store：analysis-store, article-store, conversation-store, reference-store, workspace-store, settings-store
 - 新增状态请创建独立的 store 文件，遵循现有命名模式 `xxx-store.ts`
 
-### 4. 前端组件
-
-- UI 基础组件使用 shadcn/ui，位于 `components/ui/`
-- 业务组件直接放在 `components/` 根目录
-- 样式使用 Tailwind CSS，通过 `cn()` 工具函数合并类名
-- 图标统一使用 `lucide-react`
-
-### 5. 数据库
-
-- 使用 better-sqlite3，同步 API
-- 表结构定义在 `electron/main/database/schema.sql`
-- 数据库操作封装在 `electron/main/database/index.ts`
-- 修改表结构时需注意 schema 版本迁移逻辑
-
-### 6. TypeScript 配置
+### TypeScript 配置
 
 - 前端（Next.js）：`tsconfig.json`，module=esnext，bundler 解析
 - 主进程（Electron）：`tsconfig.electron.json`，module=ES2020，node 解析
@@ -184,7 +156,7 @@ data/                   # SQLite 数据库文件
 
 ## 禁止事项
 
-- **不要**引入已有依赖能解决的重复库（如已有 lucide-react 就不要引入其他图标库）
+- **不要**引入已有依赖能解决的重复库
 - **不要**绕过 tipc 直接使用 ipcMain/ipcRenderer 通信
 - **不要**在渲染层直接操作数据库，必须通过 IPC 调用主进程
 - **不要**自行实现 Agent SDK 已提供的功能

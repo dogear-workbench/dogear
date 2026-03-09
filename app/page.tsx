@@ -5,7 +5,8 @@ import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
@@ -15,6 +16,8 @@ import { useArticleStore } from '@/stores/article-store';
 import { useAnalysisStore } from '@/stores/analysis-store';
 
 export default function Home() {
+  const router = useRouter();
+
   // 工作区状态
   const workspace = useWorkspaceStore((s) => s.workspace);
   const selectedFile = useWorkspaceStore((s) => s.selectedFile);
@@ -73,6 +76,10 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push('/settings')}>
+            <Settings className="w-4 h-4 mr-2" />
+            设置
+          </Button>
           <Button variant="outline" size="sm" onClick={openMonitorWindow}>
             <Activity className="w-4 h-4 mr-2" />
             Agent 监控

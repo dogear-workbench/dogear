@@ -8,7 +8,7 @@
  * 权限模式（与 SDK 的 PermissionMode 保持一致）
  * 前端无法直接导入 @anthropic-ai/claude-agent-sdk，因此在此重新定义
  */
-export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'delegate' | 'dontAsk';
+export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk';
 
 /**
  * 工作区接口
