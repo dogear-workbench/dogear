@@ -37,7 +37,7 @@ export function getClaudeConfigDir(): string {
   const appDir = app.isPackaged
     ? path.dirname(app.getPath('exe'))  // 生产环境：exe 同级
     : process.cwd();                     // 开发环境：项目根目录
-  return path.join(appDir, '.claude-history');
+  return path.join(appDir, '.dogear', 'conversations');
 }
 
 /**
@@ -265,8 +265,8 @@ export const agentRouter = {
         if (!workspace) {
           return { filePath: null, error: '未设置默认工作区' };
         }
-        const { dbBooks } = await import('../database/index.js');
-        const book = dbBooks.getById(input.bookId);
+        const bookService = await import('../services/book-service.js');
+        const book = await bookService.getBookById(input.bookId);
         if (!book) {
           return { filePath: null, error: '书籍不存在' };
         }
@@ -292,8 +292,8 @@ export const agentRouter = {
 
         // 获取工作区路径
         let workspacePath = '';
-        const { dbWorkspaces } = await import('../database/index.js');
-        const defaultWorkspace = dbWorkspaces.getDefault();
+        const workspaceJsonService = await import('../services/workspace-json-service.js');
+        const defaultWorkspace = await workspaceJsonService.getDefault();
         if (defaultWorkspace) {
           workspacePath = defaultWorkspace.path;
         }
@@ -370,8 +370,8 @@ export const agentRouter = {
 
         // 获取工作区路径
         let workspacePath = '';
-        const { dbWorkspaces } = await import('../database/index.js');
-        const defaultWorkspace = dbWorkspaces.getDefault();
+        const workspaceJsonService = await import('../services/workspace-json-service.js');
+        const defaultWorkspace = await workspaceJsonService.getDefault();
         if (defaultWorkspace) {
           workspacePath = defaultWorkspace.path;
         }
@@ -435,17 +435,9 @@ export const agentRouter = {
           console.log('conversationId:', input.conversationId);
 
           if (input.conversationId) {
-            if (input.forkSession && !input.isForkNewConversation) {
-              // 编辑重发模式
-              const { dbConversationBranches } = await import('../database/index.js');
-              dbConversationBranches.updatePendingSdkSessionId(input.conversationId, data.session_id);
-              console.log('已更新分支的 sdk_session_id（编辑重发模式）');
-            } else {
-              // 正常模式或分叉新对话模式
-              const { dbConversations } = await import('../database/index.js');
-              dbConversations.updateSdkSessionId(input.conversationId, data.session_id);
-              console.log('已保存 sdk_session_id 到数据库');
-            }
+            const conversationService = await import('../services/conversation-service.js');
+            await conversationService.updateSdkSessionId(input.conversationId, data.session_id);
+            console.log('已保存 sdk_session_id 到 conversations.json');
           }
 
           // 发送到前端（通过 webContents.send，因为 tipc 事件不包含此自定义事件）
@@ -624,8 +616,8 @@ export const agentRouter = {
         // 优先使用前端传入的路径，其次使用默认工作区路径，最后 fallback 到项目根目录
         let projectRoot = input.projectPath;
         if (!projectRoot) {
-          const { dbWorkspaces } = await import('../database/index.js');
-          const defaultWorkspace = dbWorkspaces.getDefault();
+          const workspaceJsonService = await import('../services/workspace-json-service.js');
+          const defaultWorkspace = await workspaceJsonService.getDefault();
           projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
         }
         const sessionsDir = await getSdkSessionsDir(projectRoot);
@@ -642,8 +634,8 @@ export const agentRouter = {
           // 尝试搜索工作区路径
           console.log('会话文件不在项目根目录，尝试搜索工作区目录...');
           try {
-            const { dbWorkspaces } = await import('../database/index.js');
-            const defaultWorkspace = dbWorkspaces.getDefault();
+            const wsService = await import('../services/workspace-json-service.js');
+            const defaultWorkspace = await wsService.getDefault();
             if (defaultWorkspace?.path) {
               const workspaceSessionsDir = await getSdkSessionsDir(defaultWorkspace.path);
               const workspaceSessionFile = path.join(workspaceSessionsDir, `${input.sdkSessionId}.jsonl`);
@@ -778,8 +770,8 @@ export const agentRouter = {
         // 优先使用前端传入的路径，其次使用默认工作区路径，最后 fallback 到项目根目录
         let projectRoot = input.projectPath;
         if (!projectRoot) {
-          const { dbWorkspaces } = await import('../database/index.js');
-          const defaultWorkspace = dbWorkspaces.getDefault();
+          const workspaceJsonService = await import('../services/workspace-json-service.js');
+          const defaultWorkspace = await workspaceJsonService.getDefault();
           projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
         }
         const sessionsDir = await getSdkSessionsDir(projectRoot);
