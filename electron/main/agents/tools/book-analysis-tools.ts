@@ -285,10 +285,9 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
-            // 需要通过数据库获取章节内容
-            // 这里我们直接从数据库读取（需要动态导入以避免循环依赖）
-            const { dbChapters } = await import('../../database/index.js');
-            const chapter = dbChapters.getById(args.chapterId);
+            // 从 chapters.json 获取章节内容（需要动态导入以避免循环依赖）
+            const bookService = await import('../../services/book-service.js');
+            const chapter = await bookService.getChapterFromFile(args.chapterId, args.bookId);
 
             if (!chapter) {
               return {
@@ -328,8 +327,8 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
-            const { dbBooks } = await import('../../database/index.js');
-            const book = dbBooks.getById(args.bookId);
+            const bookService = await import('../../services/book-service.js');
+            const book = await bookService.getBookById(args.bookId);
 
             if (!book) {
               return {
@@ -376,8 +375,8 @@ export function createBookAnalysisTools(workspacePath: string) {
         },
         async (args, extra) => {
           try {
-            const { dbChapters } = await import('../../database/index.js');
-            const chapters = dbChapters.getChapterMetadata(args.bookId);
+            const bookService = await import('../../services/book-service.js');
+            const chapters = await bookService.getChapterMetadataFromFile(args.bookId);
 
             return {
               content: [{

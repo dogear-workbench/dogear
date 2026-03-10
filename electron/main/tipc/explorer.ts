@@ -2,7 +2,7 @@
 import { tipc } from '@egoist/tipc/main';
 import electron from 'electron';
 const { shell } = electron;
-import { dbWorkspaces } from '../database/index.js';
+import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as workspaceFsService from '../services/workspace-fs-service.js';
 import * as articleService from '../services/article-service.js';
 
@@ -13,7 +13,7 @@ export const explorerRouter = {
     .input<{ workspaceId: string; parentPath: string; name: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const isArticleFolder = input.parentPath.startsWith('.dogear/articles');
@@ -33,7 +33,7 @@ export const explorerRouter = {
     .input<{ workspaceId: string; itemPath: string; newName: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const isArticlePath = input.itemPath.startsWith('.dogear/articles');
@@ -53,7 +53,7 @@ export const explorerRouter = {
     .input<{ workspaceId: string; sourcePath: string; targetPath: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const isArticlePath = input.sourcePath.startsWith('.dogear/articles');
@@ -73,7 +73,7 @@ export const explorerRouter = {
     .input<{ workspaceId: string; sourcePath: string; targetPath: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         await workspaceFsService.copyItem(workspace.path, input.sourcePath, input.targetPath);
@@ -88,7 +88,7 @@ export const explorerRouter = {
     .input<{ workspaceId: string; itemPath: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const isArticlePath = input.itemPath.startsWith('.dogear/articles');
@@ -108,7 +108,7 @@ export const explorerRouter = {
     .input<{ workspaceId: string; itemPath: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const absPath = workspaceFsService.resolveAndValidate(workspace.path, input.itemPath);

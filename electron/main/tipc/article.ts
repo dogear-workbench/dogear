@@ -1,6 +1,6 @@
 // electron/main/tipc/article.ts
 import { tipc } from '@egoist/tipc/main';
-import { dbWorkspaces } from '../database/index.js';
+import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as articleService from '../services/article-service.js';
 
 const t = tipc.create();
@@ -13,7 +13,7 @@ export const articleRouter = {
     .input<{ url: string; workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const result = await articleService.fetchAndParseArticle(input.url);
@@ -32,7 +32,7 @@ export const articleRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { articles: [], error: '工作区不存在' };
 
         const articles = await articleService.listArticles(workspace.path);
@@ -50,7 +50,7 @@ export const articleRouter = {
     .input<{ workspaceId: string; articleId: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         const article = await articleService.getArticle(workspace.path, input.articleId);
@@ -68,7 +68,7 @@ export const articleRouter = {
     .input<{ workspaceId: string; articleId: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
         await articleService.deleteArticle(workspace.path, input.articleId);

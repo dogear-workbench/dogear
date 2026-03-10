@@ -68,13 +68,6 @@ class AgentWorker {
     this.logger.info('正在初始化 Agent Worker...');
 
     try {
-      // 初始化数据库(如果提供了路径)
-      if (config.dbPath) {
-        const { initDatabase } = await import('../database/index.js');
-        initDatabase(config.dbPath);
-        this.logger.info('数据库已初始化:', config.dbPath);
-      }
-
       // v2: 初始化工作区路径
       // 使用配置传递的路径，避免在 Worker 中调用 electron.app
       // 创建轻量级 workspace 对象用于传递给 service 函数
@@ -219,9 +212,9 @@ class AgentWorker {
     let chapterContent: string | undefined;
     if (context.chapterId) {
       try {
-        // 动态导入数据库模块，避免循环依赖
-        const { dbChapters } = await import('../database/index.js');
-        const chapter = await dbChapters.getById(context.chapterId);
+        // 动态导入 bookService，避免循环依赖（Worker 线程）
+        const bookService = await import('../services/book-service.js');
+        const chapter = await bookService.getChapterFromFile(context.chapterId);
         if (chapter) {
           chapterContent = chapter.content;
           taskLogger.info('已加载章节内容:', chapter.title, '字符数:', chapter.content?.length || 0);
@@ -384,23 +377,23 @@ class AgentWorker {
     let bookInfo: any;
     let bookFilePath: string;
     try {
-      const { dbBooks } = await import('../database/index.js');
-      bookInfo = dbBooks.getById(bookId);
+      const bookService = await import('../services/book-service.js');
+      bookInfo = await bookService.getBookById(bookId);
       if (!bookInfo) {
         throw new Error(`书籍不存在: ${bookId}`);
       }
 
-      // 构建书籍文件路径 - 使用数据库中存储的 file_path（相对于工作区）
+      // 构建书籍文件路径 - 使用 meta.json 中存储的 file_path（相对于工作区）
       // file_path 格式: {bookId}/filename.ext
       bookFilePath = await workspaceService.getBookFilePath(this.workspace, bookId, bookInfo.file_path);
       taskLogger.info('书籍文件路径:', bookFilePath);
 
-      // 更新数据库状态为"分析中"
-      dbBooks.update(bookId, {
+      // 更新 meta.json 状态为"分析中"
+      await bookService.updateBookMeta(bookId, {
         analysis_status: 'analyzing',
         analyzed_at: Date.now()
       });
-      taskLogger.info('数据库状态已更新为: analyzing');
+      taskLogger.info('meta.json 状态已更新为: analyzing');
     } catch (error) {
       taskLogger.error('获取书籍信息失败:', error);
       throw error;
@@ -549,10 +542,10 @@ class AgentWorker {
                   message: '分析已停止，已完成的进度已保存',
                 });
 
-                // 更新数据库状态为"失败"（分析被中断）
+                // 更新 meta.json 状态为"失败"（分析被中断）
                 try {
-                  const { dbBooks } = await import('../database/index.js');
-                  dbBooks.update(bookId, {
+                  const bookService = await import('../services/book-service.js');
+                  await bookService.updateBookMeta(bookId, {
                     analysis_status: 'failed',
                     analyzed_at: Date.now(),
                   });
@@ -610,16 +603,16 @@ class AgentWorker {
 
       taskLogger.info('书籍分析完成');
 
-      // 分析成功，更新数据库状态为"已分析"
+      // 分析成功，更新 meta.json 状态为"已分析"
       try {
-        const { dbBooks } = await import('../database/index.js');
-        dbBooks.update(bookId, {
+        const bookService = await import('../services/book-service.js');
+        await bookService.updateBookMeta(bookId, {
           analysis_status: 'analyzed',
           analyzed_at: Date.now()
         });
-        taskLogger.info('数据库状态已更新为: analyzed');
+        taskLogger.info('meta.json 状态已更新为: analyzed');
       } catch (error) {
-        taskLogger.error('更新数据库状态失败:', error);
+        taskLogger.error('更新 meta.json 状态失败:', error);
       }
 
       return {
@@ -633,10 +626,10 @@ class AgentWorker {
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('书籍分析失败:', errorMsg);
 
-      // 分析失败，更新数据库状态为"失败"
+      // 分析失败，更新 meta.json 状态为"失败"
       try {
-        const { dbBooks } = await import('../database/index.js');
-        dbBooks.update(bookId, {
+        const bookService = await import('../services/book-service.js');
+        await bookService.updateBookMeta(bookId, {
           analysis_status: 'failed',
           analyzed_at: Date.now()
         });

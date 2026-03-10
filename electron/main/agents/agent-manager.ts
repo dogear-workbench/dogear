@@ -286,10 +286,10 @@ export class AgentManager extends EventEmitter {
 
       const dbPath = path.join(dbDir, 'dogear.db');
 
-      // 获取当前默认工作区路径（从数据库中读取，不自动创建）
+      // 获取当前默认工作区路径（从 JSON 配置读取，不自动创建）
       let workspacePath: string;
-      const { dbWorkspaces } = await import('../database/index.js');
-      const defaultWorkspace = dbWorkspaces.getDefault();
+      const workspaceJsonService = await import('../services/workspace-json-service.js');
+      const defaultWorkspace = await workspaceJsonService.getDefault();
 
       if (!defaultWorkspace) {
         // 如果没有设置默认工作区，使用临时路径，Worker 会报错提示用户先选择工作区
