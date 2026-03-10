@@ -9,14 +9,16 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { dbWorkspaces, Workspace } from '../database/index.js';
+import * as workspaceJsonService from './workspace-json-service.js';
+import type { Workspace } from './workspace-json-service.js';
+export type { Workspace };
 
 /**
  * 获取当前默认工作区
  * 如果没有默认工作区，返回 null
  */
 export async function getCurrentWorkspace(): Promise<Workspace | null> {
-  return dbWorkspaces.getDefault() || null;
+  return (await workspaceJsonService.getDefault()) || null;
 }
 
 /**
