@@ -123,14 +123,14 @@ async function searchInFullContent(
   maxResults: number
 ): Promise<SearchResult[]> {
   try {
-    const { dbChapters } = await import('../../database/index.js');
-    const chapters = dbChapters.getChapterMetadata(bookId);
+    const bookService = await import('../../services/book-service.js');
+    const chapters = await bookService.getChapterMetadataFromFile(bookId);
 
     const results: SearchResult[] = [];
 
     for (const chapter of chapters) {
       // 获取完整章节内容
-      const fullChapter = dbChapters.getById(chapter.id);
+      const fullChapter = await bookService.getChapterFromFile(chapter.id, bookId);
       if (!fullChapter) continue;
 
       const textToSearch = `${chapter.title} ${fullChapter.content}`;
@@ -192,9 +192,8 @@ export function createBookQATools(workspacePath: string, workspaceId: string) {
         {},
         async (_args, _extra) => {
           try {
-            const { dbBooks } = await import('../../database/index.js');
-            const allBooks = dbBooks.getAll();
-            const books = allBooks.filter(b => b.workspace_id === workspaceId);
+            const bookService = await import('../../services/book-service.js');
+            const books = await bookService.getAllBooks(workspaceId);
 
             if (books.length === 0) {
               return {
@@ -346,8 +345,8 @@ export function createBookQATools(workspacePath: string, workspaceId: string) {
         },
         async (args, extra) => {
           try {
-            const { dbChapters } = await import('../../database/index.js');
-            const chapter = dbChapters.getById(args.chapterId);
+            const bookService = await import('../../services/book-service.js');
+            const chapter = await bookService.getChapterFromFile(args.chapterId, args.bookId);
 
             if (!chapter) {
               return {
@@ -441,8 +440,8 @@ export function createBookQATools(workspacePath: string, workspaceId: string) {
         },
         async (args, extra) => {
           try {
-            const { dbBooks } = await import('../../database/index.js');
-            const book = dbBooks.getById(args.bookId);
+            const bookService = await import('../../services/book-service.js');
+            const book = await bookService.getBookById(args.bookId);
 
             if (!book) {
               return {
