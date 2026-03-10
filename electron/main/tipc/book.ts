@@ -2,7 +2,6 @@
 import { tipc } from '@egoist/tipc/main';
 import electron from 'electron';
 const { shell } = electron;
-import { dbBooks } from '../database/index.js';
 import * as bookService from '../services/book-service.js';
 import * as workspaceService from '../services/workspace-service.js';
 import path from 'path';
@@ -31,7 +30,7 @@ export const bookRouter = {
   getBookByFilePath: t.procedure
     .input<{ filePathOrBookId: string }>()
     .action(async ({ input }) => {
-      const books = dbBooks.getAll();
+      const books = await bookService.getAllBooks();
       // 首先尝试作为 bookId 查找
       const byId = books.find(book => book.id === input.filePathOrBookId);
       if (byId) return byId;
@@ -50,7 +49,7 @@ export const bookRouter = {
     .input<{ bookId: string }>()
     .action(async ({ input }) => {
       try {
-        const book = dbBooks.getById(input.bookId);
+        const book = await bookService.getBookById(input.bookId);
         if (!book) return { path: null, error: '书籍不存在' };
         const workspace = await workspaceService.getCurrentWorkspace();
         if (!workspace) return { path: null, error: '未设置默认工作区' };
