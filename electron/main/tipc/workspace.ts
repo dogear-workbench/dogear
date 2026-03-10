@@ -2,7 +2,8 @@
 import { tipc } from '@egoist/tipc/main';
 import electron from 'electron';
 const { dialog } = electron;
-import { dbWorkspaces, dbBooks } from '../database/index.js';
+import * as workspaceJsonService from '../services/workspace-json-service.js';
+import * as bookService from '../services/book-service.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import * as articleService from '../services/article-service.js';
@@ -15,7 +16,7 @@ export const workspaceRouter = {
   getAll: t.procedure
     .action(async () => {
       try {
-        const workspaces = dbWorkspaces.getAll();
+        const workspaces = await workspaceJsonService.getAll();
         return { workspaces };
       } catch (error) {
         console.error('获取工作区列表失败:', error);
@@ -26,7 +27,7 @@ export const workspaceRouter = {
   getDefault: t.procedure
     .action(async () => {
       try {
-        return dbWorkspaces.getDefault() ?? null;
+        return (await workspaceJsonService.getDefault()) ?? null;
       } catch (error) {
         console.error('获取默认工作区失败:', error);
         return null;
@@ -43,11 +44,11 @@ export const workspaceRouter = {
         if (result.canceled || result.filePaths.length === 0) return { canceled: true };
 
         const selectedPath = result.filePaths[0];
-        const existingWorkspaces = dbWorkspaces.getAll();
+        const existingWorkspaces = await workspaceJsonService.getAll();
         const existing = existingWorkspaces.find(w => w.path === selectedPath);
 
         if (existing) {
-          dbWorkspaces.setDefault(existing.id);
+          await workspaceJsonService.setDefault(existing.id);
           return { workspace: { ...existing, is_default: 1 }, existed: true };
         }
 
@@ -59,7 +60,7 @@ export const workspaceRouter = {
           is_default: 1,
           created_at: Date.now(),
         };
-        dbWorkspaces.add(workspace);
+        await workspaceJsonService.add(workspace);
 
         // 确保工作区目录存在
         await fs.mkdir(selectedPath, { recursive: true });
@@ -74,7 +75,7 @@ export const workspaceRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        dbWorkspaces.setDefault(input.workspaceId);
+        await workspaceJsonService.setDefault(input.workspaceId);
         return { success: true };
       } catch (error) {
         console.error('设置默认工作区失败:', error);
@@ -86,7 +87,7 @@ export const workspaceRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const workspace = dbWorkspaces.getById(input.workspaceId);
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { files: [], error: '工作区不存在' };
 
         // 1. 扫描文章树（.dogear/articles/）
@@ -96,7 +97,7 @@ export const workspaceRouter = {
         const workspaceFiles = await workspaceFsService.scanWorkspaceFiles(workspace.path);
 
         // 3. 为书籍目录附加 bookId 和书名
-        const allBooks = dbBooks.getAll().filter(b => b.workspace_id === input.workspaceId);
+        const allBooks = await bookService.getAllBooks(input.workspaceId);
         const booksByDir = new Map(allBooks.filter(b => b.id).map(b => [b.id!, b]));
         attachBookIds(workspaceFiles, booksByDir);
 
