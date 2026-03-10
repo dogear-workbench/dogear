@@ -6,7 +6,7 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { Pencil, GitBranch, ChevronLeft, ChevronRight, X, Brain, Shield, Check, ShieldAlert, ShieldCheck, Send, MessageSquare } from 'lucide-react';
+import { Pencil, GitBranch, ChevronRight, X, Brain, Shield, Check, ShieldAlert, ShieldCheck, Send, MessageSquare } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
@@ -38,9 +38,6 @@ interface Message {
   contentBlocks?: ContentBlock[];
   // SDK 消息 UUID（用于分叉定位，v4 新增）
   sdkUuid?: string;
-  // 分支信息（v4 新增）
-  branchVersions?: number;   // 此分叉点的分支总数
-  currentBranch?: number;    // 当前显示的分支索引
   forkPointSdkUuid?: string; // 用户消息上记录对应的分叉点 assistant UUID
   // AI 模型名称
   model?: string;
@@ -194,7 +191,6 @@ function MessageItem({
   messageIndex,
   onEditResend,
   onFork,
-  onSwitchBranch,
   sessionId,
   onPermissionResolved,
 }: {
@@ -202,7 +198,6 @@ function MessageItem({
   messageIndex: number;
   onEditResend?: (index: number, newContent: string) => void;
   onFork?: (assistantSdkUuid: string) => void;
-  onSwitchBranch?: (sdkUuid: string, direction: 'prev' | 'next') => void;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
 }) {
@@ -219,28 +214,6 @@ function MessageItem({
             <span className="text-white text-sm font-medium">你</span>
           </div>
           <div className="flex-1 min-w-0">
-            {/* 分支切换 UI（用户消息+AI回复作为整体切换） */}
-            {message.branchVersions && message.branchVersions > 1 && (
-              <div className="flex items-center gap-1 mb-2 text-xs text-gray-500">
-                <button
-                  onClick={() => message.forkPointSdkUuid && onSwitchBranch?.(message.forkPointSdkUuid, 'prev')}
-                  disabled={(message.currentBranch ?? 0) <= 0}
-                  className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <span className="font-mono">
-                  {(message.currentBranch ?? 0) + 1}/{message.branchVersions}
-                </span>
-                <button
-                  onClick={() => message.forkPointSdkUuid && onSwitchBranch?.(message.forkPointSdkUuid, 'next')}
-                  disabled={(message.currentBranch ?? 0) >= (message.branchVersions - 1)}
-                  className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            )}
             {isEditing ? (
               // 编辑模式
               <div className="space-y-2">
@@ -1170,41 +1143,6 @@ export function AgentChat({
               historyMessages.push(currentAssistantMessage);
             }
 
-            // v4: 查询分支信息，恢复 branchVersions 和 currentBranch
-            if (conversationId) {
-              try {
-                const branchesResult = await client.getBranches({ conversationId });
-                if (!branchesResult.error && branchesResult.branches.length > 0) {
-                  // 按 fork_point_sdk_uuid 分组统计分支数量
-                  const branchCountMap = new Map<string, number>();
-                  for (const branch of branchesResult.branches) {
-                    const count = branchCountMap.get(branch.fork_point_sdk_uuid) || 0;
-                    branchCountMap.set(branch.fork_point_sdk_uuid, count + 1);
-                  }
-
-                  // 为分叉点之后的用户消息设置分支信息
-                  // +1 因为原始版本本身也算一个版本
-                  for (let i = 0; i < historyMessages.length; i++) {
-                    const msg = historyMessages[i];
-                    if (msg.role === 'assistant' && msg.sdkUuid && branchCountMap.has(msg.sdkUuid)) {
-                      const versions = branchCountMap.get(msg.sdkUuid)! + 1;
-                      // 将分支信息设置到 forkPoint 后面的用户消息上
-                      // 这样切换时用户消息和AI回复一起切换
-                      if (i + 1 < historyMessages.length && historyMessages[i + 1].role === 'user') {
-                        historyMessages[i + 1].branchVersions = versions;
-                        historyMessages[i + 1].currentBranch = 0;
-                        historyMessages[i + 1].forkPointSdkUuid = msg.sdkUuid;
-                      }
-                    }
-                  }
-
-                  console.log('✅ 已恢复分支信息:', branchCountMap.size, '个分叉点');
-                }
-              } catch (error) {
-                console.warn('恢复分支信息失败（不影响正常使用）:', error);
-              }
-            }
-
             setMessages(historyMessages);
             setTimeout(() => {
               setHistoryLoaded(true);
@@ -1226,52 +1164,10 @@ export function AgentChat({
         return;
       }
 
-      // 传统模式：从数据库加载历史消息
+      // 无 SDK resume 模式：新对话，空消息列表
       setIsResumeMode(false);
-
-      try {
-        // 先设置 historyLoaded 为 false，防止在加载期间保存消息
-        setHistoryLoaded(false);
-
-        const result = await client.getMessages({ conversationId });
-        if (result.error) {
-          console.error('加载历史消息失败:', result.error);
-          return;
-        }
-
-        // 转换数据库消息格式到组件消息格式
-        const historyMessages: Message[] = result.messages.map((msg) => {
-          const message: Message = {
-            role: msg.role as 'user' | 'assistant',
-            content: msg.content,
-            timestamp: msg.timestamp,
-          };
-
-          // 解析 content_blocks
-          if (msg.content_blocks) {
-            try {
-              const blocks = JSON.parse(msg.content_blocks) as ContentBlock[];
-              message.contentBlocks = blocks;
-            } catch {
-              // 解析失败，忽略 content_blocks
-            }
-          }
-
-          return message;
-        });
-
-        setMessages(historyMessages);
-
-        // 延迟设置 historyLoaded，确保消息状态已更新
-        // 这样可以防止在加载过程中触发保存逻辑
-        setTimeout(() => {
-          setHistoryLoaded(true);
-        }, 100);
-
-        console.log('已从数据库加载历史消息:', historyMessages.length, '条');
-      } catch (error) {
-        console.error('加载历史消息失败:', error);
-      }
+      setMessages([]);
+      setHistoryLoaded(true);
     };
 
     loadHistory();
@@ -1390,16 +1286,13 @@ export function AgentChat({
           setTimeout(async () => {
             if (cancelled) return; // 延迟执行前再次检查
             try {
-              // 先添加用户消息到 UI（附带分支信息，立即显示切换 UI）
-              const branchCount = forkParams.branchCount || 2; // 至少 原始+当前分支=2
+              // 先添加用户消息到 UI
               setMessages(prev => [
                 ...prev,
                 {
                   role: 'user',
                   content: forkParams.editedMessage!,
                   timestamp: Date.now(),
-                  branchVersions: branchCount,
-                  currentBranch: branchCount - 1,  // 当前是最新的分支
                   forkPointSdkUuid: forkParams.resumeSessionAt,
                 },
                 {
@@ -1841,160 +1734,6 @@ export function AgentChat({
   }, [conversationId, forkConversation]);
 
   /**
-   * 从 SDK JSONL 历史中解析 forkPoint 之后的消息
-   * 复用的辅助函数，避免重复代码
-   */
-  const parseMessagesAfterForkPoint = (rawMessages: any[], forkPointUuid: string): Message[] => {
-    let foundForkPoint = false;
-    const afterMessages: Message[] = [];
-    let currentAssistantMsg: Message | null = null;
-
-    for (const msg of rawMessages) {
-      if (msg.isMeta) continue;
-
-      // 找到分叉点
-      if (!foundForkPoint) {
-        if (msg.type === 'assistant' && msg.uuid === forkPointUuid) {
-          foundForkPoint = true;
-        }
-        continue;
-      }
-
-      // 分叉点之后的消息
-      const isUser = msg.type === 'user';
-      if (isUser) {
-        // 跳过只包含 tool_result 的用户消息
-        if (Array.isArray(msg.content)) {
-          const onlyToolResult = msg.content.every((b: any) => b?.type === 'tool_result');
-          if (onlyToolResult) continue;
-        }
-        if (!msg.content || (Array.isArray(msg.content) && msg.content.length === 0)) continue;
-
-        if (currentAssistantMsg) {
-          afterMessages.push(currentAssistantMsg);
-          currentAssistantMsg = null;
-        }
-
-        let textContent = '';
-        if (typeof msg.content === 'string') {
-          textContent = msg.content;
-        } else if (Array.isArray(msg.content)) {
-          for (const block of msg.content) {
-            if (typeof block === 'string') textContent += block;
-            else if (block?.type === 'text') textContent += block.text || '';
-          }
-        }
-        if (!textContent.trim()) continue;
-
-        afterMessages.push({
-          role: 'user',
-          content: textContent,
-          timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-        });
-      } else {
-        // assistant 消息
-        let textContent = '';
-        const blocks: ContentBlock[] = [];
-        if (Array.isArray(msg.content)) {
-          for (const block of msg.content) {
-            if (typeof block === 'string') {
-              textContent += block;
-              blocks.push({ type: 'text', content: block, timestamp: Date.now() });
-            } else if (block?.type === 'text') {
-              textContent += block.text || '';
-              if (block.text) blocks.push({ type: 'text', content: block.text, timestamp: Date.now() });
-            } else if (block?.type === 'tool_use' || block?.type === 'server_tool_use') {
-              blocks.push({
-                type: 'tool_use',
-                id: block.id,
-                toolName: block.name,
-                toolInput: block.input,
-                toolUseId: block.id,
-                timestamp: Date.now(),
-              });
-            }
-          }
-        } else if (typeof msg.content === 'string') {
-          textContent = msg.content;
-          if (msg.content) blocks.push({ type: 'text', content: msg.content, timestamp: Date.now() });
-        }
-
-        if (currentAssistantMsg) {
-          currentAssistantMsg.contentBlocks = [...(currentAssistantMsg.contentBlocks || []), ...blocks];
-          currentAssistantMsg.content += textContent;
-          if (msg.uuid) currentAssistantMsg.sdkUuid = msg.uuid;
-        } else {
-          currentAssistantMsg = {
-            role: 'assistant',
-            content: textContent,
-            timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
-            contentBlocks: blocks.length > 0 ? blocks : undefined,
-            sdkUuid: msg.uuid || undefined,
-          };
-        }
-      }
-    }
-    if (currentAssistantMsg) afterMessages.push(currentAssistantMsg);
-    return afterMessages;
-  };
-
-  /**
-   * 重建会话（切换分支后需要以新的 sdk_session_id resume）
-   * 关闭旧会话，创建新会话
-   */
-  const recreateSession = useCallback(async (targetSdkSessionId: string) => {
-    if (!conversationId) return;
-
-    // 使用 ref 获取最新的 sessionId，避免闭包过期
-    const currentSessionId = sessionIdRef.current;
-    if (currentSessionId) {
-      try {
-        await client.closeQueryBasedSession({ sessionId: currentSessionId });
-      } catch (e) {
-        console.warn('关闭旧会话失败（可忽略）:', e);
-      }
-    }
-
-    // 创建新会话，resume 选中的分支
-    let projectRoot = '';
-    if (typeof window !== 'undefined' && (window as any).process?.cwd) {
-      projectRoot = (window as any).process.cwd();
-    }
-    const response = await client.createQueryBasedSession({
-      allowedTools: ['Read', 'Glob', 'Grep'],
-      context,
-      enableSkills: true,
-      projectRoot,
-      conversationId: conversationId || undefined,
-      resume: targetSdkSessionId,
-    });
-
-    if (!response.error && response.sessionId) {
-      setSessionId(response.sessionId);
-      // 同步后端初始权限模式到 UI
-      if (response.permissionMode) {
-        setPermissionMode(response.permissionMode as PermissionMode);
-      }
-      setIsSessionReady(true);
-      console.log('✅ 分支切换后会话已重建:', response.sessionId);
-    }
-  }, [conversationId, context]);
-
-  /**
-   * 获取原始对话的 sdk_session_id（不含分支）
-   * 对话的 sdk_session_id 保持不变（始终为原始值），分支 session 存在 branches 表中
-   */
-  const getOriginalSdkSessionId = useCallback(async (): Promise<string | null> => {
-    if (!conversationId) return null;
-    const convResult = await client.getById({ conversationId });
-    return convResult.conversation?.sdk_session_id || null;
-  }, [conversationId]);
-
-  /**
-   * 分支切换
-   * 在原始版本和编辑分支之间切换
-   * sdkUuid 是分叉点 assistant 消息的 UUID（来自用户消息上的 forkPointSdkUuid）
-   *
    * 设计原则：conversation.sdk_session_id 始终保持为原始值，不随分支切换而修改。
    * 分支的 session ID 存储在 conversation_branches 表中。
    * 切换分支时，关闭旧会话并创建新会话 resume 目标分支的 session。
@@ -2060,102 +1799,6 @@ export function AgentChat({
       insertModeChangeNotice('bypassPermissions');
     }
   }, [sessionId]);
-
-  const handleSwitchBranch = useCallback(async (sdkUuid: string, direction: 'prev' | 'next') => {
-    if (!conversationId) return;
-
-    // 找到分叉点 assistant 消息
-    const forkPointIdx = messages.findIndex(
-      m => m.role === 'assistant' && m.sdkUuid === sdkUuid
-    );
-    if (forkPointIdx < 0) return;
-
-    // 分支信息在 forkPoint 后面的用户消息上
-    const userMsgIdx = forkPointIdx + 1;
-    if (userMsgIdx >= messages.length || messages[userMsgIdx].role !== 'user') return;
-
-    const userMsg = messages[userMsgIdx];
-    const currentBranch = userMsg.currentBranch ?? 0;
-    const totalBranches = userMsg.branchVersions ?? 1;
-
-    const targetBranch = direction === 'prev'
-      ? Math.max(0, currentBranch - 1)
-      : Math.min(totalBranches - 1, currentBranch + 1);
-
-    if (targetBranch === currentBranch) return;
-
-    try {
-      // 保留分叉点及其之前的消息
-      const baseMessages = messages.slice(0, forkPointIdx + 1);
-
-      if (targetBranch === 0) {
-        // 切换回原始版本：conversation.sdk_session_id 就是原始 session（始终不变）
-        const originalSdkSessionId = await getOriginalSdkSessionId();
-        if (!originalSdkSessionId) return;
-
-        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: originalSdkSessionId, projectPath: workspacePath || undefined });
-        if (historyResult.error) return;
-
-        const afterMessages = parseMessagesAfterForkPoint(historyResult.messages, sdkUuid);
-
-        if (afterMessages.length > 0 && afterMessages[0].role === 'user') {
-          afterMessages[0].branchVersions = totalBranches;
-          afterMessages[0].currentBranch = 0;
-          afterMessages[0].forkPointSdkUuid = sdkUuid;
-        }
-
-        setMessages([...baseMessages, ...afterMessages]);
-        // 重建会话 resume 原始 session
-        await recreateSession(originalSdkSessionId);
-      } else {
-        // 切换到某个分支版本
-        const branchesResult = await client.getBranches({
-          conversationId, forkPointSdkUuid: sdkUuid
-        });
-
-        if (branchesResult.error || branchesResult.branches.length === 0) {
-          console.warn('未找到分支数据');
-          return;
-        }
-
-        // targetBranch 是 1-based（0=原始），branch_index 从 0 开始
-        const targetBranchRecord = branchesResult.branches.find(
-          b => b.branch_index === targetBranch - 1
-        );
-
-        if (!targetBranchRecord) {
-          console.warn('未找到目标分支:', targetBranch - 1);
-          return;
-        }
-
-        const branchSdkSessionId = targetBranchRecord.sdk_session_id;
-        if (branchSdkSessionId.startsWith('pending-')) {
-          console.warn('分支 SDK session ID 尚未更新，无法加载');
-          return;
-        }
-
-        const historyResult = await client.getSdkSessionHistory({ sdkSessionId: branchSdkSessionId, projectPath: workspacePath || undefined });
-        if (historyResult.error) {
-          console.warn('加载分支 SDK 历史失败:', historyResult.error);
-          return;
-        }
-
-        const afterMessages = parseMessagesAfterForkPoint(historyResult.messages, sdkUuid);
-
-        if (afterMessages.length > 0 && afterMessages[0].role === 'user') {
-          afterMessages[0].branchVersions = totalBranches;
-          afterMessages[0].currentBranch = targetBranch;
-          afterMessages[0].forkPointSdkUuid = sdkUuid;
-        }
-
-        setMessages([...baseMessages, ...afterMessages]);
-        // 重建会话 resume 选中分支的 session
-        await recreateSession(branchSdkSessionId);
-      }
-    } catch (error) {
-      console.error('切换分支失败:', error);
-    }
-  }, [conversationId, messages, recreateSession, getOriginalSdkSessionId]);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading || !sessionId || !isSessionReady) return;
@@ -2277,7 +1920,6 @@ export function AgentChat({
               messageIndex={index}
               onEditResend={index === lastUserIdx ? handleEditResend : undefined}
               onFork={handleFork}
-              onSwitchBranch={handleSwitchBranch}
               sessionId={sessionId}
               onPermissionResolved={handlePermissionResolved}
             />

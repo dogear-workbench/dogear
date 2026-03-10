@@ -21,7 +21,7 @@
 | 状态管理 | Zustand 5 | Store 在 `stores/` 目录 |
 | IPC 通信 | @egoist/tipc | 类型安全的主进程↔渲染层通信 |
 | AI Agent | @anthropic-ai/claude-agent-sdk | Agent 会话、工具、技能 |
-| 数据库 | better-sqlite3 | 本地 SQLite，schema 在 `electron/main/database/schema.sql` |
+| 数据存储 | JSON 文件 | `.dogear/` 目录下的 JSON 文件（settings/conversations/workspaces/书籍元数据） |
 | Markdown | react-markdown + remark-gfm + rehype-highlight | 渲染 AI 回复 |
 | 电子书解析 | epub2 / pdf-parse | EPUB 和 PDF 文件处理 |
 | 网页解析 | @mozilla/readability + turndown + linkedom | 网络文章提取并转 Markdown |
@@ -41,11 +41,10 @@ electron/
   main/
     index.ts            # Electron 入口，窗口管理
     agents/             # Agent 框架
-    services/           # 业务逻辑
-    database/           # SQLite 数据库
+    services/           # 业务逻辑（JSON 文件存储）
     tipc/               # IPC 路由
   preload/              # 预加载脚本
-data/                   # SQLite 数据库文件
+.dogear/                # 应用数据目录（settings.json, conversations.json, workspaces.json, conversations/）
 ```
 
 ## 核心文件功能索引
@@ -97,15 +96,18 @@ data/                   # SQLite 数据库文件
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `book.ts` — 书籍内容查询（章节元数据、章节内容、阅读进度、文件路径）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
-- `conversations.ts` — 对话 CRUD + 分叉 + 分支（13个 RPC）
+- `conversations.ts` — 对话 CRUD + 分叉（8个 RPC，JSON 存储）
 - `workspace.ts` — 工作区管理（列表、默认、文件夹选择、文件树）
 - `file.ts` — 文件操作（选择文件、导入电子书、打开文件位置）
-- `db.ts` — 数据库直接访问（书籍 CRUD）
+- `db.ts` — 书籍 CRUD（委托 book-service，JSON 存储）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求等）
 
 ### 业务服务（electron/main/services/）
-- `book-service.ts` — 电子书导入和预处理（文件复制、异步解析 TXT/EPUB/PDF）
+- `book-service.ts` — 电子书导入、预处理、JSON 元数据/章节存储（meta.json + chapters.json）
+- `conversation-service.ts` — 对话索引 CRUD（`.dogear/conversations.json`），不存消息内容
+- `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（readability + turndown → Markdown），微信公众号特殊处理
 - `workspace-service.ts` — 工作区目录结构管理、元数据/分析结果读写
@@ -124,21 +126,32 @@ data/                   # SQLite 数据库文件
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
-### 数据库（electron/main/database/）
-- `schema.sql` — 8张表：books / chapters / workspaces / ai_interactions / conversations / conversation_messages / conversation_branches / branch_messages
-- `index.ts` — 数据操作接口（dbBooks / dbChapters / dbAI / dbWorkspaces / dbConversations / dbConversationMessages / dbConversationBranches / dbBranchMessages）+ initDatabase() 含 v2-v5 迁移逻辑
+### 数据存储（`.dogear/` 目录）
+- `settings.json` — 应用设置（ModelProfile、Thinking 配置等）
+- `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
+- `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、bookId、分叉信息）
+- `conversations/` — SDK 会话历史（Agent SDK 自动管理）
+- 书籍元数据：`<workspace>/<book>/meta.json` + `<workspace>/<book>/chapters.json`
 
 ### 关键数据流
-- **IPC 通信**：Renderer → tipc.invoke() → Main tipc handler → service/database → renderer events 回传
+- **IPC 通信**：Renderer → tipc.invoke() → Main tipc handler → service（JSON 文件读写） → renderer events 回传
 - **Agent 执行**：Renderer → tipc.createQueryBasedSession → QueryBasedSession → query() SDK → MCP Tools → sessionMessage events → Renderer
-- **书籍导入**：tipc.importBook → book-service.importBook → dbBooks.add + copyToWorkspace + preprocessBook(async) → 立即返回
-- **工作区文件树**：workspace/getFiles → articleService.listArticleTree + workspaceFsService.scan + 数据库 bookId 标记 → 合并返回
+- **书籍导入**：tipc.importBook → book-service.importBook → 写 meta.json + copyToWorkspace + preprocessBook(async) → 立即返回
+- **工作区文件树**：workspace/getFiles → articleService.listArticleTree + workspaceFsService.scan + bookService bookId 标记 → 合并返回
 
 ---
 
 ## 关键开发约定
 
-> IPC 通信、Agent 开发、前端组件、数据库的详细规则在 `.claude/rules/` 中按路径自动加载，此处只列全局约定。
+> IPC 通信、Agent 开发、前端组件的详细规则在 `.claude/rules/` 中按路径自动加载，此处只列全局约定。
+
+### 数据存储（JSON 文件）
+
+- 所有持久化数据使用 JSON 文件，不使用 SQLite
+- 配置目录：`.dogear/`（开发: 项目根，打包: app.asar 同级）
+- `getConfigDir()` 模式：参考 `settings-service.ts`
+- 服务层统一使用 `fs.promises` 异步读写
+- 内部用 camelCase，前端兼容层用 `toCompat()` 转 snake_case
 
 ### 状态管理（Zustand 5）
 
@@ -158,5 +171,5 @@ data/                   # SQLite 数据库文件
 
 - **不要**引入已有依赖能解决的重复库
 - **不要**绕过 tipc 直接使用 ipcMain/ipcRenderer 通信
-- **不要**在渲染层直接操作数据库，必须通过 IPC 调用主进程
+- **不要**在渲染层直接操作文件系统，必须通过 IPC 调用主进程
 - **不要**自行实现 Agent SDK 已提供的功能

@@ -27,6 +27,27 @@ export interface ConversationIndex {
   updatedAt: string;   // ISO 8601 字符串
 }
 
+/** 前端兼容格式（snake_case + camelCase 双格式） */
+export interface ConversationCompat {
+  id: string;
+  title: string;
+  model: string;
+  book_id?: string;
+  workspace_id: string;
+  sdk_session_id?: string;
+  parent_conversation_id?: string;
+  fork_message_sdk_uuid?: string;
+  created_at: number;
+  updated_at: number;
+  bookId: string | null;
+  workspaceId: string;
+  sdkSessionId: string | null;
+  parentConversationId: string | null;
+  forkMessageSdkUuid: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** conversations.json 的文件结构 */
 export interface ConversationsFile {
   version: number;
@@ -269,7 +290,7 @@ export async function getAll(): Promise<ConversationIndex[]> {
  * 前端 Conversation 接口使用 snake_case 字段名和数值时间戳，
  * 此函数同时提供 snake_case 和 camelCase 版本以便渐进迁移。
  */
-export function toCompat(conv: ConversationIndex): Record<string, any> {
+export function toCompat(conv: ConversationIndex): ConversationCompat {
   return {
     id: conv.id,
     title: conv.title,
