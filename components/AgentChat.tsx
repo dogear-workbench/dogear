@@ -905,7 +905,7 @@ export function AgentChat({
 
         try {
           // 获取对话信息，拿到 sdk_session_id
-          const convResult = await client.getById({ conversationId });
+          const convResult = await client.getById({ conversationId, workspaceId: useWorkspaceStore.getState().workspace?.id || '' });
           const sdkSessionId = convResult.conversation?.sdk_session_id;
 
           if (sdkSessionId) {
@@ -1204,7 +1204,7 @@ export function AgentChat({
         } else if (conversationId) {
           // 正常 resume 模式
           try {
-            const convResult = await client.getById({ conversationId });
+            const convResult = await client.getById({ conversationId, workspaceId: useWorkspaceStore.getState().workspace?.id || '' });
             if (cancelled) return; // 检查是否已被取消
             console.log('getById 结果:', convResult);
             if (convResult.conversation?.sdk_session_id) {
@@ -1236,12 +1236,14 @@ export function AgentChat({
           return;
         }
 
+        const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
         const response = await client.createQueryBasedSession({
           allowedTools: ['Read', 'Glob', 'Grep'],
           context,
           enableSkills: true,
           projectRoot,
           conversationId: conversationId || undefined,
+          workspaceId: currentWorkspaceId,
           resume: sdkSessionId,
           forkSession: forkSessionFlag,           // v4: 分叉参数
           resumeSessionAt: resumeSessionAtFlag,   // v4: 截断位置

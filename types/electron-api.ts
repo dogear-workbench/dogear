@@ -127,11 +127,12 @@ export interface Citation {
 }
 
 /**
- * 对话接口 (v3, v4 扩展)
+ * 对话接口 (v5: 对话属于工作区，book_id 可选)
  */
 export interface Conversation {
   id: string;
-  book_id: string;
+  book_id?: string;                  // 可选：关联的书籍ID
+  workspace_id: string;              // 关联的工作区ID
   title: string;
   model: string;
   sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
@@ -139,6 +140,23 @@ export interface Conversation {
   fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
   created_at: number;
   updated_at: number;
+}
+
+/**
+ * 对话文件夹
+ */
+export interface ConversationFolder {
+  id: string;
+  name: string;
+  createdAt: string;
+}
+
+/**
+ * 对话树数据
+ */
+export interface ConversationTreeData {
+  folders: Record<string, ConversationFolder>;
+  children: Record<string, string[]>;
 }
 
 // 导出类型,供其他模块使用

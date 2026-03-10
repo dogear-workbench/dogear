@@ -1,8 +1,29 @@
 'use client';
 
-import { MessageSquare, Plus, Trash2, GitBranch } from 'lucide-react';
+import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from 'react';
+import {
+  MessageSquare, Plus, Trash2, GitBranch,
+  Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown,
+} from 'lucide-react';
+import {
+  ContextMenu, ContextMenuTrigger, ContextMenuContent,
+  ContextMenuItem, ContextMenuSeparator,
+} from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
+import type { ConversationFlatNode } from '@/stores/conversation-store';
+
+import { useTree } from '@headless-tree/react';
+import {
+  syncDataLoaderFeature,
+  selectionFeature,
+  hotkeysCoreFeature,
+  dragAndDropFeature,
+  renamingFeature,
+  propMemoizationFeature,
+} from '@headless-tree/core';
+import type { ItemInstance, DragTarget } from '@headless-tree/core';
 
 /**
  * 对话接口（v5: 对话直接属于工作区，book_id 可选）
@@ -14,8 +35,8 @@ export interface Conversation {
   title: string;
   model: string;
   sdk_session_id?: string;
-  parent_conversation_id?: string;   // 分叉对话的父对话 ID（v4）
-  fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 UUID（v4）
+  parent_conversation_id?: string;   // 分叉对话的父对话 ID
+  fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 UUID
   created_at: number;
   updated_at: number;
 }
@@ -27,9 +48,12 @@ export interface BookNode {
   expanded?: boolean;
 }
 
-/**
- * 获取相对时间文本
- */
+const CONV_TREE_ROOT = '__root__';
+
+// ============================================================
+// 工具函数
+// ============================================================
+
 function getRelativeTime(timestamp: number): string {
   const now = Date.now();
   const diff = now - timestamp;
@@ -46,9 +70,6 @@ function getRelativeTime(timestamp: number): string {
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
-/**
- * 获取对话显示标题
- */
 function getConversationTitle(conversation: Conversation): string {
   if (conversation.title && conversation.title !== '新对话') {
     return conversation.title;
@@ -62,19 +83,367 @@ function getConversationTitle(conversation: Conversation): string {
   return `对话 ${date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}`;
 }
 
-/**
- * 对话列表组件（v5: 平铺列表）
- * 直接从 store 获取数据，无需外部 props
- */
+// ============================================================
+// 新建文件夹输入框
+// ============================================================
+
+function NewFolderInput({
+  indent,
+  onConfirm,
+  onCancel,
+}: {
+  indent: number;
+  onConfirm: (name: string) => void;
+  onCancel: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useLayoutEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  return (
+    <div
+      className="flex items-center gap-1.5 py-1 pr-2"
+      style={{ paddingLeft: `${indent}px` }}
+    >
+      <Folder className="w-4 h-4 shrink-0 text-amber-500" />
+      <input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && value.trim()) {
+            onConfirm(value.trim());
+          } else if (e.key === 'Escape') {
+            onCancel();
+          }
+        }}
+        onBlur={() => {
+          if (value.trim()) {
+            onConfirm(value.trim());
+          } else {
+            onCancel();
+          }
+        }}
+        className="flex-1 min-w-0 bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
+        placeholder="文件夹名称"
+      />
+    </div>
+  );
+}
+
+// ============================================================
+// 树节点行渲染
+// ============================================================
+
+function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNode> }) {
+  const data = item.getItemData();
+  const meta = item.getItemMeta();
+  const selectedConversation = useConversationStore((s) => s.selectedConversation);
+  const selectConversation = useConversationStore((s) => s.selectConversation);
+  const deleteConversation = useConversationStore((s) => s.deleteConversation);
+  const deleteFolder = useConversationStore((s) => s.deleteFolder);
+  const renameFolder = useConversationStore((s) => s.renameFolder);
+
+  const paddingLeft = meta.level * 16 + 8;
+  const { ref, ...props } = item.getProps();
+
+  if (data.nodeType === 'folder') {
+    // 文件夹渲染
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            ref={ref}
+            {...props}
+            className={cn(
+              'flex items-center gap-1.5 py-1.5 pr-2 cursor-pointer select-none group',
+              'hover:bg-muted/50 transition-colors rounded-sm mx-1',
+              item.isDragTarget() && 'bg-blue-500/20 ring-1 ring-blue-500/50',
+            )}
+            style={{ paddingLeft: `${paddingLeft}px` }}
+          >
+            {item.isExpanded()
+              ? <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              : <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+            }
+            {item.isExpanded()
+              ? <FolderOpen className="w-4 h-4 shrink-0 text-amber-500" />
+              : <Folder className="w-4 h-4 shrink-0 text-amber-500" />
+            }
+            {item.isRenaming() ? (
+              <input
+                {...item.getRenameInputProps()}
+                className="flex-1 min-w-0 bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
+              />
+            ) : (
+              <span className="text-sm truncate flex-1">{data.name}</span>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-5 w-5 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+              onClick={(e) => {
+                e.stopPropagation();
+                deleteFolder(data.id);
+              }}
+            >
+              <Trash2 className="w-3 h-3" />
+            </Button>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onClick={() => item.startRenaming()}>
+            重命名
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            className="text-destructive"
+            onClick={() => deleteFolder(data.id)}
+          >
+            删除文件夹
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  }
+
+  // 对话渲染
+  const conv = data.conversation;
+  if (!conv) return null;
+
+  const isSelected = selectedConversation?.id === conv.id;
+  const isFork = !!conv.parent_conversation_id;
+
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          ref={ref}
+          {...props}
+          className={cn(
+            'flex items-center gap-2 py-2 pr-3 cursor-pointer transition-colors group rounded-sm mx-1',
+            isSelected ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-muted/30',
+          )}
+          style={{ paddingLeft: `${paddingLeft}px` }}
+          onClick={() => selectConversation(conv)}
+        >
+          {isFork ? (
+            <GitBranch className={cn('w-4 h-4 flex-shrink-0',
+              isSelected ? 'text-purple-600' : 'text-purple-400'
+            )} />
+          ) : (
+            <MessageSquare className={cn('w-4 h-4 flex-shrink-0',
+              isSelected ? 'text-blue-600' : 'text-muted-foreground'
+            )} />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className={cn('text-sm truncate',
+              isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
+            )}>
+              {getConversationTitle(conv)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              {getRelativeTime(conv.updated_at)}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              deleteConversation(conv.id);
+            }}
+          >
+            <Trash2 className="w-3 h-3" />
+          </Button>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem
+          className="text-destructive"
+          onClick={() => deleteConversation(conv.id)}
+        >
+          删除对话
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+// ============================================================
+// 主组件
+// ============================================================
+
 export function ConversationList() {
   const conversations = useConversationStore((s) => s.conversations);
+  const nodeMap = useConversationStore((s) => s.nodeMap);
   const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const loadingConversations = useConversationStore((s) => s.loadingConversations);
-  const selectConversation = useConversationStore((s) => s.selectConversation);
   const newConversation = useConversationStore((s) => s.newConversation);
-  const deleteConversation = useConversationStore((s) => s.deleteConversation);
+  const createFolder = useConversationStore((s) => s.createFolder);
+  const moveItem = useConversationStore((s) => s.moveItem);
+  const renameFolder = useConversationStore((s) => s.renameFolder);
+  const selectConversation = useConversationStore((s) => s.selectConversation);
 
-  const selectedConversationId = selectedConversation?.id || null;
+  // 新建文件夹状态
+  const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
+
+  // nodeMapRef 避免 dataLoader 闭包过期
+  const nodeMapRef = useRef(nodeMap);
+  nodeMapRef.current = nodeMap;
+
+  // 稳定的 dataLoader
+  const dataLoader = useMemo(() => ({
+    getItem: (itemId: string) => nodeMapRef.current[itemId] ?? {
+      id: itemId, name: itemId, isFolder: false, childrenIds: [], nodeType: 'conversation' as const,
+    },
+    getChildren: (itemId: string) => nodeMapRef.current[itemId]?.childrenIds ?? [],
+  }), []);
+
+  // 拖放回调
+  const handleDrop = useCallback((items: ItemInstance<ConversationFlatNode>[], target: DragTarget<ConversationFlatNode>) => {
+    const targetId = target.item.getId();
+    const targetData = target.item.getItemData();
+
+    // 确定目标父节点
+    const parentId = targetData.isFolder ? targetId : CONV_TREE_ROOT;
+
+    for (const item of items) {
+      moveItem(item.getId(), parentId);
+    }
+  }, [moveItem]);
+
+  // 重命名回调（仅文件夹）
+  const handleRename = useCallback((item: ItemInstance<ConversationFlatNode>, value: string) => {
+    const data = item.getItemData();
+    if (data.nodeType === 'folder' && value.trim()) {
+      renameFolder(item.getId(), value.trim());
+    }
+  }, [renameFolder]);
+
+  // 主操作：点击对话选中，文件夹展开/折叠
+  const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
+    const data = item.getItemData();
+    if (data.nodeType === 'conversation' && data.conversation) {
+      selectConversation(data.conversation);
+    }
+  }, [selectConversation]);
+
+  const canDrag = useCallback((items: ItemInstance<ConversationFlatNode>[]) => {
+    return items.every(i => i.getId() !== CONV_TREE_ROOT);
+  }, []);
+
+  const canDrop = useCallback((items: ItemInstance<ConversationFlatNode>[], target: DragTarget<ConversationFlatNode>) => {
+    const targetId = target.item.getId();
+    // 可以拖到根
+    if (targetId === CONV_TREE_ROOT) return true;
+    const targetData = target.item.getItemData();
+    // 只能拖到文件夹
+    if (!targetData.isFolder) return false;
+    for (const item of items) {
+      // 不能拖到自身
+      if (item.getId() === targetId) return false;
+      // 不能拖到自身子级
+      if (target.item.isDescendentOf(item.getId())) return false;
+    }
+    return true;
+  }, []);
+
+  const canRename = useCallback((item: ItemInstance<ConversationFlatNode>) => {
+    return item.getItemData().nodeType === 'folder';
+  }, []);
+
+  const tree = useTree<ConversationFlatNode>({
+    rootItemId: CONV_TREE_ROOT,
+    dataLoader,
+    indent: 16,
+    features: [
+      syncDataLoaderFeature,
+      selectionFeature,
+      hotkeysCoreFeature,
+      dragAndDropFeature,
+      renamingFeature,
+      propMemoizationFeature,
+    ],
+    canReorder: true,
+    openOnDropDelay: 800,
+    isItemFolder: (item) => item.getItemData().isFolder,
+    getItemName: (item) => item.getItemData().name,
+    onDrop: handleDrop,
+    onRename: handleRename,
+    onPrimaryAction: handlePrimaryAction,
+    canDrag,
+    canDrop,
+    canRename,
+  });
+
+  const items = tree.getItems();
+
+  // 滚动保持
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingScrollTop = useRef<number | null>(null);
+  const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // nodeMap 变化时重建树
+  useLayoutEffect(() => {
+    pendingScrollTop.current = scrollRef.current?.scrollTop ?? 0;
+    tree.rebuildTree();
+  }, [nodeMap, tree]);
+
+  // 恢复滚动位置
+  useLayoutEffect(() => {
+    if (pendingScrollTop.current !== null && scrollRef.current) {
+      scrollRef.current.scrollTop = pendingScrollTop.current;
+      if (scrollRestoreTimer.current) {
+        clearTimeout(scrollRestoreTimer.current);
+      }
+      scrollRestoreTimer.current = setTimeout(() => {
+        pendingScrollTop.current = null;
+        scrollRestoreTimer.current = null;
+      }, 200);
+    }
+  });
+
+  // 新建文件夹输入框位置计算
+  const newFolderInsertInfo = useMemo(() => {
+    if (creatingFolderAt === null) return null;
+
+    // 在根级别末尾插入
+    let insertAfterIndex = items.length - 1;
+    const indent = 8; // 根级别缩进
+
+    if (creatingFolderAt !== CONV_TREE_ROOT) {
+      // 在指定父文件夹下插入
+      let parentIndex = -1;
+      let parentLevel = 0;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].getId() === creatingFolderAt) {
+          parentIndex = i;
+          parentLevel = items[i].getItemMeta().level;
+          break;
+        }
+      }
+      if (parentIndex === -1) return null;
+
+      // 找到父节点的最后一个子节点
+      insertAfterIndex = parentIndex;
+      for (let i = parentIndex + 1; i < items.length; i++) {
+        if (items[i].getItemMeta().level <= parentLevel) break;
+        insertAfterIndex = i;
+      }
+
+      return {
+        insertAfterIndex,
+        indent: (parentLevel + 1) * 16 + 8,
+      };
+    }
+
+    return { insertAfterIndex, indent };
+  }, [creatingFolderAt, items]);
 
   if (loadingConversations) {
     return (
@@ -87,79 +456,72 @@ export function ConversationList() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* 新建对话按钮 */}
-      <div className="px-3 py-2 border-b">
+      {/* 工具栏 */}
+      <div className="px-3 py-2 border-b flex items-center gap-2">
         <Button
           variant="outline"
           size="sm"
-          className="w-full justify-start gap-2"
+          className="flex-1 justify-start gap-2"
           onClick={() => newConversation()}
         >
           <Plus className="w-4 h-4" />
           新建对话
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 w-8 p-0"
+          onClick={() => setCreatingFolderAt(CONV_TREE_ROOT)}
+          title="新建文件夹"
+        >
+          <FolderPlus className="w-4 h-4" />
+        </Button>
       </div>
 
-      {/* 对话列表 */}
-      <div className="flex-1 overflow-y-auto">
-        {conversations.length === 0 ? (
+      {/* 对话树 */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        {conversations.length === 0 && !creatingFolderAt ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
             <p className="text-sm">暂无对话</p>
             <p className="text-xs mt-1">点击上方按钮开始</p>
           </div>
         ) : (
-          <div className="py-1">
-            {conversations.map((conversation) => {
-              const isSelected = selectedConversationId === conversation.id;
-              const isFork = !!conversation.parent_conversation_id;
-
-              return (
-                <div
-                  key={conversation.id}
-                  className={`flex items-center gap-2 py-2 px-3 mx-1 rounded cursor-pointer transition-colors group ${
-                    isSelected ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-muted/30'
-                  }`}
-                  onClick={() => selectConversation(conversation)}
-                >
-                  {/* 图标：分叉对话用 GitBranch，普通对话用 MessageSquare */}
-                  {isFork ? (
-                    <GitBranch className={`w-4 h-4 flex-shrink-0 ${
-                      isSelected ? 'text-purple-600' : 'text-purple-400'
-                    }`} />
-                  ) : (
-                    <MessageSquare className={`w-4 h-4 flex-shrink-0 ${
-                      isSelected ? 'text-blue-600' : 'text-muted-foreground'
-                    }`} />
-                  )}
-
-                  {/* 标题和时间 */}
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-sm truncate ${
-                      isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
-                    }`}>
-                      {getConversationTitle(conversation)}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {getRelativeTime(conversation.updated_at)}
-                    </div>
-                  </div>
-
-                  {/* 删除按钮 */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteConversation(conversation.id);
+          <div {...tree.getContainerProps('对话列表')}>
+            {items.map((item, index) => (
+              <React.Fragment key={item.getId()}>
+                <ConversationTreeItem item={item} />
+                {/* 在正确位置插入新建文件夹输入框 */}
+                {newFolderInsertInfo && index === newFolderInsertInfo.insertAfterIndex && (
+                  <NewFolderInput
+                    indent={newFolderInsertInfo.indent}
+                    onConfirm={async (name) => {
+                      await createFolder(name, creatingFolderAt === CONV_TREE_ROOT ? undefined : creatingFolderAt!);
+                      setCreatingFolderAt(null);
                     }}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </div>
-              );
-            })}
+                    onCancel={() => setCreatingFolderAt(null)}
+                  />
+                )}
+              </React.Fragment>
+            ))}
+
+            {/* 树为空时也显示新建文件夹输入框 */}
+            {items.length === 0 && newFolderInsertInfo && (
+              <NewFolderInput
+                indent={newFolderInsertInfo.indent}
+                onConfirm={async (name) => {
+                  await createFolder(name, creatingFolderAt === CONV_TREE_ROOT ? undefined : creatingFolderAt!);
+                  setCreatingFolderAt(null);
+                }}
+                onCancel={() => setCreatingFolderAt(null)}
+              />
+            )}
+
+            {/* 拖拽线 */}
+            <div
+              style={tree.getDragLineStyle()}
+              className="h-[2px] bg-blue-500 rounded pointer-events-none"
+            />
           </div>
         )}
       </div>

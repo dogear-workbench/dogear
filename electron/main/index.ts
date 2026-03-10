@@ -175,6 +175,16 @@ app.whenReady().then(async () => {
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
 
+  // 执行数据迁移（旧路径 → 新路径）
+  try {
+    const workspaceJsonService = await import('./services/workspace-json-service.js');
+    await workspaceJsonService.migrateFromLegacy();
+    const conversationService = await import('./services/conversation-service.js');
+    await conversationService.migrateFromLegacy();
+  } catch (error) {
+    console.error('数据迁移失败:', error);
+  }
+
   // 初始化 Agent 管理器
   const agentManager = getAgentManager({
     maxWorkers: 4,

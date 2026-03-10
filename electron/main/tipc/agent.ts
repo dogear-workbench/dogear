@@ -357,6 +357,7 @@ export const agentRouter = {
       enableSkills?: boolean;
       projectRoot?: string;
       conversationId?: string;
+      workspaceId?: string;  // 对话所属工作区 ID
       resume?: string;
       forkSession?: boolean;
       resumeSessionAt?: string;
@@ -436,8 +437,16 @@ export const agentRouter = {
 
           if (input.conversationId) {
             const conversationService = await import('../services/conversation-service.js');
-            await conversationService.updateSdkSessionId(input.conversationId, data.session_id);
-            console.log('已保存 sdk_session_id 到 conversations.json');
+            if (input.workspaceId) {
+              await conversationService.updateSdkSessionId(input.workspaceId, input.conversationId, data.session_id);
+            } else {
+              // 兼容：全局查找
+              const result = await conversationService.getByIdGlobal(input.conversationId);
+              if (result) {
+                await conversationService.updateSdkSessionId(result.workspaceId, input.conversationId, data.session_id);
+              }
+            }
+            console.log('已保存 sdk_session_id');
           }
 
           // 发送到前端（通过 webContents.send，因为 tipc 事件不包含此自定义事件）
