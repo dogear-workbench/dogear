@@ -10,7 +10,6 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
 import { registerTipcHandlers } from './tipc/index.js';
-import { initDatabase } from './database/index.js';
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -173,9 +172,6 @@ export function sendToAgentMonitorWindow(channel: string, ...args: any[]) {
 
 // 当 Electron 完成初始化时创建窗口
 app.whenReady().then(async () => {
-  // 初始化数据库
-  await initDatabase();
-
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
 
