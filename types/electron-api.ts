@@ -127,19 +127,6 @@ export interface Citation {
 }
 
 /**
- * 对话消息接口 (v3)
- */
-export interface ConversationMessage {
-  id: string;
-  conversation_id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  content_blocks?: string;
-  sdk_uuid?: string;             // SDK 消息 UUID（v4 新增）
-  timestamp: number;
-}
-
-/**
  * 对话接口 (v3, v4 扩展)
  */
 export interface Conversation {
@@ -152,32 +139,6 @@ export interface Conversation {
   fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
   created_at: number;
   updated_at: number;
-}
-
-/**
- * 对话分支接口 (v4 新增)
- */
-export interface ConversationBranch {
-  id: string;
-  conversation_id: string;
-  fork_point_sdk_uuid: string;
-  branch_index: number;
-  sdk_session_id: string;
-  created_at: number;
-}
-
-/**
- * 分支消息接口 (v4 新增)
- */
-export interface BranchMessage {
-  id: string;
-  branch_id: string;
-  conversation_id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  content_blocks?: string;
-  sdk_uuid?: string;
-  timestamp: number;
 }
 
 // 导出类型,供其他模块使用

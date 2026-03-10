@@ -263,3 +263,31 @@ export async function getAll(): Promise<ConversationIndex[]> {
   const file = await loadConversationsFile();
   return sortedList(file.conversations);
 }
+
+/**
+ * 将 ConversationIndex 转换为前端兼容格式（snake_case）
+ * 前端 Conversation 接口使用 snake_case 字段名和数值时间戳，
+ * 此函数同时提供 snake_case 和 camelCase 版本以便渐进迁移。
+ */
+export function toCompat(conv: ConversationIndex): Record<string, any> {
+  return {
+    id: conv.id,
+    title: conv.title,
+    model: '',  // 不再存储模型名称
+    book_id: conv.bookId || undefined,
+    workspace_id: conv.workspaceId,
+    sdk_session_id: conv.sdkSessionId || undefined,
+    parent_conversation_id: conv.parentConversationId || undefined,
+    fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
+    created_at: new Date(conv.createdAt).getTime(),
+    updated_at: new Date(conv.updatedAt).getTime(),
+    // 同时提供 camelCase 版本，供新代码使用
+    bookId: conv.bookId,
+    workspaceId: conv.workspaceId,
+    sdkSessionId: conv.sdkSessionId,
+    parentConversationId: conv.parentConversationId,
+    forkMessageSdkUuid: conv.forkMessageSdkUuid,
+    createdAt: conv.createdAt,
+    updatedAt: conv.updatedAt,
+  };
+}

@@ -193,7 +193,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!selectedConversation?.id) return;
 
     try {
-      // 获取当前对话的 sdk_session_id
       const convResult = await client.getById({ conversationId: selectedConversation.id });
       const conv = convResult.conversation;
 
@@ -202,28 +201,13 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      // 创建分支记录
-      await client.createBranch({
-        conversationId: selectedConversation.id,
-        forkPointSdkUuid: params.forkPointSdkUuid,
-        sdkSessionId: `pending-${Date.now()}`,
-      });
-
-      // 查询分支数量
-      const branchesResult = await client.getBranches({
-        conversationId: selectedConversation.id,
-        forkPointSdkUuid: params.forkPointSdkUuid,
-      });
-      const branchCount = (branchesResult.branches?.length || 0) + 1;
-
-      // 设置 forkParams
+      // 使用 resume + resumeSessionAt 截断（不创建分支）
       set({
         forkParams: {
           sdkSessionIdToResume: conv.sdk_session_id,
-          forkSession: true,
+          forkSession: false,  // 不创建新会话，直接截断重写
           resumeSessionAt: params.forkPointSdkUuid,
           editedMessage: params.editedMessage,
-          branchCount,
         },
       });
     } catch (error) {
