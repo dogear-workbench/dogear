@@ -27,10 +27,9 @@ interface ArticleState {
   clearSelectedArticle: () => void;
 }
 
-/** 从 workspace-store 获取当前工作区 ID */
-const getWorkspaceId = () => {
-  // 延迟导入避免循环依赖
-  const { useWorkspaceStore } = require('./workspace-store');
+/** 从 workspace-store 获取当前工作区 ID（延迟导入避免循环依赖） */
+const getWorkspaceId = async () => {
+  const { useWorkspaceStore } = await import('./workspace-store');
   return useWorkspaceStore.getState().workspace?.id;
 };
 
@@ -42,13 +41,13 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
   articleUrlInput: '',
 
   selectArticle: async (articleMeta) => {
-    const workspaceId = getWorkspaceId();
+    const workspaceId = await getWorkspaceId();
     if (!workspaceId) return;
 
     try {
       set({ loadingArticleDetail: true });
       // 清除书籍选中状态
-      const { useWorkspaceStore } = require('./workspace-store');
+      const { useWorkspaceStore } = await import('./workspace-store');
       useWorkspaceStore.getState().setSelectedBook(null);
       useWorkspaceStore.getState().clearSelectedFile();
 
@@ -66,7 +65,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
   },
 
   deleteArticle: async (articlePath) => {
-    const workspaceId = getWorkspaceId();
+    const workspaceId = await getWorkspaceId();
     if (!workspaceId) return;
 
     if (!confirm('确定要删除这篇文章吗？此操作不可恢复。')) return;
@@ -82,7 +81,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
         set({ selectedArticle: null });
       }
       // 刷新文件树
-      const { useWorkspaceStore } = require('./workspace-store');
+      const { useWorkspaceStore } = await import('./workspace-store');
       useWorkspaceStore.getState().loadWorkspaceFiles();
     } catch (error) {
       console.error('删除文章失败:', error);
@@ -97,7 +96,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
   setArticleUrlInput: (value) => set({ articleUrlInput: value }),
 
   submitArticleUrl: async () => {
-    const workspaceId = getWorkspaceId();
+    const workspaceId = await getWorkspaceId();
     const { articleUrlInput } = get();
     if (!workspaceId || !articleUrlInput.trim()) return;
 
@@ -111,7 +110,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
       // 关闭输入框
       set({ showArticleUrlInput: false, articleUrlInput: '' });
       // 刷新文件树
-      const { useWorkspaceStore } = require('./workspace-store');
+      const { useWorkspaceStore } = await import('./workspace-store');
       useWorkspaceStore.getState().loadWorkspaceFiles();
       // 自动选中新解析的文章
       if (result.article) {

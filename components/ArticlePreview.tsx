@@ -1,4 +1,3 @@
-'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Globe, User, Calendar, ExternalLink, FileText, Quote } from 'lucide-react';

@@ -1,10 +1,8 @@
-'use client';
-
 import { useState, useEffect, useRef } from 'react';
 import { Book, Chapter, ChapterMetadata } from '@/types';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, ChevronLeft, ChevronRight, List, X, MessageSquare, Sparkles } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from 'react-router';
 import { client } from '@/lib/client';
 import { AgentChat } from '@/components/AgentChat';
 import { BookAnalysis } from '@/components/book-analysis';
@@ -182,7 +180,7 @@ export function Reader({ book }: ReaderProps) {
           <div className="text-sm text-muted-foreground">
             书籍处理过程中出现错误,请重试
           </div>
-          <Link href="/">
+          <Link to="/">
             <Button>返回首页</Button>
           </Link>
         </div>
@@ -195,7 +193,7 @@ export function Reader({ book }: ReaderProps) {
       {/* 顶部导航栏 */}
       <header className="border-b px-4 py-2 flex items-center justify-between bg-background">
         <div className="flex items-center gap-2">
-          <Link href="/">
+          <Link to="/">
             <Button variant="ghost" size="icon">
               <ArrowLeft className="w-5 h-5" />
             </Button>

@@ -60,9 +60,9 @@ interface ConversationState {
   moveItem: (itemId: string, targetParentId: string, targetIndex?: number) => Promise<void>;
 }
 
-/** 从 workspace-store 获取当前工作区 */
-const getWorkspace = () => {
-  const { useWorkspaceStore } = require('./workspace-store');
+/** 从 workspace-store 获取当前工作区（延迟导入避免循环依赖） */
+const getWorkspace = async () => {
+  const { useWorkspaceStore } = await import('./workspace-store');
   return useWorkspaceStore.getState().workspace;
 };
 
@@ -154,7 +154,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   nodeMap: {},
 
   loadConversations: async () => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
 
     try {
@@ -181,7 +181,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set({ forkParams: null, selectedConversation: conversation });
 
     // 如果对话有关联书籍，加载书籍信息
-    const { useWorkspaceStore } = require('./workspace-store');
+    const { useWorkspaceStore } = await import('./workspace-store');
     if (conversation.book_id) {
       try {
         const book = await client.getBookByFilePath({ filePathOrBookId: conversation.book_id });
@@ -196,7 +196,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   newConversation: async () => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
 
     try {
@@ -223,7 +223,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   deleteConversation: async (conversationId) => {
     if (!confirm('确定要删除这个对话吗？此操作不可恢复。')) return;
 
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
 
     try {
@@ -248,7 +248,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   setForkParams: (params) => set({ forkParams: params }),
 
   forkConversation: async (params) => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
 
     try {
@@ -308,7 +308,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const { selectedConversation } = get();
     if (!selectedConversation?.id) return;
 
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
 
     try {
@@ -336,7 +336,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   createFolder: async (name, parentId) => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
     try {
       await client.createConversationFolder({ workspaceId: workspace.id, name, parentId });
@@ -347,7 +347,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   renameFolder: async (folderId, newName) => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
     try {
       await client.renameConversationFolder({ workspaceId: workspace.id, folderId, name: newName });
@@ -358,7 +358,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   deleteFolder: async (folderId) => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
     try {
       await client.deleteConversationFolder({ workspaceId: workspace.id, folderId });
@@ -369,7 +369,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   moveItem: async (itemId, targetParentId, targetIndex) => {
-    const workspace = getWorkspace();
+    const workspace = await getWorkspace();
     if (!workspace) return;
     try {
       await client.moveConversationItem({ workspaceId: workspace.id, itemId, targetParentId, targetIndex });

@@ -1,4 +1,3 @@
-'use client';
 
 /**
  * Agent 测试组件

@@ -14,7 +14,10 @@
 | 层级 | 技术 | 说明 |
 |------|------|------|
 | 桌面框架 | Electron | 主进程 + 渲染进程架构 |
-| 前端框架 | Next.js 16 + React 19 | `app/` 目录路由 |
+| 前端构建 | Vite 7 | 开发服务器 + 构建（替代 Next.js） |
+| 前端框架 | React 19 | 纯客户端 SPA |
+| 路由 | React Router v7 | HashRouter（Electron file:// 兼容） |
+| 包管理器 | Bun | 替代 npm，更快的安装和脚本执行 |
 | UI 组件 | shadcn/ui + Radix UI | 组件在 `components/ui/` |
 | 样式 | Tailwind CSS 4 + tw-animate-css | 使用 `cn()` 合并类名（`lib/utils.ts`） |
 | 图标 | lucide-react | 统一使用此图标库 |
@@ -31,7 +34,13 @@
 ## 项目结构概览
 
 ```
-app/                    # Next.js 页面路由
+src/
+  main.tsx              # Vite 入口，挂载 React
+  App.tsx               # React Router 路由配置
+  globals.css           # Tailwind CSS 4 全局样式
+index.html              # Vite HTML 入口
+vite.config.ts          # Vite 配置
+app/                    # 页面组件（通过 React Router 而非文件系统路由）
 components/             # React 组件
   ui/                   # shadcn/ui 基础组件
 stores/                 # Zustand store
@@ -49,10 +58,14 @@ electron/
 
 ## 核心文件功能索引
 
-### 页面路由（app/）
+### 入口与路由（src/）
+- `src/main.tsx` — Vite 入口，挂载 React 到 `#root`
+- `src/App.tsx` — React Router 配置，HashRouter，定义所有路由
+- `src/globals.css` — Tailwind CSS 4 全局样式
+
+### 页面（app/）
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
-- `app/layout.tsx` — 根布局，全局元数据和字体配置
-- `app/book/[id]/page.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板
+- `app/book/BookPage.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板（useParams 获取 id）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
 
@@ -161,9 +174,16 @@ electron/
 
 ### TypeScript 配置
 
-- 前端（Next.js）：`tsconfig.json`，module=esnext，bundler 解析
+- 前端（Vite）：`tsconfig.json`，module=esnext，bundler 解析
 - 主进程（Electron）：`tsconfig.electron.json`，module=ES2020，node 解析
 - 路径别名：`@/*` 映射到项目根目录
+
+### 前端注意事项
+
+- Vite 是纯 ESM 环境，**不能使用 `require()`**，必须用 `import()` 动态导入
+- Store 之间避免循环依赖，如需延迟导入用 `await import('./xxx-store')`
+- 新增页面需在 `src/App.tsx` 中添加 `<Route>` 配置
+- 使用 HashRouter（非 BrowserRouter），因为 Electron 生产环境用 `file://` 协议
 
 ---
 

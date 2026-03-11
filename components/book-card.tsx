@@ -1,10 +1,8 @@
-'use client';
-
 import { Book } from '@/types';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BookOpen, Trash2 } from 'lucide-react';
-import Link from 'next/link';
+import { Link } from 'react-router';
 
 interface BookCardProps {
   book: Book;
@@ -36,7 +34,7 @@ export function BookCard({ book, onDelete }: BookCardProps) {
         </div>
       </CardContent>
       <CardFooter className="flex justify-between">
-        <Link href={`/book/${book.id}`}>
+        <Link to={`/book/${book.id}`}>
           <Button variant="default">
             <BookOpen className="w-4 h-4 mr-2" />
             阅读

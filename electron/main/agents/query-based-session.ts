@@ -192,16 +192,16 @@ export class QueryBasedSession extends EventEmitter {
 
       if (this.config.enableSkills && projectRoot) {
         // 必须包含 'project' 才能加载 .claude/settings.json 和 skills
-        queryOptions.settingSources = ['user','project'];
+        queryOptions.settingSources = ['user'];
         // 将项目根目录加入 additionalDirectories，确保 skills 仍然可以被加载
-        const additionalDirs: string[] = [];
-        if (projectRoot !== this.config.workspacePath) {
-          additionalDirs.push(projectRoot);
-        }
-        if (additionalDirs.length > 0) {
-          queryOptions.additionalDirectories = additionalDirs;
-          this.logger.info('已配置 additionalDirectories（含项目根目录）:', additionalDirs);
-        }
+        // const additionalDirs: string[] = [];
+        // if (projectRoot !== this.config.workspacePath) {
+        //   additionalDirs.push(projectRoot);
+        // }
+        // if (additionalDirs.length > 0) {
+        //   queryOptions.additionalDirectories = additionalDirs;
+        //   this.logger.info('已配置 additionalDirectories（含项目根目录）:', additionalDirs);
+        // }
         this.logger.info('已配置 settingSources 以加载 Skills');
       }
 

@@ -1,4 +1,3 @@
-'use client';
 
 import { client } from '@/lib/client';
 import { useBooks } from '@/lib/hooks';

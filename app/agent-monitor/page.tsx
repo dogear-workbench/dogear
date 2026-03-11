@@ -1,4 +1,3 @@
-'use client';
 
 import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';

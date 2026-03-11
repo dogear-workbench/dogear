@@ -1,12 +1,10 @@
-'use client';
-
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings } from 'lucide-react';
-import { useRouter } from 'next/navigation';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
@@ -14,9 +12,19 @@ import { ArticlePreview } from '@/components/ArticlePreview';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useAnalysisStore } from '@/stores/analysis-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 export default function Home() {
-  const router = useRouter();
+  const navigate = useNavigate();
+
+  // 应用启动时加载设置
+  const settingsLoaded = useSettingsStore((s) => s.loaded);
+  const loadSettings = useSettingsStore((s) => s.loadSettings);
+  useEffect(() => {
+    if (!settingsLoaded) {
+      loadSettings();
+    }
+  }, [settingsLoaded, loadSettings]);
 
   // 工作区状态
   const workspace = useWorkspaceStore((s) => s.workspace);
@@ -76,7 +84,7 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => router.push('/settings')}>
+          <Button variant="outline" size="sm" onClick={() => navigate('/settings')}>
             <Settings className="w-4 h-4 mr-2" />
             设置
           </Button>

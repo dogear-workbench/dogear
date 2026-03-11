@@ -47,7 +47,7 @@ function createWindow() {
 
   // 根据环境加载不同的页面
   if (isDev) {
-    // 开发环境:加载 Next.js 开发服务器
+    // 开发环境:加载 Vite 开发服务器
     mainWindow.loadURL('http://localhost:3000');
     // 打开开发者工具
     //mainWindow.webContents.openDevTools();
@@ -83,8 +83,11 @@ function createDebugWindow() {
     },
   });
 
-  // 加载调试窗口页面
-  debugWindow.loadURL('http://localhost:3000/debug');
+  // 加载调试窗口页面（HashRouter 路由）
+  const debugUrl = isDev
+    ? 'http://localhost:3000/#/debug'
+    : `file://${path.join(__dirname, '../../out/index.html')}#/debug`;
+  debugWindow.loadURL(debugUrl);
 
   // 调试窗口关闭时清理引用
   debugWindow.on('closed', () => {
@@ -135,10 +138,10 @@ export function createAgentMonitorWindow() {
     },
   });
 
-  // 加载监控窗口页面
+  // 加载监控窗口页面（HashRouter 路由）
   const monitorUrl = isDev
-    ? 'http://localhost:3000/agent-monitor'
-    : `file://${path.join(__dirname, '../../out/agent-monitor/index.html')}`;
+    ? 'http://localhost:3000/#/agent-monitor'
+    : `file://${path.join(__dirname, '../../out/index.html')}#/agent-monitor`;
   agentMonitorWindow.loadURL(monitorUrl);
 
   // 监控窗口关闭时清理引用

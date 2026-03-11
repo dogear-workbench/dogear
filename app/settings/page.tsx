@@ -1,7 +1,5 @@
-'use client';
-
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -19,7 +17,7 @@ const EFFORT_OPTIONS = [
 ] as const;
 
 export default function SettingsPage() {
-  const router = useRouter();
+  const navigate = useNavigate();
   const settings = useSettingsStore((s) => s.settings);
   const loaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
@@ -91,7 +89,7 @@ export default function SettingsPage() {
     <div className="h-screen flex flex-col">
       {/* 顶部导航栏 */}
       <header className="h-12 border-b flex items-center px-4 gap-3 bg-background">
-        <Button variant="ghost" size="sm" onClick={() => router.back()}>
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <h1 className="font-semibold">设置</h1>
