@@ -45,3 +45,4 @@ data/dogear.db
 # 应用配置目录（含 API Key 等敏感信息）
 .dogear/
 /claude_code_doc_md
+skills-lock.json

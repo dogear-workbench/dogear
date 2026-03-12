@@ -4,7 +4,7 @@ import type { Conversation } from '@/components/BookConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
 
 // 分叉参数类型
-interface ForkParams {
+export interface ForkParams {
   sdkSessionIdToResume: string;
   forkSession: boolean;
   resumeSessionAt: string;
