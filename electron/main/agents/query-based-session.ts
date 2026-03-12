@@ -92,6 +92,9 @@ export class QueryBasedSession extends EventEmitter {
     input: Record<string, unknown>;  // 保存原始 input，allow 时需要回传
   }> = new Map();
 
+  // 声明式权限规则（从 settings.json 加载，缓存避免每次 canUseTool 都读磁盘）
+  private permissionRules?: { allow?: string[]; deny?: string[] };
+
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
     this.sessionId = sessionId;
@@ -160,6 +163,18 @@ export class QueryBasedSession extends EventEmitter {
       queryOptions.thinking = appSettings.ai.thinking;
       queryOptions.effort = appSettings.ai.effort;
 
+      // 缓存声明式权限规则
+      if ((appSettings as any).permissionRules) {
+        this.permissionRules = (appSettings as any).permissionRules;
+        this.logger.info('已加载权限规则:', this.permissionRules);
+      }
+
+      // 注入 maxTurns
+      if ((appSettings.ai as any).maxTurns) {
+        queryOptions.maxTurns = (appSettings.ai as any).maxTurns;
+        this.logger.info('已配置 maxTurns:', queryOptions.maxTurns);
+      }
+
       this.logger.info('已从 settings.json 加载 AI 配置:', {
         thinking: appSettings.ai.thinking.type,
         effort: appSettings.ai.effort,
@@ -167,7 +182,7 @@ export class QueryBasedSession extends EventEmitter {
       });
 
       // 配置工具列表
-      let allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep'];
+      let allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep', 'AskUserQuestion'];
 
       // 如果启用 Skill，将 'Skill' 工具放在第一位
       if (this.config.enableSkills) {
@@ -254,7 +269,37 @@ export class QueryBasedSession extends EventEmitter {
         const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         this.logger.info('权限确认请求:', { requestId, toolName, toolUseID: options.toolUseID, decisionReason: options.decisionReason });
 
-        // 发送权限请求事件到前端
+        // AskUserQuestion 特殊处理：不走通用权限流程，而是发送到前端展示问答 UI
+        if (toolName === 'AskUserQuestion') {
+          const askRequestId = `ask-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          this.logger.info('AskUserQuestion 请求:', { askRequestId, questions: (input as any).questions });
+
+          this.emit('askUserQuestion', {
+            requestId: askRequestId,
+            questions: (input as any).questions,
+          });
+
+          return new Promise<PermissionResult>((resolve) => {
+            this.pendingPermissionRequests.set(askRequestId, { resolve, input });
+
+            options.signal.addEventListener('abort', () => {
+              if (this.pendingPermissionRequests.has(askRequestId)) {
+                this.pendingPermissionRequests.delete(askRequestId);
+                resolve({ behavior: 'deny', message: '操作已取消' });
+              }
+            });
+          });
+        }
+
+        // 声明式权限规则检查（来自设置）
+        if (this.permissionRules?.deny?.includes(toolName)) {
+          return { behavior: 'deny', message: `工具 "${toolName}" 已被设置规则禁止` };
+        }
+        if (this.permissionRules?.allow?.includes(toolName)) {
+          return { behavior: 'allow', updatedInput: input };
+        }
+
+        // 通用权限请求：发送事件到前端
         this.emit('permissionRequest', {
           requestId,
           toolName,
@@ -472,7 +517,7 @@ export class QueryBasedSession extends EventEmitter {
   /**
    * 发送消息到会话
    */
-  async sendMessage(content: string): Promise<void> {
+  async sendMessage(content: string | Array<{ type: string; [key: string]: any }>): Promise<void> {
     if (this.status === SessionStatus.CLOSED) {
       throw new Error('会话已关闭');
     }
@@ -483,8 +528,12 @@ export class QueryBasedSession extends EventEmitter {
     this.logger.info('║                    发送用户消息到会话                          ║');
     this.logger.info('╚════════════════════════════════════════════════════════════════╝');
     this.logger.info('  Session ID:', this.sessionId);
-    this.logger.info('  消息长度:', content.length, '字符');
-    this.logger.info('  消息内容:', content);
+    if (typeof content === 'string') {
+      this.logger.info('  消息长度:', content.length, '字符');
+      this.logger.info('  消息内容:', content);
+    } else {
+      this.logger.info('  消息块数:', content.length, '（含图像）');
+    }
     this.logger.info('╚════════════════════════════════════════════════════════════════╝');
     this.logger.info('');
 
@@ -1149,7 +1198,7 @@ ${contextInfo.join('\n')}
    * 响应权限确认请求
    * 由前端用户点击允许/拒绝后调用
    */
-  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny', message?: string): void {
+  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny', message?: string, updatedInput?: Record<string, unknown>): void {
     const pending = this.pendingPermissionRequests.get(requestId);
     if (!pending) {
       this.logger.warn('respondPermissionRequest: 找不到请求:', requestId);
@@ -1159,11 +1208,32 @@ ${contextInfo.join('\n')}
     this.logger.info('权限确认响应:', { requestId, behavior });
 
     if (behavior === 'allow') {
-      // SDK 的 Zod schema 要求 allow 时必须传回 updatedInput（即原始 input）
-      pending.resolve({ behavior: 'allow', updatedInput: pending.input });
+      // SDK 的 Zod schema 要求 allow 时必须传回 updatedInput
+      // 优先使用用户编辑后的 updatedInput，否则回传原始 input
+      pending.resolve({ behavior: 'allow', updatedInput: updatedInput || pending.input });
     } else {
       pending.resolve({ behavior: 'deny', message: message || '用户拒绝了此操作' });
     }
+  }
+
+  /**
+   * 响应 AskUserQuestion 请求
+   * 由前端用户选择/填写答案后调用，将 answers 注入到工具 input 中
+   */
+  respondAskUserQuestion(requestId: string, answers: Record<string, string>): void {
+    const pending = this.pendingPermissionRequests.get(requestId);
+    if (!pending) {
+      this.logger.warn('respondAskUserQuestion: 找不到请求:', requestId);
+      return;
+    }
+    this.pendingPermissionRequests.delete(requestId);
+    this.logger.info('AskUserQuestion 响应:', { requestId, answers });
+
+    // 将用户的 answers 注入到原始 input 中，然后 allow
+    pending.resolve({
+      behavior: 'allow',
+      updatedInput: { ...pending.input, answers },
+    });
   }
 
   /**

@@ -35,6 +35,12 @@ export interface AppSettings {
     thinking: ThinkingConfig;
     effort: 'low' | 'medium' | 'high' | 'max';
     activeProfileId: string;
+    maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
+  };
+  // 工具权限规则（声明式）
+  permissionRules?: {
+    allow?: string[];  // 自动允许的工具，如 ['Read', 'Glob', 'Grep']
+    deny?: string[];   // 自动拒绝的工具，如 ['Bash']
   };
   profiles: Record<string, ModelProfile>;
 }

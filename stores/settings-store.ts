@@ -12,6 +12,8 @@ interface SettingsState {
 
   setThinking: (thinking: ThinkingConfig) => Promise<void>;
   setEffort: (effort: AppSettings['ai']['effort']) => Promise<void>;
+  setMaxTurns: (maxTurns?: number) => Promise<void>;
+  setPermissionRules: (rules: { allow?: string[]; deny?: string[] }) => Promise<void>;
 
   setActiveProfile: (profileId: string) => Promise<void>;
   addProfile: () => Promise<string>;
@@ -45,6 +47,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setEffort: async (effort) => {
     const { settings, saveSettings } = get();
     await saveSettings({ ...settings, ai: { ...settings.ai, effort } });
+  },
+
+  setMaxTurns: async (maxTurns) => {
+    const { settings, saveSettings } = get();
+    await saveSettings({ ...settings, ai: { ...settings.ai, maxTurns } });
+  },
+
+  setPermissionRules: async (rules) => {
+    const { settings, saveSettings } = get();
+    await saveSettings({ ...settings, permissionRules: rules });
   },
 
   setActiveProfile: async (profileId) => {

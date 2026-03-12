@@ -121,7 +121,8 @@ export interface ExtendedSessionMessage {
     | 'stop'                // Stop hook 触发
     | 'tool_failure'        // PostToolUseFailure hook 触发
     | 'notification'        // Notification hook 触发
-    | 'task_notification';  // 子代理任务通知
+    | 'task_notification'   // 子代理任务通知
+    | 'ask_user_question';  // AskUserQuestion 工具触发
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -157,6 +158,14 @@ export interface ExtendedSessionMessage {
   taskId?: string;
   taskStatus?: string;
   taskSummary?: string;
+  // AskUserQuestion 相关字段
+  askUserRequestId?: string;
+  askUserQuestions?: Array<{
+    question: string;
+    header?: string;
+    options: Array<{ label: string; description?: string }>;
+    multiSelect?: boolean;
+  }>;
 }
 
 /**

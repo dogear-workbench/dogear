@@ -467,6 +467,15 @@ export const agentRouter = {
           });
         });
 
+        // 注册 AskUserQuestion 事件转发（SDK AskUserQuestion 工具触发时）
+        session.on('askUserQuestion', (data: { requestId: string; questions: any[] }) => {
+          handlers.askUserQuestion.send({
+            sessionId: session.getSessionId(),
+            requestId: data.requestId,
+            questions: data.questions,
+          });
+        });
+
         // 注册 Notification hook 事件转发
         session.on('notification', (data: { title?: string; message: string; notificationType: string }) => {
           // 通过 tipc 发送到前端
@@ -524,13 +533,35 @@ export const agentRouter = {
     }),
 
   sendQueryBasedSessionMessage: t.procedure
-    .input<{ sessionId: string; content: string }>()
+    .input<{ sessionId: string; content: string; images?: Array<{ media_type: string; data: string }> }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) return { error: '会话不存在' };
-        await session.sendMessage(input.content);
+
+        // 如果有图像附件，构建 ContentBlock 数组
+        if (input.images && input.images.length > 0) {
+          const contentBlocks: Array<{ type: string; [key: string]: any }> = [];
+          // 文本块
+          if (input.content) {
+            contentBlocks.push({ type: 'text', text: input.content });
+          }
+          // 图像块
+          for (const img of input.images) {
+            contentBlocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: img.media_type,
+                data: img.data,
+              },
+            });
+          }
+          await session.sendMessage(contentBlocks);
+        } else {
+          await session.sendMessage(input.content);
+        }
         return { success: true };
       } catch (error) {
         console.error('发送消息到基于 Query 的会话失败:', error);
@@ -585,18 +616,34 @@ export const agentRouter = {
       }
     }),
 
-  /** 响应权限确认请求（用户允许/拒绝工具执行） */
+  /** 响应权限确认请求（用户允许/拒绝工具执行，可选编辑后的参数） */
   respondPermissionRequest: t.procedure
-    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny'; message?: string }>()
+    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny'; message?: string; updatedInput?: Record<string, unknown> }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) return { error: '会话不存在' };
-        session.respondPermissionRequest(input.requestId, input.behavior, input.message);
+        session.respondPermissionRequest(input.requestId, input.behavior, input.message, input.updatedInput);
         return { success: true };
       } catch (error) {
         console.error('响应权限请求失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 响应 AskUserQuestion 请求（用户选择/填写答案） */
+  respondAskUserQuestion: t.procedure
+    .input<{ sessionId: string; requestId: string; answers: Record<string, string> }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) return { error: '会话不存在' };
+        session.respondAskUserQuestion(input.requestId, input.answers);
+        return { success: true };
+      } catch (error) {
+        console.error('响应 AskUserQuestion 失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
       }
     }),

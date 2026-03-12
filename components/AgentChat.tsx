@@ -5,12 +5,15 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { ToolBlock } from './ToolBlock';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { Pencil, GitBranch, ChevronRight, X, Brain, Shield, Check, ShieldAlert, ShieldCheck, Send, MessageSquare } from 'lucide-react';
+import { Pencil, GitBranch, ChevronRight, X, Brain, Shield, Check, ShieldAlert, ShieldCheck, Send, MessageSquare, ImagePlus, HelpCircle, PenLine } from 'lucide-react';
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -40,6 +43,8 @@ interface Message {
   forkPointSdkUuid?: string; // 用户消息上记录对应的分叉点 assistant UUID
   // AI 模型名称
   model?: string;
+  // 用户附带的图片（预览用）
+  images?: Array<{ preview: string }>;
 }
 
 /**
@@ -49,7 +54,9 @@ interface Message {
 interface ContentBlock {
   type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'permission_request'
     // Hook 事件类型
-    | 'session_start' | 'session_end' | 'stop' | 'tool_failure' | 'notification' | 'task_notification';
+    | 'session_start' | 'session_end' | 'stop' | 'tool_failure' | 'notification' | 'task_notification'
+    // AskUserQuestion 类型
+    | 'ask_user_question';
   id?: string;
   content?: string;
   toolName?: string;
@@ -82,6 +89,16 @@ interface ContentBlock {
   taskId?: string;                       // 子代理任务 ID
   taskStatus?: string;                   // 子代理任务状态
   taskSummary?: string;                  // 子代理任务摘要
+  // AskUserQuestion 相关字段
+  askUserRequestId?: string;
+  askUserQuestions?: Array<{
+    question: string;
+    header?: string;
+    options: Array<{ label: string; description?: string }>;
+    multiSelect?: boolean;
+  }>;
+  askUserAnswers?: Record<string, string>;  // 用户已提交的答案
+  askUserResolved?: boolean;                // 是否已回答
 }
 
 interface AgentChatProps {
@@ -192,6 +209,7 @@ function MessageItem({
   onFork,
   sessionId,
   onPermissionResolved,
+  onAskUserResolved,
 }: {
   message: Message;
   messageIndex: number;
@@ -199,6 +217,7 @@ function MessageItem({
   onFork?: (assistantSdkUuid: string) => void;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
+  onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
 }) {
   const isUser = message.role === 'user';
   const [isEditing, setIsEditing] = useState(false);
@@ -278,6 +297,19 @@ function MessageItem({
                     <div className="text-sm text-gray-900 whitespace-pre-wrap break-words pr-8">
                       {parsed.userMessage}
                     </div>
+                    {/* 用户附带的图片缩略图 */}
+                    {message.images && message.images.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {message.images.map((img, i) => (
+                          <img
+                            key={i}
+                            src={img.preview}
+                            alt={`附件 ${i + 1}`}
+                            className="w-20 h-20 object-cover rounded-md border border-gray-200"
+                          />
+                        ))}
+                      </div>
+                    )}
                     {/* 编辑按钮 - hover 时显示 */}
                     {onEditResend && (
                       <button
@@ -318,7 +350,7 @@ function MessageItem({
             {message.contentBlocks && message.contentBlocks.length > 0 ? (
               <div className="space-y-2">
                 {message.contentBlocks.map((block, idx) => (
-                  <ContentBlockItem key={idx} block={block} sessionId={sessionId} onPermissionResolved={onPermissionResolved} />
+                  <ContentBlockItem key={idx} block={block} sessionId={sessionId} onPermissionResolved={onPermissionResolved} onAskUserResolved={onAskUserResolved} />
                 ))}
               </div>
             ) : message.content ? (
@@ -411,6 +443,189 @@ function ThinkingBlock({ block }: { block: ContentBlock }) {
 }
 
 /**
+ * AskUserQuestion 卡片组件
+ * 当 SDK 触发 AskUserQuestion 工具时，展示结构化问答 UI
+ */
+function AskUserQuestionCard({
+  block,
+  sessionId,
+  onResolved,
+}: {
+  block: ContentBlock;
+  sessionId: string | null;
+  onResolved: (requestId: string, answers: Record<string, string>) => void;
+}) {
+  const questions = block.askUserQuestions || [];
+  const isResolved = !!block.askUserResolved;
+
+  // 每个问题的答案状态：key=问题文本, value=选中的选项 label 或自由文本
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  // 多选问题的状态：key=问题文本, value=选中的选项 label 数组
+  const [multiAnswers, setMultiAnswers] = useState<Record<string, string[]>>({});
+  // 每个问题是否选择"其他"
+  const [otherActive, setOtherActive] = useState<Record<string, boolean>>({});
+  // "其他"的自由文本
+  const [otherTexts, setOtherTexts] = useState<Record<string, string>>({});
+
+  const handleSubmit = async () => {
+    if (!sessionId || !block.askUserRequestId || isResolved) return;
+
+    // 构建最终答案
+    const finalAnswers: Record<string, string> = {};
+    for (const q of questions) {
+      const key = q.question;
+      if (q.multiSelect) {
+        const selected = multiAnswers[key] || [];
+        if (otherActive[key] && otherTexts[key]?.trim()) {
+          selected.push(otherTexts[key].trim());
+        }
+        finalAnswers[key] = selected.join(', ');
+      } else {
+        if (otherActive[key] && otherTexts[key]?.trim()) {
+          finalAnswers[key] = otherTexts[key].trim();
+        } else {
+          finalAnswers[key] = answers[key] || '';
+        }
+      }
+    }
+
+    await client.respondAskUserQuestion({
+      sessionId,
+      requestId: block.askUserRequestId,
+      answers: finalAnswers,
+    });
+    onResolved(block.askUserRequestId, finalAnswers);
+  };
+
+  return (
+    <div className={`rounded-lg border-2 ${isResolved ? 'border-blue-200 bg-blue-50/30' : 'border-indigo-300 bg-indigo-50/50'} p-4`}>
+      <div className="flex items-center gap-2 mb-3">
+        <HelpCircle size={16} className={isResolved ? 'text-blue-400' : 'text-indigo-600'} />
+        <span className={`text-sm font-medium ${isResolved ? 'text-blue-500' : 'text-indigo-800'}`}>
+          {isResolved ? '已回答' : 'AI 想了解更多信息'}
+        </span>
+      </div>
+
+      <div className="space-y-4">
+        {questions.map((q, qi) => (
+          <div key={qi} className="space-y-2">
+            {q.header && (
+              <span className="text-xs px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-600 font-medium">{q.header}</span>
+            )}
+            <p className="text-sm text-gray-800 font-medium">{q.question}</p>
+
+            {isResolved ? (
+              // 已回答：只读显示
+              <div className="text-sm text-gray-600 bg-white/60 rounded p-2">
+                {block.askUserAnswers?.[q.question] || '(未回答)'}
+              </div>
+            ) : q.multiSelect ? (
+              // 多选
+              <div className="space-y-1.5">
+                {q.options.map((opt, oi) => (
+                  <div key={oi} className="flex items-start gap-2">
+                    <Checkbox
+                      id={`q${qi}-opt${oi}`}
+                      checked={(multiAnswers[q.question] || []).includes(opt.label)}
+                      onCheckedChange={(checked) => {
+                        const current = multiAnswers[q.question] || [];
+                        const updated = checked
+                          ? [...current, opt.label]
+                          : current.filter(l => l !== opt.label);
+                        setMultiAnswers(prev => ({ ...prev, [q.question]: updated }));
+                      }}
+                    />
+                    <div>
+                      <Label htmlFor={`q${qi}-opt${oi}`} className="text-sm cursor-pointer">{opt.label}</Label>
+                      {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
+                    </div>
+                  </div>
+                ))}
+                {/* 其他选项 */}
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id={`q${qi}-other`}
+                    checked={!!otherActive[q.question]}
+                    onCheckedChange={(checked) => setOtherActive(prev => ({ ...prev, [q.question]: !!checked }))}
+                  />
+                  <div className="flex-1">
+                    <Label htmlFor={`q${qi}-other`} className="text-sm cursor-pointer">其他</Label>
+                    {otherActive[q.question] && (
+                      <input
+                        type="text"
+                        value={otherTexts[q.question] || ''}
+                        onChange={(e) => setOtherTexts(prev => ({ ...prev, [q.question]: e.target.value }))}
+                        placeholder="请输入..."
+                        className="mt-1 w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // 单选
+              <RadioGroup
+                value={otherActive[q.question] ? '__other__' : (answers[q.question] || '')}
+                onValueChange={(val) => {
+                  if (val === '__other__') {
+                    setOtherActive(prev => ({ ...prev, [q.question]: true }));
+                  } else {
+                    setOtherActive(prev => ({ ...prev, [q.question]: false }));
+                    setAnswers(prev => ({ ...prev, [q.question]: val }));
+                  }
+                }}
+                className="space-y-1.5"
+              >
+                {q.options.map((opt, oi) => (
+                  <div key={oi} className="flex items-start gap-2">
+                    <RadioGroupItem value={opt.label} id={`q${qi}-opt${oi}`} className="mt-0.5" />
+                    <div>
+                      <Label htmlFor={`q${qi}-opt${oi}`} className="text-sm cursor-pointer">{opt.label}</Label>
+                      {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
+                    </div>
+                  </div>
+                ))}
+                {/* 其他选项 */}
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem value="__other__" id={`q${qi}-other`} className="mt-0.5" />
+                  <div className="flex-1">
+                    <Label htmlFor={`q${qi}-other`} className="text-sm cursor-pointer">其他</Label>
+                    {otherActive[q.question] && (
+                      <input
+                        type="text"
+                        value={otherTexts[q.question] || ''}
+                        onChange={(e) => setOtherTexts(prev => ({ ...prev, [q.question]: e.target.value }))}
+                        placeholder="请输入..."
+                        className="mt-1 w-full text-sm border border-gray-300 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                        autoFocus
+                      />
+                    )}
+                  </div>
+                </div>
+              </RadioGroup>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* 提交按钮 */}
+      {!isResolved && (
+        <div className="mt-4">
+          <button
+            onClick={handleSubmit}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            <Send size={14} />
+            提交回答
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * 权限确认卡片组件
  * 当 SDK 在 default 模式下请求工具执行权限时显示
  */
@@ -426,6 +641,8 @@ function PermissionRequestCard({
   const isResolved = !!block.permissionResolved;
   const [showDenyInput, setShowDenyInput] = useState(false);
   const [denyMessage, setDenyMessage] = useState('');
+  const [isEditingInput, setIsEditingInput] = useState(false);
+  const [editedInput, setEditedInput] = useState('');
 
   const handleAllow = async () => {
     if (!sessionId || !block.permissionRequestId || isResolved) return;
@@ -435,6 +652,23 @@ function PermissionRequestCard({
       behavior: 'allow',
     });
     onResolved(block.permissionRequestId, 'allow');
+  };
+
+  // 允许并使用修改后的参数
+  const handleAllowWithEdits = async () => {
+    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    try {
+      const parsed = JSON.parse(editedInput);
+      await client.respondPermissionRequest({
+        sessionId,
+        requestId: block.permissionRequestId,
+        behavior: 'allow',
+        updatedInput: parsed,
+      });
+      onResolved(block.permissionRequestId, 'allow');
+    } catch {
+      // JSON 解析失败，不做操作
+    }
   };
 
   // 总是允许：allow 当前请求 + 切换到自动执行模式
@@ -572,6 +806,22 @@ function PermissionRequestCard({
               <Send size={12} />
               拒绝并说明
             </button>
+            <button
+              onClick={() => {
+                if (!isEditingInput) {
+                  setEditedInput(JSON.stringify(block.permissionInput, null, 2));
+                }
+                setIsEditingInput(!isEditingInput);
+              }}
+              className={`flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
+                isEditingInput
+                  ? 'text-blue-700 bg-blue-100 border border-blue-300'
+                  : 'text-gray-600 bg-gray-50 border border-gray-200 hover:bg-gray-100'
+              }`}
+            >
+              <PenLine size={12} />
+              编辑参数
+            </button>
           </div>
 
           {/* 用户输入拒绝理由 */}
@@ -596,16 +846,37 @@ function PermissionRequestCard({
               </button>
             </div>
           )}
+
+          {/* 编辑工具参数 */}
+          {isEditingInput && (
+            <div className="space-y-2">
+              <textarea
+                value={editedInput}
+                onChange={(e) => setEditedInput(e.target.value)}
+                className="w-full text-xs font-mono border border-blue-300 rounded-md px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none bg-blue-50/30"
+                rows={6}
+                autoFocus
+              />
+              <button
+                onClick={handleAllowWithEdits}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors cursor-pointer"
+              >
+                <Check size={12} />
+                允许（已修改）
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function ContentBlockItem({ block, sessionId, onPermissionResolved }: {
+function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
+  onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
 }) {
   switch (block.type) {
     case 'tool_use':
@@ -649,6 +920,15 @@ function ContentBlockItem({ block, sessionId, onPermissionResolved }: {
           block={block}
           sessionId={sessionId || null}
           onResolved={onPermissionResolved || (() => {})}
+        />
+      );
+
+    case 'ask_user_question':
+      return (
+        <AskUserQuestionCard
+          block={block}
+          sessionId={sessionId || null}
+          onResolved={onAskUserResolved || (() => {})}
         />
       );
 
@@ -854,6 +1134,15 @@ export function AgentChat({
   // 默认工作区路径（用于定位 SDK 会话文件）
   const [workspacePath, setWorkspacePath] = useState<string>('');
 
+  // 图片附件状态
+  const [pendingImages, setPendingImages] = useState<Array<{
+    file: File;
+    preview: string;
+    base64: string;
+    mediaType: string;
+  }>>([]);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 同步 sessionId 到 ref
@@ -869,6 +1158,49 @@ export function AgentChat({
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  // 图片文件转 base64
+  const fileToBase64 = useCallback((file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const result = reader.result as string;
+        // 移除 data:image/...;base64, 前缀
+        resolve(result.split(',')[1]);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  // 处理图片文件选择
+  const handleImageFiles = useCallback(async (files: FileList | File[]) => {
+    const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    const newImages = await Promise.all(imageFiles.map(async (file) => ({
+      file,
+      preview: URL.createObjectURL(file),
+      base64: await fileToBase64(file),
+      mediaType: file.type,
+    })));
+    setPendingImages(prev => [...prev, ...newImages]);
+  }, [fileToBase64]);
+
+  // 移除待发送图片
+  const removePendingImage = useCallback((index: number) => {
+    setPendingImages(prev => {
+      const removed = prev[index];
+      if (removed) URL.revokeObjectURL(removed.preview);
+      return prev.filter((_, i) => i !== index);
+    });
+  }, []);
+
+  // 清理预览 URL
+  useEffect(() => {
+    return () => {
+      pendingImages.forEach(img => URL.revokeObjectURL(img.preview));
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 获取默认工作区路径
   useEffect(() => {
@@ -1666,9 +1998,40 @@ export function AgentChat({
       setPermissionMode(data.mode as PermissionMode);
     });
 
+    // 监听 AskUserQuestion 事件
+    const unsubAskUser = rendererEvents.askUserQuestion.listen((data) => {
+      if (data.sessionId !== sessionId) return;
+
+      console.log('❓ 收到 AskUserQuestion 请求:', data);
+
+      // 将问答请求作为内容块插入到当前 assistant 消息中
+      setMessages(prev => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+
+        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+          const lastMsg = updated[lastIdx];
+          const blocks = lastMsg.contentBlocks || [];
+          const newBlock: ContentBlock = {
+            type: 'ask_user_question',
+            timestamp: Date.now(),
+            askUserRequestId: data.requestId,
+            askUserQuestions: data.questions,
+          };
+          updated[lastIdx] = {
+            ...lastMsg,
+            contentBlocks: [...blocks, newBlock],
+          };
+        }
+
+        return updated;
+      });
+    });
+
     return () => {
       unsubscribe();
       unsubPermission();
+      unsubAskUser();
     };
   }, [sessionId]);
 
@@ -1752,9 +2115,12 @@ export function AgentChat({
     setMessages(prev => {
       const updated = [...prev];
       const lastIdx = updated.length - 1;
+      const statusText = newMode === 'plan'
+        ? `权限模式已切换为「${modeLabels[newMode] || newMode}」— AI 将先描述计划而不执行操作。确认后可切换到「允许编辑」模式来执行。`
+        : `权限模式已切换为「${modeLabels[newMode] || newMode}」`;
       const noticeBlock: ContentBlock = {
         type: 'status',
-        status: `权限模式已切换为「${modeLabels[newMode] || newMode}」`,
+        status: statusText,
         timestamp: Date.now(),
       };
       // 插入到当前 assistant 消息中，或创建新 assistant 消息
@@ -1801,11 +2167,32 @@ export function AgentChat({
     }
   }, [sessionId]);
 
+  // AskUserQuestion 响应回调：更新消息中对应问答块的状态
+  const handleAskUserResolved = useCallback((requestId: string, answers: Record<string, string>) => {
+    setMessages(prev => prev.map(msg => {
+      if (!msg.contentBlocks) return msg;
+      const hasTarget = msg.contentBlocks.some(b => b.askUserRequestId === requestId);
+      if (!hasTarget) return msg;
+      return {
+        ...msg,
+        contentBlocks: msg.contentBlocks.map(b =>
+          b.askUserRequestId === requestId
+            ? { ...b, askUserResolved: true, askUserAnswers: answers }
+            : b
+        ),
+      };
+    }));
+  }, []);
+
   const handleSend = async () => {
-    if (!input.trim() || isLoading || !sessionId || !isSessionReady) return;
+    const hasText = !!input.trim();
+    const hasImages = pendingImages.length > 0;
+    if ((!hasText && !hasImages) || isLoading || !sessionId || !isSessionReady) return;
 
     const userMessage = input;
+    const imagesToSend = [...pendingImages];
     setInput('');
+    setPendingImages([]);
 
     // 构建实际发送的内容：如果有引用文章或片段，在消息前追加引用提示
     let messageToSend = userMessage;
@@ -1852,7 +2239,8 @@ export function AgentChat({
     const newUserMessage: Message = {
       role: 'user',
       content: messageToSend,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ...(imagesToSend.length > 0 && { images: imagesToSend.map(img => ({ preview: img.preview })) }),
     };
 
     // 添加用户消息
@@ -1873,8 +2261,17 @@ export function AgentChat({
     setIsLoading(true);
 
     try {
-      // 发送消息到会话（包含引用提示）
-      await client.sendQueryBasedSessionMessage({ sessionId, content: messageToSend });
+      // 发送消息到会话（包含引用提示 + 图片附件）
+      await client.sendQueryBasedSessionMessage({
+        sessionId,
+        content: messageToSend,
+        ...(imagesToSend.length > 0 && {
+          images: imagesToSend.map(img => ({
+            media_type: img.mediaType,
+            data: img.base64,
+          })),
+        }),
+      });
     } catch (error) {
       console.error('发送消息失败:', error);
       setMessages(prev => [
@@ -1923,9 +2320,50 @@ export function AgentChat({
               onFork={handleFork}
               sessionId={sessionId}
               onPermissionResolved={handlePermissionResolved}
+              onAskUserResolved={handleAskUserResolved}
             />
           ));
         })()}
+
+        {/* Plan 模式下，assistant 完成输出后显示"执行计划"按钮 */}
+        {permissionMode === 'plan' && !isLoading && messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.isStreaming && (
+          <div className="flex justify-center py-3">
+            <button
+              onClick={async () => {
+                // 切换到"允许编辑"模式
+                setPermissionMode('acceptEdits');
+                if (sessionId) {
+                  await client.setPermissionMode({ sessionId, mode: 'acceptEdits' });
+                  insertModeChangeNotice('acceptEdits');
+                  // 发送执行指令
+                  const executeMsg: Message = {
+                    role: 'user',
+                    content: '请执行上面的计划',
+                    timestamp: Date.now(),
+                  };
+                  setMessages(prev => [...prev, executeMsg, {
+                    role: 'assistant',
+                    content: '',
+                    timestamp: Date.now(),
+                    isStreaming: true,
+                    contentBlocks: [],
+                  }]);
+                  setIsLoading(true);
+                  try {
+                    await client.sendQueryBasedSessionMessage({ sessionId, content: '请执行上面的计划' });
+                  } catch (error) {
+                    console.error('执行计划失败:', error);
+                    setIsLoading(false);
+                  }
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              <ChevronRight size={16} />
+              执行计划
+            </button>
+          </div>
+        )}
 
         <div ref={messagesEndRef} />
       </div>
@@ -1970,19 +2408,74 @@ export function AgentChat({
             ))}
           </div>
         )}
+        {/* 图片预览行 */}
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {pendingImages.map((img, i) => (
+              <div key={i} className="relative group/img">
+                <img
+                  src={img.preview}
+                  alt={`待发送 ${i + 1}`}
+                  className="w-16 h-16 object-cover rounded-md border border-gray-200"
+                />
+                <button
+                  onClick={() => removePendingImage(i)}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex space-x-2">
           <div className="flex-1 relative">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyPress}
+              onPaste={(e) => {
+                const items = e.clipboardData?.items;
+                if (!items) return;
+                const imageFiles: File[] = [];
+                for (const item of items) {
+                  if (item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) imageFiles.push(file);
+                  }
+                }
+                if (imageFiles.length > 0) {
+                  e.preventDefault();
+                  handleImageFiles(imageFiles);
+                }
+              }}
               placeholder={placeholder}
               className="w-full border border-gray-300 rounded-lg p-3 pr-10 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               rows={2}
               disabled={isLoading || !isSessionReady}
             />
-            {/* 思考等级选择 — 通过 setMaxThinkingTokens 即时生效 */}
-            <div className="absolute right-2 bottom-2 flex items-center">
+            {/* 隐藏的文件选择器 */}
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) handleImageFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
+            {/* 图片上传按钮 + 思考等级选择 */}
+            <div className="absolute right-2 bottom-2 flex items-center gap-1">
+              <button
+                onClick={() => imageInputRef.current?.click()}
+                className="p-1 text-gray-400 hover:text-blue-500 transition-colors"
+                title="上传图片"
+                disabled={isLoading || !isSessionReady}
+              >
+                <ImagePlus size={14} />
+              </button>
               <Brain size={14} className={thinkingLevel > 0 ? 'text-blue-500' : 'text-gray-400'} />
               <select
                 value={thinkingLevel}
@@ -2023,7 +2516,7 @@ export function AgentChat({
           ) : (
             <button
               onClick={handleSend}
-              disabled={!input.trim() || !isSessionReady}
+              disabled={(!input.trim() && pendingImages.length === 0) || !isSessionReady}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors self-end"
             >
               发送

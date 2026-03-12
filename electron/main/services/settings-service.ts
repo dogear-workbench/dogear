@@ -36,6 +36,11 @@ export interface AppSettings {
     thinking: ThinkingConfig;
     effort: 'low' | 'medium' | 'high' | 'max';
     activeProfileId: string;
+    maxTurns?: number;
+  };
+  permissionRules?: {
+    allow?: string[];
+    deny?: string[];
   };
   profiles: Record<string, ModelProfile>;
 }

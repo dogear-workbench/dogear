@@ -85,4 +85,16 @@ export type RendererHandlers = {
     sessionId: string;
     mode: string;
   }) => void;
+
+  // AskUserQuestion 事件（SDK AskUserQuestion 工具触发）
+  askUserQuestion: (data: {
+    sessionId: string;
+    requestId: string;
+    questions: Array<{
+      question: string;
+      header?: string;
+      options: Array<{ label: string; description?: string }>;
+      multiSelect?: boolean;
+    }>;
+  }) => void;
 };

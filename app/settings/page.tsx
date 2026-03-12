@@ -9,6 +9,12 @@ import { useSettingsStore } from '@/stores/settings-store';
 import type { ThinkingConfig } from '@/types/settings';
 import { isProfileComplete } from '@/types/settings';
 
+// 已知工具列表（用于权限规则配置）
+const KNOWN_TOOLS = ['Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch'] as const;
+
+// 工具权限状态类型
+type ToolPermission = 'allow' | 'default' | 'deny';
+
 const EFFORT_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
@@ -23,6 +29,8 @@ export default function SettingsPage() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const setThinking = useSettingsStore((s) => s.setThinking);
   const setEffort = useSettingsStore((s) => s.setEffort);
+  const setMaxTurns = useSettingsStore((s) => s.setMaxTurns);
+  const setPermissionRules = useSettingsStore((s) => s.setPermissionRules);
   const setActiveProfile = useSettingsStore((s) => s.setActiveProfile);
   const updateProfile = useSettingsStore((s) => s.updateProfile);
   const addProfile = useSettingsStore((s) => s.addProfile);
@@ -32,6 +40,8 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   // budgetTokens 使用本地 state，onBlur 时保存
   const [budgetTokens, setBudgetTokens] = useState<number>(0);
+  // maxTurns 本地 state，onBlur 时保存
+  const [localMaxTurns, setLocalMaxTurns] = useState<string>('');
 
   // 加载设置
   useEffect(() => {
@@ -44,6 +54,11 @@ export default function SettingsPage() {
       setBudgetTokens(settings.ai.thinking.budgetTokens);
     }
   }, [settings?.ai.thinking.budgetTokens]);
+
+  // 同步 maxTurns 本地 state
+  useEffect(() => {
+    setLocalMaxTurns(settings?.ai.maxTurns ? String(settings.ai.maxTurns) : '');
+  }, [settings?.ai.maxTurns]);
 
   // 切换 API Key 可见性
   const toggleApiKeyVisibility = (profileId: string) => {
@@ -65,6 +80,29 @@ export default function SettingsPage() {
     if (settings?.ai.thinking.type === 'enabled') {
       setThinking({ type: 'enabled', budgetTokens });
     }
+  };
+
+  // 处理 maxTurns 失焦保存
+  const handleMaxTurnsBlur = () => {
+    const val = localMaxTurns.trim();
+    setMaxTurns(val ? Number(val) : undefined);
+  };
+
+  // 获取单个工具的权限状态
+  const getToolPermission = (toolName: string): ToolPermission => {
+    if (settings?.permissionRules?.allow?.includes(toolName)) return 'allow';
+    if (settings?.permissionRules?.deny?.includes(toolName)) return 'deny';
+    return 'default';
+  };
+
+  // 设置单个工具的权限状态
+  const handleToolPermissionChange = (toolName: string, permission: ToolPermission) => {
+    const currentRules = settings?.permissionRules || { allow: [], deny: [] };
+    const allow = (currentRules.allow || []).filter(t => t !== toolName);
+    const deny = (currentRules.deny || []).filter(t => t !== toolName);
+    if (permission === 'allow') allow.push(toolName);
+    if (permission === 'deny') deny.push(toolName);
+    setPermissionRules({ allow, deny });
   };
 
   if (!loaded) {
@@ -194,6 +232,65 @@ export default function SettingsPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* maxTurns 配置 */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">最大执行轮次</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    className="h-9 w-32 px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                    value={localMaxTurns}
+                    onChange={(e) => setLocalMaxTurns(e.target.value)}
+                    onBlur={handleMaxTurnsBlur}
+                    min={1}
+                    placeholder="不限制"
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    限制 Agent 单次对话的执行轮次，防止无限循环
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 卡片：工具权限规则 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>工具权限规则</CardTitle>
+              <CardDescription>预配置工具的自动允许/拒绝行为，减少手动确认</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {KNOWN_TOOLS.map((tool) => {
+                  const perm = getToolPermission(tool);
+                  return (
+                    <div key={tool} className="flex items-center justify-between py-2 border-b last:border-b-0">
+                      <span className="text-sm font-mono">{tool}</span>
+                      <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5">
+                        {([
+                          { value: 'allow', label: '自动允许', color: 'text-green-700' },
+                          { value: 'default', label: '需确认', color: 'text-foreground' },
+                          { value: 'deny', label: '禁止', color: 'text-red-600' },
+                        ] as const).map((opt) => (
+                          <button
+                            key={opt.value}
+                            className={cn(
+                              'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
+                              perm === opt.value
+                                ? `bg-background ${opt.color} shadow-sm`
+                                : 'text-muted-foreground hover:text-foreground'
+                            )}
+                            onClick={() => handleToolPermissionChange(tool, opt.value)}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
