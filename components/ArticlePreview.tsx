@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Globe, User, Calendar, ExternalLink, FileText, Quote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -151,7 +152,7 @@ export function ArticlePreview() {
   const fetchedDate = new Date(article.fetchedAt);
 
   return (
-    <div className="h-full overflow-y-auto">
+    <ScrollArea className="h-full overflow-hidden">
       {/* 元数据区域 */}
       <div className="p-4 border-b space-y-3">
         <h3 className="font-semibold text-lg leading-tight">{article.title}</h3>
@@ -203,6 +204,6 @@ export function ArticlePreview() {
           </div>
         )}
       </div>
-    </div>
+    </ScrollArea>
   );
 }

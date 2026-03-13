@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -101,8 +102,9 @@ export function AgentChat({
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border">
-      {/* 消息区域 */}
-      <div className="flex-1 overflow-y-auto">
+      {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
+      <ScrollArea className="flex-1 overflow-hidden">
+        <div className="px-4">
         {messages.length === 0 && (
           <div className="text-center text-gray-500 mt-20">
             <p>开始与 Agent 对话...</p>
@@ -174,7 +176,8 @@ export function AgentChat({
         />
 
         <div ref={messagesEndRef} />
-      </div>
+        </div>
+      </ScrollArea>
 
       {/* 输入区域 */}
       <ChatInputArea

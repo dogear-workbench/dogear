@@ -6,6 +6,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
@@ -166,34 +167,37 @@ export default function Home() {
         <section className="flex-1 flex flex-col min-w-0">
           {/* 标签页头 */}
           {tabs.length > 0 && (
-            <div className="flex items-center border-b bg-muted/30 overflow-x-auto">
-              {tabs.map((tab) => (
-                <div
-                  key={tab.conversationId}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
-                    activeTabId === tab.conversationId
-                      ? 'bg-background font-medium'
-                      : 'hover:bg-muted/50 text-muted-foreground'
-                  )}
-                  onClick={() => switchTab(tab.conversationId)}
-                >
-                  {tab.isStreaming && (
-                    <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
-                  )}
-                  <span className="truncate">{tab.conversationTitle}</span>
-                  <button
-                    className="ml-1 p-0.5 rounded hover:bg-muted shrink-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      closeTab(tab.conversationId);
-                    }}
+            <ScrollArea className="border-b bg-muted/30">
+              <div className="flex items-center">
+                {tabs.map((tab) => (
+                  <div
+                    key={tab.conversationId}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
+                      activeTabId === tab.conversationId
+                        ? 'bg-background font-medium'
+                        : 'hover:bg-muted/50 text-muted-foreground'
+                    )}
+                    onClick={() => switchTab(tab.conversationId)}
                   >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
+                    {tab.isStreaming && (
+                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
+                    )}
+                    <span className="truncate">{tab.conversationTitle}</span>
+                    <button
+                      className="ml-1 p-0.5 rounded hover:bg-muted shrink-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeTab(tab.conversationId);
+                      }}
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
           )}
 
           {/* 标签页内容 */}
@@ -252,7 +256,7 @@ export default function Home() {
               </Button>
             )}
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <ScrollArea className="flex-1 overflow-hidden">
             {/* 文章预览模式 */}
             {selectedArticle ? (
               <ArticlePreview />
@@ -421,7 +425,7 @@ export default function Home() {
                 <p className="text-xs mt-1">选择左侧文章或书籍查看详情</p>
               </div>
             )}
-          </div>
+          </ScrollArea>
         </aside>
       </div>
     </main>

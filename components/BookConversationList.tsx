@@ -9,6 +9,7 @@ import {
   ContextMenuItem, ContextMenuSeparator,
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
@@ -463,21 +464,25 @@ export function ConversationList() {
 
   const items = tree.getItems();
 
-  // 滚动保持
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // 滚动保持：通过 ScrollArea 的 Viewport 获取实际滚动容器
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const pendingScrollTop = useRef<number | null>(null);
   const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /** 获取 ScrollArea 内部的 Viewport 滚动容器 */
+  const getViewport = () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+
   // nodeMap 变化时重建树
   useLayoutEffect(() => {
-    pendingScrollTop.current = scrollRef.current?.scrollTop ?? 0;
+    pendingScrollTop.current = getViewport()?.scrollTop ?? 0;
     tree.rebuildTree();
   }, [nodeMap, tree]);
 
   // 恢复滚动位置
   useLayoutEffect(() => {
-    if (pendingScrollTop.current !== null && scrollRef.current) {
-      scrollRef.current.scrollTop = pendingScrollTop.current;
+    const viewport = getViewport();
+    if (pendingScrollTop.current !== null && viewport) {
+      viewport.scrollTop = pendingScrollTop.current;
       if (scrollRestoreTimer.current) {
         clearTimeout(scrollRestoreTimer.current);
       }
@@ -559,7 +564,7 @@ export function ConversationList() {
       </div>
 
       {/* 对话树 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden">
         {conversations.length === 0 && !creatingFolderAt ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
             <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
@@ -604,7 +609,7 @@ export function ConversationList() {
             />
           </div>
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

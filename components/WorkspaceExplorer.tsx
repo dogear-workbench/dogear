@@ -10,6 +10,7 @@ import {
   ContextMenuItem, ContextMenuSeparator,
 } from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -679,27 +680,27 @@ export function WorkspaceExplorer() {
     canRename,
   });
 
-  // 滚动容器 ref
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // 滚动保持：通过 ScrollArea 的 Viewport 获取实际滚动容器
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // 滚动位置保持：rebuildTree 会触发多轮异步渲染，
-  // 用 ref 保存目标 scrollTop，在每次渲染后恢复，直到树稳定
   const pendingScrollTop = useRef<number | null>(null);
   const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /** 获取 ScrollArea 内部的 Viewport 滚动容器 */
+  const getViewport = () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+
   // 当 files 变化时重建树
   useLayoutEffect(() => {
-    // 记住当前滚动位置
-    pendingScrollTop.current = scrollRef.current?.scrollTop ?? 0;
+    pendingScrollTop.current = getViewport()?.scrollTop ?? 0;
     tree.rebuildTree();
   }, [files, tree]);
 
   // 每次渲染后，如果有待恢复的滚动位置就恢复它
   useLayoutEffect(() => {
-    if (pendingScrollTop.current !== null && scrollRef.current) {
-      scrollRef.current.scrollTop = pendingScrollTop.current;
+    const viewport = getViewport();
+    if (pendingScrollTop.current !== null && viewport) {
+      viewport.scrollTop = pendingScrollTop.current;
 
-      // 重置清除定时器：等树完全停止渲染后再清除 pending 状态
       if (scrollRestoreTimer.current) {
         clearTimeout(scrollRestoreTimer.current);
       }
@@ -826,7 +827,7 @@ export function WorkspaceExplorer() {
       </div>
 
       {/* 可滚动的文件树区域 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden">
         <div {...tree.getContainerProps('工作区文件树')}>
           {items.map((item, index) => (
             <React.Fragment key={item.getId()}>
@@ -870,7 +871,7 @@ export function WorkspaceExplorer() {
             加载中...
           </div>
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }
