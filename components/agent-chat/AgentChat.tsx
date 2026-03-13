@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useSessionStore } from '@/stores/session-store';
 import type { AgentChatProps } from './types';
 import { MessageItem } from './MessageItem';
 import { ChatInputArea } from './ChatInputArea';
@@ -13,6 +14,7 @@ import { useSessionMessages } from './hooks/useSessionMessages';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { useImageAttachment } from './hooks/useImageAttachment';
 import { useSendMessage } from './hooks/useSendMessage';
+import { StreamingIndicator } from './StreamingIndicator';
 
 /**
  * Agent 聊天组件
@@ -28,11 +30,14 @@ export function AgentChat({
   showStatusHint = true,
   useSdkResume = true,
   showReplayMessages = true,
+  conversationIdOverride,
 }: AgentChatProps) {
   // 从 store 获取状态
   const bookId = useWorkspaceStore((s) => s.selectedBook?.id);
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
-  const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
+  const storeConversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
+  // 多标签页模式下使用 override，否则使用 store 中的选中对话
+  const conversationId = conversationIdOverride || storeConversationId;
   const forkParams = useConversationStore((s) => s.forkParams);
 
   // 构建 context 对象
@@ -48,6 +53,13 @@ export function AgentChat({
 
   // 加载状态
   const [isLoading, setIsLoading] = useState(false);
+
+  // 同步 isLoading 到 session-store（标签页运行状态）
+  useEffect(() => {
+    if (conversationId) {
+      useSessionStore.getState().updateStreaming(conversationId, isLoading);
+    }
+  }, [isLoading, conversationId]);
 
   // 历史消息
   const { messages, setMessages, historyLoaded, setHistoryLoaded, isResumeMode } =
@@ -152,6 +164,14 @@ export function AgentChat({
             </Button>
           </div>
         )}
+
+        {/* 运行状态指示器 */}
+        <StreamingIndicator
+          isLoading={isLoading}
+          lastBlockType={
+            messages[messages.length - 1]?.contentBlocks?.slice(-1)[0]?.type
+          }
+        />
 
         <div ref={messagesEndRef} />
       </div>

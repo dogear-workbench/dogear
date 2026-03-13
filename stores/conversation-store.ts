@@ -58,6 +58,8 @@ interface ConversationState {
   deleteFolder: (folderId: string) => Promise<void>;
   /** 移动对话或文件夹 */
   moveItem: (itemId: string, targetParentId: string, targetIndex?: number) => Promise<void>;
+  /** 更新对话标题 */
+  updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
 }
 
 /** 从 workspace-store 获取当前工作区（延迟导入避免循环依赖） */
@@ -376,6 +378,35 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       await get().loadConversations();
     } catch (error) {
       console.error('移动失败:', error);
+    }
+  },
+
+  updateConversationTitle: async (conversationId, title) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+
+    try {
+      await client.updateTitle({ workspaceId: workspace.id, conversationId, title });
+
+      // 更新本地状态
+      set((state) => ({
+        conversations: state.conversations.map((c) =>
+          c.id === conversationId ? { ...c, title } : c
+        ),
+        selectedConversation: state.selectedConversation?.id === conversationId
+          ? { ...state.selectedConversation, title }
+          : state.selectedConversation,
+        // 同步更新 nodeMap 中的标题
+        nodeMap: Object.fromEntries(
+          Object.entries(state.nodeMap).map(([key, node]) =>
+            key === conversationId
+              ? [key, { ...node, name: title, conversation: node.conversation ? { ...node.conversation, title } : undefined }]
+              : [key, node]
+          )
+        ),
+      }));
+    } catch (error) {
+      console.error('更新对话标题失败:', error);
     }
   },
 }));

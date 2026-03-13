@@ -1,7 +1,7 @@
 
 import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from 'react';
 import {
-  MessageSquare, Plus, Trash2, GitBranch,
+  MessageSquare, Plus, Trash2, GitBranch, Pencil, Loader2,
   Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown,
 } from 'lucide-react';
 import {
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
+import { useSessionStore } from '@/stores/session-store';
 
 import { useTree } from '@headless-tree/react';
 import {
@@ -145,6 +146,7 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const deleteFolder = useConversationStore((s) => s.deleteFolder);
   const renameFolder = useConversationStore((s) => s.renameFolder);
+  const openTab = useSessionStore((s) => s.openTab);
 
   const paddingLeft = meta.level * 16 + 8;
   const { ref, ...props } = item.getProps();
@@ -216,6 +218,42 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const isSelected = selectedConversation?.id === conv.id;
   const isFork = !!conv.parent_conversation_id;
 
+  // 标签页运行状态
+  const tabs = useSessionStore((s) => s.tabs);
+  const tab = tabs.find((t) => t.conversationId === conv.id);
+  const isRunning = tab?.isStreaming ?? false;
+
+  // 标题编辑状态
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  /** 进入编辑模式 */
+  const startEditing = useCallback(() => {
+    setEditTitle(getConversationTitle(conv));
+    setIsEditing(true);
+    // 下一帧聚焦并全选
+    setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 0);
+  }, [conv]);
+
+  /** 保存标题 */
+  const saveTitle = useCallback(() => {
+    const trimmed = editTitle.trim();
+    // 空标题回退为默认标题
+    const finalTitle = trimmed || getConversationTitle(conv);
+    updateConversationTitle(conv.id, finalTitle);
+    setIsEditing(false);
+  }, [editTitle, conv, updateConversationTitle]);
+
+  /** 取消编辑 */
+  const cancelEditing = useCallback(() => {
+    setIsEditing(false);
+  }, []);
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -227,9 +265,14 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
             isSelected ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-muted/30',
           )}
           style={{ paddingLeft: `${paddingLeft}px` }}
-          onClick={() => selectConversation(conv)}
+          onClick={() => {
+            selectConversation(conv);
+            openTab(conv.id, getConversationTitle(conv));
+          }}
         >
-          {isFork ? (
+          {isRunning ? (
+            <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-blue-500" />
+          ) : isFork ? (
             <GitBranch className={cn('w-4 h-4 flex-shrink-0',
               isSelected ? 'text-purple-600' : 'text-purple-400'
             )} />
@@ -239,15 +282,47 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
             )} />
           )}
           <div className="flex-1 min-w-0">
-            <div className={cn('text-sm truncate',
-              isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
-            )}>
-              {getConversationTitle(conv)}
-            </div>
+            {isEditing ? (
+              <input
+                ref={editInputRef}
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveTitle();
+                  } else if (e.key === 'Escape') {
+                    cancelEditing();
+                  }
+                  e.stopPropagation();
+                }}
+                onBlur={saveTitle}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
+              />
+            ) : (
+              <div className={cn('text-sm truncate',
+                isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
+              )}>
+                {getConversationTitle(conv)}
+              </div>
+            )}
             <div className="text-xs text-muted-foreground">
               {getRelativeTime(conv.updated_at)}
             </div>
           </div>
+          {/* 编辑按钮 */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-blue-600"
+            onClick={(e) => {
+              e.stopPropagation();
+              startEditing();
+            }}
+          >
+            <Pencil className="w-3 h-3" />
+          </Button>
+          {/* 删除按钮 */}
           <Button
             variant="ghost"
             size="sm"
@@ -262,6 +337,10 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem onClick={startEditing}>
+          重命名
+        </ContextMenuItem>
+        <ContextMenuSeparator />
         <ContextMenuItem
           className="text-destructive"
           onClick={() => deleteConversation(conv.id)}
@@ -325,12 +404,14 @@ export function ConversationList() {
   }, [renameFolder]);
 
   // 主操作：点击对话选中，文件夹展开/折叠
+  const openTabFromList = useSessionStore((s) => s.openTab);
   const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     const data = item.getItemData();
     if (data.nodeType === 'conversation' && data.conversation) {
       selectConversation(data.conversation);
+      openTabFromList(data.conversation.id, getConversationTitle(data.conversation));
     }
-  }, [selectConversation]);
+  }, [selectConversation, openTabFromList]);
 
   const canDrag = useCallback((items: ItemInstance<ConversationFlatNode>[]) => {
     return items.every(i => i.getId() !== CONV_TREE_ROOT);

@@ -70,7 +70,24 @@ electron/
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
 
 ### 业务组件（components/）
-- `AgentChat.tsx` — AI 聊天核心组件，工具调用可视化、消息分叉、权限请求
+- `agent-chat/` — AI 聊天模块（从原 AgentChat.tsx 拆分）
+  - `AgentChat.tsx` — 主组件（~180行），组合 hooks + 布局
+  - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏）
+  - `MessageItem.tsx` — 单条消息渲染（用户/助手消息、分叉/编辑按钮）
+  - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser）
+  - `ThinkingBlock.tsx` — 思考块（可折叠）
+  - `AskUserQuestionCard.tsx` — AskUser 问题卡片（单选/多选）
+  - `PermissionRequestCard.tsx` — 权限请求卡片（允许/拒绝/始终允许）
+  - `CitationBadge.tsx` — 引用徽章
+  - `types.ts` — 类型定义（ContentBlock、DisplayMessage 等）
+  - `utils.ts` — 工具函数
+  - `hooks/` — 自定义 hooks
+    - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）
+    - `useSessionMessages.ts` — 消息流监听与流式更新
+    - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
+    - `useMessageHistory.ts` — 历史消息加载与格式转换
+    - `useImageAttachment.ts` — 图片附件（base64、粘贴、预览）
+    - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `BookConversationList.tsx` — 对话列表，分叉标记，新建/删除对话

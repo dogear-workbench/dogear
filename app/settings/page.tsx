@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -133,16 +132,20 @@ export default function SettingsPage() {
         <h1 className="font-semibold">设置</h1>
       </header>
 
-      {/* 内容区域 */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto py-6 px-4 space-y-6">
-          {/* 卡片 1：AI 行为 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>AI 行为</CardTitle>
-              <CardDescription>配置 AI 的思考模式和执行力度</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
+      {/* 内容区域：Tabs 导航 */}
+      <Tabs defaultValue="behavior" className="flex-1 flex flex-col overflow-hidden">
+        <div className="px-4 pt-4">
+          <TabsList>
+            <TabsTrigger value="behavior">AI 行为</TabsTrigger>
+            <TabsTrigger value="permissions">工具权限</TabsTrigger>
+            <TabsTrigger value="profiles">模型方案</TabsTrigger>
+          </TabsList>
+        </div>
+
+        {/* Tab: AI 行为 */}
+        <TabsContent value="behavior" className="flex-1 overflow-y-auto mt-0 data-[state=inactive]:hidden">
+          <div className="max-w-2xl mx-auto py-6 px-4">
+            <div className="space-y-6">
               {/* Thinking 模式 */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">Thinking 模式</label>
@@ -252,238 +255,231 @@ export default function SettingsPage() {
                   </span>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
+        </TabsContent>
 
-          {/* 卡片：工具权限规则 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>工具权限规则</CardTitle>
-              <CardDescription>预配置工具的自动允许/拒绝行为，减少手动确认</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {KNOWN_TOOLS.map((tool) => {
-                  const perm = getToolPermission(tool);
-                  return (
-                    <div key={tool} className="flex items-center justify-between py-2 border-b last:border-b-0">
-                      <span className="text-sm font-mono">{tool}</span>
-                      <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5">
-                        {([
-                          { value: 'allow', label: '自动允许', color: 'text-green-700' },
-                          { value: 'default', label: '需确认', color: 'text-foreground' },
-                          { value: 'deny', label: '禁止', color: 'text-red-600' },
-                        ] as const).map((opt) => (
-                          <button
-                            key={opt.value}
-                            className={cn(
-                              'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
-                              perm === opt.value
-                                ? `bg-background ${opt.color} shadow-sm`
-                                : 'text-muted-foreground hover:text-foreground'
-                            )}
-                            onClick={() => handleToolPermissionChange(tool, opt.value)}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                      </div>
+        {/* Tab: 工具权限 */}
+        <TabsContent value="permissions" className="flex-1 overflow-y-auto mt-0 data-[state=inactive]:hidden">
+          <div className="max-w-2xl mx-auto py-6 px-4">
+            <div className="space-y-2">
+              {KNOWN_TOOLS.map((tool) => {
+                const perm = getToolPermission(tool);
+                return (
+                  <div key={tool} className="flex items-center justify-between py-2 border-b last:border-b-0">
+                    <span className="text-sm font-mono">{tool}</span>
+                    <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5">
+                      {([
+                        { value: 'allow', label: '自动允许', color: 'text-green-700' },
+                        { value: 'default', label: '需确认', color: 'text-foreground' },
+                        { value: 'deny', label: '禁止', color: 'text-red-600' },
+                      ] as const).map((opt) => (
+                        <button
+                          key={opt.value}
+                          className={cn(
+                            'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
+                            perm === opt.value
+                              ? `bg-background ${opt.color} shadow-sm`
+                              : 'text-muted-foreground hover:text-foreground'
+                          )}
+                          onClick={() => handleToolPermissionChange(tool, opt.value)}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* Tab: 模型方案 */}
+        <TabsContent value="profiles" className="flex-1 overflow-y-auto mt-0 data-[state=inactive]:hidden">
+          <div className="max-w-2xl mx-auto py-6 px-4">
+            {/* 内层 Tabs：模型方案切换 */}
+            <Tabs
+              value={settings.ai.activeProfileId}
+              onValueChange={setActiveProfile}
+            >
+              <div className="flex items-center gap-2">
+                <TabsList className="flex-1">
+                  {profileIds.map((id) => (
+                    <TabsTrigger key={id} value={id}>
+                      {profiles[id].name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addProfile}
+                >
+                  <Plus className="w-4 h-4" />
+                </Button>
               </div>
-            </CardContent>
-          </Card>
 
-          {/* 卡片 2：模型方案 */}
-          <Card>
-            <CardHeader>
-              <CardTitle>模型方案</CardTitle>
-              <CardDescription>管理 API 密钥和模型配置</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Tabs
-                value={settings.ai.activeProfileId}
-                onValueChange={setActiveProfile}
-              >
-                <div className="flex items-center gap-2">
-                  <TabsList className="flex-1">
-                    {profileIds.map((id) => (
-                      <TabsTrigger key={id} value={id}>
-                        {profiles[id].name}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={addProfile}
-                  >
-                    <Plus className="w-4 h-4" />
-                  </Button>
-                </div>
+              {profileIds.map((id) => {
+                const profile = profiles[id];
+                const isDefault = id === 'default';
+                const keyVisible = showApiKey[id] ?? false;
+                const profileComplete = isProfileComplete(profile);
 
-                {profileIds.map((id) => {
-                  const profile = profiles[id];
-                  const isDefault = id === 'default';
-                  const keyVisible = showApiKey[id] ?? false;
-                  const profileComplete = isProfileComplete(profile);
+                return (
+                  <TabsContent key={id} value={id} className="space-y-4 pt-2">
+                    {/* 配置完整性警告 */}
+                    {!profileComplete && (
+                      <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 text-sm">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                        请完成所有必填字段后才能使用对话功能
+                      </div>
+                    )}
 
-                  return (
-                    <TabsContent key={id} value={id} className="space-y-4 pt-2">
-                      {/* 配置完整性警告 */}
-                      {!profileComplete && (
-                        <div className="flex items-center gap-2 p-3 rounded-lg bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200 text-sm">
-                          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-                          请完成所有必填字段后才能使用对话功能
-                        </div>
-                      )}
+                    {/* 方案名称 */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">方案名称</label>
+                      <input
+                        type="text"
+                        className={inputClassName}
+                        value={profile.name}
+                        onChange={(e) => updateProfile(id, { name: e.target.value })}
+                      />
+                    </div>
 
-                      {/* 方案名称 */}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">方案名称</label>
+                    {/* API Key（必填） */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        API Key <span className="text-destructive">*</span>
+                      </label>
+                      <div className="relative">
                         <input
-                          type="text"
-                          className={inputClassName}
-                          value={profile.name}
-                          onChange={(e) => updateProfile(id, { name: e.target.value })}
+                          type={keyVisible ? 'text' : 'password'}
+                          className={cn(inputClassName, 'pr-10')}
+                          value={profile.apiKey}
+                          onChange={(e) => updateProfile(id, { apiKey: e.target.value })}
+                          placeholder="输入 API Key"
                         />
-                      </div>
-
-                      {/* API Key（必填） */}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">
-                          API Key <span className="text-destructive">*</span>
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={keyVisible ? 'text' : 'password'}
-                            className={cn(inputClassName, 'pr-10')}
-                            value={profile.apiKey}
-                            onChange={(e) => updateProfile(id, { apiKey: e.target.value })}
-                            placeholder="输入 API Key"
-                          />
-                          <button
-                            type="button"
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                            onClick={() => toggleApiKeyVisibility(id)}
-                          >
-                            {keyVisible ? (
-                              <EyeOff className="w-4 h-4" />
-                            ) : (
-                              <Eye className="w-4 h-4" />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Base URL（必填） */}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">
-                          Base URL <span className="text-destructive">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          className={inputClassName}
-                          value={profile.baseUrl}
-                          onChange={(e) => updateProfile(id, { baseUrl: e.target.value })}
-                          placeholder="如 https://api.anthropic.com"
-                        />
-                      </div>
-
-                      {/* 模型映射（三个，必填） */}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">
-                          Haiku 模型 <span className="text-destructive">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          className={inputClassName}
-                          value={profile.haikuModel}
-                          onChange={(e) => updateProfile(id, { haikuModel: e.target.value })}
-                          placeholder="如 claude-haiku-4-5"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">
-                          Sonnet 模型 <span className="text-destructive">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          className={inputClassName}
-                          value={profile.sonnetModel}
-                          onChange={(e) => updateProfile(id, { sonnetModel: e.target.value })}
-                          placeholder="如 claude-sonnet-4-6"
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">
-                          Opus 模型 <span className="text-destructive">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          className={inputClassName}
-                          value={profile.opusModel}
-                          onChange={(e) => updateProfile(id, { opusModel: e.target.value })}
-                          placeholder="如 claude-opus-4-6"
-                        />
-                      </div>
-
-                      {/* API 超时时间 */}
-                      <div className="space-y-1.5">
-                        <label className="text-sm font-medium">API 超时时间（毫秒）</label>
-                        <input
-                          type="number"
-                          className={inputClassName}
-                          value={profile.apiTimeoutMs}
-                          onChange={(e) => updateProfile(id, { apiTimeoutMs: Number(e.target.value) })}
-                          min={1000}
-                        />
-                      </div>
-
-                      {/* 禁用非必要流量 */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <label className="text-sm font-medium">禁用非必要流量</label>
-                          <p className="text-xs text-muted-foreground">关闭 SDK 的非必要网络请求</p>
-                        </div>
                         <button
                           type="button"
-                          className={cn(
-                            "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                            profile.disableNonessentialTraffic ? "bg-primary" : "bg-muted"
-                          )}
-                          onClick={() => updateProfile(id, { disableNonessentialTraffic: !profile.disableNonessentialTraffic })}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          onClick={() => toggleApiKeyVisibility(id)}
                         >
-                          <span className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                            profile.disableNonessentialTraffic ? "translate-x-6" : "translate-x-1"
-                          )} />
+                          {keyVisible ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
                         </button>
                       </div>
+                    </div>
 
-                      {/* 删除按钮（非默认方案才显示） */}
-                      {!isDefault && (
-                        <div className="pt-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => deleteProfile(id)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            删除此方案
-                          </Button>
-                        </div>
-                      )}
-                    </TabsContent>
-                  );
-                })}
-              </Tabs>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                    {/* Base URL（必填） */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        Base URL <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className={inputClassName}
+                        value={profile.baseUrl}
+                        onChange={(e) => updateProfile(id, { baseUrl: e.target.value })}
+                        placeholder="如 https://api.anthropic.com"
+                      />
+                    </div>
+
+                    {/* 模型映射（三个，必填） */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        Haiku 模型 <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className={inputClassName}
+                        value={profile.haikuModel}
+                        onChange={(e) => updateProfile(id, { haikuModel: e.target.value })}
+                        placeholder="如 claude-haiku-4-5"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        Sonnet 模型 <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className={inputClassName}
+                        value={profile.sonnetModel}
+                        onChange={(e) => updateProfile(id, { sonnetModel: e.target.value })}
+                        placeholder="如 claude-sonnet-4-6"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">
+                        Opus 模型 <span className="text-destructive">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        className={inputClassName}
+                        value={profile.opusModel}
+                        onChange={(e) => updateProfile(id, { opusModel: e.target.value })}
+                        placeholder="如 claude-opus-4-6"
+                      />
+                    </div>
+
+                    {/* API 超时时间 */}
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">API 超时时间（毫秒）</label>
+                      <input
+                        type="number"
+                        className={inputClassName}
+                        value={profile.apiTimeoutMs}
+                        onChange={(e) => updateProfile(id, { apiTimeoutMs: Number(e.target.value) })}
+                        min={1000}
+                      />
+                    </div>
+
+                    {/* 禁用非必要流量 */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-sm font-medium">禁用非必要流量</label>
+                        <p className="text-xs text-muted-foreground">关闭 SDK 的非必要网络请求</p>
+                      </div>
+                      <button
+                        type="button"
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                          profile.disableNonessentialTraffic ? "bg-primary" : "bg-muted"
+                        )}
+                        onClick={() => updateProfile(id, { disableNonessentialTraffic: !profile.disableNonessentialTraffic })}
+                      >
+                        <span className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          profile.disableNonessentialTraffic ? "translate-x-6" : "translate-x-1"
+                        )} />
+                      </button>
+                    </div>
+
+                    {/* 删除按钮（非默认方案才显示） */}
+                    {!isDefault && (
+                      <div className="pt-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => deleteProfile(id)}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          删除此方案
+                        </Button>
+                      </div>
+                    )}
+                  </TabsContent>
+                );
+              })}
+            </Tabs>
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

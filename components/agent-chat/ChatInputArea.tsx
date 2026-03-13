@@ -314,7 +314,7 @@ export function ChatInputArea({
                     size="icon-xs"
                     onClick={handleSend}
                     disabled={(!input.trim() && pendingImages.length === 0) || !isSessionReady}
-                    title="发送"
+                    title="发送 (Ctrl+Enter)"
                   >
                     <Send size={14} />
                   </InputGroupButton>

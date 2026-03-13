@@ -294,9 +294,9 @@ export function useSendMessage(params: UseSendMessageParams) {
     }
   };
 
-  // 键盘事件处理：Enter 发送，Shift+Enter 换行
+  // 键盘事件处理：Ctrl+Enter 发送，Enter 换行
   const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
     }

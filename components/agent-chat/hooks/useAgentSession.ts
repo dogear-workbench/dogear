@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSessionStore } from '@/stores/session-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ForkParams } from '@/stores/conversation-store';
 import type { Message } from '../types';
@@ -137,6 +138,15 @@ export function useAgentSession({
           sdkMode: useSdkResume ? 'SDK模式' : '数据库模式'
         });
         setIsSessionReady(true);
+
+        // 同步到 session-store（标签页状态）
+        if (conversationId) {
+          useSessionStore.getState().updateSession(
+            conversationId,
+            newSessionId,
+            response.permissionMode || 'default'
+          );
+        }
 
         // v4: 编辑重发模式下，如果有 editedMessage，会话 ready 后自动发送
         // 纯分叉新对话（isForkNewConversation=true）不自动发送，只加载历史等待用户输入

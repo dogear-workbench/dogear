@@ -82,6 +82,8 @@ export interface AgentChatProps {
   useSdkResume?: boolean;
   /** 是否显示重放的历史消息（仅当 useSdkResume=true 时有效） */
   showReplayMessages?: boolean;
+  /** 覆盖 conversationId（多标签页模式下使用） */
+  conversationIdOverride?: string;
 }
 
 /**

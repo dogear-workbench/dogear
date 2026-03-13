@@ -4,7 +4,8 @@ import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 
@@ -12,7 +13,9 @@ import { ArticlePreview } from '@/components/ArticlePreview';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useAnalysisStore } from '@/stores/analysis-store';
+import { useConversationStore } from '@/stores/conversation-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useSessionStore } from '@/stores/session-store';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -49,6 +52,16 @@ export default function Home() {
   const hideUrlInput = useArticleStore((s) => s.hideUrlInput);
   const setArticleUrlInput = useArticleStore((s) => s.setArticleUrlInput);
   const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
+
+  // 对话状态
+  const selectedConversation = useConversationStore((s) => s.selectedConversation);
+  const newConversation = useConversationStore((s) => s.newConversation);
+
+  // 多标签页状态
+  const tabs = useSessionStore((s) => s.tabs);
+  const activeTabId = useSessionStore((s) => s.activeTabId);
+  const closeTab = useSessionStore((s) => s.closeTab);
+  const switchTab = useSessionStore((s) => s.switchTab);
 
   // 分析状态
   const analyzing = useAnalysisStore((s) => s.analyzing);
@@ -139,9 +152,6 @@ export default function Home() {
         {/* 左侧：对话列表 + 文章列表 */}
         <aside className="w-64 border-r bg-muted/30 flex flex-col">
           {/* 对话列表区域 */}
-          <div className="p-3 border-b">
-            <h2 className="text-sm font-semibold">对话列表</h2>
-          </div>
           <div className="flex-1 overflow-hidden">
             <ConversationList />
           </div>
@@ -154,15 +164,70 @@ export default function Home() {
 
         {/* 中间：对话窗口 */}
         <section className="flex-1 flex flex-col min-w-0">
-          <div className="p-3 border-b">
-            <h2 className="text-sm font-semibold">AI 助手</h2>
-          </div>
-          <div className="flex-1 overflow-hidden">
-            <AgentChat
-              placeholder="我可以帮你分析书籍内容、回答问题..."
-              showStatusHint={false}
-            />
-          </div>
+          {/* 标签页头 */}
+          {tabs.length > 0 && (
+            <div className="flex items-center border-b bg-muted/30 overflow-x-auto">
+              {tabs.map((tab) => (
+                <div
+                  key={tab.conversationId}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
+                    activeTabId === tab.conversationId
+                      ? 'bg-background font-medium'
+                      : 'hover:bg-muted/50 text-muted-foreground'
+                  )}
+                  onClick={() => switchTab(tab.conversationId)}
+                >
+                  {tab.isStreaming && (
+                    <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
+                  )}
+                  <span className="truncate">{tab.conversationTitle}</span>
+                  <button
+                    className="ml-1 p-0.5 rounded hover:bg-muted shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      closeTab(tab.conversationId);
+                    }}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* 标签页内容 */}
+          {tabs.length > 0 ? (
+            <div className="flex-1 overflow-hidden relative">
+              {tabs.map((tab) => (
+                <div
+                  key={tab.conversationId}
+                  className="absolute inset-0"
+                  style={{ display: activeTabId === tab.conversationId ? 'block' : 'none' }}
+                >
+                  <AgentChat
+                    placeholder="我可以帮你分析书籍内容、回答问题..."
+                    showStatusHint={false}
+                    conversationIdOverride={tab.conversationId}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center space-y-4">
+                <MessageSquareText className="w-12 h-12 mx-auto text-muted-foreground/50" />
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">还没有选择对话</p>
+                  <p className="text-xs text-muted-foreground/70">从左侧选择一个对话，或者创建新对话</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => newConversation()}>
+                  <Plus className="w-4 h-4 mr-1" />
+                  新建对话
+                </Button>
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 右侧：预览（书籍 or 文章） */}
