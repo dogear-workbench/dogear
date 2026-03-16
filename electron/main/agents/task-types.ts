@@ -122,7 +122,11 @@ export interface ExtendedSessionMessage {
     | 'tool_failure'        // PostToolUseFailure hook 触发
     | 'notification'        // Notification hook 触发
     | 'task_notification'   // 子代理任务通知
-    | 'ask_user_question';  // AskUserQuestion 工具触发
+    | 'ask_user_question'   // AskUserQuestion 工具触发
+    // SDK 系统消息类型（斜杠命令相关）
+    | 'compact_boundary'    // 对话压缩分隔线
+    | 'compacting'          // 正在压缩中
+    | 'local_command_output'; // 本地命令输出
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -166,6 +170,9 @@ export interface ExtendedSessionMessage {
     options: Array<{ label: string; description?: string }>;
     multiSelect?: boolean;
   }>;
+  // compact_boundary 相关字段
+  compactTrigger?: 'manual' | 'auto';  // 压缩触发方式
+  compactPreTokens?: number;           // 压缩前 token 数
 }
 
 /**

@@ -151,6 +151,44 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       );
     }
 
+    // ==================== 斜杠命令相关消息 ====================
+
+    case 'compact_boundary':
+      return (
+        <div className="flex items-center gap-3 py-2">
+          <div className="flex-1 border-t border-dashed border-indigo-300"></div>
+          <div className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            对话已压缩
+            {block.compactTrigger === 'manual' ? '（手动）' : '（自动）'}
+            {block.compactPreTokens && (
+              <span className="text-indigo-400">· 压缩前 {block.compactPreTokens.toLocaleString()} tokens</span>
+            )}
+          </div>
+          <div className="flex-1 border-t border-dashed border-indigo-300"></div>
+        </div>
+      );
+
+    case 'compacting':
+      return (
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-50 border border-indigo-200 text-xs text-indigo-600">
+          <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-pulse"></div>
+          正在压缩对话历史...
+        </div>
+      );
+
+    case 'local_command_output':
+      return block.content ? (
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+          <div className="text-xs text-gray-500 mb-1">命令输出</div>
+          <div className="text-sm text-gray-700 whitespace-pre-wrap font-mono">
+            {block.content}
+          </div>
+        </div>
+      ) : null;
+
     case 'error':
       return (
         <div className="bg-red-50 border border-red-200 rounded-lg p-3">

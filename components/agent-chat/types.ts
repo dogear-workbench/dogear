@@ -17,6 +17,14 @@ export interface Message {
   model?: string;
   // 用户附带的图片（预览用）
   images?: Array<{ preview: string }>;
+  // 系统注入消息标记（skill 加载、command caveat 等，isMeta=true 的 user 消息）
+  isMeta?: boolean;
+  // 压缩摘要消息（isCompactSummary=true 的 user 消息）
+  isCompactSummary?: boolean;
+  // 压缩分隔标记（虚拟消息，用于在 UI 中画分隔线和折叠历史）
+  isCompactBoundary?: boolean;
+  // 压缩元数据
+  compactMetadata?: { trigger?: string; preTokens?: number };
 }
 
 /**
@@ -28,7 +36,9 @@ export interface ContentBlock {
     // Hook 事件类型
     | 'session_start' | 'session_end' | 'stop' | 'tool_failure' | 'notification' | 'task_notification'
     // AskUserQuestion 类型
-    | 'ask_user_question';
+    | 'ask_user_question'
+    // SDK 系统消息类型（斜杠命令相关）
+    | 'compact_boundary' | 'compacting' | 'local_command_output';
   id?: string;
   content?: string;
   toolName?: string;
@@ -71,6 +81,9 @@ export interface ContentBlock {
   }>;
   askUserAnswers?: Record<string, string>;  // 用户已提交的答案
   askUserResolved?: boolean;                // 是否已回答
+  // compact_boundary 相关字段
+  compactTrigger?: 'manual' | 'auto';  // 压缩触发方式
+  compactPreTokens?: number;           // 压缩前 token 数
 }
 
 export interface AgentChatProps {

@@ -1,11 +1,15 @@
 import { useState } from 'react';
-import { Pencil, GitBranch } from 'lucide-react';
+import { Pencil, GitBranch, Settings, ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
 import { parseUserMessageReferences, formatModelName } from './utils';
 import type { Message } from './types';
+
+/** 长文本折叠阈值 */
+const COLLAPSE_THRESHOLD = 300;
 
 export function MessageItem({
   message,
@@ -28,15 +32,50 @@ export function MessageItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editContent, setEditContent] = useState(message.content);
 
+  // 长文本折叠状态
+  const [isExpanded, setIsExpanded] = useState(false);
+  const needsCollapse = isUser && message.content.length > COLLAPSE_THRESHOLD;
+
+  // 压缩摘要消息：特殊卡片样式
+  if (message.isCompactSummary) {
+    return (
+      <div className="w-full py-2 group">
+        <Collapsible>
+          <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-xs text-indigo-700 hover:bg-indigo-100 transition-colors cursor-pointer">
+            <FileText size={14} />
+            <span className="font-medium">压缩摘要</span>
+            <span className="text-indigo-400 ml-auto">点击展开</span>
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="mt-1 px-3 py-2 rounded-lg bg-indigo-50/50 border border-indigo-100 text-xs text-indigo-800 whitespace-pre-wrap max-h-[400px] overflow-y-auto">
+              {message.content}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full py-3 border-b border-gray-100 last:border-0 group">
       {isUser ? (
-        // 用户消息
+        // 用户消息（含 isMeta 系统消息的区分渲染）
         <div className="flex items-start gap-3">
-          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-            <span className="text-white text-sm font-medium">你</span>
+          {/* 头像：isMeta 用齿轮灰色，普通用蓝色 */}
+          <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
+            message.isMeta ? 'bg-gray-400' : 'bg-blue-600'
+          }`}>
+            {message.isMeta ? (
+              <Settings size={14} className="text-white" />
+            ) : (
+              <span className="text-white text-sm font-medium">你</span>
+            )}
           </div>
           <div className="flex-1 min-w-0">
+            {/* isMeta 标签 */}
+            {message.isMeta && (
+              <div className="text-[10px] text-gray-400 mb-1">系统</div>
+            )}
             {isEditing ? (
               // 编辑模式
               <div className="space-y-2">
@@ -75,8 +114,8 @@ export function MessageItem({
                 const hasRefs = parsed.articleRefs.length > 0 || parsed.snippetRefs.length > 0;
                 return (
                   <div className="relative">
-                    {/* 引用芯片（只读，无关闭按钮） */}
-                    {hasRefs && (
+                    {/* 引用芯片（只读，无关闭按钮）— isMeta 消息不渲染引用 */}
+                    {!message.isMeta && hasRefs && (
                       <div className="flex flex-wrap gap-1.5 mb-2">
                         {parsed.articleRefs.map((ref, i) => (
                           <span
@@ -100,8 +139,39 @@ export function MessageItem({
                         ))}
                       </div>
                     )}
-                    <div className="text-sm text-gray-900 whitespace-pre-wrap break-words pr-8">
-                      {parsed.userMessage}
+                    {/* 消息文本：isMeta 用灰色小字，普通用正常样式；长文本支持折叠 */}
+                    <div className={`whitespace-pre-wrap break-words pr-8 ${
+                      message.isMeta
+                        ? 'text-xs text-gray-500 bg-gray-50 rounded-md px-2 py-1.5'
+                        : 'text-sm text-gray-900'
+                    }`}>
+                      {needsCollapse && !isExpanded ? (
+                        <>
+                          <span className="line-clamp-3">
+                            {message.isMeta ? message.content : parsed.userMessage}
+                          </span>
+                          <button
+                            onClick={() => setIsExpanded(true)}
+                            className="text-xs text-blue-500 hover:text-blue-700 mt-1 flex items-center gap-0.5"
+                          >
+                            <ChevronRight size={12} />
+                            展开全部
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          {message.isMeta ? message.content : parsed.userMessage}
+                          {needsCollapse && isExpanded && (
+                            <button
+                              onClick={() => setIsExpanded(false)}
+                              className="text-xs text-blue-500 hover:text-blue-700 mt-1 flex items-center gap-0.5"
+                            >
+                              <ChevronDown size={12} />
+                              收起
+                            </button>
+                          )}
+                        </>
+                      )}
                     </div>
                     {/* 用户附带的图片缩略图 */}
                     {message.images && message.images.length > 0 && (
@@ -116,8 +186,8 @@ export function MessageItem({
                         ))}
                       </div>
                     )}
-                    {/* 编辑按钮 - hover 时显示 */}
-                    {onEditResend && (
+                    {/* 编辑按钮 - hover 时显示（isMeta 消息不可编辑） */}
+                    {onEditResend && !message.isMeta && (
                       <Button
                         variant="ghost"
                         size="icon-sm"

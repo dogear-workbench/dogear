@@ -21,6 +21,8 @@ import { client } from '@/lib/client';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { PendingImage } from './hooks/useImageAttachment';
+import { SlashCommandMenu } from './SlashCommandMenu';
+import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
 interface ChatInputAreaProps {
   input: string;
@@ -43,6 +45,12 @@ interface ChatInputAreaProps {
   removePendingImage: (index: number) => void;
   insertModeChangeNotice: (mode: string) => void;
   setIsLoading: (loading: boolean) => void;
+  // 斜杠命令相关
+  isSlashMenuOpen: boolean;
+  filteredCommands: SlashCommandInfo[];
+  filterQuery: string;
+  onSlashCommandSelect: (cmd: SlashCommandInfo) => void;
+  onSlashMenuClose: () => void;
 }
 
 export function ChatInputArea({
@@ -66,6 +74,11 @@ export function ChatInputArea({
   removePendingImage,
   insertModeChangeNotice,
   setIsLoading,
+  isSlashMenuOpen,
+  filteredCommands,
+  filterQuery,
+  onSlashCommandSelect,
+  onSlashMenuClose,
 }: ChatInputAreaProps) {
   // 从 reference store 读取引用数据
   const referencedArticles = useReferenceStore((s) => s.referencedArticles);
@@ -84,6 +97,16 @@ export function ChatInputArea({
       ) : (
         <>
           {/* 主输入容器 — InputGroup + Textarea + Addon */}
+          <div className="relative">
+            {/* 斜杠命令浮动菜单 */}
+            <SlashCommandMenu
+              commands={filteredCommands}
+              isOpen={isSlashMenuOpen}
+              filterQuery={filterQuery}
+              onSelect={onSlashCommandSelect}
+              onClose={onSlashMenuClose}
+            />
+          </div>
           <InputGroup className="rounded-xl bg-muted/50 h-auto flex-col">
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
             {(referencedArticles.length > 0 || quotedSnippets.length > 0 || pendingImages.length > 0) && (
@@ -177,7 +200,7 @@ export function ChatInputArea({
                 }
               }}
               placeholder={placeholder}
-              className="min-h-[2.5rem] px-3 py-3"
+              className="min-h-[2.5rem] max-h-[200px] overflow-y-auto px-3 py-3"
               rows={1}
               disabled={isLoading || !isSessionReady}
             />

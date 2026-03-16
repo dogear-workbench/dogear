@@ -199,6 +199,9 @@ export function useSessionMessages({
               taskId: extendedMsg.taskId,
               taskStatus: extendedMsg.taskStatus,
               taskSummary: extendedMsg.taskSummary,
+              // compact_boundary 相关字段
+              compactTrigger: extendedMsg.compactTrigger,
+              compactPreTokens: extendedMsg.compactPreTokens,
             };
 
             updated[lastIdx] = {

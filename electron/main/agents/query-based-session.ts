@@ -515,6 +515,26 @@ export class QueryBasedSession extends EventEmitter {
   }
 
   /**
+   * 获取支持的斜杠命令列表
+   */
+  async getSupportedCommands(): Promise<Array<{ name: string; description: string; argumentHint: string }>> {
+    if (!this.query) {
+      return [];
+    }
+    try {
+      const commands = await this.query.supportedCommands();
+      return commands.map(cmd => ({
+        name: cmd.name,
+        description: cmd.description,
+        argumentHint: cmd.argumentHint,
+      }));
+    } catch (error) {
+      this.logger.error('获取支持的命令失败:', error);
+      return [];
+    }
+  }
+
+  /**
    * 发送消息到会话
    */
   async sendMessage(content: string | Array<{ type: string; [key: string]: any }>): Promise<void> {
@@ -864,6 +884,18 @@ export class QueryBasedSession extends EventEmitter {
           this.logger.info('收到 SDK session_id:', this.sdkSessionId);
           // 发出 session_id 事件，让主进程保存到数据库
           this.emit('session_init', { session_id: this.sdkSessionId });
+
+          // 从 init 消息中提取会话能力信息，通知前端
+          const initMsg = sdkMessage as any;
+          if (initMsg.slash_commands || initMsg.tools || initMsg.skills || initMsg.mcp_servers) {
+            this.emit('session_capabilities', {
+              slashCommands: initMsg.slash_commands || [],
+              tools: initMsg.tools || [],
+              skills: initMsg.skills || [],
+              mcpServers: initMsg.mcp_servers || [],
+            });
+          }
+
           // ⚠️ init 消息不需要显示在界面上，只用于内部初始化
           return null;
         }
@@ -877,6 +909,39 @@ export class QueryBasedSession extends EventEmitter {
             taskId: taskMsg.task_id,
             taskStatus: taskMsg.status,
             taskSummary: taskMsg.summary,
+            timestamp,
+          };
+        }
+
+        // 对话压缩分隔线（/compact 或自动压缩完成后）
+        if (sdkMessage.subtype === 'compact_boundary') {
+          const compactMsg = sdkMessage as any;
+          const metadata = compactMsg.compact_metadata || {};
+          this.logger.info('对话压缩完成:', metadata.trigger, '压缩前 tokens:', metadata.pre_tokens);
+          return {
+            type: 'compact_boundary',
+            compactTrigger: metadata.trigger,
+            compactPreTokens: metadata.pre_tokens,
+            timestamp,
+          };
+        }
+
+        // 正在压缩中状态
+        if (sdkMessage.subtype === 'status' && (sdkMessage as any).status === 'compacting') {
+          this.logger.info('对话正在压缩...');
+          return {
+            type: 'compacting',
+            timestamp,
+          };
+        }
+
+        // 本地命令输出（SDK 内置命令如 /compact 的文本输出）
+        if (sdkMessage.subtype === 'local_command_output') {
+          const cmdMsg = sdkMessage as any;
+          this.logger.info('本地命令输出:', cmdMsg.content?.substring(0, 100));
+          return {
+            type: 'local_command_output',
+            content: cmdMsg.content || '',
             timestamp,
           };
         }

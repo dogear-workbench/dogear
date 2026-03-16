@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronRight, Archive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -15,6 +16,7 @@ import { useSessionMessages } from './hooks/useSessionMessages';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { useImageAttachment } from './hooks/useImageAttachment';
 import { useSendMessage } from './hooks/useSendMessage';
+import { useSlashCommands } from './hooks/useSlashCommands';
 import { StreamingIndicator } from './StreamingIndicator';
 
 /**
@@ -94,6 +96,18 @@ export function AgentChat({
     setPendingImages: imageAttachment.setPendingImages,
   });
 
+  // 斜杠命令
+  const slashCommands = useSlashCommands({
+    sessionId,
+    input: sendMessage.input,
+  });
+
+  // 选择命令时更新 input
+  const handleSlashCommandSelect = (cmd: import('@/stores/slash-command-store').SlashCommandInfo) => {
+    const newInput = slashCommands.handleSlashCommandSelect(cmd);
+    sendMessage.setInput(newInput);
+  };
+
   // 自动滚动到底部
   const messagesEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -112,9 +126,15 @@ export function AgentChat({
         )}
 
         {(() => {
+          // 找到最后一个 compact_boundary 的位置
+          const lastCompactIdx = messages.reduce(
+            (acc, m, i) => m.isCompactBoundary ? i : acc, -1
+          );
           // 仅最后一条用户消息可编辑重发，历史消息只读
           const lastUserIdx = messages.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
-          return messages.map((message, index) => (
+
+          // 渲染单条消息的辅助函数
+          const renderMessage = (message: typeof messages[0], index: number) => (
             <MessageItem
               key={index}
               message={message}
@@ -125,7 +145,39 @@ export function AgentChat({
               onPermissionResolved={sendMessage.handlePermissionResolved}
               onAskUserResolved={sendMessage.handleAskUserResolved}
             />
-          ));
+          );
+
+          if (lastCompactIdx > 0) {
+            // 有压缩历史：压缩边界之前的消息折叠
+            const beforeCompact = messages.slice(0, lastCompactIdx);
+            const compactBoundary = messages[lastCompactIdx];
+            const afterCompact = messages.slice(lastCompactIdx + 1);
+            return (
+              <>
+                {/* 折叠的历史消息 */}
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 my-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer">
+                    <Archive size={14} />
+                    <span>查看 {beforeCompact.length} 条历史消息</span>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div className="opacity-70">
+                      {beforeCompact.map((msg, i) => renderMessage(msg, i))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+
+                {/* 压缩分隔线（compactBoundary 的 contentBlocks 中已有 compact_boundary 块） */}
+                {renderMessage(compactBoundary, lastCompactIdx)}
+
+                {/* 压缩后的消息正常渲染 */}
+                {afterCompact.map((msg, i) => renderMessage(msg, lastCompactIdx + 1 + i))}
+              </>
+            );
+          }
+
+          // 无压缩历史：正常渲染所有消息
+          return messages.map((message, index) => renderMessage(message, index));
         })()}
 
         {/* Plan 模式下，assistant 完成输出后显示"执行计划"按钮 */}
@@ -201,6 +253,11 @@ export function AgentChat({
         removePendingImage={imageAttachment.removePendingImage}
         insertModeChangeNotice={sendMessage.insertModeChangeNotice}
         setIsLoading={setIsLoading}
+        isSlashMenuOpen={slashCommands.isSlashMenuOpen}
+        filteredCommands={slashCommands.filteredCommands}
+        filterQuery={slashCommands.filterQuery}
+        onSlashCommandSelect={handleSlashCommandSelect}
+        onSlashMenuClose={slashCommands.closeSlashMenu}
       />
     </div>
   );

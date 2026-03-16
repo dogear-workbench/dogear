@@ -186,11 +186,100 @@ export function useSendMessage(params: UseSendMessageParams) {
     });
   }, [conversationId, forkConversation]);
 
+  // 斜杠命令拦截处理，返回 true 表示已处理（不走正常发送流程）
+  const handleSlashCommand = useCallback(async (text: string): Promise<boolean> => {
+    const trimmed = text.trim();
+    if (!trimmed.startsWith('/') || !sessionId) return false;
+
+    const parts = trimmed.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1).join(' ');
+
+    switch (cmd) {
+      case '/clear': {
+        // 前端清空消息 + 关闭当前会话
+        setMessages([]);
+        setIsLoading(false);
+        try {
+          await client.closeQueryBasedSession({ sessionId });
+        } catch (e) {
+          console.warn('关闭旧会话失败:', e);
+        }
+        // 通过 store 触发新对话创建
+        useConversationStore.getState().newConversation();
+        return true;
+      }
+
+      case '/compact': {
+        // 直接发送给 SDK 处理（SDK 内置命令）
+        setInput('');
+        // 插入状态提示
+        setMessages(prev => {
+          const compactingBlock: ContentBlock = {
+            type: 'compacting',
+            timestamp: Date.now(),
+          };
+          const lastIdx = prev.length - 1;
+          if (lastIdx >= 0 && prev[lastIdx].role === 'assistant') {
+            const updated = [...prev];
+            updated[lastIdx] = {
+              ...prev[lastIdx],
+              contentBlocks: [...(prev[lastIdx].contentBlocks || []), compactingBlock],
+            };
+            return updated;
+          }
+          return [...prev, {
+            role: 'assistant' as const,
+            content: '',
+            timestamp: Date.now(),
+            contentBlocks: [compactingBlock],
+          }];
+        });
+        try {
+          await client.sendQueryBasedSessionMessage({ sessionId, content: '/compact' });
+        } catch (e) {
+          console.error('/compact 发送失败:', e);
+        }
+        return true;
+      }
+
+      case '/search': {
+        if (!args) return false; // 没有关键词则不拦截
+        // 转换为自然语言搜索提示，让 Agent 使用 SearchBookContent 工具
+        const searchPrompt = `请在当前书籍中搜索与「${args}」相关的内容，使用 SearchBookContent 工具查找相关段落并总结结果。`;
+        // 替换 input 为搜索提示，走正常发送流程
+        setInput('');
+        // 直接发送构造的 prompt
+        setMessages(prev => [
+          ...prev,
+          { role: 'user' as const, content: `/search ${args}`, timestamp: Date.now() },
+          { role: 'assistant' as const, content: '', timestamp: Date.now(), isStreaming: true, contentBlocks: [] },
+        ]);
+        setIsLoading(true);
+        try {
+          await client.sendQueryBasedSessionMessage({ sessionId, content: searchPrompt });
+        } catch (e) {
+          console.error('/search 发送失败:', e);
+          setIsLoading(false);
+        }
+        return true;
+      }
+
+      default:
+        return false;
+    }
+  }, [sessionId, setInput, setMessages, setIsLoading]);
+
   // 发送消息
   const handleSend = async () => {
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
     if ((!hasText && !hasImages) || isLoading || !sessionId || !isSessionReady) return;
+
+    // 斜杠命令拦截
+    if (hasText && !hasImages && await handleSlashCommand(input)) {
+      return;
+    }
 
     const userMessage = input;
     const imagesToSend = [...pendingImages];

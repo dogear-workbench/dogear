@@ -97,4 +97,13 @@ export type RendererHandlers = {
       multiSelect?: boolean;
     }>;
   }) => void;
+
+  // 会话能力信息（SDK init 消息中的命令/工具/技能列表）
+  sessionCapabilities: (data: {
+    sessionId: string;
+    sdkCommands: Array<{ name: string; description: string; argumentHint: string }>;
+    tools: string[];
+    skills: string[];
+    mcpServers: Array<{ name: string; status: string }>;
+  }) => void;
 };

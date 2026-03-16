@@ -111,16 +111,65 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
             }
             console.log('Skill 内容映射:', skillContentMap.size, '个');
 
-            // 第三步：合并连续的 assistant 消息，跳过空的 user 消息
+            // 第三步：合并连续的 assistant 消息，处理特殊消息类型
             const historyMessages: Message[] = [];
             let currentAssistantMessage: Message | null = null;
+
+            // 辅助：保存当前累积的 assistant 消息
+            const flushAssistant = () => {
+              if (currentAssistantMessage) {
+                historyMessages.push(currentAssistantMessage);
+                currentAssistantMessage = null;
+              }
+            };
 
             for (const msg of historyResult.messages) {
               const isUser = msg.type === 'user';
               const content = msg.content;
 
-              // 跳过 isMeta 消息（skill 内容已经在上面收集了）
-              if (msg.isMeta) {
+              // compact_boundary：插入压缩分隔标记
+              if (msg.type === 'compact_boundary' || msg.isCompactBoundary) {
+                flushAssistant();
+                historyMessages.push({
+                  role: 'assistant',
+                  content: '',
+                  timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+                  isCompactBoundary: true,
+                  compactMetadata: msg.compactMetadata,
+                  contentBlocks: [{
+                    type: 'compact_boundary',
+                    compactTrigger: msg.compactMetadata?.trigger as 'manual' | 'auto' | undefined,
+                    compactPreTokens: msg.compactMetadata?.preTokens,
+                    timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+                  }],
+                });
+                continue;
+              }
+
+              // isMeta 且有 sourceToolUseID 的消息：已在 skillContentMap 中收集，
+              // 同时也作为 isMeta 消息渲染（区别于普通用户消息）
+              if (msg.isMeta && isUser) {
+                flushAssistant();
+                // 提取文本内容
+                let textContent = '';
+                if (typeof content === 'string') {
+                  textContent = content;
+                } else if (Array.isArray(content)) {
+                  for (const block of content) {
+                    if (typeof block === 'string') textContent += block;
+                    else if (block?.type === 'text') textContent += block.text || '';
+                  }
+                }
+                // 跳过空的 isMeta 消息
+                if (textContent.trim()) {
+                  historyMessages.push({
+                    role: 'user',
+                    content: textContent,
+                    timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+                    isMeta: true,
+                    isCompactSummary: msg.isCompactSummary || false,
+                  });
+                }
                 continue;
               }
 
@@ -142,10 +191,7 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
 
               if (isUser) {
                 // 用户消息：先保存之前的 assistant 消息
-                if (currentAssistantMessage) {
-                  historyMessages.push(currentAssistantMessage);
-                  currentAssistantMessage = null;
-                }
+                flushAssistant();
 
                 // 创建用户消息
                 let textContent = '';
@@ -170,6 +216,7 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
                   role: 'user',
                   content: textContent,
                   timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
+                  isCompactSummary: msg.isCompactSummary || false,
                 });
               } else {
                 // assistant 消息：合并到当前的 assistant 消息中
@@ -279,9 +326,7 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
             }
 
             // 保存最后一个 assistant 消息
-            if (currentAssistantMessage) {
-              historyMessages.push(currentAssistantMessage);
-            }
+            flushAssistant();
 
             setMessages(historyMessages);
             setTimeout(() => {

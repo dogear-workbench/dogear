@@ -456,6 +456,19 @@ export const agentRouter = {
           });
         });
 
+        // 注册会话能力事件转发（SDK init 消息触发时）
+        session.on('session_capabilities', async (data: { slashCommands: string[]; tools: string[]; skills: string[]; mcpServers: Array<{ name: string; status: string }> }) => {
+          // 调用 supportedCommands() 获取完整命令描述
+          const sdkCommands = await session.getSupportedCommands();
+          handlers.sessionCapabilities.send({
+            sessionId: session.getSessionId(),
+            sdkCommands,
+            tools: data.tools,
+            skills: data.skills,
+            mcpServers: data.mcpServers,
+          });
+        });
+
         // 注册权限请求事件转发（canUseTool 回调触发时）
         session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown; decisionReason?: string }) => {
           handlers.permissionRequest.send({
@@ -578,6 +591,22 @@ export const agentRouter = {
         return { success: true };
       } catch (error) {
         console.error('关闭基于 Query 的会话失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 获取会话支持的斜杠命令列表 */
+  getSessionCapabilities: t.procedure
+    .input<{ sessionId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) return { error: '会话不存在' };
+        const sdkCommands = await session.getSupportedCommands();
+        return { sdkCommands };
+      } catch (error) {
+        console.error('获取会话命令列表失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
       }
     }),
@@ -726,12 +755,28 @@ export const agentRouter = {
           uuid?: string;
           isMeta?: boolean;
           sourceToolUseID?: string;
+          isCompactSummary?: boolean;
+          isCompactBoundary?: boolean;
+          compactMetadata?: { trigger?: string; preTokens?: number };
         }> = [];
 
         for (const line of lines) {
           if (!line.trim()) continue;
           try {
             const parsed = JSON.parse(line);
+
+            // 提取 compact_boundary 系统消息（压缩分隔点）
+            if (parsed.type === 'system' && parsed.subtype === 'compact_boundary') {
+              rawMessages.push({
+                type: 'compact_boundary',
+                timestamp: parsed.timestamp,
+                uuid: parsed.uuid,
+                isCompactBoundary: true,
+                compactMetadata: parsed.compactMetadata,
+              });
+              continue;
+            }
+
             if (
               (parsed.type === 'user' && parsed.message) ||
               (parsed.type === 'assistant' && parsed.message) ||
@@ -744,6 +789,8 @@ export const agentRouter = {
                 uuid: parsed.uuid,
                 isMeta: parsed.isMeta || false,
                 sourceToolUseID: parsed.sourceToolUseID,
+                // 标记压缩摘要消息
+                isCompactSummary: parsed.isCompactSummary || false,
               });
             }
           } catch {
@@ -760,6 +807,9 @@ export const agentRouter = {
           uuid?: string;
           isMeta?: boolean;
           sourceToolUseID?: string;
+          isCompactSummary?: boolean;
+          isCompactBoundary?: boolean;
+          compactMetadata?: { trigger?: string; preTokens?: number };
         }> = [];
 
         let currentAssistantMessage: {
@@ -771,7 +821,20 @@ export const agentRouter = {
         } | null = null;
 
         for (const msg of rawMessages) {
-          if (msg.type === 'user' && msg.message) {
+          // compact_boundary：先保存当前 assistant 消息，再插入分隔标记
+          if (msg.type === 'compact_boundary') {
+            if (currentAssistantMessage) {
+              historyMessages.push({ ...currentAssistantMessage });
+              currentAssistantMessage = null;
+            }
+            historyMessages.push({
+              type: 'compact_boundary',
+              timestamp: msg.timestamp,
+              uuid: msg.uuid,
+              isCompactBoundary: true,
+              compactMetadata: msg.compactMetadata,
+            });
+          } else if (msg.type === 'user' && msg.message) {
             if (currentAssistantMessage) {
               historyMessages.push({ ...currentAssistantMessage });
               currentAssistantMessage = null;
@@ -784,6 +847,7 @@ export const agentRouter = {
               uuid: msg.uuid,
               isMeta: msg.isMeta,
               sourceToolUseID: msg.sourceToolUseID,
+              isCompactSummary: msg.isCompactSummary,
             });
           } else if (msg.type === 'assistant' && msg.message) {
             const contentBlocks = Array.isArray(msg.message.content)
