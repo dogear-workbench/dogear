@@ -71,23 +71,26 @@ electron/
 
 ### 业务组件（components/）
 - `agent-chat/` — AI 聊天模块（从原 AgentChat.tsx 拆分）
-  - `AgentChat.tsx` — 主组件（~180行），组合 hooks + 布局
-  - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏）
-  - `MessageItem.tsx` — 单条消息渲染（用户/助手消息、分叉/编辑按钮）
-  - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser）
+  - `AgentChat.tsx` — 主组件（~225行），组合 hooks + 布局 + 压缩历史折叠
+  - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单）
+  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、分叉/编辑按钮）
+  - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
+  - `SlashCommandMenu.tsx` — 斜杠命令浮动菜单（SDK + 自定义命令）
   - `ThinkingBlock.tsx` — 思考块（可折叠）
+  - `StreamingIndicator.tsx` — 运行状态指示器（思考中/执行工具/生成中）
   - `AskUserQuestionCard.tsx` — AskUser 问题卡片（单选/多选）
   - `PermissionRequestCard.tsx` — 权限请求卡片（允许/拒绝/始终允许）
   - `CitationBadge.tsx` — 引用徽章
-  - `types.ts` — 类型定义（ContentBlock、DisplayMessage 等）
+  - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary 等字段）
   - `utils.ts` — 工具函数
   - `hooks/` — 自定义 hooks
     - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
-    - `useMessageHistory.ts` — 历史消息加载与格式转换
+    - `useMessageHistory.ts` — 历史消息加载（含 compact_boundary/isMeta 处理）
     - `useImageAttachment.ts` — 图片附件（base64、粘贴、预览）
-    - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应
+    - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应、斜杠命令拦截
+    - `useSlashCommands.ts` — 斜杠命令检测、过滤、菜单控制
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `BookConversationList.tsx` — 对话列表，分叉标记，新建/删除对话
@@ -104,6 +107,7 @@ electron/
 - `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发
 - `analysis-store.ts` — 书籍分析状态：分析进度、工具执行、章节处理
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
+- `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
 
 ### 工具函数（lib/）
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
