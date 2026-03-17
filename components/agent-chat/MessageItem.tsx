@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
-import { parseUserMessageReferences, formatModelName } from './utils';
+import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage } from './utils';
 import type { Message } from './types';
 
 /** 长文本折叠阈值 */
@@ -108,8 +108,29 @@ export function MessageItem({
                 </div>
               </div>
             ) : (
-              // 显示模式：解析引用格式并渲染芯片
+              // 显示模式：先检测斜杠命令格式，再解析引用
               (() => {
+                // 检测 SDK 斜杠命令格式 (<command-name> 标签)
+                const slashCmd = parseSlashCommandMessage(message.content);
+                if (slashCmd.isCommand) {
+                  return (
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-gray-100 border border-gray-200 rounded-md text-xs text-gray-600 font-mono">
+                        <span className="text-gray-400">/</span>
+                        {slashCmd.commandName}
+                        {slashCmd.commandArgs && (
+                          <span className="text-gray-400 ml-1">{slashCmd.commandArgs}</span>
+                        )}
+                      </span>
+                      {message.timestamp && (
+                        <span className="text-xs text-gray-400">
+                          {new Date(message.timestamp).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
+
                 const parsed = parseUserMessageReferences(message.content);
                 const hasRefs = parsed.articleRefs.length > 0 || parsed.snippetRefs.length > 0;
                 return (

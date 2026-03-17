@@ -116,4 +116,13 @@ export interface ParsedUserMessage {
   articleRefs: ParsedArticleRef[];
   snippetRefs: ParsedSnippetRef[];
   userMessage: string;
+  /** SDK 斜杠命令（从 <command-name> 格式解析） */
+  slashCommand?: { name: string; args?: string };
+}
+
+/** parseSlashCommandMessage 返回类型 */
+export interface ParsedSlashCommand {
+  isCommand: boolean;
+  commandName?: string;
+  commandArgs?: string;
 }

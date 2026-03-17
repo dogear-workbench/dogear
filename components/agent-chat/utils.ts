@@ -1,4 +1,4 @@
-import type { ParsedUserMessage } from './types';
+import type { ParsedUserMessage, ParsedSlashCommand } from './types';
 
 /**
  * 格式化模型名称为简短显示
@@ -64,4 +64,22 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   result.userMessage = content.replace(/^\n+/, '');
 
   return result;
+}
+
+/**
+ * 检测用户消息是否为 SDK 斜杠命令格式
+ * SDK 存储格式:
+ *   <command-name>/xxx</command-name>
+ *   <command-message>xxx</command-message>
+ *   <command-args>xxx</command-args>
+ */
+export function parseSlashCommandMessage(content: string): ParsedSlashCommand {
+  const match = content.match(/<command-name>\/?(\w[\w-]*)<\/command-name>/);
+  if (!match) return { isCommand: false };
+
+  const commandName = match[1];
+  const argsMatch = content.match(/<command-args>([\s\S]*?)<\/command-args>/);
+  const commandArgs = argsMatch?.[1]?.trim() || undefined;
+
+  return { isCommand: true, commandName, commandArgs: commandArgs || undefined };
 }

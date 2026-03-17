@@ -2,6 +2,7 @@ import { useState, useCallback, type Dispatch, type SetStateAction } from 'react
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import { useSlashCommandStore } from '@/stores/slash-command-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { Message, ContentBlock } from '../types';
 import type { PendingImage } from './useImageAttachment';
@@ -265,8 +266,31 @@ export function useSendMessage(params: UseSendMessageParams) {
         return true;
       }
 
-      default:
+      default: {
+        // 检查是否为 SDK 已注册的命令
+        const cmdName = cmd.slice(1); // 去掉 /
+        const { allCommands } = useSlashCommandStore.getState();
+        const sdkCmd = allCommands.find(c => c.name === cmdName && c.source === 'sdk');
+
+        if (sdkCmd) {
+          // SDK 命令：直接透传给 SDK，以系统消息样式展示
+          setInput('');
+          setMessages(prev => [
+            ...prev,
+            { role: 'user' as const, content: trimmed, timestamp: Date.now(), isMeta: true },
+          ]);
+          setIsLoading(true);
+          try {
+            await client.sendQueryBasedSessionMessage({ sessionId, content: trimmed });
+          } catch (e) {
+            console.error(`SDK 命令 ${cmd} 发送失败:`, e);
+            setIsLoading(false);
+          }
+          return true;
+        }
+
         return false;
+      }
     }
   }, [sessionId, setInput, setMessages, setIsLoading]);
 

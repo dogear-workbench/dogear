@@ -538,6 +538,24 @@ export const agentRouter = {
           }
         });
 
+        // 会话创建后主动推送命令列表，避免用户需等到第一轮对话才能使用斜杠命令
+        setTimeout(async () => {
+          try {
+            const sdkCommands = await session.getSupportedCommands();
+            if (sdkCommands.length > 0) {
+              handlers.sessionCapabilities.send({
+                sessionId: session.getSessionId(),
+                sdkCommands,
+                tools: [],   // init 消息到达后会更新完整信息
+                skills: [],
+                mcpServers: [],
+              });
+            }
+          } catch (e) {
+            console.warn('主动获取命令列表失败（会话初始化中）:', e);
+          }
+        }, 100);
+
         return { sessionId: session.getSessionId(), permissionMode: 'default' };
       } catch (error) {
         console.error('创建基于 Query 的会话失败:', error);
