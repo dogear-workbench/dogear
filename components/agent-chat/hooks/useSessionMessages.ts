@@ -76,10 +76,14 @@ export function useSessionMessages({
 
         // 处理用户消息
         if (extendedMsg.type === 'user') {
+          // SDK 注入的系统消息（如中断提示）标记为 isMeta
+          const isSystemInjected = (extendedMsg.content || '').includes('[Request interrupted by user]');
+
           const newUserMessage: Message = {
             role: 'user',
             content: extendedMsg.content || '',
             timestamp: extendedMsg.timestamp || Date.now(),
+            ...(isSystemInjected ? { isMeta: true } : {}),
           };
           updated.push(newUserMessage);
           setHistoryLoaded(true);  // 收到消息后标记历史已加载

@@ -646,18 +646,31 @@ export class QueryBasedSession extends EventEmitter {
         if (message.type === 'result') {
           this.logger.info('=== 收到结果消息 ===', {
             subtype: message.subtype,
+            is_error: message.is_error,
             totalMessages: messageCount,
             replayMessages: replayCount
           });
+
           if (message.subtype === 'success') {
             this.emit('complete', message);
             this.status = SessionStatus.IDLE;
           } else {
-            this.emit('error', {
-              type: 'error',
-              error: message.errors?.join(', ') || '未知错误',
-              timestamp: Date.now()
-            } as ExtendedSessionMessage);
+            // error 类型结果：检查是否为用户中断（is_error=false 且无实际错误信息）
+            const errorMsg = message as { errors?: string[]; is_error?: boolean };
+            const hasErrors = errorMsg.errors && errorMsg.errors.length > 0;
+
+            if (!errorMsg.is_error && !hasErrors) {
+              // 用户中断：不作为错误处理，正常结束
+              this.logger.info('用户中断，正常结束会话');
+              this.emit('complete', message);
+              this.status = SessionStatus.IDLE;
+            } else {
+              this.emit('error', {
+                type: 'error',
+                error: errorMsg.errors?.join(', ') || '未知错误',
+                timestamp: Date.now()
+              } as ExtendedSessionMessage);
+            }
           }
         }
       }

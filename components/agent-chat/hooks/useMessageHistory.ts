@@ -212,11 +212,15 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
                   continue;
                 }
 
+                // SDK 注入的系统消息（如中断提示）标记为 isMeta
+                const isSystemInjected = textContent.includes('[Request interrupted by user]');
+
                 historyMessages.push({
                   role: 'user',
                   content: textContent,
                   timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
                   isCompactSummary: msg.isCompactSummary || false,
+                  ...(isSystemInjected ? { isMeta: true } : {}),
                 });
               } else {
                 // assistant 消息：合并到当前的 assistant 消息中
