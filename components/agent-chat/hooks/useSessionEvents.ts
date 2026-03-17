@@ -1,4 +1,5 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { toast } from 'sonner';
 import { rendererEvents } from '@/lib/events';
 import type { PermissionMode } from '@/types/electron-api';
 import type { Message, ContentBlock } from '../types';
@@ -120,7 +121,10 @@ export function useSessionEvents({
     const unsubNotify = rendererEvents.agentNotification.listen((data) => {
       if (data.sessionId !== sessionId) return;
       console.log('🔔 收到 Agent 通知:', data);
-      // 未来可接入 Toast 组件展示通知
+      // 通过 Sonner toast 展示 Agent 通知
+      toast.info(data.title || 'Agent 通知', {
+        description: data.message,
+      });
     });
 
     return () => {

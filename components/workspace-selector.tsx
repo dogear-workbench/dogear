@@ -1,4 +1,5 @@
 
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -44,7 +45,7 @@ export function WorkspaceSelector() {
       }
     } catch (error) {
       console.error('选择工作区失败:', error);
-      alert(`选择工作区失败: ${(error as Error).message}`);
+      toast.error('选择工作区失败', { description: (error as Error).message });
     }
   };
 

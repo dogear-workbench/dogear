@@ -1,4 +1,5 @@
 
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useBooks } from '@/lib/hooks';
 import { BookCard } from './book-card';
@@ -20,7 +21,7 @@ export function BookList() {
       }
     } catch (error) {
       console.error('Import failed:', error);
-      alert(`导入失败: ${(error as Error).message}`);
+      toast.error('导入失败', { description: (error as Error).message });
     } finally {
       setImporting(false);
     }

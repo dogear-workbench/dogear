@@ -178,6 +178,14 @@ app.whenReady().then(async () => {
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
 
+  // 初始化日志文件写入
+  try {
+    const { initFileLogging } = await import('./agents/logger.js');
+    await initFileLogging();
+  } catch (error) {
+    console.error('初始化日志系统失败:', error);
+  }
+
   // 执行数据迁移（旧路径 → 新路径）
   try {
     const workspaceJsonService = await import('./services/workspace-json-service.js');
@@ -221,4 +229,26 @@ app.on('window-all-closed', async () => {
 app.on('before-quit', async () => {
   // 关闭 Agent 管理器
   await shutdownAgentManager();
+});
+
+// ==================== 主进程全局异常捕获 ====================
+
+process.on('uncaughtException', (error) => {
+  // 动态导入 logger，避免模块加载顺序问题
+  import('./agents/logger.js').then(({ mainLogger }) => {
+    mainLogger.error('[主进程未捕获异常]', error.message, error.stack || '');
+  }).catch(() => {
+    console.error('[主进程未捕获异常]', error);
+  });
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+
+  import('./agents/logger.js').then(({ mainLogger }) => {
+    mainLogger.error('[主进程未处理的Promise拒绝]', message, stack || '');
+  }).catch(() => {
+    console.error('[主进程未处理的Promise拒绝]', reason);
+  });
 });

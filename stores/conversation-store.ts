@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type { Conversation } from '@/components/BookConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
@@ -204,7 +205,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     try {
       const result = await client.create({ workspaceId: workspace.id });
       if (result.error || !result.conversationId) {
-        alert(`创建对话失败: ${result.error || '未知错误'}`);
+        toast.error('创建对话失败', { description: result.error || '未知错误' });
         return;
       }
 
@@ -218,7 +219,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }
     } catch (error) {
       console.error('创建对话失败:', error);
-      alert(`创建对话失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('创建对话失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -231,7 +232,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     try {
       const result = await client.deleteConversation({ conversationId, workspaceId: workspace.id });
       if (result.error) {
-        alert(`删除失败: ${result.error}`);
+        toast.error('删除对话失败', { description: result.error });
         return;
       }
 
@@ -243,7 +244,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       await get().loadConversations();
     } catch (error) {
       console.error('删除对话失败:', error);
-      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('删除对话失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -264,7 +265,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }
 
       if (!parentConv.sdk_session_id) {
-        alert('该对话不支持分叉（缺少 SDK session）');
+        toast.warning('该对话不支持分叉', { description: '缺少 SDK session' });
         return;
       }
 
@@ -278,7 +279,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
 
       if (forkResult.error || !forkResult.conversationId) {
-        alert(`创建分叉对话失败: ${forkResult.error || '未知错误'}`);
+        toast.error('创建分叉对话失败', { description: forkResult.error || '未知错误' });
         return;
       }
 
@@ -302,7 +303,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       }
     } catch (error) {
       console.error('分叉对话失败:', error);
-      alert(`分叉对话失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('分叉对话失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -318,7 +319,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const conv = convResult.conversation;
 
       if (!conv?.sdk_session_id) {
-        alert('该对话不支持编辑重发（缺少 SDK session）');
+        toast.warning('该对话不支持编辑重发', { description: '缺少 SDK session' });
         return;
       }
 
@@ -333,7 +334,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
     } catch (error) {
       console.error('编辑重发失败:', error);
-      alert(`编辑重发失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('编辑重发失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 

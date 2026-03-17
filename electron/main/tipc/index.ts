@@ -10,6 +10,7 @@ import { conversationsRouter } from './conversations.js';
 import { articleRouter } from './article.js';
 import { explorerRouter } from './explorer.js';
 import { settingsRouter } from './settings.js';
+import { logRouter } from './log.js';
 
 export const router = {
   ...dbRouter,
@@ -22,6 +23,7 @@ export const router = {
   ...articleRouter,
   ...explorerRouter,
   ...settingsRouter,
+  ...logRouter,
 };
 
 export type Router = typeof router;

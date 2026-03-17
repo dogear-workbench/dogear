@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
 import type { Book } from '@/types';
@@ -120,6 +121,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const filePath = await client.selectFile();
       if (filePath) {
         await client.importBook({ filePath, workspaceId: workspace.id });
+        toast.success('书籍导入成功');
         // 导入成功后刷新文件列表和对话列表
         get().loadWorkspaceFiles();
         import('./conversation-store').then(({ useConversationStore }) => {
@@ -128,7 +130,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
     } catch (error) {
       console.error('导入失败:', error);
-      alert(`导入失败: ${(error as Error).message}`);
+      toast.error('导入失败', { description: (error as Error).message });
     } finally {
       set({ importing: false });
     }
@@ -149,7 +151,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       get().loadWorkspaceFiles();
     } catch (error) {
       console.error('删除失败:', error);
-      alert(`删除失败: ${(error as Error).message}`);
+      toast.error('删除失败', { description: (error as Error).message });
     } finally {
       set({ deleting: false });
     }
@@ -178,11 +180,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!workspace) return;
     try {
       const result = await client.createFolder({ workspaceId: workspace.id, parentPath, name });
-      if (result.error) { alert(`创建失败: ${result.error}`); return; }
+      if (result.error) { toast.error('创建文件夹失败', { description: result.error }); return; }
       await get().loadWorkspaceFiles();
     } catch (error) {
       console.error('创建文件夹失败:', error);
-      alert(`创建失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('创建文件夹失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -191,11 +193,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!workspace) return;
     try {
       const result = await client.renameItem({ workspaceId: workspace.id, itemPath, newName });
-      if (result.error) { alert(`重命名失败: ${result.error}`); return; }
+      if (result.error) { toast.error('重命名失败', { description: result.error }); return; }
       await get().loadWorkspaceFiles();
     } catch (error) {
       console.error('重命名失败:', error);
-      alert(`重命名失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('重命名失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -204,11 +206,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!workspace) return;
     try {
       const result = await client.moveItem({ workspaceId: workspace.id, sourcePath, targetPath });
-      if (result.error) { alert(`移动失败: ${result.error}`); return; }
+      if (result.error) { toast.error('移动失败', { description: result.error }); return; }
       await get().loadWorkspaceFiles();
     } catch (error) {
       console.error('移动失败:', error);
-      alert(`移动失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('移动失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -217,11 +219,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!workspace) return;
     try {
       const result = await client.copyItem({ workspaceId: workspace.id, sourcePath, targetPath });
-      if (result.error) { alert(`复制失败: ${result.error}`); return; }
+      if (result.error) { toast.error('复制失败', { description: result.error }); return; }
       await get().loadWorkspaceFiles();
     } catch (error) {
       console.error('复制失败:', error);
-      alert(`复制失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('复制失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -231,7 +233,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     if (!confirm('确定要删除吗？此操作不可恢复。')) return;
     try {
       const result = await client.deleteItem({ workspaceId: workspace.id, itemPath });
-      if (result.error) { alert(`删除失败: ${result.error}`); return; }
+      if (result.error) { toast.error('删除失败', { description: result.error }); return; }
       // 如果删除的是当前选中的文件，清除选中
       const { selectedFile } = get();
       if (selectedFile && selectedFile.path === itemPath) {
@@ -240,7 +242,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await get().loadWorkspaceFiles();
     } catch (error) {
       console.error('删除失败:', error);
-      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('删除失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 

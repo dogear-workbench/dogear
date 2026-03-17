@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type { ArticleMeta, Article } from '@/types/article';
 
@@ -73,7 +74,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     try {
       const result = await client.deleteItem({ workspaceId, itemPath: articlePath });
       if (result.error) {
-        alert(`删除失败: ${result.error}`);
+        toast.error('删除文章失败', { description: result.error });
         return;
       }
       // 如果删除的是当前选中的文章，清除选中状态
@@ -85,7 +86,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
       useWorkspaceStore.getState().loadWorkspaceFiles();
     } catch (error) {
       console.error('删除文章失败:', error);
-      alert(`删除失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('删除文章失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 
@@ -104,9 +105,10 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
       set({ parsingArticle: true });
       const result = await client.parseArticle({ url: articleUrlInput.trim(), workspaceId });
       if (result.error) {
-        alert(`解析失败: ${result.error}`);
+        toast.error('文章解析失败', { description: result.error });
         return;
       }
+      toast.success('文章保存成功');
       // 关闭输入框
       set({ showArticleUrlInput: false, articleUrlInput: '' });
       // 刷新文件树
@@ -118,7 +120,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
       }
     } catch (error) {
       console.error('解析文章失败:', error);
-      alert(`解析失败: ${error instanceof Error ? error.message : String(error)}`);
+      toast.error('文章解析失败', { description: error instanceof Error ? error.message : String(error) });
     } finally {
       set({ parsingArticle: false });
     }

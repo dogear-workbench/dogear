@@ -1,9 +1,57 @@
 import { ToolBlock } from '@/components/ToolBlock';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import type { ContentBlock } from './types';
+
+/** 解析错误消息，提取用户友好的标题和描述 */
+function parseErrorMessage(error: string): { title: string; description: string; detail?: string } {
+  const lower = error.toLowerCase();
+
+  // API 过载
+  if (lower.includes('overloaded') || lower.includes('529')) {
+    return { title: '模型服务过载', description: '服务器当前繁忙，请稍后重试。', detail: error };
+  }
+
+  // 速率限制
+  if (lower.includes('rate_limit') || lower.includes('rate limit') || lower.includes('429')) {
+    return { title: '请求频率过高', description: '已超出 API 速率限制，请稍候再试。', detail: error };
+  }
+
+  // API Key 无效
+  if (lower.includes('invalid_api_key') || lower.includes('invalid api key') || lower.includes('401') || lower.includes('authentication')) {
+    return { title: 'API Key 无效', description: '请前往设置页面检查 API Key 配置。', detail: error };
+  }
+
+  // 上下文长度超限
+  if (lower.includes('context_length') || (lower.includes('token') && lower.includes('limit')) || lower.includes('max_tokens')) {
+    return { title: '对话长度超出限制', description: '上下文已满，尝试使用 /compact 压缩对话。', detail: error };
+  }
+
+  // 网络/超时错误
+  if (lower.includes('network') || lower.includes('timeout') || lower.includes('econnrefused') || lower.includes('fetch failed') || lower.includes('enotfound')) {
+    return { title: '网络连接失败', description: '无法连接到 API 服务器，请检查网络连接。', detail: error };
+  }
+
+  // 权限不足
+  if (lower.includes('permission') || lower.includes('403') || lower.includes('forbidden')) {
+    return { title: '权限不足', description: 'API 访问被拒绝，请检查账号权限。', detail: error };
+  }
+
+  // 服务端错误
+  if (lower.includes('500') || lower.includes('internal server error') || lower.includes('502') || lower.includes('503')) {
+    return { title: '服务端错误', description: 'API 服务端发生错误，请稍后重试。', detail: error };
+  }
+
+  // 默认：如果错误信息较短，直接显示；较长则折叠
+  if (error.length <= 100) {
+    return { title: '错误', description: error };
+  }
+  return { title: '错误', description: error.substring(0, 100) + '...', detail: error };
+}
 
 export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved }: {
   block: ContentBlock;
@@ -189,17 +237,31 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         </div>
       ) : null;
 
-    case 'error':
+    case 'error': {
+      // 解析常见 API/SDK 错误，提取用户友好的描述
+      const errorText = block.error || '未知错误';
+      const { title: errorTitle, description: errorDescription, detail: errorDetail } = parseErrorMessage(errorText);
+
       return (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-red-800">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            错误: {block.error}
-          </div>
-        </div>
+        <Alert variant="destructive" className="my-1">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>{errorTitle}</AlertTitle>
+          <AlertDescription>
+            <p>{errorDescription}</p>
+            {errorDetail && (
+              <details className="mt-2">
+                <summary className="text-xs cursor-pointer opacity-70 hover:opacity-100">
+                  技术详情
+                </summary>
+                <pre className="mt-1 text-xs bg-destructive/10 rounded p-2 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                  {errorDetail}
+                </pre>
+              </details>
+            )}
+          </AlertDescription>
+        </Alert>
       );
+    }
 
     case 'result':
       // result 类型不显示任何内容，只是标志消息结束
