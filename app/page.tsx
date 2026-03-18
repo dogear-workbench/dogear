@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
 import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
@@ -17,9 +16,10 @@ import { useAnalysisStore } from '@/stores/analysis-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionStore } from '@/stores/session-store';
+import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
-  const navigate = useNavigate();
+  const openSettings = useUIStore((s) => s.openSettings);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -98,7 +98,7 @@ export default function Home() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate('/settings')}>
+          <Button variant="outline" size="sm" onClick={openSettings}>
             <Settings className="w-4 h-4 mr-2" />
             设置
           </Button>

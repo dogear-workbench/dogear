@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
+import { showConfirm } from '@/stores/confirm-store';
 import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
 import type { Book } from '@/types';
 
@@ -140,7 +141,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { selectedBook } = get();
     if (!selectedBook?.id) return;
 
-    if (!confirm(`确定要删除《${selectedBook.title}》吗？此操作不可恢复。`)) {
+    if (!await showConfirm('删除书籍', `确定要删除《${selectedBook.title}》吗？此操作不可恢复。`)) {
       return;
     }
 
@@ -230,7 +231,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   deleteItem: async (itemPath) => {
     const { workspace } = get();
     if (!workspace) return;
-    if (!confirm('确定要删除吗？此操作不可恢复。')) return;
+    if (!await showConfirm('删除项目', '确定要删除吗？此操作不可恢复。')) return;
     try {
       const result = await client.deleteItem({ workspaceId: workspace.id, itemPath });
       if (result.error) { toast.error('删除失败', { description: result.error }); return; }

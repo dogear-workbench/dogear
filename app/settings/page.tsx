@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useUIStore } from '@/stores/ui-store';
+import { useConfirmStore } from '@/stores/confirm-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 
@@ -70,7 +71,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 // ═══ 主组件 ══════════════════════════════════════════
 
 export default function SettingsPage() {
-  const navigate = useNavigate();
+  const closeSettings = useUIStore((s) => s.closeSettings);
   const savedSettings = useSettingsStore((s) => s.settings);
   const loaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
@@ -111,10 +112,40 @@ export default function SettingsPage() {
   const handleSaveAndRestart = async () => {
     await saveToStore(local);
     await restartActiveSessions();
+    closeSettings();
   };
 
   const handleCancel = () => {
     setLocal(structuredClone(savedSettings));
+  };
+
+  // ── 关闭（dirty 时拦截） ──
+  const confirmDialog = useConfirmStore((s) => s.confirm);
+  const handleClose = async () => {
+    if (!isDirty) {
+      closeSettings();
+      return;
+    }
+    const result = await confirmDialog({
+      title: '未保存的更改',
+      description: '设置已修改但尚未保存，你希望如何处理？',
+      buttons: [
+        { label: '放弃更改', value: 'discard', variant: 'outline' },
+        { label: '保存', value: 'save', variant: 'default' },
+        { label: '保存并重启会话', value: 'saveRestart', variant: 'default' },
+      ],
+    });
+    if (result === 'discard') {
+      setLocal(structuredClone(savedSettings));
+      closeSettings();
+    } else if (result === 'save') {
+      await saveToStore(local);
+    } else if (result === 'saveRestart') {
+      await saveToStore(local);
+      await restartActiveSessions();
+      closeSettings();
+    }
+    // null（点击遮罩/ESC）= 留在设置页
   };
 
   // ── 工具权限 helper ──
@@ -224,7 +255,7 @@ export default function SettingsPage() {
     <div className="h-screen flex flex-col">
       {/* ── 顶部固定栏 ── */}
       <header className="h-12 border-b flex items-center px-4 gap-3 bg-background flex-shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+        <Button variant="ghost" size="sm" onClick={handleClose}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <h1 className="font-semibold flex-1">设置</h1>

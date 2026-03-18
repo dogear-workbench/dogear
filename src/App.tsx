@@ -6,20 +6,34 @@ import AgentMonitorPage from '@/app/agent-monitor/page';
 import DebugPage from '@/app/debug/page';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useUIStore } from '@/stores/ui-store';
 
 export function App() {
+  const settingsOpen = useUIStore((s) => s.settingsOpen);
+
   return (
     <ErrorBoundary fallback="app">
       <HashRouter>
         <Routes>
           <Route path="/" element={<ErrorBoundary fallback="page"><HomePage /></ErrorBoundary>} />
-          <Route path="/settings" element={<ErrorBoundary fallback="page"><SettingsPage /></ErrorBoundary>} />
           <Route path="/book/:id" element={<ErrorBoundary fallback="page"><BookPage /></ErrorBoundary>} />
           <Route path="/agent-monitor" element={<ErrorBoundary fallback="page"><AgentMonitorPage /></ErrorBoundary>} />
           <Route path="/debug" element={<ErrorBoundary fallback="page"><DebugPage /></ErrorBoundary>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>
+
+      {/* 设置页面作为全屏 overlay，不卸载底层页面 */}
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 bg-background">
+          <ErrorBoundary fallback="page">
+            <SettingsPage />
+          </ErrorBoundary>
+        </div>
+      )}
+
+      <ConfirmDialog />
       <Toaster />
     </ErrorBoundary>
   );

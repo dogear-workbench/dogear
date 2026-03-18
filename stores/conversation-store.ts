@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
+import { showConfirm } from '@/stores/confirm-store';
 import type { Conversation } from '@/components/BookConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
 
@@ -244,7 +245,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   deleteConversation: async (conversationId) => {
-    if (!confirm('确定要删除这个对话吗？此操作不可恢复。')) return;
+    if (!await showConfirm('删除对话', '确定要删除这个对话吗？此操作不可恢复。')) return;
 
     const workspace = await getWorkspace();
     if (!workspace) return;

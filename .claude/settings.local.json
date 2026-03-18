@@ -10,8 +10,7 @@
       "Skill(superpowers:writing-plans)",
       "Skill(superpowers:writing-plans:*)",
       "Bash(npx tsc:*)",
-      "Bash(npm install:*)",
-      "Bash(curl -sL \"https://raw.githubusercontent.com/shadcn-ui/ui/main/apps/v4/registry/new-york-v4/examples/textarea-with-button.tsx\")"
+      "Bash(npm install:*)"
     ]
   },
   "enabledPlugins": {

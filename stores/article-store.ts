@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
+import { showConfirm } from '@/stores/confirm-store';
 import type { ArticleMeta, Article } from '@/types/article';
 
 interface ArticleState {
@@ -69,7 +70,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     const workspaceId = await getWorkspaceId();
     if (!workspaceId) return;
 
-    if (!confirm('确定要删除这篇文章吗？此操作不可恢复。')) return;
+    if (!await showConfirm('删除文章', '确定要删除这篇文章吗？此操作不可恢复。')) return;
 
     try {
       const result = await client.deleteItem({ workspaceId, itemPath: articlePath });

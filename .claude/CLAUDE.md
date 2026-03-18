@@ -60,11 +60,12 @@ electron/
 
 ### 入口与路由（src/）
 - `src/main.tsx` — Vite 入口，挂载 React 到 `#root`
-- `src/App.tsx` — React Router 配置，HashRouter，定义所有路由
+- `src/App.tsx` — React Router 配置 + 设置 overlay + 全局 ConfirmDialog
 - `src/globals.css` — Tailwind CSS 4 全局样式
 
 ### 页面（app/）
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
+- `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测）
 - `app/book/BookPage.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板（useParams 获取 id）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
@@ -100,6 +101,7 @@ electron/
 - `ToolBlock.tsx` — 工具调用块，可折叠显示工具输入/输出/状态
 - `book-card.tsx` — 书籍卡片（封面、标题、作者、操作按钮）
 - `book-list.tsx` — ⚠️ 已弃用，使用 WorkspaceExplorer 替代
+- `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 
 ### 状态管理（stores/）
 - `workspace-store.ts` — 工作区状态：文件树、选中文件/书籍、文件操作（CRUD/移动）
@@ -108,6 +110,9 @@ electron/
 - `analysis-store.ts` — 书籍分析状态：分析进度、工具执行、章节处理
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
+- `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
+- `ui-store.ts` — UI 状态：设置 overlay 开关
+- `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
 
 ### 工具函数（lib/）
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
@@ -141,7 +146,7 @@ electron/
 - `book-service.ts` — 电子书导入、预处理、JSON 元数据/章节存储（meta.json + chapters.json）
 - `conversation-service.ts` — 对话索引 CRUD（`.dogear/conversations.json`），不存消息内容
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
-- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（readability + turndown → Markdown），微信公众号特殊处理
 - `workspace-service.ts` — 工作区目录结构管理、元数据/分析结果读写
@@ -161,7 +166,7 @@ electron/
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
 ### 数据存储（`.dogear/` 目录）
-- `settings.json` — 应用设置（ModelProfile、Thinking 配置等）
+- `settings.json` — 应用设置（ModelProfile、Thinking、permissionMode 等）
 - `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
 - `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、bookId、分叉信息）
 - `conversations/` — SDK 会话历史（Agent SDK 自动管理）
@@ -190,7 +195,7 @@ electron/
 ### 状态管理（Zustand 5）
 
 - Store 文件统一放在 `stores/` 目录
-- 现有 Store：analysis-store, article-store, conversation-store, reference-store, workspace-store, settings-store
+- 现有 Store：analysis-store, article-store, conversation-store, reference-store, workspace-store, settings-store, session-store, ui-store, confirm-store, slash-command-store
 - 新增状态请创建独立的 store 文件，遵循现有命名模式 `xxx-store.ts`
 
 ### TypeScript 配置
@@ -205,6 +210,8 @@ electron/
 - Store 之间避免循环依赖，如需延迟导入用 `await import('./xxx-store')`
 - 新增页面需在 `src/App.tsx` 中添加 `<Route>` 配置
 - 使用 HashRouter（非 BrowserRouter），因为 Electron 生产环境用 `file://` 协议
+- **不要使用 `window.confirm` / `window.prompt`**，Electron 不支持，统一用 `showConfirm()`（`confirm-store.ts`）或 `useConfirmStore` 自定义按钮
+- 设置页是全屏 overlay（`ui-store.settingsOpen`），不是路由，避免卸载 HomePage 导致 Agent 会话关闭
 
 ---
 
