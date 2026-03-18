@@ -161,7 +161,7 @@ export default function SettingsPage() {
   const deleteProfileById = (profileId: string) => {
     if (profileId === 'default') return;
     setLocal(prev => {
-      const { [profileId]: _, ...rest } = prev.profiles;
+      const { [profileId]: _removed, ...rest } = prev.profiles;
       const activeId = prev.ai.activeProfileId === profileId ? 'default' : prev.ai.activeProfileId;
       return { ...prev, profiles: rest, ai: { ...prev.ai, activeProfileId: activeId } };
     });
