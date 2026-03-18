@@ -143,7 +143,6 @@ export class QueryBasedSession extends EventEmitter {
       // 构建 query 配置
       const queryOptions: Record<string, any> = {
         systemPrompt,
-        permissionMode: 'default',  // 默认模式：通过 canUseTool 回调询问用户
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
       };
 
@@ -162,6 +161,9 @@ export class QueryBasedSession extends EventEmitter {
       // 注入 thinking 和 effort
       queryOptions.thinking = appSettings.ai.thinking;
       queryOptions.effort = appSettings.ai.effort;
+
+      // 注入默认权限模式
+      queryOptions.permissionMode = appSettings.ai.permissionMode || 'default';
 
       // 缓存声明式权限规则
       if ((appSettings as any).permissionRules) {
