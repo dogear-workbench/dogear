@@ -41,7 +41,7 @@ interface WorkspaceState {
   setCreatingFolderAt: (parentPath: string | null) => void;
   createFolder: (parentPath: string, name: string) => Promise<void>;
   renameItem: (itemPath: string, newName: string) => Promise<void>;
-  moveItem: (sourcePath: string, targetPath: string) => Promise<void>;
+  moveItem: (sourcePath: string, targetPath: string, targetIndex?: number) => Promise<void>;
   copyItem: (sourcePath: string, targetPath: string) => Promise<void>;
   deleteItem: (itemPath: string) => Promise<void>;
   openInExplorer: (itemPath: string) => Promise<void>;
@@ -201,11 +201,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  moveItem: async (sourcePath, targetPath) => {
+  moveItem: async (sourcePath, targetPath, targetIndex) => {
     const { workspace } = get();
     if (!workspace) return;
     try {
-      const result = await client.moveItem({ workspaceId: workspace.id, sourcePath, targetPath });
+      const result = await client.moveItem({ workspaceId: workspace.id, sourcePath, targetPath, targetIndex });
       if (result.error) { toast.error('移动失败', { description: result.error }); return; }
       await get().loadWorkspaceFiles();
     } catch (error) {

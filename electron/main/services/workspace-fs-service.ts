@@ -99,7 +99,16 @@ export async function renameItem(workspacePath: string, itemRelPath: string, new
   const newAbsPath = path.join(path.dirname(oldAbsPath), newName);
   // 校验重命名后的路径仍在工作区内
   resolveAndValidate(workspacePath, path.relative(workspacePath, newAbsPath));
-  await fs.rename(oldAbsPath, newAbsPath);
+  try {
+    await fs.rename(oldAbsPath, newAbsPath);
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code === 'EPERM') {
+      await fs.cp(oldAbsPath, newAbsPath, { recursive: true });
+      await fs.rm(oldAbsPath, { recursive: true, force: true });
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**
@@ -112,7 +121,17 @@ export async function moveItem(workspacePath: string, sourceRelPath: string, tar
   const targetAbsPath = path.join(targetFolderAbsPath, itemName);
   // 校验目标路径在工作区内
   resolveAndValidate(workspacePath, path.relative(workspacePath, targetAbsPath));
-  await fs.rename(sourceAbsPath, targetAbsPath);
+  try {
+    await fs.rename(sourceAbsPath, targetAbsPath);
+  } catch (err: unknown) {
+    // Windows 上 rename 可能因文件锁报 EPERM，用 copy + delete 作为 fallback
+    if ((err as NodeJS.ErrnoException).code === 'EPERM') {
+      await fs.cp(sourceAbsPath, targetAbsPath, { recursive: true });
+      await fs.rm(sourceAbsPath, { recursive: true, force: true });
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**

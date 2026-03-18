@@ -107,11 +107,20 @@ export async function createFolder(
     createdAt: new Date().toISOString(),
   };
 
-  // 添加到父节点的 children 中
+  // 添加到父节点的 children 中（插入到最后一个文件夹之后，保证在对话之前）
   if (!tree.children[parentId]) {
     tree.children[parentId] = [];
   }
-  tree.children[parentId].push(id);
+  const siblings = tree.children[parentId];
+  let folderInsertIndex = 0;
+  for (let i = 0; i < siblings.length; i++) {
+    if (tree.folders[siblings[i]]) {
+      folderInsertIndex = i + 1;
+    } else {
+      break;
+    }
+  }
+  siblings.splice(folderInsertIndex, 0, id);
 
   // 初始化自身的 children
   tree.children[id] = [];
@@ -164,7 +173,7 @@ export async function deleteFolder(
 // 对话在树中的操作
 // ============================================================
 
-/** 将新对话添加到树（默认在根级别最前面） */
+/** 将新对话添加到树（插入到文件夹之后、其他对话之前） */
 export async function addConversationToTree(
   workspaceId: string,
   conversationId: string,
@@ -174,8 +183,18 @@ export async function addConversationToTree(
   if (!tree.children[parentId]) {
     tree.children[parentId] = [];
   }
-  // 新对话排在最前
-  tree.children[parentId].unshift(conversationId);
+  // 找到第一个非文件夹项的位置，在该位置插入新对话
+  // 这样文件夹始终在对话前面
+  const children = tree.children[parentId];
+  let insertIndex = 0;
+  for (let i = 0; i < children.length; i++) {
+    if (tree.folders[children[i]]) {
+      insertIndex = i + 1;
+    } else {
+      break;
+    }
+  }
+  children.splice(insertIndex, 0, conversationId);
   await saveTree(workspaceId, tree);
 }
 
@@ -225,6 +244,19 @@ export async function moveItem(
   } else {
     tree.children[targetParentId].push(itemId);
   }
+
+  // 强制维护分区不变量：文件夹在前、对话在后
+  const children = tree.children[targetParentId];
+  const folderIds: string[] = [];
+  const convIds: string[] = [];
+  for (const id of children) {
+    if (tree.folders[id]) {
+      folderIds.push(id);
+    } else {
+      convIds.push(id);
+    }
+  }
+  tree.children[targetParentId] = [...folderIds, ...convIds];
 
   await saveTree(workspaceId, tree);
 }

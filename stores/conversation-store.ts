@@ -70,6 +70,26 @@ const getWorkspace = async () => {
 };
 
 /**
+ * 对 children 数组进行分区排序：文件夹在前，对话在后
+ * 各分区内部保持原始数组顺序（即用户拖拽排定的顺序）
+ */
+function sortChildrenFoldersFirst(
+  childIds: string[],
+  folders: Record<string, ConversationFolder>,
+): string[] {
+  const folderIds: string[] = [];
+  const conversationIds: string[] = [];
+  for (const id of childIds) {
+    if (folders[id]) {
+      folderIds.push(id);
+    } else {
+      conversationIds.push(id);
+    }
+  }
+  return [...folderIds, ...conversationIds];
+}
+
+/**
  * 构建对话树的扁平节点映射
  * 将对话列表和树数据合并为 @headless-tree/react 需要的格式
  */
@@ -102,13 +122,13 @@ function buildNodeMap(
     return nodeMap;
   }
 
-  // 添加文件夹节点
+  // 添加文件夹节点（子节点按文件夹优先排序）
   for (const folder of Object.values(treeData.folders)) {
     nodeMap[folder.id] = {
       id: folder.id,
       name: folder.name,
       isFolder: true,
-      childrenIds: treeData.children[folder.id] || [],
+      childrenIds: sortChildrenFoldersFirst(treeData.children[folder.id] || [], treeData.folders),
       nodeType: 'folder',
       folder,
     };
@@ -135,13 +155,13 @@ function buildNodeMap(
     .filter(c => !allTreeIds.has(c.id))
     .map(c => c.id);
 
-  // 根节点
+  // 根节点（文件夹优先排序）
   const rootChildren = treeData.children[CONV_TREE_ROOT] || [];
   nodeMap[CONV_TREE_ROOT] = {
     id: CONV_TREE_ROOT,
     name: 'root',
     isFolder: true,
-    childrenIds: [...orphanConvIds, ...rootChildren],
+    childrenIds: sortChildrenFoldersFirst([...orphanConvIds, ...rootChildren], treeData.folders),
     nodeType: 'folder',
   };
 

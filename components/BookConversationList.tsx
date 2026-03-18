@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
 import { useSessionStore } from '@/stores/session-store';
+import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
 
 import { useTree } from '@headless-tree/react';
 import {
@@ -23,6 +24,7 @@ import {
   dragAndDropFeature,
   renamingFeature,
   propMemoizationFeature,
+  isOrderedDragTarget,
 } from '@headless-tree/core';
 import type { ItemInstance, DragTarget } from '@headless-tree/core';
 
@@ -385,12 +387,19 @@ export function ConversationList() {
 
   // 拖放回调
   const handleDrop = useCallback((items: ItemInstance<ConversationFlatNode>[], target: DragTarget<ConversationFlatNode>) => {
+    if (isOrderedDragTarget(target)) {
+      // 有序拖放：拖到兄弟节点之间，target.item 是父节点
+      const parentId = target.item.getId();
+      for (const item of items) {
+        moveItem(item.getId(), parentId, target.insertionIndex);
+      }
+      return;
+    }
+
+    // 无序拖放：直接拖到文件夹上
     const targetId = target.item.getId();
     const targetData = target.item.getItemData();
-
-    // 确定目标父节点
     const parentId = targetData.isFolder ? targetId : CONV_TREE_ROOT;
-
     for (const item of items) {
       moveItem(item.getId(), parentId);
     }
@@ -470,7 +479,13 @@ export function ConversationList() {
   const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** 获取 ScrollArea 内部的 Viewport 滚动容器 */
-  const getViewport = () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+  const getViewport = useCallback(
+    () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null,
+    [],
+  );
+
+  // 拖拽靠近边缘时自动滚动
+  useDragAutoScroll(getViewport);
 
   // nodeMap 变化时重建树
   useLayoutEffect(() => {

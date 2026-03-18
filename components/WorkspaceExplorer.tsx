@@ -16,6 +16,7 @@ import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { WorkspaceFileNode } from '@/types/electron-api';
 import type { ArticleMeta } from '@/types/article';
+import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
 
 import { useTree } from '@headless-tree/react';
 import {
@@ -25,6 +26,7 @@ import {
   dragAndDropFeature,
   renamingFeature,
   propMemoizationFeature,
+  isOrderedDragTarget,
 } from '@headless-tree/core';
 import type { ItemInstance, DragTarget } from '@headless-tree/core';
 
@@ -312,19 +314,17 @@ function TreeItemRow({
             {count}
           </span>
         )}
-        {/* 文章分区的新建文件夹按钮 */}
-        {isArticlesHeader && (
-          <button
-            className="ml-auto p-0.5 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSetCreatingFolder('.dogear/articles');
-            }}
-            title="新建文章文件夹"
-          >
-            <FolderPlus className="w-3.5 h-3.5" />
-          </button>
-        )}
+        {/* 分区头的新建文件夹按钮 */}
+        <button
+          className="ml-auto p-0.5 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSetCreatingFolder(isArticlesHeader ? '.dogear/articles' : '.');
+          }}
+          title={isArticlesHeader ? '新建文章文件夹' : '新建文件夹'}
+        >
+          <FolderPlus className="w-3.5 h-3.5" />
+        </button>
       </div>
     );
   }
@@ -390,14 +390,10 @@ function TreeItemRow({
       );
     }
 
-    // 文章目录下的文件夹
+    // 文章目录下的文件夹（只允许一层，不提供新建子文件夹）
     if (isArticleFolder) {
       return (
         <ContextMenuContent>
-          <ContextMenuItem onClick={handleNewSubFolder}>
-            <FolderPlus className="w-4 h-4" />
-            新建子文件夹
-          </ContextMenuItem>
           <ContextMenuItem onClick={() => item.startRenaming()}>
             <Pencil className="w-4 h-4" />
             重命名
@@ -551,11 +547,39 @@ export function WorkspaceExplorer() {
 
   // 稳定的回调
   const handleDrop = useCallback((items: ItemInstance<FlatNode>[], target: DragTarget<FlatNode>) => {
+    if (isOrderedDragTarget(target)) {
+      // 有序拖放：拖到兄弟节点之间，target.item 是父节点
+      const parentId = target.item.getId();
+      let targetPath: string | null = null;
+      if (parentId === ARTICLES_SECTION_ID) {
+        targetPath = '.dogear/articles';
+      } else if (parentId === FILES_SECTION_ID) {
+        targetPath = '.';
+      } else {
+        targetPath = target.item.getItemData().originalNode?.path ?? null;
+      }
+      if (!targetPath) return;
+
+      // 文章区传 targetIndex 支持自定义排序，文件区不传（文件系统不支持排序）
+      const isArticle = targetPath.startsWith('.dogear/articles');
+      for (const draggedItem of items) {
+        const draggedData = draggedItem.getItemData();
+        if (draggedData.originalNode) {
+          moveItemRef.current(
+            draggedData.originalNode.path,
+            targetPath,
+            isArticle ? target.insertionIndex : undefined,
+          );
+        }
+      }
+      return;
+    }
+
+    // 无序拖放：直接拖到文件夹上
     const targetItem = target.item;
     const targetData = targetItem.getItemData();
     const targetId = targetItem.getId();
 
-    // 确定目标路径：分区头映射到对应根目录
     let targetPath: string | null = null;
     if (targetId === ARTICLES_SECTION_ID) {
       targetPath = '.dogear/articles';
@@ -603,10 +627,11 @@ export function WorkspaceExplorer() {
     const targetData = target.item.getItemData();
     const targetId = target.item.getId();
 
-    // 虚拟根节点不可放置
+    // 有序拖放时 target.item 是父节点
+    // 虚拟根节点不可放置（禁止在分区头之间排序）
     if (targetId === ROOT_ID) return false;
 
-    // 分区头可以作为放置目标（代表移到该分区顶层）
+    // 分区头可以作为放置目标（代表分区内排序或移到分区顶层）
     if (targetData.nodeType === 'section-header') {
       const currentMap = nodeMapRef.current;
       for (const draggedItem of items) {
@@ -665,7 +690,7 @@ export function WorkspaceExplorer() {
       renamingFeature,
       propMemoizationFeature,
     ],
-    canReorder: false,
+    canReorder: true,
     openOnDropDelay: 800,
     initialState: {
       expandedItems: [ARTICLES_SECTION_ID, FILES_SECTION_ID],
@@ -687,7 +712,13 @@ export function WorkspaceExplorer() {
   const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /** 获取 ScrollArea 内部的 Viewport 滚动容器 */
-  const getViewport = () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null;
+  const getViewport = useCallback(
+    () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null,
+    [],
+  );
+
+  // 拖拽靠近边缘时自动滚动
+  useDragAutoScroll(getViewport);
 
   // 当 files 变化时重建树
   useLayoutEffect(() => {
@@ -806,13 +837,6 @@ export function WorkspaceExplorer() {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <button
-            className="p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
-            onClick={handleNewFolder}
-            title="新建文件夹"
-          >
-            <FolderPlus className="w-4 h-4" />
-          </button>
           <button
             className={cn(
               'p-1 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors',

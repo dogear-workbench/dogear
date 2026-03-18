@@ -50,7 +50,7 @@ export const explorerRouter = {
     }),
 
   moveItem: t.procedure
-    .input<{ workspaceId: string; sourcePath: string; targetPath: string }>()
+    .input<{ workspaceId: string; sourcePath: string; targetPath: string; targetIndex?: number }>()
     .action(async ({ input }) => {
       try {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
@@ -58,7 +58,7 @@ export const explorerRouter = {
 
         const isArticlePath = input.sourcePath.startsWith('.dogear/articles');
         if (isArticlePath) {
-          await articleService.moveArticleItem(workspace.path, input.sourcePath, input.targetPath);
+          await articleService.moveArticleItem(workspace.path, input.sourcePath, input.targetPath, input.targetIndex);
         } else {
           await workspaceFsService.moveItem(workspace.path, input.sourcePath, input.targetPath);
         }
