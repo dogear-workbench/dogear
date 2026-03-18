@@ -37,6 +37,7 @@ export interface AppSettings {
     effort: 'low' | 'medium' | 'high' | 'max';
     activeProfileId: string;
     maxTurns?: number;
+    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
   };
   permissionRules?: {
     allow?: string[];
@@ -67,6 +68,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     thinking: { type: 'adaptive' },
     effort: 'high',
     activeProfileId: 'default',
+    permissionMode: 'default',
   },
   profiles: {
     default: {

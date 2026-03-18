@@ -36,6 +36,7 @@ export interface AppSettings {
     effort: 'low' | 'medium' | 'high' | 'max';
     activeProfileId: string;
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
+    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk'; // 默认权限模式
   };
   // 工具权限规则（声明式）
   permissionRules?: {
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     thinking: { type: 'adaptive' },
     effort: 'high',
     activeProfileId: 'default',
+    permissionMode: 'default',
   },
   profiles: {
     default: {
