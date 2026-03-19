@@ -11,6 +11,7 @@ import { articleRouter } from './article.js';
 import { explorerRouter } from './explorer.js';
 import { settingsRouter } from './settings.js';
 import { logRouter } from './log.js';
+import { claudeConfigRouter } from './claude-config.js';
 
 export const router = {
   ...dbRouter,
@@ -24,6 +25,7 @@ export const router = {
   ...explorerRouter,
   ...settingsRouter,
   ...logRouter,
+  ...claudeConfigRouter,
 };
 
 export type Router = typeof router;

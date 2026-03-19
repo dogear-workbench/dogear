@@ -21,7 +21,7 @@ import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
 import { getClaudeConfigDir } from '../tipc/agent.js';
-import { loadSettings, getActiveProfile, isProfileComplete } from '../services/settings-service.js';
+import { loadSettings, getActiveProfile, isProfileComplete, type AppSettings } from '../services/settings-service.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -94,6 +94,8 @@ export class QueryBasedSession extends EventEmitter {
 
   // 声明式权限规则（从 settings.json 加载，缓存避免每次 canUseTool 都读磁盘）
   private permissionRules?: { allow?: string[]; deny?: string[] };
+  // 缓存当前权限模式（start 时从 settings 加载）
+  private currentPermissionMode: string = 'default';
 
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
@@ -130,8 +132,12 @@ export class QueryBasedSession extends EventEmitter {
     this.logger.info('resume 模式:', !!this.config.resume, this.config.resume || '(新会话)');
 
     try {
-      // 构建系统提示词
-      const systemPrompt = this.buildSystemPrompt();
+      // 从 settings.json 读取 AI 配置（唯一配置源）
+      const appSettings = await loadSettings();
+      const activeProfile = getActiveProfile(appSettings);
+
+      // 构建系统提示词（需要 appSettings 读取 systemPromptAppend）
+      const systemPrompt = this.buildSystemPrompt(appSettings);
 
       // 获取项目根目录（用于查找 .claude/skills/）
       const projectRoot = await this.getProjectRoot();
@@ -146,10 +152,6 @@ export class QueryBasedSession extends EventEmitter {
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
       };
 
-      // 从 settings.json 读取 AI 配置（唯一配置源）
-      const appSettings = await loadSettings();
-      const activeProfile = getActiveProfile(appSettings);
-
       // 校验 Profile 完整性
       if (!isProfileComplete(activeProfile)) {
         const errorMsg = `当前模型方案 "${activeProfile.name}" 配置不完整，请在设置页面完善 API Key、Base URL 和模型映射`;
@@ -163,7 +165,8 @@ export class QueryBasedSession extends EventEmitter {
       queryOptions.effort = appSettings.ai.effort;
 
       // 注入默认权限模式
-      queryOptions.permissionMode = appSettings.ai.permissionMode || 'default';
+      this.currentPermissionMode = appSettings.ai.permissionMode || 'default';
+      queryOptions.permissionMode = this.currentPermissionMode;
 
       // 缓存声明式权限规则
       if ((appSettings as any).permissionRules) {
@@ -208,8 +211,8 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       if (this.config.enableSkills && projectRoot) {
-        // 必须包含 'project' 才能加载 .claude/settings.json 和 skills
-        queryOptions.settingSources = ['user'];
+        // 从设置中读取 settingSources（包含 'project' 时加载 .claude/settings.json 和 skills）
+        queryOptions.settingSources = appSettings.ai.settingSources || ['user'];
         // 将项目根目录加入 additionalDirectories，确保 skills 仍然可以被加载
         // const additionalDirs: string[] = [];
         // if (projectRoot !== this.config.workspacePath) {
@@ -486,8 +489,15 @@ export class QueryBasedSession extends EventEmitter {
       }
       this.logger.info('');
       this.logger.info('💬 系统提示词:');
-      this.logger.info('  • 长度:', systemPrompt.length, '字符');
-      this.logger.info('  • 内容预览:', systemPrompt.substring(0, 200) + (systemPrompt.length > 200 ? '...' : ''));
+      if (typeof systemPrompt === 'string') {
+        this.logger.info('  • 模式: 纯字符串');
+        this.logger.info('  • 长度:', systemPrompt.length, '字符');
+        this.logger.info('  • 内容预览:', systemPrompt.substring(0, 200) + (systemPrompt.length > 200 ? '...' : ''));
+      } else {
+        this.logger.info('  • 模式: preset + append');
+        this.logger.info('  • preset:', systemPrompt.preset);
+        this.logger.info('  • append 长度:', systemPrompt.append.length, '字符');
+      }
       this.logger.info('');
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');
       this.logger.info('║                  开始创建 query 实例                          ║');
@@ -915,15 +925,44 @@ export class QueryBasedSession extends EventEmitter {
           return null;
         }
 
-        // 子代理任务通知（使用 agents 配置后，SDK 会发送此消息）
+        // 子代理任务开始
+        if (sdkMessage.subtype === 'task_started') {
+          const taskMsg = sdkMessage as any;
+          this.logger.info('子代理任务开始:', taskMsg.task_id, taskMsg.description);
+          return {
+            type: 'task_notification',
+            taskId: taskMsg.task_id,
+            taskStatus: 'started',
+            taskSummary: taskMsg.description,
+            toolUseId: taskMsg.tool_use_id,
+            timestamp,
+          };
+        }
+
+        // 子代理任务进度
+        if (sdkMessage.subtype === 'task_progress') {
+          const taskMsg = sdkMessage as any;
+          this.logger.info('子代理任务进度:', taskMsg.task_id, taskMsg.summary || taskMsg.description);
+          return {
+            type: 'task_notification',
+            taskId: taskMsg.task_id,
+            taskStatus: 'in_progress',
+            taskSummary: taskMsg.summary || taskMsg.description,
+            toolUseId: taskMsg.tool_use_id,
+            timestamp,
+          };
+        }
+
+        // 子代理任务完成通知
         if (sdkMessage.subtype === 'task_notification') {
           const taskMsg = sdkMessage as any;
-          this.logger.info('子代理任务通知:', taskMsg.task_id, taskMsg.status);
+          this.logger.info('子代理任务完成:', taskMsg.task_id, taskMsg.status);
           return {
             type: 'task_notification',
             taskId: taskMsg.task_id,
             taskStatus: taskMsg.status,
             taskSummary: taskMsg.summary,
+            toolUseId: taskMsg.tool_use_id,
             timestamp,
           };
         }
@@ -1052,13 +1091,33 @@ export class QueryBasedSession extends EventEmitter {
                     .join('\n');
                 }
 
+                // 检查是否携带子代理元数据（Agent 工具的 tool_use_result）
+                const tur = (userMsg as any).tool_use_result;
+                const subAgentMeta: Partial<ExtendedSessionMessage> = {};
+                if (tur?.agentId) {
+                  this.logger.info('检测到子代理结果:', tur.agentId, '状态:', tur.status);
+                  subAgentMeta.subAgentId = tur.agentId;
+                  subAgentMeta.subAgentStatus = tur.status;
+                  subAgentMeta.subAgentDurationMs = tur.totalDurationMs;
+                  subAgentMeta.subAgentTokens = tur.totalTokens;
+                  subAgentMeta.subAgentToolUseCount = tur.totalToolUseCount;
+                  // 提取子代理返回的文本
+                  if (Array.isArray(tur.content)) {
+                    subAgentMeta.subAgentResultText = tur.content
+                      .filter((c: any) => c?.type === 'text')
+                      .map((c: any) => c.text)
+                      .join('\n');
+                  }
+                }
+
                 toolResults.push({
                   type: 'tool_result',
                   toolUseId: toolResult.tool_use_id,
                   toolOutput: outputContent,
                   isError: toolResult.is_error || false,
                   timestamp,
-                  isReplay
+                  isReplay,
+                  ...subAgentMeta,
                 });
               }
             }
@@ -1174,36 +1233,41 @@ export class QueryBasedSession extends EventEmitter {
 
   /**
    * 构建系统提示词
+   * 有 systemPromptAppend 时使用 SDK 的 preset + append 模式，否则返回纯字符串
    */
-  private buildSystemPrompt(): string {
+  private buildSystemPrompt(appSettings: AppSettings): string | { type: 'preset'; preset: 'claude_code'; append: string } {
     const { context } = this.config;
+    const appendContent = appSettings.ai.systemPromptAppend;
 
-    // 基础提示词
-    let prompt = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
+    // 构建基础提示内容
+    let basePrompt = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
 
-    // 如果启用 Skills，添加相关说明
     if (this.config.enableSkills) {
-      prompt += `
+      basePrompt += `
 
 **重要**: 你可以使用 Book-QA 技能来帮助用户搜索书籍内容并基于原文回答问题。
 当用户询问与书籍相关的问题时，请使用 Skill 工具调用 book-qa 技能。`;
     }
 
-    if (!context) {
-      return prompt;
+    // 拼接上下文信息
+    if (context) {
+      const contextInfo = [];
+      if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
+      if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
+      if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
+
+      if (contextInfo.length > 0) {
+        basePrompt += `\n\n当前上下文:\n${contextInfo.join('\n')}\n\n请根据上述上下文提供有针对性的帮助。`;
+      }
     }
 
-    const contextInfo = [];
-    if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
-    if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
-    if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
+    // 有自定义 append 时，使用 SDK 的 preset + append 模式
+    if (appendContent) {
+      const fullAppend = `${basePrompt}\n\n${appendContent}`;
+      return { type: 'preset', preset: 'claude_code', append: fullAppend };
+    }
 
-    return `${prompt}
-
-当前上下文:
-${contextInfo.join('\n')}
-
-请根据上述上下文提供有针对性的帮助。`;
+    return basePrompt;
   }
 
   /**
@@ -1269,9 +1333,14 @@ ${contextInfo.join('\n')}
       return;
     }
     this.logger.info('更改权限模式:', mode);
+    this.currentPermissionMode = mode;
     await this.query.setPermissionMode(mode);
     // 通知前端权限模式已变更（双向同步）
     this.emit('permissionModeChanged', { mode });
+  }
+
+  getPermissionMode(): string {
+    return this.currentPermissionMode;
   }
 
   /**

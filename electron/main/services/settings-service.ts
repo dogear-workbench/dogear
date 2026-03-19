@@ -38,6 +38,8 @@ export interface AppSettings {
     activeProfileId: string;
     maxTurns?: number;
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
+    systemPromptAppend?: string;
+    settingSources?: ('user' | 'project')[];
   };
   permissionRules?: {
     allow?: string[];
@@ -69,6 +71,7 @@ const DEFAULT_SETTINGS: AppSettings = {
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
+    settingSources: ['user'],
   },
   profiles: {
     default: {

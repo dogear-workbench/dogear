@@ -8,6 +8,8 @@ import { useUIStore } from '@/stores/ui-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
+import { WorkspaceConfigTab } from './WorkspaceConfigTab';
+import { AgentsTab } from './AgentsTab';
 
 // ═══ 常量 ═══════════════════════════════════════════
 
@@ -285,6 +287,12 @@ export default function SettingsPage() {
           <TabsTrigger value="profiles" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             模型方案
           </TabsTrigger>
+          <TabsTrigger value="workspace" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            工作区配置
+          </TabsTrigger>
+          <TabsTrigger value="agents" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            代理管理
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Tab: AI 行为 ── */}
@@ -557,6 +565,16 @@ export default function SettingsPage() {
               })}
             </Tabs>
           </div>
+        </TabsContent>
+
+        {/* ── Tab: 工作区配置 ── */}
+        <TabsContent value="workspace" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <WorkspaceConfigTab local={local} setLocal={setLocal} />
+        </TabsContent>
+
+        {/* ── Tab: 代理管理 ── */}
+        <TabsContent value="agents" className="flex-1 overflow-hidden mt-0 p-0 data-[state=inactive]:hidden">
+          <AgentsTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -5,6 +5,7 @@ import { AlertCircle } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
+import { SubAgentBlock } from './SubAgentBlock';
 import type { ContentBlock } from './types';
 
 /** 解析错误消息，提取用户友好的标题和描述 */
@@ -61,6 +62,10 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 }) {
   switch (block.type) {
     case 'tool_use':
+      // 子代理调用使用专用的 SubAgentBlock 组件
+      if (block.isSubAgent || block.toolName === 'Agent') {
+        return <SubAgentBlock block={block} />;
+      }
       // 使用新的 ToolBlock 组件，支持折叠和状态显示
       // 根据是否有输出结果判断状态
       const toolStatus = block.toolOutput !== undefined

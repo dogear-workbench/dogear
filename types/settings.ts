@@ -37,6 +37,8 @@ export interface AppSettings {
     activeProfileId: string;
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk'; // 默认权限模式
+    systemPromptAppend?: string; // 追加到 claude_code preset 的自定义系统提示
+    settingSources?: ('user' | 'project')[]; // SDK 设置源，控制加载哪些配置文件
   };
   // 工具权限规则（声明式）
   permissionRules?: {
@@ -52,6 +54,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
+    settingSources: ['user'],
   },
   profiles: {
     default: {

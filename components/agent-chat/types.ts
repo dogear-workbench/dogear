@@ -84,6 +84,16 @@ export interface ContentBlock {
   // compact_boundary 相关字段
   compactTrigger?: 'manual' | 'auto';  // 压缩触发方式
   compactPreTokens?: number;           // 压缩前 token 数
+  // 子代理相关字段（Agent tool_use / tool_result）
+  isSubAgent?: boolean;                // 是否为子代理调用
+  subAgentDescription?: string;        // 子代理任务描述
+  subAgentType?: string;               // 子代理类型（general-purpose 等）
+  subAgentId?: string;                 // 子代理 ID（agentId）
+  subAgentStatus?: string;             // 子代理执行状态（completed/failed 等）
+  subAgentDurationMs?: number;         // 子代理执行时长
+  subAgentTokens?: number;             // 子代理 token 消耗
+  subAgentToolUseCount?: number;       // 子代理工具调用次数
+  subAgentResultText?: string;         // 子代理返回的文本结果
 }
 
 export interface AgentChatProps {

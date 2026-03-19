@@ -150,3 +150,21 @@ export interface AgentStreamUpdate {
   chunk?: string;  // 文本块
   error?: string;
 }
+
+/**
+ * 子代理文件信息（从 .claude/agents/*.md 解析）
+ */
+export interface AgentFileInfo {
+  fileName: string;      // 如 "chapter-analyzer.md"
+  agentName: string;     // 如 "chapter-analyzer"
+  definition: {
+    description: string;
+    prompt: string;
+    model?: string;
+    tools?: string[];
+    disallowedTools?: string[];
+    maxTurns?: number;
+  };
+  filePath: string;
+  source: 'file' | 'builtin';
+}

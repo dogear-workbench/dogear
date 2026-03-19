@@ -18,6 +18,7 @@ import type { RendererHandlers } from './renderer-handlers.js';
 import path from 'path';
 import fs from 'fs/promises';
 import os from 'os';
+import { loadWorkspaceAgents } from '../services/agent-definition-service.js';
 import { fileURLToPath } from 'url';
 import electron from 'electron';
 const { app } = electron;
@@ -391,25 +392,41 @@ export const agentRouter = {
           console.log('已添加 article MCP tools');
         }
 
-        // 构建默认子代理配置
-        const agents: Record<string, any> = input.agents || {};
-        if (!agents['chapter-analyzer']) {
-          agents['chapter-analyzer'] = {
-            description: '分析书籍章节内容，提取摘要、关键概念和结构信息。适用于需要深入分析单个章节的场景。',
-            prompt: '你是一个章节分析专家。你的任务是深入分析给定的章节内容，提取关键信息、主题、概念和结构。请使用中文输出分析结果。',
-            model: 'haiku',
-            tools: ['Read', 'Glob', 'Grep'],
-            maxTurns: 5,
-          };
+        // 构建子代理配置：内置默认 < 文件系统 .claude/agents/ < 前端传入
+        const agents: Record<string, any> = {};
+
+        // 1. 内置默认代理
+        agents['chapter-analyzer'] = {
+          description: '分析书籍章节内容，提取摘要、关键概念和结构信息。适用于需要深入分析单个章节的场景。',
+          prompt: '你是一个章节分析专家。你的任务是深入分析给定的章节内容，提取关键信息、主题、概念和结构。请使用中文输出分析结果。',
+          model: 'haiku',
+          tools: ['Read', 'Glob', 'Grep'],
+          maxTurns: 5,
+        };
+        agents['book-searcher'] = {
+          description: '在书籍中搜索特定内容，查找相关章节和段落。适用于用户提出关于书籍内容的问题时。',
+          prompt: '你是一个书籍内容搜索专家。你的任务是在书籍的章节中搜索与用户问题相关的内容，找到最相关的段落并提供引用。请使用中文回答。',
+          model: 'haiku',
+          tools: ['Read', 'Glob', 'Grep'],
+          maxTurns: 8,
+        };
+
+        // 2. 从工作区 .claude/agents/ 加载文件代理（覆盖同名内置代理）
+        if (workspacePath) {
+          try {
+            const fileAgents = await loadWorkspaceAgents(workspacePath);
+            for (const fa of fileAgents) {
+              agents[fa.agentName] = fa.definition;
+              console.log(`已加载工作区代理: ${fa.agentName} (${fa.fileName})`);
+            }
+          } catch (e) {
+            console.warn('加载工作区代理文件失败:', e);
+          }
         }
-        if (!agents['book-searcher']) {
-          agents['book-searcher'] = {
-            description: '在书籍中搜索特定内容，查找相关章节和段落。适用于用户提出关于书籍内容的问题时。',
-            prompt: '你是一个书籍内容搜索专家。你的任务是在书籍的章节中搜索与用户问题相关的内容，找到最相关的段落并提供引用。请使用中文回答。',
-            model: 'haiku',
-            tools: ['Read', 'Glob', 'Grep'],
-            maxTurns: 8,
-          };
+
+        // 3. 前端传入覆盖（最高优先级）
+        if (input.agents) {
+          Object.assign(agents, input.agents);
         }
 
         // 构建会话配置
@@ -556,7 +573,7 @@ export const agentRouter = {
           }
         }, 100);
 
-        return { sessionId: session.getSessionId(), permissionMode: 'default' };
+        return { sessionId: session.getSessionId(), permissionMode: session.getPermissionMode() };
       } catch (error) {
         console.error('创建基于 Query 的会话失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
@@ -776,6 +793,7 @@ export const agentRouter = {
           isCompactSummary?: boolean;
           isCompactBoundary?: boolean;
           compactMetadata?: { trigger?: string; preTokens?: number };
+          toolUseResult?: any;
         }> = [];
 
         for (const line of lines) {
@@ -809,6 +827,8 @@ export const agentRouter = {
                 sourceToolUseID: parsed.sourceToolUseID,
                 // 标记压缩摘要消息
                 isCompactSummary: parsed.isCompactSummary || false,
+                // 保留 toolUseResult（子代理结果元数据）
+                toolUseResult: parsed.toolUseResult,
               });
             }
           } catch {
@@ -828,6 +848,7 @@ export const agentRouter = {
           isCompactSummary?: boolean;
           isCompactBoundary?: boolean;
           compactMetadata?: { trigger?: string; preTokens?: number };
+          toolUseResult?: any;
         }> = [];
 
         let currentAssistantMessage: {
@@ -866,6 +887,7 @@ export const agentRouter = {
               isMeta: msg.isMeta,
               sourceToolUseID: msg.sourceToolUseID,
               isCompactSummary: msg.isCompactSummary,
+              toolUseResult: msg.toolUseResult,
             });
           } else if (msg.type === 'assistant' && msg.message) {
             const contentBlocks = Array.isArray(msg.message.content)
@@ -897,6 +919,110 @@ export const agentRouter = {
         return { messages: historyMessages };
       } catch (error) {
         console.error('读取 SDK 会话历史失败:', error);
+        return { messages: [], error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  // ── 子代理会话历史读取 ──────────────────────────────────────
+  getSubAgentHistory: t.procedure
+    .input<{ sdkSessionId: string; agentId: string; projectPath?: string }>()
+    .action(async ({ input }) => {
+      try {
+        let projectRoot = input.projectPath;
+        if (!projectRoot) {
+          const workspaceJsonService = await import('../services/workspace-json-service.js');
+          const defaultWorkspace = await workspaceJsonService.getDefault();
+          projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
+        }
+        const sessionsDir = await getSdkSessionsDir(projectRoot);
+
+        // 子代理 JSONL 路径：<sessionsDir>/<sessionId>/subagents/agent-<agentId>.jsonl
+        const subAgentFile = path.join(sessionsDir, input.sdkSessionId, 'subagents', `agent-${input.agentId}.jsonl`);
+        console.log('读取子代理会话历史:', subAgentFile);
+
+        try {
+          await fs.access(subAgentFile);
+        } catch {
+          return { messages: [], error: '子代理会话文件不存在' };
+        }
+
+        const content = await fs.readFile(subAgentFile, 'utf-8');
+        const lines = content.trim().split('\n');
+
+        // 简化解析：提取 user 和 assistant 消息
+        const messages: Array<{
+          type: string;
+          role?: string;
+          content?: any;
+          timestamp?: string;
+          uuid?: string;
+          agentId?: string;
+          model?: string;
+        }> = [];
+
+        let currentAssistant: {
+          type: string;
+          role: string;
+          content: any[];
+          timestamp?: string;
+          uuid?: string;
+          model?: string;
+        } | null = null;
+
+        const flushAssistant = () => {
+          if (currentAssistant) {
+            messages.push({ ...currentAssistant });
+            currentAssistant = null;
+          }
+        };
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const parsed = JSON.parse(line);
+
+            if (parsed.type === 'user' && parsed.message) {
+              flushAssistant();
+              messages.push({
+                type: 'user',
+                role: parsed.message.role,
+                content: parsed.message.content,
+                timestamp: parsed.timestamp,
+                uuid: parsed.uuid,
+                agentId: parsed.agentId,
+              });
+            } else if (parsed.type === 'assistant' && parsed.message) {
+              const contentBlocks = Array.isArray(parsed.message.content)
+                ? parsed.message.content
+                : (typeof parsed.message.content === 'string'
+                    ? [{ type: 'text', text: parsed.message.content }]
+                    : []);
+
+              if (!currentAssistant) {
+                currentAssistant = {
+                  type: 'assistant',
+                  role: 'assistant',
+                  content: contentBlocks,
+                  timestamp: parsed.timestamp,
+                  uuid: parsed.uuid,
+                  model: parsed.message?.model,
+                };
+              } else {
+                currentAssistant.content.push(...contentBlocks);
+                currentAssistant.timestamp = parsed.timestamp;
+              }
+            }
+          } catch {
+            // 忽略解析失败的行
+          }
+        }
+
+        flushAssistant();
+
+        console.log(`子代理历史: ${messages.length} 条消息`);
+        return { messages, agentId: input.agentId };
+      } catch (error) {
+        console.error('读取子代理会话历史失败:', error);
         return { messages: [], error: error instanceof Error ? error.message : String(error) };
       }
     }),

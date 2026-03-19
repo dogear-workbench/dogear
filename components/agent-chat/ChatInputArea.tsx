@@ -24,6 +24,39 @@ import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
+// 权限模式 → 边框/图标颜色映射
+const PERMISSION_MODE_STYLES: Record<PermissionMode, {
+  border: string;
+  focusRing: string;
+  icon: string;
+  label: string;
+}> = {
+  default: {
+    border: 'border-orange-300 dark:border-orange-500/60',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-orange-400 has-[[data-slot=input-group-control]:focus-visible]:ring-orange-400/30',
+    icon: 'text-orange-500',
+    label: '需确认',
+  },
+  bypassPermissions: {
+    border: 'border-emerald-300 dark:border-emerald-500/60',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-emerald-400 has-[[data-slot=input-group-control]:focus-visible]:ring-emerald-400/30',
+    icon: 'text-emerald-500',
+    label: '自动执行',
+  },
+  acceptEdits: {
+    border: 'border-input',
+    focusRing: '',
+    icon: 'text-muted-foreground',
+    label: '允许编辑',
+  },
+  plan: {
+    border: 'border-blue-300 dark:border-blue-500/60',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-blue-400 has-[[data-slot=input-group-control]:focus-visible]:ring-blue-400/30',
+    icon: 'text-blue-500',
+    label: '仅规划',
+  },
+};
+
 interface ChatInputAreaProps {
   input: string;
   setInput: (value: string) => void;
@@ -107,7 +140,11 @@ export function ChatInputArea({
               onClose={onSlashMenuClose}
             />
           </div>
-          <InputGroup className="rounded-xl bg-muted/50 h-auto flex-col">
+          <InputGroup className={cn(
+              "rounded-xl bg-muted/50 h-auto flex-col transition-colors",
+              PERMISSION_MODE_STYLES[permissionMode]?.border,
+              PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
+            )}>
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
             {(referencedArticles.length > 0 || quotedSnippets.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
@@ -281,14 +318,12 @@ export function ChatInputArea({
                 <DropdownMenuTrigger asChild>
                   <InputGroupButton
                     size="xs"
-                    className="gap-1 text-muted-foreground"
+                    className={cn("gap-1", PERMISSION_MODE_STYLES[permissionMode]?.icon || 'text-muted-foreground')}
                     title="权限模式"
                   >
                     <Shield size={14} />
                     <span className="text-xs">
-                      {permissionMode === 'bypassPermissions' ? '自动执行' :
-                       permissionMode === 'acceptEdits' ? '允许编辑' :
-                       permissionMode === 'plan' ? '仅规划' : '需确认'}
+                      {PERMISSION_MODE_STYLES[permissionMode]?.label || '需确认'}
                     </span>
                     <ChevronRight size={12} className="rotate-90" />
                   </InputGroupButton>

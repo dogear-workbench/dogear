@@ -64,8 +64,43 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
             // 转换 SDK 历史消息格式到组件消息格式
             // 第一步：收集所有 tool_result，建立 tool_use_id -> result 的映射
             const toolResultMap = new Map<string, { content: any; isError: boolean }>();
+            // 同时收集子代理结果（toolUseResult 含 agentId）
+            const subAgentResultMap = new Map<string, {
+              agentId: string;
+              status: string;
+              durationMs?: number;
+              totalTokens?: number;
+              toolUseCount?: number;
+              resultText?: string;
+            }>();
             for (const msg of historyResult.messages) {
               if (msg.type === 'user' && Array.isArray(msg.content)) {
+                // 检查消息是否携带 toolUseResult（子代理结果）
+                const tur = (msg as any).toolUseResult;
+                if (tur?.agentId) {
+                  // 找到关联的 tool_use_id
+                  for (const block of msg.content) {
+                    if (block?.type === 'tool_result' && block.tool_use_id) {
+                      // 提取子代理返回的文本
+                      let resultText = '';
+                      if (Array.isArray(tur.content)) {
+                        resultText = tur.content
+                          .filter((c: any) => c?.type === 'text')
+                          .map((c: any) => c.text)
+                          .join('\n');
+                      }
+                      subAgentResultMap.set(block.tool_use_id, {
+                        agentId: tur.agentId,
+                        status: tur.status || 'completed',
+                        durationMs: tur.totalDurationMs,
+                        totalTokens: tur.totalTokens,
+                        toolUseCount: tur.totalToolUseCount,
+                        resultText,
+                      });
+                    }
+                  }
+                }
+
                 for (const block of msg.content) {
                   if (block && typeof block === 'object' && block.type === 'tool_result') {
                     const toolUseId = block.tool_use_id;
@@ -90,6 +125,7 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
               }
             }
             console.log('工具结果映射:', toolResultMap.size, '个');
+            console.log('子代理结果映射:', subAgentResultMap.size, '个');
 
             // 第二步：收集 isMeta 消息（skill 内容），建立 sourceToolUseID -> content 的映射
             const skillContentMap = new Map<string, string>();
@@ -269,6 +305,10 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
                             : skillContent;
                         }
 
+                        // 检测是否为子代理调用（Agent 工具）
+                        const subAgentResult = subAgentResultMap.get(block.id);
+                        const isSubAgent = block.name === 'Agent';
+
                         blocks.push({
                           type: 'tool_use',
                           id: block.id,
@@ -280,7 +320,19 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
                           isError: toolResult?.isError || false,
                           // 历史加载的工具块，有 output 说明已完成
                           status: toolOutput !== undefined ? 'completed' : 'pending',
-                          timestamp: Date.now()
+                          timestamp: Date.now(),
+                          // 子代理元数据
+                          ...(isSubAgent ? {
+                            isSubAgent: true,
+                            subAgentDescription: block.input?.description,
+                            subAgentType: block.input?.subagent_type,
+                            subAgentId: subAgentResult?.agentId,
+                            subAgentStatus: subAgentResult?.status,
+                            subAgentDurationMs: subAgentResult?.durationMs,
+                            subAgentTokens: subAgentResult?.totalTokens,
+                            subAgentToolUseCount: subAgentResult?.toolUseCount,
+                            subAgentResultText: subAgentResult?.resultText,
+                          } : {}),
                         });
                       } else if (block.type === 'thinking') {
                         // 思考块 - 历史加载时也渲染

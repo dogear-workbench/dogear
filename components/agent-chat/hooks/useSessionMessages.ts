@@ -101,12 +101,21 @@ export function useSessionMessages({
             // 查找对应的 tool_use 块
             const toolUseIdx = blocks.findIndex(b => b.toolUseId === extendedMsg.toolUseId);
             if (toolUseIdx >= 0) {
-              // 更新找到的 tool_use 块
+              // 更新找到的 tool_use 块，同时合并子代理元数据（如有）
               const updatedBlocks = [...blocks];
               updatedBlocks[toolUseIdx] = {
                 ...updatedBlocks[toolUseIdx],
                 toolOutput: extendedMsg.toolOutput,
                 isError: extendedMsg.isError,
+                // 子代理元数据（Agent 工具的 tool_result 携带）
+                ...(extendedMsg.subAgentId ? {
+                  subAgentId: extendedMsg.subAgentId,
+                  subAgentStatus: extendedMsg.subAgentStatus,
+                  subAgentDurationMs: extendedMsg.subAgentDurationMs,
+                  subAgentTokens: extendedMsg.subAgentTokens,
+                  subAgentToolUseCount: extendedMsg.subAgentToolUseCount,
+                  subAgentResultText: extendedMsg.subAgentResultText,
+                } : {}),
               };
               updated[lastIdx] = {
                 ...lastMsg,
@@ -114,6 +123,29 @@ export function useSessionMessages({
               };
               return updated;
             }
+          }
+
+          // task_notification：如果携带 toolUseId，更新对应的 SubAgentBlock 状态
+          if (extendedMsg.type === 'task_notification' && extendedMsg.toolUseId) {
+            const subAgentIdx = blocks.findIndex(b => b.toolUseId === extendedMsg.toolUseId && b.isSubAgent);
+            if (subAgentIdx >= 0) {
+              const updatedBlocks = [...blocks];
+              updatedBlocks[subAgentIdx] = {
+                ...updatedBlocks[subAgentIdx],
+                taskId: extendedMsg.taskId,
+                taskStatus: extendedMsg.taskStatus,
+                subAgentStatus: extendedMsg.taskStatus === 'completed' ? 'completed'
+                  : extendedMsg.taskStatus === 'failed' ? 'failed'
+                  : extendedMsg.taskStatus === 'stopped' ? 'failed'
+                  : updatedBlocks[subAgentIdx].subAgentStatus,
+              };
+              updated[lastIdx] = {
+                ...lastMsg,
+                contentBlocks: updatedBlocks,
+              };
+              return updated;
+            }
+            // 没找到对应的 SubAgentBlock，作为独立块添加（fallthrough）
           }
 
           // 对于 thinking 类型，合并到最后一个 thinking 块
@@ -177,6 +209,9 @@ export function useSessionMessages({
               }
             }
 
+            // 检测 Agent 工具调用
+            const isAgentTool = extendedMsg.type === 'tool_use' && extendedMsg.toolName === 'Agent';
+
             // 创建新块
             const newBlock: ContentBlock = {
               type: extendedMsg.type,
@@ -206,6 +241,12 @@ export function useSessionMessages({
               // compact_boundary 相关字段
               compactTrigger: extendedMsg.compactTrigger,
               compactPreTokens: extendedMsg.compactPreTokens,
+              // 子代理标记（Agent tool_use）
+              ...(isAgentTool ? {
+                isSubAgent: true,
+                subAgentDescription: extendedMsg.toolInput?.description,
+                subAgentType: extendedMsg.toolInput?.subagent_type,
+              } : {}),
             };
 
             updated[lastIdx] = {
@@ -223,6 +264,9 @@ export function useSessionMessages({
           if (extendedMsg.type === 'tool_result') {
             return updated;
           }
+
+          // 检测 Agent 工具调用
+          const isAgentTool = extendedMsg.type === 'tool_use' && extendedMsg.toolName === 'Agent';
 
           // 创建新的助手消息
           console.log('  → 创建新的助手消息');
@@ -251,6 +295,12 @@ export function useSessionMessages({
             taskId: extendedMsg.taskId,
             taskStatus: extendedMsg.taskStatus,
             taskSummary: extendedMsg.taskSummary,
+            // 子代理标记（Agent tool_use）
+            ...(isAgentTool ? {
+              isSubAgent: true,
+              subAgentDescription: extendedMsg.toolInput?.description,
+              subAgentType: extendedMsg.toolInput?.subagent_type,
+            } : {}),
           };
 
           const newMessage: Message = {

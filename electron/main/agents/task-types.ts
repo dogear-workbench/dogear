@@ -173,6 +173,13 @@ export interface ExtendedSessionMessage {
   // compact_boundary 相关字段
   compactTrigger?: 'manual' | 'auto';  // 压缩触发方式
   compactPreTokens?: number;           // 压缩前 token 数
+  // 子代理相关字段（Agent 工具的 tool_result 附带的元数据）
+  subAgentId?: string;                 // 子代理 agentId
+  subAgentStatus?: string;             // 子代理执行状态
+  subAgentDurationMs?: number;         // 子代理执行时长
+  subAgentTokens?: number;             // 子代理 token 消耗
+  subAgentToolUseCount?: number;       // 子代理工具调用次数
+  subAgentResultText?: string;         // 子代理返回的文本结果
 }
 
 /**

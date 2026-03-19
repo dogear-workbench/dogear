@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
+import { PromptSidebar } from '@/components/PromptSidebar';
+import { SubAgentPanel } from '@/components/agent-chat/SubAgentPanel';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -20,6 +22,9 @@ import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
+  const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
+  const selectedSubAgentId = useUIStore((s) => s.selectedSubAgentId);
+  const clearSubAgents = useUIStore((s) => s.clearSubAgents);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -57,6 +62,11 @@ export default function Home() {
   // 对话状态
   const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const newConversation = useConversationStore((s) => s.newConversation);
+
+  // 切换对话时清空子代理列表
+  useEffect(() => {
+    clearSubAgents();
+  }, [selectedConversation?.id, clearSubAgents]);
 
   // 多标签页状态
   const tabs = useSessionStore((s) => s.tabs);
@@ -195,6 +205,16 @@ export default function Home() {
                     </button>
                   </div>
                 ))}
+                {/* 系统提示按钮 */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 ml-auto text-muted-foreground hover:text-foreground"
+                  title="自定义系统提示"
+                  onClick={togglePromptSidebar}
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                </Button>
               </div>
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
@@ -234,200 +254,211 @@ export default function Home() {
           )}
         </section>
 
-        {/* 右侧：预览（书籍 or 文章） */}
+        {/* 右侧：预览（书籍/文章）或子代理面板 */}
         <aside className="w-96 border-l flex flex-col bg-background">
-          <div className="p-3 border-b flex items-center justify-between">
-            <h2 className="text-sm font-semibold">
-              {selectedArticle ? '文章预览' : '书籍预览'}
-            </h2>
-            {selectedBook && !selectedArticle && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={deleteBook}
-                disabled={deleting}
-                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-              >
-                {deleting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Trash2 className="w-4 h-4" />
+          {selectedSubAgentId ? (
+            /* 子代理会话历史面板 */
+            <SubAgentPanel />
+          ) : (
+            /* 原有的预览内容 */
+            <>
+              <div className="p-3 border-b flex items-center justify-between">
+                <h2 className="text-sm font-semibold">
+                  {selectedArticle ? '文章预览' : '书籍预览'}
+                </h2>
+                {selectedBook && !selectedArticle && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={deleteBook}
+                    disabled={deleting}
+                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  >
+                    {deleting ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </Button>
                 )}
-              </Button>
-            )}
-          </div>
-          <ScrollArea className="flex-1 overflow-hidden">
-            {/* 文章预览模式 */}
-            {selectedArticle ? (
-              <ArticlePreview />
-            ) : selectedFile ? (
-              <div className="p-4 space-y-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
-                    <span className="text-xs text-muted-foreground">{selectedFile.ext?.slice(1).toUpperCase()}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium truncate">{selectedFile.name}</h3>
-                    <p className="text-sm text-muted-foreground truncate">{selectedFile.path}</p>
-                  </div>
-                </div>
-
-                {selectedBook ? (
-                  <div className="pt-4 border-t space-y-3">
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">书名</p>
-                      <p className="text-sm font-medium">{selectedBook.title}</p>
-                    </div>
-                    {selectedBook.author && (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">作者</p>
-                        <p className="text-sm">{selectedBook.author}</p>
+              </div>
+              <ScrollArea className="flex-1 overflow-hidden">
+                {/* 文章预览模式 */}
+                {selectedArticle ? (
+                  <ArticlePreview />
+                ) : selectedFile ? (
+                  <div className="p-4 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
+                        <span className="text-xs text-muted-foreground">{selectedFile.ext?.slice(1).toUpperCase()}</span>
                       </div>
-                    )}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">章节数</p>
-                        <p className="text-sm">{selectedBook.total_chapters || 0}</p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium truncate">{selectedFile.name}</h3>
+                        <p className="text-sm text-muted-foreground truncate">{selectedFile.path}</p>
                       </div>
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">字符数</p>
-                        <p className="text-sm">{(selectedBook.total_characters || 0).toLocaleString()}</p>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground mb-1">状态</p>
-                      <p className="text-sm">
-                        {selectedBook.processing_status === 'completed' ? (
-                          <span className="text-green-600">已处理</span>
-                        ) : selectedBook.processing_status === 'processing' ? (
-                          <span className="text-yellow-600">处理中...</span>
-                        ) : selectedBook.processing_status === 'failed' ? (
-                          <span className="text-red-600">处理失败</span>
-                        ) : (
-                          <span className="text-muted-foreground">未处理</span>
-                        )}
-                      </p>
                     </div>
 
-                    {/* 工作区文件路径 */}
-                    {workspaceFilePath && (
-                      <div>
-                        <p className="text-xs text-muted-foreground mb-1">文件路径</p>
-                        <div className="flex items-center gap-2">
-                          <p className="text-xs text-muted-foreground flex-1 truncate" title={workspaceFilePath}>{workspaceFilePath}</p>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2"
-                            onClick={openBookInFolder}
-                            title="在文件系统中打开"
-                          >
-                            <ExternalLink className="w-3 h-3" />
-                          </Button>
+                    {selectedBook ? (
+                      <div className="pt-4 border-t space-y-3">
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">书名</p>
+                          <p className="text-sm font-medium">{selectedBook.title}</p>
                         </div>
-                      </div>
-                    )}
-
-                    {/* AI 分析区域 */}
-                    <div className="pt-3 border-t space-y-3">
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground">AI 分析</p>
-                        {analysisProgress.status === 'completed' ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-600" />
-                        ) : analysisProgress.status === 'failed' ? (
-                          <XCircle className="w-4 h-4 text-red-600" />
-                        ) : analyzing ? (
-                          <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                        ) : null}
-                      </div>
-
-                      {/* 分析进度显示 */}
-                      {analyzing && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <Brain className="w-3 h-3 text-blue-500" />
-                            <span>正在分析...</span>
+                        {selectedBook.author && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">作者</p>
+                            <p className="text-sm">{selectedBook.author}</p>
                           </div>
-                          {analysisProgress.currentTool && (
-                            <div className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
-                              执行: {analysisProgress.currentTool}
+                        )}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">章节数</p>
+                            <p className="text-sm">{selectedBook.total_chapters || 0}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">字符数</p>
+                            <p className="text-sm">{(selectedBook.total_characters || 0).toLocaleString()}</p>
+                          </div>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground mb-1">状态</p>
+                          <p className="text-sm">
+                            {selectedBook.processing_status === 'completed' ? (
+                              <span className="text-green-600">已处理</span>
+                            ) : selectedBook.processing_status === 'processing' ? (
+                              <span className="text-yellow-600">处理中...</span>
+                            ) : selectedBook.processing_status === 'failed' ? (
+                              <span className="text-red-600">处理失败</span>
+                            ) : (
+                              <span className="text-muted-foreground">未处理</span>
+                            )}
+                          </p>
+                        </div>
+
+                        {/* 工作区文件路径 */}
+                        {workspaceFilePath && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-1">文件路径</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs text-muted-foreground flex-1 truncate" title={workspaceFilePath}>{workspaceFilePath}</p>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2"
+                                onClick={openBookInFolder}
+                                title="在文件系统中打开"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* AI 分析区域 */}
+                        <div className="pt-3 border-t space-y-3">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs text-muted-foreground">AI 分析</p>
+                            {analysisProgress.status === 'completed' ? (
+                              <CheckCircle2 className="w-4 h-4 text-green-600" />
+                            ) : analysisProgress.status === 'failed' ? (
+                              <XCircle className="w-4 h-4 text-red-600" />
+                            ) : analyzing ? (
+                              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                            ) : null}
+                          </div>
+
+                          {/* 分析进度显示 */}
+                          {analyzing && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Brain className="w-3 h-3 text-blue-500" />
+                                <span>正在分析...</span>
+                              </div>
+                              {analysisProgress.currentTool && (
+                                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
+                                  执行: {analysisProgress.currentTool}
+                                </div>
+                              )}
+                              {analysisProgress.currentChapter && (
+                                <div className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 rounded px-2 py-1">
+                                  章节: {analysisProgress.currentChapter}
+                                </div>
+                              )}
+                              {analysisProgress.message && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {analysisProgress.message}
+                                </div>
+                              )}
                             </div>
                           )}
-                          {analysisProgress.currentChapter && (
-                            <div className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 rounded px-2 py-1">
-                              章节: {analysisProgress.currentChapter}
+
+                          {/* 分析完成显示 */}
+                          {analysisProgress.status === 'completed' && !analyzing && (
+                            <div className="text-xs text-green-600 bg-green-50 dark:bg-green-950/30 rounded px-2 py-1.5">
+                              分析完成！可以基于分析结果进行问答
                             </div>
                           )}
-                          {analysisProgress.message && (
-                            <div className="text-xs text-muted-foreground truncate">
-                              {analysisProgress.message}
+
+                          {/* 分析失败显示 */}
+                          {analysisProgress.status === 'failed' && (
+                            <div className="text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
+                              分析失败: {analysisProgress.error || '未知错误'}
                             </div>
                           )}
-                        </div>
-                      )}
 
-                      {/* 分析完成显示 */}
-                      {analysisProgress.status === 'completed' && !analyzing && (
-                        <div className="text-xs text-green-600 bg-green-50 dark:bg-green-950/30 rounded px-2 py-1.5">
-                          分析完成！可以基于分析结果进行问答
-                        </div>
-                      )}
+                          {/* 分析按钮 */}
+                          {!analyzing && analysisProgress.status !== 'completed' && (
+                            <Button
+                              size="sm"
+                              onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
+                              disabled={!selectedBook || selectedBook.processing_status !== 'completed'}
+                              className="w-full"
+                            >
+                              <Sparkles className="w-4 h-4 mr-2" />
+                              开始 AI 分析
+                            </Button>
+                          )}
 
-                      {/* 分析失败显示 */}
-                      {analysisProgress.status === 'failed' && (
-                        <div className="text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
-                          分析失败: {analysisProgress.error || '未知错误'}
+                          {/* 重新分析按钮 */}
+                          {!analyzing && analysisProgress.status === 'completed' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
+                              className="w-full"
+                            >
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              重新分析
+                            </Button>
+                          )}
                         </div>
-                      )}
-
-                      {/* 分析按钮 */}
-                      {!analyzing && analysisProgress.status !== 'completed' && (
-                        <Button
-                          size="sm"
-                          onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
-                          disabled={!selectedBook || selectedBook.processing_status !== 'completed'}
-                          className="w-full"
-                        >
-                          <Sparkles className="w-4 h-4 mr-2" />
-                          开始 AI 分析
+                      </div>
+                    ) : (
+                      <div className="pt-4 border-t">
+                        <p className="text-sm text-muted-foreground mb-3">
+                          该文件尚未导入到数据库。
+                        </p>
+                        <Button size="sm" variant="outline" onClick={() => {/* TODO: 导入该文件 */}}>
+                          导入书籍
                         </Button>
-                      )}
-
-                      {/* 重新分析按钮 */}
-                      {!analyzing && analysisProgress.status === 'completed' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
-                          className="w-full"
-                        >
-                          <RefreshCw className="w-4 h-4 mr-2" />
-                          重新分析
-                        </Button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
-                  <div className="pt-4 border-t">
-                    <p className="text-sm text-muted-foreground mb-3">
-                      该文件尚未导入到数据库。
-                    </p>
-                    <Button size="sm" variant="outline" onClick={() => {/* TODO: 导入该文件 */}}>
-                      导入书籍
-                    </Button>
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
+                    <FileIcon className="w-12 h-12 mb-4 opacity-50" />
+                    <p className="text-sm text-center">导入书籍或文章后可在此预览</p>
+                    <p className="text-xs mt-1">选择左侧文章或书籍查看详情</p>
                   </div>
                 )}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-                <FileIcon className="w-12 h-12 mb-4 opacity-50" />
-                <p className="text-sm text-center">导入书籍或文章后可在此预览</p>
-                <p className="text-xs mt-1">选择左侧文章或书籍查看详情</p>
-              </div>
-            )}
-          </ScrollArea>
+              </ScrollArea>
+            </>
+          )}
         </aside>
       </div>
+
+      {/* 系统提示侧边栏 */}
+      <PromptSidebar />
     </main>
   );
 }
