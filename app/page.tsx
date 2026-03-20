@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -21,6 +22,7 @@ import { useSessionStore } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
+  const navigate = useNavigate();
   const openSettings = useUIStore((s) => s.openSettings);
   const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
   const selectedSubAgentId = useUIStore((s) => s.selectedSubAgentId);
@@ -115,6 +117,10 @@ export default function Home() {
           <Button variant="outline" size="sm" onClick={openMonitorWindow}>
             <Activity className="w-4 h-4 mr-2" />
             Agent 监控
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate('/stocks')}>
+            <TrendingUp className="w-4 h-4 mr-2" />
+            自选股
           </Button>
           <Button variant="outline" size="sm" onClick={() => loadWorkspaceFiles()} disabled={loadingFiles}>
             {loadingFiles ? (
