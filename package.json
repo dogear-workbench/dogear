@@ -34,6 +34,7 @@
     "epub2": "^3.0.2",
     "highlight.js": "^11.11.1",
     "iconv-lite": "^0.7.2",
+    "lightweight-charts": "^5.1.0",
     "linkedom": "^0.18.12",
     "lucide-react": "^0.562.0",
     "pdf-parse": "^2.4.5",
