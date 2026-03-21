@@ -9,12 +9,14 @@ interface PriceTextProps {
 }
 
 export function PriceText({ value, prevClose, className, prefix = '', decimals = 2 }: PriceTextProps) {
-  const diff = prevClose !== undefined ? value - prevClose : value;
+  const safeValue = typeof value === 'number' && !Number.isNaN(value) ? value : 0;
+  const safePrev = typeof prevClose === 'number' && !Number.isNaN(prevClose) ? prevClose : undefined;
+  const diff = safePrev !== undefined ? safeValue - safePrev : safeValue;
   const colorClass = diff > 0 ? 'text-red-500' : diff < 0 ? 'text-green-500' : 'text-muted-foreground';
 
   return (
     <span className={cn(colorClass, className)}>
-      {prefix}{value.toFixed(decimals)}
+      {prefix}{safeValue.toFixed(decimals)}
     </span>
   );
 }

@@ -2,13 +2,19 @@ import { useStockStore } from '@/stores/stock-store';
 import { cn } from '@/lib/utils';
 import { PercentBadge } from './shared/PercentBadge';
 
+/** 安全取数值 */
+function safe(v: unknown): number {
+  return typeof v === 'number' && !Number.isNaN(v) ? v : 0;
+}
+
 /** 格式化大数字：万亿 / 亿 / 万 */
-function formatMarketCap(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return (n / 1e12).toFixed(2) + '万亿';
-  if (abs >= 1e8) return (n / 1e8).toFixed(2) + '亿';
-  if (abs >= 1e4) return (n / 1e4).toFixed(1) + '万';
-  return n.toFixed(2);
+function formatMarketCap(n: unknown): string {
+  const v = safe(n);
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return (v / 1e12).toFixed(2) + '万亿';
+  if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+  if (abs >= 1e4) return (v / 1e4).toFixed(1) + '万';
+  return v.toFixed(2);
 }
 
 /** 单个基本面数据项 */
@@ -39,17 +45,17 @@ export function StockFundamental() {
   return (
     <div className="grid grid-cols-3 gap-1.5">
       <FundItem label="市盈率(动态)">
-        <span className={cn(quote.peRatio < 0 && 'text-muted-foreground')}>
-          {quote.peRatio > 0 ? quote.peRatio.toFixed(2) : '亏损'}
+        <span className={cn(safe(quote.peRatio) < 0 && 'text-muted-foreground')}>
+          {safe(quote.peRatio) > 0 ? safe(quote.peRatio).toFixed(2) : '亏损'}
         </span>
       </FundItem>
       <FundItem label="市盈率(TTM)">
-        <span className={cn(quote.peRatioTTM < 0 && 'text-muted-foreground')}>
-          {quote.peRatioTTM > 0 ? quote.peRatioTTM.toFixed(2) : '亏损'}
+        <span className={cn(safe(quote.peRatioTTM) < 0 && 'text-muted-foreground')}>
+          {safe(quote.peRatioTTM) > 0 ? safe(quote.peRatioTTM).toFixed(2) : '亏损'}
         </span>
       </FundItem>
       <FundItem label="市净率">
-        {quote.pbRatio.toFixed(2)}
+        {safe(quote.pbRatio).toFixed(2)}
       </FundItem>
       <FundItem label="总市值">
         {formatMarketCap(quote.totalMarketCap)}
@@ -58,16 +64,16 @@ export function StockFundamental() {
         {formatMarketCap(quote.floatMarketCap)}
       </FundItem>
       <FundItem label="换手率">
-        {quote.turnoverRate.toFixed(2)}%
+        {safe(quote.turnoverRate).toFixed(2)}%
       </FundItem>
       <FundItem label="60日涨跌幅">
-        <PercentBadge value={quote.changePercent60d} className="text-[10px] px-1 py-0" />
+        <PercentBadge value={safe(quote.changePercent60d)} className="text-[10px] px-1 py-0" />
       </FundItem>
       <FundItem label="年初至今">
-        <PercentBadge value={quote.changePercentYTD} className="text-[10px] px-1 py-0" />
+        <PercentBadge value={safe(quote.changePercentYTD)} className="text-[10px] px-1 py-0" />
       </FundItem>
       <FundItem label="振幅">
-        {quote.amplitude.toFixed(2)}%
+        {safe(quote.amplitude).toFixed(2)}%
       </FundItem>
     </div>
   );

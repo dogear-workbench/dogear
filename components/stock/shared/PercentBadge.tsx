@@ -7,8 +7,9 @@ interface PercentBadgeProps {
 }
 
 export function PercentBadge({ value, className, showSign = true }: PercentBadgeProps) {
-  const isUp = value > 0;
-  const isDown = value < 0;
+  const safeValue = typeof value === 'number' && !Number.isNaN(value) ? value : 0;
+  const isUp = safeValue > 0;
+  const isDown = safeValue < 0;
   const sign = showSign && isUp ? '+' : '';
 
   return (
@@ -21,7 +22,7 @@ export function PercentBadge({ value, className, showSign = true }: PercentBadge
         className,
       )}
     >
-      {sign}{value.toFixed(2)}%
+      {sign}{safeValue.toFixed(2)}%
     </span>
   );
 }

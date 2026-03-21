@@ -3,20 +3,32 @@ import { PriceText } from './shared/PriceText';
 import { PercentBadge } from './shared/PercentBadge';
 import { cn } from '@/lib/utils';
 
+/** 安全取数值，undefined/NaN 返回 0 */
+function safeNum(v: unknown): number {
+  return typeof v === 'number' && !Number.isNaN(v) ? v : 0;
+}
+
 /** 格式化大数字：亿 / 万亿 / 万 */
-function formatLargeNumber(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1e12) return (n / 1e12).toFixed(2) + '万亿';
-  if (abs >= 1e8) return (n / 1e8).toFixed(2) + '亿';
-  if (abs >= 1e4) return (n / 1e4).toFixed(1) + '万';
-  return n.toFixed(2);
+function formatLargeNumber(n: unknown): string {
+  const v = safeNum(n);
+  const abs = Math.abs(v);
+  if (abs >= 1e12) return (v / 1e12).toFixed(2) + '万亿';
+  if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+  if (abs >= 1e4) return (v / 1e4).toFixed(1) + '万';
+  return v.toFixed(2);
 }
 
 /** 格式化成交量（手） */
-function formatVolume(n: number): string {
-  if (n >= 1e8) return (n / 1e8).toFixed(1) + '亿手';
-  if (n >= 1e4) return (n / 1e4).toFixed(1) + '万手';
-  return n.toFixed(0) + '手';
+function formatVolume(n: unknown): string {
+  const v = safeNum(n);
+  if (v >= 1e8) return (v / 1e8).toFixed(1) + '亿手';
+  if (v >= 1e4) return (v / 1e4).toFixed(1) + '万手';
+  return v.toFixed(0) + '手';
+}
+
+/** 安全 toFixed */
+function fmt(v: unknown, digits = 2): string {
+  return safeNum(v).toFixed(digits);
 }
 
 /** 市场标签文字 */
@@ -94,27 +106,26 @@ export function StockQuote() {
 
       {/* 数据网格：3列 */}
       <div className="grid grid-cols-3 gap-px bg-border rounded-md overflow-hidden">
-        {/* 每列用 bg-background 恢复背景，gap-px + bg-border 实现分隔线 */}
         <div className="bg-background">
-          <DataItem label="开盘" value={open.toFixed(2)} />
-          <DataItem label="昨收" value={prevClose.toFixed(2)} />
-          <ColoredDataItem label="振幅" value={amplitude.toFixed(2) + '%'} raw={amplitude} />
-          <DataItem label="市盈率" value={peRatio.toFixed(1)} />
+          <DataItem label="开盘" value={fmt(open)} />
+          <DataItem label="昨收" value={fmt(prevClose)} />
+          <ColoredDataItem label="振幅" value={fmt(amplitude) + '%'} raw={safeNum(amplitude)} />
+          <DataItem label="市盈率" value={fmt(peRatio, 1)} />
           <DataItem label="总市值" value={formatLargeNumber(totalMarketCap)} />
         </div>
         <div className="bg-background">
-          <DataItem label="最高" value={high.toFixed(2)} />
-          <DataItem label="最低" value={low.toFixed(2)} />
-          <DataItem label="换手率" value={turnoverRate.toFixed(2) + '%'} />
-          <DataItem label="市净率" value={pbRatio.toFixed(2)} />
+          <DataItem label="最高" value={fmt(high)} />
+          <DataItem label="最低" value={fmt(low)} />
+          <DataItem label="换手率" value={fmt(turnoverRate) + '%'} />
+          <DataItem label="市净率" value={fmt(pbRatio)} />
           <DataItem label="流通市值" value={formatLargeNumber(floatMarketCap)} />
         </div>
         <div className="bg-background">
           <DataItem label="成交量" value={formatVolume(volume)} />
           <DataItem label="成交额" value={formatLargeNumber(turnover)} />
-          <DataItem label="量比" value={volumeRatio.toFixed(2)} />
-          <ColoredDataItem label="涨速" value={speedPercent.toFixed(2) + '%'} raw={speedPercent} />
-          <ColoredDataItem label="主力净流入" value={formatLargeNumber(mainNetInflow)} raw={mainNetInflow} />
+          <DataItem label="量比" value={fmt(volumeRatio)} />
+          <ColoredDataItem label="涨速" value={fmt(speedPercent) + '%'} raw={safeNum(speedPercent)} />
+          <ColoredDataItem label="主力净流入" value={formatLargeNumber(mainNetInflow)} raw={safeNum(mainNetInflow)} />
         </div>
       </div>
     </div>

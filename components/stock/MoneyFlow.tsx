@@ -1,24 +1,31 @@
 import { useStockStore } from '@/stores/stock-store';
 import { cn } from '@/lib/utils';
 
+/** 安全取数值 */
+function safe(v: unknown): number {
+  return typeof v === 'number' && !Number.isNaN(v) ? v : 0;
+}
+
 /** 格式化金额：亿 / 万 */
-function formatAmount(n: number): string {
-  const abs = Math.abs(n);
-  if (abs >= 1e8) return (n / 1e8).toFixed(2) + '亿';
-  if (abs >= 1e4) return (n / 1e4).toFixed(1) + '万';
-  return n.toFixed(0);
+function formatAmount(n: unknown): string {
+  const v = safe(n);
+  const abs = Math.abs(v);
+  if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+  if (abs >= 1e4) return (v / 1e4).toFixed(1) + '万';
+  return v.toFixed(0);
 }
 
 /** 获取涨跌色 className */
-function flowColor(value: number): string {
-  if (value > 0) return 'text-red-500';
-  if (value < 0) return 'text-green-500';
+function flowColor(value: unknown): string {
+  const v = safe(value);
+  if (v > 0) return 'text-red-500';
+  if (v < 0) return 'text-green-500';
   return 'text-muted-foreground';
 }
 
 /** 获取柱状图背景色 */
-function barColor(value: number): string {
-  return value > 0 ? 'bg-red-500' : 'bg-green-500';
+function barColor(value: unknown): string {
+  return safe(value) > 0 ? 'bg-red-500' : 'bg-green-500';
 }
 
 /**
