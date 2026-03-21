@@ -12,7 +12,7 @@
  *   - search        股票搜索
  */
 
-import { rateLimiter, type RateLimiterStatus } from './rate-limiter';
+import { rateLimiter, type RateLimiterStatus } from './rate-limiter.js';
 
 // ============================================================
 // 常量
