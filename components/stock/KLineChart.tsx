@@ -34,15 +34,34 @@ const MA_CONFIG = [
   { period: 60, color: '#6b7280' },  // 灰色
 ] as const;
 
+/**
+ * 将 K线日期字符串转为 lightweight-charts 可用的 time 值
+ * - 日K/周K/月K: "2026-03-20" → 直接使用（BusinessDay string）
+ * - 分钟K: "2026-03-20 09:31" → 转为 UTCTimestamp（秒数）
+ */
+function toChartTime(dateStr: string): string | number {
+  if (dateStr.includes(' ')) {
+    // 分钟级数据，含时间部分，转为 Unix 秒（UTC+8）
+    const [datePart, timePart] = dateStr.split(' ');
+    const [y, m, d] = datePart.split('-').map(Number);
+    const [h, min] = timePart.split(':').map(Number);
+    // 构造北京时间 Date，然后取 UTC 秒数
+    const dt = new Date(y, m - 1, d, h, min);
+    return Math.floor(dt.getTime() / 1000) as number;
+  }
+  // 日K/周K/月K，纯日期字符串
+  return dateStr;
+}
+
 /** 计算移动平均线 */
 function calculateMA(data: KLineDataPoint[], period: number) {
-  const result: { time: string; value: number }[] = [];
+  const result: { time: string | number; value: number }[] = [];
   for (let i = period - 1; i < data.length; i++) {
     let sum = 0;
     for (let j = i - period + 1; j <= i; j++) {
       sum += data[j].close;
     }
-    result.push({ time: data[i].date, value: sum / period });
+    result.push({ time: toChartTime(data[i].date), value: sum / period });
   }
   return result;
 }
@@ -106,7 +125,7 @@ export function KLineChart() {
     const candleSeries = chart.addSeries(CandlestickSeries, CANDLE_COLORS);
     candleSeries.setData(
       klineData.map((d) => ({
-        time: d.date,
+        time: toChartTime(d.date) as any,
         open: d.open,
         high: d.high,
         low: d.low,
@@ -124,7 +143,7 @@ export function KLineChart() {
     });
     volumeSeries.setData(
       klineData.map((d) => ({
-        time: d.date,
+        time: toChartTime(d.date) as any,
         value: d.volume,
         color: d.close >= d.open ? '#ef444480' : '#22c55e80',
       })),
