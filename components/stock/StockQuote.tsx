@@ -69,6 +69,7 @@ export function StockQuote() {
     amplitude, turnoverRate, peRatio, pbRatio,
     totalMarketCap, floatMarketCap, volumeRatio,
     speedPercent, mainNetInflow,
+    outerVolume, innerVolume, limitUp, limitDown,
   } = quote;
 
   // 涨跌额前缀
@@ -112,6 +113,7 @@ export function StockQuote() {
           <ColoredDataItem label="振幅" value={fmt(amplitude) + '%'} raw={safeNum(amplitude)} />
           <DataItem label="市盈率" value={fmt(peRatio, 1)} />
           <DataItem label="总市值" value={formatLargeNumber(totalMarketCap)} />
+          <DataItem label="涨停" value={fmt(limitUp)} className="text-red-500" />
         </div>
         <div className="bg-background">
           <DataItem label="最高" value={fmt(high)} />
@@ -119,12 +121,22 @@ export function StockQuote() {
           <DataItem label="换手率" value={fmt(turnoverRate) + '%'} />
           <DataItem label="市净率" value={fmt(pbRatio)} />
           <DataItem label="流通市值" value={formatLargeNumber(floatMarketCap)} />
+          <DataItem label="跌停" value={fmt(limitDown)} className="text-green-500" />
         </div>
         <div className="bg-background">
           <DataItem label="成交量" value={formatVolume(volume)} />
           <DataItem label="成交额" value={formatLargeNumber(turnover)} />
           <DataItem label="量比" value={fmt(volumeRatio)} />
-          <ColoredDataItem label="涨速" value={fmt(speedPercent) + '%'} raw={safeNum(speedPercent)} />
+          <ColoredDataItem
+            label="外盘"
+            value={formatVolume(outerVolume)}
+            raw={safeNum(outerVolume) - safeNum(innerVolume)}
+          />
+          <ColoredDataItem
+            label="内盘"
+            value={formatVolume(innerVolume)}
+            raw={safeNum(innerVolume) - safeNum(outerVolume)}
+          />
           <ColoredDataItem label="主力净流入" value={formatLargeNumber(mainNetInflow)} raw={safeNum(mainNetInflow)} />
         </div>
       </div>

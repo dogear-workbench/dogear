@@ -49,6 +49,17 @@ export interface StockQuote {
   mainNetInflow: number;   // 主力净流入
   changePercent60d: number;  // 60日涨跌幅
   changePercentYTD: number;  // 年初至今涨跌幅
+  outerVolume: number;     // 外盘（手）— 主动买入量
+  innerVolume: number;     // 内盘（手）— 主动卖出量
+  limitUp: number;         // 涨停价
+  limitDown: number;       // 跌停价
+  orderDiff: number;       // 委差（手）
+  avgPrice: number;        // 均价
+  high52w: number;         // 52周最高
+  low52w: number;          // 52周最低
+  floatShares: number;     // 流通股本（股）
+  totalShares: number;     // 总股本（股）
+  tradeDate: string;       // 交易日期 "2026-03-23"
   timestamp: number;       // 时间戳
 }
 
@@ -81,6 +92,33 @@ export interface KLineRequest {
   period: KLinePeriod;     // K线周期
   adjust: AdjustType;      // 复权类型
   limit?: number;          // 返回条数，默认 120
+}
+
+// === 每日快照 ===
+
+/** 每日快照数据点 — 记录日K缺少但行情接口有的字段，每日自动采集 */
+export interface DailySnapshot {
+  date: string;           // 交易日 "2026-03-23"
+  outerVolume: number;    // 外盘（手）
+  innerVolume: number;    // 内盘（手）
+  limitUp: number;        // 涨停价
+  limitDown: number;      // 跌停价
+  orderDiff: number;      // 委差（手）
+  avgPrice: number;       // 均价
+  high52w: number;        // 52周最高
+  low52w: number;         // 52周最低
+  floatShares: number;    // 流通股本（股）
+  totalShares: number;    // 总股本（股）
+  price: number;          // 收盘/当前价
+  volume: number;         // 成交量（手）
+  turnover: number;       // 成交额
+  changePercent: number;  // 涨跌幅
+  peRatio: number;        // 市盈率
+  pbRatio: number;        // 市净率
+  totalMarketCap: number; // 总市值
+  floatMarketCap: number; // 流通市值
+  turnoverRate: number;   // 换手率
+  timestamp: number;      // 采集时间戳
 }
 
 // === 分时数据 ===

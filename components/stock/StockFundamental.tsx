@@ -8,13 +8,22 @@ function safe(v: unknown): number {
 }
 
 /** 格式化大数字：万亿 / 亿 / 万 */
-function formatMarketCap(n: unknown): string {
+function formatBigNum(n: unknown): string {
   const v = safe(n);
   const abs = Math.abs(v);
   if (abs >= 1e12) return (v / 1e12).toFixed(2) + '万亿';
   if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿';
   if (abs >= 1e4) return (v / 1e4).toFixed(1) + '万';
   return v.toFixed(2);
+}
+
+/** 格式化股本：亿股 / 万股 */
+function formatShares(n: unknown): string {
+  const v = safe(n);
+  const abs = Math.abs(v);
+  if (abs >= 1e8) return (v / 1e8).toFixed(2) + '亿股';
+  if (abs >= 1e4) return (v / 1e4).toFixed(1) + '万股';
+  return v.toFixed(0) + '股';
 }
 
 /** 单个基本面数据项 */
@@ -58,13 +67,22 @@ export function StockFundamental() {
         {safe(quote.pbRatio).toFixed(2)}
       </FundItem>
       <FundItem label="总市值">
-        {formatMarketCap(quote.totalMarketCap)}
+        {formatBigNum(quote.totalMarketCap)}
       </FundItem>
       <FundItem label="流通市值">
-        {formatMarketCap(quote.floatMarketCap)}
+        {formatBigNum(quote.floatMarketCap)}
       </FundItem>
       <FundItem label="换手率">
         {safe(quote.turnoverRate).toFixed(2)}%
+      </FundItem>
+      <FundItem label="52周最高">
+        <span className="text-red-500">{safe(quote.high52w).toFixed(2)}</span>
+      </FundItem>
+      <FundItem label="52周最低">
+        <span className="text-green-500">{safe(quote.low52w).toFixed(2)}</span>
+      </FundItem>
+      <FundItem label="振幅">
+        {safe(quote.amplitude).toFixed(2)}%
       </FundItem>
       <FundItem label="60日涨跌幅">
         <PercentBadge value={safe(quote.changePercent60d)} className="text-[10px] px-1 py-0" />
@@ -72,8 +90,21 @@ export function StockFundamental() {
       <FundItem label="年初至今">
         <PercentBadge value={safe(quote.changePercentYTD)} className="text-[10px] px-1 py-0" />
       </FundItem>
-      <FundItem label="振幅">
-        {safe(quote.amplitude).toFixed(2)}%
+      <FundItem label="均价">
+        {safe(quote.avgPrice).toFixed(2)}
+      </FundItem>
+      <FundItem label="总股本">
+        {formatShares(quote.totalShares)}
+      </FundItem>
+      <FundItem label="流通股本">
+        {formatShares(quote.floatShares)}
+      </FundItem>
+      <FundItem label="委差">
+        <span className={cn(
+          safe(quote.orderDiff) > 0 ? 'text-red-500' : safe(quote.orderDiff) < 0 ? 'text-green-500' : '',
+        )}>
+          {safe(quote.orderDiff).toFixed(0)}手
+        </span>
       </FundItem>
     </div>
   );

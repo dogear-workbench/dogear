@@ -435,7 +435,9 @@ export class RateLimiter {
       // 步骤 6：记录请求到滑动窗口
       this.slidingWindow.record();
 
-      // 步骤 7：带指数退避的重试执行（最多 3 次：2s→4s→8s）
+      // 步骤 7：带指数退避的重试执行
+      // 网络级错误（fetch failed / AbortError）不重试，直接失败
+      // HTTP 5xx 等可恢复错误最多重试 2 次（共 3 次尝试）
       const maxRetries = 3;
       const baseDelayMs = 2000;
       let lastError: Error | undefined;
@@ -455,6 +457,15 @@ export class RateLimiter {
           return result;
         } catch (error) {
           lastError = error instanceof Error ? error : new Error(String(error));
+
+          // 网络级错误不重试：连接被拒绝/重置（IP封禁）、超时等
+          const errMsg = String(error);
+          if (
+            (error instanceof TypeError && errMsg.includes('fetch failed')) ||
+            (error instanceof Error && error.name === 'AbortError')
+          ) {
+            break; // 跳出重试循环，直接失败
+          }
 
           // 如果不是最后一次重试，等待指数退避时间
           if (attempt < maxRetries - 1) {

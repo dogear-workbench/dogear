@@ -4,13 +4,23 @@ import type { IChartApi, UTCTimestamp } from 'lightweight-charts';
 import { useStockStore } from '@/stores/stock-store';
 
 /**
- * 将 "09:30" 格式的时间字符串转换为当天的 UTC 时间戳（秒）
- * lightweight-charts 要求 UTCTimestamp 类型
+ * 将时间字符串转换为 UTC 时间戳（秒）
+ * 支持两种格式：
+ *   - "09:30"（仅时分，自动补当天日期）
+ *   - "2026-03-23 09:30"（东方财富 API 返回的完整格式）
  */
 function timeToTimestamp(timeStr: string): UTCTimestamp {
+  // 东方财富 API 分时数据格式: "2026-03-23 09:30"
+  if (timeStr.includes(' ')) {
+    const [datePart, timePart] = timeStr.split(' ');
+    const [y, mo, d] = datePart.split('-').map(Number);
+    const [h, m] = timePart.split(':').map(Number);
+    const date = new Date(y, mo - 1, d, h, m, 0);
+    return (date.getTime() / 1000) as UTCTimestamp;
+  }
+  // 仅时分格式: "09:30"
   const now = new Date();
   const [h, m] = timeStr.split(':').map(Number);
-  // 构造当天该时刻的 Date 对象
   const date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
   return (date.getTime() / 1000) as UTCTimestamp;
 }

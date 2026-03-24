@@ -67,6 +67,7 @@ electron/
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
 - `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测）
 - `app/book/BookPage.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板（useParams 获取 id）
+- `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
 
@@ -102,6 +103,18 @@ electron/
 - `book-card.tsx` — 书籍卡片（封面、标题、作者、操作按钮）
 - `book-list.tsx` — ⚠️ 已弃用，使用 WorkspaceExplorer 替代
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
+- `stock/` — 自选股行情模块
+  - `WatchList.tsx` — 自选股列表（右键删除、点击选中）
+  - `StockSearch.tsx` — 股票搜索弹窗（东方财富搜索 API，防抖输入）
+  - `StockQuote.tsx` — 行情卡片（30+ 字段，含外盘/内盘/涨停/跌停，红涨绿跌）
+  - `KLineChart.tsx` — K线图（Lightweight Charts v5，蜡烛图+均线+成交量，支持分钟/日/周/月K）
+  - `TimelineChart.tsx` — 分时图（价格线+均价线+成交量）
+  - `MoneyFlow.tsx` — 资金流向（主力/散户净流入柱状图）
+  - `StockFundamental.tsx` — 基本面数据网格（含52周高低/股本/委差）
+  - `DailySnapshotList.tsx` — 历史每日快照表格（外盘/内盘/占比/涨跌幅/换手率/均价）
+  - `StockDetail.tsx` — 个股详情容器（行情+K线+Tab切换分时/资金/基本面/历史快照）
+  - `shared/PriceText.tsx` — 价格文字（红涨绿跌自动着色）
+  - `shared/PercentBadge.tsx` — 涨跌幅徽章
 
 ### 状态管理（stores/）
 - `workspace-store.ts` — 工作区状态：文件树、选中文件/书籍、文件操作（CRUD/移动）
@@ -113,6 +126,7 @@ electron/
 - `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
 - `ui-store.ts` — UI 状态：设置 overlay 开关
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
+- `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
 
 ### 工具函数（lib/）
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
@@ -127,6 +141,7 @@ electron/
 - `ai.ts` — AIInteraction / AIMessage
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
 - `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation
+- `stock.ts` — WatchlistItem / StockQuote / KLineDataPoint / TimelinePoint / MoneyFlowPoint / StockSearchResult / DailySnapshot / QUOTE_FIELD_MAP / RateLimiterStatus
 - `electron.d.ts` — window.ipcRenderer 全局类型声明
 
 ### IPC 路由（electron/main/tipc/）
@@ -140,6 +155,7 @@ electron/
 - `file.ts` — 文件操作（选择文件、导入电子书、打开文件位置）
 - `db.ts` — 书籍 CRUD（委托 book-service，JSON 存储）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
+- `stock.ts` — 自选股行情（12个 RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态）
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求等）
 
 ### 业务服务（electron/main/services/）
@@ -152,6 +168,12 @@ electron/
 - `workspace-service.ts` — 工作区目录结构管理、元数据/分析结果读写
 - `workspace-fs-service.ts` — 文件树扫描和文件系统操作（安全路径验证）
 - `chapter-recognizer.ts` — 文本章节标题识别算法（5种模式匹配）
+- `stock/` — 自选股行情服务模块
+  - `rate-limiter.ts` — 请求防御体系（令牌桶 + 滑动窗口 + 断路器 + 请求合并 + 内存缓存）
+  - `stock-service.ts` — 三数据源 API 封装（腾讯行情/分时 + 东方财富K线/搜索 + 新浪K线备用，7个方法）
+  - `stock-watchlist-service.ts` — 自选股 JSON 存储（`.dogear/stocks/watchlist.json`）
+  - `stock-data-service.ts` — K线 + 每日快照 JSONL 增量存储（`.dogear/stocks/kline/` + `.dogear/stocks/daily/`）
+  - `index.ts` — barrel export
 
 ### Agent 框架（electron/main/agents/）
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
@@ -171,12 +193,16 @@ electron/
 - `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、bookId、分叉信息）
 - `conversations/` — SDK 会话历史（Agent SDK 自动管理）
 - 书籍元数据：`<workspace>/<book>/meta.json` + `<workspace>/<book>/chapters.json`
+- `stocks/watchlist.json` — 自选股列表
+- `stocks/kline/{market}.{code}.jsonl` — K线历史数据（JSONL，每行一条 KLineDataPoint）
+- `stocks/daily/{market}.{code}.jsonl` — 每日快照数据（JSONL，getQuote 时自动采集，按 tradeDate 去重）
 
 ### 关键数据流
 - **IPC 通信**：Renderer → tipc.invoke() → Main tipc handler → service（JSON 文件读写） → renderer events 回传
 - **Agent 执行**：Renderer → tipc.createQueryBasedSession → QueryBasedSession → query() SDK → MCP Tools → sessionMessage events → Renderer
 - **书籍导入**：tipc.importBook → book-service.importBook → 写 meta.json + copyToWorkspace + preprocessBook(async) → 立即返回
 - **工作区文件树**：workspace/getFiles → articleService.listArticleTree + workspaceFsService.scan + bookService bookId 标记 → 合并返回
+- **自选股行情**：Renderer → stock-store → tipc/stock → stockService（通过 RateLimiter 防护）→ 腾讯/东方财富/新浪 API → 返回解析后数据（getQuote 同时 fire-and-forget 写入每日快照 JSONL）
 
 ---
 
@@ -195,7 +221,7 @@ electron/
 ### 状态管理（Zustand 5）
 
 - Store 文件统一放在 `stores/` 目录
-- 现有 Store：analysis-store, article-store, conversation-store, reference-store, workspace-store, settings-store, session-store, ui-store, confirm-store, slash-command-store
+- 现有 Store：analysis-store, article-store, conversation-store, reference-store, workspace-store, settings-store, session-store, ui-store, confirm-store, slash-command-store, stock-store
 - 新增状态请创建独立的 store 文件，遵循现有命名模式 `xxx-store.ts`
 
 ### TypeScript 配置

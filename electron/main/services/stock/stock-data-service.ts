@@ -1,14 +1,15 @@
 /**
- * K线数据 JSONL 存储服务
+ * 股票数据 JSONL 存储服务
  *
- * 每只股票一个 JSONL 文件，路径：.dogear/stocks/kline/{market}.{code}.jsonl
- * JSONL 格式：每行一个 JSON 对象，代表一个 K 线数据点。
+ * 存储路径：
+ *   - K线数据：.dogear/stocks/kline/{market}.{code}.jsonl
+ *   - 每日快照：.dogear/stocks/daily/{market}.{code}.jsonl
+ *
+ * JSONL 格式：每行一个 JSON 对象。
  *
  * 职责：
- *   - readKLine      读取本地 K 线数据
- *   - appendKLine    增量追加（按 date 去重）
- *   - writeKLine     覆盖写入（用于非日 K 线）
- *   - getLastDate    获取本地最后一条数据的日期
+ *   - readKLine / appendKLine / writeKLine / getLastDate — K线数据管理
+ *   - appendDailySnapshot / readDailySnapshots / hasTodaySnapshot — 每日快照管理
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -46,6 +47,31 @@ export interface KLineDataPoint {
   turnoverRate: number;
 }
 
+/** 每日快照数据点（与 types/stock.ts 中的 DailySnapshot 保持一致） */
+export interface DailySnapshot {
+  date: string;
+  outerVolume: number;
+  innerVolume: number;
+  limitUp: number;
+  limitDown: number;
+  orderDiff: number;
+  avgPrice: number;
+  high52w: number;
+  low52w: number;
+  floatShares: number;
+  totalShares: number;
+  price: number;
+  volume: number;
+  turnover: number;
+  changePercent: number;
+  peRatio: number;
+  pbRatio: number;
+  totalMarketCap: number;
+  floatMarketCap: number;
+  turnoverRate: number;
+  timestamp: number;
+}
+
 // ============================================================
 // 工具函数
 // ============================================================
@@ -73,10 +99,17 @@ function getKLinePath(market: number, code: string): string {
 }
 
 /**
- * 将 KLineDataPoint 数组序列化为 JSONL 字符串。
+ * 获取指定股票的每日快照 JSONL 文件路径。
+ */
+function getDailyPath(market: number, code: string): string {
+  return path.join(getConfigDir(), 'stocks', 'daily', `${market}.${code}.jsonl`);
+}
+
+/**
+ * 将对象数组序列化为 JSONL 字符串。
  * 每行一个 JSON 对象，末尾带换行符。
  */
-function toJsonl(points: KLineDataPoint[]): string {
+function toJsonl(points: Record<string, unknown>[]): string {
   return points.map((p) => JSON.stringify(p)).join('\n') + '\n';
 }
 
@@ -161,7 +194,7 @@ class StockDataService {
     await fs.mkdir(path.dirname(filePath), { recursive: true });
 
     // 追加写入新数据
-    const jsonlContent = toJsonl(newPoints);
+    const jsonlContent = toJsonl(newPoints as unknown as Record<string, unknown>[]);
     await fs.appendFile(filePath, jsonlContent, 'utf-8');
 
     return newPoints.length;
@@ -205,8 +238,67 @@ class StockDataService {
       return;
     }
 
-    const jsonlContent = toJsonl(points);
+    const jsonlContent = toJsonl(points as unknown as Record<string, unknown>[]);
     await fs.writeFile(filePath, jsonlContent, 'utf-8');
+  }
+
+  // ============================================================
+  // 每日快照
+  // ============================================================
+
+  /**
+   * 追加每日快照（按 date 去重）。
+   * @returns 是否实际写入（false 表示该日已存在）
+   */
+  async appendDailySnapshot(market: number, code: string, snapshot: DailySnapshot): Promise<boolean> {
+    const filePath = getDailyPath(market, code);
+
+    // 读取已有快照，检查去重
+    const existing = await this.readDailySnapshots(market, code);
+    if (existing.some((s) => s.date === snapshot.date)) {
+      return false;
+    }
+
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const line = JSON.stringify(snapshot) + '\n';
+    await fs.appendFile(filePath, line, 'utf-8');
+    return true;
+  }
+
+  /**
+   * 读取本地每日快照数据。
+   */
+  async readDailySnapshots(market: number, code: string, limit?: number): Promise<DailySnapshot[]> {
+    const filePath = getDailyPath(market, code);
+
+    try {
+      const content = await fs.readFile(filePath, 'utf-8');
+      const results: DailySnapshot[] = [];
+
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const point = JSON.parse(trimmed) as DailySnapshot;
+          if (point.date) results.push(point);
+        } catch { /* 跳过无法解析的行 */ }
+      }
+
+      // 按日期降序返回，可选限制条数
+      results.sort((a, b) => b.date.localeCompare(a.date));
+      return limit ? results.slice(0, limit) : results;
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw err;
+    }
+  }
+
+  /**
+   * 判断指定交易日是否已有快照。
+   */
+  async hasTodaySnapshot(market: number, code: string, tradeDate: string): Promise<boolean> {
+    const snapshots = await this.readDailySnapshots(market, code);
+    return snapshots.some((s) => s.date === tradeDate);
   }
 }
 

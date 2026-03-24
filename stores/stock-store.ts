@@ -9,6 +9,7 @@ import type {
   AdjustType,
   TimelinePoint,
   MoneyFlowPoint,
+  DailySnapshot,
   StockSearchResult,
   RateLimiterStatus,
 } from '@/types/stock';
@@ -36,6 +37,10 @@ interface StockState {
   klinePeriod: KLinePeriod;   // 默认 101 (日K)
   klineAdjust: AdjustType;    // 默认 1 (前复权)
 
+  // 每日快照
+  dailySnapshots: DailySnapshot[];
+  loadingSnapshots: boolean;
+
   // 搜索
   searchResults: StockSearchResult[];
   searchLoading: boolean;
@@ -53,6 +58,7 @@ interface StockState {
   loadKLine: (period?: KLinePeriod, adjust?: AdjustType) => Promise<void>;
   loadTimeline: () => Promise<void>;
   loadMoneyFlow: () => Promise<void>;
+  loadDailySnapshots: () => Promise<void>;
   searchStocks: (keyword: string) => Promise<void>;
   clearSearch: () => void;
   loadRateLimiterStatus: () => Promise<void>;
@@ -75,6 +81,8 @@ export const useStockStore = create<StockState>((set, get) => ({
   loadingDetail: false,
   klinePeriod: 101,
   klineAdjust: 1,
+  dailySnapshots: [],
+  loadingSnapshots: false,
   searchResults: [],
   searchLoading: false,
   rateLimiterStatus: null,
@@ -182,7 +190,7 @@ export const useStockStore = create<StockState>((set, get) => ({
         toast.error('刷新行情失败', { description: res.error });
         return;
       }
-      if ('data' in res) {
+      if ('data' in res && res.data) {
         const newQuotes = new Map<string, StockQuote>();
         for (const q of res.data) {
           newQuotes.set(quoteKey(q.market, q.code), q);
@@ -202,9 +210,10 @@ export const useStockStore = create<StockState>((set, get) => ({
     set({
       selectedStock: { market, code },
       loadingDetail: true,
-      // 清空分时和资金流向（懒加载）
+      // 清空懒加载数据
       timelineData: [],
       moneyFlowData: [],
+      dailySnapshots: [],
     });
 
     try {
@@ -217,7 +226,13 @@ export const useStockStore = create<StockState>((set, get) => ({
 
       // 处理行情结果
       if ('error' in quoteRes && quoteRes.error) {
-        toast.error('获取行情失败', { description: quoteRes.error });
+        // 请求失败时回退到 quotes Map 中的缓存数据
+        const cached = get().quotes.get(`${market}.${code}`);
+        if (cached) {
+          set({ currentQuote: cached });
+        } else {
+          toast.error('获取行情失败', { description: quoteRes.error });
+        }
       } else if ('data' in quoteRes) {
         set({ currentQuote: quoteRes.data });
       }
@@ -311,6 +326,32 @@ export const useStockStore = create<StockState>((set, get) => ({
     } catch (error) {
       console.error('获取资金流向失败:', error);
       toast.error('获取资金流向失败', { description: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  /** 懒加载每日快照数据 */
+  loadDailySnapshots: async () => {
+    const { selectedStock } = get();
+    if (!selectedStock) return;
+
+    set({ loadingSnapshots: true });
+    try {
+      const res = await client['stock:getDailySnapshots']({
+        market: selectedStock.market,
+        code: selectedStock.code,
+      });
+      if ('error' in res && res.error) {
+        toast.error('获取快照数据失败', { description: res.error });
+        return;
+      }
+      if ('data' in res) {
+        set({ dailySnapshots: res.data });
+      }
+    } catch (error) {
+      console.error('获取快照数据失败:', error);
+      toast.error('获取快照数据失败', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      set({ loadingSnapshots: false });
     }
   },
 

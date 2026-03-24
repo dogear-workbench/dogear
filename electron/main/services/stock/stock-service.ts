@@ -1,15 +1,13 @@
 /**
- * 东方财富 API 服务 — StockService
+ * 股票行情服务 — StockService
  *
- * 封装所有东方财富行情接口，所有请求经由 RateLimiter 保护（限流 + 缓存 + 熔断）。
+ * 数据源：
+ *   - 腾讯财经（qt.gtimg.cn）— 实时行情、分时数据、搜索
+ *   - 东方财富（push2his.eastmoney.com）— K线历史数据（字段最全，含换手率）
+ *   - 新浪财经（quotes.sina.cn）— K线 fallback（东方财富失败时备用）
  *
- * API 列表：
- *   - batchQuotes   批量实时行情
- *   - getQuote      单股实时行情
- *   - getKLine      K 线历史数据
- *   - getTimeline   当日分时数据
- *   - getMoneyFlow  资金流向（日 K 级）
- *   - search        股票搜索
+ * 东方财富实时行情接口（push2.eastmoney.com）频繁触发 IP 封禁，已弃用。
+ * 历史 K 线接口（push2his.eastmoney.com）稳定可用。
  */
 
 import { rateLimiter, type RateLimiterStatus } from './rate-limiter.js';
@@ -25,69 +23,54 @@ const KLINE_CACHE_TTL = 60_000;
 /** 搜索缓存 5min */
 const SEARCH_CACHE_TTL = 300_000;
 
-/** 行情接口所有字段（push2 ulist / stock/get） */
-const ALL_FIELDS =
-  'f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18,f20,f21,f22,f23,f24,f25,f62,f115,f128,f136,f152';
-
-/** K 线字段 1（请求参数 fields1） */
+/** 东方财富 K 线字段 1（请求参数 fields1） */
 const KLINE_FIELDS1 = 'f1,f2,f3,f4,f5,f6';
-/** K 线字段 2（请求参数 fields2） */
+/** 东方财富 K 线字段 2（请求参数 fields2） */
 const KLINE_FIELDS2 = 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61';
 
 // ============================================================
 // 类型定义（在文件内定义，避免 rootDir 限制）
 // ============================================================
 
-/** 完整行情快照 */
+/** 完整行情快照（字段名与 types/stock.ts 前端类型一致） */
 export interface StockQuote {
-  /** 市场代码（1=沪 0=深） */
   market: number;
-  /** 股票代码 */
   code: string;
-  /** 股票名称 */
   name: string;
-  /** 最新价 */
   price: number;
-  /** 涨跌幅 (%) */
   changePercent: number;
-  /** 涨跌额 */
   changeAmount: number;
-  /** 成交量（手） */
   volume: number;
-  /** 成交额（元） */
   turnover: number;
-  /** 振幅 (%) */
   amplitude: number;
-  /** 换手率 (%) */
   turnoverRate: number;
-  /** 市盈率（动态） */
-  pe: number;
-  /** 量比 */
+  peRatio: number;
   volumeRatio: number;
-  /** 最高价 */
+  fiveMinChange: number;
   high: number;
-  /** 最低价 */
   low: number;
-  /** 今开 */
   open: number;
-  /** 昨收 */
   prevClose: number;
-  /** 总市值 */
   totalMarketCap: number;
-  /** 流通市值 */
-  circulatingMarketCap: number;
-  /** 涨速 (%) */
+  floatMarketCap: number;
   speedPercent: number;
-  /** 市净率 */
-  pb: number;
-  /** 60日涨跌幅 (%) */
-  change60d: number;
-  /** 年初至今涨跌幅 (%) */
-  changeYtd: number;
-  /** 主力净流入 */
+  pbRatio: number;
+  changePercent60d: number;
+  changePercentYTD: number;
   mainNetInflow: number;
-  /** 市盈率（TTM） */
-  peTtm: number;
+  peRatioTTM: number;
+  outerVolume: number;
+  innerVolume: number;
+  limitUp: number;
+  limitDown: number;
+  orderDiff: number;
+  avgPrice: number;
+  high52w: number;
+  low52w: number;
+  floatShares: number;
+  totalShares: number;
+  tradeDate: string;
+  timestamp: number;
 }
 
 /** K 线周期：1/5/15/30/60 分钟，101=日 102=周 103=月 */
@@ -98,85 +81,53 @@ export type AdjustType = 0 | 1 | 2;
 
 /** K 线请求参数 */
 export interface KLineRequest {
-  /** 证券 ID（如 "1.600519"） */
   secid: string;
-  /** K 线周期 */
   period: KLinePeriod;
-  /** 复权类型 */
   adjust: AdjustType;
-  /** 返回数据条数 */
   limit: number;
 }
 
 /** 单条 K 线数据 */
 export interface KLineDataPoint {
-  /** 日期（"2024-01-15" 或 "2024-01-15 10:30"） */
   date: string;
-  /** 开盘价 */
   open: number;
-  /** 收盘价 */
   close: number;
-  /** 最高价 */
   high: number;
-  /** 最低价 */
   low: number;
-  /** 成交量（手） */
   volume: number;
-  /** 成交额（元） */
   turnover: number;
-  /** 振幅 (%) */
   amplitude: number;
-  /** 涨跌幅 (%) */
   changePercent: number;
-  /** 涨跌额 */
   changeAmount: number;
-  /** 换手率 (%) */
   turnoverRate: number;
 }
 
 /** 分时数据点 */
 export interface TimelinePoint {
-  /** 时间（"09:30", "10:15" 等） */
   time: string;
-  /** 当前价格 */
   price: number;
-  /** 均价 */
   avgPrice: number;
-  /** 成交量（手） */
   volume: number;
-  /** 成交额（元） */
   turnover: number;
-  /** 涨跌幅 (%) */
   changePercent: number;
 }
 
 /** 资金流向数据点（日级） */
 export interface MoneyFlowPoint {
-  /** 日期 */
   date: string;
-  /** 主力流入 */
   mainInflow: number;
-  /** 主力流出 */
   mainOutflow: number;
-  /** 主力净流入 */
   mainNetInflow: number;
-  /** 散户流入 */
   retailInflow: number;
-  /** 散户流出 */
   retailOutflow: number;
-  /** 散户净流入 */
   retailNetInflow: number;
 }
 
 /** 股票搜索结果 */
 export interface StockSearchResult {
-  /** 股票代码 */
   code: string;
-  /** 股票名称 */
   name: string;
-  /** 市场代码（1=沪 0=深） */
   market: number;
-  /** 证券类型（如 "stock"） */
   type: string;
 }
 
@@ -184,117 +135,174 @@ export interface StockSearchResult {
 // 工具函数
 // ============================================================
 
-/**
- * 构造东方财富的证券 ID。
- * @param market 市场代码（1=沪 0=深）
- * @param code   股票代码（如 "600519"）
- * @returns 如 "1.600519"
- */
-function toSecid(market: number, code: string): string {
-  return `${market}.${code}`;
+/** market+code 转腾讯/新浪格式：sh600519（沪）、sz300303（深） */
+function toStockCode(market: number, code: string): string {
+  return market === 1 ? `sh${code}` : `sz${code}`;
 }
 
-/**
- * 带超时控制的 fetch。
- * @param url       请求地址
- * @param timeoutMs 超时毫秒数（默认 10s）
- */
-async function fetchWithTimeout(url: string, timeoutMs: number = 10_000): Promise<Response> {
+/** 带超时控制的 fetch */
+async function fetchWithTimeout(
+  url: string,
+  timeoutMs: number = 10_000,
+  options?: RequestInit,
+): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const response = await fetch(url, { signal: controller.signal });
-    return response;
+    return await fetch(url, { ...options, signal: controller.signal });
   } finally {
     clearTimeout(timer);
   }
 }
 
+/** 从 GBK 响应中读取文本 */
+async function readGBK(resp: Response): Promise<string> {
+  const buf = await resp.arrayBuffer();
+  return new TextDecoder('gbk').decode(buf);
+}
+
+// ============================================================
+// 腾讯财经 — 实时行情
+// ============================================================
+
 /**
- * 解析东方财富原始行情数据（f 字段 map）为 StockQuote。
- *
- * 字段映射参考（东方财富 push2 协议）：
- *   f1=市场 f2=最新价 f3=涨跌幅 f4=涨跌额 f5=成交量 f6=成交额
- *   f7=振幅 f8=换手率 f9=市盈率(动) f10=量比 f11=涨速
- *   f12=代码 f13=市场 f14=名称 f15=最高 f16=最低 f17=今开 f18=昨收
- *   f20=总市值 f21=流通市值 f22=涨速 f23=市净率
- *   f24=60日涨跌幅 f25=年初至今涨跌幅 f62=主力净流入
- *   f115=市盈率(TTM)
+ * 解析腾讯行情数据（qt.gtimg.cn）。
+ * 字段用 ~ 分隔，88 个字段，关键索引：
+ *   1=名称 2=代码 3=当前价 4=昨收 5=今开 6=成交量(手)
+ *   7=外盘(手) 8=内盘(手)
+ *   30=日期时间(YYYYMMDDHHMMSS) 31=涨跌额 32=涨跌幅
+ *   33=最高 34=最低 37=成交额(万) 38=换手率 39=市盈率
+ *   43=振幅 44=流通市值(亿) 45=总市值(亿) 46=市净率
+ *   47=涨停价 48=跌停价 49=量比 50=委差(手) 51=均价
+ *   62=60日涨跌幅 63=年初至今涨跌幅
+ *   67=52周最高 68=52周最低
+ *   72=流通股本(股) 73=总股本(股)
  */
-function parseQuote(raw: Record<string, unknown>): StockQuote {
+function parseTencentQuote(
+  p: string[],
+  stockInfo?: { market: number; code: string },
+): StockQuote | null {
+  if (p.length < 50) return null;
+
+  const market = p[0] === '1' ? 1 : 0;
+  const code = p[2] || '';
+
+  // 从索引 30 提取交易日期：YYYYMMDDHHMMSS → YYYY-MM-DD
+  const rawDate = p[30] || '';
+  const tradeDate = rawDate.length >= 8
+    ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
+    : '';
+
   return {
-    market: Number(raw.f13) || 0,
-    code: String(raw.f12 ?? ''),
-    name: String(raw.f14 ?? ''),
-    price: Number(raw.f2) || 0,
-    changePercent: Number(raw.f3) || 0,
-    changeAmount: Number(raw.f4) || 0,
-    volume: Number(raw.f5) || 0,
-    turnover: Number(raw.f6) || 0,
-    amplitude: Number(raw.f7) || 0,
-    turnoverRate: Number(raw.f8) || 0,
-    pe: Number(raw.f9) || 0,
-    volumeRatio: Number(raw.f10) || 0,
-    high: Number(raw.f15) || 0,
-    low: Number(raw.f16) || 0,
-    open: Number(raw.f17) || 0,
-    prevClose: Number(raw.f18) || 0,
-    totalMarketCap: Number(raw.f20) || 0,
-    circulatingMarketCap: Number(raw.f21) || 0,
-    speedPercent: Number(raw.f22) || 0,
-    pb: Number(raw.f23) || 0,
-    change60d: Number(raw.f24) || 0,
-    changeYtd: Number(raw.f25) || 0,
-    mainNetInflow: Number(raw.f62) || 0,
-    peTtm: Number(raw.f115) || 0,
+    market: stockInfo?.market ?? market,
+    code,
+    name: p[1] || '',
+    price: Number(p[3]) || 0,
+    prevClose: Number(p[4]) || 0,
+    open: Number(p[5]) || 0,
+    volume: Number(p[6]) || 0,
+    outerVolume: Number(p[7]) || 0,
+    innerVolume: Number(p[8]) || 0,
+    changeAmount: Number(p[31]) || 0,
+    changePercent: Number(p[32]) || 0,
+    high: Number(p[33]) || 0,
+    low: Number(p[34]) || 0,
+    turnover: (Number(p[37]) || 0) * 10000, // 万→元
+    turnoverRate: Number(p[38]) || 0,
+    peRatio: Number(p[39]) || 0,
+    amplitude: Number(p[43]) || 0,
+    floatMarketCap: (Number(p[44]) || 0) * 1e8, // 亿→元
+    totalMarketCap: (Number(p[45]) || 0) * 1e8,
+    pbRatio: Number(p[46]) || 0,
+    limitUp: Number(p[47]) || 0,
+    limitDown: Number(p[48]) || 0,
+    volumeRatio: Number(p[49]) || 0,
+    orderDiff: Number(p[50]) || 0,
+    avgPrice: Number(p[51]) || 0,
+    changePercent60d: Number(p[62]) || 0,
+    changePercentYTD: Number(p[63]) || 0,
+    high52w: Number(p[67]) || 0,
+    low52w: Number(p[68]) || 0,
+    floatShares: Number(p[72]) || 0,
+    totalShares: Number(p[73]) || 0,
+    peRatioTTM: Number(p[39]) || 0,
+    fiveMinChange: 0,
+    speedPercent: 0,
+    mainNetInflow: 0,
+    tradeDate,
+    timestamp: Date.now(),
   };
 }
 
+// ============================================================
+// 新浪财经 — K线历史数据
+// ============================================================
+
 /**
- * 解析 K 线数据。
- * 东方财富返回格式为逗号分隔字符串：
- *   "日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率"
+ * 将 KLinePeriod 转换为新浪 scale 参数。
+ * 新浪用 scale 统一控制周期：1/5/15/30/60 分钟，240=日K
+ * 周K和月K新浪不直接支持，用日K数据或保留东方财富 fallback
  */
-function parseKLine(raw: string): KLineDataPoint {
-  const parts = raw.split(',');
-  return {
-    date: parts[0] || '',
-    open: Number(parts[1]) || 0,
-    close: Number(parts[2]) || 0,
-    high: Number(parts[3]) || 0,
-    low: Number(parts[4]) || 0,
-    volume: Number(parts[5]) || 0,
-    turnover: Number(parts[6]) || 0,
-    amplitude: Number(parts[7]) || 0,
-    changePercent: Number(parts[8]) || 0,
-    changeAmount: Number(parts[9]) || 0,
-    turnoverRate: Number(parts[10]) || 0,
-  };
+function periodToSinaScale(period: KLinePeriod): number {
+  switch (period) {
+    case 1: return 1;
+    case 5: return 5;
+    case 15: return 15;
+    case 30: return 30;
+    case 60: return 60;
+    case 101: return 240;  // 日K
+    case 102: return 1680; // 周K（240*7）
+    case 103: return 7200; // 月K（240*30）
+    default: return 240;
+  }
 }
 
-/**
- * 解析分时数据。
- * 东方财富返回格式为逗号分隔字符串：
- *   "时间,当前价,均价,成交量,成交额,..."
- *
- * @param raw       逗号分隔的原始字符串
- * @param prevClose 昨收价，用于计算涨跌幅
- */
-function parseTimeline(raw: string, prevClose: number): TimelinePoint {
-  const parts = raw.split(',');
-  const price = Number(parts[1]) || 0;
-  // 涨跌幅 = (当前价 - 昨收) / 昨收 * 100
-  const changePercent = prevClose > 0 ? ((price - prevClose) / prevClose) * 100 : 0;
+// ============================================================
+// 腾讯财经 — 分时数据
+// ============================================================
 
-  return {
-    time: parts[0] || '',
-    price,
-    avgPrice: Number(parts[2]) || 0,
-    volume: Number(parts[3]) || 0,
-    turnover: Number(parts[4]) || 0,
-    changePercent: Math.round(changePercent * 100) / 100, // 保留两位小数
-  };
+/**
+ * 解析腾讯分时数据。
+ * 腾讯格式：空格分隔 "HHMM 价格 累计成交量 累计成交额"
+ * 需要将累计量转为单笔量（当前 - 前一条）
+ */
+function parseTencentTimeline(
+  rawData: string[],
+  date: string,
+  prevClose: number,
+): TimelinePoint[] {
+  const results: TimelinePoint[] = [];
+  let lastVolume = 0;
+  let lastTurnover = 0;
+
+  for (const raw of rawData) {
+    const parts = raw.split(' ');
+    if (parts.length < 4) continue;
+
+    const hhmm = parts[0];
+    const time = `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)} ${hhmm.slice(0, 2)}:${hhmm.slice(2, 4)}`;
+    const price = Number(parts[1]) || 0;
+    const totalVolume = Number(parts[2]) || 0;
+    const totalTurnover = Number(parts[3]) || 0;
+
+    // 单笔成交量 = 当前累计 - 上一条累计
+    const volume = totalVolume - lastVolume;
+    const turnover = totalTurnover - lastTurnover;
+    lastVolume = totalVolume;
+    lastTurnover = totalTurnover;
+
+    // 均价 = 累计成交额 / 累计成交量
+    const avgPrice = totalVolume > 0 ? totalTurnover / totalVolume : price;
+
+    const changePercent = prevClose > 0
+      ? Math.round(((price - prevClose) / prevClose) * 10000) / 100
+      : 0;
+
+    results.push({ time, price, avgPrice, volume, turnover, changePercent });
+  }
+
+  return results;
 }
 
 // ============================================================
@@ -303,79 +311,82 @@ function parseTimeline(raw: string, prevClose: number): TimelinePoint {
 
 class StockService {
   /**
-   * 批量获取实时行情。
-   *
-   * @param stocks 股票列表，每项包含 market 和 code
-   * @returns StockQuote 数组
+   * 批量获取实时行情（腾讯财经）。
    */
   async batchQuotes(stocks: Array<{ market: number; code: string }>): Promise<StockQuote[]> {
     if (stocks.length === 0) return [];
 
-    const secids = stocks.map((s) => toSecid(s.market, s.code)).join(',');
-    const cacheKey = `batch:${secids}`;
-
-    const url =
-      `https://push2.eastmoney.com/api/qt/ulist.np/get` +
-      `?secids=${secids}` +
-      `&fields=${ALL_FIELDS}` +
-      `&ut=fa5fd1943c7b386f172d6893dbbd1688`;
+    const codes = stocks.map((s) => toStockCode(s.market, s.code)).join(',');
+    const cacheKey = `batch:${codes}`;
 
     return rateLimiter.execute<StockQuote[]>(
       async () => {
-        const resp = await fetchWithTimeout(url);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await resp.json();
+        const resp = await fetchWithTimeout(`https://qt.gtimg.cn/q=${codes}`);
+        const text = await readGBK(resp);
 
-        // 东方财富返回格式：{ data: { diff: [ {...}, {...} ] } }
-        const diff = json?.data?.diff;
-        if (!Array.isArray(diff)) return [];
+        const results: StockQuote[] = [];
+        const entries = text.trim().split(';').filter((s) => s.trim());
 
-        return diff.map((item: Record<string, unknown>) => parseQuote(item));
+        for (const entry of entries) {
+          const match = entry.match(/v_\w+="(.*)"/);
+          if (!match) continue;
+
+          const data = match[1];
+          if (!data) continue;
+
+          const p = data.split('~');
+          const code = p[2] || '';
+          const stockInfo = stocks.find((s) => s.code === code);
+          const quote = parseTencentQuote(p, stockInfo);
+          if (quote) results.push(quote);
+        }
+
+        return results;
       },
-      { key: cacheKey, cacheTtlMs: QUOTE_CACHE_TTL }
+      { key: cacheKey, cacheTtlMs: QUOTE_CACHE_TTL },
     );
   }
 
   /**
    * 获取单只股票的实时行情。
-   *
-   * @param market 市场代码
-   * @param code   股票代码
    */
   async getQuote(market: number, code: string): Promise<StockQuote | null> {
-    const secid = toSecid(market, code);
-    const cacheKey = `quote:${secid}`;
-
-    const url =
-      `https://push2.eastmoney.com/api/qt/stock/get` +
-      `?secid=${secid}` +
-      `&fields=${ALL_FIELDS}` +
-      `&ut=fa5fd1943c7b386f172d6893dbbd1688`;
-
-    return rateLimiter.execute<StockQuote | null>(
-      async () => {
-        const resp = await fetchWithTimeout(url);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await resp.json();
-
-        const data = json?.data;
-        if (!data) return null;
-
-        return parseQuote(data as Record<string, unknown>);
-      },
-      { key: cacheKey, cacheTtlMs: QUOTE_CACHE_TTL }
-    );
+    const quotes = await this.batchQuotes([{ market, code }]);
+    return quotes.length > 0 ? quotes[0] : null;
   }
 
   /**
    * 获取 K 线历史数据。
-   *
-   * @param req K 线请求参数（secid / period / adjust / limit）
+   * 优先东方财富（push2his，字段全，含换手率），失败时 fallback 到新浪。
    */
   async getKLine(req: KLineRequest): Promise<KLineDataPoint[]> {
     const { secid, period, adjust, limit } = req;
     const cacheKey = `kline:${secid}:${period}:${adjust}:${limit}`;
 
+    return rateLimiter.execute<KLineDataPoint[]>(
+      async () => {
+        // 优先尝试东方财富历史 K 线接口
+        try {
+          const result = await this._getKLineEastMoney(secid, period, adjust, limit);
+          if (result.length > 0) return result;
+        } catch (err) {
+          console.warn('[StockService] 东方财富K线失败，切换新浪:', err);
+        }
+
+        // fallback: 新浪财经
+        return this._getKLineSina(secid, period, limit);
+      },
+      { key: cacheKey, cacheTtlMs: KLINE_CACHE_TTL },
+    );
+  }
+
+  /**
+   * 东方财富 K 线（push2his.eastmoney.com）。
+   * 返回格式：逗号分隔字符串 "日期,开,收,高,低,成交量,成交额,振幅,涨跌幅,涨跌额,换手率"
+   */
+  private async _getKLineEastMoney(
+    secid: string, period: KLinePeriod, adjust: AdjustType, limit: number,
+  ): Promise<KLineDataPoint[]> {
     const url =
       `https://push2his.eastmoney.com/api/qt/stock/kline/get` +
       `?secid=${secid}` +
@@ -387,140 +398,174 @@ class StockService {
       `&fields2=${KLINE_FIELDS2}` +
       `&ut=fa5fd1943c7b386f172d6893dbbd1688`;
 
-    return rateLimiter.execute<KLineDataPoint[]>(
-      async () => {
-        const resp = await fetchWithTimeout(url);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await resp.json();
+    const resp = await fetchWithTimeout(url);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any = await resp.json();
 
-        // 返回格式：{ data: { klines: ["日期,开,收,高,低,...", ...] } }
-        const klines = json?.data?.klines;
-        if (!Array.isArray(klines)) return [];
+    const klines = json?.data?.klines;
+    if (!Array.isArray(klines)) return [];
 
-        return klines.map((line: string) => parseKLine(line));
-      },
-      { key: cacheKey, cacheTtlMs: KLINE_CACHE_TTL }
-    );
+    return klines.map((line: string) => {
+      const p = line.split(',');
+      return {
+        date: p[0] || '',
+        open: Number(p[1]) || 0,
+        close: Number(p[2]) || 0,
+        high: Number(p[3]) || 0,
+        low: Number(p[4]) || 0,
+        volume: Number(p[5]) || 0,
+        turnover: Number(p[6]) || 0,
+        amplitude: Number(p[7]) || 0,
+        changePercent: Number(p[8]) || 0,
+        changeAmount: Number(p[9]) || 0,
+        turnoverRate: Number(p[10]) || 0,
+      };
+    });
   }
 
   /**
-   * 获取当日分时数据。
-   *
-   * @param market 市场代码
-   * @param code   股票代码
+   * 新浪财经 K 线（fallback）。
+   * scale 参数统一控制周期：1/5/15/30/60/240(日)。
+   * 注意：新浪不提供换手率和复权参数。
    */
-  async getTimeline(market: number, code: string): Promise<TimelinePoint[]> {
-    const secid = toSecid(market, code);
-    const cacheKey = `timeline:${secid}`;
+  private async _getKLineSina(
+    secid: string, period: KLinePeriod, limit: number,
+  ): Promise<KLineDataPoint[]> {
+    const [mkt, code] = secid.split('.');
+    const sinaCode = toStockCode(Number(mkt), code);
+    const scale = periodToSinaScale(period);
 
     const url =
-      `https://push2.eastmoney.com/api/qt/stock/trends2/get` +
-      `?secid=${secid}` +
-      `&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13` +
-      `&fields2=f51,f52,f53,f54,f55,f56,f57,f58` +
-      `&ut=fa5fd1943c7b386f172d6893dbbd1688`;
+      `https://quotes.sina.cn/cn/api/jsonp_v2.php/var=/CN_MarketDataService.getKLineData` +
+      `?symbol=${sinaCode}&scale=${scale}&ma=no&datalen=${limit}`;
+
+    const resp = await fetchWithTimeout(url, 10_000, {
+      headers: { Referer: 'https://finance.sina.com.cn' },
+    });
+    const text = await resp.text();
+
+    const jsonMatch = text.match(/\((\[[\s\S]*\])\)/);
+    if (!jsonMatch) return [];
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any[] = JSON.parse(jsonMatch[1]);
+    if (!Array.isArray(data)) return [];
+
+    let prevClose = 0;
+    return data.map((item) => {
+      const open = Number(item.open) || 0;
+      const close = Number(item.close) || 0;
+      const high = Number(item.high) || 0;
+      const low = Number(item.low) || 0;
+      const vol = Number(item.volume) || 0;
+
+      // 新浪日K成交量单位是股，转手
+      const volume = period >= 101 ? Math.round(vol / 100) : vol;
+      const changeAmount = prevClose > 0 ? close - prevClose : 0;
+      const changePercent = prevClose > 0
+        ? Math.round(((close - prevClose) / prevClose) * 10000) / 100
+        : 0;
+      const amplitude = prevClose > 0
+        ? Math.round(((high - low) / prevClose) * 10000) / 100
+        : 0;
+
+      prevClose = close;
+
+      return {
+        date: String(item.day || ''),
+        open,
+        close,
+        high,
+        low,
+        volume,
+        turnover: Number(item.amount) || 0,
+        amplitude,
+        changePercent,
+        changeAmount: Math.round(changeAmount * 100) / 100,
+        turnoverRate: 0, // 新浪不提供换手率
+      };
+    });
+  }
+
+  /**
+   * 获取当日分时数据（腾讯财经）。
+   */
+  async getTimeline(market: number, code: string): Promise<TimelinePoint[]> {
+    const tencentCode = toStockCode(market, code);
+    const cacheKey = `timeline:${tencentCode}`;
+
+    const url = `https://web.ifzq.gtimg.cn/appstock/app/minute/query?_var=min_data&code=${tencentCode}`;
 
     return rateLimiter.execute<TimelinePoint[]>(
       async () => {
         const resp = await fetchWithTimeout(url);
+        const text = await resp.text();
+
+        // JSONP 格式：min_data={...}
+        const jsonMatch = text.match(/=(\{[\s\S]*\})/);
+        if (!jsonMatch) return [];
+
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await resp.json();
+        const json: any = JSON.parse(jsonMatch[1]);
+        const stockData = json?.data?.[tencentCode];
+        if (!stockData) return [];
 
-        // 返回格式：{ data: { preClose: 123.45, trends: ["时间,价,均价,...", ...] } }
-        const data = json?.data;
-        if (!data) return [];
+        const minuteData = stockData.data;
+        const date = String(minuteData?.date || stockData.date || '');
+        const prevClose = Number(stockData.qt?.[tencentCode]?.[4]) || 0;
 
-        const prevClose = Number(data.preClose) || 0;
-        const trends = data.trends;
-        if (!Array.isArray(trends)) return [];
+        const rawItems = minuteData?.data;
+        if (!Array.isArray(rawItems)) return [];
 
-        return trends.map((line: string) => parseTimeline(line, prevClose));
+        return parseTencentTimeline(rawItems, date, prevClose);
       },
-      { key: cacheKey, cacheTtlMs: QUOTE_CACHE_TTL }
+      { key: cacheKey, cacheTtlMs: QUOTE_CACHE_TTL },
     );
   }
 
   /**
    * 获取资金流向数据（日 K 级别）。
-   *
-   * @param market 市场代码
-   * @param code   股票代码
+   * 注：腾讯和新浪没有公开的资金流向接口，暂时保留空实现。
    */
-  async getMoneyFlow(market: number, code: string): Promise<MoneyFlowPoint[]> {
-    const secid = toSecid(market, code);
-    const cacheKey = `moneyflow:${secid}`;
-
-    const url =
-      `https://push2.eastmoney.com/api/qt/stock/fflow/daykline/get` +
-      `?secid=${secid}` +
-      `&lmt=0` +
-      `&klt=101` +
-      `&fields1=f1,f2,f3,f7` +
-      `&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65` +
-      `&ut=fa5fd1943c7b386f172d6893dbbd1688`;
-
-    return rateLimiter.execute<MoneyFlowPoint[]>(
-      async () => {
-        const resp = await fetchWithTimeout(url);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await resp.json();
-
-        // 返回格式：{ data: { klines: ["日期,主力流入,主力流出,主力净,散户流入,散户流出,散户净,...", ...] } }
-        const klines = json?.data?.klines;
-        if (!Array.isArray(klines)) return [];
-
-        return klines.map((line: string) => {
-          const parts = line.split(',');
-          return {
-            date: parts[0] || '',
-            mainInflow: Number(parts[1]) || 0,
-            mainOutflow: Number(parts[2]) || 0,
-            mainNetInflow: Number(parts[3]) || 0,
-            retailInflow: Number(parts[4]) || 0,
-            retailOutflow: Number(parts[5]) || 0,
-            retailNetInflow: Number(parts[6]) || 0,
-          };
-        });
-      },
-      { key: cacheKey, cacheTtlMs: KLINE_CACHE_TTL }
-    );
+  async getMoneyFlow(_market: number, _code: string): Promise<MoneyFlowPoint[]> {
+    // 资金流向数据暂无替代数据源，返回空数组
+    return [];
   }
 
   /**
-   * 搜索股票（模糊匹配代码或名称）。
-   *
-   * @param keyword 搜索关键词（代码 / 名称 / 拼音首字母）
+   * 搜索股票（腾讯 smartbox 接口）。
    */
   async search(keyword: string): Promise<StockSearchResult[]> {
     if (!keyword.trim()) return [];
 
     const cacheKey = `search:${keyword}`;
-    const encodedKeyword = encodeURIComponent(keyword);
+    const encoded = encodeURIComponent(keyword);
 
-    const url =
-      `https://searchapi.eastmoney.com/api/suggest/get` +
-      `?input=${encodedKeyword}` +
-      `&type=14` +
-      `&token=D43BF722C8E33BDC906FB84D85E326E8`;
+    // 腾讯搜索接口，t=gp 限制 A 股
+    const url = `https://smartbox.gtimg.cn/s3/?v=2&q=${encoded}&t=gp`;
 
     return rateLimiter.execute<StockSearchResult[]>(
       async () => {
         const resp = await fetchWithTimeout(url);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const json: any = await resp.json();
+        const text = await resp.text();
 
-        // 返回格式：{ QuotationCodeTable: { Data: [ { Code, Name, MktNum, SecurityTypeName, ... } ] } }
-        const data = json?.QuotationCodeTable?.Data;
-        if (!Array.isArray(data)) return [];
+        // 格式：v_hint="市场~代码~名称~拼音~类型^..."
+        const match = text.match(/v_hint="(.*)"/);
+        if (!match || !match[1]) return [];
 
-        return data.map((item: Record<string, unknown>) => ({
-          code: String(item.Code ?? ''),
-          name: String(item.Name ?? ''),
-          market: Number(item.MktNum) || 0,
-          type: String(item.SecurityTypeName ?? ''),
-        }));
+        const items = match[1].split('^').filter((s) => s.trim());
+        return items.map((item) => {
+          const parts = item.split('~');
+          const mktStr = parts[0] || '';
+          return {
+            code: parts[1] || '',
+            name: parts[2] || '',
+            market: mktStr === 'sh' ? 1 : 0,
+            type: parts[4] || 'GP-A',
+          };
+        });
       },
-      { key: cacheKey, cacheTtlMs: SEARCH_CACHE_TTL }
+      { key: cacheKey, cacheTtlMs: SEARCH_CACHE_TTL },
     );
   }
 

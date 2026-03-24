@@ -67,12 +67,40 @@ export const stockRouter = {
       }
     }),
 
-  /** 获取单股实时行情 */
+  /** 获取单股实时行情（同时自动采集每日快照） */
   'stock:getQuote': t.procedure
     .input<{ market: number; code: string }>()
     .action(async ({ input }) => {
       try {
         const quote = await stockService.getQuote(input.market, input.code);
+
+        // 自动采集每日快照（fire-and-forget，不阻塞返回）
+        if (quote && quote.tradeDate) {
+          stockDataService.appendDailySnapshot(input.market, input.code, {
+            date: quote.tradeDate,
+            outerVolume: quote.outerVolume,
+            innerVolume: quote.innerVolume,
+            limitUp: quote.limitUp,
+            limitDown: quote.limitDown,
+            orderDiff: quote.orderDiff,
+            avgPrice: quote.avgPrice,
+            high52w: quote.high52w,
+            low52w: quote.low52w,
+            floatShares: quote.floatShares,
+            totalShares: quote.totalShares,
+            price: quote.price,
+            volume: quote.volume,
+            turnover: quote.turnover,
+            changePercent: quote.changePercent,
+            peRatio: quote.peRatio,
+            pbRatio: quote.pbRatio,
+            totalMarketCap: quote.totalMarketCap,
+            floatMarketCap: quote.floatMarketCap,
+            turnoverRate: quote.turnoverRate,
+            timestamp: quote.timestamp,
+          }).catch((err) => console.warn('[stock:getQuote] 快照采集失败:', err));
+        }
+
         return { data: quote };
       } catch (error) {
         return { error: String(error) };
@@ -122,6 +150,22 @@ export const stockRouter = {
       try {
         const moneyFlow = await stockService.getMoneyFlow(input.market, input.code);
         return { data: moneyFlow };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
+
+  // === 每日快照 ===
+
+  /** 获取历史每日快照 */
+  'stock:getDailySnapshots': t.procedure
+    .input<{ market: number; code: string; limit?: number }>()
+    .action(async ({ input }) => {
+      try {
+        const snapshots = await stockDataService.readDailySnapshots(
+          input.market, input.code, input.limit,
+        );
+        return { data: snapshots };
       } catch (error) {
         return { error: String(error) };
       }

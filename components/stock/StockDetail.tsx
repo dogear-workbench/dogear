@@ -8,6 +8,7 @@ import { KLineChart } from './KLineChart';
 import { TimelineChart } from './TimelineChart';
 import { MoneyFlow } from './MoneyFlow';
 import { StockFundamental } from './StockFundamental';
+import { DailySnapshotList } from './DailySnapshotList';
 
 /**
  * 个股详情容器
@@ -19,6 +20,7 @@ export function StockDetail() {
   const loadingDetail = useStockStore((s) => s.loadingDetail);
   const loadTimeline = useStockStore((s) => s.loadTimeline);
   const loadMoneyFlow = useStockStore((s) => s.loadMoneyFlow);
+  const loadDailySnapshots = useStockStore((s) => s.loadDailySnapshots);
 
   /** Tab 切换时懒加载数据 */
   const handleTabChange = useCallback(
@@ -27,10 +29,11 @@ export function StockDetail() {
         loadTimeline();
       } else if (value === 'moneyflow') {
         loadMoneyFlow();
+      } else if (value === 'snapshot') {
+        loadDailySnapshots();
       }
-      // 基本面数据已在 currentQuote 中，无需额外加载
     },
-    [loadTimeline, loadMoneyFlow],
+    [loadTimeline, loadMoneyFlow, loadDailySnapshots],
   );
 
   // 未选中股票时的空状态
@@ -74,6 +77,9 @@ export function StockDetail() {
             <TabsTrigger value="fundamental" className="flex-1">
               基本面
             </TabsTrigger>
+            <TabsTrigger value="snapshot" className="flex-1">
+              历史快照
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="timeline">
@@ -86,6 +92,10 @@ export function StockDetail() {
 
           <TabsContent value="fundamental">
             <StockFundamental />
+          </TabsContent>
+
+          <TabsContent value="snapshot">
+            <DailySnapshotList />
           </TabsContent>
         </Tabs>
       </div>
