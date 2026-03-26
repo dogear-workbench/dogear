@@ -79,11 +79,11 @@ export interface DailySnapshot {
 /**
  * 获取配置目录。
  * - 开发阶段：<项目根目录>/.dogear
- * - 打包发布后：<app.asar 同级目录>/.dogear
+ * - 打包发布后：AppData/Roaming/Dogear/.dogear
  */
 function getConfigDir(): string {
   if (app.isPackaged) {
-    return path.join(path.dirname(app.getAppPath()), '.dogear');
+    return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');
 }

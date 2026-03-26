@@ -16,6 +16,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
+import { app } from 'electron';
 import {
   AgentTask,
   TaskStatus,
@@ -235,8 +236,12 @@ export class AgentManager extends EventEmitter {
     try {
       // 创建 Worker 实例
       // Worker 会自动继承主进程的 process.env (包括从 .env 加载的配置)
+      // 设置 DOGEAR_CONFIG_DIR 供 Worker 中的 logger 使用（用顶部导入的 join/dirname）
+      const configDir = app.isPackaged
+        ? join(app.getPath('userData'), '.dogear')
+        : join(process.cwd(), '.dogear');
       const worker = new Worker(workerPath, {
-        env: process.env
+        env: { ...process.env, DOGEAR_CONFIG_DIR: configDir }
       });
 
       const wrapper: WorkerWrapper = {
@@ -273,8 +278,11 @@ export class AgentManager extends EventEmitter {
       const path = await import('path');
       const fs = await import('fs');
 
-      // 从当前文件位置向上找到项目根目录 (agents 目录 -> main 目录 -> electron 目录 -> 项目根目录)
-      const projectRoot = path.resolve(__dirname, '../../../');
+      // 获取项目根目录
+      // 打包后：AppData/Roaming/Dogear；开发时：__dirname 向上三级
+      const projectRoot = app.isPackaged
+        ? app.getPath('userData')
+        : path.resolve(__dirname, '../../../');
 
       // 数据库路径：项目根目录下的 data 文件夹
       const dbDir = path.join(projectRoot, 'data');

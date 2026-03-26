@@ -178,6 +178,17 @@ app.whenReady().then(async () => {
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
 
+  // 初始化配置目录路径（供 logger 和 Worker 使用）
+  try {
+    const { initConfigDir } = await import('./agents/logger.js');
+    const configDir = app.isPackaged
+      ? path.join(app.getPath('userData'), '.dogear')
+      : path.join(process.cwd(), '.dogear');
+    initConfigDir(configDir);
+  } catch (error) {
+    console.error('初始化配置目录失败:', error);
+  }
+
   // 初始化日志文件写入
   try {
     const { initFileLogging } = await import('./agents/logger.js');

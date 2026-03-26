@@ -45,11 +45,11 @@ export interface Workspace {
 /**
  * 获取 .dogear 配置目录
  * 开发阶段：项目根目录/.dogear
- * 打包后：app.asar 同级目录/.dogear
+ * 打包后：AppData/Roaming/Dogear/.dogear
  */
 function getConfigDir(): string {
   if (app.isPackaged) {
-    return path.join(path.dirname(app.getAppPath()), '.dogear');
+    return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');
 }

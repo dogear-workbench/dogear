@@ -18,8 +18,11 @@
 node_modules/.vite
 
 # production
-/build
 /dist
+/release
+
+# build 目录：保留配置文件，忽略离线安装包
+build/installers/
 
 # misc
 .DS_Store

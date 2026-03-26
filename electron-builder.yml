@@ -1,7 +1,7 @@
 # Electron Builder 配置文件
-# 用于将 Electron 应用打包为可执行文件
+# 用于将 Electron 应用打包为 Windows NSIS 安装包
 
-# Electron 下载镜像配置（解决网络问题）
+# Electron 下载镜像配置（解决国内网络问题）
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
 
@@ -13,39 +13,61 @@ productName: Dogear
 
 # 构建输出目录配置
 directories:
-  # 打包后的安装程序输出目录
-  output: dist
+  output: release
 
 # 需要打包的文件和目录
 files:
-  # Electron 主进程编译后的代码
+  # 编译后的 Electron 主进程 + preload 代码
   - dist/**/*
-  - electron/dist/**/*
-  # Next.js 构建输出（使用 SSR）
-  - .next/**/*
-  # Next.js 应用代码
-  - app/**/*
-  - public/**/*
-  - components.json
-  - tailwind.config.ts
-  - next.config.*.js
+  # Vite 前端构建产物
+  - out/**/*
   # Node.js 依赖包
   - node_modules/**/*
-  # package.json 文件
+  # 包描述文件
   - package.json
+
+# 额外资源（不打入 app.asar，安装后可直接访问）
+extraResources:
+  # Git 离线安装包（安装时自动检测并安装）
+  - from: build/installers/
+    to: installers/
+    filter:
+      - "**/*"
+
+# asar 配置
+asar: true
+# 从 asar 中解包的文件（子进程 spawn 无法访问 asar 内部文件）
+asarUnpack:
+  # Claude Agent SDK 整个包（cli.js 通过 spawn 启动，vendor/ 含原生二进制）
+  - node_modules/@anthropic-ai/claude-agent-sdk/**/*
 
 # Windows 平台打包配置
 win:
-  # 目标打包格式 - 仅打包目录（跳过安装程序和签名）
   target:
-    - target: dir
+    - target: nsis
       arch: x64
-  # Windows 应用图标（需要放在 build 目录下）
-  # icon: build/icon.ico
+  # Windows 应用图标（256x256 像素以上的 .ico 文件）
+  icon: build/icon.ico
+  # 不进行代码签名（无证书时跳过 winCodeSign 下载）
+  signtoolOptions: null
 
-# macOS 平台打包配置
-mac:
-  # 目标打包格式为 DMG 磁盘映像
-  target: dmg
-  # macOS 应用图标（需要放在 build 目录下）
-  icon: build/icon.icns
+# NSIS 安装包配置
+nsis:
+  # 非一键安装，显示安装向导
+  oneClick: false
+  # 安装到用户目录，无需管理员权限
+  perMachine: false
+  # 允许用户更改安装路径
+  allowToChangeInstallationDirectory: true
+  # 创建桌面快捷方式
+  createDesktopShortcut: true
+  # 创建开始菜单快捷方式
+  createStartMenuShortcut: true
+  # 自定义 NSIS 安装脚本（Git 检测+安装）
+  include: build/installer.nsh
+  # 安装包显示名称
+  installerHeaderIcon: build/icon.ico
+  # 卸载时显示的图标
+  uninstallerIcon: build/icon.ico
+  # 安装包语言
+  language: 2052

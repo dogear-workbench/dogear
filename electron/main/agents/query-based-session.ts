@@ -20,6 +20,7 @@ import type {
 import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
+import { app } from 'electron';
 import { getClaudeConfigDir } from '../tipc/agent.js';
 import { loadSettings, getActiveProfile, isProfileComplete, type AppSettings } from '../services/settings-service.js';
 
@@ -245,9 +246,10 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('✅ 已配置 resumeSessionAt:', this.config.resumeSessionAt);
       }
 
-      // 构建全新的 env 对象（不继承 process.env，完全从 settings Profile 构建）
+      // 继承系统环境变量（PATH 等），再覆盖 Profile 配置
       const claudeConfigDir = getClaudeConfigDir();
       queryOptions.env = {
+        ...process.env,
         ANTHROPIC_AUTH_TOKEN: activeProfile.apiKey,
         ANTHROPIC_BASE_URL: activeProfile.baseUrl,
         ANTHROPIC_DEFAULT_HAIKU_MODEL: activeProfile.haikuModel,
@@ -257,6 +259,18 @@ export class QueryBasedSession extends EventEmitter {
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: activeProfile.disableNonessentialTraffic ? '1' : '0',
         CLAUDE_CONFIG_DIR: claudeConfigDir,
       };
+
+      // 打包环境：显式指定 CLI 路径（spawn 不能访问 asar 内部）
+      // asarUnpack 会将文件解包到 app.asar.unpacked/ 目录
+      if (app.isPackaged) {
+        const cliPath = path.join(
+          path.dirname(app.getAppPath()),  // resources/
+          'app.asar.unpacked',
+          'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
+        );
+        queryOptions.pathToClaudeCodeExecutable = cliPath;
+        this.logger.info('打包环境 CLI 路径:', cliPath);
+      }
 
       this.logger.info('已从 settings Profile 构建 env:', {
         profileName: activeProfile.name,
@@ -290,6 +304,27 @@ export class QueryBasedSession extends EventEmitter {
             options.signal.addEventListener('abort', () => {
               if (this.pendingPermissionRequests.has(askRequestId)) {
                 this.pendingPermissionRequests.delete(askRequestId);
+                resolve({ behavior: 'deny', message: '操作已取消' });
+              }
+            });
+          });
+        }
+
+        // MCP 写操作强制权限确认（不受声明式规则和权限模式影响）
+        // 格式: mcp__dogear-stock__ModifyWatchlist
+        if (toolName === 'mcp__dogear-stock__ModifyWatchlist') {
+          this.emit('permissionRequest', {
+            requestId,
+            toolName,
+            toolInput: input,
+            decisionReason: options.decisionReason || '修改自选股列表需要确认',
+          });
+
+          return new Promise<PermissionResult>((resolve) => {
+            this.pendingPermissionRequests.set(requestId, { resolve, input });
+            options.signal.addEventListener('abort', () => {
+              if (this.pendingPermissionRequests.has(requestId)) {
+                this.pendingPermissionRequests.delete(requestId);
                 resolve({ behavior: 'deny', message: '操作已取消' });
               }
             });
@@ -1194,39 +1229,38 @@ export class QueryBasedSession extends EventEmitter {
       return this.config.projectRoot;
     }
 
-    // 开发环境：使用项目根目录
-    // 生产环境：需要考虑打包后的路径
-    if (process.env.NODE_ENV === 'development') {
-      // 开发环境，使用项目根目录
-      // 假设 electron/main 目录在项目根目录下的 electron/main
-      const currentDir = process.cwd();
-      // 向上查找包含 .claude 目录的父目录
-      let searchDir = currentDir;
-      for (let i = 0; i < 5; i++) {
-        const claudePath = path.join(searchDir, '.claude');
-        const packageJsonPath = path.join(searchDir, 'package.json');
-
-        try {
-          const fs = await import('fs/promises');
-          const [claudeExists, packageExists] = await Promise.all([
-            fs.access(claudePath).then(() => true).catch(() => false),
-            fs.access(packageJsonPath).then(() => true).catch(() => false)
-          ]);
-
-          if (claudeExists && packageExists) {
-            this.logger.info('找到项目根目录:', searchDir);
-            return searchDir;
-          }
-        } catch {
-          // 忽略错误
-        }
-
-        searchDir = path.dirname(searchDir);
-      }
+    // 生产环境：使用 AppData/Roaming/Dogear
+    if (app.isPackaged) {
+      const root = app.getPath('userData');
+      this.logger.info('打包环境项目根目录:', root);
+      return root;
     }
 
-    // 生产环境或找不到时，返回 undefined
-    // 可以在配置中显式指定 projectRoot
+    // 开发环境：向上查找包含 .claude 目录的父目录
+    const currentDir = process.cwd();
+    let searchDir = currentDir;
+    for (let i = 0; i < 5; i++) {
+      const claudePath = path.join(searchDir, '.claude');
+      const packageJsonPath = path.join(searchDir, 'package.json');
+
+      try {
+        const fs = await import('fs/promises');
+        const [claudeExists, packageExists] = await Promise.all([
+          fs.access(claudePath).then(() => true).catch(() => false),
+          fs.access(packageJsonPath).then(() => true).catch(() => false)
+        ]);
+
+        if (claudeExists && packageExists) {
+          this.logger.info('找到项目根目录:', searchDir);
+          return searchDir;
+        }
+      } catch {
+        // 忽略错误
+      }
+
+      searchDir = path.dirname(searchDir);
+    }
+
     this.logger.warn('无法自动确定项目根目录，请在配置中指定 projectRoot');
     return undefined;
   }

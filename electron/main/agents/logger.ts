@@ -28,25 +28,38 @@ export interface LoggerOptions {
   logDir?: string;          // 日志文件目录路径，设置后 WARN/ERROR 级别写入文件
 }
 
+// 缓存配置目录路径，避免重复计算
+let _configDir: string | null = null;
+
 /**
  * 获取 .dogear 配置目录
  * 开发阶段：项目根目录/.dogear
- * 打包后：app.asar 同级目录/.dogear
+ * 打包后：AppData/Roaming/Dogear/.dogear
+ *
+ * Worker 线程中无法访问 electron app，通过 DOGEAR_CONFIG_DIR 环境变量获取
+ * （由 agent-manager.ts 创建 Worker 时通过 process.env 传递）
  */
 function getConfigDir(): string {
-  // Worker 线程中无法导入 electron app，使用 process.cwd() 作为回退
-  try {
-    // 动态导入 electron，避免在 Worker 线程中报错
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const electron = require('electron');
-    const app = electron.app;
-    if (app && app.isPackaged) {
-      return path.join(path.dirname(app.getAppPath()), '.dogear');
-    }
-  } catch {
-    // Worker 线程中 require('electron') 会失败，使用回退路径
+  if (_configDir) return _configDir;
+
+  // 优先使用环境变量（Worker 线程 + 主进程均可）
+  if (process.env.DOGEAR_CONFIG_DIR) {
+    _configDir = process.env.DOGEAR_CONFIG_DIR;
+    return _configDir;
   }
-  return path.join(process.cwd(), '.dogear');
+
+  // 回退：开发环境
+  _configDir = path.join(process.cwd(), '.dogear');
+  return _configDir;
+}
+
+/**
+ * 由主进程在 app ready 后调用，设置配置目录环境变量
+ * 这样 logger 和 Worker 线程都能获取到正确的路径
+ */
+export function initConfigDir(configDir: string): void {
+  _configDir = configDir;
+  process.env.DOGEAR_CONFIG_DIR = configDir;
 }
 
 /**

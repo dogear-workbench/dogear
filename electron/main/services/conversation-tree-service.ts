@@ -36,7 +36,7 @@ const ROOT_ID = '__root__';
 
 function getConfigDir(): string {
   if (app.isPackaged) {
-    return path.join(path.dirname(app.getAppPath()), '.dogear');
+    return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');
 }

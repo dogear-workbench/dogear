@@ -14,6 +14,7 @@ import type { QueryBasedSessionConfig } from '../agents/query-based-session.js';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
+import { createStockTools } from '../agents/tools/stock-tools.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import path from 'path';
 import fs from 'fs/promises';
@@ -36,8 +37,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../');
  */
 export function getClaudeConfigDir(): string {
   const appDir = app.isPackaged
-    ? path.dirname(app.getPath('exe'))  // 生产环境：exe 同级
-    : process.cwd();                     // 开发环境：项目根目录
+    ? app.getPath('userData')  // 生产环境：AppData/Roaming/Dogear
+    : process.cwd();           // 开发环境：项目根目录
   return path.join(appDir, '.dogear', 'conversations');
 }
 
@@ -391,6 +392,12 @@ export const agentRouter = {
           mcpServers['dogear-article'] = articleTools;
           console.log('已添加 article MCP tools');
         }
+
+        // 注册股票行情工具（SearchStock / GetStockQuote / GetKLineData / GetTimeline / GetWatchlist / ModifyWatchlist）
+        // 股票工具不依赖工作区路径，始终注册
+        const stockTools = createStockTools();
+        mcpServers['dogear-stock'] = stockTools;
+        console.log('已添加 stock MCP tools');
 
         // 构建子代理配置：内置默认 < 文件系统 .claude/agents/ < 前端传入
         const agents: Record<string, any> = {};
