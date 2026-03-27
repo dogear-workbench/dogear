@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConfirmStore } from '@/stores/confirm-store';
@@ -13,29 +14,6 @@ import { PersonaTab } from './PersonaTab';
 import { AgentsTab } from './AgentsTab';
 
 // ═══ 常量 ═══════════════════════════════════════════
-
-// SDK 内置工具
-const SDK_TOOLS = [
-  { name: 'Read', description: '读取文件内容' },
-  { name: 'Glob', description: '按模式搜索文件' },
-  { name: 'Grep', description: '搜索文件内容' },
-  { name: 'Bash', description: '执行终端命令' },
-  { name: 'Write', description: '创建或覆盖文件' },
-  { name: 'Edit', description: '编辑文件片段' },
-  { name: 'WebFetch', description: '抓取网页内容' },
-  { name: 'WebSearch', description: '搜索互联网' },
-] as const;
-
-// 自定义工具
-const CUSTOM_TOOLS = [
-  { name: 'SearchInChapters', description: '在书籍章节中搜索关键词' },
-  { name: 'AnswerQuestion', description: '基于书籍内容回答问题' },
-  { name: 'ReadArticle', description: '读取已保存文章的内容' },
-  { name: 'ListArticles', description: '列出工作区中的文章' },
-  { name: 'SaveAnalysis', description: '保存书籍分析结果' },
-  { name: 'SaveChapterAnalysis', description: '保存章节分析结果' },
-  { name: 'MarkComplete', description: '标记分析任务完成' },
-] as const;
 
 const EFFORT_OPTIONS = [
   { value: 'low', label: 'Low' },
@@ -87,6 +65,16 @@ export default function SettingsPage() {
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
   // 内层 profile tab 选中状态（独立于 activeProfileId）
   const [selectedProfileTab, setSelectedProfileTab] = useState<string>('default');
+
+  // 动态加载已注册的工具列表
+  const [sdkTools, setSdkTools] = useState<Array<{ name: string; description: string }>>([]);
+  const [customTools, setCustomTools] = useState<Array<{ name: string; description: string }>>([]);
+  useEffect(() => {
+    client.getRegisteredTools().then((result: any) => {
+      if (result?.sdk) setSdkTools(result.sdk);
+      if (result?.custom) setCustomTools(result.custom);
+    }).catch(() => {});
+  }, []);
 
   // 加载设置
   useEffect(() => { loadSettings(); }, [loadSettings]);
@@ -430,14 +418,14 @@ export default function SettingsPage() {
             <div className="mb-6">
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">SDK 内置工具</h3>
               <div className="space-y-0">
-                {SDK_TOOLS.map(renderToolRow)}
+                {sdkTools.map(renderToolRow)}
               </div>
             </div>
 
             <div>
               <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">自定义工具</h3>
               <div className="space-y-0">
-                {CUSTOM_TOOLS.map(renderToolRow)}
+                {customTools.map(renderToolRow)}
               </div>
             </div>
           </div>

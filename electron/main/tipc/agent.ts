@@ -13,6 +13,7 @@ import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
 import type { QueryBasedSessionConfig } from '../agents/query-based-session.js';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { createBookQATools } from '../agents/tools/book-qa-tools.js';
+import { getAllTools } from '../agents/tools/tool-registry.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
 import { createStockTools } from '../agents/tools/stock-tools.js';
 import type { RendererHandlers } from './renderer-handlers.js';
@@ -599,30 +600,42 @@ export const agentRouter = {
     }),
 
   sendQueryBasedSessionMessage: t.procedure
-    .input<{ sessionId: string; content: string; images?: Array<{ media_type: string; data: string }> }>()
+    .input<{
+      sessionId: string;
+      content: string;
+      textBlocks?: Array<{ text: string }>;
+      images?: Array<{ media_type: string; data: string }>;
+    }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) return { error: '会话不存在' };
 
-        // 如果有图像附件，构建 ContentBlock 数组
-        if (input.images && input.images.length > 0) {
+        // 有多个 textBlocks 或图像附件时，构建 ContentBlock 数组
+        const hasMultiBlocks = (input.textBlocks && input.textBlocks.length > 0) || (input.images && input.images.length > 0);
+        if (hasMultiBlocks) {
           const contentBlocks: Array<{ type: string; [key: string]: any }> = [];
-          // 文本块
-          if (input.content) {
+          // 多文本块（引用上下文 + 用户消息，各自独立）
+          if (input.textBlocks && input.textBlocks.length > 0) {
+            for (const block of input.textBlocks) {
+              contentBlocks.push({ type: 'text', text: block.text });
+            }
+          } else if (input.content) {
             contentBlocks.push({ type: 'text', text: input.content });
           }
           // 图像块
-          for (const img of input.images) {
-            contentBlocks.push({
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: img.media_type,
-                data: img.data,
-              },
-            });
+          if (input.images) {
+            for (const img of input.images) {
+              contentBlocks.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: img.media_type,
+                  data: img.data,
+                },
+              });
+            }
           }
           await session.sendMessage(contentBlocks);
         } else {
@@ -1075,5 +1088,16 @@ export const agentRouter = {
         console.error('读取 SDK 会话列表失败:', error);
         return { sessions: [], error: error instanceof Error ? error.message : String(error) };
       }
+    }),
+
+  // 获取所有已注册的工具元数据（SDK 内置 + 自定义）
+  getRegisteredTools: t.procedure
+    .action(async () => {
+      // 触发工具文件的模块加载（确保 registerTools 被调用）
+      await import('../agents/tools/article-tools.js').catch(() => {});
+      await import('../agents/tools/book-qa-tools.js').catch(() => {});
+      await import('../agents/tools/book-analysis-tools.js').catch(() => {});
+      await import('../agents/tools/stock-tools.js').catch(() => {});
+      return getAllTools();
     }),
 };

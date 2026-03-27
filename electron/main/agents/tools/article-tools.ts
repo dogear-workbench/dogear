@@ -8,6 +8,13 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import * as articleService from '../../services/article-service.js';
+import { registerTools } from './tool-registry.js';
+
+// 注册工具元数据到 registry
+registerTools([
+  { name: 'ReadArticle', description: '读取指定文章的完整 Markdown 内容和元数据', server: 'dogear-article', category: 'article' },
+  { name: 'ListArticles', description: '列出当前工作区中所有已保存的文章', server: 'dogear-article', category: 'article' },
+]);
 
 /**
  * 创建文章阅读专用 MCP Server

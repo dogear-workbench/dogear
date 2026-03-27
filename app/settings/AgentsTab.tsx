@@ -10,6 +10,19 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import type { AgentFileInfo } from '@/types/agents';
 
+// 动态工具列表 hook
+function useAvailableTools() {
+  const [tools, setTools] = useState<string[]>([]);
+  useEffect(() => {
+    client.getRegisteredTools().then((result: any) => {
+      const sdkNames = (result?.sdk || []).map((t: any) => t.name);
+      const customNames = (result?.custom || []).map((t: any) => t.name);
+      setTools([...sdkNames, ...customNames]);
+    }).catch(() => {});
+  }, []);
+  return tools;
+}
+
 // 内置代理列表（只读展示，不可编辑/删除）
 const BUILTIN_AGENTS: AgentFileInfo[] = [
   {
@@ -40,10 +53,7 @@ const BUILTIN_AGENTS: AgentFileInfo[] = [
   },
 ];
 
-const AVAILABLE_TOOLS = [
-  'Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit', 'WebFetch', 'WebSearch',
-  'SearchInChapters', 'AnswerQuestion', 'ReadArticle', 'ListArticles',
-];
+// availableTools 已替换为动态加载的 useAvailableTools hook
 
 const MODEL_OPTIONS = [
   { value: '', label: '继承（默认）' },
@@ -56,6 +66,7 @@ export function AgentsTab() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const workspacePath = workspace?.path;
   const showConfirm = useConfirmStore((s) => s.showConfirm);
+  const availableTools = useAvailableTools();
 
   const [fileAgents, setFileAgents] = useState<AgentFileInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
@@ -322,7 +333,7 @@ export function AgentsTab() {
             <div className="space-y-1.5">
               <label className="text-sm font-medium">允许的工具</label>
               <div className="grid grid-cols-3 gap-2">
-                {AVAILABLE_TOOLS.map((tool) => (
+                {availableTools.map((tool) => (
                   <div key={tool} className="flex items-center gap-1.5">
                     <Checkbox
                       id={`tool-${tool}`}

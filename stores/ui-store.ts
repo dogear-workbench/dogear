@@ -16,6 +16,16 @@ interface UIState {
   togglePromptSidebar: () => void;
   closePromptSidebar: () => void;
 
+  // 右侧预览面板
+  /** 右侧预览面板是否展开 */
+  rightPanelOpen: boolean;
+  /** 切换右侧预览面板 */
+  toggleRightPanel: () => void;
+  /** 展开右侧预览面板 */
+  openRightPanel: () => void;
+  /** 折叠右侧预览面板 */
+  closeRightPanel: () => void;
+
   // 子代理面板（嵌入右侧预览区域）
   /** 当前对话的所有子代理列表 */
   subAgents: SubAgentInfo[];
@@ -40,6 +50,12 @@ export const useUIStore = create<UIState>((set) => ({
   promptSidebarOpen: false,
   togglePromptSidebar: () => set((s) => ({ promptSidebarOpen: !s.promptSidebarOpen })),
   closePromptSidebar: () => set({ promptSidebarOpen: false }),
+
+  // 右侧预览面板（默认折叠）
+  rightPanelOpen: false,
+  toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
+  openRightPanel: () => set({ rightPanelOpen: true }),
+  closeRightPanel: () => set({ rightPanelOpen: false }),
 
   // 子代理面板
   subAgents: [],

@@ -30,7 +30,7 @@ export function ThinkingBlock({ block }: { block: ContentBlock }) {
             <Brain size={14} className="text-gray-500" />
           )}
           <span className="text-sm text-gray-600">
-            {hasContent ? '已思考' : '思考中...'}
+            {hasContent ? '思考摘要' : '思考中...'}
           </span>
         </CollapsibleTrigger>
 
@@ -38,7 +38,7 @@ export function ThinkingBlock({ block }: { block: ContentBlock }) {
           {hasContent && (
             <div className="px-3 pb-3">
               <div className="border-t border-gray-200 pt-2">
-                <div className="text-sm text-gray-600 whitespace-pre-wrap bg-gray-100/50 rounded p-3 max-h-80 overflow-y-auto">
+                <div className="text-sm text-gray-600 whitespace-pre-wrap break-words bg-gray-100/50 rounded p-3 max-h-80 overflow-y-auto">
                   {block.content}
                 </div>
               </div>

@@ -13,6 +13,16 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import * as workspaceService from '../../services/workspace-service.js';
+import { registerTools } from './tool-registry.js';
+
+// 注册工具元数据到 registry
+registerTools([
+  { name: 'ListBooks', description: '列出当前工作区中所有已导入的书籍', server: 'dogear-book-qa', category: 'book-qa' },
+  { name: 'SearchBookContent', description: '搜索书籍中与用户问题相关的内容', server: 'dogear-book-qa', category: 'book-qa' },
+  { name: 'GetCitationContext', description: '获取指定位置的原文内容和上下文', server: 'dogear-book-qa', category: 'book-qa' },
+  { name: 'RequestMoreInfo', description: '搜索无果时请求用户提供更多信息', server: 'dogear-book-qa', category: 'book-qa' },
+  { name: 'GetBookInfo', description: '获取书籍的基本信息（书名、作者等）', server: 'dogear-book-qa', category: 'book-qa' },
+]);
 
 /**
  * 中文关键词提取（简单版）

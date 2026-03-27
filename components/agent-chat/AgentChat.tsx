@@ -7,6 +7,7 @@ import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useSessionStore } from '@/stores/session-store';
+import { useUIStore } from '@/stores/ui-store';
 import type { AgentChatProps } from './types';
 import { MessageItem } from './MessageItem';
 import { ChatInputArea } from './ChatInputArea';
@@ -35,6 +36,9 @@ export function AgentChat({
   showReplayMessages = true,
   conversationIdOverride,
 }: AgentChatProps) {
+  // UI 状态
+  const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
+
   // 从 store 获取状态
   const bookId = useWorkspaceStore((s) => s.selectedBook?.id);
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
@@ -258,6 +262,7 @@ export function AgentChat({
         filterQuery={slashCommands.filterQuery}
         onSlashCommandSelect={handleSlashCommandSelect}
         onSlashMenuClose={slashCommands.closeSlashMenu}
+        onTogglePromptSidebar={togglePromptSidebar}
       />
     </div>
   );

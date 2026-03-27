@@ -112,7 +112,7 @@ export const explorerRouter = {
         if (!workspace) return { error: '工作区不存在' };
 
         const absPath = workspaceFsService.resolveAndValidate(workspace.path, input.itemPath);
-        await shell.openPath(absPath);
+        shell.showItemInFolder(absPath);
         return { success: true };
       } catch (error) {
         console.error('打开文件管理器失败:', error);

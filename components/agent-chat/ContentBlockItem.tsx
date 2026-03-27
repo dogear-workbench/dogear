@@ -164,7 +164,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             )}
           </div>
           {block.failedToolError && (
-            <div className="text-xs text-red-600 bg-red-100/50 rounded p-2 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">
+            <div className="text-xs text-red-600 bg-red-100/50 rounded p-2 font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
               {block.failedToolError}
             </div>
           )}
@@ -236,7 +236,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       return block.content ? (
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
           <div className="text-xs text-gray-500 mb-1">命令输出</div>
-          <div className="text-sm text-gray-700 whitespace-pre-wrap font-mono">
+          <div className="text-sm text-gray-700 whitespace-pre-wrap break-all font-mono">
             {block.content}
           </div>
         </div>
@@ -258,7 +258,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
                 <summary className="text-xs cursor-pointer opacity-70 hover:opacity-100">
                   技术详情
                 </summary>
-                <pre className="mt-1 text-xs bg-destructive/10 rounded p-2 whitespace-pre-wrap max-h-32 overflow-y-auto">
+                <pre className="mt-1 text-xs bg-destructive/10 rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
                   {errorDetail}
                 </pre>
               </details>
@@ -284,7 +284,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             用户消息
           </div>
           {block.content && (
-            <div className="text-sm text-blue-700 whitespace-pre-wrap">
+            <div className="text-sm text-blue-700 whitespace-pre-wrap break-words">
               {block.content}
             </div>
           )}

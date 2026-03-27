@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
+import { useSessionStore } from '@/stores/session-store';
 import type { Conversation } from '@/components/BookConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
 
@@ -268,6 +269,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
+      // 关闭对应的 Tab
+      useSessionStore.getState().closeTab(conversationId);
+
       // 如果删除的是当前选中的对话，清除选中状态
       if (get().selectedConversation?.id === conversationId) {
         set({ selectedConversation: null });
@@ -420,6 +424,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
     try {
       await client.updateTitle({ workspaceId: workspace.id, conversationId, title });
+
+      // 同步更新 Tab 标题
+      useSessionStore.getState().updateTitle(conversationId, title);
 
       // 更新本地状态
       set((state) => ({

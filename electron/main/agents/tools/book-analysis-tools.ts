@@ -13,6 +13,18 @@
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import * as workspaceService from '../../services/workspace-service.js';
+import { registerTools } from './tool-registry.js';
+
+// 注册工具元数据到 registry
+registerTools([
+  { name: 'SaveAnalysis', description: '保存书籍的全书分析结果', server: 'dogear-book-analysis', category: 'book-analysis' },
+  { name: 'SaveChapterAnalysis', description: '保存单个章节的分析结果', server: 'dogear-book-analysis', category: 'book-analysis' },
+  { name: 'CompleteAnalysis', description: '标记书籍分析完成', server: 'dogear-book-analysis', category: 'book-analysis' },
+  { name: 'LoadAnalysis', description: '读取书籍的已有分析结果', server: 'dogear-book-analysis', category: 'book-analysis' },
+  { name: 'LoadChapterSummaries', description: '读取所有章节的分析摘要', server: 'dogear-book-analysis', category: 'book-analysis' },
+  { name: 'ReadChapterContent', description: '读取指定章节的原始完整内容', server: 'dogear-book-analysis', category: 'book-analysis' },
+  { name: 'GetChapterList', description: '获取书籍的章节列表', server: 'dogear-book-analysis', category: 'book-analysis' },
+]);
 
 /**
  * 创建书籍分析专用 MCP Server

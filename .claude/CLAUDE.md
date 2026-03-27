@@ -1,3 +1,7 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # Dogear 项目指南
 
 > AI 驱动的电子书阅读器，支持 EPUB / PDF / TXT
@@ -6,6 +10,32 @@
 
 - 使用**中文**回答
 - 必要的地方添加注释
+
+---
+
+## 常用开发命令
+
+```bash
+# 启动开发（编译 Electron + 并行启动 Vite + Electron）
+bun run dev
+
+# 仅前端开发（localhost:3000）
+bun run dev:renderer
+
+# 编译主进程（TypeScript → JavaScript）
+bun run build:electron
+
+# 完整构建（Vite 前端 + Electron 主进程）
+bun run build
+
+# 打包分发
+bun run dist
+
+# 代码检查
+bun run lint
+```
+
+> 包管理器为 **Bun**，不使用 npm。主进程代码改动需 `build:electron` 重新编译，Vite 热重载只对前端生效。
 
 ---
 
@@ -126,7 +156,7 @@ electron/
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
 - `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
-- `ui-store.ts` — UI 状态：设置 overlay 开关
+- `ui-store.ts` — UI 状态：设置 overlay 开关、右侧面板折叠（rightPanelOpen）
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
 - `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
 
@@ -185,9 +215,11 @@ electron/
 - `main-process-session.ts` — 主进程会话（SDK v2，unstable_v2_createSession）
 - `task-types.ts` — 任务类型（SUMMARIZE/ANALYZE_BOOK/CHAT_SESSION/READING_ASSIST）和消息定义
 - `logger.ts` — 日志工具（mainLogger / workerLogger / createTaskLogger）
-- `tools/book-analysis-tools.ts` — 书籍分析工具（SaveAnalysis / SaveChapterAnalysis / MarkComplete）
+- `tools/tool-registry.ts` — 工具注册表（SDK 内置工具 + 自定义工具注册，IPC 查询供设置页/代理编辑页动态加载）
 - `tools/book-qa-tools.ts` — 书籍问答工具（SearchInChapters / AnswerQuestion，关键词搜索+相关度评分）
+- `tools/book-analysis-tools.ts` — 书籍分析工具（SaveAnalysis / SaveChapterAnalysis / MarkComplete）
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）
+- `tools/stock-tools.ts` — 自选股工具（SearchStock / GetStockQuote / GetKLineData / GetTimeline / GetWatchlist / ModifyWatchlist）
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
 ### 数据存储（`.dogear/` 目录）
@@ -232,6 +264,20 @@ electron/
 - 前端（Vite）：`tsconfig.json`，module=esnext，bundler 解析
 - 主进程（Electron）：`tsconfig.electron.json`，module=ES2020，node 解析
 - 路径别名：`@/*` 映射到项目根目录
+
+### 工具注册（Tool Registry）
+
+- 新增自定义工具时，在工具文件末尾调用 `registerTools()` 注册元数据（name/description/category）
+- 设置页和代理编辑页通过 `client.getRegisteredTools()` IPC 动态获取工具列表，不再硬编码
+- `tool-registry.ts` 维护 SDK 内置工具（8个）+ 自定义工具两个分组
+
+### 消息引用格式（XML 标签）
+
+用户消息中的文章引用和段落引用使用 XML 标签结构化：
+- 文章引用：`<referenced_articles><article title="..." articleId="..." site="..." /></referenced_articles>`
+- 段落引用：`<quoted_snippet source="标题">引用文本</quoted_snippet>`（可多个）
+- 用户输入作为最后一个 text block
+- 发送到 SDK 时使用 multi content block 数组（每个引用/用户文本是独立的 `{type: "text"}` 块）
 
 ### 前端注意事项
 

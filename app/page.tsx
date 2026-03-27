@@ -3,7 +3,7 @@ import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -22,9 +22,11 @@ import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
-  const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
   const selectedSubAgentId = useUIStore((s) => s.selectedSubAgentId);
   const clearSubAgents = useUIStore((s) => s.clearSubAgents);
+  const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
+  const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
+  const openRightPanel = useUIStore((s) => s.openRightPanel);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -69,6 +71,13 @@ export default function Home() {
   useEffect(() => {
     clearSubAgents();
   }, [selectedConversation?.id, clearSubAgents]);
+
+  // 选中文章或书籍时自动展开右侧预览面板
+  useEffect(() => {
+    if (selectedArticle || selectedBook) {
+      openRightPanel();
+    }
+  }, [selectedArticle?.id, selectedBook?.id, openRightPanel]);
 
   // 多标签页状态
   const tabs = useSessionStore((s) => s.tabs);
@@ -220,15 +229,15 @@ export default function Home() {
                     </button>
                   </div>
                 ))}
-                {/* 系统提示按钮 */}
+                {/* 切换右侧预览面板 */}
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0 ml-auto text-muted-foreground hover:text-foreground"
-                  title="对话设置"
-                  onClick={togglePromptSidebar}
+                  title={rightPanelOpen ? '折叠预览面板' : '展开预览面板'}
+                  onClick={toggleRightPanel}
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  {rightPanelOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
                 </Button>
               </div>
               <ScrollBar orientation="horizontal" />
@@ -270,7 +279,10 @@ export default function Home() {
         </section>
 
         {/* 右侧：预览（书籍/文章）或子代理面板 */}
-        <aside className="w-96 border-l flex flex-col bg-background">
+        <aside className={cn(
+          "border-l flex flex-col bg-background transition-all duration-200 overflow-hidden",
+          rightPanelOpen ? 'w-96' : 'w-0 border-l-0'
+        )}>
           {selectedSubAgentId ? (
             /* 子代理会话历史面板 */
             <SubAgentPanel />

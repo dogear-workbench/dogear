@@ -315,7 +315,7 @@ export function ToolBlock({
                 <div className="text-xs font-medium text-gray-500 mb-1">
                   输入参数
                 </div>
-                <pre className="text-xs bg-white/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto">
+                <pre className="text-xs bg-white/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
                   {JSON.stringify(toolInput, null, 2)}
                 </pre>
               </div>
@@ -329,7 +329,7 @@ export function ToolBlock({
                 </div>
                 <pre
                   className={cn(
-                    "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto",
+                    "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-all",
                     isError ? "bg-red-100/50" : "bg-white/50"
                   )}
                 >
@@ -426,7 +426,7 @@ export function ToolResultBlock({
             <div className={cn("border-t mb-2", isError ? "border-red-200" : "border-green-200")} />
             <pre
               className={cn(
-                "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto",
+                "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-all",
                 isError ? "bg-red-100/50" : "bg-white/50"
               )}
             >

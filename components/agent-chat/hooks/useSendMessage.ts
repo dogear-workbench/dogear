@@ -310,34 +310,40 @@ export function useSendMessage(params: UseSendMessageParams) {
     setInput('');
     setPendingImages([]);
 
-    // 构建实际发送的内容：如果有引用文章或片段，在消息前追加引用提示
-    let messageToSend = userMessage;
-    const prefixParts: string[] = [];
+    // 构建多 content block 发送结构：每种引用独立为一个 text block，使用 XML 标签包裹
+    const textBlocks: Array<{ text: string }> = [];
 
-    // 清理文本中的换行符，确保引用格式每条引用都在单行内，方便后续解析
+    // 清理文本中的换行符
     const sanitize = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
 
-    // 整篇文章引用：只传 ID，agent 通过 ReadArticle tool 读取
+    // 整篇文章引用：独立 block，agent 通过 ReadArticle tool 读取
     if (referencedArticles.length > 0) {
       const refLines = referencedArticles.map(a =>
-        `- 《${sanitize(a.title)}》(articleId: ${a.id})${a.siteName ? ` - ${sanitize(a.siteName)}` : ''}`
+        `  <article title="${sanitize(a.title)}" articleId="${a.id}"${a.siteName ? ` site="${sanitize(a.siteName)}"` : ''} />`
       ).join('\n');
-      prefixParts.push(`[引用文章] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n${refLines}`);
+      textBlocks.push({
+        text: `<referenced_articles>\n${refLines}\n</referenced_articles>`
+      });
       clearReferencedArticles();
     }
 
-    // 文字片段引用：直接内联内容，不需要 agent 调 tool
+    // 文字片段引用：独立 block，直接内联内容
     if (quotedSnippets.length > 0) {
-      const snippetLines = quotedSnippets.map(s =>
-        `来自《${sanitize(s.articleTitle)}》:\n> ${sanitize(s.text)}`
-      ).join('\n\n');
-      prefixParts.push(`[引用片段]\n${snippetLines}`);
+      for (const s of quotedSnippets) {
+        textBlocks.push({
+          text: `<quoted_snippet source="${sanitize(s.articleTitle)}">\n${sanitize(s.text)}\n</quoted_snippet>`
+        });
+      }
       clearQuotedSnippets();
     }
 
-    if (prefixParts.length > 0) {
-      messageToSend = `${prefixParts.join('\n\n')}\n\n${userMessage}`;
+    // 用户消息作为最后一个 block
+    if (userMessage) {
+      textBlocks.push({ text: userMessage });
     }
+
+    // 兼容：拼合完整消息用于前端存储和显示
+    const messageToSend = textBlocks.map(b => b.text).join('\n\n');
 
     // ==================== 前端发送消息日志 ====================
     console.log('');
@@ -377,10 +383,12 @@ export function useSendMessage(params: UseSendMessageParams) {
     setIsLoading(true);
 
     try {
-      // 发送消息到会话（包含引用提示 + 图片附件）
+      // 发送消息到会话（多 content block + 图片附件）
       await client.sendQueryBasedSessionMessage({
         sessionId,
         content: messageToSend,
+        // 有多个 textBlocks 时使用结构化发送
+        ...(textBlocks.length > 1 && { textBlocks }),
         ...(imagesToSend.length > 0 && {
           images: imagesToSend.map(img => ({
             media_type: img.mediaType,

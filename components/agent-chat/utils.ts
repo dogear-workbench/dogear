@@ -21,47 +21,38 @@ export function formatModelName(model: string): string {
 export function parseUserMessageReferences(content: string): ParsedUserMessage {
   const result: ParsedUserMessage = { articleRefs: [], snippetRefs: [], userMessage: content };
 
-  // 匹配 [引用文章] 头部，贪婪捕获到第一个空行（\n\n）之前的全部内容
-  const articleBlockRegex = /^\[引用文章\] 以下文章已引用，可使用 ReadArticle 工具读取完整内容：\n([\s\S]+?)(?=\n\n|$)/;
-  const articleBlockMatch = content.match(articleBlockRegex);
+  // ===== 新格式：XML 标签 =====
 
-  if (articleBlockMatch) {
-    // 逐行解析文章引用
-    const articleLineRegex = /^- 《(.+?)》\(articleId: (.+?)\)(?:\s*-\s*(.+))?$/gm;
-    let lineMatch;
-    while ((lineMatch = articleLineRegex.exec(articleBlockMatch[1])) !== null) {
+  // 匹配 <referenced_articles>...</referenced_articles>
+  const xmlArticleRegex = /<referenced_articles>\s*([\s\S]*?)\s*<\/referenced_articles>/;
+  const xmlArticleMatch = content.match(xmlArticleRegex);
+  if (xmlArticleMatch) {
+    // 解析 <article title="..." articleId="..." site="..." />
+    const articleTagRegex = /<article\s+title="([^"]+)"\s+articleId="([^"]+)"(?:\s+site="([^"]+)")?\s*\/>/g;
+    let tagMatch;
+    while ((tagMatch = articleTagRegex.exec(xmlArticleMatch[1])) !== null) {
       result.articleRefs.push({
-        title: lineMatch[1],
-        articleId: lineMatch[2],
-        siteName: lineMatch[3]?.trim() || undefined,
+        title: tagMatch[1],
+        articleId: tagMatch[2],
+        siteName: tagMatch[3] || undefined,
       });
     }
-    // 移除已解析的 [引用文章] 区块
-    content = content.slice(articleBlockMatch[0].length);
+    content = content.replace(xmlArticleMatch[0], '');
   }
 
-  // 匹配 [引用片段] 区块，空行后跟 "来自《" 说明还在区块内，否则区块结束
-  const snippetBlockRegex = /^\[引用片段\]\n([\s\S]+?)(?=\n\n(?!来自《)|$)/;
-  // 先去掉可能的前导换行
-  content = content.replace(/^\n+/, '');
-  const snippetBlockMatch = content.match(snippetBlockRegex);
-
-  if (snippetBlockMatch) {
-    // 逐条解析片段引用：来自《title》:\n> text
-    const snippetRegex = /来自《(.+?)》:\n> ([\s\S]+?)(?=\n\n来自《|$)/g;
-    let snippetMatch;
-    while ((snippetMatch = snippetRegex.exec(snippetBlockMatch[1])) !== null) {
-      result.snippetRefs.push({
-        articleTitle: snippetMatch[1],
-        text: snippetMatch[2].trim(),
-      });
-    }
-    // 移除已解析的 [引用片段] 区块
-    content = content.slice(snippetBlockMatch[0].length);
+  // 匹配 <quoted_snippet source="...">...</quoted_snippet>（可能有多个）
+  const xmlSnippetRegex = /<quoted_snippet\s+source="([^"]+)">\s*([\s\S]*?)\s*<\/quoted_snippet>/g;
+  let snippetTagMatch;
+  while ((snippetTagMatch = xmlSnippetRegex.exec(content)) !== null) {
+    result.snippetRefs.push({
+      articleTitle: snippetTagMatch[1],
+      text: snippetTagMatch[2].trim(),
+    });
   }
+  content = content.replace(/<quoted_snippet\s+source="[^"]+">[\s\S]*?<\/quoted_snippet>/g, '');
 
   // 剩余的就是用户实际消息（去掉前导换行）
-  result.userMessage = content.replace(/^\n+/, '');
+  result.userMessage = content.replace(/^\n+/, '').trim();
 
   return result;
 }

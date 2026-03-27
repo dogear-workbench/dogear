@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert } from 'lucide-react';
+import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -84,6 +84,8 @@ interface ChatInputAreaProps {
   filterQuery: string;
   onSlashCommandSelect: (cmd: SlashCommandInfo) => void;
   onSlashMenuClose: () => void;
+  // 人设设置
+  onTogglePromptSidebar?: () => void;
 }
 
 export function ChatInputArea({
@@ -112,6 +114,7 @@ export function ChatInputArea({
   filterQuery,
   onSlashCommandSelect,
   onSlashMenuClose,
+  onTogglePromptSidebar,
 }: ChatInputAreaProps) {
   // 从 reference store 读取引用数据
   const referencedArticles = useReferenceStore((s) => s.referencedArticles);
@@ -349,6 +352,21 @@ export function ChatInputArea({
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
+
+              {/* 人设按钮 */}
+              {onTogglePromptSidebar && (
+                <>
+                  <span className="mx-0.5 h-4 w-px bg-border" />
+                  <InputGroupButton
+                    size="icon-xs"
+                    onClick={onTogglePromptSidebar}
+                    className="text-muted-foreground hover:text-foreground"
+                    title="对话人设设置"
+                  >
+                    <Sparkles size={14} />
+                  </InputGroupButton>
+                </>
+              )}
 
               {/* 发送/停止按钮（右侧） */}
               <div className="ml-auto">
