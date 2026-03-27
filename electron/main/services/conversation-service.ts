@@ -23,6 +23,8 @@ export interface ConversationIndex {
   bookId: string | null;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
+  personaId?: string;    // 关联的人设 ID
+  tempPrompt?: string;   // 临时提示词
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
 }
@@ -37,6 +39,8 @@ export interface ConversationCompat {
   sdk_session_id?: string;
   parent_conversation_id?: string;
   fork_message_sdk_uuid?: string;
+  persona_id?: string;
+  temp_prompt?: string;
   created_at: number;
   updated_at: number;
   bookId: string | null;
@@ -44,6 +48,8 @@ export interface ConversationCompat {
   sdkSessionId: string | null;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
+  personaId: string | undefined;
+  tempPrompt: string | undefined;
   createdAt: string;
   updatedAt: string;
 }
@@ -290,6 +296,25 @@ export async function touch(workspaceId: string, id: string): Promise<void> {
 }
 
 /**
+ * 更新对话的人设关联和临时提示词
+ */
+export async function updatePersona(
+  workspaceId: string,
+  id: string,
+  personaId?: string,
+  tempPrompt?: string,
+): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+
+  conv.personaId = personaId;
+  conv.tempPrompt = tempPrompt;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
  * 删除对话
  * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
  */
@@ -329,6 +354,8 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     sdk_session_id: conv.sdkSessionId || undefined,
     parent_conversation_id: conv.parentConversationId || undefined,
     fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
+    persona_id: conv.personaId || undefined,
+    temp_prompt: conv.tempPrompt || undefined,
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用
@@ -337,6 +364,8 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     sdkSessionId: conv.sdkSessionId,
     parentConversationId: conv.parentConversationId,
     forkMessageSdkUuid: conv.forkMessageSdkUuid,
+    personaId: conv.personaId,
+    tempPrompt: conv.tempPrompt,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
   };

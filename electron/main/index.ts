@@ -4,7 +4,7 @@
  */
 
 import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
-const { app, BrowserWindow } = electron;
+const { app, BrowserWindow, Menu } = electron;
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -26,6 +26,9 @@ let debugWindow: BrowserWindowType | null = null;
 
 // Agent 监控窗口实例
 let agentMonitorWindow: BrowserWindowType | null = null;
+
+// 自选股窗口实例
+let stockWindow: BrowserWindowType | null = null;
 
 /**
  * 创建 Electron 主窗口
@@ -171,10 +174,43 @@ export function sendToAgentMonitorWindow(channel: string, ...args: any[]) {
   }
 }
 
+/**
+ * 创建自选股窗口
+ */
+export function createStockWindow() {
+  if (stockWindow) {
+    stockWindow.focus();
+    return;
+  }
+
+  stockWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    title: '自选股行情',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const stockUrl = isDev
+    ? 'http://localhost:3000/#/stocks'
+    : `file://${path.join(__dirname, '../../out/index.html')}#/stocks`;
+  stockWindow.loadURL(stockUrl);
+
+  stockWindow.on('closed', () => {
+    stockWindow = null;
+  });
+}
+
 // ==================== 应用生命周期 ====================
 
 // 当 Electron 完成初始化时创建窗口
 app.whenReady().then(async () => {
+  // 完全隐藏默认菜单栏
+  Menu.setApplicationMenu(null);
+
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
 

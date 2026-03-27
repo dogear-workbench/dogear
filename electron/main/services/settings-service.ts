@@ -19,6 +19,15 @@ export interface ThinkingConfig {
   budgetTokens?: number;
 }
 
+/** 人设预设 */
+export interface Persona {
+  id: string;
+  name: string;
+  description?: string;
+  prompt: string;
+  createdAt: string; // ISO 8601
+}
+
 export interface ModelProfile {
   id: string;
   name: string;
@@ -38,13 +47,15 @@ export interface AppSettings {
     activeProfileId: string;
     maxTurns?: number;
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
-    systemPromptAppend?: string;
+    defaultSystemPrompt?: string; // 全局默认系统提示词
+    systemPromptAppend?: string;  // @deprecated 旧版追加提示词，向后兼容保留
     settingSources?: ('user' | 'project')[];
   };
   permissionRules?: {
     allow?: string[];
     deny?: string[];
   };
+  personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
 }
 
@@ -65,14 +76,19 @@ export function isProfileComplete(profile: ModelProfile): boolean {
 // 默认值
 // ============================================================
 
+/** 内置默认系统提示词（不可删除） */
+export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
+
 const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     thinking: { type: 'adaptive' },
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
-    settingSources: ['user'],
+    settingSources: ['project'],
+    defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
   },
+  personas: [],
   profiles: {
     default: {
       id: 'default',

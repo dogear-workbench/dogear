@@ -202,6 +202,26 @@ export async function setDefault(id: string): Promise<void> {
   await saveWorkspacesFile(file);
 }
 
+/**
+ * 删除工作区（仅从索引中移除，不删除文件夹）
+ * @param id - 要删除的工作区 ID
+ */
+export async function remove(id: string): Promise<void> {
+  const file = await loadWorkspacesFile();
+  const idx = file.workspaces.findIndex((w) => w.id === id);
+  if (idx === -1) return;
+
+  const wasDefault = file.workspaces[idx].isDefault;
+  file.workspaces.splice(idx, 1);
+
+  // 如果删除的是默认工作区，将第一个设为默认
+  if (wasDefault && file.workspaces.length > 0) {
+    file.workspaces[0].isDefault = true;
+  }
+
+  await saveWorkspacesFile(file);
+}
+
 // ============================================================
 // 迁移
 // ============================================================

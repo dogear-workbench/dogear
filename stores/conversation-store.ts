@@ -36,6 +36,8 @@ interface ConversationState {
   forkParams: ForkParams | null;
   treeData: ConversationTreeData | null;
   nodeMap: Record<string, ConversationFlatNode>;
+  /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
+  sessionRestartTrigger: number;
 
   // --- Actions ---
   /** 加载工作区对话列表和树数据 */
@@ -62,6 +64,10 @@ interface ConversationState {
   moveItem: (itemId: string, targetParentId: string, targetIndex?: number) => Promise<void>;
   /** 更新对话标题 */
   updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
+  /** 更新对话的人设关联和临时提示词 */
+  updateConversationPersona: (conversationId: string, personaId?: string, tempPrompt?: string) => Promise<void>;
+  /** 触发会话重启 */
+  triggerSessionRestart: () => void;
 }
 
 /** 从 workspace-store 获取当前工作区（延迟导入避免循环依赖） */
@@ -176,6 +182,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   forkParams: null,
   treeData: null,
   nodeMap: {},
+  sessionRestartTrigger: 0,
 
   loadConversations: async () => {
     const workspace = await getWorkspace();
@@ -204,6 +211,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   selectConversation: async (conversation) => {
     set({ forkParams: null, selectedConversation: conversation });
 
+    // 自动打开标签页（openTab 内部有防重逻辑）
+    const { useSessionStore } = await import('./session-store');
+    useSessionStore.getState().openTab(conversation.id, conversation.title || '新对话');
+
     // 如果对话有关联书籍，加载书籍信息
     const { useWorkspaceStore } = await import('./workspace-store');
     if (conversation.book_id) {
@@ -230,14 +241,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      // 重新加载对话列表
-      await get().loadConversations();
-
-      // 选中新创建的对话
+      // 先获取新对话详情并选中（让 UI 立即响应）
       const newConversation = await client.getById({ conversationId: result.conversationId, workspaceId: workspace.id });
       if (newConversation.conversation) {
         get().selectConversation(newConversation.conversation);
       }
+
+      // 后台刷新对话列表（不阻塞用户）
+      get().loadConversations();
     } catch (error) {
       console.error('创建对话失败:', error);
       toast.error('创建对话失败', { description: error instanceof Error ? error.message : String(error) });
@@ -430,5 +441,35 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch (error) {
       console.error('更新对话标题失败:', error);
     }
+  },
+
+  updateConversationPersona: async (conversationId, personaId, tempPrompt) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+
+    try {
+      await client.updateConversationPersona({
+        workspaceId: workspace.id,
+        conversationId,
+        personaId,
+        tempPrompt,
+      });
+
+      // 更新本地状态
+      set((state) => ({
+        conversations: state.conversations.map((c) =>
+          c.id === conversationId ? { ...c, persona_id: personaId, temp_prompt: tempPrompt } : c
+        ),
+        selectedConversation: state.selectedConversation?.id === conversationId
+          ? { ...state.selectedConversation, persona_id: personaId, temp_prompt: tempPrompt }
+          : state.selectedConversation,
+      }));
+    } catch (error) {
+      console.error('更新对话人设失败:', error);
+    }
+  },
+
+  triggerSessionRestart: () => {
+    set((state) => ({ sessionRestartTrigger: state.sessionRestartTrigger + 1 }));
   },
 }));

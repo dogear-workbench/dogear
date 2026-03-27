@@ -1,10 +1,9 @@
 import { useEffect } from 'react';
-import { useNavigate } from 'react-router';
 import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -22,7 +21,6 @@ import { useSessionStore } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
-  const navigate = useNavigate();
   const openSettings = useUIStore((s) => s.openSettings);
   const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
   const selectedSubAgentId = useUIStore((s) => s.selectedSubAgentId);
@@ -50,6 +48,8 @@ export default function Home() {
   const deleteBook = useWorkspaceStore((s) => s.deleteBook);
   const openBookInFolder = useWorkspaceStore((s) => s.openBookInFolder);
   const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
+  const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
+  const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
 
   // 文章状态
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -107,6 +107,15 @@ export default function Home() {
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <FolderOpen className="w-4 h-4" />
             <span>{workspace.name}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0"
+              onClick={clearWorkspace}
+              title="切换工作区"
+            >
+              <ChevronsUpDown className="w-3.5 h-3.5" />
+            </Button>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -118,7 +127,7 @@ export default function Home() {
             <Activity className="w-4 h-4 mr-2" />
             Agent 监控
           </Button>
-          <Button variant="outline" size="sm" onClick={() => navigate('/stocks')}>
+          <Button variant="outline" size="sm" onClick={openStockWindow}>
             <TrendingUp className="w-4 h-4 mr-2" />
             自选股
           </Button>
@@ -216,7 +225,7 @@ export default function Home() {
                   variant="ghost"
                   size="icon"
                   className="h-8 w-8 shrink-0 ml-auto text-muted-foreground hover:text-foreground"
-                  title="自定义系统提示"
+                  title="对话设置"
                   onClick={togglePromptSidebar}
                 >
                   <Sparkles className="w-3.5 h-3.5" />

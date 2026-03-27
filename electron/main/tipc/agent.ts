@@ -138,6 +138,13 @@ export const agentRouter = {
       return { success: true };
     }),
 
+  openStockWindow: t.procedure
+    .action(async () => {
+      const { createStockWindow } = await import('../index.js');
+      createStockWindow();
+      return { success: true };
+    }),
+
   // ── 书籍分析 v2 ──────────────────────────────────────────
   analyzeBook: t.procedure
     .input<{ bookId: string }>()
@@ -365,6 +372,8 @@ export const agentRouter = {
       resumeSessionAt?: string;
       isForkNewConversation?: boolean;
       agents?: Record<string, any>;  // 自定义子代理配置（可选）
+      personaId?: string;             // 关联的人设 ID
+      tempPrompt?: string;            // 临时提示词
     }>()
     .action(async ({ input, context }) => {
       try {
@@ -448,6 +457,8 @@ export const agentRouter = {
           forkSession: input.forkSession,
           resumeSessionAt: input.resumeSessionAt,
           agents: Object.keys(agents).length > 0 ? agents : undefined,
+          personaId: input.personaId,
+          tempPrompt: input.tempPrompt,
         };
 
         const session = sessionManager.createSession(sessionConfig);

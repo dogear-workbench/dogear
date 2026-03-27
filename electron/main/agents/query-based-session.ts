@@ -53,6 +53,9 @@ export interface QueryBasedSessionConfig {
   resumeSessionAt?: string;          // 截断到此 assistant 消息的 SDK UUID
   // 子代理配置
   agents?: Record<string, AgentDefinition>;  // 自定义子代理（通过 Task 工具调用）
+  // 人设配置
+  personaId?: string;                // 关联的人设 ID
+  tempPrompt?: string;               // 临时提示词
 }
 
 /**
@@ -213,7 +216,7 @@ export class QueryBasedSession extends EventEmitter {
 
       if (this.config.enableSkills && projectRoot) {
         // 从设置中读取 settingSources（包含 'project' 时加载 .claude/settings.json 和 skills）
-        queryOptions.settingSources = appSettings.ai.settingSources || ['user'];
+        queryOptions.settingSources = appSettings.ai.settingSources || ['project'];
         // 将项目根目录加入 additionalDirectories，确保 skills 仍然可以被加载
         // const additionalDirs: string[] = [];
         // if (projectRoot !== this.config.workspacePath) {
@@ -524,15 +527,9 @@ export class QueryBasedSession extends EventEmitter {
       }
       this.logger.info('');
       this.logger.info('💬 系统提示词:');
-      if (typeof systemPrompt === 'string') {
-        this.logger.info('  • 模式: 纯字符串');
-        this.logger.info('  • 长度:', systemPrompt.length, '字符');
-        this.logger.info('  • 内容预览:', systemPrompt.substring(0, 200) + (systemPrompt.length > 200 ? '...' : ''));
-      } else {
-        this.logger.info('  • 模式: preset + append');
-        this.logger.info('  • preset:', systemPrompt.preset);
-        this.logger.info('  • append 长度:', systemPrompt.append.length, '字符');
-      }
+      this.logger.info('  • 模式: preset + append');
+      this.logger.info('  • preset:', systemPrompt.preset);
+      this.logger.info('  • append 长度:', systemPrompt.append.length, '字符');
       this.logger.info('');
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');
       this.logger.info('║                  开始创建 query 实例                          ║');
@@ -1267,41 +1264,37 @@ export class QueryBasedSession extends EventEmitter {
 
   /**
    * 构建系统提示词
-   * 有 systemPromptAppend 时使用 SDK 的 preset + append 模式，否则返回纯字符串
+   * 统一使用 SDK 的 preset + append 模式
+   * append 组成顺序：默认提示词 → Skills 说明 → 人设 → 临时提示词 → 上下文 → 旧版兼容
    */
-  private buildSystemPrompt(appSettings: AppSettings): string | { type: 'preset'; preset: 'claude_code'; append: string } {
+  private buildSystemPrompt(appSettings: AppSettings): { type: 'preset'; preset: 'claude_code'; append: string } {
     const { context } = this.config;
-    const appendContent = appSettings.ai.systemPromptAppend;
+    const parts: string[] = [];
 
-    // 构建基础提示内容
-    let basePrompt = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
-
-    if (this.config.enableSkills) {
-      basePrompt += `
-
-**重要**: 你可以使用 Book-QA 技能来帮助用户搜索书籍内容并基于原文回答问题。
-当用户询问与书籍相关的问题时，请使用 Skill 工具调用 book-qa 技能。`;
+    // 1. 全局默认系统提示词（由设置页面管理，不在此处硬编码 fallback）
+    if (appSettings.ai.defaultSystemPrompt) {
+      parts.push(appSettings.ai.defaultSystemPrompt);
     }
 
-    // 拼接上下文信息
-    if (context) {
-      const contextInfo = [];
-      if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
-      if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
-      if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
-
-      if (contextInfo.length > 0) {
-        basePrompt += `\n\n当前上下文:\n${contextInfo.join('\n')}\n\n请根据上述上下文提供有针对性的帮助。`;
+    // 3. 人设 prompt
+    if (this.config.personaId && appSettings.personas) {
+      const persona = appSettings.personas.find(p => p.id === this.config.personaId);
+      if (persona) {
+        parts.push(`\n## 人设\n${persona.prompt}`);
       }
     }
 
-    // 有自定义 append 时，使用 SDK 的 preset + append 模式
-    if (appendContent) {
-      const fullAppend = `${basePrompt}\n\n${appendContent}`;
-      return { type: 'preset', preset: 'claude_code', append: fullAppend };
+    // 4. 临时提示词
+    if (this.config.tempPrompt) {
+      parts.push(`\n## 额外指令\n${this.config.tempPrompt}`);
     }
 
-    return basePrompt;
+    // 6. 向后兼容旧版 systemPromptAppend
+    if (appSettings.ai.systemPromptAppend) {
+      parts.push(`\n${appSettings.ai.systemPromptAppend}`);
+    }
+
+    return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };
   }
 
   /**

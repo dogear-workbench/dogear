@@ -65,7 +65,8 @@ electron/
 
 ### 页面（app/）
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
-- `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测）
+- `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测，含默认系统提示词编辑）
+- `app/settings/PersonaTab.tsx` — 人设管理标签页（CRUD：左侧列表 + 右侧编辑表单，name/description/prompt）
 - `app/book/BookPage.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板（useParams 获取 id）
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
@@ -95,6 +96,7 @@ electron/
     - `useSlashCommands.ts` — 斜杠命令检测、过滤、菜单控制
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
+- `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
 - `BookConversationList.tsx` — 对话列表，分叉标记，新建/删除对话
 - `workspace-selector.tsx` — 工作区选择/创建界面
 - `reader.tsx` — 电子书阅读器，章节导航 + 目录侧边栏 + AI面板
@@ -119,7 +121,7 @@ electron/
 ### 状态管理（stores/）
 - `workspace-store.ts` — 工作区状态：文件树、选中文件/书籍、文件操作（CRUD/移动）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
-- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发
+- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、人设关联（updateConversationPersona）、会话重启触发（sessionRestartTrigger）
 - `analysis-store.ts` — 书籍分析状态：分析进度、工具执行、章节处理
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
@@ -139,8 +141,9 @@ electron/
 - `books.ts` — Book / Chapter / ChapterMetadata / BookAnalysis
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `ai.ts` — AIInteraction / AIMessage
+- `settings.ts` — ThinkingConfig / Persona / ModelProfile / AppSettings / DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
-- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation
+- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt）
 - `stock.ts` — WatchlistItem / StockQuote / KLineDataPoint / TimelinePoint / MoneyFlowPoint / StockSearchResult / DailySnapshot / QUOTE_FIELD_MAP / RateLimiterStatus
 - `electron.d.ts` — window.ipcRenderer 全局类型声明
 
@@ -150,7 +153,7 @@ electron/
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `book.ts` — 书籍内容查询（章节元数据、章节内容、阅读进度、文件路径）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
-- `conversations.ts` — 对话 CRUD + 分叉（8个 RPC，JSON 存储）
+- `conversations.ts` — 对话 CRUD + 分叉 + 人设关联（9个 RPC，JSON 存储）
 - `workspace.ts` — 工作区管理（列表、默认、文件夹选择、文件树）
 - `file.ts` — 文件操作（选择文件、导入电子书、打开文件位置）
 - `db.ts` — 书籍 CRUD（委托 book-service，JSON 存储）
@@ -160,9 +163,9 @@ electron/
 
 ### 业务服务（electron/main/services/）
 - `book-service.ts` — 电子书导入、预处理、JSON 元数据/章节存储（meta.json + chapters.json）
-- `conversation-service.ts` — 对话索引 CRUD（`.dogear/conversations.json`），不存消息内容
+- `conversation-service.ts` — 对话索引 CRUD + 人设关联（`.dogear/conversations.json`），含 personaId/tempPrompt 字段
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
-- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（readability + turndown → Markdown），微信公众号特殊处理
 - `workspace-service.ts` — 工作区目录结构管理、元数据/分析结果读写
@@ -178,7 +181,7 @@ electron/
 ### Agent 框架（electron/main/agents/）
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
 - `agent-worker.ts` — Worker 线程执行器，与 Claude Agent SDK 交互
-- `query-based-session.ts` — 基于 query() 的会话（支持 resume/fork/skills/MCP/权限系统）
+- `query-based-session.ts` — 基于 query() 的会话（支持 resume/fork/skills/MCP/权限/人设/临时提示词），systemPrompt 统一 preset+append 模式
 - `main-process-session.ts` — 主进程会话（SDK v2，unstable_v2_createSession）
 - `task-types.ts` — 任务类型（SUMMARIZE/ANALYZE_BOOK/CHAT_SESSION/READING_ASSIST）和消息定义
 - `logger.ts` — 日志工具（mainLogger / workerLogger / createTaskLogger）
@@ -190,7 +193,7 @@ electron/
 ### 数据存储（`.dogear/` 目录）
 - `settings.json` — 应用设置（ModelProfile、Thinking、permissionMode 等）
 - `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
-- `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、bookId、分叉信息）
+- `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、bookId、分叉信息、personaId、tempPrompt）
 - `conversations/` — SDK 会话历史（Agent SDK 自动管理）
 - 书籍元数据：`<workspace>/<book>/meta.json` + `<workspace>/<book>/chapters.json`
 - `stocks/watchlist.json` — 自选股列表

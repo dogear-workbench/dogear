@@ -83,6 +83,18 @@ export const workspaceRouter = {
       }
     }),
 
+  deleteWorkspace: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await workspaceJsonService.remove(input.workspaceId);
+        return { success: true };
+      } catch (error) {
+        console.error('删除工作区失败:', error);
+        return { success: false, error: String(error) };
+      }
+    }),
+
   getFiles: t.procedure
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {

@@ -147,6 +147,8 @@ export interface Conversation {
   sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
   parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
   fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
+  persona_id?: string;               // 关联的人设 ID
+  temp_prompt?: string;              // 临时提示词（仅当前对话生效）
   created_at: number;
   updated_at: number;
 }

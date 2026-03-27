@@ -37,6 +37,10 @@ interface WorkspaceState {
   openBookInFolder: () => Promise<void>;
   /** 打开 Agent 监控窗口 */
   openMonitorWindow: () => Promise<void>;
+  /** 清空工作区（回到选择页） */
+  clearWorkspace: () => void;
+  /** 打开自选股窗口 */
+  openStockWindow: () => Promise<void>;
 
   /** 设置正在创建文件夹的父路径 */
   setCreatingFolderAt: (parentPath: string | null) => void;
@@ -173,6 +177,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await client.openMonitorWindow();
     } catch (error) {
       console.error('打开监控窗口失败:', error);
+    }
+  },
+
+  clearWorkspace: () => {
+    set({ workspace: null, files: [], selectedFile: null, selectedBook: null, workspaceFilePath: null });
+  },
+
+  openStockWindow: async () => {
+    try {
+      await client.openStockWindow();
+    } catch (error) {
+      console.error('打开自选股窗口失败:', error);
     }
   },
 

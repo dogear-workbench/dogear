@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, Home, Loader2, Plus } from 'lucide-react';
+import { FolderOpen, Home, Loader2, Plus, Trash2 } from 'lucide-react';
+import { showConfirm } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
@@ -52,6 +53,21 @@ export function WorkspaceSelector() {
   // 选择工作区
   const handleSelectWorkspace = (workspace: Workspace) => {
     setSelectedWorkspace(workspace);
+  };
+
+  // 删除工作区
+  const handleDeleteWorkspace = async (workspace: Workspace, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!await showConfirm('删除工作区', `确定要移除工作区「${workspace.name}」吗？（不会删除文件夹内容）`)) return;
+    try {
+      await client.deleteWorkspace({ workspaceId: workspace.id });
+      if (selectedWorkspace?.id === workspace.id) {
+        setSelectedWorkspace(null);
+      }
+      await loadWorkspaces();
+    } catch (error) {
+      toast.error('删除工作区失败', { description: (error as Error).message });
+    }
   };
 
   // 进入选中的工作区
@@ -121,11 +137,22 @@ export function WorkspaceSelector() {
                 <div className="font-medium truncate">{workspace.name}</div>
                 <div className="text-sm text-muted-foreground truncate">{workspace.path}</div>
               </div>
-              {workspace.is_default === 1 && (
-                <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
-                  默认
-                </span>
-              )}
+              <div className="flex items-center gap-1 shrink-0">
+                {workspace.is_default === 1 && (
+                  <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded">
+                    默认
+                  </span>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                  onClick={(e) => handleDeleteWorkspace(workspace, e)}
+                  title="移除工作区"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           ))}
         </div>

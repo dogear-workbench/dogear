@@ -7,8 +7,9 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
-import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
+import { DEFAULT_SETTINGS, BUILTIN_DEFAULT_SYSTEM_PROMPT, isProfileComplete } from '@/types/settings';
 import { WorkspaceConfigTab } from './WorkspaceConfigTab';
+import { PersonaTab } from './PersonaTab';
 import { AgentsTab } from './AgentsTab';
 
 // ═══ 常量 ═══════════════════════════════════════════
@@ -287,6 +288,9 @@ export default function SettingsPage() {
           <TabsTrigger value="profiles" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             模型方案
           </TabsTrigger>
+          <TabsTrigger value="personas" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            人设管理
+          </TabsTrigger>
           <TabsTrigger value="workspace" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             工作区配置
           </TabsTrigger>
@@ -399,6 +403,19 @@ export default function SettingsPage() {
                     </label>
                   ))}
                 </div>
+              </div>
+              {/* 默认系统提示词 */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">默认系统提示词</label>
+                <p className="text-xs text-muted-foreground">
+                  此提示词作为所有对话的基础系统提示，追加到 Claude Code 预设之后。不可为空。
+                </p>
+                <textarea
+                  className="w-full min-h-[120px] px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-y font-mono"
+                  value={local.ai.defaultSystemPrompt || BUILTIN_DEFAULT_SYSTEM_PROMPT}
+                  onChange={(e) => updateAI({ defaultSystemPrompt: e.target.value || BUILTIN_DEFAULT_SYSTEM_PROMPT })}
+                  placeholder={BUILTIN_DEFAULT_SYSTEM_PROMPT}
+                />
               </div>
             </div>
           </div>
@@ -565,6 +582,11 @@ export default function SettingsPage() {
               })}
             </Tabs>
           </div>
+        </TabsContent>
+
+        {/* ── Tab: 人设管理 ── */}
+        <TabsContent value="personas" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <PersonaTab local={local} setLocal={setLocal} />
         </TabsContent>
 
         {/* ── Tab: 工作区配置 ── */}

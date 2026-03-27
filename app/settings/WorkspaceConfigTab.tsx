@@ -3,10 +3,8 @@ import { FolderOpen, RefreshCw, FileText, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Checkbox } from '@/components/ui/checkbox';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import type { AppSettings } from '@/types/settings';
 
 interface ClaudeDirStatus {
   exists: boolean;
@@ -20,7 +18,7 @@ interface WorkspaceConfigTabProps {
   setLocal: (updater: (prev: AppSettings) => AppSettings) => void;
 }
 
-export function WorkspaceConfigTab({ local, setLocal }: WorkspaceConfigTabProps) {
+export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const workspacePath = workspace?.path;
 
@@ -75,19 +73,6 @@ export function WorkspaceConfigTab({ local, setLocal }: WorkspaceConfigTabProps)
 
   const claudeMdDirty = claudeMdContent !== savedClaudeMdContent;
 
-  // settingSources 控制
-  const sources = local.ai.settingSources || ['user'];
-  const toggleSource = (source: 'user' | 'project') => {
-    setLocal((prev) => {
-      const current = prev.ai.settingSources || ['user'];
-      const has = current.includes(source);
-      const next = has ? current.filter((s) => s !== source) : [...current, source];
-      // 至少保留一个
-      if (next.length === 0) return prev;
-      return { ...prev, ai: { ...prev.ai, settingSources: next } };
-    });
-  };
-
   if (!workspacePath) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -107,37 +92,18 @@ export function WorkspaceConfigTab({ local, setLocal }: WorkspaceConfigTabProps)
       </p>
 
       <div className="space-y-8">
-        {/* settingSources 控制 */}
+        {/* settingSources 状态（只读） */}
         <div className="space-y-3">
-          <label className="text-sm font-medium">设置源（settingSources）</label>
+          <label className="text-sm font-medium">设置源</label>
           <p className="text-xs text-muted-foreground">
-            控制 Agent SDK 加载哪些级别的配置文件。启用 project 后会自动加载工作区 .claude/CLAUDE.md。
+            Agent SDK 使用 project 设置源，自动加载工作区 .claude/ 目录中的配置（CLAUDE.md、Skills、agents/）。
           </p>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="source-user"
-                checked={sources.includes('user')}
-                onCheckedChange={() => toggleSource('user')}
-              />
-              <label htmlFor="source-user" className="text-sm">
-                user — 加载用户级 ~/.claude/ 配置
-              </label>
-            </div>
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="source-project"
-                checked={sources.includes('project')}
-                onCheckedChange={() => toggleSource('project')}
-              />
-              <label htmlFor="source-project" className="text-sm">
-                project — 加载工作区 .claude/ 配置（CLAUDE.md、agents/）
-              </label>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs px-2 py-0.5 rounded-full border bg-blue-50 border-blue-200 text-blue-700">
+              project
+            </span>
+            <span className="text-xs text-muted-foreground">已启用</span>
           </div>
-          <p className="text-xs text-muted-foreground">
-            修改后需保存设置并重启会话才能生效。
-          </p>
         </div>
 
         {/* .claude 目录状态 */}

@@ -40,6 +40,8 @@ export interface Conversation {
   sdk_session_id?: string;
   parent_conversation_id?: string;   // 分叉对话的父对话 ID
   fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 UUID
+  persona_id?: string;               // 关联的人设 ID
+  temp_prompt?: string;              // 临时提示词
   created_at: number;
   updated_at: number;
 }

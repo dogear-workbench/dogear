@@ -3,6 +3,15 @@ export interface ThinkingConfig {
   budgetTokens?: number; // 仅 type='enabled' 时有效
 }
 
+/** 人设预设 */
+export interface Persona {
+  id: string;
+  name: string;
+  description?: string;
+  prompt: string;
+  createdAt: string; // ISO 8601
+}
+
 export interface ModelProfile {
   id: string;
   name: string;
@@ -37,16 +46,21 @@ export interface AppSettings {
     activeProfileId: string;
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk'; // 默认权限模式
-    systemPromptAppend?: string; // 追加到 claude_code preset 的自定义系统提示
-    settingSources?: ('user' | 'project')[]; // SDK 设置源，控制加载哪些配置文件
+    defaultSystemPrompt?: string; // 全局默认系统提示词（替代硬编码的 basePrompt）
+    systemPromptAppend?: string; // @deprecated 旧版追加提示词，向后兼容保留
+    settingSources?: ('user' | 'project')[]; // SDK 设置源
   };
   // 工具权限规则（声明式）
   permissionRules?: {
     allow?: string[];  // 自动允许的工具，如 ['Read', 'Glob', 'Grep']
     deny?: string[];   // 自动拒绝的工具，如 ['Bash']
   };
+  personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
 }
+
+/** 内置默认系统提示词（不可删除） */
+export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
@@ -54,8 +68,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
-    settingSources: ['user'],
+    settingSources: ['project'],
+    defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
   },
+  personas: [],
   profiles: {
     default: {
       id: 'default',

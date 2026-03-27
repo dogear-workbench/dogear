@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore } from '@/stores/session-store';
+import { useConversationStore } from '@/stores/conversation-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ForkParams } from '@/stores/conversation-store';
 import type { Message } from '../types';
@@ -23,6 +24,8 @@ export function useAgentSession({
   setMessages,
   setIsLoading,
 }: UseAgentSessionParams) {
+  // 监听 sessionRestartTrigger，变化时重建会话
+  const sessionRestartTrigger = useConversationStore((s) => s.sessionRestartTrigger);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
@@ -96,6 +99,12 @@ export function useAgentSession({
         }
 
         const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
+
+        // 从当前对话获取 persona 和临时提示词
+        const currentConv = useConversationStore.getState().selectedConversation;
+        const personaId = currentConv?.persona_id || undefined;
+        const tempPrompt = currentConv?.temp_prompt || undefined;
+
         const response = await client.createQueryBasedSession({
           allowedTools: ['Read', 'Glob', 'Grep'],
           context,
@@ -107,6 +116,8 @@ export function useAgentSession({
           forkSession: forkSessionFlag,           // v4: 分叉参数
           resumeSessionAt: resumeSessionAtFlag,   // v4: 截断位置
           isForkNewConversation: forkParams?.isForkNewConversation, // v4: 区分分叉新对话/编辑重发
+          personaId,
+          tempPrompt,
         });
 
         // 关键：异步操作完成后检查是否已被取消（用户已切换到其他对话）
@@ -208,7 +219,7 @@ export function useAgentSession({
       setSessionId(null);
       setIsSessionReady(false);
     };
-  }, [conversationId, forkParams]); // 当 conversationId 或 forkParams 变化时重启会话
+  }, [conversationId, forkParams, sessionRestartTrigger]); // 当 conversationId、forkParams 或 sessionRestartTrigger 变化时重启会话
 
   return { sessionId, sessionIdRef, isSessionReady, permissionMode, setPermissionMode };
 }
