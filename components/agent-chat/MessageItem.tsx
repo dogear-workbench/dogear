@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Pencil, GitBranch, Settings, ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
@@ -29,8 +28,6 @@ export function MessageItem({
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
 }) {
   const isUser = message.role === 'user';
-  const [isEditing, setIsEditing] = useState(false);
-  const [editContent, setEditContent] = useState(message.content);
 
   // 长文本折叠状态
   const [isExpanded, setIsExpanded] = useState(false);
@@ -76,38 +73,7 @@ export function MessageItem({
             {message.isMeta && (
               <div className="text-[10px] text-gray-400 mb-1">系统</div>
             )}
-            {isEditing ? (
-              // 编辑模式
-              <div className="space-y-2">
-                <Textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  className="text-sm resize-none min-h-[4.5rem]"
-                  rows={3}
-                  autoFocus
-                />
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      if (editContent.trim() && onEditResend) {
-                        onEditResend(messageIndex, editContent.trim());
-                      }
-                      setIsEditing(false);
-                    }}
-                  >
-                    重新发送
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => { setIsEditing(false); setEditContent(message.content); }}
-                  >
-                    取消
-                  </Button>
-                </div>
-              </div>
-            ) : (
+            {(
               // 显示模式：先检测斜杠命令格式，再解析引用
               (() => {
                 // 检测 SDK 斜杠命令格式 (<command-name> 标签)
@@ -207,14 +173,14 @@ export function MessageItem({
                         ))}
                       </div>
                     )}
-                    {/* 编辑按钮 - hover 时显示（isMeta 消息不可编辑） */}
+                    {/* 重发按钮 - hover 时显示，直接将内容放回输入框（isMeta 消息不可编辑） */}
                     {onEditResend && !message.isMeta && (
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={() => { setEditContent(message.content); setIsEditing(true); }}
+                        onClick={() => onEditResend(messageIndex, message.content)}
                         className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-blue-600 h-7 w-7"
-                        title="编辑并重新发送"
+                        title="重新发送"
                       >
                         <Pencil size={14} />
                       </Button>
@@ -223,7 +189,7 @@ export function MessageItem({
                 );
               })()
             )}
-            {!isEditing && message.timestamp && (
+            {message.timestamp && (
               <div className="text-xs text-gray-400 mt-1">
                 {new Date(message.timestamp).toLocaleTimeString()}
               </div>

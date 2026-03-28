@@ -25,6 +25,7 @@ export interface ConversationIndex {
   forkMessageSdkUuid: string | null;
   personaId?: string;    // 关联的人设 ID
   tempPrompt?: string;   // 临时提示词
+  forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
 }
@@ -41,6 +42,7 @@ export interface ConversationCompat {
   fork_message_sdk_uuid?: string;
   persona_id?: string;
   temp_prompt?: string;
+  fork_pending?: boolean;
   created_at: number;
   updated_at: number;
   bookId: string | null;
@@ -249,6 +251,7 @@ export async function createFork(
     bookId: bookId ?? null,
     parentConversationId,
     forkMessageSdkUuid,
+    forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
     createdAt: now,
     updatedAt: now,
   };
@@ -279,6 +282,32 @@ export async function updateSdkSessionId(workspaceId: string, id: string, sdkSes
   if (!conv) return;
 
   conv.sdkSessionId = sdkSessionId;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
+ * 清除分叉待定状态（SDK 会话创建成功后调用）
+ */
+export async function clearForkPending(workspaceId: string, id: string): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+  conv.forkPending = false;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
+ * 清除分叉相关字段（分叉对话拿到新 sessionId 后变为独立对话）
+ */
+export async function clearForkFields(workspaceId: string, id: string): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+  conv.parentConversationId = null;
+  conv.forkMessageSdkUuid = null;
+  conv.forkPending = false;
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
 }
@@ -356,6 +385,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
     persona_id: conv.personaId || undefined,
     temp_prompt: conv.tempPrompt || undefined,
+    fork_pending: conv.forkPending || false,
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用

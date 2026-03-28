@@ -1,10 +1,17 @@
 import { create } from 'zustand';
 import type { ArticleMeta, QuoteSnippet } from '@/types/article';
 
+/** 文件引用 */
+export interface FileReference {
+  name: string;      // 文件名
+  path: string;      // 绝对路径
+}
+
 interface ReferenceState {
   // --- 状态 ---
   referencedArticles: ArticleMeta[];
   quotedSnippets: QuoteSnippet[];
+  referencedFiles: FileReference[];
 
   // --- Actions ---
   /** 引用/取消引用文章 */
@@ -19,11 +26,18 @@ interface ReferenceState {
   removeQuotedSnippet: (snippetId: string) => void;
   /** 清空所有引用片段 */
   clearQuotedSnippets: () => void;
+  /** 添加文件引用 */
+  addReferencedFile: (file: FileReference) => void;
+  /** 移除文件引用 */
+  removeReferencedFile: (filePath: string) => void;
+  /** 清空所有文件引用 */
+  clearReferencedFiles: () => void;
 }
 
 export const useReferenceStore = create<ReferenceState>((set) => ({
   referencedArticles: [],
   quotedSnippets: [],
+  referencedFiles: [],
 
   toggleReferenceArticle: (article) => {
     set((state) => {
@@ -61,4 +75,20 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   },
 
   clearQuotedSnippets: () => set({ quotedSnippets: [] }),
+
+  addReferencedFile: (file) => {
+    set((state) => {
+      // 去重：同路径不重复添加
+      if (state.referencedFiles.some(f => f.path === file.path)) return state;
+      return { referencedFiles: [...state.referencedFiles, file] };
+    });
+  },
+
+  removeReferencedFile: (filePath) => {
+    set((state) => ({
+      referencedFiles: state.referencedFiles.filter((f) => f.path !== filePath),
+    }));
+  },
+
+  clearReferencedFiles: () => set({ referencedFiles: [] }),
 }));

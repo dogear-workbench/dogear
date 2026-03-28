@@ -59,16 +59,24 @@ export function useAgentSession({
         let resumeSessionAtFlag: string | undefined;
 
         if (forkParams) {
-          // Fork 模式：使用父对话的 sdk_session_id + fork 参数
+          // Fork/编辑重发 模式：使用父对话的 sdk_session_id + fork 参数
           sdkSessionId = forkParams.sdkSessionIdToResume;
-          forkSessionFlag = true;
+          forkSessionFlag = forkParams.forkSession;
           resumeSessionAtFlag = forkParams.resumeSessionAt;
-          console.log('🔀 Fork 模式启动:', { sdkSessionId, resumeSessionAt: resumeSessionAtFlag });
+          console.log(forkParams.forkSession ? '🔀 Fork 模式启动:' : '✏️ 编辑重发模式启动:', { sdkSessionId, forkSession: forkSessionFlag, resumeSessionAt: resumeSessionAtFlag });
         } else if (conversationId) {
           // 正常 resume 模式
           try {
             const convResult = await client.getById({ conversationId, workspaceId: useWorkspaceStore.getState().workspace?.id || '' });
-            if (cancelled) return; // 检查是否已被取消
+            if (cancelled) return;
+
+            // fork_pending 对话：不启动 SDK 会话，等用户发送第一条消息
+            if (convResult.conversation?.fork_pending) {
+              console.log('⏳ fork_pending 对话，等待用户输入后再启动 SDK fork 会话');
+              setIsSessionReady(true);  // 允许用户发送消息（发送时触发实际 fork）
+              return;
+            }
+
             console.log('getById 结果:', convResult);
             if (convResult.conversation?.sdk_session_id) {
               sdkSessionId = convResult.conversation.sdk_session_id;

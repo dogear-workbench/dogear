@@ -280,6 +280,7 @@ function TreeItemRow({
   const selectFile = useWorkspaceStore(s => s.selectFile);
   const selectArticle = useArticleStore(s => s.selectArticle);
   const toggleReferenceArticle = useReferenceStore(s => s.toggleReferenceArticle);
+  const addReferencedFile = useReferenceStore(s => s.addReferencedFile);
   const deleteItem = useWorkspaceStore(s => s.deleteItem);
   const openInExplorer = useWorkspaceStore(s => s.openInExplorer);
 
@@ -414,6 +415,14 @@ function TreeItemRow({
           <ContextMenuItem onClick={handleNewSubFolder}>
             <FolderPlus className="w-4 h-4" />
             新建文件夹
+          </ContextMenuItem>
+        )}
+        {data.nodeType === 'file' && (
+          <ContextMenuItem onClick={() => {
+            addReferencedFile({ name: originalNode.name, path: originalNode.path });
+          }}>
+            <Quote className="w-4 h-4" />
+            引用到对话
           </ContextMenuItem>
         )}
         <ContextMenuItem onClick={() => item.startRenaming()}>

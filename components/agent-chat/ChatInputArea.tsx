@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles } from 'lucide-react';
+import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, CornerDownLeft, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +23,7 @@ import type { PermissionMode } from '@/types/electron-api';
 import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
+import type { ResendDraft } from '@/stores/conversation-store';
 
 // 权限模式 → 边框/图标颜色映射
 const PERMISSION_MODE_STYLES: Record<PermissionMode, {
@@ -84,6 +85,9 @@ interface ChatInputAreaProps {
   filterQuery: string;
   onSlashCommandSelect: (cmd: SlashCommandInfo) => void;
   onSlashMenuClose: () => void;
+  // 重发草稿
+  resendDraft: ResendDraft | null;
+  onCancelResend: () => void;
   // 人设设置
   onTogglePromptSidebar?: () => void;
 }
@@ -114,6 +118,8 @@ export function ChatInputArea({
   filterQuery,
   onSlashCommandSelect,
   onSlashMenuClose,
+  resendDraft,
+  onCancelResend,
   onTogglePromptSidebar,
 }: ChatInputAreaProps) {
   // 从 reference store 读取引用数据
@@ -121,6 +127,8 @@ export function ChatInputArea({
   const removeReferencedArticle = useReferenceStore((s) => s.removeReferencedArticle);
   const quotedSnippets = useReferenceStore((s) => s.quotedSnippets);
   const removeQuotedSnippet = useReferenceStore((s) => s.removeQuotedSnippet);
+  const referencedFiles = useReferenceStore((s) => s.referencedFiles);
+  const removeReferencedFile = useReferenceStore((s) => s.removeReferencedFile);
 
   return (
     <div className="p-3">
@@ -149,10 +157,10 @@ export function ChatInputArea({
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
             )}>
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
-            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || pendingImages.length > 0) && (
+            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || pendingImages.length > 0 || resendDraft) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 引用芯片 */}
-                {(referencedArticles.length > 0 || quotedSnippets.length > 0) && (
+                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
                     {/* 蓝色芯片：整篇文章引用 */}
                     {referencedArticles.map(article => (
@@ -191,6 +199,43 @@ export function ChatInputArea({
                         </Button>
                       </span>
                     ))}
+                    {/* 绿色芯片：文件引用 */}
+                    {referencedFiles.map(file => (
+                      <span
+                        key={file.path}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded-full text-xs text-green-700"
+                        title={file.path}
+                      >
+                        <FileText className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[160px] truncate">{file.name}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeReferencedFile(file.path)}
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-green-200"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                {/* 重发指示芯片 */}
+                {resendDraft && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700">
+                      <CornerDownLeft className="w-3 h-3" />
+                      <span>重新发送</span>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={onCancelResend}
+                        className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-amber-200"
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </span>
                   </div>
                 )}
 

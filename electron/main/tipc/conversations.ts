@@ -121,6 +121,18 @@ export const conversationsRouter = {
       }
     }),
 
+  clearForkPending: t.procedure
+    .input<{ conversationId: string; workspaceId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await conversationService.clearForkPending(input.workspaceId, input.conversationId);
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('清除 fork_pending 失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
   updateConversationPersona: t.procedure
     .input<{ workspaceId: string; conversationId: string; personaId?: string; tempPrompt?: string }>()
     .action(async ({ input }) => {

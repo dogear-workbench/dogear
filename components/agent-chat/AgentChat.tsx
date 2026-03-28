@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, Archive } from 'lucide-react';
+import { ChevronRight, Archive, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -45,7 +45,24 @@ export function AgentChat({
   const storeConversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
   // 多标签页模式下使用 override，否则使用 store 中的选中对话
   const conversationId = conversationIdOverride || storeConversationId;
-  const forkParams = useConversationStore((s) => s.forkParams);
+  const globalForkParams = useConversationStore((s) => s.forkParams);
+  // 仅处理属于当前对话的 forkParams，防止其他对话的 fork/editResend 触发本对话重建
+  const forkParams = (globalForkParams?.targetConversationId && globalForkParams.targetConversationId !== conversationId)
+    ? null
+    : globalForkParams;
+  const resendDraftMap = useConversationStore((s) => s.resendDraftMap);
+  const setResendDraftAction = useConversationStore((s) => s.setResendDraft);
+  const resendDraft = conversationId ? resendDraftMap[conversationId] || null : null;
+  const conversations = useConversationStore((s) => s.conversations);
+  const selectedConv = useConversationStore((s) => s.selectedConversation);
+  const selectConversation = useConversationStore((s) => s.selectConversation);
+
+  // 分叉来源父对话标题
+  const parentTitle = useMemo(() => {
+    if (!selectedConv?.parent_conversation_id) return '';
+    const parent = conversations.find(c => c.id === selectedConv.parent_conversation_id);
+    return parent?.title || '未知对话';
+  }, [selectedConv?.parent_conversation_id, conversations]);
 
   // 构建 context 对象
   const context = { bookId, workspaceId, chapterId: undefined, selectedText: undefined };
@@ -123,7 +140,27 @@ export function AgentChat({
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <ScrollArea className="flex-1 overflow-hidden">
         <div className="px-4">
-        {messages.length === 0 && (
+        {/* 分叉来源 Banner */}
+        {selectedConv?.fork_pending && selectedConv?.parent_conversation_id && (
+          <div className="flex items-center gap-2 px-3 py-2 my-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
+            <GitBranch size={14} className="flex-shrink-0" />
+            <span>分叉自: </span>
+            <button
+              onClick={async () => {
+                const parentId = selectedConv.parent_conversation_id!;
+                const parentConv = conversations.find(c => c.id === parentId);
+                if (parentConv) {
+                  await selectConversation(parentConv);
+                }
+              }}
+              className="font-medium text-purple-800 hover:underline cursor-pointer"
+            >
+              {parentTitle}
+            </button>
+          </div>
+        )}
+
+        {messages.length === 0 && !selectedConv?.fork_pending && (
           <div className="text-center text-gray-500 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>
@@ -262,6 +299,11 @@ export function AgentChat({
         filterQuery={slashCommands.filterQuery}
         onSlashCommandSelect={handleSlashCommandSelect}
         onSlashMenuClose={slashCommands.closeSlashMenu}
+        resendDraft={resendDraft}
+        onCancelResend={() => {
+          if (conversationId) setResendDraftAction(conversationId, null);
+          sendMessage.setInput('');
+        }}
         onTogglePromptSidebar={togglePromptSidebar}
       />
     </div>

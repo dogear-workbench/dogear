@@ -45,12 +45,22 @@ export function useSendMessage(params: UseSendMessageParams) {
   // 从 conversation-store 获取 actions
   const editResendAction = useConversationStore((s) => s.editResend);
   const forkConversation = useConversationStore((s) => s.forkConversation);
+  const setResendDraftAction = useConversationStore((s) => s.setResendDraft);
+  const resendDraftMap = useConversationStore((s) => s.resendDraftMap);
+  const resendDraft = conversationId ? resendDraftMap[conversationId] || null : null;
+  const setResendDraft = (draft: import('@/stores/conversation-store').ResendDraft | null) => {
+    if (conversationId) setResendDraftAction(conversationId, draft);
+  };
+  const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
+  const conversationTitle = useConversationStore((s) => s.selectedConversation?.title);
 
   // 从 reference-store 获取引用数据和清理方法
   const referencedArticles = useReferenceStore((s) => s.referencedArticles);
   const quotedSnippets = useReferenceStore((s) => s.quotedSnippets);
   const clearReferencedArticles = useReferenceStore((s) => s.clearReferencedArticles);
   const clearQuotedSnippets = useReferenceStore((s) => s.clearQuotedSnippets);
+  const referencedFiles = useReferenceStore((s) => s.referencedFiles);
+  const clearReferencedFiles = useReferenceStore((s) => s.clearReferencedFiles);
 
   // 权限模式名称映射
   const modeLabels: Record<string, string> = {
@@ -143,38 +153,34 @@ export function useSendMessage(params: UseSendMessageParams) {
   }, [setMessages]);
 
   /**
-   * 编辑重发处理
-   * 截断消息到编辑点的 assistant 消息，然后在当前对话内重新发送
+   * 编辑重发处理 — 内容放回输入框，发送时才截断
    */
   const handleEditResend = useCallback((messageIndex: number, newContent: string) => {
     if (!conversationId) return;
 
     // 找到该用户消息前面最近的 assistant 消息的 sdkUuid 作为截断点
     let targetAssistantUuid: string | undefined;
-    let targetAssistantIdx = -1;
     for (let i = messageIndex - 1; i >= 0; i--) {
       if (messages[i].role === 'assistant' && messages[i].sdkUuid) {
         targetAssistantUuid = messages[i].sdkUuid;
-        targetAssistantIdx = i;
         break;
       }
     }
 
-    if (!targetAssistantUuid || targetAssistantIdx < 0) {
+    if (!targetAssistantUuid) {
       console.warn('编辑的是第一条消息，无法使用 resumeSessionAt，暂不支持');
       return;
     }
 
-    // 截断消息：保留到 forkPoint assistant（含）
-    const truncatedMessages = messages.slice(0, targetAssistantIdx + 1);
-    setMessages(truncatedMessages);
-
-    // 通过 store action 处理（设置 forkParams + 创建分支记录）
-    editResendAction({
+    // 设置重发草稿（不截断历史，不触发 forkParams）
+    setResendDraft({
+      messageIndex,
       forkPointSdkUuid: targetAssistantUuid,
-      editedMessage: newContent,
+      originalContent: newContent,
     });
-  }, [conversationId, messages, setMessages, editResendAction]);
+    // 填充输入框
+    setInput(newContent);
+  }, [conversationId, messages, setResendDraft, setInput]);
 
   /**
    * 从某条 assistant 消息处分叉新对话
@@ -298,10 +304,86 @@ export function useSendMessage(params: UseSendMessageParams) {
   const handleSend = async () => {
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!hasText && !hasImages) || isLoading || !sessionId || !isSessionReady) return;
+    if ((!hasText && !hasImages) || isLoading) return;
+
+    // fork_pending 对话没有 sessionId，但允许发送（会触发 SDK fork 创建）
+    const isForkPending = useConversationStore.getState().selectedConversation?.fork_pending;
+    if (!isForkPending && (!sessionId || !isSessionReady)) return;
 
     // 斜杠命令拦截
     if (hasText && !hasImages && await handleSlashCommand(input)) {
+      return;
+    }
+
+    // 重发模式：截断历史 + 通过 editResendAction 触发 resume
+    if (resendDraft) {
+      const userMessage = input;
+      setInput('');
+
+      // 截断消息到截断点 assistant（含）
+      let truncateIdx = -1;
+      for (let i = resendDraft.messageIndex - 1; i >= 0; i--) {
+        if (messages[i].role === 'assistant' && messages[i].sdkUuid === resendDraft.forkPointSdkUuid) {
+          truncateIdx = i;
+          break;
+        }
+      }
+      if (truncateIdx >= 0) {
+        setMessages(messages.slice(0, truncateIdx + 1));
+      }
+
+      // 清除 draft
+      const draft = resendDraft;
+      setResendDraft(null);
+
+      // 触发 editResend action（设置 forkParams，useAgentSession 会重建会话并自动发送）
+      editResendAction({
+        forkPointSdkUuid: draft.forkPointSdkUuid,
+        editedMessage: userMessage,
+      });
+      return;
+    }
+
+    // fork_pending 模式：首次发送消息时启动 SDK fork 会话
+    const selectedConv = useConversationStore.getState().selectedConversation;
+    if (selectedConv?.fork_pending && selectedConv.parent_conversation_id) {
+      const userMessage = input;
+      setInput('');
+
+      // 获取父对话 sdk_session_id
+      const { useWorkspaceStore } = await import('@/stores/workspace-store');
+      const parentResult = await client.getById({
+        conversationId: selectedConv.parent_conversation_id,
+        workspaceId: useWorkspaceStore.getState().workspace?.id || '',
+      });
+      const parentSdkSessionId = parentResult.conversation?.sdk_session_id;
+
+      if (!parentSdkSessionId) {
+        console.warn('无法启动分叉会话: 父对话缺少 SDK session');
+        return;
+      }
+
+      // 通过 forkParams 触发 SDK fork 会话创建
+      // 注意：不设 isForkNewConversation，这样 useAgentSession 会自动发送 editedMessage
+      useConversationStore.getState().setForkParams({
+        sdkSessionIdToResume: parentSdkSessionId,
+        forkSession: true,
+        resumeSessionAt: selectedConv.fork_message_sdk_uuid || '',
+        editedMessage: userMessage,
+        targetConversationId: selectedConv.id,
+      });
+
+      // 清除 fork_pending 状态：后端 + 前端同步
+      // 后端 clearForkFields 在 agent.ts session_init 中执行，这里只需前端同步
+      const clearFields = { fork_pending: false, parent_conversation_id: undefined, fork_message_sdk_uuid: undefined };
+      useConversationStore.setState((state) => ({
+        selectedConversation: state.selectedConversation?.id === selectedConv.id
+          ? { ...state.selectedConversation, ...clearFields }
+          : state.selectedConversation,
+        conversations: state.conversations.map((c) =>
+          c.id === selectedConv.id ? { ...c, ...clearFields } : c
+        ),
+      }));
       return;
     }
 
@@ -337,6 +419,17 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearQuotedSnippets();
     }
 
+    // 文件引用：独立 block，agent 通过 Read 工具读取文件内容
+    if (referencedFiles.length > 0) {
+      const refLines = referencedFiles.map(f =>
+        `  <file name="${sanitize(f.name)}" path="${sanitize(f.path)}" />`
+      ).join('\n');
+      textBlocks.push({
+        text: `<referenced_files>\n${refLines}\n</referenced_files>`
+      });
+      clearReferencedFiles();
+    }
+
     // 用户消息作为最后一个 block
     if (userMessage) {
       textBlocks.push({ text: userMessage });
@@ -368,6 +461,17 @@ export function useSendMessage(params: UseSendMessageParams) {
     // 添加用户消息
     setMessages(prev => [...prev, newUserMessage]);
 
+    // 新对话自动标题：首条消息截取前 30 字
+    if (conversationTitle === '新对话' && messages.length === 0 && conversationId) {
+      const titleText = userMessage.replace(/<[^>]+>/g, '').trim();
+      const autoTitle = titleText.length > 30
+        ? titleText.slice(0, 30) + '...'
+        : titleText;
+      if (autoTitle) {
+        updateConversationTitle(conversationId, autoTitle);
+      }
+    }
+
     // 添加一个空的助手消息占位，准备接收流式响应
     setMessages(prev => [
       ...prev,
@@ -384,8 +488,9 @@ export function useSendMessage(params: UseSendMessageParams) {
 
     try {
       // 发送消息到会话（多 content block + 图片附件）
+      // sessionId 在此处一定不为 null（fork_pending/resendDraft 分支已提前 return）
       await client.sendQueryBasedSessionMessage({
-        sessionId,
+        sessionId: sessionId!,
         content: messageToSend,
         // 有多个 textBlocks 时使用结构化发送
         ...(textBlocks.length > 1 && { textBlocks }),

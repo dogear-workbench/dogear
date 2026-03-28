@@ -149,6 +149,7 @@ export interface Conversation {
   fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
   persona_id?: string;               // 关联的人设 ID
   temp_prompt?: string;              // 临时提示词（仅当前对话生效）
+  fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
   created_at: number;
   updated_at: number;
 }

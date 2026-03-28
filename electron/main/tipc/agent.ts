@@ -483,6 +483,13 @@ export const agentRouter = {
               }
             }
             console.log('已保存 sdk_session_id');
+
+            // 分叉对话拿到新 sessionId 后，清除分叉相关持久化字段
+            // 此后该对话变为普通独立对话
+            if (input.forkSession && input.workspaceId) {
+              await conversationService.clearForkFields(input.workspaceId, input.conversationId);
+              console.log('已清除分叉字段 (parentConversationId, forkMessageSdkUuid, forkPending)');
+            }
           }
 
           // 发送到前端（通过 webContents.send，因为 tipc 事件不包含此自定义事件）

@@ -14,6 +14,15 @@ export interface ForkParams {
   editedMessage?: string;
   branchCount?: number;
   isForkNewConversation?: boolean;
+  /** 目标对话 ID，useAgentSession 仅处理与自身 conversationId 匹配的 forkParams */
+  targetConversationId?: string;
+}
+
+/** 重发草稿（用户点击"重新发送"后暂存到输入框） */
+export interface ResendDraft {
+  messageIndex: number;
+  forkPointSdkUuid: string;
+  originalContent: string;
 }
 
 /** 对话树的扁平节点（供 @headless-tree/react 使用） */
@@ -39,6 +48,9 @@ interface ConversationState {
   nodeMap: Record<string, ConversationFlatNode>;
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
+  /** 重发草稿（按 conversationId 存储，对话级隔离） */
+  resendDraftMap: Record<string, ResendDraft>;
+  setResendDraft: (conversationId: string, draft: ResendDraft | null) => void;
 
   // --- Actions ---
   /** 加载工作区对话列表和树数据 */
@@ -184,6 +196,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   treeData: null,
   nodeMap: {},
   sessionRestartTrigger: 0,
+  resendDraftMap: {},
+  setResendDraft: (conversationId, draft) => set((state) => {
+    if (draft) {
+      return { resendDraftMap: { ...state.resendDraftMap, [conversationId]: draft } };
+    }
+    const { [conversationId]: _, ...rest } = state.resendDraftMap;
+    return { resendDraftMap: rest };
+  }),
 
   loadConversations: async () => {
     const workspace = await getWorkspace();
@@ -215,6 +235,17 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     // 自动打开标签页（openTab 内部有防重逻辑）
     const { useSessionStore } = await import('./session-store');
     useSessionStore.getState().openTab(conversation.id, conversation.title || '新对话');
+
+    // 从后端获取最新数据，覆盖可能过时的前端缓存（如分叉字段已被清除）
+    const workspace = await getWorkspace();
+    if (workspace) {
+      try {
+        const fresh = await client.getById({ conversationId: conversation.id, workspaceId: workspace.id });
+        if (fresh.conversation && get().selectedConversation?.id === conversation.id) {
+          set({ selectedConversation: fresh.conversation });
+        }
+      } catch { /* 忽略，已有缓存数据可用 */ }
+    }
 
     // 如果对话有关联书籍，加载书籍信息
     const { useWorkspaceStore } = await import('./workspace-store');
@@ -319,23 +350,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      // 设置 forkParams，让 AgentChat 以 fork 模式启动
-      set({
-        forkParams: {
-          sdkSessionIdToResume: parentConv.sdk_session_id,
-          forkSession: true,
-          resumeSessionAt: params.forkMessageSdkUuid,
-          isForkNewConversation: true,
-        },
-      });
-
+      // fork_pending 模式：不立即启动 SDK fork，等用户发送首条消息时再启动
       // 刷新对话列表
       await get().loadConversations();
 
       // 切换到新创建的分叉对话
       const newConvResult = await client.getById({ conversationId: forkResult.conversationId, workspaceId: workspace.id });
       if (newConvResult.conversation) {
-        set({ selectedConversation: newConvResult.conversation });
+        // 用 selectConversation 以打开标签页
+        await get().selectConversation(newConvResult.conversation);
       }
     } catch (error) {
       console.error('分叉对话失败:', error);
@@ -366,6 +389,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
           forkSession: false,  // 不创建新会话，直接截断重写
           resumeSessionAt: params.forkPointSdkUuid,
           editedMessage: params.editedMessage,
+          targetConversationId: selectedConversation.id,
         },
       });
     } catch (error) {
