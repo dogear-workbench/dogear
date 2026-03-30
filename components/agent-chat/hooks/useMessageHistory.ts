@@ -34,8 +34,8 @@ export function useMessageHistory({ conversationId, useSdkResume, forkParams, wo
       // 新对话的 sdk_session_id 尚未写入数据库，此时读取必然失败。
       // fork 会话启动后，SDK 会通过 replay 消息流自动推送截断历史。
       if (forkParams) {
-        console.log('🔀 Fork 模式，跳过 loadHistory，等待 SDK replay 消息流');
-        setMessages([]);
+        console.log('🔀 Fork 模式，跳过 loadHistory，保留当前消息等待 SDK replay');
+        // 不清空消息，保留当前显示的历史，SDK replay 到来后自然追加
         setHistoryLoaded(true);
         setIsResumeMode(true);
         return;

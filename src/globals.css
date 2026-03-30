@@ -4,11 +4,20 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* ═══════════════════════════════════════════════
+   Dogear Editorial Design System
+   杂志编辑室风格 — 暗色主题优先
+   ═══════════════════════════════════════════════ */
+
 @theme inline {
+  /* 字体 */
+  --font-display: "Playfair Display", "Noto Serif SC", Georgia, "Times New Roman", serif;
+  --font-sans: "DM Sans", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  /* 色彩映射 */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, monospace;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -38,6 +47,8 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+
+  /* 圆角 */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -47,80 +58,148 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
+/* ─── 亮色主题（保留基础兼容） ─── */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.147 0.004 49.25);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.147 0.004 49.25);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.147 0.004 49.25);
-  --primary: oklch(0.216 0.006 56.043);
-  --primary-foreground: oklch(0.985 0.001 106.423);
-  --secondary: oklch(0.97 0.001 106.424);
-  --secondary-foreground: oklch(0.216 0.006 56.043);
-  --muted: oklch(0.97 0.001 106.424);
-  --muted-foreground: oklch(0.553 0.013 58.071);
-  --accent: oklch(0.97 0.001 106.424);
-  --accent-foreground: oklch(0.216 0.006 56.043);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.923 0.003 48.717);
-  --input: oklch(0.923 0.003 48.717);
-  --ring: oklch(0.709 0.01 56.259);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0.001 106.423);
-  --sidebar-foreground: oklch(0.147 0.004 49.25);
-  --sidebar-primary: oklch(0.216 0.006 56.043);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
-  --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.709 0.01 56.259);
+  --radius: 0.5rem;
+
+  --background: #FAF9F6;
+  --foreground: #1A1A1A;
+  --card: #FFFFFF;
+  --card-foreground: #1A1A1A;
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1A1A;
+  --primary: #E8590C;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F0EEEB;
+  --secondary-foreground: #1A1A1A;
+  --muted: #F0EEEB;
+  --muted-foreground: #8A8580;
+  --accent: #F0EEEB;
+  --accent-foreground: #1A1A1A;
+  --destructive: #E5484D;
+  --border: #E0DDD8;
+  --input: #E0DDD8;
+  --ring: #E8590C;
+
+  --chart-1: #E8590C;
+  --chart-2: #30A46C;
+  --chart-3: #3B82F6;
+  --chart-4: #F59E0B;
+  --chart-5: #8B5CF6;
+
+  --sidebar: #F5F4F1;
+  --sidebar-foreground: #1A1A1A;
+  --sidebar-primary: #E8590C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F0EEEB;
+  --sidebar-accent-foreground: #1A1A1A;
+  --sidebar-border: #E0DDD8;
+  --sidebar-ring: #E8590C;
 }
 
+/* ─── 暗色主题（主力） ─── */
 .dark {
-  --background: oklch(0.147 0.004 49.25);
-  --foreground: oklch(0.985 0.001 106.423);
-  --card: oklch(0.216 0.006 56.043);
-  --card-foreground: oklch(0.985 0.001 106.423);
-  --popover: oklch(0.216 0.006 56.043);
-  --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.923 0.003 48.717);
-  --primary-foreground: oklch(0.216 0.006 56.043);
-  --secondary: oklch(0.268 0.007 34.298);
-  --secondary-foreground: oklch(0.985 0.001 106.423);
-  --muted: oklch(0.268 0.007 34.298);
-  --muted-foreground: oklch(0.709 0.01 56.259);
-  --accent: oklch(0.268 0.007 34.298);
-  --accent-foreground: oklch(0.985 0.001 106.423);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.553 0.013 58.071);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.216 0.006 56.043);
-  --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.268 0.007 34.298);
-  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.553 0.013 58.071);
+  --background: #0C0C0C;
+  --foreground: #EDEBE8;
+  --card: #161616;
+  --card-foreground: #EDEBE8;
+  --popover: #161616;
+  --popover-foreground: #EDEBE8;
+  --primary: #E8590C;
+  --primary-foreground: #FFFFFF;
+  --secondary: #1E1E1E;
+  --secondary-foreground: #EDEBE8;
+  --muted: #1E1E1E;
+  --muted-foreground: #9A9590;
+  --accent: #1E1E1E;
+  --accent-foreground: #EDEBE8;
+  --destructive: #E5484D;
+  --border: #2A2A2A;
+  --input: #2A2A2A;
+  --ring: #E8590C;
+
+  --chart-1: #E8590C;
+  --chart-2: #30A46C;
+  --chart-3: #3B82F6;
+  --chart-4: #F59E0B;
+  --chart-5: #8B5CF6;
+
+  --sidebar: #111111;
+  --sidebar-foreground: #EDEBE8;
+  --sidebar-primary: #E8590C;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #1E1E1E;
+  --sidebar-accent-foreground: #EDEBE8;
+  --sidebar-border: #2A2A2A;
+  --sidebar-ring: #E8590C;
 }
 
+/* ─── 基础层 ─── */
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+  }
+
+  /* 滚动条美化 — 编辑室风格：细窄、暗色、融入背景 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: #2A2A2A;
+    border-radius: 3px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: #3A3A3A;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    background: #2A2A2A;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: #3A3A3A;
+  }
+
+  :root ::-webkit-scrollbar-thumb {
+    background: #D0CCC7;
+  }
+
+  :root ::-webkit-scrollbar-thumb:hover {
+    background: #B0ACA7;
+  }
+
+  /* 文字选中高亮 — 燃烧橙 */
+  ::selection {
+    background: rgba(232, 89, 12, 0.3);
+    color: inherit;
+  }
+
+  .dark ::selection {
+    background: rgba(232, 89, 12, 0.35);
+  }
+}
+
+/* ─── 排版工具类 ─── */
+@layer utilities {
+  /* 编辑室风格粗线分隔 */
+  .border-editorial {
+    border-width: 2px;
+    border-color: var(--foreground);
+  }
+
+  /* 显示字体（标题用） */
+  .font-display {
+    font-family: "Playfair Display", "Noto Serif SC", Georgia, "Times New Roman", serif;
   }
 }

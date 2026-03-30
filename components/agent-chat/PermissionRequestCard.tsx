@@ -107,45 +107,45 @@ export function PermissionRequestCard({
     }
   };
 
-  // 已处理状态的边框/背景颜色
+  // 已处理状态的边框/背景颜色（统一中性色）
   const resolvedStyle = () => {
-    if (!isResolved) return 'border-amber-300 bg-amber-50/50';
-    if (block.permissionResolved === 'deny') return 'border-red-200 bg-red-50/30';
-    return 'border-green-200 bg-green-50/30';  // allow 和 always_allow
+    if (!isResolved) return 'border-border bg-secondary/50';
+    if (block.permissionResolved === 'deny') return 'border-border bg-secondary/30';
+    return 'border-border bg-secondary/30';
   };
 
   return (
-    <div className={`rounded-lg border-2 ${resolvedStyle()} p-3`}>
+    <div className={`rounded-lg border ${resolvedStyle()} p-3`}>
       <div className="flex items-center gap-2 mb-2">
         {isResolved && block.permissionResolved !== 'deny'
-          ? <ShieldCheck size={16} className="text-green-500" />
-          : <ShieldAlert size={16} className={isResolved ? 'text-red-400' : 'text-amber-600'} />
+          ? <ShieldCheck size={16} className="text-muted-foreground" />
+          : <ShieldAlert size={16} className={isResolved ? 'text-destructive' : 'text-foreground'} />
         }
-        <span className={`text-sm font-medium ${isResolved ? 'text-gray-500' : 'text-amber-800'}`}>
+        <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground' : 'text-foreground'}`}>
           {isResolved ? resolvedText() : '请求执行权限'}
         </span>
-        <span className="text-xs px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 font-mono">
+        <span className="text-xs px-1.5 py-0.5 bg-muted rounded text-muted-foreground font-mono">
           {block.permissionToolName}
         </span>
       </div>
 
       {/* 工具输入摘要 */}
       {block.permissionInput && (
-        <div className="mb-2 text-xs text-gray-600 bg-gray-50 rounded p-2 font-mono max-h-32 overflow-y-auto whitespace-pre-wrap">
+        <div className="mb-2 text-xs text-muted-foreground bg-muted rounded p-2 font-mono max-h-32 overflow-y-auto whitespace-pre-wrap">
           {formatToolInput(block.permissionInput)}
         </div>
       )}
 
       {/* 权限请求原因 */}
       {block.permissionDecisionReason && (
-        <div className="mb-2 text-xs text-gray-500">
+        <div className="mb-2 text-xs text-muted-foreground">
           原因: {block.permissionDecisionReason}
         </div>
       )}
 
       {/* 已拒绝时显示用户的拒绝理由 */}
       {isResolved && block.permissionResolved === 'deny' && block.permissionDenyMessage && (
-        <div className="mb-1 text-xs text-red-600 bg-red-50 rounded p-2">
+        <div className="mb-1 text-xs text-destructive bg-destructive/10 rounded p-2">
           <MessageSquare size={10} className="inline mr-1" />
           {block.permissionDenyMessage}
         </div>
@@ -155,15 +155,15 @@ export function PermissionRequestCard({
       {!isResolved && (
         <div className="space-y-2 mt-2">
           <div className="flex items-center gap-2 flex-wrap">
-            <Button size="sm" onClick={handleAllow} className="bg-green-600 hover:bg-green-700 text-white">
+            <Button size="sm" onClick={handleAllow}>
               <Check size={12} />
               允许
             </Button>
-            <Button variant="outline" size="sm" onClick={handleAlwaysAllow} className="text-green-700 border-green-300 hover:bg-green-100">
+            <Button variant="outline" size="sm" onClick={handleAlwaysAllow}>
               <ShieldCheck size={12} />
               总是允许
             </Button>
-            <Button variant="outline" size="sm" onClick={handleDeny} className="text-red-600 border-red-200 hover:bg-red-100">
+            <Button variant="outline" size="sm" onClick={handleDeny} className="text-destructive hover:bg-destructive/10">
               <X size={12} />
               拒绝
             </Button>
@@ -171,7 +171,7 @@ export function PermissionRequestCard({
               variant="outline"
               size="sm"
               onClick={() => setShowDenyInput(!showDenyInput)}
-              className={showDenyInput ? 'text-amber-700 border-amber-300 bg-amber-100' : ''}
+              className={showDenyInput ? 'bg-muted' : ''}
             >
               <Send size={12} />
               拒绝并说明
@@ -185,7 +185,7 @@ export function PermissionRequestCard({
                 }
                 setIsEditingInput(!isEditingInput);
               }}
-              className={isEditingInput ? 'text-blue-700 border-blue-300 bg-blue-100' : ''}
+              className={isEditingInput ? 'bg-muted' : ''}
             >
               <PenLine size={12} />
               编辑参数
@@ -203,7 +203,7 @@ export function PermissionRequestCard({
                 className="flex-1 text-xs"
                 autoFocus
               />
-              <Button size="sm" onClick={handleDenyWithMessage} disabled={!denyMessage.trim()} className="bg-amber-500 hover:bg-amber-600 text-white">
+              <Button size="sm" onClick={handleDenyWithMessage} disabled={!denyMessage.trim()}>
                 <Send size={12} />
                 发送
               </Button>
@@ -216,7 +216,7 @@ export function PermissionRequestCard({
               <Textarea
                 value={editedInput}
                 onChange={(e) => setEditedInput(e.target.value)}
-                className="text-xs font-mono resize-none bg-blue-50/30"
+                className="text-xs font-mono resize-none bg-muted/30"
                 rows={6}
                 autoFocus
               />

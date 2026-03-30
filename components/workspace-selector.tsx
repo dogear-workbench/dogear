@@ -23,10 +23,13 @@ export function WorkspaceSelector() {
     try {
       setLoading(true);
       const result = await client.getAll();
-      if (result.workspaces && result.workspaces.length > 0) {
-        setWorkspaces(result.workspaces);
+      const list = result.workspaces ?? [];
+      setWorkspaces(list);
+      if (list.length > 0) {
         // 默认选中第一个工作区
-        setSelectedWorkspace(result.workspaces[0]);
+        setSelectedWorkspace(list[0]);
+      } else {
+        setSelectedWorkspace(null);
       }
     } catch (error) {
       console.error('加载工作区列表失败:', error);
@@ -40,6 +43,15 @@ export function WorkspaceSelector() {
     try {
       const result = await client.selectFolder();
       if (result.workspace && !result.canceled) {
+        const { path: folderPath } = result.workspace;
+        // 校验路径：不能含中文字符或下划线（SDK 会将其处理成连字符）
+        if (/[\u4e00-\u9fa5_]/.test(folderPath)) {
+          toast.warning('路径包含不支持的字符', {
+            description: '工作区路径不能包含中文或下划线（_），SDK 会将其转换为连字符导致识别异常，请选择其他文件夹。',
+            duration: 6000,
+          });
+          return;
+        }
         // 重新加载工作区列表
         await loadWorkspaces();
         setSelectedWorkspace(result.workspace);

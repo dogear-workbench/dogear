@@ -23,7 +23,7 @@ export function CitationBadge({ citation }: { citation: Citation }) {
       variant="outline"
       size="sm"
       onClick={handleClick}
-      className="h-7 px-2 text-xs text-blue-700 border-blue-200 bg-blue-50 hover:bg-blue-100"
+      className="h-7 px-2 text-xs text-foreground border-border bg-secondary hover:bg-muted"
       title={`点击跳转到: ${citation.chapterTitle}`}
     >
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -31,7 +31,7 @@ export function CitationBadge({ citation }: { citation: Citation }) {
       </svg>
       <span className="font-medium">{citation.chapterTitle}</span>
       {citation.position && (
-        <span className="text-gray-400">: {citation.position.start}-{citation.position.end}</span>
+        <span className="text-muted-foreground">: {citation.position.start}-{citation.position.end}</span>
       )}
     </Button>
   );

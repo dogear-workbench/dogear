@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router';
-import { ArrowLeft, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useStockStore } from '@/stores/stock-store';
 import { WatchList } from '@/components/stock/WatchList';
@@ -14,7 +13,6 @@ import { StockSearch } from '@/components/stock/StockSearch';
 export default function StockPage() {
   const loadWatchlist = useStockStore((s) => s.loadWatchlist);
   const refreshQuotes = useStockStore((s) => s.refreshQuotes);
-  const navigate = useNavigate();
   const [searchOpen, setSearchOpen] = useState(false);
 
   // 刷新按钮 500ms 防抖
@@ -43,9 +41,6 @@ export default function StockPage() {
     <div className="h-screen flex flex-col bg-background">
       {/* 顶栏 */}
       <header className="flex items-center gap-2 px-4 h-12 border-b shrink-0">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/')}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
         <h1 className="text-sm font-medium">自选股行情</h1>
         <div className="flex-1" />
         <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>

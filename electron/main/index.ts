@@ -204,6 +204,21 @@ export function createStockWindow() {
   });
 }
 
+/**
+ * 关闭所有子窗口（主窗口关闭时调用）
+ */
+function closeAllChildWindows() {
+  if (stockWindow && !stockWindow.isDestroyed()) {
+    stockWindow.close();
+  }
+  if (agentMonitorWindow && !agentMonitorWindow.isDestroyed()) {
+    agentMonitorWindow.close();
+  }
+  if (debugWindow && !debugWindow.isDestroyed()) {
+    debugWindow.close();
+  }
+}
+
 // ==================== 应用生命周期 ====================
 
 // 当 Electron 完成初始化时创建窗口
@@ -253,6 +268,11 @@ app.whenReady().then(async () => {
   await agentManager.start();
 
   createWindow();
+
+  // 主窗口关闭时，关闭所有子窗口
+  mainWindow!.on('close', () => {
+    closeAllChildWindows();
+  });
 
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
   // 如果没有其他窗口打开,则创建新窗口

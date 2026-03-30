@@ -7,5 +7,11 @@
             "name": "dogear"
         }
     ],
-    "sqltools.useNodeRuntime": true
+    "sqltools.useNodeRuntime": true,
+    "files.watcherExclude": {
+        "**/release/**": true
+    },
+    "files.exclude": {
+        "release": true
+    }
 }

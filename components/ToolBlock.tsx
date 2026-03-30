@@ -187,14 +187,14 @@ function StatusIcon({ status }: { status: ToolStatus }) {
   switch (status) {
     case "pending":
       return (
-        <div className="w-4 h-4 rounded-full border-2 border-gray-300 border-t-gray-500 animate-spin" />
+        <div className="w-4 h-4 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
       );
     case "running":
-      return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      return <Loader2 className="w-4 h-4 text-sky-500 animate-spin" />;
     case "success":
-      return <Check className="w-4 h-4 text-green-600" />;
+      return <Check className="w-4 h-4 text-muted-foreground" />;
     case "error":
-      return <X className="w-4 h-4 text-red-600" />;
+      return <X className="w-4 h-4 text-red-500" />;
   }
 }
 
@@ -226,22 +226,22 @@ export function ToolBlock({
   // 是否有可展开的内容
   const hasExpandableContent = toolInput || toolOutput;
 
-  // 状态相关的样式
+  // 状态相关的样式（淡色区分，克制不张扬）
   const statusStyles: Record<ToolStatus, { bg: string; border: string; text: string }> = {
     pending: {
-      bg: "bg-gray-50",
-      border: "border-gray-200",
-      text: "text-gray-700",
+      bg: "bg-secondary",
+      border: "border-border",
+      text: "text-muted-foreground",
     },
     running: {
-      bg: "bg-blue-50",
-      border: "border-blue-200",
-      text: "text-blue-700",
+      bg: "bg-sky-50",
+      border: "border-sky-200",
+      text: "text-sky-700",
     },
     success: {
-      bg: "bg-green-50",
-      border: "border-green-200",
-      text: "text-green-700",
+      bg: "bg-secondary",
+      border: "border-border",
+      text: "text-foreground",
     },
     error: {
       bg: "bg-red-50",
@@ -292,7 +292,7 @@ export function ToolBlock({
 
           {/* 摘要信息 */}
           {summary && (
-            <span className="text-xs text-gray-500 truncate flex-1 ml-1">
+            <span className="text-xs text-muted-foreground truncate flex-1 ml-1">
               {summary}
             </span>
           )}
@@ -312,10 +312,10 @@ export function ToolBlock({
             {/* 工具输入 */}
             {toolInput && Object.keys(toolInput).length > 0 && (
               <div>
-                <div className="text-xs font-medium text-gray-500 mb-1">
+                <div className="text-xs font-medium text-muted-foreground mb-1">
                   输入参数
                 </div>
-                <pre className="text-xs bg-white/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
+                <pre className="text-xs bg-background/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
                   {JSON.stringify(toolInput, null, 2)}
                 </pre>
               </div>
@@ -324,13 +324,13 @@ export function ToolBlock({
             {/* 工具输出 */}
             {toolOutput && (
               <div>
-                <div className="text-xs font-medium text-gray-500 mb-1">
-                  执行结果 {isError && <span className="text-red-500">(错误)</span>}
+                <div className="text-xs font-medium text-muted-foreground mb-1">
+                  执行结果 {isError && <span className="text-destructive">(错误)</span>}
                 </div>
                 <pre
                   className={cn(
                     "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-all",
-                    isError ? "bg-red-100/50" : "bg-white/50"
+                    isError ? "bg-red-100/60" : "bg-background/50"
                   )}
                 >
                   {formattedOutput}
@@ -341,14 +341,14 @@ export function ToolBlock({
             {/* 引用信息 */}
             {citations && citations.length > 0 && (
               <div>
-                <div className="text-xs font-medium text-gray-500 mb-1">
+                <div className="text-xs font-medium text-muted-foreground mb-1">
                   引用来源
                 </div>
                 <div className="flex flex-wrap gap-1">
                   {citations.map((citation, idx) => (
                     <span
                       key={idx}
-                      className="inline-flex items-center px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs"
+                      className="inline-flex items-center px-2 py-0.5 bg-secondary text-foreground rounded text-xs"
                     >
                       {citation.chapterTitle || `引用 ${idx + 1}`}
                     </span>
@@ -399,7 +399,7 @@ export function ToolResultBlock({
           "rounded-lg border",
           isError
             ? "bg-red-50 border-red-200"
-            : "bg-green-50 border-green-200",
+            : "bg-secondary border-border",
           className
         )}
       >
@@ -407,27 +407,27 @@ export function ToolResultBlock({
           <ChevronRight
             className={cn(
               "w-4 h-4 transition-transform duration-200",
-              isError ? "text-red-600" : "text-green-600",
+              isError ? "text-red-500" : "text-muted-foreground",
               isOpen && "rotate-90"
             )}
           />
 
-          <span className={cn("text-sm", isError ? "text-red-700" : "text-green-700")}>
+          <span className={cn("text-sm", isError ? "text-red-700" : "text-foreground")}>
             {isError ? "❌ 执行失败" : "✅ 执行成功"}
           </span>
 
-          <span className="text-xs text-gray-500 truncate flex-1">
+          <span className="text-xs text-muted-foreground truncate flex-1">
             {outputSummary}
           </span>
         </CollapsibleTrigger>
 
         <CollapsibleContent>
           <div className="px-3 pb-3">
-            <div className={cn("border-t mb-2", isError ? "border-red-200" : "border-green-200")} />
+            <div className={cn("border-t mb-2", "border-border")} />
             <pre
               className={cn(
                 "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-all",
-                isError ? "bg-red-100/50" : "bg-white/50"
+                isError ? "bg-destructive/10" : "bg-background/50"
               )}
             >
               {formattedOutput}

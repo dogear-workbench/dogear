@@ -64,10 +64,10 @@ export function AskUserQuestionCard({
   };
 
   return (
-    <div className={`rounded-lg border-2 ${isResolved ? 'border-blue-200 bg-blue-50/30' : 'border-indigo-300 bg-indigo-50/50'} p-4`}>
+    <div className={`rounded-lg border ${isResolved ? 'border-border bg-secondary/30' : 'border-border bg-secondary/50'} p-4`}>
       <div className="flex items-center gap-2 mb-3">
-        <HelpCircle size={16} className={isResolved ? 'text-blue-400' : 'text-indigo-600'} />
-        <span className={`text-sm font-medium ${isResolved ? 'text-blue-500' : 'text-indigo-800'}`}>
+        <HelpCircle size={16} className={isResolved ? 'text-muted-foreground' : 'text-foreground'} />
+        <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground' : 'text-foreground'}`}>
           {isResolved ? '已回答' : 'AI 想了解更多信息'}
         </span>
       </div>
@@ -76,13 +76,13 @@ export function AskUserQuestionCard({
         {questions.map((q, qi) => (
           <div key={qi} className="space-y-2">
             {q.header && (
-              <span className="text-xs px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-600 font-medium">{q.header}</span>
+              <span className="text-xs px-1.5 py-0.5 bg-muted rounded text-muted-foreground font-medium">{q.header}</span>
             )}
-            <p className="text-sm text-gray-800 font-medium">{q.question}</p>
+            <p className="text-sm text-foreground font-medium">{q.question}</p>
 
             {isResolved ? (
               // 已回答：只读显示
-              <div className="text-sm text-gray-600 bg-white/60 rounded p-2">
+              <div className="text-sm text-muted-foreground bg-background/60 rounded p-2">
                 {block.askUserAnswers?.[q.question] || '(未回答)'}
               </div>
             ) : q.multiSelect ? (
@@ -103,7 +103,7 @@ export function AskUserQuestionCard({
                     />
                     <div>
                       <Label htmlFor={`q${qi}-opt${oi}`} className="text-sm cursor-pointer">{opt.label}</Label>
-                      {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
+                      {opt.description && <p className="text-xs text-muted-foreground mt-0.5">{opt.description}</p>}
                     </div>
                   </div>
                 ))}
@@ -147,7 +147,7 @@ export function AskUserQuestionCard({
                     <RadioGroupItem value={opt.label} id={`q${qi}-opt${oi}`} className="mt-0.5" />
                     <div>
                       <Label htmlFor={`q${qi}-opt${oi}`} className="text-sm cursor-pointer">{opt.label}</Label>
-                      {opt.description && <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>}
+                      {opt.description && <p className="text-xs text-muted-foreground mt-0.5">{opt.description}</p>}
                     </div>
                   </div>
                 ))}

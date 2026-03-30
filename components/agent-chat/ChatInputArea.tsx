@@ -34,14 +34,14 @@ const PERMISSION_MODE_STYLES: Record<PermissionMode, {
 }> = {
   default: {
     border: 'border-orange-300 dark:border-orange-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-orange-400 has-[[data-slot=input-group-control]:focus-visible]:ring-orange-400/30',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-orange-400 has-[[data-slot=input-group-control]:focus-visible]:ring-orange-400/20',
     icon: 'text-orange-500',
     label: '需确认',
   },
   bypassPermissions: {
-    border: 'border-emerald-300 dark:border-emerald-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-emerald-400 has-[[data-slot=input-group-control]:focus-visible]:ring-emerald-400/30',
-    icon: 'text-emerald-500',
+    border: 'border-green-300 dark:border-green-500/60',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-green-400 has-[[data-slot=input-group-control]:focus-visible]:ring-green-400/20',
+    icon: 'text-green-500',
     label: '自动执行',
   },
   acceptEdits: {
@@ -52,7 +52,7 @@ const PERMISSION_MODE_STYLES: Record<PermissionMode, {
   },
   plan: {
     border: 'border-blue-300 dark:border-blue-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-blue-400 has-[[data-slot=input-group-control]:focus-visible]:ring-blue-400/30',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-blue-400 has-[[data-slot=input-group-control]:focus-visible]:ring-blue-400/20',
     icon: 'text-blue-500',
     label: '仅规划',
   },
@@ -134,7 +134,7 @@ export function ChatInputArea({
     <div className="p-3">
       {hasPendingUserAction ? (
         // 有未处理的权限请求或 AskUser 问题时，显示提示而非输入框
-        <div className="flex items-center justify-center gap-2 py-3 text-sm text-amber-700 bg-amber-50 rounded-lg border border-amber-200">
+        <div className="flex items-center justify-center gap-2 py-3 text-sm text-muted-foreground bg-secondary rounded-lg border border-border">
           <ShieldAlert size={16} />
           <span>请先处理上方的权限请求或问题</span>
         </div>
@@ -162,11 +162,11 @@ export function ChatInputArea({
                 {/* 引用芯片 */}
                 {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
-                    {/* 蓝色芯片：整篇文章引用 */}
+                    {/* 文章引用芯片 — 淡蓝 */}
                     {referencedArticles.map(article => (
                       <span
                         key={article.id}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded-full text-xs text-blue-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700"
                         title={article.title}
                       >
                         <span className="max-w-[160px] truncate">{article.title}</span>
@@ -174,36 +174,36 @@ export function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedArticle(article.id)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-blue-200"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-sky-100"
                         >
                           <X className="w-3 h-3" />
                         </Button>
                       </span>
                     ))}
-                    {/* 紫色芯片：文字片段引用 */}
+                    {/* 文字片段引用芯片 — 淡紫灰 */}
                     {quotedSnippets.map(snippet => (
                       <span
                         key={snippet.id}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600"
                         title={`来自《${snippet.articleTitle}》: ${snippet.text}`}
                       >
                         <span className="max-w-[120px] truncate">{`"${snippet.text}"`}</span>
-                        <span className="text-purple-400 flex-shrink-0">- {snippet.articleTitle.length > 8 ? snippet.articleTitle.slice(0, 8) + '...' : snippet.articleTitle}</span>
+                        <span className="text-slate-400 flex-shrink-0">- {snippet.articleTitle.length > 8 ? snippet.articleTitle.slice(0, 8) + '...' : snippet.articleTitle}</span>
                         <Button
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeQuotedSnippet(snippet.id)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-purple-200"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-slate-200"
                         >
                           <X className="w-3 h-3" />
                         </Button>
                       </span>
                     ))}
-                    {/* 绿色芯片：文件引用 */}
+                    {/* 文件引用芯片 — 淡石板绿 */}
                     {referencedFiles.map(file => (
                       <span
                         key={file.path}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded-full text-xs text-green-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700"
                         title={file.path}
                       >
                         <FileText className="w-3 h-3 flex-shrink-0" />
@@ -212,7 +212,7 @@ export function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedFile(file.path)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-green-200"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-teal-100"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -224,14 +224,14 @@ export function ChatInputArea({
                 {/* 重发指示芯片 */}
                 {resendDraft && (
                   <div className="flex flex-wrap gap-1.5">
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700">
+                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-secondary border border-border rounded-full text-xs text-foreground">
                       <CornerDownLeft className="w-3 h-3" />
                       <span>重新发送</span>
                       <Button
                         variant="ghost"
                         size="icon-xs"
                         onClick={onCancelResend}
-                        className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-amber-200"
+                        className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-muted"
                       >
                         <X className="w-3 h-3" />
                       </Button>
@@ -323,7 +323,7 @@ export function ChatInputArea({
                     size="xs"
                     className={cn(
                       "gap-1",
-                      thinkingLevel > 0 ? 'text-blue-600' : 'text-muted-foreground'
+                      thinkingLevel > 0 ? 'text-primary' : 'text-muted-foreground'
                     )}
                     title="思考深度"
                   >
