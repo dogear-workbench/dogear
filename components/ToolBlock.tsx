@@ -1,13 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { ChevronRight, Check, X, Loader2 } from "lucide-react";
+import { Check, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
 
 /**
  * 工具调用状态
@@ -200,7 +195,7 @@ function StatusIcon({ status }: { status: ToolStatus }) {
 
 /**
  * 工具块组件
- * 显示工具调用信息，支持折叠展开详细内容
+ * 使用 CollapsibleBlock 渐隐预览样式，无边框无背景色
  */
 export function ToolBlock({
   toolName,
@@ -212,230 +207,58 @@ export function ToolBlock({
   citations,
   className,
 }: ToolBlockProps) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  // 确定实际状态
   const actualStatus: ToolStatus = isError ? "error" : status;
-
-  // 获取工具摘要
   const summary = getToolSummary(toolName, toolInput, toolOutput);
-
-  // 格式化输出
   const formattedOutput = formatToolOutput(toolName, toolOutput);
+  const icon = getToolIcon(toolName);
 
-  // 是否有可展开的内容
-  const hasExpandableContent = toolInput || toolOutput;
-
-  // 状态相关的样式（淡色区分，克制不张扬）
-  const statusStyles: Record<ToolStatus, { bg: string; border: string; text: string }> = {
-    pending: {
-      bg: "bg-secondary",
-      border: "border-border",
-      text: "text-muted-foreground",
-    },
-    running: {
-      bg: "bg-sky-50",
-      border: "border-sky-200",
-      text: "text-sky-700",
-    },
-    success: {
-      bg: "bg-secondary",
-      border: "border-border",
-      text: "text-foreground",
-    },
-    error: {
-      bg: "bg-red-50",
-      border: "border-red-200",
-      text: "text-red-700",
-    },
-  };
-
-  const styles = statusStyles[actualStatus];
+  // 标题：工具图标 + 名称 + 摘要
+  const titleText = summary
+    ? `${formatToolName(toolName)} ${summary}`
+    : formatToolName(toolName);
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div
-        className={cn(
-          "rounded-lg border",
-          styles.bg,
-          styles.border,
-          className
+    <CollapsibleBlock
+      icon={<span className="text-sm">{icon}</span>}
+      title={titleText}
+      titleClassName={cn(
+        actualStatus === 'error' && 'text-red-600',
+        actualStatus === 'running' && 'text-sky-600',
+      )}
+      statusIcon={<StatusIcon status={actualStatus} />}
+      previewLines={2}
+      className={className}
+    >
+      <div className="space-y-1.5 text-xs rounded-md bg-muted/20 px-2.5 py-2">
+        {/* 输入参数：展平显示，去掉最外层 {} */}
+        {toolInput && Object.keys(toolInput).length > 0 && (
+          <div className="text-muted-foreground whitespace-pre-wrap break-all">
+            {Object.entries(toolInput).map(([k, v]) => `"${k}": ${JSON.stringify(v)}`).join(',\n')}
+          </div>
         )}
-      >
-        {/* 工具头部 - 总是显示 */}
-        <CollapsibleTrigger
-          className={cn(
-            "w-full flex items-center gap-2 p-3 text-left",
-            "hover:bg-opacity-80 transition-colors",
-            hasExpandableContent && "cursor-pointer"
-          )}
-          disabled={!hasExpandableContent}
-        >
-          {/* 展开/折叠图标 */}
-          {hasExpandableContent && (
-            <ChevronRight
-              className={cn(
-                "w-4 h-4 transition-transform duration-200",
-                styles.text,
-                isOpen && "rotate-90"
-              )}
-            />
-          )}
-
-          {/* 工具图标 */}
-          <span className="text-base">{getToolIcon(toolName)}</span>
-
-          {/* 工具名称 */}
-          <span className={cn("font-medium text-sm", styles.text)}>
-            {formatToolName(toolName)}
-          </span>
-
-          {/* 摘要信息 */}
-          {summary && (
-            <span className="text-xs text-muted-foreground truncate flex-1 ml-1">
-              {summary}
-            </span>
-          )}
-
-          {/* 状态图标 */}
-          <div className="ml-auto">
-            <StatusIcon status={actualStatus} />
+        {/* 执行结果 */}
+        {toolOutput && (
+          <div className={cn(
+            "whitespace-pre-wrap break-all",
+            toolInput && Object.keys(toolInput).length > 0 && "border-t border-border/30 pt-1.5 mt-1",
+            isError ? "text-red-600" : "text-muted-foreground"
+          )}>
+            {isError && <span className="text-red-500/70 text-[10px] block mb-0.5">错误</span>}
+            {formattedOutput}
           </div>
-        </CollapsibleTrigger>
-
-        {/* 可折叠内容 */}
-        <CollapsibleContent>
-          <div className="px-3 pb-3 space-y-2">
-            {/* 分隔线 */}
-            <div className={cn("border-t", styles.border)} />
-
-            {/* 工具输入 */}
-            {toolInput && Object.keys(toolInput).length > 0 && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  输入参数
-                </div>
-                <pre className="text-xs bg-background/50 rounded p-2 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap break-all">
-                  {JSON.stringify(toolInput, null, 2)}
-                </pre>
-              </div>
-            )}
-
-            {/* 工具输出 */}
-            {toolOutput && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  执行结果 {isError && <span className="text-destructive">(错误)</span>}
-                </div>
-                <pre
-                  className={cn(
-                    "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-all",
-                    isError ? "bg-red-100/60" : "bg-background/50"
-                  )}
-                >
-                  {formattedOutput}
-                </pre>
-              </div>
-            )}
-
-            {/* 引用信息 */}
-            {citations && citations.length > 0 && (
-              <div>
-                <div className="text-xs font-medium text-muted-foreground mb-1">
-                  引用来源
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {citations.map((citation, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex items-center px-2 py-0.5 bg-secondary text-foreground rounded text-xs"
-                    >
-                      {citation.chapterTitle || `引用 ${idx + 1}`}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
-  );
-}
-
-/**
- * 工具结果块组件
- * 用于显示工具执行结果（与工具调用配对）
- */
-export function ToolResultBlock({
-  toolUseId,
-  toolOutput,
-  isError = false,
-  className,
-}: {
-  toolUseId?: string;
-  toolOutput?: any;
-  isError?: boolean;
-  className?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  // 格式化输出
-  const formattedOutput =
-    typeof toolOutput === "string"
-      ? toolOutput
-      : JSON.stringify(toolOutput, null, 2);
-
-  // 输出摘要
-  const outputSummary =
-    typeof toolOutput === "string"
-      ? toolOutput.split("\n")[0].substring(0, 50)
-      : "查看结果";
-
-  return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div
-        className={cn(
-          "rounded-lg border",
-          isError
-            ? "bg-red-50 border-red-200"
-            : "bg-secondary border-border",
-          className
         )}
-      >
-        <CollapsibleTrigger className="w-full flex items-center gap-2 p-2 text-left hover:bg-opacity-80 transition-colors cursor-pointer">
-          <ChevronRight
-            className={cn(
-              "w-4 h-4 transition-transform duration-200",
-              isError ? "text-red-500" : "text-muted-foreground",
-              isOpen && "rotate-90"
-            )}
-          />
-
-          <span className={cn("text-sm", isError ? "text-red-700" : "text-foreground")}>
-            {isError ? "❌ 执行失败" : "✅ 执行成功"}
-          </span>
-
-          <span className="text-xs text-muted-foreground truncate flex-1">
-            {outputSummary}
-          </span>
-        </CollapsibleTrigger>
-
-        <CollapsibleContent>
-          <div className="px-3 pb-3">
-            <div className={cn("border-t mb-2", "border-border")} />
-            <pre
-              className={cn(
-                "text-xs rounded p-2 overflow-x-auto max-h-60 overflow-y-auto whitespace-pre-wrap break-all",
-                isError ? "bg-destructive/10" : "bg-background/50"
-              )}
-            >
-              {formattedOutput}
-            </pre>
+        {/* 引用 */}
+        {citations && citations.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {citations.map((c, i) => (
+              <span key={i} className="px-1.5 py-0.5 bg-muted rounded text-muted-foreground text-xs">
+                {c.chapterTitle || `引用 ${i + 1}`}
+              </span>
+            ))}
           </div>
-        </CollapsibleContent>
+        )}
       </div>
-    </Collapsible>
+    </CollapsibleBlock>
   );
 }
 

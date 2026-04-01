@@ -89,11 +89,9 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'status':
       return (
-        <div className="bg-secondary border border-border rounded-lg p-2">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse"></div>
-            {block.status}
-          </div>
+        <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
+          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse"></div>
+          {block.status}
         </div>
       );
 
@@ -128,7 +126,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         compact: '会话已压缩重启',
       };
       return (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary border border-border text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
           <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full"></div>
           {sourceLabel[block.sessionStartSource || ''] || '会话已启动'}
         </div>
@@ -137,7 +135,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'session_end':
       return (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary border border-border text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
           <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full"></div>
           会话已结束{block.sessionEndReason ? `（${block.sessionEndReason}）` : ''}
         </div>
@@ -145,7 +143,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'stop':
       return (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary border border-border text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
           <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full"></div>
           执行已停止
         </div>
@@ -153,8 +151,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'tool_failure':
       return (
-        <div className="bg-secondary border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-destructive mb-1">
+        <div className="py-1.5">
+          <div className="flex items-center gap-2 text-sm font-medium text-destructive">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
@@ -164,7 +162,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             )}
           </div>
           {block.failedToolError && (
-            <div className="text-xs text-destructive bg-destructive/10 rounded p-2 font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+            <div className="mt-1 text-xs text-destructive font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto pl-6">
               {block.failedToolError}
             </div>
           )}
@@ -173,31 +171,36 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'notification':
       return (
-        <div className="bg-secondary border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground mb-1">
+        <div className="py-1.5">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
             </svg>
             {block.notificationTitle || '通知'}
           </div>
           {block.notificationMessage && (
-            <div className="text-xs text-muted-foreground">{block.notificationMessage}</div>
+            <div className="text-xs text-muted-foreground pl-6">{block.notificationMessage}</div>
           )}
         </div>
       );
 
     case 'task_notification': {
-      // 根据任务状态设置颜色
-      const statusColors: Record<string, { bg: string; border: string; text: string; dot: string }> = {
-        completed: { bg: 'bg-secondary', border: 'border-border', text: 'text-foreground', dot: 'bg-muted-foreground' },
-        failed: { bg: 'bg-secondary', border: 'border-border', text: 'text-destructive', dot: 'bg-destructive' },
-        cancelled: { bg: 'bg-secondary', border: 'border-border', text: 'text-muted-foreground', dot: 'bg-muted-foreground/50' },
+      const dotColors: Record<string, string> = {
+        completed: 'bg-muted-foreground',
+        failed: 'bg-destructive',
+        cancelled: 'bg-muted-foreground/50',
       };
-      const colors = statusColors[block.taskStatus || ''] || { bg: 'bg-secondary', border: 'border-border', text: 'text-foreground', dot: 'bg-muted-foreground' };
+      const textColors: Record<string, string> = {
+        completed: 'text-foreground',
+        failed: 'text-destructive',
+        cancelled: 'text-muted-foreground',
+      };
       const statusLabels: Record<string, string> = { completed: '已完成', failed: '失败', cancelled: '已取消', in_progress: '进行中' };
+      const dot = dotColors[block.taskStatus || ''] || 'bg-muted-foreground';
+      const text = textColors[block.taskStatus || ''] || 'text-foreground';
       return (
-        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-md ${colors.bg} border ${colors.border} text-xs ${colors.text}`}>
-          <div className={`w-1.5 h-1.5 ${colors.dot} rounded-full`}></div>
+        <div className={`flex items-center gap-2 py-1 text-xs ${text}`}>
+          <div className={`w-1.5 h-1.5 ${dot} rounded-full`}></div>
           <span>子任务 {block.taskId ? `[${block.taskId.substring(0, 8)}]` : ''} {statusLabels[block.taskStatus || ''] || block.taskStatus}</span>
           {block.taskSummary && <span className="text-muted-foreground ml-1">- {block.taskSummary}</span>}
         </div>
@@ -226,7 +229,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'compacting':
       return (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary border border-border text-xs text-muted-foreground">
+        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
           <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-pulse"></div>
           正在压缩对话历史...
         </div>
@@ -234,9 +237,9 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
 
     case 'local_command_output':
       return block.content ? (
-        <div className="bg-secondary border border-border rounded-lg p-3">
-          <div className="text-xs text-muted-foreground mb-1">命令输出</div>
-          <div className="text-sm text-foreground whitespace-pre-wrap break-all font-mono">
+        <div className="py-1.5">
+          <div className="text-xs text-muted-foreground">命令输出</div>
+          <div className="text-sm text-foreground whitespace-pre-wrap break-all font-mono pl-0 mt-0.5">
             {block.content}
           </div>
         </div>
@@ -275,8 +278,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     case 'user':
       // 用户消息（来自 SDK 重放）
       return (
-        <div className="bg-secondary border border-border rounded-lg p-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground mb-1">
+        <div className="py-1.5">
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
             </svg>
@@ -284,7 +287,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             用户消息
           </div>
           {block.content && (
-            <div className="text-sm text-foreground whitespace-pre-wrap break-words">
+            <div className="text-sm text-foreground whitespace-pre-wrap break-words pl-6 mt-0.5">
               {block.content}
             </div>
           )}

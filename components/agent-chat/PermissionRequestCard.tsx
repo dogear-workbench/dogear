@@ -107,21 +107,14 @@ export function PermissionRequestCard({
     }
   };
 
-  // 已处理状态的边框/背景颜色（统一中性色）
-  const resolvedStyle = () => {
-    if (!isResolved) return 'border-border bg-secondary/50';
-    if (block.permissionResolved === 'deny') return 'border-border bg-secondary/30';
-    return 'border-border bg-secondary/30';
-  };
-
   return (
-    <div className={`rounded-lg border ${resolvedStyle()} p-3`}>
+    <div className="py-2">
       <div className="flex items-center gap-2 mb-2">
         {isResolved && block.permissionResolved !== 'deny'
-          ? <ShieldCheck size={16} className="text-muted-foreground" />
-          : <ShieldAlert size={16} className={isResolved ? 'text-destructive' : 'text-foreground'} />
+          ? <ShieldCheck size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-emerald-500'} />
+          : <ShieldAlert size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-amber-500'} />
         }
-        <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground' : 'text-foreground'}`}>
+        <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground/60' : 'text-foreground'}`}>
           {isResolved ? resolvedText() : '请求执行权限'}
         </span>
         <span className="text-xs px-1.5 py-0.5 bg-muted rounded text-muted-foreground font-mono">

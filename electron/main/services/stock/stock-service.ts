@@ -559,7 +559,7 @@ class StockService {
           const mktStr = parts[0] || '';
           return {
             code: parts[1] || '',
-            name: parts[2] || '',
+            name: decodeURIComponent(parts[2] || ''),
             market: mktStr === 'sh' ? 1 : 0,
             type: parts[4] || 'GP-A',
           };

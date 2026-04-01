@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, GitBranch, Settings, ChevronDown, ChevronRight, FileText } from 'lucide-react';
+import { Pencil, GitBranch, ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -56,146 +56,135 @@ export function MessageItem({
   return (
     <div className="w-full py-4 group">
       {isUser ? (
-        // 用户消息（含 isMeta 系统消息的区分渲染）
+        // 用户消息
         <div className="flex items-start gap-3">
-          {/* 头像：isMeta 用齿轮灰色，普通用蓝色 */}
-          <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${
-            message.isMeta ? 'bg-muted-foreground' : 'bg-foreground'
-          }`}>
-            {message.isMeta ? (
-              <Settings size={14} className="text-white" />
-            ) : (
+            {/* 头像 */}
+            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-foreground">
               <span className="text-background text-sm font-medium">你</span>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            {/* isMeta 标签 */}
-            {message.isMeta && (
-              <div className="text-[10px] text-muted-foreground mb-1">系统</div>
-            )}
-            {(
-              // 显示模式：先检测斜杠命令格式，再解析引用
-              (() => {
-                // 检测 SDK 斜杠命令格式 (<command-name> 标签)
-                const slashCmd = parseSlashCommandMessage(message.content);
-                if (slashCmd.isCommand) {
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-secondary border border-border rounded-md text-xs text-muted-foreground font-mono">
-                        <span className="text-muted-foreground/60">/</span>
-                        {slashCmd.commandName}
-                        {slashCmd.commandArgs && (
-                          <span className="text-muted-foreground ml-1">{slashCmd.commandArgs}</span>
-                        )}
-                      </span>
-                      {message.timestamp && (
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(message.timestamp).toLocaleTimeString()}
+            </div>
+            <div className="flex-1 min-w-0">
+              {(
+                // 显示模式：先检测斜杠命令格式，再解析引用
+                (() => {
+                  // 检测 SDK 斜杠命令格式 (<command-name> 标签)
+                  const slashCmd = parseSlashCommandMessage(message.content);
+                  if (slashCmd.isCommand) {
+                    return (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-secondary border border-border rounded-md text-xs text-muted-foreground font-mono">
+                          <span className="text-muted-foreground/60">/</span>
+                          {slashCmd.commandName}
+                          {slashCmd.commandArgs && (
+                            <span className="text-muted-foreground ml-1">{slashCmd.commandArgs}</span>
+                          )}
                         </span>
+                        {message.timestamp && (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(message.timestamp).toLocaleTimeString()}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  const parsed = parseUserMessageReferences(message.content);
+                  const hasRefs = parsed.articleRefs.length > 0 || parsed.snippetRefs.length > 0;
+                  return (
+                    <div className="relative">
+                      {/* 引用芯片（只读，无关闭按钮） */}
+                      {hasRefs && (
+                        <div className="flex flex-wrap gap-1.5 mb-2">
+                          {parsed.articleRefs.map((ref, i) => (
+                            <span
+                              key={`article-${i}`}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700"
+                              title={ref.title}
+                            >
+                              <span className="max-w-[160px] truncate">{ref.title}</span>
+                              {ref.siteName && <span className="text-sky-400 flex-shrink-0">- {ref.siteName}</span>}
+                            </span>
+                          ))}
+                          {parsed.snippetRefs.map((ref, i) => (
+                            <span
+                              key={`snippet-${i}`}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600"
+                              title={`来自《${ref.articleTitle}》: ${ref.text}`}
+                            >
+                              <span className="max-w-[120px] truncate">{`"${ref.text}"`}</span>
+                              <span className="text-slate-400 flex-shrink-0">- {ref.articleTitle.length > 8 ? ref.articleTitle.slice(0, 8) + '...' : ref.articleTitle}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {/* 消息文本；长文本支持折叠 */}
+                      <div className="whitespace-pre-wrap break-words pr-8 text-sm text-foreground">
+                        {needsCollapse && !isExpanded ? (
+                          <>
+                            <span className="line-clamp-3">
+                              {parsed.userMessage}
+                            </span>
+                            <button
+                              onClick={() => setIsExpanded(true)}
+                              className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center gap-0.5"
+                            >
+                              <ChevronRight size={12} />
+                              展开全部
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            {parsed.userMessage}
+                            {needsCollapse && isExpanded && (
+                              <button
+                                onClick={() => setIsExpanded(false)}
+                                className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center gap-0.5"
+                              >
+                                <ChevronDown size={12} />
+                                收起
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                      {/* 用户附带的图片缩略图 */}
+                      {message.images && message.images.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {message.images.map((img, i) => (
+                            <img
+                              key={i}
+                              src={img.preview}
+                              alt={`附件 ${i + 1}`}
+                              className="w-20 h-20 object-cover rounded-md border border-border"
+                            />
+                          ))}
+                        </div>
+                      )}
+                      {/* 重发按钮 - hover 时显示，直接将内容放回输入框 */}
+                      {onEditResend && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={() => onEditResend(messageIndex, message.content)}
+                          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary h-7 w-7"
+                          title="重新发送"
+                        >
+                          <Pencil size={14} />
+                        </Button>
                       )}
                     </div>
                   );
-                }
-
-                const parsed = parseUserMessageReferences(message.content);
-                const hasRefs = parsed.articleRefs.length > 0 || parsed.snippetRefs.length > 0;
-                return (
-                  <div className="relative">
-                    {/* 引用芯片（只读，无关闭按钮）— isMeta 消息不渲染引用 */}
-                    {!message.isMeta && hasRefs && (
-                      <div className="flex flex-wrap gap-1.5 mb-2">
-                        {parsed.articleRefs.map((ref, i) => (
-                          <span
-                            key={`article-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700"
-                            title={ref.title}
-                          >
-                            <span className="max-w-[160px] truncate">{ref.title}</span>
-                            {ref.siteName && <span className="text-sky-400 flex-shrink-0">- {ref.siteName}</span>}
-                          </span>
-                        ))}
-                        {parsed.snippetRefs.map((ref, i) => (
-                          <span
-                            key={`snippet-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600"
-                            title={`来自《${ref.articleTitle}》: ${ref.text}`}
-                          >
-                            <span className="max-w-[120px] truncate">{`"${ref.text}"`}</span>
-                            <span className="text-slate-400 flex-shrink-0">- {ref.articleTitle.length > 8 ? ref.articleTitle.slice(0, 8) + '...' : ref.articleTitle}</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {/* 消息文本：isMeta 用灰色小字，普通用正常样式；长文本支持折叠 */}
-                    <div className={`whitespace-pre-wrap break-words pr-8 ${
-                      message.isMeta
-                        ? 'text-xs text-muted-foreground bg-secondary rounded-md px-2 py-1.5'
-                        : 'text-sm text-foreground'
-                    }`}>
-                      {needsCollapse && !isExpanded ? (
-                        <>
-                          <span className="line-clamp-3">
-                            {message.isMeta ? message.content : parsed.userMessage}
-                          </span>
-                          <button
-                            onClick={() => setIsExpanded(true)}
-                            className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center gap-0.5"
-                          >
-                            <ChevronRight size={12} />
-                            展开全部
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          {message.isMeta ? message.content : parsed.userMessage}
-                          {needsCollapse && isExpanded && (
-                            <button
-                              onClick={() => setIsExpanded(false)}
-                              className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center gap-0.5"
-                            >
-                              <ChevronDown size={12} />
-                              收起
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {/* 用户附带的图片缩略图 */}
-                    {message.images && message.images.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {message.images.map((img, i) => (
-                          <img
-                            key={i}
-                            src={img.preview}
-                            alt={`附件 ${i + 1}`}
-                            className="w-20 h-20 object-cover rounded-md border border-border"
-                          />
-                        ))}
-                      </div>
-                    )}
-                    {/* 重发按钮 - hover 时显示，直接将内容放回输入框（isMeta 消息不可编辑） */}
-                    {onEditResend && !message.isMeta && (
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        onClick={() => onEditResend(messageIndex, message.content)}
-                        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary h-7 w-7"
-                        title="重新发送"
-                      >
-                        <Pencil size={14} />
-                      </Button>
-                    )}
-                  </div>
-                );
-              })()
-            )}
-            {message.timestamp && (
-              <div className="text-xs text-muted-foreground mt-1">
-                {new Date(message.timestamp).toLocaleTimeString()}
-              </div>
-            )}
+                })()
+              )}
+              {message.timestamp && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+                  <span>{new Date(message.timestamp).toLocaleTimeString()}</span>
+                  {message.isQueued && (
+                    <span className="text-muted-foreground/50 text-[10px]">排队中</span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
       ) : (
         // AI 助手消息
         <div className="flex items-start gap-3">

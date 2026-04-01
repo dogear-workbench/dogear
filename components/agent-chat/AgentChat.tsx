@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronRight, Archive, GitBranch } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { ChevronRight, ChevronDown, Archive, GitBranch } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -129,16 +129,42 @@ export function AgentChat({
     sendMessage.setInput(newInput);
   };
 
-  // 自动滚动到底部
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // 滚动控制
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [newMsgCount, setNewMsgCount] = useState(0);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    setIsAtBottom(atBottom);
+    if (atBottom) setNewMsgCount(0);
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (!isAtBottom && messages.length > 0) {
+      setNewMsgCount(prev => prev + 1);
+    }
+  }, [messages.length]);
+
+  const scrollToBottom = useCallback(() => {
+    const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      setNewMsgCount(0);
+    }
+  }, []);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border">
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
-      <ScrollArea className="flex-1 overflow-hidden">
+      <div className="relative flex-1 overflow-hidden">
+      <ScrollArea
+        ref={scrollAreaRef}
+        className="h-full"
+        onScrollCapture={handleScroll}
+      >
         <div className="px-4">
         {/* 分叉来源 Banner */}
         {selectedConv?.fork_pending && selectedConv?.parent_conversation_id && (
@@ -268,9 +294,24 @@ export function AgentChat({
           }
         />
 
-        <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
+
+      {/* 跳到最新按钮 */}
+      {!isAtBottom && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-20 right-4 z-10 w-8 h-8 rounded-full bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm flex items-center justify-center transition-all shadow-sm"
+        >
+          <ChevronDown size={16} className="text-foreground/60" />
+          {newMsgCount > 0 && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center">
+              {newMsgCount > 9 ? '9+' : newMsgCount}
+            </span>
+          )}
+        </button>
+      )}
+      </div>
 
       {/* 输入区域 */}
       <ChatInputArea

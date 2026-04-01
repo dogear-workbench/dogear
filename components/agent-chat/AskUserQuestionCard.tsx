@@ -64,10 +64,10 @@ export function AskUserQuestionCard({
   };
 
   return (
-    <div className={`rounded-lg border ${isResolved ? 'border-border bg-secondary/30' : 'border-border bg-secondary/50'} p-4`}>
+    <div className="py-2">
       <div className="flex items-center gap-2 mb-3">
-        <HelpCircle size={16} className={isResolved ? 'text-muted-foreground' : 'text-foreground'} />
-        <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground' : 'text-foreground'}`}>
+        <HelpCircle size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-primary'} />
+        <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground/60' : 'text-foreground'}`}>
           {isResolved ? '已回答' : 'AI 想了解更多信息'}
         </span>
       </div>

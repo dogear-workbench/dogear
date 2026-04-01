@@ -381,18 +381,23 @@ export const agentRouter = {
         const sessionManager = getQueryBasedSessionManager();
         const handlers = getRendererHandlers<RendererHandlers>(context.sender);
 
-        // 获取工作区路径
+        // 获取工作区路径：优先用前端传入的 workspaceId，fallback 到 getDefault
         let workspacePath = '';
         const workspaceJsonService = await import('../services/workspace-json-service.js');
-        const defaultWorkspace = await workspaceJsonService.getDefault();
-        if (defaultWorkspace) {
-          workspacePath = defaultWorkspace.path;
+        let targetWorkspace = input.workspaceId
+          ? await workspaceJsonService.getById(input.workspaceId)
+          : null;
+        if (!targetWorkspace) {
+          targetWorkspace = (await workspaceJsonService.getDefault()) || null;
+        }
+        if (targetWorkspace) {
+          workspacePath = targetWorkspace.path;
         }
 
         // 构建 MCP Servers 配置（v5: 改为基于工作区加载所有书籍）
         const mcpServers: Record<string, any> = {};
         if ((input.enableSkills ?? true) && workspacePath) {
-          const currentWorkspaceId = defaultWorkspace?.id || 'default';
+          const currentWorkspaceId = targetWorkspace?.id || 'default';
           const bookQATools = createBookQATools(workspacePath, currentWorkspaceId);
           mcpServers['dogear-book-qa'] = bookQATools;
           console.log('已添加 book-qa MCP tools, workspaceId:', currentWorkspaceId);
@@ -832,6 +837,8 @@ export const agentRouter = {
           isCompactBoundary?: boolean;
           compactMetadata?: { trigger?: string; preTokens?: number };
           toolUseResult?: any;
+          /** 消息来源类型（"external" 表示真实用户输入，其他值为 SDK 注入消息） */
+          userType?: string;
         }> = [];
 
         for (const line of lines) {
@@ -867,6 +874,8 @@ export const agentRouter = {
                 isCompactSummary: parsed.isCompactSummary || false,
                 // 保留 toolUseResult（子代理结果元数据）
                 toolUseResult: parsed.toolUseResult,
+                // 消息来源类型（"external" 表示真实用户输入）
+                userType: parsed.userType,
               });
             }
           } catch {
@@ -887,6 +896,8 @@ export const agentRouter = {
           isCompactBoundary?: boolean;
           compactMetadata?: { trigger?: string; preTokens?: number };
           toolUseResult?: any;
+          /** 消息来源类型（"external" 表示真实用户输入，其他值为 SDK 注入消息） */
+          userType?: string;
         }> = [];
 
         let currentAssistantMessage: {
@@ -926,6 +937,8 @@ export const agentRouter = {
               sourceToolUseID: msg.sourceToolUseID,
               isCompactSummary: msg.isCompactSummary,
               toolUseResult: msg.toolUseResult,
+              // 传递消息来源类型，供前端区分真实用户输入与 SDK 注入消息
+              userType: msg.userType,
             });
           } else if (msg.type === 'assistant' && msg.message) {
             const contentBlocks = Array.isArray(msg.message.content)

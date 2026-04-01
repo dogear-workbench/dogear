@@ -63,8 +63,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   deleting: false,
   creatingFolderAt: null,
   setCreatingFolderAt: (parentPath) => set({ creatingFolderAt: parentPath }),
-  setWorkspace: (workspace) => {
+  setWorkspace: async (workspace) => {
     set({ workspace });
+    // 持久化为默认工作区，确保 Agent 会话使用正确的工作区路径
+    try {
+      await client.setDefault({ workspaceId: workspace.id });
+    } catch (error) {
+      console.error('设置默认工作区失败:', error);
+    }
     // 触发文件列表加载
     get().loadWorkspaceFiles();
     // 触发对话列表加载（延迟导入避免循环依赖）

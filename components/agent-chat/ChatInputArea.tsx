@@ -287,7 +287,7 @@ export function ChatInputArea({
               placeholder={placeholder}
               className="min-h-[2.5rem] max-h-[200px] overflow-y-auto px-3 py-3"
               rows={1}
-              disabled={isLoading || !isSessionReady}
+              disabled={!isSessionReady}
             />
 
             {/* 隐藏的文件选择器 */}
@@ -311,7 +311,7 @@ export function ChatInputArea({
                 onClick={() => imageInputRef.current?.click()}
                 className="text-muted-foreground hover:text-foreground"
                 title="上传图片"
-                disabled={isLoading || !isSessionReady}
+                disabled={!isSessionReady}
               >
                 <ImagePlus size={14} />
               </InputGroupButton>

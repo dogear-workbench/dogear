@@ -1,7 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
+import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,21 @@ export default function Home() {
 
   // 工作区状态
   const workspace = useWorkspaceStore((s) => s.workspace);
+  const setWorkspace = useWorkspaceStore((s) => s.setWorkspace);
+  const [loadingDefaultWs, setLoadingDefaultWs] = useState(true);
+
+  // 启动时自动加载默认工作区
+  useEffect(() => {
+    if (!workspace) {
+      client.getDefault().then((defaultWs: any) => {
+        if (defaultWs) {
+          setWorkspace(defaultWs);
+        }
+      }).catch(console.error).finally(() => setLoadingDefaultWs(false));
+    } else {
+      setLoadingDefaultWs(false);
+    }
+  }, []);
   const selectedFile = useWorkspaceStore((s) => s.selectedFile);
   const selectedBook = useWorkspaceStore((s) => s.selectedBook);
   const workspaceFilePath = useWorkspaceStore((s) => s.workspaceFilePath);
@@ -101,6 +117,15 @@ export default function Home() {
   useEffect(() => {
     return () => cleanupAnalysis();
   }, [cleanupAnalysis]);
+
+  // 正在加载默认工作区时显示加载状态
+  if (loadingDefaultWs) {
+    return (
+      <div className="h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   // 如果没有工作区，显示工作区选择界面
   if (!workspace) {

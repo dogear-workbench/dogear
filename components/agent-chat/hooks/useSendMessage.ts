@@ -304,7 +304,7 @@ export function useSendMessage(params: UseSendMessageParams) {
   const handleSend = async () => {
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!hasText && !hasImages) || isLoading) return;
+    if (!hasText && !hasImages) return;
 
     // fork_pending 对话没有 sessionId，但允许发送（会触发 SDK fork 创建）
     const isForkPending = useConversationStore.getState().selectedConversation?.fork_pending;
@@ -458,8 +458,17 @@ export function useSendMessage(params: UseSendMessageParams) {
       ...(imagesToSend.length > 0 && { images: imagesToSend.map(img => ({ preview: img.preview })) }),
     };
 
-    // 添加用户消息
-    setMessages(prev => [...prev, newUserMessage]);
+    // 添加用户消息，Agent 运行中时标记为排队
+    setMessages(prev => [...prev, {
+      ...newUserMessage,
+      isQueued: isLoading,  // Agent 运行中时标记为排队
+    }, ...(isLoading ? [] : [{
+      role: 'assistant' as const,
+      content: '' as string,
+      timestamp: Date.now(),
+      isStreaming: true,
+      contentBlocks: [] as ContentBlock[],
+    }])]);
 
     // 新对话自动标题：首条消息截取前 30 字
     if (conversationTitle === '新对话' && messages.length === 0 && conversationId) {
@@ -472,19 +481,10 @@ export function useSendMessage(params: UseSendMessageParams) {
       }
     }
 
-    // 添加一个空的助手消息占位，准备接收流式响应
-    setMessages(prev => [
-      ...prev,
-      {
-        role: 'assistant',
-        content: '',
-        timestamp: Date.now(),
-        isStreaming: true,
-        contentBlocks: []
-      }
-    ]);
-
-    setIsLoading(true);
+    // 仅在非排队时才设置 loading
+    if (!isLoading) {
+      setIsLoading(true);
+    }
 
     try {
       // 发送消息到会话（多 content block + 图片附件）

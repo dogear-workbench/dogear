@@ -19,6 +19,8 @@ export interface Message {
   images?: Array<{ preview: string }>;
   // 系统注入消息标记（skill 加载、command caveat 等，isMeta=true 的 user 消息）
   isMeta?: boolean;
+  // 排队中的消息（Agent 执行中发送的消息，等待 Agent 完成后处理）
+  isQueued?: boolean;
   // 压缩摘要消息（isCompactSummary=true 的 user 消息）
   isCompactSummary?: boolean;
   // 压缩分隔标记（虚拟消息，用于在 UI 中画分隔线和折叠历史）

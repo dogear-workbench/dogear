@@ -18,6 +18,12 @@ const __dirname = dirname(__filename);
 // 判断是否为开发环境
 const isDev = process.env.NODE_ENV === 'development';
 
+// 单实例锁：确保只能运行一个 Dogear 实例
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+}
+
 // 主窗口实例
 let mainWindow: BrowserWindowType | null = null;
 
@@ -220,6 +226,14 @@ function closeAllChildWindows() {
 }
 
 // ==================== 应用生命周期 ====================
+
+// 第二个实例启动时，聚焦到已有主窗口
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
 
 // 当 Electron 完成初始化时创建窗口
 app.whenReady().then(async () => {
