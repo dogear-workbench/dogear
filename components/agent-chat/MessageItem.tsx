@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pencil, GitBranch, ChevronDown, ChevronRight, FileText } from 'lucide-react';
+import { GitBranch, ChevronDown, ChevronRight, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -12,16 +12,12 @@ const COLLAPSE_THRESHOLD = 300;
 
 export function MessageItem({
   message,
-  messageIndex,
-  onEditResend,
   onFork,
   sessionId,
   onPermissionResolved,
   onAskUserResolved,
 }: {
   message: Message;
-  messageIndex: number;
-  onEditResend?: (index: number, newContent: string) => void;
   onFork?: (assistantSdkUuid: string) => void;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
@@ -158,18 +154,6 @@ export function MessageItem({
                             />
                           ))}
                         </div>
-                      )}
-                      {/* 重发按钮 - hover 时显示，直接将内容放回输入框 */}
-                      {onEditResend && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => onEditResend(messageIndex, message.content)}
-                          className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-primary h-7 w-7"
-                          title="重新发送"
-                        >
-                          <Pencil size={14} />
-                        </Button>
                       )}
                     </div>
                   );

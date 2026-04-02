@@ -12,17 +12,8 @@ export interface ForkParams {
   forkSession: boolean;
   resumeSessionAt: string;
   editedMessage?: string;
-  branchCount?: number;
-  isForkNewConversation?: boolean;
   /** 目标对话 ID，useAgentSession 仅处理与自身 conversationId 匹配的 forkParams */
   targetConversationId?: string;
-}
-
-/** 重发草稿（用户点击"重新发送"后暂存到输入框） */
-export interface ResendDraft {
-  messageIndex: number;
-  forkPointSdkUuid: string;
-  originalContent: string;
 }
 
 /** 对话树的扁平节点（供 @headless-tree/react 使用） */
@@ -48,9 +39,6 @@ interface ConversationState {
   nodeMap: Record<string, ConversationFlatNode>;
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
-  /** 重发草稿（按 conversationId 存储，对话级隔离） */
-  resendDraftMap: Record<string, ResendDraft>;
-  setResendDraft: (conversationId: string, draft: ResendDraft | null) => void;
 
   // --- Actions ---
   /** 加载工作区对话列表和树数据 */
@@ -65,8 +53,6 @@ interface ConversationState {
   setForkParams: (params: ForkParams | null) => void;
   /** 分叉对话（创建独立新对话） */
   forkConversation: (params: { parentConversationId: string; forkMessageSdkUuid: string }) => Promise<void>;
-  /** 编辑重发（当前对话内分支） */
-  editResend: (params: { forkPointSdkUuid: string; editedMessage: string }) => Promise<void>;
   /** 创建对话文件夹 */
   createFolder: (name: string, parentId?: string) => Promise<void>;
   /** 重命名对话文件夹 */
@@ -196,14 +182,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   treeData: null,
   nodeMap: {},
   sessionRestartTrigger: 0,
-  resendDraftMap: {},
-  setResendDraft: (conversationId, draft) => set((state) => {
-    if (draft) {
-      return { resendDraftMap: { ...state.resendDraftMap, [conversationId]: draft } };
-    }
-    const { [conversationId]: _, ...rest } = state.resendDraftMap;
-    return { resendDraftMap: rest };
-  }),
 
   loadConversations: async () => {
     const workspace = await getWorkspace();
@@ -363,38 +341,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch (error) {
       console.error('分叉对话失败:', error);
       toast.error('分叉对话失败', { description: error instanceof Error ? error.message : String(error) });
-    }
-  },
-
-  editResend: async (params) => {
-    const { selectedConversation } = get();
-    if (!selectedConversation?.id) return;
-
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-
-    try {
-      const convResult = await client.getById({ conversationId: selectedConversation.id, workspaceId: workspace.id });
-      const conv = convResult.conversation;
-
-      if (!conv?.sdk_session_id) {
-        toast.warning('该对话不支持编辑重发', { description: '缺少 SDK session' });
-        return;
-      }
-
-      // 使用 resume + resumeSessionAt 截断（不创建分支）
-      set({
-        forkParams: {
-          sdkSessionIdToResume: conv.sdk_session_id,
-          forkSession: false,  // 不创建新会话，直接截断重写
-          resumeSessionAt: params.forkPointSdkUuid,
-          editedMessage: params.editedMessage,
-          targetConversationId: selectedConversation.id,
-        },
-      });
-    } catch (error) {
-      console.error('编辑重发失败:', error);
-      toast.error('编辑重发失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 

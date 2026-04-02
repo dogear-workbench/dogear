@@ -59,11 +59,11 @@ export function useAgentSession({
         let resumeSessionAtFlag: string | undefined;
 
         if (forkParams) {
-          // Fork/编辑重发 模式：使用父对话的 sdk_session_id + fork 参数
+          // Fork 模式：使用父对话的 sdk_session_id + fork 参数
           sdkSessionId = forkParams.sdkSessionIdToResume;
           forkSessionFlag = forkParams.forkSession;
           resumeSessionAtFlag = forkParams.resumeSessionAt;
-          console.log(forkParams.forkSession ? '🔀 Fork 模式启动:' : '✏️ 编辑重发模式启动:', { sdkSessionId, forkSession: forkSessionFlag, resumeSessionAt: resumeSessionAtFlag });
+          console.log('🔀 Fork 模式启动:', { sdkSessionId, forkSession: forkSessionFlag, resumeSessionAt: resumeSessionAtFlag });
         } else if (conversationId) {
           // 正常 resume 模式
           try {
@@ -123,7 +123,6 @@ export function useAgentSession({
           resume: sdkSessionId,
           forkSession: forkSessionFlag,           // v4: 分叉参数
           resumeSessionAt: resumeSessionAtFlag,   // v4: 截断位置
-          isForkNewConversation: forkParams?.isForkNewConversation, // v4: 区分分叉新对话/编辑重发
           personaId,
           tempPrompt,
         });
@@ -167,10 +166,10 @@ export function useAgentSession({
           );
         }
 
-        // v4: 编辑重发模式下，如果有 editedMessage，会话 ready 后自动发送
-        // 纯分叉新对话（isForkNewConversation=true）不自动发送，只加载历史等待用户输入
-        if (forkParams?.editedMessage && !forkParams?.isForkNewConversation && newSessionId) {
-          console.log('🔀 编辑重发模式: 自动发送编辑后的消息:', forkParams.editedMessage);
+        // fork 模式：如果有 editedMessage，会话 ready 后自动发送（fork_pending 首次发送场景）
+        // 纯分叉新对话（forkSession=true 但无 editedMessage）不自动发送，只加载历史等待用户输入
+        if (forkParams?.editedMessage && newSessionId) {
+          console.log('🔀 Fork 自动发送消息:', forkParams.editedMessage);
           // 稍微延迟确保会话已完全初始化
           setTimeout(async () => {
             if (cancelled) return; // 延迟执行前再次检查
@@ -198,10 +197,10 @@ export function useAgentSession({
                 content: forkParams.editedMessage!
               });
             } catch (error) {
-              console.error('编辑重发模式自动发送失败:', error);
+              console.error('Fork 自动发送失败:', error);
             }
           }, 500);
-        } else if (forkParams?.isForkNewConversation) {
+        } else if (forkParams?.forkSession) {
           // 纯分叉新对话：SDK fork 后会话文件中已包含截断历史，
           // 历史消息会通过上面的 loadHistory useEffect 自动加载展示
           console.log('🔀 纯分叉模式: 等待历史加载完成，用户自行输入新消息');

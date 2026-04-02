@@ -46,13 +46,10 @@ export function AgentChat({
   // 多标签页模式下使用 override，否则使用 store 中的选中对话
   const conversationId = conversationIdOverride || storeConversationId;
   const globalForkParams = useConversationStore((s) => s.forkParams);
-  // 仅处理属于当前对话的 forkParams，防止其他对话的 fork/editResend 触发本对话重建
+  // 仅处理属于当前对话的 forkParams，防止其他对话的 fork 触发本对话重建
   const forkParams = (globalForkParams?.targetConversationId && globalForkParams.targetConversationId !== conversationId)
     ? null
     : globalForkParams;
-  const resendDraftMap = useConversationStore((s) => s.resendDraftMap);
-  const setResendDraftAction = useConversationStore((s) => s.setResendDraft);
-  const resendDraft = conversationId ? resendDraftMap[conversationId] || null : null;
   const conversations = useConversationStore((s) => s.conversations);
   const selectedConv = useConversationStore((s) => s.selectedConversation);
   const selectConversation = useConversationStore((s) => s.selectConversation);
@@ -102,7 +99,7 @@ export function AgentChat({
   // 图片附件
   const imageAttachment = useImageAttachment();
 
-  // 消息发送 + 编辑重发 + 分叉 + 权限响应
+  // 消息发送 + 分叉 + 权限响应
   const sendMessage = useSendMessage({
     sessionId,
     isSessionReady,
@@ -197,16 +194,12 @@ export function AgentChat({
           const lastCompactIdx = messages.reduce(
             (acc, m, i) => m.isCompactBoundary ? i : acc, -1
           );
-          // 仅最后一条用户消息可编辑重发，历史消息只读
-          const lastUserIdx = messages.reduce((acc, m, i) => m.role === 'user' ? i : acc, -1);
 
           // 渲染单条消息的辅助函数
           const renderMessage = (message: typeof messages[0], index: number) => (
             <MessageItem
               key={index}
               message={message}
-              messageIndex={index}
-              onEditResend={index === lastUserIdx ? sendMessage.handleEditResend : undefined}
               onFork={sendMessage.handleFork}
               sessionId={sessionId}
               onPermissionResolved={sendMessage.handlePermissionResolved}
@@ -340,11 +333,6 @@ export function AgentChat({
         filterQuery={slashCommands.filterQuery}
         onSlashCommandSelect={handleSlashCommandSelect}
         onSlashMenuClose={slashCommands.closeSlashMenu}
-        resendDraft={resendDraft}
-        onCancelResend={() => {
-          if (conversationId) setResendDraftAction(conversationId, null);
-          sendMessage.setInput('');
-        }}
         onTogglePromptSidebar={togglePromptSidebar}
       />
     </div>
