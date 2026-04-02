@@ -565,6 +565,29 @@ export const agentRouter = {
           });
         });
 
+        // 注册子代理开始事件转发
+        session.on('subAgentStarted', (data: {
+          parentSessionId: string;
+          agentId: string;
+          description: string;
+          subagentType?: string;
+        }) => {
+          handlers.subAgentStarted.send(data);
+        });
+
+        // 注册子代理完成事件转发
+        session.on('subAgentCompleted', (data: {
+          parentSessionId: string;
+          agentId: string;
+          status: string;
+          durationMs?: number;
+          tokens?: number;
+          toolUseCount?: number;
+          resultText?: string;
+        }) => {
+          handlers.subAgentCompleted.send(data);
+        });
+
         // 注册会话消息监听器
         sessionManager.on('sessionMessage', (sessionId: string, message: ExtendedSessionMessage) => {
           if (sessionId === session.getSessionId()) {

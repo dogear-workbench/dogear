@@ -106,4 +106,30 @@ export type RendererHandlers = {
     skills: string[];
     mcpServers: Array<{ name: string; status: string }>;
   }) => void;
+
+  // 子代理开始运行
+  subAgentStarted: (data: {
+    parentSessionId: string;
+    agentId: string;
+    description: string;
+    subagentType?: string;
+  }) => void;
+
+  // 子代理运行完成
+  subAgentCompleted: (data: {
+    parentSessionId: string;
+    agentId: string;
+    status: string;
+    durationMs?: number;
+    tokens?: number;
+    toolUseCount?: number;
+    resultText?: string;
+  }) => void;
+
+  // 子代理实时消息事件
+  subAgentMessage: (data: {
+    parentSessionId: string;
+    agentId: string;
+    message: ExtendedSessionMessage;
+  }) => void;
 };

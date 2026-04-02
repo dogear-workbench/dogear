@@ -870,6 +870,17 @@ export class QueryBasedSession extends EventEmitter {
               inputJson: '',
               toolUseId: block.id
             });
+
+            // 检测到 Agent 工具调用，发射 subAgentStarted 事件
+            if (block.name === 'Agent') {
+              this.emit('subAgentStarted', {
+                parentSessionId: this.sessionId,
+                agentId: block.id,  // 此时用 toolUseId 作为临时标识
+                description: '',    // input 尚未到达，description 留空
+                subagentType: undefined,
+              });
+            }
+
             // 发送 tool_use 块（无 input，前端显示为 running 状态）
             return {
               type: 'tool_use',
@@ -897,7 +908,7 @@ export class QueryBasedSession extends EventEmitter {
 
           if (pending) {
             // 解析累积的 JSON
-            let toolInput = {};
+            let toolInput: Record<string, any> = {};
             try {
               if (pending.inputJson) {
                 toolInput = JSON.parse(pending.inputJson);
@@ -908,6 +919,16 @@ export class QueryBasedSession extends EventEmitter {
 
             // 清除累积器
             this.pendingToolInputs.delete(index);
+
+            // Agent 工具 input 已完整解析，补发带 description 的 subAgentStarted 事件
+            if (pending.name === 'Agent' && pending.toolUseId) {
+              this.emit('subAgentStarted', {
+                parentSessionId: this.sessionId,
+                agentId: pending.toolUseId,
+                description: toolInput.description || toolInput.prompt || '',
+                subagentType: toolInput.subagent_type,
+              });
+            }
 
             // 发送完整的工具调用消息（携带 toolUseId 以便前端关联 tool_result）
             return {
@@ -1141,6 +1162,17 @@ export class QueryBasedSession extends EventEmitter {
                       .map((c: any) => c.text)
                       .join('\n');
                   }
+
+                  // 发射 subAgentCompleted 事件，通知子代理运行完成
+                  this.emit('subAgentCompleted', {
+                    parentSessionId: this.sessionId,
+                    agentId: tur.agentId,
+                    status: tur.status || 'completed',
+                    durationMs: tur.totalDurationMs,
+                    tokens: tur.totalTokens,
+                    toolUseCount: tur.totalToolUseCount,
+                    resultText: subAgentMeta.subAgentResultText,
+                  });
                 }
 
                 toolResults.push({
@@ -1299,12 +1331,22 @@ export class QueryBasedSession extends EventEmitter {
   }
 
   /**
+   * 清理所有子代理 tail 监听（预留，tail 功能在后续任务中实现）
+   */
+  private cleanupSubAgentTails(): void {
+    // 预留：后续 tail 实现时在此清理 setInterval 定时器
+  }
+
+  /**
    * 关闭会话
    * 调用 SDK Query 的 close() 方法优雅终止底层 CLI 子进程和 transport 流，
    * 避免快速切换对话时产生 ERR_STREAM_WRITE_AFTER_END 错误。
    */
   close(): void {
     this.logger.info('关闭会话:', this.sessionId);
+
+    // 清理子代理 tail 监听
+    this.cleanupSubAgentTails();
 
     if (this.query) {
       try {
