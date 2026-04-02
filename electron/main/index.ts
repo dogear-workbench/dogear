@@ -3,8 +3,8 @@
  * 负责应用窗口管理和生命周期
  */
 
-import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
-const { app, BrowserWindow, Menu } = electron;
+import electron, { type BrowserWindow as BrowserWindowType, type Tray as TrayType } from 'electron';
+const { app, BrowserWindow, Menu, Tray } = electron;
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -26,6 +26,12 @@ if (!gotTheLock) {
 
 // 主窗口实例
 let mainWindow: BrowserWindowType | null = null;
+
+// 系统托盘实例
+let tray: TrayType | null = null;
+
+// 是否正在退出（区分"关闭窗口"和"真正退出"）
+let isQuitting = false;
 
 // 调试窗口实例(仅开发环境)
 let debugWindow: BrowserWindowType | null = null;
@@ -225,6 +231,41 @@ function closeAllChildWindows() {
   }
 }
 
+/**
+ * 创建系统托盘图标
+ * 关闭主窗口时最小化到托盘，双击托盘图标恢复窗口
+ */
+function createTray() {
+  const iconPath = isDev
+    ? path.join(process.cwd(), 'resources/icon.ico')
+    : path.join(process.resourcesPath, 'icon.ico');
+
+  tray = new Tray(iconPath);
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: '显示窗口',
+      click: () => {
+        mainWindow?.show();
+        mainWindow?.focus();
+      },
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setToolTip('Dogear');
+  tray.setContextMenu(contextMenu);
+  tray.on('double-click', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+}
+
 // ==================== 应用生命周期 ====================
 
 // 第二个实例启动时，聚焦到已有主窗口
@@ -282,10 +323,17 @@ app.whenReady().then(async () => {
   await agentManager.start();
 
   createWindow();
+  createTray();
 
-  // 主窗口关闭时，关闭所有子窗口
-  mainWindow!.on('close', () => {
-    closeAllChildWindows();
+  // 主窗口关闭时：若非真正退出则隐藏到托盘，否则关闭所有子窗口
+  mainWindow!.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow!.hide();
+      closeAllChildWindows();
+    } else {
+      closeAllChildWindows();
+    }
   });
 
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
@@ -297,17 +345,21 @@ app.whenReady().then(async () => {
   });
 });
 
-// 当所有窗口都关闭时退出应用(在 macOS 上除外)
-app.on('window-all-closed', async () => {
-  if (process.platform !== 'darwin') {
-    // 关闭 Agent 管理器
-    await shutdownAgentManager();
-    app.quit();
-  }
+// 当所有窗口都关闭时，因为有托盘，不自动退出
+// 真正退出由托盘菜单"退出"或其他显式调用触发
+app.on('window-all-closed', () => {
+  // 保留托盘，不退出
 });
 
 // 应用退出前清理
 app.on('before-quit', async () => {
+  // 标记为真正退出，使 close 事件不再拦截
+  isQuitting = true;
+  // 销毁托盘图标
+  if (tray && !tray.isDestroyed()) {
+    tray.destroy();
+    tray = null;
+  }
   // 关闭 Agent 管理器
   await shutdownAgentManager();
 });
