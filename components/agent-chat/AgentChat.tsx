@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
-import { rendererEvents } from '@/lib/events';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useSessionStore } from '@/stores/session-store';
@@ -97,48 +96,41 @@ export function AgentChat({
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({ sessionId, setMessages, setIsLoading, setPermissionMode });
 
-  // 监听子代理生命周期事件，更新 ui-store
+  // 从 messages 的 ContentBlock 中提取子代理列表，同步到 ui-store
   const sdkSessionId = useConversationStore((s) => s.selectedConversation?.sdk_session_id);
   useEffect(() => {
-    if (!sessionId) return;
-
-    const unsubStart = rendererEvents.subAgentStarted.listen((data) => {
-      if (data.parentSessionId !== sessionId) return;
-      useUIStore.getState().registerSubAgent({
-        agentId: data.agentId,
-        sdkSessionId: sdkSessionId || '',
-        description: data.description,
-        subagentType: data.subagentType,
-        status: 'running',
-        startedAt: Date.now(),
-      });
-      // 自动切换到子代理 tab 并展开右侧面板
-      useUIStore.getState().setRightPanelTab('subagents');
-      useUIStore.getState().openRightPanel();
-    });
-
-    const unsubComplete = rendererEvents.subAgentCompleted.listen((data) => {
-      if (data.parentSessionId !== sessionId) return;
-      useUIStore.getState().updateSubAgentStatus(data.agentId, {
-        status: data.status === 'completed' ? 'completed' : 'failed',
-        completedAt: Date.now(),
-        durationMs: data.durationMs,
-        tokens: data.tokens,
-        toolUseCount: data.toolUseCount,
-        resultText: data.resultText,
-      });
-    });
-
-    return () => {
-      unsubStart();
-      unsubComplete();
-    };
-  }, [sessionId, sdkSessionId]);
-
-  // 切换对话时清空子代理列表（page.tsx 也有相同逻辑，这里作为 AgentChat 级别的保障）
-  useEffect(() => {
-    useUIStore.getState().clearSubAgents();
-  }, [conversationId]);
+    if (!sdkSessionId) {
+      useUIStore.getState().clearSubAgents();
+      return;
+    }
+    // 遍历所有消息的 contentBlocks，提取 isSubAgent 的 block
+    const agents: import('@/stores/ui-store').SubAgentInfo[] = [];
+    for (const msg of messages) {
+      if (!msg.contentBlocks) continue;
+      for (const block of msg.contentBlocks) {
+        if (!block.isSubAgent && block.toolName !== 'Agent') continue;
+        if (!block.subAgentId) continue;
+        // 避免重复
+        if (agents.some(a => a.agentId === block.subAgentId)) continue;
+        const hasOutput = block.toolOutput !== undefined || !!block.subAgentResultText;
+        const isCompleted = block.subAgentStatus === 'completed' || hasOutput;
+        const isFailed = block.subAgentStatus === 'failed' || block.isError;
+        agents.push({
+          agentId: block.subAgentId,
+          sdkSessionId,
+          description: block.subAgentDescription || block.toolInput?.description || '子代理任务',
+          subagentType: block.subAgentType || block.toolInput?.subagent_type,
+          status: isFailed ? 'failed' : isCompleted ? 'completed' : 'running',
+          durationMs: block.subAgentDurationMs,
+          tokens: block.subAgentTokens,
+          toolUseCount: block.subAgentToolUseCount,
+          resultText: block.subAgentResultText,
+        });
+      }
+    }
+    // 整体替换（而非逐个注册，避免竞争和残留）
+    useUIStore.getState().setSubAgents(agents);
+  }, [messages, sdkSessionId]);
 
   // 图片附件
   const imageAttachment = useImageAttachment();

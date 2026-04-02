@@ -23,7 +23,6 @@ import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
-  const clearSubAgents = useUIStore((s) => s.clearSubAgents);
   const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
   const openRightPanel = useUIStore((s) => s.openRightPanel);
@@ -84,10 +83,7 @@ export default function Home() {
   const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const newConversation = useConversationStore((s) => s.newConversation);
 
-  // 切换对话时清空子代理列表
-  useEffect(() => {
-    clearSubAgents();
-  }, [selectedConversation?.id, clearSubAgents]);
+  // 子代理列表的过滤由 SubAgentPanel 通过 sdkSessionId prop 完成
 
   // 选中文章或书籍时自动展开右侧预览面板
   useEffect(() => {

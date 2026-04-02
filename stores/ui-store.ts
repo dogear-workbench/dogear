@@ -40,11 +40,13 @@ interface UIState {
   setRightPanelTab: (tab: 'preview' | 'subagents') => void;
 
   // 子代理面板（嵌入右侧预览区域）
-  /** 当前对话的所有子代理列表 */
+  /** 当前对话的所有子代理列表（从 messages ContentBlock 派生） */
   subAgents: SubAgentInfo[];
   /** 当前选中查看的子代理 agentId（null 表示显示列表） */
   selectedSubAgentId: string | null;
-  /** 注册一个子代理（运行时创建时调用） */
+  /** 整体替换子代理列表（从 messages 中提取后调用） */
+  setSubAgents: (agents: SubAgentInfo[]) => void;
+  /** 注册一个子代理（按需注册，点击查看详情时调用） */
   registerSubAgent: (info: SubAgentInfo) => void;
   /** 更新子代理状态（支持部分字段更新） */
   updateSubAgentStatus: (agentId: string, update: Partial<Pick<SubAgentInfo, 'status' | 'completedAt' | 'durationMs' | 'tokens' | 'toolUseCount' | 'resultText'>>) => void;
@@ -52,7 +54,7 @@ interface UIState {
   selectSubAgent: (agentId: string | null) => void;
   /** 关闭子代理面板（回到正常预览） */
   closeSubAgentPanel: () => void;
-  /** 清空子代理列表（切换对话时调用） */
+  /** 清空子代理列表 */
   clearSubAgents: () => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
@@ -79,6 +81,7 @@ export const useUIStore = create<UIState>((set) => ({
   // 子代理面板
   subAgents: [],
   selectedSubAgentId: null,
+  setSubAgents: (agents) => set({ subAgents: agents }),
   registerSubAgent: (info) => set((s) => {
     // 防止重复注册
     if (s.subAgents.some(a => a.agentId === info.agentId)) return s;

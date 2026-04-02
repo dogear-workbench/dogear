@@ -241,15 +241,15 @@ function SubAgentDetail({
       </div>
 
       {/* 消息区域 */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin mr-2" />
             <span className="text-sm">加载中...</span>
           </div>
         ) : error ? (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3 mx-3 mt-3">
-            {error}
+          <div className="text-sm text-muted-foreground bg-muted/50 border border-border rounded-md p-3 mx-3 mt-3">
+            <p>文件丢失或该对话为分叉对话，请在原对话查看</p>
           </div>
         ) : (
           <SubAgentMessageList messages={messages} status={agent.status} />
@@ -306,7 +306,7 @@ export function SubAgentPanel() {
       </div>
 
       {/* 列表 */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overflow-hidden">
         {sortedAgents.length === 0 ? (
           <div className="p-4 text-center text-sm text-muted-foreground">暂无子代理</div>
         ) : (
