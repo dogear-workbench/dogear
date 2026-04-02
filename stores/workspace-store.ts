@@ -37,8 +37,8 @@ interface WorkspaceState {
   openBookInFolder: () => Promise<void>;
   /** 打开 Agent 监控窗口 */
   openMonitorWindow: () => Promise<void>;
-  /** 清空工作区（回到选择页） */
-  clearWorkspace: () => void;
+  /** 清空工作区（回到选择页），同时关闭所有会话并重置所有相关 store */
+  clearWorkspace: () => Promise<void>;
   /** 打开自选股窗口 */
   openStockWindow: () => Promise<void>;
 
@@ -186,7 +186,37 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 
-  clearWorkspace: () => {
+  clearWorkspace: async () => {
+    // 1. 关闭所有打开的 Agent 会话
+    const { useSessionStore } = await import('./session-store');
+    const tabs = useSessionStore.getState().tabs;
+    for (const tab of tabs) {
+      if (tab.sessionId) {
+        try {
+          await client.closeQueryBasedSession({ sessionId: tab.sessionId });
+        } catch (e) {
+          console.warn('关闭会话失败:', tab.sessionId, e);
+        }
+      }
+    }
+
+    // 2. 重置所有相关 store
+    const { useConversationStore } = await import('./conversation-store');
+    const { useArticleStore } = await import('./article-store');
+    const { useReferenceStore } = await import('./reference-store');
+    const { useAnalysisStore } = await import('./analysis-store');
+    const { useUIStore } = await import('./ui-store');
+    const { useSlashCommandStore } = await import('./slash-command-store');
+
+    useConversationStore.getState().reset();
+    useArticleStore.getState().reset();
+    useReferenceStore.getState().reset();
+    useAnalysisStore.getState().reset();
+    useUIStore.getState().reset();
+    useSlashCommandStore.getState().reset();
+    useSessionStore.getState().reset();
+
+    // 3. 最后清除自身状态
     set({ workspace: null, files: [], selectedFile: null, selectedBook: null, workspaceFilePath: null });
   },
 

@@ -27,6 +27,8 @@ interface ArticleState {
   submitArticleUrl: () => Promise<void>;
   /** 清除选中的文章 */
   clearSelectedArticle: () => void;
+  /** 重置所有状态到初始值 */
+  reset: () => void;
 }
 
 /** 从 workspace-store 获取当前工作区 ID（延迟导入避免循环依赖） */
@@ -128,4 +130,12 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
   },
 
   clearSelectedArticle: () => set({ selectedArticle: null }),
+
+  reset: () => set({
+    selectedArticle: null,
+    loadingArticleDetail: false,
+    parsingArticle: false,
+    showArticleUrlInput: false,
+    articleUrlInput: '',
+  }),
 }));

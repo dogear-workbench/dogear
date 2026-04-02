@@ -67,6 +67,8 @@ interface ConversationState {
   updateConversationPersona: (conversationId: string, personaId?: string, tempPrompt?: string) => Promise<void>;
   /** 触发会话重启 */
   triggerSessionRestart: () => void;
+  /** 重置所有状态到初始值 */
+  reset: () => void;
 }
 
 /** 从 workspace-store 获取当前工作区（延迟导入避免循环依赖） */
@@ -449,4 +451,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   triggerSessionRestart: () => {
     set((state) => ({ sessionRestartTrigger: state.sessionRestartTrigger + 1 }));
   },
+
+  reset: () => set({
+    conversations: [],
+    selectedConversation: null,
+    loadingConversations: false,
+    forkParams: null,
+    treeData: null,
+    nodeMap: {},
+    sessionRestartTrigger: 0,
+  }),
 }));

@@ -41,6 +41,8 @@ interface UIState {
   closeSubAgentPanel: () => void;
   /** 清空子代理列表（切换对话时调用） */
   clearSubAgents: () => void;
+  /** 重置所有状态到初始值 */
+  reset: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -71,4 +73,12 @@ export const useUIStore = create<UIState>((set) => ({
   selectSubAgent: (agentId) => set({ selectedSubAgentId: agentId }),
   closeSubAgentPanel: () => set({ selectedSubAgentId: null }),
   clearSubAgents: () => set({ subAgents: [], selectedSubAgentId: null }),
+
+  reset: () => set({
+    settingsOpen: false,
+    promptSidebarOpen: false,
+    rightPanelOpen: false,
+    subAgents: [],
+    selectedSubAgentId: null,
+  }),
 }));

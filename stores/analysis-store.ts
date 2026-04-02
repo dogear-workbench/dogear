@@ -26,6 +26,8 @@ interface AnalysisState {
   resetForBook: (book: Book | null) => void;
   /** 清理事件监听器 */
   cleanup: () => void;
+  /** 重置所有状态到初始值 */
+  reset: () => void;
 }
 
 // 模块级变量存储事件监听取消函数
@@ -120,5 +122,17 @@ export const useAnalysisStore = create<AnalysisState>((set, get) => ({
       analysisUnsubscribe();
       analysisUnsubscribe = null;
     }
+  },
+
+  reset: () => {
+    // 清理事件监听器
+    if (analysisUnsubscribe) {
+      analysisUnsubscribe();
+      analysisUnsubscribe = null;
+    }
+    set({
+      analyzing: false,
+      analysisProgress: { status: 'idle' },
+    });
   },
 }));

@@ -32,6 +32,8 @@ interface ReferenceState {
   removeReferencedFile: (filePath: string) => void;
   /** 清空所有文件引用 */
   clearReferencedFiles: () => void;
+  /** 重置所有状态到初始值 */
+  reset: () => void;
 }
 
 export const useReferenceStore = create<ReferenceState>((set) => ({
@@ -91,4 +93,10 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   },
 
   clearReferencedFiles: () => set({ referencedFiles: [] }),
+
+  reset: () => set({
+    referencedArticles: [],
+    quotedSnippets: [],
+    referencedFiles: [],
+  }),
 }));

@@ -31,6 +31,8 @@ interface SessionState {
   updateTitle: (conversationId: string, title: string) => void;
   /** 获取指定标签页 */
   getTab: (conversationId: string) => SessionTab | undefined;
+  /** 重置所有状态到初始值 */
+  reset: () => void;
 }
 
 const MAX_TABS = 5;
@@ -109,4 +111,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   getTab: (conversationId) => {
     return get().tabs.find((t) => t.conversationId === conversationId);
   },
+
+  reset: () => set({
+    tabs: [],
+    activeTabId: null,
+  }),
 }));
