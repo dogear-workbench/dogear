@@ -156,9 +156,9 @@ function SubAgentDetail({
                 return (
                   <div
                     key={i}
-                    className="text-xs text-muted-foreground bg-muted/60 border border-border rounded-lg px-3 py-2 whitespace-pre-wrap"
+                    className="text-sm border border-border rounded-lg px-3 py-2 whitespace-pre-wrap"
                   >
-                    {section.text!.length > 300 ? section.text!.substring(0, 300) + '...' : section.text}
+                    {section.text!.length > 500 ? section.text!.substring(0, 500) + '...' : section.text}
                   </div>
                 );
               }

@@ -86,10 +86,10 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
           <div className="text-muted-foreground text-[10px]">{metricsText}</div>
         )}
 
-        {/* 执行结果 */}
+        {/* 执行结果（不截断，CollapsibleBlock 自带渐隐折叠） */}
         {block.subAgentResultText && (
           <div className="text-muted-foreground whitespace-pre-wrap break-all">
-            <MarkdownRenderer content={block.subAgentResultText.length > 500 ? block.subAgentResultText.substring(0, 500) + '...' : block.subAgentResultText} className="text-xs" />
+            <MarkdownRenderer content={block.subAgentResultText} className="text-xs" />
           </div>
         )}
         {!block.subAgentResultText && block.toolOutput && (
@@ -97,9 +97,7 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
             "whitespace-pre-wrap break-all text-muted-foreground",
             block.isError && "text-red-600",
           )}>
-            {typeof block.toolOutput === 'string'
-              ? (block.toolOutput.length > 500 ? block.toolOutput.substring(0, 500) + '...' : block.toolOutput)
-              : JSON.stringify(block.toolOutput, null, 2)}
+            {typeof block.toolOutput === 'string' ? block.toolOutput : JSON.stringify(block.toolOutput, null, 2)}
           </div>
         )}
 
