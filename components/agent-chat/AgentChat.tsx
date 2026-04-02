@@ -130,6 +130,8 @@ export function AgentChat({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [newMsgCount, setNewMsgCount] = useState(0);
+  const lastScrollTime = useRef(0);
+  const prevMessageCount = useRef(0);
 
   const handleScroll = useCallback(() => {
     const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
@@ -139,10 +141,33 @@ export function AgentChat({
     if (atBottom) setNewMsgCount(0);
   }, []);
 
+  // 消息变化时：在底部则自动跟随滚动，否则增加未读计数
   useEffect(() => {
-    if (!isAtBottom && messages.length > 0) {
+    if (isAtBottom) {
+      const now = Date.now();
+      if (now - lastScrollTime.current > 100) {
+        lastScrollTime.current = now;
+        const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+        if (el) {
+          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        }
+      }
+    } else if (messages.length > 0) {
       setNewMsgCount(prev => prev + 1);
     }
+  }, [messages]); // 监听整个 messages 引用（streamReducer 每次返回新数组引用）
+
+  // 历史加载完成后（从无消息到有消息）自动滚到底部（无动画）
+  useEffect(() => {
+    if (prevMessageCount.current === 0 && messages.length > 0) {
+      const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTo({ top: el.scrollHeight, behavior: 'instant' });
+        });
+      }
+    }
+    prevMessageCount.current = messages.length;
   }, [messages.length]);
 
   const scrollToBottom = useCallback(() => {
