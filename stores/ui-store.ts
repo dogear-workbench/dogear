@@ -5,7 +5,14 @@ export interface SubAgentInfo {
   agentId: string;
   sdkSessionId: string;
   description?: string;
+  subagentType?: string;
   status?: 'running' | 'completed' | 'failed';
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
+  tokens?: number;
+  toolUseCount?: number;
+  resultText?: string;
 }
 
 interface UIState {
@@ -26,17 +33,23 @@ interface UIState {
   /** 折叠右侧预览面板 */
   closeRightPanel: () => void;
 
+  // 右侧面板当前 tab
+  /** 右侧面板当前 tab：预览 or 子代理列表 */
+  rightPanelTab: 'preview' | 'subagents';
+  /** 切换右侧面板 tab */
+  setRightPanelTab: (tab: 'preview' | 'subagents') => void;
+
   // 子代理面板（嵌入右侧预览区域）
   /** 当前对话的所有子代理列表 */
   subAgents: SubAgentInfo[];
-  /** 当前选中查看的子代理 agentId（null 表示不显示子代理面板） */
+  /** 当前选中查看的子代理 agentId（null 表示显示列表） */
   selectedSubAgentId: string | null;
   /** 注册一个子代理（运行时创建时调用） */
   registerSubAgent: (info: SubAgentInfo) => void;
-  /** 更新子代理状态 */
-  updateSubAgentStatus: (agentId: string, status: 'running' | 'completed' | 'failed') => void;
-  /** 选中一个子代理查看详情 */
-  selectSubAgent: (agentId: string) => void;
+  /** 更新子代理状态（支持部分字段更新） */
+  updateSubAgentStatus: (agentId: string, update: Partial<Pick<SubAgentInfo, 'status' | 'completedAt' | 'durationMs' | 'tokens' | 'toolUseCount' | 'resultText'>>) => void;
+  /** 选中一个子代理查看详情（null 表示回到列表） */
+  selectSubAgent: (agentId: string | null) => void;
   /** 关闭子代理面板（回到正常预览） */
   closeSubAgentPanel: () => void;
   /** 清空子代理列表（切换对话时调用） */
@@ -59,6 +72,10 @@ export const useUIStore = create<UIState>((set) => ({
   openRightPanel: () => set({ rightPanelOpen: true }),
   closeRightPanel: () => set({ rightPanelOpen: false }),
 
+  // 右侧面板 tab（默认预览）
+  rightPanelTab: 'preview',
+  setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
+
   // 子代理面板
   subAgents: [],
   selectedSubAgentId: null,
@@ -67,8 +84,8 @@ export const useUIStore = create<UIState>((set) => ({
     if (s.subAgents.some(a => a.agentId === info.agentId)) return s;
     return { subAgents: [...s.subAgents, info] };
   }),
-  updateSubAgentStatus: (agentId, status) => set((s) => ({
-    subAgents: s.subAgents.map(a => a.agentId === agentId ? { ...a, status } : a),
+  updateSubAgentStatus: (agentId, update) => set((s) => ({
+    subAgents: s.subAgents.map(a => a.agentId === agentId ? { ...a, ...update } : a),
   })),
   selectSubAgent: (agentId) => set({ selectedSubAgentId: agentId }),
   closeSubAgentPanel: () => set({ selectedSubAgentId: null }),
@@ -78,6 +95,7 @@ export const useUIStore = create<UIState>((set) => ({
     settingsOpen: false,
     promptSidebarOpen: false,
     rightPanelOpen: false,
+    rightPanelTab: 'preview',
     subAgents: [],
     selectedSubAgentId: null,
   }),

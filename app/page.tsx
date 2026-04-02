@@ -23,11 +23,12 @@ import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
-  const selectedSubAgentId = useUIStore((s) => s.selectedSubAgentId);
   const clearSubAgents = useUIStore((s) => s.clearSubAgents);
   const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
   const openRightPanel = useUIStore((s) => s.openRightPanel);
+  const rightPanelTab = useUIStore((s) => s.rightPanelTab);
+  const setRightPanelTab = useUIStore((s) => s.setRightPanelTab);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -303,13 +304,40 @@ export default function Home() {
           )}
         </section>
 
-        {/* 右侧：预览（书籍/文章）或子代理面板 */}
+        {/* 右侧：预览（书籍/文章）+ 子代理面板，通过 tab 切换 */}
         <aside className={cn(
           "border-l flex flex-col bg-background transition-all duration-200 overflow-hidden",
           rightPanelOpen ? 'w-96' : 'w-0 border-l-0'
         )}>
-          {selectedSubAgentId ? (
-            /* 子代理会话历史面板 */
+          {/* Tab 切换栏 */}
+          <div className="flex border-b shrink-0">
+            <button
+              onClick={() => setRightPanelTab('preview')}
+              className={cn(
+                'flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                rightPanelTab === 'preview'
+                  ? 'border-b-2 border-primary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              预览
+            </button>
+            <button
+              onClick={() => setRightPanelTab('subagents')}
+              className={cn(
+                'flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                rightPanelTab === 'subagents'
+                  ? 'border-b-2 border-primary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              子代理
+            </button>
+          </div>
+
+          {/* Tab 内容 */}
+          {rightPanelTab === 'subagents' ? (
+            /* 子代理列表面板 */
             <SubAgentPanel />
           ) : (
             /* 原有的预览内容 */

@@ -9,11 +9,9 @@ import { useUIStore } from '@/stores/ui-store';
 import type { ContentBlock } from './types';
 
 /**
- * 查看详情按钮：在右侧预览区域显示子代理会话历史
+ * 查看详情按钮：在右侧子代理 tab 中显示子代理会话历史
  */
 function ViewDetailButton({ agentId, description }: { agentId: string; description: string }) {
-  const selectSubAgent = useUIStore((s) => s.selectSubAgent);
-  const registerSubAgent = useUIStore((s) => s.registerSubAgent);
   const sdkSessionId = useConversationStore((s) => s.selectedConversation?.sdk_session_id);
 
   if (!sdkSessionId) return null;
@@ -25,9 +23,12 @@ function ViewDetailButton({ agentId, description }: { agentId: string; descripti
       className="h-6 px-2 text-[10px] text-violet-600 hover:text-violet-700 hover:bg-violet-100"
       onClick={(e) => {
         e.stopPropagation();
+        const store = useUIStore.getState();
         // 确保已注册（可能从历史加载，不一定走了运行时注册流程）
-        registerSubAgent({ agentId, sdkSessionId, description, status: 'completed' });
-        selectSubAgent(agentId);
+        store.registerSubAgent({ agentId, sdkSessionId, description, status: 'completed' });
+        store.selectSubAgent(agentId);
+        store.setRightPanelTab('subagents');
+        store.openRightPanel();
       }}
     >
       <ExternalLink className="w-3 h-3 mr-1" />
