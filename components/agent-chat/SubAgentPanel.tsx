@@ -1,21 +1,28 @@
 import { Bot, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { ContentBlockItem } from './ContentBlockItem';
 import { cn } from '@/lib/utils';
 import { useUIStore, type SubAgentInfo } from '@/stores/ui-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSubAgentMessages, type SubAgentRawMessage } from './hooks/useSubAgentMessages';
-import { MessageItem } from './MessageItem';
-import type { Message, ContentBlock } from './types';
+import type { ContentBlock } from './types';
 
 // ─── 消息转换 ───
 
-/** 将子代理原始消息转换为主会话 Message 类型，复用 MessageItem 渲染 */
-function convertToMessages(rawMessages: SubAgentRawMessage[]): Message[] {
-  const messages: Message[] = [];
+/** 从子代理原始消息中提取 ContentBlock 和 user prompt */
+interface SubAgentSection {
+  type: 'prompt' | 'assistant';
+  text?: string;           // prompt 文本
+  contentBlocks?: ContentBlock[]; // assistant 的 contentBlocks
+}
 
-  // 构建 tool_result 映射（tool_use_id → result）
-  const toolResultMap = new Map<string, { content: any; isError: boolean }>();
+function convertToSections(rawMessages: SubAgentRawMessage[]): SubAgentSection[] {
+  const sections: SubAgentSection[] = [];
+
+  // 构建 tool_result 映射
+  const toolResultMap = new Map<string, { content: string; isError: boolean }>();
   for (const msg of rawMessages) {
     if (msg.type === 'user' && Array.isArray(msg.content)) {
       for (const block of msg.content) {
@@ -34,7 +41,6 @@ function convertToMessages(rawMessages: SubAgentRawMessage[]): Message[] {
 
   for (const msg of rawMessages) {
     if (msg.type === 'user') {
-      // 提取文本内容（跳过纯 tool_result 消息）
       let text = '';
       if (typeof msg.content === 'string') {
         text = msg.content;
@@ -44,35 +50,22 @@ function convertToMessages(rawMessages: SubAgentRawMessage[]): Message[] {
           .map((b: any) => typeof b === 'string' ? b : b.text || '')
           .join('');
       }
-      if (!text) continue; // 跳过纯 tool_result 的 user 消息
-      messages.push({
-        role: 'user',
-        content: text,
-        timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : undefined,
-        isMeta: true, // 标记为系统消息样式（子代理的 prompt 不是用户输入）
-      });
+      if (text) {
+        sections.push({ type: 'prompt', text });
+      }
     } else if (msg.type === 'assistant') {
-      // 提取文本和工具调用，构建 contentBlocks
       const contentBlocks: ContentBlock[] = [];
-      let text = '';
 
-      if (typeof msg.content === 'string') {
-        text = msg.content;
+      if (typeof msg.content === 'string' && msg.content) {
+        contentBlocks.push({ type: 'text', content: msg.content, timestamp: Date.now() });
       } else if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (typeof block === 'string') {
-            text += block;
-          } else if (block?.type === 'text') {
-            text += block.text || '';
-            if (block.text) {
-              contentBlocks.push({ type: 'text', content: block.text, timestamp: Date.now() });
-            }
+            if (block) contentBlocks.push({ type: 'text', content: block, timestamp: Date.now() });
+          } else if (block?.type === 'text' && block.text) {
+            contentBlocks.push({ type: 'text', content: block.text, timestamp: Date.now() });
           } else if (block?.type === 'thinking') {
-            contentBlocks.push({
-              type: 'thinking',
-              content: block.thinking || '',
-              timestamp: Date.now(),
-            });
+            contentBlocks.push({ type: 'thinking', content: block.thinking || '', timestamp: Date.now() });
           } else if (block?.type === 'tool_use') {
             const result = toolResultMap.get(block.id);
             contentBlocks.push({
@@ -88,27 +81,18 @@ function convertToMessages(rawMessages: SubAgentRawMessage[]): Message[] {
         }
       }
 
-      // 如果没有 contentBlocks 但有文本，添加一个 text block
-      if (contentBlocks.length === 0 && text) {
-        contentBlocks.push({ type: 'text', content: text, timestamp: Date.now() });
+      if (contentBlocks.length > 0) {
+        sections.push({ type: 'assistant', contentBlocks });
       }
-
-      messages.push({
-        role: 'assistant',
-        content: text,
-        contentBlocks,
-        model: msg.model,
-        timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : undefined,
-      });
     }
   }
 
-  return messages;
+  return sections;
 }
 
 // ─── 子组件 ───
 
-/** 子代理详情视图 */
+/** 子代理详情视图 — 无头像，轻量渲染 */
 function SubAgentDetail({
   agent,
   onBack,
@@ -126,7 +110,7 @@ function SubAgentDetail({
     workspacePath,
   });
 
-  const messages = convertToMessages(rawMessages);
+  const sections = convertToSections(rawMessages);
 
   const statusDot = agent.status === 'failed'
     ? 'bg-red-500'
@@ -151,7 +135,7 @@ function SubAgentDetail({
         <span className="text-sm font-medium truncate flex-1">{agent.description || '子代理任务'}</span>
       </div>
 
-      {/* 消息区域 - 复用 MessageItem */}
+      {/* 消息区域 */}
       <ScrollArea className="flex-1 overflow-hidden">
         {loading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
@@ -162,17 +146,34 @@ function SubAgentDetail({
           <div className="text-sm text-muted-foreground bg-muted/50 border border-border rounded-md p-3 mx-3 mt-3">
             <p>文件丢失或该对话为分叉对话，请在原对话查看</p>
           </div>
-        ) : messages.length === 0 ? (
-          <div className="text-sm text-muted-foreground text-center py-8">
-            {agent.status === 'running' ? '等待消息...' : '暂无会话历史'}
-          </div>
+        ) : sections.length === 0 ? (
+          <div className="text-sm text-muted-foreground text-center py-8">暂无会话历史</div>
         ) : (
-          <div className="py-4 space-y-4 px-2">
-            {messages.map((msg, i) => (
-              <MessageItem key={i} message={msg} />
-            ))}
-            {/* 底部间距，防止内容被遮盖 */}
-            <div className="h-4" />
+          <div className="px-3 py-4 space-y-5">
+            {sections.map((section, i) => {
+              if (section.type === 'prompt') {
+                // 主会话发送的消息：灰色框
+                return (
+                  <div
+                    key={i}
+                    className="text-xs text-muted-foreground bg-muted/60 border border-border rounded-lg px-3 py-2 whitespace-pre-wrap"
+                  >
+                    {section.text!.length > 300 ? section.text!.substring(0, 300) + '...' : section.text}
+                  </div>
+                );
+              }
+
+              // 子代理回复：直接渲染 ContentBlock，无头像
+              return (
+                <div key={i} className="space-y-2">
+                  {section.contentBlocks!.map((block, j) => (
+                    <ContentBlockItem key={j} block={block} />
+                  ))}
+                </div>
+              );
+            })}
+            {/* 底部间距 */}
+            <div className="h-6" />
           </div>
         )}
       </ScrollArea>
@@ -182,13 +183,6 @@ function SubAgentDetail({
 
 // ─── 导出组件 ───
 
-/**
- * 子代理面板 — 嵌入右侧预览区域的子代理 tab 内容
- *
- * 两级结构：
- * - 第一级：当前对话的子代理列表
- * - 第二级：点击某个子代理，展示其完整会话流（复用 MessageItem 渲染）
- */
 export function SubAgentPanel({ conversationId }: { conversationId?: string }) {
   const subAgentsMap = useUIStore((s) => s.subAgentsMap);
   const subAgents = conversationId ? (subAgentsMap[conversationId] || []) : [];
@@ -208,34 +202,26 @@ export function SubAgentPanel({ conversationId }: { conversationId?: string }) {
     );
   }
 
-  // 排序：已完成按时间倒序
   const sortedAgents = [...subAgents].sort((a, b) => {
     return ((b.completedAt ?? b.startedAt ?? 0) - (a.completedAt ?? a.startedAt ?? 0));
   });
 
   return (
     <div className="flex flex-col h-full">
-      {/* 头部 */}
       <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
         <Bot className="w-4 h-4 text-violet-600" />
         <span className="text-sm font-medium">子代理</span>
         <span className="text-[10px] text-muted-foreground">({subAgents.length})</span>
       </div>
 
-      {/* 列表 */}
       <ScrollArea className="flex-1 overflow-hidden">
         {sortedAgents.length === 0 ? (
           <div className="p-4 text-center text-sm text-muted-foreground">暂无子代理</div>
         ) : (
           <div className="divide-y">
             {sortedAgents.map((agent) => {
-              const dotClass = agent.status === 'failed'
-                ? 'bg-red-500'
-                : 'bg-violet-500';
-
-              const durationText = agent.durationMs
-                ? ` · ${(agent.durationMs / 1000).toFixed(1)}s`
-                : '';
+              const dotClass = agent.status === 'failed' ? 'bg-red-500' : 'bg-violet-500';
+              const durationText = agent.durationMs ? ` · ${(agent.durationMs / 1000).toFixed(1)}s` : '';
 
               return (
                 <button
