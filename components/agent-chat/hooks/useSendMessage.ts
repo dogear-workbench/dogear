@@ -297,7 +297,6 @@ export function useSendMessage(params: UseSendMessageParams) {
         return;
       }
 
-      // 通过 forkParams 触发 SDK fork 会话创建
       // 通过 forkParams 触发 SDK fork 会话创建，useAgentSession 会自动发送 editedMessage
       useConversationStore.getState().setForkParams({
         sdkSessionIdToResume: parentSdkSessionId,

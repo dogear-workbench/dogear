@@ -958,6 +958,9 @@ export const agentRouter = {
             } else {
               currentAssistantMessage.content.push(...contentBlocks);
               currentAssistantMessage.timestamp = msg.timestamp;
+              // 同步更新 uuid 为最新行的 uuid，与 transformers.ts 的 historyTransformer 行为一致
+              // 这样 fork_pending 预览截断时能正确找到分叉点（前端 sdkUuid 存的是最后一条行的 uuid）
+              if (msg.uuid) currentAssistantMessage.uuid = msg.uuid;
             }
           }
         }

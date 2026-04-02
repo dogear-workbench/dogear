@@ -246,7 +246,8 @@ export class QueryBasedSession extends EventEmitter {
       // 配置 resumeSessionAt（截断位置）
       if (this.config.resumeSessionAt) {
         queryOptions.resumeSessionAt = this.config.resumeSessionAt;
-        this.logger.info('✅ 已配置 resumeSessionAt:', this.config.resumeSessionAt);
+        this.logger.info('✅ 已配置 resumeSessionAt:', this.config.resumeSessionAt, '| forkSession:', !!this.config.forkSession);
+        console.log('[Fork] resumeSessionAt:', this.config.resumeSessionAt, 'forkSession:', this.config.forkSession);
       }
 
       // 继承系统环境变量（PATH 等），再覆盖 Profile 配置
