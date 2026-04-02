@@ -40,21 +40,23 @@ interface UIState {
   setRightPanelTab: (tab: 'preview' | 'subagents') => void;
 
   // 子代理面板（嵌入右侧预览区域）
-  /** 当前对话的所有子代理列表（从 messages ContentBlock 派生） */
-  subAgents: SubAgentInfo[];
+  /** 按对话 ID 缓存的子代理列表（切换 tab 时不丢失） */
+  subAgentsMap: Record<string, SubAgentInfo[]>;
   /** 当前选中查看的子代理 agentId（null 表示显示列表） */
   selectedSubAgentId: string | null;
-  /** 整体替换子代理列表（从 messages 中提取后调用） */
-  setSubAgents: (agents: SubAgentInfo[]) => void;
-  /** 注册一个子代理（按需注册，点击查看详情时调用） */
-  registerSubAgent: (info: SubAgentInfo) => void;
-  /** 更新子代理状态（支持部分字段更新） */
-  updateSubAgentStatus: (agentId: string, update: Partial<Pick<SubAgentInfo, 'status' | 'completedAt' | 'durationMs' | 'tokens' | 'toolUseCount' | 'resultText'>>) => void;
+  /** 设置指定对话的子代理列表 */
+  setSubAgents: (conversationId: string, agents: SubAgentInfo[]) => void;
+  /** 获取指定对话的子代理列表 */
+  getSubAgents: (conversationId: string) => SubAgentInfo[];
+  /** 注册一个子代理到指定对话（按需注册） */
+  registerSubAgent: (conversationId: string, info: SubAgentInfo) => void;
   /** 选中一个子代理查看详情（null 表示回到列表） */
   selectSubAgent: (agentId: string | null) => void;
   /** 关闭子代理面板（回到正常预览） */
   closeSubAgentPanel: () => void;
-  /** 清空子代理列表 */
+  /** 清除指定对话的子代理缓存（关闭 tab 时调用） */
+  removeSubAgents: (conversationId: string) => void;
+  /** 清空所有缓存（工作区切换时） */
   clearSubAgents: () => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
@@ -79,27 +81,31 @@ export const useUIStore = create<UIState>((set) => ({
   setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
 
   // 子代理面板
-  subAgents: [],
+  subAgentsMap: {},
   selectedSubAgentId: null,
-  setSubAgents: (agents) => set({ subAgents: agents }),
-  registerSubAgent: (info) => set((s) => {
-    // 防止重复注册
-    if (s.subAgents.some(a => a.agentId === info.agentId)) return s;
-    return { subAgents: [...s.subAgents, info] };
-  }),
-  updateSubAgentStatus: (agentId, update) => set((s) => ({
-    subAgents: s.subAgents.map(a => a.agentId === agentId ? { ...a, ...update } : a),
+  setSubAgents: (conversationId, agents) => set((s) => ({
+    subAgentsMap: { ...s.subAgentsMap, [conversationId]: agents },
   })),
+  getSubAgents: (conversationId) => useUIStore.getState().subAgentsMap[conversationId] || [],
+  registerSubAgent: (conversationId, info) => set((s) => {
+    const existing = s.subAgentsMap[conversationId] || [];
+    if (existing.some(a => a.agentId === info.agentId)) return s;
+    return { subAgentsMap: { ...s.subAgentsMap, [conversationId]: [...existing, info] } };
+  }),
   selectSubAgent: (agentId) => set({ selectedSubAgentId: agentId }),
   closeSubAgentPanel: () => set({ selectedSubAgentId: null }),
-  clearSubAgents: () => set({ subAgents: [], selectedSubAgentId: null }),
+  removeSubAgents: (conversationId) => set((s) => {
+    const { [conversationId]: _, ...rest } = s.subAgentsMap;
+    return { subAgentsMap: rest, selectedSubAgentId: null };
+  }),
+  clearSubAgents: () => set({ subAgentsMap: {}, selectedSubAgentId: null }),
 
   reset: () => set({
     settingsOpen: false,
     promptSidebarOpen: false,
     rightPanelOpen: false,
     rightPanelTab: 'preview',
-    subAgents: [],
+    subAgentsMap: {},
     selectedSubAgentId: null,
   }),
 }));

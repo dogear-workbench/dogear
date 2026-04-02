@@ -245,6 +245,7 @@ export default function Home() {
                       onClick={(e) => {
                         e.stopPropagation();
                         closeTab(tab.conversationId);
+                        useUIStore.getState().removeSubAgents(tab.conversationId);
                       }}
                     >
                       <X className="w-3 h-3" />
@@ -334,7 +335,7 @@ export default function Home() {
           {/* Tab 内容 */}
           {rightPanelTab === 'subagents' ? (
             /* 子代理列表面板 */
-            <SubAgentPanel />
+            <SubAgentPanel conversationId={activeTabId || undefined} />
           ) : (
             /* 原有的预览内容 */
             <>

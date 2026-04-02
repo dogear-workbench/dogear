@@ -23,12 +23,12 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
   const handleViewDetail = () => {
     if (!block.subAgentId) return;
     const store = useUIStore.getState();
-    const sdkSessionId = useConversationStore.getState().selectedConversation?.sdk_session_id;
+    const conv = useConversationStore.getState().selectedConversation;
     // 按需注册（点击时才注册，不在渲染时注册）
-    if (sdkSessionId) {
-      store.registerSubAgent({
+    if (conv?.sdk_session_id && conv.id) {
+      store.registerSubAgent(conv.id, {
         agentId: block.subAgentId,
-        sdkSessionId,
+        sdkSessionId: conv.sdk_session_id,
         description,
         subagentType: agentType,
         status: isFailed ? 'failed' : isCompleted ? 'completed' : 'running',

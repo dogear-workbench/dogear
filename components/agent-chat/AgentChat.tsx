@@ -96,13 +96,10 @@ export function AgentChat({
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({ sessionId, setMessages, setIsLoading, setPermissionMode });
 
-  // 从 messages 的 ContentBlock 中提取子代理列表，同步到 ui-store
+  // 从 messages 的 ContentBlock 中提取子代理列表，按 conversationId 缓存到 ui-store
   const sdkSessionId = useConversationStore((s) => s.selectedConversation?.sdk_session_id);
   useEffect(() => {
-    if (!sdkSessionId) {
-      useUIStore.getState().clearSubAgents();
-      return;
-    }
+    if (!conversationId || !sdkSessionId) return;
     // 遍历所有消息的 contentBlocks，提取 isSubAgent 的 block
     const agents: import('@/stores/ui-store').SubAgentInfo[] = [];
     for (const msg of messages) {
@@ -110,7 +107,6 @@ export function AgentChat({
       for (const block of msg.contentBlocks) {
         if (!block.isSubAgent && block.toolName !== 'Agent') continue;
         if (!block.subAgentId) continue;
-        // 避免重复
         if (agents.some(a => a.agentId === block.subAgentId)) continue;
         const hasOutput = block.toolOutput !== undefined || !!block.subAgentResultText;
         const isCompleted = block.subAgentStatus === 'completed' || hasOutput;
@@ -128,9 +124,8 @@ export function AgentChat({
         });
       }
     }
-    // 整体替换（而非逐个注册，避免竞争和残留）
-    useUIStore.getState().setSubAgents(agents);
-  }, [messages, sdkSessionId]);
+    useUIStore.getState().setSubAgents(conversationId, agents);
+  }, [messages, sdkSessionId, conversationId]);
 
   // 图片附件
   const imageAttachment = useImageAttachment();
