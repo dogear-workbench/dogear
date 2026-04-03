@@ -12,6 +12,7 @@ import { wechatAuthService } from './wechat-auth-service.js';
 import * as workspaceJsonService from '../../services/workspace-json-service.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { getQueryBasedSessionManager } from '../../agents/query-based-session.js';
+import { stripMarkdownForWechat } from './markdown-filter.js';
 import { EventEmitter } from 'events';
 
 const log = mainLogger;
@@ -289,7 +290,7 @@ class WechatBotController extends EventEmitter {
     if (!this.waitingForAgent) return;
     this.waitingForAgent = false;
     if (this.lastReplyContext) {
-      await this.reply(text, this.lastReplyContext);
+      await this.reply(stripMarkdownForWechat(text), this.lastReplyContext);
     }
   }
 

@@ -132,6 +132,11 @@ export const wechatRouter = {
         if (message.type === 'text' && message.content) {
           _pendingAgentText += message.content;
         }
+
+        // debug 模式下权限请求通知微信
+        if (message.type === 'permission_request' && message.permissionToolName) {
+          wechatBotController.handlePermissionNotify(message.permissionToolName, sessionId).catch(() => {});
+        }
       };
 
       // 会话完成时，将积累的文本一次性发送给微信，然后清空缓冲区
