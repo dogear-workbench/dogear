@@ -46,14 +46,13 @@ export const wechatRouter = {
       // 注册状态变化回调，推送到渲染层
       const handlers = getRendererHandlers<RendererHandlers>(context.sender);
 
+      const authSender = context.sender;
       // 先移除旧的监听器避免重复
       wechatAuthService.removeAllListeners('stateChange');
       wechatAuthService.on('stateChange', (state: string, botName?: string, errorMessage?: string) => {
-        handlers.wechatAuthStatus.send({
-          state,
-          botName,
-          errorMessage,
-        });
+        if (!authSender.isDestroyed()) {
+          handlers.wechatAuthStatus.send({ state, botName, errorMessage });
+        }
       });
 
       const qrCode = await wechatAuthService.startAuth();
@@ -162,12 +161,18 @@ export const wechatRouter = {
       sessionManager.on('sessionMessage', _sessionMessageHandler);
       sessionManager.on('sessionComplete', _sessionCompleteHandler);
 
+      // 检查微信窗口 WebContents 是否仍然存活
+      const sender = context.sender;
+      const safeSend = (fn: () => void) => {
+        if (!sender.isDestroyed()) fn();
+      };
+
       await wechatPoller.start(token.botToken, token.baseUrl, {
         onMessage: async (messages) => {
           // 持久化到 _bot_ 会话
           await wechatMessageStore.appendMessages('_bot_', messages as any[]);
-          // 推送到渲染层（微信窗口展示）
-          handlers.wechatNewMessage.send({ messages: messages as any[] });
+          // 推送到渲染层（仅微信窗口存活时）
+          safeSend(() => handlers.wechatNewMessage.send({ messages: messages as any[] }));
           // 每条消息过 bot controller
           for (const msg of messages) {
             await wechatBotController.handleIncomingMessage({
@@ -179,17 +184,17 @@ export const wechatRouter = {
           }
         },
         onStatus: (state) => {
-          handlers.wechatConnectionStatus.send({
+          safeSend(() => handlers.wechatConnectionStatus.send({
             polling: state.status === 'polling',
             lastPollAt: state.lastPollAt,
             errorMessage: state.errorMessage,
-          });
+          }));
         },
         onAuthExpired: () => {
-          handlers.wechatAuthStatus.send({
+          safeSend(() => handlers.wechatAuthStatus.send({
             state: 'expired',
             errorMessage: 'Token 已过期，请重新扫码',
-          });
+          }));
         },
       });
 
