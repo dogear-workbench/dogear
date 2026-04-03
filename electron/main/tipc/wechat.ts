@@ -6,13 +6,18 @@ import { wechatPoller } from '../services/wechat/wechat-poller.js';
 import { wechatILinkService } from '../services/wechat/wechat-ilink-service.js';
 import { wechatBotController } from '../services/wechat/wechat-bot-controller.js';
 import { getQueryBasedSessionManager } from '../agents/query-based-session.js';
+import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 
 const t = tipc.create();
 
 // 模块顶层保存监听函数引用，避免重复注册旧监听器
-let _sessionMessageHandler: ((sessionId: string, message: any) => Promise<void>) | null = null;
-let _sessionCompleteHandler: ((sessionId: string) => Promise<void>) | null = null;
+let _sessionMessageHandler: ((sessionId: string, message: ExtendedSessionMessage) => void) | null = null;
+let _sessionCompleteHandler: ((sessionId: string, result: any) => Promise<void>) | null = null;
+let _remoteActionHandler: ((action: any) => void) | null = null;
+
+// 流式文本 delta 缓冲区：积累当次 query 的 assistant 文本，完成时一次性发送
+let _pendingAgentText = '';
 
 export const wechatRouter = {
   // === 认证 ===
@@ -61,6 +66,22 @@ export const wechatRouter = {
   'wechat:disconnect': t.procedure.action(async () => {
     try {
       wechatPoller.stop();
+      // 精确移除 sessionManager 监听器，防止内存泄漏
+      const sessionManager = getQueryBasedSessionManager();
+      if (_sessionMessageHandler) {
+        sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
+        _sessionMessageHandler = null;
+      }
+      if (_sessionCompleteHandler) {
+        sessionManager.removeListener('sessionComplete', _sessionCompleteHandler);
+        _sessionCompleteHandler = null;
+      }
+      _pendingAgentText = '';
+      // 精确移除 remoteAction 监听器
+      if (_remoteActionHandler) {
+        wechatBotController.removeListener('remoteAction', _remoteActionHandler);
+        _remoteActionHandler = null;
+      }
       await wechatAuthService.clearToken();
       return { data: { success: true } };
     } catch (error) {
@@ -83,11 +104,14 @@ export const wechatRouter = {
       // 初始化 bot controller（加载默认工作区等）
       await wechatBotController.init();
 
-      // 注册 remoteAction 事件转发到渲染层（避免重复注册）
-      wechatBotController.removeAllListeners('remoteAction');
-      wechatBotController.on('remoteAction', (action: any) => {
+      // 注册 remoteAction 事件转发到渲染层（精确移除旧 handler，避免重复注册）
+      if (_remoteActionHandler) {
+        wechatBotController.removeListener('remoteAction', _remoteActionHandler);
+      }
+      _remoteActionHandler = (action: any) => {
         handlers.wechatRemoteAction.send(action);
-      });
+      };
+      wechatBotController.on('remoteAction', _remoteActionHandler);
 
       // 监听 Agent 会话消息，截取最终回复发回微信
       const sessionManager = getQueryBasedSessionManager();
@@ -96,27 +120,31 @@ export const wechatRouter = {
       if (_sessionMessageHandler) sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
       if (_sessionCompleteHandler) sessionManager.removeListener('sessionComplete', _sessionCompleteHandler);
 
-      _sessionMessageHandler = async (sessionId: string, message: any) => {
+      // 重置缓冲区
+      _pendingAgentText = '';
+
+      // 收集流式文本 delta，不立即发送（流式输出每个 token 都会触发一次）
+      _sessionMessageHandler = (sessionId: string, message: ExtendedSessionMessage) => {
         const botState = wechatBotController.getState();
         if (sessionId !== botState.activeSessionId) return;
-        if (message.role !== 'assistant') return;
 
-        // 提取文本内容
-        let text = '';
-        if (typeof message.content === 'string') {
-          text = message.content;
-        } else if (Array.isArray(message.content)) {
-          text = message.content
-            .filter((b: any) => b.type === 'text')
-            .map((b: any) => b.text as string)
-            .join('\n');
+        // 只积累 assistant 的文本 delta（type='text' 是流式 token，content 是当前 delta 片段）
+        if (message.type === 'text' && message.content) {
+          _pendingAgentText += message.content;
         }
-        if (text.trim()) await wechatBotController.handleAgentReply(text.trim());
       };
 
-      _sessionCompleteHandler = async (sessionId: string) => {
+      // 会话完成时，将积累的文本一次性发送给微信，然后清空缓冲区
+      _sessionCompleteHandler = async (sessionId: string, _result: any) => {
         const botState = wechatBotController.getState();
         if (sessionId !== botState.activeSessionId) return;
+
+        const text = _pendingAgentText.trim();
+        _pendingAgentText = '';
+
+        if (text) {
+          await wechatBotController.handleAgentReply(text);
+        }
         await wechatBotController.handleAgentComplete();
       };
 
@@ -164,6 +192,22 @@ export const wechatRouter = {
   'wechat:stopPolling': t.procedure.action(async () => {
     try {
       wechatPoller.stop();
+      // 精确移除 sessionManager 监听器，防止内存泄漏
+      const sessionManager = getQueryBasedSessionManager();
+      if (_sessionMessageHandler) {
+        sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
+        _sessionMessageHandler = null;
+      }
+      if (_sessionCompleteHandler) {
+        sessionManager.removeListener('sessionComplete', _sessionCompleteHandler);
+        _sessionCompleteHandler = null;
+      }
+      _pendingAgentText = '';
+      // 精确移除 remoteAction 监听器
+      if (_remoteActionHandler) {
+        wechatBotController.removeListener('remoteAction', _remoteActionHandler);
+        _remoteActionHandler = null;
+      }
       return { data: { stopped: true } };
     } catch (error) {
       return { error: String(error) };
