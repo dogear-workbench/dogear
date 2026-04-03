@@ -3,8 +3,9 @@ import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, PanelRightOpen, PanelRightClose, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -68,6 +69,7 @@ export default function Home() {
   const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
   const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
+  const openWechatWindow = useWorkspaceStore((s) => s.openWechatWindow);
 
   // 文章状态
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -115,6 +117,38 @@ export default function Home() {
     return () => cleanupAnalysis();
   }, [cleanupAnalysis]);
 
+  // 监听微信 Bot 远程操作指令（工作区/对话切换、新建对话）
+  useEffect(() => {
+    const unsub = rendererEvents.wechatRemoteAction.listen(async (data) => {
+      const convStore = useConversationStore.getState();
+      switch (data.type) {
+        case 'switchWorkspace':
+          if (data.workspaceId) {
+            const result = await client.getAll();
+            const target = result?.workspaces?.find((w: any) => w.id === data.workspaceId);
+            if (target) useWorkspaceStore.getState().setWorkspace(target);
+          }
+          break;
+        case 'switchConversation':
+          if (data.conversationId) {
+            await convStore.loadConversations();
+            const found = useConversationStore.getState().conversations.find(
+              (c: any) => c.id === data.conversationId,
+            );
+            if (found) convStore.selectConversation(found);
+          }
+          break;
+        case 'newConversation':
+          await convStore.newConversation();
+          break;
+        case 'sendMessage':
+          // 消息由主进程 tipc 直接转发给 Agent，渲染层不重复处理
+          break;
+      }
+    });
+    return unsub;
+  }, []);
+
   // 正在加载默认工作区时显示加载状态
   if (loadingDefaultWs) {
     return (
@@ -161,6 +195,10 @@ export default function Home() {
           <Button variant="outline" size="sm" onClick={openStockWindow}>
             <TrendingUp className="w-4 h-4 mr-2" />
             自选股
+          </Button>
+          <Button variant="outline" size="sm" onClick={openWechatWindow}>
+            <MessageCircle className="w-4 h-4 mr-2" />
+            微信
           </Button>
           <Button variant="outline" size="sm" onClick={() => loadWorkspaceFiles()} disabled={loadingFiles}>
             {loadingFiles ? (
