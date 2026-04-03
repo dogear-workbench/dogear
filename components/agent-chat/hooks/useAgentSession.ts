@@ -157,6 +157,14 @@ export function useAgentSession({
         });
         setIsSessionReady(true);
 
+        // 同步 sessionId 到微信 bot controller（如果微信模块未启用则忽略）
+        try {
+          client['wechat:syncSession']({
+            sessionId: newSessionId,
+            conversationId: conversationId,
+          });
+        } catch { /* 微信模块可能未启用 */ }
+
         // 同步到 session-store（标签页状态）
         if (conversationId) {
           useSessionStore.getState().updateSession(
@@ -220,6 +228,10 @@ export function useAgentSession({
       if (sessionIdRef.current) {
         console.log('关闭会话:', sessionIdRef.current);
         client.closeQueryBasedSession({ sessionId: sessionIdRef.current });
+        // 同步关闭给微信 bot controller
+        try {
+          client['wechat:syncSession']({ sessionId: null, conversationId: null });
+        } catch { /* 忽略 */ }
         sessionIdRef.current = null;
       }
       // 重置会话状态，避免残留的旧会话 ID 被后续操作使用
