@@ -16,6 +16,9 @@ import { EventEmitter } from 'events';
 
 const log = mainLogger;
 
+// 回复上下文类型，作为参数传递以避免并发竞态
+type ReplyCtx = { contextToken: string; senderId: string };
+
 export interface BotState {
   activeWorkspaceId: string | null;
   activeConversationId: string | null;
@@ -31,8 +34,15 @@ class WechatBotController extends EventEmitter {
     debugMode: false,
   };
 
-  private replyContext: { contextToken: string; senderId: string } | null = null;
+  // 仅供 handleAgentReply / handleAgentComplete / handlePermissionNotify 使用的"最后一个上下文"
+  // 不在并发的 handleCommand 调用中修改
+  private lastReplyContext: ReplyCtx | null = null;
   private waitingForAgent = false;
+
+  constructor() {
+    super();
+    this.setMaxListeners(20);
+  }
 
   getState(): BotState {
     return { ...this.state };
@@ -44,49 +54,56 @@ class WechatBotController extends EventEmitter {
     senderId: string;
     messageType: string;
   }): Promise<void> {
-    this.replyContext = {
+    // 提取局部上下文，通过参数传递，避免实例字段竞态
+    const ctx: ReplyCtx = {
       contextToken: msg.contextToken,
       senderId: msg.senderId,
     };
+    // 更新"最后上下文"供 Agent 事件回调使用
+    this.lastReplyContext = ctx;
 
     if (msg.messageType !== 'text' || !msg.content.trim()) return;
 
     const text = msg.content.trim();
 
     if (text.startsWith('/')) {
-      await this.handleCommand(text);
+      await this.handleCommand(text, ctx);
     } else {
-      await this.handleAgentMessage(text);
+      this.handleAgentMessage(text, ctx);
     }
   }
 
-  private async handleCommand(text: string): Promise<void> {
+  private async handleCommand(text: string, ctx: ReplyCtx): Promise<void> {
     const spaceIdx = text.indexOf(' ');
     const command = (spaceIdx === -1 ? text : text.slice(0, spaceIdx)).toLowerCase();
     const args = spaceIdx === -1 ? '' : text.slice(spaceIdx + 1).trim();
 
     try {
       switch (command) {
-        case '/help': await this.cmdHelp(); break;
-        case '/status': await this.cmdStatus(); break;
-        case '/ws': await this.cmdWorkspace(args); break;
-        case '/ls': await this.cmdListConversations(); break;
-        case '/use': await this.cmdUseConversation(args); break;
-        case '/new': await this.cmdNewConversation(); break;
-        case '/stop': await this.cmdStop(); break;
-        case '/debug': await this.cmdToggleDebug(); break;
+        case '/help': await this.cmdHelp(ctx); break;
+        case '/status': await this.cmdStatus(ctx); break;
+        case '/ws': await this.cmdWorkspace(args, ctx); break;
+        case '/ls': await this.cmdListConversations(ctx); break;
+        case '/use': await this.cmdUseConversation(args, ctx); break;
+        case '/new': await this.cmdNewConversation(ctx); break;
+        case '/stop': await this.cmdStop(ctx); break;
+        case '/debug': await this.cmdToggleDebug(ctx); break;
         default:
-          await this.reply(`未知命令: ${command}\n输入 /help 查看可用命令`);
+          await this.reply(`未知命令: ${command}\n输入 /help 查看可用命令`, ctx);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error(`[bot] 命令执行失败: ${command}`, err);
-      await this.reply(`命令执行失败: ${err.message}`);
+      await this.reply(`命令执行失败: ${err instanceof Error ? err.message : String(err)}`, ctx);
     }
   }
 
-  private async handleAgentMessage(text: string): Promise<void> {
+  // 无 await，去掉 async，返回 void
+  private handleAgentMessage(text: string, ctx: ReplyCtx): void {
     if (!this.state.activeSessionId) {
-      await this.reply('当前没有激活的对话。\n用 /ls 查看对话列表，/use <编号> 选择对话，或 /new 新建对话。');
+      // 需要回复，使用传入的 ctx
+      this.reply('当前没有激活的对话。\n用 /ls 查看对话列表，/use <编号> 选择对话，或 /new 新建对话。', ctx).catch(
+        (err: unknown) => log.error('[bot] 回复失败:', err),
+      );
       return;
     }
 
@@ -100,7 +117,7 @@ class WechatBotController extends EventEmitter {
     this.waitingForAgent = true;
   }
 
-  private async cmdHelp(): Promise<void> {
+  private async cmdHelp(ctx: ReplyCtx): Promise<void> {
     await this.reply([
       '== Dogear Bot 命令 ==',
       '/help — 显示此帮助',
@@ -114,10 +131,10 @@ class WechatBotController extends EventEmitter {
       '/debug — 开关调试模式',
       '',
       '直接发送文本 → 转发给当前对话的 Agent',
-    ].join('\n'));
+    ].join('\n'), ctx);
   }
 
-  private async cmdStatus(): Promise<void> {
+  private async cmdStatus(ctx: ReplyCtx): Promise<void> {
     const ws = this.state.activeWorkspaceId
       ? await workspaceJsonService.getById(this.state.activeWorkspaceId)
       : null;
@@ -142,28 +159,28 @@ class WechatBotController extends EventEmitter {
       `对话: ${convTitle}`,
       `Agent: ${session ? '已连接' : '未连接'}`,
       `调试: ${this.state.debugMode ? '开' : '关'}`,
-    ].join('\n'));
+    ].join('\n'), ctx);
   }
 
-  private async cmdWorkspace(args: string): Promise<void> {
+  private async cmdWorkspace(args: string, ctx: ReplyCtx): Promise<void> {
     const workspaces = await workspaceJsonService.getAll();
 
     if (!args) {
       if (workspaces.length === 0) {
-        await this.reply('没有工作区。请在 Dogear 桌面端创建。');
+        await this.reply('没有工作区。请在 Dogear 桌面端创建。', ctx);
         return;
       }
       const lines = workspaces.map((ws, i) => {
         const marker = ws.id === this.state.activeWorkspaceId ? ' *' : '';
         return `${i + 1}. ${ws.name}${marker}`;
       });
-      await this.reply(['== 工作区列表 ==', ...lines, '', '用 /ws <编号> 切换'].join('\n'));
+      await this.reply(['== 工作区列表 ==', ...lines, '', '用 /ws <编号> 切换'].join('\n'), ctx);
       return;
     }
 
     const idx = parseInt(args, 10) - 1;
     if (isNaN(idx) || idx < 0 || idx >= workspaces.length) {
-      await this.reply(`无效编号。可选: 1-${workspaces.length}`);
+      await this.reply(`无效编号。可选: 1-${workspaces.length}`, ctx);
       return;
     }
 
@@ -178,18 +195,18 @@ class WechatBotController extends EventEmitter {
       workspaceId: target.id,
     });
 
-    await this.reply(`已切换到工作区: ${target.name}`);
+    await this.reply(`已切换到工作区: ${target.name}`, ctx);
   }
 
-  private async cmdListConversations(): Promise<void> {
+  private async cmdListConversations(ctx: ReplyCtx): Promise<void> {
     if (!this.state.activeWorkspaceId) {
-      await this.reply('请先选择工作区: /ws');
+      await this.reply('请先选择工作区: /ws', ctx);
       return;
     }
 
     const conversations = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
     if (conversations.length === 0) {
-      await this.reply('当前工作区没有对话。用 /new 新建。');
+      await this.reply('当前工作区没有对话。用 /new 新建。', ctx);
       return;
     }
 
@@ -199,24 +216,24 @@ class WechatBotController extends EventEmitter {
       return `${i + 1}. ${title}${marker}`;
     });
 
-    await this.reply(['== 对话列表 ==', ...lines, '', '用 /use <编号> 选择'].join('\n'));
+    await this.reply(['== 对话列表 ==', ...lines, '', '用 /use <编号> 选择'].join('\n'), ctx);
   }
 
-  private async cmdUseConversation(args: string): Promise<void> {
+  private async cmdUseConversation(args: string, ctx: ReplyCtx): Promise<void> {
     if (!this.state.activeWorkspaceId) {
-      await this.reply('请先选择工作区: /ws');
+      await this.reply('请先选择工作区: /ws', ctx);
       return;
     }
 
     if (!args) {
-      await this.reply('用法: /use <编号>');
+      await this.reply('用法: /use <编号>', ctx);
       return;
     }
 
     const conversations = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
     const idx = parseInt(args, 10) - 1;
     if (isNaN(idx) || idx < 0 || idx >= conversations.length) {
-      await this.reply(`无效编号。可选: 1-${conversations.length}`);
+      await this.reply(`无效编号。可选: 1-${conversations.length}`, ctx);
       return;
     }
 
@@ -229,12 +246,12 @@ class WechatBotController extends EventEmitter {
       conversationId: target.id,
     });
 
-    await this.reply(`已切换到对话: ${target.title || '未命名对话'}`);
+    await this.reply(`已切换到对话: ${target.title || '未命名对话'}`, ctx);
   }
 
-  private async cmdNewConversation(): Promise<void> {
+  private async cmdNewConversation(ctx: ReplyCtx): Promise<void> {
     if (!this.state.activeWorkspaceId) {
-      await this.reply('请先选择工作区: /ws');
+      await this.reply('请先选择工作区: /ws', ctx);
       return;
     }
 
@@ -243,12 +260,12 @@ class WechatBotController extends EventEmitter {
       workspaceId: this.state.activeWorkspaceId,
     });
 
-    await this.reply('正在创建新对话...');
+    await this.reply('正在创建新对话...', ctx);
   }
 
-  private async cmdStop(): Promise<void> {
+  private async cmdStop(ctx: ReplyCtx): Promise<void> {
     if (!this.state.activeSessionId) {
-      await this.reply('当前没有活跃的 Agent 会话');
+      await this.reply('当前没有活跃的 Agent 会话', ctx);
       return;
     }
 
@@ -257,21 +274,23 @@ class WechatBotController extends EventEmitter {
     if (session) {
       await session.interrupt();
       this.waitingForAgent = false;
-      await this.reply('已中断 Agent');
+      await this.reply('已中断 Agent', ctx);
     } else {
-      await this.reply('Agent 会话已不存在');
+      await this.reply('Agent 会话已不存在', ctx);
     }
   }
 
-  private async cmdToggleDebug(): Promise<void> {
+  private async cmdToggleDebug(ctx: ReplyCtx): Promise<void> {
     this.state.debugMode = !this.state.debugMode;
-    await this.reply(`调试模式: ${this.state.debugMode ? '已开启' : '已关闭'}`);
+    await this.reply(`调试模式: ${this.state.debugMode ? '已开启' : '已关闭'}`, ctx);
   }
 
   async handleAgentReply(text: string): Promise<void> {
     if (!this.waitingForAgent) return;
     this.waitingForAgent = false;
-    await this.reply(text);
+    if (this.lastReplyContext) {
+      await this.reply(text, this.lastReplyContext);
+    }
   }
 
   async handleAgentComplete(): Promise<void> {
@@ -281,7 +300,9 @@ class WechatBotController extends EventEmitter {
   async handlePermissionNotify(toolName: string, sessionId: string): Promise<void> {
     if (!this.state.debugMode) return;
     if (sessionId !== this.state.activeSessionId) return;
-    await this.reply(`[Agent 请求权限] 工具: ${toolName}\n请在桌面端确认`);
+    if (this.lastReplyContext) {
+      await this.reply(`[Agent 请求权限] 工具: ${toolName}\n请在桌面端确认`, this.lastReplyContext);
+    }
   }
 
   updateSessionId(sessionId: string | null): void {
@@ -301,12 +322,7 @@ class WechatBotController extends EventEmitter {
     }
   }
 
-  private async reply(text: string): Promise<void> {
-    if (!this.replyContext) {
-      log.warn('[bot] 没有回复上下文，无法发送');
-      return;
-    }
-
+  private async reply(text: string, ctx: ReplyCtx): Promise<void> {
     const token = wechatAuthService.getToken();
     if (!token) {
       log.warn('[bot] 未认证，无法回复');
@@ -325,13 +341,13 @@ class WechatBotController extends EventEmitter {
           token.botToken,
           token.baseUrl,
           {
-            contextToken: this.replyContext.contextToken,
-            toUserId: this.replyContext.senderId,
+            contextToken: ctx.contextToken,
+            toUserId: ctx.senderId,
             content: segment,
           },
         );
-      } catch (err: any) {
-        log.error(`[bot] 回复失败: ${err.message}`);
+      } catch (err: unknown) {
+        log.error(`[bot] 回复失败: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
   }
