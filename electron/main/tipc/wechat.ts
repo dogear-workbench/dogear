@@ -1,5 +1,6 @@
 // electron/main/tipc/wechat.ts
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
+import electron from 'electron';
 import { wechatAuthService } from '../services/wechat/wechat-auth-service.js';
 import { wechatMessageStore } from '../services/wechat/wechat-message-store.js';
 import { wechatPoller } from '../services/wechat/wechat-poller.js';
@@ -109,7 +110,12 @@ export const wechatRouter = {
         wechatBotController.removeListener('remoteAction', _remoteActionHandler);
       }
       _remoteActionHandler = (action: any) => {
-        handlers.wechatRemoteAction.send(action);
+        // 广播给所有窗口（主窗口需要处理工作区/对话切换，微信窗口不需要）
+        for (const win of electron.BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            getRendererHandlers<RendererHandlers>(win.webContents).wechatRemoteAction.send(action);
+          }
+        }
       };
       wechatBotController.on('remoteAction', _remoteActionHandler);
 

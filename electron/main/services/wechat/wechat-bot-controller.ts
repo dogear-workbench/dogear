@@ -98,24 +98,29 @@ class WechatBotController extends EventEmitter {
     }
   }
 
-  // 无 await，去掉 async，返回 void
+  // 直接通过 sessionManager 发消息给 Agent，不依赖渲染层转发
   private handleAgentMessage(text: string, ctx: ReplyCtx): void {
     if (!this.state.activeSessionId) {
-      // 需要回复，使用传入的 ctx
       this.reply('当前没有激活的对话。\n用 /ls 查看对话列表，/use <编号> 选择对话，或 /new 新建对话。', ctx).catch(
         (err: unknown) => log.error('[bot] 回复失败:', err),
       );
       return;
     }
 
-    this.emit('remoteAction', {
-      type: 'sendMessage',
-      sessionId: this.state.activeSessionId,
-      conversationId: this.state.activeConversationId,
-      content: text,
-    });
+    const sessionManager = getQueryBasedSessionManager();
+    const session = sessionManager.getSession(this.state.activeSessionId);
+    if (!session) {
+      this.reply('Agent 会话已断开，请重新选择对话: /use <编号>', ctx).catch(
+        (err: unknown) => log.error('[bot] 回复失败:', err),
+      );
+      return;
+    }
 
     this.waitingForAgent = true;
+    session.sendMessage(text).catch((err: unknown) => {
+      log.error('[bot] 发送消息给 Agent 失败:', err);
+      this.waitingForAgent = false;
+    });
   }
 
   private async cmdHelp(ctx: ReplyCtx): Promise<void> {
