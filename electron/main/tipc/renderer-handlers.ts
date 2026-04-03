@@ -132,4 +132,46 @@ export type RendererHandlers = {
     agentId: string;
     message: ExtendedSessionMessage;
   }) => void;
+
+  // === 微信 iLink ===
+
+  // 收到新微信消息
+  wechatNewMessage: (data: {
+    messages: Array<{
+      id: string;
+      contextToken: string;
+      senderId: string;
+      senderName: string;
+      content: string;
+      messageType: string;
+      timestamp: number;
+      isGroup: boolean;
+      groupId?: string;
+      groupName?: string;
+      isOutgoing: boolean;
+    }>;
+  }) => void;
+
+  // 微信认证状态变化
+  wechatAuthStatus: (data: {
+    state: string;
+    botName?: string;
+    errorMessage?: string;
+  }) => void;
+
+  // 微信连接/轮询状态变化
+  wechatConnectionStatus: (data: {
+    polling: boolean;
+    lastPollAt?: string;
+    errorMessage?: string;
+  }) => void;
+
+  // 微信远程操作指令（Bot Controller → 渲染层执行）
+  wechatRemoteAction: (data: {
+    type: 'switchWorkspace' | 'switchConversation' | 'newConversation' | 'sendMessage';
+    workspaceId?: string;
+    conversationId?: string;
+    sessionId?: string;
+    content?: string;
+  }) => void;
 };
