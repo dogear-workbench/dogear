@@ -1482,10 +1482,12 @@ export class QueryBasedSession extends EventEmitter {
  */
 export class QueryBasedSessionManager extends EventEmitter {
   private sessions: Map<string, QueryBasedSession> = new Map();
+  // 引用计数：记录每个 session 有多少个持有者（渲染层标签页 + bot 各算一个）
+  private refCounts: Map<string, number> = new Map();
   private logger = mainLogger.child('query-session-manager');
 
   /**
-   * 创建新会话
+   * 创建新会话，初始引用计数为 1（创建者持有）
    */
   createSession(config: QueryBasedSessionConfig): QueryBasedSession {
     const sessionId = uuidv4();
@@ -1511,6 +1513,7 @@ export class QueryBasedSessionManager extends EventEmitter {
     });
 
     this.sessions.set(sessionId, session);
+    this.refCounts.set(sessionId, 1);
 
     return session;
   }
@@ -1523,13 +1526,51 @@ export class QueryBasedSessionManager extends EventEmitter {
   }
 
   /**
-   * 关闭会话
+   * 增加引用计数（新的持有者进入）
+   * @returns 当前引用计数，session 不存在返回 0
+   */
+  retain(sessionId: string): number {
+    const count = this.refCounts.get(sessionId);
+    if (count === undefined) return 0;
+    const next = count + 1;
+    this.refCounts.set(sessionId, next);
+    this.logger.info(`retain session ${sessionId.substring(0, 8)}: refCount=${next}`);
+    return next;
+  }
+
+  /**
+   * 减少引用计数（持有者离开）
+   * 引用计数归零时自动销毁 session
+   * @returns 剩余引用计数
+   */
+  release(sessionId: string): number {
+    const count = this.refCounts.get(sessionId);
+    if (count === undefined) return 0;
+    const next = count - 1;
+    if (next <= 0) {
+      // 最后一个持有者离开，真正销毁
+      this.logger.info(`release session ${sessionId.substring(0, 8)}: refCount=0, closing`);
+      this._destroySession(sessionId);
+      return 0;
+    }
+    this.refCounts.set(sessionId, next);
+    this.logger.info(`release session ${sessionId.substring(0, 8)}: refCount=${next}`);
+    return next;
+  }
+
+  /**
+   * 直接关闭会话（忽略引用计数，用于强制清理）
    */
   closeSession(sessionId: string): void {
+    this._destroySession(sessionId);
+  }
+
+  private _destroySession(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
       session.close();
       this.sessions.delete(sessionId);
+      this.refCounts.delete(sessionId);
       this.logger.info('基于 Query 的会话已关闭:', sessionId.substring(0, 8));
     }
   }
@@ -1541,6 +1582,7 @@ export class QueryBasedSessionManager extends EventEmitter {
     this.logger.info('关闭所有基于 Query 的会话...');
     this.sessions.forEach(session => session.close());
     this.sessions.clear();
+    this.refCounts.clear();
   }
 
   /**
@@ -1548,6 +1590,13 @@ export class QueryBasedSessionManager extends EventEmitter {
    */
   getActiveCount(): number {
     return this.sessions.size;
+  }
+
+  /**
+   * 获取会话引用计数（调试用）
+   */
+  getRefCount(sessionId: string): number {
+    return this.refCounts.get(sessionId) ?? 0;
   }
 }
 

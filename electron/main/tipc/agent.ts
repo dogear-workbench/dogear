@@ -146,6 +146,13 @@ export const agentRouter = {
       return { success: true };
     }),
 
+  openWechatWindow: t.procedure
+    .action(async () => {
+      const { createWechatWindow } = await import('../index.js');
+      createWechatWindow();
+      return { success: true };
+    }),
+
   // ── 书籍分析 v2 ──────────────────────────────────────────
   analyzeBook: t.procedure
     .input<{ bookId: string }>()
@@ -688,7 +695,8 @@ export const agentRouter = {
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
-        sessionManager.closeSession(input.sessionId);
+        // 使用 release 而非直接 close：引用计数归零才真正销毁（支持多持有者共享 session）
+        sessionManager.release(input.sessionId);
         return { success: true };
       } catch (error) {
         console.error('关闭基于 Query 的会话失败:', error);

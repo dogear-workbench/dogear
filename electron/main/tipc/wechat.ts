@@ -17,8 +17,8 @@ let _sessionMessageHandler: ((sessionId: string, message: ExtendedSessionMessage
 let _sessionCompleteHandler: ((sessionId: string, result: any) => Promise<void>) | null = null;
 let _remoteActionHandler: ((action: any) => void) | null = null;
 
-// 流式文本 delta 缓冲区：积累当次 query 的 assistant 文本，完成时一次性发送
-let _pendingAgentText = '';
+// 流式文本 delta 缓冲区：按 sessionId 隔离，避免多 session 并行时全局变量竞争
+const _pendingAgentTexts: Map<string, string> = new Map();
 
 export const wechatRouter = {
   // === 认证 ===
@@ -76,7 +76,7 @@ export const wechatRouter = {
         sessionManager.removeListener('sessionComplete', _sessionCompleteHandler);
         _sessionCompleteHandler = null;
       }
-      _pendingAgentText = '';
+      _pendingAgentTexts.clear();
       // 精确移除 remoteAction 监听器
       if (_remoteActionHandler) {
         wechatBotController.removeListener('remoteAction', _remoteActionHandler);
@@ -125,17 +125,17 @@ export const wechatRouter = {
       if (_sessionMessageHandler) sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
       if (_sessionCompleteHandler) sessionManager.removeListener('sessionComplete', _sessionCompleteHandler);
 
-      // 重置缓冲区
-      _pendingAgentText = '';
+      // 重置缓冲区（清空所有 session 的积累文本）
+      _pendingAgentTexts.clear();
 
       // 收集流式文本 delta，不立即发送（流式输出每个 token 都会触发一次）
       _sessionMessageHandler = (sessionId: string, message: ExtendedSessionMessage) => {
         const botState = wechatBotController.getState();
         if (sessionId !== botState.activeSessionId) return;
 
-        // 只积累 assistant 的文本 delta（type='text' 是流式 token，content 是当前 delta 片段）
+        // 按 sessionId 隔离积累，避免多 session 并行时竞争
         if (message.type === 'text' && message.content) {
-          _pendingAgentText += message.content;
+          _pendingAgentTexts.set(sessionId, (_pendingAgentTexts.get(sessionId) ?? '') + message.content);
         }
 
         // debug 模式下权限请求通知微信
@@ -144,13 +144,13 @@ export const wechatRouter = {
         }
       };
 
-      // 会话完成时，将积累的文本一次性发送给微信，然后清空缓冲区
+      // 会话完成时，将积累的文本一次性发送给微信，然后清空该 session 的缓冲区
       _sessionCompleteHandler = async (sessionId: string, _result: any) => {
         const botState = wechatBotController.getState();
         if (sessionId !== botState.activeSessionId) return;
 
-        const text = _pendingAgentText.trim();
-        _pendingAgentText = '';
+        const text = (_pendingAgentTexts.get(sessionId) ?? '').trim();
+        _pendingAgentTexts.delete(sessionId);
 
         if (text) {
           await wechatBotController.handleAgentReply(text);
@@ -218,7 +218,7 @@ export const wechatRouter = {
         sessionManager.removeListener('sessionComplete', _sessionCompleteHandler);
         _sessionCompleteHandler = null;
       }
-      _pendingAgentText = '';
+      _pendingAgentTexts.clear();
       // 精确移除 remoteAction 监听器
       if (_remoteActionHandler) {
         wechatBotController.removeListener('remoteAction', _remoteActionHandler);
@@ -321,6 +321,22 @@ export const wechatRouter = {
     .input<{ sessionId: string | null; conversationId: string | null }>()
     .action(async ({ input }) => {
       try {
+        const sessionManager = getQueryBasedSessionManager();
+        const prevSessionId = wechatBotController.getState().activeSessionId;
+
+        // Bot 离开旧 session：release
+        if (prevSessionId && prevSessionId !== input.sessionId) {
+          sessionManager.release(prevSessionId);
+        }
+
+        // Bot 进入新 session：retain（渲染层创建时初始计数已为 1，这里再 +1）
+        if (input.sessionId && input.sessionId !== prevSessionId) {
+          sessionManager.retain(input.sessionId);
+          // 自动切换为 bypassPermissions，减少用户确认
+          const session = sessionManager.getSession(input.sessionId);
+          if (session) await session.setPermissionMode('bypassPermissions');
+        }
+
         wechatBotController.updateSessionId(input.sessionId);
         wechatBotController.updateConversationId(input.conversationId);
         return { data: { success: true } };
