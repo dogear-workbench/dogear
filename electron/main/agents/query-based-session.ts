@@ -101,6 +101,10 @@ export class QueryBasedSession extends EventEmitter {
   // 缓存当前权限模式（start 时从 settings 加载）
   private currentPermissionMode: string = 'default';
 
+  // 当前 turn 的进行中消息快照（用于晚加入的渲染层重播）
+  // turn 开始时积累，turn 完成（result 消息）时清空
+  private currentTurnMessages: ExtendedSessionMessage[] = [];
+
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
     this.sessionId = sessionId;
@@ -683,6 +687,10 @@ export class QueryBasedSession extends EventEmitter {
             if (message.type !== 'stream_event') {
               this.logger.info('✅ 转换结果:', JSON.stringify(extendedMessage));
             }
+            // 缓存当前 turn 的消息（重播消息不缓存，历史由 loadHistory 负责）
+            if (!extendedMessage.isReplay) {
+              this.currentTurnMessages.push(extendedMessage);
+            }
             this.emit('message', extendedMessage);
           }
         }
@@ -697,6 +705,7 @@ export class QueryBasedSession extends EventEmitter {
           });
 
           if (message.subtype === 'success') {
+            this.currentTurnMessages = [];  // turn 完成，清空快照
             this.emit('complete', message);
             this.status = SessionStatus.IDLE;
           } else {
@@ -707,6 +716,7 @@ export class QueryBasedSession extends EventEmitter {
             if (!errorMsg.is_error && !hasErrors) {
               // 用户中断：不作为错误处理，正常结束
               this.logger.info('用户中断，正常结束会话');
+              this.currentTurnMessages = [];  // 中断也清空快照
               this.emit('complete', message);
               this.status = SessionStatus.IDLE;
             } else {
@@ -1409,6 +1419,13 @@ export class QueryBasedSession extends EventEmitter {
     this.emit('permissionModeChanged', { mode });
   }
 
+  /**
+   * 获取当前 turn 的进行中消息快照（晚进来的渲染层用于重播）
+   */
+  getCurrentTurnSnapshot(): ExtendedSessionMessage[] {
+    return [...this.currentTurnMessages];
+  }
+
   getPermissionMode(): string {
     return this.currentPermissionMode;
   }
@@ -1480,6 +1497,9 @@ export class QueryBasedSession extends EventEmitter {
 /**
  * 基于 Query 的会话管理器
  */
+// 广播函数类型：将 session 事件发给所有渲染层窗口
+type SessionBroadcaster = (sessionId: string, event: 'message' | 'complete' | 'error', payload: unknown) => void;
+
 export class QueryBasedSessionManager extends EventEmitter {
   private sessions: Map<string, QueryBasedSession> = new Map();
   // 引用计数：记录每个 session 有多少个持有者（渲染层标签页 + bot 各算一个）
@@ -1488,7 +1508,16 @@ export class QueryBasedSessionManager extends EventEmitter {
   private cleanupCallbacks: Map<string, Array<() => void>> = new Map();
   // conversationId → sessionId 映射（bot 绑定时注册，渲染层打开时复用）
   private conversationSessionMap: Map<string, string> = new Map();
+  // 广播函数：由 agent.ts 初始化时注册，负责把事件发给所有渲染层
+  private broadcaster: SessionBroadcaster | null = null;
   private logger = mainLogger.child('query-session-manager');
+
+  /**
+   * 注册广播函数（应用启动时由 agent.ts 调用一次）
+   */
+  setBroadcaster(fn: SessionBroadcaster): void {
+    this.broadcaster = fn;
+  }
 
   /**
    * 创建新会话，初始引用计数为 1（创建者持有）
@@ -1499,21 +1528,25 @@ export class QueryBasedSessionManager extends EventEmitter {
 
     const session = new QueryBasedSession(sessionId, config);
 
-    // 转发会话事件
+    // 转发会话事件到 sessionManager（内部路由）+ 广播到渲染层
     session.on('message', (message) => {
       this.emit('sessionMessage', sessionId, message);
+      this.broadcaster?.(sessionId, 'message', message);
     });
 
     session.on('tool_use', (message) => {
       this.emit('sessionMessage', sessionId, message);
+      this.broadcaster?.(sessionId, 'message', message);
     });
 
     session.on('error', (message) => {
       this.emit('sessionError', sessionId, message);
+      this.broadcaster?.(sessionId, 'error', message);
     });
 
     session.on('complete', (result) => {
       this.emit('sessionComplete', sessionId, result);
+      this.broadcaster?.(sessionId, 'complete', result);
     });
 
     this.sessions.set(sessionId, session);

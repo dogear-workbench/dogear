@@ -60,6 +60,24 @@ async function getSdkSessionsDir(projectPath: string): Promise<string> {
 
 const t = tipc.create();
 
+// 模块加载时注册广播函数：所有 session 的消息统一广播给所有渲染层窗口
+// 放在模块级确保 bot 直接创建的 session 也能广播（不依赖 tipc createQueryBasedSession 路径）
+getQueryBasedSessionManager().setBroadcaster((sessionId, event, payload) => {
+  for (const win of electron.BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      const h = getRendererHandlers<RendererHandlers>(win.webContents);
+      if (event === 'message') {
+        h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
+      } else if (event === 'complete') {
+        h.queryBasedSessionComplete.send({ sessionId, result: payload });
+      } else if (event === 'error') {
+        h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
+      }
+    } catch { /* 窗口已销毁，忽略 */ }
+  }
+});
+
 export const agentRouter = {
   // ── 旧版 Agent 任务 ──────────────────────────────────────
   submitTask: t.procedure
@@ -388,13 +406,26 @@ export const agentRouter = {
         const sessionManager = getQueryBasedSessionManager();
 
         // 如果这个 conversationId 已有 bot 持有的存活 session，直接复用（retain +1）
-        // 渲染层打开时会订阅广播事件，不需要新建 session
         if (input.conversationId && !input.forkSession) {
           const existingSessionId = sessionManager.getSessionIdByConversation(input.conversationId);
           if (existingSessionId) {
             sessionManager.retain(existingSessionId);
             const existing = sessionManager.getSession(existingSessionId)!;
             console.log('复用已有 session（bot 持有）:', existingSessionId.substring(0, 8));
+
+            // 把当前 turn 进行中的消息重播给调用者窗口（避免晚打开的渲染层丢失 stream）
+            const snapshot = existing.getCurrentTurnSnapshot();
+            if (snapshot.length > 0) {
+              // 稍微延迟，确保渲染层的 useSessionMessages 监听器已注册
+              setTimeout(() => {
+                if (context.sender.isDestroyed()) return;
+                const h = getRendererHandlers<RendererHandlers>(context.sender);
+                for (const msg of snapshot) {
+                  try { h.queryBasedSessionMessage.send({ sessionId: existingSessionId, message: msg }); } catch { /* 忽略 */ }
+                }
+              }, 100);
+            }
+
             return { sessionId: existingSessionId, permissionMode: existing.getPermissionMode() };
           }
         }
@@ -606,8 +637,8 @@ export const agentRouter = {
           broadcastToAll(h => h.subAgentCompleted.send(data));
         });
 
-        // 广播 session 事件给所有存活窗口（而非绑定单个 sender）
-        // 渲染层按 sessionId 自行过滤，保证多窗口/bot共享同一session时均可收到
+        // session 事件广播由模块级 broadcaster 统一处理（见文件顶部 setBroadcaster）
+        // 这里只需要注册 session 本身的回调（capabilities/permission 等），不再重复注册 message 广播
         const thisSessionId = session.getSessionId();
         const broadcastToAll = (fn: (h: ReturnType<typeof getRendererHandlers<RendererHandlers>>) => void) => {
           for (const win of electron.BrowserWindow.getAllWindows()) {
@@ -616,30 +647,6 @@ export const agentRouter = {
             }
           }
         };
-
-        const onSessionMessage = (sessionId: string, message: ExtendedSessionMessage) => {
-          if (sessionId !== thisSessionId) return;
-          broadcastToAll(h => h.queryBasedSessionMessage.send({ sessionId, message }));
-        };
-        const onSessionComplete = (sessionId: string, result: unknown) => {
-          if (sessionId !== thisSessionId) return;
-          broadcastToAll(h => h.queryBasedSessionComplete.send({ sessionId, result }));
-        };
-        const onSessionError = (sessionId: string, message: ExtendedSessionMessage) => {
-          if (sessionId !== thisSessionId) return;
-          broadcastToAll(h => h.queryBasedSessionMessage.send({ sessionId, message }));
-        };
-
-        sessionManager.on('sessionMessage', onSessionMessage);
-        sessionManager.on('sessionComplete', onSessionComplete);
-        sessionManager.on('sessionError', onSessionError);
-
-        // session 真正销毁时清理这些监听器（避免内存泄漏）
-        sessionManager.registerCleanup(thisSessionId, () => {
-          sessionManager.removeListener('sessionMessage', onSessionMessage);
-          sessionManager.removeListener('sessionComplete', onSessionComplete);
-          sessionManager.removeListener('sessionError', onSessionError);
-        });
 
         // 会话创建后主动推送命令列表，避免用户需等到第一轮对话才能使用斜杠命令
         setTimeout(async () => {
