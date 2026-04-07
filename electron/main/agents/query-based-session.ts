@@ -1484,6 +1484,10 @@ export class QueryBasedSessionManager extends EventEmitter {
   private sessions: Map<string, QueryBasedSession> = new Map();
   // 引用计数：记录每个 session 有多少个持有者（渲染层标签页 + bot 各算一个）
   private refCounts: Map<string, number> = new Map();
+  // 每个 session 关联的外部清理函数（如 agent.ts 注册的 sessionMessage 监听器）
+  private cleanupCallbacks: Map<string, Array<() => void>> = new Map();
+  // conversationId → sessionId 映射（bot 绑定时注册，渲染层打开时复用）
+  private conversationSessionMap: Map<string, string> = new Map();
   private logger = mainLogger.child('query-session-manager');
 
   /**
@@ -1565,9 +1569,55 @@ export class QueryBasedSessionManager extends EventEmitter {
     this._destroySession(sessionId);
   }
 
+  /**
+   * 将 conversationId 与 sessionId 绑定（bot syncSession 时调用）
+   * 渲染层打开同一对话时可以复用已有 session 而不新建
+   */
+  bindConversation(conversationId: string, sessionId: string): void {
+    this.conversationSessionMap.set(conversationId, sessionId);
+  }
+
+  /**
+   * 解除 conversationId 绑定（session 销毁或 bot 切走时调用）
+   */
+  unbindConversation(conversationId: string): void {
+    this.conversationSessionMap.delete(conversationId);
+  }
+
+  /**
+   * 查找 conversationId 当前绑定的 sessionId（不存在返回 undefined）
+   */
+  getSessionIdByConversation(conversationId: string): string | undefined {
+    const sessionId = this.conversationSessionMap.get(conversationId);
+    // 确认 session 仍然存活
+    if (sessionId && this.sessions.has(sessionId)) return sessionId;
+    if (sessionId) this.conversationSessionMap.delete(conversationId); // 清理失效映射
+    return undefined;
+  }
+
+  /**
+   * 注册 session 销毁时的清理回调（如外部注册的事件监听器）
+   */
+  registerCleanup(sessionId: string, fn: () => void): void {
+    const list = this.cleanupCallbacks.get(sessionId) ?? [];
+    list.push(fn);
+    this.cleanupCallbacks.set(sessionId, list);
+  }
+
   private _destroySession(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (session) {
+      // 先执行外部注册的清理回调
+      const cleanups = this.cleanupCallbacks.get(sessionId) ?? [];
+      for (const fn of cleanups) {
+        try { fn(); } catch { /* 忽略清理错误 */ }
+      }
+      this.cleanupCallbacks.delete(sessionId);
+
+      // 清理 conversationId 映射（如果该 session 还在映射中）
+      for (const [convId, sid] of this.conversationSessionMap) {
+        if (sid === sessionId) this.conversationSessionMap.delete(convId);
+      }
       session.close();
       this.sessions.delete(sessionId);
       this.refCounts.delete(sessionId);
@@ -1580,6 +1630,11 @@ export class QueryBasedSessionManager extends EventEmitter {
    */
   closeAll(): void {
     this.logger.info('关闭所有基于 Query 的会话...');
+    for (const [_sessionId, cleanups] of this.cleanupCallbacks) {
+      for (const fn of cleanups) { try { fn(); } catch { /* 忽略 */ } }
+    }
+    this.cleanupCallbacks.clear();
+    this.conversationSessionMap.clear();
     this.sessions.forEach(session => session.close());
     this.sessions.clear();
     this.refCounts.clear();

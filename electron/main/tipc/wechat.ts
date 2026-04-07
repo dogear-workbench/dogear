@@ -324,14 +324,18 @@ export const wechatRouter = {
         const sessionManager = getQueryBasedSessionManager();
         const prevSessionId = wechatBotController.getState().activeSessionId;
 
-        // Bot 离开旧 session：release
+        const prevConvId = wechatBotController.getState().activeConversationId;
+
+        // Bot 离开旧 session：release + 解除 conversation 绑定
         if (prevSessionId && prevSessionId !== input.sessionId) {
           sessionManager.release(prevSessionId);
+          if (prevConvId) sessionManager.unbindConversation(prevConvId);
         }
 
-        // Bot 进入新 session：retain（渲染层创建时初始计数已为 1，这里再 +1）
+        // Bot 进入新 session：retain + 绑定 conversation（渲染层打开同对话时可复用）
         if (input.sessionId && input.sessionId !== prevSessionId) {
           sessionManager.retain(input.sessionId);
+          if (input.conversationId) sessionManager.bindConversation(input.conversationId, input.sessionId);
           // 自动切换为 bypassPermissions，减少用户确认
           const session = sessionManager.getSession(input.sessionId);
           if (session) await session.setPermissionMode('bypassPermissions');

@@ -386,7 +386,18 @@ export const agentRouter = {
     .action(async ({ input, context }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
-        const handlers = getRendererHandlers<RendererHandlers>(context.sender);
+
+        // 如果这个 conversationId 已有 bot 持有的存活 session，直接复用（retain +1）
+        // 渲染层打开时会订阅广播事件，不需要新建 session
+        if (input.conversationId && !input.forkSession) {
+          const existingSessionId = sessionManager.getSessionIdByConversation(input.conversationId);
+          if (existingSessionId) {
+            sessionManager.retain(existingSessionId);
+            const existing = sessionManager.getSession(existingSessionId)!;
+            console.log('复用已有 session（bot 持有）:', existingSessionId.substring(0, 8));
+            return { sessionId: existingSessionId, permissionMode: existing.getPermissionMode() };
+          }
+        }
 
         // 获取工作区路径：优先用前端传入的 workspaceId，fallback 到 getDefault
         let workspacePath = '';
@@ -504,72 +515,72 @@ export const agentRouter = {
             }
           }
 
-          // 发送到前端（通过 webContents.send，因为 tipc 事件不包含此自定义事件）
-          context.sender.send('agent:queryBasedSessionInit', {
-            sessionId: session.getSessionId(),
-            sdkSessionId: data.session_id,
-          });
+          // 广播给所有存活窗口（session 可能被多个窗口共享）
+          for (const win of electron.BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              try {
+                win.webContents.send('agent:queryBasedSessionInit', {
+                  sessionId: session.getSessionId(),
+                  sdkSessionId: data.session_id,
+                });
+              } catch { /* 窗口已销毁，忽略 */ }
+            }
+          }
         });
 
         // 注册会话能力事件转发（SDK init 消息触发时）
         session.on('session_capabilities', async (data: { slashCommands: string[]; tools: string[]; skills: string[]; mcpServers: Array<{ name: string; status: string }> }) => {
-          // 调用 supportedCommands() 获取完整命令描述
           const sdkCommands = await session.getSupportedCommands();
-          handlers.sessionCapabilities.send({
+          broadcastToAll(h => h.sessionCapabilities.send({
             sessionId: session.getSessionId(),
             sdkCommands,
             tools: data.tools,
             skills: data.skills,
             mcpServers: data.mcpServers,
-          });
+          }));
         });
 
-        // 注册权限请求事件转发（canUseTool 回调触发时）
+        // 注册权限请求事件转发
         session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown; decisionReason?: string }) => {
-          handlers.permissionRequest.send({
+          broadcastToAll(h => h.permissionRequest.send({
             sessionId: session.getSessionId(),
             requestId: data.requestId,
             toolName: data.toolName,
             toolInput: data.toolInput,
             decisionReason: data.decisionReason,
-          });
+          }));
         });
 
-        // 注册 AskUserQuestion 事件转发（SDK AskUserQuestion 工具触发时）
+        // 注册 AskUserQuestion 事件转发
         session.on('askUserQuestion', (data: { requestId: string; questions: any[] }) => {
-          handlers.askUserQuestion.send({
+          broadcastToAll(h => h.askUserQuestion.send({
             sessionId: session.getSessionId(),
             requestId: data.requestId,
             questions: data.questions,
-          });
+          }));
         });
 
         // 注册 Notification hook 事件转发
         session.on('notification', (data: { title?: string; message: string; notificationType: string }) => {
-          // 通过 tipc 发送到前端
-          handlers.agentNotification.send({
+          broadcastToAll(h => h.agentNotification.send({
             sessionId: session.getSessionId(),
             title: data.title,
             message: data.message,
             notificationType: data.notificationType,
-          });
-
-          // 通过 Electron Notification API 发送系统桌面通知
+          }));
+          // 系统桌面通知保留
           const { Notification: ElectronNotification } = electron;
           if (ElectronNotification.isSupported()) {
-            new ElectronNotification({
-              title: data.title || 'Dogear',
-              body: data.message,
-            }).show();
+            new ElectronNotification({ title: data.title || 'Dogear', body: data.message }).show();
           }
         });
 
-        // 注册权限模式变更事件转发（后端→前端双向同步）
+        // 注册权限模式变更事件转发
         session.on('permissionModeChanged', (data: { mode: string }) => {
-          handlers.permissionModeChanged.send({
+          broadcastToAll(h => h.permissionModeChanged.send({
             sessionId: session.getSessionId(),
             mode: data.mode,
-          });
+          }));
         });
 
         // 注册子代理开始事件转发
@@ -579,7 +590,7 @@ export const agentRouter = {
           description: string;
           subagentType?: string;
         }) => {
-          handlers.subAgentStarted.send(data);
+          broadcastToAll(h => h.subAgentStarted.send(data));
         });
 
         // 注册子代理完成事件转发
@@ -592,28 +603,42 @@ export const agentRouter = {
           toolUseCount?: number;
           resultText?: string;
         }) => {
-          handlers.subAgentCompleted.send(data);
+          broadcastToAll(h => h.subAgentCompleted.send(data));
         });
 
-        // 注册会话消息监听器
-        sessionManager.on('sessionMessage', (sessionId: string, message: ExtendedSessionMessage) => {
-          if (sessionId === session.getSessionId()) {
-            handlers.queryBasedSessionMessage.send({ sessionId, message });
+        // 广播 session 事件给所有存活窗口（而非绑定单个 sender）
+        // 渲染层按 sessionId 自行过滤，保证多窗口/bot共享同一session时均可收到
+        const thisSessionId = session.getSessionId();
+        const broadcastToAll = (fn: (h: ReturnType<typeof getRendererHandlers<RendererHandlers>>) => void) => {
+          for (const win of electron.BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              try { fn(getRendererHandlers<RendererHandlers>(win.webContents)); } catch { /* 窗口已销毁，忽略 */ }
+            }
           }
-        });
+        };
 
-        // 注册会话完成监听器
-        sessionManager.on('sessionComplete', (sessionId: string, result: unknown) => {
-          if (sessionId === session.getSessionId()) {
-            handlers.queryBasedSessionComplete.send({ sessionId, result });
-          }
-        });
+        const onSessionMessage = (sessionId: string, message: ExtendedSessionMessage) => {
+          if (sessionId !== thisSessionId) return;
+          broadcastToAll(h => h.queryBasedSessionMessage.send({ sessionId, message }));
+        };
+        const onSessionComplete = (sessionId: string, result: unknown) => {
+          if (sessionId !== thisSessionId) return;
+          broadcastToAll(h => h.queryBasedSessionComplete.send({ sessionId, result }));
+        };
+        const onSessionError = (sessionId: string, message: ExtendedSessionMessage) => {
+          if (sessionId !== thisSessionId) return;
+          broadcastToAll(h => h.queryBasedSessionMessage.send({ sessionId, message }));
+        };
 
-        // 注册会话错误监听器
-        sessionManager.on('sessionError', (sessionId: string, message: ExtendedSessionMessage) => {
-          if (sessionId === session.getSessionId()) {
-            handlers.queryBasedSessionMessage.send({ sessionId, message });
-          }
+        sessionManager.on('sessionMessage', onSessionMessage);
+        sessionManager.on('sessionComplete', onSessionComplete);
+        sessionManager.on('sessionError', onSessionError);
+
+        // session 真正销毁时清理这些监听器（避免内存泄漏）
+        sessionManager.registerCleanup(thisSessionId, () => {
+          sessionManager.removeListener('sessionMessage', onSessionMessage);
+          sessionManager.removeListener('sessionComplete', onSessionComplete);
+          sessionManager.removeListener('sessionError', onSessionError);
         });
 
         // 会话创建后主动推送命令列表，避免用户需等到第一轮对话才能使用斜杠命令
@@ -621,13 +646,13 @@ export const agentRouter = {
           try {
             const sdkCommands = await session.getSupportedCommands();
             if (sdkCommands.length > 0) {
-              handlers.sessionCapabilities.send({
+              broadcastToAll(h => h.sessionCapabilities.send({
                 sessionId: session.getSessionId(),
                 sdkCommands,
-                tools: [],   // init 消息到达后会更新完整信息
+                tools: [],
                 skills: [],
                 mcpServers: [],
-              });
+              }));
             }
           } catch (e) {
             console.warn('主动获取命令列表失败（会话初始化中）:', e);
