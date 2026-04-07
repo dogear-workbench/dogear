@@ -139,7 +139,14 @@ export default function Home() {
           }
           break;
         case 'newConversation':
-          await convStore.newConversation();
+          // bot 已在主进程创建对话和 session，渲染层只需刷新并打开 tab
+          if (data.conversationId) {
+            await convStore.loadConversations();
+            const newConv = useConversationStore.getState().conversations.find(
+              (c: any) => c.id === data.conversationId,
+            );
+            if (newConv) convStore.selectConversation(newConv);
+          }
           break;
         case 'sendMessage':
           // 消息由主进程 tipc 直接转发给 Agent，渲染层不重复处理

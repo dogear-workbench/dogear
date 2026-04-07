@@ -12,6 +12,7 @@ import { wechatAuthService } from './wechat-auth-service.js';
 import * as workspaceJsonService from '../../services/workspace-json-service.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { getQueryBasedSessionManager } from '../../agents/query-based-session.js';
+import type { QueryBasedSessionConfig } from '../../agents/query-based-session.js';
 import { stripMarkdownForWechat } from './markdown-filter.js';
 import { EventEmitter } from 'events';
 
@@ -230,7 +231,6 @@ class WechatBotController extends EventEmitter {
       await this.reply('请先选择工作区: /ws', ctx);
       return;
     }
-
     if (!args) {
       await this.reply('用法: /use <编号>', ctx);
       return;
@@ -244,8 +244,9 @@ class WechatBotController extends EventEmitter {
     }
 
     const target = conversations[idx];
-    this.state.activeConversationId = target.id;
+    await this.switchBotSession(target.id, target.sdkSessionId || undefined);
 
+    // 通知渲染层打开对应 tab（仅用于展示，不创建新 session）
     this.emit('remoteAction', {
       type: 'switchConversation',
       workspaceId: this.state.activeWorkspaceId,
@@ -261,12 +262,71 @@ class WechatBotController extends EventEmitter {
       return;
     }
 
+    // 在服务层创建新对话记录
+    const newConvId = await conversationService.create(this.state.activeWorkspaceId);
+    await this.switchBotSession(newConvId, undefined);
+
+    // 通知渲染层打开新对话 tab
     this.emit('remoteAction', {
       type: 'newConversation',
       workspaceId: this.state.activeWorkspaceId,
+      conversationId: newConvId,
     });
 
-    await this.reply('正在创建新对话...', ctx);
+    await this.reply('已创建新对话', ctx);
+  }
+
+  /**
+   * Bot 在主进程切换/创建 session，独立于渲染层
+   * 释放旧 session（release），创建新 session（初始计数 1，bot 持有）
+   */
+  private async switchBotSession(conversationId: string, sdkSessionId?: string): Promise<void> {
+    const sessionManager = getQueryBasedSessionManager();
+
+    // 释放旧 session
+    if (this.state.activeSessionId) {
+      if (this.state.activeConversationId) {
+        sessionManager.unbindConversation(this.state.activeConversationId);
+      }
+      sessionManager.release(this.state.activeSessionId);
+    }
+
+    // 获取工作区路径
+    const workspace = this.state.activeWorkspaceId
+      ? await workspaceJsonService.getById(this.state.activeWorkspaceId)
+      : null;
+    const workspacePath = workspace?.path ?? '';
+
+    // 创建新 session（主进程直接创建，不经过 tipc）
+    const config: QueryBasedSessionConfig = {
+      allowedTools: ['Read', 'Glob', 'Grep'],
+      workspacePath,
+      enableSkills: true,
+      resume: sdkSessionId,
+    };
+    const session = sessionManager.createSession(config);
+    await session.start();
+    await session.setPermissionMode('bypassPermissions');
+
+    // 监听 session_init 保存 sdk_session_id 到数据库
+    session.once('session_init', async (data: { session_id: string }) => {
+      try {
+        await conversationService.updateSdkSessionId(
+          this.state.activeWorkspaceId!,
+          conversationId,
+          data.session_id,
+        );
+      } catch (err) {
+        log.warn('[bot] 保存 sdk_session_id 失败:', err);
+      }
+    });
+
+    const newSessionId = session.getSessionId();
+    this.state.activeSessionId = newSessionId;
+    this.state.activeConversationId = conversationId;
+    sessionManager.bindConversation(conversationId, newSessionId);
+
+    log.info(`[bot] 切换到 session: ${newSessionId.slice(0, 8)}, conv: ${conversationId.slice(0, 8)}`);
   }
 
   private async cmdStop(ctx: ReplyCtx): Promise<void> {
