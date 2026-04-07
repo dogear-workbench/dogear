@@ -13,6 +13,7 @@ import { settingsRouter } from './settings.js';
 import { logRouter } from './log.js';
 import { claudeConfigRouter } from './claude-config.js';
 import { stockRouter } from './stock.js';
+import { wechatRouter } from './wechat.js';
 
 export const router = {
   ...dbRouter,
@@ -28,6 +29,7 @@ export const router = {
   ...logRouter,
   ...claudeConfigRouter,
   ...stockRouter,
+  ...wechatRouter,
 };
 
 export type Router = typeof router;

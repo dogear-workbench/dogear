@@ -219,7 +219,11 @@ export function ToolBlock({
 
   return (
     <CollapsibleBlock
-      icon={<span className="text-sm">{icon}</span>}
+      icon={
+        <span className="flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-blue-50 text-xs">
+          {icon}
+        </span>
+      }
       title={titleText}
       titleClassName={cn(
         actualStatus === 'error' && 'text-red-600',

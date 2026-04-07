@@ -33,6 +33,9 @@ extraResources:
     to: installers/
     filter:
       - "**/*"
+  # 托盘图标（createTray 通过 process.resourcesPath 访问）
+  - from: build/icon.ico
+    to: icon.ico
 
 # asar 配置
 asar: true

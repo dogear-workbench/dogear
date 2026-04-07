@@ -42,6 +42,9 @@ let agentMonitorWindow: BrowserWindowType | null = null;
 // 自选股窗口实例
 let stockWindow: BrowserWindowType | null = null;
 
+// 微信窗口实例
+let wechatWindow: BrowserWindowType | null = null;
+
 /**
  * 创建 Electron 主窗口
  * 配置窗口属性、加载页面并根据环境决定是否打开开发者工具
@@ -217,11 +220,44 @@ export function createStockWindow() {
 }
 
 /**
+ * 创建微信消息窗口
+ */
+export function createWechatWindow() {
+  if (wechatWindow) {
+    wechatWindow.focus();
+    return;
+  }
+
+  wechatWindow = new BrowserWindow({
+    width: 900,
+    height: 700,
+    title: '微信消息',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const wechatUrl = isDev
+    ? 'http://localhost:3000/#/wechat'
+    : `file://${path.join(__dirname, '../../out/index.html')}#/wechat`;
+  wechatWindow.loadURL(wechatUrl);
+
+  wechatWindow.on('closed', () => {
+    wechatWindow = null;
+  });
+}
+
+/**
  * 关闭所有子窗口（主窗口关闭时调用）
  */
 function closeAllChildWindows() {
   if (stockWindow && !stockWindow.isDestroyed()) {
     stockWindow.close();
+  }
+  if (wechatWindow && !wechatWindow.isDestroyed()) {
+    wechatWindow.close();
   }
   if (agentMonitorWindow && !agentMonitorWindow.isDestroyed()) {
     agentMonitorWindow.close();
@@ -236,11 +272,19 @@ function closeAllChildWindows() {
  * 关闭主窗口时最小化到托盘，双击托盘图标恢复窗口
  */
 function createTray() {
+  // 开发环境用 build/icon.ico，生产环境 electron-builder extraResources 会复制到 resourcesPath
   const iconPath = isDev
-    ? path.join(process.cwd(), 'resources/icon.ico')
+    ? path.join(process.cwd(), 'build/icon.ico')
     : path.join(process.resourcesPath, 'icon.ico');
 
-  tray = new Tray(iconPath);
+  try {
+    tray = new Tray(iconPath);
+  } catch (err) {
+    console.error('创建托盘失败，图标路径:', iconPath, err);
+    // 托盘创建失败时，关闭窗口应直接退出而非隐藏
+    isQuitting = true;
+    return;
+  }
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '显示窗口',
@@ -325,9 +369,9 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
-  // 主窗口关闭时：若非真正退出则隐藏到托盘，否则关闭所有子窗口
+  // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出
   mainWindow!.on('close', (event) => {
-    if (!isQuitting) {
+    if (!isQuitting && tray && !tray.isDestroyed()) {
       event.preventDefault();
       mainWindow!.hide();
       closeAllChildWindows();
