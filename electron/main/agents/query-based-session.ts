@@ -1629,6 +1629,16 @@ export class QueryBasedSessionManager extends EventEmitter {
   }
 
   /**
+   * 根据 sessionId 反查绑定的 conversationId（运行状态广播需要）
+   */
+  getConversationIdBySession(sessionId: string): string | undefined {
+    for (const [convId, sid] of this.conversationSessionMap) {
+      if (sid === sessionId) return convId;
+    }
+    return undefined;
+  }
+
+  /**
    * 注册 session 销毁时的清理回调（如外部注册的事件监听器）
    */
   registerCleanup(sessionId: string, fn: () => void): void {
