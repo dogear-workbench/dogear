@@ -39,6 +39,10 @@ interface ConversationState {
   nodeMap: Record<string, ConversationFlatNode>;
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
+  /** 当前正在运行（有 Agent 活跃）的对话 ID 集合 */
+  runningConversationIds: Set<string>;
+  /** 微信 Bot 当前绑定的对话 ID（null 表示未绑定） */
+  botBoundConversationId: string | null;
 
   // --- Actions ---
   /** 加载工作区对话列表和树数据 */
@@ -67,6 +71,10 @@ interface ConversationState {
   updateConversationPersona: (conversationId: string, personaId?: string, tempPrompt?: string) => Promise<void>;
   /** 触发会话重启 */
   triggerSessionRestart: () => void;
+  /** 设置对话运行状态 */
+  setRunningState: (conversationId: string, isRunning: boolean) => void;
+  /** 设置 Bot 绑定的对话 ID */
+  setBotBoundConversation: (conversationId: string | null) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -184,6 +192,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   treeData: null,
   nodeMap: {},
   sessionRestartTrigger: 0,
+  runningConversationIds: new Set<string>(),
+  botBoundConversationId: null,
 
   loadConversations: async () => {
     const workspace = await getWorkspace();
@@ -452,6 +462,19 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set((state) => ({ sessionRestartTrigger: state.sessionRestartTrigger + 1 }));
   },
 
+  setRunningState: (conversationId: string, isRunning: boolean) => {
+    set((state) => {
+      const newSet = new Set(state.runningConversationIds);
+      if (isRunning) newSet.add(conversationId);
+      else newSet.delete(conversationId);
+      return { runningConversationIds: newSet };
+    });
+  },
+
+  setBotBoundConversation: (conversationId: string | null) => {
+    set({ botBoundConversationId: conversationId });
+  },
+
   reset: () => set({
     conversations: [],
     selectedConversation: null,
@@ -460,5 +483,22 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     treeData: null,
     nodeMap: {},
     sessionRestartTrigger: 0,
+    runningConversationIds: new Set<string>(),
+    botBoundConversationId: null,
   }),
 }));
+
+// 监听主进程广播的对话运行状态和 bot 绑定变更
+if (typeof window !== 'undefined') {
+  import('@/lib/events').then(({ rendererEvents }) => {
+    // 对话运行状态变化
+    rendererEvents.conversationRunningStateChanged.listen((data) => {
+      useConversationStore.getState().setRunningState(data.conversationId, data.isRunning);
+    });
+
+    // 微信 Bot 绑定对话变更
+    rendererEvents.wechatBotBindingChanged.listen((data) => {
+      useConversationStore.getState().setBotBoundConversation(data.conversationId);
+    });
+  });
+}
