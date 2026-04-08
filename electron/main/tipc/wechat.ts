@@ -1,6 +1,5 @@
 // electron/main/tipc/wechat.ts
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
-import electron from 'electron';
 import { wechatAuthService } from '../services/wechat/wechat-auth-service.js';
 import { wechatMessageStore } from '../services/wechat/wechat-message-store.js';
 import { wechatPoller } from '../services/wechat/wechat-poller.js';
@@ -15,7 +14,6 @@ const t = tipc.create();
 // 模块顶层保存监听函数引用，避免重复注册旧监听器
 let _sessionMessageHandler: ((sessionId: string, message: ExtendedSessionMessage) => void) | null = null;
 let _sessionCompleteHandler: ((sessionId: string, result: any) => Promise<void>) | null = null;
-let _remoteActionHandler: ((action: any) => void) | null = null;
 
 // 流式文本 delta 缓冲区：按 sessionId 隔离，避免多 session 并行时全局变量竞争
 const _pendingAgentTexts: Map<string, string> = new Map();
@@ -77,11 +75,6 @@ export const wechatRouter = {
         _sessionCompleteHandler = null;
       }
       _pendingAgentTexts.clear();
-      // 精确移除 remoteAction 监听器
-      if (_remoteActionHandler) {
-        wechatBotController.removeListener('remoteAction', _remoteActionHandler);
-        _remoteActionHandler = null;
-      }
       await wechatAuthService.clearToken();
       return { data: { success: true } };
     } catch (error) {
@@ -101,22 +94,22 @@ export const wechatRouter = {
 
       const handlers = getRendererHandlers<RendererHandlers>(context.sender);
 
+      // 检查微信窗口 WebContents 是否仍然存活
+      const sender = context.sender;
+      const safeSend = (fn: () => void) => {
+        if (!sender.isDestroyed()) fn();
+      };
+
       // 初始化 bot controller（加载默认工作区等）
       await wechatBotController.init();
 
-      // 注册 remoteAction 事件转发到渲染层（精确移除旧 handler，避免重复注册）
-      if (_remoteActionHandler) {
-        wechatBotController.removeListener('remoteAction', _remoteActionHandler);
+      // 自动获取 bot 状态和对话列表，推送给前端
+      try {
+        const autoInitData = await wechatBotController.getAutoInitData();
+        safeSend(() => handlers.wechatBotAutoInit.send(autoInitData));
+      } catch (err) {
+        console.warn('[wechat] 自动初始化数据获取失败:', err);
       }
-      _remoteActionHandler = (action: any) => {
-        // 广播给所有窗口（主窗口需要处理工作区/对话切换，微信窗口不需要）
-        for (const win of electron.BrowserWindow.getAllWindows()) {
-          if (!win.isDestroyed()) {
-            getRendererHandlers<RendererHandlers>(win.webContents).wechatRemoteAction.send(action);
-          }
-        }
-      };
-      wechatBotController.on('remoteAction', _remoteActionHandler);
 
       // 监听 Agent 会话消息，截取最终回复发回微信
       const sessionManager = getQueryBasedSessionManager();
@@ -160,12 +153,6 @@ export const wechatRouter = {
 
       sessionManager.on('sessionMessage', _sessionMessageHandler);
       sessionManager.on('sessionComplete', _sessionCompleteHandler);
-
-      // 检查微信窗口 WebContents 是否仍然存活
-      const sender = context.sender;
-      const safeSend = (fn: () => void) => {
-        if (!sender.isDestroyed()) fn();
-      };
 
       await wechatPoller.start(token.botToken, token.baseUrl, {
         onMessage: async (messages) => {
@@ -219,11 +206,6 @@ export const wechatRouter = {
         _sessionCompleteHandler = null;
       }
       _pendingAgentTexts.clear();
-      // 精确移除 remoteAction 监听器
-      if (_remoteActionHandler) {
-        wechatBotController.removeListener('remoteAction', _remoteActionHandler);
-        _remoteActionHandler = null;
-      }
       return { data: { stopped: true } };
     } catch (error) {
       return { error: String(error) };
@@ -316,36 +298,17 @@ export const wechatRouter = {
       }
     }),
 
-  /** 渲染层同步当前活跃的 session 给 bot controller */
-  'wechat:syncSession': t.procedure
-    .input<{ sessionId: string | null; conversationId: string | null }>()
-    .action(async ({ input }) => {
-      try {
-        const sessionManager = getQueryBasedSessionManager();
-        const prevSessionId = wechatBotController.getState().activeSessionId;
-
-        const prevConvId = wechatBotController.getState().activeConversationId;
-
-        // Bot 离开旧 session：release + 解除 conversation 绑定
-        if (prevSessionId && prevSessionId !== input.sessionId) {
-          sessionManager.release(prevSessionId);
-          if (prevConvId) sessionManager.unbindConversation(prevConvId);
-        }
-
-        // Bot 进入新 session：retain + 绑定 conversation（渲染层打开同对话时可复用）
-        if (input.sessionId && input.sessionId !== prevSessionId) {
-          sessionManager.retain(input.sessionId);
-          if (input.conversationId) sessionManager.bindConversation(input.conversationId, input.sessionId);
-          // 自动切换为 bypassPermissions，减少用户确认
-          const session = sessionManager.getSession(input.sessionId);
-          if (session) await session.setPermissionMode('bypassPermissions');
-        }
-
-        wechatBotController.updateSessionId(input.sessionId);
-        wechatBotController.updateConversationId(input.conversationId);
-        return { data: { success: true } };
-      } catch (error) {
-        return { error: String(error) };
-      }
+  /** 获取 bot 状态和对话列表 */
+  'wechat:getBotStatus': t.procedure
+    .action(async () => {
+      return await wechatBotController.getAutoInitData();
     }),
+
+  /** 通过序号切换 bot 对话 */
+  'wechat:botUseConversation': t.procedure
+    .input<{ index: number }>()
+    .action(async ({ input }) => {
+      return await wechatBotController.useConversationByIndex(input.index);
+    }),
+
 };

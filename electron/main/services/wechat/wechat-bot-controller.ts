@@ -391,6 +391,72 @@ class WechatBotController {
     }
   }
 
+  /** 获取自动初始化数据（startPolling 后推送给前端） */
+  async getAutoInitData(): Promise<{
+    status: {
+      workspaceId: string | null;
+      workspaceName: string | null;
+      conversationId: string | null;
+      conversationTitle: string | null;
+      debugMode: boolean;
+    };
+    conversations: Array<{
+      index: number;
+      id: string;
+      title: string;
+      updatedAt: string;
+    }>;
+  }> {
+    const ws = this.state.activeWorkspaceId
+      ? await workspaceJsonService.getById(this.state.activeWorkspaceId)
+      : null;
+
+    let convTitle: string | null = null;
+    if (this.state.activeConversationId && this.state.activeWorkspaceId) {
+      const conv = await conversationService.getById(
+        this.state.activeWorkspaceId,
+        this.state.activeConversationId,
+      );
+      convTitle = conv?.title || '未命名对话';
+    }
+
+    const status = {
+      workspaceId: this.state.activeWorkspaceId,
+      workspaceName: ws?.name || null,
+      conversationId: this.state.activeConversationId,
+      conversationTitle: convTitle,
+      debugMode: this.state.debugMode,
+    };
+
+    let conversations: Array<{ index: number; id: string; title: string; updatedAt: string }> = [];
+    if (this.state.activeWorkspaceId) {
+      const convList = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
+      conversations = convList.map((conv, i) => ({
+        index: i + 1,
+        id: conv.id,
+        title: conv.title || '未命名对话',
+        updatedAt: conv.updatedAt,
+      }));
+    }
+
+    return { status, conversations };
+  }
+
+  /** 通过序号切换 bot 对话（前端 Dialog 中的"使用"按钮） */
+  async useConversationByIndex(index: number): Promise<{ success: boolean; error?: string }> {
+    if (!this.state.activeWorkspaceId) {
+      return { success: false, error: '请先选择工作区' };
+    }
+    const conversations = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
+    const idx = index - 1;
+    if (idx < 0 || idx >= conversations.length) {
+      return { success: false, error: `无效编号。可选: 1-${conversations.length}` };
+    }
+    const target = conversations[idx];
+    await this.switchBotSession(target.id, target.sdkSessionId || undefined);
+    return { success: true };
+  }
+
   private async reply(text: string, ctx: ReplyCtx): Promise<void> {
     const token = wechatAuthService.getToken();
     if (!token) {
