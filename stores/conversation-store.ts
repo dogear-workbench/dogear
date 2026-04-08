@@ -488,7 +488,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   }),
 }));
 
-// 监听主进程广播的对话运行状态和 bot 绑定变更
+// 监听主进程广播的对话运行状态、bot 绑定变更、对话列表变更
 if (typeof window !== 'undefined') {
   import('@/lib/events').then(({ rendererEvents }) => {
     // 对话运行状态变化
@@ -500,5 +500,19 @@ if (typeof window !== 'undefined') {
     rendererEvents.wechatBotBindingChanged.listen((data) => {
       useConversationStore.getState().setBotBoundConversation(data.conversationId);
     });
+
+    // 对话列表变更（bot 创建/删除对话后通知）
+    rendererEvents.conversationListChanged.listen(() => {
+      useConversationStore.getState().loadConversations();
+    });
+  });
+
+  // 初始化时查询 bot 绑定状态（避免页面刷新后丢失）
+  import('@/lib/client').then(({ client }) => {
+    client['wechat:getBotStatus'](undefined).then((data) => {
+      if (data?.status?.conversationId) {
+        useConversationStore.getState().setBotBoundConversation(data.status.conversationId);
+      }
+    }).catch(() => { /* bot 未连接时忽略 */ });
   });
 }

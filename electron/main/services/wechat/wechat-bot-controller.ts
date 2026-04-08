@@ -262,6 +262,9 @@ class WechatBotController {
     const newConvId = await conversationService.create(this.state.activeWorkspaceId);
     await this.switchBotSession(newConvId, undefined);
 
+    // 通知前端刷新对话列表
+    this.broadcastConversationListChanged(this.state.activeWorkspaceId);
+
     await this.reply('已创建新对话', ctx);
   }
 
@@ -371,6 +374,17 @@ class WechatBotController {
       try {
         const h = getRendererHandlers<RendererHandlers>(win.webContents);
         h.wechatBotBindingChanged.send({ conversationId });
+      } catch { /* ignore */ }
+    }
+  }
+
+  /** 广播对话列表变更通知 */
+  private broadcastConversationListChanged(workspaceId: string): void {
+    for (const win of electron.BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try {
+        const h = getRendererHandlers<RendererHandlers>(win.webContents);
+        h.conversationListChanged.send({ workspaceId });
       } catch { /* ignore */ }
     }
   }

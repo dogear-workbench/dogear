@@ -177,6 +177,11 @@ export type RendererHandlers = {
     conversationId: string | null;
   }) => void;
 
+  // 对话列表变更通知（主进程侧创建/删除对话后广播，前端应刷新列表）
+  conversationListChanged: (data: {
+    workspaceId: string;
+  }) => void;
+
   // 微信 Bot 自动初始化数据（startPolling 成功后推送）
   wechatBotAutoInit: (data: {
     status: {
