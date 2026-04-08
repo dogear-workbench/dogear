@@ -10,17 +10,12 @@ import {
   getQueryBasedSessionManager
 } from '../agents/query-based-session.js';
 import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
-import type { QueryBasedSessionConfig } from '../agents/query-based-session.js';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
-import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import { getAllTools } from '../agents/tools/tool-registry.js';
-import { createArticleTools } from '../agents/tools/article-tools.js';
-import { createStockTools } from '../agents/tools/stock-tools.js';
 import type { RendererHandlers } from './renderer-handlers.js';
+import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import path from 'path';
 import fs from 'fs/promises';
-import os from 'os';
-import { loadWorkspaceAgents } from '../services/agent-definition-service.js';
 import { fileURLToPath } from 'url';
 import electron from 'electron';
 const { app } = electron;
@@ -58,11 +53,28 @@ async function getSdkSessionsDir(projectPath: string): Promise<string> {
   return path.join(configDir, 'projects', normalized);
 }
 
+/** 广播对话运行状态变化给所有渲染层窗口 */
+function broadcastConversationRunning(conversationId: string, isRunning: boolean): void {
+  for (const win of electron.BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      const h = getRendererHandlers<RendererHandlers>(win.webContents);
+      h.conversationRunningStateChanged.send({ conversationId, isRunning });
+    } catch { /* 窗口已销毁 */ }
+  }
+}
+
 const t = tipc.create();
 
 // 模块加载时注册广播函数：所有 session 的消息统一广播给所有渲染层窗口
 // 放在模块级确保 bot 直接创建的 session 也能广播（不依赖 tipc createQueryBasedSession 路径）
 getQueryBasedSessionManager().setBroadcaster((sessionId, event, payload) => {
+  // 会话完成时，广播对话运行状态 → not running（在窗口循环之外执行一次）
+  if (event === 'complete') {
+    const convId = getQueryBasedSessionManager().getConversationIdBySession(sessionId);
+    if (convId) broadcastConversationRunning(convId, false);
+  }
+
   for (const win of electron.BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
@@ -385,6 +397,7 @@ export const agentRouter = {
     }),
 
   // ── 基于 Query 的会话（支持 Skills）────────────────────────
+  // 兼容层：委托 ConversationRuntimeService 处理。主路径已迁移到 attachConversationRuntime。
   createQueryBasedSession: t.procedure
     .input<{
       allowedTools?: string[];
@@ -392,283 +405,44 @@ export const agentRouter = {
       enableSkills?: boolean;
       projectRoot?: string;
       conversationId?: string;
-      workspaceId?: string;  // 对话所属工作区 ID
+      workspaceId?: string;
       resume?: string;
       forkSession?: boolean;
       resumeSessionAt?: string;
       isForkNewConversation?: boolean;
-      agents?: Record<string, any>;  // 自定义子代理配置（可选）
-      personaId?: string;             // 关联的人设 ID
-      tempPrompt?: string;            // 临时提示词
+      agents?: Record<string, any>;
+      personaId?: string;
+      tempPrompt?: string;
     }>()
     .action(async ({ input, context }) => {
       try {
-        const sessionManager = getQueryBasedSessionManager();
-
-        // 如果这个 conversationId 已有 bot 持有的存活 session，直接复用（retain +1）
-        if (input.conversationId && !input.forkSession) {
-          const existingSessionId = sessionManager.getSessionIdByConversation(input.conversationId);
-          if (existingSessionId) {
-            sessionManager.retain(existingSessionId);
-            const existing = sessionManager.getSession(existingSessionId)!;
-            console.log('复用已有 session（bot 持有）:', existingSessionId.substring(0, 8));
-
-            // 把当前 turn 进行中的消息重播给调用者窗口（避免晚打开的渲染层丢失 stream）
-            const snapshot = existing.getCurrentTurnSnapshot();
-            if (snapshot.length > 0) {
-              // 稍微延迟，确保渲染层的 useSessionMessages 监听器已注册
-              setTimeout(() => {
-                if (context.sender.isDestroyed()) return;
-                const h = getRendererHandlers<RendererHandlers>(context.sender);
-                for (const msg of snapshot) {
-                  try { h.queryBasedSessionMessage.send({ sessionId: existingSessionId, message: msg }); } catch { /* 忽略 */ }
-                }
-              }, 100);
-            }
-
-            return { sessionId: existingSessionId, permissionMode: existing.getPermissionMode() };
-          }
+        if (!input.conversationId || !input.workspaceId) {
+          return { error: 'conversationId 和 workspaceId 为必填项' };
         }
-
-        // 获取工作区路径：优先用前端传入的 workspaceId，fallback 到 getDefault
-        let workspacePath = '';
-        const workspaceJsonService = await import('../services/workspace-json-service.js');
-        let targetWorkspace = input.workspaceId
-          ? await workspaceJsonService.getById(input.workspaceId)
-          : null;
-        if (!targetWorkspace) {
-          targetWorkspace = (await workspaceJsonService.getDefault()) || null;
+        const result = await conversationRuntimeService.attachConversation(
+          input.conversationId,
+          input.workspaceId,
+          'desktop',
+          {
+            resume: input.resume,
+            forkSession: input.forkSession,
+            resumeSessionAt: input.resumeSessionAt,
+            clearForkFields: input.forkSession,
+          },
+        );
+        // 复用已有 session 时重播当前 turn 快照
+        if (!result.created && result.snapshot.length > 0) {
+          setTimeout(() => {
+            if (context.sender.isDestroyed()) return;
+            const h = getRendererHandlers<RendererHandlers>(context.sender);
+            for (const msg of result.snapshot) {
+              try { h.queryBasedSessionMessage.send({ sessionId: result.sessionId, message: msg }); } catch { /* 忽略 */ }
+            }
+          }, 100);
         }
-        if (targetWorkspace) {
-          workspacePath = targetWorkspace.path;
-        }
-
-        // 构建 MCP Servers 配置（v5: 改为基于工作区加载所有书籍）
-        const mcpServers: Record<string, any> = {};
-        if ((input.enableSkills ?? true) && workspacePath) {
-          const currentWorkspaceId = targetWorkspace?.id || 'default';
-          const bookQATools = createBookQATools(workspacePath, currentWorkspaceId);
-          mcpServers['dogear-book-qa'] = bookQATools;
-          console.log('已添加 book-qa MCP tools, workspaceId:', currentWorkspaceId);
-
-          // 注册文章阅读工具（ReadArticle / ListArticles）
-          const articleTools = createArticleTools(workspacePath);
-          mcpServers['dogear-article'] = articleTools;
-          console.log('已添加 article MCP tools');
-        }
-
-        // 注册股票行情工具（SearchStock / GetStockQuote / GetKLineData / GetTimeline / GetWatchlist / ModifyWatchlist）
-        // 股票工具不依赖工作区路径，始终注册
-        const stockTools = createStockTools();
-        mcpServers['dogear-stock'] = stockTools;
-        console.log('已添加 stock MCP tools');
-
-        // 构建子代理配置：内置默认 < 文件系统 .claude/agents/ < 前端传入
-        const agents: Record<string, any> = {};
-
-        // 1. 内置默认代理
-        agents['chapter-analyzer'] = {
-          description: '分析书籍章节内容，提取摘要、关键概念和结构信息。适用于需要深入分析单个章节的场景。',
-          prompt: '你是一个章节分析专家。你的任务是深入分析给定的章节内容，提取关键信息、主题、概念和结构。请使用中文输出分析结果。',
-          model: 'haiku',
-          tools: ['Read', 'Glob', 'Grep'],
-          maxTurns: 5,
-        };
-        agents['book-searcher'] = {
-          description: '在书籍中搜索特定内容，查找相关章节和段落。适用于用户提出关于书籍内容的问题时。',
-          prompt: '你是一个书籍内容搜索专家。你的任务是在书籍的章节中搜索与用户问题相关的内容，找到最相关的段落并提供引用。请使用中文回答。',
-          model: 'haiku',
-          tools: ['Read', 'Glob', 'Grep'],
-          maxTurns: 8,
-        };
-
-        // 2. 从工作区 .claude/agents/ 加载文件代理（覆盖同名内置代理）
-        if (workspacePath) {
-          try {
-            const fileAgents = await loadWorkspaceAgents(workspacePath);
-            for (const fa of fileAgents) {
-              agents[fa.agentName] = fa.definition;
-              console.log(`已加载工作区代理: ${fa.agentName} (${fa.fileName})`);
-            }
-          } catch (e) {
-            console.warn('加载工作区代理文件失败:', e);
-          }
-        }
-
-        // 3. 前端传入覆盖（最高优先级）
-        if (input.agents) {
-          Object.assign(agents, input.agents);
-        }
-
-        // 构建会话配置
-        const sessionConfig: QueryBasedSessionConfig = {
-          allowedTools: input.allowedTools || ['Read', 'Glob', 'Grep'],
-          context: input.context,
-          workspacePath,
-          enableSkills: input.enableSkills ?? true,
-          projectRoot: input.projectRoot,
-          mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
-          resume: input.resume,
-          forkSession: input.forkSession,
-          resumeSessionAt: input.resumeSessionAt,
-          agents: Object.keys(agents).length > 0 ? agents : undefined,
-          personaId: input.personaId,
-          tempPrompt: input.tempPrompt,
-        };
-
-        const session = sessionManager.createSession(sessionConfig);
-        await session.start();
-
-        // 监听 SDK session_id 初始化事件，保存到数据库
-        session.on('session_init', async (data: { session_id: string }) => {
-          console.log('=== 收到 SDK session_id ===');
-          console.log('SDK session_id:', data.session_id);
-          console.log('conversationId:', input.conversationId);
-
-          if (input.conversationId) {
-            const conversationService = await import('../services/conversation-service.js');
-            if (input.workspaceId) {
-              await conversationService.updateSdkSessionId(input.workspaceId, input.conversationId, data.session_id);
-            } else {
-              // 兼容：全局查找
-              const result = await conversationService.getByIdGlobal(input.conversationId);
-              if (result) {
-                await conversationService.updateSdkSessionId(result.workspaceId, input.conversationId, data.session_id);
-              }
-            }
-            console.log('已保存 sdk_session_id');
-
-            // 分叉对话拿到新 sessionId 后，清除分叉相关持久化字段
-            // 此后该对话变为普通独立对话
-            if (input.forkSession && input.workspaceId) {
-              await conversationService.clearForkFields(input.workspaceId, input.conversationId);
-              console.log('已清除分叉字段 (parentConversationId, forkMessageSdkUuid, forkPending)');
-            }
-          }
-
-          // 广播给所有存活窗口（session 可能被多个窗口共享）
-          for (const win of electron.BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed()) {
-              try {
-                win.webContents.send('agent:queryBasedSessionInit', {
-                  sessionId: session.getSessionId(),
-                  sdkSessionId: data.session_id,
-                });
-              } catch { /* 窗口已销毁，忽略 */ }
-            }
-          }
-        });
-
-        // 注册会话能力事件转发（SDK init 消息触发时）
-        session.on('session_capabilities', async (data: { slashCommands: string[]; tools: string[]; skills: string[]; mcpServers: Array<{ name: string; status: string }> }) => {
-          const sdkCommands = await session.getSupportedCommands();
-          broadcastToAll(h => h.sessionCapabilities.send({
-            sessionId: session.getSessionId(),
-            sdkCommands,
-            tools: data.tools,
-            skills: data.skills,
-            mcpServers: data.mcpServers,
-          }));
-        });
-
-        // 注册权限请求事件转发
-        session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown; decisionReason?: string }) => {
-          broadcastToAll(h => h.permissionRequest.send({
-            sessionId: session.getSessionId(),
-            requestId: data.requestId,
-            toolName: data.toolName,
-            toolInput: data.toolInput,
-            decisionReason: data.decisionReason,
-          }));
-        });
-
-        // 注册 AskUserQuestion 事件转发
-        session.on('askUserQuestion', (data: { requestId: string; questions: any[] }) => {
-          broadcastToAll(h => h.askUserQuestion.send({
-            sessionId: session.getSessionId(),
-            requestId: data.requestId,
-            questions: data.questions,
-          }));
-        });
-
-        // 注册 Notification hook 事件转发
-        session.on('notification', (data: { title?: string; message: string; notificationType: string }) => {
-          broadcastToAll(h => h.agentNotification.send({
-            sessionId: session.getSessionId(),
-            title: data.title,
-            message: data.message,
-            notificationType: data.notificationType,
-          }));
-          // 系统桌面通知保留
-          const { Notification: ElectronNotification } = electron;
-          if (ElectronNotification.isSupported()) {
-            new ElectronNotification({ title: data.title || 'Dogear', body: data.message }).show();
-          }
-        });
-
-        // 注册权限模式变更事件转发
-        session.on('permissionModeChanged', (data: { mode: string }) => {
-          broadcastToAll(h => h.permissionModeChanged.send({
-            sessionId: session.getSessionId(),
-            mode: data.mode,
-          }));
-        });
-
-        // 注册子代理开始事件转发
-        session.on('subAgentStarted', (data: {
-          parentSessionId: string;
-          agentId: string;
-          description: string;
-          subagentType?: string;
-        }) => {
-          broadcastToAll(h => h.subAgentStarted.send(data));
-        });
-
-        // 注册子代理完成事件转发
-        session.on('subAgentCompleted', (data: {
-          parentSessionId: string;
-          agentId: string;
-          status: string;
-          durationMs?: number;
-          tokens?: number;
-          toolUseCount?: number;
-          resultText?: string;
-        }) => {
-          broadcastToAll(h => h.subAgentCompleted.send(data));
-        });
-
-        // session 事件广播由模块级 broadcaster 统一处理（见文件顶部 setBroadcaster）
-        // 这里只需要注册 session 本身的回调（capabilities/permission 等），不再重复注册 message 广播
-        const thisSessionId = session.getSessionId();
-        const broadcastToAll = (fn: (h: ReturnType<typeof getRendererHandlers<RendererHandlers>>) => void) => {
-          for (const win of electron.BrowserWindow.getAllWindows()) {
-            if (!win.isDestroyed()) {
-              try { fn(getRendererHandlers<RendererHandlers>(win.webContents)); } catch { /* 窗口已销毁，忽略 */ }
-            }
-          }
-        };
-
-        // 会话创建后主动推送命令列表，避免用户需等到第一轮对话才能使用斜杠命令
-        setTimeout(async () => {
-          try {
-            const sdkCommands = await session.getSupportedCommands();
-            if (sdkCommands.length > 0) {
-              broadcastToAll(h => h.sessionCapabilities.send({
-                sessionId: session.getSessionId(),
-                sdkCommands,
-                tools: [],
-                skills: [],
-                mcpServers: [],
-              }));
-            }
-          } catch (e) {
-            console.warn('主动获取命令列表失败（会话初始化中）:', e);
-          }
-        }, 100);
-
-        return { sessionId: session.getSessionId(), permissionMode: session.getPermissionMode() };
+        return { sessionId: result.sessionId, permissionMode: result.permissionMode };
       } catch (error) {
-        console.error('创建基于 Query 的会话失败:', error);
+        console.error('createQueryBasedSession 失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
       }
     }),
@@ -685,6 +459,10 @@ export const agentRouter = {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) return { error: '会话不存在' };
+
+        // 广播对话运行状态 → running
+        const convId = sessionManager.getConversationIdBySession(input.sessionId);
+        if (convId) broadcastConversationRunning(convId, true);
 
         // 有多个 textBlocks 或图像附件时，构建 ContentBlock 数组
         const hasMultiBlocks = (input.textBlocks && input.textBlocks.length > 0) || (input.images && input.images.length > 0);

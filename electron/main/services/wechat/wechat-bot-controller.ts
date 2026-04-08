@@ -12,9 +12,11 @@ import { wechatAuthService } from './wechat-auth-service.js';
 import * as workspaceJsonService from '../../services/workspace-json-service.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { getQueryBasedSessionManager } from '../../agents/query-based-session.js';
-import type { QueryBasedSessionConfig } from '../../agents/query-based-session.js';
+import { conversationRuntimeService } from '../conversation-runtime-service.js';
 import { stripMarkdownForWechat } from './markdown-filter.js';
-import { EventEmitter } from 'events';
+import electron from 'electron';
+import { getRendererHandlers } from '@egoist/tipc/main';
+import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 
 const log = mainLogger;
 
@@ -25,14 +27,16 @@ export interface BotState {
   activeWorkspaceId: string | null;
   activeConversationId: string | null;
   activeSessionId: string | null;
+  activeAttachmentId: string | null;
   debugMode: boolean;
 }
 
-class WechatBotController extends EventEmitter {
+class WechatBotController {
   private state: BotState = {
     activeWorkspaceId: null,
     activeConversationId: null,
     activeSessionId: null,
+    activeAttachmentId: null,
     debugMode: false,
   };
 
@@ -40,11 +44,6 @@ class WechatBotController extends EventEmitter {
   // 不在并发的 handleCommand 调用中修改
   private lastReplyContext: ReplyCtx | null = null;
   private waitingForAgent = false;
-
-  constructor() {
-    super();
-    this.setMaxListeners(20);
-  }
 
   getState(): BotState {
     return { ...this.state };
@@ -116,6 +115,14 @@ class WechatBotController extends EventEmitter {
       );
       return;
     }
+
+    // 广播运行状态 → running
+    if (this.state.activeConversationId) {
+      this.broadcastConversationRunning(this.state.activeConversationId, true);
+    }
+
+    // 广播 user 消息给前端（实时显示 bot 输入）
+    this.broadcastBotUserMessage(this.state.activeSessionId, text);
 
     this.waitingForAgent = true;
     session.sendMessage(text).catch((err: unknown) => {
@@ -196,11 +203,7 @@ class WechatBotController extends EventEmitter {
     this.state.activeWorkspaceId = target.id;
     this.state.activeConversationId = null;
     this.state.activeSessionId = null;
-
-    this.emit('remoteAction', {
-      type: 'switchWorkspace',
-      workspaceId: target.id,
-    });
+    this.state.activeAttachmentId = null;
 
     await this.reply(`已切换到工作区: ${target.name}`, ctx);
   }
@@ -246,13 +249,6 @@ class WechatBotController extends EventEmitter {
     const target = conversations[idx];
     await this.switchBotSession(target.id, target.sdkSessionId || undefined);
 
-    // 通知渲染层打开对应 tab（仅用于展示，不创建新 session）
-    this.emit('remoteAction', {
-      type: 'switchConversation',
-      workspaceId: this.state.activeWorkspaceId,
-      conversationId: target.id,
-    });
-
     await this.reply(`已切换到对话: ${target.title || '未命名对话'}`, ctx);
   }
 
@@ -266,67 +262,43 @@ class WechatBotController extends EventEmitter {
     const newConvId = await conversationService.create(this.state.activeWorkspaceId);
     await this.switchBotSession(newConvId, undefined);
 
-    // 通知渲染层打开新对话 tab
-    this.emit('remoteAction', {
-      type: 'newConversation',
-      workspaceId: this.state.activeWorkspaceId,
-      conversationId: newConvId,
-    });
-
     await this.reply('已创建新对话', ctx);
   }
 
   /**
-   * Bot 在主进程切换/创建 session，独立于渲染层
-   * 释放旧 session（release），创建新 session（初始计数 1，bot 持有）
+   * Bot attach 到指定 conversation 的 runtime session。
+   * 通过 ConversationRuntimeService 统一管理生命周期，不直接操作 sessionManager。
    */
   private async switchBotSession(conversationId: string, sdkSessionId?: string): Promise<void> {
-    const sessionManager = getQueryBasedSessionManager();
-
-    // 释放旧 session
-    if (this.state.activeSessionId) {
-      if (this.state.activeConversationId) {
-        sessionManager.unbindConversation(this.state.activeConversationId);
-      }
-      sessionManager.release(this.state.activeSessionId);
+    // detach 旧 attachment
+    if (this.state.activeAttachmentId) {
+      conversationRuntimeService.detachAttachment(this.state.activeAttachmentId);
+      this.state.activeAttachmentId = null;
+      this.state.activeSessionId = null;
+      this.state.activeConversationId = null;
     }
 
-    // 获取工作区路径
-    const workspace = this.state.activeWorkspaceId
-      ? await workspaceJsonService.getById(this.state.activeWorkspaceId)
-      : null;
-    const workspacePath = workspace?.path ?? '';
+    if (!this.state.activeWorkspaceId) {
+      log.warn('[bot] switchBotSession: 没有活跃工作区');
+      return;
+    }
 
-    // 创建新 session（主进程直接创建，不经过 tipc）
-    const config: QueryBasedSessionConfig = {
-      allowedTools: ['Read', 'Glob', 'Grep'],
-      workspacePath,
-      enableSkills: true,
-      resume: sdkSessionId,
-    };
-    const session = sessionManager.createSession(config);
-    await session.start();
-    await session.setPermissionMode('bypassPermissions');
+    // attach 到新 conversation（runtime service 负责创建/复用 session、设置权限、注册事件）
+    const result = await conversationRuntimeService.attachConversation(
+      conversationId,
+      this.state.activeWorkspaceId,
+      'wechat-bot',
+      { resume: sdkSessionId },
+    );
 
-    // 监听 session_init 保存 sdk_session_id 到数据库
-    session.once('session_init', async (data: { session_id: string }) => {
-      try {
-        await conversationService.updateSdkSessionId(
-          this.state.activeWorkspaceId!,
-          conversationId,
-          data.session_id,
-        );
-      } catch (err) {
-        log.warn('[bot] 保存 sdk_session_id 失败:', err);
-      }
-    });
-
-    const newSessionId = session.getSessionId();
-    this.state.activeSessionId = newSessionId;
+    this.state.activeAttachmentId = result.attachmentId;
+    this.state.activeSessionId = result.sessionId;
     this.state.activeConversationId = conversationId;
-    sessionManager.bindConversation(conversationId, newSessionId);
 
-    log.info(`[bot] 切换到 session: ${newSessionId.slice(0, 8)}, conv: ${conversationId.slice(0, 8)}`);
+    log.info(`[bot] 切换到 session: ${result.sessionId.slice(0, 8)}, conv: ${conversationId.slice(0, 8)}, created: ${result.created}`);
+
+    // 广播 bot 绑定变更
+    this.broadcastBotBinding(conversationId);
   }
 
   private async cmdStop(ctx: ReplyCtx): Promise<void> {
@@ -363,21 +335,52 @@ class WechatBotController extends EventEmitter {
     this.waitingForAgent = false;
   }
 
+  /** 广播对话运行状态 */
+  private broadcastConversationRunning(conversationId: string, isRunning: boolean): void {
+    for (const win of electron.BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try {
+        const h = getRendererHandlers<RendererHandlers>(win.webContents);
+        h.conversationRunningStateChanged.send({ conversationId, isRunning });
+      } catch { /* ignore */ }
+    }
+  }
+
+  /** 广播 bot 发送的 user 消息给前端（实时显示） */
+  private broadcastBotUserMessage(sessionId: string, text: string): void {
+    for (const win of electron.BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try {
+        const h = getRendererHandlers<RendererHandlers>(win.webContents);
+        h.queryBasedSessionMessage.send({
+          sessionId,
+          message: {
+            type: 'human',
+            message: { role: 'user', content: text },
+            source: 'wechat-bot',
+          } as any,
+        });
+      } catch { /* ignore */ }
+    }
+  }
+
+  /** 广播 bot 绑定的对话变更 */
+  private broadcastBotBinding(conversationId: string | null): void {
+    for (const win of electron.BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try {
+        const h = getRendererHandlers<RendererHandlers>(win.webContents);
+        h.wechatBotBindingChanged.send({ conversationId });
+      } catch { /* ignore */ }
+    }
+  }
+
   async handlePermissionNotify(toolName: string, sessionId: string): Promise<void> {
     if (!this.state.debugMode) return;
     if (sessionId !== this.state.activeSessionId) return;
     if (this.lastReplyContext) {
       await this.reply(`[Agent 请求权限] 工具: ${toolName}\n请在桌面端确认`, this.lastReplyContext);
     }
-  }
-
-  updateSessionId(sessionId: string | null): void {
-    this.state.activeSessionId = sessionId;
-    log.info(`[bot] activeSessionId updated: ${sessionId?.slice(0, 8) || 'null'}`);
-  }
-
-  updateConversationId(conversationId: string | null): void {
-    this.state.activeConversationId = conversationId;
   }
 
   async init(): Promise<void> {
