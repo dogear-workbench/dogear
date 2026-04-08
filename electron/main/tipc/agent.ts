@@ -75,12 +75,28 @@ getQueryBasedSessionManager().setBroadcaster((sessionId, event, payload) => {
     if (convId) broadcastConversationRunning(convId, false);
   }
 
+  // 如果 user 消息来自 bot session，打上 source 标记
+  let messagePayload = payload;
+  if (event === 'message') {
+    const msg = payload as ExtendedSessionMessage;
+    if (msg.type === 'user') {
+      // 延迟导入避免循环依赖
+      try {
+        const { wechatBotController } = require('../services/wechat/wechat-bot-controller.js');
+        const botState = wechatBotController.getState();
+        if (botState.activeSessionId === sessionId) {
+          messagePayload = { ...msg, source: 'wechat-bot' };
+        }
+      } catch { /* wechat 模块未加载时忽略 */ }
+    }
+  }
+
   for (const win of electron.BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
       const h = getRendererHandlers<RendererHandlers>(win.webContents);
       if (event === 'message') {
-        h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
+        h.queryBasedSessionMessage.send({ sessionId, message: messagePayload as ExtendedSessionMessage });
       } else if (event === 'complete') {
         h.queryBasedSessionComplete.send({ sessionId, result: payload });
       } else if (event === 'error') {

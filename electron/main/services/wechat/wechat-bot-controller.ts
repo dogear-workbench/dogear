@@ -100,6 +100,12 @@ class WechatBotController {
 
   // 直接通过 sessionManager 发消息给 Agent，不依赖渲染层转发
   private handleAgentMessage(text: string, ctx: ReplyCtx): void {
+    if (this.waitingForAgent) {
+      log.warn('[bot] Agent 正在处理中，忽略重复消息:', text.slice(0, 50));
+      this.reply('Agent 正在处理上一条消息，请稍候...', ctx).catch(() => {});
+      return;
+    }
+
     if (!this.state.activeSessionId) {
       this.reply('当前没有激活的对话。\n用 /ls 查看对话列表，/use <编号> 选择对话，或 /new 新建对话。', ctx).catch(
         (err: unknown) => log.error('[bot] 回复失败:', err),
@@ -120,9 +126,6 @@ class WechatBotController {
     if (this.state.activeConversationId) {
       this.broadcastConversationRunning(this.state.activeConversationId, true);
     }
-
-    // 广播 user 消息给前端（实时显示 bot 输入）
-    this.broadcastBotUserMessage(this.state.activeSessionId, text);
 
     this.waitingForAgent = true;
     session.sendMessage(text).catch((err: unknown) => {
@@ -345,24 +348,6 @@ class WechatBotController {
       try {
         const h = getRendererHandlers<RendererHandlers>(win.webContents);
         h.conversationRunningStateChanged.send({ conversationId, isRunning });
-      } catch { /* ignore */ }
-    }
-  }
-
-  /** 广播 bot 发送的 user 消息给前端（实时显示） */
-  private broadcastBotUserMessage(sessionId: string, text: string): void {
-    for (const win of electron.BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue;
-      try {
-        const h = getRendererHandlers<RendererHandlers>(win.webContents);
-        h.queryBasedSessionMessage.send({
-          sessionId,
-          message: {
-            type: 'human',
-            message: { role: 'user', content: text },
-            source: 'wechat-bot',
-          } as any,
-        });
       } catch { /* ignore */ }
     }
   }

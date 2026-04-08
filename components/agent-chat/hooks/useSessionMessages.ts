@@ -30,22 +30,6 @@ export function useSessionMessages({
 
       const extendedMsg = data.message;
 
-      // 处理 bot 发送的 user 消息（实时显示 bot 输入）
-      const botHumanMsg = extendedMsg as { type?: string; message?: { role?: string; content?: string }; source?: string };
-      if (botHumanMsg.type === 'human' && botHumanMsg.message?.role === 'user') {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'user' as const,
-            content: botHumanMsg.message?.content ?? '',
-            timestamp: Date.now(),
-            contentBlocks: [],
-            source: botHumanMsg.source,
-          },
-        ]);
-        return;
-      }
-
       // 如果是重放消息且不显示重放消息，跳过
       if (extendedMsg.isReplay && !showReplayMessages) return;
 

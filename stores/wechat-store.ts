@@ -127,6 +127,8 @@ export const useWechatStore = create<WechatState>((set, get) => ({
   // === 轮询 ===
 
   startPolling: async () => {
+    // 防止重复启动（WechatDialog effect 可能多次触发）
+    if (get().polling) return;
     try {
       const res = await client['wechat:startPolling'](undefined);
       if ('error' in res && res.error) {

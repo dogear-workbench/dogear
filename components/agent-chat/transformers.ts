@@ -424,6 +424,29 @@ export function streamReducer(
         updated[i] = { ...updated[i], isQueued: false };
       }
     }
+    // bot 来源的 user 消息需要渲染（desktop 端自己发的已在 useSendMessage 中直接添加）
+    if ((extendedMsg as any).source === 'wechat-bot') {
+      // content 可能是 string 或 Array<{ type: 'text', text: string }>
+      let textContent = '';
+      if (typeof extendedMsg.content === 'string') {
+        textContent = extendedMsg.content;
+      } else if (Array.isArray(extendedMsg.content)) {
+        textContent = extendedMsg.content
+          .filter((b: any) => b?.type === 'text')
+          .map((b: any) => b.text)
+          .join('\n');
+      }
+      if (textContent) {
+        updated.push({
+          role: 'user',
+          content: textContent,
+          timestamp: Date.now(),
+          contentBlocks: [],
+          source: (extendedMsg as any).source,
+        });
+      }
+      return updated;
+    }
     // SDK 注入的 user 事件（isMeta / skill 文档等）不渲染
     return updated;
   }
