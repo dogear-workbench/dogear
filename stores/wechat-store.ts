@@ -24,6 +24,23 @@ interface WechatState {
   // 发送
   sending: boolean;
 
+  // Bot 自动初始化数据（startPolling 后推送）
+  autoInitData: {
+    status: {
+      workspaceId: string | null;
+      workspaceName: string | null;
+      conversationId: string | null;
+      conversationTitle: string | null;
+      debugMode: boolean;
+    };
+    conversations: Array<{
+      index: number;
+      id: string;
+      title: string;
+      updatedAt: string;
+    }>;
+  } | null;
+
   // 动作
   loadAuthStatus: () => Promise<void>;
   startAuth: () => Promise<void>;
@@ -32,6 +49,10 @@ interface WechatState {
   stopPolling: () => Promise<void>;
   loadHistory: () => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
+  /** 查询 bot 当前状态（Dialog 打开且已连接时调用） */
+  loadBotStatus: () => Promise<void>;
+  /** 前端点击"使用"按钮，通知 bot 切换对话 */
+  botUseConversation: (index: number) => Promise<{ success: boolean; error?: string }>;
 
   // 事件回调
   handleNewMessages: (messages: WechatMessage[]) => void;
@@ -50,6 +71,7 @@ export const useWechatStore = create<WechatState>((set, get) => ({
   contextToken: null,
   lastSenderId: null,
   sending: false,
+  autoInitData: null,
 
   // === 认证 ===
 
@@ -221,4 +243,31 @@ export const useWechatStore = create<WechatState>((set, get) => ({
       connectionError: errorMessage || null,
     });
   },
+
+  loadBotStatus: async () => {
+    try {
+      const data = await client['wechat:getBotStatus'](undefined);
+      set({ autoInitData: data });
+    } catch { /* ignore */ }
+  },
+
+  botUseConversation: async (index: number): Promise<{ success: boolean; error?: string }> => {
+    try {
+      const result = await client['wechat:botUseConversation']({ index });
+      if (result.success) {
+        get().loadBotStatus();
+      }
+      return result;
+    } catch (error) {
+      return { success: false, error: String(error) };
+    }
+  },
 }));
+
+if (typeof window !== 'undefined') {
+  import('@/lib/events').then(({ rendererEvents }) => {
+    rendererEvents.wechatBotAutoInit.listen((data) => {
+      useWechatStore.setState({ autoInitData: data });
+    });
+  });
+}
