@@ -53,6 +53,13 @@ async function getSdkSessionsDir(projectPath: string): Promise<string> {
   return path.join(configDir, 'projects', normalized);
 }
 
+// bot 状态 getter（由 wechat.ts startPolling 时注入，避免循环导入）
+type BotStateGetter = () => { activeSessionId: string | null } | null;
+let _botStateGetter: BotStateGetter | null = null;
+export function registerBotStateGetter(getter: BotStateGetter): void {
+  _botStateGetter = getter;
+}
+
 /** 广播对话运行状态变化给所有渲染层窗口 */
 function broadcastConversationRunning(conversationId: string, isRunning: boolean): void {
   for (const win of electron.BrowserWindow.getAllWindows()) {
@@ -79,15 +86,11 @@ getQueryBasedSessionManager().setBroadcaster((sessionId, event, payload) => {
   let messagePayload = payload;
   if (event === 'message') {
     const msg = payload as ExtendedSessionMessage;
-    if (msg.type === 'user') {
-      // 延迟导入避免循环依赖
-      try {
-        const { wechatBotController } = require('../services/wechat/wechat-bot-controller.js');
-        const botState = wechatBotController.getState();
-        if (botState.activeSessionId === sessionId) {
-          messagePayload = { ...msg, source: 'wechat-bot' };
-        }
-      } catch { /* wechat 模块未加载时忽略 */ }
+    if (msg.type === 'user' && _botStateGetter) {
+      const botState = _botStateGetter();
+      if (botState?.activeSessionId === sessionId) {
+        messagePayload = { ...msg, source: 'wechat-bot' };
+      }
     }
   }
 

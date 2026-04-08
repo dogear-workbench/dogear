@@ -19,8 +19,6 @@ interface UseAgentSessionParams {
 export function useAgentSession({
   conversationId,
   forkParams,
-  context,
-  useSdkResume,
   setMessages,
   setIsLoading,
 }: UseAgentSessionParams) {
@@ -28,6 +26,7 @@ export function useAgentSession({
   const sessionRestartTrigger = useConversationStore((s) => s.sessionRestartTrigger);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const attachmentIdRef = useRef<string | null>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
 
@@ -43,20 +42,14 @@ export function useAgentSession({
 
     const startSession = async () => {
       try {
-        console.log('=== 启动基于 Query 的 Agent 会话 ===');
+        console.log('=== attach conversation runtime ===');
         console.log('conversationId:', conversationId);
-        console.log('useSdkResume:', useSdkResume);
-
-        // 自动确定项目根目录
-        let projectRoot = '';
-        if (typeof window !== 'undefined' && (window as any).process?.cwd) {
-          projectRoot = (window as any).process.cwd();
-        }
 
         // v4: 判断是否为 fork 模式
         let sdkSessionId: string | undefined;
         let forkSessionFlag: boolean | undefined;
         let resumeSessionAtFlag: string | undefined;
+        let clearForkFields: boolean | undefined;
 
         if (forkParams) {
           // Fork 模式：使用父对话的 sdk_session_id + fork 参数
@@ -85,11 +78,11 @@ export function useAgentSession({
               console.log('⚠️ 该对话没有 sdk_session_id，将创建新会话');
             }
           } catch (error) {
-            console.error('❌ 获取 sdk_session_id 失败:', error);
+            console.error('❌ 获取对话信息失败:', error);
           }
         }
 
-        if (cancelled) return; // 在创建会话前再次检查
+        if (cancelled) return;
 
         // 检查 Profile 配置是否完整
         const { useSettingsStore } = await import('@/stores/settings-store');
@@ -107,74 +100,64 @@ export function useAgentSession({
         }
 
         const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
+        if (!currentWorkspaceId || !conversationId) return;
 
-        // 从当前对话获取 persona 和临时提示词
-        const currentConv = useConversationStore.getState().selectedConversation;
-        const personaId = currentConv?.persona_id || undefined;
-        const tempPrompt = currentConv?.temp_prompt || undefined;
-
-        const response = await client.createQueryBasedSession({
-          allowedTools: ['Read', 'Glob', 'Grep'],
-          context,
-          enableSkills: true,
-          projectRoot,
-          conversationId: conversationId || undefined,
+        const response = await client.attachConversationRuntime({
+          conversationId,
           workspaceId: currentWorkspaceId,
           resume: sdkSessionId,
-          forkSession: forkSessionFlag,           // v4: 分叉参数
-          resumeSessionAt: resumeSessionAtFlag,   // v4: 截断位置
-          personaId,
-          tempPrompt,
+          forkSession: forkSessionFlag,
+          resumeSessionAt: resumeSessionAtFlag,
+          clearForkFields,
         });
 
         // 关键：异步操作完成后检查是否已被取消（用户已切换到其他对话）
         if (cancelled) {
-          // 会话已创建但不再需要，立即关闭
-          if (response.sessionId) {
-            console.log('会话已创建但被取消（用户快速切换），关闭:', response.sessionId);
-            client.closeQueryBasedSession({ sessionId: response.sessionId });
+          // attachment 已建立但不再需要，立即 detach
+          if (response.attachmentId) {
+            console.log('attachment 已建立但被取消（用户快速切换），detach:', response.attachmentId);
+            client.detachConversationRuntime({ attachmentId: response.attachmentId });
           }
           return;
         }
 
-        console.log('createSession 响应:', response);
+        console.log('attachConversationRuntime 响应:', response);
 
         if (response.error) {
-          console.error('❌ 启动会话失败:', response.error);
+          console.error('❌ attach runtime 失败:', response.error);
           return;
         }
 
         const newSessionId = response.sessionId!;
+        const newAttachmentId = response.attachmentId!;
+        attachmentIdRef.current = newAttachmentId;
         setSessionId(newSessionId);
-        // 同步后端初始权限模式到 UI
+
         if (response.permissionMode) {
           setPermissionMode(response.permissionMode as PermissionMode);
         }
-        console.log('✅ 会话已启动:', {
+        console.log('✅ runtime attached:', {
           sessionId: newSessionId,
-          mode: sdkSessionId ? '(resume)' : '(new)',
-          sdkMode: useSdkResume ? 'SDK模式' : '数据库模式'
+          attachmentId: newAttachmentId,
+          created: response.created,
         });
         setIsSessionReady(true);
 
         // 同步到 session-store（标签页状态）
-        if (conversationId) {
-          useSessionStore.getState().updateSession(
-            conversationId,
-            newSessionId,
-            response.permissionMode || 'default'
-          );
-        }
+        useSessionStore.getState().updateSession(
+          conversationId,
+          newSessionId,
+          response.permissionMode || 'default',
+          newAttachmentId,
+        );
 
         // fork 模式：如果有 editedMessage，会话 ready 后自动发送（fork_pending 首次发送场景）
         // 纯分叉新对话（forkSession=true 但无 editedMessage）不自动发送，只加载历史等待用户输入
         if (forkParams?.editedMessage && newSessionId) {
           console.log('🔀 Fork 自动发送消息:', forkParams.editedMessage);
-          // 稍微延迟确保会话已完全初始化
           setTimeout(async () => {
-            if (cancelled) return; // 延迟执行前再次检查
+            if (cancelled) return;
             try {
-              // 先添加用户消息到 UI
               setMessages(prev => [
                 ...prev,
                 {
@@ -201,8 +184,6 @@ export function useAgentSession({
             }
           }, 500);
         } else if (forkParams?.forkSession) {
-          // 纯分叉新对话：SDK fork 后会话文件中已包含截断历史，
-          // 历史消息会通过上面的 loadHistory useEffect 自动加载展示
           console.log('🔀 纯分叉模式: 等待历史加载完成，用户自行输入新消息');
         }
       } catch (error) {
@@ -214,15 +195,14 @@ export function useAgentSession({
 
     startSession();
 
-    // 组件卸载或 conversationId/forkParams 变化时：标记取消 + 关闭旧会话
+    // 组件卸载或 conversationId/forkParams 变化时：标记取消 + detach 旧 attachment
     return () => {
       cancelled = true;
-      if (sessionIdRef.current) {
-        console.log('关闭会话:', sessionIdRef.current);
-        client.closeQueryBasedSession({ sessionId: sessionIdRef.current });
-        sessionIdRef.current = null;
+      if (attachmentIdRef.current) {
+        console.log('detach attachment:', attachmentIdRef.current);
+        client.detachConversationRuntime({ attachmentId: attachmentIdRef.current });
+        attachmentIdRef.current = null;
       }
-      // 重置会话状态，避免残留的旧会话 ID 被后续操作使用
       setSessionId(null);
       setIsSessionReady(false);
     };

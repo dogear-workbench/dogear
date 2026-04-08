@@ -8,9 +8,10 @@ import { create } from 'zustand';
 export interface SessionTab {
   conversationId: string;
   conversationTitle: string;
-  sessionId: string | null;  // agent session ID，初始为 null
-  isStreaming: boolean;       // 是否正在运行
-  permissionMode: string;     // 权限模式
+  sessionId: string | null;      // agent session ID，初始为 null
+  attachmentId: string | null;   // runtime attachment ID，用于 detach
+  isStreaming: boolean;          // 是否正在运行
+  permissionMode: string;        // 权限模式
 }
 
 interface SessionState {
@@ -24,7 +25,7 @@ interface SessionState {
   /** 切换到指定标签页 */
   switchTab: (conversationId: string) => void;
   /** 更新标签页的 session 信息 */
-  updateSession: (conversationId: string, sessionId: string, permissionMode: string) => void;
+  updateSession: (conversationId: string, sessionId: string, permissionMode: string, attachmentId?: string) => void;
   /** 更新标签页的运行状态 */
   updateStreaming: (conversationId: string, isStreaming: boolean) => void;
   /** 更新标签页标题 */
@@ -55,6 +56,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         conversationId,
         conversationTitle: title,
         sessionId: null,
+        attachmentId: null,
         isStreaming: false,
         permissionMode: 'default',
       }],
@@ -78,11 +80,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set({ activeTabId: conversationId });
   },
 
-  updateSession: (conversationId, sessionId, permissionMode) => {
+  updateSession: (conversationId, sessionId, permissionMode, attachmentId) => {
     set((state) => ({
       tabs: state.tabs.map((t) =>
         t.conversationId === conversationId
-          ? { ...t, sessionId, permissionMode }
+          ? { ...t, sessionId, permissionMode, ...(attachmentId !== undefined ? { attachmentId } : {}) }
           : t
       ),
     }));

@@ -9,7 +9,12 @@ import { getQueryBasedSessionManager } from '../agents/query-based-session.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 
+import { registerBotStateGetter } from './agent.js';
+
 const t = tipc.create();
+
+// 注册 bot 状态 getter 供 agent.ts 广播层使用（标记 bot 来源的 user 消息）
+registerBotStateGetter(() => wechatBotController.getState());
 
 // 模块顶层保存监听函数引用，避免重复注册旧监听器
 let _sessionMessageHandler: ((sessionId: string, message: ExtendedSessionMessage) => void) | null = null;
