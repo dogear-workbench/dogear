@@ -26,22 +26,20 @@ export function WechatDialog({ open, onOpenChange }: WechatDialogProps) {
     handleConnectionStatusChange,
   } = useWechatStore();
 
-  // Dialog 打开时加载状态
+  // Dialog 打开时加载认证状态
   useEffect(() => {
     if (open) {
       loadAuthStatus();
-      if (authState === 'connected') {
-        loadBotStatus();
-      }
     }
-  }, [open, loadAuthStatus, loadBotStatus, authState]);
+  }, [open, loadAuthStatus]);
 
-  // 认证成功后启动轮询
+  // 认证成功后启动轮询 + 加载 bot 状态
   useEffect(() => {
     if (authState === 'connected') {
       startPolling();
+      loadBotStatus();
     }
-  }, [authState, startPolling]);
+  }, [authState, startPolling, loadBotStatus]);
 
   // 监听 renderer events
   useEffect(() => {
