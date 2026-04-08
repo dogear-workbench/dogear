@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GitBranch, ChevronDown, ChevronRight, FileText } from 'lucide-react';
+import { GitBranch, ChevronDown, ChevronRight, FileText, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -55,8 +55,11 @@ export function MessageItem({
         // 用户消息
         <div className="flex items-start gap-3">
             {/* 头像 */}
-            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-foreground">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-foreground relative">
               <span className="text-background text-sm font-medium">你</span>
+              {message.source === 'wechat-bot' && (
+                <Bot className="w-3 h-3 text-green-500 absolute -bottom-0.5 -right-0.5" />
+              )}
             </div>
             <div className="flex-1 min-w-0">
               {(
