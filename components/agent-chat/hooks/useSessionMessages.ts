@@ -38,7 +38,7 @@ export function useSessionMessages({
           {
             role: 'user' as const,
             content: botMsg.message.content,
-            timestamp: new Date().toISOString(),
+            timestamp: Date.now(),
             contentBlocks: [],
             source: botMsg.source,
           },
