@@ -42,8 +42,6 @@ let agentMonitorWindow: BrowserWindowType | null = null;
 // 自选股窗口实例
 let stockWindow: BrowserWindowType | null = null;
 
-// 微信窗口实例
-let wechatWindow: BrowserWindowType | null = null;
 
 /**
  * 创建 Electron 主窗口
@@ -219,35 +217,6 @@ export function createStockWindow() {
   });
 }
 
-/**
- * 创建微信消息窗口
- */
-export function createWechatWindow() {
-  if (wechatWindow) {
-    wechatWindow.focus();
-    return;
-  }
-
-  wechatWindow = new BrowserWindow({
-    width: 900,
-    height: 700,
-    title: '微信消息',
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  const wechatUrl = isDev
-    ? 'http://localhost:3000/#/wechat'
-    : `file://${path.join(__dirname, '../../out/index.html')}#/wechat`;
-  wechatWindow.loadURL(wechatUrl);
-
-  wechatWindow.on('closed', () => {
-    wechatWindow = null;
-  });
-}
 
 /**
  * 关闭所有子窗口（主窗口关闭时调用）
@@ -255,9 +224,6 @@ export function createWechatWindow() {
 function closeAllChildWindows() {
   if (stockWindow && !stockWindow.isDestroyed()) {
     stockWindow.close();
-  }
-  if (wechatWindow && !wechatWindow.isDestroyed()) {
-    wechatWindow.close();
   }
   if (agentMonitorWindow && !agentMonitorWindow.isDestroyed()) {
     agentMonitorWindow.close();

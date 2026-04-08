@@ -41,9 +41,6 @@ interface WorkspaceState {
   clearWorkspace: () => Promise<void>;
   /** 打开自选股窗口 */
   openStockWindow: () => Promise<void>;
-  /** 打开微信窗口 */
-  openWechatWindow: () => Promise<void>;
-
   /** 设置正在创建文件夹的父路径 */
   setCreatingFolderAt: (parentPath: string | null) => void;
   createFolder: (parentPath: string, name: string) => Promise<void>;
@@ -227,14 +224,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await client.openStockWindow();
     } catch (error) {
       console.error('打开自选股窗口失败:', error);
-    }
-  },
-
-  openWechatWindow: async () => {
-    try {
-      await client.openWechatWindow();
-    } catch (error) {
-      console.error('打开微信窗口失败:', error);
     }
   },
 

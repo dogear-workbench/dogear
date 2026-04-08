@@ -176,13 +176,6 @@ export const agentRouter = {
       return { success: true };
     }),
 
-  openWechatWindow: t.procedure
-    .action(async () => {
-      const { createWechatWindow } = await import('../index.js');
-      createWechatWindow();
-      return { success: true };
-    }),
-
   // ── 书籍分析 v2 ──────────────────────────────────────────
   analyzeBook: t.procedure
     .input<{ bookId: string }>()
