@@ -2,7 +2,7 @@
 import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from 'react';
 import {
   MessageSquare, Plus, Trash2, GitBranch, Pencil, Loader2,
-  Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown,
+  Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Bot,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -224,10 +224,11 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const isSelected = selectedConversation?.id === conv.id;
   const isFork = !!conv.parent_conversation_id;
 
-  // 标签页运行状态
-  const tabs = useSessionStore((s) => s.tabs);
-  const tab = tabs.find((t) => t.conversationId === conv.id);
-  const isRunning = tab?.isStreaming ?? false;
+  // 对话运行状态（从 conversation-store 读取，主进程广播，bot 操作也会更新）
+  const runningIds = useConversationStore((s) => s.runningConversationIds);
+  const isRunning = runningIds.has(conv.id);
+  const botBoundId = useConversationStore((s) => s.botBoundConversationId);
+  const isBotBound = conv.id === botBoundId;
 
   // 标题编辑状态
   const [isEditing, setIsEditing] = useState(false);
@@ -306,10 +307,15 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
                 className="w-full bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
               />
             ) : (
-              <div className={cn('text-sm truncate',
-                isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
-              )}>
-                {getConversationTitle(conv)}
+              <div className="flex items-center gap-1">
+                <div className={cn('text-sm truncate',
+                  isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
+                )}>
+                  {getConversationTitle(conv)}
+                </div>
+                {isBotBound && (
+                  <Bot className="w-3 h-3 flex-shrink-0 text-green-500" title="Bot 已绑定" />
+                )}
               </div>
             )}
             <div className="text-xs text-muted-foreground">
