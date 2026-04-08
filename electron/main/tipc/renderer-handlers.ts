@@ -166,12 +166,32 @@ export type RendererHandlers = {
     errorMessage?: string;
   }) => void;
 
-  // 微信远程操作指令（Bot Controller → 渲染层执行）
-  wechatRemoteAction: (data: {
-    type: 'switchWorkspace' | 'switchConversation' | 'newConversation' | 'sendMessage';
-    workspaceId?: string;
-    conversationId?: string;
-    sessionId?: string;
-    content?: string;
+  // 对话运行状态变化（主进程统一管理，不依赖渲染层 tab 是否打开）
+  conversationRunningStateChanged: (data: {
+    conversationId: string;
+    isRunning: boolean;
   }) => void;
+
+  // 微信 Bot 绑定对话变更
+  wechatBotBindingChanged: (data: {
+    conversationId: string | null;
+  }) => void;
+
+  // 微信 Bot 自动初始化数据（startPolling 成功后推送）
+  wechatBotAutoInit: (data: {
+    status: {
+      workspaceId: string | null;
+      workspaceName: string | null;
+      conversationId: string | null;
+      conversationTitle: string | null;
+      debugMode: boolean;
+    };
+    conversations: Array<{
+      index: number;
+      id: string;
+      title: string;
+      updatedAt: string;
+    }>;
+  }) => void;
+
 };
