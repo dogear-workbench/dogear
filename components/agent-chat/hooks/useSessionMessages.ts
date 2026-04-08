@@ -31,16 +31,16 @@ export function useSessionMessages({
       const extendedMsg = data.message;
 
       // 处理 bot 发送的 user 消息（实时显示 bot 输入）
-      if ((extendedMsg as any).type === 'human' && (extendedMsg as any).message?.role === 'user') {
-        const botMsg = extendedMsg as any;
+      const botHumanMsg = extendedMsg as { type?: string; message?: { role?: string; content?: string }; source?: string };
+      if (botHumanMsg.type === 'human' && botHumanMsg.message?.role === 'user') {
         setMessages((prev) => [
           ...prev,
           {
             role: 'user' as const,
-            content: botMsg.message.content,
+            content: botHumanMsg.message?.content ?? '',
             timestamp: Date.now(),
             contentBlocks: [],
-            source: botMsg.source,
+            source: botHumanMsg.source,
           },
         ]);
         return;
