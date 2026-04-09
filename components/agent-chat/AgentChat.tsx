@@ -101,6 +101,8 @@ export function AgentChat({
   const prevMessageCount = useRef(0);
   // 滚动模式：auto=跟随底部, user=用户控制
   const scrollModeRef = useRef<'auto' | 'user'>('auto');
+  // 程序化滚动标志：scrollTo 调用期间为 true，防止 handleScroll 误判为用户滚动
+  const programmaticScrollRef = useRef(false);
 
   // 获取滚动视口元素
   const getViewportEl = useCallback(() => {
@@ -111,11 +113,16 @@ export function AgentChat({
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = getViewportEl();
     if (el) {
+      programmaticScrollRef.current = true;
       el.scrollTo({ top: el.scrollHeight, behavior });
       setNewMsgCount(0);
       scrollModeRef.current = 'auto';
       isAtBottomRef.current = true;
       setIsAtBottom(true);
+      // instant 没有动画，立即清除标志；smooth 需等动画结束后 handleScroll 检测到 atBottom 再清除
+      if (behavior === 'instant') {
+        programmaticScrollRef.current = false;
+      }
     }
   }, [getViewportEl]);
 
@@ -127,6 +134,18 @@ export function AgentChat({
     isAtBottomRef.current = atBottom;
     setIsAtBottom(atBottom);
 
+    if (programmaticScrollRef.current) {
+      // 程序化滚动中：到达底部时清除标志，不切换模式
+      if (atBottom) {
+        programmaticScrollRef.current = false;
+        setNewMsgCount(0);
+        // scrollModeRef 已在 scrollToBottom/ResizeObserver 中设为 auto，无需重复
+      }
+      // 未到底部时忽略（动画过渡帧），不切 user
+      return;
+    }
+
+    // 用户手动滚动
     if (atBottom) {
       setNewMsgCount(0);
       scrollModeRef.current = 'auto';
@@ -146,7 +165,9 @@ export function AgentChat({
 
     const observer = new ResizeObserver(() => {
       if (scrollModeRef.current === 'auto') {
+        programmaticScrollRef.current = true;
         el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+        // smooth 动画结束后 handleScroll 检测到 atBottom 会清除 programmaticScrollRef
       } else if (messages.length > 0) {
         setNewMsgCount(prev => prev + 1);
       }
