@@ -3,16 +3,29 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, Home, Loader2, Plus, Trash2 } from 'lucide-react';
+import { FolderOpen, Home, Loader2, Plus, Trash2, Import, X } from 'lucide-react';
 import { showConfirm } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+
+interface OrphanWorkspace {
+  id: string;
+  sourceName?: string;
+  sourcePath?: string;
+  conversationCount: number;
+  sampleTitles: string[];
+  lastUpdated: string | null;
+}
 
 export function WorkspaceSelector() {
   const setWorkspaceToStore = useWorkspaceStore((s) => s.setWorkspace);
   const [loading, setLoading] = useState(true);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null);
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [orphans, setOrphans] = useState<OrphanWorkspace[]>([]);
+  const [scanningOrphans, setScanningOrphans] = useState(false);
+  const [importingId, setImportingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadWorkspaces();
@@ -79,6 +92,43 @@ export function WorkspaceSelector() {
       await loadWorkspaces();
     } catch (error) {
       toast.error('删除工作区失败', { description: (error as Error).message });
+    }
+  };
+
+  // 扫描孤儿工作区
+  const handleScanOrphans = async () => {
+    setScanningOrphans(true);
+    try {
+      const result = await client.scanOrphanWorkspaces();
+      setOrphans(result as OrphanWorkspace[]);
+      setShowRecovery(true);
+    } catch (error) {
+      toast.error('扫描失败', { description: (error as Error).message });
+    } finally {
+      setScanningOrphans(false);
+    }
+  };
+
+  // 导入孤儿工作区的会话到当前选中的工作区
+  const handleImportOrphan = async (orphan: OrphanWorkspace) => {
+    if (!selectedWorkspace) {
+      toast.error('请先选择一个目标工作区');
+      return;
+    }
+    setImportingId(orphan.id);
+    try {
+      const result = await client.importOrphanWorkspace({
+        orphanId: orphan.id,
+        targetWorkspaceId: selectedWorkspace.id,
+        deleteAfterImport: true,
+      }) as { importedCount: number };
+      toast.success(`已导入 ${result.importedCount} 个会话到「${selectedWorkspace.name}」`);
+      setOrphans(prev => prev.filter(o => o.id !== orphan.id));
+      if (orphans.length <= 1) setShowRecovery(false);
+    } catch (error) {
+      toast.error('导入失败', { description: (error as Error).message });
+    } finally {
+      setImportingId(null);
     }
   };
 
@@ -170,7 +220,7 @@ export function WorkspaceSelector() {
         </div>
 
         {/* 操作按钮 */}
-        <div className="flex gap-3 justify-center">
+        <div className="flex gap-3 justify-center flex-wrap">
           <Button variant="outline" onClick={handleSelectFolder}>
             <Plus className="w-4 h-4 mr-2" />
             新建工作区
@@ -179,7 +229,76 @@ export function WorkspaceSelector() {
             <FolderOpen className="w-4 h-4 mr-2" />
             进入工作区
           </Button>
+          <Button variant="ghost" onClick={handleScanOrphans} disabled={scanningOrphans} className="text-muted-foreground">
+            {scanningOrphans ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Import className="w-4 h-4 mr-2" />}
+            导入丢失的会话
+          </Button>
         </div>
+
+        {/* 孤儿工作区恢复弹窗 */}
+        {showRecovery && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div className="bg-background rounded-lg border shadow-lg w-full max-w-lg mx-4">
+              <div className="flex items-center justify-between p-4 border-b">
+                <div>
+                  <div className="font-semibold">导入丢失的会话</div>
+                  <div className="text-sm text-muted-foreground mt-0.5">
+                    找到以下未关联的历史会话数据，点击可将其导入到当前选中的工作区
+                  </div>
+                </div>
+                <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => setShowRecovery(false)}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+              <div className="p-4 max-h-96 overflow-y-auto space-y-2">
+                {orphans.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">没有找到丢失的会话数据</p>
+                ) : (
+                  orphans.map(orphan => (
+                    <div
+                      key={orphan.id}
+                      className="p-3 rounded-lg border hover:bg-muted/50 cursor-pointer transition-colors"
+                      onClick={() => handleImportOrphan(orphan)}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium">
+                          {orphan.sourceName || `未知来源 (${orphan.id.slice(0, 8)}...)`}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{orphan.conversationCount} 个对话</span>
+                          {orphan.sourceName && (
+                            <span className="text-xs px-1.5 py-0.5 bg-orange-50 border border-orange-200 rounded text-orange-600">
+                              可能匹配
+                            </span>
+                          )}
+                          {importingId === orphan.id && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+                        </div>
+                      </div>
+                      {orphan.sourcePath && (
+                        <div className="text-xs text-muted-foreground truncate">原路径: {orphan.sourcePath}</div>
+                      )}
+                      {orphan.sampleTitles.length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1 truncate">
+                          {orphan.sampleTitles.join('、')}{orphan.conversationCount > 5 ? '...' : ''}
+                        </div>
+                      )}
+                      {orphan.lastUpdated && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          最后更新: {new Date(orphan.lastUpdated).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+              {selectedWorkspace && (
+                <div className="px-4 pb-3 text-xs text-muted-foreground">
+                  将导入到工作区：<span className="text-foreground font-medium">{selectedWorkspace.name}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

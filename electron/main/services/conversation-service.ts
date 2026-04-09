@@ -357,6 +357,20 @@ export async function deleteConversation(workspaceId: string, id: string): Promi
   await saveWorkspaceConversations(workspaceId, file);
 }
 
+/**
+ * 导入一条对话索引到目标工作区（用于会话恢复，保留原 ID）
+ * 如果目标工作区已存在相同 ID 的对话则跳过。
+ */
+export async function importConversation(
+  targetWorkspaceId: string,
+  conv: ConversationIndex,
+): Promise<void> {
+  const file = await loadWorkspaceConversations(targetWorkspaceId);
+  if (file.conversations[conv.id]) return; // 已存在则跳过
+  file.conversations[conv.id] = { ...conv, workspaceId: targetWorkspaceId };
+  await saveWorkspaceConversations(targetWorkspaceId, file);
+}
+
 // ============================================================
 // 兼容转换
 // ============================================================

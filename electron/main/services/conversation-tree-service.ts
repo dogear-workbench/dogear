@@ -21,11 +21,19 @@ export interface ConversationFolder {
   createdAt: string;
 }
 
+/** 来源工作区信息（创建时写入，用于恢复时识别） */
+export interface SourceWorkspaceInfo {
+  name: string;   // 工作区名称
+  path: string;   // 工作区文件系统路径
+}
+
 /** conversation-tree.json 的文件结构 */
 export interface ConversationTreeFile {
   version: number;
   folders: Record<string, ConversationFolder>;
   children: Record<string, string[]>; // parentId -> 有序子节点ID列表
+  /** 创建此 tree 时的工作区信息（用于丢失后识别来源） */
+  sourceWorkspace?: SourceWorkspaceInfo;
 }
 
 const ROOT_ID = '__root__';
@@ -250,6 +258,57 @@ export async function moveItem(
     }
   }
   tree.children[targetParentId] = [...folderIds, ...convIds];
+
+  await saveTree(workspaceId, tree);
+}
+
+/**
+ * 设置来源工作区信息（创建工作区时调用一次）
+ * 用于丢失后的恢复识别
+ */
+export async function setSourceWorkspace(workspaceId: string, info: SourceWorkspaceInfo): Promise<void> {
+  const tree = await loadTree(workspaceId);
+  tree.sourceWorkspace = info;
+  await saveTree(workspaceId, tree);
+}
+
+/**
+ * 将另一个 tree 的内容合并到当前工作区的 tree。
+ * - 旧 folders 全部拷入（UUID 天然不冲突）
+ * - 旧 __root__ 下的 children 追加到当前 __root__ 末尾（去重）
+ * - 旧非根 parent-children 关系照搬（当前 tree 没有该 parent 时）
+ * - 维护分区不变量：文件夹在前、对话在后
+ */
+export async function mergeTree(workspaceId: string, sourceTree: ConversationTreeFile): Promise<void> {
+  const tree = await loadTree(workspaceId);
+
+  // 合并 folders
+  for (const [id, folder] of Object.entries(sourceTree.folders || {})) {
+    if (!tree.folders[id]) {
+      tree.folders[id] = folder;
+    }
+  }
+
+  // 合并 children
+  for (const [parentId, childIds] of Object.entries(sourceTree.children || {})) {
+    if (parentId === ROOT_ID) {
+      // 旧根节点 children 追加到当前根末尾（去重）
+      const existing = new Set(tree.children[ROOT_ID] || []);
+      const newIds = childIds.filter(id => !existing.has(id));
+      tree.children[ROOT_ID] = [...(tree.children[ROOT_ID] || []), ...newIds];
+    } else {
+      // 非根 parent-children 照搬（当前 tree 没有这个 parent 时）
+      if (!tree.children[parentId]) {
+        tree.children[parentId] = [...childIds];
+      }
+    }
+  }
+
+  // 维护根节点分区不变量：文件夹在前、对话在后
+  const rootChildren = tree.children[ROOT_ID] || [];
+  const folderIds = rootChildren.filter(id => tree.folders[id]);
+  const convIds = rootChildren.filter(id => !tree.folders[id]);
+  tree.children[ROOT_ID] = [...folderIds, ...convIds];
 
   await saveTree(workspaceId, tree);
 }

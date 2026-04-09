@@ -8,6 +8,8 @@ import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import * as articleService from '../services/article-service.js';
 import * as workspaceFsService from '../services/workspace-fs-service.js';
+import * as conversationTreeService from '../services/conversation-tree-service.js';
+import { scanOrphanWorkspaces, importOrphanToWorkspace } from '../services/workspace-recovery-service.js';
 import type { WorkspaceFileNode } from '../types.js';
 
 const t = tipc.create();
@@ -61,6 +63,12 @@ export const workspaceRouter = {
           created_at: Date.now(),
         };
         await workspaceJsonService.add(workspace);
+
+        // 记录来源工作区信息到 conversation-tree.json（用于丢失后恢复识别）
+        await conversationTreeService.setSourceWorkspace(workspace.id, {
+          name: workspace.name,
+          path: selectedPath,
+        });
 
         // 确保工作区目录存在
         await fs.mkdir(selectedPath, { recursive: true });
@@ -118,6 +126,33 @@ export const workspaceRouter = {
       } catch (error) {
         console.error('获取工作区文件树失败:', error);
         return { files: [], error: String(error) };
+      }
+    }),
+
+  // ─── 会话恢复 ───
+
+  scanOrphanWorkspaces: t.procedure
+    .action(async () => {
+      try {
+        return await scanOrphanWorkspaces();
+      } catch (error) {
+        console.error('扫描孤儿工作区失败:', error);
+        return [];
+      }
+    }),
+
+  importOrphanWorkspace: t.procedure
+    .input<{ orphanId: string; targetWorkspaceId: string; deleteAfterImport?: boolean }>()
+    .action(async ({ input }) => {
+      try {
+        return await importOrphanToWorkspace(
+          input.orphanId,
+          input.targetWorkspaceId,
+          input.deleteAfterImport ?? true,
+        );
+      } catch (error) {
+        console.error('导入孤儿工作区失败:', error);
+        return { importedCount: 0, error: String(error) };
       }
     }),
 };
