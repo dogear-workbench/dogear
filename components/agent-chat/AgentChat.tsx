@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronRight, ChevronDown, Archive, GitBranch } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ChevronDown, Archive, GitBranch } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
@@ -298,45 +297,6 @@ export function AgentChat({
           // 无压缩历史：正常渲染所有消息
           return messages.map((message, index) => renderMessage(message, index));
         })()}
-
-        {/* Plan 模式下，assistant 完成输出后显示"执行计划"按钮 */}
-        {permissionMode === 'plan' && !isLoading && messages.length > 0 && messages[messages.length - 1]?.role === 'assistant' && !messages[messages.length - 1]?.isStreaming && (
-          <div className="flex justify-center py-3">
-            <Button
-              onClick={async () => {
-                // 切换到"允许编辑"模式
-                setPermissionMode('acceptEdits');
-                if (sessionId) {
-                  await client.setPermissionMode({ sessionId, mode: 'acceptEdits' });
-                  sendMessage.insertModeChangeNotice('acceptEdits');
-                  // 发送执行指令
-                  setMessages(prev => [...prev, {
-                    role: 'user' as const,
-                    content: '请执行上面的计划',
-                    timestamp: Date.now(),
-                  }, {
-                    role: 'assistant' as const,
-                    content: '',
-                    timestamp: Date.now(),
-                    isStreaming: true,
-                    contentBlocks: [],
-                  }]);
-                  setIsLoading(true);
-                  try {
-                    await client.sendQueryBasedSessionMessage({ sessionId, content: '请执行上面的计划' });
-                  } catch (error) {
-                    console.error('执行计划失败:', error);
-                    setIsLoading(false);
-                  }
-                }
-              }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white"
-            >
-              <ChevronRight size={16} />
-              执行计划
-            </Button>
-          </div>
-        )}
 
         {/* 运行状态指示器 */}
         <StreamingIndicator
