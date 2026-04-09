@@ -344,7 +344,7 @@ export function AgentChat({
       {/* 跳到最新按钮 */}
       {!isAtBottom && (
         <button
-          onClick={scrollToBottom}
+          onClick={() => scrollToBottom()}
           className="absolute bottom-20 right-4 z-10 w-8 h-8 rounded-full bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm flex items-center justify-center transition-all shadow-sm"
         >
           <ChevronDown size={16} className="text-foreground/60" />
