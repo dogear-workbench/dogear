@@ -42,6 +42,9 @@ let agentMonitorWindow: BrowserWindowType | null = null;
 // 自选股窗口实例
 let stockWindow: BrowserWindowType | null = null;
 
+// 会话窗口映射（conversationId → BrowserWindow）
+const sessionWindows = new Map<string, BrowserWindowType>();
+
 
 /**
  * 创建 Electron 主窗口
@@ -219,6 +222,41 @@ export function createStockWindow() {
 
 
 /**
+ * 创建独立会话窗口
+ * 同一个 conversationId 只创建一个窗口，重复调用则聚焦已有窗口
+ */
+export function createSessionWindow(conversationId: string, title: string) {
+  if (sessionWindows.has(conversationId)) {
+    const existing = sessionWindows.get(conversationId)!;
+    if (!existing.isDestroyed()) {
+      existing.focus();
+      return;
+    }
+  }
+
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    title: `会话: ${title}`,
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const url = isDev
+    ? `http://localhost:3000/#/session-window/${conversationId}`
+    : `file://${path.join(__dirname, '../../out/index.html')}#/session-window/${conversationId}`;
+  win.loadURL(url);
+
+  sessionWindows.set(conversationId, win);
+  win.on('closed', () => {
+    sessionWindows.delete(conversationId);
+  });
+}
+
+/**
  * 关闭所有子窗口（主窗口关闭时调用）
  */
 function closeAllChildWindows() {
@@ -231,6 +269,10 @@ function closeAllChildWindows() {
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.close();
   }
+  for (const [, win] of sessionWindows) {
+    if (!win.isDestroyed()) win.close();
+  }
+  sessionWindows.clear();
 }
 
 /**

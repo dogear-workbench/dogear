@@ -976,4 +976,13 @@ export const agentRouter = {
       await import('../agents/tools/stock-tools.js').catch(() => {});
       return getAllTools();
     }),
+
+  // 弹出独立会话窗口
+  openSessionWindow: t.procedure
+    .input<{ conversationId: string; title: string }>()
+    .action(async ({ input }) => {
+      const { createSessionWindow } = await import('../index.js');
+      createSessionWindow(input.conversationId, input.title);
+      return { success: true };
+    }),
 };

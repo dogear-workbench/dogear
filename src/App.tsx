@@ -6,6 +6,7 @@ import AgentMonitorPage from '@/app/agent-monitor/page';
 import DebugPage from '@/app/debug/page';
 import StockPage from '@/app/stocks/page';
 import WechatPage from '@/app/wechat/page';
+import { SessionWindowPage } from '@/app/session-window/page';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -24,6 +25,7 @@ export function App() {
           <Route path="/debug" element={<ErrorBoundary fallback="page"><DebugPage /></ErrorBoundary>} />
           <Route path="/stocks" element={<ErrorBoundary fallback="page"><StockPage /></ErrorBoundary>} />
           <Route path="/wechat" element={<ErrorBoundary fallback="page"><WechatPage /></ErrorBoundary>} />
+          <Route path="/session-window/:conversationId" element={<ErrorBoundary fallback="page"><SessionWindowPage /></ErrorBoundary>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>

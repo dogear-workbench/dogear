@@ -260,7 +260,7 @@ export default function Home() {
                   <div
                     key={tab.conversationId}
                     className={cn(
-                      'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
+                      'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
                       activeTabId === tab.conversationId
                         ? 'bg-background font-medium'
                         : 'hover:bg-muted/50 text-muted-foreground'
@@ -272,7 +272,20 @@ export default function Home() {
                     )}
                     <span className="truncate">{tab.conversationTitle}</span>
                     <button
-                      className="ml-1 p-0.5 rounded hover:bg-muted shrink-0"
+                      className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="弹出为独立窗口"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        client.openSessionWindow({
+                          conversationId: tab.conversationId,
+                          title: tab.conversationTitle,
+                        });
+                      }}
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                    <button
+                      className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
                       onClick={(e) => {
                         e.stopPropagation();
                         closeTab(tab.conversationId);
