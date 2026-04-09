@@ -11,6 +11,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
+import { safeJsonWrite } from '../safe-json.js';
 
 const { app } = electron;
 
@@ -84,9 +85,7 @@ class WechatMessageStore {
 
   /** 保存联系人列表 */
   async saveContacts(contacts: WechatContact[]): Promise<void> {
-    const dir = path.dirname(getContactsPath());
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(getContactsPath(), JSON.stringify(contacts, null, 2), 'utf-8');
+    await safeJsonWrite(getContactsPath(), contacts);
   }
 
   /** 更新/插入单个联系人 */

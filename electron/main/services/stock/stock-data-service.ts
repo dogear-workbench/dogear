@@ -14,6 +14,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
+import { safeFileWrite } from '../safe-json.js';
 
 const { app } = electron;
 
@@ -229,17 +230,10 @@ class StockDataService {
   async writeKLine(market: number, code: string, points: KLineDataPoint[]): Promise<void> {
     const filePath = getKLinePath(market, code);
 
-    // 确保目录存在
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-
-    if (points.length === 0) {
-      // 空数据则写入空文件
-      await fs.writeFile(filePath, '', 'utf-8');
-      return;
-    }
-
-    const jsonlContent = toJsonl(points as unknown as Record<string, unknown>[]);
-    await fs.writeFile(filePath, jsonlContent, 'utf-8');
+    const jsonlContent = points.length === 0
+      ? ''
+      : toJsonl(points as unknown as Record<string, unknown>[]);
+    await safeFileWrite(filePath, jsonlContent);
   }
 
   // ============================================================

@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
+import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 
 const { app } = electron;
 
@@ -104,12 +105,7 @@ function emptyFile(): WorkspacesFile {
  * 文件不存在或解析失败时返回空结构
  */
 async function loadWorkspacesFile(): Promise<WorkspacesFile> {
-  try {
-    const raw = await fs.readFile(getWorkspacesPath(), 'utf-8');
-    return JSON.parse(raw) as WorkspacesFile;
-  } catch {
-    return emptyFile();
-  }
+  return safeJsonRead<WorkspacesFile>(getWorkspacesPath(), emptyFile());
 }
 
 /**
@@ -117,9 +113,7 @@ async function loadWorkspacesFile(): Promise<WorkspacesFile> {
  * 自动创建 .dogear/workspaces/ 目录
  */
 async function saveWorkspacesFile(data: WorkspacesFile): Promise<void> {
-  const filePath = getWorkspacesPath();
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  await safeJsonWrite(getWorkspacesPath(), data);
 }
 
 // ============================================================

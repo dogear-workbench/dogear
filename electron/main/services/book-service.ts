@@ -10,6 +10,7 @@ import electron from 'electron';
 const { dialog } = electron;
 import fs from 'fs';
 import path from 'path';
+import { safeJsonWrite } from './safe-json.js';
 import { v4 as uuidv4 } from 'uuid';
 import type { Book, Chapter, ChapterMetadata } from '../types.js';
 import { ChapterRecognizer } from './chapter-recognizer.js';
@@ -27,8 +28,7 @@ export type { Book, Chapter, ChapterMetadata };
 async function saveChapters(workspacePath: string, bookId: string, chapters: Chapter[]): Promise<void> {
   const dogearDir = path.join(workspacePath, bookId, '.dogear');
   const chaptersPath = path.join(dogearDir, 'chapters.json');
-  await fs.promises.mkdir(dogearDir, { recursive: true });
-  await fs.promises.writeFile(chaptersPath, JSON.stringify({ bookId, chapters }, null, 2), 'utf-8');
+  await safeJsonWrite(chaptersPath, { bookId, chapters });
 }
 
 /** 更新 meta.json — 读取已有数据，合并新字段，写回 */

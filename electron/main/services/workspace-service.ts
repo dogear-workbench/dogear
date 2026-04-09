@@ -10,6 +10,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import * as workspaceJsonService from './workspace-json-service.js';
+import { safeJsonWrite } from './safe-json.js';
 import type { Workspace } from './workspace-json-service.js';
 export type { Workspace };
 
@@ -137,7 +138,7 @@ export async function saveBookMeta(
   const dogearDir = getDogearDir(workspace, bookId);
   const metaPath = path.join(dogearDir, 'meta.json');
 
-  await fs.writeFile(metaPath, JSON.stringify(metadata, null, 2), 'utf-8');
+  await safeJsonWrite(metaPath, metadata);
 }
 
 /**
@@ -179,10 +180,7 @@ export async function saveAnalysisStatus(
   const dogearDir = getDogearDir(workspace, bookId);
   const statusPath = path.join(dogearDir, 'status.json');
 
-  // 确保目录存在（避免 ENOENT 错误）
-  await fs.mkdir(dogearDir, { recursive: true });
-
-  await fs.writeFile(statusPath, JSON.stringify(status, null, 2), 'utf-8');
+  await safeJsonWrite(statusPath, status);
 }
 
 /**
@@ -224,9 +222,6 @@ export async function saveAnalysisResult(
   const dogearDir = getDogearDir(workspace, bookId);
   const analysisPath = path.join(dogearDir, 'analysis.json');
 
-  // 确保目录存在（避免 ENOENT 错误）
-  await fs.mkdir(dogearDir, { recursive: true });
-
   // 添加时间戳和模型信息
   const data = {
     analyzedAt: Date.now(),
@@ -234,7 +229,7 @@ export async function saveAnalysisResult(
     ...analysis
   };
 
-  await fs.writeFile(analysisPath, JSON.stringify(data, null, 2), 'utf-8');
+  await safeJsonWrite(analysisPath, data);
 }
 
 /**
@@ -274,9 +269,6 @@ export async function saveChapterAnalysis(
   const dogearDir = getDogearDir(workspace, bookId);
   const chaptersDir = path.join(dogearDir, 'chapters');
 
-  // 确保目录存在（避免 ENOENT 错误）
-  await fs.mkdir(chaptersDir, { recursive: true });
-
   // 文件名格式: chapter-001.json
   const filename = `chapter-${String(chapterNumber).padStart(3, '0')}.json`;
   const chapterPath = path.join(chaptersDir, filename);
@@ -287,7 +279,7 @@ export async function saveChapterAnalysis(
     ...analysis
   };
 
-  await fs.writeFile(chapterPath, JSON.stringify(data, null, 2), 'utf-8');
+  await safeJsonWrite(chapterPath, data);
 }
 
 /**

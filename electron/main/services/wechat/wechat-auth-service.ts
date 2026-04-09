@@ -10,6 +10,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
 import { wechatILinkService } from './wechat-ilink-service.js';
+import { safeJsonWrite } from '../safe-json.js';
 
 const { app } = electron;
 
@@ -105,9 +106,7 @@ class WechatAuthService extends EventEmitter {
 
   /** 保存 token 到磁盘 */
   private async saveToken(token: WechatAuthToken): Promise<void> {
-    const dir = path.dirname(getAuthPath());
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(getAuthPath(), JSON.stringify(token, null, 2), 'utf-8');
+    await safeJsonWrite(getAuthPath(), token);
   }
 
   /** 清除 token */

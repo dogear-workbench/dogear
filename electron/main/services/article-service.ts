@@ -8,6 +8,7 @@ import TurndownService from 'turndown';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import path from 'path';
+import { safeJsonWrite, safeFileWrite } from './safe-json.js';
 import type { WorkspaceFileNode } from '../types.js';
 /** 文章元数据（存储在 meta.json） */
 export interface ArticleMeta {
@@ -65,8 +66,7 @@ async function loadArticleOrder(workspacePath: string): Promise<ArticleOrderFile
 
 async function saveArticleOrder(workspacePath: string, data: ArticleOrderFile): Promise<void> {
   const orderPath = path.join(workspacePath, ARTICLES_DIR, ORDER_FILE);
-  await fs.mkdir(path.dirname(orderPath), { recursive: true });
-  await fs.writeFile(orderPath, JSON.stringify(data, null, 2), 'utf-8');
+  await safeJsonWrite(orderPath, data);
 }
 
 /**
@@ -357,29 +357,14 @@ export async function saveArticle(
 ): Promise<void> {
   const articleDir = path.join(workspacePath, ARTICLES_DIR, articleData.meta.id);
 
-  // 创建文章目录
-  await fs.mkdir(articleDir, { recursive: true });
-
-  // 写入 meta.json
-  await fs.writeFile(
-    path.join(articleDir, 'meta.json'),
-    JSON.stringify(articleData.meta, null, 2),
-    'utf-8'
-  );
+  // 写入 meta.json（safeJsonWrite 内部会自动创建目录）
+  await safeJsonWrite(path.join(articleDir, 'meta.json'), articleData.meta);
 
   // 写入 content.md（Markdown 正文）
-  await fs.writeFile(
-    path.join(articleDir, 'content.md'),
-    articleData.content,
-    'utf-8'
-  );
+  await safeFileWrite(path.join(articleDir, 'content.md'), articleData.content);
 
   // 写入 raw.html（原始 HTML，便于后续重新解析）
-  await fs.writeFile(
-    path.join(articleDir, 'raw.html'),
-    articleData.rawHtml,
-    'utf-8'
-  );
+  await safeFileWrite(path.join(articleDir, 'raw.html'), articleData.rawHtml);
 
   // 更新排序索引
   await addToOrder(workspacePath, ARTICLES_DIR, articleData.meta.id, false);

@@ -4,9 +4,9 @@
  * - 开发阶段：<项目根目录>/.dogear/stocks/watchlist.json
  * - 打包发布后：<app.asar 同级目录>/.dogear/stocks/watchlist.json
  */
-import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
+import { safeJsonWrite, safeJsonRead } from '../safe-json.js';
 
 const { app } = electron;
 
@@ -83,16 +83,7 @@ class StockWatchlistService {
    * 文件不存在时返回默认空列表
    */
   async load(): Promise<Watchlist> {
-    const filePath = getWatchlistPath();
-
-    try {
-      const raw = await fs.readFile(filePath, 'utf-8');
-      const parsed = JSON.parse(raw) as Watchlist;
-      return parsed;
-    } catch {
-      // 文件不存在或解析失败，返回默认值
-      return structuredClone(DEFAULT_WATCHLIST);
-    }
+    return safeJsonRead<Watchlist>(getWatchlistPath(), structuredClone(DEFAULT_WATCHLIST));
   }
 
   /**
@@ -100,10 +91,7 @@ class StockWatchlistService {
    * 自动创建 .dogear/stocks 目录
    */
   async save(watchlist: Watchlist): Promise<void> {
-    const dir = getStocksDir();
-    await fs.mkdir(dir, { recursive: true });
-    const filePath = getWatchlistPath();
-    await fs.writeFile(filePath, JSON.stringify(watchlist, null, 2), 'utf-8');
+    await safeJsonWrite(getWatchlistPath(), watchlist);
   }
 
   /**

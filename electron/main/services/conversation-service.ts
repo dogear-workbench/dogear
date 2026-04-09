@@ -7,6 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
+import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 
 const { app } = electron;
 
@@ -113,12 +114,10 @@ function emptyFile(): WorkspaceConversationsFile {
  * 文件不存在或解析失败时返回空结构
  */
 async function loadWorkspaceConversations(workspaceId: string): Promise<WorkspaceConversationsFile> {
-  try {
-    const raw = await fs.readFile(getWorkspaceConversationsPath(workspaceId), 'utf-8');
-    return JSON.parse(raw) as WorkspaceConversationsFile;
-  } catch {
-    return emptyFile();
-  }
+  return safeJsonRead<WorkspaceConversationsFile>(
+    getWorkspaceConversationsPath(workspaceId),
+    { version: 1, conversations: {} },
+  );
 }
 
 /**
@@ -126,13 +125,7 @@ async function loadWorkspaceConversations(workspaceId: string): Promise<Workspac
  * 自动创建目录
  */
 async function saveWorkspaceConversations(workspaceId: string, data: WorkspaceConversationsFile): Promise<void> {
-  const dir = getWorkspaceDataDir(workspaceId);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(
-    getWorkspaceConversationsPath(workspaceId),
-    JSON.stringify(data, null, 2),
-    'utf-8',
-  );
+  await safeJsonWrite(getWorkspaceConversationsPath(workspaceId), data);
 }
 
 // ============================================================

@@ -4,9 +4,9 @@
  * - 开发阶段：<项目根目录>/.dogear/settings.json
  * - 打包发布后：<app.asar 同级目录>/.dogear/settings.json
  */
-import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
+import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 
 const { app } = electron;
 
@@ -170,17 +170,13 @@ function deepMerge<T extends Record<string, any>>(target: T, source: T): T {
  * 文件不存在时返回默认值，已存在时与默认值深度合并（保证新增字段有默认值）
  */
 export async function loadSettings(): Promise<AppSettings> {
-  const settingsPath = getSettingsPath();
-
-  try {
-    const raw = await fs.readFile(settingsPath, 'utf-8');
-    const saved = JSON.parse(raw) as AppSettings;
-    // 与默认值深度合并，确保新增字段有默认值
-    return deepMerge(saved, DEFAULT_SETTINGS);
-  } catch {
+  const saved = await safeJsonRead<AppSettings | null>(getSettingsPath(), null);
+  if (saved === null) {
     // 文件不存在或解析失败，返回默认值
     return structuredClone(DEFAULT_SETTINGS);
   }
+  // 与默认值深度合并，确保新增字段有默认值
+  return deepMerge(saved, DEFAULT_SETTINGS);
 }
 
 /**
@@ -188,10 +184,7 @@ export async function loadSettings(): Promise<AppSettings> {
  * 自动创建 .dogear 目录
  */
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  const configDir = getConfigDir();
-  await fs.mkdir(configDir, { recursive: true });
-  const settingsPath = getSettingsPath();
-  await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+  await safeJsonWrite(getSettingsPath(), settings);
 }
 
 /**

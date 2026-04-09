@@ -3,10 +3,10 @@
  * 管理 .dogear/workspaces/{workspaceId}/conversation-tree.json
  * 负责文件夹定义和对话/文件夹的父子关系与排序
  */
-import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
+import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 
 const { app } = electron;
 
@@ -54,18 +54,11 @@ function emptyTree(): ConversationTreeFile {
 }
 
 async function loadTree(workspaceId: string): Promise<ConversationTreeFile> {
-  try {
-    const raw = await fs.readFile(getTreePath(workspaceId), 'utf-8');
-    return JSON.parse(raw) as ConversationTreeFile;
-  } catch {
-    return emptyTree();
-  }
+  return safeJsonRead<ConversationTreeFile>(getTreePath(workspaceId), emptyTree());
 }
 
 async function saveTree(workspaceId: string, data: ConversationTreeFile): Promise<void> {
-  const dir = path.dirname(getTreePath(workspaceId));
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(getTreePath(workspaceId), JSON.stringify(data, null, 2), 'utf-8');
+  await safeJsonWrite(getTreePath(workspaceId), data);
 }
 
 // ============================================================
