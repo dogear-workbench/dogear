@@ -92,8 +92,90 @@ export function AgentChat({
   // 消息流处理
   useSessionMessages({ sessionId, showReplayMessages, setMessages, setIsLoading, setHistoryLoaded });
 
+  // ─── 滚动控制（需在 useSessionEvents 之前声明，供其闭包引用）───
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const isAtBottomRef = useRef(true);
+  const [newMsgCount, setNewMsgCount] = useState(0);
+  const prevMessageCount = useRef(0);
+  // 滚动模式：auto=跟随底部, user=用户控制
+  const scrollModeRef = useRef<'auto' | 'user'>('auto');
+
+  // 获取滚动视口元素
+  const getViewportEl = useCallback(() => {
+    return scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
+  }, []);
+
+  // 滚到底部
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = getViewportEl();
+    if (el) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      setNewMsgCount(0);
+      scrollModeRef.current = 'auto';
+      isAtBottomRef.current = true;
+      setIsAtBottom(true);
+    }
+  }, [getViewportEl]);
+
+  // 用户滚动检测
+  const handleScroll = useCallback(() => {
+    const el = getViewportEl();
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    isAtBottomRef.current = atBottom;
+    setIsAtBottom(atBottom);
+
+    if (atBottom) {
+      setNewMsgCount(0);
+      scrollModeRef.current = 'auto';
+    } else {
+      scrollModeRef.current = 'user';
+    }
+  }, [getViewportEl]);
+
+  // 使用 ResizeObserver 监听消息容器高度变化，驱动自动滚动
+  // 涵盖流式输出（contentBlocks 更新）和新消息追加两种场景
+  useEffect(() => {
+    const el = getViewportEl();
+    if (!el) return;
+
+    const contentEl = el.firstElementChild as HTMLElement | null;
+    if (!contentEl) return;
+
+    const observer = new ResizeObserver(() => {
+      if (scrollModeRef.current === 'auto') {
+        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+      } else if (messages.length > 0) {
+        setNewMsgCount(prev => prev + 1);
+      }
+    });
+
+    observer.observe(contentEl);
+    return () => observer.disconnect();
+  }, [getViewportEl, sessionId]);
+
+  // 历史加载完成后（从无消息到有消息）自动滚到底部（无动画）
+  useEffect(() => {
+    if (prevMessageCount.current === 0 && messages.length > 0) {
+      requestAnimationFrame(() => {
+        scrollToBottom('instant');
+      });
+    }
+    prevMessageCount.current = messages.length;
+  }, [messages.length, scrollToBottom]);
+
   // 事件监听（完成、权限、AskUser、通知）
-  useSessionEvents({ sessionId, setMessages, setIsLoading, setPermissionMode });
+  useSessionEvents({
+    sessionId,
+    setMessages,
+    setIsLoading,
+    setPermissionMode,
+    onScrollToAction: () => {
+      // 权限请求/AskUser 到达时，延迟 100ms 等 DOM 更新完成后滚到底部
+      setTimeout(() => scrollToBottom('smooth'), 100);
+    },
+  });
 
   // 从 messages 的 ContentBlock 中提取子代理列表，按 conversationId 缓存到 ui-store
   const sdkSessionId = useConversationStore((s) => s.selectedConversation?.sdk_session_id);
@@ -155,61 +237,6 @@ export function AgentChat({
     const newInput = slashCommands.handleSlashCommandSelect(cmd);
     sendMessage.setInput(newInput);
   };
-
-  // 滚动控制
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const isAtBottomRef = useRef(true);
-  const [isAtBottom, setIsAtBottom] = useState(true);
-  const [newMsgCount, setNewMsgCount] = useState(0);
-  const lastScrollTime = useRef(0);
-  const prevMessageCount = useRef(0);
-
-  const handleScroll = useCallback(() => {
-    const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    isAtBottomRef.current = atBottom;
-    setIsAtBottom(atBottom);
-    if (atBottom) setNewMsgCount(0);
-  }, []);
-
-  // 消息变化时：在底部则自动跟随滚动，否则增加未读计数
-  // 用 ref 读取 isAtBottom，避免闭包捕获旧值
-  useEffect(() => {
-    if (isAtBottomRef.current) {
-      const now = Date.now();
-      if (now - lastScrollTime.current > 100) {
-        lastScrollTime.current = now;
-        const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-        if (el) {
-          el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-        }
-      }
-    } else if (messages.length > 0) {
-      setNewMsgCount(prev => prev + 1);
-    }
-  }, [messages]);
-
-  // 历史加载完成后（从无消息到有消息）自动滚到底部（无动画）
-  useEffect(() => {
-    if (prevMessageCount.current === 0 && messages.length > 0) {
-      const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-      if (el) {
-        requestAnimationFrame(() => {
-          el.scrollTo({ top: el.scrollHeight, behavior: 'instant' });
-        });
-      }
-    }
-    prevMessageCount.current = messages.length;
-  }, [messages.length]);
-
-  const scrollToBottom = useCallback(() => {
-    const el = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
-    if (el) {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-      setNewMsgCount(0);
-    }
-  }, []);
 
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border">

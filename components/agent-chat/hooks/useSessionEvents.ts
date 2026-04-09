@@ -9,6 +9,8 @@ interface UseSessionEventsParams {
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setPermissionMode: Dispatch<SetStateAction<PermissionMode>>;
+  /** 权限请求/AskUser 到达时通知调用方触发滚动 */
+  onScrollToAction?: () => void;
 }
 
 /**
@@ -20,6 +22,7 @@ export function useSessionEvents({
   setMessages,
   setIsLoading,
   setPermissionMode,
+  onScrollToAction,
 }: UseSessionEventsParams): void {
   useEffect(() => {
     if (!sessionId) return;
@@ -78,6 +81,9 @@ export function useSessionEvents({
 
         return updated;
       });
+
+      // 通知滚动到权限请求位置
+      onScrollToAction?.();
     });
 
     // 3. 监听后端权限模式变更（双向同步）
@@ -115,6 +121,9 @@ export function useSessionEvents({
 
         return updated;
       });
+
+      // 通知滚动到 AskUser 请求位置
+      onScrollToAction?.();
     });
 
     // 5. 监听 Agent 通知事件（Notification hook 触发的系统级通知）
