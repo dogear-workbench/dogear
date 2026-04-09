@@ -42,6 +42,7 @@ type WireOptions = {
   conversationId: string;
   workspaceId: string;
   clearForkFields?: boolean;
+  forkSession?: boolean;
 };
 
 type AttachConversationOptions = {
@@ -139,7 +140,7 @@ function wireConversationSession(session: QueryBasedSession, options: WireOption
         options.conversationId,
         data.session_id,
       );
-      if (options.clearForkFields) {
+      if (options.clearForkFields || options.forkSession) {
         await conversationService.clearForkFields(options.workspaceId, options.conversationId);
       }
     } catch (error) {
@@ -278,6 +279,7 @@ class ConversationRuntimeService {
         conversationId,
         workspaceId,
         clearForkFields: options?.clearForkFields,
+        forkSession: options?.forkSession,
       });
       created = true;
     }

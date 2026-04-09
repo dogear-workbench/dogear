@@ -56,6 +56,7 @@ export function useAgentSession({
           sdkSessionId = forkParams.sdkSessionIdToResume;
           forkSessionFlag = forkParams.forkSession;
           resumeSessionAtFlag = forkParams.resumeSessionAt;
+          clearForkFields = true;  // 分叉完成后清除后端分叉字段
           console.log('🔀 Fork 模式启动:', { sdkSessionId, forkSession: forkSessionFlag, resumeSessionAt: resumeSessionAtFlag });
         } else if (conversationId) {
           // 正常 resume 模式
