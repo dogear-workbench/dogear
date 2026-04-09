@@ -29,6 +29,8 @@ export default function Home() {
   const openRightPanel = useUIStore((s) => s.openRightPanel);
   const rightPanelTab = useUIStore((s) => s.rightPanelTab);
   const setRightPanelTab = useUIStore((s) => s.setRightPanelTab);
+  const leftPanelTab = useUIStore((s) => s.leftPanelTab);
+  const setLeftPanelTab = useUIStore((s) => s.setLeftPanelTab);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -212,16 +214,39 @@ export default function Home() {
 
       {/* 主内容区域：三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：对话列表 + 文章列表 */}
+        {/* 左侧：Tab 分页（对话列表 / 文件树） */}
         <aside className="w-64 border-r bg-muted/30 flex flex-col">
-          {/* 对话列表区域 */}
-          <div className="flex-1 overflow-hidden">
-            <ConversationList />
+          {/* Tab 切换栏 */}
+          <div className="flex border-b flex-shrink-0">
+            <button
+              onClick={() => setLeftPanelTab('conversations')}
+              className={`flex-1 py-2 text-xs font-medium text-center transition-colors ${
+                leftPanelTab === 'conversations'
+                  ? 'text-foreground border-b-2 border-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              对话
+            </button>
+            <button
+              onClick={() => setLeftPanelTab('explorer')}
+              className={`flex-1 py-2 text-xs font-medium text-center transition-colors ${
+                leftPanelTab === 'explorer'
+                  ? 'text-foreground border-b-2 border-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              文件
+            </button>
           </div>
 
-          {/* 工作区资源管理器 */}
-          <div className="border-t flex-1 flex flex-col overflow-hidden">
-            <WorkspaceExplorer />
+          {/* Tab 内容 */}
+          <div className="flex-1 overflow-hidden">
+            {leftPanelTab === 'conversations' ? (
+              <ConversationList />
+            ) : (
+              <WorkspaceExplorer />
+            )}
           </div>
         </aside>
 

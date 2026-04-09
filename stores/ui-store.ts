@@ -23,6 +23,12 @@ interface UIState {
   togglePromptSidebar: () => void;
   closePromptSidebar: () => void;
 
+  // 左侧面板 tab
+  /** 左侧面板当前 tab：对话列表 or 文件浏览器 */
+  leftPanelTab: 'conversations' | 'explorer';
+  /** 切换左侧面板 tab */
+  setLeftPanelTab: (tab: 'conversations' | 'explorer') => void;
+
   // 右侧预览面板
   /** 右侧预览面板是否展开 */
   rightPanelOpen: boolean;
@@ -70,6 +76,10 @@ export const useUIStore = create<UIState>((set) => ({
   togglePromptSidebar: () => set((s) => ({ promptSidebarOpen: !s.promptSidebarOpen })),
   closePromptSidebar: () => set({ promptSidebarOpen: false }),
 
+  // 左侧面板 tab（默认对话列表）
+  leftPanelTab: 'conversations',
+  setLeftPanelTab: (tab) => set({ leftPanelTab: tab }),
+
   // 右侧预览面板（默认折叠）
   rightPanelOpen: false,
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
@@ -103,6 +113,7 @@ export const useUIStore = create<UIState>((set) => ({
   reset: () => set({
     settingsOpen: false,
     promptSidebarOpen: false,
+    leftPanelTab: 'conversations',
     rightPanelOpen: false,
     rightPanelTab: 'preview',
     subAgentsMap: {},
