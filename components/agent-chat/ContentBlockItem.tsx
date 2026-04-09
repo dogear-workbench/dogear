@@ -90,7 +90,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     case 'status':
       return (
         <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-          <div className="w-2 h-2 bg-muted-foreground rounded-full animate-pulse"></div>
+          <div className="w-2 h-2 bg-muted-foreground rounded-full"></div>
           {block.status}
         </div>
       );
@@ -230,7 +230,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     case 'compacting':
       return (
         <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-          <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full animate-pulse"></div>
+          <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full"></div>
           正在压缩对话历史...
         </div>
       );
