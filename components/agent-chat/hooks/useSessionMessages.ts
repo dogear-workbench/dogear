@@ -13,6 +13,8 @@ interface UseSessionMessagesParams {
   setHistoryLoaded: Dispatch<SetStateAction<boolean>>;
   /** 排队消息缓冲区：Agent 运行中时暂存的消息，result 到达后依次消费 */
   queuedMessagesRef: MutableRefObject<QueuedMessageEntry[]>;
+  /** 缓冲区消费后同步 React UI state */
+  onQueueChanged?: () => void;
 }
 
 /**
@@ -26,6 +28,7 @@ export function useSessionMessages({
   setIsLoading,
   setHistoryLoaded,
   queuedMessagesRef,
+  onQueueChanged,
 }: UseSessionMessagesParams): void {
   useEffect(() => {
     if (!sessionId) return;
@@ -53,30 +56,35 @@ export function useSessionMessages({
       if (extendedMsg.type === 'result') {
         const queued = queuedMessagesRef.current;
         if (queued.length > 0) {
-          // 取出队头消息，插入到 messages 列表并发送
-          const next = queued.shift()!;
-          setMessages(prev => [...prev, next.displayMessage, {
-            role: 'assistant' as const,
-            content: '' as string,
-            timestamp: Date.now(),
-            isStreaming: true,
-            contentBlocks: [] as ContentBlock[],
-          }]);
-          client.sendQueryBasedSessionMessage({
-            sessionId: data.sessionId,
-            content: next.content,
-            ...(next.textBlocks && { textBlocks: next.textBlocks }),
-            ...(next.images && {
-              images: next.images.map(img => ({
-                media_type: img.mediaType,
-                data: img.base64,
-              })),
-            }),
-          }).catch(err => {
-            console.error('发送排队消息失败:', err);
-            setIsLoading(false);
-          });
-          // 不调用 setIsLoading(false)，新消息立即开始处理，loading 保持 true
+          // 延迟 100ms 确保 SDK 状态完全就绪后再消费下一条
+          setTimeout(() => {
+            const next = queued.shift()!;
+            // 同步 UI state（更新悬浮预览区）
+            onQueueChanged?.();
+            // 将排队消息插入到 messages 列表（用户消息 + assistant 占位）
+            setMessages(prev => [...prev, next.displayMessage, {
+              role: 'assistant' as const,
+              content: '' as string,
+              timestamp: Date.now(),
+              isStreaming: true,
+              contentBlocks: [] as ContentBlock[],
+            }]);
+            client.sendQueryBasedSessionMessage({
+              sessionId: data.sessionId,
+              content: next.content,
+              ...(next.textBlocks && { textBlocks: next.textBlocks }),
+              ...(next.images && {
+                images: next.images.map(img => ({
+                  media_type: img.mediaType,
+                  data: img.base64,
+                })),
+              }),
+            }).catch(err => {
+              console.error('发送排队消息失败:', err);
+              setIsLoading(false);
+            });
+            // 不调用 setIsLoading(false)，新消息立即开始处理，loading 保持 true
+          }, 100);
         } else {
           setIsLoading(false);
         }

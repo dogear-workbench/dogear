@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronDown, Archive, GitBranch } from 'lucide-react';
+import { ChevronDown, Archive, GitBranch, Send, X } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
@@ -250,7 +250,18 @@ export function AgentChat({
   });
 
   // 消息流处理（在 useSendMessage 之后调用，共享 queuedMessagesRef）
-  useSessionMessages({ sessionId, showReplayMessages, setMessages, setIsLoading, setHistoryLoaded, queuedMessagesRef });
+  useSessionMessages({
+    sessionId,
+    showReplayMessages,
+    setMessages,
+    setIsLoading,
+    setHistoryLoaded,
+    queuedMessagesRef,
+    // 缓冲区消费后同步 React state（更新悬浮预览区）
+    onQueueChanged: () => {
+      sendMessage.setQueuedMessages([...queuedMessagesRef.current]);
+    },
+  });
 
   // 斜杠命令
   const slashCommands = useSlashCommands({
@@ -377,6 +388,35 @@ export function AgentChat({
         </button>
       )}
       </div>
+
+      {/* 排队消息悬浮预览区 */}
+      {sendMessage.queuedMessages.length > 0 && (
+        <div className="border-t bg-muted/20 px-4 py-2 space-y-1">
+          <div className="text-xs text-muted-foreground mb-1">
+            {sendMessage.queuedMessages.length} 条消息排队中
+          </div>
+          {sendMessage.queuedMessages.map((entry, index) => (
+            <div
+              key={index}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-background border text-sm"
+            >
+              <Send size={12} className="flex-shrink-0 text-muted-foreground" />
+              <span className="flex-1 truncate text-muted-foreground">
+                {entry.displayMessage.content.length > 60
+                  ? entry.displayMessage.content.slice(0, 60) + '...'
+                  : entry.displayMessage.content}
+              </span>
+              <button
+                onClick={() => sendMessage.removeQueuedMessage(index)}
+                className="flex-shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
+                title="取消排队"
+              >
+                <X size={14} className="text-muted-foreground" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 输入区域 */}
       <ChatInputArea

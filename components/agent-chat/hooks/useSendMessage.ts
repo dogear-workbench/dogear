@@ -50,6 +50,9 @@ export function useSendMessage(params: UseSendMessageParams) {
     queuedMessagesRef,
   } = params;
 
+  // 排队消息的 React state（用于 UI 渲染），与 queuedMessagesRef 同步
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessageEntry[]>([]);
+
   const [input, setInput] = useState('');
   const [thinkingLevel, setThinkingLevel] = useState<number>(10000);
 
@@ -404,14 +407,16 @@ export function useSendMessage(params: UseSendMessageParams) {
 
     if (isLoading) {
       // Agent 运行中 → 消息存入缓冲区，不插入 messages 列表，不立即发送
-      queuedMessagesRef.current.push({
+      const entry: QueuedMessageEntry = {
         content: messageToSend,
         ...(textBlocks.length > 1 && { textBlocks }),
         ...(imagesToSend.length > 0 && {
           images: imagesToSend.map(img => ({ base64: img.base64, mediaType: img.mediaType })),
         }),
         displayMessage: newUserMessage,
-      });
+      };
+      queuedMessagesRef.current.push(entry);
+      setQueuedMessages([...queuedMessagesRef.current]);
       return;  // 直接返回，等待上一轮完成
     }
 
@@ -492,5 +497,11 @@ export function useSendMessage(params: UseSendMessageParams) {
     insertModeChangeNotice,
     modeLabels,
     hasPendingUserAction,
+    queuedMessages,
+    setQueuedMessages,
+    removeQueuedMessage: useCallback((index: number) => {
+      queuedMessagesRef.current.splice(index, 1);
+      setQueuedMessages([...queuedMessagesRef.current]);
+    }, [queuedMessagesRef]),
   };
 }
