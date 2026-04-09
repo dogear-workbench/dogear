@@ -7,11 +7,19 @@ export interface FileReference {
   path: string;      // 绝对路径
 }
 
+/** 会话引用 */
+export interface ConversationReference {
+  conversationId: string;
+  title: string;
+  sdkSessionId: string | null;
+}
+
 interface ReferenceState {
   // --- 状态 ---
   referencedArticles: ArticleMeta[];
   quotedSnippets: QuoteSnippet[];
   referencedFiles: FileReference[];
+  referencedConversations: ConversationReference[];
 
   // --- Actions ---
   /** 引用/取消引用文章 */
@@ -32,6 +40,12 @@ interface ReferenceState {
   removeReferencedFile: (filePath: string) => void;
   /** 清空所有文件引用 */
   clearReferencedFiles: () => void;
+  /** 添加会话引用（去重） */
+  addReferencedConversation: (conv: ConversationReference) => void;
+  /** 移除会话引用 */
+  removeReferencedConversation: (conversationId: string) => void;
+  /** 清空所有会话引用 */
+  clearReferencedConversations: () => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -40,6 +54,7 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   referencedArticles: [],
   quotedSnippets: [],
   referencedFiles: [],
+  referencedConversations: [],
 
   toggleReferenceArticle: (article) => {
     set((state) => {
@@ -94,9 +109,25 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
 
   clearReferencedFiles: () => set({ referencedFiles: [] }),
 
+  addReferencedConversation: (conv) => {
+    set((state) => {
+      if (state.referencedConversations.some(c => c.conversationId === conv.conversationId)) return state;
+      return { referencedConversations: [...state.referencedConversations, conv] };
+    });
+  },
+
+  removeReferencedConversation: (conversationId) => {
+    set((state) => ({
+      referencedConversations: state.referencedConversations.filter(c => c.conversationId !== conversationId),
+    }));
+  },
+
+  clearReferencedConversations: () => set({ referencedConversations: [] }),
+
   reset: () => set({
     referencedArticles: [],
     quotedSnippets: [],
     referencedFiles: [],
+    referencedConversations: [],
   }),
 }));

@@ -68,6 +68,8 @@ export function useSendMessage(params: UseSendMessageParams) {
   const clearQuotedSnippets = useReferenceStore((s) => s.clearQuotedSnippets);
   const referencedFiles = useReferenceStore((s) => s.referencedFiles);
   const clearReferencedFiles = useReferenceStore((s) => s.clearReferencedFiles);
+  const referencedConversations = useReferenceStore((s) => s.referencedConversations);
+  const clearReferencedConversations = useReferenceStore((s) => s.clearReferencedConversations);
 
   // 权限模式名称映射
   const modeLabels: Record<string, string> = {
@@ -375,6 +377,17 @@ export function useSendMessage(params: UseSendMessageParams) {
         text: `<referenced_files>\n${refLines}\n</referenced_files>`
       });
       clearReferencedFiles();
+    }
+
+    // 会话引用：独立 block，agent 可通过 sdkSessionId 读取历史会话上下文
+    if (referencedConversations.length > 0) {
+      const convLines = referencedConversations.map(c =>
+        `  <conversation title="${sanitize(c.title)}" conversationId="${c.conversationId}" sdkSessionId="${c.sdkSessionId || ''}" />`
+      ).join('\n');
+      textBlocks.push({
+        text: `<referenced_conversations>\n${convLines}\n</referenced_conversations>`
+      });
+      clearReferencedConversations();
     }
 
     // 用户消息作为最后一个 block

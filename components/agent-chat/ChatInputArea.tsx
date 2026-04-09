@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText } from 'lucide-react';
+import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -123,6 +123,8 @@ export function ChatInputArea({
   const removeQuotedSnippet = useReferenceStore((s) => s.removeQuotedSnippet);
   const referencedFiles = useReferenceStore((s) => s.referencedFiles);
   const removeReferencedFile = useReferenceStore((s) => s.removeReferencedFile);
+  const referencedConversations = useReferenceStore((s) => s.referencedConversations);
+  const removeReferencedConversation = useReferenceStore((s) => s.removeReferencedConversation);
 
   return (
     <div className="p-3">
@@ -151,10 +153,10 @@ export function ChatInputArea({
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
             )}>
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
-            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || pendingImages.length > 0) && (
+            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 引用芯片 */}
-                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0) && (
+                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
                     {/* 文章引用芯片 — 淡蓝 */}
                     {referencedArticles.map(article => (
@@ -207,6 +209,25 @@ export function ChatInputArea({
                           size="icon-xs"
                           onClick={() => removeReferencedFile(file.path)}
                           className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-teal-100"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </span>
+                    ))}
+                    {/* 会话引用芯片 — 淡紫 */}
+                    {referencedConversations.map(conv => (
+                      <span
+                        key={conv.conversationId}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                        title={`引用会话: ${conv.title}`}
+                      >
+                        <MessageSquare className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[160px] truncate">{conv.title}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeReferencedConversation(conv.conversationId)}
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-purple-100"
                         >
                           <X className="w-3 h-3" />
                         </Button>

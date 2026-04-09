@@ -1,7 +1,7 @@
 
 import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from 'react';
 import {
-  MessageSquare, Plus, Trash2, GitBranch, Pencil,
+  MessageSquare, Plus, Trash2, GitBranch, Pencil, Quote,
   Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Bot,
 } from 'lucide-react';
 import {
@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
+import { useReferenceStore } from '@/stores/reference-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
 
@@ -336,6 +337,23 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
               {getRelativeTime(conv.updated_at)}
             </div>
           </div>
+          {/* 引用按钮 */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-purple-600"
+            title="引用到当前对话"
+            onClick={(e) => {
+              e.stopPropagation();
+              useReferenceStore.getState().addReferencedConversation({
+                conversationId: conv.id,
+                title: getConversationTitle(conv),
+                sdkSessionId: conv.sdk_session_id || null,
+              });
+            }}
+          >
+            <Quote className="w-3 h-3" />
+          </Button>
           {/* 编辑按钮 */}
           <Button
             variant="ghost"
@@ -365,6 +383,15 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
       <ContextMenuContent>
         <ContextMenuItem onClick={startEditing}>
           重命名
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => {
+          useReferenceStore.getState().addReferencedConversation({
+            conversationId: conv.id,
+            title: getConversationTitle(conv),
+            sdkSessionId: conv.sdk_session_id || null,
+          });
+        }}>
+          引用到当前对话
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
