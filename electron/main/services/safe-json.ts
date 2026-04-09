@@ -54,6 +54,8 @@ export async function safeJsonWrite(filePath: string, data: unknown): Promise<vo
       // 原文件不存在，跳过备份
     }
 
+    // Windows 上 rename 到已存在目标文件会失败，先尝试删除
+    try { await fs.unlink(filePath); } catch { /* 文件不存在，忽略 */ }
     await fs.rename(tmpPath, filePath);
   });
 }
@@ -77,6 +79,8 @@ export async function safeFileWrite(filePath: string, content: string): Promise<
       // 原文件不存在
     }
 
+    // Windows 上 rename 到已存在目标文件会失败，先尝试删除
+    try { await fs.unlink(filePath); } catch { /* 文件不存在，忽略 */ }
     await fs.rename(tmpPath, filePath);
   });
 }
@@ -97,9 +101,8 @@ export async function safeJsonRead<T>(filePath: string, defaultValue: T): Promis
     const raw = await fs.readFile(bakPath, 'utf-8');
     const data = JSON.parse(raw) as T;
     console.warn(`[safeJsonRead] 从备份恢复成功: ${bakPath}`);
-    try {
-      await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    } catch { /* 修复失败也没关系 */ }
+    // 受锁保护地写回主文件，不阻塞读取返回
+    safeJsonWrite(filePath, data).catch(() => { /* 修复失败也没关系 */ });
     return data;
   } catch {
     console.warn(`[safeJsonRead] 备份也无法读取: ${bakPath}`);
