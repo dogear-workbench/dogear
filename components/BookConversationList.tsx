@@ -1,7 +1,7 @@
 
 import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from 'react';
 import {
-  MessageSquare, Plus, Trash2, GitBranch, Pencil, Loader2,
+  MessageSquare, Plus, Trash2, GitBranch, Pencil,
   Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Bot,
 } from 'lucide-react';
 import {
@@ -227,6 +227,8 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   // 对话运行状态（从 conversation-store 读取，主进程广播，bot 操作也会更新）
   const runningIds = useConversationStore((s) => s.runningConversationIds);
   const isRunning = runningIds.has(conv.id);
+  const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
+  const isPending = pendingIds.has(conv.id);
   const botBoundId = useConversationStore((s) => s.botBoundConversationId);
   const isBotBound = conv.id === botBoundId;
 
@@ -278,7 +280,19 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
           }}
         >
           {isRunning ? (
-            <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-blue-500" />
+            isPending ? (
+              // 需要用户确认 → 蓝色脉冲
+              <span className="relative flex w-4 h-4 items-center justify-center flex-shrink-0">
+                <span className="absolute w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+              </span>
+            ) : (
+              // 正常运行 → 橙色脉冲
+              <span className="relative flex w-4 h-4 items-center justify-center flex-shrink-0">
+                <span className="absolute w-2.5 h-2.5 rounded-full bg-orange-400 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-orange-500" />
+              </span>
+            )
           ) : isFork ? (
             <GitBranch className={cn('w-4 h-4 flex-shrink-0',
               isSelected ? 'text-purple-600' : 'text-purple-400'

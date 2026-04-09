@@ -1,11 +1,13 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { rendererEvents } from '@/lib/events';
+import { useConversationStore } from '@/stores/conversation-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { Message, ContentBlock } from '../types';
 
 interface UseSessionEventsParams {
   sessionId: string | null;
+  conversationId: string | null;
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setPermissionMode: Dispatch<SetStateAction<PermissionMode>>;
@@ -19,6 +21,7 @@ interface UseSessionEventsParams {
  */
 export function useSessionEvents({
   sessionId,
+  conversationId,
   setMessages,
   setIsLoading,
   setPermissionMode,
@@ -38,6 +41,11 @@ export function useSessionEvents({
       if (data.sessionId !== sessionId) return;
 
       console.log('收到会话完成事件:', data);
+
+      // 清除待处理操作标记
+      if (conversationId) {
+        useConversationStore.getState().setPendingActionState(conversationId, false);
+      }
 
       // 结束加载状态
       setIsLoading(false);
@@ -88,6 +96,11 @@ export function useSessionEvents({
         return updated;
       });
 
+      // 标记该会话有待处理的权限操作
+      if (conversationId) {
+        useConversationStore.getState().setPendingActionState(conversationId, true);
+      }
+
       // 通知滚动到权限请求位置
       onScrollToActionRef.current?.();
     });
@@ -127,6 +140,11 @@ export function useSessionEvents({
 
         return updated;
       });
+
+      // 标记该会话有待处理的 AskUser 操作
+      if (conversationId) {
+        useConversationStore.getState().setPendingActionState(conversationId, true);
+      }
 
       // 通知滚动到 AskUser 请求位置
       onScrollToActionRef.current?.();

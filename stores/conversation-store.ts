@@ -41,6 +41,8 @@ interface ConversationState {
   sessionRestartTrigger: number;
   /** 当前正在运行（有 Agent 活跃）的对话 ID 集合 */
   runningConversationIds: Set<string>;
+  /** 当前有待处理操作（权限/AskUser）的对话 ID 集合 */
+  pendingActionConversationIds: Set<string>;
   /** 微信 Bot 当前绑定的对话 ID（null 表示未绑定） */
   botBoundConversationId: string | null;
 
@@ -73,6 +75,8 @@ interface ConversationState {
   triggerSessionRestart: () => void;
   /** 设置对话运行状态 */
   setRunningState: (conversationId: string, isRunning: boolean) => void;
+  /** 设置对话的待处理操作状态（权限/AskUser） */
+  setPendingActionState: (conversationId: string, isPending: boolean) => void;
   /** 设置 Bot 绑定的对话 ID */
   setBotBoundConversation: (conversationId: string | null) => void;
   /** 重置所有状态到初始值 */
@@ -193,6 +197,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   nodeMap: {},
   sessionRestartTrigger: 0,
   runningConversationIds: new Set<string>(),
+  pendingActionConversationIds: new Set<string>(),
   botBoundConversationId: null,
 
   loadConversations: async () => {
@@ -471,6 +476,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 
+  setPendingActionState: (conversationId: string, isPending: boolean) => {
+    set((state) => {
+      const newSet = new Set(state.pendingActionConversationIds);
+      if (isPending) newSet.add(conversationId);
+      else newSet.delete(conversationId);
+      return { pendingActionConversationIds: newSet };
+    });
+  },
+
   setBotBoundConversation: (conversationId: string | null) => {
     set({ botBoundConversationId: conversationId });
   },
@@ -484,6 +498,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     nodeMap: {},
     sessionRestartTrigger: 0,
     runningConversationIds: new Set<string>(),
+    pendingActionConversationIds: new Set<string>(),
     botBoundConversationId: null,
   }),
 }));

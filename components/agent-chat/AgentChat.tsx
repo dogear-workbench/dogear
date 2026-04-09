@@ -190,6 +190,7 @@ export function AgentChat({
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
     sessionId,
+    conversationId,
     setMessages,
     setIsLoading,
     setPermissionMode,
