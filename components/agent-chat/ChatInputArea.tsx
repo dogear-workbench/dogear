@@ -391,7 +391,19 @@ export function ChatInputArea({
 
               {/* 发送/停止按钮（右侧） */}
               <div className="ml-auto">
-                {isLoading ? (
+                {(input.trim() || pendingImages.length > 0) ? (
+                  // 有输入内容 → 始终显示发送按钮（运行中时排队发送）
+                  <InputGroupButton
+                    variant="default"
+                    size="icon-xs"
+                    onClick={handleSend}
+                    disabled={!isSessionReady}
+                    title={isLoading ? "排队发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)"}
+                  >
+                    <Send size={14} />
+                  </InputGroupButton>
+                ) : isLoading ? (
+                  // 无内容 + 运行中 → 停止按钮
                   <InputGroupButton
                     variant="destructive"
                     size="icon-xs"
@@ -406,11 +418,12 @@ export function ChatInputArea({
                     <Square size={14} />
                   </InputGroupButton>
                 ) : (
+                  // 无内容 + 空闲 → 禁用发送按钮
                   <InputGroupButton
                     variant="default"
                     size="icon-xs"
                     onClick={handleSend}
-                    disabled={(!input.trim() && pendingImages.length === 0) || !isSessionReady}
+                    disabled
                     title="发送 (Ctrl+Enter)"
                   >
                     <Send size={14} />
