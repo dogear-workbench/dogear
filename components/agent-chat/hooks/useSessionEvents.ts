@@ -1,4 +1,4 @@
-import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { rendererEvents } from '@/lib/events';
 import type { PermissionMode } from '@/types/electron-api';
@@ -24,6 +24,12 @@ export function useSessionEvents({
   setPermissionMode,
   onScrollToAction,
 }: UseSessionEventsParams): void {
+  // 用 ref 存储回调，避免 effect 依赖数组包含回调导致频繁重订阅（过期闭包问题）
+  const onScrollToActionRef = useRef(onScrollToAction);
+  useEffect(() => {
+    onScrollToActionRef.current = onScrollToAction;
+  });
+
   useEffect(() => {
     if (!sessionId) return;
 
@@ -83,7 +89,7 @@ export function useSessionEvents({
       });
 
       // 通知滚动到权限请求位置
-      onScrollToAction?.();
+      onScrollToActionRef.current?.();
     });
 
     // 3. 监听后端权限模式变更（双向同步）
@@ -123,7 +129,7 @@ export function useSessionEvents({
       });
 
       // 通知滚动到 AskUser 请求位置
-      onScrollToAction?.();
+      onScrollToActionRef.current?.();
     });
 
     // 5. 监听 Agent 通知事件（Notification hook 触发的系统级通知）
