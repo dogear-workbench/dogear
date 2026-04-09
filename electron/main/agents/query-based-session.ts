@@ -177,8 +177,8 @@ export class QueryBasedSession extends EventEmitter {
       queryOptions.permissionMode = this.currentPermissionMode;
 
       // 缓存声明式权限规则
-      if ((appSettings as any).permissionRules) {
-        this.permissionRules = (appSettings as any).permissionRules;
+      if (appSettings.permissionRules) {
+        this.permissionRules = appSettings.permissionRules;
         this.logger.info('已加载权限规则:', this.permissionRules);
       }
 
@@ -201,6 +201,19 @@ export class QueryBasedSession extends EventEmitter {
       if (this.config.enableSkills) {
         allowedTools = ['Skill', ...allowedTools];
         this.logger.info('Skill 功能已启用，已添加 Skill 工具到 allowedTools 第一位:', allowedTools);
+      }
+
+      // 合并设置页面的声明式 allow 规则到 SDK allowedTools（SDK 级别自动允许，无需经过 canUseTool）
+      if (this.permissionRules?.allow?.length) {
+        const merged = new Set([...allowedTools, ...this.permissionRules.allow]);
+        allowedTools = [...merged];
+        this.logger.info('已合并 permissionRules.allow 到 allowedTools:', this.permissionRules.allow);
+      }
+
+      // 合并设置页面的声明式 deny 规则到 SDK disallowedTools
+      if (this.permissionRules?.deny?.length) {
+        queryOptions.disallowedTools = this.permissionRules.deny;
+        this.logger.info('已设置 disallowedTools:', this.permissionRules.deny);
       }
 
       queryOptions.allowedTools = allowedTools;
