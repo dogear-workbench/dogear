@@ -1,5 +1,6 @@
 import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { rendererEvents } from '@/lib/events';
+import { client } from '@/lib/client';
 import type { Message, ContentBlock } from '../types';
 import { streamReducer } from '../transformers';
 import type { QueuedMessageEntry } from './useSendMessage';
@@ -61,22 +62,19 @@ export function useSessionMessages({
             isStreaming: true,
             contentBlocks: [] as ContentBlock[],
           }]);
-          // 动态导入 client 避免模块循环依赖（Vite ESM 环境）
-          import('@/lib/client').then(({ client }) => {
-            client.sendQueryBasedSessionMessage({
-              sessionId: data.sessionId,
-              content: next.content,
-              ...(next.textBlocks && { textBlocks: next.textBlocks }),
-              ...(next.images && {
-                images: next.images.map(img => ({
-                  media_type: img.mediaType,
-                  data: img.base64,
-                })),
-              }),
-            }).catch(err => {
-              console.error('发送排队消息失败:', err);
-              setIsLoading(false);
-            });
+          client.sendQueryBasedSessionMessage({
+            sessionId: data.sessionId,
+            content: next.content,
+            ...(next.textBlocks && { textBlocks: next.textBlocks }),
+            ...(next.images && {
+              images: next.images.map(img => ({
+                media_type: img.mediaType,
+                data: img.base64,
+              })),
+            }),
+          }).catch(err => {
+            console.error('发送排队消息失败:', err);
+            setIsLoading(false);
           });
           // 不调用 setIsLoading(false)，新消息立即开始处理，loading 保持 true
         } else {
