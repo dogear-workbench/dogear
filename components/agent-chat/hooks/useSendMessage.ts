@@ -1,4 +1,4 @@
-import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -6,6 +6,14 @@ import { useSlashCommandStore } from '@/stores/slash-command-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { Message, ContentBlock } from '../types';
 import type { PendingImage } from './useImageAttachment';
+
+/** 排队消息缓冲区元素类型（由 AgentChat 声明，传给 useSendMessage 和 useSessionMessages 共享） */
+export interface QueuedMessageEntry {
+  content: string;
+  textBlocks?: Array<{ text: string }>;
+  images?: Array<{ base64: string; mediaType: string }>;
+  displayMessage: Message;
+}
 
 interface UseSendMessageParams {
   sessionId: string | null;
@@ -19,6 +27,8 @@ interface UseSendMessageParams {
   conversationId: string | null;
   pendingImages: PendingImage[];
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
+  /** 排队消息缓冲区 ref，由 AgentChat 创建并同时传给 useSessionMessages */
+  queuedMessagesRef: MutableRefObject<QueuedMessageEntry[]>;
 }
 
 /**
@@ -37,6 +47,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     conversationId,
     pendingImages,
     setPendingImages,
+    queuedMessagesRef,
   } = params;
 
   const [input, setInput] = useState('');
@@ -391,17 +402,27 @@ export function useSendMessage(params: UseSendMessageParams) {
       ...(imagesToSend.length > 0 && { images: imagesToSend.map(img => ({ preview: img.preview })) }),
     };
 
-    // 添加用户消息，Agent 运行中时标记为排队
-    setMessages(prev => [...prev, {
-      ...newUserMessage,
-      isQueued: isLoading,  // Agent 运行中时标记为排队
-    }, ...(isLoading ? [] : [{
+    if (isLoading) {
+      // Agent 运行中 → 消息存入缓冲区，不插入 messages 列表，不立即发送
+      queuedMessagesRef.current.push({
+        content: messageToSend,
+        ...(textBlocks.length > 1 && { textBlocks }),
+        ...(imagesToSend.length > 0 && {
+          images: imagesToSend.map(img => ({ base64: img.base64, mediaType: img.mediaType })),
+        }),
+        displayMessage: newUserMessage,
+      });
+      return;  // 直接返回，等待上一轮完成
+    }
+
+    // Agent 空闲 → 正常流程：插入用户消息 + assistant 占位
+    setMessages(prev => [...prev, newUserMessage, {
       role: 'assistant' as const,
       content: '' as string,
       timestamp: Date.now(),
       isStreaming: true,
       contentBlocks: [] as ContentBlock[],
-    }])]);
+    }]);
 
     // 新对话自动标题：首条消息截取前 30 字
     if (conversationTitle === '新对话' && messages.length === 0 && conversationId) {
@@ -414,10 +435,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       }
     }
 
-    // 仅在非排队时才设置 loading
-    if (!isLoading) {
-      setIsLoading(true);
-    }
+    setIsLoading(true);
 
     try {
       // 发送消息到会话（多 content block + 图片附件）

@@ -1,7 +1,8 @@
-import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { rendererEvents } from '@/lib/events';
-import type { Message } from '../types';
+import type { Message, ContentBlock } from '../types';
 import { streamReducer } from '../transformers';
+import type { QueuedMessageEntry } from './useSendMessage';
 
 interface UseSessionMessagesParams {
   sessionId: string | null;
@@ -9,6 +10,8 @@ interface UseSessionMessagesParams {
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setHistoryLoaded: Dispatch<SetStateAction<boolean>>;
+  /** 排队消息缓冲区：Agent 运行中时暂存的消息，result 到达后依次消费 */
+  queuedMessagesRef: MutableRefObject<QueuedMessageEntry[]>;
 }
 
 /**
@@ -21,6 +24,7 @@ export function useSessionMessages({
   setMessages,
   setIsLoading,
   setHistoryLoaded,
+  queuedMessagesRef,
 }: UseSessionMessagesParams): void {
   useEffect(() => {
     if (!sessionId) return;
@@ -44,9 +48,40 @@ export function useSessionMessages({
         setHistoryLoaded(true);
       }
 
-      // 收到结果消息时结束加载状态
+      // 收到结果消息时结束加载状态，或消费缓冲区中的下一条排队消息
       if (extendedMsg.type === 'result') {
-        setIsLoading(false);
+        const queued = queuedMessagesRef.current;
+        if (queued.length > 0) {
+          // 取出队头消息，插入到 messages 列表并发送
+          const next = queued.shift()!;
+          setMessages(prev => [...prev, next.displayMessage, {
+            role: 'assistant' as const,
+            content: '' as string,
+            timestamp: Date.now(),
+            isStreaming: true,
+            contentBlocks: [] as ContentBlock[],
+          }]);
+          // 动态导入 client 避免模块循环依赖（Vite ESM 环境）
+          import('@/lib/client').then(({ client }) => {
+            client.sendQueryBasedSessionMessage({
+              sessionId: data.sessionId,
+              content: next.content,
+              ...(next.textBlocks && { textBlocks: next.textBlocks }),
+              ...(next.images && {
+                images: next.images.map(img => ({
+                  media_type: img.mediaType,
+                  data: img.base64,
+                })),
+              }),
+            }).catch(err => {
+              console.error('发送排队消息失败:', err);
+              setIsLoading(false);
+            });
+          });
+          // 不调用 setIsLoading(false)，新消息立即开始处理，loading 保持 true
+        } else {
+          setIsLoading(false);
+        }
         setHistoryLoaded(true);
       }
     });

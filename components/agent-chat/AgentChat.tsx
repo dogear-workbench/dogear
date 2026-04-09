@@ -15,7 +15,7 @@ import { useAgentSession } from './hooks/useAgentSession';
 import { useSessionMessages } from './hooks/useSessionMessages';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { useImageAttachment } from './hooks/useImageAttachment';
-import { useSendMessage } from './hooks/useSendMessage';
+import { useSendMessage, type QueuedMessageEntry } from './hooks/useSendMessage';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { StreamingIndicator } from './StreamingIndicator';
 
@@ -89,8 +89,9 @@ export function AgentChat({
   const { sessionId, sessionIdRef, isSessionReady, permissionMode, setPermissionMode } =
     useAgentSession({ conversationId, forkParams, context, useSdkResume, setMessages, setIsLoading });
 
-  // 消息流处理
-  useSessionMessages({ sessionId, showReplayMessages, setMessages, setIsLoading, setHistoryLoaded });
+  // 排队消息缓冲区：由 AgentChat 声明，同时传给 useSendMessage（写入）和 useSessionMessages（消费）
+  // 必须在两个 hook 之前声明（React Hooks 顺序规则）
+  const queuedMessagesRef = useRef<QueuedMessageEntry[]>([]);
 
   // ─── 滚动控制（需在 useSessionEvents 之前声明，供其闭包引用）───
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -224,7 +225,11 @@ export function AgentChat({
     conversationId,
     pendingImages: imageAttachment.pendingImages,
     setPendingImages: imageAttachment.setPendingImages,
+    queuedMessagesRef,
   });
+
+  // 消息流处理（在 useSendMessage 之后调用，共享 queuedMessagesRef）
+  useSessionMessages({ sessionId, showReplayMessages, setMessages, setIsLoading, setHistoryLoaded, queuedMessagesRef });
 
   // 斜杠命令
   const slashCommands = useSlashCommands({
