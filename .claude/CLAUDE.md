@@ -97,6 +97,7 @@ electron/
 
 ### 页面（app/）
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
+- `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
 - `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测，含默认系统提示词编辑）
 - `app/settings/PersonaTab.tsx` — 人设管理标签页（CRUD：左侧列表 + 右侧编辑表单，name/description/prompt）
 - `app/book/BookPage.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板（useParams 获取 id）
@@ -137,6 +138,11 @@ electron/
 - `book-card.tsx` — 书籍卡片（封面、标题、作者、操作按钮）
 - `book-list.tsx` — ⚠️ 已弃用，使用 WorkspaceExplorer 替代
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
+- `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸
+- `wechat/` — 微信 Bot 模块
+  - `WechatDialog.tsx` — 微信认证 Dialog（QR码扫描 / Bot 控制面板）
+  - `BotControlPanel.tsx` — Bot 控制面板（名称、轮询状态、连接错误、断开连接）
+  - `QRCodeAuth.tsx` — QR码认证组件
 - `stock/` — 自选股行情模块
   - `WatchList.tsx` — 自选股列表（右键删除、点击选中）
   - `StockSearch.tsx` — 股票搜索弹窗（东方财富搜索 API，防抖输入）
@@ -196,6 +202,7 @@ electron/
 ### 业务服务（electron/main/services/）
 - `book-service.ts` — 电子书导入、预处理、JSON 元数据/章节存储（meta.json + chapters.json）
 - `conversation-service.ts` — 对话索引 CRUD + 人设关联（`.dogear/conversations.json`），含 personaId/tempPrompt 字段
+- `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
@@ -203,6 +210,7 @@ electron/
 - `workspace-service.ts` — 工作区目录结构管理、元数据/分析结果读写
 - `workspace-fs-service.ts` — 文件树扫描和文件系统操作（安全路径验证）
 - `chapter-recognizer.ts` — 文本章节标题识别算法（5种模式匹配）
+- `safe-json.ts` — 安全 JSON 存储（原子写入+备份+互斥锁），防止数据丢失
 - `stock/` — 自选股行情服务模块
   - `rate-limiter.ts` — 请求防御体系（令牌桶 + 滑动窗口 + 断路器 + 请求合并 + 内存缓存）
   - `stock-service.ts` — 三数据源 API 封装（腾讯行情/分时 + 东方财富K线/搜索 + 新浪K线备用，7个方法）
@@ -275,8 +283,9 @@ electron/
 
 ### 消息引用格式（XML 标签）
 
-用户消息中的文章引用和段落引用使用 XML 标签结构化：
+用户消息中的文章引用、历史对话引用和段落引用使用 XML 标签结构化：
 - 文章引用：`<referenced_articles><article title="..." articleId="..." site="..." /></referenced_articles>`
+- 历史对话引用：`<referenced_articles><article title="..." articleId="..." source_type="session" /></referenced_articles>`（source_type 标记来源为历史对话，输入框显示紫色芯片）
 - 段落引用：`<quoted_snippet source="标题">引用文本</quoted_snippet>`（可多个）
 - 用户输入作为最后一个 text block
 - 发送到 SDK 时使用 multi content block 数组（每个引用/用户文本是独立的 `{type: "text"}` 块）
