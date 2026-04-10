@@ -52,13 +52,13 @@ export function PermissionRequestCard({
     }
   };
 
-  // 总是允许：allow 当前请求 + 切换到自动执行模式
+  // 总是允许：本次允许 + SDK 在当前会话内记住该工具的权限（不切换全局模式）
   const handleAlwaysAllow = async () => {
     if (!sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
       sessionId,
       requestId: block.permissionRequestId,
-      behavior: 'allow',
+      behavior: 'always_allow',
     });
     onResolved(block.permissionRequestId, 'always_allow');
   };

@@ -26,7 +26,7 @@ const PERMISSION_MODE_OPTIONS = [
   { value: 'default', label: '标准', description: '危险操作需用户确认（推荐）' },
   { value: 'acceptEdits', label: '自动编辑', description: '文件编辑自动通过，其余需确认' },
   { value: 'plan', label: '仅规划', description: '只规划不执行，工具调用被阻止' },
-  { value: 'dontAsk', label: '静默拒绝', description: '未预授权的工具直接拒绝' },
+  { value: 'bypassPermissions', label: '自动执行', description: '⚠️ 跳过所有权限检查，仅在受控环境中使用' },
 ] as const;
 
 type ToolPermission = 'allow' | 'default' | 'deny';
@@ -67,14 +67,20 @@ export default function SettingsPage() {
   const [selectedProfileTab, setSelectedProfileTab] = useState<string>('default');
 
   // 动态加载已注册的工具列表
-  const [sdkTools, setSdkTools] = useState<Array<{ name: string; description: string }>>([]);
-  const [customTools, setCustomTools] = useState<Array<{ name: string; description: string }>>([]);
+  interface ToolInfo { name: string; description: string; server: string }
+  const [sdkTools, setSdkTools] = useState<ToolInfo[]>([]);
+  const [customTools, setCustomTools] = useState<ToolInfo[]>([]);
   useEffect(() => {
     client.getRegisteredTools().then((result: any) => {
       if (result?.sdk) setSdkTools(result.sdk);
       if (result?.custom) setCustomTools(result.custom);
     }).catch(() => {});
   }, []);
+
+  // 自定义工具在 SDK 中的实际名称格式：mcp__<server>__<name>
+  // SDK 内置工具直接用短名称
+  const toSdkToolName = (tool: ToolInfo): string =>
+    tool.server === 'sdk' ? tool.name : `mcp__${tool.server}__${tool.name}`;
 
   // 加载设置
   useEffect(() => { loadSettings(); }, [loadSettings]);
@@ -140,18 +146,20 @@ export default function SettingsPage() {
   };
 
   // ── 工具权限 helper ──
-  const getToolPermission = (toolName: string): ToolPermission => {
-    if (local.permissionRules?.allow?.includes(toolName)) return 'allow';
-    if (local.permissionRules?.deny?.includes(toolName)) return 'deny';
+  const getToolPermission = (tool: ToolInfo): ToolPermission => {
+    const key = toSdkToolName(tool);
+    if (local.permissionRules?.allow?.includes(key)) return 'allow';
+    if (local.permissionRules?.deny?.includes(key)) return 'deny';
     return 'default';
   };
 
-  const setToolPermission = (toolName: string, perm: ToolPermission) => {
+  const setToolPermission = (tool: ToolInfo, perm: ToolPermission) => {
+    const key = toSdkToolName(tool);
     const rules = local.permissionRules || { allow: [], deny: [] };
-    const allow = (rules.allow || []).filter(t => t !== toolName);
-    const deny = (rules.deny || []).filter(t => t !== toolName);
-    if (perm === 'allow') allow.push(toolName);
-    if (perm === 'deny') deny.push(toolName);
+    const allow = (rules.allow || []).filter(t => t !== key);
+    const deny = (rules.deny || []).filter(t => t !== key);
+    if (perm === 'allow') allow.push(key);
+    if (perm === 'deny') deny.push(key);
     setLocal(prev => ({ ...prev, permissionRules: { allow, deny } }));
   };
 
@@ -210,10 +218,10 @@ export default function SettingsPage() {
   const inputCls = "h-9 w-full px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring";
 
   // ── 工具权限行渲染 ──
-  const renderToolRow = (tool: { name: string; description: string }) => {
-    const perm = getToolPermission(tool.name);
+  const renderToolRow = (tool: ToolInfo) => {
+    const perm = getToolPermission(tool);
     return (
-      <div key={tool.name} className="flex items-center justify-between py-2 border-b last:border-b-0">
+      <div key={toSdkToolName(tool)} className="flex items-center justify-between py-2 border-b last:border-b-0">
         <div className="flex-1 min-w-0">
           <span className="text-sm font-mono">{tool.name}</span>
           <span className="text-xs text-muted-foreground ml-2">{tool.description}</span>
@@ -232,7 +240,7 @@ export default function SettingsPage() {
                   ? `bg-background ${opt.color} shadow-sm`
                   : 'text-muted-foreground hover:text-foreground'
               )}
-              onClick={() => setToolPermission(tool.name, opt.value)}
+              onClick={() => setToolPermission(tool, opt.value)}
             >
               {opt.label}
             </button>

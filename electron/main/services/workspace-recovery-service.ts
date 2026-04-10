@@ -44,10 +44,10 @@ export async function scanOrphanWorkspaces(): Promise<OrphanWorkspace[]> {
   const configDir = getConfigDir();
   const workspacesDir = path.join(configDir, 'workspaces');
 
-  // 读取 workspaces.json 中已注册的 ID
-  const workspacesFile = await safeJsonRead<{ workspaces: Array<{ id: string }> }>(
-    path.join(configDir, 'workspaces.json'),
-    { workspaces: [] },
+  // 读取 workspaces.json 中已注册的 ID（新路径 .dogear/workspaces/workspaces.json）
+  const workspacesFile = await safeJsonRead<{ version: number; workspaces: Array<{ id: string }> }>(
+    path.join(workspacesDir, 'workspaces.json'),
+    { version: 1, workspaces: [] },
   );
   const registeredIds = new Set(workspacesFile.workspaces.map((w) => w.id));
 

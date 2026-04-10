@@ -120,6 +120,7 @@ export function useSendMessage(params: UseSendMessageParams) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 权限确认响应回调：更新消息中对应权限请求块的状态
+  // "总是允许"不再切换全局模式，而是通过 SDK 的 updatedPermissions 机制在会话内记住
   const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => {
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;
@@ -134,15 +135,7 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-
-    // "总是允许"：切换到自动执行模式并插入通知
-    if (behavior === 'always_allow' && sessionId) {
-      setPermissionMode('bypassPermissions');
-      await client.setPermissionMode({ sessionId, mode: 'bypassPermissions' });
-      // 插入模式切换通知
-      insertModeChangeNotice('bypassPermissions');
-    }
-  }, [sessionId, setMessages, setPermissionMode, insertModeChangeNotice]);
+  }, [setMessages]);
 
   // AskUserQuestion 响应回调：更新消息中对应问答块的状态
   const handleAskUserResolved = useCallback((requestId: string, answers: Record<string, string>) => {

@@ -10,6 +10,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - 使用**中文**回答
 - 必要的地方添加注释
+- 添加新功能或修改功能时，要分析清楚原来的架构上的其他功能，不能因为修改了这个功能导致其他功能出现问题，要全方位的考虑
+- 需要有95%以上的把握，才能进行修改，有什么问题请及时询问
 
 ---
 

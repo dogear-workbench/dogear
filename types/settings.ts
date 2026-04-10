@@ -50,10 +50,11 @@ export interface AppSettings {
     systemPromptAppend?: string; // @deprecated 旧版追加提示词，向后兼容保留
     settingSources?: ('user' | 'project')[]; // SDK 设置源
   };
-  // 工具权限规则（声明式）
+  // 工具权限规则（声明式），通过 SDK settings.permissions 传递，在所有模式下生效
   permissionRules?: {
     allow?: string[];  // 自动允许的工具，如 ['Read', 'Glob', 'Grep']
     deny?: string[];   // 自动拒绝的工具，如 ['Bash']
+    ask?: string[];    // 强制要求用户确认的工具
   };
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;

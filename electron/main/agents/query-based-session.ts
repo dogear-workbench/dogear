@@ -90,10 +90,11 @@ export class QueryBasedSession extends EventEmitter {
   // key: tool_use_id 或 content_block index, value: { name, input累积字符串 }
   private pendingToolInputs: Map<string | number, { name: string; inputJson: string; toolUseId?: string }> = new Map();
 
-  // 权限请求等待队列：key=requestId, value={ resolver, originalInput }
+  // 权限请求等待队列：key=requestId, value={ resolver, originalInput, suggestions }
   private pendingPermissionRequests: Map<string, {
     resolve: (result: PermissionResult) => void;
     input: Record<string, unknown>;  // 保存原始 input，allow 时需要回传
+    suggestions?: import('@anthropic-ai/claude-agent-sdk').PermissionUpdate[];  // SDK 建议的"总是允许"规则
   }> = new Map();
 
   // 声明式权限规则（从 settings.json 加载，缓存避免每次 canUseTool 都读磁盘）
@@ -203,20 +204,24 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('Skill 功能已启用，已添加 Skill 工具到 allowedTools 第一位:', allowedTools);
       }
 
-      // 合并设置页面的声明式 allow 规则到 SDK allowedTools（SDK 级别自动允许，无需经过 canUseTool）
-      if (this.permissionRules?.allow?.length) {
-        const merged = new Set([...allowedTools, ...this.permissionRules.allow]);
-        allowedTools = [...merged];
-        this.logger.info('已合并 permissionRules.allow 到 allowedTools:', this.permissionRules.allow);
-      }
-
-      // 合并设置页面的声明式 deny 规则到 SDK disallowedTools
-      if (this.permissionRules?.deny?.length) {
-        queryOptions.disallowedTools = this.permissionRules.deny;
-        this.logger.info('已设置 disallowedTools:', this.permissionRules.deny);
-      }
-
       queryOptions.allowedTools = allowedTools;
+
+      // 通过 SDK 的 settings.permissions 传递声明式权限规则（allow/deny/ask）
+      // 这是 SDK 文档推荐的方式，优先级最高（flag settings layer），且在所有权限模式下均生效
+      if (this.permissionRules && (
+        this.permissionRules.allow?.length ||
+        this.permissionRules.deny?.length ||
+        (this.permissionRules as any).ask?.length
+      )) {
+        queryOptions.settings = {
+          permissions: {
+            ...(this.permissionRules.allow?.length && { allow: this.permissionRules.allow }),
+            ...(this.permissionRules.deny?.length && { deny: this.permissionRules.deny }),
+            ...((this.permissionRules as any).ask?.length && { ask: (this.permissionRules as any).ask }),
+          },
+        };
+        this.logger.info('已通过 settings.permissions 传递权限规则:', queryOptions.settings.permissions);
+      }
 
       // 配置 MCP Servers
       if (this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0) {
@@ -331,46 +336,18 @@ export class QueryBasedSession extends EventEmitter {
           });
         }
 
-        // MCP 写操作强制权限确认（不受声明式规则和权限模式影响）
-        // 格式: mcp__dogear-stock__ModifyWatchlist
-        if (toolName === 'mcp__dogear-stock__ModifyWatchlist') {
-          this.emit('permissionRequest', {
-            requestId,
-            toolName,
-            toolInput: input,
-            decisionReason: options.decisionReason || '修改自选股列表需要确认',
-          });
-
-          return new Promise<PermissionResult>((resolve) => {
-            this.pendingPermissionRequests.set(requestId, { resolve, input });
-            options.signal.addEventListener('abort', () => {
-              if (this.pendingPermissionRequests.has(requestId)) {
-                this.pendingPermissionRequests.delete(requestId);
-                resolve({ behavior: 'deny', message: '操作已取消' });
-              }
-            });
-          });
-        }
-
-        // 声明式权限规则检查（来自设置）
-        if (this.permissionRules?.deny?.includes(toolName)) {
-          return { behavior: 'deny', message: `工具 "${toolName}" 已被设置规则禁止` };
-        }
-        if (this.permissionRules?.allow?.includes(toolName)) {
-          return { behavior: 'allow', updatedInput: input };
-        }
-
-        // 通用权限请求：发送事件到前端
+        // 通用权限请求：发送事件到前端（含 SDK 提供的 suggestions，供"总是允许"使用）
         this.emit('permissionRequest', {
           requestId,
           toolName,
           toolInput: input,
           decisionReason: options.decisionReason,
+          hasSuggestions: !!options.suggestions?.length,  // 告知前端是否可以"总是允许"
         });
 
         // 等待前端用户响应
         return new Promise<PermissionResult>((resolve) => {
-          this.pendingPermissionRequests.set(requestId, { resolve, input });
+          this.pendingPermissionRequests.set(requestId, { resolve, input, suggestions: options.suggestions });
 
           // 如果 AbortSignal 被触发（如会话关闭），自动拒绝
           options.signal.addEventListener('abort', () => {
@@ -1445,9 +1422,15 @@ export class QueryBasedSession extends EventEmitter {
 
   /**
    * 响应权限确认请求
-   * 由前端用户点击允许/拒绝后调用
+   * 由前端用户点击允许/拒绝/总是允许后调用
+   *
+   * behavior:
+   * - 'allow': 本次允许
+   * - 'always_allow': 本次允许 + 将 SDK suggestions 作为 updatedPermissions 返回，
+   *   SDK 会在当前会话内记住该规则，后续同类请求不再触发 canUseTool
+   * - 'deny': 拒绝
    */
-  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny', message?: string, updatedInput?: Record<string, unknown>): void {
+  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny' | 'always_allow', message?: string, updatedInput?: Record<string, unknown>): void {
     const pending = this.pendingPermissionRequests.get(requestId);
     if (!pending) {
       this.logger.warn('respondPermissionRequest: 找不到请求:', requestId);
@@ -1456,10 +1439,17 @@ export class QueryBasedSession extends EventEmitter {
     this.pendingPermissionRequests.delete(requestId);
     this.logger.info('权限确认响应:', { requestId, behavior });
 
-    if (behavior === 'allow') {
-      // SDK 的 Zod schema 要求 allow 时必须传回 updatedInput
-      // 优先使用用户编辑后的 updatedInput，否则回传原始 input
-      pending.resolve({ behavior: 'allow', updatedInput: updatedInput || pending.input });
+    if (behavior === 'allow' || behavior === 'always_allow') {
+      const result: PermissionResult = {
+        behavior: 'allow',
+        updatedInput: updatedInput || pending.input,
+      };
+      // "总是允许"：将 SDK 建议的权限更新回传，SDK 会在会话内记住
+      if (behavior === 'always_allow' && pending.suggestions?.length) {
+        result.updatedPermissions = pending.suggestions;
+        this.logger.info('已回传 updatedPermissions（会话级总是允许）:', pending.suggestions.length, '条规则');
+      }
+      pending.resolve(result);
     } else {
       pending.resolve({ behavior: 'deny', message: message || '用户拒绝了此操作' });
     }
