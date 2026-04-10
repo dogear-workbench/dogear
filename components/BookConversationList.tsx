@@ -11,6 +11,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
+import { StatusPulse } from '@/components/StatusPulse';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -154,6 +156,7 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const deleteFolder = useConversationStore((s) => s.deleteFolder);
   const renameFolder = useConversationStore((s) => s.renameFolder);
   const openTab = useSessionStore((s) => s.openTab);
+  const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
 
   const paddingLeft = meta.level * 16 + 8;
   const { ref, ...props } = item.getProps();
@@ -276,24 +279,17 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
           )}
           style={{ paddingLeft: `${paddingLeft}px` }}
           onClick={() => {
+            if (sessionWindowIds.has(conv.id)) {
+              // 会话在独立窗口中，聚焦该窗口
+              client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
+              return;
+            }
             selectConversation(conv);
             openTab(conv.id, getConversationTitle(conv));
           }}
         >
           {isRunning ? (
-            isPending ? (
-              // 需要用户确认 → 蓝色脉冲
-              <span className="relative flex w-4 h-4 items-center justify-center flex-shrink-0">
-                <span className="absolute w-2.5 h-2.5 rounded-full bg-blue-400 animate-pulse" />
-                <span className="w-2 h-2 rounded-full bg-blue-500" />
-              </span>
-            ) : (
-              // 正常运行 → 橙色脉冲
-              <span className="relative flex w-4 h-4 items-center justify-center flex-shrink-0">
-                <span className="absolute w-2.5 h-2.5 rounded-full bg-orange-400 animate-pulse" />
-                <span className="w-2 h-2 rounded-full bg-orange-500" />
-              </span>
-            )
+            <StatusPulse isPending={isPending} />
           ) : isFork ? (
             <GitBranch className={cn('w-4 h-4 flex-shrink-0',
               isSelected ? 'text-purple-600' : 'text-purple-400'
@@ -333,8 +329,11 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
                 )}
               </div>
             )}
-            <div className="text-xs text-muted-foreground">
-              {getRelativeTime(conv.updated_at)}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>{getRelativeTime(conv.updated_at)}</span>
+              {isRunning && isPending && (
+                <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded">等待确认</span>
+              )}
             </div>
           </div>
           {/* 引用按钮 */}
@@ -465,13 +464,18 @@ export function ConversationList() {
 
   // 主操作：点击对话选中，文件夹展开/折叠
   const openTabFromList = useSessionStore((s) => s.openTab);
+  const sessionWindowIdsFromList = useSessionStore((s) => s.sessionWindowIds);
   const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     const data = item.getItemData();
     if (data.nodeType === 'conversation' && data.conversation) {
+      if (sessionWindowIdsFromList.has(data.conversation.id)) {
+        client.openSessionWindow({ conversationId: data.conversation.id, title: getConversationTitle(data.conversation) });
+        return;
+      }
       selectConversation(data.conversation);
       openTabFromList(data.conversation.id, getConversationTitle(data.conversation));
     }
-  }, [selectConversation, openTabFromList]);
+  }, [selectConversation, openTabFromList, sessionWindowIdsFromList]);
 
   const canDrag = useCallback((items: ItemInstance<ConversationFlatNode>[]) => {
     return items.every(i => i.getId() !== CONV_TREE_ROOT);

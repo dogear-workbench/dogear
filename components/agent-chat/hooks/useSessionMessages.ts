@@ -1,7 +1,6 @@
 import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { rendererEvents } from '@/lib/events';
-import { client } from '@/lib/client';
-import type { Message, ContentBlock } from '../types';
+import type { Message } from '../types';
 import { streamReducer } from '../transformers';
 import type { QueuedMessageEntry } from './useSendMessage';
 
@@ -11,9 +10,9 @@ interface UseSessionMessagesParams {
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setHistoryLoaded: Dispatch<SetStateAction<boolean>>;
-  /** 排队消息缓冲区：Agent 运行中时暂存的消息，result 到达后依次消费 */
+  /** 排队消息悬浮区：Agent 运行中时的排队消息列表（已发后端，仅用于 UI 匹配） */
   queuedMessagesRef: MutableRefObject<QueuedMessageEntry[]>;
-  /** 缓冲区消费后同步 React UI state */
+  /** 悬浮区消费后同步 React UI state */
   onQueueChanged?: () => void;
 }
 
@@ -41,6 +40,22 @@ export function useSessionMessages({
       // 如果是重放消息且不显示重放消息，跳过
       if (extendedMsg.isReplay && !showReplayMessages) return;
 
+      // 后端开始处理排队消息时，SDK 推送 type=user 事件
+      // 此时从悬浮区移除第一条，并在消息流中渲染该用户消息
+      if (extendedMsg.type === 'user' && !extendedMsg.isReplay) {
+        const queued = queuedMessagesRef.current;
+        const isMeta = 'isMeta' in extendedMsg && extendedMsg.isMeta;
+        const isBot = 'source' in extendedMsg && extendedMsg.source === 'wechat-bot';
+        if (queued.length > 0 && !isMeta && !isBot) {
+          const next = queued.shift()!;
+          onQueueChanged?.();
+          // 插入排队消息的 displayMessage 到消息流
+          setMessages(prev => [...prev, next.displayMessage]);
+          setHistoryLoaded(true);
+          return; // 已手动渲染，不走 streamReducer
+        }
+      }
+
       setMessages(prev => {
         const result = streamReducer(prev, extendedMsg, showReplayMessages);
         if (result === null) return prev;
@@ -52,42 +67,12 @@ export function useSessionMessages({
         setHistoryLoaded(true);
       }
 
-      // 收到结果消息时结束加载状态，或消费缓冲区中的下一条排队消息
+      // 收到结果消息时：队列为空则结束 loading，有排队消息则保持 loading
       if (extendedMsg.type === 'result') {
-        const queued = queuedMessagesRef.current;
-        if (queued.length > 0) {
-          // 延迟 100ms 确保 SDK 状态完全就绪后再消费下一条
-          setTimeout(() => {
-            const next = queued.shift()!;
-            // 同步 UI state（更新悬浮预览区）
-            onQueueChanged?.();
-            // 将排队消息插入到 messages 列表（用户消息 + assistant 占位）
-            setMessages(prev => [...prev, next.displayMessage, {
-              role: 'assistant' as const,
-              content: '' as string,
-              timestamp: Date.now(),
-              isStreaming: true,
-              contentBlocks: [] as ContentBlock[],
-            }]);
-            client.sendQueryBasedSessionMessage({
-              sessionId: data.sessionId,
-              content: next.content,
-              ...(next.textBlocks && { textBlocks: next.textBlocks }),
-              ...(next.images && {
-                images: next.images.map(img => ({
-                  media_type: img.mediaType,
-                  data: img.base64,
-                })),
-              }),
-            }).catch(err => {
-              console.error('发送排队消息失败:', err);
-              setIsLoading(false);
-            });
-            // 不调用 setIsLoading(false)，新消息立即开始处理，loading 保持 true
-          }, 100);
-        } else {
+        if (queuedMessagesRef.current.length === 0) {
           setIsLoading(false);
         }
+        // 有排队消息时保持 isLoading=true，后端会继续处理下一条
         setHistoryLoaded(true);
       }
     });

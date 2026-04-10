@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronDown, Archive, GitBranch, Send, X } from 'lucide-react';
+import { ChevronDown, Archive, GitBranch, Send } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
@@ -390,7 +390,7 @@ export function AgentChat({
       )}
       </div>
 
-      {/* 排队消息悬浮预览区 */}
+      {/* 排队消息悬浮预览区（消息已发后端排队，此处只读展示） */}
       {sendMessage.queuedMessages.length > 0 && (
         <div className="border-t bg-muted/20 px-4 py-2 space-y-1">
           <div className="text-xs text-muted-foreground mb-1">
@@ -407,13 +407,6 @@ export function AgentChat({
                   ? entry.displayMessage.content.slice(0, 60) + '...'
                   : entry.displayMessage.content}
               </span>
-              <button
-                onClick={() => sendMessage.removeQueuedMessage(index)}
-                className="flex-shrink-0 p-0.5 rounded hover:bg-muted transition-colors"
-                title="取消排队"
-              >
-                <X size={14} className="text-muted-foreground" />
-              </button>
             </div>
           ))}
         </div>

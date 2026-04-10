@@ -177,6 +177,12 @@ export type RendererHandlers = {
     conversationId: string | null;
   }) => void;
 
+  // 独立会话窗口关闭（通知主窗口恢复 Tab）
+  sessionWindowClosed: (data: {
+    conversationId: string;
+    title: string;
+  }) => void;
+
   // 对话列表变更通知（主进程侧创建/删除对话后广播，前端应刷新列表）
   conversationListChanged: (data: {
     workspaceId: string;

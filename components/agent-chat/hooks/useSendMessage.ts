@@ -135,7 +135,11 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-  }, [setMessages]);
+    // 用户已响应，清除待确认状态（脉冲从蓝色恢复为橙色）
+    if (conversationId) {
+      useConversationStore.getState().setPendingActionState(conversationId, false);
+    }
+  }, [setMessages, conversationId]);
 
   // AskUserQuestion 响应回调：更新消息中对应问答块的状态
   const handleAskUserResolved = useCallback((requestId: string, answers: Record<string, string>) => {
@@ -152,7 +156,11 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-  }, [setMessages]);
+    // 用户已响应，清除待确认状态（脉冲从蓝色恢复为橙色）
+    if (conversationId) {
+      useConversationStore.getState().setPendingActionState(conversationId, false);
+    }
+  }, [setMessages, conversationId]);
 
   /**
    * 从某条 assistant 消息处分叉新对话
@@ -412,7 +420,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     };
 
     if (isLoading) {
-      // Agent 运行中 → 消息存入缓冲区，不插入 messages 列表，不立即发送
+      // Agent 运行中 → 直接发后端排队，悬浮区显示等待状态
       const entry: QueuedMessageEntry = {
         content: messageToSend,
         ...(textBlocks.length > 1 && { textBlocks }),
@@ -423,7 +431,22 @@ export function useSendMessage(params: UseSendMessageParams) {
       };
       queuedMessagesRef.current.push(entry);
       setQueuedMessages([...queuedMessagesRef.current]);
-      return;  // 直接返回，等待上一轮完成
+
+      // 直接发送到后端（后端 pendingMessages 队列自动排队）
+      client.sendQueryBasedSessionMessage({
+        sessionId: sessionId!,
+        content: messageToSend,
+        ...(textBlocks.length > 1 && { textBlocks }),
+        ...(imagesToSend.length > 0 && {
+          images: imagesToSend.map(img => ({
+            media_type: img.mediaType,
+            data: img.base64,
+          })),
+        }),
+      }).catch(err => {
+        console.error('发送排队消息失败:', err);
+      });
+      return;  // UI 上不渲染，等后端处理到时通过 user 事件渲染
     }
 
     // Agent 空闲 → 正常流程：插入用户消息 + assistant 占位

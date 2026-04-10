@@ -17,6 +17,8 @@ export interface SessionTab {
 interface SessionState {
   tabs: SessionTab[];
   activeTabId: string | null;  // 当前显示的 conversationId
+  /** 当前在独立窗口中打开的会话 ID 集合 */
+  sessionWindowIds: Set<string>;
 
   /** 打开标签页（已存在则切换到该标签） */
   openTab: (conversationId: string, title: string) => boolean;
@@ -32,6 +34,12 @@ interface SessionState {
   updateTitle: (conversationId: string, title: string) => void;
   /** 获取指定标签页 */
   getTab: (conversationId: string) => SessionTab | undefined;
+  /** 标记会话在独立窗口中打开 */
+  addSessionWindow: (conversationId: string) => void;
+  /** 标记独立窗口关闭 */
+  removeSessionWindow: (conversationId: string) => void;
+  /** 检查会话是否在独立窗口中 */
+  isInSessionWindow: (conversationId: string) => boolean;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -41,6 +49,7 @@ const MAX_TABS = 5;
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
   activeTabId: null,
+  sessionWindowIds: new Set<string>(),
 
   openTab: (conversationId, title) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
@@ -114,8 +123,29 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return get().tabs.find((t) => t.conversationId === conversationId);
   },
 
+  addSessionWindow: (conversationId) => {
+    set((state) => {
+      const newSet = new Set(state.sessionWindowIds);
+      newSet.add(conversationId);
+      return { sessionWindowIds: newSet };
+    });
+  },
+
+  removeSessionWindow: (conversationId) => {
+    set((state) => {
+      const newSet = new Set(state.sessionWindowIds);
+      newSet.delete(conversationId);
+      return { sessionWindowIds: newSet };
+    });
+  },
+
+  isInSessionWindow: (conversationId) => {
+    return get().sessionWindowIds.has(conversationId);
+  },
+
   reset: () => set({
     tabs: [],
     activeTabId: null,
+    sessionWindowIds: new Set<string>(),
   }),
 }));

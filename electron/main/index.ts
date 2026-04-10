@@ -8,8 +8,10 @@ const { app, BrowserWindow, Menu, Tray } = electron;
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { getRendererHandlers } from '@egoist/tipc/main';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
 import { registerTipcHandlers } from './tipc/index.js';
+import type { RendererHandlers } from './tipc/renderer-handlers.js';
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -253,6 +255,11 @@ export function createSessionWindow(conversationId: string, title: string) {
   sessionWindows.set(conversationId, win);
   win.on('closed', () => {
     sessionWindows.delete(conversationId);
+    // 通知主窗口恢复 Tab
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
+      h.sessionWindowClosed.send({ conversationId, title });
+    }
   });
 }
 

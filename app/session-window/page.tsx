@@ -5,7 +5,10 @@ import { Button } from '@/components/ui/button';
 import { AgentChat } from '@/components/agent-chat/AgentChat';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
+import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -15,10 +18,20 @@ export function SessionWindowPage() {
   const loadConversations = useConversationStore((s) => s.loadConversations);
   const selectConversation = useConversationStore((s) => s.selectConversation);
 
-  // 初始化：加载对话列表并选中指定对话
+  // 初始化：加载工作区、设置、对话列表并选中指定对话
   useEffect(() => {
     if (!conversationId) return;
     async function init() {
+      // 独立窗口需要先初始化工作区和设置（与主窗口独立的渲染进程）
+      if (!useWorkspaceStore.getState().workspace) {
+        const defaultWs = await client.getDefault();
+        if (defaultWs) {
+          useWorkspaceStore.getState().setWorkspace(defaultWs);
+        }
+      }
+      if (!useSettingsStore.getState().loaded) {
+        await useSettingsStore.getState().loadSettings();
+      }
       await loadConversations();
       const conv = useConversationStore.getState().conversations.find(c => c.id === conversationId);
       if (conv) {

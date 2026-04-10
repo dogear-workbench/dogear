@@ -3,10 +3,12 @@ import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
 import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, PanelRightOpen, PanelRightClose, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { StatusPulse } from '@/components/StatusPulse';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 import { PromptSidebar } from '@/components/PromptSidebar';
@@ -99,8 +101,22 @@ export default function Home() {
   // 多标签页状态
   const tabs = useSessionStore((s) => s.tabs);
   const activeTabId = useSessionStore((s) => s.activeTabId);
+  const openTab = useSessionStore((s) => s.openTab);
   const closeTab = useSessionStore((s) => s.closeTab);
   const switchTab = useSessionStore((s) => s.switchTab);
+  const addSessionWindow = useSessionStore((s) => s.addSessionWindow);
+  const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
+  const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
+  const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
+
+  // 监听独立窗口关闭事件，恢复 Tab 到主窗口
+  useEffect(() => {
+    const unsub = rendererEvents.sessionWindowClosed.listen((data) => {
+      removeSessionWindow(data.conversationId);
+      openTab(data.conversationId, data.title);
+    });
+    return () => unsub();
+  }, [openTab, removeSessionWindow]);
 
   // 分析状态
   const analyzing = useAnalysisStore((s) => s.analyzing);
@@ -268,22 +284,30 @@ export default function Home() {
                     onClick={() => switchTab(tab.conversationId)}
                   >
                     {tab.isStreaming && (
-                      <Loader2 className="w-3 h-3 animate-spin text-blue-500 shrink-0" />
+                      <StatusPulse isPending={pendingActionIds.has(tab.conversationId)} size="sm" />
                     )}
                     <span className="truncate">{tab.conversationTitle}</span>
-                    <button
-                      className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="弹出为独立窗口"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        client.openSessionWindow({
-                          conversationId: tab.conversationId,
-                          title: tab.conversationTitle,
-                        });
-                      }}
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                    </button>
+                    {tab.isStreaming && pendingActionIds.has(tab.conversationId) && (
+                      <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
+                    )}
+                    {!tab.isStreaming && (
+                      <button
+                        className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="弹出为独立窗口"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          client.openSessionWindow({
+                            conversationId: tab.conversationId,
+                            title: tab.conversationTitle,
+                          });
+                          // 移动语义：弹出后从主窗口移除 Tab，记录到独立窗口集合
+                          addSessionWindow(tab.conversationId);
+                          closeTab(tab.conversationId);
+                        }}
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                      </button>
+                    )}
                     <button
                       className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
                       onClick={(e) => {
