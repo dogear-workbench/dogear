@@ -183,6 +183,11 @@ export type RendererHandlers = {
     title: string;
   }) => void;
 
+  // 独立会话窗口 attach 完成（通知主窗口可以安全关闭标签页）
+  sessionWindowReady: (data: {
+    conversationId: string;
+  }) => void;
+
   // 对话列表变更通知（主进程侧创建/删除对话后广播，前端应刷新列表）
   conversationListChanged: (data: {
     workspaceId: string;

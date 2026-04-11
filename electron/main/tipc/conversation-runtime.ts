@@ -28,6 +28,7 @@ export const conversationRuntimeRouter = {
           input.workspaceId,
           'desktop',
           {
+            webContentsId: context.sender.id,
             resume: input.resume,
             forkSession: input.forkSession,
             resumeSessionAt: input.resumeSessionAt,
@@ -50,6 +51,8 @@ export const conversationRuntimeRouter = {
             }
           }, 100);
         }
+
+        console.log(`[ConvRuntime] attach 完成: convId=${input.conversationId.substring(0, 8)}, created=${result.created}, sessionId=${result.sessionId.substring(0, 8)}`);
 
         return {
           attachmentId: result.attachmentId,
@@ -87,4 +90,5 @@ export const conversationRuntimeRouter = {
     .action(async ({ input }): Promise<ConversationRuntimeState> => {
       return conversationRuntimeService.getRuntimeByConversation(input.conversationId);
     }),
+
 };

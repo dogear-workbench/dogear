@@ -19,8 +19,8 @@ interface WorkspaceState {
   creatingFolderAt: string | null;
 
   // --- Actions ---
-  /** 设置工作区，触发 files/conversations/articles 加载 */
-  setWorkspace: (workspace: Workspace) => void;
+  /** 设置工作区，触发 files/conversations/articles 加载。skipSetDefault=true 时不修改默认工作区（独立窗口用） */
+  setWorkspace: (workspace: Workspace, options?: { skipSetDefault?: boolean }) => void;
   /** 加载工作区文件列表 */
   loadWorkspaceFiles: () => Promise<void>;
   /** 选择文件，加载关联书籍信息 */
@@ -62,13 +62,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   deleting: false,
   creatingFolderAt: null,
   setCreatingFolderAt: (parentPath) => set({ creatingFolderAt: parentPath }),
-  setWorkspace: async (workspace) => {
+  setWorkspace: async (workspace, options?) => {
     set({ workspace });
-    // 持久化为默认工作区，确保 Agent 会话使用正确的工作区路径
-    try {
-      await client.setDefault({ workspaceId: workspace.id });
-    } catch (error) {
-      console.error('设置默认工作区失败:', error);
+    // 独立窗口不应修改默认工作区，避免影响主窗口
+    if (!options?.skipSetDefault) {
+      try {
+        await client.setDefault({ workspaceId: workspace.id });
+      } catch (error) {
+        console.error('设置默认工作区失败:', error);
+      }
     }
     // 触发文件列表加载
     get().loadWorkspaceFiles();

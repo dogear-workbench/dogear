@@ -253,8 +253,16 @@ export function createSessionWindow(conversationId: string, title: string) {
   win.loadURL(url);
 
   sessionWindows.set(conversationId, win);
-  win.on('closed', () => {
+
+  // 提前记录 webContentsId，因为 'closed' 事件时 webContents 已销毁
+  const webContentsId = win.webContents.id;
+  win.on('closed', async () => {
     sessionWindows.delete(conversationId);
+
+    // 主进程主动 detach 该窗口的所有 attachment（渲染进程的 React cleanup 在窗口销毁时不可靠）
+    const { conversationRuntimeService } = await import('./services/conversation-runtime-service.js');
+    conversationRuntimeService.detachByWebContentsId(webContentsId);
+
     // 通知主窗口恢复 Tab
     if (mainWindow && !mainWindow.isDestroyed()) {
       const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
@@ -419,7 +427,14 @@ app.on('before-quit', async () => {
     tray.destroy();
     tray = null;
   }
-  // 关闭 Agent 管理器
+  // 关闭所有 Query-based sessions（会话进程 / SDK 子进程）
+  try {
+    const { shutdownQueryBasedSessionManager } = await import('./agents/query-based-session.js');
+    shutdownQueryBasedSessionManager();
+  } catch (error) {
+    console.error('关闭 QueryBasedSessionManager 失败:', error);
+  }
+  // 关闭 Agent Worker 线程池
   await shutdownAgentManager();
 });
 

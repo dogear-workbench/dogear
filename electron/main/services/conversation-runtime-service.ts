@@ -36,6 +36,7 @@ type AttachmentMeta = {
   sessionId: string;
   conversationId: string;
   holderType: RuntimeHolderType;
+  webContentsId?: number; // Electron webContents ID，用于窗口关闭时主动 detach
 };
 
 type WireOptions = {
@@ -46,6 +47,7 @@ type WireOptions = {
 };
 
 type AttachConversationOptions = {
+  webContentsId?: number;
   clearForkFields?: boolean;
   resume?: string;
   forkSession?: boolean;
@@ -293,7 +295,7 @@ class ConversationRuntimeService {
     }
 
     const attachmentId = uuidv4();
-    this.attachmentMap.set(attachmentId, { sessionId, conversationId, holderType });
+    this.attachmentMap.set(attachmentId, { sessionId, conversationId, holderType, webContentsId: options?.webContentsId });
     const attachments = this.sessionAttachments.get(sessionId) ?? new Set<string>();
     attachments.add(attachmentId);
     this.sessionAttachments.set(sessionId, attachments);
@@ -329,6 +331,23 @@ class ConversationRuntimeService {
 
     getQueryBasedSessionManager().release(meta.sessionId);
     return true;
+  }
+
+  /**
+   * 按 webContentsId 批量 detach（窗口关闭时主进程主动调用，避免渲染进程 cleanup 不可靠）
+   */
+  detachByWebContentsId(webContentsId: number): number {
+    let count = 0;
+    for (const [attachmentId, meta] of this.attachmentMap) {
+      if (meta.webContentsId === webContentsId) {
+        this.detachAttachment(attachmentId);
+        count++;
+      }
+    }
+    if (count > 0) {
+      console.log(`[ConvRuntime] detachByWebContentsId(${webContentsId}): 清理了 ${count} 个 attachment`);
+    }
+    return count;
   }
 
   getRuntimeByConversation(conversationId: string): ConversationRuntimeState {

@@ -1,6 +1,6 @@
 import { useParams } from 'react-router';
 import { useState, useEffect } from 'react';
-import { PanelLeft, PanelLeftClose } from 'lucide-react';
+import { PanelLeft, PanelLeftClose, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AgentChat } from '@/components/agent-chat/AgentChat';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -13,30 +13,52 @@ import { useSettingsStore } from '@/stores/settings-store';
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [ready, setReady] = useState(false);
+  const [initError, setInitError] = useState<string | null>(null);
 
   const conversations = useConversationStore((s) => s.conversations);
   const loadConversations = useConversationStore((s) => s.loadConversations);
   const selectConversation = useConversationStore((s) => s.selectConversation);
 
-  // 初始化：加载工作区、设置、对话列表并选中指定对话
+  // 初始化：通过全局查找定位对话所属工作区，再加载对话列表
+  // AgentChat 必须在 workspace 和 conversation 都准备好后才渲染，否则 hooks 会用空 workspaceId 调 IPC
   useEffect(() => {
     if (!conversationId) return;
+    setReady(false);
+    setInitError(null);
+
     async function init() {
-      // 独立窗口需要先初始化工作区和设置（与主窗口独立的渲染进程）
-      if (!useWorkspaceStore.getState().workspace) {
-        const defaultWs = await client.getDefault();
-        if (defaultWs) {
-          useWorkspaceStore.getState().setWorkspace(defaultWs);
-        }
-      }
+      // 1. 加载设置
       if (!useSettingsStore.getState().loaded) {
         await useSettingsStore.getState().loadSettings();
       }
+
+      // 2. 通过全局查找获取对话及其所属工作区（避免依赖 getDefault 可能返回错误工作区）
+      const result = await client.getConversationWithWorkspace({ conversationId: conversationId! });
+      if (!result.conversation || !result.workspaceId) {
+        setInitError(`找不到对话: ${conversationId}`);
+        return;
+      }
+
+      // 3. 获取完整工作区对象并设置到 store（不触发 setDefault，不影响主窗口）
+      const { workspaces } = await client.getAll();
+      const ws = workspaces?.find((w: { id: string }) => w.id === result.workspaceId);
+      if (!ws) {
+        setInitError(`找不到工作区: ${result.workspaceId}`);
+        return;
+      }
+      // 直接设置 workspace 状态，不走 setWorkspace（避免 fire-and-forget 和 setDefault 副作用）
+      useWorkspaceStore.setState({ workspace: ws });
+
+      // 4. 显式加载对话列表并选中目标对话
       await loadConversations();
       const conv = useConversationStore.getState().conversations.find(c => c.id === conversationId);
       if (conv) {
         await selectConversation(conv);
       }
+
+      // 5. 标记就绪 → 才渲染 AgentChat
+      setReady(true);
     }
     init();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,7 +82,7 @@ export function SessionWindowPage() {
         <span className="text-sm font-medium truncate flex-1">{title}</span>
       </header>
 
-      {/* 主体：三栏（左可折叠文件树 + 中聊天 + 右预览） */}
+      {/* 主体 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧：可折叠的工作区文件树 */}
         {leftPanelOpen && (
@@ -69,14 +91,23 @@ export function SessionWindowPage() {
           </aside>
         )}
 
-        {/* 中间：AgentChat */}
+        {/* 中间：AgentChat（必须等初始化完成后才渲染） */}
         <main className="flex-1 overflow-hidden">
-          {conversationId && (
+          {initError ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+              {initError}
+            </div>
+          ) : !ready ? (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm gap-2">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              加载中...
+            </div>
+          ) : conversationId ? (
             <AgentChat
               conversationIdOverride={conversationId}
               showStatusHint={false}
             />
-          )}
+          ) : null}
         </main>
 
         {/* 右侧：文章预览 */}

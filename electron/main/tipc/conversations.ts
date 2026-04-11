@@ -150,6 +150,25 @@ export const conversationsRouter = {
       }
     }),
 
+  // ── 跨工作区查找 ──────────────────────────────────────────
+
+  /** 通过 conversationId 全局查找对话及其所属工作区（独立窗口初始化用） */
+  getConversationWithWorkspace: t.procedure
+    .input<{ conversationId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const result = await conversationService.getByIdGlobal(input.conversationId);
+        if (!result) return { conversation: null, workspaceId: null };
+        return {
+          conversation: conversationService.toCompat(result.conv),
+          workspaceId: result.workspaceId,
+        };
+      } catch (error) {
+        console.error('跨工作区查找对话失败:', error);
+        return { conversation: null, workspaceId: null };
+      }
+    }),
+
   // ── 对话树操作 ────────────────────────────────────────────
 
   getConversationTree: t.procedure

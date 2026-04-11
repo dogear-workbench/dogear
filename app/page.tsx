@@ -99,7 +99,7 @@ export default function Home() {
   }, [selectedArticle?.id, selectedBook?.id, openRightPanel]);
 
   // 多标签页状态
-  const tabs = useSessionStore((s) => s.tabs);
+  const allTabs = useSessionStore((s) => s.tabs);
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const openTab = useSessionStore((s) => s.openTab);
   const closeTab = useSessionStore((s) => s.closeTab);
@@ -108,12 +108,20 @@ export default function Home() {
   const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
   const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
+  // 过滤掉已弹出到独立窗口的标签页（标签头隐藏，但 AgentChat 保持挂载以维持 attachment）
+  const tabs = allTabs.filter(t => !sessionWindowIds.has(t.conversationId));
 
   // 监听独立窗口关闭事件，恢复 Tab 到主窗口
+  // 独立窗口关闭时：主进程 detachByWebContentsId 释放独立窗口的 attachment，
+  // 然后 removeSessionWindow 使标签页重新可见（AgentChat 一直挂载，attachment 一直在）
   useEffect(() => {
     const unsub = rendererEvents.sessionWindowClosed.listen((data) => {
       removeSessionWindow(data.conversationId);
-      openTab(data.conversationId, data.title);
+      // 如果 allTabs 中不存在该 tab（用户在弹出前就关闭了标签页），重新打开
+      const exists = useSessionStore.getState().tabs.some(t => t.conversationId === data.conversationId);
+      if (!exists) {
+        openTab(data.conversationId, data.title);
+      }
     });
     return () => unsub();
   }, [openTab, removeSessionWindow]);
@@ -300,9 +308,9 @@ export default function Home() {
                             conversationId: tab.conversationId,
                             title: tab.conversationTitle,
                           });
-                          // 移动语义：弹出后从主窗口移除 Tab，记录到独立窗口集合
+                          // 标记为独立窗口中，但不立即关闭标签页（避免 detach 先于独立窗口 attach 导致 session 销毁）
+                          // 标签页会在收到 sessionWindowReady 事件后安全关闭
                           addSessionWindow(tab.conversationId);
-                          closeTab(tab.conversationId);
                         }}
                       >
                         <ExternalLink className="w-3 h-3" />
@@ -335,14 +343,14 @@ export default function Home() {
             </ScrollArea>
           )}
 
-          {/* 标签页内容 */}
-          {tabs.length > 0 ? (
+          {/* 标签页内容：用 allTabs 渲染以保持 AgentChat 挂载（弹出到独立窗口期间 display:none 但不卸载，sessionWindowReady 后才 closeTab 卸载） */}
+          {allTabs.length > 0 ? (
             <div className="flex-1 overflow-hidden relative">
-              {tabs.map((tab) => (
+              {allTabs.map((tab) => (
                 <div
                   key={tab.conversationId}
                   className="absolute inset-0"
-                  style={{ display: activeTabId === tab.conversationId ? 'block' : 'none' }}
+                  style={{ display: activeTabId === tab.conversationId && !sessionWindowIds.has(tab.conversationId) ? 'block' : 'none' }}
                 >
                   <AgentChat
                     placeholder="我可以帮你分析书籍内容、回答问题..."
