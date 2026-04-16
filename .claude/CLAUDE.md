@@ -56,10 +56,11 @@ bun run lint
 | 状态管理 | Zustand 5 | Store 在 `stores/` 目录 |
 | IPC 通信 | @egoist/tipc | 类型安全的主进程↔渲染层通信 |
 | AI Agent | @anthropic-ai/claude-agent-sdk | Agent 会话、工具、技能 |
-| 数据存储 | JSON 文件 | `.dogear/` 目录下的 JSON 文件（settings/conversations/workspaces/书籍元数据） |
+| 数据存储 | JSON 文件 | `.dogear/` 目录下的 JSON 文件（settings/conversations/workspaces/书籍元数据/公式） |
 | Markdown | react-markdown + remark-gfm + rehype-highlight | 渲染 AI 回复 |
 | 电子书解析 | epub2 / pdf-parse | EPUB 和 PDF 文件处理 |
 | 网页解析 | @mozilla/readability + turndown + linkedom | 网络文章提取并转 Markdown |
+| **计算分析层** | **Python 3 + pandas + numpy + lark** | **AKShare 数据获取 + 技术指标计算 + 选股筛选 + 公式引擎 + 简单回测** |
 
 ---
 
@@ -78,14 +79,40 @@ components/             # React 组件
 stores/                 # Zustand store
 lib/                    # 前端工具
 types/                  # 共享 TypeScript 类型定义
+python/                 # Python 计算分析层（新增）
+  main.py               # JSON-RPC 守护进程入口
+  requirements.txt      # 依赖：akshare, pandas, numpy, lark
+  core/                 # 核心计算模块
+    indicators.py       # 技术指标计算（MA/EMA/MACD/RSI/KDJ 等）
+    screener.py         # 股票筛选引擎
+    financials.py       # AKShare 财务数据获取
+    formula_engine.py   # 公式解析和执行引擎
+    backtest.py         # 简单策略回测
+    signals.py          # 技术信号检测（金叉/死叉/超卖 等）
+  utils/                # 工具函数
+    akshare_client.py   # AKShare 封装（限流+缓存）
+    cache.py            # TTL 内存缓存
 electron/
   main/
     index.ts            # Electron 入口，窗口管理
     agents/             # Agent 框架
     services/           # 业务逻辑（JSON 文件存储）
+      stock/
+        python-bridge.ts     # Python 守护进程管理（新增）
+        formula-service.ts   # 公式 CRUD 存储（新增）
+        ...                  # 其他股票服务
     tipc/               # IPC 路由
   preload/              # 预加载脚本
-.dogear/                # 应用数据目录（settings.json, conversations.json, workspaces.json, conversations/）
+.dogear/                # 应用数据目录
+  settings.json         # 应用设置
+  conversations.json    # 对话索引
+  workspaces.json       # 工作区索引
+  conversations/        # SDK 会话历史
+  stocks/
+    watchlist.json      # 自选股列表
+    formulas.json       # 用户公式存储（新增）
+    kline/              # K线历史（JSONL）
+    daily/              # 每日快照（JSONL）
 ```
 
 ## 核心文件功能索引
@@ -196,7 +223,7 @@ electron/
 - `file.ts` — 文件操作（选择文件、导入电子书、打开文件位置）
 - `db.ts` — 书籍 CRUD（委托 book-service，JSON 存储）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
-- `stock.ts` — 自选股行情（12个 RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态）
+- `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求等）
 
 ### 业务服务（electron/main/services/）
@@ -216,6 +243,8 @@ electron/
   - `stock-service.ts` — 三数据源 API 封装（腾讯行情/分时 + 东方财富K线/搜索 + 新浪K线备用，7个方法）
   - `stock-watchlist-service.ts` — 自选股 JSON 存储（`.dogear/stocks/watchlist.json`）
   - `stock-data-service.ts` — K线 + 每日快照 JSONL 增量存储（`.dogear/stocks/kline/` + `.dogear/stocks/daily/`）
+  - `python-bridge.ts` — Python 守护进程通信（JSON-RPC，stdin/stdout）（新增）
+  - `formula-service.ts` — 公式 CRUD 存储（`.dogear/stocks/formulas.json`）（新增）
   - `index.ts` — barrel export
 
 ### Agent 框架（electron/main/agents/）
@@ -230,6 +259,14 @@ electron/
 - `tools/book-analysis-tools.ts` — 书籍分析工具（SaveAnalysis / SaveChapterAnalysis / MarkComplete）
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）
 - `tools/stock-tools.ts` — 自选股工具（SearchStock / GetStockQuote / GetKLineData / GetTimeline / GetWatchlist / ModifyWatchlist）
+- `tools/stock-analysis-tools.ts` — 股票分析工具（新增，7个）
+  - CalcIndicators：计算技术指标（MA/EMA/MACD/RSI/KDJ/BOLL/ATR 等）
+  - ScreenStocks：全市场条件筛选（基本面/技术指标/公式）
+  - GetFinancials：财务数据查询（营收/净利润/ROE 等）
+  - CompareIndustry：行业内对比分析
+  - DetectSignals：技术信号检测（MACD金叉/RSI超卖 等）
+  - EvalFormula：执行用户自定义公式（screener/signal/score）
+  - SimpleBacktest：简单策略回测
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
 ### 数据存储（`.dogear/` 目录）
@@ -239,6 +276,7 @@ electron/
 - `conversations/` — SDK 会话历史（Agent SDK 自动管理）
 - 书籍元数据：`<workspace>/<book>/meta.json` + `<workspace>/<book>/chapters.json`
 - `stocks/watchlist.json` — 自选股列表
+- `stocks/formulas.json` — 用户公式存储（screener/signal/score 三种类型）（新增）
 - `stocks/kline/{market}.{code}.jsonl` — K线历史数据（JSONL，每行一条 KLineDataPoint）
 - `stocks/daily/{market}.{code}.jsonl` — 每日快照数据（JSONL，getQuote 时自动采集，按 tradeDate 去重）
 
@@ -248,6 +286,7 @@ electron/
 - **书籍导入**：tipc.importBook → book-service.importBook → 写 meta.json + copyToWorkspace + preprocessBook(async) → 立即返回
 - **工作区文件树**：workspace/getFiles → articleService.listArticleTree + workspaceFsService.scan + bookService bookId 标记 → 合并返回
 - **自选股行情**：Renderer → stock-store → tipc/stock → stockService（通过 RateLimiter 防护）→ 腾讯/东方财富/新浪 API → 返回解析后数据（getQuote 同时 fire-and-forget 写入每日快照 JSONL）
+- **股票分析**（新增）：AI 调用分析工具 → TypeScript handler → Python Bridge → Python 计算层（指标/筛选/公式/回测）→ 返回结果给 AI
 
 ---
 
