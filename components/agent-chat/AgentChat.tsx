@@ -95,97 +95,52 @@ export function AgentChat({
 
   // ─── 滚动控制（需在 useSessionEvents 之前声明，供其闭包引用）───
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
+  // isAtBottom: 用户是否在底部附近（控制"回到底部"按钮显示 + 自动跟随）
   const isAtBottomRef = useRef(true);
-  const [newMsgCount, setNewMsgCount] = useState(0);
-  const prevMessageCount = useRef(0);
-  // 滚动模式：auto=跟随底部, user=用户控制
-  const scrollModeRef = useRef<'auto' | 'user'>('auto');
-  // 程序化滚动标志：scrollTo 调用期间为 true，防止 handleScroll 误判为用户滚动
-  const programmaticScrollRef = useRef(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
 
-  // 获取滚动视口元素
+  // 获取 Radix ScrollArea 的实际滚动视口元素
   const getViewportEl = useCallback(() => {
     return scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
   }, []);
 
-  // 滚到底部
+  // 检测是否在底部（50px 容差）
+  const checkAtBottom = useCallback((el: HTMLElement) => {
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+  }, []);
+
+  // 滚到底部（用户点击按钮时用 smooth，程序自动跟随用同步赋值）
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = getViewportEl();
-    if (el) {
-      programmaticScrollRef.current = true;
-      el.scrollTo({ top: el.scrollHeight, behavior });
-      setNewMsgCount(0);
-      scrollModeRef.current = 'auto';
-      isAtBottomRef.current = true;
-      setIsAtBottom(true);
-      // instant 没有动画，立即清除标志；smooth 需等动画结束后 handleScroll 检测到 atBottom 再清除
-      if (behavior === 'instant') {
-        programmaticScrollRef.current = false;
-      }
+    if (!el) return;
+    if (behavior === 'instant') {
+      el.scrollTop = el.scrollHeight;
+    } else {
+      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
     }
+    isAtBottomRef.current = true;
+    setShowScrollBtn(false);
   }, [getViewportEl]);
 
-  // 用户滚动检测
+  // 用户滚动时检测位置，更新 isAtBottom 状态
   const handleScroll = useCallback(() => {
     const el = getViewportEl();
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    const atBottom = checkAtBottom(el);
     isAtBottomRef.current = atBottom;
-    setIsAtBottom(atBottom);
+    setShowScrollBtn(!atBottom);
+  }, [getViewportEl, checkAtBottom]);
 
-    if (programmaticScrollRef.current) {
-      // 程序化滚动中：到达底部时清除标志，不切换模式
-      if (atBottom) {
-        programmaticScrollRef.current = false;
-        setNewMsgCount(0);
-        // scrollModeRef 已在 scrollToBottom/ResizeObserver 中设为 auto，无需重复
+  // 轮询保持底部：在底部就一直钉在底部，不依赖任何事件
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (isAtBottomRef.current) {
+        const el = getViewportEl();
+        if (el) el.scrollTop = el.scrollHeight;
       }
-      // 未到底部时忽略（动画过渡帧），不切 user
-      return;
-    }
-
-    // 用户手动滚动
-    if (atBottom) {
-      setNewMsgCount(0);
-      scrollModeRef.current = 'auto';
-    } else {
-      scrollModeRef.current = 'user';
-    }
+    }, 50);
+    return () => clearInterval(id);
   }, [getViewportEl]);
-
-  // 使用 ResizeObserver 监听消息容器高度变化，驱动自动滚动
-  // 涵盖流式输出（contentBlocks 更新）和新消息追加两种场景
-  useEffect(() => {
-    const el = getViewportEl();
-    if (!el) return;
-
-    const contentEl = el.firstElementChild as HTMLElement | null;
-    if (!contentEl) return;
-
-    const observer = new ResizeObserver(() => {
-      if (scrollModeRef.current === 'auto') {
-        programmaticScrollRef.current = true;
-        el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-        // smooth 动画结束后 handleScroll 检测到 atBottom 会清除 programmaticScrollRef
-      } else if (messages.length > 0) {
-        setNewMsgCount(prev => prev + 1);
-      }
-    });
-
-    observer.observe(contentEl);
-    return () => observer.disconnect();
-  }, [getViewportEl, sessionId]);
-
-  // 历史加载完成后（从无消息到有消息）自动滚到底部（无动画）
-  useEffect(() => {
-    if (prevMessageCount.current === 0 && messages.length > 0) {
-      requestAnimationFrame(() => {
-        scrollToBottom('instant');
-      });
-    }
-    prevMessageCount.current = messages.length;
-  }, [messages.length, scrollToBottom]);
 
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
@@ -195,8 +150,8 @@ export function AgentChat({
     setIsLoading,
     setPermissionMode,
     onScrollToAction: () => {
-      // 权限请求/AskUser 到达时，延迟 100ms 等 DOM 更新完成后滚到底部
-      setTimeout(() => scrollToBottom('smooth'), 100);
+      // 权限请求/AskUser 到达时，延迟等 DOM 更新完成后滚到底部
+      requestAnimationFrame(() => scrollToBottom('smooth'));
     },
   });
 
@@ -375,17 +330,12 @@ export function AgentChat({
       </ScrollArea>
 
       {/* 跳到最新按钮 */}
-      {!isAtBottom && (
+      {showScrollBtn && (
         <button
           onClick={() => scrollToBottom()}
           className="absolute bottom-20 right-4 z-10 w-8 h-8 rounded-full bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm flex items-center justify-center transition-all shadow-sm"
         >
           <ChevronDown size={16} className="text-foreground/60" />
-          {newMsgCount > 0 && (
-            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary text-primary-foreground text-[10px] flex items-center justify-center">
-              {newMsgCount > 9 ? '9+' : newMsgCount}
-            </span>
-          )}
         </button>
       )}
       </div>
@@ -428,8 +378,11 @@ export function AgentChat({
         hasPendingUserAction={sendMessage.hasPendingUserAction}
         pendingImages={imageAttachment.pendingImages}
         imageInputRef={imageAttachment.imageInputRef}
-        handleSend={sendMessage.handleSend}
-        handleKeyPress={sendMessage.handleKeyPress}
+        handleSend={() => { scrollToBottom('instant'); sendMessage.handleSend(); }}
+        handleKeyPress={(e: React.KeyboardEvent) => {
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) scrollToBottom('instant');
+          sendMessage.handleKeyPress(e);
+        }}
         handleImageFiles={imageAttachment.handleImageFiles}
         removePendingImage={imageAttachment.removePendingImage}
         insertModeChangeNotice={sendMessage.insertModeChangeNotice}
