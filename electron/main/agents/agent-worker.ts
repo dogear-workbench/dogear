@@ -49,6 +49,11 @@ class AgentWorker {
   // v2: MCP Server 配置
   private bookAnalysisMcpServer: any = null;
 
+  // Phase 0: 共享 query 配置所需的运行时上下文
+  private configDir: string = '';
+  private isPackaged: boolean = false;
+  private cliPath?: string;
+
   // 会话管理
   private sessionManager = new ChatSessionManager();
   private sessions: Map<string, ChatSession> = new Map();
@@ -80,6 +85,12 @@ class AgentWorker {
         created_at: Date.now()
       };
       this.logger.info('工作区路径:', this.workspacePath);
+
+      // Phase 0: 保存共享 query 配置的运行时上下文
+      this.configDir = config.configDir;
+      this.isPackaged = config.isPackaged;
+      this.cliPath = config.cliPath;
+      this.logger.info('配置目录:', this.configDir, '| 打包环境:', this.isPackaged);
 
       // v2: 创建 MCP Server
       this.bookAnalysisMcpServer = createBookAnalysisTools(this.workspacePath);
@@ -417,6 +428,15 @@ class AgentWorker {
     // v2: 使用 Claude Agent SDK 的 query 函数进行书籍分析
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
+    // Phase 0: 加载共享 query 配置（API Key、模型映射、thinking/effort 等）
+    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const baseConfig = await buildQueryBaseConfig({
+      configDir: this.configDir,
+      isPackaged: this.isPackaged,
+      cliPath: this.cliPath,
+    });
+    taskLogger.info('已加载 query 配置, profile:', baseConfig.activeProfile.name);
+
     // 构建分析提示
     const analysisPrompt = `你需要分析这本书并保存分析结果。
 
@@ -446,7 +466,16 @@ class AgentWorker {
       const agentQuery = query({
         prompt: analysisPrompt,
         options: {
+          // 后台分析任务固定使用 bypassPermissions（不需要用户确认）
           permissionMode: "bypassPermissions",
+
+          // Phase 0: 注入共享配置（API Key、模型映射、thinking/effort、CLI 路径）
+          env: baseConfig.env,
+          thinking: baseConfig.thinking,
+          effort: baseConfig.effort,
+          ...(baseConfig.pathToClaudeCodeExecutable && {
+            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
+          }),
 
           // 允许访问工作区目录
           additionalDirectories: [this.workspacePath],

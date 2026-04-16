@@ -274,25 +274,18 @@ export class AgentManager extends EventEmitter {
       // 初始化 Worker
       this.workers.set(workerId, wrapper);
 
-      // 获取数据库路径和工作区路径(从主进程传递给 Worker)
-      const path = await import('path');
-      const fs = await import('fs');
+      // 获取工作区路径和共享配置所需的运行时上下文
+      // 注：configDir 已在上方声明（用于 Worker env 的 DOGEAR_CONFIG_DIR），此处复用
 
-      // 获取项目根目录
-      // 打包后：AppData/Roaming/Dogear；开发时：__dirname 向上三级
-      const projectRoot = app.isPackaged
-        ? app.getPath('userData')
-        : path.resolve(__dirname, '../../../');
-
-      // 数据库路径：项目根目录下的 data 文件夹
-      const dbDir = path.join(projectRoot, 'data');
-
-      // 确保 data 目录存在
-      if (!fs.existsSync(dbDir)) {
-        fs.mkdirSync(dbDir, { recursive: true });
+      // 打包环境：预计算 SDK CLI 路径（Worker 线程无法访问 electron.app）
+      let cliPath: string | undefined;
+      if (app.isPackaged) {
+        cliPath = join(
+          dirname(app.getAppPath()),
+          'app.asar.unpacked',
+          'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
+        );
       }
-
-      const dbPath = path.join(dbDir, 'dogear.db');
 
       // 获取当前默认工作区路径（从 JSON 配置读取，不自动创建）
       let workspacePath: string;
@@ -301,18 +294,20 @@ export class AgentManager extends EventEmitter {
 
       if (!defaultWorkspace) {
         // 如果没有设置默认工作区，使用临时路径，Worker 会报错提示用户先选择工作区
-        workspacePath = path.join(projectRoot, '.temp-workspace');
+        workspacePath = join(process.cwd(), '.temp-workspace');
         this.logger.warn('未设置默认工作区，Worker 可能无法正常工作');
       } else {
         workspacePath = defaultWorkspace.path;
       }
-      
+
       this.sendMessageToWorker(workerId, {
         type: 'init',
-        config: { 
+        config: {
           workerId,
-          dbPath,  // 传递数据库路径给 Worker
-          workspacePath  // 传递工作区路径给 Worker
+          workspacePath,
+          configDir,
+          isPackaged: app.isPackaged,
+          cliPath,
         }
       });
 

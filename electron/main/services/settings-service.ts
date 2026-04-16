@@ -7,102 +7,12 @@
 import path from 'path';
 import electron from 'electron';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
+import { DEFAULT_SETTINGS, deepMerge, type AppSettings } from './settings-types.js';
 
 const { app } = electron;
 
-// ============================================================
-// 类型定义（与 types/settings.ts 保持一致，主进程独立定义）
-// ============================================================
-
-export interface ThinkingConfig {
-  type: 'adaptive' | 'enabled' | 'disabled';
-  budgetTokens?: number;
-}
-
-/** 人设预设 */
-export interface Persona {
-  id: string;
-  name: string;
-  description?: string;
-  prompt: string;
-  createdAt: string; // ISO 8601
-}
-
-export interface ModelProfile {
-  id: string;
-  name: string;
-  apiKey: string;
-  baseUrl: string;
-  haikuModel: string;
-  sonnetModel: string;
-  opusModel: string;
-  apiTimeoutMs: number;
-  disableNonessentialTraffic: boolean;
-}
-
-export interface AppSettings {
-  ai: {
-    thinking: ThinkingConfig;
-    effort: 'low' | 'medium' | 'high' | 'max';
-    activeProfileId: string;
-    maxTurns?: number;
-    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
-    defaultSystemPrompt?: string; // 全局默认系统提示词
-    systemPromptAppend?: string;  // @deprecated 旧版追加提示词，向后兼容保留
-    settingSources?: ('user' | 'project')[];
-  };
-  permissionRules?: {
-    allow?: string[];
-    deny?: string[];
-  };
-  personas: Persona[]; // 人设列表
-  profiles: Record<string, ModelProfile>;
-}
-
-/**
- * 检查 Profile 是否配置完整
- */
-export function isProfileComplete(profile: ModelProfile): boolean {
-  return !!(
-    profile.apiKey &&
-    profile.baseUrl &&
-    profile.haikuModel &&
-    profile.sonnetModel &&
-    profile.opusModel
-  );
-}
-
-// ============================================================
-// 默认值
-// ============================================================
-
-/** 内置默认系统提示词（不可删除） */
-export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
-
-const DEFAULT_SETTINGS: AppSettings = {
-  ai: {
-    thinking: { type: 'adaptive' },
-    effort: 'high',
-    activeProfileId: 'default',
-    permissionMode: 'default',
-    settingSources: ['project'],
-    defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
-  },
-  personas: [],
-  profiles: {
-    default: {
-      id: 'default',
-      name: '默认',
-      apiKey: '',
-      baseUrl: '',
-      haikuModel: '',
-      sonnetModel: '',
-      opusModel: '',
-      apiTimeoutMs: 3000000,
-      disableNonessentialTraffic: true,
-    },
-  },
-};
+// 重新导出所有纯类型和纯函数，保持现有导入路径兼容
+export * from './settings-types.js';
 
 // ============================================================
 // 路径函数
@@ -122,43 +32,6 @@ function getConfigDir(): string {
 
 function getSettingsPath(): string {
   return path.join(getConfigDir(), 'settings.json');
-}
-
-// ============================================================
-// 辅助函数
-// ============================================================
-
-/**
- * 深度合并两个对象
- * target 中已有的值保留，缺失的字段从 source 补充默认值
- */
-function deepMerge<T extends Record<string, any>>(target: T, source: T): T {
-  const result = { ...source };
-
-  for (const key of Object.keys(target) as (keyof T)[]) {
-    const targetVal = target[key];
-    const sourceVal = source[key];
-
-    if (
-      targetVal !== null &&
-      sourceVal !== null &&
-      typeof targetVal === 'object' &&
-      typeof sourceVal === 'object' &&
-      !Array.isArray(targetVal) &&
-      !Array.isArray(sourceVal)
-    ) {
-      // 递归合并嵌套对象
-      (result as Record<string, unknown>)[key as string] = deepMerge(
-        targetVal as Record<string, unknown>,
-        sourceVal as Record<string, unknown>,
-      );
-    } else {
-      // 使用 target（用户已保存的值）覆盖 source（默认值）
-      (result as Record<string, unknown>)[key as string] = targetVal;
-    }
-  }
-
-  return result as T;
 }
 
 // ============================================================
@@ -185,31 +58,4 @@ export async function loadSettings(): Promise<AppSettings> {
  */
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await safeJsonWrite(getSettingsPath(), settings);
-}
-
-/**
- * 获取当前激活的 ModelProfile
- * 如果激活的 profile 不存在，回退到 default profile
- */
-export function getActiveProfile(settings: AppSettings): ModelProfile {
-  const { activeProfileId } = settings.ai;
-  const profile = settings.profiles[activeProfileId];
-
-  if (profile) {
-    return profile;
-  }
-
-  // 回退到 default
-  if (settings.profiles['default']) {
-    return settings.profiles['default'];
-  }
-
-  // 兜底：返回第一个可用的 profile
-  const firstKey = Object.keys(settings.profiles)[0];
-  if (firstKey) {
-    return settings.profiles[firstKey];
-  }
-
-  // 极端情况：profiles 为空，返回默认配置
-  return DEFAULT_SETTINGS.profiles['default'];
 }

@@ -21,8 +21,8 @@ import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
 import { app } from 'electron';
-import { getClaudeConfigDir } from '../tipc/agent.js';
-import { loadSettings, getActiveProfile, isProfileComplete, type AppSettings } from '../services/settings-service.js';
+import { buildQueryBaseConfig, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
+import type { AppSettings } from '../services/settings-types.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -141,9 +141,33 @@ export class QueryBasedSession extends EventEmitter {
     this.logger.info('resume 模式:', !!this.config.resume, this.config.resume || '(新会话)');
 
     try {
-      // 从 settings.json 读取 AI 配置（唯一配置源）
-      const appSettings = await loadSettings();
-      const activeProfile = getActiveProfile(appSettings);
+      // 构建运行时上下文（主进程可以直接访问 electron.app）
+      const ctx: QueryRuntimeContext = {
+        configDir: app.isPackaged
+          ? path.join(app.getPath('userData'), '.dogear')
+          : path.join(process.cwd(), '.dogear'),
+        isPackaged: app.isPackaged,
+        cliPath: app.isPackaged
+          ? path.join(
+              path.dirname(app.getAppPath()),
+              'app.asar.unpacked',
+              'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
+            )
+          : undefined,
+      };
+
+      // 从 settings.json 加载 AI 配置（通过共享配置层）
+      let baseConfig: QueryBaseConfig;
+      try {
+        baseConfig = await buildQueryBaseConfig(ctx);
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        this.logger.error('加载 AI 配置失败:', errorMsg);
+        this.emit('sessionError', { error: errorMsg });
+        return;
+      }
+
+      const { appSettings, activeProfile } = baseConfig;
 
       // 构建系统提示词（需要 appSettings 读取 systemPromptAppend）
       const systemPrompt = this.buildSystemPrompt(appSettings);
@@ -155,37 +179,32 @@ export class QueryBasedSession extends EventEmitter {
       // 创建持续的消息流
       const messageStream = this.createMessageStream();
 
-      // 构建 query 配置
+      // 构建 query 配置，注入共享配置
       const queryOptions: Record<string, any> = {
         systemPrompt,
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
+        // 注入共享配置
+        env: baseConfig.env,
+        thinking: baseConfig.thinking,
+        effort: baseConfig.effort,
+        ...(baseConfig.pathToClaudeCodeExecutable && {
+          pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
+        }),
       };
 
-      // 校验 Profile 完整性
-      if (!isProfileComplete(activeProfile)) {
-        const errorMsg = `当前模型方案 "${activeProfile.name}" 配置不完整，请在设置页面完善 API Key、Base URL 和模型映射`;
-        this.logger.error(errorMsg);
-        this.emit('sessionError', { error: errorMsg });
-        return;
-      }
-
-      // 注入 thinking 和 effort
-      queryOptions.thinking = appSettings.ai.thinking;
-      queryOptions.effort = appSettings.ai.effort;
-
       // 注入默认权限模式
-      this.currentPermissionMode = appSettings.ai.permissionMode || 'default';
+      this.currentPermissionMode = baseConfig.permissionMode;
       queryOptions.permissionMode = this.currentPermissionMode;
 
       // 缓存声明式权限规则
-      if (appSettings.permissionRules) {
-        this.permissionRules = appSettings.permissionRules;
+      if (baseConfig.permissionRules) {
+        this.permissionRules = baseConfig.permissionRules;
         this.logger.info('已加载权限规则:', this.permissionRules);
       }
 
       // 注入 maxTurns
-      if ((appSettings.ai as any).maxTurns) {
-        queryOptions.maxTurns = (appSettings.ai as any).maxTurns;
+      if (baseConfig.maxTurns) {
+        queryOptions.maxTurns = baseConfig.maxTurns;
         this.logger.info('已配置 maxTurns:', queryOptions.maxTurns);
       }
 
@@ -230,7 +249,6 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       // 配置工作目录：cwd 使用用户选择的工作区路径，这样 agent 的工作上下文是用户的工作区
-      // 项目根目录放入 additionalDirectories，保持 skills 的加载能力
       if (this.config.workspacePath) {
         queryOptions.cwd = this.config.workspacePath;
         this.logger.info('已配置 cwd 为用户工作区:', this.config.workspacePath);
@@ -238,16 +256,7 @@ export class QueryBasedSession extends EventEmitter {
 
       if (this.config.enableSkills && projectRoot) {
         // 从设置中读取 settingSources（包含 'project' 时加载 .claude/settings.json 和 skills）
-        queryOptions.settingSources = appSettings.ai.settingSources || ['project'];
-        // 将项目根目录加入 additionalDirectories，确保 skills 仍然可以被加载
-        // const additionalDirs: string[] = [];
-        // if (projectRoot !== this.config.workspacePath) {
-        //   additionalDirs.push(projectRoot);
-        // }
-        // if (additionalDirs.length > 0) {
-        //   queryOptions.additionalDirectories = additionalDirs;
-        //   this.logger.info('已配置 additionalDirectories（含项目根目录）:', additionalDirs);
-        // }
+        queryOptions.settingSources = baseConfig.settingSources || ['project'];
         this.logger.info('已配置 settingSources 以加载 Skills');
       }
 
@@ -272,32 +281,6 @@ export class QueryBasedSession extends EventEmitter {
         console.log('[Fork] resumeSessionAt:', this.config.resumeSessionAt, 'forkSession:', this.config.forkSession);
       }
 
-      // 继承系统环境变量（PATH 等），再覆盖 Profile 配置
-      const claudeConfigDir = getClaudeConfigDir();
-      queryOptions.env = {
-        ...process.env,
-        ANTHROPIC_AUTH_TOKEN: activeProfile.apiKey,
-        ANTHROPIC_BASE_URL: activeProfile.baseUrl,
-        ANTHROPIC_DEFAULT_HAIKU_MODEL: activeProfile.haikuModel,
-        ANTHROPIC_DEFAULT_SONNET_MODEL: activeProfile.sonnetModel,
-        ANTHROPIC_DEFAULT_OPUS_MODEL: activeProfile.opusModel,
-        API_TIMEOUT_MS: String(activeProfile.apiTimeoutMs),
-        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: activeProfile.disableNonessentialTraffic ? '1' : '0',
-        CLAUDE_CONFIG_DIR: claudeConfigDir,
-      };
-
-      // 打包环境：显式指定 CLI 路径（spawn 不能访问 asar 内部）
-      // asarUnpack 会将文件解包到 app.asar.unpacked/ 目录
-      if (app.isPackaged) {
-        const cliPath = path.join(
-          path.dirname(app.getAppPath()),  // resources/
-          'app.asar.unpacked',
-          'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
-        );
-        queryOptions.pathToClaudeCodeExecutable = cliPath;
-        this.logger.info('打包环境 CLI 路径:', cliPath);
-      }
-
       this.logger.info('已从 settings Profile 构建 env:', {
         profileName: activeProfile.name,
         baseUrl: activeProfile.baseUrl,
@@ -305,7 +288,6 @@ export class QueryBasedSession extends EventEmitter {
         sonnetModel: activeProfile.sonnetModel,
         opusModel: activeProfile.opusModel,
         apiTimeoutMs: activeProfile.apiTimeoutMs,
-        claudeConfigDir,
       });
 
       // 配置权限确认回调：当 permissionMode 为 default 时，SDK 会调用此回调
@@ -508,7 +490,7 @@ export class QueryBasedSession extends EventEmitter {
       this.logger.info('');
       this.logger.info('📁 目录配置:');
       this.logger.info('  • cwd:', queryOptions.cwd || '(默认)');
-      this.logger.info('  • CLAUDE_CONFIG_DIR:', claudeConfigDir);
+      this.logger.info('  • CLAUDE_CONFIG_DIR:', queryOptions.env?.CLAUDE_CONFIG_DIR || '(未设置)');
       this.logger.info('  • settingSources:', JSON.stringify(queryOptions.settingSources || []));
       this.logger.info('  • additionalDirectories:', JSON.stringify(queryOptions.additionalDirectories || []));
       this.logger.info('');
