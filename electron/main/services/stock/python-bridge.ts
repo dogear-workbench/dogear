@@ -17,6 +17,7 @@
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import fs from 'fs';
 import electron from 'electron';
 
 const { app } = electron;
@@ -235,21 +236,82 @@ class PythonBridge {
     );
   }
 
+  /** 获取 Python 脚本目录 */
+  private getPythonDir(): string {
+    if (!app.isPackaged) {
+      // 开发模式：项目根目录/python/
+      return path.join(process.cwd(), 'python');
+    }
+    // 打包模式：extraResources 解压到 resources/python/
+    return path.join(process.resourcesPath, 'python');
+  }
+
   /** 获取 Python 脚本路径 */
   private getScriptPath(): string {
-    // 开发模式：项目根目录/python/main.py
-    // 打包模式：app.asar 同级/python/main.py
-    const isDev = !app.isPackaged;
-    if (isDev) {
-      return path.join(process.cwd(), 'python', 'main.py');
+    return path.join(this.getPythonDir(), 'main.py');
+  }
+
+  /** 依赖已验证标记，避免每次启动都检测 */
+  private depsVerified = false;
+
+  /**
+   * 检测并安装 Python 依赖
+   * 首次运行时自动 pip install requirements.txt 中的依赖
+   */
+  private async ensureDependencies(pythonCmd: string): Promise<void> {
+    if (this.depsVerified) return;
+
+    const pythonDir = this.getPythonDir();
+    const reqFile = path.join(pythonDir, 'requirements.txt');
+
+    if (!fs.existsSync(reqFile)) {
+      console.log('[PythonBridge] requirements.txt 不存在，跳过依赖检测');
+      this.depsVerified = true;
+      return;
     }
-    return path.join(path.dirname(app.getAppPath()), 'python', 'main.py');
+
+    // 用 Python 检测核心依赖是否可导入
+    const checkScript = 'import pandas,numpy,akshare,lark';
+
+    try {
+      execSync(`${pythonCmd} -c "${checkScript}"`, {
+        timeout: 15_000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      console.log('[PythonBridge] Python 依赖检测通过');
+      this.depsVerified = true;
+      return;
+    } catch {
+      console.log('[PythonBridge] 检测到缺失依赖，开始自动安装...');
+    }
+
+    // 执行 pip install
+    try {
+      execSync(
+        `${pythonCmd} -m pip install -r "${reqFile}" --quiet`,
+        {
+          timeout: 300_000, // 5分钟超时（大包如 numpy 可能较慢）
+          encoding: 'utf-8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
+      console.log('[PythonBridge] 依赖安装完成');
+      this.depsVerified = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Python 依赖安装失败。请手动执行:\n  ${pythonCmd} -m pip install -r "${reqFile}"\n${msg}`
+      );
+    }
   }
 
   /** 启动 Python 进程 */
   private async startProcess(): Promise<void> {
     const pythonCmd = this.detectPython();
     const scriptPath = this.getScriptPath();
+
+    // 首次启动前确保依赖已安装
+    await this.ensureDependencies(pythonCmd);
 
     console.log(`[PythonBridge] 启动 Python 进程: ${pythonCmd} ${scriptPath}`);
 

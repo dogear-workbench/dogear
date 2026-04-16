@@ -36,6 +36,13 @@ extraResources:
   # 托盘图标（createTray 通过 process.resourcesPath 访问）
   - from: build/icon.ico
     to: icon.ico
+  # Python 计算分析层脚本（首次运行自动 pip install 依赖）
+  - from: python/
+    to: python/
+    filter:
+      - "**/*.py"
+      - "requirements.txt"
+      - "!**/__pycache__/**"
 
 # asar 配置
 asar: true

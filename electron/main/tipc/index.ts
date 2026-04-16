@@ -15,6 +15,7 @@ import { claudeConfigRouter } from './claude-config.js';
 import { stockRouter } from './stock.js';
 import { wechatRouter } from './wechat.js';
 import { conversationRuntimeRouter } from './conversation-runtime.js';
+import { environmentRouter } from './environment.js';
 
 export const router = {
   ...dbRouter,
@@ -32,6 +33,7 @@ export const router = {
   ...stockRouter,
   ...wechatRouter,
   ...conversationRuntimeRouter,
+  ...environmentRouter,
 };
 
 export type Router = typeof router;

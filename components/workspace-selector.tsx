@@ -3,7 +3,8 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, Home, Loader2, Plus, Trash2, Import, X } from 'lucide-react';
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible';
+import { FolderOpen, Home, Loader2, Plus, Trash2, Import, X, ChevronRight, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Download } from 'lucide-react';
 import { showConfirm } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -17,6 +18,15 @@ interface OrphanWorkspace {
   lastUpdated: string | null;
 }
 
+interface DepInfo {
+  name: string;
+  version: string | null;
+  installed: boolean;
+  required: boolean;
+  description?: string;
+  installable?: boolean;
+}
+
 export function WorkspaceSelector() {
   const setWorkspaceToStore = useWorkspaceStore((s) => s.setWorkspace);
   const [loading, setLoading] = useState(true);
@@ -26,6 +36,13 @@ export function WorkspaceSelector() {
   const [orphans, setOrphans] = useState<OrphanWorkspace[]>([]);
   const [scanningOrphans, setScanningOrphans] = useState(false);
   const [importingId, setImportingId] = useState<string | null>(null);
+
+  // 环境依赖检测
+  const [envOpen, setEnvOpen] = useState(false);
+  const [envChecking, setEnvChecking] = useState(false);
+  const [envDeps, setEnvDeps] = useState<DepInfo[]>([]);
+  const [envChecked, setEnvChecked] = useState(false);
+  const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
     loadWorkspaces();
@@ -132,6 +149,41 @@ export function WorkspaceSelector() {
     }
   };
 
+  // 检测环境依赖
+  const checkEnvironment = async () => {
+    setEnvChecking(true);
+    try {
+      const result = await client.checkEnvironment();
+      setEnvDeps(result.dependencies as DepInfo[]);
+      setEnvChecked(true);
+    } catch (error) {
+      toast.error('环境检测失败', { description: (error as Error).message });
+    } finally {
+      setEnvChecking(false);
+    }
+  };
+
+  // 一键安装 Python 依赖
+  const handleInstallPythonDeps = async () => {
+    setInstalling(true);
+    try {
+      const result = await client.installPythonDeps() as { success?: boolean; error?: string };
+      if (result.error) {
+        toast.error('安装失败', { description: result.error });
+      } else {
+        toast.success('Python 依赖安装完成');
+        await checkEnvironment();
+      }
+    } catch (error) {
+      toast.error('安装失败', { description: (error as Error).message });
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  const pythonInstalled = envDeps.some(d => d.name === 'Python' && d.installed);
+  const missingPythonPkgs = envDeps.filter(d => d.installable && !d.installed);
+
   // 进入选中的工作区
   const handleEnterWorkspace = () => {
     if (selectedWorkspace) {
@@ -234,6 +286,87 @@ export function WorkspaceSelector() {
             导入丢失的会话
           </Button>
         </div>
+
+        {/* 环境依赖检测 */}
+        <Collapsible open={envOpen} onOpenChange={(open) => {
+          setEnvOpen(open);
+          if (open && !envChecked && !envChecking) {
+            checkEnvironment();
+          }
+        }}>
+          <CollapsibleTrigger className="flex items-center gap-2 w-full px-1 py-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+            <ChevronRight className={`w-4 h-4 transition-transform duration-200 ${envOpen ? 'rotate-90' : ''}`} />
+            <span>环境依赖</span>
+            {envChecked && (
+              <span className="text-xs ml-auto">
+                {envDeps.filter(d => d.installed).length}/{envDeps.length} 已安装
+              </span>
+            )}
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="border rounded-lg mt-1">
+              {!envChecked && envChecking ? (
+                <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  检测中...
+                </div>
+              ) : envChecked ? (
+                <>
+                  <div className="divide-y">
+                    {envDeps.map((dep) => (
+                      <div key={dep.name} className="flex items-center gap-3 px-3 py-2.5">
+                        {dep.installed
+                          ? <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
+                          : dep.required
+                            ? <XCircle className="w-4 h-4 text-red-500 shrink-0" />
+                            : <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0" />
+                        }
+                        <span className="text-sm font-medium w-16 shrink-0">{dep.name}</span>
+                        <span className="text-xs text-muted-foreground w-20 shrink-0">
+                          {dep.installed ? dep.version : '未安装'}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${
+                          dep.required
+                            ? 'bg-primary/10 text-primary'
+                            : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {dep.required ? '必需' : '可选'}
+                        </span>
+                        {dep.description && (
+                          <span className="text-xs text-muted-foreground ml-auto">{dep.description}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 px-3 py-2 border-t">
+                    <Button variant="ghost" size="sm" onClick={checkEnvironment} disabled={envChecking}>
+                      {envChecking
+                        ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                        : <RefreshCw className="w-3 h-3 mr-1" />
+                      }
+                      刷新
+                    </Button>
+                    {missingPythonPkgs.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleInstallPythonDeps}
+                        disabled={installing || !pythonInstalled}
+                        title={!pythonInstalled ? '请先安装 Python' : undefined}
+                      >
+                        {installing
+                          ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                          : <Download className="w-3 h-3 mr-1" />
+                        }
+                        一键安装 Python 依赖
+                      </Button>
+                    )}
+                  </div>
+                </>
+              ) : null}
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* 孤儿工作区恢复弹窗 */}
         {showRecovery && (
