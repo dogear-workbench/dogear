@@ -66,14 +66,14 @@ export default function SettingsPage() {
   // 内层 profile tab 选中状态（独立于 activeProfileId）
   const [selectedProfileTab, setSelectedProfileTab] = useState<string>('default');
 
-  // 动态加载已注册的工具列表
+  // 动态加载已注册的工具列表（按 server 分组）
   interface ToolInfo { name: string; description: string; server: string }
-  const [sdkTools, setSdkTools] = useState<ToolInfo[]>([]);
-  const [customTools, setCustomTools] = useState<ToolInfo[]>([]);
+  interface ToolGroup { server: string; label: string; tools: ToolInfo[] }
+  const [toolGroups, setToolGroups] = useState<ToolGroup[]>([]);
   useEffect(() => {
     client.getRegisteredTools().then((result: any) => {
-      if (result?.sdk) setSdkTools(result.sdk);
-      if (result?.custom) setCustomTools(result.custom);
+      // 新格式：ToolGroup[]
+      if (Array.isArray(result)) setToolGroups(result);
     }).catch(() => {});
   }, []);
 
@@ -146,20 +146,104 @@ export default function SettingsPage() {
   };
 
   // ── 工具权限 helper ──
+
+  /** 获取组级 SDK 权限名（如 'mcp__dogear-stock'） */
+  const toServerKey = (server: string): string =>
+    server === 'sdk' ? '' : `mcp__${server}`;
+
+  /** 获取单个工具的有效权限（考虑组级规则） */
   const getToolPermission = (tool: ToolInfo): ToolPermission => {
-    const key = toSdkToolName(tool);
-    if (local.permissionRules?.allow?.includes(key)) return 'allow';
-    if (local.permissionRules?.deny?.includes(key)) return 'deny';
+    const toolKey = toSdkToolName(tool);
+    const serverKey = toServerKey(tool.server);
+    const rules = local.permissionRules;
+
+    // 先查单个工具的规则
+    if (rules?.allow?.includes(toolKey)) return 'allow';
+    if (rules?.deny?.includes(toolKey)) return 'deny';
+
+    // 再查组级规则（SDK 内置工具无组级规则）
+    if (serverKey) {
+      if (rules?.allow?.includes(serverKey)) return 'allow';
+      if (rules?.deny?.includes(serverKey)) return 'deny';
+    }
+
     return 'default';
   };
 
+  /** 获取组级权限状态：如果有组级规则则返回对应状态，否则返回 'default' */
+  const getGroupPermission = (group: ToolGroup): ToolPermission => {
+    const serverKey = toServerKey(group.server);
+    if (!serverKey) {
+      // SDK 内置工具组：检查是否所有工具权限一致
+      const perms = group.tools.map(t => getToolPermission(t));
+      if (perms.every(p => p === 'allow')) return 'allow';
+      if (perms.every(p => p === 'deny')) return 'deny';
+      if (perms.every(p => p === 'default')) return 'default';
+      return 'default'; // 混合状态
+    }
+    const rules = local.permissionRules;
+    if (rules?.allow?.includes(serverKey)) return 'allow';
+    if (rules?.deny?.includes(serverKey)) return 'deny';
+    return 'default';
+  };
+
+  /** 检查组内是否有单个工具的独立规则（混合状态检测） */
+  const hasIndividualRules = (group: ToolGroup): boolean => {
+    const rules = local.permissionRules;
+    if (!rules) return false;
+    return group.tools.some(tool => {
+      const key = toSdkToolName(tool);
+      return rules.allow?.includes(key) || rules.deny?.includes(key);
+    });
+  };
+
+  /** 设置单个工具的权限 */
   const setToolPermission = (tool: ToolInfo, perm: ToolPermission) => {
-    const key = toSdkToolName(tool);
+    const toolKey = toSdkToolName(tool);
+    const serverKey = toServerKey(tool.server);
     const rules = local.permissionRules || { allow: [], deny: [] };
-    const allow = (rules.allow || []).filter(t => t !== key);
-    const deny = (rules.deny || []).filter(t => t !== key);
-    if (perm === 'allow') allow.push(key);
-    if (perm === 'deny') deny.push(key);
+    let allow = (rules.allow || []).filter(t => t !== toolKey);
+    let deny = (rules.deny || []).filter(t => t !== toolKey);
+
+    // 如果存在组级规则，需要移除组级规则（因为现在子工具有独立状态了）
+    if (serverKey) {
+      allow = allow.filter(t => t !== serverKey);
+      deny = deny.filter(t => t !== serverKey);
+    }
+
+    if (perm === 'allow') allow.push(toolKey);
+    if (perm === 'deny') deny.push(toolKey);
+    // perm === 'default' 时不写入任何规则
+
+    setLocal(prev => ({ ...prev, permissionRules: { allow, deny } }));
+  };
+
+  /** 设置组级权限（整个 MCP Server） */
+  const setGroupPermission = (group: ToolGroup, perm: ToolPermission) => {
+    const serverKey = toServerKey(group.server);
+    const rules = local.permissionRules || { allow: [], deny: [] };
+
+    // 移除组内所有单个工具的规则
+    const toolKeys = group.tools.map(t => toSdkToolName(t));
+    let allow = (rules.allow || []).filter(t => !toolKeys.includes(t));
+    let deny = (rules.deny || []).filter(t => !toolKeys.includes(t));
+
+    if (serverKey) {
+      // 自定义工具组：使用组级规则
+      allow = allow.filter(t => t !== serverKey);
+      deny = deny.filter(t => t !== serverKey);
+      if (perm === 'allow') allow.push(serverKey);
+      if (perm === 'deny') deny.push(serverKey);
+    } else {
+      // SDK 内置工具组：逐个设置（SDK 工具没有 server 级规则）
+      if (perm === 'allow') {
+        for (const key of toolKeys) allow.push(key);
+      } else if (perm === 'deny') {
+        for (const key of toolKeys) deny.push(key);
+      }
+      // perm === 'default' 时已经清理完毕
+    }
+
     setLocal(prev => ({ ...prev, permissionRules: { allow, deny } }));
   };
 
@@ -221,12 +305,12 @@ export default function SettingsPage() {
   const renderToolRow = (tool: ToolInfo) => {
     const perm = getToolPermission(tool);
     return (
-      <div key={toSdkToolName(tool)} className="flex items-center justify-between py-2 border-b last:border-b-0">
+      <div key={toSdkToolName(tool)} className="flex items-center justify-between py-2 px-4">
         <div className="flex-1 min-w-0">
           <span className="text-sm font-mono">{tool.name}</span>
           <span className="text-xs text-muted-foreground ml-2">{tool.description}</span>
         </div>
-        <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5 flex-shrink-0 ml-4">
+        <div className="inline-flex h-7 items-center rounded-md bg-muted p-0.5 flex-shrink-0 ml-4">
           {([
             { value: 'allow' as const, label: '自动允许', color: 'text-green-700' },
             { value: 'default' as const, label: '需确认', color: 'text-foreground' },
@@ -235,7 +319,7 @@ export default function SettingsPage() {
             <button
               key={opt.value}
               className={cn(
-                'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
+                'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-2.5 py-1 text-xs font-medium transition-all',
                 perm === opt.value
                   ? `bg-background ${opt.color} shadow-sm`
                   : 'text-muted-foreground hover:text-foreground'
@@ -421,20 +505,48 @@ export default function SettingsPage() {
         <TabsContent value="permissions" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <div className="max-w-2xl py-6 px-6">
             <h2 className="text-lg font-semibold mb-1">工具权限</h2>
-            <p className="text-sm text-muted-foreground mb-6">管理 Agent 可使用的工具及其权限级别</p>
+            <p className="text-sm text-muted-foreground mb-6">管理 Agent 可使用的工具及其权限级别。可按分组整体控制，也可单独设置每个工具。</p>
 
-            <div className="mb-6">
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">SDK 内置工具</h3>
-              <div className="space-y-0">
-                {sdkTools.map(renderToolRow)}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">自定义工具</h3>
-              <div className="space-y-0">
-                {customTools.map(renderToolRow)}
-              </div>
+            <div className="space-y-6">
+              {toolGroups.map(group => {
+                const groupPerm = getGroupPermission(group);
+                const hasMixed = hasIndividualRules(group) && toServerKey(group.server) !== '';
+                return (
+                  <div key={group.server} className="border rounded-lg overflow-hidden">
+                    {/* 分组标题 + 组级三态按钮 */}
+                    <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-semibold">{group.label}</h3>
+                        <span className="text-xs text-muted-foreground">({group.tools.length})</span>
+                      </div>
+                      <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5 flex-shrink-0">
+                        {([
+                          { value: 'allow' as const, label: '全部允许', color: 'text-green-700' },
+                          { value: 'default' as const, label: '需确认', color: 'text-foreground' },
+                          { value: 'deny' as const, label: '全部禁止', color: 'text-red-600' },
+                        ]).map(opt => (
+                          <button
+                            key={opt.value}
+                            className={cn(
+                              'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
+                              groupPerm === opt.value && !hasMixed
+                                ? `bg-background ${opt.color} shadow-sm`
+                                : 'text-muted-foreground hover:text-foreground'
+                            )}
+                            onClick={() => setGroupPermission(group, opt.value)}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* 组内工具列表 */}
+                    <div className="divide-y">
+                      {group.tools.map(renderToolRow)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </TabsContent>

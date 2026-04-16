@@ -10,14 +10,15 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import type { AgentFileInfo } from '@/types/agents';
 
-// 动态工具列表 hook
+// 动态工具列表 hook（适配 ToolGroup[] 返回格式）
 function useAvailableTools() {
   const [tools, setTools] = useState<string[]>([]);
   useEffect(() => {
     client.getRegisteredTools().then((result: any) => {
-      const sdkNames = (result?.sdk || []).map((t: any) => t.name);
-      const customNames = (result?.custom || []).map((t: any) => t.name);
-      setTools([...sdkNames, ...customNames]);
+      // 新格式：ToolGroup[]，每组有 tools 数组
+      const groups = Array.isArray(result) ? result : [];
+      const allNames = groups.flatMap((g: any) => (g.tools || []).map((t: any) => t.name));
+      setTools(allNames);
     }).catch(() => {});
   }, []);
   return tools;

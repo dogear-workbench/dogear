@@ -7,6 +7,7 @@ import type { QueryBasedSession, QueryBasedSessionConfig, ExtendedSessionMessage
 import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
 import { createStockTools } from '../agents/tools/stock-tools.js';
+import { createStockAnalysisTools } from '../agents/tools/stock-analysis-tools.js';
 import { loadWorkspaceAgents } from './agent-definition-service.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
@@ -91,6 +92,9 @@ async function buildConversationSessionConfig(
 
   const stockTools = createStockTools();
   mcpServers['dogear-stock'] = stockTools;
+
+  const stockAnalysisTools = createStockAnalysisTools();
+  mcpServers['dogear-stock-analysis'] = stockAnalysisTools;
 
   const agents: Record<string, any> = {
     'chapter-analyzer': {

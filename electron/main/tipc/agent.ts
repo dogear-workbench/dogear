@@ -974,6 +974,7 @@ export const agentRouter = {
       await import('../agents/tools/book-qa-tools.js').catch(() => {});
       await import('../agents/tools/book-analysis-tools.js').catch(() => {});
       await import('../agents/tools/stock-tools.js').catch(() => {});
+      await import('../agents/tools/stock-analysis-tools.js').catch(() => {});
       return getAllTools();
     }),
 

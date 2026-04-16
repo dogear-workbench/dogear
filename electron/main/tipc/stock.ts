@@ -1,6 +1,6 @@
 // electron/main/tipc/stock.ts
 import { tipc } from '@egoist/tipc/main';
-import { stockService, stockWatchlistService, stockDataService } from '../services/stock/index.js';
+import { stockService, stockWatchlistService, stockDataService, pythonBridge, formulaService } from '../services/stock/index.js';
 
 const t = tipc.create();
 
@@ -191,4 +191,176 @@ export const stockRouter = {
   'stock:getRateLimiterStatus': t.procedure.action(async () => {
     return { data: stockService.getStatus() };
   }),
+
+  // === 技术指标计算（Python Bridge） ===
+
+  /** 计算技术指标（供前端直接调用） */
+  'stock:calcIndicators': t.procedure
+    .input<{
+      market: number;
+      code: string;
+      indicators: string[];
+      params?: Record<string, Record<string, number>>;
+      period?: 101 | 102 | 103;
+      limit?: number;
+    }>()
+    .action(async ({ input }) => {
+      try {
+        const secid = `${input.market}.${input.code}`;
+        const klineData = await stockService.getKLine({
+          secid,
+          period: input.period ?? 101,
+          adjust: 1,
+          limit: input.limit ?? 250,
+        });
+
+        if (klineData.length === 0) {
+          return { error: '未获取到 K 线数据' };
+        }
+
+        const result = await pythonBridge.call('calc_indicators', {
+          kline: klineData,
+          indicators: input.indicators,
+          params: input.params || {},
+        }, 30_000);
+
+        return { data: result };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
+
+  /** 获取 Python Bridge 状态 */
+  'stock:getPythonBridgeStatus': t.procedure.action(async () => {
+    return { data: pythonBridge.getStatus() };
+  }),
+
+  // === 公式管理 ===
+
+  /** 获取全部公式（含内置模板） */
+  'stock:getFormulas': t.procedure.action(async () => {
+    try {
+      const formulas = await formulaService.getAll();
+      return { data: formulas };
+    } catch (error) {
+      return { error: String(error) };
+    }
+  }),
+
+  /** 添加自定义公式 */
+  'stock:addFormula': t.procedure
+    .input<{ name: string; type: 'screener' | 'signal' | 'score'; expression: string; description?: string }>()
+    .action(async ({ input }) => {
+      try {
+        // 先验证语法
+        const validateResult = await pythonBridge.call<{ valid: boolean; error?: string }>(
+          'validate_formula',
+          { expression: input.expression },
+          10_000,
+        );
+        if (!validateResult.valid) {
+          return { error: `公式语法错误: ${validateResult.error}` };
+        }
+        const formula = await formulaService.add(input.name, input.type, input.expression, input.description);
+        return { data: formula };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
+
+  /** 更新公式（不可修改内置公式） */
+  'stock:updateFormula': t.procedure
+    .input<{ id: string; name?: string; expression?: string; description?: string }>()
+    .action(async ({ input }) => {
+      try {
+        const { id, ...patch } = input;
+        if (patch.expression) {
+          const validateResult = await pythonBridge.call<{ valid: boolean; error?: string }>(
+            'validate_formula',
+            { expression: patch.expression },
+            10_000,
+          );
+          if (!validateResult.valid) {
+            return { error: `公式语法错误: ${validateResult.error}` };
+          }
+        }
+        const formula = await formulaService.update(id, patch);
+        if (!formula) return { error: '公式不存在' };
+        return { data: formula };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
+
+  /** 删除公式（不可删除内置公式） */
+  'stock:removeFormula': t.procedure
+    .input<{ id: string }>()
+    .action(async ({ input }) => {
+      try {
+        const ok = await formulaService.remove(input.id);
+        return { data: ok };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
+
+  /** 验证公式语法（不执行） */
+  'stock:validateFormula': t.procedure
+    .input<{ expression: string }>()
+    .action(async ({ input }) => {
+      try {
+        const result = await pythonBridge.call<{ valid: boolean; error?: string }>(
+          'validate_formula',
+          { expression: input.expression },
+          10_000,
+        );
+        return { data: result };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
+
+  // === 回测 ===
+
+  /** 运行简单策略回测 */
+  'stock:runBacktest': t.procedure
+    .input<{
+      market: number;
+      code: string;
+      buyFormula: string;
+      sellFormula: string;
+      initialCapital?: number;
+      commission?: number;
+      limit?: number;
+    }>()
+    .action(async ({ input }) => {
+      try {
+        const secid = `${input.market}.${input.code}`;
+        const klineData = await stockService.getKLine({
+          secid,
+          period: 101,
+          adjust: 1,
+          limit: input.limit ?? 500,
+        });
+
+        if (klineData.length < 60) {
+          return { error: `K 线数据不足（仅 ${klineData.length} 条），至少需要 60 条` };
+        }
+
+        const result = await pythonBridge.call(
+          'simple_backtest',
+          {
+            kline: klineData,
+            buy_formula: input.buyFormula,
+            sell_formula: input.sellFormula,
+            initial_capital: input.initialCapital ?? 100_000,
+            commission: input.commission ?? 0.001,
+          },
+          60_000,
+        );
+        return { data: result };
+      } catch (error) {
+        return { error: String(error) };
+      }
+    }),
 };

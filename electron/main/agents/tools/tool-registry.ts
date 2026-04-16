@@ -16,6 +16,26 @@ export interface ToolMeta {
   category: 'article' | 'book-qa' | 'book-analysis' | 'stock' | 'other';
 }
 
+/** 按 MCP Server 分组后的工具列表 */
+export interface ToolGroup {
+  /** MCP Server 名称（如 'sdk', 'dogear-stock'） */
+  server: string;
+  /** 中文分组标签（如 '股票行情'） */
+  label: string;
+  /** 组内工具列表 */
+  tools: ToolMeta[];
+}
+
+/** Server 名称 → 中文分组标签 */
+const SERVER_LABELS: Record<string, string> = {
+  'sdk':                    'SDK 内置工具',
+  'dogear-stock':           '股票行情',
+  'dogear-stock-analysis':  '股票分析',
+  'dogear-article':         '文章阅读',
+  'dogear-book-qa':         '书籍问答',
+  'dogear-book-analysis':   '书籍分析',
+};
+
 /** SDK 内置工具（无法从 SDK 运行时获取元数据，故保留静态定义） */
 export const SDK_BUILTIN_TOOLS: ToolMeta[] = [
   { name: 'Read', description: '读取文件内容', server: 'sdk', category: 'other' },
@@ -51,11 +71,61 @@ export function getCustomTools(): ToolMeta[] {
 }
 
 /**
- * 获取全部工具（SDK 内置 + 自定义）
+ * 获取全部工具，按 MCP Server 分组返回
+ *
+ * SDK 内置工具作为第一组，自定义工具按 server 分组排列。
+ * 分组顺序固定：sdk → stock → stock-analysis → article → book-qa → book-analysis → 其他
  */
-export function getAllTools(): { sdk: ToolMeta[]; custom: ToolMeta[] } {
-  return {
-    sdk: SDK_BUILTIN_TOOLS,
-    custom: [...customTools],
-  };
+export function getAllTools(): ToolGroup[] {
+  // 按 server 聚合自定义工具
+  const serverMap = new Map<string, ToolMeta[]>();
+  for (const tool of customTools) {
+    const list = serverMap.get(tool.server) || [];
+    list.push(tool);
+    serverMap.set(tool.server, list);
+  }
+
+  // 固定排序
+  const serverOrder = [
+    'sdk',
+    'dogear-stock',
+    'dogear-stock-analysis',
+    'dogear-article',
+    'dogear-book-qa',
+    'dogear-book-analysis',
+  ];
+
+  const groups: ToolGroup[] = [];
+
+  // SDK 内置工具组
+  groups.push({
+    server: 'sdk',
+    label: SERVER_LABELS['sdk'] || 'SDK 内置工具',
+    tools: [...SDK_BUILTIN_TOOLS],
+  });
+
+  // 按固定顺序添加已注册的 server 分组
+  for (const server of serverOrder) {
+    if (server === 'sdk') continue;
+    const tools = serverMap.get(server);
+    if (tools && tools.length > 0) {
+      groups.push({
+        server,
+        label: SERVER_LABELS[server] || server,
+        tools: [...tools],
+      });
+      serverMap.delete(server);
+    }
+  }
+
+  // 添加未在固定顺序中的 server（未来新增的 server 自动兜底）
+  for (const [server, tools] of serverMap) {
+    groups.push({
+      server,
+      label: SERVER_LABELS[server] || server,
+      tools: [...tools],
+    });
+  }
+
+  return groups;
 }
