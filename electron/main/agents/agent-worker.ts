@@ -159,6 +159,10 @@ class AgentWorker {
           result = await this.handleReadingAssistTask(task, taskLogger);
           break;
 
+        case TaskType.PARSE_ARTICLE:
+          result = await this.handleParseArticleTask(task, taskLogger);
+          break;
+
         default:
           throw new Error(`未知任务类型: ${task.type}`);
       }
@@ -681,6 +685,153 @@ class AgentWorker {
   }
 
   /**
+   * 处理文章解析任务（自进化文章解析系统）
+   *
+   * 模式分支：
+   * - fixedParseSuccess=true  → 质量检查模式：先读当前内容，判断是否达标，不达标再重新解析
+   * - fixedParseSuccess=false → 完整解析模式：直接读 raw.html 从零解析
+   *
+   * 产出：
+   * - 若有改进：通过 SaveParsedArticle 覆盖 meta.json / content.md
+   * - 若发现新规律：通过 UpdateParserRule 精简重写规则文件
+   * - history.jsonl 追加一行解析记录
+   */
+  private async handleParseArticleTask(task: AgentTask, taskLogger: any): Promise<any> {
+    const payload = task.payload as import('./task-types.js').ParseArticlePayload;
+    const { articleId, articleDir, url, fixedParseSuccess, skillsDir } = payload;
+
+    taskLogger.info('开始文章解析任务:', articleId, '| 固定解析状态:', fixedParseSuccess ? '成功' : '失败');
+
+    const startedAt = Date.now();
+
+    // 从 URL 提取 platform（简单域名映射）
+    const platform = detectPlatform(url);
+
+    // 加载 query 基础配置
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const baseConfig = await buildQueryBaseConfig({
+      configDir: this.configDir,
+      isPackaged: this.isPackaged,
+      cliPath: this.cliPath,
+    });
+
+    // 创建文章解析 MCP Server
+    const { createArticleParseMcpServer } = await import('./tools/article-parse-tools.js');
+    const articleParseMcpServer = createArticleParseMcpServer();
+
+    // 构建 prompt（payload 路径嵌入其中，供 AI 调用工具时回填参数）
+    const prompt = fixedParseSuccess
+      ? buildQualityCheckPrompt({ articleId, articleDir, url, skillsDir, platform })
+      : buildFullParsePrompt({ articleId, articleDir, url, skillsDir, platform });
+
+    let resultSummary = '';
+    let ruleUpdated: string | null = null;
+    let articleSaved = false;
+
+    try {
+      const agentQuery = query({
+        prompt,
+        options: {
+          permissionMode: 'bypassPermissions',
+          env: baseConfig.env,
+          thinking: baseConfig.thinking,
+          effort: baseConfig.effort,
+          ...(baseConfig.pathToClaudeCodeExecutable && {
+            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
+          }),
+          mcpServers: {
+            'dogear-article-parse': articleParseMcpServer,
+          },
+          allowedTools: [
+            'mcp__dogear-article-parse__ReadRawHtml',
+            'mcp__dogear-article-parse__ReadCurrentContent',
+            'mcp__dogear-article-parse__ReadParserRules',
+            'mcp__dogear-article-parse__SaveParsedArticle',
+            'mcp__dogear-article-parse__UpdateParserRule',
+          ],
+          hooks: {
+            PostToolUse: [{
+              hooks: [async (input: any) => {
+                const { tool_name } = input;
+                if (tool_name === 'mcp__dogear-article-parse__SaveParsedArticle') {
+                  articleSaved = true;
+                  taskLogger.info('文章已保存');
+                } else if (tool_name === 'mcp__dogear-article-parse__UpdateParserRule') {
+                  const ti = input.tool_input || {};
+                  ruleUpdated = ti.type === 'platform' ? `platforms/${ti.platform}.md` : 'common.md';
+                  taskLogger.info('规则已更新:', ruleUpdated);
+                }
+                return { continue: true };
+              }],
+            }],
+          },
+        },
+      });
+
+      // 迭代消息
+      for await (const message of agentQuery) {
+        if (message.type === 'assistant') {
+          const msg = message as any;
+          const content = msg.message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text') {
+                resultSummary += block.text;
+              }
+            }
+          }
+        } else if (message.type === 'result') {
+          taskLogger.info('AI 解析完成');
+        }
+      }
+
+      // 追加历史记录
+      await appendParseHistory(skillsDir, {
+        timestamp: new Date().toISOString(),
+        articleId,
+        url,
+        platform,
+        fixedParseSuccess,
+        aiArticleSaved: articleSaved,
+        ruleUpdated,
+        durationMs: Date.now() - startedAt,
+      });
+
+      taskLogger.info('文章解析任务完成，耗时:', Date.now() - startedAt, 'ms');
+
+      return {
+        articleId,
+        articleSaved,
+        ruleUpdated,
+        summary: resultSummary.slice(0, 500),
+      };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      taskLogger.error('文章解析任务失败:', errorMsg);
+
+      // 记录失败历史
+      await appendParseHistory(skillsDir, {
+        timestamp: new Date().toISOString(),
+        articleId,
+        url,
+        platform,
+        fixedParseSuccess,
+        aiArticleSaved: false,
+        ruleUpdated: null,
+        durationMs: Date.now() - startedAt,
+        error: errorMsg,
+      }).catch(() => { /* 历史记录失败不影响主流程 */ });
+
+      return {
+        articleId,
+        articleSaved: false,
+        error: errorMsg,
+      };
+    }
+  }
+
+  /**
    * 处理阅读辅助任务
    */
   private async handleReadingAssistTask(task: AgentTask, taskLogger: any): Promise<string> {
@@ -789,6 +940,117 @@ class AgentWorker {
     this.currentTask = null;
     this.messagePort = null;
   }
+}
+
+// ==================== 文章解析任务辅助函数 ====================
+
+/**
+ * 从 URL 提取平台标识
+ * 扩展此函数以支持更多平台。
+ */
+function detectPlatform(url: string): string | undefined {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (hostname === 'mp.weixin.qq.com') return 'wechat';
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+interface PromptBuildParams {
+  articleId: string;
+  articleDir: string;
+  url: string;
+  skillsDir: string;
+  platform?: string;
+}
+
+function buildQualityCheckPrompt(p: PromptBuildParams): string {
+  return `你是一个文章解析质量检查员。请按以下步骤工作：
+
+**任务上下文：**
+- articleId: ${p.articleId}
+- articleDir: ${p.articleDir}
+- url: ${p.url}
+- skillsDir: ${p.skillsDir}
+- platform: ${p.platform || '未知'}
+
+**执行步骤：**
+
+1. 调用 ReadParserRules（skillsDir="${p.skillsDir}"${p.platform ? `, platform="${p.platform}"` : ''}）了解当前的解析规则。
+2. 调用 ReadCurrentContent（articleDir="${p.articleDir}"）查看当前已解析的内容。
+3. 根据规则中的"质量检查标准"逐项检查：
+   - 标题是否非空、合理
+   - 正文长度是否 > 200 字符
+   - 是否有明显的导航残留、重复内容、垃圾文本
+   - 图片 URL 是否看起来正常
+4. **判断结论：**
+   - 如果质量达标 → 直接输出"✅ 质量检查通过"并结束，不要调用任何写入工具
+   - 如果质量不达标 → 继续执行步骤 5-7
+5. 调用 ReadRawHtml（articleDir="${p.articleDir}"）获取原始 HTML。
+6. 基于规则和 HTML 结构重新提取标题、作者、正文（Markdown 格式），调用 SaveParsedArticle 覆盖保存。
+7. 如果过程中发现了规则中未覆盖的新解析模式，调用 UpdateParserRule 精简地更新规则（全量重写，不是追加；文件保持在 common.md ≤ 10KB、平台规则 ≤ 5KB）。
+
+**重要约束：**
+- 不要编造 HTML 中不存在的内容。
+- 只在质量确实不达标时才保存，避免无谓的覆盖。
+- 所有工具调用都要传入完整的绝对路径参数。
+
+现在开始执行。`;
+}
+
+function buildFullParsePrompt(p: PromptBuildParams): string {
+  return `你是一个文章解析器。固定解析流程已经失败，需要你从零开始解析。
+
+**任务上下文：**
+- articleId: ${p.articleId}
+- articleDir: ${p.articleDir}
+- url: ${p.url}
+- skillsDir: ${p.skillsDir}
+- platform: ${p.platform || '未知'}
+
+**执行步骤：**
+
+1. 调用 ReadParserRules（skillsDir="${p.skillsDir}"${p.platform ? `, platform="${p.platform}"` : ''}）了解已有的解析策略。
+2. 调用 ReadRawHtml（articleDir="${p.articleDir}"）获取原始 HTML（默认最多 50KB）。
+3. 基于规则分析 HTML 结构，定位正文、提取标题/作者/摘要。
+4. 调用 SaveParsedArticle 保存解析结果（必须提供 title 和 content，content 为 Markdown 格式）。
+5. 如果发现了新的解析模式（规则中未覆盖），调用 UpdateParserRule 精简地更新规则（全量重写）。
+
+**重要约束：**
+- 不要编造 HTML 中不存在的内容。
+- 如果 HTML 内容明显不完整（登录墙、反爬页面），在回答中说明并跳过保存。
+- 所有工具调用都要传入完整的绝对路径参数。
+
+现在开始执行。`;
+}
+
+interface ParseHistoryEntry {
+  timestamp: string;
+  articleId: string;
+  url: string;
+  platform?: string;
+  fixedParseSuccess: boolean;
+  aiArticleSaved: boolean;
+  ruleUpdated: string | null;
+  durationMs: number;
+  error?: string;
+}
+
+/**
+ * 追加一行解析历史到 history.jsonl。
+ * 并发场景下依赖 safe-json.ts 的文件锁（withFileLock）保证原子性。
+ */
+async function appendParseHistory(skillsDir: string, entry: ParseHistoryEntry): Promise<void> {
+  const { default: path } = await import('path');
+  const fs = await import('fs/promises');
+  const { withFileLock } = await import('../services/safe-json.js');
+  const historyPath = path.join(skillsDir, 'history.jsonl');
+
+  await withFileLock(historyPath, async () => {
+    await fs.appendFile(historyPath, JSON.stringify(entry) + '\n', 'utf-8');
+  });
 }
 
 // ==================== Worker 入口 ====================

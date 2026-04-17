@@ -1,9 +1,54 @@
 // electron/main/tipc/article.ts
+import path from 'path';
 import { tipc } from '@egoist/tipc/main';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as articleService from '../services/article-service.js';
+import { getAgentManager } from '../agents/agent-manager.js';
+import { TaskType, TaskStatus, type AgentTask, type ParseArticlePayload } from '../agents/task-types.js';
+import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import { v4 as uuidv4 } from 'uuid';
 
 const t = tipc.create();
+
+/**
+ * 成功路径后异步提交 AI 质量检查任务（不阻塞 parseArticle 返回）。
+ * 失败也静默吞掉，不影响用户看到固定解析的结果。
+ */
+function submitQualityCheckTask(params: {
+  articleId: string;
+  workspacePath: string;
+  url: string;
+}) {
+  try {
+    const articleDir = path.join(params.workspacePath, '.dogear/articles', params.articleId);
+    const skillsDir = getArticleParserSkillsDir();
+
+    const payload: ParseArticlePayload = {
+      articleId: params.articleId,
+      articleDir,
+      workspacePath: params.workspacePath,
+      url: params.url,
+      fixedParseSuccess: true,
+      skillsDir,
+    };
+
+    const task: AgentTask = {
+      id: uuidv4(),
+      type: TaskType.PARSE_ARTICLE,
+      status: TaskStatus.PENDING,
+      payload,
+      createdAt: Date.now(),
+    };
+
+    // 不等待任务执行结果，AI 异步工作
+    void getAgentManager().submitTask(task).catch((err) => {
+      console.warn('[article] 提交 PARSE_ARTICLE 任务失败:', err);
+    });
+  } catch (err) {
+    // 提交失败不影响主流程
+    console.warn('[article] 准备 PARSE_ARTICLE 任务失败:', err);
+  }
+}
 
 export const articleRouter = {
   /**
@@ -18,6 +63,14 @@ export const articleRouter = {
 
         const result = await articleService.fetchAndParseArticle(input.url);
         await articleService.saveArticle(workspace.path, result);
+
+        // 异步触发 AI 质量检查（后台静默执行，用户立即收到固定解析结果）
+        submitQualityCheckTask({
+          articleId: result.meta.id,
+          workspacePath: workspace.path,
+          url: input.url,
+        });
+
         return { article: result.meta };
       } catch (error) {
         console.error('解析文章失败:', error);
