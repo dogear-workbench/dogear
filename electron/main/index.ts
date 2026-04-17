@@ -370,6 +370,14 @@ app.whenReady().then(async () => {
     console.error('初始化日志系统失败:', error);
   }
 
+  // 初始化文章解析器 Skill 规则目录
+  try {
+    const { ensureSkillsInitialized } = await import('./services/article-parser-skills-service.js');
+    await ensureSkillsInitialized();
+  } catch (error) {
+    console.error('初始化文章解析 Skill 目录失败:', error);
+  }
+
   // 执行数据迁移（旧路径 → 新路径）
   try {
     const workspaceJsonService = await import('./services/workspace-json-service.js');

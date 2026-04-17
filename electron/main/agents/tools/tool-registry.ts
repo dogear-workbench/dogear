@@ -32,6 +32,7 @@ const SERVER_LABELS: Record<string, string> = {
   'dogear-stock':           '股票行情',
   'dogear-stock-analysis':  '股票分析',
   'dogear-article':         '文章阅读',
+  'dogear-article-parse':   '文章解析',
   'dogear-book-qa':         '书籍问答',
   'dogear-book-analysis':   '书籍分析',
 };
@@ -91,6 +92,7 @@ export function getAllTools(): ToolGroup[] {
     'dogear-stock',
     'dogear-stock-analysis',
     'dogear-article',
+    'dogear-article-parse',
     'dogear-book-qa',
     'dogear-book-analysis',
   ];

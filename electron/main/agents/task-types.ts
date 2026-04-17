@@ -21,7 +21,8 @@ export enum TaskType {
   SUMMARIZE = 'summarize',          // 文本摘要
   ANALYZE_BOOK = 'analyze_book',    // 书籍分析
   READING_ASSIST = 'reading_assist', // 阅读辅助
-  CHAT_SESSION = 'chat_session'     // 持续对话会话
+  CHAT_SESSION = 'chat_session',    // 持续对话会话
+  PARSE_ARTICLE = 'parse_article'  // 文章解析（质量检查 + AI 重新解析）
 }
 
 /**
@@ -180,6 +181,18 @@ export interface ExtendedSessionMessage {
   subAgentTokens?: number;             // 子代理 token 消耗
   subAgentToolUseCount?: number;       // 子代理工具调用次数
   subAgentResultText?: string;         // 子代理返回的文本结果
+}
+
+/**
+ * 文章解析任务负载
+ */
+export interface ParseArticlePayload {
+  articleId: string;
+  articleDir: string;        // 绝对路径：<workspace>/.dogear/articles/<id>
+  workspacePath: string;     // 工作区路径（saveArticle 需要）
+  url: string;
+  fixedParseSuccess: boolean;
+  skillsDir: string;         // 全局 Skill 目录：<configDir>/skills/article-parser
 }
 
 /**
