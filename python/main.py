@@ -139,6 +139,45 @@ def handle_validate_formula(request_id: str, params: dict):
     send_response(request_id, result)
 
 
+def handle_run_article_script(request_id: str, params: dict):
+    """
+    执行平台脚本。
+
+    params:
+      script_path: str | None — 脚本文件路径（二选一）
+      script_content: str | None — 直接传入的脚本源码（二选一）
+      url: str
+      html: str
+      timeout_ms: int (default 5000，范围 [100, 30000])
+    """
+    from article_parser.runner import run_script
+
+    script_path = params.get("script_path")
+    script_content = params.get("script_content")
+    url = params.get("url", "")
+    html = params.get("html", "")
+    timeout_ms = int(params.get("timeout_ms", 5000))
+
+    if not script_path and not script_content:
+        send_error(request_id, -1, "必须提供 script_path 或 script_content")
+        return
+    if not html:
+        send_error(request_id, -1, "缺少 html 参数")
+        return
+
+    # clamp 到合理范围
+    timeout_ms = max(100, min(timeout_ms, 30_000))
+
+    result = run_script(
+        script_path=script_path,
+        script_content=script_content,
+        url=url,
+        html=html,
+        timeout_ms=timeout_ms,
+    )
+    send_response(request_id, result.to_dict())
+
+
 def handle_simple_backtest(request_id: str, params: dict):
     """简单策略回测"""
     kline = params.get("kline")
@@ -177,6 +216,7 @@ METHOD_HANDLERS = {
     "eval_formula": handle_eval_formula,
     "validate_formula": handle_validate_formula,
     "simple_backtest": handle_simple_backtest,
+    "run_article_script": handle_run_article_script,
 }
 
 
