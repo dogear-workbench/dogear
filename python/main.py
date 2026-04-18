@@ -22,6 +22,10 @@ def log(msg: str):
 
 log("Python 计算层启动中...")
 
+# 让用户平台脚本能用 `from article_parser_sdk import ...`
+from article_parser import sdk as _article_parser_sdk
+sys.modules['article_parser_sdk'] = _article_parser_sdk
+
 from core.protocol import read_request, send_response, send_error
 from core.indicators import calculate
 from core.financials import get_financials, compare_industry
