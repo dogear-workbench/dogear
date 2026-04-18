@@ -122,7 +122,7 @@ export function createArticleParseMcpServer() {
               if (platformContent) {
                 result += `\n\n---\n\n# ${args.platform} 平台规则\n\n${platformContent}`;
               } else {
-                result += `\n\n---\n\n# ${args.platform} 平台规则\n\n（暂无此平台的专项规则，请基于通用规则解析并考虑调用 UpdateParserRule 新增规则）`;
+                result += `\n\n---\n\n# ${args.platform} 平台规则\n\n（暂无此平台的专项规则。如需新增，使用 ReadPlatformScript / RunPlatformScript / UpdatePlatformScript 创建 Python 脚本）`;
               }
             }
 
