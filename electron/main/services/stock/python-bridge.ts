@@ -271,7 +271,7 @@ class PythonBridge {
     }
 
     // 用 Python 检测核心依赖是否可导入
-    const checkScript = 'import pandas,numpy,akshare,lark';
+    const checkScript = 'import pandas,numpy,akshare,lark,bs4,lxml,markdownify';
 
     try {
       execSync(`${pythonCmd} -c "${checkScript}"`, {
