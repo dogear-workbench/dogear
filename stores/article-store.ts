@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
-import type { ArticleMeta, Article } from '@/types/article';
+import { rendererEvents } from '@/lib/events';
+import type { ArticleMeta, Article, ArticleParseStatus } from '@/types/article';
 
 interface ArticleState {
   // --- 状态 ---
@@ -139,3 +140,20 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     articleUrlInput: '',
   }),
 }));
+
+// Phase 3: 监听后端解析状态变化，实时更新选中文章的 parseStatus
+// 只在浏览器环境启用（有 window.ipcRenderer）
+if (typeof window !== 'undefined' && window.ipcRenderer) {
+  rendererEvents.articleParseStatusChanged.listen((data: {
+    articleId: string;
+    workspacePath: string;
+    parseStatus: ArticleParseStatus;
+  }) => {
+    const state = useArticleStore.getState();
+    if (state.selectedArticle?.id === data.articleId) {
+      useArticleStore.setState({
+        selectedArticle: { ...state.selectedArticle, parseStatus: data.parseStatus },
+      });
+    }
+  });
+}

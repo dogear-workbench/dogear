@@ -1,11 +1,68 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, User, Calendar, ExternalLink, FileText, Quote } from 'lucide-react';
+import { Globe, User, Calendar, ExternalLink, FileText, Quote, Loader2, Sparkles, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import type { ArticleParseStatus } from '@/types/article';
+
+/** 解析状态 Badge 的展示配置 */
+const PARSE_STATUS_CONFIG: Record<ArticleParseStatus, {
+  label: string;
+  title: string;  // tooltip（浏览器默认 title）
+  className: string;
+  Icon: typeof CheckCircle2;
+}> = {
+  fixed: {
+    label: '已解析',
+    title: '固定解析成功，质量达标',
+    className: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50',
+    Icon: CheckCircle2,
+  },
+  ai_parsing: {
+    label: 'AI 检查中',
+    title: 'AI 正在后台检查解析质量',
+    className: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-50',
+    Icon: Loader2,
+  },
+  ai_enhanced: {
+    label: 'AI 增强',
+    title: 'AI 已改进解析结果',
+    className: 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-50',
+    Icon: Sparkles,
+  },
+  quality_warning: {
+    label: '质量警告',
+    title: '固定解析质量不达标，AI 也未能改善',
+    className: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-50',
+    Icon: AlertTriangle,
+  },
+  failed: {
+    label: '解析失败',
+    title: '解析失败',
+    className: 'bg-red-50 text-red-700 border-red-200 hover:bg-red-50',
+    Icon: XCircle,
+  },
+};
+
+/** 文章解析状态 Badge 组件 */
+function ParseStatusBadge({ status }: { status: ArticleParseStatus }) {
+  const cfg = PARSE_STATUS_CONFIG[status];
+  const isSpinning = status === 'ai_parsing';
+  return (
+    <Badge
+      variant="outline"
+      className={cfg.className + ' gap-1 font-normal'}
+      title={cfg.title}
+    >
+      <cfg.Icon className={'w-3 h-3' + (isSpinning ? ' animate-spin' : '')} />
+      <span>{cfg.label}</span>
+    </Badge>
+  );
+}
 
 /**
  * 选中文字后的浮动引用按钮
@@ -155,7 +212,12 @@ export function ArticlePreview() {
     <ScrollArea className="h-full overflow-hidden">
       {/* 元数据区域 */}
       <div className="p-4 border-b space-y-3">
-        <h3 className="font-semibold text-lg leading-tight">{article.title}</h3>
+        <div className="flex items-start gap-2">
+          <h3 className="font-semibold text-lg leading-tight flex-1">{article.title}</h3>
+          {article.parseStatus && (
+            <ParseStatusBadge status={article.parseStatus} />
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
           {article.author && (

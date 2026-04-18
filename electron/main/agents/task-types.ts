@@ -232,4 +232,6 @@ export type WorkerToMainMessage =
   | { type: 'pong' }
   | { type: 'error'; error: string }
   // v2: 分析进度消息
-  | { type: 'analysisProgress'; bookId: string; toolName?: string; toolInput?: any; chapterSaved?: boolean; chapterTitle?: string; message?: string; status?: string };
+  | { type: 'analysisProgress'; bookId: string; toolName?: string; toolInput?: any; chapterSaved?: boolean; chapterTitle?: string; message?: string; status?: string }
+  // Phase 3: 文章解析状态变化
+  | { type: 'articleParseStatusChanged'; articleId: string; workspacePath: string; parseStatus: 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed' };

@@ -133,6 +133,15 @@ export type RendererHandlers = {
     message: ExtendedSessionMessage;
   }) => void;
 
+  // === 文章解析状态（Phase 3） ===
+
+  // 文章解析状态变化（AI 质量检查/重新解析后端广播）
+  articleParseStatusChanged: (data: {
+    articleId: string;
+    workspacePath: string;
+    parseStatus: 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
+  }) => void;
+
   // === 微信 iLink ===
 
   // 收到新微信消息

@@ -7,7 +7,7 @@ import { fileRouter } from './file.js';
 import { workspaceRouter } from './workspace.js';
 import { agentRouter } from './agent.js';
 import { conversationsRouter } from './conversations.js';
-import { articleRouter } from './article.js';
+import { articleRouter, registerArticleParseStatusListener } from './article.js';
 import { explorerRouter } from './explorer.js';
 import { settingsRouter } from './settings.js';
 import { logRouter } from './log.js';
@@ -40,4 +40,6 @@ export type Router = typeof router;
 
 export function registerTipcHandlers() {
   registerIpcMain(router);
+  // Phase 3: 注册文章解析状态变化的全局监听器（AgentManager → 所有窗口）
+  registerArticleParseStatusListener();
 }

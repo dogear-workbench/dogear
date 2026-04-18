@@ -698,11 +698,23 @@ class AgentWorker {
    */
   private async handleParseArticleTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').ParseArticlePayload;
-    const { articleId, articleDir, url, fixedParseSuccess, skillsDir } = payload;
+    const { articleId, articleDir, url, workspacePath, fixedParseSuccess, skillsDir } = payload;
 
     taskLogger.info('开始文章解析任务:', articleId, '| 固定解析状态:', fixedParseSuccess ? '成功' : '失败');
 
     const startedAt = Date.now();
+
+    // 进入 AI 解析中状态 → 回写 meta.json + 广播事件
+    const { updateArticleParseStatus } = await import('../services/article-service.js');
+    await updateArticleParseStatus(workspacePath, articleId, 'ai_parsing').catch((err) => {
+      taskLogger.warn('写入 ai_parsing 状态失败:', err);
+    });
+    this.sendMessage({
+      type: 'articleParseStatusChanged',
+      articleId,
+      workspacePath,
+      parseStatus: 'ai_parsing',
+    });
 
     // 从 URL 提取 platform（简单域名映射）
     const platform = detectPlatform(url);
@@ -798,12 +810,30 @@ class AgentWorker {
         durationMs: Date.now() - startedAt,
       });
 
-      taskLogger.info('文章解析任务完成，耗时:', Date.now() - startedAt, 'ms');
+      // 判定最终状态：
+      // - 固定解析成功路径：若 AI 有 save → ai_enhanced；否则 → fixed（质量达标，无需改动）
+      // - 完整解析路径：若 AI 成功 save → ai_enhanced；否则 → quality_warning（AI 也无法解析）
+      const finalStatus = articleSaved
+        ? 'ai_enhanced' as const
+        : fixedParseSuccess ? 'fixed' as const : 'quality_warning' as const;
+
+      await updateArticleParseStatus(workspacePath, articleId, finalStatus).catch((err) => {
+        taskLogger.warn('写入最终状态失败:', err);
+      });
+      this.sendMessage({
+        type: 'articleParseStatusChanged',
+        articleId,
+        workspacePath,
+        parseStatus: finalStatus,
+      });
+
+      taskLogger.info('文章解析任务完成，耗时:', Date.now() - startedAt, 'ms', '| 最终状态:', finalStatus);
 
       return {
         articleId,
         articleSaved,
         ruleUpdated,
+        parseStatus: finalStatus,
         summary: resultSummary.slice(0, 500),
       };
     } catch (error) {
@@ -823,9 +853,20 @@ class AgentWorker {
         error: errorMsg,
       }).catch(() => { /* 历史记录失败不影响主流程 */ });
 
+      // 异常时的状态：固定解析曾成功 → 退回 fixed；否则 → failed
+      const errorStatus = fixedParseSuccess ? 'fixed' as const : 'failed' as const;
+      await updateArticleParseStatus(workspacePath, articleId, errorStatus).catch(() => { /* ignore */ });
+      this.sendMessage({
+        type: 'articleParseStatusChanged',
+        articleId,
+        workspacePath,
+        parseStatus: errorStatus,
+      });
+
       return {
         articleId,
         articleSaved: false,
+        parseStatus: errorStatus,
         error: errorMsg,
       };
     }

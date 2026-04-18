@@ -10,6 +10,15 @@ import fs from 'fs/promises';
 import path from 'path';
 import { safeJsonWrite, safeFileWrite } from './safe-json.js';
 import type { WorkspaceFileNode } from '../types.js';
+
+/** 文章解析状态（与 types/article.ts 的 ArticleParseStatus 保持一致） */
+export type ArticleParseStatus =
+  | 'fixed'
+  | 'ai_parsing'
+  | 'ai_enhanced'
+  | 'quality_warning'
+  | 'failed';
+
 /** 文章元数据（存储在 meta.json） */
 export interface ArticleMeta {
   id: string;
@@ -21,6 +30,7 @@ export interface ArticleMeta {
   wordCount: number;
   fetchedAt: number;
   language: string | null;
+  parseStatus?: ArticleParseStatus;
 }
 
 /** 文章完整数据（meta + 正文内容） */
@@ -341,6 +351,7 @@ export async function fetchAndParseArticle(url: string): Promise<{
     wordCount: finalWordCount,
     fetchedAt: Date.now(),
     language: article?.lang || null,
+    parseStatus: 'fixed',  // 初始：固定解析完成，尚未经过 AI 检查
   };
 
   return { meta, content: markdown, rawHtml: html };
@@ -466,6 +477,39 @@ export async function getArticle(
   const content = await fs.readFile(path.join(articleDir, 'content.md'), 'utf-8');
 
   return { ...meta, content };
+}
+
+/**
+ * 更新文章的解析状态（只修改 parseStatus 字段，其他字段保持不变）
+ * 供 AI 质量检查任务在开始/结束时回写使用。
+ * @returns 是否成功更新（文章不存在时返回 false，不抛异常）
+ */
+export async function updateArticleParseStatus(
+  workspacePath: string,
+  articleId: string,
+  parseStatus: ArticleParseStatus,
+): Promise<boolean> {
+  const articlesRoot = path.join(workspacePath, ARTICLES_DIR);
+
+  let articleDir = path.join(articlesRoot, articleId);
+  try {
+    await fs.access(path.join(articleDir, 'meta.json'));
+  } catch {
+    const found = await findArticleDirById(articlesRoot, articleId);
+    if (!found) return false;
+    articleDir = found;
+  }
+
+  try {
+    const metaPath = path.join(articleDir, 'meta.json');
+    const raw = await fs.readFile(metaPath, 'utf-8');
+    const meta = JSON.parse(raw) as ArticleMeta;
+    meta.parseStatus = parseStatus;
+    await safeJsonWrite(metaPath, meta);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

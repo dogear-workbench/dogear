@@ -439,6 +439,15 @@ export class AgentManager extends EventEmitter {
         // 心跳响应,更新活动时间
         break;
 
+      case 'articleParseStatusChanged':
+        // Phase 3: 文章解析状态变化，发射事件供 tipc 层订阅后广播到前端
+        this.emit('articleParseStatusChanged', {
+          articleId: message.articleId,
+          workspacePath: message.workspacePath,
+          parseStatus: message.parseStatus,
+        });
+        break;
+
       case 'error':
         this.logger.error(`Worker ${workerId} 报错:`, message.error);
         break;

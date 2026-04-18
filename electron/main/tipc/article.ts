@@ -1,14 +1,44 @@
 // electron/main/tipc/article.ts
 import path from 'path';
-import { tipc } from '@egoist/tipc/main';
+import { BrowserWindow } from 'electron';
+import { tipc, getRendererHandlers } from '@egoist/tipc/main';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as articleService from '../services/article-service.js';
 import { getAgentManager } from '../agents/agent-manager.js';
 import { TaskType, TaskStatus, type AgentTask, type ParseArticlePayload } from '../agents/task-types.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import type { RendererHandlers } from './renderer-handlers.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const t = tipc.create();
+
+/**
+ * 注册一次性全局监听：将 AgentManager 的 articleParseStatusChanged 事件
+ * 广播到所有渲染窗口（主窗口 + 独立会话窗口都可能展示文章）。
+ * 由 tipc/index.ts 在应用启动时调用。
+ */
+let listenerRegistered = false;
+export function registerArticleParseStatusListener() {
+  if (listenerRegistered) return;
+  listenerRegistered = true;
+
+  getAgentManager().on('articleParseStatusChanged', (data: {
+    articleId: string;
+    workspacePath: string;
+    parseStatus: 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
+  }) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try {
+        const handlers = getRendererHandlers<RendererHandlers>(win.webContents);
+        handlers.articleParseStatusChanged.send(data);
+      } catch (err) {
+        // 单个窗口失败不影响其他窗口
+        console.warn('[article] 广播到窗口失败:', err);
+      }
+    }
+  });
+}
 
 /**
  * 成功路径后异步提交 AI 质量检查任务（不阻塞 parseArticle 返回）。
