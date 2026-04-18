@@ -7,10 +7,28 @@
   - 失败：{'ok': False, 'error_type': ..., 'error_message': ..., 'traceback': ..., 'stdout': ...}
   - 超时：{'ok': False, 'error_type': 'TimeoutError', ...}
 
-安全约束：
-- 脚本顶层 import 只允许 article_parser_sdk（AST 预扫描）
-- 不允许 exec/eval/compile/__import__（AST 拦截）
-- 不提供 __builtins__.open（替换内置）
+安全约束（AST 层面）：
+- 脚本顶层 import 只允许 article_parser_sdk（AST 预扫描 Import/ImportFrom）
+- 禁用内置 exec/eval/compile/__import__/open/getattr/setattr/globals/vars（AST 预扫描 Call）
+- 禁止访问反射类 dunder（__class__/__globals__/__subclasses__ 等，AST 预扫描 Attribute）
+- 禁止 __builtins__ 下标访问（AST 预扫描 Subscript）
+
+信任模型（重要）：
+AST 白名单是"防手抖"——挡住 AI 生成的直写形式、疏忽写法。真正的安全边界是
+python-bridge 的子进程隔离 + 断路器：即使 AST 被绕过，最坏后果也只是让 Python
+子进程被污染；主进程不受影响；python-bridge 的 crash threshold 会在 N 次异常
+后熔断该脚本。
+
+已知 AST 绕过限制：
+- 字符串拼接 + getattr 链式反射（如 s='ex'+'ec'; getattr(__builtins__, s)()）
+  当前 BLOCKED_BUILTINS 已 ban getattr，此路不通；但更隐蔽的动态查找仍可能
+- 通过字节码字面量（bytecode obfuscation）静态不可判定
+
+Python 线程超时的妥协：
+- 子线程无法被强制 kill（Python 限制），_run_with_timeout 超时返回后线程仍在跑
+- daemon=True 保证 Python 进程退出时一并结束
+- 长期泄漏的线程由 python-bridge 的进程重启（断路器触发）清理
+- stdout capture 是全局状态：泄漏线程的 print 可能污染后续请求的 stdout。可接受
 """
 from __future__ import annotations
 import ast
@@ -29,7 +47,11 @@ from typing import Optional
 ALLOWED_IMPORTS = {'article_parser_sdk'}
 
 # 禁用的内置函数
-BLOCKED_BUILTINS = {'eval', 'exec', 'compile', '__import__', 'open'}
+BLOCKED_BUILTINS = {
+    'eval', 'exec', 'compile', '__import__', 'open',
+    # 反射类（防止通过 getattr(__builtins__, 'exec') 之类绕过白名单）
+    'getattr', 'setattr', 'globals', 'vars',
+}
 
 
 class ScriptSecurityError(Exception):
@@ -84,6 +106,23 @@ def _validate_ast(source: str, script_name: str) -> None:
         raise ScriptSecurityError(f'语法错误: {e}')
 
     for node in ast.walk(tree):
+        # 禁止访问 dunder 属性（__class__/__globals__/__builtins__/__subclasses__/__import__/__dict__/__bases__/__code__/__mro__）
+        if isinstance(node, ast.Attribute):
+            if node.attr.startswith('__') and node.attr.endswith('__'):
+                # 允许脚本自己的 __init__/__name__ 等少数字段，但封掉反射族
+                DANGEROUS_DUNDERS = {
+                    '__class__', '__globals__', '__builtins__', '__subclasses__',
+                    '__import__', '__dict__', '__bases__', '__code__', '__mro__',
+                    '__base__', '__getattribute__', '__reduce__', '__reduce_ex__',
+                }
+                if node.attr in DANGEROUS_DUNDERS:
+                    raise ScriptSecurityError(f'禁止访问危险属性 .{node.attr}')
+
+        # 禁止对 __builtins__ 做下标访问（__builtins__['exec']）
+        if isinstance(node, ast.Subscript):
+            if isinstance(node.value, ast.Name) and node.value.id == '__builtins__':
+                raise ScriptSecurityError('禁止下标访问 __builtins__')
+
         # import xxx
         if isinstance(node, ast.Import):
             for alias in node.names:
@@ -159,6 +198,15 @@ def run_script(
     start = time.time()
     stdout_capture = io.StringIO()
 
+    # 0. 互斥参数校验
+    if script_path is not None and script_content is not None:
+        return RunResult(
+            ok=False,
+            error_type='ValueError',
+            error_message='script_path 和 script_content 不能同时提供',
+            duration_ms=0,
+        )
+
     # 1. 获取源码（给 AST 扫描）
     if script_content is None:
         if script_path is None:
@@ -166,6 +214,7 @@ def run_script(
                 ok=False,
                 error_type='ValueError',
                 error_message='必须提供 script_path 或 script_content',
+                duration_ms=int((time.time() - start) * 1000),
             )
         try:
             with open(script_path, 'r', encoding='utf-8') as f:
@@ -176,6 +225,7 @@ def run_script(
                 error_type=type(e).__name__,
                 error_message=f'读取脚本失败: {e}',
                 traceback=traceback.format_exc(),
+                duration_ms=int((time.time() - start) * 1000),
             )
     else:
         source = script_content
@@ -212,7 +262,7 @@ def run_script(
             error_type='TimeoutError',
             error_message=str(e),
             stdout=stdout_capture.getvalue(),
-            duration_ms=timeout_ms,
+            duration_ms=int((time.time() - start) * 1000),  # 真实耗时，可能略大于 timeout_ms
         )
     except BaseException as e:
         return RunResult(

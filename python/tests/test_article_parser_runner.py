@@ -137,6 +137,117 @@ class RunnerTests(unittest.TestCase):
         self.assertFalse(r.ok)
         self.assertEqual(r.error_type, 'AttributeError')
 
+    def test_dotted_import_blocked(self):
+        """import os.path 应被拦截"""
+        src = """
+import os.path
+
+def extract(ctx):
+    return {'title': 'T', 'content': 'x' * 100}
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'ScriptSecurityError')
+
+    def test_from_dotted_import_blocked(self):
+        """from os.path import join 应被拦截"""
+        src = """
+from os.path import join
+
+def extract(ctx):
+    return {'title': 'T', 'content': 'x' * 100}
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'ScriptSecurityError')
+
+    def test_getattr_blocked(self):
+        """getattr 调用应被拦截（反射绕过防御）"""
+        src = """
+from article_parser_sdk import Result
+
+def extract(ctx):
+    f = getattr(__builtins__, 'exec')
+    f("print('pwned')")
+    return Result(title='T', content='x' * 100)
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'ScriptSecurityError')
+
+    def test_dunder_class_blocked(self):
+        """.__class__ 访问应被拦截"""
+        src = """
+from article_parser_sdk import Result
+
+def extract(ctx):
+    x = ().__class__
+    return Result(title='T', content='x' * 100)
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'ScriptSecurityError')
+
+    def test_builtins_subscript_blocked(self):
+        """__builtins__['exec'] 下标访问应被拦截"""
+        src = """
+def extract(ctx):
+    f = __builtins__['exec']
+    return {'title': 'T', 'content': 'x' * 100}
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'ScriptSecurityError')
+
+    def test_non_result_return_type(self):
+        """extract 返回非 Result/dict 应报错"""
+        src = """
+def extract(ctx):
+    return 42
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'TypeError')
+
+    def test_none_return(self):
+        """extract 返回 None 应报错"""
+        src = """
+def extract(ctx):
+    return None
+"""
+        r = _run(src)
+        self.assertFalse(r.ok)
+        # None 既不是 Result 也不是 dict
+        self.assertEqual(r.error_type, 'TypeError')
+
+    def test_stdout_captured(self):
+        """脚本里的 print 应被捕获到 stdout 字段"""
+        src = """
+from article_parser_sdk import Result
+
+def extract(ctx):
+    print('debug msg')
+    return Result(title='T', content='x' * 100)
+"""
+        r = _run(src)
+        self.assertTrue(r.ok, f'error={r.error_message}')
+        self.assertIn('debug msg', r.stdout)
+
+    def test_both_params_provided_error(self):
+        """script_path 和 script_content 同时提供应报错"""
+        from article_parser.runner import run_script
+        r = run_script(script_path='/tmp/x.py', script_content='', url='', html='<x/>')
+        self.assertFalse(r.ok)
+        self.assertEqual(r.error_type, 'ValueError')
+        self.assertIn('不能同时', r.error_message)
+
+    def test_duration_ms_always_set(self):
+        """所有失败分支的 duration_ms 都应该 >= 0"""
+        r = _run("invalid python !! syntax")
+        self.assertFalse(r.ok)
+        self.assertIsNotNone(r.duration_ms)
+        self.assertGreaterEqual(r.duration_ms, 0)
+
 
 if __name__ == '__main__':
     unittest.main()
