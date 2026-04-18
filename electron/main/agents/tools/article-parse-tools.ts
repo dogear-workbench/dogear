@@ -18,11 +18,15 @@ import { registerTools } from './tool-registry.js';
 
 // 注册工具元数据
 registerTools([
-  { name: 'ReadRawHtml',       description: '读取文章的原始 HTML（最多 50KB，截断防止 token 超限）',  server: 'dogear-article-parse', category: 'article' },
-  { name: 'ReadCurrentContent', description: '读取当前已解析的文章内容（meta.json + content.md）',   server: 'dogear-article-parse', category: 'article' },
-  { name: 'ReadParserRules',   description: '读取解析规则文件（通用规则 + 匹配的平台规则）',           server: 'dogear-article-parse', category: 'article' },
-  { name: 'SaveParsedArticle', description: '覆盖保存 AI 重新解析的文章结果（不修改 raw.html）',      server: 'dogear-article-parse', category: 'article' },
-  { name: 'UpdateParserRule',  description: '更新 Skill 规则文件，将新发现的解析经验写回',            server: 'dogear-article-parse', category: 'article' },
+  { name: 'ReadRawHtml',          description: '读取文章的原始 HTML（最多 50KB，截断防止 token 超限）',  server: 'dogear-article-parse', category: 'article' },
+  { name: 'ReadCurrentContent',   description: '读取当前已解析的文章内容（meta.json + content.md）',   server: 'dogear-article-parse', category: 'article' },
+  { name: 'ReadParserRules',      description: '读取解析规则文件（通用规则 + 匹配的平台规则）',           server: 'dogear-article-parse', category: 'article' },
+  { name: 'SaveParsedArticle',    description: '覆盖保存 AI 重新解析的文章结果（不修改 raw.html）',      server: 'dogear-article-parse', category: 'article' },
+  { name: 'ListPlatformScripts',  description: '列出所有已有的平台脚本（*.py 文件）',                   server: 'dogear-article-parse', category: 'article' },
+  { name: 'ReadPlatformScript',   description: '读取单个平台脚本的源码',                                server: 'dogear-article-parse', category: 'article' },
+  { name: 'RunPlatformScript',    description: '在 Python 沙箱里试跑脚本（支持候选源码，不落盘）',       server: 'dogear-article-parse', category: 'article' },
+  { name: 'UpdatePlatformScript', description: '落盘平台脚本文件（仅在 RunPlatformScript 成功后调用）',  server: 'dogear-article-parse', category: 'article' },
+  { name: 'ReadParseHistory',     description: '读取最近 N 条解析历史',                                 server: 'dogear-article-parse', category: 'article' },
 ]);
 
 /** 安全校验：目标路径必须在允许的根目录之内 */
@@ -175,47 +179,224 @@ export function createArticleParseMcpServer() {
         }
       ),
 
-      // ===== 工具 5: UpdateParserRule =====
+      // ===== 工具 5: ListPlatformScripts =====
       tool(
-        'UpdateParserRule',
-        '更新 Skill 规则文件，将新发现的解析经验写回\n' +
-        '只在发现了通用规则或平台规则文件中未覆盖的新模式时调用。\n' +
-        '更新时精简合并而非直接追加，保持规则文件简洁（common.md ≤ 10KB，平台规则 ≤ 5KB）。',
+        'ListPlatformScripts',
+        '列出所有已有的平台脚本（*.py 文件）',
         {
-          skillsDir: z.string().describe('Skill 规则目录的绝对路径（payload.skillsDir）'),
-          type:      z.enum(['common', 'platform']).describe('"common" 更新通用规则，"platform" 更新平台规则'),
-          platform:  z.string().optional().describe('平台名称（type="platform" 时必填，如 "wechat"）'),
-          content:   z.string().describe('规则文件的完整新内容（全量替换，非追加）'),
+          skillsDir: z.string().describe('Skill 规则目录的绝对路径'),
         },
         async (args) => {
           try {
-            let targetPath: string;
-            if (args.type === 'common') {
-              targetPath = path.join(args.skillsDir, 'common.md');
-              assertPathSafe(targetPath, args.skillsDir);
-            } else {
-              if (!args.platform) {
-                return { content: [{ type: 'text' as const, text: '❌ type="platform" 时必须提供 platform 参数' }], isError: true };
-              }
-              // platform 名称只允许字母数字和连字符，防止路径注入
-              if (!/^[a-zA-Z0-9\-_]+$/.test(args.platform)) {
-                return { content: [{ type: 'text' as const, text: `❌ platform 名称不合法：${args.platform}` }], isError: true };
-              }
-              targetPath = path.join(args.skillsDir, 'platforms', `${args.platform}.md`);
-              assertPathSafe(targetPath, args.skillsDir);
-              await fs.mkdir(path.dirname(targetPath), { recursive: true });
+            const dir = path.join(args.skillsDir, 'platforms');
+            assertPathSafe(dir, args.skillsDir);
+            const entries = await fs.readdir(dir).catch(() => [] as string[]);
+            const scripts = entries
+              .filter((n) => n.endsWith('.py'))
+              .map((n) => n.slice(0, -3));
+            const details = await Promise.all(scripts.map(async (p) => {
+              const st = await fs.stat(path.join(dir, p + '.py'));
+              return {
+                platform: p,
+                path: `platforms/${p}.py`,
+                sizeBytes: st.size,
+                lastModified: st.mtime.toISOString(),
+              };
+            }));
+            return {
+              content: [{
+                type: 'text' as const,
+                text: details.length
+                  ? `已有 ${details.length} 个平台脚本:\n\n\`\`\`json\n${JSON.stringify(details, null, 2)}\n\`\`\``
+                  : '暂无平台脚本。',
+              }],
+            };
+          } catch (error) {
+            return { content: [{ type: 'text' as const, text: `❌ 列出脚本失败: ${error}` }], isError: true };
+          }
+        }
+      ),
+
+      // ===== 工具 6: ReadPlatformScript =====
+      tool(
+        'ReadPlatformScript',
+        '读取单个平台脚本的源码',
+        {
+          skillsDir: z.string().describe('Skill 规则目录的绝对路径'),
+          platform:  z.string().describe('平台名称（如 "wechat"）'),
+        },
+        async (args) => {
+          try {
+            if (!/^[a-z0-9_-]{1,32}$/.test(args.platform)) {
+              return { content: [{ type: 'text' as const, text: `❌ platform 名称不合法: ${args.platform}` }], isError: true };
+            }
+            const p = path.join(args.skillsDir, 'platforms', `${args.platform}.py`);
+            assertPathSafe(p, args.skillsDir);
+            const content = await fs.readFile(p, 'utf-8').catch(() => null);
+            if (content === null) {
+              return { content: [{ type: 'text' as const, text: `该平台暂无脚本：platforms/${args.platform}.py 不存在` }] };
+            }
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `# platforms/${args.platform}.py (${Buffer.byteLength(content, 'utf-8')} 字节)\n\n\`\`\`python\n${content}\n\`\`\``,
+              }],
+            };
+          } catch (error) {
+            return { content: [{ type: 'text' as const, text: `❌ 读取脚本失败: ${error}` }], isError: true };
+          }
+        }
+      ),
+
+      // ===== 工具 7: RunPlatformScript =====
+      tool(
+        'RunPlatformScript',
+        '在 Python 沙箱里试跑平台脚本。支持两种模式：\n' +
+        '- 生产模式：传 skillsDir+platform+articleDir，跑已落盘的脚本对当前 raw.html\n' +
+        '- 调试模式：传 scriptContent+articleDir，跑候选源码（不落盘）对当前 raw.html',
+        {
+          articleDir:    z.string().describe('文章目录的绝对路径（用来读 raw.html）'),
+          skillsDir:     z.string().optional().describe('Skill 目录（生产模式必填）'),
+          platform:      z.string().optional().describe('平台名称（生产模式必填）'),
+          scriptContent: z.string().optional().describe('脚本源码（调试模式必填）'),
+          timeoutMs:     z.number().optional().default(5000).describe('超时毫秒数，默认 5000'),
+        },
+        async (args) => {
+          try {
+            const htmlPath = path.join(args.articleDir, 'raw.html');
+            const html = await fs.readFile(htmlPath, 'utf-8').catch(() => null);
+            if (html === null) {
+              return { content: [{ type: 'text' as const, text: `❌ raw.html 不存在：${htmlPath}` }], isError: true };
             }
 
+            const metaRaw = await fs.readFile(path.join(args.articleDir, 'meta.json'), 'utf-8').catch(() => '{}');
+            const meta = JSON.parse(metaRaw);
+            const url: string = meta.url || '';
+
+            const params: Record<string, unknown> = { url, html, timeout_ms: args.timeoutMs };
+            if (args.scriptContent) {
+              params.script_content = args.scriptContent;
+            } else if (args.skillsDir && args.platform) {
+              if (!/^[a-z0-9_-]{1,32}$/.test(args.platform)) {
+                return { content: [{ type: 'text' as const, text: `❌ platform 名称不合法: ${args.platform}` }], isError: true };
+              }
+              params.script_path = path.join(args.skillsDir, 'platforms', `${args.platform}.py`);
+            } else {
+              return { content: [{ type: 'text' as const, text: '❌ 必须提供 scriptContent 或 (skillsDir + platform)' }], isError: true };
+            }
+
+            const { pythonBridge } = await import('../../services/stock/python-bridge.js');
+            const result = await pythonBridge.call<Record<string, unknown>>('run_article_script', params, 30_000);
+
+            const resultContent = typeof result.content === 'string' ? result.content : '';
+            const previewContent = resultContent.length > 2000
+              ? resultContent.slice(0, 2000) + '\n\n[已截断，总长 ' + resultContent.length + ' 字符]'
+              : resultContent;
+
+            const summary = {
+              ok: result.ok,
+              title: result.title,
+              author: result.author,
+              site_name: result.site_name,
+              excerpt: result.excerpt,
+              language: result.language,
+              duration_ms: result.duration_ms,
+              error_type: result.error_type,
+              error_message: result.error_message,
+              stdout: result.stdout,
+            };
+
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `## 脚本执行结果\n\n\`\`\`json\n${JSON.stringify(summary, null, 2)}\n\`\`\`\n\n${result.ok ? '## 正文预览\n\n' + previewContent : '## Traceback\n\n```\n' + (result.traceback || '(无)') + '\n```'}`,
+              }],
+            };
+          } catch (error) {
+            return { content: [{ type: 'text' as const, text: `❌ RunPlatformScript 失败: ${error}` }], isError: true };
+          }
+        }
+      ),
+
+      // ===== 工具 8: UpdatePlatformScript =====
+      tool(
+        'UpdatePlatformScript',
+        '落盘平台脚本。只在 RunPlatformScript 试跑成功后调用。\n' +
+        '路径白名单：只能写 platforms/<name>.py；name 必须是 [a-z0-9_-]{1,32}。',
+        {
+          skillsDir: z.string().describe('Skill 目录的绝对路径'),
+          platform:  z.string().describe('平台名称'),
+          content:   z.string().describe('脚本完整源码（UTF-8）'),
+        },
+        async (args) => {
+          try {
+            if (!/^[a-z0-9_-]{1,32}$/.test(args.platform)) {
+              return { content: [{ type: 'text' as const, text: `❌ platform 名称不合法: ${args.platform}` }], isError: true };
+            }
+            const bytes = Buffer.byteLength(args.content, 'utf-8');
+            if (bytes > 20 * 1024) {
+              return { content: [{ type: 'text' as const, text: `❌ 脚本过大（${bytes} 字节），上限 20 KB` }], isError: true };
+            }
+            const { pythonBridge } = await import('../../services/stock/python-bridge.js');
+            const dryrun = await pythonBridge.call<Record<string, unknown>>('run_article_script', {
+              script_content: args.content,
+              url: 'https://example.com/__syntax_check__',
+              html: '<html><body>dry</body></html>',
+              timeout_ms: 2000,
+            }, 10_000);
+
+            const errorType = dryrun.error_type as string | undefined;
+            if (errorType === 'SyntaxError' || errorType === 'ScriptSecurityError') {
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: `❌ 脚本预检失败：${errorType} — ${dryrun.error_message}`,
+                }],
+                isError: true,
+              };
+            }
+
+            const targetPath = path.join(args.skillsDir, 'platforms', `${args.platform}.py`);
+            assertPathSafe(targetPath, args.skillsDir);
+            await fs.mkdir(path.dirname(targetPath), { recursive: true });
             await safeFileWrite(targetPath, args.content);
 
             return {
               content: [{
                 type: 'text' as const,
-                text: `✅ 规则文件已更新：${path.relative(args.skillsDir, targetPath)}\n大小：${Buffer.byteLength(args.content, 'utf-8')} 字节`,
+                text: `✅ 已保存：platforms/${args.platform}.py（${bytes} 字节）`,
               }],
             };
           } catch (error) {
-            return { content: [{ type: 'text' as const, text: `❌ 更新规则失败: ${error}` }], isError: true };
+            return { content: [{ type: 'text' as const, text: `❌ 保存脚本失败: ${error}` }], isError: true };
+          }
+        }
+      ),
+
+      // ===== 工具 9: ReadParseHistory =====
+      tool(
+        'ReadParseHistory',
+        '读取最近 N 条解析历史（history.jsonl 的尾部）',
+        {
+          skillsDir: z.string().describe('Skill 目录的绝对路径'),
+          limit:     z.number().optional().default(20).describe('读取条数，默认 20'),
+        },
+        async (args) => {
+          try {
+            const p = path.join(args.skillsDir, 'history.jsonl');
+            const raw = await fs.readFile(p, 'utf-8').catch(() => '');
+            const lines = raw.split('\n').filter((l) => l.trim()).slice(-args.limit);
+            const entries = lines.map((l) => {
+              try { return JSON.parse(l); } catch { return { raw: l }; }
+            });
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `## 最近 ${entries.length} 条解析历史\n\n\`\`\`json\n${JSON.stringify(entries, null, 2)}\n\`\`\``,
+              }],
+            };
+          } catch (error) {
+            return { content: [{ type: 'text' as const, text: `❌ 读取历史失败: ${error}` }], isError: true };
           }
         }
       ),
