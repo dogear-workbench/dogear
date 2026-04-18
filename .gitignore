@@ -49,3 +49,6 @@ data/dogear.db
 .dogear/
 /claude_code_doc_md
 skills-lock.json
+
+# git worktrees
+.worktrees/
