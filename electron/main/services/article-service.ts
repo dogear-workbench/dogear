@@ -238,6 +238,78 @@ export async function fetchRawHtml(url: string): Promise<string> {
   return response.text();
 }
 
+/** tryPlatformScript 的返回值类型 */
+export interface ScriptParseAttempt {
+  ok: boolean;
+  title?: string;
+  content?: string;
+  author?: string | null;
+  siteName?: string | null;
+  excerpt?: string | null;
+  language?: string | null;
+  durationMs: number;
+  errorType?: string;
+  errorMessage?: string;
+}
+
+/**
+ * 尝试用平台脚本解析文章。
+ * 脚本不存在 → ok=false, errorType='NoScript'（不是异常，是正常的"无脚本"情况）
+ * 脚本成功 → ok=true 含解析结果
+ * 脚本失败 → ok=false 含错误详情
+ * 此函数永远不 throw，所有错误包装在返回值里。
+ */
+export async function tryPlatformScript(params: {
+  platform: string;
+  url: string;
+  html: string;
+  timeoutMs?: number;
+}): Promise<ScriptParseAttempt> {
+  const { getArticleParserSkillsDir } = await import('./article-parser-skills-service.js');
+  const { pythonBridge } = await import('./stock/python-bridge.js');
+  const scriptPath = path.join(getArticleParserSkillsDir(), 'platforms', `${params.platform}.py`);
+
+  // 脚本不存在 → 静默返回（不报错）
+  const exists = await fs.access(scriptPath).then(() => true).catch(() => false);
+  if (!exists) {
+    return {
+      ok: false,
+      durationMs: 0,
+      errorType: 'NoScript',
+      errorMessage: `No platform script for ${params.platform}`,
+    };
+  }
+
+  try {
+    const res = await pythonBridge.call<Record<string, unknown>>('run_article_script', {
+      script_path: scriptPath,
+      url: params.url,
+      html: params.html,
+      timeout_ms: params.timeoutMs ?? 5000,
+    }, 30_000);
+
+    return {
+      ok: !!res.ok,
+      title: typeof res.title === 'string' ? res.title : undefined,
+      content: typeof res.content === 'string' ? res.content : undefined,
+      author: typeof res.author === 'string' ? res.author : null,
+      siteName: typeof res.site_name === 'string' ? res.site_name : null,
+      excerpt: typeof res.excerpt === 'string' ? res.excerpt : null,
+      language: typeof res.language === 'string' ? res.language : null,
+      durationMs: typeof res.duration_ms === 'number' ? res.duration_ms : 0,
+      errorType: typeof res.error_type === 'string' ? res.error_type : undefined,
+      errorMessage: typeof res.error_message === 'string' ? res.error_message : undefined,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      durationMs: 0,
+      errorType: 'BridgeError',
+      errorMessage: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 /**
  * 抓取并解析网络文章
  * @param url - 文章 URL
