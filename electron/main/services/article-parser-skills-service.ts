@@ -1,8 +1,8 @@
 /**
  * 文章解析器 Skill 规则目录管理服务
  *
- * 负责在应用启动时自动初始化 .dogear/skills/article-parser/ 目录，
- * 包含通用解析规则 common.md、平台规则 platforms/wechat.md 和解析历史 history.jsonl。
+ * 负责在应用启动时自动初始化 .dogear/skills/article-parser/ 目录（SDK local plugin 格式），
+ * 包含 SKILL.md（plugin 入口）、common.md（通用常识）、platforms/wechat.py（微信解析脚本）、history.jsonl。
  * 所有初始化操作是幂等的：文件已存在则不覆盖。
  */
 
@@ -91,33 +91,101 @@ const COMMON_MD = `# 通用文章解析规则
 - [ ] Markdown 格式正确（标题层级、代码块闭合）
 `;
 
-const WECHAT_MD = `# 微信公众号 (mp.weixin.qq.com)
+const SKILL_MD = `---
+name: article-parser
+description: 从网络文章 HTML 中提取标题、正文、作者等结构化内容。当用户导入文章失败、解析质量不佳，或用户明确要求调整某平台解析逻辑时使用此 Skill。
+---
 
-## 域名匹配
-- \`mp.weixin.qq.com\`
+# 文章解析 Skill
 
-## 内容提取策略
+## 何时使用
+- 后台 PARSE_ARTICLE 任务触发（脚本或 Readability 解析失败）
+- 用户在对话中说"xx 平台解析不对""帮我改下 xx 脚本"
 
-### 长文章（标准模式）
-- Readability 正常提取即可
-- 图片使用 \`data-src\` 属性（必须做懒加载修复）
+## 可用 MCP 工具（dogear-article-parse）
+- ReadRawHtml / ReadCurrentContent — 看原料和已解析结果
+- ListPlatformScripts / ReadPlatformScript — 看已有平台脚本
+- RunPlatformScript — 试跑脚本（支持 scriptContent 试跑候选，不落盘）
+- UpdatePlatformScript — 落盘脚本（仅在试跑通过后调用）
+- SaveParsedArticle — 保存当前这篇文章的解析结果
+- ReadParseHistory — 看最近的解析历史，辅助判断是否有规律性失败
 
-### 短内容（type 9）
-微信短内容不在 DOM 中，而是存储在 JS 变量里：
-1. 在 \`<script>\` 标签中查找 \`text_page_info\` 变量
-2. 正则提取：\`text_page_info:\\s*\\{[\\s\\S]*?content:\\s*JsDecode\\('([\\s\\S]*?)'\\)\`
-3. 解码转义序列：\`\\x0a\` → 换行，\`\\x26\` → &，等等
-4. 如果 Readability 提取的内容为空但 JS 变量有内容，使用 JS 变量的内容
+## 调试循环
 
-### 元数据提取
-- 标题：\`window.msg_title = '...'\` JS 变量
-- 作者：\`nick_name: '...'\` JS 变量
-- 站点名：默认为 "微信公众号"
+遇到解析问题时，严格按下列步骤：
 
-## 注意事项
-- 微信文章的 \`<section>\` 标签大量使用 inline style
-- 部分样式会导致 Readability 错误判断内容层级
-- 图片可能有防盗链，需要保留原始 URL
+1. **诊断**：ReadRawHtml 和 ReadCurrentContent 了解问题
+2. **查旧**：ListPlatformScripts → 若有脚本则 ReadPlatformScript 读出来
+3. **写候选**：基于 HTML 结构编写新/改进的 extract() 函数
+   - 必须 from article_parser_sdk import，不允许 import os/requests 等
+   - 返回 Result(title=..., content=..., author=..., site_name=...)
+   - content 必须是 Markdown 格式
+4. **试跑**：RunPlatformScript(scriptContent=候选源码) 试跑
+   - 失败 → 读 traceback，修改，再试（最多 5 轮）
+   - 成功 → 检查 title 非空、content ≥ 200 字符、内容合理
+5. **落盘**：UpdatePlatformScript(platform, content=脚本最终版) 写入
+6. **保存当前文章**：SaveParsedArticle(title, content, ...)
+
+## 约束
+- 脚本存在且有效时优先用脚本解析
+- 不要为登录墙/反爬页面写脚本，直接报告失败
+- UpdatePlatformScript 之前必须有一次成功的 RunPlatformScript
+- 脚本保持精简，不追求覆盖所有边缘场景
+- 禁止修改 SKILL.md 和 common.md（工具路径白名单已拒绝）
+
+## 常识参考
+common.md 里记录了通用的 HTML 预处理和元数据提取常识，可用 ReadParserRules 加载作为参考。
+`;
+
+const WECHAT_PY = `"""
+微信公众号 (mp.weixin.qq.com) 解析脚本。
+
+关键模式：
+- 长文章：正文在 #js_content 或 .rich_media_content 里
+- 短内容（type 9）：不在 DOM，而在 <script> 里的 text_page_info.content
+- 图片懒加载：data-src 优先于 src
+"""
+from article_parser_sdk import soup, Result, extract_js_var, html_to_markdown
+
+
+def extract(ctx):
+    doc = soup(ctx.html)
+
+    # 修复懒加载：data-src 复制到 src
+    for img in doc.find_all('img'):
+        if img.get('data-src') and not img.get('src'):
+            img['src'] = img['data-src']
+
+    # 路径 1：长文章标准模式
+    body = doc.select_one('#js_content') or doc.select_one('.rich_media_content')
+    if body and len(body.get_text(strip=True)) > 50:
+        title_tag = doc.select_one('#activity-name') or doc.select_one('h1')
+        title = title_tag.get_text(strip=True) if title_tag else None
+
+        author_tag = doc.select_one('#js_name') or doc.select_one('.rich_media_meta_nickname')
+        author = author_tag.get_text(strip=True) if author_tag else None
+
+        if title:
+            return Result(
+                title=title,
+                content=html_to_markdown(body),
+                author=author,
+                site_name='微信公众号',
+            )
+
+    # 路径 2：短内容（type 9）
+    short_content = extract_js_var(ctx.html, 'text_page_info', 'content')
+    if short_content and len(short_content.strip()) > 20:
+        title = extract_js_var(ctx.html, 'msg_title') or '(微信短内容)'
+        author = extract_js_var(ctx.html, 'nick_name')
+        return Result(
+            title=title,
+            content=short_content,
+            author=author,
+            site_name='微信公众号',
+        )
+
+    raise ValueError('无法识别的微信文章结构')
 `;
 
 // ============================================================
@@ -135,19 +203,21 @@ export async function ensureSkillsInitialized(): Promise<void> {
 
   await fs.mkdir(platformsDir, { recursive: true });
 
+  const skillPath = path.join(skillsDir, 'SKILL.md');
   const commonPath = path.join(skillsDir, 'common.md');
-  const wechatPath = path.join(platformsDir, 'wechat.md');
+  const wechatPyPath = path.join(platformsDir, 'wechat.py');
   const historyPath = path.join(skillsDir, 'history.jsonl');
 
-  // 只在文件不存在时写入初始内容
+  // 幂等：文件已存在则不覆盖（用户/AI 可能已经改过）
+  if (!(await fileExists(skillPath))) {
+    await safeFileWrite(skillPath, SKILL_MD);
+  }
   if (!(await fileExists(commonPath))) {
     await safeFileWrite(commonPath, COMMON_MD);
   }
-
-  if (!(await fileExists(wechatPath))) {
-    await safeFileWrite(wechatPath, WECHAT_MD);
+  if (!(await fileExists(wechatPyPath))) {
+    await safeFileWrite(wechatPyPath, WECHAT_PY);
   }
-
   if (!(await fileExists(historyPath))) {
     await fs.writeFile(historyPath, '', 'utf-8');
   }

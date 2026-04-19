@@ -13,6 +13,7 @@ import type { WorkspaceFileNode } from '../types.js';
 
 /** 文章解析状态（与 types/article.ts 的 ArticleParseStatus 保持一致） */
 export type ArticleParseStatus =
+  | 'script_ok'        // 新增：平台脚本解析成功（零 AI）
   | 'fixed'
   | 'ai_parsing'
   | 'ai_enhanced'
@@ -206,16 +207,27 @@ async function renameInOrder(
 }
 
 /**
- * 抓取并解析网络文章
- * @param url - 文章 URL
- * @returns 解析后的文章数据（meta + markdown 正文 + 原始 HTML）
+ * 根据 URL 检测平台名称，用于选择对应的 Python 平台脚本。
+ * 返回 null 表示未识别的平台，走 Readability 兜底。
  */
-export async function fetchAndParseArticle(url: string): Promise<{
-  meta: ArticleMeta;
-  content: string;
-  rawHtml: string;
-}> {
-  // 1. 抓取 HTML
+export function detectPlatform(url: string): string | null {
+  try {
+    const host = new URL(url).hostname;
+    if (host === 'mp.weixin.qq.com') return 'wechat';
+    if (host.endsWith('.zhihu.com')) return 'zhihu';
+    if (host.endsWith('.juejin.cn') || host === 'juejin.cn') return 'juejin';
+    if (host.endsWith('.bilibili.com') || host === 'bilibili.com') return 'bilibili';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 仅抓取 URL 的原始 HTML，不做解析。
+ * 供主流程在尝试平台脚本前预取，避免后续 Readability 重复抓取。
+ */
+export async function fetchRawHtml(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -224,7 +236,110 @@ export async function fetchAndParseArticle(url: string): Promise<{
   if (!response.ok) {
     throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
   }
-  const html = await response.text();
+  return response.text();
+}
+
+/** tryPlatformScript 的返回值类型 */
+export interface ScriptParseAttempt {
+  ok: boolean;
+  title?: string;
+  content?: string;
+  author?: string | null;
+  siteName?: string | null;
+  excerpt?: string | null;
+  language?: string | null;
+  durationMs: number;
+  errorType?: string;
+  errorMessage?: string;
+}
+
+/**
+ * 尝试用平台脚本解析文章。
+ * 脚本不存在 → ok=false, errorType='NoScript'（不是异常，是正常的"无脚本"情况）
+ * 脚本成功 → ok=true 含解析结果
+ * 脚本失败 → ok=false 含错误详情
+ * 此函数永远不 throw，所有错误包装在返回值里。
+ */
+export async function tryPlatformScript(params: {
+  platform: string;
+  url: string;
+  html: string;
+  timeoutMs?: number;
+}): Promise<ScriptParseAttempt> {
+  const { getArticleParserSkillsDir } = await import('./article-parser-skills-service.js');
+  const { pythonBridge } = await import('./stock/python-bridge.js');
+  const scriptPath = path.join(getArticleParserSkillsDir(), 'platforms', `${params.platform}.py`);
+
+  // 脚本不存在 → 静默返回（不报错）
+  const exists = await fs.access(scriptPath).then(() => true).catch(() => false);
+  if (!exists) {
+    return {
+      ok: false,
+      durationMs: 0,
+      errorType: 'NoScript',
+      errorMessage: `No platform script for ${params.platform}`,
+    };
+  }
+
+  try {
+    const res = await pythonBridge.call<Record<string, unknown>>('run_article_script', {
+      script_path: scriptPath,
+      url: params.url,
+      html: params.html,
+      timeout_ms: params.timeoutMs ?? 5000,
+    }, 30_000);
+
+    return {
+      ok: !!res.ok,
+      title: typeof res.title === 'string' ? res.title : undefined,
+      content: typeof res.content === 'string' ? res.content : undefined,
+      author: typeof res.author === 'string' ? res.author : null,
+      siteName: typeof res.site_name === 'string' ? res.site_name : null,
+      excerpt: typeof res.excerpt === 'string' ? res.excerpt : null,
+      language: typeof res.language === 'string' ? res.language : null,
+      durationMs: typeof res.duration_ms === 'number' ? res.duration_ms : 0,
+      errorType: typeof res.error_type === 'string' ? res.error_type : undefined,
+      errorMessage: typeof res.error_message === 'string' ? res.error_message : undefined,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      durationMs: 0,
+      errorType: 'BridgeError',
+      errorMessage: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * 抓取并解析网络文章
+ * @param url - 文章 URL
+ * @param options.rawHtml - 可选：预先抓取的原始 HTML；提供时跳过网络请求
+ * @returns 解析后的文章数据（meta + markdown 正文 + 原始 HTML）
+ */
+export async function fetchAndParseArticle(
+  url: string,
+  options?: { rawHtml?: string }
+): Promise<{
+  meta: ArticleMeta;
+  content: string;
+  rawHtml: string;
+}> {
+  // 1. 抓取 HTML（如果调用方已预取则直接使用，避免重复请求）
+  let html: string;
+  if (options?.rawHtml !== undefined) {
+    html = options.rawHtml;
+  } else {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
+    }
+    html = await response.text();
+  }
 
   // 2. 使用 linkedom 解析为 DOM
   const { document } = parseHTML(html);
@@ -379,6 +494,79 @@ export async function saveArticle(
 
   // 更新排序索引
   await addToOrder(workspacePath, ARTICLES_DIR, articleData.meta.id, false);
+}
+
+/**
+ * 保存平台脚本直接输出的文章。
+ * 创建文章目录，写 meta.json / content.md / raw.html，更新排序索引。
+ */
+export async function saveArticleFromScript(params: {
+  workspacePath: string;
+  url: string;
+  rawHtml: string;
+  title: string;
+  content: string;
+  author: string | null;
+  siteName: string | null;
+  excerpt: string | null;
+  language: string | null;
+}): Promise<ArticleMeta> {
+  const id = uuidv4();
+  const wordCount = params.content.replace(/\s+/g, '').length;
+
+  const meta: ArticleMeta = {
+    id,
+    url: params.url,
+    title: params.title,
+    author: params.author,
+    siteName: params.siteName,
+    excerpt: params.excerpt,
+    wordCount,
+    fetchedAt: Date.now(),
+    language: params.language,
+    parseStatus: 'script_ok',
+  };
+
+  const articleDir = path.join(params.workspacePath, ARTICLES_DIR, id);
+  await safeJsonWrite(path.join(articleDir, 'meta.json'), meta);
+  await safeFileWrite(path.join(articleDir, 'content.md'), params.content);
+  await safeFileWrite(path.join(articleDir, 'raw.html'), params.rawHtml);
+  await addToOrder(params.workspacePath, ARTICLES_DIR, id, false);
+
+  return meta;
+}
+
+/**
+ * AI 介入时创建文章目录骨架：写 raw.html + stub meta.json，不写 content.md。
+ * AI 任务完成后会通过 SaveParsedArticle 工具覆盖 meta 和 content。
+ * 返回 articleDir 的绝对路径。
+ */
+export async function saveRawHtmlStub(params: {
+  workspacePath: string;
+  articleId: string;
+  url: string;
+  rawHtml: string;
+}): Promise<string> {
+  const articleDir = path.join(params.workspacePath, ARTICLES_DIR, params.articleId);
+
+  const stubMeta: ArticleMeta = {
+    id: params.articleId,
+    url: params.url,
+    title: '(AI 解析中...)',
+    author: null,
+    siteName: null,
+    excerpt: null,
+    wordCount: 0,
+    fetchedAt: Date.now(),
+    language: null,
+    parseStatus: 'ai_parsing',
+  };
+
+  await safeJsonWrite(path.join(articleDir, 'meta.json'), stubMeta);
+  await safeFileWrite(path.join(articleDir, 'raw.html'), params.rawHtml);
+  await addToOrder(params.workspacePath, ARTICLES_DIR, params.articleId, false);
+
+  return articleDir;
 }
 
 /**

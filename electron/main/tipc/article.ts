@@ -1,14 +1,16 @@
 // electron/main/tipc/article.ts
 import path from 'path';
+import fs from 'fs/promises';
 import { BrowserWindow } from 'electron';
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
+import { v4 as uuidv4 } from 'uuid';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as articleService from '../services/article-service.js';
 import { getAgentManager } from '../agents/agent-manager.js';
 import { TaskType, TaskStatus, type AgentTask, type ParseArticlePayload } from '../agents/task-types.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import { withFileLock } from '../services/safe-json.js';
 import type { RendererHandlers } from './renderer-handlers.js';
-import { v4 as uuidv4 } from 'uuid';
 
 const t = tipc.create();
 
@@ -25,7 +27,7 @@ export function registerArticleParseStatusListener() {
   getAgentManager().on('articleParseStatusChanged', (data: {
     articleId: string;
     workspacePath: string;
-    parseStatus: 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
+    parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
   }) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (win.isDestroyed()) continue;
@@ -40,28 +42,38 @@ export function registerArticleParseStatusListener() {
   });
 }
 
+// ============================================================
+// V2 主流程辅助函数
+// ============================================================
+
 /**
- * 成功路径后异步提交 AI 质量检查任务（不阻塞 parseArticle 返回）。
- * 失败也静默吞掉，不影响用户看到固定解析的结果。
+ * 将 AI 解析任务提交到 AgentManager Worker 池。
+ * fire-and-forget：失败只打印警告，不 throw。
  */
-function submitQualityCheckTask(params: {
+function submitAiParseTask(params: {
   articleId: string;
+  articleDir: string;
   workspacePath: string;
   url: string;
+  platform: string | null;
+  trigger: 'script_failed' | 'parse_failed' | 'user_requested';
+  scriptError?: { type: string; message: string };
+  readabilityError?: string;
 }) {
   try {
-    const articleDir = path.join(params.workspacePath, '.dogear/articles', params.articleId);
     const skillsDir = getArticleParserSkillsDir();
-
     const payload: ParseArticlePayload = {
       articleId: params.articleId,
-      articleDir,
+      articleDir: params.articleDir,
       workspacePath: params.workspacePath,
       url: params.url,
-      fixedParseSuccess: true,
       skillsDir,
+      platform: params.platform,
+      trigger: params.trigger,
+      scriptError: params.scriptError,
+      readabilityError: params.readabilityError,
+      fixedParseSuccess: false,
     };
-
     const task: AgentTask = {
       id: uuidv4(),
       type: TaskType.PARSE_ARTICLE,
@@ -69,20 +81,38 @@ function submitQualityCheckTask(params: {
       payload,
       createdAt: Date.now(),
     };
-
-    // 不等待任务执行结果，AI 异步工作
     void getAgentManager().submitTask(task).catch((err) => {
       console.warn('[article] 提交 PARSE_ARTICLE 任务失败:', err);
     });
   } catch (err) {
-    // 提交失败不影响主流程
     console.warn('[article] 准备 PARSE_ARTICLE 任务失败:', err);
+  }
+}
+
+/**
+ * 向解析历史 JSONL 文件追加一条记录（不阻塞主流程）。
+ */
+async function appendParseHistoryEntry(entry: Record<string, unknown>) {
+  try {
+    const skillsDir = getArticleParserSkillsDir();
+    const historyPath = path.join(skillsDir, 'history.jsonl');
+    const line = JSON.stringify(entry) + '\n';
+    await withFileLock(historyPath, async () => {
+      await fs.appendFile(historyPath, line, 'utf-8');
+    });
+  } catch {
+    // history write failure should never block main flow
   }
 }
 
 export const articleRouter = {
   /**
-   * 解析网络文章并保存到工作区
+   * 解析网络文章并保存到工作区（V2 主流程）
+   *
+   * 优先级：
+   *   1. 平台脚本（Python）— 零 AI，最快
+   *   2. Readability — 本地 HTML 解析
+   *   3. AI 兜底 — 两者均失败时创建 stub 并提交 Agent 任务
    */
   parseArticle: t.procedure
     .input<{ url: string; workspaceId: string }>()
@@ -91,17 +121,126 @@ export const articleRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        const result = await articleService.fetchAndParseArticle(input.url);
-        await articleService.saveArticle(workspace.path, result);
+        // 1. 一次性抓取原始 HTML（平台脚本和 Readability 共用，避免重复请求）
+        let rawHtml: string;
+        try {
+          rawHtml = await articleService.fetchRawHtml(input.url);
+        } catch (fetchError) {
+          return { error: `抓取失败: ${fetchError}` };
+        }
 
-        // 异步触发 AI 质量检查（后台静默执行，用户立即收到固定解析结果）
-        submitQualityCheckTask({
-          articleId: result.meta.id,
+        const platform = articleService.detectPlatform(input.url);
+
+        // 2. 尝试平台脚本（零 AI，最快路径）
+        let scriptAttempt: articleService.ScriptParseAttempt | null = null;
+        if (platform) {
+          scriptAttempt = await articleService.tryPlatformScript({
+            platform,
+            url: input.url,
+            html: rawHtml,
+          });
+
+          if (scriptAttempt.ok) {
+            const meta = await articleService.saveArticleFromScript({
+              workspacePath: workspace.path,
+              url: input.url,
+              rawHtml,
+              title: scriptAttempt.title!,
+              content: scriptAttempt.content!,
+              author: scriptAttempt.author ?? null,
+              siteName: scriptAttempt.siteName ?? null,
+              excerpt: scriptAttempt.excerpt ?? null,
+              language: scriptAttempt.language ?? null,
+            });
+            void appendParseHistoryEntry({
+              timestamp: new Date().toISOString(),
+              articleId: meta.id,
+              url: input.url,
+              platform,
+              trigger: 'auto',
+              triggeredAi: false,
+              parseStatus: 'script_ok',
+              durationMs: scriptAttempt.durationMs,
+            });
+            return { article: meta };
+          }
+        }
+
+        // 3. Readability 兜底
+        let readabilityError: string | undefined;
+        try {
+          const result = await articleService.fetchAndParseArticle(input.url, { rawHtml });
+          await articleService.saveArticle(workspace.path, result);
+          void appendParseHistoryEntry({
+            timestamp: new Date().toISOString(),
+            articleId: result.meta.id,
+            url: input.url,
+            platform,
+            trigger: 'auto',
+            triggeredAi: false,
+            parseStatus: 'fixed',
+            durationMs: 0,
+          });
+          return { article: result.meta };
+        } catch (err) {
+          readabilityError = String(err);
+        }
+
+        // 4. 两者均失败 → 创建 stub 并提交 AI 任务
+        const articleId = uuidv4();
+        const articleDir = await articleService.saveRawHtmlStub({
           workspacePath: workspace.path,
+          articleId,
           url: input.url,
+          rawHtml,
         });
 
-        return { article: result.meta };
+        // 判断 AI 触发原因：脚本存在但失败 vs Readability 失败
+        const trigger =
+          scriptAttempt && !scriptAttempt.ok && scriptAttempt.errorType !== 'NoScript'
+            ? ('script_failed' as const)
+            : ('parse_failed' as const);
+
+        submitAiParseTask({
+          articleId,
+          articleDir,
+          workspacePath: workspace.path,
+          url: input.url,
+          platform,
+          trigger,
+          scriptError:
+            scriptAttempt && !scriptAttempt.ok && scriptAttempt.errorType !== 'NoScript'
+              ? { type: scriptAttempt.errorType ?? 'Unknown', message: scriptAttempt.errorMessage ?? '' }
+              : undefined,
+          readabilityError,
+        });
+
+        void appendParseHistoryEntry({
+          timestamp: new Date().toISOString(),
+          articleId,
+          url: input.url,
+          platform,
+          trigger,
+          triggeredAi: true,
+          parseStatus: 'ai_parsing',
+          durationMs: 0,
+        });
+
+        // 返回 stub meta，让前端立即显示"AI 解析中"状态
+        return {
+          article: {
+            id: articleId,
+            url: input.url,
+            title: '(AI 解析中...)',
+            author: null,
+            siteName: null,
+            excerpt: null,
+            wordCount: 0,
+            fetchedAt: Date.now(),
+            language: null,
+            parseStatus: 'ai_parsing',
+          } as articleService.ArticleMeta,
+        };
       } catch (error) {
         console.error('解析文章失败:', error);
         return { error: String(error) };
@@ -159,6 +298,27 @@ export const articleRouter = {
       } catch (error) {
         console.error('删除文章失败:', error);
         return { error: String(error) };
+      }
+    }),
+
+  /**
+   * 获取文章解析历史记录（最近 N 条，从 history.jsonl 读取）
+   */
+  getParseHistory: t.procedure
+    .input<{ limit?: number }>()
+    .action(async ({ input }) => {
+      try {
+        const limit = Math.min(input.limit ?? 50, 200);
+        const skillsDir = getArticleParserSkillsDir();
+        const historyPath = path.join(skillsDir, 'history.jsonl');
+        const raw = await fs.readFile(historyPath, 'utf-8').catch(() => '');
+        const lines = raw.split('\n').filter((l) => l.trim()).slice(-limit);
+        const entries = lines.map((l) => {
+          try { return JSON.parse(l); } catch { return { raw: l }; }
+        });
+        return { entries: entries.reverse() };  // most recent first
+      } catch (error) {
+        return { entries: [], error: String(error) };
       }
     }),
 };

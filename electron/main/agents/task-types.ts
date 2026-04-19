@@ -191,8 +191,16 @@ export interface ParseArticlePayload {
   articleDir: string;        // 绝对路径：<workspace>/.dogear/articles/<id>
   workspacePath: string;     // 工作区路径（saveArticle 需要）
   url: string;
-  fixedParseSuccess: boolean;
   skillsDir: string;         // 全局 Skill 目录：<configDir>/skills/article-parser
+
+  // V2: trigger context
+  platform: string | null;
+  trigger: 'script_failed' | 'parse_failed' | 'user_requested';
+  scriptError?: { type: string; message: string };
+  readabilityError?: string;
+
+  // V1 compat (kept temporarily)
+  fixedParseSuccess?: boolean;
 }
 
 /**
@@ -233,5 +241,5 @@ export type WorkerToMainMessage =
   | { type: 'error'; error: string }
   // v2: 分析进度消息
   | { type: 'analysisProgress'; bookId: string; toolName?: string; toolInput?: any; chapterSaved?: boolean; chapterTitle?: string; message?: string; status?: string }
-  // Phase 3: 文章解析状态变化
-  | { type: 'articleParseStatusChanged'; articleId: string; workspacePath: string; parseStatus: 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed' };
+  // Phase 3/4: 文章解析状态变化
+  | { type: 'articleParseStatusChanged'; articleId: string; workspacePath: string; parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed' };
