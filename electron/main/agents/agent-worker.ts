@@ -685,24 +685,27 @@ class AgentWorker {
   }
 
   /**
-   * 处理文章解析任务（自进化文章解析系统）
+   * 处理文章解析任务（V2：Skill 驱动解析系统）
    *
-   * 模式分支：
-   * - fixedParseSuccess=true  → 质量检查模式：先读当前内容，判断是否达标，不达标再重新解析
-   * - fixedParseSuccess=false → 完整解析模式：直接读 raw.html 从零解析
+   * 流程：
+   * - 加载 article-parser Skill（plugins: [{ type: 'local', path: skillsDir }]）
+   * - AI 按 SKILL.md 定义的调试循环工作
+   * - trigger 说明触发原因（script_failed / parse_failed / user_requested）
    *
    * 产出：
    * - 若有改进：通过 SaveParsedArticle 覆盖 meta.json / content.md
-   * - 若发现新规律：通过 UpdateParserRule 精简重写规则文件
+   * - 若发现新平台脚本模式：通过 UpdatePlatformScript 更新 platforms/<platform>.py
    * - history.jsonl 追加一行解析记录
    */
   private async handleParseArticleTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').ParseArticlePayload;
-    const { articleId, articleDir, url, workspacePath, skillsDir } = payload;
-    // fixedParseSuccess 在 V2 中已变为可选字段，默认 false（AI 兜底路径）
-    const fixedParseSuccess: boolean = payload.fixedParseSuccess ?? false;
+    const { articleId, articleDir, workspacePath, url, skillsDir } = payload;
+    const platform = payload.platform ?? null;
+    const trigger = payload.trigger ?? 'parse_failed';
+    const scriptError = payload.scriptError;
+    const readabilityError = payload.readabilityError;
 
-    taskLogger.info('开始文章解析任务:', articleId, '| 固定解析状态:', fixedParseSuccess ? '成功' : '失败');
+    taskLogger.info('开始文章解析任务:', articleId, '| trigger:', trigger, '| platform:', platform ?? '(未识别)');
 
     const startedAt = Date.now();
 
@@ -718,9 +721,6 @@ class AgentWorker {
       parseStatus: 'ai_parsing',
     });
 
-    // 从 URL 提取 platform（简单域名映射）
-    const platform = detectPlatform(url);
-
     // 加载 query 基础配置
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
     const { buildQueryBaseConfig } = await import('./agent-query-config.js');
@@ -734,13 +734,20 @@ class AgentWorker {
     const { createArticleParseMcpServer } = await import('./tools/article-parse-tools.js');
     const articleParseMcpServer = createArticleParseMcpServer();
 
-    // 构建 prompt（payload 路径嵌入其中，供 AI 调用工具时回填参数）
-    const prompt = fixedParseSuccess
-      ? buildQualityCheckPrompt({ articleId, articleDir, url, skillsDir, platform })
-      : buildFullParsePrompt({ articleId, articleDir, url, skillsDir, platform });
+    // 构建 prompt（V2：直接指向 Skill，embed 触发上下文）
+    const prompt = buildV2ParsePrompt({
+      articleId,
+      articleDir,
+      url,
+      platform,
+      skillsDir,
+      trigger,
+      scriptError,
+      readabilityError,
+    });
 
     let resultSummary = '';
-    let ruleUpdated: string | null = null;
+    let scriptUpdated: string | null = null;
     let articleSaved = false;
 
     try {
@@ -754,6 +761,9 @@ class AgentWorker {
           ...(baseConfig.pathToClaudeCodeExecutable && {
             pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
           }),
+          plugins: [
+            { type: 'local' as const, path: skillsDir },
+          ],
           mcpServers: {
             'dogear-article-parse': articleParseMcpServer,
           },
@@ -762,7 +772,11 @@ class AgentWorker {
             'mcp__dogear-article-parse__ReadCurrentContent',
             'mcp__dogear-article-parse__ReadParserRules',
             'mcp__dogear-article-parse__SaveParsedArticle',
-            'mcp__dogear-article-parse__UpdateParserRule',
+            'mcp__dogear-article-parse__ListPlatformScripts',
+            'mcp__dogear-article-parse__ReadPlatformScript',
+            'mcp__dogear-article-parse__RunPlatformScript',
+            'mcp__dogear-article-parse__UpdatePlatformScript',
+            'mcp__dogear-article-parse__ReadParseHistory',
           ],
           hooks: {
             PostToolUse: [{
@@ -771,10 +785,10 @@ class AgentWorker {
                 if (tool_name === 'mcp__dogear-article-parse__SaveParsedArticle') {
                   articleSaved = true;
                   taskLogger.info('文章已保存');
-                } else if (tool_name === 'mcp__dogear-article-parse__UpdateParserRule') {
+                } else if (tool_name === 'mcp__dogear-article-parse__UpdatePlatformScript') {
                   const ti = input.tool_input || {};
-                  ruleUpdated = ti.type === 'platform' ? `platforms/${ti.platform}.md` : 'common.md';
-                  taskLogger.info('规则已更新:', ruleUpdated);
+                  scriptUpdated = `platforms/${ti.platform}.py`;
+                  taskLogger.info('平台脚本已更新:', scriptUpdated);
                 }
                 return { continue: true };
               }],
@@ -806,18 +820,18 @@ class AgentWorker {
         articleId,
         url,
         platform,
-        fixedParseSuccess,
-        aiArticleSaved: articleSaved,
-        ruleUpdated,
+        trigger,
+        triggeredAi: true,
+        scriptUpdated,
+        articleSaved,
+        parseStatus: articleSaved ? 'ai_enhanced' : 'quality_warning',
         durationMs: Date.now() - startedAt,
       });
 
-      // 判定最终状态：
-      // - 固定解析成功路径：若 AI 有 save → ai_enhanced；否则 → fixed（质量达标，无需改动）
-      // - 完整解析路径：若 AI 成功 save → ai_enhanced；否则 → quality_warning（AI 也无法解析）
+      // 判定最终状态：若 AI 成功 save → ai_enhanced；否则 → quality_warning（AI 也无法解析）
       const finalStatus = articleSaved
         ? 'ai_enhanced' as const
-        : fixedParseSuccess ? 'fixed' as const : 'quality_warning' as const;
+        : 'quality_warning' as const;
 
       await updateArticleParseStatus(workspacePath, articleId, finalStatus).catch((err) => {
         taskLogger.warn('写入最终状态失败:', err);
@@ -834,7 +848,7 @@ class AgentWorker {
       return {
         articleId,
         articleSaved,
-        ruleUpdated,
+        scriptUpdated,
         parseStatus: finalStatus,
         summary: resultSummary.slice(0, 500),
       };
@@ -848,15 +862,16 @@ class AgentWorker {
         articleId,
         url,
         platform,
-        fixedParseSuccess,
-        aiArticleSaved: false,
-        ruleUpdated: null,
+        trigger,
+        triggeredAi: true,
+        scriptUpdated: null,
+        articleSaved: false,
+        parseStatus: 'failed',
         durationMs: Date.now() - startedAt,
         error: errorMsg,
       }).catch(() => { /* 历史记录失败不影响主流程 */ });
 
-      // 异常时的状态：固定解析曾成功 → 退回 fixed；否则 → failed
-      const errorStatus = fixedParseSuccess ? 'fixed' as const : 'failed' as const;
+      const errorStatus = 'failed' as const;
       await updateArticleParseStatus(workspacePath, articleId, errorStatus).catch(() => { /* ignore */ });
       this.sendMessage({
         type: 'articleParseStatusChanged',
@@ -1001,82 +1016,44 @@ function detectPlatform(url: string): string | undefined {
   }
 }
 
-interface PromptBuildParams {
+interface V2PromptParams {
   articleId: string;
   articleDir: string;
   url: string;
+  platform: string | null;
   skillsDir: string;
-  platform?: string;
+  trigger: string;
+  scriptError?: { type: string; message: string };
+  readabilityError?: string;
 }
 
-function buildQualityCheckPrompt(p: PromptBuildParams): string {
-  return `你是一个文章解析质量检查员。请按以下步骤工作：
+function buildV2ParsePrompt(p: V2PromptParams): string {
+  return `你是文章解析器。article-parser Skill 已加载，请按 Skill 中的调试循环工作。
 
 **任务上下文：**
 - articleId: ${p.articleId}
 - articleDir: ${p.articleDir}
 - url: ${p.url}
+- platform: ${p.platform || '(未识别)'}
 - skillsDir: ${p.skillsDir}
-- platform: ${p.platform || '未知'}
+- trigger: ${p.trigger}
+${p.scriptError ? `- 脚本错误：${p.scriptError.type} — ${p.scriptError.message}` : ''}
+${p.readabilityError ? `- Readability 错误：${p.readabilityError}` : ''}
 
-**执行步骤：**
-
-1. 调用 ReadParserRules（skillsDir="${p.skillsDir}"${p.platform ? `, platform="${p.platform}"` : ''}）了解当前的解析规则。
-2. 调用 ReadCurrentContent（articleDir="${p.articleDir}"）查看当前已解析的内容。
-3. 根据规则中的"质量检查标准"逐项检查：
-   - 标题是否非空、合理
-   - 正文长度是否 > 200 字符
-   - 是否有明显的导航残留、重复内容、垃圾文本
-   - 图片 URL 是否看起来正常
-4. **判断结论：**
-   - 如果质量达标 → 直接输出"✅ 质量检查通过"并结束，不要调用任何写入工具
-   - 如果质量不达标 → 继续执行步骤 5-7
-5. 调用 ReadRawHtml（articleDir="${p.articleDir}"）获取原始 HTML。
-6. 基于规则和 HTML 结构重新提取标题、作者、正文（Markdown 格式），调用 SaveParsedArticle 覆盖保存。
-7. 如果过程中发现了规则中未覆盖的新解析模式，调用 UpdateParserRule 精简地更新规则（全量重写，不是追加；文件保持在 common.md ≤ 10KB、平台规则 ≤ 5KB）。
-
-**重要约束：**
-- 不要编造 HTML 中不存在的内容。
-- 只在质量确实不达标时才保存，避免无谓的覆盖。
-- 所有工具调用都要传入完整的绝对路径参数。
-
-现在开始执行。`;
-}
-
-function buildFullParsePrompt(p: PromptBuildParams): string {
-  return `你是一个文章解析器。固定解析流程已经失败，需要你从零开始解析。
-
-**任务上下文：**
-- articleId: ${p.articleId}
-- articleDir: ${p.articleDir}
-- url: ${p.url}
-- skillsDir: ${p.skillsDir}
-- platform: ${p.platform || '未知'}
-
-**执行步骤：**
-
-1. 调用 ReadParserRules（skillsDir="${p.skillsDir}"${p.platform ? `, platform="${p.platform}"` : ''}）了解已有的解析策略。
-2. 调用 ReadRawHtml（articleDir="${p.articleDir}"）获取原始 HTML（默认最多 50KB）。
-3. 基于规则分析 HTML 结构，定位正文、提取标题/作者/摘要。
-4. 调用 SaveParsedArticle 保存解析结果（必须提供 title 和 content，content 为 Markdown 格式）。
-5. 如果发现了新的解析模式（规则中未覆盖），调用 UpdateParserRule 精简地更新规则（全量重写）。
-
-**重要约束：**
-- 不要编造 HTML 中不存在的内容。
-- 如果 HTML 内容明显不完整（登录墙、反爬页面），在回答中说明并跳过保存。
-- 所有工具调用都要传入完整的绝对路径参数。
-
-现在开始执行。`;
+现在按 SKILL.md 定义的步骤完成解析。
+所有工具参数路径都要传入完整绝对路径。`;
 }
 
 interface ParseHistoryEntry {
   timestamp: string;
   articleId: string;
   url: string;
-  platform?: string;
-  fixedParseSuccess: boolean;
-  aiArticleSaved: boolean;
-  ruleUpdated: string | null;
+  platform?: string | null;
+  trigger?: string;
+  triggeredAi?: boolean;
+  scriptUpdated: string | null;
+  articleSaved: boolean;
+  parseStatus: string;
   durationMs: number;
   error?: string;
 }
