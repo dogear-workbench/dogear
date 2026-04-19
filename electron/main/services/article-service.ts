@@ -13,6 +13,7 @@ import type { WorkspaceFileNode } from '../types.js';
 
 /** 文章解析状态（与 types/article.ts 的 ArticleParseStatus 保持一致） */
 export type ArticleParseStatus =
+  | 'script_ok'        // 新增：平台脚本解析成功（零 AI）
   | 'fixed'
   | 'ai_parsing'
   | 'ai_enhanced'
@@ -493,6 +494,79 @@ export async function saveArticle(
 
   // 更新排序索引
   await addToOrder(workspacePath, ARTICLES_DIR, articleData.meta.id, false);
+}
+
+/**
+ * 保存平台脚本直接输出的文章。
+ * 创建文章目录，写 meta.json / content.md / raw.html，更新排序索引。
+ */
+export async function saveArticleFromScript(params: {
+  workspacePath: string;
+  url: string;
+  rawHtml: string;
+  title: string;
+  content: string;
+  author: string | null;
+  siteName: string | null;
+  excerpt: string | null;
+  language: string | null;
+}): Promise<ArticleMeta> {
+  const id = uuidv4();
+  const wordCount = params.content.replace(/\s+/g, '').length;
+
+  const meta: ArticleMeta = {
+    id,
+    url: params.url,
+    title: params.title,
+    author: params.author,
+    siteName: params.siteName,
+    excerpt: params.excerpt,
+    wordCount,
+    fetchedAt: Date.now(),
+    language: params.language,
+    parseStatus: 'script_ok',
+  };
+
+  const articleDir = path.join(params.workspacePath, ARTICLES_DIR, id);
+  await safeJsonWrite(path.join(articleDir, 'meta.json'), meta);
+  await safeFileWrite(path.join(articleDir, 'content.md'), params.content);
+  await safeFileWrite(path.join(articleDir, 'raw.html'), params.rawHtml);
+  await addToOrder(params.workspacePath, ARTICLES_DIR, id, false);
+
+  return meta;
+}
+
+/**
+ * AI 介入时创建文章目录骨架：写 raw.html + stub meta.json，不写 content.md。
+ * AI 任务完成后会通过 SaveParsedArticle 工具覆盖 meta 和 content。
+ * 返回 articleDir 的绝对路径。
+ */
+export async function saveRawHtmlStub(params: {
+  workspacePath: string;
+  articleId: string;
+  url: string;
+  rawHtml: string;
+}): Promise<string> {
+  const articleDir = path.join(params.workspacePath, ARTICLES_DIR, params.articleId);
+
+  const stubMeta: ArticleMeta = {
+    id: params.articleId,
+    url: params.url,
+    title: '(AI 解析中...)',
+    author: null,
+    siteName: null,
+    excerpt: null,
+    wordCount: 0,
+    fetchedAt: Date.now(),
+    language: null,
+    parseStatus: 'ai_parsing',
+  };
+
+  await safeJsonWrite(path.join(articleDir, 'meta.json'), stubMeta);
+  await safeFileWrite(path.join(articleDir, 'raw.html'), params.rawHtml);
+  await addToOrder(params.workspacePath, ARTICLES_DIR, params.articleId, false);
+
+  return articleDir;
 }
 
 /**

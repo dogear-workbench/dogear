@@ -698,7 +698,9 @@ class AgentWorker {
    */
   private async handleParseArticleTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').ParseArticlePayload;
-    const { articleId, articleDir, url, workspacePath, fixedParseSuccess, skillsDir } = payload;
+    const { articleId, articleDir, url, workspacePath, skillsDir } = payload;
+    // fixedParseSuccess 在 V2 中已变为可选字段，默认 false（AI 兜底路径）
+    const fixedParseSuccess: boolean = payload.fixedParseSuccess ?? false;
 
     taskLogger.info('开始文章解析任务:', articleId, '| 固定解析状态:', fixedParseSuccess ? '成功' : '失败');
 
