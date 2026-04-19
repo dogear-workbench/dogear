@@ -300,4 +300,25 @@ export const articleRouter = {
         return { error: String(error) };
       }
     }),
+
+  /**
+   * 获取文章解析历史记录（最近 N 条，从 history.jsonl 读取）
+   */
+  getParseHistory: t.procedure
+    .input<{ limit?: number }>()
+    .action(async ({ input }) => {
+      try {
+        const limit = Math.min(input.limit ?? 50, 200);
+        const skillsDir = getArticleParserSkillsDir();
+        const historyPath = path.join(skillsDir, 'history.jsonl');
+        const raw = await fs.readFile(historyPath, 'utf-8').catch(() => '');
+        const lines = raw.split('\n').filter((l) => l.trim()).slice(-limit);
+        const entries = lines.map((l) => {
+          try { return JSON.parse(l); } catch { return { raw: l }; }
+        });
+        return { entries: entries.reverse() };  // most recent first
+      } catch (error) {
+        return { entries: [], error: String(error) };
+      }
+    }),
 };
