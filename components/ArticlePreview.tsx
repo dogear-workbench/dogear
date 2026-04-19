@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, User, Calendar, ExternalLink, FileText, Quote, Loader2, Sparkles, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
+import { Globe, User, Calendar, ExternalLink, FileText, Quote, Loader2, Sparkles, CheckCircle2, AlertTriangle, XCircle, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -16,6 +16,12 @@ const PARSE_STATUS_CONFIG: Record<ArticleParseStatus, {
   className: string;
   Icon: typeof CheckCircle2;
 }> = {
+  script_ok: {
+    label: '脚本解析',
+    title: '平台脚本直接解析成功，零 AI',
+    className: 'bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-50',
+    Icon: Zap,
+  },
   fixed: {
     label: '已解析',
     title: '固定解析成功，质量达标',
