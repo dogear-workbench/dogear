@@ -206,16 +206,27 @@ async function renameInOrder(
 }
 
 /**
- * 抓取并解析网络文章
- * @param url - 文章 URL
- * @returns 解析后的文章数据（meta + markdown 正文 + 原始 HTML）
+ * 根据 URL 检测平台名称，用于选择对应的 Python 平台脚本。
+ * 返回 null 表示未识别的平台，走 Readability 兜底。
  */
-export async function fetchAndParseArticle(url: string): Promise<{
-  meta: ArticleMeta;
-  content: string;
-  rawHtml: string;
-}> {
-  // 1. 抓取 HTML
+export function detectPlatform(url: string): string | null {
+  try {
+    const host = new URL(url).hostname;
+    if (host === 'mp.weixin.qq.com') return 'wechat';
+    if (host.endsWith('.zhihu.com')) return 'zhihu';
+    if (host.endsWith('.juejin.cn') || host === 'juejin.cn') return 'juejin';
+    if (host.endsWith('.bilibili.com') || host === 'bilibili.com') return 'bilibili';
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 仅抓取 URL 的原始 HTML，不做解析。
+ * 供主流程在尝试平台脚本前预取，避免后续 Readability 重复抓取。
+ */
+export async function fetchRawHtml(url: string): Promise<string> {
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -224,7 +235,38 @@ export async function fetchAndParseArticle(url: string): Promise<{
   if (!response.ok) {
     throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
   }
-  const html = await response.text();
+  return response.text();
+}
+
+/**
+ * 抓取并解析网络文章
+ * @param url - 文章 URL
+ * @param options.rawHtml - 可选：预先抓取的原始 HTML；提供时跳过网络请求
+ * @returns 解析后的文章数据（meta + markdown 正文 + 原始 HTML）
+ */
+export async function fetchAndParseArticle(
+  url: string,
+  options?: { rawHtml?: string }
+): Promise<{
+  meta: ArticleMeta;
+  content: string;
+  rawHtml: string;
+}> {
+  // 1. 抓取 HTML（如果调用方已预取则直接使用，避免重复请求）
+  let html: string;
+  if (options?.rawHtml !== undefined) {
+    html = options.rawHtml;
+  } else {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
+    }
+    html = await response.text();
+  }
 
   // 2. 使用 linkedom 解析为 DOM
   const { document } = parseHTML(html);
