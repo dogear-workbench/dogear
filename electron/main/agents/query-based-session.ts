@@ -23,6 +23,8 @@ import path from 'path';
 import { app } from 'electron';
 import { buildQueryBaseConfig, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
 import type { AppSettings } from '../services/settings-types.js';
+import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
+import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -242,11 +244,18 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('已通过 settings.permissions 传递权限规则:', queryOptions.settings.permissions);
       }
 
-      // 配置 MCP Servers
-      if (this.config.mcpServers && Object.keys(this.config.mcpServers).length > 0) {
-        queryOptions.mcpServers = this.config.mcpServers;
-        this.logger.info('已配置 MCP Servers:', Object.keys(this.config.mcpServers));
-      }
+      // 配置 MCP Servers：始终挂载 article-parse 服务，并合并调用方传入的额外 servers
+      queryOptions.mcpServers = {
+        'dogear-article-parse': createArticleParseMcpServer(),
+        ...(this.config.mcpServers || {}),
+      };
+      this.logger.info('已配置 MCP Servers:', Object.keys(queryOptions.mcpServers));
+
+      // 配置 Skill 插件：注册 article-parser local skill
+      queryOptions.plugins = [
+        { type: 'local' as const, path: getArticleParserSkillsDir() },
+      ];
+      this.logger.info('已配置 Skill 插件: article-parser', getArticleParserSkillsDir());
 
       // 配置工作目录：cwd 使用用户选择的工作区路径，这样 agent 的工作上下文是用户的工作区
       if (this.config.workspacePath) {
