@@ -58,6 +58,9 @@ export interface AppSettings {
   };
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
+  ui?: {
+    messageDisplayMode: 'compact' | 'detailed'; // 工具/思考块显示模式
+  };
 }
 
 /** 内置默认系统提示词（不可删除） */
@@ -73,6 +76,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
   },
   personas: [],
+  ui: {
+    messageDisplayMode: 'compact',
+  },
   profiles: {
     default: {
       id: 'default',
