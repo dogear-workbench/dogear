@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GitBranch, FileText, Bot } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -109,14 +109,13 @@ export function MessageItem({
                         ))}
                       </div>
                     )}
-                    {/* 消息文本：默认 2 行折叠，点击展开 */}
+                    {/* 消息文本：默认 2 行折叠，通过右下角 chevron 按钮展开 */}
                     <div
                       className={cn(
-                        "whitespace-pre-wrap break-words text-sm text-foreground cursor-pointer select-text",
+                        "whitespace-pre-wrap break-words text-sm text-foreground",
                         !isStickyExpanded && "line-clamp-2",
                         isStickyExpanded && "max-h-[40vh] overflow-y-auto"
                       )}
-                      onClick={() => setIsStickyExpanded(v => !v)}
                     >
                       {parsed.userMessage}
                     </div>
@@ -146,6 +145,17 @@ export function MessageItem({
               </div>
             )}
           </div>
+          {/* 展开/收起按钮：右下角 chevron，避免选文字时意外触发 */}
+          <button
+            onClick={() => setIsStickyExpanded(v => !v)}
+            className="absolute bottom-1 right-2 p-0.5 rounded hover:bg-muted/50 transition-colors"
+            title={isStickyExpanded ? '收起' : '展开'}
+          >
+            {isStickyExpanded
+              ? <ChevronUp size={12} className="text-muted-foreground/60" />
+              : <ChevronDown size={12} className="text-muted-foreground/60" />
+            }
+          </button>
         </div>
       ) : (
         // AI 助手消息：无头像无外框，正文平齐左边缘
