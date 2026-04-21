@@ -1,15 +1,13 @@
 import { useState } from 'react';
-import { GitBranch, ChevronDown, ChevronRight, FileText, Bot } from 'lucide-react';
+import { GitBranch, FileText, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage } from './utils';
 import type { Message } from './types';
-
-/** 长文本折叠阈值 */
-const COLLAPSE_THRESHOLD = 300;
 
 export function MessageItem({
   message,
@@ -26,9 +24,8 @@ export function MessageItem({
 }) {
   const isUser = message.role === 'user';
 
-  // 长文本折叠状态
-  const [isExpanded, setIsExpanded] = useState(false);
-  const needsCollapse = isUser && message.content.length > COLLAPSE_THRESHOLD;
+  // sticky 展开/收起状态（用户消息默认折叠为 2 行）
+  const [isStickyExpanded, setIsStickyExpanded] = useState(false);
 
   // 压缩摘要消息：特殊卡片样式
   if (message.isCompactSummary) {
@@ -53,8 +50,8 @@ export function MessageItem({
   return (
     <div className="w-full py-4 group">
       {isUser ? (
-        // 用户消息：淡色外框包裹，无头像
-        <div className="relative border border-border rounded-lg px-4 py-2 bg-background/95">
+        // 用户消息：淡色外框包裹，无头像；sticky 粘住滚动区顶部
+        <div className="relative sticky top-0 z-10 border border-border rounded-lg px-4 py-2 bg-background/95 backdrop-blur-sm">
           {message.source === 'wechat-bot' && (
             <Bot className="w-3 h-3 text-green-500 absolute top-2 right-2" />
           )}
@@ -112,35 +109,16 @@ export function MessageItem({
                         ))}
                       </div>
                     )}
-                    {/* 消息文本；长文本支持折叠 */}
-                    <div className="whitespace-pre-wrap break-words text-sm text-foreground">
-                      {needsCollapse && !isExpanded ? (
-                        <>
-                          <span className="line-clamp-3">
-                            {parsed.userMessage}
-                          </span>
-                          <button
-                            onClick={() => setIsExpanded(true)}
-                            className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center gap-0.5"
-                          >
-                            <ChevronRight size={12} />
-                            展开全部
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          {parsed.userMessage}
-                          {needsCollapse && isExpanded && (
-                            <button
-                              onClick={() => setIsExpanded(false)}
-                              className="text-xs text-primary hover:text-primary/80 mt-1 flex items-center gap-0.5"
-                            >
-                              <ChevronDown size={12} />
-                              收起
-                            </button>
-                          )}
-                        </>
+                    {/* 消息文本：默认 2 行折叠，点击展开 */}
+                    <div
+                      className={cn(
+                        "whitespace-pre-wrap break-words text-sm text-foreground cursor-pointer select-text",
+                        !isStickyExpanded && "line-clamp-2",
+                        isStickyExpanded && "max-h-[40vh] overflow-y-auto"
                       )}
+                      onClick={() => setIsStickyExpanded(v => !v)}
+                    >
+                      {parsed.userMessage}
                     </div>
                     {/* 用户附带的图片缩略图 */}
                     {message.images && message.images.length > 0 && (
