@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
+import { Badge } from '@/components/ui/badge';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage } from './utils';
 import type { Message } from './types';
 
@@ -183,11 +184,9 @@ export function MessageItem({
           <div className="flex-1 min-w-0">
             {/* 模型名 badge：显示在消息正文上方 */}
             {message.model && (
-              <div className="mb-1">
-                <span className="inline-flex items-center h-5 px-2 rounded-md bg-muted text-muted-foreground text-xs font-medium">
-                  {formatModelName(message.model)}
-                </span>
-              </div>
+              <Badge variant="subtle" className="mb-1 h-5 rounded-md text-xs font-medium">
+                {formatModelName(message.model)}
+              </Badge>
             )}
             {/* 按照接收顺序渲染所有内容块 */}
             {message.contentBlocks && message.contentBlocks.length > 0 ? (
