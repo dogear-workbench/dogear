@@ -3,6 +3,7 @@
 import { Check, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
+import { useSettingsStore } from '@/stores/settings-store';
 
 /**
  * 工具调用状态
@@ -207,6 +208,8 @@ export function ToolBlock({
   citations,
   className,
 }: ToolBlockProps) {
+  const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
+  const defaultOpen = displayMode === 'detailed';
   const actualStatus: ToolStatus = isError ? "error" : status;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
@@ -231,6 +234,7 @@ export function ToolBlock({
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
       previewLines={2}
+      defaultOpen={defaultOpen}
       className={className}
     >
       <div className="space-y-1.5 text-xs rounded-md bg-muted/20 px-2.5 py-2">
