@@ -179,14 +179,16 @@ export function MessageItem({
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
               <span className="text-primary-foreground text-sm font-medium">AI</span>
             </div>
-            {/* 模型名称 */}
-            {message.model && (
-              <div className="text-[10px] text-muted-foreground text-center mt-0.5 max-w-[80px] truncate" title={message.model}>
-                {formatModelName(message.model)}
-              </div>
-            )}
           </div>
           <div className="flex-1 min-w-0">
+            {/* 模型名 badge：显示在消息正文上方 */}
+            {message.model && (
+              <div className="mb-1">
+                <span className="inline-flex items-center h-5 px-2 rounded-md bg-muted text-muted-foreground text-xs font-medium">
+                  {formatModelName(message.model)}
+                </span>
+              </div>
+            )}
             {/* 按照接收顺序渲染所有内容块 */}
             {message.contentBlocks && message.contentBlocks.length > 0 ? (
               <div className="space-y-2">
