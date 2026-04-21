@@ -54,7 +54,7 @@ export function MessageItem({
     <div className="w-full py-4 group">
       {isUser ? (
         // 用户消息：淡色外框包裹，无头像
-        <div className="relative border border-border rounded-lg px-4 py-3 bg-background/50">
+        <div className="relative border border-border rounded-lg px-4 py-2 bg-background/95">
           {message.source === 'wechat-bot' && (
             <Bot className="w-3 h-3 text-green-500 absolute top-2 right-2" />
           )}
@@ -171,8 +171,7 @@ export function MessageItem({
         </div>
       ) : (
         // AI 助手消息：无头像无外框，正文平齐左边缘
-        <div className="w-full">
-          <div className="min-w-0">
+        <div className="min-w-0">
             {/* 模型名 badge：显示在消息正文上方 */}
             {message.model && (
               <Badge variant="subtle" className="mb-1 h-5 rounded-md text-xs font-medium">
@@ -224,7 +223,6 @@ export function MessageItem({
               )}
             </div>
           </div>
-        </div>
       )}
     </div>
   );
