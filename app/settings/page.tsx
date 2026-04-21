@@ -102,6 +102,13 @@ export default function SettingsPage() {
     setLocal(prev => ({ ...prev, ai: { ...prev.ai, ...patch } }));
   };
 
+  const updateUI = (patch: Partial<NonNullable<AppSettings['ui']>>) => {
+    setLocal(prev => ({
+      ...prev,
+      ui: { ...(prev.ui ?? { messageDisplayMode: 'compact' }), ...patch }
+    }));
+  };
+
   // ── 保存 ──
   const handleSave = async () => {
     await saveToStore(local);
@@ -500,6 +507,40 @@ export default function SettingsPage() {
                   onChange={(e) => updateAI({ defaultSystemPrompt: e.target.value || BUILTIN_DEFAULT_SYSTEM_PROMPT })}
                   placeholder={BUILTIN_DEFAULT_SYSTEM_PROMPT}
                 />
+              </div>
+
+              {/* 消息显示模式 */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">消息显示模式</label>
+                <p className="text-xs text-muted-foreground">控制工具调用和思考过程的默认展开态</p>
+                <div className="space-y-2">
+                  <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
+                    <input
+                      type="radio"
+                      name="messageDisplayMode"
+                      className="mt-0.5"
+                      checked={(local.ui?.messageDisplayMode ?? 'compact') === 'compact'}
+                      onChange={() => updateUI({ messageDisplayMode: 'compact' })}
+                    />
+                    <div>
+                      <div className="text-sm font-medium">简化（推荐）</div>
+                      <div className="text-xs text-muted-foreground">工具调用和思考块默认折叠，只显示标题</div>
+                    </div>
+                  </label>
+                  <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
+                    <input
+                      type="radio"
+                      name="messageDisplayMode"
+                      className="mt-0.5"
+                      checked={local.ui?.messageDisplayMode === 'detailed'}
+                      onChange={() => updateUI({ messageDisplayMode: 'detailed' })}
+                    />
+                    <div>
+                      <div className="text-sm font-medium">详细</div>
+                      <div className="text-xs text-muted-foreground">工具调用和思考块默认展开，显示完整输入/输出</div>
+                    </div>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
