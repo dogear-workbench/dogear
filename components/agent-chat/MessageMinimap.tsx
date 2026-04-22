@@ -53,7 +53,8 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef }: MinimapProps
       });
     };
 
-    update();
+    // 延迟一帧等 DOM 布局完成
+    requestAnimationFrame(update);
     viewport.addEventListener('scroll', update);
     const resizeObs = new ResizeObserver(update);
     resizeObs.observe(viewport);
