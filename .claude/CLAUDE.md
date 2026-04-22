@@ -133,20 +133,28 @@ electron/
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
 
 ### 业务组件（components/）
-- `agent-chat/` — AI 聊天模块（从原 AgentChat.tsx 拆分）
-  - `AgentChat.tsx` — 主组件（~225行），组合 hooks + 布局 + 压缩历史折叠
+- `agent-chat/` — AI 聊天模块（从原 AgentChat.tsx 拆分，~20 文件）
+  - `AgentChat.tsx` — 主组件（~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成
   - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单）
-  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、分叉/编辑按钮）
+  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮）
   - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
-  - `SlashCommandMenu.tsx` — 斜杠命令浮动菜单（SDK + 自定义命令）
-  - `ThinkingBlock.tsx` — 思考块（可折叠）
+  - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）
+  - `SearchBar.tsx` — 搜索浮条（Ctrl+F 快捷键、文本匹配高亮、激活项自动滚动）
+  - `ThinkingBlock.tsx` — 思考块（compact/detailed 两种展示模式）
+  - `ToolBlock.tsx` — 工具块（含参数摘要、compact 模式 20px 胶囊行）
   - `StreamingIndicator.tsx` — 运行状态指示器（思考中/执行工具/生成中）
   - `AskUserQuestionCard.tsx` — AskUser 问题卡片（单选/多选）
   - `PermissionRequestCard.tsx` — 权限请求卡片（允许/拒绝/始终允许）
   - `CitationBadge.tsx` — 引用徽章
+  - `CollapsibleBlock.tsx` — 可折叠块基础组件
+  - `SubAgentPanel.tsx` — 子 Agent 面板
+  - `SubAgentBlock.tsx` — 子 Agent 块
+  - `highlight.ts` — 搜索高亮工具（mark 黄底 + active 橙底 ring）
+  - `minimap-utils.ts` — 消息预览提取工具函数
+  - `transformers.ts` — 消息转换工具
   - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary 等字段）
-  - `utils.ts` — 工具函数
-  - `hooks/` — 自定义 hooks
+  - `utils.ts` — 工具函数（getUserMessageSearchableText 等）
+  - `hooks/` — 自定义 hooks（10 个）
     - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
@@ -154,6 +162,9 @@ electron/
     - `useImageAttachment.ts` — 图片附件（base64、粘贴、预览）
     - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应、斜杠命令拦截
     - `useSlashCommands.ts` — 斜杠命令检测、过滤、菜单控制
+    - `useChatScroll.ts` — 统一滚动控制（AI 回答期间自动跟随、用户向上滚停止、searchToMessage/scrollToElement）
+    - `useMessageSearch.ts` — 消息搜索（文本匹配、高亮、激活项追踪）
+    - `useSubAgentMessages.ts` — 子 Agent 消息流处理
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
@@ -161,11 +172,12 @@ electron/
 - `workspace-selector.tsx` — 工作区选择/创建界面
 - `reader.tsx` — 电子书阅读器，章节导航 + 目录侧边栏 + AI面板
 - `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮
-- `ToolBlock.tsx` — 工具调用块，可折叠显示工具输入/输出/状态
+- `ToolBlock.tsx` — 工具调用块，compact/detailed 两种模式，参数摘要
 - `book-card.tsx` — 书籍卡片（封面、标题、作者、操作按钮）
 - `book-list.tsx` — ⚠️ 已弃用，使用 WorkspaceExplorer 替代
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 - `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸
+- `ArticleParseHistoryPanel.tsx` — 网络文章解析历史面板，追踪 script/readability/ai 状态
 - `wechat/` — 微信 Bot 模块
   - `WechatDialog.tsx` — 微信认证 Dialog（QR码扫描 / Bot 控制面板）
   - `BotControlPanel.tsx` — Bot 控制面板（名称、轮询状态、连接错误、断开连接）
@@ -233,7 +245,8 @@ electron/
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
-- `article-service.ts` — 网络文章抓取（readability + turndown → Markdown），微信公众号特殊处理
+- `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
+- `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义（新增）
 - `workspace-service.ts` — 工作区目录结构管理、元数据/分析结果读写
 - `workspace-fs-service.ts` — 文件树扫描和文件系统操作（安全路径验证）
 - `chapter-recognizer.ts` — 文本章节标题识别算法（5种模式匹配）
