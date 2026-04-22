@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Message } from '../types';
+import { getUserMessageSearchableText } from '../utils';
 
 export interface SearchMatch {
   id: string;
@@ -48,18 +49,16 @@ export function useMessageSearch(messages: Message[]) {
       messages.forEach((msg, messageIndex) => {
         if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary) return;
 
-        // 用户消息：去除 XML 引用标签后匹配纯文本
+        // 用户消息: 用统一的 searchable text(与 MessageItem 渲染 offset 对齐)
         if (msg.role === 'user' && msg.content) {
-          const pureText = msg.content
-            .replace(/<referenced_articles>[\s\S]*?<\/referenced_articles>/g, '')
-            .replace(/<quoted_snippet[^>]*>[\s\S]*?<\/quoted_snippet>/g, '')
-            .replace(/<command-[a-z-]+>[\s\S]*?<\/command-[a-z-]+>/g, '')
-            .replace(/^\n+/, '').trim();
-          let idx = 0;
-          const lower = pureText.toLowerCase();
-          while ((idx = lower.indexOf(q, idx)) !== -1) {
-            result.push({ id: `${messageIndex}-u-${idx}`, messageIndex, blockIndex: -1, textStart: idx, textEnd: idx + q.length });
-            idx += q.length;
+          const pureText = getUserMessageSearchableText(msg.content);
+          if (pureText) {
+            let idx = 0;
+            const lower = pureText.toLowerCase();
+            while ((idx = lower.indexOf(q, idx)) !== -1) {
+              result.push({ id: `${messageIndex}-u-${idx}`, messageIndex, blockIndex: -1, textStart: idx, textEnd: idx + q.length });
+              idx += q.length;
+            }
           }
         }
 

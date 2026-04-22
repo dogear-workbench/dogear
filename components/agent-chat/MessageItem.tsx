@@ -55,10 +55,17 @@ export function MessageItem({
   }
 
   return (
-    <div className="w-full py-4 group" data-message-id={messageIndex !== undefined ? `msg-${messageIndex}` : undefined}>
+    <div
+      className={cn(
+        'w-full my-2 group',
+        // sticky 在最外层: 用 margin 而非 padding,避免 padding 区出现多余底色
+        isUser && 'sticky top-0 z-10',
+      )}
+      data-message-id={messageIndex !== undefined ? `msg-${messageIndex}` : undefined}
+    >
       {isUser ? (
-        // 用户消息：加粗外框+阴影；sticky 粘住滚动区顶部时阴影更强
-        <div className="relative sticky top-0 z-10 border-2 border-muted-foreground/25 rounded-lg px-4 py-2 bg-background/95 backdrop-blur-sm shadow-md">
+        // 用户消息: 加粗外框+阴影+完全不透明,遮挡后面滚过的 AI 回答
+        <div className="relative border-2 border-muted-foreground/25 rounded-lg px-4 py-2 bg-background shadow-md">
           {message.source === 'wechat-bot' && (
             <Bot className="w-3 h-3 text-green-500 absolute top-2 right-2" />
           )}

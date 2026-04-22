@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, Archive, GitBranch, Send, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -17,6 +17,7 @@ import { useSessionEvents } from './hooks/useSessionEvents';
 import { useImageAttachment } from './hooks/useImageAttachment';
 import { useSendMessage, type QueuedMessageEntry } from './hooks/useSendMessage';
 import { useSlashCommands } from './hooks/useSlashCommands';
+import { useChatScroll } from './hooks/useChatScroll';
 import { StreamingIndicator } from './StreamingIndicator';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
@@ -97,65 +98,15 @@ export function AgentChat({
   // 必须在两个 hook 之前声明（React Hooks 顺序规则）
   const queuedMessagesRef = useRef<QueuedMessageEntry[]>([]);
 
-  // ─── 滚动控制（需在 useSessionEvents 之前声明，供其闭包引用）───
+  // ─── 滚动控制（统一入口: useChatScroll）───
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  // isAtBottom: 用户是否在底部附近（控制"回到底部"按钮显示 + 自动跟随）
-  const isAtBottomRef = useRef(true);
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
-
-  // 获取 Radix ScrollArea 的实际滚动视口元素
-  const getViewportEl = useCallback(() => {
-    return scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null;
-  }, []);
-
-  // 检测是否在底部（50px 容差）
-  const checkAtBottom = useCallback((el: HTMLElement) => {
-    return el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-  }, []);
-
-  // 滚到底部（用户点击按钮时用 smooth，程序自动跟随用同步赋值）
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
-    const el = getViewportEl();
-    if (!el) return;
-    if (behavior === 'instant') {
-      el.scrollTop = el.scrollHeight;
-    } else {
-      el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
-    }
-    isAtBottomRef.current = true;
-    setShowScrollBtn(false);
-  }, [getViewportEl]);
-
-  // 通用：把指定元素滚动到 viewport 中央（替代 scrollIntoView，Radix ScrollArea 更可靠）
-  const scrollElementIntoView = useCallback((el: HTMLElement) => {
-    const viewport = getViewportEl();
-    if (!viewport || !el) return;
-    const elRect = el.getBoundingClientRect();
-    const vpRect = viewport.getBoundingClientRect();
-    const offset = elRect.top - vpRect.top + viewport.scrollTop
-                 - viewport.clientHeight / 2 + el.clientHeight / 2;
-    viewport.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
-  }, [getViewportEl]);
-
-  // 用户滚动时检测位置，更新 isAtBottom 状态
-  const handleScroll = useCallback(() => {
-    const el = getViewportEl();
-    if (!el) return;
-    const atBottom = checkAtBottom(el);
-    isAtBottomRef.current = atBottom;
-    setShowScrollBtn(!atBottom);
-  }, [getViewportEl, checkAtBottom]);
-
-  // 轮询保持底部：在底部就一直钉在底部，不依赖任何事件
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (isAtBottomRef.current) {
-        const el = getViewportEl();
-        if (el) el.scrollTop = el.scrollHeight;
-      }
-    }, 50);
-    return () => clearInterval(id);
-  }, [getViewportEl]);
+  const {
+    showScrollBtn,
+    scrollToBottom,
+    scrollToMessage,
+    scrollToElement,
+    handleScroll,
+  } = useChatScroll({ scrollAreaRef, isLoading });
 
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
@@ -263,12 +214,12 @@ export function AgentChat({
     return () => window.removeEventListener('keydown', handler);
   }, [openSearch]);
 
-  // Task 9: 激活项切换时自动滚动到视口中央（用 viewport 手动滚动，双向可靠）
+  // 搜索激活项切换时: 滚动到上 1/3 位置
   useEffect(() => {
     if (!search.activeMatch) return;
     const el = document.querySelector(`[data-match-id="${search.activeMatch.id}"]`) as HTMLElement | null;
-    if (el) scrollElementIntoView(el);
-  }, [search.activeMatch?.id, scrollElementIntoView]);
+    if (el) scrollToElement(el, { align: 'top-third' });
+  }, [search.activeMatch?.id, scrollToElement]);
 
   return (
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
@@ -402,7 +353,7 @@ export function AgentChat({
             messages={messages}
             hidden={search.isOpen}
             scrollAreaRef={scrollAreaRef}
-            onJumpTo={scrollElementIntoView}
+            onJumpToMessage={(idx) => scrollToMessage(idx, { align: 'top', flash: true })}
           />
         </div>
 

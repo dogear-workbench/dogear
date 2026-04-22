@@ -58,6 +58,19 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
 }
 
 /**
+ * 提取用户消息中"可被搜索/可被高亮"的纯文本,与 MessageItem 渲染用的
+ * parseUserMessageReferences().userMessage 保持 offset 完全一致
+ *
+ * 若消息是 SDK 斜杠命令(<command-name> 格式),返回空串—— MessageItem 会渲染
+ * 成命令芯片,正文不参与搜索
+ */
+export function getUserMessageSearchableText(content: string): string {
+  const slash = parseSlashCommandMessage(content);
+  if (slash.isCommand) return '';
+  return parseUserMessageReferences(content).userMessage;
+}
+
+/**
  * 检测用户消息是否为 SDK 斜杠命令格式
  * SDK 存储格式:
  *   <command-name>/xxx</command-name>
