@@ -54,11 +54,15 @@ function parseErrorMessage(error: string): { title: string; description: string;
   return { title: '错误', description: error.substring(0, 100) + '...', detail: error };
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, searchQuery, activeMatchId, messageIndex, blockIndex }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
+  searchQuery?: string;
+  activeMatchId?: string | null;
+  messageIndex?: number;
+  blockIndex?: number;
 }) {
   switch (block.type) {
     case 'tool_use':
@@ -297,7 +301,13 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     case 'text':
     default:
       return block.content ? (
-        <MarkdownRenderer content={block.content} className="text-sm" />
+        <MarkdownRenderer
+          content={block.content}
+          className="text-sm"
+          searchQuery={searchQuery}
+          matchIdPrefix={messageIndex !== undefined && blockIndex !== undefined ? `${messageIndex}-${blockIndex}` : undefined}
+          activeMatchId={activeMatchId}
+        />
       ) : null;
   }
 }

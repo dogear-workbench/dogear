@@ -1,27 +1,59 @@
 
+import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
+import { highlightText } from './agent-chat/highlight';
 
 interface MarkdownRendererProps {
   /** Markdown 文本内容 */
   content: string;
   /** 额外的 CSS 类名 */
   className?: string;
+  /** 搜索关键词，用于高亮显示 */
+  searchQuery?: string;
+  /** match id 前缀，格式 `${messageIndex}-${blockIndex}` */
+  matchIdPrefix?: string;
+  /** 当前激活的 match id */
+  activeMatchId?: string | null;
+}
+
+/**
+ * 对 children 中的 string 类型子节点应用高亮
+ */
+function wrapChildren(
+  children: React.ReactNode,
+  query?: string,
+  prefix?: string,
+  activeId?: string | null
+): React.ReactNode {
+  if (!query?.trim() || !prefix) return children;
+  return React.Children.map(children, child =>
+    typeof child === 'string' ? highlightText(child, query, prefix, activeId ?? null) : child
+  );
 }
 
 /**
  * 通用 Markdown 渲染组件
  * 支持 GFM 语法（表格、删除线等）、代码高亮、图片防盗链、链接安全拦截
+ * 支持搜索高亮（searchQuery + matchIdPrefix + activeMatchId）
  */
-export function MarkdownRenderer({ content, className }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId }: MarkdownRendererProps) {
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={{
+          // 段落：对 string 子节点应用搜索高亮
+          p: ({ children, ...props }) => (
+            <p {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId)}</p>
+          ),
+          // 列表项：对 string 子节点应用搜索高亮
+          li: ({ children, ...props }) => (
+            <li {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId)}</li>
+          ),
           // 表格：添加边框和样式
           table: ({ children, ...props }) => (
             <div className="overflow-x-auto my-4">

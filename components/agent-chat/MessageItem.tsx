@@ -7,20 +7,27 @@ import { ContentBlockItem } from './ContentBlockItem';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage } from './utils';
+import { highlightText } from './highlight';
 import type { Message } from './types';
 
 export function MessageItem({
   message,
+  messageIndex,
   onFork,
   sessionId,
   onPermissionResolved,
   onAskUserResolved,
+  searchQuery,
+  activeMatchId,
 }: {
   message: Message;
+  messageIndex?: number;
   onFork?: (assistantSdkUuid: string) => void;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
+  searchQuery?: string;
+  activeMatchId?: string | null;
 }) {
   const isUser = message.role === 'user';
 
@@ -48,7 +55,7 @@ export function MessageItem({
   }
 
   return (
-    <div className="w-full py-4 group">
+    <div className="w-full py-4 group" data-message-id={messageIndex !== undefined ? `msg-${messageIndex}` : undefined}>
       {isUser ? (
         // 用户消息：淡色外框包裹，无头像；sticky 粘住滚动区顶部
         <div className="relative sticky top-0 z-10 border border-border rounded-lg px-4 py-2 bg-background/95 backdrop-blur-sm">
@@ -117,7 +124,10 @@ export function MessageItem({
                         isStickyExpanded && "max-h-[40vh] overflow-y-auto"
                       )}
                     >
-                      {parsed.userMessage}
+                      {searchQuery && messageIndex !== undefined
+                        ? highlightText(parsed.userMessage, searchQuery, `${messageIndex}-u`, activeMatchId ?? null)
+                        : parsed.userMessage
+                      }
                     </div>
                     {/* 用户附带的图片缩略图 */}
                     {message.images && message.images.length > 0 && (
@@ -170,11 +180,27 @@ export function MessageItem({
             {message.contentBlocks && message.contentBlocks.length > 0 ? (
               <div className="space-y-2">
                 {message.contentBlocks.map((block, idx) => (
-                  <ContentBlockItem key={idx} block={block} sessionId={sessionId} onPermissionResolved={onPermissionResolved} onAskUserResolved={onAskUserResolved} />
+                  <ContentBlockItem
+                    key={idx}
+                    block={block}
+                    blockIndex={idx}
+                    sessionId={sessionId}
+                    onPermissionResolved={onPermissionResolved}
+                    onAskUserResolved={onAskUserResolved}
+                    searchQuery={searchQuery}
+                    activeMatchId={activeMatchId}
+                    messageIndex={messageIndex}
+                  />
                 ))}
               </div>
             ) : message.content ? (
-              <MarkdownRenderer content={message.content} className="text-sm" />
+              <MarkdownRenderer
+                content={message.content}
+                className="text-sm"
+                searchQuery={searchQuery}
+                matchIdPrefix={messageIndex !== undefined ? `${messageIndex}-c` : undefined}
+                activeMatchId={activeMatchId}
+              />
             ) : null}
 
             {/* 流式输出状态 */}

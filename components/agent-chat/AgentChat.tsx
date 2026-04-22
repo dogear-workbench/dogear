@@ -233,8 +233,8 @@ export function AgentChat({
     sendMessage.setInput(newInput);
   };
 
-  // 消息搜索
-  const search = useMessageSearch();
+  // 消息搜索（传入 messages 以实时计算匹配）
+  const search = useMessageSearch(messages);
   // 解构出稳定引用，避免 useEffect deps 依赖整个 search 对象
   const openSearch = search.open;
 
@@ -249,6 +249,13 @@ export function AgentChat({
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [openSearch]);
+
+  // Task 9: 激活项切换时自动滚动到视口中央
+  useEffect(() => {
+    if (!search.activeMatch) return;
+    const el = document.querySelector(`[data-match-id="${search.activeMatch.id}"]`);
+    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [search.activeMatch?.id]);
 
   return (
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
@@ -308,10 +315,13 @@ export function AgentChat({
             <MessageItem
               key={index}
               message={message}
+              messageIndex={index}
               onFork={sendMessage.handleFork}
               sessionId={sessionId}
               onPermissionResolved={sendMessage.handlePermissionResolved}
               onAskUserResolved={sendMessage.handleAskUserResolved}
+              searchQuery={search.query || undefined}
+              activeMatchId={search.activeMatch?.id ?? null}
             />
           );
 
