@@ -18,6 +18,8 @@ import { useImageAttachment } from './hooks/useImageAttachment';
 import { useSendMessage, type QueuedMessageEntry } from './hooks/useSendMessage';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { StreamingIndicator } from './StreamingIndicator';
+import { SearchBar } from './SearchBar';
+import { useMessageSearch } from './hooks/useMessageSearch';
 
 /**
  * Agent 聊天组件
@@ -231,10 +233,35 @@ export function AgentChat({
     sendMessage.setInput(newInput);
   };
 
+  // 消息搜索
+  const search = useMessageSearch();
+
+  // Ctrl+F 唤起搜索浮条
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault();
+        search.open();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [search.open]);
+
   return (
     <div className="flex flex-col h-full bg-white rounded-lg border">
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
+        <SearchBar
+          isOpen={search.isOpen}
+          query={search.query}
+          setQuery={search.setQuery}
+          totalMatches={search.matches.length}
+          activeIndex={search.activeIndex}
+          onPrev={search.prev}
+          onNext={search.next}
+          onClose={search.close}
+        />
       <ScrollArea
         ref={scrollAreaRef}
         className="h-full"
