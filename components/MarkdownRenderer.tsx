@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
@@ -40,71 +40,75 @@ function wrapChildren(
  * 支持搜索高亮（searchQuery + matchIdPrefix + activeMatchId）
  */
 export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId }: MarkdownRendererProps) {
+  // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
+  // 只有搜索相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）
+  const mdComponents = useMemo(() => ({
+    // 段落：对 string 子节点应用搜索高亮
+    p: ({ children, ...props }: React.ComponentPropsWithoutRef<'p'>) => (
+      <p {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId)}</p>
+    ),
+    // 列表项：对 string 子节点应用搜索高亮
+    li: ({ children, ...props }: React.ComponentPropsWithoutRef<'li'>) => (
+      <li {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId)}</li>
+    ),
+    // 表格：添加边框和样式
+    table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
+      <div className="overflow-x-auto my-4">
+        <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600" {...props}>
+          {children}
+        </table>
+      </div>
+    ),
+    th: ({ children, ...props }: React.ComponentPropsWithoutRef<'th'>) => (
+      <th className="border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 px-3 py-2 text-left text-sm font-semibold" {...props}>
+        {children}
+      </th>
+    ),
+    td: ({ children, ...props }: React.ComponentPropsWithoutRef<'td'>) => (
+      <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm" {...props}>
+        {children}
+      </td>
+    ),
+    // 代码块：添加圆角和溢出滚动
+    pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
+      <pre className="rounded-lg overflow-x-auto p-4 my-3 bg-gray-900 text-gray-100" {...props}>
+        {children}
+      </pre>
+    ),
+    // 链接：拦截默认导航，改为外部浏览器打开
+    a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => (
+      <a
+        href={href}
+        onClick={(e) => {
+          e.preventDefault();
+          if (href) window.open(href, '_blank');
+        }}
+        className="text-blue-500 hover:underline"
+        {...props}
+      >
+        {children}
+      </a>
+    ),
+    // 图片：限制最大宽度，防盗链处理
+    img: ({ src, alt, ...props }: React.ComponentPropsWithoutRef<'img'>) => (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={src}
+        alt={alt || ''}
+        className="max-w-full h-auto rounded"
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        {...props}
+      />
+    ),
+  }), [searchQuery, matchIdPrefix, activeMatchId]);
+
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
-        components={{
-          // 段落：对 string 子节点应用搜索高亮
-          p: ({ children, ...props }) => (
-            <p {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId)}</p>
-          ),
-          // 列表项：对 string 子节点应用搜索高亮
-          li: ({ children, ...props }) => (
-            <li {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId)}</li>
-          ),
-          // 表格：添加边框和样式
-          table: ({ children, ...props }) => (
-            <div className="overflow-x-auto my-4">
-              <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600" {...props}>
-                {children}
-              </table>
-            </div>
-          ),
-          th: ({ children, ...props }) => (
-            <th className="border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 px-3 py-2 text-left text-sm font-semibold" {...props}>
-              {children}
-            </th>
-          ),
-          td: ({ children, ...props }) => (
-            <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm" {...props}>
-              {children}
-            </td>
-          ),
-          // 代码块：添加圆角和溢出滚动
-          pre: ({ children, ...props }) => (
-            <pre className="rounded-lg overflow-x-auto p-4 my-3 bg-gray-900 text-gray-100" {...props}>
-              {children}
-            </pre>
-          ),
-          // 链接：拦截默认导航，改为外部浏览器打开
-          a: ({ href, children, ...props }) => (
-            <a
-              href={href}
-              onClick={(e) => {
-                e.preventDefault();
-                if (href) window.open(href, '_blank');
-              }}
-              className="text-blue-500 hover:underline"
-              {...props}
-            >
-              {children}
-            </a>
-          ),
-          // 图片：限制最大宽度，防盗链处理
-          img: ({ src, alt, ...props }) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={src}
-              alt={alt || ''}
-              className="max-w-full h-auto rounded"
-              loading="lazy"
-              referrerPolicy="no-referrer"
-              {...props}
-            />
-          ),
-        }}
+        components={mdComponents}
       >
         {content}
       </ReactMarkdown>
