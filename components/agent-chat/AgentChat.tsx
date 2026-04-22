@@ -20,6 +20,7 @@ import { useSlashCommands } from './hooks/useSlashCommands';
 import { StreamingIndicator } from './StreamingIndicator';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
+import { MessageMinimap } from './MessageMinimap';
 
 /**
  * Agent 聊天组件
@@ -269,6 +270,11 @@ export function AgentChat({
         onPrev={search.prev}
         onNext={search.next}
         onClose={search.close}
+      />
+      <MessageMinimap
+        messages={messages}
+        hidden={search.isOpen}
+        scrollAreaRef={scrollAreaRef}
       />
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
