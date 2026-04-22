@@ -26,10 +26,9 @@ export function highlightText(
       React.createElement('mark', {
         key: `mark-${counter}`,
         'data-match-id': matchId,
-        style: { background: 'transparent' },
         className: isActive
-          ? 'text-orange-600 font-medium'
-          : 'text-orange-500',
+          ? 'bg-orange-400 text-white rounded px-0.5 ring-2 ring-orange-600'
+          : 'bg-yellow-200 text-foreground rounded px-0.5',
       }, text.slice(idx, idx + q.length))
     );
     lastEnd = idx + q.length;

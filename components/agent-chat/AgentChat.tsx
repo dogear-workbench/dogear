@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronDown, Archive, GitBranch, Send } from 'lucide-react';
+import { ChevronDown, Archive, GitBranch, Send, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
@@ -37,6 +37,7 @@ export function AgentChat({
   useSdkResume = true,
   showReplayMessages = true,
   conversationIdOverride,
+  rightPanelToggle,
 }: AgentChatProps) {
   // UI 状态
   const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
@@ -123,6 +124,17 @@ export function AgentChat({
     }
     isAtBottomRef.current = true;
     setShowScrollBtn(false);
+  }, [getViewportEl]);
+
+  // 通用：把指定元素滚动到 viewport 中央（替代 scrollIntoView，Radix ScrollArea 更可靠）
+  const scrollElementIntoView = useCallback((el: HTMLElement) => {
+    const viewport = getViewportEl();
+    if (!viewport || !el) return;
+    const elRect = el.getBoundingClientRect();
+    const vpRect = viewport.getBoundingClientRect();
+    const offset = elRect.top - vpRect.top + viewport.scrollTop
+                 - viewport.clientHeight / 2 + el.clientHeight / 2;
+    viewport.scrollTo({ top: Math.max(0, offset), behavior: 'smooth' });
   }, [getViewportEl]);
 
   // 用户滚动时检测位置，更新 isAtBottom 状态
@@ -251,12 +263,12 @@ export function AgentChat({
     return () => window.removeEventListener('keydown', handler);
   }, [openSearch]);
 
-  // Task 9: 激活项切换时自动滚动到视口中央
+  // Task 9: 激活项切换时自动滚动到视口中央（用 viewport 手动滚动，双向可靠）
   useEffect(() => {
     if (!search.activeMatch) return;
-    const el = document.querySelector(`[data-match-id="${search.activeMatch.id}"]`);
-    if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [search.activeMatch?.id]);
+    const el = document.querySelector(`[data-match-id="${search.activeMatch.id}"]`) as HTMLElement | null;
+    if (el) scrollElementIntoView(el);
+  }, [search.activeMatch?.id, scrollElementIntoView]);
 
   return (
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
@@ -271,19 +283,14 @@ export function AgentChat({
         onNext={search.next}
         onClose={search.close}
       />
-      <MessageMinimap
-        messages={messages}
-        hidden={search.isOpen}
-        scrollAreaRef={scrollAreaRef}
-      />
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
       <ScrollArea
         ref={scrollAreaRef}
-        className="h-full"
+        className="h-full pr-12"
         onScrollCapture={handleScroll}
       >
-        <div className="px-4">
+        <div className="px-6">
         {/* 分叉来源 Banner */}
         {selectedConv?.fork_pending && selectedConv?.parent_conversation_id && (
           <div className="flex items-center gap-2 px-3 py-2 my-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
@@ -375,15 +382,43 @@ export function AgentChat({
         </div>
       </ScrollArea>
 
-      {/* 跳到最新按钮 */}
-      {showScrollBtn && (
-        <button
-          onClick={() => scrollToBottom()}
-          className="absolute bottom-20 right-4 z-10 w-8 h-8 rounded-full bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm flex items-center justify-center transition-all shadow-sm"
-        >
-          <ChevronDown size={16} className="text-foreground/60" />
-        </button>
-      )}
+      {/* 右侧工具轨道：w-12 透明浮层，顶部+底部两组按钮 */}
+      <div className="absolute top-0 right-0 bottom-0 w-12 flex flex-col pointer-events-none z-10">
+        {/* 顶部按钮组：右栏折叠 + Minimap */}
+        <div className="flex flex-col gap-1 p-1 pointer-events-auto">
+          {rightPanelToggle && (
+            <button
+              onClick={rightPanelToggle.onToggle}
+              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+              title={rightPanelToggle.open ? '折叠预览面板' : '展开预览面板'}
+            >
+              {rightPanelToggle.open
+                ? <PanelRightClose size={14} />
+                : <PanelRightOpen size={14} />
+              }
+            </button>
+          )}
+          <MessageMinimap
+            messages={messages}
+            hidden={search.isOpen}
+            scrollAreaRef={scrollAreaRef}
+            onJumpTo={scrollElementIntoView}
+          />
+        </div>
+
+        {/* 底部按钮组：回到底部 */}
+        <div className="mt-auto flex flex-col gap-1 p-1 pointer-events-auto">
+          {showScrollBtn && (
+            <button
+              onClick={() => scrollToBottom()}
+              className="w-8 h-8 flex items-center justify-center rounded-md bg-foreground/10 hover:bg-foreground/20 backdrop-blur-sm text-foreground/60 transition-colors shadow-sm"
+              title="回到底部"
+            >
+              <ChevronDown size={14} />
+            </button>
+          )}
+        </div>
+      </div>
       </div>
 
       {/* 排队消息悬浮预览区（消息已发后端排队，此处只读展示） */}

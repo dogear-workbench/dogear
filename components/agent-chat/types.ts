@@ -111,6 +111,11 @@ export interface AgentChatProps {
   showReplayMessages?: boolean;
   /** 覆盖 conversationId（多标签页模式下使用） */
   conversationIdOverride?: string;
+  /** 右侧面板折叠控制（主页/独立会话窗口传入，渲染到右侧工具轨道顶部） */
+  rightPanelToggle?: {
+    open: boolean;
+    onToggle: () => void;
+  };
 }
 
 /**

@@ -6,6 +6,7 @@ import { AgentChat } from '@/components/agent-chat/AgentChat';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 import { client } from '@/lib/client';
+import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -13,6 +14,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
 
@@ -106,12 +108,21 @@ export function SessionWindowPage() {
             <AgentChat
               conversationIdOverride={conversationId}
               showStatusHint={false}
+              rightPanelToggle={{
+                open: rightPanelOpen,
+                onToggle: () => setRightPanelOpen(v => !v),
+              }}
             />
           ) : null}
         </main>
 
-        {/* 右侧：文章预览 */}
-        <aside className="w-80 border-l overflow-hidden flex-shrink-0">
+        {/* 右侧：文章预览（可折叠） */}
+        <aside
+          className={cn(
+            'border-l overflow-hidden flex-shrink-0 transition-[width]',
+            rightPanelOpen ? 'w-80' : 'w-0 border-l-0'
+          )}
+        >
           <ArticlePreview />
         </aside>
       </div>

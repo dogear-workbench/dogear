@@ -5,7 +5,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, PanelRightOpen, PanelRightClose, MessageCircle } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { StatusPulse } from '@/components/StatusPulse';
@@ -328,16 +328,6 @@ export default function Home() {
                     </button>
                   </div>
                 ))}
-                {/* 切换右侧预览面板 */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 ml-auto text-muted-foreground hover:text-foreground"
-                  title={rightPanelOpen ? '折叠预览面板' : '展开预览面板'}
-                  onClick={toggleRightPanel}
-                >
-                  {rightPanelOpen ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-                </Button>
               </div>
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
@@ -356,6 +346,7 @@ export default function Home() {
                     placeholder="我可以帮你分析书籍内容、回答问题..."
                     showStatusHint={false}
                     conversationIdOverride={tab.conversationId}
+                    rightPanelToggle={{ open: rightPanelOpen, onToggle: toggleRightPanel }}
                   />
                 </div>
               ))}

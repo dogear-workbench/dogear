@@ -209,7 +209,6 @@ export function ToolBlock({
   className,
 }: ToolBlockProps) {
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
-  const defaultOpen = displayMode === 'detailed';
   const actualStatus: ToolStatus = isError ? "error" : status;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
@@ -219,6 +218,33 @@ export function ToolBlock({
   const titleText = summary
     ? `${formatToolName(toolName)} ${summary}`
     : formatToolName(toolName);
+
+  // 简化模式：只渲染一行胶囊（含参数摘要），不可展开
+  if (displayMode === 'compact') {
+    return (
+      <div
+        className={cn(
+          "inline-flex items-center gap-1 px-2 h-5 rounded-full bg-muted/70 text-xs max-w-full",
+          actualStatus === 'error' && 'bg-red-50 text-red-600',
+          actualStatus === 'running' && 'bg-sky-50 text-sky-600',
+          actualStatus !== 'error' && actualStatus !== 'running' && 'text-muted-foreground',
+          className
+        )}
+        title={summary ? `${formatToolName(toolName)} · ${summary}` : formatToolName(toolName)}
+      >
+        <span>{icon}</span>
+        <span className="font-medium flex-shrink-0">{formatToolName(toolName)}</span>
+        {summary && (
+          <>
+            <span className="opacity-50 flex-shrink-0">·</span>
+            <span className="opacity-80 truncate">{summary}</span>
+          </>
+        )}
+        {actualStatus === 'running' && <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />}
+        {actualStatus === 'error' && <X className="w-3 h-3 flex-shrink-0" />}
+      </div>
+    );
+  }
 
   return (
     <CollapsibleBlock
@@ -234,7 +260,7 @@ export function ToolBlock({
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
       previewLines={2}
-      defaultOpen={defaultOpen}
+      defaultOpen={false}
       className={className}
     >
       <div className="space-y-1.5 text-xs rounded-md bg-muted/20 px-2.5 py-2">
