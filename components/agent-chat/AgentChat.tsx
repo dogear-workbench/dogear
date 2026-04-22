@@ -235,33 +235,36 @@ export function AgentChat({
 
   // 消息搜索
   const search = useMessageSearch();
+  // 解构出稳定引用，避免 useEffect deps 依赖整个 search 对象
+  const openSearch = search.open;
 
   // Ctrl+F 唤起搜索浮条
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
         e.preventDefault();
-        search.open();
+        openSearch();
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [search.open]);
+  }, [openSearch]);
 
   return (
-    <div className="flex flex-col h-full bg-white rounded-lg border">
+    <div className="relative flex flex-col h-full bg-white rounded-lg border">
+      {/* SearchBar 挂在最外层 relative 容器，避免被内部 overflow-hidden 裁剪 */}
+      <SearchBar
+        isOpen={search.isOpen}
+        query={search.query}
+        setQuery={search.setQuery}
+        totalMatches={search.matches.length}
+        activeIndex={search.activeIndex}
+        onPrev={search.prev}
+        onNext={search.next}
+        onClose={search.close}
+      />
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
-        <SearchBar
-          isOpen={search.isOpen}
-          query={search.query}
-          setQuery={search.setQuery}
-          totalMatches={search.matches.length}
-          activeIndex={search.activeIndex}
-          onPrev={search.prev}
-          onNext={search.next}
-          onClose={search.close}
-        />
       <ScrollArea
         ref={scrollAreaRef}
         className="h-full"
