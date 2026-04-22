@@ -294,6 +294,27 @@ electron/
 
 > IPC 通信、Agent 开发、前端组件的详细规则在 `.claude/rules/` 中按路径自动加载，此处只列全局约定。
 
+### 模块化与解耦原则 ⭐
+
+**新增功能必须优先考虑解耦，避免单文件膨胀**。参考已有的模块化实践：
+
+- **前端组件**：`agent-chat/` 模块（15+ 文件，主组件 225 行）、`stock/` 模块（KLineChart/TimelineChart/MoneyFlow 等各司其职）
+- **服务层**：`electron/main/services/stock/` 模块（rate-limiter/stock-service/stock-watchlist-service/stock-data-service/python-bridge/formula-service）
+- **Agent 工具**：`electron/main/agents/tools/` 目录（tool-registry/book-qa-tools/book-analysis-tools/article-tools/stock-tools/stock-analysis-tools）
+
+**复杂功能拆分检查单**：
+- ✅ 单个函数或组件 >300 行 → 拆成多个小组件或工具函数
+- ✅ 涉及 3+ 个独立的责任 → 分别创建 Service/Hook/Utility 文件
+- ✅ 有可复用的子流程 → 提取为独立的 Hook / Service 方法 / 工具函数
+- ✅ 前端逻辑 + UI 渲染混杂 → 分离成 Container + Presentational Component，或创建 Custom Hook
+- ✅ IPC 处理 + 业务逻辑 + 数据存储混杂 → 分离成 tipc handler / Service / DAO 三层
+- ✅ 工具集合超过 5 个 → 按功能域创建新的工具文件或子目录（如 `stock-analysis-tools.ts`）
+
+**实施步骤**：
+1. **先设计**：实现前梳理职责，识别可复用部分
+2. **后编码**：按职责分离创建文件，保留聚合入口（barrel export）
+3. **文档化**：在相应目录的 README.md 或 CLAUDE.md 注明职责边界
+
 ### 数据存储（JSON 文件）
 
 - 所有持久化数据使用 JSON 文件，不使用 SQLite
@@ -346,3 +367,5 @@ electron/
 - **不要**绕过 tipc 直接使用 ipcMain/ipcRenderer 通信
 - **不要**在渲染层直接操作文件系统，必须通过 IPC 调用主进程
 - **不要**自行实现 Agent SDK 已提供的功能
+- **不要**将复杂逻辑堆积在单一文件中，超过 300 行要分解
+- **不要**混杂不同的职责（UI + 逻辑、Service + 存储层、工具集合 + 聚合逻辑），要及时拆分
