@@ -23,6 +23,11 @@ interface UIState {
   togglePromptSidebar: () => void;
   closePromptSidebar: () => void;
 
+  /** 归档面板 overlay（从对话列表底部按钮打开） */
+  archivePanelOpen: boolean;
+  openArchivePanel: () => void;
+  closeArchivePanel: () => void;
+
   // 左侧面板 tab
   /** 左侧面板当前 tab：对话列表 or 文件浏览器 */
   leftPanelTab: 'conversations' | 'explorer';
@@ -76,6 +81,10 @@ export const useUIStore = create<UIState>((set) => ({
   togglePromptSidebar: () => set((s) => ({ promptSidebarOpen: !s.promptSidebarOpen })),
   closePromptSidebar: () => set({ promptSidebarOpen: false }),
 
+  archivePanelOpen: false,
+  openArchivePanel: () => set({ archivePanelOpen: true }),
+  closeArchivePanel: () => set({ archivePanelOpen: false }),
+
   // 左侧面板 tab（默认对话列表）
   leftPanelTab: 'conversations',
   setLeftPanelTab: (tab) => set({ leftPanelTab: tab }),
@@ -113,6 +122,7 @@ export const useUIStore = create<UIState>((set) => ({
   reset: () => set({
     settingsOpen: false,
     promptSidebarOpen: false,
+    archivePanelOpen: false,
     leftPanelTab: 'conversations',
     rightPanelOpen: false,
     rightPanelTab: 'preview',

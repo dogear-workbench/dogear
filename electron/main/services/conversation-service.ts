@@ -27,6 +27,8 @@ export interface ConversationIndex {
   personaId?: string;    // 关联的人设 ID
   tempPrompt?: string;   // 临时提示词
   forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
+  /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
+  archivedAt?: string;
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
 }
@@ -44,6 +46,7 @@ export interface ConversationCompat {
   persona_id?: string;
   temp_prompt?: string;
   fork_pending?: boolean;
+  archived_at?: string;
   created_at: number;
   updated_at: number;
   bookId: string | null;
@@ -53,6 +56,7 @@ export interface ConversationCompat {
   forkMessageSdkUuid: string | null;
   personaId: string | undefined;
   tempPrompt: string | undefined;
+  archivedAt: string | undefined;
   createdAt: string;
   updatedAt: string;
 }
@@ -142,20 +146,35 @@ function sortedList(conversations: Record<string, ConversationIndex>): Conversat
 }
 
 /**
- * 获取指定工作区的所有对话（按 updatedAt 倒序）
+ * 获取指定工作区的所有对话（按 updatedAt 倒序，默认过滤归档）
+ * @param options.includeArchived 是否包含已归档对话，默认 false
  */
-export async function getByWorkspaceId(workspaceId: string): Promise<ConversationIndex[]> {
+export async function getByWorkspaceId(
+  workspaceId: string,
+  options?: { includeArchived?: boolean },
+): Promise<ConversationIndex[]> {
   const file = await loadWorkspaceConversations(workspaceId);
-  return sortedList(file.conversations);
+  const includeArchived = options?.includeArchived ?? false;
+  const entries = includeArchived
+    ? file.conversations
+    : Object.fromEntries(
+        Object.entries(file.conversations).filter(([, c]) => !c.archivedAt),
+      );
+  return sortedList(entries);
 }
 
 /**
- * 获取指定书籍的所有对话（按 updatedAt 倒序）
+ * 获取指定书籍的所有对话（按 updatedAt 倒序，默认过滤归档）
  */
-export async function getByBookId(workspaceId: string, bookId: string): Promise<ConversationIndex[]> {
+export async function getByBookId(
+  workspaceId: string,
+  bookId: string,
+  options?: { includeArchived?: boolean },
+): Promise<ConversationIndex[]> {
   const file = await loadWorkspaceConversations(workspaceId);
+  const includeArchived = options?.includeArchived ?? false;
   const filtered = Object.values(file.conversations).filter(
-    (c) => c.bookId === bookId,
+    (c) => c.bookId === bookId && (includeArchived || !c.archivedAt),
   );
   return filtered.sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -266,6 +285,44 @@ export async function updateTitle(workspaceId: string, id: string, title: string
   await saveWorkspaceConversations(workspaceId, file);
 }
 
+/** 默认 title（新建对话时设置）——用于识别"用户尚未修改过 title"的状态 */
+const DEFAULT_TITLE = '新对话';
+/** 自动生成 title 时截取的最大长度 */
+const AUTO_TITLE_MAX_LENGTH = 30;
+
+/**
+ * 从用户第一条消息自动生成 title。
+ *
+ * 仅当当前 title 是默认值（DEFAULT_TITLE）时执行，避免覆盖用户手动修改的标题。
+ * 截取规则：去除换行与首尾空白，取前 AUTO_TITLE_MAX_LENGTH 字，超长加 "…"。
+ *
+ * @returns 是否实际更新了 title
+ */
+export async function autoUpdateTitleFromFirstMessage(
+  workspaceId: string,
+  id: string,
+  messageText: string,
+): Promise<boolean> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return false;
+
+  // 仅默认 title 时才自动生成（保护用户已修改的标题）
+  if (conv.title !== DEFAULT_TITLE) return false;
+
+  const cleaned = messageText.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return false;
+
+  const truncated = cleaned.length > AUTO_TITLE_MAX_LENGTH
+    ? cleaned.slice(0, AUTO_TITLE_MAX_LENGTH) + '…'
+    : cleaned;
+
+  conv.title = truncated;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+  return true;
+}
+
 /**
  * 更新对话的 SDK session ID
  */
@@ -337,8 +394,11 @@ export async function updatePersona(
 }
 
 /**
- * 删除对话
+ * 删除对话（硬删除：从索引中彻底移除）
  * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
+ *
+ * 注意：本函数只删索引。如需同时清理 SDK 会话历史 JSONL 文件，
+ * 请使用 tipc 层的 deleteConversation RPC（会调用 SDK deleteSession）。
  */
 export async function deleteConversation(workspaceId: string, id: string): Promise<void> {
   const file = await loadWorkspaceConversations(workspaceId);
@@ -355,6 +415,45 @@ export async function deleteConversation(workspaceId: string, id: string): Promi
   }
 
   await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
+ * 归档对话（软删除：设置 archivedAt，保留索引和 SDK 历史）
+ * 仅 sdkSessionId 非空的对话允许归档；sdkSessionId=null 的对话应直接硬删除。
+ */
+export async function archiveConversation(workspaceId: string, id: string): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+  if (conv.archivedAt) return; // 已归档，幂等
+
+  conv.archivedAt = new Date().toISOString();
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
+ * 取消归档（恢复到主对话列表）
+ */
+export async function unarchiveConversation(workspaceId: string, id: string): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+  if (!conv.archivedAt) return; // 未归档，幂等
+
+  conv.archivedAt = undefined;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
+ * 获取已归档的对话列表（按 archivedAt 倒序）
+ */
+export async function getArchivedByWorkspace(workspaceId: string): Promise<ConversationIndex[]> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  return Object.values(file.conversations)
+    .filter((c) => c.archivedAt)
+    .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime());
 }
 
 /**
@@ -393,6 +492,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     persona_id: conv.personaId || undefined,
     temp_prompt: conv.tempPrompt || undefined,
     fork_pending: conv.forkPending || false,
+    archived_at: conv.archivedAt || undefined,
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用
@@ -403,6 +503,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     forkMessageSdkUuid: conv.forkMessageSdkUuid,
     personaId: conv.personaId,
     tempPrompt: conv.tempPrompt,
+    archivedAt: conv.archivedAt,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
   };

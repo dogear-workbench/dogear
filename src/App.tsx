@@ -10,6 +10,7 @@ import { SessionWindowPage } from '@/app/session-window/page';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ArchivePanel } from '@/components/ArchivePanel';
 import { useUIStore } from '@/stores/ui-store';
 
 export function App() {
@@ -40,6 +41,7 @@ export function App() {
       )}
 
       <ConfirmDialog />
+      <ArchivePanel />
       <Toaster />
     </ErrorBoundary>
   );

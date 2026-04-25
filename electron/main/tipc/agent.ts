@@ -14,6 +14,7 @@ import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { getAllTools } from '../agents/tools/tool-registry.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
+import * as conversationService from '../services/conversation-service.js';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
@@ -476,10 +477,36 @@ export const agentRouter = {
         const convId = sessionManager.getConversationIdBySession(input.sessionId);
         if (convId) broadcastConversationRunning(convId, true);
 
+        // 自动 title：如果对话的 title 仍是默认值"新对话"，用这条消息的前 30 字替换。
+        // 只跑一次（后续消息 title 已不是默认值）。用户文本优先取 textBlocks 最后一个块（用户输入在引用之后），否则用 content。
+        // 失败不影响发送流程，只记日志。
+        if (convId) {
+          try {
+            const lookup = await conversationService.getByIdGlobal(convId);
+            if (lookup) {
+              const userText =
+                (input.textBlocks && input.textBlocks.length > 0
+                  ? input.textBlocks[input.textBlocks.length - 1].text
+                  : input.content) || '';
+              if (userText) {
+                await conversationService.autoUpdateTitleFromFirstMessage(
+                  lookup.workspaceId,
+                  convId,
+                  userText,
+                );
+              }
+            }
+          } catch (e) {
+            console.warn('[autoTitle] 更新失败（不影响消息发送）:', e);
+          }
+        }
+
         // 有多个 textBlocks 或图像附件时，构建 ContentBlock 数组
         const hasMultiBlocks = (input.textBlocks && input.textBlocks.length > 0) || (input.images && input.images.length > 0);
         if (hasMultiBlocks) {
-          const contentBlocks: Array<{ type: string; [key: string]: any }> = [];
+          // 使用 any[] 构建块，发送前由 sendMessage 的参数类型校验；
+          // SDK 0.2.119 起 ContentBlockParam 类型更严格，但这里的字段（text/image+base64）都符合规范
+          const contentBlocks: any[] = [];
           // 多文本块（引用上下文 + 用户消息，各自独立）
           if (input.textBlocks && input.textBlocks.length > 0) {
             for (const block of input.textBlocks) {

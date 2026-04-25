@@ -2,8 +2,9 @@
 import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from 'react';
 import {
   MessageSquare, Plus, Trash2, GitBranch, Pencil, Quote,
-  Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Bot,
+  Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Bot, Archive,
 } from 'lucide-react';
+import { useUIStore } from '@/stores/ui-store';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator,
@@ -46,6 +47,7 @@ export interface Conversation {
   persona_id?: string;               // 关联的人设 ID
   temp_prompt?: string;              // 临时提示词
   fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
+  archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   created_at: number;
   updated_at: number;
 }
@@ -679,6 +681,27 @@ export function ConversationList() {
           </div>
         )}
       </ScrollArea>
+
+      {/* 底部：归档入口 */}
+      <ArchiveFooterButton />
+    </div>
+  );
+}
+
+/** 底部归档入口按钮 */
+function ArchiveFooterButton() {
+  const openArchive = useUIStore((s: any) => s.openArchivePanel);
+  return (
+    <div className="px-3 py-2 border-t">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
+        onClick={openArchive}
+      >
+        <Archive className="w-4 h-4" />
+        归档
+      </Button>
     </div>
   );
 }

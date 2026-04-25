@@ -282,31 +282,48 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
+  /**
+   * 删除/归档对话（按 sdkSessionId 状态分流）
+   * - 有 sdkSessionId（真实对话过）→ 归档（软删除，可恢复）
+   * - 无 sdkSessionId（新建空对话 / 分叉未执行）→ 直接硬删除
+   */
   deleteConversation: async (conversationId) => {
-    if (!await showConfirm('删除对话', '确定要删除这个对话吗？此操作不可恢复。')) return;
-
     const workspace = await getWorkspace();
     if (!workspace) return;
 
+    // 查找对话，判断走归档还是硬删除
+    const target = get().conversations.find(c => c.id === conversationId);
+    const shouldArchive = !!target?.sdk_session_id;
+
+    const confirmed = shouldArchive
+      ? await showConfirm('归档对话', '对话将移至归档列表。你可以在侧边栏底部的"归档"中恢复或永久删除。')
+      : await showConfirm('删除对话', '此对话尚未有内容，将直接删除。此操作不可恢复。');
+    if (!confirmed) return;
+
     try {
-      const result = await client.deleteConversation({ conversationId, workspaceId: workspace.id });
+      const result = shouldArchive
+        ? await client.archiveConversation({ conversationId, workspaceId: workspace.id })
+        : await client.deleteConversation({ conversationId, workspaceId: workspace.id });
+
       if (result.error) {
-        toast.error('删除对话失败', { description: result.error });
+        toast.error(shouldArchive ? '归档对话失败' : '删除对话失败', { description: result.error });
         return;
       }
 
       // 关闭对应的 Tab
       useSessionStore.getState().closeTab(conversationId);
 
-      // 如果删除的是当前选中的对话，清除选中状态
+      // 如果操作的是当前选中的对话，清除选中状态
       if (get().selectedConversation?.id === conversationId) {
         set({ selectedConversation: null });
       }
 
       await get().loadConversations();
     } catch (error) {
-      console.error('删除对话失败:', error);
-      toast.error('删除对话失败', { description: error instanceof Error ? error.message : String(error) });
+      console.error(shouldArchive ? '归档对话失败:' : '删除对话失败:', error);
+      toast.error(shouldArchive ? '归档对话失败' : '删除对话失败', {
+        description: error instanceof Error ? error.message : String(error),
+      });
     }
   },
 
