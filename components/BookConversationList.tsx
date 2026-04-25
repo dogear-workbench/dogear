@@ -156,7 +156,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const selectConversation = useConversationStore((s) => s.selectConversation);
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const deleteFolder = useConversationStore((s) => s.deleteFolder);
-  const renameFolder = useConversationStore((s) => s.renameFolder);
   const openTab = useSessionStore((s) => s.openTab);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
 
@@ -413,7 +412,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
 export function ConversationList() {
   const conversations = useConversationStore((s) => s.conversations);
   const nodeMap = useConversationStore((s) => s.nodeMap);
-  const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const loadingConversations = useConversationStore((s) => s.loadingConversations);
   const newConversation = useConversationStore((s) => s.newConversation);
   const createFolder = useConversationStore((s) => s.createFolder);

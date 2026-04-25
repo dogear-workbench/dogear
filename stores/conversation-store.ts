@@ -118,7 +118,6 @@ function buildNodeMap(
   treeData: ConversationTreeData | null,
 ): Record<string, ConversationFlatNode> {
   const nodeMap: Record<string, ConversationFlatNode> = {};
-  const convMap = new Map(conversations.map(c => [c.id, c]));
 
   if (!treeData) {
     // 无树数据，所有对话平铺到根

@@ -52,7 +52,7 @@ export function useImageAttachment() {
     return () => {
       pendingImages.forEach(img => URL.revokeObjectURL(img.preview));
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return {
     pendingImages,

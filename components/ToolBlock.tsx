@@ -17,7 +17,6 @@ interface ToolBlockProps {
   toolName: string;
   toolInput?: any;
   toolOutput?: any;
-  toolUseId?: string;
   status?: ToolStatus;
   isError?: boolean;
   citations?: any[];
@@ -78,7 +77,7 @@ function formatToolName(toolName: string): string {
 function getToolSummary(
   toolName: string,
   toolInput?: any,
-  toolOutput?: any
+  _toolOutput?: any
 ): string {
   if (!toolInput) return "";
 
@@ -202,7 +201,6 @@ export function ToolBlock({
   toolName,
   toolInput,
   toolOutput,
-  toolUseId,
   status = "success",
   isError = false,
   citations,

@@ -68,7 +68,7 @@ export function StockQuote() {
     volume, turnover, open, high, low, prevClose,
     amplitude, turnoverRate, peRatio, pbRatio,
     totalMarketCap, floatMarketCap, volumeRatio,
-    speedPercent, mainNetInflow,
+    mainNetInflow,
     outerVolume, innerVolume, limitUp, limitDown,
   } = quote;
 

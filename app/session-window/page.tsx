@@ -63,7 +63,6 @@ export function SessionWindowPage() {
       setReady(true);
     }
     init();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
   const title = conversations.find(c => c.id === conversationId)?.title || '会话窗口';

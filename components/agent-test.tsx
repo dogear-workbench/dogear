@@ -76,7 +76,7 @@ export default function AgentTest() {
   // 提交任务
   const submitTask = async () => {
     try {
-      let task: any = {
+      const task: any = {
         type: selectedTaskType,
         payload: {}
       };

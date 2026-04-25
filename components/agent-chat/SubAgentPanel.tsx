@@ -1,7 +1,6 @@
 import { Bot, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
 import { cn } from '@/lib/utils';
 import { useUIStore, type SubAgentInfo } from '@/stores/ui-store';

@@ -87,11 +87,11 @@ export function AgentChat({
   }, [isLoading, conversationId]);
 
   // 历史消息
-  const { messages, setMessages, historyLoaded, setHistoryLoaded, isResumeMode } =
+  const { messages, setMessages, setHistoryLoaded } =
     useMessageHistory({ conversationId, useSdkResume, forkParams, workspacePath });
 
   // 会话生命周期
-  const { sessionId, sessionIdRef, isSessionReady, permissionMode, setPermissionMode } =
+  const { sessionId, isSessionReady, permissionMode, setPermissionMode } =
     useAgentSession({ conversationId, forkParams, context, useSdkResume, setMessages, setIsLoading });
 
   // 排队消息缓冲区：由 AgentChat 声明，同时传给 useSendMessage（写入）和 useSessionMessages（消费）

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -43,7 +43,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     messages,
     setMessages,
     setIsLoading,
-    setPermissionMode,
+    setPermissionMode: _setPermissionMode,
     conversationId,
     pendingImages,
     setPendingImages,
@@ -117,7 +117,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       }
       return updated;
     });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // 权限确认响应回调：更新消息中对应权限请求块的状态
   // "总是允许"不再切换全局模式，而是通过 SDK 的 updatedPermissions 机制在会话内记住

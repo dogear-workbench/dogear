@@ -277,8 +277,6 @@ function TreeItemRow({
   // Store hooks
   const selectedFile = useWorkspaceStore(s => s.selectedFile);
   const selectedArticle = useArticleStore(s => s.selectedArticle);
-  const selectFile = useWorkspaceStore(s => s.selectFile);
-  const selectArticle = useArticleStore(s => s.selectArticle);
   const toggleReferenceArticle = useReferenceStore(s => s.toggleReferenceArticle);
   const addReferencedFile = useReferenceStore(s => s.addReferencedFile);
   const deleteItem = useWorkspaceStore(s => s.deleteItem);
@@ -772,10 +770,6 @@ export function WorkspaceExplorer() {
     setCreatingFolderAt(parentPath);
   }, [tree]);
 
-  // 工具栏操作
-  const handleNewFolder = useCallback(() => {
-    handleSetCreatingFolder('.');
-  }, [handleSetCreatingFolder]);
 
   const handleRefresh = useCallback(() => {
     loadWorkspaceFiles();

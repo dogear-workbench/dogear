@@ -9,7 +9,24 @@ const eslintConfig = defineConfig([
     "build/**",
     "node_modules/**",
     "electron/**",
+    ".worktrees/**",
+    "python/**",
   ]),
+  {
+    rules: {
+      // IPC/SDK 边界大量使用 any,保留提示但不阻塞
+      "@typescript-eslint/no-explicit-any": "warn",
+      // 允许以 _ 开头的参数/变量作为"故意未使用"的占位符
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

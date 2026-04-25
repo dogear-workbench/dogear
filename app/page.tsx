@@ -86,7 +86,6 @@ export default function Home() {
   const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
 
   // 对话状态
-  const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const newConversation = useConversationStore((s) => s.newConversation);
 
   // 子代理列表的过滤由 SubAgentPanel 通过 sdkSessionId prop 完成

@@ -33,7 +33,7 @@ interface AnalysisState {
 // 模块级变量存储事件监听取消函数
 let analysisUnsubscribe: (() => void) | null = null;
 
-export const useAnalysisStore = create<AnalysisState>((set, get) => ({
+export const useAnalysisStore = create<AnalysisState>((set) => ({
   analyzing: false,
   analysisProgress: { status: 'idle' },
 

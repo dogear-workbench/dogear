@@ -91,7 +91,6 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
     ),
     // 图片：限制最大宽度，防盗链处理
     img: ({ src, alt, ...props }: React.ComponentPropsWithoutRef<'img'>) => (
-      // eslint-disable-next-line @next/next/no-img-element
       <img
         src={src}
         alt={alt || ''}

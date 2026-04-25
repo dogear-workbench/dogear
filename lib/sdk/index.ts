@@ -22,7 +22,7 @@ export const SDK_VERSION = '0.1.0';
 /**
  * SDK 初始化(可选)
  */
-export function init(options?: {
+export function init(_options?: {
   apiKey?: string;
   baseURL?: string;
   model?: string;
