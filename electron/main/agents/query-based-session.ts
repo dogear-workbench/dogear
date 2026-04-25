@@ -17,6 +17,16 @@ import type {
   SessionStartHookInput, SessionEndHookInput, StopHookInput,
   PostToolUseFailureHookInput, NotificationHookInput,
 } from '@anthropic-ai/claude-agent-sdk';
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
+
+/**
+ * SDK 0.2.69 起，subagent 工具在 wire 上的名字在 'Agent' / 'Task' 之间过渡。
+ * CHANGELOG 明确最终会回到 'Agent'，过渡期两种名字都可能出现，统一兼容判断。
+ */
+const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
+function isSubAgentToolName(name: string | undefined | null): boolean {
+  return !!name && SUBAGENT_TOOL_NAMES.has(name);
+}
 import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
@@ -58,6 +68,8 @@ export interface QueryBasedSessionConfig {
   // 人设配置
   personaId?: string;                // 关联的人设 ID
   tempPrompt?: string;               // 临时提示词
+  // 会话标题（用于 SDK 0.2.119+ 跳过自动生成，仅新建会话生效，resume 时持久化标题优先）
+  title?: string;
 }
 
 /**
@@ -275,6 +287,11 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('✅ 已配置 resume 会话:', this.config.resume);
       } else {
         this.logger.info('创建新会话（无 resume）');
+        // 仅新建会话时传入 title，跳过 SDK 自动生成（省一次 LLM 调用）
+        // resume 时 SDK 会使用持久化的 title，此处不传
+        const sessionTitle = this.config.title?.trim() || '新对话';
+        queryOptions.title = sessionTitle;
+        this.logger.info('已配置 title（跳过 SDK 自动生成）:', sessionTitle);
       }
 
       // 配置 forkSession（分叉会话）
@@ -567,7 +584,7 @@ export class QueryBasedSession extends EventEmitter {
   /**
    * 发送消息到会话
    */
-  async sendMessage(content: string | Array<{ type: string; [key: string]: any }>): Promise<void> {
+  async sendMessage(content: string | ContentBlockParam[]): Promise<void> {
     if (this.status === SessionStatus.CLOSED) {
       throw new Error('会话已关闭');
     }
@@ -678,35 +695,82 @@ export class QueryBasedSession extends EventEmitter {
 
         // 处理结果消息（单次对话完成）
         if (message.type === 'result') {
+          // SDK 0.2.119+ 提供 terminal_reason，优先使用它分类；缺失时回退到 subtype 判断
+          const terminalReason = (message as { terminal_reason?: string }).terminal_reason;
           this.logger.info('=== 收到结果消息 ===', {
             subtype: message.subtype,
             is_error: message.is_error,
+            terminal_reason: terminalReason || '(未提供)',
             totalMessages: messageCount,
             replayMessages: replayCount
           });
 
-          if (message.subtype === 'success') {
-            this.currentTurnMessages = [];  // turn 完成，清空快照
-            this.emit('complete', message);
+          // 分类决策：优先 terminal_reason，兜底用旧的 subtype + is_error
+          // 分类结果：'complete' | 'interrupted' | 'max_turns' | 'rate_limited' | 'error'
+          let category: 'complete' | 'interrupted' | 'max_turns' | 'rate_limited' | 'error';
+          let errorDetail: string | undefined;
+
+          if (terminalReason) {
+            switch (terminalReason) {
+              case 'completed':
+                category = 'complete';
+                break;
+              case 'aborted_streaming':
+              case 'aborted_tools':
+                category = 'interrupted';
+                break;
+              case 'max_turns':
+                category = 'max_turns';
+                break;
+              case 'blocking_limit':
+              case 'rapid_refill_breaker':
+                category = 'rate_limited';
+                errorDetail = terminalReason;
+                break;
+              default:
+                // prompt_too_long / image_error / model_error / stop_hook_prevented / hook_stopped / tool_deferred
+                category = 'error';
+                errorDetail = terminalReason;
+            }
+          } else {
+            // 兜底：旧的 subtype + is_error 判断（保持升级前行为兼容）
+            if (message.subtype === 'success') {
+              category = 'complete';
+            } else {
+              const errorMsg = message as { errors?: string[]; is_error?: boolean };
+              const hasErrors = errorMsg.errors && errorMsg.errors.length > 0;
+              if (!errorMsg.is_error && !hasErrors) {
+                category = 'interrupted'; // 用户中断的典型特征
+              } else {
+                category = 'error';
+                errorDetail = errorMsg.errors?.join(', ') || '未知错误';
+              }
+            }
+          }
+
+          // 按分类分发事件
+          // - complete / interrupted / max_turns: 统一走 'complete'（会话正常结束流），附加 terminal_reason 供前端差异化提示
+          // - rate_limited / error: 走 'error'
+          if (category === 'complete' || category === 'interrupted' || category === 'max_turns') {
+            this.currentTurnMessages = [];  // turn 完成/中断/达上限均清空快照
+            // 把 terminal_reason 和分类附加到 message 上，前端可用于 UI 差异化
+            const enriched = {
+              ...message,
+              terminal_reason: terminalReason,
+              terminalCategory: category, // 'complete' | 'interrupted' | 'max_turns'
+            };
+            this.logger.info(`会话结束（${category}）`, terminalReason ? `terminal_reason=${terminalReason}` : '');
+            this.emit('complete', enriched);
             this.status = SessionStatus.IDLE;
           } else {
-            // error 类型结果：检查是否为用户中断（is_error=false 且无实际错误信息）
-            const errorMsg = message as { errors?: string[]; is_error?: boolean };
-            const hasErrors = errorMsg.errors && errorMsg.errors.length > 0;
-
-            if (!errorMsg.is_error && !hasErrors) {
-              // 用户中断：不作为错误处理，正常结束
-              this.logger.info('用户中断，正常结束会话');
-              this.currentTurnMessages = [];  // 中断也清空快照
-              this.emit('complete', message);
-              this.status = SessionStatus.IDLE;
-            } else {
-              this.emit('error', {
-                type: 'error',
-                error: errorMsg.errors?.join(', ') || '未知错误',
-                timestamp: Date.now()
-              } as ExtendedSessionMessage);
-            }
+            // rate_limited / error：作为错误事件发送
+            this.emit('error', {
+              type: 'error',
+              error: errorDetail || '未知错误',
+              terminal_reason: terminalReason,
+              terminalCategory: category, // 'rate_limited' | 'error'
+              timestamp: Date.now()
+            } as ExtendedSessionMessage);
           }
         }
       }
@@ -862,8 +926,8 @@ export class QueryBasedSession extends EventEmitter {
               toolUseId: block.id
             });
 
-            // 检测到 Agent 工具调用，发射 subAgentStarted 事件
-            if (block.name === 'Agent') {
+            // 检测到 Agent/Task 工具调用，发射 subAgentStarted 事件
+            if (isSubAgentToolName(block.name)) {
               this.emit('subAgentStarted', {
                 parentSessionId: this.sessionId,
                 agentId: block.id,  // 此时用 toolUseId 作为临时标识
@@ -911,8 +975,8 @@ export class QueryBasedSession extends EventEmitter {
             // 清除累积器
             this.pendingToolInputs.delete(index);
 
-            // Agent 工具 input 已完整解析，补发带 description 的 subAgentStarted 事件
-            if (pending.name === 'Agent' && pending.toolUseId) {
+            // Agent/Task 工具 input 已完整解析，补发带 description 的 subAgentStarted 事件
+            if (isSubAgentToolName(pending.name) && pending.toolUseId) {
               this.emit('subAgentStarted', {
                 parentSessionId: this.sessionId,
                 agentId: pending.toolUseId,
