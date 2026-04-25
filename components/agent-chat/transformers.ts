@@ -121,8 +121,8 @@ export function createContentBlock(extendedMsg: {
   compactPreTokens?: number;
   [key: string]: any;
 }): ContentBlock {
-  // 检测 Agent 工具调用
-  const isAgentTool = extendedMsg.type === 'tool_use' && extendedMsg.toolName === 'Agent';
+  // 检测子代理工具调用（SDK 过渡期 'Agent' / 'Task' 都可能出现）
+  const isAgentTool = extendedMsg.type === 'tool_use' && (extendedMsg.toolName === 'Agent' || extendedMsg.toolName === 'Task');
 
   return {
     type: extendedMsg.type as ContentBlock['type'],
@@ -328,7 +328,7 @@ export function historyTransformer(rawMessages: any[]): Message[] {
                 toolOutput = toolOutput ? `${toolOutput}\n\n--- Skill 内容 ---\n${sc}` : sc;
               }
               const subAgentResult = subAgentResultMap.get(block.id);
-              const isSubAgent = block.name === 'Agent';
+              const isSubAgent = block.name === 'Agent' || block.name === 'Task';
               blocks.push({
                 type: 'tool_use',
                 id: block.id,

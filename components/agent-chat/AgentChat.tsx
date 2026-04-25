@@ -130,7 +130,7 @@ export function AgentChat({
     for (const msg of messages) {
       if (!msg.contentBlocks) continue;
       for (const block of msg.contentBlocks) {
-        if (!block.isSubAgent && block.toolName !== 'Agent') continue;
+        if (!block.isSubAgent && block.toolName !== 'Agent' && block.toolName !== 'Task') continue;
         if (!block.subAgentId) continue;
         if (agents.some(a => a.agentId === block.subAgentId)) continue;
         const hasOutput = block.toolOutput !== undefined || !!block.subAgentResultText;

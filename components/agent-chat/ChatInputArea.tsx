@@ -55,6 +55,18 @@ const PERMISSION_MODE_STYLES: Record<PermissionMode, {
     icon: 'text-blue-500',
     label: '仅规划',
   },
+  dontAsk: {
+    border: 'border-purple-300 dark:border-purple-500/60',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-purple-400 has-[[data-slot=input-group-control]:focus-visible]:ring-purple-400/20',
+    icon: 'text-purple-500',
+    label: '不询问',
+  },
+  auto: {
+    border: 'border-teal-300 dark:border-teal-500/60',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-teal-400 has-[[data-slot=input-group-control]:focus-visible]:ring-teal-400/20',
+    icon: 'text-teal-500',
+    label: '自动',
+  },
 };
 
 interface ChatInputAreaProps {

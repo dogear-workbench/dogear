@@ -67,7 +67,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   switch (block.type) {
     case 'tool_use':
       // 子代理调用使用专用的 SubAgentBlock 组件
-      if (block.isSubAgent || block.toolName === 'Agent') {
+      if (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task') {
         return <SubAgentBlock block={block} />;
       }
       // 使用新的 ToolBlock 组件，支持折叠和状态显示
