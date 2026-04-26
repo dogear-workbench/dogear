@@ -20,6 +20,7 @@ const EFFORT_OPTIONS = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
+  { value: 'xhigh', label: '超高' },
   { value: 'max', label: 'Max' },
 ] as const;
 
@@ -396,53 +397,6 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold mb-1">AI 行为</h2>
             <p className="text-sm text-muted-foreground mb-6">配置 Agent 的思考模式、执行力度和权限策略</p>
             <div className="space-y-6">
-              {/* Thinking 模式 */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium">思考模式</label>
-                <div className="space-y-2">
-                  <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                    <input type="radio" name="thinking" className="mt-0.5"
-                      checked={local.ai.thinking.type === 'adaptive'}
-                      onChange={() => updateAI({ thinking: { type: 'adaptive' } })}
-                    />
-                    <div>
-                      <div className="text-sm font-medium">Adaptive（自适应）</div>
-                      <div className="text-xs text-muted-foreground">Claude 自主决定何时思考及深度（推荐）</div>
-                    </div>
-                  </label>
-                  <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                    <input type="radio" name="thinking" className="mt-0.5"
-                      checked={local.ai.thinking.type === 'enabled'}
-                      onChange={() => updateAI({ thinking: { type: 'enabled', budgetTokens: local.ai.thinking.budgetTokens || 10000 } })}
-                    />
-                    <div className="flex-1">
-                      <div className="text-sm font-medium">Enabled（固定预算）</div>
-                      <div className="text-xs text-muted-foreground">指定固定的思考 token 预算</div>
-                      {local.ai.thinking.type === 'enabled' && (
-                        <div className="mt-2">
-                          <input type="number"
-                            className="h-8 w-40 px-2 text-sm border rounded bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                            value={local.ai.thinking.budgetTokens || 10000}
-                            onChange={(e) => updateAI({ thinking: { type: 'enabled', budgetTokens: Number(e.target.value) } })}
-                            min={1} placeholder="Token 预算"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </label>
-                  <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                    <input type="radio" name="thinking" className="mt-0.5"
-                      checked={local.ai.thinking.type === 'disabled'}
-                      onChange={() => updateAI({ thinking: { type: 'disabled' } })}
-                    />
-                    <div>
-                      <div className="text-sm font-medium">Disabled（禁用）</div>
-                      <div className="text-xs text-muted-foreground">关闭扩展思考</div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
               {/* Effort 级别 */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">执行力度</label>
@@ -461,6 +415,46 @@ export default function SettingsPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* 默认模型层级 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">默认模型</label>
+                <p className="text-xs text-muted-foreground">
+                  注入 ANTHROPIC_MODEL 环境变量，决定 CLI 的默认模型层级。不指定时由 SDK 决定。
+                </p>
+                <select
+                  className="h-9 w-full px-3 text-sm border rounded bg-background"
+                  value={local.ai.defaultModelTier || ''}
+                  onChange={(e) => updateAI({
+                    defaultModelTier: e.target.value ? e.target.value as 'haiku' | 'sonnet' | 'opus' : undefined
+                  })}
+                >
+                  <option value="">不指定</option>
+                  <option value="haiku">Haiku</option>
+                  <option value="sonnet">Sonnet</option>
+                  <option value="opus">Opus</option>
+                </select>
+              </div>
+
+              {/* 子代理模型层级 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">子代理模型</label>
+                <p className="text-xs text-muted-foreground">
+                  注入 CLAUDE_CODE_SUBAGENT_MODEL 环境变量，决定 Task 工具启动的子代理用哪一层。
+                </p>
+                <select
+                  className="h-9 w-full px-3 text-sm border rounded bg-background"
+                  value={local.ai.subagentModelTier || ''}
+                  onChange={(e) => updateAI({
+                    subagentModelTier: e.target.value ? e.target.value as 'haiku' | 'sonnet' | 'opus' : undefined
+                  })}
+                >
+                  <option value="">不指定</option>
+                  <option value="haiku">Haiku</option>
+                  <option value="sonnet">Sonnet</option>
+                  <option value="opus">Opus</option>
+                </select>
               </div>
 
               {/* maxTurns */}
