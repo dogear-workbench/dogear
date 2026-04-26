@@ -32,7 +32,7 @@ import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
 import { app } from 'electron';
 import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
-import type { AppSettings } from '../services/settings-types.js';
+import type { AppSettings, ModelProfile } from '../services/settings-types.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 
@@ -115,6 +115,9 @@ export class QueryBasedSession extends EventEmitter {
   private permissionRules?: { allow?: string[]; deny?: string[] };
   // 缓存当前权限模式（start 时从 settings 加载）
   private currentPermissionMode: string = 'default';
+  // 缓存当前 tier 和 activeProfile（用于 setModel）
+  private currentTier?: 'haiku' | 'sonnet' | 'opus';
+  private currentActiveProfile?: ModelProfile;
 
   // 当前 turn 的进行中消息快照（用于晚加入的渲染层重播）
   // turn 开始时积累，turn 完成（result 消息）时清空
@@ -193,7 +196,6 @@ export class QueryBasedSession extends EventEmitter {
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
         // 注入共享配置
         env: baseConfig.env,
-        thinking: baseConfig.thinking,
         effort: baseConfig.effort,
         ...(baseConfig.pathToClaudeCodeExecutable && {
           pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
@@ -203,6 +205,9 @@ export class QueryBasedSession extends EventEmitter {
       // 注入默认权限模式
       this.currentPermissionMode = baseConfig.permissionMode;
       queryOptions.permissionMode = this.currentPermissionMode;
+
+      // 缓存 activeProfile 供 setModel 使用
+      this.currentActiveProfile = baseConfig.activeProfile;
 
       // 缓存声明式权限规则
       if (baseConfig.permissionRules) {
@@ -217,7 +222,6 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       this.logger.info('已从 settings.json 加载 AI 配置:', {
-        thinking: appSettings.ai.thinking.type,
         effort: appSettings.ai.effort,
         profileName: activeProfile.name,
       });
@@ -1525,17 +1529,32 @@ export class QueryBasedSession extends EventEmitter {
   }
 
   /**
-   * 设置最大思考 token 数
-   * 0 = 禁用思考，null = 恢复默认（模型自动决定），正整数 = 固定预算
-   * 对于 Opus 4.6：非 0 值会强制使用 adaptive 模式
+   * 切换模型 tier（haiku/sonnet/opus），传 undefined 则恢复默认
    */
-  async setMaxThinkingTokens(maxThinkingTokens: number | null): Promise<void> {
+  async setModel(tier?: 'haiku' | 'sonnet' | 'opus'): Promise<void> {
     if (!this.query) {
-      this.logger.warn('setMaxThinkingTokens: 没有活跃的 query');
+      this.logger.warn('setModel: 没有活跃的 query');
       return;
     }
-    this.logger.info('设置 maxThinkingTokens:', maxThinkingTokens);
-    await this.query.setMaxThinkingTokens(maxThinkingTokens);
+
+    let modelStr: string | undefined = undefined;
+    if (tier) {
+      const profile = this.currentActiveProfile;
+      if (!profile) {
+        this.logger.warn('setModel: currentActiveProfile 未初始化');
+        return;
+      }
+      const tierMap = {
+        haiku: profile.haikuModel,
+        sonnet: profile.sonnetModel,
+        opus: profile.opusModel,
+      };
+      modelStr = tierMap[tier];
+    }
+
+    this.logger.info(`setModel: tier=${tier}, modelStr=${modelStr}`);
+    await this.query.setModel(modelStr);
+    this.currentTier = tier;
   }
 
   /**
