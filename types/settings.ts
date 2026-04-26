@@ -1,8 +1,3 @@
-export interface ThinkingConfig {
-  type: 'adaptive' | 'enabled' | 'disabled';
-  budgetTokens?: number; // 仅 type='enabled' 时有效
-}
-
 /** 人设预设 */
 export interface Persona {
   id: string;
@@ -41,14 +36,17 @@ export function isProfileComplete(profile: ModelProfile): boolean {
 
 export interface AppSettings {
   ai: {
-    thinking: ThinkingConfig;
-    effort: 'low' | 'medium' | 'high' | 'max';
+    effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     activeProfileId: string;
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk'; // 默认权限模式
     defaultSystemPrompt?: string; // 全局默认系统提示词（替代硬编码的 basePrompt）
     systemPromptAppend?: string; // @deprecated 旧版追加提示词，向后兼容保留
     settingSources?: ('user' | 'project')[]; // SDK 设置源
+    /** 注入 ANTHROPIC_MODEL，决定 CLI 默认模型 */
+    defaultModelTier?: 'haiku' | 'sonnet' | 'opus';
+    /** 注入 CLAUDE_CODE_SUBAGENT_MODEL，决定 Task 工具子代理模型 */
+    subagentModelTier?: 'haiku' | 'sonnet' | 'opus';
   };
   // 工具权限规则（声明式），通过 SDK settings.permissions 传递，在所有模式下生效
   permissionRules?: {
@@ -68,7 +66,6 @@ export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和�
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
-    thinking: { type: 'adaptive' },
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
