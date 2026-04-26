@@ -54,7 +54,7 @@ export function useSendMessage(params: UseSendMessageParams) {
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessageEntry[]>([]);
 
   const [input, setInput] = useState('');
-  const [thinkingLevel, setThinkingLevel] = useState<number>(10000);
+  const [currentTier, setCurrentTier] = useState<'haiku' | 'sonnet' | 'opus' | undefined>(undefined);
 
   // 从 conversation-store 获取 actions
   const forkConversation = useConversationStore((s) => s.forkConversation);
@@ -516,8 +516,8 @@ export function useSendMessage(params: UseSendMessageParams) {
   return {
     input,
     setInput,
-    thinkingLevel,
-    setThinkingLevel,
+    currentTier,
+    setCurrentTier,
     handleSend,
     handleKeyPress,
     handleFork,

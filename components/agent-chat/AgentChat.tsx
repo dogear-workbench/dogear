@@ -403,8 +403,8 @@ export function AgentChat({
         sessionId={sessionId}
         placeholder={placeholder}
         showStatusHint={showStatusHint}
-        thinkingLevel={sendMessage.thinkingLevel}
-        setThinkingLevel={sendMessage.setThinkingLevel}
+        currentTier={sendMessage.currentTier}
+        setCurrentTier={sendMessage.setCurrentTier}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}

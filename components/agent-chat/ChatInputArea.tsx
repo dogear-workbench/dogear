@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Brain, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare } from 'lucide-react';
+import { Cpu, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -77,8 +77,8 @@ interface ChatInputAreaProps {
   sessionId: string | null;
   placeholder: string;
   showStatusHint: boolean;
-  thinkingLevel: number;
-  setThinkingLevel: (level: number) => void;
+  currentTier?: 'haiku' | 'sonnet' | 'opus';
+  setCurrentTier: (tier: 'haiku' | 'sonnet' | 'opus' | undefined) => void;
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
   hasPendingUserAction: boolean;
@@ -108,8 +108,8 @@ export function ChatInputArea({
   sessionId,
   placeholder,
   showStatusHint,
-  thinkingLevel,
-  setThinkingLevel,
+  currentTier,
+  setCurrentTier,
   permissionMode,
   setPermissionMode,
   hasPendingUserAction,
@@ -325,44 +325,46 @@ export function ChatInputArea({
                 <ImagePlus size={14} />
               </InputGroupButton>
 
-              {/* 思考等级 DropdownMenu */}
+              {/* 模型层级 */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <InputGroupButton
                     size="xs"
                     className={cn(
                       "gap-1",
-                      thinkingLevel > 0 ? 'text-primary' : 'text-muted-foreground'
+                      currentTier ? 'text-primary' : 'text-muted-foreground'
                     )}
-                    title="思考深度"
+                    title="模型层级"
                   >
-                    <Brain size={14} />
+                    <Cpu size={14} />
                     <span className="text-xs">
-                      {thinkingLevel === 0 ? '关闭' : thinkingLevel <= 2000 ? '低' : thinkingLevel <= 6000 ? '中' : '高'}
+                      {currentTier === 'haiku' ? 'Haiku' :
+                       currentTier === 'sonnet' ? 'Sonnet' :
+                       currentTier === 'opus' ? 'Opus' : '默认'}
                     </span>
                     <ChevronRight size={12} className="rotate-90" />
                   </InputGroupButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="min-w-[120px]">
-                  <DropdownMenuLabel>思考深度</DropdownMenuLabel>
+                  <DropdownMenuLabel>模型层级</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuRadioGroup
-                    value={String(thinkingLevel)}
+                    value={currentTier ?? ''}
                     onValueChange={async (value) => {
-                      const newLevel = Number(value);
-                      setThinkingLevel(newLevel);
+                      const newTier = value === '' ? undefined : (value as 'haiku' | 'sonnet' | 'opus');
+                      setCurrentTier(newTier);
                       if (sessionId) {
-                        await client.setMaxThinkingTokens({
+                        await client.setSessionModel({
                           sessionId,
-                          maxThinkingTokens: newLevel === 0 ? 0 : newLevel,
+                          tier: newTier,
                         });
                       }
                     }}
                   >
-                    <DropdownMenuRadioItem value="0">关闭</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="2000">低</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="6000">中</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="10000">高</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="">默认</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="haiku">Haiku</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="sonnet">Sonnet</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="opus">Opus</DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
