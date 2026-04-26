@@ -432,7 +432,7 @@ class AgentWorker {
     // v2: 使用 Claude Agent SDK 的 query 函数进行书籍分析
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
 
-    // Phase 0: 加载共享 query 配置（API Key、模型映射、thinking/effort 等）
+    // Phase 0: 加载共享 query 配置（API Key、模型映射、effort 等）
     const { buildQueryBaseConfig } = await import('./agent-query-config.js');
     const baseConfig = await buildQueryBaseConfig({
       configDir: this.configDir,
