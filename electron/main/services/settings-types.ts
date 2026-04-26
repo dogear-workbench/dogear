@@ -7,11 +7,6 @@
 // 类型定义（与 types/settings.ts 保持一致，主进程独立定义）
 // ============================================================
 
-export interface ThinkingConfig {
-  type: 'adaptive' | 'enabled' | 'disabled';
-  budgetTokens?: number;
-}
-
 /** 人设预设 */
 export interface Persona {
   id: string;
@@ -35,14 +30,17 @@ export interface ModelProfile {
 
 export interface AppSettings {
   ai: {
-    thinking: ThinkingConfig;
-    effort: 'low' | 'medium' | 'high' | 'max';
+    effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
     activeProfileId: string;
     maxTurns?: number;
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
     defaultSystemPrompt?: string; // 全局默认系统提示词
     systemPromptAppend?: string;  // @deprecated 旧版追加提示词，向后兼容保留
     settingSources?: ('user' | 'project')[];
+    /** 注入 ANTHROPIC_MODEL，决定 CLI 默认模型 */
+    defaultModelTier?: 'haiku' | 'sonnet' | 'opus';
+    /** 注入 CLAUDE_CODE_SUBAGENT_MODEL，决定 Task 工具子代理模型 */
+    subagentModelTier?: 'haiku' | 'sonnet' | 'opus';
   };
   permissionRules?: {
     allow?: string[];
@@ -61,7 +59,6 @@ export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和�
 
 export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
-    thinking: { type: 'adaptive' },
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
