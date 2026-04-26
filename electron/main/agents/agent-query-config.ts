@@ -66,8 +66,6 @@ export interface QueryRuntimeContext {
 export interface QueryBaseConfig {
   /** 包含 API Key、Base URL、模型映射等的环境变量（传给 query() 的 env 参数） */
   env: Record<string, string>;
-  /** 思考配置 */
-  thinking: AppSettings['ai']['thinking'];
   /** 努力程度 */
   effort: AppSettings['ai']['effort'];
   /** 权限模式 */
@@ -138,9 +136,22 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
   // 打包环境：设置 CLI 可执行文件路径
   const pathToClaudeCodeExecutable = ctx.isPackaged && ctx.cliPath ? ctx.cliPath : undefined;
 
+  // 根据用户配置注入 ANTHROPIC_MODEL / CLAUDE_CODE_SUBAGENT_MODEL
+  const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
+    haiku:  activeProfile.haikuModel,
+    sonnet: activeProfile.sonnetModel,
+    opus:   activeProfile.opusModel,
+  };
+
+  if (appSettings.ai.defaultModelTier) {
+    env.ANTHROPIC_MODEL = tierMap[appSettings.ai.defaultModelTier];
+  }
+  if (appSettings.ai.subagentModelTier) {
+    env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[appSettings.ai.subagentModelTier];
+  }
+
   return {
     env,
-    thinking: appSettings.ai.thinking,
     effort: appSettings.ai.effort,
     permissionMode: appSettings.ai.permissionMode,
     permissionRules: appSettings.permissionRules,
