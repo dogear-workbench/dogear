@@ -635,18 +635,20 @@ export const agentRouter = {
       }
     }),
 
-  /** 设置思考 token 上限（0=禁用, null=默认） */
-  setMaxThinkingTokens: t.procedure
-    .input<{ sessionId: string; maxThinkingTokens: number | null }>()
+  /** 切换会话模型档位（haiku / sonnet / opus） */
+  setSessionModel: t.procedure
+    .input<{ sessionId: string; tier?: 'haiku' | 'sonnet' | 'opus' }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
-        if (!session) return { error: '会话不存在' };
-        await session.setMaxThinkingTokens(input.maxThinkingTokens);
+        if (!session) {
+          throw new Error(`会话不存在: ${input.sessionId}`);
+        }
+        await session.setModel(input.tier);
         return { success: true };
       } catch (error) {
-        console.error('设置 thinking tokens 失败:', error);
+        console.error('切换会话模型失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
       }
     }),
