@@ -473,9 +473,8 @@ class AgentWorker {
           // 后台分析任务固定使用 bypassPermissions（不需要用户确认）
           permissionMode: "bypassPermissions",
 
-          // Phase 0: 注入共享配置（API Key、模型映射、thinking/effort、CLI 路径）
+          // Phase 0: 注入共享配置（API Key、模型映射、effort、CLI 路径）
           env: baseConfig.env,
-          thinking: baseConfig.thinking,
           effort: baseConfig.effort,
           ...(baseConfig.pathToClaudeCodeExecutable && {
             pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
@@ -756,7 +755,6 @@ class AgentWorker {
         options: {
           permissionMode: 'bypassPermissions',
           env: baseConfig.env,
-          thinking: baseConfig.thinking,
           effort: baseConfig.effort,
           ...(baseConfig.pathToClaudeCodeExecutable && {
             pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
