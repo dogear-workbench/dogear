@@ -8,6 +8,33 @@
 
 import path from 'path';
 import { safeJsonRead } from '../services/safe-json.js';
+
+/**
+ * 解析当前平台的 Claude CLI 原生二进制路径（打包环境使用）
+ *
+ * SDK 0.2.113+ 架构变化：claude CLI 从主包中的 cli.js 改为 optionalDependencies
+ * 平台子包里的原生可执行文件，例如：
+ *   - win32 x64  → @anthropic-ai/claude-agent-sdk-win32-x64/claude.exe
+ *   - darwin arm → @anthropic-ai/claude-agent-sdk-darwin-arm64/claude
+ *   - linux x64  → @anthropic-ai/claude-agent-sdk-linux-x64/claude
+ *
+ * 必须配合 electron-builder.yml 的 asarUnpack 规则，把对应平台子包解压到
+ * app.asar.unpacked/ 下，否则子进程 spawn 无法执行 asar 内的虚拟路径。
+ *
+ * @param appPath electron.app.getAppPath() 的返回值（通常是 app.asar 路径）
+ */
+export function resolveClaudeCliPath(appPath: string): string {
+  const platform = process.platform; // 'win32' | 'darwin' | 'linux'
+  const arch = process.arch;         // 'x64' | 'arm64' | ...
+  const binaryName = platform === 'win32' ? 'claude.exe' : 'claude';
+  const subPkg = `claude-agent-sdk-${platform}-${arch}`;
+  return path.join(
+    path.dirname(appPath),
+    'app.asar.unpacked',
+    'node_modules', '@anthropic-ai', subPkg,
+    binaryName,
+  );
+}
 import {
   type AppSettings,
   type ModelProfile,

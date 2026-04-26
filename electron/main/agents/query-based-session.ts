@@ -31,7 +31,7 @@ import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
 import { app } from 'electron';
-import { buildQueryBaseConfig, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
+import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
 import type { AppSettings } from '../services/settings-types.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
@@ -161,13 +161,7 @@ export class QueryBasedSession extends EventEmitter {
           ? path.join(app.getPath('userData'), '.dogear')
           : path.join(process.cwd(), '.dogear'),
         isPackaged: app.isPackaged,
-        cliPath: app.isPackaged
-          ? path.join(
-              path.dirname(app.getAppPath()),
-              'app.asar.unpacked',
-              'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
-            )
-          : undefined,
+        cliPath: app.isPackaged ? resolveClaudeCliPath(app.getAppPath()) : undefined,
       };
 
       // 从 settings.json 加载 AI 配置（通过共享配置层）

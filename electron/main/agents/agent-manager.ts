@@ -25,6 +25,7 @@ import {
   AgentWorkerConfig
 } from './task-types.js';
 import { mainLogger, createTaskLogger } from './logger.js';
+import { resolveClaudeCliPath } from './agent-query-config.js';
 
 // 获取当前文件的路径 (ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -278,14 +279,8 @@ export class AgentManager extends EventEmitter {
       // 注：configDir 已在上方声明（用于 Worker env 的 DOGEAR_CONFIG_DIR），此处复用
 
       // 打包环境：预计算 SDK CLI 路径（Worker 线程无法访问 electron.app）
-      let cliPath: string | undefined;
-      if (app.isPackaged) {
-        cliPath = join(
-          dirname(app.getAppPath()),
-          'app.asar.unpacked',
-          'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'cli.js'
-        );
-      }
+      // 0.2.113+：claude 已改为平台子包里的原生二进制，由 resolveClaudeCliPath 按平台动态定位
+      const cliPath: string | undefined = app.isPackaged ? resolveClaudeCliPath(app.getAppPath()) : undefined;
 
       // 获取当前默认工作区路径（从 JSON 配置读取，不自动创建）
       let workspacePath: string;
