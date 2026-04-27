@@ -266,13 +266,33 @@ def calculate(kline: list[dict], indicators: list[str], params: dict = None) -> 
     if params is None:
         params = {}
 
+    # 各指标的参数别名映射：外部键 → 函数关键字参数
+    _PARAM_ALIASES: dict[str, dict[str, str]] = {
+        "MA":   {"N": "periods", "periods": "periods"},
+        "EMA":  {"N": "periods", "periods": "periods"},
+        "MACD": {"fast": "fast", "slow": "slow", "signal": "signal"},
+        "KDJ":  {"n": "n", "m1": "m1", "m2": "m2"},
+        "RSI":  {"period": "period", "N": "period"},
+        "BOLL": {"N": "period", "period": "period", "k": "width", "width": "width"},
+        "WR":   {"period": "period", "N": "period"},
+        "ATR":  {"period": "period", "N": "period"},
+    }
+
     results = {}
     for name in indicators:
         upper_name = name.upper()
         if upper_name not in INDICATOR_REGISTRY:
             raise ValueError(f"未知指标: {name}，可用指标: {', '.join(INDICATOR_REGISTRY.keys())}")
 
-        indicator_params = params.get(name, params.get(upper_name, {}))
-        results[upper_name] = INDICATOR_REGISTRY[upper_name](kline, **indicator_params)
+        raw_params = params.get(name, params.get(upper_name, {}))
+
+        # 将外部参数名（如 "N"）映射到函数实际关键字参数名
+        alias_map = _PARAM_ALIASES.get(upper_name, {})
+        normalized: dict = {}
+        for k, v in raw_params.items():
+            mapped_key = alias_map.get(k, k)
+            normalized[mapped_key] = v
+
+        results[upper_name] = INDICATOR_REGISTRY[upper_name](kline, **normalized)
 
     return results

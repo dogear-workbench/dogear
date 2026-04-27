@@ -173,8 +173,8 @@ export function createStockAnalysisTools() {
           indicators: z.array(
             z.enum(AVAILABLE_INDICATORS)
           ).min(1).describe('要计算的指标列表'),
-          params: z.record(z.string(), z.record(z.string(), z.number())).optional()
-            .describe('可选参数覆盖，如 {"RSI": {"period": 6}, "BOLL": {"width": 3}}'),
+          params: z.record(z.string(), z.record(z.string(), z.union([z.number(), z.array(z.number())]))).optional()
+            .describe('可选参数覆盖，如 {"RSI": {"period": 6}, "BOLL": {"width": 3}, "MA": {"N": [5,10,20,60]}}'),
           period: z.enum(['daily', 'weekly', 'monthly']).default('daily')
             .describe('K线周期（默认日K）'),
           limit: z.number().min(30).max(MAX_KLINE_LIMIT).default(DEFAULT_KLINE_LIMIT)
@@ -767,7 +767,7 @@ export function createStockAnalysisTools() {
             }>('compare_industry', {
               symbol: args.code,
               metrics: args.metrics,
-            }, 30_000);
+            }, 60_000);
 
             if (result.error) {
               return {
