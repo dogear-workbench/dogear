@@ -42,7 +42,8 @@ export interface ContentBlock {
     // AskUserQuestion 类型
     | 'ask_user_question'
     // SDK 系统消息类型（斜杠命令相关）
-    | 'compact_boundary' | 'compacting' | 'local_command_output';
+    | 'compact_boundary' | 'compacting' | 'local_command_output'
+    | 'tool_group';  // 虚拟分组类型，仅在前端渲染前预处理时生成
   id?: string;
   content?: string;
   toolName?: string;
@@ -98,6 +99,8 @@ export interface ContentBlock {
   subAgentTokens?: number;             // 子代理 token 消耗
   subAgentToolUseCount?: number;       // 子代理工具调用次数
   subAgentResultText?: string;         // 子代理返回的文本结果
+  /** tool_group 内部的子 block 列表（虚拟类型，不持久化） */
+  children?: ContentBlock[];
 }
 
 export interface AgentChatProps {
