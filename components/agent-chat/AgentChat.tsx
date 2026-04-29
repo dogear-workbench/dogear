@@ -22,6 +22,7 @@ import { StreamingIndicator } from './StreamingIndicator';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
+import { useToolRegistryStore } from '@/stores/tool-registry-store';
 
 /**
  * Agent 聊天组件
@@ -68,6 +69,11 @@ export function AgentChat({
   // 构建 context 对象
   const context = { bookId, workspaceId, chapterId: undefined, selectedText: undefined };
 
+  // 预加载工具分类映射（供 ToolBlock/ToolGroupBlock 使用中文大类标签）
+  useEffect(() => {
+    useToolRegistryStore.getState().ensureLoaded();
+  }, []);
+
   // 获取默认工作区路径
   const [workspacePath, setWorkspacePath] = useState('');
   useEffect(() => {
@@ -78,6 +84,19 @@ export function AgentChat({
 
   // 加载状态
   const [isLoading, setIsLoading] = useState(false);
+
+  // SDK 0.2.119+：下一步建议气泡（临时 UI 状态，不跨会话持久化）
+  const [promptSuggestion, setPromptSuggestion] = useState<string | null>(null);
+
+  // 切换会话/对话时清空建议气泡
+  useEffect(() => {
+    setPromptSuggestion(null);
+  }, [conversationId]);
+
+  // Agent 开始新一轮（isLoading 转 true）时清空旧建议
+  useEffect(() => {
+    if (isLoading) setPromptSuggestion(null);
+  }, [isLoading]);
 
   // 同步 isLoading 到 session-store（标签页运行状态）
   useEffect(() => {
@@ -183,6 +202,7 @@ export function AgentChat({
     onQueueChanged: () => {
       sendMessage.setQueuedMessages([...queuedMessagesRef.current]);
     },
+    onPromptSuggestion: (suggestion) => setPromptSuggestion(suggestion),
   });
 
   // 斜杠命令
@@ -329,6 +349,25 @@ export function AgentChat({
             messages[messages.length - 1]?.contentBlocks?.slice(-1)[0]?.type
           }
         />
+
+        {/* SDK 0.2.119+：下一步建议气泡（点击追加到输入框，临时状态） */}
+        {promptSuggestion && !isLoading && (
+          <div className="flex items-start gap-2 mt-2 mb-4">
+            <button
+              onClick={() => {
+                const current = sendMessage.input;
+                const sep = current && !current.endsWith(' ') && !current.endsWith('\n') ? ' ' : '';
+                sendMessage.setInput(current + sep + promptSuggestion);
+                setPromptSuggestion(null);
+              }}
+              className="group inline-flex items-start gap-2 max-w-[90%] px-3 py-2 rounded-2xl rounded-tl-sm bg-muted/60 hover:bg-muted text-left text-sm text-foreground/80 hover:text-foreground border border-border/40 transition-colors cursor-pointer"
+              title="点击填入输入框"
+            >
+              <span className="text-xs mt-0.5 text-muted-foreground group-hover:text-foreground/70">💡</span>
+              <span className="flex-1 leading-relaxed">{promptSuggestion}</span>
+            </button>
+          </div>
+        )}
 
         </div>
       </ScrollArea>
