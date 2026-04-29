@@ -124,6 +124,7 @@ export interface ExtendedSessionMessage {
     | 'notification'        // Notification hook 触发
     | 'task_notification'   // 子代理任务通知
     | 'ask_user_question'   // AskUserQuestion 工具触发
+    | 'prompt_suggestion'   // SDK 0.2.119+ 每轮结束后的下一步建议
     // SDK 系统消息类型（斜杠命令相关）
     | 'compact_boundary'    // 对话压缩分隔线
     | 'compacting'          // 正在压缩中
@@ -171,6 +172,8 @@ export interface ExtendedSessionMessage {
     options: Array<{ label: string; description?: string }>;
     multiSelect?: boolean;
   }>;
+  // 下一步建议（type='prompt_suggestion' 时使用）
+  suggestion?: string;
   // compact_boundary 相关字段
   compactTrigger?: 'manual' | 'auto';  // 压缩触发方式
   compactPreTokens?: number;           // 压缩前 token 数

@@ -26,7 +26,7 @@ const EFFORT_OPTIONS = [
 
 const PERMISSION_MODE_OPTIONS = [
   { value: 'default', label: '标准', description: '危险操作需用户确认（推荐）' },
-  { value: 'acceptEdits', label: '自动编辑', description: '文件编辑自动通过，其余需确认' },
+  { value: 'acceptEdits', label: '自动编辑', description: '文件编辑（Edit/Write）和 Bash 文件系统命令（mkdir/touch/rm/mv/cp/sed 等）自动通过，其余需确认' },
   { value: 'plan', label: '仅规划', description: '只规划不执行，工具调用被阻止' },
   { value: 'bypassPermissions', label: '自动执行', description: '⚠️ 跳过所有权限检查，仅在受控环境中使用' },
 ] as const;
@@ -501,6 +501,42 @@ export default function SettingsPage() {
                   onChange={(e) => updateAI({ defaultSystemPrompt: e.target.value || BUILTIN_DEFAULT_SYSTEM_PROMPT })}
                   placeholder={BUILTIN_DEFAULT_SYSTEM_PROMPT}
                 />
+              </div>
+
+              {/* 下一步建议气泡（promptSuggestions） */}
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={local.ai.promptSuggestionsEnabled !== false}
+                    onChange={(e) => updateAI({ promptSuggestionsEnabled: e.target.checked })}
+                  />
+                  <div>
+                    <div className="text-sm font-medium">下一步建议气泡</div>
+                    <div className="text-xs text-muted-foreground">
+                      Agent 每轮回答后显示一条下一步提示气泡，点击可快速填入输入框（SDK 0.2.119+ 特性）
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              {/* 环境上下文挪到首条消息（excludeDynamicSections） */}
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={local.ai.excludeDynamicSections !== false}
+                    onChange={(e) => updateAI({ excludeDynamicSections: e.target.checked })}
+                  />
+                  <div>
+                    <div className="text-sm font-medium">优化 Prompt 缓存</div>
+                    <div className="text-xs text-muted-foreground">
+                      将环境上下文（工作目录、时间等）移到首条用户消息，避免每轮打穿缓存。一般建议开启（SDK 0.2.119+ 特性）
+                    </div>
+                  </div>
+                </label>
               </div>
 
               {/* 消息显示模式 */}

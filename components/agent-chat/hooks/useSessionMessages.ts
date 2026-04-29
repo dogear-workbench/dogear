@@ -14,6 +14,8 @@ interface UseSessionMessagesParams {
   queuedMessagesRef: MutableRefObject<QueuedMessageEntry[]>;
   /** 悬浮区消费后同步 React UI state */
   onQueueChanged?: () => void;
+  /** SDK 0.2.119+ 每轮结束后的下一步建议（每轮最多一条） */
+  onPromptSuggestion?: (suggestion: string) => void;
 }
 
 /**
@@ -28,6 +30,7 @@ export function useSessionMessages({
   setHistoryLoaded,
   queuedMessagesRef,
   onQueueChanged,
+  onPromptSuggestion,
 }: UseSessionMessagesParams): void {
   useEffect(() => {
     if (!sessionId) return;
@@ -39,6 +42,15 @@ export function useSessionMessages({
 
       // 如果是重放消息且不显示重放消息，跳过
       if (extendedMsg.isReplay && !showReplayMessages) return;
+
+      // SDK 0.2.119+：下一步建议气泡（独立 UI 状态，不混入消息流）
+      if (extendedMsg.type === 'prompt_suggestion') {
+        const suggestion = (extendedMsg as { suggestion?: string }).suggestion;
+        if (typeof suggestion === 'string' && suggestion.trim()) {
+          onPromptSuggestion?.(suggestion);
+        }
+        return;
+      }
 
       // 后端开始处理排队消息时，SDK 推送 type=user 事件
       // 此时从悬浮区移除第一条，并在消息流中渲染该用户消息

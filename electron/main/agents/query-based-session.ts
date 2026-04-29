@@ -206,6 +206,18 @@ export class QueryBasedSession extends EventEmitter {
       this.currentPermissionMode = baseConfig.permissionMode;
       queryOptions.permissionMode = this.currentPermissionMode;
 
+      // SDK 0.2.119+：excludeDynamicSections 把环境上下文移到首条 user message，提升缓存命中率
+      // 默认开启，用户可在设置中关闭
+      if (appSettings.ai.excludeDynamicSections !== false) {
+        queryOptions.excludeDynamicSections = true;
+      }
+
+      // SDK 0.2.119+：promptSuggestions 在每轮结束后产出一条 SDKPromptSuggestionMessage
+      // 默认开启，用户可在设置中关闭
+      if (appSettings.ai.promptSuggestionsEnabled !== false) {
+        queryOptions.promptSuggestions = true;
+      }
+
       // 缓存 activeProfile 供 setModel 使用
       this.currentActiveProfile = baseConfig.activeProfile;
 
@@ -689,6 +701,20 @@ export class QueryBasedSession extends EventEmitter {
             }
             this.emit('message', extendedMessage);
           }
+        }
+
+        // SDK 0.2.119+：下一步建议消息（每轮 result 之后最多一条）
+        if ((message as any).type === 'prompt_suggestion') {
+          const suggestion = (message as any).suggestion;
+          this.logger.info('💡 收到 prompt_suggestion:', suggestion);
+          if (typeof suggestion === 'string' && suggestion.trim()) {
+            this.emit('message', {
+              type: 'prompt_suggestion',
+              suggestion,
+              timestamp: Date.now(),
+            } as ExtendedSessionMessage);
+          }
+          continue;
         }
 
         // 处理结果消息（单次对话完成）

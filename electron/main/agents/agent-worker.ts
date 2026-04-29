@@ -152,8 +152,8 @@ class AgentWorker {
           break;
 
         case TaskType.ANALYZE_BOOK:
-          result = await this.handleAnalyzeBookTask(task, taskLogger);
-          break;
+          // 书籍分析功能已废弃（早期 demo），当前项目聚焦股票和文章摘要
+          throw new Error('书籍分析功能已废弃，请使用股票分析或文章摘要功能');
 
         case TaskType.READING_ASSIST:
           result = await this.handleReadingAssistTask(task, taskLogger);
@@ -753,7 +753,9 @@ class AgentWorker {
       const agentQuery = query({
         prompt,
         options: {
-          permissionMode: 'bypassPermissions',
+          // SDK 0.2.119+：bypassPermissions 会绕过 allowedTools 白名单，任何工具都被放行。
+          // 用 dontAsk 保留"不打扰用户"的语义，同时让 allowedTools 真正生效。
+          permissionMode: 'dontAsk',
           env: baseConfig.env,
           effort: baseConfig.effort,
           ...(baseConfig.pathToClaudeCodeExecutable && {
