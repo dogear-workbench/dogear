@@ -1,6 +1,6 @@
 // components/agent-chat/CollapsibleBlock.tsx
 import { useState, useRef, useEffect, type ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ChevronUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface CollapsibleBlockProps {
@@ -79,10 +79,19 @@ export function CollapsibleBlock({
       {/* 内容区域 */}
       <div className="pl-5 mt-0.5">
         {isOpen ? (
-          /* 展开：完整内容，限制最大高度 + 内部滚动 */
-          <div className="max-h-[500px] overflow-y-auto">
-            {children}
-          </div>
+          <>
+            {/* 展开：完整内容，限制最大高度 + 内部滚动 */}
+            <div className="max-h-[500px] overflow-y-auto">
+              {children}
+            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="flex items-center justify-center gap-1 w-full py-1 mt-0.5 text-xs text-muted-foreground/50 hover:text-muted-foreground hover:bg-muted/30 rounded transition-colors"
+            >
+              <ChevronUp className="w-3 h-3" />
+              <span>收起</span>
+            </button>
+          </>
         ) : (
           /* 收起：预览 N 行 + 渐隐 */
           <div className="relative">
