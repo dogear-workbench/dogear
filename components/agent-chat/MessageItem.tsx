@@ -8,7 +8,51 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage } from './utils';
 import { highlightText } from './highlight';
-import type { Message } from './types';
+import { useSettingsStore } from '@/stores/settings-store';
+import type { Message, ContentBlock } from './types';
+
+/**
+ * 将连续的 tool_use（中间可夹 thinking）合并为 tool_group 虚拟 block。
+ * - ≥2 个工具才分组；单个工具 / 单个 thinking / Task/Agent 子代理 不分组
+ * - 遇到 text / permission_request / ask_user_question 等其他类型 → 结束当前分组
+ */
+function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  const result: ContentBlock[] = [];
+  let buffer: ContentBlock[] = [];
+  let toolCount = 0;
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    if (toolCount >= 2) {
+      result.push({
+        type: 'tool_group',
+        children: buffer,
+        timestamp: buffer[0].timestamp,
+      });
+    } else {
+      result.push(...buffer);
+    }
+    buffer = [];
+    toolCount = 0;
+  };
+
+  for (const block of blocks) {
+    const isSubAgent = block.type === 'tool_use'
+      && (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task');
+
+    if (block.type === 'tool_use' && !isSubAgent) {
+      buffer.push(block);
+      toolCount++;
+    } else if (block.type === 'thinking' && buffer.length > 0) {
+      buffer.push(block);
+    } else {
+      flush();
+      result.push(block);
+    }
+  }
+  flush();
+  return result;
+}
 
 export function MessageItem({
   message,
@@ -30,6 +74,7 @@ export function MessageItem({
   activeMatchId?: string | null;
 }) {
   const isUser = message.role === 'user';
+  const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
 
   // sticky 展开/收起状态（用户消息默认折叠为 2 行）
   const [isStickyExpanded, setIsStickyExpanded] = useState(false);
@@ -184,31 +229,36 @@ export function MessageItem({
               </Badge>
             )}
             {/* 按照接收顺序渲染所有内容块 */}
-            {message.contentBlocks && message.contentBlocks.length > 0 ? (
-              <div className="space-y-2">
-                {message.contentBlocks.map((block, idx) => (
-                  <ContentBlockItem
-                    key={idx}
-                    block={block}
-                    blockIndex={idx}
-                    sessionId={sessionId}
-                    onPermissionResolved={onPermissionResolved}
-                    onAskUserResolved={onAskUserResolved}
-                    searchQuery={searchQuery}
-                    activeMatchId={activeMatchId}
-                    messageIndex={messageIndex}
-                  />
-                ))}
-              </div>
-            ) : message.content ? (
-              <MarkdownRenderer
-                content={message.content}
-                className="text-sm"
-                searchQuery={searchQuery}
-                matchIdPrefix={messageIndex !== undefined ? `${messageIndex}-c` : undefined}
-                activeMatchId={activeMatchId}
-              />
-            ) : null}
+            {(() => {
+              const blocksToRender = (message.contentBlocks && displayMode === 'compact')
+                ? groupBlocks(message.contentBlocks)
+                : (message.contentBlocks || []);
+              return blocksToRender.length > 0 ? (
+                <div className="space-y-2">
+                  {blocksToRender.map((block, idx) => (
+                    <ContentBlockItem
+                      key={idx}
+                      block={block}
+                      blockIndex={idx}
+                      sessionId={sessionId}
+                      onPermissionResolved={onPermissionResolved}
+                      onAskUserResolved={onAskUserResolved}
+                      searchQuery={searchQuery}
+                      activeMatchId={activeMatchId}
+                      messageIndex={messageIndex}
+                    />
+                  ))}
+                </div>
+              ) : message.content ? (
+                <MarkdownRenderer
+                  content={message.content}
+                  className="text-sm"
+                  searchQuery={searchQuery}
+                  matchIdPrefix={messageIndex !== undefined ? `${messageIndex}-c` : undefined}
+                  activeMatchId={activeMatchId}
+                />
+              ) : null;
+            })()}
 
             {/* 流式输出状态 */}
             {message.isStreaming && (!message.contentBlocks || message.contentBlocks.length === 0) && (
