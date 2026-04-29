@@ -6,6 +6,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import { SubAgentBlock } from './SubAgentBlock';
+import { ToolGroupBlock } from './ToolGroupBlock';
 import type { ContentBlock } from './types';
 
 /** 解析错误消息，提取用户友好的标题和描述 */
@@ -65,6 +66,20 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   blockIndex?: number;
 }) {
   switch (block.type) {
+    case 'tool_group':
+      return (
+        <ToolGroupBlock
+          blocks={block.children || []}
+          sessionId={sessionId}
+          onPermissionResolved={onPermissionResolved}
+          onAskUserResolved={onAskUserResolved}
+          searchQuery={searchQuery}
+          activeMatchId={activeMatchId}
+          messageIndex={messageIndex}
+          blockIndex={blockIndex}
+        />
+      );
+
     case 'tool_use':
       // 子代理调用使用专用的 SubAgentBlock 组件
       if (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task') {
