@@ -4,6 +4,7 @@ import { Check, X, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useToolRegistryStore } from '@/stores/tool-registry-store';
 
 /**
  * 工具调用状态
@@ -211,38 +212,13 @@ export function ToolBlock({
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
   const icon = getToolIcon(toolName);
+  const getCategoryLabel = useToolRegistryStore(s => s.getCategoryLabel);
+  const categoryLabel = getCategoryLabel(toolName);
 
-  // 标题：工具图标 + 名称 + 摘要
+  // 标题：中文大类 · 参数摘要
   const titleText = summary
-    ? `${formatToolName(toolName)} ${summary}`
-    : formatToolName(toolName);
-
-  // 简化模式：只渲染一行胶囊（含参数摘要），不可展开
-  if (displayMode === 'compact') {
-    return (
-      <div
-        className={cn(
-          "inline-flex items-center gap-1 px-2 h-5 rounded-full bg-muted/70 text-xs max-w-full",
-          actualStatus === 'error' && 'bg-red-50 text-red-600',
-          actualStatus === 'running' && 'bg-sky-50 text-sky-600',
-          actualStatus !== 'error' && actualStatus !== 'running' && 'text-muted-foreground',
-          className
-        )}
-        title={summary ? `${formatToolName(toolName)} · ${summary}` : formatToolName(toolName)}
-      >
-        <span>{icon}</span>
-        <span className="font-medium flex-shrink-0">{formatToolName(toolName)}</span>
-        {summary && (
-          <>
-            <span className="opacity-50 flex-shrink-0">·</span>
-            <span className="opacity-80 truncate">{summary}</span>
-          </>
-        )}
-        {actualStatus === 'running' && <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />}
-        {actualStatus === 'error' && <X className="w-3 h-3 flex-shrink-0" />}
-      </div>
-    );
-  }
+    ? `${categoryLabel} · ${summary}`
+    : categoryLabel;
 
   return (
     <CollapsibleBlock
@@ -257,7 +233,7 @@ export function ToolBlock({
         actualStatus === 'running' && 'text-sky-600',
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
-      previewLines={2}
+      previewLines={displayMode === 'compact' ? 0 : 2}
       defaultOpen={false}
       className={className}
     >
