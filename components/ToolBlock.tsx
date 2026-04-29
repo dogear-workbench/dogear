@@ -54,22 +54,6 @@ function getToolIcon(toolName: string): string {
   return TOOL_ICONS[toolName] || TOOL_ICONS.default;
 }
 
-/**
- * 格式化工具名称（用于显示）
- * 将 mcp__xxx__YyyZzz 格式转换为更友好的显示
- */
-function formatToolName(toolName: string): string {
-  if (toolName.startsWith("mcp__")) {
-    // 格式: mcp__server-name__ToolName
-    const parts = toolName.split("__");
-    if (parts.length >= 3) {
-      const serverName = parts[1];
-      const methodName = parts.slice(2).join("__");
-      return `${serverName}: ${methodName}`;
-    }
-  }
-  return toolName;
-}
 
 /**
  * 获取工具摘要信息
