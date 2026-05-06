@@ -13,7 +13,7 @@ export interface ToolMeta {
   /** 所属 MCP Server 名称 */
   server: string;
   /** 分类标签 */
-  category: 'article' | 'book-qa' | 'book-analysis' | 'stock' | 'other';
+  category: 'article' | 'book-qa' | 'book-analysis' | 'stock' | 'memory' | 'other';
 }
 
 /** 按 MCP Server 分组后的工具列表 */
@@ -29,6 +29,7 @@ export interface ToolGroup {
 /** Server 名称 → 中文分组标签 */
 const SERVER_LABELS: Record<string, string> = {
   'sdk':                    'SDK 内置工具',
+  'dogear-memory':          '记忆大脑',
   'dogear-stock':           '股票行情',
   'dogear-stock-analysis':  '股票分析',
   'dogear-article':         '文章阅读',
@@ -89,6 +90,7 @@ export function getAllTools(): ToolGroup[] {
   // 固定排序
   const serverOrder = [
     'sdk',
+    'dogear-memory',
     'dogear-stock',
     'dogear-stock-analysis',
     'dogear-article',

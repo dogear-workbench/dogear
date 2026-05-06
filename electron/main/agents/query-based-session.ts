@@ -35,6 +35,7 @@ import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, t
 import type { AppSettings, ModelProfile } from '../services/settings-types.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -180,8 +181,13 @@ export class QueryBasedSession extends EventEmitter {
 
       const { appSettings, activeProfile } = baseConfig;
 
+      // 加载工作区核心档案（buildSystemPrompt 保持同步，异步加载在此处做）
+      const coreProfileText = this.config.workspacePath
+        ? await loadCoreProfileForSession(this.config.workspacePath)
+        : null;
+
       // 构建系统提示词（需要 appSettings 读取默认提示词与人设）
-      const systemPrompt = this.buildSystemPrompt(appSettings);
+      const systemPrompt = this.buildSystemPrompt(appSettings, coreProfileText);
 
       // 获取项目根目录（用于查找 .claude/skills/）
       const projectRoot = await this.getProjectRoot();
@@ -286,8 +292,9 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       if (this.config.enableSkills && projectRoot) {
-        // 从设置中读取 settingSources（包含 'project' 时加载 .claude/settings.json 和 skills）
-        queryOptions.settingSources = baseConfig.settingSources || ['project'];
+        // 固定加载 user + project 两个源，不暴露给用户配置
+        // （覆盖老用户 settings.json 里存量的 ['project'] 值，保证 ~/.claude/CLAUDE.md 生效）
+        queryOptions.settingSources = ['user', 'project'];
         this.logger.info('已配置 settingSources 以加载 Skills');
       }
 
@@ -543,6 +550,7 @@ export class QueryBasedSession extends EventEmitter {
       this.logger.info('  • 模式: preset + append');
       this.logger.info('  • preset:', systemPrompt.preset);
       this.logger.info('  • append 长度:', systemPrompt.append.length, '字符');
+      this.logger.info('  • coreProfile 已注入:', !!coreProfileText, coreProfileText?.length ?? 0, '字符');
       this.logger.info('');
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');
       this.logger.info('║                  开始创建 query 实例                          ║');
@@ -1377,9 +1385,14 @@ export class QueryBasedSession extends EventEmitter {
   /**
    * 构建系统提示词
    * 统一使用 SDK 的 preset + append 模式
-   * append 组成顺序：默认提示词 → 人设 → 对话规则（持久绑定此对话）
+   * append 组成顺序：默认提示词 → 人设 → 对话规则 → 工作区用户画像
+   *
+   * coreProfileText 由 start() 提前 await 加载后传入，保持本方法同步。
    */
-  private buildSystemPrompt(appSettings: AppSettings): { type: 'preset'; preset: 'claude_code'; append: string } {
+  private buildSystemPrompt(
+    appSettings: AppSettings,
+    coreProfileText: string | null,
+  ): { type: 'preset'; preset: 'claude_code'; append: string } {
     const parts: string[] = [];
 
     // 1. 全局默认系统提示词（由设置页面管理，不在此处硬编码 fallback）
@@ -1387,7 +1400,7 @@ export class QueryBasedSession extends EventEmitter {
       parts.push(appSettings.ai.defaultSystemPrompt);
     }
 
-    // 3. 人设 prompt
+    // 2. 人设 prompt
     if (this.config.personaId && appSettings.personas) {
       const persona = appSettings.personas.find(p => p.id === this.config.personaId);
       if (persona) {
@@ -1395,9 +1408,14 @@ export class QueryBasedSession extends EventEmitter {
       }
     }
 
-    // 4. 对话规则（持久绑定此对话）
+    // 3. 对话规则（持久绑定此对话）
     if (this.config.tempPrompt) {
       parts.push(`\n## 额外指令\n${this.config.tempPrompt}`);
+    }
+
+    // 4. 工作区用户画像（core-profile.md，由 memory-loader 预格式化好）
+    if (coreProfileText) {
+      parts.push(coreProfileText);
     }
 
     return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };

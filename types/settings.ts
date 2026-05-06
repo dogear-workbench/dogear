@@ -72,7 +72,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     effort: 'high',
     activeProfileId: 'default',
     permissionMode: 'default',
-    settingSources: ['project'],
+    settingSources: ['user', 'project'],
     defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
     excludeDynamicSections: true,
     promptSuggestionsEnabled: true,

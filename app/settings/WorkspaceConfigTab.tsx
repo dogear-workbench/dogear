@@ -88,24 +88,10 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
     <div className="max-w-2xl py-6 px-6">
       <h2 className="text-lg font-semibold mb-1">工作区配置</h2>
       <p className="text-sm text-muted-foreground mb-6">
-        管理工作区的 .claude 目录和 SDK 设置源
+        管理工作区的 .claude 目录
       </p>
 
       <div className="space-y-8">
-        {/* settingSources 状态（只读） */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">设置源</label>
-          <p className="text-xs text-muted-foreground">
-            Agent SDK 使用 project 设置源，自动加载工作区 .claude/ 目录中的配置（CLAUDE.md、Skills、agents/）。
-          </p>
-          <div className="flex items-center gap-2">
-            <span className="text-xs px-2 py-0.5 rounded-full border bg-blue-50 border-blue-200 text-blue-700">
-              project
-            </span>
-            <span className="text-xs text-muted-foreground">已启用</span>
-          </div>
-        </div>
-
         {/* .claude 目录状态 */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
