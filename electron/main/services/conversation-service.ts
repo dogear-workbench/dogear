@@ -25,7 +25,7 @@ export interface ConversationIndex {
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
   personaId?: string;    // 关联的人设 ID
-  tempPrompt?: string;   // 临时提示词
+  tempPrompt?: string;   // 对话规则（持久绑定此对话）
   forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
   /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
   archivedAt?: string;

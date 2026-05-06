@@ -105,7 +105,7 @@ export function PromptSidebar() {
                 </div>
                 {localTempPrompt && (
                   <div className="text-xs text-muted-foreground mt-1 ml-5.5">
-                    临时提示词：已设置
+                    对话规则：已设置
                   </div>
                 )}
               </div>
@@ -177,17 +177,17 @@ export function PromptSidebar() {
               {/* 分隔线 */}
               <div className="border-t mx-4" />
 
-              {/* 临时提示词 */}
+              {/* 对话规则（持久绑定此对话） */}
               <div className="px-4 py-3 space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">临时提示词</label>
+                <label className="text-xs font-medium text-muted-foreground">对话规则</label>
                 <Textarea
                   value={localTempPrompt}
                   onChange={(e) => setLocalTempPrompt(e.target.value)}
-                  placeholder="为当前对话添加额外指令..."
+                  placeholder="为当前对话添加专属规则（会跟随对话保存）..."
                   className="min-h-[100px] text-sm resize-y"
                 />
                 <p className="text-xs text-muted-foreground">
-                  仅对当前对话生效，不会影响其他对话。
+                  仅对当前对话生效，与对话一同保存（包括归档后）。
                 </p>
               </div>
             </div>

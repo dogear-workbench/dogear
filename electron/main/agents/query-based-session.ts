@@ -67,7 +67,7 @@ export interface QueryBasedSessionConfig {
   agents?: Record<string, AgentDefinition>;  // 自定义子代理（通过 Task 工具调用）
   // 人设配置
   personaId?: string;                // 关联的人设 ID
-  tempPrompt?: string;               // 临时提示词
+  tempPrompt?: string;               // 对话规则（持久绑定此对话）
   // 会话标题（用于 SDK 0.2.119+ 跳过自动生成，仅新建会话生效，resume 时持久化标题优先）
   title?: string;
 }
@@ -180,7 +180,7 @@ export class QueryBasedSession extends EventEmitter {
 
       const { appSettings, activeProfile } = baseConfig;
 
-      // 构建系统提示词（需要 appSettings 读取 systemPromptAppend）
+      // 构建系统提示词（需要 appSettings 读取默认提示词与人设）
       const systemPrompt = this.buildSystemPrompt(appSettings);
 
       // 获取项目根目录（用于查找 .claude/skills/）
@@ -1377,10 +1377,9 @@ export class QueryBasedSession extends EventEmitter {
   /**
    * 构建系统提示词
    * 统一使用 SDK 的 preset + append 模式
-   * append 组成顺序：默认提示词 → Skills 说明 → 人设 → 临时提示词 → 上下文 → 旧版兼容
+   * append 组成顺序：默认提示词 → 人设 → 对话规则（持久绑定此对话）
    */
   private buildSystemPrompt(appSettings: AppSettings): { type: 'preset'; preset: 'claude_code'; append: string } {
-    const { context } = this.config;
     const parts: string[] = [];
 
     // 1. 全局默认系统提示词（由设置页面管理，不在此处硬编码 fallback）
@@ -1396,14 +1395,9 @@ export class QueryBasedSession extends EventEmitter {
       }
     }
 
-    // 4. 临时提示词
+    // 4. 对话规则（持久绑定此对话）
     if (this.config.tempPrompt) {
       parts.push(`\n## 额外指令\n${this.config.tempPrompt}`);
-    }
-
-    // 6. 向后兼容旧版 systemPromptAppend
-    if (appSettings.ai.systemPromptAppend) {
-      parts.push(`\n${appSettings.ai.systemPromptAppend}`);
     }
 
     return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };

@@ -41,7 +41,6 @@ export interface AppSettings {
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk'; // 默认权限模式
     defaultSystemPrompt?: string; // 全局默认系统提示词（替代硬编码的 basePrompt）
-    systemPromptAppend?: string; // @deprecated 旧版追加提示词，向后兼容保留
     settingSources?: ('user' | 'project')[]; // SDK 设置源
     /** 注入 ANTHROPIC_MODEL，决定 CLI 默认模型 */
     defaultModelTier?: 'haiku' | 'sonnet' | 'opus';

@@ -35,7 +35,6 @@ export interface AppSettings {
     maxTurns?: number;
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
     defaultSystemPrompt?: string; // 全局默认系统提示词
-    systemPromptAppend?: string;  // @deprecated 旧版追加提示词，向后兼容保留
     settingSources?: ('user' | 'project')[];
     /** 注入 ANTHROPIC_MODEL，决定 CLI 默认模型 */
     defaultModelTier?: 'haiku' | 'sonnet' | 'opus';

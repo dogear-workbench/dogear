@@ -45,7 +45,7 @@ export interface Conversation {
   parent_conversation_id?: string;   // 分叉对话的父对话 ID
   fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 UUID
   persona_id?: string;               // 关联的人设 ID
-  temp_prompt?: string;              // 临时提示词
+  temp_prompt?: string;              // 对话规则（持久绑定此对话）
   fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   created_at: number;
