@@ -10,6 +10,7 @@ import { conversationsRouter } from './conversations.js';
 import { articleRouter, registerArticleParseStatusListener } from './article.js';
 import { explorerRouter } from './explorer.js';
 import { settingsRouter } from './settings.js';
+import { memoryRouter } from './memory.js';
 import { logRouter } from './log.js';
 import { claudeConfigRouter } from './claude-config.js';
 import { stockRouter } from './stock.js';
@@ -28,6 +29,7 @@ export const router = {
   ...articleRouter,
   ...explorerRouter,
   ...settingsRouter,
+  ...memoryRouter,
   ...logRouter,
   ...claudeConfigRouter,
   ...stockRouter,

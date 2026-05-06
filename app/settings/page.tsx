@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS, BUILTIN_DEFAULT_SYSTEM_PROMPT, isProfileComplete } fr
 import { WorkspaceConfigTab } from './WorkspaceConfigTab';
 import { PersonaTab } from './PersonaTab';
 import { AgentsTab } from './AgentsTab';
+import { MemoryTab } from './MemoryTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 
 // ═══ 常量 ═══════════════════════════════════════════
@@ -382,6 +383,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="workspace" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             工作区配置
+          </TabsTrigger>
+          <TabsTrigger value="memory" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            记忆管理
           </TabsTrigger>
           <TabsTrigger value="agents" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             代理管理
@@ -775,6 +779,11 @@ export default function SettingsPage() {
         {/* ── Tab: 工作区配置 ── */}
         <TabsContent value="workspace" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <WorkspaceConfigTab local={local} setLocal={setLocal} />
+        </TabsContent>
+
+        {/* ── Tab: 记忆管理 ── */}
+        <TabsContent value="memory" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <MemoryTab />
         </TabsContent>
 
         {/* ── Tab: 代理管理 ── */}
