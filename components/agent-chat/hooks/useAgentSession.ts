@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore } from '@/stores/session-store';
@@ -126,6 +127,8 @@ export function useAgentSession({
 
         if (response.error) {
           console.error('❌ attach runtime 失败:', response.error);
+          // 活跃会话数达到上限等错误展示给用户
+          toast.error('无法打开会话', { description: response.error });
           return;
         }
 

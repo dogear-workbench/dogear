@@ -1609,13 +1609,30 @@ export class QueryBasedSession extends EventEmitter {
 // 广播函数类型：将 session 事件发给所有渲染层窗口
 type SessionBroadcaster = (sessionId: string, event: 'message' | 'complete' | 'error', payload: unknown) => void;
 
+/**
+ * 活跃会话超出上限时抛出的错误
+ * 调用方（tipc handler / runtime service）需捕获并返回友好错误
+ */
+export class SessionLimitError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionLimitError';
+  }
+}
+
 export class QueryBasedSessionManager extends EventEmitter {
+  /**
+   * 活跃会话上限（里程碑 1.5 Phase 2 Step A2.1）
+   * 每个对话占一个 session，避免用户累积过多 SDK 子进程消耗资源
+   */
+  static readonly MAX_ACTIVE_SESSIONS = 10;
+
   private sessions: Map<string, QueryBasedSession> = new Map();
   // 引用计数：记录每个 session 有多少个持有者（渲染层标签页 + bot 各算一个）
   private refCounts: Map<string, number> = new Map();
   // 每个 session 关联的外部清理函数（如 agent.ts 注册的 sessionMessage 监听器）
   private cleanupCallbacks: Map<string, Array<() => void>> = new Map();
-  // conversationId → sessionId 映射（bot 绑定时注册，渲染层打开时复用）
+  // conversationId → sessionId 映射（bot 绑定时注册,渲染层打开时复用）
   private conversationSessionMap: Map<string, string> = new Map();
   // 广播函数：由 agent.ts 初始化时注册，负责把事件发给所有渲染层
   private broadcaster: SessionBroadcaster | null = null;
@@ -1630,8 +1647,15 @@ export class QueryBasedSessionManager extends EventEmitter {
 
   /**
    * 创建新会话，初始引用计数为 1（创建者持有）
+   * 达到 MAX_ACTIVE_SESSIONS 时抛出 SessionLimitError，调用方需捕获并给出用户提示
    */
   createSession(config: QueryBasedSessionConfig): QueryBasedSession {
+    if (this.sessions.size >= QueryBasedSessionManager.MAX_ACTIVE_SESSIONS) {
+      throw new SessionLimitError(
+        `活跃会话已达到上限 ${QueryBasedSessionManager.MAX_ACTIVE_SESSIONS} 个，请关闭一些会话后再试`
+      );
+    }
+
     const sessionId = uuidv4();
     this.logger.info('创建基于 Query 的会话:', sessionId.substring(0, 8));
 
