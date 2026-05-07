@@ -4,7 +4,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -16,6 +16,7 @@ import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { EmptyFocusState } from '@/components/EmptyFocusState';
+import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -90,6 +91,7 @@ export default function Home() {
   const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
+  const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
 
   // 文章状态
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -202,6 +204,16 @@ export default function Home() {
           </Button>
           <h1 className="font-semibold">Dogear</h1>
           <WorkspaceSwitcherPopover />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => setWorkspaceRuleDialogOpen(true)}
+            title="编辑当前工作区的 .claude/CLAUDE.md"
+          >
+            <ScrollText className="w-4 h-4" />
+            <span className="text-xs">工作区规则</span>
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={openSettings}>
@@ -571,6 +583,9 @@ export default function Home() {
 
       {/* 微信 Bot 控制 Dialog */}
       <WechatDialog open={wechatDialogOpen} onOpenChange={setWechatDialogOpen} />
+
+      {/* 工作区规则 Dialog（里程碑 1.5 Step A2.6） */}
+      <WorkspaceRuleDialog open={workspaceRuleDialogOpen} onOpenChange={setWorkspaceRuleDialogOpen} />
     </main>
   );
 }

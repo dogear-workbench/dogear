@@ -1,8 +1,14 @@
+/**
+ * 工作区配置 Tab（设置页）
+ *
+ * 里程碑 1.5 Step A2.6 后：仅展示当前工作区 `.claude` 目录只读状态。
+ * CLAUDE.md 编辑器已迁出到顶部导航栏的 "工作区规则" Dialog（WorkspaceRuleDialog）。
+ */
+
 import { useState, useEffect, useCallback } from 'react';
-import { FolderOpen, RefreshCw, FileText, Check } from 'lucide-react';
+import { FolderOpen, RefreshCw, FileText, Check, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
@@ -14,8 +20,9 @@ interface ClaudeDirStatus {
 }
 
 interface WorkspaceConfigTabProps {
-  local: AppSettings;
-  setLocal: (updater: (prev: AppSettings) => AppSettings) => void;
+  // 保留 props 形态以兼容设置页调用处，当前不再使用 local/setLocal
+  local?: unknown;
+  setLocal?: unknown;
 }
 
 export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
@@ -23,26 +30,16 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
   const workspacePath = workspace?.path;
 
   const [status, setStatus] = useState<ClaudeDirStatus | null>(null);
-  const [claudeMdContent, setClaudeMdContent] = useState('');
-  const [savedClaudeMdContent, setSavedClaudeMdContent] = useState('');
   const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
 
-  // 加载 .claude 目录状态和 CLAUDE.md 内容
   const loadData = useCallback(async () => {
     if (!workspacePath) return;
     setLoading(true);
     try {
-      const [statusResult, mdResult] = await Promise.all([
-        client.getClaudeDirStatus({ workspacePath }),
-        client.readClaudeMd({ workspacePath }),
-      ]);
+      const statusResult = await client.getClaudeDirStatus({ workspacePath });
       if ('status' in statusResult) {
         setStatus(statusResult.status as ClaudeDirStatus);
       }
-      const content = ('content' in mdResult ? mdResult.content : null) as string | null;
-      setClaudeMdContent(content || '');
-      setSavedClaudeMdContent(content || '');
     } finally {
       setLoading(false);
     }
@@ -52,26 +49,11 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
     loadData();
   }, [loadData]);
 
-  // 初始化 .claude 目录
   const handleInit = async () => {
     if (!workspacePath) return;
     await client.initClaudeDir({ workspacePath });
     await loadData();
   };
-
-  // 保存 CLAUDE.md
-  const handleSaveClaudeMd = async () => {
-    if (!workspacePath) return;
-    setSaving(true);
-    try {
-      await client.writeClaudeMd({ workspacePath, content: claudeMdContent });
-      setSavedClaudeMdContent(claudeMdContent);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const claudeMdDirty = claudeMdContent !== savedClaudeMdContent;
 
   if (!workspacePath) {
     return (
@@ -88,16 +70,22 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
     <div className="max-w-2xl py-6 px-6">
       <h2 className="text-lg font-semibold mb-1">工作区配置</h2>
       <p className="text-sm text-muted-foreground mb-6">
-        管理工作区的 .claude 目录
+        查看当前工作区的 .claude 目录状态。
       </p>
 
       <div className="space-y-8">
-        {/* .claude 目录状态 */}
+        {/* .claude 目录状态（只读） */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium">.claude 目录</label>
-            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={loadData} disabled={loading}>
-              <RefreshCw className={cn("w-3.5 h-3.5", loading && "animate-spin")} />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={loadData}
+              disabled={loading}
+            >
+              <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
             </Button>
           </div>
 
@@ -125,7 +113,8 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
                   <div className="flex items-center gap-2 ml-6">
                     <FolderOpen className="w-3.5 h-3.5 text-muted-foreground" />
                     <span>
-                      agents/ {status.hasAgentsDir ? `（${status.agentFiles.length} 个代理）` : '（不存在）'}
+                      agents/{' '}
+                      {status.hasAgentsDir ? `（${status.agentFiles.length} 个代理）` : '（不存在）'}
                     </span>
                   </div>
                 </>
@@ -142,30 +131,17 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
           )}
         </div>
 
-        {/* CLAUDE.md 编辑器 */}
-        {status?.exists && (
-          <div className="space-y-3">
-            <label className="text-sm font-medium">CLAUDE.md 工作区指令</label>
-            <p className="text-xs text-muted-foreground">
-              此文件的内容会被 Agent SDK 自动加载为项目级指令（需启用 project 设置源）。
-            </p>
-            <Textarea
-              value={claudeMdContent}
-              onChange={(e) => setClaudeMdContent(e.target.value)}
-              placeholder="# 工作区指令&#10;&#10;在此编写给 AI 助手的工作区级别指令..."
-              className="min-h-[200px] font-mono text-sm resize-y"
-            />
-            <div className="flex justify-end">
-              <Button
-                size="sm"
-                onClick={handleSaveClaudeMd}
-                disabled={!claudeMdDirty || saving}
-              >
-                {saving ? '保存中...' : '保存 CLAUDE.md'}
-              </Button>
-            </div>
+        {/* CLAUDE.md 编辑入口迁移提示 */}
+        <div className="rounded-md border border-dashed p-4 text-sm space-y-2">
+          <div className="flex items-center gap-2 font-medium">
+            <ExternalLink className="w-4 h-4" />
+            CLAUDE.md 编辑器已迁移
           </div>
-        )}
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            关闭此设置页，点击顶部导航栏的 <span className="font-medium">「工作区规则」</span>{' '}
+            按钮即可编辑当前工作区的 CLAUDE.md。
+          </p>
+        </div>
       </div>
     </div>
   );
