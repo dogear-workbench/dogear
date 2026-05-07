@@ -34,6 +34,12 @@ interface UIState {
   /** 切换左侧面板 tab */
   setLeftPanelTab: (tab: 'conversations' | 'explorer') => void;
 
+  // 左侧面板折叠（里程碑 1.5 Step A2.5）
+  /** 左侧面板是否展开 */
+  leftPanelOpen: boolean;
+  /** 切换左侧面板 */
+  toggleLeftPanel: () => void;
+
   // 右侧预览面板
   /** 右侧预览面板是否展开 */
   rightPanelOpen: boolean;
@@ -89,6 +95,10 @@ export const useUIStore = create<UIState>((set) => ({
   leftPanelTab: 'conversations',
   setLeftPanelTab: (tab) => set({ leftPanelTab: tab }),
 
+  // 左侧面板折叠（默认展开）
+  leftPanelOpen: true,
+  toggleLeftPanel: () => set((s) => ({ leftPanelOpen: !s.leftPanelOpen })),
+
   // 右侧预览面板（默认折叠）
   rightPanelOpen: false,
   toggleRightPanel: () => set((s) => ({ rightPanelOpen: !s.rightPanelOpen })),
@@ -124,6 +134,7 @@ export const useUIStore = create<UIState>((set) => ({
     promptSidebarOpen: false,
     archivePanelOpen: false,
     leftPanelTab: 'conversations',
+    leftPanelOpen: true,
     rightPanelOpen: false,
     rightPanelTab: 'preview',
     subAgentsMap: {},

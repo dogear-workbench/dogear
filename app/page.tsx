@@ -4,7 +4,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, TrendingUp, MessageCircle } from 'lucide-react';
+import { RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -15,6 +15,7 @@ import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
+import { EmptyFocusState } from '@/components/EmptyFocusState';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -34,6 +35,8 @@ export default function Home() {
   const setRightPanelTab = useUIStore((s) => s.setRightPanelTab);
   const leftPanelTab = useUIStore((s) => s.leftPanelTab);
   const setLeftPanelTab = useUIStore((s) => s.setLeftPanelTab);
+  const leftPanelOpen = useUIStore((s) => s.leftPanelOpen);
+  const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -97,9 +100,6 @@ export default function Home() {
   const hideUrlInput = useArticleStore((s) => s.hideUrlInput);
   const setArticleUrlInput = useArticleStore((s) => s.setArticleUrlInput);
   const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
-
-  // 对话状态
-  const newConversation = useConversationStore((s) => s.newConversation);
 
   // 子代理列表的过滤由 SubAgentPanel 通过 sdkSessionId prop 完成
 
@@ -186,7 +186,20 @@ export default function Home() {
     <main className="h-screen flex flex-col">
       {/* 顶部导航栏 */}
       <header className="h-12 border-b flex items-center justify-between px-4 bg-background">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            onClick={toggleLeftPanel}
+            title={leftPanelOpen ? '折叠左侧面板' : '展开左侧面板'}
+          >
+            {leftPanelOpen ? (
+              <PanelLeftClose className="w-4 h-4" />
+            ) : (
+              <PanelLeftOpen className="w-4 h-4" />
+            )}
+          </Button>
           <h1 className="font-semibold">Dogear</h1>
           <WorkspaceSwitcherPopover />
         </div>
@@ -251,8 +264,13 @@ export default function Home() {
 
       {/* 主内容区域：三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：Tab 分页（对话列表 / 文件树） */}
-        <aside className="w-64 border-r bg-muted/30 flex flex-col">
+        {/* 左侧：Tab 分页（对话列表 / 文件树），可折叠（里程碑 1.5 Step A2.5） */}
+        <aside
+          className={cn(
+            'border-r bg-muted/30 flex flex-col transition-all duration-200 overflow-hidden',
+            leftPanelOpen ? 'w-64' : 'w-0 border-r-0',
+          )}
+        >
           {/* Tab 切换栏 */}
           <div className="flex border-b flex-shrink-0">
             <button
@@ -311,19 +329,7 @@ export default function Home() {
               ))}
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center space-y-4">
-                <MessageSquareText className="w-12 h-12 mx-auto text-muted-foreground/50" />
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">还没有选择对话</p>
-                  <p className="text-xs text-muted-foreground/70">从左侧选择一个对话，或者创建新对话</p>
-                </div>
-                <Button variant="outline" size="sm" onClick={() => newConversation()}>
-                  <Plus className="w-4 h-4 mr-1" />
-                  新建对话
-                </Button>
-              </div>
-            </div>
+            <EmptyFocusState />
           )}
         </section>
 
