@@ -1,12 +1,13 @@
 /**
- * 工作区多会话 Tab 栏（里程碑 1.5 Step A2.3）
+ * 工作区多会话 Tab 栏（里程碑 1.5 Step A2.3，A2.8 增强右键菜单）
  *
  * 职责：
  * - 渲染活跃会话标签页（来自 session-store）
  * - 点击 Tab：切换聚焦，如 tab 所属工作区与当前不同，先切工作区再聚焦
  * - 关闭 Tab：释放后端 Query 会话（closeQueryBasedSession），再从 UI 移除
  * - 显示 StatusPulse 指示运行/等待确认状态
- * - "弹出到独立窗口" 按钮
+ * - 右键菜单：弹出到独立窗口、关闭标签页、关闭其他标签页
+ * - hover 快捷入口：弹出按钮、关闭按钮（保留便于鼠标用户）
  *
  * 不负责：
  * - AgentChat 渲染（由调用方控制）
@@ -18,6 +19,13 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { StatusPulse } from '@/components/StatusPulse';
 import { useSessionStore, type SessionTab } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -68,8 +76,7 @@ export function WorkspaceTabBar() {
   };
 
   /** 关闭 Tab：释放后端 session + 从 UI 移除 */
-  const handleCloseTab = async (tab: SessionTab, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const closeTabInternal = async (tab: SessionTab) => {
     if (tab.sessionId) {
       try {
         await client.closeQueryBasedSession({ sessionId: tab.sessionId });
@@ -81,9 +88,28 @@ export function WorkspaceTabBar() {
     useUIStore.getState().removeSubAgents(tab.conversationId);
   };
 
-  /** 弹出到独立窗口 */
-  const handlePopOut = (tab: SessionTab, e: React.MouseEvent) => {
+  const handleCloseTab = async (tab: SessionTab, e: React.MouseEvent) => {
     e.stopPropagation();
+    await closeTabInternal(tab);
+  };
+
+  /** 关闭其他标签页（右键菜单项） */
+  const handleCloseOthers = async (tab: SessionTab) => {
+    const targets = tabs.filter((t) => t.conversationId !== tab.conversationId);
+    for (const t of targets) {
+      await closeTabInternal(t);
+    }
+  };
+
+  /** 弹出到独立窗口 */
+  const popOutInternal = (tab: SessionTab) => {
+    // 运行中的会话不能弹出：会造成前端两处监听 stream 事件冲突
+    if (tab.isStreaming || runningConversationIds.has(tab.conversationId)) {
+      toast.warning('会话运行中无法弹出', {
+        description: '等待当前回答结束后再试',
+      });
+      return;
+    }
     client.openSessionWindow({
       conversationId: tab.conversationId,
       title: tab.conversationTitle,
@@ -91,6 +117,11 @@ export function WorkspaceTabBar() {
     // 标记为独立窗口，AgentChat 保持挂载以便 attachment 平滑过渡，
     // 收到 sessionWindowReady 事件后才安全关闭标签页
     addSessionWindow(tab.conversationId);
+  };
+
+  const handlePopOut = (tab: SessionTab, e: React.MouseEvent) => {
+    e.stopPropagation();
+    popOutInternal(tab);
   };
 
   return (
@@ -101,38 +132,62 @@ export function WorkspaceTabBar() {
           const isRunning = runningConversationIds.has(tab.conversationId);
           const isPending = pendingActionIds.has(tab.conversationId);
           const showPulse = tab.isStreaming || isRunning;
+          const canPopOut = !tab.isStreaming && !isRunning;
 
           return (
-            <div
-              key={tab.conversationId}
-              className={cn(
-                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
-                isActive ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
-              )}
-              onClick={() => handleTabClick(tab)}
-            >
-              {showPulse && <StatusPulse isPending={isPending} size="sm" />}
-              <span className="truncate">{tab.conversationTitle}</span>
-              {showPulse && isPending && (
-                <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
-              )}
-              {!tab.isStreaming && !isRunning && (
-                <button
-                  className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="弹出为独立窗口"
-                  onClick={(e) => handlePopOut(tab, e)}
+            <ContextMenu key={tab.conversationId}>
+              <ContextMenuTrigger asChild>
+                <div
+                  className={cn(
+                    'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
+                    isActive ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+                  )}
+                  onClick={() => handleTabClick(tab)}
                 >
-                  <ExternalLink className="w-3 h-3" />
-                </button>
-              )}
-              <button
-                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
-                title="关闭标签页"
-                onClick={(e) => handleCloseTab(tab, e)}
-              >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
+                  {showPulse && <StatusPulse isPending={isPending} size="sm" />}
+                  <span className="truncate">{tab.conversationTitle}</span>
+                  {showPulse && isPending && (
+                    <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
+                  )}
+                  {canPopOut && (
+                    <button
+                      className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                      title="弹出为独立窗口"
+                      onClick={(e) => handlePopOut(tab, e)}
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  )}
+                  <button
+                    className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
+                    title="关闭标签页"
+                    onClick={(e) => handleCloseTab(tab, e)}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem
+                  onClick={() => popOutInternal(tab)}
+                  disabled={!canPopOut}
+                >
+                  <ExternalLink className="w-3.5 h-3.5 mr-2" />
+                  弹出到独立窗口
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem onClick={() => closeTabInternal(tab)}>
+                  <X className="w-3.5 h-3.5 mr-2" />
+                  关闭标签页
+                </ContextMenuItem>
+                <ContextMenuItem
+                  onClick={() => handleCloseOthers(tab)}
+                  disabled={tabs.length <= 1}
+                >
+                  关闭其他标签页
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
           );
         })}
       </div>

@@ -42,17 +42,17 @@ export function SessionWindowPage() {
         return;
       }
 
-      // 3. 获取完整工作区对象并设置到 store（不触发 setDefault，不影响主窗口）
+      // 3. 获取完整工作区对象并设置到 store（skipSetDefault 避免影响主窗口的默认工作区）
       const { workspaces } = await client.getAll();
       const ws = workspaces?.find((w: { id: string }) => w.id === result.workspaceId);
       if (!ws) {
         setInitError(`找不到工作区: ${result.workspaceId}`);
         return;
       }
-      // 直接设置 workspace 状态，不走 setWorkspace（避免 fire-and-forget 和 setDefault 副作用）
-      useWorkspaceStore.setState({ workspace: ws });
+      // 使用 setWorkspace 以触发 conversation-store 分片激活（A2.2 分片后必需）
+      await useWorkspaceStore.getState().setWorkspace(ws, { skipSetDefault: true });
 
-      // 4. 显式加载对话列表并选中目标对话
+      // 4. 显式再加载一次对话列表（setWorkspace 内部的 fire-and-forget 可能未完成），然后选中目标对话
       await loadConversations();
       const conv = useConversationStore.getState().conversations.find(c => c.id === conversationId);
       if (conv) {
