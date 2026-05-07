@@ -10,6 +10,7 @@ import { useConfirmStore } from '@/stores/confirm-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, BUILTIN_DEFAULT_SYSTEM_PROMPT, isProfileComplete } from '@/types/settings';
 import { WorkspaceConfigTab } from './WorkspaceConfigTab';
+import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { PersonaTab } from './PersonaTab';
 import { AgentsTab } from './AgentsTab';
 import { MemoryTab } from './MemoryTab';
@@ -383,6 +384,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="workspace" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             工作区配置
+          </TabsTrigger>
+          <TabsTrigger value="workspace-management" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            工作区管理
           </TabsTrigger>
           <TabsTrigger value="memory" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             记忆管理
@@ -779,6 +783,11 @@ export default function SettingsPage() {
         {/* ── Tab: 工作区配置 ── */}
         <TabsContent value="workspace" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <WorkspaceConfigTab local={local} setLocal={setLocal} />
+        </TabsContent>
+
+        {/* ── Tab: 工作区管理 ── */}
+        <TabsContent value="workspace-management" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <WorkspaceManagementTab />
         </TabsContent>
 
         {/* ── Tab: 记忆管理 ── */}

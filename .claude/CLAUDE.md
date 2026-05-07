@@ -127,6 +127,8 @@ electron/
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
 - `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测，含默认系统提示词编辑）
 - `app/settings/PersonaTab.tsx` — 人设管理标签页（CRUD：左侧列表 + 右侧编辑表单，name/description/prompt）
+- `app/settings/WorkspaceConfigTab.tsx` — 工作区配置标签页（只读展示 .claude 目录状态，CLAUDE.md 编辑器已迁移到 WorkspaceRuleDialog）
+- `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查，里程碑 1.5 Step A2.7）
 - `app/book/BookPage.tsx` — 书籍阅读页面，章节导航 + AI问答/分析面板（useParams 获取 id）
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
@@ -169,7 +171,10 @@ electron/
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
 - `BookConversationList.tsx` — 对话列表，分叉标记，新建/删除对话
-- `workspace-selector.tsx` — 工作区选择/创建界面
+- `WorkspaceSwitcherPopover.tsx` — 顶部导航栏工作区切换器（选择/添加，里程碑 1.5 Step A2.4）
+- `WelcomeFirstRun.tsx` — 零工作区首次启动引导卡片（里程碑 1.5 Step A2.4）
+- `WorkspaceRuleDialog.tsx` — 工作区规则 Dialog（.claude/CLAUDE.md 编辑器，里程碑 1.5 Step A2.6）
+- `EmptyFocusState.tsx` — 无聚焦对话时的占位（里程碑 1.5 Step A2.5）
 - `reader.tsx` — 电子书阅读器，章节导航 + 目录侧边栏 + AI面板
 - `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮
 - `ToolBlock.tsx` — 工具调用块，compact/detailed 两种模式，参数摘要
