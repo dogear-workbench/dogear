@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { WorkspaceSelector } from '@/components/workspace-selector';
 import { ConversationList } from '@/components/BookConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, TrendingUp, ChevronsUpDown, MessageCircle } from 'lucide-react';
+import { RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, TrendingUp, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -14,6 +13,8 @@ import { PromptSidebar } from '@/components/PromptSidebar';
 import { SubAgentPanel } from '@/components/agent-chat/SubAgentPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
+import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
+import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -47,15 +48,28 @@ export default function Home() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const setWorkspace = useWorkspaceStore((s) => s.setWorkspace);
   const [loadingDefaultWs, setLoadingDefaultWs] = useState(true);
+  // 总工作区数量（用于区分 "零工作区首次启动" vs "有工作区但未选" 两种场景）
+  const [totalWorkspaceCount, setTotalWorkspaceCount] = useState<number | null>(null);
 
   // 启动时自动加载默认工作区
   useEffect(() => {
     if (!workspace) {
-      client.getDefault().then((defaultWs: any) => {
-        if (defaultWs) {
-          setWorkspace(defaultWs);
+      (async () => {
+        try {
+          const [defaultWs, allResult] = await Promise.all([
+            client.getDefault(),
+            client.getAll(),
+          ]);
+          setTotalWorkspaceCount(allResult.workspaces?.length ?? 0);
+          if (defaultWs) {
+            setWorkspace(defaultWs);
+          }
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoadingDefaultWs(false);
         }
-      }).catch(console.error).finally(() => setLoadingDefaultWs(false));
+      })();
     } else {
       setLoadingDefaultWs(false);
     }
@@ -71,7 +85,6 @@ export default function Home() {
   const deleteBook = useWorkspaceStore((s) => s.deleteBook);
   const openBookInFolder = useWorkspaceStore((s) => s.openBookInFolder);
   const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
-  const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
 
@@ -145,9 +158,28 @@ export default function Home() {
     );
   }
 
-  // 如果没有工作区，显示工作区选择界面
+  // 无工作区时：
+  // - 首次启动（没有任何工作区）→ 显示欢迎引导
+  // - 有工作区但用户主动 "clearWorkspace"（清空默认）→ 同样走欢迎引导，
+  //   让用户重新从 Popover 选择（A2.7 设置页的工作区管理 Tab 提供完整列表/删除/恢复）
   if (!workspace) {
-    return <WorkspaceSelector />;
+    if (totalWorkspaceCount === 0) {
+      return <WelcomeFirstRun />;
+    }
+    // 有历史工作区但当前未激活 → 简单提示并提供 Popover 入口
+    return (
+      <div className="h-screen flex items-center justify-center bg-muted/20">
+        <div className="max-w-md w-full bg-background rounded-xl border shadow-lg p-8 space-y-4 text-center">
+          <h2 className="text-lg font-semibold">请选择一个工作区继续</h2>
+          <p className="text-sm text-muted-foreground">
+            检测到 {totalWorkspaceCount ?? 0} 个已有工作区，点击下方选择。
+          </p>
+          <div className="flex justify-center">
+            <WorkspaceSwitcherPopover />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -156,19 +188,7 @@ export default function Home() {
       <header className="h-12 border-b flex items-center justify-between px-4 bg-background">
         <div className="flex items-center gap-4">
           <h1 className="font-semibold">Dogear</h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <FolderOpen className="w-4 h-4" />
-            <span>{workspace.name}</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0"
-              onClick={clearWorkspace}
-              title="切换工作区"
-            >
-              <ChevronsUpDown className="w-3.5 h-3.5" />
-            </Button>
-          </div>
+          <WorkspaceSwitcherPopover />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={openSettings}>
