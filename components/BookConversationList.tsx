@@ -159,6 +159,46 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const openTab = useSessionStore((s) => s.openTab);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
 
+  // 下面这些 hooks 原本在 "if (data.nodeType === 'folder') return ..." 和
+  // "if (!conv) return null" 之后调用，违反 React Hooks 规则 —— 切换工作区
+  // 触发 tree rebuild 时，同一 fiber 对应的 nodeType 可能从 folder 变成 conversation
+  // （或反之），hooks 数量随之变化就抛 "Rendered fewer hooks" 错误。
+  // 修复：所有 hooks 提到函数顶部，early return 放到最后。
+  const runningIds = useConversationStore((s) => s.runningConversationIds);
+  const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
+  const botBoundId = useConversationStore((s) => s.botBoundConversationId);
+  const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  const conv = data.nodeType === 'folder' ? null : data.conversation ?? null;
+
+  /** 进入编辑模式 */
+  const startEditing = useCallback(() => {
+    if (!conv) return;
+    setEditTitle(getConversationTitle(conv));
+    setIsEditing(true);
+    setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 0);
+  }, [conv]);
+
+  /** 保存标题 */
+  const saveTitle = useCallback(() => {
+    if (!conv) return;
+    const trimmed = editTitle.trim();
+    const finalTitle = trimmed || getConversationTitle(conv);
+    updateConversationTitle(conv.id, finalTitle);
+    setIsEditing(false);
+  }, [editTitle, conv, updateConversationTitle]);
+
+  /** 取消编辑 */
+  const cancelEditing = useCallback(() => {
+    setIsEditing(false);
+  }, []);
+
   const paddingLeft = meta.level * 16 + 8;
   const { ref, ...props } = item.getProps();
 
@@ -222,51 +262,14 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
     );
   }
 
-  // 对话渲染
-  const conv = data.conversation;
+  // 对话渲染前的 early return（所有 hooks 已在上方调用完毕）
   if (!conv) return null;
 
   const isSelected = selectedConversation?.id === conv.id;
   const isFork = !!conv.parent_conversation_id;
-
-  // 对话运行状态（从 conversation-store 读取，主进程广播，bot 操作也会更新）
-  const runningIds = useConversationStore((s) => s.runningConversationIds);
   const isRunning = runningIds.has(conv.id);
-  const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
   const isPending = pendingIds.has(conv.id);
-  const botBoundId = useConversationStore((s) => s.botBoundConversationId);
   const isBotBound = conv.id === botBoundId;
-
-  // 标题编辑状态
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState('');
-  const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
-  const editInputRef = useRef<HTMLInputElement>(null);
-
-  /** 进入编辑模式 */
-  const startEditing = useCallback(() => {
-    setEditTitle(getConversationTitle(conv));
-    setIsEditing(true);
-    // 下一帧聚焦并全选
-    setTimeout(() => {
-      editInputRef.current?.focus();
-      editInputRef.current?.select();
-    }, 0);
-  }, [conv]);
-
-  /** 保存标题 */
-  const saveTitle = useCallback(() => {
-    const trimmed = editTitle.trim();
-    // 空标题回退为默认标题
-    const finalTitle = trimmed || getConversationTitle(conv);
-    updateConversationTitle(conv.id, finalTitle);
-    setIsEditing(false);
-  }, [editTitle, conv, updateConversationTitle]);
-
-  /** 取消编辑 */
-  const cancelEditing = useCallback(() => {
-    setIsEditing(false);
-  }, []);
 
   return (
     <ContextMenu>

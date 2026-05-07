@@ -568,3 +568,5 @@ client.listTopics(workspacePath) → 显示列表
 ## 修订历史
 
 - 2026-05-05：初版设计。规则层 + 记忆层双轨，里程碑 1 只做静态部分
+- 2026-05-06：后端 Step 1-4 + 前端 Step 5-6 完成，Step 7 端到端联调通过
+- 2026-05-07：core-profile 定位调整——仍保留注入逻辑和 UI，但**不要求用户手动维护**，定位为"里程碑 2 做梦系统的输出容器"；里程碑 1 的实际主交付是 topics + RecallMemory；MemoryTab 的 core-profile 标签在空态下显示"等待做梦系统自动生成"。同时确认：**SDK 的 `~/.claude/projects/c--dogear/memory/` 这份平行记忆的处理**保留到 2026-05 下旬（做梦系统启动前）再决策是禁用、重定向还是并存

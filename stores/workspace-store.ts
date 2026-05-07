@@ -63,13 +63,20 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   creatingFolderAt: null,
   setCreatingFolderAt: (parentPath) => set({ creatingFolderAt: parentPath }),
   setWorkspace: async (workspace, options?) => {
-    // 切换到不同工作区时清理属于旧工作区的文件/书籍选中态
-    // 里程碑 1.5 Phase 2 A2.9：A2.2 分片后，conversations 已按工作区分片，
-    // 但 selectedFile/selectedBook/workspaceFilePath 仍是全局单值；不清会出现
-    // 右侧预览显示旧工作区书籍 / 左侧 ConversationList 选中行错位的残留
+    // 里程碑 1.5 Phase 2 A2.9：切换到不同工作区时清理属于旧工作区的选中态
+    // 背景：A2.2 conversations 分片后，selectedFile/selectedBook/workspaceFilePath 仍是全局单值；
+    //       不清会出现右侧预览显示旧工作区书籍 / 左侧列表选中行错位的残留
+    // 关键：先把依赖的 store 模块 await 拿到，再做一次同步 set，让 React 只看到一次一致的状态切换，
+    //       避免 workspace 已切但 conversation 分片/ article 选中还是旧值的中间态渲染
+    //       （某些组件在中间态下会走到不同条件分支，引发 hooks 计数不一致）
     const prev = get().workspace;
     const workspaceChanged = prev?.id !== workspace.id;
+    const { useConversationStore } = await import('./conversation-store');
     if (workspaceChanged) {
+      const { useArticleStore } = await import('./article-store');
+      // 先同步清 article 选中 + 切换 conversation 分片，再一次 set 切换 workspace + 清空所有选中字段
+      useArticleStore.getState().clearSelectedArticle();
+      useConversationStore.getState().activateWorkspace(workspace.id);
       set({
         workspace,
         selectedFile: null,
@@ -77,11 +84,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         workspaceFilePath: null,
         files: [],
       });
-      // 清理 article-store 中残留的旧工作区文章选中态
-      import('./article-store').then(({ useArticleStore }) => {
-        useArticleStore.getState().clearSelectedArticle();
-      });
     } else {
+      // 同一工作区重复 setWorkspace（例如独立窗口初始化时）：仍需确保分片激活
+      useConversationStore.getState().activateWorkspace(workspace.id);
       set({ workspace });
     }
     // 独立窗口不应修改默认工作区，避免影响主窗口
@@ -92,13 +97,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         console.error('设置默认工作区失败:', error);
       }
     }
-    // 触发文件列表加载
+    // 触发文件列表 + 对话列表加载（fire-and-forget，分片已激活，不会错位到旧工作区）
     get().loadWorkspaceFiles();
-    // 里程碑 1.5 Phase 2 Step A2.2：激活 conversation-store 对应工作区分片，再加载对话列表
-    import('./conversation-store').then(({ useConversationStore }) => {
-      useConversationStore.getState().activateWorkspace(workspace.id);
-      useConversationStore.getState().loadConversations();
-    });
+    useConversationStore.getState().loadConversations();
   },
 
   loadWorkspaceFiles: async () => {
