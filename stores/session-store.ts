@@ -3,6 +3,7 @@
  * 管理多个并行运行的 Agent 会话标签页
  */
 import { create } from 'zustand';
+import { toast } from 'sonner';
 
 /** 单个会话标签页信息 */
 export interface SessionTab {
@@ -45,7 +46,8 @@ interface SessionState {
   reset: () => void;
 }
 
-const MAX_TABS = 5;
+// 里程碑 1.5：Tab 上限对齐后端 MAX_ACTIVE_SESSIONS=10
+const MAX_TABS = 10;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
@@ -59,7 +61,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       return true;
     }
     if (get().tabs.length >= MAX_TABS) {
-      return false; // 达到上限，由调用方提示用户
+      // 达到上限：统一在 store 层 toast 提示，调用方无需处理
+      toast.warning(`最多只能同时打开 ${MAX_TABS} 个会话`, {
+        description: '请先关闭一些标签页再打开新对话',
+      });
+      return false;
     }
     set((state) => ({
       tabs: [...state.tabs, {

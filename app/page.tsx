@@ -5,15 +5,15 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, X, TrendingUp, ChevronsUpDown, MessageCircle } from 'lucide-react';
+import { FolderOpen, RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, MessageSquareText, TrendingUp, ChevronsUpDown, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
-import { StatusPulse } from '@/components/StatusPulse';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 import { PromptSidebar } from '@/components/PromptSidebar';
 import { SubAgentPanel } from '@/components/agent-chat/SubAgentPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
+import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -97,18 +97,12 @@ export default function Home() {
     }
   }, [selectedArticle?.id, selectedBook?.id, openRightPanel]);
 
-  // 多标签页状态
+  // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const openTab = useSessionStore((s) => s.openTab);
-  const closeTab = useSessionStore((s) => s.closeTab);
-  const switchTab = useSessionStore((s) => s.switchTab);
-  const addSessionWindow = useSessionStore((s) => s.addSessionWindow);
   const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
-  const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
-  // 过滤掉已弹出到独立窗口的标签页（标签头隐藏，但 AgentChat 保持挂载以维持 attachment）
-  const tabs = allTabs.filter(t => !sessionWindowIds.has(t.conversationId));
 
   // 监听独立窗口关闭事件，恢复 Tab 到主窗口
   // 独立窗口关闭时：主进程 detachByWebContentsId 释放独立窗口的 attachment，
@@ -275,62 +269,8 @@ export default function Home() {
 
         {/* 中间：对话窗口 */}
         <section className="flex-1 flex flex-col min-w-0">
-          {/* 标签页头 */}
-          {tabs.length > 0 && (
-            <ScrollArea className="border-b bg-muted/30">
-              <div className="flex items-center">
-                {tabs.map((tab) => (
-                  <div
-                    key={tab.conversationId}
-                    className={cn(
-                      'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
-                      activeTabId === tab.conversationId
-                        ? 'bg-background font-medium'
-                        : 'hover:bg-muted/50 text-muted-foreground'
-                    )}
-                    onClick={() => switchTab(tab.conversationId)}
-                  >
-                    {tab.isStreaming && (
-                      <StatusPulse isPending={pendingActionIds.has(tab.conversationId)} size="sm" />
-                    )}
-                    <span className="truncate">{tab.conversationTitle}</span>
-                    {tab.isStreaming && pendingActionIds.has(tab.conversationId) && (
-                      <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
-                    )}
-                    {!tab.isStreaming && (
-                      <button
-                        className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                        title="弹出为独立窗口"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          client.openSessionWindow({
-                            conversationId: tab.conversationId,
-                            title: tab.conversationTitle,
-                          });
-                          // 标记为独立窗口中，但不立即关闭标签页（避免 detach 先于独立窗口 attach 导致 session 销毁）
-                          // 标签页会在收到 sessionWindowReady 事件后安全关闭
-                          addSessionWindow(tab.conversationId);
-                        }}
-                      >
-                        <ExternalLink className="w-3 h-3" />
-                      </button>
-                    )}
-                    <button
-                      className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeTab(tab.conversationId);
-                        useUIStore.getState().removeSubAgents(tab.conversationId);
-                      }}
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <ScrollBar orientation="horizontal" />
-            </ScrollArea>
-          )}
+          {/* 标签页头（抽取为独立组件：里程碑 1.5 Step A2.3） */}
+          <WorkspaceTabBar />
 
           {/* 标签页内容：用 allTabs 渲染以保持 AgentChat 挂载（弹出到独立窗口期间 display:none 但不卸载，sessionWindowReady 后才 closeTab 卸载） */}
           {allTabs.length > 0 ? (
