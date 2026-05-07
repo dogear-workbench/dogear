@@ -20,7 +20,14 @@ const __dirname = dirname(__filename);
 // 判断是否为开发环境
 const isDev = process.env.NODE_ENV === 'development';
 
-// 单实例锁：确保只能运行一个 Dogear 实例
+// 开发环境使用独立的 userData 路径，避免与生产环境共享单实例锁文件和 Electron 缓存
+// Windows 文件系统不区分大小写：默认 dev (dogear) 和 prod (Dogear) 会指向同一个 AppData 目录
+// 改到 Dogear-Dev 后两者彻底隔离，允许 dev 和 prod 同时运行
+if (isDev) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'Dogear-Dev'));
+}
+
+// 单实例锁：确保只能运行一个 Dogear 实例（dev/prod 因 userData 隔离，互相独立）
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
