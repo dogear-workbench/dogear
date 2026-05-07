@@ -63,7 +63,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   creatingFolderAt: null,
   setCreatingFolderAt: (parentPath) => set({ creatingFolderAt: parentPath }),
   setWorkspace: async (workspace, options?) => {
-    set({ workspace });
+    // 切换到不同工作区时清理属于旧工作区的文件/书籍选中态
+    // 里程碑 1.5 Phase 2 A2.9：A2.2 分片后，conversations 已按工作区分片，
+    // 但 selectedFile/selectedBook/workspaceFilePath 仍是全局单值；不清会出现
+    // 右侧预览显示旧工作区书籍 / 左侧 ConversationList 选中行错位的残留
+    const prev = get().workspace;
+    const workspaceChanged = prev?.id !== workspace.id;
+    if (workspaceChanged) {
+      set({
+        workspace,
+        selectedFile: null,
+        selectedBook: null,
+        workspaceFilePath: null,
+        files: [],
+      });
+      // 清理 article-store 中残留的旧工作区文章选中态
+      import('./article-store').then(({ useArticleStore }) => {
+        useArticleStore.getState().clearSelectedArticle();
+      });
+    } else {
+      set({ workspace });
+    }
     // 独立窗口不应修改默认工作区，避免影响主窗口
     if (!options?.skipSetDefault) {
       try {
