@@ -286,7 +286,7 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
               return;
             }
             selectConversation(conv);
-            openTab(conv.id, getConversationTitle(conv));
+            openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
           }}
         >
           {isRunning ? (
@@ -473,7 +473,7 @@ export function ConversationList() {
         return;
       }
       selectConversation(data.conversation);
-      openTabFromList(data.conversation.id, getConversationTitle(data.conversation));
+      openTabFromList(data.conversation.id, getConversationTitle(data.conversation), data.conversation.workspace_id);
     }
   }, [selectConversation, openTabFromList, sessionWindowIdsFromList]);
 

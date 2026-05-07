@@ -8,6 +8,7 @@ import { create } from 'zustand';
 export interface SessionTab {
   conversationId: string;
   conversationTitle: string;
+  workspaceId: string;           // 会话所属工作区（里程碑 1.5：Tab 跨工作区保留）
   sessionId: string | null;      // agent session ID，初始为 null
   attachmentId: string | null;   // runtime attachment ID，用于 detach
   isStreaming: boolean;          // 是否正在运行
@@ -21,7 +22,7 @@ interface SessionState {
   sessionWindowIds: Set<string>;
 
   /** 打开标签页（已存在则切换到该标签） */
-  openTab: (conversationId: string, title: string) => boolean;
+  openTab: (conversationId: string, title: string, workspaceId: string) => boolean;
   /** 关闭标签页 */
   closeTab: (conversationId: string) => void;
   /** 切换到指定标签页 */
@@ -51,7 +52,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   activeTabId: null,
   sessionWindowIds: new Set<string>(),
 
-  openTab: (conversationId, title) => {
+  openTab: (conversationId, title, workspaceId) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
     if (existing) {
       set({ activeTabId: conversationId });
@@ -64,6 +65,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       tabs: [...state.tabs, {
         conversationId,
         conversationTitle: title,
+        workspaceId,
         sessionId: null,
         attachmentId: null,
         isStreaming: false,

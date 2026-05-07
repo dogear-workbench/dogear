@@ -29,14 +29,43 @@ export interface ConversationFlatNode {
 
 const CONV_TREE_ROOT = '__root__';
 
+/**
+ * 单个工作区的对话分片（里程碑 1.5 Phase 2 Step A2.2）
+ * 切换工作区时顶层 conversations/selectedConversation/... 从对应分片镜像
+ */
+interface WorkspaceConversationSlice {
+  conversations: Conversation[];
+  selectedConversation: Conversation | null;
+  treeData: ConversationTreeData | null;
+  nodeMap: Record<string, ConversationFlatNode>;
+  loadingConversations: boolean;
+}
+
+function emptySlice(): WorkspaceConversationSlice {
+  return {
+    conversations: [],
+    selectedConversation: null,
+    treeData: null,
+    nodeMap: {},
+    loadingConversations: false,
+  };
+}
+
 interface ConversationState {
-  // --- 状态 ---
+  // --- 按工作区分片的状态（唯一真源） ---
+  byWorkspace: Record<string, WorkspaceConversationSlice>;
+  /** 当前激活的工作区 id（顶层镜像字段指向它） */
+  activeWorkspaceId: string | null;
+
+  // --- 顶层镜像字段（从 byWorkspace[activeWorkspaceId] 同步，供选择器读取，保持现有调用点 API 不变） ---
   conversations: Conversation[];
   selectedConversation: Conversation | null;
   loadingConversations: boolean;
-  forkParams: ForkParams | null;
   treeData: ConversationTreeData | null;
   nodeMap: Record<string, ConversationFlatNode>;
+
+  // --- 全局状态（跨工作区共享） ---
+  forkParams: ForkParams | null;
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
   /** 当前正在运行（有 Agent 活跃）的对话 ID 集合 */
@@ -47,7 +76,9 @@ interface ConversationState {
   botBoundConversationId: string | null;
 
   // --- Actions ---
-  /** 加载工作区对话列表和树数据 */
+  /** 切换激活工作区：把顶层镜像指向该工作区的分片（不触发加载） */
+  activateWorkspace: (workspaceId: string | null) => void;
+  /** 加载当前工作区对话列表和树数据（写入对应分片） */
   loadConversations: () => Promise<void>;
   /** 选择对话 */
   selectConversation: (conversation: Conversation) => Promise<void>;
@@ -187,59 +218,116 @@ function buildNodeMap(
   return nodeMap;
 }
 
+/**
+ * 工具函数：用 patch 更新指定工作区的分片，同时如果该工作区是当前激活则同步顶层镜像
+ */
+function patchSlice(
+  state: ConversationState,
+  workspaceId: string,
+  patch: Partial<WorkspaceConversationSlice>,
+): Partial<ConversationState> {
+  const prev = state.byWorkspace[workspaceId] ?? emptySlice();
+  const next = { ...prev, ...patch };
+  const update: Partial<ConversationState> = {
+    byWorkspace: { ...state.byWorkspace, [workspaceId]: next },
+  };
+  // 如果更新的是当前激活工作区，同步顶层镜像
+  if (state.activeWorkspaceId === workspaceId) {
+    Object.assign(update, patch);
+  }
+  return update;
+}
+
 export const useConversationStore = create<ConversationState>((set, get) => ({
+  byWorkspace: {},
+  activeWorkspaceId: null,
+
+  // 顶层镜像字段初始值
   conversations: [],
   selectedConversation: null,
   loadingConversations: false,
-  forkParams: null,
   treeData: null,
   nodeMap: {},
+
+  // 全局状态
+  forkParams: null,
   sessionRestartTrigger: 0,
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
   botBoundConversationId: null,
 
+  activateWorkspace: (workspaceId) => {
+    if (!workspaceId) {
+      set({
+        activeWorkspaceId: null,
+        conversations: [],
+        selectedConversation: null,
+        loadingConversations: false,
+        treeData: null,
+        nodeMap: {},
+      });
+      return;
+    }
+    const slice = get().byWorkspace[workspaceId] ?? emptySlice();
+    set({
+      activeWorkspaceId: workspaceId,
+      conversations: slice.conversations,
+      selectedConversation: slice.selectedConversation,
+      loadingConversations: slice.loadingConversations,
+      treeData: slice.treeData,
+      nodeMap: slice.nodeMap,
+    });
+  },
+
   loadConversations: async () => {
     const workspace = await getWorkspace();
     if (!workspace) return;
+    const wsId = workspace.id;
 
     try {
-      set({ loadingConversations: true });
+      set((state) => patchSlice(state, wsId, { loadingConversations: true }));
       // 并行加载对话列表和树数据
       const [convResult, treeResult] = await Promise.all([
-        client.getByWorkspaceId({ workspaceId: workspace.id }),
-        client.getConversationTree({ workspaceId: workspace.id }),
+        client.getByWorkspaceId({ workspaceId: wsId }),
+        client.getConversationTree({ workspaceId: wsId }),
       ]);
 
       const conversations = convResult.conversations || [];
       const treeData = treeResult.tree || null;
       const nodeMap = buildNodeMap(conversations, treeData);
 
-      set({ conversations, treeData, nodeMap });
+      set((state) => patchSlice(state, wsId, { conversations, treeData, nodeMap }));
     } catch (error) {
       console.error('加载对话列表失败:', error);
     } finally {
-      set({ loadingConversations: false });
+      set((state) => patchSlice(state, wsId, { loadingConversations: false }));
     }
   },
 
   selectConversation: async (conversation) => {
-    set({ forkParams: null, selectedConversation: conversation });
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    const wsId = workspace.id;
+
+    set((state) => ({ ...patchSlice(state, wsId, { selectedConversation: conversation }), forkParams: null }));
 
     // 自动打开标签页（openTab 内部有防重逻辑）
-    const { useSessionStore } = await import('./session-store');
-    useSessionStore.getState().openTab(conversation.id, conversation.title || '新对话');
+    useSessionStore.getState().openTab(conversation.id, conversation.title || '新对话', wsId);
 
     // 从后端获取最新数据，覆盖可能过时的前端缓存（如分叉字段已被清除）
-    const workspace = await getWorkspace();
-    if (workspace) {
-      try {
-        const fresh = await client.getById({ conversationId: conversation.id, workspaceId: workspace.id });
-        if (fresh.conversation && get().selectedConversation?.id === conversation.id) {
-          set({ selectedConversation: fresh.conversation });
-        }
-      } catch { /* 忽略，已有缓存数据可用 */ }
-    }
+    try {
+      const fresh = await client.getById({ conversationId: conversation.id, workspaceId: wsId });
+      if (fresh.conversation) {
+        const freshConv = fresh.conversation;
+        set((state) => {
+          const slice = state.byWorkspace[wsId];
+          if (slice?.selectedConversation?.id === conversation.id) {
+            return patchSlice(state, wsId, { selectedConversation: freshConv });
+          }
+          return state;
+        });
+      }
+    } catch { /* 忽略，已有缓存数据可用 */ }
 
     // 如果对话有关联书籍，加载书籍信息
     const { useWorkspaceStore } = await import('./workspace-store');
@@ -289,9 +377,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   deleteConversation: async (conversationId) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
+    const wsId = workspace.id;
 
     // 查找对话，判断走归档还是硬删除
-    const target = get().conversations.find(c => c.id === conversationId);
+    const slice = get().byWorkspace[wsId] ?? emptySlice();
+    const target = slice.conversations.find(c => c.id === conversationId);
     const shouldArchive = !!target?.sdk_session_id;
 
     const confirmed = shouldArchive
@@ -301,8 +391,8 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
     try {
       const result = shouldArchive
-        ? await client.archiveConversation({ conversationId, workspaceId: workspace.id })
-        : await client.deleteConversation({ conversationId, workspaceId: workspace.id });
+        ? await client.archiveConversation({ conversationId, workspaceId: wsId })
+        : await client.deleteConversation({ conversationId, workspaceId: wsId });
 
       if (result.error) {
         toast.error(shouldArchive ? '归档对话失败' : '删除对话失败', { description: result.error });
@@ -313,8 +403,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       useSessionStore.getState().closeTab(conversationId);
 
       // 如果操作的是当前选中的对话，清除选中状态
-      if (get().selectedConversation?.id === conversationId) {
-        set({ selectedConversation: null });
+      const curSlice = get().byWorkspace[wsId];
+      if (curSlice?.selectedConversation?.id === conversationId) {
+        set((state) => patchSlice(state, wsId, { selectedConversation: null }));
       }
 
       await get().loadConversations();
@@ -424,30 +515,36 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   updateConversationTitle: async (conversationId, title) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
+    const wsId = workspace.id;
 
     try {
-      await client.updateTitle({ workspaceId: workspace.id, conversationId, title });
+      await client.updateTitle({ workspaceId: wsId, conversationId, title });
 
       // 同步更新 Tab 标题
       useSessionStore.getState().updateTitle(conversationId, title);
 
-      // 更新本地状态
-      set((state) => ({
-        conversations: state.conversations.map((c) =>
+      // 更新分片状态
+      set((state) => {
+        const slice = state.byWorkspace[wsId] ?? emptySlice();
+        const newConvs = slice.conversations.map((c) =>
           c.id === conversationId ? { ...c, title } : c
-        ),
-        selectedConversation: state.selectedConversation?.id === conversationId
-          ? { ...state.selectedConversation, title }
-          : state.selectedConversation,
-        // 同步更新 nodeMap 中的标题
-        nodeMap: Object.fromEntries(
-          Object.entries(state.nodeMap).map(([key, node]) =>
+        );
+        const newSelected = slice.selectedConversation?.id === conversationId
+          ? { ...slice.selectedConversation, title }
+          : slice.selectedConversation;
+        const newNodeMap = Object.fromEntries(
+          Object.entries(slice.nodeMap).map(([key, node]) =>
             key === conversationId
               ? [key, { ...node, name: title, conversation: node.conversation ? { ...node.conversation, title } : undefined }]
               : [key, node]
           )
-        ),
-      }));
+        );
+        return patchSlice(state, wsId, {
+          conversations: newConvs,
+          selectedConversation: newSelected,
+          nodeMap: newNodeMap,
+        });
+      });
     } catch (error) {
       console.error('更新对话标题失败:', error);
     }
@@ -456,24 +553,29 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   updateConversationPersona: async (conversationId, personaId, tempPrompt) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
+    const wsId = workspace.id;
 
     try {
       await client.updateConversationPersona({
-        workspaceId: workspace.id,
+        workspaceId: wsId,
         conversationId,
         personaId,
         tempPrompt,
       });
 
-      // 更新本地状态
-      set((state) => ({
-        conversations: state.conversations.map((c) =>
+      set((state) => {
+        const slice = state.byWorkspace[wsId] ?? emptySlice();
+        const newConvs = slice.conversations.map((c) =>
           c.id === conversationId ? { ...c, persona_id: personaId, temp_prompt: tempPrompt } : c
-        ),
-        selectedConversation: state.selectedConversation?.id === conversationId
-          ? { ...state.selectedConversation, persona_id: personaId, temp_prompt: tempPrompt }
-          : state.selectedConversation,
-      }));
+        );
+        const newSelected = slice.selectedConversation?.id === conversationId
+          ? { ...slice.selectedConversation, persona_id: personaId, temp_prompt: tempPrompt }
+          : slice.selectedConversation;
+        return patchSlice(state, wsId, {
+          conversations: newConvs,
+          selectedConversation: newSelected,
+        });
+      });
     } catch (error) {
       console.error('更新对话人设失败:', error);
     }
@@ -506,12 +608,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   },
 
   reset: () => set({
+    byWorkspace: {},
+    activeWorkspaceId: null,
     conversations: [],
     selectedConversation: null,
     loadingConversations: false,
-    forkParams: null,
     treeData: null,
     nodeMap: {},
+    forkParams: null,
     sessionRestartTrigger: 0,
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),

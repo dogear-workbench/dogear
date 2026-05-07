@@ -190,6 +190,7 @@ export type RendererHandlers = {
   sessionWindowClosed: (data: {
     conversationId: string;
     title: string;
+    workspaceId: string;
   }) => void;
 
   // 独立会话窗口 attach 完成（通知主窗口可以安全关闭标签页）

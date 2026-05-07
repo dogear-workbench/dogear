@@ -270,10 +270,17 @@ export function createSessionWindow(conversationId: string, title: string) {
     const { conversationRuntimeService } = await import('./services/conversation-runtime-service.js');
     conversationRuntimeService.detachByWebContentsId(webContentsId);
 
-    // 通知主窗口恢复 Tab
+    // 通知主窗口恢复 Tab（需要附带 workspaceId，以便正确回到对应工作区标签页）
     if (mainWindow && !mainWindow.isDestroyed()) {
-      const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
-      h.sessionWindowClosed.send({ conversationId, title });
+      try {
+        const { getByIdGlobal } = await import('./services/conversation-service.js');
+        const result = await getByIdGlobal(conversationId);
+        const workspaceId = result?.workspaceId || '';
+        const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
+        h.sessionWindowClosed.send({ conversationId, title, workspaceId });
+      } catch (err) {
+        console.error('[sessionWindowClosed] 获取 workspaceId 失败:', err);
+      }
     }
   });
 }

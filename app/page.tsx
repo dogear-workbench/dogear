@@ -119,7 +119,7 @@ export default function Home() {
       // 如果 allTabs 中不存在该 tab（用户在弹出前就关闭了标签页），重新打开
       const exists = useSessionStore.getState().tabs.some(t => t.conversationId === data.conversationId);
       if (!exists) {
-        openTab(data.conversationId, data.title);
+        openTab(data.conversationId, data.title, data.workspaceId);
       }
     });
     return () => unsub();

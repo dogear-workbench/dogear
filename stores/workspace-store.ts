@@ -74,8 +74,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
     // 触发文件列表加载
     get().loadWorkspaceFiles();
-    // 触发对话列表加载（延迟导入避免循环依赖）
+    // 里程碑 1.5 Phase 2 Step A2.2：激活 conversation-store 对应工作区分片，再加载对话列表
     import('./conversation-store').then(({ useConversationStore }) => {
+      useConversationStore.getState().activateWorkspace(workspace.id);
       useConversationStore.getState().loadConversations();
     });
   },
@@ -202,7 +203,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const { useSlashCommandStore } = await import('./slash-command-store');
     const { useSessionStore } = await import('./session-store');
 
-    useConversationStore.getState().reset();
+    // 里程碑 1.5 Phase 2 Step A2.2：分片化后不再完全 reset conversation-store（保留跨工作区分片）
+    // 只切换 activeWorkspaceId 为 null，顶层镜像字段自动清空
+    useConversationStore.getState().activateWorkspace(null);
     useArticleStore.getState().reset();
     useReferenceStore.getState().reset();
     useAnalysisStore.getState().reset();
