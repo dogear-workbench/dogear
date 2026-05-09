@@ -1007,6 +1007,25 @@ export const agentRouter = {
       return getAllTools();
     }),
 
+  // 获取可选工具包清单（含启用状态），供设置页 ToolPacksTab 使用
+  listToolPacks: t.procedure
+    .action(async () => {
+      const { OPTIONAL_TOOL_PACKS } = await import('../services/tool-packs.js');
+      const { loadSettings } = await import('../services/settings-service.js');
+      const settings = await loadSettings();
+      const enabled = new Set(settings.enabledToolPacks ?? []);
+      return OPTIONAL_TOOL_PACKS.map((pack) => ({
+        name: pack.name,
+        label: pack.label,
+        description: pack.description,
+        mcpServer: pack.mcpServerName,
+        toolCount: pack.toolCount,
+        requiresWorkspace: pack.requiresWorkspace,
+        requirements: pack.requirements,
+        enabled: enabled.has(pack.name),
+      }));
+    }),
+
   // 弹出独立会话窗口
   openSessionWindow: t.procedure
     .input<{ conversationId: string; title: string }>()

@@ -7,11 +7,14 @@ import type { QueryBasedSession, QueryBasedSessionConfig, ExtendedSessionMessage
 import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
 import { createStockTools } from '../agents/tools/stock-tools.js';
-import { createStockAnalysisTools } from '../agents/tools/stock-analysis-tools.js';
 import { createMemoryTools } from '../agents/tools/memory-tools.js';
+import { createStockAnalysisTools } from '../agents/tools/stock-analysis-tools.js';
 import { loadWorkspaceAgents } from './agent-definition-service.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
+import { loadSettings } from './settings-service.js';
+import { getStockAnalysisSkillDir } from './stock-analysis-skills-service.js';
+import { OPTIONAL_TOOL_PACKS } from './tool-packs.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 
 const { BrowserWindow, Notification: ElectronNotification } = electron;
@@ -82,23 +85,61 @@ async function buildConversationSessionConfig(
   const workspace = await workspaceJsonService.getById(workspaceId);
   const workspacePath = workspace?.path ?? '';
 
+  const appSettings = await loadSettings();
+  const enabledToolPacks = appSettings.enabledToolPacks ?? [];
+
+  // 1. 常驻 MCP server（永远注册）：memory 工具
+  // 2. 可选 MCP server（按 enabledToolPacks 注册）：book-qa / article / stock-quote / stock-analysis
   const mcpServers: Record<string, unknown> = {};
+
   if (workspacePath) {
-    const bookQATools = createBookQATools(workspacePath, workspaceId);
-    mcpServers['dogear-book-qa'] = bookQATools;
-
-    const articleTools = createArticleTools(workspacePath);
-    mcpServers['dogear-article'] = articleTools;
-
-    const memoryTools = createMemoryTools(workspacePath);
-    mcpServers['dogear-memory'] = memoryTools;
+    mcpServers['dogear-memory'] = createMemoryTools(workspacePath);
   }
 
-  const stockTools = createStockTools();
-  mcpServers['dogear-stock'] = stockTools;
+  // 工具包工厂表（避免遍历时分支判断）
+  type ToolPackFactory = () => unknown;
+  const toolPackFactories: Record<string, { factory: ToolPackFactory; available: boolean }> = {
+    'book-qa': {
+      factory: () => createBookQATools(workspacePath, workspaceId),
+      available: !!workspacePath,
+    },
+    'article': {
+      factory: () => createArticleTools(workspacePath),
+      available: !!workspacePath,
+    },
+    'stock-quote': {
+      factory: () => createStockTools(),
+      available: true,
+    },
+    'stock-analysis': {
+      factory: () => createStockAnalysisTools(),
+      available: true,
+    },
+  };
 
-  const stockAnalysisTools = createStockAnalysisTools();
-  mcpServers['dogear-stock-analysis'] = stockAnalysisTools;
+  for (const pack of OPTIONAL_TOOL_PACKS) {
+    if (!enabledToolPacks.includes(pack.name)) continue;
+    const entry = toolPackFactories[pack.name];
+    if (!entry || !entry.available) continue;
+    mcpServers[pack.mcpServerName] = entry.factory();
+  }
+
+  // allowedTools：基础工具 + 常驻 MCP 通配符 + 已启用工具包通配符（默认放行 = 不弹权限）
+  const allowedTools: string[] = ['Read', 'Glob', 'Grep'];
+  if (mcpServers['dogear-memory']) {
+    allowedTools.push('mcp__dogear-memory__*');
+  }
+  for (const pack of OPTIONAL_TOOL_PACKS) {
+    if (mcpServers[pack.mcpServerName]) {
+      allowedTools.push(`mcp__${pack.mcpServerName}__*`);
+    }
+  }
+
+  // SKILL.md 插件：只为启用了 stock-analysis 的会话挂载（其他工具包暂无 SKILL.md）
+  const extraPluginPaths: string[] = [];
+  if (enabledToolPacks.includes('stock-analysis')) {
+    extraPluginPaths.push(getStockAnalysisSkillDir());
+  }
 
   const agents: Record<string, any> = {
     'chapter-analyzer': {
@@ -129,10 +170,12 @@ async function buildConversationSessionConfig(
   }
 
   return {
-    allowedTools: ['Read', 'Glob', 'Grep'],
+    allowedTools,
     workspacePath,
     enableSkills: true,
+    extraPluginPaths: extraPluginPaths.length > 0 ? extraPluginPaths : undefined,
     mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,
+    enabledToolPacks: enabledToolPacks.length > 0 ? enabledToolPacks : undefined,
     resume: options?.resume ?? conversation.sdkSessionId ?? undefined,
     forkSession: options?.forkSession,
     resumeSessionAt: options?.resumeSessionAt,

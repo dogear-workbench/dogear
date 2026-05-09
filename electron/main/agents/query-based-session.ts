@@ -36,6 +36,7 @@ import type { AppSettings, ModelProfile } from '../services/settings-types.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
+import { buildToolPackGuide } from './tool-pack-guide.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -61,6 +62,13 @@ export interface QueryBasedSessionConfig {
   // Skill 配置
   enableSkills?: boolean;            // 是否启用 Skill 功能（默认 false）
   projectRoot?: string;              // 项目根目录（用于查找 .claude/skills/）
+  /** 额外的 local plugin 路径（用于工具包附带的 SKILL.md，如 stock-analysis） */
+  extraPluginPaths?: string[];
+  /**
+   * 启用的工具包名称列表（如 ['stock-analysis', 'stock-quote']）。
+   * 用于 buildSystemPrompt 注入"工具导览"，告诉 Agent 哪些类目的工具可以通过 Tool Search 搜索。
+   */
+  enabledToolPacks?: string[];
   resume?: string;                   // SDK session_id（用于恢复会话）
   forkSession?: boolean;             // 是否创建分叉（与 resume 配合使用）
   resumeSessionAt?: string;          // 截断到此 assistant 消息的 SDK UUID
@@ -279,11 +287,13 @@ export class QueryBasedSession extends EventEmitter {
       };
       this.logger.info('已配置 MCP Servers:', Object.keys(queryOptions.mcpServers));
 
-      // 配置 Skill 插件：注册 article-parser local skill
+      // 配置 Skill 插件：article-parser 常驻 + 按需启用的额外 plugin（如 stock-analysis）
+      const extraPluginPaths = this.config.extraPluginPaths ?? [];
       queryOptions.plugins = [
         { type: 'local' as const, path: getArticleParserSkillsDir() },
+        ...extraPluginPaths.map((p) => ({ type: 'local' as const, path: p })),
       ];
-      this.logger.info('已配置 Skill 插件: article-parser', getArticleParserSkillsDir());
+      this.logger.info('已配置 Skill 插件:', queryOptions.plugins.map((p: { path: string }) => p.path));
 
       // 配置工作目录：cwd 使用用户选择的工作区路径，这样 agent 的工作上下文是用户的工作区
       if (this.config.workspacePath) {
@@ -1416,6 +1426,16 @@ export class QueryBasedSession extends EventEmitter {
     // 4. 工作区用户画像（core-profile.md，由 memory-loader 预格式化好）
     if (coreProfileText) {
       parts.push(coreProfileText);
+    }
+
+    // 5. Tool Search 工具导览（告诉 Agent 哪些类目的工具可以搜）
+    // SDK 默认开启 ENABLE_TOOL_SEARCH，MCP 工具完整 schema 不进上下文，
+    // 这段导览帮助 Agent 知道"有什么类目可搜"，提升工具选择命中率。
+    const enabledPacks = this.config.enabledToolPacks ?? [];
+    const hasWorkspace = !!this.config.workspacePath;
+    const guide = buildToolPackGuide(enabledPacks, hasWorkspace);
+    if (guide) {
+      parts.push(guide);
     }
 
     return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };

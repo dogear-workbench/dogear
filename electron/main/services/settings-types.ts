@@ -51,6 +51,8 @@ export interface AppSettings {
   };
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
+  /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
+  enabledToolPacks?: string[];
 }
 
 // ============================================================
@@ -71,6 +73,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     promptSuggestionsEnabled: true,
   },
   personas: [],
+  enabledToolPacks: [],
   profiles: {
     default: {
       id: 'default',

@@ -14,6 +14,7 @@ import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { PersonaTab } from './PersonaTab';
 import { AgentsTab } from './AgentsTab';
 import { MemoryTab } from './MemoryTab';
+import { ToolPacksTab } from './ToolPacksTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 
 // ═══ 常量 ═══════════════════════════════════════════
@@ -376,6 +377,9 @@ export default function SettingsPage() {
           <TabsTrigger value="permissions" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             工具权限
           </TabsTrigger>
+          <TabsTrigger value="toolpacks" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            工具包
+          </TabsTrigger>
           <TabsTrigger value="profiles" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             模型方案
           </TabsTrigger>
@@ -632,6 +636,11 @@ export default function SettingsPage() {
               })}
             </div>
           </div>
+        </TabsContent>
+
+        {/* ── Tab: 工具包 ── */}
+        <TabsContent value="toolpacks" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <ToolPacksTab local={local} setLocal={setLocal} />
         </TabsContent>
 
         {/* ── Tab: 模型方案 ── */}
