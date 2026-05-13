@@ -33,11 +33,10 @@ import {
 import type { ItemInstance, DragTarget } from '@headless-tree/core';
 
 /**
- * 对话接口（v5: 对话直接属于工作区，book_id 可选）
+ * 对话接口（对话直接属于工作区）
  */
 export interface Conversation {
   id: string;
-  book_id?: string;                  // 可选：关联的书籍ID
   workspace_id: string;              // 关联的工作区ID
   title: string;
   model: string;
@@ -50,13 +49,6 @@ export interface Conversation {
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   created_at: number;
   updated_at: number;
-}
-
-// 保留 BookNode 导出以兼容可能的外部引用
-export interface BookNode {
-  book: { id?: string; title: string };
-  conversations: Conversation[];
-  expanded?: boolean;
 }
 
 const CONV_TREE_ROOT = '__root__';
@@ -707,5 +699,3 @@ function ArchiveFooterButton() {
   );
 }
 
-// 保留旧名导出以兼容
-export const BookConversationList = ConversationList;

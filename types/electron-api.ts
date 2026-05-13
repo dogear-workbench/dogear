@@ -30,8 +30,6 @@ export interface WorkspaceFileNode {
   type: 'file' | 'directory' | 'article';
   ext?: string;
   children?: WorkspaceFileNode[];
-  /** 书籍 ID（type='file' 且为已导入书籍时存在） */
-  bookId?: string;
   /** 文章专属字段（type='article' 时存在） */
   articleMeta?: {
     id: string;
@@ -40,23 +38,6 @@ export interface WorkspaceFileNode {
     fetchedAt: number;
     wordCount: number;
   };
-}
-
-/**
- * 书籍分析更新事件数据
- */
-export interface BookAnalysisUpdate {
-  bookId: string;
-  taskId?: string;
-  status?: string;
-  result?: any;
-  error?: string;
-  toolName?: string;
-  toolInput?: any;
-  chapterSaved?: boolean;
-  chapterTitle?: string;
-  message?: string;
-  statusMessage?: string;
 }
 
 /**
@@ -139,11 +120,10 @@ export interface Citation {
 }
 
 /**
- * 对话接口 (v5: 对话属于工作区，book_id 可选)
+ * 对话接口
  */
 export interface Conversation {
   id: string;
-  book_id?: string;                  // 可选：关联的书籍ID
   workspace_id: string;              // 关联的工作区ID
   title: string;
   model: string;
@@ -176,6 +156,5 @@ export interface ConversationTreeData {
 }
 
 // 导出类型,供其他模块使用
-export type { Book, Chapter, ChapterMetadata } from './books';
 export type { AIMessage } from './ai';
 export type { AgentTask, AgentTaskUpdate, TaskStatus, TaskType, ChatSessionPayload } from './agents';

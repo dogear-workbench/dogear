@@ -27,8 +27,6 @@ export type { ExtendedSessionMessage };
  * 会话上下文
  */
 export interface SessionContext {
-  bookId?: string;
-  chapterId?: string;
   selectedText?: string;
 }
 
@@ -285,19 +283,14 @@ export class MainProcessSession extends EventEmitter {
   private buildSystemPrompt(): string {
     const { context } = this.config;
 
-    if (!context) {
-      return '你是一个帮助用户阅读和分析电子书的 AI 助手。';
+    if (!context?.selectedText) {
+      return '你是一个 AI 个人助手。';
     }
 
-    const contextInfo = [];
-    if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
-    if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
-    if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
-
-    return `你是一个帮助用户阅读和分析电子书的 AI 助手。
+    return `你是一个 AI 个人助手。
 
 当前上下文:
-${contextInfo.join('\n')}
+选中文本: ${context.selectedText}
 
 请根据上述上下文提供有针对性的帮助。`;
   }

@@ -37,6 +37,6 @@ export function getInfo() {
   return {
     version: SDK_VERSION,
     name: 'Dogear SDK',
-    description: 'AI-powered eBook Reader SDK'
+    description: 'Dogear AI SDK'
   };
 }

@@ -3,7 +3,6 @@ import { tipc } from '@egoist/tipc/main';
 import electron from 'electron';
 const { dialog } = electron;
 import * as workspaceJsonService from '../services/workspace-json-service.js';
-import * as bookService from '../services/book-service.js';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
 import * as articleService from '../services/article-service.js';
@@ -116,12 +115,7 @@ export const workspaceRouter = {
         // 2. 扫描工作区普通文件（排除 .dogear）
         const workspaceFiles = await workspaceFsService.scanWorkspaceFiles(workspace.path);
 
-        // 3. 为书籍目录附加 bookId 和书名
-        const allBooks = await bookService.getAllBooks(input.workspaceId);
-        const booksByDir = new Map(allBooks.filter(b => b.id).map(b => [b.id!, b]));
-        attachBookIds(workspaceFiles, booksByDir);
-
-        // 4. 合并：文章树在前，普通文件在后
+        // 3. 合并：文章树在前，普通文件在后
         return { files: [...articleTree, ...workspaceFiles] };
       } catch (error) {
         console.error('获取工作区文件树失败:', error);
@@ -157,22 +151,3 @@ export const workspaceRouter = {
     }),
 };
 
-/** 递归遍历文件树，为匹配 bookId 的目录附加 bookId 字段 */
-function attachBookIds(
-  nodes: WorkspaceFileNode[],
-  booksByDir: Map<string, any>
-): void {
-  for (const node of nodes) {
-    if (node.type === 'directory') {
-      const dirName = node.path.split('/')[0];
-      const book = booksByDir.get(dirName);
-      if (book) {
-        node.bookId = book.id;
-        node.name = book.title;
-      }
-      if (node.children) {
-        attachBookIds(node.children, booksByDir);
-      }
-    }
-  }
-}

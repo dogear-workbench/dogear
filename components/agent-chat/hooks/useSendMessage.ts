@@ -232,8 +232,7 @@ export function useSendMessage(params: UseSendMessageParams) {
 
       case '/search': {
         if (!args) return false; // 没有关键词则不拦截
-        // 转换为自然语言搜索提示，让 Agent 使用 SearchBookContent 工具
-        const searchPrompt = `请在当前书籍中搜索与「${args}」相关的内容，使用 SearchBookContent 工具查找相关段落并总结结果。`;
+        const searchPrompt = `请搜索与「${args}」相关的内容，查找相关段落并总结结果。`;
         // 替换 input 为搜索提示，走正常发送流程
         setInput('');
         // 直接发送构造的 prompt

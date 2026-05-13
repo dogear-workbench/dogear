@@ -3,18 +3,13 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
 import type { Workspace, WorkspaceFileNode } from '@/types/electron-api';
-import type { Book } from '@/types';
 
 interface WorkspaceState {
   // --- 状态 ---
   workspace: Workspace | null;
   files: WorkspaceFileNode[];
   selectedFile: WorkspaceFileNode | null;
-  selectedBook: Book | null;
-  workspaceFilePath: string | null;
   loadingFiles: boolean;
-  importing: boolean;
-  deleting: boolean;
   /** 正在创建文件夹的父路径（null 表示未在创建） */
   creatingFolderAt: string | null;
 
@@ -23,18 +18,10 @@ interface WorkspaceState {
   setWorkspace: (workspace: Workspace, options?: { skipSetDefault?: boolean }) => void;
   /** 加载工作区文件列表 */
   loadWorkspaceFiles: () => Promise<void>;
-  /** 选择文件，加载关联书籍信息 */
+  /** 选择文件 */
   selectFile: (file: WorkspaceFileNode) => Promise<void>;
-  /** 设置选中书籍（供其他 store 调用） */
-  setSelectedBook: (book: Book | null) => void;
   /** 清除文件选中状态 */
   clearSelectedFile: () => void;
-  /** 导入书籍 */
-  importBook: () => Promise<void>;
-  /** 删除当前选中书籍 */
-  deleteBook: () => Promise<void>;
-  /** 在文件管理器中打开书籍 */
-  openBookInFolder: () => Promise<void>;
   /** 打开 Agent 监控窗口 */
   openMonitorWindow: () => Promise<void>;
   /** 清空工作区（回到选择页），同时关闭所有会话并重置所有相关 store */
@@ -55,41 +42,26 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   workspace: null,
   files: [],
   selectedFile: null,
-  selectedBook: null,
-  workspaceFilePath: null,
   loadingFiles: false,
-  importing: false,
-  deleting: false,
   creatingFolderAt: null,
   setCreatingFolderAt: (parentPath) => set({ creatingFolderAt: parentPath }),
   setWorkspace: async (workspace, options?) => {
-    // 里程碑 1.5 Phase 2 A2.9：切换到不同工作区时清理属于旧工作区的选中态
-    // 背景：A2.2 conversations 分片后，selectedFile/selectedBook/workspaceFilePath 仍是全局单值；
-    //       不清会出现右侧预览显示旧工作区书籍 / 左侧列表选中行错位的残留
-    // 关键：先把依赖的 store 模块 await 拿到，再做一次同步 set，让 React 只看到一次一致的状态切换，
-    //       避免 workspace 已切但 conversation 分片/ article 选中还是旧值的中间态渲染
-    //       （某些组件在中间态下会走到不同条件分支，引发 hooks 计数不一致）
     const prev = get().workspace;
     const workspaceChanged = prev?.id !== workspace.id;
     const { useConversationStore } = await import('./conversation-store');
     if (workspaceChanged) {
       const { useArticleStore } = await import('./article-store');
-      // 先同步清 article 选中 + 切换 conversation 分片，再一次 set 切换 workspace + 清空所有选中字段
       useArticleStore.getState().clearSelectedArticle();
       useConversationStore.getState().activateWorkspace(workspace.id);
       set({
         workspace,
         selectedFile: null,
-        selectedBook: null,
-        workspaceFilePath: null,
         files: [],
       });
     } else {
-      // 同一工作区重复 setWorkspace（例如独立窗口初始化时）：仍需确保分片激活
       useConversationStore.getState().activateWorkspace(workspace.id);
       set({ workspace });
     }
-    // 独立窗口不应修改默认工作区，避免影响主窗口
     if (!options?.skipSetDefault) {
       try {
         await client.setDefault({ workspaceId: workspace.id });
@@ -97,7 +69,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         console.error('设置默认工作区失败:', error);
       }
     }
-    // 触发文件列表 + 对话列表加载（fire-and-forget，分片已激活，不会错位到旧工作区）
     get().loadWorkspaceFiles();
     useConversationStore.getState().loadConversations();
   },
@@ -120,86 +91,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   selectFile: async (file) => {
-    set({ selectedFile: file, workspaceFilePath: null });
-    try {
-      const bookId = (file as any).bookId;
-      if (bookId) {
-        const book = await client.getBookByFilePath({ filePathOrBookId: bookId });
-        set({ selectedBook: book || null });
-        // 获取工作区中的文件路径
-        if (book) {
-          const pathResult = await client.getWorkspaceFilePath({ bookId });
-          if (pathResult.path) {
-            set({ workspaceFilePath: pathResult.path });
-          }
-        }
-      } else {
-        set({ selectedBook: null });
-      }
-    } catch (error) {
-      console.error('获取书籍信息失败:', error);
-      set({ selectedBook: null });
-    }
+    set({ selectedFile: file });
   },
-
-  setSelectedBook: (book) => set({ selectedBook: book }),
 
   clearSelectedFile: () => set({ selectedFile: null }),
-
-  importBook: async () => {
-    const { workspace } = get();
-    if (!workspace) return;
-
-    try {
-      set({ importing: true });
-      const filePath = await client.selectFile();
-      if (filePath) {
-        await client.importBook({ filePath, workspaceId: workspace.id });
-        toast.success('书籍导入成功');
-        // 导入成功后刷新文件列表和对话列表
-        get().loadWorkspaceFiles();
-        import('./conversation-store').then(({ useConversationStore }) => {
-          useConversationStore.getState().loadConversations();
-        });
-      }
-    } catch (error) {
-      console.error('导入失败:', error);
-      toast.error('导入失败', { description: (error as Error).message });
-    } finally {
-      set({ importing: false });
-    }
-  },
-
-  deleteBook: async () => {
-    const { selectedBook } = get();
-    if (!selectedBook?.id) return;
-
-    if (!await showConfirm('删除书籍', `确定要删除《${selectedBook.title}》吗？此操作不可恢复。`)) {
-      return;
-    }
-
-    try {
-      set({ deleting: true });
-      await client.deleteBook({ id: selectedBook.id });
-      set({ selectedBook: null, selectedFile: null });
-      get().loadWorkspaceFiles();
-    } catch (error) {
-      console.error('删除失败:', error);
-      toast.error('删除失败', { description: (error as Error).message });
-    } finally {
-      set({ deleting: false });
-    }
-  },
-
-  openBookInFolder: async () => {
-    const { selectedBook } = get();
-    if (!selectedBook?.id) return;
-    try {
-      await client.openBookInFolder({ bookId: selectedBook.id });
-    } catch (error) {
-      console.error('打开文件失败:', error);
-    }
-  },
 
   openMonitorWindow: async () => {
     try {
@@ -210,31 +105,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   clearWorkspace: async () => {
-    // 里程碑 1.5 Phase 2 Step A2.1：后端会话不再随工作区切换关闭
-    // 后端 QueryBasedSession 持续运行，用户切回工作区后 Tab 仍然可用
-    //
-    // 视图层 store 仍然 reset，因为当前 "clearWorkspace" 调用点（顶部切换按钮）
-    // 语义是"回到选择页"，后续 A2.4/A2.5 重构交互后再调整
-
     const { useConversationStore } = await import('./conversation-store');
     const { useArticleStore } = await import('./article-store');
     const { useReferenceStore } = await import('./reference-store');
-    const { useAnalysisStore } = await import('./analysis-store');
     const { useUIStore } = await import('./ui-store');
     const { useSlashCommandStore } = await import('./slash-command-store');
     const { useSessionStore } = await import('./session-store');
 
-    // 里程碑 1.5 Phase 2 Step A2.2：分片化后不再完全 reset conversation-store（保留跨工作区分片）
-    // 只切换 activeWorkspaceId 为 null，顶层镜像字段自动清空
     useConversationStore.getState().activateWorkspace(null);
     useArticleStore.getState().reset();
     useReferenceStore.getState().reset();
-    useAnalysisStore.getState().reset();
     useUIStore.getState().reset();
     useSlashCommandStore.getState().reset();
     useSessionStore.getState().reset();
 
-    set({ workspace: null, files: [], selectedFile: null, selectedBook: null, workspaceFilePath: null });
+    set({ workspace: null, files: [], selectedFile: null });
   },
 
   openStockWindow: async () => {
@@ -304,10 +189,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     try {
       const result = await client.deleteItem({ workspaceId: workspace.id, itemPath });
       if (result.error) { toast.error('删除失败', { description: result.error }); return; }
-      // 如果删除的是当前选中的文件，清除选中
       const { selectedFile } = get();
       if (selectedFile && selectedFile.path === itemPath) {
-        set({ selectedFile: null, selectedBook: null });
+        set({ selectedFile: null });
       }
       await get().loadWorkspaceFiles();
     } catch (error) {

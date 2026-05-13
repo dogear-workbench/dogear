@@ -45,7 +45,6 @@ export function AgentChat({
   const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
 
   // 从 store 获取状态
-  const bookId = useWorkspaceStore((s) => s.selectedBook?.id);
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
   const storeConversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
   // 多标签页模式下使用 override，否则使用 store 中的选中对话
@@ -67,7 +66,7 @@ export function AgentChat({
   }, [selectedConv?.parent_conversation_id, conversations]);
 
   // 构建 context 对象
-  const context = { bookId, workspaceId, chapterId: undefined, selectedText: undefined };
+  const context = { workspaceId, selectedText: undefined };
 
   // 预加载工具分类映射（供 ToolBlock/ToolGroupBlock 使用中文大类标签）
   useEffect(() => {

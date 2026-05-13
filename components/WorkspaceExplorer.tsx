@@ -1,7 +1,7 @@
 
 import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import {
-  Globe, Folder, FolderOpen, File, BookOpen,
+  Globe, Folder, FolderOpen, File,
   ChevronRight, ChevronDown, FolderPlus, RefreshCw,
   Quote, Trash2, Pencil, ExternalLink,
 } from 'lucide-react';
@@ -50,12 +50,6 @@ function getRelativeTime(timestamp: number): string {
 /** 判断路径是否属于文章目录 */
 function isArticlePath(path: string): boolean {
   return path.startsWith('.dogear/articles');
-}
-
-/** 判断文件扩展名是否为电子书格式 */
-function isBookExt(ext?: string): boolean {
-  if (!ext) return false;
-  return ['.epub', '.pdf', '.txt'].includes(ext.toLowerCase());
 }
 
 /** 从 WorkspaceFileNode 构建 ArticleMeta 对象 */
@@ -342,9 +336,6 @@ function TreeItemRow({
       return item.isExpanded()
         ? <FolderOpen className="w-4 h-4 shrink-0 text-blue-500" />
         : <Folder className="w-4 h-4 shrink-0 text-blue-500" />;
-    }
-    if (isBookExt(originalNode.ext)) {
-      return <BookOpen className="w-4 h-4 shrink-0 text-orange-500" />;
     }
     return <File className="w-4 h-4 shrink-0 text-muted-foreground" />;
   };

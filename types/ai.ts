@@ -9,7 +9,6 @@
  */
 export interface AIInteraction {
   id?: string;                // 交互记录唯一标识(UUID)
-  book_id?: string;           // 关联的书籍 ID(UUID)
   type: 'chat' | 'summarize' | 'qna';  // 交互类型:对话/摘要/问答
   user_message?: string;      // 用户的消息
   ai_response: string;        // AI 的回复

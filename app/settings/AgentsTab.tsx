@@ -25,34 +25,7 @@ function useAvailableTools() {
 }
 
 // 内置代理列表（只读展示，不可编辑/删除）
-const BUILTIN_AGENTS: AgentFileInfo[] = [
-  {
-    fileName: '',
-    agentName: 'chapter-analyzer',
-    definition: {
-      description: '分析书籍章节内容，提取摘要、关键概念和结构信息',
-      prompt: '你是一个章节分析专家...',
-      model: 'haiku',
-      tools: ['Read', 'Glob', 'Grep'],
-      maxTurns: 5,
-    },
-    filePath: '',
-    source: 'builtin',
-  },
-  {
-    fileName: '',
-    agentName: 'book-searcher',
-    definition: {
-      description: '在书籍中搜索特定内容，查找相关章节和段落',
-      prompt: '你是一个书籍内容搜索专家...',
-      model: 'haiku',
-      tools: ['Read', 'Glob', 'Grep'],
-      maxTurns: 8,
-    },
-    filePath: '',
-    source: 'builtin',
-  },
-];
+const BUILTIN_AGENTS: AgentFileInfo[] = [];
 
 // availableTools 已替换为动态加载的 useAvailableTools hook
 

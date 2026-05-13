@@ -1,7 +1,5 @@
 // electron/main/tipc/index.ts
 import { registerIpcMain } from '@egoist/tipc/main';
-import { dbRouter } from './db.js';
-import { bookRouter } from './book.js';
 import { aiRouter } from './ai.js';
 import { fileRouter } from './file.js';
 import { workspaceRouter } from './workspace.js';
@@ -19,8 +17,6 @@ import { conversationRuntimeRouter } from './conversation-runtime.js';
 import { environmentRouter } from './environment.js';
 
 export const router = {
-  ...dbRouter,
-  ...bookRouter,
   ...aiRouter,
   ...fileRouter,
   ...workspaceRouter,

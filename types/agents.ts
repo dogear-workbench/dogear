@@ -20,8 +20,6 @@ export enum TaskStatus {
 export enum TaskType {
   CHAT_SESSION = 'chat_session',    // AI 对话会话
   SUMMARIZE = 'summarize',          // 文本摘要
-  ANALYZE_BOOK = 'analyze_book',    // 书籍分析
-  READING_ASSIST = 'reading_assist' // 阅读辅助
 }
 
 /**
@@ -48,8 +46,6 @@ export interface ChatTaskPayload {
     content: string;
   }>;
   context?: {
-    bookId?: string;
-    chapterId?: string;
     selectedText?: string;
   };
 }
@@ -65,8 +61,6 @@ export interface ChatSessionPayload {
     content: string;
   };
   context?: {                              // 上下文信息（action=start 时使用）
-    bookId?: string;
-    chapterId?: string;
     selectedText?: string;
   };
 }
@@ -77,23 +71,6 @@ export interface ChatSessionPayload {
 export interface SummarizeTaskPayload {
   text: string;
   maxLength?: number;
-  language?: string;
-}
-
-/**
- * 书籍分析任务负载
- */
-export interface AnalyzeBookPayload {
-  bookId: string;
-  analysisTypes?: ('summary' | 'keywords' | 'structure')[];
-}
-
-/**
- * 阅读辅助任务负载
- */
-export interface ReadingAssistPayload {
-  text: string;
-  action: 'explain' | 'translate' | 'expand';
   language?: string;
 }
 

@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
 import { useSessionStore } from '@/stores/session-store';
-import type { Conversation } from '@/components/BookConversationList';
+import type { Conversation } from '@/components/ConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
 
 // 分叉参数类型
@@ -328,20 +328,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         });
       }
     } catch { /* 忽略，已有缓存数据可用 */ }
-
-    // 如果对话有关联书籍，加载书籍信息
-    const { useWorkspaceStore } = await import('./workspace-store');
-    if (conversation.book_id) {
-      try {
-        const book = await client.getBookByFilePath({ filePathOrBookId: conversation.book_id });
-        useWorkspaceStore.getState().setSelectedBook(book || null);
-      } catch (error) {
-        console.error('获取书籍信息失败:', error);
-        useWorkspaceStore.getState().setSelectedBook(null);
-      }
-    } else {
-      useWorkspaceStore.getState().setSelectedBook(null);
-    }
   },
 
   newConversation: async () => {
@@ -444,7 +430,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         title: `分叉自: ${parentConv.title}`,
         parentConversationId: params.parentConversationId,
         forkMessageSdkUuid: params.forkMessageSdkUuid,
-        bookId: parentConv.book_id,
       });
 
       if (forkResult.error || !forkResult.conversationId) {

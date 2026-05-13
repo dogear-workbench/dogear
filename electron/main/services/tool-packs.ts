@@ -38,14 +38,6 @@ export interface ToolPackMeta {
  */
 export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
   {
-    name: 'book-qa',
-    label: '书籍问答',
-    description: '基于已导入书籍的内容检索与定位（搜索章节、获取引用上下文、列出书籍）',
-    mcpServerName: 'dogear-book-qa',
-    toolCount: 5,
-    requiresWorkspace: true,
-  },
-  {
     name: 'article',
     label: '文章管理',
     description: '已抓取文章的读取与列举（读取 Markdown 全文、列出工作区文章）',

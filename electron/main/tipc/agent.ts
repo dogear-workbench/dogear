@@ -196,154 +196,12 @@ export const agentRouter = {
       return { success: true };
     }),
 
-  // ── 书籍分析 v2 ──────────────────────────────────────────
-  analyzeBook: t.procedure
-    .input<{ bookId: string }>()
-    .action(async ({ input, context }) => {
-      try {
-        const agentManager = getAgentManager();
-        const handlers = getRendererHandlers<RendererHandlers>(context.sender);
-        const task: AgentTask = {
-          id: '',
-          type: TaskType.ANALYZE_BOOK,
-          status: 'pending' as any,
-          payload: { bookId: input.bookId },
-          createdAt: Date.now(),
-        };
-        const taskId = await agentManager.submitTask(task, (taskId, status, result, error) => {
-          handlers.analysisUpdate.send({
-            bookId: input.bookId,
-            taskId,
-            status,
-            result,
-            error,
-          });
-        });
-        return { taskId };
-      } catch (error) {
-        console.error('启动书籍分析失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  getAnalysisStatus: t.procedure
-    .input<{ bookId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const workspaceService = await import('../services/workspace-service.js');
-        const workspace = await workspaceService.getCurrentWorkspace();
-        if (!workspace) {
-          return { status: 'none' as const, result: null, error: '未设置默认工作区' };
-        }
-        const status = await workspaceService.loadAnalysisStatus(workspace, input.bookId);
-        const result = await workspaceService.loadAnalysisResult(workspace, input.bookId);
-        return {
-          status: status?.analysisStatus || 'none',
-          result: result || null,
-        };
-      } catch (error) {
-        console.error('获取分析状态失败:', error);
-        return { status: 'none' as const, result: null, error: String(error) };
-      }
-    }),
-
-  getChapterAnalyses: t.procedure
-    .input<{ bookId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const workspaceService = await import('../services/workspace-service.js');
-        const workspace = await workspaceService.getCurrentWorkspace();
-        if (!workspace) {
-          return { analyses: [], error: '未设置默认工作区' };
-        }
-        const analyses = await workspaceService.loadChapterAnalyses(workspace, input.bookId);
-        return { analyses };
-      } catch (error) {
-        console.error('获取章节分析失败:', error);
-        return { analyses: [], error: String(error) };
-      }
-    }),
-
-  chatWithAnalysis: t.procedure
-    .input<{ bookId: string; message: string }>()
-    .action(async ({ input, context }) => {
-      try {
-        const agentManager = getAgentManager();
-        const handlers = getRendererHandlers<RendererHandlers>(context.sender);
-
-        // 创建聊天会话任务
-        const task: AgentTask = {
-          id: '',
-          type: TaskType.CHAT_SESSION,
-          status: 'pending' as any,
-          payload: {
-            action: 'start',
-            context: { bookId: input.bookId },
-          } as ChatSessionPayload,
-          createdAt: Date.now(),
-        };
-
-        const sessionId = await agentManager.submitTask(task, (taskId, status, result, error) => {
-          handlers.agentTaskUpdate.send({ taskId, status, result, error });
-        });
-
-        // 注册会话消息回调
-        agentManager.registerSessionCallback(sessionId, async (sid, msg) => {
-          handlers.agentSessionMessage.send({
-            sessionId: sid,
-            message: msg,
-          });
-        });
-
-        // 发送用户的第一个消息
-        const chatTask: AgentTask = {
-          id: `chat-${Date.now()}`,
-          type: TaskType.CHAT_SESSION,
-          status: 'pending' as any,
-          payload: {
-            action: 'message',
-            sessionId,
-            message: { role: 'user', content: input.message },
-          } as ChatSessionPayload,
-          createdAt: Date.now(),
-        };
-        await agentManager.submitTask(chatTask);
-
-        return { sessionId };
-      } catch (error) {
-        console.error('启动分析对话失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  getBookFilePath: t.procedure
-    .input<{ bookId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const workspaceService = await import('../services/workspace-service.js');
-        const workspace = await workspaceService.getCurrentWorkspace();
-        if (!workspace) {
-          return { filePath: null, error: '未设置默认工作区' };
-        }
-        const bookService = await import('../services/book-service.js');
-        const book = await bookService.getBookById(input.bookId);
-        if (!book) {
-          return { filePath: null, error: '书籍不存在' };
-        }
-        const filePath = await workspaceService.getBookFilePath(workspace, input.bookId, book.file_path);
-        return { filePath };
-      } catch (error) {
-        console.error('获取书籍文件路径失败:', error);
-        return { filePath: null, error: String(error) };
-      }
-    }),
-
   // ── 主进程会话（SDK v2）──────────────────────────────────
   createMainProcessSession: t.procedure
     .input<{
       model?: string;
       allowedTools?: string[];
-      context?: { bookId?: string; chapterId?: string; selectedText?: string };
+      context?: { selectedText?: string };
     }>()
     .action(async ({ input, context }) => {
       try {
@@ -414,7 +272,7 @@ export const agentRouter = {
   createQueryBasedSession: t.procedure
     .input<{
       allowedTools?: string[];
-      context?: { bookId?: string; chapterId?: string; selectedText?: string };
+      context?: { selectedText?: string };
       enableSkills?: boolean;
       projectRoot?: string;
       conversationId?: string;
@@ -1000,8 +858,6 @@ export const agentRouter = {
     .action(async () => {
       // 触发工具文件的模块加载（确保 registerTools 被调用）
       await import('../agents/tools/article-tools.js').catch(() => {});
-      await import('../agents/tools/book-qa-tools.js').catch(() => {});
-      await import('../agents/tools/book-analysis-tools.js').catch(() => {});
       await import('../agents/tools/stock-tools.js').catch(() => {});
       await import('../agents/tools/stock-analysis-tools.js').catch(() => {});
       return getAllTools();

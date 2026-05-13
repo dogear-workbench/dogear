@@ -27,8 +27,6 @@ import {
   type UserMessage,
   type ChatContext,
 } from './skills/chat-skill.js';
-import { createBookAnalysisTools, BOOK_ANALYSIS_SYSTEM_PROMPT } from './tools/book-analysis-tools.js';
-import * as workspaceService from '../services/workspace-service.js';
 
 /**
  * Agent Worker 类
@@ -42,12 +40,6 @@ class AgentWorker {
 
   // v2: 工作区路径配置
   private workspacePath: string = '';
-
-  // v2: 轻量级 workspace 对象（用于传递给 service 函数）
-  private workspace: any = null;
-
-  // v2: MCP Server 配置
-  private bookAnalysisMcpServer: any = null;
 
   // Phase 0: 共享 query 配置所需的运行时上下文
   private configDir: string = '';
@@ -73,17 +65,7 @@ class AgentWorker {
     this.logger.info('正在初始化 Agent Worker...');
 
     try {
-      // v2: 初始化工作区路径
-      // 使用配置传递的路径，避免在 Worker 中调用 electron.app
-      // 创建轻量级 workspace 对象用于传递给 service 函数
       this.workspacePath = config.workspacePath || '';
-      this.workspace = {
-        id: 'current',
-        name: '当前工作区',
-        path: this.workspacePath,
-        is_default: 1,
-        created_at: Date.now()
-      };
       this.logger.info('工作区路径:', this.workspacePath);
 
       // Phase 0: 保存共享 query 配置的运行时上下文
@@ -91,10 +73,6 @@ class AgentWorker {
       this.isPackaged = config.isPackaged;
       this.cliPath = config.cliPath;
       this.logger.info('配置目录:', this.configDir, '| 打包环境:', this.isPackaged);
-
-      // v2: 创建 MCP Server
-      this.bookAnalysisMcpServer = createBookAnalysisTools(this.workspacePath);
-      this.logger.info('书籍分析 MCP Server 已创建');
 
       this.isReady = true;
       this.sendMessage({
@@ -150,10 +128,6 @@ class AgentWorker {
         case TaskType.SUMMARIZE:
           result = await this.handleSummarizeTask(task, taskLogger);
           break;
-
-        case TaskType.ANALYZE_BOOK:
-          // 书籍分析功能已废弃（早期 demo），当前项目聚焦股票和文章摘要
-          throw new Error('书籍分析功能已废弃，请使用股票分析或文章摘要功能');
 
         case TaskType.READING_ASSIST:
           result = await this.handleReadingAssistTask(task, taskLogger);
@@ -223,31 +197,9 @@ class AgentWorker {
 
     taskLogger.info('启动新的聊天会话,上下文:', context);
 
-    // 如果有 chapterId，获取章节内容作为上下文
-    let chapterContent: string | undefined;
-    if (context.chapterId) {
-      try {
-        // 动态导入 bookService，避免循环依赖（Worker 线程）
-        const bookService = await import('../services/book-service.js');
-        const chapter = await bookService.getChapterFromFile(context.chapterId);
-        if (chapter) {
-          chapterContent = chapter.content;
-          taskLogger.info('已加载章节内容:', chapter.title, '字符数:', chapter.content?.length || 0);
-        }
-      } catch (error) {
-        taskLogger.error('获取章节内容失败:', error);
-      }
-    }
-
     // 创建会话配置
     const config: ChatSessionConfig = {
       context,
-      chapterContent,  // 传递章节内容
-
-      // v2: 添加 MCP Server 配置，让调试窗口也能使用书籍分析工具
-      mcpServers: this.bookAnalysisMcpServer ? {
-        'dogear-book-analysis': this.bookAnalysisMcpServer,
-      } : undefined,
 
       // 允许访问工作区目录
       additionalDirectories: this.workspacePath ? [this.workspacePath] : undefined,
@@ -377,310 +329,6 @@ class AgentWorker {
 
     const preview = payload.text?.substring(0, 50) || '';
     return `[摘要] ${preview}... (完整摘要待实现)`;
-  }
-
-  /**
-   * 处理书籍分析任务 (v2: 使用 MCP Server)
-   */
-  private async handleAnalyzeBookTask(task: AgentTask, taskLogger: any): Promise<any> {
-    const payload = task.payload;
-    const { bookId } = payload;
-
-    taskLogger.info('处理书籍分析任务:', bookId);
-
-    // 获取书籍信息以确定文件路径
-    let bookInfo: any;
-    let bookFilePath: string;
-    try {
-      const bookService = await import('../services/book-service.js');
-      bookInfo = await bookService.getBookById(bookId);
-      if (!bookInfo) {
-        throw new Error(`书籍不存在: ${bookId}`);
-      }
-
-      // 构建书籍文件路径 - 使用 meta.json 中存储的 file_path（相对于工作区）
-      // file_path 格式: {bookId}/filename.ext
-      bookFilePath = await workspaceService.getBookFilePath(this.workspace, bookId, bookInfo.file_path);
-      taskLogger.info('书籍文件路径:', bookFilePath);
-
-      // 更新 meta.json 状态为"分析中"
-      await bookService.updateBookMeta(bookId, {
-        analysis_status: 'analyzing',
-        analyzed_at: Date.now()
-      });
-      taskLogger.info('meta.json 状态已更新为: analyzing');
-    } catch (error) {
-      taskLogger.error('获取书籍信息失败:', error);
-      throw error;
-    }
-
-    // 更新文件系统中的状态
-    // 先创建完整的目录结构（避免后续保存时 ENOENT 错误）
-    try {
-      await workspaceService.getOrCreateBookDir(this.workspace, bookId);
-      taskLogger.info('书籍目录结构已创建');
-
-      await workspaceService.saveAnalysisStatus(this.workspace, bookId, {
-        analysisStatus: 'analyzing',
-        analyzedAt: Date.now()
-      });
-      taskLogger.info('文件系统状态已更新为: analyzing');
-    } catch (error) {
-      taskLogger.error('更新文件系统状态失败:', error);
-    }
-
-    // v2: 使用 Claude Agent SDK 的 query 函数进行书籍分析
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-
-    // Phase 0: 加载共享 query 配置（API Key、模型映射、effort 等）
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
-    const baseConfig = await buildQueryBaseConfig({
-      configDir: this.configDir,
-      isPackaged: this.isPackaged,
-      cliPath: this.cliPath,
-    });
-    taskLogger.info('已加载 query 配置, profile:', baseConfig.activeProfile.name);
-
-    // 构建分析提示
-    const analysisPrompt = `你需要分析这本书并保存分析结果。
-
-**书籍信息:**
-- bookId: ${bookId}
-- 书名: ${bookInfo.title}
-- 作者: ${bookInfo.author || '未知'}
-- 文件路径: ${bookFilePath}
-- 总章节数: ${bookInfo.total_chapters}
-
-**重要:你必须完成以下所有步骤,缺一不可:**
-
-1. 调用 GetBookInfo 获取书籍基本信息(验证数据)
-2. 调用 GetChapterList 获取章节列表
-3. 使用 Read 工具读取书籍文件: ${bookFilePath}
-   - 如果文件很大,可以只读取前几章来判断类型
-4. 根据内容判断类型(fiction/non-fiction/article等)
-5. **必须调用 SaveAnalysis** 保存全书分析结果
-6. **必须对每个章节调用 SaveChapterAnalysis** 保存章节分析
-   - 至少保存章节标题和摘要
-7. **必须调用 CompleteAnalysis** 标记完成
-
-请使用中文进行分析。现在开始执行。`;
-
-    try {
-      // 创建 query 实例
-      const agentQuery = query({
-        prompt: analysisPrompt,
-        options: {
-          // 后台分析任务固定使用 bypassPermissions（不需要用户确认）
-          permissionMode: "bypassPermissions",
-
-          // Phase 0: 注入共享配置（API Key、模型映射、effort、CLI 路径）
-          env: baseConfig.env,
-          effort: baseConfig.effort,
-          ...(baseConfig.pathToClaudeCodeExecutable && {
-            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
-          }),
-
-          // 允许访问工作区目录
-          additionalDirectories: [this.workspacePath],
-
-          // 内置工具
-          allowedTools: ['Read', 'Glob', 'Grep'],
-
-          // v2: 自定义 MCP Server（书籍分析工具）
-          mcpServers: {
-            'dogear-book-analysis': this.bookAnalysisMcpServer,
-          },
-
-          // 分析专用的 System Prompt
-          systemPrompt: BOOK_ANALYSIS_SYSTEM_PROMPT,
-
-          // 启用会话持久化
-          persistSession: true,
-
-          // 子代理：章节分析器（可并行分析多个章节）
-          agents: {
-            'chapter-analyzer': {
-              description: '分析单个章节的内容，提取摘要和关键信息',
-              prompt: '你是一个章节分析器。分析给定的章节内容，输出结构化的分析结果。使用中文。',
-              model: 'haiku',
-              tools: ['Read', 'Glob', 'Grep'],
-              maxTurns: 3,
-            },
-          },
-
-          // Hooks - 让分析活动可见
-          hooks: {
-            PreToolUse: [{
-              hooks: [async (input: any) => {
-                const { tool_name, tool_input } = input;
-                taskLogger.debug('Agent 使用工具:', tool_name);
-
-                // 发送进度到主进程
-                this.sendMessage({
-                  type: 'analysisProgress',
-                  bookId,
-                  toolName: tool_name,
-                  toolInput: this.simplifyToolInput(tool_input)
-                });
-
-                return { continue: true };
-              }]
-            }],
-            PostToolUse: [{
-              hooks: [async (input: any) => {
-                const { tool_name, tool_input } = input;
-                taskLogger.debug('Agent 工具完成:', tool_name);
-
-                // 特殊处理章节保存进度
-                if (tool_name === 'SaveChapterAnalysis') {
-                  const title = tool_input?.title || '未知章节';
-                  this.sendMessage({
-                    type: 'analysisProgress',
-                    bookId,
-                    chapterSaved: true,
-                    chapterTitle: title
-                  });
-                }
-
-                return { continue: true };
-              }]
-            }],
-            // 工具执行失败时记录错误（替代 PostToolUse 中的手动错误检查）
-            PostToolUseFailure: [{
-              hooks: [async (input: any) => {
-                const { tool_name, error } = input;
-                taskLogger.warn(`工具 ${tool_name} 执行失败:`, error);
-
-                this.sendMessage({
-                  type: 'analysisProgress',
-                  bookId,
-                  toolName: tool_name,
-                  status: 'tool_error',
-                  message: `工具 ${tool_name} 执行失败: ${error}`,
-                });
-
-                return { continue: true };
-              }]
-            }],
-            // 分析任务被停止时保存已完成的进度
-            Stop: [{
-              hooks: [async () => {
-                taskLogger.info('分析任务 Stop hook 触发，保存已完成进度');
-
-                this.sendMessage({
-                  type: 'analysisProgress',
-                  bookId,
-                  status: 'stopped',
-                  message: '分析已停止，已完成的进度已保存',
-                });
-
-                // 更新 meta.json 状态为"失败"（分析被中断）
-                try {
-                  const bookService = await import('../services/book-service.js');
-                  await bookService.updateBookMeta(bookId, {
-                    analysis_status: 'failed',
-                    analyzed_at: Date.now(),
-                  });
-                } catch (error) {
-                  taskLogger.error('保存停止状态失败:', error);
-                }
-
-                return { continue: true };
-              }]
-            }],
-          }
-        }
-      });
-
-      // 收集响应
-      let fullResponse = '';
-
-      for await (const message of agentQuery) {
-        if (message.type === 'assistant') {
-          // SDKMessage 类型中的 assistant 消息
-          const msg = message as any;
-          if (msg.message && msg.message.content) {
-            // 处理内容块
-            const content = msg.message.content;
-            if (Array.isArray(content)) {
-              for (const block of content) {
-                if (block.type === 'text') {
-                  const text = block.text;
-                  fullResponse += text;
-
-                  // 发送流式进度更新
-                  this.sendMessage({
-                    type: 'analysisProgress',
-                    bookId,
-                    message: text
-                  });
-                }
-              }
-            }
-          }
-        } else if (message.type === 'system') {
-          const subtype = (message as any).subtype;
-          taskLogger.debug('系统消息:', subtype);
-
-          // 发送系统状态更新
-          this.sendMessage({
-            type: 'analysisProgress',
-            bookId,
-            status: subtype
-          });
-        } else if (message.type === 'result') {
-          taskLogger.info('分析完成');
-        }
-      }
-
-      taskLogger.info('书籍分析完成');
-
-      // 分析成功，更新 meta.json 状态为"已分析"
-      try {
-        const bookService = await import('../services/book-service.js');
-        await bookService.updateBookMeta(bookId, {
-          analysis_status: 'analyzed',
-          analyzed_at: Date.now()
-        });
-        taskLogger.info('meta.json 状态已更新为: analyzed');
-      } catch (error) {
-        taskLogger.error('更新 meta.json 状态失败:', error);
-      }
-
-      return {
-        bookId,
-        response: fullResponse || '分析完成',
-        completed: true,
-        analyzedAt: Date.now()
-      };
-
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      taskLogger.error('书籍分析失败:', errorMsg);
-
-      // 分析失败，更新 meta.json 状态为"失败"
-      try {
-        const bookService = await import('../services/book-service.js');
-        await bookService.updateBookMeta(bookId, {
-          analysis_status: 'failed',
-          analyzed_at: Date.now()
-        });
-
-        // 更新文件系统状态
-        await workspaceService.saveAnalysisStatus(this.workspace, bookId, {
-          analysisStatus: 'failed',
-          lastError: errorMsg
-        });
-      } catch (updateError) {
-        taskLogger.error('更新失败状态时出错:', updateError);
-      }
-
-      return {
-        bookId,
-        error: errorMsg,
-        completed: false
-      };
-    }
   }
 
   /**

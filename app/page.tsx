@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { ConversationList } from '@/components/BookConversationList';
+import { ConversationList } from '@/components/ConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, File as FileIcon, Plus, Activity, Trash2, Brain, CheckCircle2, XCircle, Sparkles, ExternalLink, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
+import { RefreshCw, Loader2, File as FileIcon, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
@@ -21,8 +21,6 @@ import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
-import { useAnalysisStore } from '@/stores/analysis-store';
-import { useConversationStore } from '@/stores/conversation-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -79,15 +77,8 @@ export default function Home() {
     }
   }, []);
   const selectedFile = useWorkspaceStore((s) => s.selectedFile);
-  const selectedBook = useWorkspaceStore((s) => s.selectedBook);
-  const workspaceFilePath = useWorkspaceStore((s) => s.workspaceFilePath);
   const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
-  const importing = useWorkspaceStore((s) => s.importing);
-  const deleting = useWorkspaceStore((s) => s.deleting);
   const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
-  const importBook = useWorkspaceStore((s) => s.importBook);
-  const deleteBook = useWorkspaceStore((s) => s.deleteBook);
-  const openBookInFolder = useWorkspaceStore((s) => s.openBookInFolder);
   const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
@@ -103,14 +94,12 @@ export default function Home() {
   const setArticleUrlInput = useArticleStore((s) => s.setArticleUrlInput);
   const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
 
-  // 子代理列表的过滤由 SubAgentPanel 通过 sdkSessionId prop 完成
-
-  // 选中文章或书籍时自动展开右侧预览面板
+  // 选中文章时自动展开右侧预览面板
   useEffect(() => {
-    if (selectedArticle || selectedBook) {
+    if (selectedArticle) {
       openRightPanel();
     }
-  }, [selectedArticle?.id, selectedBook?.id, openRightPanel]);
+  }, [selectedArticle?.id, openRightPanel]);
 
   // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
@@ -133,23 +122,6 @@ export default function Home() {
     });
     return () => unsub();
   }, [openTab, removeSessionWindow]);
-
-  // 分析状态
-  const analyzing = useAnalysisStore((s) => s.analyzing);
-  const analysisProgress = useAnalysisStore((s) => s.analysisProgress);
-  const analyzeBook = useAnalysisStore((s) => s.analyzeBook);
-  const resetForBook = useAnalysisStore((s) => s.resetForBook);
-  const cleanupAnalysis = useAnalysisStore((s) => s.cleanup);
-
-  // 切换书籍时重置分析状态
-  useEffect(() => {
-    resetForBook(selectedBook);
-  }, [selectedBook?.id, resetForBook]);
-
-  // 清理分析事件监听器
-  useEffect(() => {
-    return () => cleanupAnalysis();
-  }, [cleanupAnalysis]);
 
   // 正在加载默认工作区时显示加载状态
   if (loadingDefaultWs) {
@@ -267,10 +239,6 @@ export default function Home() {
               导入文章
             </Button>
           )}
-          <Button size="sm" onClick={importBook} disabled={importing}>
-            <Plus className="w-4 h-4 mr-2" />
-            {importing ? '导入中...' : '导入书籍'}
-          </Button>
         </div>
       </header>
 
@@ -332,7 +300,7 @@ export default function Home() {
                   style={{ display: activeTabId === tab.conversationId && !sessionWindowIds.has(tab.conversationId) ? 'block' : 'none' }}
                 >
                   <AgentChat
-                    placeholder="我可以帮你分析书籍内容、回答问题..."
+                    placeholder="向 AI 助手提问..."
                     showStatusHint={false}
                     conversationIdOverride={tab.conversationId}
                     rightPanelToggle={{ open: rightPanelOpen, onToggle: toggleRightPanel }}
@@ -381,30 +349,14 @@ export default function Home() {
             /* 子代理列表面板 */
             <SubAgentPanel conversationId={activeTabId || undefined} />
           ) : (
-            /* 原有的预览内容 */
+            /* 文章/文件预览 */
             <>
               <div className="p-3 border-b flex items-center justify-between">
                 <h2 className="text-sm font-semibold">
-                  {selectedArticle ? '文章预览' : '书籍预览'}
+                  {selectedArticle ? '文章预览' : '文件预览'}
                 </h2>
-                {selectedBook && !selectedArticle && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={deleteBook}
-                    disabled={deleting}
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                  >
-                    {deleting ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-4 h-4" />
-                    )}
-                  </Button>
-                )}
               </div>
               <ScrollArea className="flex-1 overflow-hidden">
-                {/* 文章预览模式 */}
                 {selectedArticle ? (
                   <ArticlePreview />
                 ) : selectedFile ? (
@@ -418,158 +370,11 @@ export default function Home() {
                         <p className="text-sm text-muted-foreground truncate">{selectedFile.path}</p>
                       </div>
                     </div>
-
-                    {selectedBook ? (
-                      <div className="pt-4 border-t space-y-3">
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">书名</p>
-                          <p className="text-sm font-medium">{selectedBook.title}</p>
-                        </div>
-                        {selectedBook.author && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">作者</p>
-                            <p className="text-sm">{selectedBook.author}</p>
-                          </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">章节数</p>
-                            <p className="text-sm">{selectedBook.total_chapters || 0}</p>
-                          </div>
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">字符数</p>
-                            <p className="text-sm">{(selectedBook.total_characters || 0).toLocaleString()}</p>
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground mb-1">状态</p>
-                          <p className="text-sm">
-                            {selectedBook.processing_status === 'completed' ? (
-                              <span className="text-green-600">已处理</span>
-                            ) : selectedBook.processing_status === 'processing' ? (
-                              <span className="text-yellow-600">处理中...</span>
-                            ) : selectedBook.processing_status === 'failed' ? (
-                              <span className="text-red-600">处理失败</span>
-                            ) : (
-                              <span className="text-muted-foreground">未处理</span>
-                            )}
-                          </p>
-                        </div>
-
-                        {/* 工作区文件路径 */}
-                        {workspaceFilePath && (
-                          <div>
-                            <p className="text-xs text-muted-foreground mb-1">文件路径</p>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs text-muted-foreground flex-1 truncate" title={workspaceFilePath}>{workspaceFilePath}</p>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 px-2"
-                                onClick={openBookInFolder}
-                                title="在文件系统中打开"
-                              >
-                                <ExternalLink className="w-3 h-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* AI 分析区域 */}
-                        <div className="pt-3 border-t space-y-3">
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">AI 分析</p>
-                            {analysisProgress.status === 'completed' ? (
-                              <CheckCircle2 className="w-4 h-4 text-green-600" />
-                            ) : analysisProgress.status === 'failed' ? (
-                              <XCircle className="w-4 h-4 text-red-600" />
-                            ) : analyzing ? (
-                              <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
-                            ) : null}
-                          </div>
-
-                          {/* 分析进度显示 */}
-                          {analyzing && (
-                            <div className="space-y-2">
-                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                <Brain className="w-3 h-3 text-blue-500" />
-                                <span>正在分析...</span>
-                              </div>
-                              {analysisProgress.currentTool && (
-                                <div className="text-xs text-muted-foreground bg-muted/50 rounded px-2 py-1">
-                                  执行: {analysisProgress.currentTool}
-                                </div>
-                              )}
-                              {analysisProgress.currentChapter && (
-                                <div className="text-xs text-blue-600 bg-blue-50 dark:bg-blue-950/30 rounded px-2 py-1">
-                                  章节: {analysisProgress.currentChapter}
-                                </div>
-                              )}
-                              {analysisProgress.message && (
-                                <div className="text-xs text-muted-foreground truncate">
-                                  {analysisProgress.message}
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* 分析完成显示 */}
-                          {analysisProgress.status === 'completed' && !analyzing && (
-                            <div className="text-xs text-green-600 bg-green-50 dark:bg-green-950/30 rounded px-2 py-1.5">
-                              分析完成！可以基于分析结果进行问答
-                            </div>
-                          )}
-
-                          {/* 分析失败显示 */}
-                          {analysisProgress.status === 'failed' && (
-                            <div className="text-xs text-red-600 bg-red-50 dark:bg-red-950/30 rounded px-2 py-1.5">
-                              分析失败: {analysisProgress.error || '未知错误'}
-                            </div>
-                          )}
-
-                          {/* 分析按钮 */}
-                          {!analyzing && analysisProgress.status !== 'completed' && (
-                            <Button
-                              size="sm"
-                              onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
-                              disabled={!selectedBook || selectedBook.processing_status !== 'completed'}
-                              className="w-full"
-                            >
-                              <Sparkles className="w-4 h-4 mr-2" />
-                              开始 AI 分析
-                            </Button>
-                          )}
-
-                          {/* 重新分析按钮 */}
-                          {!analyzing && analysisProgress.status === 'completed' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => selectedBook?.id && analyzeBook(selectedBook.id)}
-                              className="w-full"
-                            >
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                              重新分析
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="pt-4 border-t">
-                        <p className="text-sm text-muted-foreground mb-3">
-                          该文件尚未导入到数据库。
-                        </p>
-                        <Button size="sm" variant="outline" onClick={() => {/* TODO: 导入该文件 */}}>
-                          导入书籍
-                        </Button>
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
                     <FileIcon className="w-12 h-12 mb-4 opacity-50" />
-                    <p className="text-sm text-center">导入书籍或文章后可在此预览</p>
-                    <p className="text-xs mt-1">选择左侧文章或书籍查看详情</p>
+                    <p className="text-sm text-center">选择左侧文章或文件查看详情</p>
                   </div>
                 )}
               </ScrollArea>

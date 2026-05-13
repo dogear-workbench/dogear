@@ -39,18 +39,6 @@ async function tryDeleteSdkSession(workspaceId: string, sdkSessionId: string): P
 export const conversationsRouter = {
   // ── 对话 CRUD ─────────────────────────────────────────────
 
-  getByBookId: t.procedure
-    .input<{ bookId: string; workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const conversations = await conversationService.getByBookId(input.workspaceId, input.bookId);
-        return { conversations: conversations.map(conversationService.toCompat), error: undefined };
-      } catch (error) {
-        console.error('获取对话列表失败:', error);
-        return { conversations: [], error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
   getById: t.procedure
     .input<{ conversationId: string; workspaceId: string }>()
     .action(async ({ input }) => {
@@ -64,13 +52,12 @@ export const conversationsRouter = {
     }),
 
   create: t.procedure
-    .input<{ workspaceId: string; bookId?: string; title?: string }>()
+    .input<{ workspaceId: string; title?: string }>()
     .action(async ({ input }) => {
       try {
         const conversationId = await conversationService.create(
           input.workspaceId,
           input.title || '新对话',
-          input.bookId
         );
         // 同步添加到树
         await treeService.addConversationToTree(input.workspaceId, conversationId);
@@ -176,7 +163,7 @@ export const conversationsRouter = {
     }),
 
   createFork: t.procedure
-    .input<{ workspaceId: string; title: string; parentConversationId: string; forkMessageSdkUuid: string; bookId?: string }>()
+    .input<{ workspaceId: string; title: string; parentConversationId: string; forkMessageSdkUuid: string }>()
     .action(async ({ input }) => {
       try {
         const conversationId = await conversationService.createFork(
@@ -184,7 +171,6 @@ export const conversationsRouter = {
           input.title,
           input.parentConversationId,
           input.forkMessageSdkUuid,
-          input.bookId
         );
         // 同步添加到树
         await treeService.addConversationToTree(input.workspaceId, conversationId);

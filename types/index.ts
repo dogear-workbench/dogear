@@ -3,9 +3,6 @@
  * 供主进程、预加载进程、渲染进程共同使用
  */
 
-// 书籍相关类型
-export * from './books.js';
-
 // AI 相关类型
 export * from './ai.js';
 

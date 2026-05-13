@@ -51,9 +51,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
 
     try {
       set({ loadingArticleDetail: true });
-      // 清除书籍选中状态
       const { useWorkspaceStore } = await import('./workspace-store');
-      useWorkspaceStore.getState().setSelectedBook(null);
       useWorkspaceStore.getState().clearSelectedFile();
 
       const result = await client.getArticleDetail({ workspaceId, articleId: articleMeta.id });

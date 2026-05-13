@@ -83,8 +83,6 @@ export default function AgentMonitorPage() {
     const typeNames: Record<string, string> = {
       'chat': '对话',
       'summarize': '摘要',
-      'analyze_book': '书籍分析',
-      'reading_assist': '阅读辅助'
     };
     return typeNames[type] || type;
   };

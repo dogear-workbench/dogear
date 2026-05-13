@@ -19,7 +19,6 @@ export enum TaskStatus {
  */
 export enum TaskType {
   SUMMARIZE = 'summarize',          // 文本摘要
-  ANALYZE_BOOK = 'analyze_book',    // 书籍分析
   READING_ASSIST = 'reading_assist', // 阅读辅助
   CHAT_SESSION = 'chat_session',    // 持续对话会话
   PARSE_ARTICLE = 'parse_article'  // 文章解析（质量检查 + AI 重新解析）
@@ -49,8 +48,6 @@ export interface ChatTaskPayload {
     content: string;
   }>;
   context?: {
-    bookId?: string;
-    chapterId?: string;
     selectedText?: string;
   };
 }
@@ -66,8 +63,6 @@ export interface ChatSessionPayload {
     content: string;
   };
   context?: {                              // 上下文信息（action=start 时使用）
-    bookId?: string;
-    chapterId?: string;
     selectedText?: string;
   };
 }
@@ -79,14 +74,6 @@ export interface SummarizeTaskPayload {
   text: string;
   maxLength?: number;
   language?: string;
-}
-
-/**
- * 书籍分析任务负载
- */
-export interface AnalyzeBookPayload {
-  bookId: string;
-  analysisTypes?: ('summary' | 'keywords' | 'structure')[];
 }
 
 /**
@@ -138,7 +125,7 @@ export interface ExtendedSessionMessage {
   error?: string;
   isError?: boolean;               // 工具执行是否出错（用于 tool_result 类型）
   timestamp: number;
-  citations?: Citation[];          // 引用信息（用于书籍问答）
+  citations?: Citation[];          // 引用信息
   isReplay?: boolean;              // 是否为重放的历史消息（SDK resume 时使用）
   uuid?: string;                   // 消息 UUID（SDK 提供）
   model?: string;                  // AI 使用的实际模型名称
@@ -242,7 +229,5 @@ export type WorkerToMainMessage =
   | { type: 'sessionClosed'; sessionId: string }  // 会话已关闭
   | { type: 'pong' }
   | { type: 'error'; error: string }
-  // v2: 分析进度消息
-  | { type: 'analysisProgress'; bookId: string; toolName?: string; toolInput?: any; chapterSaved?: boolean; chapterTitle?: string; message?: string; status?: string }
   // Phase 3/4: 文章解析状态变化
   | { type: 'articleParseStatusChanged'; articleId: string; workspacePath: string; parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed' };

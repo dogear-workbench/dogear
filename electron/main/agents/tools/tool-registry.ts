@@ -13,7 +13,7 @@ export interface ToolMeta {
   /** 所属 MCP Server 名称 */
   server: string;
   /** 分类标签 */
-  category: 'article' | 'book-qa' | 'book-analysis' | 'stock' | 'memory' | 'other';
+  category: 'article' | 'stock' | 'memory' | 'other';
 }
 
 /** 按 MCP Server 分组后的工具列表 */
@@ -34,8 +34,6 @@ const SERVER_LABELS: Record<string, string> = {
   'dogear-stock-analysis':  '股票分析',
   'dogear-article':         '文章阅读',
   'dogear-article-parse':   '文章解析',
-  'dogear-book-qa':         '书籍问答',
-  'dogear-book-analysis':   '书籍分析',
 };
 
 /** SDK 内置工具（无法从 SDK 运行时获取元数据，故保留静态定义） */
@@ -76,7 +74,7 @@ export function getCustomTools(): ToolMeta[] {
  * 获取全部工具，按 MCP Server 分组返回
  *
  * SDK 内置工具作为第一组，自定义工具按 server 分组排列。
- * 分组顺序固定：sdk → stock → stock-analysis → article → book-qa → book-analysis → 其他
+ * 分组顺序固定：sdk → stock → stock-analysis → article → 其他
  */
 export function getAllTools(): ToolGroup[] {
   // 按 server 聚合自定义工具
@@ -95,8 +93,6 @@ export function getAllTools(): ToolGroup[] {
     'dogear-stock-analysis',
     'dogear-article',
     'dogear-article-parse',
-    'dogear-book-qa',
-    'dogear-book-analysis',
   ];
 
   const groups: ToolGroup[] = [];

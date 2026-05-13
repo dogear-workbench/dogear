@@ -21,7 +21,6 @@ export interface ConversationIndex {
   title: string;
   sdkSessionId: string | null;
   workspaceId: string;
-  bookId: string | null;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
   personaId?: string;    // 关联的人设 ID
@@ -38,7 +37,6 @@ export interface ConversationCompat {
   id: string;
   title: string;
   model: string;
-  book_id?: string;
   workspace_id: string;
   sdk_session_id?: string;
   parent_conversation_id?: string;
@@ -49,7 +47,6 @@ export interface ConversationCompat {
   archived_at?: string;
   created_at: number;
   updated_at: number;
-  bookId: string | null;
   workspaceId: string;
   sdkSessionId: string | null;
   parentConversationId: string | null;
@@ -163,23 +160,6 @@ export async function getByWorkspaceId(
   return sortedList(entries);
 }
 
-/**
- * 获取指定书籍的所有对话（按 updatedAt 倒序，默认过滤归档）
- */
-export async function getByBookId(
-  workspaceId: string,
-  bookId: string,
-  options?: { includeArchived?: boolean },
-): Promise<ConversationIndex[]> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const includeArchived = options?.includeArchived ?? false;
-  const filtered = Object.values(file.conversations).filter(
-    (c) => c.bookId === bookId && (includeArchived || !c.archivedAt),
-  );
-  return filtered.sort(
-    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-  );
-}
 
 /**
  * 根据 ID 获取单条对话，不存在则返回 null
@@ -218,7 +198,6 @@ export async function getByIdGlobal(id: string): Promise<{ conv: ConversationInd
 export async function create(
   workspaceId: string,
   title: string = '新对话',
-  bookId?: string,
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -229,7 +208,6 @@ export async function create(
     title,
     sdkSessionId: null,
     workspaceId,
-    bookId: bookId ?? null,
     parentConversationId: null,
     forkMessageSdkUuid: null,
     createdAt: now,
@@ -249,7 +227,6 @@ export async function createFork(
   title: string,
   parentConversationId: string,
   forkMessageSdkUuid: string,
-  bookId?: string,
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -260,7 +237,6 @@ export async function createFork(
     title,
     sdkSessionId: null,
     workspaceId,
-    bookId: bookId ?? null,
     parentConversationId,
     forkMessageSdkUuid,
     forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
@@ -484,7 +460,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     id: conv.id,
     title: conv.title,
     model: '',  // 不再存储模型名称
-    book_id: conv.bookId || undefined,
     workspace_id: conv.workspaceId,
     sdk_session_id: conv.sdkSessionId || undefined,
     parent_conversation_id: conv.parentConversationId || undefined,
@@ -496,7 +471,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用
-    bookId: conv.bookId,
     workspaceId: conv.workspaceId,
     sdkSessionId: conv.sdkSessionId,
     parentConversationId: conv.parentConversationId,

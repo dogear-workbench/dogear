@@ -23,8 +23,6 @@ import { EventEmitter } from 'events';
  * 对话上下文
  */
 export interface ChatContext {
-  bookId?: string;
-  chapterId?: string;
   selectedText?: string;
 }
 
@@ -350,16 +348,9 @@ ${trimmedContent}
     }
 
     const contextInfo = [];
-    if (context.bookId) contextInfo.push(`书籍ID: ${context.bookId}`);
-    if (context.chapterId) contextInfo.push(`章节ID: ${context.chapterId}`);
     if (context.selectedText) contextInfo.push(`选中文本: ${context.selectedText}`);
 
-    return `你是一个帮助用户阅读和分析电子书的 AI 助手。
-
-当前上下文:
-${contextInfo.join('\n')}
-
-请根据上述上下文提供有针对性的帮助。`;
+    return `你是一个 AI 个人助手。${contextInfo.length > 0 ? `\n\n当前上下文:\n${contextInfo.join('\n')}` : ''}`;
 }
 
 /**

@@ -10,21 +10,6 @@ import type { TaskStatus } from '../agents/task-types.js';
  * 每个属性是一个函数签名，参数即为事件的 payload
  */
 export type RendererHandlers = {
-  // 书籍分析进度更新
-  analysisUpdate: (data: {
-    bookId: string;
-    taskId?: string;
-    status?: string;
-    result?: unknown;
-    error?: string;
-    toolName?: string;
-    toolInput?: unknown;
-    chapterSaved?: boolean;
-    chapterTitle?: string;
-    message?: string;
-    statusMessage?: string;
-  }) => void;
-
   // Agent 任务状态更新
   agentTaskUpdate: (data: {
     taskId: string;

@@ -4,7 +4,6 @@ import { getRendererHandlers } from '@egoist/tipc/main';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { getQueryBasedSessionManager } from '../agents/query-based-session.js';
 import type { QueryBasedSession, QueryBasedSessionConfig, ExtendedSessionMessage } from '../agents/query-based-session.js';
-import { createBookQATools } from '../agents/tools/book-qa-tools.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
 import { createStockTools } from '../agents/tools/stock-tools.js';
 import { createMemoryTools } from '../agents/tools/memory-tools.js';
@@ -89,7 +88,7 @@ async function buildConversationSessionConfig(
   const enabledToolPacks = appSettings.enabledToolPacks ?? [];
 
   // 1. 常驻 MCP server（永远注册）：memory 工具
-  // 2. 可选 MCP server（按 enabledToolPacks 注册）：book-qa / article / stock-quote / stock-analysis
+  // 2. 可选 MCP server（按 enabledToolPacks 注册）：article / stock-quote / stock-analysis
   const mcpServers: Record<string, unknown> = {};
 
   if (workspacePath) {
@@ -99,10 +98,6 @@ async function buildConversationSessionConfig(
   // 工具包工厂表（避免遍历时分支判断）
   type ToolPackFactory = () => unknown;
   const toolPackFactories: Record<string, { factory: ToolPackFactory; available: boolean }> = {
-    'book-qa': {
-      factory: () => createBookQATools(workspacePath, workspaceId),
-      available: !!workspacePath,
-    },
     'article': {
       factory: () => createArticleTools(workspacePath),
       available: !!workspacePath,
@@ -141,22 +136,7 @@ async function buildConversationSessionConfig(
     extraPluginPaths.push(getStockAnalysisSkillDir());
   }
 
-  const agents: Record<string, any> = {
-    'chapter-analyzer': {
-      description: 'Analyze one chapter and summarize its structure.',
-      prompt: 'You are a chapter analysis specialist. Summarize the given chapter in Chinese.',
-      model: 'haiku',
-      tools: ['Read', 'Glob', 'Grep'],
-      maxTurns: 5,
-    },
-    'book-searcher': {
-      description: 'Search book content and locate relevant passages.',
-      prompt: 'You are a book search specialist. Find relevant passages and answer in Chinese.',
-      model: 'haiku',
-      tools: ['Read', 'Glob', 'Grep'],
-      maxTurns: 8,
-    },
-  };
+  const agents: Record<string, any> = {};
 
   if (workspacePath) {
     try {

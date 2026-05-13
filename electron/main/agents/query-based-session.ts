@@ -45,8 +45,6 @@ export type { ExtendedSessionMessage };
  * 会话上下文
  */
 export interface SessionContext {
-  bookId?: string;
-  chapterId?: string;
   selectedText?: string;
 }
 
@@ -421,15 +419,9 @@ export class QueryBasedSession extends EventEmitter {
           const ctx = this.config.context;
 
           if (source === 'startup') {
-            // 新会话启动：注入完整上下文
-            if (ctx?.bookId) additionalContext += `当前书籍 ID: ${ctx.bookId}\n`;
-            if (ctx?.chapterId) additionalContext += `当前章节 ID: ${ctx.chapterId}\n`;
             if (ctx?.selectedText) additionalContext += `用户选中的文本: ${ctx.selectedText}\n`;
-          } else if (source === 'resume') {
-            if (ctx?.bookId) additionalContext = `会话已恢复。当前书籍 ID: ${ctx.bookId}`;
           } else if (source === 'compact') {
             additionalContext = '注意：会话已经过压缩，部分上下文可能丢失。';
-            if (ctx?.bookId) additionalContext += ` 当前书籍 ID: ${ctx.bookId}`;
           }
 
           return {

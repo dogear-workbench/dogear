@@ -11,7 +11,7 @@ import type { Message } from '../types';
 interface UseAgentSessionParams {
   conversationId: string | null;
   forkParams: ForkParams | null;
-  context: { bookId?: string; workspaceId?: string; chapterId?: string; selectedText?: string };
+  context: { workspaceId?: string; selectedText?: string };
   useSdkResume: boolean;
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setIsLoading: Dispatch<SetStateAction<boolean>>;

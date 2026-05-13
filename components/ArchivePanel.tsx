@@ -11,7 +11,7 @@ import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { client } from '@/lib/client';
-import type { Conversation } from '@/components/BookConversationList';
+import type { Conversation } from '@/components/ConversationList';
 
 function formatArchivedTime(iso?: string): string {
   if (!iso) return '';
