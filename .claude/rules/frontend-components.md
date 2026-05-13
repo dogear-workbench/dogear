@@ -2,6 +2,8 @@
 paths:
   - "components/**/*.tsx"
   - "app/**/*.tsx"
+  - "src/**/*.tsx"
+  - "stores/**/*.ts"
 ---
 
 # 前端组件规则
