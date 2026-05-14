@@ -3,11 +3,12 @@ import React, { useCallback, useMemo, useLayoutEffect, useRef, useState } from '
 import {
   MessageSquare, Plus, Trash2, GitBranch, Pencil, Quote,
   Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Bot, Archive,
+  FolderInput, FolderOutput,
 } from 'lucide-react';
 import { useUIStore } from '@/stores/ui-store';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
-  ContextMenuItem, ContextMenuSeparator,
+  ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent,
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,40 +19,41 @@ import { useConversationStore } from '@/stores/conversation-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useSessionStore } from '@/stores/session-store';
-import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
 
 import { useTree } from '@headless-tree/react';
 import {
   syncDataLoaderFeature,
   selectionFeature,
   hotkeysCoreFeature,
-  dragAndDropFeature,
   renamingFeature,
   propMemoizationFeature,
-  isOrderedDragTarget,
 } from '@headless-tree/core';
-import type { ItemInstance, DragTarget } from '@headless-tree/core';
+import type { ItemInstance } from '@headless-tree/core';
 
 /**
  * 对话接口（对话直接属于工作区）
  */
 export interface Conversation {
   id: string;
-  workspace_id: string;              // 关联的工作区ID
+  workspace_id: string;
   title: string;
   model: string;
   sdk_session_id?: string;
-  parent_conversation_id?: string;   // 分叉对话的父对话 ID
-  fork_message_sdk_uuid?: string;    // 分叉点的 assistant 消息 UUID
-  persona_id?: string;               // 关联的人设 ID
-  temp_prompt?: string;              // 对话规则（持久绑定此对话）
-  fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
-  archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
+  parent_conversation_id?: string;
+  fork_message_sdk_uuid?: string;
+  persona_id?: string;
+  temp_prompt?: string;
+  fork_pending?: boolean;
+  archived_at?: string;
   created_at: number;
   updated_at: number;
 }
 
 const CONV_TREE_ROOT = '__root__';
+
+// 30 天阈值，超过则归入"更早"分组
+const RECENT_DAYS = 30;
+const RECENT_THRESHOLD_MS = RECENT_DAYS * 86400_000;
 
 // ============================================================
 // 工具函数
@@ -138,24 +140,63 @@ function NewFolderInput({
 }
 
 // ============================================================
+// 分组标题行（最近 / 更早）
+// ============================================================
+
+function GroupHeader({
+  label,
+  count,
+  collapsed,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+      onClick={onToggle}
+    >
+      {collapsed
+        ? <ChevronRight className="w-3 h-3" />
+        : <ChevronDown className="w-3 h-3" />
+      }
+      <span>{label}</span>
+      <span className="ml-auto text-[10px] opacity-70">{count}</span>
+    </div>
+  );
+}
+
+// ============================================================
 // 树节点行渲染
 // ============================================================
 
-function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNode> }) {
+interface FolderOption {
+  id: string;
+  name: string;
+}
+
+function ConversationTreeItem({
+  item,
+  parentId,
+  folderOptions,
+}: {
+  item: ItemInstance<ConversationFlatNode>;
+  parentId: string;
+  folderOptions: FolderOption[];
+}) {
   const data = item.getItemData();
   const meta = item.getItemMeta();
   const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const selectConversation = useConversationStore((s) => s.selectConversation);
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const deleteFolder = useConversationStore((s) => s.deleteFolder);
+  const moveItem = useConversationStore((s) => s.moveItem);
   const openTab = useSessionStore((s) => s.openTab);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
 
-  // 下面这些 hooks 原本在 "if (data.nodeType === 'folder') return ..." 和
-  // "if (!conv) return null" 之后调用，违反 React Hooks 规则 —— 切换工作区
-  // 触发 tree rebuild 时，同一 fiber 对应的 nodeType 可能从 folder 变成 conversation
-  // （或反之），hooks 数量随之变化就抛 "Rendered fewer hooks" 错误。
-  // 修复：所有 hooks 提到函数顶部，early return 放到最后。
   const runningIds = useConversationStore((s) => s.runningConversationIds);
   const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
   const botBoundId = useConversationStore((s) => s.botBoundConversationId);
@@ -166,7 +207,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
 
   const conv = data.nodeType === 'folder' ? null : data.conversation ?? null;
 
-  /** 进入编辑模式 */
   const startEditing = useCallback(() => {
     if (!conv) return;
     setEditTitle(getConversationTitle(conv));
@@ -177,7 +217,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
     }, 0);
   }, [conv]);
 
-  /** 保存标题 */
   const saveTitle = useCallback(() => {
     if (!conv) return;
     const trimmed = editTitle.trim();
@@ -186,7 +225,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
     setIsEditing(false);
   }, [editTitle, conv, updateConversationTitle]);
 
-  /** 取消编辑 */
   const cancelEditing = useCallback(() => {
     setIsEditing(false);
   }, []);
@@ -195,7 +233,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const { ref, ...props } = item.getProps();
 
   if (data.nodeType === 'folder') {
-    // 文件夹渲染
     return (
       <ContextMenu>
         <ContextMenuTrigger asChild>
@@ -205,7 +242,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
             className={cn(
               'flex items-center gap-1.5 py-1.5 pr-2 cursor-pointer select-none group',
               'hover:bg-muted/50 transition-colors rounded-sm mx-1',
-              item.isDragTarget() && 'bg-blue-500/20 ring-1 ring-blue-500/50',
             )}
             style={{ paddingLeft: `${paddingLeft}px` }}
           >
@@ -254,7 +290,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
     );
   }
 
-  // 对话渲染前的 early return（所有 hooks 已在上方调用完毕）
   if (!conv) return null;
 
   const isSelected = selectedConversation?.id === conv.id;
@@ -262,6 +297,7 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isBotBound = conv.id === botBoundId;
+  const inFolder = parentId !== CONV_TREE_ROOT;
 
   return (
     <ContextMenu>
@@ -276,7 +312,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
           style={{ paddingLeft: `${paddingLeft}px` }}
           onClick={() => {
             if (sessionWindowIds.has(conv.id)) {
-              // 会话在独立窗口中，聚焦该窗口
               client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
               return;
             }
@@ -321,7 +356,7 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
                   {getConversationTitle(conv)}
                 </div>
                 {isBotBound && (
-                  <Bot className="w-3 h-3 flex-shrink-0 text-green-500" title="Bot 已绑定" />
+                  <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />
                 )}
               </div>
             )}
@@ -332,7 +367,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
               )}
             </div>
           </div>
-          {/* 引用按钮 */}
           <Button
             variant="ghost"
             size="sm"
@@ -349,7 +383,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
           >
             <Quote className="w-3 h-3" />
           </Button>
-          {/* 编辑按钮 */}
           <Button
             variant="ghost"
             size="sm"
@@ -361,7 +394,6 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
           >
             <Pencil className="w-3 h-3" />
           </Button>
-          {/* 删除按钮 */}
           <Button
             variant="ghost"
             size="sm"
@@ -389,6 +421,39 @@ function ConversationTreeItem({ item }: { item: ItemInstance<ConversationFlatNod
           引用到当前对话
         </ContextMenuItem>
         <ContextMenuSeparator />
+        {folderOptions.length > 0 ? (
+          <ContextMenuSub>
+            <ContextMenuSubTrigger>
+              <FolderInput className="w-3.5 h-3.5 mr-2" />
+              移动到文件夹
+            </ContextMenuSubTrigger>
+            <ContextMenuSubContent>
+              {folderOptions
+                .filter((f) => f.id !== parentId)
+                .map((f) => (
+                  <ContextMenuItem
+                    key={f.id}
+                    onClick={() => moveItem(conv.id, f.id)}
+                  >
+                    <Folder className="w-3.5 h-3.5 mr-2 text-amber-500" />
+                    {f.name}
+                  </ContextMenuItem>
+                ))}
+            </ContextMenuSubContent>
+          </ContextMenuSub>
+        ) : (
+          <ContextMenuItem disabled>
+            <FolderInput className="w-3.5 h-3.5 mr-2" />
+            移动到文件夹（暂无文件夹）
+          </ContextMenuItem>
+        )}
+        {inFolder && (
+          <ContextMenuItem onClick={() => moveItem(conv.id, CONV_TREE_ROOT)}>
+            <FolderOutput className="w-3.5 h-3.5 mr-2" />
+            从文件夹移出
+          </ContextMenuItem>
+        )}
+        <ContextMenuSeparator />
         <ContextMenuItem
           className="text-destructive"
           onClick={() => deleteConversation(conv.id)}
@@ -410,18 +475,16 @@ export function ConversationList() {
   const loadingConversations = useConversationStore((s) => s.loadingConversations);
   const newConversation = useConversationStore((s) => s.newConversation);
   const createFolder = useConversationStore((s) => s.createFolder);
-  const moveItem = useConversationStore((s) => s.moveItem);
   const renameFolder = useConversationStore((s) => s.renameFolder);
   const selectConversation = useConversationStore((s) => s.selectConversation);
 
-  // 新建文件夹状态
   const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
+  const [earlierCollapsed, setEarlierCollapsed] = useState(true);
+  const [recentCollapsed, setRecentCollapsed] = useState(false);
 
-  // nodeMapRef 避免 dataLoader 闭包过期
   const nodeMapRef = useRef(nodeMap);
   nodeMapRef.current = nodeMap;
 
-  // 稳定的 dataLoader
   const dataLoader = useMemo(() => ({
     getItem: (itemId: string) => nodeMapRef.current[itemId] ?? {
       id: itemId, name: itemId, isFolder: false, childrenIds: [], nodeType: 'conversation' as const,
@@ -429,27 +492,6 @@ export function ConversationList() {
     getChildren: (itemId: string) => nodeMapRef.current[itemId]?.childrenIds ?? [],
   }), []);
 
-  // 拖放回调
-  const handleDrop = useCallback((items: ItemInstance<ConversationFlatNode>[], target: DragTarget<ConversationFlatNode>) => {
-    if (isOrderedDragTarget(target)) {
-      // 有序拖放：拖到兄弟节点之间，target.item 是父节点
-      const parentId = target.item.getId();
-      for (const item of items) {
-        moveItem(item.getId(), parentId, target.insertionIndex);
-      }
-      return;
-    }
-
-    // 无序拖放：直接拖到文件夹上
-    const targetId = target.item.getId();
-    const targetData = target.item.getItemData();
-    const parentId = targetData.isFolder ? targetId : CONV_TREE_ROOT;
-    for (const item of items) {
-      moveItem(item.getId(), parentId);
-    }
-  }, [moveItem]);
-
-  // 重命名回调（仅文件夹）
   const handleRename = useCallback((item: ItemInstance<ConversationFlatNode>, value: string) => {
     const data = item.getItemData();
     if (data.nodeType === 'folder' && value.trim()) {
@@ -457,7 +499,6 @@ export function ConversationList() {
     }
   }, [renameFolder]);
 
-  // 主操作：点击对话选中，文件夹展开/折叠
   const openTabFromList = useSessionStore((s) => s.openTab);
   const sessionWindowIdsFromList = useSessionStore((s) => s.sessionWindowIds);
   const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
@@ -472,26 +513,6 @@ export function ConversationList() {
     }
   }, [selectConversation, openTabFromList, sessionWindowIdsFromList]);
 
-  const canDrag = useCallback((items: ItemInstance<ConversationFlatNode>[]) => {
-    return items.every(i => i.getId() !== CONV_TREE_ROOT);
-  }, []);
-
-  const canDrop = useCallback((items: ItemInstance<ConversationFlatNode>[], target: DragTarget<ConversationFlatNode>) => {
-    const targetId = target.item.getId();
-    // 可以拖到根
-    if (targetId === CONV_TREE_ROOT) return true;
-    const targetData = target.item.getItemData();
-    // 只能拖到文件夹
-    if (!targetData.isFolder) return false;
-    for (const item of items) {
-      // 不能拖到自身
-      if (item.getId() === targetId) return false;
-      // 不能拖到自身子级
-      if (target.item.isDescendentOf(item.getId())) return false;
-    }
-    return true;
-  }, []);
-
   const canRename = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     return item.getItemData().nodeType === 'folder';
   }, []);
@@ -504,45 +525,92 @@ export function ConversationList() {
       syncDataLoaderFeature,
       selectionFeature,
       hotkeysCoreFeature,
-      dragAndDropFeature,
       renamingFeature,
       propMemoizationFeature,
     ],
-    canReorder: true,
-    openOnDropDelay: 800,
     isItemFolder: (item) => item.getItemData().isFolder,
     getItemName: (item) => item.getItemData().name,
-    onDrop: handleDrop,
     onRename: handleRename,
     onPrimaryAction: handlePrimaryAction,
-    canDrag,
-    canDrop,
     canRename,
   });
 
   const items = tree.getItems();
 
-  // 滚动保持：通过 ScrollArea 的 Viewport 获取实际滚动容器
+  // 文件夹选项（用于"移动到文件夹"右键菜单）
+  const folderOptions = useMemo<FolderOption[]>(() => {
+    return Object.values(nodeMap)
+      .filter((n) => n.nodeType === 'folder' && n.id !== CONV_TREE_ROOT)
+      .map((n) => ({ id: n.id, name: n.name }));
+  }, [nodeMap]);
+
+  // 给每一项算它的 parent（用 nodeMap.childrenIds 反推）
+  const itemParentMap = useMemo<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const node of Object.values(nodeMap)) {
+      for (const childId of node.childrenIds) {
+        map[childId] = node.id;
+      }
+    }
+    return map;
+  }, [nodeMap]);
+
+  // 把 items 拆成「文件夹及其子项」与「根级对话」两部分；根级对话再分「最近 / 更早」
+  type RenderEntry =
+    | { kind: 'item'; item: ItemInstance<ConversationFlatNode>; parentId: string; index: number }
+    | { kind: 'group'; group: 'recent' | 'earlier'; count: number };
+
+  const { topEntries, recentEntries, earlierEntries } = useMemo(() => {
+    const top: Array<{ item: ItemInstance<ConversationFlatNode>; index: number }> = [];
+    const recent: Array<{ item: ItemInstance<ConversationFlatNode>; index: number }> = [];
+    const earlier: Array<{ item: ItemInstance<ConversationFlatNode>; index: number }> = [];
+
+    const now = Date.now();
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      const data = it.getItemData();
+      const level = it.getItemMeta().level;
+      const isRoot = level === 0;
+
+      if (data.nodeType === 'folder') {
+        // 根级文件夹及其展开后的子项都属于"top"段
+        top.push({ item: it, index: i });
+        continue;
+      }
+
+      if (!isRoot) {
+        // 文件夹内的对话直接归入 top（紧跟在文件夹下）
+        top.push({ item: it, index: i });
+        continue;
+      }
+
+      // 根级对话 → 按 30 天阈值分流
+      const ts = data.conversation?.updated_at ?? 0;
+      if (now - ts <= RECENT_THRESHOLD_MS) {
+        recent.push({ item: it, index: i });
+      } else {
+        earlier.push({ item: it, index: i });
+      }
+    }
+
+    return { topEntries: top, recentEntries: recent, earlierEntries: earlier };
+  }, [items]);
+
+  // 滚动保持
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const pendingScrollTop = useRef<number | null>(null);
   const scrollRestoreTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** 获取 ScrollArea 内部的 Viewport 滚动容器 */
   const getViewport = useCallback(
     () => scrollAreaRef.current?.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement | null,
     [],
   );
 
-  // 拖拽靠近边缘时自动滚动
-  useDragAutoScroll(getViewport);
-
-  // nodeMap 变化时重建树
   useLayoutEffect(() => {
     pendingScrollTop.current = getViewport()?.scrollTop ?? 0;
     tree.rebuildTree();
   }, [nodeMap, tree]);
 
-  // 恢复滚动位置
   useLayoutEffect(() => {
     const viewport = getViewport();
     if (pendingScrollTop.current !== null && viewport) {
@@ -557,42 +625,41 @@ export function ConversationList() {
     }
   });
 
-  // 新建文件夹输入框位置计算
+  // 新建文件夹输入框位置：始终插在文件夹段末尾（根级新建）
   const newFolderInsertInfo = useMemo(() => {
     if (creatingFolderAt === null) return null;
 
-    // 在根级别末尾插入
-    let insertAfterIndex = items.length - 1;
-    const indent = 8; // 根级别缩进
-
-    if (creatingFolderAt !== CONV_TREE_ROOT) {
-      // 在指定父文件夹下插入
-      let parentIndex = -1;
-      let parentLevel = 0;
-      for (let i = 0; i < items.length; i++) {
-        if (items[i].getId() === creatingFolderAt) {
-          parentIndex = i;
-          parentLevel = items[i].getItemMeta().level;
-          break;
+    if (creatingFolderAt === CONV_TREE_ROOT) {
+      // 找到 top 段最后一个根级文件夹的索引；若无，则插在 top 段开头
+      let insertAfterEntryIndex = -1;
+      for (let i = 0; i < topEntries.length; i++) {
+        const it = topEntries[i].item;
+        if (it.getItemData().nodeType === 'folder' && it.getItemMeta().level === 0) {
+          insertAfterEntryIndex = i;
         }
       }
-      if (parentIndex === -1) return null;
-
-      // 找到父节点的最后一个子节点
-      insertAfterIndex = parentIndex;
-      for (let i = parentIndex + 1; i < items.length; i++) {
-        if (items[i].getItemMeta().level <= parentLevel) break;
-        insertAfterIndex = i;
-      }
-
-      return {
-        insertAfterIndex,
-        indent: (parentLevel + 1) * 16 + 8,
-      };
+      return { insertAfterEntryIndex, indent: 8 };
     }
 
-    return { insertAfterIndex, indent };
-  }, [creatingFolderAt, items]);
+    // 子文件夹下新建（保留接口能力，但 UI 入口现在不用）
+    let parentEntryIndex = -1;
+    let parentLevel = 0;
+    for (let i = 0; i < topEntries.length; i++) {
+      if (topEntries[i].item.getId() === creatingFolderAt) {
+        parentEntryIndex = i;
+        parentLevel = topEntries[i].item.getItemMeta().level;
+        break;
+      }
+    }
+    if (parentEntryIndex === -1) return null;
+
+    let insertAfterEntryIndex = parentEntryIndex;
+    for (let i = parentEntryIndex + 1; i < topEntries.length; i++) {
+      if (topEntries[i].item.getItemMeta().level <= parentLevel) break;
+      insertAfterEntryIndex = i;
+    }
+    return { insertAfterEntryIndex, indent: (parentLevel + 1) * 16 + 8 };
+  }, [creatingFolderAt, topEntries]);
 
   if (loadingConversations) {
     return (
@@ -603,9 +670,11 @@ export function ConversationList() {
     );
   }
 
+  const hasAnyContent =
+    topEntries.length > 0 || recentEntries.length > 0 || earlierEntries.length > 0;
+
   return (
     <div className="h-full flex flex-col">
-      {/* 工具栏 */}
       <div className="px-3 py-2 border-b flex items-center gap-2">
         <Button
           variant="outline"
@@ -627,7 +696,6 @@ export function ConversationList() {
         </Button>
       </div>
 
-      {/* 对话树 */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 overflow-hidden">
         {conversations.length === 0 && !creatingFolderAt ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -637,11 +705,15 @@ export function ConversationList() {
           </div>
         ) : (
           <div {...tree.getContainerProps('对话列表')}>
-            {items.map((item, index) => (
-              <React.Fragment key={item.getId()}>
-                <ConversationTreeItem item={item} />
-                {/* 在正确位置插入新建文件夹输入框 */}
-                {newFolderInsertInfo && index === newFolderInsertInfo.insertAfterIndex && (
+            {/* 文件夹及其展开后的子项 */}
+            {topEntries.map((entry, i) => (
+              <React.Fragment key={entry.item.getId()}>
+                <ConversationTreeItem
+                  item={entry.item}
+                  parentId={itemParentMap[entry.item.getId()] ?? CONV_TREE_ROOT}
+                  folderOptions={folderOptions}
+                />
+                {newFolderInsertInfo && i === newFolderInsertInfo.insertAfterEntryIndex && (
                   <NewFolderInput
                     indent={newFolderInsertInfo.indent}
                     onConfirm={async (name) => {
@@ -654,8 +726,8 @@ export function ConversationList() {
               </React.Fragment>
             ))}
 
-            {/* 树为空时也显示新建文件夹输入框 */}
-            {items.length === 0 && newFolderInsertInfo && (
+            {/* 没有任何文件夹时，新建文件夹输入框单独渲染在最前 */}
+            {newFolderInsertInfo && newFolderInsertInfo.insertAfterEntryIndex === -1 && (
               <NewFolderInput
                 indent={newFolderInsertInfo.indent}
                 onConfirm={async (name) => {
@@ -666,22 +738,61 @@ export function ConversationList() {
               />
             )}
 
-            {/* 拖拽线 */}
-            <div
-              style={tree.getDragLineStyle()}
-              className="h-[2px] bg-blue-500 rounded pointer-events-none"
-            />
+            {/* 「最近」分组 */}
+            {recentEntries.length > 0 && (
+              <>
+                <GroupHeader
+                  label={`最近 ${RECENT_DAYS} 天`}
+                  count={recentEntries.length}
+                  collapsed={recentCollapsed}
+                  onToggle={() => setRecentCollapsed((v) => !v)}
+                />
+                {!recentCollapsed && recentEntries.map((entry) => (
+                  <ConversationTreeItem
+                    key={entry.item.getId()}
+                    item={entry.item}
+                    parentId={CONV_TREE_ROOT}
+                    folderOptions={folderOptions}
+                  />
+                ))}
+              </>
+            )}
+
+            {/* 「更早」分组（默认折叠） */}
+            {earlierEntries.length > 0 && (
+              <>
+                <GroupHeader
+                  label="更早"
+                  count={earlierEntries.length}
+                  collapsed={earlierCollapsed}
+                  onToggle={() => setEarlierCollapsed((v) => !v)}
+                />
+                {!earlierCollapsed && earlierEntries.map((entry) => (
+                  <ConversationTreeItem
+                    key={entry.item.getId()}
+                    item={entry.item}
+                    parentId={CONV_TREE_ROOT}
+                    folderOptions={folderOptions}
+                  />
+                ))}
+              </>
+            )}
+
+            {!hasAnyContent && !creatingFolderAt && (
+              <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+                <MessageSquare className="w-10 h-10 mb-3 opacity-50" />
+                <p className="text-xs">暂无对话</p>
+              </div>
+            )}
           </div>
         )}
       </ScrollArea>
 
-      {/* 底部：归档入口 */}
       <ArchiveFooterButton />
     </div>
   );
 }
 
-/** 底部归档入口按钮 */
 function ArchiveFooterButton() {
   const openArchive = useUIStore((s: any) => s.openArchivePanel);
   return (
@@ -698,4 +809,3 @@ function ArchiveFooterButton() {
     </div>
   );
 }
-

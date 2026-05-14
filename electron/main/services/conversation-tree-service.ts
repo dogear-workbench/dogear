@@ -199,6 +199,45 @@ export async function addConversationToTree(
   await saveTree(workspaceId, tree);
 }
 
+/**
+ * 按 updatedAt 倒序重排树中所有 children 数组的对话部分（文件夹顺序保持不变）。
+ * 写入后调用一次即可让"同层时间倒序 + 文件夹置顶"成为持久状态。
+ *
+ * @param updatedAtMap conversationId -> ISO 时间字符串
+ */
+export async function sortConversationsByUpdatedAt(
+  workspaceId: string,
+  updatedAtMap: Record<string, string>,
+): Promise<void> {
+  const tree = await loadTree(workspaceId);
+  let mutated = false;
+
+  for (const [parentId, childIds] of Object.entries(tree.children)) {
+    const folders: string[] = [];
+    const conversations: string[] = [];
+    for (const id of childIds) {
+      if (tree.folders[id]) folders.push(id);
+      else conversations.push(id);
+    }
+
+    conversations.sort((a, b) => {
+      const ta = new Date(updatedAtMap[a] ?? 0).getTime();
+      const tb = new Date(updatedAtMap[b] ?? 0).getTime();
+      return tb - ta;
+    });
+
+    const next = [...folders, ...conversations];
+    if (next.some((id, i) => id !== childIds[i]) || next.length !== childIds.length) {
+      tree.children[parentId] = next;
+      mutated = true;
+    }
+  }
+
+  if (mutated) {
+    await saveTree(workspaceId, tree);
+  }
+}
+
 /** 从树中移除对话 */
 export async function removeConversationFromTree(
   workspaceId: string,

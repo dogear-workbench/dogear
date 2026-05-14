@@ -15,6 +15,7 @@ import { stockRouter } from './stock.js';
 import { wechatRouter } from './wechat.js';
 import { conversationRuntimeRouter } from './conversation-runtime.js';
 import { environmentRouter } from './environment.js';
+import { skillRouter } from './skill.js';
 
 export const router = {
   ...aiRouter,
@@ -32,6 +33,7 @@ export const router = {
   ...wechatRouter,
   ...conversationRuntimeRouter,
   ...environmentRouter,
+  ...skillRouter,
 };
 
 export type Router = typeof router;

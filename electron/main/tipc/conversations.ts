@@ -16,6 +16,21 @@ const t = tipc.create();
  * 它会读取 process.env.CLAUDE_CONFIG_DIR 来定位 JSONL 文件。为保证准确，
  * 调用前临时设置 process.env.CLAUDE_CONFIG_DIR，调用完毕后恢复。
  */
+/**
+ * 拉取工作区所有对话的 updatedAt，按倒序重排树。
+ * 失败静默：对话本身写入已成功，重排只是 UX 优化。
+ */
+async function reorderTreeByUpdatedAt(workspaceId: string): Promise<void> {
+  try {
+    const conversations = await conversationService.getByWorkspaceId(workspaceId, { includeArchived: true });
+    const map: Record<string, string> = {};
+    for (const c of conversations) map[c.id] = c.updatedAt;
+    await treeService.sortConversationsByUpdatedAt(workspaceId, map);
+  } catch (error) {
+    console.warn('[reorderTree] 重排对话树失败:', error);
+  }
+}
+
 async function tryDeleteSdkSession(workspaceId: string, sdkSessionId: string): Promise<void> {
   const originalEnv = process.env.CLAUDE_CONFIG_DIR;
   try {
@@ -155,6 +170,8 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const conversations = await conversationService.getByWorkspaceId(input.workspaceId);
+        // 顺手把树按 updatedAt 重排一次，让"同层时间倒序"自动收敛
+        await reorderTreeByUpdatedAt(input.workspaceId);
         return { conversations: conversations.map(conversationService.toCompat), error: undefined };
       } catch (error) {
         console.error('获取工作区对话列表失败:', error);
@@ -284,6 +301,8 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         await treeService.moveItem(input.workspaceId, input.itemId, input.targetParentId, input.targetIndex);
+        // 移动后按时间倒序重排目标 parent，让对话自动落到顶端
+        await reorderTreeByUpdatedAt(input.workspaceId);
         return { success: true, error: undefined };
       } catch (error) {
         console.error('移动对话项目失败:', error);
