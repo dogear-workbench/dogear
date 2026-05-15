@@ -14,8 +14,6 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs/promises';
 import { getArticleParserSkillsDir } from './article-parser-skills-service.js';
-import { getStockAnalysisSkillDir } from './stock-analysis-skills-service.js';
-import { loadSettings } from './settings-service.js';
 
 export type SkillSource = 'workspace' | 'user' | 'plugin';
 
@@ -128,17 +126,14 @@ async function scanSkillsDir(rootDir: string, source: SkillSource): Promise<Skil
 
 /**
  * 列出所有 Skill：
- * - plugin 段：article-parser（常驻）+ stock-analysis（跟随 stock-analysis 工具包）
- * - workspace 段：<workspacePath>/.claude/skills/*
+ * - plugin 段：article-parser（常驻；stock-analysis 已迁移到订阅模板，不在此处出现）
+ * - workspace 段：<workspacePath>/.claude/skills/*（含订阅后的 stock-analysis 副本）
  * - user 段：~/.claude/skills/*
  */
 export async function listSkills(workspacePath: string | null | undefined): Promise<SkillEntry[]> {
   const result: SkillEntry[] = [];
 
-  // 1. 内置 plugin
-  const settings = await loadSettings();
-  const enabledPacks = new Set(settings.enabledToolPacks ?? []);
-
+  // 1. 内置 plugin（仅 article-parser）
   const articleDir = getArticleParserSkillsDir();
   const articleMeta = await readSkillMeta(articleDir);
   if (articleMeta) {
@@ -151,21 +146,6 @@ export async function listSkills(workspacePath: string | null | undefined): Prom
       enabled: articleMeta.enabled,
       pluginGate: 'always',
       pluginActive: true,
-    });
-  }
-
-  const stockDir = getStockAnalysisSkillDir();
-  const stockMeta = await readSkillMeta(stockDir);
-  if (stockMeta) {
-    result.push({
-      source: 'plugin',
-      name: stockMeta.name ?? 'stock-analysis',
-      description: stockMeta.description,
-      dir: stockDir,
-      filePath: stockMeta.filePath,
-      enabled: stockMeta.enabled,
-      pluginGate: 'stock-analysis',
-      pluginActive: enabledPacks.has('stock-analysis'),
     });
   }
 
@@ -196,7 +176,6 @@ export async function setSkillEnabled(
   const allowedRoots = [
     path.join(os.homedir(), '.claude', 'skills'),
     getArticleParserSkillsDir(),
-    getStockAnalysisSkillDir(),
   ];
   if (workspacePath) {
     allowedRoots.push(path.join(workspacePath, '.claude', 'skills'));

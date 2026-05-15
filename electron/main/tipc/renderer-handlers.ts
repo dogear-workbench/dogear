@@ -111,13 +111,6 @@ export type RendererHandlers = {
     resultText?: string;
   }) => void;
 
-  // 子代理实时消息事件
-  subAgentMessage: (data: {
-    parentSessionId: string;
-    agentId: string;
-    message: ExtendedSessionMessage;
-  }) => void;
-
   // === 文章解析状态（Phase 3） ===
 
   // 文章解析状态变化（脚本/AI 质量检查/重新解析后端广播）

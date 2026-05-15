@@ -143,5 +143,5 @@ export interface AgentFileInfo {
     maxTurns?: number;
   };
   filePath: string;
-  source: 'file' | 'builtin';
+  source: 'file' | 'template';
 }

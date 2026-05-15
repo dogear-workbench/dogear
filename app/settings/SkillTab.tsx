@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Sparkles, FolderOpen, User, Package } from 'lucide-react';
+import { Sparkles, FolderOpen, User, Package, Download, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { showConfirm } from '@/stores/confirm-store';
 
 interface SkillEntry {
   source: 'workspace' | 'user' | 'plugin';
@@ -15,27 +16,44 @@ interface SkillEntry {
   pluginActive?: boolean;
 }
 
+interface SkillTemplate {
+  name: string;
+  description: string;
+}
+
 const SOURCE_META: Record<SkillEntry['source'], { label: string; icon: typeof Sparkles; hint: string }> = {
-  plugin: { label: '内置 Skill', icon: Package, hint: '由工具包开关联动，禁用需修改 SKILL.md 文件' },
-  workspace: { label: '工作区 Skill', icon: FolderOpen, hint: '位于 <workspace>/.claude/skills/，可单独启停' },
-  user: { label: '用户 Skill', icon: User, hint: '位于 ~/.claude/skills/，可单独启停' },
+  plugin: { label: '插件 Skills', icon: Package, hint: '随应用内置（如文章解析），禁用需修改 SKILL.md 文件' },
+  workspace: { label: '工作区 Skills', icon: FolderOpen, hint: '位于 <workspace>/.claude/skills/，可单独启停' },
+  user: { label: '用户 Skills', icon: User, hint: '位于 ~/.claude/skills/，可单独启停' },
 };
 
 export function SkillTab() {
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id ?? null);
+  const workspacePath = useWorkspaceStore((s) => s.workspace?.path);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
+  const [templates, setTemplates] = useState<SkillTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyDir, setBusyDir] = useState<string | null>(null);
+  const [busyTemplate, setBusyTemplate] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const result = (await client.listSkills({ workspaceId })) as { skills?: SkillEntry[]; error?: string };
-      if (result.error) {
-        console.error('listSkills 失败:', result.error);
+      const [skillResult, tplResult] = await Promise.all([
+        client.listSkills({ workspaceId }) as Promise<{ skills?: SkillEntry[]; error?: string }>,
+        client.listSkillTemplates() as Promise<{ templates?: SkillTemplate[]; error?: string }>,
+      ]);
+      if (skillResult.error) {
+        console.error('listSkills 失败:', skillResult.error);
         setSkills([]);
       } else {
-        setSkills(result.skills ?? []);
+        setSkills(skillResult.skills ?? []);
+      }
+      if (tplResult.error) {
+        console.error('listSkillTemplates 失败:', tplResult.error);
+        setTemplates([]);
+      } else {
+        setTemplates(tplResult.templates ?? []);
       }
     } finally {
       setLoading(false);
@@ -64,6 +82,43 @@ export function SkillTab() {
     }
   };
 
+  const handleSubscribe = async (template: SkillTemplate, isResync: boolean) => {
+    if (!workspacePath) return;
+    if (isResync) {
+      const ok = await showConfirm(
+        '重新同步模板',
+        `「重新同步」会覆盖你对 ${template.name} 的本地修改，确定继续吗？`,
+      );
+      if (!ok) return;
+    }
+    setBusyTemplate(template.name);
+    try {
+      const result = (await client.subscribeSkillTemplate({
+        workspacePath,
+        name: template.name,
+        overwrite: isResync,
+      })) as { success?: boolean; error?: string };
+      if (result.error === 'SKILL_EXISTS') {
+        const ok = await showConfirm(
+          'Skill 已存在',
+          `${template.name} 已存在，是否覆盖？`,
+        );
+        if (!ok) return;
+        await client.subscribeSkillTemplate({
+          workspacePath,
+          name: template.name,
+          overwrite: true,
+        });
+      } else if (result.error) {
+        console.error('订阅失败:', result.error);
+        return;
+      }
+      await reload();
+    } finally {
+      setBusyTemplate(null);
+    }
+  };
+
   const grouped: Record<SkillEntry['source'], SkillEntry[]> = {
     plugin: [],
     workspace: [],
@@ -72,6 +127,10 @@ export function SkillTab() {
   for (const skill of skills) {
     grouped[skill.source].push(skill);
   }
+
+  const subscribedNames = new Set(
+    grouped.workspace.map((s) => s.name),
+  );
 
   if (loading) {
     return (
@@ -88,6 +147,64 @@ export function SkillTab() {
         Agent 启动时会自动扫描 <code className="text-xs">~/.claude/skills/</code> 与 <code className="text-xs">&lt;工作区&gt;/.claude/skills/</code>，
         把匹配到的 SKILL.md 注入元数据。禁用通过把 <code className="text-xs">SKILL.md</code> 重命名为 <code className="text-xs">SKILL.md.disabled</code> 实现，下一次会话生效。
       </p>
+
+      {/* 可订阅模板 */}
+      <section className="mb-6">
+        <div className="flex items-center gap-2 mb-2">
+          <Download className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">可订阅模板</h3>
+          <span className="text-xs text-muted-foreground">订阅后副本写入工作区，可任意编辑</span>
+        </div>
+
+        {templates.length === 0 ? (
+          <div className="border rounded-lg p-4 text-xs text-muted-foreground bg-muted/20">
+            暂无可订阅模板
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {templates.map((tpl) => {
+              const subscribed = subscribedNames.has(tpl.name);
+              const busy = busyTemplate === tpl.name;
+              return (
+                <div
+                  key={tpl.name}
+                  className="border rounded-lg p-3 bg-background"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-semibold">{tpl.name}</span>
+                        {subscribed && (
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+                            已订阅
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground leading-relaxed mt-1">{tpl.description}</p>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={busy || !workspacePath}
+                      className={cn(
+                        'flex items-center gap-1.5 px-2.5 h-7 rounded-md border text-xs flex-shrink-0',
+                        'hover:bg-muted/50 transition-colors',
+                        (busy || !workspacePath) && 'opacity-50 cursor-not-allowed',
+                      )}
+                      onClick={() => handleSubscribe(tpl, subscribed)}
+                      title={subscribed ? '重新同步（覆盖本地）' : '订阅到工作区'}
+                    >
+                      {subscribed
+                        ? <><RotateCcw className="w-3 h-3" />重新同步</>
+                        : <><Download className="w-3 h-3" />订阅</>}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
 
       {(['plugin', 'workspace', 'user'] as const).map((source) => {
         const list = grouped[source];
@@ -126,18 +243,6 @@ export function SkillTab() {
                             <span className="text-sm font-semibold">{skill.name}</span>
                             {isPlugin && skill.pluginGate === 'always' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">常驻</span>
-                            )}
-                            {isPlugin && skill.pluginGate && skill.pluginGate !== 'always' && (
-                              <span
-                                className={cn(
-                                  'text-xs px-1.5 py-0.5 rounded',
-                                  skill.pluginActive
-                                    ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
-                                    : 'bg-muted text-muted-foreground',
-                                )}
-                              >
-                                跟随「{skill.pluginGate}」工具包 · {skill.pluginActive ? '已启用' : '未启用'}
-                              </span>
                             )}
                             {!skill.enabled && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400">

@@ -26,7 +26,7 @@ export interface AgentFileInfo {
   agentName: string;
   definition: ParsedAgentDefinition;
   filePath: string;
-  source: 'file' | 'builtin';
+  source: 'file' | 'template';
 }
 
 /**

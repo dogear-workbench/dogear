@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Plus, Trash2, Bot, Save, FolderOpen } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Plus, Trash2, Bot, Save, FolderOpen, Download, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,27 +7,67 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useConfirmStore } from '@/stores/confirm-store';
+import { showConfirm } from '@/stores/confirm-store';
 import type { AgentFileInfo } from '@/types/agents';
 
-// 动态工具列表 hook（适配 ToolGroup[] 返回格式）
-function useAvailableTools() {
-  const [tools, setTools] = useState<string[]>([]);
-  useEffect(() => {
-    client.getRegisteredTools().then((result: any) => {
-      // 新格式：ToolGroup[]，每组有 tools 数组
-      const groups = Array.isArray(result) ? result : [];
-      const allNames = groups.flatMap((g: any) => (g.tools || []).map((t: any) => t.name));
-      setTools(allNames);
-    }).catch(() => {});
-  }, []);
-  return tools;
+interface ToolMeta {
+  name: string;
+  description: string;
+  server: string;
+  category: string;
+}
+interface ToolGroup {
+  server: string;
+  label: string;
+  tools: ToolMeta[];
 }
 
-// 内置代理列表（只读展示，不可编辑/删除）
-const BUILTIN_AGENTS: AgentFileInfo[] = [];
+function useToolGroups() {
+  const [groups, setGroups] = useState<ToolGroup[]>([]);
+  useEffect(() => {
+    client.getRegisteredTools().then((result: any) => {
+      setGroups(Array.isArray(result) ? result : []);
+    }).catch(() => {});
+  }, []);
+  return groups;
+}
 
-// availableTools 已替换为动态加载的 useAvailableTools hook
+const SDK_BUILTIN_AGENTS: AgentFileInfo[] = [
+  {
+    fileName: '(sdk)',
+    agentName: 'Explore',
+    definition: {
+      description: '只读探索代理（Haiku）。在大型仓库中快速定位文件、grep 关键字、回答「X 在哪定义/谁引用 Y」。不会做改动。',
+      prompt: '',
+      model: 'haiku',
+      tools: ['Read', 'Glob', 'Grep'],
+    },
+    filePath: '',
+    source: 'template',
+  },
+  {
+    fileName: '(sdk)',
+    agentName: 'general-purpose',
+    definition: {
+      description: '通用代理。研究复杂问题、搜索代码、执行多步骤任务。适合不属于 Explore/Plan 的开放式任务。',
+      prompt: '',
+      tools: [],
+    },
+    filePath: '',
+    source: 'template',
+  },
+  {
+    fileName: '(sdk)',
+    agentName: 'Plan',
+    definition: {
+      description: '软件架构规划代理。需要设计实现策略时使用，返回分步计划、关键文件、架构权衡。',
+      prompt: '',
+      tools: [],
+    },
+    filePath: '',
+    source: 'template',
+  },
+];
 
 const MODEL_OPTIONS = [
   { value: '', label: '继承（默认）' },
@@ -36,69 +76,128 @@ const MODEL_OPTIONS = [
   { value: 'opus', label: 'Opus' },
 ];
 
+interface AgentTemplate {
+  fileName: string;
+  agentName: string;
+  description: string;
+}
+
+function parseAgentFile(content: string, fileName: string, workspacePath: string): AgentFileInfo {
+  const descMatch = content.match(/description:\s*(.+)/);
+  const modelMatch = content.match(/model:\s*(.+)/);
+  const maxTurnsMatch = content.match(/maxTurns:\s*(\d+)/);
+  const toolsMatch = content.match(/tools:\n((?:\s+-\s+.+\n?)*)/);
+  const tools = toolsMatch
+    ? toolsMatch[1].split('\n').map(l => l.trim().replace(/^-\s+/, '')).filter(Boolean)
+    : [];
+  const parts = content.split(/^---\s*$/m);
+  const prompt = parts.length >= 3 ? parts.slice(2).join('---').trim() : '';
+  return {
+    fileName,
+    agentName: fileName.replace(/\.md$/, ''),
+    definition: {
+      description: descMatch?.[1]?.trim() || '',
+      prompt,
+      model: modelMatch?.[1]?.trim(),
+      tools: tools.length > 0 ? tools : undefined,
+      maxTurns: maxTurnsMatch ? parseInt(maxTurnsMatch[1]) : undefined,
+    },
+    filePath: `${workspacePath}/.claude/agents/${fileName}`,
+    source: 'file',
+  };
+}
+
+/**
+ * 把工具列表反向推导成「分组开关」状态
+ * - 含 mcp__<server>__* → 该 MCP 包开关 ON
+ * - 含基础包内任一工具 → 基础包 ON
+ */
+function deriveToolGroupSelection(tools: string[] | undefined, groups: ToolGroup[]): Record<string, boolean> {
+  const selected: Record<string, boolean> = {};
+  if (!tools || tools.length === 0) return selected;
+  for (const g of groups) {
+    if (g.server === 'sdk') {
+      const sdkNames = new Set(g.tools.map(t => t.name));
+      if (tools.some(t => sdkNames.has(t))) selected[g.server] = true;
+    } else {
+      const wildcard = `mcp__${g.server}__*`;
+      if (tools.includes(wildcard) || tools.some(t => t.startsWith(`mcp__${g.server}__`))) {
+        selected[g.server] = true;
+      }
+    }
+  }
+  return selected;
+}
+
+/**
+ * 把分组开关状态展开成具体工具名列表（写入 .md frontmatter 用）
+ */
+function expandToolGroupSelection(selection: Record<string, boolean>, groups: ToolGroup[]): string[] {
+  const result: string[] = [];
+  for (const g of groups) {
+    if (!selection[g.server]) continue;
+    if (g.server === 'sdk') {
+      result.push(...g.tools.map(t => t.name));
+    } else {
+      result.push(`mcp__${g.server}__*`);
+    }
+  }
+  return result;
+}
+
 export function AgentsTab() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const workspacePath = workspace?.path;
-  const showConfirm = useConfirmStore((s) => s.showConfirm);
-  const availableTools = useAvailableTools();
+  const toolGroups = useToolGroups();
 
   const [fileAgents, setFileAgents] = useState<AgentFileInfo[]>([]);
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [busyTemplate, setBusyTemplate] = useState<string | null>(null);
 
-  // 编辑表单状态
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
   const [editModel, setEditModel] = useState('');
-  const [editTools, setEditTools] = useState<string[]>([]);
+  const [editToolGroups, setEditToolGroups] = useState<Record<string, boolean>>({});
   const [editMaxTurns, setEditMaxTurns] = useState<number | undefined>();
   const [editPrompt, setEditPrompt] = useState('');
   const [isNewAgent, setIsNewAgent] = useState(false);
 
-  // 所有代理（内置 + 文件）
-  const allAgents = [...BUILTIN_AGENTS, ...fileAgents];
+  const allAgents = useMemo(
+    () => [...SDK_BUILTIN_AGENTS, ...fileAgents],
+    [fileAgents],
+  );
 
-  // 加载文件代理
+  const fileAgentNames = useMemo(
+    () => new Set(fileAgents.map((a) => a.fileName)),
+    [fileAgents],
+  );
+
+  const loadTemplates = useCallback(async () => {
+    try {
+      const result = await client.listAgentTemplates();
+      if ('templates' in result && Array.isArray(result.templates)) {
+        setTemplates(result.templates as unknown as AgentTemplate[]);
+      }
+    } catch (error) {
+      console.warn('加载代理模板失败', error);
+    }
+  }, []);
+
   const loadAgents = useCallback(async () => {
     if (!workspacePath) return;
     setLoading(true);
     try {
       const result = await client.listAgentFiles({ workspacePath });
       if ('files' in result) {
-        // 解析每个文件获取信息（简单展示文件名）
         const agents: AgentFileInfo[] = [];
         for (const fileName of (result.files as string[])) {
           const contentResult = await client.readAgentFile({ workspacePath, fileName });
           const content = 'content' in contentResult ? contentResult.content as string | null : null;
           if (content) {
-            // 简单解析 frontmatter 中的 description
-            const descMatch = content.match(/description:\s*(.+)/);
-            const modelMatch = content.match(/model:\s*(.+)/);
-            const maxTurnsMatch = content.match(/maxTurns:\s*(\d+)/);
-            // 解析 tools 列表
-            const toolsMatch = content.match(/tools:\n((?:\s+-\s+.+\n?)*)/);
-            const tools = toolsMatch
-              ? toolsMatch[1].split('\n').map(l => l.trim().replace(/^-\s+/, '')).filter(Boolean)
-              : [];
-
-            // 提取 prompt（--- 之后的内容）
-            const parts = content.split(/^---\s*$/m);
-            const prompt = parts.length >= 3 ? parts.slice(2).join('---').trim() : '';
-
-            agents.push({
-              fileName,
-              agentName: fileName.replace(/\.md$/, ''),
-              definition: {
-                description: descMatch?.[1]?.trim() || '',
-                prompt,
-                model: modelMatch?.[1]?.trim(),
-                tools: tools.length > 0 ? tools : undefined,
-                maxTurns: maxTurnsMatch ? parseInt(maxTurnsMatch[1]) : undefined,
-              },
-              filePath: `${workspacePath}/.claude/agents/${fileName}`,
-              source: 'file',
-            });
+            agents.push(parseAgentFile(content, fileName, workspacePath));
           }
         }
         setFileAgents(agents);
@@ -112,7 +211,10 @@ export function AgentsTab() {
     loadAgents();
   }, [loadAgents]);
 
-  // 选中代理时填充表单
+  useEffect(() => {
+    loadTemplates();
+  }, [loadTemplates]);
+
   const selectAgent = (agentName: string) => {
     setSelectedAgent(agentName);
     setIsNewAgent(false);
@@ -121,37 +223,35 @@ export function AgentsTab() {
       setEditName(agent.agentName);
       setEditDescription(agent.definition.description);
       setEditModel(agent.definition.model || '');
-      setEditTools(agent.definition.tools || []);
+      setEditToolGroups(deriveToolGroupSelection(agent.definition.tools, toolGroups));
       setEditMaxTurns(agent.definition.maxTurns);
       setEditPrompt(agent.definition.prompt);
     }
   };
 
-  // 新建代理
   const handleNew = () => {
     setSelectedAgent(null);
     setIsNewAgent(true);
     setEditName('');
     setEditDescription('');
     setEditModel('haiku');
-    setEditTools(['Read', 'Glob', 'Grep']);
+    setEditToolGroups({ sdk: true });
     setEditMaxTurns(10);
     setEditPrompt('');
   };
 
-  // 保存代理到文件
   const handleSave = async () => {
     if (!workspacePath || !editName.trim()) return;
     setSaving(true);
     try {
-      // 构建 frontmatter
+      const tools = expandToolGroupSelection(editToolGroups, toolGroups);
       const lines = ['---'];
       if (editDescription) lines.push(`description: ${editDescription}`);
       if (editModel) lines.push(`model: ${editModel}`);
       if (editMaxTurns) lines.push(`maxTurns: ${editMaxTurns}`);
-      if (editTools.length > 0) {
+      if (tools.length > 0) {
         lines.push('tools:');
-        for (const t of editTools) lines.push(`  - ${t}`);
+        for (const t of tools) lines.push(`  - ${t}`);
       }
       lines.push('---', '', editPrompt);
 
@@ -165,10 +265,9 @@ export function AgentsTab() {
     }
   };
 
-  // 删除代理文件
   const handleDelete = async (agentName: string) => {
     if (!workspacePath) return;
-    const confirmed = await showConfirm(`确定要删除代理 "${agentName}" 吗？`);
+    const confirmed = await showConfirm('删除代理', `确定要删除代理 "${agentName}" 吗？`);
     if (!confirmed) return;
     await client.deleteAgentFile({ workspacePath, fileName: `${agentName}.md` });
     await loadAgents();
@@ -178,13 +277,48 @@ export function AgentsTab() {
     }
   };
 
-  const toggleTool = (tool: string) => {
-    setEditTools((prev) =>
-      prev.includes(tool) ? prev.filter((t) => t !== tool) : [...prev, tool]
-    );
+  const handleSubscribe = async (template: AgentTemplate, isResync: boolean) => {
+    if (!workspacePath) return;
+    if (isResync) {
+      const ok = await showConfirm(
+        '重新同步模板',
+        `「重新同步」会覆盖你对 ${template.fileName} 的本地修改，确定继续吗？`,
+      );
+      if (!ok) return;
+    }
+    setBusyTemplate(template.fileName);
+    try {
+      const result = await client.subscribeAgentTemplate({
+        workspacePath,
+        fileName: template.fileName,
+        overwrite: isResync,
+      });
+      if ('error' in result && result.error === 'AGENT_EXISTS') {
+        const ok = await showConfirm(
+          '代理已存在',
+          `${template.fileName} 已存在，是否覆盖？`,
+        );
+        if (!ok) return;
+        await client.subscribeAgentTemplate({
+          workspacePath,
+          fileName: template.fileName,
+          overwrite: true,
+        });
+      } else if ('error' in result && result.error) {
+        console.error('订阅失败:', result.error);
+        return;
+      }
+      await loadAgents();
+    } finally {
+      setBusyTemplate(null);
+    }
   };
 
-  const selectedIsBuiltin = allAgents.find((a) => a.agentName === selectedAgent)?.source === 'builtin';
+  const toggleGroup = (server: string) => {
+    setEditToolGroups((prev) => ({ ...prev, [server]: !prev[server] }));
+  };
+
+  const selectedIsBuiltin = allAgents.find((a) => a.agentName === selectedAgent)?.source === 'template';
 
   if (!workspacePath) {
     return (
@@ -200,7 +334,7 @@ export function AgentsTab() {
   return (
     <div className="flex-1 flex overflow-hidden">
       {/* 左侧：代理列表 */}
-      <div className="w-48 border-r flex flex-col">
+      <div className="w-56 border-r flex flex-col">
         <div className="p-2 border-b flex items-center justify-between">
           <span className="text-xs font-medium text-muted-foreground">代理列表</span>
           <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleNew} title="新建代理">
@@ -208,9 +342,13 @@ export function AgentsTab() {
           </Button>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {allAgents.map((agent) => (
+          {/* SDK 内置 */}
+          <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/30">
+            SDK 内置（只读）
+          </div>
+          {SDK_BUILTIN_AGENTS.map((agent) => (
             <div
-              key={`${agent.source}-${agent.agentName}`}
+              key={`sdk-${agent.agentName}`}
               className={cn(
                 'flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-b',
                 selectedAgent === agent.agentName && !isNewAgent
@@ -221,13 +359,72 @@ export function AgentsTab() {
             >
               <Bot className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
               <span className="truncate flex-1">{agent.agentName}</span>
-              {agent.source === 'builtin' && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
-                  内置
-                </span>
-              )}
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                SDK
+              </span>
             </div>
           ))}
+
+          {/* 可订阅模板 */}
+          <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/30 mt-1">
+            可订阅模板
+          </div>
+          {templates.length === 0 && (
+            <div className="px-3 py-2 text-xs text-muted-foreground">无可订阅模板</div>
+          )}
+          {templates.map((tpl) => {
+            const subscribed = fileAgentNames.has(tpl.fileName);
+            const busy = busyTemplate === tpl.fileName;
+            return (
+              <div
+                key={`tpl-${tpl.fileName}`}
+                className="flex items-center gap-2 px-3 py-2 text-sm border-b group"
+              >
+                <Bot className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+                <div className="flex-1 min-w-0">
+                  <div className="truncate">{tpl.agentName}</div>
+                  {tpl.description && (
+                    <div className="text-[10px] text-muted-foreground truncate">{tpl.description}</div>
+                  )}
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0"
+                  onClick={() => handleSubscribe(tpl, subscribed)}
+                  disabled={busy}
+                  title={subscribed ? '重新同步（覆盖本地）' : '订阅到工作区'}
+                >
+                  {subscribed
+                    ? <RotateCcw className="w-3.5 h-3.5" />
+                    : <Download className="w-3.5 h-3.5" />}
+                </Button>
+              </div>
+            );
+          })}
+
+          {/* 工作区代理 */}
+          <div className="px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground bg-muted/30 mt-1">
+            当前工作区
+          </div>
+          {fileAgents.map((agent) => (
+            <div
+              key={`file-${agent.agentName}`}
+              className={cn(
+                'flex items-center gap-2 px-3 py-2 text-sm cursor-pointer border-b',
+                selectedAgent === agent.agentName && !isNewAgent
+                  ? 'bg-accent'
+                  : 'hover:bg-muted/50',
+              )}
+              onClick={() => selectAgent(agent.agentName)}
+            >
+              <Bot className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate flex-1">{agent.agentName}</span>
+            </div>
+          ))}
+          {fileAgents.length === 0 && (
+            <div className="px-3 py-2 text-xs text-muted-foreground">暂无工作区代理</div>
+          )}
           {loading && (
             <div className="px-3 py-2 text-xs text-muted-foreground">加载中...</div>
           )}
@@ -244,11 +441,10 @@ export function AgentsTab() {
 
             {selectedIsBuiltin && (
               <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
-                内置代理为只读，如需自定义请创建同名文件代理来覆盖。
+                SDK 内置代理为只读。如需自定义，可创建同名工作区代理来覆盖。
               </p>
             )}
 
-            {/* 名称 */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">名称</label>
               <Input
@@ -263,7 +459,6 @@ export function AgentsTab() {
               </p>
             </div>
 
-            {/* 描述 */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">描述</label>
               <Input
@@ -275,7 +470,6 @@ export function AgentsTab() {
               />
             </div>
 
-            {/* 模型 */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">模型</label>
               <select
@@ -290,7 +484,6 @@ export function AgentsTab() {
               </select>
             </div>
 
-            {/* maxTurns */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">最大轮次</label>
               <Input
@@ -303,25 +496,37 @@ export function AgentsTab() {
               />
             </div>
 
-            {/* 工具 */}
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">允许的工具</label>
-              <div className="grid grid-cols-3 gap-2">
-                {availableTools.map((tool) => (
-                  <div key={tool} className="flex items-center gap-1.5">
+              <label className="text-sm font-medium">允许的工具包</label>
+              <div className="space-y-2 border rounded-md p-3">
+                {toolGroups.map((g) => (
+                  <div key={g.server} className="flex items-start gap-2">
                     <Checkbox
-                      id={`tool-${tool}`}
-                      checked={editTools.includes(tool)}
-                      onCheckedChange={() => toggleTool(tool)}
+                      id={`tg-${g.server}`}
+                      checked={!!editToolGroups[g.server]}
+                      onCheckedChange={() => toggleGroup(g.server)}
                       disabled={selectedIsBuiltin}
+                      className="mt-0.5"
                     />
-                    <label htmlFor={`tool-${tool}`} className="text-xs">{tool}</label>
+                    <label htmlFor={`tg-${g.server}`} className="text-sm flex-1 cursor-pointer">
+                      <div className="font-medium">{g.label}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {g.tools.length} 个工具
+                        {g.server !== 'sdk' && (
+                          <span className="ml-1 font-mono opacity-70">
+                            mcp__{g.server}__*
+                          </span>
+                        )}
+                      </div>
+                    </label>
                   </div>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground">
+                整组勾选；保存时基础包写出全部工具名，MCP 包写通配符。
+              </p>
             </div>
 
-            {/* Prompt */}
             <div className="space-y-1.5">
               <label className="text-sm font-medium">系统提示词（Prompt）</label>
               <Textarea
@@ -333,7 +538,6 @@ export function AgentsTab() {
               />
             </div>
 
-            {/* 操作按钮 */}
             {!selectedIsBuiltin && (
               <div className="flex gap-2 pt-2">
                 <Button size="sm" onClick={handleSave} disabled={!editName.trim() || saving}>

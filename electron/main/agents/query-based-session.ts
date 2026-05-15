@@ -251,7 +251,7 @@ export class QueryBasedSession extends EventEmitter {
       });
 
       // 配置工具列表
-      let allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep', 'AskUserQuestion'];
+      let allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep', 'AskUserQuestion', 'Agent'];
 
       // 如果启用 Skill，将 'Skill' 工具放在第一位
       if (this.config.enableSkills) {

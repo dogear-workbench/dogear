@@ -392,14 +392,6 @@ app.whenReady().then(async () => {
     console.error('初始化文章解析 Skill 目录失败:', error);
   }
 
-  // 初始化股票分析 Skill 目录（按需启用，但文件幂等存在，启用时 plugin 能直接加载）
-  try {
-    const { ensureStockAnalysisSkillInitialized } = await import('./services/stock-analysis-skills-service.js');
-    await ensureStockAnalysisSkillInitialized();
-  } catch (error) {
-    console.error('初始化股票分析 Skill 目录失败:', error);
-  }
-
   // 执行数据迁移（旧路径 → 新路径）
   try {
     const workspaceJsonService = await import('./services/workspace-json-service.js');

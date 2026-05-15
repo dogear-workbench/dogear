@@ -37,7 +37,9 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
         toolUseCount: block.subAgentToolUseCount,
       });
     }
-    store.selectSubAgent(block.subAgentId);
+    if (conv?.id) {
+      store.selectSubAgent(conv.id, block.subAgentId);
+    }
     store.setRightPanelTab('subagents');
     store.openRightPanel();
   };

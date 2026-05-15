@@ -102,7 +102,6 @@ function SubAgentDetail({
   const workspacePath = useWorkspaceStore((s) => s.workspace?.path);
 
   const { messages: rawMessages, loading, error } = useSubAgentMessages({
-    parentSessionId: null,
     agentId: agent.agentId,
     sdkSessionId: agent.sdkSessionId,
     status: agent.status,
@@ -185,18 +184,19 @@ function SubAgentDetail({
 export function SubAgentPanel({ conversationId }: { conversationId?: string }) {
   const subAgentsMap = useUIStore((s) => s.subAgentsMap);
   const subAgents = conversationId ? (subAgentsMap[conversationId] || []) : [];
-  const selectedSubAgentId = useUIStore((s) => s.selectedSubAgentId);
+  const selectedSubAgentMap = useUIStore((s) => s.selectedSubAgentMap);
   const selectSubAgent = useUIStore((s) => s.selectSubAgent);
+  const selectedSubAgentId = conversationId ? (selectedSubAgentMap[conversationId] ?? null) : null;
 
   const selectedAgent = selectedSubAgentId
     ? subAgents.find(a => a.agentId === selectedSubAgentId) || null
     : null;
 
-  if (selectedAgent) {
+  if (selectedAgent && conversationId) {
     return (
       <SubAgentDetail
         agent={selectedAgent}
-        onBack={() => selectSubAgent(null)}
+        onBack={() => selectSubAgent(conversationId, null)}
       />
     );
   }
@@ -225,7 +225,7 @@ export function SubAgentPanel({ conversationId }: { conversationId?: string }) {
               return (
                 <button
                   key={agent.agentId}
-                  onClick={() => selectSubAgent(agent.agentId)}
+                  onClick={() => conversationId && selectSubAgent(conversationId, agent.agentId)}
                   className="w-full flex items-center gap-2 px-3 py-2.5 text-left hover:bg-muted/50 transition-colors"
                 >
                   <div className={cn('w-2 h-2 rounded-full shrink-0', dotClass)} />

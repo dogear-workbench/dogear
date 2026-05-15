@@ -12,7 +12,6 @@ import { loadWorkspaceAgents } from './agent-definition-service.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
 import { loadSettings } from './settings-service.js';
-import { getStockAnalysisSkillDir } from './stock-analysis-skills-service.js';
 import { OPTIONAL_TOOL_PACKS } from './tool-packs.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 
@@ -120,7 +119,7 @@ async function buildConversationSessionConfig(
   }
 
   // allowedTools：基础工具 + 常驻 MCP 通配符 + 已启用工具包通配符（默认放行 = 不弹权限）
-  const allowedTools: string[] = ['Read', 'Glob', 'Grep'];
+  const allowedTools: string[] = ['Read', 'Glob', 'Grep', 'Agent'];
   if (mcpServers['dogear-memory']) {
     allowedTools.push('mcp__dogear-memory__*');
   }
@@ -130,14 +129,13 @@ async function buildConversationSessionConfig(
     }
   }
 
-  // SKILL.md 插件：只为启用了 stock-analysis 的会话挂载（其他工具包暂无 SKILL.md）
+  // SKILL.md 插件：保留 article-parser 一条；stock-analysis 改为订阅到 <ws>/.claude/skills/，
+  // 由 SDK settingSources=['project'] 自动加载，不再走 extraPluginPaths。
   const extraPluginPaths: string[] = [];
-  if (enabledToolPacks.includes('stock-analysis')) {
-    extraPluginPaths.push(getStockAnalysisSkillDir());
-  }
 
   const agents: Record<string, any> = {};
 
+  // workspace 代理（订阅到 <ws>/.claude/agents/ 的副本由此处加载）
   if (workspacePath) {
     try {
       const fileAgents = await loadWorkspaceAgents(workspacePath);

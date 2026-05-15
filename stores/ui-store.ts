@@ -59,8 +59,8 @@ interface UIState {
   // 子代理面板（嵌入右侧预览区域）
   /** 按对话 ID 缓存的子代理列表（切换 tab 时不丢失） */
   subAgentsMap: Record<string, SubAgentInfo[]>;
-  /** 当前选中查看的子代理 agentId（null 表示显示列表） */
-  selectedSubAgentId: string | null;
+  /** 按对话 ID 缓存的"当前选中子代理"——避免跨对话污染 */
+  selectedSubAgentMap: Record<string, string | null>;
   /** 设置指定对话的子代理列表 */
   setSubAgents: (conversationId: string, agents: SubAgentInfo[]) => void;
   /** 获取指定对话的子代理列表 */
@@ -68,9 +68,7 @@ interface UIState {
   /** 注册一个子代理到指定对话（按需注册） */
   registerSubAgent: (conversationId: string, info: SubAgentInfo) => void;
   /** 选中一个子代理查看详情（null 表示回到列表） */
-  selectSubAgent: (agentId: string | null) => void;
-  /** 关闭子代理面板（回到正常预览） */
-  closeSubAgentPanel: () => void;
+  selectSubAgent: (conversationId: string, agentId: string | null) => void;
   /** 清除指定对话的子代理缓存（关闭 tab 时调用） */
   removeSubAgents: (conversationId: string) => void;
   /** 清空所有缓存（工作区切换时） */
@@ -111,7 +109,7 @@ export const useUIStore = create<UIState>((set) => ({
 
   // 子代理面板
   subAgentsMap: {},
-  selectedSubAgentId: null,
+  selectedSubAgentMap: {},
   setSubAgents: (conversationId, agents) => set((s) => ({
     subAgentsMap: { ...s.subAgentsMap, [conversationId]: agents },
   })),
@@ -121,13 +119,15 @@ export const useUIStore = create<UIState>((set) => ({
     if (existing.some(a => a.agentId === info.agentId)) return s;
     return { subAgentsMap: { ...s.subAgentsMap, [conversationId]: [...existing, info] } };
   }),
-  selectSubAgent: (agentId) => set({ selectedSubAgentId: agentId }),
-  closeSubAgentPanel: () => set({ selectedSubAgentId: null }),
+  selectSubAgent: (conversationId, agentId) => set((s) => ({
+    selectedSubAgentMap: { ...s.selectedSubAgentMap, [conversationId]: agentId },
+  })),
   removeSubAgents: (conversationId) => set((s) => {
-    const { [conversationId]: _, ...rest } = s.subAgentsMap;
-    return { subAgentsMap: rest, selectedSubAgentId: null };
+    const { [conversationId]: _agents, ...restAgents } = s.subAgentsMap;
+    const { [conversationId]: _sel, ...restSel } = s.selectedSubAgentMap;
+    return { subAgentsMap: restAgents, selectedSubAgentMap: restSel };
   }),
-  clearSubAgents: () => set({ subAgentsMap: {}, selectedSubAgentId: null }),
+  clearSubAgents: () => set({ subAgentsMap: {}, selectedSubAgentMap: {} }),
 
   reset: () => set({
     settingsOpen: false,
@@ -138,6 +138,6 @@ export const useUIStore = create<UIState>((set) => ({
     rightPanelOpen: false,
     rightPanelTab: 'preview',
     subAgentsMap: {},
-    selectedSubAgentId: null,
+    selectedSubAgentMap: {},
   }),
 }));

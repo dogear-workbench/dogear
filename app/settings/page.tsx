@@ -619,7 +619,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* ── Tab: 代理管理 ── */}
-        <TabsContent value="agents" className="flex-1 overflow-hidden mt-0 p-0 data-[state=inactive]:hidden">
+        <TabsContent value="agents" className="flex-1 flex overflow-hidden mt-0 p-0 data-[state=inactive]:hidden">
           <AgentsTab />
         </TabsContent>
 

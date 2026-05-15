@@ -1,42 +1,26 @@
 /**
- * 股票分析 Skill 目录管理服务
+ * Skill 模板服务（当前承载股票分析 Skill 模板）
  *
- * 负责在应用启动时幂等初始化 .dogear/skills/stock-analysis/ 目录（SDK local plugin 格式），
- * 包含 SKILL.md（描述 agent 何时使用此 Skill、可用工具清单）。
+ * 与 agent-templates-service.ts 同款做法：模板内容内嵌为 TS 字符串常量，
+ * 用户在设置页主动「订阅」时，复制为 `<workspace>/.claude/skills/<name>/SKILL.md`，
+ * 之后由 SDK settingSources=['project'] 自动加载，副本可任意编辑。
  *
- * 与 article-parser-skills-service 的区别：
- * - 本 Skill 仅在 settings.enabledToolPacks 包含 'stock-analysis' 时挂载，
- *   挂载后 SKILL.md 元数据进入 system prompt（~100 token）。
- * - 工具实现走标准 MCP server（dogear-stock-analysis），由 conversation-runtime-service
- *   按 enabledToolPacks 注册并默认放行；SDK 默认开启 Tool Search，工具完整 schema 不进上下文。
+ * 注意：本服务**不**控制工具包是否注册——MCP server `dogear-stock-analysis`
+ * 由 conversation-runtime-service 按 `enabledToolPacks` 注册，与 SKILL.md
+ * 是否订阅完全独立。
  */
 
 import path from 'path';
 import fs from 'fs/promises';
-import electron from 'electron';
-import { safeFileWrite } from './safe-json.js';
 
-const { app } = electron;
-
-function getConfigDir(): string {
-  if (app.isPackaged) {
-    return path.join(app.getPath('userData'), '.dogear');
-  }
-  return path.join(process.cwd(), '.dogear');
+export interface SkillTemplateMeta {
+  /** Skill 名称（目录名） */
+  name: string;
+  /** SKILL.md 中的 description（订阅前供 UI 展示） */
+  description: string;
 }
 
-/**
- * 返回股票分析 Skill 目录的绝对路径
- */
-export function getStockAnalysisSkillDir(): string {
-  return path.join(getConfigDir(), 'skills', 'stock-analysis');
-}
-
-// ============================================================
-// SKILL.md 初始内容
-// ============================================================
-
-const SKILL_MD = `---
+const STOCK_ANALYSIS_SKILL_MD = `---
 name: stock-analysis
 description: 股票技术指标计算、条件筛选、财务分析、技术信号检测、自定义公式执行、简单策略回测。当用户询问"帮我筛选 PE<20 的银行股"、"茅台的 MACD 现在什么状态"、"今天有哪些金叉"、"这个策略历史表现如何"等场景时使用。
 ---
@@ -75,18 +59,45 @@ description: 股票技术指标计算、条件筛选、财务分析、技术信�
 - Python Bridge 不可用时工具会返回明确的依赖安装指引
 `;
 
-// ============================================================
-// 初始化
-// ============================================================
+const TEMPLATES: Record<string, { description: string; content: string }> = {
+  'stock-analysis': {
+    description:
+      '股票技术指标计算、条件筛选、财务分析、技术信号检测、自定义公式执行、简单策略回测。',
+    content: STOCK_ANALYSIS_SKILL_MD,
+  },
+};
+
+export function listSkillTemplates(): SkillTemplateMeta[] {
+  return Object.entries(TEMPLATES).map(([name, t]) => ({
+    name,
+    description: t.description,
+  }));
+}
 
 /**
- * 确保股票分析 Skill 目录和 SKILL.md 存在。
- * 始终写入最新版本（开发阶段不保留兼容层），保证文案随版本迭代下发到所有用户。
- * 在应用启动时调用一次，错误不应阻塞启动。
+ * 把 Skill 模板订阅到工作区：写入 `<workspace>/.claude/skills/<name>/SKILL.md`。
+ * overwrite=false 且 SKILL.md 已存在时抛 'SKILL_EXISTS' 让前端弹 confirm 后重试。
  */
-export async function ensureStockAnalysisSkillInitialized(): Promise<void> {
-  const skillDir = getStockAnalysisSkillDir();
+export async function subscribeSkillTemplate(
+  workspacePath: string,
+  name: string,
+  overwrite: boolean,
+): Promise<void> {
+  const template = TEMPLATES[name];
+  if (!template) {
+    throw new Error(`未知 Skill 模板: ${name}`);
+  }
+  const skillDir = path.join(workspacePath, '.claude', 'skills', name);
+  const skillFile = path.join(skillDir, 'SKILL.md');
+  if (!overwrite) {
+    try {
+      await fs.access(skillFile);
+      throw new Error('SKILL_EXISTS');
+    } catch (err) {
+      if (err instanceof Error && err.message === 'SKILL_EXISTS') throw err;
+      // 文件不存在，继续写入
+    }
+  }
   await fs.mkdir(skillDir, { recursive: true });
-  const skillPath = path.join(skillDir, 'SKILL.md');
-  await safeFileWrite(skillPath, SKILL_MD);
+  await fs.writeFile(skillFile, template.content, 'utf-8');
 }

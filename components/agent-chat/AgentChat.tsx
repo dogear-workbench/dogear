@@ -141,9 +141,9 @@ export function AgentChat({
 
   // 从 messages 的 ContentBlock 中提取子代理列表，按 conversationId 缓存到 ui-store
   const sdkSessionId = useConversationStore((s) => s.selectedConversation?.sdk_session_id);
+  const prevAgentCountRef = useRef(0);
   useEffect(() => {
     if (!conversationId || !sdkSessionId) return;
-    // 遍历所有消息的 contentBlocks，提取 isSubAgent 的 block
     const agents: import('@/stores/ui-store').SubAgentInfo[] = [];
     for (const msg of messages) {
       if (!msg.contentBlocks) continue;
@@ -168,6 +168,18 @@ export function AgentChat({
       }
     }
     useUIStore.getState().setSubAgents(conversationId, agents);
+
+    // 检测到新增子代理 + 当前对话是 active tab → 自动展开右侧子代理面板
+    const prevCount = prevAgentCountRef.current;
+    if (agents.length > prevCount) {
+      const activeTabId = useSessionStore.getState().activeTabId;
+      if (activeTabId === conversationId) {
+        const ui = useUIStore.getState();
+        ui.setRightPanelTab('subagents');
+        ui.openRightPanel();
+      }
+    }
+    prevAgentCountRef.current = agents.length;
   }, [messages, sdkSessionId, conversationId]);
 
   // 图片附件
