@@ -30,11 +30,13 @@ function isSubAgentToolName(name: string | undefined | null): boolean {
 import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
+import fs from 'fs/promises';
 import { app } from 'electron';
 import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
 import type { AppSettings, ModelProfile } from '../services/settings-types.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
 import { buildToolPackGuide } from './tool-pack-guide.js';
 
@@ -261,21 +263,22 @@ export class QueryBasedSession extends EventEmitter {
 
       queryOptions.allowedTools = allowedTools;
 
-      // 通过 SDK 的 settings.permissions 传递声明式权限规则（allow/deny/ask）
-      // 这是 SDK 文档推荐的方式，优先级最高（flag settings layer），且在所有权限模式下均生效
+      // 收集要走 flag-settings 层的字段（permissions + enabledPlugins）
+      // 这里只是先攒着，后面统一写到一个 JSON 文件里，把 file path 交给 SDK 的 `settings` 选项。
+      // 为什么不直接用 inline object：实测 sdk.mjs:255661 inline 对象不会被 JSON 序列化，
+      // 会被 child_process.spawn 转成 `[object Object]` 而失效；必须传文件路径。
+      const flagSettings: Record<string, unknown> = {};
       if (this.permissionRules && (
         this.permissionRules.allow?.length ||
         this.permissionRules.deny?.length ||
         (this.permissionRules as any).ask?.length
       )) {
-        queryOptions.settings = {
-          permissions: {
-            ...(this.permissionRules.allow?.length && { allow: this.permissionRules.allow }),
-            ...(this.permissionRules.deny?.length && { deny: this.permissionRules.deny }),
-            ...((this.permissionRules as any).ask?.length && { ask: (this.permissionRules as any).ask }),
-          },
+        flagSettings.permissions = {
+          ...(this.permissionRules.allow?.length && { allow: this.permissionRules.allow }),
+          ...(this.permissionRules.deny?.length && { deny: this.permissionRules.deny }),
+          ...((this.permissionRules as any).ask?.length && { ask: (this.permissionRules as any).ask }),
         };
-        this.logger.info('已通过 settings.permissions 传递权限规则:', queryOptions.settings.permissions);
+        this.logger.info('已收集声明式权限规则到 flag-settings:', flagSettings.permissions);
       }
 
       // 配置 MCP Servers：始终挂载 article-parse 服务，并合并调用方传入的额外 servers
@@ -286,6 +289,7 @@ export class QueryBasedSession extends EventEmitter {
       this.logger.info('已配置 MCP Servers:', Object.keys(queryOptions.mcpServers));
 
       // 配置 Skill 插件：article-parser 常驻 + 按需启用的额外 plugin（如 stock-analysis）
+      // 注意：市场订阅的插件（superpowers 等）由 SDK 通过 settingSources 自动读取 enabledPlugins 处理，不在此手动注入
       const extraPluginPaths = this.config.extraPluginPaths ?? [];
       queryOptions.plugins = [
         { type: 'local' as const, path: getArticleParserSkillsDir() },
@@ -300,9 +304,11 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       if (this.config.enableSkills && projectRoot) {
-        // 固定加载 user + project 两个源，不暴露给用户配置
-        // （覆盖老用户 settings.json 里存量的 ['project'] 值，保证 ~/.claude/CLAUDE.md 生效）
-        queryOptions.settingSources = ['user', 'project'];
+        // 固定加载 user + project + local 三个源，不暴露给用户配置
+        // - user: ~/.claude/settings.json（用户级 enabledPlugins，如 frontend-design/skill-creator）
+        // - project: <cwd>/.claude/settings.json（项目级共享配置）
+        // - local: <cwd>/.claude/settings.local.json（项目级私有 enabledPlugins，如 superpowers）
+        queryOptions.settingSources = ['user', 'project', 'local'];
         this.logger.info('已配置 settingSources 以加载 Skills');
       }
 
@@ -517,6 +523,44 @@ export class QueryBasedSession extends EventEmitter {
       }];
 
       queryOptions.hooks = hooks;
+
+      // ==================== 市场插件桥接 + flag-settings 落盘 ====================
+      // 1. 桥接 installed_plugins.json 到 CLAUDE_CONFIG_DIR（SDK 字面读取）
+      // 2. 把 permissions + enabledPlugins 合并写入 flag-settings.json，路径作为 --settings 传给 SDK
+      //    （sdk.mjs:255661 实测 inline object 不被 JSON 序列化会变 [object Object]，必须用文件路径）
+      const claudeConfigDir = baseConfig.env.CLAUDE_CONFIG_DIR;
+      try {
+        if (claudeConfigDir) {
+          const bridgeResult = await syncMarketplacePluginsToConfigDir(
+            claudeConfigDir,
+            this.config.workspacePath,
+          );
+          const enabledKeys = Object.keys(bridgeResult.enabledPlugins);
+          this.logger.info('已桥接市场插件元数据:', {
+            pluginCount: bridgeResult.pluginCount,
+            enabledKeys,
+          });
+          if (enabledKeys.length > 0) {
+            flagSettings.enabledPlugins = bridgeResult.enabledPlugins;
+          }
+        }
+      } catch (bridgeErr) {
+        this.logger.warn('桥接市场插件元数据失败（不影响主流程）:', bridgeErr);
+      }
+
+      if (Object.keys(flagSettings).length > 0 && claudeConfigDir) {
+        try {
+          const flagSettingsPath = path.join(claudeConfigDir, 'flag-settings.json');
+          await fs.writeFile(flagSettingsPath, JSON.stringify(flagSettings, null, 2), 'utf-8');
+          queryOptions.settings = flagSettingsPath;
+          this.logger.info('已写入 flag-settings 并通过 --settings <file> 注入:', {
+            path: flagSettingsPath,
+            keys: Object.keys(flagSettings),
+          });
+        } catch (writeErr) {
+          this.logger.warn('写入 flag-settings.json 失败（不影响主流程）:', writeErr);
+        }
+      }
 
       // ==================== 请求配置详情 ====================
       this.logger.info('╔════════════════════════════════════════════════════════════════╗');

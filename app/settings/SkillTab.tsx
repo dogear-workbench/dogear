@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Sparkles, FolderOpen, User, Package, Download, RotateCcw } from 'lucide-react';
+import { Sparkles, FolderOpen, User, Package, Download, RotateCcw, Store } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { showConfirm } from '@/stores/confirm-store';
 
 interface SkillEntry {
-  source: 'workspace' | 'user' | 'plugin';
+  source: 'workspace' | 'user' | 'plugin' | 'marketplace';
   name: string;
   description?: string;
   dir: string;
@@ -14,6 +14,7 @@ interface SkillEntry {
   enabled: boolean;
   pluginGate?: 'always' | string;
   pluginActive?: boolean;
+  marketplacePlugin?: string;
 }
 
 interface SkillTemplate {
@@ -25,6 +26,7 @@ const SOURCE_META: Record<SkillEntry['source'], { label: string; icon: typeof Sp
   plugin: { label: '插件 Skills', icon: Package, hint: '随应用内置（如文章解析），禁用需修改 SKILL.md 文件' },
   workspace: { label: '工作区 Skills', icon: FolderOpen, hint: '位于 <workspace>/.claude/skills/，可单独启停' },
   user: { label: '用户 Skills', icon: User, hint: '位于 ~/.claude/skills/，可单独启停' },
+  marketplace: { label: '市场订阅 Skills', icon: Store, hint: '来自 Claude Code 市场，在 Claude Code 中管理订阅' },
 };
 
 export function SkillTab() {
@@ -123,6 +125,7 @@ export function SkillTab() {
     plugin: [],
     workspace: [],
     user: [],
+    marketplace: [],
   };
   for (const skill of skills) {
     grouped[skill.source].push(skill);
@@ -206,7 +209,7 @@ export function SkillTab() {
         )}
       </section>
 
-      {(['plugin', 'workspace', 'user'] as const).map((source) => {
+      {(['plugin', 'workspace', 'user', 'marketplace'] as const).map((source) => {
         const list = grouped[source];
         const meta = SOURCE_META[source];
         const Icon = meta.icon;
@@ -220,12 +223,13 @@ export function SkillTab() {
 
             {list.length === 0 ? (
               <div className="border rounded-lg p-4 text-xs text-muted-foreground bg-muted/20">
-                {source === 'plugin' ? '未发现内置 Skill' : '没有发现任何 skill'}
+                {source === 'plugin' ? '未发现内置 Skill' : source === 'marketplace' ? '未发现已启用的市场订阅 Skill' : '没有发现任何 skill'}
               </div>
             ) : (
               <div className="space-y-2">
                 {list.map((skill) => {
                   const isPlugin = skill.source === 'plugin';
+                  const isMarketplace = skill.source === 'marketplace';
                   const pluginInactive = isPlugin && skill.pluginActive === false;
                   const effectiveEnabled = skill.enabled && !pluginInactive;
                   const busy = busyDir === skill.dir;
@@ -244,7 +248,12 @@ export function SkillTab() {
                             {isPlugin && skill.pluginGate === 'always' && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">常驻</span>
                             )}
-                            {!skill.enabled && (
+                            {isMarketplace && skill.marketplacePlugin && (
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-400 font-mono">
+                                {skill.marketplacePlugin}
+                              </span>
+                            )}
+                            {!skill.enabled && !isMarketplace && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
                                 已禁用（SKILL.md.disabled）
                               </span>
@@ -256,24 +265,26 @@ export function SkillTab() {
                           <p className="text-xs text-muted-foreground/70 font-mono mt-1 break-all">{skill.dir}</p>
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={busy}
-                          className={cn(
-                            'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0',
-                            skill.enabled ? 'bg-primary' : 'bg-muted',
-                            busy && 'opacity-50 cursor-not-allowed',
-                          )}
-                          onClick={() => toggleSkill(skill)}
-                          aria-label={`${skill.enabled ? '禁用' : '启用'} ${skill.name}`}
-                        >
-                          <span
+                        {!isMarketplace && (
+                          <button
+                            type="button"
+                            disabled={busy}
                             className={cn(
-                              'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                              skill.enabled ? 'translate-x-6' : 'translate-x-1',
+                              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors flex-shrink-0',
+                              skill.enabled ? 'bg-primary' : 'bg-muted',
+                              busy && 'opacity-50 cursor-not-allowed',
                             )}
-                          />
-                        </button>
+                            onClick={() => toggleSkill(skill)}
+                            aria-label={`${skill.enabled ? '禁用' : '启用'} ${skill.name}`}
+                          >
+                            <span
+                              className={cn(
+                                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                                skill.enabled ? 'translate-x-6' : 'translate-x-1',
+                              )}
+                            />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

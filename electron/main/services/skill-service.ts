@@ -15,7 +15,7 @@ import os from 'os';
 import fs from 'fs/promises';
 import { getArticleParserSkillsDir } from './article-parser-skills-service.js';
 
-export type SkillSource = 'workspace' | 'user' | 'plugin';
+export type SkillSource = 'workspace' | 'user' | 'plugin' | 'marketplace';
 
 export interface SkillEntry {
   source: SkillSource;
@@ -30,6 +30,8 @@ export interface SkillEntry {
   pluginGate?: 'always' | string;
   /** plugin 类型才有：当前工具包是否启用 */
   pluginActive?: boolean;
+  /** marketplace 类型才有：来源插件标识，格式 "<name>@<marketplace>" */
+  marketplacePlugin?: string;
 }
 
 const FRONTMATTER_RE = /^---\s*\n([\s\S]*?)\n---/;
@@ -124,11 +126,130 @@ async function scanSkillsDir(rootDir: string, source: SkillSource): Promise<Skil
   return result;
 }
 
+interface InstalledPluginEntry {
+  scope: 'user' | 'local';
+  installPath: string;
+  projectPath?: string;
+  version?: string;
+}
+
+interface InstalledPluginsFile {
+  version?: number;
+  plugins?: Record<string, InstalledPluginEntry[]>;
+}
+
+async function readEnabledPlugins(settingsPath: string): Promise<Record<string, boolean>> {
+  try {
+    const content = await fs.readFile(settingsPath, 'utf-8');
+    const data = JSON.parse(content);
+    return (data.enabledPlugins as Record<string, boolean>) ?? {};
+  } catch {
+    return {};
+  }
+}
+
+async function resolveEnabledMarketplacePlugins(
+  workspacePath: string | null | undefined,
+): Promise<{ pluginKey: string; installPath: string }[]> {
+  const installedPath = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
+
+  let installedFile: InstalledPluginsFile;
+  try {
+    const content = await fs.readFile(installedPath, 'utf-8');
+    installedFile = JSON.parse(content);
+  } catch {
+    return [];
+  }
+  const plugins = installedFile.plugins;
+  if (!plugins || typeof plugins !== 'object') return [];
+
+  const userEnabled = await readEnabledPlugins(path.join(os.homedir(), '.claude', 'settings.json'));
+  const projectEnabled = workspacePath
+    ? await readEnabledPlugins(path.join(workspacePath, '.claude', 'settings.local.json'))
+    : {};
+  const merged: Record<string, boolean> = { ...userEnabled, ...projectEnabled };
+
+  const result: { pluginKey: string; installPath: string }[] = [];
+  for (const [pluginKey, entries] of Object.entries(plugins)) {
+    if (merged[pluginKey] !== true) continue;
+    if (!Array.isArray(entries)) continue;
+
+    const entry = entries.find((e) => {
+      if (e.scope === 'user') return true;
+      if (e.scope === 'local' && workspacePath && e.projectPath) {
+        return path.normalize(e.projectPath) === path.normalize(workspacePath);
+      }
+      return false;
+    });
+    if (!entry) continue;
+
+    result.push({ pluginKey, installPath: entry.installPath });
+  }
+  return result;
+}
+
+/**
+ * 列出当前工作区下启用的市场插件根目录路径（用于传给 SDK query() 的 plugins 参数）
+ */
+export async function listEnabledMarketplacePluginPaths(
+  workspacePath: string | null | undefined,
+): Promise<string[]> {
+  const list = await resolveEnabledMarketplacePlugins(workspacePath);
+  return list.map((p) => p.installPath);
+}
+
+async function scanMarketplaceSkills(workspacePath: string | null | undefined): Promise<SkillEntry[]> {
+  const enabled = await resolveEnabledMarketplacePlugins(workspacePath);
+  const result: SkillEntry[] = [];
+
+  for (const { pluginKey, installPath } of enabled) {
+    const skillsDir = path.join(installPath, 'skills');
+    let skillDirs: string[] = [];
+    try {
+      skillDirs = await fs.readdir(skillsDir);
+    } catch {
+      continue;
+    }
+
+    for (const skillName of skillDirs) {
+      const skillDir = path.join(skillsDir, skillName);
+      try {
+        const stat = await fs.stat(skillDir);
+        if (!stat.isDirectory()) continue;
+      } catch {
+        continue;
+      }
+
+      const skillFilePath = path.join(skillDir, 'SKILL.md');
+      let content = '';
+      try {
+        content = await fs.readFile(skillFilePath, 'utf-8');
+      } catch {
+        continue;
+      }
+
+      const meta = parseFrontmatter(content);
+      result.push({
+        source: 'marketplace',
+        name: meta.name ?? skillName,
+        description: meta.description,
+        dir: skillDir,
+        filePath: skillFilePath,
+        enabled: true,
+        marketplacePlugin: pluginKey,
+      });
+    }
+  }
+
+  return result;
+}
+
 /**
  * 列出所有 Skill：
  * - plugin 段：article-parser（常驻；stock-analysis 已迁移到订阅模板，不在此处出现）
  * - workspace 段：<workspacePath>/.claude/skills/*（含订阅后的 stock-analysis 副本）
  * - user 段：~/.claude/skills/*
+ * - marketplace 段：来自 Claude Code 市场的已启用插件 skills
  */
 export async function listSkills(workspacePath: string | null | undefined): Promise<SkillEntry[]> {
   const result: SkillEntry[] = [];
@@ -158,6 +279,9 @@ export async function listSkills(workspacePath: string | null | undefined): Prom
   // 3. 用户级
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
   result.push(...(await scanSkillsDir(userSkillsDir, 'user')));
+
+  // 4. 市场插件
+  result.push(...(await scanMarketplaceSkills(workspacePath)));
 
   return result;
 }
