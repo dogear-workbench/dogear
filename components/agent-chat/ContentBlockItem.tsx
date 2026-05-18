@@ -8,6 +8,7 @@ import { PermissionRequestCard } from './PermissionRequestCard';
 import { SubAgentBlock } from './SubAgentBlock';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { TodoListBlock } from './TodoListBlock';
+import { CodeChangeBlock } from './CodeChangeBlock';
 import type { ContentBlock } from './types';
 
 /** 解析错误消息，提取用户友好的标题和描述 */
@@ -84,6 +85,16 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     case 'tool_use': {
       if (block.toolName === 'TodoWrite' && (block.toolInput as any)?.todos) {
         return <TodoListBlock todos={(block.toolInput as any).todos} />;
+      }
+      if (['Edit', 'Write', 'Bash'].includes(block.toolName || '')) {
+        return (
+          <CodeChangeBlock
+            toolName={block.toolName!}
+            toolInput={block.toolInput as Record<string, any> | undefined}
+            toolOutput={typeof block.toolOutput === 'string' ? block.toolOutput : undefined}
+            isError={block.isError}
+          />
+        );
       }
       // 子代理调用使用专用的 SubAgentBlock 组件
       if (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task') {
