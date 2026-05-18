@@ -1194,11 +1194,8 @@ export class QueryBasedSession extends EventEmitter {
           return null;
         }
 
-        return {
-          type: 'status',
-          status: sdkMessage.subtype,
-          timestamp
-        };
+        this.logger.info('未识别的 system subtype:', sdkMessage.subtype);
+        return null;
       }
 
       case 'user': {
