@@ -313,6 +313,7 @@ export default function SettingsPage() {
                 <label className="text-sm font-medium">子代理模型</label>
                 <p className="text-xs text-muted-foreground">
                   注入 CLAUDE_CODE_SUBAGENT_MODEL 环境变量，决定 Task 工具启动的子代理用哪一层。
+                  未指定时，若配置了「努力程度」会自动用 Sonnet（Haiku 不支持 effort 参数）。
                 </p>
                 <select
                   className="h-9 w-full px-3 text-sm border rounded bg-background"

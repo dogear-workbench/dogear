@@ -146,8 +146,12 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
   if (appSettings.ai.defaultModelTier) {
     env.ANTHROPIC_MODEL = tierMap[appSettings.ai.defaultModelTier];
   }
-  if (appSettings.ai.subagentModelTier) {
-    env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[appSettings.ai.subagentModelTier];
+  // Subagent 模型：用户显式指定优先；未指定但 effort 非空时兜底到 sonnet
+  // 原因：Claude Code 子代理默认 haiku，haiku 不支持 effort 参数会 API 400
+  const subagentTier = appSettings.ai.subagentModelTier
+    ?? (appSettings.ai.effort ? 'sonnet' as const : undefined);
+  if (subagentTier) {
+    env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[subagentTier];
   }
 
   return {
