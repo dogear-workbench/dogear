@@ -7,6 +7,7 @@ import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import { SubAgentBlock } from './SubAgentBlock';
 import { ToolGroupBlock } from './ToolGroupBlock';
+import { TodoListBlock } from './TodoListBlock';
 import type { ContentBlock } from './types';
 
 /** 解析错误消息，提取用户友好的标题和描述 */
@@ -80,13 +81,16 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         />
       );
 
-    case 'tool_use':
+    case 'tool_use': {
+      if (block.toolName === 'TodoWrite' && (block.toolInput as any)?.todos) {
+        return <TodoListBlock todos={(block.toolInput as any).todos} />;
+      }
       // 子代理调用使用专用的 SubAgentBlock 组件
       if (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task') {
         return <SubAgentBlock block={block} />;
       }
-      // 使用新的 ToolBlock 组件，支持折叠和状态显示
-      // 根据是否有输出结果判断状态
+      // toolOutput 已通过 tool_result 合并到 tool_use block 中
+      // 通过 toolOutput 是否存在决定状态：undefined=running, 否则success/error
       const toolStatus = block.toolOutput !== undefined
         ? (block.isError ? 'error' : 'success')
         : 'running';
@@ -100,6 +104,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           citations={block.citations}
         />
       );
+    }
 
     case 'tool_result':
       // tool_result 不独立渲染，结果已整合到对应 tool_use 的 ToolBlock 中
