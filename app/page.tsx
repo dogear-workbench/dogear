@@ -17,6 +17,7 @@ import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover'
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { EmptyFocusState } from '@/components/EmptyFocusState';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
+import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -391,6 +392,9 @@ export default function Home() {
 
       {/* 工作区规则 Dialog（里程碑 1.5 Step A2.6） */}
       <WorkspaceRuleDialog open={workspaceRuleDialogOpen} onOpenChange={setWorkspaceRuleDialogOpen} />
+
+      {/* Markdown 文件预览 Dialog */}
+      <MarkdownFileDialog />
     </main>
   );
 }

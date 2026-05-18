@@ -119,4 +119,13 @@ export const explorerRouter = {
         return { error: String(error) };
       }
     }),
+
+  readFile: t.procedure
+    .input<{ workspaceId: string; path: string }>()
+    .action(async ({ input }) => {
+      const workspace = await workspaceJsonService.getById(input.workspaceId);
+      if (!workspace) throw new Error('工作区不存在');
+      const content = await workspaceFsService.readWorkspaceTextFile(workspace.path, input.path);
+      return { content };
+    }),
 };

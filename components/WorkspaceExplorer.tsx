@@ -12,6 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { WorkspaceFileNode } from '@/types/electron-api';
@@ -611,7 +612,16 @@ export function WorkspaceExplorer() {
       const articleMeta = buildArticleMeta(data.originalNode);
       if (articleMeta) selectArticleRef.current(articleMeta);
     } else if (data.nodeType === 'file') {
-      selectFileRef.current(data.originalNode);
+      const node = data.originalNode;
+      const ext = node.ext?.toLowerCase();
+      if (ext === '.md' || ext === '.markdown') {
+        const ws = useWorkspaceStore.getState().workspace;
+        if (ws) {
+          useMarkdownPreviewStore.getState().open(ws.id, node.path, node.name);
+          return;
+        }
+      }
+      selectFileRef.current(node);
     }
     // directory 的展开/折叠由 headless-tree 自动处理
   }, []);

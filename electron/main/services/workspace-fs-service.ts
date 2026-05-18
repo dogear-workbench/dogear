@@ -154,3 +154,18 @@ export async function deleteItem(workspacePath: string, itemRelPath: string): Pr
   const absPath = resolveAndValidate(workspacePath, itemRelPath);
   await fs.rm(absPath, { recursive: true, force: true });
 }
+
+const ALLOWED_TEXT_EXT = ['.md', '.markdown', '.txt', '.json'];
+
+export async function readWorkspaceTextFile(workspacePath: string, relPath: string): Promise<string> {
+  const safePath = resolveAndValidate(workspacePath, relPath);
+  const ext = path.extname(safePath).toLowerCase();
+  if (!ALLOWED_TEXT_EXT.includes(ext)) {
+    throw new Error(`不支持的文件类型: ${ext}`);
+  }
+  const stat = await fs.stat(safePath);
+  if (stat.size > 5 * 1024 * 1024) {
+    throw new Error('文件过大（>5MB），不支持预览');
+  }
+  return fs.readFile(safePath, 'utf-8');
+}
