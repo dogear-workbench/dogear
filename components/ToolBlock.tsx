@@ -199,10 +199,13 @@ export function ToolBlock({
   const getCategoryLabel = useToolRegistryStore(s => s.getCategoryLabel);
   const categoryLabel = getCategoryLabel(toolName);
 
-  // 标题：中文大类 · 参数摘要
-  const titleText = summary
-    ? `${categoryLabel} · ${summary}`
-    : categoryLabel;
+  // 优先级：具体工具名（去掉 mcp__server__ 前缀）> 类别名
+  // 让用户能看出 Read/Edit/Bash 这种 SDK 工具的具体名称，而不是统一"SDK 内置工具"
+  const niceName = toolName.startsWith('mcp__')
+    ? toolName.split('__').slice(2).join('__') || categoryLabel
+    : toolName;
+  const headLabel = niceName || categoryLabel;
+  const titleText = summary ? `${headLabel} · ${summary}` : headLabel;
 
   return (
     <CollapsibleBlock
