@@ -52,9 +52,9 @@ export function useChatScroll({
     followRef.current = true;
     const vp = getViewport();
     if (!vp) return;
+    vp.scrollTop = vp.scrollHeight; // 进入回答态立即触底一次
     const content = vp.firstElementChild;
     if (!content) return;
-
     const obs = new ResizeObserver(() => {
       if (followRef.current) {
         vp.scrollTop = vp.scrollHeight;
@@ -84,10 +84,10 @@ export function useChatScroll({
       } else {
         vp.scrollTo({ top: vp.scrollHeight, behavior: 'smooth' });
       }
-      if (isLoading) followRef.current = true;
+      followRef.current = true;
       setShowScrollBtn(false);
     },
-    [getViewport, isLoading],
+    [getViewport],
   );
 
   const scrollToElement = useCallback(
