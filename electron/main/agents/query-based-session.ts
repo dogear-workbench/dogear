@@ -211,6 +211,8 @@ export class QueryBasedSession extends EventEmitter {
         // 注入共享配置
         env: baseConfig.env,
         effort: baseConfig.effort,
+        // Opus 4.7 默认 display='omitted'，显式恢复 summarized 让用户看见思考过程
+        thinking: { type: 'adaptive', display: 'summarized' },
         ...(baseConfig.pathToClaudeCodeExecutable && {
           pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
         }),
