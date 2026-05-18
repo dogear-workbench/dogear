@@ -52,19 +52,16 @@ export function useSessionMessages({
         return;
       }
 
-      // 后端开始处理排队消息时，SDK 推送 type=user 事件
-      // 此时从悬浮区移除第一条，并在消息流中渲染该用户消息
+      // UI 已在 useSendMessage 中插入排队消息，这里只对账消费队列，不重复 push
       if (extendedMsg.type === 'user' && !extendedMsg.isReplay) {
         const queued = queuedMessagesRef.current;
         const isMeta = 'isMeta' in extendedMsg && extendedMsg.isMeta;
         const isBot = 'source' in extendedMsg && extendedMsg.source === 'wechat-bot';
         if (queued.length > 0 && !isMeta && !isBot) {
-          const next = queued.shift()!;
+          queued.shift();
           onQueueChanged?.();
-          // 插入排队消息的 displayMessage 到消息流
-          setMessages(prev => [...prev, next.displayMessage]);
           setHistoryLoaded(true);
-          return; // 已手动渲染，不走 streamReducer
+          return;
         }
       }
 

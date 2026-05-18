@@ -431,6 +431,8 @@ export function useSendMessage(params: UseSendMessageParams) {
       queuedMessagesRef.current.push(entry);
       setQueuedMessages([...queuedMessagesRef.current]);
 
+      setMessages(prev => [...prev, newUserMessage]);
+
       // 直接发送到后端（后端 pendingMessages 队列自动排队）
       client.sendQueryBasedSessionMessage({
         sessionId: sessionId!,
@@ -445,7 +447,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       }).catch(err => {
         console.error('发送排队消息失败:', err);
       });
-      return;  // UI 上不渲染，等后端处理到时通过 user 事件渲染
+      return; // UI 已立即插入消息，后端通过 user 事件做对账消费
     }
 
     // Agent 空闲 → 正常流程：插入用户消息 + assistant 占位
