@@ -329,6 +329,22 @@ export default function SettingsPage() {
                 </select>
               </div>
 
+              {/* 思考过程展示 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">思考过程展示</label>
+                <p className="text-xs text-muted-foreground">
+                  控制模型 thinking 块的可见性。Opus 4.7 默认隐藏，开启「显示摘要」可看到推理过程。
+                </p>
+                <select
+                  className="h-9 w-full px-3 text-sm border rounded bg-background"
+                  value={local.ai.thinkingDisplay ?? 'summarized'}
+                  onChange={(e) => updateAI({ thinkingDisplay: e.target.value as 'summarized' | 'omitted' })}
+                >
+                  <option value="summarized">显示摘要</option>
+                  <option value="omitted">不展示</option>
+                </select>
+              </div>
+
               {/* maxTurns */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">最大执行轮次</label>

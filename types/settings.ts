@@ -50,6 +50,8 @@ export interface AppSettings {
     excludeDynamicSections?: boolean;
     /** SDK 0.2.119+：启用 Agent 回答后的下一步建议气泡（默认 true） */
     promptSuggestionsEnabled?: boolean;
+    /** 思考过程展示方式：summarized=显示摘要 / omitted=不展示。默认 summarized */
+    thinkingDisplay?: 'summarized' | 'omitted';
   };
   // 工具权限规则（声明式），通过 SDK settings.permissions 传递，在所有模式下生效
   permissionRules?: {
@@ -78,6 +80,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
     excludeDynamicSections: true,
     promptSuggestionsEnabled: true,
+    thinkingDisplay: 'summarized',
   },
   personas: [],
   enabledToolPacks: [],

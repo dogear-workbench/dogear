@@ -121,14 +121,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       // tool_result 不独立渲染，结果已整合到对应 tool_use 的 ToolBlock 中
       return null;
 
-    case 'status':
-      return (
-        <div className="flex items-center gap-2 py-1 text-sm text-muted-foreground">
-          <div className="w-2 h-2 bg-muted-foreground rounded-full"></div>
-          {block.status}
-        </div>
-      );
-
     case 'thinking':
       return <ThinkingBlock block={block} />;
 

@@ -64,12 +64,15 @@ export function useChatScroll({
     return () => obs.disconnect();
   }, [isLoading, getViewport]);
 
-  // 滚动时更新 showScrollBtn;回答期间同步更新 followRef
+  // 滚动时更新 showScrollBtn 和 followRef
+  // - 用户向上滚 → followRef=false（即使 isLoading 时也立即停止跟随）
+  // - 用户滚到底（<=4px） → followRef=true，自动恢复跟随（下一次 token 到达继续粘底）
   const handleScroll = useCallback(() => {
     const vp = getViewport();
     if (!vp) return;
-    const atBottom = vp.scrollHeight - vp.scrollTop - vp.clientHeight < 50;
-    setShowScrollBtn(!atBottom);
+    const distance = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
+    const atBottom = distance <= 4;
+    setShowScrollBtn(distance >= 50);
     if (isLoading) {
       followRef.current = atBottom;
     }
