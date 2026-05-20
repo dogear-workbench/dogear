@@ -120,6 +120,23 @@ export function MessageItem({
               (() => {
                 // 检测 SDK 斜杠命令格式 (<command-name> 标签)
                 const slashCmd = parseSlashCommandMessage(message.content);
+
+                // /model 命令优先：无论是 <command-name> 还是 <local-command-stdout>，统一渲染为轻量切换模型指示
+                if (slashCmd.isCommand && slashCmd.commandName === 'model' && slashCmd.commandArgs) {
+                  return (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Settings2 className="w-3.5 h-3.5" />
+                      <span>切换模型至</span>
+                      <Badge variant="subtle" className="h-5 rounded-md text-xs font-medium">
+                        {formatModelName(slashCmd.commandArgs)}
+                      </Badge>
+                      {message.timestamp && (
+                        <span className="ml-auto">{new Date(message.timestamp).toLocaleTimeString()}</span>
+                      )}
+                    </div>
+                  );
+                }
+
                 if (slashCmd.isCommand) {
                   return (
                     <div className="flex items-center gap-2">
@@ -141,7 +158,7 @@ export function MessageItem({
 
                 const parsed = parseUserMessageReferences(message.content);
 
-                // /model 命令或 local-command-stdout → 渲染为轻量切换模型指示，不作为普通用户消息
+                // local-command-stdout 形式的"Set model to xxx" → 渲染为轻量切换模型指示
                 if (parsed.modelSwitch && !parsed.userMessage) {
                   return (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
