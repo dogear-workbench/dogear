@@ -19,15 +19,18 @@ export function formatModelName(model: string): string {
 }
 
 export function parseUserMessageReferences(content: string): ParsedUserMessage {
-  const result: ParsedUserMessage = { articleRefs: [], snippetRefs: [], userMessage: content };
-
-  // ===== 新格式：XML 标签 =====
+  const result: ParsedUserMessage = {
+    articleRefs: [],
+    snippetRefs: [],
+    fileRefs: [],
+    conversationRefs: [],
+    userMessage: content,
+  };
 
   // 匹配 <referenced_articles>...</referenced_articles>
   const xmlArticleRegex = /<referenced_articles>\s*([\s\S]*?)\s*<\/referenced_articles>/;
   const xmlArticleMatch = content.match(xmlArticleRegex);
   if (xmlArticleMatch) {
-    // 解析 <article title="..." articleId="..." site="..." />
     const articleTagRegex = /<article\s+title="([^"]+)"\s+articleId="([^"]+)"(?:\s+site="([^"]+)")?\s*\/>/g;
     let tagMatch;
     while ((tagMatch = articleTagRegex.exec(xmlArticleMatch[1])) !== null) {
@@ -40,7 +43,38 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
     content = content.replace(xmlArticleMatch[0], '');
   }
 
-  // 匹配 <quoted_snippet source="...">...</quoted_snippet>（可能有多个）
+  // 匹配 <referenced_files>...</referenced_files>
+  const xmlFileRegex = /<referenced_files>\s*([\s\S]*?)\s*<\/referenced_files>/;
+  const xmlFileMatch = content.match(xmlFileRegex);
+  if (xmlFileMatch) {
+    const fileTagRegex = /<file\s+name="([^"]+)"\s+path="([^"]+)"\s*\/>/g;
+    let tagMatch;
+    while ((tagMatch = fileTagRegex.exec(xmlFileMatch[1])) !== null) {
+      result.fileRefs.push({
+        name: tagMatch[1],
+        path: tagMatch[2],
+      });
+    }
+    content = content.replace(xmlFileMatch[0], '');
+  }
+
+  // 匹配 <referenced_conversations>...</referenced_conversations>
+  const xmlConvRegex = /<referenced_conversations>\s*([\s\S]*?)\s*<\/referenced_conversations>/;
+  const xmlConvMatch = content.match(xmlConvRegex);
+  if (xmlConvMatch) {
+    const convTagRegex = /<conversation\s+title="([^"]+)"\s+conversationId="([^"]+)"(?:\s+sdkSessionId="([^"]+)")?\s*\/>/g;
+    let tagMatch;
+    while ((tagMatch = convTagRegex.exec(xmlConvMatch[1])) !== null) {
+      result.conversationRefs.push({
+        title: tagMatch[1],
+        conversationId: tagMatch[2],
+        sdkSessionId: tagMatch[3] || undefined,
+      });
+    }
+    content = content.replace(xmlConvMatch[0], '');
+  }
+
+  // 匹配 <quoted_snippet source="...">...</quoted_snippet>
   const xmlSnippetRegex = /<quoted_snippet\s+source="([^"]+)">\s*([\s\S]*?)\s*<\/quoted_snippet>/g;
   let snippetTagMatch;
   while ((snippetTagMatch = xmlSnippetRegex.exec(content)) !== null) {
@@ -51,7 +85,25 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   }
   content = content.replace(/<quoted_snippet\s+source="[^"]+">[\s\S]*?<\/quoted_snippet>/g, '');
 
-  // 剩余的就是用户实际消息（去掉前导换行）
+  // 检测 <local-command-stdout>Set model to xxx</local-command-stdout>
+  const stdoutMatch = content.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+  if (stdoutMatch) {
+    result.localCommandStdout = stdoutMatch[1].trim();
+    const modelSetMatch = result.localCommandStdout.match(/^Set model to\s+(\S+)/i);
+    if (modelSetMatch) {
+      result.modelSwitch = modelSetMatch[1];
+    }
+    content = content.replace(stdoutMatch[0], '');
+  }
+
+  // 检测 /model xxx 命令（裸文本，非 SDK <command-name> 格式）
+  const trimmed = content.replace(/^\n+/, '').trim();
+  const modelCmdMatch = trimmed.match(/^\/model\s+(\S+)\s*$/);
+  if (modelCmdMatch) {
+    result.modelSwitch = result.modelSwitch || modelCmdMatch[1];
+    content = '';
+  }
+
   result.userMessage = content.replace(/^\n+/, '').trim();
 
   return result;

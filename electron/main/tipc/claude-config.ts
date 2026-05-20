@@ -5,6 +5,8 @@ import {
   initClaudeDir,
   readClaudeMd,
   writeClaudeMd,
+  readUserClaudeMd,
+  writeUserClaudeMd,
   listAgentFiles,
   readAgentFile,
   writeAgentFile,
@@ -78,6 +80,35 @@ export const claudeConfigRouter = {
         return { success: true };
       } catch (error) {
         console.error('写入 CLAUDE.md 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /**
+   * 读取用户级 CLAUDE.md（~/.claude/CLAUDE.md）
+   */
+  readUserClaudeMd: t.procedure
+    .action(async () => {
+      try {
+        const content = await readUserClaudeMd();
+        return { content };
+      } catch (error) {
+        console.error('读取用户级 CLAUDE.md 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /**
+   * 写入用户级 CLAUDE.md
+   */
+  writeUserClaudeMd: t.procedure
+    .input<{ content: string }>()
+    .action(async ({ input }) => {
+      try {
+        await writeUserClaudeMd(input.content);
+        return { success: true };
+      } catch (error) {
+        console.error('写入用户级 CLAUDE.md 失败:', error);
         return { error: String(error) };
       }
     }),

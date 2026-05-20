@@ -2,6 +2,8 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Map as MapIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractMessagePreview } from './minimap-utils';
+import { useConversationStore } from '@/stores/conversation-store';
+import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import type { Message } from './types';
 
 interface MinimapProps {
@@ -32,14 +34,30 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
   const [currentTurnId, setCurrentTurnId] = useState<number | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // compact 折叠状态：折叠时，最后一个 compact_boundary 之前的消息不进入 minimap
+  const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
+  const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
+
   // Turn 分组: user 消息开始一个新 turn,包含直到下一个 user 消息前的所有 assistant
   const { turns, turnByIndex } = useMemo(() => {
     const turnByIndex = new Map<number, number>(); // messageIndex → turnId
     const turns: Turn[] = [];
     let currentTid = -1;
 
+    // 计算折叠时需要跳过的范围：最后一个 compact_boundary 之前的消息全部隐藏
+    let hiddenUntilIdx = -1;
+    if (isHistoryCollapsed) {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].isCompactBoundary) {
+          hiddenUntilIdx = i;
+          break;
+        }
+      }
+    }
+
     messages.forEach((msg, i) => {
       if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary) return;
+      if (i < hiddenUntilIdx) return;
 
       if (msg.role === 'user') {
         currentTid += 1;
@@ -69,7 +87,7 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
     });
 
     return { turns, turnByIndex };
-  }, [messages]);
+  }, [messages, isHistoryCollapsed]);
 
   const shouldShow = (hovering || pinned) && !hidden;
 

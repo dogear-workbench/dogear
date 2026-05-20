@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChevronDown, Archive, GitBranch, Send, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -23,6 +22,7 @@ import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
+import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 
 /**
  * Agent 聊天组件
@@ -57,6 +57,10 @@ export function AgentChat({
   const conversations = useConversationStore((s) => s.conversations);
   const selectedConv = useConversationStore((s) => s.selectedConversation);
   const selectConversation = useConversationStore((s) => s.selectConversation);
+
+  // compact_boundary 折叠状态（默认折叠，每个对话独立）
+  const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
+  const toggleCollapse = useCompactCollapseStore((s) => s.toggle);
 
   // 分叉来源父对话标题
   const parentTitle = useMemo(() => {
@@ -321,24 +325,34 @@ export function AgentChat({
           );
 
           if (lastCompactIdx > 0) {
-            // 有压缩历史：压缩边界之前的消息折叠
+            // 有压缩历史：压缩边界之前的消息折叠（受 store 控制，默认折叠）
             const beforeCompact = messages.slice(0, lastCompactIdx);
             const compactBoundary = messages[lastCompactIdx];
             const afterCompact = messages.slice(lastCompactIdx + 1);
             return (
               <>
-                {/* 折叠的历史消息 */}
-                <Collapsible>
-                  <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 my-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer">
+                {isHistoryCollapsed ? (
+                  <button
+                    onClick={() => conversationId && toggleCollapse(conversationId)}
+                    className="flex items-center gap-2 w-full px-3 py-2 my-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer"
+                  >
                     <Archive size={14} />
                     <span>查看 {beforeCompact.length} 条历史消息</span>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => conversationId && toggleCollapse(conversationId)}
+                      className="flex items-center gap-2 w-full px-3 py-2 my-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer"
+                    >
+                      <Archive size={14} />
+                      <span>折叠 {beforeCompact.length} 条历史消息</span>
+                    </button>
                     <div className="opacity-70">
                       {beforeCompact.map((msg, i) => renderMessage(msg, i))}
                     </div>
-                  </CollapsibleContent>
-                </Collapsible>
+                  </>
+                )}
 
                 {/* 压缩分隔线（compactBoundary 的 contentBlocks 中已有 compact_boundary 块） */}
                 {renderMessage(compactBoundary, lastCompactIdx)}

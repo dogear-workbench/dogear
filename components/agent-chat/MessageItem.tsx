@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -140,7 +140,28 @@ export function MessageItem({
                 }
 
                 const parsed = parseUserMessageReferences(message.content);
-                const hasRefs = parsed.articleRefs.length > 0 || parsed.snippetRefs.length > 0;
+
+                // /model 命令或 local-command-stdout → 渲染为轻量切换模型指示，不作为普通用户消息
+                if (parsed.modelSwitch && !parsed.userMessage) {
+                  return (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Settings2 className="w-3.5 h-3.5" />
+                      <span>切换模型至</span>
+                      <Badge variant="subtle" className="h-5 rounded-md text-xs font-medium">
+                        {formatModelName(parsed.modelSwitch)}
+                      </Badge>
+                      {message.timestamp && (
+                        <span className="ml-auto">{new Date(message.timestamp).toLocaleTimeString()}</span>
+                      )}
+                    </div>
+                  );
+                }
+
+                const hasRefs =
+                  parsed.articleRefs.length > 0 ||
+                  parsed.snippetRefs.length > 0 ||
+                  parsed.fileRefs.length > 0 ||
+                  parsed.conversationRefs.length > 0;
                 return (
                   <div className="relative">
                     {/* 引用芯片（只读，无关闭按钮） */}
@@ -164,6 +185,26 @@ export function MessageItem({
                           >
                             <span className="max-w-[120px] truncate">{`"${ref.text}"`}</span>
                             <span className="text-slate-400 flex-shrink-0">- {ref.articleTitle.length > 8 ? ref.articleTitle.slice(0, 8) + '...' : ref.articleTitle}</span>
+                          </span>
+                        ))}
+                        {parsed.fileRefs.map((ref, i) => (
+                          <span
+                            key={`file-${i}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700"
+                            title={ref.path}
+                          >
+                            <FileText className="w-3 h-3 flex-shrink-0" />
+                            <span className="max-w-[160px] truncate">{ref.name}</span>
+                          </span>
+                        ))}
+                        {parsed.conversationRefs.map((ref, i) => (
+                          <span
+                            key={`conv-${i}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                            title={ref.title}
+                          >
+                            <MessageSquare className="w-3 h-3 flex-shrink-0" />
+                            <span className="max-w-[160px] truncate">{ref.title}</span>
                           </span>
                         ))}
                       </div>

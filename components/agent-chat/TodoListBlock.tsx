@@ -1,4 +1,4 @@
-import { Check, Circle, Loader2 } from 'lucide-react';
+import { Check, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface TodoItem {
@@ -25,7 +25,9 @@ export function TodoListBlock({ todos }: TodoListBlockProps) {
           <li key={i} className="flex items-start gap-2">
             <span className="mt-0.5 flex-none">
               {t.status === 'completed' && <Check className="w-3.5 h-3.5 text-emerald-600" />}
-              {t.status === 'in_progress' && <Loader2 className="w-3.5 h-3.5 text-sky-600 animate-spin" />}
+              {t.status === 'in_progress' && (
+                <Circle className="w-3.5 h-3.5 text-sky-600 fill-sky-600" />
+              )}
               {t.status === 'pending' && <Circle className="w-3.5 h-3.5 text-muted-foreground" />}
             </span>
             <span className={cn(

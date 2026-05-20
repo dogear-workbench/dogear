@@ -1,5 +1,6 @@
 import { CollapsibleBlock } from './CollapsibleBlock';
-import { FileEdit, FilePlus, Terminal } from 'lucide-react';
+import { FileEdit, FilePlus, Terminal, Eye } from 'lucide-react';
+import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 
 interface Props {
   toolName: 'Edit' | 'Write' | 'Bash' | string;
@@ -40,21 +41,39 @@ export function CodeChangeBlock({ toolName, toolInput, toolOutput, isError }: Pr
   if (toolName === 'Write') {
     const file = toolInput?.file_path ?? '';
     const content: string = toolInput?.content ?? '';
+    const fileName = file.split(/[\\/]/).pop() || file;
+    const isMarkdown = /\.(md|markdown)$/i.test(file);
+    const handlePreview = (e: React.MouseEvent) => {
+      e.stopPropagation();
+      useMarkdownPreviewStore.getState().openInline(fileName, content);
+    };
     return (
-      <CollapsibleBlock
-        icon={<FilePlus className="w-4 h-4 text-emerald-600" />}
-        title={`Write · ${file.split(/[\\/]/).pop() || file}`}
-        titleClassName={status === 'error' ? 'text-red-600' : ''}
-        defaultOpen={false}
-        previewLines={0}
-      >
-        <div className="space-y-1.5 text-xs">
-          <div className="font-mono text-muted-foreground break-all">{file}</div>
-          <pre className="bg-muted/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-64 overflow-auto">
-            {content}
-          </pre>
-        </div>
-      </CollapsibleBlock>
+      <div className="relative">
+        <CollapsibleBlock
+          icon={<FilePlus className="w-4 h-4 text-emerald-600" />}
+          title={`Write · ${fileName}`}
+          titleClassName={status === 'error' ? 'text-red-600' : ''}
+          defaultOpen={false}
+          previewLines={0}
+        >
+          <div className="space-y-1.5 text-xs">
+            <div className="font-mono text-muted-foreground break-all">{file}</div>
+            <pre className="bg-muted/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-64 overflow-auto">
+              {content}
+            </pre>
+          </div>
+        </CollapsibleBlock>
+        {isMarkdown && content && (
+          <button
+            onClick={handlePreview}
+            className="absolute top-0 right-0 flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 hover:bg-sky-50 rounded px-1.5 py-0.5 transition-colors"
+            title="渲染预览"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            预览
+          </button>
+        )}
+      </div>
     );
   }
 

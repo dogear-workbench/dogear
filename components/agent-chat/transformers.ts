@@ -362,6 +362,7 @@ export function historyTransformer(rawMessages: any[]): Message[] {
       }
 
       const assistantUuid = msg.uuid || undefined;
+      const assistantModel = msg.model || undefined;
 
       if (currentAssistantMessage) {
         currentAssistantMessage.contentBlocks = [
@@ -370,12 +371,14 @@ export function historyTransformer(rawMessages: any[]): Message[] {
         ];
         currentAssistantMessage.content += textContent;
         if (assistantUuid) currentAssistantMessage.sdkUuid = assistantUuid;
+        if (assistantModel) currentAssistantMessage.model = assistantModel;
       } else {
         currentAssistantMessage = createAssistantMessage({
           content: textContent,
           timestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : Date.now(),
           contentBlocks: blocks.length > 0 ? blocks : undefined,
           sdkUuid: assistantUuid,
+          model: assistantModel,
         });
       }
     }
@@ -403,6 +406,31 @@ export function streamReducer(
 
   const updated = [...prev];
   const lastIdx = updated.length - 1;
+
+  // 运行时 compact_boundary：插入独立的分隔消息（带 isCompactBoundary 标记）
+  if (extendedMsg.type === 'compact_boundary') {
+    // 关闭可能正在流式输出的 assistant 消息
+    if (lastIdx >= 0 && updated[lastIdx].role === 'assistant' && updated[lastIdx].isStreaming) {
+      updated[lastIdx] = { ...updated[lastIdx], isStreaming: false };
+    }
+    const ts = extendedMsg.timestamp || Date.now();
+    updated.push(createAssistantMessage({
+      content: '',
+      timestamp: ts,
+      isCompactBoundary: true,
+      compactMetadata: {
+        trigger: extendedMsg.compactTrigger,
+        preTokens: extendedMsg.compactPreTokens,
+      },
+      contentBlocks: [{
+        type: 'compact_boundary',
+        compactTrigger: extendedMsg.compactTrigger,
+        compactPreTokens: extendedMsg.compactPreTokens,
+        timestamp: ts,
+      }],
+    }));
+    return updated;
+  }
 
   // assistant_uuid 处理
   if (extendedMsg.type === 'assistant_uuid') {

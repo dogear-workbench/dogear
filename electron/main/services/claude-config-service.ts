@@ -4,6 +4,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 
 // .claude 目录结构
 // <workspacePath>/.claude/
@@ -102,6 +103,28 @@ export async function writeClaudeMd(workspacePath: string, content: string): Pro
   const claudeDir = getClaudeDir(workspacePath);
   await fs.mkdir(claudeDir, { recursive: true });
   await fs.writeFile(path.join(claudeDir, 'CLAUDE.md'), content, 'utf-8');
+}
+
+// ============================================================
+// 用户级 CLAUDE.md（~/.claude/CLAUDE.md）
+// ============================================================
+
+function getUserClaudeMdPath(): string {
+  return path.join(os.homedir(), '.claude', 'CLAUDE.md');
+}
+
+export async function readUserClaudeMd(): Promise<string | null> {
+  try {
+    return await fs.readFile(getUserClaudeMdPath(), 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+export async function writeUserClaudeMd(content: string): Promise<void> {
+  const filePath = getUserClaudeMdPath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, content, 'utf-8');
 }
 
 // ============================================================

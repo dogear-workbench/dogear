@@ -134,10 +134,25 @@ export interface ParsedSnippetRef {
   articleTitle: string;
   text: string;
 }
+export interface ParsedFileRef {
+  name: string;
+  path: string;
+}
+export interface ParsedConversationRef {
+  title: string;
+  conversationId: string;
+  sdkSessionId?: string;
+}
 export interface ParsedUserMessage {
   articleRefs: ParsedArticleRef[];
   snippetRefs: ParsedSnippetRef[];
+  fileRefs: ParsedFileRef[];
+  conversationRefs: ParsedConversationRef[];
   userMessage: string;
+  /** /model 命令切换模型（如 anthropic/claude-sonnet-4.6） */
+  modelSwitch?: string;
+  /** 是否为 <local-command-stdout> 输出包装的用户消息 */
+  localCommandStdout?: string;
   /** SDK 斜杠命令（从 <command-name> 格式解析） */
   slashCommand?: { name: string; args?: string };
 }

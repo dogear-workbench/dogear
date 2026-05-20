@@ -14,10 +14,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { FolderOpen, RefreshCw, FileText, Check, Loader2 } from 'lucide-react';
+import { FolderOpen, RefreshCw, FileText, Check, Loader2, Pencil, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import {
   Dialog,
   DialogContent,
@@ -52,6 +53,7 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [initing, setIniting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!workspacePath) return;
@@ -79,7 +81,10 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
 
   // Dialog 打开时拉取最新数据（关闭后状态保留但下次打开重新加载，避免编辑过时内容）
   useEffect(() => {
-    if (open) loadData();
+    if (open) {
+      loadData();
+      setIsEditing(false);
+    }
   }, [open, loadData]);
 
   const dirty = content !== savedContent;
@@ -107,6 +112,7 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
     try {
       await client.writeClaudeMd({ workspacePath, content });
       setSavedContent(content);
+      setIsEditing(false);
       toast.success('已保存 CLAUDE.md');
     } catch (err) {
       console.error('保存失败:', err);
@@ -116,6 +122,18 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleCancelEdit = async () => {
+    if (dirty) {
+      const ok = await showConfirm(
+        '放弃未保存的修改？',
+        '你对 CLAUDE.md 的改动还没保存。',
+      );
+      if (!ok) return;
+      setContent(savedContent);
+    }
+    setIsEditing(false);
   };
 
   // dirty 关闭拦截：强制关闭时提示丢弃改动
@@ -225,18 +243,54 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
             {/* CLAUDE.md 编辑器 */}
             {status?.exists && (
               <div className="space-y-2">
-                <label className="text-xs font-medium text-muted-foreground">
-                  CLAUDE.md 内容
-                  {dirty && (
-                    <span className="ml-2 text-amber-600">● 未保存</span>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-muted-foreground">
+                    CLAUDE.md 内容
+                    {dirty && (
+                      <span className="ml-2 text-amber-600">● 未保存</span>
+                    )}
+                  </label>
+                  {!isEditing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={() => setIsEditing(true)}
+                    >
+                      <Pencil className="w-3 h-3 mr-1" />
+                      编辑
+                    </Button>
                   )}
-                </label>
-                <Textarea
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  placeholder={'# 工作区指令\n\n在此编写给 AI 助手的工作区级指令...'}
-                  className="min-h-[280px] max-h-[50vh] font-mono text-xs resize-y"
-                />
+                  {isEditing && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-xs"
+                      onClick={handleCancelEdit}
+                    >
+                      <Eye className="w-3 h-3 mr-1" />
+                      返回预览
+                    </Button>
+                  )}
+                </div>
+                {isEditing ? (
+                  <Textarea
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder={'# 工作区指令\n\n在此编写给 AI 助手的工作区级指令...'}
+                    className="min-h-[280px] max-h-[50vh] font-mono text-xs resize-y"
+                  />
+                ) : (
+                  <div className="min-h-[280px] max-h-[50vh] overflow-y-auto rounded-md border bg-muted/10 px-3 py-2">
+                    {content.trim() ? (
+                      <MarkdownRenderer content={content} />
+                    ) : (
+                      <div className="text-xs text-muted-foreground py-2">
+                        CLAUDE.md 为空，点击「编辑」开始填写。
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -246,7 +300,7 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
           <Button variant="outline" onClick={() => handleOpenChange(false)}>
             关闭
           </Button>
-          {status?.exists && (
+          {status?.exists && isEditing && (
             <Button onClick={handleSave} disabled={!dirty || saving}>
               {saving && <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />}
               {saving ? '保存中...' : '保存'}

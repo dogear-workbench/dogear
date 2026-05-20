@@ -9,7 +9,37 @@ import { SubAgentBlock } from './SubAgentBlock';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { TodoListBlock } from './TodoListBlock';
 import { CodeChangeBlock } from './CodeChangeBlock';
+import { useConversationStore } from '@/stores/conversation-store';
+import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import type { ContentBlock } from './types';
+
+function CompactBoundaryDivider({ block }: { block: ContentBlock }) {
+  const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
+  const isCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
+  const toggle = useCompactCollapseStore((s) => s.toggle);
+  return (
+    <button
+      type="button"
+      onClick={() => conversationId && toggle(conversationId)}
+      className="flex items-center gap-3 py-2 w-full group/compact"
+      title={isCollapsed ? '点击展开此前历史' : '点击折叠此前历史'}
+    >
+      <div className="flex-1 border-t border-dashed border-border"></div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary px-3 py-1 rounded-full border border-border group-hover/compact:bg-muted transition-colors">
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+        </svg>
+        对话已压缩
+        {block.compactTrigger === 'manual' ? '（手动）' : '（自动）'}
+        {block.compactPreTokens && (
+          <span className="text-muted-foreground/60">· 压缩前 {block.compactPreTokens.toLocaleString()} tokens</span>
+        )}
+        <span className="text-muted-foreground/60 ml-1">· {isCollapsed ? '展开历史' : '折叠历史'}</span>
+      </div>
+      <div className="flex-1 border-t border-dashed border-border"></div>
+    </button>
+  );
+}
 
 /** 解析错误消息，提取用户友好的标题和描述 */
 function parseErrorMessage(error: string): { title: string; description: string; detail?: string } {
@@ -236,22 +266,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     // ==================== 斜杠命令相关消息 ====================
 
     case 'compact_boundary':
-      return (
-        <div className="flex items-center gap-3 py-2">
-          <div className="flex-1 border-t border-dashed border-border"></div>
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-secondary px-3 py-1 rounded-full border border-border">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-            </svg>
-            对话已压缩
-            {block.compactTrigger === 'manual' ? '（手动）' : '（自动）'}
-            {block.compactPreTokens && (
-              <span className="text-muted-foreground/60">· 压缩前 {block.compactPreTokens.toLocaleString()} tokens</span>
-            )}
-          </div>
-          <div className="flex-1 border-t border-dashed border-border"></div>
-        </div>
-      );
+      return <CompactBoundaryDivider block={block} />;
 
     case 'compacting':
       return (

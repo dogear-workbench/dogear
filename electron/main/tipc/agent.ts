@@ -630,6 +630,7 @@ export const agentRouter = {
           content?: any;
           timestamp?: string;
           uuid?: string;
+          model?: string;
           isMeta?: boolean;
           sourceToolUseID?: string;
           isCompactSummary?: boolean;
@@ -646,6 +647,7 @@ export const agentRouter = {
           content: any[];
           timestamp?: string;
           uuid?: string;
+          model?: string;
         } | null = null;
 
         for (const msg of rawMessages) {
@@ -694,6 +696,7 @@ export const agentRouter = {
                 content: contentBlocks,
                 timestamp: msg.timestamp,
                 uuid: msg.uuid,
+                model: msg.message.model,
               };
             } else {
               currentAssistantMessage.content.push(...contentBlocks);
@@ -701,6 +704,7 @@ export const agentRouter = {
               // 同步更新 uuid 为最新行的 uuid，与 transformers.ts 的 historyTransformer 行为一致
               // 这样 fork_pending 预览截断时能正确找到分叉点（前端 sdkUuid 存的是最后一条行的 uuid）
               if (msg.uuid) currentAssistantMessage.uuid = msg.uuid;
+              if (msg.message.model) currentAssistantMessage.model = msg.message.model;
             }
           }
         }
