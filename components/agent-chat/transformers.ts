@@ -293,6 +293,10 @@ export function historyTransformer(rawMessages: any[]): Message[] {
       if (!textContent.trim()) continue;
       if (isSystemInjectedText(textContent)) continue;
 
+      // SDK 注入：<local-command-stdout>Set model to ...</local-command-stdout>
+      // 与同步的 <command-name>/model 是同一动作的两条记录，跳过 stdout 那条避免双显
+      if (/<local-command-stdout>\s*Set model to\b/i.test(textContent)) continue;
+
       flushAssistant();
       historyMessages.push(createUserMessage({
         content: textContent,

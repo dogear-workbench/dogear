@@ -6,7 +6,7 @@ import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage } from './utils';
+import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage } from './utils';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { Message, ContentBlock } from './types';
@@ -99,6 +99,47 @@ export function MessageItem({
     );
   }
 
+  // SDK 注入的用户消息（/model 命令、命令输出等）：渲染为居中内联系统指示，
+  // 不进 sticky 气泡，不挂 data-message-id（避免 Minimap 把它当用户轮次）
+  if (isUser && isSdkInjectedUserMessage(message.content)) {
+    const slashCmd = parseSlashCommandMessage(message.content);
+    const parsed = parseUserMessageReferences(message.content);
+    const modelArg = (slashCmd.isCommand && slashCmd.commandName === 'model')
+      ? slashCmd.commandArgs
+      : parsed.modelSwitch;
+    if (modelArg) {
+      return (
+        <div className="w-full my-2 flex items-center justify-center gap-2 text-xs text-muted-foreground">
+          <Settings2 className="w-3.5 h-3.5" />
+          <span>切换模型至</span>
+          <Badge variant="subtle" className="h-5 rounded-md text-xs font-medium">
+            {formatModelName(modelArg)}
+          </Badge>
+          {message.timestamp && (
+            <span className="text-muted-foreground/60">
+              {new Date(message.timestamp).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+      );
+    }
+    // 其他 SDK 注入命令兜底：渲染为命令芯片
+    if (slashCmd.isCommand) {
+      return (
+        <div className="w-full my-2 flex items-center justify-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-secondary border border-border rounded-md text-xs text-muted-foreground font-mono">
+            <span className="text-muted-foreground/60">/</span>
+            {slashCmd.commandName}
+            {slashCmd.commandArgs && (
+              <span className="text-muted-foreground ml-1">{slashCmd.commandArgs}</span>
+            )}
+          </span>
+        </div>
+      );
+    }
+    return null;
+  }
+
   return (
     <div
       className={cn(
@@ -116,64 +157,9 @@ export function MessageItem({
           )}
           <div className="min-w-0">
             {(
-              // 显示模式：先检测斜杠命令格式，再解析引用
+              // SDK 注入的命令已在上方提前 return，此处只处理真实用户输入
               (() => {
-                // 检测 SDK 斜杠命令格式 (<command-name> 标签)
-                const slashCmd = parseSlashCommandMessage(message.content);
-
-                // /model 命令优先：无论是 <command-name> 还是 <local-command-stdout>，统一渲染为轻量切换模型指示
-                if (slashCmd.isCommand && slashCmd.commandName === 'model' && slashCmd.commandArgs) {
-                  return (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Settings2 className="w-3.5 h-3.5" />
-                      <span>切换模型至</span>
-                      <Badge variant="subtle" className="h-5 rounded-md text-xs font-medium">
-                        {formatModelName(slashCmd.commandArgs)}
-                      </Badge>
-                      {message.timestamp && (
-                        <span className="ml-auto">{new Date(message.timestamp).toLocaleTimeString()}</span>
-                      )}
-                    </div>
-                  );
-                }
-
-                if (slashCmd.isCommand) {
-                  return (
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-secondary border border-border rounded-md text-xs text-muted-foreground font-mono">
-                        <span className="text-muted-foreground/60">/</span>
-                        {slashCmd.commandName}
-                        {slashCmd.commandArgs && (
-                          <span className="text-muted-foreground ml-1">{slashCmd.commandArgs}</span>
-                        )}
-                      </span>
-                      {message.timestamp && (
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </span>
-                      )}
-                    </div>
-                  );
-                }
-
                 const parsed = parseUserMessageReferences(message.content);
-
-                // local-command-stdout 形式的"Set model to xxx" → 渲染为轻量切换模型指示
-                if (parsed.modelSwitch && !parsed.userMessage) {
-                  return (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Settings2 className="w-3.5 h-3.5" />
-                      <span>切换模型至</span>
-                      <Badge variant="subtle" className="h-5 rounded-md text-xs font-medium">
-                        {formatModelName(parsed.modelSwitch)}
-                      </Badge>
-                      {message.timestamp && (
-                        <span className="ml-auto">{new Date(message.timestamp).toLocaleTimeString()}</span>
-                      )}
-                    </div>
-                  );
-                }
-
                 const hasRefs =
                   parsed.articleRefs.length > 0 ||
                   parsed.snippetRefs.length > 0 ||

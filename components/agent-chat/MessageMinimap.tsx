@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Map as MapIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractMessagePreview } from './minimap-utils';
+import { isSdkInjectedUserMessage } from './utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import type { Message } from './types';
@@ -57,6 +58,8 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
 
     messages.forEach((msg, i) => {
       if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary) return;
+      // SDK 注入的命令消息（/model、local-command-stdout 等）不算用户轮次
+      if (msg.role === 'user' && isSdkInjectedUserMessage(msg.content)) return;
       if (i < hiddenUntilIdx) return;
 
       if (msg.role === 'user') {

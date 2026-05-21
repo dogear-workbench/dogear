@@ -139,3 +139,19 @@ export function parseSlashCommandMessage(content: string): ParsedSlashCommand {
 
   return { isCommand: true, commandName, commandArgs: commandArgs || undefined };
 }
+
+/**
+ * 判断 user 消息是否为「SDK 系统注入」类（命令调用、命令输出等）。
+ * 这类消息不是真实用户输入，渲染时应作为系统指示而非用户气泡，
+ * 同时不应进入 Minimap 的轮次计算。
+ */
+export function isSdkInjectedUserMessage(content: string): boolean {
+  if (!content) return false;
+  // <command-name>/xxx</command-name>
+  if (/<command-name>/.test(content)) return true;
+  // <local-command-stdout>...</local-command-stdout>
+  if (/<local-command-stdout>/.test(content)) return true;
+  // 裸文本 /model xxx（运行时用户在输入框敲的）
+  if (/^\s*\/model\s+\S+/.test(content)) return true;
+  return false;
+}
