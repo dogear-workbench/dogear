@@ -153,8 +153,7 @@
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
 - `agent-worker.ts` — Worker 线程执行器，与 Claude Agent SDK 交互
 - `query-based-session.ts` — 基于 query() 的会话（支持 resume/fork/skills/MCP/权限/人设/临时提示词），systemPrompt 统一 preset+append 模式
-- `main-process-session.ts` — 主进程会话（SDK v2，unstable_v2_createSession）
-- `task-types.ts` — 任务类型（SUMMARIZE/CHAT_SESSION）和消息定义
+- `task-types.ts` — 任务类型（SUMMARIZE/CHAT_SESSION）和消息定义（含 ExtendedSessionMessage 源定义）
 - `logger.ts` — 日志工具（mainLogger / workerLogger / createTaskLogger）
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置工具 + 自定义工具注册，IPC 查询供设置页/代理编辑页动态加载）
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）

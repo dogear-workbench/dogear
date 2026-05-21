@@ -2,7 +2,7 @@
  * main→renderer 事件类型定义
  * 用于 getRendererHandlers<T> 和 createEventHandlers<T> 的类型约束
  */
-import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
+import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { TaskStatus } from '../agents/task-types.js';
 
 /**
@@ -28,12 +28,6 @@ export type RendererHandlers = {
   agentSessionMessage: (data: {
     sessionId: string;
     message: string;
-  }) => void;
-
-  // 主进程会话消息（SDK v2）
-  mainProcessSessionMessage: (data: {
-    sessionId: string;
-    message: ExtendedSessionMessage;
   }) => void;
 
   // 基于 Query 的会话消息

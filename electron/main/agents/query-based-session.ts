@@ -254,15 +254,7 @@ export class QueryBasedSession extends EventEmitter {
         profileName: activeProfile.name,
       });
 
-      // 配置工具列表
-      let allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep', 'AskUserQuestion', 'Agent'];
-
-      // 如果启用 Skill，将 'Skill' 工具放在第一位
-      if (this.config.enableSkills) {
-        allowedTools = ['Skill', ...allowedTools];
-        this.logger.info('Skill 功能已启用，已添加 Skill 工具到 allowedTools 第一位:', allowedTools);
-      }
-
+      const allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep', 'AskUserQuestion', 'Agent'];
       queryOptions.allowedTools = allowedTools;
 
       // 收集要走 flag-settings 层的字段（permissions + enabledPlugins）

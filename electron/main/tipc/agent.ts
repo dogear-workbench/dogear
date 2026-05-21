@@ -4,12 +4,9 @@ import { getAgentManager } from '../agents/agent-manager.js';
 import { AgentTask, TaskType, ChatSessionPayload } from '../agents/task-types.js';
 import { sendToDebugWindow } from '../index.js';
 import {
-  getMainProcessSessionManager
-} from '../agents/main-process-session.js';
-import {
   getQueryBasedSessionManager
 } from '../agents/query-based-session.js';
-import type { ExtendedSessionMessage } from '../agents/main-process-session.js';
+import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { getAllTools } from '../agents/tools/tool-registry.js';
 import type { RendererHandlers } from './renderer-handlers.js';
@@ -194,77 +191,6 @@ export const agentRouter = {
       const { createStockWindow } = await import('../index.js');
       createStockWindow();
       return { success: true };
-    }),
-
-  // ── 主进程会话（SDK v2）──────────────────────────────────
-  createMainProcessSession: t.procedure
-    .input<{
-      model?: string;
-      allowedTools?: string[];
-      context?: { selectedText?: string };
-    }>()
-    .action(async ({ input, context }) => {
-      try {
-        const sessionManager = getMainProcessSessionManager();
-        const handlers = getRendererHandlers<RendererHandlers>(context.sender);
-
-        // 获取工作区路径
-        let workspacePath = '';
-        const workspaceJsonService = await import('../services/workspace-json-service.js');
-        const defaultWorkspace = await workspaceJsonService.getDefault();
-        if (defaultWorkspace) {
-          workspacePath = defaultWorkspace.path;
-        }
-
-        const session = sessionManager.createSession({
-          model: input.model,
-          allowedTools: input.allowedTools || ['Read', 'Glob', 'Grep'],
-          context: input.context,
-          workspacePath,
-        });
-
-        await session.start();
-
-        // 注册会话消息监听器
-        sessionManager.on('sessionMessage', (sessionId: string, message: ExtendedSessionMessage) => {
-          if (sessionId === session.getSessionId()) {
-            handlers.mainProcessSessionMessage.send({ sessionId, message });
-          }
-        });
-
-        return { sessionId: session.getSessionId() };
-      } catch (error) {
-        console.error('创建主进程会话失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  sendMainProcessSessionMessage: t.procedure
-    .input<{ sessionId: string; content: string }>()
-    .action(async ({ input }) => {
-      try {
-        const sessionManager = getMainProcessSessionManager();
-        const session = sessionManager.getSession(input.sessionId);
-        if (!session) return { error: '会话不存在' };
-        await session.sendMessage(input.content);
-        return { success: true };
-      } catch (error) {
-        console.error('发送消息到主进程会话失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  closeMainProcessSession: t.procedure
-    .input<{ sessionId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const sessionManager = getMainProcessSessionManager();
-        sessionManager.closeSession(input.sessionId);
-        return { success: true };
-      } catch (error) {
-        console.error('关闭主进程会话失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
     }),
 
   // ── 基于 Query 的会话（支持 Skills）────────────────────────

@@ -116,6 +116,11 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       if (block.toolName === 'TodoWrite' && (block.toolInput as any)?.todos) {
         return <TodoListBlock todos={(block.toolInput as any).todos} />;
       }
+      if (block.toolName === 'TaskList' && Array.isArray((block.toolOutput as any)?.tasks)) {
+        const todos = ((block.toolOutput as any).tasks as Array<{ subject: string; status: 'pending' | 'in_progress' | 'completed' }>)
+          .map((t) => ({ content: t.subject, activeForm: t.subject, status: t.status }));
+        return <TodoListBlock todos={todos} />;
+      }
       if (['Edit', 'Write', 'Bash'].includes(block.toolName || '')) {
         return (
           <CodeChangeBlock

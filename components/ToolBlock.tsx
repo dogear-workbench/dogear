@@ -38,6 +38,10 @@ const TOOL_ICONS: Record<string, string> = {
   WebFetch: "🔗",
   Task: "🤖",
   TodoWrite: "📋",
+  TaskCreate: "📋",
+  TaskUpdate: "📋",
+  TaskGet: "📋",
+  TaskList: "📋",
   AskUserQuestion: "❓",
   Skill: "⚡",  // Skill 类型图标
   default: "🔧",
@@ -114,6 +118,20 @@ function getToolSummary(
     case "TodoWrite":
       const todos = toolInput.todos || [];
       return `${todos.length} 个任务`;
+
+    case "TaskCreate":
+      return toolInput.subject || "";
+
+    case "TaskUpdate":
+      return toolInput.taskId
+        ? `${toolInput.taskId}${toolInput.status ? ` → ${toolInput.status}` : ''}`
+        : "";
+
+    case "TaskGet":
+      return toolInput.taskId || "";
+
+    case "TaskList":
+      return "查询任务列表";
 
     case "AskUserQuestion":
       const questions = toolInput.questions || [];
