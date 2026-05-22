@@ -1,4 +1,4 @@
-import { useState, useCallback, type MutableRefObject, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -6,14 +6,6 @@ import { useSlashCommandStore } from '@/stores/slash-command-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { Message, ContentBlock } from '../types';
 import type { PendingImage } from './useImageAttachment';
-
-/** 排队消息缓冲区元素类型（由 AgentChat 声明，传给 useSendMessage 和 useSessionMessages 共享） */
-export interface QueuedMessageEntry {
-  content: string;
-  textBlocks?: Array<{ text: string }>;
-  images?: Array<{ base64: string; mediaType: string }>;
-  displayMessage: Message;
-}
 
 interface UseSendMessageParams {
   sessionId: string | null;
@@ -27,8 +19,6 @@ interface UseSendMessageParams {
   conversationId: string | null;
   pendingImages: PendingImage[];
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
-  /** 排队消息缓冲区 ref，由 AgentChat 创建并同时传给 useSessionMessages */
-  queuedMessagesRef: MutableRefObject<QueuedMessageEntry[]>;
 }
 
 /**
@@ -47,11 +37,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     conversationId,
     pendingImages,
     setPendingImages,
-    queuedMessagesRef,
   } = params;
-
-  // 排队消息的 React state（用于 UI 渲染），与 queuedMessagesRef 同步
-  const [queuedMessages, setQueuedMessages] = useState<QueuedMessageEntry[]>([]);
 
   const [input, setInput] = useState('');
   const [currentTier, setCurrentTier] = useState<'haiku' | 'sonnet' | 'opus' | undefined>(undefined);
@@ -419,21 +405,9 @@ export function useSendMessage(params: UseSendMessageParams) {
     };
 
     if (isLoading) {
-      // Agent 运行中 → 直接发后端排队，悬浮区显示等待状态
-      const entry: QueuedMessageEntry = {
-        content: messageToSend,
-        ...(textBlocks.length > 1 && { textBlocks }),
-        ...(imagesToSend.length > 0 && {
-          images: imagesToSend.map(img => ({ base64: img.base64, mediaType: img.mediaType })),
-        }),
-        displayMessage: newUserMessage,
-      };
-      queuedMessagesRef.current.push(entry);
-      setQueuedMessages([...queuedMessagesRef.current]);
-
+      // Agent 运行中 → 立即在 UI 显示用户消息；后端 pendingMessages 队列会在下一轮窗口消费
       setMessages(prev => [...prev, newUserMessage]);
 
-      // 直接发送到后端（后端 pendingMessages 队列自动排队）
       client.sendQueryBasedSessionMessage({
         sessionId: sessionId!,
         content: messageToSend,
@@ -445,9 +419,9 @@ export function useSendMessage(params: UseSendMessageParams) {
           })),
         }),
       }).catch(err => {
-        console.error('发送排队消息失败:', err);
+        console.error('插话消息发送失败:', err);
       });
-      return; // UI 已立即插入消息，后端通过 user 事件做对账消费
+      return;
     }
 
     // Agent 空闲 → 正常流程：插入用户消息 + assistant 占位
@@ -527,11 +501,5 @@ export function useSendMessage(params: UseSendMessageParams) {
     insertModeChangeNotice,
     modeLabels,
     hasPendingUserAction,
-    queuedMessages,
-    setQueuedMessages,
-    removeQueuedMessage: useCallback((index: number) => {
-      queuedMessagesRef.current.splice(index, 1);
-      setQueuedMessages([...queuedMessagesRef.current]);
-    }, [queuedMessagesRef]),
   };
 }

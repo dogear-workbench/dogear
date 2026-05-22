@@ -1,6 +1,7 @@
 import { CollapsibleBlock } from './CollapsibleBlock';
 import { FileEdit, FilePlus, Terminal, Eye } from 'lucide-react';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
+import { ToolDetailShell, ToolSection } from './tool-renderers/ToolDetailShell';
 
 interface Props {
   toolName: 'Edit' | 'Write' | 'Bash' | string;
@@ -25,15 +26,19 @@ export function CodeChangeBlock({ toolName, toolInput, toolOutput, isError }: Pr
         defaultOpen={false}
         previewLines={0}
       >
-        <div className="space-y-1.5 text-xs">
-          <div className="font-mono text-muted-foreground break-all">{file}</div>
-          <pre className="bg-red-50 text-red-900 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-48 overflow-auto">
-            - {oldStr}
-          </pre>
-          <pre className="bg-emerald-50 text-emerald-900 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-48 overflow-auto">
-            + {newStr}
-          </pre>
-        </div>
+        <ToolDetailShell>
+          <ToolSection label="文件">
+            <div className="font-mono text-foreground break-all">{file}</div>
+          </ToolSection>
+          <ToolSection label="变更">
+            <pre className="font-mono bg-red-50 text-red-900 border border-red-200/60 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-48 overflow-auto">
+              - {oldStr}
+            </pre>
+            <pre className="font-mono bg-emerald-50 text-emerald-900 border border-emerald-200/60 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-48 overflow-auto">
+              + {newStr}
+            </pre>
+          </ToolSection>
+        </ToolDetailShell>
       </CollapsibleBlock>
     );
   }
@@ -56,12 +61,16 @@ export function CodeChangeBlock({ toolName, toolInput, toolOutput, isError }: Pr
           defaultOpen={false}
           previewLines={0}
         >
-          <div className="space-y-1.5 text-xs">
-            <div className="font-mono text-muted-foreground break-all">{file}</div>
-            <pre className="bg-muted/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-64 overflow-auto">
-              {content}
-            </pre>
-          </div>
+          <ToolDetailShell>
+            <ToolSection label="文件">
+              <div className="font-mono text-foreground break-all">{file}</div>
+            </ToolSection>
+            <ToolSection label="内容">
+              <pre className="font-mono bg-muted/40 text-foreground rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-80 overflow-auto">
+                {content}
+              </pre>
+            </ToolSection>
+          </ToolDetailShell>
         </CollapsibleBlock>
         {isMarkdown && content && (
           <button
@@ -89,16 +98,22 @@ export function CodeChangeBlock({ toolName, toolInput, toolOutput, isError }: Pr
         defaultOpen={false}
         previewLines={0}
       >
-        <div className="space-y-1.5 text-xs">
-          <pre className="bg-zinc-900 text-zinc-100 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
-            $ {cmd}
-          </pre>
-          {toolOutput && (
-            <pre className="bg-muted/40 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-64 overflow-auto">
-              {toolOutput}
+        <ToolDetailShell>
+          <ToolSection label="命令">
+            <pre className="font-mono bg-zinc-900 text-zinc-100 rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-32 overflow-auto">
+              $ {cmd}
             </pre>
+          </ToolSection>
+          {toolOutput && (
+            <ToolSection label={isError ? '错误' : '输出'}>
+              <pre className={`font-mono rounded px-2 py-1.5 whitespace-pre-wrap break-all max-h-80 overflow-auto ${
+                isError ? 'bg-red-50 text-red-900 border border-red-200/60' : 'bg-muted/40 text-foreground'
+              }`}>
+                {toolOutput}
+              </pre>
+            </ToolSection>
           )}
-        </div>
+        </ToolDetailShell>
       </CollapsibleBlock>
     );
   }

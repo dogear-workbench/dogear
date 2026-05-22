@@ -110,6 +110,10 @@ function SubAgentDetail({
 
   const sections = convertToSections(rawMessages);
 
+  // 优先用历史里第一条 assistant 消息的 model（最准确），否则回落到注册时的 model（toolInput.model）
+  const modelFromHistory = rawMessages.find((m) => m.type === 'assistant' && m.model)?.model;
+  const displayModel = modelFromHistory || agent.model;
+
   const statusDot = agent.status === 'failed'
     ? 'bg-red-500'
     : agent.status === 'running'
@@ -131,6 +135,11 @@ function SubAgentDetail({
         </Button>
         <div className={cn('w-2 h-2 rounded-full shrink-0', statusDot)} />
         <span className="text-sm font-medium truncate flex-1">{agent.description || '子代理任务'}</span>
+        {displayModel && (
+          <span className="text-[10px] text-muted-foreground shrink-0 px-1.5 py-0.5 rounded bg-muted">
+            {displayModel}
+          </span>
+        )}
       </div>
 
       {/* 消息区域 */}
@@ -231,9 +240,9 @@ export function SubAgentPanel({ conversationId }: { conversationId?: string }) {
                   <div className={cn('w-2 h-2 rounded-full shrink-0', dotClass)} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm truncate">{agent.description || '子代理任务'}</div>
-                    {(agent.subagentType || durationText) && (
+                    {(agent.subagentType || agent.model || durationText) && (
                       <div className="text-xs text-muted-foreground truncate mt-0.5">
-                        {agent.subagentType || ''}{durationText}
+                        {[agent.subagentType, agent.model].filter(Boolean).join(' · ')}{durationText}
                       </div>
                     )}
                   </div>

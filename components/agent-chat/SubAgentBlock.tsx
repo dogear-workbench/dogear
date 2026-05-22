@@ -18,6 +18,7 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
   const isRunning = !isCompleted && !isFailed;
   const description = block.subAgentDescription || block.toolInput?.description || '子代理任务';
   const agentType = block.subAgentType || block.toolInput?.subagent_type || '';
+  const model: string | undefined = block.toolInput?.model;
 
   // 查看详情：按需注册到 store 并打开面板
   const handleViewDetail = () => {
@@ -31,6 +32,7 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
         sdkSessionId: conv.sdk_session_id,
         description,
         subagentType: agentType,
+        model,
         status: isFailed ? 'failed' : isCompleted ? 'completed' : 'running',
         durationMs: block.subAgentDurationMs,
         tokens: block.subAgentTokens,
@@ -64,8 +66,9 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
     <span className="text-muted-foreground text-xs">✓</span>
   );
 
-  // 指标文本
+  // 指标文本（model 放最前面突出）
   const metricsText = [
+    model,
     block.subAgentToolUseCount !== undefined ? `${block.subAgentToolUseCount} 工具` : '',
     durationText,
   ].filter(Boolean).join(' · ');

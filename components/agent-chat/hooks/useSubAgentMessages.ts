@@ -40,24 +40,43 @@ export function useSubAgentMessages({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!sdkSessionId || !agentId) return;
+    if (!sdkSessionId || !agentId) {
+      // 切到无效目标时，主动清空历史，避免旧详情残留
+      setMessages([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
 
-    setLoading(true);
+    let cancelled = false;
+    setMessages([]);
     setError(null);
+    setLoading(true);
     client.getSubAgentHistory({
       sdkSessionId,
       agentId,
       projectPath: workspacePath,
     })
       .then((result) => {
+        if (cancelled) return;
         if (result.error) {
           setError(result.error as string);
         } else {
           setMessages((result.messages || []) as SubAgentRawMessage[]);
         }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [sdkSessionId, agentId, status, workspacePath]);
 
   return { messages, loading, error };

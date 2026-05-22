@@ -427,13 +427,13 @@ export function ChatInputArea({
               {/* 发送/停止按钮（右侧） */}
               <div className="ml-auto">
                 {(input.trim() || pendingImages.length > 0) ? (
-                  // 有输入内容 → 始终显示发送按钮（运行中时排队发送）
+                  // 有输入内容 → 始终显示发送按钮（运行中时插话发送，Agent 在下一轮窗口接收）
                   <InputGroupButton
                     variant="default"
                     size="icon-xs"
                     onClick={handleSend}
                     disabled={!isSessionReady}
-                    title={isLoading ? "排队发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)"}
+                    title={isLoading ? "插话发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)"}
                   >
                     <Send size={14} />
                   </InputGroupButton>

@@ -6,6 +6,8 @@ export interface SubAgentInfo {
   sdkSessionId: string;
   description?: string;
   subagentType?: string;
+  /** 子代理使用的模型（来自结果消息携带的 model 字段） */
+  model?: string;
   status?: 'running' | 'completed' | 'failed';
   startedAt?: number;
   completedAt?: number;

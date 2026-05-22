@@ -56,6 +56,11 @@
     - `useChatScroll.ts` — 统一滚动控制（AI 回答期间自动跟随、用户向上滚停止、searchToMessage/scrollToElement）
     - `useMessageSearch.ts` — 消息搜索（文本匹配、高亮、激活项追踪）
     - `useSubAgentMessages.ts` — 子 Agent 消息流处理
+  - `tool-renderers/` — 工具块专属渲染器（由 ToolBlock 路由分发）
+    - `ToolDetailShell.tsx` — 统一展开容器（ToolSection / KeyValueList / OutputBox），bg-card+border 替代 bg-muted/20，主内容用 text-foreground
+    - `ReadRenderer.tsx` — Read 工具：文件路径头 + 等宽内容块
+    - `GlobRenderer.tsx` — Glob 工具：pattern 徽章 + 匹配文件路径列表
+    - `GrepRenderer.tsx` — Grep 工具：pattern 徽章 + 命中行 + 关键词高亮
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）

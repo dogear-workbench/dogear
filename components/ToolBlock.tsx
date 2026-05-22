@@ -5,6 +5,15 @@ import { cn } from "@/lib/utils";
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
+import {
+  ToolDetailShell,
+  ToolSection,
+  KeyValueList,
+  OutputBox,
+} from './agent-chat/tool-renderers/ToolDetailShell';
+import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
+import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
+import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 
 /**
  * 工具调用状态
@@ -225,6 +234,20 @@ export function ToolBlock({
   const headLabel = niceName || categoryLabel;
   const titleText = summary ? `${headLabel} · ${summary}` : headLabel;
 
+  // Tier 1 专属渲染器
+  const specializedRenderer = (() => {
+    if (toolName === 'Read') {
+      return <ReadRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+    }
+    if (toolName === 'Glob') {
+      return <GlobRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+    }
+    if (toolName === 'Grep') {
+      return <GrepRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+    }
+    return null;
+  })();
+
   return (
     <CollapsibleBlock
       icon={
@@ -242,35 +265,31 @@ export function ToolBlock({
       defaultOpen={false}
       className={className}
     >
-      <div className="space-y-1.5 text-xs rounded-md bg-muted/20 px-2.5 py-2">
-        {/* 输入参数：展平显示，去掉最外层 {} */}
-        {toolInput && Object.keys(toolInput).length > 0 && (
-          <div className="text-muted-foreground whitespace-pre-wrap break-all">
-            {Object.entries(toolInput).map(([k, v]) => `"${k}": ${JSON.stringify(v)}`).join(',\n')}
-          </div>
-        )}
-        {/* 执行结果 */}
-        {toolOutput && (
-          <div className={cn(
-            "whitespace-pre-wrap break-all",
-            toolInput && Object.keys(toolInput).length > 0 && "border-t border-border/30 pt-1.5 mt-1",
-            isError ? "text-red-600" : "text-muted-foreground"
-          )}>
-            {isError && <span className="text-red-500/70 text-[10px] block mb-0.5">错误</span>}
-            {formattedOutput}
-          </div>
-        )}
-        {/* 引用 */}
-        {citations && citations.length > 0 && (
-          <div className="flex flex-wrap gap-1 pt-1">
-            {citations.map((c, i) => (
-              <span key={i} className="px-1.5 py-0.5 bg-muted rounded text-muted-foreground text-xs">
-                {c.chapterTitle || `引用 ${i + 1}`}
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
+      {specializedRenderer ?? (
+        <ToolDetailShell>
+          {toolInput && Object.keys(toolInput).length > 0 && (
+            <ToolSection label="输入">
+              <KeyValueList data={toolInput} />
+            </ToolSection>
+          )}
+          {toolOutput !== undefined && toolOutput !== null && toolOutput !== '' && (
+            <ToolSection label={isError ? '错误' : '输出'}>
+              <OutputBox content={formattedOutput} isError={isError} />
+            </ToolSection>
+          )}
+          {citations && citations.length > 0 && (
+            <ToolSection label="引用">
+              <div className="flex flex-wrap gap-1">
+                {citations.map((c, i) => (
+                  <span key={i} className="px-1.5 py-0.5 bg-muted rounded text-muted-foreground text-xs">
+                    {c.chapterTitle || `引用 ${i + 1}`}
+                  </span>
+                ))}
+              </div>
+            </ToolSection>
+          )}
+        </ToolDetailShell>
+      )}
     </CollapsibleBlock>
   );
 }
