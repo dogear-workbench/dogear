@@ -427,13 +427,13 @@ export const agentRouter = {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) {
-          return { modelStr: undefined };
+          return { error: 'session_not_found' };
         }
         const result = await session.setModel(input.tier);
-        return result; // { modelStr }
+        return result; // { modelStr } — modelStr 为 undefined 表示成功切到"默认"
       } catch (error) {
         console.error('切换会话模型失败:', error);
-        return { modelStr: undefined };
+        return { error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

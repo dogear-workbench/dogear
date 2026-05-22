@@ -352,14 +352,21 @@ export function ChatInputArea({
                     value={currentTier ?? ''}
                     onValueChange={async (value) => {
                       const newTier = value === '' ? undefined : (value as 'haiku' | 'sonnet' | 'opus');
+                      const prevTier = currentTier;
                       setCurrentTier(newTier);
                       if (!sessionId) return;
                       try {
                         const result = await client.setSessionModel({ sessionId, tier: newTier });
+                        if ('error' in result) {
+                          setCurrentTier(prevTier);
+                          console.warn('模型切换失败:', result.error);
+                          return;
+                        }
                         // 走 SDK /model 命令路径，与用户手动输入 /model 完全一致
-                        const cmdArg = result?.modelStr || 'default';
+                        const cmdArg = result.modelStr || 'default';
                         await client.sendQueryBasedSessionMessage({ sessionId, content: `/model ${cmdArg}` });
                       } catch (e) {
+                        setCurrentTier(prevTier);
                         console.warn('模型切换失败:', e);
                       }
                     }}
