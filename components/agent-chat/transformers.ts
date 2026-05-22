@@ -1,5 +1,6 @@
 // components/agent-chat/transformers.ts
 import type { Message, ContentBlock } from './types';
+import { injectTaskSummary } from './task-aggregator';
 
 /**
  * 判断 JSONL 中的 user 消息是否为真实用户输入
@@ -389,7 +390,7 @@ export function historyTransformer(rawMessages: any[]): Message[] {
   }
 
   flushAssistant();
-  return historyMessages;
+  return injectTaskSummary(historyMessages);
 }
 
 // ==================== 实时流消息更新 ====================

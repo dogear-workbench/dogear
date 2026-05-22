@@ -23,6 +23,7 @@ import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import { useTaskListAggregator } from './hooks/useTaskListAggregator';
 
 /**
  * Agent 聊天组件
@@ -111,6 +112,8 @@ export function AgentChat({
   // 历史消息
   const { messages, setMessages, setHistoryLoaded } =
     useMessageHistory({ conversationId, useSdkResume, forkParams, workspacePath });
+
+  useTaskListAggregator(messages, setMessages);
 
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode } =

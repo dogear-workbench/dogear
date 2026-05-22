@@ -152,6 +152,15 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       );
     }
 
+    case 'task_summary': {
+      const todos = (block.tasks || []).map((t) => ({
+        content: t.subject,
+        activeForm: t.activeForm || t.subject,
+        status: t.status,
+      }));
+      return <TodoListBlock todos={todos} />;
+    }
+
     case 'tool_result':
       // tool_result 不独立渲染，结果已整合到对应 tool_use 的 ToolBlock 中
       return null;
