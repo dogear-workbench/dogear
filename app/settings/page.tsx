@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConfirmStore } from '@/stores/confirm-store';
+import { useConversationStore } from '@/stores/conversation-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, BUILTIN_DEFAULT_SYSTEM_PROMPT, isProfileComplete } from '@/types/settings';
 import { WorkspaceConfigTab } from './WorkspaceConfigTab';
@@ -115,6 +116,8 @@ export default function SettingsPage() {
   const handleSaveAndRestart = async () => {
     await saveToStore(sanitizeForSave(local));
     await restartActiveSessions();
+    // 后端 sessionManager.closeAll() 不会通知前端，必须显式触发前端 useAgentSession 重建
+    useConversationStore.getState().triggerSessionRestart();
     closeSettings();
   };
 
@@ -146,6 +149,8 @@ export default function SettingsPage() {
     } else if (result === 'saveRestart') {
       await saveToStore(sanitizeForSave(local));
       await restartActiveSessions();
+      // 后端 sessionManager.closeAll() 不会通知前端，必须显式触发前端 useAgentSession 重建
+      useConversationStore.getState().triggerSessionRestart();
       closeSettings();
     }
     // null（点击遮罩/ESC）= 留在设置页
