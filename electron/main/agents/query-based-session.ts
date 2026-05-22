@@ -1162,13 +1162,30 @@ export class QueryBasedSession extends EventEmitter {
           };
         }
 
-        // 正在压缩中状态
-        if (sdkMessage.subtype === 'status' && (sdkMessage as any).status === 'compacting') {
-          this.logger.info('对话正在压缩...');
-          return {
-            type: 'compacting',
-            timestamp,
-          };
+        // status 消息：压缩中 / 权限模式变更
+        if (sdkMessage.subtype === 'status') {
+          const statusMsg = sdkMessage as { status?: string; permissionMode?: string };
+
+          if (statusMsg.status === 'compacting') {
+            this.logger.info('对话正在压缩...');
+            return {
+              type: 'compacting',
+              timestamp,
+            };
+          }
+
+          // AI 调用 ExitPlanMode 等工具后，SDK 推送带 permissionMode 的 status 消息
+          // 复用 setPermissionMode 链路（会 emit permissionModeChanged 事件）让前端 UI 自动同步
+          // 去重不可删：setPermissionMode 内部同步赋值 currentPermissionMode，回环第二轮在此被拦截
+          if (typeof statusMsg.permissionMode === 'string' && statusMsg.permissionMode !== this.currentPermissionMode) {
+            this.logger.info('SDK status 推送 permissionMode 变更:', statusMsg.permissionMode);
+            this.setPermissionMode(statusMsg.permissionMode as PermissionMode).catch((e) =>
+              this.logger.warn('同步 SDK 推送的 permissionMode 失败:', e)
+            );
+            return null;
+          }
+
+          return null;
         }
 
         // 本地命令输出（SDK 内置命令如 /compact 的文本输出）
