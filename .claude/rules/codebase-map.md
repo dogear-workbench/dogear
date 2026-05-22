@@ -42,10 +42,11 @@
   - `SubAgentBlock.tsx` — 子 Agent 块
   - `highlight.ts` — 搜索高亮工具（mark 黄底 + active 橙底 ring）
   - `minimap-utils.ts` — 消息预览提取工具函数
-  - `transformers.ts` — 消息转换工具
-  - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary 等字段）
+  - `transformers.ts` — 消息转换工具（历史回放末尾调 injectTaskSummary 吸附任务汇总块）
+  - `task-aggregator.ts` — Task* CRUD 聚合纯函数（aggregateTasks / injectTaskSummary），把分散的 TaskCreate/TaskUpdate 合成单个 task_summary 虚拟块
+  - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary/task_summary 等字段）
   - `utils.ts` — 工具函数（getUserMessageSearchableText 等）
-  - `hooks/` — 自定义 hooks（10 个）
+  - `hooks/` — 自定义 hooks（11 个）
     - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
@@ -56,11 +57,13 @@
     - `useChatScroll.ts` — 统一滚动控制（AI 回答期间自动跟随、用户向上滚停止、searchToMessage/scrollToElement）
     - `useMessageSearch.ts` — 消息搜索（文本匹配、高亮、激活项追踪）
     - `useSubAgentMessages.ts` — 子 Agent 消息流处理
+    - `useTaskListAggregator.ts` — 流式 task_summary 维护（监听 messages，签名比较防抖，把吸附位置随最后一次 Task* 调用迁移）
   - `tool-renderers/` — 工具块专属渲染器（由 ToolBlock 路由分发）
     - `ToolDetailShell.tsx` — 统一展开容器（ToolSection / KeyValueList / OutputBox），bg-card+border 替代 bg-muted/20，主内容用 text-foreground
     - `ReadRenderer.tsx` — Read 工具：文件路径头 + 等宽内容块
     - `GlobRenderer.tsx` — Glob 工具：pattern 徽章 + 匹配文件路径列表
     - `GrepRenderer.tsx` — Grep 工具：pattern 徽章 + 命中行 + 关键词高亮
+    - `SkillRenderer.tsx` — Skill 工具：lucide Zap 琥珀色图标 + Skill 名 + 参数 + 输出
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
@@ -137,7 +140,7 @@
 - `conversation-service.ts` — 对话索引 CRUD + 人设关联（`.dogear/conversations.json`），含 personaId/tempPrompt 字段
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
-- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt、permissionRules.allow/deny；导出 appendPermissionAllowRules 供权限请求"始终允许"持久化）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
 - `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义（新增）

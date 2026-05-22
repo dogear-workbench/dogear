@@ -556,9 +556,6 @@ export function ConversationList() {
   }, [nodeMap]);
 
   // 把 items 拆成「文件夹及其子项」与「根级对话」两部分；根级对话再分「最近 / 更早」
-  type RenderEntry =
-    | { kind: 'item'; item: ItemInstance<ConversationFlatNode>; parentId: string; index: number }
-    | { kind: 'group'; group: 'recent' | 'earlier'; count: number };
 
   const { topEntries, recentEntries, earlierEntries } = useMemo(() => {
     const top: Array<{ item: ItemInstance<ConversationFlatNode>; index: number }> = [];
