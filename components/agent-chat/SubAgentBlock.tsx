@@ -3,6 +3,7 @@ import { Bot, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useUIStore } from '@/stores/ui-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import type { ContentBlock } from './types';
 
@@ -12,6 +13,7 @@ import type { ContentBlock } from './types';
  * 不主动注册到 ui-store，子代理列表由 IPC 事件驱动
  */
 export function SubAgentBlock({ block }: { block: ContentBlock }) {
+  const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
   const hasOutput = block.toolOutput !== undefined || !!block.subAgentResultText;
   const isCompleted = block.subAgentStatus === 'completed' || hasOutput;
   const isFailed = block.subAgentStatus === 'failed' || block.isError;
@@ -83,7 +85,7 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
       title={titleParts.join(' ')}
       titleClassName={isFailed ? 'text-red-600' : isRunning ? 'text-blue-600' : undefined}
       statusIcon={statusIcon}
-      previewLines={2}
+      previewLines={displayMode === 'compact' ? 0 : 2}
     >
       <div className="space-y-1.5 text-xs rounded-md bg-muted/20 px-2.5 py-2">
         {/* 指标 */}

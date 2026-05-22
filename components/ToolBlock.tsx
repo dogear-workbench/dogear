@@ -14,6 +14,8 @@ import {
 import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
+import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
+import { Zap } from 'lucide-react';
 
 /**
  * 工具调用状态
@@ -245,16 +247,25 @@ export function ToolBlock({
     if (toolName === 'Grep') {
       return <GrepRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
+    if (toolName === 'Skill') {
+      return <SkillRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+    }
     return null;
   })();
 
+  const iconNode = toolName === 'Skill' ? (
+    <span className="flex items-center justify-center w-5 h-5 rounded border border-amber-200 bg-amber-50">
+      <Zap className="w-3 h-3 text-amber-600" />
+    </span>
+  ) : (
+    <span className="flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-blue-50 text-xs">
+      {icon}
+    </span>
+  );
+
   return (
     <CollapsibleBlock
-      icon={
-        <span className="flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-blue-50 text-xs">
-          {icon}
-        </span>
-      }
+      icon={iconNode}
       title={titleText}
       titleClassName={cn(
         actualStatus === 'error' && 'text-red-600',
