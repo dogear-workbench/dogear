@@ -59,3 +59,23 @@ export async function loadSettings(): Promise<AppSettings> {
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await safeJsonWrite(getSettingsPath(), settings);
 }
+
+/**
+ * 追加规则到 permissionRules.allow，自动去重。
+ * 用于权限请求"始终允许"按钮的持久化。
+ */
+export async function appendPermissionAllowRules(rules: string[]): Promise<void> {
+  if (!rules.length) return;
+  const current = await loadSettings();
+  const existing = new Set(current.permissionRules?.allow || []);
+  const before = existing.size;
+  for (const r of rules) existing.add(r);
+  if (existing.size === before) return; // 全部已存在，跳过写盘
+  await saveSettings({
+    ...current,
+    permissionRules: {
+      allow: Array.from(existing),
+      deny: current.permissionRules?.deny || [],
+    },
+  });
+}

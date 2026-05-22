@@ -34,6 +34,7 @@ import fs from 'fs/promises';
 import { app } from 'electron';
 import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
 import type { AppSettings, ModelProfile } from '../services/settings-types.js';
+import { appendPermissionAllowRules } from '../services/settings-service.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
@@ -1582,10 +1583,25 @@ export class QueryBasedSession extends EventEmitter {
         behavior: 'allow',
         updatedInput: updatedInput || pending.input,
       };
-      // "总是允许"：将 SDK 建议的权限更新回传，SDK 会在会话内记住
       if (behavior === 'always_allow' && pending.suggestions?.length) {
+        // 本次会话立即生效（SDK 在 query 进程内记住）
         result.updatedPermissions = pending.suggestions;
-        this.logger.info('已回传 updatedPermissions（会话级总是允许）:', pending.suggestions.length, '条规则');
+        // 持久化到 AppSettings.permissionRules.allow，跨会话保留
+        // suggestions 是 PermissionUpdate[]，需要解构内部的 rules（仅 addRules + allow 走持久化）
+        const ruleStrings = pending.suggestions
+          .flatMap((upd) => {
+            if (upd.type !== 'addRules' || upd.behavior !== 'allow') return [];
+            return upd.rules.map((rv) =>
+              rv.ruleContent ? `${rv.toolName}(${rv.ruleContent})` : rv.toolName
+            );
+          })
+          .filter((s): s is string => typeof s === 'string' && s.length > 0);
+        if (ruleStrings.length) {
+          appendPermissionAllowRules(ruleStrings).catch((e) =>
+            this.logger.warn('持久化 always_allow 规则失败:', e)
+          );
+          this.logger.info('已持久化 always_allow 规则:', ruleStrings);
+        }
       }
       pending.resolve(result);
     } else {

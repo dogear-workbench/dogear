@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Sparkles, ChevronDown, ChevronRight, Package } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronRight, Package, ShieldCheck, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import type { AppSettings } from '@/types/settings';
@@ -101,6 +101,18 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
     if (perms.length > 0 && perms.every((p) => p === 'deny')) return 'deny';
     if (perms.every((p) => p === 'default')) return 'default';
     return 'default';
+  };
+
+  // ── 细粒度允许规则（带括号模式）─────────────────────
+  const getFineGrainedAllowRules = (): string[] => {
+    const allow = local.permissionRules?.allow || [];
+    return allow.filter((r) => r.includes('('));
+  };
+
+  const removeFineGrainedRule = (rule: string) => {
+    const rules = local.permissionRules || { allow: [], deny: [] };
+    const allow = (rules.allow || []).filter((r) => r !== rule);
+    setLocal((prev) => ({ ...prev, permissionRules: { allow, deny: rules.deny || [] } }));
   };
 
   if (loading) {
@@ -337,6 +349,45 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
           </div>
         )}
       </section>
+
+      {/* ── 细粒度允许规则 ───────────────────────────────────── */}
+      {(() => {
+        const fineGrainedRules = getFineGrainedAllowRules();
+        return (
+      <section>
+        <div className="flex items-center gap-2 mb-2">
+          <ShieldCheck className="w-4 h-4 text-muted-foreground" />
+          <h3 className="text-sm font-semibold">细粒度允许规则</h3>
+          <span className="text-xs text-muted-foreground">
+            点击会话权限卡的"始终允许"后自动写入
+          </span>
+        </div>
+        <div className="border rounded-lg overflow-hidden">
+          {fineGrainedRules.length === 0 ? (
+            <div className="text-xs text-muted-foreground px-4 py-3">
+              暂无细粒度规则
+            </div>
+          ) : (
+            <div className="divide-y">
+              {fineGrainedRules.map((rule) => (
+                <div key={rule} className="flex items-center justify-between gap-3 px-4 py-2 text-xs">
+                  <span className="font-mono text-foreground truncate">{rule}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeFineGrainedRule(rule)}
+                    className="text-muted-foreground hover:text-red-600 shrink-0"
+                    title="删除此规则"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+        );
+      })()}
 
       <p className="text-xs text-muted-foreground">
         提示：MCP 工具（股票/文章等）通过工具包开关整组管理，不再支持单工具权限。修改后需保存并重启会话才会生效。
