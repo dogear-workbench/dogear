@@ -76,8 +76,8 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
 
   const setSdkToolPermission = (tool: ToolInfo, perm: ToolPermission) => {
     const rules = local.permissionRules || { allow: [], deny: [] };
-    let allow = (rules.allow || []).filter((t) => t !== tool.name);
-    let deny = (rules.deny || []).filter((t) => t !== tool.name);
+    const allow = (rules.allow || []).filter((t) => t !== tool.name);
+    const deny = (rules.deny || []).filter((t) => t !== tool.name);
     if (perm === 'allow') allow.push(tool.name);
     if (perm === 'deny') deny.push(tool.name);
     setLocal((prev) => ({ ...prev, permissionRules: { allow, deny } }));
@@ -87,8 +87,8 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
     if (!sdkGroup) return;
     const rules = local.permissionRules || { allow: [], deny: [] };
     const sdkNames = new Set(sdkGroup.tools.map((t) => t.name));
-    let allow = (rules.allow || []).filter((t) => !sdkNames.has(t));
-    let deny = (rules.deny || []).filter((t) => !sdkNames.has(t));
+    const allow = (rules.allow || []).filter((t) => !sdkNames.has(t));
+    const deny = (rules.deny || []).filter((t) => !sdkNames.has(t));
     if (perm === 'allow') for (const t of sdkGroup.tools) allow.push(t.name);
     if (perm === 'deny') for (const t of sdkGroup.tools) deny.push(t.name);
     setLocal((prev) => ({ ...prev, permissionRules: { allow, deny } }));
