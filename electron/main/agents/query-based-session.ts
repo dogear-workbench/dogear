@@ -1615,11 +1615,12 @@ export class QueryBasedSession extends EventEmitter {
 
   /**
    * 切换模型 tier（haiku/sonnet/opus），传 undefined 则恢复默认
+   * 返回实际生效的 modelStr，供调用方发 /model 命令到会话历史
    */
-  async setModel(tier?: 'haiku' | 'sonnet' | 'opus'): Promise<void> {
+  async setModel(tier?: 'haiku' | 'sonnet' | 'opus'): Promise<{ modelStr?: string }> {
     if (!this.query) {
       this.logger.warn('setModel: 没有活跃的 query');
-      return;
+      return {};
     }
 
     let modelStr: string | undefined = undefined;
@@ -1627,7 +1628,7 @@ export class QueryBasedSession extends EventEmitter {
       const profile = this.currentActiveProfile;
       if (!profile) {
         this.logger.warn('setModel: currentActiveProfile 未初始化');
-        return;
+        return {};
       }
       const tierMap = {
         haiku: profile.haikuModel,
@@ -1641,14 +1642,7 @@ export class QueryBasedSession extends EventEmitter {
     await this.query.setModel(modelStr);
     this.currentTier = tier;
 
-    // 注入 /model 命令到会话历史，让 SDK 记录切换动作，
-    // 与用户手动输入 /model 命令的路径保持一致（MessageItem 渲染为居中切换提示）。
-    const cmdArg = modelStr || 'default';
-    try {
-      await this.sendMessage(`/model ${cmdArg}`);
-    } catch (e) {
-      this.logger.warn(`setModel: /model 命令注入失败:`, e);
-    }
+    return { modelStr };
   }
 
   /**

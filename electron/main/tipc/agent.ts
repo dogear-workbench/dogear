@@ -427,13 +427,13 @@ export const agentRouter = {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) {
-          throw new Error(`会话不存在: ${input.sessionId}`);
+          return { modelStr: undefined };
         }
-        await session.setModel(input.tier);
-        return { success: true };
+        const result = await session.setModel(input.tier);
+        return result; // { modelStr }
       } catch (error) {
         console.error('切换会话模型失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
+        return { modelStr: undefined };
       }
     }),
 
