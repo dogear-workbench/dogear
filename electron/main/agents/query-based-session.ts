@@ -1640,6 +1640,15 @@ export class QueryBasedSession extends EventEmitter {
     this.logger.info(`setModel: tier=${tier}, modelStr=${modelStr}`);
     await this.query.setModel(modelStr);
     this.currentTier = tier;
+
+    // 注入 /model 命令到会话历史，让 SDK 记录切换动作，
+    // 与用户手动输入 /model 命令的路径保持一致（MessageItem 渲染为居中切换提示）。
+    const cmdArg = modelStr || 'default';
+    try {
+      await this.sendMessage(`/model ${cmdArg}`);
+    } catch (e) {
+      this.logger.warn(`setModel: /model 命令注入失败:`, e);
+    }
   }
 
   /**
