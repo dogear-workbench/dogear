@@ -73,6 +73,39 @@ export function useSendMessage(params: UseSendMessageParams) {
     )
   );
 
+  // 通用：在对话末尾插入一条 status 块（合并到尾部 assistant 消息或新建一条）
+  const appendStatusBlock = useCallback((statusText: string) => {
+    setMessages(prev => {
+      const updated = [...prev];
+      const lastIdx = updated.length - 1;
+      const noticeBlock: ContentBlock = {
+        type: 'status',
+        status: statusText,
+        timestamp: Date.now(),
+      };
+      if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+        const lastMsg = updated[lastIdx];
+        updated[lastIdx] = {
+          ...lastMsg,
+          contentBlocks: [...(lastMsg.contentBlocks || []), noticeBlock],
+        };
+      } else {
+        updated.push({
+          role: 'assistant',
+          content: '',
+          timestamp: Date.now(),
+          contentBlocks: [noticeBlock],
+        });
+      }
+      return updated;
+    });
+  }, [setMessages]);
+
+  // 在对话中插入模型切换通知（仅 UI 提示，不走 SDK /model）
+  const insertModelChangeNotice = useCallback((label: string) => {
+    appendStatusBlock(`已切换至「${label}」模型`);
+  }, [appendStatusBlock]);
+
   // 在对话中插入模式切换通知
   const insertModeChangeNotice = useCallback((newMode: string) => {
     setMessages(prev => {
@@ -107,7 +140,7 @@ export function useSendMessage(params: UseSendMessageParams) {
 
   // 权限确认响应回调：更新消息中对应权限请求块的状态
   // "总是允许"不再切换全局模式，而是通过 SDK 的 updatedPermissions 机制在会话内记住
-  const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => {
+  const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => {
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;
       const hasTarget = msg.contentBlocks.some(b => b.permissionRequestId === requestId);
@@ -499,6 +532,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     handlePermissionResolved,
     handleAskUserResolved,
     insertModeChangeNotice,
+    insertModelChangeNotice,
     modeLabels,
     hasPendingUserAction,
   };

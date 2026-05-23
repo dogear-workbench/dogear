@@ -89,6 +89,7 @@ interface ChatInputAreaProps {
   handleImageFiles: (files: FileList | File[]) => void;
   removePendingImage: (index: number) => void;
   insertModeChangeNotice: (mode: string) => void;
+  insertModelChangeNotice: (label: string) => void;
   setIsLoading: (loading: boolean) => void;
   // 斜杠命令相关
   isSlashMenuOpen: boolean;
@@ -120,6 +121,7 @@ export function ChatInputArea({
   handleImageFiles,
   removePendingImage,
   insertModeChangeNotice,
+  insertModelChangeNotice,
   setIsLoading,
   isSlashMenuOpen,
   filteredCommands,
@@ -362,9 +364,11 @@ export function ChatInputArea({
                           console.warn('模型切换失败:', result.error);
                           return;
                         }
-                        // 走 SDK /model 命令路径，与用户手动输入 /model 完全一致
-                        const cmdArg = result.modelStr || 'default';
-                        await client.sendQueryBasedSessionMessage({ sessionId, content: `/model ${cmdArg}` });
+                        const label = newTier === 'haiku' ? 'Haiku'
+                          : newTier === 'sonnet' ? 'Sonnet'
+                          : newTier === 'opus' ? 'Opus'
+                          : '默认';
+                        insertModelChangeNotice(label);
                       } catch (e) {
                         setCurrentTier(prevTier);
                         console.warn('模型切换失败:', e);

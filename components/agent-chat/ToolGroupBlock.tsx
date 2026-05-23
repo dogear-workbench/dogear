@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 interface ToolGroupBlockProps {
   blocks: ContentBlock[];
   sessionId?: string | null;
-  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
+  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
   searchQuery?: string;
   activeMatchId?: string | null;

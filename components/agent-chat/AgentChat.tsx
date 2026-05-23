@@ -442,6 +442,7 @@ export function AgentChat({
         handleImageFiles={imageAttachment.handleImageFiles}
         removePendingImage={imageAttachment.removePendingImage}
         insertModeChangeNotice={sendMessage.insertModeChangeNotice}
+        insertModelChangeNotice={sendMessage.insertModelChangeNotice}
         setIsLoading={setIsLoading}
         isSlashMenuOpen={slashCommands.isSlashMenuOpen}
         filteredCommands={slashCommands.filteredCommands}

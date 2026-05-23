@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, X, ShieldAlert, ShieldCheck, Send, MessageSquare, PenLine } from 'lucide-react';
+import { Check, X, ShieldAlert, ShieldCheck, Send, MessageSquare, PenLine, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,7 +17,7 @@ export function PermissionRequestCard({
 }: {
   block: ContentBlock;
   sessionId: string | null;
-  onResolved: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
+  onResolved: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
 }) {
   const isResolved = !!block.permissionResolved;
   const [showDenyInput, setShowDenyInput] = useState(false);
@@ -63,6 +63,17 @@ export function PermissionRequestCard({
     onResolved(block.permissionRequestId, 'always_allow');
   };
 
+  // 本会话允许：当前会话进程内放行该工具，不写磁盘，关闭会话即失效
+  const handleAllowSession = async () => {
+    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    await client.respondPermissionRequest({
+      sessionId,
+      requestId: block.permissionRequestId,
+      behavior: 'allow_session',
+    });
+    onResolved(block.permissionRequestId, 'allow_session');
+  };
+
   const handleDeny = async () => {
     if (!sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
@@ -101,7 +112,8 @@ export function PermissionRequestCard({
   const resolvedText = () => {
     switch (block.permissionResolved) {
       case 'allow': return '已允许执行';
-      case 'always_allow': return '已允许执行（已切换自动模式）';
+      case 'always_allow': return '已允许执行（已持久化规则）';
+      case 'allow_session': return '已允许执行（本会话内放行）';
       case 'deny': return '已拒绝执行';
       default: return '';
     }
@@ -152,7 +164,11 @@ export function PermissionRequestCard({
               <Check size={12} />
               允许
             </Button>
-            <Button variant="outline" size="sm" onClick={handleAlwaysAllow}>
+            <Button variant="outline" size="sm" onClick={handleAllowSession} title="仅本会话内放行，关闭会话即失效">
+              <Clock size={12} />
+              本会话允许
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleAlwaysAllow} title="持久化到 settings，跨会话保留">
               <ShieldCheck size={12} />
               总是允许
             </Button>

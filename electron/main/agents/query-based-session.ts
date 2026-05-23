@@ -114,11 +114,12 @@ export class QueryBasedSession extends EventEmitter {
   // key: tool_use_id 或 content_block index, value: { name, input累积字符串 }
   private pendingToolInputs: Map<string | number, { name: string; inputJson: string; toolUseId?: string }> = new Map();
 
-  // 权限请求等待队列：key=requestId, value={ resolver, originalInput, suggestions }
+  // 权限请求等待队列：key=requestId, value={ resolver, originalInput, suggestions, toolName }
   private pendingPermissionRequests: Map<string, {
     resolve: (result: PermissionResult) => void;
     input: Record<string, unknown>;  // 保存原始 input，allow 时需要回传
     suggestions?: import('@anthropic-ai/claude-agent-sdk').PermissionUpdate[];  // SDK 建议的"总是允许"规则
+    toolName?: string;  // 工具名，allow_session 时用于构造会话级 addRules
   }> = new Map();
 
   // 声明式权限规则（从 settings.json 加载，缓存避免每次 canUseTool 都读磁盘）
@@ -381,7 +382,7 @@ export class QueryBasedSession extends EventEmitter {
 
         // 等待前端用户响应
         return new Promise<PermissionResult>((resolve) => {
-          this.pendingPermissionRequests.set(requestId, { resolve, input, suggestions: options.suggestions });
+          this.pendingPermissionRequests.set(requestId, { resolve, input, suggestions: options.suggestions, toolName });
 
           // 如果 AbortSignal 被触发（如会话关闭），自动拒绝
           options.signal.addEventListener('abort', () => {
@@ -1582,11 +1583,11 @@ export class QueryBasedSession extends EventEmitter {
    *
    * behavior:
    * - 'allow': 本次允许
-   * - 'always_allow': 本次允许 + 将 SDK suggestions 作为 updatedPermissions 返回，
-   *   SDK 会在当前会话内记住该规则，后续同类请求不再触发 canUseTool
+   * - 'allow_session': 本次允许 + 仅在当前会话进程内放行该工具（不写磁盘）
+   * - 'always_allow': 本次允许 + 将 SDK suggestions 作为 updatedPermissions 返回 + 持久化到 settings
    * - 'deny': 拒绝
    */
-  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny' | 'always_allow', message?: string, updatedInput?: Record<string, unknown>): void {
+  respondPermissionRequest(requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', message?: string, updatedInput?: Record<string, unknown>): void {
     const pending = this.pendingPermissionRequests.get(requestId);
     if (!pending) {
       this.logger.warn('respondPermissionRequest: 找不到请求:', requestId);
@@ -1595,7 +1596,7 @@ export class QueryBasedSession extends EventEmitter {
     this.pendingPermissionRequests.delete(requestId);
     this.logger.info('权限确认响应:', { requestId, behavior });
 
-    if (behavior === 'allow' || behavior === 'always_allow') {
+    if (behavior === 'allow' || behavior === 'always_allow' || behavior === 'allow_session') {
       const result: PermissionResult = {
         behavior: 'allow',
         updatedInput: updatedInput || pending.input,
@@ -1619,6 +1620,15 @@ export class QueryBasedSession extends EventEmitter {
           );
           this.logger.info('已持久化 always_allow 规则:', ruleStrings);
         }
+      } else if (behavior === 'allow_session' && pending.toolName) {
+        // 仅当前会话进程内放行：destination=session，不写磁盘
+        result.updatedPermissions = [{
+          type: 'addRules',
+          rules: [{ toolName: pending.toolName }],
+          behavior: 'allow',
+          destination: 'session',
+        }];
+        this.logger.info('已添加会话级放行规则:', pending.toolName);
       }
       pending.resolve(result);
     } else {

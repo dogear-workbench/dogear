@@ -63,7 +63,7 @@ export interface ContentBlock {
   permissionToolName?: string;
   permissionInput?: any;
   permissionDecisionReason?: string;
-  permissionResolved?: 'allow' | 'deny' | 'always_allow';  // 用户已响应的状态
+  permissionResolved?: 'allow' | 'deny' | 'always_allow' | 'allow_session';  // 用户已响应的状态
   permissionDenyMessage?: string;  // 用户自定义的拒绝理由
   // Hook 事件相关字段
   sessionStartSource?: string;           // SessionStart: 启动来源

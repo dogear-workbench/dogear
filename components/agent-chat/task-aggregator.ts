@@ -8,14 +8,35 @@ interface TaskState {
   createdAt: number;
 }
 
+// SDK TaskCreate 返回 { task: { id, subject } }，但经 transformers 后会被 JSON.stringify 成字符串。
+// 这里同时支持对象形态（live 流）和字符串形态（历史回放）。
+function extractCreateTaskId(output: any): string | undefined {
+  if (!output) return undefined;
+  if (typeof output === 'object') {
+    return output?.task?.id || output?.taskId || output?.id;
+  }
+  if (typeof output === 'string') {
+    try {
+      const parsed = JSON.parse(output);
+      return parsed?.task?.id || parsed?.taskId || parsed?.id;
+    } catch {
+      const m = output.match(/"id"\s*:\s*"([^"]+)"/);
+      return m ? m[1] : undefined;
+    }
+  }
+  return undefined;
+}
+
 /**
  * 从消息序列累积所有 Task* 工具调用的最终状态。
- * - TaskCreate：用 output.taskId（SDK 返回值），fallback 到 input.subject
- * - TaskUpdate：以 input.taskId 匹配，覆盖 status/subject/activeForm
+ * - TaskCreate：用 output.task.id（SDK 返回值），按 toolUseId 兜底保留草稿
+ * - TaskUpdate：以 input.taskId 匹配
  * - TaskList / TaskGet：忽略（只读）
  */
 export function aggregateTasks(messages: Message[]): TaskState[] {
   const state = new Map<string, TaskState>();
+  // toolUseId → 真正 taskId 的映射，处理 TaskCreate 还在 running（无 output）时的临时状态
+  const pendingByToolUseId = new Map<string, string>();
 
   for (const msg of messages) {
     if (msg.role !== 'assistant' || !msg.contentBlocks) continue;
@@ -26,8 +47,19 @@ export function aggregateTasks(messages: Message[]): TaskState[] {
       const output = block.toolOutput as any;
 
       if (name === 'TaskCreate') {
-        const id = output?.taskId || output?.id || input?.id || input?.subject;
+        const realId = extractCreateTaskId(output);
+        // 还没有 output 时退而求其次用 toolUseId 当 key，等 output 到了再合并
+        const id = realId || (block.toolUseId ? `__pending__:${block.toolUseId}` : input?.subject);
         if (!id) continue;
+        if (realId && block.toolUseId) {
+          pendingByToolUseId.set(block.toolUseId, realId);
+          const pendingKey = `__pending__:${block.toolUseId}`;
+          if (state.has(pendingKey) && !state.has(realId)) {
+            const prev = state.get(pendingKey)!;
+            state.set(realId, { ...prev, id: realId });
+            state.delete(pendingKey);
+          }
+        }
         if (!state.has(id)) {
           state.set(id, {
             id,

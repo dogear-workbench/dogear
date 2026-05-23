@@ -1,7 +1,7 @@
 import { ToolBlock } from '@/components/ToolBlock';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, ClipboardList, ClipboardCheck, ClipboardEdit } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
@@ -90,7 +90,7 @@ function parseErrorMessage(error: string): { title: string; description: string;
 export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, searchQuery, activeMatchId, messageIndex, blockIndex }: {
   block: ContentBlock;
   sessionId?: string | null;
-  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow', denyMessage?: string) => void;
+  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
   searchQuery?: string;
   activeMatchId?: string | null;
@@ -120,6 +120,44 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         const todos = ((block.toolOutput as any).tasks as Array<{ subject: string; status: 'pending' | 'in_progress' | 'completed' }>)
           .map((t) => ({ content: t.subject, activeForm: t.subject, status: t.status }));
         return <TodoListBlock todos={todos} />;
+      }
+      // TaskCreate / TaskUpdate：紧凑单行渲染（最终聚合走 task_summary 块）
+      if (block.toolName === 'TaskCreate') {
+        const input = (block.toolInput as any) || {};
+        const subject = input.subject || '新任务';
+        return (
+          <div className="flex items-center gap-2 py-0.5 text-xs">
+            <ClipboardList className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
+            <span className="text-muted-foreground">新建任务</span>
+            <span className="text-foreground truncate">{subject}</span>
+          </div>
+        );
+      }
+      if (block.toolName === 'TaskUpdate') {
+        const input = (block.toolInput as any) || {};
+        const statusLabels: Record<string, string> = {
+          pending: '待办', in_progress: '进行中', completed: '已完成', deleted: '删除',
+        };
+        const statusColors: Record<string, string> = {
+          pending: 'text-muted-foreground',
+          in_progress: 'text-amber-600',
+          completed: 'text-emerald-600',
+          deleted: 'text-destructive',
+        };
+        const status = input.status;
+        const Icon = status === 'completed' ? ClipboardCheck : ClipboardEdit;
+        return (
+          <div className="flex items-center gap-2 py-0.5 text-xs">
+            <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${statusColors[status] || 'text-muted-foreground'}`} />
+            <span className="text-muted-foreground">更新任务</span>
+            <span className="text-foreground truncate">{input.subject || input.taskId || ''}</span>
+            {status && (
+              <span className={`ml-auto ${statusColors[status] || 'text-muted-foreground'}`}>
+                → {statusLabels[status] || status}
+              </span>
+            )}
+          </div>
+        );
       }
       if (['Edit', 'Write', 'Bash'].includes(block.toolName || '')) {
         return (

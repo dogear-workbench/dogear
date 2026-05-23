@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, X, Loader2 } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Globe, Link2, Bot, ClipboardList, HelpCircle, Zap, Wrench, Plug } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -15,7 +16,6 @@ import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
-import { Zap } from 'lucide-react';
 
 /**
  * 工具调用状态
@@ -35,38 +35,32 @@ interface ToolBlockProps {
   className?: string;
 }
 
-/**
- * 工具图标映射
- */
-const TOOL_ICONS: Record<string, string> = {
-  Read: "📄",
-  Write: "📝",
-  Edit: "✏️",
-  Bash: "💻",
-  Grep: "🔍",
-  Glob: "📁",
-  WebSearch: "🌐",
-  WebFetch: "🔗",
-  Task: "🤖",
-  TodoWrite: "📋",
-  TaskCreate: "📋",
-  TaskUpdate: "📋",
-  TaskGet: "📋",
-  TaskList: "📋",
-  AskUserQuestion: "❓",
-  Skill: "⚡",  // Skill 类型图标
-  default: "🔧",
+interface ToolIconSpec {
+  Icon: LucideIcon;
+  className: string;
+  bg: string;
+}
+
+const TOOL_ICONS: Record<string, ToolIconSpec> = {
+  Read: { Icon: FileText, className: 'text-sky-600', bg: 'border-sky-200 bg-sky-50' },
+  Glob: { Icon: FolderSearch, className: 'text-indigo-600', bg: 'border-indigo-200 bg-indigo-50' },
+  Grep: { Icon: Search, className: 'text-violet-600', bg: 'border-violet-200 bg-violet-50' },
+  WebSearch: { Icon: Globe, className: 'text-cyan-600', bg: 'border-cyan-200 bg-cyan-50' },
+  WebFetch: { Icon: Link2, className: 'text-cyan-600', bg: 'border-cyan-200 bg-cyan-50' },
+  Task: { Icon: Bot, className: 'text-purple-600', bg: 'border-purple-200 bg-purple-50' },
+  TodoWrite: { Icon: ClipboardList, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
+  TaskList: { Icon: ClipboardList, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
+  TaskGet: { Icon: ClipboardList, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
+  AskUserQuestion: { Icon: HelpCircle, className: 'text-blue-600', bg: 'border-blue-200 bg-blue-50' },
+  Skill: { Icon: Zap, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
 };
 
-/**
- * 获取工具图标
- */
-function getToolIcon(toolName: string): string {
-  // 检查是否是 MCP 工具
-  if (toolName.startsWith("mcp__")) {
-    return "🔌";  // MCP 工具图标
+function getToolIcon(toolName: string): ToolIconSpec {
+  if (TOOL_ICONS[toolName]) return TOOL_ICONS[toolName];
+  if (toolName.startsWith('mcp__')) {
+    return { Icon: Plug, className: 'text-teal-600', bg: 'border-teal-200 bg-teal-50' };
   }
-  return TOOL_ICONS[toolName] || TOOL_ICONS.default;
+  return { Icon: Wrench, className: 'text-slate-600', bg: 'border-slate-200 bg-slate-50' };
 }
 
 
@@ -170,22 +164,11 @@ function getToolSummary(
 }
 
 /**
- * 格式化工具输出用于显示
+ * 格式化工具输出用于显示（不截断，由 OutputBox 的 max-h 滚动）
  */
-function formatToolOutput(toolName: string, toolOutput?: any): string {
-  if (!toolOutput) return "";
-
-  if (typeof toolOutput === "string") {
-    // 对于很长的输出，显示行数统计
-    const lines = toolOutput.split("\n");
-    if (lines.length > 100) {
-      return toolOutput.substring(0, 5000) + `\n\n... (共 ${lines.length} 行)`;
-    }
-    return toolOutput.length > 5000
-      ? toolOutput.substring(0, 5000) + "..."
-      : toolOutput;
-  }
-
+function formatToolOutput(_toolName: string, toolOutput?: any): string {
+  if (toolOutput === undefined || toolOutput === null) return "";
+  if (typeof toolOutput === "string") return toolOutput;
   return JSON.stringify(toolOutput, null, 2);
 }
 
@@ -224,7 +207,7 @@ export function ToolBlock({
   const actualStatus: ToolStatus = isError ? "error" : status;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
-  const icon = getToolIcon(toolName);
+  const iconSpec = getToolIcon(toolName);
   const getCategoryLabel = useToolRegistryStore(s => s.getCategoryLabel);
   const categoryLabel = getCategoryLabel(toolName);
 
@@ -253,13 +236,10 @@ export function ToolBlock({
     return null;
   })();
 
-  const iconNode = toolName === 'Skill' ? (
-    <span className="flex items-center justify-center w-5 h-5 rounded border border-amber-200 bg-amber-50">
-      <Zap className="w-3 h-3 text-amber-600" />
-    </span>
-  ) : (
-    <span className="flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-blue-50 text-xs">
-      {icon}
+  const { Icon: ToolIconComp, className: iconColor, bg: iconBg } = iconSpec;
+  const iconNode = (
+    <span className={cn('flex items-center justify-center w-5 h-5 rounded border', iconBg)}>
+      <ToolIconComp className={cn('w-3 h-3', iconColor)} />
     </span>
   );
 

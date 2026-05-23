@@ -389,7 +389,7 @@ export const agentRouter = {
 
   /** 响应权限确认请求（用户允许/拒绝/总是允许工具执行，可选编辑后的参数） */
   respondPermissionRequest: t.procedure
-    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny' | 'always_allow'; message?: string; updatedInput?: Record<string, unknown> }>()
+    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session'; message?: string; updatedInput?: Record<string, unknown> }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
