@@ -240,6 +240,21 @@ export function AgentChat({
     if (el) scrollToElement(el, { align: 'top-third' });
   }, [search.activeMatch?.id, scrollToElement]);
 
+  // 搜索命中折叠段时自动展开 + 跳转
+  useEffect(() => {
+    if (!search.activeMatch || !conversationId) return;
+    const lastBoundaryIdx = messages.reduce(
+      (acc, m, i) => m.isCompactBoundary ? i : acc, -1
+    );
+    if (lastBoundaryIdx > 0 && search.activeMatch.messageIndex < lastBoundaryIdx && isHistoryCollapsed) {
+      useCompactCollapseStore.getState().setCollapsed(conversationId, false);
+      const targetIdx = search.activeMatch.messageIndex;
+      requestAnimationFrame(() => {
+        scrollToMessage(targetIdx, { align: 'top', flash: true });
+      });
+    }
+  }, [search.activeMatch, conversationId, isHistoryCollapsed, messages, scrollToMessage]);
+
   return (
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
       {/* SearchBar 挂在最外层 relative 容器，避免被内部 overflow-hidden 裁剪 */}
