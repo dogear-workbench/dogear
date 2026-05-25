@@ -236,6 +236,13 @@ export class QueryBasedSession extends EventEmitter {
         queryOptions.promptSuggestions = true;
       }
 
+      // 自动压缩：永远启用（关闭会爆窗），1M 模式下阈值设为 900K（留 100K 缓冲给最后几轮 messages）
+      queryOptions.autoCompactEnabled = true;
+      if (baseConfig.activeProfile.enable1MContext) {
+        queryOptions.autoCompactWindow = 900_000;
+        this.logger.info('已启用 1M 长上下文模式 (autoCompactWindow=900000)');
+      }
+
       // 缓存 activeProfile 供 setModel 使用
       this.currentActiveProfile = baseConfig.activeProfile;
 

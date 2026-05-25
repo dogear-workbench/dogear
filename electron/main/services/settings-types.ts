@@ -26,6 +26,8 @@ export interface ModelProfile {
   opusModel: string;
   apiTimeoutMs: number;
   disableNonessentialTraffic: boolean;
+  /** 启用 1M 长上下文模式：自动压缩阈值设为 900K token。默认 false */
+  enable1MContext?: boolean;
 }
 
 export interface AppSettings {

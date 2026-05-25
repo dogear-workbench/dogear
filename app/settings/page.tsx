@@ -595,6 +595,27 @@ export default function SettingsPage() {
                       </button>
                     </div>
 
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="text-sm font-medium">启用 1M 长上下文模式</label>
+                        <p className="text-xs text-muted-foreground">
+                          仅 Claude Opus 4.6+ / Sonnet 4.6 原生支持 1M 上下文，其他模型勾选可能撞模型上限报错
+                        </p>
+                      </div>
+                      <button type="button"
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
+                          profile.enable1MContext ? "bg-primary" : "bg-muted"
+                        )}
+                        onClick={() => updateProfileField(id, { enable1MContext: !profile.enable1MContext })}
+                      >
+                        <span className={cn(
+                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
+                          profile.enable1MContext ? "translate-x-6" : "translate-x-1"
+                        )} />
+                      </button>
+                    </div>
+
                     {/* 底部操作 */}
                     <div className="flex items-center gap-2 pt-2">
                       {!isActive && (

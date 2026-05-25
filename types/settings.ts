@@ -19,6 +19,8 @@ export interface ModelProfile {
   // 高级配置
   apiTimeoutMs: number;                // API_TIMEOUT_MS，默认 3000000
   disableNonessentialTraffic: boolean; // CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC，默认 true
+  /** 启用 1M 长上下文模式：自动压缩阈值设为 900K token。默认 false */
+  enable1MContext?: boolean;
 }
 
 /**
