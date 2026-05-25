@@ -3,6 +3,7 @@ import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useSlashCommandStore } from '@/stores/slash-command-store';
+import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { Message, ContentBlock } from '../types';
 import type { PendingImage } from './useImageAttachment';
@@ -359,6 +360,11 @@ export function useSendMessage(params: UseSendMessageParams) {
     const imagesToSend = [...pendingImages];
     setInput('');
     setPendingImages([]);
+
+    // 发送新消息时强制折叠 compact 历史段，让旧 DOM 立即卸载
+    if (conversationId) {
+      useCompactCollapseStore.getState().setCollapsed(conversationId, true);
+    }
 
     // 构建多 content block 发送结构：每种引用独立为一个 text block，使用 XML 标签包裹
     const textBlocks: Array<{ text: string }> = [];
