@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Archive, GitBranch, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { ChevronDown, GitBranch, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -24,6 +24,8 @@ import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useTaskListAggregator } from './hooks/useTaskListAggregator';
+import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
+import { CollapseControlBar } from './CollapseControlBar';
 
 /**
  * Agent 聊天组件
@@ -307,39 +309,27 @@ export function AgentChat({
           );
 
           if (lastCompactIdx > 0) {
-            // 有压缩历史：压缩边界之前的消息折叠（受 store 控制，默认折叠）
             const beforeCompact = messages.slice(0, lastCompactIdx);
             const compactBoundary = messages[lastCompactIdx];
             const afterCompact = messages.slice(lastCompactIdx + 1);
             return (
               <>
                 {isHistoryCollapsed ? (
-                  <button
-                    onClick={() => conversationId && toggleCollapse(conversationId)}
-                    className="flex items-center gap-2 w-full px-3 py-2 my-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer"
-                  >
-                    <Archive size={14} />
-                    <span>查看 {beforeCompact.length} 条历史消息</span>
-                  </button>
+                  <CollapsedHistoryBanner
+                    count={beforeCompact.length}
+                    onExpand={() => conversationId && toggleCollapse(conversationId)}
+                  />
                 ) : (
                   <>
-                    <button
-                      onClick={() => conversationId && toggleCollapse(conversationId)}
-                      className="flex items-center gap-2 w-full px-3 py-2 my-2 rounded-lg bg-gray-50 border border-gray-200 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors cursor-pointer"
-                    >
-                      <Archive size={14} />
-                      <span>折叠 {beforeCompact.length} 条历史消息</span>
-                    </button>
-                    <div className="opacity-70">
-                      {beforeCompact.map((msg, i) => renderMessage(msg, i))}
-                    </div>
+                    <CollapseControlBar
+                      count={beforeCompact.length}
+                      onCollapse={() => conversationId && toggleCollapse(conversationId)}
+                    />
+                    {beforeCompact.map((msg, i) => renderMessage(msg, i))}
                   </>
                 )}
 
-                {/* 压缩分隔线（compactBoundary 的 contentBlocks 中已有 compact_boundary 块） */}
                 {renderMessage(compactBoundary, lastCompactIdx)}
-
-                {/* 压缩后的消息正常渲染 */}
                 {afterCompact.map((msg, i) => renderMessage(msg, lastCompactIdx + 1 + i))}
               </>
             );
