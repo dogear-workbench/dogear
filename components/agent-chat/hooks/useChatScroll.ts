@@ -33,6 +33,10 @@ export function useChatScroll({
   isLoading,
 }: UseChatScrollOptions): UseChatScrollReturn {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  // Task 1: 新状态机基础——followModeRef 是目标状态，followRef 是向下兼容的镜像（Task 4 删除）
+  const followModeRef = useRef<'auto' | 'manual'>('manual');
+  const programmaticRef = useRef(false);
+  // followRef 保留兼容语义：true ↔ followModeRef='auto'，Task 4 删除
   const followRef = useRef(false);
 
   const getViewport = useCallback((): HTMLElement | null => {
@@ -43,21 +47,39 @@ export function useChatScroll({
     );
   }, [scrollAreaRef]);
 
+  const setFollowMode = (mode: 'auto' | 'manual') => {
+    followModeRef.current = mode;
+    followRef.current = mode === 'auto';
+  };
+
+  const scrollViewportTo = (top: number, behavior: ScrollBehavior) => {
+    const vp = getViewport();
+    if (!vp) return;
+    programmaticRef.current = true;
+    if (behavior === 'instant') {
+      vp.scrollTop = top;
+      requestAnimationFrame(() => { programmaticRef.current = false; });
+    } else {
+      vp.scrollTo({ top, behavior: 'smooth' });
+      setTimeout(() => { programmaticRef.current = false; }, 400);
+    }
+  };
+
   // AI 回答期间启用自动跟随;结束时立即关闭
   useEffect(() => {
     if (!isLoading) {
-      followRef.current = false;
+      setFollowMode('manual');
       return;
     }
-    followRef.current = true;
+    setFollowMode('auto');
     const vp = getViewport();
     if (!vp) return;
-    vp.scrollTop = vp.scrollHeight; // 进入回答态立即触底一次
+    scrollViewportTo(vp.scrollHeight, 'instant'); // 进入回答态立即触底一次
     const content = vp.firstElementChild;
     if (!content) return;
     const obs = new ResizeObserver(() => {
-      if (followRef.current) {
-        vp.scrollTop = vp.scrollHeight;
+      if (followModeRef.current === 'auto') {
+        scrollViewportTo(vp.scrollHeight, 'instant');
       }
     });
     obs.observe(content);
@@ -74,7 +96,7 @@ export function useChatScroll({
     const atBottom = distance <= 4;
     setShowScrollBtn(distance >= 50);
     if (isLoading) {
-      followRef.current = atBottom;
+      setFollowMode(atBottom ? 'auto' : 'manual');
     }
   }, [getViewport, isLoading]);
 
@@ -82,12 +104,8 @@ export function useChatScroll({
     (behavior: ScrollBehavior = 'smooth') => {
       const vp = getViewport();
       if (!vp) return;
-      if (behavior === 'instant') {
-        vp.scrollTop = vp.scrollHeight;
-      } else {
-        vp.scrollTo({ top: vp.scrollHeight, behavior: 'smooth' });
-      }
-      followRef.current = true;
+      scrollViewportTo(vp.scrollHeight, behavior);
+      setFollowMode('auto');
       setShowScrollBtn(false);
     },
     [getViewport],
@@ -97,7 +115,7 @@ export function useChatScroll({
     (el: HTMLElement, opts?: ScrollOptions) => {
       const vp = getViewport();
       if (!vp || !el) return;
-      followRef.current = false; // 取消自动跟随,防止被回弹
+      setFollowMode('manual'); // 取消自动跟随,防止被回弹
 
       // sticky 元素的 getBoundingClientRect 会返回"粘连后"的位置(≈ viewport 顶部),
       // 会导致向上跳转到 sticky user 消息时算出错误(只挪一点点就不动)。
@@ -123,10 +141,7 @@ export function useChatScroll({
         targetScrollTop = elTopInContent - vp.clientHeight / 3;
       }
 
-      vp.scrollTo({
-        top: Math.max(0, targetScrollTop),
-        behavior: opts?.behavior ?? 'smooth',
-      });
+      scrollViewportTo(Math.max(0, targetScrollTop), opts?.behavior ?? 'smooth');
 
       if (opts?.flash) {
         el.classList.add('minimap-flash');
