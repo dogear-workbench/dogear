@@ -86,9 +86,7 @@ export function useChatScroll({
     return () => obs.disconnect();
   }, [isLoading, getViewport]);
 
-  // 滚动时更新 showScrollBtn 和 followRef
-  // - 用户向上滚 → followRef=false（即使 isLoading 时也立即停止跟随）
-  // - 用户滚到底（<=4px） → followRef=true，自动恢复跟随（下一次 token 到达继续粘底）
+  // Task 2-3 会重写：用户介入判定迁移到 wheel/touch/keydown，本函数只负责 UI 标志
   const handleScroll = useCallback(() => {
     const vp = getViewport();
     if (!vp) return;
