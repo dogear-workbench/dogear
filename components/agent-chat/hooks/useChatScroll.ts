@@ -113,16 +113,17 @@ export function useChatScroll({
       if (['PageUp', 'ArrowUp', 'Home'].includes(e.key)) setFollowMode('manual');
     };
 
-    vp.addEventListener('wheel', onWheel, { passive: true });
-    vp.addEventListener('touchstart', onTouchStart, { passive: true });
-    vp.addEventListener('touchmove', onTouchMove, { passive: true });
-    window.addEventListener('keydown', onKeyDown);
+    // capture 阶段监听，避免子组件 stopPropagation 后失效
+    vp.addEventListener('wheel', onWheel, { passive: true, capture: true });
+    vp.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
+    vp.addEventListener('touchmove', onTouchMove, { passive: true, capture: true });
+    window.addEventListener('keydown', onKeyDown, true);
 
     return () => {
-      vp.removeEventListener('wheel', onWheel);
-      vp.removeEventListener('touchstart', onTouchStart);
-      vp.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('keydown', onKeyDown);
+      vp.removeEventListener('wheel', onWheel, { capture: true });
+      vp.removeEventListener('touchstart', onTouchStart, { capture: true });
+      vp.removeEventListener('touchmove', onTouchMove, { capture: true });
+      window.removeEventListener('keydown', onKeyDown, true);
     };
   }, [getViewport]);
 
