@@ -23,11 +23,22 @@ interface UseChatScrollReturn {
 /**
  * 聊天区统一滚动控制 hook
  *
- * 行为约定:
- * - AI 回答期间(isLoading=true): 自动跟随底部,用户向上滚立即停止跟随
- * - AI 回答结束后: 完全交还控制权给用户,不再有任何自动滚动
- * - scrollToMessage / scrollToElement: 立即关闭跟随,确保跳转不被回弹
- * - 对齐方式默认 'top-third': 目标第一行落在可见区顶部下方 1/3 处
+ * 状态机: followMode = 'auto' | 'manual'
+ * - auto: 任何 DOM 增高(ResizeObserver)都续滚到底
+ * - manual: 保留用户当前位置,新内容到达不打扰
+ *
+ * 进入 auto:
+ * - isLoading false→true (新一轮开始,同时触底一次)
+ * - scrollToBottom() 调用
+ * - 用户主动滚回距底 ≤ 64px (handleScroll 反向提升)
+ *
+ * 进入 manual:
+ * - 用户 wheel 向上 / touchmove 向下拖 / 按 PageUp/ArrowUp/Home (capture 阶段监听,只有用户能触发)
+ * - scrollToMessage / scrollToElement (跳转防回弹)
+ *
+ * 不改变状态: 程序滚动(打 programmaticRef 标志)、ResizeObserver 续滚、isLoading true→false
+ *
+ * 对齐方式默认 'top-third': 目标第一行落在可见区顶部下方 1/3 处
  */
 export function useChatScroll({
   scrollAreaRef,

@@ -54,7 +54,7 @@
     - `useImageAttachment.ts` — 图片附件（base64、粘贴、预览）
     - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应、斜杠命令拦截
     - `useSlashCommands.ts` — 斜杠命令检测、过滤、菜单控制
-    - `useChatScroll.ts` — 统一滚动控制（AI 回答期间自动跟随、用户向上滚停止、searchToMessage/scrollToElement）
+    - `useChatScroll.ts` — 统一滚动控制（followMode 状态机 auto/manual，wheel/touch/keydown 判定用户介入，ResizeObserver 续滚，scrollToMessage/scrollToElement）
     - `useMessageSearch.ts` — 消息搜索（文本匹配、高亮、激活项追踪）
     - `useSubAgentMessages.ts` — 子 Agent 消息流处理
     - `useTaskListAggregator.ts` — 流式 task_summary 维护（监听 messages，签名比较防抖，把吸附位置随最后一次 Task* 调用迁移）
