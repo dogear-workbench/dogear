@@ -65,16 +65,10 @@ export function useChatScroll({
     }
   };
 
-  // AI 回答期间启用自动跟随;结束时立即关闭
+  // ResizeObserver 随 hook 生命周期存亡，followMode=auto 时续滚
   useEffect(() => {
-    if (!isLoading) {
-      setFollowMode('manual');
-      return;
-    }
-    setFollowMode('auto');
     const vp = getViewport();
     if (!vp) return;
-    scrollViewportTo(vp.scrollHeight, 'instant'); // 进入回答态立即触底一次
     const content = vp.firstElementChild;
     if (!content) return;
     const obs = new ResizeObserver(() => {
@@ -84,6 +78,15 @@ export function useChatScroll({
     });
     obs.observe(content);
     return () => obs.disconnect();
+  }, [getViewport]);
+
+  // isLoading false→true 时切换到自动跟随并触底一次；true→false 不做任何动作
+  useEffect(() => {
+    if (isLoading) {
+      setFollowMode('auto');
+      const vp = getViewport();
+      if (vp) scrollViewportTo(vp.scrollHeight, 'instant');
+    }
   }, [isLoading, getViewport]);
 
   // Task 2-3 会重写：用户介入判定迁移到 wheel/touch/keydown，本函数只负责 UI 标志
