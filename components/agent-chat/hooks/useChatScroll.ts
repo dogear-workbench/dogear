@@ -17,6 +17,7 @@ interface UseChatScrollReturn {
   scrollToMessage: (messageIndex: number, opts?: ScrollOptions) => void;
   scrollToElement: (el: HTMLElement, opts?: ScrollOptions) => void;
   handleScroll: () => void;
+  isFollowing: () => boolean;
 }
 
 /**
@@ -204,5 +205,6 @@ export function useChatScroll({
     scrollToMessage,
     scrollToElement,
     handleScroll,
+    isFollowing: () => followModeRef.current === 'auto',
   };
 }

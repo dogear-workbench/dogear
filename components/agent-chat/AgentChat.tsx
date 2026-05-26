@@ -129,6 +129,7 @@ export function AgentChat({
     scrollToMessage,
     scrollToElement,
     handleScroll,
+    isFollowing,
   } = useChatScroll({ scrollAreaRef, isLoading });
 
   // 事件监听（完成、权限、AskUser、通知）
@@ -139,8 +140,9 @@ export function AgentChat({
     setIsLoading,
     setPermissionMode,
     onScrollToAction: () => {
-      // 权限请求/AskUser 到达时，延迟等 DOM 更新完成后滚到底部
-      requestAnimationFrame(() => scrollToBottom('smooth'));
+      requestAnimationFrame(() => {
+        if (isFollowing()) scrollToBottom('smooth');
+      });
     },
   });
 
