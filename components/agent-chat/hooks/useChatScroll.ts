@@ -89,17 +89,53 @@ export function useChatScroll({
     }
   }, [isLoading, getViewport]);
 
-  // Task 2-3 会重写：用户介入判定迁移到 wheel/touch/keydown，本函数只负责 UI 标志
+  // 用户介入判定：wheel/touch/keydown（浏览器因内容增长不会触发这些）
+  useEffect(() => {
+    const vp = getViewport();
+    if (!vp) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY < 0) setFollowMode('manual');
+    };
+
+    let touchStartY: number | null = null;
+    const onTouchStart = (e: TouchEvent) => {
+      touchStartY = e.touches[0]?.clientY ?? null;
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      if (touchStartY === null) return;
+      const y = e.touches[0]?.clientY ?? 0;
+      if (y - touchStartY > 4) setFollowMode('manual');
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!vp.contains(document.activeElement) && document.activeElement !== document.body) return;
+      if (['PageUp', 'ArrowUp', 'Home'].includes(e.key)) setFollowMode('manual');
+    };
+
+    vp.addEventListener('wheel', onWheel, { passive: true });
+    vp.addEventListener('touchstart', onTouchStart, { passive: true });
+    vp.addEventListener('touchmove', onTouchMove, { passive: true });
+    window.addEventListener('keydown', onKeyDown);
+
+    return () => {
+      vp.removeEventListener('wheel', onWheel);
+      vp.removeEventListener('touchstart', onTouchStart);
+      vp.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [getViewport]);
+
   const handleScroll = useCallback(() => {
+    if (programmaticRef.current) return;
     const vp = getViewport();
     if (!vp) return;
     const distance = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-    const atBottom = distance <= 4;
     setShowScrollBtn(distance >= 50);
-    if (isLoading) {
-      setFollowMode(atBottom ? 'auto' : 'manual');
+    if (followModeRef.current === 'manual' && distance <= 64) {
+      setFollowMode('auto');
     }
-  }, [getViewport, isLoading]);
+  }, [getViewport]);
 
   const scrollToBottom = useCallback(
     (behavior: ScrollBehavior = 'smooth') => {
