@@ -33,11 +33,8 @@ export function useChatScroll({
   isLoading,
 }: UseChatScrollOptions): UseChatScrollReturn {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
-  // Task 1: 新状态机基础——followModeRef 是目标状态，followRef 是向下兼容的镜像（Task 4 删除）
   const followModeRef = useRef<'auto' | 'manual'>('manual');
   const programmaticRef = useRef(false);
-  // followRef 保留兼容语义：true ↔ followModeRef='auto'，Task 4 删除
-  const followRef = useRef(false);
 
   const getViewport = useCallback((): HTMLElement | null => {
     return (
@@ -49,7 +46,6 @@ export function useChatScroll({
 
   const setFollowMode = (mode: 'auto' | 'manual') => {
     followModeRef.current = mode;
-    followRef.current = mode === 'auto';
   };
 
   const scrollViewportTo = (top: number, behavior: ScrollBehavior) => {
