@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ChevronDown, GitBranch, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
@@ -196,6 +196,23 @@ export function AgentChat({
     setPendingImages: imageAttachment.setPendingImages,
   });
 
+  // 权限/AskUser 响应后恢复自动跟随
+  const handlePermissionResolvedWithScroll = useCallback(
+    async (...args: Parameters<typeof sendMessage.handlePermissionResolved>) => {
+      await sendMessage.handlePermissionResolved(...args);
+      requestAnimationFrame(() => scrollToBottom('smooth'));
+    },
+    [sendMessage.handlePermissionResolved, scrollToBottom]
+  );
+
+  const handleAskUserResolvedWithScroll = useCallback(
+    async (...args: Parameters<typeof sendMessage.handleAskUserResolved>) => {
+      await sendMessage.handleAskUserResolved(...args);
+      requestAnimationFrame(() => scrollToBottom('smooth'));
+    },
+    [sendMessage.handleAskUserResolved, scrollToBottom]
+  );
+
   // 消息流处理
   useSessionMessages({
     sessionId,
@@ -318,8 +335,8 @@ export function AgentChat({
               messageIndex={index}
               onFork={sendMessage.handleFork}
               sessionId={sessionId}
-              onPermissionResolved={sendMessage.handlePermissionResolved}
-              onAskUserResolved={sendMessage.handleAskUserResolved}
+              onPermissionResolved={handlePermissionResolvedWithScroll}
+              onAskUserResolved={handleAskUserResolvedWithScroll}
               searchQuery={search.query || undefined}
               activeMatchId={search.activeMatch?.id ?? null}
             />
