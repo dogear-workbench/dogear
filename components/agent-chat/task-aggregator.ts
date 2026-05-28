@@ -8,20 +8,23 @@ interface TaskState {
   createdAt: number;
 }
 
-// SDK TaskCreate 返回 { task: { id, subject } }，但经 transformers 后会被 JSON.stringify 成字符串。
-// 这里同时支持对象形态（live 流）和字符串形态（历史回放）。
+// SDK TaskCreate 类型签名是 { task: { id, subject } }，但 tool_result 实际下发的是人类可读字符串：
+//   "Task #<id> created successfully: <subject>"
+// 经主进程/transformers 拍扁后到这里永远是 string。对象/JSON 分支保留作未来兼容。
 function extractCreateTaskId(output: any): string | undefined {
   if (!output) return undefined;
   if (typeof output === 'object') {
     return output?.task?.id || output?.taskId || output?.id;
   }
   if (typeof output === 'string') {
+    const m = output.match(/Task\s+#([A-Za-z0-9_-]+)\s+created/i);
+    if (m) return m[1];
     try {
       const parsed = JSON.parse(output);
       return parsed?.task?.id || parsed?.taskId || parsed?.id;
     } catch {
-      const m = output.match(/"id"\s*:\s*"([^"]+)"/);
-      return m ? m[1] : undefined;
+      const jm = output.match(/"id"\s*:\s*"([^"]+)"/);
+      return jm ? jm[1] : undefined;
     }
   }
   return undefined;
