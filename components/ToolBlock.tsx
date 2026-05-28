@@ -4,7 +4,6 @@ import { Check, X, Loader2, FileText, FolderSearch, Search, Globe, Link2, Bot, C
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
-import { useSettingsStore } from '@/stores/settings-store';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import {
   ToolDetailShell,
@@ -38,29 +37,28 @@ interface ToolBlockProps {
 interface ToolIconSpec {
   Icon: LucideIcon;
   className: string;
-  bg: string;
 }
 
 const TOOL_ICONS: Record<string, ToolIconSpec> = {
-  Read: { Icon: FileText, className: 'text-sky-600', bg: 'border-sky-200 bg-sky-50' },
-  Glob: { Icon: FolderSearch, className: 'text-indigo-600', bg: 'border-indigo-200 bg-indigo-50' },
-  Grep: { Icon: Search, className: 'text-violet-600', bg: 'border-violet-200 bg-violet-50' },
-  WebSearch: { Icon: Globe, className: 'text-cyan-600', bg: 'border-cyan-200 bg-cyan-50' },
-  WebFetch: { Icon: Link2, className: 'text-cyan-600', bg: 'border-cyan-200 bg-cyan-50' },
-  Task: { Icon: Bot, className: 'text-purple-600', bg: 'border-purple-200 bg-purple-50' },
-  TodoWrite: { Icon: ClipboardList, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
-  TaskList: { Icon: ClipboardList, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
-  TaskGet: { Icon: ClipboardList, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
-  AskUserQuestion: { Icon: HelpCircle, className: 'text-blue-600', bg: 'border-blue-200 bg-blue-50' },
-  Skill: { Icon: Zap, className: 'text-amber-600', bg: 'border-amber-200 bg-amber-50' },
+  Read: { Icon: FileText, className: 'text-sky-600' },
+  Glob: { Icon: FolderSearch, className: 'text-indigo-600' },
+  Grep: { Icon: Search, className: 'text-violet-600' },
+  WebSearch: { Icon: Globe, className: 'text-cyan-600' },
+  WebFetch: { Icon: Link2, className: 'text-cyan-600' },
+  Task: { Icon: Bot, className: 'text-purple-600' },
+  TodoWrite: { Icon: ClipboardList, className: 'text-amber-600' },
+  TaskList: { Icon: ClipboardList, className: 'text-amber-600' },
+  TaskGet: { Icon: ClipboardList, className: 'text-amber-600' },
+  AskUserQuestion: { Icon: HelpCircle, className: 'text-blue-600' },
+  Skill: { Icon: Zap, className: 'text-amber-600' },
 };
 
 function getToolIcon(toolName: string): ToolIconSpec {
   if (TOOL_ICONS[toolName]) return TOOL_ICONS[toolName];
   if (toolName.startsWith('mcp__')) {
-    return { Icon: Plug, className: 'text-teal-600', bg: 'border-teal-200 bg-teal-50' };
+    return { Icon: Plug, className: 'text-teal-600' };
   }
-  return { Icon: Wrench, className: 'text-slate-600', bg: 'border-slate-200 bg-slate-50' };
+  return { Icon: Wrench, className: 'text-slate-600' };
 }
 
 
@@ -203,7 +201,6 @@ export function ToolBlock({
   citations,
   className,
 }: ToolBlockProps) {
-  const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
   const actualStatus: ToolStatus = isError ? "error" : status;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
@@ -236,12 +233,8 @@ export function ToolBlock({
     return null;
   })();
 
-  const { Icon: ToolIconComp, className: iconColor, bg: iconBg } = iconSpec;
-  const iconNode = (
-    <span className={cn('flex items-center justify-center w-5 h-5 rounded border', iconBg)}>
-      <ToolIconComp className={cn('w-3 h-3', iconColor)} />
-    </span>
-  );
+  const { Icon: ToolIconComp, className: iconColor } = iconSpec;
+  const iconNode = <ToolIconComp className={cn('w-4 h-4', iconColor)} />;
 
   return (
     <CollapsibleBlock
@@ -252,7 +245,7 @@ export function ToolBlock({
         actualStatus === 'running' && 'text-sky-600',
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
-      previewLines={displayMode === 'compact' ? 0 : 2}
+      previewLines={0}
       defaultOpen={false}
       className={className}
     >

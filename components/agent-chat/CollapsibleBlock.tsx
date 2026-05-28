@@ -10,6 +10,8 @@ interface CollapsibleBlockProps {
   title: string;
   /** 标题右侧的状态指示 */
   statusIcon?: ReactNode;
+  /** 标题右侧的额外操作（在 statusIcon 之前），用 span+onClick 避免按钮嵌套 */
+  headerActions?: ReactNode;
   /** 默认预览行数（超出部分渐隐） */
   previewLines?: number;
   /** 子内容 */
@@ -33,6 +35,7 @@ export function CollapsibleBlock({
   icon,
   title,
   statusIcon,
+  headerActions,
   previewLines = 3,
   children,
   className,
@@ -73,7 +76,10 @@ export function CollapsibleBlock({
         <span className={cn('text-sm text-muted-foreground truncate', titleClassName)}>
           {title}
         </span>
-        {statusIcon && <span className="ml-auto flex-shrink-0">{statusIcon}</span>}
+        {headerActions && <span className="ml-auto flex-shrink-0">{headerActions}</span>}
+        {statusIcon && (
+          <span className={cn('flex-shrink-0', !headerActions && 'ml-auto')}>{statusIcon}</span>
+        )}
       </button>
 
       {/* 内容区域：previewLines=0 且收起时不渲染任何内容 */}

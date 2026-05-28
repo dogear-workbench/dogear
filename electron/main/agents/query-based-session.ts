@@ -27,6 +27,43 @@ const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
 function isSubAgentToolName(name: string | undefined | null): boolean {
   return !!name && SUBAGENT_TOOL_NAMES.has(name);
 }
+
+/**
+ * 日志友好的 SDK 消息序列化：
+ * - SessionStart hook 注入的 additionalContext 经常是几 KB 的 skill 全文，
+ *   完整打印会刷屏。这里对 hook_started / hook_response 只打摘要。
+ * - 其它消息超过 2KB 也做整体截断，保留首尾便于排查。
+ */
+function formatSdkMessageForLog(message: SDKMessage): string {
+  const MAX_LEN = 2000;
+  if (message.type === 'system') {
+    const sub = (message as { subtype?: string }).subtype;
+    if (sub === 'hook_started' || sub === 'hook_progress' || sub === 'hook_response') {
+      const m = message as Record<string, unknown>;
+      const summary: Record<string, unknown> = {
+        type: 'system',
+        subtype: sub,
+        hook_name: m.hook_name,
+        hook_event: m.hook_event,
+        hook_id: m.hook_id,
+        session_id: m.session_id,
+      };
+      if (sub === 'hook_response') {
+        summary.outcome = m.outcome;
+        summary.exit_code = m.exit_code;
+        const out = typeof m.output === 'string' ? m.output : '';
+        summary.output_chars = out.length;
+        if (out.length > 0) {
+          summary.output_preview = out.slice(0, 200) + (out.length > 200 ? '…' : '');
+        }
+      }
+      return JSON.stringify(summary, null, 2);
+    }
+  }
+  const full = JSON.stringify(message, null, 2);
+  if (full.length <= MAX_LEN) return full;
+  return `${full.slice(0, MAX_LEN)}\n... [truncated ${full.length - MAX_LEN} chars]`;
+}
 import { mainLogger } from './logger.js';
 import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
@@ -739,7 +776,7 @@ export class QueryBasedSession extends EventEmitter {
           // 其他非流式消息：输出原始数据
           this.logger.info('');
           this.logger.info(`📨 [${messageCount}] SDK 消息 [${message.type}]${isReplayMsg ? ' (重放)' : ''}`);
-          this.logger.info('原始数据:', JSON.stringify(message, null, 2));
+          this.logger.info('原始数据:', formatSdkMessageForLog(message));
           this.logger.info('');
         }
 

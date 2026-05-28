@@ -32,7 +32,6 @@
   - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）
   - `SearchBar.tsx` — 搜索浮条（Ctrl+F 快捷键、文本匹配高亮、激活项自动滚动）
   - `ThinkingBlock.tsx` — 思考块（compact/detailed 两种展示模式）
-  - `ToolBlock.tsx` — 工具块(含参数摘要、compact 模式 20px 胶囊行)
   - `StreamingIndicator.tsx` — 运行状态指示器（思考中/执行工具/生成中）
   - `AskUserQuestionCard.tsx` — AskUser 问题卡片（单选/多选）
   - `PermissionRequestCard.tsx` — 权限请求卡片（允许/拒绝/始终允许）
@@ -64,6 +63,7 @@
     - `GlobRenderer.tsx` — Glob 工具：pattern 徽章 + 匹配文件路径列表
     - `GrepRenderer.tsx` — Grep 工具：pattern 徽章 + 命中行 + 关键词高亮
     - `SkillRenderer.tsx` — Skill 工具：lucide Zap 琥珀色图标 + Skill 名 + 参数 + 输出
+- `ToolBlock.tsx` — 工具块路由组件（顶层 components/，按工具名分发到专属 renderer 或 ToolDetailShell；图标走 lucide 简约样式，无边框包裹）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）

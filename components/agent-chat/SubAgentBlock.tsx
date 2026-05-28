@@ -3,7 +3,6 @@ import { Bot, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useUIStore } from '@/stores/ui-store';
-import { useSettingsStore } from '@/stores/settings-store';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import type { ContentBlock } from './types';
 
@@ -13,7 +12,6 @@ import type { ContentBlock } from './types';
  * 不主动注册到 ui-store，子代理列表由 IPC 事件驱动
  */
 export function SubAgentBlock({ block }: { block: ContentBlock }) {
-  const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
   const hasOutput = block.toolOutput !== undefined || !!block.subAgentResultText;
   const isCompleted = block.subAgentStatus === 'completed' || hasOutput;
   const isFailed = block.subAgentStatus === 'failed' || block.isError;
@@ -23,7 +21,11 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
   const model: string | undefined = block.toolInput?.model;
 
   // 查看详情：按需注册到 store 并打开面板
-  const handleViewDetail = () => {
+  const handleViewDetail = (e?: React.MouseEvent | React.KeyboardEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
     if (!block.subAgentId) return;
     const store = useUIStore.getState();
     const conv = useConversationStore.getState().selectedConversation;
@@ -75,25 +77,36 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
     durationText,
   ].filter(Boolean).join(' · ');
 
+  const detailAction = block.subAgentId ? (
+    <span
+      role="button"
+      tabIndex={0}
+      onClick={handleViewDetail}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') handleViewDetail(e);
+      }}
+      className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 hover:bg-sky-50 rounded px-1.5 py-0.5 transition-colors cursor-pointer"
+      title="查看子代理详情"
+    >
+      <ExternalLink className="w-3.5 h-3.5" />
+      详情
+    </span>
+  ) : null;
+
   return (
     <CollapsibleBlock
-      icon={
-        <span className="flex items-center justify-center w-5 h-5 rounded border border-blue-200 bg-blue-50">
-          <Bot className="w-3 h-3 text-blue-600" />
-        </span>
-      }
+      icon={<Bot className="w-4 h-4 text-blue-600" />}
       title={titleParts.join(' ')}
       titleClassName={isFailed ? 'text-red-600' : isRunning ? 'text-blue-600' : undefined}
       statusIcon={statusIcon}
-      previewLines={displayMode === 'compact' ? 0 : 2}
+      headerActions={detailAction}
+      previewLines={0}
     >
       <div className="space-y-1.5 text-xs rounded-md bg-muted/20 px-2.5 py-2">
-        {/* 指标 */}
         {metricsText && (
           <div className="text-muted-foreground text-[10px]">{metricsText}</div>
         )}
 
-        {/* 执行结果（不截断，CollapsibleBlock 自带渐隐折叠） */}
         {block.subAgentResultText && (
           <div className="text-muted-foreground whitespace-pre-wrap break-all">
             <MarkdownRenderer content={block.subAgentResultText} className="text-xs" />
@@ -108,17 +121,9 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
           </div>
         )}
 
-        {/* 查看详情 */}
         {block.subAgentId && (
-          <div className="flex items-center justify-between pt-1 border-t border-border/30">
+          <div className="pt-1 border-t border-border/30">
             <span className="text-[10px] text-muted-foreground/60">ID: {block.subAgentId.substring(0, 12)}</span>
-            <button
-              onClick={handleViewDetail}
-              className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700 cursor-pointer"
-            >
-              <ExternalLink className="w-3 h-3" />
-              查看详情
-            </button>
           </div>
         )}
       </div>
