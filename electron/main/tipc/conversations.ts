@@ -4,6 +4,7 @@ import { deleteSession } from '@anthropic-ai/claude-agent-sdk';
 import * as conversationService from '../services/conversation-service.js';
 import * as treeService from '../services/conversation-tree-service.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
+import { deleteUsage } from '../services/usage/usage-service.js';
 import { getClaudeConfigDir } from './agent.js';
 
 const t = tipc.create();
@@ -118,6 +119,8 @@ export const conversationsRouter = {
         }
 
         await conversationService.deleteConversation(input.workspaceId, input.conversationId);
+        // 清理用量 JSONL（失败静默，不阻塞删除）
+        await deleteUsage(input.conversationId).catch(() => {});
         // 同步从树中移除
         await treeService.removeConversationFromTree(input.workspaceId, input.conversationId);
         return { success: true, error: undefined };

@@ -8,6 +8,8 @@ import fs from 'fs/promises';
 import * as articleService from '../services/article-service.js';
 import * as workspaceFsService from '../services/workspace-fs-service.js';
 import * as conversationTreeService from '../services/conversation-tree-service.js';
+import * as conversationService from '../services/conversation-service.js';
+import { deleteUsage } from '../services/usage/usage-service.js';
 import { scanOrphanWorkspaces, importOrphanToWorkspace } from '../services/workspace-recovery-service.js';
 import type { WorkspaceFileNode } from '../types.js';
 
@@ -94,6 +96,9 @@ export const workspaceRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
+        // 删除前遍历工作区下所有对话，联动清理其 usage JSONL（失败静默）
+        const convs = await conversationService.getByWorkspaceId(input.workspaceId, { includeArchived: true });
+        await Promise.all(convs.map(c => deleteUsage(c.id).catch(() => {})));
         await workspaceJsonService.remove(input.workspaceId);
         return { success: true };
       } catch (error) {
