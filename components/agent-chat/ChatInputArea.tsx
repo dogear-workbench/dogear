@@ -22,6 +22,7 @@ import { useReferenceStore } from '@/stores/reference-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
+import { UsageBadge } from './usage-badge/UsageBadge';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
 // 权限模式 → 边框/图标颜色映射
@@ -75,6 +76,7 @@ interface ChatInputAreaProps {
   isLoading: boolean;
   isSessionReady: boolean;
   sessionId: string | null;
+  conversationId: string | null;
   placeholder: string;
   showStatusHint: boolean;
   currentTier?: 'haiku' | 'sonnet' | 'opus';
@@ -107,6 +109,7 @@ export function ChatInputArea({
   isLoading,
   isSessionReady,
   sessionId,
+  conversationId,
   placeholder,
   showStatusHint,
   currentTier,
@@ -437,6 +440,9 @@ export function ChatInputArea({
                   </InputGroupButton>
                 </>
               )}
+
+              {/* 上下文用量徽章 */}
+              <UsageBadge conversationId={conversationId} />
 
               {/* 发送/停止按钮（右侧） */}
               <div className="ml-auto">

@@ -449,6 +449,7 @@ export function AgentChat({
         isLoading={isLoading}
         isSessionReady={isSessionReady}
         sessionId={sessionId}
+        conversationId={conversationId}
         placeholder={placeholder}
         showStatusHint={showStatusHint}
         currentTier={sendMessage.currentTier}
