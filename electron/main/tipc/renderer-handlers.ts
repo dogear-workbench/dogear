@@ -175,6 +175,9 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
+  // 对话用量有新条目写入（Task 6 写完后广播，渲染层收到后重新 getUsage）
+  usageEntryAdded: (data: { conversationId: string }) => void;
+
   // 微信 Bot 自动初始化数据（startPolling 成功后推送）
   wechatBotAutoInit: (data: {
     status: {
