@@ -32,8 +32,7 @@ export function useConversationUsage(conversationId: string | null) {
     let cancelled = false;
 
     const fetchUsage = () => {
-      client.getUsage
-        .invoke({ conversationId })
+      client.getUsage({ conversationId })
         .then(data => {
           if (!cancelled) setUsage(data);
         })
