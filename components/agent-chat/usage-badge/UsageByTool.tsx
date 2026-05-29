@@ -31,13 +31,13 @@ export function UsageByTool({ usage }: { usage: ConversationUsage }) {
               <span className="tabular-nums text-muted-foreground shrink-0">{count} ×</span>
             </div>
           ))}
-          {hidden > 0 && (
+          {tools.length > 5 && (
             <button
               type="button"
-              onClick={() => setExpanded(true)}
+              onClick={() => setExpanded(e => !e)}
               className="text-muted-foreground hover:text-foreground"
             >
-              （+{hidden} 个，展开）
+              {expanded ? '（收起）' : `（+${hidden} 个，展开）`}
             </button>
           )}
         </>

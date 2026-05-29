@@ -60,13 +60,13 @@ export function UsageEntryRow({ entry }: { entry: ConversationUsageEntry }) {
               缓存写入 5m {formatTokens(cc.ephemeral5mInputTokens)} · 1h {formatTokens(cc.ephemeral1hInputTokens)}
             </div>
           )}
-          {entry.subagentCalls?.map((s, i) => (
-            <div key={i} className="tabular-nums">
+          {entry.subagentCalls?.map(s => (
+            <div key={s.agentId} className="tabular-nums">
               子代理 {s.agentId}：{formatTokens(s.totalTokens)} tokens · {s.totalToolUseCount} 次工具
             </div>
           ))}
-          {entry.permissionDenials?.map((d, i) => (
-            <div key={i}>拒绝：{d.tool_name}</div>
+          {entry.permissionDenials?.map(d => (
+            <div key={d.tool_use_id}>拒绝：{d.tool_name}</div>
           ))}
         </div>
       )}

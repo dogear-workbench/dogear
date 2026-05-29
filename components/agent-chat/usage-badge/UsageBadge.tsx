@@ -23,6 +23,7 @@ export function UsageBadge({ conversationId }: { conversationId: string | null }
   const ratio = limit > 0 ? Math.min(used / limit, 1) : 0;
   const barColor = ratio > 0.85 ? 'bg-red-500' : ratio > 0.6 ? 'bg-amber-500' : 'bg-muted-foreground';
 
+  // 固定（pinned）时拦截 hover 关闭，只能再次点击徽章解除
   const handleOpenChange = (o: boolean) => {
     if (!pinned) setOpen(o);
   };
