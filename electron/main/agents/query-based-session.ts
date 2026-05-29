@@ -16,7 +16,7 @@ import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
 import { appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker } from '../services/usage/usage-service.js';
 import { extractUsageEntry } from '../services/usage/usage-extractor.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
-import type { CompactMarker } from '../types.js';
+import type { CompactMarker, ConversationUsageEntry } from '../types.js';
 import type {
   SDKUserMessage, SDKMessage, SDKUserMessageReplay, CanUseTool, PermissionResult, PermissionMode,
   AgentDefinition, HookEvent, HookCallbackMatcher,
@@ -907,6 +907,7 @@ export class QueryBasedSession extends EventEmitter {
             this.emit('complete', enriched);
             this.status = SessionStatus.IDLE;
           } else {
+            this.currentTurnMessages = [];  // rate_limited / error 同样结束本轮，清空快照避免污染下一轮工具计数
             // rate_limited / error：作为错误事件发送
             this.emit('error', {
               type: 'error',
@@ -1867,7 +1868,7 @@ export class QueryBasedSessionManager extends EventEmitter {
       this.broadcaster?.(sessionId, 'complete', result);
     });
 
-    session.on('usage', ({ conversationId, entry }: { conversationId?: string; entry: import('../types.js').ConversationUsageEntry }) => {
+    session.on('usage', ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
       if (!conversationId) return;
       appendUsageEntry(conversationId, entry).catch(() => {});
       broadcastUsageEntryAdded(conversationId);
