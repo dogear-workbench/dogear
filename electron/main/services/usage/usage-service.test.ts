@@ -1,0 +1,99 @@
+import { describe, it, expect, afterAll, mock } from 'bun:test';
+import path from 'path';
+import os from 'os';
+
+// bun test 环境中没有 Electron，mock electron 模块使 getConfigDir() 回退到 tmpdir
+const tmpBase = path.join(os.tmpdir(), `dogear-usage-test-${Date.now()}`);
+mock.module('electron', () => ({
+  default: { app: { isPackaged: false, getPath: () => tmpBase } },
+}));
+
+// mock 必须在 import 服务之前完成（静态导入会在执行前求值，用动态 import 绕过）
+const { appendEntry, appendCompactMarker, readUsage, deleteUsage } = await import('./usage-service.js');
+import type { ConversationUsageEntry, CompactMarker } from '../../types.js';
+
+const TEST_ID = `__usage_test__${Date.now()}`;
+
+function makeEntry(overrides: Partial<ConversationUsageEntry> = {}): ConversationUsageEntry {
+  return {
+    uuid: 'test-uuid-1',
+    turnIndex: 0,
+    timestamp: Date.now(),
+    durationMs: 100,
+    durationApiMs: 90,
+    numTurns: 1,
+    isError: false,
+    totalCostUsd: 0.001,
+    usage: {
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheCreationInputTokens: 10,
+      cacheReadInputTokens: 5,
+    },
+    modelUsage: {},
+    toolCalls: [{ name: 'Bash', count: 2 }],
+    ...overrides,
+  };
+}
+
+afterAll(async () => {
+  await deleteUsage(TEST_ID);
+});
+
+describe('usage-service', () => {
+  it('appends entries and compact marker, reads back correctly', async () => {
+    await appendEntry(TEST_ID, makeEntry({
+      uuid: 'e1', turnIndex: 0, totalCostUsd: 0.001,
+      usage: { inputTokens: 100, outputTokens: 50, cacheCreationInputTokens: 10, cacheReadInputTokens: 5 },
+      toolCalls: [{ name: 'Bash', count: 2 }],
+    }));
+    await appendEntry(TEST_ID, makeEntry({
+      uuid: 'e2', turnIndex: 1, totalCostUsd: 0.002,
+      usage: { inputTokens: 200, outputTokens: 80, cacheCreationInputTokens: 0, cacheReadInputTokens: 20 },
+      toolCalls: [{ name: 'Read', count: 3 }],
+    }));
+
+    const marker: CompactMarker = {
+      uuid: 'c1',
+      timestamp: Date.now(),
+      afterTurnIndex: 1,
+      trigger: 'manual',
+      preTokens: 12000,
+    };
+    await appendCompactMarker(TEST_ID, marker);
+
+    const usage = await readUsage(TEST_ID);
+
+    expect(usage.entries.length).toBe(2);
+    expect(usage.compactMarkers.length).toBe(1);
+    expect(usage.totals.turnCount).toBe(2);
+    expect(usage.totals.inputTokens).toBe(300);          // 100 + 200
+    expect(usage.totals.outputTokens).toBe(130);         // 50 + 80
+    expect(usage.totals.cacheCreationInputTokens).toBe(10);
+    expect(usage.totals.cacheReadInputTokens).toBe(25);  // 5 + 20
+    expect(usage.totals.totalCostUsd).toBeCloseTo(0.003);
+    expect(usage.totals.toolCallCount).toBe(5);          // 2 + 3
+
+    // kind 字段不应泄漏到 entries / compactMarkers
+    expect((usage.entries[0] as any).kind).toBeUndefined();
+    expect((usage.compactMarkers[0] as any).kind).toBeUndefined();
+  });
+
+  it('returns empty usage for nonexistent conversationId', async () => {
+    const result = await readUsage('__nonexistent_conversation__');
+    expect(result.entries.length).toBe(0);
+    expect(result.totals.turnCount).toBe(0);
+    expect(result.totals.inputTokens).toBe(0);
+  });
+
+  it('deleteUsage removes the file and readUsage returns empty afterward', async () => {
+    await deleteUsage(TEST_ID);
+    const after = await readUsage(TEST_ID);
+    expect(after.entries.length).toBe(0);
+    expect(after.totals.turnCount).toBe(0);
+  });
+
+  it('deleteUsage on nonexistent file does not throw', async () => {
+    await expect(deleteUsage('__never_existed__')).resolves.toBeUndefined();
+  });
+});
