@@ -8,6 +8,8 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
+import { readUsage } from './usage/usage-service.js';
+import type { ConversationUsageEntry } from '../types.js';
 
 const { app } = electron;
 
@@ -30,6 +32,14 @@ export interface ConversationIndex {
   archivedAt?: string;
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
+  usageSummary?: {
+    turnCount: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCacheReadTokens: number;
+    lastContextSize?: number;
+    lastContextWindow?: number;
+  };
 }
 
 /** 前端兼容格式（snake_case + camelCase 双格式） */
@@ -56,6 +66,14 @@ export interface ConversationCompat {
   archivedAt: string | undefined;
   createdAt: string;
   updatedAt: string;
+  usageSummary?: {
+    turnCount: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+    totalCacheReadTokens: number;
+    lastContextSize?: number;
+    lastContextWindow?: number;
+  };
 }
 
 /** 每工作区的 conversations.json 文件结构 */
@@ -480,7 +498,79 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     archivedAt: conv.archivedAt,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
+    usageSummary: conv.usageSummary,
   };
+}
+
+// ============================================================
+// 用量汇总
+// ============================================================
+
+function pickMainContextWindow(entry: ConversationUsageEntry): number | undefined {
+  const models = Object.values(entry.modelUsage ?? {});
+  if (models.length === 0) return undefined;
+  const main = models.reduce((a, b) => (b.inputTokens > a.inputTokens ? b : a));
+  return main.contextWindow || undefined;
+}
+
+/**
+ * 将一条用量记录增量合并到对话索引的 usageSummary 字段。
+ * 不更新 updatedAt（用量采集是后台行为，不影响排序）。
+ */
+export async function applyUsageSummary(
+  conversationId: string,
+  entry: ConversationUsageEntry,
+): Promise<void> {
+  const found = await getByIdGlobal(conversationId);
+  if (!found) return;
+  const { workspaceId } = found;
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[conversationId];
+  if (!conv) return;
+
+  const prev = conv.usageSummary;
+  const lastContextSize =
+    entry.usage.inputTokens + entry.usage.cacheReadInputTokens + entry.usage.cacheCreationInputTokens;
+  const lastContextWindow = pickMainContextWindow(entry);
+
+  conv.usageSummary = {
+    turnCount: (prev?.turnCount ?? 0) + 1,
+    totalInputTokens: (prev?.totalInputTokens ?? 0) + entry.usage.inputTokens,
+    totalOutputTokens: (prev?.totalOutputTokens ?? 0) + entry.usage.outputTokens,
+    totalCacheReadTokens: (prev?.totalCacheReadTokens ?? 0) + entry.usage.cacheReadInputTokens,
+    lastContextSize,
+    lastContextWindow,
+  };
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+/**
+ * 若 usageSummary.turnCount 与 JSONL 实际轮次不一致，则重建 summary。
+ * 懒触发：由 getUsage IPC handler 调用，fire-and-forget。
+ */
+export async function recomputeUsageSummaryIfStale(conversationId: string): Promise<void> {
+  const found = await getByIdGlobal(conversationId);
+  if (!found) return;
+  const { workspaceId, conv } = found;
+  const usage = await readUsage(conversationId);
+  if ((conv.usageSummary?.turnCount ?? 0) === usage.totals.turnCount) return;
+
+  const file = await loadWorkspaceConversations(workspaceId);
+  const target = file.conversations[conversationId];
+  if (!target) return;
+
+  const lastEntry = usage.entries[usage.entries.length - 1];
+  target.usageSummary = {
+    turnCount: usage.totals.turnCount,
+    totalInputTokens: usage.totals.inputTokens,
+    totalOutputTokens: usage.totals.outputTokens,
+    totalCacheReadTokens: usage.totals.cacheReadInputTokens,
+    lastContextSize: lastEntry
+      ? lastEntry.usage.inputTokens + lastEntry.usage.cacheReadInputTokens + lastEntry.usage.cacheCreationInputTokens
+      : undefined,
+    lastContextWindow: lastEntry ? pickMainContextWindow(lastEntry) : undefined,
+  };
+  await saveWorkspaceConversations(workspaceId, file);
 }
 
 // ============================================================

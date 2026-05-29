@@ -78,6 +78,7 @@ import { app } from 'electron';
 import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
 import type { AppSettings, ModelProfile } from '../services/settings-types.js';
 import { appendPermissionAllowRules } from '../services/settings-service.js';
+import * as conversationService from '../services/conversation-service.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
@@ -1871,6 +1872,7 @@ export class QueryBasedSessionManager extends EventEmitter {
     session.on('usage', ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
       if (!conversationId) return;
       appendUsageEntry(conversationId, entry).catch(() => {});
+      conversationService.applyUsageSummary(conversationId, entry).catch(() => {});
       broadcastUsageEntryAdded(conversationId);
     });
 
