@@ -10,7 +10,13 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { EventEmitter } from 'events';
+import { BrowserWindow } from 'electron';
+import { getRendererHandlers } from '@egoist/tipc/main';
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
+import { appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker } from '../services/usage/usage-service.js';
+import { extractUsageEntry } from '../services/usage/usage-extractor.js';
+import type { RendererHandlers } from '../tipc/renderer-handlers.js';
+import type { CompactMarker } from '../types.js';
 import type {
   SDKUserMessage, SDKMessage, SDKUserMessageReplay, CanUseTool, PermissionResult, PermissionMode,
   AgentDefinition, HookEvent, HookCallbackMatcher,
@@ -171,6 +177,8 @@ export class QueryBasedSession extends EventEmitter {
   // 当前 turn 的进行中消息快照（用于晚加入的渲染层重播）
   // turn 开始时积累，turn 完成（result 消息）时清空
   private currentTurnMessages: ExtendedSessionMessage[] = [];
+  // token 用量采集：当前 turn 索引（每次 result 消息后递增）
+  private usageTurnIndex = 0;
 
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
@@ -824,6 +832,23 @@ export class QueryBasedSession extends EventEmitter {
             replayMessages: replayCount
           });
 
+          // —— token 用量采集（fire-and-forget，绝不影响主流程）——
+          try {
+            const convId = this.config.conversationId;
+            if (convId) {
+              const entry = extractUsageEntry(
+                message,
+                this.currentTurnMessages,
+                this.usageTurnIndex,
+                this.currentActiveProfile?.opusModel,
+              );
+              this.usageTurnIndex += 1;
+              this.emit('usage', { conversationId: convId, entry });
+            }
+          } catch (err) {
+            this.logger.warn('用量采集失败（忽略）:', err);
+          }
+
           // 分类决策：优先 terminal_reason，兜底用旧的 subtype + is_error
           // 分类结果：'complete' | 'interrupted' | 'max_turns' | 'rate_limited' | 'error'
           let category: 'complete' | 'interrupted' | 'max_turns' | 'rate_limited' | 'error';
@@ -1200,6 +1225,17 @@ export class QueryBasedSession extends EventEmitter {
           const compactMsg = sdkMessage as any;
           const metadata = compactMsg.compact_metadata || {};
           this.logger.info('对话压缩完成:', metadata.trigger, '压缩前 tokens:', metadata.pre_tokens);
+          const convId = this.config.conversationId;
+          if (convId) {
+            const marker: CompactMarker = {
+              uuid: uuidv4(),
+              timestamp,
+              afterTurnIndex: this.usageTurnIndex,
+              trigger: metadata.trigger === 'manual' ? 'manual' : 'auto',
+              preTokens: metadata.pre_tokens ?? 0,
+            };
+            this.emit('compactMarker', { conversationId: convId, marker });
+          }
           return {
             type: 'compact_boundary',
             compactTrigger: metadata.trigger,
@@ -1758,6 +1794,17 @@ export class SessionLimitError extends Error {
   }
 }
 
+function broadcastUsageEntryAdded(conversationId: string): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      getRendererHandlers<RendererHandlers>(win.webContents).usageEntryAdded.send({ conversationId });
+    } catch {
+      // 单窗口失败不影响其他窗口
+    }
+  }
+}
+
 export class QueryBasedSessionManager extends EventEmitter {
   /**
    * 活跃会话上限（里程碑 1.5 Phase 2 Step A2.1）
@@ -1818,6 +1865,17 @@ export class QueryBasedSessionManager extends EventEmitter {
     session.on('complete', (result) => {
       this.emit('sessionComplete', sessionId, result);
       this.broadcaster?.(sessionId, 'complete', result);
+    });
+
+    session.on('usage', ({ conversationId, entry }: { conversationId?: string; entry: import('../types.js').ConversationUsageEntry }) => {
+      if (!conversationId) return;
+      appendUsageEntry(conversationId, entry).catch(() => {});
+      broadcastUsageEntryAdded(conversationId);
+    });
+
+    session.on('compactMarker', ({ conversationId, marker }: { conversationId?: string; marker: CompactMarker }) => {
+      if (!conversationId) return;
+      appendUsageCompactMarker(conversationId, marker).catch(() => {});
     });
 
     this.sessions.set(sessionId, session);
