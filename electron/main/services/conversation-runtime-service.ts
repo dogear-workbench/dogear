@@ -162,6 +162,7 @@ async function buildConversationSessionConfig(
     tempPrompt: conversation.tempPrompt,
     // 传入对话标题，新建 SDK 会话时跳过自动生成（resume 场景 SDK 内部忽略此字段）
     title: conversation.title,
+    conversationId,
   };
 }
 

@@ -117,6 +117,7 @@ export interface QueryBasedSessionConfig {
   tempPrompt?: string;               // 对话规则（持久绑定此对话）
   // 会话标题（用于 SDK 0.2.119+ 跳过自动生成，仅新建会话生效，resume 时持久化标题优先）
   title?: string;
+  conversationId?: string;           // 所属对话 ID，用于 token 用量采集落盘
 }
 
 /**
