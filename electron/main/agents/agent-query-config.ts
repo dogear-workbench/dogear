@@ -154,6 +154,12 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
     env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[subagentTier];
   }
 
+  // 1M 长上下文：把自动压缩窗口设为 900K（留 100K 缓冲给最后几轮 messages）
+  // 必须走环境变量，SDK 的 autoCompactWindow 属于 Settings 类型，设在 query Options 上会被忽略
+  if (activeProfile.enable1MContext) {
+    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '900000';
+  }
+
   return {
     env,
     effort: appSettings.ai.effort,
