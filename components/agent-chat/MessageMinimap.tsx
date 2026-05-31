@@ -3,6 +3,7 @@ import { Map as MapIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractMessagePreview } from './minimap-utils';
 import { isSdkInjectedUserMessage } from './utils';
+import { buildTurns } from './turns';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import type { Message } from './types';
@@ -15,9 +16,8 @@ interface MinimapProps {
   onJumpToMessage: (messageIndex: number) => void;
 }
 
-interface Turn {
+interface MinimapTurn {
   turnId: number;
-  userIdx: number | null; // 少数情况可能只有 assistant(没有对应 user)
   userPreview: string | null;
   assistantPreviews: string[]; // 同一 turn 内多条 assistant 合并展示
   jumpTargetIdx: number; // 点击跳转到哪条消息
@@ -39,54 +39,34 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
   const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
   const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
 
-  // Turn 分组: user 消息开始一个新 turn,包含直到下一个 user 消息前的所有 assistant
+  // Turn 分组: 复用共享 buildTurns，预览文案从 memberIdxs 派生
   const { turns, turnByIndex } = useMemo(() => {
-    const turnByIndex = new Map<number, number>(); // messageIndex → turnId
-    const turns: Turn[] = [];
-    let currentTid = -1;
+    const { turns: rawTurns, turnByIndex } = buildTurns(messages, {
+      collapsed: isHistoryCollapsed,
+    });
 
-    // 计算折叠时需要跳过的范围：最后一个 compact_boundary 之前的消息全部隐藏
-    let hiddenUntilIdx = -1;
-    if (isHistoryCollapsed) {
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i].isCompactBoundary) {
-          hiddenUntilIdx = i;
-          break;
-        }
-      }
-    }
+    const turns: MinimapTurn[] = rawTurns.map((t) => {
+      const userPreview =
+        t.headerIdx !== null
+          ? extractMessagePreview(messages[t.headerIdx]) || '(空消息)'
+          : null;
 
-    messages.forEach((msg, i) => {
-      if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary) return;
-      // SDK 注入的命令消息（/model、local-command-stdout 等）不算用户轮次
-      if (msg.role === 'user' && isSdkInjectedUserMessage(msg.content)) return;
-      if (i < hiddenUntilIdx) return;
+      const assistantPreviews = t.memberIdxs
+        .filter((i) => {
+          if (i === t.headerIdx) return false;
+          const m = messages[i];
+          if (m.isMeta || m.isCompactBoundary || m.isCompactSummary) return false;
+          if (m.role === 'user' && isSdkInjectedUserMessage(m.content)) return false;
+          return true;
+        })
+        .map((i) => extractMessagePreview(messages[i]) || '(AI 回复)');
 
-      if (msg.role === 'user') {
-        currentTid += 1;
-        turns.push({
-          turnId: currentTid,
-          userIdx: i,
-          userPreview: extractMessagePreview(msg) || '(空消息)',
-          assistantPreviews: [],
-          jumpTargetIdx: i,
-        });
-      } else if (currentTid === -1) {
-        // 极罕见: 开头就是 assistant(比如恢复丢失会话后导入的)
-        currentTid = 0;
-        turns.push({
-          turnId: 0,
-          userIdx: null,
-          userPreview: null,
-          assistantPreviews: [extractMessagePreview(msg) || '(AI 回复)'],
-          jumpTargetIdx: i,
-        });
-      } else {
-        const t = turns[turns.length - 1];
-        t.assistantPreviews.push(extractMessagePreview(msg) || '(AI 回复)');
-      }
-
-      turnByIndex.set(i, currentTid);
+      return {
+        turnId: t.turnId,
+        userPreview,
+        assistantPreviews,
+        jumpTargetIdx: t.headerIdx ?? t.memberIdxs[0],
+      };
     });
 
     return { turns, turnByIndex };
