@@ -26,6 +26,7 @@ import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useTaskListAggregator } from './hooks/useTaskListAggregator';
 import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
 import { CollapseControlBar } from './CollapseControlBar';
+import { buildTurns } from './turns';
 
 /**
  * Agent 聊天组件
@@ -326,8 +327,10 @@ export function AgentChat({
           const lastCompactIdx = messages.reduce(
             (acc, m, i) => m.isCompactBoundary ? i : acc, -1
           );
+          const hasCompactHistory = lastCompactIdx > 0;
+          const collapsed = isHistoryCollapsed && hasCompactHistory;
 
-          // 渲染单条消息的辅助函数
+          // 渲染单条消息的辅助函数（messageIndex 始终为原始扁平下标）
           const renderMessage = (message: typeof messages[0], index: number) => (
             <MessageItem
               key={index}
@@ -342,35 +345,32 @@ export function AgentChat({
             />
           );
 
-          if (lastCompactIdx > 0) {
-            const beforeCompact = messages.slice(0, lastCompactIdx);
-            const compactBoundary = messages[lastCompactIdx];
-            const afterCompact = messages.slice(lastCompactIdx + 1);
-            return (
-              <>
-                {isHistoryCollapsed ? (
+          const { turns } = buildTurns(messages, { collapsed });
+
+          return (
+            <>
+              {/* 压缩历史 banner / 收起条：普通块，不吸顶，在所有 section 之前 */}
+              {hasCompactHistory && (
+                collapsed ? (
                   <CollapsedHistoryBanner
-                    count={beforeCompact.length}
+                    count={lastCompactIdx}
                     onExpand={() => conversationId && toggleCollapse(conversationId)}
                   />
                 ) : (
-                  <>
-                    <CollapseControlBar
-                      count={beforeCompact.length}
-                      onCollapse={() => conversationId && toggleCollapse(conversationId)}
-                    />
-                    {beforeCompact.map((msg, i) => renderMessage(msg, i))}
-                  </>
-                )}
+                  <CollapseControlBar
+                    count={lastCompactIdx}
+                    onCollapse={() => conversationId && toggleCollapse(conversationId)}
+                  />
+                )
+              )}
 
-                {renderMessage(compactBoundary, lastCompactIdx)}
-                {afterCompact.map((msg, i) => renderMessage(msg, lastCompactIdx + 1 + i))}
-              </>
-            );
-          }
-
-          // 无压缩历史：正常渲染所有消息
-          return messages.map((message, index) => renderMessage(message, index));
+              {turns.map((turn) => (
+                <section key={turn.turnId} className="agent-turn">
+                  {turn.memberIdxs.map((i) => renderMessage(messages[i], i))}
+                </section>
+              ))}
+            </>
+          );
         })()}
 
         {/* 运行状态指示器 */}
