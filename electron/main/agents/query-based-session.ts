@@ -846,14 +846,21 @@ export class QueryBasedSession extends EventEmitter {
               // 上下文窗口真实快照：control request 走独立通道，fire-and-forget
               // 不阻塞 for-await 消息循环；会话已关闭时 reject 被吞掉
               const turnIndexForCtx = entry.turnIndex;
+              const enable1M = this.currentActiveProfile?.enable1MContext ?? false;
               this.query?.getContextUsage().then((ctx) => {
                 if (!ctx) return;
+                const totalTokens = ctx.totalTokens ?? 0;
+                // SDK 的 maxTokens 只反映标准窗口（200k），不感知 1M beta；启用 1M 时按 1M 兜底并同步重算占比
+                const maxTokens = enable1M ? Math.max(ctx.maxTokens ?? 0, 1_000_000) : (ctx.maxTokens ?? 0);
+                const percentage = enable1M && maxTokens > 0
+                  ? (totalTokens / maxTokens) * 100
+                  : (ctx.percentage ?? 0);
                 const snapshot: ContextSnapshot = {
                   turnIndex: turnIndexForCtx,
                   timestamp: Date.now(),
-                  totalTokens: ctx.totalTokens ?? 0,
-                  maxTokens: ctx.maxTokens ?? 0,
-                  percentage: ctx.percentage ?? 0,
+                  totalTokens,
+                  maxTokens,
+                  percentage,
                   model: ctx.model ?? '',
                   categories: (ctx.categories ?? [])
                     .filter((c) => (c.tokens ?? 0) > 0)
@@ -1885,16 +1892,17 @@ export class QueryBasedSessionManager extends EventEmitter {
       this.broadcaster?.(sessionId, 'complete', result);
     });
 
-    session.on('usage', ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
+    session.on('usage', async ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
       if (!conversationId) return;
-      appendUsageEntry(conversationId, entry).catch(() => {});
+      // 先 await 落盘再广播，否则前端 refetch 会读到尚未写入的 JSONL（显示滞后一轮/需重载）
+      await appendUsageEntry(conversationId, entry);
       conversationService.applyUsageSummary(conversationId, entry).catch(() => {});
       broadcastUsageEntryAdded(conversationId);
     });
 
-    session.on('usageContext', ({ conversationId, snapshot }: { conversationId?: string; snapshot: ContextSnapshot }) => {
+    session.on('usageContext', async ({ conversationId, snapshot }: { conversationId?: string; snapshot: ContextSnapshot }) => {
       if (!conversationId) return;
-      appendUsageContext(conversationId, snapshot).catch(() => {});
+      await appendUsageContext(conversationId, snapshot);
       broadcastUsageEntryAdded(conversationId);
     });
 
