@@ -82,6 +82,8 @@ interface ConversationState {
   loadConversations: () => Promise<void>;
   /** 选择对话 */
   selectConversation: (conversation: Conversation) => Promise<void>;
+  /** 按 id 聚焦对话（Tab 切换/关闭后同步左侧列表高亮），不重复打开 Tab；id 为 null 时清空选中 */
+  focusConversationById: (conversationId: string | null) => Promise<void>;
   /** 新建对话 */
   newConversation: () => Promise<void>;
   /** 删除对话 */
@@ -328,6 +330,30 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         });
       }
     } catch { /* 忽略，已有缓存数据可用 */ }
+  },
+
+  focusConversationById: async (conversationId) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    const wsId = workspace.id;
+    if (!conversationId) {
+      set((state) => patchSlice(state, wsId, { selectedConversation: null }));
+      return;
+    }
+    // 已是当前选中则跳过（避免重复 set 与多余请求）
+    if (get().byWorkspace[wsId]?.selectedConversation?.id === conversationId) return;
+    // 先从当前分片找；跨工作区切 Tab 时分片可能尚未加载，回退后端查询
+    let conv = (get().byWorkspace[wsId]?.conversations ?? []).find((c) => c.id === conversationId) ?? null;
+    if (!conv) {
+      try {
+        const fresh = await client.getById({ conversationId, workspaceId: wsId });
+        conv = fresh.conversation ?? null;
+      } catch { /* 查询失败则保持原选中 */ }
+    }
+    if (conv) {
+      const selected = conv;
+      set((state) => patchSlice(state, wsId, { selectedConversation: selected }));
+    }
   },
 
   newConversation: async () => {
@@ -625,6 +651,14 @@ if (typeof window !== 'undefined') {
     rendererEvents.conversationListChanged.listen(() => {
       useConversationStore.getState().loadConversations();
     });
+  });
+
+  // Tab 焦点联动：activeTabId 变化（点 Tab/关 Tab 自动切/关其他/独立窗口收回等所有入口）
+  // 时同步左侧对话列表的选中高亮，使「当前焦点会话」与列表高亮始终一致
+  useSessionStore.subscribe((state, prev) => {
+    if (state.activeTabId !== prev.activeTabId) {
+      useConversationStore.getState().focusConversationById(state.activeTabId);
+    }
   });
 
   // 初始化时查询 bot 绑定状态（避免页面刷新后丢失）
