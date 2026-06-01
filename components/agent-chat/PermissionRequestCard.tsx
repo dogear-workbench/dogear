@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Check, X, ShieldAlert, ShieldCheck, Send, MessageSquare, PenLine, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/lib/client';
 import type { ContentBlock } from './types';
@@ -203,13 +202,18 @@ export function PermissionRequestCard({
 
           {/* 用户输入拒绝理由 */}
           {showDenyInput && (
-            <div className="flex gap-2">
-              <Input
+            <div className="flex gap-2 items-end">
+              <Textarea
                 value={denyMessage}
                 onChange={(e) => setDenyMessage(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && denyMessage.trim()) handleDenyWithMessage(); }}
-                placeholder="输入拒绝理由，AI 会根据你的说明调整..."
-                className="flex-1 text-xs"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (denyMessage.trim()) handleDenyWithMessage();
+                  }
+                }}
+                placeholder="输入拒绝理由，AI 会根据你的说明调整...（Enter 发送，Shift+Enter 换行）"
+                className="flex-1 text-xs min-h-[64px] resize-y"
                 autoFocus
               />
               <Button size="sm" onClick={handleDenyWithMessage} disabled={!denyMessage.trim()}>

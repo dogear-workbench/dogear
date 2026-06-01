@@ -4,7 +4,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/lib/client';
 import type { ContentBlock } from './types';
 
@@ -117,11 +117,11 @@ export function AskUserQuestionCard({
                   <div className="flex-1">
                     <Label htmlFor={`q${qi}-other`} className="text-sm cursor-pointer">其他</Label>
                     {otherActive[q.question] && (
-                      <Input
+                      <Textarea
                         value={otherTexts[q.question] || ''}
                         onChange={(e) => setOtherTexts(prev => ({ ...prev, [q.question]: e.target.value }))}
                         placeholder="请输入..."
-                        className="mt-1 text-sm"
+                        className="mt-1 text-sm min-h-[64px] resize-y"
                         autoFocus
                       />
                     )}
@@ -157,11 +157,11 @@ export function AskUserQuestionCard({
                   <div className="flex-1">
                     <Label htmlFor={`q${qi}-other`} className="text-sm cursor-pointer">其他</Label>
                     {otherActive[q.question] && (
-                      <Input
+                      <Textarea
                         value={otherTexts[q.question] || ''}
                         onChange={(e) => setOtherTexts(prev => ({ ...prev, [q.question]: e.target.value }))}
                         placeholder="请输入..."
-                        className="mt-1 text-sm"
+                        className="mt-1 text-sm min-h-[64px] resize-y"
                         autoFocus
                       />
                     )}

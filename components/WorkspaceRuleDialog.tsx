@@ -152,7 +152,7 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-6xl">
         <DialogHeader>
           <DialogTitle>工作区规则</DialogTitle>
           <DialogDescription>
