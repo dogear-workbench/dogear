@@ -29,6 +29,12 @@ test('resolveContext maxTokens 缺失只给 used、不画进度', () => {
 test('resolveContext 无快照返回 used=null', () => {
   expect(resolveContext(undefined).used).toBeNull();
 });
+test('resolveContext enable1MContext 把上限兜底到 1M 并重算占比', () => {
+  const r = resolveContext(snap(), true);
+  expect(r.limit).toBe(1_000_000);
+  expect(r.label).toBe('1M');
+  expect(Math.round(r.percentage)).toBe(3); // 34000 / 1_000_000
+});
 test('formatTokens 千分位缩写', () => {
   expect(formatTokens(15632)).toBe('15.6k');
   expect(formatTokens(900000)).toBe('900k');

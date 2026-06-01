@@ -18,7 +18,8 @@ export function formatTokens(n: number): string {
 /**
  * 解析当前上下文占用与上限，来自 SDK 真实快照 latestContext（query.getContextUsage）。
  * 无快照（旧对话或采集失败）返回 used=null，UI 据此不画进度条。
- * maxTokens 为 SDK 权威窗口（含 1M 模式），缺失时仅展示占用值、不画进度。
+ * SDK 的 maxTokens 只反映标准窗口（200k），不感知 1M beta；enable1MContext 为真时
+ * 按 1M 兜底并据此重算占比，使上限与徽章上的 1M 标记一致（跟随用户勾选）。
  */
 export interface ContextInfo {
   used: number | null;
@@ -27,14 +28,21 @@ export interface ContextInfo {
   label: string;
 }
 
-export function resolveContext(latestContext: ContextSnapshot | undefined): ContextInfo {
+export function resolveContext(
+  latestContext: ContextSnapshot | undefined,
+  enable1MContext = false,
+): ContextInfo {
   if (!latestContext || latestContext.totalTokens <= 0) {
     return { used: null, limit: 0, percentage: 0, label: '' };
   }
-  const limit = latestContext.maxTokens > 0 ? latestContext.maxTokens : 0;
-  const percentage = latestContext.percentage > 0
-    ? latestContext.percentage
-    : (limit > 0 ? (latestContext.totalTokens / limit) * 100 : 0);
+  const rawLimit = latestContext.maxTokens > 0 ? latestContext.maxTokens : 0;
+  const limit = enable1MContext ? Math.max(rawLimit, 1_000_000) : rawLimit;
+  // 上限被 1M 覆盖后，SDK 按 200k 算出的 percentage 不再适用，按 used/limit 重算
+  const percentage = limit !== rawLimit
+    ? (latestContext.totalTokens / limit) * 100
+    : (latestContext.percentage > 0
+        ? latestContext.percentage
+        : (limit > 0 ? (latestContext.totalTokens / limit) * 100 : 0));
   return {
     used: latestContext.totalTokens,
     limit,

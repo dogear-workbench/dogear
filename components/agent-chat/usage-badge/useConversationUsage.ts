@@ -8,7 +8,7 @@ import type { ConversationUsage } from '@/types/usage';
 /**
  * 订阅某对话的用量数据：首屏全量拉取，usageEntryAdded 事件触发重新拉取。
  * 当前上下文占用/上限派生自 SDK 真实快照 usage.latestContext。
- * enable1MContext 仅用于徽章上的 1M 标记展示。
+ * enable1MContext 既用于徽章上的 1M 标记，也驱动 resolveContext 把上限兜底到 1M。
  */
 export function useConversationUsage(conversationId: string | null) {
   const [usage, setUsage] = useState<ConversationUsage | null>(null);
@@ -44,7 +44,7 @@ export function useConversationUsage(conversationId: string | null) {
     };
   }, [conversationId]);
 
-  const context = resolveContext(usage?.latestContext);
+  const context = resolveContext(usage?.latestContext, enable1MContext);
 
   return { usage, enable1MContext, context };
 }
