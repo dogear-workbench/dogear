@@ -59,9 +59,20 @@ export interface CompactMarker {
   preTokens: number;
 }
 
+export interface ContextSnapshot {
+  turnIndex: number;
+  timestamp: number;
+  totalTokens: number;
+  maxTokens: number;
+  percentage: number;
+  model: string;
+  categories: Array<{ name: string; tokens: number }>;
+}
+
 export interface ConversationUsage {
   entries: ConversationUsageEntry[];
   compactMarkers: CompactMarker[];
+  latestContext?: ContextSnapshot;
   totals: {
     inputTokens: number;
     outputTokens: number;
@@ -75,7 +86,8 @@ export interface ConversationUsage {
 
 export type UsageJsonlLine =
   | ({ kind: 'entry' } & ConversationUsageEntry)
-  | ({ kind: 'compact' } & CompactMarker);
+  | ({ kind: 'compact' } & CompactMarker)
+  | ({ kind: 'context' } & ContextSnapshot);
 
 /**
  * 工作区文件节点

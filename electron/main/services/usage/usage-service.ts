@@ -6,6 +6,7 @@ import { mainLogger } from '../../agents/logger.js';
 import type {
   ConversationUsageEntry,
   CompactMarker,
+  ContextSnapshot,
   ConversationUsage,
   UsageJsonlLine,
 } from '../../types.js';
@@ -101,6 +102,26 @@ export async function appendCompactMarker(
 }
 
 /**
+ * 追加一条上下文快照到 JSONL 文件。
+ * fire-and-forget：IO 出错只 warn，不抛异常。
+ */
+export async function appendContext(
+  conversationId: string,
+  snapshot: ContextSnapshot,
+): Promise<void> {
+  try {
+    assertSafeId(conversationId);
+    const file = usageFilePath(conversationId);
+    await withFileLock(file, async () => {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.appendFile(file, JSON.stringify({ kind: 'context', ...snapshot } satisfies UsageJsonlLine) + '\n', 'utf-8');
+    });
+  } catch (err) {
+    logger.warn('appendContext 失败', err);
+  }
+}
+
+/**
  * 读取对话的全部用量记录并计算汇总。
  * 文件不存在返回空结构，其他 IO 错误 warn 后也返回空结构。
  */
@@ -127,6 +148,7 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
 
   const entries: ConversationUsageEntry[] = [];
   const compactMarkers: CompactMarker[] = [];
+  let latestContext: ContextSnapshot | undefined;
 
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -138,6 +160,8 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
         entries.push(rest as ConversationUsageEntry);
       } else if (kind === 'compact') {
         compactMarkers.push(rest as CompactMarker);
+      } else if (kind === 'context') {
+        latestContext = rest as ContextSnapshot;
       }
     } catch {
       // 跳过无法解析的行
@@ -166,6 +190,7 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
   return {
     entries,
     compactMarkers,
+    latestContext,
     totals: {
       inputTokens,
       outputTokens,

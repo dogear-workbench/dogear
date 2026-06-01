@@ -69,9 +69,22 @@ export interface CompactMarker {
   preTokens: number;
 }
 
+/** 某轮结束时的上下文窗口真实快照（来自 SDK query.getContextUsage()） */
+export interface ContextSnapshot {
+  turnIndex: number;
+  timestamp: number;
+  totalTokens: number;   // 当前上下文占用
+  maxTokens: number;     // 压缩上限（SDK 权威值）
+  percentage: number;
+  model: string;
+  categories: Array<{ name: string; tokens: number }>;
+}
+
 export interface ConversationUsage {
   entries: ConversationUsageEntry[];
   compactMarkers: CompactMarker[];
+  /** 最近一次落盘的上下文快照；旧对话或采集失败时为空 */
+  latestContext?: ContextSnapshot;
   totals: {
     inputTokens: number;
     outputTokens: number;
@@ -85,4 +98,5 @@ export interface ConversationUsage {
 
 export type UsageJsonlLine =
   | ({ kind: 'entry' } & ConversationUsageEntry)
-  | ({ kind: 'compact' } & CompactMarker);
+  | ({ kind: 'compact' } & CompactMarker)
+  | ({ kind: 'context' } & ContextSnapshot);

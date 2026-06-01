@@ -1,9 +1,10 @@
 import type { ConversationUsage, ConversationUsageEntry } from '@/types/usage';
-import { formatTokens, currentContextSize, cacheHitRate } from './usage-utils';
+import type { ContextInfo } from './usage-utils';
+import { formatTokens, cacheHitRate } from './usage-utils';
 
 interface Props {
   usage: ConversationUsage;
-  contextLimit: { limit: number; label: string };
+  context: ContextInfo;
   lastEntry: ConversationUsageEntry;
 }
 
@@ -12,14 +13,19 @@ function fmtMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** 头部：上下文进度大字 + 上次输入/缓存命中 + 累计轮数/API 用时/首 token + token 合计。金额不显示。 */
-export function UsageSummaryHeader({ usage, contextLimit, lastEntry }: Props) {
-  const used = currentContextSize(lastEntry.usage);
-  const limit = contextLimit.limit;
-  const pct = limit > 0 ? Math.round((used / limit) * 100) : null;
-  const hitRate = Math.round(cacheHitRate(lastEntry.usage) * 100);
-
+/**
+ * 头部：当前上下文占用（SDK 真实快照）+ 会话级缓存命中率 + 累计轮数/API 用时/首 token + token 合计。
+ * 金额不显示。
+ */
+export function UsageSummaryHeader({ usage, context }: Props) {
   const totals = usage.totals;
+  const used = context.used;
+  const limit = context.limit;
+  const pct = used !== null && limit > 0 ? Math.round(context.percentage) : null;
+
+  // 会话级缓存命中率：整个会话累计输入里有多少命中缓存
+  const hitRate = Math.round(cacheHitRate(totals) * 100);
+
   const apiMs = usage.entries.reduce((s, e) => s + (e.durationApiMs || 0), 0);
   const ttfts = usage.entries.map(e => e.ttftMs).filter((x): x is number => typeof x === 'number');
   const avgTtft = ttfts.length ? ttfts.reduce((a, b) => a + b, 0) / ttfts.length : null;
@@ -27,16 +33,19 @@ export function UsageSummaryHeader({ usage, contextLimit, lastEntry }: Props) {
   return (
     <div className="p-3 space-y-1.5">
       <div className="flex items-baseline justify-between">
-        <span className="text-muted-foreground">上下文{contextLimit.label && ` · ${contextLimit.label}`}</span>
-        <span className="tabular-nums font-medium">
-          {used.toLocaleString()}
-          {limit > 0 ? ` / ${limit.toLocaleString()}` : ''}
-          {pct !== null && <span className="text-muted-foreground"> ({pct}%)</span>}
-        </span>
+        <span className="text-muted-foreground">上下文{context.label && ` · ${context.label}`}</span>
+        {used !== null ? (
+          <span className="tabular-nums font-medium">
+            {used.toLocaleString()}
+            {limit > 0 ? ` / ${limit.toLocaleString()}` : ''}
+            {pct !== null && <span className="text-muted-foreground"> ({pct}%)</span>}
+          </span>
+        ) : (
+          <span className="text-muted-foreground">暂无（发送一条消息后刷新）</span>
+        )}
       </div>
-      <div className="flex items-center gap-4 text-muted-foreground">
-        <span>上次输入 <span className="tabular-nums text-foreground">{lastEntry.usage.inputTokens.toLocaleString()}</span></span>
-        <span>缓存命中 <span className="tabular-nums text-foreground">{lastEntry.usage.cacheReadInputTokens.toLocaleString()} ({hitRate}%)</span></span>
+      <div className="text-muted-foreground">
+        会话缓存命中率 <span className="tabular-nums text-foreground">{hitRate}%</span>
       </div>
 
       <div className="pt-1 text-muted-foreground">

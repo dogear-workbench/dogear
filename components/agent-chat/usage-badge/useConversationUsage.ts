@@ -2,20 +2,13 @@ import { useEffect, useState } from 'react';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { useSettingsStore } from '@/stores/settings-store';
-import { resolveContextLimit } from './usage-utils';
-import type { ConversationUsage, ConversationUsageEntry } from '@/types/usage';
-
-/** 取一条 entry 的主模型 usage（input token 最多的那个），用于解析上下文上限 */
-function pickMainModelUsage(entry: ConversationUsageEntry | undefined) {
-  if (!entry) return undefined;
-  const models = Object.values(entry.modelUsage ?? {});
-  if (models.length === 0) return undefined;
-  return models.reduce((a, b) => (b.inputTokens > a.inputTokens ? b : a));
-}
+import { resolveContext } from './usage-utils';
+import type { ConversationUsage } from '@/types/usage';
 
 /**
  * 订阅某对话的用量数据：首屏全量拉取，usageEntryAdded 事件触发重新拉取。
- * 同时从 settings 读取当前 profile 的 1M 上下文开关，派生上下文上限。
+ * 当前上下文占用/上限派生自 SDK 真实快照 usage.latestContext。
+ * enable1MContext 仅用于徽章上的 1M 标记展示。
  */
 export function useConversationUsage(conversationId: string | null) {
   const [usage, setUsage] = useState<ConversationUsage | null>(null);
@@ -51,8 +44,7 @@ export function useConversationUsage(conversationId: string | null) {
     };
   }, [conversationId]);
 
-  const lastEntry = usage?.entries[usage.entries.length - 1];
-  const contextLimit = resolveContextLimit(pickMainModelUsage(lastEntry), enable1MContext);
+  const context = resolveContext(usage?.latestContext);
 
-  return { usage, enable1MContext, contextLimit };
+  return { usage, enable1MContext, context };
 }

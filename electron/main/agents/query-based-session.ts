@@ -13,10 +13,10 @@ import { EventEmitter } from 'events';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import { query, type Query } from '@anthropic-ai/claude-agent-sdk';
-import { appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker } from '../services/usage/usage-service.js';
+import { appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker, appendContext as appendUsageContext } from '../services/usage/usage-service.js';
 import { extractUsageEntry } from '../services/usage/usage-extractor.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
-import type { CompactMarker, ConversationUsageEntry } from '../types.js';
+import type { CompactMarker, ContextSnapshot, ConversationUsageEntry } from '../types.js';
 import type {
   SDKUserMessage, SDKMessage, SDKUserMessageReplay, CanUseTool, PermissionResult, PermissionMode,
   AgentDefinition, HookEvent, HookCallbackMatcher,
@@ -842,6 +842,25 @@ export class QueryBasedSession extends EventEmitter {
               );
               this.usageTurnIndex += 1;
               this.emit('usage', { conversationId: convId, entry });
+
+              // 上下文窗口真实快照：control request 走独立通道，fire-and-forget
+              // 不阻塞 for-await 消息循环；会话已关闭时 reject 被吞掉
+              const turnIndexForCtx = entry.turnIndex;
+              this.query?.getContextUsage().then((ctx) => {
+                if (!ctx) return;
+                const snapshot: ContextSnapshot = {
+                  turnIndex: turnIndexForCtx,
+                  timestamp: Date.now(),
+                  totalTokens: ctx.totalTokens ?? 0,
+                  maxTokens: ctx.maxTokens ?? 0,
+                  percentage: ctx.percentage ?? 0,
+                  model: ctx.model ?? '',
+                  categories: (ctx.categories ?? [])
+                    .filter((c) => (c.tokens ?? 0) > 0)
+                    .map((c) => ({ name: c.name, tokens: c.tokens })),
+                };
+                this.emit('usageContext', { conversationId: convId, snapshot });
+              }).catch(() => {});
             }
           } catch (err) {
             this.logger.warn('用量采集失败（忽略）:', err);
@@ -1870,6 +1889,12 @@ export class QueryBasedSessionManager extends EventEmitter {
       if (!conversationId) return;
       appendUsageEntry(conversationId, entry).catch(() => {});
       conversationService.applyUsageSummary(conversationId, entry).catch(() => {});
+      broadcastUsageEntryAdded(conversationId);
+    });
+
+    session.on('usageContext', ({ conversationId, snapshot }: { conversationId?: string; snapshot: ContextSnapshot }) => {
+      if (!conversationId) return;
+      appendUsageContext(conversationId, snapshot).catch(() => {});
       broadcastUsageEntryAdded(conversationId);
     });
 

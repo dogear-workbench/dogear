@@ -9,10 +9,11 @@ mock.module('electron', () => ({
 }));
 
 // mock 必须在 import 服务之前完成（静态导入会在执行前求值，用动态 import 绕过）
-const { appendEntry, appendCompactMarker, readUsage, deleteUsage } = await import('./usage-service.js');
-import type { ConversationUsageEntry, CompactMarker } from '../../types.js';
+const { appendEntry, appendCompactMarker, appendContext, readUsage, deleteUsage } = await import('./usage-service.js');
+import type { ConversationUsageEntry, CompactMarker, ContextSnapshot } from '../../types.js';
 
 const TEST_ID = `__usage_test__${Date.now()}`;
+const CTX_ID = `__usage_ctx_test__${Date.now()}`;
 
 function makeEntry(overrides: Partial<ConversationUsageEntry> = {}): ConversationUsageEntry {
   return {
@@ -38,6 +39,7 @@ function makeEntry(overrides: Partial<ConversationUsageEntry> = {}): Conversatio
 
 afterAll(async () => {
   await deleteUsage(TEST_ID);
+  await deleteUsage(CTX_ID);
 });
 
 describe('usage-service', () => {
@@ -77,6 +79,28 @@ describe('usage-service', () => {
     // kind 字段不应泄漏到 entries / compactMarkers
     expect((usage.entries[0] as any).kind).toBeUndefined();
     expect((usage.compactMarkers[0] as any).kind).toBeUndefined();
+  });
+
+  it('appends context snapshots and reads back only the latest', async () => {
+    const snap1: ContextSnapshot = {
+      turnIndex: 0, timestamp: Date.now(), totalTokens: 12000, maxTokens: 200000,
+      percentage: 6, model: 'claude-opus-4-7', categories: [{ name: 'messages', tokens: 8000 }],
+    };
+    const snap2: ContextSnapshot = {
+      turnIndex: 1, timestamp: Date.now() + 1, totalTokens: 34000, maxTokens: 200000,
+      percentage: 17, model: 'claude-opus-4-7', categories: [{ name: 'messages', tokens: 30000 }],
+    };
+    await appendEntry(CTX_ID, makeEntry({ uuid: 'ce1', turnIndex: 0 }));
+    await appendContext(CTX_ID, snap1);
+    await appendEntry(CTX_ID, makeEntry({ uuid: 'ce2', turnIndex: 1 }));
+    await appendContext(CTX_ID, snap2);
+
+    const usage = await readUsage(CTX_ID);
+
+    expect(usage.entries.length).toBe(2);
+    expect(usage.latestContext?.totalTokens).toBe(34000);   // 取最后一条
+    expect(usage.latestContext?.turnIndex).toBe(1);
+    expect((usage.latestContext as any)?.kind).toBeUndefined();
   });
 
   it('returns empty usage for nonexistent conversationId', async () => {

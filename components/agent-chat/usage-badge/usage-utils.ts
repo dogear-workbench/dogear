@@ -1,6 +1,5 @@
-import type { ConversationUsageEntry } from '@/types/usage';
+import type { ConversationUsageEntry, ContextSnapshot } from '@/types/usage';
 
-type ModelUsage = ConversationUsageEntry['modelUsage'][string];
 type Usage = ConversationUsageEntry['usage'];
 
 /** contextWindow → 简洁标签：200000→'200k'，1000000→'1M' */
@@ -17,30 +16,39 @@ export function formatTokens(n: number): string {
 }
 
 /**
- * 解析上下文上限与标签。
- * 1M 模式固定 900k（SDK 上报 contextWindow 仍是 200k，但实际可用近 1M，留压缩余量按 900k 计）。
- * 普通模式取模型自身 contextWindow；缺失则 limit=0，UI 据此不画进度条。
+ * 解析当前上下文占用与上限，来自 SDK 真实快照 latestContext（query.getContextUsage）。
+ * 无快照（旧对话或采集失败）返回 used=null，UI 据此不画进度条。
+ * maxTokens 为 SDK 权威窗口（含 1M 模式），缺失时仅展示占用值、不画进度。
  */
-export function resolveContextLimit(
-  modelUsage: ModelUsage | undefined,
-  enable1M: boolean,
-): { limit: number; label: string } {
-  if (enable1M) return { limit: 900000, label: '1M' };
-  const window = modelUsage?.contextWindow ?? 0;
-  if (!window) return { limit: 0, label: '' };
-  return { limit: window, label: formatLabel(window) };
+export interface ContextInfo {
+  used: number | null;
+  limit: number;
+  percentage: number;
+  label: string;
 }
 
-/** 缓存命中率 = cacheRead / (input + cacheRead) */
+export function resolveContext(latestContext: ContextSnapshot | undefined): ContextInfo {
+  if (!latestContext || latestContext.totalTokens <= 0) {
+    return { used: null, limit: 0, percentage: 0, label: '' };
+  }
+  const limit = latestContext.maxTokens > 0 ? latestContext.maxTokens : 0;
+  const percentage = latestContext.percentage > 0
+    ? latestContext.percentage
+    : (limit > 0 ? (latestContext.totalTokens / limit) * 100 : 0);
+  return {
+    used: latestContext.totalTokens,
+    limit,
+    percentage,
+    label: limit > 0 ? formatLabel(limit) : '',
+  };
+}
+
+/**
+ * 缓存命中率 = cacheRead / (input + cacheRead)。
+ * 传单轮 usage 或会话级 totals（同字段形状）均可。
+ */
 export function cacheHitRate(usage: Pick<Usage, 'inputTokens' | 'cacheReadInputTokens'>): number {
   const denom = usage.inputTokens + usage.cacheReadInputTokens;
   if (denom <= 0) return 0;
   return usage.cacheReadInputTokens / denom;
-}
-
-/** 当前上下文占用 = input + cacheRead + cacheCreation */
-export function currentContextSize(
-  usage: Pick<Usage, 'inputTokens' | 'cacheReadInputTokens' | 'cacheCreationInputTokens'>,
-): number {
-  return usage.inputTokens + usage.cacheReadInputTokens + usage.cacheCreationInputTokens;
 }
