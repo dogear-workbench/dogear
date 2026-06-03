@@ -42,6 +42,9 @@ let tray: TrayType | null = null;
 // 是否正在退出（区分"关闭窗口"和"真正退出"）
 let isQuitting = false;
 
+// 会话提炼夜间定时器（里程碑 2 Phase A）
+let digestNightlyTimer: NodeJS.Timeout | null = null;
+
 // 调试窗口实例(仅开发环境)
 let debugWindow: BrowserWindowType | null = null;
 
@@ -414,6 +417,27 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  // ── 会话提炼三触发点（里程碑 2 Phase A）──
+  // 触发点①：启动后延迟扫一遍，backfill 存量会话（低优先，不阻塞窗口）
+  setTimeout(() => {
+    void import('./services/memory/digest-trigger.js')
+      .then((m) => m.triggerScanAll())
+      .catch((err) => console.error('启动会话提炼扫描失败:', err));
+  }, 8000);
+
+  // 触发点②：夜间定时（每小时检查本地时间命中 03:xx，软件开着才跑；每天最多一次）
+  let lastNightlyDigestDay = '';
+  digestNightlyTimer = setInterval(() => {
+    const now = new Date();
+    if (now.getHours() !== 3) return;
+    const day = now.toISOString().slice(0, 10);
+    if (day === lastNightlyDigestDay) return;
+    lastNightlyDigestDay = day;
+    void import('./services/memory/digest-trigger.js')
+      .then((m) => m.triggerScanAll())
+      .catch((err) => console.error('夜间会话提炼扫描失败:', err));
+  }, 60 * 60 * 1000);
+
   // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出
   mainWindow!.on('close', (event) => {
     if (!isQuitting && tray && !tray.isDestroyed()) {
@@ -444,6 +468,11 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   // 标记为真正退出，使 close 事件不再拦截
   isQuitting = true;
+  // 停止会话提炼夜间定时器
+  if (digestNightlyTimer) {
+    clearInterval(digestNightlyTimer);
+    digestNightlyTimer = null;
+  }
   // 销毁托盘图标
   if (tray && !tray.isDestroyed()) {
     tray.destroy();

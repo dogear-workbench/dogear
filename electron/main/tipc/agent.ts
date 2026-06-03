@@ -136,8 +136,18 @@ export const agentRouter = {
         payload: { action: 'close', sessionId: input.sessionId } as ChatSessionPayload,
         createdAt: Date.now(),
       };
+      // 关闭前捕获 conversationId（关闭后映射可能被清理），供提炼脏检查用
+      const convId = getQueryBasedSessionManager().getConversationIdBySession(input.sessionId);
       const taskId = await agentManager.submitTask(task);
       agentManager.unregisterSessionCallbacks(input.sessionId);
+      // 触发点③：延迟一会儿让 JSONL 落盘，再对该会话所属工作区做脏检查
+      if (convId) {
+        setTimeout(() => {
+          void import('../services/memory/digest-trigger.js')
+            .then((m) => m.triggerScanByConversation(convId))
+            .catch(() => { /* 提炼是后台任务，失败不影响关会话 */ });
+        }, 3000);
+      }
       return { taskId, success: true };
     }),
 
