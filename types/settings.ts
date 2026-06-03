@@ -48,6 +48,8 @@ export interface AppSettings {
     defaultModelTier?: 'haiku' | 'sonnet' | 'opus';
     /** 注入 CLAUDE_CODE_SUBAGENT_MODEL，决定 Agent 工具（原 Task）子代理模型 */
     subagentModelTier?: 'haiku' | 'sonnet' | 'opus';
+    /** 会话提炼（DIGEST_SESSION）使用的模型档位。默认 haiku */
+    digestModelTier?: 'haiku' | 'sonnet' | 'opus';
     /** SDK 0.2.119+：true 时环境上下文移到首条 user message，改善 prompt 缓存命中率（默认 true） */
     excludeDynamicSections?: boolean;
     /** SDK 0.2.119+：启用 Agent 回答后的下一步建议气泡（默认 true） */
@@ -83,6 +85,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     excludeDynamicSections: true,
     promptSuggestionsEnabled: true,
     thinkingDisplay: 'summarized',
+    digestModelTier: 'haiku',
   },
   personas: [],
   enabledToolPacks: [],
