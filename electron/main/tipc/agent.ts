@@ -12,11 +12,12 @@ import { getAllTools } from '../agents/tools/tool-registry.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import * as conversationService from '../services/conversation-service.js';
+import { getClaudeConfigDir, getSdkSessionsDir } from '../services/memory/session-paths.js';
+export { getClaudeConfigDir } from '../services/memory/session-paths.js';
 import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import electron from 'electron';
-const { app } = electron;
 
 // 获取当前文件的路径 (ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -24,32 +25,6 @@ const __dirname = path.dirname(__filename);
 
 // 计算项目根目录（tipc -> main -> electron -> 项目根目录）
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
-
-/**
- * 获取 CLAUDE_CONFIG_DIR 路径
- * 与 query-based-session.ts 中设置的 env.CLAUDE_CONFIG_DIR 保持一致
- */
-export function getClaudeConfigDir(): string {
-  const appDir = app.isPackaged
-    ? app.getPath('userData')  // 生产环境：AppData/Roaming/Dogear
-    : process.cwd();           // 开发环境：项目根目录
-  return path.join(appDir, '.dogear', 'conversations');
-}
-
-/**
- * 获取 SDK 会话的存储目录
- * 路径规则与 CLI 内部一致：{CLAUDE_CONFIG_DIR}/projects/{normalized_path}
- */
-async function getSdkSessionsDir(projectPath: string): Promise<string> {
-  let normalized: string;
-  if (process.platform === 'win32') {
-    normalized = projectPath.replace(/\\/g, '-').replace(/:/g, '-');
-  } else {
-    normalized = projectPath.replace(/\//g, '-');
-  }
-  const configDir = getClaudeConfigDir();
-  return path.join(configDir, 'projects', normalized);
-}
 
 // bot 状态 getter（由 wechat.ts startPolling 时注入，避免循环导入）
 type BotStateGetter = () => { activeSessionId: string | null } | null;
@@ -449,7 +424,7 @@ export const agentRouter = {
           const defaultWorkspace = await workspaceJsonService.getDefault();
           projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
         }
-        const sessionsDir = await getSdkSessionsDir(projectRoot);
+        const sessionsDir = getSdkSessionsDir(projectRoot);
         let sessionFile = path.join(sessionsDir, `${input.sdkSessionId}.jsonl`);
 
         console.log('读取 SDK 会话历史:', { sdkSessionId: input.sdkSessionId, projectRoot, sessionsDir, sessionFile });
@@ -466,7 +441,7 @@ export const agentRouter = {
             const wsService = await import('../services/workspace-json-service.js');
             const defaultWorkspace = await wsService.getDefault();
             if (defaultWorkspace?.path) {
-              const workspaceSessionsDir = await getSdkSessionsDir(defaultWorkspace.path);
+              const workspaceSessionsDir = getSdkSessionsDir(defaultWorkspace.path);
               const workspaceSessionFile = path.join(workspaceSessionsDir, `${input.sdkSessionId}.jsonl`);
               console.log('尝试工作区路径:', workspaceSessionFile);
               try {
@@ -658,7 +633,7 @@ export const agentRouter = {
           const defaultWorkspace = await workspaceJsonService.getDefault();
           projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
         }
-        const sessionsDir = await getSdkSessionsDir(projectRoot);
+        const sessionsDir = getSdkSessionsDir(projectRoot);
 
         // 子代理 JSONL 路径：<sessionsDir>/<sessionId>/subagents/agent-<agentId>.jsonl
         const subAgentFile = path.join(sessionsDir, input.sdkSessionId, 'subagents', `agent-${input.agentId}.jsonl`);
@@ -762,7 +737,7 @@ export const agentRouter = {
           const defaultWorkspace = await workspaceJsonService.getDefault();
           projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
         }
-        const sessionsDir = await getSdkSessionsDir(projectRoot);
+        const sessionsDir = getSdkSessionsDir(projectRoot);
         const indexPath = path.join(sessionsDir, 'sessions-index.json');
 
         console.log('读取 SDK 会话索引:', { projectRoot, sessionsDir, indexPath });
