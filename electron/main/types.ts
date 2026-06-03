@@ -107,3 +107,14 @@ export interface WorkspaceFileNode {
     wordCount: number;
   };
 }
+
+// ─── 会话清洗 / 摘要类型（里程碑 2 Phase A）───
+
+export interface CleanedTranscript {
+  sessionId: string;
+  transcript: string;
+  turnCount: number;
+  lastTimestamp: string;
+  sourceMtime: number;
+  stats: { originalBytes: number; cleanedChars: number; ratio: number };
+}
