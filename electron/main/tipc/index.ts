@@ -17,6 +17,7 @@ import { conversationRuntimeRouter } from './conversation-runtime.js';
 import { environmentRouter } from './environment.js';
 import { skillRouter } from './skill.js';
 import { usageRouter } from './usage.js';
+import { digestRouter } from './digest.js';
 
 export const router = {
   ...aiRouter,
@@ -36,6 +37,7 @@ export const router = {
   ...environmentRouter,
   ...skillRouter,
   ...usageRouter,
+  ...digestRouter,
 };
 
 export type Router = typeof router;

@@ -119,3 +119,44 @@ export async function readDigest(wsId: string, sessionId: string): Promise<Diges
     throw err;
   }
 }
+
+export interface DigestSummary {
+  sessionId: string;
+  conversationId?: string;
+  title: string;
+  createdAt: string;
+  turnCount: number;
+}
+
+/** 列出某工作区所有摘要卡的摘要信息（按 createdAt 降序，排除 _cleaned/ 留底） */
+export async function listDigests(wsId: string): Promise<DigestSummary[]> {
+  const dir = getDigestsDir(wsId);
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') return [];
+    throw err;
+  }
+  const out: DigestSummary[] = [];
+  for (const name of names) {
+    if (!name.endsWith('.md')) continue; // _cleaned 子目录无 .md 后缀，天然跳过
+    try {
+      const raw = await fs.readFile(path.join(dir, name), 'utf-8');
+      const card = parseDigestCard(raw);
+      if (card) {
+        out.push({
+          sessionId: card.sessionId,
+          conversationId: card.conversationId,
+          title: card.title,
+          createdAt: card.createdAt,
+          turnCount: card.turnCount,
+        });
+      }
+    } catch {
+      continue;
+    }
+  }
+  out.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  return out;
+}
