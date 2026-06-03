@@ -137,6 +137,10 @@ class AgentWorker {
           result = await this.handleParseArticleTask(task, taskLogger);
           break;
 
+        case TaskType.DIGEST_SESSION:
+          result = await this.handleDigestSessionTask(task, taskLogger);
+          break;
+
         default:
           throw new Error(`未知任务类型: ${task.type}`);
       }
@@ -534,6 +538,83 @@ class AgentWorker {
         parseStatus: errorStatus,
         error: errorMsg,
       };
+    }
+  }
+
+  /**
+   * 处理会话提炼任务（DIGEST_SESSION）
+   *
+   * 一次性 headless query：agent 自主调 CleanTranscript → ReadExistingDigest → SaveDigest，
+   * 把一段会话 JSONL 提炼成「会话摘要卡」。模型按 digestModelTier 覆盖（默认 haiku）。
+   */
+  private async handleDigestSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
+    const payload = task.payload as import('./task-types.js').DigestSessionPayload;
+    const { workspaceId, workspacePath, sdkSessionId } = payload;
+
+    taskLogger.info('开始会话提炼任务:', sdkSessionId, '| workspace:', workspaceId);
+    const startedAt = Date.now();
+
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const baseConfig = await buildQueryBaseConfig({
+      configDir: this.configDir,
+      isPackaged: this.isPackaged,
+      cliPath: this.cliPath,
+    });
+
+    // 覆盖提炼模型：payload 优先，否则读 settings，缺省 haiku
+    const tier = payload.digestModelTier
+      ?? baseConfig.appSettings.ai.digestModelTier
+      ?? 'haiku';
+    const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
+      haiku: baseConfig.activeProfile.haikuModel,
+      sonnet: baseConfig.activeProfile.sonnetModel,
+      opus: baseConfig.activeProfile.opusModel,
+    };
+    const env = { ...baseConfig.env, ANTHROPIC_MODEL: tierMap[tier] };
+
+    const { createDigestTools } = await import('./tools/digest-tools.js');
+    let saved = false;
+    const digestServer = createDigestTools(workspaceId, workspacePath, () => { saved = true; });
+
+    const { loadDigestPrompt } = await import('../services/memory/digest-prompt.js');
+    const template = await loadDigestPrompt(this.configDir);
+    const prompt = `${template}\n\n目标会话 sessionId: ${sdkSessionId}`;
+
+    try {
+      const agentQuery = query({
+        prompt,
+        options: {
+          permissionMode: 'dontAsk',
+          env,
+          // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
+          ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
+          ...(baseConfig.pathToClaudeCodeExecutable && {
+            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
+          }),
+          mcpServers: {
+            'dogear-memory-digest': digestServer,
+          },
+          allowedTools: [
+            'mcp__dogear-memory-digest__CleanTranscript',
+            'mcp__dogear-memory-digest__ReadExistingDigest',
+            'mcp__dogear-memory-digest__SaveDigest',
+          ],
+        },
+      });
+
+      for await (const message of agentQuery) {
+        if (message.type === 'result') {
+          taskLogger.info('会话提炼完成');
+        }
+      }
+
+      taskLogger.info('会话提炼任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
+      return { sdkSessionId, saved, tier };
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      taskLogger.error('会话提炼任务失败:', errorMsg);
+      return { sdkSessionId, saved: false, error: errorMsg };
     }
   }
 

@@ -21,7 +21,8 @@ export enum TaskType {
   SUMMARIZE = 'summarize',          // 文本摘要
   READING_ASSIST = 'reading_assist', // 阅读辅助
   CHAT_SESSION = 'chat_session',    // 持续对话会话
-  PARSE_ARTICLE = 'parse_article'  // 文章解析（质量检查 + AI 重新解析）
+  PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
+  DIGEST_SESSION = 'digest_session' // 会话提炼（清洗 → 摘要卡）
 }
 
 /**
@@ -191,6 +192,17 @@ export interface ParseArticlePayload {
 
   // V1 compat (kept temporarily)
   fixedParseSuccess?: boolean;
+}
+
+/**
+ * 会话提炼任务负载
+ * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
+ */
+export interface DigestSessionPayload {
+  workspaceId: string;       // 工作区 ID（落卡 / 留底用）
+  workspacePath: string;     // 工作区绝对路径（定位 JSONL 用）
+  sdkSessionId: string;      // 目标会话 ID
+  digestModelTier?: 'haiku' | 'sonnet' | 'opus'; // 提炼模型档位（缺省读 settings）
 }
 
 /**
