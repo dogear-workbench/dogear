@@ -105,7 +105,7 @@ function getConfigDir(): string {
 }
 
 /** 获取工作区数据目录 .dogear/workspaces/{workspaceId}/ */
-function getWorkspaceDataDir(workspaceId: string): string {
+export function getWorkspaceDataDir(workspaceId: string): string {
   return path.join(getConfigDir(), 'workspaces', workspaceId);
 }
 
