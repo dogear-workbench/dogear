@@ -3,7 +3,8 @@
 import { tipc } from '@egoist/tipc/main';
 import { listDigests, readDigest } from '../services/memory/digest-store.js';
 import { enqueueDigests, getDigestActivity } from '../services/memory/digest-trigger.js';
-import { loadSettings, saveSettings } from '../services/settings-service.js';
+import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
+import { loadDigestPrompt, saveDigestPrompt, DEFAULT_DIGEST_PROMPT } from '../services/memory/digest-prompt.js';
 
 const t = tipc.create();
 
@@ -114,6 +115,31 @@ export const digestRouter = {
         return { activity: getDigestActivity() };
       } catch (error) {
         console.error('[digest] getDigestActivity 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /** 读取提炼提示词模板（缺失返回内置默认并播种） */
+  getDigestPrompt: t.procedure
+    .action(async () => {
+      try {
+        const prompt = await loadDigestPrompt(getConfigDir());
+        return { prompt, defaultPrompt: DEFAULT_DIGEST_PROMPT };
+      } catch (error) {
+        console.error('[digest] getDigestPrompt 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /** 保存提炼提示词模板 */
+  setDigestPrompt: t.procedure
+    .input<{ prompt: string }>()
+    .action(async ({ input }) => {
+      try {
+        await saveDigestPrompt(getConfigDir(), input.prompt);
+        return { success: true };
+      } catch (error) {
+        console.error('[digest] setDigestPrompt 失败:', error);
         return { error: String(error) };
       }
     }),

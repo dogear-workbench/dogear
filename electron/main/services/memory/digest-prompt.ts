@@ -33,3 +33,9 @@ export async function loadDigestPrompt(configDir: string): Promise<string> {
   await fs.writeFile(file, DEFAULT_DIGEST_PROMPT, 'utf-8');
   return DEFAULT_DIGEST_PROMPT;
 }
+
+/** 覆盖写入提示词模板 */
+export async function saveDigestPrompt(configDir: string, content: string): Promise<void> {
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(getDigestPromptPath(configDir), content, 'utf-8');
+}

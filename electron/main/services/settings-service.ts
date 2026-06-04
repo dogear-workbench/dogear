@@ -23,7 +23,7 @@ export * from './settings-types.js';
  * 开发阶段：项目根目录/.dogear
  * 打包后：AppData/Roaming/Dogear/.dogear
  */
-function getConfigDir(): string {
+export function getConfigDir(): string {
   if (app.isPackaged) {
     return path.join(app.getPath('userData'), '.dogear');
   }
