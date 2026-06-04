@@ -14,6 +14,7 @@ import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { PersonaTab } from './PersonaTab';
 import { AgentsTab } from './AgentsTab';
 import { MemoryTab } from './MemoryTab';
+import { DigestsPanel } from './memory/DigestsPanel';
 import { ToolsAndPermissionsTab } from './ToolsAndPermissionsTab';
 import { SkillTab } from './SkillTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
@@ -258,6 +259,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="memory" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             记忆管理
+          </TabsTrigger>
+          <TabsTrigger value="digests" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            会话摘要
           </TabsTrigger>
           <TabsTrigger value="agents" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             代理管理
@@ -659,6 +663,15 @@ export default function SettingsPage() {
         {/* ── Tab: 记忆管理 ── */}
         <TabsContent value="memory" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <MemoryTab />
+        </TabsContent>
+
+        {/* ── Tab: 会话摘要 ── */}
+        <TabsContent value="digests" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <div className="max-w-4xl py-6 px-6">
+            <h2 className="text-lg font-semibold mb-1">会话摘要</h2>
+            <p className="text-sm text-muted-foreground mb-6">后台自动把每个会话提炼成摘要卡，可在此查看、重新提炼、配置提炼方案与提示词。</p>
+            <DigestsPanel />
+          </div>
         </TabsContent>
 
         {/* ── Tab: 代理管理 ── */}

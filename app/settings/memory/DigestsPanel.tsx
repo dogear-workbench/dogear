@@ -5,11 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
 import { useConfirmStore } from '@/stores/confirm-store';
-
-interface Props {
-  workspaceId: string;
-  workspacePath: string;
-}
+import { useWorkspaceStore } from '@/stores/workspace-store';
 
 interface DigestSummary {
   sessionId: string;
@@ -60,7 +56,10 @@ const KIND_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
   搁置: 'outline',
 };
 
-export function DigestsPanel({ workspaceId, workspacePath }: Props) {
+export function DigestsPanel() {
+  const workspace = useWorkspaceStore((s) => s.workspace);
+  const workspaceId = workspace?.id;
+  const workspacePath = workspace?.path;
   const confirm = useConfirmStore((s) => s.confirm);
   const [list, setList] = useState<DigestSummary[]>([]);
   const [selected, setSelected] = useState<DigestCard | null>(null);
@@ -132,6 +131,10 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
       buttons: [{ label: '知道了', value: 'ok' }],
     });
   };
+
+  if (!workspaceId || !workspacePath) {
+    return <div className="text-sm text-muted-foreground py-8 text-center">请先选择一个工作区</div>;
+  }
 
   return (
     <div className="space-y-4">
