@@ -10,6 +10,7 @@
  */
 
 import { parentPort } from 'worker_threads';
+import path from 'node:path';
 import {
   MainToWorkerMessage,
   WorkerToMainMessage,
@@ -562,16 +563,33 @@ class AgentWorker {
       cliPath: this.cliPath,
     });
 
-    // 覆盖提炼模型：payload 优先，否则读 settings，缺省 haiku
+    // 提炼方案：digestProfileId 指定的 Profile，缺省回退主会话 activeProfile
+    const { buildProfileEnv } = await import('./agent-query-config.js');
+    const { isProfileComplete } = await import('../services/settings-types.js');
+    const digestProfileId = baseConfig.appSettings.ai.digestProfileId;
+    const digestProfile =
+      (digestProfileId && baseConfig.appSettings.profiles[digestProfileId])
+      || baseConfig.activeProfile;
+
+    if (!isProfileComplete(digestProfile)) {
+      const error = `提炼方案「${digestProfile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`;
+      taskLogger.error('会话提炼任务终止:', error);
+      return { sdkSessionId, saved: false, error };
+    }
+
     const tier = payload.digestModelTier
       ?? baseConfig.appSettings.ai.digestModelTier
       ?? 'haiku';
     const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
-      haiku: baseConfig.activeProfile.haikuModel,
-      sonnet: baseConfig.activeProfile.sonnetModel,
-      opus: baseConfig.activeProfile.opusModel,
+      haiku: digestProfile.haikuModel,
+      sonnet: digestProfile.sonnetModel,
+      opus: digestProfile.opusModel,
     };
-    const env = { ...baseConfig.env, ANTHROPIC_MODEL: tierMap[tier] };
+    const claudeConfigDir = path.join(this.configDir, 'conversations');
+    const env = {
+      ...buildProfileEnv(digestProfile, claudeConfigDir),
+      ANTHROPIC_MODEL: tierMap[tier],
+    };
 
     const { createDigestTools } = await import('./tools/digest-tools.js');
     let saved = false;
@@ -610,7 +628,7 @@ class AgentWorker {
       }
 
       taskLogger.info('会话提炼任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { sdkSessionId, saved, tier };
+      return { sdkSessionId, saved, tier, profileName: digestProfile.name };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('会话提炼任务失败:', errorMsg);
