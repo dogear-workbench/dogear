@@ -7,10 +7,12 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { CoreProfilePanel } from './memory/CoreProfilePanel';
 import { TopicsPanel } from './memory/TopicsPanel';
+import { DigestsPanel } from './memory/DigestsPanel';
 
 export function MemoryTab() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const workspacePath = workspace?.path;
+  const workspaceId = workspace?.id;
   const confirm = useConfirmStore((s) => s.confirm);
   const [rebuilding, setRebuilding] = useState(false);
 
@@ -83,6 +85,7 @@ export function MemoryTab() {
         <TabsList>
           <TabsTrigger value="core">核心档案</TabsTrigger>
           <TabsTrigger value="topics">主题记忆</TabsTrigger>
+          <TabsTrigger value="digests">会话摘要</TabsTrigger>
         </TabsList>
 
         <TabsContent value="core" className="pt-4">
@@ -91,6 +94,10 @@ export function MemoryTab() {
 
         <TabsContent value="topics" className="pt-4">
           <TopicsPanel workspacePath={workspacePath} />
+        </TabsContent>
+
+        <TabsContent value="digests" className="pt-4">
+          {workspaceId && <DigestsPanel workspaceId={workspaceId} workspacePath={workspacePath} />}
         </TabsContent>
       </Tabs>
     </div>
