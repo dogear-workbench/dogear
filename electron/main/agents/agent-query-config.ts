@@ -98,6 +98,34 @@ async function loadSettingsFromDir(configDir: string): Promise<AppSettings> {
 }
 
 /**
+ * 拼装单个 Profile 的凭证 + 模型映射环境变量（不含 ANTHROPIC_MODEL/SUBAGENT 档位决策）。
+ * buildQueryBaseConfig 与后台 digest 任务共用，确保换 Profile 时凭证整体切换。
+ */
+export function buildProfileEnv(
+  profile: ModelProfile,
+  claudeConfigDir: string,
+): Record<string, string> {
+  const env: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    ANTHROPIC_AUTH_TOKEN: profile.apiKey,
+    ANTHROPIC_BASE_URL: profile.baseUrl,
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: profile.haikuModel,
+    ANTHROPIC_DEFAULT_SONNET_MODEL: profile.sonnetModel,
+    ANTHROPIC_DEFAULT_OPUS_MODEL: profile.opusModel,
+    API_TIMEOUT_MS: String(profile.apiTimeoutMs),
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: profile.disableNonessentialTraffic ? '1' : '0',
+    CLAUDE_CONFIG_DIR: claudeConfigDir,
+  };
+  // 1M 长上下文：按 Profile 配置显式控制，避免继承父进程环境中的值
+  if (profile.enable1MContext) {
+    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '900000';
+  } else {
+    delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+  }
+  return env;
+}
+
+/**
  * 构建 query() 所需的通用配置
  *
  * 主进程和 Worker 线程都调用此函数，传入各自的运行时上下文。
@@ -121,17 +149,7 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
   const claudeConfigDir = path.join(ctx.configDir, 'conversations');
 
   // 构建环境变量（合并系统 env + Profile 凭据）
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    ANTHROPIC_AUTH_TOKEN: activeProfile.apiKey,
-    ANTHROPIC_BASE_URL: activeProfile.baseUrl,
-    ANTHROPIC_DEFAULT_HAIKU_MODEL: activeProfile.haikuModel,
-    ANTHROPIC_DEFAULT_SONNET_MODEL: activeProfile.sonnetModel,
-    ANTHROPIC_DEFAULT_OPUS_MODEL: activeProfile.opusModel,
-    API_TIMEOUT_MS: String(activeProfile.apiTimeoutMs),
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: activeProfile.disableNonessentialTraffic ? '1' : '0',
-    CLAUDE_CONFIG_DIR: claudeConfigDir,
-  };
+  const env = buildProfileEnv(activeProfile, claudeConfigDir);
 
   // 打包环境：设置 CLI 可执行文件路径
   const pathToClaudeCodeExecutable = ctx.isPackaged && ctx.cliPath ? ctx.cliPath : undefined;
@@ -152,12 +170,6 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
     ?? (appSettings.ai.effort ? 'sonnet' as const : undefined);
   if (subagentTier) {
     env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[subagentTier];
-  }
-
-  // 1M 长上下文：把自动压缩窗口设为 900K（留 100K 缓冲给最后几轮 messages）
-  // 必须走环境变量，SDK 的 autoCompactWindow 属于 Settings 类型，设在 query Options 上会被忽略
-  if (activeProfile.enable1MContext) {
-    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '900000';
   }
 
   return {
