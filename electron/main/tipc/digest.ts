@@ -2,7 +2,7 @@
 // 会话摘要卡巡检 + 手动提炼 + 提炼模型档位 IPC
 import { tipc } from '@egoist/tipc/main';
 import { listDigests, readDigest } from '../services/memory/digest-store.js';
-import { enqueueDigests } from '../services/memory/digest-trigger.js';
+import { enqueueDigests, getDigestActivity } from '../services/memory/digest-trigger.js';
 import { loadSettings, saveSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
@@ -76,6 +76,44 @@ export const digestRouter = {
         return { success: true };
       } catch (error) {
         console.error('[digest] setDigestModelTier 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /** 读取提炼模型方案 id（缺省回退主会话 activeProfileId） */
+  getDigestProfileId: t.procedure
+    .action(async () => {
+      try {
+        const settings = await loadSettings();
+        return { profileId: settings.ai.digestProfileId ?? settings.ai.activeProfileId };
+      } catch (error) {
+        console.error('[digest] getDigestProfileId 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /** 设置提炼模型方案 id */
+  setDigestProfileId: t.procedure
+    .input<{ profileId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const settings = await loadSettings();
+        settings.ai.digestProfileId = input.profileId;
+        await saveSettings(settings);
+        return { success: true };
+      } catch (error) {
+        console.error('[digest] setDigestProfileId 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /** 读取提炼活动状态（前端轮询用） */
+  getDigestActivity: t.procedure
+    .action(async () => {
+      try {
+        return { activity: getDigestActivity() };
+      } catch (error) {
+        console.error('[digest] getDigestActivity 失败:', error);
         return { error: String(error) };
       }
     }),
