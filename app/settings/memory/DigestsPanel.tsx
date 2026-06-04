@@ -86,7 +86,8 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
       if ('tier' in r && r.tier) setTier(r.tier as Tier);
     });
     client.getSettings().then((s) => {
-      const list = Object.values(s.profiles ?? {}).map((p) => ({ id: p.id, name: p.name }));
+      const profilesMap = 'settings' in s && s.settings?.profiles ? s.settings.profiles : {};
+      const list = Object.values(profilesMap).map((p) => ({ id: p.id, name: p.name }));
       setProfiles(list);
     });
     client.getDigestProfileId().then((r) => {
