@@ -144,6 +144,7 @@
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
 - `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
 - `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL）
+- `digest.ts` — 会话摘要卡巡检（listDigests / readDigest / triggerDigest 手动提炼 / get+setDigestModelTier）
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded 等）
 
 ## 业务服务（electron/main/services/）
@@ -152,6 +153,14 @@
 - `usage/` — 会话 token 用量采集与存储
   - `usage-extractor.ts` — 从 SDK result 提取 ConversationUsageEntry 纯函数（含 MODEL_CONTEXT_WINDOWS 兜底表、modelUsage 缺失合成、工具/子代理聚合）
   - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/deleteUsage）
+- `memory/` — 会话清洗 + 提炼闭环（里程碑 2 Phase A）
+  - `session-paths.ts` — 会话路径解析共享 util（getClaudeConfigDir / getSdkSessionsDir / getSessionJsonlPath，agent.ts 复用）
+  - `transcript-cleaner.ts` — 会话 JSONL 确定性去噪（cleanTranscriptFromLines 纯函数 + cleanTranscript IO，剥工具结果/系统行/思考块，保留用户+助手文字与一行工具骨架，~20x 压缩）
+  - `digest-store.ts` — 摘要卡读写（DigestCard 序列化/解析、saveDigest/readDigest/listDigests）+ 留底干净稿（_cleaned/）；落 `<configDir>/workspaces/<wsId>/digests/`
+  - `digest-prompt.ts` — 提炼提示词模板（DEFAULT_DIGEST_PROMPT + loadDigestPrompt 播种 `<configDir>/digest-prompt.md`）
+  - `digest-scanner.ts` — 脏检查（isDirty 纯函数按 JSONL mtime vs 卡 sourceMtime；findDirtySessions / scanAllWorkspaces）
+  - `digest-trigger.ts` — 提炼编排（串行队列并发=1 + in-flight 去重；triggerScanAll / triggerScanByConversation；提交 DIGEST_SESSION 任务）
+  - 注：里程碑1 的工作区主题记忆（memory-service / memory-recall / memory-fs / index）也在此目录
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt、permissionRules.allow/deny；导出 appendPermissionAllowRules 供权限请求"始终允许"持久化）
@@ -175,7 +184,7 @@
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
 - `agent-worker.ts` — Worker 线程执行器，与 Claude Agent SDK 交互
 - `query-based-session.ts` — 基于 query() 的会话（支持 resume/fork/skills/MCP/权限/人设/临时提示词），systemPrompt 统一 preset+append 模式
-- `task-types.ts` — 任务类型（SUMMARIZE/CHAT_SESSION）和消息定义（含 ExtendedSessionMessage 源定义）
+- `task-types.ts` — 任务类型（SUMMARIZE/CHAT_SESSION/PARSE_ARTICLE/DIGEST_SESSION）和消息定义（含 ExtendedSessionMessage、DigestSessionPayload 源定义）
 - `logger.ts` — 日志工具（mainLogger / workerLogger / createTaskLogger）
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置工具 + 自定义工具注册，IPC 查询供设置页/代理编辑页动态加载）
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）
@@ -188,7 +197,10 @@
   - DetectSignals：技术信号检测（MACD金叉/RSI超卖 等）
   - EvalFormula：执行用户自定义公式（screener/signal/score）
   - SimpleBacktest：简单策略回测
+- `tools/digest-tools.ts` — 会话提炼 MCP 工具（dogear-memory-digest server：CleanTranscript 去噪+留底 / ReadExistingDigest / SaveDigest）
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
+
+> 会话提炼链路：脏检查（digest-scanner）三触发点（启动扫/夜间03点/关会话）→ digest-trigger 串行起 DIGEST_SESSION 任务 → agent-worker.handleDigestSessionTask 一次性 query（模型按 digestModelTier 覆盖 ANTHROPIC_MODEL，haiku 不传 effort）→ agent 自调 digest-tools 三工具 → 摘要卡落 `<configDir>/workspaces/<wsId>/digests/<sessionId>.md`
 
 ## 数据存储（`.dogear/` 目录）
 
@@ -197,6 +209,9 @@
 - `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、分叉信息、personaId、tempPrompt、usageSummary）
 - `conversations/` — SDK 会话历史（Agent SDK 自动管理）
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细（每行一条 entry 或 compact marker，删除对话/工作区时联动清理）
+- `workspaces/{workspaceId}/digests/{sessionId}.md` — 会话摘要卡（frontmatter + 概述 + 想法/注意/决策条目带回溯 uuid）
+- `workspaces/{workspaceId}/digests/_cleaned/{sessionId}.md` — 提炼留底干净逐字稿（质量排查用）
+- `digest-prompt.md` — 会话提炼提示词模板（全局单份，首次缺失自动播种，可编辑）
 - `stocks/watchlist.json` — 自选股列表
 - `stocks/formulas.json` — 用户公式存储（screener/signal/score 三种类型）（新增）
 - `stocks/kline/{market}.{code}.jsonl` — K线历史数据（JSONL，每行一条 KLineDataPoint）
