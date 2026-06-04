@@ -24,7 +24,7 @@ export interface DigestRecentEntry {
 }
 
 export interface DigestActivity {
-  current: { workspaceId: string; sessionId: string; startedAt: number } | null;
+  current: { workspaceId: string; sessionId: string; startedAt: number; taskId: string } | null;
   queueDepth: number;
   recent: DigestRecentEntry[];
   lastScan: { at: number; dirtyCount: number } | null;
@@ -86,7 +86,6 @@ async function pump(): Promise<void> {
 
 async function runOne(d: DirtySession): Promise<void> {
   const startedAt = Date.now();
-  current = { workspaceId: d.workspaceId, sessionId: d.sdkSessionId, startedAt };
 
   const pushRecent = (outcome: DigestOutcome, extra: Partial<DigestRecentEntry>) => {
     recent.unshift({
@@ -112,6 +111,7 @@ async function runOne(d: DirtySession): Promise<void> {
     } as DigestSessionPayload,
     createdAt: Date.now(),
   };
+  current = { workspaceId: d.workspaceId, sessionId: d.sdkSessionId, startedAt, taskId: task.id };
 
   const { getAgentManager } = await import('../../agents/agent-manager.js');
   await new Promise<void>((resolve) => {

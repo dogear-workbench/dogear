@@ -35,6 +35,7 @@ import {
 class AgentWorker {
   private workerId: string;
   private currentTask: AgentTask | null = null;
+  private currentAbortController: AbortController | null = null;
   private messagePort: any = null;
   private isReady = false;
   private logger = workerLogger;
@@ -599,12 +600,16 @@ class AgentWorker {
     const template = await loadDigestPrompt(this.configDir);
     const prompt = `${template}\n\n目标会话 sessionId: ${sdkSessionId}`;
 
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
+
     try {
       const agentQuery = query({
         prompt,
         options: {
           permissionMode: 'dontAsk',
           env,
+          abortController,
           // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
           ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
           ...(baseConfig.pathToClaudeCodeExecutable && {
@@ -630,9 +635,15 @@ class AgentWorker {
       taskLogger.info('会话提炼任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
       return { sdkSessionId, saved, tier, profileName: digestProfile.name };
     } catch (error) {
+      if (abortController.signal.aborted) {
+        taskLogger.info('会话提炼被取消:', sdkSessionId);
+        return { sdkSessionId, saved: false, cancelled: true };
+      }
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('会话提炼任务失败:', errorMsg);
       return { sdkSessionId, saved: false, error: errorMsg };
+    } finally {
+      this.currentAbortController = null;
     }
   }
 
@@ -726,6 +737,7 @@ class AgentWorker {
   cancelTask(taskId: string) {
     if (this.currentTask && this.currentTask.id === taskId) {
       this.logger.info('取消任务:', taskId);
+      this.currentAbortController?.abort();
       this.sendTaskUpdate(taskId, TaskStatus.CANCELLED);
       this.currentTask = null;
     }

@@ -143,4 +143,18 @@ export const digestRouter = {
         return { error: String(error) };
       }
     }),
+
+  /** 取消提炼任务（队列中即时移除；正在跑的中断 query） */
+  cancelDigest: t.procedure
+    .input<{ taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const { getAgentManager } = await import('../agents/agent-manager.js');
+        getAgentManager().cancelTask(input.taskId);
+        return { success: true };
+      } catch (error) {
+        console.error('[digest] cancelDigest 失败:', error);
+        return { error: String(error) };
+      }
+    }),
 };
