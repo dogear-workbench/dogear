@@ -147,10 +147,13 @@ class AgentWorker {
           throw new Error(`未知任务类型: ${task.type}`);
       }
 
-      // 任务完成
+      // 任务完成（若期间被 cancelTask 取消，currentTask 已被清空且已发过 CANCELLED，跳过重复通知）
+      const cancelledDuringRun = this.currentTask?.id !== task.id;
       this.currentTask = null;
-      taskLogger.info('任务完成');
-      this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, result);
+      if (!cancelledDuringRun) {
+        taskLogger.info('任务完成');
+        this.sendTaskUpdate(task.id, TaskStatus.COMPLETED, result);
+      }
 
     } catch (error) {
       this.currentTask = null;
