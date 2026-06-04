@@ -144,7 +144,7 @@
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
 - `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
 - `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL）
-- `digest.ts` — 会话摘要卡巡检（listDigests / readDigest / triggerDigest 手动提炼 / get+setDigestModelTier）
+- `digest.ts` — 会话摘要卡巡检（listDigests / readDigest / triggerDigest 手动提炼 / get+setDigestModelTier 档位 / get+setDigestProfileId 独立模型方案 / getDigestActivity 提炼活动轮询）
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded 等）
 
 ## 业务服务（electron/main/services/）
@@ -159,7 +159,7 @@
   - `digest-store.ts` — 摘要卡读写（DigestCard 序列化/解析、saveDigest/readDigest/listDigests）+ 留底干净稿（_cleaned/）；落 `<configDir>/workspaces/<wsId>/digests/`
   - `digest-prompt.ts` — 提炼提示词模板（DEFAULT_DIGEST_PROMPT + loadDigestPrompt 播种 `<configDir>/digest-prompt.md`）
   - `digest-scanner.ts` — 脏检查（isDirty 纯函数按 JSONL mtime vs 卡 sourceMtime；findDirtySessions / scanAllWorkspaces）
-  - `digest-trigger.ts` — 提炼编排（串行队列并发=1 + in-flight 去重；triggerScanAll / triggerScanByConversation；提交 DIGEST_SESSION 任务）
+  - `digest-trigger.ts` — 提炼编排（串行队列并发=1 + in-flight 去重；triggerScanAll / triggerScanByConversation；提交 DIGEST_SESSION 任务）+ 提炼活动采集（current / queueDepth / recent 环形缓冲 / lastScan，classifyOutcome 判 saved/no-card/error，getDigestActivity 供前端轮询）
   - 注：里程碑1 的工作区主题记忆（memory-service / memory-recall / memory-fs / index）也在此目录
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
@@ -200,7 +200,7 @@
 - `tools/digest-tools.ts` — 会话提炼 MCP 工具（dogear-memory-digest server：CleanTranscript 去噪+留底 / ReadExistingDigest / SaveDigest）
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
-> 会话提炼链路：脏检查（digest-scanner）三触发点（启动扫/夜间03点/关会话）→ digest-trigger 串行起 DIGEST_SESSION 任务 → agent-worker.handleDigestSessionTask 一次性 query（模型按 digestModelTier 覆盖 ANTHROPIC_MODEL，haiku 不传 effort）→ agent 自调 digest-tools 三工具 → 摘要卡落 `<configDir>/workspaces/<wsId>/digests/<sessionId>.md`
+> 会话提炼链路：脏检查（digest-scanner）三触发点（启动扫/夜间03点/关会话）→ digest-trigger 串行起 DIGEST_SESSION 任务（并采集活动状态供记忆 Tab 轮询）→ agent-worker.handleDigestSessionTask 一次性 query（模型按 digestProfileId 指定的独立方案 + digestModelTier 档位重建凭证 env，缺省回退主会话 activeProfile，方案不完整即返回明确 error，haiku 不传 effort）→ agent 自调 digest-tools 三工具 → 摘要卡落 `<configDir>/workspaces/<wsId>/digests/<sessionId>.md`
 
 ## 数据存储（`.dogear/` 目录）
 
