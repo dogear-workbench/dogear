@@ -38,6 +38,21 @@ interface DigestCard {
 
 type Tier = 'haiku' | 'sonnet' | 'opus';
 
+interface DigestActivity {
+  current: { workspaceId: string; sessionId: string; startedAt: number } | null;
+  queueDepth: number;
+  recent: Array<{
+    sessionId: string;
+    finishedAt: number;
+    outcome: 'saved' | 'no-card' | 'error';
+    tier?: string;
+    profileName?: string;
+    error?: string;
+    durationMs: number;
+  }>;
+  lastScan: { at: number; dirtyCount: number } | null;
+}
+
 const KIND_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
   决策: 'default',
   想法: 'secondary',
@@ -51,6 +66,9 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
   const [selected, setSelected] = useState<DigestCard | null>(null);
   const [tier, setTier] = useState<Tier>('haiku');
   const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
+  const [profileId, setProfileId] = useState<string>('');
+  const [activity, setActivity] = useState<DigestActivity | null>(null);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -67,7 +85,28 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
     client.getDigestModelTier().then((r) => {
       if ('tier' in r && r.tier) setTier(r.tier as Tier);
     });
+    client.getSettings().then((s) => {
+      const list = Object.values(s.profiles ?? {}).map((p) => ({ id: p.id, name: p.name }));
+      setProfiles(list);
+    });
+    client.getDigestProfileId().then((r) => {
+      if ('profileId' in r && r.profileId) setProfileId(r.profileId);
+    });
   }, [loadList]);
+
+  useEffect(() => {
+    let alive = true;
+    const poll = async () => {
+      const r = await client.getDigestActivity();
+      if (alive && 'activity' in r && r.activity) setActivity(r.activity as DigestActivity);
+    };
+    poll();
+    const id = setInterval(poll, 2000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   const selectCard = async (sessionId: string) => {
     const result = await client.readDigest({ workspaceId, sessionId });
@@ -77,6 +116,11 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
   const handleTierChange = async (next: Tier) => {
     setTier(next);
     await client.setDigestModelTier({ tier: next });
+  };
+
+  const handleProfileChange = async (next: string) => {
+    setProfileId(next);
+    await client.setDigestProfileId({ profileId: next });
   };
 
   const handleReDigest = async (sessionId: string) => {
@@ -92,7 +136,16 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground whitespace-nowrap">提炼模型</label>
+          <label className="text-sm text-muted-foreground whitespace-nowrap">提炼方案</label>
+          <select
+            className="h-9 px-3 text-sm border rounded bg-background"
+            value={profileId}
+            onChange={(e) => handleProfileChange(e.target.value)}
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
           <select
             className="h-9 px-3 text-sm border rounded bg-background"
             value={tier}
@@ -108,6 +161,48 @@ export function DigestsPanel({ workspaceId, workspacePath }: Props) {
           刷新
         </Button>
       </div>
+
+      {activity && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-sm space-y-2">
+          <div className="flex items-center gap-2">
+            {activity.current ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                <span>正在提炼 <code className="text-xs">{activity.current.sessionId.slice(0, 12)}…</code></span>
+              </>
+            ) : (
+              <span className="text-muted-foreground">空闲</span>
+            )}
+            {activity.queueDepth > 0 && (
+              <Badge variant="secondary">队列 {activity.queueDepth}</Badge>
+            )}
+            {activity.lastScan && (
+              <span className="ml-auto text-xs text-muted-foreground">
+                上次扫描发现 {activity.lastScan.dirtyCount} 个待提炼 ·{' '}
+                {new Date(activity.lastScan.at).toLocaleTimeString()}
+              </span>
+            )}
+          </div>
+          {activity.recent.length > 0 && (
+            <ul className="space-y-1">
+              {activity.recent.slice(0, 5).map((r, i) => (
+                <li key={i} className="flex items-center gap-2 text-xs">
+                  <span>
+                    {r.outcome === 'saved' ? '✅' : r.outcome === 'no-card' ? '⚠️' : '❌'}
+                  </span>
+                  <code className="truncate max-w-[160px]">{r.sessionId.slice(0, 12)}…</code>
+                  {r.tier && <span className="text-muted-foreground">{r.tier}</span>}
+                  {r.outcome === 'no-card' && <span className="text-muted-foreground">未产卡</span>}
+                  {r.error && <span className="text-destructive truncate max-w-[200px]" title={r.error}>{r.error}</span>}
+                  <span className="ml-auto text-muted-foreground">
+                    {new Date(r.finishedAt).toLocaleTimeString()}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
 
       <div className="flex gap-6">
         {/* 左侧：摘要卡列表 */}
