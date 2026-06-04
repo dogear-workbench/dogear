@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, RefreshCw, Sparkles } from 'lucide-react';
+import { FileText, RefreshCw, Sparkles, Square, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
+import { cn } from '@/lib/utils';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
@@ -35,7 +36,7 @@ interface DigestCard {
 type Tier = 'haiku' | 'sonnet' | 'opus';
 
 interface DigestActivity {
-  current: { workspaceId: string; sessionId: string; startedAt: number } | null;
+  current: { workspaceId: string; sessionId: string; startedAt: number; taskId: string } | null;
   queueDepth: number;
   recent: Array<{
     sessionId: string;
@@ -68,6 +69,10 @@ export function DigestsPanel() {
   const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
   const [profileId, setProfileId] = useState<string>('');
   const [activity, setActivity] = useState<DigestActivity | null>(null);
+  const [prompt, setPrompt] = useState('');
+  const [defaultPrompt, setDefaultPrompt] = useState('');
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [promptDirty, setPromptDirty] = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -91,6 +96,10 @@ export function DigestsPanel() {
     });
     client.getDigestProfileId().then((r) => {
       if ('profileId' in r && r.profileId) setProfileId(r.profileId);
+    });
+    client.getDigestPrompt().then((r) => {
+      if ('prompt' in r && r.prompt) setPrompt(r.prompt);
+      if ('defaultPrompt' in r && r.defaultPrompt) setDefaultPrompt(r.defaultPrompt);
     });
   }, [loadList]);
 
@@ -121,6 +130,18 @@ export function DigestsPanel() {
   const handleProfileChange = async (next: string) => {
     setProfileId(next);
     await client.setDigestProfileId({ profileId: next });
+  };
+
+  const handleSavePrompt = async () => {
+    await client.setDigestPrompt({ prompt });
+    setPromptDirty(false);
+  };
+  const handleResetPrompt = () => {
+    setPrompt(defaultPrompt);
+    setPromptDirty(true);
+  };
+  const handleCancelDigest = async (taskId: string) => {
+    await client.cancelDigest({ taskId });
   };
 
   const handleReDigest = async (sessionId: string) => {
@@ -173,6 +194,15 @@ export function DigestsPanel() {
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                 <span>正在提炼 <code className="text-xs">{activity.current.sessionId.slice(0, 12)}…</code></span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-destructive"
+                  onClick={() => handleCancelDigest(activity.current!.taskId)}
+                >
+                  <Square className="w-3 h-3 mr-1" />
+                  停止
+                </Button>
               </>
             ) : (
               <span className="text-muted-foreground">空闲</span>
@@ -207,6 +237,29 @@ export function DigestsPanel() {
           )}
         </div>
       )}
+
+      <div className="rounded-md border">
+        <button
+          className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover:bg-muted/50"
+          onClick={() => setPromptOpen((v) => !v)}
+        >
+          <span>提炼提示词</span>
+          <ChevronDown className={cn('w-4 h-4 transition-transform', promptOpen && 'rotate-180')} />
+        </button>
+        {promptOpen && (
+          <div className="p-3 space-y-2 border-t">
+            <textarea
+              className="w-full min-h-[200px] px-3 py-2 text-sm border rounded-md bg-background font-mono resize-y"
+              value={prompt}
+              onChange={(e) => { setPrompt(e.target.value); setPromptDirty(true); }}
+            />
+            <div className="flex items-center gap-2">
+              <Button size="sm" disabled={!promptDirty} onClick={handleSavePrompt}>保存提示词</Button>
+              <Button size="sm" variant="outline" onClick={handleResetPrompt}>恢复默认</Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex gap-6">
         {/* 左侧：摘要卡列表 */}
