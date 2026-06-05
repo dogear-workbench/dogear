@@ -8,7 +8,11 @@ const { app } = electron;
  * 与 query-based-session.ts 中设置的 env.CLAUDE_CONFIG_DIR 保持一致
  */
 export function getClaudeConfigDir(): string {
-  const appDir = app.isPackaged ? app.getPath('userData') : process.cwd();
+  // Worker 线程无 electron app，优先读注入的 DOGEAR_CONFIG_DIR（已是 .dogear 目录）
+  if (process.env.DOGEAR_CONFIG_DIR) {
+    return path.join(process.env.DOGEAR_CONFIG_DIR, 'conversations');
+  }
+  const appDir = app?.isPackaged ? app.getPath('userData') : process.cwd();
   return path.join(appDir, '.dogear', 'conversations');
 }
 
