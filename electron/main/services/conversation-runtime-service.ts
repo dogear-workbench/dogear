@@ -123,6 +123,11 @@ async function buildConversationSessionConfig(
   if (mcpServers['dogear-memory']) {
     allowedTools.push('mcp__dogear-memory__*');
   }
+  // 复盘工具（dogear-memory-review）由 query-based-session 在工作区上下文齐全时挂载，
+  // 这里同条件放行，避免复盘 skill 每次调工具都弹权限
+  if (workspacePath) {
+    allowedTools.push('mcp__dogear-memory-review__*');
+  }
   for (const pack of OPTIONAL_TOOL_PACKS) {
     if (mcpServers[pack.mcpServerName]) {
       allowedTools.push(`mcp__${pack.mcpServerName}__*`);
@@ -150,6 +155,7 @@ async function buildConversationSessionConfig(
   return {
     allowedTools,
     workspacePath,
+    workspaceId,
     enableSkills: true,
     extraPluginPaths: extraPluginPaths.length > 0 ? extraPluginPaths : undefined,
     mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,

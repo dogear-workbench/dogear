@@ -81,6 +81,8 @@ import { appendPermissionAllowRules } from '../services/settings-service.js';
 import * as conversationService from '../services/conversation-service.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import { createReviewMcpServer } from './tools/review-tools.js';
+import { getReviewSkillDir } from '../services/memory/review-skill-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
 import { buildToolPackGuide } from './tool-pack-guide.js';
@@ -104,6 +106,7 @@ export interface QueryBasedSessionConfig {
   systemPrompt?: string;             // 系统提示词
   context?: SessionContext;          // 上下文信息
   workspacePath?: string;            // 工作区路径
+  workspaceId?: string;              // 工作区 ID（挂载 dogear-memory-review 复盘工具/skill 用）
   // Skill 配置
   enableSkills?: boolean;            // 是否启用 Skill 功能（默认 false）
   projectRoot?: string;              // 项目根目录（用于查找 .claude/skills/）
@@ -329,8 +332,13 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       // 配置 MCP Servers：始终挂载 article-parse 服务，并合并调用方传入的额外 servers
+      // 工作区上下文齐全时挂载跨会话复盘服务（dogear-memory-review）
+      const hasWorkspaceContext = !!(this.config.workspaceId && this.config.workspacePath);
       queryOptions.mcpServers = {
         'dogear-article-parse': createArticleParseMcpServer(),
+        ...(hasWorkspaceContext
+          ? { 'dogear-memory-review': createReviewMcpServer(this.config.workspaceId!, this.config.workspacePath!) }
+          : {}),
         ...(this.config.mcpServers || {}),
       };
       this.logger.info('已配置 MCP Servers:', Object.keys(queryOptions.mcpServers));
@@ -340,6 +348,7 @@ export class QueryBasedSession extends EventEmitter {
       const extraPluginPaths = this.config.extraPluginPaths ?? [];
       queryOptions.plugins = [
         { type: 'local' as const, path: getArticleParserSkillsDir() },
+        ...(hasWorkspaceContext ? [{ type: 'local' as const, path: getReviewSkillDir() }] : []),
         ...extraPluginPaths.map((p) => ({ type: 'local' as const, path: p })),
       ];
       this.logger.info('已配置 Skill 插件:', queryOptions.plugins.map((p: { path: string }) => p.path));

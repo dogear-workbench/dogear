@@ -395,6 +395,14 @@ app.whenReady().then(async () => {
     console.error('初始化文章解析 Skill 目录失败:', error);
   }
 
+  // 初始化跨会话复盘 Skill 目录
+  try {
+    const { ensureReviewSkillInitialized } = await import('./services/memory/review-skill-service.js');
+    await ensureReviewSkillInitialized();
+  } catch (error) {
+    console.error('初始化复盘 Skill 目录失败:', error);
+  }
+
   // 执行数据迁移（旧路径 → 新路径）
   try {
     const workspaceJsonService = await import('./services/workspace-json-service.js');
