@@ -22,7 +22,8 @@ export enum TaskType {
   READING_ASSIST = 'reading_assist', // 阅读辅助
   CHAT_SESSION = 'chat_session',    // 持续对话会话
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
-  DIGEST_SESSION = 'digest_session' // 会话提炼（清洗 → 摘要卡）
+  DIGEST_SESSION = 'digest_session', // 会话提炼（清洗 → 摘要卡）
+  REVIEW_SESSION = 'review_session'  // 跨会话复盘（摘要卡 → 复盘卡）
 }
 
 /**
@@ -203,6 +204,16 @@ export interface DigestSessionPayload {
   workspacePath: string;     // 工作区绝对路径（定位 JSONL 用）
   sdkSessionId: string;      // 目标会话 ID
   digestModelTier?: 'haiku' | 'sonnet' | 'opus'; // 提炼模型档位（缺省读 settings）
+}
+
+/**
+ * 跨会话复盘任务负载
+ * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
+ */
+export interface ReviewSessionPayload {
+  workspaceId: string;   // 工作区 ID（读摘要卡 / 落复盘卡）
+  workspacePath: string; // 工作区绝对路径（TraceSource 定位 JSONL 用）
+  reviewModelTier?: 'haiku' | 'sonnet' | 'opus'; // 复盘模型档位（缺省读 settings）
 }
 
 /**

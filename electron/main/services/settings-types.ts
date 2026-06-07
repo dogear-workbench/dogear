@@ -46,6 +46,10 @@ export interface AppSettings {
     digestModelTier?: 'haiku' | 'sonnet' | 'opus';
     /** 会话提炼使用的模型方案 id（缺省回退 activeProfileId，与主会话解耦） */
     digestProfileId?: string;
+    /** 跨会话复盘（REVIEW_SESSION）使用的模型档位。默认 sonnet */
+    reviewModelTier?: 'haiku' | 'sonnet' | 'opus';
+    /** 跨会话复盘使用的模型方案 id。缺省回退 activeProfileId */
+    reviewProfileId?: string;
     /** SDK 0.2.119+：true 时环境上下文移到首条 user message，改善 prompt 缓存命中率（默认 true） */
     excludeDynamicSections?: boolean;
     /** SDK 0.2.119+：启用 Agent 回答后的下一步建议气泡（默认 true） */
