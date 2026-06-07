@@ -9,6 +9,12 @@ import { mainLogger } from '../../agents/logger.js';
 const inFlight = new Set<string>();
 const queue: DirtySession[] = [];
 let pumping = false;
+const idleWaiters: Array<() => void> = [];
+
+export function whenDigestIdle(): Promise<void> {
+  if (!pumping && queue.length === 0 && inFlight.size === 0) return Promise.resolve();
+  return new Promise<void>((resolve) => idleWaiters.push(resolve));
+}
 
 export type DigestOutcome = 'saved' | 'no-card' | 'error';
 
@@ -81,6 +87,10 @@ async function pump(): Promise<void> {
     }
   } finally {
     pumping = false;
+    if (queue.length === 0 && inFlight.size === 0) {
+      const waiters = idleWaiters.splice(0);
+      for (const w of waiters) w();
+    }
   }
 }
 
