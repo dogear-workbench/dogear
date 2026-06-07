@@ -34,8 +34,9 @@ function errText(prefix: string, error: unknown) {
  * 创建跨会话复盘 MCP Server
  * @param workspaceId 工作区 ID（读写摘要卡 / 复盘卡）
  * @param workspacePath 工作区绝对路径（定位原始会话 JSONL 用）
+ * @param onSaved 可选：SaveReviewCard 成功时回调（handler 用来判断是否真正落卡）
  */
-export function createReviewMcpServer(workspaceId: string, workspacePath: string) {
+export function createReviewMcpServer(workspaceId: string, workspacePath: string, onSaved?: () => void) {
   return createSdkMcpServer({
     name: 'dogear-memory-review',
     version: '1.0.0',
@@ -155,6 +156,7 @@ export function createReviewMcpServer(workspaceId: string, workspacePath: string
               items: args.items,
             };
             await saveReview(workspaceId, card);
+            onSaved?.();
             return {
               content: [{
                 type: 'text' as const,
