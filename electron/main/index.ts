@@ -425,12 +425,17 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
-  // ── 会话提炼三触发点（里程碑 2 Phase A）──
+  // ── 会话提炼/复盘三触发点（里程碑 2 Phase A+B）──
   // 触发点①：启动后延迟扫一遍，backfill 存量会话（低优先，不阻塞窗口）
   setTimeout(() => {
     void import('./services/memory/digest-trigger.js')
-      .then((m) => m.triggerScanAll())
-      .catch((err) => console.error('启动会话提炼扫描失败:', err));
+      .then(async (m) => {
+        await m.triggerScanAll();
+        await m.whenDigestIdle();
+        const r = await import('./services/memory/review-trigger.js');
+        await r.triggerReviewScan();
+      })
+      .catch((err) => console.error('启动会话提炼/复盘扫描失败:', err));
   }, 8000);
 
   // 触发点②：夜间定时（每小时检查本地时间命中 03:xx，软件开着才跑；每天最多一次）
@@ -442,8 +447,13 @@ app.whenReady().then(async () => {
     if (day === lastNightlyDigestDay) return;
     lastNightlyDigestDay = day;
     void import('./services/memory/digest-trigger.js')
-      .then((m) => m.triggerScanAll())
-      .catch((err) => console.error('夜间会话提炼扫描失败:', err));
+      .then(async (m) => {
+        await m.triggerScanAll();
+        await m.whenDigestIdle();
+        const r = await import('./services/memory/review-trigger.js');
+        await r.triggerReviewScan();
+      })
+      .catch((err) => console.error('夜间会话提炼/复盘扫描失败:', err));
   }, 60 * 60 * 1000);
 
   // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出
