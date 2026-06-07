@@ -15,7 +15,7 @@ import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
-import { EmptyFocusState } from '@/components/EmptyFocusState';
+import { Dashboard } from '@/components/dashboard/Dashboard';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 
@@ -310,7 +310,7 @@ export default function Home() {
               ))}
             </div>
           ) : (
-            <EmptyFocusState />
+            <Dashboard />
           )}
         </section>
 
