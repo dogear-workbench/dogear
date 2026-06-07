@@ -143,6 +143,10 @@ class AgentWorker {
           result = await this.handleDigestSessionTask(task, taskLogger);
           break;
 
+        case TaskType.REVIEW_SESSION:
+          result = await this.handleReviewSessionTask(task, taskLogger);
+          break;
+
         default:
           throw new Error(`未知任务类型: ${task.type}`);
       }
@@ -645,6 +649,112 @@ class AgentWorker {
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('会话提炼任务失败:', errorMsg);
       return { sdkSessionId, saved: false, error: errorMsg };
+    } finally {
+      this.currentAbortController = null;
+    }
+  }
+
+  /**
+   * 处理跨会话复盘任务（REVIEW_SESSION）
+   *
+   * 一次性 headless query：agent 自主调 ListDigests → ReadDigest → ReadReviewCard → TraceSource → SaveReviewCard，
+   * 把工作区所有摘要卡综合成一张「复盘卡」。模型按 reviewModelTier 覆盖（默认 sonnet）。
+   */
+  private async handleReviewSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
+    const payload = task.payload as import('./task-types.js').ReviewSessionPayload;
+    const { workspaceId, workspacePath } = payload;
+
+    taskLogger.info('开始跨会话复盘任务:', '| workspace:', workspaceId);
+    const startedAt = Date.now();
+
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const baseConfig = await buildQueryBaseConfig({
+      configDir: this.configDir,
+      isPackaged: this.isPackaged,
+      cliPath: this.cliPath,
+    });
+
+    // 复盘方案：reviewProfileId 指定的 Profile，缺省回退主会话 activeProfile
+    const { buildProfileEnv } = await import('./agent-query-config.js');
+    const { isProfileComplete } = await import('../services/settings-types.js');
+    const reviewProfileId = baseConfig.appSettings.ai.reviewProfileId;
+    const reviewProfile =
+      (reviewProfileId && baseConfig.appSettings.profiles[reviewProfileId])
+      || baseConfig.activeProfile;
+
+    if (!isProfileComplete(reviewProfile)) {
+      const error = `复盘方案「${reviewProfile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`;
+      taskLogger.error('跨会话复盘任务终止:', error);
+      return { workspaceId, saved: false, error };
+    }
+
+    const tier = payload.reviewModelTier
+      ?? baseConfig.appSettings.ai.reviewModelTier
+      ?? 'sonnet';
+    const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
+      haiku: reviewProfile.haikuModel,
+      sonnet: reviewProfile.sonnetModel,
+      opus: reviewProfile.opusModel,
+    };
+    const claudeConfigDir = path.join(this.configDir, 'conversations');
+    const env = {
+      ...buildProfileEnv(reviewProfile, claudeConfigDir),
+      ANTHROPIC_MODEL: tierMap[tier],
+    };
+
+    const { createReviewMcpServer } = await import('./tools/review-tools.js');
+    let saved = false;
+    const reviewServer = createReviewMcpServer(workspaceId, workspacePath, () => { saved = true; });
+
+    const { loadReviewPrompt } = await import('../services/memory/review-prompt.js');
+    const template = await loadReviewPrompt(this.configDir);
+    const prompt = template;
+
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
+
+    try {
+      const agentQuery = query({
+        prompt,
+        options: {
+          permissionMode: 'dontAsk',
+          env,
+          abortController,
+          // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
+          ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
+          ...(baseConfig.pathToClaudeCodeExecutable && {
+            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
+          }),
+          mcpServers: {
+            'dogear-memory-review': reviewServer,
+          },
+          allowedTools: [
+            'mcp__dogear-memory-review__ListDigests',
+            'mcp__dogear-memory-review__ReadDigest',
+            'mcp__dogear-memory-review__ReadReviewCard',
+            'mcp__dogear-memory-review__TraceSource',
+            'mcp__dogear-memory-review__SaveReviewCard',
+          ],
+        },
+      });
+
+      for await (const message of agentQuery) {
+        if (message.type === 'result') {
+          taskLogger.info('跨会话复盘完成');
+        }
+      }
+
+      taskLogger.info('跨会话复盘任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
+      return { workspaceId, saved, tier, profileName: reviewProfile.name };
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        taskLogger.info('跨会话复盘被取消:', workspaceId);
+        return { workspaceId, saved: false, cancelled: true };
+      }
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      taskLogger.error('跨会话复盘任务失败:', errorMsg);
+      return { workspaceId, saved: false, error: errorMsg };
     } finally {
       this.currentAbortController = null;
     }
