@@ -18,6 +18,8 @@ import { environmentRouter } from './environment.js';
 import { skillRouter } from './skill.js';
 import { usageRouter } from './usage.js';
 import { digestRouter } from './digest.js';
+import { reviewRouter } from './review.js';
+import { notesRouter } from './notes.js';
 
 export const router = {
   ...aiRouter,
@@ -38,6 +40,8 @@ export const router = {
   ...skillRouter,
   ...usageRouter,
   ...digestRouter,
+  ...reviewRouter,
+  ...notesRouter,
 };
 
 export type Router = typeof router;
