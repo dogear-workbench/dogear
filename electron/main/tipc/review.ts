@@ -115,4 +115,17 @@ export const reviewRouter = {
         return { error: String(error) };
       }
     }),
+
+  cancelReview: t.procedure
+    .input<{ taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const { getAgentManager } = await import('../agents/agent-manager.js');
+        getAgentManager().cancelTask(input.taskId);
+        return { success: true };
+      } catch (error) {
+        console.error('[review] cancelReview 失败:', error);
+        return { error: String(error) };
+      }
+    }),
 };
