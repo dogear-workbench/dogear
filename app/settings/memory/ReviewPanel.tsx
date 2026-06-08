@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Square, ChevronDown, Sparkles } from 'lucide-react';
+import { RefreshCw, Square, ChevronDown, Sparkles, CheckCircle2, AlertCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { client } from '@/lib/client';
@@ -167,7 +167,13 @@ export function ReviewPanel() {
             <ul className="space-y-1">
               {activity.recent.slice(0, 5).map((r, i) => (
                 <li key={i} className="flex items-center gap-2 text-xs">
-                  <span>{r.outcome === 'saved' ? '✅' : r.outcome === 'no-card' ? '⚠️' : '❌'}</span>
+                  {r.outcome === 'saved' ? (
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  ) : r.outcome === 'no-card' ? (
+                    <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  ) : (
+                    <XCircle className="w-3.5 h-3.5 text-destructive shrink-0" />
+                  )}
                   <code className="truncate max-w-[160px]">{r.workspaceId.slice(0, 12)}…</code>
                   {r.tier && <span className="text-muted-foreground">{r.tier}</span>}
                   {r.outcome === 'no-card' && <span className="text-muted-foreground">未产卡</span>}

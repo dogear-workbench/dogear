@@ -9,13 +9,14 @@ interface ScratchpadSectionProps {
 export function ScratchpadSection({ workspaceId }: ScratchpadSectionProps) {
   const notesContent = useDashboardStore((s) => s.notesContent);
   const notesSaving = useDashboardStore((s) => s.notesSaving);
-  const setNotesLocal = useDashboardStore((s) => s.setNotesLocal);
   const flushNotes = useDashboardStore((s) => s.flushNotes);
 
   const [value, setValue] = useState(notesContent);
   const [touched, setTouched] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // notesContent 仅在加载/切工作区时变化（编辑期间不回写 store），
+  // 故此处只在那些时机同步本地值并清空「已保存」提示。
   useEffect(() => {
     setValue(notesContent);
     setTouched(false);
@@ -31,10 +32,9 @@ export function ScratchpadSection({ workspaceId }: ScratchpadSectionProps) {
     const v = e.target.value;
     setValue(v);
     setTouched(true);
-    setNotesLocal(v);
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      flushNotes(workspaceId);
+      flushNotes(workspaceId, v);
     }, 800);
   };
 

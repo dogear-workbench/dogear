@@ -8,10 +8,10 @@ export interface StaleWorkspace {
   workspacePath: string;
 }
 
-/** 脏条件：无复盘卡 → 脏；有卡时最新摘要卡晚于上次复盘 → 脏（纯函数，可单测） */
+/** 脏条件：无摘要卡 → 不脏（无可复盘）；有摘要卡但无复盘卡 → 脏；最新摘要卡晚于上次复盘 → 脏（纯函数，可单测） */
 export function isReviewStale(card: ReviewCard | null, latestDigestCreatedAt: string | null): boolean {
-  if (!card) return true;
   if (!latestDigestCreatedAt) return false;
+  if (!card) return true;
   return latestDigestCreatedAt > card.reviewedAt;
 }
 

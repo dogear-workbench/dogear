@@ -18,3 +18,6 @@ test('最新摘要卡不晚于上次复盘 → 跳过', () => {
 test('无摘要卡（latest 为 null）→ 跳过', () => {
   expect(isReviewStale(card('2026-06-07T00:00:00Z'), null)).toBe(false);
 });
+test('无卡且无摘要卡 → 跳过', () => {
+  expect(isReviewStale(null, null)).toBe(false);
+});

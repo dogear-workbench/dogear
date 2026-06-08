@@ -24,7 +24,7 @@ interface AdvisorSectionProps {
 
 export function AdvisorSection({ workspaceId, workspacePath }: AdvisorSectionProps) {
   const reviewCard = useDashboardStore((s) => s.reviewCard);
-  const reviewRunning = useDashboardStore((s) => s.reviewRunning);
+  const reviewRunning = useDashboardStore((s) => s.reviewRunningWorkspaceId === workspaceId);
   const triggerReview = useDashboardStore((s) => s.triggerReview);
 
   const hasItems = reviewCard && reviewCard.items.length > 0;

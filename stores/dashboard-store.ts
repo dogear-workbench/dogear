@@ -40,23 +40,62 @@ interface DashboardState {
   reviewActivity: ReviewActivity | null;
   notesContent: string;
   notesSaving: boolean;
-  reviewRunning: boolean;
+  // 正在复盘的工作区 id（null 表示无）。组件按 wsId 派生自己的「复盘中」状态，
+  // 避免全局布尔在多工作区间串台。
+  reviewRunningWorkspaceId: string | null;
+  // 当前仪表盘呈现的工作区，用于轮询结束后判断是否回填到正在看的工作区。
+  currentWorkspaceId: string | null;
 
+  setCurrentWorkspace: (workspaceId: string) => void;
   loadReview: (workspaceId: string) => Promise<void>;
   loadNotes: (workspaceId: string) => Promise<void>;
-  setNotesLocal: (content: string) => void;
-  flushNotes: (workspaceId: string) => Promise<void>;
+  flushNotes: (workspaceId: string, content: string) => Promise<void>;
   triggerReview: (workspaceId: string, workspacePath: string) => Promise<void>;
 }
 
 let pollIntervalId: ReturnType<typeof setInterval> | null = null;
+
+function startReviewPoll(
+  set: (partial: Partial<DashboardState>) => void,
+  get: () => DashboardState,
+): void {
+  if (pollIntervalId !== null) return; // 单例轮询：多工作区共享一个定时器
+  pollIntervalId = setInterval(async () => {
+    try {
+      const result = await client.getReviewActivity();
+      if (!('activity' in result) || !result.activity) return;
+      const activity = result.activity as ReviewActivity;
+      set({ reviewActivity: activity });
+
+      const busy = activity.current !== null || activity.queueDepth > 0;
+      if (busy) return;
+
+      clearInterval(pollIntervalId!);
+      pollIntervalId = null;
+      const finishedWs = get().reviewRunningWorkspaceId;
+      set({ reviewRunningWorkspaceId: null });
+      // 仅当复盘完成的工作区仍是当前呈现的工作区时，才回填复盘卡，
+      // 否则会把别的工作区的卡刷到正在看的仪表盘上。
+      if (finishedWs && finishedWs === get().currentWorkspaceId) {
+        get().loadReview(finishedWs);
+      }
+    } catch (error) {
+      console.error('[dashboard] 轮询 getReviewActivity 失败:', error);
+    }
+  }, 2000);
+}
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
   reviewCard: null,
   reviewActivity: null,
   notesContent: '',
   notesSaving: false,
-  reviewRunning: false,
+  reviewRunningWorkspaceId: null,
+  currentWorkspaceId: null,
+
+  setCurrentWorkspace: (workspaceId) => {
+    set({ currentWorkspaceId: workspaceId });
+  },
 
   loadReview: async (workspaceId) => {
     try {
@@ -80,15 +119,10 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     }
   },
 
-  setNotesLocal: (content) => {
-    set({ notesContent: content });
-  },
-
-  flushNotes: async (workspaceId) => {
-    const { notesContent } = get();
+  flushNotes: async (workspaceId, content) => {
     set({ notesSaving: true });
     try {
-      await client.saveNotes({ workspaceId, content: notesContent });
+      await client.saveNotes({ workspaceId, content });
     } catch (error) {
       console.error('[dashboard] flushNotes 失败:', error);
     } finally {
@@ -97,43 +131,13 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   },
 
   triggerReview: async (workspaceId, workspacePath) => {
-    if (pollIntervalId !== null) return;
-
     try {
       await client.triggerReview({ workspaceId, workspacePath });
     } catch (error) {
       console.error('[dashboard] triggerReview 失败:', error);
       return;
     }
-
-    set({ reviewRunning: true });
-
-    const stopPoll = (wsId: string) => {
-      if (pollIntervalId !== null) {
-        clearInterval(pollIntervalId);
-        pollIntervalId = null;
-      }
-      set({ reviewRunning: false });
-      get().loadReview(wsId);
-    };
-
-    pollIntervalId = setInterval(async () => {
-      try {
-        const result = await client.getReviewActivity();
-        if (!('activity' in result) || !result.activity) return;
-        const activity = result.activity as ReviewActivity;
-        set({ reviewActivity: activity });
-
-        const stillRunning =
-          (activity.current?.workspaceId === workspaceId) ||
-          (activity.queueDepth > 0 && activity.recent.length === 0);
-
-        if (!stillRunning) {
-          stopPoll(workspaceId);
-        }
-      } catch (error) {
-        console.error('[dashboard] 轮询 getReviewActivity 失败:', error);
-      }
-    }, 2000);
+    set({ reviewRunningWorkspaceId: workspaceId });
+    startReviewPoll(set, get);
   },
 }));

@@ -10,14 +10,16 @@ import { ScratchpadSection } from './ScratchpadSection';
 export function Dashboard() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const newConversation = useConversationStore((s) => s.newConversation);
+  const setCurrentWorkspace = useDashboardStore((s) => s.setCurrentWorkspace);
   const loadReview = useDashboardStore((s) => s.loadReview);
   const loadNotes = useDashboardStore((s) => s.loadNotes);
 
   useEffect(() => {
     if (!workspace?.id) return;
+    setCurrentWorkspace(workspace.id);
     loadReview(workspace.id);
     loadNotes(workspace.id);
-  }, [workspace?.id, loadReview, loadNotes]);
+  }, [workspace?.id, setCurrentWorkspace, loadReview, loadNotes]);
 
   if (!workspace) {
     return (
