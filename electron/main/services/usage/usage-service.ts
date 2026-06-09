@@ -20,7 +20,11 @@ const logger = mainLogger.child('usage-service');
 // ============================================================
 
 function getConfigDir(): string {
-  if (app.isPackaged) {
+  // 与 session-paths.ts 对齐：优先读 env（worker 线程 / 测试场景无 electron app）
+  if (process.env.DOGEAR_CONFIG_DIR) {
+    return process.env.DOGEAR_CONFIG_DIR;
+  }
+  if (app?.isPackaged) {
     return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');

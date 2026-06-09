@@ -1,19 +1,31 @@
-import { describe, it, expect, afterAll, mock } from 'bun:test';
+import { describe, it, expect, afterAll, beforeAll } from 'bun:test';
+import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { randomUUID } from 'crypto';
 
-// bun test 环境中没有 Electron，mock electron 模块使 getConfigDir() 回退到 tmpdir
-const tmpBase = path.join(os.tmpdir(), `dogear-usage-test-${Date.now()}`);
-mock.module('electron', () => ({
-  default: { app: { isPackaged: false, getPath: () => tmpBase } },
-}));
+// 不再 mock electron（bun 并发跑多文件时 mock.module 会与别的测试相互覆盖）。
+// 改用 DOGEAR_CONFIG_DIR env 让 getConfigDir() 走 env 分支，与 session-paths.ts 对齐。
+let tmpBase: string;
+let prevEnv: string | undefined;
 
-// mock 必须在 import 服务之前完成（静态导入会在执行前求值，用动态 import 绕过）
-const { appendEntry, appendCompactMarker, appendContext, readUsage, deleteUsage } = await import('./usage-service.js');
+beforeAll(async () => {
+  tmpBase = await fs.mkdtemp(path.join(os.tmpdir(), 'dogear-usage-test-'));
+  prevEnv = process.env.DOGEAR_CONFIG_DIR;
+  process.env.DOGEAR_CONFIG_DIR = tmpBase;
+});
+
+afterAll(async () => {
+  if (prevEnv === undefined) delete process.env.DOGEAR_CONFIG_DIR;
+  else process.env.DOGEAR_CONFIG_DIR = prevEnv;
+  await fs.rm(tmpBase, { recursive: true, force: true });
+});
+
+import { appendEntry, appendCompactMarker, appendContext, readUsage, deleteUsage } from './usage-service.js';
 import type { ConversationUsageEntry, CompactMarker, ContextSnapshot } from '../../types.js';
 
-const TEST_ID = `__usage_test__${Date.now()}`;
-const CTX_ID = `__usage_ctx_test__${Date.now()}`;
+const TEST_ID = `__usage_test__${randomUUID()}`;
+const CTX_ID = `__usage_ctx_test__${randomUUID()}`;
 
 function makeEntry(overrides: Partial<ConversationUsageEntry> = {}): ConversationUsageEntry {
   return {
@@ -36,11 +48,6 @@ function makeEntry(overrides: Partial<ConversationUsageEntry> = {}): Conversatio
     ...overrides,
   };
 }
-
-afterAll(async () => {
-  await deleteUsage(TEST_ID);
-  await deleteUsage(CTX_ID);
-});
 
 describe('usage-service', () => {
   it('appends entries and compact marker, reads back correctly', async () => {
