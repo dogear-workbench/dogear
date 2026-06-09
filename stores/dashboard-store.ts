@@ -1,23 +1,6 @@
 import { create } from 'zustand';
 import { client } from '@/lib/client';
 
-export interface ReviewRef {
-  sessionId: string;
-  uuid: string;
-}
-
-export interface ReviewItem {
-  kind: string;
-  text: string;
-  refs: ReviewRef[];
-}
-
-export interface ReviewCard {
-  reviewedAt: string;
-  coveredCount: number;
-  items: ReviewItem[];
-}
-
 export interface ReviewRecentEntry {
   workspaceId: string;
   finishedAt: number;
@@ -36,7 +19,8 @@ export interface ReviewActivity {
 }
 
 interface DashboardState {
-  reviewCard: ReviewCard | null;
+  reportMarkdown: string | null;
+  reportUpdatedAt: string | null;
   reviewActivity: ReviewActivity | null;
   notesContent: string;
   notesSaving: boolean;
@@ -47,7 +31,7 @@ interface DashboardState {
   currentWorkspaceId: string | null;
 
   setCurrentWorkspace: (workspaceId: string) => void;
-  loadReview: (workspaceId: string) => Promise<void>;
+  loadReport: (workspaceId: string) => Promise<void>;
   loadNotes: (workspaceId: string) => Promise<void>;
   flushNotes: (workspaceId: string, content: string) => Promise<void>;
   triggerReview: (workspaceId: string, workspacePath: string) => Promise<void>;
@@ -74,10 +58,10 @@ function startReviewPoll(
       pollIntervalId = null;
       const finishedWs = get().reviewRunningWorkspaceId;
       set({ reviewRunningWorkspaceId: null });
-      // 仅当复盘完成的工作区仍是当前呈现的工作区时，才回填复盘卡，
-      // 否则会把别的工作区的卡刷到正在看的仪表盘上。
+      // 仅当生成完成的工作区仍是当前呈现的工作区时，才回填报告，
+      // 否则会把别的工作区的报告刷到正在看的仪表盘上。
       if (finishedWs && finishedWs === get().currentWorkspaceId) {
-        get().loadReview(finishedWs);
+        get().loadReport(finishedWs);
       }
     } catch (error) {
       console.error('[dashboard] 轮询 getReviewActivity 失败:', error);
@@ -86,7 +70,8 @@ function startReviewPoll(
 }
 
 export const useDashboardStore = create<DashboardState>((set, get) => ({
-  reviewCard: null,
+  reportMarkdown: null,
+  reportUpdatedAt: null,
   reviewActivity: null,
   notesContent: '',
   notesSaving: false,
@@ -97,14 +82,18 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     set({ currentWorkspaceId: workspaceId });
   },
 
-  loadReview: async (workspaceId) => {
+  loadReport: async (workspaceId) => {
     try {
-      const result = await client.getReviewCard({ workspaceId });
-      if ('card' in result) {
-        set({ reviewCard: (result.card as ReviewCard) ?? null });
+      const result = await client.getReport({ workspaceId });
+      if ('report' in result) {
+        const report = result.report as { markdown: string; updatedAt: string } | null;
+        set({
+          reportMarkdown: report?.markdown ?? null,
+          reportUpdatedAt: report?.updatedAt ?? null,
+        });
       }
     } catch (error) {
-      console.error('[dashboard] loadReview 失败:', error);
+      console.error('[dashboard] loadReport 失败:', error);
     }
   },
 

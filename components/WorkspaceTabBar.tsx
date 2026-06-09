@@ -14,7 +14,7 @@
  * - 对话创建（由对话列表处理）
  */
 
-import { ExternalLink, X } from 'lucide-react';
+import { ExternalLink, X, Home } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { StatusPulse } from '@/components/StatusPulse';
-import { useSessionStore, type SessionTab } from '@/stores/session-store';
+import { useSessionStore, type SessionTab, HOME_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -46,8 +46,6 @@ export function WorkspaceTabBar() {
 
   // 过滤掉已弹到独立窗口的 Tab（保持 AgentChat 挂载但不显示标签头）
   const tabs = allTabs.filter((t) => !sessionWindowIds.has(t.conversationId));
-
-  if (tabs.length === 0) return null;
 
   /** Tab 点击：如 workspaceId 不同则先切换工作区，再聚焦 Tab */
   const handleTabClick = async (tab: SessionTab) => {
@@ -127,6 +125,17 @@ export function WorkspaceTabBar() {
   return (
     <ScrollArea className="border-b bg-muted/30">
       <div className="flex items-center">
+        <button
+          onClick={() => switchTab(HOME_TAB_ID)}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
+            activeTabId === HOME_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+          )}
+          title="首页"
+        >
+          <Home className="w-3.5 h-3.5" />
+          <span>首页</span>
+        </button>
         {tabs.map((tab) => {
           const isActive = activeTabId === tab.conversationId;
           const isRunning = runningConversationIds.has(tab.conversationId);

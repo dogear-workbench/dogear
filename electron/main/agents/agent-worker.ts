@@ -655,10 +655,11 @@ class AgentWorker {
   }
 
   /**
-   * 处理跨会话复盘任务（REVIEW_SESSION）
+   * 处理首页报告任务（REVIEW_SESSION，历史代号 review）
    *
-   * 一次性 headless query：agent 自主调 ListDigests → ReadDigest → ReadReviewCard → TraceSource → SaveReviewCard，
-   * 把工作区所有摘要卡综合成一张「复盘卡」。模型按 reviewModelTier 覆盖（默认 sonnet）。
+   * 一次性 headless query：agent 自主调 ListDigests → ReadDigest → TraceSource → ReadReport/WriteReport
+   * + RecallMemory/SaveMemory/ForgetMemory，把新摘要卡分流为「更新记忆 + 重写首页报告」。
+   * saved 表示是否写了报告。模型按 reviewModelTier 覆盖（默认 sonnet）。
    */
   private async handleReviewSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').ReviewSessionPayload;
@@ -704,8 +705,10 @@ class AgentWorker {
     };
 
     const { createReviewMcpServer } = await import('./tools/review-tools.js');
+    const { createMemoryTools } = await import('./tools/memory-tools.js');
     let saved = false;
     const reviewServer = createReviewMcpServer(workspaceId, workspacePath, () => { saved = true; });
+    const memoryServer = createMemoryTools(workspacePath);
 
     const { loadReviewPrompt } = await import('../services/memory/review-prompt.js');
     const template = await loadReviewPrompt(this.configDir);
@@ -728,13 +731,17 @@ class AgentWorker {
           }),
           mcpServers: {
             'dogear-memory-review': reviewServer,
+            'dogear-memory': memoryServer,
           },
           allowedTools: [
             'mcp__dogear-memory-review__ListDigests',
             'mcp__dogear-memory-review__ReadDigest',
-            'mcp__dogear-memory-review__ReadReviewCard',
             'mcp__dogear-memory-review__TraceSource',
-            'mcp__dogear-memory-review__SaveReviewCard',
+            'mcp__dogear-memory-review__ReadReport',
+            'mcp__dogear-memory-review__WriteReport',
+            'mcp__dogear-memory__RecallMemory',
+            'mcp__dogear-memory__SaveMemory',
+            'mcp__dogear-memory__ForgetMemory',
           ],
         },
       });

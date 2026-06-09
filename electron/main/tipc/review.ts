@@ -1,5 +1,5 @@
 import { tipc } from '@egoist/tipc/main';
-import { readReview } from '../services/memory/review-store.js';
+import { readReport } from '../services/memory/review-store.js';
 import { triggerReview, getReviewActivity } from '../services/memory/review-trigger.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
 import { loadReviewPrompt, saveReviewPrompt, DEFAULT_REVIEW_PROMPT } from '../services/memory/review-prompt.js';
@@ -9,14 +9,14 @@ const t = tipc.create();
 type ReviewModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export const reviewRouter = {
-  getReviewCard: t.procedure
+  getReport: t.procedure
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const card = await readReview(input.workspaceId);
-        return { card };
+        const report = await readReport(input.workspaceId);
+        return { report };
       } catch (error) {
-        console.error('[review] getReviewCard 失败:', error);
+        console.error('[review] getReport 失败:', error);
         return { error: String(error) };
       }
     }),

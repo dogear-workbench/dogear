@@ -85,6 +85,10 @@
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 - `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸
 - `ArticleParseHistoryPanel.tsx` — 网络文章解析历史面板，追踪 script/readability/ai 状态
+- `dashboard/` — 首页工作台（固定「首页」tab 内容）
+  - `Dashboard.tsx` — 容器（@container 自适应：窄屏堆叠 / 宽屏左报告右速记），按 workspace.id 拉 loadReport + loadNotes
+  - `ReportSection.tsx` — 首页报告区（MarkdownRenderer 渲染 `dashboard.md` 正文 + 刷新按钮触发 triggerReview + 相对时间）
+  - `ScratchpadSection.tsx` — 速记板（800ms debounce 自动保存）
 - `wechat/` — 微信 Bot 模块
   - `WechatDialog.tsx` — 微信认证 Dialog（QR码扫描 / Bot 控制面板）
   - `BotControlPanel.tsx` — Bot 控制面板（名称、轮询状态、连接错误、断开连接）
@@ -113,6 +117,8 @@
 - `ui-store.ts` — UI 状态：设置 overlay 开关、右侧面板折叠（rightPanelOpen）
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
 - `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
+- `dashboard-store.ts` — 首页工作台状态：reportMarkdown/reportUpdatedAt（首页报告）+ notesContent（速记板）+ reviewActivity 轮询 + triggerReview/loadReport/loadNotes/flushNotes actions
+- `session-store.ts` — 多会话标签页：tabs[] + activeTabId + sessionWindowIds；导出 `HOME_TAB_ID` 哨兵（非真实会话）表示首页 tab，activeTabId 初始/关末 tab 后回退到该哨兵
 
 ## 工具函数（lib/）
 
@@ -145,6 +151,7 @@
 - `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
 - `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL）
 - `digest.ts` — 会话摘要卡巡检（listDigests / readDigest / triggerDigest 手动提炼 / get+setDigestModelTier 档位 / get+setDigestProfileId 独立模型方案 / getDigestActivity 提炼活动轮询 / get+setDigestPrompt 提示词读写 / cancelDigest 取消任务）
+- `review.ts` — 首页报告（历史代号 review）：getReport 读 `dashboard.md` / triggerReview 触发生成 / getReviewActivity 活动轮询 / get+setReviewPrompt 提示词 / get+setReviewModelTier 档位 / get+setReviewProfileId 方案 / cancelReview 取消
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded 等）
 
 ## 业务服务（electron/main/services/）
@@ -160,6 +167,11 @@
   - `digest-prompt.ts` — 提炼提示词模板（DEFAULT_DIGEST_PROMPT + loadDigestPrompt 播种 `<configDir>/digest-prompt.md` + saveDigestPrompt 写入，设置页可编辑）
   - `digest-scanner.ts` — 脏检查（isDirty 纯函数按 JSONL mtime vs 卡 sourceMtime；findDirtySessions / scanAllWorkspaces）
   - `digest-trigger.ts` — 提炼编排（串行队列并发=1 + in-flight 去重；triggerScanAll / triggerScanByConversation；提交 DIGEST_SESSION 任务）+ 提炼活动采集（current / queueDepth / recent 环形缓冲 / lastScan，classifyOutcome 判 saved/no-card/error，getDigestActivity 供前端轮询）
+  - `review-store.ts` — 首页报告存储（历史代号 review）：ReportDoc { updatedAt, markdown } 落 `<configDir>/workspaces/<wsId>/dashboard.md`，serializeReport/parseReport 纯函数 + saveReport/readReport IO
+  - `review-scanner.ts` — 报告脏检查：isReportStale 纯函数（最新摘要卡 createdAt vs 报告 updatedAt）+ findStaleWorkspaces 遍历
+  - `review-prompt.ts` — 报告提示词模板（DEFAULT_REVIEW_PROMPT 引导 agent 分流为「记忆 SaveMemory + 报告 WriteReport」+ loadReviewPrompt 播种 `<configDir>/review-prompt.md` + saveReviewPrompt）
+  - `review-skill-service.ts` — `<configDir>/skills/review/SKILL.md` 初始化（cross-session-review，内容不一致即覆盖），供普通会话「聊聊首页」交互式触发
+  - `review-trigger.ts` — 报告生成编排（串行队列 + in-flight 去重；triggerReview 提交 REVIEW_SESSION 任务）+ 活动采集（current/queueDepth/recent/lastScan）
   - 注：里程碑1 的工作区主题记忆（memory-service / memory-recall / memory-fs / index）也在此目录
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
@@ -198,9 +210,12 @@
   - EvalFormula：执行用户自定义公式（screener/signal/score）
   - SimpleBacktest：简单策略回测
 - `tools/digest-tools.ts` — 会话提炼 MCP 工具（dogear-memory-digest server：CleanTranscript 去噪+留底 / ReadExistingDigest / SaveDigest）
+- `tools/review-tools.ts` — 首页报告 MCP 工具（dogear-memory-review server：ListDigests / ReadDigest / TraceSource / ReadReport / WriteReport）；零分析逻辑，分流靠提示词。配合 dogear-memory 的 RecallMemory/SaveMemory/ForgetMemory 实现「记忆 + 报告」双层写入
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
 > 会话提炼链路：脏检查（digest-scanner）三触发点（启动扫/夜间03点/关会话）→ digest-trigger 串行起 DIGEST_SESSION 任务（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleDigestSessionTask 一次性 query（模型按 digestProfileId 指定的独立方案 + digestModelTier 档位重建凭证 env，缺省回退主会话 activeProfile，方案不完整即返回明确 error，haiku 不传 effort；query 接 AbortController，cancelDigest → cancelTask 真正中断）→ agent 自调 digest-tools 三工具 → 摘要卡落 `<configDir>/workspaces/<wsId>/digests/<sessionId>.md`
+
+> 首页报告链路（接续 digest 之后；历史代号 review）：脏检查（review-scanner.isReportStale：最新摘要卡 createdAt > 报告 updatedAt）→ review-trigger 串行起 REVIEW_SESSION 任务 → agent-worker.handleReviewSessionTask 一次性 query（同样按 reviewProfileId+reviewModelTier 重建 env，可取消）→ agent 自调 review-tools（ListDigests/ReadDigest/TraceSource）+ memory-tools（RecallMemory/SaveMemory/ForgetMemory）做**分流**：沉淀/有价值结论/注意事项进**记忆**（详细全集），需用户主动处理的待办/中断/搁置的简述进**报告**；最终 WriteReport 落 `dashboard.md`。首页 Dashboard 用 MarkdownRenderer 渲染 dashboard.md 给用户看；普通会话里说"聊聊首页"也能触发同一 skill。
 
 ## 数据存储（`.dogear/` 目录）
 
@@ -211,7 +226,9 @@
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细（每行一条 entry 或 compact marker，删除对话/工作区时联动清理）
 - `workspaces/{workspaceId}/digests/{sessionId}.md` — 会话摘要卡（frontmatter + 概述 + 想法/注意/决策条目带回溯 uuid）
 - `workspaces/{workspaceId}/digests/_cleaned/{sessionId}.md` — 提炼留底干净逐字稿（质量排查用）
+- `workspaces/{workspaceId}/dashboard.md` — 首页报告（frontmatter 仅 updatedAt + 给用户看的纯净 markdown 正文；记忆详细版另落 `<workspacePath>/.dogear/memory/`）
 - `digest-prompt.md` — 会话提炼提示词模板（全局单份，首次缺失自动播种，可编辑）
+- `review-prompt.md` — 首页报告提示词模板（全局单份，首次缺失自动播种，可编辑）
 - `stocks/watchlist.json` — 自选股列表
 - `stocks/formulas.json` — 用户公式存储（screener/signal/score 三种类型）（新增）
 - `stocks/kline/{market}.{code}.jsonl` — K线历史数据（JSONL，每行一条 KLineDataPoint）

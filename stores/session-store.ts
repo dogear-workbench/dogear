@@ -5,6 +5,9 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 
+/** 常驻「首页」tab 的哨兵 id（非真实会话） */
+export const HOME_TAB_ID = '__home__';
+
 /** 单个会话标签页信息 */
 export interface SessionTab {
   conversationId: string;
@@ -18,7 +21,7 @@ export interface SessionTab {
 
 interface SessionState {
   tabs: SessionTab[];
-  activeTabId: string | null;  // 当前显示的 conversationId
+  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 HOME_TAB_ID 哨兵）
   /** 当前在独立窗口中打开的会话 ID 集合 */
   sessionWindowIds: Set<string>;
 
@@ -51,7 +54,7 @@ const MAX_TABS = 10;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
-  activeTabId: null,
+  activeTabId: HOME_TAB_ID,
   sessionWindowIds: new Set<string>(),
 
   openTab: (conversationId, title, workspaceId) => {
@@ -87,7 +90,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const newTabs = state.tabs.filter((t) => t.conversationId !== conversationId);
       let newActive = state.activeTabId;
       if (state.activeTabId === conversationId) {
-        newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : null;
+        newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : HOME_TAB_ID;
       }
       return { tabs: newTabs, activeTabId: newActive };
     });
@@ -153,7 +156,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   reset: () => set({
     tabs: [],
-    activeTabId: null,
+    activeTabId: HOME_TAB_ID,
     sessionWindowIds: new Set<string>(),
   }),
 }));

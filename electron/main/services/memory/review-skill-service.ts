@@ -25,22 +25,25 @@ export function getReviewSkillDir(): string {
 
 const SKILL_MD = `---
 name: cross-session-review
-description: 当用户要求复盘、回顾跨会话进展、串一下做过什么、看哪些思路没落实/搁置时使用。综合本工作区所有会话摘要卡，产出或更新一张「复盘卡」。
+description: 当用户要求复盘、回顾进展、聊聊首页/报告、串一下做过什么、看哪些待办没落实/搁置、或要更新首页报告与记忆时使用。读会话摘要卡 + 现有报告，增量更新记忆与首页报告。
 ---
 
 ${DEFAULT_REVIEW_PROMPT}`;
 
 /**
  * 确保复盘 Skill 目录与 SKILL.md 存在。
- * 幂等：文件已存在则不覆盖（用户可能已改）。启动时调用一次，错误不应阻塞启动。
+ * 内容不一致则覆盖（提示词随版本演进，避免开发机残留旧 skill）。启动时调用一次，错误不应阻塞启动。
  */
 export async function ensureReviewSkillInitialized(): Promise<void> {
   const skillDir = getReviewSkillDir();
   await fs.mkdir(skillDir, { recursive: true });
   const skillPath = path.join(skillDir, 'SKILL.md');
+  // 生成内容，与磁盘不一致则覆盖（提示词随版本演进，避免开发机残留旧 skill）。
+  let existing: string | null = null;
   try {
-    await fs.access(skillPath);
-  } catch {
+    existing = await fs.readFile(skillPath, 'utf-8');
+  } catch { /* 不存在 */ }
+  if (existing !== SKILL_MD) {
     await fs.writeFile(skillPath, SKILL_MD, 'utf-8');
   }
 }

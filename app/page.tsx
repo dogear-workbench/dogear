@@ -23,7 +23,7 @@ import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore } from '@/stores/session-store';
+import { useSessionStore, HOME_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 
 export default function Home() {
@@ -291,27 +291,31 @@ export default function Home() {
           {/* 标签页头（抽取为独立组件：里程碑 1.5 Step A2.3） */}
           <WorkspaceTabBar />
 
-          {/* 标签页内容：用 allTabs 渲染以保持 AgentChat 挂载（弹出到独立窗口期间 display:none 但不卸载，sessionWindowReady 后才 closeTab 卸载） */}
-          {allTabs.length > 0 ? (
-            <div className="flex-1 overflow-hidden relative">
-              {allTabs.map((tab) => (
-                <div
-                  key={tab.conversationId}
-                  className="absolute inset-0"
-                  style={{ display: activeTabId === tab.conversationId && !sessionWindowIds.has(tab.conversationId) ? 'block' : 'none' }}
-                >
-                  <AgentChat
-                    placeholder="向 AI 助手提问..."
-                    showStatusHint={false}
-                    conversationIdOverride={tab.conversationId}
-                    rightPanelToggle={{ open: rightPanelOpen, onToggle: toggleRightPanel }}
-                  />
-                </div>
-              ))}
+          {/* 标签页内容：Dashboard + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowReady 后才 closeTab 卸载） */}
+          <div className="flex-1 overflow-hidden relative">
+            {/* 首页：activeTabId 为哨兵时显示 */}
+            <div
+              className="absolute inset-0 flex flex-col"
+              style={{ display: activeTabId === HOME_TAB_ID ? 'flex' : 'none' }}
+            >
+              <Dashboard />
             </div>
-          ) : (
-            <Dashboard />
-          )}
+            {/* 会话：各自按 activeTabId 切显示，保持 AgentChat 挂载 */}
+            {allTabs.map((tab) => (
+              <div
+                key={tab.conversationId}
+                className="absolute inset-0"
+                style={{ display: activeTabId === tab.conversationId && !sessionWindowIds.has(tab.conversationId) ? 'block' : 'none' }}
+              >
+                <AgentChat
+                  placeholder="向 AI 助手提问..."
+                  showStatusHint={false}
+                  conversationIdOverride={tab.conversationId}
+                  rightPanelToggle={{ open: rightPanelOpen, onToggle: toggleRightPanel }}
+                />
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* 右侧：预览（书籍/文章）+ 子代理面板，通过 tab 切换 */}
