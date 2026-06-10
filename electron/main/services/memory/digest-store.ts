@@ -102,8 +102,10 @@ export function parseDigestCard(raw: string): DigestCard | null {
         parsed &&
         typeof parsed.primary === 'string' &&
         Array.isArray(parsed.secondary) &&
+        parsed.secondary.every((t: unknown) => typeof t === 'string') &&
         parsed.scores &&
-        typeof parsed.scores === 'object'
+        typeof parsed.scores === 'object' &&
+        !Array.isArray(parsed.scores)
       ) {
         tags = parsed as DigestTags;
       }

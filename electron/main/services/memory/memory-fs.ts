@@ -77,6 +77,8 @@ function parseSimpleYaml(text: string): Frontmatter {
 }
 
 function stripQuotes(s: string): string {
+  // Note: 不 unescape \" → " — 存 JSON 字符串的调用方必须自行 unescape
+  // 参考 digest-store.ts parseDigestCard 的处理方式
   if (s.length >= 2) {
     const first = s[0];
     const last = s[s.length - 1];

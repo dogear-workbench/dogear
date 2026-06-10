@@ -67,3 +67,19 @@ test('tagsJson 损坏时 tags 解析为 undefined（不抛错）', () => {
   expect(back).not.toBeNull();
   expect(back.tags).toBeUndefined();
 });
+
+test('tagsJson 的 scores 为数组时被拒绝（tags = undefined）', () => {
+  // 构造一个 tagsJson 损坏成 scores: [1,2,3] 的卡
+  // 注意 frontmatter 序列化层会给含 " 的字符串加引号+转义
+  const broken = `---\nsessionId: test\ntitle: t\ncreatedAt: 2026-01-01T00:00:00.000Z\nsourceMtime: "0"\nturnCount: "0"\ntagsJson: "{\\"primary\\":\\"a\\",\\"secondary\\":[],\\"scores\\":[1,2,3]}"\n---\n\n## 概述\n空\n\n## 想法 / 注意 / 决策\n`;
+  const back = parseDigestCard(broken)!;
+  expect(back).not.toBeNull();
+  expect(back.tags).toBeUndefined();
+});
+
+test('tagsJson 的 secondary 含非字符串元素时被拒绝（tags = undefined）', () => {
+  const broken = `---\nsessionId: test\ntitle: t\ncreatedAt: 2026-01-01T00:00:00.000Z\nsourceMtime: "0"\nturnCount: "0"\ntagsJson: "{\\"primary\\":\\"a\\",\\"secondary\\":[1,2],\\"scores\\":{}}"\n---\n\n## 概述\n空\n\n## 想法 / 注意 / 决策\n`;
+  const back = parseDigestCard(broken)!;
+  expect(back).not.toBeNull();
+  expect(back.tags).toBeUndefined();
+});
