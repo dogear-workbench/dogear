@@ -7,7 +7,7 @@ export function matchByThreshold(
   categories: SmartCategory[],
   threshold: number
 ): Array<{ categoryId: string; score: number }> {
-  const allTags = [tags.primary, ...tags.secondary];
+  const allTags = [...new Set([tags.primary, ...tags.secondary])];
   const results = categories.map((c) => {
     let score = 0;
     for (const t of allTags) {
@@ -30,7 +30,7 @@ export function pickRedistributeCandidates(
   const neighbors = categories
     .map((c) => ({ cat: c, overlap: c.anchorTags.filter((t) => newAnchorTags.includes(t)).length }))
     .filter((x) => x.overlap > 0)
-    .sort((a, b) => b.overlap - a.overlap)
+    .sort((a, b) => b.overlap - a.overlap || a.cat.id.localeCompare(b.cat.id))
     .slice(0, 2);
 
   return neighbors.map(({ cat }) => ({
@@ -39,19 +39,28 @@ export function pickRedistributeCandidates(
   }));
 }
 
-// 标签归一化（trim、空格/斜杠 → 中划线、合并多余中划线）
+// 标签归一化（trim、空格/斜杠 → 中划线、合并多余中划线、剥前后缀 dash）
 export function normalizeTag(tag: string): string {
-  return tag.trim().replace(/[/\s]+/g, '-').replace(/-+/g, '-');
+  return tag
+    .trim()
+    .replace(/[/\s]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 // 把 DigestTags 整个归一化（写入摘要卡前调一次，保证一致性）
+// scores 冲突时保留较大分数；过滤空标签
 export function normalizeTags(tags: DigestTags): DigestTags {
   const remap = (t: string) => normalizeTag(t);
   const scores: Record<string, number> = {};
-  for (const [k, v] of Object.entries(tags.scores)) scores[remap(k)] = v;
+  for (const [k, v] of Object.entries(tags.scores)) {
+    const nk = remap(k);
+    if (!nk) continue; // 过滤空标签
+    scores[nk] = Math.max(scores[nk] ?? 0, v); // 冲突保留较大分数
+  }
   return {
     primary: remap(tags.primary),
-    secondary: tags.secondary.map(remap),
+    secondary: tags.secondary.map(remap).filter((t) => t.length > 0),
     scores,
   };
 }

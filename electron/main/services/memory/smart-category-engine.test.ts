@@ -60,3 +60,54 @@ test('normalizeTags 整体归一化', () => {
   expect(t.secondary).toEqual(['UI-重构']);
   expect(t.scores).toEqual({ '产品-Dashboard': 0.8, 'UI-重构': 0.5 });
 });
+
+test('normalizeTag 剥前后缀 dash', () => {
+  expect(normalizeTag('/ Dashboard')).toBe('Dashboard');
+  expect(normalizeTag('React/')).toBe('React');
+  expect(normalizeTag('-- hello --')).toBe('hello');
+});
+
+test('normalizeTag 纯空白返回空字符串', () => {
+  expect(normalizeTag('   ')).toBe('');
+  expect(normalizeTag('')).toBe('');
+});
+
+test('normalizeTags 处理 scores 冲突（保留较大分数 + 过滤空标签）', () => {
+  const t = normalizeTags({
+    primary: '产品-Dashboard',
+    secondary: ['', '   ', '产品/Dashboard'],
+    scores: {
+      '产品 / Dashboard': 0.5,
+      '产品/Dashboard': 0.8,
+      '产品-Dashboard': 0.6,
+      '   ': 0.9, // 空标签的 score 应被过滤
+    },
+  });
+  expect(t.secondary).toEqual(['产品-Dashboard']); // 空标签过滤掉
+  expect(t.scores).toEqual({ '产品-Dashboard': 0.8 }); // 三个 key 归一化为同一个，取 max
+});
+
+test('matchByThreshold primary 与 secondary 重复时不双计', () => {
+  const singleCat: SmartCategory[] = [
+    { id: 'c1', name: 'A', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
+  ];
+  const tags: DigestTags = {
+    primary: 't1',
+    secondary: ['t1'], // 重复
+    scores: { t1: 0.6 },
+  };
+  const r = matchByThreshold(tags, singleCat, 0.5);
+  expect(r).toHaveLength(1);
+  expect(r[0].score).toBeCloseTo(0.6); // 不是 1.2
+});
+
+test('pickRedistributeCandidates 同 overlap 时按 id 字典序', () => {
+  const tieCats: SmartCategory[] = [
+    { id: 'c_b', name: 'B', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
+    { id: 'c_a', name: 'A', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
+    { id: 'c_c', name: 'C', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
+  ];
+  const r = pickRedistributeCandidates(tieCats, ['t1']);
+  expect(r).toHaveLength(2);
+  expect(r.map((x) => x.categoryId)).toEqual(['c_a', 'c_b']); // 字典序前两个
+});
