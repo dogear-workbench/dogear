@@ -41,3 +41,29 @@ test('数字字段以数字类型恢复', () => {
   expect(back.turnCount).toBe(26);
   expect(typeof back.sourceMtime).toBe('number');
 });
+
+test('tags round-trip 保持等价', () => {
+  const card: DigestCard = {
+    ...sample,
+    tags: {
+      primary: '产品-Dashboard',
+      secondary: ['UI重构', '用户反馈'],
+      scores: { '产品-Dashboard': 0.85, 'UI重构': 0.6, '用户反馈': 0.4 },
+    },
+  };
+  const back = parseDigestCard(serializeDigestCard(card))!;
+  expect(back.tags).toEqual(card.tags);
+});
+
+test('旧卡无 tags 字段，解析后 tags 为 undefined', () => {
+  const back = parseDigestCard(serializeDigestCard(sample))!;
+  expect(back.tags).toBeUndefined();
+});
+
+test('tagsJson 损坏时 tags 解析为 undefined（不抛错）', () => {
+  // 手工构造一个 tagsJson 损坏的 markdown
+  const broken = `---\nsessionId: test\ntitle: t\ncreatedAt: 2026-01-01T00:00:00.000Z\nsourceMtime: "0"\nturnCount: "0"\ntagsJson: "not-json-{"\n---\n\n## 概述\n空\n\n## 想法 / 注意 / 决策\n`;
+  const back = parseDigestCard(broken)!;
+  expect(back).not.toBeNull();
+  expect(back.tags).toBeUndefined();
+});

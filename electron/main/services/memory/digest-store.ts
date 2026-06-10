@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDataDir } from '../conversation-service.js';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
+import type { DigestTags } from '../../types.js';
 
 // ─── 摘要卡结构（设计 4.3，无 topics）───
 
@@ -18,6 +19,7 @@ export interface DigestCard {
   turnCount: number;
   summary: string;
   items: { kind: string; text: string; uuid: string }[];
+  tags?: DigestTags;   // 智能分类用；旧卡无此字段
 }
 
 const ITEM_SEP = ' ⟶ ';
@@ -62,6 +64,9 @@ export function serializeDigestCard(card: DigestCard): string {
     turnCount: String(card.turnCount),
   };
   if (card.conversationId) fm.conversationId = card.conversationId;
+  if (card.tags) {
+    fm.tagsJson = JSON.stringify(card.tags);
+  }
   const itemLines = card.items.map(
     (i) => `- [${i.kind}] ${i.text.replace(/\s*\n\s*/g, ' ')}${ITEM_SEP}${i.uuid}`,
   );
@@ -86,6 +91,27 @@ export function parseDigestCard(raw: string): DigestCard | null {
   }
 
   const conversationId = strOf(fm.conversationId);
+
+  let tags: DigestTags | undefined;
+  const tagsJson = strOf(fm.tagsJson);
+  if (tagsJson) {
+    try {
+      // quoteIfNeeded 序列化时把 " 转义为 \"，stripQuotes 不还原；手动 unescape
+      const parsed = JSON.parse(tagsJson.replace(/\\"/g, '"'));
+      if (
+        parsed &&
+        typeof parsed.primary === 'string' &&
+        Array.isArray(parsed.secondary) &&
+        parsed.scores &&
+        typeof parsed.scores === 'object'
+      ) {
+        tags = parsed as DigestTags;
+      }
+    } catch {
+      // JSON 损坏：忽略 tags 字段，不让旧/坏卡解析失败
+    }
+  }
+
   return {
     sessionId,
     conversationId: conversationId || undefined,
@@ -95,6 +121,7 @@ export function parseDigestCard(raw: string): DigestCard | null {
     turnCount: Number(strOf(fm.turnCount)) || 0,
     summary,
     items,
+    tags,
   };
 }
 
