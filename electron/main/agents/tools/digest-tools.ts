@@ -133,7 +133,7 @@ export function createDigestTools(
           })).describe('想法/注意/决策/搁置条目列表'),
           tags: z.object({
             primary: z.string().min(1),
-            secondary: z.array(z.string()).max(3).default([]),
+            secondary: z.array(z.string()).max(3),
             scores: z.record(z.string(), z.number().min(0).max(1)),
           }).optional().describe('智能分类标签：主标签 + 0-3 个辅标签 + 每个标签的 0-1 适配度'),
         },

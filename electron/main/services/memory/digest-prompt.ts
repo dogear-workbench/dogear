@@ -12,7 +12,7 @@ export const DEFAULT_DIGEST_PROMPT = `你在为一段开发会话写「会话摘
    - 概述：用一两句说清「这次会话做了几件事 + 每件事简述」；
    - 条目：抓「决策 / 想法 / 注意 / 搁置」四类要点，每条配一个出处 uuid（取自逐字稿里每段「· 」后面的完整 uuid，别编造）；
    - 只抓真正有信息量的点，宁缺毋滥；
-5. 调 SaveDigest({ sessionId, title, summary, items }) 落卡。
+5. 调 SaveDigest({ sessionId, title, summary, items, tags }) 落卡（tags 见下方「标签产出」要求）。
 
 完成后直接结束，不要再多说。
 
