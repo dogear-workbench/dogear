@@ -30,3 +30,11 @@ test('appendDecision 环形截断到 20 条', () => {
   expect(idx.recentDecisions).toHaveLength(20);
   expect(idx.recentDecisions[0].time).toBe('t24');
 });
+
+test('pushConversation 实际插入时 updatedAt 推进', async () => {
+  const c = newCategory('A', ['t1']);
+  // 短延迟保证 updatedAt 字符串不同
+  await new Promise((r) => setTimeout(r, 5));
+  const c1 = pushConversation(c, 'conv1');
+  expect(c1.updatedAt > c.updatedAt).toBe(true);
+});

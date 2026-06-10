@@ -2,6 +2,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getWorkspaceDataDir } from '../conversation-service.js';
+import { safeJsonWrite } from '../safe-json.js';
+import { mainLogger } from '../../agents/logger.js';
 import type { SmartCategoriesIndex, SmartCategory, CategorizeDecisionLog } from '../../types.js';
 
 const FILE_NAME = 'smart-categories.json';
@@ -18,15 +20,16 @@ export async function readIndex(wsId: string): Promise<SmartCategoriesIndex> {
     if (!Array.isArray(parsed.categories)) parsed.categories = [];
     if (!Array.isArray(parsed.recentDecisions)) parsed.recentDecisions = [];
     return parsed;
-  } catch {
+  } catch (err: any) {
+    if (err?.code !== 'ENOENT') {
+      mainLogger.warn('[smart-category] readIndex 失败，返回空索引:', err);
+    }
     return { categories: [], recentDecisions: [] };
   }
 }
 
 export async function writeIndex(wsId: string, idx: SmartCategoriesIndex): Promise<void> {
-  const dir = getWorkspaceDataDir(wsId);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(getIndexPath(wsId), JSON.stringify(idx, null, 2), 'utf-8');
+  await safeJsonWrite(getIndexPath(wsId), idx);
 }
 
 // 纯函数：把 conversationId 加进指定分类（去重）
@@ -59,5 +62,6 @@ export function appendDecision(idx: SmartCategoriesIndex, log: CategorizeDecisio
 
 export function newCategory(name: string, anchorTags: string[]): SmartCategory {
   const now = new Date().toISOString();
+  // 8-char hex 前缀（~32-bit 熵），单工作区分类上限 10 个，碰撞概率可忽略
   return { id: `cat_${randomUUID().slice(0, 8)}`, name, anchorTags, conversationIds: [], createdAt: now, updatedAt: now };
 }
