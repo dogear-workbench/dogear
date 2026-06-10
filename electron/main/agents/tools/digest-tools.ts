@@ -131,6 +131,11 @@ export function createDigestTools(
             text: z.string().min(1).describe('条目内容'),
             uuid: z.string().describe('出处 uuid（取自逐字稿每段 · 后的 uuid）'),
           })).describe('想法/注意/决策/搁置条目列表'),
+          tags: z.object({
+            primary: z.string().min(1),
+            secondary: z.array(z.string()).max(3).default([]),
+            scores: z.record(z.string(), z.number().min(0).max(1)),
+          }).optional().describe('智能分类标签：主标签 + 0-3 个辅标签 + 每个标签的 0-1 适配度'),
         },
         async (args) => {
           try {
@@ -145,6 +150,7 @@ export function createDigestTools(
               turnCount: cleaned.turnCount,
               summary: args.summary,
               items: args.items,
+              tags: args.tags,
             };
             await saveDigest(workspaceId, card);
             onSaved?.();

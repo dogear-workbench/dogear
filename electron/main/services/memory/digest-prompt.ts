@@ -14,7 +14,19 @@ export const DEFAULT_DIGEST_PROMPT = `你在为一段开发会话写「会话摘
    - 只抓真正有信息量的点，宁缺毋滥；
 5. 调 SaveDigest({ sessionId, title, summary, items }) 落卡。
 
-完成后直接结束，不要再多说。`;
+完成后直接结束，不要再多说。
+
+## 标签产出（必填）
+
+调用 SaveDigest 时必须同时提供 tags 字段：
+- primary: 1 个主标签，自由文本，描述会话主导主题（如 "产品-Dashboard"、"股票-估值"、"代码-重构"）
+- secondary: 0–3 个辅标签，覆盖次要主题或方法面
+- scores: 给每个标签（含主+辅）打 0–1 的适配度，表示会话与该标签的契合程度
+  - 0.8+：会话主要内容就是这个主题
+  - 0.5–0.8：明确涉及但非主导
+  - 0.5 以下：边角，不必加进 secondary
+
+**归一化**：标签内部用中划线分层（如 "股票-估值-DCF"），不用斜杠 / 空格做分隔。`;
 
 function getDigestPromptPath(configDir: string): string {
   return path.join(configDir, 'digest-prompt.md');
