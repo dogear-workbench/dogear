@@ -61,8 +61,26 @@ function emptyTree(): ConversationTreeFile {
   return { version: 1, folders: {}, children: { [ROOT_ID]: [] } };
 }
 
+/**
+ * 仅保留 __root__ 下的 folderId；散落的 conversationId 一律丢弃。
+ * 幂等：多次调用在无散落时直接返回 mutated=false。
+ */
+export function migrateRootScatter(tree: ConversationTreeFile): { next: ConversationTreeFile; mutated: boolean } {
+  const rootChildren = tree.children[ROOT_ID] ?? [];
+  const folderIds = new Set(Object.keys(tree.folders));
+  const cleaned = rootChildren.filter((id) => folderIds.has(id));
+  if (cleaned.length === rootChildren.length) return { next: tree, mutated: false };
+  return {
+    next: { ...tree, children: { ...tree.children, [ROOT_ID]: cleaned } },
+    mutated: true,
+  };
+}
+
 async function loadTree(workspaceId: string): Promise<ConversationTreeFile> {
-  return safeJsonRead<ConversationTreeFile>(getTreePath(workspaceId), emptyTree());
+  const raw = await safeJsonRead<ConversationTreeFile>(getTreePath(workspaceId), emptyTree());
+  const { next, mutated } = migrateRootScatter(raw);
+  if (mutated) await saveTree(workspaceId, next);
+  return next;
 }
 
 async function saveTree(workspaceId: string, data: ConversationTreeFile): Promise<void> {
@@ -238,20 +256,21 @@ export async function sortConversationsByUpdatedAt(
   }
 }
 
-/** 从树中移除对话 */
+/** 从树中移除对话（扫全部 children，支持多引用） */
 export async function removeConversationFromTree(
   workspaceId: string,
   conversationId: string,
 ): Promise<void> {
   const tree = await loadTree(workspaceId);
+  let mutated = false;
   for (const childIds of Object.values(tree.children)) {
-    const index = childIds.indexOf(conversationId);
-    if (index !== -1) {
+    let index;
+    while ((index = childIds.indexOf(conversationId)) !== -1) {
       childIds.splice(index, 1);
-      break;
+      mutated = true;
     }
   }
-  await saveTree(workspaceId, tree);
+  if (mutated) await saveTree(workspaceId, tree);
 }
 
 /**
@@ -298,6 +317,78 @@ export async function moveItem(
   }
   tree.children[targetParentId] = [...folderIds, ...convIds];
 
+  await saveTree(workspaceId, tree);
+}
+
+/**
+ * 把 conversationId 加到指定文件夹的 children（去重）。
+ * 不动其他文件夹，支持多引用语义。
+ */
+export async function addConversationToFolder(
+  workspaceId: string,
+  conversationId: string,
+  folderId: string,
+): Promise<void> {
+  const tree = await loadTree(workspaceId);
+  if (!tree.folders[folderId]) return; // 文件夹不存在静默
+  if (!tree.children[folderId]) tree.children[folderId] = [];
+  if (tree.children[folderId].includes(conversationId)) return; // 已在该文件夹
+  // 插到文件夹之后、其他对话之前（保持"文件夹在前、对话在后"不变量）
+  const children = tree.children[folderId];
+  let insertIndex = 0;
+  for (let i = 0; i < children.length; i++) {
+    if (tree.folders[children[i]]) insertIndex = i + 1;
+    else break;
+  }
+  children.splice(insertIndex, 0, conversationId);
+  await saveTree(workspaceId, tree);
+}
+
+/** 从指定文件夹移除对话（不动其他文件夹的引用） */
+export async function removeConversationFromFolder(
+  workspaceId: string,
+  conversationId: string,
+  folderId: string,
+): Promise<void> {
+  const tree = await loadTree(workspaceId);
+  const children = tree.children[folderId];
+  if (!children) return;
+  const idx = children.indexOf(conversationId);
+  if (idx === -1) return;
+  children.splice(idx, 1);
+  await saveTree(workspaceId, tree);
+}
+
+/** 从一个文件夹移到另一个（remove + add 合并一次写入） */
+export async function moveConversationBetweenFolders(
+  workspaceId: string,
+  conversationId: string,
+  fromFolderId: string,
+  toFolderId: string,
+): Promise<void> {
+  if (fromFolderId === toFolderId) return;
+  const tree = await loadTree(workspaceId);
+  // 从源移除
+  const fromChildren = tree.children[fromFolderId];
+  if (fromChildren) {
+    const idx = fromChildren.indexOf(conversationId);
+    if (idx !== -1) fromChildren.splice(idx, 1);
+  }
+  // 目标文件夹不存在时，源已 remove，写回防数据不一致
+  if (!tree.folders[toFolderId]) {
+    await saveTree(workspaceId, tree);
+    return;
+  }
+  if (!tree.children[toFolderId]) tree.children[toFolderId] = [];
+  if (!tree.children[toFolderId].includes(conversationId)) {
+    const toChildren = tree.children[toFolderId];
+    let insertIndex = 0;
+    for (let i = 0; i < toChildren.length; i++) {
+      if (tree.folders[toChildren[i]]) insertIndex = i + 1;
+      else break;
+    }
+    toChildren.splice(insertIndex, 0, conversationId);
+  }
   await saveTree(workspaceId, tree);
 }
 

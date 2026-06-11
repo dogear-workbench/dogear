@@ -256,7 +256,16 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const tree = await treeService.getTree(input.workspaceId);
-        return { tree, error: undefined };
+        // 拿活跃对话 id 集合（已默认排除 archived）
+        const liveConvs = await conversationService.getByWorkspaceId(input.workspaceId);
+        const liveIds = new Set(liveConvs.map((c) => c.id));
+        // 过滤每个 children 数组：保留 folder + 在 liveIds 中的对话
+        const filteredChildren: Record<string, string[]> = {};
+        for (const [parentId, childIds] of Object.entries(tree.children)) {
+          filteredChildren[parentId] = childIds.filter((id) => tree.folders[id] || liveIds.has(id));
+        }
+        const filtered = { ...tree, children: filteredChildren };
+        return { tree: filtered, error: undefined };
       } catch (error) {
         console.error('获取对话树失败:', error);
         return { tree: null, error: error instanceof Error ? error.message : String(error) };
@@ -309,6 +318,44 @@ export const conversationsRouter = {
         return { success: true, error: undefined };
       } catch (error) {
         console.error('移动对话项目失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  addConversationToFolder: t.procedure
+    .input<{ workspaceId: string; conversationId: string; folderId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await treeService.addConversationToFolder(input.workspaceId, input.conversationId, input.folderId);
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('添加对话到文件夹失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  removeConversationFromFolder: t.procedure
+    .input<{ workspaceId: string; conversationId: string; folderId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await treeService.removeConversationFromFolder(input.workspaceId, input.conversationId, input.folderId);
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('从文件夹移除对话失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  moveConversationBetweenFolders: t.procedure
+    .input<{ workspaceId: string; conversationId: string; fromFolderId: string; toFolderId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await treeService.moveConversationBetweenFolders(
+          input.workspaceId, input.conversationId, input.fromFolderId, input.toFolderId,
+        );
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('在文件夹间移动对话失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
