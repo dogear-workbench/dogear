@@ -3,6 +3,9 @@ import {
   TaskType, TaskStatus, type AgentTask, type CategorizeSessionPayload,
 } from '../../agents/task-types.js';
 import { mainLogger } from '../../agents/logger.js';
+import { BrowserWindow } from 'electron';
+import { getRendererHandlers } from '@egoist/tipc/main';
+import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 
 type CategorizeJob =
   | { kind: 'incremental'; workspaceId: string; conversationId: string; digestPath: string }
@@ -179,6 +182,18 @@ async function runOne(job: CategorizeJob): Promise<void> {
           profileName: result?.profileName,
           error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
         });
+        // 索引真的改了才广播（match/join/new），skip/error/cancelled 不广播
+        if (outcome === 'match' || outcome === 'join' || outcome === 'new') {
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (win.isDestroyed()) continue;
+            try {
+              getRendererHandlers<RendererHandlers>(win.webContents)
+                .categoriesUpdated.send({ workspaceId: job.workspaceId });
+            } catch {
+              // ignore destroyed windows
+            }
+          }
+        }
         resolve();
       }
     }).catch((err) => {

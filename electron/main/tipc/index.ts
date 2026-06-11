@@ -19,6 +19,7 @@ import { skillRouter } from './skill.js';
 import { usageRouter } from './usage.js';
 import { digestRouter } from './digest.js';
 import { reviewRouter } from './review.js';
+import { categoryRouter } from './category.js';
 import { notesRouter } from './notes.js';
 
 export const router = {
@@ -41,6 +42,7 @@ export const router = {
   ...usageRouter,
   ...digestRouter,
   ...reviewRouter,
+  ...categoryRouter,
   ...notesRouter,
 };
 

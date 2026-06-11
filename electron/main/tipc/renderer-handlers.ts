@@ -178,6 +178,9 @@ export type RendererHandlers = {
   // 对话用量有新条目写入（Task 6 写完后广播，渲染层收到后重新 getUsage）
   usageEntryAdded: (data: { conversationId: string }) => void;
 
+  // 智能分类索引变更（CATEGORIZE_SESSION 完成后广播，前端 store 收到刷新）
+  categoriesUpdated: (data: { workspaceId: string }) => void;
+
   // 微信 Bot 自动初始化数据（startPolling 成功后推送）
   wechatBotAutoInit: (data: {
     status: {
