@@ -23,7 +23,8 @@ export enum TaskType {
   CHAT_SESSION = 'chat_session',    // 持续对话会话
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
   DIGEST_SESSION = 'digest_session', // 会话提炼（清洗 → 摘要卡）
-  REVIEW_SESSION = 'review_session'  // 跨会话复盘（摘要卡 → 复盘卡）
+  REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
+  CATEGORIZE_SESSION = 'categorize_session' // 智能分类决策
 }
 
 /**
@@ -214,6 +215,21 @@ export interface ReviewSessionPayload {
   workspaceId: string;   // 工作区 ID（读摘要卡 / 落复盘卡）
   workspacePath: string; // 工作区绝对路径（TraceSource 定位 JSONL 用）
   reviewModelTier?: 'haiku' | 'sonnet' | 'opus'; // 复盘模型档位（缺省读 settings）
+}
+
+/**
+ * 智能分类任务负载
+ * mode='incremental'：处理单条新摘要卡（DigestSession 串联触发）
+ * mode='full-rebuild'：清空索引后对所有摘要卡按 createdAt 升序串行决策（设置页"立即重跑全部分类"用）
+ * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
+ */
+export interface CategorizeSessionPayload {
+  workspaceId: string;       // 工作区 ID
+  workspacePath: string;     // 工作区绝对路径（保留，未来 trace 用，可能不直接用到）
+  mode: 'incremental' | 'full-rebuild';
+  conversationId?: string;   // incremental 必填
+  digestPath?: string;       // incremental 必填，摘要卡 .md 文件绝对路径
+  categorizeModelTier?: 'haiku' | 'sonnet' | 'opus'; // 缺省读 settings
 }
 
 /**
