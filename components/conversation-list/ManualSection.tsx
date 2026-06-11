@@ -16,6 +16,7 @@ import {
 } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
 import { ConversationRow } from './ConversationRow';
+import { openOrFocusConversation } from './utils';
 
 const CONV_TREE_ROOT = '__root__';
 
@@ -150,7 +151,6 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   const nodeMap = useConversationStore((s) => s.nodeMap);
   const createFolder = useConversationStore((s) => s.createFolder);
   const renameFolder = useConversationStore((s) => s.renameFolder);
-  const selectConversation = useConversationStore((s) => s.selectConversation);
 
   const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
 
@@ -174,9 +174,9 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     const data = item.getItemData();
     if (data.nodeType === 'conversation' && data.conversation) {
-      selectConversation(data.conversation);
+      openOrFocusConversation(data.conversation);
     }
-  }, [selectConversation]);
+  }, []);
 
   const canRename = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     return item.getItemData().nodeType === 'folder';

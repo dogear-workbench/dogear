@@ -52,6 +52,7 @@ export function openOrFocusConversation(conv: Conversation): void {
   }
   const { selectConversation } = useConversationStore.getState();
   selectConversation(conv);
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
 }
 
 /**
