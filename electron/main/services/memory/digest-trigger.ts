@@ -137,6 +137,9 @@ async function runOne(d: DirtySession): Promise<void> {
           profileName: result?.profileName,
           error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
         });
+        if (status === TaskStatus.COMPLETED && outcome === 'saved') {
+          void chainCategorize(d, result);
+        }
         resolve();
       }
     }).catch((err) => {
@@ -145,6 +148,30 @@ async function runOne(d: DirtySession): Promise<void> {
       resolve();
     });
   });
+}
+
+/** Digest 成功后异步串联触发分类，不阻塞 digest 队列 */
+async function chainCategorize(d: DirtySession, _result: any): Promise<void> {
+  try {
+    // 1. 读 settings 检查开关
+    const { loadSettings } = await import('../settings-service.js');
+    const settings = await loadSettings();
+    if (settings.smartCategory?.enabled === false) return;
+
+    // 2. 读摘要卡拿 conversationId + tags
+    const { readDigest, getDigestPath } = await import('./digest-store.js');
+    const card = await readDigest(d.workspaceId, d.sdkSessionId);
+    if (!card) return;
+    if (!card.tags) return;           // 旧卡或 agent 没出 tags
+    if (!card.conversationId) return; // 兜底
+
+    // 3. 调 triggerCategorize（fire-and-forget，category-trigger 内部有自己的队列）
+    const { triggerCategorize } = await import('./category-trigger.js');
+    const digestPath = getDigestPath(d.workspaceId, d.sdkSessionId);
+    triggerCategorize(d.workspaceId, card.conversationId, digestPath);
+  } catch (err) {
+    mainLogger.warn('[digest→category] 串联触发失败:', d.workspaceId, d.sdkSessionId, err);
+  }
 }
 
 /** 触发点①/②：全量脏检查 → 入队 */
