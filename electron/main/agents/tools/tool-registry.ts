@@ -34,6 +34,7 @@ const SERVER_LABELS: Record<string, string> = {
   'dogear-stock-analysis':  '股票分析',
   'dogear-article':         '文章阅读',
   'dogear-article-parse':   '文章解析',
+  'dogear-smart-category':  '智能分类',
 };
 
 /** SDK 内置工具（无法从 SDK 运行时获取元数据，故保留静态定义） */

@@ -12,6 +12,7 @@ import {
 import { getConversationsByIds } from '../../services/conversation-service.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { registerTools } from './tool-registry.js';
+import { mainLogger } from '../logger.js';
 
 registerTools([
   {
@@ -154,6 +155,13 @@ export function createCategoryTools() {
               // 处理 redistribute：先从源分类移除，再加到目标分类
               for (const m of action.redistribute ?? []) {
                 const targetId = m.moveToCategoryId === '__NEW__' ? cat.id : m.moveToCategoryId;
+                // 校验目标分类存在，防止 LLM hallucinate 不存在的 id 时把会话从所有分类删掉却没归入任何地方
+                if (!idx.categories.some((c) => c.id === targetId)) {
+                  mainLogger.warn(
+                    `[smart-category] redistribute 跳过：moveToCategoryId=${m.moveToCategoryId} 既非 __NEW__ 也非任何现有分类，conversationId=${m.conversationId} 不动`,
+                  );
+                  continue;
+                }
                 for (const c of idx.categories) {
                   if (c.id !== targetId) {
                     c.conversationIds = c.conversationIds.filter((x) => x !== m.conversationId);
