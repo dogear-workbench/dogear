@@ -210,6 +210,19 @@ export async function getByIdGlobal(id: string): Promise<{ conv: ConversationInd
 }
 
 /**
+ * 批量按 conversationId 拿索引（找不到的跳过，不抛错）。供 ListCategories 拉样例标题用。
+ * 跨工作区扫描，返回的列表顺序与传入 ids 顺序一致（缺失项不出现，不留 undefined 占位）。
+ */
+export async function getConversationsByIds(ids: string[]): Promise<ConversationIndex[]> {
+  const out: ConversationIndex[] = [];
+  for (const id of ids) {
+    const found = await getByIdGlobal(id);
+    if (found) out.push(found.conv);
+  }
+  return out;
+}
+
+/**
  * 创建新对话
  * @returns 新对话的 ID
  */

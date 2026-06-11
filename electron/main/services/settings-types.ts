@@ -63,6 +63,16 @@ export interface AppSettings {
   };
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
+  /** 智能分类设置 */
+  smartCategory?: {
+    enabled?: boolean;          // 默认 true
+    threshold?: number;         // 0–1，默认 0.5
+    maxCategories?: number;     // 默认 10
+    /** 智能分类使用的模型档位。默认 haiku */
+    categorizeModelTier?: 'haiku' | 'sonnet' | 'opus';
+    /** 智能分类使用的模型方案 id。缺省回退 activeProfileId */
+    categorizeProfileId?: string;
+  };
   /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
   enabledToolPacks?: string[];
 }
