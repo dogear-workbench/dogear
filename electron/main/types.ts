@@ -147,3 +147,31 @@ export interface SmartCategoriesIndex {
   categories: SmartCategory[];
   recentDecisions: CategorizeDecisionLog[];   // 环形，最多 20 条
 }
+
+/** 智能分类任务一次执行的结果记录（环形缓冲项） */
+export interface CategorizeRecentEntry {
+  workspaceId: string;
+  kind: 'incremental' | 'full-rebuild';
+  conversationId?: string;
+  finishedAt: number;
+  outcome: 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled';
+  decisions?: Record<string, number>;
+  tier?: string;
+  profileName?: string;
+  error?: string;
+  durationMs: number;
+}
+
+/** 智能分类活动总览（全局单队列，不按 workspaceId 区分） */
+export interface CategorizeActivity {
+  current: {
+    workspaceId: string;
+    conversationId?: string;
+    kind: 'incremental' | 'full-rebuild';
+    startedAt: number;
+    taskId: string;
+  } | null;
+  queueDepth: number;
+  recent: CategorizeRecentEntry[];
+  lastScan: { at: number; dirtyCount: number } | null;
+}

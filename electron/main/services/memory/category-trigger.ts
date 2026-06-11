@@ -6,6 +6,7 @@ import { mainLogger } from '../../agents/logger.js';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
+import type { CategorizeActivity, CategorizeRecentEntry } from '../../types.js';
 
 type CategorizeJob =
   | { kind: 'incremental'; workspaceId: string; conversationId: string; digestPath: string }
@@ -16,32 +17,6 @@ const queue: CategorizeJob[] = [];
 let pumping = false;
 
 export type CategorizeOutcome = 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled';
-
-export interface CategorizeRecentEntry {
-  workspaceId: string;
-  kind: 'incremental' | 'full-rebuild';
-  conversationId?: string;
-  finishedAt: number;
-  outcome: CategorizeOutcome;
-  decisions?: Record<string, number>;
-  tier?: string;
-  profileName?: string;
-  error?: string;
-  durationMs: number;
-}
-
-export interface CategorizeActivity {
-  current: {
-    workspaceId: string;
-    conversationId?: string;
-    kind: 'incremental' | 'full-rebuild';
-    startedAt: number;
-    taskId: string;
-  } | null;
-  queueDepth: number;
-  recent: CategorizeRecentEntry[];
-  lastScan: { at: number; dirtyCount: number } | null;
-}
 
 const RECENT_MAX = 15;
 let current: CategorizeActivity['current'] = null;

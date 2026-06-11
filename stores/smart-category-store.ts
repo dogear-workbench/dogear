@@ -1,33 +1,6 @@
 import { create } from 'zustand';
 import { client } from '@/lib/client';
-import type { SmartCategory } from '@/types/smart-category';
-
-// 手动镜像主进程类型，避免从 electron/ 路径 import
-export interface CategorizeRecentEntry {
-  workspaceId: string;
-  kind: 'incremental' | 'full-rebuild';
-  conversationId?: string;
-  finishedAt: number;
-  outcome: 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled';
-  decisions?: Record<string, number>;
-  tier?: string;
-  profileName?: string;
-  error?: string;
-  durationMs: number;
-}
-
-export interface CategorizeActivity {
-  current: {
-    workspaceId: string;
-    conversationId?: string;
-    kind: 'incremental' | 'full-rebuild';
-    startedAt: number;
-    taskId: string;
-  } | null;
-  queueDepth: number;
-  recent: CategorizeRecentEntry[];
-  lastScan: { at: number; dirtyCount: number } | null;
-}
+import type { CategorizeActivity, SmartCategory } from '@/types/smart-category';
 
 interface SmartCategoryStore {
   categories: SmartCategory[];
@@ -38,9 +11,9 @@ interface SmartCategoryStore {
   load: (workspaceId: string) => Promise<void>;
   /** 触发全量重建（清空 + 重决策所有摘要卡） */
   triggerFullRebuild: (workspaceId: string) => Promise<void>;
-  /** 取消当前正在跑的任务 */
+  /** 取消当前正在跑的任务（全局单队列，无需 workspaceId） */
   cancel: () => Promise<boolean>;
-  /** 拉一次活动状态（设置页轮询用） */
+  /** 拉一次活动状态（全局单队列，后端不按 workspaceId 区分） */
   refreshActivity: () => Promise<void>;
   /** 清空 store（切换工作区时调用） */
   reset: () => void;
