@@ -38,6 +38,16 @@ export interface ConversationTreeFile {
 
 const ROOT_ID = '__root__';
 
+/** 在 children 数组中找到"最后一个文件夹之后"的插入位置，维护"文件夹在前、对话在后"不变量 */
+function folderFirstInsertIndex(children: string[], folders: Record<string, ConversationFolder>): number {
+  let idx = 0;
+  for (let i = 0; i < children.length; i++) {
+    if (folders[children[i]]) idx = i + 1;
+    else break;
+  }
+  return idx;
+}
+
 // ============================================================
 // 路径函数
 // ============================================================
@@ -69,7 +79,7 @@ export function migrateRootScatter(tree: ConversationTreeFile): { next: Conversa
   const rootChildren = tree.children[ROOT_ID] ?? [];
   const folderIds = new Set(Object.keys(tree.folders));
   const cleaned = rootChildren.filter((id) => folderIds.has(id));
-  if (cleaned.length === rootChildren.length) return { next: tree, mutated: false };
+  if (cleaned.length === rootChildren.length) return { next: { ...tree }, mutated: false };
   return {
     next: { ...tree, children: { ...tree.children, [ROOT_ID]: cleaned } },
     mutated: true,
@@ -131,15 +141,8 @@ export async function createFolder(
     tree.children[parentId] = [];
   }
   const siblings = tree.children[parentId];
-  let folderInsertIndex = 0;
-  for (let i = 0; i < siblings.length; i++) {
-    if (tree.folders[siblings[i]]) {
-      folderInsertIndex = i + 1;
-    } else {
-      break;
-    }
-  }
-  siblings.splice(folderInsertIndex, 0, id);
+  const insertIndex = folderFirstInsertIndex(siblings, tree.folders);
+  siblings.splice(insertIndex, 0, id);
 
   // 初始化自身的 children
   tree.children[id] = [];
@@ -202,17 +205,9 @@ export async function addConversationToTree(
   if (!tree.children[parentId]) {
     tree.children[parentId] = [];
   }
-  // 找到第一个非文件夹项的位置，在该位置插入新对话
-  // 这样文件夹始终在对话前面
+  // 文件夹始终在对话前面
   const children = tree.children[parentId];
-  let insertIndex = 0;
-  for (let i = 0; i < children.length; i++) {
-    if (tree.folders[children[i]]) {
-      insertIndex = i + 1;
-    } else {
-      break;
-    }
-  }
+  const insertIndex = folderFirstInsertIndex(children, tree.folders);
   children.splice(insertIndex, 0, conversationId);
   await saveTree(workspaceId, tree);
 }
@@ -335,11 +330,7 @@ export async function addConversationToFolder(
   if (tree.children[folderId].includes(conversationId)) return; // 已在该文件夹
   // 插到文件夹之后、其他对话之前（保持"文件夹在前、对话在后"不变量）
   const children = tree.children[folderId];
-  let insertIndex = 0;
-  for (let i = 0; i < children.length; i++) {
-    if (tree.folders[children[i]]) insertIndex = i + 1;
-    else break;
-  }
+  const insertIndex = folderFirstInsertIndex(children, tree.folders);
   children.splice(insertIndex, 0, conversationId);
   await saveTree(workspaceId, tree);
 }
@@ -368,25 +359,19 @@ export async function moveConversationBetweenFolders(
 ): Promise<void> {
   if (fromFolderId === toFolderId) return;
   const tree = await loadTree(workspaceId);
+  if (!tree.folders[toFolderId]) {
+    throw new Error(`目标文件夹不存在: ${toFolderId}`);
+  }
   // 从源移除
   const fromChildren = tree.children[fromFolderId];
   if (fromChildren) {
     const idx = fromChildren.indexOf(conversationId);
     if (idx !== -1) fromChildren.splice(idx, 1);
   }
-  // 目标文件夹不存在时，源已 remove，写回防数据不一致
-  if (!tree.folders[toFolderId]) {
-    await saveTree(workspaceId, tree);
-    return;
-  }
   if (!tree.children[toFolderId]) tree.children[toFolderId] = [];
   if (!tree.children[toFolderId].includes(conversationId)) {
     const toChildren = tree.children[toFolderId];
-    let insertIndex = 0;
-    for (let i = 0; i < toChildren.length; i++) {
-      if (tree.folders[toChildren[i]]) insertIndex = i + 1;
-      else break;
-    }
+    const insertIndex = folderFirstInsertIndex(toChildren, tree.folders);
     toChildren.splice(insertIndex, 0, conversationId);
   }
   await saveTree(workspaceId, tree);
