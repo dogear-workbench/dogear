@@ -24,6 +24,8 @@ interface SessionState {
   activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 HOME_TAB_ID 哨兵）
   /** 当前在独立窗口中打开的会话 ID 集合 */
   sessionWindowIds: Set<string>;
+  /** 最近一次"被点击"的对话列表节点 id（用于双层高亮区分"焦点节点" vs "已打开同会话其他节点"） */
+  lastFocusedNodeId: string | null;
 
   /** 打开标签页（已存在则切换到该标签） */
   openTab: (conversationId: string, title: string, workspaceId: string) => boolean;
@@ -45,6 +47,8 @@ interface SessionState {
   removeSessionWindow: (conversationId: string) => void;
   /** 检查会话是否在独立窗口中 */
   isInSessionWindow: (conversationId: string) => boolean;
+  /** 设置最近聚焦的节点 id */
+  setLastFocusedNodeId: (nodeId: string | null) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -56,6 +60,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
   activeTabId: HOME_TAB_ID,
   sessionWindowIds: new Set<string>(),
+  lastFocusedNodeId: null,
 
   openTab: (conversationId, title, workspaceId) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
@@ -154,9 +159,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     return get().sessionWindowIds.has(conversationId);
   },
 
+  setLastFocusedNodeId: (nodeId) => set({ lastFocusedNodeId: nodeId }),
+
   reset: () => set({
     tabs: [],
     activeTabId: HOME_TAB_ID,
     sessionWindowIds: new Set<string>(),
+    lastFocusedNodeId: null,
   }),
 }));

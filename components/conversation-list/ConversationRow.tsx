@@ -15,7 +15,7 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { client } from '@/lib/client';
 import type { Conversation } from '@/components/ConversationList';
-import { CONV_TREE_ROOT, getConversationTitle, getRelativeTime, openOrFocusConversation } from './utils';
+import { CONV_TREE_ROOT, getConversationTitle, getRelativeTime, openOrFocusConversation, useNodeHighlight } from './utils';
 
 interface FolderOption {
   id: string;
@@ -24,7 +24,8 @@ interface FolderOption {
 
 export interface ConversationRowProps {
   conv: Conversation;
-  isSelected?: boolean;
+  /** 节点稳定 id，用于双层高亮区分"同会话多处显示" */
+  nodeId: string;
   /** 显示在文件夹内（影响右键菜单的「从文件夹移出」选项） */
   inFolder?: boolean;
   /** 该会话所在 parent folderId（移动文件夹时用，inFolder=true 时必传） */
@@ -42,7 +43,7 @@ export interface ConversationRowProps {
 
 export function ConversationRow({
   conv,
-  isSelected,
+  nodeId,
   inFolder = false,
   folderId,
   onClick,
@@ -50,7 +51,6 @@ export function ConversationRow({
   archived = false,
   folderOptions = [],
 }: ConversationRowProps) {
-  const selectedConversation = useConversationStore((s) => s.selectedConversation);
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const moveItem = useConversationStore((s) => s.moveItem);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
@@ -59,11 +59,12 @@ export function ConversationRow({
   const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
   const botBoundId = useConversationStore((s) => s.botBoundConversationId);
 
+  const { isOpen, isSelected } = useNodeHighlight(conv.id, nodeId);
+
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  const actualSelected = isSelected !== undefined ? isSelected : selectedConversation?.id === conv.id;
   const isFork = !!conv.parent_conversation_id;
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
@@ -94,9 +95,9 @@ export function ConversationRow({
     if (onClick) {
       onClick();
     } else {
-      openOrFocusConversation(conv);
+      openOrFocusConversation(conv, nodeId);
     }
-  }, [conv, onClick]);
+  }, [conv, onClick, nodeId]);
 
   const handleRestore = useCallback(async () => {
     await client.unarchiveConversation({ conversationId: conv.id, workspaceId: conv.workspace_id });
@@ -115,7 +116,9 @@ export function ConversationRow({
         <div
           className={cn(
             'flex items-center gap-2 py-2 pr-3 cursor-pointer transition-colors group rounded-sm mx-1',
-            actualSelected ? 'bg-blue-100 dark:bg-blue-900/30' : 'hover:bg-muted/30',
+            isSelected ? 'bg-blue-100 dark:bg-blue-900/30'
+              : isOpen ? 'bg-muted/60'
+              : 'hover:bg-muted/30',
           )}
           style={{ paddingLeft: `${indent}px` }}
           onClick={handleClick}
@@ -124,11 +127,11 @@ export function ConversationRow({
             <StatusPulse isPending={isPending} />
           ) : isFork ? (
             <GitBranch className={cn('w-4 h-4 flex-shrink-0',
-              actualSelected ? 'text-purple-600' : 'text-purple-400'
+              isSelected ? 'text-purple-600' : 'text-purple-400'
             )} />
           ) : (
             <MessageSquare className={cn('w-4 h-4 flex-shrink-0',
-              actualSelected ? 'text-blue-600' : 'text-muted-foreground'
+              isSelected ? 'text-blue-600' : 'text-muted-foreground'
             )} />
           )}
           <div className="flex-1 min-w-0">
@@ -152,7 +155,7 @@ export function ConversationRow({
             ) : (
               <div className="flex items-center gap-1">
                 <div className={cn('text-sm truncate',
-                  actualSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
+                  isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground'
                 )}>
                   {getConversationTitle(conv)}
                 </div>

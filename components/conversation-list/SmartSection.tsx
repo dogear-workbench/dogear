@@ -83,7 +83,12 @@ function CategoryGroup({
         <span className="ml-auto text-[10px] opacity-70">{convs.length}</span>
       </div>
       {!collapsed && convs.map((c) => (
-        <ConversationRow key={c.id} conv={c} indent={20} />
+        <ConversationRow
+          key={`${cat.id}:${c.id}`}
+          conv={c}
+          nodeId={`conv:${c.id}::smart::${cat.id}`}
+          indent={20}
+        />
       ))}
     </div>
   );

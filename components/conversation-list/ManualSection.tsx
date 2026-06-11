@@ -133,6 +133,7 @@ function FolderTreeItem({
   return (
     <ConversationRow
       conv={data.conversation}
+      nodeId={`conv:${data.conversation.id}::manual::${parentId}`}
       inFolder={parentId !== CONV_TREE_ROOT}
       folderId={parentId !== CONV_TREE_ROOT ? parentId : undefined}
       indent={paddingLeft}
@@ -155,6 +156,8 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   const nodeMapRef = useRef(nodeMap);
   nodeMapRef.current = nodeMap;
 
+  const itemParentMapRef = useRef<Record<string, string>>({});
+
   const dataLoader = useMemo(() => ({
     getItem: (itemId: string) => nodeMapRef.current[itemId] ?? {
       id: itemId, name: itemId, isFolder: false, childrenIds: [], nodeType: 'conversation' as const,
@@ -172,7 +175,9 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     const data = item.getItemData();
     if (data.nodeType === 'conversation' && data.conversation) {
-      openOrFocusConversation(data.conversation);
+      const parentId = itemParentMapRef.current[item.getId()] ?? CONV_TREE_ROOT;
+      const nodeId = `conv:${data.conversation.id}::manual::${parentId}`;
+      openOrFocusConversation(data.conversation, nodeId);
     }
   }, []);
 
@@ -242,6 +247,7 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
         map[childId] = node.id;
       }
     }
+    itemParentMapRef.current = map;
     return map;
   }, [nodeMap]);
 

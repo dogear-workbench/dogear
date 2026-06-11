@@ -32,7 +32,7 @@ export function RecentVirtualGroup() {
         <span className="ml-auto text-[10px] opacity-70">{recent.length}</span>
       </div>
       {!collapsed && recent.map((conv) => (
-        <ConversationRow key={conv.id} conv={conv} indent={20} />
+        <ConversationRow key={conv.id} conv={conv} nodeId={`conv:${conv.id}::recent`} indent={20} />
       ))}
     </div>
   );

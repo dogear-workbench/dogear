@@ -67,7 +67,7 @@ export function TimeSection() {
             onToggle={() => setRecentMidCollapsed((v) => !v)}
           />
           {!recentMidCollapsed && recentMid.map((c) => (
-            <ConversationRow key={c.id} conv={c} indent={20} />
+            <ConversationRow key={c.id} conv={c} nodeId={`conv:${c.id}::time::mid`} indent={20} />
           ))}
         </>
       )}
@@ -80,7 +80,7 @@ export function TimeSection() {
             onToggle={() => setEarlierCollapsed((v) => !v)}
           />
           {!earlierCollapsed && earlier.map((c) => (
-            <ConversationRow key={c.id} conv={c} indent={20} />
+            <ConversationRow key={c.id} conv={c} nodeId={`conv:${c.id}::time::earlier`} indent={20} />
           ))}
         </>
       )}

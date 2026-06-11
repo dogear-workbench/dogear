@@ -44,11 +44,25 @@ export const TIME_BUCKET_THRESHOLD_MS = TIME_BUCKET_DAYS * 86400_000;
 export const CONV_TREE_ROOT = '__root__';
 
 /**
+ * 节点高亮状态：
+ * - isOpen: conversationId 在 tabs 里（淡色背景，可能多节点）
+ * - isSelected: 该节点是"最近被点击"的那一处（深色背景，唯一）
+ */
+export function useNodeHighlight(conversationId: string, nodeId: string): { isOpen: boolean; isSelected: boolean } {
+  const tabs = useSessionStore((s) => s.tabs);
+  const lastFocusedNodeId = useSessionStore((s) => s.lastFocusedNodeId);
+  const isOpen = tabs.some((t) => t.conversationId === conversationId);
+  const isSelected = lastFocusedNodeId === nodeId;
+  return { isOpen, isSelected };
+}
+
+/**
  * 统一打开会话 tab 的入口
  * sessionWindowIds.has(conv.id) 时调 client.openSessionWindow，否则 selectConversation + openTab
  */
-export function openOrFocusConversation(conv: Conversation): void {
+export function openOrFocusConversation(conv: Conversation, nodeId?: string): void {
   const sessionWindowIds = useSessionStore.getState().sessionWindowIds;
+  if (nodeId) useSessionStore.getState().setLastFocusedNodeId(nodeId);
   if (sessionWindowIds.has(conv.id)) {
     client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
     return;

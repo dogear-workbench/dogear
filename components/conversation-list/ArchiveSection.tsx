@@ -40,6 +40,7 @@ export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
         <ConversationRow
           key={c.id}
           conv={c}
+          nodeId={`conv:${c.id}::archive`}
           archived
           indent={16}
         />
