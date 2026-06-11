@@ -771,6 +771,13 @@ class AgentWorker {
     }
   }
 
+  // ─── handleCategorizeSessionTask 模块级 helper ───────────────────────────
+
+  /** 返回一个全零的分类决策计数对象，用于统一各退出路径的返回 shape。 */
+  private static emptyCategorizeDecisions(): Record<'match' | 'join' | 'new' | 'skip' | 'error', number> {
+    return { match: 0, join: 0, new: 0, skip: 0, error: 0 };
+  }
+
   /**
    * 处理智能分类任务（CATEGORIZE_SESSION）
    *
@@ -785,7 +792,7 @@ class AgentWorker {
    */
   private async handleCategorizeSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').CategorizeSessionPayload;
-    const { workspaceId, workspacePath, mode } = payload;
+    const { workspaceId, mode } = payload;
 
     taskLogger.info('开始智能分类任务:', '| workspace:', workspaceId, '| mode:', mode);
     const startedAt = Date.now();
@@ -808,7 +815,7 @@ class AgentWorker {
     if (!isProfileComplete(categorizeProfile)) {
       const error = `分类方案「${categorizeProfile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`;
       taskLogger.error('智能分类任务终止:', error);
-      return { workspaceId, decided: 0, error };
+      return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error };
     }
 
     const tier = payload.categorizeModelTier
@@ -928,7 +935,10 @@ class AgentWorker {
         `### 新摘要卡`,
         `- conversationId: ${conversationId}`,
         `- 标题: ${card.title}`,
-        `- 概述: ${card.summary}`,
+        `- 概述:`,
+        '  ```',
+        '  ' + card.summary.replace(/\n/g, '\n  '),
+        '  ```',
         `- tags.primary: ${card.tags.primary}`,
         `- tags.secondary: ${JSON.stringify(card.tags.secondary)}`,
         `- tags.scores: ${JSON.stringify(card.tags.scores)}`,
@@ -981,6 +991,9 @@ class AgentWorker {
 
         // 检查最新决策日志判断结果
         const idx2 = await readIndex(workspaceId);
+        // 安全前提：Phase 9 trigger 保证 categorize 串行（同一工作区并发=1），
+        // 同一 conversationId 在 query 完成前不会有其他 SaveCategory 调用。
+        // appendDecision 是头插法 → find 命中的即本次最新决策。
         const latestForConv = idx2.recentDecisions.find((d) => d.conversationId === conversationId);
         if (latestForConv && (latestForConv.decision === 'join' || latestForConv.decision === 'new')) {
           decided = latestForConv.decision;
@@ -1019,12 +1032,12 @@ class AgentWorker {
 
     // ──── 主流程 ────
 
-    try {
-      const decisions: Record<string, number> = { match: 0, join: 0, new: 0, skip: 0, error: 0 };
+    const decisions = AgentWorker.emptyCategorizeDecisions();
 
+    try {
       if (mode === 'incremental') {
         if (!payload.conversationId || !payload.digestPath) {
-          return { workspaceId, decided: 0, error: 'incremental 模式必须提供 conversationId + digestPath' };
+          return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error: 'incremental 模式必须提供 conversationId + digestPath' };
         }
         const r = await decideForDigest(payload.digestPath, payload.conversationId);
         decisions[r]++;
@@ -1069,11 +1082,11 @@ class AgentWorker {
       return { workspaceId, mode, decisions, tier, profileName: categorizeProfile.name };
     } catch (error) {
       if (abortController.signal.aborted) {
-        return { workspaceId, cancelled: true };
+        return { workspaceId, mode, decisions, cancelled: true };
       }
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('智能分类任务失败:', errorMsg);
-      return { workspaceId, error: errorMsg };
+      return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error: errorMsg };
     } finally {
       this.currentAbortController = null;
     }
