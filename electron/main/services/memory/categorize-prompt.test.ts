@@ -8,7 +8,8 @@ test('默认提示词包含决策原则与工具说明', () => {
   expect(DEFAULT_CATEGORIZE_PROMPT).toContain('JOIN_EXISTING');
   expect(DEFAULT_CATEGORIZE_PROMPT).toContain('NEW_CATEGORY');
   expect(DEFAULT_CATEGORIZE_PROMPT).toContain('分类宁可宽不要窄');
-  expect(DEFAULT_CATEGORIZE_PROMPT).toContain('已达上限');
+  expect(DEFAULT_CATEGORIZE_PROMPT).toContain('atLimit'); // 上限以 ListCategories 返回值为准
+  expect(DEFAULT_CATEGORIZE_PROMPT).toContain('调 ListCategories'); // 流程第一步
 });
 
 test('loadCategorizePrompt 首次缺失自动播种', async () => {

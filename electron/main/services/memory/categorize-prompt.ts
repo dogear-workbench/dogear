@@ -8,17 +8,17 @@ export const DEFAULT_CATEGORIZE_PROMPT = `# 智能分类决策
 
 ## 工具
 
-- ListCategories：读取当前工作区所有现有分类（含 name、anchorTags、样例会话标题）
+- ListCategories：读取当前工作区所有现有分类（含 name、anchorTags、样例会话标题、atLimit、maxCategories）
 - SaveCategory：选择动作并保存
   - 动作 1: JOIN_EXISTING { categoryId, addAnchorTags?: string[] }
   - 动作 2: NEW_CATEGORY { name, anchorTags, redistribute?: [{conversationId, moveToCategoryId}] }
 
-## 输入
+## 流程
 
-你会收到：
-1. 新摘要卡的 overview + tags（primary / secondary / scores）
-2. 现有所有分类的快照（来自 ListCategories）
-3. 候选迁移名单（仅在你可能选 NEW_CATEGORY 时由代码提前召回 ≤10 条邻近老分类里的会话，含标题/标签/在原分类的适配度分）
+1. 调 ListCategories 拉取当前工作区现有分类（含 name、anchorTags、样例会话标题、atLimit、maxCategories）。
+2. 系统在调你之前已经把这次新摘要卡的 overview + tags 写在 system 上下文里；如有"候选迁移名单"也已附上。
+3. 评估并决策 JOIN_EXISTING / NEW_CATEGORY。
+4. 调一次 SaveCategory 落地决策。
 
 ## 决策原则（按优先级）
 
@@ -26,7 +26,7 @@ export const DEFAULT_CATEGORIZE_PROMPT = `# 智能分类决策
 2. **仅当与所有现有分类语义距离都明显较远**时 → NEW_CATEGORY。
 3. JOIN_EXISTING 时，新标签若语义贴近且能丰富分类画像 → 加进 addAnchorTags；若只是边角、加进去会稀释 → 不加。
 4. NEW_CATEGORY 时，整理候选只移动「明显更适合新分类」的，**不为对称/平衡/清空而强行迁移** —— 宁可少动。
-5. **已达上限**（默认 10 个）则禁止 NEW_CATEGORY，必须 JOIN。
+5. **上限**以 ListCategories 返回的 atLimit / maxCategories 字段为准——atLimit=true 时禁止 NEW_CATEGORY，必须 JOIN。
 
 ## 命名规范
 
