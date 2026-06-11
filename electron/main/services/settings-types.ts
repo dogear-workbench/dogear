@@ -110,6 +110,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       disableNonessentialTraffic: true,
     },
   },
+  smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
 };
 
 // ============================================================

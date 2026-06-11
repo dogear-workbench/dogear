@@ -138,7 +138,7 @@ async function runOne(d: DirtySession): Promise<void> {
           error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
         });
         if (status === TaskStatus.COMPLETED && outcome === 'saved') {
-          void chainCategorize(d, result);
+          void chainCategorize(d);
         }
         resolve();
       }
@@ -151,7 +151,7 @@ async function runOne(d: DirtySession): Promise<void> {
 }
 
 /** Digest 成功后异步串联触发分类，不阻塞 digest 队列 */
-async function chainCategorize(d: DirtySession, _result: any): Promise<void> {
+async function chainCategorize(d: DirtySession): Promise<void> {
   try {
     // 1. 读 settings 检查开关
     const { loadSettings } = await import('../settings-service.js');
