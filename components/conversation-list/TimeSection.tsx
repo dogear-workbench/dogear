@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { Conversation } from '@/components/ConversationList';
-import { TIME_BUCKET_THRESHOLD_MS } from './utils';
+import { RECENT_THRESHOLD_MS, TIME_BUCKET_THRESHOLD_MS } from './utils';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
 import { ConversationRow } from './ConversationRow';
 
@@ -37,8 +37,8 @@ export function TimeSection() {
   const [earlierCollapsed, setEarlierCollapsed] = useState(true);
   const [recentMidCollapsed, setRecentMidCollapsed] = useState(false);
 
-  // 过滤归档 + 拆 30 天 / 更早
-  // 注意：< 5 天的也归到「30天内」，因为 RecentVirtualGroup 只是虚拟视图（不从底下分组扣除）
+  // 过滤归档 + 拆 < 5 天 / 5-30 天 / 更早。前者由 RecentVirtualGroup 渲染，
+  // 时间视图的「30 天内」桶把 < 5 天扣掉，避免与「近期」重复展示同一会话
   const { recentMid, earlier } = useMemo(() => {
     const now = Date.now();
     const mid: Conversation[] = [];
@@ -46,6 +46,7 @@ export function TimeSection() {
     for (const c of conversations) {
       if (c.archived_at) continue;
       const age = now - (c.updated_at ?? c.created_at);
+      if (age <= RECENT_THRESHOLD_MS) continue;
       if (age <= TIME_BUCKET_THRESHOLD_MS) mid.push(c);
       else old.push(c);
     }

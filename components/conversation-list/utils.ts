@@ -40,6 +40,9 @@ export const RECENT_THRESHOLD_MS = RECENT_DAYS * 86400_000;
 export const TIME_BUCKET_DAYS = 30;
 export const TIME_BUCKET_THRESHOLD_MS = TIME_BUCKET_DAYS * 86400_000;
 
+// 对话树根节点哨兵 id（与后端 ROOT_ID 同步）
+export const CONV_TREE_ROOT = '__root__';
+
 /**
  * 统一打开会话 tab 的入口
  * sessionWindowIds.has(conv.id) 时调 client.openSessionWindow，否则 selectConversation + openTab
@@ -55,10 +58,3 @@ export function openOrFocusConversation(conv: Conversation): void {
   useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
 }
 
-/**
- * 同一 conversationId 在多少处出现（手动文件夹数 + 智能分类数）
- * Phase 16 实现；Phase 14 占位返回 0
- */
-export function useAppearanceCount(_conversationId: string): number {
-  return 0; // TODO: Phase 16 实现
-}

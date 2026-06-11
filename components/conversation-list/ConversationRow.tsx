@@ -15,7 +15,7 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { client } from '@/lib/client';
 import type { Conversation } from '@/components/ConversationList';
-import { getConversationTitle, getRelativeTime, openOrFocusConversation } from './utils';
+import { CONV_TREE_ROOT, getConversationTitle, getRelativeTime, openOrFocusConversation } from './utils';
 
 interface FolderOption {
   id: string;
@@ -39,7 +39,6 @@ export interface ConversationRowProps {
   folderOptions?: FolderOption[];
 }
 
-const CONV_TREE_ROOT = '__root__';
 
 export function ConversationRow({
   conv,
@@ -101,6 +100,12 @@ export function ConversationRow({
 
   const handleRestore = useCallback(async () => {
     await client.unarchiveConversation({ conversationId: conv.id, workspaceId: conv.workspace_id });
+    useConversationStore.getState().loadConversations();
+  }, [conv]);
+
+  // 归档行的"永久删除"必须走 IPC 硬删，绕过 store.deleteConversation 内部"已归档→再归档"的分支
+  const handlePermanentDelete = useCallback(async () => {
+    await client.deleteConversation({ conversationId: conv.id, workspaceId: conv.workspace_id });
     useConversationStore.getState().loadConversations();
   }, [conv]);
 
@@ -217,7 +222,7 @@ export function ConversationRow({
             <ContextMenuSeparator />
             <ContextMenuItem
               className="text-destructive"
-              onClick={() => deleteConversation(conv.id)}
+              onClick={handlePermanentDelete}
             >
               永久删除
             </ContextMenuItem>

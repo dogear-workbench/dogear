@@ -16,9 +16,7 @@ import {
 } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
 import { ConversationRow } from './ConversationRow';
-import { openOrFocusConversation } from './utils';
-
-const CONV_TREE_ROOT = '__root__';
+import { CONV_TREE_ROOT, openOrFocusConversation } from './utils';
 
 interface FolderOption {
   id: string;
