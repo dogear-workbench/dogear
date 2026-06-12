@@ -14,7 +14,7 @@ export function AppearanceBadge({ count, className }: AppearanceBadgeProps) {
   const orange = count >= 5;
   return (
     <span
-      title={`此会话还出现在 ${count} 处`}
+      title={`此会话共出现在 ${count} 处`}
       className={cn(
         'inline-flex items-center text-[10px] leading-none px-1 py-0.5 rounded',
         orange

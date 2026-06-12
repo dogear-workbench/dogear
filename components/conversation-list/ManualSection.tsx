@@ -270,8 +270,9 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
     return { insertAfterEntryIndex, indent: (parentLevel + 1) * 16 + 8 };
   }, [creatingFolderAt, topEntries]);
 
-  const hasFolders = Object.values(nodeMap).some(
-    (n) => n.nodeType === 'folder' && n.id !== CONV_TREE_ROOT,
+  const hasFolders = useMemo(
+    () => Object.values(nodeMap).some((n) => n.nodeType === 'folder' && n.id !== CONV_TREE_ROOT),
+    [nodeMap],
   );
 
   if (topEntries.length === 0 && !creatingFolderAt) {
