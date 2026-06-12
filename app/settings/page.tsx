@@ -16,6 +16,7 @@ import { AgentsTab } from './AgentsTab';
 import { MemoryTab } from './MemoryTab';
 import { DigestsPanel } from './memory/DigestsPanel';
 import { ReviewPanel } from './memory/ReviewPanel';
+import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { ToolsAndPermissionsTab } from './ToolsAndPermissionsTab';
 import { SkillTab } from './SkillTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
@@ -678,6 +679,11 @@ export default function SettingsPage() {
               <h2 className="text-lg font-semibold mb-1">跨会话复盘</h2>
               <p className="text-sm text-muted-foreground mb-6">后台综合本工作区的摘要卡，滚动维护一张复盘卡（首页仪表盘呈现）。可在此配置复盘方案、档位与提示词，或立即复盘。</p>
               <ReviewPanel />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold mb-1">智能分类</h2>
+              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节阈值/模型/提示词，或立即重跑全量。</p>
+              <SmartCategoryPanel />
             </div>
           </div>
         </TabsContent>
