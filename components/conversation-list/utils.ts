@@ -1,6 +1,7 @@
 import type { Conversation } from '@/components/ConversationList';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useSmartCategoryStore } from '@/stores/smart-category-store';
 import { client } from '@/lib/client';
 
 export function getRelativeTime(timestamp: number): string {
@@ -54,6 +55,27 @@ export function useNodeHighlight(conversationId: string, nodeId: string): { isOp
   const isOpen = tabs.some((t) => t.conversationId === conversationId);
   const isSelected = lastFocusedNodeId === nodeId;
   return { isOpen, isSelected };
+}
+
+/**
+ * 该会话在树/分类里出现的总次数。
+ * 计数包含：每个含此 conversationId 的手动文件夹 + 每个含此 conversationId 的智能分类
+ * 不计：智能/时间/归档/近期视图本身（它们是按集合派生的，不是显式归类）
+ */
+export function useAppearanceCount(conversationId: string): number {
+  const nodeMap = useConversationStore((s) => s.nodeMap);
+  const categories = useSmartCategoryStore((s) => s.categories);
+
+  let count = 0;
+  for (const node of Object.values(nodeMap)) {
+    if (node.nodeType === 'folder' && node.childrenIds.includes(conversationId)) {
+      count++;
+    }
+  }
+  for (const cat of categories) {
+    if (cat.conversationIds.includes(conversationId)) count++;
+  }
+  return count;
 }
 
 /**

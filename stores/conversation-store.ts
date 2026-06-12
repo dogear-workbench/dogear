@@ -100,6 +100,12 @@ interface ConversationState {
   deleteFolder: (folderId: string) => Promise<void>;
   /** 移动对话或文件夹 */
   moveItem: (itemId: string, targetParentId: string, targetIndex?: number) => Promise<void>;
+  /** 把对话添加到指定文件夹（多引用语义，不动其他文件夹）*/
+  addConversationToFolder: (conversationId: string, folderId: string) => Promise<void>;
+  /** 从指定文件夹移除（不动其他文件夹）*/
+  removeConversationFromFolder: (conversationId: string, folderId: string) => Promise<void>;
+  /** 在两个文件夹间移动（remove + add 原子）*/
+  moveConversationBetweenFolders: (conversationId: string, fromFolderId: string, toFolderId: string) => Promise<void>;
   /** 更新对话标题 */
   updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
   /** 更新对话的人设关联和临时提示词 */
@@ -520,6 +526,39 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       await get().loadConversations();
     } catch (error) {
       console.error('移动失败:', error);
+    }
+  },
+
+  addConversationToFolder: async (conversationId, folderId) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    try {
+      await client.addConversationToFolder({ workspaceId: workspace.id, conversationId, folderId });
+      await get().loadConversations();
+    } catch (error) {
+      console.error('添加到文件夹失败:', error);
+    }
+  },
+
+  removeConversationFromFolder: async (conversationId, folderId) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    try {
+      await client.removeConversationFromFolder({ workspaceId: workspace.id, conversationId, folderId });
+      await get().loadConversations();
+    } catch (error) {
+      console.error('从文件夹移除失败:', error);
+    }
+  },
+
+  moveConversationBetweenFolders: async (conversationId, fromFolderId, toFolderId) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    try {
+      await client.moveConversationBetweenFolders({ workspaceId: workspace.id, conversationId, fromFolderId, toFolderId });
+      await get().loadConversations();
+    } catch (error) {
+      console.error('在文件夹间移动失败:', error);
     }
   },
 

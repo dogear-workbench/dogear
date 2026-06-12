@@ -18,11 +18,6 @@ import type { ItemInstance } from '@headless-tree/core';
 import { ConversationRow } from './ConversationRow';
 import { CONV_TREE_ROOT, openOrFocusConversation } from './utils';
 
-interface FolderOption {
-  id: string;
-  name: string;
-}
-
 function NewFolderInput({
   indent,
   onConfirm,
@@ -72,11 +67,9 @@ function NewFolderInput({
 
 function FolderTreeItem({
   item,
-  folderOptions,
   parentId,
 }: {
   item: ItemInstance<ConversationFlatNode>;
-  folderOptions: FolderOption[];
   parentId: string;
 }) {
   const data = item.getItemData();
@@ -137,7 +130,6 @@ function FolderTreeItem({
       inFolder={parentId !== CONV_TREE_ROOT}
       folderId={parentId !== CONV_TREE_ROOT ? parentId : undefined}
       indent={paddingLeft}
-      folderOptions={folderOptions}
     />
   );
 }
@@ -232,13 +224,6 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
     return result;
   }, [items]);
 
-  // 文件夹选项（用于"移动到文件夹"右键菜单）
-  const folderOptions = useMemo<FolderOption[]>(() => {
-    return Object.values(nodeMap)
-      .filter((n) => n.nodeType === 'folder' && n.id !== CONV_TREE_ROOT)
-      .map((n) => ({ id: n.id, name: n.name }));
-  }, [nodeMap]);
-
   // 给每一项算它的 parent
   const itemParentMap = useMemo<Record<string, string>>(() => {
     const map: Record<string, string> = {};
@@ -285,7 +270,9 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
     return { insertAfterEntryIndex, indent: (parentLevel + 1) * 16 + 8 };
   }, [creatingFolderAt, topEntries]);
 
-  const hasFolders = folderOptions.length > 0;
+  const hasFolders = Object.values(nodeMap).some(
+    (n) => n.nodeType === 'folder' && n.id !== CONV_TREE_ROOT,
+  );
 
   if (topEntries.length === 0 && !creatingFolderAt) {
     return (
@@ -308,7 +295,6 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
           <React.Fragment key={entry.item.getId()}>
             <FolderTreeItem
               item={entry.item}
-              folderOptions={folderOptions}
               parentId={itemParentMap[entry.item.getId()] ?? CONV_TREE_ROOT}
             />
             {newFolderInsertInfo && i === newFolderInsertInfo.insertAfterEntryIndex && (

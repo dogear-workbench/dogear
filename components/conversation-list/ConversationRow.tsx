@@ -1,12 +1,11 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
   MessageSquare, GitBranch, Bot, Quote, Pencil, Trash2,
-  Folder, FolderInput, FolderOutput, ArchiveRestore,
+  FolderOutput, ArchiveRestore,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
-  ContextMenuItem, ContextMenuSeparator, ContextMenuSub,
-  ContextMenuSubTrigger, ContextMenuSubContent,
+  ContextMenuItem, ContextMenuSeparator,
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -15,18 +14,16 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { client } from '@/lib/client';
 import type { Conversation } from '@/components/ConversationList';
-import { CONV_TREE_ROOT, getConversationTitle, getRelativeTime, openOrFocusConversation, useNodeHighlight } from './utils';
-
-interface FolderOption {
-  id: string;
-  name: string;
-}
+import { getConversationTitle, getRelativeTime, openOrFocusConversation, useAppearanceCount, useNodeHighlight } from './utils';
+import { AppearanceBadge } from './AppearanceBadge';
+import { AddToFolderMenu } from './AddToFolderMenu';
+import { MoveToFolderMenu } from './MoveToFolderMenu';
 
 export interface ConversationRowProps {
   conv: Conversation;
   /** 节点稳定 id，用于双层高亮区分"同会话多处显示" */
   nodeId: string;
-  /** 显示在文件夹内（影响右键菜单的「从文件夹移出」选项） */
+  /** 显示在文件夹内（影响右键菜单的「从文件夹移除」选项） */
   inFolder?: boolean;
   /** 该会话所在 parent folderId（移动文件夹时用，inFolder=true 时必传） */
   folderId?: string;
@@ -36,8 +33,6 @@ export interface ConversationRowProps {
   indent?: number;
   /** 归档模式：右键显示恢复/永久删除，而不是普通操作 */
   archived?: boolean;
-  /** 可用文件夹选项（普通模式下右键"移动到文件夹"用） */
-  folderOptions?: FolderOption[];
 }
 
 
@@ -49,10 +44,9 @@ export function ConversationRow({
   onClick,
   indent = 8,
   archived = false,
-  folderOptions = [],
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
-  const moveItem = useConversationStore((s) => s.moveItem);
+  const removeConversationFromFolder = useConversationStore((s) => s.removeConversationFromFolder);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
 
   const runningIds = useConversationStore((s) => s.runningConversationIds);
@@ -60,6 +54,7 @@ export function ConversationRow({
   const botBoundId = useConversationStore((s) => s.botBoundConversationId);
 
   const { isOpen, isSelected } = useNodeHighlight(conv.id, nodeId);
+  const appearanceCount = useAppearanceCount(conv.id);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -69,7 +64,6 @@ export function ConversationRow({
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isBotBound = conv.id === botBoundId;
-  const parentId = folderId ?? CONV_TREE_ROOT;
 
   const startEditing = useCallback(() => {
     setEditTitle(getConversationTitle(conv));
@@ -162,6 +156,7 @@ export function ConversationRow({
                 {isBotBound && (
                   <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />
                 )}
+                <AppearanceBadge count={appearanceCount} />
               </div>
             )}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -245,37 +240,16 @@ export function ConversationRow({
               引用到当前对话
             </ContextMenuItem>
             <ContextMenuSeparator />
-            {folderOptions.length > 0 ? (
-              <ContextMenuSub>
-                <ContextMenuSubTrigger>
-                  <FolderInput className="w-3.5 h-3.5 mr-2" />
-                  移动到文件夹
-                </ContextMenuSubTrigger>
-                <ContextMenuSubContent>
-                  {folderOptions
-                    .filter((f) => f.id !== parentId)
-                    .map((f) => (
-                      <ContextMenuItem
-                        key={f.id}
-                        onClick={() => moveItem(conv.id, f.id)}
-                      >
-                        <Folder className="w-3.5 h-3.5 mr-2 text-amber-500" />
-                        {f.name}
-                      </ContextMenuItem>
-                    ))}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
+            {inFolder ? (
+              <>
+                <MoveToFolderMenu conversationId={conv.id} fromFolderId={folderId!} />
+                <ContextMenuItem onClick={() => removeConversationFromFolder(conv.id, folderId!)}>
+                  <FolderOutput className="w-3.5 h-3.5 mr-2" />
+                  从文件夹移除
+                </ContextMenuItem>
+              </>
             ) : (
-              <ContextMenuItem disabled>
-                <FolderInput className="w-3.5 h-3.5 mr-2" />
-                移动到文件夹（暂无文件夹）
-              </ContextMenuItem>
-            )}
-            {inFolder && (
-              <ContextMenuItem onClick={() => moveItem(conv.id, CONV_TREE_ROOT)}>
-                <FolderOutput className="w-3.5 h-3.5 mr-2" />
-                从文件夹移出
-              </ContextMenuItem>
+              <AddToFolderMenu conversationId={conv.id} />
             )}
             <ContextMenuSeparator />
             <ContextMenuItem
