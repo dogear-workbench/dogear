@@ -425,6 +425,11 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  // 首页报告文件监视：dashboard.md 任意写入都广播给前端实时刷新
+  void import('./services/memory/dashboard-watcher.js')
+    .then((m) => m.startDashboardWatcher())
+    .catch((err) => console.error('启动 dashboard-watcher 失败:', err));
+
   // ── 会话提炼/复盘三触发点（里程碑 2 Phase A+B）──
   // 触发点①：启动后延迟扫一遍，backfill 存量会话（低优先，不阻塞窗口）
   setTimeout(() => {

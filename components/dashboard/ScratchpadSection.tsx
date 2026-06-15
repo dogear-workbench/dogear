@@ -1,5 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { cn } from '@/lib/utils';
+import {
+  MDXEditor,
+  type MDXEditorMethods,
+  headingsPlugin,
+  listsPlugin,
+  quotePlugin,
+  thematicBreakPlugin,
+  linkPlugin,
+  linkDialogPlugin,
+  markdownShortcutPlugin,
+  toolbarPlugin,
+  UndoRedo,
+  BoldItalicUnderlineToggles,
+  BlockTypeSelect,
+  ListsToggle,
+  CreateLink,
+  Separator,
+} from '@mdxeditor/editor';
+import '@mdxeditor/editor/style.css';
 import { useDashboardStore } from '@/stores/dashboard-store';
 
 interface ScratchpadSectionProps {
@@ -11,14 +29,18 @@ export function ScratchpadSection({ workspaceId }: ScratchpadSectionProps) {
   const notesSaving = useDashboardStore((s) => s.notesSaving);
   const flushNotes = useDashboardStore((s) => s.flushNotes);
 
-  const [value, setValue] = useState(notesContent);
+  const editorRef = useRef<MDXEditorMethods>(null);
   const [touched, setTouched] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // notesContent 仅在加载/切工作区时变化（编辑期间不回写 store），
-  // 故此处只在那些时机同步本地值并清空「已保存」提示。
+  // 切工作区或加载完成时，强制把编辑器内容同步到 store
+  // （MDXEditor 是非受控的，必须通过 ref 重设）
   useEffect(() => {
-    setValue(notesContent);
+    const editor = editorRef.current;
+    if (!editor) return;
+    if (editor.getMarkdown() !== notesContent) {
+      editor.setMarkdown(notesContent);
+    }
     setTouched(false);
   }, [notesContent, workspaceId]);
 
@@ -28,19 +50,17 @@ export function ScratchpadSection({ workspaceId }: ScratchpadSectionProps) {
     };
   }, []);
 
-  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const v = e.target.value;
-    setValue(v);
+  const handleChange = (md: string) => {
     setTouched(true);
     if (timerRef.current !== null) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
-      flushNotes(workspaceId, v);
+      flushNotes(workspaceId, md);
     }, 800);
   };
 
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
+    <section className="flex h-full min-h-0 flex-col gap-2">
+      <div className="flex shrink-0 items-center justify-between px-1">
         <h2 className="text-sm font-semibold text-foreground">我的速记</h2>
         {touched && (
           <span className="text-xs text-muted-foreground">
@@ -48,17 +68,41 @@ export function ScratchpadSection({ workspaceId }: ScratchpadSectionProps) {
           </span>
         )}
       </div>
-      <textarea
-        value={value}
-        onChange={handleChange}
-        placeholder="随手记点什么…"
-        className={cn(
-          'w-full min-h-40 resize-y rounded-lg border border-input bg-background px-3 py-2',
-          'text-sm text-foreground placeholder:text-muted-foreground',
-          'focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-ring',
-          'transition-colors',
-        )}
-      />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-background">
+        <MDXEditor
+          ref={editorRef}
+          markdown={notesContent}
+          onChange={handleChange}
+          placeholder="随手记点什么…"
+          contentEditableClassName="prose prose-sm max-w-none dark:prose-invert px-4 py-3 min-h-full focus:outline-none"
+          className="flex-1 overflow-y-auto"
+          plugins={[
+            headingsPlugin(),
+            listsPlugin(),
+            quotePlugin(),
+            thematicBreakPlugin(),
+            linkPlugin(),
+            linkDialogPlugin(),
+            markdownShortcutPlugin(),
+            toolbarPlugin({
+              toolbarClassName: 'border-b border-border bg-muted/30',
+              toolbarContents: () => (
+                <>
+                  <UndoRedo />
+                  <Separator />
+                  <BoldItalicUnderlineToggles />
+                  <Separator />
+                  <BlockTypeSelect />
+                  <Separator />
+                  <ListsToggle />
+                  <Separator />
+                  <CreateLink />
+                </>
+              ),
+            }),
+          ]}
+        />
+      </div>
     </section>
   );
 }

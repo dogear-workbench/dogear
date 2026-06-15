@@ -24,7 +24,9 @@ export * from './settings-types.js';
  * 打包后：AppData/Roaming/Dogear/.dogear
  */
 export function getConfigDir(): string {
-  if (app.isPackaged) {
+  // Worker 线程无 electron app，优先读注入的 DOGEAR_CONFIG_DIR
+  if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
+  if (app?.isPackaged) {
     return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');

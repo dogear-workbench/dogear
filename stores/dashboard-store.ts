@@ -130,3 +130,15 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
     startReviewPoll(set, get);
   },
 }));
+
+// 监听主进程广播：dashboard.md 文件变更（不论谁写）→ 当前工作区匹配则 reload
+if (typeof window !== 'undefined') {
+  import('@/lib/events').then(({ rendererEvents }) => {
+    rendererEvents.reportUpdated.listen((data) => {
+      const state = useDashboardStore.getState();
+      if (data.workspaceId === state.currentWorkspaceId) {
+        void state.loadReport(data.workspaceId);
+      }
+    });
+  });
+}
