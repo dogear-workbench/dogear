@@ -788,32 +788,24 @@ class AgentWorker {
       cliPath: this.cliPath,
     });
 
-    const { buildProfileEnv } = await import('./agent-query-config.js');
-    const { isProfileComplete } = await import('../services/settings-types.js');
-    const categorizeProfileId = baseConfig.appSettings.ai.categorizeProfileId;
-    const categorizeProfile =
-      (categorizeProfileId && baseConfig.appSettings.profiles[categorizeProfileId])
-      || baseConfig.activeProfile;
+    const { resolveModelSelection } = await import('./agent-query-config.js');
+    const selection = payload.modelSelection
+      ?? baseConfig.appSettings.ai.categorizeModelSelection
+      ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    if (!isProfileComplete(categorizeProfile)) {
-      const error = `分类方案「${categorizeProfile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`;
+    let env: Record<string, string>;
+    let tier: ModelTier;
+    let resolvedProfile: ModelProfile;
+    try {
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, this.configDir);
+      env = r.env;
+      tier = r.tier;
+      resolvedProfile = r.profile;
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('智能分类任务终止:', error);
       return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error };
     }
-
-    const tier = payload.categorizeModelTier
-      ?? baseConfig.appSettings.ai.categorizeModelTier
-      ?? 'haiku';
-    const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
-      haiku: categorizeProfile.haikuModel,
-      sonnet: categorizeProfile.sonnetModel,
-      opus: categorizeProfile.opusModel,
-    };
-    const claudeConfigDir = path.join(this.configDir, 'conversations');
-    const env = {
-      ...buildProfileEnv(categorizeProfile, claudeConfigDir),
-      ANTHROPIC_MODEL: tierMap[tier],
-    };
 
     const threshold = baseConfig.appSettings.smartCategory?.threshold ?? 0.5;
 
@@ -1062,7 +1054,7 @@ class AgentWorker {
       }
 
       taskLogger.info('智能分类任务完成，耗时:', Date.now() - startedAt, 'ms', '| decisions:', decisions, '| tier:', tier);
-      return { workspaceId, mode, decisions, tier, profileName: categorizeProfile.name };
+      return { workspaceId, mode, decisions, tier, profileName: resolvedProfile.name };
     } catch (error) {
       if (abortController.signal.aborted) {
         return { workspaceId, mode, decisions, cancelled: true };
