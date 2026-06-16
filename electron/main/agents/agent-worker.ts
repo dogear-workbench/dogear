@@ -672,33 +672,24 @@ class AgentWorker {
       cliPath: this.cliPath,
     });
 
-    // 复盘方案：reviewProfileId 指定的 Profile，缺省回退主会话 activeProfile
-    const { buildProfileEnv } = await import('./agent-query-config.js');
-    const { isProfileComplete } = await import('../services/settings-types.js');
-    const reviewProfileId = baseConfig.appSettings.ai.reviewProfileId;
-    const reviewProfile =
-      (reviewProfileId && baseConfig.appSettings.profiles[reviewProfileId])
-      || baseConfig.activeProfile;
+    const { resolveModelSelection } = await import('./agent-query-config.js');
+    const selection = payload.modelSelection
+      ?? baseConfig.appSettings.ai.reviewModelSelection
+      ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    if (!isProfileComplete(reviewProfile)) {
-      const error = `复盘方案「${reviewProfile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`;
+    let env: Record<string, string>;
+    let tier: ModelTier;
+    let resolvedProfile: ModelProfile;
+    try {
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, this.configDir);
+      env = r.env;
+      tier = r.tier;
+      resolvedProfile = r.profile;
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('跨会话复盘任务终止:', error);
       return { workspaceId, saved: false, error };
     }
-
-    const tier = payload.reviewModelTier
-      ?? baseConfig.appSettings.ai.reviewModelTier
-      ?? 'sonnet';
-    const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
-      haiku: reviewProfile.haikuModel,
-      sonnet: reviewProfile.sonnetModel,
-      opus: reviewProfile.opusModel,
-    };
-    const claudeConfigDir = path.join(this.configDir, 'conversations');
-    const env = {
-      ...buildProfileEnv(reviewProfile, claudeConfigDir),
-      ANTHROPIC_MODEL: tierMap[tier],
-    };
 
     const { createReviewMcpServer } = await import('./tools/review-tools.js');
     const { createMemoryTools } = await import('./tools/memory-tools.js');
@@ -749,7 +740,7 @@ class AgentWorker {
       }
 
       taskLogger.info('跨会话复盘任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { workspaceId, saved, tier, profileName: reviewProfile.name };
+      return { workspaceId, saved, tier, profileName: resolvedProfile.name };
     } catch (error) {
       if (abortController.signal.aborted) {
         taskLogger.info('跨会话复盘被取消:', workspaceId);
