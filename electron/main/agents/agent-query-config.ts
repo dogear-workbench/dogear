@@ -38,9 +38,10 @@ export function resolveClaudeCliPath(appPath: string): string {
 import {
   type AppSettings,
   type ModelProfile,
+  type ModelSelection,
+  type ModelTier,
   DEFAULT_SETTINGS,
   deepMerge,
-  getActiveProfile,
   isProfileComplete,
 } from '../services/settings-types.js';
 
@@ -123,6 +124,42 @@ export function buildProfileEnv(
     delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
   }
   return env;
+}
+
+// 把 ModelSelection 解析为完整的 env / profile / tier
+export function resolveModelSelection(
+  appSettings: AppSettings,
+  selection: ModelSelection | null,
+  fallback: ModelSelection | null,
+  configDir: string,
+): { profile: ModelProfile; tier: ModelTier; modelId: string; env: Record<string, string> } {
+  const target = selection ?? fallback;
+  if (!target) {
+    throw new Error('未指定模型，请先在对话或设置中选择模型');
+  }
+  const profile = appSettings.profiles[target.profileId];
+  if (!profile) {
+    throw new Error(`模型方案「${target.profileId}」不存在`);
+  }
+  if (!isProfileComplete(profile)) {
+    throw new Error(`模型方案「${profile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`);
+  }
+  const claudeConfigDir = path.join(configDir, 'conversations');
+  const env = buildProfileEnv(profile, claudeConfigDir);
+  const tierMap: Record<ModelTier, string> = {
+    haiku: profile.haikuModel,
+    sonnet: profile.sonnetModel,
+    opus: profile.opusModel,
+  };
+  env.ANTHROPIC_MODEL = tierMap[target.tier];
+  // 子代理：未显式指定且 effort 非空时，回退到 sonnet
+  // (SDK 默认 haiku，haiku 不支持 effort 参数会 API 400)
+  const subagentTier = appSettings.ai.subagentModelTier
+    ?? (appSettings.ai.effort ? 'sonnet' as const : undefined);
+  if (subagentTier) {
+    env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[subagentTier];
+  }
+  return { profile, tier: target.tier, modelId: tierMap[target.tier], env };
 }
 
 /**
