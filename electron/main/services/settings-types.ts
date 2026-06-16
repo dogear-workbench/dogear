@@ -7,6 +7,13 @@
 // 类型定义（与 types/settings.ts 保持一致，主进程独立定义）
 // ============================================================
 
+export type ModelTier = 'haiku' | 'sonnet' | 'opus';
+
+export interface ModelSelection {
+  profileId: string;
+  tier: ModelTier;
+}
+
 /** 人设预设 */
 export interface Persona {
   id: string;
@@ -33,27 +40,16 @@ export interface ModelProfile {
 export interface AppSettings {
   ai: {
     effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-    activeProfileId: string;
     maxTurns?: number;
     permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
     defaultSystemPrompt?: string; // 全局默认系统提示词
     settingSources?: ('user' | 'project')[];
-    /** 注入 ANTHROPIC_MODEL，决定 CLI 默认模型 */
-    defaultModelTier?: 'haiku' | 'sonnet' | 'opus';
+    defaultModelSelection: ModelSelection | null;
+    digestModelSelection: ModelSelection | null;
+    reviewModelSelection: ModelSelection | null;
+    categorizeModelSelection: ModelSelection | null;
     /** 注入 CLAUDE_CODE_SUBAGENT_MODEL，决定 Agent 工具（原 Task）子代理模型 */
-    subagentModelTier?: 'haiku' | 'sonnet' | 'opus';
-    /** 会话提炼（DIGEST_SESSION）使用的模型档位。默认 haiku */
-    digestModelTier?: 'haiku' | 'sonnet' | 'opus';
-    /** 会话提炼使用的模型方案 id（缺省回退 activeProfileId，与主会话解耦） */
-    digestProfileId?: string;
-    /** 跨会话复盘（REVIEW_SESSION）使用的模型档位。默认 sonnet */
-    reviewModelTier?: 'haiku' | 'sonnet' | 'opus';
-    /** 跨会话复盘使用的模型方案 id。缺省回退 activeProfileId */
-    reviewProfileId?: string;
-    /** 智能分类（CATEGORIZE_SESSION）使用的模型档位。默认 haiku */
-    categorizeModelTier?: 'haiku' | 'sonnet' | 'opus';
-    /** 智能分类使用的模型方案 id。缺省回退 activeProfileId */
-    categorizeProfileId?: string;
+    subagentModelTier?: ModelTier;
     /** SDK 0.2.119+：true 时环境上下文移到首条 user message，改善 prompt 缓存命中率（默认 true） */
     excludeDynamicSections?: boolean;
     /** SDK 0.2.119+：启用 Agent 回答后的下一步建议气泡（默认 true） */
