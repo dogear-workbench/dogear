@@ -3,6 +3,8 @@
  * 定义主进程与 Agent Worker 之间的通信协议
  */
 
+import type { ModelSelection } from '../services/settings-types.js';
+
 /**
  * 任务状态枚举
  */
@@ -204,7 +206,7 @@ export interface DigestSessionPayload {
   workspaceId: string;       // 工作区 ID（落卡 / 留底用）
   workspacePath: string;     // 工作区绝对路径（定位 JSONL 用）
   sdkSessionId: string;      // 目标会话 ID
-  digestModelTier?: 'haiku' | 'sonnet' | 'opus'; // 提炼模型档位（缺省读 settings）
+  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.digestModelSelection）
 }
 
 /**
@@ -214,7 +216,7 @@ export interface DigestSessionPayload {
 export interface ReviewSessionPayload {
   workspaceId: string;   // 工作区 ID（读摘要卡 / 落复盘卡）
   workspacePath: string; // 工作区绝对路径（TraceSource 定位 JSONL 用）
-  reviewModelTier?: 'haiku' | 'sonnet' | 'opus'; // 复盘模型档位（缺省读 settings）
+  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.reviewModelSelection）
 }
 
 /**
@@ -229,7 +231,7 @@ export interface CategorizeSessionPayload {
   mode: 'incremental' | 'full-rebuild';
   conversationId?: string;   // incremental 必填
   digestPath?: string;       // incremental 必填，摘要卡 .md 文件绝对路径
-  categorizeModelTier?: 'haiku' | 'sonnet' | 'opus'; // 缺省读 settings
+  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
 }
 
 /**
