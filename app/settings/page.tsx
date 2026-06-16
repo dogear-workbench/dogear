@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Check } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -20,6 +20,7 @@ import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { ToolsAndPermissionsTab } from './ToolsAndPermissionsTab';
 import { SkillTab } from './SkillTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
+import { ModelSelector } from '@/components/ModelSelector';
 
 // ═══ 常量 ═══════════════════════════════════════════
 
@@ -70,7 +71,7 @@ export default function SettingsPage() {
   const [local, setLocal] = useState<AppSettings>(DEFAULT_SETTINGS);
   // API Key 显示/隐藏
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
-  // 内层 profile tab 选中状态（独立于 activeProfileId）
+  // 内层 profile tab 选中状态
   const [selectedProfileTab, setSelectedProfileTab] = useState<string>('default');
 
   // 加载设置
@@ -80,7 +81,8 @@ export default function SettingsPage() {
   useEffect(() => {
     if (loaded) {
       setLocal(structuredClone(savedSettings));
-      setSelectedProfileTab(savedSettings.ai.activeProfileId);
+      const firstProfileId = Object.keys(savedSettings.profiles)[0] ?? 'default';
+      setSelectedProfileTab(firstProfileId);
     }
   }, [loaded, savedSettings]);
 
@@ -188,14 +190,17 @@ export default function SettingsPage() {
     if (profileId === 'default') return;
     setLocal(prev => {
       const { [profileId]: _removed, ...rest } = prev.profiles;
-      const activeId = prev.ai.activeProfileId === profileId ? 'default' : prev.ai.activeProfileId;
-      return { ...prev, profiles: rest, ai: { ...prev.ai, activeProfileId: activeId } };
+      const newAi = { ...prev.ai };
+      const clearIfMatch = (key: 'defaultModelSelection' | 'digestModelSelection' | 'reviewModelSelection' | 'categorizeModelSelection') => {
+        if (newAi[key]?.profileId === profileId) newAi[key] = null;
+      };
+      clearIfMatch('defaultModelSelection');
+      clearIfMatch('digestModelSelection');
+      clearIfMatch('reviewModelSelection');
+      clearIfMatch('categorizeModelSelection');
+      return { ...prev, profiles: rest, ai: newAi };
     });
     setSelectedProfileTab('default');
-  };
-
-  const activateProfile = (profileId: string) => {
-    updateAI({ activeProfileId: profileId });
   };
 
   // ── 加载中 ──
@@ -299,24 +304,20 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* 默认模型层级 */}
+              {/* 默认模型 */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">默认模型</label>
                 <p className="text-xs text-muted-foreground">
-                  注入 ANTHROPIC_MODEL 环境变量，决定 CLI 的默认模型层级。不指定时由 SDK 决定。
+                  新建对话将使用此模型；选「不指定」时新对话需手动选择模型才能发送消息。
+                  此处的修改仅影响之后新建的对话，不会改动已存在对话的模型设置。
                 </p>
-                <select
-                  className="h-9 w-full px-3 text-sm border rounded bg-background"
-                  value={local.ai.defaultModelTier || ''}
-                  onChange={(e) => updateAI({
-                    defaultModelTier: e.target.value ? e.target.value as 'haiku' | 'sonnet' | 'opus' : undefined
-                  })}
-                >
-                  <option value="">不指定</option>
-                  <option value="haiku">Haiku</option>
-                  <option value="sonnet">Sonnet</option>
-                  <option value="opus">Opus</option>
-                </select>
+                <ModelSelector
+                  settings={local}
+                  value={local.ai.defaultModelSelection}
+                  onChange={(v) => updateAI({ defaultModelSelection: v })}
+                  allowUnset={true}
+                  triggerVariant="block"
+                />
               </div>
 
               {/* 子代理模型层级 */}
@@ -491,13 +492,12 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold mb-1">模型方案</h2>
             <p className="text-sm text-muted-foreground mb-6">管理 API 配置方案，切换不同的模型和服务地址</p>
 
-            {/* 内层 Tabs：Profile 切换（浏览用，不等于 activeProfileId） */}
+            {/* 内层 Tabs：Profile 切换 */}
             <Tabs value={selectedProfileTab} onValueChange={setSelectedProfileTab}>
               <div className="flex items-center gap-2 mb-4">
                 <TabsList className="flex-1">
                   {profileIds.map(id => (
-                    <TabsTrigger key={id} value={id} className="gap-1.5">
-                      {local.ai.activeProfileId === id && <Check className="w-3 h-3" />}
+                    <TabsTrigger key={id} value={id}>
                       {local.profiles[id].name}
                     </TabsTrigger>
                   ))}
@@ -512,7 +512,6 @@ export default function SettingsPage() {
                 const isDefault = id === 'default';
                 const keyVisible = showApiKey[id] ?? false;
                 const complete = isProfileComplete(profile);
-                const isActive = local.ai.activeProfileId === id;
 
                 return (
                   <TabsContent key={id} value={id} className="space-y-4 pt-2">
@@ -624,12 +623,6 @@ export default function SettingsPage() {
 
                     {/* 底部操作 */}
                     <div className="flex items-center gap-2 pt-2">
-                      {!isActive && (
-                        <Button variant="outline" size="sm" onClick={() => activateProfile(id)}>
-                          <Check className="w-4 h-4 mr-2" />
-                          启用此方案
-                        </Button>
-                      )}
                       {!isDefault && (
                         <Button variant="ghost" size="sm"
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
