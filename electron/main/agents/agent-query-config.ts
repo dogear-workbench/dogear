@@ -58,6 +58,8 @@ export interface QueryRuntimeContext {
   isPackaged: boolean;
   /** SDK CLI 可执行文件路径（打包环境需要，开发环境不需要） */
   cliPath?: string;
+  /** 主会话路径：传入对话级模型选择（null=用 settings.defaultModelSelection 兜底） */
+  conversationModelSelection?: ModelSelection | null;
 }
 
 /**
@@ -81,8 +83,10 @@ export interface QueryBaseConfig {
   settingSources?: AppSettings['ai']['settingSources'];
   /** 完整的 AppSettings（供调用方使用，如构建 systemPrompt） */
   appSettings: AppSettings;
-  /** 当前激活的 ModelProfile（供调用方日志使用） */
-  activeProfile: ModelProfile;
+  /** 实际解析后使用的 ModelProfile（来自 conversationModelSelection 或 defaultModelSelection） */
+  resolvedProfile: ModelProfile;
+  /** 实际解析后的 tier（haiku/sonnet/opus） */
+  resolvedTier: ModelTier;
 }
 
 /**
@@ -164,51 +168,19 @@ export function resolveModelSelection(
 
 /**
  * 构建 query() 所需的通用配置
- *
  * 主进程和 Worker 线程都调用此函数，传入各自的运行时上下文。
- * 返回的配置可直接注入到 query() options 中。
  *
- * @throws 当 API 配置不完整时抛出错误
+ * @throws 当未选择模型 / 方案不存在 / 配置不完整时抛出
  */
 export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<QueryBaseConfig> {
-  // 读取设置
   const appSettings = await loadSettingsFromDir(ctx.configDir);
-  const activeProfile = getActiveProfile(appSettings);
-
-  // 校验 Profile 完整性
-  if (!isProfileComplete(activeProfile)) {
-    throw new Error(
-      `模型方案 "${activeProfile.name}" 配置不完整，请在设置页面完善 API Key、Base URL 和模型映射`
-    );
-  }
-
-  // CLAUDE_CONFIG_DIR 与 getClaudeConfigDir() 保持一致：{configDir}/conversations
-  const claudeConfigDir = path.join(ctx.configDir, 'conversations');
-
-  // 构建环境变量（合并系统 env + Profile 凭据）
-  const env = buildProfileEnv(activeProfile, claudeConfigDir);
-
-  // 打包环境：设置 CLI 可执行文件路径
+  const { profile, tier, env } = resolveModelSelection(
+    appSettings,
+    ctx.conversationModelSelection ?? null,
+    appSettings.ai.defaultModelSelection,
+    ctx.configDir,
+  );
   const pathToClaudeCodeExecutable = ctx.isPackaged && ctx.cliPath ? ctx.cliPath : undefined;
-
-  // 根据用户配置注入 ANTHROPIC_MODEL / CLAUDE_CODE_SUBAGENT_MODEL
-  const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
-    haiku:  activeProfile.haikuModel,
-    sonnet: activeProfile.sonnetModel,
-    opus:   activeProfile.opusModel,
-  };
-
-  if (appSettings.ai.defaultModelTier) {
-    env.ANTHROPIC_MODEL = tierMap[appSettings.ai.defaultModelTier];
-  }
-  // Subagent 模型：用户显式指定优先；未指定但 effort 非空时兜底到 sonnet
-  // 原因：Claude Code 子代理默认 haiku，haiku 不支持 effort 参数会 API 400
-  const subagentTier = appSettings.ai.subagentModelTier
-    ?? (appSettings.ai.effort ? 'sonnet' as const : undefined);
-  if (subagentTier) {
-    env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[subagentTier];
-  }
-
   return {
     env,
     effort: appSettings.ai.effort,
@@ -218,6 +190,7 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
     pathToClaudeCodeExecutable,
     settingSources: appSettings.ai.settingSources,
     appSettings,
-    activeProfile,
+    resolvedProfile: profile,
+    resolvedTier: tier,
   };
 }
