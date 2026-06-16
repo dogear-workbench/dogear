@@ -134,7 +134,7 @@ export interface Conversation {
   fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
   persona_id?: string;               // 关联的人设 ID
   temp_prompt?: string;              // 临时提示词（仅当前对话生效）
-  modelSelection: ModelSelection | null;  // 对话级模型覆盖（null = 跟随全局）
+  modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
   fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   usageSummary?: {
