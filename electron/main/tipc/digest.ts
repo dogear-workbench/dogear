@@ -1,14 +1,13 @@
 // electron/main/tipc/digest.ts
-// 会话摘要卡巡检 + 手动提炼 + 提炼模型档位 IPC
+// 会话摘要卡巡检 + 手动提炼 + 提炼模型选择 IPC
 import { tipc } from '@egoist/tipc/main';
 import { listDigests, readDigest } from '../services/memory/digest-store.js';
 import { enqueueDigests, getDigestActivity } from '../services/memory/digest-trigger.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
 import { loadDigestPrompt, saveDigestPrompt, DEFAULT_DIGEST_PROMPT } from '../services/memory/digest-prompt.js';
+import type { ModelSelection } from '../services/settings-types.js';
 
 const t = tipc.create();
-
-type DigestModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export const digestRouter = {
   /** 列出工作区所有摘要卡（摘要信息） */
@@ -54,56 +53,29 @@ export const digestRouter = {
       }
     }),
 
-  /** 读取提炼模型档位（缺省 haiku） */
-  getDigestModelTier: t.procedure
+  /** 读取提炼任务专用模型选择（null 时运行时回退到 defaultModelSelection） */
+  getDigestModelSelection: t.procedure
     .action(async () => {
       try {
         const settings = await loadSettings();
-        return { tier: (settings.ai.digestModelTier ?? 'haiku') as DigestModelTier };
+        return { selection: settings.ai.digestModelSelection };
       } catch (error) {
-        console.error('[digest] getDigestModelTier 失败:', error);
+        console.error('[digest] getDigestModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  /** 设置提炼模型档位 */
-  setDigestModelTier: t.procedure
-    .input<{ tier: DigestModelTier }>()
+  /** 设置提炼任务专用模型选择（传 null 表示清空，回退到默认） */
+  setDigestModelSelection: t.procedure
+    .input<{ selection: ModelSelection | null }>()
     .action(async ({ input }) => {
       try {
         const settings = await loadSettings();
-        settings.ai.digestModelTier = input.tier;
+        settings.ai.digestModelSelection = input.selection;
         await saveSettings(settings);
         return { success: true };
       } catch (error) {
-        console.error('[digest] setDigestModelTier 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /** 读取提炼模型方案 id（缺省回退主会话 activeProfileId） */
-  getDigestProfileId: t.procedure
-    .action(async () => {
-      try {
-        const settings = await loadSettings();
-        return { profileId: settings.ai.digestProfileId ?? settings.ai.activeProfileId };
-      } catch (error) {
-        console.error('[digest] getDigestProfileId 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /** 设置提炼模型方案 id */
-  setDigestProfileId: t.procedure
-    .input<{ profileId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const settings = await loadSettings();
-        settings.ai.digestProfileId = input.profileId;
-        await saveSettings(settings);
-        return { success: true };
-      } catch (error) {
-        console.error('[digest] setDigestProfileId 失败:', error);
+        console.error('[digest] setDigestModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),

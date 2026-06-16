@@ -13,10 +13,9 @@ import {
 } from '../services/memory/categorize-prompt.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
 import { getByWorkspaceId } from '../services/conversation-service.js';
+import type { ModelSelection } from '../services/settings-types.js';
 
 const t = tipc.create();
-
-type CategorizeModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export const categoryRouter = {
   getCategories: t.procedure
@@ -105,52 +104,29 @@ export const categoryRouter = {
       }
     }),
 
-  getCategorizeModelTier: t.procedure
+  /** 读取分类任务专用模型选择（null 时运行时回退到 defaultModelSelection） */
+  getCategorizeModelSelection: t.procedure
     .action(async () => {
       try {
         const settings = await loadSettings();
-        return { tier: (settings.ai.categorizeModelTier ?? 'haiku') as CategorizeModelTier };
+        return { selection: settings.ai.categorizeModelSelection };
       } catch (error) {
-        console.error('[category] getCategorizeModelTier 失败:', error);
+        console.error('[category] getCategorizeModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  setCategorizeModelTier: t.procedure
-    .input<{ tier: CategorizeModelTier }>()
+  /** 设置分类任务专用模型选择（传 null 表示清空，回退到默认） */
+  setCategorizeModelSelection: t.procedure
+    .input<{ selection: ModelSelection | null }>()
     .action(async ({ input }) => {
       try {
         const settings = await loadSettings();
-        settings.ai.categorizeModelTier = input.tier;
+        settings.ai.categorizeModelSelection = input.selection;
         await saveSettings(settings);
         return { success: true };
       } catch (error) {
-        console.error('[category] setCategorizeModelTier 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  getCategorizeProfileId: t.procedure
-    .action(async () => {
-      try {
-        const settings = await loadSettings();
-        return { profileId: settings.ai.categorizeProfileId ?? settings.ai.activeProfileId };
-      } catch (error) {
-        console.error('[category] getCategorizeProfileId 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  setCategorizeProfileId: t.procedure
-    .input<{ profileId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const settings = await loadSettings();
-        settings.ai.categorizeProfileId = input.profileId;
-        await saveSettings(settings);
-        return { success: true };
-      } catch (error) {
-        console.error('[category] setCategorizeProfileId 失败:', error);
+        console.error('[category] setCategorizeModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),

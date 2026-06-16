@@ -3,10 +3,9 @@ import { readReport } from '../services/memory/review-store.js';
 import { triggerReview, getReviewActivity } from '../services/memory/review-trigger.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
 import { loadReviewPrompt, saveReviewPrompt, DEFAULT_REVIEW_PROMPT } from '../services/memory/review-prompt.js';
+import type { ModelSelection } from '../services/settings-types.js';
 
 const t = tipc.create();
-
-type ReviewModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export const reviewRouter = {
   getReport: t.procedure
@@ -66,52 +65,29 @@ export const reviewRouter = {
       }
     }),
 
-  getReviewModelTier: t.procedure
+  /** 读取复盘任务专用模型选择（null 时运行时回退到 defaultModelSelection） */
+  getReviewModelSelection: t.procedure
     .action(async () => {
       try {
         const settings = await loadSettings();
-        return { tier: (settings.ai.reviewModelTier ?? 'sonnet') as ReviewModelTier };
+        return { selection: settings.ai.reviewModelSelection };
       } catch (error) {
-        console.error('[review] getReviewModelTier 失败:', error);
+        console.error('[review] getReviewModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  setReviewModelTier: t.procedure
-    .input<{ tier: ReviewModelTier }>()
+  /** 设置复盘任务专用模型选择（传 null 表示清空，回退到默认） */
+  setReviewModelSelection: t.procedure
+    .input<{ selection: ModelSelection | null }>()
     .action(async ({ input }) => {
       try {
         const settings = await loadSettings();
-        settings.ai.reviewModelTier = input.tier;
+        settings.ai.reviewModelSelection = input.selection;
         await saveSettings(settings);
         return { success: true };
       } catch (error) {
-        console.error('[review] setReviewModelTier 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  getReviewProfileId: t.procedure
-    .action(async () => {
-      try {
-        const settings = await loadSettings();
-        return { profileId: settings.ai.reviewProfileId ?? settings.ai.activeProfileId };
-      } catch (error) {
-        console.error('[review] getReviewProfileId 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  setReviewProfileId: t.procedure
-    .input<{ profileId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const settings = await loadSettings();
-        settings.ai.reviewProfileId = input.profileId;
-        await saveSettings(settings);
-        return { success: true };
-      } catch (error) {
-        console.error('[review] setReviewProfileId 失败:', error);
+        console.error('[review] setReviewModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),
