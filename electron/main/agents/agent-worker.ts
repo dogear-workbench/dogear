@@ -28,6 +28,7 @@ import {
   type UserMessage,
   type ChatContext,
 } from './skills/chat-skill.js';
+import type { ModelTier, ModelProfile } from '../services/settings-types.js';
 
 /**
  * Agent Worker 类
@@ -575,33 +576,24 @@ class AgentWorker {
       cliPath: this.cliPath,
     });
 
-    // 提炼方案：digestProfileId 指定的 Profile，缺省回退主会话 activeProfile
-    const { buildProfileEnv } = await import('./agent-query-config.js');
-    const { isProfileComplete } = await import('../services/settings-types.js');
-    const digestProfileId = baseConfig.appSettings.ai.digestProfileId;
-    const digestProfile =
-      (digestProfileId && baseConfig.appSettings.profiles[digestProfileId])
-      || baseConfig.activeProfile;
+    const { resolveModelSelection } = await import('./agent-query-config.js');
+    const selection = payload.modelSelection
+      ?? baseConfig.appSettings.ai.digestModelSelection
+      ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    if (!isProfileComplete(digestProfile)) {
-      const error = `提炼方案「${digestProfile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`;
+    let env: Record<string, string>;
+    let tier: ModelTier;
+    let resolvedProfile: ModelProfile;
+    try {
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, this.configDir);
+      env = r.env;
+      tier = r.tier;
+      resolvedProfile = r.profile;
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('会话提炼任务终止:', error);
       return { sdkSessionId, saved: false, error };
     }
-
-    const tier = payload.digestModelTier
-      ?? baseConfig.appSettings.ai.digestModelTier
-      ?? 'haiku';
-    const tierMap: Record<'haiku' | 'sonnet' | 'opus', string> = {
-      haiku: digestProfile.haikuModel,
-      sonnet: digestProfile.sonnetModel,
-      opus: digestProfile.opusModel,
-    };
-    const claudeConfigDir = path.join(this.configDir, 'conversations');
-    const env = {
-      ...buildProfileEnv(digestProfile, claudeConfigDir),
-      ANTHROPIC_MODEL: tierMap[tier],
-    };
 
     const { createDigestTools } = await import('./tools/digest-tools.js');
     let saved = false;
@@ -644,7 +636,7 @@ class AgentWorker {
       }
 
       taskLogger.info('会话提炼任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { sdkSessionId, saved, tier, profileName: digestProfile.name };
+      return { sdkSessionId, saved, tier, profileName: resolvedProfile.name };
     } catch (error) {
       if (abortController.signal.aborted) {
         taskLogger.info('会话提炼被取消:', sdkSessionId);
