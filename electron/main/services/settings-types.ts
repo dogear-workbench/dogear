@@ -83,13 +83,16 @@ export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和�
 export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     effort: 'high',
-    activeProfileId: 'default',
     permissionMode: 'default',
     settingSources: ['user', 'project'],
     defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
     excludeDynamicSections: true,
     promptSuggestionsEnabled: true,
     thinkingDisplay: 'summarized',
+    defaultModelSelection: null,
+    digestModelSelection: null,
+    reviewModelSelection: null,
+    categorizeModelSelection: null,
   },
   personas: [],
   enabledToolPacks: [],
@@ -157,31 +160,4 @@ export function deepMerge<T extends Record<string, any>>(target: T, source: T): 
   }
 
   return result as T;
-}
-
-/**
- * 获取当前激活的 ModelProfile
- * 如果激活的 profile 不存在，回退到 default profile
- */
-export function getActiveProfile(settings: AppSettings): ModelProfile {
-  const { activeProfileId } = settings.ai;
-  const profile = settings.profiles[activeProfileId];
-
-  if (profile) {
-    return profile;
-  }
-
-  // 回退到 default
-  if (settings.profiles['default']) {
-    return settings.profiles['default'];
-  }
-
-  // 兜底：返回第一个可用的 profile
-  const firstKey = Object.keys(settings.profiles)[0];
-  if (firstKey) {
-    return settings.profiles[firstKey];
-  }
-
-  // 极端情况：profiles 为空，返回默认配置
-  return DEFAULT_SETTINGS.profiles['default'];
 }
