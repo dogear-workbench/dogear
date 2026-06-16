@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Cpu, Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare } from 'lucide-react';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,9 +20,11 @@ import {
 import { client } from '@/lib/client';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { PermissionMode } from '@/types/electron-api';
+import type { AppSettings, ModelSelection } from '@/types/settings';
 import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { UsageBadge } from './usage-badge/UsageBadge';
+import { ModelSelector } from '@/components/ModelSelector';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
 // 权限模式 → 边框/图标颜色映射
@@ -79,8 +81,9 @@ interface ChatInputAreaProps {
   conversationId: string | null;
   placeholder: string;
   showStatusHint: boolean;
-  currentTier?: 'haiku' | 'sonnet' | 'opus';
-  setCurrentTier: (tier: 'haiku' | 'sonnet' | 'opus' | undefined) => void;
+  currentSelection: ModelSelection | null;
+  onSelectionChange: (s: ModelSelection | null) => void;
+  settings: AppSettings;
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
   hasPendingUserAction: boolean;
@@ -91,7 +94,6 @@ interface ChatInputAreaProps {
   handleImageFiles: (files: FileList | File[]) => void;
   removePendingImage: (index: number) => void;
   insertModeChangeNotice: (mode: string) => void;
-  insertModelChangeNotice: (label: string) => void;
   setIsLoading: (loading: boolean) => void;
   // 斜杠命令相关
   isSlashMenuOpen: boolean;
@@ -112,8 +114,9 @@ export function ChatInputArea({
   conversationId,
   placeholder,
   showStatusHint,
-  currentTier,
-  setCurrentTier,
+  currentSelection,
+  onSelectionChange,
+  settings,
   permissionMode,
   setPermissionMode,
   hasPendingUserAction,
@@ -124,7 +127,6 @@ export function ChatInputArea({
   handleImageFiles,
   removePendingImage,
   insertModeChangeNotice,
-  insertModelChangeNotice,
   setIsLoading,
   isSlashMenuOpen,
   filteredCommands,
@@ -330,61 +332,14 @@ export function ChatInputArea({
                 <ImagePlus size={14} />
               </InputGroupButton>
 
-              {/* 模型层级 */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <InputGroupButton
-                    size="xs"
-                    className={cn(
-                      "gap-1",
-                      currentTier ? 'text-primary' : 'text-muted-foreground'
-                    )}
-                    title="模型层级"
-                  >
-                    <Cpu size={14} />
-                    <span className="text-xs">
-                      {currentTier === 'haiku' ? 'Haiku' :
-                       currentTier === 'sonnet' ? 'Sonnet' :
-                       currentTier === 'opus' ? 'Opus' : '默认'}
-                    </span>
-                    <ChevronRight size={12} className="rotate-90" />
-                  </InputGroupButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="min-w-[120px]">
-                  <DropdownMenuLabel>模型层级</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuRadioGroup
-                    value={currentTier ?? ''}
-                    onValueChange={async (value) => {
-                      const newTier = value === '' ? undefined : (value as 'haiku' | 'sonnet' | 'opus');
-                      const prevTier = currentTier;
-                      setCurrentTier(newTier);
-                      if (!sessionId) return;
-                      try {
-                        const result = await client.setSessionModel({ sessionId, tier: newTier });
-                        if ('error' in result) {
-                          setCurrentTier(prevTier);
-                          console.warn('模型切换失败:', result.error);
-                          return;
-                        }
-                        const label = newTier === 'haiku' ? 'Haiku'
-                          : newTier === 'sonnet' ? 'Sonnet'
-                          : newTier === 'opus' ? 'Opus'
-                          : '默认';
-                        insertModelChangeNotice(label);
-                      } catch (e) {
-                        setCurrentTier(prevTier);
-                        console.warn('模型切换失败:', e);
-                      }
-                    }}
-                  >
-                    <DropdownMenuRadioItem value="">默认</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="haiku">Haiku</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="sonnet">Sonnet</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="opus">Opus</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {/* 模型选择 */}
+              <ModelSelector
+                settings={settings}
+                value={currentSelection}
+                onChange={onSelectionChange}
+                allowUnset={false}
+                triggerVariant="inline"
+              />
 
               {/* 分隔 */}
               <span className="mx-0.5 h-4 w-px bg-border" />

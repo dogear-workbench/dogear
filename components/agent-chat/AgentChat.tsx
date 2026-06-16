@@ -6,6 +6,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { AgentChatProps } from './types';
 import { MessageItem } from './MessageItem';
 import { ChatInputArea } from './ChatInputArea';
@@ -47,6 +48,7 @@ export function AgentChat({
 }: AgentChatProps) {
   // UI 状态
   const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
+  const settings = useSettingsStore((s) => s.settings);
 
   // 从 store 获取状态
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
@@ -452,8 +454,9 @@ export function AgentChat({
         conversationId={conversationId}
         placeholder={placeholder}
         showStatusHint={showStatusHint}
-        currentTier={sendMessage.currentTier}
-        setCurrentTier={sendMessage.setCurrentTier}
+        currentSelection={null}
+        onSelectionChange={() => {}}
+        settings={settings}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}
@@ -467,7 +470,6 @@ export function AgentChat({
         handleImageFiles={imageAttachment.handleImageFiles}
         removePendingImage={imageAttachment.removePendingImage}
         insertModeChangeNotice={sendMessage.insertModeChangeNotice}
-        insertModelChangeNotice={sendMessage.insertModelChangeNotice}
         setIsLoading={setIsLoading}
         isSlashMenuOpen={slashCommands.isSlashMenuOpen}
         filteredCommands={slashCommands.filteredCommands}
