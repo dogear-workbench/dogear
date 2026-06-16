@@ -76,7 +76,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
 import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
-import type { AppSettings, ModelProfile } from '../services/settings-types.js';
+import type { AppSettings, ModelProfile, ModelSelection, ModelTier } from '../services/settings-types.js';
 import { appendPermissionAllowRules } from '../services/settings-service.js';
 import * as conversationService from '../services/conversation-service.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
@@ -128,6 +128,8 @@ export interface QueryBasedSessionConfig {
   // 会话标题（用于 SDK 0.2.119+ 跳过自动生成，仅新建会话生效，resume 时持久化标题优先）
   title?: string;
   conversationId?: string;           // 所属对话 ID，用于 token 用量采集落盘
+  /** 对话级模型选择（null=未选；构造方必须显式传入，从对话表读取） */
+  modelSelection: ModelSelection | null;
 }
 
 /**
@@ -174,9 +176,9 @@ export class QueryBasedSession extends EventEmitter {
   private permissionRules?: { allow?: string[]; deny?: string[] };
   // 缓存当前权限模式（start 时从 settings 加载）
   private currentPermissionMode: string = 'default';
-  // 缓存当前 tier 和 activeProfile（用于 setModel）
-  private currentTier?: 'haiku' | 'sonnet' | 'opus';
-  private currentActiveProfile?: ModelProfile;
+  // 缓存当前生效的 selection / profile（用于 setModel）
+  private currentModelSelection: ModelSelection | null = null;
+  private currentResolvedProfile?: ModelProfile;
 
   // 当前 turn 的进行中消息快照（用于晚加入的渲染层重播）
   // turn 开始时积累，turn 完成（result 消息）时清空
@@ -226,6 +228,7 @@ export class QueryBasedSession extends EventEmitter {
           : path.join(process.cwd(), '.dogear'),
         isPackaged: app.isPackaged,
         cliPath: app.isPackaged ? resolveClaudeCliPath(app.getAppPath()) : undefined,
+        conversationModelSelection: this.config.modelSelection,
       };
 
       // 从 settings.json 加载 AI 配置（通过共享配置层）
@@ -239,7 +242,7 @@ export class QueryBasedSession extends EventEmitter {
         return;
       }
 
-      const { appSettings, activeProfile } = baseConfig;
+      const { appSettings, resolvedProfile } = baseConfig;
 
       // 加载工作区核心档案（buildSystemPrompt 保持同步，异步加载在此处做）
       const coreProfileText = this.config.workspacePath
@@ -286,12 +289,13 @@ export class QueryBasedSession extends EventEmitter {
         queryOptions.promptSuggestions = true;
       }
 
-      if (baseConfig.activeProfile.enable1MContext) {
+      if (resolvedProfile.enable1MContext) {
         this.logger.info('已启用 1M 长上下文模式 (CLAUDE_CODE_AUTO_COMPACT_WINDOW=900000)');
       }
 
-      // 缓存 activeProfile 供 setModel 使用
-      this.currentActiveProfile = baseConfig.activeProfile;
+      // 缓存 selection/profile 供 setModel 使用
+      this.currentModelSelection = this.config.modelSelection ?? baseConfig.appSettings.ai.defaultModelSelection;
+      this.currentResolvedProfile = resolvedProfile;
 
       // 缓存声明式权限规则
       if (baseConfig.permissionRules) {
@@ -307,7 +311,7 @@ export class QueryBasedSession extends EventEmitter {
 
       this.logger.info('已从 settings.json 加载 AI 配置:', {
         effort: appSettings.ai.effort,
-        profileName: activeProfile.name,
+        profileName: resolvedProfile.name,
       });
 
       const allowedTools = this.config.allowedTools || ['Read', 'Glob', 'Grep', 'AskUserQuestion', 'Agent'];
@@ -395,12 +399,12 @@ export class QueryBasedSession extends EventEmitter {
       }
 
       this.logger.info('已从 settings Profile 构建 env:', {
-        profileName: activeProfile.name,
-        baseUrl: activeProfile.baseUrl,
-        haikuModel: activeProfile.haikuModel,
-        sonnetModel: activeProfile.sonnetModel,
-        opusModel: activeProfile.opusModel,
-        apiTimeoutMs: activeProfile.apiTimeoutMs,
+        profileName: resolvedProfile.name,
+        baseUrl: resolvedProfile.baseUrl,
+        haikuModel: resolvedProfile.haikuModel,
+        sonnetModel: resolvedProfile.sonnetModel,
+        opusModel: resolvedProfile.opusModel,
+        apiTimeoutMs: resolvedProfile.apiTimeoutMs,
       });
 
       // 配置权限确认回调：当 permissionMode 为 default 时，SDK 会调用此回调
@@ -847,7 +851,7 @@ export class QueryBasedSession extends EventEmitter {
                 message,
                 this.currentTurnMessages,
                 this.usageTurnIndex,
-                this.currentActiveProfile?.opusModel,
+                this.currentResolvedProfile?.opusModel,
               );
               this.usageTurnIndex += 1;
               this.emit('usage', { conversationId: convId, entry });
@@ -1765,35 +1769,30 @@ export class QueryBasedSession extends EventEmitter {
   }
 
   /**
-   * 切换模型 tier（haiku/sonnet/opus），传 undefined 则恢复默认
-   * 返回实际生效的 modelStr，供调用方发 /model 命令到会话历史
+   * 切换模型选择（同 profile 换 tier 走 SDK 快速路径；跨 profile 返回 needsRestart，上层负责重建会话）
    */
-  async setModel(tier?: 'haiku' | 'sonnet' | 'opus'): Promise<{ modelStr?: string }> {
+  async setModel(selection: ModelSelection): Promise<{ ok: true; needsRestart?: boolean } | { ok: false; error: string }> {
     if (!this.query) {
-      this.logger.warn('setModel: 没有活跃的 query');
-      return {};
+      return { ok: false, error: 'no active query' };
     }
-
-    let modelStr: string | undefined = undefined;
-    if (tier) {
-      const profile = this.currentActiveProfile;
-      if (!profile) {
-        this.logger.warn('setModel: currentActiveProfile 未初始化');
-        return {};
-      }
-      const tierMap = {
-        haiku: profile.haikuModel,
-        sonnet: profile.sonnetModel,
-        opus: profile.opusModel,
-      };
-      modelStr = tierMap[tier];
+    if (!this.currentModelSelection || !this.currentResolvedProfile) {
+      return { ok: false, error: '当前会话未初始化模型' };
     }
-
-    this.logger.info(`setModel: tier=${tier}, modelStr=${modelStr}`);
+    // 跨 profile：上层负责销毁重建 QueryBasedSession
+    if (this.currentModelSelection.profileId !== selection.profileId) {
+      return { ok: true, needsRestart: true };
+    }
+    // 同 profile 换 tier：走 SDK 快速路径
+    const tierMap: Record<ModelTier, string> = {
+      haiku: this.currentResolvedProfile.haikuModel,
+      sonnet: this.currentResolvedProfile.sonnetModel,
+      opus: this.currentResolvedProfile.opusModel,
+    };
+    const modelStr = tierMap[selection.tier];
+    this.logger.info(`setModel: tier=${selection.tier}, modelStr=${modelStr}`);
     await this.query.setModel(modelStr);
-    this.currentTier = tier;
-
-    return { modelStr };
+    this.currentModelSelection = selection;
+    return { ok: true };
   }
 
   /**
