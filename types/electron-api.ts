@@ -4,6 +4,8 @@
  * 注意：IPC 通信的类型安全由 @egoist/tipc 提供，不再需要手动定义 API 接口
  */
 
+import type { ModelSelection } from './settings';
+
 /**
  * 权限模式（与 SDK 的 PermissionMode 保持一致）
  * 前端无法直接导入 @anthropic-ai/claude-agent-sdk，因此在此重新定义
@@ -132,6 +134,7 @@ export interface Conversation {
   fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
   persona_id?: string;               // 关联的人设 ID
   temp_prompt?: string;              // 临时提示词（仅当前对话生效）
+  modelSelection: ModelSelection | null;  // 对话级模型覆盖（null = 跟随全局）
   fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   usageSummary?: {
