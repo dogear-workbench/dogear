@@ -7,6 +7,9 @@ import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import type { AppSettings, ModelSelection } from '@/types/settings';
+import { DEFAULT_SETTINGS } from '@/types/settings';
+import { ModelSelector } from '@/components/ModelSelector';
 
 interface DigestSummary {
   sessionId: string;
@@ -32,8 +35,6 @@ interface DigestCard {
   summary: string;
   items: DigestItem[];
 }
-
-type Tier = 'haiku' | 'sonnet' | 'opus';
 
 interface DigestActivity {
   current: { workspaceId: string; sessionId: string; startedAt: number; taskId: string } | null;
@@ -64,10 +65,9 @@ export function DigestsPanel() {
   const confirm = useConfirmStore((s) => s.confirm);
   const [list, setList] = useState<DigestSummary[]>([]);
   const [selected, setSelected] = useState<DigestCard | null>(null);
-  const [tier, setTier] = useState<Tier>('haiku');
   const [loading, setLoading] = useState(false);
-  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
-  const [profileId, setProfileId] = useState<string>('');
+  const [selection, setSelection] = useState<ModelSelection | null>(null);
+  const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [activity, setActivity] = useState<DigestActivity | null>(null);
   const [prompt, setPrompt] = useState('');
   const [defaultPrompt, setDefaultPrompt] = useState('');
@@ -86,16 +86,11 @@ export function DigestsPanel() {
 
   useEffect(() => {
     loadList();
-    client.getDigestModelTier().then((r) => {
-      if ('tier' in r && r.tier) setTier(r.tier as Tier);
+    client.getDigestModelSelection().then((r) => {
+      if ('selection' in r) setSelection(r.selection);
     });
     client.getSettings().then((s) => {
-      const profilesMap = 'settings' in s && s.settings?.profiles ? s.settings.profiles : {};
-      const list = Object.values(profilesMap).map((p) => ({ id: p.id, name: p.name }));
-      setProfiles(list);
-    });
-    client.getDigestProfileId().then((r) => {
-      if ('profileId' in r && r.profileId) setProfileId(r.profileId);
+      if ('settings' in s && s.settings) setSettings(s.settings);
     });
     client.getDigestPrompt().then((r) => {
       if ('prompt' in r && r.prompt) setPrompt(r.prompt);
@@ -122,14 +117,9 @@ export function DigestsPanel() {
     if ('card' in result && result.card) setSelected(result.card as DigestCard);
   };
 
-  const handleTierChange = async (next: Tier) => {
-    setTier(next);
-    await client.setDigestModelTier({ tier: next });
-  };
-
-  const handleProfileChange = async (next: string) => {
-    setProfileId(next);
-    await client.setDigestProfileId({ profileId: next });
+  const handleSelectionChange = async (next: ModelSelection | null) => {
+    setSelection(next);
+    await client.setDigestModelSelection({ selection: next });
   };
 
   const handleSavePrompt = async () => {
@@ -160,26 +150,18 @@ export function DigestsPanel() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground whitespace-nowrap">提炼方案</label>
-          <select
-            className="h-9 px-3 text-sm border rounded bg-background"
-            value={profileId}
-            onChange={(e) => handleProfileChange(e.target.value)}
-          >
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-          <select
-            className="h-9 px-3 text-sm border rounded bg-background"
-            value={tier}
-            onChange={(e) => handleTierChange(e.target.value as Tier)}
-          >
-            <option value="haiku">Haiku（便宜，默认）</option>
-            <option value="sonnet">Sonnet</option>
-            <option value="opus">Opus</option>
-          </select>
+        <div className="flex items-center gap-2 flex-1">
+          <label className="text-sm text-muted-foreground whitespace-nowrap">提炼模型</label>
+          <div className="min-w-[240px]">
+            <ModelSelector
+              settings={settings}
+              value={selection}
+              onChange={handleSelectionChange}
+              allowUnset={true}
+              triggerVariant="block"
+            />
+          </div>
+          <span className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</span>
         </div>
         <Button variant="outline" size="sm" onClick={loadList} disabled={loading}>
           <RefreshCw className={loading ? 'w-4 h-4 mr-1 animate-spin' : 'w-4 h-4 mr-1'} />
