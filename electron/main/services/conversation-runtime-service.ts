@@ -249,6 +249,13 @@ function wireConversationSession(session: QueryBasedSession, options: WireOption
     }));
   });
 
+  session.on('pendingCountChanged', (data: { count: number }) => {
+    broadcastToAll((handlers) => handlers.pendingCountChanged.send({
+      sessionId: session.getSessionId(),
+      count: data.count,
+    }));
+  });
+
   session.on('subAgentStarted', (data: {
     parentSessionId: string;
     agentId: string;

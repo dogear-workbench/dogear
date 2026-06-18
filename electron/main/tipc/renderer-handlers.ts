@@ -42,6 +42,12 @@ export type RendererHandlers = {
     result: unknown;
   }) => void;
 
+  // 队列长度变化（插话/正常消息进出 pendingMessages）
+  pendingCountChanged: (data: {
+    sessionId: string;
+    count: number;
+  }) => void;
+
   // 权限确认请求（SDK canUseTool 回调触发）
   permissionRequest: (data: {
     sessionId: string;

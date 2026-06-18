@@ -745,6 +745,7 @@ export class QueryBasedSession extends EventEmitter {
     } else {
       // 否则加入待处理队列
       this.pendingMessages.push(sdkMessage);
+      this.emit('pendingCountChanged', { count: this.pendingMessages.length });
     }
   }
 
@@ -1485,6 +1486,7 @@ export class QueryBasedSession extends EventEmitter {
       // 如果有待处理的消息，立即返回
       if (this.pendingMessages.length > 0) {
         const msg = this.pendingMessages.shift()!;
+        this.emit('pendingCountChanged', { count: this.pendingMessages.length });
         yield msg;
         continue;
       }
@@ -1636,6 +1638,7 @@ export class QueryBasedSession extends EventEmitter {
     }
 
     this.pendingMessages = [];
+    this.emit('pendingCountChanged', { count: 0 });
 
     // 清理未完成的权限请求（自动拒绝）
     for (const [, pending] of this.pendingPermissionRequests) {
@@ -1659,6 +1662,10 @@ export class QueryBasedSession extends EventEmitter {
       return;
     }
     this.logger.info('中断当前执行');
+    if (this.pendingMessages.length > 0) {
+      this.pendingMessages = [];
+      this.emit('pendingCountChanged', { count: 0 });
+    }
     await this.query.interrupt();
   }
 
