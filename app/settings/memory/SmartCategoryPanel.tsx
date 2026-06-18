@@ -67,7 +67,7 @@ export function SmartCategoryPanel() {
     });
 
     client.getCategorizeModelSelection().then((r) => {
-      if ('selection' in r) setSelection(r.selection);
+      if ('selection' in r) setSelection(r.selection ?? null);
     });
 
     client.getSettings().then((s) => {

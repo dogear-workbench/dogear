@@ -13,9 +13,10 @@ import type { ConversationUsage } from '@/types/usage';
 export function useConversationUsage(conversationId: string | null) {
   const [usage, setUsage] = useState<ConversationUsage | null>(null);
 
-  const enable1MContext = useSettingsStore(
-    s => s.settings.profiles[s.settings.ai.activeProfileId]?.enable1MContext ?? false,
-  );
+  const enable1MContext = useSettingsStore(s => {
+    const sel = s.settings.ai.defaultModelSelection;
+    return sel ? (s.settings.profiles[sel.profileId]?.enable1MContext ?? false) : false;
+  });
 
   useEffect(() => {
     if (!conversationId) {

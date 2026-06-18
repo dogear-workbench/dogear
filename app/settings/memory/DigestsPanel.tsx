@@ -87,7 +87,7 @@ export function DigestsPanel() {
   useEffect(() => {
     loadList();
     client.getDigestModelSelection().then((r) => {
-      if ('selection' in r) setSelection(r.selection);
+      if ('selection' in r) setSelection(r.selection ?? null);
     });
     client.getSettings().then((s) => {
       if ('settings' in s && s.settings) setSettings(s.settings);

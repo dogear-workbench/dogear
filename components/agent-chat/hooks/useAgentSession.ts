@@ -86,21 +86,6 @@ export function useAgentSession({
 
         if (cancelled) return;
 
-        // 检查 Profile 配置是否完整
-        const { useSettingsStore } = await import('@/stores/settings-store');
-        const { isProfileComplete } = await import('@/types/settings');
-        const settingsState = useSettingsStore.getState();
-        const activeId = settingsState.settings.ai.activeProfileId;
-        const activeProfile = settingsState.settings.profiles[activeId];
-        if (!activeProfile || !isProfileComplete(activeProfile)) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: '当前模型方案未配置完整，请先前往设置页面完成配置（API Key、Base URL、模型映射）。',
-            timestamp: Date.now(),
-          }]);
-          return;
-        }
-
         const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
         if (!currentWorkspaceId || !conversationId) return;
 

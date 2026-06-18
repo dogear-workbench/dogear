@@ -404,21 +404,20 @@ export const agentRouter = {
       }
     }),
 
-  /** 切换会话模型档位（haiku / sonnet / opus） */
+  /** 切换会话模型选择（同 profile 换 tier 走 SDK 快速路径；跨 profile 返回 needsRestart） */
   setSessionModel: t.procedure
-    .input<{ sessionId: string; tier?: 'haiku' | 'sonnet' | 'opus' }>()
+    .input<{ sessionId: string; selection: import('../services/settings-types.js').ModelSelection }>()
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
         if (!session) {
-          return { error: 'session_not_found' };
+          return { ok: false as const, error: 'session_not_found' };
         }
-        const result = await session.setModel(input.tier);
-        return result; // { modelStr } — modelStr 为 undefined 表示成功切到"默认"
+        return await session.setModel(input.selection);
       } catch (error) {
         console.error('切换会话模型失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
+        return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

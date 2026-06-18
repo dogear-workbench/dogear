@@ -1,10 +1,13 @@
 import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useSlashCommandStore } from '@/stores/slash-command-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import { sameSelection } from '@/lib/model-selection';
 import type { PermissionMode } from '@/types/electron-api';
+import type { ModelSelection } from '@/types/settings';
 import type { Message, ContentBlock } from '../types';
 import type { PendingImage } from './useImageAttachment';
 
@@ -20,6 +23,7 @@ interface UseSendMessageParams {
   conversationId: string | null;
   pendingImages: PendingImage[];
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
+  currentSelection: ModelSelection | null;
 }
 
 /**
@@ -38,15 +42,17 @@ export function useSendMessage(params: UseSendMessageParams) {
     conversationId,
     pendingImages,
     setPendingImages,
+    currentSelection,
   } = params;
 
   const [input, setInput] = useState('');
-  const [currentTier, setCurrentTier] = useState<'haiku' | 'sonnet' | 'opus' | undefined>(undefined);
+  const [lastAppliedSelection, setLastAppliedSelection] = useState<ModelSelection | null>(null);
 
   // 从 conversation-store 获取 actions
   const forkConversation = useConversationStore((s) => s.forkConversation);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
   const conversationTitle = useConversationStore((s) => s.selectedConversation?.title);
+  const triggerSessionRestart = useConversationStore((s) => s.triggerSessionRestart);
 
   // 从 reference-store 获取引用数据和清理方法
   const referencedArticles = useReferenceStore((s) => s.referencedArticles);
@@ -73,39 +79,6 @@ export function useSendMessage(params: UseSendMessageParams) {
       (b.type === 'ask_user_question' && !b.askUserResolved)
     )
   );
-
-  // 通用：在对话末尾插入一条 status 块（合并到尾部 assistant 消息或新建一条）
-  const appendStatusBlock = useCallback((statusText: string) => {
-    setMessages(prev => {
-      const updated = [...prev];
-      const lastIdx = updated.length - 1;
-      const noticeBlock: ContentBlock = {
-        type: 'status',
-        status: statusText,
-        timestamp: Date.now(),
-      };
-      if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-        const lastMsg = updated[lastIdx];
-        updated[lastIdx] = {
-          ...lastMsg,
-          contentBlocks: [...(lastMsg.contentBlocks || []), noticeBlock],
-        };
-      } else {
-        updated.push({
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          contentBlocks: [noticeBlock],
-        });
-      }
-      return updated;
-    });
-  }, [setMessages]);
-
-  // 在对话中插入模型切换通知（仅 UI 提示，不走 SDK /model）
-  const insertModelChangeNotice = useCallback((label: string) => {
-    appendStatusBlock(`已切换至「${label}」模型`);
-  }, [appendStatusBlock]);
 
   // 在对话中插入模式切换通知
   const insertModeChangeNotice = useCallback((newMode: string) => {
@@ -463,6 +436,26 @@ export function useSendMessage(params: UseSendMessageParams) {
       return;
     }
 
+    // 发送前模型校验 + reconcile（仅空闲路径执行；插话沿用会话当前模型）
+    if (!currentSelection) {
+      toast.error('请先选择模型');
+      return;
+    }
+    if (sessionId && !sameSelection(lastAppliedSelection, currentSelection)) {
+      const result = await client.setSessionModel({ sessionId, selection: currentSelection });
+      if (!result.ok) {
+        toast.error(result.error || '模型切换失败');
+        return;
+      }
+      if (result.needsRestart) {
+        toast.info('正在切换模型方案，请稍后重新发送');
+        triggerSessionRestart();
+        setLastAppliedSelection(null);
+        return;
+      }
+      setLastAppliedSelection(currentSelection);
+    }
+
     // Agent 空闲 → 正常流程：插入用户消息 + assistant 占位
     setMessages(prev => [...prev, newUserMessage, {
       role: 'assistant' as const,
@@ -530,15 +523,12 @@ export function useSendMessage(params: UseSendMessageParams) {
   return {
     input,
     setInput,
-    currentTier,
-    setCurrentTier,
     handleSend,
     handleKeyPress,
     handleFork,
     handlePermissionResolved,
     handleAskUserResolved,
     insertModeChangeNotice,
-    insertModelChangeNotice,
     modeLabels,
     hasPendingUserAction,
   };

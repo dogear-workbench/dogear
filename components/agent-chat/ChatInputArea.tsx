@@ -135,6 +135,8 @@ export function ChatInputArea({
   onSlashMenuClose,
   onTogglePromptSidebar,
 }: ChatInputAreaProps) {
+  const isModelMissing = !currentSelection;
+  const effectivePlaceholder = isModelMissing ? '请先选择模型' : placeholder;
   // 从 reference store 读取引用数据
   const referencedArticles = useReferenceStore((s) => s.referencedArticles);
   const removeReferencedArticle = useReferenceStore((s) => s.removeReferencedArticle);
@@ -300,10 +302,10 @@ export function ChatInputArea({
                   handleImageFiles(imageFiles);
                 }
               }}
-              placeholder={placeholder}
+              placeholder={effectivePlaceholder}
               className="min-h-[2.5rem] max-h-[200px] overflow-y-auto px-3 py-3"
               rows={1}
-              disabled={!isSessionReady}
+              disabled={!isSessionReady || isModelMissing}
             />
 
             {/* 隐藏的文件选择器 */}
@@ -407,8 +409,8 @@ export function ChatInputArea({
                     variant="default"
                     size="icon-xs"
                     onClick={handleSend}
-                    disabled={!isSessionReady}
-                    title={isLoading ? "插话发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)"}
+                    disabled={!isSessionReady || isModelMissing}
+                    title={isModelMissing ? "请先选择模型" : (isLoading ? "插话发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)")}
                   >
                     <Send size={14} />
                   </InputGroupButton>

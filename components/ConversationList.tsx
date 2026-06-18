@@ -16,6 +16,8 @@ import { ArchiveSection } from './conversation-list/ArchiveSection';
  * 对话接口（对话直接属于工作区）
  * 其他文件依然从这里 import Conversation，保持向后兼容。
  */
+import type { ModelSelection } from '@/types/settings';
+
 export interface Conversation {
   id: string;
   workspace_id: string;
@@ -26,6 +28,7 @@ export interface Conversation {
   fork_message_sdk_uuid?: string;
   persona_id?: string;
   temp_prompt?: string;
+  modelSelection: ModelSelection | null;
   fork_pending?: boolean;
   archived_at?: string;
   created_at: number;

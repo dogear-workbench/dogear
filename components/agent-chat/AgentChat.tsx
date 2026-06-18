@@ -49,6 +49,7 @@ export function AgentChat({
   // UI 状态
   const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
   const settings = useSettingsStore((s) => s.settings);
+  const setConvSelection = useConversationStore((s) => s.setConversationModelSelection);
 
   // 从 store 获取状态
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
@@ -197,6 +198,7 @@ export function AgentChat({
     conversationId,
     pendingImages: imageAttachment.pendingImages,
     setPendingImages: imageAttachment.setPendingImages,
+    currentSelection: selectedConv?.modelSelection ?? null,
   });
 
   // 权限/AskUser 响应后恢复自动跟随
@@ -454,8 +456,8 @@ export function AgentChat({
         conversationId={conversationId}
         placeholder={placeholder}
         showStatusHint={showStatusHint}
-        currentSelection={null}
-        onSelectionChange={() => {}}
+        currentSelection={selectedConv?.modelSelection ?? null}
+        onSelectionChange={(v) => { if (conversationId) setConvSelection(conversationId, v); }}
         settings={settings}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}
