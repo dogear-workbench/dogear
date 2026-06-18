@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -30,6 +31,7 @@ export function useAgentSession({
   const attachmentIdRef = useRef<string | null>(null);
   const [isSessionReady, setIsSessionReady] = useState(false);
   const [permissionMode, setPermissionMode] = useState<PermissionMode>('default');
+  const [pendingCount, setPendingCount] = useState(0);
 
   // 同步 sessionId 到 ref
   useEffect(() => {
@@ -197,5 +199,17 @@ export function useAgentSession({
     };
   }, [conversationId, forkParams, sessionRestartTrigger]); // 当 conversationId、forkParams 或 sessionRestartTrigger 变化时重启会话
 
-  return { sessionId, sessionIdRef, isSessionReady, permissionMode, setPermissionMode };
+  // 订阅 pendingCountChanged：跟踪本会话的待处理插话队列长度
+  useEffect(() => {
+    if (!sessionId) {
+      setPendingCount(0);
+      return;
+    }
+    const unsub = rendererEvents.pendingCountChanged.listen((data) => {
+      if (data.sessionId === sessionId) setPendingCount(data.count);
+    });
+    return () => { unsub(); };
+  }, [sessionId]);
+
+  return { sessionId, sessionIdRef, isSessionReady, permissionMode, setPermissionMode, pendingCount };
 }
