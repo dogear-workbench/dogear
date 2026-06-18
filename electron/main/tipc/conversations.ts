@@ -6,6 +6,7 @@ import * as treeService from '../services/conversation-tree-service.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { deleteUsage } from '../services/usage/usage-service.js';
 import { getClaudeConfigDir } from './agent.js';
+import { loadSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
 
@@ -71,11 +72,12 @@ export const conversationsRouter = {
     .input<{ workspaceId: string; title?: string }>()
     .action(async ({ input }) => {
       try {
+        const settings = await loadSettings();
         const conversationId = await conversationService.create(
           input.workspaceId,
           input.title || '新对话',
+          settings.ai.defaultModelSelection,
         );
-        // 同步添加到树
         await treeService.addConversationToTree(input.workspaceId, conversationId);
         return { conversationId, error: undefined };
       } catch (error) {
@@ -186,13 +188,14 @@ export const conversationsRouter = {
     .input<{ workspaceId: string; title: string; parentConversationId: string; forkMessageSdkUuid: string }>()
     .action(async ({ input }) => {
       try {
+        const parent = await conversationService.getById(input.workspaceId, input.parentConversationId);
         const conversationId = await conversationService.createFork(
           input.workspaceId,
           input.title,
           input.parentConversationId,
           input.forkMessageSdkUuid,
+          parent?.modelSelection ?? null,
         );
-        // 同步添加到树
         await treeService.addConversationToTree(input.workspaceId, conversationId);
         return { conversationId, error: undefined };
       } catch (error) {
@@ -226,6 +229,22 @@ export const conversationsRouter = {
         return { success: true, error: undefined };
       } catch (error) {
         console.error('更新对话人设失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  setConversationModelSelection: t.procedure
+    .input<{ workspaceId: string; conversationId: string; selection: import('../services/settings-types.js').ModelSelection | null }>()
+    .action(async ({ input }) => {
+      try {
+        await conversationService.updateModelSelection(
+          input.workspaceId,
+          input.conversationId,
+          input.selection,
+        );
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('更新对话模型选择失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),

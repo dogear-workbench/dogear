@@ -10,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 import { readUsage } from './usage/usage-service.js';
 import type { ConversationUsageEntry } from '../types.js';
+import type { ModelSelection } from './settings-types.js';
 
 const { app } = electron;
 
@@ -27,6 +28,7 @@ export interface ConversationIndex {
   forkMessageSdkUuid: string | null;
   personaId?: string;    // 关联的人设 ID
   tempPrompt?: string;   // 对话规则（持久绑定此对话）
+  modelSelection: ModelSelection | null;
   forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
   /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
   archivedAt?: string;
@@ -63,6 +65,7 @@ export interface ConversationCompat {
   forkMessageSdkUuid: string | null;
   personaId: string | undefined;
   tempPrompt: string | undefined;
+  modelSelection: ModelSelection | null;
   archivedAt: string | undefined;
   createdAt: string;
   updatedAt: string;
@@ -229,6 +232,7 @@ export async function getConversationsByIds(ids: string[]): Promise<Conversation
 export async function create(
   workspaceId: string,
   title: string = '新对话',
+  modelSelection: ModelSelection | null = null,
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -241,6 +245,7 @@ export async function create(
     workspaceId,
     parentConversationId: null,
     forkMessageSdkUuid: null,
+    modelSelection: modelSelection ? { ...modelSelection } : null,
     createdAt: now,
     updatedAt: now,
   };
@@ -258,6 +263,7 @@ export async function createFork(
   title: string,
   parentConversationId: string,
   forkMessageSdkUuid: string,
+  modelSelection: ModelSelection | null = null,
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -270,6 +276,7 @@ export async function createFork(
     workspaceId,
     parentConversationId,
     forkMessageSdkUuid,
+    modelSelection: modelSelection ? { ...modelSelection } : null,
     forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
     createdAt: now,
     updatedAt: now,
@@ -400,6 +407,19 @@ export async function updatePersona(
   await saveWorkspaceConversations(workspaceId, file);
 }
 
+export async function updateModelSelection(
+  workspaceId: string,
+  id: string,
+  modelSelection: ModelSelection | null,
+): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+  conv.modelSelection = modelSelection ? { ...modelSelection } : null;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
 /**
  * 删除对话（硬删除：从索引中彻底移除）
  * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
@@ -508,6 +528,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     forkMessageSdkUuid: conv.forkMessageSdkUuid,
     personaId: conv.personaId,
     tempPrompt: conv.tempPrompt,
+    modelSelection: conv.modelSelection ?? null,
     archivedAt: conv.archivedAt,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,

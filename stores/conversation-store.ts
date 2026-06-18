@@ -110,6 +110,8 @@ interface ConversationState {
   updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
   /** 更新对话的人设关联和临时提示词 */
   updateConversationPersona: (conversationId: string, personaId?: string, tempPrompt?: string) => Promise<void>;
+  /** 更新对话的模型选择（null = 不指定） */
+  setConversationModelSelection: (conversationId: string, selection: import('@/types/settings').ModelSelection | null) => Promise<void>;
   /** 触发会话重启 */
   triggerSessionRestart: () => void;
   /** 设置对话运行状态 */
@@ -628,6 +630,34 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
     } catch (error) {
       console.error('更新对话人设失败:', error);
+    }
+  },
+
+  setConversationModelSelection: async (conversationId, selection) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    const wsId = workspace.id;
+    try {
+      await client.setConversationModelSelection({
+        workspaceId: wsId,
+        conversationId,
+        selection,
+      });
+      set((state) => {
+        const slice = state.byWorkspace[wsId] ?? emptySlice();
+        const newConvs = slice.conversations.map((c) =>
+          c.id === conversationId ? { ...c, modelSelection: selection } : c
+        );
+        const newSelected = slice.selectedConversation?.id === conversationId
+          ? { ...slice.selectedConversation, modelSelection: selection }
+          : slice.selectedConversation;
+        return patchSlice(state, wsId, {
+          conversations: newConvs,
+          selectedConversation: newSelected,
+        });
+      });
+    } catch (error) {
+      console.error('更新对话模型选择失败:', error);
     }
   },
 
