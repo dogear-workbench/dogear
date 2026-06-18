@@ -25,6 +25,7 @@ import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { UsageBadge } from './usage-badge/UsageBadge';
 import { ModelSelector } from '@/components/ModelSelector';
+import type { PendingState } from './hooks/usePendingState';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
 // 权限模式 → 边框/图标颜色映射
@@ -75,7 +76,7 @@ const PERMISSION_MODE_STYLES: Record<PermissionMode, {
 interface ChatInputAreaProps {
   input: string;
   setInput: (value: string) => void;
-  isLoading: boolean;
+  pendingState: PendingState;
   isSessionReady: boolean;
   sessionId: string | null;
   conversationId: string | null;
@@ -108,7 +109,7 @@ interface ChatInputAreaProps {
 export function ChatInputArea({
   input,
   setInput,
-  isLoading,
+  pendingState,
   isSessionReady,
   sessionId,
   conversationId,
@@ -410,12 +411,12 @@ export function ChatInputArea({
                     size="icon-xs"
                     onClick={handleSend}
                     disabled={!isSessionReady || isModelMissing}
-                    title={isModelMissing ? "请先选择模型" : (isLoading ? "插话发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)")}
+                    title={isModelMissing ? "请先选择模型" : (pendingState !== 'idle' ? "插话发送 (Ctrl+Enter)" : "发送 (Ctrl+Enter)")}
                   >
                     <Send size={14} />
                   </InputGroupButton>
-                ) : isLoading ? (
-                  // 无内容 + 运行中 → 停止按钮
+                ) : pendingState !== 'idle' ? (
+                  // 无内容 + 运行中/有插话队列 → 停止按钮
                   <InputGroupButton
                     variant="destructive"
                     size="icon-xs"
@@ -425,7 +426,7 @@ export function ChatInputArea({
                         setIsLoading(false);
                       }
                     }}
-                    title="停止"
+                    title={pendingState === 'flushing' ? '停止（清空插话队列）' : '停止'}
                   >
                     <Square size={14} />
                   </InputGroupButton>

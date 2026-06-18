@@ -19,6 +19,7 @@ import { useSendMessage } from './hooks/useSendMessage';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
 import { StreamingIndicator } from './StreamingIndicator';
+import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
@@ -122,8 +123,10 @@ export function AgentChat({
   useTaskListAggregator(messages, setMessages);
 
   // 会话生命周期
-  const { sessionId, isSessionReady, permissionMode, setPermissionMode } =
+  const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
     useAgentSession({ conversationId, forkParams, context, useSdkResume, setMessages, setIsLoading });
+
+  const pendingState = derivePendingState({ isRunning: isLoading, pendingCount });
 
   // ─── 滚动控制（统一入口: useChatScroll）───
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -379,7 +382,8 @@ export function AgentChat({
 
         {/* 运行状态指示器 */}
         <StreamingIndicator
-          isLoading={isLoading}
+          pendingState={pendingState}
+          pendingCount={pendingCount}
           lastBlockType={
             messages[messages.length - 1]?.contentBlocks?.slice(-1)[0]?.type
           }
@@ -450,7 +454,7 @@ export function AgentChat({
       <ChatInputArea
         input={sendMessage.input}
         setInput={sendMessage.setInput}
-        isLoading={isLoading}
+        pendingState={pendingState}
         isSessionReady={isSessionReady}
         sessionId={sessionId}
         conversationId={conversationId}
