@@ -218,6 +218,7 @@ Phase 2 (Usage 观察) ──> 跑 1-2 周数据 ──> 决定 Phase 4 范围
 3. **Phase 4 大文件阈值**：当前定 1000 行 / 截 500 行，实际值要 Phase 2 数据出来后调优
 4. **Phase 2 数据驱动决策的判断标准**：什么算"重读频率高"？建议先跑数据看分布，按 95 分位数决定
 5. **跨平台 hook**：当前 PowerShell 实现仅 Windows，未来若有 macOS / Linux 用户需要 .sh 版本（dogear 当前定位 Windows，暂不考虑）
+6. **OpenTelemetry 重型方案备选**：Claude Code CLI 内置 OTel instrumentation（`claude_code.tool.execution` / `tool.blocked_on_user` / `llm_request` 等 span，自带耗时和子代理嵌套）。当前不引入：单机桌面应用无 collector 场景 + console exporter 会污染 SDK stdout。仅借鉴字段命名（`toolActivity` / `permissionWaits`）。若未来需要工具耗时、子代理委派链可视化等更精细维度，可考虑嵌入式 collector 方案
 
 ## 验证方式
 

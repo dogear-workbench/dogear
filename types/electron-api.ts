@@ -135,6 +135,7 @@ export interface Conversation {
   persona_id?: string;               // 关联的人设 ID
   temp_prompt?: string;              // 临时提示词（仅当前对话生效）
   modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
+  cachePolicy?: '5m' | '1h';         // 提示缓存策略；缺省视为 5m
   fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   usageSummary?: {

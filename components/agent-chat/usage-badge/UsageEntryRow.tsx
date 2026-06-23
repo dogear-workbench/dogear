@@ -20,7 +20,7 @@ export function UsageEntryRow({ entry }: { entry: ConversationUsageEntry }) {
   const [open, setOpen] = useState(false);
   const status = statusInfo(entry);
   const hitRate = Math.round(cacheHitRate(entry.usage) * 100);
-  const toolSummary = (entry.toolCalls ?? []).map(t => `${t.name}×${t.count}`).join(' ');
+  const toolSummary = (entry.toolActivity?.calls ?? []).map(t => `${t.name}×${t.count}`).join(' ');
 
   const cc = entry.usage.cacheCreation;
   const hasDetail =

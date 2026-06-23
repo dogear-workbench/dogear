@@ -29,6 +29,7 @@ export interface Conversation {
   persona_id?: string;
   temp_prompt?: string;
   modelSelection: ModelSelection | null;
+  cachePolicy?: '5m' | '1h';
   fork_pending?: boolean;
   archived_at?: string;
   created_at: number;

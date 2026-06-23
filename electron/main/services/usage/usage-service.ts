@@ -9,6 +9,7 @@ import type {
   ContextSnapshot,
   ConversationUsage,
   UsageJsonlLine,
+  PermissionWaitRecord,
 } from '../../types.js';
 
 const { app } = electron;
@@ -106,6 +107,27 @@ export async function appendCompactMarker(
 }
 
 /**
+ * 追加一条权限等待记录到 JSONL 文件。
+ * 独立 JSONL 行（kind='permission'），readUsage 读取时聚合到最近一条 entry 的 permissionWaits。
+ * fire-and-forget：IO 出错只 warn，不抛异常。
+ */
+export async function appendPermissionWait(
+  conversationId: string,
+  record: PermissionWaitRecord,
+): Promise<void> {
+  try {
+    assertSafeId(conversationId);
+    const file = usageFilePath(conversationId);
+    await withFileLock(file, async () => {
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.appendFile(file, JSON.stringify({ kind: 'permission', ...record } satisfies UsageJsonlLine) + '\n', 'utf-8');
+    });
+  } catch (err) {
+    logger.warn('appendPermissionWait 失败', err);
+  }
+}
+
+/**
  * 追加一条上下文快照到 JSONL 文件。
  * fire-and-forget：IO 出错只 warn，不抛异常。
  */
@@ -153,6 +175,9 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
   const entries: ConversationUsageEntry[] = [];
   const compactMarkers: CompactMarker[] = [];
   let latestContext: ContextSnapshot | undefined;
+  // permission 记录可能先于其所属 entry 落盘（响应时即 append，entry 待本轮结束才 append）
+  // → 先入暂存队列，扫描结束后按 requestedAt 归属到时间窗口匹配的 entry
+  const pendingPermissions: PermissionWaitRecord[] = [];
 
   for (const line of content.split('\n')) {
     const trimmed = line.trim();
@@ -166,10 +191,28 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
         compactMarkers.push(rest as CompactMarker);
       } else if (kind === 'context') {
         latestContext = rest as ContextSnapshot;
+      } else if (kind === 'permission') {
+        pendingPermissions.push(rest as PermissionWaitRecord);
       }
     } catch {
       // 跳过无法解析的行
     }
+  }
+
+  // permission 归属：分配到 requestedAt ≤ entry.timestamp 且最接近的 entry（即该权限发生在那一轮内）
+  // 找不到所属 entry（如所有 entry 都早于该 permission）时挂到最后一条 entry，无 entry 则丢弃
+  for (const p of pendingPermissions) {
+    let target: ConversationUsageEntry | undefined;
+    for (const e of entries) {
+      if (e.timestamp >= p.requestedAt) {
+        target = e;
+        break;
+      }
+    }
+    if (!target) target = entries[entries.length - 1];
+    if (!target) continue;
+    if (!target.permissionWaits) target.permissionWaits = [];
+    target.permissionWaits.push(p);
   }
 
   // 计算汇总
@@ -186,9 +229,7 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
     cacheCreationInputTokens += e.usage.cacheCreationInputTokens;
     cacheReadInputTokens += e.usage.cacheReadInputTokens;
     totalCostUsd += e.totalCostUsd;
-    for (const tc of e.toolCalls) {
-      toolCallCount += tc.count;
-    }
+    toolCallCount += e.toolActivity?.totalCalls ?? 0;
   }
 
   return {

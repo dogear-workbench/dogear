@@ -25,6 +25,7 @@ import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { UsageBadge } from './usage-badge/UsageBadge';
 import { ModelSelector } from '@/components/ModelSelector';
+import { CachePolicySelector } from './CachePolicySelector';
 import type { PendingState } from './hooks/usePendingState';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
@@ -84,6 +85,8 @@ interface ChatInputAreaProps {
   showStatusHint: boolean;
   currentSelection: ModelSelection | null;
   onSelectionChange: (s: ModelSelection | null) => void;
+  cachePolicy: '5m' | '1h' | undefined;
+  workspaceId: string | null;
   settings: AppSettings;
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
@@ -117,6 +120,8 @@ export function ChatInputArea({
   showStatusHint,
   currentSelection,
   onSelectionChange,
+  cachePolicy,
+  workspaceId,
   settings,
   permissionMode,
   setPermissionMode,
@@ -342,6 +347,15 @@ export function ChatInputArea({
                 onChange={onSelectionChange}
                 allowUnset={false}
                 triggerVariant="inline"
+              />
+
+              {/* 缓存策略 */}
+              <CachePolicySelector
+                policy={cachePolicy}
+                sessionId={sessionId}
+                workspaceId={workspaceId}
+                conversationId={conversationId}
+                pendingState={pendingState}
               />
 
               {/* 分隔 */}

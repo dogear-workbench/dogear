@@ -4,6 +4,8 @@ import { UsageSummaryHeader } from './UsageSummaryHeader';
 import { UsageContextBreakdown } from './UsageContextBreakdown';
 import { UsageByModel } from './UsageByModel';
 import { UsageByTool } from './UsageByTool';
+import { UsageReadActivity } from './UsageReadActivity';
+import { UsagePermissionWaits } from './UsagePermissionWaits';
 import { UsageEntryList } from './UsageEntryList';
 
 interface Props {
@@ -22,6 +24,8 @@ export function UsageHoverCard({ usage, context, lastEntry }: Props) {
         <UsageByModel usage={usage} />
         <UsageByTool usage={usage} />
       </div>
+      <UsageReadActivity usage={usage} />
+      <UsagePermissionWaits usage={usage} />
       <UsageEntryList usage={usage} />
     </div>
   );

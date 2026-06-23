@@ -1,6 +1,6 @@
 import type { ConversationUsage, ConversationUsageEntry } from '@/types/usage';
 import type { ContextInfo } from './usage-utils';
-import { formatTokens, cacheHitRate } from './usage-utils';
+import { formatTokens, cacheHitRate, aggregateCacheCreation } from './usage-utils';
 
 interface Props {
   usage: ConversationUsage;
@@ -25,6 +25,7 @@ export function UsageSummaryHeader({ usage, context }: Props) {
 
   // 会话级缓存命中率：整个会话累计输入里有多少命中缓存
   const hitRate = Math.round(cacheHitRate(totals) * 100);
+  const cc = aggregateCacheCreation(usage.entries);
 
   const apiMs = usage.entries.reduce((s, e) => s + (e.durationApiMs || 0), 0);
   const ttfts = usage.entries.map(e => e.ttftMs).filter((x): x is number => typeof x === 'number');
@@ -46,6 +47,12 @@ export function UsageSummaryHeader({ usage, context }: Props) {
       </div>
       <div className="text-muted-foreground">
         会话缓存命中率 <span className="tabular-nums text-foreground">{hitRate}%</span>
+        {cc.hasAnyDetail && (
+          <span className="ml-2">
+            · 写入 5m <span className="tabular-nums text-foreground">{formatTokens(cc.ephemeral5mInputTokens)}</span>
+            {' '}/ 1h <span className="tabular-nums text-foreground">{formatTokens(cc.ephemeral1hInputTokens)}</span>
+          </span>
+        )}
       </div>
 
       <div className="pt-1 text-muted-foreground">

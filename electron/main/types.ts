@@ -6,6 +6,24 @@ import type { SDKPermissionDenial } from '@anthropic-ai/claude-agent-sdk';
 
 // ─── 用量监控类型（镜像自 types/usage.ts）───
 
+export interface ToolCallRecord {
+  name: string;
+  count: number;
+  files?: string[];
+}
+
+export interface ToolActivity {
+  calls: ToolCallRecord[];
+  totalCalls: number;
+}
+
+export interface PermissionWaitRecord {
+  toolName: string;
+  decision: 'allow' | 'deny' | 'always_allow' | 'allow_session';
+  waitMs: number;
+  requestedAt: number;
+}
+
 export interface ConversationUsageEntry {
   uuid: string;
   turnIndex: number;
@@ -40,7 +58,7 @@ export interface ConversationUsageEntry {
     contextWindow: number;
     maxOutputTokens: number;
   }>;
-  toolCalls: Array<{ name: string; count: number }>;
+  toolActivity?: ToolActivity;
   subagentCalls?: Array<{
     agentId: string;
     totalTokens: number;
@@ -49,6 +67,7 @@ export interface ConversationUsageEntry {
     usage: ConversationUsageEntry['usage'];
   }>;
   permissionDenials?: SDKPermissionDenial[];
+  permissionWaits?: PermissionWaitRecord[];
 }
 
 export interface CompactMarker {
@@ -87,7 +106,8 @@ export interface ConversationUsage {
 export type UsageJsonlLine =
   | ({ kind: 'entry' } & ConversationUsageEntry)
   | ({ kind: 'compact' } & CompactMarker)
-  | ({ kind: 'context' } & ContextSnapshot);
+  | ({ kind: 'context' } & ContextSnapshot)
+  | ({ kind: 'permission' } & PermissionWaitRecord);
 
 /**
  * 工作区文件节点

@@ -3,6 +3,8 @@ import { Check, X, ShieldAlert, ShieldCheck, Send, MessageSquare, PenLine, Clock
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/lib/client';
+import { useConversationStore } from '@/stores/conversation-store';
+import type { PermissionWaitRecord } from '@/types/usage';
 import type { ContentBlock } from './types';
 
 /**
@@ -24,6 +26,22 @@ export function PermissionRequestCard({
   const [isEditingInput, setIsEditingInput] = useState(false);
   const [editedInput, setEditedInput] = useState('');
 
+  const reportWait = (decision: PermissionWaitRecord['decision']) => {
+    const cid = useConversationStore.getState().selectedConversation?.id;
+    const requestedAt = block.timestamp;
+    const toolName = block.permissionToolName;
+    if (!cid || !requestedAt || !toolName) return;
+    client.recordPermissionWait({
+      conversationId: cid,
+      record: {
+        toolName,
+        decision,
+        waitMs: Date.now() - requestedAt,
+        requestedAt,
+      },
+    }).catch(() => {});
+  };
+
   const handleAllow = async () => {
     if (!sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
@@ -31,6 +49,7 @@ export function PermissionRequestCard({
       requestId: block.permissionRequestId,
       behavior: 'allow',
     });
+    reportWait('allow');
     onResolved(block.permissionRequestId, 'allow');
   };
 
@@ -45,6 +64,7 @@ export function PermissionRequestCard({
         behavior: 'allow',
         updatedInput: parsed,
       });
+      reportWait('allow');
       onResolved(block.permissionRequestId, 'allow');
     } catch {
       // JSON 解析失败，不做操作
@@ -59,6 +79,7 @@ export function PermissionRequestCard({
       requestId: block.permissionRequestId,
       behavior: 'always_allow',
     });
+    reportWait('always_allow');
     onResolved(block.permissionRequestId, 'always_allow');
   };
 
@@ -70,6 +91,7 @@ export function PermissionRequestCard({
       requestId: block.permissionRequestId,
       behavior: 'allow_session',
     });
+    reportWait('allow_session');
     onResolved(block.permissionRequestId, 'allow_session');
   };
 
@@ -81,6 +103,7 @@ export function PermissionRequestCard({
       behavior: 'deny',
       message: '用户拒绝了此操作',
     });
+    reportWait('deny');
     onResolved(block.permissionRequestId, 'deny');
   };
 
@@ -93,6 +116,7 @@ export function PermissionRequestCard({
       behavior: 'deny',
       message: denyMessage.trim(),
     });
+    reportWait('deny');
     onResolved(block.permissionRequestId, 'deny', denyMessage.trim());
   };
 

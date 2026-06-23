@@ -1,5 +1,35 @@
 import type { SDKPermissionDenial } from '@anthropic-ai/claude-agent-sdk';
 
+/** 单个工具的本 entry 调用记录 */
+export interface ToolCallRecord {
+  /** 工具名，如 'Read' / 'Edit' / 'Bash' */
+  name: string;
+  /** 本 entry 内该工具被调用次数 */
+  count: number;
+  /** Read 工具专属：命中的 file_path 列表（去重，按调用顺序） */
+  files?: string[];
+}
+
+/** 工具活动聚合（结构预留扩展） */
+export interface ToolActivity {
+  /** 本 entry 内所有工具调用记录，按 count desc 排序 */
+  calls: ToolCallRecord[];
+  /** 本 entry 内工具调用总数（含重复） */
+  totalCalls: number;
+}
+
+/** 一次权限请求的等待时长记录 */
+export interface PermissionWaitRecord {
+  /** 权限请求对应的 tool name（如 'Bash'） */
+  toolName: string;
+  /** 用户决策结果，与 SDK behavior 对齐 */
+  decision: 'allow' | 'deny' | 'always_allow' | 'allow_session';
+  /** 从请求发出到用户响应的等待毫秒数 */
+  waitMs: number;
+  /** 请求时间戳（ms，便于跨 entry 对齐） */
+  requestedAt: number;
+}
+
 export interface ConversationUsageEntry {
   // 标识
   uuid: string;
@@ -50,7 +80,8 @@ export interface ConversationUsageEntry {
     maxOutputTokens: number;
   }>;
 
-  toolCalls: Array<{ name: string; count: number }>;
+  /** 工具活动聚合；optional 兼容旧 JSONL 行（旧行此字段缺失） */
+  toolActivity?: ToolActivity;
   subagentCalls?: Array<{
     agentId: string;
     totalTokens: number;
@@ -59,6 +90,8 @@ export interface ConversationUsageEntry {
     usage: ConversationUsageEntry['usage'];
   }>;
   permissionDenials?: SDKPermissionDenial[];
+  /** 权限等待记录，由独立 JSONL 行（kind='permission'）聚合而来 */
+  permissionWaits?: PermissionWaitRecord[];
 }
 
 export interface CompactMarker {
@@ -99,4 +132,5 @@ export interface ConversationUsage {
 export type UsageJsonlLine =
   | ({ kind: 'entry' } & ConversationUsageEntry)
   | ({ kind: 'compact' } & CompactMarker)
-  | ({ kind: 'context' } & ContextSnapshot);
+  | ({ kind: 'context' } & ContextSnapshot)
+  | ({ kind: 'permission' } & PermissionWaitRecord);

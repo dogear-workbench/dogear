@@ -130,6 +130,8 @@ export interface QueryBasedSessionConfig {
   conversationId?: string;           // 所属对话 ID，用于 token 用量采集落盘
   /** 对话级模型选择（null=未选；构造方必须显式传入，从对话表读取） */
   modelSelection: ModelSelection | null;
+  /** 提示缓存策略；缺省视为 5m。'1h' 时 SDK 启动注入 ENABLE_PROMPT_CACHING_1H=1 */
+  cachePolicy?: '5m' | '1h';
 }
 
 /**
@@ -179,6 +181,8 @@ export class QueryBasedSession extends EventEmitter {
   // 缓存当前生效的 selection / profile（用于 setModel）
   private currentModelSelection: ModelSelection | null = null;
   private currentResolvedProfile?: ModelProfile;
+  // 缓存当前生效的 cachePolicy（start 时落定；setCachePolicy 修改后需重启会话才能生效）
+  private currentCachePolicy: '5m' | '1h' = '5m';
 
   // 当前 turn 的进行中消息快照（用于晚加入的渲染层重播）
   // turn 开始时积累，turn 完成（result 消息）时清空
@@ -229,7 +233,9 @@ export class QueryBasedSession extends EventEmitter {
         isPackaged: app.isPackaged,
         cliPath: app.isPackaged ? resolveClaudeCliPath(app.getAppPath()) : undefined,
         conversationModelSelection: this.config.modelSelection,
+        cachePolicy: this.config.cachePolicy ?? '5m',
       };
+      this.currentCachePolicy = this.config.cachePolicy ?? '5m';
 
       // 从 settings.json 加载 AI 配置（通过共享配置层）
       let baseConfig: QueryBaseConfig;
@@ -1800,6 +1806,18 @@ export class QueryBasedSession extends EventEmitter {
     await this.query.setModel(modelStr);
     this.currentModelSelection = selection;
     return { ok: true };
+  }
+
+  /**
+   * 切换缓存策略：env 是 SDK 启动级，无法热切。
+   * 同策略幂等返回 needsRestart=false；切换则更新内部缓存并返回 needsRestart=true，上层负责重建会话。
+   */
+  setCachePolicy(policy: '5m' | '1h'): { ok: true; needsRestart: boolean } {
+    if (this.currentCachePolicy === policy) {
+      return { ok: true, needsRestart: false };
+    }
+    this.currentCachePolicy = policy;
+    return { ok: true, needsRestart: true };
   }
 
   /**

@@ -195,6 +195,7 @@ export const conversationsRouter = {
           input.parentConversationId,
           input.forkMessageSdkUuid,
           parent?.modelSelection ?? null,
+          parent?.cachePolicy ?? '5m',
         );
         await treeService.addConversationToTree(input.workspaceId, conversationId);
         return { conversationId, error: undefined };
@@ -245,6 +246,22 @@ export const conversationsRouter = {
         return { success: true, error: undefined };
       } catch (error) {
         console.error('更新对话模型选择失败:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  setConversationCachePolicy: t.procedure
+    .input<{ workspaceId: string; conversationId: string; policy: '5m' | '1h' }>()
+    .action(async ({ input }) => {
+      try {
+        await conversationService.updateCachePolicy(
+          input.workspaceId,
+          input.conversationId,
+          input.policy,
+        );
+        return { success: true, error: undefined };
+      } catch (error) {
+        console.error('更新对话缓存策略失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),

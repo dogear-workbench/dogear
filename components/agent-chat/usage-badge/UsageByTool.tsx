@@ -5,7 +5,7 @@ import type { ConversationUsage } from '@/types/usage';
 function aggregateTools(usage: ConversationUsage): Array<[string, number]> {
   const map = new Map<string, number>();
   for (const e of usage.entries) {
-    for (const t of e.toolCalls ?? []) {
+    for (const t of e.toolActivity?.calls ?? []) {
       map.set(t.name, (map.get(t.name) ?? 0) + t.count);
     }
   }

@@ -29,6 +29,7 @@ export interface ConversationIndex {
   personaId?: string;    // 关联的人设 ID
   tempPrompt?: string;   // 对话规则（持久绑定此对话）
   modelSelection: ModelSelection | null;
+  cachePolicy?: '5m' | '1h'; // 提示缓存策略；缺省视为 5m
   forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
   /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
   archivedAt?: string;
@@ -66,6 +67,7 @@ export interface ConversationCompat {
   personaId: string | undefined;
   tempPrompt: string | undefined;
   modelSelection: ModelSelection | null;
+  cachePolicy: '5m' | '1h' | undefined;
   archivedAt: string | undefined;
   createdAt: string;
   updatedAt: string;
@@ -246,6 +248,7 @@ export async function create(
     parentConversationId: null,
     forkMessageSdkUuid: null,
     modelSelection: modelSelection ? { ...modelSelection } : null,
+    cachePolicy: '5m',
     createdAt: now,
     updatedAt: now,
   };
@@ -264,6 +267,7 @@ export async function createFork(
   parentConversationId: string,
   forkMessageSdkUuid: string,
   modelSelection: ModelSelection | null = null,
+  cachePolicy: '5m' | '1h' = '5m',
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -277,6 +281,7 @@ export async function createFork(
     parentConversationId,
     forkMessageSdkUuid,
     modelSelection: modelSelection ? { ...modelSelection } : null,
+    cachePolicy,
     forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
     createdAt: now,
     updatedAt: now,
@@ -420,6 +425,19 @@ export async function updateModelSelection(
   await saveWorkspaceConversations(workspaceId, file);
 }
 
+export async function updateCachePolicy(
+  workspaceId: string,
+  id: string,
+  policy: '5m' | '1h',
+): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) return;
+  conv.cachePolicy = policy;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
 /**
  * 删除对话（硬删除：从索引中彻底移除）
  * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
@@ -529,6 +547,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     personaId: conv.personaId,
     tempPrompt: conv.tempPrompt,
     modelSelection: conv.modelSelection ?? null,
+    cachePolicy: conv.cachePolicy,
     archivedAt: conv.archivedAt,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,

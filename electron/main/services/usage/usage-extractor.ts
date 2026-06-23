@@ -1,4 +1,4 @@
-import type { ConversationUsageEntry } from '../../types.js';
+import type { ConversationUsageEntry, ToolActivity, ToolCallRecord } from '../../types.js';
 
 /** 子代理工具名集合，与 query-based-session.ts 保持一致但不直接导入以避免耦合 */
 const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
@@ -81,17 +81,41 @@ export function extractUsageEntry(
     };
   }
 
-  // ── toolCalls：按名称计数，排除子代理工具，保留插入顺序，count desc ──
-  const toolCountMap = new Map<string, number>();
+  // ── toolActivity：按名称计数，排除子代理工具；Read 工具收集 file_path（去重保序）──
+  const toolMap = new Map<string, { count: number; files?: string[]; fileSet?: Set<string> }>();
   for (const msg of turnMessages) {
-    if (msg.type === 'tool_use' && msg.toolName && !SUBAGENT_TOOL_NAMES.has(msg.toolName)) {
-      toolCountMap.set(msg.toolName, (toolCountMap.get(msg.toolName) ?? 0) + 1);
+    if (msg.type !== 'tool_use' || !msg.toolName) continue;
+    if (SUBAGENT_TOOL_NAMES.has(msg.toolName)) continue;
+    let rec = toolMap.get(msg.toolName);
+    if (!rec) {
+      rec = { count: 0 };
+      if (msg.toolName === 'Read') {
+        rec.files = [];
+        rec.fileSet = new Set();
+      }
+      toolMap.set(msg.toolName, rec);
+    }
+    rec.count += 1;
+    if (msg.toolName === 'Read' && rec.fileSet) {
+      const fp = msg.toolInput?.file_path ?? msg.input?.file_path;
+      if (typeof fp === 'string' && fp && !rec.fileSet.has(fp)) {
+        rec.fileSet.add(fp);
+        rec.files!.push(fp);
+      }
     }
   }
-  // 稳定排序：count desc，顺序相同时保留 Map 插入顺序
-  const toolCalls = Array.from(toolCountMap.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(([name, count]) => ({ name, count }));
+  const calls: ToolCallRecord[] = Array.from(toolMap.entries())
+    .sort((a, b) => b[1].count - a[1].count)
+    .map(([name, rec]) => {
+      const out: ToolCallRecord = { name, count: rec.count };
+      if (rec.files && rec.files.length > 0) out.files = rec.files;
+      return out;
+    });
+  let totalCalls = 0;
+  for (const c of calls) totalCalls += c.count;
+  const toolActivity: ToolActivity | undefined = calls.length > 0
+    ? { calls, totalCalls }
+    : undefined;
 
   // ── subagentCalls：从 tool_result 中提取 subAgentId 的记录 ──
   const subagentMessages = turnMessages.filter((msg) => msg.subAgentId);
@@ -121,7 +145,7 @@ export function extractUsageEntry(
     totalCostUsd: result.total_cost_usd ?? 0,
     usage,
     modelUsage,
-    toolCalls,
+    toolActivity,
     subagentCalls,
     permissionDenials: result.permission_denials,
   };

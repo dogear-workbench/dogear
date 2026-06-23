@@ -462,6 +462,8 @@ export function AgentChat({
         showStatusHint={showStatusHint}
         currentSelection={selectedConv?.modelSelection ?? null}
         onSelectionChange={(v) => { if (conversationId) setConvSelection(conversationId, v); }}
+        cachePolicy={selectedConv?.cachePolicy}
+        workspaceId={selectedConv?.workspace_id ?? null}
         settings={settings}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}

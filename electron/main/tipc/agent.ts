@@ -421,6 +421,32 @@ export const agentRouter = {
       }
     }),
 
+  /**
+   * 切换会话缓存策略：env 是 SDK 启动级，切换必然 needsRestart=true。
+   * 先写对话表（持久化策略），再标记会话需重启。无 active session 时只写库返回 needsRestart=false。
+   */
+  setSessionCachePolicy: t.procedure
+    .input<{ sessionId: string; workspaceId: string; conversationId: string; policy: '5m' | '1h' }>()
+    .action(async ({ input }) => {
+      try {
+        const conversationService = await import('../services/conversation-service.js');
+        await conversationService.updateCachePolicy(
+          input.workspaceId,
+          input.conversationId,
+          input.policy,
+        );
+        const sessionManager = getQueryBasedSessionManager();
+        const session = sessionManager.getSession(input.sessionId);
+        if (!session) {
+          return { ok: true as const, needsRestart: false };
+        }
+        return session.setCachePolicy(input.policy);
+      } catch (error) {
+        console.error('切换会话缓存策略失败:', error);
+        return { ok: false as const, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
   // ── SDK 会话历史读取 ──────────────────────────────────────
   getSdkSessionHistory: t.procedure
     .input<{ sdkSessionId: string; projectPath?: string }>()

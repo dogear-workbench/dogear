@@ -125,6 +125,8 @@ interface ConversationState {
   updateConversationPersona: (conversationId: string, personaId?: string, tempPrompt?: string) => Promise<void>;
   /** 更新对话的模型选择（null = 不指定） */
   setConversationModelSelection: (conversationId: string, selection: import('@/types/settings').ModelSelection | null) => Promise<void>;
+  /** 更新对话的缓存策略（仅写库；切换是否需要重启会话由调用方处理） */
+  setConversationCachePolicy: (conversationId: string, policy: '5m' | '1h') => Promise<void>;
   /** 触发会话重启 */
   triggerSessionRestart: () => void;
   /** 设置跨 profile 切换后的待续发载荷（null 表示清除） */
@@ -674,6 +676,34 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
     } catch (error) {
       console.error('更新对话模型选择失败:', error);
+    }
+  },
+
+  setConversationCachePolicy: async (conversationId, policy) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return;
+    const wsId = workspace.id;
+    try {
+      await client.setConversationCachePolicy({
+        workspaceId: wsId,
+        conversationId,
+        policy,
+      });
+      set((state) => {
+        const slice = state.byWorkspace[wsId] ?? emptySlice();
+        const newConvs = slice.conversations.map((c) =>
+          c.id === conversationId ? { ...c, cachePolicy: policy } : c
+        );
+        const newSelected = slice.selectedConversation?.id === conversationId
+          ? { ...slice.selectedConversation, cachePolicy: policy }
+          : slice.selectedConversation;
+        return patchSlice(state, wsId, {
+          conversations: newConvs,
+          selectedConversation: newSelected,
+        });
+      });
+    } catch (error) {
+      console.error('更新对话缓存策略失败:', error);
     }
   },
 

@@ -60,6 +60,8 @@ export interface QueryRuntimeContext {
   cliPath?: string;
   /** 主会话路径：传入对话级模型选择（null=用 settings.defaultModelSelection 兜底） */
   conversationModelSelection?: ModelSelection | null;
+  /** 提示缓存策略：'1h' 时注入 ENABLE_PROMPT_CACHING_1H=1；缺省/'5m' 不设（SDK 默认 5m） */
+  cachePolicy?: '5m' | '1h';
 }
 
 /**
@@ -180,6 +182,9 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
     appSettings.ai.defaultModelSelection,
     ctx.configDir,
   );
+  if (ctx.cachePolicy === '1h') {
+    env.ENABLE_PROMPT_CACHING_1H = '1';
+  }
   const pathToClaudeCodeExecutable = ctx.isPackaged && ctx.cliPath ? ctx.cliPath : undefined;
   return {
     env,
