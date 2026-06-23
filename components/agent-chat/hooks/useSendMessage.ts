@@ -448,7 +448,31 @@ export function useSendMessage(params: UseSendMessageParams) {
         return;
       }
       if (result.needsRestart) {
-        toast.info('正在切换模型方案，请稍后重新发送');
+        // 跨 profile 切换：把消息插入 UI（用户能看到自己写的内容已"在路上"）+
+        // 把待发载荷塞进 store，让 useAgentSession 在新 session ready 后自动续发
+        setMessages(prev => [...prev, newUserMessage, {
+          role: 'assistant' as const,
+          content: '' as string,
+          timestamp: Date.now(),
+          contentBlocks: [{
+            type: 'status' as const,
+            status: '正在切换模型方案，稍候自动发送…',
+            timestamp: Date.now(),
+          }],
+        }]);
+        if (conversationId) {
+          useConversationStore.getState().setPendingSendAfterRestart({
+            conversationId,
+            content: messageToSend,
+            ...(textBlocks.length > 1 && { textBlocks }),
+            ...(imagesToSend.length > 0 && {
+              images: imagesToSend.map(img => ({
+                media_type: img.mediaType,
+                data: img.base64,
+              })),
+            }),
+          });
+        }
         triggerSessionRestart();
         setLastAppliedSelection(null);
         return;

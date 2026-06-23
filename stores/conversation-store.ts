@@ -16,6 +16,17 @@ export interface ForkParams {
   targetConversationId?: string;
 }
 
+/**
+ * 跨 profile 切换模型后待续发的载荷：useSendMessage 在 needsRestart 分支塞入，
+ * useAgentSession 在新 session ready 后按 conversationId 匹配消费。
+ */
+export interface PendingSendPayload {
+  conversationId: string;
+  content: string;
+  textBlocks?: Array<{ text: string }>;
+  images?: Array<{ media_type: string; data: string }>;
+}
+
 /** 对话树的扁平节点（供 @headless-tree/react 使用） */
 export interface ConversationFlatNode {
   id: string;
@@ -68,6 +79,8 @@ interface ConversationState {
   forkParams: ForkParams | null;
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
+  /** 跨 profile 切换模型后待续发的载荷（useAgentSession 重启完成后自动消费） */
+  pendingSendAfterRestart: PendingSendPayload | null;
   /** 当前正在运行（有 Agent 活跃）的对话 ID 集合 */
   runningConversationIds: Set<string>;
   /** 当前有待处理操作（权限/AskUser）的对话 ID 集合 */
@@ -114,6 +127,8 @@ interface ConversationState {
   setConversationModelSelection: (conversationId: string, selection: import('@/types/settings').ModelSelection | null) => Promise<void>;
   /** 触发会话重启 */
   triggerSessionRestart: () => void;
+  /** 设置跨 profile 切换后的待续发载荷（null 表示清除） */
+  setPendingSendAfterRestart: (payload: PendingSendPayload | null) => void;
   /** 设置对话运行状态 */
   setRunningState: (conversationId: string, isRunning: boolean) => void;
   /** 设置对话的待处理操作状态（权限/AskUser） */
@@ -262,6 +277,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   // 全局状态
   forkParams: null,
   sessionRestartTrigger: 0,
+  pendingSendAfterRestart: null,
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
   botBoundConversationId: null,
@@ -665,6 +681,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set((state) => ({ sessionRestartTrigger: state.sessionRestartTrigger + 1 }));
   },
 
+  setPendingSendAfterRestart: (payload) => {
+    set({ pendingSendAfterRestart: payload });
+  },
+
   setRunningState: (conversationId: string, isRunning: boolean) => {
     set((state) => {
       const newSet = new Set(state.runningConversationIds);
@@ -697,6 +717,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     nodeMap: {},
     forkParams: null,
     sessionRestartTrigger: 0,
+    pendingSendAfterRestart: null,
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),
     botBoundConversationId: null,

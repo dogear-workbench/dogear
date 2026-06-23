@@ -116,6 +116,11 @@ export function useAgentSession({
           console.error('❌ attach runtime 失败:', response.error);
           // 活跃会话数达到上限等错误展示给用户
           toast.error('无法打开会话', { description: response.error });
+          // 启动失败：清除属于该对话的待续发载荷，避免下次进对话被错误消费
+          const pending = useConversationStore.getState().pendingSendAfterRestart;
+          if (pending && pending.conversationId === conversationId) {
+            useConversationStore.getState().setPendingSendAfterRestart(null);
+          }
           return;
         }
 
@@ -141,6 +146,29 @@ export function useAgentSession({
           response.permissionMode || 'default',
           newAttachmentId,
         );
+
+        // 跨 profile 切换模型重启后：消费待续发载荷，自动 send 用户原本要发的消息
+        // （UI 上 useSendMessage 已经插过 user message + 状态块，这里只补发实际请求）
+        const pendingSend = useConversationStore.getState().pendingSendAfterRestart;
+        if (pendingSend && pendingSend.conversationId === conversationId && newSessionId) {
+          useConversationStore.getState().setPendingSendAfterRestart(null);
+          setTimeout(async () => {
+            if (cancelled) return;
+            setIsLoading(true);
+            try {
+              await client.sendQueryBasedSessionMessage({
+                sessionId: newSessionId,
+                content: pendingSend.content,
+                ...(pendingSend.textBlocks && { textBlocks: pendingSend.textBlocks }),
+                ...(pendingSend.images && { images: pendingSend.images }),
+              });
+            } catch (error) {
+              console.error('切换模型后自动续发失败:', error);
+              setIsLoading(false);
+              toast.error('自动续发失败', { description: error instanceof Error ? error.message : String(error) });
+            }
+          }, 500);
+        }
 
         // fork 模式：如果有 editedMessage，会话 ready 后自动发送（fork_pending 首次发送场景）
         // 纯分叉新对话（forkSession=true 但无 editedMessage）不自动发送，只加载历史等待用户输入
