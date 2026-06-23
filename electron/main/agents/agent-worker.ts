@@ -423,7 +423,8 @@ class AgentWorker {
           // 用 dontAsk 保留"不打扰用户"的语义，同时让 allowedTools 真正生效。
           permissionMode: 'dontAsk',
           env: baseConfig.env,
-          effort: baseConfig.effort,
+          // effort 为 null/undefined 时不传给 SDK，由模型自带默认值决定
+          ...(baseConfig.effort ? { effort: baseConfig.effort } : {}),
           ...(baseConfig.pathToClaudeCodeExecutable && {
             pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
           }),

@@ -25,11 +25,18 @@ import { ModelSelector } from '@/components/ModelSelector';
 // ═══ 常量 ═══════════════════════════════════════════
 
 const EFFORT_OPTIONS = [
+  { value: null, label: '不指定' },
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' },
   { value: 'xhigh', label: '超高' },
   { value: 'max', label: 'Max' },
+] as const;
+
+const THINKING_TYPE_OPTIONS = [
+  { value: 'adaptive', label: '自适应', description: '模型自决何时思考、思考多深（推荐）' },
+  { value: 'enabled', label: '固定预算', description: '每轮固定花 N token 思考' },
+  { value: 'disabled', label: '关闭', description: '不思考，省 thinking token' },
 ] as const;
 
 const PERMISSION_MODE_OPTIONS = [
@@ -285,14 +292,17 @@ export default function SettingsPage() {
             <p className="text-sm text-muted-foreground mb-6">配置 Agent 的思考模式、执行力度和权限策略</p>
             <div className="space-y-6">
               {/* Effort 级别 */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium">执行力度</label>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">执行力度（effort）</label>
+                <p className="text-xs text-muted-foreground">
+                  选「不指定」时不传 effort 给 SDK，由模型自带默认值决定（一般更省 thinking token）。
+                </p>
                 <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
                   {EFFORT_OPTIONS.map(opt => (
-                    <button key={opt.value}
+                    <button key={String(opt.value)}
                       className={cn(
                         'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-4 py-1.5 text-sm font-medium transition-all',
-                        local.ai.effort === opt.value
+                        (local.ai.effort ?? null) === opt.value
                           ? 'bg-background text-foreground shadow-sm'
                           : 'text-muted-foreground hover:text-foreground'
                       )}
@@ -341,21 +351,62 @@ export default function SettingsPage() {
                 </select>
               </div>
 
-              {/* 思考过程展示 */}
+              {/* 思考模式 */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">思考过程展示</label>
+                <label className="text-sm font-medium">思考模式</label>
                 <p className="text-xs text-muted-foreground">
-                  控制模型 thinking 块的可见性。Opus 4.7 默认隐藏，开启「显示摘要」可看到推理过程。
+                  控制 SDK 传给模型的 thinking 配置（ThinkingConfig.type）。
                 </p>
                 <select
                   className="h-9 w-full px-3 text-sm border rounded bg-background"
-                  value={local.ai.thinkingDisplay ?? 'summarized'}
-                  onChange={(e) => updateAI({ thinkingDisplay: e.target.value as 'summarized' | 'omitted' })}
+                  value={local.ai.thinkingType ?? 'adaptive'}
+                  onChange={(e) => updateAI({ thinkingType: e.target.value as 'adaptive' | 'enabled' | 'disabled' })}
                 >
-                  <option value="summarized">显示摘要</option>
-                  <option value="omitted">不展示</option>
+                  {THINKING_TYPE_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label} — {opt.description}</option>
+                  ))}
                 </select>
               </div>
+
+              {/* 思考预算（仅 enabled 模式） */}
+              {(local.ai.thinkingType ?? 'adaptive') === 'enabled' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">思考预算（tokens）</label>
+                  <p className="text-xs text-muted-foreground">
+                    每轮固定花费的 thinking token 数量。建议 4000–16000；留空走 SDK 默认。
+                  </p>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1000}
+                    placeholder="8000"
+                    className="h-9 w-full px-3 text-sm border rounded bg-background"
+                    value={local.ai.thinkingBudgetTokens ?? ''}
+                    onChange={(e) => {
+                      const v = e.target.value.trim();
+                      updateAI({ thinkingBudgetTokens: v === '' ? undefined : Number(v) });
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* 思考过程展示（关闭模式下隐藏） */}
+              {(local.ai.thinkingType ?? 'adaptive') !== 'disabled' && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">思考过程展示</label>
+                  <p className="text-xs text-muted-foreground">
+                    控制模型 thinking 块的可见性。Opus 4.7 默认隐藏，开启「显示摘要」可看到推理过程。
+                  </p>
+                  <select
+                    className="h-9 w-full px-3 text-sm border rounded bg-background"
+                    value={local.ai.thinkingDisplay ?? 'summarized'}
+                    onChange={(e) => updateAI({ thinkingDisplay: e.target.value as 'summarized' | 'omitted' })}
+                  >
+                    <option value="summarized">显示摘要</option>
+                    <option value="omitted">不展示</option>
+                  </select>
+                </div>
+              )}
 
               {/* maxTurns */}
               <div className="space-y-3">

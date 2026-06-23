@@ -75,7 +75,7 @@ import type { ExtendedSessionMessage } from './task-types.js';
 import path from 'path';
 import fs from 'fs/promises';
 import { app } from 'electron';
-import { buildQueryBaseConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
+import { buildQueryBaseConfig, buildThinkingConfig, resolveClaudeCliPath, type QueryRuntimeContext, type QueryBaseConfig } from './agent-query-config.js';
 import type { AppSettings, ModelProfile, ModelSelection, ModelTier } from '../services/settings-types.js';
 import { appendPermissionAllowRules } from '../services/settings-service.js';
 import * as conversationService from '../services/conversation-service.js';
@@ -265,9 +265,9 @@ export class QueryBasedSession extends EventEmitter {
         includePartialMessages: true,  // 启用流式消息事件（SDKPartialAssistantMessage）
         // 注入共享配置
         env: baseConfig.env,
-        effort: baseConfig.effort,
-        // Opus 4.7 默认 display='omitted'。用户可在设置中切换 summarized/omitted
-        thinking: { type: 'adaptive', display: appSettings.ai.thinkingDisplay ?? 'summarized' },
+        // effort 为 null/undefined 时不传给 SDK，由模型自带默认值决定
+        ...(baseConfig.effort ? { effort: baseConfig.effort } : {}),
+        thinking: buildThinkingConfig(appSettings.ai),
         ...(baseConfig.pathToClaudeCodeExecutable && {
           pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
         }),

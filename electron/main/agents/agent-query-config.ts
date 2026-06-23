@@ -69,7 +69,7 @@ export interface QueryRuntimeContext {
 export interface QueryBaseConfig {
   /** 包含 API Key、Base URL、模型映射等的环境变量（传给 query() 的 env 参数） */
   env: Record<string, string>;
-  /** 努力程度 */
+  /** 推理努力程度。null/undefined 表示不传给 SDK，由模型自带默认决定 */
   effort: AppSettings['ai']['effort'];
   /** 权限模式 */
   permissionMode: AppSettings['ai']['permissionMode'];
@@ -183,7 +183,7 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
   const pathToClaudeCodeExecutable = ctx.isPackaged && ctx.cliPath ? ctx.cliPath : undefined;
   return {
     env,
-    effort: appSettings.ai.effort,
+    effort: appSettings.ai.effort ?? null,
     permissionMode: appSettings.ai.permissionMode,
     permissionRules: appSettings.permissionRules,
     maxTurns: appSettings.ai.maxTurns,
@@ -193,4 +193,25 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
     resolvedProfile: profile,
     resolvedTier: tier,
   };
+}
+
+/**
+ * 把 AppSettings.ai 里 thinkingType / thinkingBudgetTokens / thinkingDisplay 三段
+ * 组装成 SDK 的 ThinkingConfig 入参。
+ */
+export function buildThinkingConfig(ai: AppSettings['ai']):
+  | { type: 'adaptive'; display?: 'summarized' | 'omitted' }
+  | { type: 'enabled'; budgetTokens?: number; display?: 'summarized' | 'omitted' }
+  | { type: 'disabled' } {
+  const type = ai.thinkingType ?? 'adaptive';
+  if (type === 'disabled') return { type: 'disabled' };
+  const display = ai.thinkingDisplay ?? 'summarized';
+  if (type === 'enabled') {
+    return {
+      type: 'enabled',
+      display,
+      ...(ai.thinkingBudgetTokens && ai.thinkingBudgetTokens > 0 ? { budgetTokens: ai.thinkingBudgetTokens } : {}),
+    };
+  }
+  return { type: 'adaptive', display };
 }
