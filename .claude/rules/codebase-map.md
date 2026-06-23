@@ -33,7 +33,7 @@
   - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）
   - `SearchBar.tsx` — 搜索浮条（Ctrl+F 快捷键、文本匹配高亮、激活项自动滚动）
   - `ThinkingBlock.tsx` — 思考块（compact/detailed 两种展示模式）
-  - `StreamingIndicator.tsx` — 运行状态指示器（思考中/执行工具/生成中）
+  - `StreamingIndicator.tsx` — 运行状态指示器（基于 pendingState：思考中/执行工具/生成中；flushing 态显示插话队列长度）
   - `AskUserQuestionCard.tsx` — AskUser 问题卡片（单选/多选）
   - `PermissionRequestCard.tsx` — 权限请求卡片（允许/拒绝/始终允许）
   - `CitationBadge.tsx` — 引用徽章
@@ -46,8 +46,8 @@
   - `task-aggregator.ts` — Task* CRUD 聚合纯函数（aggregateTasks / injectTaskSummary），把分散的 TaskCreate/TaskUpdate 合成单个 task_summary 虚拟块
   - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary/task_summary 等字段）
   - `utils.ts` — 工具函数（getUserMessageSearchableText 等）
-  - `hooks/` — 自定义 hooks（11 个）
-    - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）
+  - `hooks/` — 自定义 hooks（12 个）
+    - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）+ 订阅 pendingCountChanged 暴露 pendingCount
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
     - `useMessageHistory.ts` — 历史消息加载（含 compact_boundary/isMeta 处理）
@@ -58,6 +58,7 @@
     - `useMessageSearch.ts` — 消息搜索（文本匹配、高亮、激活项追踪）
     - `useSubAgentMessages.ts` — 子 Agent 消息流处理
     - `useTaskListAggregator.ts` — 流式 task_summary 维护（监听 messages，签名比较防抖，把吸附位置随最后一次 Task* 调用迁移）
+    - `usePendingState.ts` — 纯函数 derivePendingState({ isRunning, pendingCount }) → 'idle' | 'running' | 'flushing'
   - `tool-renderers/` — 工具块专属渲染器（由 ToolBlock 路由分发）
     - `ToolDetailShell.tsx` — 统一展开容器（ToolSection / KeyValueList / OutputBox），bg-card+border 替代 bg-muted/20，主内容用 text-foreground
     - `ReadRenderer.tsx` — Read 工具：文件路径头 + 等宽内容块
@@ -96,6 +97,7 @@
 - `WorkspaceRuleDialog.tsx` — 工作区规则 Dialog（.claude/CLAUDE.md 编辑器，里程碑 1.5 Step A2.6）
 - `EmptyFocusState.tsx` — 无聚焦对话时的占位（里程碑 1.5 Step A2.5）
 - `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮
+- `ModelSelector.tsx` — 通用模型选择下拉（按 Profile 分组、按 modelId 去重、可选「不指定」、inline/block 两种触发器）
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 - `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸
 - `ArticleParseHistoryPanel.tsx` — 网络文章解析历史面板，追踪 script/readability/ai 状态
@@ -124,7 +126,7 @@
 
 - `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
-- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、人设关联（updateConversationPersona）、会话重启触发（sessionRestartTrigger）
+- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、人设关联（updateConversationPersona）、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
 - `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
@@ -140,15 +142,16 @@
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
 - `utils.ts` — cn() 类名合并工具
 - `events.ts` — tipc 事件处理入口，监听主进程事件
+- `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）
 - `sdk/index.ts` + `sdk/query.ts` — Claude Agent SDK 的 query 函数封装
 
 ## 类型定义（types/）
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `ai.ts` — AIInteraction / AIMessage
-- `settings.ts` — ThinkingConfig / Persona / ModelProfile / AppSettings / DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
+- `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立）/ DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
-- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt）
+- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt/modelSelection）
 - `stock.ts` — WatchlistItem / StockQuote / KLineDataPoint / TimelinePoint / MoneyFlowPoint / StockSearchResult / DailySnapshot / QUOTE_FIELD_MAP / RateLimiterStatus
 - `usage.ts` — 会话用量数据模型（ConversationUsageEntry / CompactMarker / ContextSnapshot / ConversationUsage / UsageJsonlLine），主进程镜像在 `electron/main/types.ts`
 - `smart-category.ts` — 智能分类数据模型（DigestTags / SmartCategory / CategorizeDecisionLog / SmartCategoriesIndex / CategorizeActivity / CategorizeRecentEntry），主进程镜像在 `electron/main/types.ts`
@@ -166,14 +169,15 @@
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
 - `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
 - `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL）
-- `digest.ts` — 会话摘要卡巡检（listDigests / readDigest / triggerDigest 手动提炼 / get+setDigestModelTier 档位 / get+setDigestProfileId 独立模型方案 / getDigestActivity 提炼活动轮询 / get+setDigestPrompt 提示词读写 / cancelDigest 取消任务）
-- `review.ts` — 首页报告（历史代号 review）：getReport 读 `dashboard.md` / triggerReview 触发生成 / getReviewActivity 活动轮询 / get+setReviewPrompt 提示词 / get+setReviewModelTier 档位 / get+setReviewProfileId 方案 / cancelReview 取消
-- `category.ts` — 智能分类：getCategories（含归档过滤）/ triggerCategorize / triggerFullRebuild / cancelCategorize（无参全局单队列）/ getCategorizeActivity / get+setCategorizePrompt / get+setCategorizeModelTier 档位 / get+setCategorizeProfileId 方案 / get+setSmartCategorySettings（enabled/threshold/maxCategories，后端 clamp）；conversations.ts 也加了 addConversationToFolder / removeConversationFromFolder / moveConversationBetweenFolders 三个 IPC 支持手动文件夹多引用
-- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated 等）
+- `digest.ts` — 会话摘要卡巡检（listDigests / readDigest / triggerDigest 手动提炼 / get+setDigestModelSelection 整体模型选择 / getDigestActivity 提炼活动轮询 / get+setDigestPrompt 提示词读写 / cancelDigest 取消任务）
+- `review.ts` — 首页报告（历史代号 review）：getReport 读 `dashboard.md` / triggerReview 触发生成 / getReviewActivity 活动轮询 / get+setReviewPrompt 提示词 / get+setReviewModelSelection 整体模型选择 / cancelReview 取消
+- `category.ts` — 智能分类：getCategories（含归档过滤）/ triggerCategorize / triggerFullRebuild / cancelCategorize（无参全局单队列）/ getCategorizeActivity / get+setCategorizePrompt / get+setCategorizeModelSelection 整体模型选择 / get+setSmartCategorySettings（enabled/threshold/maxCategories，后端 clamp）；conversations.ts 也加了 addConversationToFolder / removeConversationFromFolder / moveConversationBetweenFolders 三个 IPC 支持手动文件夹多引用，以及 setConversationModelSelection 单独写对话级模型
+- `agent.ts` — Agent 会话管理：包含 setSessionModel（接收 ModelSelection，返回 `{ ok:true; needsRestart? } | { ok:false; error }`；同 profile 换 tier 走 SDK 快速路径，跨 profile 由前端触发会话重启）
+- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged 等）
 
 ## 业务服务（electron/main/services/）
 
-- `conversation-service.ts` — 对话索引 CRUD + 人设关联（`.dogear/conversations.json`），含 personaId/tempPrompt 字段 + usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
+- `conversation-service.ts` — 对话索引 CRUD + 人设关联 + 对话级模型选择（`.dogear/conversations.json`），含 personaId/tempPrompt/modelSelection 字段；create() 时由 tipc 注入 settings.ai.defaultModelSelection 浅拷贝，createFork() 继承父对话 modelSelection；updateModelSelection 单独维护；含 usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
 - `usage/` — 会话 token 用量采集与存储
   - `usage-extractor.ts` — 从 SDK result 提取 ConversationUsageEntry 纯函数（含 MODEL_CONTEXT_WINDOWS 兜底表、modelUsage 缺失合成、工具/子代理聚合）
   - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/deleteUsage）
@@ -216,8 +220,9 @@
 
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
 - `agent-worker.ts` — Worker 线程执行器，与 Claude Agent SDK 交互
-- `query-based-session.ts` — 基于 query() 的会话（支持 resume/fork/skills/MCP/权限/人设/临时提示词），systemPrompt 统一 preset+append 模式
-- `task-types.ts` — 任务类型（SUMMARIZE/CHAT_SESSION/PARSE_ARTICLE/DIGEST_SESSION/REVIEW_SESSION/CATEGORIZE_SESSION）和消息定义（含 ExtendedSessionMessage、DigestSessionPayload / CategorizeSessionPayload 源定义）
+- `query-based-session.ts` — 基于 query() 的会话（支持 resume/fork/skills/MCP/权限/人设/临时提示词/对话级 modelSelection），systemPrompt 统一 preset+append 模式；setModel(selection) 返回 discriminated union 区分快速换 tier 与跨 profile needsRestart；pendingMessages push/shift/clear 全节点 emit pendingCountChanged 事件
+- `agent-query-config.ts` — query() 配置构建器（主进程 + Worker 共用）：导出 resolveModelSelection 纯函数，是所有任务（主会话 / Digest / Review / Categorize）模型解析的唯一入口（接收 selection + fallback，按 profileId 重建凭证 env + 注入 ANTHROPIC_MODEL + subagent tier 兜底）
+- `task-types.ts` — 任务类型（SUMMARIZE/CHAT_SESSION/PARSE_ARTICLE/DIGEST_SESSION/REVIEW_SESSION/CATEGORIZE_SESSION）和消息定义（含 ExtendedSessionMessage、各 Payload 源定义；Digest/Review/CategorizeSessionPayload 用统一 modelSelection?: ModelSelection 字段）
 - `logger.ts` — 日志工具（mainLogger / workerLogger / createTaskLogger）
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置工具 + 自定义工具注册，IPC 查询供设置页/代理编辑页动态加载）
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）
@@ -235,11 +240,13 @@
 - `tools/category-tools.ts` — 智能分类 MCP 工具（dogear-smart-category server：ListCategories 含样例标题 / SaveCategory 接受 JOIN_EXISTING { categoryId, addAnchorTags? } 或 NEW_CATEGORY { name, anchorTags, redistribute? } discriminated union，校验上限 / append 决策日志）
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
-> 会话提炼链路：脏检查（digest-scanner）三触发点（启动扫/夜间03点/关会话）→ digest-trigger 串行起 DIGEST_SESSION 任务（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleDigestSessionTask 一次性 query（模型按 digestProfileId 指定的独立方案 + digestModelTier 档位重建凭证 env，缺省回退主会话 activeProfile，方案不完整即返回明确 error，haiku 不传 effort；query 接 AbortController，cancelDigest → cancelTask 真正中断）→ agent 自调 digest-tools 三工具 → 摘要卡落 `<configDir>/workspaces/<wsId>/digests/<sessionId>.md`
+> 会话提炼链路：脏检查（digest-scanner）三触发点（启动扫/夜间03点/关会话）→ digest-trigger 串行起 DIGEST_SESSION 任务（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleDigestSessionTask 一次性 query（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolveModelSelection 重建凭证 env，方案不完整即返回明确 error，haiku 不传 effort；query 接 AbortController，cancelDigest → cancelTask 真正中断）→ agent 自调 digest-tools 三工具 → 摘要卡落 `<configDir>/workspaces/<wsId>/digests/<sessionId>.md`
 
-> 首页报告链路（接续 digest 之后；历史代号 review）：脏检查（review-scanner.isReportStale：最新摘要卡 createdAt > 报告 updatedAt）→ review-trigger 串行起 REVIEW_SESSION 任务 → agent-worker.handleReviewSessionTask 一次性 query（同样按 reviewProfileId+reviewModelTier 重建 env，可取消）→ agent 自调 review-tools（ListDigests/ReadDigest/TraceSource）+ memory-tools（RecallMemory/SaveMemory/ForgetMemory）做**分流**：沉淀/有价值结论/注意事项进**记忆**（详细全集），需用户主动处理的待办/中断/搁置的简述进**报告**；最终 WriteReport 落 `dashboard.md`。首页 Dashboard 用 MarkdownRenderer 渲染 dashboard.md 给用户看；普通会话里说"聊聊首页"也能触发同一 skill。
+> 首页报告链路（接续 digest 之后；历史代号 review）：脏检查（review-scanner.isReportStale：最新摘要卡 createdAt > 报告 updatedAt）→ review-trigger 串行起 REVIEW_SESSION 任务 → agent-worker.handleReviewSessionTask 一次性 query（同样按 reviewModelSelection 三级 fallback 走 resolveModelSelection，可取消）→ agent 自调 review-tools（ListDigests/ReadDigest/TraceSource）+ memory-tools（RecallMemory/SaveMemory/ForgetMemory）做**分流**：沉淀/有价值结论/注意事项进**记忆**（详细全集），需用户主动处理的待办/中断/搁置的简述进**报告**；最终 WriteReport 落 `dashboard.md`。首页 Dashboard 用 MarkdownRenderer 渲染 dashboard.md 给用户看；普通会话里说"聊聊首页"也能触发同一 skill。
 
-> 智能分类链路：digest-trigger 任务成功保存摘要卡后 → chainCategorize 检查 smartCategory.enabled + 摘要卡的 tags/conversationId → category-trigger.triggerCategorize 串行起 CATEGORIZE_SESSION 任务 → agent-worker.handleCategorizeSessionTask：Step A 跑 matchByThreshold 阈值匹配（0 LLM），命中即 push 到对应分类记 'match'；无匹配则上 LLM（按 categorizeProfileId+categorizeModelTier 重建 env，可取消，haiku 不传 effort）→ agent 自调 category-tools（ListCategories 看现有分类 + 样例 / SaveCategory 决策 JOIN_EXISTING 或 NEW_CATEGORY，新建时附带 redistribute 候选迁移）→ smart-categories.json 落 `<configDir>/workspaces/<wsId>/`。outcome=match/join/new 时 broadcast categoriesUpdated，前端 useSmartCategoryStore 自动 reload。手动文件夹支持多引用语义（同一 conversationId 可在多个 folder children 里），通过 conversations.ts 的 addConversationToFolder/removeConversationFromFolder/moveConversationBetweenFolders IPC + conversation-tree-service.migrateRootScatter 懒迁移（loadTree 时清掉 __root__ 散落对话）实现。
+> 智能分类链路：digest-trigger 任务成功保存摘要卡后 → chainCategorize 检查 smartCategory.enabled + 摘要卡的 tags/conversationId → category-trigger.triggerCategorize 串行起 CATEGORIZE_SESSION 任务 → agent-worker.handleCategorizeSessionTask：Step A 跑 matchByThreshold 阈值匹配（0 LLM），命中即 push 到对应分类记 'match'；无匹配则上 LLM（按 categorizeModelSelection 三级 fallback 走 resolveModelSelection，可取消，haiku 不传 effort）→ agent 自调 category-tools（ListCategories 看现有分类 + 样例 / SaveCategory 决策 JOIN_EXISTING 或 NEW_CATEGORY，新建时附带 redistribute 候选迁移）→ smart-categories.json 落 `<configDir>/workspaces/<wsId>/`。outcome=match/join/new 时 broadcast categoriesUpdated，前端 useSmartCategoryStore 自动 reload。手动文件夹支持多引用语义（同一 conversationId 可在多个 folder children 里），通过 conversations.ts 的 addConversationToFolder/removeConversationFromFolder/moveConversationBetweenFolders IPC + conversation-tree-service.migrateRootScatter 懒迁移（loadTree 时清掉 __root__ 散落对话）实现。
+
+> 模型选择链路（Phase 4-5 重构）：对话创建时 tipc 把 settings.ai.defaultModelSelection 浅拷贝到 conversation.modelSelection（fork 则继承父对话）→ ChatInputArea 输入框工具栏的 ModelSelector（按 Profile 分组、按 modelId 去重、空选时红字「请先选择模型」+ textarea/send 全 disable）→ 用户切换时 conversation-store.setConversationModelSelection 写库 + 同步顶层镜像 → useSendMessage 发送前 reconcile：null 拦截 toast、有变更则 client.setSessionModel(selection)；同 profile 换 tier 走 SDK 快速路径，跨 profile 后端返回 needsRestart → triggerSessionRestart + 让用户重发；插话路径（pendingState!='idle'）跳过 reconcile 沿用会话原模型。usePendingState 派生 idle/running/flushing；StreamingIndicator flushing 态显示「队列还有 N 条插话待回复…」。
 
 ## 数据存储（`.dogear/` 目录）
 
