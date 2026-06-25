@@ -2,7 +2,7 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonRead, safeJsonWrite } from './safe-json.js';
-import type { Group, SharedReference } from '../types.js';
+import type { Group } from '../types.js';
 
 const { app } = electron;
 
@@ -47,7 +47,6 @@ export async function createGroup(workspaceId: string, init?: { title?: string }
     title: init?.title,
     createdAt: now,
     updatedAt: now,
-    sharedReferences: [],
   };
   file.groups.push(group);
   await saveGroups(workspaceId, file);
@@ -57,7 +56,7 @@ export async function createGroup(workspaceId: string, init?: { title?: string }
 export async function updateGroup(
   workspaceId: string,
   groupId: string,
-  patch: Partial<Pick<Group, 'title' | 'sharedReferences'>>,
+  patch: Partial<Pick<Group, 'title'>>,
 ): Promise<Group> {
   const file = await loadGroups(workspaceId);
   const idx = file.groups.findIndex((g) => g.id === groupId);
@@ -65,7 +64,6 @@ export async function updateGroup(
 
   const group = file.groups[idx];
   if (patch.title !== undefined) group.title = patch.title;
-  if (patch.sharedReferences !== undefined) group.sharedReferences = patch.sharedReferences;
   group.updatedAt = Date.now();
 
   await saveGroups(workspaceId, file);
@@ -77,39 +75,5 @@ export async function deleteGroup(workspaceId: string, groupId: string): Promise
   const idx = file.groups.findIndex((g) => g.id === groupId);
   if (idx === -1) throw new Error(`Group not found: ${groupId}`);
   file.groups.splice(idx, 1);
-  await saveGroups(workspaceId, file);
-}
-
-type SharedReferenceInput = SharedReference extends infer T
-  ? T extends SharedReference ? Omit<T, 'id' | 'addedAt'> : never
-  : never;
-
-export async function addReference(
-  workspaceId: string,
-  groupId: string,
-  ref: SharedReferenceInput,
-): Promise<SharedReference> {
-  const file = await loadGroups(workspaceId);
-  const group = file.groups.find((g) => g.id === groupId);
-  if (!group) throw new Error(`Group not found: ${groupId}`);
-
-  const newRef = { ...ref, id: uuidv4(), addedAt: Date.now() } as SharedReference;
-  group.sharedReferences.push(newRef);
-  group.updatedAt = Date.now();
-
-  await saveGroups(workspaceId, file);
-  return newRef;
-}
-
-export async function removeReference(workspaceId: string, groupId: string, refId: string): Promise<void> {
-  const file = await loadGroups(workspaceId);
-  const group = file.groups.find((g) => g.id === groupId);
-  if (!group) throw new Error(`Group not found: ${groupId}`);
-
-  const idx = group.sharedReferences.findIndex((r) => r.id === refId);
-  if (idx === -1) throw new Error(`Reference not found: ${refId}`);
-  group.sharedReferences.splice(idx, 1);
-  group.updatedAt = Date.now();
-
   await saveGroups(workspaceId, file);
 }

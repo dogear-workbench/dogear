@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare } from 'lucide-react';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -152,6 +152,8 @@ export function ChatInputArea({
   const removeReferencedFile = useReferenceStore((s) => s.removeReferencedFile);
   const referencedConversations = useReferenceStore((s) => s.referencedConversations);
   const removeReferencedConversation = useReferenceStore((s) => s.removeReferencedConversation);
+  const referencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
+  const removeReferencedSharedFile = useReferenceStore((s) => s.removeReferencedSharedFile);
 
   return (
     <div className="p-3">
@@ -180,10 +182,10 @@ export function ChatInputArea({
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
             )}>
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
-            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || pendingImages.length > 0) && (
+            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 引用芯片 */}
-                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0) && (
+                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
                     {/* 文章引用芯片 — 淡蓝 */}
                     {referencedArticles.map(article => (
@@ -255,6 +257,25 @@ export function ChatInputArea({
                           size="icon-xs"
                           onClick={() => removeReferencedConversation(conv.conversationId)}
                           className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-purple-100"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </span>
+                    ))}
+                    {/* 共享文件引用芯片 — 淡青柠 */}
+                    {referencedSharedFiles.map(file => (
+                      <span
+                        key={file.absPath}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-lime-50 border border-lime-200 rounded-full text-xs text-lime-700"
+                        title={file.absPath}
+                      >
+                        <Folder className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[160px] truncate">{file.relPath}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeReferencedSharedFile(file.absPath)}
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-lime-100"
                         >
                           <X className="w-3 h-3" />
                         </Button>

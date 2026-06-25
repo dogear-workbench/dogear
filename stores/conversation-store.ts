@@ -395,7 +395,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
 
     try {
-      const result = await client.create({ workspaceId: workspace.id });
+      const { useGroupStore } = await import('./group-store');
+      const group = await useGroupStore.getState().createGroup();
+      if (!group) return;
+
+      const result = await client.create({ workspaceId: workspace.id, groupId: group.id });
       if (result.error || !result.conversationId) {
         toast.error('创建对话失败', { description: result.error || '未知错误' });
         return;

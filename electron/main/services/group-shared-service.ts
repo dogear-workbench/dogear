@@ -1,10 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
-import * as workspaceJsonService from './workspace-json-service.js';
-import * as groupService from './group-service.js';
-import { readWorkspaceTextFile } from './workspace-fs-service.js';
-import type { NativeFileEntry, SharedReference } from '../types.js';
+import type { NativeFileEntry } from '../types.js';
 
 const { app } = electron;
 
@@ -29,11 +26,11 @@ function safeResolve(sharedDir: string, relPath: string): string {
   return resolved;
 }
 
-export async function listNativeFiles(workspaceId: string, groupId: string): Promise<NativeFileEntry[]> {
+export async function listNativeFiles(workspaceId: string, groupId: string): Promise<{ files: NativeFileEntry[]; sharedDir: string }> {
   const sharedDir = await getSharedDir(workspaceId, groupId);
-  const result: NativeFileEntry[] = [];
-  await walk(sharedDir, sharedDir, result);
-  return result;
+  const files: NativeFileEntry[] = [];
+  await walk(sharedDir, sharedDir, files);
+  return { files, sharedDir };
 }
 
 async function walk(dir: string, base: string, out: NativeFileEntry[]): Promise<void> {
@@ -76,30 +73,4 @@ export async function deleteNativeFile(workspaceId: string, groupId: string, rel
   const sharedDir = await getSharedDir(workspaceId, groupId);
   const abs = safeResolve(sharedDir, relPath);
   await fs.rm(abs, { force: true });
-}
-
-export async function listReferences(workspaceId: string, groupId: string): Promise<SharedReference[]> {
-  const group = await groupService.getGroup(workspaceId, groupId);
-  if (!group) throw new Error(`Group not found: ${groupId}`);
-  return group.sharedReferences;
-}
-
-export async function readReferencedFile(workspaceId: string, groupId: string, refId: string): Promise<string> {
-  const refs = await listReferences(workspaceId, groupId);
-  const ref = refs.find((r) => r.id === refId);
-  if (!ref) throw new Error(`Reference not found: ${refId}`);
-  if (ref.type !== 'file') throw new Error(`Unsupported reference type: ${ref.type}`);
-  const workspace = await workspaceJsonService.getById(workspaceId);
-  if (!workspace?.path) throw new Error(`Workspace path missing: ${workspaceId}`);
-  return readWorkspaceTextFile(workspace.path, ref.path);
-}
-
-export function validateWorkspacePath(workspacePath: string, inputPath: string): string {
-  const abs = path.isAbsolute(inputPath) ? inputPath : path.resolve(workspacePath, inputPath);
-  const normalized = path.normalize(abs);
-  const baseNormalized = path.normalize(workspacePath);
-  if (!normalized.startsWith(baseNormalized + path.sep) && normalized !== baseNormalized) {
-    throw new Error('路径越权：引用文件必须在工作区内');
-  }
-  return path.relative(baseNormalized, normalized).replace(/\\/g, '/');
 }

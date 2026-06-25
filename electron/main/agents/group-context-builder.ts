@@ -1,5 +1,5 @@
 /**
- * 会话启动时把所属组的概况 + 共享区文件清单 + 引用项清单
+ * 会话启动时把所属组的概况 + 共享区文件清单
  * 拼到 systemPrompt 的 append 末尾，让 Agent 天然知道组里有什么。
  * 详情靠 ListGroupFiles / ReadGroupFile 工具按需读取（避免 prompt 膨胀）。
  */
@@ -48,10 +48,7 @@ function formatRelativeTime(mtime: number): string {
  *   **共享区原生文件**（前 N 个，按 mtime 倒序）：
  *   - `notes.md` (2.3KB, 5分钟前)
  *
- *   **共享区引用文件**（前 N 个）：
- *   - `<path>` <label?>
- *
- *   需要查看详情请使用 ListGroupFiles / ReadGroupFile 工具。
+ *   需要查看这些文件的详情请使用 ListGroupFiles / ReadGroupFile 工具。
  */
 export async function buildGroupContextPrompt(
   workspaceId: string,
@@ -72,9 +69,10 @@ export async function buildGroupContextPrompt(
     parts.push('');
 
     // 原生文件
-    let natives: Awaited<ReturnType<typeof groupSharedService.listNativeFiles>> = [];
+    let natives: { relPath: string; size: number; mtime: number }[] = [];
     try {
-      natives = await groupSharedService.listNativeFiles(workspaceId, groupId);
+      const result = await groupSharedService.listNativeFiles(workspaceId, groupId);
+      natives = result.files;
     } catch (e) {
       logger.warn('列原生文件失败:', e);
     }
@@ -89,25 +87,6 @@ export async function buildGroupContextPrompt(
       }
       if (natives.length > MAX_FILES_LISTED) {
         parts.push(`- …还有 ${natives.length - MAX_FILES_LISTED} 个`);
-      }
-    }
-    parts.push('');
-
-    // 引用项
-    const refs = group.sharedReferences ?? [];
-    const refsShown = refs.slice(0, MAX_FILES_LISTED);
-    parts.push(`**共享区引用文件**（共 ${refs.length} 个${refs.length > MAX_FILES_LISTED ? '，展示前 ' + MAX_FILES_LISTED : ''}）：`);
-    if (refs.length === 0) {
-      parts.push('- （暂无）');
-    } else {
-      for (const ref of refsShown) {
-        if (ref.type === 'file') {
-          const label = ref.label ? ` — ${ref.label}` : '';
-          parts.push(`- \`${truncatePath(ref.path)}\`${label}`);
-        }
-      }
-      if (refs.length > MAX_FILES_LISTED) {
-        parts.push(`- …还有 ${refs.length - MAX_FILES_LISTED} 个`);
       }
     }
     parts.push('');

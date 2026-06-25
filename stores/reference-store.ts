@@ -14,12 +14,20 @@ export interface ConversationReference {
   sdkSessionId: string | null;
 }
 
+/** 共享文件引用（会话组共享区） */
+export interface SharedFileReference {
+  groupId: string;
+  relPath: string;
+  absPath: string;
+}
+
 interface ReferenceState {
   // --- 状态 ---
   referencedArticles: ArticleMeta[];
   quotedSnippets: QuoteSnippet[];
   referencedFiles: FileReference[];
   referencedConversations: ConversationReference[];
+  referencedSharedFiles: SharedFileReference[];
 
   // --- Actions ---
   /** 引用/取消引用文章 */
@@ -46,6 +54,12 @@ interface ReferenceState {
   removeReferencedConversation: (conversationId: string) => void;
   /** 清空所有会话引用 */
   clearReferencedConversations: () => void;
+  /** 添加共享文件引用（去重） */
+  addReferencedSharedFile: (file: SharedFileReference) => void;
+  /** 移除共享文件引用 */
+  removeReferencedSharedFile: (absPath: string) => void;
+  /** 清空所有共享文件引用 */
+  clearReferencedSharedFiles: () => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -55,6 +69,7 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   quotedSnippets: [],
   referencedFiles: [],
   referencedConversations: [],
+  referencedSharedFiles: [],
 
   toggleReferenceArticle: (article) => {
     set((state) => {
@@ -124,10 +139,26 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
 
   clearReferencedConversations: () => set({ referencedConversations: [] }),
 
+  addReferencedSharedFile: (file) => {
+    set((state) => {
+      if (state.referencedSharedFiles.some(f => f.absPath === file.absPath)) return state;
+      return { referencedSharedFiles: [...state.referencedSharedFiles, file] };
+    });
+  },
+
+  removeReferencedSharedFile: (absPath) => {
+    set((state) => ({
+      referencedSharedFiles: state.referencedSharedFiles.filter(f => f.absPath !== absPath),
+    }));
+  },
+
+  clearReferencedSharedFiles: () => set({ referencedSharedFiles: [] }),
+
   reset: () => set({
     referencedArticles: [],
     quotedSnippets: [],
     referencedFiles: [],
     referencedConversations: [],
+    referencedSharedFiles: [],
   }),
 }));

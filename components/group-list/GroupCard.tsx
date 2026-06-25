@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ChevronRight, ChevronDown, Layers, MoreHorizontal } from 'lucide-react';
+import { ChevronRight, ChevronDown, MoreHorizontal, Plus } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator,
@@ -83,16 +83,15 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
         <ContextMenuTrigger asChild>
           <div
             className={cn(
-              'flex items-center gap-2 py-2 pr-3 pl-2 cursor-pointer hover:bg-muted/30 group rounded-sm mx-1',
-              isSelected && 'bg-blue-50/50 dark:bg-blue-900/20',
+              'flex items-center gap-2 py-1 pr-2 pl-2 cursor-pointer hover:bg-muted/30 group rounded-sm mx-1',
+              isSelected && 'bg-muted/40',
             )}
             onClick={handleHeaderClick}
           >
             {isExpanded
-              ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
-              : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-muted-foreground" />
+              ? <ChevronDown className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
+              : <ChevronRight className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
             }
-            <Layers className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
             <div className="flex-1 min-w-0">
               {isEditing ? (
                 <input
@@ -106,13 +105,25 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
                   }}
                   onBlur={saveTitle}
                   onClick={(e) => e.stopPropagation()}
-                  className="w-full bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
+                  className="w-full bg-background border border-primary rounded px-1.5 py-0.5 text-xs outline-none"
                 />
               ) : (
-                <span className="text-sm truncate block">{deriveGroupTitle(group, conversations)}</span>
+                <span className="text-xs text-muted-foreground truncate block">{deriveGroupTitle(group, conversations)}</span>
               )}
             </div>
             <span className="text-xs text-muted-foreground flex-shrink-0">{conversations.length}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleNewConversation();
+              }}
+              title="在组内新建对话"
+            >
+              <Plus className="w-3 h-3" />
+            </Button>
             <Button
               variant="ghost"
               size="sm"
@@ -131,7 +142,7 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
             </Button>
           </div>
         </ContextMenuTrigger>
-        <ContextMenuContent>
+        <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
           <ContextMenuItem onClick={startEditing}>重命名</ContextMenuItem>
           <ContextMenuItem onClick={handleNewConversation}>在组内新建对话</ContextMenuItem>
           <ContextMenuSeparator />

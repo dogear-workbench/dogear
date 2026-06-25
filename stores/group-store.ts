@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import type { Group, SharedReference } from '@/types/group';
+import type { Group } from '@/types/group';
 
 const getWorkspace = async () => {
   const { useWorkspaceStore } = await import('./workspace-store');
@@ -18,10 +18,8 @@ interface GroupState {
   setCurrentGroup: (groupId: string | null) => void;
   toggleExpand: (groupId: string) => void;
   createGroup: (title?: string) => Promise<Group | null>;
-  updateGroup: (groupId: string, patch: { title?: string; sharedReferences?: SharedReference[] }) => Promise<void>;
+  updateGroup: (groupId: string, patch: { title?: string }) => Promise<void>;
   deleteGroup: (groupId: string) => Promise<void>;
-  addReference: (groupId: string, path: string, label?: string) => Promise<SharedReference | null>;
-  removeReference: (groupId: string, refId: string) => Promise<void>;
 }
 
 export const useGroupStore = create<GroupState>((set) => ({
@@ -101,45 +99,6 @@ export const useGroupStore = create<GroupState>((set) => ({
       }));
     } catch (e) {
       console.error('删除会话组失败:', e);
-    }
-  },
-
-  addReference: async (groupId, path, label) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return null;
-    try {
-      const r = await client.addReference({ workspaceId: workspace.id, groupId, refType: 'file', path, label });
-      if (r.error || !r.reference) return null;
-      const ref = r.reference;
-      set((state) => ({
-        groups: state.groups.map((g) =>
-          g.id === groupId
-            ? { ...g, sharedReferences: [...g.sharedReferences, ref] }
-            : g,
-        ),
-      }));
-      return ref;
-    } catch (e) {
-      console.error('添加共享引用失败:', e);
-      return null;
-    }
-  },
-
-  removeReference: async (groupId, refId) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      const r = await client.removeReference({ workspaceId: workspace.id, groupId, refId });
-      if (!r.ok) return;
-      set((state) => ({
-        groups: state.groups.map((g) =>
-          g.id === groupId
-            ? { ...g, sharedReferences: g.sharedReferences.filter((ref) => ref.id !== refId) }
-            : g,
-        ),
-      }));
-    } catch (e) {
-      console.error('移除共享引用失败:', e);
     }
   },
 }));

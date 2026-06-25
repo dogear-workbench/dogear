@@ -27,6 +27,13 @@ paths:
 - 来源：ArticlePreview 选中文字
 - 使用场景：精确引用文章中的文本片段
 
+### 4. 共享文件引用（会话组共享区）
+- XML 格式：`<referenced_shared_files><shared_file group_id="..." rel_path="..." abs_path="..." /></referenced_shared_files>`
+- 关键字段：`abs_path` 是文件系统绝对路径，agent 用 Read 工具直接读取
+- 来源：SharedAreaPanel 每行的 Link2 引用按钮
+- 输入框芯片颜色：淡青柠（lime）
+- 使用场景：把会话组共享区里 agent 写出的文件引用到当前消息，让另一个 agent 读取
+
 ## 消息构建规范
 
 ### 单内容块（纯文本）

@@ -63,6 +63,8 @@ export function useSendMessage(params: UseSendMessageParams) {
   const clearReferencedFiles = useReferenceStore((s) => s.clearReferencedFiles);
   const referencedConversations = useReferenceStore((s) => s.referencedConversations);
   const clearReferencedConversations = useReferenceStore((s) => s.clearReferencedConversations);
+  const referencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
+  const clearReferencedSharedFiles = useReferenceStore((s) => s.clearReferencedSharedFiles);
 
   // 权限模式名称映射
   const modeLabels: Record<string, string> = {
@@ -386,6 +388,17 @@ export function useSendMessage(params: UseSendMessageParams) {
         text: `<referenced_conversations>\n${convLines}\n</referenced_conversations>`
       });
       clearReferencedConversations();
+    }
+
+    // 共享文件引用：独立 block，agent 通过 Read 工具读取绝对路径
+    if (referencedSharedFiles.length > 0) {
+      const refLines = referencedSharedFiles.map(f =>
+        `  <shared_file group_id="${sanitize(f.groupId)}" rel_path="${sanitize(f.relPath)}" abs_path="${sanitize(f.absPath)}" />`
+      ).join('\n');
+      textBlocks.push({
+        text: `<referenced_shared_files>\n${refLines}\n</referenced_shared_files>`
+      });
+      clearReferencedSharedFiles();
     }
 
     // 用户消息作为最后一个 block

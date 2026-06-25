@@ -45,7 +45,7 @@ export function ConversationList() {
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id) ?? '';
   const [view, setView] = useState<ListView>('group');
 
-  if (loadingConversations) {
+  if (loadingConversations && conversations.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
         <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />

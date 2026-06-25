@@ -186,7 +186,7 @@ export function ConversationRow({
           )}
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent>
+      <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
         {archived ? (
           <>
             <ContextMenuItem onClick={handleRestore}>
