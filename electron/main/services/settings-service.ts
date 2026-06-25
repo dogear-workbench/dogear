@@ -76,8 +76,8 @@ export async function appendPermissionAllowRules(rules: string[]): Promise<void>
   await saveSettings({
     ...current,
     permissionRules: {
+      ...current.permissionRules,
       allow: Array.from(existing),
-      deny: current.permissionRules?.deny || [],
     },
   });
 }

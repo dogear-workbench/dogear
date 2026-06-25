@@ -17,7 +17,7 @@ interface ToolPack {
   enabled: boolean;
 }
 
-type ToolPermission = 'allow' | 'default' | 'deny';
+type ToolPermission = 'allow' | 'default' | 'ask' | 'deny';
 
 interface Props {
   local: AppSettings;
@@ -70,34 +70,40 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
   const getSdkToolPermission = (tool: ToolInfo): ToolPermission => {
     const rules = local.permissionRules;
     if (rules?.allow?.includes(tool.name)) return 'allow';
+    if (rules?.ask?.includes(tool.name)) return 'ask';
     if (rules?.deny?.includes(tool.name)) return 'deny';
     return 'default';
   };
 
   const setSdkToolPermission = (tool: ToolInfo, perm: ToolPermission) => {
-    const rules = local.permissionRules || { allow: [], deny: [] };
+    const rules = local.permissionRules || { allow: [], ask: [], deny: [] };
     const allow = (rules.allow || []).filter((t) => t !== tool.name);
+    const ask = (rules.ask || []).filter((t) => t !== tool.name);
     const deny = (rules.deny || []).filter((t) => t !== tool.name);
     if (perm === 'allow') allow.push(tool.name);
+    if (perm === 'ask') ask.push(tool.name);
     if (perm === 'deny') deny.push(tool.name);
-    setLocal((prev) => ({ ...prev, permissionRules: { allow, deny } }));
+    setLocal((prev) => ({ ...prev, permissionRules: { allow, ask, deny } }));
   };
 
   const setSdkGroupPermission = (perm: ToolPermission) => {
     if (!sdkGroup) return;
-    const rules = local.permissionRules || { allow: [], deny: [] };
+    const rules = local.permissionRules || { allow: [], ask: [], deny: [] };
     const sdkNames = new Set(sdkGroup.tools.map((t) => t.name));
     const allow = (rules.allow || []).filter((t) => !sdkNames.has(t));
+    const ask = (rules.ask || []).filter((t) => !sdkNames.has(t));
     const deny = (rules.deny || []).filter((t) => !sdkNames.has(t));
     if (perm === 'allow') for (const t of sdkGroup.tools) allow.push(t.name);
+    if (perm === 'ask') for (const t of sdkGroup.tools) ask.push(t.name);
     if (perm === 'deny') for (const t of sdkGroup.tools) deny.push(t.name);
-    setLocal((prev) => ({ ...prev, permissionRules: { allow, deny } }));
+    setLocal((prev) => ({ ...prev, permissionRules: { allow, ask, deny } }));
   };
 
   const getSdkGroupPermission = (): ToolPermission => {
     if (!sdkGroup) return 'default';
     const perms = sdkGroup.tools.map((t) => getSdkToolPermission(t));
     if (perms.length > 0 && perms.every((p) => p === 'allow')) return 'allow';
+    if (perms.length > 0 && perms.every((p) => p === 'ask')) return 'ask';
     if (perms.length > 0 && perms.every((p) => p === 'deny')) return 'deny';
     if (perms.every((p) => p === 'default')) return 'default';
     return 'default';
@@ -110,9 +116,12 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
   };
 
   const removeFineGrainedRule = (rule: string) => {
-    const rules = local.permissionRules || { allow: [], deny: [] };
+    const rules = local.permissionRules || { allow: [], ask: [], deny: [] };
     const allow = (rules.allow || []).filter((r) => r !== rule);
-    setLocal((prev) => ({ ...prev, permissionRules: { allow, deny: rules.deny || [] } }));
+    setLocal((prev) => ({
+      ...prev,
+      permissionRules: { ...rules, allow },
+    }));
   };
 
   if (loading) {
@@ -151,7 +160,7 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
       <div>
         <h2 className="text-lg font-semibold mb-1">工具与权限</h2>
         <p className="text-sm text-muted-foreground">
-          统一管理 Agent 可用的能力：开关工具包决定有没有这组工具，开启即默认放行。SDK 内置工具支持细粒度三态权限。MCP 工具不再单独控制——和工具包开关绑定。
+          统一管理 Agent 可用的能力：开关工具包决定有没有这组工具，开启即默认放行。SDK 内置工具支持细粒度四态权限。MCP 工具不再单独控制——和工具包开关绑定。
         </p>
       </div>
 
@@ -281,9 +290,14 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
 
       {/* ── SDK 内置工具权限 ───────────────────────────── */}
       <section>
-        <div className="flex items-center gap-2 mb-2">
-          <h3 className="text-sm font-semibold">SDK 内置工具权限</h3>
-          <span className="text-xs text-muted-foreground">细粒度三态：自动允许 / 需确认 / 禁止</span>
+        <div className="mb-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">SDK 内置工具权限</h3>
+            <span className="text-xs text-muted-foreground">细粒度四态：自动允许 / 跟随模式 / 始终询问 / 禁止</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            「跟随模式」由顶部权限模式决定（自动执行下放行）；「始终询问」即使在自动执行下也会弹确认。
+          </p>
         </div>
         {sdkGroup && (
           <div className="border rounded-lg overflow-hidden">
@@ -295,7 +309,8 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
               <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5 flex-shrink-0">
                 {([
                   { value: 'allow' as const, label: '全部允许', color: 'text-green-700' },
-                  { value: 'default' as const, label: '需确认', color: 'text-foreground' },
+                  { value: 'default' as const, label: '跟随模式', color: 'text-foreground' },
+                  { value: 'ask' as const, label: '始终询问', color: 'text-amber-600' },
                   { value: 'deny' as const, label: '全部禁止', color: 'text-red-600' },
                 ]).map((opt) => (
                   <button
@@ -325,7 +340,8 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
                     <div className="inline-flex h-7 items-center rounded-md bg-muted p-0.5 flex-shrink-0 ml-4">
                       {([
                         { value: 'allow' as const, label: '自动允许', color: 'text-green-700' },
-                        { value: 'default' as const, label: '需确认', color: 'text-foreground' },
+                        { value: 'default' as const, label: '跟随模式', color: 'text-foreground' },
+                        { value: 'ask' as const, label: '始终询问', color: 'text-amber-600' },
                         { value: 'deny' as const, label: '禁止', color: 'text-red-600' },
                       ]).map((opt) => (
                         <button

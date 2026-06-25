@@ -67,6 +67,7 @@ export interface AppSettings {
   };
   permissionRules?: {
     allow?: string[];
+    ask?: string[];
     deny?: string[];
   };
   personas: Persona[]; // 人设列表
