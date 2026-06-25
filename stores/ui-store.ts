@@ -53,10 +53,10 @@ interface UIState {
   closeRightPanel: () => void;
 
   // 右侧面板当前 tab
-  /** 右侧面板当前 tab：预览 or 子代理列表 */
-  rightPanelTab: 'preview' | 'subagents';
+  /** 右侧面板当前 tab：预览 / 子代理列表 / 共享区 */
+  rightPanelTab: 'preview' | 'subagents' | 'shared';
   /** 切换右侧面板 tab */
-  setRightPanelTab: (tab: 'preview' | 'subagents') => void;
+  setRightPanelTab: (tab: 'preview' | 'subagents' | 'shared') => void;
 
   // 子代理面板（嵌入右侧预览区域）
   /** 按对话 ID 缓存的子代理列表（切换 tab 时不丢失） */

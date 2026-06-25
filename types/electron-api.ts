@@ -138,6 +138,8 @@ export interface Conversation {
   cachePolicy?: '5m' | '1h';         // 提示缓存策略；缺省视为 5m
   fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
+  groupId: string;                   // 所属会话组 ID
+  role: 'main' | 'sub';             // P1 只产生 'main'
   usageSummary?: {
     turnCount: number;
     totalInputTokens: number;

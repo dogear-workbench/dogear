@@ -1,12 +1,15 @@
 import React from 'react';
-import { Brain, Clock } from 'lucide-react';
+import { Brain, Clock, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type ListView = 'smart' | 'time';
+export type ListView = 'group' | 'smart' | 'time';
 
 export function ViewTabs({ value, onChange }: { value: ListView; onChange: (v: ListView) => void }) {
   return (
     <div className="flex items-center gap-1 px-2 py-1 border-y bg-muted/20">
+      <Tab active={value === 'group'} onClick={() => onChange('group')} icon={<Layers className="w-3.5 h-3.5" />}>
+        组
+      </Tab>
       <Tab active={value === 'smart'} onClick={() => onChange('smart')} icon={<Brain className="w-3.5 h-3.5" />}>
         智能
       </Tab>

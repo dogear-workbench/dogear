@@ -413,6 +413,20 @@ app.whenReady().then(async () => {
     console.error('数据迁移失败:', error);
   }
 
+  // 会话组 P1: 给老会话补 groupId
+  try {
+    const workspaceJsonService = await import('./services/workspace-json-service.js');
+    const conversationService = await import('./services/conversation-service.js');
+    const workspaces = await workspaceJsonService.getAll();
+    let total = 0;
+    for (const ws of workspaces) {
+      total += await conversationService.migrateOrphanConversations(ws.id);
+    }
+    if (total > 0) console.log(`[group-migration] ${total} 条会话补齐 groupId`);
+  } catch (error) {
+    console.error('会话组迁移失败:', error);
+  }
+
   // 初始化 Agent 管理器
   const agentManager = getAgentManager({
     maxWorkers: 4,

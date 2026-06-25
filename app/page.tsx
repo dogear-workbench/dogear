@@ -11,6 +11,7 @@ import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 import { PromptSidebar } from '@/components/PromptSidebar';
 import { SubAgentPanel } from '@/components/agent-chat/SubAgentPanel';
+import { SharedAreaPanel } from '@/components/SharedAreaPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
@@ -25,6 +26,7 @@ import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionStore, HOME_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
+import { useConversationStore } from '@/stores/conversation-store';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
@@ -108,6 +110,12 @@ export default function Home() {
   const openTab = useSessionStore((s) => s.openTab);
   const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
+
+  // 当前激活对话对应的组 ID（HOME_TAB_ID 哨兵或 groupId 空时为 null）
+  const activeConv = useConversationStore((s) =>
+    s.conversations.find((c) => c.id === activeTabId) ?? null
+  );
+  const currentGroupId = activeConv?.groupId || null;
 
   // 监听独立窗口关闭事件，恢复 Tab 到主窗口
   // 独立窗口关闭时：主进程 detachByWebContentsId 释放独立窗口的 attachment，
@@ -347,12 +355,26 @@ export default function Home() {
             >
               子代理
             </button>
+            <button
+              onClick={() => setRightPanelTab('shared')}
+              className={cn(
+                'flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                rightPanelTab === 'shared'
+                  ? 'border-b-2 border-primary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+            >
+              共享区
+            </button>
           </div>
 
           {/* Tab 内容 */}
           {rightPanelTab === 'subagents' ? (
             /* 子代理列表面板 */
             <SubAgentPanel conversationId={activeTabId || undefined} />
+          ) : rightPanelTab === 'shared' ? (
+            /* 共享区面板 */
+            <SharedAreaPanel workspaceId={workspace.id} groupId={currentGroupId} />
           ) : (
             /* 文章/文件预览 */
             <>

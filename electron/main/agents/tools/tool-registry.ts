@@ -35,6 +35,7 @@ const SERVER_LABELS: Record<string, string> = {
   'dogear-article':         '文章阅读',
   'dogear-article-parse':   '文章解析',
   'dogear-smart-category':  '智能分类',
+  'dogear-group':           '会话组共享区',
 };
 
 /** SDK 内置工具（无法从 SDK 运行时获取元数据，故保留静态定义） */
@@ -94,6 +95,7 @@ export function getAllTools(): ToolGroup[] {
     'dogear-stock-analysis',
     'dogear-article',
     'dogear-article-parse',
+    'dogear-group',
   ];
 
   const groups: ToolGroup[] = [];

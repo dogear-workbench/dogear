@@ -128,6 +128,9 @@ async function buildConversationSessionConfig(
   if (workspacePath) {
     allowedTools.push('mcp__dogear-memory-review__*');
   }
+  if (conversation.groupId) {
+    allowedTools.push('mcp__dogear-group__*');
+  }
   for (const pack of OPTIONAL_TOOL_PACKS) {
     if (mcpServers[pack.mcpServerName]) {
       allowedTools.push(`mcp__${pack.mcpServerName}__*`);
@@ -156,6 +159,7 @@ async function buildConversationSessionConfig(
     allowedTools,
     workspacePath,
     workspaceId,
+    groupId: conversation.groupId || undefined,
     enableSkills: true,
     extraPluginPaths: extraPluginPaths.length > 0 ? extraPluginPaths : undefined,
     mcpServers: Object.keys(mcpServers).length > 0 ? mcpServers : undefined,

@@ -330,6 +330,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } finally {
       set((state) => patchSlice(state, wsId, { loadingConversations: false }));
     }
+
+    void import('./group-store').then(({ useGroupStore }) => {
+      useGroupStore.getState().load(wsId).catch(() => {});
+    });
   },
 
   selectConversation: async (conversation) => {
@@ -356,6 +360,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         });
       }
     } catch { /* 忽略，已有缓存数据可用 */ }
+
+    void import('./group-store').then(({ useGroupStore }) => {
+      useGroupStore.getState().setCurrentGroup(conversation.groupId ?? null);
+    });
   },
 
   focusConversationById: async (conversationId) => {

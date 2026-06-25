@@ -262,7 +262,9 @@ class WechatBotController {
     }
 
     // 在服务层创建新对话记录
-    const newConvId = await conversationService.create(this.state.activeWorkspaceId);
+    const groupService = await import('../group-service.js');
+    const newGroup = await groupService.createGroup(this.state.activeWorkspaceId);
+    const newConvId = await conversationService.create(this.state.activeWorkspaceId, newGroup.id);
     await this.switchBotSession(newConvId, undefined);
 
     // 通知前端刷新对话列表

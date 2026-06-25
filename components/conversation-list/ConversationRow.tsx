@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  MessageSquare, GitBranch, Bot, Quote, Pencil, Trash2,
+  MessageSquare, GitBranch, Bot, MoreHorizontal,
   FolderOutput, ArchiveRestore,
 } from 'lucide-react';
 import {
@@ -167,46 +167,22 @@ export function ConversationRow({
             </div>
           </div>
           {!archived && (
-            <>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-purple-600"
-                title="引用到当前对话"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  useReferenceStore.getState().addReferencedConversation({
-                    conversationId: conv.id,
-                    title: getConversationTitle(conv),
-                    sdkSessionId: conv.sdk_session_id || null,
-                  });
-                }}
-              >
-                <Quote className="w-3 h-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-blue-600"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  startEditing();
-                }}
-              >
-                <Pencil className="w-3 h-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteConversation(conv.id);
-                }}
-              >
-                <Trash2 className="w-3 h-3" />
-              </Button>
-            </>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                e.currentTarget.dispatchEvent(new MouseEvent('contextmenu', {
+                  bubbles: true,
+                  clientX: rect.left,
+                  clientY: rect.bottom,
+                }));
+              }}
+            >
+              <MoreHorizontal className="w-3 h-3" />
+            </Button>
           )}
         </div>
       </ContextMenuTrigger>

@@ -82,10 +82,12 @@ import * as conversationService from '../services/conversation-service.js';
 import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { createReviewMcpServer } from './tools/review-tools.js';
+import { createGroupTools } from './tools/group-tools.js';
 import { getReviewSkillDir } from '../services/memory/review-skill-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
 import { buildToolPackGuide } from './tool-pack-guide.js';
+import { buildGroupContextPrompt } from './group-context-builder.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -107,6 +109,7 @@ export interface QueryBasedSessionConfig {
   context?: SessionContext;          // 上下文信息
   workspacePath?: string;            // 工作区路径
   workspaceId?: string;              // 工作区 ID（挂载 dogear-memory-review 复盘工具/skill 用）
+  groupId?: string;                  // 所属会话组 ID（挂载 dogear-group 工具用）
   // Skill 配置
   enableSkills?: boolean;            // 是否启用 Skill 功能（默认 false）
   projectRoot?: string;              // 项目根目录（用于查找 .claude/skills/）
@@ -255,8 +258,12 @@ export class QueryBasedSession extends EventEmitter {
         ? await loadCoreProfileForSession(this.config.workspacePath)
         : null;
 
+      const groupContextText = (this.config.workspaceId && this.config.groupId)
+        ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId)
+        : '';
+
       // 构建系统提示词（需要 appSettings 读取默认提示词与人设）
-      const systemPrompt = this.buildSystemPrompt(appSettings, coreProfileText);
+      const systemPrompt = this.buildSystemPrompt(appSettings, coreProfileText, groupContextText);
 
       // 获取项目根目录（用于查找 .claude/skills/）
       const projectRoot = await this.getProjectRoot();
@@ -344,10 +351,14 @@ export class QueryBasedSession extends EventEmitter {
       // 配置 MCP Servers：始终挂载 article-parse 服务，并合并调用方传入的额外 servers
       // 工作区上下文齐全时挂载跨会话复盘服务（dogear-memory-review）
       const hasWorkspaceContext = !!(this.config.workspaceId && this.config.workspacePath);
+      const hasGroupContext = !!(this.config.workspaceId && this.config.groupId);
       queryOptions.mcpServers = {
         'dogear-article-parse': createArticleParseMcpServer(),
         ...(hasWorkspaceContext
           ? { 'dogear-memory-review': createReviewMcpServer(this.config.workspaceId!, this.config.workspacePath!) }
+          : {}),
+        ...(hasGroupContext
+          ? { 'dogear-group': createGroupTools(this.config.workspaceId!, this.config.groupId!) }
           : {}),
         ...(this.config.mcpServers || {}),
       };
@@ -1568,6 +1579,7 @@ export class QueryBasedSession extends EventEmitter {
   private buildSystemPrompt(
     appSettings: AppSettings,
     coreProfileText: string | null,
+    groupContextText: string = '',
   ): { type: 'preset'; preset: 'claude_code'; append: string } {
     const parts: string[] = [];
 
@@ -1602,6 +1614,11 @@ export class QueryBasedSession extends EventEmitter {
     const guide = buildToolPackGuide(enabledPacks, hasWorkspace);
     if (guide) {
       parts.push(guide);
+    }
+
+    // 6. 会话组上下文（共享区文件清单 + 概况），放在最后让 Agent 最近一次看到
+    if (groupContextText) {
+      parts.push(groupContextText);
     }
 
     return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };

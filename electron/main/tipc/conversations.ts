@@ -4,6 +4,7 @@ import { deleteSession } from '@anthropic-ai/claude-agent-sdk';
 import * as conversationService from '../services/conversation-service.js';
 import * as treeService from '../services/conversation-tree-service.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
+import * as groupService from '../services/group-service.js';
 import { deleteUsage } from '../services/usage/usage-service.js';
 import { getClaudeConfigDir } from './agent.js';
 import { loadSettings } from '../services/settings-service.js';
@@ -69,13 +70,17 @@ export const conversationsRouter = {
     }),
 
   create: t.procedure
-    .input<{ workspaceId: string; title?: string }>()
+    .input<{ workspaceId: string; title?: string; groupId?: string }>()
     .action(async ({ input }) => {
       try {
         const settings = await loadSettings();
+        const title = input.title || '新对话';
+        const groupId = input.groupId
+          ?? (await groupService.createGroup(input.workspaceId, { title })).id;
         const conversationId = await conversationService.create(
           input.workspaceId,
-          input.title || '新对话',
+          groupId,
+          title,
           settings.ai.defaultModelSelection,
         );
         await treeService.addConversationToTree(input.workspaceId, conversationId);
@@ -189,8 +194,12 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const parent = await conversationService.getById(input.workspaceId, input.parentConversationId);
+        // fork 继承父对话的 groupId；父对话无 groupId 时（理论上迁移后不存在）新建一组
+        const groupId = parent?.groupId
+          ?? (await groupService.createGroup(input.workspaceId, { title: input.title })).id;
         const conversationId = await conversationService.createFork(
           input.workspaceId,
+          groupId,
           input.title,
           input.parentConversationId,
           input.forkMessageSdkUuid,

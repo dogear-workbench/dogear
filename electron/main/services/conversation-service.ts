@@ -33,6 +33,8 @@ export interface ConversationIndex {
   forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
   /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
   archivedAt?: string;
+  groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
+  role?: 'main' | 'sub';    // P1 只产生 'main'
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
   usageSummary?: {
@@ -79,6 +81,8 @@ export interface ConversationCompat {
     lastContextSize?: number;
     lastContextWindow?: number;
   };
+  groupId: string;
+  role: 'main' | 'sub';
 }
 
 /** 每工作区的 conversations.json 文件结构 */
@@ -233,6 +237,7 @@ export async function getConversationsByIds(ids: string[]): Promise<Conversation
  */
 export async function create(
   workspaceId: string,
+  groupId: string,
   title: string = '新对话',
   modelSelection: ModelSelection | null = null,
 ): Promise<string> {
@@ -249,6 +254,8 @@ export async function create(
     forkMessageSdkUuid: null,
     modelSelection: modelSelection ? { ...modelSelection } : null,
     cachePolicy: '5m',
+    groupId,
+    role: 'main',
     createdAt: now,
     updatedAt: now,
   };
@@ -263,6 +270,7 @@ export async function create(
  */
 export async function createFork(
   workspaceId: string,
+  groupId: string,
   title: string,
   parentConversationId: string,
   forkMessageSdkUuid: string,
@@ -283,6 +291,8 @@ export async function createFork(
     modelSelection: modelSelection ? { ...modelSelection } : null,
     cachePolicy,
     forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
+    groupId,
+    role: 'main',
     createdAt: now,
     updatedAt: now,
   };
@@ -552,6 +562,8 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
     usageSummary: conv.usageSummary,
+    groupId: conv.groupId ?? '',
+    role: conv.role ?? 'main',
   };
 }
 
@@ -675,4 +687,28 @@ export async function migrateFromLegacy(): Promise<void> {
   // 备份旧文件
   await fs.rename(legacyPath, legacyPath + '.bak');
   console.log('[conversation-service] 迁移完成');
+}
+
+/**
+ * 给工作区内缺少 groupId 的对话补齐会话组（每条对话对应一个独立组）。
+ * 幂等：已有 groupId 的跳过。返回实际迁移条数。
+ */
+export async function migrateOrphanConversations(workspaceId: string): Promise<number> {
+  // 延迟导入避免循环依赖（group-service 不依赖 conversation-service）
+  const groupService = await import('./group-service.js');
+  const file = await loadWorkspaceConversations(workspaceId);
+  let count = 0;
+
+  for (const conv of Object.values(file.conversations)) {
+    if (conv.groupId) continue; // 已有 groupId，跳过
+    const group = await groupService.createGroup(workspaceId, { title: conv.title });
+    conv.groupId = group.id;
+    conv.role = 'main';
+    count++;
+  }
+
+  if (count > 0) {
+    await saveWorkspaceConversations(workspaceId, file);
+  }
+  return count;
 }
