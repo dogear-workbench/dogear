@@ -19,6 +19,7 @@ import { ReviewPanel } from './memory/ReviewPanel';
 import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { ToolsAndPermissionsTab } from './ToolsAndPermissionsTab';
 import { SkillTab } from './SkillTab';
+import { SubAgentTab } from './SubAgentTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
 
@@ -279,6 +280,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="agents" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             代理管理
+          </TabsTrigger>
+          <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            子会话派遣
           </TabsTrigger>
           <TabsTrigger value="parse-history" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             解析历史
@@ -735,6 +739,11 @@ export default function SettingsPage() {
         {/* ── Tab: 代理管理 ── */}
         <TabsContent value="agents" className="flex-1 flex overflow-hidden mt-0 p-0 data-[state=inactive]:hidden">
           <AgentsTab />
+        </TabsContent>
+
+        {/* ── Tab: 子会话派遣 ── */}
+        <TabsContent value="sub-agent" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <SubAgentTab local={local} setLocal={setLocal} />
         </TabsContent>
 
         {/* ── Tab: 解析历史 ── */}

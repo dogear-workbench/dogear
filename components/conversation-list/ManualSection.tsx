@@ -15,7 +15,7 @@ import {
   propMemoizationFeature,
 } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
-import { ConversationRow } from './ConversationRow';
+import { ConversationRowWithChildren } from './ConversationRowWithChildren';
 import { CONV_TREE_ROOT, openOrFocusConversation } from './utils';
 
 function NewFolderInput({
@@ -124,7 +124,7 @@ function FolderTreeItem({
   if (!data.conversation) return null;
 
   return (
-    <ConversationRow
+    <ConversationRowWithChildren
       conv={data.conversation}
       nodeId={`conv:${data.conversation.id}::manual::${parentId}`}
       inFolder={parentId !== CONV_TREE_ROOT}

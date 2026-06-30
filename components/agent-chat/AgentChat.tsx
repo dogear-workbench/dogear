@@ -19,6 +19,7 @@ import { useSendMessage } from './hooks/useSendMessage';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
 import { StreamingIndicator } from './StreamingIndicator';
+import { SubAgentBanner } from './SubAgentBanner';
 import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
@@ -127,6 +128,37 @@ export function AgentChat({
     useAgentSession({ conversationId, forkParams, context, useSdkResume, setMessages, setIsLoading });
 
   const pendingState = derivePendingState({ isRunning: isLoading, pendingCount });
+
+  // 主会话派出的子会话快照（用于 StreamingIndicator 显示「等待 N 个交付」+ 中断按钮）
+  const childrenForThis = useConversationStore(
+    (s) => (conversationId ? s.childrenByParent[conversationId] : undefined) ?? null,
+  );
+  const { awaitCount, doneCount } = useMemo(() => {
+    if (!childrenForThis) return { awaitCount: 0, doneCount: 0 };
+    let awaiting = 0;
+    let done = 0;
+    for (const c of childrenForThis) {
+      if (c.status === 'running') awaiting++;
+      else if (c.status === 'done') done++;
+    }
+    return { awaitCount: awaiting, doneCount: done };
+  }, [childrenForThis]);
+
+  const handleAbortWait = useCallback(async () => {
+    if (!conversationId) return;
+    const result = await client.abortWaitForDeliveries({ parentConversationId: conversationId });
+    // tipc 返回联合类型时 error 字段可能存在；尝试读出失败原因
+    const err = (result as { error?: string }).error;
+    if (err) {
+      const { toast } = await import('sonner');
+      toast.error('中断等待失败', { description: err });
+      return;
+    }
+    if (result.abortedWaits > 0) {
+      const { toast } = await import('sonner');
+      toast.success(`已中断 ${result.abortedWaits} 个等待，取消 ${result.cancelledChildren} 个子会话`);
+    }
+  }, [conversationId]);
 
   // ─── 滚动控制（统一入口: useChatScroll）───
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -303,6 +335,16 @@ export function AgentChat({
         onScrollCapture={handleScroll}
       >
         <div className="px-6">
+        {/* 子会话委派 banner（仅 role==='sub' 时显示） */}
+        {selectedConv?.role === 'sub' && (
+          <SubAgentBanner
+            conversation={selectedConv}
+            onOpenParent={(parentId) => {
+              const parent = conversations.find((c) => c.id === parentId);
+              if (parent) void selectConversation(parent);
+            }}
+          />
+        )}
         {/* 分叉来源 Banner */}
         {selectedConv?.fork_pending && selectedConv?.parent_conversation_id && (
           <div className="flex items-center gap-2 px-3 py-2 my-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
@@ -387,6 +429,9 @@ export function AgentChat({
           lastBlockType={
             messages[messages.length - 1]?.contentBlocks?.slice(-1)[0]?.type
           }
+          awaitCount={awaitCount}
+          doneCount={doneCount}
+          onAbortWait={handleAbortWait}
         />
 
         {/* SDK 0.2.119+：下一步建议气泡（点击追加到输入框，临时状态） */}

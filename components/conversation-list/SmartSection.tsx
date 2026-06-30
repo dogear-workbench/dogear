@@ -5,7 +5,7 @@ import { useConversationStore } from '@/stores/conversation-store';
 import type { SmartCategory } from '@/types/smart-category';
 import type { Conversation } from '@/components/ConversationList';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
-import { ConversationRow } from './ConversationRow';
+import { ConversationRowWithChildren } from './ConversationRowWithChildren';
 
 interface SmartSectionProps {
   workspaceId: string;
@@ -62,7 +62,7 @@ function CategoryGroup({
   const convs = useMemo(() => {
     return cat.conversationIds
       .map((id) => convById.get(id))
-      .filter((c): c is Conversation => !!c && !c.archived_at)
+      .filter((c): c is Conversation => !!c && !c.archived_at && c.role !== 'sub')
       .sort((a, b) => b.updated_at - a.updated_at);
   }, [cat.conversationIds, convById]);
 
@@ -83,7 +83,7 @@ function CategoryGroup({
         <span className="ml-auto text-[10px] opacity-70">{convs.length}</span>
       </div>
       {!collapsed && convs.map((c) => (
-        <ConversationRow
+        <ConversationRowWithChildren
           key={`${cat.id}:${c.id}`}
           conv={c}
           nodeId={`conv:${c.id}::smart::${cat.id}`}

@@ -136,10 +136,11 @@ export function buildProfileEnv(
 export function resolveModelSelection(
   appSettings: AppSettings,
   selection: ModelSelection | null,
+  subAgentFallback: ModelSelection | null,
   fallback: ModelSelection | null,
   configDir: string,
 ): { profile: ModelProfile; tier: ModelTier; modelId: string; env: Record<string, string> } {
-  const target = selection ?? fallback;
+  const target = selection ?? subAgentFallback ?? fallback;
   if (!target) {
     throw new Error('未指定模型，请先在对话或设置中选择模型');
   }
@@ -179,6 +180,7 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
   const { profile, tier, env } = resolveModelSelection(
     appSettings,
     ctx.conversationModelSelection ?? null,
+    null,
     appSettings.ai.defaultModelSelection,
     ctx.configDir,
   );

@@ -130,6 +130,9 @@ async function buildConversationSessionConfig(
   }
   if (conversation.groupId) {
     allowedTools.push('mcp__dogear-group__*');
+    // 派遣工具：main 实际挂 dogear-delegation，sub 挂 dogear-sub-agent，由 query-based-session 内做分流
+    allowedTools.push('mcp__dogear-delegation__*');
+    allowedTools.push('mcp__dogear-sub-agent__*');
   }
   for (const pack of OPTIONAL_TOOL_PACKS) {
     if (mcpServers[pack.mcpServerName]) {
@@ -155,6 +158,22 @@ async function buildConversationSessionConfig(
     }
   }
 
+  // 子会话场景：从 delegation-bridge 拉出 task / outputPath，组装 subAgent 段
+  // 懒 import 避免 bridge ⇌ runtime 循环依赖
+  let subAgent: QueryBasedSessionConfig['subAgent'];
+  if (conversation.role === 'sub') {
+    const bridge = await import('../agents/delegation-bridge.js');
+    const snapshot = bridge.getChildSnapshot(conversationId);
+    if (snapshot && conversation.parentConversationId) {
+      subAgent = {
+        task: snapshot.task,
+        outputPath: snapshot.outputPath,
+        parentConversationId: conversation.parentConversationId,
+      };
+    }
+    // snapshot 为空（app 重启后 bridge 状态丢失）时 subAgent 留空，子会话当普通会话处理
+  }
+
   return {
     allowedTools,
     workspacePath,
@@ -175,6 +194,7 @@ async function buildConversationSessionConfig(
     // 传入对话标题，新建 SDK 会话时跳过自动生成（resume 场景 SDK 内部忽略此字段）
     title: conversation.title,
     conversationId,
+    subAgent,
   };
 }
 
@@ -343,6 +363,16 @@ class ConversationRuntimeService {
 
     if (holderType === 'wechat-bot' && created) {
       await session.setPermissionMode('bypassPermissions');
+    }
+
+    // 子会话：套用 settings.subAgent.permissionMode（默认 'bypassPermissions'）
+    if (created) {
+      const conversation = await conversationService.getById(workspaceId, conversationId);
+      if (conversation?.role === 'sub') {
+        const appSettings = await loadSettings();
+        const subMode = appSettings.subAgent?.permissionMode ?? 'bypassPermissions';
+        await session.setPermissionMode(subMode);
+      }
     }
 
     const attachmentId = uuidv4();

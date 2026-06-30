@@ -240,6 +240,7 @@ export async function create(
   groupId: string,
   title: string = '新对话',
   modelSelection: ModelSelection | null = null,
+  options?: { role?: 'main' | 'sub'; parentConversationId?: string; cachePolicy?: '5m' | '1h' },
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -250,12 +251,12 @@ export async function create(
     title,
     sdkSessionId: null,
     workspaceId,
-    parentConversationId: null,
+    parentConversationId: options?.parentConversationId ?? null,
     forkMessageSdkUuid: null,
     modelSelection: modelSelection ? { ...modelSelection } : null,
-    cachePolicy: '5m',
+    cachePolicy: options?.cachePolicy ?? '5m',
     groupId,
-    role: 'main',
+    role: options?.role ?? 'main',
     createdAt: now,
     updatedAt: now,
   };

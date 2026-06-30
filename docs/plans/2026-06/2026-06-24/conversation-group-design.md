@@ -263,6 +263,39 @@ system prompt 自动追加：
 - 列表主子可视化（缩进 + 连线 + 等 N 个交付角标）
 - 交付契约 enforcement（outputPath 必填、summary 限长、SubmitDelivery 强制）
 
+### Phase 2.5：委派体验打磨（候选）
+
+**性质**：Phase 2 落地后从实际使用中发现的「不致命但值得修」清单。每条都是独立小改动，不互为依赖，可按需挑选实施。**来源**：`docs/plans/2026-06/2026-06-26/sub-conversation-delegation/step8-settings.md` 完成总结。
+
+**候选项**：
+
+1. **bridge 内存丢失后的子会话孤儿恢复**
+   - 现状：app 重启后 bridge 的 `childStates` 内存清空 → 前端 `childrenByParent` 拉回空 → 子会话在列表里彻底消失（被 `role !== 'sub'` 过滤）。但对应 conversation 仍在 `conversations.json`
+   - 修复方向：① 重启时扫 `conversations.json` 把 `role==='sub'` 的拉回 bridge state（status 标 `'unknown'` 或 `'cancelled'`，沿用现有 ChildStatus 类型）② 前端 section 决定是否展示 orphan sub（建议默认展示在父行下方但用 ❓ 灰色状态区分）
+   - 收益：用户重启后仍能进入历史子会话看产出 / 续聊
+
+2. **AskParent 重试防护**
+   - 现状：AskParent 被 reject 后（如父会话当时未激活）子 agent 拿 isError，未实测是否会反复重试调 AskParent 形成死循环
+   - 修复方向：实测确认。如果观察到死循环，在 bridge 加「该子会话回合内已 reject 过则后续 AskParent 直接 isError」标记
+   - 优先级：低，等实战出现该症状再做
+
+3. **DelegateBatch 失败的前端 toast 反馈**
+   - 现状：DelegateBatch 中途失败有日志和 agent 看得见的 isError，但前端用户没有 toast 提示
+   - 修复方向：bridge 在 batch 部分失败时 broadcast 一个 `delegateBatchFailed` 事件，前端订阅后 toast；或者直接让 ConversationRow 的 ⏳N 角标变红几秒
+   - 收益：用户能立即察觉「我以为派出去 5 个，实际只成了 3 个」
+
+4. **abortWait 可选 stopChildren**
+   - 现状：「🛑 中断等待」按设计**不**杀子会话 session（mark cancelled + 释放 outputPath，子会话继续跑直到自然完成或 timeout），可能浪费 token
+   - 修复方向：扩展 `abortWaitForDeliveries({ stopChildren?: boolean })`，UI 上做成「中断等待 / 中断并停止子会话」两个选项
+   - 触发条件：实战出现「中断等待后子会话又跑了 20 分钟才超时」的浪费再做
+
+5. **`deliveriesAwaitChanged` 事件的精细化使用**
+   - 现状：bridge 在子会话状态变化时 emit `deliveriesAwaitChanged`（含 runningCount / doneCount），但前端只用 `childrenByParent` derive，没订阅该事件
+   - 修复方向：留作未来精细化用——如「父会话已完成 N 个子会话」的实时进度条、首页 Dashboard 的「当前等待中的派遣任务」面板等
+   - 状态：保留 emit，无需删除
+
+**何时启动 Phase 2.5**：Phase 3 落定后再视使用反馈挑做；不要在 Phase 3 前打断主线。
+
 ### Phase 3：旧功能全面适配
 
 **包含**：

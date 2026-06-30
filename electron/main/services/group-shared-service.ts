@@ -74,3 +74,111 @@ export async function deleteNativeFile(workspaceId: string, groupId: string, rel
   const abs = safeResolve(sharedDir, relPath);
   await fs.rm(abs, { force: true });
 }
+
+// ─── 子会话 outputPath 占用表（进程级内存，重启清空）───
+
+const pathClaims = new Map<string, string>();  // key = `${workspaceId}:${groupId}:${relPath}`, value = childId
+
+function claimKey(workspaceId: string, groupId: string, relPath: string): string {
+  return `${workspaceId}:${groupId}:${relPath}`;
+}
+
+export type ClaimResult =
+  | { ok: true }
+  | { ok: false; reason: 'file_exists' | 'claimed_by_other'; holderChildId?: string };
+
+export async function claimOutputPath(
+  workspaceId: string,
+  groupId: string,
+  relPath: string,
+  childId: string,
+): Promise<ClaimResult> {
+  const sharedDir = await getSharedDir(workspaceId, groupId);
+  const abs = safeResolve(sharedDir, relPath);
+  try {
+    await fs.access(abs);
+    return { ok: false, reason: 'file_exists' };
+  } catch {
+    // 文件不存在，继续
+  }
+  const key = claimKey(workspaceId, groupId, relPath);
+  const holder = pathClaims.get(key);
+  if (holder && holder !== childId) {
+    return { ok: false, reason: 'claimed_by_other', holderChildId: holder };
+  }
+  pathClaims.set(key, childId);
+  return { ok: true };
+}
+
+export function releaseOutputPath(
+  workspaceId: string,
+  groupId: string,
+  relPath: string,
+  childId: string,
+): void {
+  const key = claimKey(workspaceId, groupId, relPath);
+  const holder = pathClaims.get(key);
+  if (holder === childId) pathClaims.delete(key);
+}
+
+export function releaseAllByChild(childId: string): void {
+  for (const [key, holder] of pathClaims.entries()) {
+    if (holder === childId) pathClaims.delete(key);
+  }
+}
+
+export function isClaimed(workspaceId: string, groupId: string, relPath: string): boolean {
+  return pathClaims.has(claimKey(workspaceId, groupId, relPath));
+}
+
+export interface PreviewClaimConflict {
+  relPath: string;
+  reason: 'file_exists' | 'claimed_by_other';
+  holderChildId?: string;
+}
+
+/**
+ * 纯检查一批 outputPath 是否可被 claim，不修改 pathClaims。
+ * 返回所有冲突项，方便 DelegateBatch 一次性向 agent 报告。
+ */
+export async function previewClaim(
+  workspaceId: string,
+  groupId: string,
+  relPaths: string[],
+): Promise<{ ok: true } | { ok: false; conflicts: PreviewClaimConflict[] }> {
+  const sharedDir = await getSharedDir(workspaceId, groupId);
+  const conflicts: PreviewClaimConflict[] = [];
+  const seenInBatch = new Map<string, number>();
+
+  for (let i = 0; i < relPaths.length; i++) {
+    const relPath = relPaths[i];
+
+    const firstSeenIdx = seenInBatch.get(relPath);
+    if (firstSeenIdx !== undefined) {
+      conflicts.push({ relPath, reason: 'claimed_by_other', holderChildId: `batch[${firstSeenIdx}]` });
+      continue;
+    }
+    seenInBatch.set(relPath, i);
+
+    let abs: string;
+    try {
+      abs = safeResolve(sharedDir, relPath);
+    } catch {
+      conflicts.push({ relPath, reason: 'file_exists' });
+      continue;
+    }
+    try {
+      await fs.access(abs);
+      conflicts.push({ relPath, reason: 'file_exists' });
+      continue;
+    } catch {
+      // 文件不存在
+    }
+    const holder = pathClaims.get(claimKey(workspaceId, groupId, relPath));
+    if (holder) {
+      conflicts.push({ relPath, reason: 'claimed_by_other', holderChildId: holder });
+    }
+  }
+
+  return conflicts.length === 0 ? { ok: true } : { ok: false, conflicts };
+}

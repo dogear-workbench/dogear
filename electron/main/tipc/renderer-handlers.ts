@@ -4,6 +4,7 @@
  */
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { TaskStatus } from '../agents/task-types.js';
+import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -205,6 +206,21 @@ export type RendererHandlers = {
       title: string;
       updatedAt: string;
     }>;
+  }) => void;
+
+  // 子会话状态变化（delegation-bridge 广播）
+  childStatusChanged: (data: {
+    parentConversationId: string;
+    childId: string;
+    status: ChildStatus;
+    snapshot: ChildStateSnapshot;
+  }) => void;
+
+  // 父会话等待中的子会话数量变化
+  deliveriesAwaitChanged: (data: {
+    parentConversationId: string;
+    runningCount: number;
+    doneCount: number;
   }) => void;
 
 };

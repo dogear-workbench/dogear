@@ -22,6 +22,7 @@ import { reviewRouter } from './review.js';
 import { categoryRouter } from './category.js';
 import { notesRouter } from './notes.js';
 import { groupRouter } from './group.js';
+import { delegationRouter } from './delegation.js';
 
 export const router = {
   ...aiRouter,
@@ -46,6 +47,7 @@ export const router = {
   ...categoryRouter,
   ...notesRouter,
   ...groupRouter,
+  ...delegationRouter,
 };
 
 export type Router = typeof router;

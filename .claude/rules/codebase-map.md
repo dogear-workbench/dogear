@@ -18,6 +18,7 @@
 - `app/settings/PersonaTab.tsx` — 人设管理标签页（CRUD：左侧列表 + 右侧编辑表单，name/description/prompt）
 - `app/settings/WorkspaceConfigTab.tsx` — 工作区配置标签页（只读展示 .claude 目录状态，CLAUDE.md 编辑器已迁移到 WorkspaceRuleDialog）
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查，里程碑 1.5 Step A2.7）
+- `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（默认模型 / 权限模式 / 超时分钟数；写 `settings.subAgent`，单次派遣不可覆盖）
 - `app/settings/memory/SmartCategoryPanel.tsx` — 智能分类设置面板（挂在「会话摘要」Tab 末尾）：总开关 / 阈值 / 上限锁死 10 / 模型方案 + 档位 / 提示词折叠编辑器 / 立即重跑全部分类（confirm-store 二次确认）/ 活动状态 + 停止 / 当前分类列表
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
@@ -149,7 +150,7 @@
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `ai.ts` — AIInteraction / AIMessage
-- `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立）/ DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
+- `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, permissionMode?, timeoutMinutes }` 子会话派遣默认配置；permissionMode 含 bypassPermissions）/ DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
 - `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt/modelSelection）
 - `stock.ts` — WatchlistItem / StockQuote / KLineDataPoint / TimelinePoint / MoneyFlowPoint / StockSearchResult / DailySnapshot / QUOTE_FIELD_MAP / RateLimiterStatus

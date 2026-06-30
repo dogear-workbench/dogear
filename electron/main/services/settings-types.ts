@@ -45,7 +45,7 @@ export interface AppSettings {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定 */
     effort?: EffortLevel | null;
     maxTurns?: number;
-    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk';
+    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions';
     defaultSystemPrompt?: string; // 全局默认系统提示词
     settingSources?: ('user' | 'project')[];
     defaultModelSelection: ModelSelection | null;
@@ -78,6 +78,13 @@ export interface AppSettings {
     threshold?: number;         // 0–1，默认 0.5
     maxCategories?: number;     // 默认 10
   };
+  /** 子会话派遣默认配置 */
+  subAgent: {
+    modelSelection?: ModelSelection | null;
+    permissionMode?: AppSettings['ai']['permissionMode'];
+    /** 单个子会话最长允许跑的分钟数，默认 30 */
+    timeoutMinutes: number;
+  };
   /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
   enabledToolPacks?: string[];
 }
@@ -105,6 +112,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     categorizeModelSelection: null,
   },
   personas: [],
+  subAgent: { permissionMode: 'bypassPermissions', timeoutMinutes: 30 },
   enabledToolPacks: [],
   profiles: {
     default: {

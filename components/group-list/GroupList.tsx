@@ -29,7 +29,7 @@ export function GroupList({ workspaceId: _workspaceId }: GroupListProps) {
         <GroupCard
           key={group.id}
           group={group}
-          conversations={conversations.filter((c) => c.groupId === group.id)}
+          conversations={conversations.filter((c) => c.groupId === group.id && c.role !== 'sub')}
         />
       ))}
     </div>

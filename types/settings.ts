@@ -51,7 +51,7 @@ export interface AppSettings {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定（推荐新装默认） */
     effort?: EffortLevel | null;
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
-    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk'; // 默认权限模式
+    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'; // 默认权限模式
     defaultSystemPrompt?: string; // 全局默认系统提示词（替代硬编码的 basePrompt）
     settingSources?: ('user' | 'project')[]; // SDK 设置源
     defaultModelSelection: ModelSelection | null;
@@ -79,6 +79,15 @@ export interface AppSettings {
   };
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
+  /** 子会话派遣默认配置 */
+  subAgent: {
+    /** 默认模型；空时回退到 ai.defaultModelSelection */
+    modelSelection?: ModelSelection | null;
+    /** 子会话默认权限模式；缺省 bypassPermissions */
+    permissionMode?: AppSettings['ai']['permissionMode'];
+    /** 单个子会话最长允许跑的分钟数，默认 30 */
+    timeoutMinutes: number;
+  };
   /** 智能分类设置 */
   smartCategory?: {
     enabled?: boolean;          // 默认 true
@@ -112,6 +121,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
   personas: [],
+  subAgent: { permissionMode: 'bypassPermissions', timeoutMinutes: 30 },
   enabledToolPacks: [],
   ui: {
     messageDisplayMode: 'compact',

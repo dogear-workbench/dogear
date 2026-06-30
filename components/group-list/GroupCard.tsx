@@ -12,7 +12,7 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
-import { ConversationRow } from '@/components/conversation-list/ConversationRow';
+import { ConversationRowWithChildren } from '@/components/conversation-list/ConversationRowWithChildren';
 import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { deriveGroupTitle } from './utils';
 
@@ -153,7 +153,7 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
       </ContextMenu>
 
       {isExpanded && conversations.map((conv) => (
-        <ConversationRow
+        <ConversationRowWithChildren
           key={conv.id}
           conv={conv}
           nodeId={`group:${group.id}:${conv.id}`}

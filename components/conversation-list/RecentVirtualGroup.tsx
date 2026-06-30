@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Zap, ChevronDown, ChevronRight } from 'lucide-react';
 import { useConversationStore } from '@/stores/conversation-store';
 import { RECENT_THRESHOLD_MS } from './utils';
-import { ConversationRow } from './ConversationRow';
+import { ConversationRowWithChildren } from './ConversationRowWithChildren';
 
 export function RecentVirtualGroup() {
   const conversations = useConversationStore((s) => s.conversations);
@@ -11,7 +11,7 @@ export function RecentVirtualGroup() {
   const recent = useMemo(() => {
     const now = Date.now();
     return conversations
-      .filter((c) => !c.archived_at && now - (c.updated_at ?? c.created_at) <= RECENT_THRESHOLD_MS)
+      .filter((c) => !c.archived_at && c.role !== 'sub' && now - (c.updated_at ?? c.created_at) <= RECENT_THRESHOLD_MS)
       .sort((a, b) => b.updated_at - a.updated_at);
   }, [conversations]);
 
@@ -32,7 +32,7 @@ export function RecentVirtualGroup() {
         <span className="ml-auto text-[10px] opacity-70">{recent.length}</span>
       </div>
       {!collapsed && recent.map((conv) => (
-        <ConversationRow key={conv.id} conv={conv} nodeId={`conv:${conv.id}::recent`} indent={20} />
+        <ConversationRowWithChildren key={conv.id} conv={conv} nodeId={`conv:${conv.id}::recent`} indent={20} />
       ))}
     </div>
   );

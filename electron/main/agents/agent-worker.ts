@@ -586,7 +586,7 @@ class AgentWorker {
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, this.configDir);
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
       env = r.env;
       tier = r.tier;
       resolvedProfile = r.profile;
@@ -682,7 +682,7 @@ class AgentWorker {
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, this.configDir);
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
       env = r.env;
       tier = r.tier;
       resolvedProfile = r.profile;
@@ -798,7 +798,7 @@ class AgentWorker {
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, this.configDir);
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
       env = r.env;
       tier = r.tier;
       resolvedProfile = r.profile;

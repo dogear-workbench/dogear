@@ -210,3 +210,45 @@ export interface NativeFileEntry {
   size: number;
   mtime: number;
 }
+
+// ─── 子会话派遣（镜像自 types/delegation.ts）───
+
+export type ChildStatus =
+  | 'running'
+  | 'done'
+  | 'failed'
+  | 'timeout'
+  | 'cancelled'
+  | 'no_delivery';
+
+export interface DelegateSpec {
+  task: string;
+  outputPath: string;
+  title?: string;
+}
+
+export interface DeliveryResult {
+  childId: string;
+  status: ChildStatus;
+  outputPath: string;
+  title: string;
+  summary?: string;
+  errorMessage?: string;
+  startedAt: number;
+  finishedAt?: number;
+}
+
+export interface ChildStateSnapshot {
+  childId: string;
+  parentConversationId: string;
+  groupId: string;
+  outputPath: string;
+  /** 派遣时的任务描述（与 startChild 时 DelegateSpec.task 一致） */
+  task: string;
+  title: string;
+  status: ChildStatus;
+  startedAt: number;
+  finishedAt?: number;
+  summary?: string;
+  errorMessage?: string;
+}

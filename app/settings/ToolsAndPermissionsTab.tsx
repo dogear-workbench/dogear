@@ -25,6 +25,26 @@ interface Props {
 }
 
 const MEMORY_SERVER = 'dogear-memory';
+const GROUP_SERVER = 'dogear-group';
+
+interface ResidentMeta {
+  server: string;
+  label: string;
+  description: string;
+}
+
+const RESIDENT_SERVERS: ResidentMeta[] = [
+  {
+    server: MEMORY_SERVER,
+    label: '记忆系统',
+    description: '跨会话保存与查询用户偏好和反馈，永远启用、默认放行，不参与开关管理。',
+  },
+  {
+    server: GROUP_SERVER,
+    label: '会话组共享区',
+    description: '会话加入组时自动启用，提供共享区文件的列出、读取、写入；非组会话不会注册。',
+  },
+];
 
 export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
   const [toolGroups, setToolGroups] = useState<ToolGroup[]>([]);
@@ -51,7 +71,6 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
   }, [toolGroups]);
 
   const sdkGroup = groupByServer['sdk'];
-  const memoryGroup = groupByServer[MEMORY_SERVER];
 
   // ── 工具包开关 ─────────────────────────────────────
   const enabledPackSet = new Set(local.enabledToolPacks ?? []);
@@ -171,33 +190,41 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
           <h3 className="text-sm font-semibold">常驻能力</h3>
           <span className="text-xs text-muted-foreground">永远启用，自动放行</span>
         </div>
-        <div className="border rounded-lg overflow-hidden">
-          <button
-            type="button"
-            className="w-full flex items-start justify-between gap-3 p-4 bg-muted/30 text-left"
-            onClick={() => toggleExpand(MEMORY_SERVER)}
-          >
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-semibold">记忆系统</h4>
-                <span className="text-xs text-muted-foreground font-mono">{MEMORY_SERVER}</span>
-                {memoryGroup && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                    {memoryGroup.tools.length} 个工具
-                  </span>
-                )}
+        <div className="space-y-3">
+          {RESIDENT_SERVERS.map((meta) => {
+            const group = groupByServer[meta.server];
+            const expanded = expandedServers[meta.server] ?? false;
+            return (
+              <div key={meta.server} className="border rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  className="w-full flex items-start justify-between gap-3 p-4 bg-muted/30 text-left"
+                  onClick={() => toggleExpand(meta.server)}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-semibold">{meta.label}</h4>
+                      <span className="text-xs text-muted-foreground font-mono">{meta.server}</span>
+                      {group && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                          {group.tools.length} 个工具
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                      {meta.description}
+                    </p>
+                  </div>
+                  {expanded ? (
+                    <ChevronDown className="w-4 h-4 mt-1 text-muted-foreground shrink-0" />
+                  ) : (
+                    <ChevronRight className="w-4 h-4 mt-1 text-muted-foreground shrink-0" />
+                  )}
+                </button>
+                {expanded && renderPackToolList(meta.server)}
               </div>
-              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-                跨会话保存与查询用户偏好和反馈，永远启用、默认放行，不参与开关管理。
-              </p>
-            </div>
-            {expandedServers[MEMORY_SERVER] ? (
-              <ChevronDown className="w-4 h-4 mt-1 text-muted-foreground shrink-0" />
-            ) : (
-              <ChevronRight className="w-4 h-4 mt-1 text-muted-foreground shrink-0" />
-            )}
-          </button>
-          {expandedServers[MEMORY_SERVER] && renderPackToolList(MEMORY_SERVER)}
+            );
+          })}
         </div>
       </section>
 

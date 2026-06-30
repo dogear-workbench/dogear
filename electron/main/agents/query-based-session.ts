@@ -83,6 +83,8 @@ import { createArticleParseMcpServer } from './tools/article-parse-tools.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { createReviewMcpServer } from './tools/review-tools.js';
 import { createGroupTools } from './tools/group-tools.js';
+import { createDelegationTools } from './tools/delegation-tools.js';
+import { createSubAgentTools } from './tools/sub-agent-tools.js';
 import { getReviewSkillDir } from '../services/memory/review-skill-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
@@ -135,6 +137,15 @@ export interface QueryBasedSessionConfig {
   modelSelection: ModelSelection | null;
   /** 提示缓存策略；缺省视为 5m。'1h' 时 SDK 启动注入 ENABLE_PROMPT_CACHING_1H=1 */
   cachePolicy?: '5m' | '1h';
+  /**
+   * 子会话派遣段（仅 role='sub' 时存在）。用于工具注入分流与 sub system prompt 拼装。
+   * main 会话此字段为 undefined。
+   */
+  subAgent?: {
+    task: string;
+    outputPath: string;
+    parentConversationId: string;
+  };
 }
 
 /**
@@ -352,6 +363,30 @@ export class QueryBasedSession extends EventEmitter {
       // 工作区上下文齐全时挂载跨会话复盘服务（dogear-memory-review）
       const hasWorkspaceContext = !!(this.config.workspaceId && this.config.workspacePath);
       const hasGroupContext = !!(this.config.workspaceId && this.config.groupId);
+      const isSubAgent = !!this.config.subAgent;
+      // role 分流：main 注入 dogear-delegation；sub 注入 dogear-sub-agent 且不挂 delegation（杜绝嵌套派遣）
+      const delegationServers: Record<string, unknown> = {};
+      if (hasGroupContext) {
+        if (isSubAgent) {
+          delegationServers['dogear-sub-agent'] = createSubAgentTools({
+            workspaceId: this.config.workspaceId!,
+            groupId: this.config.groupId!,
+            childConversationId: this.config.conversationId!,
+            outputPath: this.config.subAgent!.outputPath,
+          });
+        } else {
+          delegationServers['dogear-delegation'] = createDelegationTools({
+            workspaceId: this.config.workspaceId!,
+            groupId: this.config.groupId!,
+            parentConversationId: this.config.conversationId!,
+          });
+        }
+      }
+      // 上游传入的 mcpServers：若是子会话，强制剔除可能误注入的 dogear-delegation
+      const incomingMcpServers = { ...(this.config.mcpServers || {}) };
+      if (isSubAgent) {
+        delete incomingMcpServers['dogear-delegation'];
+      }
       queryOptions.mcpServers = {
         'dogear-article-parse': createArticleParseMcpServer(),
         ...(hasWorkspaceContext
@@ -360,7 +395,8 @@ export class QueryBasedSession extends EventEmitter {
         ...(hasGroupContext
           ? { 'dogear-group': createGroupTools(this.config.workspaceId!, this.config.groupId!) }
           : {}),
-        ...(this.config.mcpServers || {}),
+        ...delegationServers,
+        ...incomingMcpServers,
       };
       this.logger.info('已配置 MCP Servers:', Object.keys(queryOptions.mcpServers));
 
@@ -1619,6 +1655,20 @@ export class QueryBasedSession extends EventEmitter {
     // 6. 会话组上下文（共享区文件清单 + 概况），放在最后让 Agent 最近一次看到
     if (groupContextText) {
       parts.push(groupContextText);
+    }
+
+    // 7. 子会话派遣段（仅 role='sub' 注入）：告诉子 agent 自己的任务 / 交付路径 / 必须调 SubmitDelivery 收尾
+    if (this.config.subAgent) {
+      const { task, outputPath } = this.config.subAgent;
+      parts.push(`\n## 你是一个被派遣的子会话\n` +
+        `**任务**：${task}\n\n` +
+        `**交付路径**：${outputPath}（共享区相对路径）\n\n` +
+        `**交付契约**（必须遵守）：\n` +
+        `1. 完成任务后，用 WriteGroupFile 把交付物正文写入 \`${outputPath}\`。\n` +
+        `2. 然后调 SubmitDelivery({ summary, outputPath: '${outputPath}' }) 通知父会话；summary ≤500 字总结你做了什么。\n` +
+        `3. **未调 SubmitDelivery 就停下**会被视作未交付（no_delivery），父会话拿不到结果。\n` +
+        `4. 不要派遣孙子会话（你没有 DelegateTo 工具）。\n` +
+        `5. 遇到歧义、缺少关键信息时调 AskParent({ question }) 反问父会话，不要瞎猜。一次只能挂起一个问题，父会话回复后才能再问下一个。\n`);
     }
 
     return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };

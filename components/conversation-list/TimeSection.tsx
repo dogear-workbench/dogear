@@ -4,7 +4,7 @@ import { useConversationStore } from '@/stores/conversation-store';
 import type { Conversation } from '@/components/ConversationList';
 import { RECENT_THRESHOLD_MS, TIME_BUCKET_THRESHOLD_MS } from './utils';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
-import { ConversationRow } from './ConversationRow';
+import { ConversationRowWithChildren } from './ConversationRowWithChildren';
 
 function GroupHeader({
   label,
@@ -45,6 +45,7 @@ export function TimeSection() {
     const old: Conversation[] = [];
     for (const c of conversations) {
       if (c.archived_at) continue;
+      if (c.role === 'sub') continue;
       const age = now - (c.updated_at ?? c.created_at);
       if (age <= RECENT_THRESHOLD_MS) continue;
       if (age <= TIME_BUCKET_THRESHOLD_MS) mid.push(c);
@@ -67,7 +68,7 @@ export function TimeSection() {
             onToggle={() => setRecentMidCollapsed((v) => !v)}
           />
           {!recentMidCollapsed && recentMid.map((c) => (
-            <ConversationRow key={c.id} conv={c} nodeId={`conv:${c.id}::time::mid`} indent={20} />
+            <ConversationRowWithChildren key={c.id} conv={c} nodeId={`conv:${c.id}::time::mid`} indent={20} />
           ))}
         </>
       )}
@@ -80,7 +81,7 @@ export function TimeSection() {
             onToggle={() => setEarlierCollapsed((v) => !v)}
           />
           {!earlierCollapsed && earlier.map((c) => (
-            <ConversationRow key={c.id} conv={c} nodeId={`conv:${c.id}::time::earlier`} indent={20} />
+            <ConversationRowWithChildren key={c.id} conv={c} nodeId={`conv:${c.id}::time::earlier`} indent={20} />
           ))}
         </>
       )}

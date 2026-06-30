@@ -5,6 +5,7 @@ import { showConfirm } from '@/stores/confirm-store';
 import { useSessionStore } from '@/stores/session-store';
 import type { Conversation } from '@/components/ConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
+import type { ChildStateSnapshot } from '@/types/delegation';
 
 // 分叉参数类型
 export interface ForkParams {
@@ -87,6 +88,8 @@ interface ConversationState {
   pendingActionConversationIds: Set<string>;
   /** 微信 Bot 当前绑定的对话 ID（null 表示未绑定） */
   botBoundConversationId: string | null;
+  /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
+  childrenByParent: Record<string, ChildStateSnapshot[]>;
 
   // --- Actions ---
   /** 切换激活工作区：把顶层镜像指向该工作区的分片（不触发加载） */
@@ -137,6 +140,10 @@ interface ConversationState {
   setPendingActionState: (conversationId: string, isPending: boolean) => void;
   /** 设置 Bot 绑定的对话 ID */
   setBotBoundConversation: (conversationId: string | null) => void;
+  /** 从 bridge 拉取所有子会话快照（loadConversations 后台调一次） */
+  refreshAllChildren: () => Promise<void>;
+  /** 把一条 childStatusChanged 事件应用到 childrenByParent */
+  applyChildSnapshot: (snapshot: ChildStateSnapshot) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -283,6 +290,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
   botBoundConversationId: null,
+  childrenByParent: {},
 
   activateWorkspace: (workspaceId) => {
     if (!workspaceId) {
@@ -334,6 +342,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     void import('./group-store').then(({ useGroupStore }) => {
       useGroupStore.getState().load(wsId).catch(() => {});
     });
+
+    // 后台拉子会话快照（bridge 内存态，非阻塞）
+    void get().refreshAllChildren();
   },
 
   selectConversation: async (conversation) => {
@@ -749,6 +760,38 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set({ botBoundConversationId: conversationId });
   },
 
+  refreshAllChildren: async () => {
+    try {
+      const result = await client.listAllChildren(undefined);
+      const grouped: Record<string, ChildStateSnapshot[]> = {};
+      for (const snap of result.children ?? []) {
+        const arr = grouped[snap.parentConversationId] ?? [];
+        arr.push(snap);
+        grouped[snap.parentConversationId] = arr;
+      }
+      for (const arr of Object.values(grouped)) {
+        arr.sort((a, b) => a.startedAt - b.startedAt);
+      }
+      set({ childrenByParent: grouped });
+    } catch (error) {
+      console.error('拉取子会话快照失败:', error);
+    }
+  },
+
+  applyChildSnapshot: (snapshot) => {
+    set((state) => {
+      const parentId = snapshot.parentConversationId;
+      const list = state.childrenByParent[parentId] ?? [];
+      const idx = list.findIndex((s) => s.childId === snapshot.childId);
+      const next = idx >= 0
+        ? list.map((s, i) => (i === idx ? snapshot : s))
+        : [...list, snapshot].sort((a, b) => a.startedAt - b.startedAt);
+      return {
+        childrenByParent: { ...state.childrenByParent, [parentId]: next },
+      };
+    });
+  },
+
   reset: () => set({
     byWorkspace: {},
     activeWorkspaceId: null,
@@ -763,6 +806,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),
     botBoundConversationId: null,
+    childrenByParent: {},
   }),
 }));
 
@@ -782,6 +826,11 @@ if (typeof window !== 'undefined') {
     // 对话列表变更（bot 创建/删除对话后通知）
     rendererEvents.conversationListChanged.listen(() => {
       useConversationStore.getState().loadConversations();
+    });
+
+    // 子会话状态变化（delegation-bridge → applyChildSnapshot）
+    rendererEvents.childStatusChanged.listen((data) => {
+      useConversationStore.getState().applyChildSnapshot(data.snapshot);
     });
   });
 

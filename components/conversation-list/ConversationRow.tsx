@@ -33,6 +33,8 @@ export interface ConversationRowProps {
   indent?: number;
   /** 归档模式：右键显示恢复/永久删除，而不是普通操作 */
   archived?: boolean;
+  /** 主会话当前还在等的子会话数量（>0 时右侧角标 ⏳N） */
+  awaitCount?: number;
 }
 
 
@@ -44,6 +46,7 @@ export function ConversationRow({
   onClick,
   indent = 8,
   archived = false,
+  awaitCount = 0,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const removeConversationFromFolder = useConversationStore((s) => s.removeConversationFromFolder);
@@ -157,6 +160,14 @@ export function ConversationRow({
                   <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />
                 )}
                 <AppearanceBadge count={appearanceCount} />
+                {awaitCount > 0 && (
+                  <span
+                    className="ml-1 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300 rounded px-1 flex-shrink-0"
+                    title={`等待 ${awaitCount} 个子会话交付`}
+                  >
+                    ⏳{awaitCount}
+                  </span>
+                )}
               </div>
             )}
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
