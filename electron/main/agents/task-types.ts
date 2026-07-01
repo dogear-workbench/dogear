@@ -24,7 +24,7 @@ export enum TaskType {
   READING_ASSIST = 'reading_assist', // 阅读辅助
   CHAT_SESSION = 'chat_session',    // 持续对话会话
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
-  DIGEST_SESSION = 'digest_session', // 会话提炼（清洗 → 摘要卡）
+  GROUP_DIGEST_SESSION = 'group_digest_session', // 组级摘要卡提炼（Phase 3）
   REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
   CATEGORIZE_SESSION = 'categorize_session' // 智能分类决策
 }
@@ -199,13 +199,15 @@ export interface ParseArticlePayload {
 }
 
 /**
- * 会话提炼任务负载
+ * 组级摘要卡提炼任务负载（Phase 3）
  * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
  */
-export interface DigestSessionPayload {
-  workspaceId: string;       // 工作区 ID（落卡 / 留底用）
+export interface GroupDigestSessionPayload {
+  workspaceId: string;       // 工作区 ID
   workspacePath: string;     // 工作区绝对路径（定位 JSONL 用）
-  sdkSessionId: string;      // 目标会话 ID
+  groupId: string;           // 组 ID
+  dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>;
+  hasExistingCard: boolean;
   modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.digestModelSelection）
 }
 
@@ -227,10 +229,10 @@ export interface ReviewSessionPayload {
  */
 export interface CategorizeSessionPayload {
   workspaceId: string;       // 工作区 ID
-  workspacePath: string;     // 工作区绝对路径（保留，未来 trace 用，可能不直接用到）
+  workspacePath: string;     // 工作区绝对路径（保留，未来 trace 用）
   mode: 'incremental' | 'full-rebuild';
-  conversationId?: string;   // incremental 必填
-  digestPath?: string;       // incremental 必填，摘要卡 .md 文件绝对路径
+  groupId?: string;              // incremental 必填
+  groupDigestPath?: string;      // incremental 必填，组卡 .md 文件绝对路径
   modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
 }
 

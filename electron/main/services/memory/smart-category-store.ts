@@ -16,10 +16,10 @@ export function getIndexPath(wsId: string): string {
 export async function readIndex(wsId: string): Promise<SmartCategoriesIndex> {
   try {
     const raw = await fs.readFile(getIndexPath(wsId), 'utf-8');
-    const parsed = JSON.parse(raw) as SmartCategoriesIndex;
+    const parsed = JSON.parse(raw) as any;
     if (!Array.isArray(parsed.categories)) parsed.categories = [];
     if (!Array.isArray(parsed.recentDecisions)) parsed.recentDecisions = [];
-    return parsed;
+    return parsed as SmartCategoriesIndex;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') {
       mainLogger.warn('[smart-category] readIndex 失败，返回空索引:', err);
@@ -32,23 +32,23 @@ export async function writeIndex(wsId: string, idx: SmartCategoriesIndex): Promi
   await safeJsonWrite(getIndexPath(wsId), idx);
 }
 
-// 纯函数：把 conversationId 加进指定分类（去重）
-export function pushConversation(cat: SmartCategory, conversationId: string): SmartCategory {
-  if (cat.conversationIds.includes(conversationId)) return cat;
+// 纯函数：把 groupId 加进指定分类（去重）
+export function pushGroup(cat: SmartCategory, groupId: string): SmartCategory {
+  if (cat.groupIds.includes(groupId)) return cat;
   return {
     ...cat,
-    conversationIds: [...cat.conversationIds, conversationId],
+    groupIds: [...cat.groupIds, groupId],
     updatedAt: new Date().toISOString(),
   };
 }
 
-// 纯函数：从所有分类中移除 conversationId
-export function removeConversationEverywhere(idx: SmartCategoriesIndex, conversationId: string): SmartCategoriesIndex {
+// 纯函数：从所有分类中移除 groupId
+export function removeGroupEverywhere(idx: SmartCategoriesIndex, groupId: string): SmartCategoriesIndex {
   return {
     ...idx,
     categories: idx.categories.map((c) =>
-      c.conversationIds.includes(conversationId)
-        ? { ...c, conversationIds: c.conversationIds.filter((x) => x !== conversationId), updatedAt: new Date().toISOString() }
+      c.groupIds.includes(groupId)
+        ? { ...c, groupIds: c.groupIds.filter((x) => x !== groupId), updatedAt: new Date().toISOString() }
         : c
     ),
   };
@@ -63,5 +63,5 @@ export function appendDecision(idx: SmartCategoriesIndex, log: CategorizeDecisio
 export function newCategory(name: string, anchorTags: string[]): SmartCategory {
   const now = new Date().toISOString();
   // 8-char hex 前缀（~32-bit 熵），单工作区分类上限 10 个，碰撞概率可忽略
-  return { id: `cat_${randomUUID().slice(0, 8)}`, name, anchorTags, conversationIds: [], createdAt: now, updatedAt: now };
+  return { id: `cat_${randomUUID().slice(0, 8)}`, name, anchorTags, groupIds: [], createdAt: now, updatedAt: now };
 }

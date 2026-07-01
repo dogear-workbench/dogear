@@ -1,7 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  MessageSquare, GitBranch, Bot, MoreHorizontal,
-  FolderOutput, ArchiveRestore,
+  MessageSquare, GitBranch, Bot, MoreHorizontal, ArchiveRestore,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -14,19 +13,12 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { client } from '@/lib/client';
 import type { Conversation } from '@/components/ConversationList';
-import { getConversationTitle, getRelativeTime, openOrFocusConversation, useAppearanceCount, useNodeHighlight } from './utils';
-import { AppearanceBadge } from './AppearanceBadge';
-import { AddToFolderMenu } from './AddToFolderMenu';
-import { MoveToFolderMenu } from './MoveToFolderMenu';
+import { getConversationTitle, getRelativeTime, openOrFocusConversation, useNodeHighlight } from './utils';
 
 export interface ConversationRowProps {
   conv: Conversation;
   /** 节点稳定 id，用于双层高亮区分"同会话多处显示" */
   nodeId: string;
-  /** 显示在文件夹内（影响右键菜单的「从文件夹移除」选项） */
-  inFolder?: boolean;
-  /** 该会话所在 parent folderId（移动文件夹时用，inFolder=true 时必传） */
-  folderId?: string;
   /** 自定义点击行为（可选，默认用 openOrFocusConversation） */
   onClick?: () => void;
   /** 列表样式 indent（px），默认 8 */
@@ -41,15 +33,12 @@ export interface ConversationRowProps {
 export function ConversationRow({
   conv,
   nodeId,
-  inFolder = false,
-  folderId,
   onClick,
   indent = 8,
   archived = false,
   awaitCount = 0,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
-  const removeConversationFromFolder = useConversationStore((s) => s.removeConversationFromFolder);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
 
   const runningIds = useConversationStore((s) => s.runningConversationIds);
@@ -57,7 +46,6 @@ export function ConversationRow({
   const botBoundId = useConversationStore((s) => s.botBoundConversationId);
 
   const { isOpen, isSelected } = useNodeHighlight(conv.id, nodeId);
-  const appearanceCount = useAppearanceCount(conv.id);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -159,7 +147,6 @@ export function ConversationRow({
                 {isBotBound && (
                   <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />
                 )}
-                <AppearanceBadge count={appearanceCount} />
                 {awaitCount > 0 && (
                   <span
                     className="ml-1 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300 rounded px-1 flex-shrink-0"
@@ -226,18 +213,6 @@ export function ConversationRow({
             }}>
               引用到当前对话
             </ContextMenuItem>
-            <ContextMenuSeparator />
-            {inFolder ? (
-              <>
-                <MoveToFolderMenu conversationId={conv.id} fromFolderId={folderId!} />
-                <ContextMenuItem onClick={() => removeConversationFromFolder(conv.id, folderId!)}>
-                  <FolderOutput className="w-3.5 h-3.5 mr-2" />
-                  从文件夹移除
-                </ContextMenuItem>
-              </>
-            ) : (
-              <AddToFolderMenu conversationId={conv.id} />
-            )}
             <ContextMenuSeparator />
             <ContextMenuItem
               className="text-destructive"

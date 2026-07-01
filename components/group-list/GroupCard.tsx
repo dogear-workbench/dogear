@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { ChevronRight, ChevronDown, MoreHorizontal, Plus } from 'lucide-react';
+import { ChevronRight, ChevronDown, MoreHorizontal, Plus, FolderOutput } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
   ContextMenuItem, ContextMenuSeparator,
@@ -10,22 +10,31 @@ import { client } from '@/lib/client';
 import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { showConfirm } from '@/stores/confirm-store';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 import { ConversationRowWithChildren } from '@/components/conversation-list/ConversationRowWithChildren';
 import { openOrFocusConversation } from '@/components/conversation-list/utils';
+import { AppearanceBadge } from '@/components/conversation-list/AppearanceBadge';
+import { useAppearanceCount } from '@/components/conversation-list/utils';
+import { AddGroupToFolderMenu } from '@/components/conversation-list/AddGroupToFolderMenu';
+import { MoveGroupToFolderMenu } from '@/components/conversation-list/MoveGroupToFolderMenu';
 import { deriveGroupTitle } from './utils';
 
 interface GroupCardProps {
   group: Group;
   conversations: Conversation[];
+  /** 该 GroupCard 出现在某个文件夹下时传入；用于「从文件夹移除」与「移动到其他文件夹」菜单 */
+  folderId?: string;
 }
 
-export function GroupCard({ group, conversations }: GroupCardProps) {
+export function GroupCard({ group, conversations, folderId }: GroupCardProps) {
   const expandedGroupIds = useGroupStore((s) => s.expandedGroupIds);
   const currentGroupId = useGroupStore((s) => s.currentGroupId);
   const isExpanded = expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
+  const appearanceCount = useAppearanceCount(group.id);
+  const removeGroupFromFolder = useConversationStore((s) => s.removeGroupFromFolder);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -73,9 +82,14 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
     }
   }, [group.id]);
 
-  const handleDelete = useCallback(() => {
+  const handleDelete = useCallback(async () => {
+    const ok = await showConfirm(
+      '删除会话组',
+      `将一并删除组内 ${conversations.length} 个会话及共享区。此操作不可恢复。`,
+    );
+    if (!ok) return;
     useGroupStore.getState().deleteGroup(group.id);
-  }, [group.id]);
+  }, [group.id, conversations.length]);
 
   return (
     <div className="mb-0.5">
@@ -108,7 +122,10 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
                   className="w-full bg-background border border-primary rounded px-1.5 py-0.5 text-xs outline-none"
                 />
               ) : (
-                <span className="text-xs text-muted-foreground truncate block">{deriveGroupTitle(group, conversations)}</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground truncate">{deriveGroupTitle(group, conversations)}</span>
+                  <AppearanceBadge count={appearanceCount} />
+                </div>
               )}
             </div>
             <span className="text-xs text-muted-foreground flex-shrink-0">{conversations.length}</span>
@@ -143,8 +160,20 @@ export function GroupCard({ group, conversations }: GroupCardProps) {
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-          <ContextMenuItem onClick={startEditing}>重命名</ContextMenuItem>
+          <ContextMenuItem onClick={startEditing}>重命名组</ContextMenuItem>
           <ContextMenuItem onClick={handleNewConversation}>在组内新建对话</ContextMenuItem>
+          <ContextMenuSeparator />
+          {folderId ? (
+            <>
+              <MoveGroupToFolderMenu groupId={group.id} fromFolderId={folderId} />
+              <ContextMenuItem onClick={() => removeGroupFromFolder(group.id, folderId)}>
+                <FolderOutput className="w-3.5 h-3.5 mr-2" />
+                从文件夹移除
+              </ContextMenuItem>
+            </>
+          ) : (
+            <AddGroupToFolderMenu groupId={group.id} />
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem className="text-destructive" onClick={handleDelete}>
             删除组

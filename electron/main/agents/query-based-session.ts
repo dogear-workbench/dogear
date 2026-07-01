@@ -1657,7 +1657,15 @@ export class QueryBasedSession extends EventEmitter {
       parts.push(groupContextText);
     }
 
-    // 7. 子会话派遣段（仅 role='sub' 注入）：告诉子 agent 自己的任务 / 交付路径 / 必须调 SubmitDelivery 收尾
+    // 7. _notes/ 引导（仅主会话；子会话不写 notes）
+    if (!this.config.subAgent && this.config.workspacePath) {
+      parts.push(`\n## 共享区阶段总结（可选）\n` +
+        `当某个阶段告一段落、或上下文用量已较高时，你可以主动调用 \`WriteGroupFile\` 把一份阶段总结写到 \`shared/_notes/<YYYY-MM-DD-HHmm>-<phase>.md\`，` +
+        `frontmatter 带 \`summary:\` 一行。这不是强制——只在你判断「现在写下来对下次接续/组卡有价值」时做。` +
+        `不要为了凑数而写，也不要把工具用法、流程细节往里堆。`);
+    }
+
+    // 8. 子会话派遣段（仅 role='sub' 注入）：告诉子 agent 自己的任务 / 交付路径 / 必须调 SubmitDelivery 收尾
     if (this.config.subAgent) {
       const { task, outputPath } = this.config.subAgent;
       parts.push(`\n## 你是一个被派遣的子会话\n` +

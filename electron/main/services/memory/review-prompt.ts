@@ -12,8 +12,8 @@ export const DEFAULT_REVIEW_PROMPT = `# 首页报告 / 跨会话记忆维护
 ## 步骤
 
 1. ReadReport() 看现有报告，记下 updatedAt。
-2. ListDigests()，挑出 createdAt 晚于 updatedAt 的摘要卡（**不管几张，都要处理**）；没有新卡就什么都不做，直接结束。
-3. 逐张 ReadDigest 读新卡。拿不准某条含义时，TraceSource(sessionId, uuid) 翻原始会话再下笔，禁止凭只言片语臆断。
+2. ListDigests()，挑出 createdAt 晚于 updatedAt 的组卡（**不管几张，都要处理**）；没有新卡就什么都不做，直接结束。
+3. 逐张 ReadDigest(groupId) 读新组卡（按**组**聚合）。拿不准某条含义时，TraceSource(sessionId, uuid) 翻原始会话再下笔，禁止凭只言片语臆断。
 4. RecallMemory 拿相关已有记忆，避免重复或与既有沉淀冲突。
 5. **分流**（最重要，判断标准是"靠谁、在什么时机被触发"）：
    - 沉淀 / 有价值结论 / 注意事项 → 写进**记忆**（SaveMemory）。这些未来靠 recall 浮现。
@@ -27,7 +27,7 @@ export const DEFAULT_REVIEW_PROMPT = `# 首页报告 / 跨会话记忆维护
    ## 建议
    ## 沉淀（最新少量几条）
    \`\`\`
-   增量合并：没变的段落原样保留；沉淀只列最新少量几条，不堆历史。
+   "做了哪些"按组聚合：每行「- 组标题 (createdAt): summary 精简」。增量合并：没变的段落原样保留；沉淀只列最新少量几条，不堆历史。
 
 ## 契约
 - 报告纯净、给人看：不放 sessionId/uuid/链条。

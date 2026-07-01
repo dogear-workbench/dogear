@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
+import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
-import type { Conversation } from '@/components/ConversationList';
+import type { Group } from '@/types/group';
 import { RECENT_THRESHOLD_MS, TIME_BUCKET_THRESHOLD_MS } from './utils';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
-import { ConversationRowWithChildren } from './ConversationRowWithChildren';
+import { GroupCard } from '@/components/group-list/GroupCard';
 
 function GroupHeader({
   label,
@@ -33,28 +34,29 @@ function GroupHeader({
 }
 
 export function TimeSection() {
+  const groups = useGroupStore((s) => s.groups);
   const conversations = useConversationStore((s) => s.conversations);
   const [earlierCollapsed, setEarlierCollapsed] = useState(true);
   const [recentMidCollapsed, setRecentMidCollapsed] = useState(false);
 
-  // 过滤归档 + 拆 < 5 天 / 5-30 天 / 更早。前者由 RecentVirtualGroup 渲染，
-  // 时间视图的「30 天内」桶把 < 5 天扣掉，避免与「近期」重复展示同一会话
+  // < 5 天交给 RecentVirtualGroup；5-30 天进 mid；> 30 天进 earlier
   const { recentMid, earlier } = useMemo(() => {
     const now = Date.now();
-    const mid: Conversation[] = [];
-    const old: Conversation[] = [];
-    for (const c of conversations) {
-      if (c.archived_at) continue;
-      if (c.role === 'sub') continue;
-      const age = now - (c.updated_at ?? c.created_at);
+    const mid: Group[] = [];
+    const old: Group[] = [];
+    for (const g of groups) {
+      const age = now - g.updatedAt;
       if (age <= RECENT_THRESHOLD_MS) continue;
-      if (age <= TIME_BUCKET_THRESHOLD_MS) mid.push(c);
-      else old.push(c);
+      if (age <= TIME_BUCKET_THRESHOLD_MS) mid.push(g);
+      else old.push(g);
     }
-    mid.sort((a, b) => b.updated_at - a.updated_at);
-    old.sort((a, b) => b.updated_at - a.updated_at);
+    mid.sort((a, b) => b.updatedAt - a.updatedAt);
+    old.sort((a, b) => b.updatedAt - a.updatedAt);
     return { recentMid: mid, earlier: old };
-  }, [conversations]);
+  }, [groups]);
+
+  const convsOf = (groupId: string) =>
+    conversations.filter((c) => c.groupId === groupId && c.role !== 'sub' && !c.archived_at);
 
   return (
     <div>
@@ -67,8 +69,8 @@ export function TimeSection() {
             collapsed={recentMidCollapsed}
             onToggle={() => setRecentMidCollapsed((v) => !v)}
           />
-          {!recentMidCollapsed && recentMid.map((c) => (
-            <ConversationRowWithChildren key={c.id} conv={c} nodeId={`conv:${c.id}::time::mid`} indent={20} />
+          {!recentMidCollapsed && recentMid.map((g) => (
+            <GroupCard key={g.id} group={g} conversations={convsOf(g.id)} />
           ))}
         </>
       )}
@@ -80,8 +82,8 @@ export function TimeSection() {
             collapsed={earlierCollapsed}
             onToggle={() => setEarlierCollapsed((v) => !v)}
           />
-          {!earlierCollapsed && earlier.map((c) => (
-            <ConversationRowWithChildren key={c.id} conv={c} nodeId={`conv:${c.id}::time::earlier`} indent={20} />
+          {!earlierCollapsed && earlier.map((g) => (
+            <GroupCard key={g.id} group={g} conversations={convsOf(g.id)} />
           ))}
         </>
       )}

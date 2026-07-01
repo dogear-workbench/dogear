@@ -140,8 +140,8 @@ class AgentWorker {
           result = await this.handleParseArticleTask(task, taskLogger);
           break;
 
-        case TaskType.DIGEST_SESSION:
-          result = await this.handleDigestSessionTask(task, taskLogger);
+        case TaskType.GROUP_DIGEST_SESSION:
+          result = await this.handleGroupDigestTask(task, taskLogger);
           break;
 
         case TaskType.REVIEW_SESSION:
@@ -557,27 +557,26 @@ class AgentWorker {
   }
 
   /**
-   * 处理会话提炼任务（DIGEST_SESSION）
+   * 处理组级摘要卡提炼任务（GROUP_DIGEST_SESSION，Phase 3）
    *
-   * 一次性 headless query：agent 自主调 CleanTranscript → ReadExistingDigest → SaveDigest，
-   * 把一段会话 JSONL 提炼成「会话摘要卡」。模型按 digestModelTier 覆盖（默认 haiku）。
+   * 一次性 headless query：agent 自主调 ReadGroupDigest → CleanTranscript(dirty) → ListGroupFiles → SaveGroupDigest，
+   * 整合多会话的逐字稿 + 共享区文件 → 组卡。模型按 digestModelSelection 覆盖（默认 haiku）。
    */
-  private async handleDigestSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
-    const payload = task.payload as import('./task-types.js').DigestSessionPayload;
-    const { workspaceId, workspacePath, sdkSessionId } = payload;
+  private async handleGroupDigestTask(task: AgentTask, taskLogger: any): Promise<any> {
+    const payload = task.payload as import('./task-types.js').GroupDigestSessionPayload;
+    const { workspaceId, workspacePath, groupId, dirtyConversations, hasExistingCard } = payload;
 
-    taskLogger.info('开始会话提炼任务:', sdkSessionId, '| workspace:', workspaceId);
+    taskLogger.info('开始组级摘要卡任务:', groupId, '| workspace:', workspaceId, '| dirty:', dirtyConversations.length);
     const startedAt = Date.now();
 
     const { query } = await import('@anthropic-ai/claude-agent-sdk');
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { buildQueryBaseConfig, resolveModelSelection } = await import('./agent-query-config.js');
     const baseConfig = await buildQueryBaseConfig({
       configDir: this.configDir,
       isPackaged: this.isPackaged,
       cliPath: this.cliPath,
     });
 
-    const { resolveModelSelection } = await import('./agent-query-config.js');
     const selection = payload.modelSelection
       ?? baseConfig.appSettings.ai.digestModelSelection
       ?? baseConfig.appSettings.ai.defaultModelSelection;
@@ -592,17 +591,59 @@ class AgentWorker {
       resolvedProfile = r.profile;
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
-      taskLogger.error('会话提炼任务终止:', error);
-      return { sdkSessionId, saved: false, error };
+      taskLogger.error('组级摘要卡任务终止:', error);
+      return { groupId, saved: false, error };
     }
 
+    const { createGroupDigestTools } = await import('./tools/group-digest-tools.js');
     const { createDigestTools } = await import('./tools/digest-tools.js');
-    let saved = false;
-    const digestServer = createDigestTools(workspaceId, workspacePath, () => { saved = true; });
+    const { createGroupTools } = await import('./tools/group-tools.js');
 
-    const { loadDigestPrompt } = await import('../services/memory/digest-prompt.js');
-    const template = await loadDigestPrompt(this.configDir);
-    const prompt = `${template}\n\n目标会话 sessionId: ${sdkSessionId}`;
+    let saved = false;
+    const groupDigestServer = createGroupDigestTools(workspaceId, workspacePath, groupId, dirtyConversations, () => { saved = true; });
+    const transcriptServer = createDigestTools(workspaceId, workspacePath);
+    const groupServer = createGroupTools(workspaceId, groupId);
+
+    // 读取已有组卡 sourcesSeen（供 system prompt 注入）
+    const { readGroupDigest, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
+    const existingCard = hasExistingCard ? await readGroupDigest(workspaceId, groupId) : null;
+    const sourcesSeenText = existingCard?.sourcesSeen.length
+      ? existingCard.sourcesSeen.map((s) => `    - sessionId=${s.sessionId} conv=${s.conversationId} mtime=${s.mtime}`).join('\n')
+      : '    (无)';
+
+    // 共享区文件清单
+    const { listNativeFiles } = await import('../services/group-shared-service.js');
+    const { files: nativeFiles } = await listNativeFiles(workspaceId, groupId).catch(() => ({ files: [] }));
+    const notesFiles = nativeFiles.filter((f) => f.relPath.startsWith('_notes/'));
+    const otherFiles = nativeFiles.filter((f) => !f.relPath.startsWith('_notes/'));
+    const sharedFileText = otherFiles.length
+      ? otherFiles.map((f) => `    - ${f.relPath} (size=${f.size}, mtime=${f.mtime})`).join('\n')
+      : '    (空)';
+    const notesFileText = notesFiles.length
+      ? notesFiles.map((f) => `    - ${f.relPath}`).join('\n')
+      : '    (无)';
+
+    const { loadGroupDigestPrompt } = await import('../services/memory/group-digest-prompt.js');
+    const template = await loadGroupDigestPrompt(this.configDir);
+    const groupDigestPath = getGroupDigestPath(workspaceId, groupId);
+
+    const contextSection = [
+      '\n## 本次输入',
+      `- workspaceId: ${workspaceId}`,
+      `- groupId: ${groupId}`,
+      `- 组卡路径: ${groupDigestPath}`,
+      `- hasExistingCard: ${hasExistingCard}`,
+      `- dirtyConversations:`,
+      ...dirtyConversations.map((d) => `  - sessionId=${d.sessionId} conversationId=${d.conversationId} mtime=${d.mtime}`),
+      `- 当前组卡 sourcesSeen（共 ${existingCard?.sourcesSeen.length ?? 0} 项）:`,
+      sourcesSeenText,
+      `- 共享区文件清单（含 _notes/ 子目录）:`,
+      sharedFileText,
+      `- shared/_notes/ 文件清单（请优先 ReadGroupFile 这些）:`,
+      notesFileText,
+    ].join('\n');
+
+    const prompt = `${template}${contextSection}`;
 
     const abortController = new AbortController();
     this.currentAbortController = abortController;
@@ -620,32 +661,36 @@ class AgentWorker {
             pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
           }),
           mcpServers: {
-            'dogear-memory-digest': digestServer,
+            'dogear-group-digest': groupDigestServer,
+            'dogear-memory-digest': transcriptServer,
+            'dogear-group': groupServer,
           },
           allowedTools: [
+            'mcp__dogear-group-digest__ReadGroupDigest',
+            'mcp__dogear-group-digest__SaveGroupDigest',
             'mcp__dogear-memory-digest__CleanTranscript',
-            'mcp__dogear-memory-digest__ReadExistingDigest',
-            'mcp__dogear-memory-digest__SaveDigest',
+            'mcp__dogear-group__ReadGroupFile',
+            'mcp__dogear-group__ListGroupFiles',
           ],
         },
       });
 
       for await (const message of agentQuery) {
         if (message.type === 'result') {
-          taskLogger.info('会话提炼完成');
+          taskLogger.info('组级摘要卡提炼完成');
         }
       }
 
-      taskLogger.info('会话提炼任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { sdkSessionId, saved, tier, profileName: resolvedProfile.name };
+      taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
+      return { groupId, saved, tier, profileName: resolvedProfile.name };
     } catch (error) {
       if (abortController.signal.aborted) {
-        taskLogger.info('会话提炼被取消:', sdkSessionId);
-        return { sdkSessionId, saved: false, cancelled: true };
+        taskLogger.info('组级摘要卡被取消:', groupId);
+        return { groupId, saved: false, cancelled: true };
       }
       const errorMsg = error instanceof Error ? error.message : String(error);
-      taskLogger.error('会话提炼任务失败:', errorMsg);
-      return { sdkSessionId, saved: false, error: errorMsg };
+      taskLogger.error('组级摘要卡任务失败:', errorMsg);
+      return { groupId, saved: false, error: errorMsg };
     } finally {
       this.currentAbortController = null;
     }
@@ -813,11 +858,13 @@ class AgentWorker {
     // ──── 内部辅助：处理单张摘要卡（Step A + LLM）────
 
     const {
-      readIndex, writeIndex, pushConversation, appendDecision,
+      readIndex, writeIndex, pushGroup, appendDecision,
     } = await import('../services/memory/smart-category-store.js');
     const { matchByThreshold, pickRedistributeCandidates } = await import('../services/memory/smart-category-engine.js');
-    const { parseDigestCard, getDigestsDir } = await import('../services/memory/digest-store.js');
-    const { getConversationsByIds } = await import('../services/conversation-service.js');
+    const { parseGroupDigest, getGroupDigestsDir } = await import('../services/memory/group-digest-store.js');
+    const { getByWorkspaceId } = await import('../services/conversation-service.js');
+    const groupService = await import('../services/group-service.js');
+    const { deriveGroupTitle } = await import('../services/group-helpers.js');
     const { loadCategorizePrompt } = await import('../services/memory/categorize-prompt.js');
     const { createCategoryTools } = await import('./tools/category-tools.js');
     const fs = await import('node:fs/promises');
@@ -826,36 +873,36 @@ class AgentWorker {
     this.currentAbortController = abortController;
 
     /**
-     * 决策单张摘要卡。返回决策结果 'match' | 'join' | 'new' | 'skip' | 'error'。
+     * 决策单张组卡。返回决策结果 'match' | 'join' | 'new' | 'skip' | 'error'。
      * LLM 调用前会插入 prompt 模板 + 候选名单。
      */
-    const decideForDigest = async (
-      digestPath: string,
-      conversationId: string,
+    const decideForGroup = async (
+      groupDigestPath: string,
+      groupId: string,
     ): Promise<'match' | 'join' | 'new' | 'skip' | 'error'> => {
       if (abortController.signal.aborted) return 'error';
 
-      // 读摘要卡
+      // 读组卡
       let raw: string;
       try {
-        raw = await fs.readFile(digestPath, 'utf-8');
+        raw = await fs.readFile(groupDigestPath, 'utf-8');
       } catch (err) {
-        taskLogger.warn('读摘要卡失败:', digestPath, err);
+        taskLogger.warn('读组卡失败:', groupDigestPath, err);
         return 'error';
       }
-      const card = parseDigestCard(raw);
+      const card = parseGroupDigest(raw);
       if (!card) {
-        taskLogger.warn('摘要卡解析失败:', digestPath);
+        taskLogger.warn('组卡解析失败:', groupDigestPath);
         return 'error';
       }
 
-      // 无 tags 早退（LLM 没遵守提示词、或老卡未补标签）
+      // 无 tags 早退（agent 没遵守提示词、或老卡未补标签）
       if (!card.tags) {
-        taskLogger.info('摘要卡无 tags，记 skip:', conversationId);
+        taskLogger.info('组卡无 tags，记 skip:', groupId);
         let idx0 = await readIndex(workspaceId);
         idx0 = appendDecision(idx0, {
           time: new Date().toISOString(),
-          conversationId,
+          groupId,
           decision: 'skip',
           reason: 'digest 缺 tags',
         });
@@ -870,36 +917,42 @@ class AgentWorker {
         for (const m of matches) {
           const cat = idx.categories.find((c) => c.id === m.categoryId);
           if (cat) {
-            const updated = pushConversation(cat, conversationId);
+            const updated = pushGroup(cat, groupId);
             idx.categories = idx.categories.map((c) => (c.id === cat.id ? updated : c));
           }
         }
         idx = appendDecision(idx, {
           time: new Date().toISOString(),
-          conversationId,
+          groupId,
           decision: 'match',
           reason: `matched ${matches.map((m) => m.categoryId).join(',')}`,
         });
         await writeIndex(workspaceId, idx);
-        taskLogger.info('Step A 命中:', conversationId, '→', matches.map((m) => m.categoryId));
+        taskLogger.info('Step A 命中:', groupId, '→', matches.map((m) => m.categoryId));
         return 'match';
       }
 
       // 无匹配 → 上 LLM
-      // 候选召回：用新摘要卡的所有 tags 作为"新 anchor 候选"
+      // 候选召回：用新组卡的所有 tags 作为"新 anchor 候选"
       const allTags = [card.tags.primary, ...card.tags.secondary];
       const candidates = pickRedistributeCandidates(idx.categories, allTags);
-      // 拉候选会话的 title 用于注入
-      const allCandidateIds = candidates.flatMap((c) => c.conversationIds);
-      const convsForCandidates = await getConversationsByIds(allCandidateIds);
-      const titleMap = new Map(convsForCandidates.map((c) => [c.id, c.title]));
+      // 拉候选组的 title 用于注入
+      const allConvs = await getByWorkspaceId(workspaceId);
+      const allGroups = await groupService.listGroups(workspaceId);
+      const groupMap = new Map(allGroups.map((g) => [g.id, g]));
+      const titleByGroup = new Map<string, string>();
+      for (const c of candidates) {
+        for (const gid of c.groupIds) {
+          if (titleByGroup.has(gid)) continue;
+          const g = groupMap.get(gid);
+          if (!g) { titleByGroup.set(gid, '(未知组)'); continue; }
+          titleByGroup.set(gid, deriveGroupTitle(g, allConvs.filter((cv) => cv.groupId === gid)));
+        }
+      }
       const candidatesForPrompt = candidates.map((c) => ({
         categoryId: c.categoryId,
         categoryName: idx.categories.find((x) => x.id === c.categoryId)?.name ?? '',
-        conversations: c.conversationIds.map((cid) => ({
-          conversationId: cid,
-          title: titleMap.get(cid) ?? '(未知标题)',
-        })),
+        groups: c.groupIds.map((gid) => ({ groupId: gid, title: titleByGroup.get(gid) ?? '(未知组)' })),
       }));
 
       const template = await loadCategorizePrompt(this.configDir);
@@ -908,8 +961,8 @@ class AgentWorker {
         '',
         '## 本次输入',
         '',
-        `### 新摘要卡`,
-        `- conversationId: ${conversationId}`,
+        `### 新组卡`,
+        `- groupId: ${groupId}`,
         `- 标题: ${card.title}`,
         `- 概述:`,
         '  ```',
@@ -924,20 +977,19 @@ class AgentWorker {
           ? ['（如选 NEW_CATEGORY，redistribute 留空即可）']
           : candidatesForPrompt.map((g) =>
             `- 分类 ${g.categoryName} (${g.categoryId})：\n` +
-            g.conversations.map((c) => `  - ${c.conversationId} ｜ ${c.title}`).join('\n')
+            g.groups.map((x) => `  - ${x.groupId} ｜ ${x.title}`).join('\n')
           )),
         '',
         `### 工作区上下文`,
         `- workspaceId: ${workspaceId}`,
         `- 调 ListCategories 时使用此 workspaceId`,
-        `- 调 SaveCategory 时使用此 workspaceId 和 conversationId=${conversationId}`,
+        `- 调 SaveCategory 时使用此 workspaceId 和 groupId=${groupId}`,
       ].join('\n');
 
       const categoryServer = createCategoryTools();
 
       let decided: 'join' | 'new' | 'error' = 'error';
 
-      // 在 SaveCategory 工具被调用时通过日志拿到结果——简化版用 query 完成后读 recentDecisions 判断
       try {
         const agentQuery = query({
           prompt: userContext,
@@ -961,24 +1013,24 @@ class AgentWorker {
 
         for await (const message of agentQuery) {
           if (message.type === 'result') {
-            taskLogger.info('LLM 决策完成:', conversationId);
+            taskLogger.info('LLM 决策完成:', groupId);
           }
         }
 
         // 检查最新决策日志判断结果
         const idx2 = await readIndex(workspaceId);
-        // 安全前提：Phase 9 trigger 保证 categorize 串行（同一工作区并发=1），
-        // 同一 conversationId 在 query 完成前不会有其他 SaveCategory 调用。
+        // trigger 保证 categorize 串行（同一工作区并发=1），
+        // 同一 groupId 在 query 完成前不会有其他 SaveCategory 调用。
         // appendDecision 是头插法 → find 命中的即本次最新决策。
-        const latestForConv = idx2.recentDecisions.find((d) => d.conversationId === conversationId);
-        if (latestForConv && (latestForConv.decision === 'join' || latestForConv.decision === 'new')) {
-          decided = latestForConv.decision;
+        const latestForGroup = idx2.recentDecisions.find((d) => d.groupId === groupId);
+        if (latestForGroup && (latestForGroup.decision === 'join' || latestForGroup.decision === 'new')) {
+          decided = latestForGroup.decision;
         } else {
           // LLM 没有真正调 SaveCategory
           let idx3 = idx2;
           idx3 = appendDecision(idx3, {
             time: new Date().toISOString(),
-            conversationId,
+            groupId,
             decision: 'error',
             reason: 'LLM 未调 SaveCategory',
           });
@@ -987,7 +1039,7 @@ class AgentWorker {
         }
       } catch (error) {
         if (abortController.signal.aborted) {
-          taskLogger.info('智能分类被取消:', conversationId);
+          taskLogger.info('智能分类被取消:', groupId);
           return 'error';
         }
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -995,7 +1047,7 @@ class AgentWorker {
         let idx4 = await readIndex(workspaceId);
         idx4 = appendDecision(idx4, {
           time: new Date().toISOString(),
-          conversationId,
+          groupId,
           decision: 'error',
           reason: errorMsg,
         });
@@ -1012,44 +1064,45 @@ class AgentWorker {
 
     try {
       if (mode === 'incremental') {
-        if (!payload.conversationId || !payload.digestPath) {
-          return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error: 'incremental 模式必须提供 conversationId + digestPath' };
+        if (!payload.groupId || !payload.groupDigestPath) {
+          return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error: 'incremental 模式必须提供 groupId + groupDigestPath' };
         }
-        const r = await decideForDigest(payload.digestPath, payload.conversationId);
+        const r = await decideForGroup(payload.groupDigestPath, payload.groupId);
         decisions[r]++;
       } else {
-        // full-rebuild：清空 index，按 createdAt 升序对所有摘要卡走相同流程
+        // full-rebuild：清空 index，按 createdAt 升序对所有组卡走相同流程
         taskLogger.info('full-rebuild: 清空 smart-categories.json');
         await writeIndex(workspaceId, { categories: [], recentDecisions: [] });
 
-        const digestsDir = getDigestsDir(workspaceId);
+        const digestsDir = getGroupDigestsDir(workspaceId);
         let entries: string[];
         try {
           entries = await fs.readdir(digestsDir);
         } catch {
           entries = [];
         }
-        // 只取 .md 文件（_cleaned/ 子目录里没有 .md，自动跳过）
-        const mdFiles = entries.filter((n) => n.endsWith('.md'));
+        // 跳过 _cleaned/_archive/_orphan 子目录，只取顶层 .md
+        const SKIP = new Set(['_cleaned', '_archive', '_orphan']);
+        const mdFiles = entries.filter((n) => !SKIP.has(n) && n.endsWith('.md'));
 
         // 按 createdAt 升序：parse 一次先排序
-        const cards: { path: string; conversationId: string; createdAt: string }[] = [];
+        const cards: { path: string; groupId: string; createdAt: string }[] = [];
         for (const name of mdFiles) {
           const p = path.join(digestsDir, name);
           try {
             const raw = await fs.readFile(p, 'utf-8');
-            const card = parseDigestCard(raw);
-            if (card?.conversationId) {
-              cards.push({ path: p, conversationId: card.conversationId, createdAt: card.createdAt });
+            const card = parseGroupDigest(raw);
+            if (card?.groupId) {
+              cards.push({ path: p, groupId: card.groupId, createdAt: card.createdAt });
             }
-          } catch {}
+          } catch { /* 跳过解析失败 */ }
         }
         cards.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
 
-        taskLogger.info(`full-rebuild: 待处理 ${cards.length} 张摘要卡`);
+        taskLogger.info(`full-rebuild: 待处理 ${cards.length} 张组卡`);
         for (const c of cards) {
           if (abortController.signal.aborted) break;
-          const r = await decideForDigest(c.path, c.conversationId);
+          const r = await decideForGroup(c.path, c.groupId);
           decisions[r]++;
         }
       }

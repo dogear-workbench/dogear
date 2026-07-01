@@ -6,6 +6,7 @@ import { useSessionStore } from '@/stores/session-store';
 import type { Conversation } from '@/components/ConversationList';
 import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
 import type { ChildStateSnapshot } from '@/types/delegation';
+import type { Group } from '@/types/group';
 
 // 分叉参数类型
 export interface ForkParams {
@@ -28,14 +29,14 @@ export interface PendingSendPayload {
   images?: Array<{ media_type: string; data: string }>;
 }
 
-/** 对话树的扁平节点（供 @headless-tree/react 使用） */
+/** 对话树的扁平节点（供 @headless-tree/react 使用）。Phase 3：叶子节点装组而非对话。 */
 export interface ConversationFlatNode {
   id: string;
   name: string;
   isFolder: boolean;
   childrenIds: string[];
-  nodeType: 'conversation' | 'folder';
-  conversation?: Conversation;
+  nodeType: 'group' | 'folder';
+  group?: Group;
   folder?: ConversationFolder;
 }
 
@@ -116,12 +117,12 @@ interface ConversationState {
   deleteFolder: (folderId: string) => Promise<void>;
   /** 移动对话或文件夹 */
   moveItem: (itemId: string, targetParentId: string, targetIndex?: number) => Promise<void>;
-  /** 把对话添加到指定文件夹（多引用语义，不动其他文件夹）*/
-  addConversationToFolder: (conversationId: string, folderId: string) => Promise<void>;
-  /** 从指定文件夹移除（不动其他文件夹）*/
-  removeConversationFromFolder: (conversationId: string, folderId: string) => Promise<void>;
-  /** 在两个文件夹间移动（remove + add 原子）*/
-  moveConversationBetweenFolders: (conversationId: string, fromFolderId: string, toFolderId: string) => Promise<void>;
+  /** 把组添加到指定文件夹（多引用语义，不动其他文件夹）*/
+  addGroupToFolder: (groupId: string, folderId: string) => Promise<void>;
+  /** 从指定文件夹移除组（不动其他文件夹）*/
+  removeGroupFromFolder: (groupId: string, folderId: string) => Promise<void>;
+  /** 在两个文件夹间移动组（remove + add 原子）*/
+  moveGroupBetweenFolders: (groupId: string, fromFolderId: string, toFolderId: string) => Promise<void>;
   /** 更新对话标题 */
   updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
   /** 更新对话的人设关联和临时提示词 */
@@ -175,77 +176,62 @@ function sortChildrenFoldersFirst(
 }
 
 /**
- * 构建对话树的扁平节点映射
- * 将对话列表和树数据合并为 @headless-tree/react 需要的格式
+ * 构建对话树的扁平节点映射（Phase 3 组化后）。
+ * - __root__ 只装 folderId
+ * - 文件夹节点 childrenIds 装 groupId（filtered 到 group-store 已知组）
+ * - 叶子节点为 group（每个 group 单独建一个 node）
  */
 function buildNodeMap(
-  conversations: Conversation[],
+  groups: Group[],
   treeData: ConversationTreeData | null,
 ): Record<string, ConversationFlatNode> {
   const nodeMap: Record<string, ConversationFlatNode> = {};
+  const groupById = new Map(groups.map((g) => [g.id, g]));
+
+  // 1) 每个组建一个叶子节点
+  for (const g of groups) {
+    nodeMap[g.id] = {
+      id: g.id,
+      name: g.title || '(未命名组)',
+      isFolder: false,
+      childrenIds: [],
+      nodeType: 'group',
+      group: g,
+    };
+  }
 
   if (!treeData) {
-    // 无树数据，所有对话平铺到根
     nodeMap[CONV_TREE_ROOT] = {
       id: CONV_TREE_ROOT,
       name: 'root',
       isFolder: true,
-      childrenIds: conversations.map(c => c.id),
+      childrenIds: [],
       nodeType: 'folder',
     };
-    for (const conv of conversations) {
-      nodeMap[conv.id] = {
-        id: conv.id,
-        name: conv.title || '新对话',
-        isFolder: false,
-        childrenIds: [],
-        nodeType: 'conversation',
-        conversation: conv,
-      };
-    }
     return nodeMap;
   }
 
-  // 添加文件夹节点（子节点按文件夹优先排序）
+  // 2) 文件夹节点（childrenIds 过滤到现存组 + 嵌套子文件夹）
   for (const folder of Object.values(treeData.folders)) {
+    const raw = treeData.children[folder.id] || [];
+    const filtered = raw.filter((id) => treeData.folders[id] || groupById.has(id));
     nodeMap[folder.id] = {
       id: folder.id,
       name: folder.name,
       isFolder: true,
-      childrenIds: sortChildrenFoldersFirst(treeData.children[folder.id] || [], treeData.folders),
+      childrenIds: sortChildrenFoldersFirst(filtered, treeData.folders),
       nodeType: 'folder',
       folder,
     };
   }
 
-  // 添加对话节点
-  for (const conv of conversations) {
-    nodeMap[conv.id] = {
-      id: conv.id,
-      name: conv.title || '新对话',
-      isFolder: false,
-      childrenIds: [],
-      nodeType: 'conversation',
-      conversation: conv,
-    };
-  }
-
-  // 处理不在树中的孤儿对话（迁移遗漏或手动创建的）
-  const allTreeIds = new Set<string>();
-  for (const childIds of Object.values(treeData.children)) {
-    for (const id of childIds) allTreeIds.add(id);
-  }
-  const orphanConvIds = conversations
-    .filter(c => !allTreeIds.has(c.id))
-    .map(c => c.id);
-
-  // 根节点（文件夹优先排序）
-  const rootChildren = treeData.children[CONV_TREE_ROOT] || [];
+  // 3) 根节点：只保留 folderId
+  const rootChildren = (treeData.children[CONV_TREE_ROOT] || []).filter((id) => treeData.folders[id]);
   nodeMap[CONV_TREE_ROOT] = {
     id: CONV_TREE_ROOT,
     name: 'root',
     isFolder: true,
-    childrenIds: sortChildrenFoldersFirst([...orphanConvIds, ...rootChildren], treeData.folders),
+    childrenIds: rootChildren,
     nodeType: 'folder',
   };
 
@@ -322,26 +308,29 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
     try {
       set((state) => patchSlice(state, wsId, { loadingConversations: true }));
-      // 并行加载对话列表和树数据
-      const [convResult, treeResult] = await Promise.all([
+      // 并行加载对话列表、树、组
+      const [convResult, treeResult, groupsResult] = await Promise.all([
         client.getByWorkspaceId({ workspaceId: wsId }),
         client.getConversationTree({ workspaceId: wsId }),
+        client.listGroups({ workspaceId: wsId }),
       ]);
 
       const conversations = convResult.conversations || [];
       const treeData = treeResult.tree || null;
-      const nodeMap = buildNodeMap(conversations, treeData);
+      const groups = groupsResult.groups || [];
+      const nodeMap = buildNodeMap(groups, treeData);
 
       set((state) => patchSlice(state, wsId, { conversations, treeData, nodeMap }));
+
+      // 同步 group-store（避免组件分别拉取造成时序错位）
+      void import('./group-store').then(({ useGroupStore }) => {
+        useGroupStore.setState({ groups, loading: false });
+      });
     } catch (error) {
       console.error('加载对话列表失败:', error);
     } finally {
       set((state) => patchSlice(state, wsId, { loadingConversations: false }));
     }
-
-    void import('./group-store').then(({ useGroupStore }) => {
-      useGroupStore.getState().load(wsId).catch(() => {});
-    });
 
     // 后台拉子会话快照（bridge 内存态，非阻塞）
     void get().refreshAllChildren();
@@ -572,36 +561,36 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  addConversationToFolder: async (conversationId, folderId) => {
+  addGroupToFolder: async (groupId, folderId) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
     try {
-      await client.addConversationToFolder({ workspaceId: workspace.id, conversationId, folderId });
+      await client.addGroupToFolder({ workspaceId: workspace.id, groupId, folderId });
       await get().loadConversations();
     } catch (error) {
-      console.error('添加到文件夹失败:', error);
+      console.error('添加组到文件夹失败:', error);
     }
   },
 
-  removeConversationFromFolder: async (conversationId, folderId) => {
+  removeGroupFromFolder: async (groupId, folderId) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
     try {
-      await client.removeConversationFromFolder({ workspaceId: workspace.id, conversationId, folderId });
+      await client.removeGroupFromFolder({ workspaceId: workspace.id, groupId, folderId });
       await get().loadConversations();
     } catch (error) {
-      console.error('从文件夹移除失败:', error);
+      console.error('从文件夹移除组失败:', error);
     }
   },
 
-  moveConversationBetweenFolders: async (conversationId, fromFolderId, toFolderId) => {
+  moveGroupBetweenFolders: async (groupId, fromFolderId, toFolderId) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
     try {
-      await client.moveConversationBetweenFolders({ workspaceId: workspace.id, conversationId, fromFolderId, toFolderId });
+      await client.moveGroupBetweenFolders({ workspaceId: workspace.id, groupId, fromFolderId, toFolderId });
       await get().loadConversations();
     } catch (error) {
-      console.error('在文件夹间移动失败:', error);
+      console.error('在文件夹间移动组失败:', error);
     }
   },
 
@@ -616,7 +605,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       // 同步更新 Tab 标题
       useSessionStore.getState().updateTitle(conversationId, title);
 
-      // 更新分片状态
+      // 更新分片状态（nodeMap 装组，不需要按 conversationId 改）
       set((state) => {
         const slice = state.byWorkspace[wsId] ?? emptySlice();
         const newConvs = slice.conversations.map((c) =>
@@ -625,17 +614,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         const newSelected = slice.selectedConversation?.id === conversationId
           ? { ...slice.selectedConversation, title }
           : slice.selectedConversation;
-        const newNodeMap = Object.fromEntries(
-          Object.entries(slice.nodeMap).map(([key, node]) =>
-            key === conversationId
-              ? [key, { ...node, name: title, conversation: node.conversation ? { ...node.conversation, title } : undefined }]
-              : [key, node]
-          )
-        );
         return patchSlice(state, wsId, {
           conversations: newConvs,
           selectedConversation: newSelected,
-          nodeMap: newNodeMap,
         });
       });
     } catch (error) {

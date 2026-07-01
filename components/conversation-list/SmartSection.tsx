@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Tag, ChevronDown, ChevronRight } from 'lucide-react';
 import { useSmartCategoryStore } from '@/stores/smart-category-store';
+import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { SmartCategory } from '@/types/smart-category';
+import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
-import { ConversationRowWithChildren } from './ConversationRowWithChildren';
+import { GroupCard } from '@/components/group-list/GroupCard';
 
 interface SmartSectionProps {
   workspaceId: string;
@@ -15,31 +17,31 @@ export function SmartSection({ workspaceId }: SmartSectionProps) {
   const categories = useSmartCategoryStore((s) => s.categories);
   const loading = useSmartCategoryStore((s) => s.loading);
   const load = useSmartCategoryStore((s) => s.load);
+  const groups = useGroupStore((s) => s.groups);
   const conversations = useConversationStore((s) => s.conversations);
 
   useEffect(() => {
     if (workspaceId) load(workspaceId);
   }, [workspaceId, load]);
 
-  // 按 conversationIds.length 倒序，空分类隐藏
   const visible = useMemo(
     () => categories
-      .filter((c) => c.conversationIds.length > 0)
-      .sort((a, b) => b.conversationIds.length - a.conversationIds.length),
+      .filter((c) => c.groupIds.length > 0)
+      .sort((a, b) => b.groupIds.length - a.groupIds.length),
     [categories]
   );
 
-  const convById = useMemo(() => {
-    const m = new Map<string, Conversation>();
-    for (const c of conversations) m.set(c.id, c);
+  const groupById = useMemo(() => {
+    const m = new Map<string, Group>();
+    for (const g of groups) m.set(g.id, g);
     return m;
-  }, [conversations]);
+  }, [groups]);
 
   return (
     <div>
       <RecentVirtualGroup />
       {visible.map((cat) => (
-        <CategoryGroup key={cat.id} cat={cat} convById={convById} />
+        <CategoryGroup key={cat.id} cat={cat} groupById={groupById} conversations={conversations} />
       ))}
       {!loading && visible.length === 0 && (
         <div className="px-3 py-6 text-center text-xs text-muted-foreground">
@@ -52,21 +54,23 @@ export function SmartSection({ workspaceId }: SmartSectionProps) {
 
 function CategoryGroup({
   cat,
-  convById,
+  groupById,
+  conversations,
 }: {
   cat: SmartCategory;
-  convById: Map<string, Conversation>;
+  groupById: Map<string, Group>;
+  conversations: Conversation[];
 }) {
   const [collapsed, setCollapsed] = useState(false);
 
-  const convs = useMemo(() => {
-    return cat.conversationIds
-      .map((id) => convById.get(id))
-      .filter((c): c is Conversation => !!c && !c.archived_at && c.role !== 'sub')
-      .sort((a, b) => b.updated_at - a.updated_at);
-  }, [cat.conversationIds, convById]);
+  const groupsInCat = useMemo(() => {
+    return cat.groupIds
+      .map((id) => groupById.get(id))
+      .filter((g): g is Group => !!g)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [cat.groupIds, groupById]);
 
-  if (convs.length === 0) return null;
+  if (groupsInCat.length === 0) return null;
 
   return (
     <div>
@@ -80,14 +84,13 @@ function CategoryGroup({
         }
         <Tag className="w-3 h-3" />
         <span className="truncate">{cat.name}</span>
-        <span className="ml-auto text-[10px] opacity-70">{convs.length}</span>
+        <span className="ml-auto text-[10px] opacity-70">{groupsInCat.length}</span>
       </div>
-      {!collapsed && convs.map((c) => (
-        <ConversationRowWithChildren
-          key={`${cat.id}:${c.id}`}
-          conv={c}
-          nodeId={`conv:${c.id}::smart::${cat.id}`}
-          indent={20}
+      {!collapsed && groupsInCat.map((g) => (
+        <GroupCard
+          key={`${cat.id}:${g.id}`}
+          group={g}
+          conversations={conversations.filter((c) => c.groupId === g.id && c.role !== 'sub' && !c.archived_at)}
         />
       ))}
     </div>

@@ -5,18 +5,18 @@ import {
 } from '@/components/ui/context-menu';
 import { useConversationStore } from '@/stores/conversation-store';
 
-interface MoveToFolderMenuProps {
-  conversationId: string;
+interface MoveGroupToFolderMenuProps {
+  groupId: string;
   /** 当前所在 folderId（用于过滤掉自身 + 调 move IPC） */
   fromFolderId: string;
 }
 
 /**
- * 单选子菜单：从 from 文件夹移动到目标文件夹（保留多引用语义之外的"换位置"操作）
+ * 单选子菜单：从 from 文件夹移动组到目标文件夹
  */
-export function MoveToFolderMenu({ conversationId, fromFolderId }: MoveToFolderMenuProps) {
+export function MoveGroupToFolderMenu({ groupId, fromFolderId }: MoveGroupToFolderMenuProps) {
   const nodeMap = useConversationStore((s) => s.nodeMap);
-  const moveConversationBetweenFolders = useConversationStore((s) => s.moveConversationBetweenFolders);
+  const moveGroupBetweenFolders = useConversationStore((s) => s.moveGroupBetweenFolders);
 
   const folders = useMemo(() => {
     return Object.values(nodeMap)
@@ -43,7 +43,7 @@ export function MoveToFolderMenu({ conversationId, fromFolderId }: MoveToFolderM
         {folders.map((f) => (
           <ContextMenuItem
             key={f.id}
-            onClick={() => moveConversationBetweenFolders(conversationId, fromFolderId, f.id)}
+            onClick={() => moveGroupBetweenFolders(groupId, fromFolderId, f.id)}
           >
             <Folder className="w-3.5 h-3.5 mr-2 text-amber-500" />
             {f.name}

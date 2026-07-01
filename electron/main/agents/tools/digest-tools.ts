@@ -1,17 +1,23 @@
 /**
- * 会话提炼 MCP Server 工具（dogear-memory-digest）
+ * 会话逐字稿清洗 MCP Server 工具（dogear-memory-digest）
  *
- * DIGEST_SESSION agent 用：CleanTranscript / ReadExistingDigest / SaveDigest
- * 一次性 headless query 自主调用，把一段会话 JSONL 提炼成「会话摘要卡」。
+ * 仅保留 CleanTranscript——被 GROUP_DIGEST_SESSION agent 调用。
+ * ReadExistingDigest / SaveDigest 已被 ReadGroupDigest / SaveGroupDigest 替代，已删除。
  */
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { cleanTranscript } from '../../services/memory/transcript-cleaner.js';
-import {
-  saveCleanedBackup, saveDigest, readDigest, getDigestPath, type DigestCard,
-} from '../../services/memory/digest-store.js';
-import * as conversationService from '../../services/conversation-service.js';
+import { getWorkspaceDataDir } from '../../services/conversation-service.js';
 import { registerTools } from './tool-registry.js';
+
+/** 留底干净逐字稿到 <wsDataDir>/digests/_cleaned/<sessionId>.md（供排查；与组卡同目录） */
+async function saveCleanedBackup(wsId: string, sessionId: string, transcript: string): Promise<void> {
+  const dir = path.join(getWorkspaceDataDir(wsId), 'digests', '_cleaned');
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(path.join(dir, `${sessionId}.md`), transcript, 'utf-8');
+}
 
 registerTools([
   {
@@ -20,40 +26,16 @@ registerTools([
     server: 'dogear-memory-digest',
     category: 'memory',
   },
-  {
-    name: 'ReadExistingDigest',
-    description: '读取指定会话的旧摘要卡正文（供对比新旧）',
-    server: 'dogear-memory-digest',
-    category: 'memory',
-  },
-  {
-    name: 'SaveDigest',
-    description: '确定性写入会话摘要卡',
-    server: 'dogear-memory-digest',
-    category: 'memory',
-  },
 ]);
 
-/** 反查 conversations.json，按 sdkSessionId 找 conversationId（找不到返回 undefined） */
-async function lookupConversationId(
-  workspaceId: string, sdkSessionId: string,
-): Promise<string | undefined> {
-  try {
-    const list = await conversationService.getByWorkspaceId(workspaceId, { includeArchived: true });
-    return list.find((c) => c.sdkSessionId === sdkSessionId)?.id;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
- * 创建会话提炼 MCP Server
- * @param workspaceId 工作区 ID（落卡 / 留底用）
+ * 创建 CleanTranscript MCP Server
+ * @param workspaceId 工作区 ID（留底用）
  * @param workspacePath 工作区绝对路径（定位 JSONL 用）
- * @param onSaved 可选：SaveDigest 成功时回调（handler 用来判断是否真正落卡）
+ * @param _onSaved 保留参数兼容旧调用，目前不使用
  */
 export function createDigestTools(
-  workspaceId: string, workspacePath: string, onSaved?: () => void,
+  workspaceId: string, workspacePath: string, _onSaved?: () => void,
 ) {
   return createSdkMcpServer({
     name: 'dogear-memory-digest',
@@ -80,91 +62,6 @@ export function createDigestTools(
               content: [{
                 type: 'text' as const,
                 text: `清洗会话失败: ${error instanceof Error ? error.message : String(error)}`,
-              }],
-              isError: true,
-            };
-          }
-        },
-      ),
-
-      tool(
-        'ReadExistingDigest',
-        '读取指定会话已有的摘要卡正文，供对比新旧决定重写/增补。无旧卡时返回「(无旧摘要)」。',
-        { sessionId: z.string().describe('SDK 会话 ID') },
-        async (args) => {
-          try {
-            const card = await readDigest(workspaceId, args.sessionId);
-            if (!card) {
-              return { content: [{ type: 'text' as const, text: '(无旧摘要)' }] };
-            }
-            const itemsText = card.items
-              .map((i) => `- [${i.kind}] ${i.text} ⟶ ${i.uuid}`)
-              .join('\n');
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `标题：${card.title}\n\n## 概述\n${card.summary}\n\n## 条目\n${itemsText}`,
-              }],
-            };
-          } catch (error) {
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `读取旧摘要失败: ${error instanceof Error ? error.message : String(error)}`,
-              }],
-              isError: true,
-            };
-          }
-        },
-      ),
-
-      tool(
-        'SaveDigest',
-        '确定性写入会话摘要卡（frontmatter / 回溯结构由工具拼装，你只填内容字段）。' +
-        'items 每条带 uuid（取自干净逐字稿每段 · 后的 uuid）用于回溯。重提炼会覆盖旧卡。',
-        {
-          sessionId: z.string().describe('SDK 会话 ID'),
-          title: z.string().min(1).describe('一句话标题'),
-          summary: z.string().min(1).describe('概述：这次会话做了几件事 + 简述'),
-          items: z.array(z.object({
-            kind: z.enum(['决策', '想法', '注意', '搁置']).describe('条目类型'),
-            text: z.string().min(1).describe('条目内容'),
-            uuid: z.string().describe('出处 uuid（取自逐字稿每段 · 后的 uuid）'),
-          })).describe('想法/注意/决策/搁置条目列表'),
-          tags: z.object({
-            primary: z.string().min(1),
-            secondary: z.array(z.string()).max(3),
-            scores: z.record(z.string(), z.number().min(0).max(1)),
-          }).optional().describe('智能分类标签：主标签 + 0-3 个辅标签 + 每个标签的 0-1 适配度'),
-        },
-        async (args) => {
-          try {
-            const cleaned = await cleanTranscript(workspacePath, args.sessionId);
-            const conversationId = await lookupConversationId(workspaceId, args.sessionId);
-            const card: DigestCard = {
-              sessionId: args.sessionId,
-              conversationId,
-              title: args.title,
-              createdAt: new Date().toISOString(),
-              sourceMtime: cleaned.sourceMtime,
-              turnCount: cleaned.turnCount,
-              summary: args.summary,
-              items: args.items,
-              tags: args.tags,
-            };
-            await saveDigest(workspaceId, card);
-            onSaved?.();
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `已保存摘要卡 → ${getDigestPath(workspaceId, args.sessionId)}（${args.items.length} 条目）`,
-              }],
-            };
-          } catch (error) {
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `保存摘要卡失败: ${error instanceof Error ? error.message : String(error)}`,
               }],
               isError: true,
             };

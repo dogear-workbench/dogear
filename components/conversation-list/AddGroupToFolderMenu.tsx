@@ -6,29 +6,28 @@ import {
 } from '@/components/ui/context-menu';
 import { useConversationStore } from '@/stores/conversation-store';
 
-interface AddToFolderMenuProps {
-  conversationId: string;
+interface AddGroupToFolderMenuProps {
+  groupId: string;
 }
 
 /**
- * 多选子菜单：勾选 = 该会话在该 folder 里。
+ * 多选子菜单：勾选 = 该组在该 folder 里。
  * toggle 调 add/remove IPC，菜单不关闭让用户连选。
  */
-export function AddToFolderMenu({ conversationId }: AddToFolderMenuProps) {
+export function AddGroupToFolderMenu({ groupId }: AddGroupToFolderMenuProps) {
   const nodeMap = useConversationStore((s) => s.nodeMap);
-  const addConversationToFolder = useConversationStore((s) => s.addConversationToFolder);
-  const removeConversationFromFolder = useConversationStore((s) => s.removeConversationFromFolder);
+  const addGroupToFolder = useConversationStore((s) => s.addGroupToFolder);
+  const removeGroupFromFolder = useConversationStore((s) => s.removeGroupFromFolder);
 
-  // 所有文件夹（不含 root） + 该 folder 是否已含 conversationId
   const folders = useMemo(() => {
     return Object.values(nodeMap)
       .filter((n) => n.nodeType === 'folder' && n.id !== '__root__')
       .map((n) => ({
         id: n.id,
         name: n.name,
-        included: n.childrenIds.includes(conversationId),
+        included: n.childrenIds.includes(groupId),
       }));
-  }, [nodeMap, conversationId]);
+  }, [nodeMap, groupId]);
 
   if (folders.length === 0) {
     return (
@@ -52,8 +51,8 @@ export function AddToFolderMenu({ conversationId }: AddToFolderMenuProps) {
             checked={f.included}
             onSelect={(e) => e.preventDefault()}
             onCheckedChange={(checked) => {
-              if (checked) addConversationToFolder(conversationId, f.id);
-              else removeConversationFromFolder(conversationId, f.id);
+              if (checked) addGroupToFolder(groupId, f.id);
+              else removeGroupFromFolder(groupId, f.id);
             }}
           >
             <Folder className="w-3.5 h-3.5 mr-2 text-amber-500" />

@@ -140,12 +140,12 @@ export const agentRouter = {
       const convId = getQueryBasedSessionManager().getConversationIdBySession(input.sessionId);
       const taskId = await agentManager.submitTask(task);
       agentManager.unregisterSessionCallbacks(input.sessionId);
-      // 触发点③：延迟一会儿让 JSONL 落盘，再对该会话所属工作区做脏检查
+      // 触发点③：延迟 3s 让 JSONL 落盘后，对该会话所属组做脏检查
       if (convId) {
         setTimeout(() => {
-          void import('../services/memory/digest-trigger.js')
-            .then((m) => m.triggerScanByConversation(convId))
-            .catch(() => { /* 提炼是后台任务，失败不影响关会话 */ });
+          void import('../services/memory/group-digest-trigger.js')
+            .then((m) => m.triggerByConversation(convId))
+            .catch(() => { /* 后台任务，失败不影响关会话 */ });
         }, 3000);
       }
       return { taskId, success: true };

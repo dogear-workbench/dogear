@@ -58,22 +58,24 @@ export function useNodeHighlight(conversationId: string, nodeId: string): { isOp
 }
 
 /**
- * 该会话在树/分类里出现的总次数。
- * 计数包含：每个含此 conversationId 的手动文件夹 + 每个含此 conversationId 的智能分类
+ * 该组在树/分类里出现的总次数（Phase 3 后改按组计数）。
+ * 计数包含：每个含此 groupId 的手动文件夹 + 每个含此 groupId 的智能分类
  * 不计：智能/时间/归档/近期视图本身（它们是按集合派生的，不是显式归类）
  */
-export function useAppearanceCount(conversationId: string): number {
+export function useAppearanceCount(groupId: string | undefined): number {
   const nodeMap = useConversationStore((s) => s.nodeMap);
   const categories = useSmartCategoryStore((s) => s.categories);
 
+  if (!groupId) return 0;
+
   let count = 0;
   for (const node of Object.values(nodeMap)) {
-    if (node.nodeType === 'folder' && node.childrenIds.includes(conversationId)) {
+    if (node.nodeType === 'folder' && node.childrenIds.includes(groupId)) {
       count++;
     }
   }
   for (const cat of categories) {
-    if (cat.conversationIds.includes(conversationId)) count++;
+    if (cat.groupIds.includes(groupId)) count++;
   }
   return count;
 }

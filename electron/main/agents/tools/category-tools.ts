@@ -2,22 +2,24 @@
  * 智能分类 MCP Server 工具（dogear-smart-category）
  *
  * CATEGORIZE_SESSION agent 用：ListCategories / SaveCategory
- * 由 Phase 8 worker 在每次"无阈值匹配"时启动一次 headless query 调用。
+ * 由 Phase 3 worker 在每次"无阈值匹配"时启动一次 headless query 调用。
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import {
-  readIndex, writeIndex, pushConversation, appendDecision, newCategory,
+  readIndex, writeIndex, pushGroup, appendDecision, newCategory,
 } from '../../services/memory/smart-category-store.js';
-import { getConversationsByIds } from '../../services/conversation-service.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { registerTools } from './tool-registry.js';
 import { mainLogger } from '../logger.js';
+import { getByWorkspaceId } from '../../services/conversation-service.js';
+import * as groupService from '../../services/group-service.js';
+import { deriveGroupTitle } from '../../services/group-helpers.js';
 
 registerTools([
   {
     name: 'ListCategories',
-    description: '读取当前工作区智能分类（含 anchorTags、样例会话、atLimit/maxCategories）',
+    description: '读取当前工作区智能分类（含 anchorTags、样例组标题、atLimit/maxCategories）',
     server: 'dogear-smart-category',
     category: 'memory',
   },
@@ -35,7 +37,7 @@ const listArgs = z.object({
 
 const saveArgs = z.object({
   workspaceId: z.string().describe('工作区 ID'),
-  conversationId: z.string().describe('待归类的会话 ID'),
+  groupId: z.string().describe('待归类的组 ID'),
   action: z.discriminatedUnion('type', [
     z.object({
       type: z.literal('JOIN_EXISTING'),
@@ -49,7 +51,7 @@ const saveArgs = z.object({
       name: z.string().min(1).max(20).describe('分类名（2-6 字短词组）'),
       anchorTags: z.array(z.string()).min(1).describe('该分类的 anchor 标签集'),
       redistribute: z.array(z.object({
-        conversationId: z.string(),
+        groupId: z.string(),
         moveToCategoryId: z.string().describe('目标分类 id；新分类用 "__NEW__" 占位'),
       })).optional().describe('受影响候选迁移列表（最多由系统注入的候选数量）'),
       reason: z.string().optional(),
@@ -59,7 +61,6 @@ const saveArgs = z.object({
 
 /**
  * 创建智能分类 MCP server。
- * 由 Phase 8 worker 在启动 CATEGORIZE_SESSION query 时挂载。
  */
 export function createCategoryTools() {
   return createSdkMcpServer({
@@ -68,20 +69,28 @@ export function createCategoryTools() {
     tools: [
       tool(
         'ListCategories',
-        '读取当前工作区的智能分类列表，返回 { categories: [{id, name, anchorTags, conversationCount, sampleTitles}], atLimit, maxCategories }。决策前必须调一次。',
+        '读取当前工作区的智能分类列表，返回 { categories: [{id, name, anchorTags, groupCount, sampleGroupTitles}], atLimit, maxCategories }。决策前必须调一次。',
         listArgs.shape,
         async (args) => {
           try {
             const idx = await readIndex(args.workspaceId);
+            const allConvs = await getByWorkspaceId(args.workspaceId);
             const enriched = await Promise.all(idx.categories.map(async (c) => {
-              const sampleIds = c.conversationIds.slice(-3);
-              const samples = await getConversationsByIds(sampleIds);
+              const sampleIds = c.groupIds.slice(-3);
+              const sampleTitles: string[] = [];
+              for (const gid of sampleIds) {
+                const group = await groupService.getGroup(args.workspaceId, gid);
+                if (group) {
+                  const groupConvs = allConvs.filter((conv) => conv.groupId === gid);
+                  sampleTitles.push(deriveGroupTitle(group, groupConvs));
+                }
+              }
               return {
                 id: c.id,
                 name: c.name,
                 anchorTags: c.anchorTags,
-                conversationCount: c.conversationIds.length,
-                sampleTitles: samples.map((s) => s.title),
+                groupCount: c.groupIds.length,
+                sampleGroupTitles: sampleTitles,
               };
             }));
             const settings = await loadSettings();
@@ -129,14 +138,14 @@ export function createCategoryTools() {
               }
               const addTags = action.addAnchorTags ?? [];
               const updated = {
-                ...pushConversation(cat, args.conversationId),
+                ...pushGroup(cat, args.groupId),
                 anchorTags: [...new Set([...cat.anchorTags, ...addTags])],
                 updatedAt: nowIso,
               };
               idx.categories = idx.categories.map((c) => (c.id === cat.id ? updated : c));
               idx = appendDecision(idx, {
                 time: nowIso,
-                conversationId: args.conversationId,
+                groupId: args.groupId,
                 decision: 'join',
                 reason: action.reason,
               });
@@ -149,33 +158,32 @@ export function createCategoryTools() {
                 };
               }
               const cat = newCategory(action.name, action.anchorTags);
-              cat.conversationIds = [args.conversationId];
+              cat.groupIds = [args.groupId];
               idx.categories.push(cat);
 
-              // 处理 redistribute：先从源分类移除，再加到目标分类
+              // 处理 redistribute
               for (const m of action.redistribute ?? []) {
                 const targetId = m.moveToCategoryId === '__NEW__' ? cat.id : m.moveToCategoryId;
-                // 校验目标分类存在，防止 LLM hallucinate 不存在的 id 时把会话从所有分类删掉却没归入任何地方
                 if (!idx.categories.some((c) => c.id === targetId)) {
                   mainLogger.warn(
-                    `[smart-category] redistribute 跳过：moveToCategoryId=${m.moveToCategoryId} 既非 __NEW__ 也非任何现有分类，conversationId=${m.conversationId} 不动`,
+                    `[smart-category] redistribute 跳过：moveToCategoryId=${m.moveToCategoryId} 既非 __NEW__ 也非任何现有分类，groupId=${m.groupId} 不动`,
                   );
                   continue;
                 }
                 for (const c of idx.categories) {
                   if (c.id !== targetId) {
-                    c.conversationIds = c.conversationIds.filter((x) => x !== m.conversationId);
+                    c.groupIds = c.groupIds.filter((x) => x !== m.groupId);
                   }
                 }
                 const target = idx.categories.find((c) => c.id === targetId);
-                if (target && !target.conversationIds.includes(m.conversationId)) {
-                  target.conversationIds.push(m.conversationId);
+                if (target && !target.groupIds.includes(m.groupId)) {
+                  target.groupIds.push(m.groupId);
                   target.updatedAt = nowIso;
                 }
               }
               idx = appendDecision(idx, {
                 time: nowIso,
-                conversationId: args.conversationId,
+                groupId: args.groupId,
                 decision: 'new',
                 reason: action.reason,
               });

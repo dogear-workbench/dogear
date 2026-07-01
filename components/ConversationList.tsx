@@ -11,7 +11,6 @@ import type { ListView } from './conversation-list/ViewTabs';
 import { SmartSection } from './conversation-list/SmartSection';
 import { TimeSection } from './conversation-list/TimeSection';
 import { ArchiveSection } from './conversation-list/ArchiveSection';
-import { GroupList } from './group-list/GroupList';
 
 /**
  * 对话接口（对话直接属于工作区）
@@ -43,7 +42,7 @@ export function ConversationList() {
   const loadingConversations = useConversationStore((s) => s.loadingConversations);
   const conversations = useConversationStore((s) => s.conversations);
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id) ?? '';
-  const [view, setView] = useState<ListView>('group');
+  const [view, setView] = useState<ListView>('manual');
 
   if (loadingConversations && conversations.length === 0) {
     return (
@@ -67,10 +66,9 @@ export function ConversationList() {
           </div>
         ) : (
           <>
-            <ManualSection workspaceId={workspaceId} />
             <ViewTabs value={view} onChange={setView} />
-            {view === 'group'
-              ? <GroupList workspaceId={workspaceId} />
+            {view === 'manual'
+              ? <ManualSection workspaceId={workspaceId} />
               : view === 'smart'
               ? <SmartSection workspaceId={workspaceId} />
               : <TimeSection />

@@ -3,8 +3,8 @@ import { matchByThreshold, pickRedistributeCandidates, normalizeTag, normalizeTa
 import type { SmartCategory, DigestTags } from '../../types.ts';
 
 const cats: SmartCategory[] = [
-  { id: 'c1', name: '产品', anchorTags: ['产品-Dashboard', 'UI重构'], conversationIds: [], createdAt: '', updatedAt: '' },
-  { id: 'c2', name: '股票', anchorTags: ['股票-估值'], conversationIds: [], createdAt: '', updatedAt: '' },
+  { id: 'c1', name: '产品', anchorTags: ['产品-Dashboard', 'UI重构'], groupIds: [], createdAt: '', updatedAt: '' },
+  { id: 'c2', name: '股票', anchorTags: ['股票-估值'], groupIds: [], createdAt: '', updatedAt: '' },
 ];
 
 test('matchByThreshold 命中单个分类', () => {
@@ -39,7 +39,7 @@ test('matchByThreshold 命中多个分类（多标签归类）', () => {
 });
 
 test('pickRedistributeCandidates 只返回邻近 2 个分类', () => {
-  const more = [...cats, { id: 'c3', name: '代码', anchorTags: ['UI重构'], conversationIds: ['x'], createdAt: '', updatedAt: '' }];
+  const more = [...cats, { id: 'c3', name: '代码', anchorTags: ['UI重构'], groupIds: ['x'], createdAt: '', updatedAt: '' }];
   const r = pickRedistributeCandidates(more, ['UI重构', '产品-Dashboard']);
   expect(r).toHaveLength(2);
   expect(r.map((x) => x.categoryId).sort()).toEqual(['c1', 'c3']);
@@ -89,7 +89,7 @@ test('normalizeTags 处理 scores 冲突（保留较大分数 + 过滤空标签�
 
 test('matchByThreshold primary 与 secondary 重复时不双计', () => {
   const singleCat: SmartCategory[] = [
-    { id: 'c1', name: 'A', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
+    { id: 'c1', name: 'A', anchorTags: ['t1'], groupIds: [], createdAt: '', updatedAt: '' },
   ];
   const tags: DigestTags = {
     primary: 't1',
@@ -103,9 +103,9 @@ test('matchByThreshold primary 与 secondary 重复时不双计', () => {
 
 test('pickRedistributeCandidates 同 overlap 时按 id 字典序', () => {
   const tieCats: SmartCategory[] = [
-    { id: 'c_b', name: 'B', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
-    { id: 'c_a', name: 'A', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
-    { id: 'c_c', name: 'C', anchorTags: ['t1'], conversationIds: [], createdAt: '', updatedAt: '' },
+    { id: 'c_b', name: 'B', anchorTags: ['t1'], groupIds: [], createdAt: '', updatedAt: '' },
+    { id: 'c_a', name: 'A', anchorTags: ['t1'], groupIds: [], createdAt: '', updatedAt: '' },
+    { id: 'c_c', name: 'C', anchorTags: ['t1'], groupIds: [], createdAt: '', updatedAt: '' },
   ];
   const r = pickRedistributeCandidates(tieCats, ['t1']);
   expect(r).toHaveLength(2);

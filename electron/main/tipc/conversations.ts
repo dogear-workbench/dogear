@@ -20,15 +20,15 @@ const t = tipc.create();
  * 调用前临时设置 process.env.CLAUDE_CONFIG_DIR，调用完毕后恢复。
  */
 /**
- * 拉取工作区所有对话的 updatedAt，按倒序重排树。
+ * 拉取工作区所有 group 的 updatedAt，按倒序重排树。
  * 失败静默：对话本身写入已成功，重排只是 UX 优化。
  */
 async function reorderTreeByUpdatedAt(workspaceId: string): Promise<void> {
   try {
-    const conversations = await conversationService.getByWorkspaceId(workspaceId, { includeArchived: true });
-    const map: Record<string, string> = {};
-    for (const c of conversations) map[c.id] = c.updatedAt;
-    await treeService.sortConversationsByUpdatedAt(workspaceId, map);
+    const groups = await groupService.listGroups(workspaceId);
+    const map: Record<string, number> = {};
+    for (const g of groups) map[g.id] = g.updatedAt;
+    await treeService.sortGroupsByUpdatedAt(workspaceId, map);
   } catch (error) {
     console.warn('[reorderTree] 重排对话树失败:', error);
   }
@@ -83,7 +83,6 @@ export const conversationsRouter = {
           title,
           settings.ai.defaultModelSelection,
         );
-        await treeService.addConversationToTree(input.workspaceId, conversationId);
         return { conversationId, error: undefined };
       } catch (error) {
         console.error('创建对话失败:', error);
@@ -128,8 +127,6 @@ export const conversationsRouter = {
         await conversationService.deleteConversation(input.workspaceId, input.conversationId);
         // 清理用量 JSONL（失败静默，不阻塞删除）
         await deleteUsage(input.conversationId).catch(() => {});
-        // 同步从树中移除
-        await treeService.removeConversationFromTree(input.workspaceId, input.conversationId);
         return { success: true, error: undefined };
       } catch (error) {
         console.error('删除对话失败:', error);
@@ -206,7 +203,6 @@ export const conversationsRouter = {
           parent?.modelSelection ?? null,
           parent?.cachePolicy ?? '5m',
         );
-        await treeService.addConversationToTree(input.workspaceId, conversationId);
         return { conversationId, error: undefined };
       } catch (error) {
         console.error('创建分叉对话失败:', error);
@@ -367,40 +363,40 @@ export const conversationsRouter = {
       }
     }),
 
-  addConversationToFolder: t.procedure
-    .input<{ workspaceId: string; conversationId: string; folderId: string }>()
+  addGroupToFolder: t.procedure
+    .input<{ workspaceId: string; groupId: string; folderId: string }>()
     .action(async ({ input }) => {
       try {
-        await treeService.addConversationToFolder(input.workspaceId, input.conversationId, input.folderId);
+        await treeService.addGroupToFolder(input.workspaceId, input.groupId, input.folderId);
         return { success: true, error: undefined };
       } catch (error) {
-        console.error('添加对话到文件夹失败:', error);
+        console.error('添加组到文件夹失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 
-  removeConversationFromFolder: t.procedure
-    .input<{ workspaceId: string; conversationId: string; folderId: string }>()
+  removeGroupFromFolder: t.procedure
+    .input<{ workspaceId: string; groupId: string; folderId: string }>()
     .action(async ({ input }) => {
       try {
-        await treeService.removeConversationFromFolder(input.workspaceId, input.conversationId, input.folderId);
+        await treeService.removeGroupFromFolder(input.workspaceId, input.groupId, input.folderId);
         return { success: true, error: undefined };
       } catch (error) {
-        console.error('从文件夹移除对话失败:', error);
+        console.error('从文件夹移除组失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 
-  moveConversationBetweenFolders: t.procedure
-    .input<{ workspaceId: string; conversationId: string; fromFolderId: string; toFolderId: string }>()
+  moveGroupBetweenFolders: t.procedure
+    .input<{ workspaceId: string; groupId: string; fromFolderId: string; toFolderId: string }>()
     .action(async ({ input }) => {
       try {
-        await treeService.moveConversationBetweenFolders(
-          input.workspaceId, input.conversationId, input.fromFolderId, input.toFolderId,
+        await treeService.moveGroupBetweenFolders(
+          input.workspaceId, input.groupId, input.fromFolderId, input.toFolderId,
         );
         return { success: true, error: undefined };
       } catch (error) {
-        console.error('在文件夹间移动对话失败:', error);
+        console.error('在文件夹间移动组失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),

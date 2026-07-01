@@ -1,19 +1,21 @@
 import React, { useMemo, useState } from 'react';
 import { Zap, ChevronDown, ChevronRight } from 'lucide-react';
+import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { RECENT_THRESHOLD_MS } from './utils';
-import { ConversationRowWithChildren } from './ConversationRowWithChildren';
+import { GroupCard } from '@/components/group-list/GroupCard';
 
 export function RecentVirtualGroup() {
+  const groups = useGroupStore((s) => s.groups);
   const conversations = useConversationStore((s) => s.conversations);
   const [collapsed, setCollapsed] = useState(false);
 
   const recent = useMemo(() => {
     const now = Date.now();
-    return conversations
-      .filter((c) => !c.archived_at && c.role !== 'sub' && now - (c.updated_at ?? c.created_at) <= RECENT_THRESHOLD_MS)
-      .sort((a, b) => b.updated_at - a.updated_at);
-  }, [conversations]);
+    return groups
+      .filter((g) => now - g.updatedAt <= RECENT_THRESHOLD_MS)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+  }, [groups]);
 
   if (recent.length === 0) return null;
 
@@ -31,8 +33,12 @@ export function RecentVirtualGroup() {
         <span>近期（&lt; 5 天）</span>
         <span className="ml-auto text-[10px] opacity-70">{recent.length}</span>
       </div>
-      {!collapsed && recent.map((conv) => (
-        <ConversationRowWithChildren key={conv.id} conv={conv} nodeId={`conv:${conv.id}::recent`} indent={20} />
+      {!collapsed && recent.map((group) => (
+        <GroupCard
+          key={group.id}
+          group={group}
+          conversations={conversations.filter((c) => c.groupId === group.id && c.role !== 'sub' && !c.archived_at)}
+        />
       ))}
     </div>
   );

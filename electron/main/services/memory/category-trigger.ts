@@ -9,7 +9,7 @@ import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 import type { CategorizeActivity, CategorizeRecentEntry } from '../../types.js';
 
 type CategorizeJob =
-  | { kind: 'incremental'; workspaceId: string; conversationId: string; digestPath: string }
+  | { kind: 'incremental'; workspaceId: string; groupId: string; groupDigestPath: string }
   | { kind: 'full-rebuild'; workspaceId: string };
 
 const inFlight = new Set<string>();
@@ -58,7 +58,7 @@ export function getCategorizeActivity(): CategorizeActivity {
 
 function jobKey(job: CategorizeJob): string {
   return job.kind === 'incremental'
-    ? `c:${job.workspaceId}:${job.conversationId}`
+    ? `c:${job.workspaceId}:${job.groupId}`
     : `r:${job.workspaceId}`;
 }
 
@@ -96,7 +96,7 @@ async function runOne(job: CategorizeJob): Promise<void> {
     recent.unshift({
       workspaceId: job.workspaceId,
       kind: job.kind,
-      conversationId: job.kind === 'incremental' ? job.conversationId : undefined,
+      groupId: job.kind === 'incremental' ? job.groupId : undefined,
       finishedAt: Date.now(),
       outcome,
       durationMs: Date.now() - startedAt,
@@ -120,8 +120,8 @@ async function runOne(job: CategorizeJob): Promise<void> {
         workspaceId: job.workspaceId,
         workspacePath: ws.path,
         mode: 'incremental',
-        conversationId: job.conversationId,
-        digestPath: job.digestPath,
+        groupId: job.groupId,
+        groupDigestPath: job.groupDigestPath,
       }
     : {
         workspaceId: job.workspaceId,
@@ -139,7 +139,7 @@ async function runOne(job: CategorizeJob): Promise<void> {
 
   current = {
     workspaceId: job.workspaceId,
-    conversationId: job.kind === 'incremental' ? job.conversationId : undefined,
+    groupId: job.kind === 'incremental' ? job.groupId : undefined,
     kind: job.kind,
     startedAt,
     taskId: task.id,
@@ -179,9 +179,9 @@ async function runOne(job: CategorizeJob): Promise<void> {
   });
 }
 
-/** 手动触发：单条增量决策（Phase 10 串联点用） */
-export function triggerCategorize(workspaceId: string, conversationId: string, digestPath: string): void {
-  enqueue({ kind: 'incremental', workspaceId, conversationId, digestPath });
+/** 手动触发：单条增量决策（组 digest saved 后串联） */
+export function triggerCategorize(workspaceId: string, groupId: string, groupDigestPath: string): void {
+  enqueue({ kind: 'incremental', workspaceId, groupId, groupDigestPath });
 }
 
 /** 手动触发：清空 + 全量重做（设置页"立即重跑全部分类"按钮用） */

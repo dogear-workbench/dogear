@@ -427,6 +427,17 @@ app.whenReady().then(async () => {
     console.error('会话组迁移失败:', error);
   }
 
+  // Phase 3 迁移：旧会话卡升级为组卡 + smart-categories/conversation-tree 字段升级
+  try {
+    const { runMigrationP3 } = await import('./services/memory/migration-p3.js');
+    const configDir = app.isPackaged
+      ? path.join(app.getPath('userData'), '.dogear')
+      : path.join(process.cwd(), '.dogear');
+    await runMigrationP3(configDir);
+  } catch (error) {
+    console.error('[migration-p3] 失败:', error);
+  }
+
   // 初始化 Agent 管理器
   const agentManager = getAgentManager({
     maxWorkers: 4,
@@ -444,17 +455,17 @@ app.whenReady().then(async () => {
     .then((m) => m.startDashboardWatcher())
     .catch((err) => console.error('启动 dashboard-watcher 失败:', err));
 
-  // ── 会话提炼/复盘三触发点（里程碑 2 Phase A+B）──
-  // 触发点①：启动后延迟扫一遍，backfill 存量会话（低优先，不阻塞窗口）
+  // ── 组级提炼/复盘三触发点（Phase 3）──
+  // 触发点①：启动后延迟扫一遍，backfill 存量组（低优先，不阻塞窗口）
   setTimeout(() => {
-    void import('./services/memory/digest-trigger.js')
+    void import('./services/memory/group-digest-trigger.js')
       .then(async (m) => {
         await m.triggerScanAll();
-        await m.whenDigestIdle();
+        await m.whenGroupDigestIdle();
         const r = await import('./services/memory/review-trigger.js');
         await r.triggerReviewScan();
       })
-      .catch((err) => console.error('启动会话提炼/复盘扫描失败:', err));
+      .catch((err) => console.error('启动组提炼/复盘扫描失败:', err));
   }, 8000);
 
   // 触发点②：夜间定时（每小时检查本地时间命中 03:xx，软件开着才跑；每天最多一次）
@@ -465,14 +476,14 @@ app.whenReady().then(async () => {
     const day = now.toISOString().slice(0, 10);
     if (day === lastNightlyDigestDay) return;
     lastNightlyDigestDay = day;
-    void import('./services/memory/digest-trigger.js')
+    void import('./services/memory/group-digest-trigger.js')
       .then(async (m) => {
         await m.triggerScanAll();
-        await m.whenDigestIdle();
+        await m.whenGroupDigestIdle();
         const r = await import('./services/memory/review-trigger.js');
         await r.triggerReviewScan();
       })
-      .catch((err) => console.error('夜间会话提炼/复盘扫描失败:', err));
+      .catch((err) => console.error('夜间组提炼/复盘扫描失败:', err));
   }, 60 * 60 * 1000);
 
   // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出

@@ -8,15 +8,15 @@
 import fs from 'node:fs/promises';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { listDigests, readDigest } from '../../services/memory/digest-store.js';
+import { listGroupDigests, readGroupDigest } from '../../services/memory/group-digest-store.js';
 import { readReport, saveReport } from '../../services/memory/review-store.js';
 import { traceSourceFromLines } from '../../services/memory/trace-source.js';
 import { getSessionJsonlPath } from '../../services/memory/session-paths.js';
 import { registerTools } from './tool-registry.js';
 
 registerTools([
-  { name: 'ListDigests', description: '列出本工作区所有会话摘要卡（含 createdAt）', server: 'dogear-memory-review', category: 'memory' },
-  { name: 'ReadDigest', description: '读取单张摘要卡（含条目与回溯 uuid）', server: 'dogear-memory-review', category: 'memory' },
+  { name: 'ListDigests', description: '列出本工作区所有组卡（按组聚合，含 createdAt）', server: 'dogear-memory-review', category: 'memory' },
+  { name: 'ReadDigest', description: '读取单张组卡（含概述、items 多源 sources 与 keyOutputs）', server: 'dogear-memory-review', category: 'memory' },
   { name: 'TraceSource', description: '按 uuid 回溯原始会话原文，供查证含义', server: 'dogear-memory-review', category: 'memory' },
   { name: 'ReadReport', description: '读取当前首页报告（拿 updatedAt 与正文，用于增量）', server: 'dogear-memory-review', category: 'memory' },
   { name: 'WriteReport', description: '覆盖写入首页报告（纯净 markdown，给用户看）', server: 'dogear-memory-review', category: 'memory' },
@@ -31,7 +31,7 @@ function errText(prefix: string, error: unknown) {
 
 /**
  * 创建首页报告 MCP Server
- * @param workspaceId 工作区 ID（读写摘要卡 / 报告）
+ * @param workspaceId 工作区 ID（读写组卡 / 报告）
  * @param workspacePath 工作区绝对路径（定位原始会话 JSONL 用）
  * @param onSaved 可选：WriteReport 成功时回调（worker 用来判断是否真正落报告）
  */
@@ -42,38 +42,45 @@ export function createReviewMcpServer(workspaceId: string, workspacePath: string
     tools: [
       tool(
         'ListDigests',
-        '列出本工作区所有会话摘要卡（sessionId · createdAt · 标题）。用它和报告的 updatedAt 对比，判断哪些是新卡（createdAt 晚于 updatedAt 即新，不管几张都要处理）。',
+        '列出本工作区所有组卡（按组聚合）：每行格式「- groupId · createdAt · 标题 · N会话」。用它和报告的 updatedAt 对比，判断哪些是新组卡（createdAt 晚于 updatedAt 即新）。',
         {},
         async () => {
           try {
-            const list = await listDigests(workspaceId);
+            const list = await listGroupDigests(workspaceId);
             const text = list.length
-              ? list.map((d) => `- ${d.sessionId} · ${d.createdAt} · ${d.title}`).join('\n')
-              : '(无摘要卡)';
+              ? list.map((d) => `- ${d.groupId} · ${d.createdAt} · ${d.title} · ${d.sessionCount}会话`).join('\n')
+              : '(无组卡)';
             return { content: [{ type: 'text' as const, text }] };
           } catch (error) {
-            return errText('列出摘要卡失败', error);
+            return errText('列出组卡失败', error);
           }
         },
       ),
 
       tool(
         'ReadDigest',
-        '读取单张摘要卡，返回概述 + 条目（每条带回溯 uuid）。',
-        { sessionId: z.string().describe('摘要卡的 SDK 会话 ID') },
+        '读取单张组卡，返回概述 + items（多源 sources，每条带 sources[{sessionId, uuid}]）+ keyOutputs 段。',
+        { groupId: z.string().describe('组 ID') },
         async (args) => {
           try {
-            const card = await readDigest(workspaceId, args.sessionId);
-            if (!card) return { content: [{ type: 'text' as const, text: '(无此摘要卡)' }] };
-            const itemsText = card.items.map((i) => `- [${i.kind}] ${i.text} ⟶ ${i.uuid}`).join('\n');
+            const card = await readGroupDigest(workspaceId, args.groupId);
+            if (!card) return { content: [{ type: 'text' as const, text: '(无此组卡)' }] };
+            const itemsText = card.items.map((i) =>
+              `- [${i.kind}] ${i.text} ⟶ ${i.sources.map((s) => `${s.sessionId}#${s.uuid}`).join(', ')}`
+            ).join('\n');
+            const koText = card.keyOutputs.length
+              ? '\n\n## 关键产出\n' + card.keyOutputs.map((o) =>
+                  `- ${o.path} :: ${o.oneLine}${o.sessionId ? ' ← ' + o.sessionId : ''}`
+                ).join('\n')
+              : '';
             return {
               content: [{
                 type: 'text' as const,
-                text: `标题：${card.title}\ncreatedAt：${card.createdAt}\n\n## 概述\n${card.summary}\n\n## 条目\n${itemsText}`,
+                text: `标题：${card.title}\ncreatedAt：${card.createdAt}\n\n## 概述\n${card.summary}\n\n## items\n${itemsText}${koText}`,
               }],
             };
           } catch (error) {
-            return errText('读取摘要卡失败', error);
+            return errText('读取组卡失败', error);
           }
         },
       ),
@@ -83,7 +90,7 @@ export function createReviewMcpServer(workspaceId: string, workspacePath: string
         '按 uuid 回溯原始会话，返回该消息及前后对话原文。拿不准某条含义时用它查证；找不到则不要据此条臆断。',
         {
           sessionId: z.string().describe('出处的 SDK 会话 ID'),
-          uuid: z.string().describe('出处 uuid（取自摘要卡条目）'),
+          uuid: z.string().describe('出处 uuid（取自组卡 items.sources）'),
         },
         async (args) => {
           try {
@@ -111,7 +118,7 @@ export function createReviewMcpServer(workspaceId: string, workspacePath: string
 
       tool(
         'ReadReport',
-        '读取当前首页报告。返回 updatedAt（上次更新时间，用于判断哪些摘要卡是新的）和正文 markdown。无报告时返回「(无报告)」，据此走全量分支。',
+        '读取当前首页报告。返回 updatedAt（上次更新时间，用于判断哪些组卡是新的）和正文 markdown。无报告时返回「(无报告)」，据此走全量分支。',
         {},
         async () => {
           try {
@@ -132,7 +139,7 @@ export function createReviewMcpServer(workspaceId: string, workspacePath: string
       tool(
         'WriteReport',
         '覆盖写入首页报告（updatedAt 由工具自动生成）。markdown 是给用户看的纯净报告：' +
-        '只放需用户主动处理的待办/中断（简述）、近 5 天做了哪些、建议、最新少量沉淀。' +
+        '只放需用户主动处理的待办/中断（简述）、近 5 天做了哪些（按组聚合）、建议、最新少量沉淀。' +
         '不要放链条/refs/sessionId（那些进记忆）。增量更新：没变的段落原样保留。',
         {
           markdown: z.string().min(1).describe('报告正文（纯净 markdown，无 frontmatter）'),

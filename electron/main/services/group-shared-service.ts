@@ -3,6 +3,8 @@ import path from 'path';
 import electron from 'electron';
 import type { NativeFileEntry } from '../types.js';
 
+export const NOTES_DIR_NAME = '_notes';
+
 const { app } = electron;
 
 function getConfigDir(): string {
@@ -54,6 +56,12 @@ async function walk(dir: string, base: string, out: NativeFileEntry[]): Promise<
       });
     }
   }
+}
+
+/** 只返回 _notes/ 子目录下的文件 */
+export async function listNotesFiles(workspaceId: string, groupId: string): Promise<NativeFileEntry[]> {
+  const { files } = await listNativeFiles(workspaceId, groupId);
+  return files.filter((f) => f.relPath.startsWith(NOTES_DIR_NAME + '/'));
 }
 
 export async function readNativeFile(workspaceId: string, groupId: string, relPath: string): Promise<string> {

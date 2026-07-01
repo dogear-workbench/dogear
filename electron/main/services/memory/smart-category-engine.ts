@@ -26,7 +26,7 @@ export function matchByThreshold(
 export function pickRedistributeCandidates(
   categories: SmartCategory[],
   newAnchorTags: string[],
-): Array<{ categoryId: string; conversationIds: string[] }> {
+): Array<{ categoryId: string; groupIds: string[] }> {
   const neighbors = categories
     .map((c) => ({ cat: c, overlap: c.anchorTags.filter((t) => newAnchorTags.includes(t)).length }))
     .filter((x) => x.overlap > 0)
@@ -35,7 +35,7 @@ export function pickRedistributeCandidates(
 
   return neighbors.map(({ cat }) => ({
     categoryId: cat.id,
-    conversationIds: cat.conversationIds,
+    groupIds: cat.groupIds,
   }));
 }
 

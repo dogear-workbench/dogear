@@ -27,7 +27,7 @@ export const categoryRouter = {
         const liveIds = new Set(liveConvs.map((c) => c.id));
         const filteredCategories = idx.categories.map((c) => ({
           ...c,
-          conversationIds: c.conversationIds.filter((id) => liveIds.has(id)),
+          groupIds: c.groupIds.filter((id) => liveIds.has(id)),
         }));
         return { categories: filteredCategories };
       } catch (error) {
@@ -37,10 +37,10 @@ export const categoryRouter = {
     }),
 
   triggerCategorize: t.procedure
-    .input<{ workspaceId: string; conversationId: string; digestPath: string }>()
+    .input<{ workspaceId: string; groupId: string; groupDigestPath: string }>()
     .action(async ({ input }) => {
       try {
-        triggerCategorize(input.workspaceId, input.conversationId, input.digestPath);
+        triggerCategorize(input.workspaceId, input.groupId, input.groupDigestPath);
         return { success: true };
       } catch (error) {
         console.error('[category] triggerCategorize 失败:', error);

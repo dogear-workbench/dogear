@@ -15,8 +15,8 @@ import {
   propMemoizationFeature,
 } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
-import { ConversationRowWithChildren } from './ConversationRowWithChildren';
-import { CONV_TREE_ROOT, openOrFocusConversation } from './utils';
+import { GroupCard } from '@/components/group-list/GroupCard';
+import { CONV_TREE_ROOT } from './utils';
 
 function NewFolderInput({
   indent,
@@ -75,6 +75,7 @@ function FolderTreeItem({
   const data = item.getItemData();
   const meta = item.getItemMeta();
   const deleteFolder = useConversationStore((s) => s.deleteFolder);
+  const conversations = useConversationStore((s) => s.conversations);
 
   const paddingLeft = meta.level * 16 + 8;
   const { ref, ...props } = item.getProps();
@@ -121,16 +122,14 @@ function FolderTreeItem({
     );
   }
 
-  if (!data.conversation) return null;
-
+  // group leaf
+  if (!data.group) return null;
+  const folderId = parentId !== CONV_TREE_ROOT ? parentId : undefined;
+  const convs = conversations.filter((c) => c.groupId === data.group!.id && c.role !== 'sub' && !c.archived_at);
   return (
-    <ConversationRowWithChildren
-      conv={data.conversation}
-      nodeId={`conv:${data.conversation.id}::manual::${parentId}`}
-      inFolder={parentId !== CONV_TREE_ROOT}
-      folderId={parentId !== CONV_TREE_ROOT ? parentId : undefined}
-      indent={paddingLeft}
-    />
+    <div style={{ paddingLeft: `${paddingLeft}px` }}>
+      <GroupCard group={data.group} conversations={convs} folderId={folderId} />
+    </div>
   );
 }
 
@@ -152,7 +151,7 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
 
   const dataLoader = useMemo(() => ({
     getItem: (itemId: string) => nodeMapRef.current[itemId] ?? {
-      id: itemId, name: itemId, isFolder: false, childrenIds: [], nodeType: 'conversation' as const,
+      id: itemId, name: itemId, isFolder: false, childrenIds: [], nodeType: 'group' as const,
     },
     getChildren: (itemId: string) => nodeMapRef.current[itemId]?.childrenIds ?? [],
   }), []);
@@ -163,15 +162,6 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
       renameFolder(item.getId(), value.trim());
     }
   }, [renameFolder]);
-
-  const handlePrimaryAction = useCallback((item: ItemInstance<ConversationFlatNode>) => {
-    const data = item.getItemData();
-    if (data.nodeType === 'conversation' && data.conversation) {
-      const parentId = itemParentMapRef.current[item.getId()] ?? CONV_TREE_ROOT;
-      const nodeId = `conv:${data.conversation.id}::manual::${parentId}`;
-      openOrFocusConversation(data.conversation, nodeId);
-    }
-  }, []);
 
   const canRename = useCallback((item: ItemInstance<ConversationFlatNode>) => {
     return item.getItemData().nodeType === 'folder';
@@ -191,7 +181,6 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
     isItemFolder: (item) => item.getItemData().isFolder,
     getItemName: (item) => item.getItemData().name,
     onRename: handleRename,
-    onPrimaryAction: handlePrimaryAction,
     canRename,
   });
 
@@ -216,10 +205,10 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
       }
 
       if (!isRoot) {
-        // 文件夹内的对话
+        // 文件夹内的组
         result.push({ item: it, index: i });
       }
-      // 根级对话不在 ManualSection 渲染
+      // 根级 group 不在 ManualSection 渲染（理论上不会出现，root 只装 folder）
     }
     return result;
   }, [items]);
@@ -277,7 +266,7 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
 
   if (topEntries.length === 0 && !creatingFolderAt) {
     return (
-      <div className="px-3 py-1">
+      <div className="px-3 py-4">
         <button
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => setCreatingFolderAt(CONV_TREE_ROOT)}
@@ -285,6 +274,9 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
           <FolderPlus className="w-3.5 h-3.5" />
           新建文件夹
         </button>
+        <p className="mt-2 text-[11px] text-muted-foreground/70">
+          通过组卡的「添加到文件夹」把会话组归类。
+        </p>
       </div>
     );
   }

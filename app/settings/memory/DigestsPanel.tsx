@@ -11,36 +11,45 @@ import type { AppSettings, ModelSelection } from '@/types/settings';
 import { DEFAULT_SETTINGS } from '@/types/settings';
 import { ModelSelector } from '@/components/ModelSelector';
 
-interface DigestSummary {
-  sessionId: string;
-  conversationId?: string;
+interface GroupDigestSummary {
+  groupId: string;
   title: string;
   createdAt: string;
-  turnCount: number;
+  updatedAt: string;
+  sessionCount: number;
 }
 
-interface DigestItem {
+interface GroupDigestSource { sessionId: string; uuid: string; }
+
+interface GroupDigestItem {
   kind: string;
   text: string;
-  uuid: string;
+  sources: GroupDigestSource[];
 }
 
-interface DigestCard {
-  sessionId: string;
-  conversationId?: string;
+interface GroupDigestKeyOutput {
+  path: string;
+  oneLine: string;
+  sessionId?: string;
+}
+
+interface GroupDigestCard {
+  groupId: string;
   title: string;
   createdAt: string;
-  sourceMtime: number;
-  turnCount: number;
+  updatedAt: string;
+  sourcesSeen: Array<{ sessionId: string; conversationId: string; mtime: number }>;
   summary: string;
-  items: DigestItem[];
+  items: GroupDigestItem[];
+  keyOutputs: GroupDigestKeyOutput[];
 }
 
-interface DigestActivity {
-  current: { workspaceId: string; sessionId: string; startedAt: number; taskId: string } | null;
+interface GroupDigestActivity {
+  current: { workspaceId: string; groupId: string; startedAt: number; taskId: string } | null;
   queueDepth: number;
   recent: Array<{
-    sessionId: string;
+    workspaceId: string;
+    groupId: string;
     finishedAt: number;
     outcome: 'saved' | 'no-card' | 'error';
     tier?: string;
@@ -63,22 +72,23 @@ export function DigestsPanel() {
   const workspaceId = workspace?.id;
   const workspacePath = workspace?.path;
   const confirm = useConfirmStore((s) => s.confirm);
-  const [list, setList] = useState<DigestSummary[]>([]);
-  const [selected, setSelected] = useState<DigestCard | null>(null);
+  const [list, setList] = useState<GroupDigestSummary[]>([]);
+  const [selected, setSelected] = useState<GroupDigestCard | null>(null);
   const [loading, setLoading] = useState(false);
   const [selection, setSelection] = useState<ModelSelection | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
-  const [activity, setActivity] = useState<DigestActivity | null>(null);
+  const [activity, setActivity] = useState<GroupDigestActivity | null>(null);
   const [prompt, setPrompt] = useState('');
   const [defaultPrompt, setDefaultPrompt] = useState('');
   const [promptOpen, setPromptOpen] = useState(false);
   const [promptDirty, setPromptDirty] = useState(false);
 
   const loadList = useCallback(async () => {
+    if (!workspaceId) return;
     setLoading(true);
     try {
-      const result = await client.listDigests({ workspaceId });
-      if ('digests' in result && result.digests) setList(result.digests as DigestSummary[]);
+      const result = await client.listGroupDigests({ workspaceId });
+      if ('digests' in result && result.digests) setList(result.digests as GroupDigestSummary[]);
     } finally {
       setLoading(false);
     }
@@ -92,7 +102,7 @@ export function DigestsPanel() {
     client.getSettings().then((s) => {
       if ('settings' in s && s.settings) setSettings(s.settings);
     });
-    client.getDigestPrompt().then((r) => {
+    client.getGroupDigestPrompt().then((r) => {
       if ('prompt' in r && r.prompt) setPrompt(r.prompt);
       if ('defaultPrompt' in r && r.defaultPrompt) setDefaultPrompt(r.defaultPrompt);
     });
@@ -101,8 +111,8 @@ export function DigestsPanel() {
   useEffect(() => {
     let alive = true;
     const poll = async () => {
-      const r = await client.getDigestActivity();
-      if (alive && 'activity' in r && r.activity) setActivity(r.activity as DigestActivity);
+      const r = await client.getGroupDigestActivity();
+      if (alive && 'activity' in r && r.activity) setActivity(r.activity as GroupDigestActivity);
     };
     poll();
     const id = setInterval(poll, 2000);
@@ -112,9 +122,10 @@ export function DigestsPanel() {
     };
   }, []);
 
-  const selectCard = async (sessionId: string) => {
-    const result = await client.readDigest({ workspaceId, sessionId });
-    if ('card' in result && result.card) setSelected(result.card as DigestCard);
+  const selectCard = async (groupId: string) => {
+    if (!workspaceId) return;
+    const result = await client.readGroupDigest({ workspaceId, groupId });
+    if ('card' in result && result.card) setSelected(result.card as GroupDigestCard);
   };
 
   const handleSelectionChange = async (next: ModelSelection | null) => {
@@ -123,7 +134,7 @@ export function DigestsPanel() {
   };
 
   const handleSavePrompt = async () => {
-    await client.setDigestPrompt({ prompt });
+    await client.setGroupDigestPrompt({ prompt });
     setPromptDirty(false);
   };
   const handleResetPrompt = () => {
@@ -131,14 +142,15 @@ export function DigestsPanel() {
     setPromptDirty(true);
   };
   const handleCancelDigest = async (taskId: string) => {
-    await client.cancelDigest({ taskId });
+    await client.cancelGroupDigest({ taskId });
   };
 
-  const handleReDigest = async (sessionId: string) => {
-    await client.triggerDigest({ workspaceId, workspacePath, sdkSessionId: sessionId });
+  const handleReDigest = async (groupId: string) => {
+    if (!workspaceId || !workspacePath) return;
+    await client.triggerGroupDigest({ workspaceId, workspacePath, groupId });
     await confirm({
       title: '已加入提炼队列',
-      description: '该会话将在后台重新提炼，稍后点「刷新」查看更新。',
+      description: '该组将在后台重新提炼，稍后点「刷新」查看更新。',
       buttons: [{ label: '知道了', value: 'ok' }],
     });
   };
@@ -175,7 +187,7 @@ export function DigestsPanel() {
             {activity.current ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                <span>正在提炼 <code className="text-xs">{activity.current.sessionId.slice(0, 12)}…</code></span>
+                <span>正在提炼组 <code className="text-xs">{activity.current.groupId.slice(0, 16)}…</code></span>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -206,7 +218,7 @@ export function DigestsPanel() {
                   <span>
                     {r.outcome === 'saved' ? '✅' : r.outcome === 'no-card' ? '⚠️' : '❌'}
                   </span>
-                  <code className="truncate max-w-[160px]">{r.sessionId.slice(0, 12)}…</code>
+                  <code className="truncate max-w-[200px]">{r.groupId.slice(0, 16)}…</code>
                   {r.tier && <span className="text-muted-foreground">{r.tier}</span>}
                   {r.outcome === 'no-card' && <span className="text-muted-foreground">未产卡</span>}
                   {r.error && <span className="text-destructive truncate max-w-[200px]" title={r.error}>{r.error}</span>}
@@ -225,7 +237,7 @@ export function DigestsPanel() {
           className="w-full flex items-center justify-between px-3 py-2 text-sm font-medium hover:bg-muted/50"
           onClick={() => setPromptOpen((v) => !v)}
         >
-          <span>提炼提示词</span>
+          <span>组级提炼提示词</span>
           <ChevronDown className={cn('w-4 h-4 transition-transform', promptOpen && 'rotate-180')} />
         </button>
         {promptOpen && (
@@ -244,38 +256,38 @@ export function DigestsPanel() {
       </div>
 
       <div className="flex gap-6">
-        {/* 左侧：摘要卡列表 */}
+        {/* 左侧：组卡列表 */}
         <div className="w-64 shrink-0 space-y-1 max-h-[60vh] overflow-y-auto">
           {list.length === 0 ? (
             <div className="text-sm text-muted-foreground py-8 text-center">
               <FileText className="w-8 h-8 mx-auto opacity-40 mb-2" />
-              暂无会话摘要
+              暂无组卡
             </div>
           ) : (
             list.map((d) => (
               <button
-                key={d.sessionId}
-                onClick={() => selectCard(d.sessionId)}
+                key={d.groupId}
+                onClick={() => selectCard(d.groupId)}
                 className={`w-full text-left px-3 py-2 rounded text-sm transition-colors ${
-                  selected?.sessionId === d.sessionId
+                  selected?.groupId === d.groupId
                     ? 'bg-accent text-accent-foreground'
                     : 'hover:bg-muted'
                 }`}
               >
                 <div className="font-medium truncate">{d.title || '(无标题)'}</div>
                 <div className="text-xs text-muted-foreground">
-                  {new Date(d.createdAt).toLocaleString()} · {d.turnCount} 轮
+                  {new Date(d.updatedAt).toLocaleString()} · {d.sessionCount} 会话
                 </div>
               </button>
             ))
           )}
         </div>
 
-        {/* 右侧：摘要卡正文 */}
+        {/* 右侧：组卡正文 */}
         <div className="flex-1 min-w-0">
           {!selected ? (
             <div className="text-sm text-muted-foreground py-16 text-center">
-              选择左侧一张摘要卡查看详情
+              选择左侧一张组卡查看详情
             </div>
           ) : (
             <div className="space-y-4">
@@ -283,14 +295,14 @@ export function DigestsPanel() {
                 <div className="min-w-0">
                   <h3 className="text-base font-semibold">{selected.title}</h3>
                   <p className="text-xs text-muted-foreground mt-0.5 font-mono break-all">
-                    {selected.sessionId}
+                    {selected.groupId}
                   </p>
                 </div>
                 <Button
                   variant="outline"
                   size="sm"
                   className="shrink-0"
-                  onClick={() => handleReDigest(selected.sessionId)}
+                  onClick={() => handleReDigest(selected.groupId)}
                 >
                   <Sparkles className="w-4 h-4 mr-1" />
                   重新提炼
@@ -316,10 +328,28 @@ export function DigestsPanel() {
                         </div>
                         <span
                           className="text-[11px] text-muted-foreground font-mono break-all pl-1"
-                          title="出处消息 uuid（用于回溯原会话）"
+                          title="出处 sessionId#uuid（用于回溯原会话）"
                         >
-                          ⟶ {it.uuid}
+                          ⟶ {it.sources.map((s) => `${s.sessionId.slice(0, 8)}#${s.uuid.slice(0, 8)}`).join(', ')}
                         </span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {selected.keyOutputs.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-medium mb-2">关键产出</h4>
+                  <ul className="space-y-1">
+                    {selected.keyOutputs.map((o, i) => (
+                      <li key={i} className="text-sm">
+                        <code className="text-xs">{o.path}</code> :: {o.oneLine}
+                        {o.sessionId && (
+                          <span className="text-[11px] text-muted-foreground ml-1">
+                            ← {o.sessionId.slice(0, 8)}
+                          </span>
+                        )}
                       </li>
                     ))}
                   </ul>

@@ -125,7 +125,7 @@ export function SmartCategoryPanel() {
     if (!workspaceId) return;
     const ok = await confirm({
       title: '立即重跑全部分类',
-      description: '将清空现有分类并重新决策所有摘要卡，过程可能持续几分钟。',
+      description: '将清空现有分类，并按组重新决策所有组卡，过程可能持续几分钟。',
       buttons: [
         { label: '取消', value: 'cancel', variant: 'outline' },
         { label: '开始重跑', value: 'confirm', variant: 'default' },
@@ -150,6 +150,10 @@ export function SmartCategoryPanel() {
 
   return (
     <div className="space-y-4">
+      <p className="text-xs text-muted-foreground">
+        分类对象：<b>会话组</b>（一个组 = 一个主题）。组卡产生 / 更新后自动决策，命中现有分类或另起新类。
+      </p>
+
       {/* 1. 总开关 + 阈值 + 分类上限 */}
       <div className="flex flex-wrap items-center gap-6 rounded-md border bg-muted/30 px-3 py-3">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -236,7 +240,7 @@ export function SmartCategoryPanel() {
                 <span>
                   正在分类{' '}
                   <code className="text-xs">
-                    {(activity.current.conversationId ?? activity.current.kind).slice(0, 12)}…
+                    {(activity.current.groupId ?? activity.current.kind).slice(0, 12)}…
                   </code>
                 </span>
                 <Button
@@ -276,7 +280,7 @@ export function SmartCategoryPanel() {
                   </span>
                   <span className="text-muted-foreground">{r.outcome}</span>
                   <code className="truncate max-w-[160px]">
-                    {(r.conversationId ?? r.kind).slice(0, 12)}…
+                    {(r.groupId ?? r.kind).slice(0, 12)}…
                   </code>
                   {r.tier && <span className="text-muted-foreground">{r.tier}</span>}
                   {r.error && (
@@ -319,7 +323,7 @@ export function SmartCategoryPanel() {
             {categories.length === 0 ? (
               <div className="text-sm text-muted-foreground py-4 text-center">
                 <Brain className="w-8 h-8 mx-auto opacity-40 mb-2" />
-                暂无分类，提炼会话后会自动生成
+                暂无分类，会话组产生组卡后会自动生成
               </div>
             ) : (
               <ul className="space-y-2">
@@ -330,7 +334,7 @@ export function SmartCategoryPanel() {
                       <div className="font-medium">
                         {cat.name}{' '}
                         <span className="text-xs text-muted-foreground font-normal">
-                          ({cat.conversationIds.length})
+                          ({cat.groupIds.length})
                         </span>
                       </div>
                       {cat.anchorTags.length > 0 && (

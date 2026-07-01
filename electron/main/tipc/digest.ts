@@ -1,123 +1,86 @@
 // electron/main/tipc/digest.ts
-// 会话摘要卡巡检 + 手动提炼 + 提炼模型选择 IPC
+// 组级摘要卡 IPC（Phase 3）：列出/读取组卡 + 触发/取消 + 提示词 + 模型选择 + 活动轮询
 import { tipc } from '@egoist/tipc/main';
-import { listDigests, readDigest } from '../services/memory/digest-store.js';
-import { enqueueDigests, getDigestActivity } from '../services/memory/digest-trigger.js';
+import { listGroupDigests, readGroupDigest } from '../services/memory/group-digest-store.js';
+import {
+  triggerScanAll, triggerByGroup, getGroupDigestActivity,
+} from '../services/memory/group-digest-trigger.js';
+import {
+  loadGroupDigestPrompt, saveGroupDigestPrompt, DEFAULT_GROUP_DIGEST_PROMPT,
+} from '../services/memory/group-digest-prompt.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
-import { loadDigestPrompt, saveDigestPrompt, DEFAULT_DIGEST_PROMPT } from '../services/memory/digest-prompt.js';
 import type { ModelSelection } from '../services/settings-types.js';
 
 const t = tipc.create();
 
 export const digestRouter = {
-  /** 列出工作区所有摘要卡（摘要信息） */
-  listDigests: t.procedure
+  listGroupDigests: t.procedure
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const digests = await listDigests(input.workspaceId);
+        const digests = await listGroupDigests(input.workspaceId);
         return { digests };
       } catch (error) {
-        console.error('[digest] listDigests 失败:', error);
+        console.error('[digest] listGroupDigests 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  /** 读取单张摘要卡正文 */
-  readDigest: t.procedure
-    .input<{ workspaceId: string; sessionId: string }>()
+  readGroupDigest: t.procedure
+    .input<{ workspaceId: string; groupId: string }>()
     .action(async ({ input }) => {
       try {
-        const card = await readDigest(input.workspaceId, input.sessionId);
+        const card = await readGroupDigest(input.workspaceId, input.groupId);
         return { card };
       } catch (error) {
-        console.error('[digest] readDigest 失败:', error);
+        console.error('[digest] readGroupDigest 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  /** 手动提炼指定会话（入队，串行后台执行） */
-  triggerDigest: t.procedure
-    .input<{ workspaceId: string; workspacePath: string; sdkSessionId: string }>()
+  triggerGroupDigestScan: t.procedure
+    .action(async () => {
+      try { await triggerScanAll(); return { success: true }; }
+      catch (error) { console.error('[digest] triggerGroupDigestScan 失败:', error); return { error: String(error) }; }
+    }),
+
+  triggerGroupDigest: t.procedure
+    .input<{ workspaceId: string; workspacePath: string; groupId: string }>()
     .action(async ({ input }) => {
       try {
-        enqueueDigests([{
-          workspaceId: input.workspaceId,
-          workspacePath: input.workspacePath,
-          sdkSessionId: input.sdkSessionId,
-        }]);
+        await triggerByGroup(input.workspaceId, input.workspacePath, input.groupId);
         return { success: true };
       } catch (error) {
-        console.error('[digest] triggerDigest 失败:', error);
+        console.error('[digest] triggerGroupDigest 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  /** 读取提炼任务专用模型选择（null 时运行时回退到 defaultModelSelection） */
-  getDigestModelSelection: t.procedure
+  getGroupDigestActivity: t.procedure
+    .action(async () => {
+      try { return { activity: getGroupDigestActivity() }; }
+      catch (error) { console.error('[digest] getGroupDigestActivity 失败:', error); return { error: String(error) }; }
+    }),
+
+  getGroupDigestPrompt: t.procedure
     .action(async () => {
       try {
-        const settings = await loadSettings();
-        return { selection: settings.ai.digestModelSelection };
+        const prompt = await loadGroupDigestPrompt(getConfigDir());
+        return { prompt, defaultPrompt: DEFAULT_GROUP_DIGEST_PROMPT };
       } catch (error) {
-        console.error('[digest] getDigestModelSelection 失败:', error);
+        console.error('[digest] getGroupDigestPrompt 失败:', error);
         return { error: String(error) };
       }
     }),
 
-  /** 设置提炼任务专用模型选择（传 null 表示清空，回退到默认） */
-  setDigestModelSelection: t.procedure
-    .input<{ selection: ModelSelection | null }>()
-    .action(async ({ input }) => {
-      try {
-        const settings = await loadSettings();
-        settings.ai.digestModelSelection = input.selection;
-        await saveSettings(settings);
-        return { success: true };
-      } catch (error) {
-        console.error('[digest] setDigestModelSelection 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /** 读取提炼活动状态（前端轮询用） */
-  getDigestActivity: t.procedure
-    .action(async () => {
-      try {
-        return { activity: getDigestActivity() };
-      } catch (error) {
-        console.error('[digest] getDigestActivity 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /** 读取提炼提示词模板（缺失返回内置默认并播种） */
-  getDigestPrompt: t.procedure
-    .action(async () => {
-      try {
-        const prompt = await loadDigestPrompt(getConfigDir());
-        return { prompt, defaultPrompt: DEFAULT_DIGEST_PROMPT };
-      } catch (error) {
-        console.error('[digest] getDigestPrompt 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /** 保存提炼提示词模板 */
-  setDigestPrompt: t.procedure
+  setGroupDigestPrompt: t.procedure
     .input<{ prompt: string }>()
     .action(async ({ input }) => {
-      try {
-        await saveDigestPrompt(getConfigDir(), input.prompt);
-        return { success: true };
-      } catch (error) {
-        console.error('[digest] setDigestPrompt 失败:', error);
-        return { error: String(error) };
-      }
+      try { await saveGroupDigestPrompt(getConfigDir(), input.prompt); return { success: true }; }
+      catch (error) { console.error('[digest] setGroupDigestPrompt 失败:', error); return { error: String(error) }; }
     }),
 
-  /** 取消提炼任务（队列中即时移除；正在跑的中断 query） */
-  cancelDigest: t.procedure
+  cancelGroupDigest: t.procedure
     .input<{ taskId: string }>()
     .action(async ({ input }) => {
       try {
@@ -125,7 +88,27 @@ export const digestRouter = {
         getAgentManager().cancelTask(input.taskId);
         return { success: true };
       } catch (error) {
-        console.error('[digest] cancelDigest 失败:', error);
+        console.error('[digest] cancelGroupDigest 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  // 保留 digestModelSelection 配置项（复用 settings.ai.digestModelSelection）
+  getDigestModelSelection: t.procedure
+    .action(async () => {
+      try { return { selection: (await loadSettings()).ai.digestModelSelection }; }
+      catch (error) { console.error('[digest] getDigestModelSelection 失败:', error); return { error: String(error) }; }
+    }),
+  setDigestModelSelection: t.procedure
+    .input<{ selection: ModelSelection | null }>()
+    .action(async ({ input }) => {
+      try {
+        const s = await loadSettings();
+        s.ai.digestModelSelection = input.selection;
+        await saveSettings(s);
+        return { success: true };
+      } catch (error) {
+        console.error('[digest] setDigestModelSelection 失败:', error);
         return { error: String(error) };
       }
     }),

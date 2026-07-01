@@ -1,7 +1,9 @@
 /**
- * 对话树服务
+ * 对话树服务（Phase 3 组化后）
  * 管理 .dogear/workspaces/{workspaceId}/conversation-tree.json
- * 负责文件夹定义和对话/文件夹的父子关系与排序
+ * - __root__ 只装 folderId
+ * - children[folderId] 装 groupId（多引用语义：同 groupId 可在多个 folder）
+ * - schemaVersion = 2 表示已 Phase 3 升级
  */
 import path from 'path';
 import electron from 'electron';
@@ -30,8 +32,11 @@ export interface SourceWorkspaceInfo {
 /** conversation-tree.json 的文件结构 */
 export interface ConversationTreeFile {
   version: number;
+  /** Phase 3 升级标记：schemaVersion=2 表示 children 装 groupId */
+  schemaVersion?: number;
   folders: Record<string, ConversationFolder>;
-  children: Record<string, string[]>; // parentId -> 有序子节点ID列表
+  /** parentId → 有序子节点ID。__root__ 装 folderId；folderId 装 groupId */
+  children: Record<string, string[]>;
   /** 创建此 tree 时的工作区信息（用于丢失后识别来源） */
   sourceWorkspace?: SourceWorkspaceInfo;
 }
@@ -107,14 +112,12 @@ export async function getTree(workspaceId: string): Promise<ConversationTreeFile
 }
 
 // ============================================================
-// 迁移辅助
+// 迁移辅助（旧 API 已废弃；保留 initializeTree 供首次安装兜底使用）
 // ============================================================
 
-/** 初始化工作区树（迁移时调用：将所有对话放到根级别） */
-export async function initializeTree(workspaceId: string, conversationIds: string[]): Promise<void> {
-  const tree = emptyTree();
-  tree.children[ROOT_ID] = [...conversationIds];
-  await saveTree(workspaceId, tree);
+/** 初始化工作区树（首次安装兜底，普通使用走 migration-p3 已 schemaVersion=2 的树） */
+export async function initializeTree(workspaceId: string): Promise<void> {
+  await saveTree(workspaceId, emptyTree());
 }
 
 // ============================================================
@@ -192,54 +195,37 @@ export async function deleteFolder(
 }
 
 // ============================================================
-// 对话在树中的操作
+// 组在树中的操作（Phase 3 组化后）
 // ============================================================
 
-/** 将新对话添加到树（插入到文件夹之后、其他对话之前） */
-export async function addConversationToTree(
-  workspaceId: string,
-  conversationId: string,
-  parentId: string = ROOT_ID,
-): Promise<void> {
-  const tree = await loadTree(workspaceId);
-  if (!tree.children[parentId]) {
-    tree.children[parentId] = [];
-  }
-  // 文件夹始终在对话前面
-  const children = tree.children[parentId];
-  const insertIndex = folderFirstInsertIndex(children, tree.folders);
-  children.splice(insertIndex, 0, conversationId);
-  await saveTree(workspaceId, tree);
-}
-
 /**
- * 按 updatedAt 倒序重排树中所有 children 数组的对话部分（文件夹顺序保持不变）。
- * 写入后调用一次即可让"同层时间倒序 + 文件夹置顶"成为持久状态。
- *
- * @param updatedAtMap conversationId -> ISO 时间字符串
+ * 按 updatedAt 倒序重排所有文件夹下 children 中的 group 部分（文件夹顺序保持不变）。
+ * @param updatedAtMap groupId -> ms timestamp 或 ISO 时间字符串
  */
-export async function sortConversationsByUpdatedAt(
+export async function sortGroupsByUpdatedAt(
   workspaceId: string,
-  updatedAtMap: Record<string, string>,
+  updatedAtMap: Record<string, number | string>,
 ): Promise<void> {
   const tree = await loadTree(workspaceId);
   let mutated = false;
 
   for (const [parentId, childIds] of Object.entries(tree.children)) {
     const folders: string[] = [];
-    const conversations: string[] = [];
+    const groups: string[] = [];
     for (const id of childIds) {
       if (tree.folders[id]) folders.push(id);
-      else conversations.push(id);
+      else groups.push(id);
     }
 
-    conversations.sort((a, b) => {
-      const ta = new Date(updatedAtMap[a] ?? 0).getTime();
-      const tb = new Date(updatedAtMap[b] ?? 0).getTime();
+    groups.sort((a, b) => {
+      const va = updatedAtMap[a] ?? 0;
+      const vb = updatedAtMap[b] ?? 0;
+      const ta = typeof va === 'number' ? va : new Date(va).getTime();
+      const tb = typeof vb === 'number' ? vb : new Date(vb).getTime();
       return tb - ta;
     });
 
-    const next = [...folders, ...conversations];
+    const next = [...folders, ...groups];
     if (next.some((id, i) => id !== childIds[i]) || next.length !== childIds.length) {
       tree.children[parentId] = next;
       mutated = true;
@@ -251,16 +237,16 @@ export async function sortConversationsByUpdatedAt(
   }
 }
 
-/** 从树中移除对话（扫全部 children，支持多引用） */
-export async function removeConversationFromTree(
+/** 从树中移除组（扫全部 children，支持多引用） */
+export async function removeGroupFromTree(
   workspaceId: string,
-  conversationId: string,
+  groupId: string,
 ): Promise<void> {
   const tree = await loadTree(workspaceId);
   let mutated = false;
   for (const childIds of Object.values(tree.children)) {
     let index;
-    while ((index = childIds.indexOf(conversationId)) !== -1) {
+    while ((index = childIds.indexOf(groupId)) !== -1) {
       childIds.splice(index, 1);
       mutated = true;
     }
@@ -316,44 +302,43 @@ export async function moveItem(
 }
 
 /**
- * 把 conversationId 加到指定文件夹的 children（去重）。
+ * 把 groupId 加到指定文件夹的 children（去重）。
  * 不动其他文件夹，支持多引用语义。
  */
-export async function addConversationToFolder(
+export async function addGroupToFolder(
   workspaceId: string,
-  conversationId: string,
+  groupId: string,
   folderId: string,
 ): Promise<void> {
   const tree = await loadTree(workspaceId);
-  if (!tree.folders[folderId]) return; // 文件夹不存在静默
+  if (!tree.folders[folderId]) return;
   if (!tree.children[folderId]) tree.children[folderId] = [];
-  if (tree.children[folderId].includes(conversationId)) return; // 已在该文件夹
-  // 插到文件夹之后、其他对话之前（保持"文件夹在前、对话在后"不变量）
+  if (tree.children[folderId].includes(groupId)) return;
   const children = tree.children[folderId];
   const insertIndex = folderFirstInsertIndex(children, tree.folders);
-  children.splice(insertIndex, 0, conversationId);
+  children.splice(insertIndex, 0, groupId);
   await saveTree(workspaceId, tree);
 }
 
-/** 从指定文件夹移除对话（不动其他文件夹的引用） */
-export async function removeConversationFromFolder(
+/** 从指定文件夹移除组（不动其他文件夹的引用） */
+export async function removeGroupFromFolder(
   workspaceId: string,
-  conversationId: string,
+  groupId: string,
   folderId: string,
 ): Promise<void> {
   const tree = await loadTree(workspaceId);
   const children = tree.children[folderId];
   if (!children) return;
-  const idx = children.indexOf(conversationId);
+  const idx = children.indexOf(groupId);
   if (idx === -1) return;
   children.splice(idx, 1);
   await saveTree(workspaceId, tree);
 }
 
 /** 从一个文件夹移到另一个（remove + add 合并一次写入） */
-export async function moveConversationBetweenFolders(
+export async function moveGroupBetweenFolders(
   workspaceId: string,
-  conversationId: string,
+  groupId: string,
   fromFolderId: string,
   toFolderId: string,
 ): Promise<void> {
@@ -362,17 +347,16 @@ export async function moveConversationBetweenFolders(
   if (!tree.folders[toFolderId]) {
     throw new Error(`目标文件夹不存在: ${toFolderId}`);
   }
-  // 从源移除
   const fromChildren = tree.children[fromFolderId];
   if (fromChildren) {
-    const idx = fromChildren.indexOf(conversationId);
+    const idx = fromChildren.indexOf(groupId);
     if (idx !== -1) fromChildren.splice(idx, 1);
   }
   if (!tree.children[toFolderId]) tree.children[toFolderId] = [];
-  if (!tree.children[toFolderId].includes(conversationId)) {
+  if (!tree.children[toFolderId].includes(groupId)) {
     const toChildren = tree.children[toFolderId];
     const insertIndex = folderFirstInsertIndex(toChildren, tree.folders);
-    toChildren.splice(insertIndex, 0, conversationId);
+    toChildren.splice(insertIndex, 0, groupId);
   }
   await saveTree(workspaceId, tree);
 }

@@ -8,14 +8,14 @@ export interface SmartCategory {
   id: string;
   name: string;
   anchorTags: string[];
-  conversationIds: string[];
+  groupIds: string[];
   createdAt: string;                    // ISO
   updatedAt: string;                    // ISO
 }
 
 export interface CategorizeDecisionLog {
   time: string;                         // ISO
-  conversationId: string;
+  groupId: string;
   decision: 'match' | 'join' | 'new' | 'skip' | 'error';
   reason?: string;
 }
@@ -29,7 +29,7 @@ export interface SmartCategoriesIndex {
 export interface CategorizeRecentEntry {
   workspaceId: string;
   kind: 'incremental' | 'full-rebuild';
-  conversationId?: string;
+  groupId?: string;                     // full-rebuild 时可能缺省
   finishedAt: number;
   outcome: 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled';
   decisions?: Record<string, number>;
@@ -43,7 +43,7 @@ export interface CategorizeRecentEntry {
 export interface CategorizeActivity {
   current: {
     workspaceId: string;
-    conversationId?: string;
+    groupId?: string;                   // full-rebuild 时可能缺省
     kind: 'incremental' | 'full-rebuild';
     startedAt: number;
     taskId: string;
