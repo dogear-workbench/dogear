@@ -313,8 +313,8 @@ export class QueryBasedSession extends EventEmitter {
         queryOptions.promptSuggestions = true;
       }
 
-      if (resolvedProfile.enable1MContext) {
-        this.logger.info('已启用 1M 长上下文模式 (CLAUDE_CODE_AUTO_COMPACT_WINDOW=900000)');
+      if (resolvedProfile.autoCompactWindow && resolvedProfile.autoCompactWindow > 0) {
+        this.logger.info(`已设置自动压缩窗口 CLAUDE_CODE_AUTO_COMPACT_WINDOW=${resolvedProfile.autoCompactWindow}`);
       }
 
       // 缓存 selection/profile 供 setModel 使用

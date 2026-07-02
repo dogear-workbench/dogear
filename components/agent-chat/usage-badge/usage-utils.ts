@@ -18,8 +18,8 @@ export function formatTokens(n: number): string {
 /**
  * 解析当前上下文占用与上限，来自 SDK 真实快照 latestContext（query.getContextUsage）。
  * 无快照（旧对话或采集失败）返回 used=null，UI 据此不画进度条。
- * SDK 的 maxTokens 只反映标准窗口（200k），不感知 1M beta；enable1MContext 为真时
- * 按 1M 兜底并据此重算占比，使上限与徽章上的 1M 标记一致（跟随用户勾选）。
+ * autoCompactWindow：用户在 profile 里设置的自动压缩窗口（CLAUDE_CODE_AUTO_COMPACT_WINDOW），
+ * >0 时把进度条上限收窄到这个 token 数并重算占比，反映"离压缩还有多远"。
  */
 export interface ContextInfo {
   used: number | null;
@@ -30,14 +30,18 @@ export interface ContextInfo {
 
 export function resolveContext(
   latestContext: ContextSnapshot | undefined,
-  enable1MContext = false,
+  autoCompactWindow = 0,
 ): ContextInfo {
   if (!latestContext || latestContext.totalTokens <= 0) {
     return { used: null, limit: 0, percentage: 0, label: '' };
   }
   const rawLimit = latestContext.maxTokens > 0 ? latestContext.maxTokens : 0;
-  const limit = enable1MContext ? Math.max(rawLimit, 1_000_000) : rawLimit;
-  // 上限被 1M 覆盖后，SDK 按 200k 算出的 percentage 不再适用，按 used/limit 重算
+  // autoCompactWindow 上限受模型实际上下文窗口约束（SDK 文档: "该值上限为模型的实际上下文窗口"）
+  const effectiveWindow = autoCompactWindow > 0
+    ? (rawLimit > 0 ? Math.min(autoCompactWindow, rawLimit) : autoCompactWindow)
+    : 0;
+  const limit = effectiveWindow > 0 ? effectiveWindow : rawLimit;
+  // 上限被 autoCompactWindow 覆盖后，SDK 上报的 percentage 不再适用，按 used/limit 重算
   const percentage = limit !== rawLimit
     ? (latestContext.totalTokens / limit) * 100
     : (latestContext.percentage > 0

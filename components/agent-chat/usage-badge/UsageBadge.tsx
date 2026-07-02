@@ -10,7 +10,7 @@ import { formatTokens } from './usage-utils';
  * 上下文占用来自 SDK 真实快照（context.used）；无快照时只显示统计、不画进度条。
  */
 export function UsageBadge({ conversationId }: { conversationId: string | null }) {
-  const { usage, enable1MContext, context } = useConversationUsage(conversationId);
+  const { usage, context } = useConversationUsage(conversationId);
 
   const lastEntry = usage?.entries[usage.entries.length - 1];
   if (!usage || !lastEntry) return null;
@@ -42,9 +42,6 @@ export function UsageBadge({ conversationId }: { conversationId: string | null }
             {used !== null ? formatTokens(used) : '—'}
             {hasBar ? ` / ${formatTokens(limit)}` : ''}
           </span>
-          {enable1MContext && (
-            <span className="px-1 py-0.5 rounded bg-muted text-[10px] leading-none">1M</span>
-          )}
         </button>
       </HoverCardTrigger>
       <HoverCardContent align="end" className="w-[560px] p-0 text-xs">

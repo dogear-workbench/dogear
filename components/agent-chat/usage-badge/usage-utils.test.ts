@@ -29,11 +29,20 @@ test('resolveContext maxTokens 缺失只给 used、不画进度', () => {
 test('resolveContext 无快照返回 used=null', () => {
   expect(resolveContext(undefined).used).toBeNull();
 });
-test('resolveContext enable1MContext 把上限兜底到 1M 并重算占比', () => {
-  const r = resolveContext(snap(), true);
-  expect(r.limit).toBe(1_000_000);
-  expect(r.label).toBe('1M');
-  expect(Math.round(r.percentage)).toBe(3); // 34000 / 1_000_000
+test('resolveContext autoCompactWindow 把上限收窄到用户设定值并重算占比', () => {
+  const r = resolveContext(snap({ maxTokens: 1_000_000, percentage: 3 }), 500_000);
+  expect(r.limit).toBe(500_000);
+  expect(r.label).toBe('500k');
+  expect(Math.round(r.percentage)).toBe(7); // 34000 / 500_000
+});
+test('resolveContext autoCompactWindow 超过模型上限被截断到 rawLimit', () => {
+  const r = resolveContext(snap({ maxTokens: 200_000 }), 900_000);
+  expect(r.limit).toBe(200_000);
+});
+test('resolveContext autoCompactWindow=0 走 SDK 上限', () => {
+  const r = resolveContext(snap(), 0);
+  expect(r.limit).toBe(200_000);
+  expect(r.percentage).toBe(17);
 });
 test('formatTokens 千分位缩写', () => {
   expect(formatTokens(15632)).toBe('15.6k');

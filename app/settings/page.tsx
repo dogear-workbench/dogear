@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -655,25 +656,25 @@ export default function SettingsPage() {
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium">启用 1M 长上下文模式</label>
-                        <p className="text-xs text-muted-foreground">
-                          仅 Claude Opus 4.6+ / Sonnet 4.6 原生支持 1M 上下文，其他模型勾选可能撞模型上限报错
-                        </p>
-                      </div>
-                      <button type="button"
-                        className={cn(
-                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                          profile.enable1MContext ? "bg-primary" : "bg-muted"
-                        )}
-                        onClick={() => updateProfileField(id, { enable1MContext: !profile.enable1MContext })}
-                      >
-                        <span className={cn(
-                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                          profile.enable1MContext ? "translate-x-6" : "translate-x-1"
-                        )} />
-                      </button>
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">自动压缩窗口 (tokens)</label>
+                      <p className="text-xs text-muted-foreground">
+                        CLAUDE_CODE_AUTO_COMPACT_WINDOW；留空按模型默认（标准 200K / 扩展 1M）。
+                        填 500000 = 到 50 万 token 时触发压缩。上限受模型实际上下文窗口约束。
+                      </p>
+                      <Input
+                        type="number"
+                        min={0}
+                        placeholder="留空 = 走 SDK 默认"
+                        value={profile.autoCompactWindow ?? ''}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          updateProfileField(id, {
+                            autoCompactWindow: v === '' ? undefined : Math.max(0, Number(v) || 0),
+                          });
+                        }}
+                        className="max-w-[240px]"
+                      />
                     </div>
 
                     {/* 底部操作 */}

@@ -123,9 +123,9 @@ export function buildProfileEnv(
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: profile.disableNonessentialTraffic ? '1' : '0',
     CLAUDE_CONFIG_DIR: claudeConfigDir,
   };
-  // 1M 长上下文：按 Profile 配置显式控制，避免继承父进程环境中的值
-  if (profile.enable1MContext) {
-    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = '900000';
+  // 自动压缩窗口：>0 时显式注入，否则移除，避免继承父进程环境
+  if (profile.autoCompactWindow && profile.autoCompactWindow > 0) {
+    env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(profile.autoCompactWindow);
   } else {
     delete env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
   }

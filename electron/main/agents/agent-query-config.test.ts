@@ -17,7 +17,12 @@ test('buildProfileEnv 注入凭证与模型映射', () => {
   expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
 });
 
-test('buildProfileEnv 在 enable1MContext 时设置压缩窗口', () => {
-  const env = buildProfileEnv({ ...profile, enable1MContext: true }, '/cfg/conversations');
-  expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('900000');
+test('buildProfileEnv 在设置 autoCompactWindow 时注入具体 token 数', () => {
+  const env = buildProfileEnv({ ...profile, autoCompactWindow: 500000 }, '/cfg/conversations');
+  expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe('500000');
+});
+
+test('buildProfileEnv 在 autoCompactWindow=0 时不注入压缩窗口', () => {
+  const env = buildProfileEnv({ ...profile, autoCompactWindow: 0 }, '/cfg/conversations');
+  expect(env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
 });

@@ -33,8 +33,8 @@ export interface ModelProfile {
   opusModel: string;
   apiTimeoutMs: number;
   disableNonessentialTraffic: boolean;
-  /** 启用 1M 长上下文模式：自动压缩阈值设为 900K token。默认 false */
-  enable1MContext?: boolean;
+  /** 自动压缩窗口 token 数（CLAUDE_CODE_AUTO_COMPACT_WINDOW）。空/0 走 SDK 默认（= 模型实际上下文窗口） */
+  autoCompactWindow?: number;
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
