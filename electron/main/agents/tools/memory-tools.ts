@@ -1,13 +1,18 @@
 /**
  * 记忆大脑 MCP Server 工具
  *
- * 三个工具：RecallMemory / SaveMemory / ForgetMemory，操作工作区级记忆
+ * 默认三个工具：RecallMemory / SaveMemory / ForgetMemory，操作工作区级记忆
  * （<workspace>/.dogear/memory/）。SDK 自身的 auto-memory 是全局画像级别，
  * 本工具面向的是"工作区主题记忆"，两者正交。
  *
+ * autonomous 模式（opts.autonomous=true）：
+ * - SaveMemory 描述改为自动化任务契约（"仅用户明确要求"仅适用于交互式聊天）
+ * - 额外注册 GetCoreProfile / UpdateCoreProfile 两个工具（供复盘任务维护稳定身份画像）
+ *
  * 使用边界：
- * - SaveMemory 仅在用户明确要求"记住 XX"时调用，不要自行猜测
+ * - SaveMemory 默认仅在用户明确要求"记住 XX"时调用，autonomous 模式下改为按调用方提示词判断
  * - RecallMemory 在讨论具体主题开头主动调用，不要等用户追问
+ * - UpdateCoreProfile 是全量覆盖，调用前必须先 GetCoreProfile 合并
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
@@ -40,12 +45,23 @@ registerTools([
 /**
  * 创建记忆大脑 MCP Server
  * @param workspacePath 工作区绝对路径，空串时调用方不应注入此 server
+ * @param opts.autonomous true 时切换到自动化任务契约（放开 SaveMemory 门槛 + 额外注册 core-profile 工具）
  */
-export function createMemoryTools(workspacePath: string) {
-  return createSdkMcpServer({
-    name: 'dogear-memory',
-    version: '1.0.0',
-    tools: [
+export function createMemoryTools(workspacePath: string, opts?: { autonomous?: boolean }) {
+  const autonomous = opts?.autonomous === true;
+
+  const saveMemoryDescription = autonomous
+    ? '保存新的主题记忆或覆盖现有主题。\n' +
+      '本调用来自复盘 / 自动化任务：**判断标准以调用方提示词为准**，"仅在用户明确要求时才调用"那条规则只适用于交互式聊天场景，不适用于本任务，够格就放心写。\n' +
+      '保真契约仍然适用：拿不准某条根源 / 因果时用 TraceSource 查证，宁可不写也不瞎造。\n' +
+      'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
+      '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。'
+    : '保存新的主题记忆或覆盖现有主题。\n' +
+      '⚠️ 仅在用户**明确表达**"记住 XX"、"把这个存到记忆里"等意图时调用，不要自行猜测。\n' +
+      'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
+      '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。';
+
+  const tools = [
       // ========================================
       // 工具 1: 召回主题记忆
       // ========================================
@@ -102,10 +118,7 @@ export function createMemoryTools(workspacePath: string) {
       // ========================================
       tool(
         'SaveMemory',
-        '保存新的主题记忆或覆盖现有主题。\n' +
-        '⚠️ 仅在用户**明确表达**"记住 XX"、"把这个存到记忆里"等意图时调用，不要自行猜测。\n' +
-        'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
-        '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。',
+        saveMemoryDescription,
         {
           slug: z
             .string()
@@ -180,6 +193,96 @@ export function createMemoryTools(workspacePath: string) {
           }
         },
       ),
-    ],
+    ...(autonomous ? [
+      // ========================================
+      // 工具 4（仅 autonomous）: 读取核心画像
+      // ========================================
+      tool(
+        'GetCoreProfile',
+        '读取本工作区的 core-profile（每个新会话自动注入的稳定身份画像）。\n' +
+        '返回当前正文和 updated 时间戳；文件不存在或为空时返回明确提示——**空是正常状态**，不代表没必要写，只是目前没有足够稳定的信号。\n' +
+        '任何 UpdateCoreProfile 调用前都必须先调本工具拿现状，再合并成完整版本传回去（Update 是全量覆盖）。',
+        {},
+        async () => {
+          try {
+            const profile = await memoryService.getCoreProfile(workspacePath);
+            if (!profile || !profile.content.trim()) {
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: '（当前 core-profile 为空，是正常状态；不代表没必要写，只是目前没有足够稳定跨会话的信号）',
+                  },
+                ],
+              };
+            }
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `updated：${profile.updated}\n\n${profile.content}`,
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `读取 core-profile 失败: ${error instanceof Error ? error.message : String(error)}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        },
+      ),
+
+      // ========================================
+      // 工具 5（仅 autonomous）: 更新核心画像
+      // ========================================
+      tool(
+        'UpdateCoreProfile',
+        '全量覆盖写入 core-profile。\n' +
+        '⚠️ 触发门槛**极苛刻**——只有真正稳定、跨多次会话反复验证为真的身份 / 偏好 / 工作模式才够格（例如"不写单元测试""偏好薄 IO 厚提示词""使用中文回答"）。近期动态、进行中的任务、某次具体决定都不该进这里。**大多数复盘不该调用本工具**。\n' +
+        '⚠️ 是**全量覆盖**：必须先 GetCoreProfile 拿现有内容，把新增部分与之合并成完整版本再传入，否则会丢失已有内容。\n' +
+        '写入成功后 updated 时间戳自动刷新。',
+        {
+          content: z
+            .string()
+            .min(1)
+            .describe('合并后的完整 core-profile 正文（markdown）；不带 frontmatter，工具会自动加'),
+        },
+        async (args) => {
+          try {
+            await memoryService.updateCoreProfile(workspacePath, args.content);
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: '已更新 core-profile（全量覆盖）',
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `更新 core-profile 失败: ${error instanceof Error ? error.message : String(error)}`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        },
+      ),
+    ] : []),
+  ];
+
+  return createSdkMcpServer({
+    name: 'dogear-memory',
+    version: '1.0.0',
+    tools,
   });
 }

@@ -741,7 +741,7 @@ class AgentWorker {
     const { createMemoryTools } = await import('./tools/memory-tools.js');
     let saved = false;
     const reviewServer = createReviewMcpServer(workspaceId, workspacePath, () => { saved = true; });
-    const memoryServer = createMemoryTools(workspacePath);
+    const memoryServer = createMemoryTools(workspacePath, { autonomous: true });
 
     const { loadReviewPrompt } = await import('../services/memory/review-prompt.js');
     const template = await loadReviewPrompt(this.configDir);
@@ -775,6 +775,8 @@ class AgentWorker {
             'mcp__dogear-memory__RecallMemory',
             'mcp__dogear-memory__SaveMemory',
             'mcp__dogear-memory__ForgetMemory',
+            'mcp__dogear-memory__GetCoreProfile',
+            'mcp__dogear-memory__UpdateCoreProfile',
           ],
         },
       });
