@@ -1,5 +1,8 @@
 // 组级摘要卡提炼触发编排（Phase 3 Step 2）：替代旧 digest-trigger
 // 串行队列并发=1 + in-flight 去重（按 ${workspaceId}:${groupId}）
+import fsSync from 'node:fs';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import {
   TaskType, TaskStatus, type AgentTask, type GroupDigestSessionPayload,
 } from '../../agents/task-types.js';
@@ -8,6 +11,7 @@ import {
 } from './group-digest-scanner.js';
 import { readGroupDigest, getGroupDigestPath } from './group-digest-store.js';
 import { mainLogger } from '../../agents/logger.js';
+import { getConfigDir } from '../settings-service.js';
 
 export type GroupDigestOutcome = 'saved' | 'no-card' | 'error';
 
@@ -46,6 +50,56 @@ const RECENT_MAX = 15;
 let current: GroupDigestActivity['current'] = null;
 const recent: GroupDigestRecentEntry[] = [];
 let lastScan: GroupDigestActivity['lastScan'] = null;
+
+// ─── 活动状态持久化 ───
+// recent / lastScan 落 <configDir>/digest-activity.json，避免重启后设置面板看不到历史
+
+interface DigestActivityDoc {
+  version: 1;
+  recent: GroupDigestRecentEntry[];
+  lastScan: GroupDigestActivity['lastScan'];
+  updatedAt: number;
+}
+
+function getActivityPath(): string {
+  return path.join(getConfigDir(), 'digest-activity.json');
+}
+
+let writeTimer: NodeJS.Timeout | null = null;
+
+function schedulePersist(): void {
+  if (writeTimer) clearTimeout(writeTimer);
+  writeTimer = setTimeout(() => {
+    writeTimer = null;
+    void persistActivity();
+  }, 500);
+}
+
+async function persistActivity(): Promise<void> {
+  try {
+    const doc: DigestActivityDoc = {
+      version: 1,
+      recent: recent.slice(0, RECENT_MAX),
+      lastScan,
+      updatedAt: Date.now(),
+    };
+    await fs.writeFile(getActivityPath(), JSON.stringify(doc, null, 2), 'utf-8');
+  } catch (err) {
+    mainLogger.warn('[group-digest] 持久化 activity 失败:', err);
+  }
+}
+
+// 模块加载时同步加载磁盘状态（文件小，同步读无性能问题；让前端首次拉 activity 即拿到历史）
+try {
+  const raw = fsSync.readFileSync(getActivityPath(), 'utf-8');
+  const doc = JSON.parse(raw) as DigestActivityDoc;
+  if (doc && doc.version === 1) {
+    if (Array.isArray(doc.recent)) recent.push(...doc.recent.slice(0, RECENT_MAX));
+    if (doc.lastScan) lastScan = doc.lastScan;
+  }
+} catch {
+  // 文件不存在或损坏：用默认空状态
+}
 
 function entryKey(e: QueueEntry): string {
   return `${e.workspaceId}:${e.groupId}`;
@@ -117,6 +171,7 @@ async function runOne(e: QueueEntry): Promise<void> {
     });
     if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
     current = null;
+    schedulePersist();
   };
 
   // 脏检查
@@ -197,6 +252,7 @@ export async function triggerScanAll(): Promise<void> {
   const dirtyGroups = await scanAllWorkspaces();
   const dirtyCount = dirtyGroups.length;
   lastScan = { at: Date.now(), dirtyCount };
+  schedulePersist();
   mainLogger.info(`[group-digest] 扫描完成，发现 ${dirtyCount} 个 dirty 组`);
   for (const g of dirtyGroups) {
     enqueue({ workspaceId: g.workspaceId, workspacePath: g.workspacePath, groupId: g.groupId });
@@ -223,4 +279,32 @@ export async function triggerByConversation(convId: string): Promise<void> {
 /** 手动入口：指定单个 group */
 export async function triggerByGroup(workspaceId: string, workspacePath: string, groupId: string): Promise<void> {
   enqueue({ workspaceId, workspacePath, groupId });
+}
+
+/**
+ * 一键停止：清空待跑队列 + 取消当前正在跑的任务。
+ * 已落盘的组卡不受影响（下次扫描时 isGroupDirty 会跳过）。
+ */
+export async function cancelAllGroupDigest(): Promise<{ cancelledQueued: number; cancelledCurrent: boolean }> {
+  const cancelledQueued = queue.length;
+  queue.length = 0;
+  inFlight.clear();
+
+  const cancelledCurrent = current !== null;
+  if (current) {
+    try {
+      const { getAgentManager } = await import('../../agents/agent-manager.js');
+      getAgentManager().cancelTask(current.taskId);
+    } catch (err) {
+      mainLogger.warn('[group-digest] cancelTask 失败:', err);
+    }
+  }
+
+  // pump 当前若在 await runOne，cancelTask 会让回调触发 resolve，pump 自然退出
+  // 但若 pump 不在跑（pumping=false），waiters 不会自动被通知
+  const waiters = idleWaiters.splice(0);
+  for (const w of waiters) w();
+
+  mainLogger.info(`[group-digest] 一键停止: queue=${cancelledQueued}, current=${cancelledCurrent}`);
+  return { cancelledQueued, cancelledCurrent };
 }

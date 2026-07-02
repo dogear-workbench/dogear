@@ -3,7 +3,7 @@
 import { tipc } from '@egoist/tipc/main';
 import { listGroupDigests, readGroupDigest } from '../services/memory/group-digest-store.js';
 import {
-  triggerScanAll, triggerByGroup, getGroupDigestActivity,
+  triggerScanAll, triggerByGroup, getGroupDigestActivity, cancelAllGroupDigest,
 } from '../services/memory/group-digest-trigger.js';
 import {
   loadGroupDigestPrompt, saveGroupDigestPrompt, DEFAULT_GROUP_DIGEST_PROMPT,
@@ -89,6 +89,17 @@ export const digestRouter = {
         return { success: true };
       } catch (error) {
         console.error('[digest] cancelGroupDigest 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  cancelAllGroupDigest: t.procedure
+    .action(async () => {
+      try {
+        const result = await cancelAllGroupDigest();
+        return { success: true, ...result };
+      } catch (error) {
+        console.error('[digest] cancelAllGroupDigest 失败:', error);
         return { error: String(error) };
       }
     }),

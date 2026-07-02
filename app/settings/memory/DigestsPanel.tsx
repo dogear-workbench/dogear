@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { FileText, RefreshCw, Sparkles, Square, ChevronDown } from 'lucide-react';
+import { FileText, RefreshCw, Sparkles, Square, ChevronDown, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -74,7 +74,6 @@ export function DigestsPanel() {
   const confirm = useConfirmStore((s) => s.confirm);
   const [list, setList] = useState<GroupDigestSummary[]>([]);
   const [selected, setSelected] = useState<GroupDigestCard | null>(null);
-  const [loading, setLoading] = useState(false);
   const [selection, setSelection] = useState<ModelSelection | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [activity, setActivity] = useState<GroupDigestActivity | null>(null);
@@ -85,13 +84,8 @@ export function DigestsPanel() {
 
   const loadList = useCallback(async () => {
     if (!workspaceId) return;
-    setLoading(true);
-    try {
-      const result = await client.listGroupDigests({ workspaceId });
-      if ('digests' in result && result.digests) setList(result.digests as GroupDigestSummary[]);
-    } finally {
-      setLoading(false);
-    }
+    const result = await client.listGroupDigests({ workspaceId });
+    if ('digests' in result && result.digests) setList(result.digests as GroupDigestSummary[]);
   }, [workspaceId]);
 
   useEffect(() => {
@@ -111,8 +105,13 @@ export function DigestsPanel() {
   useEffect(() => {
     let alive = true;
     const poll = async () => {
-      const r = await client.getGroupDigestActivity();
-      if (alive && 'activity' in r && r.activity) setActivity(r.activity as GroupDigestActivity);
+      const [ar, lr] = await Promise.all([
+        client.getGroupDigestActivity(),
+        workspaceId ? client.listGroupDigests({ workspaceId }) : Promise.resolve(null),
+      ]);
+      if (!alive) return;
+      if ('activity' in ar && ar.activity) setActivity(ar.activity as GroupDigestActivity);
+      if (lr && 'digests' in lr && lr.digests) setList(lr.digests as GroupDigestSummary[]);
     };
     poll();
     const id = setInterval(poll, 2000);
@@ -120,7 +119,7 @@ export function DigestsPanel() {
       alive = false;
       clearInterval(id);
     };
-  }, []);
+  }, [workspaceId]);
 
   const selectCard = async (groupId: string) => {
     if (!workspaceId) return;
@@ -141,8 +140,20 @@ export function DigestsPanel() {
     setPrompt(defaultPrompt);
     setPromptDirty(true);
   };
-  const handleCancelDigest = async (taskId: string) => {
-    await client.cancelGroupDigest({ taskId });
+  const handleStopAll = async () => {
+    const r = await client.cancelAllGroupDigest();
+    if ('success' in r && r.success) {
+      await confirm({
+        title: '已停止提炼',
+        description: `清空待跑队列 ${r.cancelledQueued} 个${r.cancelledCurrent ? '，并取消当前任务' : ''}。已落盘的组卡不受影响。`,
+        buttons: [{ label: '知道了', value: 'ok' }],
+      });
+    }
+  };
+
+  const handleRestart = async () => {
+    await client.triggerGroupDigestScan();
+    await loadList();
   };
 
   const handleReDigest = async (groupId: string) => {
@@ -150,7 +161,7 @@ export function DigestsPanel() {
     await client.triggerGroupDigest({ workspaceId, workspacePath, groupId });
     await confirm({
       title: '已加入提炼队列',
-      description: '该组将在后台重新提炼，稍后点「刷新」查看更新。',
+      description: '该组将在后台重新提炼，列表会自动刷新。',
       buttons: [{ label: '知道了', value: 'ok' }],
     });
   };
@@ -175,10 +186,21 @@ export function DigestsPanel() {
           </div>
           <span className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</span>
         </div>
-        <Button variant="outline" size="sm" onClick={loadList} disabled={loading}>
-          <RefreshCw className={loading ? 'w-4 h-4 mr-1 animate-spin' : 'w-4 h-4 mr-1'} />
-          刷新
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!activity?.current && !(activity?.queueDepth && activity.queueDepth > 0)}
+            onClick={handleStopAll}
+          >
+            <Square className="w-4 h-4 mr-1" />
+            停止
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleRestart}>
+            <RotateCcw className="w-4 h-4 mr-1" />
+            重新开始
+          </Button>
+        </div>
       </div>
 
       {activity && (
@@ -188,15 +210,6 @@ export function DigestsPanel() {
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-primary" />
                 <span>正在提炼组 <code className="text-xs">{activity.current.groupId.slice(0, 16)}…</code></span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-destructive"
-                  onClick={() => handleCancelDigest(activity.current!.taskId)}
-                >
-                  <Square className="w-3 h-3 mr-1" />
-                  停止
-                </Button>
               </>
             ) : (
               <span className="text-muted-foreground">空闲</span>
