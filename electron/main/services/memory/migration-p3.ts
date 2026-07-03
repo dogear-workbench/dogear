@@ -149,8 +149,26 @@ async function migrateDigestCards(
     if (SKIP_DIRS.has(name)) continue;
     if (!name.endsWith('.md')) continue;
 
-    const sessionId = name.replace(/\.md$/, '');
     const oldPath = path.join(digestsDir, name);
+
+    // 按 frontmatter 判定格式：有 groupId 已是新组卡（跳过）；只有 sessionId 才是旧会话卡
+    // 光看文件名会把 group_xxx.md 当成 sessionId="group_xxx" 误搬到 _orphan
+    let sessionId: string;
+    try {
+      const raw = await fs.readFile(oldPath, 'utf-8');
+      const { fm } = parseFrontmatter(raw);
+      const gid = typeof fm.groupId === 'string' ? fm.groupId.trim() : '';
+      if (gid) continue; // 已是新格式组卡，不动
+      const sid = typeof fm.sessionId === 'string' ? fm.sessionId.trim() : '';
+      if (!sid) {
+        mainLogger.warn(`[migration-p3] 无法识别的 digest md（frontmatter 缺 sessionId 与 groupId），跳过: ${oldPath}`);
+        continue;
+      }
+      sessionId = sid;
+    } catch (err) {
+      mainLogger.warn(`[migration-p3] 读取 digest md 失败，跳过: ${oldPath}`, err);
+      continue;
+    }
 
     const conv = sessionToConv.get(sessionId);
     if (!conv || conv.role === 'sub') {

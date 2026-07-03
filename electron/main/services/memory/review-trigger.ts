@@ -4,6 +4,17 @@ import {
 } from '../../agents/task-types.js';
 import type { StaleWorkspace } from './review-scanner.js';
 import { mainLogger } from '../../agents/logger.js';
+import { readReport, saveReport } from './review-store.js';
+
+/**
+ * agent 决定不写报告时，touch dashboard.md 的 updatedAt。
+ * 保留原 markdown（无则写空串），只把 updatedAt 刷成"现在"——
+ * 避免 isReportStale 一直判脏、导致每次启动都白跑一次 review agent。
+ */
+async function touchReportUpdatedAt(workspaceId: string): Promise<void> {
+  const existing = await readReport(workspaceId);
+  await saveReport(workspaceId, existing?.markdown ?? '');
+}
 
 const inFlight = new Set<string>();
 const queue: StaleWorkspace[] = [];
@@ -123,6 +134,10 @@ async function runOne(w: StaleWorkspace): Promise<void> {
           profileName: result?.profileName,
           error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
         });
+        if (outcome === 'no-card') {
+          void touchReportUpdatedAt(w.workspaceId).catch((err) =>
+            mainLogger.warn('[review] no-card touch dashboard 失败:', key(w), err));
+        }
         resolve();
       }
     }).catch((err) => {

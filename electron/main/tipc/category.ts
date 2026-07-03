@@ -12,7 +12,7 @@ import {
   DEFAULT_CATEGORIZE_PROMPT,
 } from '../services/memory/categorize-prompt.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
-import { getByWorkspaceId } from '../services/conversation-service.js';
+import { listGroups } from '../services/group-service.js';
 import type { ModelSelection } from '../services/settings-types.js';
 
 const t = tipc.create();
@@ -23,11 +23,11 @@ export const categoryRouter = {
     .action(async ({ input }) => {
       try {
         const idx = await readIndex(input.workspaceId);
-        const liveConvs = await getByWorkspaceId(input.workspaceId);
-        const liveIds = new Set(liveConvs.map((c) => c.id));
+        const liveGroups = await listGroups(input.workspaceId);
+        const liveGroupIds = new Set(liveGroups.map((g) => g.id));
         const filteredCategories = idx.categories.map((c) => ({
           ...c,
-          groupIds: c.groupIds.filter((id) => liveIds.has(id)),
+          groupIds: c.groupIds.filter((id) => liveGroupIds.has(id)),
         }));
         return { categories: filteredCategories };
       } catch (error) {
