@@ -40,7 +40,7 @@ export const categoryRouter = {
     .input<{ workspaceId: string; groupId: string; groupDigestPath: string }>()
     .action(async ({ input }) => {
       try {
-        triggerCategorize(input.workspaceId, input.groupId, input.groupDigestPath);
+        await triggerCategorize(input.workspaceId, input.groupId, input.groupDigestPath);
         return { success: true };
       } catch (error) {
         console.error('[category] triggerCategorize 失败:', error);
@@ -52,7 +52,7 @@ export const categoryRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        triggerFullRebuild(input.workspaceId);
+        await triggerFullRebuild(input.workspaceId);
         return { success: true };
       } catch (error) {
         console.error('[category] triggerFullRebuild 失败:', error);

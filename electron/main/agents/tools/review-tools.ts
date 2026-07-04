@@ -5,13 +5,11 @@
  * 全是薄 IO，零分析逻辑——判断、归并、分流（沉淀进记忆 vs 待办进报告）全在提示词里引导 agent。
  * 沉淀进记忆由独立的 dogear-memory server（RecallMemory/SaveMemory/ForgetMemory）承担。
  */
-import fs from 'node:fs/promises';
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { listGroupDigests, readGroupDigest } from '../../services/memory/group-digest-store.js';
 import { readReport, saveReport } from '../../services/memory/review-store.js';
-import { traceSourceFromLines } from '../../services/memory/trace-source.js';
-import { getSessionJsonlPath } from '../../services/memory/session-paths.js';
+import { readCleanTranscript } from '../../services/memory/transcript-cleaner.js';
 import { registerTools } from './tool-registry.js';
 
 registerTools([
@@ -93,26 +91,19 @@ export function createReviewMcpServer(workspaceId: string, workspacePath: string
           uuid: z.string().describe('出处 uuid（取自组卡 items.sources）'),
         },
         async (args) => {
-          try {
-            const file = getSessionJsonlPath(workspacePath, args.sessionId);
-            const raw = await fs.readFile(file, 'utf-8');
-            const lines = raw.split('\n').filter(Boolean);
-            const r = traceSourceFromLines(lines, args.uuid, 2);
-            if (!r.found) {
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: `未在会话 ${args.sessionId} 中找到 uuid ${args.uuid} 对应原文。请勿据此条臆断，宁可不写。`,
-                }],
-              };
-            }
-            const text = r.messages
-              .map((m) => `[${m.role}${m.uuid === args.uuid ? ' · ★目标' : ''}]\n${m.text}`)
-              .join('\n\n');
-            return { content: [{ type: 'text' as const, text }] };
-          } catch (error) {
-            return errText('回溯原文失败', error);
+          const r = await readCleanTranscript(workspacePath, args.sessionId, {
+            uuid: args.uuid,
+            uuidContext: 2,
+          });
+          if (!r.ok) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `未在会话 ${args.sessionId} 中找到 uuid ${args.uuid} 对应原文（${r.error}）。请勿据此条臆断，宁可不写。`,
+              }],
+            };
           }
+          return { content: [{ type: 'text' as const, text: r.text }] };
         },
       ),
 

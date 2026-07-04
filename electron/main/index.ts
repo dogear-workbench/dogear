@@ -438,6 +438,22 @@ app.whenReady().then(async () => {
     console.error('[migration-p3] 失败:', error);
   }
 
+  // Phase 4 迁移：组卡 digests/<groupId>.md → groups/<groupId>/digest.md，删 _cleaned/
+  try {
+    const { runMigrationP4 } = await import('./services/memory/migration-p4.js');
+    const configDir = app.isPackaged
+      ? path.join(app.getPath('userData'), '.dogear')
+      : path.join(process.cwd(), '.dogear');
+    await runMigrationP4(configDir);
+  } catch (error) {
+    console.error('[migration-p4] 失败:', error);
+  } finally {
+    // 无论迁移成功失败都放开 gate（失败情况下 group-digest / category / review trigger 会读到新路径的空目录，
+    // 比永远堵住更好——用户可以看到问题、手动重跑迁移或触发提炼）
+    const { markMigrationComplete } = await import('./services/memory/migration-gate.js');
+    markMigrationComplete();
+  }
+
   // 初始化 Agent 管理器
   const agentManager = getAgentManager({
     maxWorkers: 4,

@@ -12,6 +12,7 @@ import {
 import { readGroupDigest, getGroupDigestPath } from './group-digest-store.js';
 import { mainLogger } from '../../agents/logger.js';
 import { getConfigDir } from '../settings-service.js';
+import { whenMigrationReady } from './migration-gate.js';
 
 export type GroupDigestOutcome = 'saved' | 'no-card' | 'error';
 
@@ -240,7 +241,7 @@ async function chainCategorize(workspaceId: string, groupId: string, groupDigest
     if (!card?.tags) return;
 
     const { triggerCategorize } = await import('./category-trigger.js');
-    triggerCategorize(workspaceId, groupId, groupDigestPath);
+    void triggerCategorize(workspaceId, groupId, groupDigestPath);
   } catch (err) {
     mainLogger.warn('[group-digest→category] 串联触发失败:', workspaceId, groupId, err);
   }
@@ -248,6 +249,7 @@ async function chainCategorize(workspaceId: string, groupId: string, groupDigest
 
 /** 触发点①/②：扫所有工作区所有 group → dirty 的提交 */
 export async function triggerScanAll(): Promise<void> {
+  await whenMigrationReady();
   mainLogger.info('[group-digest] 开始全量扫描');
   const dirtyGroups = await scanAllWorkspaces();
   const dirtyCount = dirtyGroups.length;
@@ -261,6 +263,7 @@ export async function triggerScanAll(): Promise<void> {
 
 /** 触发点③：关会话后只扫该会话所属工作区/组 */
 export async function triggerByConversation(convId: string): Promise<void> {
+  await whenMigrationReady();
   try {
     const { getByIdGlobal } = await import('../conversation-service.js');
     const found = await getByIdGlobal(convId);
@@ -278,6 +281,7 @@ export async function triggerByConversation(convId: string): Promise<void> {
 
 /** 手动入口：指定单个 group */
 export async function triggerByGroup(workspaceId: string, workspacePath: string, groupId: string): Promise<void> {
+  await whenMigrationReady();
   enqueue({ workspaceId, workspacePath, groupId });
 }
 

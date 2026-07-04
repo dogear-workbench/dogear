@@ -133,6 +133,8 @@ async function buildConversationSessionConfig(
     // 派遣工具：main 实际挂 dogear-delegation，sub 挂 dogear-sub-agent，由 query-based-session 内做分流
     allowedTools.push('mcp__dogear-delegation__*');
     allowedTools.push('mcp__dogear-sub-agent__*');
+    // 引用工具：仅子会话实际有 dogear-reference server，此处按 groupId 对称放行避免弹权限
+    allowedTools.push('mcp__dogear-reference__*');
   }
   for (const pack of OPTIONAL_TOOL_PACKS) {
     if (mcpServers[pack.mcpServerName]) {

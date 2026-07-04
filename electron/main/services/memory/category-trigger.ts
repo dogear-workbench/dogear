@@ -7,6 +7,7 @@ import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 import type { CategorizeActivity, CategorizeRecentEntry } from '../../types.js';
+import { whenMigrationReady } from './migration-gate.js';
 
 type CategorizeJob =
   | { kind: 'incremental'; workspaceId: string; groupId: string; groupDigestPath: string }
@@ -180,12 +181,14 @@ async function runOne(job: CategorizeJob): Promise<void> {
 }
 
 /** 手动触发：单条增量决策（组 digest saved 后串联） */
-export function triggerCategorize(workspaceId: string, groupId: string, groupDigestPath: string): void {
+export async function triggerCategorize(workspaceId: string, groupId: string, groupDigestPath: string): Promise<void> {
+  await whenMigrationReady();
   enqueue({ kind: 'incremental', workspaceId, groupId, groupDigestPath });
 }
 
 /** 手动触发：清空 + 全量重做（设置页"立即重跑全部分类"按钮用） */
-export function triggerFullRebuild(workspaceId: string): void {
+export async function triggerFullRebuild(workspaceId: string): Promise<void> {
+  await whenMigrationReady();
   enqueue({ kind: 'full-rebuild', workspaceId });
 }
 

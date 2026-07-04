@@ -1,5 +1,5 @@
-// 组级摘要卡存储（Phase 3 Step 1）
-// 路径：<configDir>/workspaces/<wsId>/digests/<groupId>.md
+// 组级摘要卡存储
+// 路径：<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDataDir } from '../conversation-service.js';
@@ -65,12 +65,19 @@ const KEY_OUTPUT_RE = /^- (.+?) :: (.+?)(?:\s+←\s+(\S+))?$/;
 
 // ─── 路径 ───
 
-export function getGroupDigestsDir(wsId: string): string {
-  return path.join(getWorkspaceDataDir(wsId), 'digests');
+/** 工作区所有组共用的父目录：<wsData>/groups/ */
+export function getGroupsRootDir(wsId: string): string {
+  return path.join(getWorkspaceDataDir(wsId), 'groups');
 }
 
+/** 单个组的目录：<wsData>/groups/<groupId>/ */
+export function getGroupDir(wsId: string, groupId: string): string {
+  return path.join(getGroupsRootDir(wsId), groupId);
+}
+
+/** 组卡文件：<wsData>/groups/<groupId>/digest.md */
 export function getGroupDigestPath(wsId: string, groupId: string): string {
-  return path.join(getGroupDigestsDir(wsId), `${groupId}.md`);
+  return path.join(getGroupDir(wsId, groupId), 'digest.md');
 }
 
 // ─── 纯函数：序列化 / 解析 ───
@@ -197,8 +204,7 @@ function strOf(v: Frontmatter[string] | undefined): string {
 // ─── 读写 ───
 
 export async function saveGroupDigest(wsId: string, card: GroupDigestCard): Promise<void> {
-  const dir = getGroupDigestsDir(wsId);
-  await fs.mkdir(dir, { recursive: true });
+  await fs.mkdir(getGroupDir(wsId, card.groupId), { recursive: true });
   await fs.writeFile(getGroupDigestPath(wsId, card.groupId), serializeGroupDigest(card), 'utf-8');
 }
 
@@ -212,23 +218,23 @@ export async function readGroupDigest(wsId: string, groupId: string): Promise<Gr
   }
 }
 
-/** 列出某工作区所有组卡摘要（按 updatedAt 降序），跳过 _cleaned/ 和 _archive/ 子目录 */
+/** 列出某工作区所有组卡摘要（按 updatedAt 降序），扫 groups/<groupId>/digest.md */
 export async function listGroupDigests(wsId: string): Promise<GroupDigestSummary[]> {
-  const dir = getGroupDigestsDir(wsId);
-  let names: string[];
+  const root = getGroupsRootDir(wsId);
+  let dirents: import('node:fs').Dirent[];
   try {
-    names = await fs.readdir(dir);
+    dirents = await fs.readdir(root, { withFileTypes: true });
   } catch (err: any) {
     if (err?.code === 'ENOENT') return [];
     throw err;
   }
-  const SKIP_DIRS = new Set(['_cleaned', '_archive', '_orphan']);
   const out: GroupDigestSummary[] = [];
-  for (const name of names) {
-    if (SKIP_DIRS.has(name)) continue;
-    if (!name.endsWith('.md')) continue;
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory()) continue;
+    if (dirent.name.startsWith('_')) continue;
+    const digestFile = path.join(root, dirent.name, 'digest.md');
     try {
-      const raw = await fs.readFile(path.join(dir, name), 'utf-8');
+      const raw = await fs.readFile(digestFile, 'utf-8');
       const card = parseGroupDigest(raw);
       if (card) {
         out.push({

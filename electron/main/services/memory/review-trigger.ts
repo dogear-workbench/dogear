@@ -5,6 +5,7 @@ import {
 import type { StaleWorkspace } from './review-scanner.js';
 import { mainLogger } from '../../agents/logger.js';
 import { readReport, saveReport } from './review-store.js';
+import { whenMigrationReady } from './migration-gate.js';
 
 /**
  * agent 决定不写报告时，touch dashboard.md 的 updatedAt。
@@ -150,6 +151,7 @@ async function runOne(w: StaleWorkspace): Promise<void> {
 
 /** 触发点①/②：全量过时检查 → 入队 */
 export async function triggerReviewScan(): Promise<void> {
+  await whenMigrationReady();
   try {
     const { findStaleWorkspaces } = await import('./review-scanner.js');
     const stale = await findStaleWorkspaces();
@@ -164,6 +166,7 @@ export async function triggerReviewScan(): Promise<void> {
 }
 
 /** 手动触发：单个工作区 */
-export function triggerReview(workspaceId: string, workspacePath: string): void {
+export async function triggerReview(workspaceId: string, workspacePath: string): Promise<void> {
+  await whenMigrationReady();
   enqueueReviews([{ workspaceId, workspacePath }]);
 }

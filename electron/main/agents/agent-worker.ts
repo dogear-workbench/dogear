@@ -600,7 +600,12 @@ class AgentWorker {
     const { createGroupTools } = await import('./tools/group-tools.js');
 
     let saved = false;
-    const groupDigestServer = createGroupDigestTools(workspaceId, workspacePath, groupId, dirtyConversations, () => { saved = true; });
+    let backgroundSaved = false;
+    const groupDigestServer = createGroupDigestTools(
+      workspaceId, workspacePath, groupId, dirtyConversations,
+      () => { saved = true; },
+      () => { backgroundSaved = true; },
+    );
     const transcriptServer = createDigestTools(workspaceId, workspacePath);
     const groupServer = createGroupTools(workspaceId, groupId);
 
@@ -668,6 +673,7 @@ class AgentWorker {
           allowedTools: [
             'mcp__dogear-group-digest__ReadGroupDigest',
             'mcp__dogear-group-digest__SaveGroupDigest',
+            'mcp__dogear-group-digest__SaveGroupBackground',
             'mcp__dogear-memory-digest__CleanTranscript',
             'mcp__dogear-group__ReadGroupFile',
             'mcp__dogear-group__ListGroupFiles',
@@ -681,12 +687,12 @@ class AgentWorker {
         }
       }
 
-      taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { groupId, saved, tier, profileName: resolvedProfile.name };
+      taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| background:', backgroundSaved, '| tier:', tier);
+      return { groupId, saved, backgroundSaved, tier, profileName: resolvedProfile.name };
     } catch (error) {
       if (abortController.signal.aborted) {
         taskLogger.info('组级摘要卡被取消:', groupId);
-        return { groupId, saved: false, cancelled: true };
+        return { groupId, saved: false, backgroundSaved, cancelled: true };
       }
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('组级摘要卡任务失败:', errorMsg);
@@ -863,7 +869,7 @@ class AgentWorker {
       readIndex, writeIndex, pushGroup, appendDecision,
     } = await import('../services/memory/smart-category-store.js');
     const { matchByThreshold, pickRedistributeCandidates } = await import('../services/memory/smart-category-engine.js');
-    const { parseGroupDigest, getGroupDigestsDir } = await import('../services/memory/group-digest-store.js');
+    const { parseGroupDigest, getGroupsRootDir, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
     const { getByWorkspaceId } = await import('../services/conversation-service.js');
     const groupService = await import('../services/group-service.js');
     const { deriveGroupTitle } = await import('../services/group-helpers.js');
@@ -1076,28 +1082,26 @@ class AgentWorker {
         taskLogger.info('full-rebuild: 清空 smart-categories.json');
         await writeIndex(workspaceId, { categories: [], recentDecisions: [] });
 
-        const digestsDir = getGroupDigestsDir(workspaceId);
-        let entries: string[];
+        const groupsRoot = getGroupsRootDir(workspaceId);
+        let dirents: import('node:fs').Dirent[];
         try {
-          entries = await fs.readdir(digestsDir);
+          dirents = await fs.readdir(groupsRoot, { withFileTypes: true });
         } catch {
-          entries = [];
+          dirents = [];
         }
-        // 跳过 _cleaned/_archive/_orphan 子目录，只取顶层 .md
-        const SKIP = new Set(['_cleaned', '_archive', '_orphan']);
-        const mdFiles = entries.filter((n) => !SKIP.has(n) && n.endsWith('.md'));
-
-        // 按 createdAt 升序：parse 一次先排序
+        // 只扫子目录 groups/<groupId>/digest.md，跳过下划线开头的保留目录
         const cards: { path: string; groupId: string; createdAt: string }[] = [];
-        for (const name of mdFiles) {
-          const p = path.join(digestsDir, name);
+        for (const dirent of dirents) {
+          if (!dirent.isDirectory()) continue;
+          if (dirent.name.startsWith('_')) continue;
+          const p = getGroupDigestPath(workspaceId, dirent.name);
           try {
             const raw = await fs.readFile(p, 'utf-8');
             const card = parseGroupDigest(raw);
             if (card?.groupId) {
               cards.push({ path: p, groupId: card.groupId, createdAt: card.createdAt });
             }
-          } catch { /* 跳过解析失败 */ }
+          } catch { /* 跳过解析失败或文件不存在 */ }
         }
         cards.sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1));
 

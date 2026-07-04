@@ -11,7 +11,7 @@ import { mainLogger } from '../../agents/logger.js';
 import { safeJsonWrite } from '../safe-json.js';
 import { parseFrontmatter, type Frontmatter } from './memory-fs.js';
 import {
-  readGroupDigest, saveGroupDigest, getGroupDigestsDir,
+  readGroupDigest, saveGroupDigest,
   type GroupDigestCard,
 } from './group-digest-store.js';
 import { getSessionJsonlPath } from './session-paths.js';
@@ -72,18 +72,18 @@ function parseLegacyDigestCard(raw: string): LegacyDigestCard | null {
   };
 }
 
+function getDigestsDir(wsId: string): string {
+  return path.join(getWorkspaceDataDir(wsId), 'digests');
+}
+
 async function readLegacyDigest(wsId: string, sessionId: string): Promise<LegacyDigestCard | null> {
   try {
-    const raw = await fs.readFile(path.join(getGroupDigestsDir(wsId), `${sessionId}.md`), 'utf-8');
+    const raw = await fs.readFile(path.join(getDigestsDir(wsId), `${sessionId}.md`), 'utf-8');
     return parseLegacyDigestCard(raw);
   } catch (err: any) {
     if (err?.code === 'ENOENT') return null;
     throw err;
   }
-}
-
-function getDigestsDir(wsId: string): string {
-  return path.join(getWorkspaceDataDir(wsId), 'digests');
 }
 
 /** 主入口，幂等执行 */

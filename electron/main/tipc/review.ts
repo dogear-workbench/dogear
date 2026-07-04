@@ -24,7 +24,7 @@ export const reviewRouter = {
     .input<{ workspaceId: string; workspacePath: string }>()
     .action(async ({ input }) => {
       try {
-        triggerReview(input.workspaceId, input.workspacePath);
+        await triggerReview(input.workspaceId, input.workspacePath);
         return { success: true };
       } catch (error) {
         console.error('[review] triggerReview 失败:', error);

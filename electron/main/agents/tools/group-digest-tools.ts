@@ -1,7 +1,8 @@
 /**
  * 组级摘要卡 MCP Server 工具（dogear-group-digest，Phase 3）
  *
- * GROUP_DIGEST_SESSION agent 用：ReadGroupDigest + SaveGroupDigest
+ * GROUP_DIGEST_SESSION agent 用：ReadGroupDigest + SaveGroupDigest + SaveGroupBackground
+ * digest.md 是给人看 + 首页复盘用；background.md 是给「组内新会话」派子会话读的结构化背景
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
@@ -10,6 +11,9 @@ import {
   type GroupDigestCard,
   getGroupDigestPath,
 } from '../../services/memory/group-digest-store.js';
+import {
+  saveGroupBackground, getBackgroundPath, type GroupBackground,
+} from '../../services/memory/background-store.js';
 import { registerTools } from './tool-registry.js';
 
 registerTools([
@@ -25,6 +29,12 @@ registerTools([
     server: 'dogear-group-digest',
     category: 'memory',
   },
+  {
+    name: 'SaveGroupBackground',
+    description: '写入本组 background.md（给组内新会话派子会话读的结构化背景）',
+    server: 'dogear-group-digest',
+    category: 'memory',
+  },
 ]);
 
 export function createGroupDigestTools(
@@ -32,7 +42,8 @@ export function createGroupDigestTools(
   workspacePath: string,
   groupId: string,
   dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>,
-  onSaved?: () => void,
+  onDigestSaved?: () => void,
+  onBackgroundSaved?: () => void,
 ) {
   return createSdkMcpServer({
     name: 'dogear-group-digest',
@@ -115,12 +126,57 @@ export function createGroupDigestTools(
               tags: args.tags,
             };
             await saveGroupDigest(workspaceId, card);
-            onSaved?.();
+            onDigestSaved?.();
             return {
               content: [{ type: 'text' as const, text: `已保存组卡 → ${getGroupDigestPath(workspaceId, groupId)}（${args.items.length} items / ${args.keyOutputs.length} keyOutputs）` }],
             };
           } catch (e) {
             return { content: [{ type: 'text' as const, text: `保存组卡失败: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
+          }
+        },
+      ),
+
+      tool(
+        'SaveGroupBackground',
+        '写入本组 background.md（给下一个新会话读的结构化背景）。'
+          + '4 字段：topic 一句话组主题；progress 2-3 句当前进展；'
+          + 'keyDecisions 数组罗列已拍板的决策（避免下个新会话重议）；'
+          + 'openQuestions 数组罗列未决/搁置的问题。'
+          + 'groupId 必须等于上下文中给定的 groupId。'
+          + '写这个之前一定要先写 SaveGroupDigest；两个字段是不同视角的产物，不冲突不替代。',
+        {
+          groupId: z.string(),
+          topic: z.string().min(1),
+          progress: z.string().min(1),
+          keyDecisions: z.array(z.string().min(1)),
+          openQuestions: z.array(z.string().min(1)),
+        },
+        async (args) => {
+          try {
+            if (args.groupId !== groupId) {
+              return { content: [{ type: 'text' as const, text: `Error: groupId 必须是 ${groupId}` }], isError: true };
+            }
+            const bg: GroupBackground = {
+              groupId,
+              updatedAt: new Date().toISOString(),
+              topic: args.topic,
+              progress: args.progress,
+              keyDecisions: args.keyDecisions,
+              openQuestions: args.openQuestions,
+            };
+            await saveGroupBackground(workspaceId, bg);
+            onBackgroundSaved?.();
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `已保存 background → ${getBackgroundPath(workspaceId, groupId)}（${args.keyDecisions.length} decisions / ${args.openQuestions.length} questions）`,
+              }],
+            };
+          } catch (e) {
+            return {
+              content: [{ type: 'text' as const, text: `保存 background 失败: ${e instanceof Error ? e.message : String(e)}` }],
+              isError: true,
+            };
           }
         },
       ),

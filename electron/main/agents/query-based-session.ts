@@ -85,11 +85,14 @@ import { createReviewMcpServer } from './tools/review-tools.js';
 import { createGroupTools } from './tools/group-tools.js';
 import { createDelegationTools } from './tools/delegation-tools.js';
 import { createSubAgentTools } from './tools/sub-agent-tools.js';
+import { createReferenceTools } from './tools/reference-tools.js';
 import { getReviewSkillDir } from '../services/memory/review-skill-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
 import { buildToolPackGuide } from './tool-pack-guide.js';
 import { buildGroupContextPrompt } from './group-context-builder.js';
+import { REFERENCE_APPEND, groupAppendFor } from './session-append-templates.js';
+import { getGroup } from '../services/group-service.js';
 
 // 重新导出，保持现有导入路径兼容
 export type { ExtendedSessionMessage };
@@ -273,8 +276,33 @@ export class QueryBasedSession extends EventEmitter {
         ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId)
         : '';
 
+      // 组背景注入判定：主会话 + 在组里 + 组内已有其他非子会话（sub 不算兄弟）
+      // 首会话只有 A 段引用提示，B 段派子会话没兄弟没组卡会白跑
+      let groupNameForAppend: string | null = null;
+      if (
+        !this.config.subAgent
+        && this.config.workspaceId
+        && this.config.groupId
+      ) {
+        try {
+          const siblings = await conversationService.getByWorkspaceId(this.config.workspaceId);
+          const hasSibling = siblings.some(c =>
+            c.groupId === this.config.groupId
+            && c.role !== 'sub'
+            && c.id !== this.config.conversationId
+          );
+          if (hasSibling) {
+            const group = await getGroup(this.config.workspaceId, this.config.groupId);
+            const rawTitle = group?.title?.trim();
+            groupNameForAppend = rawTitle || `未命名组（创建于 ${group ? new Date(group.createdAt).toLocaleString('zh-CN') : '未知时间'}）`;
+          }
+        } catch (e) {
+          this.logger.warn('计算组背景注入失败，跳过 B 段:', e);
+        }
+      }
+
       // 构建系统提示词（需要 appSettings 读取默认提示词与人设）
-      const systemPrompt = this.buildSystemPrompt(appSettings, coreProfileText, groupContextText);
+      const systemPrompt = this.buildSystemPrompt(appSettings, coreProfileText, groupContextText, groupNameForAppend);
 
       // 获取项目根目录（用于查找 .claude/skills/）
       const projectRoot = await this.getProjectRoot();
@@ -373,6 +401,13 @@ export class QueryBasedSession extends EventEmitter {
             groupId: this.config.groupId!,
             childConversationId: this.config.conversationId!,
             outputPath: this.config.subAgent!.outputPath,
+          });
+          // 子会话专用：跨会话引用 + 组背景 + 兄弟列表（主 agent 靠 DelegateTo 派子会话来用它们，避免主上下文污染）
+          delegationServers['dogear-reference'] = createReferenceTools({
+            workspaceId: this.config.workspaceId!,
+            workspacePath: this.config.workspacePath!,
+            groupId: this.config.groupId!,
+            parentConversationId: this.config.subAgent!.parentConversationId,
           });
         } else {
           delegationServers['dogear-delegation'] = createDelegationTools({
@@ -1616,6 +1651,7 @@ export class QueryBasedSession extends EventEmitter {
     appSettings: AppSettings,
     coreProfileText: string | null,
     groupContextText: string = '',
+    groupNameForAppend: string | null = null,
   ): { type: 'preset'; preset: 'claude_code'; append: string } {
     const parts: string[] = [];
 
@@ -1655,6 +1691,16 @@ export class QueryBasedSession extends EventEmitter {
     // 6. 会话组上下文（共享区文件清单 + 概况），放在最后让 Agent 最近一次看到
     if (groupContextText) {
       parts.push(groupContextText);
+    }
+
+    // 6a. 通用「引用历史会话」提示（所有主会话；子会话没有 DelegateTo 不注入）
+    if (!this.config.subAgent) {
+      parts.push(REFERENCE_APPEND);
+    }
+
+    // 6b. 组背景提示（主会话 + 组内非首个；由 start() 判定并传入 groupName）
+    if (groupNameForAppend) {
+      parts.push(groupAppendFor(groupNameForAppend));
     }
 
     // 7. _notes/ 引导（仅主会话；子会话不写 notes）
