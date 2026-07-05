@@ -11,7 +11,7 @@ export function ReportSection({ workspaceId: _workspaceId }: ReportSectionProps)
   const openSettings = useUIStore((s) => s.openSettings);
 
   if (reportMarkdown) {
-    return <MarkdownRenderer content={reportMarkdown} />;
+    return <MarkdownRenderer content={reportMarkdown} stripHtmlComments />;
   }
 
   return (

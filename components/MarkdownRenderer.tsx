@@ -17,6 +17,8 @@ interface MarkdownRendererProps {
   matchIdPrefix?: string;
   /** 当前激活的 match id */
   activeMatchId?: string | null;
+  /** 渲染前剥掉 HTML 注释（如 `<!-- refs: ... -->`）。仅在报告/摘要等"人不该看到元注释"场景开启 */
+  stripHtmlComments?: boolean;
 }
 
 /**
@@ -39,7 +41,11 @@ function wrapChildren(
  * 支持 GFM 语法（表格、删除线等）、代码高亮、图片防盗链、链接安全拦截
  * 支持搜索高亮（searchQuery + matchIdPrefix + activeMatchId）
  */
-export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments }: MarkdownRendererProps) {
+  const processedContent = useMemo(
+    () => (stripHtmlComments ? content.replace(/<!--[\s\S]*?-->/g, '') : content),
+    [content, stripHtmlComments],
+  );
   // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
   // 只有搜索相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）
   const mdComponents = useMemo(() => ({
@@ -109,7 +115,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         rehypePlugins={[rehypeHighlight]}
         components={mdComponents}
       >
-        {content}
+        {processedContent}
       </ReactMarkdown>
     </div>
   );
