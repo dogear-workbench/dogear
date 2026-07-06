@@ -91,7 +91,7 @@ import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-ser
 import { loadCoreProfileForSession } from '../services/memory/memory-loader.js';
 import { buildToolPackGuide } from './tool-pack-guide.js';
 import { buildGroupContextPrompt } from './group-context-builder.js';
-import { REFERENCE_APPEND, groupAppendFor } from './session-append-templates.js';
+import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, subAgentContractFor } from './session-append-templates.js';
 import { getGroup } from '../services/group-service.js';
 
 // 重新导出，保持现有导入路径兼容
@@ -1705,24 +1705,13 @@ export class QueryBasedSession extends EventEmitter {
 
     // 7. _notes/ 引导（仅主会话；子会话不写 notes）
     if (!this.config.subAgent && this.config.workspacePath) {
-      parts.push(`\n## 共享区阶段总结（可选）\n` +
-        `当某个阶段告一段落、或上下文用量已较高时，你可以主动调用 \`WriteGroupFile\` 把一份阶段总结写到 \`shared/_notes/<YYYY-MM-DD-HHmm>-<phase>.md\`，` +
-        `frontmatter 带 \`summary:\` 一行。这不是强制——只在你判断「现在写下来对下次接续/组卡有价值」时做。` +
-        `不要为了凑数而写，也不要把工具用法、流程细节往里堆。`);
+      parts.push(NOTES_GUIDANCE_APPEND);
     }
 
     // 8. 子会话派遣段（仅 role='sub' 注入）：告诉子 agent 自己的任务 / 交付路径 / 必须调 SubmitDelivery 收尾
     if (this.config.subAgent) {
       const { task, outputPath } = this.config.subAgent;
-      parts.push(`\n## 你是一个被派遣的子会话\n` +
-        `**任务**：${task}\n\n` +
-        `**交付路径**：${outputPath}（共享区相对路径）\n\n` +
-        `**交付契约**（必须遵守）：\n` +
-        `1. 完成任务后，用 WriteGroupFile 把交付物正文写入 \`${outputPath}\`。\n` +
-        `2. 然后调 SubmitDelivery({ summary, outputPath: '${outputPath}' }) 通知父会话；summary ≤500 字总结你做了什么。\n` +
-        `3. **未调 SubmitDelivery 就停下**会被视作未交付（no_delivery），父会话拿不到结果。\n` +
-        `4. 不要派遣孙子会话（你没有 DelegateTo 工具）。\n` +
-        `5. 遇到歧义、缺少关键信息时调 AskParent({ question }) 反问父会话，不要瞎猜。一次只能挂起一个问题，父会话回复后才能再问下一个。\n`);
+      parts.push(subAgentContractFor({ task, outputPath }));
     }
 
     return { type: 'preset', preset: 'claude_code', append: parts.join('\n') };

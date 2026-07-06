@@ -252,3 +252,14 @@ export interface ChildStateSnapshot {
   summary?: string;
   errorMessage?: string;
 }
+
+// ─── 系统提示词展示段（镜像自 types/system-prompt.ts）───
+
+export interface SystemPromptSegment {
+  key: string;
+  label: string;
+  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide';
+  template: string;
+  triggerDescription: string;
+  isDynamic: boolean;
+}
