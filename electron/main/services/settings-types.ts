@@ -112,7 +112,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     categorizeModelSelection: null,
   },
   personas: [],
-  subAgent: { permissionMode: 'bypassPermissions', timeoutMinutes: 30 },
+  subAgent: { permissionMode: 'dontAsk', timeoutMinutes: 30 },
   enabledToolPacks: [],
   profiles: {
     default: {

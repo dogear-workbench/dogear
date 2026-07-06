@@ -363,16 +363,18 @@ class ConversationRuntimeService {
       throw new Error(`Failed to attach runtime for conversation ${conversationId}`);
     }
 
+    // SDK 0.2.119+：bypassPermissions 需要宿主以 --dangerously-skip-permissions 启动，
+    // dogear 从不带该 flag；改用 dontAsk 既不打扰用户，又让 allowedTools 白名单继续生效。
     if (holderType === 'wechat-bot' && created) {
-      await session.setPermissionMode('bypassPermissions');
+      await session.setPermissionMode('dontAsk');
     }
 
-    // 子会话：套用 settings.subAgent.permissionMode（默认 'bypassPermissions'）
+    // 子会话：套用 settings.subAgent.permissionMode（默认 'dontAsk'，同上原因）
     if (created) {
       const conversation = await conversationService.getById(workspaceId, conversationId);
       if (conversation?.role === 'sub') {
         const appSettings = await loadSettings();
-        const subMode = appSettings.subAgent?.permissionMode ?? 'bypassPermissions';
+        const subMode = appSettings.subAgent?.permissionMode ?? 'dontAsk';
         await session.setPermissionMode(subMode);
       }
     }
