@@ -15,7 +15,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 后端模板抽取 + IPC](./step1-backend.md) — 抽 `query-based-session.ts` 里硬编码的 append 段到 session-append-templates.ts；新增 tipc 路由 `getSystemPromptSegments()` 返回结构化清单
-- [ ] [Step 2: 前端 Tab + 挂载 + 文档](./step2-frontend.md) — 新建 SystemPromptPreviewTab 组件；挂到设置页；更新 codebase-map
+- [x] [Step 2: 前端 Tab + 挂载 + 文档](./step2-frontend.md) — 新建 SystemPromptPreviewTab 组件；挂到设置页；更新 codebase-map
 
 ## 全局决策
 
