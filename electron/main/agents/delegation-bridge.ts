@@ -214,8 +214,8 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const parent = await conversationService.getById(workspaceId, parentConversationId);
   if (!parent) throw new Error(`父对话 ${parentConversationId} 不存在`);
 
-  const modelSel = parent.modelSelection
-    ?? settings.subAgent?.modelSelection
+  const modelSel = settings.subAgent?.modelSelection
+    ?? parent.modelSelection
     ?? settings.ai.defaultModelSelection
     ?? null;
 
