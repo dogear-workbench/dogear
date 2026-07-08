@@ -1,36 +1,23 @@
 /**
- * 子会话派遣相关类型（Phase 2）
+ * Agent 协作模式相关类型（Step 2：通信 API 重构）
  * 前端与主进程共用。主进程镜像在 electron/main/types.ts。
  */
 
 export type ChildStatus =
-  | 'running'      // 子会话仍在跑
-  | 'done'         // 已 SubmitDelivery
+  | 'running'      // 会话仍在跑
+  | 'done'         // 已通过 SendMessage(delivery:true) 交付
   | 'failed'       // agent 跑挂了或内部异常
   | 'timeout'      // 超过 subAgent.timeoutMinutes
-  | 'cancelled'    // 用户/父会话主动停
-  | 'no_delivery'; // 子会话自然结束但没调 SubmitDelivery
+  | 'cancelled'    // 被主动停止
+  | 'no_delivery'; // 会话自然结束但没交付
 
 export interface DelegateSpec {
-  /** 委派给子会话的任务描述（自然语言） */
+  /** 委派给新会话的任务描述（自然语言） */
   task: string;
-  /** 子会话必须把交付物写到共享区的这个相对路径 */
+  /** 建议新会话把交付物写到共享区的这个相对路径（内容较长时使用） */
   outputPath: string;
-  /** 子会话标题，缺省由 bridge 生成 */
+  /** 新会话标题，缺省由 bridge 生成 */
   title?: string;
-}
-
-export interface DeliveryResult {
-  childId: string;
-  status: ChildStatus;
-  outputPath: string;
-  title: string;
-  /** SubmitDelivery 时由子 agent 写入的一句话总结 */
-  summary?: string;
-  /** failed / timeout / cancelled 时的原因 */
-  errorMessage?: string;
-  startedAt: number;
-  finishedAt?: number;
 }
 
 export interface ChildStateSnapshot {
@@ -46,4 +33,6 @@ export interface ChildStateSnapshot {
   finishedAt?: number;
   summary?: string;
   errorMessage?: string;
+  /** 该会话自身的 SDK sessionId；session_init 事件到达前为 undefined */
+  sdkSessionId?: string;
 }

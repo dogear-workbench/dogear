@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 通信 API 重构 + 契约通道校验
-status: pending
+status: done
 ---
 
 ## 目标
@@ -86,14 +86,63 @@ status: pending
 
 ## 实施回填（做完后填）
 
+### 架构决策落地
+
+采用**方案 A（彻底统一）**：`dogear-sub-agent` MCP server 删除，改用 `dogear-delegation` 挂两套工具子集（工具子集控制防孙子而非 server 分流）：
+- 主会话工具集：`CreateSession` / `CreateSessionBatch` / `SendMessage` / `WaitForMessage` / `ListLinkedSessions` / `StopSession`
+- 子会话工具集：`SendMessage` / `WaitForMessage` / `ListLinkedSessions`（无 Create*/Stop）
+
+delegation-bridge 内部**保守化**：保留 childStates 状态机、`startChild`/`stopChild`/`getChildrenByParent`/`getChildSnapshot`/`abortWaitsForParent`（签名与广播事件契约不变）。新增：`messageWaiters` 通用消息等待池、`sdkSessionIdWaiters`（等异步 session_init）、`markChildDelivered`、`getChildIdBySessionId`/`getParentSessionIdByChildConversationId` 反查 helper。移除：`askPending`/`askParent`/`replyToChild`/`sendMessageToChild`/`submitDelivery`/旧 `waitFor`+`waitStates`。
+
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+
+**改动文件清单**：
+- `electron/main/services/contract-channel-service.ts` — **新建**，`hasDirectContractChannel(fromSessionId, toSessionId)` 只认直接派出关系
+- `electron/main/agents/tools/delegation-tools.ts` — 全面重写，6 个新工具 + role 参数控制子集
+- `electron/main/agents/tools/sub-agent-tools.ts` — **删除**
+- `electron/main/agents/delegation-bridge.ts` — 见上「架构决策落地」
+- `electron/main/agents/query-based-session.ts` — `createDelegationTools({ role: 'main' \| 'sub', ... })` 挂载分流
+- `electron/main/agents/session-append-templates.ts` — `subAgentContractFor` / `REFERENCE_APPEND` / `groupAppendFor` 三段提示词重写
+- `electron/main/agents/tools/reference-tools.ts` — 注释 DelegateTo → CreateSession
+- `electron/main/agents/tools/tool-registry.ts` — `SERVER_LABELS` 加 `dogear-delegation` / `dogear-reference` 标签
+- `electron/main/services/conversation-runtime-service.ts` — 移除 `mcp__dogear-sub-agent__*` 白名单
+- `electron/main/services/group-shared-service.ts` — 注释更新
+- `electron/main/tipc/delegation.ts` — 仅改注释；IPC procedure 名保留向后兼容
+- `electron/main/types.ts` / `types/delegation.ts` — 移除 `DeliveryResult`；`ChildStateSnapshot` 加 `sdkSessionId?`
+- `app/settings/SubAgentTab.tsx` — 文案 DelegateTo → CreateSession
+- `.claude/rules/codebase-map.md` — 主会话更新（delegation-tools 段 + 组提炼链路两处 SubmitDelivery）
+- `.claude/skills/staged-execution/SKILL.md` — 主会话更新（10+ 处旧工具名替换）
+
+**与计划差异**（3 处）：
+1. `WaitForMessage` 不按 delivery 过滤（否则 AskParent 替代流程的普通回复无法唤醒）。取第一条到达消息返回，delivery 只作为消息标记字段用于文案区分和 no_delivery 判定
+2. `SendMessage(delivery:true)` 不再校验交付物文件已写入（旧 SubmitDelivery 会读 outputPath 校验非空）
+3. `CreateSession` 需异步等子会话 sdkSessionId 就绪（session_init 事件），bridge 层新增 `waitForChildSdkSessionId()` 默认 15s 超时，超时未就绪时提示改用 ListLinkedSessions 补查
+
+`StopSession` 契约校验比通用 `hasDirectContractChannel` 更严——仅允许停自己派出的对象（`target.contractMetadata.parentSessionId === 自己的sdkSessionId`），双重保险。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-  - 新工具的完整入参 / 出参签名（Step 4/5 UI 层可能引用）
-  - `hasContractChannel` 的具体位置和签名
-- Step 3/4/5 该从哪里继续：Step 3 完全独立可以并行，Step 4/5 关注前端 UI，可以从这里开始
-- 待办或已知限制：
-  - `.claude/` 下文档提示词的更新是否已手动完成？
+
+**关键签名**：
+```ts
+// 服务层
+export async function hasDirectContractChannel(
+  fromSessionId: string,
+  toSessionId: string,
+): Promise<boolean>
+
+// createDelegationTools opts（判别联合）
+type DelegationToolsOpts =
+  | { role: 'main'; workspaceId; groupId; conversationId }
+  | { role: 'sub'; workspaceId; groupId; conversationId; parentConversationId }
+```
+
+前端 IPC 层保持向后兼容：`abortWaitForDeliveries` 等 procedure 名未改，但**内部语义变宽**——原来只取消被显式等待的子会话，现在会取消该父名下所有 running 子会话 + resolve(null) 所有 messageWaiters。
+
+**Step 3/4/5 接入点**：
+- Step 3（排序 + 图标）完全独立，可以并行；已有 `Conversation.contractMetadata`（Step 1）+ `ChildStateSnapshot.sdkSessionId`（Step 2 新增）即够
+- Step 4（溯源条 + Tab 静默启动）：前端可用 `contractMetadata.parentSessionId` 反查派出者；若要显式 IPC 查询，Step 1 遗留的 `getBySessionId` IPC 封装可在此补
+- Step 5（消息 sender）：agent 消息可用 `sender: { type: 'agent', sessionId }`；sessionId 就是 `ChildStateSnapshot.sdkSessionId`
+
+**待办 / 已知限制**：
+- `docs/plans/` 下历史档案保留旧工具名不改（历史决策记录）
+- `.claude/` 更新已完成（本 step 收尾时主会话手动改）

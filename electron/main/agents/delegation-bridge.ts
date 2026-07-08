@@ -1,6 +1,8 @@
 /**
- * Delegation Bridge — 主进程内子会话派遣运行时
- * 维护活跃子会话状态机 + Promise 挂起池 + 监听 QueryBasedSession complete/error 推进 status
+ * Delegation Bridge — 主进程内 Agent 协作运行时
+ * 维护会话创建/停止的状态机（childStates，用于 UI 展示 + no_delivery 检测）+
+ * 通用消息投递与等待（messageWaiters，支撑 SendMessage / WaitForMessage）+
+ * 监听 QueryBasedSession 的 session_init / complete / error 推进状态。
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -18,7 +20,6 @@ import type {
   ChildStatus,
   ChildStateSnapshot,
   DelegateSpec,
-  DeliveryResult,
 } from '../types.js';
 
 const logger = mainLogger.child('delegation-bridge');
@@ -26,35 +27,28 @@ const logger = mainLogger.child('delegation-bridge');
 interface ChildStateInternal extends ChildStateSnapshot {
   workspaceId: string;
   attachmentId: string;
+  /** 本地运行时 sessionId（QueryBasedSessionManager 内部 key，非 SDK sdkSessionId） */
   sessionId: string;
   timeoutTimer?: NodeJS.Timeout;
 }
 
-interface WaitStateInternal {
+export interface WaitForMessageResult {
+  fromSessionId: string;
+  message: string;
+  delivery: boolean;
+}
+
+interface MessageWaiterInternal {
   id: string;
-  parentConversationId: string;
-  childIds: string[];
-  resolve: (results: DeliveryResult[]) => void;
+  ownerConversationId: string;
+  fromSdkSessionIds: Set<string>;
+  resolve: (result: WaitForMessageResult | null) => void;
   timer: NodeJS.Timeout;
 }
 
-interface AskPendingInternal {
-  resolve: (answer: string) => void;
-  reject: (err: Error) => void;
-  question: string;
-  askedAt: number;
-}
-
 const childStates = new Map<string, ChildStateInternal>();
-const waitStates = new Map<string, WaitStateInternal>();
-const askPending = new Map<string, AskPendingInternal>();
-
-function clearAskPendingForChild(childId: string, reason: string): void {
-  const pending = askPending.get(childId);
-  if (!pending) return;
-  askPending.delete(childId);
-  pending.reject(new Error(reason));
-}
+const messageWaiters = new Map<string, MessageWaiterInternal>();
+const sdkSessionIdWaiters = new Map<string, Array<(sdkSessionId: string) => void>>();
 
 // ─── 事件广播 helpers ───
 
@@ -104,52 +98,12 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
     finishedAt: c.finishedAt,
     summary: c.summary,
     errorMessage: c.errorMessage,
+    sdkSessionId: c.sdkSessionId,
   };
-}
-
-function buildResults(childIds: string[]): DeliveryResult[] {
-  return childIds.map(id => {
-    const c = childStates.get(id);
-    if (!c) {
-      return {
-        childId: id,
-        status: 'failed' as ChildStatus,
-        outputPath: '',
-        task: '',
-        title: '',
-        errorMessage: '子会话状态丢失',
-        startedAt: 0,
-      };
-    }
-    return {
-      childId: c.childId,
-      status: c.status,
-      outputPath: c.outputPath,
-      title: c.title,
-      summary: c.summary,
-      errorMessage: c.errorMessage,
-      startedAt: c.startedAt,
-      finishedAt: c.finishedAt,
-    };
-  });
 }
 
 function isTerminal(status: ChildStatus): boolean {
   return status !== 'running';
-}
-
-function resolveWaitsIfReady(): void {
-  for (const [waitId, ws] of waitStates) {
-    const allTerminal = ws.childIds.every(id => {
-      const c = childStates.get(id);
-      return c ? isTerminal(c.status) : true;
-    });
-    if (allTerminal) {
-      clearTimeout(ws.timer);
-      waitStates.delete(waitId);
-      ws.resolve(buildResults(ws.childIds));
-    }
-  }
 }
 
 // ─── session 事件 wiring ───
@@ -157,21 +111,34 @@ function resolveWaitsIfReady(): void {
 function wireSession(childId: string, session: QueryBasedSession): void {
   session.on('complete', () => onSessionComplete(childId));
   session.on('error', (msg: unknown) => onSessionError(childId, msg));
+  session.on('session_init', (data: { session_id: string }) => onChildSessionInit(childId, data.session_id));
+  // session_init 理论上在 wireSession 之后才会触发；这里做一次同步兜底，覆盖极小概率的时序竞争
+  const existing = session.getSdkSessionId();
+  if (existing) onChildSessionInit(childId, existing);
+}
+
+function onChildSessionInit(childId: string, sdkSessionId: string): void {
+  const c = childStates.get(childId);
+  if (!c || c.sdkSessionId) return;
+  c.sdkSessionId = sdkSessionId;
+  const resolvers = sdkSessionIdWaiters.get(childId);
+  if (resolvers) {
+    sdkSessionIdWaiters.delete(childId);
+    for (const resolve of resolvers) resolve(sdkSessionId);
+  }
 }
 
 function onSessionComplete(childId: string): void {
   const c = childStates.get(childId);
   if (!c || c.status !== 'running') return;
-  // 子 agent 自然停了但没调 SubmitDelivery
+  // 会话自然停了但没调 SendMessage(delivery:true) 交付
   c.status = 'no_delivery';
   c.finishedAt = Date.now();
-  c.errorMessage = '子会话结束但未提交交付物';
+  c.errorMessage = '会话结束但未交付';
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  clearAskPendingForChild(childId, '子会话结束前未收到 ReplyToChild');
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  resolveWaitsIfReady();
 }
 
 function onSessionError(childId: string, msg: unknown): void {
@@ -181,11 +148,9 @@ function onSessionError(childId: string, msg: unknown): void {
   c.finishedAt = Date.now();
   c.errorMessage = extractErrorMessage(msg);
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  clearAskPendingForChild(childId, '子会话异常前未收到 ReplyToChild');
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  resolveWaitsIfReady();
 }
 
 function extractErrorMessage(msg: unknown): string {
@@ -198,7 +163,7 @@ function extractErrorMessage(msg: unknown): string {
   return '未知错误';
 }
 
-// ─── 对外方法 ───
+// ─── 创建 / 停止会话 ───
 
 export interface StartChildOptions {
   parentConversationId: string;
@@ -212,7 +177,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   const settings = await loadSettings();
   const parent = await conversationService.getById(workspaceId, parentConversationId);
-  if (!parent) throw new Error(`父对话 ${parentConversationId} 不存在`);
+  if (!parent) throw new Error(`发起会话 ${parentConversationId} 不存在`);
 
   const modelSel = settings.subAgent?.modelSelection
     ?? parent.modelSelection
@@ -222,7 +187,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const title = spec.title ?? `子会话: ${spec.task.slice(0, 30)}`;
 
   if (!parent.sdkSessionId) {
-    logger.warn(`父会话 ${parentConversationId} 尚无 sdkSessionId，子会话 ${title} 将不写入 contractMetadata（无法溯源派出者）`);
+    logger.warn(`发起会话 ${parentConversationId} 尚无 sdkSessionId，新会话 ${title} 将不写入 contractMetadata（无法溯源派出者）`);
   }
   const contractMetadata: conversationService.ContractMetadata | undefined = parent.sdkSessionId
     ? {
@@ -308,68 +273,6 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   return toSnapshot(state);
 }
 
-export async function submitDelivery(childId: string, summary: string, outputPath: string): Promise<void> {
-  const c = childStates.get(childId);
-  if (!c) throw new Error(`子会话 ${childId} 不存在`);
-  if (c.status !== 'running') throw new Error(`子会话 ${childId} 不在运行状态（当前 ${c.status}）`);
-  if (outputPath !== c.outputPath) throw new Error(`outputPath 不匹配：期望 "${c.outputPath}"，实际 "${outputPath}"`);
-
-  let content: string;
-  try {
-    content = await groupSharedService.readNativeFile(c.workspaceId, c.groupId, outputPath);
-  } catch (err) {
-    throw new Error(`交付物文件未写入或读取失败: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (!content.trim()) throw new Error('交付物文件为空');
-
-  c.status = 'done';
-  c.summary = summary;
-  c.finishedAt = Date.now();
-  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, outputPath, childId);
-
-  broadcastChildStatusChanged(c.parentConversationId, childId, 'done', toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  resolveWaitsIfReady();
-}
-
-export async function waitFor(
-  parentConversationId: string,
-  childIds: string[],
-  timeoutMs?: number,
-): Promise<DeliveryResult[]> {
-  for (const id of childIds) {
-    const c = childStates.get(id);
-    if (!c) throw new Error(`子会话 ${id} 不存在`);
-    if (c.parentConversationId !== parentConversationId) {
-      throw new Error(`子会话 ${id} 不属于父会话 ${parentConversationId}`);
-    }
-  }
-
-  const allTerminal = childIds.every(id => isTerminal(childStates.get(id)!.status));
-  if (allTerminal) return buildResults(childIds);
-
-  const settings = await loadSettings();
-  const effectiveTimeoutMs = timeoutMs ?? (settings.subAgent?.timeoutMinutes ?? 30) * 60_000;
-
-  return new Promise<DeliveryResult[]>(resolve => {
-    const waitId = uuidv4();
-    const timer = setTimeout(() => {
-      waitStates.delete(waitId);
-      // 把还在 running 的强制 timeout
-      const pending = childIds.filter(id => {
-        const c = childStates.get(id);
-        return c && c.status === 'running';
-      });
-      void Promise.all(pending.map(id => stopChild(id, 'timeout'))).then(() => {
-        resolve(buildResults(childIds));
-      });
-    }, effectiveTimeoutMs);
-
-    waitStates.set(waitId, { id: waitId, parentConversationId, childIds: [...childIds], resolve, timer });
-  });
-}
-
 export async function stopChild(childId: string, reason: 'cancelled' | 'timeout' = 'cancelled'): Promise<void> {
   const c = childStates.get(childId);
   if (!c) return;
@@ -377,9 +280,8 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
 
   c.status = reason;
   c.finishedAt = Date.now();
-  c.errorMessage = reason === 'timeout' ? '超时中断' : '被父会话停止';
+  c.errorMessage = reason === 'timeout' ? '超时中断' : '被停止';
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  clearAskPendingForChild(childId, reason === 'timeout' ? '子会话超时中断' : '子会话被停止');
 
   const session = getQueryBasedSessionManager().getSession(c.sessionId);
   if (session) {
@@ -391,7 +293,22 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
 
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  resolveWaitsIfReady();
+}
+
+/**
+ * 标记某个会话已通过 SendMessage(delivery:true) 完成交付（由 delegation-tools 调用）。
+ * 只对仍处于 running 状态的会话生效，幂等安全。
+ */
+export function markChildDelivered(childId: string, summary: string): void {
+  const c = childStates.get(childId);
+  if (!c || c.status !== 'running') return;
+  c.status = 'done';
+  c.summary = summary;
+  c.finishedAt = Date.now();
+  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+  broadcastChildStatusChanged(c.parentConversationId, childId, 'done', toSnapshot(c));
+  broadcastDeliveriesAwaitChanged(c.parentConversationId);
 }
 
 export function getChildrenByParent(parentConversationId: string): ChildStateSnapshot[] {
@@ -411,17 +328,6 @@ export function getAllChildren(): ChildStateSnapshot[] {
   return Array.from(childStates.values()).map(toSnapshot);
 }
 
-export async function sendMessageToChild(childId: string, message: string): Promise<void> {
-  const c = childStates.get(childId);
-  if (!c) throw new Error(`子会话 ${childId} 不存在`);
-  if (c.status !== 'running') throw new Error(`子会话 ${childId} 不在运行状态（当前 ${c.status}）`);
-
-  const session = getQueryBasedSessionManager().getSession(c.sessionId);
-  if (!session) throw new Error(`子会话 ${childId} session 已丢失`);
-
-  await session.sendMessage(message);
-}
-
 export async function previewClaim(
   workspaceId: string,
   groupId: string,
@@ -430,89 +336,158 @@ export async function previewClaim(
   return groupSharedService.previewClaim(workspaceId, groupId, relPaths);
 }
 
-export async function askParent(childId: string, question: string): Promise<string> {
+/**
+ * 在 parentConversationId 派出的子会话中，按子会话自身的 sdkSessionId 反查 childId。
+ * 只在「我派出的」范围内查找，防止越权操作别人的子会话。
+ */
+export function getChildIdBySessionId(parentConversationId: string, sessionId: string): string | null {
+  for (const c of childStates.values()) {
+    if (c.parentConversationId === parentConversationId && c.sdkSessionId === sessionId) {
+      return c.childId;
+    }
+  }
+  return null;
+}
+
+/**
+ * 子会话反查「派出自己的会话」的 sdkSessionId（子 → 父方向）。
+ */
+export async function getParentSessionIdByChildConversationId(childConversationId: string): Promise<string | null> {
+  const c = childStates.get(childConversationId);
+  if (!c) return null;
+  const parent = await conversationService.getById(c.workspaceId, c.parentConversationId);
+  return parent?.sdkSessionId ?? null;
+}
+
+/**
+ * 等待某个刚创建的子会话拿到自己的 sdkSessionId（session_init 是异步到达的）。
+ * 超时返回 null，调用方应引导 agent 之后用 ListLinkedSessions 兜底查询。
+ */
+export function waitForChildSdkSessionId(childId: string, timeoutMs = 15000): Promise<string | null> {
   const c = childStates.get(childId);
-  if (!c) throw new Error(`子会话 ${childId} 不存在`);
-  if (c.status !== 'running') throw new Error(`子会话 ${childId} 不在运行状态（当前 ${c.status}）`);
-  if (askPending.has(childId)) {
-    throw new Error('已有一个未回复的 AskParent，请等待主会话回复后再问下一个');
-  }
+  if (!c) return Promise.resolve(null);
+  if (c.sdkSessionId) return Promise.resolve(c.sdkSessionId);
 
-  const parentSessionId = getQueryBasedSessionManager().getSessionIdByConversation(c.parentConversationId);
-  if (!parentSessionId) {
-    throw new Error(`父会话 ${c.parentConversationId} 当前未激活，无法反问`);
-  }
-  const parentSession = getQueryBasedSessionManager().getSession(parentSessionId);
-  if (!parentSession) {
-    throw new Error(`父会话 session ${parentSessionId} 已丢失`);
-  }
-
-  const pushedText = [
-    `[子会话 反问 · ${c.title}（${childId}）]`,
-    question,
-    '',
-    `（请用 ReplyToChild({ childId: "${childId}", answer: "..." }) 回复，否则该子会话会一直挂着）`,
-  ].join('\n');
-
-  return new Promise<string>((resolve, reject) => {
-    askPending.set(childId, { resolve, reject, question, askedAt: Date.now() });
-    parentSession.sendMessage(pushedText).catch((err: unknown) => {
-      const pending = askPending.get(childId);
-      if (pending) {
-        askPending.delete(childId);
-        pending.reject(err instanceof Error ? err : new Error(String(err)));
+  return new Promise((resolve) => {
+    let settled = false;
+    const wrapped = (sdkSessionId: string) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(sdkSessionId);
+    };
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const list = sdkSessionIdWaiters.get(childId);
+      if (list) {
+        const idx = list.indexOf(wrapped);
+        if (idx >= 0) list.splice(idx, 1);
+        if (list.length === 0) sdkSessionIdWaiters.delete(childId);
       }
+      resolve(null);
+    }, timeoutMs);
+    const list = sdkSessionIdWaiters.get(childId) ?? [];
+    list.push(wrapped);
+    sdkSessionIdWaiters.set(childId, list);
+  });
+}
+
+// ─── 通用消息投递 / 等待（SendMessage / WaitForMessage 的运行时支撑） ───
+
+/**
+ * 挂起等待来自指定 sdkSessionId 集合中任意一方的下一条消息。
+ * 超时返回 null。同一 ownerConversationId 允许有多个并行等待（不同 waiterId）。
+ */
+export function waitForMessage(
+  ownerConversationId: string,
+  fromSdkSessionIds: string[],
+  timeoutMs: number,
+): Promise<WaitForMessageResult | null> {
+  return new Promise((resolve) => {
+    const id = uuidv4();
+    const timer = setTimeout(() => {
+      messageWaiters.delete(id);
+      resolve(null);
+    }, timeoutMs);
+    messageWaiters.set(id, {
+      id,
+      ownerConversationId,
+      fromSdkSessionIds: new Set(fromSdkSessionIds),
+      resolve,
+      timer,
     });
   });
 }
 
-export function replyToChild(childId: string, answer: string): void {
-  const pending = askPending.get(childId);
-  if (!pending) throw new Error(`子会话 ${childId} 当前没有挂起的 AskParent`);
-  askPending.delete(childId);
-  pending.resolve(answer);
+export interface DeliverMessageOptions {
+  toConversationId: string;
+  fromSessionId: string;
+  fromLabel: string;
+  message: string;
+  delivery: boolean;
 }
 
 /**
- * 中断指定父会话所有活跃的 WaitForDeliveries。
- * 行为：把每个 waitState 中仍在 running 的 child mark 'cancelled' + 释放 outputPath，
- * 但**不**调用 session.interrupt（子会话继续跑或自行完成；之后调 SubmitDelivery 会拿到 isError）。
- * 最后 resolve 所有 waitState Promise，让主会话 query 解锁。
+ * 'waiter'：目标正在 WaitForMessage 挂起，消息直接送进它的等待结果
+ * 'queued'：目标当前没有挂起等待，消息作为一条新输入推进目标会话的下一轮
+ * 'target_inactive'：目标会话当前未运行（未打开/已关闭），消息未能送达
+ */
+export type DeliverMessageOutcome = 'waiter' | 'queued' | 'target_inactive';
+
+export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutcome {
+  for (const [id, w] of messageWaiters) {
+    if (w.ownerConversationId === opts.toConversationId && w.fromSdkSessionIds.has(opts.fromSessionId)) {
+      clearTimeout(w.timer);
+      messageWaiters.delete(id);
+      w.resolve({ fromSessionId: opts.fromSessionId, message: opts.message, delivery: opts.delivery });
+      return 'waiter';
+    }
+  }
+
+  const localSessionId = getQueryBasedSessionManager().getSessionIdByConversation(opts.toConversationId);
+  const session = localSessionId ? getQueryBasedSessionManager().getSession(localSessionId) : undefined;
+  if (!session) return 'target_inactive';
+
+  const label = opts.delivery ? '交付' : '消息';
+  const text = `[来自「${opts.fromLabel}」的${label}]\n${opts.message}`;
+  session.sendMessage(text).catch((err: unknown) => {
+    logger.warn(`deliverMessage 推送失败 (${opts.toConversationId})`, err);
+  });
+  return 'queued';
+}
+
+/**
+ * 中断指定发起会话的所有活跃 WaitForMessage 等待，并把它名下仍在跑的会话标记为取消。
+ * 行为：不调用 session.interrupt（对方会话继续跑或自行结束；之后再交付会因父已放弃等待而只是普通推送）。
  */
 export function abortWaitsForParent(parentConversationId: string): {
   abortedWaits: number;
   cancelledChildren: number;
 } {
-  const relevantWaits: WaitStateInternal[] = [];
-  for (const ws of waitStates.values()) {
-    if (ws.parentConversationId === parentConversationId) relevantWaits.push(ws);
+  let abortedWaits = 0;
+  for (const [id, w] of messageWaiters) {
+    if (w.ownerConversationId !== parentConversationId) continue;
+    clearTimeout(w.timer);
+    messageWaiters.delete(id);
+    w.resolve(null);
+    abortedWaits++;
   }
-  if (relevantWaits.length === 0) return { abortedWaits: 0, cancelledChildren: 0 };
 
-  const cancelledChildIds = new Set<string>();
-  for (const ws of relevantWaits) {
-    for (const childId of ws.childIds) {
-      const c = childStates.get(childId);
-      if (!c || c.status !== 'running') continue;
-      c.status = 'cancelled';
-      c.finishedAt = Date.now();
-      c.errorMessage = '父会话中断了等待';
-      if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-      clearAskPendingForChild(childId, '父会话中断等待');
-      groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-      broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-      cancelledChildIds.add(childId);
-    }
+  let cancelledChildren = 0;
+  for (const c of childStates.values()) {
+    if (c.parentConversationId !== parentConversationId || c.status !== 'running') continue;
+    c.status = 'cancelled';
+    c.finishedAt = Date.now();
+    c.errorMessage = '发起会话中断了等待';
+    if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+    groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, c.childId);
+    broadcastChildStatusChanged(c.parentConversationId, c.childId, c.status, toSnapshot(c));
+    cancelledChildren++;
   }
-  if (cancelledChildIds.size > 0) {
+  if (abortedWaits > 0 || cancelledChildren > 0) {
     broadcastDeliveriesAwaitChanged(parentConversationId);
   }
 
-  for (const ws of relevantWaits) {
-    clearTimeout(ws.timer);
-    waitStates.delete(ws.id);
-    ws.resolve(buildResults(ws.childIds));
-  }
-
-  return { abortedWaits: relevantWaits.length, cancelledChildren: cancelledChildIds.size };
+  return { abortedWaits, cancelledChildren };
 }

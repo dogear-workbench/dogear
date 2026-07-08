@@ -34,7 +34,7 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
     <div className="max-w-2xl py-6 px-6">
       <h2 className="text-lg font-semibold mb-1">子会话派遣</h2>
       <p className="text-sm text-muted-foreground mb-6">
-        当 Agent 调 DelegateTo / DelegateBatch 派出独立子会话时的默认行为。下列配置只在「派遣时」生效，单次派遣的工具调用不可覆盖。
+        当 Agent 调 CreateSession / CreateSessionBatch 派出独立子会话时的默认行为。下列配置只在「派遣时」生效，单次派遣的工具调用不可覆盖。
       </p>
 
       <div className="space-y-6">
@@ -82,7 +82,7 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
         <div className="space-y-2">
           <label className="text-sm font-medium">超时（分钟）</label>
           <p className="text-xs text-muted-foreground">
-            单个子会话允许独立运行的最长时间。超时会被强制 abort 且 WaitForDeliveries 收到 status:timeout。Agent 调 WaitForDeliveries 时可传 timeoutMs 显式覆盖此默认值。范围 {MIN_TIMEOUT}–{MAX_TIMEOUT}。
+            单个子会话允许独立运行的最长时间。超时会被强制 abort，状态变为 timeout。Agent 调 WaitForMessage 时可传 timeoutMs 显式覆盖此默认值。范围 {MIN_TIMEOUT}–{MAX_TIMEOUT}。
           </p>
           <input
             type="number"

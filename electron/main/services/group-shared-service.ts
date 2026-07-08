@@ -147,7 +147,7 @@ export interface PreviewClaimConflict {
 
 /**
  * 纯检查一批 outputPath 是否可被 claim，不修改 pathClaims。
- * 返回所有冲突项，方便 DelegateBatch 一次性向 agent 报告。
+ * 返回所有冲突项，方便 CreateSessionBatch 一次性向 agent 报告。
  */
 export async function previewClaim(
   workspaceId: string,

@@ -1,7 +1,7 @@
 /**
  * 引用会话/组背景 MCP Server 工具（dogear-reference）
  *
- * 只装到「子会话」——主 agent 靠 DelegateTo 派子会话消化后回摘要，避免污染主上下文。
+ * 只装到「子会话」——主 agent 靠 CreateSession 派新会话消化后回摘要，避免污染主上下文。
  *
  * 工具：
  * - ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）

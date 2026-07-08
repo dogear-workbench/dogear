@@ -84,7 +84,6 @@ import { getArticleParserSkillsDir } from '../services/article-parser-skills-ser
 import { createReviewMcpServer } from './tools/review-tools.js';
 import { createGroupTools } from './tools/group-tools.js';
 import { createDelegationTools } from './tools/delegation-tools.js';
-import { createSubAgentTools } from './tools/sub-agent-tools.js';
 import { createReferenceTools } from './tools/reference-tools.js';
 import { getReviewSkillDir } from '../services/memory/review-skill-service.js';
 import { syncMarketplacePluginsToConfigDir } from '../services/plugin-bridge-service.js';
@@ -392,17 +391,19 @@ export class QueryBasedSession extends EventEmitter {
       const hasWorkspaceContext = !!(this.config.workspaceId && this.config.workspacePath);
       const hasGroupContext = !!(this.config.workspaceId && this.config.groupId);
       const isSubAgent = !!this.config.subAgent;
-      // role 分流：main 注入 dogear-delegation；sub 注入 dogear-sub-agent 且不挂 delegation（杜绝嵌套派遣）
+      // role 分流：dogear-delegation 对主/子会话都挂载，但工具子集不同（子会话没有
+      // CreateSession/CreateSessionBatch/StopSession，天然杜绝嵌套派遣）
       const delegationServers: Record<string, unknown> = {};
       if (hasGroupContext) {
         if (isSubAgent) {
-          delegationServers['dogear-sub-agent'] = createSubAgentTools({
+          delegationServers['dogear-delegation'] = createDelegationTools({
+            role: 'sub',
             workspaceId: this.config.workspaceId!,
             groupId: this.config.groupId!,
-            childConversationId: this.config.conversationId!,
-            outputPath: this.config.subAgent!.outputPath,
+            conversationId: this.config.conversationId!,
+            parentConversationId: this.config.subAgent!.parentConversationId,
           });
-          // 子会话专用：跨会话引用 + 组背景 + 兄弟列表（主 agent 靠 DelegateTo 派子会话来用它们，避免主上下文污染）
+          // 子会话专用：跨会话引用 + 组背景 + 兄弟列表（主 agent 靠 CreateSession 派子会话来用它们，避免主上下文污染）
           delegationServers['dogear-reference'] = createReferenceTools({
             workspaceId: this.config.workspaceId!,
             workspacePath: this.config.workspacePath!,
@@ -411,17 +412,16 @@ export class QueryBasedSession extends EventEmitter {
           });
         } else {
           delegationServers['dogear-delegation'] = createDelegationTools({
+            role: 'main',
             workspaceId: this.config.workspaceId!,
             groupId: this.config.groupId!,
-            parentConversationId: this.config.conversationId!,
+            conversationId: this.config.conversationId!,
           });
         }
       }
-      // 上游传入的 mcpServers：若是子会话，强制剔除可能误注入的 dogear-delegation
+      // 上游传入的 mcpServers：强制剔除可能误注入的 dogear-delegation，我们总是自己按 role 挂载
       const incomingMcpServers = { ...(this.config.mcpServers || {}) };
-      if (isSubAgent) {
-        delete incomingMcpServers['dogear-delegation'];
-      }
+      delete incomingMcpServers['dogear-delegation'];
       queryOptions.mcpServers = {
         'dogear-article-parse': createArticleParseMcpServer(),
         ...(hasWorkspaceContext
@@ -1693,7 +1693,7 @@ export class QueryBasedSession extends EventEmitter {
       parts.push(groupContextText);
     }
 
-    // 6a. 通用「引用历史会话」提示（所有主会话；子会话没有 DelegateTo 不注入）
+    // 6a. 通用「引用历史会话」提示（所有主会话；子会话没有 CreateSession 不注入）
     if (!this.config.subAgent) {
       parts.push(REFERENCE_APPEND);
     }
@@ -1708,7 +1708,7 @@ export class QueryBasedSession extends EventEmitter {
       parts.push(NOTES_GUIDANCE_APPEND);
     }
 
-    // 8. 子会话派遣段（仅 role='sub' 注入）：告诉子 agent 自己的任务 / 交付路径 / 必须调 SubmitDelivery 收尾
+    // 8. 子会话派遣段（仅 role='sub' 注入）：告诉子 agent 自己的任务 / 交付路径 / 如何用 SendMessage 交付
     if (this.config.subAgent) {
       const { task, outputPath } = this.config.subAgent;
       parts.push(subAgentContractFor({ task, outputPath }));

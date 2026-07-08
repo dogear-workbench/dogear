@@ -4,9 +4,9 @@
  * 这些不是用户可编辑的提示词，也不是人设——是根据会话所处的组上下文，
  * 在会话启动时动态拼接、告诉主 agent 如何优雅地引用历史会话 / 组背景。
  *
- * 关联：Step 4 装到子会话的 dogear-reference 工具（ReadReferenceSession /
- * ReadGroupBackground / ListSiblingSessions），主 agent 通过 DelegateTo
- * 派子会话来间接使用它们，避免污染主上下文。
+ * 关联：装到子会话的 dogear-reference 工具（ReadReferenceSession /
+ * ReadGroupBackground / ListSiblingSessions），主 agent 通过 CreateSession
+ * 派新会话来间接使用它们，避免污染主上下文。
  */
 
 import { buildToolPackGuide } from './tool-pack-guide.js';
@@ -15,8 +15,8 @@ import type { SystemPromptSegment } from '../types.js';
 /** 通用引用会话提示（组内会话默认加，主 agent 侧）。 */
 export const REFERENCE_APPEND =
   '\n## 引用历史会话\n' +
-  '如需引用某个具体历史会话的内容作为参考，用 DelegateTo 派子会话去消化并交回摘要。\n' +
-  '子会话有 ReadReferenceSession 工具能读任意 SDK 会话的去噪原文，会分析后只回给你精炼版本。\n' +
+  '如需引用某个具体历史会话的内容作为参考，用 CreateSession 派一个新会话去消化并交回摘要。\n' +
+  '新会话有 ReadReferenceSession 工具能读任意 SDK 会话的去噪原文，会分析后只回给你精炼版本。\n' +
   '**不要自己直接读会话原文** —— 那会污染你的上下文。';
 
 /**
@@ -28,13 +28,13 @@ export function groupAppendFor(groupName: string): string {
   return (
     '\n## 当前会话组\n' +
     `你处在会话组「${safeName}」内，该组已有其他兄弟会话。\n` +
-    '需要了解组之前的进展 / 结论 / 待办、或某个兄弟会话最近动向时，用 DelegateTo 派子会话去梳理。\n' +
-    '子会话有这些专用工具：\n' +
+    '需要了解组之前的进展 / 结论 / 待办、或某个兄弟会话最近动向时，用 CreateSession 派一个新会话去梳理。\n' +
+    '新会话有这些专用工具：\n' +
     '- ReadGroupBackground：读本组结构化背景（topic / progress / keyDecisions / openQuestions）\n' +
     '- ListSiblingSessions：列本组其他兄弟会话（含活跃状态 / 是否已被组卡收录）\n' +
     '- ReadGroupDigest：读本组的组级摘要卡（items / keyOutputs / tags）\n' +
     '- ReadReferenceSession：读任意兄弟会话的去噪原文\n' +
-    '**都是子会话独占**——你自己没有这些工具，只能派子会话，等它 SubmitDelivery 交摘要回来。'
+    '**都是被派出的会话独占**——你自己没有这些工具，只能派新会话，等它用 SendMessage(..., { delivery: true }) 把摘要交回来。'
   );
 }
 
@@ -47,20 +47,19 @@ export const NOTES_GUIDANCE_APPEND =
 
 /**
  * 子会话交付契约（仅 role='sub' 注入）。
- * 告诉子 agent 自己的任务 / 交付路径 / 必须调 SubmitDelivery 收尾。
+ * 告诉子 agent 自己的任务 / 交付路径 / 如何用 SendMessage + WaitForMessage 与派出者协作。
  */
 export function subAgentContractFor(opts: { task: string; outputPath: string }): string {
   const { task, outputPath } = opts;
   return (
     `\n## 你是一个被派遣的子会话\n` +
     `**任务**：${task}\n\n` +
-    `**交付路径**：${outputPath}（共享区相对路径）\n\n` +
-    `**交付契约**（必须遵守）：\n` +
-    `1. 完成任务后，用 WriteGroupFile 把交付物正文写入 \`${outputPath}\`。\n` +
-    `2. 然后调 SubmitDelivery({ summary, outputPath: '${outputPath}' }) 通知父会话；summary ≤500 字总结你做了什么。\n` +
-    `3. **未调 SubmitDelivery 就停下**会被视作未交付（no_delivery），父会话拿不到结果。\n` +
-    `4. 不要派遣孙子会话（你没有 DelegateTo 工具）。\n` +
-    `5. 遇到歧义、缺少关键信息时调 AskParent({ question }) 反问父会话，不要瞎猜。一次只能挂起一个问题，父会话回复后才能再问下一个。\n`
+    `**建议交付路径**：${outputPath}（共享区相对路径。交付内容较长时先用 WriteGroupFile 写进去，SendMessage 里只放摘要；内容简短可以直接写在 SendMessage 里）\n\n` +
+    `**交付契约**：\n` +
+    `1. 先用 \`ListLinkedSessions\` 查到派出你的会话的 sessionId。\n` +
+    `2. 完成任务后，用 \`SendMessage(sessionId, summary, { delivery: true })\` 向它交付结果；summary ≤500 字总结你做了什么。\n` +
+    `3. 有歧义、缺少关键信息时，用 \`SendMessage(sessionId, question)\` 反问，然后 \`WaitForMessage([sessionId])\` 挂起等待回复，不要瞎猜。\n` +
+    `4. 你没有 CreateSession / CreateSessionBatch 工具，不能派遣孙子会话。\n`
   );
 }
 
@@ -107,7 +106,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '引用历史会话提示',
       category: 'reference',
       template: REFERENCE_APPEND,
-      triggerDescription: '所有主会话都注入（子会话没有 DelegateTo 工具，跳过）。引导 Agent 通过派子会话消化历史会话，避免自己直接读会话原文污染上下文。',
+      triggerDescription: '所有主会话都注入（子会话没有 CreateSession 工具，跳过）。引导 Agent 通过派新会话消化历史会话，避免自己直接读会话原文污染上下文。',
       isDynamic: false,
     },
     {
@@ -116,7 +115,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       category: 'group',
       template: groupAppendFor('<组名>'),
       triggerDescription:
-        '主会话 + 所在组已有其他兄弟会话时注入。告诉 Agent 组里的专用子会话工具（ReadGroupBackground / ListSiblingSessions / ReadGroupDigest / ReadReferenceSession），都必须通过 DelegateTo 派子会话使用。',
+        '主会话 + 所在组已有其他兄弟会话时注入。告诉 Agent 组里的专用子会话工具（ReadGroupBackground / ListSiblingSessions / ReadGroupDigest / ReadReferenceSession），都必须通过 CreateSession 派新会话使用。',
       isDynamic: true,
     },
     {
@@ -132,7 +131,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '子会话交付契约',
       category: 'sub-agent',
       template: subAgentContractFor({ task: '<任务描述>', outputPath: '<交付路径>' }),
-      triggerDescription: '仅子会话（role=\'sub\'）注入。给子 agent 明确任务、交付路径与「必须调 SubmitDelivery 收尾」契约，禁止派孙子会话，遇歧义走 AskParent。',
+      triggerDescription: '仅子会话（role=\'sub\'）注入。给子 agent 明确任务、建议交付路径，以及如何用 SendMessage(delivery:true) 交付、SendMessage+WaitForMessage 反问，禁止派孙子会话。',
       isDynamic: true,
     },
   ];

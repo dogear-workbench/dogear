@@ -211,7 +211,7 @@ export interface NativeFileEntry {
   mtime: number;
 }
 
-// ─── 子会话派遣（镜像自 types/delegation.ts）───
+// ─── Agent 协作模式（镜像自 types/delegation.ts）───
 
 export type ChildStatus =
   | 'running'
@@ -227,17 +227,6 @@ export interface DelegateSpec {
   title?: string;
 }
 
-export interface DeliveryResult {
-  childId: string;
-  status: ChildStatus;
-  outputPath: string;
-  title: string;
-  summary?: string;
-  errorMessage?: string;
-  startedAt: number;
-  finishedAt?: number;
-}
-
 export interface ChildStateSnapshot {
   childId: string;
   parentConversationId: string;
@@ -251,6 +240,8 @@ export interface ChildStateSnapshot {
   finishedAt?: number;
   summary?: string;
   errorMessage?: string;
+  /** 该会话自身的 SDK sessionId；session_init 事件到达前为 undefined */
+  sdkSessionId?: string;
 }
 
 // ─── 系统提示词展示段（镜像自 types/system-prompt.ts）───

@@ -130,9 +130,8 @@ async function buildConversationSessionConfig(
   }
   if (conversation.groupId) {
     allowedTools.push('mcp__dogear-group__*');
-    // 派遣工具：main 实际挂 dogear-delegation，sub 挂 dogear-sub-agent，由 query-based-session 内做分流
+    // 协作工具：主/子会话都挂 dogear-delegation，但工具子集不同（由 query-based-session 内按 role 分流）
     allowedTools.push('mcp__dogear-delegation__*');
-    allowedTools.push('mcp__dogear-sub-agent__*');
     // 引用工具：仅子会话实际有 dogear-reference server，此处按 groupId 对称放行避免弹权限
     allowedTools.push('mcp__dogear-reference__*');
   }
