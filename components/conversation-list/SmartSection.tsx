@@ -8,6 +8,7 @@ import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
 import { GroupCard } from '@/components/group-list/GroupCard';
+import { sortConversationsWithDFS } from '@/lib/conversation-sort';
 
 interface SmartSectionProps {
   workspaceId: string;
@@ -90,7 +91,7 @@ function CategoryGroup({
         <GroupCard
           key={`${cat.id}:${g.id}`}
           group={g}
-          conversations={conversations.filter((c) => c.groupId === g.id && c.role !== 'sub' && !c.archived_at)}
+          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === g.id && !c.archived_at))}
         />
       ))}
     </div>

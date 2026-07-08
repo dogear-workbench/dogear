@@ -13,7 +13,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { showConfirm } from '@/stores/confirm-store';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
-import { ConversationRowWithChildren } from '@/components/conversation-list/ConversationRowWithChildren';
+import { ConversationRow } from '@/components/conversation-list/ConversationRow';
 import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { AppearanceBadge } from '@/components/conversation-list/AppearanceBadge';
 import { useAppearanceCount } from '@/components/conversation-list/utils';
@@ -182,7 +182,7 @@ export function GroupCard({ group, conversations, folderId }: GroupCardProps) {
       </ContextMenu>
 
       {isExpanded && conversations.map((conv) => (
-        <ConversationRowWithChildren
+        <ConversationRow
           key={conv.id}
           conv={conv}
           nodeId={`group:${group.id}:${conv.id}`}

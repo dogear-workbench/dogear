@@ -4,6 +4,7 @@ import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { RECENT_THRESHOLD_MS } from './utils';
 import { GroupCard } from '@/components/group-list/GroupCard';
+import { sortConversationsWithDFS } from '@/lib/conversation-sort';
 
 export function RecentVirtualGroup() {
   const groups = useGroupStore((s) => s.groups);
@@ -37,7 +38,7 @@ export function RecentVirtualGroup() {
         <GroupCard
           key={group.id}
           group={group}
-          conversations={conversations.filter((c) => c.groupId === group.id && c.role !== 'sub' && !c.archived_at)}
+          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === group.id && !c.archived_at))}
         />
       ))}
     </div>

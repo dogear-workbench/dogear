@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  MessageSquare, GitBranch, Bot, MoreHorizontal, ArchiveRestore,
+  MessagesSquare, GitBranch, Bot, MoreHorizontal, ArchiveRestore,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -25,8 +25,6 @@ export interface ConversationRowProps {
   indent?: number;
   /** 归档模式：右键显示恢复/永久删除，而不是普通操作 */
   archived?: boolean;
-  /** 主会话当前还在等的子会话数量（>0 时右侧角标 ⏳N） */
-  awaitCount?: number;
 }
 
 
@@ -36,7 +34,6 @@ export function ConversationRow({
   onClick,
   indent = 8,
   archived = false,
-  awaitCount = 0,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
@@ -52,6 +49,7 @@ export function ConversationRow({
   const editInputRef = useRef<HTMLInputElement>(null);
 
   const isFork = !!conv.parent_conversation_id;
+  const isAgentConversation = conv.contractMetadata?.createdBy === 'agent';
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isBotBound = conv.id === botBoundId;
@@ -114,8 +112,12 @@ export function ConversationRow({
             <GitBranch className={cn('w-4 h-4 flex-shrink-0',
               isSelected ? 'text-purple-600' : 'text-purple-400'
             )} />
+          ) : isAgentConversation ? (
+            <Bot className={cn('w-4 h-4 flex-shrink-0',
+              isSelected ? 'text-blue-600' : 'text-muted-foreground'
+            )} />
           ) : (
-            <MessageSquare className={cn('w-4 h-4 flex-shrink-0',
+            <MessagesSquare className={cn('w-4 h-4 flex-shrink-0',
               isSelected ? 'text-blue-600' : 'text-muted-foreground'
             )} />
           )}
@@ -146,14 +148,6 @@ export function ConversationRow({
                 </div>
                 {isBotBound && (
                   <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />
-                )}
-                {awaitCount > 0 && (
-                  <span
-                    className="ml-1 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-300 rounded px-1 flex-shrink-0"
-                    title={`等待 ${awaitCount} 个子会话交付`}
-                  >
-                    ⏳{awaitCount}
-                  </span>
                 )}
               </div>
             )}

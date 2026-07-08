@@ -6,6 +6,7 @@ import type { Group } from '@/types/group';
 import { RECENT_THRESHOLD_MS, TIME_BUCKET_THRESHOLD_MS } from './utils';
 import { RecentVirtualGroup } from './RecentVirtualGroup';
 import { GroupCard } from '@/components/group-list/GroupCard';
+import { sortConversationsWithDFS } from '@/lib/conversation-sort';
 
 function GroupHeader({
   label,
@@ -56,7 +57,7 @@ export function TimeSection() {
   }, [groups]);
 
   const convsOf = (groupId: string) =>
-    conversations.filter((c) => c.groupId === groupId && c.role !== 'sub' && !c.archived_at);
+    sortConversationsWithDFS(conversations.filter((c) => c.groupId === groupId && !c.archived_at));
 
   return (
     <div>
