@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 会话内溯源条 + Tab 静默启动
-status: pending
+status: done
 ---
 
 ## 目标
@@ -79,11 +79,27 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+
+**与计划差异**：
+- 原计划没提要动 `SubAgentBanner`，实施中发现它跟 LineageBar 语义 100% 重合（都是"从哪里来"顶部横幅）：SubAgentBanner 基于 `role==='sub'` + `childrenByParent` 内存态（bridge 重启就丢），LineageBar 基于 `contractMetadata.parentSessionId` 持久化字段。同时保留会造成两个横幅叠加，所以本 step 顺带删除 SubAgentBanner，AgentChat 用 LineageBar 替换。
+- **Tab 静默启动天然成立**，无需改代码：`delegation-bridge.startChild()` 只在后端创建 conversation，走 `conversationListChanged` 事件；前端 `stores/conversation-store.ts:808` 监听后只做 `loadConversations()`，不动 `activeTabId`。前端唯一激活 tab 的路径是用户点击列表 → `openOrFocusConversation()` → `openTab()`。所以派出会话默认就是"进列表但不抢焦点"。
+- **Agent 会话接受用户输入**已 no-op：`ChatInputArea` / `useSendMessage` 对所有 conversation 通用，SubAgentBanner 移除后彻底无 gate。
+
+**改动文件清单**：
+- 新建 `components/agent-chat/LineageBar.tsx`
+- 改 `components/agent-chat/AgentChat.tsx`：import 换 SubAgentBanner → LineageBar；渲染条件从 `selectedConv?.role === 'sub'` 改为 `selectedConv` 存在即渲染（LineageBar 内部按 contractMetadata 决定是否显示）
+- 删 `components/agent-chat/SubAgentBanner.tsx`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-  - `LineageBar` 组件位置和 props
-- 待办或已知限制：
-  - 溯源条派出者查询是从 store 拿还是走 tipc？
+
+- **关键签名**：
+  - `LineageBar({ conversation, onOpenParent }: { conversation: Conversation; onOpenParent?: (parentConversationId: string) => void })`
+  - 位置：`components/agent-chat/LineageBar.tsx`
+  - 派出者查询走前端 store（`useConversationStore.conversations`），按 `sdk_session_id === contractMetadata.parentSessionId` 匹配。不需要 tipc。
+- **视觉规范**（Step 5 可参考对齐）：
+  - 派出者存在：蓝色 badge（`bg-blue-50 border-blue-200 text-blue-900` + dark 模式反色）+ `CornerDownRight` 图标
+  - 派出者已删：灰色 badge（`bg-muted/50 border-border text-muted-foreground`）
+  - 尺寸：`text-xs px-3 py-2 my-2 rounded-lg`，跟旧的 SubAgentBanner 视觉体量一致
+- **待办 / 已知限制**：
+  - LineageBar 只按 `sdk_session_id` 反查派出者（跨工作区查不到，因为 conversation-store 只装当前工作区的会话）。当前工作区隔离下这个行为合理，若未来支持跨工作区跳转再扩展
+  - `selectConversation(parent)` 在 AgentChat.tsx 的 onOpenParent 里被调用，会走当前的 Tab 打开逻辑（openOrFocusConversation 那套）——已复用现有机制，无需额外处理

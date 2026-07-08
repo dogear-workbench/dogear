@@ -19,7 +19,7 @@ import { useSendMessage } from './hooks/useSendMessage';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
 import { StreamingIndicator } from './StreamingIndicator';
-import { SubAgentBanner } from './SubAgentBanner';
+import { LineageBar } from './LineageBar';
 import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
@@ -335,9 +335,9 @@ export function AgentChat({
         onScrollCapture={handleScroll}
       >
         <div className="px-6">
-        {/* 子会话委派 banner（仅 role==='sub' 时显示） */}
-        {selectedConv?.role === 'sub' && (
-          <SubAgentBanner
+        {/* 会话溯源条（agent 派出会话，contractMetadata 存在时渲染） */}
+        {selectedConv && (
+          <LineageBar
             conversation={selectedConv}
             onOpenParent={(parentId) => {
               const parent = conversations.find((c) => c.id === parentId);
