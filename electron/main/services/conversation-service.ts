@@ -18,6 +18,18 @@ const { app } = electron;
 // 类型定义
 // ============================================================
 
+/**
+ * 契约元数据（Agent 协作模式）
+ * 手动创建的会话此字段为 undefined；agent 派出的会话必填
+ * 与 types/electron-api.ts 的同名接口镜像（主进程 rootDir 限制无法跨目录 import 前端类型）
+ */
+export interface ContractMetadata {
+  parentSessionId: string;
+  task: string;
+  expectedOutputPath?: string;
+  createdBy: 'agent' | 'human';
+}
+
 /** 单条对话的索引信息 */
 export interface ConversationIndex {
   id: string;
@@ -35,6 +47,7 @@ export interface ConversationIndex {
   archivedAt?: string;
   groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';    // P1 只产生 'main'
+  contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
   usageSummary?: {
@@ -83,6 +96,7 @@ export interface ConversationCompat {
   };
   groupId: string;
   role: 'main' | 'sub';
+  contractMetadata?: ContractMetadata;
 }
 
 /** 每工作区的 conversations.json 文件结构 */
@@ -219,6 +233,32 @@ export async function getByIdGlobal(id: string): Promise<{ conv: ConversationInd
 }
 
 /**
+ * 跨工作区按 sdkSessionId 查找对话（遍历所有工作区目录）
+ * 用于 delegation-tools 反查派出者会话（只知道 sdkSessionId 时）
+ */
+export async function getBySessionId(
+  sdkSessionId: string,
+): Promise<{ conv: ConversationIndex; workspaceId: string } | null> {
+  const workspacesDir = path.join(getConfigDir(), 'workspaces');
+  try {
+    const entries = await fs.readdir(workspacesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const wsId = entry.name;
+      const file = await loadWorkspaceConversations(wsId);
+      for (const conv of Object.values(file.conversations)) {
+        if (conv.sdkSessionId === sdkSessionId) {
+          return { conv, workspaceId: wsId };
+        }
+      }
+    }
+  } catch {
+    // workspaces 目录不存在
+  }
+  return null;
+}
+
+/**
  * 批量按 conversationId 拿索引（找不到的跳过，不抛错）。供 ListCategories 拉样例标题用。
  * 跨工作区扫描，返回的列表顺序与传入 ids 顺序一致（缺失项不出现，不留 undefined 占位）。
  */
@@ -240,7 +280,12 @@ export async function create(
   groupId: string,
   title: string = '新对话',
   modelSelection: ModelSelection | null = null,
-  options?: { role?: 'main' | 'sub'; parentConversationId?: string; cachePolicy?: '5m' | '1h' },
+  options?: {
+    role?: 'main' | 'sub';
+    parentConversationId?: string;
+    cachePolicy?: '5m' | '1h';
+    contractMetadata?: ContractMetadata;
+  },
 ): Promise<string> {
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
@@ -257,6 +302,7 @@ export async function create(
     cachePolicy: options?.cachePolicy ?? '5m',
     groupId,
     role: options?.role ?? 'main',
+    contractMetadata: options?.contractMetadata,
     createdAt: now,
     updatedAt: now,
   };
@@ -281,6 +327,7 @@ export async function createFork(
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
   const now = new Date().toISOString();
+  const parent = file.conversations[parentConversationId];
 
   file.conversations[id] = {
     id,
@@ -290,6 +337,7 @@ export async function createFork(
     parentConversationId,
     forkMessageSdkUuid,
     modelSelection: modelSelection ? { ...modelSelection } : null,
+    contractMetadata: parent?.contractMetadata ? { ...parent.contractMetadata } : undefined,
     cachePolicy,
     forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
     groupId,
@@ -565,6 +613,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     usageSummary: conv.usageSummary,
     groupId: conv.groupId ?? '',
     role: conv.role ?? 'main',
+    contractMetadata: conv.contractMetadata,
   };
 }
 

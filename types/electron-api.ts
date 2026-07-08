@@ -122,6 +122,17 @@ export interface Citation {
 }
 
 /**
+ * 契约元数据（Agent 协作模式）
+ * 手动创建的会话此字段为 undefined；agent 派出的会话必填
+ */
+export interface ContractMetadata {
+  parentSessionId: string;           // 派出者的 sdkSessionId
+  task: string;                      // 派出时的任务描述
+  expectedOutputPath?: string;       // 约定的交付路径
+  createdBy: 'agent' | 'human';
+}
+
+/**
  * 对话接口
  */
 export interface Conversation {
@@ -140,6 +151,7 @@ export interface Conversation {
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
   groupId: string;                   // 所属会话组 ID
   role: 'main' | 'sub';             // P1 只产生 'main'
+  contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
   usageSummary?: {
     turnCount: number;
     totalInputTokens: number;

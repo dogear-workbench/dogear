@@ -15,7 +15,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 数据层地基](./step1-data-foundation.md) — `contractMetadata` 字段 + service CRUD + 现有 delegation-tools 内部写入
+- [x] [Step 1: 数据层地基](./step1-data-foundation.md) — `contractMetadata` 字段 + service CRUD + 现有 delegation-tools 内部写入
 - [ ] [Step 2: 通信 API 重构 + 契约通道校验](./step2-communication-refactor.md) — delegation-tools 改为通用 `SendMessage/CreateSession` + 通信许可校验 + 提示词更新
 - [ ] [Step 3: 列表排序 + 图标区分](./step3-list-sort-icons.md) — DFS 排序纯函数 + `ConversationRow` 按 `createdBy` 换图标
 - [ ] [Step 4: 会话内溯源条 + Tab 静默启动](./step4-lineage-tab-behavior.md) — 溯源条组件 + 派出时 tab 不抢焦点

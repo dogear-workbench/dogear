@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 数据层地基
-status: pending
+status: done
 ---
 
 ## 目标
@@ -64,12 +64,56 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：（新发现的边界、调整的设计）
-- 改动文件清单：
+
+**改动文件清单**：
+- `types/electron-api.ts` — 新增 `ContractMetadata` 接口；`Conversation` 加 `contractMetadata?` 字段
+- `electron/main/services/conversation-service.ts` — 镜像 export `ContractMetadata`；`ConversationIndex` / `ConversationCompat` 加字段；`create()` options 加 `contractMetadata?`；`createFork()` 从父对话浅拷贝继承；新增 `getBySessionId()` 跨工作区查找；`toCompat()` 透传
+- `electron/main/agents/delegation-bridge.ts` — `startChild()` 在父有 `sdkSessionId` 时组装 metadata 传给 create；父无 sdkSessionId 时跳过并 warn
+
+**未改动（确认后跳过）**：
+- `electron/main/agents/tools/delegation-tools.ts` — DelegateTo/DelegateBatch 都走 `bridge.startChild`，bridge 层已补，工具本身无独立创建路径
+- `electron/main/services/conversation-runtime-service.ts` — `attachConversation` 只绑定已有 session，不独立 create
+- `electron/main/tipc/conversations.ts` — 手动 create handler 默认 undefined，签名无需改
+- `electron/main/types.ts` — 主进程原本就不镜像前端 `Conversation`，走独立 `ConversationIndex`，无需同步
+
+**与计划差异**：
+- `getBySessionId` 返回值调整为 `{ conv, workspaceId }`（对齐 `getByIdGlobal`），跨工作区查找必须带回 workspaceId 才能定位存储
+- 父会话 `sdkSessionId` 为 null 时跳过写入而非传空串，避免产生语义无效的 `parentSessionId: ''`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-  - `Conversation.contractMetadata` 的具体 TS 类型（Step 2/3/4/5 都要用）
-  - `getBySessionId` 的具体签名（Step 2 契约通道校验要用）
-- Step 2 该从哪里继续：先读 delegation-tools 现有工具清单，然后重构
-- 待办或已知限制：
+
+**关键签名**：
+```ts
+// types/electron-api.ts + electron/main/services/conversation-service.ts（镜像 export）
+export interface ContractMetadata {
+  parentSessionId: string;
+  task: string;
+  expectedOutputPath?: string;
+  createdBy: 'agent' | 'human';
+}
+
+// conversation-service.ts
+export async function getBySessionId(
+  sdkSessionId: string,
+): Promise<{ conv: ConversationIndex; workspaceId: string } | null>
+
+// conversation-service.ts — options 新增 contractMetadata
+export async function create(
+  workspaceId: string,
+  groupId: string,
+  title: string = '新对话',
+  modelSelection: ModelSelection | null = null,
+  options?: {
+    role?: 'main' | 'sub';
+    parentConversationId?: string;
+    cachePolicy?: '5m' | '1h';
+    contractMetadata?: ContractMetadata;
+  },
+): Promise<string>
+```
+
+**Step 2 该从哪里继续**：先读 `electron/main/agents/tools/delegation-tools.ts` + `electron/main/agents/delegation-bridge.ts` 熟悉现有 7 个工具语义，再规划新工具映射。契约通道校验用 `conversationService.getBySessionId()` 反查派出者。
+
+**待办 / 已知限制**：
+- 前端 IPC 层未暴露 `getBySessionId`。若 Step 4（溯源条）需前端直接查派出者，需在 `electron/main/tipc/conversations.ts` 补 procedure
+- `ConversationCompat.contractMetadata` 直接透传 camelCase（字段名本就是 camelCase，无需转 snake_case）

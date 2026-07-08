@@ -221,11 +221,24 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   const title = spec.title ?? `子会话: ${spec.task.slice(0, 30)}`;
 
+  if (!parent.sdkSessionId) {
+    logger.warn(`父会话 ${parentConversationId} 尚无 sdkSessionId，子会话 ${title} 将不写入 contractMetadata（无法溯源派出者）`);
+  }
+  const contractMetadata: conversationService.ContractMetadata | undefined = parent.sdkSessionId
+    ? {
+        parentSessionId: parent.sdkSessionId,
+        task: spec.task,
+        expectedOutputPath: spec.outputPath,
+        createdBy: 'agent',
+      }
+    : undefined;
+
   // 先建 conversation 拿到 childId
   const childId = await conversationService.create(workspaceId, groupId, title, modelSel, {
     role: 'sub',
     parentConversationId,
     cachePolicy: parent.cachePolicy,
+    contractMetadata,
   });
 
   // claim outputPath，失败则回滚
