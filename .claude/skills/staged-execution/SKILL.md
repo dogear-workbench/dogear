@@ -38,8 +38,8 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 
 | 角色 | 职责 | 禁止 |
 |---|---|---|
-| **主会话** | 读 plan / 读 step / 决定分派策略 / 派子会话 / 等交付 / 验收 / 回填 stepN.md / 打勾 plan.md / git commit | 直接 Edit/Write 业务代码 |
-| **子会话** | 按 task 描述改代码 / WriteGroupFile 到 outputPath / SubmitDelivery | 派孙会话（没工具）/ 越 step 边界改动 |
+| **主会话** | 读 plan / 读 step / 决定分派策略 / 派子会话 / 等交付 / 验收 / 回填 stepN.md / 打勾 plan.md / git commit / **改 `.claude/**` 下所有文件** | 直接 Edit/Write 业务代码 |
+| **子会话** | 按 task 描述改代码 / WriteGroupFile 到 outputPath / SubmitDelivery | 派孙会话（没工具）/ 越 step 边界改动 / **动 `.claude/**` 下任何文件** |
 
 ## 分派规则
 
@@ -52,6 +52,19 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
   3. 交付要求：「按 stepN.md 的 计划改动 段实施代码；完成后 WriteGroupFile 到 outputPath；然后 SubmitDelivery 交回改动清单」
 - `outputPath`：约定为 `stepN-delivery.md`（保持组共享区可追溯）
 - `title`：`step N: <stepN.md 的 title>`
+
+### 例外：主会话必须自己做的情形
+
+**`.claude/**` 下的所有文件**（skill、rule、CLAUDE.md、提示词、hooks、settings 等）**必须**由主会话直接 Edit，**不管改动多大都不派子会话**。
+
+原因：子会话启动时会加载 `.claude/`，如果同时有子会话在写这个目录会阻塞导致超时，严重时子会话直接卡死拿不到交付。
+
+处理：如果 stepN.md 的计划改动里同时包含业务代码和 `.claude/` 文件——**拆两半**：
+- `.claude/` 部分主会话自己 Edit
+- 业务代码部分派子会话
+- 派出时 task 描述里明确写「不要动 `.claude/` 下任何文件，那部分主会话已处理」
+
+不存在"例外的例外"——`.claude/` 铁定主会话做。
 
 ### 例外：主会话可以自己做的情形
 
@@ -169,6 +182,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - 「commit 里带上这几天累积的改动一起提」→ 混提交 = 违规
 - 「lint 挂了，加个 // eslint-disable 先过」→ 掩盖问题 = 违规
 - 「子会话卡住了，我 SendMessageToChild 疯狂指导它」→ 3 次不成 = 停下，不无限循环
+- 「这个 step 有 .claude/ 改动，顺手一起派给子会话吧」→ 会阻塞超时，拆两半：`.claude/` 主会话做，其他派子
 
 ## 用户信号说明你走错了
 
@@ -176,5 +190,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - 「这个改动跟 step 计划的不一样」 → 越界了，回滚
 - 「commit 里怎么有那么多无关文件」 → 混提交，重新分割
 - 「跑一下 lint / build 看看」 → 你跳过了验收清单，补做
+- 「子会话怎么卡住不动了 / 超时了」 → 检查是不是让它改 `.claude/` 了，是的话立即停子会话，主会话自己 Edit .claude/ 部分
 
 看到这些信号：停，回本 skill 前置检查，找出跳过的环节。
