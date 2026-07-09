@@ -65,3 +65,24 @@ export function newCategory(name: string, anchorTags: string[]): SmartCategory {
   // 8-char hex 前缀（~32-bit 熵），单工作区分类上限 10 个，碰撞概率可忽略
   return { id: `cat_${randomUUID().slice(0, 8)}`, name, anchorTags, groupIds: [], createdAt: now, updatedAt: now };
 }
+
+// 纯函数：合并两个分类为一个新分类（不 mutate，fromIds 任一不存在或相同则 throw）
+export function mergeCategories(
+  idx: SmartCategoriesIndex,
+  fromIds: [string, string],
+  name: string,
+  anchorTags: string[],
+): SmartCategoriesIndex {
+  const [id1, id2] = fromIds;
+  if (id1 === id2) throw new Error(`fromIds 不能相同: ${id1}`);
+  const cat1 = idx.categories.find((c) => c.id === id1);
+  const cat2 = idx.categories.find((c) => c.id === id2);
+  if (!cat1) throw new Error(`分类 ${id1} 不存在`);
+  if (!cat2) throw new Error(`分类 ${id2} 不存在`);
+  const merged = newCategory(name, anchorTags);
+  merged.groupIds = [...new Set([...cat1.groupIds, ...cat2.groupIds])];
+  return {
+    ...idx,
+    categories: [...idx.categories.filter((c) => c.id !== id1 && c.id !== id2), merged],
+  };
+}

@@ -16,7 +16,7 @@ export interface SmartCategory {
 export interface CategorizeDecisionLog {
   time: string;                         // ISO
   groupId: string;
-  decision: 'match' | 'join' | 'new' | 'skip' | 'error';
+  decision: 'match' | 'join' | 'new' | 'skip' | 'error' | 'merge' | 'prune';
   reason?: string;
 }
 
