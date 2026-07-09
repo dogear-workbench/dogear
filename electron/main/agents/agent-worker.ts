@@ -1030,7 +1030,9 @@ class AgentWorker {
             },
             allowedTools: [
               'mcp__dogear-smart-category__ListCategories',
-              'mcp__dogear-smart-category__SaveCategory',
+              'mcp__dogear-smart-category__SaveCategoryJoin',
+              'mcp__dogear-smart-category__SaveCategoryNew',
+              'mcp__dogear-smart-category__SaveCategoryMerge',
             ],
           },
         });
@@ -1220,7 +1222,7 @@ class AgentWorker {
           allowedTools: [
             'mcp__dogear-smart-category__ListCategories',
             'mcp__dogear-smart-category__PruneCategoryTags',
-            'mcp__dogear-smart-category__SaveCategory',
+            'mcp__dogear-smart-category__SaveCategoryMerge',
           ],
         },
       });

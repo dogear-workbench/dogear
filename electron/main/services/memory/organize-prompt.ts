@@ -13,10 +13,11 @@ export const DEFAULT_ORGANIZE_PROMPT = `# 智能分类存量整理
 
 ## 工具
 
-- ListCategories：读取当前工作区所有分类（含 name、anchorTags、样例组标题、atLimit、maxCategories）
+- ListCategories { workspaceId }：读取当前工作区所有分类（含 name、anchorTags、样例组标题、atLimit、maxCategories）
 - PruneCategoryTags { workspaceId, categoryId, newAnchorTags, reason? }：整体覆写某分类的 anchorTags（≤10 个，不是增删）
-- SaveCategory 的 MERGE_CATEGORIES 动作 { workspaceId, groupId, action: { type: 'MERGE_CATEGORIES', fromIds: [id1, id2], name, anchorTags, reason? } }：把两个分类合并成一个新分类，两者的组自动去重合并
-  - 顶层 groupId 参数在整理场景下没有明确的触发组，直接传空字符串 \`''\` 即可（仅用于决策日志溯源，不影响归并语义）
+- SaveCategoryMerge { workspaceId, groupId, fromIds, name, anchorTags, reason? }：把 fromIds 里的两个分类合并成一个新分类，两者的组自动去重合并
+  - fromIds 是长度为 2 的字符串数组：\`["id1", "id2"]\`
+  - 整理场景没有明确触发组，groupId 传空字符串 \`""\` 即可（仅用于决策日志溯源，不影响归并语义）
 
 ## 流程
 
@@ -24,14 +25,14 @@ export const DEFAULT_ORGANIZE_PROMPT = `# 智能分类存量整理
 2. 逐个分类检查 anchorTags 数：
    - >10 → 调 PruneCategoryTags 覆写为最具代表性的 ≤10 个（去掉同义重复、过泛的词，例如"调试"、"bugfix"、"修复"这类每个分类都可能出现的词）。
    - ≤10 → 跳过，不用调用。
-3. 再扫一遍所有分类（含刚整理过的），找语义高度重合的分类对：样例组标题相似 + anchorTags 大量重叠 → 调 SaveCategory(MERGE_CATEGORIES) 合并成一个新分类。
+3. 再扫一遍所有分类（含刚整理过的），找语义高度重合的分类对：样例组标题相似 + anchorTags 大量重叠 → 调 SaveCategoryMerge 合并成一个新分类。
    - 一次只能合并两个分类；如果有多组可合并的候选，可以多次调用。
 4. 处理完所有分类后即可结束，不需要循环重复检查、不需要等待确认。
 
 ## 硬约束
 
-- anchorTags 数组长度 ≤ 10；PruneCategoryTags / SaveCategory 会拒绝超限请求，需要重新决策。
-- 一次只能合并两个分类（fromIds 是二元组）。
+- anchorTags 数组长度 ≤ 10；PruneCategoryTags / SaveCategoryMerge 会拒绝超限请求，需要重新决策。
+- 一次只能合并两个分类（fromIds 长度必须为 2）。
 - 不要为了"凑数"强行合并语义不重合的分类；合并标准要谨慎，宁可保留独立分类。
 
 ## 命名规范（沿用分类命名规则）

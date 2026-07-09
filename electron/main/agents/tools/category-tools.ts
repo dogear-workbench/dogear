@@ -1,8 +1,11 @@
 /**
  * 智能分类 MCP Server 工具（dogear-smart-category）
  *
- * CATEGORIZE_SESSION agent 用：ListCategories / SaveCategory
- * 由 Phase 3 worker 在每次"无阈值匹配"时启动一次 headless query 调用。
+ * CATEGORIZE_SESSION agent 用：ListCategories / SaveCategoryJoin / SaveCategoryNew / SaveCategoryMerge
+ * CATEGORIZE_ORGANIZE agent 用：ListCategories / PruneCategoryTags / SaveCategoryMerge
+ *
+ * 三种保存动作拆成独立工具（原 SaveCategory 用 discriminatedUnion + tuple，
+ * GLM 等国内 Anthropic 兼容层不吃 oneOf / prefixItems，拆开后 schema 纯 object 全平台通吃）。
  */
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
@@ -24,8 +27,20 @@ registerTools([
     category: 'memory',
   },
   {
-    name: 'SaveCategory',
-    description: '保存分类决策（JOIN_EXISTING / NEW_CATEGORY / MERGE_CATEGORIES）',
+    name: 'SaveCategoryJoin',
+    description: '把组归入现有分类（可选扩/覆写 anchorTags）',
+    server: 'dogear-smart-category',
+    category: 'memory',
+  },
+  {
+    name: 'SaveCategoryNew',
+    description: '新建分类并把组放入（可附 redistribute 迁移名单，达上限会被拒）',
+    server: 'dogear-smart-category',
+    category: 'memory',
+  },
+  {
+    name: 'SaveCategoryMerge',
+    description: '把两个现有分类合并成一个新分类，两者的组自动去重合并',
     server: 'dogear-smart-category',
     category: 'memory',
   },
@@ -41,37 +56,36 @@ const listArgs = z.object({
   workspaceId: z.string().describe('工作区 ID'),
 });
 
-const saveArgs = z.object({
+const joinArgs = z.object({
   workspaceId: z.string().describe('工作区 ID'),
   groupId: z.string().describe('待归类的组 ID'),
-  action: z.discriminatedUnion('type', [
-    z.object({
-      type: z.literal('JOIN_EXISTING'),
-      categoryId: z.string(),
-      addAnchorTags: z.array(z.string()).optional()
-        .describe('可选：新标签若语义贴近且能丰富分类画像就加进 anchorTags；否则留空。与 replaceAnchorTags 互斥'),
-      replaceAnchorTags: z.array(z.string()).max(10).optional()
-        .describe('可选：整体覆写该分类的 anchorTags（不是新增）。与 addAnchorTags 互斥；当前 anchorTags 已达 10 个上限时必须用这个才能生效'),
-      reason: z.string().optional().describe('简短决策理由（供审计）'),
-    }),
-    z.object({
-      type: z.literal('NEW_CATEGORY'),
-      name: z.string().min(1).max(20).describe('分类名（2-6 字短词组）'),
-      anchorTags: z.array(z.string()).min(1).max(10).describe('该分类的 anchor 标签集，最多 10 个'),
-      redistribute: z.array(z.object({
-        groupId: z.string(),
-        moveToCategoryId: z.string().describe('目标分类 id；新分类用 "__NEW__" 占位'),
-      })).optional().describe('受影响候选迁移列表（最多由系统注入的候选数量）'),
-      reason: z.string().optional(),
-    }),
-    z.object({
-      type: z.literal('MERGE_CATEGORIES'),
-      fromIds: z.tuple([z.string(), z.string()]).describe('待合并的两个现有分类 id'),
-      name: z.string().min(1).max(20).describe('合并后新分类的名称'),
-      anchorTags: z.array(z.string()).min(1).max(10).describe('合并后新分类的 anchor 标签集，最多 10 个'),
-      reason: z.string().optional(),
-    }),
-  ]),
+  categoryId: z.string().describe('归入的目标分类 ID'),
+  addAnchorTags: z.array(z.string()).optional()
+    .describe('可选：新标签若语义贴近且能丰富分类画像就加进 anchorTags；否则留空。与 replaceAnchorTags 互斥'),
+  replaceAnchorTags: z.array(z.string()).max(10).optional()
+    .describe('可选：整体覆写该分类的 anchorTags（不是新增）。与 addAnchorTags 互斥；当前 anchorTags 已达 10 个上限时必须用这个才能生效'),
+  reason: z.string().optional().describe('简短决策理由（供审计）'),
+});
+
+const newArgs = z.object({
+  workspaceId: z.string().describe('工作区 ID'),
+  groupId: z.string().describe('待归类的组 ID'),
+  name: z.string().min(1).max(20).describe('分类名（2-6 字短词组）'),
+  anchorTags: z.array(z.string()).min(1).max(10).describe('该分类的 anchor 标签集，最多 10 个'),
+  redistribute: z.array(z.object({
+    groupId: z.string(),
+    moveToCategoryId: z.string().describe('目标分类 id；新分类用 "__NEW__" 占位'),
+  })).optional().describe('受影响候选迁移列表（最多由系统注入的候选数量）'),
+  reason: z.string().optional().describe('简短决策理由（供审计）'),
+});
+
+const mergeArgs = z.object({
+  workspaceId: z.string().describe('工作区 ID'),
+  groupId: z.string().describe('触发本次决策的组 ID；批量整理场景无触发组时传空字符串 ""'),
+  fromIds: z.array(z.string()).length(2).describe('待合并的两个现有分类 id（数组长度必须为 2）'),
+  name: z.string().min(1).max(20).describe('合并后新分类的名称'),
+  anchorTags: z.array(z.string()).min(1).max(10).describe('合并后新分类的 anchor 标签集，最多 10 个'),
+  reason: z.string().optional().describe('简短决策理由（供审计）'),
 });
 
 /**
@@ -132,9 +146,62 @@ export function createCategoryTools() {
       ),
 
       tool(
-        'SaveCategory',
-        '保存分类决策。action.type=JOIN_EXISTING 归入现有分类（可附 addAnchorTags 扩 anchor，或 replaceAnchorTags 整体覆写，二者互斥），NEW_CATEGORY 新建分类（可附 redistribute 迁移名单），或 MERGE_CATEGORIES 合并两个现有分类为一个新分类。已达上限时 NEW_CATEGORY 会被拒绝，需先 MERGE_CATEGORIES 腾位置。',
-        saveArgs.shape,
+        'SaveCategoryJoin',
+        '把 groupId 归入现有分类 categoryId。可选 addAnchorTags（扩展该分类 anchorTags）或 replaceAnchorTags（整体覆写），二者互斥；不加标签则留空。该分类当前 anchorTags 已达 10 上限时必须用 replaceAnchorTags 才能加新标签。',
+        joinArgs.shape,
+        async (args) => {
+          try {
+            let idx = await readIndex(args.workspaceId);
+            const nowIso = new Date().toISOString();
+
+            const cat = idx.categories.find((c) => c.id === args.categoryId);
+            if (!cat) {
+              return { content: [{ type: 'text' as const, text: `Error: 分类 ${args.categoryId} 不存在` }], isError: true };
+            }
+            if (args.addAnchorTags && args.replaceAnchorTags) {
+              return { content: [{ type: 'text' as const, text: 'Error: addAnchorTags 与 replaceAnchorTags 互斥，只能二选一' }], isError: true };
+            }
+            let nextAnchorTags: string[];
+            if (args.replaceAnchorTags) {
+              nextAnchorTags = args.replaceAnchorTags;
+            } else {
+              const addTags = args.addAnchorTags ?? [];
+              nextAnchorTags = [...new Set([...cat.anchorTags, ...addTags])];
+              if (nextAnchorTags.length > 10) {
+                return { content: [{ type: 'text' as const, text: 'Error: 该分类已达 10 tag 上限，请用 replaceAnchorTags 覆写或不加' }], isError: true };
+              }
+            }
+            const updated = {
+              ...pushGroup(cat, args.groupId),
+              anchorTags: nextAnchorTags,
+              updatedAt: nowIso,
+            };
+            idx.categories = idx.categories.map((c) => (c.id === cat.id ? updated : c));
+            idx = appendDecision(idx, {
+              time: nowIso,
+              groupId: args.groupId,
+              decision: 'join',
+              reason: args.reason,
+            });
+
+            await writeIndex(args.workspaceId, idx);
+            return { content: [{ type: 'text' as const, text: 'OK' }] };
+          } catch (error) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `保存分类失败: ${error instanceof Error ? error.message : String(error)}`,
+              }],
+              isError: true,
+            };
+          }
+        },
+      ),
+
+      tool(
+        'SaveCategoryNew',
+        '新建分类并把 groupId 放进去。可选 redistribute 迁移名单（moveToCategoryId="__NEW__" 表示迁到刚新建的这个分类）。分类总数已达上限时会被直接拒绝——此时先调 SaveCategoryMerge 腾位置。',
+        newArgs.shape,
         async (args) => {
           try {
             let idx = await readIndex(args.workspaceId);
@@ -142,91 +209,79 @@ export function createCategoryTools() {
             const maxCategories = settings.smartCategory?.maxCategories ?? 10;
             const nowIso = new Date().toISOString();
 
-            const action = args.action;
-            if (action.type === 'JOIN_EXISTING') {
-              const cat = idx.categories.find((c) => c.id === action.categoryId);
-              if (!cat) {
-                return { content: [{ type: 'text' as const, text: `Error: 分类 ${action.categoryId} 不存在` }], isError: true };
-              }
-              if (action.addAnchorTags && action.replaceAnchorTags) {
-                return { content: [{ type: 'text' as const, text: 'Error: addAnchorTags 与 replaceAnchorTags 互斥，只能二选一' }], isError: true };
-              }
-              let nextAnchorTags: string[];
-              if (action.replaceAnchorTags) {
-                nextAnchorTags = action.replaceAnchorTags;
-              } else {
-                const addTags = action.addAnchorTags ?? [];
-                nextAnchorTags = [...new Set([...cat.anchorTags, ...addTags])];
-                if (nextAnchorTags.length > 10) {
-                  return { content: [{ type: 'text' as const, text: 'Error: 该分类已达 10 tag 上限，请用 replaceAnchorTags 覆写或不加' }], isError: true };
-                }
-              }
-              const updated = {
-                ...pushGroup(cat, args.groupId),
-                anchorTags: nextAnchorTags,
-                updatedAt: nowIso,
-              };
-              idx.categories = idx.categories.map((c) => (c.id === cat.id ? updated : c));
-              idx = appendDecision(idx, {
-                time: nowIso,
-                groupId: args.groupId,
-                decision: 'join',
-                reason: action.reason,
-              });
-            } else if (action.type === 'MERGE_CATEGORIES') {
-              try {
-                idx = mergeCategories(idx, action.fromIds, action.name, action.anchorTags);
-              } catch (mergeError) {
-                const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
-                return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true };
-              }
-              idx = appendDecision(idx, {
-                time: nowIso,
-                groupId: args.groupId,
-                decision: 'merge',
-                reason: action.reason,
-              });
-            } else {
-              // NEW_CATEGORY
-              if (idx.categories.length >= maxCategories) {
-                return { content: [{ type: 'text' as const, text: `Error: 已达分类上限 ${maxCategories}，必须 JOIN_EXISTING` }], isError: true };
-              }
-              const cat = newCategory(action.name, action.anchorTags);
-              cat.groupIds = [args.groupId];
-              idx.categories.push(cat);
-
-              // 处理 redistribute
-              for (const m of action.redistribute ?? []) {
-                const targetId = m.moveToCategoryId === '__NEW__' ? cat.id : m.moveToCategoryId;
-                if (!idx.categories.some((c) => c.id === targetId)) {
-                  mainLogger.warn(
-                    `[smart-category] redistribute 跳过：moveToCategoryId=${m.moveToCategoryId} 既非 __NEW__ 也非任何现有分类，groupId=${m.groupId} 不动`,
-                  );
-                  continue;
-                }
-                for (const c of idx.categories) {
-                  if (c.id !== targetId) {
-                    c.groupIds = c.groupIds.filter((x) => x !== m.groupId);
-                  }
-                }
-                const target = idx.categories.find((c) => c.id === targetId);
-                if (target && !target.groupIds.includes(m.groupId)) {
-                  target.groupIds.push(m.groupId);
-                  target.updatedAt = nowIso;
-                }
-              }
-              idx = appendDecision(idx, {
-                time: nowIso,
-                groupId: args.groupId,
-                decision: 'new',
-                reason: action.reason,
-              });
+            if (idx.categories.length >= maxCategories) {
+              return { content: [{ type: 'text' as const, text: `Error: 已达分类上限 ${maxCategories}，必须 SaveCategoryJoin` }], isError: true };
             }
+            const cat = newCategory(args.name, args.anchorTags);
+            cat.groupIds = [args.groupId];
+            idx.categories.push(cat);
+
+            for (const m of args.redistribute ?? []) {
+              const targetId = m.moveToCategoryId === '__NEW__' ? cat.id : m.moveToCategoryId;
+              if (!idx.categories.some((c) => c.id === targetId)) {
+                mainLogger.warn(
+                  `[smart-category] redistribute 跳过：moveToCategoryId=${m.moveToCategoryId} 既非 __NEW__ 也非任何现有分类，groupId=${m.groupId} 不动`,
+                );
+                continue;
+              }
+              for (const c of idx.categories) {
+                if (c.id !== targetId) {
+                  c.groupIds = c.groupIds.filter((x) => x !== m.groupId);
+                }
+              }
+              const target = idx.categories.find((c) => c.id === targetId);
+              if (target && !target.groupIds.includes(m.groupId)) {
+                target.groupIds.push(m.groupId);
+                target.updatedAt = nowIso;
+              }
+            }
+            idx = appendDecision(idx, {
+              time: nowIso,
+              groupId: args.groupId,
+              decision: 'new',
+              reason: args.reason,
+            });
 
             await writeIndex(args.workspaceId, idx);
+            return { content: [{ type: 'text' as const, text: 'OK' }] };
+          } catch (error) {
             return {
-              content: [{ type: 'text' as const, text: 'OK' }],
+              content: [{
+                type: 'text' as const,
+                text: `保存分类失败: ${error instanceof Error ? error.message : String(error)}`,
+              }],
+              isError: true,
             };
+          }
+        },
+      ),
+
+      tool(
+        'SaveCategoryMerge',
+        '把 fromIds 里的两个现有分类合并成一个新分类，两者的组自动去重合并进新分类。fromIds 必须是长度为 2 的字符串数组。批量整理场景无触发组时 groupId 传空字符串 ""。',
+        mergeArgs.shape,
+        async (args) => {
+          try {
+            let idx = await readIndex(args.workspaceId);
+            const nowIso = new Date().toISOString();
+
+            // zod .length(2) 已保证运行时长度，这里做类型层的 tuple 断言
+            const fromIds = args.fromIds as [string, string];
+            try {
+              idx = mergeCategories(idx, fromIds, args.name, args.anchorTags);
+            } catch (mergeError) {
+              const msg = mergeError instanceof Error ? mergeError.message : String(mergeError);
+              return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true };
+            }
+            idx = appendDecision(idx, {
+              time: nowIso,
+              groupId: args.groupId,
+              decision: 'merge',
+              reason: args.reason,
+            });
+
+            await writeIndex(args.workspaceId, idx);
+            return { content: [{ type: 'text' as const, text: 'OK' }] };
           } catch (error) {
             return {
               content: [{
