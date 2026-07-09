@@ -632,6 +632,17 @@ class AgentWorker {
     const template = await loadGroupDigestPrompt(this.configDir);
     const groupDigestPath = getGroupDigestPath(workspaceId, groupId);
 
+    // 分类词汇表（打 tag 时优先复用）：冷启动（无分类）不注入此段
+    const { readIndex: readCategoryIndex } = await import('../services/memory/smart-category-store.js');
+    const categoryIdx = await readCategoryIndex(workspaceId);
+    const categoryVocabLines = categoryIdx.categories.length > 0
+      ? [
+        '',
+        '当前工作区分类词汇表（打 tag 时优先从中选择，实在没合适才自造）：',
+        ...categoryIdx.categories.map((c) => `- ${c.name}: [${c.anchorTags.join(', ')}]`),
+      ]
+      : [];
+
     const contextSection = [
       '\n## 本次输入',
       `- workspaceId: ${workspaceId}`,
@@ -646,6 +657,7 @@ class AgentWorker {
       sharedFileText,
       `- shared/_notes/ 文件清单（请优先 ReadGroupFile 这些）:`,
       notesFileText,
+      ...categoryVocabLines,
     ].join('\n');
 
     const prompt = `${template}${contextSection}`;

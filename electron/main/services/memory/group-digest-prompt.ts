@@ -38,6 +38,12 @@ export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两�
 - 不要复述共享文件正文；只写 path + 一句话定位。
 - 标签内部用中划线分层（如 "产品-Dashboard"），不用斜杠/空格。
 - background 的 keyDecisions 和 openQuestions 不该有交集——已定的进 keyDecisions，未定 / 搁置的进 openQuestions。
+
+## 打 tag 的词汇选择
+系统会在你的上下文里附上当前工作区的**分类词汇表**（若有）。打 tag 时优先从中选择贴合的词——这样组卡能被快速归类，不用每次都跑分类决策。
+实在没合适的（比如首次讨论新主题）才自造 tag。
+
+词汇表按 \`分类名: [tag1, tag2, ...]\` 一行一分类展示，你不需要精确匹配某个分类，也不需要照抄——它是启发式的选词参考。
 `;
 
 function getGroupDigestPromptPath(configDir: string): string {

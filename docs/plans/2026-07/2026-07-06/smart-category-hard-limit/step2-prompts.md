@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 提示词与提炼源头对齐
-status: pending
+status: done
 ---
 
 ## 目标
@@ -72,10 +72,27 @@ status: pending
   - 新组卡的 tag 是否倾向复用现有词汇
 - [ ] 手动触发一次入卡分类，走一次 LLM 分支，观察 agent 是否按新决策流程走
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-（TBD）
 
-### 给下一步的接力棒
-（TBD — 至少要写：agent-worker.ts 里注入词汇表的具体函数/位置，方便 Step 3 复用同样机制注入 organize 上下文；如果发现 categorize-prompt 结构有大改，需要提示 Step 3 的 organize prompt 是否也需要跟着改）
+- `electron/main/services/memory/categorize-prompt.ts` — `DEFAULT_CATEGORIZE_PROMPT` 全文重写：工具列表精确列出 JOIN_EXISTING(addAnchorTags/replaceAnchorTags 互斥)、NEW_CATEGORY、MERGE_CATEGORIES(fromIds/name/anchorTags)；决策流程改为「atLimit=false（JOIN 细分 <10/=10 两种 anchor 处理）vs atLimit=true（先扫合并候选→MERGE+NEW 或 fallback JOIN）」分支树；新增「addAnchorTags 收紧规则」段（默认不加/最多 2 个/泛词黑名单）；保留原「命名规范」「宁可宽不要窄」原则；新增「硬约束」段
+- `electron/main/services/memory/group-digest-prompt.ts:42-46` — 「写作要点」之后新增「打 tag 的词汇选择」段，说明词汇表格式和优先复用原则
+- `electron/main/agents/agent-worker.ts:635-644` — `handleGroupDigestTask` 里 `loadGroupDigestPrompt` 之后、`contextSection` 构建之前，`readIndex(workspaceId)` 拉分类，非冷启动时组 `categoryVocabLines`（`- ${name}: [${anchorTags.join(', ')}]` 每分类一行）；`categoryVocabLines` 展开到 `contextSection` 数组末尾（第 660 行 `...categoryVocabLines`），最终并入 `prompt = template + contextSection`
+
+验证：`bun run build:electron` 通过；`bun run lint` 0 errors / 83 既有 warnings（三个改动文件无新增警告）。
+
+### 给下一步的接力棒（Step 3 复用要点）
+
+**agent-worker.ts 分类词汇表注入机制**：
+- 函数：`handleGroupDigestTask`（注意 **实际方法名不是 `handleGroupDigestSessionTask`**，plan.md/step2.md 里写的是文档笔误；`AgentWorker` 类的私有方法，位于 `agent-worker.ts:565`）
+- 注入方式：**不走 systemPrompt / systemPromptAppend**，而是**追加进 initial user prompt**——`query({ prompt, options })` 完全没传 `systemPrompt` 选项（用 SDK 默认 preset），所有上下文都通过字符串拼接塞进 `prompt` 变量：`prompt = template + contextSection`
+- `contextSection` 是一个 `string[]` `.join('\n')` 拼出的文本块，本来就在塞 `dirtyConversations` / `sourcesSeen` / `sharedFileText` / `notesFileText`；分类词汇表就是往这个数组末尾多塞一段
+
+**Step 3 CATEGORIZE_ORGANIZE 任务如果需要类似"资源清单"注入**：直接照抄——`readIndex(workspaceId)` → 判空 → 组 `string[]` → 塞进对应任务的 prompt 拼接处，不用碰 `agent-query-config.ts` 或 `query()` 的 `options`。
+
+**Prune 工具的 allowedTools 未加**：`handleCategorizeSessionTask` 的 `allowedTools` 数组仍只有 `ListCategories` / `SaveCategory`（本步骤计划要求 PruneCategoryTags 不用在 per-group 流程引用）。Step 3 的 organize 任务大概率需要在自己的 `query()` 里显式加上 `mcp__dogear-smart-category__PruneCategoryTags`。
+
+**决策流程摘要（Step 3 organize prompt 参考）**：新的 categorize-prompt 是两层分支树——先看 `atLimit`（ListCategories 返回的字段），未满走 JOIN vs NEW 的语义相关性判断（JOIN 时再细分 anchorTags 是否 =10 决定 add 还是 replace）；已满先尝试「合并两个高重合分类腾位置 + 紧接着新建」，都合不了才降级为强制 JOIN。organize 任务大概率会用 PruneCategoryTags 覆写（批量场景），而不是 add/replaceAnchorTags 的增量逻辑。
+
+**dev 环境操作提示**（Step 4 手测注意）：子会话删除了本地 `.dogear/categorize-prompt.md` 和 `.dogear/group-digest-prompt.md` 两个过时种子文件（loadXxxPrompt 缺失时会用新 DEFAULT 重播种）；如果 Step 4 手测的 configDir 下已有旧种子，需要先删掉才能吃到新提示词。
