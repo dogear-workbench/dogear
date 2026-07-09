@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 存量清理任务链路 + UI
-status: pending
+status: done
 ---
 
 ## 目标
@@ -83,10 +83,47 @@ status: pending
   - 检查 recentDecisions 里是否有 prune/merge 记录
 - [ ] 手动停止一次，验证队列清干净
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-（TBD）
 
-### 给下一步的接力棒
-（TBD — 至少要写：清理后 smart-categories.json 的实际结构、有哪些分类被合并了、matchByThreshold 命中率变化的初步观察）
+**类型层**：
+- `types/smart-category.ts:29-53` + `electron/main/types.ts:171-197` — `CategorizeRecentEntry.kind`/`CategorizeActivity.current.kind` 加 `'organize'`；`CategorizeRecentEntry.outcome` 加 `'done'`
+
+**任务定义**：
+- `electron/main/agents/task-types.ts` — `TaskType.CATEGORIZE_ORGANIZE = 'categorize_organize'` + `CategorizeOrganizeSessionPayload { workspaceId, modelSelection? }`
+
+**编排器**（未拆独立文件，扩展现 232 行文件）：
+- `electron/main/services/memory/category-trigger.ts`：`CategorizeJob` union 加 `organize` 分支；`classifyCategorizeOutcome` 新增 `isOrganize` 参数（organize 直接返 `done`）；`runOne` 按 kind 分派 payload / TaskType；broadcast 条件扩到 `match/join/new/done`；新增导出 `triggerCategorizeOrganize` / `cancelCategorizeOrganize`（**只在 `current?.kind === 'organize'` 时才真正 cancel**，避免误杀 per-group）
+
+**新增提示词模块**：
+- `electron/main/services/memory/organize-prompt.ts`（新文件 74 行）— 沿用 categorize-prompt 模式：`DEFAULT_ORGANIZE_PROMPT` + `loadOrganizePrompt` / `saveOrganizePrompt`，种子落 `<configDir>/organize-prompt.md`
+
+**Worker Handler**：
+- `electron/main/agents/agent-worker.ts:151-157` — switch 加 CATEGORIZE_ORGANIZE 分派
+- `electron/main/agents/agent-worker.ts:1153-1257` — 新 `handleCategorizeOrganizeTask`：三级 fallback 走 `resolveModelSelection`；`loadOrganizePrompt` + 字符串拼接注入 workspaceId / 分类数（不碰 systemPrompt）；allowedTools = `[ListCategories, PruneCategoryTags, SaveCategory]`（server 名 `dogear-smart-category`）；query 接 `this.currentAbortController`；haiku 不传 effort；结束后重读 `readCategoryIndex` 用头插法 `recentDecisions` + `startedAt` 分界统计 `{prune, merge}`；不自己 broadcast（由 category-trigger 统一）
+
+**IPC**：
+- `electron/main/tipc/category.ts` — 新增 4 个 RPC：`triggerCategorizeOrganize` / `cancelCategorizeOrganize` / `getOrganizePrompt` / `setOrganizePrompt`（`getCategorizeActivity` 复用，未新建 organize 专用版本）
+
+**前端**：
+- `stores/smart-category-store.ts` — 加 `triggerOrganize(workspaceId)` / `cancelOrganize()` actions
+- `app/settings/memory/SmartCategoryPanel.tsx` — 新增 `Wand2` 图标 + `handleOrganize` 走 `useConfirmStore.confirm()` 二次确认；按钮紧跟"立即重跑全部分类"（中间竖分割线）；活动状态里 `kind==='organize'` 显示"正在整理现有标签…"；停止按钮按 kind 分流；recent 列表 `kind==='organize'` 显示"批量整理"+ prune/merge 计数；outcome `'done'` 显示 ✅
+
+验证：`bun run build:electron` 通过；`bun run lint` 0 errors / 83 既有 warnings。
+
+### 给 Step 4 的接力棒（联调 + 手测）
+
+**手测清单**（子会话已列，主会话 Step 4 执行）：
+1. 打开设置页 → 会话摘要 Tab → 智能分类面板；确认"一键整理现有标签"按钮在"立即重跑全部分类"右侧、中间有竖分割线
+2. 点击按钮 → 应弹出 confirm-store 弹窗（非浏览器 confirm）；取消 → 无请求；开始整理 → 触发任务
+3. 运行期间：活动状态显示"正在整理现有标签…" + 停止按钮；如果此时有 per-group 会进入队列等待（queueDepth 增）
+4. 完成后：查 `<workspace>/.dogear/workspaces/<wsId>/smart-categories.json`——所有 `anchorTags.length <= 10`；`recentDecisions` 里有 `decision: 'prune'` / `'merge'` 条目（`groupId` 为空串是预期）；语义重合分类是否真的合并（旧两个 id 消失、新分类 groupIds 是两者去重合并）
+5. 点停止验证：活动状态回空闲，recent 出现 `outcome: 'cancelled'` 的批量整理条目；已落库的部分保留（agent 是逐工具落库的，中断只停后续调用）
+
+**未评估项**（Step 4 用真实数据观察）：
+- CATEGORIZE_ORGANIZE 的合并候选识别质量
+- anchorTags 压缩后 Step A `matchByThreshold` 命中率是否提升
+- organize prompt 是否需要迭代（比如过度合并 / 保守不合并）
+
+**Step 4 手测前注意**：Step 2 已删本地 `.dogear/categorize-prompt.md` + `.dogear/group-digest-prompt.md`，本步骤新增的 `.dogear/organize-prompt.md` 首次跑时会自动播种，不需要手动删

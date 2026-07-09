@@ -11,8 +11,12 @@ interface SmartCategoryStore {
   load: (workspaceId: string) => Promise<void>;
   /** 触发全量重建（清空 + 重决策所有摘要卡） */
   triggerFullRebuild: (workspaceId: string) => Promise<void>;
+  /** 触发存量分类整理（压 anchorTags + 合并语义重合分类，与 per-group 共享队列互斥） */
+  triggerOrganize: (workspaceId: string) => Promise<void>;
   /** 取消当前正在跑的任务（全局单队列，无需 workspaceId） */
   cancel: () => Promise<boolean>;
+  /** 取消当前正在跑的 organize 任务（仅当当前活动确实是 organize 时生效） */
+  cancelOrganize: () => Promise<boolean>;
   /** 拉一次活动状态（全局单队列，后端不按 workspaceId 区分） */
   refreshActivity: () => Promise<void>;
   /** 清空 store（切换工作区时调用） */
@@ -47,12 +51,30 @@ export const useSmartCategoryStore = create<SmartCategoryStore>((set) => ({
     }
   },
 
+  triggerOrganize: async (workspaceId) => {
+    try {
+      await client.triggerCategorizeOrganize({ workspaceId });
+    } catch (e) {
+      console.warn('[smart-category] triggerOrganize 失败:', e);
+    }
+  },
+
   cancel: async () => {
     try {
       const r = await client.cancelCategorize();
       return r.cancelled === true;
     } catch (e) {
       console.warn('[smart-category] cancel 失败:', e);
+      return false;
+    }
+  },
+
+  cancelOrganize: async () => {
+    try {
+      const r = await client.cancelCategorizeOrganize();
+      return r.cancelled === true;
+    } catch (e) {
+      console.warn('[smart-category] cancelOrganize 失败:', e);
       return false;
     }
   },

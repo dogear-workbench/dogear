@@ -1,6 +1,6 @@
-// 智能分类触发编排：incremental（单会话）+ full-rebuild（工作区全量）
+// 智能分类触发编排：incremental（单会话）+ full-rebuild（工作区全量）+ organize（存量整理）
 import {
-  TaskType, TaskStatus, type AgentTask, type CategorizeSessionPayload,
+  TaskType, TaskStatus, type AgentTask, type CategorizeSessionPayload, type CategorizeOrganizeSessionPayload,
 } from '../../agents/task-types.js';
 import { mainLogger } from '../../agents/logger.js';
 import { BrowserWindow } from 'electron';
@@ -11,13 +11,14 @@ import { whenMigrationReady } from './migration-gate.js';
 
 type CategorizeJob =
   | { kind: 'incremental'; workspaceId: string; groupId: string; groupDigestPath: string }
-  | { kind: 'full-rebuild'; workspaceId: string };
+  | { kind: 'full-rebuild'; workspaceId: string }
+  | { kind: 'organize'; workspaceId: string };
 
 const inFlight = new Set<string>();
 const queue: CategorizeJob[] = [];
 let pumping = false;
 
-export type CategorizeOutcome = 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled';
+export type CategorizeOutcome = 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled' | 'done';
 
 const RECENT_MAX = 15;
 let current: CategorizeActivity['current'] = null;
@@ -28,6 +29,7 @@ let lastScan: CategorizeActivity['lastScan'] = null;
 /**
  * 由 worker result + error 判定结果类别（纯函数，可单测）
  * - cancelled / error 直接判
+ * - organize 任务不产出 match/join/new 决策，成功即 'done'
  * - 否则按 decisions 计数里非零键的优先级判定：match > join > new > skip > error
  *   incremental 模式下 decisions 通常只有 1 个非零键（单条决策）
  *   full-rebuild 多条聚合，主要看里面是不是有 error；优先级仍按上面排
@@ -36,9 +38,11 @@ export function classifyCategorizeOutcome(
   result: any,
   error?: string,
   status?: TaskStatus,
+  isOrganize?: boolean,
 ): CategorizeOutcome {
   if (status === TaskStatus.CANCELLED || result?.cancelled) return 'cancelled';
   if (error || result?.error) return 'error';
+  if (isOrganize) return 'done';
   const d = (result?.decisions ?? {}) as Record<string, number>;
   if ((d.match ?? 0) > 0) return 'match';
   if ((d.join ?? 0) > 0) return 'join';
@@ -58,9 +62,9 @@ export function getCategorizeActivity(): CategorizeActivity {
 }
 
 function jobKey(job: CategorizeJob): string {
-  return job.kind === 'incremental'
-    ? `c:${job.workspaceId}:${job.groupId}`
-    : `r:${job.workspaceId}`;
+  if (job.kind === 'incremental') return `c:${job.workspaceId}:${job.groupId}`;
+  if (job.kind === 'organize') return `o:${job.workspaceId}`;
+  return `r:${job.workspaceId}`;
 }
 
 function enqueue(job: CategorizeJob): void {
@@ -116,27 +120,38 @@ async function runOne(job: CategorizeJob): Promise<void> {
     return;
   }
 
-  const payload: CategorizeSessionPayload = job.kind === 'incremental'
-    ? {
-        workspaceId: job.workspaceId,
-        workspacePath: ws.path,
-        mode: 'incremental',
-        groupId: job.groupId,
-        groupDigestPath: job.groupDigestPath,
-      }
-    : {
-        workspaceId: job.workspaceId,
-        workspacePath: ws.path,
-        mode: 'full-rebuild',
-      };
-
-  const task: AgentTask = {
-    id: `categorize-${jobKey(job)}-${Date.now()}`,
-    type: TaskType.CATEGORIZE_SESSION,
-    status: TaskStatus.PENDING,
-    payload,
-    createdAt: Date.now(),
-  };
+  let task: AgentTask;
+  if (job.kind === 'organize') {
+    const payload: CategorizeOrganizeSessionPayload = { workspaceId: job.workspaceId };
+    task = {
+      id: `categorize-${jobKey(job)}-${Date.now()}`,
+      type: TaskType.CATEGORIZE_ORGANIZE,
+      status: TaskStatus.PENDING,
+      payload,
+      createdAt: Date.now(),
+    };
+  } else {
+    const payload: CategorizeSessionPayload = job.kind === 'incremental'
+      ? {
+          workspaceId: job.workspaceId,
+          workspacePath: ws.path,
+          mode: 'incremental',
+          groupId: job.groupId,
+          groupDigestPath: job.groupDigestPath,
+        }
+      : {
+          workspaceId: job.workspaceId,
+          workspacePath: ws.path,
+          mode: 'full-rebuild',
+        };
+    task = {
+      id: `categorize-${jobKey(job)}-${Date.now()}`,
+      type: TaskType.CATEGORIZE_SESSION,
+      status: TaskStatus.PENDING,
+      payload,
+      createdAt: Date.now(),
+    };
+  }
 
   current = {
     workspaceId: job.workspaceId,
@@ -151,15 +166,15 @@ async function runOne(job: CategorizeJob): Promise<void> {
   await new Promise<void>((resolve) => {
     getAgentManager().submitTask(task, (_taskId, status, result, error) => {
       if (status === TaskStatus.COMPLETED || status === TaskStatus.FAILED || status === TaskStatus.CANCELLED) {
-        const outcome = classifyCategorizeOutcome(result, error, status);
+        const outcome = classifyCategorizeOutcome(result, error, status, job.kind === 'organize');
         pushRecent(outcome, {
           decisions: result?.decisions,
           tier: result?.tier,
           profileName: result?.profileName,
           error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
         });
-        // 索引真的改了才广播（match/join/new），skip/error/cancelled 不广播
-        if (outcome === 'match' || outcome === 'join' || outcome === 'new') {
+        // 索引真的改了才广播（match/join/new/done），skip/error/cancelled 不广播
+        if (outcome === 'match' || outcome === 'join' || outcome === 'new' || outcome === 'done') {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             try {
@@ -192,10 +207,25 @@ export async function triggerFullRebuild(workspaceId: string): Promise<void> {
   enqueue({ kind: 'full-rebuild', workspaceId });
 }
 
+/**
+ * 手动触发：存量分类整理（设置页"一键整理现有标签"按钮用）
+ * 与 incremental/full-rebuild 共享同一串行队列，天然互斥。
+ */
+export async function triggerCategorizeOrganize(workspaceId: string): Promise<void> {
+  await whenMigrationReady();
+  enqueue({ kind: 'organize', workspaceId });
+}
+
 /** 取消当前正在跑的任务（如有）。返回是否真的取消了 */
 export async function cancelCurrent(): Promise<boolean> {
   if (!currentTaskId) return false;
   const { getAgentManager } = await import('../../agents/agent-manager.js');
   getAgentManager().cancelTask(currentTaskId);
   return true;
+}
+
+/** 取消当前正在跑的 organize 任务；仅当当前活动确实是 organize 时才生效，避免误取消 per-group 任务 */
+export async function cancelCategorizeOrganize(): Promise<boolean> {
+  if (current?.kind !== 'organize') return false;
+  return cancelCurrent();
 }

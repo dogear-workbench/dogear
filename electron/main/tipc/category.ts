@@ -3,7 +3,9 @@ import { readIndex } from '../services/memory/smart-category-store.js';
 import {
   triggerCategorize,
   triggerFullRebuild,
+  triggerCategorizeOrganize,
   cancelCurrent,
+  cancelCategorizeOrganize,
   getCategorizeActivity,
 } from '../services/memory/category-trigger.js';
 import {
@@ -11,6 +13,11 @@ import {
   saveCategorizePrompt,
   DEFAULT_CATEGORIZE_PROMPT,
 } from '../services/memory/categorize-prompt.js';
+import {
+  loadOrganizePrompt,
+  saveOrganizePrompt,
+  DEFAULT_ORGANIZE_PROMPT,
+} from '../services/memory/organize-prompt.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
 import { listGroups } from '../services/group-service.js';
 import type { ModelSelection } from '../services/settings-types.js';
@@ -71,6 +78,29 @@ export const categoryRouter = {
       }
     }),
 
+  triggerCategorizeOrganize: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }) => {
+      try {
+        await triggerCategorizeOrganize(input.workspaceId);
+        return { success: true };
+      } catch (error) {
+        console.error('[category] triggerCategorizeOrganize 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  cancelCategorizeOrganize: t.procedure
+    .action(async () => {
+      try {
+        const cancelled = await cancelCategorizeOrganize();
+        return { cancelled };
+      } catch (error) {
+        console.error('[category] cancelCategorizeOrganize 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
   getCategorizeActivity: t.procedure
     .action(async () => {
       try {
@@ -100,6 +130,29 @@ export const categoryRouter = {
         return { success: true };
       } catch (error) {
         console.error('[category] setCategorizePrompt 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  getOrganizePrompt: t.procedure
+    .action(async () => {
+      try {
+        const prompt = await loadOrganizePrompt(getConfigDir());
+        return { prompt, defaultPrompt: DEFAULT_ORGANIZE_PROMPT };
+      } catch (error) {
+        console.error('[category] getOrganizePrompt 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  setOrganizePrompt: t.procedure
+    .input<{ prompt: string }>()
+    .action(async ({ input }) => {
+      try {
+        await saveOrganizePrompt(getConfigDir(), input.prompt);
+        return { success: true };
+      } catch (error) {
+        console.error('[category] setOrganizePrompt 失败:', error);
         return { error: String(error) };
       }
     }),

@@ -152,6 +152,10 @@ class AgentWorker {
           result = await this.handleCategorizeSessionTask(task, taskLogger);
           break;
 
+        case TaskType.CATEGORIZE_ORGANIZE:
+          result = await this.handleCategorizeOrganizeTask(task, taskLogger);
+          break;
+
         default:
           throw new Error(`未知任务类型: ${task.type}`);
       }
@@ -1134,6 +1138,119 @@ class AgentWorker {
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('智能分类任务失败:', errorMsg);
       return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error: errorMsg };
+    } finally {
+      this.currentAbortController = null;
+    }
+  }
+
+  /**
+   * 处理存量分类整理任务（CATEGORIZE_ORGANIZE）
+   *
+   * 一次性 headless query：agent 自主调 ListCategories → PruneCategoryTags（压 anchorTags ≤10）
+   * + SaveCategory(MERGE_CATEGORIES)（合并语义重合分类）。与 CATEGORIZE_SESSION 共享同一串行队列（互斥）。
+   * 模型按 categorizeModelSelection 覆盖（默认 haiku）；可取消。
+   */
+  private async handleCategorizeOrganizeTask(task: AgentTask, taskLogger: any): Promise<any> {
+    const payload = task.payload as import('./task-types.js').CategorizeOrganizeSessionPayload;
+    const { workspaceId } = payload;
+
+    taskLogger.info('开始存量分类整理任务:', '| workspace:', workspaceId);
+    const startedAt = Date.now();
+
+    const { query } = await import('@anthropic-ai/claude-agent-sdk');
+    const { buildQueryBaseConfig, resolveModelSelection } = await import('./agent-query-config.js');
+    const baseConfig = await buildQueryBaseConfig({
+      configDir: this.configDir,
+      isPackaged: this.isPackaged,
+      cliPath: this.cliPath,
+    });
+
+    const selection = payload.modelSelection
+      ?? baseConfig.appSettings.ai.categorizeModelSelection
+      ?? baseConfig.appSettings.ai.defaultModelSelection;
+
+    let env: Record<string, string>;
+    let tier: ModelTier;
+    let resolvedProfile: ModelProfile;
+    try {
+      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
+      env = r.env;
+      tier = r.tier;
+      resolvedProfile = r.profile;
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      taskLogger.error('存量分类整理任务终止:', error);
+      return { workspaceId, decisions: { prune: 0, merge: 0 }, error };
+    }
+
+    const { readIndex: readCategoryIndex } = await import('../services/memory/smart-category-store.js');
+    const { createCategoryTools } = await import('./tools/category-tools.js');
+    const { loadOrganizePrompt } = await import('../services/memory/organize-prompt.js');
+
+    const idxBefore = await readCategoryIndex(workspaceId);
+    const template = await loadOrganizePrompt(this.configDir);
+    const prompt = [
+      template,
+      '',
+      '## 本次输入',
+      `- workspaceId: ${workspaceId}`,
+      `- 当前分类数: ${idxBefore.categories.length}`,
+      '- 调 ListCategories / PruneCategoryTags / SaveCategory 时使用此 workspaceId',
+    ].join('\n');
+
+    const categoryServer = createCategoryTools();
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
+
+    try {
+      const agentQuery = query({
+        prompt,
+        options: {
+          permissionMode: 'dontAsk',
+          env,
+          abortController,
+          // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
+          ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
+          ...(baseConfig.pathToClaudeCodeExecutable && {
+            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
+          }),
+          mcpServers: {
+            'dogear-smart-category': categoryServer,
+          },
+          allowedTools: [
+            'mcp__dogear-smart-category__ListCategories',
+            'mcp__dogear-smart-category__PruneCategoryTags',
+            'mcp__dogear-smart-category__SaveCategory',
+          ],
+        },
+      });
+
+      for await (const message of agentQuery) {
+        if (message.type === 'result') {
+          taskLogger.info('存量分类整理完成');
+        }
+      }
+
+      // 统计本次新增的决策条数：recentDecisions 是头插法（按时间倒序），
+      // 单队列串行保证整理期间不会有其他决策写入，遇到 startedAt 之前的条目即可停止统计
+      const idxAfter = await readCategoryIndex(workspaceId);
+      const decisions = { prune: 0, merge: 0 };
+      for (const d of idxAfter.recentDecisions) {
+        if (new Date(d.time).getTime() < startedAt) break;
+        if (d.decision === 'prune') decisions.prune++;
+        else if (d.decision === 'merge') decisions.merge++;
+      }
+
+      taskLogger.info('存量分类整理任务完成，耗时:', Date.now() - startedAt, 'ms', '| decisions:', decisions, '| tier:', tier);
+      return { workspaceId, decisions, tier, profileName: resolvedProfile.name };
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        taskLogger.info('存量分类整理被取消:', workspaceId);
+        return { workspaceId, decisions: { prune: 0, merge: 0 }, cancelled: true };
+      }
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      taskLogger.error('存量分类整理任务失败:', errorMsg);
+      return { workspaceId, decisions: { prune: 0, merge: 0 }, error: errorMsg };
     } finally {
       this.currentAbortController = null;
     }

@@ -171,10 +171,10 @@ export interface SmartCategoriesIndex {
 /** 智能分类任务一次执行的结果记录（环形缓冲项） */
 export interface CategorizeRecentEntry {
   workspaceId: string;
-  kind: 'incremental' | 'full-rebuild';
-  groupId?: string;                     // full-rebuild 时可能缺省
+  kind: 'incremental' | 'full-rebuild' | 'organize';
+  groupId?: string;                     // full-rebuild / organize 时可能缺省
   finishedAt: number;
-  outcome: 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled';
+  outcome: 'match' | 'join' | 'new' | 'skip' | 'error' | 'cancelled' | 'done';
   decisions?: Record<string, number>;
   tier?: string;
   profileName?: string;
@@ -186,8 +186,8 @@ export interface CategorizeRecentEntry {
 export interface CategorizeActivity {
   current: {
     workspaceId: string;
-    groupId?: string;                   // full-rebuild 时可能缺省
-    kind: 'incremental' | 'full-rebuild';
+    groupId?: string;                   // full-rebuild / organize 时可能缺省
+    kind: 'incremental' | 'full-rebuild' | 'organize';
     startedAt: number;
     taskId: string;
   } | null;

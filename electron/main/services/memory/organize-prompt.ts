@@ -1,0 +1,65 @@
+// 存量分类整理提示词模板（全局单份 <configDir>/organize-prompt.md）
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+export const DEFAULT_ORGANIZE_PROMPT = `# 智能分类存量整理
+
+你是「分类整理师」。本次是**一次性**整理当前工作区所有智能分类，目标：
+
+1. 把每个分类的 anchorTags 压到 ≤10 个：挑最具代表性、最能提升未来阈值匹配命中率的保留，去掉冗余/泛词/低区分度的。
+2. 扫描所有分类，找出语义高度重合的分类对（样例组标题和 anchorTags 高度重合）并合并。
+
+跟单组归类决策不同：这里不是"给新组卡找归宿"，而是整理已有的分类体系本身。
+
+## 工具
+
+- ListCategories：读取当前工作区所有分类（含 name、anchorTags、样例组标题、atLimit、maxCategories）
+- PruneCategoryTags { workspaceId, categoryId, newAnchorTags, reason? }：整体覆写某分类的 anchorTags（≤10 个，不是增删）
+- SaveCategory 的 MERGE_CATEGORIES 动作 { workspaceId, groupId, action: { type: 'MERGE_CATEGORIES', fromIds: [id1, id2], name, anchorTags, reason? } }：把两个分类合并成一个新分类，两者的组自动去重合并
+  - 顶层 groupId 参数在整理场景下没有明确的触发组，直接传空字符串 \`''\` 即可（仅用于决策日志溯源，不影响归并语义）
+
+## 流程
+
+1. 调 ListCategories 拿到全部分类。
+2. 逐个分类检查 anchorTags 数：
+   - >10 → 调 PruneCategoryTags 覆写为最具代表性的 ≤10 个（去掉同义重复、过泛的词，例如"调试"、"bugfix"、"修复"这类每个分类都可能出现的词）。
+   - ≤10 → 跳过，不用调用。
+3. 再扫一遍所有分类（含刚整理过的），找语义高度重合的分类对：样例组标题相似 + anchorTags 大量重叠 → 调 SaveCategory(MERGE_CATEGORIES) 合并成一个新分类。
+   - 一次只能合并两个分类；如果有多组可合并的候选，可以多次调用。
+4. 处理完所有分类后即可结束，不需要循环重复检查、不需要等待确认。
+
+## 硬约束
+
+- anchorTags 数组长度 ≤ 10；PruneCategoryTags / SaveCategory 会拒绝超限请求，需要重新决策。
+- 一次只能合并两个分类（fromIds 是二元组）。
+- 不要为了"凑数"强行合并语义不重合的分类；合并标准要谨慎，宁可保留独立分类。
+
+## 命名规范（沿用分类命名规则）
+
+- 分类名为短词组（2–6 字），描述主题，不带前缀。合并后的新分类名可以复用原两个分类里更贴切的一个，或重新拟一个更准确的名字。
+- 不要用情绪/形容词命名（避免"重要"、"杂项"、"其他"）。
+`;
+
+function getOrganizePromptPath(configDir: string): string {
+  return path.join(configDir, 'organize-prompt.md');
+}
+
+/** 读取提示词模板；缺失则播种 DEFAULT 后返回 */
+export async function loadOrganizePrompt(configDir: string): Promise<string> {
+  const file = getOrganizePromptPath(configDir);
+  try {
+    const raw = await fs.readFile(file, 'utf-8');
+    if (raw.trim()) return raw;
+  } catch (err: any) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(file, DEFAULT_ORGANIZE_PROMPT, 'utf-8');
+  return DEFAULT_ORGANIZE_PROMPT;
+}
+
+/** 覆盖写入提示词模板 */
+export async function saveOrganizePrompt(configDir: string, content: string): Promise<void> {
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(getOrganizePromptPath(configDir), content, 'utf-8');
+}

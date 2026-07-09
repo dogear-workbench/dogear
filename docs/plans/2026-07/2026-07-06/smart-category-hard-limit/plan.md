@@ -26,7 +26,7 @@
 
 - [x] [Step 1: 后端数据模型与工具改造](./step1-schema-tools.md) — SaveCategory 扩展 + PruneCategoryTags + 硬上限校验
 - [x] [Step 2: 提示词与提炼源头对齐](./step2-prompts.md) — categorize-prompt 决策流程 + group-digest-prompt 加分类词汇上下文
-- [ ] [Step 3: 存量清理任务链路 + UI](./step3-organize.md) — 新任务类型 + trigger + IPC + 按钮
+- [x] [Step 3: 存量清理任务链路 + UI](./step3-organize.md) — 新任务类型 + trigger + IPC + 按钮
 - [ ] [Step 4: 联调 + 手测 + 文档同步](./step4-verify-docsync.md) — 端到端跑通 + doc-sync
 
 ## 全局决策

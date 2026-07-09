@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, Square, ChevronDown, Sparkles, Brain, Tag } from 'lucide-react';
+import { RefreshCw, Square, ChevronDown, Sparkles, Brain, Tag, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { client } from '@/lib/client';
@@ -41,7 +41,9 @@ export function SmartCategoryPanel() {
   const activity = useSmartCategoryStore((s) => s.activity);
   const load = useSmartCategoryStore((s) => s.load);
   const triggerFullRebuild = useSmartCategoryStore((s) => s.triggerFullRebuild);
+  const triggerOrganize = useSmartCategoryStore((s) => s.triggerOrganize);
   const cancel = useSmartCategoryStore((s) => s.cancel);
+  const cancelOrganize = useSmartCategoryStore((s) => s.cancelOrganize);
   const refreshActivity = useSmartCategoryStore((s) => s.refreshActivity);
 
   // ── 设置状态 ──
@@ -134,6 +136,19 @@ export function SmartCategoryPanel() {
     if (ok === 'confirm') await triggerFullRebuild(workspaceId);
   };
 
+  const handleOrganize = async () => {
+    if (!workspaceId) return;
+    const ok = await confirm({
+      title: '一键整理现有标签',
+      description: '将扫描所有分类，把超过 10 个的 anchorTags 压缩到上限内，并尝试合并语义高度重合的分类。会覆写现有标签结构，跑期间请勿新增组卡入库。',
+      buttons: [
+        { label: '取消', value: 'cancel', variant: 'outline' },
+        { label: '开始整理', value: 'confirm', variant: 'default' },
+      ],
+    });
+    if (ok === 'confirm') await triggerOrganize(workspaceId);
+  };
+
   const handleReloadCategories = async () => {
     if (!workspaceId) return;
     setLoadingCategories(true);
@@ -204,6 +219,11 @@ export function SmartCategoryPanel() {
           <Sparkles className="w-4 h-4 mr-1" />
           立即重跑全部分类
         </Button>
+        <div className="w-px h-5 bg-border mx-1" />
+        <Button variant="outline" size="sm" onClick={handleOrganize}>
+          <Wand2 className="w-4 h-4 mr-1" />
+          一键整理现有标签
+        </Button>
       </div>
 
       {/* 3. 提示词编辑器（折叠） */}
@@ -237,17 +257,21 @@ export function SmartCategoryPanel() {
             {activity.current ? (
               <>
                 <RefreshCw className="w-4 h-4 animate-spin text-primary" />
-                <span>
-                  正在分类{' '}
-                  <code className="text-xs">
-                    {(activity.current.groupId ?? activity.current.kind).slice(0, 12)}…
-                  </code>
-                </span>
+                {activity.current.kind === 'organize' ? (
+                  <span>正在整理现有标签（压 anchorTags + 合并重合分类）…</span>
+                ) : (
+                  <span>
+                    正在分类{' '}
+                    <code className="text-xs">
+                      {(activity.current.groupId ?? activity.current.kind).slice(0, 12)}…
+                    </code>
+                  </span>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-6 px-2 text-destructive"
-                  onClick={() => cancel()}
+                  onClick={() => (activity.current?.kind === 'organize' ? cancelOrganize() : cancel())}
                 >
                   <Square className="w-3 h-3 mr-1" />
                   停止
@@ -274,14 +298,20 @@ export function SmartCategoryPanel() {
                     {r.outcome === 'match' ? '🎯'
                       : r.outcome === 'join' ? '➕'
                       : r.outcome === 'new' ? '✨'
+                      : r.outcome === 'done' ? '✅'
                       : r.outcome === 'skip' ? '⚪'
                       : r.outcome === 'cancelled' ? '🚫'
                       : '❌'}
                   </span>
                   <span className="text-muted-foreground">{r.outcome}</span>
                   <code className="truncate max-w-[160px]">
-                    {(r.groupId ?? r.kind).slice(0, 12)}…
+                    {r.kind === 'organize' ? '批量整理' : `${(r.groupId ?? r.kind).slice(0, 12)}…`}
                   </code>
+                  {r.kind === 'organize' && r.decisions && (
+                    <span className="text-muted-foreground">
+                      prune {r.decisions.prune ?? 0} / merge {r.decisions.merge ?? 0}
+                    </span>
+                  )}
                   {r.tier && <span className="text-muted-foreground">{r.tier}</span>}
                   {r.error && (
                     <span className="text-destructive truncate max-w-[200px]" title={r.error}>

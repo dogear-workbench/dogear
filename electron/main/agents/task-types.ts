@@ -26,7 +26,8 @@ export enum TaskType {
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
   GROUP_DIGEST_SESSION = 'group_digest_session', // 组级摘要卡提炼（Phase 3）
   REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
-  CATEGORIZE_SESSION = 'categorize_session' // 智能分类决策
+  CATEGORIZE_SESSION = 'categorize_session', // 智能分类决策
+  CATEGORIZE_ORGANIZE = 'categorize_organize' // 存量分类整理（压 anchorTags + 合并重合分类）
 }
 
 /**
@@ -233,6 +234,16 @@ export interface CategorizeSessionPayload {
   mode: 'incremental' | 'full-rebuild';
   groupId?: string;              // incremental 必填
   groupDigestPath?: string;      // incremental 必填，组卡 .md 文件绝对路径
+  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
+}
+
+/**
+ * 存量分类整理任务负载（一键整理现有标签，设置页按钮触发）
+ * 与 CATEGORIZE_SESSION 共享同一串行队列（category-trigger），天然互斥。
+ * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
+ */
+export interface CategorizeOrganizeSessionPayload {
+  workspaceId: string;       // 工作区 ID
   modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
 }
 
