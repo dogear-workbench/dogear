@@ -65,6 +65,17 @@ function broadcastChildStatusChanged(parentConversationId: string, childId: stri
   }
 }
 
+function broadcastConversationListChanged(workspaceId: string): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      getRendererHandlers<RendererHandlers>(win.webContents).conversationListChanged.send({ workspaceId });
+    } catch (err) {
+      logger.warn('broadcastConversationListChanged failed', err);
+    }
+  }
+}
+
 function broadcastDeliveriesAwaitChanged(parentConversationId: string): void {
   let runningCount = 0;
   let doneCount = 0;
@@ -205,6 +216,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     cachePolicy: parent.cachePolicy,
     contractMetadata,
   });
+  broadcastConversationListChanged(workspaceId);
 
   // claim outputPath，失败则回滚
   const claim = await groupSharedService.claimOutputPath(workspaceId, groupId, spec.outputPath, childId);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { HelpCircle, Send } from 'lucide-react';
+import { HelpCircle, Send, Square } from 'lucide-react';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
@@ -173,9 +173,22 @@ export function AskUserQuestionCard({
         ))}
       </div>
 
-      {/* 提交按钮 */}
+      {/* 提交/停止按钮 */}
       {!isResolved && (
-        <div className="mt-4">
+        <div className="mt-4 flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!sessionId}
+            onClick={async () => {
+              if (sessionId) {
+                await client.interruptQueryBasedSession({ sessionId });
+              }
+            }}
+          >
+            <Square size={14} />
+            停止
+          </Button>
           <Button size="sm" onClick={handleSubmit}>
             <Send size={14} />
             提交回答

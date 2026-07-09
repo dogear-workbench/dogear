@@ -1,6 +1,6 @@
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  MessagesSquare, GitBranch, Bot, MoreHorizontal, ArchiveRestore,
+  MessagesSquare, GitBranch, Bot, Workflow, MoreHorizontal, ArchiveRestore,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -113,7 +113,7 @@ export function ConversationRow({
               isSelected ? 'text-purple-600' : 'text-purple-400'
             )} />
           ) : isAgentConversation ? (
-            <Bot className={cn('w-4 h-4 flex-shrink-0',
+            <Workflow className={cn('w-4 h-4 flex-shrink-0',
               isSelected ? 'text-blue-600' : 'text-muted-foreground'
             )} />
           ) : (
