@@ -63,6 +63,7 @@ export function MessageItem({
   onAskUserResolved,
   searchQuery,
   activeMatchId,
+  isAgentConversation,
 }: {
   message: Message;
   messageIndex?: number;
@@ -72,6 +73,8 @@ export function MessageItem({
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
   searchQuery?: string;
   activeMatchId?: string | null;
+  /** 当前会话是否 agent 会话（用于判断"用户介入"徽章） */
+  isAgentConversation?: boolean;
 }) {
   const isUser = message.role === 'user';
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
@@ -167,6 +170,25 @@ export function MessageItem({
                   parsed.conversationRefs.length > 0;
                 return (
                   <div className="relative">
+                    {/* Sender 徽章：agent 跨会话消息 / 用户在 agent 会话里介入 */}
+                    {parsed.senderKind === 'agent' && (
+                      <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+                        <Bot className="w-3 h-3 flex-shrink-0" />
+                        <span>来自</span>
+                        <span className="font-medium truncate max-w-[200px]">
+                          {parsed.senderDisplayName ?? '未知会话'}
+                        </span>
+                        {parsed.senderIsDelivery && (
+                          <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 text-[10px] dark:bg-green-900/30 dark:text-green-300">交付</span>
+                        )}
+                      </div>
+                    )}
+                    {isAgentConversation && !parsed.senderKind && (
+                      <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
+                        <MessageSquare className="w-3 h-3 flex-shrink-0" />
+                        <span>你</span>
+                      </div>
+                    )}
                     {/* 引用芯片（只读，无关闭按钮） */}
                     {hasRefs && (
                       <div className="flex flex-wrap gap-1.5 mb-2">

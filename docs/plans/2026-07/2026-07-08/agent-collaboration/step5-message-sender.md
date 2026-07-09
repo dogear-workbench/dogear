@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 消息 sender 视觉区分
-status: pending
+status: done
 ---
 
 ## 目标
@@ -81,9 +81,28 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+
+**与计划差异**：
+- 计划里原假设直接在 `Message` 类型上加 `senderKind` / `senderSessionId` / `senderDisplayName` 字段（前端内存态）。实施中发现底层走的是 SDK 的 `SDKUserMessage`，字段结构由 SDK 定义、我们塞不进自定义字段——加了也不会随 SDK JSONL 持久化，replay 时前端拿不到。跟用户确认后改走 **XML 标签编码到 content**（跟已有的 `<referenced_articles>` / `<quoted_snippet>` 一致），前端通过 `parseUserMessageReferences` 解析、剥离标签、映射到 `ParsedUserMessage` 的 sender 字段。类型改动落在 `ParsedUserMessage`（解析结果）而非 `Message`（原始存储）。
+- 视觉方案选了 **A（仅徽章，不改背景色）**，头像/图标沿用消息卡外框；agent 徽章带 Bot 图标，用户介入徽章带 MessageSquare 图标，可选带绿色"交付"小标。
+- **Agent 会话接受用户输入** 是 no-op：`ChatInputArea` / `useSendMessage` 对所有 conversation 通用，没有针对 agent 会话的 gate（Step 3+4 清理旧 SubAgentBanner 时已顺带确认）。
+
+**改动文件清单**：
+- 改 `electron/main/agents/delegation-bridge.ts`：`deliverMessage()` 把文本前缀 `[来自「XX」的...]` 换成 `<sender kind="agent" session_id="..." name="..." delivery="..."/>` XML 标签；文件末尾新增 `escapeXmlAttr()` 辅助函数
+- 改 `components/agent-chat/types.ts`：`ParsedUserMessage` 加 `senderKind` / `senderSessionId` / `senderDisplayName` / `senderIsDelivery` 4 个可选字段
+- 改 `components/agent-chat/utils.ts`：`parseUserMessageReferences()` 加 `<sender>` 标签解析，含 XML 反转义
+- 改 `components/agent-chat/MessageItem.tsx`：加 `isAgentConversation` prop；在用户消息卡的引用芯片段前插入 sender 徽章渲染（agent 来源徽章 / 用户介入徽章 / 交付小标）
+- 改 `components/agent-chat/AgentChat.tsx`：`<MessageItem/>` 调用处传 `isAgentConversation={selectedConv?.contractMetadata?.createdBy === 'agent'}`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 待办或已知限制：
+
+- **XML 标签规范**：`<sender kind="agent|human" session_id="..." name="..." delivery="true|false"/>`
+  - `kind` 必填；其他字段可选
+  - `name` 属性值需 XML escape（`&` → `&amp;`，`<` → `&lt;`，`>` → `&gt;`，`"` → `&quot;`），解析时反转义
+- **User 侧的 sender 标签**：目前 useSendMessage 手打消息**不注入 `<sender kind="human"/>` 标签**——前端 MessageItem 靠 "在 agent 会话 + 无 sender 标签 = 用户介入" 判断"你"徽章。如果未来跨设备/多用户场景需要区分具体用户身份，需要在 useSendMessage 里主动注入 `<sender kind="human" name="..."/>`。
+- **回避的坑**：
+  - `SDKUserMessage.content` 支持 string / blocks 两种；deliverMessage 用 string 路径拼接，前端 replay 时 SDK JSONL 会存原始 string，`parseUserMessageReferences` 从 string 里解析——路径闭环
+  - sender 标签持久化跟 SDK 生命周期同步（跟 `<referenced_articles>` 一致），app 重启后 replay 依然能显示徽章
+- **已知限制**：
+  - `senderDisplayName` 是发送时的快照，派出者会话被重命名后不会联动更新（跟 step5 计划一致）
+  - Agent 自己 query 产生的 assistant 消息不带 sender（不算跨会话），如果未来需要 assistant 徽章需另行设计

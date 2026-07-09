@@ -34,7 +34,7 @@
 - `agent-chat/` — AI 聊天模块（从原 AgentChat.tsx 拆分，~20 文件）
   - `AgentChat.tsx` — 主组件（~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成
   - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单）
-  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮）
+  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮；解析 `<sender/>` XML 标签在跨会话消息头显示派出者名字徽章）
   - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
   - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）
   - `SearchBar.tsx` — 搜索浮条（Ctrl+F 快捷键、文本匹配高亮、激活项自动滚动）
@@ -46,6 +46,7 @@
   - `CollapsibleBlock.tsx` — 可折叠块基础组件
   - `SubAgentPanel.tsx` — 子 Agent 面板
   - `SubAgentBlock.tsx` — 子 Agent 块
+  - `LineageBar.tsx` — 溯源条：当前对话 contractMetadata 存在（agent 派出）时顶部显示「由 [派出者标题] 派出：[task]」，点击跳转派出者会话；派出者已删除时显示灰色占位（替代旧的 SubAgentBanner）
   - `highlight.ts` — 搜索高亮工具（mark 黄底 + active 橙底 ring）
   - `minimap-utils.ts` — 消息预览提取工具函数
   - `transformers.ts` — 消息转换工具（历史回放末尾调 injectTaskSummary 吸附任务汇总块）
@@ -86,7 +87,7 @@
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
 - `ConversationList.tsx` — 对话列表主骨架（Phase 3 改：三态 Tab 手动|智能|时间 + 归档段）
 - `conversation-list/` — 对话列表子组件（Phase 14 拆分；Phase 3 全面按组渲染）
-  - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / 编辑/引用/删除 hover 按钮；文件夹相关 ContextMenu 已上移到 GroupCard）
+  - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / 编辑/引用/删除 hover 按钮；agent 派出会话（contractMetadata.createdBy='agent'）显示 Bot 图标 + task tooltip；文件夹相关 ContextMenu 已上移到 GroupCard）
   - `ManualSection.tsx` — 手动文件夹区（headless-tree 仅在此用；children[__root__] 里的 folderId 节点及其子树，叶子渲染 GroupCard 装 groupId）
   - `SmartSection.tsx` — 智能分类视图（按 groupIds.length 倒序，空分类隐藏，渲染 GroupCard；useSmartCategoryStore.load 同步）
   - `TimeSection.tsx` — 时间视图（按 group.updatedAt 分桶，30 天内 + 更早；< 5 天扣到 RecentVirtualGroup 不重复）
@@ -99,7 +100,7 @@
   - `MoveGroupToFolderMenu.tsx` — 组级：单选子菜单，调 moveGroupBetweenFolders
   - `utils.ts` — getRelativeTime / getConversationTitle / RECENT_THRESHOLD_MS / TIME_BUCKET_THRESHOLD_MS / CONV_TREE_ROOT / openOrFocusConversation（统一 selectConversation + openTab 入口，接 nodeId 设 lastFocusedNodeId）/ useNodeHighlight（isOpen 淡色 + isSelected 深色）/ useAppearanceCount（按 groupId 计数手动文件夹数 + 智能分类数）
 - `group-list/` — 组级 UI 组件（Phase 3）
-  - `GroupCard.tsx` — 组卡片（组标题 + AppearanceBadge + 展开/收起会话行 + 无 folderId 时显 AddGroupToFolderMenu / 有 folderId 时显 MoveGroupToFolderMenu + 从文件夹移除 + 删除组走 confirm-store 二次确认）
+  - `GroupCard.tsx` — 组卡片（组标题 + AppearanceBadge + 展开/收起会话行；agent 派出会话平摊到组内，用 sortConversationsWithDFS 让子会话紧跟派出者；无 folderId 时显 AddGroupToFolderMenu / 有 folderId 时显 MoveGroupToFolderMenu + 从文件夹移除 + 删除组走 confirm-store 二次确认）
   - `utils.ts` — 组 helpers（deriveGroupTitle 等）
 - `WorkspaceSwitcherPopover.tsx` — 顶部导航栏工作区切换器（选择/添加，里程碑 1.5 Step A2.4）
 - `WelcomeFirstRun.tsx` — 零工作区首次启动引导卡片（里程碑 1.5 Step A2.4）
@@ -153,6 +154,7 @@
 - `utils.ts` — cn() 类名合并工具
 - `events.ts` — tipc 事件处理入口，监听主进程事件
 - `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）
+- `conversation-sort.ts` — sortConversationsWithDFS：组内会话排序纯函数，手动会话按 updated_at 倒序 + agent 派出会话按 DFS 紧跟派出者（parentSessionId 不在组时回落自然序）
 - `sdk/index.ts` + `sdk/query.ts` — Claude Agent SDK 的 query 函数封装
 
 ## 类型定义（types/）
@@ -161,7 +163,8 @@
 - `ai.ts` — AIInteraction / AIMessage
 - `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, permissionMode?, timeoutMinutes }` 子会话派遣默认配置；permissionMode 含 bypassPermissions）/ DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
-- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt/modelSelection）
+- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt/modelSelection/contractMetadata — 后者记录 agent 派出溯源：createdBy / parentSessionId / task）
+- `delegation.ts` — Agent 协作契约数据模型（ContractMetadata / ChildSessionState / 契约通道消息类型）
 - `stock.ts` — WatchlistItem / StockQuote / KLineDataPoint / TimelinePoint / MoneyFlowPoint / StockSearchResult / DailySnapshot / QUOTE_FIELD_MAP / RateLimiterStatus
 - `usage.ts` — 会话用量数据模型（ConversationUsageEntry / CompactMarker / ContextSnapshot / ConversationUsage / UsageJsonlLine），主进程镜像在 `electron/main/types.ts`
 - `system-prompt.ts` — SystemPromptSegment（key/label/category/template/triggerDescription/isDynamic），主进程镜像在 `electron/main/types.ts`
@@ -196,13 +199,15 @@
 - `memory/` — 会话清洗 + 组级提炼闭环（Phase 3 已改为「组」粒度）
   - `session-paths.ts` — 会话路径解析共享 util（getClaudeConfigDir / getSdkSessionsDir / getSessionJsonlPath，agent.ts 复用）
   - `transcript-cleaner.ts` — 会话 JSONL 确定性去噪（cleanTranscriptFromLines 纯函数 + cleanTranscript IO，剥工具结果/系统行/思考块，保留用户+助手文字与一行工具骨架，~20x 压缩）
-  - `group-digest-store.ts` — 组卡读写（GroupDigestCard 序列化/解析 + sourcesSeen 合并 + readGroupDigest/saveGroupDigest/listGroupDigests/deleteGroupDigest；落 `<configDir>/workspaces/<wsId>/digests/<groupId>.md`）
+  - `group-digest-store.ts` — 组卡读写（GroupDigestCard 序列化/解析 + sourcesSeen 合并 + readGroupDigest/saveGroupDigest/listGroupDigests/deleteGroupDigest；Phase 4 起落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`；导出 getGroupDir 供组内其它文件复用）
   - `group-digest-prompt.ts` — 组提炼提示词模板（DEFAULT_GROUP_DIGEST_PROMPT + loadGroupDigestPrompt 播种 `<configDir>/group-digest-prompt.md` + saveGroupDigestPrompt；设置页可编辑）
   - `group-digest-scanner.ts` — 组卡脏判定（isGroupDirty 纯函数按「新会话加入 / 会话 mtime 增长 / 会话被移出」三条件；findDirtyGroups / scanDirtyByGroup / scanDirtyByConversation；子会话 role='sub' 被过滤）
   - `group-digest-trigger.ts` — 组提炼编排（串行队列并发=1 + in-flight 去重；triggerGroupDigestScan / triggerGroupDigestByGroup / triggerGroupDigestByConversation；提交 GROUP_DIGEST_SESSION 任务）+ 活动采集（current/queueDepth/recent 环形 / lastScan）+ recent/lastScan 持久化到 `<configDir>/digest-activity.json`（sync load + debounce 500ms save）+ cancelAllGroupDigest 一键停 + 成功后 chainCategorize
   - `migration-p3.ts` — 启动幂等迁移（app.whenReady 之后一次跑完）：① 旧 `<sessionId>.md` → `<groupId>.md` 1:1 重命名并落 sourcesSeen；② smart-categories.json 的 conversationIds → groupIds；③ conversation-tree.json 的 children 从 conversationId → groupId + schemaVersion=2；旧产物落 `_archive/`，二次执行检测已迁移即跳过
   - `notes-store.ts` — 组共享区 `_notes/` 目录读写（列出/读取，供组提炼 agent 优先利用 working agent 的阶段总结）
-  - `trace-source.ts` — 从 sessionId#uuid 回溯原会话消息（review-tools 用）
+  - `background-store.ts` — 组背景 background.md（Phase 4）：结构化 frontmatter（topic / progress / keyDecisions / openQuestions），落 `<wsData>/groups/<groupId>/background.md`，供组内新会话派子会话查阅
+  - `migration-gate.ts` — 启动闸门（Phase 4）：whenMigrationReady() 阻塞组提炼 / 分类 trigger，直到 markMigrationComplete() 被调用
+  - `migration-p4.ts` — Phase 4 幂等迁移：组卡从 `<wsData>/digests/<groupId>.md` 迁到 `<wsData>/groups/<groupId>/digest.md`，删除 `digests/_cleaned/`（不再留盘干净逐字稿）
   - `dashboard-watcher.ts` — dashboard.md 文件监听（chokidar，变更时向前端广播 dashboardChanged 事件，触发 dashboard-store 重新拉取）
   - `review-store.ts` — 首页报告存储：ReportDoc { updatedAt, markdown } 落 `<configDir>/workspaces/<wsId>/dashboard.md`
   - `review-scanner.ts` — 报告脏检查：isReportStale 纯函数（最新组卡 updatedAt vs 报告 updatedAt）
@@ -215,6 +220,7 @@
   - `category-trigger.ts` — 分类编排（串行队列并发=1 + in-flight 去重；triggerCategorize(workspaceId, groupId, groupDigestPath) 单条 / triggerFullRebuild 工作区全量 / cancelCurrent 取消正在跑的任务）+ 活动采集 + outcome=match/join/new 时广播 categoriesUpdated
   - 注：里程碑1 的工作区主题记忆（memory-service / memory-recall / memory-fs / memory-indexer / memory-loader / memory-types）也在此目录
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
+- `contract-channel-service.ts` — 契约通道校验（hasDirectContractChannel：只认直接派出关系，A 派 B 派 C 时 A 无法直连 C；SendMessage / StopSession 工具层前置校验）
 - `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup
 - `group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{groupId}/shared/`），供 group-tools 和前端 SharedAreaPanel 使用
 - `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：Phase 3 起 children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree
@@ -258,6 +264,7 @@
 - `tools/digest-tools.ts` — 会话逐字稿清洗 MCP 工具（dogear-memory-digest server：只保留 CleanTranscript；旧 ReadExistingDigest/SaveDigest 已被 group-digest-tools 替代）
 - `tools/group-digest-tools.ts` — 组卡 MCP 工具（dogear-group-digest server：ReadGroupDigest / SaveGroupDigest；SaveGroupDigest 自动用 dirtyConversations 合并 sourcesSeen，groupId 校验与任务 payload 一致，供 GROUP_DIGEST_SESSION agent 独占）
 - `tools/group-tools.ts` — 会话组共享区 MCP 工具（dogear-group server：ListGroupFiles / ReadGroupFile / WriteGroupFile；供 working agent 主动写 `_notes/` 阶段总结）
+- `tools/reference-tools.ts` — 引用会话 / 组背景 MCP 工具（dogear-reference server，**只装到子会话**）：ReadReferenceSession 读任意 sessionId 的去噪原文（可尾切 / 区间切）/ ReadGroupBackground 读本组 background.md 结构化字段 / ListSiblingSessions 列组内兄弟会话；主 agent 靠 CreateSession 派子会话消化后回摘要，避免污染主上下文
 - `tools/delegation-tools.ts` — Agent 协作 MCP 工具（dogear-delegation server，Step 2 重构，方案 A 单 server + 工具子集控制防孙子）：
   - 主会话工具集：`CreateSession` / `CreateSessionBatch` / `SendMessage` / `WaitForMessage` / `ListLinkedSessions` / `StopSession`
   - 子会话工具集：`SendMessage` / `WaitForMessage` / `ListLinkedSessions`（无 Create*/Stop，不能派孙子）
@@ -269,7 +276,7 @@
 - `tools/category-tools.ts` — 智能分类 MCP 工具（dogear-smart-category server：ListCategories 含样例组标题 / SaveCategory 接受 JOIN_EXISTING { categoryId, addAnchorTags? } 或 NEW_CATEGORY { name, anchorTags, redistribute? } discriminated union，校验上限 / append 决策日志，入参和落库全用 groupId）
 - `skills/chat-skill.ts` — 对话技能（ChatSession / ChatSessionManager）
 
-> 组提炼链路（Phase 3）：脏检查（group-digest-scanner）三触发点（启动扫/夜间03点/关会话）→ group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations[]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleGroupDigestSessionTask 一次性 query（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolveModelSelection 重建凭证 env，方案不完整即返回明确 error，haiku 不传 effort；query 接 AbortController，cancelGroupDigest → cancelTask 真正中断）→ agent 自调 CleanTranscript（对 dirty 会话逐个去噪）+ ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ ListGroupFiles/ReadGroupFile（拉 `_notes/` 阶段总结、子会话 SendMessage delivery 产出）+ SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/digests/<groupId>.md`。子会话（role='sub'）不进 sourcesSeen，其贡献通过 SendMessage delivery 汇入父会话产出。
+> 组提炼链路（Phase 3）：脏检查（group-digest-scanner）三触发点（启动扫/夜间03点/关会话）→ group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations[]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleGroupDigestSessionTask 一次性 query（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolveModelSelection 重建凭证 env，方案不完整即返回明确 error，haiku 不传 effort；query 接 AbortController，cancelGroupDigest → cancelTask 真正中断）→ agent 自调 CleanTranscript（对 dirty 会话逐个去噪）+ ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ ListGroupFiles/ReadGroupFile（拉 `_notes/` 阶段总结、子会话 SendMessage delivery 产出）+ SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`（Phase 4 路径）。子会话（role='sub'）不进 sourcesSeen，其贡献通过 SendMessage delivery 汇入父会话产出。
 
 > 首页报告链路（历史代号 review）：脏检查（review-scanner.isReportStale：最新组卡 updatedAt > 报告 updatedAt）→ review-trigger 串行起 REVIEW_SESSION 任务 → agent-worker.handleReviewSessionTask 一次性 query（同样按 reviewModelSelection 三级 fallback 走 resolveModelSelection，可取消）→ agent 自调 review-tools（ListDigests/ReadDigest/TraceSource）+ memory-tools（RecallMemory/SaveMemory/ForgetMemory）做**分流**：沉淀/有价值结论/注意事项进**记忆**（详细全集），需用户主动处理的待办/中断/搁置的简述进**报告**；最终 WriteReport 落 `dashboard.md`。首页 Dashboard 用 MarkdownRenderer 渲染 dashboard.md 给用户看；dashboard-watcher 监听文件变化推事件到前端；普通会话里说"聊聊首页"也能触发同一 skill。
 
@@ -284,9 +291,9 @@
 - `conversations.json` — 对话索引（id、标题、sdkSessionId、workspaceId、分叉信息、personaId、tempPrompt、usageSummary）
 - `conversations/` — SDK 会话历史（Agent SDK 自动管理）
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细（每行一条 entry 或 compact marker，删除对话/工作区时联动清理）
-- `workspaces/{workspaceId}/digests/{groupId}.md` — 组级摘要卡（Phase 3；frontmatter 含 groupId/title/createdAt/updatedAt/sourcesSeen[] + 概述 + 想法/注意/决策条目带回溯 sessionId#uuid + keyOutputs + tags）
-- `workspaces/{workspaceId}/digests/_cleaned/{sessionId}.md` — 提炼留底干净逐字稿（质量排查用；仍按 sessionId 命名）
-- `workspaces/{workspaceId}/digests/_archive/{sessionId}.md` — 迁移前旧的会话级摘要卡备份（migration-p3 落）
+- `workspaces/{workspaceId}/groups/{groupId}/digest.md` — 组级摘要卡（Phase 4 迁移后路径；frontmatter 含 groupId/title/createdAt/updatedAt/sourcesSeen[] + 概述 + 想法/注意/决策条目带回溯 sessionId#uuid + keyOutputs + tags）
+- `workspaces/{workspaceId}/groups/{groupId}/background.md` — 组背景（结构化 frontmatter：topic / progress / keyDecisions / openQuestions）
+- `workspaces/{workspaceId}/digests/_archive/{sessionId}.md` — 迁移前旧的会话级摘要卡备份（migration-p3 落，Phase 4 后旧 `digests/` 仅剩 _archive）
 - `workspaces/{workspaceId}/dashboard.md` — 首页报告（frontmatter 仅 updatedAt + 给用户看的纯净 markdown 正文；记忆详细版另落 `<workspacePath>/.dogear/memory/`）
 - `group-digest-prompt.md` — 组提炼提示词模板（全局单份，首次缺失自动播种，可编辑；Phase 3 起替代旧 `digest-prompt.md`）
 - `review-prompt.md` — 首页报告提示词模板（全局单份，首次缺失自动播种，可编辑）

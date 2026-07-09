@@ -19,7 +19,7 @@
 - [x] [Step 2: 通信 API 重构 + 契约通道校验](./step2-communication-refactor.md) — delegation-tools 改为通用 `SendMessage/CreateSession` + 通信许可校验 + 提示词更新
 - [x] [Step 3: 列表排序 + 图标区分](./step3-list-sort-icons.md) — DFS 排序纯函数 + `ConversationRow` 按 `createdBy` 换图标
 - [x] [Step 4: 会话内溯源条 + Tab 静默启动](./step4-lineage-tab-behavior.md) — 溯源条组件 + 派出时 tab 不抢焦点
-- [ ] [Step 5: 消息 sender 视觉区分](./step5-message-sender.md) — `MessageItem` 显示消息来源（human / agent:sessionId）
+- [x] [Step 5: 消息 sender 视觉区分](./step5-message-sender.md) — `MessageItem` 显示消息来源（human / agent:sessionId）
 
 **依赖顺序**：1 → 2 / 3（可并行）；4、5 依赖 1+2
 

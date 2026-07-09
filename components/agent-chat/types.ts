@@ -157,6 +157,14 @@ export interface ParsedUserMessage {
   fileRefs: ParsedFileRef[];
   conversationRefs: ParsedConversationRef[];
   userMessage: string;
+  /** 跨会话消息来源标记；未标记默认按 role 推断（agent = 跨会话代表发来，human = 用户手打） */
+  senderKind?: 'agent' | 'human';
+  /** agent 消息时，发送者 sdk session id */
+  senderSessionId?: string;
+  /** 发送者显示名（拍照，避免后续重命名/删除后拿不到） */
+  senderDisplayName?: string;
+  /** 是否为正式交付（SendMessage 的 delivery=true） */
+  senderIsDelivery?: boolean;
   /** /model 命令切换模型（如 anthropic/claude-sonnet-4.6） */
   modelSwitch?: string;
   /** 是否为 <local-command-stdout> 输出包装的用户消息 */

@@ -449,8 +449,8 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
   const session = localSessionId ? getQueryBasedSessionManager().getSession(localSessionId) : undefined;
   if (!session) return 'target_inactive';
 
-  const label = opts.delivery ? '交付' : '消息';
-  const text = `[来自「${opts.fromLabel}」的${label}]\n${opts.message}`;
+  const senderTag = `<sender kind="agent" session_id="${escapeXmlAttr(opts.fromSessionId)}" name="${escapeXmlAttr(opts.fromLabel)}" delivery="${opts.delivery ? 'true' : 'false'}"/>`;
+  const text = `${senderTag}\n${opts.message}`;
   session.sendMessage(text).catch((err: unknown) => {
     logger.warn(`deliverMessage 推送失败 (${opts.toConversationId})`, err);
   });
@@ -490,4 +490,13 @@ export function abortWaitsForParent(parentConversationId: string): {
   }
 
   return { abortedWaits, cancelledChildren };
+}
+
+/** 转义 XML 属性值中的特殊字符 */
+function escapeXmlAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }

@@ -74,6 +74,27 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
     content = content.replace(xmlConvMatch[0], '');
   }
 
+  // 匹配 <sender kind="..." session_id="..." name="..." delivery="..."/>
+  const senderRegex = /<sender\s+kind="([^"]+)"(?:\s+session_id="([^"]*)")?(?:\s+name="([^"]*)")?(?:\s+delivery="(true|false)")?\s*\/>/;
+  const senderMatch = content.match(senderRegex);
+  if (senderMatch) {
+    const kind = senderMatch[1];
+    if (kind === 'agent' || kind === 'human') {
+      result.senderKind = kind;
+      if (senderMatch[2]) result.senderSessionId = senderMatch[2];
+      if (senderMatch[3]) {
+        // 反转义 XML 属性
+        result.senderDisplayName = senderMatch[3]
+          .replace(/&quot;/g, '"')
+          .replace(/&gt;/g, '>')
+          .replace(/&lt;/g, '<')
+          .replace(/&amp;/g, '&');
+      }
+      if (senderMatch[4]) result.senderIsDelivery = senderMatch[4] === 'true';
+    }
+    content = content.replace(senderMatch[0], '');
+  }
+
   // 匹配 <quoted_snippet source="...">...</quoted_snippet>
   const xmlSnippetRegex = /<quoted_snippet\s+source="([^"]+)">\s*([\s\S]*?)\s*<\/quoted_snippet>/g;
   let snippetTagMatch;

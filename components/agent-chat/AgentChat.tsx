@@ -391,6 +391,7 @@ export function AgentChat({
               onAskUserResolved={handleAskUserResolvedWithScroll}
               searchQuery={search.query || undefined}
               activeMatchId={search.activeMatch?.id ?? null}
+              isAgentConversation={selectedConv?.contractMetadata?.createdBy === 'agent'}
             />
           );
 
