@@ -282,6 +282,14 @@ function wireConversationSession(session: QueryBasedSession, options: WireOption
     }));
   });
 
+  session.on('sessionStateChanged', (data: { conversationId: string; running: boolean; pendingAction: boolean }) => {
+    broadcastToAll((handlers) => handlers.sessionStateChanged.send(data));
+  });
+
+  session.on('sessionClosed', (data: { conversationId: string }) => {
+    broadcastToAll((handlers) => handlers.sessionClosed.send(data));
+  });
+
   session.on('subAgentStarted', (data: {
     parentSessionId: string;
     agentId: string;

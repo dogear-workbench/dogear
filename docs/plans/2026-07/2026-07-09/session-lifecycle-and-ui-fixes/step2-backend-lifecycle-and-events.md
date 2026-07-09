@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 后端 QueryBasedSession 生命周期与状态事件契约
-status: pending
+status: done
 ---
 
 ## 目标
@@ -74,14 +74,54 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+
+**query-based-session.ts**
+- 新增字段：`isQueryInFlight` / `lastEmittedRunning` / `lastEmittedPendingAction` / `wasIdle`
+- 新增 `isIdle(): boolean`（L1755）：`pendingMessages.length===0 && !isQueryInFlight && pendingPermissionRequests.size===0`
+  - 注：本代码库权限请求与 AskUserQuestion 共用同一个 Map，无需分两个字段
+- 新增 `syncSessionState()`（L1767）：去重广播 `sessionStateChanged` + 空闲边缘 emit `'idle'`
+- 埋点：`sendMessage()` / `createMessageStream` dequeue / `processMessageLoop` result 各分支尾部 / `canUseTool` 权限 & AskUser 分支的 set/delete 之后 / `respondPermissionRequest` / `respondAskUserQuestion` / SessionEnd hook 均调 `syncSessionState()`
+- `close()` 头部先 emit `sessionClosed`（在 destroy 子进程之前），末尾重置 `isQueryInFlight=false`；**不再单独 emit sessionStateChanged:false**
+- `QueryBasedSessionManager.createSession()`：新增 `session.on('idle', ...)` 监听，refCount===0 时触发 `_destroySession`
+- `release()`：归零时先查 `isIdle()`，只有空闲才 destroy；不空闲则保留 session 继续跑，等 'idle' 事件自动收尾
+- `retain()` / `interrupt()` 未改
+
+**renderer-handlers.ts**：新增两个事件 TS 类型定义
+
+**conversation-runtime-service.ts**：wireConversationSession 里转发两个新事件到所有窗口（broadcastToAll）
+
+- 与计划差异：无（2.1 / 2.2 / 2.3 / 2.4 全覆盖；2.5 决策 = 不加 IPC）
+- 改动文件清单：3 个（query-based-session.ts / renderer-handlers.ts / conversation-runtime-service.ts）
+
+### 验证
+- `bun run build:electron`：通过
+- `bun run lint`：0 errors，83 既存 warnings
+- 逻辑复核：`close()` 只在三条路径触发（① 显式 closeSession/closeAll ② release 归零 && isIdle ③ 'idle' 事件监听在 refCount=0 时自动触发）；其他路径只 emit 状态，不销毁
 
 ### 给下一步的接力棒（Step 3 需要这些）
-- 事件契约签名：
-  - `sessionStateChanged` payload：（写实际字段）
-  - `sessionClosed` payload：（写实际字段）
-- retain / release 新签名：（是否有变化）
-- hasActiveSession IPC：（新增了 / 没新增，前端如何判断续订 vs resume）
-- markUiDetached 是否作为独立 IPC：（是 / 否；如果是就复用 release）
-- 已知边界：（比如 close 时事件的确切顺序、edge case）
+
+**事件契约签名**
+- `sessionStateChanged`: `{ conversationId: string; running: boolean; pendingAction: boolean }`
+  - `running = pendingMessages.length > 0 || isQueryInFlight`
+  - `pendingAction = pendingPermissionRequests.size > 0`（权限 + AskUser 合并语义）
+  - 去重：相同 running/pendingAction 不重复 emit
+- `sessionClosed`: `{ conversationId: string }`
+  - close() 最开始 emit（此时监听器还没被 removeAllListeners 摘掉）
+  - **sessionClosed 之后不会再有 sessionStateChanged:false**，前端把两个事件都当作"该会话不在跑了"处理即可
+
+**retain / release**：签名未变（Step 3 前端调用方式不用改）
+- 语义变化：release 归零后不再无条件销毁，先查 isIdle。跑步机模式自动接管
+
+**hasActiveSession IPC**：**未新增**
+- attach 本来就是 upsert 语义（`attachConversationRuntime` → `conversationRuntimeService.attachConversation()` 查活的复用、死的走 SDK resume），返回 `{ sessionId, created }` 已够用
+- Step 3 前端直接调 attach 即可
+
+**markUiDetached**：**未新增独立 IPC**
+- 现有 `detachConversationRuntime` → `sessionManager.release()` 内部已获得"跑步机"行为
+- Step 3 继续用现有 IPC 名字
+
+**已知边界**
+1. **close() 内事件顺序**：sessionClosed → cleanupSubAgentTails → query.close 销毁子进程 → status=CLOSED → 清 messageResolvers/pendingMessages（emit pendingCountChanged:0）→ 清 pendingPermissionRequests（deny 全部）→ removeAllListeners
+2. **`/clear` 斜杠命令行为差异**：`useSendMessage.ts:186` 的 `/clear` 和关 Tab 都走同一个 `closeQueryBasedSession` → `release()`。如果调用时 session 正在跑，旧 session 不会立刻杀而是后台跑完。**Step 3 需要判断**：`/clear` 是否要走真正强杀路径（复用 `sessionManager.closeSession()` 忽略引用计数），还是接受此新语义
+3. **子会话（CreateSession）场景不用额外埋点**：`delegation-bridge.ts` 的 `sendMessage(spec.task)` 内部会走 syncSessionState，2.3 埋点自然覆盖
+4. **旧 `conversationRunningStateChanged` 事件未删**（`electron/main/tipc/agent.ts` broadcastConversationRunning + wechat-bot-controller 也用）。语义比新事件窄（只 running 无 pendingAction，未覆盖权限场景）。Step 3 前端切到新事件后可决定是否废弃旧事件

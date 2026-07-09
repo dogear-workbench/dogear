@@ -206,6 +206,14 @@ export class QueryBasedSession extends EventEmitter {
   // token 用量采集：当前 turn 索引（每次 result 消息后递增）
   private usageTurnIndex = 0;
 
+  // 跑步机模式生命周期状态：当前 turn 是否仍在进行（sendMessage 置 true，result 消息落地后置 false）
+  private isQueryInFlight: boolean = false;
+  // sessionStateChanged 去重用：上一次广播的 running/pendingAction，避免相同状态重复 emit
+  private lastEmittedRunning: boolean | undefined;
+  private lastEmittedPendingAction: boolean | undefined;
+  // idle 边缘检测：构造时视为空闲，用于 syncSessionState 判断"刚刚变空闲"这一跳变
+  private wasIdle: boolean = true;
+
   constructor(sessionId: string, config: QueryBasedSessionConfig) {
     super();
     this.sessionId = sessionId;
@@ -511,16 +519,19 @@ export class QueryBasedSession extends EventEmitter {
             questions: (input as any).questions,
           });
 
-          return new Promise<PermissionResult>((resolve) => {
+          const askResult = new Promise<PermissionResult>((resolve) => {
             this.pendingPermissionRequests.set(askRequestId, { resolve, input });
 
             options.signal.addEventListener('abort', () => {
               if (this.pendingPermissionRequests.has(askRequestId)) {
                 this.pendingPermissionRequests.delete(askRequestId);
+                this.syncSessionState();
                 resolve({ behavior: 'deny', message: '操作已取消' });
               }
             });
           });
+          this.syncSessionState();
+          return askResult;
         }
 
         // 通用权限请求：发送事件到前端（含 SDK 提供的 suggestions，供"总是允许"使用）
@@ -533,17 +544,20 @@ export class QueryBasedSession extends EventEmitter {
         });
 
         // 等待前端用户响应
-        return new Promise<PermissionResult>((resolve) => {
+        const permResult = new Promise<PermissionResult>((resolve) => {
           this.pendingPermissionRequests.set(requestId, { resolve, input, suggestions: options.suggestions, toolName });
 
           // 如果 AbortSignal 被触发（如会话关闭），自动拒绝
           options.signal.addEventListener('abort', () => {
             if (this.pendingPermissionRequests.has(requestId)) {
               this.pendingPermissionRequests.delete(requestId);
+              this.syncSessionState();
               resolve({ behavior: 'deny', message: '操作已取消' });
             }
           });
         });
+        this.syncSessionState();
+        return permResult;
       }) satisfies CanUseTool;
 
       // ==================== 子代理配置 ====================
@@ -605,6 +619,7 @@ export class QueryBasedSession extends EventEmitter {
             pending.resolve({ behavior: 'deny', message: '会话已结束' });
           }
           this.pendingPermissionRequests.clear();
+          this.syncSessionState();
 
           return { continue: true };
         }],
@@ -826,6 +841,9 @@ export class QueryBasedSession extends EventEmitter {
       session_id: this.sessionId,
     };
 
+    // 消息一旦进入管道即视为 turn 开始（跑步机模式：running 状态从这里起算）
+    this.isQueryInFlight = true;
+
     // 如果有等待中的 resolver，立即解析
     if (this.messageResolvers.length > 0) {
       const resolve = this.messageResolvers.shift()!;
@@ -835,6 +853,7 @@ export class QueryBasedSession extends EventEmitter {
       this.pendingMessages.push(sdkMessage);
       this.emit('pendingCountChanged', { count: this.pendingMessages.length });
     }
+    this.syncSessionState();
   }
 
   /**
@@ -1036,6 +1055,10 @@ export class QueryBasedSession extends EventEmitter {
               timestamp: Date.now()
             } as ExtendedSessionMessage);
           }
+
+          // 无论正常结束/中断/达上限/限流/出错，turn 都已落地，跑步机状态回落
+          this.isQueryInFlight = false;
+          this.syncSessionState();
         }
       }
 
@@ -1575,6 +1598,7 @@ export class QueryBasedSession extends EventEmitter {
       if (this.pendingMessages.length > 0) {
         const msg = this.pendingMessages.shift()!;
         this.emit('pendingCountChanged', { count: this.pendingMessages.length });
+        this.syncSessionState();
         yield msg;
         continue;
       }
@@ -1725,12 +1749,54 @@ export class QueryBasedSession extends EventEmitter {
   }
 
   /**
+   * 综合判断当前是否空闲：无待发消息、无进行中的 turn、无挂起的权限/AskUser 请求。
+   * 语义需与 pendingState==='idle' 保持一致，是"跑步机模式"释放引用时能否直接 close() 的唯一判据。
+   */
+  isIdle(): boolean {
+    return this.pendingMessages.length === 0
+      && !this.isQueryInFlight
+      && this.pendingPermissionRequests.size === 0;
+  }
+
+  /**
+   * 在消息队列 / turn 状态 / 权限请求发生变化后调用：
+   * - 去重广播 sessionStateChanged（跨会话事件，驱动前端全局 running/pendingAction Set）
+   * - 空闲边缘触发时 emit 'idle'，供 QueryBasedSessionManager 判断是否需要自动收尾（跑完自动收）
+   * close() 场景不走这里：close 时只 emit 一次 sessionClosed，不再单独广播 sessionStateChanged:false。
+   */
+  private syncSessionState(): void {
+    const conversationId = this.config.conversationId;
+    if (conversationId) {
+      const running = this.pendingMessages.length > 0 || this.isQueryInFlight;
+      const pendingAction = this.pendingPermissionRequests.size > 0;
+      if (running !== this.lastEmittedRunning || pendingAction !== this.lastEmittedPendingAction) {
+        this.lastEmittedRunning = running;
+        this.lastEmittedPendingAction = pendingAction;
+        this.emit('sessionStateChanged', { conversationId, running, pendingAction });
+      }
+    }
+
+    const idleNow = this.isIdle();
+    if (idleNow && !this.wasIdle) {
+      this.emit('idle');
+    }
+    this.wasIdle = idleNow;
+  }
+
+  /**
    * 关闭会话
    * 调用 SDK Query 的 close() 方法优雅终止底层 CLI 子进程和 transport 流，
    * 避免快速切换对话时产生 ERR_STREAM_WRITE_AFTER_END 错误。
    */
   close(): void {
     this.logger.info('关闭会话:', this.sessionId);
+
+    // 先广播 sessionClosed（在销毁子进程之前），前端把它当作"该会话不在跑了"的原子信号，
+    // 不再单独 emit sessionStateChanged:false，避免两个事件顺序竞态
+    const conversationId = this.config.conversationId;
+    if (conversationId) {
+      this.emit('sessionClosed', { conversationId });
+    }
 
     // 清理子代理 tail 监听
     this.cleanupSubAgentTails();
@@ -1746,6 +1812,7 @@ export class QueryBasedSession extends EventEmitter {
     }
 
     this.status = SessionStatus.CLOSED;
+    this.isQueryInFlight = false;
 
     // 通知消息流迭代器结束
     while (this.messageResolvers.length > 0) {
@@ -1829,6 +1896,7 @@ export class QueryBasedSession extends EventEmitter {
       return;
     }
     this.pendingPermissionRequests.delete(requestId);
+    this.syncSessionState();
     this.logger.info('权限确认响应:', { requestId, behavior });
 
     if (behavior === 'allow' || behavior === 'always_allow' || behavior === 'allow_session') {
@@ -1882,6 +1950,7 @@ export class QueryBasedSession extends EventEmitter {
       return;
     }
     this.pendingPermissionRequests.delete(requestId);
+    this.syncSessionState();
     this.logger.info('AskUserQuestion 响应:', { requestId, answers });
 
     // 将用户的 answers 注入到原始 input 中，然后 allow
@@ -2007,6 +2076,15 @@ export class QueryBasedSessionManager extends EventEmitter {
 
     const session = new QueryBasedSession(sessionId, config);
 
+    // 跑步机模式：session 从非空闲跳变为空闲时，若此刻已无 UI 引用则自动收尾（跑完自动收）
+    session.on('idle', () => {
+      const count = this.refCounts.get(sessionId) ?? 0;
+      if (count === 0 && this.sessions.has(sessionId)) {
+        this.logger.info(`session ${sessionId.substring(0, 8)} 空闲且无 UI 引用，自动 close()`);
+        this._destroySession(sessionId);
+      }
+    });
+
     // 转发会话事件到 sessionManager（内部路由）+ 广播到渲染层
     session.on('message', (message) => {
       this.emit('sessionMessage', sessionId, message);
@@ -2074,22 +2152,26 @@ export class QueryBasedSessionManager extends EventEmitter {
   }
 
   /**
-   * 减少引用计数（持有者离开）
-   * 引用计数归零时自动销毁 session
+   * 减少引用计数（持有者离开，即"markUiDetached"：只解除 UI 订阅，不强杀）
+   * 跑步机模式：引用计数归零时，只有 session 已空闲才真正销毁；仍在跑的话继续跑，
+   * 交给 QueryBasedSession 的 'idle' 事件在跑完后自动收尾。
    * @returns 剩余引用计数
    */
   release(sessionId: string): number {
     const count = this.refCounts.get(sessionId);
     if (count === undefined) return 0;
-    const next = count - 1;
-    if (next <= 0) {
-      // 最后一个持有者离开，真正销毁
-      this.logger.info(`release session ${sessionId.substring(0, 8)}: refCount=0, closing`);
-      this._destroySession(sessionId);
-      return 0;
-    }
+    const next = Math.max(0, count - 1);
     this.refCounts.set(sessionId, next);
     this.logger.info(`release session ${sessionId.substring(0, 8)}: refCount=${next}`);
+    if (next === 0) {
+      const session = this.sessions.get(sessionId);
+      if (session && session.isIdle()) {
+        this.logger.info(`release: refCount=0 且已空闲，触发 close()`);
+        this._destroySession(sessionId);
+      } else {
+        this.logger.info(`release: refCount=0 但仍在运行，保留 session（跑步机模式，跑完自动收）`);
+      }
+    }
     return next;
   }
 

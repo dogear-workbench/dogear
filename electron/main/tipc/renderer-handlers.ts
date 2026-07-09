@@ -223,4 +223,18 @@ export type RendererHandlers = {
     doneCount: number;
   }) => void;
 
+  // 会话运行/挂起操作状态变化（跑步机模式：后端唯一权威判定，一次事件同步驱动前端全局
+  // running/pendingAction Set 与 session 内 pendingState，状态跟上次不同才 emit）
+  sessionStateChanged: (data: {
+    conversationId: string;
+    running: boolean;
+    pendingAction: boolean;
+  }) => void;
+
+  // 会话已终止（QueryBasedSession.close() 内部在销毁子进程之前 emit 一次）
+  // 前端收到后应把该会话从 running/pendingAction Set 中清除，不再等待对应的 sessionStateChanged:false
+  sessionClosed: (data: {
+    conversationId: string;
+  }) => void;
+
 };
