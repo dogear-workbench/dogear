@@ -102,7 +102,7 @@ export function WorkspaceTabBar() {
   /** 弹出到独立窗口 */
   const popOutInternal = (tab: SessionTab) => {
     // 运行中的会话不能弹出：会造成前端两处监听 stream 事件冲突
-    if (tab.isStreaming || runningConversationIds.has(tab.conversationId)) {
+    if (runningConversationIds.has(tab.conversationId)) {
       toast.warning('会话运行中无法弹出', {
         description: '等待当前回答结束后再试',
       });
@@ -140,8 +140,8 @@ export function WorkspaceTabBar() {
           const isActive = activeTabId === tab.conversationId;
           const isRunning = runningConversationIds.has(tab.conversationId);
           const isPending = pendingActionIds.has(tab.conversationId);
-          const showPulse = tab.isStreaming || isRunning;
-          const canPopOut = !tab.isStreaming && !isRunning;
+          const showPulse = isRunning;
+          const canPopOut = !isRunning;
 
           return (
             <ContextMenu key={tab.conversationId}>

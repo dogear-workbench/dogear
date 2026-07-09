@@ -130,11 +130,7 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-    // 用户已响应，清除待确认状态（脉冲从蓝色恢复为橙色）
-    if (conversationId) {
-      useConversationStore.getState().setPendingActionState(conversationId, false);
-    }
-  }, [setMessages, conversationId]);
+  }, [setMessages]);
 
   // AskUserQuestion 响应回调：更新消息中对应问答块的状态
   const handleAskUserResolved = useCallback((requestId: string, answers: Record<string, string>) => {
@@ -151,11 +147,7 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-    // 用户已响应，清除待确认状态（脉冲从蓝色恢复为橙色）
-    if (conversationId) {
-      useConversationStore.getState().setPendingActionState(conversationId, false);
-    }
-  }, [setMessages, conversationId]);
+  }, [setMessages]);
 
   /**
    * 从某条 assistant 消息处分叉新对话
@@ -179,11 +171,12 @@ export function useSendMessage(params: UseSendMessageParams) {
 
     switch (cmd) {
       case '/clear': {
-        // 前端清空消息 + 关闭当前会话
+        // 前端清空消息 + 强制终止旧会话（跑步机模式下 release 不会打断执行中的任务，
+        // 但 /clear 语义是"立即重置"，必须忽略引用计数强杀，避免旧任务在后台继续跑）
         setMessages([]);
         setIsLoading(false);
         try {
-          await client.closeQueryBasedSession({ sessionId });
+          await client.forceCloseQueryBasedSession({ sessionId });
         } catch (e) {
           console.warn('关闭旧会话失败:', e);
         }

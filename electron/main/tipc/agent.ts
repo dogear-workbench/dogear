@@ -322,6 +322,20 @@ export const agentRouter = {
       }
     }),
 
+  /** 强制终止会话，忽略引用计数（供 /clear 等需要立即打断执行中任务的场景使用） */
+  forceCloseQueryBasedSession: t.procedure
+    .input<{ sessionId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const sessionManager = getQueryBasedSessionManager();
+        sessionManager.closeSession(input.sessionId);
+        return { success: true };
+      } catch (error) {
+        console.error('强制关闭基于 Query 的会话失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
   /** 获取会话支持的斜杠命令列表 */
   getSessionCapabilities: t.procedure
     .input<{ sessionId: string }>()

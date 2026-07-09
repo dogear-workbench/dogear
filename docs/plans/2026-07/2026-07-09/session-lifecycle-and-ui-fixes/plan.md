@@ -16,7 +16,7 @@
 
 - [x] [Step 1: 三个独立小修](./step1-independent-small-fixes.md) — CreateSession 补广播 / agent 图标换 Workflow / AskUser 加停止按钮
 - [x] [Step 2: 后端生命周期与事件契约](./step2-backend-lifecycle-and-events.md) — QueryBasedSession 解耦引用计数强杀，统一状态事件广播
-- [ ] [Step 3: 前端 store + hook 适配](./step3-frontend-adaptation.md) — 删 SessionTab.isStreaming、迁移 WorkspaceTabBar 判断、改写 useAgentSession attach/detach
+- [x] [Step 3: 前端 store + hook 适配](./step3-frontend-adaptation.md) — 删 SessionTab.isStreaming、迁移 WorkspaceTabBar 判断、改写 useAgentSession attach/detach
 - [ ] [Step 4: 边界收尾与手测验收](./step4-edge-cases-and-verify.md) — app 退出清理、未决问题回收、手测 golden path
 
 ## 全局决策

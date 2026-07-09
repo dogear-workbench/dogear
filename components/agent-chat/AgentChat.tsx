@@ -4,7 +4,6 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
-import { useSessionStore } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { AgentChatProps } from './types';
@@ -110,13 +109,6 @@ export function AgentChat({
     if (isLoading) setPromptSuggestion(null);
   }, [isLoading]);
 
-  // 同步 isLoading 到 session-store（标签页运行状态）
-  useEffect(() => {
-    if (conversationId) {
-      useSessionStore.getState().updateStreaming(conversationId, isLoading);
-    }
-  }, [isLoading, conversationId]);
-
   // 历史消息
   const { messages, setMessages, setHistoryLoaded } =
     useMessageHistory({ conversationId, useSdkResume, forkParams, workspacePath });
@@ -174,7 +166,6 @@ export function AgentChat({
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
     sessionId,
-    conversationId,
     setMessages,
     setIsLoading,
     setPermissionMode,

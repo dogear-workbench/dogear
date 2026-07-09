@@ -794,9 +794,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 // 监听主进程广播的对话运行状态、bot 绑定变更、对话列表变更
 if (typeof window !== 'undefined') {
   import('@/lib/events').then(({ rendererEvents }) => {
-    // 对话运行状态变化
-    rendererEvents.conversationRunningStateChanged.listen((data) => {
-      useConversationStore.getState().setRunningState(data.conversationId, data.isRunning);
+    // 会话运行/挂起状态变化（跑步机模式：后端唯一权威判定，同一次事件同步更新 running/pendingAction 两个 Set）
+    rendererEvents.sessionStateChanged.listen((data) => {
+      useConversationStore.getState().setRunningState(data.conversationId, data.running);
+      useConversationStore.getState().setPendingActionState(data.conversationId, data.pendingAction);
+    });
+
+    // 会话已终止：running/pendingAction 都清零，不再等待对应的 sessionStateChanged:false
+    rendererEvents.sessionClosed.listen((data) => {
+      useConversationStore.getState().setRunningState(data.conversationId, false);
+      useConversationStore.getState().setPendingActionState(data.conversationId, false);
     });
 
     // 微信 Bot 绑定对话变更
