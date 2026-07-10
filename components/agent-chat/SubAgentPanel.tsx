@@ -1,4 +1,4 @@
-import { Bot, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
+import { Workflow, ChevronRight, ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ContentBlockItem } from './ContentBlockItem';
@@ -217,7 +217,7 @@ export function SubAgentPanel({ conversationId }: { conversationId?: string }) {
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
-        <Bot className="w-4 h-4 text-violet-600" />
+        <Workflow className="w-4 h-4 text-violet-600" />
         <span className="text-sm font-medium">子代理</span>
         <span className="text-[10px] text-muted-foreground">({subAgents.length})</span>
       </div>

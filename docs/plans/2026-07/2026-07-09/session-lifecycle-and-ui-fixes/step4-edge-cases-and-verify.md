@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 边界收尾与手测验收
-status: pending
+status: done
 ---
 
 ## 目标
@@ -83,13 +83,40 @@ status: pending
 - [ ] lint
 - [ ] build（含前端 Vite + 主进程 tsc）
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
 
-### 完成总结（回填到 plan.md 的末尾）
-- 4 个原始问题解决情况：
-- 3 个未决问题最终决定：
-- 实施中新发现的问题与处理：
+**4.1 app 退出清理**
+- 复核 `electron/main/index.ts:532-554` `before-quit` 已调 `shutdownQueryBasedSessionManager()` → `closeAll()` 遍历所有 session close 并清 refCount/cleanupCallbacks/conversationSessionMap。已就绪，未改代码。
+
+**4.1 workspace 切换清理（用户拍板：跳过）**
+- 与 plan 原文差异：plan 4.1 提到「workspace 切换 → 所有 session 都应 close」，与里程碑 1.5「Tab 跨工作区保留」设计冲突。用户选择「跑步机自然处理」——app 退出统一清理够用，日常 workspace 切换保留跑步机语义（idle GC / running 保活）。未改 workspace-store.ts。
+
+**4.2 agent-monitor**
+- 复核该页只监控 Worker 线程池状态（SUMMARIZE/DIGEST/REVIEW/CATEGORIZE 一次性任务），不涉及 QueryBasedSession。与本次改动无关，未改。
+
+**4.3 SubAgentPanel 头部图标**
+- `components/agent-chat/SubAgentPanel.tsx:1,220` `Bot` → `Workflow`，与列表行 agent 派出会话图标统一（LineageBar 里的 `CornerDownRight` 未动，符合原计划）。
+
+**4.5 codebase-map.md 文档同步**
+- `session-store.ts` 描述补「SessionTab 无 isStreaming 字段」
+- `conversation-store.ts` 描述补两个 Set 唯一订阅源换到 sessionStateChanged/sessionClosed + 删乐观直写避免 race
+- `query-based-session.ts` 描述补跑步机生命周期（retain/release 引用计数 + sessionClosed 原子事件 + sessionStateChanged 状态广播）
+- `agent.ts` IPC 描述补 forceCloseQueryBasedSession（/clear 强杀路径）
+- `renderer-handlers.ts` 描述补 sessionStateChanged / sessionClosed
+
+**4.6 lint + build**
+- `bun run lint`：0 errors，83 既存 warnings（同 Step 3 基线）
+- `bun run build`：Vite + tsc(electron) 全过
+
+### 与计划差异
+- 4.1 workspace 切换清理：用户决策跳过（见上）。
+- 4.2 agent-monitor：性质澄清后确认不涉及，无需改动。
+- 4.4 完整验收清单：属于人工手测，交给用户走 golden path。
+
+### 改动文件清单
+- `components/agent-chat/SubAgentPanel.tsx`（icon 替换）
+- `.claude/rules/codebase-map.md`（5 处描述更新）
+- `docs/plans/2026-07/2026-07-09/session-lifecycle-and-ui-fixes/step4-edge-cases-and-verify.md`（本文件）
+- `docs/plans/2026-07/2026-07-09/session-lifecycle-and-ui-fixes/plan.md`（打勾 + 完成总结）
