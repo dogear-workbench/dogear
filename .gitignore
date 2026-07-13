@@ -53,3 +53,7 @@ skills-lock.json
 # git worktrees
 .worktrees/
 /python/article_parser
+
+# Python
+__pycache__/
+*.pyc

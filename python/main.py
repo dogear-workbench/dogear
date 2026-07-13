@@ -33,6 +33,8 @@ from core.screener import screen_stocks
 from core.signals import detect_signals
 from core.formula_engine import parse_and_eval, validate_formula, FormulaContext
 from core.backtest import simple_backtest
+from announcements.parser import parse_pdf
+from announcements.markdown import to_markdown
 
 log("模块加载完成，等待请求...")
 
@@ -206,6 +208,19 @@ def handle_simple_backtest(request_id: str, params: dict):
     send_response(request_id, result)
 
 
+def handle_parse_announcement_pdf(request_id: str, params: dict):
+    """解析公告 PDF 为 markdown"""
+    pdf_path = params.get("path")
+
+    if not pdf_path:
+        send_error(request_id, -1, "缺少 path 参数")
+        return
+
+    parsed = parse_pdf(pdf_path)
+    markdown = to_markdown(parsed)
+    send_response(request_id, {"markdown": markdown})
+
+
 METHOD_HANDLERS = {
     "ping": handle_ping,
     "calc_indicators": handle_calc_indicators,
@@ -217,6 +232,7 @@ METHOD_HANDLERS = {
     "validate_formula": handle_validate_formula,
     "simple_backtest": handle_simple_backtest,
     "run_article_script": handle_run_article_script,
+    "parse_announcement_pdf": handle_parse_announcement_pdf,
 }
 
 

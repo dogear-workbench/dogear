@@ -439,3 +439,22 @@ class PythonBridge {
 
 /** 全局 PythonBridge 单例 */
 export const pythonBridge = new PythonBridge();
+
+// ============================================================
+// 公告 PDF 解析
+// ============================================================
+
+/**
+ * 解析公告 PDF 为 markdown。
+ * Python bridge 调用异常视为解析失败，不做兜底。
+ */
+export async function parseAnnouncementPdf(
+  pdfPath: string,
+): Promise<{ ok: true; data: { markdown: string } } | { ok: false; error: string }> {
+  try {
+    const result = await pythonBridge.call<{ markdown: string }>('parse_announcement_pdf', { path: pdfPath });
+    return { ok: true, data: result };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
