@@ -84,6 +84,14 @@ export interface AppSettings {
     permissionMode?: AppSettings['ai']['permissionMode'];
     /** 单个子会话最长允许跑的分钟数，默认 30 */
     timeoutMinutes: number;
+    /** 提示缓存策略；缺省 '5m' */
+    cachePolicy?: '5m' | '1h';
+    /** 是否注入 core-profile.md；缺省 false */
+    loadCoreProfile?: boolean;
+    /** 是否加载 .claude/skills；缺省 false */
+    loadSkills?: boolean;
+    /** 是否挂载 dogear-article-parse；缺省 false */
+    loadArticleParse?: boolean;
   };
   /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
   enabledToolPacks?: string[];
@@ -112,7 +120,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     categorizeModelSelection: null,
   },
   personas: [],
-  subAgent: { permissionMode: 'dontAsk', timeoutMinutes: 30 },
+  subAgent: {
+    permissionMode: 'dontAsk',
+    timeoutMinutes: 30,
+    cachePolicy: '5m',
+    loadCoreProfile: false,
+    loadSkills: false,
+    loadArticleParse: false,
+  },
   enabledToolPacks: [],
   profiles: {
     default: {

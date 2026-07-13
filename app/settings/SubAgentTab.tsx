@@ -12,6 +12,29 @@ const SUB_AGENT_PERMISSION_OPTIONS = [
   { value: 'default',           label: '标准',             description: '危险操作都要用户确认（在子会话 tab 内）。会拖慢派遣节奏。' },
 ] as const;
 
+const CACHE_POLICY_OPTIONS = [
+  { value: '5m', label: '5 分钟（推荐）', description: '缓存写入费用低。子会话通常一轮跑完就结束，5m 完全够用。' },
+  { value: '1h', label: '1 小时',         description: '写入费用是 5m 的 1.6 倍。仅在你的派遣流程会跨很久（>10 分钟）多轮复用子会话时选。' },
+] as const;
+
+const CONTEXT_MOUNT_OPTIONS = [
+  {
+    key: 'loadCoreProfile' as const,
+    label: '注入工作区用户画像',
+    description: '让子会话读到 .dogear/memory/core-profile.md 里的用户偏好。执行类任务通常用不到，占 5-15K tokens。',
+  },
+  {
+    key: 'loadSkills' as const,
+    label: '加载 .claude/skills',
+    description: 'brainstorming / staged-impl / doc-sync 等流程 skill。执行器只干活不做规划，通常不需要。',
+  },
+  {
+    key: 'loadArticleParse' as const,
+    label: '挂载 dogear-article-parse',
+    description: '网络文章解析工具集。只有让子会话去抓/解析文章时才需要。',
+  },
+];
+
 const MIN_TIMEOUT = 1;
 const MAX_TIMEOUT = 180;
 
@@ -100,6 +123,61 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
               updateSub({ timeoutMinutes: clampTimeout(Number(e.target.value)) });
             }}
           />
+        </div>
+
+        {/* 缓存策略 */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium">缓存策略</label>
+          <p className="text-xs text-muted-foreground">
+            子会话启动时的 prompt cache TTL。1h 写入费用是 5m 的约 1.6 倍，而子会话通常单轮跑完就结束、多余的 TTL 是浪费。
+          </p>
+          <div className="space-y-2">
+            {CACHE_POLICY_OPTIONS.map((opt) => (
+              <label
+                key={opt.value}
+                className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors"
+              >
+                <input
+                  type="radio"
+                  name="subAgentCachePolicy"
+                  className="mt-0.5"
+                  checked={(sub.cachePolicy ?? '5m') === opt.value}
+                  onChange={() => updateSub({ cachePolicy: opt.value })}
+                />
+                <div>
+                  <div className="text-sm font-medium">{opt.label}</div>
+                  <div className="text-xs text-muted-foreground">{opt.description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {/* 上下文挂载 */}
+        <div className="space-y-3">
+          <label className="text-sm font-medium">上下文挂载</label>
+          <p className="text-xs text-muted-foreground">
+            子会话默认精简，只挂交付/共享区/引用等核心工具。以下项按需勾选，勾越少子会话 baseline 越小、cache 命中率越高。核心的 dogear-group / dogear-delegation / dogear-reference 不在此列，始终挂载。
+          </p>
+          <div className="space-y-2">
+            {CONTEXT_MOUNT_OPTIONS.map((opt) => (
+              <label
+                key={opt.key}
+                className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={sub[opt.key] === true}
+                  onChange={(e) => updateSub({ [opt.key]: e.target.checked })}
+                />
+                <div>
+                  <div className="text-sm font-medium">{opt.label}</div>
+                  <div className="text-xs text-muted-foreground">{opt.description}</div>
+                </div>
+              </label>
+            ))}
+          </div>
         </div>
       </div>
     </div>

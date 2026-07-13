@@ -213,7 +213,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const childId = await conversationService.create(workspaceId, groupId, title, modelSel, {
     role: 'sub',
     parentConversationId,
-    cachePolicy: parent.cachePolicy,
+    cachePolicy: settings.subAgent?.cachePolicy ?? '5m',
     contractMetadata,
   });
   broadcastConversationListChanged(workspaceId);

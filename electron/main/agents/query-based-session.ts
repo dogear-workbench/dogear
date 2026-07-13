@@ -274,8 +274,16 @@ export class QueryBasedSession extends EventEmitter {
 
       const { appSettings, resolvedProfile } = baseConfig;
 
+      // 子会话按 settings.subAgent 的开关精简上下文，主会话不受影响
+      const isSubAgentSession = !!this.config.subAgent;
+      const subAgentCfg = appSettings.subAgent ?? {};
+
       // 加载工作区核心档案（buildSystemPrompt 保持同步，异步加载在此处做）
-      const coreProfileText = this.config.workspacePath
+      // 子会话默认不注入用户画像（干活用不到，纯占 token）
+      const shouldLoadCoreProfile = isSubAgentSession
+        ? subAgentCfg.loadCoreProfile === true
+        : true;
+      const coreProfileText = (shouldLoadCoreProfile && this.config.workspacePath)
         ? await loadCoreProfileForSession(this.config.workspacePath)
         : null;
 
@@ -430,9 +438,15 @@ export class QueryBasedSession extends EventEmitter {
       // 上游传入的 mcpServers：强制剔除可能误注入的 dogear-delegation，我们总是自己按 role 挂载
       const incomingMcpServers = { ...(this.config.mcpServers || {}) };
       delete incomingMcpServers['dogear-delegation'];
+      // 子会话默认精简：article-parse 按开关；memory-review 不挂（首页报告是主会话产物）
+      const shouldMountArticleParse = isSubAgentSession
+        ? subAgentCfg.loadArticleParse === true
+        : true;
+      const shouldMountMemoryReview = !isSubAgentSession && hasWorkspaceContext;
+
       queryOptions.mcpServers = {
-        'dogear-article-parse': createArticleParseMcpServer(),
-        ...(hasWorkspaceContext
+        ...(shouldMountArticleParse ? { 'dogear-article-parse': createArticleParseMcpServer() } : {}),
+        ...(shouldMountMemoryReview
           ? { 'dogear-memory-review': createReviewMcpServer(this.config.workspaceId!, this.config.workspacePath!) }
           : {}),
         ...(hasGroupContext
@@ -447,8 +461,9 @@ export class QueryBasedSession extends EventEmitter {
       // 注意：市场订阅的插件（superpowers 等）由 SDK 通过 settingSources 自动读取 enabledPlugins 处理，不在此手动注入
       const extraPluginPaths = this.config.extraPluginPaths ?? [];
       queryOptions.plugins = [
-        { type: 'local' as const, path: getArticleParserSkillsDir() },
-        ...(hasWorkspaceContext ? [{ type: 'local' as const, path: getReviewSkillDir() }] : []),
+        // 跟随各自的 MCP：不挂工具就不带对应 skill
+        ...(shouldMountArticleParse ? [{ type: 'local' as const, path: getArticleParserSkillsDir() }] : []),
+        ...(shouldMountMemoryReview ? [{ type: 'local' as const, path: getReviewSkillDir() }] : []),
         ...extraPluginPaths.map((p) => ({ type: 'local' as const, path: p })),
       ];
       this.logger.info('已配置 Skill 插件:', queryOptions.plugins.map((p: { path: string }) => p.path));
@@ -459,7 +474,11 @@ export class QueryBasedSession extends EventEmitter {
         this.logger.info('已配置 cwd 为用户工作区:', this.config.workspacePath);
       }
 
-      if (this.config.enableSkills && projectRoot) {
+      // 子会话默认不加载 .claude/skills（brainstorming/staged-impl 等对执行器是死重）
+      const shouldLoadSkillSources = isSubAgentSession
+        ? subAgentCfg.loadSkills === true
+        : true;
+      if (this.config.enableSkills && projectRoot && shouldLoadSkillSources) {
         // 固定加载 user + project + local 三个源，不暴露给用户配置
         // - user: ~/.claude/settings.json（用户级 enabledPlugins，如 frontend-design/skill-creator）
         // - project: <cwd>/.claude/settings.json（项目级共享配置）
