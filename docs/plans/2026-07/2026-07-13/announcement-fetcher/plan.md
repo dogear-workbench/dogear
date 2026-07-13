@@ -20,7 +20,7 @@
 - [x] [Step 2: 巨潮列表 API + orgId 映射](./step2-cninfo-list-api.md) — Service 能列出任意股票的公告元数据
 - [x] [Step 3: 全文抓取 + 懒缓存](./step3-fetch-cache.md) — readAnnouncement 命中/未命中路径都跑通
 - [x] [Step 4: Agent MCP 工具注册](./step4-agent-tools.md) — 真实会话里 agent 能调 ListAnnouncements / ReadAnnouncement
-- [ ] [Step 5: 文档同步收尾](./step5-doc-sync.md) — codebase-map + CLAUDE.md 同步
+- [x] [Step 5: 文档同步收尾](./step5-doc-sync.md) — codebase-map + CLAUDE.md 同步
 
 ## 全局决策
 
@@ -45,3 +45,24 @@
 - PDF：`http://static.cninfo.com.cn/finalpage/{date}/{fileId}.PDF`（URL 从列表返回的 `adjunctUrl` 拼）
 
 **验证方式**：不写单测（项目偏好），每步用一个 node -e 或临时脚本跑一遍关键路径 + build + lint。Agent 工具那步在真实会话里手测。
+
+## 完成总结
+
+**能力全景**：Agent 现在可以对 A 股任意个股拉巨潮资讯网公告列表 + 按需读取全文（PDF → pdfplumber → markdown 含表格），本地懒缓存永久复用。用户在设置页开启「公司公告」工具包后即刻可用。
+
+**从计划到实施的偏差**：
+- Step 3：`electron/main/types.ts` 镜像未落地——stock 域现有惯例是服务文件内联 + `types/stock.ts` 手动同步（Step 2 已确认，`RateLimiterStatus` 是先例）；`validateCninfoUrl` 用 `URL` 解析替代字符串 `startsWith`（防前缀绕过攻击）；`downloadPdf` 失败/超限时清理半成品文件
+- Step 4：超出字面清单额外做了三处串联——独立 MCP server `dogear-stock-announcement`（对齐 `stock-analysis` 先例）+ `tool-packs.ts` 注册可选工具包 + `conversation-runtime-service.ts` `toolPackFactories` 挂载工厂。原因：只加 `tool-registry.ts` 元数据仅影响设置页展示，不影响工具能否被 agent 调用，不做这步就是死代码
+- Step 5：plan 里写的 `python_workspace/` 实际叫 `python/`，pdfplumber 已在 Step 1 加进 `python/requirements.txt`，无需新建 README
+
+**未做的事 / 留给未来的**：
+- 定时预抓：属于第三阶段（按天工作流），本阶段只做懒缓存
+- 多源 fallback（东财/腾讯）：等真出问题再补
+- Jina Reader 兜底：pdfplumber 已足够稳
+- 超长公告分页 / 摘要目录：靠 description 约束 agent 自行判断，未做工具层截断
+- `ReadAnnouncement` 未透传 `meta`：index.json 里 title/type/date 字段落空，不影响功能只影响缓存目录可读性
+- `code`/`market` 与 `url` 不匹配的强校验：低概率误用，未加
+- 缓存过期机制：只增不淘，需要清理只能整只股清空（`clearAnnouncementCache`）
+- UI 缓存清理按钮：Service 层 `clearAnnouncementCache` 已导出，UI 按钮留给未来
+
+**待用户手测**：真实会话里开启「公司公告」工具包 → "帮我查一下贵州茅台（600519）最近有什么公告" → 追问 "看下最新那条业绩相关的" → 验证列表返回、全文读取、二次读命中缓存。子会话按纪律未跑 `bun run dev`。

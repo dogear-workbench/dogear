@@ -54,7 +54,7 @@ paths:
 
 ### Agent 工具拆分
 - `tools/tool-registry.ts` — 元数据注册表（聚合入口）
-- 按业务域分文件：`book-qa-tools.ts` / `book-analysis-tools.ts` / `article-tools.ts` / `stock-tools.ts` / `stock-analysis-tools.ts` / `memory-tools.ts`
+- 按业务域分文件：`book-qa-tools.ts` / `book-analysis-tools.ts` / `article-tools.ts` / `stock-tools.ts` / `stock-analysis-tools.ts` / `stock-announcement-tools.ts` / `memory-tools.ts`
 - 同一业务域的相关工具放一个文件，跨域不复用工具文件
 
 ### 拆分时机
