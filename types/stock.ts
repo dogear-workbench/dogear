@@ -230,3 +230,21 @@ export interface ListAnnouncementsOpts {
   types?: AnnouncementType[]; // 只返回指定类型，不传则不限制
   limit?: number;             // 返回条数上限，默认 20
 }
+
+/** 公告全文（解析后的 markdown） */
+export interface AnnouncementDetail {
+  url: string;                // 公告 PDF 地址（缓存 key 来源）
+  markdown: string;           // 解析后的全文 markdown
+  cachedAt: string;           // 首次缓存时间（ISO 格式）
+  fromCache: boolean;         // 本次是否命中本地缓存
+}
+
+/** 缓存索引条目（对应 index.json 中的一条） */
+export interface CachedAnnouncementEntry {
+  url: string;
+  title: string;
+  type: AnnouncementType;
+  date: string;
+  hash: string;                // sha256(url).slice(0, 16)
+  cachedAt: string;             // ISO 格式
+}

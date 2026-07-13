@@ -5,5 +5,11 @@ export { rateLimiter } from './rate-limiter.js';
 export { pythonBridge } from './python-bridge.js';
 export { formulaService } from './formula-service.js';
 export type { StockFormula, FormulaType } from './formula-service.js';
-export { listAnnouncements } from './announcement-service.js';
-export type { Announcement, AnnouncementType, ListAnnouncementsOpts } from './announcement-service.js';
+export { listAnnouncements, readAnnouncement, clearAnnouncementCache } from './announcement-service.js';
+export type {
+  Announcement,
+  AnnouncementType,
+  ListAnnouncementsOpts,
+  AnnouncementDetail,
+  CachedAnnouncementEntry,
+} from './announcement-service.js';
