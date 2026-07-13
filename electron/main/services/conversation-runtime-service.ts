@@ -8,6 +8,7 @@ import { createArticleTools } from '../agents/tools/article-tools.js';
 import { createStockTools } from '../agents/tools/stock-tools.js';
 import { createMemoryTools } from '../agents/tools/memory-tools.js';
 import { createStockAnalysisTools } from '../agents/tools/stock-analysis-tools.js';
+import { createAnnouncementTools } from '../agents/tools/stock-announcement-tools.js';
 import { loadWorkspaceAgents } from './agent-definition-service.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
@@ -107,6 +108,10 @@ async function buildConversationSessionConfig(
     },
     'stock-analysis': {
       factory: () => createStockAnalysisTools(),
+      available: true,
+    },
+    'stock-announcement': {
+      factory: () => createAnnouncementTools(),
       available: true,
     },
   };

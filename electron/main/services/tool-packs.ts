@@ -62,4 +62,12 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
     requiresWorkspace: false,
     requirements: '需要 Python 3.10+ 和 pandas/numpy/akshare 依赖（首次使用自动检测）',
   },
+  {
+    name: 'stock-announcement',
+    label: '公司公告',
+    description: '查询公司公告列表并读取全文（巨潮资讯网数据源，PDF 解析为 markdown，本地懒缓存）',
+    mcpServerName: 'dogear-stock-announcement',
+    toolCount: 2,
+    requiresWorkspace: false,
+  },
 ];

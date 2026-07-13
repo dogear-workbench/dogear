@@ -19,7 +19,7 @@
 - [x] [Step 1: Python PDF 解析器 + Bridge RPC](./step1-python-parser.md) — pdfplumber 打通 → 命令行喂 PDF 出 markdown
 - [x] [Step 2: 巨潮列表 API + orgId 映射](./step2-cninfo-list-api.md) — Service 能列出任意股票的公告元数据
 - [x] [Step 3: 全文抓取 + 懒缓存](./step3-fetch-cache.md) — readAnnouncement 命中/未命中路径都跑通
-- [ ] [Step 4: Agent MCP 工具注册](./step4-agent-tools.md) — 真实会话里 agent 能调 ListAnnouncements / ReadAnnouncement
+- [x] [Step 4: Agent MCP 工具注册](./step4-agent-tools.md) — 真实会话里 agent 能调 ListAnnouncements / ReadAnnouncement
 - [ ] [Step 5: 文档同步收尾](./step5-doc-sync.md) — codebase-map + CLAUDE.md 同步
 
 ## 全局决策
