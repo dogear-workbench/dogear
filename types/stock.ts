@@ -207,3 +207,26 @@ export interface RateLimiterStatus {
   consecutiveFailures: number;      // 连续失败次数
   cooldownUntil: number | null;     // 冷却截止时间戳（null=无冷却）
 }
+
+// === 公司公告 ===
+
+/** 公告类型分类（从巨潮返回的分类编码反推） */
+export type AnnouncementType = 'annual' | 'quarterly' | 'semi_annual' | 'interim' | 'ipo' | 'other';
+
+/** 公司公告 */
+export interface Announcement {
+  url: string;             // PDF 完整下载地址
+  title: string;           // 公告标题
+  type: AnnouncementType;  // 公告分类
+  date: string;            // 公告日期 "2026-06-22"
+  code: string;            // 股票代码
+  market: string;          // 市场：sh/sz/bj
+}
+
+/** 公告列表查询参数 */
+export interface ListAnnouncementsOpts {
+  since?: string;             // 起始日期（含）"2026-01-01"
+  until?: string;             // 截止日期（含）
+  types?: AnnouncementType[]; // 只返回指定类型，不传则不限制
+  limit?: number;             // 返回条数上限，默认 20
+}
