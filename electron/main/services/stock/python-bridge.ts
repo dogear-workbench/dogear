@@ -315,12 +315,21 @@ class PythonBridge {
 
     console.log(`[PythonBridge] 启动 Python 进程: ${pythonCmd} ${scriptPath}`);
 
+    // 剥离代理环境变量：akshare 内部走 requests，会自动读 HTTP_PROXY/HTTPS_PROXY，
+    // Electron 启动时继承的代理端口若已失效（例如用户切到 TUN 模式关掉了 HTTP 代理），
+    // 会导致所有东财请求报 "Unable to connect to proxy"。让 Python 走直连，交给 TUN 接管。
+    const cleanEnv: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(cleanEnv)) {
+      if (/^(https?|all)_proxy$/i.test(key)) delete cleanEnv[key];
+    }
+
     this.process = spawn(pythonCmd, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
-        ...process.env,
+        ...cleanEnv,
         PYTHONUNBUFFERED: '1',       // 禁用 Python 输出缓冲
         PYTHONIOENCODING: 'utf-8',   // 确保 UTF-8 编码
+        NO_PROXY: '*',               // 兜底：即使某些库自动探测系统代理也强制直连
       },
     });
 
