@@ -17,7 +17,7 @@
 ## 步骤索引
 
 ### 阶段 0：基础修复
-- [ ] [Step 1: 升级已弃用接口](./step1-upgrade-deprecated.md) — `abstract_ths` → `new_ths`、`indicator`（新浪）→ `indicator_em`（东财）
+- [x] [Step 1: 升级已弃用接口](./step1-upgrade-deprecated.md) — `abstract_ths` → `new_ths`、`indicator`（新浪）→ `indicator_em`（东财）
 
 ### 阶段 1：资金面
 - [ ] [Step 2: 资金流向](./step2-fund-flow.md) — 个股/大盘/板块资金流，修复 TS 层占位

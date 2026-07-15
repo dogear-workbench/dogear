@@ -4,7 +4,7 @@ AKShare 客户端封装
 提供限流、TTL 缓存、错误重试，防止因频繁调用被数据源封禁。
 AKShare 底层数据源（东方财富、同花顺）有不同的频率限制：
   - 批量接口（stock_zh_a_spot_em）：5s 冷却
-  - 单股接口（stock_financial_abstract_ths）：0.5s 间隔
+  - 单股接口（stock_financial_abstract_new_ths）：0.5s 间隔
 """
 
 import time
@@ -145,6 +145,78 @@ def _normalize_from_ths_industry(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+# 同花顺新版财报摘要 stock_financial_abstract_new_ths 的 metric_name 归一化
+# （原始返回是长表：一行 = 一个报告期 x 一个指标；3 个 xxx_yoy_growth_ratio 指标是其余
+#  指标 yoy 列的百分比重复表达，丢弃不影响信息完整性）
+_THS_ABSTRACT_METRIC_MAP = {
+    "operating_income_total": "营业总收入",
+    "parent_holder_net_profit": "归属净利润",
+    "index_deduct_holder_net_profit": "扣非净利润",
+    "basic_eps": "基本每股收益",
+    "calc_per_net_assets": "每股净资产",
+    "index_weighted_avg_roe": "净资产收益率",
+    "index_full_diluted_roe": "净资产收益率-摊薄",
+    "sale_gross_margin": "销售毛利率",
+    "sale_net_interest_ratio": "销售净利率",
+    "assets_debt_ratio": "资产负债率",
+    "index_per_operating_cash_flow_net": "每股经营现金流",
+    "per_undistributed_profits": "每股未分配利润",
+    "per_capital_reserve": "每股资本公积金",
+    "current_ratio": "流动比率",
+    "quick_ratio": "速动比率",
+    "conservative_quick_ratio": "保守速动比率",
+    "equity_ratio": "产权比率",
+    "inventory_turnover_ratio": "存货周转率",
+    "inventory_turnover_days": "存货周转天数",
+    "receive_accounts_turnover_days": "应收账款周转天数",
+    "business_cycle": "营业周期",
+}
+_THS_ABSTRACT_DROP_METRICS = {
+    "deduct_net_profit_yoy_growth_ratio",
+    "calculate_operating_income_total_yoy_growth_ratio",
+    "calculate_parent_holder_net_profit_yoy_growth_ratio",
+}
+
+
+def _pivot_ths_financial_abstract(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    把 stock_financial_abstract_new_ths 的长表转成宽表：一行一个报告期。
+    每个指标产出 4 列：{中文名}（累计值）、{中文名}_yoy、{中文名}_mom、{中文名}_single_yoy
+    （yoy/mom/single_yoy 原始是小数，这里 *100 转百分比，与旧版字段量纲保持一致）。
+    """
+    df = df[~df["metric_name"].isin(_THS_ABSTRACT_DROP_METRICS)].copy()
+    df["metric_cn"] = df["metric_name"].map(_THS_ABSTRACT_METRIC_MAP).fillna(df["metric_name"])
+
+    pivot = df.pivot_table(
+        index="report_date", columns="metric_cn",
+        values=["value", "yoy", "mom", "single_yoy"], aggfunc="first",
+    )
+
+    out = pd.DataFrame(index=pivot.index)
+    for metric_cn in df["metric_cn"].unique():
+        if ("value", metric_cn) in pivot.columns:
+            out[metric_cn] = pivot[("value", metric_cn)]
+        for suffix in ("yoy", "mom", "single_yoy"):
+            if (suffix, metric_cn) in pivot.columns:
+                out[f"{metric_cn}_{suffix}"] = pd.to_numeric(
+                    pivot[(suffix, metric_cn)], errors="coerce"
+                ) * 100
+
+    out = out.reset_index().rename(columns={"report_date": "报告期"})
+    return out.sort_values("报告期").reset_index(drop=True)
+
+
+def _symbol_to_secucode(symbol: str) -> str:
+    """裸代码转东财 SECUCODE 格式（沪 6 开头→.SH，深 0/3 开头→.SZ，北 8/4 开头→.BJ）。"""
+    if symbol.startswith("6"):
+        suffix = "SH"
+    elif symbol.startswith(("8", "4")):
+        suffix = "BJ"
+    else:
+        suffix = "SZ"
+    return f"{symbol}.{suffix}"
+
+
 # ============================================================
 # 公开 API
 # ============================================================
@@ -222,17 +294,19 @@ def get_industry_stocks(industry: str) -> pd.DataFrame:
     return df
 
 
-def get_financial_abstract(symbol: str) -> pd.DataFrame:
+def get_financial_abstract(symbol: str, indicator: str = "按报告期") -> pd.DataFrame:
     """
-    获取个股财报摘要（同花顺数据源）。
+    获取个股财报摘要（同花顺新版数据源，含 yoy/mom/single_yoy）。
 
     Args:
         symbol: 股票代码，如"600519"
+        indicator: 报告期口径，默认"按报告期"，可选"一季度"/"二季度"/"三季度"/"四季度"/"按年度"
 
-    返回：最近若干期的营收、净利润、ROE、毛利率等。
+    返回：宽表 DataFrame，一行一个报告期。列含营业总收入/归属净利润/净资产收益率/销售毛利率等
+    基础值，以及每个指标对应的 {指标}_yoy（同比%）、{指标}_mom（环比%）、{指标}_single_yoy（单季同比%）。
     缓存 1h。
     """
-    cache_key = f"financial:{symbol}"
+    cache_key = f"financial:{symbol}:{indicator}"
     cached = _cache.get(cache_key)
     if cached is not None:
         return cached
@@ -240,30 +314,35 @@ def get_financial_abstract(symbol: str) -> pd.DataFrame:
     _single_limiter.wait()
     _log(f"正在获取财报数据: {symbol}")
 
-    df = _retry(lambda: ak.stock_financial_abstract_ths(symbol=symbol))
+    raw = _retry(lambda: ak.stock_financial_abstract_new_ths(symbol=symbol, indicator=indicator))
+    df = _pivot_ths_financial_abstract(raw)
 
     _cache.set(cache_key, df, 3600)
     return df
 
 
-def get_financial_indicators(symbol: str) -> pd.DataFrame:
+def get_financial_indicators(symbol: str, indicator: str = "按报告期") -> pd.DataFrame:
     """
-    获取个股财务分析指标（ROE、毛利率、净利率等时间序列）。
+    获取个股财务分析指标（东方财富主要指标，按报告期/单季度时间序列）。
 
     Args:
-        symbol: 股票代码
+        symbol: 股票代码裸码，如"600519"（内部自动转东财 SECUCODE 格式，如"600519.SH"）
+        indicator: "按报告期"（默认，累计值）或"按单季度"
 
+    返回 AKShare 原始列名（141+ 字段，含 EPSJB/TOTALOPERATEREVE/ROEJQ 等东财指标代码），
+    暂未做中文归一化——该接口当前无消费方，留待后续 step 按需裁剪/映射字段。
     缓存 1h。
     """
-    cache_key = f"fin_indicators:{symbol}"
+    secucode = _symbol_to_secucode(symbol)
+    cache_key = f"fin_indicators:{secucode}:{indicator}"
     cached = _cache.get(cache_key)
     if cached is not None:
         return cached
 
     _single_limiter.wait()
-    _log(f"正在获取财务指标: {symbol}")
+    _log(f"正在获取财务指标: {secucode}")
 
-    df = _retry(lambda: ak.stock_financial_analysis_indicator(symbol=symbol))
+    df = _retry(lambda: ak.stock_financial_analysis_indicator_em(symbol=secucode, indicator=indicator))
 
     _cache.set(cache_key, df, 3600)
     return df

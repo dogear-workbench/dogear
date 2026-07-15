@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 升级已弃用接口
-status: pending
+status: done
 ---
 
 ## 目标
@@ -30,9 +30,23 @@ status: pending
 ## 实施回填
 
 ### 实际改动
-（执行后填：差异、文件清单）
+- `python/utils/akshare_client.py`：
+  - 新增 `_THS_ABSTRACT_METRIC_MAP`（21 个指标 metric_name → 中文名）+ `_THS_ABSTRACT_DROP_METRICS`（丢 3 个冗余 `*_yoy_growth_ratio`）
+  - 新增 `_pivot_ths_financial_abstract()` 长表转宽表 + `_symbol_to_secucode()` 裸码转 SECUCODE
+  - `get_financial_abstract(symbol, indicator="按报告期")` 改调 `stock_financial_abstract_new_ths`，返回宽表附 `_yoy`/`_mom`/`_single_yoy` 衍生列（原始小数 ×100 转百分比）
+  - `get_financial_indicators(symbol, indicator="按报告期")` 改调 `stock_financial_analysis_indicator_em`
+  - 缓存 key 追加 `indicator` 维度，TTL 保持 3600s
+- `python/core/financials.py`：`column_map` 保留所有旧英文字段名（revenue/net_profit/roe/gross_margin/…），新增 yoy/mom/single_yoy 系列映射；删除新 API 不产出的旧同花顺容错别名（`营业收入`/`每股收益`/`毛利率`/`经营现金流`）
+- `python/core/screener.py`：**未改动**（核实其 PE/PB 筛选字段全部来自 `get_all_a_stocks`，与本次升级的两个函数无交集）
+- `electron/main/agents/tools/stock-analysis-tools.ts:389-392`：GetFinancials 描述补充新增字段说明与新接口名
+- 4 文件 diff：+113 -29，含 step1.md 本身
+
+### 与计划的一处偏差
+- Plan 里 `get_financial_indicators` 示例的 symbol 格式为前缀式 `"SH600519"`，实测该接口只吃**后缀 SECUCODE 格式** `"600519.SH"`，前缀式会返回空数据。已按实测的 `_symbol_to_secucode()`（沪 6→.SH，深 0/3→.SZ，北 8/4→.BJ）实现。
+- `get_financial_indicators` 目前全代码库无消费方，只做了接口升级 + symbol 格式修正，返回列仍是东财原始 141 列英文缩写（`EPSJB`/`TOTALOPERATEREVE`/`ROEJQ` 等），未做中文归一化——留待未来有消费方的 step 按需处理，避免为不存在的调用方过度设计。
 
 ### 给下一步的接力棒
 - `get_financial_abstract` 新签名：`def get_financial_abstract(symbol: str, indicator: str = "按报告期") -> pd.DataFrame`
-- `get_financial_indicators` 新签名：`def get_financial_indicators(symbol: str, indicator: str = "按报告期") -> pd.DataFrame`，symbol 是裸代码（内部转 SH/SZ/BJ 前缀）
+- `get_financial_indicators` 新签名：`def get_financial_indicators(symbol: str, indicator: str = "按报告期") -> pd.DataFrame`，symbol 是裸代码（内部转 `600519.SH` 这种 SECUCODE 格式，**不是** `SH600519` 前缀）
+- 已存在的复用辅助：`_symbol_to_secucode()`（裸码→SECUCODE）可被后续需要东财 SECUCODE 格式的接口直接复用
 - 给 Step 5 的提示：abstract 升级后字段仍然只是摘要，三大报表（200+ 字段）走 step 5 新建的 statements.py，不要混用

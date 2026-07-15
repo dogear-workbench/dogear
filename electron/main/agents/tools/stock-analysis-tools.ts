@@ -387,9 +387,10 @@ export function createStockAnalysisTools() {
       // ========================================
       tool(
         'GetFinancials',
-        '获取个股财报数据（营收、净利润、ROE、毛利率等）。\n' +
-        '数据来源: 同花顺财报摘要，通过 AKShare 获取。\n' +
-        '使用场景: 用户想了解某只股票的基本面数据、财务健康状况。',
+        '获取个股财报数据（营收、净利润、ROE、毛利率、净利率、资产负债率、每股经营现金流等，' +
+        '每项指标均附带 _yoy 同比%/_mom 环比%/_single_yoy 单季同比% 三个衍生字段）。\n' +
+        '数据来源: 同花顺财报摘要新版接口（stock_financial_abstract_new_ths），通过 AKShare 获取。\n' +
+        '使用场景: 用户想了解某只股票的基本面数据、财务健康状况、同比环比变化趋势。',
         {
           market: z.number().describe('市场代码（1=沪市 0=深市）'),
           code: z.string().describe('股票代码（如"600519"）'),

@@ -65,6 +65,7 @@ def get_financials(symbol: str, periods: int = 4) -> dict:
                     "report_date": "2025-12-31",
                     "revenue": 150560000000,
                     "revenue_yoy": 15.2,
+                    "revenue_mom": 3.4,
                     "net_profit": 74730000000,
                     "net_profit_yoy": 12.8,
                     "roe": 32.5,
@@ -88,32 +89,35 @@ def get_financials(symbol: str, periods: int = 4) -> dict:
     if df is None or df.empty:
         return {"symbol": symbol, "periods": []}
 
-    # AKShare 返回的列名可能因版本不同而变化，尝试常见的列名映射
-    # 注意：同一个 en_name 可能对应多个中文列名（优先级从上到下，后出现的会覆盖前面的）
+    # 列名来自 akshare_client.get_financial_abstract 归一化后的宽表
+    # （stock_financial_abstract_new_ths 升级版，每个指标额外带 _yoy/_mom/_single_yoy 衍生列）
     column_map = {
         '报告期': 'report_date',
         '营业总收入': 'revenue',
-        '营业收入': 'revenue',
-        '净利润': 'net_profit',
+        '营业总收入_yoy': 'revenue_yoy',
+        '营业总收入_mom': 'revenue_mom',
+        '营业总收入_single_yoy': 'revenue_single_yoy',
         '归属净利润': 'net_profit',
+        '归属净利润_yoy': 'net_profit_yoy',
+        '归属净利润_mom': 'net_profit_mom',
+        '归属净利润_single_yoy': 'net_profit_single_yoy',
         '扣非净利润': 'net_profit_deducted',
+        '扣非净利润_yoy': 'net_profit_deducted_yoy',
         '基本每股收益': 'eps',
-        '每股收益': 'eps',
+        '基本每股收益_yoy': 'eps_yoy',
         '每股净资产': 'bvps',
         '净资产收益率': 'roe',
+        '净资产收益率_yoy': 'roe_yoy',
         '净资产收益率-摊薄': 'roe_diluted',
+        '净资产收益率-摊薄_yoy': 'roe_diluted_yoy',
         '销售毛利率': 'gross_margin',
-        '毛利率': 'gross_margin',
+        '销售毛利率_yoy': 'gross_margin_yoy',
         '销售净利率': 'net_margin',
+        '销售净利率_yoy': 'net_margin_yoy',
         '资产负债率': 'debt_ratio',
-        '营业总收入同比增长率': 'revenue_yoy',
-        '营业总收入同比增长': 'revenue_yoy',
-        '营收同比': 'revenue_yoy',
-        '净利润同比增长率': 'net_profit_yoy',
-        '净利润同比增长': 'net_profit_yoy',
-        '净利润同比': 'net_profit_yoy',
+        '资产负债率_yoy': 'debt_ratio_yoy',
         '每股经营现金流': 'operating_cash_flow_per_share',
-        '经营现金流': 'operating_cash_flow',
+        '每股经营现金流_yoy': 'operating_cash_flow_per_share_yoy',
     }
 
     # 取最近 N 期（数据按时间正序排列，tail 取最新，倒序使最新在前）
