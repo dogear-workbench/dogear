@@ -1,7 +1,7 @@
 ---
 step: 2
 title: TS 工具层适配
-status: pending
+status: done
 ---
 
 ## 目标
@@ -70,14 +70,49 @@ status: pending
 - **`_source` 缺失时的行为**：如果 `_source` 是 undefined（比如 cache 命中丢了 attrs），假设是主源，不显示 banner（宁可漏报也不误报——误报会误导用户认为主源挂了）
 - **markdown 顶部 banner 的位置**：放在 markdown 正文最上方 + 一个空行分隔，agent 引用工具输出到用户回复里时容易带上；不要放在最下方（易被忽略）
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
 
-（与计划差异、改动文件清单、python-bridge 的具体改动方式）
+- `python/core/screener.py` — `screen_stocks()` return dict 顶层加 `"_source": df.attrs.get("_source")`（1 行）
+- `electron/main/services/stock/python-bridge.ts`
+  - 新增 `DataSourceExhaustedError extends Error`，带 `attempts: [string, string][]` 字段
+  - `PythonResponse.error.code` 类型扩为 `number | string`，`error.data` 扩为 `{ attempts?: [string, string][] }`
+  - `handleResponse()` 在有 error 时先判 `code === 'DATA_SOURCE_EXHAUSTED'`，命中就 reject `DataSourceExhaustedError`（带 attempts），否则走原有 `new Error(message)` 兜底
+- `electron/main/agents/tools/stock-analysis-tools.ts`
+  - 新增 `formatSourceBanner(source): string` 纯函数，放文件顶部辅助区
+  - `ScreenStocks` 工具：正常路径读 `result._source` 拼 banner 到输出最前面（"无匹配"和"有结果"两个分支都拼）；catch 块新增 `error instanceof DataSourceExhaustedError` 分支，返回 `isError: true` + 明确文案
 
-### 给下一步的接力棒
+### 与计划的差异 / 现场决策
 
-- `DataSourceExhaustedError` 的抛出位置和文案格式（供 Step 3 SKILL.md 提示词描述"agent 遇到这个错误该怎么办"）
-- `_source` banner 在工具 markdown 输出里的具体文本模板（供 Step 3 SKILL.md 举例）
-- ScreenStocks 工具签名是否有变化（参数名/返回结构）
+- 无实质差异，完全按计划实施
+- `formatSourceBanner` 末尾自带 `\n\n`（含空行分隔），调用处直接 `output = banner + 正文` 即可，无需额外空行处理
+
+### 验证
+
+- `bun run lint` 通过（0 errors，83 个 pre-existing `no-explicit-any` warning 与本次无关）
+- `bun run build:electron` 通过（tsc 无输出即成功）
+- 端到端场景验证（临时改 raise 触发降级）**未做**——留给 Step 3 端到端 SOP 验证一次性覆盖
+
+### 给下一步的接力棒（供 Step 3 SKILL.md）
+
+- **异常抛出位置**：`python-bridge.ts:handleResponse` → 传播到 `ScreenStocks` 工具 → 返回 `isError: true` + 文案：
+  ```
+  候选池数据当前不可用（东财+新浪都不通，通常几小时后恢复）。
+
+  尝试记录:
+  - eastmoney: <错误摘要>
+  - sina: <错误摘要>
+  ```
+  agent 看到这个 `isError` 时应**明确中止 SOP** 并如实告诉用户"数据源全挂了"，不要瞎编数据继续。
+
+- **_source banner 文本模板**（Step 3 SKILL.md 举例用）：
+  ```
+  > ⚠️ 数据源：sina（东财不可达）
+  > 备源字段可能不全（如 PE / 流通市值缺失），本次未按对应条件筛
+  ```
+  banner 出现在工具输出的**最上方**（前 3 行）；`_source` 为空或 `'eastmoney'` 时不显示。
+
+- **ScreenStocks 工具签名未变**（`conditions` + `limit`），只是返回内容顶部可能多一个 banner 段，SOP 提示词不需要为参数变化调整。
+
+- **其他工具未动**：CalcIndicators / DetectSignals / GetFinancials 等仍是「单只单维度挂了直接返回原始 error」，Step 3 提示词需要告诉 agent "深挖细节挂了要留白 + 统一列【数据缺口】表"（对应 plan 的三级错误处理约定）。

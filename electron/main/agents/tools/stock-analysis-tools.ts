@@ -15,7 +15,7 @@ import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { stockService } from '../../services/stock/stock-service.js';
 import { stockDataService } from '../../services/stock/stock-data-service.js';
-import { pythonBridge } from '../../services/stock/python-bridge.js';
+import { pythonBridge, DataSourceExhaustedError } from '../../services/stock/python-bridge.js';
 import { registerTools } from './tool-registry.js';
 
 // 注册工具元数据到 registry
@@ -51,6 +51,13 @@ const MAX_KLINE_LIMIT = 500;
 function safe(val: number | undefined | null, digits = 2): string {
   if (val == null || isNaN(val)) return '-';
   return val.toFixed(digits);
+}
+
+/** 备源降级 banner；_source 为空或本就是主源（eastmoney）时不显示 */
+function formatSourceBanner(source: string | null | undefined): string {
+  if (!source || source === 'eastmoney') return '';
+  return `> ⚠️ 数据源：${source}（东财不可达）\n` +
+    '> 备源字段可能不全（如 PE / 流通市值缺失），本次未按对应条件筛\n\n';
 }
 
 /** 获取数组最后一个非 null 值 */
@@ -317,16 +324,19 @@ export function createStockAnalysisTools() {
                 industry?: string; turnover_rate?: number;
                 technical_data?: Record<string, number>;
               }>;
+              _source?: string | null;
             }>('screen_stocks', {
               conditions: args.conditions,
               limit: args.limit,
             }, 120_000);
 
+            const banner = formatSourceBanner(result._source);
+
             if (result.stocks.length === 0) {
               return {
                 content: [{
                   type: 'text' as const,
-                  text: `筛选完成：扫描 ${result.total_scanned} 只股票，无匹配结果。\n请尝试放宽条件。`,
+                  text: `${banner}筛选完成：扫描 ${result.total_scanned} 只股票，无匹配结果。\n请尝试放宽条件。`,
                 }],
               };
             }
@@ -337,7 +347,8 @@ export function createStockAnalysisTools() {
               `${s.code} | ${s.name} | ${safe(s.price)} | ${safe(s.change_percent)}% | ${safe(s.pe)} | ${safe(s.pb)} | ${safe(s.market_cap)} | ${s.industry || '-'}`
             );
 
-            let output = `筛选结果（扫描 ${result.total_scanned} 只，匹配 ${result.total_matched} 只，返回 ${result.returned} 只）：\n`;
+            let output = banner;
+            output += `筛选结果（扫描 ${result.total_scanned} 只，匹配 ${result.total_matched} 只，返回 ${result.returned} 只）：\n`;
             output += `${header}\n${separator}\n${rows.join('\n')}`;
 
             const withTech = result.stocks.filter(s => s.technical_data);
@@ -353,6 +364,16 @@ export function createStockAnalysisTools() {
               content: [{ type: 'text' as const, text: output }],
             };
           } catch (error) {
+            if (error instanceof DataSourceExhaustedError) {
+              return {
+                isError: true,
+                content: [{
+                  type: 'text' as const,
+                  text: '候选池数据当前不可用（东财+新浪都不通，通常几小时后恢复）。\n\n尝试记录:\n' +
+                    error.attempts.map(([n, m]) => `- ${n}: ${m}`).join('\n'),
+                }],
+              };
+            }
             return {
               content: [{ type: 'text' as const, text: `筛选失败: ${error}` }],
               isError: true,

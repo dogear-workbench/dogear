@@ -37,8 +37,19 @@ interface PythonRequest {
 interface PythonResponse {
   id: string;
   result?: unknown;
-  error?: { code: number; message: string };
+  error?: { code: number | string; message: string; data?: { attempts?: [string, string][] } };
   progress?: { current: number; total: number; message: string };
+}
+
+/** 双源数据源全部失败（一级候选池根基场景），携带各源失败详情 */
+export class DataSourceExhaustedError extends Error {
+  attempts: [string, string][];
+
+  constructor(message: string, attempts: [string, string][]) {
+    super(message);
+    this.name = 'DataSourceExhaustedError';
+    this.attempts = attempts;
+  }
 }
 
 /** 挂起的请求 */
@@ -426,7 +437,11 @@ class PythonBridge {
     clearTimeout(pending.timer);
 
     if (response.error) {
-      pending.reject(new Error(response.error.message));
+      if (response.error.code === 'DATA_SOURCE_EXHAUSTED') {
+        pending.reject(new DataSourceExhaustedError(response.error.message, response.error.data?.attempts ?? []));
+      } else {
+        pending.reject(new Error(response.error.message));
+      }
     } else {
       pending.resolve(response.result);
     }

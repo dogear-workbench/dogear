@@ -290,4 +290,5 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
         "total_matched": total_matched,
         "returned": len(stocks),
         "stocks": stocks,
+        "_source": df.attrs.get("_source"),
     }
