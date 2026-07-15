@@ -1,7 +1,7 @@
 ---
 step: 3
 title: SKILL.md + 端到端验证
-status: pending
+status: done
 ---
 
 ## 目标
@@ -69,19 +69,39 @@ status: pending
 - **观察 SOP 是姊妹 skill，不在本次范围**——如果 agent 走完 Step 3 后用户问"接下来每天怎么跟踪"，agent 应回答"观察工作流暂未实现，本次报告的股票代码你可以自己加到自选股手动跟踪"
 - **skill 触发精度**：如果本 skill 描述写太宽（比如"股票"就触发），会污染其他股票问答；写太窄又漏触发。参考同 repo 已有 skill 的 description 写法，控制在"明确的选股/圈股意图"
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
 
-（SKILL.md 最终结构、跑端到端时发现的问题）
+- 新增 `.claude/skills/stock-picking/SKILL.md`，结构：
+  - `frontmatter description`——精准触发"选股 / 圈股 / 从 X 板块选几只"意图，明确排除"查单只 / 深挖已知代码 / 大盘问答"
+  - **3 条铁律**：缺数据留白 / 财报串行调 `GetFinancials` / `ScreenStocks` 全挂时直接中止不给假逃生舱
+  - **3 步 SOP**：追问硬软条件 → 一次跑完轻量圈选（ScreenStocks + 串行 GetFinancials + DetectSignals + ListAnnouncements）→ 用户挑重点后深挖出报告
+  - **数据源分级兜底表**（4 行）：对应 plan.md 里的三级失败处理
+  - **报告结构模板**：每只按「推/观望/不推 + 技术面 + 基本面 + 催化剂」，结尾必列【数据缺口】表
+  - **1 个示例对话**：科技板块 → 软件开发 → 3 只候选 → 报告，展示 3 步节奏
+
+### 与计划的差异 / 现场决策
+
+- **`ListIndustries` 备源信号缺失（Step 2 review 遗留观察点）**：SKILL.md 里让 agent「不确定行业名先调 `ListIndustries` 关键词过滤」，字段全 null 的兜底靠 SKILL 里的"简表顶部透传 banner + 数据缺口表"覆盖。**未改代码**（对齐 Step 2 收尾时选的 A 方向）。
+- **候选池上限**：设计文档未决问题里的"15-25 只"直接落成 SKILL.md 里的 `limit=25`，用完一次再调。
+- **用户不指定行业**：SKILL.md 明写"必须追问，不默认全市场跑"，对齐 plan.md 决策。
 
 ### 端到端验证结果
 
-- 正常路径：（agent 是否按 SOP 走 / 报告质量 / 耗时）
-- 降级路径：（agent 是否如实告知 / 有没有瞎造数据）
-- 全挂路径：（agent 是否干净中止 / 有没有给假逃生舱）
+**由用户手动执行**（主会话跑不了 GUI 交互）。checklist（step3.md 计划改动段列出）：
+- [ ] `bun run dev` 起 dogear
+- [ ] agent-chat 发起「从 X 板块选几只有近期利好的股票」，观察 3 步 SOP 是否走通、中间是否在 Step 1 / Step 2 两处停下等用户
+- [ ] 临时把 `python/utils/akshare_client.py:get_all_a_stocks` 主源 lambda 改成 raise，观察 agent 是否透传 sina banner、如实说"未按 PE 筛"、不瞎猜 PE 数值
+- [ ] 再 patch 备源也 raise，观察 agent 是否直接中止告诉用户"数据源不可用稍后重试"、不给假逃生舱
+- [ ] 验证完把临时 raise 改回来
+
+跑完发现问题（触发 / 报告结构 / 降级文案）→ 回本文档补写迭代记录，或直接改 SKILL.md 再 commit。
 
 ### 后续 TODO
 
-- 未解决的未决问题（对齐 design 文档的 4 个未决问题清单）
-- 用完一次发现的迭代方向（哪些参数需要调、哪些描述需要改）
+- **未决问题遗留**（跟 design 文档对齐）：
+  - 候选池 15-25 只的上限值，用完一次后按体感调
+  - 雪球 xq_a_token 过期问题（`stock_individual_basic_info_xq` / `stock_individual_spot_xq`），跟本 skill 无关，另开任务处理
+  - `stock_board_industry_cons_ths` 在当前 akshare 版本被移除——本次不涉及，走同花顺备源要拿行业成分股时再处理
+- **观察 / 跟踪 SOP 是姊妹 skill**，SKILL.md 里已明说本次不实现，用户问时按"跟踪工作流暂未实现"回答；等圈选 SOP 跑通几轮后单独规划

@@ -16,7 +16,7 @@
 
 - [x] [Step 1: Python 层双源降级](./step1-python-fallback.md) — 通用 helper + 两个函数改造 + main.py 结构化 error
 - [x] [Step 2: TS 工具层适配](./step2-ts-tool-adapt.md) — ScreenStocks 捕获降级信号 + `_source` 传递到 markdown
-- [ ] [Step 3: SKILL.md + 端到端验证](./step3-skill-e2e.md) — 编写 skill 提示词 + 手动跑一次完整 SOP
+- [x] [Step 3: SKILL.md + 端到端验证](./step3-skill-e2e.md) — 编写 skill 提示词 + 手动跑一次完整 SOP（端到端由用户手动执行）
 
 ## 全局决策
 
