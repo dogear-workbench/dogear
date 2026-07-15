@@ -13,6 +13,7 @@ Dogear Python 计算层 — JSON-RPC 守护进程
 import sys
 import json
 import traceback
+import pandas as pd
 
 
 # 将 stderr 用于日志（不干扰 stdout 的 JSON 通信）
@@ -31,6 +32,7 @@ from core.indicators import calculate
 from core.financials import get_financials, compare_industry
 from core.screener import screen_stocks
 from core.signals import detect_signals
+from utils.akshare_client import get_industry_list
 from core.formula_engine import parse_and_eval, validate_formula, FormulaContext
 from core.backtest import simple_backtest
 from announcements.parser import parse_pdf
@@ -208,6 +210,62 @@ def handle_simple_backtest(request_id: str, params: dict):
     send_response(request_id, result)
 
 
+def handle_list_industries(request_id: str, params: dict):
+    """
+    列出东方财富行业板块（可选按关键词子串过滤）。
+
+    params:
+      keyword: str | None — 板块名称子串过滤（大小写不敏感）
+      limit: int (default 200) — 返回条数上限，防止一次塞太多进上下文
+    """
+    keyword = (params.get("keyword") or "").strip()
+    limit = int(params.get("limit", 200))
+
+    df = get_industry_list()
+
+    # 字段容错读取（东财返回列名稳定，但版本升级时防漂移）
+    name_col = next((c for c in df.columns if c in ('板块名称', '名称')), None)
+    if name_col is None:
+        send_error(request_id, -1, f"行业列表返回缺少板块名称列，实际列: {list(df.columns)}")
+        return
+
+    industries = []
+    for _, row in df.iterrows():
+        name = str(row[name_col])
+        if keyword and keyword.lower() not in name.lower():
+            continue
+
+        def _num(col):
+            if col not in df.columns:
+                return None
+            try:
+                v = row[col]
+                return None if pd.isna(v) else float(v)
+            except Exception:
+                return None
+
+        industries.append({
+            "name": name,
+            "change_percent": _num('涨跌幅'),
+            "market_cap": _num('总市值'),
+            "turnover_rate": _num('换手率'),
+            "up_count": int(_num('上涨家数') or 0) or None,
+            "down_count": int(_num('下跌家数') or 0) or None,
+        })
+
+    total = len(industries)
+    truncated = total > limit
+    if truncated:
+        industries = industries[:limit]
+
+    send_response(request_id, {
+        "total": total,
+        "returned": len(industries),
+        "truncated": truncated,
+        "industries": industries,
+    })
+
+
 def handle_parse_announcement_pdf(request_id: str, params: dict):
     """解析公告 PDF 为 markdown"""
     pdf_path = params.get("path")
@@ -231,6 +289,7 @@ METHOD_HANDLERS = {
     "eval_formula": handle_eval_formula,
     "validate_formula": handle_validate_formula,
     "simple_backtest": handle_simple_backtest,
+    "list_industries": handle_list_industries,
     "run_article_script": handle_run_article_script,
     "parse_announcement_pdf": handle_parse_announcement_pdf,
 }

@@ -254,9 +254,10 @@
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置工具 + 自定义工具注册，IPC 查询供设置页/代理编辑页动态加载）
 - `tools/article-tools.ts` — 文章阅读工具（ReadArticle / ListArticles）
 - `tools/stock-tools.ts` — 自选股工具（SearchStock / GetStockQuote / GetKLineData / GetTimeline / GetWatchlist / ModifyWatchlist）
-- `tools/stock-analysis-tools.ts` — 股票分析工具（新增，7个）
+- `tools/stock-analysis-tools.ts` — 股票分析工具（8个）
   - CalcIndicators：计算技术指标（MA/EMA/MACD/RSI/KDJ/BOLL/ATR 等）
-  - ScreenStocks：全市场条件筛选（基本面/技术指标/公式）
+  - ScreenStocks：全市场条件筛选（基本面/技术指标/公式，industry 需精确等值匹配东财板块名）
+  - ListIndustries：列东方财富行业板块（keyword 过滤，返回 name 可直接喂给 ScreenStocks 的 industry）
   - GetFinancials：财务数据查询（营收/净利润/ROE 等）
   - CompareIndustry：行业内对比分析
   - DetectSignals：技术信号检测（MACD金叉/RSI超卖 等）

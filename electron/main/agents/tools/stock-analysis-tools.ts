@@ -22,6 +22,7 @@ import { registerTools } from './tool-registry.js';
 registerTools([
   { name: 'CalcIndicators', description: '计算股票技术指标（MACD/KDJ/RSI/BOLL/MA 等）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'ScreenStocks', description: '全市场条件筛选股票', server: 'dogear-stock-analysis', category: 'stock' },
+  { name: 'ListIndustries', description: '列出东方财富行业板块（可关键词过滤，返回可直接喂给 ScreenStocks 的行业名）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'GetFinancials', description: '获取个股财报数据', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'CompareIndustry', description: '个股行业对比分析', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'DetectSignals', description: '检测股票技术信号（MACD金叉/KDJ超卖/RSI超买等）', server: 'dogear-stock-analysis', category: 'stock' },
@@ -281,7 +282,7 @@ export function createStockAnalysisTools() {
         '注意: 技术指标筛选需要逐股获取K线数据，候选超过100只时会自动截断。',
         {
           conditions: z.object({
-            industry: z.string().optional().describe('行业名称（如"食品饮料"、"银行"）'),
+            industry: z.string().optional().describe('行业名称（如"食品饮料"、"银行"），必须精确等值匹配东方财富板块名；不确定名称时先调 ListIndustries 查询'),
             price_min: z.number().optional().describe('最低价格'),
             price_max: z.number().optional().describe('最高价格'),
             pe_min: z.number().optional().describe('最低市盈率'),
@@ -729,6 +730,81 @@ export function createStockAnalysisTools() {
           } catch (error) {
             return {
               content: [{ type: 'text' as const, text: `回测失败: ${error}` }],
+              isError: true,
+            };
+          }
+        }
+      ),
+
+      // ========================================
+      // 工具: 列出行业板块
+      // ========================================
+      tool(
+        'ListIndustries',
+        '列出东方财富的所有行业板块，用来查询"科技"、"消费"这类宽概念对应哪些细分板块名。\n' +
+        '返回的每个板块 name 字段可以直接作为 ScreenStocks 的 industry 参数值（精确等值匹配）。\n' +
+        '使用场景：\n' +
+        '- 用户提到宽泛领域（"科技股"、"新能源"），先调本工具找细分板块名再筛选。\n' +
+        '- 不确定某个行业名是否存在或叫什么（如"半导体"vs"电子元件"），先列一下再传给 ScreenStocks。\n' +
+        '- 想看某个板块的整体涨跌幅、市值规模、上涨/下跌家数。\n' +
+        '参数：\n' +
+        '- keyword：可选，板块名子串过滤（大小写不敏感）。不传则返回全部（受 limit 截断）。\n' +
+        '- limit：返回条数上限，默认 60，最多 200。带 keyword 时通常十几条就够，不带时可能有 90+ 板块，建议配合 keyword 使用。\n' +
+        '返回字段：name（板块名）、change_percent（板块涨跌幅%）、market_cap（板块总市值元）、turnover_rate（换手率%）、up_count/down_count（上涨/下跌家数）。',
+        {
+          keyword: z.string().optional().describe('板块名子串过滤，如"半导体"、"电子"、"银行"；不传则返回全部'),
+          limit: z.number().min(1).max(200).default(60).describe('返回条数上限，默认 60'),
+        },
+        async (args) => {
+          try {
+            const result = await pythonBridge.call<{
+              total: number;
+              returned: number;
+              truncated: boolean;
+              industries: Array<{
+                name: string;
+                change_percent: number | null;
+                market_cap: number | null;
+                turnover_rate: number | null;
+                up_count: number | null;
+                down_count: number | null;
+              }>;
+            }>(
+              'list_industries',
+              { keyword: args.keyword ?? '', limit: args.limit },
+              30_000,
+            );
+
+            if (result.industries.length === 0) {
+              const hint = args.keyword
+                ? `无匹配"${args.keyword}"的板块。尝试更短的关键词或不带 keyword 列出全部。`
+                : '未获取到行业板块列表。';
+              return { content: [{ type: 'text' as const, text: hint }] };
+            }
+
+            const header = '板块名 | 涨跌幅 | 总市值(亿) | 换手率 | 上涨/下跌';
+            const separator = '---|---|---|---|---';
+            const rows = result.industries.map((it) => {
+              const capYi = it.market_cap != null ? (it.market_cap / 1e8).toFixed(0) : '-';
+              const up = it.up_count ?? '-';
+              const down = it.down_count ?? '-';
+              return `${it.name} | ${safe(it.change_percent)}% | ${capYi} | ${safe(it.turnover_rate)}% | ${up}/${down}`;
+            });
+
+            const title = args.keyword
+              ? `匹配"${args.keyword}"的行业板块（共 ${result.total} 个，返回 ${result.returned}）`
+              : `东方财富行业板块（共 ${result.total} 个，返回 ${result.returned}）`;
+
+            let output = `${title}：\n${header}\n${separator}\n${rows.join('\n')}`;
+            if (result.truncated) {
+              output += `\n\n(已按 limit=${args.limit} 截断，如需更多请调大 limit 或增加 keyword)`;
+            }
+            output += '\n\n上面 name 列的值可直接作为 ScreenStocks 的 industry 参数。';
+
+            return { content: [{ type: 'text' as const, text: output }] };
+          } catch (error) {
+            return {
+              content: [{ type: 'text' as const, text: `列出行业板块失败: ${error}` }],
               isError: true,
             };
           }
