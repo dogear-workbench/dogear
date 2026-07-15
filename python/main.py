@@ -32,7 +32,7 @@ from core.indicators import calculate
 from core.financials import get_financials, compare_industry
 from core.screener import screen_stocks
 from core.signals import detect_signals
-from utils.akshare_client import get_industry_list
+from utils.akshare_client import get_industry_list, DataSourceExhausted
 from core.formula_engine import parse_and_eval, validate_formula, FormulaContext
 from core.backtest import simple_backtest
 from announcements.parser import parse_pdf
@@ -279,6 +279,23 @@ def handle_parse_announcement_pdf(request_id: str, params: dict):
     send_response(request_id, {"markdown": markdown})
 
 
+def send_data_source_exhausted_error(request_id: str, exc: DataSourceExhausted):
+    """
+    数据源双源全挂的结构化 error 响应，比 send_error 多一个 data.attempts 字段。
+    protocol.py 的 send_error 不支持 data 参数，这里直接组装 JSON。
+    """
+    msg = json.dumps({
+        "id": request_id,
+        "error": {
+            "code": "DATA_SOURCE_EXHAUSTED",
+            "message": str(exc),
+            "data": {"attempts": exc.errors},
+        },
+    }, ensure_ascii=False)
+    sys.stdout.write(msg + "\n")
+    sys.stdout.flush()
+
+
 METHOD_HANDLERS = {
     "ping": handle_ping,
     "calc_indicators": handle_calc_indicators,
@@ -325,6 +342,12 @@ def main():
 
         except json.JSONDecodeError as e:
             log(f"JSON 解析失败: {e}")
+        except DataSourceExhausted as e:
+            log(f"数据源全部降级失败: {e}")
+            try:
+                send_data_source_exhausted_error(request_id, e)
+            except Exception:
+                pass
         except Exception as e:
             log(f"处理请求异常: {traceback.format_exc()}")
             try:

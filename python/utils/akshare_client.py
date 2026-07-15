@@ -63,6 +63,89 @@ def _retry(fn, max_retries=3, base_delay=1.0):
 
 
 # ============================================================
+# 双源降级
+# ============================================================
+
+class DataSourceExhausted(Exception):
+    """一级接口的所有候选数据源均调用失败。"""
+
+    def __init__(self, errors: list[tuple[str, str]]):
+        self.errors = errors
+        summary = "; ".join(f"{name}: {msg}" for name, msg in errors)
+        super().__init__(f"数据源全部失败（{len(errors)} 个）: {summary}")
+
+    def __str__(self):
+        return self.args[0]
+
+
+def _try_sources(*sources: tuple[str, "callable[[], pd.DataFrame]"]) -> pd.DataFrame:
+    """
+    按序尝试多个数据源，成功即返回 df 并标记 df.attrs['_source'] = name。
+    全部失败则抛 DataSourceExhausted，不重试等待（fallback 本身就是唯一的容错手段）。
+
+    Args:
+        sources: [(name, fn), ...]，fn 无参、返回 pd.DataFrame
+    """
+    errors: list[tuple[str, str]] = []
+    for name, fn in sources:
+        try:
+            df = fn()
+            df.attrs["_source"] = name
+            return df
+        except Exception as e:
+            msg = str(e)[:100]
+            errors.append((name, msg))
+            _log(f"数据源 {name} 失败，尝试下一个候选源: {msg}")
+    raise DataSourceExhausted(errors)
+
+
+# 新浪 stock_zh_a_spot 与东财 stock_zh_a_spot_em 的同名列映射（值相同，显式列出便于核对）
+_SINA_TO_EM_COLUMNS = [
+    "代码", "名称", "最新价", "涨跌额", "涨跌幅",
+    "昨收", "今开", "最高", "最低", "成交量", "成交额",
+]
+
+# 东财独有、新浪无对应字段的列，统一补 NaN 占位（保持 df.columns 形状一致）
+_EM_ONLY_COLUMNS = [
+    "序号", "振幅", "量比", "换手率", "市盈率-动态", "市净率",
+    "总市值", "流通市值", "涨速", "5分钟涨跌", "60日涨跌幅", "年初至今涨跌幅",
+]
+
+
+def _normalize_from_sina(df: pd.DataFrame) -> pd.DataFrame:
+    """把新浪 stock_zh_a_spot 归一化为东财 stock_zh_a_spot_em 的列结构。"""
+    out = df[[c for c in _SINA_TO_EM_COLUMNS if c in df.columns]].copy()
+    out["代码"] = out["代码"].str.replace(r"^(sh|sz|bj)", "", regex=True)
+    for col in _EM_ONLY_COLUMNS:
+        out[col] = pd.NA
+    return out
+
+
+# 同花顺 stock_board_industry_summary_ths 与东财 stock_board_industry_name_em 的列名映射
+_THS_TO_EM_INDUSTRY_COLUMNS = {
+    "序号": "排名",
+    "板块": "板块名称",
+    "涨跌幅": "涨跌幅",
+    "上涨家数": "上涨家数",
+    "下跌家数": "下跌家数",
+    "领涨股": "领涨股票",
+    "领涨股-涨跌幅": "领涨股票-涨跌幅",
+}
+
+# 东财独有、同花顺无对应字段的列，统一补 NaN 占位
+_EM_ONLY_INDUSTRY_COLUMNS = ["板块代码", "最新价", "涨跌额", "总市值", "换手率"]
+
+
+def _normalize_from_ths_industry(df: pd.DataFrame) -> pd.DataFrame:
+    """把同花顺 stock_board_industry_summary_ths 归一化为东财行业板块列表的列结构。"""
+    cols = {cn: em for cn, em in _THS_TO_EM_INDUSTRY_COLUMNS.items() if cn in df.columns}
+    out = df[list(cols.keys())].rename(columns=cols).copy()
+    for col in _EM_ONLY_INDUSTRY_COLUMNS:
+        out[col] = pd.NA
+    return out
+
+
+# ============================================================
 # 公开 API
 # ============================================================
 
@@ -71,7 +154,8 @@ def get_all_a_stocks() -> pd.DataFrame:
     获取全 A 股实时行情快照。
 
     返回 DataFrame 包含：代码、名称、现价、涨跌幅、PE、PB、总市值、流通市值、
-    换手率、成交额、行业等字段。
+    换手率、成交额、行业等字段。主源东方财富挂时降级到新浪（PE/PB/市值等字段为 NaN）。
+    双源全挂抛 DataSourceExhausted。
 
     缓存 60s（市场全局数据不需要每次实时）。
     """
@@ -82,16 +166,20 @@ def get_all_a_stocks() -> pd.DataFrame:
     _bulk_limiter.wait()
     _log("正在获取全 A 股快照...")
 
-    df = _retry(lambda: ak.stock_zh_a_spot_em())
+    df = _try_sources(
+        ("eastmoney", lambda: ak.stock_zh_a_spot_em()),
+        ("sina", lambda: _normalize_from_sina(ak.stock_zh_a_spot())),
+    )
 
     _cache.set("all_a_stocks", df, 60)
-    _log(f"全 A 股快照获取完成: {len(df)} 只股票")
+    _log(f"全 A 股快照获取完成: {len(df)} 只股票 (源: {df.attrs.get('_source')})")
     return df
 
 
 def get_industry_list() -> pd.DataFrame:
     """
-    获取行业板块列表（东方财富行业分类）。
+    获取行业板块列表（东方财富行业分类）。主源挂时降级到同花顺（部分字段为 NaN）。
+    双源全挂抛 DataSourceExhausted。
 
     缓存 24h。
     """
@@ -102,7 +190,10 @@ def get_industry_list() -> pd.DataFrame:
     _bulk_limiter.wait()
     _log("正在获取行业板块列表...")
 
-    df = _retry(lambda: ak.stock_board_industry_name_em())
+    df = _try_sources(
+        ("eastmoney", lambda: ak.stock_board_industry_name_em()),
+        ("ths", lambda: _normalize_from_ths_industry(ak.stock_board_industry_summary_ths())),
+    )
 
     _cache.set("industry_list", df, 86400)
     return df
