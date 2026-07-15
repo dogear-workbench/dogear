@@ -149,6 +149,34 @@ export function useSendMessage(params: UseSendMessageParams) {
     }));
   }, [setMessages]);
 
+  // 中断当前执行：发 IPC + 本地把所有未 resolved 的 pending block 标为已取消，
+  // 让 hasPendingUserAction 立刻变假、输入框立刻回来（否则依赖后端事件闭环时序，UI 卡在"等确认"）
+  const handleInterrupt = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      await client.interruptQueryBasedSession({ sessionId });
+    } catch (e) {
+      console.warn('中断会话失败:', e);
+    }
+    setMessages(prev => prev.map(msg => {
+      if (!msg.contentBlocks) return msg;
+      let changed = false;
+      const blocks = msg.contentBlocks.map(b => {
+        if (b.type === 'permission_request' && !b.permissionResolved) {
+          changed = true;
+          return { ...b, permissionResolved: 'deny' as const, permissionDenyMessage: '已中断' };
+        }
+        if (b.type === 'ask_user_question' && !b.askUserResolved) {
+          changed = true;
+          return { ...b, askUserResolved: true, askUserCancelled: true };
+        }
+        return b;
+      });
+      return changed ? { ...msg, contentBlocks: blocks } : msg;
+    }));
+    setIsLoading(false);
+  }, [sessionId, setMessages, setIsLoading]);
+
   /**
    * 从某条 assistant 消息处分叉新对话
    */
@@ -558,6 +586,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     handleFork,
     handlePermissionResolved,
     handleAskUserResolved,
+    handleInterrupt,
     insertModeChangeNotice,
     modeLabels,
     hasPendingUserAction,

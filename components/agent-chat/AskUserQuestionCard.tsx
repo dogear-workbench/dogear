@@ -16,13 +16,16 @@ export function AskUserQuestionCard({
   block,
   sessionId,
   onResolved,
+  onInterrupt,
 }: {
   block: ContentBlock;
   sessionId: string | null;
   onResolved: (requestId: string, answers: Record<string, string>) => void;
+  onInterrupt?: () => void | Promise<void>;
 }) {
   const questions = block.askUserQuestions || [];
   const isResolved = !!block.askUserResolved;
+  const isCancelled = !!block.askUserCancelled;
 
   // 每个问题的答案状态：key=问题文本, value=选中的选项 label 或自由文本
   const [answers, setAnswers] = useState<Record<string, string>>({});
@@ -68,7 +71,7 @@ export function AskUserQuestionCard({
       <div className="flex items-center gap-2 mb-3">
         <HelpCircle size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-primary'} />
         <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground/60' : 'text-foreground'}`}>
-          {isResolved ? '已回答' : 'AI 想了解更多信息'}
+          {isResolved ? (isCancelled ? '已取消' : '已回答') : 'AI 想了解更多信息'}
         </span>
       </div>
 
@@ -81,9 +84,9 @@ export function AskUserQuestionCard({
             <p className="text-sm text-foreground font-medium">{q.question}</p>
 
             {isResolved ? (
-              // 已回答：只读显示
+              // 已回答/已取消：只读显示
               <div className="text-sm text-muted-foreground bg-background/60 rounded p-2">
-                {block.askUserAnswers?.[q.question] || '(未回答)'}
+                {isCancelled ? '(用户中断，未回答)' : (block.askUserAnswers?.[q.question] || '(未回答)')}
               </div>
             ) : q.multiSelect ? (
               // 多选
@@ -179,12 +182,8 @@ export function AskUserQuestionCard({
           <Button
             size="sm"
             variant="outline"
-            disabled={!sessionId}
-            onClick={async () => {
-              if (sessionId) {
-                await client.interruptQueryBasedSession({ sessionId });
-              }
-            }}
+            disabled={!sessionId || !onInterrupt}
+            onClick={() => { void onInterrupt?.(); }}
           >
             <Square size={14} />
             停止

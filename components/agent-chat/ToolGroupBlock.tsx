@@ -11,6 +11,7 @@ interface ToolGroupBlockProps {
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
+  onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
   messageIndex?: number;
@@ -28,6 +29,7 @@ export function ToolGroupBlock({
   sessionId,
   onPermissionResolved,
   onAskUserResolved,
+  onInterrupt,
   searchQuery,
   activeMatchId,
   messageIndex,
@@ -82,6 +84,7 @@ export function ToolGroupBlock({
             sessionId={sessionId}
             onPermissionResolved={onPermissionResolved}
             onAskUserResolved={onAskUserResolved}
+            onInterrupt={onInterrupt}
             searchQuery={searchQuery}
             activeMatchId={activeMatchId}
             messageIndex={messageIndex}

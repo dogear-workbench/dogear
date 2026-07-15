@@ -1868,6 +1868,15 @@ export class QueryBasedSession extends EventEmitter {
       this.pendingMessages = [];
       this.emit('pendingCountChanged', { count: 0 });
     }
+    // 主动拒绝所有挂起的权限/AskUser 请求：不依赖 SDK 是否会传导 abort signal 到 canUseTool，
+    // 保证 pendingAction 状态立即复位（否则前端 Set 会一直保留、Tab 圆点熄不掉）
+    if (this.pendingPermissionRequests.size > 0) {
+      for (const [, pending] of this.pendingPermissionRequests) {
+        pending.resolve({ behavior: 'deny', message: '用户中断' });
+      }
+      this.pendingPermissionRequests.clear();
+    }
+    this.syncSessionState();
     await this.query.interrupt();
   }
 

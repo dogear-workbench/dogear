@@ -87,11 +87,12 @@ function parseErrorMessage(error: string): { title: string; description: string;
   return { title: '错误', description: error.substring(0, 100) + '...', detail: error };
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, searchQuery, activeMatchId, messageIndex, blockIndex }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageIndex, blockIndex }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
+  onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
   messageIndex?: number;
@@ -105,6 +106,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           sessionId={sessionId}
           onPermissionResolved={onPermissionResolved}
           onAskUserResolved={onAskUserResolved}
+          onInterrupt={onInterrupt}
           searchQuery={searchQuery}
           activeMatchId={activeMatchId}
           messageIndex={messageIndex}
@@ -221,6 +223,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           block={block}
           sessionId={sessionId || null}
           onResolved={onAskUserResolved || (() => {})}
+          onInterrupt={onInterrupt}
         />
       );
 

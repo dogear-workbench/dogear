@@ -87,6 +87,7 @@ export interface ContentBlock {
   }>;
   askUserAnswers?: Record<string, string>;  // 用户已提交的答案
   askUserResolved?: boolean;                // 是否已回答
+  askUserCancelled?: boolean;               // 是否被用户中断（点了停止按钮）
   // compact_boundary 相关字段
   compactTrigger?: 'manual' | 'auto';  // 压缩触发方式
   compactPreTokens?: number;           // 压缩前 token 数

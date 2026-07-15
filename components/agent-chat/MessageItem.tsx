@@ -61,6 +61,7 @@ export function MessageItem({
   sessionId,
   onPermissionResolved,
   onAskUserResolved,
+  onInterrupt,
   searchQuery,
   activeMatchId,
   isAgentConversation,
@@ -71,6 +72,7 @@ export function MessageItem({
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
+  onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
   /** 当前会话是否 agent 会话（用于判断"用户介入"徽章） */
@@ -309,6 +311,7 @@ export function MessageItem({
                       sessionId={sessionId}
                       onPermissionResolved={onPermissionResolved}
                       onAskUserResolved={onAskUserResolved}
+                      onInterrupt={onInterrupt}
                       searchQuery={searchQuery}
                       activeMatchId={activeMatchId}
                       messageIndex={messageIndex}

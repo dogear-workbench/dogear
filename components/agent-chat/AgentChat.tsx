@@ -385,6 +385,7 @@ export function AgentChat({
               sessionId={sessionId}
               onPermissionResolved={handlePermissionResolvedWithScroll}
               onAskUserResolved={handleAskUserResolvedWithScroll}
+              onInterrupt={sendMessage.handleInterrupt}
               searchQuery={search.query || undefined}
               activeMatchId={search.activeMatch?.id ?? null}
               isAgentConversation={selectedConv?.contractMetadata?.createdBy === 'agent'}
@@ -520,7 +521,7 @@ export function AgentChat({
         handleImageFiles={imageAttachment.handleImageFiles}
         removePendingImage={imageAttachment.removePendingImage}
         insertModeChangeNotice={sendMessage.insertModeChangeNotice}
-        setIsLoading={setIsLoading}
+        onInterrupt={sendMessage.handleInterrupt}
         isSlashMenuOpen={slashCommands.isSlashMenuOpen}
         filteredCommands={slashCommands.filteredCommands}
         filterQuery={slashCommands.filterQuery}

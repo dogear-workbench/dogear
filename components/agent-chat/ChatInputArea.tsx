@@ -98,7 +98,7 @@ interface ChatInputAreaProps {
   handleImageFiles: (files: FileList | File[]) => void;
   removePendingImage: (index: number) => void;
   insertModeChangeNotice: (mode: string) => void;
-  setIsLoading: (loading: boolean) => void;
+  onInterrupt: () => void | Promise<void>;
   // 斜杠命令相关
   isSlashMenuOpen: boolean;
   filteredCommands: SlashCommandInfo[];
@@ -133,7 +133,7 @@ export function ChatInputArea({
   handleImageFiles,
   removePendingImage,
   insertModeChangeNotice,
-  setIsLoading,
+  onInterrupt,
   isSlashMenuOpen,
   filteredCommands,
   filterQuery,
@@ -455,12 +455,7 @@ export function ChatInputArea({
                   <InputGroupButton
                     variant="destructive"
                     size="icon-xs"
-                    onClick={async () => {
-                      if (sessionId) {
-                        await client.interruptQueryBasedSession({ sessionId });
-                        setIsLoading(false);
-                      }
-                    }}
+                    onClick={() => { void onInterrupt(); }}
                     title={pendingState === 'flushing' ? '停止（清空插话队列）' : '停止'}
                   >
                     <Square size={14} />
