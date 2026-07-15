@@ -66,23 +66,31 @@ export function useSessionEvents({
       setMessages(prev => {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
+        const newBlock: ContentBlock = {
+          type: 'permission_request',
+          timestamp: Date.now(),
+          permissionRequestId: data.requestId,
+          permissionToolName: data.toolName,
+          permissionInput: data.toolInput,
+          permissionDecisionReason: data.decisionReason,
+        };
 
-        // 找到当前 assistant 消息，插入权限请求块
         if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
           const lastMsg = updated[lastIdx];
-          const blocks = lastMsg.contentBlocks || [];
-          const newBlock: ContentBlock = {
-            type: 'permission_request',
-            timestamp: Date.now(),
-            permissionRequestId: data.requestId,
-            permissionToolName: data.toolName,
-            permissionInput: data.toolInput,
-            permissionDecisionReason: data.decisionReason,
-          };
           updated[lastIdx] = {
             ...lastMsg,
-            contentBlocks: [...blocks, newBlock],
+            contentBlocks: [...(lastMsg.contentBlocks || []), newBlock],
           };
+        } else {
+          // 外部启动的会话（agent 派子会话等）没有本地插入的 assistant 占位，
+          // 直接 push 一个新 assistant 消息挂块，避免权限请求被丢弃导致会话卡死
+          updated.push({
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+            isStreaming: true,
+            contentBlocks: [newBlock],
+          });
         }
 
         return updated;
@@ -109,20 +117,28 @@ export function useSessionEvents({
       setMessages(prev => {
         const updated = [...prev];
         const lastIdx = updated.length - 1;
+        const newBlock: ContentBlock = {
+          type: 'ask_user_question',
+          timestamp: Date.now(),
+          askUserRequestId: data.requestId,
+          askUserQuestions: data.questions,
+        };
 
         if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
           const lastMsg = updated[lastIdx];
-          const blocks = lastMsg.contentBlocks || [];
-          const newBlock: ContentBlock = {
-            type: 'ask_user_question',
-            timestamp: Date.now(),
-            askUserRequestId: data.requestId,
-            askUserQuestions: data.questions,
-          };
           updated[lastIdx] = {
             ...lastMsg,
-            contentBlocks: [...blocks, newBlock],
+            contentBlocks: [...(lastMsg.contentBlocks || []), newBlock],
           };
+        } else {
+          // 同权限请求：外部启动的会话没 assistant 占位，push 新消息挂块避免丢失
+          updated.push({
+            role: 'assistant',
+            content: '',
+            timestamp: Date.now(),
+            isStreaming: true,
+            contentBlocks: [newBlock],
+          });
         }
 
         return updated;

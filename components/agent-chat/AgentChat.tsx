@@ -119,7 +119,12 @@ export function AgentChat({
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
     useAgentSession({ conversationId, forkParams, context, useSdkResume, setMessages, setIsLoading });
 
-  const pendingState = derivePendingState({ isRunning: isLoading, pendingCount });
+  // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，
+  // 用后端权威运行态兜底；本地 isLoading 保留用于点击发送的乐观预置和失败恢复
+  const isRunningInStore = useConversationStore((s) =>
+    conversationId ? s.runningConversationIds.has(conversationId) : false,
+  );
+  const pendingState = derivePendingState({ isRunning: isLoading || isRunningInStore, pendingCount });
 
   // 主会话派出的子会话快照（用于 StreamingIndicator 显示「等待 N 个交付」+ 中断按钮）
   const childrenForThis = useConversationStore(
