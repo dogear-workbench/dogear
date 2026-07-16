@@ -594,3 +594,98 @@ def get_sector_fund_flow_rank(indicator: str, sector_type: str) -> pd.DataFrame:
 
     _cache.set(cache_key, df, 300)
     return df
+
+
+# ============================================================
+# 北向资金（沪深港通）
+# ============================================================
+
+_HSGT_INDIVIDUAL_COLUMNS = {
+    "持股日期": "date",
+    "当日收盘价": "close",
+    "当日涨跌幅": "change_percent",
+    "持股数量": "hold_shares",
+    "持股市值": "hold_market_cap",
+    "持股数量占A股百分比": "hold_pct_a_share",
+    "今日增持股数": "net_shares_change",
+    "今日增持资金": "net_cap_change",
+    "今日持股市值变化": "hold_market_cap_change",
+}
+
+_HSGT_HIST_COLUMNS = {
+    "日期": "date",
+    "当日成交净买额": "net_buy_amount",
+    "买入成交额": "buy_amount",
+    "卖出成交额": "sell_amount",
+    "历史累计净买额": "cumulative_net_buy_amount",
+    "当日资金流入": "daily_fund_inflow",
+    "当日余额": "daily_balance",
+    "持股市值": "hold_market_cap",
+    "领涨股": "leading_stock",
+    "领涨股-涨跌幅": "leading_stock_change_percent",
+    "领涨股-代码": "leading_stock_code",
+    "沪深300": "hs300",
+    "沪深300-涨跌幅": "hs300_change_percent",
+}
+
+
+def get_hsgt_individual(symbol: str) -> pd.DataFrame:
+    """
+    获取个股北向持股历史（东方财富，沪深港通持股统计）。
+
+    Args:
+        symbol: 股票代码裸码，如"002008"
+
+    返回归一化列名：date/close/change_percent/hold_shares/hold_market_cap/
+    hold_pct_a_share/net_shares_change/net_cap_change/hold_market_cap_change
+    （持股数量单位：股；持股市值/今日增持资金单位：元；涨跌幅/占比单位：%）
+
+    缓存 3600s（北向数据日频更新）。
+    """
+    cache_key = f"hsgt_individual:{symbol}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    _single_limiter.wait()
+    _log(f"正在获取北向个股持股: {symbol}")
+
+    df = _retry(lambda: ak.stock_hsgt_individual_em(symbol=symbol))
+    df = df.rename(columns=_HSGT_INDIVIDUAL_COLUMNS)
+
+    _cache.set(cache_key, df, 3600)
+    return df
+
+
+def get_hsgt_hist(fund_type: str) -> pd.DataFrame:
+    """
+    获取沪深港通资金流向历史（东方财富）。
+
+    Args:
+        fund_type: 资金类型枚举 "北向资金"|"沪股通"|"深股通"|"南向资金"|"港股通沪"|"港股通深"
+
+    返回归一化列名：date/net_buy_amount/buy_amount/sell_amount/cumulative_net_buy_amount/
+    daily_fund_inflow/daily_balance/hold_market_cap/leading_stock/leading_stock_change_percent/
+    leading_stock_code/hs300/hs300_change_percent
+    （net_buy_amount/buy_amount/sell_amount/daily_fund_inflow/daily_balance 单位：亿元；
+    cumulative_net_buy_amount 单位：万亿元；hold_market_cap 单位：元）
+
+    注意：交易所自 2024-08-19 起不再披露沪深港通每日资金流明细，此后
+    net_buy_amount/buy_amount/sell_amount/daily_fund_inflow/daily_balance 均为 null，
+    仅 hold_market_cap（持股市值）等季度持仓数据仍有更新。
+
+    缓存 3600s。
+    """
+    cache_key = f"hsgt_hist:{fund_type}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    _bulk_limiter.wait()
+    _log(f"正在获取沪深港通资金流向历史: {fund_type}")
+
+    df = _retry(lambda: ak.stock_hsgt_hist_em(symbol=fund_type))
+    df = df.rename(columns=_HSGT_HIST_COLUMNS)
+
+    _cache.set(cache_key, df, 3600)
+    return df

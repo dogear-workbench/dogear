@@ -40,6 +40,7 @@ from core.fund_flow import (
     get_market_fund_flow_series,
     get_sector_fund_flow_rank_data,
 )
+from core.hsgt import get_hsgt_individual_series, get_hsgt_hist_data
 from announcements.parser import parse_pdf
 from announcements.markdown import to_markdown
 
@@ -312,6 +313,32 @@ def handle_get_sector_fund_flow_rank(request_id: str, params: dict):
     send_response(request_id, result)
 
 
+def handle_get_hsgt_individual(request_id: str, params: dict):
+    """获取个股北向持股序列"""
+    symbol = params.get("symbol")
+    days = params.get("days", 250)
+
+    if not symbol:
+        send_error(request_id, -1, "缺少 symbol 参数")
+        return
+
+    result = get_hsgt_individual_series(symbol, days)
+    send_response(request_id, result)
+
+
+def handle_get_hsgt_hist(request_id: str, params: dict):
+    """获取沪深港通资金流向历史"""
+    fund_type = params.get("fund_type")
+    days = params.get("days", 250)
+
+    if fund_type not in ("北向资金", "沪股通", "深股通", "南向资金", "港股通沪", "港股通深"):
+        send_error(request_id, -1, f"fund_type 参数非法: {fund_type}，需为 北向资金/沪股通/深股通/南向资金/港股通沪/港股通深")
+        return
+
+    result = get_hsgt_hist_data(fund_type, days)
+    send_response(request_id, result)
+
+
 def handle_parse_announcement_pdf(request_id: str, params: dict):
     """解析公告 PDF 为 markdown"""
     pdf_path = params.get("path")
@@ -358,6 +385,8 @@ METHOD_HANDLERS = {
     "get_individual_fund_flow": handle_get_individual_fund_flow,
     "get_market_fund_flow": handle_get_market_fund_flow,
     "get_sector_fund_flow_rank": handle_get_sector_fund_flow_rank,
+    "get_hsgt_individual": handle_get_hsgt_individual,
+    "get_hsgt_hist": handle_get_hsgt_hist,
 }
 
 

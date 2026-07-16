@@ -26,6 +26,7 @@ registerTools([
   { name: 'GetFinancials', description: '获取个股财报数据', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'CompareIndustry', description: '个股行业对比分析', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'GetFundFlow', description: '查询个股/大盘/板块资金流向（东方财富数据源）', server: 'dogear-stock-analysis', category: 'stock' },
+  { name: 'GetNorthboundHolding', description: '查询北向资金持股（个股或汇总）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'DetectSignals', description: '检测股票技术信号（MACD金叉/KDJ超卖/RSI超买等）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'EvalFormula', description: '执行自定义公式表达式（类通达信语法）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'SimpleBacktest', description: '基于公式的简单策略回测（历史K线验证买卖信号）', server: 'dogear-stock-analysis', category: 'stock' },
@@ -1036,6 +1037,102 @@ export function createStockAnalysisTools() {
           } catch (error) {
             return {
               content: [{ type: 'text' as const, text: `获取资金流向失败: ${error}` }],
+              isError: true,
+            };
+          }
+        }
+      ),
+
+      // ========================================
+      // 工具: 北向资金持股
+      // ========================================
+      tool(
+        'GetNorthboundHolding',
+        '查询北向资金持股数据（东方财富数据源）。一个工具聚合两种用途：\n' +
+        '- type=individual: 个股北向持股历史，需 stock（裸代码，如"600519"）\n' +
+        '- type=summary: 沪深港通资金流向汇总历史，需 fund_type\n' +
+        '数据来源: 东方财富沪深港通持股统计接口。\n' +
+        '单位：持股数量（股）、持股市值/净买额/资金流入（元，summary 的净买额/买卖额单位为亿元、' +
+        '历史累计净买额单位为万亿元，字段名已标注）、持股占比/涨跌幅（%）。\n' +
+        '限制：A 股只关注北向（沪股通+深股通），南向/港股通是港股方向数据；' +
+        '交易所自 2024-08-19 起不再披露沪深港通每日资金流明细，summary 的 net_buy_amount/' +
+        'buy_amount/sell_amount/daily_fund_inflow/daily_balance 此后恒为空值（预期行为非故障）。',
+        {
+          type: z.enum(['individual', 'summary']).describe('查询类型：individual=个股北向持股 / summary=北向资金汇总'),
+          stock: z.string().optional().describe('股票代码，type=individual 时必填'),
+          fund_type: z.enum(['北向资金', '沪股通', '深股通', '南向资金', '港股通沪', '港股通深']).optional()
+            .describe('资金类型，type=summary 时必填'),
+          days: z.number().min(1).max(250).default(30).describe('返回最近多少个交易日，默认 30'),
+        },
+        async (args) => {
+          try {
+            if (args.type === 'individual') {
+              if (!args.stock) {
+                return {
+                  content: [{ type: 'text' as const, text: 'type=individual 时必须提供 stock 参数' }],
+                  isError: true,
+                };
+              }
+
+              const result = await pythonBridge.call<{
+                symbol: string;
+                count: number;
+                data: Array<Record<string, number | string | null>>;
+                error?: string;
+              }>('get_hsgt_individual', { symbol: args.stock, days: args.days }, 30_000);
+
+              if (result.error) {
+                return { content: [{ type: 'text' as const, text: `获取北向个股持股失败: ${result.error}` }], isError: true };
+              }
+              if (result.data.length === 0) {
+                return { content: [{ type: 'text' as const, text: `未找到 ${args.stock} 的北向持股数据。` }] };
+              }
+
+              const rows = [...result.data].reverse();
+              let output = `=== ${args.stock} 北向持股历史（最近 ${result.count} 个交易日） ===\n`;
+              output += `日期 | 收盘价 | 涨跌幅 | 持股数量 | 持股市值 | 占A股% | 今日增持股数 | 今日增持资金\n---|---|---|---|---|---|---|---\n`;
+              output += rows.map((d) =>
+                `${d.date} | ${safe(Number(d.close))} | ${safe(Number(d.change_percent))}% | ${d.hold_shares ?? '-'} | ${formatYuan(Number(d.hold_market_cap))} | ${safe(Number(d.hold_pct_a_share))}% | ${d.net_shares_change ?? '-'} | ${formatYuan(Number(d.net_cap_change))}`
+              ).join('\n');
+
+              return { content: [{ type: 'text' as const, text: output }] };
+            }
+
+            // type === 'summary'
+            if (!args.fund_type) {
+              return {
+                content: [{ type: 'text' as const, text: 'type=summary 时必须提供 fund_type 参数' }],
+                isError: true,
+              };
+            }
+
+            const result = await pythonBridge.call<{
+              fund_type: string;
+              count: number;
+              data: Array<Record<string, number | string | null>>;
+              error?: string;
+            }>('get_hsgt_hist', { fund_type: args.fund_type, days: args.days }, 30_000);
+
+            if (result.error) {
+              return { content: [{ type: 'text' as const, text: `获取北向资金汇总失败: ${result.error}` }], isError: true };
+            }
+            if (result.data.length === 0) {
+              return { content: [{ type: 'text' as const, text: `未找到${args.fund_type}的历史数据。` }] };
+            }
+
+            const rows = [...result.data].reverse();
+            let output = `=== ${args.fund_type} 历史（最近 ${result.count} 个交易日） ===\n`;
+            output += `日期 | 净买额(亿) | 买入额(亿) | 卖出额(亿) | 累计净买额(万亿) | 持股市值 | 领涨股\n---|---|---|---|---|---|---\n`;
+            output += rows.map((d) => {
+              const leading = d.leading_stock ? `${d.leading_stock}(${safe(Number(d.leading_stock_change_percent))}%)` : '-';
+              return `${d.date} | ${safe(Number(d.net_buy_amount))} | ${safe(Number(d.buy_amount))} | ${safe(Number(d.sell_amount))} | ${safe(Number(d.cumulative_net_buy_amount), 4)} | ${formatYuan(Number(d.hold_market_cap))} | ${leading}`;
+            }).join('\n');
+            output += '\n\n（交易所自 2024-08-19 起不再披露每日资金流明细，净买额/买入额/卖出额此后为空属预期行为）';
+
+            return { content: [{ type: 'text' as const, text: output }] };
+          } catch (error) {
+            return {
+              content: [{ type: 'text' as const, text: `获取北向资金持股失败: ${error}` }],
               isError: true,
             };
           }
