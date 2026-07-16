@@ -25,6 +25,7 @@ registerTools([
   { name: 'ListIndustries', description: '列出东方财富行业板块（可关键词过滤，返回可直接喂给 ScreenStocks 的行业名）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'GetFinancials', description: '获取个股财报数据', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'CompareIndustry', description: '个股行业对比分析', server: 'dogear-stock-analysis', category: 'stock' },
+  { name: 'GetFundFlow', description: '查询个股/大盘/板块资金流向（东方财富数据源）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'DetectSignals', description: '检测股票技术信号（MACD金叉/KDJ超卖/RSI超买等）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'EvalFormula', description: '执行自定义公式表达式（类通达信语法）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'SimpleBacktest', description: '基于公式的简单策略回测（历史K线验证买卖信号）', server: 'dogear-stock-analysis', category: 'stock' },
@@ -51,6 +52,15 @@ const MAX_KLINE_LIMIT = 500;
 function safe(val: number | undefined | null, digits = 2): string {
   if (val == null || isNaN(val)) return '-';
   return val.toFixed(digits);
+}
+
+/** 金额格式化：亿/万，用于资金流向净额（元）展示 */
+function formatYuan(val: number | undefined | null): string {
+  if (val == null || isNaN(val)) return '-';
+  const abs = Math.abs(val);
+  if (abs >= 1e8) return `${(val / 1e8).toFixed(2)}亿`;
+  if (abs >= 1e4) return `${(val / 1e4).toFixed(1)}万`;
+  return val.toFixed(0);
 }
 
 /** 备源降级 banner；_source 为空或本就是主源（eastmoney）时不显示 */
@@ -899,6 +909,133 @@ export function createStockAnalysisTools() {
           } catch (error) {
             return {
               content: [{ type: 'text' as const, text: `行业对比失败: ${error}` }],
+              isError: true,
+            };
+          }
+        }
+      ),
+
+      // ========================================
+      // 工具: 资金流向
+      // ========================================
+      tool(
+        'GetFundFlow',
+        '查询资金流向数据（东方财富数据源）。一个工具聚合三种用途：\n' +
+        '- type=individual: 个股资金流向，近 100 个交易日，需 stock+market\n' +
+        '- type=market: 大盘（沪深两市整体）资金流向，近 100 个交易日\n' +
+        '- type=sector: 板块资金流向排名（行业/概念/地域），需 indicator+sector_type\n' +
+        '字段单位：净额（元）、净占比（%）。主力=超大单+大单净流入，散户=中单+小单净流入。\n' +
+        '使用场景: 用户想了解某只股票/大盘/板块的主力资金动向。',
+        {
+          type: z.enum(['individual', 'market', 'sector']).describe('查询类型：individual=个股 / market=大盘 / sector=板块排名'),
+          stock: z.string().optional().describe('股票代码（如"600519"），type=individual 时必填'),
+          market: z.enum(['sh', 'sz', 'bj']).optional().describe('市场（sh=沪 sz=深 bj=北交所），type=individual 时必填'),
+          indicator: z.enum(['今日', '5日', '10日']).optional().describe('板块资金流统计口径，type=sector 时必填'),
+          sector_type: z.enum(['行业资金流', '概念资金流', '地域资金流']).optional().describe('板块类型，type=sector 时必填'),
+        },
+        async (args) => {
+          try {
+            if (args.type === 'individual') {
+              if (!args.stock || !args.market) {
+                return {
+                  content: [{ type: 'text' as const, text: 'type=individual 时必须提供 stock 和 market 参数' }],
+                  isError: true,
+                };
+              }
+
+              const result = await pythonBridge.call<{
+                stock: string;
+                market: string;
+                count: number;
+                data: Array<Record<string, number | string | null>>;
+                error?: string;
+              }>('get_individual_fund_flow', { stock: args.stock, market: args.market }, 30_000);
+
+              if (result.error) {
+                return { content: [{ type: 'text' as const, text: `获取个股资金流向失败: ${result.error}` }], isError: true };
+              }
+              if (result.data.length === 0) {
+                return { content: [{ type: 'text' as const, text: `未找到 ${args.market}${args.stock} 的资金流向数据。` }] };
+              }
+
+              const recent = result.data.slice(-10);
+              const mainSum = result.data.reduce((s, d) => s + (Number(d.main_net_inflow) || 0), 0);
+              const retailSum = result.data.reduce((s, d) => s + (Number(d.medium_net_inflow) || 0) + (Number(d.small_net_inflow) || 0), 0);
+
+              let output = `=== ${args.stock} 个股资金流向（近 ${result.count} 个交易日，${args.market}） ===\n`;
+              output += `期间主力净流入累计: ${formatYuan(mainSum)}  |  散户净流入累计: ${formatYuan(retailSum)}\n\n`;
+              output += `日期 | 收盘价 | 涨跌幅 | 主力净流入 | 主力净占比 | 散户净流入\n---|---|---|---|---|---\n`;
+              output += recent.map((d) => {
+                const retail = (Number(d.medium_net_inflow) || 0) + (Number(d.small_net_inflow) || 0);
+                return `${d.date} | ${safe(Number(d.close))} | ${safe(Number(d.change_percent))}% | ${formatYuan(Number(d.main_net_inflow))} | ${safe(Number(d.main_net_pct))}% | ${formatYuan(retail)}`;
+              }).join('\n');
+              output += `\n\n（仅展示最近 10 日，完整区间共 ${result.count} 个交易日）`;
+
+              return { content: [{ type: 'text' as const, text: output }] };
+            }
+
+            if (args.type === 'market') {
+              const result = await pythonBridge.call<{
+                count: number;
+                data: Array<Record<string, number | string | null>>;
+                error?: string;
+              }>('get_market_fund_flow', {}, 30_000);
+
+              if (result.error) {
+                return { content: [{ type: 'text' as const, text: `获取大盘资金流向失败: ${result.error}` }], isError: true };
+              }
+              if (result.data.length === 0) {
+                return { content: [{ type: 'text' as const, text: '未获取到大盘资金流向数据。' }] };
+              }
+
+              const recent = result.data.slice(-10);
+              const mainSum = result.data.reduce((s, d) => s + (Number(d.main_net_inflow) || 0), 0);
+
+              let output = `=== 大盘资金流向（沪深两市整体，近 ${result.count} 个交易日） ===\n`;
+              output += `期间主力净流入累计: ${formatYuan(mainSum)}\n\n`;
+              output += `日期 | 上证收盘 | 上证涨跌幅 | 深证收盘 | 深证涨跌幅 | 主力净流入 | 主力净占比\n---|---|---|---|---|---|---\n`;
+              output += recent.map((d) =>
+                `${d.date} | ${safe(Number(d.sh_close))} | ${safe(Number(d.sh_change_percent))}% | ${safe(Number(d.sz_close))} | ${safe(Number(d.sz_change_percent))}% | ${formatYuan(Number(d.main_net_inflow))} | ${safe(Number(d.main_net_pct))}%`
+              ).join('\n');
+              output += `\n\n（仅展示最近 10 日，完整区间共 ${result.count} 个交易日）`;
+
+              return { content: [{ type: 'text' as const, text: output }] };
+            }
+
+            // type === 'sector'
+            if (!args.indicator || !args.sector_type) {
+              return {
+                content: [{ type: 'text' as const, text: 'type=sector 时必须提供 indicator 和 sector_type 参数' }],
+                isError: true,
+              };
+            }
+
+            const result = await pythonBridge.call<{
+              indicator: string;
+              sector_type: string;
+              total: number;
+              returned: number;
+              data: Array<Record<string, number | string | null>>;
+              error?: string;
+            }>('get_sector_fund_flow_rank', { indicator: args.indicator, sector_type: args.sector_type }, 30_000);
+
+            if (result.error) {
+              return { content: [{ type: 'text' as const, text: `获取板块资金流排名失败: ${result.error}` }], isError: true };
+            }
+            if (result.data.length === 0) {
+              return { content: [{ type: 'text' as const, text: `未获取到${args.sector_type}的${args.indicator}资金流排名。` }] };
+            }
+
+            let output = `=== ${args.sector_type} 资金流排名（${args.indicator}，共 ${result.total} 个板块，返回 ${result.returned}） ===\n`;
+            output += `排名 | 板块 | 涨跌幅 | 主力净流入 | 主力净占比 | 主力净流入最大股\n---|---|---|---|---|---\n`;
+            output += result.data.map((d) =>
+              `${d.rank} | ${d.name} | ${safe(Number(d.change_percent))}% | ${formatYuan(Number(d.main_net_inflow))} | ${safe(Number(d.main_net_pct))}% | ${d.main_net_inflow_top_stock ?? '-'}`
+            ).join('\n');
+
+            return { content: [{ type: 'text' as const, text: output }] };
+          } catch (error) {
+            return {
+              content: [{ type: 'text' as const, text: `获取资金流向失败: ${error}` }],
               isError: true,
             };
           }

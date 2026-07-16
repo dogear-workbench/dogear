@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 资金流向
-status: pending
+status: done
 ---
 
 ## 目标
@@ -35,9 +35,26 @@ status: pending
 ## 实施回填
 
 ### 实际改动
-（执行后填）
+- `python/utils/akshare_client.py`（+145 行）：新增资金流章节
+  - `_FUND_FLOW_SUFFIX_MAP`：主力/超大单/大单/中单/小单 净额/净占比 → 英文字段名，三方法共用
+  - `_normalize_sector_fund_flow_rank`：处理板块排名带 indicator 前缀（"今日主力净流入-净额"）的列名
+  - `get_individual_fund_flow(stock, market)`：`_single_limiter` + 60s 缓存
+  - `get_market_fund_flow()` / `get_sector_fund_flow_rank(indicator, sector_type)`：`_bulk_limiter` + 300s 缓存
+- `python/core/fund_flow.py`（新建 147 行，纯函数）：三个 `_series` / `_data` 函数，`_safe_num` 统一 NaN→None，异常 catch 后返回 `{"error": ...}`
+- `python/main.py`：import fund_flow 三函数，新增 3 个 `handle_*` 带参数校验，`METHOD_HANDLERS` 注册
+- `electron/main/services/stock/stock-service.ts:535-567`：`getMoneyFlow` 从"返回空数组"占位改为 `pythonBridge.call('get_individual_fund_flow', ...)`；market number(1沪/0深) 转 "sh"/"sz"；Python 异常或业务 error 时 `console.warn` + 返回 `[]` 降级不阻塞前端
+- `electron/main/agents/tools/stock-analysis-tools.ts`：新增 `formatYuan()` 辅助 + `GetFundFlow` 工具（type=individual|market|sector 聚合三种查询）+ `registerTools([...])` 元数据注册
+
+### 与计划的两处偏差
+1. **Python method 命名从 plan 的 `akshare.<action>` 改为 snake_case 不带前缀**：现有 `METHOD_HANDLERS`（`ping`/`get_financials`/`screen_stocks`/`list_industries` 等 12 个 method）全部是 snake_case 无前缀，plan 的点分命名空间在代码库里没有先例。为保持单一约定沿用 `get_individual_fund_flow` / `get_market_fund_flow` / `get_sector_fund_flow_rank`。全局决策 #1 应视为已修正。
+2. **MoneyFlowPoint 类型保留不变（方案 A）**：实测 `MoneyFlow.tsx` 只消费 `mainNetInflow` / `retailNetInflow` 两个字段，其他四个 inflow/outflow 前端从未使用。所以 AKShare 只给净额不给拆分流入流出没问题——固定填 0 即可，不改类型和前端组件。
+
+### 遗留问题
+- AKShare 三接口的实际返回列名基于惯例整理，未连线实测（用户手测确认），如有出入只需改 `akshare_client.py` 映射表
+- `market="bj"` 个股资金流未实测（`ak.stock_individual_fund_flow` 是否真支持 bj 未验证）
 
 ### 给下一步的接力棒
 - `fund_flow.py` 已建，后续若需要资金流衍生指标（如主力连续净流入天数）在此扩展
-- 给 Step 3 的提示：北向资金语义独立（外资性质），单独建 `hsgt.py` 模块，不要混进 fund_flow
-- 工具 GetFundFlow 已占用了 `type` 参数，北向工具用不同工具名避免混淆
+- `_FUND_FLOW_SUFFIX_MAP` 可复用于其他返回相同字段模板的接口
+- 给 Step 3 的提示：北向资金语义独立（外资性质），单独建 `hsgt.py`，不要混进 fund_flow
+- 工具 `GetFundFlow` 已占用了 `type` 参数，北向工具用不同工具名（如 `GetNorthboundFlow`）避免语义混淆

@@ -459,3 +459,138 @@ def get_stock_hist(symbol: str, period: str = "daily",
 
     _cache.set(cache_key, df, 60)
     return df
+
+
+# ============================================================
+# 资金流向
+# ============================================================
+
+# 主力/超大单/大单/中单/小单净流入-净额、净流入-净占比 的中文后缀 → 英文字段名
+# （个股/大盘接口无前缀；板块排名接口按 indicator 加前缀"今日"/"5日"/"10日"，调用方先剥离前缀再套用本映射）
+_FUND_FLOW_SUFFIX_MAP = {
+    "主力净流入-净额": "main_net_inflow",
+    "主力净流入-净占比": "main_net_pct",
+    "超大单净流入-净额": "super_large_net_inflow",
+    "超大单净流入-净占比": "super_large_net_pct",
+    "大单净流入-净额": "large_net_inflow",
+    "大单净流入-净占比": "large_net_pct",
+    "中单净流入-净额": "medium_net_inflow",
+    "中单净流入-净占比": "medium_net_pct",
+    "小单净流入-净额": "small_net_inflow",
+    "小单净流入-净占比": "small_net_pct",
+    "主力净流入最大股": "main_net_inflow_top_stock",
+}
+
+_INDIVIDUAL_FUND_FLOW_COLUMNS = {
+    "日期": "date",
+    "收盘价": "close",
+    "涨跌幅": "change_percent",
+    **_FUND_FLOW_SUFFIX_MAP,
+}
+
+_MARKET_FUND_FLOW_COLUMNS = {
+    "日期": "date",
+    "上证-收盘价": "sh_close",
+    "上证-涨跌幅": "sh_change_percent",
+    "深证-收盘价": "sz_close",
+    "深证-涨跌幅": "sz_change_percent",
+    **_FUND_FLOW_SUFFIX_MAP,
+}
+
+
+def _normalize_sector_fund_flow_rank(df: pd.DataFrame, indicator: str) -> pd.DataFrame:
+    """把板块资金流排名的前缀列名（如"今日主力净流入-净额"）剥离前缀后套用统一映射。"""
+    rename = {}
+    for col in df.columns:
+        if col in ("序号", "名称"):
+            rename[col] = {"序号": "rank", "名称": "name"}[col]
+            continue
+        suffix = col[len(indicator):] if col.startswith(indicator) else col
+        if suffix == "涨跌幅":
+            rename[col] = "change_percent"
+        elif suffix in _FUND_FLOW_SUFFIX_MAP:
+            rename[col] = _FUND_FLOW_SUFFIX_MAP[suffix]
+    return df.rename(columns=rename)
+
+
+def get_individual_fund_flow(stock: str, market: str) -> pd.DataFrame:
+    """
+    获取个股资金流向历史（东方财富，近 100 个交易日）。
+
+    Args:
+        stock: 股票代码，如"600519"
+        market: 市场枚举 "sh"|"sz"|"bj"
+
+    返回归一化列名：date/close/change_percent/main_net_inflow/main_net_pct/
+    super_large_net_inflow/super_large_net_pct/large_net_inflow/large_net_pct/
+    medium_net_inflow/medium_net_pct/small_net_inflow/small_net_pct
+    （净额单位：元；净占比单位：%）
+
+    缓存 60s。
+    """
+    cache_key = f"individual_fund_flow:{market}:{stock}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    _single_limiter.wait()
+    _log(f"正在获取个股资金流向: {market}{stock}")
+
+    df = _retry(lambda: ak.stock_individual_fund_flow(stock=stock, market=market))
+    df = df.rename(columns=_INDIVIDUAL_FUND_FLOW_COLUMNS)
+
+    _cache.set(cache_key, df, 60)
+    return df
+
+
+def get_market_fund_flow() -> pd.DataFrame:
+    """
+    获取大盘资金流向历史（沪深两市整体，东方财富）。
+
+    返回归一化列名：date/sh_close/sh_change_percent/sz_close/sz_change_percent/
+    main_net_inflow/main_net_pct/super_large_net_inflow/.../small_net_pct
+    （净额单位：元；净占比单位：%）
+
+    缓存 300s。
+    """
+    cached = _cache.get("market_fund_flow")
+    if cached is not None:
+        return cached
+
+    _bulk_limiter.wait()
+    _log("正在获取大盘资金流向...")
+
+    df = _retry(lambda: ak.stock_market_fund_flow())
+    df = df.rename(columns=_MARKET_FUND_FLOW_COLUMNS)
+
+    _cache.set("market_fund_flow", df, 300)
+    return df
+
+
+def get_sector_fund_flow_rank(indicator: str, sector_type: str) -> pd.DataFrame:
+    """
+    获取板块资金流向排名（东方财富）。
+
+    Args:
+        indicator: 统计口径，枚举 "今日"|"5日"|"10日"
+        sector_type: 板块类型，枚举 "行业资金流"|"概念资金流"|"地域资金流"
+
+    返回归一化列名：rank/name/change_percent/main_net_inflow/main_net_pct/
+    super_large_net_inflow/.../small_net_pct/main_net_inflow_top_stock
+    （净额单位：元；净占比单位：%）
+
+    缓存 300s。
+    """
+    cache_key = f"sector_fund_flow_rank:{indicator}:{sector_type}"
+    cached = _cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    _bulk_limiter.wait()
+    _log(f"正在获取板块资金流排名: indicator={indicator}, sector_type={sector_type}")
+
+    df = _retry(lambda: ak.stock_sector_fund_flow_rank(indicator=indicator, sector_type=sector_type))
+    df = _normalize_sector_fund_flow_rank(df, indicator)
+
+    _cache.set(cache_key, df, 300)
+    return df

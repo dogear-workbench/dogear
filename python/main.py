@@ -35,6 +35,11 @@ from core.signals import detect_signals
 from utils.akshare_client import get_industry_list, DataSourceExhausted
 from core.formula_engine import parse_and_eval, validate_formula, FormulaContext
 from core.backtest import simple_backtest
+from core.fund_flow import (
+    get_individual_fund_flow_series,
+    get_market_fund_flow_series,
+    get_sector_fund_flow_rank_data,
+)
 from announcements.parser import parse_pdf
 from announcements.markdown import to_markdown
 
@@ -266,6 +271,47 @@ def handle_list_industries(request_id: str, params: dict):
     })
 
 
+def handle_get_individual_fund_flow(request_id: str, params: dict):
+    """获取个股资金流向序列"""
+    stock = params.get("stock")
+    market = params.get("market")
+    days = params.get("days", 100)
+
+    if not stock:
+        send_error(request_id, -1, "缺少 stock 参数")
+        return
+    if market not in ("sh", "sz", "bj"):
+        send_error(request_id, -1, f"market 参数非法: {market}，需为 sh/sz/bj")
+        return
+
+    result = get_individual_fund_flow_series(stock, market, days)
+    send_response(request_id, result)
+
+
+def handle_get_market_fund_flow(request_id: str, params: dict):
+    """获取大盘资金流向序列"""
+    days = params.get("days", 100)
+    result = get_market_fund_flow_series(days)
+    send_response(request_id, result)
+
+
+def handle_get_sector_fund_flow_rank(request_id: str, params: dict):
+    """获取板块资金流向排名"""
+    indicator = params.get("indicator")
+    sector_type = params.get("sector_type")
+    limit = params.get("limit", 50)
+
+    if indicator not in ("今日", "5日", "10日"):
+        send_error(request_id, -1, f"indicator 参数非法: {indicator}，需为 今日/5日/10日")
+        return
+    if sector_type not in ("行业资金流", "概念资金流", "地域资金流"):
+        send_error(request_id, -1, f"sector_type 参数非法: {sector_type}，需为 行业资金流/概念资金流/地域资金流")
+        return
+
+    result = get_sector_fund_flow_rank_data(indicator, sector_type, limit)
+    send_response(request_id, result)
+
+
 def handle_parse_announcement_pdf(request_id: str, params: dict):
     """解析公告 PDF 为 markdown"""
     pdf_path = params.get("path")
@@ -309,6 +355,9 @@ METHOD_HANDLERS = {
     "list_industries": handle_list_industries,
     "run_article_script": handle_run_article_script,
     "parse_announcement_pdf": handle_parse_announcement_pdf,
+    "get_individual_fund_flow": handle_get_individual_fund_flow,
+    "get_market_fund_flow": handle_get_market_fund_flow,
+    "get_sector_fund_flow_rank": handle_get_sector_fund_flow_rank,
 }
 
 

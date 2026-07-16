@@ -11,6 +11,7 @@
  */
 
 import { rateLimiter, type RateLimiterStatus } from './rate-limiter.js';
+import { pythonBridge } from './python-bridge.js';
 
 // ============================================================
 // 常量
@@ -524,12 +525,45 @@ class StockService {
   }
 
   /**
-   * 获取资金流向数据（日 K 级别）。
-   * 注：腾讯和新浪没有公开的资金流向接口，暂时保留空实现。
+   * 获取资金流向数据（日 K 级别，近 100 个交易日）。
+   * 走 Python Bridge 调用 AKShare（东方财富数据源）。
+   * AKShare 只提供净额，无法拆分单独的流入/流出，mainInflow/mainOutflow/
+   * retailInflow/retailOutflow 固定填 0，前端 MoneyFlow.tsx 只消费净额字段。
+   * 主力 = 超大单+大单净流入（AKShare 已合并），散户 = 中单+小单净流入。
+   * Python 守护进程不可用或接口失败时优雅降级为空数组，不阻塞前端渲染。
    */
-  async getMoneyFlow(_market: number, _code: string): Promise<MoneyFlowPoint[]> {
-    // 资金流向数据暂无替代数据源，返回空数组
-    return [];
+  async getMoneyFlow(market: number, code: string): Promise<MoneyFlowPoint[]> {
+    const akMarket = market === 1 ? 'sh' : 'sz';
+
+    try {
+      const result = await pythonBridge.call<{
+        data: Array<{
+          date: string;
+          main_net_inflow: number | null;
+          medium_net_inflow: number | null;
+          small_net_inflow: number | null;
+        }>;
+        error?: string;
+      }>('get_individual_fund_flow', { stock: code, market: akMarket }, 30_000);
+
+      if (result.error) {
+        console.warn('[StockService] 资金流向获取失败:', result.error);
+        return [];
+      }
+
+      return result.data.map((row) => ({
+        date: row.date,
+        mainInflow: 0,
+        mainOutflow: 0,
+        mainNetInflow: row.main_net_inflow ?? 0,
+        retailInflow: 0,
+        retailOutflow: 0,
+        retailNetInflow: (row.medium_net_inflow ?? 0) + (row.small_net_inflow ?? 0),
+      }));
+    } catch (error) {
+      console.warn('[StockService] Python Bridge 调用失败，资金流向降级为空数组:', error);
+      return [];
+    }
   }
 
   /**
