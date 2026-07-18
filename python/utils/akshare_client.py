@@ -9,6 +9,16 @@ AKShare 底层数据源（东方财富、同花顺）有不同的频率限制：
 
 import time
 import sys
+
+# 强制 requests 忽略系统/环境代理：数据源均在国内，用户本机代理挂了不该影响行情
+# 必须在 import akshare 前完成，覆盖 akshare 内部所有 Session 实例
+import requests as _requests
+_orig_session_init = _requests.Session.__init__
+def _no_trust_env_init(self, *args, **kwargs):
+    _orig_session_init(self, *args, **kwargs)
+    self.trust_env = False
+_requests.Session.__init__ = _no_trust_env_init
+
 import akshare as ak
 import pandas as pd
 from .cache import TTLCache
