@@ -14,7 +14,7 @@
 ## 步骤索引
 
 - [x] [Step 1: baostock 客户端骨架](./step1-baostock-client.md) — 登录管理 + 三类接口封装 + TTL 缓存
-- [ ] [Step 2: 全 A 快照懒预拉与本地缓存](./step2-snapshot-cache.md) — snapshot.py 首次触发即拉、跨天重拉、派生字段计算
+- [x] [Step 2: 全 A 快照懒预拉与本地缓存](./step2-snapshot-cache.md) — snapshot.py 首次触发即拉、跨天重拉、派生字段计算
 - [ ] [Step 3: screener 改造走本地快照](./step3-screener-migration.md) — `screen_stocks` / `ListIndustries` / 行业过滤从 snapshot 读
 - [ ] [Step 4: financials 改造走 baostock 财务接口](./step4-financials-migration.md) — `get_financials` 主源换 baostock，同花顺兜底保留
 

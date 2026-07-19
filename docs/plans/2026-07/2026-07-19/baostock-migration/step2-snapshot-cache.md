@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 全 A 快照懒预拉与本地缓存
-status: pending
+status: done
 ---
 
 ## 目标
@@ -59,10 +59,29 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 新建 `python/core/snapshot.py`（~192 行，唯一改动文件）
+  - `get_dogear_root()` 读 `DOGEAR_CONFIG_DIR` 环境变量，回退 `~/.dogear`（与 TS 侧 getConfigDir 对齐）
+  - `_resolve_trade_date()` 用 `get_all_stock_codes(date=)` 空 DF 判断非交易日（合并 is_trade_date 语义）
+  - `_pull_full_a()` 过滤 `sh.6*/sz.0*/sz.3*`，逐只拉取，单只失败跳过；每 500 只 `send_progress`（request_id 空则跳过）
+  - `_add_derived_fields()` 按用户决策：`total_market_cap`/`float_market_cap`/`volume_ratio` 固定 NaN，只算 `amplitude`
+  - `_atomic_write_jsonl()` 写 `.tmp` 后 `os.replace`
+- **与计划差异**：
+  1. **未做 `get_stock_basic()` join** —— 用户已确认跳过市值派生，接力棒决策
+  2. **未做 `get_industry_map()` 行业 join** —— 范围裁剪到 step3；industry_map 缓存 7 天，screener 用到时再 join 无性能损失
 
 ### 给下一步的接力棒
-- `get_snapshot()` 返回的 DataFrame 列清单：
-- 全 A 拉取实测总时长：
-- 拉取失败的股票数 / 占比：
-- 已知限制 / 坑：
+- **`get_snapshot()` 返回 DataFrame 列清单（22 列）**：
+  ```
+  date, code, open, high, low, close, preclose, volume, amount, adjustflag,
+  turn, tradestatus, pctChg, peTTM, pbMRQ, psTTM, pcfNcfTTM, isST,
+  total_market_cap(NaN), float_market_cap(NaN), amplitude, volume_ratio(NaN)
+  ```
+- **全 A 拉取实测总时长**：432.5s（约 7.2 分钟），比 step1 预估 5 分钟略慢，量级一致
+- **拉取失败股票数 / 占比**：0 / 0%，5486 候选 → 5481 有效（停牌过滤 5 只）
+- **JSONL 文件**：`~/.dogear/stocks/daily_snapshot/{date}.jsonl`，约 2.1MB
+- **已知限制 / 坑（step3 必读）**：
+  1. **快照无 industry 列**：screener 做行业过滤需自行 `pd.merge(get_industry_map(), on="code")`；industry_map 有 7 天缓存，重复调无痛
+  2. **无股本 → 无真实市值**：`total_market_cap`/`float_market_cap` 是 NaN 占位，**不可用于市值筛选条件**；若 screener 需按市值筛，得另想办法或明确告诉 agent 该条件不可用
+  3. **get_snapshot() 同步阻塞 7 分钟**：接入 python-bridge 时**必须异步/带 progress**，不能同步等待（会阻塞其他 RPC）；建议 python-bridge 端加一个 `warmupSnapshot` 类的独立命令，让 agent 先起预热再查
+  4. **"毫秒级缓存命中"限同进程**：`_resolve_trade_date` 内部 TTLCache 生命周期 = 进程生命周期，每次新起 `python -c ...` 还是要 3-5s 重新 login + 查交易日历；生产走常驻 python-bridge 不受影响
+  5. 停牌过滤已在 snapshot 层完成，screener 侧不用再判 `tradestatus`
