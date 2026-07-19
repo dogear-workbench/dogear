@@ -3,11 +3,21 @@
 
 从全 A 股市场中按条件筛选股票。
 支持基本面条件（PE/PB/市值/行业）和技术指标条件（RSI/MACD 等）。
+
+数据源：core.snapshot.get_snapshot()（baostock 全 A 日快照 + 本地缓存），
+字段沿用 baostock 原始命名（peTTM/pbMRQ/turn/pctChg 等），行业分类另从
+utils.baostock_client.get_industry_map() join 补齐（snapshot 本身不含行业列）。
+
+MVP 限制：snapshot 的 total_market_cap/float_market_cap 为 NaN 占位（无可靠
+股本数据源），传入 market_cap_min/max 条件时会被忽略并在返回结果里附带
+warnings 提示，不会误伤成 0 结果。
 """
 
 import sys
 import pandas as pd
-from utils.akshare_client import get_all_a_stocks, get_stock_hist
+from core.snapshot import get_snapshot
+from utils.akshare_client import get_stock_hist
+from utils.baostock_client import get_industry_map
 from .indicators import calculate as calc_indicators
 from .protocol import send_progress
 
@@ -22,11 +32,12 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
 
     Args:
         conditions: 筛选条件，支持以下字段:
-            - industry: str          行业名称（如"食品饮料"）
+            - industry: str          行业名称（如"银行"）
             - price_min/price_max: float  价格区间
             - pe_min/pe_max: float   市盈率区间
             - pb_min/pb_max: float   市净率区间
-            - market_cap_min/market_cap_max: float  总市值区间（亿元）
+            - market_cap_min/market_cap_max: float  总市值区间（亿元）；
+              MVP 阶段快照无股本数据，该条件会被忽略并附带 warnings 提示
             - change_percent_min/max: float  涨跌幅区间
             - turnover_rate_min/max: float  换手率区间
             - technical: list[dict]  技术指标条件，如:
@@ -38,41 +49,47 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
         {
             "total_scanned": 5000,
             "total_matched": 25,
-            "stocks": [...]
+            "returned": 5,
+            "stocks": [...],
+            "warnings": [...],
+            "_source": None,
         }
     """
     _log(f"开始筛选, 条件: {conditions}, limit={limit}")
 
-    # 1. 获取全 A 股快照
-    df = get_all_a_stocks()
+    warnings = []
+
+    # 1. 获取全 A 日快照 + 行业映射 join
+    df = get_snapshot(request_id=request_id)
     total_scanned = len(df)
 
     if request_id:
-        send_progress(request_id, 1, 5, f"已获取 {total_scanned} 只 A 股数据")
+        send_progress(request_id, 1, 5, f"已获取 {total_scanned} 只 A 股快照数据")
 
-    # 列名映射（AKShare stock_zh_a_spot_em 的中文列名）
+    industry_df = get_industry_map()[['code', 'code_name', 'industry']]
+    df = pd.merge(df, industry_df, on='code', how='left')
+
+    # 列名映射（snapshot 用 baostock 原始字段名）
     col_map = {
-        'code': '代码',
-        'name': '名称',
-        'price': '最新价',
-        'change_percent': '涨跌幅',
-        'pe': '市盈率-动态',
-        'pb': '市净率',
-        'market_cap': '总市值',
-        'float_market_cap': '流通市值',
-        'turnover_rate': '换手率',
-        'turnover': '成交额',
-        'volume': '成交量',
-        'industry': '所属行业',
-        'high_52w': '52周最高',
-        'low_52w': '52周最低',
+        'code': 'code',
+        'name': 'code_name',
+        'price': 'close',
+        'change_percent': 'pctChg',
+        'pe': 'peTTM',
+        'pb': 'pbMRQ',
+        'market_cap': 'total_market_cap',
+        'float_market_cap': 'float_market_cap',
+        'turnover_rate': 'turn',
+        'turnover': 'amount',
+        'volume': 'volume',
+        'industry': 'industry',
     }
 
     # 找到实际存在的列名
     actual_cols = {}
-    for key, cn_name in col_map.items():
-        if cn_name in df.columns:
-            actual_cols[key] = cn_name
+    for key, col_name in col_map.items():
+        if col_name in df.columns:
+            actual_cols[key] = col_name
 
     # 2. 基本面过滤
     filtered = df.copy()
@@ -113,14 +130,13 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
         if 'pb_max' in conditions:
             filtered = filtered[filtered[pb_col] <= conditions['pb_max']]
 
-    # 市值过滤（数据单位是元，条件单位是亿元）
+    # 市值过滤（MVP 阶段快照无股本数据，total_market_cap 为 NaN 占位，条件跳过不 raise）
     if 'market_cap' in actual_cols:
         mc_col = actual_cols['market_cap']
         filtered[mc_col] = pd.to_numeric(filtered[mc_col], errors='coerce')
-        if 'market_cap_min' in conditions:
-            filtered = filtered[filtered[mc_col] >= conditions['market_cap_min'] * 1e8]
-        if 'market_cap_max' in conditions:
-            filtered = filtered[filtered[mc_col] <= conditions['market_cap_max'] * 1e8]
+        if 'market_cap_min' in conditions or 'market_cap_max' in conditions:
+            _log("MVP 阶段快照无股本数据（total_market_cap 为 NaN 占位），市值筛选条件已跳过")
+            warnings.append("market_cap 条件已忽略（MVP 阶段快照无股本数据）")
 
     # 涨跌幅过滤
     if 'change_percent' in actual_cols:
@@ -146,6 +162,7 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
         send_progress(request_id, 2, 5, f"基本面过滤完成，剩余 {len(filtered)} 只")
 
     # 3. 技术指标过滤（如果有）
+    # snapshot 的 code 带 sh./sz. 前缀，get_stock_hist（akshare）只吃裸码，调用前需 strip
     technical_conditions = conditions.get('technical', [])
     tech_results = {}
 
@@ -158,16 +175,17 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
         _log(f"开始技术指标筛选: {len(candidates)} 只候选")
 
         for idx, (_, row) in enumerate(candidates.iterrows()):
-            code = str(row.get(actual_cols.get('code', '代码'), ''))
-            name = str(row.get(actual_cols.get('name', '名称'), ''))
+            code_full = str(row.get(actual_cols.get('code', 'code'), ''))
+            code_bare = code_full.split('.')[-1] if '.' in code_full else code_full
+            name = str(row.get(actual_cols.get('name', 'code_name'), ''))
 
             if request_id and idx % 10 == 0:
                 send_progress(request_id, 3, 5,
                     f"技术指标筛选中... {idx}/{len(candidates)} ({name})")
 
             try:
-                # 获取K线（使用 AKShare 备用源）
-                hist_df = get_stock_hist(code, period="daily")
+                # 获取K线（K线仍走 AKShare，接口稳定）
+                hist_df = get_stock_hist(code_bare, period="daily")
 
                 if hist_df is None or len(hist_df) < 30:
                     continue
@@ -228,11 +246,11 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
                             break
 
                 if all_pass:
-                    tech_passed_codes.append(code)
-                    tech_results[code] = stock_tech_data
+                    tech_passed_codes.append(code_full)
+                    tech_results[code_full] = stock_tech_data
 
             except Exception as e:
-                _log(f"技术筛选跳过 {code}: {e}")
+                _log(f"技术筛选跳过 {code_full}: {e}")
                 continue
 
         # 用技术筛选结果过滤
@@ -250,11 +268,20 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
 
     stocks = []
     for _, row in result_df.iterrows():
-        code = str(row.get(actual_cols.get('code', ''), ''))
-        market = 1 if code.startswith('6') or code.startswith('688') else 0
+        code_full = str(row.get(actual_cols.get('code', ''), ''))
+        code_bare = code_full.split('.')[-1] if '.' in code_full else code_full
+
+        if code_full.startswith('sh.'):
+            market = 1
+        elif code_full.startswith('sz.'):
+            market = 0
+        elif code_full.startswith('bj.'):
+            market = 2
+        else:
+            market = 0
 
         stock = {
-            'code': code,
+            'code': code_bare,
             'name': str(row.get(actual_cols.get('name', ''), '')),
             'market': market,
         }
@@ -266,7 +293,8 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
                 val = row.get(actual_cols[key])
                 if key == 'market_cap' and val is not None:
                     try:
-                        stock[key] = round(float(val) / 1e8, 2)  # 转为亿
+                        fval = float(val)
+                        stock[key] = None if pd.isna(fval) else round(fval / 1e8, 2)  # 转为亿
                     except Exception:
                         stock[key] = None
                 else:
@@ -277,8 +305,8 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
                         stock[key] = str(val) if val is not None else None
 
         # 添加技术指标数据
-        if code in tech_results:
-            stock['technical_data'] = tech_results[code]
+        if code_full in tech_results:
+            stock['technical_data'] = tech_results[code_full]
 
         stocks.append(stock)
 
@@ -290,5 +318,6 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
         "total_matched": total_matched,
         "returned": len(stocks),
         "stocks": stocks,
-        "_source": df.attrs.get("_source"),
+        "warnings": warnings,
+        "_source": None,
     }

@@ -22,7 +22,7 @@ import { registerTools } from './tool-registry.js';
 registerTools([
   { name: 'CalcIndicators', description: '计算股票技术指标（MACD/KDJ/RSI/BOLL/MA 等）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'ScreenStocks', description: '全市场条件筛选股票', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'ListIndustries', description: '列出东方财富行业板块（可关键词过滤，返回可直接喂给 ScreenStocks 的行业名）', server: 'dogear-stock-analysis', category: 'stock' },
+  { name: 'ListIndustries', description: '列出证监会行业分类（带分类代码前缀，如 J66货币金融服务；可关键词过滤，返回可直接喂给 ScreenStocks 的行业名）', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'GetFinancials', description: '获取个股财报数据', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'CompareIndustry', description: '个股行业对比分析', server: 'dogear-stock-analysis', category: 'stock' },
   { name: 'GetFundFlow', description: '查询个股/大盘/板块资金流向（东方财富数据源）', server: 'dogear-stock-analysis', category: 'stock' },
@@ -300,7 +300,7 @@ export function createStockAnalysisTools() {
         '注意: 技术指标筛选需要逐股获取K线数据，候选超过100只时会自动截断。',
         {
           conditions: z.object({
-            industry: z.string().optional().describe('行业名称（如"食品饮料"、"银行"），必须精确等值匹配东方财富板块名；不确定名称时先调 ListIndustries 查询'),
+            industry: z.string().optional().describe('证监会行业分类名（带分类代码前缀，如"J66货币金融服务"、"C27医药制造业"），必须精确等值匹配；命名与东方财富板块名（"银行"、"食品饮料"）不同——不要直接传俗名，先调 ListIndustries 查真实值域'),
             price_min: z.number().optional().describe('最低价格'),
             price_max: z.number().optional().describe('最高价格'),
             pe_min: z.number().optional().describe('最低市盈率'),
@@ -774,12 +774,13 @@ export function createStockAnalysisTools() {
       // ========================================
       tool(
         'ListIndustries',
-        '列出东方财富的所有行业板块，用来查询"科技"、"消费"这类宽概念对应哪些细分板块名。\n' +
-        '返回的每个板块 name 字段可以直接作为 ScreenStocks 的 industry 参数值（精确等值匹配）。\n' +
+        '列出证监会行业分类（CSRC 一级/二级行业），用来查询"科技"、"消费"这类宽概念对应哪些细分分类名。\n' +
+        '返回的每个 name 字段带分类代码前缀（如"J66货币金融服务"、"C27医药制造业"），可直接作为 ScreenStocks 的 industry 参数（精确等值匹配）。\n' +
+        '⚠️ 命名与东方财富板块名不同：银行股在"J66货币金融服务"下（混少量非银金融），不叫"银行"；医药股在"C27医药制造业"下，不叫"医药"。用户传俗名时必须先查询映射，不要直接猜。\n' +
         '使用场景：\n' +
-        '- 用户提到宽泛领域（"科技股"、"新能源"），先调本工具找细分板块名再筛选。\n' +
-        '- 不确定某个行业名是否存在或叫什么（如"半导体"vs"电子元件"），先列一下再传给 ScreenStocks。\n' +
-        '- 想看某个板块的整体涨跌幅、市值规模、上涨/下跌家数。\n' +
+        '- 用户提到宽泛领域（"科技股"、"新能源"、"银行股"），先调本工具找对应分类名再筛选。\n' +
+        '- 不确定某个行业名是否存在或叫什么，先列一下再传给 ScreenStocks。\n' +
+        '- 想看某个分类的整体涨跌幅、上涨/下跌家数（注：市值字段当前不可用，为 null）。\n' +
         '参数：\n' +
         '- keyword：可选，板块名子串过滤（大小写不敏感）。不传则返回全部（受 limit 截断）。\n' +
         '- limit：返回条数上限，默认 60，最多 200。带 keyword 时通常十几条就够，不带时可能有 90+ 板块，建议配合 keyword 使用。\n' +

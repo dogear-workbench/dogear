@@ -32,7 +32,9 @@ from core.indicators import calculate
 from core.financials import get_financials, compare_industry
 from core.screener import screen_stocks
 from core.signals import detect_signals
-from utils.akshare_client import get_industry_list, DataSourceExhausted
+from core.snapshot import get_snapshot
+from utils.baostock_client import get_industry_map
+from utils.akshare_client import DataSourceExhausted
 from core.formula_engine import parse_and_eval, validate_formula, FormulaContext
 from core.backtest import simple_backtest
 from core.fund_flow import (
@@ -218,46 +220,47 @@ def handle_simple_backtest(request_id: str, params: dict):
 
 def handle_list_industries(request_id: str, params: dict):
     """
-    列出东方财富行业板块（可选按关键词子串过滤）。
+    列出行业分类（baostock 全 A 快照按行业分组聚合，可选按关键词子串过滤）。
+
+    数据源：core.snapshot.get_snapshot() + utils.baostock_client.get_industry_map()
+    join 出行业列，按行业分组算涨跌幅/换手率均值与涨跌家数。
+    market_cap 恒为 None：MVP 阶段快照无股本数据，聚合不出板块总市值。
 
     params:
-      keyword: str | None — 板块名称子串过滤（大小写不敏感）
+      keyword: str | None — 行业名称子串过滤（大小写不敏感）
       limit: int (default 200) — 返回条数上限，防止一次塞太多进上下文
     """
     keyword = (params.get("keyword") or "").strip()
     limit = int(params.get("limit", 200))
 
-    df = get_industry_list()
-
-    # 字段容错读取（东财返回列名稳定，但版本升级时防漂移）
-    name_col = next((c for c in df.columns if c in ('板块名称', '名称')), None)
-    if name_col is None:
-        send_error(request_id, -1, f"行业列表返回缺少板块名称列，实际列: {list(df.columns)}")
-        return
+    snapshot_df = get_snapshot(request_id=request_id)
+    industry_df = get_industry_map()[['code', 'industry']]
+    merged = pd.merge(snapshot_df, industry_df, on='code', how='left')
 
     industries = []
-    for _, row in df.iterrows():
-        name = str(row[name_col])
+    for name, group in merged.groupby('industry', dropna=True):
+        name = str(name)
+        if not name or name == 'nan':
+            continue
         if keyword and keyword.lower() not in name.lower():
             continue
 
-        def _num(col):
-            if col not in df.columns:
-                return None
-            try:
-                v = row[col]
-                return None if pd.isna(v) else float(v)
-            except Exception:
-                return None
+        pct = pd.to_numeric(group['pctChg'], errors='coerce')
+        turn = pd.to_numeric(group['turn'], errors='coerce')
+
+        change_percent = pct.mean()
+        turnover_rate = turn.mean()
 
         industries.append({
             "name": name,
-            "change_percent": _num('涨跌幅'),
-            "market_cap": _num('总市值'),
-            "turnover_rate": _num('换手率'),
-            "up_count": int(_num('上涨家数') or 0) or None,
-            "down_count": int(_num('下跌家数') or 0) or None,
+            "change_percent": None if pd.isna(change_percent) else round(float(change_percent), 2),
+            "market_cap": None,
+            "turnover_rate": None if pd.isna(turnover_rate) else round(float(turnover_rate), 2),
+            "up_count": int((pct > 0).sum()),
+            "down_count": int((pct < 0).sum()),
         })
+
+    industries.sort(key=lambda item: item["name"])
 
     total = len(industries)
     truncated = total > limit

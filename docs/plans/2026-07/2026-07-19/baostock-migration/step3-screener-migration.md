@@ -1,7 +1,7 @@
 ---
 step: 3
 title: screener 改造走本地快照
-status: pending
+status: done
 ---
 
 ## 目标
@@ -51,9 +51,30 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- `python/core/screener.py`：数据源 `get_all_a_stocks()` → `get_snapshot() + get_industry_map()` join；列名映射从 akshare 中文名换成 baostock 原名（`close/pctChg/peTTM/pbMRQ/total_market_cap/turn/industry/code/code_name`）；`market_cap` 过滤分支改成"警告 + 跳过"（不再返回 0）；技术筛选段调 `get_stock_hist` 前 strip 前缀；返回的 `code` strip 前缀、`market` 从前缀反推
+- `python/main.py::handle_list_industries`：数据源换成 snapshot + industry_map，按行业分组聚合 `pctChg.mean() / turn.mean() / up_count / down_count`，`market_cap` 恒为 `null`；返回结构不变
+- `electron/main/agents/tools/stock-analysis-tools.ts`：三处工具描述改写——`registerTools` 里 ListIndustries 短描述、`ScreenStocks` 的 industry 参数 describe、`ListIndustries` 工具主描述——把"东方财富板块名"改成"证监会行业分类名（带分类代码前缀）"，加⚠️提示 agent 不要传俗名
+- **与计划差异**：
+  1. 计划里 step2 假设 snapshot 有 industry 列，实际没有 → screener 内自己 join（industry_map 有 7 天缓存无痛）
+  2. 发现 baostock CSRC 分类名与东财板块名完全不重叠 → 用户决策改工具描述引导 agent 先查 ListIndustries（本次同步改了 TS 工具描述，未做归一化映射）
+  3. `52周最高/最低` 字段删除（snapshot 无对应数据，原来也是"存在才返回"）
+  4. `_source` 保留但固定 `None`（baostock 单源无降级概念）
 
 ### 给下一步的接力棒
-- ListIndustries 返回字段清单（有哪些是靠 snapshot 聚合算出来的、哪些是 NaN）：
-- 端到端跑通的选股场景 case：
-- 已知限制 / 坑：
+- **ListIndustries 返回字段清单**：
+  - `name`（string，如 `J66货币金融服务`）
+  - `change_percent`（float，行业内 pctChg 均值）
+  - `market_cap`（**恒为 null**，snapshot 无股本数据）
+  - `turnover_rate`（float，行业内 turn 均值）
+  - `up_count` / `down_count`（int，行业内涨跌家数）
+  - 总共 83 个 CSRC 分类
+- **端到端选股场景验证**：
+  - PE/PB 筛选：`{pe_max: 30, pb_max: 5}` → total_matched=1432，返回样本正确
+  - 行业过滤：`{industry: 'J66货币金融服务'}` → total_matched=45（前 43 是银行 + 2 非银金融）
+  - market_cap 警告：`{market_cap_min: 100}` → warnings 提示、returned=3710（未误伤为 0）
+- **已知限制 / 坑**（step4 及后续必读）：
+  1. **industry 语义变化**：J66 类目下混少量非银金融，`industry: 'J66货币金融服务'` 筛出的不是纯银行；归一化映射未做，MVP 阶段可接受
+  2. **市值筛选完全不可用**：total_market_cap NaN、warning 提示；用户如需按市值筛选需要单独解决股本数据源
+  3. **industry_map 里查不到的新股**：join 后 `code_name` 会显示 `"nan"` 字符串（`str(NaN)` 默认行为）；本次全量验证未观察到，理论存在
+  4. **技术筛选段 code 需要 strip 前缀**再调 `get_stock_hist`（akshare 只吃裸码），已在本步处理
+  5. **pyc 缓存文件被 tracked**（.gitignore 有规则但历史遗留）：与本 step 无关，未处理
