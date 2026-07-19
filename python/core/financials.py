@@ -12,6 +12,7 @@ from utils.akshare_client import (
     get_stock_basic_xq,
     get_industry_pe_cninfo,
 )
+from utils.baostock_client import get_financial_series, BaostockError
 
 
 def _log(msg: str):
@@ -49,6 +50,131 @@ def _safe_float(val) -> float | None:
         return None
 
 
+def _pct(val) -> float | None:
+    """baostock 财务比率字段是小数（如 0.1056），转换为百分比数值"""
+    f = _safe_float(val)
+    return f * 100 if f is not None else None
+
+
+def _symbol_to_bs_code(symbol: str) -> str:
+    """股票代码转 baostock 格式（如 600519 → sh.600519）"""
+    if symbol.startswith(('600', '601', '603', '605', '688', '689', '900')):
+        return f"sh.{symbol}"
+    if symbol.startswith(('000', '001', '002', '003', '300', '301', '200')):
+        return f"sz.{symbol}"
+    if symbol.startswith(('4', '8', '920')):
+        return f"bj.{symbol}"
+    raise BaostockError(f"无法识别的股票代码格式: {symbol}", error_type="ApiError")
+
+
+def _select_or_empty(df: pd.DataFrame | None, cols: list[str]) -> pd.DataFrame:
+    """从 df 中取出指定列，缺失的列填 None，df 为空则返回全 None 的空表"""
+    if df is None or df.empty:
+        return pd.DataFrame(columns=cols)
+    sub = pd.DataFrame({c: (df[c] if c in df.columns else None) for c in cols})
+    return sub
+
+
+def _get_financials_from_baostock(symbol: str, periods: int) -> dict:
+    """
+    通过 baostock 5 个财务接口组合获取财报数据，字段映射回旧同花顺输出的英文键名。
+
+    baostock 字段 → 输出字段：
+      profit.MBRevenue → revenue（元，累计口径）
+      profit.netProfit → net_profit（元，累计口径）
+      profit.roeAvg → roe（×100，累计口径）
+      profit.npMargin → net_margin（×100）
+      profit.gpMargin → gross_margin（×100）
+      profit.epsTTM → eps
+      growth.YOYPNI → net_profit_yoy（×100，官方归母净利润同比）
+      balance.liabilityToAsset → debt_ratio（×100）
+      balance.currentRatio → current_ratio（新增字段，不做单位转换）
+      revenue_yoy 用相邻年份同报告期（月/日相同）的 revenue 自算，因 growth 表无营收同比字段
+
+    net_profit_deducted / bvps / operating_cash_flow_per_share：baostock 无对应数据，固定 None
+    revenue_mom / revenue_single_yoy / net_profit_mom / net_profit_single_yoy 等 mom/single_yoy 字段：MVP 阶段固定 None
+    """
+    bs_code = _symbol_to_bs_code(symbol)
+    year_range = max(2, (periods // 4) + 1)
+    data = get_financial_series(bs_code, year_range=year_range)
+
+    if all(df is None or df.empty for df in data.values()):
+        raise BaostockError(f"baostock 财务数据为空: {symbol}", error_type="EmptyResult")
+
+    profit_cols = ['statDate', 'roeAvg', 'npMargin', 'gpMargin', 'netProfit', 'epsTTM', 'MBRevenue']
+    growth_cols = ['statDate', 'YOYPNI']
+    balance_cols = ['statDate', 'liabilityToAsset', 'currentRatio']
+
+    profit_sub = _select_or_empty(data.get('profit'), profit_cols)
+    growth_sub = _select_or_empty(data.get('growth'), growth_cols)
+    balance_sub = _select_or_empty(data.get('balance'), balance_cols)
+
+    merged = profit_sub.merge(growth_sub, on='statDate', how='outer').merge(balance_sub, on='statDate', how='outer')
+    merged = merged[merged['statDate'].notna() & (merged['statDate'] != '')]
+
+    if merged.empty:
+        raise BaostockError(f"baostock 财务数据无法解析: {symbol}", error_type="EmptyResult")
+
+    merged = merged.sort_values('statDate').reset_index(drop=True)
+
+    revenue_by_date = {row['statDate']: _safe_float(row['MBRevenue']) for _, row in merged.iterrows()}
+
+    def _prev_year_date(stat_date: str) -> str | None:
+        try:
+            y, m, d = stat_date.split('-')
+            return f"{int(y) - 1}-{m}-{d}"
+        except (ValueError, AttributeError):
+            return None
+
+    all_periods = []
+    for _, row in merged.iterrows():
+        stat_date = row['statDate']
+        revenue = _safe_float(row.get('MBRevenue'))
+        prev_revenue = revenue_by_date.get(_prev_year_date(stat_date))
+        revenue_yoy = (
+            round((revenue - prev_revenue) / prev_revenue * 100, 4)
+            if revenue is not None and prev_revenue not in (None, 0)
+            else None
+        )
+
+        all_periods.append({
+            "report_date": stat_date,
+            "revenue": revenue,
+            "revenue_yoy": revenue_yoy,
+            "revenue_mom": None,
+            "revenue_single_yoy": None,
+            "net_profit": _safe_float(row.get('netProfit')),
+            "net_profit_yoy": _pct(row.get('YOYPNI')),
+            "net_profit_mom": None,
+            "net_profit_single_yoy": None,
+            "net_profit_deducted": None,
+            "net_profit_deducted_yoy": None,
+            "eps": _safe_float(row.get('epsTTM')),
+            "eps_yoy": None,
+            "bvps": None,
+            "roe": _pct(row.get('roeAvg')),
+            "roe_yoy": None,
+            "roe_diluted": None,
+            "roe_diluted_yoy": None,
+            "gross_margin": _pct(row.get('gpMargin')),
+            "gross_margin_yoy": None,
+            "net_margin": _pct(row.get('npMargin')),
+            "net_margin_yoy": None,
+            "debt_ratio": _pct(row.get('liabilityToAsset')),
+            "debt_ratio_yoy": None,
+            "current_ratio": _safe_float(row.get('currentRatio')),
+            "operating_cash_flow_per_share": None,
+            "operating_cash_flow_per_share_yoy": None,
+        })
+
+    result_periods = list(reversed(all_periods))[:periods]
+
+    if not result_periods:
+        raise BaostockError(f"baostock 财务数据解析后为空: {symbol}", error_type="EmptyResult")
+
+    return {"symbol": symbol, "periods": result_periods, "_source": "baostock"}
+
+
 def get_financials(symbol: str, periods: int = 4) -> dict:
     """
     获取个股财报摘要数据。
@@ -81,13 +207,18 @@ def get_financials(symbol: str, periods: int = 4) -> dict:
     _log(f"获取财报: {symbol}, 期数={periods}")
 
     try:
+        return _get_financials_from_baostock(symbol, periods)
+    except BaostockError as e:
+        _log(f"baostock 财务数据获取失败({e.error_type}): {e}，降级到同花顺")
+
+    try:
         df = get_financial_abstract(symbol)
     except Exception as e:
         _log(f"获取财报失败: {e}")
-        return {"symbol": symbol, "periods": [], "error": str(e)}
+        return {"symbol": symbol, "periods": [], "error": str(e), "error_type": "ThsFetchError"}
 
     if df is None or df.empty:
-        return {"symbol": symbol, "periods": []}
+        return {"symbol": symbol, "periods": [], "_source": "ths"}
 
     # 列名来自 akshare_client.get_financial_abstract 归一化后的宽表
     # （stock_financial_abstract_new_ths 升级版，每个指标额外带 _yoy/_mom/_single_yoy 衍生列）
@@ -136,7 +267,7 @@ def get_financials(symbol: str, periods: int = 4) -> dict:
 
         result_periods.append(period_data)
 
-    return {"symbol": symbol, "periods": result_periods}
+    return {"symbol": symbol, "periods": result_periods, "_source": "ths"}
 
 
 def _parse_kv_df(df: pd.DataFrame) -> dict:

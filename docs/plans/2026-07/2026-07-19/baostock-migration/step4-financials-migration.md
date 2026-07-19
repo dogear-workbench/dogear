@@ -1,7 +1,7 @@
 ---
 step: 4
 title: financials 改造走 baostock 财务接口
-status: pending
+status: done
 ---
 
 ## 目标
@@ -50,13 +50,36 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- `python/core/financials.py`：仅此一个文件
+  - 新增 `_pct(val)`：baostock 财务比率字段是小数，×100 转百分比
+  - 新增 `_symbol_to_bs_code(symbol)`：`600/601/603/605/688/689/900→sh.` / `000/001/002/003/300/301/200→sz.` / `4/8/920→bj.`；无法识别抛 `BaostockError(ApiError)` 触发降级
+  - 新增 `_select_or_empty(df, cols)`：安全取列（缺列填 None、空 df 返回空表），供三表 outer join 用
+  - 新增 `_get_financials_from_baostock(symbol, periods)`：走 profit + growth + balance 三表按 `statDate` outer join，字段映射到旧同花顺英文键；operation / cash_flow 拉取但未纳入输出
+  - `get_financials`：顶部先 try baostock，只 catch `BaostockError` 降级到同花顺；两条路径都加 `_source`（"baostock" / "ths"）；最终失败加 `error_type: "ThsFetchError"`
+- **未改**：`compare_industry` 及其辅助函数 / `python-bridge.ts` / `stock-analysis-tools.ts` / `.claude/**`
+- **与计划差异**：
+  1. `operation` / `cash_flow` 两表拉取但未纳入最终输出（计划提到 NRTurnRatio/INVTurnRatio/CAToAsset，委派指令未强制要求，本步为保范围最小未展开）
+  2. `revenue_yoy` 自算（相邻年份同月日 revenue 差值），而非用 growth 表——因为 growth 表根本没有营收同比字段
+  3. 新增 `current_ratio` 字段（旧同花顺无），只增不减不影响兼容
 
 ### 给下一步的接力棒
-- baostock 财务字段与同花顺字段映射差异表：
-- yoy/mom/single_yoy 覆盖情况：
-- 已知限制 / 坑：
+- **baostock 与同花顺字段差异表**：
+  | 字段 | baostock 来源 | 缺失情况 |
+  |---|---|---|
+  | revenue / net_profit / eps / roe / net_margin / gross_margin | profit 表 | ✓ |
+  | net_profit_yoy | growth.YOYPNI | ✓ |
+  | debt_ratio / current_ratio | balance 表 | ⚠️ debt_ratio 数量级不稳定 |
+  | revenue_yoy | 自算 | 依赖两年数据都非 null |
+  | net_profit_deducted / bvps / operating_cash_flow_per_share | 无 | 恒 None |
+  | mom / single_yoy 全体 | 无（MVP 决策） | 恒 None |
+- **yoy / mom / single_yoy 覆盖**：只有 `net_profit_yoy`（官方 YOYPNI）和 `revenue_yoy`（自算，Q1/Q3 因 revenue 缺失常为空）有值；其余 yoy 字段全 None；mom / single_yoy 全 None
+- **已知限制 / 坑**（**重要，需向下一环节传达**）：
+  1. **`debt_ratio` 数据质量问题**：baostock `liabilityToAsset` 多数历史季度原始值比合理范围小 100 倍（0.001 量级而非 0.1），只有最新 1-2 个季度是对的，两只测试股票都复现相同规律。当前实现对所有季度统一 ×100，会导致历史 debt_ratio 显著失真偏小。**未做启发式修正**（客户端无法判断真值）。**建议**：agent 提示词或 `GetFinancials` 工具描述加一句"debt_ratio 部分历史季度可能不准确，交叉验证；比率<1 时高度可疑"
+  2. **`MBRevenue`（revenue）在 Q1/Q3 常为 null**：baostock 该字段规律性只在半年报/年报（Q2/Q4）披露；agent 逐季看营收趋势会看到间歇性空值
+  3. **累计口径 vs 单季度**：baostock 是当年累计值（Q3 = 前三季度累计），旧同花顺可能是单季度；已用 `_source` 字段标注让 agent 感知口径差异，未做单季度差分转换（超 MVP 范围）
+  4. **无扣非净利润 / BVPS / 每股经营现金流**：baostock 无对应字段固定 None
+  5. **降级路径已实测**（`999999` 触发无效前缀 → catch BaostockError → 走同花顺 → 同花顺也无该代码 → 返回 error），逻辑链完整
 
 ## 完成后
 
-回到 `../baostock-migration/plan.md` 末尾补「## 完成总结」，汇总 4 步实际改动与偏差。
+已回到 `../baostock-migration/plan.md` 末尾补「## 完成总结」，汇总 4 步实际改动与偏差。

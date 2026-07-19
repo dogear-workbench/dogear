@@ -16,7 +16,7 @@
 - [x] [Step 1: baostock 客户端骨架](./step1-baostock-client.md) — 登录管理 + 三类接口封装 + TTL 缓存
 - [x] [Step 2: 全 A 快照懒预拉与本地缓存](./step2-snapshot-cache.md) — snapshot.py 首次触发即拉、跨天重拉、派生字段计算
 - [x] [Step 3: screener 改造走本地快照](./step3-screener-migration.md) — `screen_stocks` / `ListIndustries` / 行业过滤从 snapshot 读
-- [ ] [Step 4: financials 改造走 baostock 财务接口](./step4-financials-migration.md) — `get_financials` 主源换 baostock，同花顺兜底保留
+- [x] [Step 4: financials 改造走 baostock 财务接口](./step4-financials-migration.md) — `get_financials` 主源换 baostock，同花顺兜底保留
 
 ## 全局决策
 
@@ -46,3 +46,36 @@
 - 并发/多线程拉取（串行即可）
 - 快照多源合并降级（baostock 挂了就报错，不再走 akshare 兜底）
 - akshare_client 里挂掉的接口清理（挂着即可）
+
+## 完成总结
+
+选股 SOP 三条路径（ScreenStocks / ListIndustries / GetFinancials）全部脱离东财 clist 依赖，改走 baostock 数据源；同花顺作为 GetFinancials 兜底保留；实测 5481 只有效 A 股快照约 7 分钟一次性预拉，之后本地缓存毫秒命中。
+
+**实际改动清单**：
+- 新增 `python/utils/baostock_client.py`（6 个接口 + BaostockError + 进程级 session 单例 + TTL 缓存 + stdout 噪声吞掉）
+- 新增 `python/core/snapshot.py`（懒预拉 + 本地 JSONL 缓存 + 原子写入 + 派生字段占位）
+- 改造 `python/core/screener.py::screen_stocks`（数据源换成 snapshot + industry_map join，字段用 baostock 原名，market_cap 条件走警告分支）
+- 改造 `python/main.py::handle_list_industries`（同样切换到 snapshot + 按行业分组聚合）
+- 改造 `python/core/financials.py::get_financials`（新增 baostock 主路径，同花顺降级兜底，两条路径 `_source` 标注来源）
+- 同步改 `electron/main/agents/tools/stock-analysis-tools.ts` 三处工具描述（"东财板块名" → "证监会行业分类名"）
+- `python/requirements.txt` 加 `baostock`
+
+**与原计划的关键偏差**（用户已决策通过）：
+1. **snapshot 跳过市值派生**（step2）：`get_stock_basic()` 实测无总股本字段，`total_market_cap` / `float_market_cap` / `volume_ratio` 三个字段 NaN 占位；screener 侧市值筛选条件走警告不误伤
+2. **industry 命名体系变化**（step3）：baostock 用证监会分类（"J66货币金融服务"），跟东财板块名（"银行"）完全不重叠；改工具描述引导 agent 先查 ListIndustries，未做归一化映射
+3. **financials 部分字段无数据**（step4）：baostock 无扣非净利润 / 每股净资产 / 每股经营现金流；mom / single_yoy 全部 MVP 不做
+
+**已知遗留问题**（后续可能需要处理）：
+1. **`debt_ratio` 数据质量**：baostock `liabilityToAsset` 多数历史季度原始值小 100 倍，导致 debt_ratio 展示失真偏小；未做启发式修正——建议在 GetFinancials 工具描述或 stock-picking skill 提示 agent 交叉验证
+2. **市值筛选完全不可用**：需要独立解决股本数据源问题
+3. **CSRC 分类粒度问题**：J66 混少量非银金融，agent 拿到结果需自行辨识
+4. **revenue Q1/Q3 常空**：baostock 只在半年报/年报稳定披露 MBRevenue
+5. **快照首次同步阻塞 7 分钟**：接入 python-bridge 时建议加异步预热命令
+6. **pyc 缓存文件被 tracked**（历史遗留，非本次引入）：与 baostock 迁移无关，可另起清理任务
+
+**未做但已规划的后续（超 MVP 范围）**：
+- snapshot 定时刷新（当前首次触发即拉，一天一次；后续可上定时任务）
+- 全 A 拉取并发化（当前串行 7 分钟，加并发可压到 2-3 分钟）
+- 快照多源合并降级（当前 baostock 挂了直接报错，未来可加 akshare 兜底）
+- 累计口径 → 单季度差分（financials `_source` 已标注让 agent 感知，未做转换）
+- akshare_client 里已挂掉的接口清理（挂着不影响）
