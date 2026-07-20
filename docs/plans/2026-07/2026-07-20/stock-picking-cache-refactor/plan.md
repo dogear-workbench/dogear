@@ -28,7 +28,7 @@
 - [x] [Step 2: 公告列表当天缓存](./step2-announcements-cache.md) — announcement-service.listAnnouncements 加当天 key 缓存
 - [x] [Step 3: 候选池预热服务 + PreheatCandidatePool 工具](./step3-preheat-service.md) — 新增 preheat-service 编排硬筛+全池数据预热；新增 MCP 工具
 - [x] [Step 4: 综合评分服务 + RankCandidates 工具](./step4-scoring-tool.md) — 新增 scoring-service 纯函数打分；新增 MCP 工具支持权重可调
-- [ ] [Step 5: 改写 stock-picking skill 文档](./step5-skill-rewrite.md) — 把新 SOP + 权重公式 + 子会话粒度 + 长周期维度全部落进 SKILL.md
+- [x] [Step 5: 改写 stock-picking skill 文档](./step5-skill-rewrite.md) — 把新 SOP + 权重公式 + 子会话粒度 + 长周期维度全部落进 SKILL.md
 
 ## 全局决策
 
@@ -97,3 +97,25 @@ interface RankedCandidate extends CandidateData {
 - 元数据在 tool-registry 里注册（复用 registerTools 机制）
 
 **不写单测**（项目偏好）；每 step 完成后手动 build + 用 skill 跑一遍验证。
+
+## 完成总结
+
+**实际交付**（5 个 commit）：
+1. `9e6eb3b` Step 1：财报缓存服务，GetFinancials 走本地 JSONL 缓存
+2. Step 2：公告列表当天缓存，同天多次查询走本地过滤
+3. Step 3：候选池预热服务与 PreheatCandidatePool 工具（含 tool-packs 挂载）
+4. Step 4：综合评分服务与 RankCandidates 工具（同 server 追加）
+5. Step 5：改写 stock-picking SKILL.md（主会话直接 Edit，`.claude/` 铁律）
+
+**架构成效**：agent 从"手工串行 75+ 次工具调用"收敛到"预热 1 次 + 评分 N 次（换权重秒级）+ 子会话 N 只并行深挖"。首次预热约 40s，同天重跑 <15s。
+
+**关键设计决策记录**：
+- MCP server 挂载走 `tool-packs.ts` + `conversation-runtime-service.ts`（可选工具包机制），不是 `query-based-session.ts`——用户需在设置页手动开启「候选池预热」工具包
+- 评分算法：分位数打分 + 归一化权重 + signal/catalyst 恒不归零（空数组是合法结果，非数据缺失）+ 信号时间衰减 1.0→0.3 线性
+- 财报缓存粒度是 `reportPeriod`（如 `2025Q4`）永久 key，同一期永不失效
+- 公告列表缓存粒度是「当天 + 宽范围（近 6 个月 × 100 条）」，同天 opts 组合走本地过滤
+
+**已知遗留（不阻塞交付）**：
+- `netProfitYoYQuarter` 当前 baostock 主源恒 null，growth 维度实际等价纯用年报口径
+- `market_cap_min/max` baostock 主源无股本数据，条件基本不生效
+- 未做真实数据端到端手测，等下一次真实选股任务触发时验证
