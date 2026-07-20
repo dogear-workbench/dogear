@@ -62,6 +62,23 @@ export interface CachedAnnouncementEntry {
   cachedAt: string;
 }
 
+/** 公告列表当天缓存中的单条条目（不含 code/market，由 AnnouncementListCache 顶层统一携带） */
+export interface CachedAnnouncementListItem {
+  url: string;
+  title: string;
+  type: AnnouncementType;
+  date: string;
+}
+
+/** 公告列表当天缓存文件结构（`list.{YYYY-MM-DD}.json`） */
+interface AnnouncementListCache {
+  cachedAt: string;
+  market: Market;
+  code: string;
+  range: { since: string; until: string; limit: number };
+  items: CachedAnnouncementListItem[];
+}
+
 type Market = 'sh' | 'sz' | 'bj';
 
 // ============================================================
@@ -191,29 +208,6 @@ function marketToColumn(market: Market): string {
   return 'bj';
 }
 
-/**
- * 已验证的巨潮 category 参数，仅覆盖定期报告三类。
- * IPO / 临时公告没有稳定可验证的官方分类 ID，交给 inferType 做客户端二次过滤兜底，
- * 正确性优先于服务端预过滤效率。
- */
-const CATEGORY_IDS: Partial<Record<AnnouncementType, string[]>> = {
-  annual: ['category_ndbg_szsh'],
-  semi_annual: ['category_bndbg_szsh'],
-  quarterly: ['category_yjdbg_szsh', 'category_sjdbg_szsh'],
-};
-
-/** 把类型枚举映射到巨潮 category 参数；混入未知类型时放弃服务端预过滤（返回空串），避免误伤 */
-function categoryFilter(types?: AnnouncementType[]): string {
-  if (!types || types.length === 0) return '';
-  const ids: string[] = [];
-  for (const t of types) {
-    const mapped = CATEGORY_IDS[t];
-    if (!mapped) return '';
-    ids.push(...mapped);
-  }
-  return ids.join(';');
-}
-
 /** 从巨潮返回的 announcementType（"||" 分隔的层级分类编码）反推 AnnouncementType */
 function inferType(cninfoCategory: string | null | undefined): AnnouncementType {
   if (!cninfoCategory) return 'other';
@@ -236,14 +230,6 @@ function extractDate(adjunctUrl: string, fallbackTime: number): string {
   return new Date(fallbackTime + 8 * 3600 * 1000).toISOString().slice(0, 10);
 }
 
-/** 拼装 seDate 参数（"since~until"），both 缺省时不传日期范围（不限时间，靠 limit/翻页上限兜底） */
-function buildSeDate(opts: ListAnnouncementsOpts): string {
-  if (!opts.since && !opts.until) return '';
-  const since = opts.since ?? '1990-01-01';
-  const until = opts.until ?? new Date().toISOString().slice(0, 10);
-  return `${since}~${until}`;
-}
-
 // ============================================================
 // 巨潮公告列表查询
 // ============================================================
@@ -264,12 +250,12 @@ const PAGE_SIZE = 30;
 /** 翻页安全上限，避免类型过滤命中率低时无限翻页 */
 const MAX_PAGES = 10;
 
+/** 服务端 category 参数固定传空：当天首次拉全量缓存不做类型预过滤，类型过滤统一交给本地 filterCachedAnnouncements */
 async function fetchAnnouncementPage(
   code: string,
   orgId: string,
   market: Market,
   pageNum: number,
-  category: string,
   seDate: string,
 ): Promise<CninfoQueryResponse> {
   const params = new URLSearchParams({
@@ -278,7 +264,7 @@ async function fetchAnnouncementPage(
     pageSize: String(PAGE_SIZE),
     pageNum: String(pageNum),
     column: marketToColumn(market),
-    category,
+    category: '',
     plate: '',
     seDate,
     searchkey: '',
@@ -300,12 +286,119 @@ async function fetchAnnouncementPage(
       });
       return resp.json() as Promise<CninfoQueryResponse>;
     },
-    { key: `cninfo:list:${code}:${category}:${seDate}:${pageNum}`, cacheTtlMs: 60_000 },
+    { key: `cninfo:list:${code}:${seDate}:${pageNum}`, cacheTtlMs: 60_000 },
   );
 }
 
+/** 按 seDate 翻页拉取公告列表，最多凑够 limit 条，不做类型过滤（留给调用方本地过滤） */
+async function fetchAnnouncementItems(
+  code: string,
+  orgId: string,
+  market: Market,
+  seDate: string,
+  limit: number,
+): Promise<CachedAnnouncementListItem[]> {
+  const collected: CachedAnnouncementListItem[] = [];
+
+  for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
+    const page = await fetchAnnouncementPage(code, orgId, market, pageNum, seDate);
+    const items = page.announcements ?? [];
+
+    for (const item of items) {
+      collected.push({
+        url: `http://static.cninfo.com.cn/${item.adjunctUrl}`,
+        title: item.announcementTitle,
+        type: inferType(item.announcementType),
+        date: extractDate(item.adjunctUrl, item.announcementTime),
+      });
+
+      if (collected.length >= limit) break;
+    }
+
+    if (collected.length >= limit) break;
+    if (items.length < PAGE_SIZE) break; // 已到最后一页
+  }
+
+  return collected.slice(0, limit);
+}
+
+// ============================================================
+// 公告列表当天缓存
+// ============================================================
+
+/** 当天首次拉取时使用的宽范围：覆盖绝大多数查询，之后同天所有 opts 组合走本地过滤 */
+const WIDE_RANGE_MONTHS = 6;
+const WIDE_FETCH_LIMIT = 100;
+
+/** 本地时区 YYYY-MM-DD，用作缓存 key（与 UTC 的 toISOString 会有跨日误差，故手动拼接） */
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function todayDateKey(): string {
+  return localDateKey(new Date());
+}
+
+function monthsAgoDateKey(months: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return localDateKey(d);
+}
+
+function getAnnouncementListCachePath(market: Market, code: string, dateKey: string): string {
+  return path.join(getStorageDir(market, code), `list.${dateKey}.json`);
+}
+
+/** 读当天公告列表缓存；文件不存在是正常情况（当天首次调用），只有解析失败才打日志 */
+async function readAnnouncementListCache(
+  market: Market,
+  code: string,
+  dateKey: string,
+): Promise<AnnouncementListCache | null> {
+  const filePath = getAnnouncementListCachePath(market, code, dateKey);
+  try {
+    const raw = await fs.readFile(filePath, 'utf-8');
+    return JSON.parse(raw) as AnnouncementListCache;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    console.warn('[AnnouncementListCache] 读缓存失败，当作未命中:', err);
+    return null;
+  }
+}
+
+/** 写盘失败只打日志，不影响本次已经拿到的返回结果 */
+async function writeAnnouncementListCache(cache: AnnouncementListCache, dateKey: string): Promise<void> {
+  const filePath = getAnnouncementListCachePath(cache.market, cache.code, dateKey);
+  try {
+    await safeJsonWrite(filePath, cache);
+  } catch (err) {
+    console.warn('[AnnouncementListCache] 写缓存失败，不影响本次返回:', err);
+  }
+}
+
+/** 对当天缓存的全量列表做本地过滤（since/until/types/limit），Step 3 预热服务复用 */
+export function filterCachedAnnouncements(
+  items: CachedAnnouncementListItem[],
+  opts: ListAnnouncementsOpts,
+): CachedAnnouncementListItem[] {
+  let filtered = items;
+  if (opts.since) filtered = filtered.filter((x) => x.date >= opts.since!);
+  if (opts.until) filtered = filtered.filter((x) => x.date <= opts.until!);
+  if (opts.types && opts.types.length > 0) filtered = filtered.filter((x) => opts.types!.includes(x.type));
+  return filtered.slice(0, opts.limit ?? 20);
+}
+
+function toAnnouncements(items: CachedAnnouncementListItem[], code: string, market: Market): Announcement[] {
+  return items.map((item) => ({ ...item, code, market }));
+}
+
 /**
- * 拉取指定股票的公告列表。
+ * 拉取指定股票的公告列表，按"当天 key"缓存：当天首次调用忽略 opts，拉近 6 个月 × 100 条全量写盘；
+ * 之后同天内的所有 opts 组合都用这份全量数据本地过滤。若请求的 since 早于缓存覆盖范围，视为缓存不完整，
+ * 改用能覆盖该 since 的范围重新真调并覆写当天缓存。
  * @param code 股票代码，如 "600519"
  * @param market 市场，不传则从代码前缀推断；推断失败返回 error
  * @param opts since/until 日期过滤、types 类型过滤、limit 返回条数（默认 20）
@@ -320,43 +413,38 @@ export async function listAnnouncements(
     return { ok: false, error: `无法识别股票代码 ${code} 所属市场，请显式传入 market` };
   }
 
+  const today = todayDateKey();
+
   try {
+    const cached = await readAnnouncementListCache(resolvedMarket, code, today);
+    if (cached && (!opts.since || opts.since >= cached.range.since)) {
+      return { ok: true, data: toAnnouncements(filterCachedAnnouncements(cached.items, opts), code, resolvedMarket) };
+    }
+
     const orgId = await getOrgId(code);
     if (!orgId) {
       return { ok: false, error: `未找到股票代码 ${code} 对应的巨潮 orgId` };
     }
 
-    const category = categoryFilter(opts.types);
-    const seDate = buildSeDate(opts);
-    const limit = opts.limit ?? 20;
+    const wideSince = monthsAgoDateKey(WIDE_RANGE_MONTHS);
+    const since = opts.since && opts.since < wideSince ? opts.since : wideSince;
+    const limit = Math.max(WIDE_FETCH_LIMIT, opts.limit ?? 0);
+    const seDate = `${since}~${today}`;
 
-    const collected: Announcement[] = [];
+    const items = await fetchAnnouncementItems(code, orgId, resolvedMarket, seDate, limit);
 
-    for (let pageNum = 1; pageNum <= MAX_PAGES; pageNum++) {
-      const page = await fetchAnnouncementPage(code, orgId, resolvedMarket, pageNum, category, seDate);
-      const items = page.announcements ?? [];
+    await writeAnnouncementListCache(
+      {
+        cachedAt: new Date().toISOString(),
+        market: resolvedMarket,
+        code,
+        range: { since, until: today, limit },
+        items,
+      },
+      today,
+    );
 
-      for (const item of items) {
-        const type = inferType(item.announcementType);
-        if (opts.types && opts.types.length > 0 && !opts.types.includes(type)) continue;
-
-        collected.push({
-          url: `http://static.cninfo.com.cn/${item.adjunctUrl}`,
-          title: item.announcementTitle,
-          type,
-          date: extractDate(item.adjunctUrl, item.announcementTime),
-          code,
-          market: resolvedMarket,
-        });
-
-        if (collected.length >= limit) break;
-      }
-
-      if (collected.length >= limit) break;
-      if (items.length < PAGE_SIZE) break; // 已到最后一页
-    }
-
-    return { ok: true, data: collected.slice(0, limit) };
+    return { ok: true, data: toAnnouncements(filterCachedAnnouncements(items, opts), code, resolvedMarket) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { ok: false, error: `巨潮公告查询失败: ${message}` };
