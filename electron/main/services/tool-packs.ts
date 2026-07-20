@@ -70,4 +70,13 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
     toolCount: 2,
     requiresWorkspace: false,
   },
+  {
+    name: 'stock-picking',
+    label: '候选池预热',
+    description: '硬筛候选池 + 财报/信号/公告标题全池预热（PreheatCandidatePool），配合选股 skill 使用',
+    mcpServerName: 'dogear-stock-picking',
+    toolCount: 1,
+    requiresWorkspace: false,
+    requirements: '需要 Python 3.10+（复用股票分析计算层）',
+  },
 ];
