@@ -1,16 +1,17 @@
 /**
  * 选股预热 MCP Server 工具
  *
- * 提供 1 个工具：
+ * 提供 2 个工具：
  *   - PreheatCandidatePool — 硬筛候选池 + 财报/信号/公告标题全池预热，一次调用产出完整候选池数据
- *
- * 后续 Step 4 会在本文件追加 RankCandidates（综合评分排序）。
+ *   - RankCandidates — 对候选池按综合权重打分排序，支持权重可调秒级重跑
  */
 
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { preheatCandidatePool } from '../../services/stock/preheat-service.js';
-import type { PreheatResult } from '../../services/stock/preheat-service.js';
+import type { CandidateData, PreheatResult } from '../../services/stock/preheat-service.js';
+import { scoreAndRank, getEffectiveWeights } from '../../services/stock/scoring-service.js';
+import type { ScoringWeights, RankedCandidate } from '../../services/stock/scoring-service.js';
 import { registerTools } from './tool-registry.js';
 
 // 注册工具元数据到 registry
@@ -18,6 +19,12 @@ registerTools([
   {
     name: 'PreheatCandidatePool',
     description: '硬筛候选池 + 财报/信号/公告标题全池预热，一次调用产出完整候选池数据',
+    server: 'dogear-stock-picking',
+    category: 'stock',
+  },
+  {
+    name: 'RankCandidates',
+    description: '对 PreheatCandidatePool 的候选池按综合权重（ROE/增速/估值/信号/催化剂/惩罚）打分并排序，权重可调',
     server: 'dogear-stock-picking',
     category: 'stock',
   },
@@ -66,6 +73,56 @@ function formatPreheatOutput(result: PreheatResult): string {
   output += '```json\n';
   output += JSON.stringify({ candidates }, null, 2);
   output += '\n```\n';
+
+  return output;
+}
+
+const DIMENSION_LABELS: Record<keyof ScoringWeights, string> = {
+  roe: 'ROE',
+  growth: '增速',
+  valuation: '估值',
+  signal: '信号',
+  catalyst: '催化剂',
+  penalty: '惩罚',
+};
+
+function isWeightsEmpty(weights: Partial<ScoringWeights> | undefined): boolean {
+  if (!weights) return true;
+  return Object.values(weights).every((v) => v === undefined);
+}
+
+function formatRankedOutput(
+  ranked: RankedCandidate[],
+  top: number,
+  totalCount: number,
+  effectiveWeights: ScoringWeights,
+  zeroedDimensions: (keyof ScoringWeights)[],
+  usedDefaultWeights: boolean,
+): string {
+  if (totalCount === 0) {
+    return '## 综合评分排序\n\n候选池为空，请先用 PreheatCandidatePool 生成候选池数据。';
+  }
+
+  const shown = ranked.slice(0, top);
+  let output = `## 综合评分排序（前 ${shown.length}，共 ${totalCount} 只）\n\n`;
+
+  const weightLine = (Object.keys(DIMENSION_LABELS) as (keyof ScoringWeights)[])
+    .map((key) => `${DIMENSION_LABELS[key]} ${(effectiveWeights[key] * 100).toFixed(0)}%`)
+    .join(' / ');
+  output += `**权重**：${weightLine}${usedDefaultWeights ? '（默认）' : ''}\n\n`;
+
+  if (zeroedDimensions.length > 0) {
+    const labels = zeroedDimensions.map((key) => DIMENSION_LABELS[key]).join('、');
+    output += `> ${labels} 维度全池缺失，权重已重分配\n\n`;
+  }
+
+  output += '| 排名 | 代码 | 名称 | 综合分 | ROE分 | 增速分 | 估值分 | 信号分 | 催化剂分 | 惩罚 |\n';
+  output += '|---|---|---|---|---|---|---|---|---|---|\n';
+  for (const c of shown) {
+    const b = c.scoreBreakdown;
+    output += `| ${c.rank} | ${c.code} | ${c.name} | ${c.score.toFixed(1)} | ${b.roe.toFixed(0)} | ${b.growth.toFixed(0)} | ` +
+      `${b.valuation.toFixed(0)} | ${b.signal.toFixed(0)} | ${b.catalyst.toFixed(0)} | ${b.penalty.toFixed(0)} |\n`;
+  }
 
   return output;
 }
@@ -134,6 +191,54 @@ export function createStockPickingTools() {
               content: [{
                 type: 'text' as const,
                 text: `候选池预热失败: ${error instanceof Error ? error.message : String(error)}`,
+              }],
+              isError: true,
+            };
+          }
+        }
+      ),
+
+      // ========================================
+      // 工具: 候选池综合评分排序
+      // ========================================
+      tool(
+        'RankCandidates',
+        '对 PreheatCandidatePool 的候选池按综合权重打分并排序：ROE/增速/估值走分位数打分，信号强度按近期技术信号加减分并按时间衰减，' +
+        '公告催化剂按标题关键词加减分，业绩下滑作为独立惩罚项扣分。综合分 = 各维度加权求和 - 惩罚。\n' +
+        '使用场景: 拿到 PreheatCandidatePool 的候选池数据后，用本工具排序筛出 Top N；权重可调，支持秒级重跑试算不同策略（如更看重 ROE 或更看重估值）。\n' +
+        '返回: markdown 表格，含每只的综合分与各维度原始得分（0-100），便于用户理解排名依据。\n' +
+        '注意: 某维度若全池候选都缺失该数据，该维度权重会自动归零并按比例分配给其他维度，返回结果会标注。',
+        {
+          candidates: z.array(z.record(z.string(), z.any())).min(1)
+            .describe('候选池数据数组，直接从 PreheatCandidatePool 结果里"结构化数据"JSON 代码块的 candidates 字段复制'),
+          weights: z.object({
+            roe: z.number().optional().describe('ROE 权重，默认 0.25'),
+            growth: z.number().optional().describe('净利增速权重，默认 0.25'),
+            valuation: z.number().optional().describe('估值（PE 倒数）权重，默认 0.20'),
+            signal: z.number().optional().describe('技术信号权重，默认 0.15'),
+            catalyst: z.number().optional().describe('公告催化剂权重，默认 0.10'),
+            penalty: z.number().optional().describe('业绩下滑惩罚权重，默认 0.05'),
+          }).optional().describe('权重覆盖，缺省用默认权重（ROE 0.25 / 增速 0.25 / 估值 0.20 / 信号 0.15 / 催化剂 0.10 / 惩罚 0.05），会自动归一化到和为 1'),
+          top: z.number().min(1).max(100).default(15).describe('返回前 N 只，默认 15'),
+        },
+        async (args) => {
+          try {
+            const candidates = args.candidates as unknown as CandidateData[];
+            const ranked = scoreAndRank(candidates, args.weights ?? {});
+            const { weights: effectiveWeights, zeroedDimensions } = getEffectiveWeights(candidates, args.weights ?? {});
+            const usedDefaultWeights = isWeightsEmpty(args.weights);
+
+            return {
+              content: [{
+                type: 'text' as const,
+                text: formatRankedOutput(ranked, args.top, candidates.length, effectiveWeights, zeroedDimensions, usedDefaultWeights),
+              }],
+            };
+          } catch (error) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `候选池评分排序失败: ${error instanceof Error ? error.message : String(error)}`,
               }],
               isError: true,
             };

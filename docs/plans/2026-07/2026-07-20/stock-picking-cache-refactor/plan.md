@@ -27,7 +27,7 @@
 - [x] [Step 1: 财报缓存服务 + 改 GetFinancials](./step1-financials-cache.md) — 新增 financials-cache-service，GetFinancials 先查缓存再调 Python
 - [x] [Step 2: 公告列表当天缓存](./step2-announcements-cache.md) — announcement-service.listAnnouncements 加当天 key 缓存
 - [x] [Step 3: 候选池预热服务 + PreheatCandidatePool 工具](./step3-preheat-service.md) — 新增 preheat-service 编排硬筛+全池数据预热；新增 MCP 工具
-- [ ] [Step 4: 综合评分服务 + RankCandidates 工具](./step4-scoring-tool.md) — 新增 scoring-service 纯函数打分；新增 MCP 工具支持权重可调
+- [x] [Step 4: 综合评分服务 + RankCandidates 工具](./step4-scoring-tool.md) — 新增 scoring-service 纯函数打分；新增 MCP 工具支持权重可调
 - [ ] [Step 5: 改写 stock-picking skill 文档](./step5-skill-rewrite.md) — 把新 SOP + 权重公式 + 子会话粒度 + 长周期维度全部落进 SKILL.md
 
 ## 全局决策
