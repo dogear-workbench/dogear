@@ -16,6 +16,7 @@ import { z } from 'zod';
 import { stockService } from '../../services/stock/stock-service.js';
 import { stockDataService } from '../../services/stock/stock-data-service.js';
 import { pythonBridge, DataSourceExhaustedError } from '../../services/stock/python-bridge.js';
+import { readFinancialsCache, writeFinancialsCache } from '../../services/stock/financials-cache-service.js';
 import { registerTools } from './tool-registry.js';
 
 // 注册工具元数据到 registry
@@ -409,23 +410,34 @@ export function createStockAnalysisTools() {
         },
         async (args) => {
           try {
-            const result = await pythonBridge.call<{
-              symbol: string;
-              periods: Array<Record<string, number | string | null>>;
-              error?: string;
-            }>('get_financials', {
-              symbol: args.code,
-              periods: args.periods,
-            }, 30_000);
+            const { hit, missingCount } = await readFinancialsCache(args.market, args.code, args.periods);
 
-            if (result.error) {
-              return {
-                content: [{ type: 'text' as const, text: `获取财报失败: ${result.error}` }],
-                isError: true,
-              };
+            let periods: Array<Record<string, number | string | null>>;
+
+            if (missingCount === 0) {
+              periods = hit.map((entry) => entry.data);
+            } else {
+              const result = await pythonBridge.call<{
+                symbol: string;
+                periods: Array<Record<string, number | string | null>>;
+                error?: string;
+              }>('get_financials', {
+                symbol: args.code,
+                periods: args.periods,
+              }, 30_000);
+
+              if (result.error) {
+                return {
+                  content: [{ type: 'text' as const, text: `获取财报失败: ${result.error}` }],
+                  isError: true,
+                };
+              }
+
+              periods = result.periods;
+              await writeFinancialsCache(args.market, args.code, periods);
             }
 
-            if (result.periods.length === 0) {
+            if (periods.length === 0) {
               return {
                 content: [{ type: 'text' as const, text: `未找到 ${args.code} 的财报数据。` }],
               };
@@ -446,7 +458,7 @@ export function createStockAnalysisTools() {
             let output = `=== ${args.code} 财务数据 ===\n`;
 
             for (const field of fields) {
-              const values = result.periods.map(p => {
+              const values = periods.map(p => {
                 const v = p[field.key];
                 if (v === null || v === undefined) return '-';
                 if (field.format && typeof v === 'number') return field.format(v);
