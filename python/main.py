@@ -30,6 +30,7 @@ sys.modules['article_parser_sdk'] = _article_parser_sdk
 from core.protocol import read_request, send_response, send_error
 from core.indicators import calculate
 from core.financials import get_financials, compare_industry
+from core.long_term import compute_long_term_financials
 from core.screener import screen_stocks
 from core.signals import detect_signals
 from utils.baostock_client import get_industry_map
@@ -81,6 +82,24 @@ def handle_get_financials(request_id: str, params: dict):
 
     result = get_financials(symbol, periods)
     send_response(request_id, result)
+
+
+def handle_long_term_financials(request_id: str, params: dict):
+    """计算 5 年长期财报聚合指标"""
+    symbol = params.get("symbol")
+
+    if not symbol:
+        send_error(request_id, -1, "缺少 symbol 参数")
+        return
+
+    # periods=20 覆盖 5 年×4 季度，确保能筛出 5 个年报期
+    fin_result = get_financials(symbol, periods=20)
+    if fin_result.get("error"):
+        send_response(request_id, {"symbol": symbol, "error": fin_result["error"], "error_type": fin_result.get("error_type")})
+        return
+
+    metrics = compute_long_term_financials(fin_result.get("periods", []))
+    send_response(request_id, {"symbol": symbol, **metrics})
 
 
 def handle_compare_industry(request_id: str, params: dict):
@@ -358,6 +377,7 @@ METHOD_HANDLERS = {
     "ping": handle_ping,
     "calc_indicators": handle_calc_indicators,
     "get_financials": handle_get_financials,
+    "long_term_financials": handle_long_term_financials,
     "compare_industry": handle_compare_industry,
     "screen_stocks": handle_screen_stocks,
     "detect_signals": handle_detect_signals,
