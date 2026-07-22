@@ -1,30 +1,21 @@
-/**
- * 选股预热 MCP Server 工具
- *
- * 提供 2 个工具：
- *   - PreheatCandidatePool — 硬筛候选池 + 财报/信号/公告标题全池预热，一次调用产出完整候选池数据
- *   - RankCandidates — 对候选池按综合权重打分排序，支持权重可调秒级重跑
- */
-
 import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
-import { preheatCandidatePool } from '../../services/stock/preheat-service.js';
-import type { CandidateData, PreheatResult } from '../../services/stock/preheat-service.js';
-import { scoreAndRank, getEffectiveWeights } from '../../services/stock/scoring-service.js';
-import type { ScoringWeights, RankedCandidate } from '../../services/stock/scoring-service.js';
+import { preheatLongTermPool } from '../../services/stock/long-term-preheat-service.js';
+import type { LongTermPreheatResult, LongTermCandidateData } from '../../services/stock/long-term-preheat-service.js';
+import { rankByLongTerm } from '../../services/stock/long-term-rank-service.js';
+import type { RankByLongTermResult, LongTermWeights } from '../../services/stock/long-term-rank-service.js';
 import { registerTools } from './tool-registry.js';
 
-// 注册工具元数据到 registry
 registerTools([
   {
-    name: 'PreheatCandidatePool',
-    description: '硬筛候选池 + 财报/信号/公告标题全池预热，一次调用产出完整候选池数据',
+    name: 'PreheatLongTermPool',
+    description: '5 年长期视角候选池预热：硬筛（行业 + 卫生条件）→ 可获取性预检 → 5 年财报 → 周 K 趋势，耗时 3-5 分钟，上限 100 只',
     server: 'dogear-stock-picking',
     category: 'stock',
   },
   {
-    name: 'RankCandidates',
-    description: '对 PreheatCandidatePool 的候选池按综合权重（ROE/增速/估值/信号/催化剂/惩罚）打分并排序，权重可调',
+    name: 'RankByLongTerm',
+    description: '对 PreheatLongTermPool 的候选池按长期 4 维度（ROE 均值 / 增长 CAGR / 长期趋势 / 稳定性）打分排序，秒级重排，权重可调',
     server: 'dogear-stock-picking',
     category: 'stock',
   },
@@ -34,97 +25,69 @@ registerTools([
 // 辅助函数
 // ============================================================
 
-function safe(val: number | null | undefined, digits = 2): string {
+function safeNum(val: number | null | undefined, digits = 1): string {
   if (val === null || val === undefined || Number.isNaN(val)) return '-';
   return val.toFixed(digits);
 }
 
-function formatPreheatOutput(result: PreheatResult): string {
+function formatLongTermOutput(result: Extract<LongTermPreheatResult, { ok: true }>): string {
   const { candidates, status, elapsedMs } = result;
   const elapsedSec = (elapsedMs / 1000).toFixed(1);
 
+  const lines: string[] = [
+    '## 长期候选池预热结果',
+    '',
+    `**硬筛后**：${status.total} 只 | **预检通过**：${status.afterPreflight} | **数据不足<3年**：${status.insufficientYears} | **周K失败**：${status.klineFailed} | **耗时**：${elapsedSec}s`,
+    `**快照日**：${status.snapshotDate} | **完整5年财报**：${status.financialsFullYears} | **3-4年财报**：${status.financialsPartialYears}`,
+  ];
+
   if (candidates.length === 0) {
-    return `## 候选池预热结果\n\n硬筛后候选池为空，请放宽筛选条件（行业/价格/PE/市值）。\n\n**耗时**：${elapsedSec}s`;
+    lines.push('', '候选池经过财报 + 周 K 过滤后为空，请放宽行业范围或检查数据可用性。');
+    lines.push('', '### 结构化数据（供 RankByLongTerm）', '', '```json', JSON.stringify({ candidates: [] }, null, 2), '```');
+    return lines.join('\n');
   }
 
-  let output = '## 候选池预热结果\n\n';
-  output += `**硬筛后**：${status.total} 只 | ` +
-    `**财报命中**：${status.financialsHit}/${status.total}（另拉取 ${status.financialsFetched}） | ` +
-    `**信号成功**：${status.signalsSuccess}/${status.total} | ` +
-    `**公告成功**：${status.announcementsSuccess}/${status.total} | ` +
-    `**耗时**：${elapsedSec}s\n\n`;
+  lines.push('');
+  lines.push('| 代码 | 名称 | 行业 | 现价 | 年内位置 | ROE均值5y | 净利CAGR5y | 趋势状态 | 5年年报 |');
+  lines.push('|---|---|---|---|---|---|---|---|---|');
 
-  output += '| 代码 | 名称 | 现价 | 涨跌 | PE | PB | ROE | 净利同比(年) | 净利同比(最近期) | 信号数 | 公告数 |\n';
-  output += '|---|---|---|---|---|---|---|---|---|---|---|\n';
+  const hasDowngrade = candidates.some((c) => c.growthDowngrade);
+
   for (const c of candidates) {
-    output += `| ${c.code} | ${c.name} | ${safe(c.price)} | ${safe(c.changePercent)}% | ${safe(c.pe)} | ${safe(c.pb)} | ` +
-      `${safe(c.roe)}% | ${safe(c.netProfitYoY)}% | ${safe(c.netProfitYoYQuarter)}% | ${c.signals.length} | ${c.announcements.length} |\n`;
+    const cagrStr = c.netProfitCAGR5y !== null
+      ? `${c.netProfitCAGR5y.toFixed(1)}%${c.growthDowngrade ? '^' : ''}`
+      : '-';
+    lines.push(
+      `| ${c.code} | ${c.name} | ${c.industry} | ${safeNum(c.currentPrice)} | ${safeNum(c.yearPositionPct)}% | ${safeNum(c.roeMean5y)}% | ${cagrStr} | ${c.trendState} | ${c.reportYearsAvailable} |`,
+    );
   }
 
-  const withFailures = candidates.filter((c) => c.failures.length > 0);
-  if (withFailures.length > 0) {
-    output += '\n### 数据缺口\n\n';
-    for (const c of withFailures) {
-      output += `- ${c.code}（${c.name}）：${c.failures.join(', ')} 维度拉取失败\n`;
+  if (hasDowngrade) {
+    lines.push('');
+    lines.push('^ 净利数据不足 5 年 CAGR，已降级为 5 年净利同比均值');
+  }
+
+  // 数据缺口（来自 failuresByCategory）
+  const failureCategories = Object.entries(status.failuresByCategory).filter(([, cnt]) => cnt > 0);
+  if (failureCategories.length > 0 || status.insufficientYears > 0) {
+    lines.push('');
+    lines.push('### 数据缺口');
+    if (status.insufficientYears > 0) {
+      lines.push(`- 年报不足 3 年（已剔除）：${status.insufficientYears} 只`);
+    }
+    for (const [cat, cnt] of failureCategories) {
+      lines.push(`- ${cat} 数据拉取失败（已剔除）：${cnt} 只`);
     }
   }
 
-  output += '\n### 结构化数据（供 RankCandidates）\n\n';
-  output += '```json\n';
-  output += JSON.stringify({ candidates }, null, 2);
-  output += '\n```\n';
+  lines.push('');
+  lines.push('### 结构化数据（供 RankByLongTerm）');
+  lines.push('');
+  lines.push('```json');
+  lines.push(JSON.stringify({ candidates }, null, 2));
+  lines.push('```');
 
-  return output;
-}
-
-const DIMENSION_LABELS: Record<keyof ScoringWeights, string> = {
-  roe: 'ROE',
-  growth: '增速',
-  valuation: '估值',
-  signal: '信号',
-  catalyst: '催化剂',
-  penalty: '惩罚',
-};
-
-function isWeightsEmpty(weights: Partial<ScoringWeights> | undefined): boolean {
-  if (!weights) return true;
-  return Object.values(weights).every((v) => v === undefined);
-}
-
-function formatRankedOutput(
-  ranked: RankedCandidate[],
-  top: number,
-  totalCount: number,
-  effectiveWeights: ScoringWeights,
-  zeroedDimensions: (keyof ScoringWeights)[],
-  usedDefaultWeights: boolean,
-): string {
-  if (totalCount === 0) {
-    return '## 综合评分排序\n\n候选池为空，请先用 PreheatCandidatePool 生成候选池数据。';
-  }
-
-  const shown = ranked.slice(0, top);
-  let output = `## 综合评分排序（前 ${shown.length}，共 ${totalCount} 只）\n\n`;
-
-  const weightLine = (Object.keys(DIMENSION_LABELS) as (keyof ScoringWeights)[])
-    .map((key) => `${DIMENSION_LABELS[key]} ${(effectiveWeights[key] * 100).toFixed(0)}%`)
-    .join(' / ');
-  output += `**权重**：${weightLine}${usedDefaultWeights ? '（默认）' : ''}\n\n`;
-
-  if (zeroedDimensions.length > 0) {
-    const labels = zeroedDimensions.map((key) => DIMENSION_LABELS[key]).join('、');
-    output += `> ${labels} 维度全池缺失，权重已重分配\n\n`;
-  }
-
-  output += '| 排名 | 代码 | 名称 | 综合分 | ROE分 | 增速分 | 估值分 | 信号分 | 催化剂分 | 惩罚 |\n';
-  output += '|---|---|---|---|---|---|---|---|---|---|\n';
-  for (const c of shown) {
-    const b = c.scoreBreakdown;
-    output += `| ${c.rank} | ${c.code} | ${c.name} | ${c.score.toFixed(1)} | ${b.roe.toFixed(0)} | ${b.growth.toFixed(0)} | ` +
-      `${b.valuation.toFixed(0)} | ${b.signal.toFixed(0)} | ${b.catalyst.toFixed(0)} | ${b.penalty.toFixed(0)} |\n`;
-  }
-
-  return output;
+  return lines.join('\n');
 }
 
 // ============================================================
@@ -134,116 +97,109 @@ function formatRankedOutput(
 export function createStockPickingTools() {
   return createSdkMcpServer({
     name: 'dogear-stock-picking',
-    version: '1.0.0',
+    version: '2.0.0',
     tools: [
       // ========================================
-      // 工具: 候选池硬筛 + 全池预热
+      // 工具: 长期候选池预热
       // ========================================
       tool(
-        'PreheatCandidatePool',
-        '一次调用完成"硬筛候选池 + 全池数据预热"：先按行业/价格/PE/市值等条件全市场硬筛，' +
-        '合并多个行业的结果并去重、按 PE 升序排序后截断到 limit，再并发预热每只候选的财报（ROE/净利同比）、' +
-        '技术信号（近期 MACD 金叉/KDJ 超卖等）、公告标题三类数据。\n' +
-        '使用场景: 选股类需求的第一步，替代"先 ScreenStocks 再逐只调 GetFinancials/DetectSignals/ListAnnouncements"的低效循环。\n' +
-        '返回: markdown 表格（可读展示）+ 一个 JSON 代码块（候选池结构化数据，供后续 RankCandidates 直接使用）。\n' +
-        '注意: 预热预算约 40 秒，limit 越大耗时越长；单只单维度失败不会中断整池，会体现在返回结果的"数据缺口"里。',
+        'PreheatLongTermPool',
+        '5 年长期视角候选池预热。硬筛条件只吃行业 + 卫生条件（excludeNegativePe / excludeSt），' +
+        '不看价格/PE/市值等短期估值条件。\n' +
+        '执行链路：全市场行业硬筛 → 可获取性预检（1 期财报）→ 5 年年报（ROE均值/CAGR/稳定性）→ 周 K 趋势指标（MA26/MA52/年内位置）→ 完整性检查。\n' +
+        'insufficientYears 是年报 <3 年的独立计数（与 failuresByCategory.financials 的技术失败分开统计）；两者都会从候选池剔除。\n' +
+        '返回: markdown 展示表 + 结构化 JSON 代码块（candidates 数组，供 RankByLongTerm 直接使用）。\n' +
+        '耗时预算: 3-5 分钟；limit 上限 100 只；agent 可自主分批调用或派子会话处理不同行业后合并 candidates。',
         {
           industries: z.array(z.string()).min(1)
-            .describe('CSRC 行业分类名列表（带分类代码前缀，如"C39计算机、通信和其他电子设备制造业"），不确定名称先调 ListIndustries 查询真实值域；传多个行业会分别硬筛后合并去重'),
-          price_min: z.number().optional().describe('最低价格'),
-          price_max: z.number().optional().describe('最高价格'),
-          pe_min: z.number().optional().describe('最低市盈率'),
-          pe_max: z.number().optional().describe('最高市盈率'),
-          market_cap_min: z.number().optional().describe('最低总市值（亿元）；当前数据源无股本数据，该条件多数情况下不生效'),
-          market_cap_max: z.number().optional().describe('最高总市值（亿元）；当前数据源无股本数据，该条件多数情况下不生效'),
-          exclude_negative_pe: z.boolean().default(true).describe('是否排除亏损股（PE<0），默认排除'),
-          exclude_st: z.boolean().default(true).describe('是否排除 ST/*ST 股票，默认排除'),
-          limit: z.number().min(1).max(100).default(50).describe('候选池上限，默认 50，最大 100'),
-          signal_lookback: z.number().min(1).max(30).default(7).describe('信号检测回看天数，默认 7'),
-          announcement_since: z.string().optional().describe('公告起始日期 YYYY-MM-DD，不传默认近 30 天'),
+            .describe('CSRC 行业分类名列表（带分类代码前缀，如"C27医药制造业"），不确定名称先调 ListIndustries 查询真实值域；传多个行业会分别硬筛后合并去重'),
+          excludeNegativePe: z.boolean().default(true)
+            .describe('是否排除亏损股（PE<0），默认排除'),
+          excludeSt: z.boolean().default(true)
+            .describe('是否排除 ST/*ST 股票，默认排除'),
+          limit: z.number().min(1).max(100).default(50)
+            .describe('候选池上限，默认 50，最大 100'),
+          wantBatchSize: z.number().min(1).max(20).default(5)
+            .describe('财报 + 周 K 拉取的并发批次大小，默认 5；调大可加速但增加限流风险'),
         },
         async (args) => {
-          try {
-            const result = await preheatCandidatePool(
-              {
-                industries: args.industries,
-                priceMin: args.price_min,
-                priceMax: args.price_max,
-                peMin: args.pe_min,
-                peMax: args.pe_max,
-                marketCapMin: args.market_cap_min,
-                marketCapMax: args.market_cap_max,
-                excludeNegativePe: args.exclude_negative_pe,
-                excludeSt: args.exclude_st,
-              },
-              {
-                limit: args.limit,
-                wantSignalLookback: args.signal_lookback,
-                wantAnnouncementSince: args.announcement_since,
-              },
-            );
+          const result = await preheatLongTermPool(
+            {
+              industries: args.industries,
+              excludeNegativePe: args.excludeNegativePe,
+              excludeSt: args.excludeSt,
+            },
+            {
+              limit: args.limit,
+              wantBatchSize: args.wantBatchSize,
+            },
+          );
 
+          if (!result.ok) {
             return {
-              content: [{ type: 'text' as const, text: formatPreheatOutput(result) }],
-            };
-          } catch (error) {
-            return {
-              content: [{
-                type: 'text' as const,
-                text: `候选池预热失败: ${error instanceof Error ? error.message : String(error)}`,
-              }],
               isError: true,
+              content: [{ type: 'text' as const, text: result.error }],
             };
           }
-        }
+
+          return {
+            content: [{ type: 'text' as const, text: formatLongTermOutput(result) }],
+          };
+        },
       ),
 
       // ========================================
-      // 工具: 候选池综合评分排序
+      // 工具: 长期综合评分排序
       // ========================================
       tool(
-        'RankCandidates',
-        '对 PreheatCandidatePool 的候选池按综合权重打分并排序：ROE/增速/估值走分位数打分，信号强度按近期技术信号加减分并按时间衰减，' +
-        '公告催化剂按标题关键词加减分，业绩下滑作为独立惩罚项扣分。综合分 = 各维度加权求和 - 惩罚。\n' +
-        '使用场景: 拿到 PreheatCandidatePool 的候选池数据后，用本工具排序筛出 Top N；权重可调，支持秒级重跑试算不同策略（如更看重 ROE 或更看重估值）。\n' +
-        '返回: markdown 表格，含每只的综合分与各维度原始得分（0-100），便于用户理解排名依据。\n' +
-        '注意: 某维度若全池候选都缺失该数据，该维度权重会自动归零并按比例分配给其他维度，返回结果会标注。',
+        'RankByLongTerm',
+        '对 PreheatLongTermPool 的候选池按 4 维度长期指标打分排序：ROE 均值（盈利能力）/ 增长 CAGR（成长性）/ 长期趋势（周 K MA26/MA52 + 年内位置）/ 稳定性（ROE 变异系数 + 净利下滑年数）。\n' +
+        '使用方法: 从 PreheatLongTermPool 返回结果的 JSON 代码块中取 candidates 数组，原样传入本工具。\n' +
+        '权重可反复调整秒级重跑（如偏重 ROE 则 roeMean=0.4、growth=0.2、trend=0.2、stability=0.2）；不传 weights 则用默认均等权重（各 0.25）。\n' +
+        '返回: markdown 排名表（含各维度得分 0-100 + 原始指标值）+ weightsApplied JSON（显示实际生效权重，含归零重分配说明）。',
         {
           candidates: z.array(z.record(z.string(), z.any())).min(1)
-            .describe('候选池数据数组，直接从 PreheatCandidatePool 结果里"结构化数据"JSON 代码块的 candidates 字段复制'),
+            .describe('候选池数组，直接从 PreheatLongTermPool 结果的 JSON 代码块里取 candidates 字段原样复制'),
           weights: z.object({
-            roe: z.number().optional().describe('ROE 权重，默认 0.25'),
-            growth: z.number().optional().describe('净利增速权重，默认 0.25'),
-            valuation: z.number().optional().describe('估值（PE 倒数）权重，默认 0.20'),
-            signal: z.number().optional().describe('技术信号权重，默认 0.15'),
-            catalyst: z.number().optional().describe('公告催化剂权重，默认 0.10'),
-            penalty: z.number().optional().describe('业绩下滑惩罚权重，默认 0.05'),
-          }).optional().describe('权重覆盖，缺省用默认权重（ROE 0.25 / 增速 0.25 / 估值 0.20 / 信号 0.15 / 催化剂 0.10 / 惩罚 0.05），会自动归一化到和为 1'),
-          top: z.number().min(1).max(100).default(15).describe('返回前 N 只，默认 15'),
+            roeMean: z.number().min(0).optional().describe('ROE 均值权重，默认 0.25'),
+            growth: z.number().min(0).optional().describe('增长 CAGR 权重，默认 0.25'),
+            trend: z.number().min(0).optional().describe('长期趋势权重，默认 0.25'),
+            stability: z.number().min(0).optional().describe('稳定性权重，默认 0.25'),
+          }).optional()
+            .describe('权重覆盖，默认均等（各 0.25）；自动归一化；某维度全池数据缺失时自动归零并重分配'),
+          top: z.number().min(1).max(50).default(15)
+            .describe('返回前 N 只，默认 15，最大 50'),
         },
         async (args) => {
           try {
-            const candidates = args.candidates as unknown as CandidateData[];
-            const ranked = scoreAndRank(candidates, args.weights ?? {});
-            const { weights: effectiveWeights, zeroedDimensions } = getEffectiveWeights(candidates, args.weights ?? {});
-            const usedDefaultWeights = isWeightsEmpty(args.weights);
+            const candidates = args.candidates as unknown as LongTermCandidateData[];
+            const weights: LongTermWeights | undefined = args.weights
+              ? {
+                roeMean: args.weights.roeMean,
+                growth: args.weights.growth,
+                trend: args.weights.trend,
+                stability: args.weights.stability,
+              }
+              : undefined;
+
+            const result: RankByLongTermResult = rankByLongTerm({ candidates, weights, top: args.top });
+
+            const weightsJson = JSON.stringify(result.weightsApplied, null, 2);
+            const text = `${result.markdown}\n\n### 生效权重（weightsApplied）\n\n\`\`\`json\n${weightsJson}\n\`\`\``;
 
             return {
-              content: [{
-                type: 'text' as const,
-                text: formatRankedOutput(ranked, args.top, candidates.length, effectiveWeights, zeroedDimensions, usedDefaultWeights),
-              }],
+              content: [{ type: 'text' as const, text }],
             };
           } catch (error) {
             return {
+              isError: true,
               content: [{
                 type: 'text' as const,
-                text: `候选池评分排序失败: ${error instanceof Error ? error.message : String(error)}`,
+                text: `长期评分排序失败: ${error instanceof Error ? error.message : String(error)}`,
               }],
-              isError: true,
             };
           }
-        }
+        },
       ),
     ],
   });

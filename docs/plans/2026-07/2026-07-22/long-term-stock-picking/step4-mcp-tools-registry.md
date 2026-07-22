@@ -1,7 +1,7 @@
 ---
 step: 4
 title: MCP 工具定义 + 注册表更新 + 删除旧工具
-status: pending
+status: done
 ---
 
 ## 目标
@@ -81,13 +81,56 @@ bun run build:electron
 1. 在设置页 → 代理编辑页 → 工具列表，确认能看到 `PreheatLongTermPool` + `RankByLongTerm`，不能看到 `PreheatCandidatePool` + `RankCandidates`
 2. 在对话里让 agent 手动调一次 `PreheatLongTermPool`，观察是否正常返回
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-（旧工具实际所在文件、是否合并到 stock-picking-tools.ts、schema 上的调整等）
+- 旧的 `PreheatCandidatePool` / `RankCandidates` 就在 `stock-picking-tools.ts` 里（同一个 MCP server `dogear-stock-picking`），Step 4 直接完全重写这一个文件，保留 server 名字不变
+- MCP server 版本号从 `1.0.0` 升到 `2.0.0`（breaking change 语义）
+- `tool-registry.ts` 的注册元数据由文件末尾 `registerTools([...])` 覆盖，无需单独改注册表
+- `tool-packs.ts` 里 `stock-picking` 包的 description 从"硬筛候选池 + 财报/信号/公告标题全池预热"改为"5 年长期视角候选池预热（PreheatLongTermPool）+ 综合评分排序（RankByLongTerm）"，toolCount 保持 2
+- 删除服务文件：`preheat-service.ts`（443 行）+ `scoring-service.ts`（293 行）；plan.md 里写的是 `rank-service.ts`，实际文件名是 `scoring-service.ts`
+- schema 微调：`RankByLongTerm` 的 `top` 上限设为 50（原设想 100，考虑到长期视角一般只看头部十几只）；`weights` 4 字段均 `number ≥ 0`
+- 无残留引用：`preheatCandidatePool` / `scoreAndRank` / `getEffectiveWeights` / `preheat-service` / `scoring-service` 在 electron/ 下已全无引用（仅 `long-term-types.ts` 注释里出现服务文件名，无代码影响）
+- `.claude/skills/stock-picking/SKILL.md` 仍引用旧工具名，属 Step 5 范围
 
 ### 改动文件清单
-（新增/修改/删除的文件）
+- 修改（完全重写）：`electron/main/agents/tools/stock-picking-tools.ts`（288 行 → 206 行）
+- 修改：`electron/main/services/tool-packs.ts`（description 更新）
+- 删除：`electron/main/services/stock/preheat-service.ts`
+- 删除：`electron/main/services/stock/scoring-service.ts`
 
 ### 给下一步的接力棒
-（Step 5 Skill 文档要引用新的工具名 + schema + 描述，本 step 落地版本的工具名/参数细节；旧工具的注册状态；MCP server 层的 breaking changes 等）
+
+**工具名 + MCP server**
+| 工具名 | MCP server | 用途 |
+|---|---|---|
+| `PreheatLongTermPool` | `dogear-stock-picking` | 长期候选池预热（3-5 分钟） |
+| `RankByLongTerm` | `dogear-stock-picking` | 候选池打分排序（秒级） |
+
+**PreheatLongTermPool 参数**
+- `industries: string[]` 必填 min 1（CSRC 分类名带前缀，如 `C27医药制造业`；先用 `ListIndustries` 查）
+- `excludeNegativePe?: boolean` 默认 true
+- `excludeSt?: boolean` 默认 true
+- `limit?: number` 1-100，默认 50
+- `wantBatchSize?: number` 1-20，默认 5
+
+**RankByLongTerm 参数**
+- `candidates: object[]` min 1（从 PreheatLongTermPool 返回 JSON 代码块的 `candidates` 字段原样复制）
+- `weights?: { roeMean?, growth?, trend?, stability? }` 4 字段均 `≥0`，默认各 0.25，内部自动归一化
+- `top?: number` 1-50，默认 15
+
+**返回结构**
+- PreheatLongTermPool 成功：header（硬筛/预检/insufficientYears/klineFailed/耗时/快照日）+ markdown 表 + `### 数据缺口` + `### 结构化数据（供 RankByLongTerm）` JSON 代码块
+- PreheatLongTermPool 失败：`isError: true`，中文错误说明
+- RankByLongTerm：markdown 排名表（含 4 维度 0-100 分 + 原始指标）+ `### 生效权重（weightsApplied）` JSON
+
+**SKILL.md 需强调的调用约定**
+1. PreheatLongTermPool 只传行业 + 卫生条件，不传价格/PE（长期视角）
+2. RankByLongTerm 的 candidates 必须从上一步 JSON 代码块原样取，不要手工构造
+3. `insufficientYears`（年报<3年）与 `failuresByCategory.financials`（技术失败）是两个独立计数，两者都会剔除
+4. 趋势状态枚举：`strong_bull` / `consolidation` / `pullback` / `bear` / `insufficient`
+5. 全维度归零时 rank 阶段会 throw，agent 需 catch 后告知用户
+
+**耗时预算**
+- PreheatLongTermPool：limit=50 约 3 分钟，limit=100 约 5 分钟
+- RankByLongTerm：<1 秒
