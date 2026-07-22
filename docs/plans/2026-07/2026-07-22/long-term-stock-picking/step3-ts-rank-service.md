@@ -1,7 +1,7 @@
 ---
 step: 3
 title: TS 打分排序服务
-status: pending
+status: done
 ---
 
 ## 目标
@@ -170,11 +170,38 @@ if (preheatResult.ok) {
 
 期望：markdown 表能正常显示，`totalScore` 在 0-100 之间，4 维度分之和加权 = totalScore，`weightsApplied` 若无归零则严格等于输入权重（归一化到和为 1）。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
+- 完全按计划落地，4 维度打分与归一化重分配算法无偏差。
+- ROE 负值不参与分位数排序但同样 0 分；CV=0 特判 100 分（完全稳定，避免除零）；growthDowngrade 用 `^` 标注 + 表格末尾脚注。
+- trend 维度即使 `trendState='insufficient'`，yearPositionPct 仍能贡献 40% 子分，符合 Step 2 交付里的建议。
+- 仅 roeMean / growth 两个维度可能全池归零（trend/stability 字段始终有值），notes[] 透传归零说明；理论上不会触发"全部归零"错误路径，保留防御性 throw。
+- 数值量级确认：Python `long_term.py` 返回 roe_mean_5y 和 CAGR 都是百分比形式（29.46 表示 29.46%），markdown 直接 `toFixed(1)+"%"` 正确，无需缩放。
+- 未做真实数据验证；`bun run build:electron` 通过。
 
 ### 改动文件清单
+- 新增 `electron/main/services/stock/long-term-rank-service.ts` (~325 行) — `rankByLongTerm` 主入口 + `percentileRank` helper
 
 ### 给下一步的接力棒
-（Step 4 MCP 工具要暴露 `preheatLongTermPool` + `rankByLongTerm` 的接口 schema，接口签名以本 step 落地版本为准）
+- **导入**：
+  ```ts
+  import { rankByLongTerm } from '../services/stock/long-term-rank-service.js';
+  import type { RankByLongTermInput, RankByLongTermResult, RankedCandidate, LongTermWeights } from '../services/stock/long-term-rank-service.js';
+  ```
+- **MCP 工具 `RankByLongTerm` 建议 Zod schema**：
+  ```ts
+  z.object({
+    candidates: z.array(z.any()).describe('来自 PreheatLongTermPool 的 candidates 数组，原样传入'),
+    weights: z.object({
+      roeMean:   z.number().min(0).optional(),
+      growth:    z.number().min(0).optional(),
+      trend:     z.number().min(0).optional(),
+      stability: z.number().min(0).optional(),
+    }).optional(),
+    top: z.number().int().min(1).max(50).default(15).optional(),
+  })
+  ```
+- **返回字段说明**：`markdown` 直接给用户看；`ranked[]` 全排序（不截断）供 agent 二次筛选；`weightsApplied` 归一化后和为 1；`notes[]` 归零说明 agent 应透传给用户。
+- **数值处理**：`RankByLongTermResult.markdown` 已格式化好，MCP 工具直接 `content: [{ type: 'text', text: result.markdown }]` 加上 JSON code block 里的 ranked/weightsApplied 即可。
+- **遗留问题**：无。
