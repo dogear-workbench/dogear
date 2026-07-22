@@ -16,10 +16,12 @@ import atexit
 import contextlib
 import io
 import sys
+import threading
 import time
 from datetime import datetime
 
 import baostock as bs
+import baostock.common.context as _bs_context
 import pandas as pd
 
 from .cache import TTLCache
@@ -52,22 +54,63 @@ class BaostockError(Exception):
 
 # ============================================================
 # session 管理：进程级单例，避免每次调用都 login
+#
+# baostock 官方约束：不能并发连接访问，超限会进黑名单。SocketUtil 每次 login 都
+# 新建 socket 并覆盖 context.default_socket，旧 socket 不主动关闭——反复 login
+# 会累积泄漏 TCP 连接，撞上并发限制后服务端接受连接即断开，recv 到空 → 报
+# 10002007 "网络接收错误"，形成连续失败雪球。
+#
+# 对策：
+#   1. _session_active + 锁保证成功后不再重复 login
+#   2. 首次失败自动重试 3 次（1s → 2s 退避），自愈瞬时抖动
+#   3. 每次 login 前清理 default_socket，避免累积泄漏
 # ============================================================
 
 _session_active = False
+_session_lock = threading.Lock()
+
+
+def _cleanup_stale_socket():
+    """关闭 baostock 内部可能残留的 socket，避免累积触发并发连接限制。"""
+    sock = getattr(_bs_context, "default_socket", None)
+    if sock is None:
+        return
+    try:
+        sock.close()
+    except Exception:
+        pass
+    try:
+        delattr(_bs_context, "default_socket")
+    except Exception:
+        pass
 
 
 def _ensure_login():
     global _session_active
     if _session_active:
         return
-    buf = io.StringIO()
-    with contextlib.redirect_stdout(buf):
-        lg = bs.login()
-    if lg.error_code != "0":
-        raise BaostockError(f"baostock 登录失败: {lg.error_msg}", error_type="LoginFailed")
-    _session_active = True
-    _log("baostock 登录成功")
+    with _session_lock:
+        if _session_active:
+            return
+        last_err = None
+        for attempt in range(3):
+            _cleanup_stale_socket()
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                lg = bs.login()
+            if lg.error_code == "0":
+                _session_active = True
+                _log("baostock 登录成功")
+                return
+            last_err = f"{lg.error_code} {lg.error_msg}"
+            _log(f"login 尝试 {attempt + 1}/3 失败: {last_err}")
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+        _cleanup_stale_socket()
+        raise BaostockError(
+            f"baostock 登录失败（重试 3 次）: {last_err}",
+            error_type="LoginFailed",
+        )
 
 
 def _logout_at_exit():
@@ -138,6 +181,18 @@ def get_industry_map() -> pd.DataFrame:
     _cache.set("industry_map", df, 7 * 86400)
     _log(f"行业分类映射获取完成: {len(df)} 条")
     return df
+
+
+def get_industry_codes(industry: str) -> list[str]:
+    """
+    从缓存的 industry_map 里 filter 出指定行业的所有 baostock code 列表（带 sh./sz./bj. 前缀）。
+
+    命中 industry_map 缓存后是纯内存 filter，秒回。
+    industry 名需完整匹配（如 "C39计算机、通信和其他电子设备制造业"），大小写敏感。
+    """
+    industry_df = get_industry_map()
+    matched = industry_df[industry_df['industry'] == industry]
+    return matched['code'].tolist()
 
 
 def get_all_stock_codes(date: str = "") -> pd.DataFrame:
