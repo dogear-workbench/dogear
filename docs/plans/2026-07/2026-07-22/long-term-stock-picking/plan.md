@@ -30,7 +30,7 @@
 - [x] [Step 2: TS 预热编排服务](./step2-ts-preheat-service.md) — 新建 `long-term-preheat-service.ts`，编排硬筛 + 预检 + 财报/K 线拉取 + K 线派生指标
 - [x] [Step 3: TS 打分排序服务](./step3-ts-rank-service.md) — 新建 `long-term-rank-service.ts`，分位数打分 + 权重归一化 + 全池归零重分配
 - [x] [Step 4: MCP 工具定义 + 注册表更新 + 删除旧工具](./step4-mcp-tools-registry.md) — 定义 `PreheatLongTermPool` + `RankByLongTerm`，删除旧的两个工具及其 service 文件
-- [ ] [Step 5: Skill 文档完全重写](./step5-skill-rewrite.md) — 重写 `stock-picking/SKILL.md`，新 3 步 SOP + 新铁律 + 新示例
+- [x] [Step 5: Skill 文档完全重写](./step5-skill-rewrite.md) — 重写 `stock-picking/SKILL.md`，新 3 步 SOP + 新铁律 + 新示例
 - [ ] [Step 6: 端到端手工验证](./step6-e2e-validation.md) — 跑一次完整流程，验证 status 字段、评分逻辑、错误场景
 
 ## 全局决策

@@ -1,7 +1,7 @@
 ---
 step: 5
 title: Skill 文档完全重写
-status: pending
+status: done
 ---
 
 ## 目标
@@ -142,13 +142,38 @@ Step 5 完成后：
    - 示例对话完整可执行
 2. 重启一次对话，让 agent 说"你从科技股里选几只我看看"，观察是否按新 SOP 追问条件
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-（对 design.md 段 6 草案的调整、示例对话的具体内容等）
+- 完全重写 `SKILL.md`（原 240 行 → 新版约 210 行），frontmatter description 保持不变（skill 触发条件不变）
+- 版本号标注 v3（原 v2），首段介绍强调"5 年长期视角"贯穿全流程
+- 铁律扩到 3 条（原 2 条 + 新增"禁止用当天数据当选股评分维度"，KDJ/当天涨跌幅/日 K 信号只允许作为 Step 3 深挖辅助信息）
+- Step 1 硬条件从 4 条压缩到 3 条（删除价格上限 / PE 上限 / 市值范围，追问模板同步精简为 4 问）
+- Step 1 追问模板：明确列出"如果用户提了价格/PE/市值就告知副作用"（长期视角不看这些）
+- Step 2 status 透传字段清单：`total / afterPreflight / insufficientYears / klineFailed / financialsFullYears / financialsPartialYears / snapshotDate`，其中 `insufficientYears` 与 `failuresByCategory.financials` 是两个独立计数，都会剔除但计数分开
+- Step 3 报告模板从"技术面/基本面/催化剂"改为"长期基本面/长期技术面/长期催化剂/风险提示"四段，公告口径从"近 30 天"改为"近 1 年"，年内位置直接引用候选数据的 `yearPositionPct` 不重算
+- 综合评分权重段：4 键 `roeMean / growth / trend / stability`，每键子权重按 design.md 描述（trend=周K 60%+年内位置 40%；stability=ROE CV 60%+下滑年数 40%）；新增"常见预设组合"表（均衡/质量为王/成长为王/稳健派/趋势敏感）供 Step 2 追问举例
+- 分级兜底表更新为 5 级（A 中止 / B 单只剔除 / C 单只单维度降级 / D 全池归零 / E 快照时效），明确 `growthDowngrade` 和 `trendState='insufficient'` 属 C 级降级
+- 边界与限制段扩到 8 条：新增 5 年窗口副作用、周 K 250 期新股降级、硬筛无价格/PE/市值、耗时 3-5 分钟自主判断派子会话
+- 示例对话完全重写：从"C39+I65 科技 + 偏重成长和 ROE"起，展示 status 透传、`weights={roeMean:0.35,growth:0.35,trend:0.15,stability:0.15}` 传法、Top 15 表格结构（含 4 维度分和 ROE均值/净利CAGR/趋势状态原始值列）
+- 保留：数据源分级兜底表、子会话并行边界表、`CreateSessionBatch` 派子会话模式、"用户需要在设置页开启工具包"提示、`ListIndustries` 先查 CSRC 分类的追问姿势
 
 ### 改动文件清单
-（`SKILL.md`）
+- 修改（完全重写）：`C:/dogear/.claude/skills/stock-picking/SKILL.md`
 
 ### 给下一步的接力棒
-（Step 6 端到端验证需要按本 step 定稿的 SOP 跑一遍，验证 skill 描述与工具实际行为一致）
+
+**Step 6 端到端验证要覆盖的关键路径**：
+
+1. **Skill 触发**：新对话说"从科技板块选 3 只长期观察" → agent 应按新 SOP 追问（不问 PE/价格/市值，问行业/ST/亏损/权重偏好/数量）
+2. **ListIndustries 前置**：agent 说"科技"时应先调 `ListIndustries` 查 CSRC 分类，不直接猜 industry 名
+3. **PreheatLongTermPool 参数**：只传 `industries[] / excludeNegativePe / excludeSt / limit / wantBatchSize`，不带任何价格/PE/市值参数
+4. **status 透传**：验证 agent 把 `total / afterPreflight / insufficientYears / klineFailed / financialsFullYears / financialsPartialYears / snapshotDate` 都展示给用户
+5. **铁律 2 触发**：若手工构造一个 `total=0` 场景（用不存在的行业名），agent 应停下按铁律 2 追问，不凭空造股票
+6. **RankByLongTerm 权重传法**：用户说"偏重 ROE 和成长"→ agent 传 `weights={roeMean:0.35, growth:0.35, trend:0.15, stability:0.15}`（4 键，不是旧的 6 键）
+7. **换权重不重预热**：用户说"换成偏重稳定性再看一版"→ agent 只调 RankByLongTerm，不重复调 PreheatLongTermPool
+8. **weightsApplied 归零透传**：若某维度全池 null，agent 应告知"XX 维度全池缺失已归零"
+9. **Step 3 深挖对齐长期视角**：子会话报告结构含"长期基本面/长期技术面/长期催化剂/风险提示"四段，公告拉近 1 年而非近 30 天
+10. **铁律 3 触发**：若 agent 在评分/选股阶段主动提"某股 KDJ 金叉"作为选股理由，应视为违规（KDJ 只允许在 Step 3 辅助信息里出现）
+
+**Step 6 无需改代码**，纯手工验证，跑通即可。若发现工具行为与 SKILL.md 描述不一致，回改对应的 stepN.md（很可能是 Step 2/3/4 落地细节与文档预设不同）。
