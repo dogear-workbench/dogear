@@ -340,7 +340,8 @@ export function createStockAnalysisTools() {
             }>('screen_stocks', {
               conditions: args.conditions,
               limit: args.limit,
-            }, 120_000);
+            }, 600_000);
+            // 首次调用会触发全 A 快照预拉（baostock 逐只，5-7 分钟），同天后续调用毫秒命中
 
             const banner = formatSourceBanner(result._source);
 
@@ -792,11 +793,10 @@ export function createStockAnalysisTools() {
         '使用场景：\n' +
         '- 用户提到宽泛领域（"科技股"、"新能源"、"银行股"），先调本工具找对应分类名再筛选。\n' +
         '- 不确定某个行业名是否存在或叫什么，先列一下再传给 ScreenStocks。\n' +
-        '- 想看某个分类的整体涨跌幅、上涨/下跌家数（注：市值字段当前不可用，为 null）。\n' +
         '参数：\n' +
         '- keyword：可选，板块名子串过滤（大小写不敏感）。不传则返回全部（受 limit 截断）。\n' +
         '- limit：返回条数上限，默认 60，最多 200。带 keyword 时通常十几条就够，不带时可能有 90+ 板块，建议配合 keyword 使用。\n' +
-        '返回字段：name（板块名）、change_percent（板块涨跌幅%）、market_cap（板块总市值元）、turnover_rate（换手率%）、up_count/down_count（上涨/下跌家数）。',
+        '返回字段：只有 name（分类名）。板块涨跌统计需另用专门工具（当前未提供）。',
         {
           keyword: z.string().optional().describe('板块名子串过滤，如"半导体"、"电子"、"银行"；不传则返回全部'),
           limit: z.number().min(1).max(200).default(60).describe('返回条数上限，默认 60'),
@@ -807,14 +807,7 @@ export function createStockAnalysisTools() {
               total: number;
               returned: number;
               truncated: boolean;
-              industries: Array<{
-                name: string;
-                change_percent: number | null;
-                market_cap: number | null;
-                turnover_rate: number | null;
-                up_count: number | null;
-                down_count: number | null;
-              }>;
+              industries: Array<{ name: string }>;
             }>(
               'list_industries',
               { keyword: args.keyword ?? '', limit: args.limit },
@@ -828,24 +821,16 @@ export function createStockAnalysisTools() {
               return { content: [{ type: 'text' as const, text: hint }] };
             }
 
-            const header = '板块名 | 涨跌幅 | 总市值(亿) | 换手率 | 上涨/下跌';
-            const separator = '---|---|---|---|---';
-            const rows = result.industries.map((it) => {
-              const capYi = it.market_cap != null ? (it.market_cap / 1e8).toFixed(0) : '-';
-              const up = it.up_count ?? '-';
-              const down = it.down_count ?? '-';
-              return `${it.name} | ${safe(it.change_percent)}% | ${capYi} | ${safe(it.turnover_rate)}% | ${up}/${down}`;
-            });
-
             const title = args.keyword
-              ? `匹配"${args.keyword}"的行业板块（共 ${result.total} 个，返回 ${result.returned}）`
-              : `东方财富行业板块（共 ${result.total} 个，返回 ${result.returned}）`;
+              ? `匹配"${args.keyword}"的 CSRC 行业分类（共 ${result.total} 个，返回 ${result.returned}）`
+              : `CSRC 行业分类（共 ${result.total} 个，返回 ${result.returned}）`;
 
-            let output = `${title}：\n${header}\n${separator}\n${rows.join('\n')}`;
+            const list = result.industries.map((it) => `- ${it.name}`).join('\n');
+            let output = `${title}：\n${list}`;
             if (result.truncated) {
               output += `\n\n(已按 limit=${args.limit} 截断，如需更多请调大 limit 或增加 keyword)`;
             }
-            output += '\n\n上面 name 列的值可直接作为 ScreenStocks 的 industry 参数。';
+            output += '\n\n以上分类名可直接作为 ScreenStocks 的 industry 参数（精确等值匹配）。';
 
             return { content: [{ type: 'text' as const, text: output }] };
           } catch (error) {

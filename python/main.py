@@ -32,7 +32,6 @@ from core.indicators import calculate
 from core.financials import get_financials, compare_industry
 from core.screener import screen_stocks
 from core.signals import detect_signals
-from core.snapshot import get_snapshot
 from utils.baostock_client import get_industry_map
 from utils.akshare_client import DataSourceExhausted
 from core.formula_engine import parse_and_eval, validate_formula, FormulaContext
@@ -220,11 +219,11 @@ def handle_simple_backtest(request_id: str, params: dict):
 
 def handle_list_industries(request_id: str, params: dict):
     """
-    列出行业分类（baostock 全 A 快照按行业分组聚合，可选按关键词子串过滤）。
+    列出行业分类（baostock query_stock_industry 全市场映射表按行业名去重）。
 
-    数据源：core.snapshot.get_snapshot() + utils.baostock_client.get_industry_map()
-    join 出行业列，按行业分组算涨跌幅/换手率均值与涨跌家数。
-    market_cap 恒为 None：MVP 阶段快照无股本数据，聚合不出板块总市值。
+    只调 get_industry_map()（一次 RPC + 7 天缓存），秒回。不再依赖全 A 快照——
+    查行业名不该拖上全市场 K 线拉取（首次要 5-7 分钟）。
+    如果以后要看板块涨跌统计，请另做专门工具，用户主动触发时才走 snapshot。
 
     params:
       keyword: str | None — 行业名称子串过滤（大小写不敏感）
@@ -233,34 +232,17 @@ def handle_list_industries(request_id: str, params: dict):
     keyword = (params.get("keyword") or "").strip()
     limit = int(params.get("limit", 200))
 
-    snapshot_df = get_snapshot(request_id=request_id)
-    industry_df = get_industry_map()[['code', 'industry']]
-    merged = pd.merge(snapshot_df, industry_df, on='code', how='left')
+    industry_df = get_industry_map()
 
-    industries = []
-    for name, group in merged.groupby('industry', dropna=True):
-        name = str(name)
-        if not name or name == 'nan':
-            continue
-        if keyword and keyword.lower() not in name.lower():
-            continue
+    names = sorted({
+        str(name) for name in industry_df['industry'].dropna().unique()
+        if str(name) and str(name) != 'nan'
+    })
+    if keyword:
+        kw = keyword.lower()
+        names = [n for n in names if kw in n.lower()]
 
-        pct = pd.to_numeric(group['pctChg'], errors='coerce')
-        turn = pd.to_numeric(group['turn'], errors='coerce')
-
-        change_percent = pct.mean()
-        turnover_rate = turn.mean()
-
-        industries.append({
-            "name": name,
-            "change_percent": None if pd.isna(change_percent) else round(float(change_percent), 2),
-            "market_cap": None,
-            "turnover_rate": None if pd.isna(turnover_rate) else round(float(turnover_rate), 2),
-            "up_count": int((pct > 0).sum()),
-            "down_count": int((pct < 0).sum()),
-        })
-
-    industries.sort(key=lambda item: item["name"])
+    industries = [{"name": name} for name in names]
 
     total = len(industries)
     truncated = total > limit
