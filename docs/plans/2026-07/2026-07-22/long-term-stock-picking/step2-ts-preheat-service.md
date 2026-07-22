@@ -1,7 +1,7 @@
 ---
 step: 2
 title: TS 预热编排服务
-status: pending
+status: done
 ---
 
 ## 目标
@@ -156,13 +156,34 @@ console.log(JSON.stringify(result, null, 2));
 - 候选池里能看到 `roeMean5y` / `netProfitCAGR5y` / `weeklyMA26` / `yearPositionPct` 等字段
 - 耗时 60-90 秒（20 只规模）
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-（与计划的差异、K 线接口的坑、并发调优等）
+- 主流程 8 步完全按计划实现，无偏差。
+- 拆出 3 个文件（types / kline-indicators / preheat-service）避免主入口膨胀；主 service 369 行。
+- 未修改 python-bridge.ts（`call<T>` 通用调用够用，无需类型化 method map）。
+- 未修改 stock-data-service：周 K 与日 K 共用同一 JSONL 文件名，跳过 appendKLine 只依赖 rate-limiter 60s 内存缓存，避免混合粒度污染缓存。
+- `snapshotDate` 暂用当天日期作代理（baostock 快照无独立日期接口），未来需精确可让 Python 侧 `screen_stocks` 返回值加 `snapshot_date` 字段。
+- `checkIntegrity` 把 `trendState='insufficient'` 视作 trend 维度 null 语义参与"≥3 个 null 剔除"判定，跟设计意图一致。
+- 未做真实数据验证（不新建 tipc handler，Step 4 才做），`bun run build:electron` 通过是主要质量门。
 
 ### 改动文件清单
-（`long-term-preheat-service.ts` / 可能修改的 `python-bridge.ts` / 其他）
+- 新增 `electron/main/services/stock/long-term-types.ts` (70 行) — 公共类型
+- 新增 `electron/main/services/stock/long-term-kline-indicators.ts` (103 行) — 纯计算 helper
+- 新增 `electron/main/services/stock/long-term-preheat-service.ts` (369 行) — `preheatLongTermPool` 主入口
 
 ### 给下一步的接力棒
-（Step 3 rank 服务要接收 `LongTermCandidateData[]`，关键字段签名，null 值出现规律等）
+- **导入方式**：`import type { LongTermCandidateData, LongTermPreheatStatus } from '../services/stock/long-term-types.js'`
+- **字段 null 概率估计**（Step 3 排 rank 时的 D 级归零判断依据）：
+  - `roeMean5y` / `netProfitCAGR5y` / `revenueCAGR5y` / `weeklyMA26` / `weeklyMA52`：低（<15%）
+  - `roeCV5y`：中（20-30%，需 ≥3 年有效 ROE）
+  - `trendState='insufficient'`：中（10-20%，新股/次新股/复牌不足 100 期）
+  - `currentPrice/yearHigh/yearLow/yearPositionPct`：极低（只要有 1 条 K 线就有值）
+- **Step 3 应重点处理**：
+  - D 级：某维度全池 null → 权重设 0，其余按比例重分配，返回 `weightsApplied` 透传
+  - `growthDowngrade=true` 的候选：`netProfitCAGR5y` 实为"5 年净利同比均值"，语义不同，排 rank 时可在返回表加标注
+  - `trendState='insufficient'` 时：yearPositionPct 仍有效，可作为 trend 维度部分分而不是直接归零
+- **数据量级**：50 只候选进去，实际剩余约 25-40 只，`top` 默认 15 合理
+- **遗留问题**：
+  - `insufficientYears` 独立计数，不并入 `failuresByCategory['financials']`（两种失败原因分开展示），Step 4 工具 description 里应说清楚
+  - `snapshotDate` 精度问题（见上）
