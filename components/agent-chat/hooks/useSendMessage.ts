@@ -153,10 +153,12 @@ export function useSendMessage(params: UseSendMessageParams) {
   // 让 hasPendingUserAction 立刻变假、输入框立刻回来（否则依赖后端事件闭环时序，UI 卡在"等确认"）
   const handleInterrupt = useCallback(async () => {
     if (!sessionId) return;
+    console.log('[interrupt-trace] handleInterrupt 触发', { sessionId: sessionId.substring(0, 8) });
     try {
       await client.interruptQueryBasedSession({ sessionId });
+      console.log('[interrupt-trace] interruptQueryBasedSession IPC 已 resolve');
     } catch (e) {
-      console.warn('中断会话失败:', e);
+      console.warn('[interrupt-trace] 中断会话失败:', e);
     }
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;

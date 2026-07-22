@@ -45,6 +45,11 @@ export function useAgentSession({
 
     const startSession = async () => {
       try {
+        console.log('[interrupt-trace] useAgentSession effect 触发 startSession', {
+          conversationId,
+          forkParams: !!forkParams,
+          sessionRestartTrigger,
+        });
         console.log('=== attach conversation runtime ===');
         console.log('conversationId:', conversationId);
 
@@ -217,6 +222,11 @@ export function useAgentSession({
     // 组件卸载或 conversationId/forkParams 变化时：标记取消 + detach 旧 attachment
     return () => {
       cancelled = true;
+      console.log('[interrupt-trace] useAgentSession cleanup（可能是依赖变化触发 detach → release）', {
+        conversationId,
+        hadAttachment: !!attachmentIdRef.current,
+        sessionRestartTrigger,
+      });
       if (attachmentIdRef.current) {
         console.log('detach attachment:', attachmentIdRef.current);
         client.detachConversationRuntime({ attachmentId: attachmentIdRef.current });

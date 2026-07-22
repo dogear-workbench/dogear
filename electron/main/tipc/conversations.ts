@@ -1,6 +1,7 @@
 // electron/main/tipc/conversations.ts
 import { tipc } from '@egoist/tipc/main';
 import { deleteSession } from '@anthropic-ai/claude-agent-sdk';
+import fs from 'node:fs/promises';
 import * as conversationService from '../services/conversation-service.js';
 import * as treeService from '../services/conversation-tree-service.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
@@ -8,6 +9,8 @@ import * as groupService from '../services/group-service.js';
 import { deleteUsage } from '../services/usage/usage-service.js';
 import { getClaudeConfigDir } from './agent.js';
 import { loadSettings } from '../services/settings-service.js';
+import { readIndex, writeIndex, removeGroupEverywhere } from '../services/memory/smart-category-store.js';
+import { getGroupDir } from '../services/memory/group-digest-store.js';
 
 const t = tipc.create();
 
@@ -31,6 +34,40 @@ async function reorderTreeByUpdatedAt(workspaceId: string): Promise<void> {
     await treeService.sortGroupsByUpdatedAt(workspaceId, map);
   } catch (error) {
     console.warn('[reorderTree] 重排对话树失败:', error);
+  }
+}
+
+/**
+ * 删除会话后如果组已空（含归档），联动删除组及其所有关联记录：
+ * groups.json / conversation-tree / smart-categories / groups/<id>/ 目录。
+ * 任一步失败不阻塞主流程，只 warn。
+ */
+async function deleteGroupIfEmpty(workspaceId: string, groupId: string): Promise<void> {
+  try {
+    const remaining = await conversationService.getByWorkspaceId(workspaceId, { includeArchived: true });
+    const stillUsed = remaining.some((c) => c.groupId === groupId);
+    if (stillUsed) return;
+
+    await groupService.deleteGroup(workspaceId, groupId).catch((err) => {
+      console.warn('[auto-delete-group] 删除组条目失败:', err);
+    });
+    await treeService.removeGroupFromTree(workspaceId, groupId).catch((err) => {
+      console.warn('[auto-delete-group] 从对话树移除失败:', err);
+    });
+    try {
+      const idx = await readIndex(workspaceId);
+      await writeIndex(workspaceId, removeGroupEverywhere(idx, groupId));
+    } catch (err) {
+      console.warn('[auto-delete-group] 清理智能分类引用失败:', err);
+    }
+    try {
+      await fs.rm(getGroupDir(workspaceId, groupId), { recursive: true, force: true });
+    } catch (err) {
+      console.warn('[auto-delete-group] 删除组目录失败:', err);
+    }
+    console.log('[auto-delete-group] 空组已清理:', groupId);
+  } catch (error) {
+    console.warn('[auto-delete-group] 空组检测失败:', error);
   }
 }
 
@@ -123,10 +160,14 @@ export const conversationsRouter = {
         if (conv?.sdkSessionId) {
           await tryDeleteSdkSession(input.workspaceId, conv.sdkSessionId);
         }
+        const orphanedGroupId = conv?.groupId;
 
         await conversationService.deleteConversation(input.workspaceId, input.conversationId);
         // 清理用量 JSONL（失败静默，不阻塞删除）
         await deleteUsage(input.conversationId).catch(() => {});
+        if (orphanedGroupId) {
+          await deleteGroupIfEmpty(input.workspaceId, orphanedGroupId);
+        }
         return { success: true, error: undefined };
       } catch (error) {
         console.error('删除对话失败:', error);

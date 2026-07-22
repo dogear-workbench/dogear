@@ -831,6 +831,13 @@ export class QueryBasedSession extends EventEmitter {
    * 发送消息到会话
    */
   async sendMessage(content: string | ContentBlockParam[]): Promise<void> {
+    this.logger.info('[interrupt-trace] sendMessage 入口', {
+      sessionId: this.sessionId.substring(0, 8),
+      status: this.status,
+      isQueryInFlight: this.isQueryInFlight,
+      queryStillPresent: !!this.query,
+      messageResolvers: this.messageResolvers.length,
+    });
     if (this.status === SessionStatus.CLOSED) {
       throw new Error('会话已关闭');
     }
@@ -1060,6 +1067,9 @@ export class QueryBasedSession extends EventEmitter {
               terminal_reason: terminalReason,
               terminalCategory: category, // 'complete' | 'interrupted' | 'max_turns'
             };
+            this.logger.info(`[interrupt-trace] terminal 消息到达 category=${category} terminal_reason=${terminalReason ?? 'n/a'}`, {
+              sessionId: this.sessionId.substring(0, 8),
+            });
             this.logger.info(`会话结束（${category}）`, terminalReason ? `terminal_reason=${terminalReason}` : '');
             this.emit('complete', enriched);
             this.status = SessionStatus.IDLE;
@@ -1081,11 +1091,22 @@ export class QueryBasedSession extends EventEmitter {
         }
       }
 
+      this.logger.info('[interrupt-trace] processMessageLoop 自然退出（for-await 结束）', {
+        sessionId: this.sessionId.substring(0, 8),
+        status: this.status,
+        queryStillPresent: !!this.query,
+      });
       this.logger.info('=== 消息流结束 ===', {
         totalMessages: messageCount,
         replayMessages: replayCount
       });
     } catch (error) {
+      this.logger.error('[interrupt-trace] processMessageLoop 抛错退出:', {
+        sessionId: this.sessionId.substring(0, 8),
+        status: this.status,
+        queryStillPresent: !!this.query,
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.logger.error('消息处理循环错误:', error);
       this.emit('error', {
         type: 'error',
@@ -1797,6 +1818,12 @@ export class QueryBasedSession extends EventEmitter {
 
     const idleNow = this.isIdle();
     if (idleNow && !this.wasIdle) {
+      this.logger.info('[interrupt-trace] session emit idle (可能触发 refCount=0 时自动 close)', {
+        sessionId: this.sessionId.substring(0, 8),
+        isQueryInFlight: this.isQueryInFlight,
+        pendingMessages: this.pendingMessages.length,
+        pendingPermissions: this.pendingPermissionRequests.size,
+      });
       this.emit('idle');
     }
     this.wasIdle = idleNow;
@@ -1808,6 +1835,13 @@ export class QueryBasedSession extends EventEmitter {
    * 避免快速切换对话时产生 ERR_STREAM_WRITE_AFTER_END 错误。
    */
   close(): void {
+    this.logger.info('[interrupt-trace] session.close() 被调用', {
+      sessionId: this.sessionId.substring(0, 8),
+      status: this.status,
+      isQueryInFlight: this.isQueryInFlight,
+      queryStillPresent: !!this.query,
+      stack: new Error('close-caller').stack?.split('\n').slice(1, 8).join('\n'),
+    });
     this.logger.info('关闭会话:', this.sessionId);
 
     // 先广播 sessionClosed（在销毁子进程之前），前端把它当作"该会话不在跑了"的原子信号，
@@ -1860,10 +1894,16 @@ export class QueryBasedSession extends EventEmitter {
    */
   async interrupt(): Promise<void> {
     if (!this.query) {
-      this.logger.warn('interrupt: 没有活跃的 query');
+      this.logger.warn('[interrupt-trace] interrupt: 没有活跃的 query');
       return;
     }
-    this.logger.info('中断当前执行');
+    this.logger.info('[interrupt-trace] interrupt 开始', {
+      sessionId: this.sessionId.substring(0, 8),
+      status: this.status,
+      isQueryInFlight: this.isQueryInFlight,
+      pendingPermissions: this.pendingPermissionRequests.size,
+      pendingMessages: this.pendingMessages.length,
+    });
     if (this.pendingMessages.length > 0) {
       this.pendingMessages = [];
       this.emit('pendingCountChanged', { count: 0 });
@@ -1878,6 +1918,12 @@ export class QueryBasedSession extends EventEmitter {
     }
     this.syncSessionState();
     await this.query.interrupt();
+    this.logger.info('[interrupt-trace] SDK query.interrupt() 已 resolve', {
+      sessionId: this.sessionId.substring(0, 8),
+      status: this.status,
+      isQueryInFlight: this.isQueryInFlight,
+      queryStillPresent: !!this.query,
+    });
   }
 
   /**
@@ -2107,6 +2153,11 @@ export class QueryBasedSessionManager extends EventEmitter {
     // 跑步机模式：session 从非空闲跳变为空闲时，若此刻已无 UI 引用则自动收尾（跑完自动收）
     session.on('idle', () => {
       const count = this.refCounts.get(sessionId) ?? 0;
+      this.logger.info('[interrupt-trace] manager 收到 idle', {
+        sessionId: sessionId.substring(0, 8),
+        refCount: count,
+        willDestroy: count === 0 && this.sessions.has(sessionId),
+      });
       if (count === 0 && this.sessions.has(sessionId)) {
         this.logger.info(`session ${sessionId.substring(0, 8)} 空闲且无 UI 引用，自动 close()`);
         this._destroySession(sessionId);
@@ -2190,9 +2241,12 @@ export class QueryBasedSessionManager extends EventEmitter {
     if (count === undefined) return 0;
     const next = Math.max(0, count - 1);
     this.refCounts.set(sessionId, next);
-    this.logger.info(`release session ${sessionId.substring(0, 8)}: refCount=${next}`);
+    const session = this.sessions.get(sessionId);
+    this.logger.info(`[interrupt-trace] release session ${sessionId.substring(0, 8)}: refCount ${count} -> ${next}`, {
+      idle: session?.isIdle(),
+      stack: new Error('release-caller').stack?.split('\n').slice(1, 6).join('\n'),
+    });
     if (next === 0) {
-      const session = this.sessions.get(sessionId);
       if (session && session.isIdle()) {
         this.logger.info(`release: refCount=0 且已空闲，触发 close()`);
         this._destroySession(sessionId);
