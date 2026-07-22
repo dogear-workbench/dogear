@@ -334,6 +334,12 @@ class PythonBridge {
       if (/^(https?|all)_proxy$/i.test(key)) delete cleanEnv[key];
     }
 
+    // Python 侧 get_dogear_root() 优先读 DOGEAR_CONFIG_DIR，不注入则回退到 ~/.dogear，
+    // 导致 snapshot 落在用户目录、与 TS 侧项目目录 .dogear/stocks/ 分裂——每次都重新拉全 A（7 分钟），缓存失效
+    const dogearConfigDir = app.isPackaged
+      ? path.join(app.getPath('userData'), '.dogear')
+      : path.join(process.cwd(), '.dogear');
+
     this.process = spawn(pythonCmd, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -341,6 +347,7 @@ class PythonBridge {
         PYTHONUNBUFFERED: '1',       // 禁用 Python 输出缓冲
         PYTHONIOENCODING: 'utf-8',   // 确保 UTF-8 编码
         NO_PROXY: '*',               // 兜底：即使某些库自动探测系统代理也强制直连
+        DOGEAR_CONFIG_DIR: dogearConfigDir,
       },
     });
 

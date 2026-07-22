@@ -102,7 +102,8 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 /** 每个行业硬筛调用的返回上限，多行业合并去重后再统一截断到 limit */
 const SCREEN_LIMIT_PER_INDUSTRY = 100;
-const SCREEN_TIMEOUT_MS = 120_000;
+// 首次调用触发全 A 快照预拉（baostock 逐只，实测 5-7 分钟），同天后续调用毫秒命中缓存
+const SCREEN_TIMEOUT_MS = 600_000;
 const FINANCIALS_TIMEOUT_MS = 30_000;
 const SIGNAL_CALC_TIMEOUT_MS = 30_000;
 /** 财报请求期数：覆盖近 1 年左右的报告，确保能找到最近一期年报 */

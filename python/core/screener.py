@@ -15,7 +15,7 @@ warnings 提示，不会误伤成 0 结果。
 
 import sys
 import pandas as pd
-from core.snapshot import get_snapshot
+from core.snapshot import get_snapshot, get_industry_snapshot
 from utils.akshare_client import get_stock_hist
 from utils.baostock_client import get_industry_map
 from .indicators import calculate as calc_indicators
@@ -59,15 +59,20 @@ def screen_stocks(conditions: dict, request_id: str = "", limit: int = 20) -> di
 
     warnings = []
 
-    # 1. 获取全 A 日快照 + 行业映射 join
-    df = get_snapshot(request_id=request_id)
+    # 1. 获取快照——传 industry 时走行业增量拉取（快 15-20 倍），否则全 A 兜底
+    industry_arg = conditions.get('industry')
+    if industry_arg:
+        df = get_industry_snapshot(industry_arg, request_id=request_id)
+        # get_industry_snapshot 返回已带 industry / code_name 列，无需再 merge
+    else:
+        df = get_snapshot(request_id=request_id)
+        industry_df = get_industry_map()[['code', 'code_name', 'industry']]
+        df = pd.merge(df, industry_df, on='code', how='left')
+
     total_scanned = len(df)
 
     if request_id:
-        send_progress(request_id, 1, 5, f"已获取 {total_scanned} 只 A 股快照数据")
-
-    industry_df = get_industry_map()[['code', 'code_name', 'industry']]
-    df = pd.merge(df, industry_df, on='code', how='left')
+        send_progress(request_id, 1, 5, f"已获取 {total_scanned} 只快照数据")
 
     # 列名映射（snapshot 用 baostock 原始字段名）
     col_map = {
