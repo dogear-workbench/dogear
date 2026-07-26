@@ -9,7 +9,6 @@ export interface LongTermPreheatConditions {
 
 export interface LongTermPreheatOptions {
   limit?: number;
-  wantBatchSize?: number;
 }
 
 export interface LongTermAnnualReport {

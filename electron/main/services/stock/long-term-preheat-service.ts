@@ -27,9 +27,7 @@ const MAX_LIMIT = 100;
 const SCREEN_LIMIT_PER_INDUSTRY = 200;
 const SCREEN_TIMEOUT_MS = 600_000;
 const PREFLIGHT_TIMEOUT_MS = 20_000;
-const FINANCIALS_TIMEOUT_MS = 15_000;
-const PREFLIGHT_BATCH_SIZE = 10;
-const DEFAULT_BATCH_SIZE = 5;
+const FINANCIALS_TIMEOUT_MS = 30_000;
 
 // ============================================================
 // Python 侧内部类型（snake_case）
@@ -89,13 +87,11 @@ function toNumberOrNull(val: unknown): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-async function processBatches<T>(
-  items: T[],
-  batchSize: number,
-  worker: (item: T) => Promise<void>,
-): Promise<void> {
-  for (let i = 0; i < items.length; i += batchSize) {
-    await Promise.all(items.slice(i, i + batchSize).map(worker));
+// Python bridge 端是纯串行处理请求，TS 端并发发只会造成排队末尾超时和 ORPHAN 响应。
+// 一律 for-of 串行调用，靠单只小超时（20-30s）快速甄别真慢股票。
+async function runSerially<T>(items: T[], worker: (item: T) => Promise<void>): Promise<void> {
+  for (const item of items) {
+    await worker(item);
   }
 }
 
@@ -148,7 +144,7 @@ async function runPreflight(
   const passedKeys = new Set<string>();
   const failedKeys = new Set<string>();
 
-  await processBatches(pool, PREFLIGHT_BATCH_SIZE, async (stock) => {
+  await runSerially(pool, async (stock) => {
     try {
       const result = await pythonBridge.call<{ symbol: string; periods: unknown[]; error?: string }>(
         'get_financials',
@@ -173,17 +169,16 @@ async function runPreflight(
 }
 
 // ============================================================
-// Step 5：5 年财报拉取（每批 batchSize 只，Python 端串行）
+// Step 5：5 年财报拉取（串行，Python 端本就是串行处理）
 // ============================================================
 
 async function fetchAllFinancials(
   candidates: LongTermCandidateData[],
   status: LongTermPreheatStatus,
-  batchSize: number,
 ): Promise<LongTermCandidateData[]> {
   const droppedKeys = new Set<string>();
 
-  await processBatches(candidates, batchSize, async (candidate) => {
+  await runSerially(candidates, async (candidate) => {
     const key = stockKey(candidate.market, candidate.code);
     try {
       const raw = await pythonBridge.call<LongTermFinancialsRaw>(
@@ -237,17 +232,16 @@ async function fetchAllFinancials(
 }
 
 // ============================================================
-// Step 6：周 K 拉取 + 派生指标（每批 batchSize 只，走 rate-limiter）
+// Step 6：周 K 拉取 + 派生指标（串行，走 rate-limiter）
 // ============================================================
 
 async function fetchAllWeeklyKLines(
   candidates: LongTermCandidateData[],
   status: LongTermPreheatStatus,
-  batchSize: number,
 ): Promise<LongTermCandidateData[]> {
   const droppedKeys = new Set<string>();
 
-  await processBatches(candidates, batchSize, async (candidate) => {
+  await runSerially(candidates, async (candidate) => {
     const key = stockKey(candidate.market, candidate.code);
     const secid = `${candidate.market}.${candidate.code}`;
     try {
@@ -312,7 +306,6 @@ export async function preheatLongTermPool(
 
   const startedAt = Date.now();
   const limit = Math.min(Math.max(options.limit ?? DEFAULT_LIMIT, 1), MAX_LIMIT);
-  const batchSize = options.wantBatchSize ?? DEFAULT_BATCH_SIZE;
 
   const status: LongTermPreheatStatus = {
     total: 0, afterPreflight: 0, preflightFailed: 0,
@@ -351,13 +344,13 @@ export async function preheatLongTermPool(
   }));
 
   // Step 5
-  const financialsPassed = await fetchAllFinancials(candidates, status, batchSize);
+  const financialsPassed = await fetchAllFinancials(candidates, status);
   if (financialsPassed.length === 0) {
     return { ok: false, error: '所有候选财报数据年份不足（<3 年），无可参评标的' };
   }
 
   // Step 6
-  const klinePassed = await fetchAllWeeklyKLines(financialsPassed, status, batchSize);
+  const klinePassed = await fetchAllWeeklyKLines(financialsPassed, status);
 
   // Step 7
   return {

@@ -168,37 +168,44 @@ class StockDataService {
   }
 
   /**
-   * 增量追加 K 线数据。
+   * 合并 K 线数据：接口返回的数据按 date 覆盖本地同日期的行，新日期追加。
    *
-   * 先读取现有数据获取已有日期集合，只追加新日期的数据点。
-   * 适用于日 K 线等需要增量更新的场景。
+   * 不能简单跳过已存在的日期——当日 K 线在盘中是未收盘的临时值，
+   * 且前复权数据在每次除权除息后整段历史都会变。
    *
    * @param market 市场代码（1=沪 0=深）
    * @param code   股票代码
-   * @param points 待追加的 K 线数据点
-   * @returns 实际追加的数据点数量
+   * @param points 接口返回的 K 线数据点
+   * @returns 新增的数据点数量（不含被覆盖更新的）
    */
   async appendKLine(market: number, code: string, points: KLineDataPoint[]): Promise<number> {
     if (points.length === 0) return 0;
 
     const filePath = getKLinePath(market, code);
-
-    // 读取现有数据，收集已有日期
     const existing = await this.readKLine(market, code);
-    const existingDates = new Set(existing.map((p) => p.date));
+    const byDate = new Map(existing.map((p) => [p.date, p]));
 
-    // 过滤出新数据点（按 date 去重）
-    const newPoints = points.filter((p) => !existingDates.has(p.date));
-    if (newPoints.length === 0) return 0;
+    let added = 0;
+    let changed = false;
 
-    // 确保目录存在
+    for (const point of points) {
+      const prev = byDate.get(point.date);
+      if (!prev) {
+        added++;
+        changed = true;
+      } else if (JSON.stringify(prev) !== JSON.stringify(point)) {
+        changed = true;
+      }
+      byDate.set(point.date, point);
+    }
+
+    if (!changed) return 0;
+
+    const merged = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
     await fs.mkdir(path.dirname(filePath), { recursive: true });
+    await safeFileWrite(filePath, toJsonl(merged as unknown as Record<string, unknown>[]));
 
-    // 追加写入新数据
-    const jsonlContent = toJsonl(newPoints as unknown as Record<string, unknown>[]);
-    await fs.appendFile(filePath, jsonlContent, 'utf-8');
-
-    return newPoints.length;
+    return added;
   }
 
   /**
@@ -241,21 +248,31 @@ class StockDataService {
   // ============================================================
 
   /**
-   * 追加每日快照（按 date 去重）。
-   * @returns 是否实际写入（false 表示该日已存在）
+   * 写入每日快照：同日期用新值覆盖，新日期追加。
+   *
+   * 快照采自实时行情，盘中采到的是临时值，必须允许当日覆盖，
+   * 否则那天最终留下的是第一次打开页面时的盘中价而非收盘价。
+   *
+   * @returns 是否实际写盘（false 表示数据无变化）
    */
   async appendDailySnapshot(market: number, code: string, snapshot: DailySnapshot): Promise<boolean> {
     const filePath = getDailyPath(market, code);
-
-    // 读取已有快照，检查去重
     const existing = await this.readDailySnapshots(market, code);
-    if (existing.some((s) => s.date === snapshot.date)) {
-      return false;
-    }
+    const idx = existing.findIndex((s) => s.date === snapshot.date);
 
     await fs.mkdir(path.dirname(filePath), { recursive: true });
-    const line = JSON.stringify(snapshot) + '\n';
-    await fs.appendFile(filePath, line, 'utf-8');
+
+    if (idx < 0) {
+      await fs.appendFile(filePath, JSON.stringify(snapshot) + '\n', 'utf-8');
+      return true;
+    }
+
+    if (JSON.stringify(existing[idx]) === JSON.stringify(snapshot)) return false;
+
+    // readDailySnapshots 返回降序，落盘统一按日期升序，与追加写入的自然顺序一致
+    existing[idx] = snapshot;
+    existing.sort((a, b) => a.date.localeCompare(b.date));
+    await safeFileWrite(filePath, toJsonl(existing as unknown as Record<string, unknown>[]));
     return true;
   }
 

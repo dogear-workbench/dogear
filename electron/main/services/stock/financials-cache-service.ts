@@ -4,7 +4,8 @@
  * 存储路径：.dogear/stocks/financials/{market}.{code}.jsonl
  * JSONL 格式：每行一个 CachedFinancialsPeriod JSON。
  *
- * 缓存策略：按 reportPeriod（如 "2025Q4"）缓存，同一期永远命中，无需过期。
+ * 缓存策略：按 reportPeriod（如 "2025Q4"）缓存。已定稿的历史期数据不变，永久命中；
+ * 但最新一期需要定期回源，否则新财报发布后只要请求期数没超过已缓存条数就永远读不到。
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -96,6 +97,9 @@ export function deriveReportPeriod(reportDate: string): string {
 // 读写缓存
 // ============================================================
 
+/** 最新一期的回源间隔：超过这个时长就重新拉，用于发现新发布的财报 */
+const LATEST_PERIOD_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * 读取财报缓存。
  *
@@ -103,13 +107,14 @@ export function deriveReportPeriod(reportDate: string): string {
  * @param code 股票代码
  * @param wantPeriods 期望的期数
  * @returns hit：按 reportDate 倒序取到的前 wantPeriods 条（不足则返回已有的全部）；
- *          missingCount：还缺多少期（0 表示全部命中）
+ *          missingCount：还缺多少期（0 表示条数够）；
+ *          stale：最新一期的写入时间已超过 TTL，可能有新财报未收录
  */
 export async function readFinancialsCache(
   market: number,
   code: string,
   wantPeriods: number
-): Promise<{ hit: CachedFinancialsPeriod[]; missingCount: number }> {
+): Promise<{ hit: CachedFinancialsPeriod[]; missingCount: number; stale: boolean }> {
   const filePath = getFinancialsCachePath(market, code);
 
   try {
@@ -119,13 +124,17 @@ export async function readFinancialsCache(
 
     const hit = all.slice(0, wantPeriods);
     const missingCount = Math.max(0, wantPeriods - hit.length);
-    return { hit, missingCount };
+
+    const latestFetchedAt = hit.length ? Date.parse(hit[0].fetchedAt) : NaN;
+    const stale = Number.isNaN(latestFetchedAt) || Date.now() - latestFetchedAt > LATEST_PERIOD_TTL_MS;
+
+    return { hit, missingCount, stale };
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { hit: [], missingCount: wantPeriods };
+      return { hit: [], missingCount: wantPeriods, stale: true };
     }
     console.warn('[FinancialsCache] 读缓存失败，当作未命中:', err);
-    return { hit: [], missingCount: wantPeriods };
+    return { hit: [], missingCount: wantPeriods, stale: true };
   }
 }
 

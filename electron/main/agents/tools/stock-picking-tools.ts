@@ -109,7 +109,7 @@ export function createStockPickingTools() {
         '执行链路：全市场行业硬筛 → 可获取性预检（1 期财报）→ 5 年年报（ROE均值/CAGR/稳定性）→ 周 K 趋势指标（MA26/MA52/年内位置）→ 完整性检查。\n' +
         'insufficientYears 是年报 <3 年的独立计数（与 failuresByCategory.financials 的技术失败分开统计）；两者都会从候选池剔除。\n' +
         '返回: markdown 展示表 + 结构化 JSON 代码块（candidates 数组，供 RankByLongTerm 直接使用）。\n' +
-        '耗时预算: 3-5 分钟；limit 上限 100 只；agent 可自主分批调用或派子会话处理不同行业后合并 candidates。',
+        '耗时预算: 单行业 limit=50 约 3-5 分钟；limit 上限 100 只；一次只传一个行业，多板块请分开多次调用（或派子会话并行），后续合并 candidates。',
         {
           industries: z.array(z.string()).min(1)
             .describe('CSRC 行业分类名列表（带分类代码前缀，如"C27医药制造业"），不确定名称先调 ListIndustries 查询真实值域；传多个行业会分别硬筛后合并去重'),
@@ -119,8 +119,6 @@ export function createStockPickingTools() {
             .describe('是否排除 ST/*ST 股票，默认排除'),
           limit: z.number().min(1).max(100).default(50)
             .describe('候选池上限，默认 50，最大 100'),
-          wantBatchSize: z.number().min(1).max(20).default(5)
-            .describe('财报 + 周 K 拉取的并发批次大小，默认 5；调大可加速但增加限流风险'),
         },
         async (args) => {
           const result = await preheatLongTermPool(
@@ -131,7 +129,6 @@ export function createStockPickingTools() {
             },
             {
               limit: args.limit,
-              wantBatchSize: args.wantBatchSize,
             },
           );
 

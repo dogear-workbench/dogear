@@ -92,17 +92,46 @@ class PythonBridge {
   private process: ChildProcess | null = null;
   private pythonPath: string | null = null;
   private pendingRequests: Map<string, PendingRequest> = new Map();
+  private requestMeta: Map<string, { method: string; startedAt: number }> = new Map();
   private buffer = '';
   private consecutiveCrashes = 0;
   private cooldownUntil: number | null = null;
   private initializing = false;
   private initPromise: Promise<void> | null = null;
+  private logPath: string | null = null;
 
   constructor() {
     // 注册应用退出时的清理
     app.on('will-quit', () => {
+      this.log('▲ APP_QUIT');
       this.shutdown();
     });
+  }
+
+  /** 落盘日志：`.dogear/logs/python-bridge.log`，同步 append 避免崩溃丢关键行 */
+  private log(msg: string): void {
+    try {
+      if (!this.logPath) {
+        const dogearConfigDir = app.isPackaged
+          ? path.join(app.getPath('userData'), '.dogear')
+          : path.join(process.cwd(), '.dogear');
+        const logDir = path.join(dogearConfigDir, 'logs');
+        fs.mkdirSync(logDir, { recursive: true });
+        this.logPath = path.join(logDir, 'python-bridge.log');
+      }
+      const ts = new Date().toISOString().slice(11, 23);
+      fs.appendFileSync(this.logPath, `[${ts}] ${msg}\n`);
+    } catch {
+      // 日志失败不能影响业务
+    }
+  }
+
+  private shortId(id: string): string {
+    return id.slice(0, 8);
+  }
+
+  private truncate(s: string, max = 500): string {
+    return s.length > max ? `${s.slice(0, max)}…(+${s.length - max})` : s;
   }
 
   // ----------------------------------------------------------
@@ -127,10 +156,17 @@ class PythonBridge {
 
     const id = uuidv4();
     const request: PythonRequest = { id, method, params };
+    const startedAt = Date.now();
+
+    const paramsPreview = this.truncate(JSON.stringify(params), 300);
+    this.log(`→ REQ id=${this.shortId(id)} method=${method} timeout=${timeoutMs}ms params=${paramsPreview}`);
 
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pendingRequests.delete(id);
+        this.requestMeta.delete(id);
+        const elapsed = Date.now() - startedAt;
+        this.log(`⏰ TIMEOUT id=${this.shortId(id)} method=${method} elapsed=${elapsed}ms pending=${this.pendingRequests.size}`);
         reject(new Error(`Python 请求超时（${timeoutMs}ms）: method=${method}`));
       }, timeoutMs);
 
@@ -140,6 +176,7 @@ class PythonBridge {
         timer,
         onProgress,
       });
+      this.requestMeta.set(id, { method, startedAt });
 
       const line = JSON.stringify(request) + '\n';
       this.process!.stdin!.write(line);
@@ -161,6 +198,8 @@ class PythonBridge {
   shutdown(): void {
     if (!this.process) return;
 
+    this.log(`← SHUTDOWN pid=${this.process.pid} pending=${this.pendingRequests.size}`);
+
     try {
       const shutdownReq = JSON.stringify({ id: 'shutdown', method: 'shutdown', params: {} }) + '\n';
       this.process.stdin!.write(shutdownReq);
@@ -171,6 +210,7 @@ class PythonBridge {
     const proc = this.process;
     setTimeout(() => {
       if (proc && proc.exitCode === null) {
+        this.log(`✂ SIGTERM pid=${proc.pid}（shutdown 超时未退出）`);
         proc.kill('SIGTERM');
       }
     }, SHUTDOWN_WAIT_MS);
@@ -325,6 +365,7 @@ class PythonBridge {
     await this.ensureDependencies(pythonCmd);
 
     console.log(`[PythonBridge] 启动 Python 进程: ${pythonCmd} ${scriptPath}`);
+    this.log(`▶ SPAWN cmd=${pythonCmd} script=${scriptPath}`);
 
     // 剥离代理环境变量：akshare 内部走 requests，会自动读 HTTP_PROXY/HTTPS_PROXY，
     // Electron 启动时继承的代理端口若已失效（例如用户切到 TUN 模式关掉了 HTTP 代理），
@@ -357,17 +398,24 @@ class PythonBridge {
       this.processBuffer();
     });
 
+    this.log(`▶ SPAWNED pid=${this.process.pid}`);
+
     // 监听 stderr（日志）
     this.process.stderr!.on('data', (chunk: Buffer) => {
       const msg = chunk.toString('utf-8').trim();
       if (msg) {
         console.log(`[PythonBridge:stderr] ${msg}`);
+        // stderr 可能一次到多行，逐行落盘保留 Python 端进度
+        for (const line of msg.split(/\r?\n/)) {
+          if (line) this.log(`[stderr] ${line}`);
+        }
       }
     });
 
     // 监听进程退出
     this.process.on('exit', (code, signal) => {
       console.warn(`[PythonBridge] Python 进程退出: code=${code}, signal=${signal}`);
+      this.log(`■ EXIT code=${code} signal=${signal} pending=${this.pendingRequests.size}`);
       this.process = null;
       this.consecutiveCrashes++;
 
@@ -377,6 +425,7 @@ class PythonBridge {
           `[PythonBridge] 连续崩溃 ${this.consecutiveCrashes} 次，` +
           `断路器开启，冷却 ${CRASH_COOLDOWN_MS / 1000}s`
         );
+        this.log(`✖ BREAKER_OPEN crashes=${this.consecutiveCrashes} cooldown_until=${new Date(this.cooldownUntil).toISOString()}`);
       }
 
       this.rejectAllPending(new Error(`Python 进程异常退出 (code=${code})`));
@@ -384,6 +433,7 @@ class PythonBridge {
 
     this.process.on('error', (err) => {
       console.error(`[PythonBridge] 进程启动失败:`, err);
+      this.log(`✖ PROC_ERROR ${err.message}`);
       this.process = null;
       this.rejectAllPending(new Error(`Python 进程启动失败: ${err.message}`));
     });
@@ -416,11 +466,16 @@ class PythonBridge {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
+      // 关键：把每行 raw stdout 都记下来，用于验证/证伪 stdout 污染假设
+      this.log(`← RAW ${this.truncate(trimmed)}`);
+
       try {
         const response: PythonResponse = JSON.parse(trimmed);
         this.handleResponse(response);
-      } catch {
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.warn(`[PythonBridge] 无法解析响应: ${trimmed}`);
+        this.log(`⚠ PARSE_FAIL err=${errMsg} raw=${this.truncate(trimmed)}`);
       }
     }
   }
@@ -429,38 +484,52 @@ class PythonBridge {
   private handleResponse(response: PythonResponse): void {
     const pending = this.pendingRequests.get(response.id);
     if (!pending) {
-      // 可能是超时后收到的响应，忽略
+      // 可能是超时后收到的响应
+      this.log(`⚠ ORPHAN id=${this.shortId(response.id)}（pending map 无此 id，可能已超时）`);
       return;
     }
 
+    const meta = this.requestMeta.get(response.id);
+    const method = meta?.method ?? '?';
+    const elapsed = meta ? Date.now() - meta.startedAt : -1;
+
     // 进度更新（不完成请求）
     if (response.progress) {
+      const { current, total, message } = response.progress;
+      this.log(`← RESP id=${this.shortId(response.id)} type=progress ${current}/${total} ${message}`);
       pending.onProgress?.(response.progress);
       return;
     }
 
     // 完成请求
     this.pendingRequests.delete(response.id);
+    this.requestMeta.delete(response.id);
     clearTimeout(pending.timer);
 
     if (response.error) {
+      this.log(`← RESP id=${this.shortId(response.id)} method=${method} elapsed=${elapsed}ms type=error code=${response.error.code} msg=${this.truncate(response.error.message, 200)}`);
       if (response.error.code === 'DATA_SOURCE_EXHAUSTED') {
         pending.reject(new DataSourceExhaustedError(response.error.message, response.error.data?.attempts ?? []));
       } else {
         pending.reject(new Error(response.error.message));
       }
     } else {
+      this.log(`← RESP id=${this.shortId(response.id)} method=${method} elapsed=${elapsed}ms type=result`);
       pending.resolve(response.result);
     }
   }
 
   /** 拒绝所有挂起的请求 */
   private rejectAllPending(error: Error): void {
+    if (this.pendingRequests.size > 0) {
+      this.log(`✖ REJECT_ALL pending=${this.pendingRequests.size} reason=${error.message}`);
+    }
     for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.pendingRequests.clear();
+    this.requestMeta.clear();
   }
 }
 

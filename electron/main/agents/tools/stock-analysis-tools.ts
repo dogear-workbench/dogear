@@ -402,7 +402,7 @@ export function createStockAnalysisTools() {
         'GetFinancials',
         '获取个股财报数据（营收、净利润、ROE、毛利率、净利率、资产负债率、每股经营现金流等，' +
         '每项指标均附带 _yoy 同比%/_mom 环比%/_single_yoy 单季同比% 三个衍生字段）。\n' +
-        '数据来源: 同花顺财报摘要新版接口（stock_financial_abstract_new_ths），通过 AKShare 获取。\n' +
+        '数据来源: 同花顺财报摘要新版接口（stock_financial_abstract_new_ths），失败时降级 baostock。\n' +
         '使用场景: 用户想了解某只股票的基本面数据、财务健康状况、同比环比变化趋势。',
         {
           market: z.number().describe('市场代码（1=沪市 0=深市）'),
@@ -411,31 +411,45 @@ export function createStockAnalysisTools() {
         },
         async (args) => {
           try {
-            const { hit, missingCount } = await readFinancialsCache(args.market, args.code, args.periods);
+            const { hit, missingCount, stale } = await readFinancialsCache(args.market, args.code, args.periods);
 
             let periods: Array<Record<string, number | string | null>>;
 
-            if (missingCount === 0) {
+            if (missingCount === 0 && !stale) {
               periods = hit.map((entry) => entry.data);
             } else {
-              const result = await pythonBridge.call<{
-                symbol: string;
-                periods: Array<Record<string, number | string | null>>;
-                error?: string;
-              }>('get_financials', {
-                symbol: args.code,
-                periods: args.periods,
-              }, 30_000);
+              let fetched: Array<Record<string, number | string | null>> | null = null;
+              let fetchError = '';
 
-              if (result.error) {
+              try {
+                const result = await pythonBridge.call<{
+                  symbol: string;
+                  periods: Array<Record<string, number | string | null>>;
+                  error?: string;
+                }>('get_financials', {
+                  symbol: args.code,
+                  periods: args.periods,
+                }, 30_000);
+
+                if (result.error) fetchError = result.error;
+                else fetched = result.periods;
+              } catch (err) {
+                fetchError = String(err);
+              }
+
+              if (fetched) {
+                periods = fetched;
+                await writeFinancialsCache(args.market, args.code, periods);
+              } else if (missingCount === 0) {
+                // 回源失败但条数够，用过期缓存兜底，好过什么都返回不了
+                console.warn(`[GetFinancials] ${args.code} 回源失败，降级用缓存: ${fetchError}`);
+                periods = hit.map((entry) => entry.data);
+              } else {
                 return {
-                  content: [{ type: 'text' as const, text: `获取财报失败: ${result.error}` }],
+                  content: [{ type: 'text' as const, text: `获取财报失败: ${fetchError}` }],
                   isError: true,
                 };
               }
-
-              periods = result.periods;
-              await writeFinancialsCache(args.market, args.code, periods);
             }
 
             if (periods.length === 0) {
@@ -847,13 +861,16 @@ export function createStockAnalysisTools() {
       // ========================================
       tool(
         'CompareIndustry',
-        '将个股与同行业其他股票对比，显示行业均值/中位数等统计。\n' +
+        '将个股与同行业其他股票对比，显示行业均值/中位数/排名。\n' +
+        '数据源: baostock 行业快照（证监会行业分类），与 ScreenStocks 同口径。\n' +
+        'PE/PB 统计自动剔除负值（亏损股），行业内有极端值时请以中位数为准。\n' +
+        'rank 为升序位次（1 = 行业内最低），total 为参与统计的有效样本数。\n' +
         '使用场景: 用户想知道某只股票在行业中的估值水平。',
         {
           market: z.number().describe('市场代码（1=沪市 0=深市）'),
           code: z.string().describe('股票代码'),
-          metrics: z.array(z.string()).optional().default(['pe', 'pb', 'market_cap'])
-            .describe('对比指标，可选: pe/pb/market_cap/float_market_cap/turnover_rate/change_percent'),
+          metrics: z.array(z.string()).optional().default(['pe', 'pb', 'turnover_rate'])
+            .describe('对比指标，可选: pe/pb/turnover_rate/change_percent。市值类指标（market_cap/float_market_cap）因快照无股本数据不可用'),
         },
         async (args) => {
           try {
@@ -883,14 +900,13 @@ export function createStockAnalysisTools() {
               };
             }
 
-            let output = `=== ${result.name}(${result.symbol}) vs ${result.industry}行业（共 ${result.industry_count} 只） ===\n\n`;
-            output += `指标 | 本股 | 行业均值 | 行业中位数 | 行业规模\n`;
+            let output = `=== ${result.name}(${result.symbol}) vs ${result.industry}（共 ${result.industry_count} 只） ===\n\n`;
+            output += `指标 | 本股 | 行业均值 | 行业中位数 | 排名(升序)\n`;
             output += `---|---|---|---|---\n`;
 
             const metricLabels: Record<string, string> = {
-              pe: '市盈率', pb: '市净率', market_cap: '总市值(亿)',
-              float_market_cap: '流通市值(亿)', turnover_rate: '换手率(%)',
-              change_percent: '涨跌幅(%)',
+              pe: 'PE(TTM)', pb: 'PB(MRQ)',
+              turnover_rate: '换手率(%)', change_percent: '涨跌幅(%)',
             };
 
             for (const [key, data] of Object.entries(result.metrics)) {
@@ -898,7 +914,7 @@ export function createStockAnalysisTools() {
                 output += `${metricLabels[key] || key} | - | - | - | ${data.error}\n`;
                 continue;
               }
-              const scaleStr = data.rank > 0 ? `${data.rank}/${data.total}` : `共${data.total}只`;
+              const scaleStr = data.rank > 0 ? `${data.rank}/${data.total}` : `本股无有效值(样本${data.total})`;
               output += `${metricLabels[key] || key} | ${safe(data.value)} | ${safe(data.industry_avg)} | ${safe(data.industry_median)} | ${scaleStr}\n`;
             }
 
