@@ -28,6 +28,28 @@ paths:
 - 工具命名遵循 SDK 约定：`mcp__{server_name}__{tool_name}`，server_name 在 `createSdkMcpServer` 时指定
 - 输入参数用 Zod schema 严格校验
 - 错误情况返回 `isError: true`，不要抛异常（会终止 Agent 循环）
+
+### ToolDef 中立化约定
+
+后台任务链路的运行时正在从 Agent SDK 迁到 pi，工具定义已与运行时解耦（`electron/main/agents/pi/tool-adapter.ts`）。新写工具按这个形状：
+
+```ts
+export function createXxxToolDefs(...闭包参数): ToolDef[] {
+  return [
+    defineTool('ToolName', '描述', z.object({ foo: z.string() }), async (args) => { ... }),
+  ];
+}
+
+// 需要给 SDK 用时包一层薄壳，对外签名不变
+export function createXxxTools(...同样的参数) {
+  return toSdkServer('dogear-xxx', '1.0.0', createXxxToolDefs(...));
+}
+```
+
+- `schema` 用 `z.object({...})`（不是裸 shape）——`toSdkServer` 内部取 `.shape` 还原给 SDK 的 `tool()`，`toPiTools` 走 `z.toJSONSchema()` 喂给 pi
+- handler 一律沿用 `isError: true` 约定，**两个运行时都不用管**——`toPiTools` 负责在 pi 侧翻转成 `throw`
+- pi 侧工具名是裸名（`ReadGroupDigest`），不带 `mcp__server__` 前缀；提示词里引用工具名时注意区分运行时
+- pi 的 loop 没有轮次上限，跑 pi 的链路必须在 `subscribe` 里数 `turn_start`，超限调 `agent.abort()`
 - 单个工具文件超过 5 个工具或 300 行时，按功能域拆分（参考 `stock-tools.ts` / `stock-analysis-tools.ts` 的拆分）
 
 ## Python 计算层（股票分析）

@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 工具定义中立化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -106,12 +106,56 @@ export function createXxxTools(...同样的参数) {
 
 ### 实际改动
 
-- 与计划差异：
+- 与计划差异：多导出一个 `defineTool` 泛型辅助（`ToolDef.handler` 公共接口用 `any` 才能装进数组，`defineTool` 在调用点恢复 `z.infer<S>` 类型检查）。其余按计划。
 - 改动文件清单：
+  - 新建 `electron/main/agents/pi/tool-adapter.ts`
+  - 改 `tools/` 下 6 个文件：`digest-tools.ts` / `group-digest-tools.ts` / `review-tools.ts` / `category-tools.ts` / `group-tools.ts` / `memory-tools.ts`
+  - 改 `.claude/rules/agent-development.md`（主会话做，新增「ToolDef 中立化约定」一节）
+  - 调用方（`agent-worker.ts` / `query-based-session.ts` / `conversation-runtime-service.ts`）**零改动**
 
 ### 给下一步的接力棒
 
-- `ToolDef` / `toSdkServer` / `toPiTools` 的最终签名：
-- 各文件新导出的 `createXxxToolDefs` 签名清单（step3/step4 直接调这些）：
-- schema 转换实际走的路径（`z.toJSONSchema` 还是兜底）：
-- 改造中发现的与预期不符的地方：
+- **`tool-adapter.ts` 最终签名**：
+  ```ts
+  export type ToolResult = { content: Array<{ type: 'text'; text: string }>; isError?: boolean };
+
+  export interface ToolDef {
+    name: string;
+    description: string;
+    schema: z.ZodObject<z.ZodRawShape>;
+    handler: (args: any) => Promise<ToolResult>;
+  }
+
+  export function defineTool<S extends z.ZodObject<z.ZodRawShape>>(
+    name: string, description: string, schema: S,
+    handler: (args: z.infer<S>) => Promise<ToolResult>,
+  ): ToolDef;
+
+  export function toSdkServer(serverName: string, version: string, defs: ToolDef[]): /* SdkMcpServer */;
+  export function toPiTools(defs: ToolDef[]): AgentTool[];
+  ```
+
+- **各文件新导出的 `createXxxToolDefs`（step3/step4 直接调这些）**：
+  | 文件 | 签名 |
+  |---|---|
+  | `digest-tools.ts` | `createDigestToolDefs(_workspaceId, workspacePath, _onSaved?): ToolDef[]` |
+  | `group-digest-tools.ts` | `createGroupDigestToolDefs(workspaceId, workspacePath, groupId, dirtyConversations, onDigestSaved?, onBackgroundSaved?): ToolDef[]` |
+  | `review-tools.ts` | `createReviewToolDefs(workspaceId, workspacePath, onSaved?): ToolDef[]` |
+  | `category-tools.ts` | `createCategoryToolDefs(): ToolDef[]` |
+  | `group-tools.ts` | `createGroupToolDefs(workspaceId, groupId): ToolDef[]` |
+  | `memory-tools.ts` | `createMemoryToolDefs(workspacePath, opts?: { autonomous?: boolean }): ToolDef[]` |
+
+  原 `createXxxTools()` 全部保留为薄壳，签名与返回类型不变。
+
+- **schema 转换路径**：走 `z.toJSONSchema(def.schema)`，未用兜底方案。SDK 侧靠 `def.schema.shape` 还原。
+
+- **与预期不符的地方**：
+  1. `ToolDef.handler` 无法用泛型精确表达又同时放进 `ToolDef[]`（TS 逆变），只能公共接口收 `any` + `defineTool` 辅助保类型。
+  2. `toSdkServer` 内 `tool()` 第四参需 `as any`（SDK 的 handler 类型与中立 `ToolResult` 不完全对齐），已就近 `eslint-disable` 单行。
+
+### 验收结果
+
+- `bun run build:electron` 0 error；`bun run lint` 83 warnings / 0 error（与改造前存量一致，无新增）
+- `git diff -w` 核对：6 个文件的实际差异全部是结构性搬迁，工具名 / 描述文案 / handler 函数体逐字未变
+- `memory-tools` 的 `autonomous` 分支（SaveMemory 描述切换 + core-profile 两个工具增减）原样保留
+- 手测 A/B（组提炼产出比对、主会话调 RecallMemory / ListGroupFiles）：**待 step4 收尾时连同 pi 链路一起做**

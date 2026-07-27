@@ -15,11 +15,11 @@
  * - UpdateCoreProfile 是全量覆盖，调用前必须先 GetCoreProfile 合并
  */
 
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import * as memoryService from '../../services/memory/memory-service.js';
 import * as memoryRecall from '../../services/memory/memory-recall.js';
 import { registerTools } from './tool-registry.js';
+import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
 registerTools([
   {
@@ -42,12 +42,7 @@ registerTools([
   },
 ]);
 
-/**
- * 创建记忆大脑 MCP Server
- * @param workspacePath 工作区绝对路径，空串时调用方不应注入此 server
- * @param opts.autonomous true 时切换到自动化任务契约（放开 SaveMemory 门槛 + 额外注册 core-profile 工具）
- */
-export function createMemoryTools(workspacePath: string, opts?: { autonomous?: boolean }) {
+export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?: boolean }): ToolDef[] {
   const autonomous = opts?.autonomous === true;
 
   const saveMemoryDescription = autonomous
@@ -61,148 +56,151 @@ export function createMemoryTools(workspacePath: string, opts?: { autonomous?: b
       'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
       '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。';
 
-  const tools = [
-      // ========================================
-      // 工具 1: 召回主题记忆
-      // ========================================
-      tool(
-        'RecallMemory',
-        '按关键词查询与主题相关的工作区级历史记忆。每个主题记忆包含关键词索引和 markdown 正文。\n' +
-        '使用时机：在讨论具体主题（股票分析、架构设计、用户偏好等）的开头主动调用，不要等用户追问历史才查。\n' +
-        '匹配规则：关键词做小写归一化 + 子串匹配，不做中文分词。\n' +
-        '每次最多返回 5 个主题，超出会有 hint 提示，请优化关键词再调。',
-        {
-          keywords: z
-            .array(z.string())
-            .min(1)
-            .describe('关键词数组，会做小写 + 子串匹配。例如 ["股票", "估值"]'),
-          limit: z
-            .number()
-            .int()
-            .min(1)
-            .max(5)
-            .optional()
-            .describe('返回主题数上限，默认 3，最大 5'),
-        },
-        async (args) => {
-          try {
-            const result = await memoryRecall.recall(
-              workspacePath,
-              args.keywords,
-              args.limit ?? 3,
-            );
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: JSON.stringify(result, null, 2),
-                },
-              ],
-            };
-          } catch (error) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `召回记忆失败: ${error instanceof Error ? error.message : String(error)}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        },
-      ),
+  const defs: ToolDef[] = [
+    // ========================================
+    // 工具 1: 召回主题记忆
+    // ========================================
+    defineTool(
+      'RecallMemory',
+      '按关键词查询与主题相关的工作区级历史记忆。每个主题记忆包含关键词索引和 markdown 正文。\n' +
+      '使用时机：在讨论具体主题（股票分析、架构设计、用户偏好等）的开头主动调用，不要等用户追问历史才查。\n' +
+      '匹配规则：关键词做小写归一化 + 子串匹配，不做中文分词。\n' +
+      '每次最多返回 5 个主题，超出会有 hint 提示，请优化关键词再调。',
+      z.object({
+        keywords: z
+          .array(z.string())
+          .min(1)
+          .describe('关键词数组，会做小写 + 子串匹配。例如 ["股票", "估值"]'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(5)
+          .optional()
+          .describe('返回主题数上限，默认 3，最大 5'),
+      }),
+      async (args) => {
+        try {
+          const result = await memoryRecall.recall(
+            workspacePath,
+            args.keywords,
+            args.limit ?? 3,
+          );
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(result, null, 2),
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `召回记忆失败: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      },
+    ),
 
-      // ========================================
-      // 工具 2: 保存主题记忆
-      // ========================================
-      tool(
-        'SaveMemory',
-        saveMemoryDescription,
-        {
-          slug: z
-            .string()
-            .regex(/^[a-z0-9-]+$/, 'slug 必须是 kebab-case（仅小写字母数字和连字符）')
-            .describe('kebab-case slug，例如 "stock-valuation"、"user-coffee-preference"'),
-          title: z.string().min(1).describe('主题中文标题，例如 "股票估值偏好"'),
-          keywords: z
-            .array(z.string())
-            .min(1)
-            .describe('关键词数组，用于 RecallMemory 检索。越具体越有用'),
-          content: z
-            .string()
-            .min(1)
-            .describe('主题正文，markdown 格式，描述记忆的具体内容'),
-        },
-        async (args) => {
-          try {
-            const topic = await memoryService.upsertTopic(workspacePath, args);
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `已保存主题「${topic.title}」(slug=${topic.slug})，updated=${topic.updated}`,
-                },
-              ],
-            };
-          } catch (error) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `保存记忆失败: ${error instanceof Error ? error.message : String(error)}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        },
-      ),
+    // ========================================
+    // 工具 2: 保存主题记忆
+    // ========================================
+    defineTool(
+      'SaveMemory',
+      saveMemoryDescription,
+      z.object({
+        slug: z
+          .string()
+          .regex(/^[a-z0-9-]+$/, 'slug 必须是 kebab-case（仅小写字母数字和连字符）')
+          .describe('kebab-case slug，例如 "stock-valuation"、"user-coffee-preference"'),
+        title: z.string().min(1).describe('主题中文标题，例如 "股票估值偏好"'),
+        keywords: z
+          .array(z.string())
+          .min(1)
+          .describe('关键词数组，用于 RecallMemory 检索。越具体越有用'),
+        content: z
+          .string()
+          .min(1)
+          .describe('主题正文，markdown 格式，描述记忆的具体内容'),
+      }),
+      async (args) => {
+        try {
+          const topic = await memoryService.upsertTopic(workspacePath, args);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `已保存主题「${topic.title}」(slug=${topic.slug})，updated=${topic.updated}`,
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `保存记忆失败: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      },
+    ),
 
-      // ========================================
-      // 工具 3: 删除主题记忆
-      // ========================================
-      tool(
-        'ForgetMemory',
-        '删除指定 slug 的主题记忆。仅在用户明确要求"忘记 XX"时使用。\n' +
-        '此操作同时删除 markdown 文件和 index.json 中的条目。',
-        {
-          slug: z.string().describe('要删除的主题 slug'),
-        },
-        async (args) => {
-          try {
-            await memoryService.deleteTopic(workspacePath, args.slug);
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `已删除主题 slug=${args.slug}`,
-                },
-              ],
-            };
-          } catch (error) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `删除记忆失败: ${error instanceof Error ? error.message : String(error)}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        },
-      ),
-    ...(autonomous ? [
+    // ========================================
+    // 工具 3: 删除主题记忆
+    // ========================================
+    defineTool(
+      'ForgetMemory',
+      '删除指定 slug 的主题记忆。仅在用户明确要求"忘记 XX"时使用。\n' +
+      '此操作同时删除 markdown 文件和 index.json 中的条目。',
+      z.object({
+        slug: z.string().describe('要删除的主题 slug'),
+      }),
+      async (args) => {
+        try {
+          await memoryService.deleteTopic(workspacePath, args.slug);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `已删除主题 slug=${args.slug}`,
+              },
+            ],
+          };
+        } catch (error) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `删除记忆失败: ${error instanceof Error ? error.message : String(error)}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      },
+    ),
+  ];
+
+  if (autonomous) {
+    defs.push(
       // ========================================
       // 工具 4（仅 autonomous）: 读取核心画像
       // ========================================
-      tool(
+      defineTool(
         'GetCoreProfile',
         '读取本工作区的 core-profile（每个新会话自动注入的稳定身份画像）。\n' +
         '返回当前正文和 updated 时间戳；文件不存在或为空时返回明确提示——**空是正常状态**，不代表没必要写，只是目前没有足够稳定的信号。\n' +
         '任何 UpdateCoreProfile 调用前都必须先调本工具拿现状，再合并成完整版本传回去（Update 是全量覆盖）。',
-        {},
+        z.object({}),
         async () => {
           try {
             const profile = await memoryService.getCoreProfile(workspacePath);
@@ -241,18 +239,18 @@ export function createMemoryTools(workspacePath: string, opts?: { autonomous?: b
       // ========================================
       // 工具 5（仅 autonomous）: 更新核心画像
       // ========================================
-      tool(
+      defineTool(
         'UpdateCoreProfile',
         '全量覆盖写入 core-profile。\n' +
         '⚠️ 触发门槛**极苛刻**——只有真正稳定、跨多次会话反复验证为真的身份 / 偏好 / 工作模式才够格（例如"不写单元测试""偏好薄 IO 厚提示词""使用中文回答"）。近期动态、进行中的任务、某次具体决定都不该进这里。**大多数复盘不该调用本工具**。\n' +
         '⚠️ 是**全量覆盖**：必须先 GetCoreProfile 拿现有内容，把新增部分与之合并成完整版本再传入，否则会丢失已有内容。\n' +
         '写入成功后 updated 时间戳自动刷新。',
-        {
+        z.object({
           content: z
             .string()
             .min(1)
             .describe('合并后的完整 core-profile 正文（markdown）；不带 frontmatter，工具会自动加'),
-        },
+        }),
         async (args) => {
           try {
             await memoryService.updateCoreProfile(workspacePath, args.content);
@@ -277,12 +275,12 @@ export function createMemoryTools(workspacePath: string, opts?: { autonomous?: b
           }
         },
       ),
-    ] : []),
-  ];
+    );
+  }
 
-  return createSdkMcpServer({
-    name: 'dogear-memory',
-    version: '1.0.0',
-    tools,
-  });
+  return defs;
+}
+
+export function createMemoryTools(workspacePath: string, opts?: { autonomous?: boolean }) {
+  return toSdkServer('dogear-memory', '1.0.0', createMemoryToolDefs(workspacePath, opts));
 }

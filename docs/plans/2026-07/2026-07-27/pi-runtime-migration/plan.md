@@ -15,7 +15,7 @@
 ## 步骤索引
 
 - [x] [Step 1: pi 最小验证](./step1-pi-smoke-test.md) — 装包，用现有 profile 的 anthropic 端点跑通一次 tool call 往返，核实设计文档里 5 个未决项
-- [ ] [Step 2: 工具定义中立化](./step2-tool-def-neutralize.md) — 22 个工具改成 `ToolDef[]`，旧引擎继续走 `toSdkServer`，行为零变化
+- [x] [Step 2: 工具定义中立化](./step2-tool-def-neutralize.md) — 22 个工具改成 `ToolDef[]`，旧引擎继续走 `toSdkServer`，行为零变化
 - [ ] [Step 3: GROUP_DIGEST 切 pi](./step3-group-digest-to-pi.md) — `provider.ts` + `run-once.ts`，第一条链路真实切换
 - [ ] [Step 4: review + categorize 切 pi](./step4-review-categorize-to-pi.md) — 剩下三个 handler 照抄，收尾清理
 
