@@ -83,6 +83,8 @@ const CRASH_COOLDOWN_MS = 30_000;
 const CRASH_THRESHOLD = 3;
 /** 关闭等待时间 */
 const SHUTDOWN_WAIT_MS = 2_000;
+/** 开发模式 .py 变更防抖，覆盖编辑器保存时的多次触发 */
+const WATCH_DEBOUNCE_MS = 300;
 
 // ============================================================
 // PythonBridge 类
@@ -99,11 +101,18 @@ class PythonBridge {
   private initializing = false;
   private initPromise: Promise<void> | null = null;
   private logPath: string | null = null;
+  private watcher: fs.FSWatcher | null = null;
+  private watchTimer: ReturnType<typeof setTimeout> | null = null;
+  /** .py 已变更、等待重启（可能被在跑的请求推迟） */
+  private restartPending = false;
+  /** 本次退出是热重启主动杀的，exit 处理里不能计入崩溃 */
+  private intentionalRestart = false;
 
   constructor() {
     // 注册应用退出时的清理
     app.on('will-quit', () => {
       this.log('▲ APP_QUIT');
+      this.stopWatching();
       this.shutdown();
     });
   }
@@ -168,6 +177,7 @@ class PythonBridge {
         const elapsed = Date.now() - startedAt;
         this.log(`⏰ TIMEOUT id=${this.shortId(id)} method=${method} elapsed=${elapsed}ms pending=${this.pendingRequests.size}`);
         reject(new Error(`Python 请求超时（${timeoutMs}ms）: method=${method}`));
+        this.maybeRestart();
       }, timeoutMs);
 
       this.pendingRequests.set(id, {
@@ -217,6 +227,67 @@ class PythonBridge {
 
     this.process = null;
     this.rejectAllPending(new Error('Python Bridge 正在关闭'));
+  }
+
+  // ----------------------------------------------------------
+  // 开发模式热重启
+  // ----------------------------------------------------------
+
+  /**
+   * 监听 python/ 下的 .py 变更，改完自动重启守护进程。
+   * 打包后不生效；进程是懒启动的，这里只负责杀，下次 call 时自然重新 spawn。
+   */
+  private startWatching(): void {
+    if (app.isPackaged || this.watcher) return;
+
+    const dir = this.getPythonDir();
+    try {
+      this.watcher = fs.watch(dir, { recursive: true }, (_event, filename) => {
+        if (!filename || !filename.toString().endsWith('.py')) return;
+        if (this.watchTimer) clearTimeout(this.watchTimer);
+        this.watchTimer = setTimeout(() => {
+          this.watchTimer = null;
+          this.requestRestart(filename.toString());
+        }, WATCH_DEBOUNCE_MS);
+      });
+      console.log(`[PythonBridge] 已监听 Python 代码变更: ${dir}`);
+    } catch (err) {
+      console.warn('[PythonBridge] 监听 Python 目录失败，热重启不可用:', err);
+    }
+  }
+
+  private stopWatching(): void {
+    if (this.watchTimer) {
+      clearTimeout(this.watchTimer);
+      this.watchTimer = null;
+    }
+    this.watcher?.close();
+    this.watcher = null;
+  }
+
+  /** 挂起重启请求：有请求在跑就等它跑完，避免斩断几分钟的预热任务 */
+  private requestRestart(filename: string): void {
+    this.restartPending = true;
+    const pending = this.pendingRequests.size;
+    console.log(
+      `[PythonBridge] 检测到 ${filename} 变更，${pending > 0 ? `等待 ${pending} 个在跑请求完成后重启` : '重启守护进程'}`,
+    );
+    this.log(`⟳ RESTART_REQ file=${filename} pending=${pending}`);
+    this.maybeRestart();
+  }
+
+  /** 请求排空后真正执行重启，在每次请求收尾时调用 */
+  private maybeRestart(): void {
+    if (!this.restartPending || this.pendingRequests.size > 0) return;
+    this.restartPending = false;
+
+    const proc = this.process;
+    if (!proc || proc.exitCode !== null) return;
+
+    this.intentionalRestart = true;
+    this.log(`⟳ RESTART_KILL pid=${proc.pid}`);
+    console.log('[PythonBridge] 重启 Python 守护进程（下次调用时自动拉起）');
+    proc.kill();
   }
 
   // ----------------------------------------------------------
@@ -414,9 +485,17 @@ class PythonBridge {
 
     // 监听进程退出
     this.process.on('exit', (code, signal) => {
-      console.warn(`[PythonBridge] Python 进程退出: code=${code}, signal=${signal}`);
       this.log(`■ EXIT code=${code} signal=${signal} pending=${this.pendingRequests.size}`);
       this.process = null;
+
+      // 热重启是主动杀的，计入崩溃会让连改三次文件直接触发断路器
+      if (this.intentionalRestart) {
+        this.intentionalRestart = false;
+        this.log('⟳ RESTART_DONE（等待下次调用懒启动）');
+        return;
+      }
+
+      console.warn(`[PythonBridge] Python 进程退出: code=${code}, signal=${signal}`);
       this.consecutiveCrashes++;
 
       if (this.consecutiveCrashes >= CRASH_THRESHOLD) {
@@ -448,6 +527,7 @@ class PythonBridge {
       this.consecutiveCrashes = 0;
       this.cooldownUntil = null;
       console.log('[PythonBridge] 健康检查通过');
+      this.startWatching();
     } catch (err) {
       // 健康检查失败，杀掉进程
       this.process?.kill();
@@ -517,6 +597,8 @@ class PythonBridge {
       this.log(`← RESP id=${this.shortId(response.id)} method=${method} elapsed=${elapsed}ms type=result`);
       pending.resolve(response.result);
     }
+
+    this.maybeRestart();
   }
 
   /** 拒绝所有挂起的请求 */

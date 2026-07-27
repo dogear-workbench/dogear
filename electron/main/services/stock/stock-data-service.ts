@@ -8,8 +8,8 @@
  * JSONL 格式：每行一个 JSON 对象。
  *
  * 职责：
- *   - readKLine / appendKLine / writeKLine / getLastDate — K线数据管理
- *   - appendDailySnapshot / readDailySnapshots / hasTodaySnapshot — 每日快照管理
+ *   - readKLine / appendKLine / writeKLine — K线数据管理
+ *   - appendDailySnapshot / readDailySnapshots — 每日快照管理
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -209,23 +209,6 @@ class StockDataService {
   }
 
   /**
-   * 获取本地最后一条 K 线数据的日期。
-   *
-   * 用于增量请求：获取本地最新日期后，只请求该日期之后的数据。
-   *
-   * @param market 市场代码（1=沪 0=深）
-   * @param code   股票代码
-   * @returns 最后一条数据的日期字符串，无数据则返回 null
-   */
-  async getLastDate(market: number, code: string): Promise<string | null> {
-    const points = await this.readKLine(market, code);
-    if (points.length === 0) return null;
-
-    // JSONL 文件中数据按时间顺序存储，最后一条即为最新
-    return points[points.length - 1].date;
-  }
-
-  /**
    * 覆盖写入 K 线数据。
    *
    * 完全替换文件内容，适用于非日 K 线（分钟线、周线等），无需增量更新。
@@ -302,14 +285,6 @@ class StockDataService {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
       throw err;
     }
-  }
-
-  /**
-   * 判断指定交易日是否已有快照。
-   */
-  async hasTodaySnapshot(market: number, code: string, tradeDate: string): Promise<boolean> {
-    const snapshots = await this.readDailySnapshots(market, code);
-    return snapshots.some((s) => s.date === tradeDate);
   }
 }
 

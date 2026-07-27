@@ -35,6 +35,7 @@ paths:
 - Python 守护进程通过 `electron/main/services/stock/python-bridge.ts` 通信（JSON-RPC，stdin/stdout）
 - 修改 `python/core/*.py` 的接口时，同步更新 python-bridge 的 method 列表和 stock-analysis-tools 的工具描述
 - Python 端不引入 stdout 输出（会污染 JSON-RPC 协议），用 stderr 或日志文件
+- 开发模式下 `python/**/*.py` 改动会自动重启守护进程（有请求在跑时等跑完再重启），不必手动重启 dogear；打包后不生效
 - 不可用时降级：python-bridge 启动失败时，基础股票工具（dogear-stock）仍能正常工作
 
 ## 模块化范例（参考已有实现）

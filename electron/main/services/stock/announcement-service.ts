@@ -101,6 +101,8 @@ const EMPTY_ORG_MAP: OrgMapFile = { updatedAt: '', map: {} };
 const MIN_MERGED_LIST_SIZE = 5000;
 /** 北交所补充列表最小合理条数 */
 const MIN_BJ_LIST_SIZE = 100;
+/** orgId 映射表重抓冷却：未命中时映射表若比这更新，判定该股票确实不存在而非未同步 */
+const ORG_MAP_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 function getConfigDir(): string {
   if (app.isPackaged) {
@@ -171,11 +173,20 @@ async function ensureOrgIdMap(): Promise<OrgMapFile> {
   return refreshOrgIdMap();
 }
 
-/** 查询股票对应的巨潮 orgId；本地未命中时懒重抓一次（可能是新上市未同步），仍未命中返回 null */
+/**
+ * 查询股票对应的巨潮 orgId；本地未命中时懒重抓一次（可能是新上市未同步），仍未命中返回 null。
+ *
+ * 未命中不能无条件重抓：错代码 / 指数 / 港股这类"本来就不在表里"的查询会把两个全市场接口
+ * 打满。映射表若是 24h 内拉的就认定"真没这只股"，直接返回 null。用文件的 updatedAt 判断而
+ * 非内存变量，跨进程重启同样有效。
+ */
 async function getOrgId(code: string): Promise<string | null> {
   const file = await ensureOrgIdMap();
   const hit = file.map[code];
   if (hit) return hit.orgId;
+
+  const age = Date.now() - Date.parse(file.updatedAt);
+  if (Number.isFinite(age) && age < ORG_MAP_REFRESH_COOLDOWN_MS) return null;
 
   const refreshed = await refreshOrgIdMap();
   return refreshed.map[code]?.orgId ?? null;
@@ -369,13 +380,27 @@ async function readAnnouncementListCache(
   }
 }
 
-/** 写盘失败只打日志，不影响本次已经拿到的返回结果 */
+/** 写盘失败只打日志，不影响本次已经拿到的返回结果；顺带清掉往日残留，避免每天一个文件无限堆积 */
 async function writeAnnouncementListCache(cache: AnnouncementListCache, dateKey: string): Promise<void> {
+  const dir = getStorageDir(cache.market, cache.code);
   const filePath = getAnnouncementListCachePath(cache.market, cache.code, dateKey);
   try {
     await safeJsonWrite(filePath, cache);
   } catch (err) {
     console.warn('[AnnouncementListCache] 写缓存失败，不影响本次返回:', err);
+    return;
+  }
+
+  const keep = path.basename(filePath);
+  try {
+    const entries = await fs.readdir(dir);
+    await Promise.all(
+      entries
+        .filter((name) => name.startsWith('list.') && name.endsWith('.json') && name !== keep)
+        .map((name) => fs.unlink(path.join(dir, name)).catch(() => {})),
+    );
+  } catch (err) {
+    console.warn('[AnnouncementListCache] 清理旧缓存失败，不影响本次返回:', err);
   }
 }
 
