@@ -20,8 +20,8 @@
     "forceConsistentCasingInFileNames": true,
     // 允许导入 JSON 文件
     "resolveJsonModule": true,
-    // 使用 Node.js 风格的模块解析
-    "moduleResolution": "node",
+    // bundler 解析支持 package.json exports 子路径（pi-ai 等 ESM 包需要）
+    "moduleResolution": "bundler",
     // 包含 Node.js 类型定义
     "types": ["node"]
   },

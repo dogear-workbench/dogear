@@ -29,6 +29,7 @@ import {
   type ChatContext,
 } from './skills/chat-skill.js';
 import type { ModelTier, ModelProfile } from '../services/settings-types.js';
+import type { PiModelResult } from './pi/provider.js';
 
 /**
  * Agent Worker 类
@@ -573,8 +574,8 @@ class AgentWorker {
     taskLogger.info('开始组级摘要卡任务:', groupId, '| workspace:', workspaceId, '| dirty:', dirtyConversations.length);
     const startedAt = Date.now();
 
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-    const { buildQueryBaseConfig, resolveModelSelection } = await import('./agent-query-config.js');
+    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { resolvePiModel } = await import('./pi/provider.js');
     const baseConfig = await buildQueryBaseConfig({
       configDir: this.configDir,
       isPackaged: this.isPackaged,
@@ -585,12 +586,12 @@ class AgentWorker {
       ?? baseConfig.appSettings.ai.digestModelSelection
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    let env: Record<string, string>;
+    let model: PiModelResult['model'];
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
-      env = r.env;
+      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
     } catch (e) {
@@ -599,19 +600,21 @@ class AgentWorker {
       return { groupId, saved: false, error };
     }
 
-    const { createGroupDigestTools } = await import('./tools/group-digest-tools.js');
-    const { createDigestTools } = await import('./tools/digest-tools.js');
-    const { createGroupTools } = await import('./tools/group-tools.js');
+    const { createGroupDigestToolDefs } = await import('./tools/group-digest-tools.js');
+    const { createDigestToolDefs } = await import('./tools/digest-tools.js');
+    const { createGroupToolDefs } = await import('./tools/group-tools.js');
 
     let saved = false;
     let backgroundSaved = false;
-    const groupDigestServer = createGroupDigestTools(
+    const groupDigestDefs = createGroupDigestToolDefs(
       workspaceId, workspacePath, groupId, dirtyConversations,
       () => { saved = true; },
       () => { backgroundSaved = true; },
     );
-    const transcriptServer = createDigestTools(workspaceId, workspacePath);
-    const groupServer = createGroupTools(workspaceId, groupId);
+    const transcriptDefs = createDigestToolDefs(workspaceId, workspacePath);
+    // group-tools 有 3 个工具，但本任务只授权 ListGroupFiles + ReadGroupFile，不含 WriteGroupFile
+    const groupDefs = createGroupToolDefs(workspaceId, groupId)
+      .filter((t) => t.name === 'ListGroupFiles' || t.name === 'ReadGroupFile');
 
     // 读取已有组卡 sourcesSeen（供 system prompt 注入）
     const { readGroupDigest, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
@@ -666,52 +669,38 @@ class AgentWorker {
 
     const prompt = `${template}${contextSection}`;
 
+    const { runOnce } = await import('./pi/run-once.js');
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
+    const systemPrompt = '你是一个后台内容提炼 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+
     try {
-      const agentQuery = query({
+      const result = await runOnce({
+        systemPrompt,
         prompt,
-        options: {
-          permissionMode: 'dontAsk',
-          env,
-          abortController,
-          // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
-          ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
-          ...(baseConfig.pathToClaudeCodeExecutable && {
-            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
-          }),
-          mcpServers: {
-            'dogear-group-digest': groupDigestServer,
-            'dogear-memory-digest': transcriptServer,
-            'dogear-group': groupServer,
-          },
-          allowedTools: [
-            'mcp__dogear-group-digest__ReadGroupDigest',
-            'mcp__dogear-group-digest__SaveGroupDigest',
-            'mcp__dogear-group-digest__SaveGroupBackground',
-            'mcp__dogear-memory-digest__CleanTranscript',
-            'mcp__dogear-group__ReadGroupFile',
-            'mcp__dogear-group__ListGroupFiles',
-          ],
-        },
+        tools: [...groupDigestDefs, ...transcriptDefs, ...groupDefs],
+        model,
+        profile: resolvedProfile,
+        signal: abortController.signal,
+        maxTurns: 30,
+        onLog: (m) => taskLogger.info(m),
       });
 
-      for await (const message of agentQuery) {
-        if (message.type === 'result') {
-          taskLogger.info('组级摘要卡提炼完成');
+      if (!result.ok) {
+        if (result.cancelled) {
+          taskLogger.info('组级摘要卡被取消:', groupId);
+          return { groupId, saved: false, backgroundSaved, cancelled: true };
         }
+        taskLogger.error('组级摘要卡任务失败:', result.error);
+        return { groupId, saved: false, error: result.error };
       }
 
       taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| background:', backgroundSaved, '| tier:', tier);
       return { groupId, saved, backgroundSaved, tier, profileName: resolvedProfile.name };
     } catch (error) {
-      if (abortController.signal.aborted) {
-        taskLogger.info('组级摘要卡被取消:', groupId);
-        return { groupId, saved: false, backgroundSaved, cancelled: true };
-      }
       const errorMsg = error instanceof Error ? error.message : String(error);
-      taskLogger.error('组级摘要卡任务失败:', errorMsg);
+      taskLogger.error('组级摘要卡意外失败:', errorMsg);
       return { groupId, saved: false, error: errorMsg };
     } finally {
       this.currentAbortController = null;
