@@ -34,7 +34,7 @@ export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两�
 
 ## 写作要点
 - 已有组卡 + dirty 会话是增量输入。已覆盖的旧内容不要丢，但要按新会话刷新认知。
-- items.sources 必须真实——uuid 取自逐字稿"· "后的完整 uuid，不要编造。
+- items.sources 的 uuid 必须**逐字复制** CleanTranscript 输出中 \`## [role · ts · uuid]\` 第三段的完整字符串，不得凭记忆重构或编造。SaveGroupDigest 落盘前会自动校验每个 uuid 是否真实存在于对应会话，校验不通过会拒绝保存并列出哪条有问题及修复方法。
 - 不要复述共享文件正文；只写 path + 一句话定位。
 - 标签内部用中划线分层（如 "产品-Dashboard"），不用斜杠/空格。
 - background 的 keyDecisions 和 openQuestions 不该有交集——已定的进 keyDecisions，未定 / 搁置的进 openQuestions。

@@ -13,6 +13,9 @@ import {
 import {
   saveGroupBackground, getBackgroundPath, type GroupBackground,
 } from '../../services/memory/background-store.js';
+import {
+  buildSessionUuidIndex, validateItemSources, type SourceProblem,
+} from '../../services/memory/source-fidelity.js';
 import { registerTools } from './tool-registry.js';
 import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -36,6 +39,26 @@ registerTools([
     category: 'memory',
   },
 ]);
+
+function formatFidelityError(problems: SourceProblem[]): string {
+  const lines: string[] = [`保真度校验失败，以下 ${problems.length} 条引用无效：`, ''];
+  for (const p of problems) {
+    lines.push(`item[${p.itemIndex}]「${p.itemText}」  ${p.sessionId}#${p.uuid}`);
+    if (p.kind === 'session_missing') {
+      lines.push(`  ✗ session_missing：找不到会话 ${p.sessionId} 的逐字稿文件`);
+    } else if (p.kind === 'uuid_not_found') {
+      lines.push(`  ✗ uuid_not_found：该 uuid 在会话 ${p.sessionId} 的去噪逐字稿里不存在`);
+    } else {
+      lines.push(`  ✗ wrong_session：该 uuid 真正属于会话 ${p.correctSessionId}，请把 sessionId 改为 ${p.correctSessionId}`);
+    }
+  }
+  lines.push('');
+  lines.push('修复步骤：');
+  lines.push('1. 调 CleanTranscript(sdkSessionId) 重新查证该会话，uuid 在 "## [role · ts · uuid]" 的第三段');
+  lines.push('2. wrong_session 类型只需把 source.sessionId 改为上面给出的正确会话 id');
+  lines.push('3. 若确实查不到对应消息，删掉这条 source；若某条 item 的 sources 全部无效则删掉整条 item');
+  return lines.join('\n');
+}
 
 export function createGroupDigestToolDefs(
   workspaceId: string,
@@ -107,6 +130,14 @@ export function createGroupDigestToolDefs(
         try {
           if (args.groupId !== groupId) {
             return { content: [{ type: 'text' as const, text: `Error: groupId 必须是 ${groupId}` }], isError: true };
+          }
+          if (args.items.length > 0) {
+            const sessionIds = [...new Set(args.items.flatMap((item) => item.sources.map((s) => s.sessionId)))];
+            const index = await buildSessionUuidIndex(workspacePath, sessionIds);
+            const problems = validateItemSources(index, args.items);
+            if (problems.length > 0) {
+              return { content: [{ type: 'text' as const, text: formatFidelityError(problems) }], isError: true };
+            }
           }
           const existing = await readGroupDigest(workspaceId, groupId);
           const newSourcesSeen = mergeSourcesSeen(existing?.sourcesSeen ?? [], dirtyConversations);
