@@ -44,6 +44,11 @@ export async function runOnce(opts: {
       }
     } else if (e.type === 'tool_execution_start') {
       onLog?.(`[tool] ${e.toolName}`);
+    } else if (e.type === 'tool_execution_end' && e.isError) {
+      const raw = typeof e.result?.content?.[0]?.text === 'string'
+        ? e.result.content[0].text
+        : String(e.result ?? '');
+      onLog?.(`[tool-error] ${e.toolName}: ${raw.slice(0, 300)}`);
     } else if (e.type === 'agent_end') {
       onLog?.(`[done] turns=${turnCount}`);
     }

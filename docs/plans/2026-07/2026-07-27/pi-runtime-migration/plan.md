@@ -18,7 +18,7 @@
 - [x] [Step 2: 工具定义中立化](./step2-tool-def-neutralize.md) — 22 个工具改成 `ToolDef[]`，旧引擎继续走 `toSdkServer`，行为零变化
 - [x] [Step 3: GROUP_DIGEST 切 pi](./step3-group-digest-to-pi.md) — `provider.ts` + `run-once.ts`，第一条链路真实切换
 - [x] [Step 3.5: 组卡引用保真度校验](./step3.5-source-fidelity-guard.md) — 插入步：step3 验收测出 sources uuid 编造 9/40，补确定性校验后再往下切。实测保真度 73% → 100%
-- [ ] [Step 4: review + categorize 切 pi](./step4-review-categorize-to-pi.md) — 剩下三个 handler 照抄，收尾清理
+- [x] [Step 4: review + categorize 切 pi](./step4-review-categorize-to-pi.md) — 剩下三个 handler 照抄，收尾清理
 
 > 步骤编号与设计文档的「落地顺序」表对应关系：step1↔步0、step2↔步1、step3↔步2、step4↔步3。
 
@@ -51,3 +51,31 @@
 **验证方式**
 - `bun run build:electron` + `bun run lint`，加手测。项目不写单测。
 - 每一步的真正验收是「产出物质量比对」，不是「代码能跑」。
+
+## 完成总结
+
+**阶段一收尾时间**：2026-07-29
+
+**实际改动汇总**
+
+| 文件 | 性质 | 说明 |
+|---|---|---|
+| `electron/main/agents/pi/provider.ts` | step3 新建，本步不改 | `resolvePiModel` + `buildPiModels` |
+| `electron/main/agents/pi/run-once.ts` | step3 新建，step4 小改 | 新增 `tool_execution_end` 错误日志 |
+| `electron/main/agents/pi/tool-adapter.ts` | step2 新建，本步不改 | |
+| `electron/main/agents/agent-worker.ts` | 主改文件 | 三个 handler 切 pi，清理 3 处 SDK 动态 import |
+
+**与原设计的偏差**
+- `tool_execution_end` 事件确认携带 `isError: boolean` + `result: any`，可直接用于错误日志（step3 未订阅的判断「无信息增量」有误，现已补上）
+- 取消路径语义统一：`runOnce` 不抛出，取消以 `{ ok: false, cancelled: true }` 返回；`handleCategorizeSessionTask` 的外层 catch 取消检查因此简化（不再依赖 `abortController.signal.aborted`）
+- `buildQueryBaseConfig` 三个 handler 仍保留调用（读 `appSettings` 的三级 fallback），但不再使用 `env` / `effort` / `pathToClaudeCodeExecutable` 字段
+
+**还在用 SDK 的地方**
+- `PARSE_ARTICLE` 链路（`agent-worker.ts:395`）——依赖 SDK 的 plugins skill 发现机制，阶段一保留
+- 主会话（`query-based-session.ts`）——阶段一不动
+
+**二期待做**
+- 主会话迁移：需先对齐 `plugins` skill 发现机制的替代方案
+- `apiFormat` 字段：二期加字段时 `provider.ts` 已预留形状
+- `ModelProfile` 中的 `disableNonessentialTraffic` / `autoCompactWindow` / `subagentModelTier` 字段在 pi 里无用，迁移完成后统一清理
+- prompt cache 优化：模板移进 `systemPrompt` 段

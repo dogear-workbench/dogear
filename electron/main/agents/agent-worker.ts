@@ -684,7 +684,10 @@ class AgentWorker {
         profile: resolvedProfile,
         signal: abortController.signal,
         maxTurns: 30,
-        onLog: (m) => taskLogger.info(m),
+        onLog: (m) => {
+          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
+          else taskLogger.info(m);
+        },
       });
 
       if (!result.ok) {
@@ -721,25 +724,24 @@ class AgentWorker {
     taskLogger.info('开始跨会话复盘任务:', '| workspace:', workspaceId);
     const startedAt = Date.now();
 
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
     const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { resolvePiModel } = await import('./pi/provider.js');
     const baseConfig = await buildQueryBaseConfig({
       configDir: this.configDir,
       isPackaged: this.isPackaged,
       cliPath: this.cliPath,
     });
 
-    const { resolveModelSelection } = await import('./agent-query-config.js');
     const selection = payload.modelSelection
       ?? baseConfig.appSettings.ai.reviewModelSelection
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    let env: Record<string, string>;
+    let model: PiModelResult['model'];
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
-      env = r.env;
+      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
     } catch (e) {
@@ -748,11 +750,13 @@ class AgentWorker {
       return { workspaceId, saved: false, error };
     }
 
-    const { createReviewMcpServer } = await import('./tools/review-tools.js');
-    const { createMemoryTools } = await import('./tools/memory-tools.js');
+    const { createReviewToolDefs } = await import('./tools/review-tools.js');
+    const { createMemoryToolDefs } = await import('./tools/memory-tools.js');
+    const { runOnce } = await import('./pi/run-once.js');
     let saved = false;
-    const reviewServer = createReviewMcpServer(workspaceId, workspacePath, () => { saved = true; });
-    const memoryServer = createMemoryTools(workspacePath, { autonomous: true });
+    // 10 个工具全部授权：review 5 个 + memory autonomous 5 个
+    const reviewDefs = createReviewToolDefs(workspaceId, workspacePath, () => { saved = true; });
+    const memoryDefs = createMemoryToolDefs(workspacePath, { autonomous: true });
 
     const { loadReviewPrompt } = await import('../services/memory/review-prompt.js');
     const template = await loadReviewPrompt(this.configDir);
@@ -761,50 +765,35 @@ class AgentWorker {
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
+    const systemPrompt = '你是一个后台内容复盘 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+
     try {
-      const agentQuery = query({
+      const result = await runOnce({
+        systemPrompt,
         prompt,
-        options: {
-          permissionMode: 'dontAsk',
-          env,
-          abortController,
-          // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
-          ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
-          ...(baseConfig.pathToClaudeCodeExecutable && {
-            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
-          }),
-          mcpServers: {
-            'dogear-memory-review': reviewServer,
-            'dogear-memory': memoryServer,
-          },
-          allowedTools: [
-            'mcp__dogear-memory-review__ListDigests',
-            'mcp__dogear-memory-review__ReadDigest',
-            'mcp__dogear-memory-review__TraceSource',
-            'mcp__dogear-memory-review__ReadReport',
-            'mcp__dogear-memory-review__WriteReport',
-            'mcp__dogear-memory__RecallMemory',
-            'mcp__dogear-memory__SaveMemory',
-            'mcp__dogear-memory__ForgetMemory',
-            'mcp__dogear-memory__GetCoreProfile',
-            'mcp__dogear-memory__UpdateCoreProfile',
-          ],
+        tools: [...reviewDefs, ...memoryDefs],
+        model,
+        profile: resolvedProfile,
+        signal: abortController.signal,
+        maxTurns: 30,
+        onLog: (m) => {
+          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
+          else taskLogger.info(m);
         },
       });
 
-      for await (const message of agentQuery) {
-        if (message.type === 'result') {
-          taskLogger.info('跨会话复盘完成');
+      if (!result.ok) {
+        if (result.cancelled) {
+          taskLogger.info('跨会话复盘被取消:', workspaceId);
+          return { workspaceId, saved: false, cancelled: true };
         }
+        taskLogger.error('跨会话复盘任务失败:', result.error);
+        return { workspaceId, saved: false, error: result.error };
       }
 
       taskLogger.info('跨会话复盘任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
       return { workspaceId, saved, tier, profileName: resolvedProfile.name };
     } catch (error) {
-      if (abortController.signal.aborted) {
-        taskLogger.info('跨会话复盘被取消:', workspaceId);
-        return { workspaceId, saved: false, cancelled: true };
-      }
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('跨会话复盘任务失败:', errorMsg);
       return { workspaceId, saved: false, error: errorMsg };
@@ -839,25 +828,24 @@ class AgentWorker {
     taskLogger.info('开始智能分类任务:', '| workspace:', workspaceId, '| mode:', mode);
     const startedAt = Date.now();
 
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
     const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { resolvePiModel } = await import('./pi/provider.js');
     const baseConfig = await buildQueryBaseConfig({
       configDir: this.configDir,
       isPackaged: this.isPackaged,
       cliPath: this.cliPath,
     });
 
-    const { resolveModelSelection } = await import('./agent-query-config.js');
     const selection = payload.modelSelection
       ?? baseConfig.appSettings.ai.categorizeModelSelection
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    let env: Record<string, string>;
+    let model: PiModelResult['model'];
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
-      env = r.env;
+      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
     } catch (e) {
@@ -879,8 +867,15 @@ class AgentWorker {
     const groupService = await import('../services/group-service.js');
     const { deriveGroupTitle } = await import('../services/group-helpers.js');
     const { loadCategorizePrompt } = await import('../services/memory/categorize-prompt.js');
-    const { createCategoryTools } = await import('./tools/category-tools.js');
+    const { createCategoryToolDefs } = await import('./tools/category-tools.js');
+    const { runOnce } = await import('./pi/run-once.js');
     const fs = await import('node:fs/promises');
+
+    // 授权子集：ListCategories / SaveCategoryJoin / SaveCategoryNew / SaveCategoryMerge（不含 PruneCategoryTags）
+    const sessionCategoryDefs = createCategoryToolDefs()
+      .filter((t) => ['ListCategories', 'SaveCategoryJoin', 'SaveCategoryNew', 'SaveCategoryMerge'].includes(t.name));
+
+    const systemPromptCategorize = '你是一个后台智能分类 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
 
     const abortController = new AbortController();
     this.currentAbortController = abortController;
@@ -999,39 +994,39 @@ class AgentWorker {
         `- 调 SaveCategory 时使用此 workspaceId 和 groupId=${groupId}`,
       ].join('\n');
 
-      const categoryServer = createCategoryTools();
-
       let decided: 'join' | 'new' | 'error' = 'error';
 
-      try {
-        const agentQuery = query({
-          prompt: userContext,
-          options: {
-            permissionMode: 'dontAsk',
-            env,
-            abortController,
-            ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
-            ...(baseConfig.pathToClaudeCodeExecutable && {
-              pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
-            }),
-            mcpServers: {
-              'dogear-smart-category': categoryServer,
-            },
-            allowedTools: [
-              'mcp__dogear-smart-category__ListCategories',
-              'mcp__dogear-smart-category__SaveCategoryJoin',
-              'mcp__dogear-smart-category__SaveCategoryNew',
-              'mcp__dogear-smart-category__SaveCategoryMerge',
-            ],
-          },
-        });
+      const queryResult = await runOnce({
+        systemPrompt: systemPromptCategorize,
+        prompt: userContext,
+        tools: sessionCategoryDefs,
+        model,
+        profile: resolvedProfile,
+        signal: abortController.signal,
+        maxTurns: 30,
+        onLog: (m) => {
+          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
+          else taskLogger.info(m);
+        },
+      });
 
-        for await (const message of agentQuery) {
-          if (message.type === 'result') {
-            taskLogger.info('LLM 决策完成:', groupId);
-          }
+      if (!queryResult.ok) {
+        if (queryResult.cancelled) {
+          taskLogger.info('智能分类被取消:', groupId);
+          return 'error';
         }
-
+        const errorMsg = queryResult.error;
+        taskLogger.error('LLM 决策失败:', errorMsg);
+        let idx4 = await readIndex(workspaceId);
+        idx4 = appendDecision(idx4, {
+          time: new Date().toISOString(),
+          groupId,
+          decision: 'error',
+          reason: errorMsg,
+        });
+        await writeIndex(workspaceId, idx4);
+        decided = 'error';
+      } else {
         // 检查最新决策日志判断结果
         const idx2 = await readIndex(workspaceId);
         // trigger 保证 categorize 串行（同一工作区并发=1），
@@ -1052,22 +1047,6 @@ class AgentWorker {
           await writeIndex(workspaceId, idx3);
           decided = 'error';
         }
-      } catch (error) {
-        if (abortController.signal.aborted) {
-          taskLogger.info('智能分类被取消:', groupId);
-          return 'error';
-        }
-        const errorMsg = error instanceof Error ? error.message : String(error);
-        taskLogger.error('LLM 决策失败:', errorMsg);
-        let idx4 = await readIndex(workspaceId);
-        idx4 = appendDecision(idx4, {
-          time: new Date().toISOString(),
-          groupId,
-          decision: 'error',
-          reason: errorMsg,
-        });
-        await writeIndex(workspaceId, idx4);
-        decided = 'error';
       }
 
       return decided;
@@ -1148,8 +1127,8 @@ class AgentWorker {
     taskLogger.info('开始存量分类整理任务:', '| workspace:', workspaceId);
     const startedAt = Date.now();
 
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-    const { buildQueryBaseConfig, resolveModelSelection } = await import('./agent-query-config.js');
+    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { resolvePiModel } = await import('./pi/provider.js');
     const baseConfig = await buildQueryBaseConfig({
       configDir: this.configDir,
       isPackaged: this.isPackaged,
@@ -1160,12 +1139,12 @@ class AgentWorker {
       ?? baseConfig.appSettings.ai.categorizeModelSelection
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
-    let env: Record<string, string>;
+    let model: PiModelResult['model'];
     let tier: ModelTier;
     let resolvedProfile: ModelProfile;
     try {
-      const r = resolveModelSelection(baseConfig.appSettings, selection, null, null, this.configDir);
-      env = r.env;
+      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
     } catch (e) {
@@ -1175,7 +1154,7 @@ class AgentWorker {
     }
 
     const { readIndex: readCategoryIndex } = await import('../services/memory/smart-category-store.js');
-    const { createCategoryTools } = await import('./tools/category-tools.js');
+    const { createCategoryToolDefs } = await import('./tools/category-tools.js');
     const { loadOrganizePrompt } = await import('../services/memory/organize-prompt.js');
 
     const idxBefore = await readCategoryIndex(workspaceId);
@@ -1189,37 +1168,38 @@ class AgentWorker {
       '- 调 ListCategories / PruneCategoryTags / SaveCategory 时使用此 workspaceId',
     ].join('\n');
 
-    const categoryServer = createCategoryTools();
+    // 授权子集：ListCategories / PruneCategoryTags / SaveCategoryMerge（不含 Join / New）
+    const categoryDefs = createCategoryToolDefs()
+      .filter((t) => ['ListCategories', 'PruneCategoryTags', 'SaveCategoryMerge'].includes(t.name));
+
+    const { runOnce } = await import('./pi/run-once.js');
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
+    const systemPrompt = '你是一个后台分类整理 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+
     try {
-      const agentQuery = query({
+      const result = await runOnce({
+        systemPrompt,
         prompt,
-        options: {
-          permissionMode: 'dontAsk',
-          env,
-          abortController,
-          // haiku 不支持 effort 参数（会 API 400），仅非 haiku 档位透传
-          ...(tier !== 'haiku' && baseConfig.effort ? { effort: baseConfig.effort } : {}),
-          ...(baseConfig.pathToClaudeCodeExecutable && {
-            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
-          }),
-          mcpServers: {
-            'dogear-smart-category': categoryServer,
-          },
-          allowedTools: [
-            'mcp__dogear-smart-category__ListCategories',
-            'mcp__dogear-smart-category__PruneCategoryTags',
-            'mcp__dogear-smart-category__SaveCategoryMerge',
-          ],
+        tools: categoryDefs,
+        model,
+        profile: resolvedProfile,
+        signal: abortController.signal,
+        maxTurns: 30,
+        onLog: (m) => {
+          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
+          else taskLogger.info(m);
         },
       });
 
-      for await (const message of agentQuery) {
-        if (message.type === 'result') {
-          taskLogger.info('存量分类整理完成');
+      if (!result.ok) {
+        if (result.cancelled) {
+          taskLogger.info('存量分类整理被取消:', workspaceId);
+          return { workspaceId, decisions: { prune: 0, merge: 0 }, cancelled: true };
         }
+        taskLogger.error('存量分类整理任务失败:', result.error);
+        return { workspaceId, decisions: { prune: 0, merge: 0 }, error: result.error };
       }
 
       // 统计本次新增的决策条数：recentDecisions 是头插法（按时间倒序），
@@ -1235,10 +1215,6 @@ class AgentWorker {
       taskLogger.info('存量分类整理任务完成，耗时:', Date.now() - startedAt, 'ms', '| decisions:', decisions, '| tier:', tier);
       return { workspaceId, decisions, tier, profileName: resolvedProfile.name };
     } catch (error) {
-      if (abortController.signal.aborted) {
-        taskLogger.info('存量分类整理被取消:', workspaceId);
-        return { workspaceId, decisions: { prune: 0, merge: 0 }, cancelled: true };
-      }
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('存量分类整理任务失败:', errorMsg);
       return { workspaceId, decisions: { prune: 0, merge: 0 }, error: errorMsg };

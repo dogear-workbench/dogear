@@ -197,13 +197,13 @@ export async function runOnce(opts: {
 
 ## 未决问题
 
-跑通时才能确认，现在无法拍板：
+> ✅ 以下全部在 step3-step4 实施阶段回填结论。
 
-1. pi `Model` 描述符的具体必填字段（contextWindow / cost / capabilities 等）。
-2. `anthropicMessagesApi()` 的确切导出路径（README 只给了 `openAICompletionsApi` 来自 `@earendil-works/pi-ai/api/openai-completions.lazy`）。
-3. `z.toJSONSchema()` 的产物能否被 pi 的 `validateToolCall`（TypeBox `Value.Check`）接受。**兜底**：适配器绕过 pi 校验，改用 zod 自身 `parse()`——handler 本来就需要 typed args。
-4. 后台任务是否改为 `systemPrompt` + `prompt` 两段以吃 prompt cache。**倾向阶段一保持等价**（整个模板仍作 user prompt 发送），减少变量，第二步再优化。
-5. `apiTimeoutMs` 在 pi 侧的落点（`AbortSignal.timeout` 包在 `runOnce` 还是 provider 层）。
+1. **pi `Model` 描述符的具体必填字段**：必填 `id / name / api / provider / baseUrl / reasoning / input / cost / contextWindow / maxTokens`。实测 `contextWindow: 200_000 / maxTokens: 8192 / cost 全 0 / reasoning: false`，`maxTokens` 直接作为请求体的 `max_tokens` 字段发出，不可省略。
+2. **`anthropicMessagesApi()` 的确切导出路径**：`@earendil-works/pi-ai/api/anthropic-messages.lazy`（`node` moduleResolution 认不出 `package.json` exports 子路径，需改 `bundler`）。
+3. **`z.toJSONSchema()` 的产物能否被 pi 接受**：✅ 可用。适配器用 zod `parse()` 做校验，pi 接收已解析参数，绕过 TypeBox。所有工具均通过冒烟测试和真实链路验证。
+4. **后台任务是否用 systemPrompt + prompt 两段**：阶段一保持等价——模板仍走 `prompt`（user turn），`systemPrompt` 只放最小身份段（一句话）。prompt cache 优化留二期。
+5. **`apiTimeoutMs` 在 pi 侧的落点**：改为 per-request 超时，直接透传给 `streamSimple` 的 `timeoutMs` 参数。整轮墙钟上限改由 `maxTurns=30` 兜底，理由见 step3 实施回填。
 
 ## 供应链风险
 
