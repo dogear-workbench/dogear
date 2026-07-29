@@ -116,9 +116,12 @@ export async function findDirtyGroups(wsId: string, wsPath: string): Promise<Dir
   return result;
 }
 
-/** 单 group 脏检查（仅给该 group 算 dirty）。triggerByConversation/triggerByGroup 用 */
+/**
+ * 单 group 脏检查（仅给该 group 算 dirty）。triggerByConversation/triggerByGroup 用。
+ * force=true 跳过脏判定并返回全量 main 会话——手动「重新提炼」是明知不脏也要重看一遍。
+ */
 export async function findDirtyGroup(
-  wsId: string, wsPath: string, groupId: string,
+  wsId: string, wsPath: string, groupId: string, force = false,
 ): Promise<DirtyGroup | null> {
   const allConvs = await conversationService.getByWorkspaceId(wsId);
   const mainConvs = allConvs.filter(
@@ -143,14 +146,18 @@ export async function findDirtyGroup(
   if (currentMainConvs.length === 0) return null;
 
   const card = await readGroupDigest(wsId, groupId);
-  const seenOnly = currentMainConvs.map((c) => ({ sessionId: c.sessionId, mtime: c.mtime }));
-  if (!isGroupDirty(card, seenOnly)) return null;
+  if (!force) {
+    const seenOnly = currentMainConvs.map((c) => ({ sessionId: c.sessionId, mtime: c.mtime }));
+    if (!isGroupDirty(card, seenOnly)) return null;
+  }
 
   return {
     workspaceId: wsId,
     workspacePath: wsPath,
     groupId,
-    dirtyConversations: findDirtyConversationsInGroup(card, currentMainConvs),
+    dirtyConversations: force
+      ? currentMainConvs.map((c) => ({ ...c }))
+      : findDirtyConversationsInGroup(card, currentMainConvs),
     hasExistingCard: card !== null,
   };
 }

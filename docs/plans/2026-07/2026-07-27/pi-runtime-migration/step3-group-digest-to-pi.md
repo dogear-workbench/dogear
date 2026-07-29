@@ -97,7 +97,7 @@ export async function runOnce(opts: {
 - [x] **pi 连通性冒烟**（计划外补充，用完即删的 `scripts/pi-smoke.mjs`）：对真实 profile 发一次带工具的请求，验证「模型名解析 → 认证头 → 工具回环 → 轮次计数」四环。结果 `model.id=glm-4.7` / `x-api-key` 被 GLM 端点接受 / `Echo` 工具往返成功 / 2 轮结束 / 3.9s。**这一步是必要的**：它把「底层连通性」和「提炼质量」两类问题隔离开，否则后者出问题时无法归因
 - [x] ~~逐字比对新旧 `digest.md`~~ → **无法执行**：5 份基线组卡引用的会话 JSONL 均已被清理，跑保真度得 0% 是「查无此文件」而非「编造」，作废。改为对 pi 产出做**绝对值校验**，结论见回填
 - [x] `background.md` 四字段（topic / progress / keyDecisions / openQuestions）正常产出（`group_a2153547` 3.5KB / `group_2977a10a` 2.3KB，四字段齐全）
-- [ ] 设置页「会话摘要」Tab 的活动状态、进度、**停止按钮**都正常（取消路径走的是 `agent.abort()`，必须实测）→ **未做**，顺延到 step4 收尾统一手测
+- [x] 设置页「会话摘要」Tab 的活动状态、进度、**停止按钮**都正常（取消路径走的是 `agent.abort()`，必须实测）→ **step3.5 实测掉了**：停止按钮命中，`outcome: error / "已取消" / 9.9s`，活动记录正常入 recent
 - [ ] 故意配一个错误的 profile（比如清空 apiKey），确认错误分支返回结构不变、UI 显示正常 → **未做**，顺延到 step4
 
 ## 已知风险

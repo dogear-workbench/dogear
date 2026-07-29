@@ -40,6 +40,8 @@ interface QueueEntry {
   workspaceId: string;
   workspacePath: string;
   groupId: string;
+  /** 手动入口：跳过脏检查强制重跑，且按全量会话重看 */
+  force?: boolean;
 }
 
 const inFlight = new Set<string>();
@@ -175,8 +177,8 @@ async function runOne(e: QueueEntry): Promise<void> {
     schedulePersist();
   };
 
-  // 脏检查
-  const dirtyGroup = await findDirtyGroup(workspaceId, workspacePath, groupId);
+  // 脏检查（force 时跳过，见 triggerByGroup）
+  const dirtyGroup = await findDirtyGroup(workspaceId, workspacePath, groupId, e.force);
   if (!dirtyGroup) {
     // 不脏，跳过（不入 recent）
     return;
@@ -279,10 +281,10 @@ export async function triggerByConversation(convId: string): Promise<void> {
   }
 }
 
-/** 手动入口：指定单个 group */
+/** 手动入口：指定单个 group，强制重跑（用户点了就是要重提炼，不看脏不脏） */
 export async function triggerByGroup(workspaceId: string, workspacePath: string, groupId: string): Promise<void> {
   await whenMigrationReady();
-  enqueue({ workspaceId, workspacePath, groupId });
+  enqueue({ workspaceId, workspacePath, groupId, force: true });
 }
 
 /**

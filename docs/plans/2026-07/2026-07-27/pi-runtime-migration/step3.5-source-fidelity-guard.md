@@ -69,9 +69,9 @@ export function validateItemSources(
 ## 验收
 
 - [x] `bun run build:electron` + `bun run lint` 通过
-- [ ] 对 `group_a2153547`（已知有 9 条编造 + 2 条张冠李戴）触发重新提炼，观察：校验是否拦下、agent 收到错误后是否修正、最终落盘的组卡保真度是否 100%
-- [ ] 用 step3 回填里的 uuid 索引脚本复测，确认新组卡 0 编造 0 张冠李戴
-- [ ] 确认拦截不会导致死循环：agent 修不好时应在 `maxTurns=30` 内收敛，组卡宁可不存也不存错的
+- [x] 对 `group_a2153547`（已知有 9 条编造 + 2 条张冠李戴）触发重新提炼，观察：校验是否拦下、agent 收到错误后是否修正、最终落盘的组卡保真度是否 100%
+- [x] 用 step3 回填里的 uuid 索引脚本复测，确认新组卡 0 编造 0 张冠李戴
+- [x] 确认拦截不会导致死循环：agent 修不好时应在 `maxTurns=30` 内收敛，组卡宁可不存也不存错的
 - [x] 主会话链路不受影响（`createGroupDigestTools` 走 `toSdkServer`，签名未变）
 
 ## 已知风险
@@ -96,10 +96,27 @@ export function validateItemSources(
 
 `bun run build:electron` 0 error；`bun run lint` 0 error / 83 warning，与改动前逐字一致，无新增。
 
+**实测中补的一处计划外改动**（`group-digest-scanner.ts` + `group-digest-trigger.ts`，+18/-9）：设置页的「重新提炼」按钮原先也要过脏检查，组不脏就静默跳过，导致本步根本没法复测。给 `findDirtyGroup` 加 `force` 参数——`triggerByGroup` 传 `true`，跳过脏判定并把 `dirtyConversations` 换成**全量 main 会话**（手动重跑的语义是「明知不脏也要整组重看一遍」，只给增量会话会让 agent 看不到要修的旧引用）。自动扫脏 / 关会话触发两条路径不传该参数，行为不变。
+
 ### 拦截效果实测
 
-> 待下次真实提炼触发后填。**验证方法**：对 `group_a2153547`（已知 9 编造 + 2 张冠李戴）触发重新提炼，然后用 step3 回填里记的 uuid 索引脚本复测保真度。
+对 `group_a2153547` 手动触发重新提炼（GLM sonnet，60.8s，`outcome: saved`），用全库 uuid 索引（19695 uuid / 166 会话 JSONL）复测：
 
-- 触发重提炼后校验命中几条：
-- agent 是否自行修正（`wrong_session` 提示是否被采纳）：
-- 最终组卡保真度：
+| | step3 旧组卡 | 本次新组卡 |
+|---|---|---|
+| 引用总数 | 40 | 33 |
+| 正确 | 29 | **33** |
+| 张冠李戴 | 2 | 0 |
+| 编造 | 9 | 0 |
+| 保真 | 73% | **100%** |
+
+**100% 不是靠删引用换来的。** 按会话拆开看，出问题的两个旧会话 `dde7f8c1` + `4f3e41bc` 引用数 14 → 13（只少 1 条），正确数却从 7 涨到 13——agent 收到错误后回去重新查证补对了 uuid，而非走「查不到就删掉」的兜底路径。这同时证伪了「已知风险 2：校验口径过严导致误报」——若误报，会表现为这两个会话的引用被成批删空。
+
+- 触发重提炼后校验命中几条：**无法直接观测**。logger 只落盘 WARN/ERROR，工具返回的 `isError` 不写日志。上面是从「正确引用数不降反升」反推的。要直接观测，需在 `run-once.ts` 里把工具 error 打成 WARN——**step4 顺手加**，review 链路的引用面更大，届时需要可观测性
+- agent 是否自行修正：**是**，且 13/13 全对
+- 最终组卡保真度：**100%（33/33）**
+
+**连带验收掉的 step3 遗留项**（原记在「搁置」里）：
+- 停止按钮（`agent.abort` 路径）：15:52 那次 `outcome: error / "已取消" / 9.9s`，正常中断
+- 不死循环：60.8s 收敛，未触及 `maxTurns=30`
+- `SaveGroupBackground` 同步落盘，`chainCategorize` 正常触发（`decision: match`，走阈值匹配 0 LLM，未上 LLM 分支）
