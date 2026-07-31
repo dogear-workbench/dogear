@@ -12,8 +12,12 @@ import { Agent, type AgentEvent } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
+import { toPiTools } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
+import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
 import { loadSettings } from '../../services/settings-service.js';
+import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
+import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
 import type { ModelSelection, ModelProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 
@@ -89,11 +93,16 @@ export class PiSession extends EventEmitter {
 
     const piModels = buildPiModels(profile);
 
+    const skillEntries = await loadSkillIndex([getArticleParserSkillsDir(), getReviewSkillDir()]);
+    const skillIndexText = formatSkillIndexForPrompt(skillEntries);
+    const systemPrompt = [this.config.systemPrompt ?? '', skillIndexText].filter(Boolean).join('\n\n');
+    const tools = toPiTools([createSkillTool(skillEntries)]);
+
     this.agent = new Agent({
       initialState: {
-        systemPrompt: this.config.systemPrompt ?? '',
+        systemPrompt,
         model,
-        tools: [],
+        tools,
       },
       streamFn: (m, ctx, streamOpts) =>
         piModels.streamSimple(m, ctx, { ...streamOpts, timeoutMs: profile.apiTimeoutMs }),
@@ -101,7 +110,7 @@ export class PiSession extends EventEmitter {
 
     this.agent.subscribe((event) => this.handleAgentEvent(event));
 
-    this.logger.info('✅ pi 会话已创建', { profile: profile.name, tier });
+    this.logger.info('✅ pi 会话已创建', { profile: profile.name, tier, skills: skillEntries.map((e) => e.name) });
   }
 
   private handleAgentEvent(event: AgentEvent): void {
