@@ -6,6 +6,7 @@ import { sendToDebugWindow } from '../index.js';
 import {
   getQueryBasedSessionManager
 } from '../agents/query-based-session.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { getAllTools } from '../agents/tools/tool-registry.js';
@@ -73,6 +74,24 @@ getQueryBasedSessionManager().setBroadcaster((sessionId, event, payload) => {
       const h = getRendererHandlers<RendererHandlers>(win.webContents);
       if (event === 'message') {
         h.queryBasedSessionMessage.send({ sessionId, message: messagePayload as ExtendedSessionMessage });
+      } else if (event === 'complete') {
+        h.queryBasedSessionComplete.send({ sessionId, result: payload });
+      } else if (event === 'error') {
+        h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
+      }
+    } catch { /* 窗口已销毁，忽略 */ }
+  }
+});
+
+// pi 会话广播：与上面 QueryBasedSessionManager 的广播逻辑对称但相互独立
+// （阶段一没有 bot 来源标记 / running-state legacy 广播，events 复用同一套 IPC 事件名）
+getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
+  for (const win of electron.BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      const h = getRendererHandlers<RendererHandlers>(win.webContents);
+      if (event === 'message') {
+        h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
       } else if (event === 'complete') {
         h.queryBasedSessionComplete.send({ sessionId, result: payload });
       } else if (event === 'error') {
@@ -239,12 +258,18 @@ export const agentRouter = {
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
+        const piSessionManager = getPiSessionManager();
         const session = sessionManager.getSession(input.sessionId);
-        if (!session) return { error: '会话不存在' };
+        // pi 会话：方法面对齐（sendMessage 签名一致），未命中 SDK manager 时按 sessionId 试 PiSessionManager
+        const piSession = session ? undefined : piSessionManager.getSession(input.sessionId);
+        const activeSession = session ?? piSession;
+        if (!activeSession) return { error: '会话不存在' };
 
-        // 广播对话运行状态 → running
-        const convId = sessionManager.getConversationIdBySession(input.sessionId);
-        if (convId) broadcastConversationRunning(convId, true);
+        // 广播对话运行状态 → running（legacy 事件，pi 阶段一暂不接入，不影响主链路）
+        const convId = session
+          ? sessionManager.getConversationIdBySession(input.sessionId)
+          : piSessionManager.getConversationIdBySession(input.sessionId);
+        if (convId && session) broadcastConversationRunning(convId, true);
 
         // 自动 title：如果对话的 title 仍是默认值"新对话"，用这条消息的前 30 字替换。
         // 只跑一次（后续消息 title 已不是默认值）。用户文本优先取 textBlocks 最后一个块（用户输入在引用之后），否则用 content。
@@ -297,9 +322,9 @@ export const agentRouter = {
               });
             }
           }
-          await session.sendMessage(contentBlocks);
+          await activeSession.sendMessage(contentBlocks);
         } else {
-          await session.sendMessage(input.content);
+          await activeSession.sendMessage(input.content);
         }
         return { success: true };
       } catch (error) {
@@ -313,8 +338,14 @@ export const agentRouter = {
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
+        const piSessionManager = getPiSessionManager();
         // 使用 release 而非直接 close：引用计数归零才真正销毁（支持多持有者共享 session）
-        sessionManager.release(input.sessionId);
+        // sessionId 由各自 Manager 用 uuidv4() 独立生成，试两个 Manager 无冲突风险
+        if (sessionManager.getSession(input.sessionId)) {
+          sessionManager.release(input.sessionId);
+        } else {
+          piSessionManager.release(input.sessionId);
+        }
         return { success: true };
       } catch (error) {
         console.error('关闭基于 Query 的会话失败:', error);
@@ -424,7 +455,7 @@ export const agentRouter = {
     .action(async ({ input }) => {
       try {
         const sessionManager = getQueryBasedSessionManager();
-        const session = sessionManager.getSession(input.sessionId);
+        const session = sessionManager.getSession(input.sessionId) ?? getPiSessionManager().getSession(input.sessionId);
         if (!session) {
           return { ok: false as const, error: 'session_not_found' };
         }

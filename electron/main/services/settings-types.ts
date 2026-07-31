@@ -35,6 +35,8 @@ export interface ModelProfile {
   disableNonessentialTraffic: boolean;
   /** 自动压缩窗口 token 数（CLAUDE_CODE_AUTO_COMPACT_WINDOW）。空/0 走 SDK 默认（= 模型实际上下文窗口） */
   autoCompactWindow?: number;
+  /** 主会话运行时格式；缺省视为 'anthropic-sdk'。'pi' 路由到 PiSessionManager（pi-ai + pi-agent-core） */
+  apiFormat?: 'anthropic-sdk' | 'pi';
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';

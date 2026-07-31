@@ -4,6 +4,8 @@ import { getRendererHandlers } from '@egoist/tipc/main';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import { getQueryBasedSessionManager } from '../agents/query-based-session.js';
 import type { QueryBasedSession, QueryBasedSessionConfig, ExtendedSessionMessage } from '../agents/query-based-session.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
+import type { ModelSelection } from './settings-types.js';
 import { createArticleTools } from '../agents/tools/article-tools.js';
 import { createStockTools } from '../agents/tools/stock-tools.js';
 import { createMemoryTools } from '../agents/tools/memory-tools.js';
@@ -42,6 +44,8 @@ type AttachmentMeta = {
   conversationId: string;
   holderType: RuntimeHolderType;
   webContentsId?: number; // Electron webContents ID，用于窗口关闭时主动 detach
+  /** 该 attachment 绑定的运行时，detach 时据此路由到正确的 Manager */
+  apiFormat: 'anthropic-sdk' | 'pi';
 };
 
 type WireOptions = {
@@ -70,6 +74,21 @@ function broadcastToAll(
       // Ignore destroyed or unavailable windows.
     }
   }
+}
+
+/**
+ * 按会话的 modelSelection（缺省回退 settings.ai.defaultModelSelection）解析出对应 ModelProfile 的
+ * apiFormat，决定该对话该走 QueryBasedSessionManager 还是 PiSessionManager。
+ * 与 pi/provider.ts 的 resolvePiModel 使用同一套「selection ?? fallback」口径，但只取 apiFormat 字段，
+ * 不在此处做模型解析（模型解析留给各自 Session 的 start()）。
+ */
+function resolveApiFormat(
+  appSettings: Awaited<ReturnType<typeof loadSettings>>,
+  modelSelection: ModelSelection | null,
+): 'anthropic-sdk' | 'pi' {
+  const target = modelSelection ?? appSettings.ai.defaultModelSelection;
+  const profile = target ? appSettings.profiles[target.profileId] : undefined;
+  return profile?.apiFormat ?? 'anthropic-sdk';
 }
 
 async function buildConversationSessionConfig(
@@ -349,6 +368,16 @@ class ConversationRuntimeService {
     holderType: RuntimeHolderType,
     options?: AttachConversationOptions,
   ): Promise<ConversationRuntimeAttachment> {
+    const conversationForRouting = await conversationService.getById(workspaceId, conversationId);
+    if (!conversationForRouting) {
+      throw new Error(`Conversation not found: ${conversationId}`);
+    }
+    const appSettingsForRouting = await loadSettings();
+    const apiFormat = resolveApiFormat(appSettingsForRouting, conversationForRouting.modelSelection ?? null);
+    if (apiFormat === 'pi') {
+      return this.attachPiConversation(conversationId, holderType, options, conversationForRouting.modelSelection ?? null);
+    }
+
     const sessionManager = getQueryBasedSessionManager();
     let sessionId = sessionManager.getSessionIdByConversation(conversationId);
     let session = sessionId ? sessionManager.getSession(sessionId) : undefined;
@@ -397,7 +426,7 @@ class ConversationRuntimeService {
     }
 
     const attachmentId = uuidv4();
-    this.attachmentMap.set(attachmentId, { sessionId, conversationId, holderType, webContentsId: options?.webContentsId });
+    this.attachmentMap.set(attachmentId, { sessionId, conversationId, holderType, webContentsId: options?.webContentsId, apiFormat: 'anthropic-sdk' });
     const attachments = this.sessionAttachments.get(sessionId) ?? new Set<string>();
     attachments.add(attachmentId);
     this.sessionAttachments.set(sessionId, attachments);
@@ -411,6 +440,60 @@ class ConversationRuntimeService {
       permissionMode: session.getPermissionMode(),
       created,
       snapshot,
+    };
+  }
+
+  /**
+   * pi 运行时的 attach 路径。阶段一没有 resume/fork/权限模式/快照概念，
+   * 只做「有存活 session 就 retain，否则新建+bind」的最小闭环。
+   */
+  private async attachPiConversation(
+    conversationId: string,
+    holderType: RuntimeHolderType,
+    options: AttachConversationOptions | undefined,
+    modelSelection: ModelSelection | null,
+  ): Promise<ConversationRuntimeAttachment> {
+    const piSessionManager = getPiSessionManager();
+    let sessionId = piSessionManager.getSessionIdByConversation(conversationId);
+    let session = sessionId ? piSessionManager.getSession(sessionId) : undefined;
+    let created = false;
+
+    if (sessionId && !session) {
+      sessionId = undefined;
+    }
+
+    if (sessionId && session) {
+      piSessionManager.retain(sessionId);
+    } else {
+      const appSettings = await loadSettings();
+      session = piSessionManager.createSession({
+        conversationId,
+        modelSelection,
+        systemPrompt: appSettings.ai.defaultSystemPrompt,
+      });
+      await session.start();
+      sessionId = session.getSessionId();
+      piSessionManager.bindConversation(conversationId, sessionId);
+      created = true;
+    }
+
+    if (!sessionId || !session) {
+      throw new Error(`Failed to attach pi runtime for conversation ${conversationId}`);
+    }
+
+    const attachmentId = uuidv4();
+    this.attachmentMap.set(attachmentId, { sessionId, conversationId, holderType, webContentsId: options?.webContentsId, apiFormat: 'pi' });
+    const attachments = this.sessionAttachments.get(sessionId) ?? new Set<string>();
+    attachments.add(attachmentId);
+    this.sessionAttachments.set(sessionId, attachments);
+
+    return {
+      attachmentId,
+      sessionId,
+      // pi 阶段一无权限模式概念，固定回传 'default' 供前端展示
+      permissionMode: 'default',
+      created,
+      snapshot: [],
     };
   }
 
@@ -431,7 +514,11 @@ class ConversationRuntimeService {
       }
     }
 
-    getQueryBasedSessionManager().release(meta.sessionId);
+    if (meta.apiFormat === 'pi') {
+      getPiSessionManager().release(meta.sessionId);
+    } else {
+      getQueryBasedSessionManager().release(meta.sessionId);
+    }
     return true;
   }
 
@@ -454,14 +541,18 @@ class ConversationRuntimeService {
 
   getRuntimeByConversation(conversationId: string): ConversationRuntimeState {
     const sessionManager = getQueryBasedSessionManager();
-    const sessionId = sessionManager.getSessionIdByConversation(conversationId);
+    let sessionId = sessionManager.getSessionIdByConversation(conversationId);
     if (!sessionId || !sessionManager.getSession(sessionId)) {
-      return {
-        conversationId,
-        sessionId: null,
-        attachmentCount: 0,
-        holders: [],
-      };
+      const piSessionManager = getPiSessionManager();
+      sessionId = piSessionManager.getSessionIdByConversation(conversationId);
+      if (!sessionId || !piSessionManager.getSession(sessionId)) {
+        return {
+          conversationId,
+          sessionId: null,
+          attachmentCount: 0,
+          holders: [],
+        };
+      }
     }
 
     const attachments = this.sessionAttachments.get(sessionId) ?? new Set<string>();

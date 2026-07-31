@@ -617,6 +617,22 @@ export default function SettingsPage() {
                       />
                     </div>
 
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">运行时格式</label>
+                      <p className="text-xs text-muted-foreground">
+                        决定该方案的对话走哪套运行时。默认 anthropic-sdk（Claude Agent SDK，功能完整）；
+                        pi（pi-ai + pi-agent-core）目前仅支持纯文本对话，无工具/权限/skill。
+                      </p>
+                      <select
+                        className="h-9 w-full px-3 text-sm border rounded bg-background"
+                        value={profile.apiFormat ?? 'anthropic-sdk'}
+                        onChange={(e) => updateProfileField(id, { apiFormat: e.target.value as 'anthropic-sdk' | 'pi' })}
+                      >
+                        <option value="anthropic-sdk">anthropic-sdk（默认）</option>
+                        <option value="pi">pi</option>
+                      </select>
+                    </div>
+
                     {(['haikuModel', 'sonnetModel', 'opusModel'] as const).map(field => {
                       const labels: Record<string, string> = { haikuModel: 'Haiku 模型', sonnetModel: 'Sonnet 模型', opusModel: 'Opus 模型' };
                       const placeholders: Record<string, string> = { haikuModel: '如 claude-haiku-4-5', sonnetModel: '如 claude-sonnet-4-6', opusModel: '如 claude-opus-4-6' };
