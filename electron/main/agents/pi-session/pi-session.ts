@@ -10,6 +10,7 @@
 import { EventEmitter } from 'events';
 import { Agent, type AgentEvent, type BeforeToolCallContext, type BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
+import type { UserMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { toPiTools } from '../pi/tool-adapter.js';
@@ -73,6 +74,13 @@ export class PiSession extends EventEmitter {
   private pendingPermissionRequests: Map<string, PendingPermissionRequest> = new Map();
   // 本会话进程内免确认的工具名集合（allow_session 语义，不落盘，关闭会话即失效）
   private sessionAllowedTools: Set<string> = new Set();
+  // steer 队列长度（pi 没暴露 .length，dogear 自己计数）。
+  // pi 的 steeringMode 配置成 'one-at-a-time'：每个 turn_start drain 一条，
+  // 因此 steer() 时 +1，turn_start 事件处理时 -1（不发负数）。
+  private pendingSteerCount = 0;
+  // sessionStateChanged 去重：记录上次广播的 running/pendingAction
+  private lastEmittedRunning = false;
+  private lastEmittedPendingAction = false;
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -130,6 +138,9 @@ export class PiSession extends EventEmitter {
         model,
         tools,
       },
+      // 'one-at-a-time' 与 dogear 现有插话语义一致（SDK 侧 pendingMessages 也是一条条 shift 消费）：
+      // 每次 steer 进队列后，在下一个 turn_start 边界只 drain 一条注入，多余的留在队列里等下个 turn。
+      steeringMode: 'one-at-a-time',
       streamFn: (m, ctx, streamOpts) =>
         piModels.streamSimple(m, ctx, { ...streamOpts, timeoutMs: profile.apiTimeoutMs }),
       beforeToolCall: (context, signal) => this.handleBeforeToolCall(context, signal),
@@ -141,6 +152,15 @@ export class PiSession extends EventEmitter {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
+    // turn_start：one-at-a-time 模式下 pi 在此刻 drain 一条 steer 消息。
+    // 即使本次 turn 不是被 steer 触发的（比如 prompt 直接开的），只要队列里有货就会被 drain 一条，
+    // 所以这里无条件在有队列时 -1。安全：if > 0 才减，防漂移。
+    if (event.type === 'turn_start' && this.pendingSteerCount > 0) {
+      this.pendingSteerCount--;
+      this.emit('pendingCountChanged', { count: this.pendingSteerCount });
+      this.syncSessionState();
+    }
+
     const message = convertPiEvent(event);
     if (message) {
       this.emit('message', message);
@@ -156,6 +176,35 @@ export class PiSession extends EventEmitter {
         error: errMsg,
         timestamp: Date.now(),
       } as ExtendedSessionMessage);
+      return;
+    }
+
+    // agent_end：一次完整 run（可能含多轮工具调用）结束。兜底：如果还有 steer 残留
+    // （理论上 turn_start 应该已清完，但中断/异常路径可能漏发），强制归零并广播一次状态。
+    if (event.type === 'agent_end') {
+      if (this.pendingSteerCount > 0) {
+        this.logger.warn('agent_end 时 steer 队列仍非空，强制清零:', this.pendingSteerCount);
+        this.pendingSteerCount = 0;
+        this.emit('pendingCountChanged', { count: 0 });
+      }
+      this.syncSessionState();
+    }
+  }
+
+  /**
+   * 与 SDK 侧 QueryBasedSession.syncSessionState 对称的去重广播。
+   * running = agent.isStreaming || pendingSteerCount>0；pendingAction = pendingSteerCount>0。
+   * close() 不走这里，靠 sessionClosed 让前端清 Set。
+   */
+  private syncSessionState(): void {
+    const conversationId = this.config.conversationId;
+    if (!conversationId) return;
+    const running = !!this.agent?.state.isStreaming || this.pendingSteerCount > 0;
+    const pendingAction = this.pendingSteerCount > 0;
+    if (running !== this.lastEmittedRunning || pendingAction !== this.lastEmittedPendingAction) {
+      this.lastEmittedRunning = running;
+      this.lastEmittedPendingAction = pendingAction;
+      this.emit('sessionStateChanged', { conversationId, running, pendingAction });
     }
   }
 
@@ -217,11 +266,30 @@ export class PiSession extends EventEmitter {
     }
 
     const text = typeof content === 'string' ? content : extractTextFromBlocks(content);
+    const agent = this.agent;
+    const isRunning = !!agent.state.isStreaming || this.pendingSteerCount > 0;
 
-    this.logger.info('发送用户消息到 pi 会话:', { length: text.length });
+    this.logger.info('发送用户消息到 pi 会话:', { length: text.length, isRunning, pendingSteer: this.pendingSteerCount });
+
+    if (isRunning) {
+      // 插话路径：steer 在当前 assistant turn 结束后注入（one-at-a-time 模式下排在已有队列后面）。
+      // prompt 的 Promise 只代表"消息进入管道"，不等整轮跑完；steer 本身是同步入队，立刻返回。
+      const steerMessage: UserMessage = {
+        role: 'user',
+        content: text,
+        timestamp: Date.now(),
+      };
+      agent.steer(steerMessage);
+      this.pendingSteerCount++;
+      this.emit('pendingCountChanged', { count: this.pendingSteerCount });
+      this.syncSessionState();
+      return;
+    }
 
     try {
-      await this.agent.prompt(text);
+      await agent.prompt(text);
+      // agent_end 事件已经会触发 syncSessionState；complete 也只是给上层 conversation-runtime
+      // 一个"本次 sendMessage 的 Promise resolved"信号，不代表 turn 跑完。
       this.emit('complete', { subtype: 'success' });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -235,20 +303,24 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 阶段一没有插话队列，也没有接入跑步机式引用计数（PiSessionManager.release 归零直接销毁），
-   * 这里仍只看 agent 是否在流式输出——权限请求挂起时 agent.state.isStreaming 本身就是 true。
-   * agent 尚未 start() 时同样视为空闲（安全默认值）。
+   * 空闲 = 无正在跑的 turn + 无 steer 队列 + 无挂起的权限请求。
+   * PiSessionManager.release 归零直接销毁（pi 阶段一无跑步机模式），但 isIdle 仍给上层一个
+   * "现在关掉是否安全"的判据。
    */
   isIdle(): boolean {
-    return !this.agent?.state.isStreaming;
+    return !this.agent?.state.isStreaming
+      && this.pendingSteerCount === 0
+      && this.pendingPermissionRequests.size === 0;
   }
 
   close(): void {
     if (this.status === PiSessionStatus.CLOSED) return;
     this.logger.info('关闭 pi 会话:', this.sessionId);
 
+    this.agent?.clearAllQueues();
     this.agent?.abort();
     this.status = PiSessionStatus.CLOSED;
+    this.pendingSteerCount = 0;
     this.rejectAllPendingPermissionRequests('会话已关闭');
 
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
@@ -258,6 +330,9 @@ export class PiSession extends EventEmitter {
   async interrupt(): Promise<void> {
     // 不依赖 abort signal 是否会传导到 beforeToolCall 的挂起 Promise，主动拒绝兜底
     // （与 SDK 侧 QueryBasedSession.interrupt() 的处理方式一致）
+    this.agent?.clearAllQueues();
+    this.pendingSteerCount = 0;
+    this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');
     this.agent?.abort();
   }

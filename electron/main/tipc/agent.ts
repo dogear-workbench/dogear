@@ -99,6 +99,15 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
       } else if (event === 'permissionRequest') {
         const data = payload as { requestId: string; toolName: string; toolInput: unknown };
         h.permissionRequest.send({ sessionId, requestId: data.requestId, toolName: data.toolName, toolInput: data.toolInput });
+      } else if (event === 'pendingCountChanged') {
+        const data = payload as { count: number };
+        h.pendingCountChanged.send({ sessionId, count: data.count });
+      } else if (event === 'sessionStateChanged') {
+        const data = payload as { conversationId: string; running: boolean; pendingAction: boolean };
+        h.sessionStateChanged.send(data);
+      } else if (event === 'sessionClosed') {
+        const data = payload as { conversationId: string };
+        h.sessionClosed.send(data);
       }
     } catch { /* 窗口已销毁，忽略 */ }
   }

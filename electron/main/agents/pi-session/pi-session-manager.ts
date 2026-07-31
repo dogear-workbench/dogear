@@ -13,7 +13,11 @@ import { PiSession, type PiSessionConfig } from './pi-session.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 
 /** 广播函数类型：将 session 事件发给所有渲染层窗口，注册方式与 QueryBasedSessionManager 对称但相互独立 */
-type PiSessionBroadcaster = (sessionId: string, event: 'message' | 'complete' | 'error' | 'permissionRequest', payload: unknown) => void;
+type PiSessionBroadcaster = (
+  sessionId: string,
+  event: 'message' | 'complete' | 'error' | 'permissionRequest' | 'pendingCountChanged' | 'sessionStateChanged' | 'sessionClosed',
+  payload: unknown,
+) => void;
 
 export class PiSessionManager extends EventEmitter {
   private sessions: Map<string, PiSession> = new Map();
@@ -54,6 +58,24 @@ export class PiSessionManager extends EventEmitter {
     session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown }) => {
       this.emit('sessionPermissionRequest', sessionId, data);
       this.broadcaster?.(sessionId, 'permissionRequest', data);
+    });
+
+    // 插话队列长度变化（Step 5）：与 SDK 侧 pendingCountChanged 对称
+    session.on('pendingCountChanged', (data: { count: number }) => {
+      this.emit('sessionPendingCountChanged', sessionId, data);
+      this.broadcaster?.(sessionId, 'pendingCountChanged', data);
+    });
+
+    // 跑步机状态原子事件（Step 5）：驱动前端 running/pendingAction 两个 Set
+    session.on('sessionStateChanged', (data: { conversationId: string; running: boolean; pendingAction: boolean }) => {
+      this.emit('sessionStateChanged', sessionId, data);
+      this.broadcaster?.(sessionId, 'sessionStateChanged', data);
+    });
+
+    // 会话关闭（Step 5）：前端清 running/pendingAction Set 的原子信号
+    session.on('sessionClosed', (data: { conversationId: string }) => {
+      this.emit('sessionClosed', sessionId, data);
+      this.broadcaster?.(sessionId, 'sessionClosed', data);
     });
 
     this.sessions.set(sessionId, session);
