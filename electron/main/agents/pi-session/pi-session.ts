@@ -8,7 +8,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { Agent, type AgentEvent } from '@earendil-works/pi-agent-core';
+import { Agent, type AgentEvent, type BeforeToolCallContext, type BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
@@ -17,8 +17,9 @@ import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { createSearchToolDefs } from './search-tools.js';
+import { isPermissionExempt, isToolPreapproved } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
-import { loadSettings } from '../../services/settings-service.js';
+import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
 import type { ModelSelection, ModelProfile } from '../../services/settings-types.js';
@@ -38,6 +39,14 @@ export interface PiSessionConfig {
 enum PiSessionStatus {
   IDLE = 'idle',
   CLOSED = 'closed',
+}
+
+interface PendingPermissionRequest {
+  resolve: (result: BeforeToolCallResult | undefined) => void;
+  toolName: string;
+  /** beforeToolCall 收到的原始 args 引用；agent-loop.js 里这个引用与后续 tool.execute 用的是同一个对象，
+   * 原地修改字段即可让"编辑参数后允许"生效，不需要额外的回写机制 */
+  args: unknown;
 }
 
 /** 从 SDK 风格的 ContentBlockParam[] 中提取纯文本（阶段一不支持图像，静默丢弃非文本块） */
@@ -60,6 +69,10 @@ export class PiSession extends EventEmitter {
   // 缓存当前生效的 selection/profile，供 setModel 判断是否需要重启会话
   private currentModelSelection: ModelSelection | null = null;
   private currentResolvedProfile?: ModelProfile;
+  // requestId -> 挂起的权限确认请求，等待前端 respondPermissionRequest 调用来 resolve
+  private pendingPermissionRequests: Map<string, PendingPermissionRequest> = new Map();
+  // 本会话进程内免确认的工具名集合（allow_session 语义，不落盘，关闭会话即失效）
+  private sessionAllowedTools: Set<string> = new Set();
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -104,7 +117,6 @@ export class PiSession extends EventEmitter {
 
     // 工具集合：builtin-tools（Read/Write/Edit/Bash，原生 pi AgentTool）
     // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具，统一 ToolDef 形状)
-    // Step 4 的 beforeToolCall 权限拦截点插在 Agent 构造之后的 subscribe/配置处，不在这里。
     const toolDefs = [
       createSkillTool(skillEntries),
       ...createSearchToolDefs(this.config.workspacePath),
@@ -120,6 +132,7 @@ export class PiSession extends EventEmitter {
       },
       streamFn: (m, ctx, streamOpts) =>
         piModels.streamSimple(m, ctx, { ...streamOpts, timeoutMs: profile.apiTimeoutMs }),
+      beforeToolCall: (context, signal) => this.handleBeforeToolCall(context, signal),
     });
 
     this.agent.subscribe((event) => this.handleAgentEvent(event));
@@ -144,6 +157,50 @@ export class PiSession extends EventEmitter {
         timestamp: Date.now(),
       } as ExtendedSessionMessage);
     }
+  }
+
+  /**
+   * 工具调用权限拦截点。对齐 SDK 侧 canUseTool 语义：
+   * 只读工具（read/Glob/Grep）和本会话/持久化规则已允许的工具直接放行；
+   * 其余工具 emit 'permissionRequest' 事件（走独立 IPC 通道，不经过 ExtendedSessionMessage 流，
+   * 与 SDK 侧 conversation-runtime-service 的 permissionRequest 广播路径完全对称），
+   * 挂起等待前端 respondPermissionRequest 调用来 resolve。
+   */
+  private async handleBeforeToolCall(
+    context: BeforeToolCallContext,
+    signal?: AbortSignal,
+  ): Promise<BeforeToolCallResult | undefined> {
+    const toolName = context.toolCall.name;
+    if (isPermissionExempt(toolName) || this.sessionAllowedTools.has(toolName)) {
+      return undefined;
+    }
+
+    const appSettings = await loadSettings();
+    if (isToolPreapproved(appSettings.permissionRules?.allow, toolName)) {
+      return undefined;
+    }
+
+    const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    this.logger.info('权限确认请求:', { requestId, toolName });
+
+    return new Promise<BeforeToolCallResult | undefined>((resolve) => {
+      // 必须先注册到 pending map 再 emit：respondPermissionRequest 可能被同步调用
+      // （例如测试场景），emit 在前会导致 map 里还查不到这个 requestId。
+      this.pendingPermissionRequests.set(requestId, { resolve, toolName, args: context.args });
+
+      signal?.addEventListener('abort', () => {
+        if (this.pendingPermissionRequests.has(requestId)) {
+          this.pendingPermissionRequests.delete(requestId);
+          resolve({ block: true, reason: '操作已取消' });
+        }
+      });
+
+      this.emit('permissionRequest', {
+        requestId,
+        toolName,
+        toolInput: context.args,
+      });
+    });
   }
 
   /** pi 阶段一不支持斜杠命令 */
@@ -178,7 +235,8 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 阶段一没有插话队列/权限请求概念，agent 不在流式输出即视为空闲。
+   * 阶段一没有插话队列，也没有接入跑步机式引用计数（PiSessionManager.release 归零直接销毁），
+   * 这里仍只看 agent 是否在流式输出——权限请求挂起时 agent.state.isStreaming 本身就是 true。
    * agent 尚未 start() 时同样视为空闲（安全默认值）。
    */
   isIdle(): boolean {
@@ -191,13 +249,25 @@ export class PiSession extends EventEmitter {
 
     this.agent?.abort();
     this.status = PiSessionStatus.CLOSED;
+    this.rejectAllPendingPermissionRequests('会话已关闭');
 
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
     this.removeAllListeners();
   }
 
   async interrupt(): Promise<void> {
+    // 不依赖 abort signal 是否会传导到 beforeToolCall 的挂起 Promise，主动拒绝兜底
+    // （与 SDK 侧 QueryBasedSession.interrupt() 的处理方式一致）
+    this.rejectAllPendingPermissionRequests('用户中断');
     this.agent?.abort();
+  }
+
+  private rejectAllPendingPermissionRequests(reason: string): void {
+    if (this.pendingPermissionRequests.size === 0) return;
+    for (const [, pending] of this.pendingPermissionRequests) {
+      pending.resolve({ block: true, reason });
+    }
+    this.pendingPermissionRequests.clear();
   }
 
   /** pi 阶段一没有工具/canUseTool，因此没有权限模式概念，no-op */
@@ -205,9 +275,46 @@ export class PiSession extends EventEmitter {
     this.logger.warn('setPermissionMode: pi 会话阶段一不支持权限模式，忽略');
   }
 
-  /** pi 阶段一从不产生权限请求，no-op */
-  respondPermissionRequest(): void {
-    this.logger.warn('respondPermissionRequest: pi 会话阶段一从不产生权限请求，忽略');
+  /**
+   * 响应权限确认请求，四种行为语义对齐 SDK 侧 QueryBasedSession.respondPermissionRequest：
+   * - allow：本次放行；有 updatedInput 时原地改写 context.args
+   * - allow_session：本次放行 + 本会话进程内记住该工具（不落盘，关闭会话即失效）
+   * - always_allow：本次放行 + 落盘到 settings.permissionRules.allow（工具粒度，跨会话保留）
+   * - deny：beforeToolCall 返回 block，工具收到一条 error 结果
+   */
+  respondPermissionRequest(
+    requestId: string,
+    behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session',
+    message?: string,
+    updatedInput?: Record<string, unknown>,
+  ): void {
+    const pending = this.pendingPermissionRequests.get(requestId);
+    if (!pending) {
+      this.logger.warn('respondPermissionRequest: 找不到请求:', requestId);
+      return;
+    }
+    this.pendingPermissionRequests.delete(requestId);
+    this.logger.info('权限确认响应:', { requestId, behavior, toolName: pending.toolName });
+
+    if (behavior === 'deny') {
+      pending.resolve({ block: true, reason: message || '用户拒绝了此操作' });
+      return;
+    }
+
+    if (updatedInput && pending.args && typeof pending.args === 'object') {
+      Object.assign(pending.args as Record<string, unknown>, updatedInput);
+    }
+
+    if (behavior === 'allow_session') {
+      this.sessionAllowedTools.add(pending.toolName);
+    } else if (behavior === 'always_allow') {
+      this.sessionAllowedTools.add(pending.toolName);
+      appendPermissionAllowRules([pending.toolName]).catch((error) =>
+        this.logger.warn('持久化 always_allow 规则失败:', error),
+      );
+    }
+
+    pending.resolve(undefined);
   }
 
   /** pi 阶段一从不产生 AskUserQuestion，no-op */

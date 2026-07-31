@@ -13,7 +13,7 @@ import { PiSession, type PiSessionConfig } from './pi-session.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 
 /** 广播函数类型：将 session 事件发给所有渲染层窗口，注册方式与 QueryBasedSessionManager 对称但相互独立 */
-type PiSessionBroadcaster = (sessionId: string, event: 'message' | 'complete' | 'error', payload: unknown) => void;
+type PiSessionBroadcaster = (sessionId: string, event: 'message' | 'complete' | 'error' | 'permissionRequest', payload: unknown) => void;
 
 export class PiSessionManager extends EventEmitter {
   private sessions: Map<string, PiSession> = new Map();
@@ -47,6 +47,13 @@ export class PiSessionManager extends EventEmitter {
     session.on('complete', (result: unknown) => {
       this.emit('sessionComplete', sessionId, result);
       this.broadcaster?.(sessionId, 'complete', result);
+    });
+
+    // 权限确认请求：与 SDK 侧 conversation-runtime-service 的 permissionRequest 广播路径对称，
+    // 走独立 IPC 通道（不经过 ExtendedSessionMessage 消息流），前端 useSessionEvents.ts 消费
+    session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown }) => {
+      this.emit('sessionPermissionRequest', sessionId, data);
+      this.broadcaster?.(sessionId, 'permissionRequest', data);
     });
 
     this.sessions.set(sessionId, session);

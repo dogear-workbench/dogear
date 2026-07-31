@@ -96,6 +96,9 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
         h.queryBasedSessionComplete.send({ sessionId, result: payload });
       } else if (event === 'error') {
         h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
+      } else if (event === 'permissionRequest') {
+        const data = payload as { requestId: string; toolName: string; toolInput: unknown };
+        h.permissionRequest.send({ sessionId, requestId: data.requestId, toolName: data.toolName, toolInput: data.toolInput });
       }
     } catch { /* 窗口已销毁，忽略 */ }
   }
@@ -424,8 +427,10 @@ export const agentRouter = {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
-        if (!session) return { error: '会话不存在' };
-        session.respondPermissionRequest(input.requestId, input.behavior, input.message, input.updatedInput);
+        // pi 会话：方法面对齐（respondPermissionRequest 签名一致），未命中 SDK manager 时按 sessionId 试 PiSessionManager
+        const activeSession = session ?? getPiSessionManager().getSession(input.sessionId);
+        if (!activeSession) return { error: '会话不存在' };
+        activeSession.respondPermissionRequest(input.requestId, input.behavior, input.message, input.updatedInput);
         return { success: true };
       } catch (error) {
         console.error('响应权限请求失败:', error);
