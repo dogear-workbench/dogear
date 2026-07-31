@@ -66,13 +66,16 @@ export function createReferenceTools(opts: ReferenceToolsOpts) {
         {
           sessionId: z.string().describe('目标会话的 SDK sessionId'),
           tail: z.number().int().positive().optional().describe('尾 N 条（去噪后计数）'),
-          range: z.tuple([z.number().int().nonnegative(), z.number().int().nonnegative()])
-            .optional().describe('起止 index，闭开区间 [start, end)'),
+          rangeStart: z.number().int().nonnegative().optional().describe('起始 index（含），与 rangeEnd 配合使用，闭开区间 [rangeStart, rangeEnd)'),
+          rangeEnd: z.number().int().nonnegative().optional().describe('结束 index（不含），与 rangeStart 配合使用'),
         },
         async (args) => {
+          const range = (args.rangeStart != null && args.rangeEnd != null)
+            ? [args.rangeStart, args.rangeEnd] as [number, number]
+            : undefined;
           const r = await readCleanTranscript(workspacePath, args.sessionId, {
             tail: args.tail,
-            range: args.range,
+            range,
           });
           if (!r.ok) {
             return {
