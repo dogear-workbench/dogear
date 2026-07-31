@@ -20,7 +20,7 @@
 - [x] [Step 3: 基础工具接入](./step3-basic-tools.md) — 文件类工具（Read/Write/Edit/Bash/Grep/Glob）+ dogear-memory 常驻工具，tool_use/tool_result 消息转换
 - [x] [Step 4: 权限卡片](./step4-permission-card.md) — beforeToolCall 接入、原地修改参数技巧、始终允许规则复用
 - [x] [Step 5: 插话队列](./step5-interrupt-queue.md) — steer()/followUp() 接入、usePendingState 三态状态机重新设计
-- [ ] [Step 6: usage 统计](./step6-usage-tracking.md) — pi 事件 → ConversationUsageEntry 提取逻辑
+- [x] [Step 6: usage 统计](./step6-usage-tracking.md) — pi 事件 → ConversationUsageEntry 提取逻辑
 - [ ] [Step 7: 联调验收](./step7-integration-verify.md) — 端到端跑真实任务，确认可日常切换使用，记录已知限制
 
 ## 全局决策

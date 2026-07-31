@@ -8,9 +8,10 @@
  */
 
 import { EventEmitter } from 'events';
+import { v4 as uuidv4 } from 'uuid';
 import { Agent, type AgentEvent, type BeforeToolCallContext, type BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
-import type { UserMessage } from '@earendil-works/pi-ai';
+import type { AssistantMessage, UserMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { toPiTools } from '../pi/tool-adapter.js';
@@ -23,6 +24,12 @@ import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
+import {
+  createPiUsageAccumulator,
+  accumulatePiUsage,
+  extractPiUsageEntry,
+  type PiUsageAccumulator,
+} from './usage-extractor.js';
 import type { ModelSelection, ModelProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 
@@ -81,6 +88,12 @@ export class PiSession extends EventEmitter {
   // sessionStateChanged 去重：记录上次广播的 running/pendingAction
   private lastEmittedRunning = false;
   private lastEmittedPendingAction = false;
+  // 本轮 emit 出去的 ExtendedSessionMessage 快照，agent_end 时喂给 extractPiUsageEntry 聚合 toolActivity
+  private currentTurnMessages: ExtendedSessionMessage[] = [];
+  // usage 提取粒度对齐 SDK result：每次 sendMessage（agent_end）产一条 entry，自增
+  private usageTurnIndex = 0;
+  // 本轮累加器：message_end 时累加 AssistantMessage.usage，agent_end 时取出转 entry 后置 null
+  private currentRunUsageAccum: PiUsageAccumulator | null = null;
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -161,8 +174,16 @@ export class PiSession extends EventEmitter {
       this.syncSessionState();
     }
 
+    // message_end：单次 LLM call 结束，AssistantMessage.usage 携带本轮 token 用量，累加进 currentRunUsageAccum
+    if (event.type === 'message_end' && event.message && (event.message as { role?: string }).role === 'assistant') {
+      if (!this.currentRunUsageAccum) this.currentRunUsageAccum = createPiUsageAccumulator();
+      accumulatePiUsage(this.currentRunUsageAccum, event.message as AssistantMessage);
+    }
+
     const message = convertPiEvent(event);
     if (message) {
+      // 缓存本轮 emit 出去的消息快照，agent_end 时喂给 extractPiUsageEntry 聚合 toolActivity
+      this.currentTurnMessages.push(message);
       this.emit('message', message);
       return;
     }
@@ -179,15 +200,41 @@ export class PiSession extends EventEmitter {
       return;
     }
 
-    // agent_end：一次完整 run（可能含多轮工具调用）结束。兜底：如果还有 steer 残留
-    // （理论上 turn_start 应该已清完，但中断/异常路径可能漏发），强制归零并广播一次状态。
+    // agent_end：一次完整 run（可能含多轮工具调用）结束。先产出 usage entry，再兜底 steer 清零与状态广播。
     if (event.type === 'agent_end') {
+      this.emitUsageEntry();
+      this.currentTurnMessages = [];
+      this.currentRunUsageAccum = null;
+
       if (this.pendingSteerCount > 0) {
         this.logger.warn('agent_end 时 steer 队列仍非空，强制清零:', this.pendingSteerCount);
         this.pendingSteerCount = 0;
         this.emit('pendingCountChanged', { count: 0 });
       }
       this.syncSessionState();
+    }
+  }
+
+  /**
+   * agent_end 时把本轮累加器 + turn 消息快照转成 ConversationUsageEntry 并 emit 'usage'。
+   * fire-and-forget：异常只 warn，不影响主流程。与 SDK 侧 result 消息分支的 usage 采集口径对称。
+   */
+  private emitUsageEntry(): void {
+    try {
+      const convId = this.config.conversationId;
+      if (!convId) return;
+      const accum = this.currentRunUsageAccum ?? createPiUsageAccumulator();
+      const entry = extractPiUsageEntry(
+        accum,
+        this.currentTurnMessages,
+        this.usageTurnIndex,
+        this.currentResolvedProfile?.opusModel,
+      );
+      entry.uuid = uuidv4();
+      this.usageTurnIndex += 1;
+      this.emit('usage', { conversationId: convId, entry });
+    } catch (err) {
+      this.logger.warn('用量采集失败（忽略）:', err);
     }
   }
 
@@ -294,6 +341,9 @@ export class PiSession extends EventEmitter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('pi 会话执行失败:', message);
+      // 兜底：pi 极端路径（streamFn throw 等）可能跳过 agent_end，主动清本轮 usage 状态避免污染下一轮
+      this.currentTurnMessages = [];
+      this.currentRunUsageAccum = null;
       this.emit('error', {
         type: 'error',
         error: message,

@@ -7,10 +7,27 @@
  */
 
 import { EventEmitter } from 'events';
+import { BrowserWindow } from 'electron';
+import { getRendererHandlers } from '@egoist/tipc/main';
 import { v4 as uuidv4 } from 'uuid';
 import { mainLogger } from '../logger.js';
 import { PiSession, type PiSessionConfig } from './pi-session.js';
+import { appendEntry as appendUsageEntry } from '../../services/usage/usage-service.js';
+import { applyUsageSummary } from '../../services/conversation-service.js';
+import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
+import type { ConversationUsageEntry } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
+
+function broadcastUsageEntryAdded(conversationId: string): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      getRendererHandlers<RendererHandlers>(win.webContents).usageEntryAdded.send({ conversationId });
+    } catch {
+      // 单窗口失败不影响其他窗口
+    }
+  }
+}
 
 /** 广播函数类型：将 session 事件发给所有渲染层窗口，注册方式与 QueryBasedSessionManager 对称但相互独立 */
 type PiSessionBroadcaster = (
@@ -76,6 +93,15 @@ export class PiSessionManager extends EventEmitter {
     session.on('sessionClosed', (data: { conversationId: string }) => {
       this.emit('sessionClosed', sessionId, data);
       this.broadcaster?.(sessionId, 'sessionClosed', data);
+    });
+
+    // usage 提取（Step 6）：先 await 落盘再广播，否则前端 refetch 会读到尚未写入的 JSONL。
+    // 与 SDK 侧 QueryBasedSessionManager 的 usage 监听器完全对称，前端 usage 徽章零改动复用。
+    session.on('usage', async ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
+      if (!conversationId) return;
+      await appendUsageEntry(conversationId, entry);
+      applyUsageSummary(conversationId, entry).catch(() => {});
+      broadcastUsageEntryAdded(conversationId);
     });
 
     this.sessions.set(sessionId, session);
