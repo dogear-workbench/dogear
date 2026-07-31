@@ -375,7 +375,7 @@ class ConversationRuntimeService {
     const appSettingsForRouting = await loadSettings();
     const apiFormat = resolveApiFormat(appSettingsForRouting, conversationForRouting.modelSelection ?? null);
     if (apiFormat === 'pi') {
-      return this.attachPiConversation(conversationId, holderType, options, conversationForRouting.modelSelection ?? null);
+      return this.attachPiConversation(conversationId, workspaceId, holderType, options, conversationForRouting.modelSelection ?? null);
     }
 
     const sessionManager = getQueryBasedSessionManager();
@@ -449,6 +449,7 @@ class ConversationRuntimeService {
    */
   private async attachPiConversation(
     conversationId: string,
+    workspaceId: string,
     holderType: RuntimeHolderType,
     options: AttachConversationOptions | undefined,
     modelSelection: ModelSelection | null,
@@ -466,10 +467,12 @@ class ConversationRuntimeService {
       piSessionManager.retain(sessionId);
     } else {
       const appSettings = await loadSettings();
+      const workspace = await workspaceJsonService.getById(workspaceId);
       session = piSessionManager.createSession({
         conversationId,
         modelSelection,
         systemPrompt: appSettings.ai.defaultSystemPrompt,
+        workspacePath: workspace?.path ?? '',
       });
       await session.start();
       sessionId = session.getSessionId();

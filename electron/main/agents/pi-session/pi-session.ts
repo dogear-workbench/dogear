@@ -15,6 +15,9 @@ import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { toPiTools } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
+import { createBuiltinFileTools } from './builtin-tools.js';
+import { createSearchToolDefs } from './search-tools.js';
+import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
@@ -28,6 +31,8 @@ export interface PiSessionConfig {
   modelSelection: ModelSelection | null;
   /** 系统提示词。阶段一直接沿用全局默认提示词，不做人设/工作区/工具导览拼装 */
   systemPrompt?: string;
+  /** 所属工作区绝对路径，用于文件类工具（Read/Write/Edit/Bash/Grep/Glob）的边界校验和 memory 工具存储位置 */
+  workspacePath: string;
 }
 
 enum PiSessionStatus {
@@ -96,7 +101,16 @@ export class PiSession extends EventEmitter {
     const skillEntries = await loadSkillIndex([getArticleParserSkillsDir(), getReviewSkillDir()]);
     const skillIndexText = formatSkillIndexForPrompt(skillEntries);
     const systemPrompt = [this.config.systemPrompt ?? '', skillIndexText].filter(Boolean).join('\n\n');
-    const tools = toPiTools([createSkillTool(skillEntries)]);
+
+    // 工具集合：builtin-tools（Read/Write/Edit/Bash，原生 pi AgentTool）
+    // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具，统一 ToolDef 形状)
+    // Step 4 的 beforeToolCall 权限拦截点插在 Agent 构造之后的 subscribe/配置处，不在这里。
+    const toolDefs = [
+      createSkillTool(skillEntries),
+      ...createSearchToolDefs(this.config.workspacePath),
+      ...createMemoryToolDefs(this.config.workspacePath),
+    ];
+    const tools = [...createBuiltinFileTools(this.config.workspacePath), ...toPiTools(toolDefs)];
 
     this.agent = new Agent({
       initialState: {

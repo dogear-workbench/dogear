@@ -17,7 +17,7 @@
 
 - [x] [Step 1: apiFormat 路由 + PiSession 最小骨架](./step1-walking-skeleton.md) — 加字段、设置页 UI、新建 PiSession/PiSessionManager 骨架，跑通"发一句话、收到文字回复"的最短链路
 - [x] [Step 2: Skill 加载器](./step2-skill-loader.md) — 手写 SKILL.md 扫描+索引+懒加载，接入 article-parser/review 两个现有 skill
-- [ ] [Step 3: 基础工具接入](./step3-basic-tools.md) — 文件类工具（Read/Write/Edit/Bash/Grep/Glob）+ dogear-memory 常驻工具，tool_use/tool_result 消息转换
+- [x] [Step 3: 基础工具接入](./step3-basic-tools.md) — 文件类工具（Read/Write/Edit/Bash/Grep/Glob）+ dogear-memory 常驻工具，tool_use/tool_result 消息转换
 - [ ] [Step 4: 权限卡片](./step4-permission-card.md) — beforeToolCall 接入、原地修改参数技巧、始终允许规则复用
 - [ ] [Step 5: 插话队列](./step5-interrupt-queue.md) — steer()/followUp() 接入、usePendingState 三态状态机重新设计
 - [ ] [Step 6: usage 统计](./step6-usage-tracking.md) — pi 事件 → ConversationUsageEntry 提取逻辑
