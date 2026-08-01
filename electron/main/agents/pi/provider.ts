@@ -52,8 +52,9 @@ export function resolvePiModel(
     sonnet: profile.sonnetModel,
     opus: profile.opusModel,
   };
-  const model = buildPiModel(profile, tierMap[target.tier], target.tier);
-  return { model, profile, tier: target.tier };
+  const tier = target.tier as ModelTier;
+  const model = buildPiModel(profile, tierMap[tier], tier);
+  return { model, profile, tier };
 }
 
 /**

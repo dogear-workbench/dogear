@@ -2054,7 +2054,8 @@ export class QueryBasedSession extends EventEmitter {
       sonnet: this.currentResolvedProfile.sonnetModel,
       opus: this.currentResolvedProfile.opusModel,
     };
-    const modelStr = tierMap[selection.tier];
+    const tier = selection.tier as ModelTier;
+    const modelStr = tierMap[tier];
     this.logger.info(`setModel: tier=${selection.tier}, modelStr=${modelStr}`);
     await this.query.setModel(modelStr);
     this.currentModelSelection = selection;

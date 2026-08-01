@@ -158,7 +158,8 @@ export function resolveModelSelection(
     sonnet: profile.sonnetModel,
     opus: profile.opusModel,
   };
-  env.ANTHROPIC_MODEL = tierMap[target.tier];
+  const tier = target.tier as ModelTier;
+  env.ANTHROPIC_MODEL = tierMap[tier];
   // 子代理：未显式指定且 effort 非空时，回退到 sonnet
   // (SDK 默认 haiku，haiku 不支持 effort 参数会 API 400)
   const subagentTier = appSettings.ai.subagentModelTier
@@ -166,7 +167,7 @@ export function resolveModelSelection(
   if (subagentTier) {
     env.CLAUDE_CODE_SUBAGENT_MODEL = tierMap[subagentTier];
   }
-  return { profile, tier: target.tier, modelId: tierMap[target.tier], env };
+  return { profile, tier, modelId: tierMap[tier], env };
 }
 
 /**

@@ -28,7 +28,7 @@ import {
   type UserMessage,
   type ChatContext,
 } from './skills/chat-skill.js';
-import type { ModelTier, ModelProfile } from '../services/settings-types.js';
+import type { ModelProfile } from '../services/settings-types.js';
 import type { PiModelResult } from './pi/provider.js';
 
 /**
@@ -587,7 +587,7 @@ class AgentWorker {
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
-    let tier: ModelTier;
+    let tier: string;
     let resolvedProfile: ModelProfile;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
@@ -737,7 +737,7 @@ class AgentWorker {
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
-    let tier: ModelTier;
+    let tier: string;
     let resolvedProfile: ModelProfile;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
@@ -841,7 +841,7 @@ class AgentWorker {
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
-    let tier: ModelTier;
+    let tier: string;
     let resolvedProfile: ModelProfile;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
@@ -1140,7 +1140,7 @@ class AgentWorker {
       ?? baseConfig.appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
-    let tier: ModelTier;
+    let tier: string;
     let resolvedProfile: ModelProfile;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);

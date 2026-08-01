@@ -2,7 +2,8 @@ export type ModelTier = 'haiku' | 'sonnet' | 'opus';
 
 export interface ModelSelection {
   profileId: string;
-  tier: ModelTier;
+  /** anthropic-sdk 分支是 ModelTier 三选一；pi 分支存 piModels 里的某个模型 ID 原文 */
+  tier: string;
 }
 
 /** 人设预设 */
@@ -30,19 +31,21 @@ export interface ModelProfile {
   autoCompactWindow?: number;
   /** 主会话运行时格式；缺省视为 'anthropic-sdk'。'pi' 路由到 PiSessionManager（pi-ai + pi-agent-core） */
   apiFormat?: 'anthropic-sdk' | 'pi';
+  /** 仅 apiFormat==='pi' 时生效：pi 客户端的线协议；缺省视为 'anthropic-messages' */
+  piWireApi?: 'anthropic-messages' | 'openai-responses';
+  /** 仅 apiFormat==='pi' 时生效：pi 分支可用的模型 ID 清单（ModelSelection.tier 取值域） */
+  piModels?: string[];
 }
 
 /**
  * 检查 Profile 是否配置完整（可以用于创建会话）
  */
 export function isProfileComplete(profile: ModelProfile): boolean {
-  return !!(
-    profile.apiKey &&
-    profile.baseUrl &&
-    profile.haikuModel &&
-    profile.sonnetModel &&
-    profile.opusModel
-  );
+  if (!profile.apiKey || !profile.baseUrl) return false;
+  if (profile.apiFormat === 'pi') {
+    return (profile.piModels?.length ?? 0) > 0;
+  }
+  return !!(profile.haikuModel && profile.sonnetModel && profile.opusModel);
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
