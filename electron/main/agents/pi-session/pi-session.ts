@@ -133,7 +133,7 @@ export class PiSession extends EventEmitter {
     this.logger.info('=== 启动 pi 会话 ===', { sessionId: this.sessionId });
 
     const appSettings = await loadSettings();
-    const { model, profile, tier } = resolvePiModel(
+    const { model, profile, tier, thinkingLevel } = resolvePiModel(
       appSettings,
       this.config.modelSelection,
       null,
@@ -180,6 +180,7 @@ export class PiSession extends EventEmitter {
         systemPrompt,
         model,
         tools,
+        thinkingLevel,
       },
       // 'one-at-a-time' 与 dogear 现有插话语义一致（SDK 侧 pendingMessages 也是一条条 shift 消费）：
       // 每次 steer 进队列后，在下一个 turn_start 边界只 drain 一条注入，多余的留在队列里等下个 turn。

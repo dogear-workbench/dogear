@@ -1,5 +1,5 @@
-import { Agent } from '@earendil-works/pi-agent-core';
-import type { Model } from '@earendil-works/pi-ai';
+import { Agent, type ThinkingLevel } from '@earendil-works/pi-agent-core';
+import type { Api, Model } from '@earendil-works/pi-ai';
 import type { ModelProfile } from '../../services/settings-types.js';
 import { type ToolDef, toPiTools } from './tool-adapter.js';
 import { buildPiModels } from './provider.js';
@@ -12,13 +12,14 @@ export async function runOnce(opts: {
   systemPrompt?: string;
   prompt: string;
   tools: ToolDef[];
-  model: Model<'anthropic-messages'>;
+  model: Model<Api>;
   profile: ModelProfile;
+  thinkingLevel?: ThinkingLevel;
   signal?: AbortSignal;
   maxTurns?: number;
   onLog?: (msg: string) => void;
 }): Promise<{ ok: true } | { ok: false; error: string; cancelled?: boolean }> {
-  const { systemPrompt = '', prompt, tools, model, profile, signal, maxTurns = 30, onLog } = opts;
+  const { systemPrompt = '', prompt, tools, model, profile, thinkingLevel = 'off', signal, maxTurns = 30, onLog } = opts;
 
   const piModels = buildPiModels(profile);
 
@@ -27,6 +28,7 @@ export async function runOnce(opts: {
       systemPrompt,
       model,
       tools: toPiTools(tools),
+      thinkingLevel,
     },
     streamFn: (m, ctx, streamOpts) =>
       piModels.streamSimple(m, ctx, { ...streamOpts, timeoutMs: profile.apiTimeoutMs }),

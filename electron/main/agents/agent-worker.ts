@@ -30,6 +30,7 @@ import {
 } from './skills/chat-skill.js';
 import type { ModelProfile } from '../services/settings-types.js';
 import type { PiModelResult } from './pi/provider.js';
+import type { ThinkingLevel } from '@earendil-works/pi-agent-core';
 
 /**
  * Agent Worker 类
@@ -589,11 +590,13 @@ class AgentWorker {
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
+    let thinkingLevel: ThinkingLevel;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
+      thinkingLevel = r.thinkingLevel;
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('组级摘要卡任务终止:', error);
@@ -682,6 +685,7 @@ class AgentWorker {
         tools: [...groupDigestDefs, ...transcriptDefs, ...groupDefs],
         model,
         profile: resolvedProfile,
+        thinkingLevel,
         signal: abortController.signal,
         maxTurns: 30,
         onLog: (m) => {
@@ -739,11 +743,13 @@ class AgentWorker {
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
+    let thinkingLevel: ThinkingLevel;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
+      thinkingLevel = r.thinkingLevel;
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('跨会话复盘任务终止:', error);
@@ -774,6 +780,7 @@ class AgentWorker {
         tools: [...reviewDefs, ...memoryDefs],
         model,
         profile: resolvedProfile,
+        thinkingLevel,
         signal: abortController.signal,
         maxTurns: 30,
         onLog: (m) => {
@@ -843,11 +850,13 @@ class AgentWorker {
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
+    let thinkingLevel: ThinkingLevel;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
+      thinkingLevel = r.thinkingLevel;
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('智能分类任务终止:', error);
@@ -1002,6 +1011,7 @@ class AgentWorker {
         tools: sessionCategoryDefs,
         model,
         profile: resolvedProfile,
+        thinkingLevel,
         signal: abortController.signal,
         maxTurns: 30,
         onLog: (m) => {
@@ -1142,11 +1152,13 @@ class AgentWorker {
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
+    let thinkingLevel: ThinkingLevel;
     try {
       const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
+      thinkingLevel = r.thinkingLevel;
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       taskLogger.error('存量分类整理任务终止:', error);
@@ -1185,6 +1197,7 @@ class AgentWorker {
         tools: categoryDefs,
         model,
         profile: resolvedProfile,
+        thinkingLevel,
         signal: abortController.signal,
         maxTurns: 30,
         onLog: (m) => {
