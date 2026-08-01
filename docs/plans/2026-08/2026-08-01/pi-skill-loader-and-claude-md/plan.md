@@ -13,14 +13,14 @@
 ## 步骤索引
 
 - [x] [Step 1: 重写 skill-loader 用 loadSkills 替换手写](./step1-rewrite-skill-loader.md) — 删除手写 frontmatter 解析 / formatSkillIndexForPrompt / createSkillTool，改为薄封装 pi-agent-core 的 `loadSkills` + `formatSkillInvocation`；保留对外签名不变
-- [ ] [Step 2: pi-session 接入 CLAUDE.md + 扩 skill 扫描目录](./step2-pi-session-claude-md-and-dirs.md) — `start()` 内读 `.claude/CLAUDE.md` + `~/.claude/CLAUDE.md`，扩 `loadSkillIndex` 调用到 4 个目录，重构 systemPrompt 拼装顺序
+- [x] [Step 2: pi-session 接入 CLAUDE.md + 扩 skill 扫描目录](./step2-pi-session-claude-md-and-dirs.md) — `start()` 内读 `.claude/CLAUDE.md` + `~/.claude/CLAUDE.md`，扩 `loadSkillIndex` 调用到 4 个目录，重构 systemPrompt 拼装顺序
 - [ ] [Step 3: codebase-map 提升为 skill](./step3-codebase-map-as-skill.md) — 新建 `.claude/skills/codebase-map/SKILL.md`，从 `.claude/rules/codebase-map.md` 复制内容 + 加 frontmatter
 - [ ] [Step 4: CLAUDE.md 精简改写](./step4-simplify-claude-md.md) — 按设计文档的精简方案改 `.claude/CLAUDE.md` 到 ~45 行
 
 ## 全局决策
 
 - **systemPrompt 极简策略**：pi 主会话的 systemPrompt = 项目级 CLAUDE.md + 用户级 CLAUDE.md（可选）+ skill 索引。三段拼一次，**不接 persona / temp_prompt**（留作后续 step），不迁移 SDK 的 6 段隐形系统契约（`session-append-templates.ts`）。
-- **skill 扫描顺序**（顺序敏感，后到覆盖前者）：`.claude/skills` → `~/.claude/skills` → `.dogear/skills/article-parser` → `.dogear/skills/review`。项目级优先级最低，本地 `.dogear` 优先级最高。
+- **skill 扫描顺序**（顺序敏感）：`.claude/skills` → `~/.claude/skills` → `.dogear/skills/article-parser` → `.dogear/skills/review`。**Step 2 实施时发现 loadSkills 内部去重逻辑是「先到为准」而非「后到覆盖」**——这意味着当前传入顺序下项目级 `.claude/skills` 实际优先级最高（与原设计期望相反）。当前各目录无重名 skill，行为正确，未来若引入重名需重新审视传入顺序。
 - **skill-loader 对外签名保持不变**：`loadSkillIndex(dirs)` / `formatSkillIndexForPrompt(entries)` / `createSkillTool(entries)` 三个函数签名不动，只换内部实现，避免影响 pi-session.ts 调用方。
 - **CLAUDE.md 精简会同时影响 SDK 主会话**：SDK 自己也读 CLAUDE.md，精简后 SDK 侧也减负；但 SDK 还会自动加载 `.claude/rules/`（path-based 触发），所以 SDK 侧不丢规则。这是设计内的正向副作用。
 - **`.claude/rules/` 本次不动**：SDK 时代遗物，等 pi 主会话迁移收尾时统一清理。

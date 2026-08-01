@@ -8,6 +8,9 @@
  */
 
 import { EventEmitter } from 'events';
+import os from 'os';
+import path from 'path';
+import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, type AgentEvent, type BeforeToolCallContext, type BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
@@ -17,6 +20,7 @@ import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { toPiTools } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
+import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { isPermissionExempt, isToolPreapproved } from './permission-rules.js';
@@ -66,6 +70,15 @@ function extractTextFromBlocks(blocks: ContentBlockParam[]): string {
     }
   }
   return texts.join('\n');
+}
+
+/** 读文本文件，失败（不存在/无权限）静默返回空串。给 CLAUDE.md 这类"加分项"用，不阻塞会话启动 */
+async function readTextFileSafe(filePath: string): Promise<string> {
+  try {
+    return await fs.readFile(filePath, 'utf-8');
+  } catch {
+    return '';
+  }
 }
 
 export class PiSession extends EventEmitter {
@@ -132,9 +145,26 @@ export class PiSession extends EventEmitter {
 
     const piModels = buildPiModels(profile);
 
-    const skillEntries = await loadSkillIndex([getArticleParserSkillsDir(), getReviewSkillDir()]);
+    const projectClaudeMd = await readTextFileSafe(path.join(this.config.workspacePath, '.claude', 'CLAUDE.md'));
+    const userClaudeMd = await readTextFileSafe(path.join(os.homedir(), '.claude', 'CLAUDE.md'));
+
+    const env = new WorkspaceExecutionEnv(this.config.workspacePath);
+    const skillEntries = await loadSkillIndex([
+      path.join(this.config.workspacePath, '.claude', 'skills'),
+      path.join(os.homedir(), '.claude', 'skills'),
+      getArticleParserSkillsDir(),
+      getReviewSkillDir(),
+    ], env);
     const skillIndexText = formatSkillIndexForPrompt(skillEntries);
-    const systemPrompt = [this.config.systemPrompt ?? '', skillIndexText].filter(Boolean).join('\n\n');
+
+    // systemPrompt 拼装顺序（极简策略，不接 persona / temp_prompt，不迁移 SDK 的 6 段隐形系统契约）：
+    // config.systemPrompt（外部传入，tipc 那边拼的 preset）→ 项目 CLAUDE.md → 用户 CLAUDE.md → skill 索引
+    const systemPrompt = [
+      this.config.systemPrompt ?? '',
+      projectClaudeMd,
+      userClaudeMd,
+      skillIndexText,
+    ].filter(Boolean).join('\n\n');
 
     // 工具集合：builtin-tools（Read/Write/Edit/Bash，原生 pi AgentTool）
     // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具，统一 ToolDef 形状)
@@ -161,7 +191,12 @@ export class PiSession extends EventEmitter {
 
     this.agent.subscribe((event) => this.handleAgentEvent(event));
 
-    this.logger.info('✅ pi 会话已创建', { profile: profile.name, tier, skills: skillEntries.map((e) => e.name) });
+    this.logger.info('✅ pi 会话已创建', {
+      profile: profile.name,
+      tier,
+      skills: skillEntries.map((e) => e.name),
+      claudeMd: { project: !!projectClaudeMd, user: !!userClaudeMd },
+    });
   }
 
   private handleAgentEvent(event: AgentEvent): void {
