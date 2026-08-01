@@ -200,8 +200,25 @@ export class PiSession extends EventEmitter {
       return;
     }
 
-    // agent_end：一次完整 run（可能含多轮工具调用）结束。先产出 usage entry，再兜底 steer 清零与状态广播。
+    // agent_end：一次完整 run（可能含多轮工具调用）结束。
+    // pi-agent-core 不单独 emit error 事件：模型 4xx/5xx 时 pi-ai 把异常 catch 转成 stopReason='error' + errorMessage 塞进 message，
+    // agent-loop.js:108 / agent.js handleRunFailure 走 error 路径时只在 messages[last] 上携带 errorMessage。
+    // 这里兜底把它转成 error 消息推给前端，避免 GLM 1211 这类错被静默吞掉。
     if (event.type === 'agent_end') {
+      const lastMessage = event.messages[event.messages.length - 1] as {
+        role?: string;
+        stopReason?: string;
+        errorMessage?: string;
+      } | undefined;
+      if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'error' && lastMessage.errorMessage) {
+        this.logger.error('pi 模型返回错误:', lastMessage.errorMessage);
+        this.emit('message', {
+          type: 'error',
+          error: lastMessage.errorMessage,
+          timestamp: Date.now(),
+        } as ExtendedSessionMessage);
+      }
+
       this.emitUsageEntry();
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
@@ -349,6 +366,11 @@ export class PiSession extends EventEmitter {
         error: message,
         timestamp: Date.now(),
       } as ExtendedSessionMessage);
+    } finally {
+      // pi-agent-core 的 agent_end 触发时 isStreaming 仍是 true（finishRun 还没跑），
+      // 所以 handleAgentEvent 里基于 isStreaming 判断 running 会失败、不广播 false。
+      // 等 prompt() Promise resolve 时 finishRun 才完成、isStreaming 翻回 false，这里再算一次让前端收到 running=false。
+      this.syncSessionState();
     }
   }
 
