@@ -26,6 +26,15 @@ function tierToModelKey(tier: ModelTier): 'haikuModel' | 'sonnetModel' | 'opusMo
   return `${tier}Model` as 'haikuModel' | 'sonnetModel' | 'opusModel';
 }
 
+function resolveCurrentLabel(settings: AppSettings, value: ModelSelection): string {
+  const profile = settings.profiles[value.profileId];
+  if (!profile) return '已删除的模型';
+  if (profile.apiFormat === 'pi') {
+    return (profile.piModels ?? []).includes(value.tier) ? value.tier : '已删除的模型';
+  }
+  return profile[tierToModelKey(value.tier as ModelTier)] ?? '已删除的模型';
+}
+
 export function ModelSelector({
   settings,
   value,
@@ -36,7 +45,7 @@ export function ModelSelector({
 }: Props) {
   const profiles = Object.values(settings.profiles);
   const currentLabel = value
-    ? (settings.profiles[value.profileId]?.[tierToModelKey(value.tier)] ?? '已删除的模型')
+    ? resolveCurrentLabel(settings, value)
     : (allowUnset ? '不指定' : '请选择模型');
 
   return (
