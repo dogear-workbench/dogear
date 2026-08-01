@@ -20,7 +20,7 @@
 - [x] [Step 2: provider.ts 协议路由 + 能力目录查询](./step2-provider-routing.md) — `resolvePiModel`/`buildPiModel`/`buildPiModels` 按 `piWireApi` 分支，查 pi-ai 内置目录借能力元数据，算出 `thinkingLevel`
 - [x] [Step 3: pi 运行时接入 thinkingLevel](./step3-thinking-level-wiring.md) — 主会话 + 四条后台任务消费 `resolvePiModel` 新增的 `thinkingLevel`
 - [x] [Step 4: 设置页 UI + 模型选择组件适配](./step4-settings-ui.md) — Profile 表单 pi 分支（协议下拉 + 模型清单 CRUD）、`ModelSelector`/`dedupeProfileTiers` 分支
-- [ ] [Step 5: 联调验收](./step5-integration-verify.md) — 真实 OpenAI Key 跑 GPT-5 端到端 + anthropic-sdk 路径回归
+- [ ] [Step 5: 联调验收](./step5-integration-verify.md) — 真实 OpenAI Key 跑 GPT-5 端到端 + anthropic-sdk 路径回归（**待用户自行验证**，见下方完成总结）
 
 ## 全局决策
 
@@ -31,3 +31,17 @@
 - **两处镜像**：主进程不能直接 `import` `types/`，`types/settings.ts` 和 `electron/main/services/settings-types.ts` 的 `ModelProfile`/`ModelSelection` 改动必须同步，参照现有 `apiFormat` 字段的维护方式。
 - **验证方式**：不写单测。每步验证靠 `bun run build:electron`（主进程改动）/ `bun run lint` + 手测。主进程改动后需要重新编译，Vite 热重载只对前端生效。
 - **落盘文件路径**：settings.json、conversations.json 等既有 JSON 存储的字段结构变化不需要额外迁移脚本包装（`piModels`/`piWireApi` 是新增可选字段，旧数据天然兼容；`ModelSelection.tier` 只是放宽类型不改存储值）。
+
+## 完成总结
+
+Step 1-4 已实施完成并各自提交（数据模型 → provider 协议路由 → thinkingLevel 全链路接入 → 设置页 UI），`bun run build:electron` 和 `bun run lint` 在四步完成后的代码上全量跑通、0 错误。
+
+**架构落地情况**：
+- `ModelProfile` 新增 `piWireApi`/`piModels`，`ModelSelection.tier` 放宽为 `string`，启动时幂等迁移旧三档字段（Step 1）
+- `provider.ts` 按 `piWireApi` 路由协议，按 `modelId` 查 `pi-ai` 内置目录（`ANTHROPIC_MODELS`/`OPENAI_MODELS`）借能力元数据，查不到回退保守默认值；`resolvePiModel` 新增 `thinkingLevel` 输出（Step 2）
+- 主会话 `PiSession` + 四条后台任务（GROUP_DIGEST/REVIEW/CATEGORIZE_SESSION/CATEGORIZE_ORGANIZE）全部接上 `thinkingLevel`，`ai.effort` 真正影响 pi 运行时推理强度（Step 3）
+- 设置页 pi Profile 支持协议下拉 + 模型清单 CRUD，`ModelSelector`/`dedupeProfileTiers` 同步支持自由模型枚举（Step 4）
+
+**执行期发现并修正的一处文档偏差**（已记入 Step 2/3 的实施回填）：`thinkingLevel` 的类型来源比 plan.md 原写的更细——`@earendil-works/pi-ai` 的 `ThinkingLevel` 不含 `'off'`，实际用其 `ModelThinkingLevel`（provider.ts）和 `@earendil-works/pi-agent-core` 自己的同名 `ThinkingLevel`（run-once.ts/pi-session.ts/agent-worker.ts，语义等价，与 `Agent` 同包）。不影响功能，纯类型标注精度问题。
+
+**Step 5 未执行**：端到端联调需要真实 OpenAI API Key + 交互式跑应用观察结果，这部分动作只能由用户本人完成（配置 Key、发消息、触发后台任务、观察回归），已征询用户意见后决定跳过，留给用户后续按 `step5-integration-verify.md` 的清单自行验证。若验证中发现问题，按 systematic-debugging 流程处理。
