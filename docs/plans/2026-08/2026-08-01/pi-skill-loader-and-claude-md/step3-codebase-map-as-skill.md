@@ -1,7 +1,7 @@
 ---
 step: 3
 title: codebase-map 提升为 skill
-status: pending
+status: done
 ---
 
 ## 目标
@@ -23,8 +23,8 @@ status: pending
 
 ## 计划改动
 
-- [ ] 新建目录 `.claude/skills/codebase-map/`
-- [ ] 新建 `.claude/skills/codebase-map/SKILL.md`：
+- [x] 新建目录 `.claude/skills/codebase-map/`
+- [x] 新建 `.claude/skills/codebase-map/SKILL.md`：
   - frontmatter：
     ```yaml
     ---
@@ -33,19 +33,21 @@ status: pending
     ---
     ```
   - 正文：从 `.claude/rules/codebase-map.md` 整体复制过来（保持现有内容不动）
-- [ ] **保留 `.claude/rules/codebase-map.md` 不动**：SDK 时代遗物，SDK 主会话仍会通过 path-based 触发加载它（虽然内容重复但 SDK 侧无影响）。等 pi 主会话迁移收尾时统一清理 `.claude/rules/`
-- [ ] 验证 description 不超 1024 字符（实际看下来这段很短，肯定不超）
+- [x] **保留 `.claude/rules/codebase-map.md` 不动**：SDK 时代遗物，SDK 主会话仍会通过 path-based 触发加载它（虽然内容重复但 SDK 侧无影响）。等 pi 主会话迁移收尾时统一清理 `.claude/rules/`
+- [x] 验证 description 不超 1024 字符（实际看下来这段很短，肯定不超）
 - [ ] 手测：pi 会话启动后看日志 `skills: [...]` 数组里有没有 `codebase-map`；新会话里发"models 层在哪"这种问题，看 agent 是否主动调 `Skill(name='codebase-map')`
 
 ## 实施回填（做完后填）
 
 ### 实际改动
 
-- 与计划差异：
+- 与计划差异：无。按计划新建 `.claude/skills/codebase-map/SKILL.md`（frontmatter name/description + 正文从 `.claude/rules/codebase-map.md` 整体复制 325 行）。保留 `.claude/rules/codebase-map.md` 不动。
 - 改动文件清单：
+  - `.claude/skills/codebase-map/SKILL.md`（新增）
 
 ### 给下一步的接力棒
 
-- **codebase-map skill 已生效**：description 写法影响 agent 命中率，初版用 "当你不清楚某个文件/模块在哪、要做什么时主动调用"。如果手测发现命中率低，调整 description 关键词（让模型在"在哪 / 哪里 / 不知道"等表达时更易触发）
+- **codebase-map skill 已生效**：description 用 step3.md 原文。如果手测发现命中率低，调整 description 关键词（让模型在"在哪 / 哪里 / 不知道"等表达时更易触发）。
 - **现有 `.claude/rules/codebase-map.md` 未删**：因为 SDK 仍会 path-based 触发。两份内容此时重复，等 pi 迁移收尾时再删旧版。**注意**：以后改 codebase-map 内容要同步改两份——或者 Step 4 之后改成 SKILL.md 为单一来源，`.claude/rules/codebase-map.md` 改成单行重定向提示。短期不优化。
+- **手测待主会话执行**：手测项需要重启 pi 会话验证（loadSkills 现在能扫到 codebase-map），不在本 step 范围。预期 pi 启动日志 `skills: [...]` 数组长度从 9 增到 10（含 codebase-map）。
 - 下个 step 该从哪里继续：`.claude/CLAUDE.md` 精简改写（最后一步，独立改文件）

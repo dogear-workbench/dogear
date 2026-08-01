@@ -14,7 +14,7 @@
 
 - [x] [Step 1: 重写 skill-loader 用 loadSkills 替换手写](./step1-rewrite-skill-loader.md) — 删除手写 frontmatter 解析 / formatSkillIndexForPrompt / createSkillTool，改为薄封装 pi-agent-core 的 `loadSkills` + `formatSkillInvocation`；保留对外签名不变
 - [x] [Step 2: pi-session 接入 CLAUDE.md + 扩 skill 扫描目录](./step2-pi-session-claude-md-and-dirs.md) — `start()` 内读 `.claude/CLAUDE.md` + `~/.claude/CLAUDE.md`，扩 `loadSkillIndex` 调用到 4 个目录，重构 systemPrompt 拼装顺序
-- [ ] [Step 3: codebase-map 提升为 skill](./step3-codebase-map-as-skill.md) — 新建 `.claude/skills/codebase-map/SKILL.md`，从 `.claude/rules/codebase-map.md` 复制内容 + 加 frontmatter
+- [x] [Step 3: codebase-map 提升为 skill](./step3-codebase-map-as-skill.md) — 新建 `.claude/skills/codebase-map/SKILL.md`，从 `.claude/rules/codebase-map.md` 复制内容 + 加 frontmatter
 - [ ] [Step 4: CLAUDE.md 精简改写](./step4-simplify-claude-md.md) — 按设计文档的精简方案改 `.claude/CLAUDE.md` 到 ~45 行
 
 ## 全局决策
