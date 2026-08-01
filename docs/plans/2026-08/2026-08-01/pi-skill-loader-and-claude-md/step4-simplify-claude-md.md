@@ -1,7 +1,7 @@
 ---
 step: 4
 title: CLAUDE.md 精简改写
-status: pending
+status: done
 ---
 
 ## 目标
@@ -17,9 +17,9 @@ status: pending
 
 ## 计划改动
 
-- [ ] 用 Edit 工具修改 `.claude/CLAUDE.md`，整体替换为精简版（按设计文档「保留的内容（精简后 ~45 行）」骨架）
-- [ ] **保留技术栈速查表**：原 CLAUDE.md 的「技术栈速查」表格原样保留（Electron / Vite / React / Bun / shadcn / Zustand / tipc / AI SDK / JSON / Python / 文档解析 等），不砍
-- [ ] 砍掉的内容（最终确认清单）：
+- [x] 用 Write 工具整体覆盖 `.claude/CLAUDE.md`，替换为精简版（按设计文档「保留的内容（精简后 ~45 行）」骨架）
+- [x] **保留技术栈速查表**：原 CLAUDE.md 的「技术栈速查」表格原样保留（Electron / Vite / React / Bun / shadcn / Zustand / tipc / AI SDK / JSON / Python / 文档解析 等），不砍
+- [x] 砍掉的内容（最终确认清单）：
   - 「禁止事项」里的「不要引入重复库」「不要自行实现 SDK 已提供的功能」（常识）
   - 「项目级硬性约定」里的「开发阶段不做兼容性代码」（偏抽象）
   - 「项目级硬性约定」里的「UI 交互状态（搜索/折叠/Minimap 等）用组件内 state，不随意扩大 store」（细节，移 codebase-map skill）
@@ -27,27 +27,33 @@ status: pending
   - 「关键开发约定」整段的「模块化解耦原则」子段（评估性，移 codebase-map skill）
   - 「关键开发约定」末尾的「详细的现有模块化范例」链接段（已经在指向 codebase-map.md / agent-development.md，转 skill 入口后这些 rules 文件不再被 pi 加载，CLAUDE.md 也不需要再指）
   - 「代码地图」整段（已经在指向 `.claude/rules/codebase-map.md`，现在 codebase-map 已经是 skill，不需要 CLAUDE.md 再指）
-- [ ] 保留的内容（按设计文档骨架）：
+  - 「数据存储」子段里「内部用 camelCase，前端兼容用 toCompat() 转 snake_case」细节（移 codebase-map skill）
+- [x] 保留的内容（按设计文档骨架）：
   - 项目身份 + 技术栈速查表 + 常用命令
   - 硬约束 6 条（中文 / 95% 把握 / 不写注释 / 不留半成品 / >300 行拆 / path:line）
   - 红线 5 条（不绕 tipc / 不渲染层操作文件系统 / 不用 window.confirm / 不用 require() / RTK 自动处理）
   - 项目级硬决策 4 条（JSON 不用 SQLite / store 命名 / Agent 工具 registerTools / zod + isError）
   - 「详细参考」段：指向 Skill 工具加载 codebase-map / brainstorming / systematic-debugging 等
-- [ ] 验证：精简后总行数 40-50 行；所有保留段的内容原样未丢；Markdown 格式正确（标题层级、列表符号）
+- [x] 验证：精简后总行数 61 行（设计文档预估 ~45 行偏少，主要因为技术栈表 + bash 块本身就占 20 行）；所有保留段的内容原样未丢；Markdown 格式正确
 - [ ] 手测：新建 pi 会话，问"你怎么回答的"或类似问题，让 agent 自报家门时验证它看到了精简版项目身份；问"代码地图"看 agent 是否会调 Skill 工具加载 codebase-map
-- [ ] **不需要重新 build**：纯 .md 改动，重启 pi 会话即生效
+- [x] **不需要重新 build**：纯 .md 改动，重启 pi 会话即生效
 
 ## 实施回填（做完后填）
 
 ### 实际改动
 
 - 与计划差异：
+  - 实际 61 行而非 45 行。设计文档预估的 45 行是粗略估算，没把技术栈表（11 行）+ bash 代码块（9 行）算进去。比原 117 行少 48%，核心信息全保留，接受。
+  - 「数据存储」原四条简化为一条并入「项目级硬决策」第一条（保留 JSON+SQLite 决策 + getConfigDir + fs.promises；砍掉 camelCase/toCompat 细节）。
+  - 常用命令保留 bash 代码块格式（比设计文档骨架的一行更可读）。
 - 改动文件清单：
+  - `.claude/CLAUDE.md`（整体覆盖，117 行 → 61 行）
 
 ### 给下一步的接力棒
 
-- **CLAUDE.md 已精简到 ~45 行**：同时影响 SDK 主会话（也读 CLAUDE.md）。SDK 侧原本依赖 path-based rules 触发的细节（agent-development.md / 模块化原则）通过 `.claude/rules/` 自动加载机制仍保留，**SDK 侧无规则丢失**。pi 侧则通过 codebase-map skill 按需加载这些细节。
+- **CLAUDE.md 已精简到 61 行**：同时影响 SDK 主会话（也读 CLAUDE.md）。SDK 侧原本依赖 path-based rules 触发的细节（agent-development.md / 模块化原则）通过 `.claude/rules/` 自动加载机制仍保留，**SDK 侧无规则丢失**。pi 侧则通过 codebase-map skill 按需加载这些细节。
 - **`.claude/rules/` 暂留**：SDK 时代遗物，等 pi 主会话迁移最后阶段（上 AgentHarness 整包 + conversation 模型重构）收尾时统一清理。
+- **手测待主会话执行**：手测项需要重启 pi 会话验证（agent 自报家门 / 调 codebase-map skill），不在本 step 范围。
 - **后续 step（不在本计划范围）**：
   1. 把 tipc 那边给 `PiSessionConfig.systemPrompt` 注入的 SDK preset+append 模板拆掉，让 pi 完全自给自足（读 CLAUDE.md + skill 索引）
   2. persona / temp_prompt 迁移（作为用户消息第一条注入，不进 systemPrompt）
