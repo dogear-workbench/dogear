@@ -1,0 +1,60 @@
+diff --git a/node_modules/@earendil-works/pi-agent-core/.bun-tag-e499507601f5dafe b/.bun-tag-e499507601f5dafe
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/dist/harness/env/nodejs.js b/dist/harness/env/nodejs.js
+index b552266b5b615c1f5e2b64fdaf683921d6f361ad..91c777bbbcbbfdba2b36fcc24fbb25a65b4bd3ba 100644
+--- a/dist/harness/env/nodejs.js
++++ b/dist/harness/env/nodejs.js
+@@ -54,7 +54,7 @@ function fileInfoFromStats(path, stats) {
+     if (!kind)
+         return err(new FileError("invalid", "Unsupported file type", path));
+     return ok({
+-        name: path.replace(/\/+$/, "").split("/").pop() ?? path,
++        name: path.replace(/\\/g, "/").replace(/\/+$/, "").split("/").pop() ?? path,
+         path,
+         kind,
+         size: stats.size,
+diff --git a/dist/harness/prompt-templates.js b/dist/harness/prompt-templates.js
+index 520316f494454fc3614c6780fd7f9844fd5d7f92..bba1efc3c025699661695ee05f6c127cc37d9ab1 100644
+--- a/dist/harness/prompt-templates.js
++++ b/dist/harness/prompt-templates.js
+@@ -172,7 +172,7 @@ function parseFrontmatter(content) {
+     }
+ }
+ function basenameEnvPath(path) {
+-    const normalized = path.replace(/\/+$/, "");
++    const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+     const slashIndex = normalized.lastIndexOf("/");
+     return slashIndex === -1 ? normalized : normalized.slice(slashIndex + 1);
+ }
+diff --git a/dist/harness/skills.js b/dist/harness/skills.js
+index 5b94819ba70f183c190843107f3f69fca2200a21..695b133bd12d2115f1f61560075d40d989510d5b 100644
+--- a/dist/harness/skills.js
++++ b/dist/harness/skills.js
+@@ -287,21 +287,21 @@ async function resolveKind(env, info, diagnostics) {
+     return target.value.kind === "file" || target.value.kind === "directory" ? target.value.kind : undefined;
+ }
+ function joinEnvPath(base, child) {
+-    return `${base.replace(/\/+$/, "")}/${child.replace(/^\/+/, "")}`;
++    return `${base.replace(/\\/g, "/").replace(/\/+$/, "")}/${child.replace(/\\/g, "/").replace(/^\/+/, "")}`;
+ }
+ function dirnameEnvPath(path) {
+-    const normalized = path.replace(/\/+$/, "");
++    const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+     const slashIndex = normalized.lastIndexOf("/");
+     return slashIndex <= 0 ? "/" : normalized.slice(0, slashIndex);
+ }
+ function basenameEnvPath(path) {
+-    const normalized = path.replace(/\/+$/, "");
++    const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "");
+     const slashIndex = normalized.lastIndexOf("/");
+     return slashIndex === -1 ? normalized : normalized.slice(slashIndex + 1);
+ }
+ function relativeEnvPath(root, path) {
+-    const normalizedRoot = root.replace(/\/+$/, "");
+-    const normalizedPath = path.replace(/\/+$/, "");
++    const normalizedRoot = root.replace(/\\/g, "/").replace(/\/+$/, "");
++    const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+     if (normalizedPath === normalizedRoot)
+         return "";
+     return normalizedPath.startsWith(`${normalizedRoot}/`)
