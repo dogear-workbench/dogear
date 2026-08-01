@@ -17,7 +17,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 数据模型 + 存量迁移](./step1-data-model-migration.md) — `ModelProfile`/`ModelSelection` 类型改造，启动时一次性迁移旧三档字段到 `piModels`
-- [ ] [Step 2: provider.ts 协议路由 + 能力目录查询](./step2-provider-routing.md) — `resolvePiModel`/`buildPiModel`/`buildPiModels` 按 `piWireApi` 分支，查 pi-ai 内置目录借能力元数据，算出 `thinkingLevel`
+- [x] [Step 2: provider.ts 协议路由 + 能力目录查询](./step2-provider-routing.md) — `resolvePiModel`/`buildPiModel`/`buildPiModels` 按 `piWireApi` 分支，查 pi-ai 内置目录借能力元数据，算出 `thinkingLevel`
 - [ ] [Step 3: pi 运行时接入 thinkingLevel](./step3-thinking-level-wiring.md) — 主会话 + 四条后台任务消费 `resolvePiModel` 新增的 `thinkingLevel`
 - [ ] [Step 4: 设置页 UI + 模型选择组件适配](./step4-settings-ui.md) — Profile 表单 pi 分支（协议下拉 + 模型清单 CRUD）、`ModelSelector`/`dedupeProfileTiers` 分支
 - [ ] [Step 5: 联调验收](./step5-integration-verify.md) — 真实 OpenAI Key 跑 GPT-5 端到端 + anthropic-sdk 路径回归

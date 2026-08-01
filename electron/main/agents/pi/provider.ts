@@ -1,6 +1,9 @@
 import { createModels, createProvider } from '@earendil-works/pi-ai';
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
-import type { Model } from '@earendil-works/pi-ai';
+import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
+import { ANTHROPIC_MODELS } from '@earendil-works/pi-ai/providers/anthropic.models';
+import { OPENAI_MODELS } from '@earendil-works/pi-ai/providers/openai.models';
+import type { Api, Model, ModelThinkingLevel } from '@earendil-works/pi-ai';
 import {
   isProfileComplete,
   type AppSettings,
@@ -10,24 +13,45 @@ import {
 } from '../../services/settings-types.js';
 
 export interface PiModelResult {
-  model: Model<'anthropic-messages'>;
+  model: Model<Api>;
   profile: ModelProfile;
-  tier: ModelTier;
+  tier: string;
+  thinkingLevel: ModelThinkingLevel;
 }
 
-function buildPiModel(profile: ModelProfile, modelId: string, tier: ModelTier): Model<'anthropic-messages'> {
+function resolveWireApi(profile: ModelProfile): 'anthropic-messages' | 'openai-responses' {
+  return profile.piWireApi ?? 'anthropic-messages';
+}
+
+function lookupCatalogModel(wireApi: 'anthropic-messages' | 'openai-responses', modelId: string) {
+  // ModelCatalog 的键是字面量联合，按用户传入的 string 查表需要断言成 Record<string, Model<Api>>
+  const catalog = (wireApi === 'openai-responses' ? OPENAI_MODELS : ANTHROPIC_MODELS) as Record<string, Model<Api>>;
+  const entry = catalog[modelId];
+  if (!entry) return undefined;
+  return {
+    reasoning: entry.reasoning,
+    thinkingLevelMap: entry.thinkingLevelMap,
+    contextWindow: entry.contextWindow,
+    maxTokens: entry.maxTokens,
+  };
+}
+
+function buildPiModel(profile: ModelProfile, modelId: string, tierOrLabel: string): Model<Api> {
+  const wireApi = resolveWireApi(profile);
+  const catalog = lookupCatalogModel(wireApi, modelId);
   return {
     // pi 直接把 id 当作请求体里的 model 字段发出去，必须是真实模型名
     id: modelId,
-    name: `${profile.name} / ${tier}`,
-    api: 'anthropic-messages',
+    name: `${profile.name} / ${tierOrLabel}`,
+    api: wireApi,
     provider: profile.id,
     baseUrl: profile.baseUrl,
-    reasoning: false,
+    reasoning: catalog?.reasoning ?? false,
+    thinkingLevelMap: catalog?.thinkingLevelMap,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 200_000,
-    maxTokens: 8192,
+    contextWindow: catalog?.contextWindow ?? 200_000,
+    maxTokens: catalog?.maxTokens ?? 8192,
   };
 }
 
@@ -47,14 +71,28 @@ export function resolvePiModel(
     throw new Error(`模型方案「${profile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`);
   }
 
-  const tierMap: Record<ModelTier, string> = {
-    haiku: profile.haikuModel,
-    sonnet: profile.sonnetModel,
-    opus: profile.opusModel,
-  };
-  const tier = target.tier as ModelTier;
-  const model = buildPiModel(profile, tierMap[tier], tier);
-  return { model, profile, tier };
+  let modelId: string;
+  let tier: string;
+  if (profile.apiFormat === 'pi') {
+    if (!(profile.piModels ?? []).includes(target.tier)) {
+      throw new Error(`模型「${target.tier}」不在方案「${profile.name}」的模型清单里`);
+    }
+    modelId = target.tier;
+    tier = target.tier;
+  } else {
+    // anthropic-sdk 路径的 tier 只会是 ModelTier 三选一，按需收窄
+    const tierMap: Record<ModelTier, string> = {
+      haiku: profile.haikuModel,
+      sonnet: profile.sonnetModel,
+      opus: profile.opusModel,
+    };
+    tier = target.tier;
+    modelId = tierMap[target.tier as ModelTier];
+  }
+
+  const model = buildPiModel(profile, modelId, tier);
+  const thinkingLevel: ModelThinkingLevel = appSettings.ai.effort ?? 'off';
+  return { model, profile, tier, thinkingLevel };
 }
 
 /**
@@ -63,7 +101,16 @@ export function resolvePiModel(
  * pi 运行时不使用，迁移完成后统一清理。
  */
 export function buildPiModels(profile: ModelProfile) {
-  const api = anthropicMessagesApi();
+  const wireApi = resolveWireApi(profile);
+  const api = wireApi === 'openai-responses' ? openAIResponsesApi() : anthropicMessagesApi();
+  const models =
+    profile.apiFormat === 'pi'
+      ? (profile.piModels ?? []).map((id) => buildPiModel(profile, id, id))
+      : [
+          buildPiModel(profile, profile.haikuModel, 'haiku'),
+          buildPiModel(profile, profile.sonnetModel, 'sonnet'),
+          buildPiModel(profile, profile.opusModel, 'opus'),
+        ];
   const provider = createProvider({
     id: profile.id,
     name: profile.name,
@@ -74,14 +121,10 @@ export function buildPiModels(profile: ModelProfile) {
         resolve: async () => ({ auth: { apiKey: profile.apiKey } }),
       },
     },
-    models: [
-      buildPiModel(profile, profile.haikuModel, 'haiku'),
-      buildPiModel(profile, profile.sonnetModel, 'sonnet'),
-      buildPiModel(profile, profile.opusModel, 'opus'),
-    ],
+    models,
     api,
   });
-  const models = createModels();
-  models.setProvider(provider);
-  return models;
+  const piModels = createModels();
+  piModels.setProvider(provider);
+  return piModels;
 }
