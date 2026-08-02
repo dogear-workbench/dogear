@@ -1,7 +1,7 @@
 ---
 step: 1
 title: Thinking 流事件转换
-status: pending
+status: done
 ---
 
 ## 目标
@@ -30,11 +30,14 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无。
+- 改动文件清单：`electron/main/agents/pi-session/message-converter.ts`、本文件。
+- `convertPiEvent()` 在 `message_update` 中将 `thinking_delta` 转换为 `type: 'thinking'` 的 `ExtendedSessionMessage`；`thinking_start` 与 `thinking_end` 继续忽略。
+- 同步更新事件转换模块说明，准确覆盖 text、thinking 与工具事件。
+- 已执行 `bun run lint`（仅项目既有 83 条 warning，无 error）与 `bun run build:electron`（通过）。
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`convertPiEvent(event: AgentEvent): ExtendedSessionMessage | null` 已支持 `text_delta` 和 `thinking_delta`。
+- 下个 step 该从哪里继续：在 `electron/main/agents/pi-session/pi-session.ts` 实现 PiSession 的 `dontAsk` 自动放行权限模式。
+- 待办或已知限制：无。

@@ -1,6 +1,6 @@
 /**
- * pi Agent 事件 → 前端 ExtendedSessionMessage 转换
- * 与现有 QueryBasedSession.convertSDKMessage 对应，但只覆盖 pi 目前产出的事件形状。
+ * pi Agent 事件 → 前端 ExtendedSessionMessage 转换。
+ * 覆盖文本与 thinking 增量，以及工具调用的起止事件。
  */
 
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
@@ -15,11 +15,7 @@ function extractToolResultText(content: unknown): string {
     .join('\n');
 }
 
-/**
- * Step 1（walking skeleton）只处理文本增量，映射到 type:'text'。
- * Step 3 补上 tool_execution_start/tool_execution_end（Agent 顶层事件，非 assistantMessageEvent）→ tool_use/tool_result。
- * 后续 step 还可以再追加 thinking_delta → thinking。
- */
+/** 将 pi 事件转换为既有前端消息。 */
 export function convertPiEvent(event: AgentEvent): ExtendedSessionMessage | null {
   if (event.type === 'tool_execution_start') {
     return {
@@ -47,6 +43,14 @@ export function convertPiEvent(event: AgentEvent): ExtendedSessionMessage | null
   if (ame.type === 'text_delta') {
     return {
       type: 'text',
+      content: ame.delta,
+      timestamp: Date.now(),
+    };
+  }
+
+  if (ame.type === 'thinking_delta') {
+    return {
+      type: 'thinking',
       content: ame.delta,
       timestamp: Date.now(),
     };
