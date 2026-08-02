@@ -623,7 +623,9 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">运行时格式</label>
                       <p className="text-xs text-muted-foreground">
                         决定该方案的对话走哪套运行时。默认 anthropic-sdk（Claude Agent SDK，功能完整）；
-                        pi（pi-ai + pi-agent-core）目前仅支持纯文本对话，无工具/权限/skill。
+                        pi（pi-ai + pi-agent-core）已支持基础工具（Read/Write/Edit/Bash/Grep/Glob）、
+                        常驻记忆工具、skill 加载、权限卡片、插话队列，但暂不支持 fork/压缩/子会话派遣/
+                        group/reference/市场插件 skill/stock 等业务工具包。
                       </p>
                       <select
                         className="h-9 w-full px-3 text-sm border rounded bg-background"
