@@ -14,7 +14,7 @@
 
 - [x] [Step 1: Thinking 流事件转换](./step1-thinking-stream.md) — 将 pi 的 `thinking_delta` 转为既有前端可渲染的 thinking 消息。
 - [x] [Step 2: 全自动权限模式](./step2-auto-approve-permission.md) — 实现 PiSession 的权限模式存储、SDK `dontAsk` 兼容映射与自动放行。
-- [ ] [Step 3: 上下文用量快照](./step3-context-usage.md) — 从 pi assistant usage 发出 `usageContext` 事件，恢复既有上下文进度展示。
+- [x] [Step 3: 上下文用量快照](./step3-context-usage.md) — 从 pi assistant usage 发出 `usageContext` 事件，恢复既有上下文进度展示。
 
 ## 全局决策
 
@@ -24,3 +24,9 @@
 - 上下文快照按单条 assistant `message_end` 的最新 usage 计算，不使用整轮累计 usage，避免多工具轮次累加造成当前上下文大小虚高。
 - 上下文 token 口径固定为 `input + cacheRead + cacheWrite`；最大窗口来自 `MODEL_CONTEXT_WINDOWS`。未知模型窗口时不伪造比例，`maxTokens` 与 `percentage` 均为 `0`。
 - 所有新增事件继续通过现有 EventEmitter → conversation runtime → usage service 链路传递，不新增渲染层文件系统访问或绕过 tipc 的 IPC。
+
+## 完成总结
+
+- PiSession 已将 `thinking_delta` 转换为既有前端消息流可直接渲染的 thinking 消息。
+- PiSession 已支持 SDK `PermissionMode`，其中 `dontAsk` 自动放行，其他模式保留逐工具确认的保守语义。
+- PiSession 已从每条 assistant usage 发出并持久化上下文快照，复用既有 usage 刷新链路。

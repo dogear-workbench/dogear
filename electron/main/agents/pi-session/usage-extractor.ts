@@ -20,7 +20,7 @@
  */
 
 import type { AssistantMessage, Usage } from '@earendil-works/pi-ai';
-import type { ConversationUsageEntry, ToolCallRecord, ToolActivity } from '../../types.js';
+import type { ContextSnapshot, ConversationUsageEntry, ToolCallRecord, ToolActivity } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 import { MODEL_CONTEXT_WINDOWS } from '../../services/usage/usage-extractor.js';
 
@@ -61,6 +61,26 @@ export function createPiUsageAccumulator(): PiUsageAccumulator {
 }
 
 /** 把单条 AssistantMessage.usage 累加到累加器 */
+/** 从单条 assistant message 创建当前上下文用量快照。 */
+export function extractPiContextSnapshot(message: AssistantMessage, turnIndex: number): ContextSnapshot | null {
+  const usage = message.usage;
+  if (!usage) return null;
+
+  const model = message.responseModel || message.model;
+  const totalTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  const maxTokens = MODEL_CONTEXT_WINDOWS[model] ?? 0;
+
+  return {
+    turnIndex,
+    timestamp: Date.now(),
+    totalTokens,
+    maxTokens,
+    percentage: maxTokens > 0 ? totalTokens / maxTokens * 100 : 0,
+    model,
+    categories: [],
+  };
+}
+
 export function accumulatePiUsage(accum: PiUsageAccumulator, message: AssistantMessage): void {
   const u: Usage | undefined = message.usage;
   const input = u?.input ?? 0;

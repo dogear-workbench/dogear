@@ -32,6 +32,7 @@ import { getReviewSkillDir } from '../../services/memory/review-skill-service.js
 import {
   createPiUsageAccumulator,
   accumulatePiUsage,
+  extractPiContextSnapshot,
   extractPiUsageEntry,
   type PiUsageAccumulator,
 } from './usage-extractor.js';
@@ -214,8 +215,15 @@ export class PiSession extends EventEmitter {
 
     // message_end：单次 LLM call 结束，AssistantMessage.usage 携带本轮 token 用量，累加进 currentRunUsageAccum
     if (event.type === 'message_end' && event.message && (event.message as { role?: string }).role === 'assistant') {
+      const assistantMessage = event.message as AssistantMessage;
       if (!this.currentRunUsageAccum) this.currentRunUsageAccum = createPiUsageAccumulator();
-      accumulatePiUsage(this.currentRunUsageAccum, event.message as AssistantMessage);
+      accumulatePiUsage(this.currentRunUsageAccum, assistantMessage);
+
+      const conversationId = this.config.conversationId;
+      const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex);
+      if (conversationId && snapshot) {
+        this.emit('usageContext', { conversationId, snapshot });
+      }
     }
 
     const message = convertPiEvent(event);

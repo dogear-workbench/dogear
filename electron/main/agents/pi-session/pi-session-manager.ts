@@ -12,10 +12,10 @@ import { getRendererHandlers } from '@egoist/tipc/main';
 import { v4 as uuidv4 } from 'uuid';
 import { mainLogger } from '../logger.js';
 import { PiSession, type PiSessionConfig } from './pi-session.js';
-import { appendEntry as appendUsageEntry } from '../../services/usage/usage-service.js';
+import { appendContext as appendUsageContext, appendEntry as appendUsageEntry } from '../../services/usage/usage-service.js';
 import { applyUsageSummary } from '../../services/conversation-service.js';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
-import type { ConversationUsageEntry } from '../../types.js';
+import type { ContextSnapshot, ConversationUsageEntry } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 
 function broadcastUsageEntryAdded(conversationId: string): void {
@@ -101,6 +101,12 @@ export class PiSessionManager extends EventEmitter {
       if (!conversationId) return;
       await appendUsageEntry(conversationId, entry);
       applyUsageSummary(conversationId, entry).catch(() => {});
+      broadcastUsageEntryAdded(conversationId);
+    });
+
+    session.on('usageContext', async ({ conversationId, snapshot }: { conversationId?: string; snapshot: ContextSnapshot }) => {
+      if (!conversationId) return;
+      await appendUsageContext(conversationId, snapshot);
       broadcastUsageEntryAdded(conversationId);
     });
 

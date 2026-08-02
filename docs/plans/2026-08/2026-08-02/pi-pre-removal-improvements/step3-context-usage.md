@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 上下文用量快照
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,11 +36,15 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：为使已有 EventEmitter → usage service 链路在 PiSessionManager 中闭合，补充了 `pi-session-manager.ts` 的 `usageContext` 监听、持久化与刷新广播；未新增 IPC 或渲染层改动。
+- 改动文件清单：`electron/main/agents/pi-session/usage-extractor.ts`、`electron/main/agents/pi-session/pi-session.ts`、`electron/main/agents/pi-session/pi-session-manager.ts`、本文件。
+- 新增 `extractPiContextSnapshot()`：从单条 assistant usage 计算 `input + cacheRead + cacheWrite`，已知模型窗口取 `MODEL_CONTEXT_WINDOWS`；未知窗口保持真实 token 总数且 `maxTokens`、`percentage` 为 `0`。
+- PiSession 在每次 assistant `message_end` 以当前 `usageTurnIndex` emit `usageContext`，同一 run 的后续快照会覆盖为最新上下文。
+- PiSessionManager 将快照写入既有 usage service，随后广播已有 `usageEntryAdded`，无需新增 IPC。
+- 已执行 `bun run lint`（仅项目既有 83 条 warning，无 error）与 `bun run build:electron`（通过）。
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`extractPiContextSnapshot(message, turnIndex): ContextSnapshot | null`；PiSession 发出 `{ conversationId, snapshot }` 的 `usageContext` 事件。
+- 下个 step 该从哪里继续：本计划全部步骤已完成。
+- 待办或已知限制：无。
