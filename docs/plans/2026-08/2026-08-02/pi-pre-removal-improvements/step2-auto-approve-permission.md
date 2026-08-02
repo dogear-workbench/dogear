@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 全自动权限模式
-status: pending
+status: done
 ---
 
 ## 目标
@@ -35,11 +35,15 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无。
+- 改动文件清单：`electron/main/agents/pi-session/pi-session.ts`、本文件。
+- 新增 `currentPermissionMode`，默认 `default`；`setPermissionMode(mode)` 更新状态、记录日志并 emit `permissionModeChanged`。
+- 新增 `getPermissionMode()`，与 conversation runtime attach 返回值兼容。
+- `handleBeforeToolCall()` 在最前方仅对 `dontAsk` 自动放行；其他 SDK 权限模式继续走既有豁免、会话规则、持久化规则与前端确认链路。
+- 已执行 `bun run lint`（仅项目既有 83 条 warning，无 error）与 `bun run build:electron`（通过）。
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`setPermissionMode(mode: PermissionMode)` 与 `getPermissionMode(): PermissionMode` 已由 PiSession 提供。
+- 下个 step 该从哪里继续：在 `usage-extractor.ts` 提取单条 assistant message 的上下文快照，并在 PiSession 的 `message_end` 发出 `usageContext`。
+- 待办或已知限制：无。

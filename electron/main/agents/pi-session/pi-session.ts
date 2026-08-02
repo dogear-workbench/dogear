@@ -14,6 +14,7 @@ import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import { Agent, type AgentEvent, type BeforeToolCallContext, type BeforeToolCallResult } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
+import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import type { AssistantMessage, UserMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
@@ -90,6 +91,7 @@ export class PiSession extends EventEmitter {
   // 缓存当前生效的 selection/profile，供 setModel 判断是否需要重启会话
   private currentModelSelection: ModelSelection | null = null;
   private currentResolvedProfile?: ModelProfile;
+  private currentPermissionMode: PermissionMode = 'default';
   // requestId -> 挂起的权限确认请求，等待前端 respondPermissionRequest 调用来 resolve
   private pendingPermissionRequests: Map<string, PendingPermissionRequest> = new Map();
   // 本会话进程内免确认的工具名集合（allow_session 语义，不落盘，关闭会话即失效）
@@ -320,6 +322,10 @@ export class PiSession extends EventEmitter {
     signal?: AbortSignal,
   ): Promise<BeforeToolCallResult | undefined> {
     const toolName = context.toolCall.name;
+    if (this.currentPermissionMode === 'dontAsk') {
+      return undefined;
+    }
+
     if (isPermissionExempt(toolName) || this.sessionAllowedTools.has(toolName)) {
       return undefined;
     }
@@ -453,9 +459,14 @@ export class PiSession extends EventEmitter {
     this.pendingPermissionRequests.clear();
   }
 
-  /** pi 阶段一没有工具/canUseTool，因此没有权限模式概念，no-op */
-  async setPermissionMode(): Promise<void> {
-    this.logger.warn('setPermissionMode: pi 会话阶段一不支持权限模式，忽略');
+  async setPermissionMode(mode: PermissionMode): Promise<void> {
+    this.currentPermissionMode = mode;
+    this.logger.info('更改 pi 权限模式:', mode);
+    this.emit('permissionModeChanged', { mode });
+  }
+
+  getPermissionMode(): PermissionMode {
+    return this.currentPermissionMode;
   }
 
   /**

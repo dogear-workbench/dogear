@@ -13,7 +13,7 @@
 ## 步骤索引
 
 - [x] [Step 1: Thinking 流事件转换](./step1-thinking-stream.md) — 将 pi 的 `thinking_delta` 转为既有前端可渲染的 thinking 消息。
-- [ ] [Step 2: 全自动权限模式](./step2-auto-approve-permission.md) — 实现 PiSession 的权限模式存储、SDK `dontAsk` 兼容映射与自动放行。
+- [x] [Step 2: 全自动权限模式](./step2-auto-approve-permission.md) — 实现 PiSession 的权限模式存储、SDK `dontAsk` 兼容映射与自动放行。
 - [ ] [Step 3: 上下文用量快照](./step3-context-usage.md) — 从 pi assistant usage 发出 `usageContext` 事件，恢复既有上下文进度展示。
 
 ## 全局决策
