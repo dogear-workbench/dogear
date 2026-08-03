@@ -46,6 +46,8 @@ export interface ConversationIndex {
   forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
   /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
   archivedAt?: string;
+  /** 归档原因；SDK 主会话移除一次性迁移写入 'sdk-main-session-removed'，手动归档不写此字段 */
+  archiveReason?: string;
   groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';    // P1 只产生 'main'
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
@@ -776,4 +778,109 @@ export async function migrateOrphanConversations(workspaceId: string): Promise<n
     await saveWorkspaceConversations(workspaceId, file);
   }
   return count;
+}
+
+// ============================================================
+// SDK 主会话移除：一次性归档迁移
+// ============================================================
+
+/**
+ * 归档迁移的幂等版本号。写入到每个工作区 conversations.json 的顶层 `version` 字段——
+ * 该字段本身就是文件结构版本 marker（与 migration-p3/p4 用 schemaVersion 标记同一思路），
+ * 达到此版本即视为该工作区已完成 SDK 主会话归档迁移，不再重复扫描。
+ */
+const SDK_ARCHIVE_MIGRATION_VERSION = 3;
+
+/** 迁移写入的归档原因，标识"因移除 SDK 主会话而被冻结"的旧对话 */
+export const ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED = 'sdk-main-session-removed';
+
+export interface SdkArchiveMigrationResult {
+  /** 本次实际归档（此前未归档）的对话数 */
+  archivedCount: number;
+  /** 本次跳过（已被用户手动归档过，未重置其 archivedAt）的对话数 */
+  skippedAlreadyArchivedCount: number;
+  /** 实际执行了迁移的工作区数 */
+  workspacesProcessed: number;
+  /** 因 version 已达标而跳过的工作区数（幂等命中） */
+  workspacesSkipped: number;
+}
+
+/**
+ * 对单个工作区执行归档迁移。幂等：文件 version >= SDK_ARCHIVE_MIGRATION_VERSION 时直接跳过
+ * （返回 null），此后该工作区新建的对话与再次调用本函数都不会被重复处理或改写 archivedAt。
+ */
+async function migrateSdkArchiveForWorkspace(
+  workspaceId: string,
+): Promise<{ archived: number; skippedAlreadyArchived: number } | null> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  if (file.version >= SDK_ARCHIVE_MIGRATION_VERSION) return null;
+
+  let archived = 0;
+  let skippedAlreadyArchived = 0;
+  const now = new Date().toISOString();
+
+  for (const conv of Object.values(file.conversations)) {
+    // 清除遗留 sdkSessionId：SDK 主会话 runtime 已移除，不再有任何路径依赖此字段
+    if (conv.sdkSessionId) conv.sdkSessionId = null;
+
+    if (conv.archivedAt) {
+      // 已被用户手动归档过：不重置归档时间，也不覆盖其归档原因
+      skippedAlreadyArchived++;
+      continue;
+    }
+
+    conv.archivedAt = now;
+    conv.archiveReason = ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED;
+    conv.updatedAt = now;
+    archived++;
+  }
+
+  file.version = SDK_ARCHIVE_MIGRATION_VERSION;
+  await saveWorkspaceConversations(workspaceId, file);
+  return { archived, skippedAlreadyArchived };
+}
+
+/**
+ * SDK 主会话移除的一次性迁移入口：遍历全部工作区，把既有 Conversation（包括尚无
+ * sdkSessionId 的空对话）统一归档并清除遗留 sdkSessionId。
+ *
+ * 幂等：每个工作区独立按 version marker 判定，重复调用不会重置已归档对话的
+ * archivedAt，也不会影响迁移完成后新建的对话（新对话所在文件 version 已是最新，
+ * 不会再进入归档循环）。
+ *
+ * 调用时机：由 electron/main/index.ts 在启动迁移阶段显式调用，必须排在
+ * migration-p3（依赖 sdkSessionId 匹配旧会话卡升级）之后，避免清空 sdkSessionId
+ * 导致那一步的匹配全部落空。
+ */
+export async function runSdkMainSessionArchiveMigration(): Promise<SdkArchiveMigrationResult> {
+  const workspacesDir = path.join(getConfigDir(), 'workspaces');
+  const result: SdkArchiveMigrationResult = {
+    archivedCount: 0,
+    skippedAlreadyArchivedCount: 0,
+    workspacesProcessed: 0,
+    workspacesSkipped: 0,
+  };
+
+  try {
+    const entries = await fs.readdir(workspacesDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const outcome = await migrateSdkArchiveForWorkspace(entry.name);
+        if (outcome === null) {
+          result.workspacesSkipped++;
+          continue;
+        }
+        result.workspacesProcessed++;
+        result.archivedCount += outcome.archived;
+        result.skippedAlreadyArchivedCount += outcome.skippedAlreadyArchived;
+      } catch (err) {
+        console.warn(`[conversation-service] SDK 主会话归档迁移失败 wsId=${entry.name}:`, err);
+      }
+    }
+  } catch {
+    // workspaces 目录不存在，无需迁移
+  }
+
+  return result;
 }

@@ -1,27 +1,16 @@
 // electron/main/tipc/conversations.ts
 import { tipc } from '@egoist/tipc/main';
-import { deleteSession } from '@anthropic-ai/claude-agent-sdk';
 import fs from 'node:fs/promises';
 import * as conversationService from '../services/conversation-service.js';
 import * as treeService from '../services/conversation-tree-service.js';
-import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as groupService from '../services/group-service.js';
 import { deleteUsage } from '../services/usage/usage-service.js';
-import { getClaudeConfigDir } from './agent.js';
 import { loadSettings } from '../services/settings-service.js';
 import { readIndex, writeIndex, removeGroupEverywhere } from '../services/memory/smart-category-store.js';
 import { getGroupDir } from '../services/memory/group-digest-store.js';
 
 const t = tipc.create();
 
-/**
- * 调用 SDK deleteSession 清理 JSONL 历史文件。
- * 失败不抛异常（静默），避免阻塞索引删除。
- *
- * 注意：SDK 的 deleteSession 是主进程内直接调用的函数（非 spawn CLI），
- * 它会读取 process.env.CLAUDE_CONFIG_DIR 来定位 JSONL 文件。为保证准确，
- * 调用前临时设置 process.env.CLAUDE_CONFIG_DIR，调用完毕后恢复。
- */
 /**
  * 拉取工作区所有 group 的 updatedAt，按倒序重排树。
  * 失败静默：对话本身写入已成功，重排只是 UX 优化。
@@ -68,26 +57,6 @@ async function deleteGroupIfEmpty(workspaceId: string, groupId: string): Promise
     console.log('[auto-delete-group] 空组已清理:', groupId);
   } catch (error) {
     console.warn('[auto-delete-group] 空组检测失败:', error);
-  }
-}
-
-async function tryDeleteSdkSession(workspaceId: string, sdkSessionId: string): Promise<void> {
-  const originalEnv = process.env.CLAUDE_CONFIG_DIR;
-  try {
-    const workspace = await workspaceJsonService.getById(workspaceId);
-    if (!workspace?.path) {
-      console.warn('[deleteSession] 工作区路径不存在，跳过 JSONL 清理:', workspaceId);
-      return;
-    }
-    process.env.CLAUDE_CONFIG_DIR = getClaudeConfigDir();
-    await deleteSession(sdkSessionId, { dir: workspace.path });
-    console.log('[deleteSession] 已清理 SDK 历史:', sdkSessionId);
-  } catch (error) {
-    console.warn('[deleteSession] 清理 SDK 历史失败（对话索引仍会被删除）:', error);
-  } finally {
-    // 恢复原值（无论之前是否设置）
-    if (originalEnv === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-    else process.env.CLAUDE_CONFIG_DIR = originalEnv;
   }
 }
 
@@ -155,11 +124,7 @@ export const conversationsRouter = {
     .input<{ conversationId: string; workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        // 如果对话有 sdkSessionId，先通过 SDK 清理 JSONL 历史文件（失败静默）
         const conv = await conversationService.getById(input.workspaceId, input.conversationId);
-        if (conv?.sdkSessionId) {
-          await tryDeleteSdkSession(input.workspaceId, conv.sdkSessionId);
-        }
         const orphanedGroupId = conv?.groupId;
 
         await conversationService.deleteConversation(input.workspaceId, input.conversationId);

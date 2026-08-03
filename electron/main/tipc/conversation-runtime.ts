@@ -10,7 +10,7 @@ export const conversationRuntimeRouter = {
   /**
    * 桌面端 attach 到指定 conversation 的 runtime session。
    * 若 conversation 已有存活 session，直接复用（retain +1）并返回当前 turn 快照；
-   * 否则新建 session（resume / fork 参数由主进程 buildConversationSessionConfig 统一构建）。
+   * 否则由 PiSessionManager 新建 session（resume / fork 参数暂未接入 pi 运行时，留给后续 step）。
    */
   attachConversationRuntime: t.procedure
     .input<{
