@@ -1,10 +1,10 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { preheatLongTermPool } from '../../services/stock/long-term-preheat-service.js';
 import type { LongTermPreheatResult, LongTermCandidateData } from '../../services/stock/long-term-preheat-service.js';
 import { rankByLongTerm } from '../../services/stock/long-term-rank-service.js';
 import type { RankByLongTermResult, LongTermWeights } from '../../services/stock/long-term-rank-service.js';
 import { registerTools } from './tool-registry.js';
+import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
 registerTools([
   {
@@ -94,110 +94,114 @@ function formatLongTermOutput(result: Extract<LongTermPreheatResult, { ok: true 
 // 工具创建函数
 // ============================================================
 
-export function createStockPickingTools() {
-  return createSdkMcpServer({
-    name: 'dogear-stock-picking',
-    version: '2.0.0',
-    tools: [
-      // ========================================
-      // 工具: 长期候选池预热
-      // ========================================
-      tool(
-        'PreheatLongTermPool',
-        '5 年长期视角候选池预热。硬筛条件只吃行业 + 卫生条件（excludeNegativePe / excludeSt），' +
-        '不看价格/PE/市值等短期估值条件。\n' +
-        '执行链路：全市场行业硬筛 → 可获取性预检（1 期财报）→ 5 年年报（ROE均值/CAGR/稳定性）→ 周 K 趋势指标（MA26/MA52/年内位置）→ 完整性检查。\n' +
-        'insufficientYears 是年报 <3 年的独立计数（与 failuresByCategory.financials 的技术失败分开统计）；两者都会从候选池剔除。\n' +
-        '返回: markdown 展示表 + 结构化 JSON 代码块（candidates 数组，供 RankByLongTerm 直接使用）。\n' +
-        '耗时预算: 单行业 limit=50 约 3-5 分钟；limit 上限 100 只；一次只传一个行业，多板块请分开多次调用（或派子会话并行），后续合并 candidates。',
-        {
-          industries: z.array(z.string()).min(1)
-            .describe('CSRC 行业分类名列表（带分类代码前缀，如"C27医药制造业"），不确定名称先调 ListIndustries 查询真实值域；传多个行业会分别硬筛后合并去重'),
-          excludeNegativePe: z.boolean().default(true)
-            .describe('是否排除亏损股（PE<0），默认排除'),
-          excludeSt: z.boolean().default(true)
-            .describe('是否排除 ST/*ST 股票，默认排除'),
-          limit: z.number().min(1).max(100).default(50)
-            .describe('候选池上限，默认 50，最大 100'),
-        },
-        async (args) => {
-          const result = await preheatLongTermPool(
-            {
-              industries: args.industries,
-              excludeNegativePe: args.excludeNegativePe,
-              excludeSt: args.excludeSt,
-            },
-            {
-              limit: args.limit,
-            },
-          );
+/**
+ * 创建长期选股工具中立定义（ToolDef[]）
+ * @returns ToolDef 数组
+ */
+export function createStockPickingToolDefs(): ToolDef[] {
+  return [
+    // ========================================
+    // 工具: 长期候选池预热
+    // ========================================
+    defineTool(
+      'PreheatLongTermPool',
+      '5 年长期视角候选池预热。硬筛条件只吃行业 + 卫生条件（excludeNegativePe / excludeSt），' +
+      '不看价格/PE/市值等短期估值条件。\n' +
+      '执行链路：全市场行业硬筛 → 可获取性预检（1 期财报）→ 5 年年报（ROE均值/CAGR/稳定性）→ 周 K 趋势指标（MA26/MA52/年内位置）→ 完整性检查。\n' +
+      'insufficientYears 是年报 <3 年的独立计数（与 failuresByCategory.financials 的技术失败分开统计）；两者都会从候选池剔除。\n' +
+      '返回: markdown 展示表 + 结构化 JSON 代码块（candidates 数组，供 RankByLongTerm 直接使用）。\n' +
+      '耗时预算: 单行业 limit=50 约 3-5 分钟；limit 上限 100 只；一次只传一个行业，多板块请分开多次调用（或派子会话并行），后续合并 candidates。',
+      z.object({
+        industries: z.array(z.string()).min(1)
+          .describe('CSRC 行业分类名列表（带分类代码前缀，如"C27医药制造业"），不确定名称先调 ListIndustries 查询真实值域；传多个行业会分别硬筛后合并去重'),
+        excludeNegativePe: z.boolean().default(true)
+          .describe('是否排除亏损股（PE<0），默认排除'),
+        excludeSt: z.boolean().default(true)
+          .describe('是否排除 ST/*ST 股票，默认排除'),
+        limit: z.number().min(1).max(100).default(50)
+          .describe('候选池上限，默认 50，最大 100'),
+      }),
+      async (args) => {
+        const result = await preheatLongTermPool(
+          {
+            industries: args.industries,
+            excludeNegativePe: args.excludeNegativePe,
+            excludeSt: args.excludeSt,
+          },
+          {
+            limit: args.limit,
+          },
+        );
 
-          if (!result.ok) {
-            return {
-              isError: true,
-              content: [{ type: 'text' as const, text: result.error }],
-            };
-          }
+        if (!result.ok) {
+          return {
+            isError: true,
+            content: [{ type: 'text' as const, text: result.error }],
+          };
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: formatLongTermOutput(result) }],
+        };
+      },
+    ),
+
+    // ========================================
+    // 工具: 长期综合评分排序
+    // ========================================
+    defineTool(
+      'RankByLongTerm',
+      '对 PreheatLongTermPool 的候选池按 4 维度长期指标打分排序：ROE 均值（盈利能力）/ 增长 CAGR（成长性）/ 长期趋势（周 K MA26/MA52 + 年内位置）/ 稳定性（ROE 变异系数 + 净利下滑年数）。\n' +
+      '使用方法: 从 PreheatLongTermPool 返回结果的 JSON 代码块中取 candidates 数组，原样传入本工具。\n' +
+      '权重可反复调整秒级重跑（如偏重 ROE 则 roeMean=0.4、growth=0.2、trend=0.2、stability=0.2）；不传 weights 则用默认均等权重（各 0.25）。\n' +
+      '返回: markdown 排名表（含各维度得分 0-100 + 原始指标值）+ weightsApplied JSON（显示实际生效权重，含归零重分配说明）。',
+      z.object({
+        candidates: z.array(z.record(z.string(), z.any())).min(1)
+          .describe('候选池数组，直接从 PreheatLongTermPool 结果的 JSON 代码块里取 candidates 字段原样复制'),
+        weights: z.object({
+          roeMean: z.number().min(0).optional().describe('ROE 均值权重，默认 0.25'),
+          growth: z.number().min(0).optional().describe('增长 CAGR 权重，默认 0.25'),
+          trend: z.number().min(0).optional().describe('长期趋势权重，默认 0.25'),
+          stability: z.number().min(0).optional().describe('稳定性权重，默认 0.25'),
+        }).optional()
+          .describe('权重覆盖，默认均等（各 0.25）；自动归一化；某维度全池数据缺失时自动归零并重分配'),
+        top: z.number().min(1).max(50).default(15)
+          .describe('返回前 N 只，默认 15，最大 50'),
+      }),
+      async (args) => {
+        try {
+          const candidates = args.candidates as unknown as LongTermCandidateData[];
+          const weights: LongTermWeights | undefined = args.weights
+            ? {
+              roeMean: args.weights.roeMean,
+              growth: args.weights.growth,
+              trend: args.weights.trend,
+              stability: args.weights.stability,
+            }
+            : undefined;
+
+          const result: RankByLongTermResult = rankByLongTerm({ candidates, weights, top: args.top });
+
+          const weightsJson = JSON.stringify(result.weightsApplied, null, 2);
+          const text = `${result.markdown}\n\n### 生效权重（weightsApplied）\n\n\`\`\`json\n${weightsJson}\n\`\`\``;
 
           return {
-            content: [{ type: 'text' as const, text: formatLongTermOutput(result) }],
+            content: [{ type: 'text' as const, text }],
           };
-        },
-      ),
+        } catch (error) {
+          return {
+            isError: true,
+            content: [{
+              type: 'text' as const,
+              text: `长期评分排序失败: ${error instanceof Error ? error.message : String(error)}`,
+            }],
+          };
+        }
+      },
+    ),
+  ];
+}
 
-      // ========================================
-      // 工具: 长期综合评分排序
-      // ========================================
-      tool(
-        'RankByLongTerm',
-        '对 PreheatLongTermPool 的候选池按 4 维度长期指标打分排序：ROE 均值（盈利能力）/ 增长 CAGR（成长性）/ 长期趋势（周 K MA26/MA52 + 年内位置）/ 稳定性（ROE 变异系数 + 净利下滑年数）。\n' +
-        '使用方法: 从 PreheatLongTermPool 返回结果的 JSON 代码块中取 candidates 数组，原样传入本工具。\n' +
-        '权重可反复调整秒级重跑（如偏重 ROE 则 roeMean=0.4、growth=0.2、trend=0.2、stability=0.2）；不传 weights 则用默认均等权重（各 0.25）。\n' +
-        '返回: markdown 排名表（含各维度得分 0-100 + 原始指标值）+ weightsApplied JSON（显示实际生效权重，含归零重分配说明）。',
-        {
-          candidates: z.array(z.record(z.string(), z.any())).min(1)
-            .describe('候选池数组，直接从 PreheatLongTermPool 结果的 JSON 代码块里取 candidates 字段原样复制'),
-          weights: z.object({
-            roeMean: z.number().min(0).optional().describe('ROE 均值权重，默认 0.25'),
-            growth: z.number().min(0).optional().describe('增长 CAGR 权重，默认 0.25'),
-            trend: z.number().min(0).optional().describe('长期趋势权重，默认 0.25'),
-            stability: z.number().min(0).optional().describe('稳定性权重，默认 0.25'),
-          }).optional()
-            .describe('权重覆盖，默认均等（各 0.25）；自动归一化；某维度全池数据缺失时自动归零并重分配'),
-          top: z.number().min(1).max(50).default(15)
-            .describe('返回前 N 只，默认 15，最大 50'),
-        },
-        async (args) => {
-          try {
-            const candidates = args.candidates as unknown as LongTermCandidateData[];
-            const weights: LongTermWeights | undefined = args.weights
-              ? {
-                roeMean: args.weights.roeMean,
-                growth: args.weights.growth,
-                trend: args.weights.trend,
-                stability: args.weights.stability,
-              }
-              : undefined;
-
-            const result: RankByLongTermResult = rankByLongTerm({ candidates, weights, top: args.top });
-
-            const weightsJson = JSON.stringify(result.weightsApplied, null, 2);
-            const text = `${result.markdown}\n\n### 生效权重（weightsApplied）\n\n\`\`\`json\n${weightsJson}\n\`\`\``;
-
-            return {
-              content: [{ type: 'text' as const, text }],
-            };
-          } catch (error) {
-            return {
-              isError: true,
-              content: [{
-                type: 'text' as const,
-                text: `长期评分排序失败: ${error instanceof Error ? error.message : String(error)}`,
-              }],
-            };
-          }
-        },
-      ),
-    ],
-  });
+export function createStockPickingTools() {
+  return toSdkServer('dogear-stock-picking', '2.0.0', createStockPickingToolDefs());
 }

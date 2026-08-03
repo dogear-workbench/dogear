@@ -1,7 +1,7 @@
 ---
 step: 2e
 title: 可选工具包 ToolDef 中立化改造
-status: pending
+status: done
 ---
 
 ## 目标
@@ -24,24 +24,24 @@ status: pending
 
 ## 计划改动
 
-- [ ] `article-tools.ts`：新增 `createArticleToolDefs(workspacePath: string): ToolDef[]`，原 `createArticleTools` 改造成调用 `toSdkServer('dogear-article', '1.0.0', createArticleToolDefs(workspacePath))` 的薄壳，对外签名、返回类型、行为不变。
-- [ ] `stock-tools.ts`：同上模式，新增 `createStockToolDefs(): ToolDef[]`，`createStockTools()` 改薄壳。
-- [ ] `stock-analysis-tools.ts`：新增 `createStockAnalysisToolDefs(): ToolDef[]`，`createStockAnalysisTools()` 改薄壳。
-- [ ] `stock-announcement-tools.ts`：新增 `createAnnouncementToolDefs(): ToolDef[]`，`createAnnouncementTools()` 改薄壳。
-- [ ] `stock-picking-tools.ts`：新增 `createStockPickingToolDefs(): ToolDef[]`，`createStockPickingTools()` 改薄壳。
-- [ ] 五个文件的原 handler 逻辑原样保留（含 `isError: true` 错误返回约定），只做"包装层"重构，不改工具的业务行为、参数 schema 或错误信息文案。
-- [ ] 执行 `bun run build:electron`，确认现有 SDK 侧调用点（`conversation-runtime-service.ts` 里旧的 `buildConversationSessionConfig` 已在 Step 3 stash 里被删——如果验收时 Step 3 仍未 pop 回来，改为确认 `agent-worker.ts` 等其他仍在用这些工厂的调用点签名不受影响）零类型错误。
+- [x] `article-tools.ts`：新增 `createArticleToolDefs(workspacePath: string): ToolDef[]`，原 `createArticleTools` 改造成调用 `toSdkServer('dogear-article', '1.0.0', createArticleToolDefs(workspacePath))` 的薄壳，对外签名、返回类型、行为不变。
+- [x] `stock-tools.ts`：同上模式，新增 `createStockToolDefs(): ToolDef[]`，`createStockTools()` 改薄壳。
+- [x] `stock-analysis-tools.ts`：新增 `createStockAnalysisToolDefs(): ToolDef[]`，`createStockAnalysisTools()` 改薄壳。
+- [x] `stock-announcement-tools.ts`：新增 `createAnnouncementToolDefs(): ToolDef[]`，`createAnnouncementTools()` 改薄壳。
+- [x] `stock-picking-tools.ts`：新增 `createStockPickingToolDefs(): ToolDef[]`，`createStockPickingTools()` 改薄壳（version 沿用原有 `2.0.0`，未与其它四个统一，避免顺手改动）。
+- [x] 五个文件的原 handler 逻辑原样保留（含 `isError: true` 错误返回约定），只做"包装层"重构，不改工具的业务行为、参数 schema 或错误信息文案。
+- [x] 执行 `bun run build:electron`，零类型错误。原调用点（`conversation-runtime-service.ts` 的 `buildConversationSessionConfig`）确认已在 Step 3 stash 里被删，当前工作区五个工厂函数暂无调用方（不影响类型检查）。
 
 ## 实施回填（做完后填）
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无实质差异，`stock-picking-tools.ts` 薄壳的 version 参数沿用原代码就有的 `'2.0.0'`（其余四个是 `'1.0.0'`），未做统一，属改造前既有差异。
+- 改动文件清单：`article-tools.ts` / `stock-tools.ts` / `stock-analysis-tools.ts` / `stock-announcement-tools.ts` / `stock-picking-tools.ts`（均只做机械重排，handler 逐字节保留）。
 
 ### 给下一步的接力棒
 
-- 五个 `createXxxToolDefs` 的最终导出签名：
-- 是否有工具在中立化过程中发现原 SDK schema 用了 `toPiTools` 不支持的 zod 特性（如需要手动修正 schema 写法）：
+- 五个 `createXxxToolDefs` 最终签名：`createArticleToolDefs(workspacePath: string)`、`createStockToolDefs()`、`createStockAnalysisToolDefs()`、`createAnnouncementToolDefs()`、`createStockPickingToolDefs()`，均返回 `ToolDef[]`。
+- 已知运行时风险点（TS 类型检查通过，但 `z.toJSONSchema`/pi-agent-core 侧兼容性未实测，Step 2F 接入时留意）：`CalcIndicators.params`/`EvalFormula.stock_data` 的嵌套 `z.record`；`RankByLongTerm.candidates` 的 `z.array(z.record(z.string(), z.any()))`；`ScreenStocks.conditions.exclude_negative_pe` 是嵌套子对象里的 `.default(true)`（memory-tools.ts 范例从未出现过 `.default()` 用法）；`ListAnnouncements.types`/`CalcIndicators.indicators` 的 `z.array(z.enum(...))`；`GetFundFlow`/`GetNorthboundHolding` 的判别字段驱动可选参数（校验靠 handler 内部手动兜底，非本次改造引入）。如实测报错，作为 Step 2F（或插入 Step 2G）范围处理，不回改本 step。
 - 下个 step 入口：Step 2F 直接 `import` 这些 `createXxxToolDefs`，在 `PiSession.start()` 里按 `enabledToolPacks` 挂载。
-- 待办或已知限制：
+- 待办或已知限制：未做 pi 运行时实际加载验证（`toPiTools` 消费路径），仅确认 TS 类型层面形状正确 + 薄壳产出与改造前逐字节等价。
