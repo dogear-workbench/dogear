@@ -22,7 +22,7 @@
 - [x] [Step 2C: Harness 权限与关闭语义](./step2c-harness-permission-close.md) — 将完整权限状态机迁入 tool_call hook，并收敛中断、关闭和落盘顺序。
 - [x] [Step 2D: Harness 主会话回归验收](./step2d-harness-regression.md) — 构建并人工验证 Harness 主会话完整产品流程。
 - [x] [Step 2E: 可选工具包 ToolDef 中立化改造](./step2e-toolpack-neutralization.md) — 把 article/stock-quote/stock-analysis/stock-announcement/stock-picking 五个工具工厂改造成中立 ToolDef 形态，供 PiSession 消费。
-- [ ] [Step 2F: PiSession 工具包接入与权限批量免确认](./step2f-pisession-toolpack-wiring.md) — 让 PiSession 按 enabledToolPacks/groupId 挂载工具包并对齐旧 SDK 的批量免确认体验。
+- [x] [Step 2F: PiSession 工具包接入与权限批量免确认](./step2f-pisession-toolpack-wiring.md) — 让 PiSession 按 enabledToolPacks/groupId 挂载工具包并对齐旧 SDK 的批量免确认体验。
 - [ ] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
 - [ ] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
 - [ ] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。

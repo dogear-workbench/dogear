@@ -18,15 +18,24 @@ import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
-import { toPiTools } from '../pi/tool-adapter.js';
+import { toPiTools, type ToolDef } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
 import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
-import { isPermissionExempt, isToolPreapproved } from './permission-rules.js';
+import { isPermissionExempt, isToolPreapproved, isToolInEnabledPack } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
+import { createArticleToolDefs } from '../tools/article-tools.js';
+import { createStockToolDefs } from '../tools/stock-tools.js';
+import { createStockAnalysisToolDefs } from '../tools/stock-analysis-tools.js';
+import { createAnnouncementToolDefs } from '../tools/stock-announcement-tools.js';
+import { createStockPickingToolDefs } from '../tools/stock-picking-tools.js';
+import { createGroupToolDefs } from '../tools/group-tools.js';
+import { createDelegationToolDefs } from '../tools/delegation-tools.js';
+import { createReviewToolDefs } from '../tools/review-tools.js';
+import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
@@ -53,6 +62,10 @@ export interface PiSessionConfig {
   workspaceId: string;
   harnessSessionId: string | null;
   onHarnessSessionCreated: (sessionId: string) => Promise<void>;
+  /** 用户在设置页开启的可选工具包名（对齐 tool-packs.ts 的 OPTIONAL_TOOL_PACKS[].name），缺省视为空数组 */
+  enabledToolPacks: string[];
+  /** 对话所属会话组 ID；存在时挂载 dogear-group / dogear-delegation（role='main'） */
+  groupId?: string;
 }
 
 enum PiSessionStatus {
@@ -120,6 +133,9 @@ export class PiSession extends EventEmitter {
   // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
   // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
   private closingPromise: Promise<void> | null = null;
+  // 工具名 → 所属工具包标识（OPTIONAL_TOOL_PACKS[].name 或 'dogear-group'/'dogear-delegation'/'dogear-memory-review'），
+  // start() 组装 toolDefs 时同步填充，供 handleToolCall 的批量免确认判定使用
+  private toolPackMap: Map<string, string> = new Map();
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -190,12 +206,62 @@ export class PiSession extends EventEmitter {
     ].filter(Boolean).join('\n\n');
 
     // 工具集合：builtin-tools（Read/Write/Edit/Bash，harness 原生工具，env 经 toolContext 注入）
-    // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具，统一 ToolDef 形状，不需要 env context）
-    const toolDefs = [
+    // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具 + 按 enabledToolPacks/groupId 挂载的可选工具包，
+    //   统一 ToolDef 形状，不需要 env context）
+    const registerPack = (packName: string, defs: ToolDef[]): ToolDef[] => {
+      for (const def of defs) this.toolPackMap.set(def.name, packName);
+      return defs;
+    };
+
+    const toolDefs: ToolDef[] = [
       createSkillTool(skillEntries),
       ...createSearchToolDefs(this.config.workspacePath),
       ...createMemoryToolDefs(this.config.workspacePath),
     ];
+
+    // 可选工具包（对齐旧 SDK 侧 enabledToolPacks 通配符体验）：article 依赖 workspacePath，其余四个不依赖
+    for (const pack of OPTIONAL_TOOL_PACKS) {
+      if (!this.config.enabledToolPacks.includes(pack.name)) continue;
+      switch (pack.name) {
+        case 'article':
+          if (this.config.workspacePath) {
+            toolDefs.push(...registerPack(pack.name, createArticleToolDefs(this.config.workspacePath)));
+          }
+          break;
+        case 'stock-quote':
+          toolDefs.push(...registerPack(pack.name, createStockToolDefs()));
+          break;
+        case 'stock-analysis':
+          toolDefs.push(...registerPack(pack.name, createStockAnalysisToolDefs()));
+          break;
+        case 'stock-announcement':
+          toolDefs.push(...registerPack(pack.name, createAnnouncementToolDefs()));
+          break;
+        case 'stock-picking':
+          toolDefs.push(...registerPack(pack.name, createStockPickingToolDefs()));
+          break;
+        default:
+          break;
+      }
+    }
+
+    // dogear-group / dogear-delegation：按 conversation.groupId 存在放行（本 step 只服务主会话，role 固定 'main'；
+    // 子会话的 pi 化工具包接入留给 Step 5）
+    if (this.config.groupId) {
+      toolDefs.push(...registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
+      toolDefs.push(...registerPack('dogear-delegation', createDelegationToolDefs({
+        role: 'main',
+        workspaceId: this.config.workspaceId,
+        groupId: this.config.groupId,
+        conversationId: this.config.conversationId,
+      })));
+    }
+
+    // dogear-memory-review：按 workspacePath 齐全放行，onSaved 主会话场景不传（无需感知落盘时机）
+    if (this.config.workspacePath) {
+      toolDefs.push(...registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
+    }
+
     const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
       ...createBuiltinFileTools(),
       ...toPiTools(toolDefs),
@@ -362,6 +428,13 @@ export class PiSession extends EventEmitter {
     }
 
     if (isPermissionExempt(toolName) || this.sessionAllowedTools.has(toolName)) {
+      return undefined;
+    }
+
+    // 工具包粒度批量免确认（对齐旧 SDK allowedTools: mcp__<server>__* 通配符体验）：
+    // 已启用的可选工具包 + dogear-group/dogear-delegation/dogear-memory-review 常驻放行类别，
+    // 整包不弹确认（不区分包内读写工具，口径与旧 SDK 侧 conversation-runtime-service 一致）
+    if (isToolInEnabledPack(toolName, this.toolPackMap, this.config.enabledToolPacks)) {
       return undefined;
     }
 

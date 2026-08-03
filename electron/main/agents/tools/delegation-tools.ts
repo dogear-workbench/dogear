@@ -8,13 +8,13 @@
  *
  * 所有跨会话通信都必须先过 hasDirectContractChannel 校验（服务层，contract-channel-service.ts）。
  */
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import * as bridge from '../delegation-bridge.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { hasDirectContractChannel } from '../../services/contract-channel-service.js';
 import { registerTools } from './tool-registry.js';
+import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
 registerTools([
   { name: 'CreateSession', description: '创建一个平级的新会话来协作处理任务', server: 'dogear-delegation', category: 'other' },
@@ -65,22 +65,22 @@ function textResult(text: string) {
   return { content: [{ type: 'text' as const, text }] };
 }
 
-export function createDelegationTools(opts: DelegationToolsOpts) {
+export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
   async function resolveOwnConversation() {
     return conversationService.getById(opts.workspaceId, opts.conversationId);
   }
 
-  const sharedTools = [
-    tool(
+  const sharedTools: ToolDef[] = [
+    defineTool(
       'SendMessage',
       SEND_MESSAGE_DESC,
-      {
+      z.object({
         toSessionId: z.string().min(1).describe('目标会话的 sdkSessionId（通过 CreateSession 返回值或 ListLinkedSessions 获取）'),
         message: z.string().min(1).describe('消息内容'),
         options: z.object({
           delivery: z.boolean().optional().describe('标记为正式交付（任务完成通知），配合 WaitForMessage 使用'),
         }).optional(),
-      },
+      }),
       async (args) => {
         const ownConv = await resolveOwnConversation();
         const ownSessionId = ownConv?.sdkSessionId;
@@ -123,13 +123,13 @@ export function createDelegationTools(opts: DelegationToolsOpts) {
       },
     ),
 
-    tool(
+    defineTool(
       'WaitForMessage',
       WAIT_FOR_MESSAGE_DESC,
-      {
+      z.object({
         fromSessionIds: z.array(z.string().min(1)).min(1).describe('要等待其消息的会话 sdkSessionId 列表'),
         timeoutMs: z.number().int().positive().optional().describe('超时毫秒数；缺省走 settings.subAgent.timeoutMinutes'),
-      },
+      }),
       async (args) => {
         const settings = await loadSettings();
         const effectiveTimeoutMs = args.timeoutMs ?? (settings.subAgent?.timeoutMinutes ?? 30) * 60_000;
@@ -142,10 +142,10 @@ export function createDelegationTools(opts: DelegationToolsOpts) {
       },
     ),
 
-    tool(
+    defineTool(
       'ListLinkedSessions',
       LIST_LINKED_DESC,
-      {},
+      z.object({}),
       async () => {
         if (opts.role === 'main') {
           const children = bridge.getChildrenByParent(opts.conversationId);
@@ -168,23 +168,19 @@ export function createDelegationTools(opts: DelegationToolsOpts) {
   ];
 
   if (opts.role === 'sub') {
-    return createSdkMcpServer({
-      name: 'dogear-delegation',
-      version: '2.0.0',
-      tools: sharedTools,
-    });
+    return sharedTools;
   }
 
-  const mainOnlyTools = [
-    tool(
+  const mainOnlyTools: ToolDef[] = [
+    defineTool(
       'CreateSession',
       '创建一个平级的新会话来协作处理任务。新会话与当前会话建立契约通道，可通过 SendMessage / WaitForMessage 双向通信。' +
       'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。',
-      {
+      z.object({
         task: z.string().min(1).describe('委派给新会话的任务描述（自然语言）'),
         outputPath: z.string().min(1).describe('建议新会话写入共享区的相对路径（如 hello.md），用于承载较长的交付内容'),
         title: z.string().optional().describe('新会话标题；缺省由系统生成'),
-      },
+      }),
       async (args) => {
         try {
           const snapshot = await bridge.startChild({
@@ -211,17 +207,17 @@ export function createDelegationTools(opts: DelegationToolsOpts) {
       },
     ),
 
-    tool(
+    defineTool(
       'CreateSessionBatch',
       '原子批量创建多个新会话。先一次性 dry-run 校验所有 outputPath 不冲突，任何一个冲突则整批拒绝；' +
       '全部 ok 才依次拉起。中途任意一个拉起失败将回滚已创建的会话。',
-      {
+      z.object({
         items: z.array(z.object({
           task: z.string().min(1).describe('子任务描述'),
           outputPath: z.string().min(1).describe('建议写入共享区的相对路径'),
           title: z.string().optional().describe('会话标题；缺省自动生成'),
         })).min(1).describe('批量创建条目列表'),
-      },
+      }),
       async (args) => {
         try {
           const preview = await bridge.previewClaim(
@@ -276,13 +272,13 @@ export function createDelegationTools(opts: DelegationToolsOpts) {
       },
     ),
 
-    tool(
+    defineTool(
       'StopSession',
       '停止当前会话直接派出的某个会话（仅对 running 有效）。停止后该会话状态变为 cancelled。' +
       '需要停止派出你自己的会话，或提醒对方停止时，请改用 SendMessage 表达意图。',
-      {
+      z.object({
         sessionId: z.string().min(1).describe('要停止的会话 sdkSessionId'),
-      },
+      }),
       async (args) => {
         const ownConv = await resolveOwnConversation();
         const ownSessionId = ownConv?.sdkSessionId;
@@ -315,9 +311,12 @@ export function createDelegationTools(opts: DelegationToolsOpts) {
     ),
   ];
 
-  return createSdkMcpServer({
-    name: 'dogear-delegation',
-    version: '2.0.0',
-    tools: [...mainOnlyTools, ...sharedTools],
-  });
+  return [...mainOnlyTools, ...sharedTools];
+}
+
+/**
+ * 创建协作通信专用 MCP Server（SDK 薄壳，签名和行为不变）
+ */
+export function createDelegationTools(opts: DelegationToolsOpts) {
+  return toSdkServer('dogear-delegation', '2.0.0', createDelegationToolDefs(opts));
 }

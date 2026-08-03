@@ -19,3 +19,29 @@ export function isPermissionExempt(toolName: string): boolean {
 export function isToolPreapproved(allowRules: string[] | undefined, toolName: string): boolean {
   return !!allowRules?.includes(toolName);
 }
+
+/**
+ * 常驻放行工具包：只要挂了就不弹确认，不受 enabledToolPacks 开关控制
+ * （dogear-group / dogear-delegation 按 conversation.groupId 存在挂载，dogear-memory-review 按 workspacePath 齐全挂载）。
+ */
+export const ALWAYS_ALLOWED_TOOL_PACKS: ReadonlySet<string> = new Set([
+  'dogear-group',
+  'dogear-delegation',
+  'dogear-memory-review',
+]);
+
+/**
+ * 工具包粒度批量免确认判定，对齐旧 SDK `allowedTools: mcp__<server>__*` 通配符体验：
+ * 给定工具名和 PiSession 组装 toolDefs 时构建的「工具名 → 工具包标识」映射表，
+ * 若该工具所属工具包在 enabledToolPacks 里，或属于 ALWAYS_ALLOWED_TOOL_PACKS 常驻放行类别，
+ * 则整包免确认（不区分包内读写工具，与旧 SDK 侧口径一致）。
+ */
+export function isToolInEnabledPack(
+  toolName: string,
+  toolPackMap: ReadonlyMap<string, string>,
+  enabledToolPacks: readonly string[],
+): boolean {
+  const pack = toolPackMap.get(toolName);
+  if (!pack) return false;
+  return ALWAYS_ALLOWED_TOOL_PACKS.has(pack) || enabledToolPacks.includes(pack);
+}

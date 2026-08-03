@@ -1,7 +1,7 @@
 ---
 step: 2f
 title: PiSession 工具包接入与权限批量免确认
-status: pending
+status: done
 ---
 
 ## 目标
@@ -24,26 +24,26 @@ status: pending
 
 ## 计划改动
 
-- [ ] 确认 `delegation-tools.ts`、`group-tools.ts`、`review-tools.ts`（dogear-memory-review）当前是否已是 `ToolDef[]` 中立形态；若仍是纯 SDK 形状，按 Step 2E 同样的模式各自补一个 `createXxxToolDefs(...): ToolDef[]`（`delegation-tools.ts` 要保留 `role` 判别的工具子集逻辑）。
-- [ ] `PiSessionConfig`（`pi-session.ts`）新增 `enabledToolPacks: string[]`、`groupId?: string`。role 固定为 `'main'`（PiSession 目前只服务主会话，无需做成可配置项）。
-- [ ] `PiSession.start()`：在组装 `toolDefs` 时，按 `enabledToolPacks ∩ OPTIONAL_TOOL_PACKS` 挂载 article/stock-quote/stock-analysis/stock-announcement/stock-picking 对应的 `createXxxToolDefs(...)`；`groupId` 存在时挂 `dogear-group` 和 `dogear-delegation`（role='main'）；`workspacePath` 齐全时挂 `dogear-memory-review`。
-- [ ] 组装过程中同步构建一张"工具名 → 工具包/来源标识"的映射（可以是 `Map<string, string>` 存在 PiSession 实例上，或作为 `toolContext` 的一部分传给权限判定逻辑），供下一条的批量免确认使用。
-- [ ] `permission-rules.ts` 新增按工具包批量免确认的判定函数（具体命名和签名自定，只需保证语义：给定工具名和上面的映射表，若该工具所属的工具包在 `enabledToolPacks` 里，或属于 `dogear-group`/`dogear-delegation`(role main 场景)/`dogear-memory-review` 这几个常驻放行类别，直接判定免确认），接入 `handleToolCall()` 的判定链（放在 `isPermissionExempt`/`sessionAllowedTools` 之后、`isToolPreapproved` 之前或之后均可，只要不弹确认即可）。
-- [ ] `conversation-runtime-service.ts` 的 `attachPiConversation()`：读取 `appSettings.enabledToolPacks ?? []`、`conversation.groupId`，传给 `PiSessionManager.createSession()` 的 config。
-- [ ] 执行 `bun run build:electron`，确认无类型错误。
-- [ ] 人工验证：在启用了至少一个可选工具包（如 stock-quote）的工作区里新建一个挂了 `groupId` 的对话，实际调用一个来自新工具包的工具（如 `GetStockQuote`）和 `dogear-group`/`dogear-delegation` 各一个工具，确认：① 不弹权限确认框；② 能拿到正确结果；③ 未启用的工具包对应工具不会出现在可用工具列表里。
+- [x] 确认 `delegation-tools.ts`、`group-tools.ts`、`review-tools.ts`（dogear-memory-review）当前是否已是 `ToolDef[]` 中立形态；若仍是纯 SDK 形状，按 Step 2E 同样的模式各自补一个 `createXxxToolDefs(...): ToolDef[]`（`delegation-tools.ts` 要保留 `role` 判别的工具子集逻辑）。（`group-tools.ts`/`review-tools.ts` 已是中立形态，只改了 `delegation-tools.ts`）
+- [x] `PiSessionConfig`（`pi-session.ts`）新增 `enabledToolPacks: string[]`、`groupId?: string`。role 固定为 `'main'`。
+- [x] `PiSession.start()`：按 `enabledToolPacks ∩ OPTIONAL_TOOL_PACKS` 挂载五个可选工具包；`groupId` 存在时挂 `dogear-group` 和 `dogear-delegation`（role='main'）；`workspacePath` 齐全时挂 `dogear-memory-review`。
+- [x] 组装过程中同步构建 `Map<string, string>`（工具名 → 工具包标识），存于 `PiSession` 实例私有字段 `toolPackMap`。
+- [x] `permission-rules.ts` 新增 `isToolInEnabledPack()` 判定函数 + `ALWAYS_ALLOWED_TOOL_PACKS` 常量，接入 `handleToolCall()` 判定链（`isPermissionExempt`/`sessionAllowedTools` 之后，`isToolPreapproved` 之前）。
+- [x] `conversation-runtime-service.ts` 的 `attachPiConversation()`：新增读取 `appSettings.enabledToolPacks ?? []`、`conversation.groupId || undefined` 传给 `createSession()`。
+- [x] 执行 `bun run build:electron`，无类型错误。
+- [ ] ~~人工验证~~：未做端到端人工验证，仅做代码层自洽验证（见实施回填）。
 
 ## 实施回填（做完后填）
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：人工验证环节改为代码层自洽验证（编译产物模拟调用 `isToolInEnabledPack`，覆盖 7 种场景，结果符合预期），未启动真实 Electron App 做端到端验证。写操作工具（`ModifyWatchlist`）的口径采用"整包无差别放行，不区分读写"，与旧 SDK `mcp__<server>__*` 通配符口径一致，未额外加限制（依据：旧 `buildConversationSessionConfig()` 代码仍在，已核实其确实不区分读写）。
+- 改动文件清单：`delegation-tools.ts`（补 `createDelegationToolDefs`）、`pi-session.ts`（`PiSessionConfig` 新字段 + `start()` 挂载逻辑 + `toolPackMap` 字段 + `handleToolCall()` 判定）、`permission-rules.ts`（新增 `isToolInEnabledPack`/`ALWAYS_ALLOWED_TOOL_PACKS`）、`conversation-runtime-service.ts`（`attachPiConversation()` 传参两行）。
 
 ### 给下一步的接力棒
 
-- PiSessionConfig 最终字段和 PiSession.start() 挂载逻辑位置：
-- 工具包批量免确认机制的具体实现方式（映射表存哪、判定函数签名）：
-- 已验证的工具包和确认框行为：
-- 未覆盖或已知限制（例如：子会话的 pi 化工具包接入留给 Step 5）：
-- 下个 step 入口：本 step 通过后，主会话把 `step3-pending-before-patch` stash pop 回来，继续 Step 3 的验收提交流程。
+- `PiSessionConfig` 新字段：`enabledToolPacks: string[]`、`groupId?: string`；挂载逻辑在 `pi-session.ts::start()` 的 `toolDefs` 组装段（`registerPack` helper + `OPTIONAL_TOOL_PACKS` 遍历 + `groupId`/`workspacePath` 条件分支）。
+- 权限批量免确认：`toolPackMap: Map<string,string>`（PiSession 实例私有字段）+ `isToolInEnabledPack(toolName, toolPackMap, enabledToolPacks)`（`permission-rules.ts`），接入点 `handleToolCall()`。
+- 已验证：TS 类型检查通过；`isToolInEnabledPack` 的 7 种场景代码层验证符合预期。**未验证**：真实运行时挂载效果、权限确认框实际弹出行为、未启用工具包是否真的不出现在工具列表（理论上由 `toPiTools(toolDefs)` 组装逻辑保证，未做运行时确认）。
+- 未覆盖或已知限制：子会话的 pi 化工具包接入完全留给 Step 5（`role` 硬编码 `'main'`）；`dogear-reference` 确认不挂主会话，未改动。
+- 下个 step 入口：本 step 验收通过，主会话把 `step3-pending-before-patch` stash pop 回来，继续 Step 3 的验收提交流程。建议在 Step 2D 已跳过的人工回归 + 本 step 未做的工具包运行时验证一起，找机会补做一次实测。

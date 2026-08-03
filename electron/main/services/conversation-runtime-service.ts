@@ -480,6 +480,8 @@ class ConversationRuntimeService {
         harnessSessionId: conversation.sessionId ?? null,
         onHarnessSessionCreated: (harnessSessionId) =>
           conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
+        enabledToolPacks: appSettings.enabledToolPacks ?? [],
+        groupId: conversation.groupId || undefined,
       });
       try {
         await session.start();
