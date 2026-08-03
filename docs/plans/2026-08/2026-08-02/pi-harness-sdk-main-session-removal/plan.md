@@ -17,7 +17,10 @@
 ## 步骤索引
 
 - [x] [Step 1: 验证 Harness 依赖与会话仓库](./step1-harness-repository.md) — 接入并验证 Harness API，建立按工作区隔离的 create/open/delete/fork 仓库边界。
-- [ ] [Step 2: Harness 驱动 PiSession](./step2-pi-session-harness.md) — 先接入最小 Conversation sessionId/workspaceId 生命周期，再以 Harness 替换裸 Agent，完成创建、恢复与运行时协议适配。
+- [ ] [Step 2A: Conversation 与 Harness Session 生命周期](./step2a-conversation-harness-lifecycle.md) — 为新 Conversation 建立 sessionId 的创建、回写与恢复闭环。
+- [ ] [Step 2B: Harness 消息与状态适配](./step2b-harness-message-state-adapter.md) — 用 adapter 替换裸 Agent，保持消息、插话、状态与 usage 语义。
+- [ ] [Step 2C: Harness 权限与关闭语义](./step2c-harness-permission-close.md) — 将完整权限状态机迁入 tool_call hook，并收敛中断、关闭和落盘顺序。
+- [ ] [Step 2D: Harness 主会话回归验收](./step2d-harness-regression.md) — 构建并人工验证 Harness 主会话完整产品流程。
 - [ ] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
 - [ ] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
 - [ ] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
@@ -28,7 +31,9 @@
 - 范围为“移除 SDK 主会话”：`@anthropic-ai/claude-agent-sdk` 暂不从依赖中卸载，`PARSE_ARTICLE` 仍可使用其 query、plugin 和 skill 发现能力。
 - 不做 SDK JSONL → Harness JSONL 转换，不维护双格式 Conversation 历史读取兼容。
 - 启动一次性迁移时，现有全部 Conversation（包括尚无 SDK session 的空对话）统一写入 `archivedAt` 和 `archiveReason: 'sdk-main-session-removed'`；旧 SDK JSONL 留盘作为不可操作备份。
-- 新 Conversation 的持久会话标识为 `sessionId: string | null`，不保存绝对路径；`null` 表示首次发送前尚未创建 Harness session。Step 2 先落地该字段及其 runtime create/open 回写闭环，Step 3 再执行旧 Conversation 的一次性归档。
+- 新 Conversation 的持久会话标识为 `sessionId: string | null`，不保存绝对路径；`null` 表示首次发送前尚未创建 Harness session。Step 2A 先落地该字段及其 runtime create/open 回写闭环，Step 3 再执行旧 Conversation 的一次性归档。
+- AgentHarness 的接入必须经 `pi-harness-adapter.ts` 隔离；Harness 事件、Session 与 Session Tree 类型不得泄漏出 `electron/main/agents/pi-session/`。
+- Step 2B 至 2C 不允许降低现有 PiSession 的权限确认、编辑工具参数、插话、消息、状态或 usage 语义；任一 API 差异必须通过 adapter 显式适配。
 - 新 Harness session 根目录固定为 `<configDir>/workspaces/<workspaceId>/sessions/`，不得写入用户真实 workspace；采用上游 `JsonlSessionRepo` 的 cwd 编码子目录与时间戳文件名布局，Conversation 仅持久化其稳定 `sessionId`。
 - `PiSession` 是 Dogear 的运行时门面；TIPC、store 和 React 组件不得使用 `AgentHarness`、`SessionTreeEntry`、`leafId` 等 Harness 类型。
 - 前端历史读取以 Conversation 为入口，不再传递或暴露底层 session 文件 ID；归档旧会话只显示冻结说明，不回放 SDK JSONL。
