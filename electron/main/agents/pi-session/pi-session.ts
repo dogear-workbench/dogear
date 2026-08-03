@@ -12,10 +12,10 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { Agent, type AgentEvent, type BeforeToolCallContext, type BeforeToolCallResult } from '@earendil-works/pi-agent-core';
+import type { AgentEvent, AgentHarnessTool, ExecutionEnv } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
-import type { AssistantMessage, UserMessage } from '@earendil-works/pi-ai';
+import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { toPiTools } from '../pi/tool-adapter.js';
@@ -23,6 +23,7 @@ import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
 import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
+import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { isPermissionExempt, isToolPreapproved } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
@@ -60,9 +61,9 @@ enum PiSessionStatus {
 }
 
 interface PendingPermissionRequest {
-  resolve: (result: BeforeToolCallResult | undefined) => void;
+  resolve: (result: HarnessToolCallResult | undefined) => void;
   toolName: string;
-  /** beforeToolCall 收到的原始 args 引用；agent-loop.js 里这个引用与后续 tool.execute 用的是同一个对象，
+  /** tool_call hook 收到的原始 input 引用；agent-harness.js 里这个引用与后续 tool.execute 用的是同一个对象，
    * 原地修改字段即可让"编辑参数后允许"生效，不需要额外的回写机制 */
   args: unknown;
 }
@@ -91,7 +92,10 @@ export class PiSession extends EventEmitter {
   private sessionId: string;
   private config: PiSessionConfig;
   private logger = mainLogger;
-  private agent: Agent | null = null;
+  private adapter: PiHarnessAdapter | null = null;
+  // Harness 不暴露 isStreaming 之类的运行状态查询，改由本地字段镜像 harness 的 phase：
+  // sendMessage() 调用 prompt() 前置 true，onSettled 回调置 false；见 syncSessionState()。
+  private running = false;
   private status: PiSessionStatus = PiSessionStatus.IDLE;
   // 缓存当前生效的 selection/profile，供 setModel 判断是否需要重启会话
   private currentModelSelection: ModelSelection | null = null;
@@ -101,9 +105,8 @@ export class PiSession extends EventEmitter {
   private pendingPermissionRequests: Map<string, PendingPermissionRequest> = new Map();
   // 本会话进程内免确认的工具名集合（allow_session 语义，不落盘，关闭会话即失效）
   private sessionAllowedTools: Set<string> = new Set();
-  // steer 队列长度（pi 没暴露 .length，dogear 自己计数）。
-  // pi 的 steeringMode 配置成 'one-at-a-time'：每个 turn_start drain 一条，
-  // 因此 steer() 时 +1，turn_start 事件处理时 -1（不发负数）。
+  // steer 队列长度，由 adapter 的 onSteerQueueChanged 回调（Harness queue_update 事件）镜像，
+  // 不再手动 +1/-1：queue_update 在 steer() 入队和 one-at-a-time drain 时都会触发，是权威数据源。
   private pendingSteerCount = 0;
   // sessionStateChanged 去重：记录上次广播的 running/pendingAction
   private lastEmittedRunning = false;
@@ -132,7 +135,7 @@ export class PiSession extends EventEmitter {
   }
 
   async start(): Promise<void> {
-    if (this.agent) {
+    if (this.adapter) {
       this.logger.warn('会话已经启动');
       return;
     }
@@ -140,13 +143,14 @@ export class PiSession extends EventEmitter {
     this.logger.info('=== 启动 pi 会话 ===', { sessionId: this.sessionId });
 
     const repository = getPiSessionRepository();
-    if (this.config.harnessSessionId) {
-      await repository.open(this.config.workspaceId, this.config.harnessSessionId);
-    } else {
-      const { info } = await repository.create(this.config.workspaceId);
-      await this.config.onHarnessSessionCreated(info.id);
-      this.config.harnessSessionId = info.id;
-    }
+    const session = this.config.harnessSessionId
+      ? await repository.open(this.config.workspaceId, this.config.harnessSessionId)
+      : await (async () => {
+          const { session: created, info } = await repository.create(this.config.workspaceId);
+          await this.config.onHarnessSessionCreated(info.id);
+          this.config.harnessSessionId = info.id;
+          return created;
+        })();
 
     const appSettings = await loadSettings();
     const { model, profile, tier, thinkingLevel } = resolvePiModel(
@@ -182,31 +186,32 @@ export class PiSession extends EventEmitter {
       skillIndexText,
     ].filter(Boolean).join('\n\n');
 
-    // 工具集合：builtin-tools（Read/Write/Edit/Bash，原生 pi AgentTool）
-    // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具，统一 ToolDef 形状)
+    // 工具集合：builtin-tools（Read/Write/Edit/Bash，harness 原生工具，env 经 toolContext 注入）
+    // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具，统一 ToolDef 形状，不需要 env context）
     const toolDefs = [
       createSkillTool(skillEntries),
       ...createSearchToolDefs(this.config.workspacePath),
       ...createMemoryToolDefs(this.config.workspacePath),
     ];
-    const tools = [...createBuiltinFileTools(this.config.workspacePath), ...toPiTools(toolDefs)];
+    const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
+      ...createBuiltinFileTools(),
+      ...toPiTools(toolDefs),
+    ];
 
-    this.agent = new Agent({
-      initialState: {
-        systemPrompt,
-        model,
-        tools,
-        thinkingLevel,
-      },
-      // 'one-at-a-time' 与 dogear 现有插话语义一致（SDK 侧 pendingMessages 也是一条条 shift 消费）：
-      // 每次 steer 进队列后，在下一个 turn_start 边界只 drain 一条注入，多余的留在队列里等下个 turn。
-      steeringMode: 'one-at-a-time',
-      streamFn: (m, ctx, streamOpts) =>
-        piModels.streamSimple(m, ctx, { ...streamOpts, timeoutMs: profile.apiTimeoutMs }),
-      beforeToolCall: (context, signal) => this.handleBeforeToolCall(context, signal),
+    this.adapter = new PiHarnessAdapter({
+      session,
+      models: piModels,
+      tools,
+      toolContext: { env },
+      systemPrompt,
+      model,
+      thinkingLevel,
+      timeoutMs: profile.apiTimeoutMs,
+      onAgentEvent: (event) => this.handleAgentEvent(event),
+      onSteerQueueChanged: (count) => this.handleSteerQueueChanged(count),
+      onSettled: () => this.handleSettled(),
+      onToolCall: (event) => this.handleToolCall(event),
     });
-
-    this.agent.subscribe((event) => this.handleAgentEvent(event));
 
     this.logger.info('✅ pi 会话已创建', {
       profile: profile.name,
@@ -217,15 +222,6 @@ export class PiSession extends EventEmitter {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
-    // turn_start：one-at-a-time 模式下 pi 在此刻 drain 一条 steer 消息。
-    // 即使本次 turn 不是被 steer 触发的（比如 prompt 直接开的），只要队列里有货就会被 drain 一条，
-    // 所以这里无条件在有队列时 -1。安全：if > 0 才减，防漂移。
-    if (event.type === 'turn_start' && this.pendingSteerCount > 0) {
-      this.pendingSteerCount--;
-      this.emit('pendingCountChanged', { count: this.pendingSteerCount });
-      this.syncSessionState();
-    }
-
     // message_end：单次 LLM call 结束，AssistantMessage.usage 携带本轮 token 用量，累加进 currentRunUsageAccum
     if (event.type === 'message_end' && event.message && (event.message as { role?: string }).role === 'assistant') {
       const assistantMessage = event.message as AssistantMessage;
@@ -281,14 +277,27 @@ export class PiSession extends EventEmitter {
       this.emitUsageEntry();
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
-
-      if (this.pendingSteerCount > 0) {
-        this.logger.warn('agent_end 时 steer 队列仍非空，强制清零:', this.pendingSteerCount);
-        this.pendingSteerCount = 0;
-        this.emit('pendingCountChanged', { count: 0 });
-      }
-      this.syncSessionState();
+      // running=false 的最终结算交给 onSettled（Harness settled 事件晚于 agent_end，
+      // 此时 steer 队列的真实状态已经由 queue_update 同步过，这里不再需要强制清零兜底）
     }
+  }
+
+  /**
+   * steer 队列长度变化（Harness queue_update 事件），入队与 one-at-a-time drain 都会触发。
+   */
+  private handleSteerQueueChanged(count: number): void {
+    this.pendingSteerCount = count;
+    this.emit('pendingCountChanged', { count });
+    this.syncSessionState();
+  }
+
+  /**
+   * 一次完整 run（含所有工具调用和插话）彻底结束（Harness settled 事件，晚于 agent_end），
+   * 驱动 running=false 的最终结算。
+   */
+  private handleSettled(): void {
+    this.running = false;
+    this.syncSessionState();
   }
 
   /**
@@ -316,13 +325,13 @@ export class PiSession extends EventEmitter {
 
   /**
    * 与 SDK 侧 QueryBasedSession.syncSessionState 对称的去重广播。
-   * running = agent.isStreaming || pendingSteerCount>0；pendingAction = pendingSteerCount>0。
+   * running = this.running（onSettled 镜像的 harness phase）|| pendingSteerCount>0；pendingAction = pendingSteerCount>0。
    * close() 不走这里，靠 sessionClosed 让前端清 Set。
    */
   private syncSessionState(): void {
     const conversationId = this.config.conversationId;
     if (!conversationId) return;
-    const running = !!this.agent?.state.isStreaming || this.pendingSteerCount > 0;
+    const running = this.running || this.pendingSteerCount > 0;
     const pendingAction = this.pendingSteerCount > 0;
     if (running !== this.lastEmittedRunning || pendingAction !== this.lastEmittedPendingAction) {
       this.lastEmittedRunning = running;
@@ -332,17 +341,19 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 工具调用权限拦截点。对齐 SDK 侧 canUseTool 语义：
+   * 工具调用权限拦截点（Harness tool_call hook）。对齐 SDK 侧 canUseTool 语义：
    * 只读工具（read/Glob/Grep）和本会话/持久化规则已允许的工具直接放行；
    * 其余工具 emit 'permissionRequest' 事件（走独立 IPC 通道，不经过 ExtendedSessionMessage 流，
    * 与 SDK 侧 conversation-runtime-service 的 permissionRequest 广播路径完全对称），
    * 挂起等待前端 respondPermissionRequest 调用来 resolve。
+   *
+   * 与裸 Agent 的 beforeToolCall 不同，Harness 的 tool_call hook 不带 AbortSignal 参数，
+   * 因此这里不再有 signal.addEventListener('abort', ...) 的自动拒绝兜底：当前唯一会触发
+   * harness 层面 abort 的路径就是 close()/interrupt()，两者都已经显式调用
+   * rejectAllPendingPermissionRequests()，功能等价。
    */
-  private async handleBeforeToolCall(
-    context: BeforeToolCallContext,
-    signal?: AbortSignal,
-  ): Promise<BeforeToolCallResult | undefined> {
-    const toolName = context.toolCall.name;
+  private async handleToolCall(context: HarnessToolCallEvent): Promise<HarnessToolCallResult | undefined> {
+    const toolName = context.toolName;
     if (this.currentPermissionMode === 'dontAsk') {
       return undefined;
     }
@@ -359,22 +370,15 @@ export class PiSession extends EventEmitter {
     const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.logger.info('权限确认请求:', { requestId, toolName });
 
-    return new Promise<BeforeToolCallResult | undefined>((resolve) => {
+    return new Promise<HarnessToolCallResult | undefined>((resolve) => {
       // 必须先注册到 pending map 再 emit：respondPermissionRequest 可能被同步调用
       // （例如测试场景），emit 在前会导致 map 里还查不到这个 requestId。
-      this.pendingPermissionRequests.set(requestId, { resolve, toolName, args: context.args });
-
-      signal?.addEventListener('abort', () => {
-        if (this.pendingPermissionRequests.has(requestId)) {
-          this.pendingPermissionRequests.delete(requestId);
-          resolve({ block: true, reason: '操作已取消' });
-        }
-      });
+      this.pendingPermissionRequests.set(requestId, { resolve, toolName, args: context.input });
 
       this.emit('permissionRequest', {
         requestId,
         toolName,
-        toolInput: context.args,
+        toolInput: context.input,
       });
     });
   }
@@ -388,51 +392,44 @@ export class PiSession extends EventEmitter {
     if (this.status === PiSessionStatus.CLOSED) {
       throw new Error('会话已关闭');
     }
-    if (!this.agent) {
+    if (!this.adapter) {
       throw new Error('会话尚未启动');
     }
 
     const text = typeof content === 'string' ? content : extractTextFromBlocks(content);
-    const agent = this.agent;
-    const isRunning = !!agent.state.isStreaming || this.pendingSteerCount > 0;
+    const adapter = this.adapter;
+    const isRunning = this.running || this.pendingSteerCount > 0;
 
     this.logger.info('发送用户消息到 pi 会话:', { length: text.length, isRunning, pendingSteer: this.pendingSteerCount });
 
     if (isRunning) {
       // 插话路径：steer 在当前 assistant turn 结束后注入（one-at-a-time 模式下排在已有队列后面）。
-      // prompt 的 Promise 只代表"消息进入管道"，不等整轮跑完；steer 本身是同步入队，立刻返回。
-      const steerMessage: UserMessage = {
-        role: 'user',
-        content: text,
-        timestamp: Date.now(),
-      };
-      agent.steer(steerMessage);
-      this.pendingSteerCount++;
-      this.emit('pendingCountChanged', { count: this.pendingSteerCount });
-      this.syncSessionState();
+      // pendingSteerCount / pendingCountChanged / syncSessionState 由 onSteerQueueChanged
+      // 回调（Harness queue_update 事件）驱动，这里不再手动计数。
+      await adapter.steer(text);
       return;
     }
 
+    this.running = true;
     try {
-      await agent.prompt(text);
-      // agent_end 事件已经会触发 syncSessionState；complete 也只是给上层 conversation-runtime
+      await adapter.prompt(text);
+      // settled 事件已经会触发 syncSessionState；complete 也只是给上层 conversation-runtime
       // 一个"本次 sendMessage 的 Promise resolved"信号，不代表 turn 跑完。
       this.emit('complete', { subtype: 'success' });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error('pi 会话执行失败:', message);
-      // 兜底：pi 极端路径（streamFn throw 等）可能跳过 agent_end，主动清本轮 usage 状态避免污染下一轮
+      // 兜底：harness.prompt() 在 createTurnState() 等阶段抛出时不会走到 agent_end/settled，
+      // 主动清本轮 usage 状态和 running 标记，避免会话卡在"运行中"、污染下一轮
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
+      this.running = false;
       this.emit('error', {
         type: 'error',
         error: message,
         timestamp: Date.now(),
       } as ExtendedSessionMessage);
     } finally {
-      // pi-agent-core 的 agent_end 触发时 isStreaming 仍是 true（finishRun 还没跑），
-      // 所以 handleAgentEvent 里基于 isStreaming 判断 running 会失败、不广播 false。
-      // 等 prompt() Promise resolve 时 finishRun 才完成、isStreaming 翻回 false，这里再算一次让前端收到 running=false。
       this.syncSessionState();
     }
   }
@@ -443,7 +440,7 @@ export class PiSession extends EventEmitter {
    * "现在关掉是否安全"的判据。
    */
   isIdle(): boolean {
-    return !this.agent?.state.isStreaming
+    return !this.running
       && this.pendingSteerCount === 0
       && this.pendingPermissionRequests.size === 0;
   }
@@ -452,10 +449,10 @@ export class PiSession extends EventEmitter {
     if (this.status === PiSessionStatus.CLOSED) return;
     this.logger.info('关闭 pi 会话:', this.sessionId);
 
-    this.agent?.clearAllQueues();
-    this.agent?.abort();
+    this.adapter?.abort();
     this.status = PiSessionStatus.CLOSED;
     this.pendingSteerCount = 0;
+    this.running = false;
     this.rejectAllPendingPermissionRequests('会话已关闭');
 
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
@@ -463,13 +460,12 @@ export class PiSession extends EventEmitter {
   }
 
   async interrupt(): Promise<void> {
-    // 不依赖 abort signal 是否会传导到 beforeToolCall 的挂起 Promise，主动拒绝兜底
-    // （与 SDK 侧 QueryBasedSession.interrupt() 的处理方式一致）
-    this.agent?.clearAllQueues();
+    // 不依赖 tool_call hook 收到 abort 信号（Harness 的 tool_call hook 不带 signal 参数），
+    // 主动拒绝兜底（与 SDK 侧 QueryBasedSession.interrupt() 的处理方式一致）
     this.pendingSteerCount = 0;
     this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');
-    this.agent?.abort();
+    this.adapter?.abort();
   }
 
   private rejectAllPendingPermissionRequests(reason: string): void {
@@ -495,7 +491,7 @@ export class PiSession extends EventEmitter {
    * - allow：本次放行；有 updatedInput 时原地改写 context.args
    * - allow_session：本次放行 + 本会话进程内记住该工具（不落盘，关闭会话即失效）
    * - always_allow：本次放行 + 落盘到 settings.permissionRules.allow（工具粒度，跨会话保留）
-   * - deny：beforeToolCall 返回 block，工具收到一条 error 结果
+   * - deny：tool_call hook 返回 block，工具收到一条 error 结果
    */
   respondPermissionRequest(
     requestId: string,

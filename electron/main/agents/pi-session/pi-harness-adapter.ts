@@ -1,0 +1,129 @@
+/**
+ * AgentHarness 构造与事件订阅的唯一入口（阶段二 Step 2B）。
+ *
+ * 把 AgentHarness / Session / AgentHarnessOwnEvent 等持久化相关类型封在本文件内，
+ * 对 pi-session.ts 只暴露 Dogear 语义的方法和事件回调（prompt/steer/abort + 消息/队列/settled/权限回调）。
+ * pi-session.ts 仍然拿到裸 `AgentEvent`（text/thinking/tool_execution_start/end/agent_end 等），
+ * 因为这批类型是 bare Agent 和 AgentHarness 共用的中立事件，不属于"Harness 专有类型"，
+ * 复用现有 convertPiEvent() 不需要改造。
+ */
+import {
+  AgentHarness,
+  type AgentEvent,
+  type AgentHarnessTool,
+  type ExecutionEnv,
+  type Session,
+  type JsonlSessionMetadata,
+} from '@earendil-works/pi-agent-core';
+import type { Api, Model, Models, ModelThinkingLevel } from '@earendil-works/pi-ai';
+
+/** AgentEvent 的全部 type 字面量，用于从 subscribe() 的并集事件流里筛出裸 Agent 事件 */
+const AGENT_EVENT_TYPES = new Set<string>([
+  'agent_start',
+  'agent_end',
+  'turn_start',
+  'turn_end',
+  'message_start',
+  'message_update',
+  'message_end',
+  'tool_execution_start',
+  'tool_execution_update',
+  'tool_execution_end',
+]);
+
+export interface HarnessToolCallEvent {
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+}
+
+export interface HarnessToolCallResult {
+  block?: boolean;
+  reason?: string;
+}
+
+/**
+ * 与裸 Agent 的 beforeToolCall 不同，Harness 的 tool_call hook 不传 AbortSignal，
+ * 见 pi-session.ts handleBeforeToolCall 的调整说明。
+ */
+export type HarnessToolCallHandler = (
+  event: HarnessToolCallEvent,
+) => Promise<HarnessToolCallResult | undefined> | HarnessToolCallResult | undefined;
+
+export interface PiHarnessAdapterOptions {
+  session: Session<JsonlSessionMetadata>;
+  models: Models;
+  tools: AgentHarnessTool<{ env: ExecutionEnv }>[];
+  toolContext: { env: ExecutionEnv };
+  systemPrompt: string;
+  model: Model<Api>;
+  thinkingLevel: ModelThinkingLevel;
+  /** 对齐旧 streamFn 里强制覆盖的 profile.apiTimeoutMs */
+  timeoutMs?: number;
+  /** 裸 Agent 事件透传（text/thinking/tool_execution_start/end/agent_end 等），语义与旧 agent.subscribe 完全一致 */
+  onAgentEvent: (event: AgentEvent) => void;
+  /** steer 队列真实长度变化（steer() 入队和 one-at-a-time drain 都会触发），替代旧的手动 +1/-1 计数 */
+  onSteerQueueChanged: (steerCount: number) => void;
+  /** 一次完整 run（含所有工具调用和插话）彻底结束，晚于 agent_end，用于驱动 running=false 的最终结算 */
+  onSettled: () => void;
+  onToolCall: HarnessToolCallHandler;
+}
+
+export class PiHarnessAdapter {
+  private harness: AgentHarness<{ env: ExecutionEnv }>;
+
+  constructor(options: PiHarnessAdapterOptions) {
+    this.harness = new AgentHarness<{ env: ExecutionEnv }>({
+      session: options.session,
+      models: options.models,
+      tools: options.tools,
+      toolContext: options.toolContext,
+      systemPrompt: options.systemPrompt,
+      model: options.model,
+      thinkingLevel: options.thinkingLevel,
+      streamOptions: options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : undefined,
+    });
+
+    // 关键实现事实（已读 agent-harness.js 源码确认）：queue_update/settled/save_point/abort 等
+    // AgentHarnessOwnEvent 走 emitOwn()，emitOwn 只遍历 subscribe() 注册的通配符监听器，
+    // 完全不读取 .on(type, handler) 按类型注册的 handler map——.on() 只对 emitHook() 分发的
+    // 事件类型有效（tool_call/tool_result/context/before_agent_start/before_provider_*/
+    // session_before_*）。这意味着 queue_update/settled 必须在 subscribe() 里按 type 分支处理，
+    // 用 .on('settled', ...) 注册会被静默忽略（handler 永远不被调用，无报错无警告）。
+    this.harness.subscribe((event) => {
+      if (AGENT_EVENT_TYPES.has(event.type)) {
+        options.onAgentEvent(event as AgentEvent);
+        return;
+      }
+      if (event.type === 'queue_update') {
+        options.onSteerQueueChanged(event.steer.length);
+        return;
+      }
+      if (event.type === 'settled') {
+        options.onSettled();
+      }
+    });
+
+    // tool_call 走 emitHook()，.on() 在这里是有效的分发路径
+    this.harness.on('tool_call', (event) =>
+      options.onToolCall({ toolCallId: event.toolCallId, toolName: event.toolName, input: event.input }),
+    );
+  }
+
+  async prompt(text: string): Promise<void> {
+    await this.harness.prompt(text);
+  }
+
+  async steer(text: string): Promise<void> {
+    await this.harness.steer(text);
+  }
+
+  /**
+   * fire-and-forget：对齐旧 close()/interrupt() 里同步调用 agent.abort() 的调用形状。
+   * Harness.abort() 内部已经清空 steer/followUp 队列 + 等待 idle，没有独立的"仅清队列"原语，
+   * 见 step2b-delivery.md 的已知限制说明。
+   */
+  abort(): void {
+    void this.harness.abort();
+  }
+}
