@@ -1,7 +1,7 @@
 ---
 step: 2a
 title: Conversation 与 Harness Session 生命周期
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,14 +28,14 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：Harness repository 生命周期验证暂置于裸 Agent 启动前，未替换现有 Agent 运行时。
+- 改动文件清单：`electron/main/services/conversation-service.ts`、`electron/main/services/conversation-runtime-service.ts`、`electron/main/agents/pi-session/pi-session.ts`。
 
 ### 给下一步的接力棒
 
-- Conversation sessionId 字段与兼容输出：
-- PiSessionConfig 的实际生命周期字段：
-- create/open 与回写时序：
-- 错误语义：
+- Conversation sessionId 字段与兼容输出：索引持久化 `sessionId: string | null`；旧 JSON 缺字段读取时以 `null` 处理；兼容输出包含 `session_id` 与 `sessionId`。
+- PiSessionConfig 的实际生命周期字段：`workspaceId`、`harnessSessionId`、`onHarnessSessionCreated`。
+- create/open 与回写时序：启动 PiSession 时已有 ID 则 repository.open；无 ID 则 repository.create，成功后先调用回写，再开始裸 Agent 初始化。
+- 错误语义：open 失败直接拒绝启动；create 后回写失败直接拒绝启动，不创建替代会话。
 - 下个 step 入口：Step 2B 在此基础上新增 Harness adapter 并替换裸 Agent，不重复实现 Conversation 字段或 repository 生命周期。
-- 待办或已知限制：
+- 待办或已知限制：Harness session 已创建并验证生命周期，但尚未承载 Agent 消息和状态。

@@ -35,6 +35,7 @@ export interface ConversationIndex {
   id: string;
   title: string;
   sdkSessionId: string | null;
+  sessionId: string | null;
   workspaceId: string;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
@@ -67,6 +68,7 @@ export interface ConversationCompat {
   model: string;
   workspace_id: string;
   sdk_session_id?: string;
+  session_id?: string;
   parent_conversation_id?: string;
   fork_message_sdk_uuid?: string;
   persona_id?: string;
@@ -77,6 +79,7 @@ export interface ConversationCompat {
   updated_at: number;
   workspaceId: string;
   sdkSessionId: string | null;
+  sessionId: string | null;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
   personaId: string | undefined;
@@ -295,6 +298,7 @@ export async function create(
     id,
     title,
     sdkSessionId: null,
+    sessionId: null,
     workspaceId,
     parentConversationId: options?.parentConversationId ?? null,
     forkMessageSdkUuid: null,
@@ -333,6 +337,7 @@ export async function createFork(
     id,
     title,
     sdkSessionId: null,
+    sessionId: null,
     workspaceId,
     parentConversationId,
     forkMessageSdkUuid,
@@ -410,6 +415,16 @@ export async function updateSdkSessionId(workspaceId: string, id: string, sdkSes
   if (!conv) return;
 
   conv.sdkSessionId = sdkSessionId;
+  conv.updatedAt = new Date().toISOString();
+  await saveWorkspaceConversations(workspaceId, file);
+}
+
+export async function updateSessionId(workspaceId: string, id: string, sessionId: string): Promise<void> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  const conv = file.conversations[id];
+  if (!conv) throw new Error(`Conversation not found: ${id}`);
+
+  conv.sessionId = sessionId;
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
 }
@@ -590,6 +605,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     model: '',  // 不再存储模型名称
     workspace_id: conv.workspaceId,
     sdk_session_id: conv.sdkSessionId || undefined,
+    session_id: conv.sessionId || undefined,
     parent_conversation_id: conv.parentConversationId || undefined,
     fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
     persona_id: conv.personaId || undefined,
@@ -601,6 +617,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     // 同时提供 camelCase 版本，供新代码使用
     workspaceId: conv.workspaceId,
     sdkSessionId: conv.sdkSessionId,
+    sessionId: conv.sessionId ?? null,
     parentConversationId: conv.parentConversationId,
     forkMessageSdkUuid: conv.forkMessageSdkUuid,
     personaId: conv.personaId,

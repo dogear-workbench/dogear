@@ -38,6 +38,7 @@ import {
 } from './usage-extractor.js';
 import type { ModelSelection, ModelProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
+import { getPiSessionRepository } from './pi-session-repository.js';
 
 export interface PiSessionConfig {
   /** 所属对话 ID，用于 sessionClosed 等事件路由 */
@@ -48,6 +49,9 @@ export interface PiSessionConfig {
   systemPrompt?: string;
   /** 所属工作区绝对路径，用于文件类工具（Read/Write/Edit/Bash/Grep/Glob）的边界校验和 memory 工具存储位置 */
   workspacePath: string;
+  workspaceId: string;
+  harnessSessionId: string | null;
+  onHarnessSessionCreated: (sessionId: string) => Promise<void>;
 }
 
 enum PiSessionStatus {
@@ -134,6 +138,15 @@ export class PiSession extends EventEmitter {
     }
 
     this.logger.info('=== 启动 pi 会话 ===', { sessionId: this.sessionId });
+
+    const repository = getPiSessionRepository();
+    if (this.config.harnessSessionId) {
+      await repository.open(this.config.workspaceId, this.config.harnessSessionId);
+    } else {
+      const { info } = await repository.create(this.config.workspaceId);
+      await this.config.onHarnessSessionCreated(info.id);
+      this.config.harnessSessionId = info.id;
+    }
 
     const appSettings = await loadSettings();
     const { model, profile, tier, thinkingLevel } = resolvePiModel(

@@ -454,6 +454,9 @@ class ConversationRuntimeService {
     options: AttachConversationOptions | undefined,
     modelSelection: ModelSelection | null,
   ): Promise<ConversationRuntimeAttachment> {
+    const conversation = await conversationService.getById(workspaceId, conversationId);
+    if (!conversation) throw new Error(`Conversation not found: ${conversationId}`);
+
     const piSessionManager = getPiSessionManager();
     let sessionId = piSessionManager.getSessionIdByConversation(conversationId);
     let session = sessionId ? piSessionManager.getSession(sessionId) : undefined;
@@ -473,6 +476,10 @@ class ConversationRuntimeService {
         modelSelection,
         systemPrompt: appSettings.ai.defaultSystemPrompt,
         workspacePath: workspace?.path ?? '',
+        workspaceId,
+        harnessSessionId: conversation.sessionId ?? null,
+        onHarnessSessionCreated: (harnessSessionId) =>
+          conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
       });
       await session.start();
       sessionId = session.getSessionId();

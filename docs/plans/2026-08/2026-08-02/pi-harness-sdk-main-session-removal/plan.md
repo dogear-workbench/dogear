@@ -17,7 +17,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 验证 Harness 依赖与会话仓库](./step1-harness-repository.md) — 接入并验证 Harness API，建立按工作区隔离的 create/open/delete/fork 仓库边界。
-- [ ] [Step 2A: Conversation 与 Harness Session 生命周期](./step2a-conversation-harness-lifecycle.md) — 为新 Conversation 建立 sessionId 的创建、回写与恢复闭环。
+- [x] [Step 2A: Conversation 与 Harness Session 生命周期](./step2a-conversation-harness-lifecycle.md) — 为新 Conversation 建立 sessionId 的创建、回写与恢复闭环。
 - [ ] [Step 2B: Harness 消息与状态适配](./step2b-harness-message-state-adapter.md) — 用 adapter 替换裸 Agent，保持消息、插话、状态与 usage 语义。
 - [ ] [Step 2C: Harness 权限与关闭语义](./step2c-harness-permission-close.md) — 将完整权限状态机迁入 tool_call hook，并收敛中断、关闭和落盘顺序。
 - [ ] [Step 2D: Harness 主会话回归验收](./step2d-harness-regression.md) — 构建并人工验证 Harness 主会话完整产品流程。
