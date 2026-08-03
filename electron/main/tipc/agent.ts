@@ -356,7 +356,7 @@ export const agentRouter = {
         if (sessionManager.getSession(input.sessionId)) {
           sessionManager.release(input.sessionId);
         } else {
-          piSessionManager.release(input.sessionId);
+          await piSessionManager.release(input.sessionId);
         }
         return { success: true };
       } catch (error) {
@@ -404,8 +404,10 @@ export const agentRouter = {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
-        if (!session) return { error: '会话不存在' };
-        await session.interrupt();
+        // pi 会话：方法面对齐（interrupt 签名一致），未命中 SDK manager 时按 sessionId 试 PiSessionManager
+        const activeSession = session ?? getPiSessionManager().getSession(input.sessionId);
+        if (!activeSession) return { error: '会话不存在' };
+        await activeSession.interrupt();
         return { success: true };
       } catch (error) {
         console.error('中断会话失败:', error);
@@ -420,8 +422,10 @@ export const agentRouter = {
       try {
         const sessionManager = getQueryBasedSessionManager();
         const session = sessionManager.getSession(input.sessionId);
-        if (!session) return { error: '会话不存在' };
-        await session.setPermissionMode(input.mode);
+        // pi 会话：方法面对齐（setPermissionMode 签名一致），未命中 SDK manager 时按 sessionId 试 PiSessionManager
+        const activeSession = session ?? getPiSessionManager().getSession(input.sessionId);
+        if (!activeSession) return { error: '会话不存在' };
+        await activeSession.setPermissionMode(input.mode);
         return { success: true };
       } catch (error) {
         console.error('更改权限模式失败:', error);

@@ -133,21 +133,21 @@ export class PiSessionManager extends EventEmitter {
    * 减少引用计数。归零即销毁——阶段一没有需要"跑完再收尾"的后台副作用（无工具）。
    * @returns 剩余引用计数
    */
-  release(sessionId: string): number {
+  async release(sessionId: string): Promise<number> {
     const count = this.refCounts.get(sessionId);
     if (count === undefined) return 0;
     const next = Math.max(0, count - 1);
     this.refCounts.set(sessionId, next);
     this.logger.info(`release pi session ${sessionId.substring(0, 8)}: refCount ${count} -> ${next}`);
     if (next === 0) {
-      this._destroySession(sessionId);
+      await this._destroySession(sessionId);
     }
     return next;
   }
 
   /** 直接关闭会话（忽略引用计数） */
-  closeSession(sessionId: string): void {
-    this._destroySession(sessionId);
+  async closeSession(sessionId: string): Promise<void> {
+    await this._destroySession(sessionId);
   }
 
   bindConversation(conversationId: string, sessionId: string): void {
@@ -172,25 +172,51 @@ export class PiSessionManager extends EventEmitter {
     return undefined;
   }
 
-  private _destroySession(sessionId: string): void {
+  /**
+   * 先从 sessions/refCounts/conversationSessionMap 摘除，再 await 实际收尾——
+   * 摘除动作本身不耗时，保证即使 session.close() 卡住，这个 sessionId 在 manager
+   * 层面也已经不可再被外部拿到（不会被重复 retain/release）。
+   */
+  private async _destroySession(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
     for (const [convId, sid] of this.conversationSessionMap) {
       if (sid === sessionId) this.conversationSessionMap.delete(convId);
     }
-
-    session.close();
     this.sessions.delete(sessionId);
     this.refCounts.delete(sessionId);
+
+    try {
+      await session.close();
+    } catch (error) {
+      // close() 内部（adapter.abort()）已经吞掉 harness 聚合异常，这里只是双重兜底，
+      // 确保 release()/closeSession() 的调用方（tipc handler）永远不会收到未处理 rejection。
+      this.logger.warn('pi 会话关闭时出错（已忽略）:', error);
+    }
     this.logger.info('pi 会话已关闭:', sessionId.substring(0, 8));
   }
 
+  /**
+   * app 退出路径：不能因为某个 session 卡在 abort() 收尾（例如等待模型 API 请求超时）
+   * 而阻塞进程退出，对每个 session 加超时兜底；超时或出错都只 warn 不外抛，
+   * 保证不产生未处理 rejection。
+   */
   closeAll(): void {
+    const sessions = Array.from(this.sessions.values());
     this.conversationSessionMap.clear();
-    this.sessions.forEach((session) => session.close());
     this.sessions.clear();
     this.refCounts.clear();
+
+    const CLOSE_ALL_TIMEOUT_MS = 5000;
+    for (const session of sessions) {
+      Promise.race([
+        session.close(),
+        new Promise<void>((resolve) => setTimeout(resolve, CLOSE_ALL_TIMEOUT_MS)),
+      ]).catch((error) => {
+        this.logger.warn('closeAll: 会话关闭失败（已忽略，进程即将退出）:', error);
+      });
+    }
   }
 
   getActiveCount(): number {

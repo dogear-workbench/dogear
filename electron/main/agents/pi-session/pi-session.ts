@@ -117,6 +117,9 @@ export class PiSession extends EventEmitter {
   private usageTurnIndex = 0;
   // 本轮累加器：message_end 时累加 AssistantMessage.usage，agent_end 时取出转 entry 后置 null
   private currentRunUsageAccum: PiUsageAccumulator | null = null;
+  // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
+  // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
+  private closingPromise: Promise<void> | null = null;
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -445,27 +448,50 @@ export class PiSession extends EventEmitter {
       && this.pendingPermissionRequests.size === 0;
   }
 
-  close(): void {
-    if (this.status === PiSessionStatus.CLOSED) return;
+  /**
+   * 并发调用共享同一个收尾 Promise（closingPromise），保证 removeAllListeners()
+   * 等一次性收尾动作只执行一次；status 只在收尾完成后才置 CLOSED。
+   */
+  close(): Promise<void> {
+    if (this.status === PiSessionStatus.CLOSED) return Promise.resolve();
+    if (!this.closingPromise) this.closingPromise = this.doClose();
+    return this.closingPromise;
+  }
+
+  private async doClose(): Promise<void> {
     this.logger.info('关闭 pi 会话:', this.sessionId);
 
-    this.adapter?.abort();
+    // 顺序不可换：先拒绝挂起的权限确认请求，让卡在 tool_call hook 里的 Promise 立刻 resolve，
+    // 工具调用才能收到 blocked 结果继续走完当前这一轮；否则 adapter.abort() 内部
+    // harness.waitForIdle() 会一直等这一轮结束，永久死锁（见 pi-harness-adapter.ts abort() 注释）。
+    this.rejectAllPendingPermissionRequests('会话已关闭');
+    // await 到这里 resolve 即代表当前 run 已完全结束、settled 已触发，可以安全做收尾。
+    await this.adapter?.abort();
+
     this.status = PiSessionStatus.CLOSED;
     this.pendingSteerCount = 0;
     this.running = false;
-    this.rejectAllPendingPermissionRequests('会话已关闭');
-
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
+    // 必须在 abort() 完成之后才摘监听器：abort 过程中 harness 仍可能 emit 最后的
+    // agent_end/settled/usage 等事件，提前摘掉会让这些事件被静默丢弃。
     this.removeAllListeners();
   }
 
+  /**
+   * 未对 interrupt() 加重入锁：AgentHarness.abort() 对并发调用是安全的——
+   * steerQueue/followUpQueue 在函数入口即被清空（第二次调用拿到空数组无副作用），
+   * runAbortController?.abort() 对已 abort 的 controller 重复调用是 no-op，
+   * waitForIdle() 各自 await 同一个 runPromise 都能正常 resolve（见 agent-harness.js:912-942）。
+   * 本方法自身的 rejectAllPendingPermissionRequests / pendingSteerCount 清零也都是幂等操作，
+   * 因此用户连点两次"中断"不会死锁或产生不一致状态。
+   */
   async interrupt(): Promise<void> {
     // 不依赖 tool_call hook 收到 abort 信号（Harness 的 tool_call hook 不带 signal 参数），
     // 主动拒绝兜底（与 SDK 侧 QueryBasedSession.interrupt() 的处理方式一致）
     this.pendingSteerCount = 0;
     this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');
-    this.adapter?.abort();
+    await this.adapter?.abort();
   }
 
   private rejectAllPendingPermissionRequests(reason: string): void {

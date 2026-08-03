@@ -16,6 +16,9 @@ import {
   type JsonlSessionMetadata,
 } from '@earendil-works/pi-agent-core';
 import type { Api, Model, Models, ModelThinkingLevel } from '@earendil-works/pi-ai';
+import { mainLogger } from '../logger.js';
+
+const logger = mainLogger.child('pi-harness-adapter');
 
 /** AgentEvent 的全部 type 字面量，用于从 subscribe() 的并集事件流里筛出裸 Agent 事件 */
 const AGENT_EVENT_TYPES = new Set<string>([
@@ -119,11 +122,22 @@ export class PiHarnessAdapter {
   }
 
   /**
-   * fire-and-forget：对齐旧 close()/interrupt() 里同步调用 agent.abort() 的调用形状。
-   * Harness.abort() 内部已经清空 steer/followUp 队列 + 等待 idle，没有独立的"仅清队列"原语，
-   * 见 step2b-delivery.md 的已知限制说明。
+   * await 到 harness.abort() resolve 即代表当前 run（含正在跑的工具调用）已完全结束、
+   * settled 已触发——这是 close()/interrupt() 等待落盘完成的唯一同步点（harness 无独立
+   * waitForIdle() 出口）。调用方必须先拒绝所有挂起的权限确认请求再调用本方法：
+   * runAbortController.abort() 只发取消信号，不会主动 resolve 卡在 tool_call hook 里的
+   * pending permission Promise，若不先清理会导致 harness 内部 waitForIdle() 永久等待、
+   * 本方法死锁挂起。
+   *
+   * harness.abort() 内部把 emitQueueUpdate/waitForIdle/emitOwn 三步的异常收集进 errors[]，
+   * 全部执行完后才可能抛 AggregateError；这里吞掉并 warn，不向上抛——"关闭/中断会话"是产品
+   * 级操作，不应该因为 harness 内部收尾错误而卡死或让调用方处理一个无法预期的聚合异常。
    */
-  abort(): void {
-    void this.harness.abort();
+  async abort(): Promise<void> {
+    try {
+      await this.harness.abort();
+    } catch (error) {
+      logger.warn('harness.abort() 内部出现错误（已忽略）:', error);
+    }
   }
 }
