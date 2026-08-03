@@ -17,8 +17,8 @@
 ## 步骤索引
 
 - [x] [Step 1: 验证 Harness 依赖与会话仓库](./step1-harness-repository.md) — 接入并验证 Harness API，建立按工作区隔离的 create/open/delete/fork 仓库边界。
-- [ ] [Step 2: Harness 驱动 PiSession](./step2-pi-session-harness.md) — 用 Harness 替换裸 Agent，保留 Dogear 的消息、权限、状态与 usage 协议。
-- [ ] [Step 3: Conversation Schema 与旧会话归档迁移](./step3-conversation-migration.md) — 引入中立 sessionId、一次性归档旧会话，并将 runtime 生命周期只路由到 pi。
+- [ ] [Step 2: Harness 驱动 PiSession](./step2-pi-session-harness.md) — 先接入最小 Conversation sessionId/workspaceId 生命周期，再以 Harness 替换裸 Agent，完成创建、恢复与运行时协议适配。
+- [ ] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
 - [ ] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
 - [ ] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
 - [ ] [Step 6: 移除 SDK 主会话代码并验收边界](./step6-sdk-main-cleanup.md) — 删除 SDK 主会话路径，确认 SDK 仅服务 PARSE_ARTICLE，完成构建与关键流程验收。
@@ -28,7 +28,7 @@
 - 范围为“移除 SDK 主会话”：`@anthropic-ai/claude-agent-sdk` 暂不从依赖中卸载，`PARSE_ARTICLE` 仍可使用其 query、plugin 和 skill 发现能力。
 - 不做 SDK JSONL → Harness JSONL 转换，不维护双格式 Conversation 历史读取兼容。
 - 启动一次性迁移时，现有全部 Conversation（包括尚无 SDK session 的空对话）统一写入 `archivedAt` 和 `archiveReason: 'sdk-main-session-removed'`；旧 SDK JSONL 留盘作为不可操作备份。
-- 新 Conversation 的持久会话标识为 `sessionId: string | null`，不保存绝对路径；`null` 表示首次发送前尚未创建 Harness session。
+- 新 Conversation 的持久会话标识为 `sessionId: string | null`，不保存绝对路径；`null` 表示首次发送前尚未创建 Harness session。Step 2 先落地该字段及其 runtime create/open 回写闭环，Step 3 再执行旧 Conversation 的一次性归档。
 - 新 Harness session 根目录固定为 `<configDir>/workspaces/<workspaceId>/sessions/`，不得写入用户真实 workspace；采用上游 `JsonlSessionRepo` 的 cwd 编码子目录与时间戳文件名布局，Conversation 仅持久化其稳定 `sessionId`。
 - `PiSession` 是 Dogear 的运行时门面；TIPC、store 和 React 组件不得使用 `AgentHarness`、`SessionTreeEntry`、`leafId` 等 Harness 类型。
 - 前端历史读取以 Conversation 为入口，不再传递或暴露底层 session 文件 ID；归档旧会话只显示冻结说明，不回放 SDK JSONL。

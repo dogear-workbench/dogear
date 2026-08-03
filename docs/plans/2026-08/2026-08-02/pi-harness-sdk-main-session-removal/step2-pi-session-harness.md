@@ -1,23 +1,25 @@
 ---
 step: 2
 title: Harness 驱动 PiSession
-status: pending
+status: in_progress
 ---
 
 ## 目标
 
-在不改变 TIPC 和前端会话协议的前提下，让 PiSession 使用 AgentHarness 运行、持久化和恢复主会话。
+在不改变 TIPC 和前端会话协议的前提下，先落地新 Conversation 的最小 `sessionId`/workspaceId 生命周期，再让 PiSession 使用 AgentHarness 完成主会话创建、持久化和恢复。
 
 ## 依赖上下文（接力棒输入）
 
 - 前置 step 产出：`pi-session-repository.ts` 已封装经真实类型验证的 Harness repo create/open/delete/fork，并记录了实际 hook、事件和 flush API。
 - 当前 PiSession 的 Dogear 协议包括 `message`、`permissionRequest`、`pendingCountChanged`、`sessionStateChanged`、`sessionClosed`、`usage`、`usageContext`，见 `electron/main/agents/pi-session/pi-session.ts`。
 - `PiSessionManager` 负责将上述事件广播到多渲染窗口并写入 usage JSONL，见 `electron/main/agents/pi-session/pi-session-manager.ts`。
+- 当前 Conversation schema、创建与 runtime 生命周期尚未保存 Harness `sessionId`；原计划此项位于 Step 3，但已由用户授权前置到本 step，只覆盖新会话的字段、传递与 create/open 回写，不执行旧 SDK Conversation 归档。
 - Harness 类型不得泄漏到 TIPC、store 或 React 组件。
 
 ## 计划改动
 
-- [ ] 扩展 PiSessionConfig，使创建/恢复会话能接收 workspaceId 和已有 `sessionId`，并在 start 时通过 repository create/open 获得 Harness session。
+- [ ] 在 `conversation-service.ts`、`conversation-runtime-service.ts` 及必要类型中前置最小新 Conversation schema：保存 `sessionId: string | null`，在创建、runtime 启动和首次 Harness 创建后完成 workspaceId/sessionId 的传递与回写；不得在本 step 归档已有 SDK Conversation。
+- [ ] 扩展 PiSessionConfig，使创建/恢复会话能接收 workspaceId 和已有 `sessionId`，并在 start 时通过 repository create/open 获得 Harness session；新建时把生成的 sessionId 回调给 runtime 以持久化。
 - [ ] 将裸 `Agent` 的构造、订阅和 prompt 驱动替换为 Harness 对应 API；保留 `PiSession` 对外的方法签名和 EventEmitter 事件名。
 - [ ] 将当前 `beforeToolCall` 权限状态机迁移到 Harness `tool_call` hook：维持 dontAsk、豁免规则、会话 allow、持久 allow、前端确认、取消和关闭时 reject 的行为。
 - [ ] 验证“编辑工具输入后允许”的语义；若 Harness hook 不共享原始参数引用，改为其支持的显式参数改写返回值，不能静默丢失编辑功能。
@@ -41,5 +43,5 @@ status: pending
 - Harness event → Dogear event 映射：
 - 权限 hook 实际行为与已知限制：
 - session close/flush 的顺序：
-- 下个 step 入口：
+- 下个 step 入口：Step 3 仅处理旧 Conversation 的一次性归档、SDK runtime 残余分支收敛与迁移幂等性，不再新增新 Conversation 的 Harness session 字段或生命周期。
 - 待办或已知限制：
