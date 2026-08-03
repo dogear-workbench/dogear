@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 旧会话归档迁移与 runtime 收敛
-status: pending
+status: in_progress
 ---
 
 ## 目标

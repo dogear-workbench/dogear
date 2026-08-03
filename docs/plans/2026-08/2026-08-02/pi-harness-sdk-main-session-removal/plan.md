@@ -21,6 +21,8 @@
 - [x] [Step 2B: Harness 消息与状态适配](./step2b-harness-message-state-adapter.md) — 用 adapter 替换裸 Agent，保持消息、插话、状态与 usage 语义。
 - [x] [Step 2C: Harness 权限与关闭语义](./step2c-harness-permission-close.md) — 将完整权限状态机迁入 tool_call hook，并收敛中断、关闭和落盘顺序。
 - [x] [Step 2D: Harness 主会话回归验收](./step2d-harness-regression.md) — 构建并人工验证 Harness 主会话完整产品流程。
+- [ ] [Step 2E: 可选工具包 ToolDef 中立化改造](./step2e-toolpack-neutralization.md) — 把 article/stock-quote/stock-analysis/stock-announcement/stock-picking 五个工具工厂改造成中立 ToolDef 形态，供 PiSession 消费。
+- [ ] [Step 2F: PiSession 工具包接入与权限批量免确认](./step2f-pisession-toolpack-wiring.md) — 让 PiSession 按 enabledToolPacks/groupId 挂载工具包并对齐旧 SDK 的批量免确认体验。
 - [ ] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
 - [ ] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
 - [ ] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
@@ -42,3 +44,5 @@
 - 跨会话通信使用 Harness `sessionId` 作为运行时地址，Conversation `id` 仍是业务主键；delegation 的旧 `sdkSessionId` 协议及其 SDK runtime 创建路径统一由 Step 5 迁移，Step 3 仅移除主 Conversation runtime 对它的依赖。
 - 每步完成后运行相关类型检查/构建；主进程改动至少执行 `bun run build:electron`，最终执行 `bun run build`。
 - 旧 Step 2（`step2-pi-session-harness.md`）已由 Step 2A～2D 取代，仅作历史记录，不纳入执行状态与步骤索引。
+- Step 3 验收时发现规划缺口：PiSession 自 Step 1 起只挂了内建文件工具与常驻记忆工具，从未接入 article/stock-quote/stock-analysis/stock-announcement/stock-picking/dogear-group/dogear-delegation/dogear-memory-review 等工具包，而 Step 3 会把所有主会话强制切到 PiSessionManager，若不先补齐会导致主会话功能倒退。插入 Step 2E、2F 补齐后再继续 Step 3；`dogear-reference` 确认仍只装子会话，不纳入本次补齐范围。
+- 新增工具包在 pi 侧统一按"工具包粒度批量免确认"接入权限判定（Step 2F 落地），对齐旧 SDK `allowedTools` 通配符体验，不接受逐工具确认的降级方案。
