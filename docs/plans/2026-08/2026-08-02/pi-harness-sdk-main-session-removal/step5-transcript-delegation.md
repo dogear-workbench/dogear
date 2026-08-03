@@ -15,6 +15,7 @@ status: pending
 - 当前 SDK transcript 链路集中于 `electron/main/services/memory/session-paths.ts`、`transcript-cleaner.ts`、`group-digest-scanner.ts`、`source-fidelity.ts` 和 `agents/tools/digest-tools.ts`。
 - 当前 delegation 协议、bridge 和工具以 `sdkSessionId` 作为跨会话地址，集中于 `electron/main/agents/delegation-bridge.ts` 与 `electron/main/agents/tools/delegation-tools.ts`。
 - 旧归档会话必须排除在 dirty scan、摘要、引用校验和 delegation 之外。
+- 已知现状缺口：`pi-session.ts` 的 `getSdkSessionId()` 目前硬编码返回 `undefined`（注释仍是 Step 2A 之前"pi 无持久化 session_id"的过时描述，未随 Step 2A 引入的 Conversation `sessionId` 更新）。这导致当前所有走 pi 的主会话调用 `CreateSession` 派子会话时，`delegation-bridge.ts` 因 `parent.sdkSessionId` 恒为空而放弃写 `contractMetadata`（仅 warn 日志，不报错），协作溯源实际失效。本步骤需要在切换协议命名的同时修复这一点：Harness 会话创建后应让 `getSdkSessionId()`（或其更名后的等价方法）返回真实的 Harness `sessionId`。
 
 ## 计划改动
 

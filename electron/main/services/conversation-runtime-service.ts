@@ -481,7 +481,14 @@ class ConversationRuntimeService {
         onHarnessSessionCreated: (harnessSessionId) =>
           conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
       });
-      await session.start();
+      try {
+        await session.start();
+      } catch (error) {
+        // start() 失败（如 Harness session 文件缺失/损坏）时，createSession 已注册的
+        // sessions/refCounts 条目从未 bindConversation，没有其他路径能回收，必须在这里主动清理。
+        piSessionManager.closeSession(session.getSessionId());
+        throw error;
+      }
       sessionId = session.getSessionId();
       piSessionManager.bindConversation(conversationId, sessionId);
       created = true;

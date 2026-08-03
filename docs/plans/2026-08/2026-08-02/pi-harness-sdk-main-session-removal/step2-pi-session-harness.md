@@ -1,8 +1,11 @@
 ---
 step: 2
 title: Harness 驱动 PiSession
-status: in_progress
+status: superseded
+supersededBy: [step2a-conversation-harness-lifecycle.md, step2b-harness-message-state-adapter.md, step2c-harness-permission-close.md, step2d-harness-regression.md]
 ---
+
+> 本文件记录拆分前的 Step 2 方案，已由 Step 2A～2D 替代，不再执行或回填。以拆分后的步骤文件为准。
 
 ## 目标
 

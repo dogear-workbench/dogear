@@ -12,6 +12,7 @@ status: pending
 
 - 前置 step 产出：Conversation 已有 `sessionId`、旧会话可通过 archiveReason 识别、主会话只由 PiSessionManager 驱动。
 - Harness repository 提供 open/delete/fork；其实际 API、树路径与 entry 格式以 Step 1 回填为准。
+- Harness entry 读取必须复用 `pi-session/` 内的共享 reader；本步骤的 UI history adapter 仅负责将 reader 输出转换为前端消息，Step 5 的 memory transcript adapter 复用相同 reader。
 - 当前历史入口为 `getSdkSessionHistory`，相关 renderer hook 为 `components/agent-chat/hooks/useMessageHistory.ts`。
 - 全局决策：前端和 TIPC 不得暴露 Harness 类型；旧 SDK 归档会话不回放 JSONL。
 
@@ -21,9 +22,9 @@ status: pending
 - [ ] 实现 Harness history adapter：将 message entry 转为既有前端消息格式；compaction 仅映射为已有 compact boundary 或简洁元消息；model_change、label、custom 等非展示 entry 默认不进入消息流。
 - [ ] 对缺少 sessionId 的新空会话返回空历史；对 `archiveReason: 'sdk-main-session-removed'` 返回明确的 legacy archived 状态，而非错误或空白歧义。
 - [ ] 修改 `useMessageHistory` 和必要的 AgentChat 容器调用点，以 conversationId 请求历史；增加旧归档会话的冻结占位，禁用发送、编辑重发、分叉等操作入口。
-- [ ] 修改 Conversation 删除链路：新 Harness 会话删除 metadata 前调用 repository delete；旧归档会话只删除 metadata，默认不删除旧 SDK JSONL 备份。
-- [ ] 改造 Fork：使用 repository fork 创建新的 Harness session 与新的 Conversation metadata；第一版只从当前 leaf fork，除非现有 UI 已传递稳定 entry 定位信息。
-- [ ] 确保 fork 产生的 sessionId 写入新 Conversation，原对话和分支各自独立恢复；定义 session 文件删除失败、fork 失败时的回滚顺序，避免 metadata 指向不存在的 session。
+- [ ] 修改 Conversation 删除链路：新 Harness 会话先调用 repository delete，成功后再删除 Conversation metadata；repository delete 失败则保留 metadata 并返回错误。旧归档会话只删除 metadata，默认不删除旧 SDK JSONL 备份。
+- [ ] 改造 Fork：第一版只从 repository 可无歧义定位的当前 leaf fork，除非现有 UI 已传递稳定 entry 定位信息；先完成 repository fork 并取得新 sessionId，再创建新 Conversation metadata。
+- [ ] 确保 fork 产生的 sessionId 写入新 Conversation，原对话和分支各自独立恢复；Conversation metadata 创建失败时尝试删除新 session，并将 session 清理失败作为明确错误记录，避免 metadata 指向不存在的 session 或静默孤儿文件。
 - [ ] 执行 `bun run build`，手动验证新会话恢复、旧会话归档占位、删除、当前末端 fork 和分叉后独立发送。
 
 ## 实施回填（做完后填）

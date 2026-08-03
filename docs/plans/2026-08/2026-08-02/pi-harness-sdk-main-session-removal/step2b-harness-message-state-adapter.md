@@ -21,10 +21,10 @@ status: in_progress
 - [ ] 使用 repository 返回的 Session、models、tools、system prompt、thinking level 和 streamOptions 构造 Harness；不启用自动 compaction。
 - [ ] 将底层 Agent 消息事件映射回现有 message、thinking、tool_use、tool_result、错误和 usage 输入；必要时演进 message-converter，但不得修改渲染层消息协议。
 - [ ] 用 Harness `queue_update` 计算 pendingCountChanged，用 `settled` 驱动 running=false 与单轮结算，用 save_point 建立后续关闭落盘边界。
-- [ ] 将 sendMessage 的 prompt/steer 路径和 interrupt 的 abort/队列清理适配到 Harness 正式 API，保持插话一条条消费的产品语义。
-- [ ] 将完整权限状态机接入 Harness `tool_call` hook，保留 dontAsk、豁免规则、会话 allow、持久 allow、allow、deny、编辑工具输入和前端 `permissionRequest` / `respondPermissionRequest` 的既有语义。
+- [ ] 将 sendMessage 的 prompt/steer 路径与 Harness 正式 API 对齐，保持插话一条条消费的产品语义；仅暴露供 Step 2C 调用的 adapter abort/clearQueue 原语，不在本步骤实现生命周期出口清理。
+- [ ] 将完整权限状态机接入 Harness `tool_call` hook，保留 dontAsk、豁免规则、会话 allow、持久 allow、allow、deny、编辑工具输入和前端 `permissionRequest` / `respondPermissionRequest` 的既有正常路径语义，并建立供 Step 2C 清理的 pending permission registry。
 - [ ] 验证编辑工具输入后允许时 Harness 执行器对 input 的传递语义；若不共享引用，使用上游支持的显式改写机制。
-- [ ] 执行 `bun run build:electron`，手动验证文本消息、工具消息、连续插话、usage、权限确认、编辑后允许和中断状态。
+- [ ] 执行 `bun run build:electron`，手动验证文本消息、工具消息、单次插话、usage、权限允许/拒绝与编辑后允许；中断、关闭、release 与挂起权限清理由 Step 2C 验证。
 
 ## 实施回填（做完后填）
 

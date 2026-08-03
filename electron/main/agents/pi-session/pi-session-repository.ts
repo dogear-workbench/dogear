@@ -38,6 +38,10 @@ function toSessionInfo(metadata: JsonlSessionMetadata): PiHarnessSession {
 
 export class PiSessionRepository {
   private repositories = new Map<string, WorkspaceRepository>();
+  // 按 workspaceId 缓存的 session 列表；上游 JsonlSessionRepo 没有按 id 直查的 API，
+  // 每次 open/delete/fork/getSessionPath 都要 list() 全量扫目录，工作区会话数一多就会变慢。
+  // create/delete/fork 会改变文件集合，因此各自完成后立即失效对应缓存。
+  private metadataCache = new Map<string, JsonlSessionMetadata[]>();
 
   private getWorkspaceRepository(workspaceId: string): WorkspaceRepository {
     let repository = this.repositories.get(workspaceId);
@@ -55,9 +59,17 @@ export class PiSessionRepository {
     return repository;
   }
 
-  private async findMetadata(workspaceId: string, sessionId: string): Promise<JsonlSessionMetadata> {
+  private async listMetadata(workspaceId: string): Promise<JsonlSessionMetadata[]> {
+    const cached = this.metadataCache.get(workspaceId);
+    if (cached) return cached;
     const { repo, cwd } = this.getWorkspaceRepository(workspaceId);
-    const metadata = (await repo.list({ cwd })).find((item) => item.id === sessionId);
+    const list = await repo.list({ cwd });
+    this.metadataCache.set(workspaceId, list);
+    return list;
+  }
+
+  private async findMetadata(workspaceId: string, sessionId: string): Promise<JsonlSessionMetadata> {
+    const metadata = (await this.listMetadata(workspaceId)).find((item) => item.id === sessionId);
     if (!metadata) throw new Error(`Harness session not found: ${sessionId}`);
     return metadata;
   }
@@ -66,6 +78,7 @@ export class PiSessionRepository {
     const { repo, cwd } = this.getWorkspaceRepository(workspaceId);
     const session = await repo.create({ cwd, id: sessionId });
     const metadata = await session.getMetadata();
+    this.metadataCache.delete(workspaceId);
     return { session, info: toSessionInfo(metadata) };
   }
 
@@ -81,6 +94,7 @@ export class PiSessionRepository {
   async delete(workspaceId: string, sessionId: string): Promise<void> {
     const { repo } = this.getWorkspaceRepository(workspaceId);
     await repo.delete(await this.findMetadata(workspaceId, sessionId));
+    this.metadataCache.delete(workspaceId);
   }
 
   async fork(
@@ -94,6 +108,7 @@ export class PiSessionRepository {
       ...options,
     });
     const metadata = await session.getMetadata();
+    this.metadataCache.delete(workspaceId);
     return { session, info: toSessionInfo(metadata) };
   }
 }

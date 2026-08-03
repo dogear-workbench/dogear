@@ -33,10 +33,12 @@
 - 启动一次性迁移时，现有全部 Conversation（包括尚无 SDK session 的空对话）统一写入 `archivedAt` 和 `archiveReason: 'sdk-main-session-removed'`；旧 SDK JSONL 留盘作为不可操作备份。
 - 新 Conversation 的持久会话标识为 `sessionId: string | null`，不保存绝对路径；`null` 表示首次发送前尚未创建 Harness session。Step 2A 先落地该字段及其 runtime create/open 回写闭环，Step 3 再执行旧 Conversation 的一次性归档。
 - AgentHarness 的接入必须经 `pi-harness-adapter.ts` 隔离；Harness 事件、Session 与 Session Tree 类型不得泄漏出 `electron/main/agents/pi-session/`。
+- Harness 的 session entry / transcript 读取只能经 `electron/main/agents/pi-session/` 内的共享 reader；Step 4 的 UI history adapter 与 Step 5 的 memory transcript adapter 可各自转换数据，但不得分别解析 Harness session 文件或 tree。
 - Step 2B 至 2C 不允许降低现有 PiSession 的权限确认、编辑工具参数、插话、消息、状态或 usage 语义；任一 API 差异必须通过 adapter 显式适配。
 - 新 Harness session 根目录固定为 `<configDir>/workspaces/<workspaceId>/sessions/`，不得写入用户真实 workspace；采用上游 `JsonlSessionRepo` 的 cwd 编码子目录与时间戳文件名布局，Conversation 仅持久化其稳定 `sessionId`。
 - `PiSession` 是 Dogear 的运行时门面；TIPC、store 和 React 组件不得使用 `AgentHarness`、`SessionTreeEntry`、`leafId` 等 Harness 类型。
 - 前端历史读取以 Conversation 为入口，不再传递或暴露底层 session 文件 ID；归档旧会话只显示冻结说明，不回放 SDK JSONL。
 - Harness 自动 compaction 不在首个迁移闭环启用；先完成持久化、恢复、历史与 fork，再单独设计上下文压缩策略。
-- 跨会话通信使用 Harness `sessionId` 作为运行时地址，Conversation `id` 仍是业务主键；所有旧 `sdkSessionId` 协议命名随迁移收敛。
+- 跨会话通信使用 Harness `sessionId` 作为运行时地址，Conversation `id` 仍是业务主键；delegation 的旧 `sdkSessionId` 协议及其 SDK runtime 创建路径统一由 Step 5 迁移，Step 3 仅移除主 Conversation runtime 对它的依赖。
 - 每步完成后运行相关类型检查/构建；主进程改动至少执行 `bun run build:electron`，最终执行 `bun run build`。
+- 旧 Step 2（`step2-pi-session-harness.md`）已由 Step 2A～2D 取代，仅作历史记录，不纳入执行状态与步骤索引。
