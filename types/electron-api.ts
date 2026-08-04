@@ -140,15 +140,17 @@ export interface Conversation {
   workspace_id: string;              // 关联的工作区ID
   title: string;
   model: string;
-  sdk_session_id?: string;           // SDK 返回的 session_id（用于 resume 功能）
+  sdk_session_id?: string;           // 旧 SDK 主会话的 session_id；主会话移除后恒为空
+  session_id?: string;               // Harness 持久化 sessionId（用于恢复/删除/分叉）
   parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
-  fork_message_sdk_uuid?: string;    // 分叉点 assistant 消息 UUID（v4）
+  fork_message_sdk_uuid?: string;    // 分叉点标识（Harness 迁移后是 SessionTreeEntry id）
   persona_id?: string;               // 关联的人设 ID
   temp_prompt?: string;              // 临时提示词（仅当前对话生效）
   modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
   cachePolicy?: '5m' | '1h';         // 提示缓存策略；缺省视为 5m
-  fork_pending?: boolean;            // 分叉已创建但 SDK 会话未建立
+  fork_pending?: boolean;            // @deprecated SDK 时代的分叉待定态，Harness fork 已同步创建不再产生
   archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
+  archive_reason?: string;           // 归档原因；'sdk-main-session-removed' = 迁移冻结的旧会话
   groupId: string;                   // 所属会话组 ID
   role: 'main' | 'sub';             // P1 只产生 'main'
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined

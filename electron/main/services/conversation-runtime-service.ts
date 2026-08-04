@@ -32,10 +32,6 @@ type AttachmentMeta = {
 
 type AttachConversationOptions = {
   webContentsId?: number;
-  clearForkFields?: boolean;
-  resume?: string;
-  forkSession?: boolean;
-  resumeSessionAt?: string;
 };
 
 class ConversationRuntimeService {

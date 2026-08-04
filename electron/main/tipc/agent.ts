@@ -210,56 +210,6 @@ export const agentRouter = {
     }),
 
   // ── 基于 Query 的会话（支持 Skills）────────────────────────
-  // 兼容层：委托 ConversationRuntimeService 处理。主路径已迁移到 attachConversationRuntime。
-  createQueryBasedSession: t.procedure
-    .input<{
-      allowedTools?: string[];
-      context?: { selectedText?: string };
-      enableSkills?: boolean;
-      projectRoot?: string;
-      conversationId?: string;
-      workspaceId?: string;
-      resume?: string;
-      forkSession?: boolean;
-      resumeSessionAt?: string;
-      isForkNewConversation?: boolean;
-      agents?: Record<string, any>;
-      personaId?: string;
-      tempPrompt?: string;
-    }>()
-    .action(async ({ input, context }) => {
-      try {
-        if (!input.conversationId || !input.workspaceId) {
-          return { error: 'conversationId 和 workspaceId 为必填项' };
-        }
-        const result = await conversationRuntimeService.attachConversation(
-          input.conversationId,
-          input.workspaceId,
-          'desktop',
-          {
-            resume: input.resume,
-            forkSession: input.forkSession,
-            resumeSessionAt: input.resumeSessionAt,
-            clearForkFields: input.forkSession,
-          },
-        );
-        // 复用已有 session 时重播当前 turn 快照
-        if (!result.created && result.snapshot.length > 0) {
-          setTimeout(() => {
-            if (context.sender.isDestroyed()) return;
-            const h = getRendererHandlers<RendererHandlers>(context.sender);
-            for (const msg of result.snapshot) {
-              try { h.queryBasedSessionMessage.send({ sessionId: result.sessionId, message: msg }); } catch { /* 忽略 */ }
-            }
-          }, 100);
-        }
-        return { sessionId: result.sessionId, permissionMode: result.permissionMode };
-      } catch (error) {
-        console.error('createQueryBasedSession 失败:', error);
-        return { error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
   sendQueryBasedSessionMessage: t.procedure
     .input<{
       sessionId: string;
@@ -510,213 +460,34 @@ export const agentRouter = {
       }
     }),
 
-  // ── SDK 会话历史读取 ──────────────────────────────────────
-  getSdkSessionHistory: t.procedure
-    .input<{ sdkSessionId: string; projectPath?: string }>()
+  // ── Harness 会话历史读取（以 Conversation 为入口）────────────
+  /**
+   * 通用会话历史 IPC：以 conversationId 为入口，主进程自行判断走哪条路径。
+   * - archived_legacy：archiveReason 为 SDK 主会话移除迁移写入的冻结标记，不回放旧 SDK JSONL
+   * - empty：conversation 尚无 sessionId（新对话，从未发送过消息）
+   * - ok：读取 Harness 当前 branch 并转换为前端消息格式
+   */
+  getConversationHistory: t.procedure
+    .input<{ conversationId: string; workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        // 优先使用前端传入的路径，其次使用默认工作区路径，最后 fallback 到项目根目录
-        let projectRoot = input.projectPath;
-        if (!projectRoot) {
-          const workspaceJsonService = await import('../services/workspace-json-service.js');
-          const defaultWorkspace = await workspaceJsonService.getDefault();
-          projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
-        }
-        const sessionsDir = getSdkSessionsDir(projectRoot);
-        let sessionFile = path.join(sessionsDir, `${input.sdkSessionId}.jsonl`);
+        const conv = await conversationService.getById(input.workspaceId, input.conversationId);
+        if (!conv) return { status: 'error' as const, error: '对话不存在' };
 
-        console.log('读取 SDK 会话历史:', { sdkSessionId: input.sdkSessionId, projectRoot, sessionsDir, sessionFile });
-
-        // 检查文件是否存在
-        let fileFound = false;
-        try {
-          await fs.access(sessionFile);
-          fileFound = true;
-        } catch {
-          // 尝试搜索工作区路径
-          console.log('会话文件不在项目根目录，尝试搜索工作区目录...');
-          try {
-            const wsService = await import('../services/workspace-json-service.js');
-            const defaultWorkspace = await wsService.getDefault();
-            if (defaultWorkspace?.path) {
-              const workspaceSessionsDir = getSdkSessionsDir(defaultWorkspace.path);
-              const workspaceSessionFile = path.join(workspaceSessionsDir, `${input.sdkSessionId}.jsonl`);
-              console.log('尝试工作区路径:', workspaceSessionFile);
-              try {
-                await fs.access(workspaceSessionFile);
-                sessionFile = workspaceSessionFile;
-                fileFound = true;
-                console.log('在工作区目录找到会话文件');
-              } catch {
-                // 工作区目录也没有
-              }
-            }
-          } catch (e) {
-            console.warn('搜索工作区目录失败:', e);
-          }
+        if (conv.archivedAt && conv.archiveReason === conversationService.ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED) {
+          return { status: 'archived_legacy' as const, archivedAt: conv.archivedAt };
         }
 
-        if (!fileFound) {
-          return { messages: [], error: '会话文件不存在' };
+        if (!conv.sessionId) {
+          return { status: 'empty' as const, messages: [] };
         }
 
-        // 读取 JSONL 文件
-        const content = await fs.readFile(sessionFile, 'utf-8');
-        const lines = content.trim().split('\n');
-
-        // 解析每行 JSON
-        const rawMessages: Array<{
-          type: string;
-          message?: any;
-          timestamp?: string;
-          uuid?: string;
-          isMeta?: boolean;
-          sourceToolUseID?: string;
-          isCompactSummary?: boolean;
-          isCompactBoundary?: boolean;
-          compactMetadata?: { trigger?: string; preTokens?: number };
-          toolUseResult?: any;
-          /** 消息来源类型（"external" 表示真实用户输入，其他值为 SDK 注入消息） */
-          userType?: string;
-        }> = [];
-
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const parsed = JSON.parse(line);
-
-            // 提取 compact_boundary 系统消息（压缩分隔点）
-            if (parsed.type === 'system' && parsed.subtype === 'compact_boundary') {
-              rawMessages.push({
-                type: 'compact_boundary',
-                timestamp: parsed.timestamp,
-                uuid: parsed.uuid,
-                isCompactBoundary: true,
-                compactMetadata: parsed.compactMetadata,
-              });
-              continue;
-            }
-
-            if (
-              (parsed.type === 'user' && parsed.message) ||
-              (parsed.type === 'assistant' && parsed.message) ||
-              (parsed.message?.role === 'tool_result')
-            ) {
-              rawMessages.push({
-                type: parsed.type,
-                message: parsed.message,
-                timestamp: parsed.timestamp,
-                uuid: parsed.uuid,
-                isMeta: parsed.isMeta || false,
-                sourceToolUseID: parsed.sourceToolUseID,
-                // 标记压缩摘要消息
-                isCompactSummary: parsed.isCompactSummary || false,
-                // 保留 toolUseResult（子代理结果元数据）
-                toolUseResult: parsed.toolUseResult,
-                // 消息来源类型（"external" 表示真实用户输入）
-                userType: parsed.userType,
-              });
-            }
-          } catch {
-            // 忽略解析失败的行
-          }
-        }
-
-        // 合并连续的 assistant 消息
-        const historyMessages: Array<{
-          type: string;
-          role?: string;
-          content?: any;
-          timestamp?: string;
-          uuid?: string;
-          model?: string;
-          isMeta?: boolean;
-          sourceToolUseID?: string;
-          isCompactSummary?: boolean;
-          isCompactBoundary?: boolean;
-          compactMetadata?: { trigger?: string; preTokens?: number };
-          toolUseResult?: any;
-          /** 消息来源类型（"external" 表示真实用户输入，其他值为 SDK 注入消息） */
-          userType?: string;
-        }> = [];
-
-        let currentAssistantMessage: {
-          type: string;
-          role: string;
-          content: any[];
-          timestamp?: string;
-          uuid?: string;
-          model?: string;
-        } | null = null;
-
-        for (const msg of rawMessages) {
-          // compact_boundary：先保存当前 assistant 消息，再插入分隔标记
-          if (msg.type === 'compact_boundary') {
-            if (currentAssistantMessage) {
-              historyMessages.push({ ...currentAssistantMessage });
-              currentAssistantMessage = null;
-            }
-            historyMessages.push({
-              type: 'compact_boundary',
-              timestamp: msg.timestamp,
-              uuid: msg.uuid,
-              isCompactBoundary: true,
-              compactMetadata: msg.compactMetadata,
-            });
-          } else if (msg.type === 'user' && msg.message) {
-            if (currentAssistantMessage) {
-              historyMessages.push({ ...currentAssistantMessage });
-              currentAssistantMessage = null;
-            }
-            historyMessages.push({
-              type: 'user',
-              role: msg.message.role,
-              content: msg.message.content,
-              timestamp: msg.timestamp,
-              uuid: msg.uuid,
-              isMeta: msg.isMeta,
-              sourceToolUseID: msg.sourceToolUseID,
-              isCompactSummary: msg.isCompactSummary,
-              toolUseResult: msg.toolUseResult,
-              // 传递消息来源类型，供前端区分真实用户输入与 SDK 注入消息
-              userType: msg.userType,
-            });
-          } else if (msg.type === 'assistant' && msg.message) {
-            const contentBlocks = Array.isArray(msg.message.content)
-              ? msg.message.content
-              : (typeof msg.message.content === 'string'
-                  ? [{ type: 'text', text: msg.message.content }]
-                  : []);
-
-            if (!currentAssistantMessage) {
-              currentAssistantMessage = {
-                type: 'assistant',
-                role: 'assistant',
-                content: contentBlocks,
-                timestamp: msg.timestamp,
-                uuid: msg.uuid,
-                model: msg.message.model,
-              };
-            } else {
-              currentAssistantMessage.content.push(...contentBlocks);
-              currentAssistantMessage.timestamp = msg.timestamp;
-              // 同步更新 uuid 为最新行的 uuid，与 transformers.ts 的 historyTransformer 行为一致
-              // 这样 fork_pending 预览截断时能正确找到分叉点（前端 sdkUuid 存的是最后一条行的 uuid）
-              if (msg.uuid) currentAssistantMessage.uuid = msg.uuid;
-              if (msg.message.model) currentAssistantMessage.model = msg.message.model;
-            }
-          }
-        }
-
-        if (currentAssistantMessage) {
-          historyMessages.push(currentAssistantMessage);
-        }
-
-        console.log(`读取到 ${historyMessages.length} 条历史消息（已合并连续的 assistant 消息）`);
-        return { messages: historyMessages };
+        const { buildSessionHistory } = await import('../agents/pi-session/history-adapter.js');
+        const messages = await buildSessionHistory(input.workspaceId, conv.sessionId);
+        return { status: 'ok' as const, messages };
       } catch (error) {
-        console.error('读取 SDK 会话历史失败:', error);
-        return { messages: [], error: error instanceof Error ? error.message : String(error) };
+        console.error('读取对话历史失败:', error);
+        return { status: 'error' as const, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

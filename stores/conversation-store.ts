@@ -8,16 +8,6 @@ import type { ConversationFolder, ConversationTreeData } from '@/types/electron-
 import type { ChildStateSnapshot } from '@/types/delegation';
 import type { Group } from '@/types/group';
 
-// 分叉参数类型
-export interface ForkParams {
-  sdkSessionIdToResume: string;
-  forkSession: boolean;
-  resumeSessionAt: string;
-  editedMessage?: string;
-  /** 目标对话 ID，useAgentSession 仅处理与自身 conversationId 匹配的 forkParams */
-  targetConversationId?: string;
-}
-
 /**
  * 跨 profile 切换模型后待续发的载荷：useSendMessage 在 needsRestart 分支塞入，
  * useAgentSession 在新 session ready 后按 conversationId 匹配消费。
@@ -78,7 +68,6 @@ interface ConversationState {
   nodeMap: Record<string, ConversationFlatNode>;
 
   // --- 全局状态（跨工作区共享） ---
-  forkParams: ForkParams | null;
   /** 会话重启触发器（递增时触发 useAgentSession 重建会话） */
   sessionRestartTrigger: number;
   /** 跨 profile 切换模型后待续发的载荷（useAgentSession 重启完成后自动消费） */
@@ -105,8 +94,6 @@ interface ConversationState {
   newConversation: () => Promise<void>;
   /** 删除对话 */
   deleteConversation: (conversationId: string) => Promise<void>;
-  /** 设置分叉参数 */
-  setForkParams: (params: ForkParams | null) => void;
   /** 分叉对话（创建独立新对话） */
   forkConversation: (params: { parentConversationId: string; forkMessageSdkUuid: string }) => Promise<void>;
   /** 创建对话文件夹 */
@@ -270,7 +257,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   nodeMap: {},
 
   // 全局状态
-  forkParams: null,
   sessionRestartTrigger: 0,
   pendingSendAfterRestart: null,
   runningConversationIds: new Set<string>(),
@@ -341,7 +327,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     const wsId = workspace.id;
 
-    set((state) => ({ ...patchSlice(state, wsId, { selectedConversation: conversation }), forkParams: null }));
+    set((state) => patchSlice(state, wsId, { selectedConversation: conversation }));
 
     // 自动打开标签页（openTab 内部有防重逻辑）
     useSessionStore.getState().openTab(conversation.id, conversation.title || '新对话', wsId);
@@ -467,8 +453,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  setForkParams: (params) => set({ forkParams: params }),
-
   forkConversation: async (params) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
@@ -483,12 +467,12 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      if (!parentConv.sdk_session_id) {
-        toast.warning('该对话不支持分叉', { description: '缺少 SDK session' });
+      if (!parentConv.session_id) {
+        toast.warning('该对话不支持分叉', { description: '尚未创建会话' });
         return;
       }
 
-      // 创建分叉对话记录
+      // 创建分叉对话记录：后端同步完成 Harness fork，返回时新对话已可直接恢复
       const forkResult = await client.createFork({
         workspaceId: parentConv.workspace_id,
         title: `分叉自: ${parentConv.title}`,
@@ -501,7 +485,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      // fork_pending 模式：不立即启动 SDK fork，等用户发送首条消息时再启动
       // 刷新对话列表
       await get().loadConversations();
 
@@ -781,7 +764,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     loadingConversations: false,
     treeData: null,
     nodeMap: {},
-    forkParams: null,
     sessionRestartTrigger: 0,
     pendingSendAfterRestart: null,
     runningConversationIds: new Set<string>(),

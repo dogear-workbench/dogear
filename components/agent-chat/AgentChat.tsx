@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { ChevronDown, GitBranch, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { Archive, ChevronDown, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -42,7 +41,6 @@ import { buildTurns } from './turns';
 export function AgentChat({
   placeholder = '输入消息...',
   showStatusHint = true,
-  useSdkResume = true,
   showReplayMessages = true,
   conversationIdOverride,
   rightPanelToggle,
@@ -53,15 +51,9 @@ export function AgentChat({
   const setConvSelection = useConversationStore((s) => s.setConversationModelSelection);
 
   // 从 store 获取状态
-  const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
   const storeConversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
   // 多标签页模式下使用 override，否则使用 store 中的选中对话
   const conversationId = conversationIdOverride || storeConversationId;
-  const globalForkParams = useConversationStore((s) => s.forkParams);
-  // 仅处理属于当前对话的 forkParams，防止其他对话的 fork 触发本对话重建
-  const forkParams = (globalForkParams?.targetConversationId && globalForkParams.targetConversationId !== conversationId)
-    ? null
-    : globalForkParams;
   const conversations = useConversationStore((s) => s.conversations);
   const selectedConv = useConversationStore((s) => s.selectedConversation);
   const selectConversation = useConversationStore((s) => s.selectConversation);
@@ -70,27 +62,9 @@ export function AgentChat({
   const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
   const toggleCollapse = useCompactCollapseStore((s) => s.toggle);
 
-  // 分叉来源父对话标题
-  const parentTitle = useMemo(() => {
-    if (!selectedConv?.parent_conversation_id) return '';
-    const parent = conversations.find(c => c.id === selectedConv.parent_conversation_id);
-    return parent?.title || '未知对话';
-  }, [selectedConv?.parent_conversation_id, conversations]);
-
-  // 构建 context 对象
-  const context = { workspaceId, selectedText: undefined };
-
   // 预加载工具分类映射（供 ToolBlock/ToolGroupBlock 使用中文大类标签）
   useEffect(() => {
     useToolRegistryStore.getState().ensureLoaded();
-  }, []);
-
-  // 获取默认工作区路径
-  const [workspacePath, setWorkspacePath] = useState('');
-  useEffect(() => {
-    client.getDefault().then((ws) => {
-      if (ws?.path) setWorkspacePath(ws.path);
-    });
   }, []);
 
   // 加载状态
@@ -110,14 +84,16 @@ export function AgentChat({
   }, [isLoading]);
 
   // 历史消息
-  const { messages, setMessages, setHistoryLoaded } =
-    useMessageHistory({ conversationId, useSdkResume, forkParams, workspacePath });
+  const { messages, setMessages, setHistoryLoaded, historyStatus, archivedAt } =
+    useMessageHistory({ conversationId });
+  // 旧 SDK 主会话迁移冻结的归档会话：只读展示历史，不建立 runtime、不允许发送/编辑重发/分叉
+  const isArchivedLegacy = historyStatus === 'archived_legacy';
 
   useTaskListAggregator(messages, setMessages);
 
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
-    useAgentSession({ conversationId, forkParams, context, useSdkResume, setMessages, setIsLoading });
+    useAgentSession({ conversationId, archived: isArchivedLegacy, setIsLoading });
 
   // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，
   // 用后端权威运行态兜底；本地 isLoading 保留用于点击发送的乐观预置和失败恢复
@@ -341,27 +317,21 @@ export function AgentChat({
             }}
           />
         )}
-        {/* 分叉来源 Banner */}
-        {selectedConv?.fork_pending && selectedConv?.parent_conversation_id && (
-          <div className="flex items-center gap-2 px-3 py-2 my-2 rounded-lg bg-purple-50 border border-purple-200 text-xs text-purple-700">
-            <GitBranch size={14} className="flex-shrink-0" />
-            <span>分叉自: </span>
-            <button
-              onClick={async () => {
-                const parentId = selectedConv.parent_conversation_id!;
-                const parentConv = conversations.find(c => c.id === parentId);
-                if (parentConv) {
-                  await selectConversation(parentConv);
-                }
-              }}
-              className="font-medium text-purple-800 hover:underline cursor-pointer"
-            >
-              {parentTitle}
-            </button>
+        {/* 旧 SDK 主会话迁移冻结提示：只读展示，不回放 JSONL、不允许发送/编辑重发/分叉 */}
+        {isArchivedLegacy && (
+          <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+            <Archive size={14} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">此对话来自迁移前的旧版本，历史记录已冻结</p>
+              <p className="mt-0.5 text-amber-700">仅供查看，无法继续发送消息、编辑重发或分叉；原始记录已保留为不可操作的备份文件。</p>
+              {archivedAt && (
+                <p className="mt-0.5 text-amber-600">归档时间：{new Date(archivedAt).toLocaleString()}</p>
+              )}
+            </div>
           </div>
         )}
 
-        {messages.length === 0 && !selectedConv?.fork_pending && (
+        {messages.length === 0 && !isArchivedLegacy && (
           <div className="text-center text-gray-500 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>
@@ -381,7 +351,7 @@ export function AgentChat({
               key={index}
               message={message}
               messageIndex={index}
-              onFork={sendMessage.handleFork}
+              onFork={isArchivedLegacy ? undefined : sendMessage.handleFork}
               sessionId={sessionId}
               onPermissionResolved={handlePermissionResolvedWithScroll}
               onAskUserResolved={handleAskUserResolvedWithScroll}
@@ -493,7 +463,13 @@ export function AgentChat({
       </div>
       </div>
 
-      {/* 输入区域 */}
+      {/* 输入区域：旧版本迁移冻结的归档会话不提供输入入口 */}
+      {isArchivedLegacy ? (
+        <div className="flex items-center gap-2 px-4 py-3 border-t text-xs text-muted-foreground bg-muted/30">
+          <Archive size={14} className="flex-shrink-0" />
+          <span>此对话已冻结，无法发送新消息</span>
+        </div>
+      ) : (
       <ChatInputArea
         input={sendMessage.input}
         setInput={sendMessage.setInput}
@@ -529,6 +505,7 @@ export function AgentChat({
         onSlashMenuClose={slashCommands.closeSlashMenu}
         onTogglePromptSidebar={togglePromptSidebar}
       />
+      )}
     </div>
   );
 }

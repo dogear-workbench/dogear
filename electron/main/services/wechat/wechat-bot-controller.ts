@@ -291,12 +291,12 @@ class WechatBotController {
       return;
     }
 
-    // attach 到新 conversation（runtime service 负责创建/复用 session、设置权限、注册事件）
+    // attach 到新 conversation（runtime service 负责创建/复用 session、设置权限、注册事件；
+    // resume 目标已由 conversation.sessionId 决定，不再需要调用方传入）
     const result = await conversationRuntimeService.attachConversation(
       conversationId,
       this.state.activeWorkspaceId,
       'wechat-bot',
-      { resume: sdkSessionId },
     );
 
     this.state.activeAttachmentId = result.attachmentId;

@@ -38,12 +38,14 @@ export interface ConversationIndex {
   sessionId: string | null;
   workspaceId: string;
   parentConversationId: string | null;
+  /** 分叉点标识；SDK 时代是 Claude JSONL 消息 uuid，Harness 迁移后是 fork 时使用的 SessionTreeEntry id */
   forkMessageSdkUuid: string | null;
   personaId?: string;    // 关联的人设 ID
   tempPrompt?: string;   // 对话规则（持久绑定此对话）
   modelSelection: ModelSelection | null;
   cachePolicy?: '5m' | '1h'; // 提示缓存策略；缺省视为 5m
-  forkPending?: boolean; // 分叉已创建但 SDK 会话未建立
+  /** @deprecated SDK 时代"分叉待定，等首条消息才建会话"的状态位；Harness fork 已改为同步创建，不再产生新值 */
+  forkPending?: boolean;
   /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
   archivedAt?: string;
   /** 归档原因；SDK 主会话移除一次性迁移写入 'sdk-main-session-removed'，手动归档不写此字段 */
@@ -77,6 +79,7 @@ export interface ConversationCompat {
   temp_prompt?: string;
   fork_pending?: boolean;
   archived_at?: string;
+  archive_reason?: string;
   created_at: number;
   updated_at: number;
   workspaceId: string;
@@ -89,6 +92,7 @@ export interface ConversationCompat {
   modelSelection: ModelSelection | null;
   cachePolicy: '5m' | '1h' | undefined;
   archivedAt: string | undefined;
+  archiveReason: string | undefined;
   createdAt: string;
   updatedAt: string;
   usageSummary?: {
@@ -318,7 +322,8 @@ export async function create(
 }
 
 /**
- * 创建分叉对话
+ * 创建分叉对话。分叉现在是同步/即时的：调用方必须已经用 Harness repository fork
+ * 出新 sessionId，此函数只落 Conversation metadata，不再有 forkPending 待定态。
  * @returns 新对话的 ID
  */
 export async function createFork(
@@ -326,6 +331,7 @@ export async function createFork(
   groupId: string,
   title: string,
   parentConversationId: string,
+  sessionId: string,
   forkMessageSdkUuid: string,
   modelSelection: ModelSelection | null = null,
   cachePolicy: '5m' | '1h' = '5m',
@@ -339,14 +345,13 @@ export async function createFork(
     id,
     title,
     sdkSessionId: null,
-    sessionId: null,
+    sessionId,
     workspaceId,
     parentConversationId,
     forkMessageSdkUuid,
     modelSelection: modelSelection ? { ...modelSelection } : null,
     contractMetadata: parent?.contractMetadata ? { ...parent.contractMetadata } : undefined,
     cachePolicy,
-    forkPending: true,  // 标记为待分叉状态，用户发送首条消息时才启动 SDK fork
     groupId,
     role: 'main',
     createdAt: now,
@@ -427,32 +432,6 @@ export async function updateSessionId(workspaceId: string, id: string, sessionId
   if (!conv) throw new Error(`Conversation not found: ${id}`);
 
   conv.sessionId = sessionId;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-}
-
-/**
- * 清除分叉待定状态（SDK 会话创建成功后调用）
- */
-export async function clearForkPending(workspaceId: string, id: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  conv.forkPending = false;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-}
-
-/**
- * 清除分叉相关字段（分叉对话拿到新 sessionId 后变为独立对话）
- */
-export async function clearForkFields(workspaceId: string, id: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  conv.parentConversationId = null;
-  conv.forkMessageSdkUuid = null;
-  conv.forkPending = false;
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
 }
@@ -614,6 +593,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     temp_prompt: conv.tempPrompt || undefined,
     fork_pending: conv.forkPending || false,
     archived_at: conv.archivedAt || undefined,
+    archive_reason: conv.archiveReason || undefined,
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用
@@ -627,6 +607,7 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     modelSelection: conv.modelSelection ?? null,
     cachePolicy: conv.cachePolicy,
     archivedAt: conv.archivedAt,
+    archiveReason: conv.archiveReason,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
     usageSummary: conv.usageSummary,

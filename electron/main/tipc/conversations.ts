@@ -8,6 +8,8 @@ import { deleteUsage } from '../services/usage/usage-service.js';
 import { loadSettings } from '../services/settings-service.js';
 import { readIndex, writeIndex, removeGroupEverywhere } from '../services/memory/smart-category-store.js';
 import { getGroupDir } from '../services/memory/group-digest-store.js';
+import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
 const t = tipc.create();
 
@@ -125,8 +127,34 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const conv = await conversationService.getById(input.workspaceId, input.conversationId);
-        const orphanedGroupId = conv?.groupId;
+        if (!conv) return { success: true, error: undefined }; // 已不存在，幂等
 
+        // 旧归档会话（SDK 主会话移除迁移冻结）从未有 Harness session，只删 metadata，
+        // 默认保留旧 SDK JSONL 备份（全局决策：备份不可操作但留盘）。
+        const isLegacyArchived =
+          !!conv.archivedAt && conv.archiveReason === conversationService.ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED;
+
+        if (conv.sessionId && !isLegacyArchived) {
+          const piSessionManager = getPiSessionManager();
+          const liveSessionId = piSessionManager.getSessionIdByConversation(input.conversationId);
+          if (liveSessionId === conv.sessionId) {
+            // 先关掉内存中的活跃 session，避免它继续持有即将被删除的 JSONL 文件
+            await piSessionManager.closeSession(liveSessionId).catch((error) => {
+              console.warn('[deleteConversation] 关闭活跃会话失败（继续尝试删除文件）:', error);
+            });
+          }
+          try {
+            await getPiSessionRepository().delete(input.workspaceId, conv.sessionId);
+          } catch (error) {
+            console.error('[deleteConversation] 删除 Harness session 文件失败，保留 Conversation metadata:', error);
+            return {
+              success: false,
+              error: `删除会话文件失败: ${error instanceof Error ? error.message : String(error)}`,
+            };
+          }
+        }
+
+        const orphanedGroupId = conv.groupId;
         await conversationService.deleteConversation(input.workspaceId, input.conversationId);
         // 清理用量 JSONL（失败静默，不阻塞删除）
         await deleteUsage(input.conversationId).catch(() => {});
@@ -192,39 +220,67 @@ export const conversationsRouter = {
       }
     }),
 
+  /**
+   * 创建分叉对话：先用 Harness repository 同步 fork 出新 sessionId，成功后才落
+   * Conversation metadata；metadata 落盘失败则回滚删除刚 fork 出的孤儿 session。
+   * 第一版只支持"从可无歧义定位的 entry fork"——forkMessageSdkUuid 现在是前端消息
+   * 携带的 Harness SessionTreeEntry id（分叉按钮只在助手消息上出现，history-adapter
+   * 已把该消息合并写入的最后一个 entry id 塞进 sdkUuid），用 position:'at' 精确截断；
+   * 拿不到时退化为拷贝父 session 全部 entries（等效于从当前 leaf fork）。
+   */
   createFork: t.procedure
     .input<{ workspaceId: string; title: string; parentConversationId: string; forkMessageSdkUuid: string }>()
     .action(async ({ input }) => {
       try {
         const parent = await conversationService.getById(input.workspaceId, input.parentConversationId);
+        if (!parent) return { conversationId: null, error: '父对话不存在' };
+        if (!parent.sessionId) return { conversationId: null, error: '父对话尚未创建会话，无法分叉' };
+
+        const repository = getPiSessionRepository();
+        let forkedSessionId: string;
+        try {
+          const forkOptions = input.forkMessageSdkUuid
+            ? { entryId: input.forkMessageSdkUuid, position: 'at' as const }
+            : {};
+          const { info } = await repository.fork(input.workspaceId, parent.sessionId, forkOptions);
+          forkedSessionId = info.id;
+        } catch (error) {
+          console.error('[createFork] Harness fork 失败:', error);
+          return { conversationId: null, error: `分叉会话失败: ${error instanceof Error ? error.message : String(error)}` };
+        }
+
         // fork 继承父对话的 groupId；父对话无 groupId 时（理论上迁移后不存在）新建一组
-        const groupId = parent?.groupId
+        const groupId = parent.groupId
           ?? (await groupService.createGroup(input.workspaceId, { title: input.title })).id;
-        const conversationId = await conversationService.createFork(
-          input.workspaceId,
-          groupId,
-          input.title,
-          input.parentConversationId,
-          input.forkMessageSdkUuid,
-          parent?.modelSelection ?? null,
-          parent?.cachePolicy ?? '5m',
-        );
-        return { conversationId, error: undefined };
+
+        try {
+          const conversationId = await conversationService.createFork(
+            input.workspaceId,
+            groupId,
+            input.title,
+            input.parentConversationId,
+            forkedSessionId,
+            input.forkMessageSdkUuid,
+            parent.modelSelection ?? null,
+            parent.cachePolicy ?? '5m',
+          );
+          return { conversationId, error: undefined };
+        } catch (error) {
+          console.error('[createFork] 创建 Conversation metadata 失败，回滚孤儿 session:', error);
+          try {
+            await repository.delete(input.workspaceId, forkedSessionId);
+          } catch (cleanupError) {
+            console.error('[createFork] 孤儿 session 清理失败，需人工检查残留文件:', {
+              workspaceId: input.workspaceId,
+              forkedSessionId,
+              cleanupError,
+            });
+          }
+          return { conversationId: null, error: error instanceof Error ? error.message : String(error) };
+        }
       } catch (error) {
         console.error('创建分叉对话失败:', error);
         return { conversationId: null, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  clearForkPending: t.procedure
-    .input<{ conversationId: string; workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await conversationService.clearForkPending(input.workspaceId, input.conversationId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('清除 fork_pending 失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

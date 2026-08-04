@@ -24,7 +24,7 @@
 - [x] [Step 2E: 可选工具包 ToolDef 中立化改造](./step2e-toolpack-neutralization.md) — 把 article/stock-quote/stock-analysis/stock-announcement/stock-picking 五个工具工厂改造成中立 ToolDef 形态，供 PiSession 消费。
 - [x] [Step 2F: PiSession 工具包接入与权限批量免确认](./step2f-pisession-toolpack-wiring.md) — 让 PiSession 按 enabledToolPacks/groupId 挂载工具包并对齐旧 SDK 的批量免确认体验。
 - [x] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
-- [ ] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
+- [x] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
 - [ ] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
 - [ ] [Step 6: 移除 SDK 主会话代码并验收边界](./step6-sdk-main-cleanup.md) — 删除 SDK 主会话路径，确认 SDK 仅服务 PARSE_ARTICLE，完成构建与关键流程验收。
 

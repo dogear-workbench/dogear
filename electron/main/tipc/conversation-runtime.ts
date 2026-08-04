@@ -10,16 +10,13 @@ export const conversationRuntimeRouter = {
   /**
    * 桌面端 attach 到指定 conversation 的 runtime session。
    * 若 conversation 已有存活 session，直接复用（retain +1）并返回当前 turn 快照；
-   * 否则由 PiSessionManager 新建 session（resume / fork 参数暂未接入 pi 运行时，留给后续 step）。
+   * 否则由 PiSessionManager 新建/恢复 session——resume 目标由 conversation.sessionId 决定，
+   * 不再需要调用方传 resume/fork 参数（fork 已改为 createFork 时同步完成）。
    */
   attachConversationRuntime: t.procedure
     .input<{
       conversationId: string;
       workspaceId: string;
-      resume?: string;
-      forkSession?: boolean;
-      resumeSessionAt?: string;
-      clearForkFields?: boolean;
     }>()
     .action(async ({ input, context }) => {
       try {
@@ -27,13 +24,7 @@ export const conversationRuntimeRouter = {
           input.conversationId,
           input.workspaceId,
           'desktop',
-          {
-            webContentsId: context.sender.id,
-            resume: input.resume,
-            forkSession: input.forkSession,
-            resumeSessionAt: input.resumeSessionAt,
-            clearForkFields: input.clearForkFields,
-          },
+          { webContentsId: context.sender.id },
         );
 
         // 复用已有 session 时，把当前 turn 进行中的消息重播给调用者窗口

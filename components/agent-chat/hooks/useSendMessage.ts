@@ -303,54 +303,10 @@ export function useSendMessage(params: UseSendMessageParams) {
     const hasImages = pendingImages.length > 0;
     if (!hasText && !hasImages) return;
 
-    // fork_pending 对话没有 sessionId，但允许发送（会触发 SDK fork 创建）
-    const isForkPending = useConversationStore.getState().selectedConversation?.fork_pending;
-    if (!isForkPending && (!sessionId || !isSessionReady)) return;
+    if (!sessionId || !isSessionReady) return;
 
     // 斜杠命令拦截
     if (hasText && !hasImages && await handleSlashCommand(input)) {
-      return;
-    }
-
-    // fork_pending 模式：首次发送消息时启动 SDK fork 会话
-    const selectedConv = useConversationStore.getState().selectedConversation;
-    if (selectedConv?.fork_pending && selectedConv.parent_conversation_id) {
-      const userMessage = input;
-      setInput('');
-
-      // 获取父对话 sdk_session_id
-      const { useWorkspaceStore } = await import('@/stores/workspace-store');
-      const parentResult = await client.getById({
-        conversationId: selectedConv.parent_conversation_id,
-        workspaceId: useWorkspaceStore.getState().workspace?.id || '',
-      });
-      const parentSdkSessionId = parentResult.conversation?.sdk_session_id;
-
-      if (!parentSdkSessionId) {
-        console.warn('无法启动分叉会话: 父对话缺少 SDK session');
-        return;
-      }
-
-      // 通过 forkParams 触发 SDK fork 会话创建，useAgentSession 会自动发送 editedMessage
-      useConversationStore.getState().setForkParams({
-        sdkSessionIdToResume: parentSdkSessionId,
-        forkSession: true,
-        resumeSessionAt: selectedConv.fork_message_sdk_uuid || '',
-        editedMessage: userMessage,
-        targetConversationId: selectedConv.id,
-      });
-
-      // 清除 fork_pending 状态：后端 + 前端同步
-      // 后端 clearForkFields 在 agent.ts session_init 中执行，这里只需前端同步
-      const clearFields = { fork_pending: false, parent_conversation_id: undefined, fork_message_sdk_uuid: undefined };
-      useConversationStore.setState((state) => ({
-        selectedConversation: state.selectedConversation?.id === selectedConv.id
-          ? { ...state.selectedConversation, ...clearFields }
-          : state.selectedConversation,
-        conversations: state.conversations.map((c) =>
-          c.id === selectedConv.id ? { ...c, ...clearFields } : c
-        ),
-      }));
       return;
     }
 
@@ -540,7 +496,7 @@ export function useSendMessage(params: UseSendMessageParams) {
 
     try {
       // 发送消息到会话（多 content block + 图片附件）
-      // sessionId 在此处一定不为 null（fork_pending 分支已提前 return）
+      // sessionId 在此处一定不为 null（handleSend 顶部已提前 return）
       await client.sendQueryBasedSessionMessage({
         sessionId: sessionId!,
         content: messageToSend,

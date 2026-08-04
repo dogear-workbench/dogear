@@ -24,6 +24,7 @@ export interface Conversation {
   title: string;
   model: string;
   sdk_session_id?: string;
+  session_id?: string;
   parent_conversation_id?: string;
   fork_message_sdk_uuid?: string;
   persona_id?: string;
@@ -32,6 +33,7 @@ export interface Conversation {
   cachePolicy?: '5m' | '1h';
   fork_pending?: boolean;
   archived_at?: string;
+  archive_reason?: string;
   created_at: number;
   updated_at: number;
   groupId?: string;
