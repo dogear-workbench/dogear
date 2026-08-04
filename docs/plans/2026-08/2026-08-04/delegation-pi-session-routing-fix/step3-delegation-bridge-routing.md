@@ -1,7 +1,7 @@
 ---
 step: 3
 title: delegation-bridge 会话查找路由改造
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,12 +36,21 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无实质差异；额外顺手更新了 3 处失效注释（文件头 docstring、`ChildStateInternal.sessionId` 字段注释、`waitForChildSdkSessionId` 的 docstring），因为它们提到的 `session_init`/`QueryBasedSessionManager` 已不存在，属于同一批"文字描述准确性"改动，未触碰任何逻辑。
+- 改动文件清单：仅 `electron/main/agents/delegation-bridge.ts`。
 
 ### 给下一步的接力棒
 
 - 实际的 import 路径和导出名：
+  - `import type { PiSession } from './pi-session/pi-session.js';`
+  - `import { getPiSessionManager } from './pi-session/pi-session-manager.js';`
 - `wireSession`/`startChild`/`stopChild`/`deliverMessage` 改造后的最终代码形态：
+  - `wireSession(childId: string, session: PiSession): void` — 只保留 `session.on('complete', ...)` / `session.on('error', ...)`，`session_init` 监听已删除；紧跟 `const existing = session.getSdkSessionId(); if (existing) onChildSessionInit(childId, existing);` 保留，注释已改为"常态路径必定命中"。
+  - `startChild`：`const session = getPiSessionManager().getSession(attachment.sessionId);`，其余判空/报错逻辑不变。
+  - `stopChild`：`const session = getPiSessionManager().getSession(c.sessionId);`，`session.interrupt()` 调用不变。
+  - `deliverMessage`：`const localSessionId = getPiSessionManager().getSessionIdByConversation(opts.toConversationId); const session = localSessionId ? getPiSessionManager().getSession(localSessionId) : undefined;`，其余不变。
 - 下个 step 入口：端到端手测 `CreateSession` → `SendMessage`/`WaitForMessage` → `StopSession`/交付 全链路。
-- 待办或已知限制：（例如 `onChildSessionInit`/`sdkSessionIdWaiters`/`waitForChildSdkSessionId` 这套原本为异步等待设计的机制目前保留未简化，现在永远走同步兜底立即 resolve，功能上无问题但存在"死代码路径"，是否值得在此顺手精简由实施时判断，不强制）
+- 待办或已知限制：`onChildSessionInit`/`sdkSessionIdWaiters`/`waitForChildSdkSessionId` 这套异步等待机制**未做简化**——严格限定改动范围在 delegation-bridge.ts 内部改动逻辑本身没问题，但考虑到这三者是纯粹的死代码路径（`waitForChildSdkSessionId` 的超时分支、`sdkSessionIdWaiters` 的 push/resolve 循环、`onChildSessionInit` 里 `resolvers` 判空后的循环都永远不会被真正触发，因为 `existing` 必有值），本 step 判断这属于"精简重构"而非"路由修复"的范畴，保留原样以最小化改动面，仅更新了相关注释使其准确。如果后续 step 或用户希望进一步精简，可以考虑直接把 `waitForChildSdkSessionId` 收敛成同步读取 `c.sdkSessionId ?? null` 并删除 `sdkSessionIdWaiters` 整个 Map 及相关分支。
+- `error` 事件 payload 形状已核实：`pi-session.ts:335-339` 和 `:519-523` 两处 emit 都是 `{ type: 'error', error: string, timestamp: number }`，与 `extractErrorMessage` 里 `m.error` 字段读取完全兼容，无需修正。
+- `interrupt()` 方法确认存在（`pi-session.ts:577`），签名兼容，直接替换调用对象即可，无需改造。
+- `bun run build:electron` 执行结果：`tsc -p tsconfig.electron.json` 无任何输出，编译通过，无类型错误。

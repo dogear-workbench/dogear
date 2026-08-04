@@ -2,14 +2,15 @@
  * Delegation Bridge — 主进程内 Agent 协作运行时
  * 维护会话创建/停止的状态机（childStates，用于 UI 展示 + no_delivery 检测）+
  * 通用消息投递与等待（messageWaiters，支撑 SendMessage / WaitForMessage）+
- * 监听 QueryBasedSession 的 session_init / complete / error 推进状态。
+ * 监听 PiSession 的 complete / error 事件推进状态。
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 
-import { QueryBasedSession, getQueryBasedSessionManager } from './query-based-session.js';
+import type { PiSession } from './pi-session/pi-session.js';
+import { getPiSessionManager } from './pi-session/pi-session-manager.js';
 import { mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
@@ -27,7 +28,7 @@ const logger = mainLogger.child('delegation-bridge');
 interface ChildStateInternal extends ChildStateSnapshot {
   workspaceId: string;
   attachmentId: string;
-  /** 本地运行时 sessionId（QueryBasedSessionManager 内部 key，非 SDK sdkSessionId） */
+  /** 本地运行时 sessionId（PiSessionManager 内部 key，非 SDK sdkSessionId） */
   sessionId: string;
   timeoutTimer?: NodeJS.Timeout;
 }
@@ -119,11 +120,11 @@ function isTerminal(status: ChildStatus): boolean {
 
 // ─── session 事件 wiring ───
 
-function wireSession(childId: string, session: QueryBasedSession): void {
+function wireSession(childId: string, session: PiSession): void {
   session.on('complete', () => onSessionComplete(childId));
   session.on('error', (msg: unknown) => onSessionError(childId, msg));
-  session.on('session_init', (data: { session_id: string }) => onChildSessionInit(childId, data.session_id));
-  // session_init 理论上在 wireSession 之后才会触发；这里做一次同步兜底，覆盖极小概率的时序竞争
+  // PiSession 在 attachConversation 返回前已 start() 完成，getSdkSessionId() 此时必定有值，
+  // 这是常态路径而非兜底（PiSession 不 emit session_init 事件）
   const existing = session.getSdkSessionId();
   if (existing) onChildSessionInit(childId, existing);
 }
@@ -257,7 +258,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     throw err;
   }
 
-  const session = getQueryBasedSessionManager().getSession(attachment.sessionId);
+  const session = getPiSessionManager().getSession(attachment.sessionId);
   if (!session) {
     childStates.delete(childId);
     groupSharedService.releaseOutputPath(workspaceId, groupId, spec.outputPath, childId);
@@ -295,7 +296,7 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
   c.errorMessage = reason === 'timeout' ? '超时中断' : '被停止';
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
 
-  const session = getQueryBasedSessionManager().getSession(c.sessionId);
+  const session = getPiSessionManager().getSession(c.sessionId);
   if (session) {
     try { await session.interrupt(); } catch (err) { logger.warn(`session.interrupt 失败 ${childId}`, err); }
   }
@@ -372,8 +373,9 @@ export async function getParentSessionIdByChildConversationId(childConversationI
 }
 
 /**
- * 等待某个刚创建的子会话拿到自己的 sdkSessionId（session_init 是异步到达的）。
- * 超时返回 null，调用方应引导 agent 之后用 ListLinkedSessions 兜底查询。
+ * 等待某个刚创建的子会话拿到自己的 sdkSessionId。
+ * PiSession 改造后 wireSession 的同步兜底必定命中，此函数总是立即 resolve；
+ * 保留是为了不改变调用方签名，超时分支已是死代码路径。
  */
 export function waitForChildSdkSessionId(childId: string, timeoutMs = 15000): Promise<string | null> {
   const c = childStates.get(childId);
@@ -457,8 +459,8 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
     }
   }
 
-  const localSessionId = getQueryBasedSessionManager().getSessionIdByConversation(opts.toConversationId);
-  const session = localSessionId ? getQueryBasedSessionManager().getSession(localSessionId) : undefined;
+  const localSessionId = getPiSessionManager().getSessionIdByConversation(opts.toConversationId);
+  const session = localSessionId ? getPiSessionManager().getSession(localSessionId) : undefined;
   if (!session) return 'target_inactive';
 
   const senderTag = `<sender kind="agent" session_id="${escapeXmlAttr(opts.fromSessionId)}" name="${escapeXmlAttr(opts.fromLabel)}" delivery="${opts.delivery ? 'true' : 'false'}"/>`;
