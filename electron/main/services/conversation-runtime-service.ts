@@ -81,6 +81,8 @@ class ConversationRuntimeService {
           conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
         enabledToolPacks: appSettings.enabledToolPacks ?? [],
         groupId: conversation.groupId || undefined,
+        // TODO(Step2): 应传 conversation.role，本 step 范围限定在 pi-session.ts，暂硬编码占位保持现状行为
+        role: 'main',
       });
       try {
         await session.start();

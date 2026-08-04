@@ -33,7 +33,7 @@ import { createStockAnalysisToolDefs } from '../tools/stock-analysis-tools.js';
 import { createAnnouncementToolDefs } from '../tools/stock-announcement-tools.js';
 import { createStockPickingToolDefs } from '../tools/stock-picking-tools.js';
 import { createGroupToolDefs } from '../tools/group-tools.js';
-import { createDelegationToolDefs } from '../tools/delegation-tools.js';
+import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createReviewToolDefs } from '../tools/review-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
@@ -64,8 +64,14 @@ export interface PiSessionConfig {
   onHarnessSessionCreated: (sessionId: string) => Promise<void>;
   /** 用户在设置页开启的可选工具包名（对齐 tool-packs.ts 的 OPTIONAL_TOOL_PACKS[].name），缺省视为空数组 */
   enabledToolPacks: string[];
-  /** 对话所属会话组 ID；存在时挂载 dogear-group / dogear-delegation（role='main'） */
+  /** 对话所属会话组 ID；存在时挂载 dogear-group / dogear-delegation */
   groupId?: string;
+  /** 与 Conversation.role 同语义，直接透传，决定 dogear-delegation 工具包给主会话集还是子会话集 */
+  role: 'main' | 'sub';
+  /** role='sub' 时必需：派出当前会话的会话 conversationId（对齐 SubDelegationOpts.parentConversationId）。
+   * 本 step 尚无调用方能提供真实值（依赖 conversation.contractMetadata，接线是后续 step 的范围），
+   * 仅在此打通类型通道；role='main' 时不使用 */
+  parentConversationId?: string;
 }
 
 enum PiSessionStatus {
@@ -148,9 +154,9 @@ export class PiSession extends EventEmitter {
     return this.sessionId;
   }
 
-  /** pi 阶段一没有 SDK 式的持久化 session_id / resume 概念，预留字段供后续 step 对齐 */
+  /** Harness 的真实持久化 sessionId；start() 内两条分支（open 已有 / create 新建）都会同步赋值 config.harnessSessionId，resolve 时必定可用 */
   getSdkSessionId(): string | undefined {
-    return undefined;
+    return this.config.harnessSessionId ?? undefined;
   }
 
   async start(): Promise<void> {
@@ -245,16 +251,26 @@ export class PiSession extends EventEmitter {
       }
     }
 
-    // dogear-group / dogear-delegation：按 conversation.groupId 存在放行（本 step 只服务主会话，role 固定 'main'；
-    // 子会话的 pi 化工具包接入留给 Step 5）
+    // dogear-group / dogear-delegation：按 conversation.groupId 存在放行，role 透传 this.config.role
+    // 决定 dogear-delegation 拿主会话工具集（含 CreateSession/StopSession）还是子会话工具集（无法派孙子）
     if (this.config.groupId) {
       toolDefs.push(...registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
-      toolDefs.push(...registerPack('dogear-delegation', createDelegationToolDefs({
-        role: 'main',
-        workspaceId: this.config.workspaceId,
-        groupId: this.config.groupId,
-        conversationId: this.config.conversationId,
-      })));
+      // 判别联合按 this.config.role 收窄：sub 分支需要 parentConversationId（真实接线留给后续 step）
+      const delegationOpts: DelegationToolsOpts = this.config.role === 'sub'
+        ? {
+            role: 'sub',
+            workspaceId: this.config.workspaceId,
+            groupId: this.config.groupId,
+            conversationId: this.config.conversationId,
+            parentConversationId: this.config.parentConversationId ?? '',
+          }
+        : {
+            role: 'main',
+            workspaceId: this.config.workspaceId,
+            groupId: this.config.groupId,
+            conversationId: this.config.conversationId,
+          };
+      toolDefs.push(...registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
     }
 
     // dogear-memory-review：按 workspacePath 齐全放行，onSaved 主会话场景不传（无需感知落盘时机）
