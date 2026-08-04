@@ -62,7 +62,7 @@ function formatFidelityError(problems: SourceProblem[]): string {
 
 export function createGroupDigestToolDefs(
   workspaceId: string,
-  workspacePath: string,
+  _workspacePath: string,
   groupId: string,
   dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>,
   onDigestSaved?: () => void,
@@ -133,7 +133,7 @@ export function createGroupDigestToolDefs(
           }
           if (args.items.length > 0) {
             const sessionIds = [...new Set(args.items.flatMap((item) => item.sources.map((s) => s.sessionId)))];
-            const index = await buildSessionUuidIndex(workspacePath, sessionIds);
+            const index = await buildSessionUuidIndex(workspaceId, sessionIds);
             const problems = validateItemSources(index, args.items);
             if (problems.length > 0) {
               return { content: [{ type: 'text' as const, text: formatFidelityError(problems) }], isError: true };

@@ -1,35 +1,8 @@
 // 组卡引用保真度校验（纯函数 + IO 分离，与 transcript-cleaner.ts 同风格）
 // 确保 SaveGroupDigest 里的每个 sessionId#uuid 都真实存在于对应会话的去噪逐字稿
-import fs from 'node:fs/promises';
-import { getSessionJsonlPath } from './session-paths.js';
-import { cleanMessagesFromLines } from './transcript-cleaner.js';
-
-/**
- * 对每个 sessionId 读一次 JSONL，复用 cleanMessagesFromLines 保证校验口径与 agent 所见一致。
- * 返回值中 null 表示该会话的 JSONL 文件不存在。
- */
-export async function buildSessionUuidIndex(
-  workspacePath: string,
-  sessionIds: string[],
-): Promise<Map<string, Set<string> | null>> {
-  const index = new Map<string, Set<string> | null>();
-  await Promise.all(sessionIds.map(async (sid) => {
-    try {
-      const file = getSessionJsonlPath(workspacePath, sid);
-      const raw = await fs.readFile(file, 'utf-8');
-      const lines = raw.split('\n').filter(Boolean);
-      const messages = cleanMessagesFromLines(lines);
-      index.set(sid, new Set(messages.map((m) => m.uuid).filter(Boolean)));
-    } catch (err: any) {
-      if (err?.code === 'ENOENT') {
-        index.set(sid, null);
-      } else {
-        throw err;
-      }
-    }
-  }));
-  return index;
-}
+// buildSessionUuidIndex 的实现现在在 pi-session/transcript-adapter.ts（Harness 类型不得泄漏出该目录），
+// 这里薄转发，validateItemSources 是纯函数，与数据来源无关，留在此文件。
+export { buildSessionUuidIndex } from '../../agents/pi-session/transcript-adapter.js';
 
 export interface SourceProblem {
   itemIndex: number;

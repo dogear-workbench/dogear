@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import * as conversationService from '../conversation-service.js';
 import * as workspaceService from '../workspace-json-service.js';
 import * as groupService from '../group-service.js';
-import { getSessionJsonlPath } from './session-paths.js';
+import { getPiSessionRepository } from '../../agents/pi-session/pi-session-repository.js';
 import { readGroupDigest, type GroupDigestCard } from './group-digest-store.js';
 
 export interface DirtyGroupConversation {
@@ -82,19 +82,19 @@ export async function findDirtyGroups(wsId: string, wsPath: string): Promise<Dir
     );
     if (mainConvs.length === 0) continue;
 
-    // stat 每个 JSONL，stat 失败则跳过该会话
+    // stat 每个 Harness session 文件，stat 失败则跳过该会话
     const currentMainConvs: Array<{ conversationId: string; sessionId: string; mtime: number }> = [];
     for (const conv of mainConvs) {
-      const jsonlPath = getSessionJsonlPath(wsPath, conv.sdkSessionId!);
       try {
-        const stat = await fs.stat(jsonlPath);
+        const sessionPath = await getPiSessionRepository().getSessionPath(wsId, conv.sdkSessionId!);
+        const stat = await fs.stat(sessionPath);
         currentMainConvs.push({
           conversationId: conv.id,
           sessionId: conv.sdkSessionId!,
           mtime: stat.mtimeMs,
         });
       } catch {
-        // JSONL 不存在或无法访问，跳过该会话
+        // session 不存在或无法访问，跳过该会话
       }
     }
     if (currentMainConvs.length === 0) continue;
@@ -131,16 +131,16 @@ export async function findDirtyGroup(
 
   const currentMainConvs: Array<{ conversationId: string; sessionId: string; mtime: number }> = [];
   for (const conv of mainConvs) {
-    const jsonlPath = getSessionJsonlPath(wsPath, conv.sdkSessionId!);
     try {
-      const stat = await fs.stat(jsonlPath);
+      const sessionPath = await getPiSessionRepository().getSessionPath(wsId, conv.sdkSessionId!);
+      const stat = await fs.stat(sessionPath);
       currentMainConvs.push({
         conversationId: conv.id,
         sessionId: conv.sdkSessionId!,
         mtime: stat.mtimeMs,
       });
     } catch {
-      // JSONL 不存在，跳过
+      // session 不存在，跳过
     }
   }
   if (currentMainConvs.length === 0) return null;

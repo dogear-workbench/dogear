@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { listGroupDigests, readGroupDigest } from '../../services/memory/group-digest-store.js';
 import { readReport, saveReport } from '../../services/memory/review-store.js';
-import { readCleanTranscript } from '../../services/memory/transcript-cleaner.js';
+import { readCleanTranscript } from '../pi-session/transcript-adapter.js';
 import { registerTools } from './tool-registry.js';
 import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -27,7 +27,7 @@ function errText(prefix: string, error: unknown) {
   };
 }
 
-export function createReviewToolDefs(workspaceId: string, workspacePath: string, onSaved?: () => void): ToolDef[] {
+export function createReviewToolDefs(workspaceId: string, _workspacePath: string, onSaved?: () => void): ToolDef[] {
   return [
     defineTool(
       'ListDigests',
@@ -82,7 +82,7 @@ export function createReviewToolDefs(workspaceId: string, workspacePath: string,
         uuid: z.string().describe('出处 uuid（取自组卡 items.sources）'),
       }),
       async (args) => {
-        const r = await readCleanTranscript(workspacePath, args.sessionId, {
+        const r = await readCleanTranscript(workspaceId, args.sessionId, {
           uuid: args.uuid,
           uuidContext: 2,
         });

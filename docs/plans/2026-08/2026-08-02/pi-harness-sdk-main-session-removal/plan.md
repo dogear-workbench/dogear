@@ -25,7 +25,7 @@
 - [x] [Step 2F: PiSession 工具包接入与权限批量免确认](./step2f-pisession-toolpack-wiring.md) — 让 PiSession 按 enabledToolPacks/groupId 挂载工具包并对齐旧 SDK 的批量免确认体验。
 - [x] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
 - [x] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
-- [ ] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
+- [x] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
 - [ ] [Step 6: 移除 SDK 主会话代码并验收边界](./step6-sdk-main-cleanup.md) — 删除 SDK 主会话路径，确认 SDK 仅服务 PARSE_ARTICLE，完成构建与关键流程验收。
 
 ## 全局决策
@@ -46,4 +46,5 @@
 - 旧 Step 2（`step2-pi-session-harness.md`）已由 Step 2A～2D 取代，仅作历史记录，不纳入执行状态与步骤索引。
 - Step 3 验收时发现规划缺口：PiSession 自 Step 1 起只挂了内建文件工具与常驻记忆工具，从未接入 article/stock-quote/stock-analysis/stock-announcement/stock-picking/dogear-group/dogear-delegation/dogear-memory-review 等工具包，而 Step 3 会把所有主会话强制切到 PiSessionManager，若不先补齐会导致主会话功能倒退。插入 Step 2E、2F 补齐后再继续 Step 3；`dogear-reference` 确认仍只装子会话，不纳入本次补齐范围。
 - 新增工具包在 pi 侧统一按"工具包粒度批量免确认"接入权限判定（Step 2F 落地），对齐旧 SDK `allowedTools` 通配符体验，不接受逐工具确认的降级方案。
-- Step 3 完成后发现 delegation 协议在 Pi 运行时下已生产损坏（`getSdkSessionId()` 硬编码 undefined、`PiSessionConfig` 缺 role、`delegation-bridge.ts` 仍硬编码查 `QueryBasedSessionManager`），已提前拆出独立计划 `docs/plans/2026-08/2026-08-04/delegation-pi-session-routing-fix/plan.md` 修复并端到端验收通过（详见 `step5-transcript-delegation.md` 依赖上下文一节的补充说明）。Step 5 的 delegation 路由/角色/sessionId 双写部分已完成，剩余范围收窄为 transcript/组摘要/`reference-tools.ts`/`source-fidelity.ts` 的 Harness 适配（仍依赖 Step4 的共享 reader）以及 `sdkSessionId`→`sessionId` 的协议改名（视情况处理）。
+- Step 3 完成后发现 delegation 协议在 Pi 运行时下已生产损坏（`getSdkSessionId()` 硬编码 undefined、`PiSessionConfig` 缺 role、`delegation-bridge.ts` 仍硬编码查 `QueryBasedSessionManager`），已提前拆出独立计划 `docs/plans/2026-08/2026-08-04/delegation-pi-session-routing-fix/plan.md` 修复并端到端验收通过（详见 `step5-transcript-delegation.md` 依赖上下文一节的补充说明）。Step 5 的 delegation 路由/角色/sessionId 双写部分已完成，剩余范围收窄为 transcript/组摘要/`reference-tools.ts`/`source-fidelity.ts` 的 Harness 适配（仍依赖 Step4 的共享 reader）以及 `sdkSessionId`→`sessionId` 的协议改名（视情况处理，最终决定推迟不做）。
+- Step 5 完成后发现另一个未生效的半成品开关：`dogear-reference` 工具包已补挂载到 `pi-session.ts`（`role==='sub' && parentConversationId` 条件），但 `PiSessionConfig.parentConversationId` 从未被 `conversation-runtime-service.ts` 的 `attachConversation()` 真正赋值——子会话的 `contractMetadata` 只存了父会话的 Harness `parentSessionId`，没有存 `parentConversationId`，要接线需要改 `delegation-bridge.ts` 的 `startChild()`（补充 `parentConversationId` 到 contractMetadata 或 Conversation 记录）或在 runtime 侧反查，两者都超出 Step 5 "不碰 delegation-bridge.ts" 的边界，留作独立待办，不纳入 Step 6（Step 6 是移除 SDK 代码 + 边界验收，性质不同）。

@@ -35,6 +35,7 @@ import { createStockPickingToolDefs } from '../tools/stock-picking-tools.js';
 import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createReviewToolDefs } from '../tools/review-tools.js';
+import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
@@ -271,6 +272,16 @@ export class PiSession extends EventEmitter {
             conversationId: this.config.conversationId,
           };
       toolDefs.push(...registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
+
+      // dogear-reference：只装到子会话（role='sub'），且必须拿到 parentConversationId 才能定位兄弟会话
+      if (this.config.role === 'sub' && this.config.parentConversationId) {
+        toolDefs.push(...registerPack('dogear-reference', createReferenceToolDefs({
+          workspaceId: this.config.workspaceId,
+          workspacePath: this.config.workspacePath,
+          groupId: this.config.groupId,
+          parentConversationId: this.config.parentConversationId,
+        })));
+      }
     }
 
     // dogear-memory-review：按 workspacePath 齐全放行，onSaved 主会话场景不传（无需感知落盘时机）
