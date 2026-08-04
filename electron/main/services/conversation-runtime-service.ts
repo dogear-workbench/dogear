@@ -78,11 +78,13 @@ class ConversationRuntimeService {
         workspaceId,
         harnessSessionId: conversation.sessionId ?? null,
         onHarnessSessionCreated: (harnessSessionId) =>
-          conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
+          Promise.all([
+            conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
+            conversationService.updateSdkSessionId(workspaceId, conversationId, harnessSessionId),
+          ]).then(() => undefined),
         enabledToolPacks: appSettings.enabledToolPacks ?? [],
         groupId: conversation.groupId || undefined,
-        // TODO(Step2): 应传 conversation.role，本 step 范围限定在 pi-session.ts，暂硬编码占位保持现状行为
-        role: 'main',
+        role: conversation.role ?? 'main',
       });
       try {
         await session.start();

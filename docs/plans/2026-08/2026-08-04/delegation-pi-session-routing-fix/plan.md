@@ -14,7 +14,7 @@
 ## 步骤索引
 
 - [x] [Step 1: PiSession 角色感知与真实 sessionId 暴露](./step1-pisession-role-sessionid.md) — 修 `PiSessionConfig` 缺 role 导致子会话拿错工具集；修 `getSdkSessionId()` 硬编码 undefined。
-- [ ] [Step 2: conversation-runtime-service 接线 role 与双写 sdkSessionId](./step2-runtime-service-wiring.md) — 让 `attachConversation` 把 conversation.role 传给 PiSession；让 harness session 创建后 `conv.sdkSessionId` 和 `conv.sessionId` 保持同值。
+- [x] [Step 2: conversation-runtime-service 接线 role 与双写 sdkSessionId](./step2-runtime-service-wiring.md) — 让 `attachConversation` 把 conversation.role 传给 PiSession；让 harness session 创建后 `conv.sdkSessionId` 和 `conv.sessionId` 保持同值。
 - [ ] [Step 3: delegation-bridge 会话查找路由改造](./step3-delegation-bridge-routing.md) — 把硬编码的 `getQueryBasedSessionManager()` 全部换成 `getPiSessionManager()`，清掉不会触发的 `session_init` 监听死代码。
 - [ ] [Step 4: 端到端验收与主计划文档同步](./step4-e2e-verification.md) — 手测完整子会话协作链路；在主计划 Step5 文档里记录本次提前完成的范围。
 
