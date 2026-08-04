@@ -46,3 +46,4 @@
 - 旧 Step 2（`step2-pi-session-harness.md`）已由 Step 2A～2D 取代，仅作历史记录，不纳入执行状态与步骤索引。
 - Step 3 验收时发现规划缺口：PiSession 自 Step 1 起只挂了内建文件工具与常驻记忆工具，从未接入 article/stock-quote/stock-analysis/stock-announcement/stock-picking/dogear-group/dogear-delegation/dogear-memory-review 等工具包，而 Step 3 会把所有主会话强制切到 PiSessionManager，若不先补齐会导致主会话功能倒退。插入 Step 2E、2F 补齐后再继续 Step 3；`dogear-reference` 确认仍只装子会话，不纳入本次补齐范围。
 - 新增工具包在 pi 侧统一按"工具包粒度批量免确认"接入权限判定（Step 2F 落地），对齐旧 SDK `allowedTools` 通配符体验，不接受逐工具确认的降级方案。
+- Step 3 完成后发现 delegation 协议在 Pi 运行时下已生产损坏（`getSdkSessionId()` 硬编码 undefined、`PiSessionConfig` 缺 role、`delegation-bridge.ts` 仍硬编码查 `QueryBasedSessionManager`），已提前拆出独立计划 `docs/plans/2026-08/2026-08-04/delegation-pi-session-routing-fix/plan.md` 修复并端到端验收通过（详见 `step5-transcript-delegation.md` 依赖上下文一节的补充说明）。Step 5 的 delegation 路由/角色/sessionId 双写部分已完成，剩余范围收窄为 transcript/组摘要/`reference-tools.ts`/`source-fidelity.ts` 的 Harness 适配（仍依赖 Step4 的共享 reader）以及 `sdkSessionId`→`sessionId` 的协议改名（视情况处理）。

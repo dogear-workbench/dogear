@@ -16,7 +16,7 @@
 - [x] [Step 1: PiSession 角色感知与真实 sessionId 暴露](./step1-pisession-role-sessionid.md) — 修 `PiSessionConfig` 缺 role 导致子会话拿错工具集；修 `getSdkSessionId()` 硬编码 undefined。
 - [x] [Step 2: conversation-runtime-service 接线 role 与双写 sdkSessionId](./step2-runtime-service-wiring.md) — 让 `attachConversation` 把 conversation.role 传给 PiSession；让 harness session 创建后 `conv.sdkSessionId` 和 `conv.sessionId` 保持同值。
 - [x] [Step 3: delegation-bridge 会话查找路由改造](./step3-delegation-bridge-routing.md) — 把硬编码的 `getQueryBasedSessionManager()` 全部换成 `getPiSessionManager()`，清掉不会触发的 `session_init` 监听死代码。
-- [ ] [Step 4: 端到端验收与主计划文档同步](./step4-e2e-verification.md) — 手测完整子会话协作链路；在主计划 Step5 文档里记录本次提前完成的范围。
+- [x] [Step 4: 端到端验收与主计划文档同步](./step4-e2e-verification.md) — 手测完整子会话协作链路；在主计划 Step5 文档里记录本次提前完成的范围。
 
 ## 全局决策
 
@@ -27,3 +27,12 @@
 - 不涉及 transcript、组摘要、`reference-tools.ts`、`source-fidelity.ts` 的改动——这些仍然按主计划依赖 Step4 的共享 reader，留在主计划 Step5 收尾。
 - 每步完成后至少执行 `bun run build:electron`（本次改动均在主进程），Step4 做完整链路手测。
 - 完成后需要在主计划的 `step5-transcript-delegation.md` 的"依赖上下文"一节补充说明：delegation 协议路由/角色/sessionId 双写部分已提前完成，避免重复劳动。
+
+## 完成总结
+
+四步全部完成，`bun run build:electron` 全量通过，端到端手测（4 次真实子会话创建、SendMessage/WaitForMessage 双向收发、StopSession、ListLinkedSessions 权限边界）均符合预期，未发现新问题。已在主计划 `pi-harness-sdk-main-session-removal/plan.md` 的「全局决策」和 `step5-transcript-delegation.md` 的「依赖上下文」中同步记录本次提前完成的范围，Step5 剩余工作收窄为 transcript/组摘要/引用工具的 Harness 适配。
+
+遗留待办（不阻塞本计划关闭，留给后续按需处理）：
+- `sdkSessionId` → `sessionId` 字段/协议改名（牵连约 71 个文件），留给主计划 Step5 视情况处理。
+- `onChildSessionInit`/`sdkSessionIdWaiters`/`waitForChildSdkSessionId` 死代码路径可择机精简。
+- `PiSessionConfig.parentConversationId` 仍是占位空字符串，尚无真实数据源接线。

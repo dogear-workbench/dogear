@@ -16,6 +16,13 @@ status: pending
 - 当前 delegation 协议、bridge 和工具以 `sdkSessionId` 作为跨会话地址，集中于 `electron/main/agents/delegation-bridge.ts` 与 `electron/main/agents/tools/delegation-tools.ts`。
 - 旧归档会话必须排除在 dirty scan、摘要、引用校验和 delegation 之外。
 - 已知现状缺口：`pi-session.ts` 的 `getSdkSessionId()` 目前硬编码返回 `undefined`（注释仍是 Step 2A 之前"pi 无持久化 session_id"的过时描述，未随 Step 2A 引入的 Conversation `sessionId` 更新）。这导致当前所有走 pi 的主会话调用 `CreateSession` 派子会话时，`delegation-bridge.ts` 因 `parent.sdkSessionId` 恒为空而放弃写 `contractMetadata`（仅 warn 日志，不报错），协作溯源实际失效。本步骤需要在切换协议命名的同时修复这一点：Harness 会话创建后应让 `getSdkSessionId()`（或其更名后的等价方法）返回真实的 Harness `sessionId`。
+- **补充（2026-08-04 已提前完成）**：上一条列出的 delegation 协议路由/角色/sessionId 双写问题已经在独立计划 `docs/plans/2026-08/2026-08-04/delegation-pi-session-routing-fix/plan.md` 中修复并端到端验收通过，不需要在本 step 重复处理。具体完成内容：
+  - `PiSessionConfig` 新增 `role: 'main' | 'sub'` 字段并正确透传给 `dogear-delegation` 工具包组装逻辑（子会话现在拿到受限工具集：只有 `SendMessage`/`WaitForMessage`/`ListLinkedSessions`，没有 `CreateSession`/`CreateSessionBatch`/`StopSession`）。
+  - `PiSession.getSdkSessionId()` 已改为返回真实 Harness `sessionId`（`this.config.harnessSessionId ?? undefined`），不再恒为 `undefined`。
+  - `conversation-runtime-service.ts` 的 `attachConversation` 已把 `conversation.role` 传给 `PiSessionConfig.role`；Harness session 创建成功后同时双写 `conv.sessionId` 和 `conv.sdkSessionId`（两字段保持同值，字段名均未改动/未合并）。
+  - `delegation-bridge.ts` 的 `wireSession`/`startChild`/`stopChild`/`deliverMessage` 已全部从 `QueryBasedSession`/`getQueryBasedSessionManager()` 切换到 `PiSession`/`getPiSessionManager()`，不再有 SDK 运行时依赖；不会触发的 `session_init` 死代码监听已删除。
+  - 端到端手测已验证：`CreateSession` 不再报"session 拉起失败"；子会话工具集角色限制生效；`SendMessage`/`WaitForMessage` 双向收发正常（含 delivery 与普通消息两种路径）；`StopSession` 正常中断（状态变为 `cancelled`）；`ListLinkedSessions` 在子会话侧只能看到直接派出者，看不到祖父/兄弟会话。
+  - **本 step 仍需处理、未被上述计划覆盖的范围**：`sdkSessionId` → `sessionId` 的字段/协议改名（`ChildStateSnapshot`、`delegation-tools.ts`、`conversation-service.ts` 等处仍保留原字段名，改名牵连约 71 个文件，含前端展示，留给本 step 视情况处理）；`onChildSessionInit`/`sdkSessionIdWaiters`/`waitForChildSdkSessionId` 这套现在已是死代码路径的异步等待机制尚未精简（可选：收敛成同步读取并删除相关 Map）；transcript/组摘要/`reference-tools.ts`/`source-fidelity.ts` 的 Harness 适配完全未动，仍是本 step 的核心范围。
 
 ## 计划改动
 
