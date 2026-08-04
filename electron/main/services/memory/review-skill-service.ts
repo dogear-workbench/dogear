@@ -1,8 +1,10 @@
 /**
  * 跨会话复盘 Skill 目录管理（里程碑 2 Phase B）
  *
- * 在 <configDir>/skills/review/ 下幂等初始化 SKILL.md（SDK local plugin 入口）。
- * 由 query-based-session 作为 local plugin 加载，配合 dogear-memory-review MCP 工具使用。
+ * 在 <configDir>/skills/review/ 下幂等初始化 SKILL.md。
+ * 该目录由 PiSession（pi-session.ts）纳入 skill 扫描路径，经 pi-agent-core 的
+ * loadSkills 发现后注入 <available_skills> 索引，agent 通过 Skill 工具按需加载全文，
+ * 配合 dogear-memory-review MCP 工具使用。
  */
 import path from 'path';
 import fs from 'fs/promises';

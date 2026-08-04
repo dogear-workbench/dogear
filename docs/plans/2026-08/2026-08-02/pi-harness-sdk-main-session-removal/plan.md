@@ -26,7 +26,7 @@
 - [x] [Step 3: 旧会话归档迁移与 runtime 收敛](./step3-conversation-migration.md) — 归档既有 SDK Conversation，移除残余 SDK runtime 生命周期分支并完成一次性迁移。
 - [x] [Step 4: 历史、删除与 Fork 的 TIPC/UI 适配](./step4-history-delete-fork.md) — 以 Conversation 为入口读取 Harness 历史，完成归档占位、删除和原生分叉。
 - [x] [Step 5: Transcript、组摘要与 Delegation 迁移](./step5-transcript-delegation.md) — 让摘要、引用校验与跨会话协作使用 Harness sessionId 和统一 transcript adapter。
-- [ ] [Step 6: 移除 SDK 主会话代码并验收边界](./step6-sdk-main-cleanup.md) — 删除 SDK 主会话路径，确认 SDK 仅服务 PARSE_ARTICLE，完成构建与关键流程验收。
+- [x] [Step 6: 移除 SDK 主会话代码并验收边界](./step6-sdk-main-cleanup.md) — 删除 SDK 主会话路径，确认 SDK 仅服务 PARSE_ARTICLE，完成构建与关键流程验收。
 
 ## 全局决策
 
@@ -48,3 +48,9 @@
 - 新增工具包在 pi 侧统一按"工具包粒度批量免确认"接入权限判定（Step 2F 落地），对齐旧 SDK `allowedTools` 通配符体验，不接受逐工具确认的降级方案。
 - Step 3 完成后发现 delegation 协议在 Pi 运行时下已生产损坏（`getSdkSessionId()` 硬编码 undefined、`PiSessionConfig` 缺 role、`delegation-bridge.ts` 仍硬编码查 `QueryBasedSessionManager`），已提前拆出独立计划 `docs/plans/2026-08/2026-08-04/delegation-pi-session-routing-fix/plan.md` 修复并端到端验收通过（详见 `step5-transcript-delegation.md` 依赖上下文一节的补充说明）。Step 5 的 delegation 路由/角色/sessionId 双写部分已完成，剩余范围收窄为 transcript/组摘要/`reference-tools.ts`/`source-fidelity.ts` 的 Harness 适配（仍依赖 Step4 的共享 reader）以及 `sdkSessionId`→`sessionId` 的协议改名（视情况处理，最终决定推迟不做）。
 - Step 5 完成后发现另一个未生效的半成品开关：`dogear-reference` 工具包已补挂载到 `pi-session.ts`（`role==='sub' && parentConversationId` 条件），但 `PiSessionConfig.parentConversationId` 从未被 `conversation-runtime-service.ts` 的 `attachConversation()` 真正赋值——子会话的 `contractMetadata` 只存了父会话的 Harness `parentSessionId`，没有存 `parentConversationId`，要接线需要改 `delegation-bridge.ts` 的 `startChild()`（补充 `parentConversationId` 到 contractMetadata 或 Conversation 记录）或在 runtime 侧反查，两者都超出 Step 5 "不碰 delegation-bridge.ts" 的边界，留作独立待办，不纳入 Step 6（Step 6 是移除 SDK 代码 + 边界验收，性质不同）。
+
+## 完成总结
+
+主会话从 Claude Agent SDK 完整迁移到 `@earendil-works/pi-agent-core` 的 AgentHarness（`electron/main/agents/pi-session/` 下的 `PiSession`/`PiSessionManager` 门面），旧 SDK 主会话实现 `query-based-session.ts`（约 2400 行）及其唯一的 TIPC 分流分支已全部删除；`@anthropic-ai/claude-agent-sdk` 现在 100% 收敛于 `PARSE_ARTICLE` 后台任务调用链（+ 少量类型引用），未再保留任何主会话运行时依赖。
+
+Step 6 收尾阶段额外发现并清理了一条计划外的独立 SDK 死链路（`TaskType.CHAT_SESSION` + `chat-skill.ts`，前端零调用方），并补齐了 `.claude/rules/codebase-map.md` 里此前从未记录过的 `pi-session/` 整个目录索引、重写了描述已过时的 `session-runtime.md`。已知遗留候选项（`agent-manager.ts` 的 sessionCallbacks 死分支、`renderer-handlers.ts` 六个无发送方的事件类型、微信 bot 消息徽章功能因运行时切换而失效、`attachConversation` 的晚加入快照重播未实现）详见 `step6-sdk-main-cleanup.md` 的接力棒段落，均判断为风险/收益不匹配本次"移除 SDK 主会话"的范围，建议后续另开计划处理。

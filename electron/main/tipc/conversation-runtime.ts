@@ -28,7 +28,7 @@ export const conversationRuntimeRouter = {
         );
 
         // 复用已有 session 时，把当前 turn 进行中的消息重播给调用者窗口
-        // 避免晚打开的渲染层丢失 stream（同旧 createQueryBasedSession 逻辑）
+        // 避免晚打开的渲染层丢失 stream
         if (!result.created && result.snapshot.length > 0) {
           setTimeout(() => {
             if (context.sender.isDestroyed()) return;

@@ -8,7 +8,7 @@
  * 同一数组不会互相误判——SDK 规则带括号，pi 规则是纯工具名，字符串精确匹配不会碰撞。
  */
 
-/** 无需权限确认即可执行的只读工具，对齐 SDK 侧 query-based-session.ts 默认 allowedTools 白名单口径 */
+/** 无需权限确认即可执行的只读工具，对齐旧 SDK 主会话运行时的默认 allowedTools 白名单口径 */
 export const PERMISSION_EXEMPT_TOOLS: ReadonlySet<string> = new Set(['read', 'Glob', 'Grep']);
 
 export function isPermissionExempt(toolName: string): boolean {

@@ -240,7 +240,7 @@ export interface ChildStateSnapshot {
   finishedAt?: number;
   summary?: string;
   errorMessage?: string;
-  /** 该会话自身的 SDK sessionId；session_init 事件到达前为 undefined */
+  /** 该会话自身的 SDK sessionId；attachConversation 完成、PiSession 启动后立即同步赋值（PiSession 不发 session_init 事件） */
   sdkSessionId?: string;
 }
 

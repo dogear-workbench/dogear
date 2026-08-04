@@ -9,18 +9,17 @@ paths:
 
 ## 通用原则
 
-- 修改 Agent 功能前，先查 `@anthropic-ai/claude-agent-sdk` 包中是否已有实现
+- 主会话（及其派遣的子会话）已从 Claude Agent SDK 迁移到 `@earendil-works/pi-agent-core` 的 AgentHarness，运行时门面是 `electron/main/agents/pi-session/` 下的 `PiSession`/`PiSessionManager`，优先在此基础上扩展
+- `@anthropic-ai/claude-agent-sdk` 仅保留给 `PARSE_ARTICLE` 后台任务使用，修改该任务链路前先查 SDK 包接口：
   - `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` — 接口定义
   - `node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts` — 工具类型
-- QueryBasedSession（`query-based-session.ts`）是当前主要的会话方式，优先在此基础上扩展
 - Agent 与渲染层通信通过 `electron/main/tipc/renderer-handlers.ts` 中定义的事件，不要自建 channel
 
 ## 目录约定
 
 - `electron/main/agents/tools/` — 自定义 Agent 工具（in-process MCP server，通过 `createSdkMcpServer` 注册）
-- `electron/main/agents/skills/` — Agent SDK 内部使用的代码级 skill（如 `chat-skill.ts` 的 ChatSession）
-- `.claude/skills/` — Claude Code 标准 skill（SKILL.md + 资源），用于流程编排和工具元指南
-- 不要混淆这两类 skills：前者是 SDK 封装层，后者是给 Claude 看的 markdown 指令
+- `electron/main/agents/pi-session/` — pi 运行时会话门面（PiSession/PiSessionManager/权限规则/skill 加载等），TIPC 和渲染层只能通过它访问，不得直接使用 Harness 类型
+- `.claude/skills/` — Claude Code 标准 skill（SKILL.md + 资源），用于流程编排和工具元指南，与上面的运行时代码是两个不同概念，不要混淆
 
 ## 工具开发
 
@@ -31,7 +30,7 @@ paths:
 
 ### ToolDef 中立化约定
 
-四条后台一次性任务（GROUP_DIGEST / REVIEW / CATEGORIZE / CATEGORIZE_ORGANIZE）已跑在 pi 运行时上，主会话和 PARSE_ARTICLE 仍在 SDK；工具定义已与运行时解耦（`electron/main/agents/pi/tool-adapter.ts`）。新写工具按这个形状：
+主会话（及子会话）与四条后台一次性任务（GROUP_DIGEST / REVIEW / CATEGORIZE / CATEGORIZE_ORGANIZE）都已跑在 pi 运行时上，只有 PARSE_ARTICLE 仍在 SDK；工具定义已与运行时解耦（`electron/main/agents/pi/tool-adapter.ts`）。新写工具按这个形状：
 
 ```ts
 export function createXxxToolDefs(...闭包参数): ToolDef[] {

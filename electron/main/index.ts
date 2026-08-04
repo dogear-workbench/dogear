@@ -557,12 +557,12 @@ app.on('before-quit', async () => {
     tray.destroy();
     tray = null;
   }
-  // 关闭所有 Query-based sessions（会话进程 / SDK 子进程）
+  // 关闭所有 pi 会话
   try {
-    const { shutdownQueryBasedSessionManager } = await import('./agents/query-based-session.js');
-    shutdownQueryBasedSessionManager();
+    const { shutdownPiSessionManager } = await import('./agents/pi-session/pi-session-manager.js');
+    shutdownPiSessionManager();
   } catch (error) {
-    console.error('关闭 QueryBasedSessionManager 失败:', error);
+    console.error('关闭 PiSessionManager 失败:', error);
   }
   // 关闭 Agent Worker 线程池
   await shutdownAgentManager();

@@ -520,23 +520,6 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
-   * 注册会话消息回调
-   */
-  registerSessionCallback(sessionId: string, callback: SessionMessageCallback) {
-    if (!this.sessionCallbacks.has(sessionId)) {
-      this.sessionCallbacks.set(sessionId, []);
-    }
-    this.sessionCallbacks.get(sessionId)!.push(callback);
-  }
-
-  /**
-   * 移除会话消息回调
-   */
-  unregisterSessionCallbacks(sessionId: string) {
-    this.sessionCallbacks.delete(sessionId);
-  }
-
-  /**
    * 处理 Worker 错误
    */
   private handleWorkerError(workerId: string, error: Error) {

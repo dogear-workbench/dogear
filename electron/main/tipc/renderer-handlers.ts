@@ -231,7 +231,7 @@ export type RendererHandlers = {
     pendingAction: boolean;
   }) => void;
 
-  // 会话已终止（QueryBasedSession.close() 内部在销毁子进程之前 emit 一次）
+  // 会话已终止（PiSession.close() 收尾完成后 emit 一次）
   // 前端收到后应把该会话从 running/pendingAction Set 中清除，不再等待对应的 sessionStateChanged:false
   sessionClosed: (data: {
     conversationId: string;

@@ -5,7 +5,7 @@ const { app } = electron;
 
 /**
  * 获取 CLAUDE_CONFIG_DIR 路径
- * 与 query-based-session.ts 中设置的 env.CLAUDE_CONFIG_DIR 保持一致
+ * 与 agent-query-config.ts 中设置的 env.CLAUDE_CONFIG_DIR 保持一致
  */
 export function getClaudeConfigDir(): string {
   // Worker 线程无 electron app，优先读注入的 DOGEAR_CONFIG_DIR（已是 .dogear 目录）

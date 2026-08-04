@@ -1,6 +1,6 @@
 import type { ConversationUsageEntry, ToolActivity, ToolCallRecord } from '../../types.js';
 
-/** 子代理工具名集合，与 query-based-session.ts 保持一致但不直接导入以避免耦合 */
+/** 子代理工具名集合，与 SDK Task 工具命名保持一致但不直接导入以避免耦合 */
 const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
 
 /** 已知模型的 context window 大小（保守取值） */

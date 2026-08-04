@@ -1,9 +1,11 @@
 /**
- * 共享的 query() 配置构建器
+ * 共享的 query() 配置构建器 + 设置读取入口
  *
  * 此文件无 electron 依赖，可在 Worker 线程中安全导入。
- * 主进程（QueryBasedSession）和 Worker 线程（后台任务）都通过此函数
- * 获取统一的 API 配置，避免重复和遗漏。
+ * 现在两类调用方共用：PARSE_ARTICLE 任务用它构建真正的 SDK query() 配置（主会话已迁移到
+ * pi-agent-core 的 PiSession，不再依赖本文件）；GROUP_DIGEST/REVIEW/CATEGORIZE/
+ * CATEGORIZE_ORGANIZE 四条 pi 后台任务只借用 buildQueryBaseConfig 读取 appSettings，
+ * 再把结果喂给 pi/provider.ts 的 resolvePiModel，本身不发起 SDK query()。
  */
 
 import path from 'path';

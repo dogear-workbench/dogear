@@ -22,7 +22,6 @@ export enum TaskStatus {
 export enum TaskType {
   SUMMARIZE = 'summarize',          // 文本摘要
   READING_ASSIST = 'reading_assist', // 阅读辅助
-  CHAT_SESSION = 'chat_session',    // 持续对话会话
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
   GROUP_DIGEST_SESSION = 'group_digest_session', // 组级摘要卡提炼（Phase 3）
   REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
@@ -54,21 +53,6 @@ export interface ChatTaskPayload {
     content: string;
   }>;
   context?: {
-    selectedText?: string;
-  };
-}
-
-/**
- * 持续对话会话任务负载
- */
-export interface ChatSessionPayload {
-  action: 'start' | 'message' | 'close';  // 会话操作
-  sessionId?: string;                      // 会话 ID（start 时可选，message/close 时必需）
-  message?: {                              // 用户消息（action=message 时使用）
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-  };
-  context?: {                              // 上下文信息（action=start 时使用）
     selectedText?: string;
   };
 }

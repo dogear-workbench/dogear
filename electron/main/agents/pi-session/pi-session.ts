@@ -1,10 +1,10 @@
 /**
- * 基于 pi-ai + pi-agent-core 的会话实现（阶段二 Step 1：walking skeleton）
+ * 基于 pi-ai + pi-agent-core（AgentHarness）的主会话运行时实现
  *
- * 与 QueryBasedSession 是两个独立的类，长期并存，不共享运行时接口。
- * 方法面对齐 QueryBasedSession（getSessionId/start/sendMessage/close/interrupt/...），
- * 但本步骤只有 start()/sendMessage()/close()/getSessionId() 是真实实现，
- * 其余方法（权限/插话/工具相关）返回安全默认值或 no-op，留给后续 step 补全。
+ * 主会话与派遣子会话唯一使用的会话类，旧 SDK 主会话实现已随迁移整体移除。
+ * 方法面（getSessionId/start/sendMessage/close/interrupt/setPermissionMode/
+ * respondPermissionRequest 等）覆盖完整的会话生命周期、权限确认、插话队列、
+ * usage 采集等能力。
  */
 
 import { EventEmitter } from 'events';
@@ -420,7 +420,7 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 与 SDK 侧 QueryBasedSession.syncSessionState 对称的去重广播。
+   * 去重广播当前跑步机状态（running/pendingAction），驱动前端 running/pendingAction 两个 Set。
    * running = this.running（onSettled 镜像的 harness phase）|| pendingSteerCount>0；pendingAction = pendingSteerCount>0。
    * close() 不走这里，靠 sessionClosed 让前端清 Set。
    */
@@ -587,7 +587,7 @@ export class PiSession extends EventEmitter {
    */
   async interrupt(): Promise<void> {
     // 不依赖 tool_call hook 收到 abort 信号（Harness 的 tool_call hook 不带 signal 参数），
-    // 主动拒绝兜底（与 SDK 侧 QueryBasedSession.interrupt() 的处理方式一致）
+    // 主动拒绝所有待处理权限请求兜底，避免中断后仍有请求悬挂等待
     this.pendingSteerCount = 0;
     this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');
@@ -613,7 +613,7 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 响应权限确认请求，四种行为语义对齐 SDK 侧 QueryBasedSession.respondPermissionRequest：
+   * 响应权限确认请求，支持四种行为语义：
    * - allow：本次放行；有 updatedInput 时原地改写 context.args
    * - allow_session：本次放行 + 本会话进程内记住该工具（不落盘，关闭会话即失效）
    * - always_allow：本次放行 + 落盘到 settings.permissionRules.allow（工具粒度，跨会话保留）

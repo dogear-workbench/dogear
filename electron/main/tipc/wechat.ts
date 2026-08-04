@@ -5,7 +5,7 @@ import { wechatMessageStore } from '../services/wechat/wechat-message-store.js';
 import { wechatPoller } from '../services/wechat/wechat-poller.js';
 import { wechatILinkService } from '../services/wechat/wechat-ilink-service.js';
 import { wechatBotController } from '../services/wechat/wechat-bot-controller.js';
-import { getQueryBasedSessionManager } from '../agents/query-based-session.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 
@@ -70,7 +70,7 @@ export const wechatRouter = {
     try {
       wechatPoller.stop();
       // 精确移除 sessionManager 监听器，防止内存泄漏
-      const sessionManager = getQueryBasedSessionManager();
+      const sessionManager = getPiSessionManager();
       if (_sessionMessageHandler) {
         sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
         _sessionMessageHandler = null;
@@ -117,7 +117,7 @@ export const wechatRouter = {
       }
 
       // 监听 Agent 会话消息，截取最终回复发回微信
-      const sessionManager = getQueryBasedSessionManager();
+      const sessionManager = getPiSessionManager();
 
       // 移除旧的监听器
       if (_sessionMessageHandler) sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
@@ -201,7 +201,7 @@ export const wechatRouter = {
     try {
       wechatPoller.stop();
       // 精确移除 sessionManager 监听器，防止内存泄漏
-      const sessionManager = getQueryBasedSessionManager();
+      const sessionManager = getPiSessionManager();
       if (_sessionMessageHandler) {
         sessionManager.removeListener('sessionMessage', _sessionMessageHandler);
         _sessionMessageHandler = null;

@@ -1,9 +1,11 @@
 /**
- * pi 会话管理器（阶段二 Step 1：walking skeleton）
+ * pi 会话管理器
  *
- * 独立于 QueryBasedSessionManager，不改造/不依赖它。方法面对齐（getSession/retain/release/
- * closeSession/bindConversation/getConversationIdBySession 等），供 conversation-runtime-service.ts
- * 按 ModelProfile.apiFormat 路由使用。
+ * 主会话（及其派遣的子会话）唯一的运行时管理器：conversation-runtime-service.ts 统一通过
+ * getPiSessionManager() 管理会话生命周期（getSession/retain/release/closeSession/
+ * bindConversation/getConversationIdBySession 等）。ModelProfile.apiFormat 字段仍然存在，
+ * 但现在只服务模型选择器 UI 的三档 tier vs 自由 piModels 列表展示（见 pi/provider.ts、
+ * lib/model-selection.ts），不再决定运行时路由——旧 SDK 主会话实现已随迁移完成整体移除。
  */
 
 import { EventEmitter } from 'events';
@@ -29,7 +31,7 @@ function broadcastUsageEntryAdded(conversationId: string): void {
   }
 }
 
-/** 广播函数类型：将 session 事件发给所有渲染层窗口，注册方式与 QueryBasedSessionManager 对称但相互独立 */
+/** 广播函数类型：将 session 事件（message/complete/error/permissionRequest 等）发给所有渲染层窗口 */
 type PiSessionBroadcaster = (
   sessionId: string,
   event: 'message' | 'complete' | 'error' | 'permissionRequest' | 'pendingCountChanged' | 'sessionStateChanged' | 'sessionClosed',
@@ -38,8 +40,8 @@ type PiSessionBroadcaster = (
 
 export class PiSessionManager extends EventEmitter {
   private sessions: Map<string, PiSession> = new Map();
-  // 引用计数：与 QueryBasedSessionManager 语义一致，但阶段一没有"跑步机模式"——
-  // release 归零直接销毁（pi 阶段一无工具副作用需要跑完收尾，Step 3+ 引入工具后需重新评估）
+  // 引用计数：release 归零即直接销毁，不做旧 SDK 主会话运行时那种"跑步机保活"
+  // （running/pending 时延迟关闭）——当前 pi 会话结构下尚未引入这层区分
   private refCounts: Map<string, number> = new Map();
   private conversationSessionMap: Map<string, string> = new Map();
   private broadcaster: PiSessionBroadcaster | null = null;
@@ -96,7 +98,7 @@ export class PiSessionManager extends EventEmitter {
     });
 
     // usage 提取（Step 6）：先 await 落盘再广播，否则前端 refetch 会读到尚未写入的 JSONL。
-    // 与 SDK 侧 QueryBasedSessionManager 的 usage 监听器完全对称，前端 usage 徽章零改动复用。
+    // 落盘格式与旧 SDK 主会话运行时一致，前端 usage 徽章零改动复用。
     session.on('usage', async ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
       if (!conversationId) return;
       await appendUsageEntry(conversationId, entry);

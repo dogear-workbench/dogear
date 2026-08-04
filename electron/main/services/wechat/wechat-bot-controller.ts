@@ -11,7 +11,7 @@ import { wechatILinkService } from './wechat-ilink-service.js';
 import { wechatAuthService } from './wechat-auth-service.js';
 import * as workspaceJsonService from '../../services/workspace-json-service.js';
 import * as conversationService from '../../services/conversation-service.js';
-import { getQueryBasedSessionManager } from '../../agents/query-based-session.js';
+import { getPiSessionManager } from '../../agents/pi-session/pi-session-manager.js';
 import { conversationRuntimeService } from '../conversation-runtime-service.js';
 import { stripMarkdownForWechat } from './markdown-filter.js';
 import electron from 'electron';
@@ -113,7 +113,7 @@ class WechatBotController {
       return;
     }
 
-    const sessionManager = getQueryBasedSessionManager();
+    const sessionManager = getPiSessionManager();
     const session = sessionManager.getSession(this.state.activeSessionId);
     if (!session) {
       this.reply('Agent 会话已断开，请重新选择对话: /use <编号>', ctx).catch(
@@ -165,7 +165,7 @@ class WechatBotController {
       convTitle = conv?.title || '未命名对话';
     }
 
-    const sessionManager = getQueryBasedSessionManager();
+    const sessionManager = getPiSessionManager();
     const session = this.state.activeSessionId
       ? sessionManager.getSession(this.state.activeSessionId)
       : null;
@@ -315,7 +315,7 @@ class WechatBotController {
       return;
     }
 
-    const sessionManager = getQueryBasedSessionManager();
+    const sessionManager = getPiSessionManager();
     const session = sessionManager.getSession(this.state.activeSessionId);
     if (session) {
       await session.interrupt();
