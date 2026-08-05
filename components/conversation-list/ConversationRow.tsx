@@ -182,7 +182,7 @@ export function ConversationRow({
           useReferenceStore.getState().addReferencedConversation({
             conversationId: conv.id,
             title: getConversationTitle(conv),
-            sdkSessionId: conv.sdk_session_id || null,
+            sessionId: conv.session_id || null,
           });
         }}>
           引用到当前对话

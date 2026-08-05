@@ -75,7 +75,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       'SendMessage',
       SEND_MESSAGE_DESC,
       z.object({
-        toSessionId: z.string().min(1).describe('目标会话的 sdkSessionId（通过 CreateSession 返回值或 ListLinkedSessions 获取）'),
+        toSessionId: z.string().min(1).describe('目标会话的 sessionId（通过 CreateSession 返回值或 ListLinkedSessions 获取）'),
         message: z.string().min(1).describe('消息内容'),
         options: z.object({
           delivery: z.boolean().optional().describe('标记为正式交付（任务完成通知），配合 WaitForMessage 使用'),
@@ -83,9 +83,9 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       }),
       async (args) => {
         const ownConv = await resolveOwnConversation();
-        const ownSessionId = ownConv?.sdkSessionId;
+        const ownSessionId = ownConv?.sessionId;
         if (!ownSessionId) {
-          return errorResult('当前会话尚未完成初始化（无 sdkSessionId），暂时无法发送消息，请稍后重试');
+          return errorResult('当前会话尚未完成初始化（无 sessionId），暂时无法发送消息，请稍后重试');
         }
         if (args.toSessionId === ownSessionId) {
           return errorResult('不能向自己发送消息');
@@ -127,7 +127,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       'WaitForMessage',
       WAIT_FOR_MESSAGE_DESC,
       z.object({
-        fromSessionIds: z.array(z.string().min(1)).min(1).describe('要等待其消息的会话 sdkSessionId 列表'),
+        fromSessionIds: z.array(z.string().min(1)).min(1).describe('要等待其消息的会话 sessionId 列表'),
         timeoutMs: z.number().int().positive().optional().describe('超时毫秒数；缺省走 settings.subAgent.timeoutMinutes'),
       }),
       async (args) => {
@@ -153,16 +153,16 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             return textResult('（当前会话还没有建立任何契约通道）');
           }
           const lines = children.map((c) =>
-            `- sessionId=${c.sdkSessionId ?? '(尚未就绪，稍后重试)'} · ${c.title} · status=${c.status} · 你派出的`
+            `- sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'} · ${c.title} · status=${c.status} · 你派出的`
           );
           return textResult(`共 ${children.length} 个契约通道：\n${lines.join('\n')}`);
         }
 
         const parent = await conversationService.getById(opts.workspaceId, opts.parentConversationId);
-        if (!parent?.sdkSessionId) {
+        if (!parent?.sessionId) {
           return textResult('（派出你的会话当前不可达，可能尚未初始化或已被删除）');
         }
-        return textResult(`共 1 个契约通道：\n- sessionId=${parent.sdkSessionId} · ${parent.title} · 派出你的会话`);
+        return textResult(`共 1 个契约通道：\n- sessionId=${parent.sessionId} · ${parent.title} · 派出你的会话`);
       },
     ),
   ];
@@ -189,16 +189,16 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             groupId: opts.groupId,
             spec: { task: args.task, outputPath: args.outputPath, title: args.title },
           });
-          const sdkSessionId = await bridge.waitForChildSdkSessionId(snapshot.childId);
-          if (!sdkSessionId) {
+          const sessionId = await bridge.waitForChildSessionId(snapshot.childId);
+          if (!sessionId) {
             return textResult(
-              `✅ 已创建新会话「${snapshot.title}」，但它的 sdkSessionId 还没就绪。\n` +
+              `✅ 已创建新会话「${snapshot.title}」，但它的 sessionId 还没就绪。\n` +
               `稍后用 ListLinkedSessions 查到 sessionId 后，再用 SendMessage / WaitForMessage 与它通信。`,
             );
           }
           return textResult(
-            `✅ 已创建新会话 ${sdkSessionId}（${snapshot.title}）→ 建议交付路径 ${args.outputPath}\n` +
-            `用 SendMessage("${sdkSessionId}", ...) 与它通信；WaitForMessage(["${sdkSessionId}"]) 等待它交付。`,
+            `✅ 已创建新会话 ${sessionId}（${snapshot.title}）→ 建议交付路径 ${args.outputPath}\n` +
+            `用 SendMessage("${sessionId}", ...) 与它通信；WaitForMessage(["${sessionId}"]) 等待它交付。`,
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -256,12 +256,12 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             }
           }
 
-          const sdkSessionIds = await Promise.all(started.map((s) => bridge.waitForChildSdkSessionId(s.childId)));
+          const sessionIds = await Promise.all(started.map((s) => bridge.waitForChildSessionId(s.childId)));
           const lines = [`✅ 已批量创建 ${started.length} 个新会话`, ''];
           for (let i = 0; i < started.length; i++) {
             const s = started[i];
-            const sid = sdkSessionIds[i];
-            lines.push(`- ${sid ?? '(sdkSessionId 尚未就绪)'}（${s.title}）→ ${s.outputPath}`);
+            const sid = sessionIds[i];
+            lines.push(`- ${sid ?? '(sessionId 尚未就绪)'}（${s.title}）→ ${s.outputPath}`);
           }
           lines.push('', '用 SendMessage / WaitForMessage 分别与它们通信（尚未就绪的稍后用 ListLinkedSessions 补查）。');
           return textResult(lines.join('\n'));
@@ -277,13 +277,13 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       '停止当前会话直接派出的某个会话（仅对 running 有效）。停止后该会话状态变为 cancelled。' +
       '需要停止派出你自己的会话，或提醒对方停止时，请改用 SendMessage 表达意图。',
       z.object({
-        sessionId: z.string().min(1).describe('要停止的会话 sdkSessionId'),
+        sessionId: z.string().min(1).describe('要停止的会话 sessionId'),
       }),
       async (args) => {
         const ownConv = await resolveOwnConversation();
-        const ownSessionId = ownConv?.sdkSessionId;
+        const ownSessionId = ownConv?.sessionId;
         if (!ownSessionId) {
-          return errorResult('当前会话尚未完成初始化（无 sdkSessionId），暂时无法操作');
+          return errorResult('当前会话尚未完成初始化（无 sessionId），暂时无法操作');
         }
         const target = await conversationService.getBySessionId(args.sessionId);
         if (!target) {

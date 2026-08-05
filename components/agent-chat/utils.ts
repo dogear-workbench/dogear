@@ -62,13 +62,13 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   const xmlConvRegex = /<referenced_conversations>\s*([\s\S]*?)\s*<\/referenced_conversations>/;
   const xmlConvMatch = content.match(xmlConvRegex);
   if (xmlConvMatch) {
-    const convTagRegex = /<conversation\s+title="([^"]+)"\s+conversationId="([^"]+)"(?:\s+sdkSessionId="([^"]+)")?\s*\/>/g;
+    const convTagRegex = /<conversation\s+title="([^"]+)"\s+conversationId="([^"]+)"(?:\s+sessionId="([^"]+)")?\s*\/>/g;
     let tagMatch;
     while ((tagMatch = convTagRegex.exec(xmlConvMatch[1])) !== null) {
       result.conversationRefs.push({
         title: tagMatch[1],
         conversationId: tagMatch[2],
-        sdkSessionId: tagMatch[3] || undefined,
+        sessionId: tagMatch[3] || undefined,
       });
     }
     content = content.replace(xmlConvMatch[0], '');

@@ -363,10 +363,10 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearReferencedFiles();
     }
 
-    // 会话引用：独立 block，agent 可通过 sdkSessionId 读取历史会话上下文
+    // 会话引用：独立 block，agent 可通过 sessionId 读取历史会话上下文
     if (referencedConversations.length > 0) {
       const convLines = referencedConversations.map(c =>
-        `  <conversation title="${sanitize(c.title)}" conversationId="${c.conversationId}" sdkSessionId="${c.sdkSessionId || ''}" />`
+        `  <conversation title="${sanitize(c.title)}" conversationId="${c.conversationId}" sessionId="${c.sessionId || ''}" />`
       ).join('\n');
       textBlocks.push({
         text: `<referenced_conversations>\n${convLines}\n</referenced_conversations>`

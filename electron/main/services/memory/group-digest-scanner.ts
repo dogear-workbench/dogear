@@ -78,7 +78,7 @@ export async function findDirtyGroups(wsId: string, wsPath: string): Promise<Dir
   for (const group of groups) {
     // 只看 main 会话（排除 sub），且必须有 sdkSessionId
     const mainConvs = allConvs.filter(
-      (c) => c.groupId === group.id && c.role !== 'sub' && c.sdkSessionId,
+      (c) => c.groupId === group.id && c.role !== 'sub' && c.sessionId,
     );
     if (mainConvs.length === 0) continue;
 
@@ -86,11 +86,11 @@ export async function findDirtyGroups(wsId: string, wsPath: string): Promise<Dir
     const currentMainConvs: Array<{ conversationId: string; sessionId: string; mtime: number }> = [];
     for (const conv of mainConvs) {
       try {
-        const sessionPath = await getPiSessionRepository().getSessionPath(wsId, conv.sdkSessionId!);
+        const sessionPath = await getPiSessionRepository().getSessionPath(wsId, conv.sessionId!);
         const stat = await fs.stat(sessionPath);
         currentMainConvs.push({
           conversationId: conv.id,
-          sessionId: conv.sdkSessionId!,
+          sessionId: conv.sessionId!,
           mtime: stat.mtimeMs,
         });
       } catch {
@@ -127,18 +127,18 @@ export async function findDirtyGroup(
   if (!group || group.archivedAt !== undefined) return null;
   const allConvs = await conversationService.getByWorkspaceId(wsId);
   const mainConvs = allConvs.filter(
-    (c) => c.groupId === groupId && c.role !== 'sub' && c.sdkSessionId,
+    (c) => c.groupId === groupId && c.role !== 'sub' && c.sessionId,
   );
   if (mainConvs.length === 0) return null;
 
   const currentMainConvs: Array<{ conversationId: string; sessionId: string; mtime: number }> = [];
   for (const conv of mainConvs) {
     try {
-      const sessionPath = await getPiSessionRepository().getSessionPath(wsId, conv.sdkSessionId!);
+      const sessionPath = await getPiSessionRepository().getSessionPath(wsId, conv.sessionId!);
       const stat = await fs.stat(sessionPath);
       currentMainConvs.push({
         conversationId: conv.id,
-        sessionId: conv.sdkSessionId!,
+        sessionId: conv.sessionId!,
         mtime: stat.mtimeMs,
       });
     } catch {

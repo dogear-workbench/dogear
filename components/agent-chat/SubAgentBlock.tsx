@@ -30,10 +30,10 @@ export function SubAgentBlock({ block }: { block: ContentBlock }) {
     const store = useUIStore.getState();
     const conv = useConversationStore.getState().selectedConversation;
     // 按需注册（点击时才注册，不在渲染时注册）
-    if (conv?.sdk_session_id && conv.id) {
+    if (conv?.session_id && conv.id) {
       store.registerSubAgent(conv.id, {
         agentId: block.subAgentId,
-        sdkSessionId: conv.sdk_session_id,
+        sessionId: conv.session_id,
         description,
         subagentType: agentType,
         model,

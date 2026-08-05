@@ -109,7 +109,7 @@ class ConversationRuntimeService {
         await conversationService.updateSessionId(
           workspaceId,
           conversationId,
-          session.getSdkSessionId()!,
+          session.getHarnessSessionId()!,
         );
       }
       sessionId = session.getSessionId();

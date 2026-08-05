@@ -11,7 +11,7 @@ export interface FileReference {
 export interface ConversationReference {
   conversationId: string;
   title: string;
-  sdkSessionId: string | null;
+  sessionId: string | null;
 }
 
 /** 共享文件引用（会话组共享区） */

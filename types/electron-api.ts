@@ -123,7 +123,7 @@ export interface Citation {
  * 手动创建的会话此字段为 undefined；agent 派出的会话必填
  */
 export interface ContractMetadata {
-  parentSessionId: string;           // 派出者的 sdkSessionId
+  parentSessionId: string;           // 派出者的 sessionId
   task: string;                      // 派出时的任务描述
   expectedOutputPath?: string;       // 约定的交付路径
   createdBy: 'agent' | 'human';
@@ -137,7 +137,6 @@ export interface Conversation {
   workspace_id: string;              // 关联的工作区ID
   title: string;
   model: string;
-  sdk_session_id?: string;           // 旧 SDK 主会话的 session_id；主会话移除后恒为空
   session_id?: string;               // Harness 持久化 sessionId（用于恢复/删除/分叉）
   parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
   fork_message_sdk_uuid?: string;    // 分叉点标识（Harness 迁移后是 SessionTreeEntry id）

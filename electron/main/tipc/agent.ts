@@ -358,7 +358,7 @@ export const agentRouter = {
 
   // ── 子代理会话历史读取 ──────────────────────────────────────
   getSubAgentHistory: t.procedure
-    .input<{ sdkSessionId: string; agentId: string; projectPath?: string }>()
+    .input<{ sessionId: string; agentId: string; projectPath?: string }>()
     .action(async ({ input }) => {
       try {
         let projectRoot = input.projectPath;
@@ -370,7 +370,7 @@ export const agentRouter = {
         const sessionsDir = getSdkSessionsDir(projectRoot);
 
         // 子代理 JSONL 路径：<sessionsDir>/<sessionId>/subagents/agent-<agentId>.jsonl
-        const subAgentFile = path.join(sessionsDir, input.sdkSessionId, 'subagents', `agent-${input.agentId}.jsonl`);
+        const subAgentFile = path.join(sessionsDir, input.sessionId, 'subagents', `agent-${input.agentId}.jsonl`);
         console.log('读取子代理会话历史:', subAgentFile);
 
         try {

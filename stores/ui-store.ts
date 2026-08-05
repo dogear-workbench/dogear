@@ -3,7 +3,7 @@ import { create } from 'zustand';
 /** 单个子代理的信息 */
 export interface SubAgentInfo {
   agentId: string;
-  sdkSessionId: string;
+  sessionId: string;
   description?: string;
   subagentType?: string;
   /** 子代理使用的模型（来自结果消息携带的 model 字段） */

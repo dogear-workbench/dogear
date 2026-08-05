@@ -17,8 +17,8 @@ export interface SubAgentRawMessage {
 interface UseSubAgentMessagesParams {
   /** 子代理的 agentId */
   agentId: string | null;
-  /** 子代理的 sdkSessionId（用于历史文件定位） */
-  sdkSessionId: string | null;
+  /** 子代理的 sessionId（用于历史文件定位） */
+  sessionId: string | null;
   /** 子代理状态 */
   status: 'running' | 'completed' | 'failed' | undefined;
   /** 工作区路径（可选，用于历史文件定位） */
@@ -31,7 +31,7 @@ interface UseSubAgentMessagesParams {
  */
 export function useSubAgentMessages({
   agentId,
-  sdkSessionId,
+  sessionId,
   status,
   workspacePath,
 }: UseSubAgentMessagesParams) {
@@ -40,7 +40,7 @@ export function useSubAgentMessages({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!sdkSessionId || !agentId) {
+    if (!sessionId || !agentId) {
       // 切到无效目标时，主动清空历史，避免旧详情残留
       setMessages([]);
       setError(null);
@@ -53,7 +53,7 @@ export function useSubAgentMessages({
     setError(null);
     setLoading(true);
     client.getSubAgentHistory({
-      sdkSessionId,
+      sessionId,
       agentId,
       projectPath: workspacePath,
     })
@@ -77,7 +77,7 @@ export function useSubAgentMessages({
     return () => {
       cancelled = true;
     };
-  }, [sdkSessionId, agentId, status, workspacePath]);
+  }, [sessionId, agentId, status, workspacePath]);
 
   return { messages, loading, error };
 }

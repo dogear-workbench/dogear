@@ -33,6 +33,6 @@ export interface ChildStateSnapshot {
   finishedAt?: number;
   summary?: string;
   errorMessage?: string;
-  /** 该会话自身的 SDK sessionId；attachConversation 完成、PiSession 启动后立即同步赋值（PiSession 不发 session_init 事件） */
-  sdkSessionId?: string;
+  /** 该会话自身的 Harness sessionId；attachConversation 完成、PiSession 启动后立即同步赋值 */
+  sessionId?: string;
 }

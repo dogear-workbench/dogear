@@ -250,7 +250,7 @@ class WechatBotController {
     }
 
     const target = conversations[idx];
-    await this.switchBotSession(target.id, target.sdkSessionId || undefined);
+    await this.switchBotSession(target.id, target.sessionId || undefined);
 
     await this.reply(`已切换到对话: ${target.title || '未命名对话'}`, ctx);
   }
@@ -277,7 +277,7 @@ class WechatBotController {
    * Bot attach 到指定 conversation 的 runtime session。
    * 通过 ConversationRuntimeService 统一管理生命周期，不直接操作 sessionManager。
    */
-  private async switchBotSession(conversationId: string, sdkSessionId?: string): Promise<void> {
+  private async switchBotSession(conversationId: string, _sessionId?: string): Promise<void> {
     // detach 旧 attachment
     if (this.state.activeAttachmentId) {
       conversationRuntimeService.detachAttachment(this.state.activeAttachmentId);
@@ -454,7 +454,7 @@ class WechatBotController {
       return { success: false, error: `无效编号。可选: 1-${conversations.length}` };
     }
     const target = conversations[idx];
-    await this.switchBotSession(target.id, target.sdkSessionId || undefined);
+    await this.switchBotSession(target.id, target.sessionId || undefined);
     return { success: true };
   }
 

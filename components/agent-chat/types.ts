@@ -150,7 +150,7 @@ export interface ParsedFileRef {
 export interface ParsedConversationRef {
   title: string;
   conversationId: string;
-  sdkSessionId?: string;
+  sessionId?: string;
 }
 export interface ParsedUserMessage {
   articleRefs: ParsedArticleRef[];

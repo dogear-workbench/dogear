@@ -19,7 +19,7 @@ export function LineageBar({ conversation, onOpenParent }: LineageBarProps) {
   const meta = conversation.contractMetadata;
   const parent = useMemo(() => {
     if (!meta?.parentSessionId) return null;
-    return conversations.find((c) => c.sdk_session_id === meta.parentSessionId) ?? null;
+    return conversations.find((c) => c.session_id === meta.parentSessionId) ?? null;
   }, [meta?.parentSessionId, conversations]);
 
   if (!meta) return null;

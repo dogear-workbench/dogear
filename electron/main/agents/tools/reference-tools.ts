@@ -136,14 +136,14 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
       async () => {
         try {
           const parentConv = await conversationService.getById(workspaceId, parentConversationId);
-          const parentSessionId = parentConv?.sdkSessionId ?? null;
+          const parentSessionId = parentConv?.sessionId ?? null;
 
           const allConvs = await conversationService.getByWorkspaceId(workspaceId);
           const siblings = allConvs.filter((c) =>
             c.groupId === groupId
             && c.role !== 'sub'
             && c.id !== parentConversationId
-            && !!c.sdkSessionId,
+            && !!c.sessionId,
           );
 
           // 组卡的 sourcesSeen 用来判 hasDigestCoverage
@@ -153,7 +153,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
           const now = Date.now();
           const rows: string[] = [];
           for (const c of siblings) {
-            const sid = c.sdkSessionId!;
+            const sid = c.sessionId!;
             if (sid === parentSessionId) continue; // 兜底防御
             let mtime = 0;
             try {

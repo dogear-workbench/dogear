@@ -55,7 +55,7 @@ function formatFidelityError(problems: SourceProblem[]): string {
   }
   lines.push('');
   lines.push('修复步骤：');
-  lines.push('1. 调 CleanTranscript(sdkSessionId) 重新查证该会话，uuid 在 "## [role · ts · uuid]" 的第三段');
+  lines.push('1. 调 CleanTranscript(sessionId) 重新查证该会话，uuid 在 "## [role · ts · uuid]" 的第三段');
   lines.push('2. wrong_session 类型只需把 source.sessionId 改为上面给出的正确会话 id');
   lines.push('3. 若确实查不到对应消息，删掉这条 source；若某条 item 的 sources 全部无效则删掉整条 item');
   return lines.join('\n');

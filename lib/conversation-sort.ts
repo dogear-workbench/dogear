@@ -10,7 +10,7 @@ export function sortConversationsWithDFS(conversations: Conversation[]): Convers
 
   const bySessionId = new Map<string, Conversation>();
   for (const c of base) {
-    if (c.sdk_session_id) bySessionId.set(c.sdk_session_id, c);
+    if (c.session_id) bySessionId.set(c.session_id, c);
   }
 
   const parentSessionIdOf = (c: Conversation): string | undefined => {
@@ -43,7 +43,7 @@ export function sortConversationsWithDFS(conversations: Conversation[]): Convers
     if (visited.has(c.id)) return;
     visited.add(c.id);
     result.push(c);
-    const children = c.sdk_session_id ? childrenBySessionId.get(c.sdk_session_id) : undefined;
+    const children = c.session_id ? childrenBySessionId.get(c.session_id) : undefined;
     if (children) {
       for (const child of children) visit(child);
     }

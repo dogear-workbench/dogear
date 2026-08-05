@@ -217,9 +217,9 @@ export function AgentChat({
 
   // 从 messages 的 ContentBlock 中提取子代理列表，按 conversationId 缓存到 ui-store
   // 仅注册列表数据，不主动打开右侧面板（用户手动切到子代理 Tab 时仍可看到）
-  const sdkSessionId = currentConversation?.sdk_session_id;
+  const convSessionId = currentConversation?.session_id;
   useEffect(() => {
-    if (!conversationId || !sdkSessionId) return;
+    if (!conversationId || !convSessionId) return;
     const agents: import('@/stores/ui-store').SubAgentInfo[] = [];
     for (const msg of messages) {
       if (!msg.contentBlocks) continue;
@@ -232,7 +232,7 @@ export function AgentChat({
         const isFailed = block.subAgentStatus === 'failed' || block.isError;
         agents.push({
           agentId: block.subAgentId,
-          sdkSessionId,
+          sessionId: convSessionId,
           description: block.subAgentDescription || block.toolInput?.description || '子代理任务',
           subagentType: block.subAgentType || block.toolInput?.subagent_type,
           model: block.toolInput?.model,
@@ -245,7 +245,7 @@ export function AgentChat({
       }
     }
     useUIStore.getState().setSubAgents(conversationId, agents);
-  }, [messages, sdkSessionId, conversationId]);
+  }, [messages, convSessionId, conversationId]);
 
   // 图片附件
   const imageAttachment = useImageAttachment();

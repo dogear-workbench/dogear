@@ -25,9 +25,9 @@ export function createDigestToolDefs(
     defineTool(
       'CleanTranscript',
       '对指定会话做确定性去噪，返回干净逐字稿（已剥工具结果/系统行/思考块，保留用户+助手文字与一行工具骨架，每段带完整 uuid）。',
-      z.object({ sdkSessionId: z.string().describe('Harness 会话 ID') }),
+      z.object({ sessionId: z.string().describe('Harness 会话 ID') }),
       async (args) => {
-        const result = await readCleanTranscript(workspaceId, args.sdkSessionId);
+        const result = await readCleanTranscript(workspaceId, args.sessionId);
         if (!result.ok) {
           return {
             content: [{ type: 'text' as const, text: `清洗会话失败: ${result.error}` }],

@@ -72,18 +72,6 @@ export const conversationsRouter = {
       }
     }),
 
-  updateSdkSessionId: t.procedure
-    .input<{ conversationId: string; sdkSessionId: string; workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await conversationService.updateSdkSessionId(input.workspaceId, input.conversationId, input.sdkSessionId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('更新 SDK session ID 失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
   deleteConversation: t.procedure
     .input<{ conversationId: string; workspaceId: string }>()
     .action(async ({ input }) => {

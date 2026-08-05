@@ -179,7 +179,7 @@ export class PiSession extends EventEmitter {
   }
 
   /** Harness 的真实持久化 sessionId；start() 内两条分支（open 已有 / create 新建）都会同步赋值 config.harnessSessionId，resolve 时必定可用 */
-  getSdkSessionId(): string | undefined {
+  getHarnessSessionId(): string | undefined {
     return this.config.harnessSessionId ?? undefined;
   }
 

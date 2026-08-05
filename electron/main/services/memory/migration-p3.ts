@@ -132,13 +132,13 @@ async function migrateDigestCards(
   // 建立 sessionId → conversation 映射
   const sessionToConv = new Map<string, ConversationIndex>();
   for (const c of convs) {
-    if (c.sdkSessionId) sessionToConv.set(c.sdkSessionId, c);
+    if (c.sessionId) sessionToConv.set(c.sessionId, c);
   }
 
   // 建立 groupId → main 会话数量映射
   const groupMainCount = new Map<string, number>();
   for (const c of convs) {
-    if (c.groupId && c.role !== 'sub' && c.sdkSessionId) {
+    if (c.groupId && c.role !== 'sub' && c.sessionId) {
       groupMainCount.set(c.groupId, (groupMainCount.get(c.groupId) ?? 0) + 1);
     }
   }

@@ -35,7 +35,6 @@ export interface ContractMetadata {
 export interface ConversationIndex {
   id: string;
   title: string;
-  sdkSessionId: string | null;
   sessionId: string | null;
   workspaceId: string;
   parentConversationId: string | null;
@@ -70,7 +69,6 @@ export interface ConversationCompat {
   title: string;
   model: string;
   workspace_id: string;
-  sdk_session_id?: string;
   session_id?: string;
   parent_conversation_id?: string;
   fork_message_sdk_uuid?: string;
@@ -80,7 +78,6 @@ export interface ConversationCompat {
   created_at: number;
   updated_at: number;
   workspaceId: string;
-  sdkSessionId: string | null;
   sessionId: string | null;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
@@ -238,11 +235,11 @@ export async function getByIdGlobal(id: string): Promise<{ conv: ConversationInd
 }
 
 /**
- * 跨工作区按 sdkSessionId 查找对话（遍历所有工作区目录）
- * 用于 delegation-tools 反查派出者会话（只知道 sdkSessionId 时）
+ * 跨工作区按 sessionId 查找对话（遍历所有工作区目录）
+ * 用于 delegation-tools 反查派出者会话
  */
 export async function getBySessionId(
-  sdkSessionId: string,
+  sessionId: string,
 ): Promise<{ conv: ConversationIndex; workspaceId: string } | null> {
   const workspacesDir = path.join(getConfigDir(), 'workspaces');
   try {
@@ -252,7 +249,7 @@ export async function getBySessionId(
       const wsId = entry.name;
       const file = await loadWorkspaceConversations(wsId);
       for (const conv of Object.values(file.conversations)) {
-        if (conv.sdkSessionId === sdkSessionId) {
+        if (conv.sessionId === sessionId) {
           return { conv, workspaceId: wsId };
         }
       }
@@ -300,7 +297,6 @@ export async function create(
   file.conversations[id] = {
     id,
     title,
-    sdkSessionId: null,
     sessionId: null,
     workspaceId,
     parentConversationId: options?.parentConversationId ?? null,
@@ -342,7 +338,6 @@ export async function createFork(
   file.conversations[id] = {
     id,
     title,
-    sdkSessionId: null,
     sessionId,
     workspaceId,
     parentConversationId,
@@ -413,21 +408,6 @@ export async function autoUpdateTitleFromFirstMessage(
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
   return true;
-}
-
-/**
- * 更新对话的 SDK session ID
- */
-export async function updateSdkSessionId(workspaceId: string, id: string, sdkSessionId: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
-
-  conv.sdkSessionId = sdkSessionId;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
 }
 
 export async function updateSessionId(workspaceId: string, id: string, sessionId: string): Promise<void> {
@@ -561,7 +541,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     title: conv.title,
     model: '',  // 不再存储模型名称
     workspace_id: conv.workspaceId,
-    sdk_session_id: conv.sdkSessionId || undefined,
     session_id: conv.sessionId || undefined,
     parent_conversation_id: conv.parentConversationId || undefined,
     fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
@@ -572,7 +551,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用
     workspaceId: conv.workspaceId,
-    sdkSessionId: conv.sdkSessionId,
     sessionId: conv.sessionId ?? null,
     parentConversationId: conv.parentConversationId,
     forkMessageSdkUuid: conv.forkMessageSdkUuid,

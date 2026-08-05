@@ -41,7 +41,7 @@ async function removeLegacyHistory(
   conversation: ConversationIndex,
   workspacePath: string | undefined,
 ): Promise<void> {
-  const sessionIds = new Set([conversation.sdkSessionId, conversation.sessionId].filter((id): id is string => !!id));
+  const sessionIds = new Set([conversation.sessionId].filter((id): id is string => !!id));
   for (const sessionId of sessionIds) {
     assertSafeSessionId(sessionId);
     await fs.rm(path.join(getClaudeConfigDir(), `${sessionId}.jsonl`), { force: true });

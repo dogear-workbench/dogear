@@ -28,6 +28,6 @@ export function getSdkSessionsDir(projectPath: string): string {
 }
 
 /** 单会话 JSONL 文件路径 */
-export function getSessionJsonlPath(workspacePath: string, sdkSessionId: string): string {
-  return path.join(getSdkSessionsDir(workspacePath), `${sdkSessionId}.jsonl`);
+export function getSessionJsonlPath(workspacePath: string, sessionId: string): string {
+  return path.join(getSdkSessionsDir(workspacePath), `${sessionId}.jsonl`);
 }

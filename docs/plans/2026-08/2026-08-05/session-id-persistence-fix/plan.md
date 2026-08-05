@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: sessionId 写入逻辑修改 + onHarnessSessionCreated 回调删除](./step1-session-id-write.md) — 核心修复：attachConversation 里 create 后直接写 sessionId，PiSession.start() 删除回调
-- [ ] [Step 2: 删除 sdkSessionId 字段及全部引用](./step2-remove-sdk-session-id.md) — 清除类型定义、运行时代码、前端引用
+- [x] [Step 2: 删除 sdkSessionId 字段及全部引用](./step2-remove-sdk-session-id.md) — 清除类型定义、运行时代码、前端引用
 - [ ] [Step 3: 存量数据迁移 + 损坏数据修复](./step3-migration-repair.md) — sdkSessionId 合并到 sessionId、修复空壳指针、清理空壳 jsonl
 
 ## 全局决策

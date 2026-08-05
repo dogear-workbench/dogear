@@ -30,7 +30,7 @@ const logger = mainLogger.child('delegation-bridge');
 interface ChildStateInternal extends ChildStateSnapshot {
   workspaceId: string;
   attachmentId: string;
-  /** 本地运行时 sessionId（PiSessionManager 内部 key，非 SDK sdkSessionId） */
+  /** 该会话自身的 Harness sessionId；attachConversation 完成后立即同步赋值 */
   sessionId: string;
   timeoutTimer?: NodeJS.Timeout;
 }
@@ -51,7 +51,7 @@ interface MessageWaiterInternal {
 
 const childStates = new Map<string, ChildStateInternal>();
 const messageWaiters = new Map<string, MessageWaiterInternal>();
-const sdkSessionIdWaiters = new Map<string, Array<(sdkSessionId: string) => void>>();
+const sessionIdWaiters = new Map<string, Array<(sessionId: string) => void>>();
 
 // ─── 事件广播 helpers ───
 
@@ -112,7 +112,7 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
     finishedAt: c.finishedAt,
     summary: c.summary,
     errorMessage: c.errorMessage,
-    sdkSessionId: c.sdkSessionId,
+    sessionId: c.sessionId,
   };
 }
 
@@ -124,20 +124,20 @@ function isTerminal(status: ChildStatus): boolean {
 
 function wireSession(childId: string, session: PiSession): void {
   session.on('complete', (result: PiSessionTurnResult) => onSessionComplete(childId, result));
-  // PiSession 在 attachConversation 返回前已 start() 完成，getSdkSessionId() 此时必定有值，
+  // PiSession 在 attachConversation 返回前已 start() 完成，getHarnessSessionId() 此时必定有值，
   // 这是常态路径而非兜底（PiSession 不 emit session_init 事件）
-  const existing = session.getSdkSessionId();
+  const existing = session.getHarnessSessionId();
   if (existing) onChildSessionInit(childId, existing);
 }
 
-function onChildSessionInit(childId: string, sdkSessionId: string): void {
+function onChildSessionInit(childId: string, sessionId: string): void {
   const c = childStates.get(childId);
-  if (!c || c.sdkSessionId) return;
-  c.sdkSessionId = sdkSessionId;
-  const resolvers = sdkSessionIdWaiters.get(childId);
+  if (!c || c.sessionId) return;
+  c.sessionId = sessionId;
+  const resolvers = sessionIdWaiters.get(childId);
   if (resolvers) {
-    sdkSessionIdWaiters.delete(childId);
-    for (const resolve of resolvers) resolve(sdkSessionId);
+    sessionIdWaiters.delete(childId);
+    for (const resolve of resolvers) resolve(sessionId);
   }
 }
 
@@ -195,12 +195,12 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   const title = spec.title ?? `子会话: ${spec.task.slice(0, 30)}`;
 
-  if (!parent.sdkSessionId) {
-    logger.warn(`发起会话 ${parentConversationId} 尚无 sdkSessionId，新会话 ${title} 将不写入 contractMetadata（无法溯源派出者）`);
+  if (!parent.sessionId) {
+    logger.warn(`发起会话 ${parentConversationId} 尚无 sessionId，新会话 ${title} 将不写入 contractMetadata（无法溯源派出者）`);
   }
-  const contractMetadata: conversationService.ContractMetadata | undefined = parent.sdkSessionId
+  const contractMetadata: conversationService.ContractMetadata | undefined = parent.sessionId
     ? {
-        parentSessionId: parent.sdkSessionId,
+        parentSessionId: parent.sessionId,
         task: spec.task,
         expectedOutputPath: spec.outputPath,
         createdBy: 'agent',
@@ -347,12 +347,12 @@ export async function previewClaim(
 }
 
 /**
- * 在 parentConversationId 派出的子会话中，按子会话自身的 sdkSessionId 反查 childId。
+ * 在 parentConversationId 派出的子会话中，按子会话自身的 sessionId 反查 childId。
  * 只在「我派出的」范围内查找，防止越权操作别人的子会话。
  */
 export function getChildIdBySessionId(parentConversationId: string, sessionId: string): string | null {
   for (const c of childStates.values()) {
-    if (c.parentConversationId === parentConversationId && c.sdkSessionId === sessionId) {
+    if (c.parentConversationId === parentConversationId && c.sessionId === sessionId) {
       return c.childId;
     }
   }
@@ -360,54 +360,54 @@ export function getChildIdBySessionId(parentConversationId: string, sessionId: s
 }
 
 /**
- * 子会话反查「派出自己的会话」的 sdkSessionId（子 → 父方向）。
+ * 子会话反查「派出自己的会话」的 sessionId（子 → 父方向）。
  */
 export async function getParentSessionIdByChildConversationId(childConversationId: string): Promise<string | null> {
   const c = childStates.get(childConversationId);
   if (!c) return null;
   const parent = await conversationService.getById(c.workspaceId, c.parentConversationId);
-  return parent?.sdkSessionId ?? null;
+  return parent?.sessionId ?? null;
 }
 
 /**
- * 等待某个刚创建的子会话拿到自己的 sdkSessionId。
+ * 等待某个刚创建的子会话拿到自己的 sessionId。
  * PiSession 改造后 wireSession 的同步兜底必定命中，此函数总是立即 resolve；
  * 保留是为了不改变调用方签名，超时分支已是死代码路径。
  */
-export function waitForChildSdkSessionId(childId: string, timeoutMs = 15000): Promise<string | null> {
+export function waitForChildSessionId(childId: string, timeoutMs = 15000): Promise<string | null> {
   const c = childStates.get(childId);
   if (!c) return Promise.resolve(null);
-  if (c.sdkSessionId) return Promise.resolve(c.sdkSessionId);
+  if (c.sessionId) return Promise.resolve(c.sessionId);
 
   return new Promise((resolve) => {
     let settled = false;
-    const wrapped = (sdkSessionId: string) => {
+    const wrapped = (sessionId: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve(sdkSessionId);
+      resolve(sessionId);
     };
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      const list = sdkSessionIdWaiters.get(childId);
+      const list = sessionIdWaiters.get(childId);
       if (list) {
         const idx = list.indexOf(wrapped);
         if (idx >= 0) list.splice(idx, 1);
-        if (list.length === 0) sdkSessionIdWaiters.delete(childId);
+        if (list.length === 0) sessionIdWaiters.delete(childId);
       }
       resolve(null);
     }, timeoutMs);
-    const list = sdkSessionIdWaiters.get(childId) ?? [];
+    const list = sessionIdWaiters.get(childId) ?? [];
     list.push(wrapped);
-    sdkSessionIdWaiters.set(childId, list);
+    sessionIdWaiters.set(childId, list);
   });
 }
 
 // ─── 通用消息投递 / 等待（SendMessage / WaitForMessage 的运行时支撑） ───
 
 /**
- * 挂起等待来自指定 sdkSessionId 集合中任意一方的下一条消息。
+ * 挂起等待来自指定 sessionId 集合中任意一方的下一条消息。
  * 超时返回 null。同一 ownerConversationId 允许有多个并行等待（不同 waiterId）。
  */
 export function waitForMessage(

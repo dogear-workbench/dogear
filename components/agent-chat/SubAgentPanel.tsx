@@ -103,7 +103,7 @@ function SubAgentDetail({
 
   const { messages: rawMessages, loading, error } = useSubAgentMessages({
     agentId: agent.agentId,
-    sdkSessionId: agent.sdkSessionId,
+    sessionId: agent.sessionId,
     status: agent.status,
     workspacePath,
   });
