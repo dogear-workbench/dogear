@@ -32,7 +32,7 @@
 ## 业务组件（components/）
 
 - `agent-chat/` — AI 聊天模块（从原 AgentChat.tsx 拆分，~20 文件）
-  - `AgentChat.tsx` — 主组件（~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成
+  - `AgentChat.tsx` — 主组件，组合 hooks、布局、右侧工具轨道与 Minimap；通过 `useTopicArchiveState` 将归档或已删除话题强制为历史只读，状态确认前不 attach runtime
   - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单）
   - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮；解析 `<sender/>` XML 标签在跨会话消息头显示派出者名字徽章）
   - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
@@ -53,11 +53,12 @@
   - `task-aggregator.ts` — Task* CRUD 聚合纯函数（aggregateTasks / injectTaskSummary），把分散的 TaskCreate/TaskUpdate 合成单个 task_summary 虚拟块
   - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary/task_summary 等字段）
   - `utils.ts` — 工具函数（getUserMessageSearchableText 等）
-  - `hooks/` — 自定义 hooks（12 个）
+  - `hooks/` — 自定义 hooks（13 个）
     - `useAgentSession.ts` — 会话生命周期（attach/detach/重启）+ pendingCount 订阅；接收 attach 的实时消息、权限请求和运行态快照，先同步 store 后交给 reducer 回放
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
     - `useMessageHistory.ts` — 历史消息加载（含 compact_boundary/isMeta 处理）
+    - `useTopicArchiveState.ts` — 读取 conversation 与 Group.archivedAt，返回话题 active/archived/missing 状态，作为聊天只读边界
     - `useImageAttachment.ts` — 图片附件（base64、粘贴、预览）
     - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应、斜杠命令拦截
     - `useSlashCommands.ts` — 斜杠命令检测、过滤、菜单控制
@@ -87,12 +88,12 @@
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
 - `ConversationList.tsx` — 对话列表主骨架（Phase 3 改：三态 Tab 手动|智能|时间 + 归档段）
 - `conversation-list/` — 对话列表子组件（Phase 14 拆分；Phase 3 全面按组渲染）
-  - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / 编辑/引用/删除 hover 按钮；按 `childSnapshotsById` 显示子会话运行、交付、失败、超时、取消或未交付及原因 tooltip；文件夹相关 ContextMenu 已上移到 GroupCard）
+  - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId、双层高亮、编辑/引用/删除入口；`readOnly` 时隐藏全部写入入口；按 `childSnapshotsById` 显示子会话终态；文件夹相关菜单上移到 GroupCard）
   - `ManualSection.tsx` — 手动文件夹区（headless-tree 仅在此用；children[__root__] 里的 folderId 节点及其子树，叶子渲染 GroupCard 装 groupId）
   - `SmartSection.tsx` — 智能分类视图（按 groupIds.length 倒序，空分类隐藏，渲染 GroupCard；useSmartCategoryStore.load 同步）
   - `TimeSection.tsx` — 时间视图（按 group.updatedAt 分桶，30 天内 + 更早；< 5 天扣到 RecentVirtualGroup 不重复）
   - `RecentVirtualGroup.tsx` — ⚡ 近期 < 5 天虚拟分组，按 group.updatedAt，smart/time 都显示
-  - `ArchiveSection.tsx` — 内联可折叠归档段，懒加载 listArchivedConversations（仍按 conversation 归档）
+  - `ArchiveSection.tsx` — 内联可折叠的“已归档话题”段，调用 `listArchivedTopics`，以 `GroupCard mode="archived"` 浏览只读历史
   - `ViewTabs.tsx` — 三态切换（manual|smart|time），local state 不持久化
   - `Toolbar.tsx` — 顶部"新建对话"按钮（"新建文件夹"按钮在 ManualSection 内）
   - `AppearanceBadge.tsx` — ⟂N 角标（count≥5 变橙；用于组标题）
@@ -100,7 +101,7 @@
   - `MoveGroupToFolderMenu.tsx` — 组级：单选子菜单，调 moveGroupBetweenFolders
   - `utils.ts` — getRelativeTime / getConversationTitle / RECENT_THRESHOLD_MS / TIME_BUCKET_THRESHOLD_MS / CONV_TREE_ROOT / openOrFocusConversation（统一 selectConversation + openTab 入口，接 nodeId 设 lastFocusedNodeId）/ useNodeHighlight（isOpen 淡色 + isSelected 深色）/ useAppearanceCount（按 groupId 计数手动文件夹数 + 智能分类数）
 - `group-list/` — 组级 UI 组件（Phase 3）
-  - `GroupCard.tsx` — 组卡片（组标题 + AppearanceBadge + 展开/收起会话行；agent 派出会话平摊到组内，用 sortConversationsWithDFS 让子会话紧跟派出者；无 folderId 时显 AddGroupToFolderMenu / 有 folderId 时显 MoveGroupToFolderMenu + 从文件夹移除 + 删除组走 confirm-store 二次确认）
+  - `GroupCard.tsx` — 话题卡片（标题、AppearanceBadge、展开会话行；`active` 模式可重命名、新建、归档和删除，`archived` 模式仅恢复、永久删除与只读历史；组内会话按 DFS 排序）
   - `utils.ts` — 组 helpers（deriveGroupTitle 等）
 - `WorkspaceSwitcherPopover.tsx` — 顶部导航栏工作区切换器（选择/添加，里程碑 1.5 Step A2.4）
 - `WelcomeFirstRun.tsx` — 零工作区首次启动引导卡片（里程碑 1.5 Step A2.4）
@@ -137,7 +138,7 @@
 - `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
 - `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、人设关联（updateConversationPersona）、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；`runningConversationIds` / `pendingActionConversationIds` 的唯一事实源是后端 `sessionStateChanged` / `sessionClosed` 或 attach 权威快照；`childrenByParent` 供父会话统计，`childSnapshotsById` 供子会话行和聊天页呈现终态
-- `group-store.ts` — 会话组状态：groups[] + selectedGroupId + loadGroups / createGroup / updateGroup / deleteGroup / setSelectedGroupId
+- `group-store.ts` — 活跃话题状态：groups[]、currentGroupId、展开状态与 load/create/update/archive/restore/delete action；归档或删除关闭关联标签页，恢复会将话题写回活跃列表
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
 - `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
@@ -177,7 +178,8 @@
 - `agent.ts` — Agent 会话管理（RPC：创建/发送/关闭会话、权限控制）
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
-- `conversations.ts` — 对话 CRUD + 分叉 + 人设关联（JSON 存储）
+- `conversations.ts` — 对话 CRUD、分叉、人设关联和文件夹引用；会话删除一律物理删除，普通查询与树只返回活跃话题数据
+- `group.ts` — 话题 CRUD、归档/恢复/永久删除与归档话题读模型（`listArchivedTopics`）
 - `workspace.ts` — 工作区管理（列表、默认、文件夹选择、文件树）
 - `file.ts` — 文件操作（打开文件位置）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
@@ -192,7 +194,8 @@
 
 ## 业务服务（electron/main/services/）
 
-- `conversation-service.ts` — 对话索引 CRUD + 人设关联 + 对话级模型选择（`.dogear/conversations.json`），含 personaId/tempPrompt/modelSelection 字段；create() 时由 tipc 注入 settings.ai.defaultModelSelection 浅拷贝，createFork() 继承父对话 modelSelection；updateModelSelection 单独维护；含 usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
+- `conversation-service.ts` — 对话索引 CRUD + 人设关联 + 对话级模型选择（`.dogear/conversations.json`）；普通查询只返回活跃话题，创建和写入均要求所属话题活跃；`archivedAt/archiveReason` 仅供启动迁移读取
+- `topic-lifecycle-service.ts` — 会话和话题物理删除协调层：关闭 runtime、清理 Harness/旧 SDK 历史与 usage、索引、树、分类和组目录；启动时迁移旧会话归档并清理空话题，可重试
 - `usage/` — 会话 token 用量采集与存储
   - `usage-extractor.ts` — 从 SDK result 提取 ConversationUsageEntry 纯函数（含 MODEL_CONTEXT_WINDOWS 兜底表、modelUsage 缺失合成、工具/子代理聚合）
   - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/deleteUsage）
@@ -222,7 +225,7 @@
   - 注：里程碑1 的工作区主题记忆（memory-service / memory-recall / memory-fs / memory-indexer / memory-loader / memory-types）也在此目录
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、复用 session；attach 返回 PiSession 的进行中消息、权限请求和运行态快照）
 - `contract-channel-service.ts` — 契约通道校验（hasDirectContractChannel：只认直接派出关系，A 派 B 派 C 时 A 无法直连 C；SendMessage / StopSession 工具层前置校验）
-- `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup
+- `group-service.ts` — 话题 CRUD（`.dogear/groups/{workspaceId}.json`）：`Group.archivedAt` 是唯一归档状态，提供活跃/归档列表、归档/恢复和 `requireActiveGroup` 写入前置校验
 - `group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{groupId}/shared/`），供 group-tools 和前端 SharedAreaPanel 使用
 - `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：Phase 3 起 children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
@@ -311,7 +314,8 @@
 
 - `settings.json` — 应用设置（ModelProfile、Thinking、permissionMode 等）
 - `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
-- `conversations.json` — 对话索引（id、标题、`sessionId: string | null`——Harness 会话稳定标识、`workspaceId`、`groupId`/`role`、分叉信息、personaId、tempPrompt、modelSelection、usageSummary；`sdkSessionId` 为迁移前遗留字段，主会话移除后恒为空，仅供归档溯源）
+- `conversations.json` — 对话索引（id、标题、`sessionId: string | null`、`workspaceId`、`groupId`/`role`、分叉信息、personaId、tempPrompt、modelSelection、usageSummary）；会话级 `archivedAt/archiveReason` 仅为启动迁移读取，不能作为产品归档状态
+- `groups/{workspaceId}.json` — 话题索引；`Group.archivedAt?: number` 是唯一归档状态，归档仅隐藏并锁定话题，永久删除才清理其关联工件
 - `conversations/` — 旧 SDK 主会话历史（迁移归档后的只读备份，不再回放/恢复，仅归档说明引用；新会话历史见下方 `workspaces/{workspaceId}/sessions/`）
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细（每行一条 entry 或 compact marker，删除对话/工作区时联动清理）
 - `workspaces/{workspaceId}/sessions/` — 主会话（及子会话）的 Harness JSONL 会话文件，`pi-session-repository.ts` 的 `JsonlSessionRepo` 按其 cwd 编码子目录 + 时间戳文件名布局管理；`conversations.json` 的 `sessionId` 字段指向这里，不保存绝对路径

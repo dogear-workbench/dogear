@@ -224,7 +224,7 @@ export async function runTopicLifecycleMigration(): Promise<TopicLifecycleMigrat
 
       const conversations = await conversationService.getByWorkspaceId(workspace.id, { includeArchived: true });
       for (const conversation of conversations) {
-        if (!conversation.archivedAt) continue;
+        if (conversation.archivedAt === undefined) continue;
         const outcome = await deleteConversationInternal(workspace.id, conversation.id, false, workspace.path);
         if (!outcome.result.ok) throw new Error(outcome.result.error);
         if (outcome.deleted) result.conversationsDeleted++;

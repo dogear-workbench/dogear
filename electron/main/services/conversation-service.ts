@@ -47,9 +47,8 @@ export interface ConversationIndex {
   cachePolicy?: '5m' | '1h'; // 提示缓存策略；缺省视为 5m
   /** @deprecated SDK 时代"分叉待定，等首条消息才建会话"的状态位；Harness fork 已改为同步创建，不再产生新值 */
   forkPending?: boolean;
-  /** 仅供话题生命周期迁移读取的旧会话归档记录 */
+  /** @deprecated 仅为话题生命周期 v1 迁移读取；所有存量清理后可随迁移代码移除。 */
   archivedAt?: string;
-  archiveReason?: string;
   groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';    // P1 只产生 'main'
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined

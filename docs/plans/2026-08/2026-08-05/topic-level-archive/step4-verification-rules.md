@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 完整性验收与规则固化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,10 +25,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：复用临时 `DOGEAR_CONFIG_DIR` 与 Electron 主进程完成隔离验证，未向仓库新增测试文件；额外修复了旧 `Conversation.archivedAt = ''` 会被迁移遗漏的边界，并移除无用的 `archiveReason` 类型字段。计划要求的新数据生命周期规则已存在，改为扩展其 paths 和删除/归档/迁移验收矩阵。
+- 改动文件清单：`electron/main/services/topic-lifecycle-service.ts`、`electron/main/services/conversation-service.ts`、`.claude/rules/data-lifecycle.md`、`.claude/rules/codebase-map.md`。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`Group.archivedAt` 是唯一归档状态；`topicLifecycleService.deleteConversation/deleteTopic/runTopicLifecycleMigration()` 管理物理删除与迁移；`ConversationIndex.archivedAt?: string` 仅保留给 v1 迁移读取。
+- 下个 step 该从哪里继续：本计划全部完成；后续涉及删除、归档或迁移时按 `.claude/rules/data-lifecycle.md` 的五类影响面和验收矩阵执行。
+- 待办或已知限制：隔离数据验证已覆盖单会话/最后会话删除、归档/恢复、运行中归档、永久删除、旧归档迁移（含空字符串）和重复迁移；`bun run lint` 通过（70 条既有 warning、无 error），`bun run build:electron`、`bun run build`、`git diff --check` 均通过。
