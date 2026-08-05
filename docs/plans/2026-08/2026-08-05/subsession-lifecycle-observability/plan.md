@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: PiSession 状态与终态模型](./step1-pi-lifecycle.md) — 立即发布运行态，并把模型错误变成结构化执行失败。
-- [ ] [Step 2: 委派桥接与前端状态呈现](./step2-bridge-ui.md) — 让 bridge 按真实终态结算，前端展示运行、失败和未交付。
+- [x] [Step 2: 委派桥接与前端状态呈现](./step2-bridge-ui.md) — 让 bridge 按真实终态结算，前端展示运行、失败和未交付。
 - [ ] [Step 3: 回放回归、验收与协作规则](./step3-verification-rules.md) — 验证晚打开/快速切换场景，并固化派遣前后检查规则。
 
 ## 全局决策

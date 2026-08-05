@@ -80,6 +80,7 @@ interface ConversationState {
   botBoundConversationId: string | null;
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
   childrenByParent: Record<string, ChildStateSnapshot[]>;
+  childSnapshotsById: Record<string, ChildStateSnapshot>;
 
   // --- Actions ---
   /** 切换激活工作区：把顶层镜像指向该工作区的分片（不触发加载） */
@@ -728,15 +729,17 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     try {
       const result = await client.listAllChildren(undefined);
       const grouped: Record<string, ChildStateSnapshot[]> = {};
+      const byId: Record<string, ChildStateSnapshot> = {};
       for (const snap of result.children ?? []) {
         const arr = grouped[snap.parentConversationId] ?? [];
         arr.push(snap);
         grouped[snap.parentConversationId] = arr;
+        byId[snap.childId] = snap;
       }
       for (const arr of Object.values(grouped)) {
         arr.sort((a, b) => a.startedAt - b.startedAt);
       }
-      set({ childrenByParent: grouped });
+      set({ childrenByParent: grouped, childSnapshotsById: byId });
     } catch (error) {
       console.error('拉取子会话快照失败:', error);
     }
@@ -752,6 +755,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         : [...list, snapshot].sort((a, b) => a.startedAt - b.startedAt);
       return {
         childrenByParent: { ...state.childrenByParent, [parentId]: next },
+        childSnapshotsById: { ...state.childSnapshotsById, [snapshot.childId]: snapshot },
       };
     });
   },
@@ -770,6 +774,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     pendingActionConversationIds: new Set<string>(),
     botBoundConversationId: null,
     childrenByParent: {},
+    childSnapshotsById: {},
   }),
 }));
 

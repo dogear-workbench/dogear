@@ -82,6 +82,10 @@ export interface PiSessionLiveSnapshot {
     toolName: string;
     toolInput: unknown;
   }>;
+  sessionState: {
+    running: boolean;
+    pendingAction: boolean;
+  };
 }
 
 export interface PiSessionTurnResult {
@@ -188,6 +192,10 @@ export class PiSession extends EventEmitter {
         toolName: pending.toolName,
         toolInput: pending.args,
       })),
+      sessionState: {
+        running: this.running || this.pendingSteerCount > 0,
+        pendingAction: this.pendingSteerCount > 0,
+      },
     };
   }
 

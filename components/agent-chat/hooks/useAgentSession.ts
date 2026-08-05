@@ -5,7 +5,13 @@ import { rendererEvents } from '@/lib/events';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
-import type { PermissionMode } from '@/types/electron-api';
+import type { ExtendedSessionMessage, PermissionMode } from '@/types/electron-api';
+
+export interface LivePermissionRequest {
+  requestId: string;
+  toolName: string;
+  toolInput: unknown;
+}
 
 interface UseAgentSessionParams {
   conversationId: string | null;
@@ -13,6 +19,7 @@ interface UseAgentSessionParams {
   archived: boolean;
   historyLoaded: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
+  onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => void;
 }
 
 export function useAgentSession({
@@ -20,6 +27,7 @@ export function useAgentSession({
   archived,
   historyLoaded,
   setIsLoading,
+  onLiveSnapshot,
 }: UseAgentSessionParams) {
   // 监听 sessionRestartTrigger，变化时重建会话
   const sessionRestartTrigger = useConversationStore((s) => s.sessionRestartTrigger);
@@ -82,6 +90,14 @@ export function useAgentSession({
         if (response.permissionMode) {
           setPermissionMode(response.permissionMode as PermissionMode);
         }
+        if (response.sessionState) {
+          useConversationStore.getState().setRunningState(conversationId, response.sessionState.running);
+          useConversationStore.getState().setPendingActionState(conversationId, response.sessionState.pendingAction);
+        }
+        onLiveSnapshot?.(
+          response.snapshot ?? [],
+          response.pendingPermissionRequests ?? [],
+        );
         setIsSessionReady(true);
 
         // 同步到 session-store（标签页状态）
@@ -133,7 +149,7 @@ export function useAgentSession({
       setSessionId(null);
       setIsSessionReady(false);
     };
-  }, [conversationId, archived, historyLoaded, sessionRestartTrigger]);
+  }, [conversationId, archived, historyLoaded, sessionRestartTrigger, onLiveSnapshot]);
 
   // 订阅 pendingCountChanged：跟踪本会话的待处理插话队列长度
   useEffect(() => {

@@ -28,6 +28,28 @@ import { useTaskListAggregator } from './hooks/useTaskListAggregator';
 import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
 import { CollapseControlBar } from './CollapseControlBar';
 import { buildTurns } from './turns';
+import { streamReducer } from './transformers';
+import type { ExtendedSessionMessage } from '@/types/electron-api';
+import type { ChildStatus } from '@/types/delegation';
+import type { LivePermissionRequest } from './hooks/useAgentSession';
+
+const childStatusLabels: Record<ChildStatus, string> = {
+  running: '子会话运行中',
+  done: '子会话已交付',
+  failed: '子会话运行失败',
+  timeout: '子会话已超时',
+  cancelled: '子会话已取消',
+  no_delivery: '子会话结束但未交付',
+};
+
+const childStatusStyles: Record<ChildStatus, string> = {
+  running: 'bg-orange-50 border-orange-200 text-orange-800',
+  done: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+  failed: 'bg-red-50 border-red-200 text-red-800',
+  timeout: 'bg-red-50 border-red-200 text-red-800',
+  cancelled: 'bg-muted border-border text-muted-foreground',
+  no_delivery: 'bg-amber-50 border-amber-200 text-amber-800',
+};
 
 /**
  * Agent 聊天组件
@@ -57,6 +79,7 @@ export function AgentChat({
   const conversations = useConversationStore((s) => s.conversations);
   const selectedConv = useConversationStore((s) => s.selectedConversation);
   const selectConversation = useConversationStore((s) => s.selectConversation);
+  const childSnapshot = useConversationStore((s) => conversationId ? s.childSnapshotsById[conversationId] : undefined);
 
   // compact_boundary 折叠状态（默认折叠，每个对话独立）
   const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
@@ -89,11 +112,33 @@ export function AgentChat({
   // 旧 SDK 主会话迁移冻结的归档会话：只读展示历史，不建立 runtime、不允许发送/编辑重发/分叉
   const isArchivedLegacy = historyStatus === 'archived_legacy';
 
+  const applyLiveSnapshot = useCallback((snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => {
+    if (snapshot.length === 0 && pendingPermissionRequests.length === 0) return;
+    setMessages((previous) => {
+      let next = previous;
+      for (const message of snapshot) {
+        const reduced = streamReducer(next, message, showReplayMessages);
+        if (reduced) next = reduced;
+      }
+      for (const request of pendingPermissionRequests) {
+        const reduced = streamReducer(next, {
+          type: 'permission_request',
+          timestamp: Date.now(),
+          permissionRequestId: request.requestId,
+          permissionToolName: request.toolName,
+          permissionInput: request.toolInput,
+        }, showReplayMessages);
+        if (reduced) next = reduced;
+      }
+      return next;
+    });
+  }, [setMessages, showReplayMessages]);
+
   useTaskListAggregator(messages, setMessages);
 
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
-    useAgentSession({ conversationId, archived: isArchivedLegacy, historyLoaded, setIsLoading });
+    useAgentSession({ conversationId, archived: isArchivedLegacy, historyLoaded, setIsLoading, onLiveSnapshot: applyLiveSnapshot });
 
   // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，
   // 用后端权威运行态兜底；本地 isLoading 保留用于点击发送的乐观预置和失败恢复
@@ -106,15 +151,17 @@ export function AgentChat({
   const childrenForThis = useConversationStore(
     (s) => (conversationId ? s.childrenByParent[conversationId] : undefined) ?? null,
   );
-  const { awaitCount, doneCount } = useMemo(() => {
-    if (!childrenForThis) return { awaitCount: 0, doneCount: 0 };
+  const { awaitCount, doneCount, issueCount } = useMemo(() => {
+    if (!childrenForThis) return { awaitCount: 0, doneCount: 0, issueCount: 0 };
     let awaiting = 0;
     let done = 0;
+    let issues = 0;
     for (const c of childrenForThis) {
       if (c.status === 'running') awaiting++;
       else if (c.status === 'done') done++;
+      else issues++;
     }
-    return { awaitCount: awaiting, doneCount: done };
+    return { awaitCount: awaiting, doneCount: done, issueCount: issues };
   }, [childrenForThis]);
 
   const handleAbortWait = useCallback(async () => {
@@ -319,6 +366,12 @@ export function AgentChat({
             }}
           />
         )}
+        {childSnapshot && (
+          <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childStatusStyles[childSnapshot.status]}`} title={childSnapshot.errorMessage || childSnapshot.summary}>
+            <p className="font-medium">{childStatusLabels[childSnapshot.status]}</p>
+            {childSnapshot.errorMessage && <p className="mt-0.5">{childSnapshot.errorMessage}</p>}
+          </div>
+        )}
         {/* 旧 SDK 主会话迁移冻结提示：只读展示，不回放 JSONL、不允许发送/编辑重发/分叉 */}
         {isArchivedLegacy && (
           <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
@@ -401,6 +454,7 @@ export function AgentChat({
           }
           awaitCount={awaitCount}
           doneCount={doneCount}
+          issueCount={issueCount}
           onAbortWait={handleAbortWait}
         />
 

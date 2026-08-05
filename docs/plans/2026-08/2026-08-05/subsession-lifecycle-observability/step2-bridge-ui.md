@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 委派桥接与前端状态呈现
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,10 +27,22 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- bridge 只消费 PiSession 的结构化 `complete` 终态：正常未交付为 `no_delivery`，失败为 `failed`，中断为 `cancelled`；所有 attachment 都在该安全结算点回收。
+- runtime attach 返回实时消息、权限请求及运行状态快照。`useAgentSession` 把权威状态写入 store，并通过 `streamReducer` 回放快照，消除依赖延时 IPC 广播的晚打开竞态。
+- conversation store 建立 `childSnapshotsById` 索引；会话行和子会话页面显示运行、交付、失败、超时、取消及未交付原因。父会话等待区分别统计已交付与异常，未交付不计为完成。
+- 与计划差异：现有 `ChildStateSnapshot.errorMessage` 已同时镜像主进程与前端，未新增重复的终态原因字段。
 - 改动文件清单：
+  - `electron/main/agents/delegation-bridge.ts`
+  - `electron/main/agents/pi-session/pi-session.ts`
+  - `electron/main/services/conversation-runtime-service.ts`
+  - `electron/main/tipc/conversation-runtime.ts`
+  - `stores/conversation-store.ts`
+  - `components/conversation-list/ConversationRow.tsx`
+  - `components/agent-chat/AgentChat.tsx`
+  - `components/agent-chat/StreamingIndicator.tsx`
+  - `components/agent-chat/hooks/useAgentSession.ts`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`attachConversationRuntime` 返回 `snapshot`、`pendingPermissionRequests` 和 `sessionState`；`childSnapshotsById[conversationId]` 是子会话终态的前端查询入口。
+- 下个 step 该从哪里继续：执行真实派遣回归，尤其验证未打开子会话、晚打开、模型错误、取消与超时的状态和 attachment 回收。
+- 待办或已知限制：未在本机发起真实模型任务；需要 Step 3 按场景验收。

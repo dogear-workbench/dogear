@@ -9,7 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 
-import type { PiSession } from './pi-session/pi-session.js';
+import type { PiSession, PiSessionTurnResult } from './pi-session/pi-session.js';
 import { getPiSessionManager } from './pi-session/pi-session-manager.js';
 import { mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
@@ -121,8 +121,7 @@ function isTerminal(status: ChildStatus): boolean {
 // ─── session 事件 wiring ───
 
 function wireSession(childId: string, session: PiSession): void {
-  session.on('complete', () => onSessionComplete(childId));
-  session.on('error', (msg: unknown) => onSessionError(childId, msg));
+  session.on('complete', (result: PiSessionTurnResult) => onSessionComplete(childId, result));
   // PiSession 在 attachConversation 返回前已 start() 完成，getSdkSessionId() 此时必定有值，
   // 这是常态路径而非兜底（PiSession 不 emit session_init 事件）
   const existing = session.getSdkSessionId();
@@ -141,21 +140,28 @@ function onChildSessionInit(childId: string, sdkSessionId: string): void {
 }
 
 /**
- * 会话结算（complete/error）是本会话这一轮 prompt() 真正跑完的信号，是唯一安全的资源释放时机——
+ * 结构化 complete 是本会话这一轮 prompt() 真正跑完的信号，是唯一安全的资源释放时机——
  * markChildDelivered 发生在 SendMessage 工具调用中途（prompt() 仍在执行），此时 detach 会
  * 触发 release() 归零后立即 close()/abort() 正在跑的这一轮，绝不能在那里做。
  * 状态只在仍是 'running' 时才改写（保留"是否曾经交付"的语义），但 detach 无论如何都要执行一次——
  * 哪怕 markChildDelivered/stopChild 已经改过 status，也可能还没释放过 attachment（如已释放，
  * detachAttachment 本身幂等，重复调用是安全 no-op）。
  */
-function onSessionComplete(childId: string): void {
+function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
   const c = childStates.get(childId);
   if (!c) return;
   if (c.status === 'running') {
-    // 会话自然停了但没调 SendMessage(delivery:true) 交付
-    c.status = 'no_delivery';
+    if (result.subtype === 'failed') {
+      c.status = 'failed';
+      c.errorMessage = result.error?.message || '会话运行失败';
+    } else if (result.subtype === 'cancelled') {
+      c.status = 'cancelled';
+      c.errorMessage = result.error?.message || '会话已取消';
+    } else {
+      c.status = 'no_delivery';
+      c.errorMessage = '会话结束但未交付';
+    }
     c.finishedAt = Date.now();
-    c.errorMessage = '会话结束但未交付';
     groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
     broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
     broadcastDeliveriesAwaitChanged(c.parentConversationId);
@@ -164,29 +170,9 @@ function onSessionComplete(childId: string): void {
   if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
 }
 
-function onSessionError(childId: string, msg: unknown): void {
-  const c = childStates.get(childId);
-  if (!c) return;
-  if (c.status === 'running') {
-    c.status = 'failed';
-    c.finishedAt = Date.now();
-    c.errorMessage = extractErrorMessage(msg);
-    groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-    broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-    broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  }
-  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
-}
-
-function extractErrorMessage(msg: unknown): string {
-  if (typeof msg === 'string') return msg;
-  if (msg && typeof msg === 'object') {
-    const m = msg as Record<string, unknown>;
-    if (typeof m.error === 'string') return m.error;
-    if (typeof m.message === 'string') return m.message;
-  }
-  return '未知错误';
+function extractErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === 'string' ? error : '未知错误';
 }
 
 // ─── 创建 / 停止会话 ───
@@ -292,9 +278,12 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   broadcastDeliveriesAwaitChanged(parentConversationId);
 
   // fire-and-forget 发任务
-  session.sendMessage(spec.task).catch((err: unknown) => {
-    logger.error(`子会话 ${childId} sendMessage 失败`, err);
-    onSessionError(childId, err);
+  session.sendMessage(spec.task).catch((error: unknown) => {
+    logger.error(`子会话 ${childId} sendMessage 失败`, error);
+    onSessionComplete(childId, {
+      subtype: 'failed',
+      error: { kind: 'runtime', message: extractErrorMessage(error) },
+    });
   });
 
   return toSnapshot(state);

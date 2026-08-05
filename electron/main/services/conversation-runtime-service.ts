@@ -20,6 +20,10 @@ export interface ConversationRuntimeAttachment {
     toolName: string;
     toolInput: unknown;
   }>;
+  sessionState: {
+    running: boolean;
+    pendingAction: boolean;
+  };
 }
 
 export interface ConversationRuntimeState {
@@ -124,6 +128,7 @@ class ConversationRuntimeService {
       created,
       snapshot: liveSnapshot.messages,
       pendingPermissionRequests: liveSnapshot.permissionRequests,
+      sessionState: liveSnapshot.sessionState,
     };
   }
 

@@ -1,8 +1,7 @@
 // electron/main/tipc/conversation-runtime.ts
-import { tipc, getRendererHandlers } from '@egoist/tipc/main';
+import { tipc } from '@egoist/tipc/main';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import type { ConversationRuntimeState } from '../services/conversation-runtime-service.js';
-import type { RendererHandlers } from './renderer-handlers.js';
 
 const t = tipc.create();
 
@@ -27,29 +26,6 @@ export const conversationRuntimeRouter = {
           { webContentsId: context.sender.id },
         );
 
-        // 复用已有 session 时，把当前 turn 的消息和待确认请求重播给调用者窗口。
-        if (!result.created && (result.snapshot.length > 0 || result.pendingPermissionRequests.length > 0)) {
-          setTimeout(() => {
-            if (context.sender.isDestroyed()) return;
-            const h = getRendererHandlers<RendererHandlers>(context.sender);
-            try {
-              for (const msg of result.snapshot) {
-                h.queryBasedSessionMessage.send({ sessionId: result.sessionId, message: msg });
-              }
-              for (const request of result.pendingPermissionRequests) {
-                h.permissionRequest.send({
-                  sessionId: result.sessionId,
-                  requestId: request.requestId,
-                  toolName: request.toolName,
-                  toolInput: request.toolInput,
-                });
-              }
-            } catch {
-              // 窗口已销毁，忽略
-            }
-          }, 100);
-        }
-
         console.log(`[ConvRuntime] attach 完成: convId=${input.conversationId.substring(0, 8)}, created=${result.created}, sessionId=${result.sessionId.substring(0, 8)}`);
 
         return {
@@ -57,6 +33,9 @@ export const conversationRuntimeRouter = {
           sessionId: result.sessionId,
           permissionMode: result.permissionMode,
           created: result.created,
+          snapshot: result.snapshot,
+          pendingPermissionRequests: result.pendingPermissionRequests,
+          sessionState: result.sessionState,
         };
       } catch (error) {
         console.error('attachConversationRuntime 失败:', error);

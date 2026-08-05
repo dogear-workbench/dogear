@@ -10,6 +10,7 @@ interface StreamingIndicatorProps {
   awaitCount?: number;
   /** 已完成的子会话数量（与 awaitCount 合并展示） */
   doneCount?: number;
+  issueCount?: number;
   /** 点击「🛑 中断等待」时调用（仅 awaitCount>0 才会出现） */
   onAbortWait?: () => void;
 }
@@ -21,13 +22,14 @@ export function StreamingIndicator({
   lastBlockType,
   awaitCount = 0,
   doneCount = 0,
+  issueCount = 0,
   onAbortWait,
 }: StreamingIndicatorProps) {
   const isAwaiting = pendingState === 'running' && awaitCount > 0;
   if (pendingState === 'idle' && !isAwaiting) return null;
 
   const label = isAwaiting
-    ? `等待 ${awaitCount} 个子会话交付…（已完成 ${doneCount}）`
+    ? `等待 ${awaitCount} 个子会话交付…（已交付 ${doneCount}${issueCount > 0 ? `，异常 ${issueCount}` : ''}）`
     : pendingState === 'flushing'
       ? `队列还有 ${pendingCount} 条插话待回复…`
       : lastBlockType === 'thinking'
