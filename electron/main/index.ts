@@ -445,28 +445,23 @@ app.whenReady().then(async () => {
       ? path.join(app.getPath('userData'), '.dogear')
       : path.join(process.cwd(), '.dogear');
     await runMigrationP4(configDir);
+    const { runTopicLifecycleMigration } = await import('./services/topic-lifecycle-service.js');
+    const result = await runTopicLifecycleMigration();
+    if (result.errors.length > 0) {
+      console.error('[topic-lifecycle-migration] 失败:', result.errors);
+    } else {
+      console.log(
+        `[topic-lifecycle-migration] 完成: 删除 ${result.conversationsDeleted} 条旧归档会话，` +
+        `处理 ${result.workspacesProcessed} 个工作区，跳过 ${result.workspacesSkipped} 个工作区`,
+      );
+    }
   } catch (error) {
-    console.error('[migration-p4] 失败:', error);
+    console.error('[migration-p4/topic-lifecycle] 失败:', error);
   } finally {
     // 无论迁移成功失败都放开 gate（失败情况下 group-digest / category / review trigger 会读到新路径的空目录，
     // 比永远堵住更好——用户可以看到问题、手动重跑迁移或触发提炼）
     const { markMigrationComplete } = await import('./services/memory/migration-gate.js');
     markMigrationComplete();
-  }
-
-  // SDK 主会话移除迁移：归档全部存量 Conversation（含尚无 sdkSessionId 的空对话）并清除
-  // 遗留 sdkSessionId。必须排在 migration-p3 之后执行——P3 依赖 sdkSessionId 匹配旧会话卡
-  // 升级为组卡，若先清空该字段会导致匹配全部落空。
-  try {
-    const conversationService = await import('./services/conversation-service.js');
-    const result = await conversationService.runSdkMainSessionArchiveMigration();
-    console.log(
-      `[sdk-archive-migration] 完成: 归档 ${result.archivedCount} 条会话，` +
-      `跳过已归档 ${result.skippedAlreadyArchivedCount} 条，` +
-      `处理 ${result.workspacesProcessed} 个工作区，跳过已迁移 ${result.workspacesSkipped} 个工作区`,
-    );
-  } catch (error) {
-    console.error('[sdk-archive-migration] 失败:', error);
   }
 
   // 初始化 Agent 管理器

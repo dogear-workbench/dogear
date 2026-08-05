@@ -91,10 +91,19 @@ export class PiSessionRepository {
     return (await this.findMetadata(workspaceId, sessionId)).path;
   }
 
-  async delete(workspaceId: string, sessionId: string): Promise<void> {
+  async delete(workspaceId: string, sessionId: string): Promise<boolean> {
     const { repo } = this.getWorkspaceRepository(workspaceId);
-    await repo.delete(await this.findMetadata(workspaceId, sessionId));
+    const metadata = (await this.listMetadata(workspaceId)).find((item) => item.id === sessionId);
+    if (!metadata) return false;
+    try {
+      await repo.delete(metadata);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.metadataCache.delete(workspaceId);
+      return false;
+    }
     this.metadataCache.delete(workspaceId);
+    return true;
   }
 
   async fork(

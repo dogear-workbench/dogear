@@ -132,6 +132,28 @@ class ConversationRuntimeService {
     };
   }
 
+  async closeConversation(conversationId: string): Promise<void> {
+    const sessionIds = new Set<string>();
+    for (const [attachmentId, meta] of this.attachmentMap) {
+      if (meta.conversationId !== conversationId) continue;
+      sessionIds.add(meta.sessionId);
+      this.attachmentMap.delete(attachmentId);
+      const attachments = this.sessionAttachments.get(meta.sessionId);
+      if (!attachments) continue;
+      attachments.delete(attachmentId);
+      if (attachments.size === 0) this.sessionAttachments.delete(meta.sessionId);
+    }
+
+    const piSessionManager = getPiSessionManager();
+    const activeSessionId = piSessionManager.getSessionIdByConversation(conversationId);
+    if (activeSessionId) sessionIds.add(activeSessionId);
+    for (const sessionId of sessionIds) {
+      if (piSessionManager.getSession(sessionId)) {
+        await piSessionManager.closeSession(sessionId);
+      }
+    }
+  }
+
   getAttachmentMeta(attachmentId: string): AttachmentMeta | undefined {
     return this.attachmentMap.get(attachmentId);
   }

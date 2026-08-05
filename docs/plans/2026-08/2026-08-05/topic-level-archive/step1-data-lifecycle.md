@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 话题数据模型、级联清理与旧归档迁移
-status: pending
+status: done
 ---
 
 ## 目标
@@ -31,10 +31,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：为保证会话索引只在所有工件清理成功后才删除，补充了 `conversationRuntimeService.closeConversation()`、`deleteUsageStrict()` 和 Pi Harness repository 的缺失文件幂等处理；其余按计划实施。
+- 改动文件清单：`types/group.ts`、`electron/main/types.ts`、`electron/main/services/group-service.ts`、`electron/main/services/topic-lifecycle-service.ts`、`electron/main/services/conversation-runtime-service.ts`、`electron/main/agents/pi-session/pi-session-repository.ts`、`electron/main/services/usage/usage-service.ts`、`electron/main/tipc/conversations.ts`、`electron/main/index.ts`、`electron/main/services/conversation-service.ts`。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`Group.archivedAt?: number` 是唯一归档状态；`groupService.listActiveGroups/listArchivedGroups/archiveGroup/restoreGroup()` 提供话题归档读写；`topicLifecycleService.deleteConversation/deleteTopic/cleanupEmptyTopics/runTopicLifecycleMigration()` 集中管理删除与迁移，并以 `{ ok, error? }` 返回可重试结果。
+- 下个 step 该从哪里继续：在 `electron/main/tipc/group.ts` 和 `electron/main/tipc/conversations.ts` 接入话题归档、恢复、删除路由；前端 store 基于活跃/归档话题切换数据，并移除产品级单会话归档入口。
+- 待办或已知限制：历史 `Conversation.archivedAt/archiveReason` 与旧归档 RPC 暂仅为迁移前数据读取兼容，Step 2 必须移除其产品入口。`bun test` 仍有 6 个既有断言失败和 2 个测试环境模块错误；本步骤的 `bun run lint`、`bun run build:electron`、`git diff --check` 均通过。

@@ -252,13 +252,20 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
  * 删除对话的用量 JSONL 文件。
  * ENOENT 静默忽略，其他错误 warn，不抛异常。
  */
-export async function deleteUsage(conversationId: string): Promise<void> {
+export async function deleteUsageStrict(conversationId: string): Promise<void> {
+  assertSafeId(conversationId);
   try {
-    assertSafeId(conversationId);
-    const file = usageFilePath(conversationId);
-    await fs.unlink(file);
+    await fs.unlink(usageFilePath(conversationId));
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw err;
+  }
+}
+
+export async function deleteUsage(conversationId: string): Promise<void> {
+  try {
+    await deleteUsageStrict(conversationId);
+  } catch (err) {
     logger.warn('deleteUsage 失败', err);
   }
 }

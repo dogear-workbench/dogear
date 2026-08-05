@@ -203,6 +203,7 @@ export interface Group {
   title?: string;
   createdAt: number;
   updatedAt: number;
+  archivedAt?: number;
 }
 
 export interface NativeFileEntry {

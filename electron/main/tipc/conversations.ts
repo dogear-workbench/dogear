@@ -1,15 +1,11 @@
 // electron/main/tipc/conversations.ts
 import { tipc } from '@egoist/tipc/main';
-import fs from 'node:fs/promises';
 import * as conversationService from '../services/conversation-service.js';
 import * as treeService from '../services/conversation-tree-service.js';
 import * as groupService from '../services/group-service.js';
-import { deleteUsage } from '../services/usage/usage-service.js';
-import { loadSettings } from '../services/settings-service.js';
-import { readIndex, writeIndex, removeGroupEverywhere } from '../services/memory/smart-category-store.js';
-import { getGroupDir } from '../services/memory/group-digest-store.js';
+import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
-import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
+import { loadSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
 
@@ -25,40 +21,6 @@ async function reorderTreeByUpdatedAt(workspaceId: string): Promise<void> {
     await treeService.sortGroupsByUpdatedAt(workspaceId, map);
   } catch (error) {
     console.warn('[reorderTree] 重排对话树失败:', error);
-  }
-}
-
-/**
- * 删除会话后如果组已空（含归档），联动删除组及其所有关联记录：
- * groups.json / conversation-tree / smart-categories / groups/<id>/ 目录。
- * 任一步失败不阻塞主流程，只 warn。
- */
-async function deleteGroupIfEmpty(workspaceId: string, groupId: string): Promise<void> {
-  try {
-    const remaining = await conversationService.getByWorkspaceId(workspaceId, { includeArchived: true });
-    const stillUsed = remaining.some((c) => c.groupId === groupId);
-    if (stillUsed) return;
-
-    await groupService.deleteGroup(workspaceId, groupId).catch((err) => {
-      console.warn('[auto-delete-group] 删除组条目失败:', err);
-    });
-    await treeService.removeGroupFromTree(workspaceId, groupId).catch((err) => {
-      console.warn('[auto-delete-group] 从对话树移除失败:', err);
-    });
-    try {
-      const idx = await readIndex(workspaceId);
-      await writeIndex(workspaceId, removeGroupEverywhere(idx, groupId));
-    } catch (err) {
-      console.warn('[auto-delete-group] 清理智能分类引用失败:', err);
-    }
-    try {
-      await fs.rm(getGroupDir(workspaceId, groupId), { recursive: true, force: true });
-    } catch (err) {
-      console.warn('[auto-delete-group] 删除组目录失败:', err);
-    }
-    console.log('[auto-delete-group] 空组已清理:', groupId);
-  } catch (error) {
-    console.warn('[auto-delete-group] 空组检测失败:', error);
   }
 }
 
@@ -126,42 +88,10 @@ export const conversationsRouter = {
     .input<{ conversationId: string; workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const conv = await conversationService.getById(input.workspaceId, input.conversationId);
-        if (!conv) return { success: true, error: undefined }; // 已不存在，幂等
-
-        // 旧归档会话（SDK 主会话移除迁移冻结）从未有 Harness session，只删 metadata，
-        // 默认保留旧 SDK JSONL 备份（全局决策：备份不可操作但留盘）。
-        const isLegacyArchived =
-          !!conv.archivedAt && conv.archiveReason === conversationService.ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED;
-
-        if (conv.sessionId && !isLegacyArchived) {
-          const piSessionManager = getPiSessionManager();
-          const liveSessionId = piSessionManager.getSessionIdByConversation(input.conversationId);
-          if (liveSessionId === conv.sessionId) {
-            // 先关掉内存中的活跃 session，避免它继续持有即将被删除的 JSONL 文件
-            await piSessionManager.closeSession(liveSessionId).catch((error) => {
-              console.warn('[deleteConversation] 关闭活跃会话失败（继续尝试删除文件）:', error);
-            });
-          }
-          try {
-            await getPiSessionRepository().delete(input.workspaceId, conv.sessionId);
-          } catch (error) {
-            console.error('[deleteConversation] 删除 Harness session 文件失败，保留 Conversation metadata:', error);
-            return {
-              success: false,
-              error: `删除会话文件失败: ${error instanceof Error ? error.message : String(error)}`,
-            };
-          }
-        }
-
-        const orphanedGroupId = conv.groupId;
-        await conversationService.deleteConversation(input.workspaceId, input.conversationId);
-        // 清理用量 JSONL（失败静默，不阻塞删除）
-        await deleteUsage(input.conversationId).catch(() => {});
-        if (orphanedGroupId) {
-          await deleteGroupIfEmpty(input.workspaceId, orphanedGroupId);
-        }
-        return { success: true, error: undefined };
+        const result = await topicLifecycleService.deleteConversation(input.workspaceId, input.conversationId);
+        return result.ok
+          ? { success: true, error: undefined }
+          : { success: false, error: result.error };
       } catch (error) {
         console.error('删除对话失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };

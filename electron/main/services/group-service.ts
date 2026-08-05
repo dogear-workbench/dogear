@@ -5,6 +5,7 @@ import { safeJsonRead, safeJsonWrite } from './safe-json.js';
 import type { Group } from '../types.js';
 
 const { app } = electron;
+const GROUPS_SCHEMA_VERSION = 2;
 
 function getConfigDir(): string {
   if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
@@ -21,22 +22,65 @@ interface GroupsFile {
   groups: Group[];
 }
 
+function normalizeGroup(value: unknown): Group | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as Partial<Group>;
+  if (typeof raw.id !== 'string' || !raw.id) return null;
+  if (typeof raw.createdAt !== 'number' || !Number.isFinite(raw.createdAt)) return null;
+  if (typeof raw.updatedAt !== 'number' || !Number.isFinite(raw.updatedAt)) return null;
+  const group: Group = {
+    id: raw.id,
+    createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
+  };
+  if (typeof raw.title === 'string') group.title = raw.title;
+  if (typeof raw.archivedAt === 'number' && Number.isFinite(raw.archivedAt)) {
+    group.archivedAt = raw.archivedAt;
+  }
+  return group;
+}
+
+function normalizeGroupsFile(value: unknown): GroupsFile {
+  const raw = Array.isArray(value)
+    ? { groups: value }
+    : value && typeof value === 'object'
+      ? value as { groups?: unknown }
+      : {};
+  const groups = Array.isArray(raw.groups)
+    ? raw.groups.map(normalizeGroup).filter((group): group is Group => group !== null)
+    : [];
+  return { version: GROUPS_SCHEMA_VERSION, groups };
+}
+
 async function loadGroups(workspaceId: string): Promise<GroupsFile> {
-  return safeJsonRead<GroupsFile>(getGroupsPath(workspaceId), { version: 1, groups: [] });
+  const raw = await safeJsonRead<unknown>(getGroupsPath(workspaceId), { version: GROUPS_SCHEMA_VERSION, groups: [] });
+  return normalizeGroupsFile(raw);
 }
 
 async function saveGroups(workspaceId: string, data: GroupsFile): Promise<void> {
-  await safeJsonWrite(getGroupsPath(workspaceId), data);
+  await safeJsonWrite(getGroupsPath(workspaceId), {
+    version: GROUPS_SCHEMA_VERSION,
+    groups: data.groups,
+  } satisfies GroupsFile);
 }
 
 export async function listGroups(workspaceId: string): Promise<Group[]> {
-  const file = await loadGroups(workspaceId);
-  return file.groups;
+  return (await loadGroups(workspaceId)).groups;
+}
+
+export async function listActiveGroups(workspaceId: string): Promise<Group[]> {
+  return (await listGroups(workspaceId)).filter((group) => group.archivedAt === undefined);
+}
+
+export async function listArchivedGroups(workspaceId: string): Promise<Group[]> {
+  return (await listGroups(workspaceId))
+    .filter((group) => group.archivedAt !== undefined)
+    .sort((a, b) => b.archivedAt! - a.archivedAt!);
 }
 
 export async function getGroup(workspaceId: string, groupId: string): Promise<Group | null> {
   const file = await loadGroups(workspaceId);
-  return file.groups.find((g) => g.id === groupId) ?? null;
+  return file.groups.find((group) => group.id === groupId) ?? null;
 }
 
 export async function createGroup(workspaceId: string, init?: { title?: string }): Promise<Group> {
@@ -59,10 +103,9 @@ export async function updateGroup(
   patch: Partial<Pick<Group, 'title'>>,
 ): Promise<Group> {
   const file = await loadGroups(workspaceId);
-  const idx = file.groups.findIndex((g) => g.id === groupId);
-  if (idx === -1) throw new Error(`Group not found: ${groupId}`);
+  const group = file.groups.find((item) => item.id === groupId);
+  if (!group) throw new Error(`Group not found: ${groupId}`);
 
-  const group = file.groups[idx];
   if (patch.title !== undefined) group.title = patch.title;
   group.updatedAt = Date.now();
 
@@ -70,10 +113,35 @@ export async function updateGroup(
   return group;
 }
 
+export async function archiveGroup(workspaceId: string, groupId: string): Promise<Group> {
+  const file = await loadGroups(workspaceId);
+  const group = file.groups.find((item) => item.id === groupId);
+  if (!group) throw new Error(`Group not found: ${groupId}`);
+  if (group.archivedAt === undefined) {
+    const now = Date.now();
+    group.archivedAt = now;
+    group.updatedAt = now;
+    await saveGroups(workspaceId, file);
+  }
+  return group;
+}
+
+export async function restoreGroup(workspaceId: string, groupId: string): Promise<Group> {
+  const file = await loadGroups(workspaceId);
+  const group = file.groups.find((item) => item.id === groupId);
+  if (!group) throw new Error(`Group not found: ${groupId}`);
+  if (group.archivedAt !== undefined) {
+    delete group.archivedAt;
+    group.updatedAt = Date.now();
+    await saveGroups(workspaceId, file);
+  }
+  return group;
+}
+
 export async function deleteGroup(workspaceId: string, groupId: string): Promise<void> {
   const file = await loadGroups(workspaceId);
-  const idx = file.groups.findIndex((g) => g.id === groupId);
-  if (idx === -1) throw new Error(`Group not found: ${groupId}`);
-  file.groups.splice(idx, 1);
+  const index = file.groups.findIndex((group) => group.id === groupId);
+  if (index === -1) return;
+  file.groups.splice(index, 1);
   await saveGroups(workspaceId, file);
 }
