@@ -1,7 +1,7 @@
 ---
 step: 1
 title: PiSession 状态与终态模型
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,10 +27,16 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- PiSession 在 `adapter.prompt()` 前立即同步 `running=true`，结算后仍由 Harness settled 回调发布 `running=false`。
+- 新增 `PiSessionTurnResult`，将模型流错误、`agent_end` 错误、运行时抛错和用户中断统一为 `success`、`failed`、`cancelled` 三类终态；错误仍作为消息流事件送往聊天页。
+- `complete` 仅在 prompt 已返回（Harness 已结算）后发布结构化终态，PiSessionManager 和 tipc 广播路径已使用该类型。
+- 与计划差异：未改 bridge 的 child 分类和前端呈现，留在 Step 2 按计划处理。
 - 改动文件清单：
+  - `electron/main/agents/pi-session/pi-session.ts`
+  - `electron/main/agents/pi-session/pi-session-manager.ts`
+  - `electron/main/tipc/agent.ts`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`PiSessionTurnResult = { subtype: 'success' | 'failed' | 'cancelled'; error?: { kind; message } }`；`complete` 事件始终在安全结算后发送。
+- 下个 step 该从哪里继续：让 `delegation-bridge.ts` 的 `wireSession` 读取 complete 结果，并按 subtype 设置 child status，再安全 detach attachment。
+- 待办或已知限制：当前 bridge 仍把所有 complete 视为 `no_delivery`，因此必须执行 Step 2 后子会话失败才会在界面正确分类。

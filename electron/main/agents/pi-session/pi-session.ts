@@ -84,6 +84,14 @@ export interface PiSessionLiveSnapshot {
   }>;
 }
 
+export interface PiSessionTurnResult {
+  subtype: 'success' | 'failed' | 'cancelled';
+  error?: {
+    kind: 'model' | 'runtime' | 'cancelled';
+    message: string;
+  };
+}
+
 enum PiSessionStatus {
   IDLE = 'idle',
   CLOSED = 'closed',
@@ -147,6 +155,7 @@ export class PiSession extends EventEmitter {
   private usageTurnIndex = 0;
   // 本轮累加器：message_end 时累加 AssistantMessage.usage，agent_end 时取出转 entry 后置 null
   private currentRunUsageAccum: PiUsageAccumulator | null = null;
+  private currentTurnResult: PiSessionTurnResult | null = null;
   // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
   // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
   private closingPromise: Promise<void> | null = null;
@@ -362,48 +371,66 @@ export class PiSession extends EventEmitter {
       return;
     }
 
-    // 模型请求失败/被中断：assistantMessageEvent 里携带最终错误信息
     if (event.type === 'message_update' && event.assistantMessageEvent.type === 'error') {
       const errMsg = event.assistantMessageEvent.error.errorMessage || '模型请求失败';
-      this.logger.error('pi 模型返回错误:', errMsg);
-      this.emit('error', {
-        type: 'error',
-        error: errMsg,
-        timestamp: Date.now(),
-      } as ExtendedSessionMessage);
+      if (this.recordTurnFailure('model', errMsg)) {
+        this.logger.error('pi 模型返回错误:', errMsg);
+        this.emitErrorMessage(errMsg);
+      }
       return;
     }
 
-    // agent_end：一次完整 run（可能含多轮工具调用）结束。
-    // pi-agent-core 不单独 emit error 事件：模型 4xx/5xx 时 pi-ai 把异常 catch 转成 stopReason='error' + errorMessage 塞进 message，
-    // agent-loop.js:108 / agent.js handleRunFailure 走 error 路径时只在 messages[last] 上携带 errorMessage。
-    // 这里兜底把它转成 error 消息推给前端，避免 GLM 1211 这类错被静默吞掉。
     if (event.type === 'agent_end') {
       const lastMessage = event.messages[event.messages.length - 1] as {
         role?: string;
         stopReason?: string;
         errorMessage?: string;
       } | undefined;
-      if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'error' && lastMessage.errorMessage) {
-        this.logger.error('pi 模型返回错误:', lastMessage.errorMessage);
-        this.emit('message', {
-          type: 'error',
-          error: lastMessage.errorMessage,
-          timestamp: Date.now(),
-        } as ExtendedSessionMessage);
+      if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'error') {
+        const errorMessage = lastMessage.errorMessage || '模型请求失败';
+        if (this.recordTurnFailure('model', errorMessage)) {
+          this.logger.error('pi 模型返回错误:', errorMessage);
+          this.emitErrorMessage(errorMessage);
+        }
+      } else if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'aborted') {
+        this.recordTurnCancelled('会话已中断');
       }
 
       this.emitUsageEntry();
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
-      // running=false 的最终结算交给 onSettled（Harness settled 事件晚于 agent_end，
-      // 此时 steer 队列的真实状态已经由 queue_update 同步过，这里不再需要强制清零兜底）
     }
   }
 
   /**
    * steer 队列长度变化（Harness queue_update 事件），入队与 one-at-a-time drain 都会触发。
    */
+  private recordTurnFailure(kind: 'model' | 'runtime', message: string): boolean {
+    if (this.currentTurnResult) return false;
+    this.currentTurnResult = {
+      subtype: 'failed',
+      error: { kind, message },
+    };
+    return true;
+  }
+
+  private recordTurnCancelled(message: string): boolean {
+    if (this.currentTurnResult) return false;
+    this.currentTurnResult = {
+      subtype: 'cancelled',
+      error: { kind: 'cancelled', message },
+    };
+    return true;
+  }
+
+  private emitErrorMessage(message: string): void {
+    this.emit('message', {
+      type: 'error',
+      error: message,
+      timestamp: Date.now(),
+    } as ExtendedSessionMessage);
+  }
+
   private handleSteerQueueChanged(count: number): void {
     this.pendingSteerCount = count;
     this.emit('pendingCountChanged', { count });
@@ -545,26 +572,24 @@ export class PiSession extends EventEmitter {
       return;
     }
 
+    this.currentTurnResult = null;
     this.running = true;
+    this.syncSessionState();
     try {
       await adapter.prompt(text);
-      // settled 事件已经会触发 syncSessionState；complete 也只是给上层 conversation-runtime
-      // 一个"本次 sendMessage 的 Promise resolved"信号，不代表 turn 跑完。
-      this.emit('complete', { subtype: 'success' });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error('pi 会话执行失败:', message);
-      // 兜底：harness.prompt() 在 createTurnState() 等阶段抛出时不会走到 agent_end/settled，
-      // 主动清本轮 usage 状态和 running 标记，避免会话卡在"运行中"、污染下一轮
+      if (this.recordTurnFailure('runtime', message)) {
+        this.logger.error('pi 会话执行失败:', message);
+        this.emitErrorMessage(message);
+      }
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
       this.running = false;
-      this.emit('error', {
-        type: 'error',
-        error: message,
-        timestamp: Date.now(),
-      } as ExtendedSessionMessage);
     } finally {
+      const result = this.currentTurnResult ?? { subtype: 'success' };
+      this.emit('complete', result);
+      this.currentTurnResult = null;
       this.syncSessionState();
     }
   }
@@ -620,6 +645,7 @@ export class PiSession extends EventEmitter {
   async interrupt(): Promise<void> {
     // 不依赖 tool_call hook 收到 abort 信号（Harness 的 tool_call hook 不带 signal 参数），
     // 主动拒绝所有待处理权限请求兜底，避免中断后仍有请求悬挂等待
+    if (this.running || this.pendingSteerCount > 0) this.recordTurnCancelled('用户中断');
     this.pendingSteerCount = 0;
     this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');

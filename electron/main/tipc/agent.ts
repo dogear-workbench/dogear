@@ -4,6 +4,7 @@ import { getAgentManager } from '../agents/agent-manager.js';
 import { AgentTask, TaskType } from '../agents/task-types.js';
 import { sendToDebugWindow } from '../index.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
+import type { PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import { getAllTools } from '../agents/tools/tool-registry.js';
@@ -42,7 +43,7 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
       if (event === 'message') {
         h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
       } else if (event === 'complete') {
-        h.queryBasedSessionComplete.send({ sessionId, result: payload });
+        h.queryBasedSessionComplete.send({ sessionId, result: payload as PiSessionTurnResult });
       } else if (event === 'error') {
         h.queryBasedSessionMessage.send({ sessionId, message: payload as ExtendedSessionMessage });
       } else if (event === 'permissionRequest') {

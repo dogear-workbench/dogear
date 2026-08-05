@@ -13,7 +13,7 @@ import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import { v4 as uuidv4 } from 'uuid';
 import { mainLogger } from '../logger.js';
-import { PiSession, type PiSessionConfig } from './pi-session.js';
+import { PiSession, type PiSessionConfig, type PiSessionTurnResult } from './pi-session.js';
 import { appendContext as appendUsageContext, appendEntry as appendUsageEntry } from '../../services/usage/usage-service.js';
 import { applyUsageSummary } from '../../services/conversation-service.js';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
@@ -67,7 +67,7 @@ export class PiSessionManager extends EventEmitter {
       this.broadcaster?.(sessionId, 'error', message);
     });
 
-    session.on('complete', (result: unknown) => {
+    session.on('complete', (result: PiSessionTurnResult) => {
       this.emit('sessionComplete', sessionId, result);
       this.broadcaster?.(sessionId, 'complete', result);
     });
