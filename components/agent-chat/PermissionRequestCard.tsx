@@ -15,10 +15,12 @@ export function PermissionRequestCard({
   block,
   sessionId,
   onResolved,
+  readOnly = false,
 }: {
   block: ContentBlock;
   sessionId: string | null;
   onResolved: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
+  readOnly?: boolean;
 }) {
   const isResolved = !!block.permissionResolved;
   const [showDenyInput, setShowDenyInput] = useState(false);
@@ -43,7 +45,7 @@ export function PermissionRequestCard({
   };
 
   const handleAllow = async () => {
-    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    if (readOnly || !sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
       sessionId,
       requestId: block.permissionRequestId,
@@ -55,7 +57,7 @@ export function PermissionRequestCard({
 
   // 允许并使用修改后的参数
   const handleAllowWithEdits = async () => {
-    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    if (readOnly || !sessionId || !block.permissionRequestId || isResolved) return;
     try {
       const parsed = JSON.parse(editedInput);
       await client.respondPermissionRequest({
@@ -73,7 +75,7 @@ export function PermissionRequestCard({
 
   // 总是允许：本次允许 + SDK 在当前会话内记住该工具的权限（不切换全局模式）
   const handleAlwaysAllow = async () => {
-    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    if (readOnly || !sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
       sessionId,
       requestId: block.permissionRequestId,
@@ -85,7 +87,7 @@ export function PermissionRequestCard({
 
   // 本会话允许：当前会话进程内放行该工具，不写磁盘，关闭会话即失效
   const handleAllowSession = async () => {
-    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    if (readOnly || !sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
       sessionId,
       requestId: block.permissionRequestId,
@@ -96,7 +98,7 @@ export function PermissionRequestCard({
   };
 
   const handleDeny = async () => {
-    if (!sessionId || !block.permissionRequestId || isResolved) return;
+    if (readOnly || !sessionId || !block.permissionRequestId || isResolved) return;
     await client.respondPermissionRequest({
       sessionId,
       requestId: block.permissionRequestId,
@@ -109,7 +111,7 @@ export function PermissionRequestCard({
 
   // 带自定义消息的拒绝
   const handleDenyWithMessage = async () => {
-    if (!sessionId || !block.permissionRequestId || isResolved || !denyMessage.trim()) return;
+    if (readOnly || !sessionId || !block.permissionRequestId || isResolved || !denyMessage.trim()) return;
     await client.respondPermissionRequest({
       sessionId,
       requestId: block.permissionRequestId,
@@ -180,7 +182,7 @@ export function PermissionRequestCard({
       )}
 
       {/* 操作按钮 */}
-      {!isResolved && (
+      {!isResolved && !readOnly && (
         <div className="space-y-2 mt-2">
           <div className="flex items-center gap-2 flex-wrap">
             <Button size="sm" onClick={handleAllow}>

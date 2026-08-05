@@ -41,7 +41,7 @@ const RESIDENT_SERVERS: ResidentMeta[] = [
   },
   {
     server: GROUP_SERVER,
-    label: '会话组共享区',
+    label: '话题共享区',
     description: '会话加入组时自动启用，提供共享区文件的列出、读取、写入；非组会话不会注册。',
   },
 ];

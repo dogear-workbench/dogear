@@ -38,7 +38,7 @@ export function RecentVirtualGroup() {
         <GroupCard
           key={group.id}
           group={group}
-          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === group.id && !c.archived_at))}
+          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === group.id))}
         />
       ))}
     </div>

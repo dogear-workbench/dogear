@@ -15,7 +15,7 @@ export function Toolbar() {
         onClick={() => newConversation()}
       >
         <Plus className="w-4 h-4" />
-        新建对话
+        新建话题
       </Button>
     </div>
   );

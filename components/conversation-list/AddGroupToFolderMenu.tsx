@@ -33,7 +33,7 @@ export function AddGroupToFolderMenu({ groupId }: AddGroupToFolderMenuProps) {
     return (
       <ContextMenuItem disabled>
         <FolderPlus className="w-3.5 h-3.5 mr-2" />
-        添加到文件夹（暂无文件夹）
+        添加话题到文件夹（暂无文件夹）
       </ContextMenuItem>
     );
   }
@@ -42,7 +42,7 @@ export function AddGroupToFolderMenu({ groupId }: AddGroupToFolderMenuProps) {
     <ContextMenuSub>
       <ContextMenuSubTrigger>
         <FolderPlus className="w-3.5 h-3.5 mr-2" />
-        添加到文件夹
+        添加话题到文件夹
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
         {folders.map((f) => (

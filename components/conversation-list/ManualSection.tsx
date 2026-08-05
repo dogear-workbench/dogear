@@ -126,7 +126,7 @@ function FolderTreeItem({
   // group leaf
   if (!data.group) return null;
   const folderId = parentId !== CONV_TREE_ROOT ? parentId : undefined;
-  const convs = sortConversationsWithDFS(conversations.filter((c) => c.groupId === data.group!.id && !c.archived_at));
+  const convs = sortConversationsWithDFS(conversations.filter((c) => c.groupId === data.group!.id));
   return (
     <div style={{ paddingLeft: `${paddingLeft}px` }}>
       <GroupCard group={data.group} conversations={convs} folderId={folderId} />
@@ -276,7 +276,7 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
           新建文件夹
         </button>
         <p className="mt-2 text-[11px] text-muted-foreground/70">
-          通过组卡的「添加到文件夹」把会话组归类。
+          通过话题卡的「添加到文件夹」把话题归类。
         </p>
       </div>
     );

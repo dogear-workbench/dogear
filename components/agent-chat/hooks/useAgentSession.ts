@@ -15,8 +15,8 @@ export interface LivePermissionRequest {
 
 interface UseAgentSessionParams {
   conversationId: string | null;
-  /** 归档冻结的旧会话（SDK 主会话移除迁移标记）不建立 Harness runtime，只展示历史占位 */
   archived: boolean;
+  topicStateReady: boolean;
   historyLoaded: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => void;
@@ -25,6 +25,7 @@ interface UseAgentSessionParams {
 export function useAgentSession({
   conversationId,
   archived,
+  topicStateReady,
   historyLoaded,
   setIsLoading,
   onLiveSnapshot,
@@ -50,7 +51,7 @@ export function useAgentSession({
     let cancelled = false;
 
     const startSession = async () => {
-      if (archived || !conversationId || !historyLoaded) return;
+      if (archived || !topicStateReady || !conversationId || !historyLoaded) return;
 
       try {
         const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
@@ -139,7 +140,7 @@ export function useAgentSession({
 
     startSession();
 
-    // 组件卸载或 conversationId/archived 变化时：标记取消 + detach 旧 attachment
+    // 组件卸载或会话状态变化时：标记取消 + detach 旧 attachment
     return () => {
       cancelled = true;
       if (attachmentIdRef.current) {
@@ -149,7 +150,7 @@ export function useAgentSession({
       setSessionId(null);
       setIsSessionReady(false);
     };
-  }, [conversationId, archived, historyLoaded, sessionRestartTrigger, onLiveSnapshot]);
+  }, [conversationId, archived, topicStateReady, historyLoaded, sessionRestartTrigger, onLiveSnapshot]);
 
   // 订阅 pendingCountChanged：跟踪本会话的待处理插话队列长度
   useEffect(() => {

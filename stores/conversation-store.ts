@@ -96,7 +96,7 @@ interface ConversationState {
   /** 删除对话 */
   deleteConversation: (conversationId: string) => Promise<void>;
   /** 话题归档、恢复或删除后的前端同步 */
-  handleTopicStateChange: (groupId: string, closeTabs: boolean) => Promise<void>;
+  handleTopicStateChange: (groupId: string, closeTabs: boolean, conversationIds?: string[]) => Promise<void>;
   /** 分叉对话（创建独立新对话） */
   forkConversation: (params: { parentConversationId: string; forkMessageSdkUuid: string }) => Promise<void>;
   /** 创建对话文件夹 */
@@ -182,7 +182,7 @@ function buildNodeMap(
   for (const g of groups) {
     nodeMap[g.id] = {
       id: g.id,
-      name: g.title || '(未命名组)',
+      name: g.title || '(未命名话题)',
       isFolder: false,
       childrenIds: [],
       nodeType: 'group',
@@ -438,14 +438,17 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  handleTopicStateChange: async (groupId, closeTabs) => {
+  handleTopicStateChange: async (groupId, closeTabs, topicConversationIds = []) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
     const wsId = workspace.id;
     const slice = get().byWorkspace[wsId] ?? emptySlice();
-    const conversationIds = slice.conversations
-      .filter((conversation) => conversation.groupId === groupId)
-      .map((conversation) => conversation.id);
+    const conversationIds = new Set([
+      ...topicConversationIds,
+      ...slice.conversations
+        .filter((conversation) => conversation.groupId === groupId)
+        .map((conversation) => conversation.id),
+    ]);
 
     if (closeTabs) {
       for (const conversationId of conversationIds) {

@@ -65,6 +65,7 @@ export function MessageItem({
   searchQuery,
   activeMatchId,
   isAgentConversation,
+  readOnly = false,
 }: {
   message: Message;
   messageIndex?: number;
@@ -77,6 +78,7 @@ export function MessageItem({
   activeMatchId?: string | null;
   /** 当前会话是否 agent 会话（用于判断"用户介入"徽章） */
   isAgentConversation?: boolean;
+  readOnly?: boolean;
 }) {
   const isUser = message.role === 'user';
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
@@ -315,6 +317,7 @@ export function MessageItem({
                       searchQuery={searchQuery}
                       activeMatchId={activeMatchId}
                       messageIndex={messageIndex}
+                      readOnly={readOnly}
                     />
                   ))}
                 </div>

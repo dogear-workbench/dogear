@@ -16,29 +16,9 @@ import { ArchiveSection } from './conversation-list/ArchiveSection';
  * 对话接口（对话直接属于工作区）
  * 其他文件依然从这里 import Conversation，保持向后兼容。
  */
-import type { ModelSelection } from '@/types/settings';
+import type { Conversation as ConversationData } from '@/types/electron-api';
 
-export interface Conversation {
-  id: string;
-  workspace_id: string;
-  title: string;
-  model: string;
-  sdk_session_id?: string;
-  session_id?: string;
-  parent_conversation_id?: string;
-  fork_message_sdk_uuid?: string;
-  persona_id?: string;
-  temp_prompt?: string;
-  modelSelection: ModelSelection | null;
-  cachePolicy?: '5m' | '1h';
-  fork_pending?: boolean;
-  archived_at?: string;
-  archive_reason?: string;
-  created_at: number;
-  updated_at: number;
-  groupId?: string;
-  role?: 'main' | 'sub';
-}
+export type Conversation = ConversationData;
 
 export function ConversationList() {
   const loadingConversations = useConversationStore((s) => s.loadingConversations);
@@ -63,8 +43,8 @@ export function ConversationList() {
         {conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground py-16">
             <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
-            <p className="text-sm">暂无对话</p>
-            <p className="text-xs mt-1">点击上方按钮开始</p>
+            <p className="text-sm">暂无话题</p>
+            <p className="text-xs mt-1">点击上方按钮创建话题</p>
           </div>
         ) : (
           <>

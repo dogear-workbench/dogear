@@ -146,8 +146,6 @@ export interface Conversation {
   modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
   cachePolicy?: '5m' | '1h';         // 提示缓存策略；缺省视为 5m
   fork_pending?: boolean;            // @deprecated SDK 时代的分叉待定态，Harness fork 已同步创建不再产生
-  archived_at?: string;              // 归档时间（ISO 8601），有值=已归档
-  archive_reason?: string;           // 归档原因；'sdk-main-session-removed' = 迁移冻结的旧会话
   groupId: string;                   // 所属会话组 ID
   role: 'main' | 'sub';             // P1 只产生 'main'
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined

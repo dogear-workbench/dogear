@@ -24,6 +24,7 @@ interface UseSendMessageParams {
   pendingImages: PendingImage[];
   setPendingImages: Dispatch<SetStateAction<PendingImage[]>>;
   currentSelection: ModelSelection | null;
+  readOnly: boolean;
 }
 
 /**
@@ -43,6 +44,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     pendingImages,
     setPendingImages,
     currentSelection,
+    readOnly,
   } = params;
 
   const [input, setInput] = useState('');
@@ -117,6 +119,7 @@ export function useSendMessage(params: UseSendMessageParams) {
   // 权限确认响应回调：更新消息中对应权限请求块的状态
   // "总是允许"不再切换全局模式，而是通过 SDK 的 updatedPermissions 机制在会话内记住
   const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => {
+    if (readOnly) return;
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;
       const hasTarget = msg.contentBlocks.some(b => b.permissionRequestId === requestId);
@@ -130,10 +133,11 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-  }, [setMessages]);
+  }, [readOnly, setMessages]);
 
   // AskUserQuestion 响应回调：更新消息中对应问答块的状态
   const handleAskUserResolved = useCallback((requestId: string, answers: Record<string, string>) => {
+    if (readOnly) return;
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;
       const hasTarget = msg.contentBlocks.some(b => b.askUserRequestId === requestId);
@@ -147,12 +151,12 @@ export function useSendMessage(params: UseSendMessageParams) {
         ),
       };
     }));
-  }, [setMessages]);
+  }, [readOnly, setMessages]);
 
   // 中断当前执行：发 IPC + 本地把所有未 resolved 的 pending block 标为已取消，
   // 让 hasPendingUserAction 立刻变假、输入框立刻回来（否则依赖后端事件闭环时序，UI 卡在"等确认"）
   const handleInterrupt = useCallback(async () => {
-    if (!sessionId) return;
+    if (readOnly || !sessionId) return;
     console.log('[interrupt-trace] handleInterrupt 触发', { sessionId: sessionId.substring(0, 8) });
     try {
       await client.interruptQueryBasedSession({ sessionId });
@@ -177,18 +181,18 @@ export function useSendMessage(params: UseSendMessageParams) {
       return changed ? { ...msg, contentBlocks: blocks } : msg;
     }));
     setIsLoading(false);
-  }, [sessionId, setMessages, setIsLoading]);
+  }, [readOnly, sessionId, setMessages, setIsLoading]);
 
   /**
    * 从某条 assistant 消息处分叉新对话
    */
   const handleFork = useCallback((assistantSdkUuid: string) => {
-    if (!conversationId) return;
+    if (readOnly || !conversationId) return;
     forkConversation({
       parentConversationId: conversationId,
       forkMessageSdkUuid: assistantSdkUuid,
     });
-  }, [conversationId, forkConversation]);
+  }, [conversationId, forkConversation, readOnly]);
 
   // 斜杠命令拦截处理，返回 true 表示已处理（不走正常发送流程）
   const handleSlashCommand = useCallback(async (text: string): Promise<boolean> => {
@@ -299,6 +303,7 @@ export function useSendMessage(params: UseSendMessageParams) {
 
   // 发送消息
   const handleSend = async () => {
+    if (readOnly) return;
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
     if (!hasText && !hasImages) return;

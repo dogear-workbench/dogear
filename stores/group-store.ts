@@ -61,13 +61,13 @@ export const useGroupStore = create<GroupState>((set) => ({
     try {
       const r = await client.createGroup({ workspaceId: workspace.id, title });
       if (r.error || !r.group) {
-        toast.error('创建会话组失败', { description: r.error || '未知错误' });
+        toast.error('创建话题失败', { description: r.error || '未知错误' });
         return null;
       }
       set((state) => ({ groups: [...state.groups, r.group!] }));
       return r.group;
     } catch (e) {
-      toast.error('创建会话组失败', { description: e instanceof Error ? e.message : String(e) });
+      toast.error('创建话题失败', { description: e instanceof Error ? e.message : String(e) });
       return null;
     }
   },
@@ -119,6 +119,12 @@ export const useGroupStore = create<GroupState>((set) => ({
         toast.error('恢复话题失败', { description: result.error || '未知错误' });
         return false;
       }
+      const restoredGroup = result.group;
+      set((state) => ({
+        groups: state.groups.some((group) => group.id === groupId)
+          ? state.groups.map((group) => group.id === groupId ? restoredGroup : group)
+          : [...state.groups, restoredGroup],
+      }));
       const { useConversationStore } = await import('./conversation-store');
       await useConversationStore.getState().handleTopicStateChange(groupId, false);
       return true;
@@ -133,6 +139,10 @@ export const useGroupStore = create<GroupState>((set) => ({
     const workspace = await getWorkspace();
     if (!workspace) return false;
     try {
+      const archivedTopics = await client.listArchivedTopics({ workspaceId: workspace.id }).catch(() => ({ topics: [] }));
+      const archivedConversationIds = archivedTopics.topics
+        ?.find((topic) => topic.group.id === groupId)
+        ?.conversations.map((conversation) => conversation.id) ?? [];
       const result = await client.deleteTopic({ workspaceId: workspace.id, groupId });
       if (!result.ok) {
         toast.error('永久删除话题失败', { description: result.error || '未知错误' });
@@ -143,7 +153,7 @@ export const useGroupStore = create<GroupState>((set) => ({
         currentGroupId: state.currentGroupId === groupId ? null : state.currentGroupId,
       }));
       const { useConversationStore } = await import('./conversation-store');
-      await useConversationStore.getState().handleTopicStateChange(groupId, true);
+      await useConversationStore.getState().handleTopicStateChange(groupId, true, archivedConversationIds);
       return true;
     } catch (error) {
       console.error('永久删除话题失败:', error);

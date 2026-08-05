@@ -87,7 +87,7 @@ function parseErrorMessage(error: string): { title: string; description: string;
   return { title: '错误', description: error.substring(0, 100) + '...', detail: error };
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageIndex, blockIndex }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageIndex, blockIndex, readOnly = false }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
@@ -97,6 +97,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   activeMatchId?: string | null;
   messageIndex?: number;
   blockIndex?: number;
+  readOnly?: boolean;
 }) {
   switch (block.type) {
     case 'tool_group':
@@ -111,6 +112,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           activeMatchId={activeMatchId}
           messageIndex={messageIndex}
           blockIndex={blockIndex}
+          readOnly={readOnly}
         />
       );
 
@@ -214,6 +216,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           block={block}
           sessionId={sessionId || null}
           onResolved={onPermissionResolved || (() => {})}
+          readOnly={readOnly}
         />
       );
 
@@ -224,6 +227,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           sessionId={sessionId || null}
           onResolved={onAskUserResolved || (() => {})}
           onInterrupt={onInterrupt}
+          readOnly={readOnly}
         />
       );
 

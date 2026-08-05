@@ -91,7 +91,7 @@ function CategoryGroup({
         <GroupCard
           key={`${cat.id}:${g.id}`}
           group={g}
-          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === g.id && !c.archived_at))}
+          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === g.id))}
         />
       ))}
     </div>

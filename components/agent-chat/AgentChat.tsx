@@ -10,6 +10,7 @@ import { MessageItem } from './MessageItem';
 import { ChatInputArea } from './ChatInputArea';
 import { useMessageHistory } from './hooks/useMessageHistory';
 import { useAgentSession } from './hooks/useAgentSession';
+import { useTopicArchiveState } from './hooks/useTopicArchiveState';
 import { useSessionMessages } from './hooks/useSessionMessages';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { useImageAttachment } from './hooks/useImageAttachment';
@@ -77,8 +78,8 @@ export function AgentChat({
   // 多标签页模式下使用 override，否则使用 store 中的选中对话
   const conversationId = conversationIdOverride || storeConversationId;
   const conversations = useConversationStore((s) => s.conversations);
-  const selectedConv = useConversationStore((s) => s.selectedConversation);
   const selectConversation = useConversationStore((s) => s.selectConversation);
+  const { conversation: currentConversation, topicState } = useTopicArchiveState(conversationId);
   const childSnapshot = useConversationStore((s) => conversationId ? s.childSnapshotsById[conversationId] : undefined);
 
   // compact_boundary 折叠状态（默认折叠，每个对话独立）
@@ -107,10 +108,11 @@ export function AgentChat({
   }, [isLoading]);
 
   // 历史消息
-  const { messages, setMessages, historyLoaded, setHistoryLoaded, historyStatus, archivedAt } =
-    useMessageHistory({ conversationId });
-  // 旧 SDK 主会话迁移冻结的归档会话：只读展示历史，不建立 runtime、不允许发送/编辑重发/分叉
-  const isArchivedLegacy = historyStatus === 'archived_legacy';
+  const { messages, setMessages, historyLoaded, setHistoryLoaded } = useMessageHistory({ conversationId });
+  const isTopicStatePending = !!conversationId && topicState === 'loading';
+  const topicArchived = topicState === 'archived';
+  const isTopicReadOnly = topicArchived || topicState === 'missing';
+  const isReadOnly = isTopicReadOnly;
 
   const applyLiveSnapshot = useCallback((snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => {
     if (snapshot.length === 0 && pendingPermissionRequests.length === 0) return;
@@ -138,7 +140,14 @@ export function AgentChat({
 
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
-    useAgentSession({ conversationId, archived: isArchivedLegacy, historyLoaded, setIsLoading, onLiveSnapshot: applyLiveSnapshot });
+    useAgentSession({
+      conversationId,
+      archived: isReadOnly,
+      topicStateReady: !isTopicStatePending,
+      historyLoaded,
+      setIsLoading,
+      onLiveSnapshot: applyLiveSnapshot,
+    });
 
   // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，
   // 用后端权威运行态兜底；本地 isLoading 保留用于点击发送的乐观预置和失败恢复
@@ -208,7 +217,7 @@ export function AgentChat({
 
   // 从 messages 的 ContentBlock 中提取子代理列表，按 conversationId 缓存到 ui-store
   // 仅注册列表数据，不主动打开右侧面板（用户手动切到子代理 Tab 时仍可看到）
-  const sdkSessionId = useConversationStore((s) => s.selectedConversation?.sdk_session_id);
+  const sdkSessionId = currentConversation?.sdk_session_id;
   useEffect(() => {
     if (!conversationId || !sdkSessionId) return;
     const agents: import('@/stores/ui-store').SubAgentInfo[] = [];
@@ -254,7 +263,8 @@ export function AgentChat({
     conversationId,
     pendingImages: imageAttachment.pendingImages,
     setPendingImages: imageAttachment.setPendingImages,
-    currentSelection: selectedConv?.modelSelection ?? null,
+    currentSelection: currentConversation?.modelSelection ?? null,
+    readOnly: isReadOnly,
   });
 
   // 权限/AskUser 响应后恢复自动跟随
@@ -357,9 +367,9 @@ export function AgentChat({
       >
         <div className="px-6">
         {/* 会话溯源条（agent 派出会话，contractMetadata 存在时渲染） */}
-        {selectedConv && (
+        {currentConversation && (
           <LineageBar
-            conversation={selectedConv}
+            conversation={currentConversation}
             onOpenParent={(parentId) => {
               const parent = conversations.find((c) => c.id === parentId);
               if (parent) void selectConversation(parent);
@@ -373,20 +383,23 @@ export function AgentChat({
           </div>
         )}
         {/* 旧 SDK 主会话迁移冻结提示：只读展示，不回放 JSONL、不允许发送/编辑重发/分叉 */}
-        {isArchivedLegacy && (
+        {topicArchived && (
           <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
             <Archive size={14} className="flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium">此对话来自迁移前的旧版本，历史记录已冻结</p>
-              <p className="mt-0.5 text-amber-700">仅供查看，无法继续发送消息、编辑重发或分叉；原始记录已保留为不可操作的备份文件。</p>
-              {archivedAt && (
-                <p className="mt-0.5 text-amber-600">归档时间：{new Date(archivedAt).toLocaleString()}</p>
-              )}
+              <p className="font-medium">此话题已归档</p>
+              <p className="mt-0.5 text-amber-700">历史记录仅供查看；恢复话题后才能发送消息、编辑重发、分叉或调整模型与权限。</p>
             </div>
           </div>
         )}
+        {topicState === 'missing' && (
+          <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
+            <Archive size={14} className="flex-shrink-0 mt-0.5" />
+            <p>此话题已删除，无法继续操作。</p>
+          </div>
+        )}
 
-        {messages.length === 0 && !isArchivedLegacy && (
+        {messages.length === 0 && !isReadOnly && !isTopicStatePending && (
           <div className="text-center text-gray-500 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>
@@ -406,14 +419,15 @@ export function AgentChat({
               key={index}
               message={message}
               messageIndex={index}
-              onFork={isArchivedLegacy ? undefined : sendMessage.handleFork}
+              onFork={isReadOnly ? undefined : sendMessage.handleFork}
               sessionId={sessionId}
               onPermissionResolved={handlePermissionResolvedWithScroll}
               onAskUserResolved={handleAskUserResolvedWithScroll}
               onInterrupt={sendMessage.handleInterrupt}
               searchQuery={search.query || undefined}
               activeMatchId={search.activeMatch?.id ?? null}
-              isAgentConversation={selectedConv?.contractMetadata?.createdBy === 'agent'}
+              isAgentConversation={currentConversation?.contractMetadata?.createdBy === 'agent'}
+              readOnly={isReadOnly}
             />
           );
 
@@ -455,11 +469,11 @@ export function AgentChat({
           awaitCount={awaitCount}
           doneCount={doneCount}
           issueCount={issueCount}
-          onAbortWait={handleAbortWait}
+          onAbortWait={isReadOnly ? undefined : handleAbortWait}
         />
 
         {/* SDK 0.2.119+：下一步建议气泡（点击追加到输入框，临时状态） */}
-        {promptSuggestion && !isLoading && (
+        {promptSuggestion && !isLoading && !isReadOnly && (
           <div className="flex items-start gap-2 mt-2 mb-4">
             <button
               onClick={() => {
@@ -519,11 +533,15 @@ export function AgentChat({
       </div>
       </div>
 
-      {/* 输入区域：旧版本迁移冻结的归档会话不提供输入入口 */}
-      {isArchivedLegacy ? (
+      {/* 输入区域 */}
+      {isTopicStatePending ? (
+        <div className="flex items-center gap-2 px-4 py-3 border-t text-xs text-muted-foreground bg-muted/30">
+          <span>正在检查话题状态…</span>
+        </div>
+      ) : isReadOnly ? (
         <div className="flex items-center gap-2 px-4 py-3 border-t text-xs text-muted-foreground bg-muted/30">
           <Archive size={14} className="flex-shrink-0" />
-          <span>此对话已冻结，无法发送新消息</span>
+          <span>{topicArchived ? '此话题已归档，恢复后才能发送新消息' : '此话题已删除，无法发送新消息'}</span>
         </div>
       ) : (
       <ChatInputArea
@@ -535,10 +553,10 @@ export function AgentChat({
         conversationId={conversationId}
         placeholder={placeholder}
         showStatusHint={showStatusHint}
-        currentSelection={selectedConv?.modelSelection ?? null}
-        onSelectionChange={(v) => { if (conversationId) setConvSelection(conversationId, v); }}
-        cachePolicy={selectedConv?.cachePolicy}
-        workspaceId={selectedConv?.workspace_id ?? null}
+        currentSelection={currentConversation?.modelSelection ?? null}
+        onSelectionChange={(value) => { if (conversationId) void setConvSelection(conversationId, value); }}
+        cachePolicy={currentConversation?.cachePolicy}
+        workspaceId={currentConversation?.workspace_id ?? null}
         settings={settings}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}

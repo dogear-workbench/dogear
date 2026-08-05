@@ -16,6 +16,7 @@ interface ToolGroupBlockProps {
   activeMatchId?: string | null;
   messageIndex?: number;
   blockIndex?: number;
+  readOnly?: boolean;
 }
 
 /**
@@ -34,6 +35,7 @@ export function ToolGroupBlock({
   activeMatchId,
   messageIndex,
   blockIndex,
+  readOnly,
 }: ToolGroupBlockProps) {
   const getCategoryLabel = useToolRegistryStore(s => s.getCategoryLabel);
 
@@ -89,6 +91,7 @@ export function ToolGroupBlock({
             activeMatchId={activeMatchId}
             messageIndex={messageIndex}
             blockIndex={blockIndex !== undefined ? blockIndex * 100 + idx : idx}
+            readOnly={readOnly}
           />
         ))}
       </div>

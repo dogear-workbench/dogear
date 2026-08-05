@@ -166,7 +166,7 @@ export function SmartCategoryPanel() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
-        分类对象：<b>会话组</b>（一个组 = 一个主题）。组卡产生 / 更新后自动决策，命中现有分类或另起新类。
+        分类对象：<b>话题</b>（一个话题可包含多个对话）。话题摘要产生 / 更新后自动决策，命中现有分类或另起新类。
       </p>
 
       {/* 1. 总开关 + 阈值 + 分类上限 */}
@@ -353,7 +353,7 @@ export function SmartCategoryPanel() {
             {categories.length === 0 ? (
               <div className="text-sm text-muted-foreground py-4 text-center">
                 <Brain className="w-8 h-8 mx-auto opacity-40 mb-2" />
-                暂无分类，会话组产生组卡后会自动生成
+                暂无分类，话题产生摘要后会自动生成
               </div>
             ) : (
               <ul className="space-y-2">

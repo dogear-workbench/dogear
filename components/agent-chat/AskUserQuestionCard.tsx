@@ -17,11 +17,13 @@ export function AskUserQuestionCard({
   sessionId,
   onResolved,
   onInterrupt,
+  readOnly = false,
 }: {
   block: ContentBlock;
   sessionId: string | null;
   onResolved: (requestId: string, answers: Record<string, string>) => void;
   onInterrupt?: () => void | Promise<void>;
+  readOnly?: boolean;
 }) {
   const questions = block.askUserQuestions || [];
   const isResolved = !!block.askUserResolved;
@@ -37,7 +39,7 @@ export function AskUserQuestionCard({
   const [otherTexts, setOtherTexts] = useState<Record<string, string>>({});
 
   const handleSubmit = async () => {
-    if (!sessionId || !block.askUserRequestId || isResolved) return;
+    if (readOnly || !sessionId || !block.askUserRequestId || isResolved) return;
 
     // 构建最终答案
     const finalAnswers: Record<string, string> = {};
@@ -88,6 +90,8 @@ export function AskUserQuestionCard({
               <div className="text-sm text-muted-foreground bg-background/60 rounded p-2">
                 {isCancelled ? '(用户中断，未回答)' : (block.askUserAnswers?.[q.question] || '(未回答)')}
               </div>
+            ) : readOnly ? (
+              <div className="text-sm text-muted-foreground bg-background/60 rounded p-2">话题已归档，无法提交回答</div>
             ) : q.multiSelect ? (
               // 多选
               <div className="space-y-1.5">
@@ -177,7 +181,7 @@ export function AskUserQuestionCard({
       </div>
 
       {/* 提交/停止按钮 */}
-      {!isResolved && (
+      {!isResolved && !readOnly && (
         <div className="mt-4 flex items-center gap-2">
           <Button
             size="sm"

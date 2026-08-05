@@ -28,7 +28,7 @@ export function MoveGroupToFolderMenu({ groupId, fromFolderId }: MoveGroupToFold
     return (
       <ContextMenuItem disabled>
         <FolderInput className="w-3.5 h-3.5 mr-2" />
-        移动到文件夹（暂无其他文件夹）
+        移动话题到文件夹（暂无其他文件夹）
       </ContextMenuItem>
     );
   }
@@ -37,7 +37,7 @@ export function MoveGroupToFolderMenu({ groupId, fromFolderId }: MoveGroupToFold
     <ContextMenuSub>
       <ContextMenuSubTrigger>
         <FolderInput className="w-3.5 h-3.5 mr-2" />
-        移动到文件夹
+        移动话题到文件夹
       </ContextMenuSubTrigger>
       <ContextMenuSubContent>
         {folders.map((f) => (

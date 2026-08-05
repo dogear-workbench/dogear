@@ -7,20 +7,18 @@ interface UseMessageHistoryParams {
   conversationId: string | null;
 }
 
-export type HistoryStatus = 'loading' | 'ok' | 'empty' | 'archived_legacy' | 'error';
+export type HistoryStatus = 'loading' | 'ok' | 'empty' | 'error';
 
 /**
  * 历史消息加载 Hook
  * 以 conversationId 为唯一入口调用 getConversationHistory：主进程按 Conversation 状态
- * 返回 ok（正常历史）/ empty（新对话尚无 sessionId）/ archived_legacy（SDK 主会话移除
- * 迁移冻结的旧会话，不回放 JSONL）三种状态，AgentChat 据此渲染冻结占位并禁用操作入口。
+ * 返回 ok（正常历史）/ empty（新对话尚无 sessionId）/ error（读取失败）三种状态。
  */
 export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
-  const [archivedAt, setArchivedAt] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -28,7 +26,6 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
     const loadHistory = async () => {
       setHistoryLoaded(false);
       setHistoryStatus('loading');
-      setArchivedAt(undefined);
 
       if (!conversationId) {
         setMessages([]);
@@ -42,15 +39,6 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
       try {
         const result = await client.getConversationHistory({ conversationId, workspaceId });
         if (cancelled) return;
-
-        if (result.status === 'archived_legacy') {
-          setMessages([]);
-          setArchivedAt(result.archivedAt);
-          setHistoryStatus('archived_legacy');
-          setHistoryConversationId(conversationId);
-          setHistoryLoaded(true);
-          return;
-        }
 
         if (result.status === 'error') {
           console.error('读取对话历史失败:', result.error);
@@ -88,6 +76,5 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
     historyLoaded: historyLoaded && historyConversationId === conversationId,
     setHistoryLoaded,
     historyStatus,
-    archivedAt,
   };
 }

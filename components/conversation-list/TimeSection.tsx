@@ -57,7 +57,7 @@ export function TimeSection() {
   }, [groups]);
 
   const convsOf = (groupId: string) =>
-    sortConversationsWithDFS(conversations.filter((c) => c.groupId === groupId && !c.archived_at));
+    sortConversationsWithDFS(conversations.filter((c) => c.groupId === groupId));
 
   return (
     <div>

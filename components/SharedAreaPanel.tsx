@@ -28,7 +28,7 @@ function formatMtime(mtime: number): string {
 
 export function SharedAreaPanel({ workspaceId, groupId }: SharedAreaPanelProps) {
   const groups = useGroupStore((s) => s.groups);
-  const groupTitle = groups.find((g) => g.id === groupId)?.title || '未命名组';
+  const groupTitle = groups.find((g) => g.id === groupId)?.title || '未命名话题';
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [nativeFiles, setNativeFiles] = useState<NativeFileEntry[]>([]);

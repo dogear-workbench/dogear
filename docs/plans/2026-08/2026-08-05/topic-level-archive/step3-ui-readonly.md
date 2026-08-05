@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 左侧话题界面与只读归档浏览
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,10 +28,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：归档话题在活跃会话列表之外，永久删除前补查 `listArchivedTopics` 以收集会话 ID，保证所有已打开标签页和选中项关闭；验收中补充恢复后将后端返回话题 upsert 回活跃 `groups`，让主列表和归档区即时同步。
+- 改动文件清单：`components/conversation-list/ArchiveSection.tsx`、`components/group-list/GroupCard.tsx`、`components/conversation-list/ConversationRow.tsx`、`components/agent-chat/AgentChat.tsx`、`components/agent-chat/hooks/useTopicArchiveState.ts`、`components/agent-chat/hooks/useAgentSession.ts`、`components/agent-chat/hooks/useMessageHistory.ts`、`components/agent-chat/hooks/useSendMessage.ts`、`components/agent-chat/MessageItem.tsx`、`components/agent-chat/ContentBlockItem.tsx`、`components/agent-chat/ToolGroupBlock.tsx`、`components/agent-chat/PermissionRequestCard.tsx`、`components/agent-chat/AskUserQuestionCard.tsx`、`components/ConversationList.tsx`、`components/conversation-list/{AddGroupToFolderMenu,ManualSection,MoveGroupToFolderMenu,RecentVirtualGroup,SmartSection,TimeSection,Toolbar}.tsx`、`components/group-list/utils.ts`、`app/settings/ToolsAndPermissionsTab.tsx`、`app/settings/memory/SmartCategoryPanel.tsx`、`components/SharedAreaPanel.tsx`、`src/App.tsx`、`stores/{group-store,conversation-store,ui-store}.ts`、`types/electron-api.ts`；删除 `components/ArchivePanel.tsx`。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`GroupCard` 支持 `mode?: 'active' | 'archived'`；`ConversationRow` 支持 `readOnly`；`useTopicArchiveState(conversationId)` 返回 `loading | active | archived | missing`；`handleTopicStateChange(groupId, closeTabs, conversationIds?)` 可清理归档话题已打开的标签页。
+- 下个 step 该从哪里继续：按 Step 4 删除矩阵实际验证归档、恢复、永久删除在主窗口和独立会话窗口的工件清理与 UI 同步，并同步项目规则和代码地图。
+- 待办或已知限制：`bun run lint` 通过（70 条既有 warning、无 error），`bun run build:renderer` 与 `git diff --check` 通过；Vite 仍有既有动态导入和 bundle size warning。
