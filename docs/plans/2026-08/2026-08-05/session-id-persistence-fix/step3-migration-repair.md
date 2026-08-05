@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 存量数据迁移 + 损坏数据修复
-status: pending
+status: done
 ---
 
 ## 目标
@@ -65,7 +65,12 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- （待填）
+- 新增 `electron/main/services/migration-session-id.ts`：三阶段幂等迁移脚本
+- 改动 `electron/main/index.ts`：在 migration-p3 之前插入 `runSessionIdMigration()` 调用
 
 ### 给下一步的接力棒
-- （待填）
+- 迁移标记文件：`<configDir>/migration-session-id-done.json`（version=1）
+- 空壳判定阈值：≤225B（只有 session header 行，无 branch entries）
+- 修复映射使用 title 关键词 + correctSessionId 前缀动态匹配（非硬编码完整 UUID）
+- 当前开发环境实际有 3 条 sdkSessionId 非 null 的会话（sessionId=NULL），迁移会自动合并
+- step3 文件列出的 4 个修复目标（f2c6c159/a9aee3ee/0b134fd1/0f822c46）在当前数据中已不存在，脚本仍保留映射以兼容其他环境

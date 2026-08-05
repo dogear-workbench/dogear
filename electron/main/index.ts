@@ -427,6 +427,15 @@ app.whenReady().then(async () => {
     console.error('会话组迁移失败:', error);
   }
 
+  // sessionId 持久化迁移：sdkSessionId 合并到 sessionId + 空壳指针修复 + 空壳 jsonl 清理
+  // 必须在 migration-p3 之前执行：migration-p3 的 migrateDigestCards 用 c.sessionId 构建 sessionToConv Map
+  try {
+    const { runSessionIdMigration } = await import('./services/migration-session-id.js');
+    await runSessionIdMigration();
+  } catch (error) {
+    console.error('[migration-session-id] 失败:', error);
+  }
+
   // Phase 3 迁移：旧会话卡升级为组卡 + smart-categories/conversation-tree 字段升级
   try {
     const { runMigrationP3 } = await import('./services/memory/migration-p3.js');
