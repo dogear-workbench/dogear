@@ -1,7 +1,12 @@
 ---
 paths:
+  - "electron/main/agents/pi-session/**/*.ts"
+  - "electron/main/agents/delegation-*.ts"
   - "electron/main/services/conversation-runtime-service.ts"
+  - "electron/main/tipc/conversation-runtime.ts"
+  - "stores/conversation-store.ts"
   - "components/agent-chat/**/*.tsx"
+  - "components/conversation-list/ConversationRow.tsx"
 ---
 
 # 会话运行时管理规则
@@ -21,7 +26,7 @@ paths:
 ### 1. 会话生命周期管理
 - **创建**：为对话创建 `PiSession`（`piSessionManager.createSession()` + `session.start()`），Harness 会话文件落 `<configDir>/workspaces/<workspaceId>/sessions/`
 - **附加**：允许新的持有者（desktop/wechat-bot）绑定到同一 session，走 `retain()` 引用计数 +1
-- **快照占位**：`attachConversation` 目前恒返回 `snapshot: []`（尚未实现晚加入重播，接口留了口子，见下方常见坑点）
+- **快照**：`attachConversation` 返回进行中消息、权限请求和 `running/pendingAction` 运行态；渲染层必须在 attach 响应后用既有 reducer 回放，不依赖延时广播
 - **关闭**：`detachAttachment()` 调 `release()`，引用计数归零即直接销毁（无跑步机保活）
 
 ### 2. 多附件绑定
@@ -29,9 +34,11 @@ paths:
 export interface ConversationRuntimeAttachment {
   attachmentId: string;           // 唯一标识符（UUID）
   sessionId: string;              // 绑定的 Harness sessionId
-  permissionMode: string;         // pi 阶段一无权限模式概念，固定回传 'default'
+  permissionMode: PiPermissionMode; // 当前会话的权限模式
   created: boolean;               // 该附件是否创建了这个 session
-  snapshot: ExtendedSessionMessage[]; // 当前恒为 []，见上方「快照占位」
+  snapshot: ExtendedSessionMessage[]; // 当前 turn 的进行中消息
+  pendingPermissionRequests: Array<{ requestId: string; toolName: string; toolInput: unknown }>;
+  sessionState: { running: boolean; pendingAction: boolean }; // attach 时的权威状态快照
 }
 
 export interface ConversationRuntimeState {
@@ -76,13 +83,17 @@ const attachment = await runtimeService.attachConversation(
 );
 ```
 
-## 快照机制（当前未实现，接口留了口子）
+## 快照机制
 
-`ConversationRuntimeAttachment.snapshot` 目前恒为 `[]`——`conversation-runtime-service.ts` 的 `attachConversation()` 尚未实现"晚加入窗口重播当前 turn 消息"的逻辑，只是把这个字段留在接口里。`electron/main/tipc/conversation-runtime.ts` 的 `attachConversationRuntime` 路由里确实有一段按 `result.snapshot.length > 0` 重播消息的代码，但因为 `snapshot` 永远是空数组，这段代码目前永远不会执行。如果要实现晚加入重播，需要在 PiSession 侧维护当前 turn 的消息缓存并在 `attachConversation` 时填充这个字段。
+`PiSession.getLiveSnapshot()` 是晚加入窗口的唯一事实来源，返回进行中消息、挂起权限请求和运行态。`attachConversationRuntime` 经 tipc 原样返回快照；`useAgentSession` 先把 `sessionState` 写入 conversation store，再将消息和权限请求交给 `streamReducer`。不要在前端为后台子会话乐观写 `runningConversationIds`，也不要用定时重试替代快照。
+
+## 子会话终态与资源释放
+
+`PiSession` 只在 Harness 已结算后发布 `PiSessionTurnResult`：`success`、`failed`、`cancelled`。`delegation-bridge` 只能根据这个结果更新 child status：成功但未 `delivery:true` 才能是 `no_delivery`；失败必须是 `failed` 且携带原因；中断保留 `cancelled` 或预先写入的 `timeout`。`SendMessage(delivery:true)` 不得 detach attachment，attachment 必须等结构化 complete 后释放。
 
 ## 权限模式
 
-pi 阶段一没有区分 holderType 的权限模式概念，`attachConversation` 返回的 `permissionMode` 固定回传字符串 `'default'`。权限确认逻辑由 `PiSession`（`electron/main/agents/pi-session/pi-session.ts` 的 `setPermissionMode`/`respondPermissionRequest`）统一处理，不按 desktop/wechat-bot 区分。
+`attachConversation` 返回当前 `PiPermissionMode`。权限确认逻辑由 `PiSession`（`setPermissionMode`/`respondPermissionRequest`）统一处理；子会话默认模式取 `settings.subAgent.permissionMode`，再回退到全局设置。
 
 ## 数据持久化
 
@@ -95,5 +106,7 @@ pi 阶段一没有区分 holderType 的权限模式概念，`attachConversation`
 
 1. **忘记 detach** → 会话不会关闭，资源泄漏（`release()` 归零才销毁）
 2. **holderType 拼写** → 必须是 'desktop' 或 'wechat-bot' 之一
-3. **误以为快照已实现** → 见上方「快照机制」，目前恒为空数组，晚加入窗口拿不到当前 turn 进行中消息
-4. **把 attachConversation 当配置对象调用** → 实际是位置参数 `(conversationId, workspaceId, holderType, options?)`，不是 `{ conversationId, workspaceId, ... }`
+3. **跳过 attach 响应中的快照** → 晚打开窗口会错过进行中消息、权限请求或运行态；必须经 store 和 reducer 回放
+4. **把模型错误折叠为 no_delivery** → 只有 `success` 且从未交付才能标记为 no_delivery
+5. **在 delivery:true 时释放 attachment** → 当前 prompt 可能仍在执行，必须等 complete 后回收
+6. **把 attachConversation 当配置对象调用** → 实际是位置参数 `(conversationId, workspaceId, holderType, options?)`，不是 `{ conversationId, workspaceId, ... }`

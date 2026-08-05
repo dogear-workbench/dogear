@@ -10,6 +10,7 @@ import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 
 import type { PiSession, PiSessionTurnResult } from './pi-session/pi-session.js';
+import { classifyChildCompletion } from './delegation-lifecycle.js';
 import { getPiSessionManager } from './pi-session/pi-session-manager.js';
 import { mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
@@ -151,16 +152,9 @@ function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
   const c = childStates.get(childId);
   if (!c) return;
   if (c.status === 'running') {
-    if (result.subtype === 'failed') {
-      c.status = 'failed';
-      c.errorMessage = result.error?.message || '会话运行失败';
-    } else if (result.subtype === 'cancelled') {
-      c.status = 'cancelled';
-      c.errorMessage = result.error?.message || '会话已取消';
-    } else {
-      c.status = 'no_delivery';
-      c.errorMessage = '会话结束但未交付';
-    }
+    const completion = classifyChildCompletion(result);
+    c.status = completion.status;
+    c.errorMessage = completion.errorMessage;
     c.finishedAt = Date.now();
     groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
     broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
