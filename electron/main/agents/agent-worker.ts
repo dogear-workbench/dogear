@@ -716,6 +716,8 @@ class AgentWorker {
       groupId: string,
     ): Promise<'match' | 'join' | 'new' | 'skip' | 'error'> => {
       if (abortController.signal.aborted) return 'error';
+      const group = await groupService.getGroup(workspaceId, groupId);
+      if (!group || group.archivedAt !== undefined) return 'skip';
 
       // 读组卡
       let raw: string;
@@ -892,9 +894,18 @@ class AgentWorker {
         const r = await decideForGroup(payload.groupDigestPath, payload.groupId);
         decisions[r]++;
       } else {
-        // full-rebuild：清空 index，按 createdAt 升序对所有组卡走相同流程
-        taskLogger.info('full-rebuild: 清空 smart-categories.json');
-        await writeIndex(workspaceId, { categories: [], recentDecisions: [] });
+        const existingIndex = await readIndex(workspaceId);
+        const activeGroupIds = new Set(
+          (await groupService.listActiveGroups(workspaceId)).map((group) => group.id),
+        );
+        const preservedCategories = existingIndex.categories
+          .map((category) => ({
+            ...category,
+            groupIds: category.groupIds.filter((groupId) => !activeGroupIds.has(groupId)),
+          }))
+          .filter((category) => category.groupIds.length > 0);
+        taskLogger.info('full-rebuild: 重建活跃话题分类并保留归档引用');
+        await writeIndex(workspaceId, { categories: preservedCategories, recentDecisions: [] });
 
         const groupsRoot = getGroupsRootDir(workspaceId);
         let dirents: import('node:fs').Dirent[];

@@ -4,6 +4,7 @@ import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
+import { requireActiveGroup } from './group-service.js';
 import { loadSettings } from './settings-service.js';
 
 export type RuntimeHolderType = 'desktop' | 'wechat-bot';
@@ -61,6 +62,8 @@ class ConversationRuntimeService {
   ): Promise<ConversationRuntimeAttachment> {
     const conversation = await conversationService.getById(workspaceId, conversationId);
     if (!conversation) throw new Error(`Conversation not found: ${conversationId}`);
+    if (!conversation.groupId) throw new Error('对话未关联话题，无法启动运行时');
+    await requireActiveGroup(workspaceId, conversation.groupId);
 
     const piSessionManager = getPiSessionManager();
     let sessionId = piSessionManager.getSessionIdByConversation(conversationId);

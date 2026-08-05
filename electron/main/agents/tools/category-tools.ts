@@ -104,25 +104,26 @@ export function createCategoryToolDefs(): ToolDef[] {
       async (args) => {
         try {
           const idx = await readIndex(args.workspaceId);
-          const allConvs = await getByWorkspaceId(args.workspaceId);
-          const enriched = await Promise.all(idx.categories.map(async (c) => {
-            const sampleIds = c.groupIds.slice(-3);
-            const sampleTitles: string[] = [];
-            for (const gid of sampleIds) {
-              const group = await groupService.getGroup(args.workspaceId, gid);
-              if (group) {
-                const groupConvs = allConvs.filter((conv) => conv.groupId === gid);
-                sampleTitles.push(deriveGroupTitle(group, groupConvs));
-              }
-            }
+          const [allConvs, activeGroups] = await Promise.all([
+            getByWorkspaceId(args.workspaceId),
+            groupService.listActiveGroups(args.workspaceId),
+          ]);
+          const activeGroupIds = new Set(activeGroups.map((group) => group.id));
+          const groupById = new Map(activeGroups.map((group) => [group.id, group]));
+          const enriched = idx.categories.map((c) => {
+            const groupIds = c.groupIds.filter((groupId) => activeGroupIds.has(groupId));
+            const sampleTitles = groupIds.slice(-3).flatMap((groupId) => {
+              const group = groupById.get(groupId);
+              return group ? [deriveGroupTitle(group, allConvs.filter((conv) => conv.groupId === groupId))] : [];
+            });
             return {
               id: c.id,
               name: c.name,
               anchorTags: c.anchorTags,
-              groupCount: c.groupIds.length,
+              groupCount: groupIds.length,
               sampleGroupTitles: sampleTitles,
             };
-          }));
+          });
           const settings = await loadSettings();
           const maxCategories = settings.smartCategory?.maxCategories ?? 10;
           return {
@@ -152,6 +153,7 @@ export function createCategoryToolDefs(): ToolDef[] {
       joinArgs,
       async (args) => {
         try {
+          await groupService.requireActiveGroup(args.workspaceId, args.groupId);
           let idx = await readIndex(args.workspaceId);
           const nowIso = new Date().toISOString();
 
@@ -205,6 +207,10 @@ export function createCategoryToolDefs(): ToolDef[] {
       newArgs,
       async (args) => {
         try {
+          await groupService.requireActiveGroup(args.workspaceId, args.groupId);
+          for (const move of args.redistribute ?? []) {
+            await groupService.requireActiveGroup(args.workspaceId, move.groupId);
+          }
           let idx = await readIndex(args.workspaceId);
           const settings = await loadSettings();
           const maxCategories = settings.smartCategory?.maxCategories ?? 10;

@@ -1,7 +1,7 @@
 ---
 step: 2
 title: TIPC 路由与前端状态切换
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,10 +28,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：为保证归档话题的只读边界覆盖后台任务，额外在 Agent 派遣、分类工具、组卡/共享区写入、摘要扫描和增量分类入口统一校验活跃话题；分类全量重建保留归档话题的持久化分类引用。
+- 改动文件清单：`electron/main/tipc/group.ts`、`electron/main/tipc/conversations.ts`、`electron/main/tipc/agent.ts`、`electron/main/tipc/category.ts`、`electron/main/services/group-service.ts`、`electron/main/services/conversation-service.ts`、`electron/main/services/conversation-runtime-service.ts`、`electron/main/services/memory/category-trigger.ts`、`electron/main/services/memory/group-digest-scanner.ts`、`electron/main/agents/agent-worker.ts`、`electron/main/agents/delegation-bridge.ts`、`electron/main/agents/tools/category-tools.ts`、`electron/main/agents/tools/group-digest-tools.ts`、`electron/main/agents/tools/group-tools.ts`、`stores/group-store.ts`、`stores/conversation-store.ts`。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`groupRouter.archiveTopic/restoreTopic/listArchivedTopics/deleteTopic` 提供话题级读写；`groupService.requireActiveGroup()` 是一切写入和运行时 attach 的统一前置校验；`useGroupStore` 提供同名 action，`useConversationStore.handleTopicStateChange()` 负责活跃列表、Tab 与选中态同步。
+- 下个 step 该从哪里继续：将 `ArchivePanel.tsx`、`conversation-list/ArchiveSection.tsx`、`ConversationRow.tsx` 改用 `listArchivedTopics` 与话题 action，替换现有单会话归档交互，并实现归档话题的只读浏览。
+- 待办或已知限制：`GroupCard.tsx` 暂仍调用兼容别名 `deleteGroup`，该别名已转发到 `deleteTopic`；Step 3 应连同菜单文案统一改为“话题”。本步骤的 `bun run lint`（72 条既有 warning、无 error）、`bun run build:electron` 和 `git diff --check` 均通过。

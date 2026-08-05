@@ -9,6 +9,7 @@ import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 import { readUsage } from './usage/usage-service.js';
+import { listActiveGroups, requireActiveGroup } from './group-service.js';
 import type { ConversationUsageEntry } from '../types.js';
 import type { ModelSelection } from './settings-types.js';
 
@@ -46,9 +47,8 @@ export interface ConversationIndex {
   cachePolicy?: '5m' | '1h'; // 提示缓存策略；缺省视为 5m
   /** @deprecated SDK 时代"分叉待定，等首条消息才建会话"的状态位；Harness fork 已改为同步创建，不再产生新值 */
   forkPending?: boolean;
-  /** 归档时间（ISO 8601）。有值 = 已归档，undefined = 未归档。仅 sdkSessionId 非空的对话会被归档 */
+  /** 仅供话题生命周期迁移读取的旧会话归档记录 */
   archivedAt?: string;
-  /** 归档原因；SDK 主会话移除一次性迁移写入 'sdk-main-session-removed'，手动归档不写此字段 */
   archiveReason?: string;
   groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';    // P1 只产生 'main'
@@ -78,8 +78,6 @@ export interface ConversationCompat {
   persona_id?: string;
   temp_prompt?: string;
   fork_pending?: boolean;
-  archived_at?: string;
-  archive_reason?: string;
   created_at: number;
   updated_at: number;
   workspaceId: string;
@@ -91,8 +89,6 @@ export interface ConversationCompat {
   tempPrompt: string | undefined;
   modelSelection: ModelSelection | null;
   cachePolicy: '5m' | '1h' | undefined;
-  archivedAt: string | undefined;
-  archiveReason: string | undefined;
   createdAt: string;
   updatedAt: string;
   usageSummary?: {
@@ -193,21 +189,22 @@ function sortedList(conversations: Record<string, ConversationIndex>): Conversat
 }
 
 /**
- * 获取指定工作区的所有对话（按 updatedAt 倒序，默认过滤归档）
- * @param options.includeArchived 是否包含已归档对话，默认 false
+ * 获取指定工作区的所有对话（按 updatedAt 倒序，默认只返回活跃话题）
+ * @param options.includeArchived 是否包含归档话题中的对话，默认 false
  */
 export async function getByWorkspaceId(
   workspaceId: string,
   options?: { includeArchived?: boolean },
 ): Promise<ConversationIndex[]> {
   const file = await loadWorkspaceConversations(workspaceId);
-  const includeArchived = options?.includeArchived ?? false;
-  const entries = includeArchived
-    ? file.conversations
-    : Object.fromEntries(
-        Object.entries(file.conversations).filter(([, c]) => !c.archivedAt),
-      );
-  return sortedList(entries);
+  if (options?.includeArchived) return sortedList(file.conversations);
+
+  const activeGroupIds = new Set((await listActiveGroups(workspaceId)).map((group) => group.id));
+  return sortedList(Object.fromEntries(
+    Object.entries(file.conversations).filter(([, conversation]) =>
+      !!conversation.groupId && activeGroupIds.has(conversation.groupId),
+    ),
+  ));
 }
 
 
@@ -296,6 +293,7 @@ export async function create(
     contractMetadata?: ContractMetadata;
   },
 ): Promise<string> {
+  await requireActiveGroup(workspaceId, groupId);
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
   const now = new Date().toISOString();
@@ -336,6 +334,7 @@ export async function createFork(
   modelSelection: ModelSelection | null = null,
   cachePolicy: '5m' | '1h' = '5m',
 ): Promise<string> {
+  await requireActiveGroup(workspaceId, groupId);
   const file = await loadWorkspaceConversations(workspaceId);
   const id = uuidv4();
   const now = new Date().toISOString();
@@ -369,6 +368,8 @@ export async function updateTitle(workspaceId: string, id: string, title: string
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return;
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
 
   conv.title = title;
   conv.updatedAt = new Date().toISOString();
@@ -396,6 +397,8 @@ export async function autoUpdateTitleFromFirstMessage(
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return false;
+  if (!conv.groupId) return false;
+  await requireActiveGroup(workspaceId, conv.groupId);
 
   // 仅默认 title 时才自动生成（保护用户已修改的标题）
   if (conv.title !== DEFAULT_TITLE) return false;
@@ -420,6 +423,8 @@ export async function updateSdkSessionId(workspaceId: string, id: string, sdkSes
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return;
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
 
   conv.sdkSessionId = sdkSessionId;
   conv.updatedAt = new Date().toISOString();
@@ -430,6 +435,8 @@ export async function updateSessionId(workspaceId: string, id: string, sessionId
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) throw new Error(`Conversation not found: ${id}`);
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
 
   conv.sessionId = sessionId;
   conv.updatedAt = new Date().toISOString();
@@ -443,6 +450,8 @@ export async function touch(workspaceId: string, id: string): Promise<void> {
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return;
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
 
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
@@ -460,6 +469,8 @@ export async function updatePersona(
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return;
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
 
   conv.personaId = personaId;
   conv.tempPrompt = tempPrompt;
@@ -475,6 +486,8 @@ export async function updateModelSelection(
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return;
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
   conv.modelSelection = modelSelection ? { ...modelSelection } : null;
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
@@ -488,6 +501,8 @@ export async function updateCachePolicy(
   const file = await loadWorkspaceConversations(workspaceId);
   const conv = file.conversations[id];
   if (!conv) return;
+  if (!conv.groupId) throw new Error('对话未关联话题');
+  await requireActiveGroup(workspaceId, conv.groupId);
   conv.cachePolicy = policy;
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
@@ -517,44 +532,6 @@ export async function deleteConversation(workspaceId: string, id: string): Promi
   await saveWorkspaceConversations(workspaceId, file);
 }
 
-/**
- * 归档对话（软删除：设置 archivedAt，保留索引和 SDK 历史）
- * 仅 sdkSessionId 非空的对话允许归档；sdkSessionId=null 的对话应直接硬删除。
- */
-export async function archiveConversation(workspaceId: string, id: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (conv.archivedAt) return; // 已归档，幂等
-
-  conv.archivedAt = new Date().toISOString();
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-}
-
-/**
- * 取消归档（恢复到主对话列表）
- */
-export async function unarchiveConversation(workspaceId: string, id: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.archivedAt) return; // 未归档，幂等
-
-  conv.archivedAt = undefined;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-}
-
-/**
- * 获取已归档的对话列表（按 archivedAt 倒序）
- */
-export async function getArchivedByWorkspace(workspaceId: string): Promise<ConversationIndex[]> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  return Object.values(file.conversations)
-    .filter((c) => c.archivedAt)
-    .sort((a, b) => new Date(b.archivedAt!).getTime() - new Date(a.archivedAt!).getTime());
-}
 
 /**
  * 导入一条对话索引到目标工作区（用于会话恢复，保留原 ID）
@@ -592,8 +569,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     persona_id: conv.personaId || undefined,
     temp_prompt: conv.tempPrompt || undefined,
     fork_pending: conv.forkPending || false,
-    archived_at: conv.archivedAt || undefined,
-    archive_reason: conv.archiveReason || undefined,
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
     // 同时提供 camelCase 版本，供新代码使用
@@ -606,8 +581,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     tempPrompt: conv.tempPrompt,
     modelSelection: conv.modelSelection ?? null,
     cachePolicy: conv.cachePolicy,
-    archivedAt: conv.archivedAt,
-    archiveReason: conv.archiveReason,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
     usageSummary: conv.usageSummary,
@@ -760,5 +733,3 @@ export async function migrateOrphanConversations(workspaceId: string): Promise<n
   }
   return count;
 }
-
-export const ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED = 'sdk-main-session-removed';

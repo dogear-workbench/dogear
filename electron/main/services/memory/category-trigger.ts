@@ -112,6 +112,15 @@ async function runOne(job: CategorizeJob): Promise<void> {
     currentTaskId = null;
   };
 
+  if (job.kind === 'incremental') {
+    const { getGroup } = await import('../group-service.js');
+    const group = await getGroup(job.workspaceId, job.groupId);
+    if (!group || group.archivedAt !== undefined) {
+      pushRecent('skip', { error: '话题已归档或不存在' });
+      return;
+    }
+  }
+
   // 拿 workspacePath
   const { getById: getWorkspaceById } = await import('../workspace-json-service.js');
   const ws = await getWorkspaceById(job.workspaceId);

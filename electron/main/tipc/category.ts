@@ -19,7 +19,7 @@ import {
   DEFAULT_ORGANIZE_PROMPT,
 } from '../services/memory/organize-prompt.js';
 import { loadSettings, saveSettings, getConfigDir } from '../services/settings-service.js';
-import { listGroups } from '../services/group-service.js';
+import { listActiveGroups, requireActiveGroup } from '../services/group-service.js';
 import type { ModelSelection } from '../services/settings-types.js';
 
 const t = tipc.create();
@@ -30,7 +30,7 @@ export const categoryRouter = {
     .action(async ({ input }) => {
       try {
         const idx = await readIndex(input.workspaceId);
-        const liveGroups = await listGroups(input.workspaceId);
+        const liveGroups = await listActiveGroups(input.workspaceId);
         const liveGroupIds = new Set(liveGroups.map((g) => g.id));
         const filteredCategories = idx.categories.map((c) => ({
           ...c,
@@ -47,6 +47,7 @@ export const categoryRouter = {
     .input<{ workspaceId: string; groupId: string; groupDigestPath: string }>()
     .action(async ({ input }) => {
       try {
+        await requireActiveGroup(input.workspaceId, input.groupId);
         await triggerCategorize(input.workspaceId, input.groupId, input.groupDigestPath);
         return { success: true };
       } catch (error) {

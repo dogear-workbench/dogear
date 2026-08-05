@@ -15,7 +15,7 @@ const t = tipc.create();
  */
 async function reorderTreeByUpdatedAt(workspaceId: string): Promise<void> {
   try {
-    const groups = await groupService.listGroups(workspaceId);
+    const groups = await groupService.listActiveGroups(workspaceId);
     const map: Record<string, number> = {};
     for (const g of groups) map[g.id] = g.updatedAt;
     await treeService.sortGroupsByUpdatedAt(workspaceId, map);
@@ -98,42 +98,6 @@ export const conversationsRouter = {
       }
     }),
 
-  archiveConversation: t.procedure
-    .input<{ conversationId: string; workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await conversationService.archiveConversation(input.workspaceId, input.conversationId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('归档对话失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  unarchiveConversation: t.procedure
-    .input<{ conversationId: string; workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await conversationService.unarchiveConversation(input.workspaceId, input.conversationId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('取消归档失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  /** 列出工作区的已归档对话（按归档时间倒序） */
-  listArchivedConversations: t.procedure
-    .input<{ workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const conversations = await conversationService.getArchivedByWorkspace(input.workspaceId);
-        return { conversations: conversations.map(conversationService.toCompat), error: undefined };
-      } catch (error) {
-        console.error('获取归档对话列表失败:', error);
-        return { conversations: [], error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
 
   // 获取工作区下所有对话（按 updatedAt 倒序）
   getByWorkspaceId: t.procedure
@@ -165,6 +129,7 @@ export const conversationsRouter = {
         const parent = await conversationService.getById(input.workspaceId, input.parentConversationId);
         if (!parent) return { conversationId: null, error: '父对话不存在' };
         if (!parent.sessionId) return { conversationId: null, error: '父对话尚未创建会话，无法分叉' };
+        if (parent.groupId) await groupService.requireActiveGroup(input.workspaceId, parent.groupId);
 
         const repository = getPiSessionRepository();
         let forkedSessionId: string;
@@ -289,13 +254,12 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const tree = await treeService.getTree(input.workspaceId);
-        // 拿活跃对话 id 集合（已默认排除 archived）
-        const liveConvs = await conversationService.getByWorkspaceId(input.workspaceId);
-        const liveIds = new Set(liveConvs.map((c) => c.id));
-        // 过滤每个 children 数组：保留 folder + 在 liveIds 中的对话
+        const activeGroupIds = new Set(
+          (await groupService.listActiveGroups(input.workspaceId)).map((group) => group.id),
+        );
         const filteredChildren: Record<string, string[]> = {};
         for (const [parentId, childIds] of Object.entries(tree.children)) {
-          filteredChildren[parentId] = childIds.filter((id) => tree.folders[id] || liveIds.has(id));
+          filteredChildren[parentId] = childIds.filter((id) => tree.folders[id] || activeGroupIds.has(id));
         }
         const filtered = { ...tree, children: filteredChildren };
         return { tree: filtered, error: undefined };
@@ -359,6 +323,7 @@ export const conversationsRouter = {
     .input<{ workspaceId: string; groupId: string; folderId: string }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         await treeService.addGroupToFolder(input.workspaceId, input.groupId, input.folderId);
         return { success: true, error: undefined };
       } catch (error) {
@@ -371,6 +336,7 @@ export const conversationsRouter = {
     .input<{ workspaceId: string; groupId: string; folderId: string }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         await treeService.removeGroupFromFolder(input.workspaceId, input.groupId, input.folderId);
         return { success: true, error: undefined };
       } catch (error) {
@@ -383,6 +349,7 @@ export const conversationsRouter = {
     .input<{ workspaceId: string; groupId: string; fromFolderId: string; toFolderId: string }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         await treeService.moveGroupBetweenFolders(
           input.workspaceId, input.groupId, input.fromFolderId, input.toFolderId,
         );

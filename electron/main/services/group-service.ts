@@ -83,6 +83,13 @@ export async function getGroup(workspaceId: string, groupId: string): Promise<Gr
   return file.groups.find((group) => group.id === groupId) ?? null;
 }
 
+export async function requireActiveGroup(workspaceId: string, groupId: string): Promise<Group> {
+  const group = await getGroup(workspaceId, groupId);
+  if (!group) throw new Error('话题不存在');
+  if (group.archivedAt !== undefined) throw new Error('话题已归档，请先恢复后再继续操作');
+  return group;
+}
+
 export async function createGroup(workspaceId: string, init?: { title?: string }): Promise<Group> {
   const file = await loadGroups(workspaceId);
   const now = Date.now();

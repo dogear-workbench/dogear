@@ -1,10 +1,10 @@
-import fs from 'fs/promises';
-import path from 'path';
 import electron from 'electron';
 import { tipc } from '@egoist/tipc/main';
 import * as groupService from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import * as conversationService from '../services/conversation-service.js';
+import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
+import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 
 const t = tipc.create();
 
@@ -13,7 +13,7 @@ export const groupRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const groups = await groupService.listGroups(input.workspaceId);
+        const groups = await groupService.listActiveGroups(input.workspaceId);
         return { groups, error: undefined };
       } catch (error) {
         console.error('获取会话组列表失败:', error);
@@ -49,6 +49,7 @@ export const groupRouter = {
     .input<{ workspaceId: string; groupId: string; patch: { title?: string } }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         const group = await groupService.updateGroup(input.workspaceId, input.groupId, input.patch);
         return { group, error: undefined };
       } catch (error) {
@@ -57,25 +58,71 @@ export const groupRouter = {
       }
     }),
 
-  deleteGroup: t.procedure
+  archiveTopic: t.procedure
     .input<{ workspaceId: string; groupId: string }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         const conversations = await conversationService.getByWorkspaceId(input.workspaceId, { includeArchived: true });
-        const count = conversations.filter((c) => c.groupId === input.groupId).length;
-        if (count > 0) {
-          return { ok: false, error: `组内还有 ${count} 个对话，请先清理` };
-        }
-        await groupService.deleteGroup(input.workspaceId, input.groupId);
-        try {
-          const sharedDir = await groupSharedService.getSharedDir(input.workspaceId, input.groupId);
-          await fs.rm(path.dirname(sharedDir), { recursive: true, force: true });
-        } catch (cleanupError) {
-          console.warn('[deleteGroup] 清理共享目录失败:', cleanupError);
-        }
-        return { ok: true, error: undefined };
+        await Promise.all(
+          conversations
+            .filter((conversation) => conversation.groupId === input.groupId)
+            .map((conversation) => conversationRuntimeService.closeConversation(conversation.id)),
+        );
+        const group = await groupService.archiveGroup(input.workspaceId, input.groupId);
+        return { group, error: undefined };
       } catch (error) {
-        console.error('删除会话组失败:', error);
+        console.error('归档话题失败:', error);
+        return { group: null, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  restoreTopic: t.procedure
+    .input<{ workspaceId: string; groupId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const group = await groupService.restoreGroup(input.workspaceId, input.groupId);
+        return { group, error: undefined };
+      } catch (error) {
+        console.error('恢复话题失败:', error);
+        return { group: null, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  listArchivedTopics: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const [groups, conversations] = await Promise.all([
+          groupService.listArchivedGroups(input.workspaceId),
+          conversationService.getByWorkspaceId(input.workspaceId, { includeArchived: true }),
+        ]);
+        const topics = groups.map((group) => ({
+          group,
+          conversations: conversations
+            .filter((conversation) => conversation.groupId === group.id)
+            .map(conversationService.toCompat),
+        }));
+        return { topics, error: undefined };
+      } catch (error) {
+        console.error('获取归档话题失败:', error);
+        return { topics: [], error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  deleteTopic: t.procedure
+    .input<{ workspaceId: string; groupId: string }>()
+    .action(async ({ input }) => {
+      try {
+        if (!await groupService.getGroup(input.workspaceId, input.groupId)) {
+          return { ok: false, error: '话题不存在' };
+        }
+        const result = await topicLifecycleService.deleteTopic(input.workspaceId, input.groupId);
+        return result.ok
+          ? { ok: true, error: undefined }
+          : { ok: false, error: result.error };
+      } catch (error) {
+        console.error('永久删除话题失败:', error);
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
@@ -108,6 +155,7 @@ export const groupRouter = {
     .input<{ workspaceId: string; groupId: string; relPath: string; content: string }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         await groupSharedService.writeNativeFile(input.workspaceId, input.groupId, input.relPath, input.content);
         return { ok: true, error: undefined };
       } catch (error) {
@@ -120,6 +168,7 @@ export const groupRouter = {
     .input<{ workspaceId: string; groupId: string; relPath: string }>()
     .action(async ({ input }) => {
       try {
+        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
         await groupSharedService.deleteNativeFile(input.workspaceId, input.groupId, input.relPath);
         return { ok: true, error: undefined };
       } catch (error) {

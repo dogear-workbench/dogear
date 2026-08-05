@@ -14,6 +14,7 @@ import { classifyChildCompletion } from './delegation-lifecycle.js';
 import { getPiSessionManager } from './pi-session/pi-session-manager.js';
 import { mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
+import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
@@ -184,6 +185,8 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const settings = await loadSettings();
   const parent = await conversationService.getById(workspaceId, parentConversationId);
   if (!parent) throw new Error(`发起会话 ${parentConversationId} 不存在`);
+  if (!parent.groupId || parent.groupId !== groupId) throw new Error('子会话必须创建在发起会话所属的话题中');
+  await requireActiveGroup(workspaceId, groupId);
 
   const modelSel = settings.subAgent?.modelSelection
     ?? parent.modelSelection

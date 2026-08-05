@@ -16,6 +16,7 @@ import {
 import {
   buildSessionUuidIndex, validateItemSources, type SourceProblem,
 } from '../../services/memory/source-fidelity.js';
+import { requireActiveGroup } from '../../services/group-service.js';
 import { registerTools } from './tool-registry.js';
 import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -131,6 +132,7 @@ export function createGroupDigestToolDefs(
           if (args.groupId !== groupId) {
             return { content: [{ type: 'text' as const, text: `Error: groupId 必须是 ${groupId}` }], isError: true };
           }
+          await requireActiveGroup(workspaceId, groupId);
           if (args.items.length > 0) {
             const sessionIds = [...new Set(args.items.flatMap((item) => item.sources.map((s) => s.sessionId)))];
             const index = await buildSessionUuidIndex(workspaceId, sessionIds);
@@ -184,6 +186,7 @@ export function createGroupDigestToolDefs(
           if (args.groupId !== groupId) {
             return { content: [{ type: 'text' as const, text: `Error: groupId 必须是 ${groupId}` }], isError: true };
           }
+          await requireActiveGroup(workspaceId, groupId);
           const bg: GroupBackground = {
             groupId,
             updatedAt: new Date().toISOString(),

@@ -19,6 +19,9 @@ interface GroupState {
   toggleExpand: (groupId: string) => void;
   createGroup: (title?: string) => Promise<Group | null>;
   updateGroup: (groupId: string, patch: { title?: string }) => Promise<void>;
+  archiveTopic: (groupId: string) => Promise<boolean>;
+  restoreTopic: (groupId: string) => Promise<boolean>;
+  deleteTopic: (groupId: string) => Promise<boolean>;
   deleteGroup: (groupId: string) => Promise<void>;
 }
 
@@ -84,21 +87,72 @@ export const useGroupStore = create<GroupState>((set) => ({
     }
   },
 
-  deleteGroup: async (groupId) => {
+  archiveTopic: async (groupId) => {
     const workspace = await getWorkspace();
-    if (!workspace) return;
+    if (!workspace) return false;
     try {
-      const r = await client.deleteGroup({ workspaceId: workspace.id, groupId });
-      if (!r.ok) {
-        toast.error('删除会话组失败', { description: r.error || '未知错误' });
-        return;
+      const result = await client.archiveTopic({ workspaceId: workspace.id, groupId });
+      if (result.error || !result.group) {
+        toast.error('归档话题失败', { description: result.error || '未知错误' });
+        return false;
       }
       set((state) => ({
-        groups: state.groups.filter((g) => g.id !== groupId),
+        groups: state.groups.filter((group) => group.id !== groupId),
         currentGroupId: state.currentGroupId === groupId ? null : state.currentGroupId,
       }));
-    } catch (e) {
-      console.error('删除会话组失败:', e);
+      const { useConversationStore } = await import('./conversation-store');
+      await useConversationStore.getState().handleTopicStateChange(groupId, true);
+      return true;
+    } catch (error) {
+      console.error('归档话题失败:', error);
+      toast.error('归档话题失败', { description: error instanceof Error ? error.message : String(error) });
+      return false;
     }
+  },
+
+  restoreTopic: async (groupId) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return false;
+    try {
+      const result = await client.restoreTopic({ workspaceId: workspace.id, groupId });
+      if (result.error || !result.group) {
+        toast.error('恢复话题失败', { description: result.error || '未知错误' });
+        return false;
+      }
+      const { useConversationStore } = await import('./conversation-store');
+      await useConversationStore.getState().handleTopicStateChange(groupId, false);
+      return true;
+    } catch (error) {
+      console.error('恢复话题失败:', error);
+      toast.error('恢复话题失败', { description: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
+  },
+
+  deleteTopic: async (groupId) => {
+    const workspace = await getWorkspace();
+    if (!workspace) return false;
+    try {
+      const result = await client.deleteTopic({ workspaceId: workspace.id, groupId });
+      if (!result.ok) {
+        toast.error('永久删除话题失败', { description: result.error || '未知错误' });
+        return false;
+      }
+      set((state) => ({
+        groups: state.groups.filter((group) => group.id !== groupId),
+        currentGroupId: state.currentGroupId === groupId ? null : state.currentGroupId,
+      }));
+      const { useConversationStore } = await import('./conversation-store');
+      await useConversationStore.getState().handleTopicStateChange(groupId, true);
+      return true;
+    } catch (error) {
+      console.error('永久删除话题失败:', error);
+      toast.error('永久删除话题失败', { description: error instanceof Error ? error.message : String(error) });
+      return false;
+    }
+  },
+
+  deleteGroup: async (groupId) => {
+    await useGroupStore.getState().deleteTopic(groupId);
   },
 }));

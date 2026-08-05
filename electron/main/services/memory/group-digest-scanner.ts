@@ -71,7 +71,7 @@ export function findDirtyConversationsInGroup(
 
 /** 扫描单个工作区，返回所有 dirty 的组 */
 export async function findDirtyGroups(wsId: string, wsPath: string): Promise<DirtyGroup[]> {
-  const groups = await groupService.listGroups(wsId);
+  const groups = await groupService.listActiveGroups(wsId);
   const allConvs = await conversationService.getByWorkspaceId(wsId);
   const result: DirtyGroup[] = [];
 
@@ -123,6 +123,8 @@ export async function findDirtyGroups(wsId: string, wsPath: string): Promise<Dir
 export async function findDirtyGroup(
   wsId: string, wsPath: string, groupId: string, force = false,
 ): Promise<DirtyGroup | null> {
+  const group = await groupService.getGroup(wsId, groupId);
+  if (!group || group.archivedAt !== undefined) return null;
   const allConvs = await conversationService.getByWorkspaceId(wsId);
   const mainConvs = allConvs.filter(
     (c) => c.groupId === groupId && c.role !== 'sub' && c.sdkSessionId,

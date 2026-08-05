@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import * as groupSharedService from '../../services/group-shared-service.js';
+import { requireActiveGroup } from '../../services/group-service.js';
 import { registerTools } from './tool-registry.js';
 import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -70,6 +71,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
       }),
       async (args) => {
         try {
+          await requireActiveGroup(workspaceId, groupId);
           await groupSharedService.writeNativeFile(workspaceId, groupId, args.relPath, args.content);
           const bytes = Buffer.byteLength(args.content, 'utf-8');
           return {

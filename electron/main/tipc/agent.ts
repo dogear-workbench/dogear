@@ -11,6 +11,7 @@ import { getAllTools } from '../agents/tools/tool-registry.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import * as conversationService from '../services/conversation-service.js';
+import { requireActiveGroup } from '../services/group-service.js';
 import { getClaudeConfigDir, getSdkSessionsDir } from '../services/memory/session-paths.js';
 export { getClaudeConfigDir } from '../services/memory/session-paths.js';
 import path from 'path';
@@ -129,21 +130,21 @@ export const agentRouter = {
         if (convId) {
           try {
             const lookup = await conversationService.getByIdGlobal(convId);
-            if (lookup) {
-              const userText =
-                (input.textBlocks && input.textBlocks.length > 0
-                  ? input.textBlocks[input.textBlocks.length - 1].text
-                  : input.content) || '';
-              if (userText) {
-                await conversationService.autoUpdateTitleFromFirstMessage(
-                  lookup.workspaceId,
-                  convId,
-                  userText,
-                );
-              }
+            if (!lookup?.conv.groupId) return { error: '对话未关联话题，无法发送消息' };
+            await requireActiveGroup(lookup.workspaceId, lookup.conv.groupId);
+            const userText =
+              (input.textBlocks && input.textBlocks.length > 0
+                ? input.textBlocks[input.textBlocks.length - 1].text
+                : input.content) || '';
+            if (userText) {
+              await conversationService.autoUpdateTitleFromFirstMessage(
+                lookup.workspaceId,
+                convId,
+                userText,
+              );
             }
-          } catch (e) {
-            console.warn('[autoTitle] 更新失败（不影响消息发送）:', e);
+          } catch (error) {
+            return { error: error instanceof Error ? error.message : String(error) };
           }
         }
 
@@ -331,8 +332,7 @@ export const agentRouter = {
 
   // ── Harness 会话历史读取（以 Conversation 为入口）────────────
   /**
-   * 通用会话历史 IPC：以 conversationId 为入口，主进程自行判断走哪条路径。
-   * - archived_legacy：archiveReason 为 SDK 主会话移除迁移写入的冻结标记，不回放旧 SDK JSONL
+   * 通用会话历史 IPC：以 conversationId 为入口读取 Harness 当前 branch。
    * - empty：conversation 尚无 sessionId（新对话，从未发送过消息）
    * - ok：读取 Harness 当前 branch 并转换为前端消息格式
    */
@@ -342,10 +342,6 @@ export const agentRouter = {
       try {
         const conv = await conversationService.getById(input.workspaceId, input.conversationId);
         if (!conv) return { status: 'error' as const, error: '对话不存在' };
-
-        if (conv.archivedAt && conv.archiveReason === conversationService.ARCHIVE_REASON_SDK_MAIN_SESSION_REMOVED) {
-          return { status: 'archived_legacy' as const, archivedAt: conv.archivedAt };
-        }
 
         if (!conv.sessionId) {
           return { status: 'empty' as const, messages: [] };
