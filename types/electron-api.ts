@@ -6,10 +6,7 @@
 
 import type { ModelSelection } from './settings';
 
-/**
- * 权限模式（与 SDK 的 PermissionMode 保持一致）
- * 前端无法直接导入 @anthropic-ai/claude-agent-sdk，因此在此重新定义
- */
+/** Pi 会话权限模式。 */
 export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto';
 
 /**

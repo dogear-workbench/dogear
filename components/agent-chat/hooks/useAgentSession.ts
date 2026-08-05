@@ -11,12 +11,14 @@ interface UseAgentSessionParams {
   conversationId: string | null;
   /** 归档冻结的旧会话（SDK 主会话移除迁移标记）不建立 Harness runtime，只展示历史占位 */
   archived: boolean;
+  historyLoaded: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
 }
 
 export function useAgentSession({
   conversationId,
   archived,
+  historyLoaded,
   setIsLoading,
 }: UseAgentSessionParams) {
   // 监听 sessionRestartTrigger，变化时重建会话
@@ -40,7 +42,7 @@ export function useAgentSession({
     let cancelled = false;
 
     const startSession = async () => {
-      if (archived || !conversationId) return;
+      if (archived || !conversationId || !historyLoaded) return;
 
       try {
         const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
@@ -131,7 +133,7 @@ export function useAgentSession({
       setSessionId(null);
       setIsSessionReady(false);
     };
-  }, [conversationId, archived, sessionRestartTrigger]);
+  }, [conversationId, archived, historyLoaded, sessionRestartTrigger]);
 
   // 订阅 pendingCountChanged：跟踪本会话的待处理插话队列长度
   useEffect(() => {

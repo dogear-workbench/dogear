@@ -14,7 +14,7 @@ import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
 import type { AgentEvent, AgentHarnessTool, ExecutionEnv } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
-import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
+import type { PiPermissionMode } from './permission-mode.js';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
@@ -25,7 +25,7 @@ import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
-import { isPermissionExempt, isToolPreapproved, isToolInEnabledPack } from './permission-rules.js';
+import { isAutoAllowedEditTool, isPermissionExempt, isToolDenied, isToolForcedAsk, isToolInEnabledPack, isToolPreapproved } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
 import { createStockToolDefs } from '../tools/stock-tools.js';
@@ -70,9 +70,18 @@ export interface PiSessionConfig {
   /** 与 Conversation.role 同语义，直接透传，决定 dogear-delegation 工具包给主会话集还是子会话集 */
   role: 'main' | 'sub';
   /** role='sub' 时必需：派出当前会话的会话 conversationId（对齐 SubDelegationOpts.parentConversationId）。
-   * 本 step 尚无调用方能提供真实值（依赖 conversation.contractMetadata，接线是后续 step 的范围），
-   * 仅在此打通类型通道；role='main' 时不使用 */
+   * 由 conversation-runtime-service.ts 从 conversation.parentConversationId 透传；role='main' 时不使用 */
   parentConversationId?: string;
+  permissionMode: PiPermissionMode;
+}
+
+export interface PiSessionLiveSnapshot {
+  messages: ExtendedSessionMessage[];
+  permissionRequests: Array<{
+    requestId: string;
+    toolName: string;
+    toolInput: unknown;
+  }>;
 }
 
 enum PiSessionStatus {
@@ -120,7 +129,7 @@ export class PiSession extends EventEmitter {
   // 缓存当前生效的 selection/profile，供 setModel 判断是否需要重启会话
   private currentModelSelection: ModelSelection | null = null;
   private currentResolvedProfile?: ModelProfile;
-  private currentPermissionMode: PermissionMode = 'default';
+  private currentPermissionMode: PiPermissionMode = 'default';
   // requestId -> 挂起的权限确认请求，等待前端 respondPermissionRequest 调用来 resolve
   private pendingPermissionRequests: Map<string, PendingPermissionRequest> = new Map();
   // 本会话进程内免确认的工具名集合（allow_session 语义，不落盘，关闭会话即失效）
@@ -133,6 +142,7 @@ export class PiSession extends EventEmitter {
   private lastEmittedPendingAction = false;
   // 本轮 emit 出去的 ExtendedSessionMessage 快照，agent_end 时喂给 extractPiUsageEntry 聚合 toolActivity
   private currentTurnMessages: ExtendedSessionMessage[] = [];
+  private liveTurnMessages: ExtendedSessionMessage[] = [];
   // usage 提取粒度对齐 SDK result：每次 sendMessage（agent_end）产一条 entry，自增
   private usageTurnIndex = 0;
   // 本轮累加器：message_end 时累加 AssistantMessage.usage，agent_end 时取出转 entry 后置 null
@@ -148,6 +158,7 @@ export class PiSession extends EventEmitter {
     super();
     this.sessionId = sessionId;
     this.config = config;
+    this.currentPermissionMode = config.permissionMode;
     this.logger = this.logger.child(`pi-session-${sessionId.substring(0, 8)}`);
   }
 
@@ -158,6 +169,17 @@ export class PiSession extends EventEmitter {
   /** Harness 的真实持久化 sessionId；start() 内两条分支（open 已有 / create 新建）都会同步赋值 config.harnessSessionId，resolve 时必定可用 */
   getSdkSessionId(): string | undefined {
     return this.config.harnessSessionId ?? undefined;
+  }
+
+  getLiveSnapshot(): PiSessionLiveSnapshot {
+    return {
+      messages: [...this.liveTurnMessages],
+      permissionRequests: Array.from(this.pendingPermissionRequests.entries()).map(([requestId, pending]) => ({
+        requestId,
+        toolName: pending.toolName,
+        toolInput: pending.args,
+      })),
+    };
   }
 
   async start(): Promise<void> {
@@ -256,7 +278,7 @@ export class PiSession extends EventEmitter {
     // 决定 dogear-delegation 拿主会话工具集（含 CreateSession/StopSession）还是子会话工具集（无法派孙子）
     if (this.config.groupId) {
       toolDefs.push(...registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
-      // 判别联合按 this.config.role 收窄：sub 分支需要 parentConversationId（真实接线留给后续 step）
+      // 判别联合按 this.config.role 收窄：sub 分支需要 parentConversationId
       const delegationOpts: DelegationToolsOpts = this.config.role === 'sub'
         ? {
             role: 'sub',
@@ -335,6 +357,7 @@ export class PiSession extends EventEmitter {
     if (message) {
       // 缓存本轮 emit 出去的消息快照，agent_end 时喂给 extractPiUsageEntry 聚合 toolActivity
       this.currentTurnMessages.push(message);
+      this.liveTurnMessages.push(message);
       this.emit('message', message);
       return;
     }
@@ -393,6 +416,7 @@ export class PiSession extends EventEmitter {
    */
   private handleSettled(): void {
     this.running = false;
+    this.liveTurnMessages = [];
     this.syncSessionState();
   }
 
@@ -450,24 +474,31 @@ export class PiSession extends EventEmitter {
    */
   private async handleToolCall(context: HarnessToolCallEvent): Promise<HarnessToolCallResult | undefined> {
     const toolName = context.toolName;
-    if (this.currentPermissionMode === 'dontAsk') {
-      return undefined;
-    }
-
-    if (isPermissionExempt(toolName) || this.sessionAllowedTools.has(toolName)) {
-      return undefined;
-    }
-
-    // 工具包粒度批量免确认（对齐旧 SDK allowedTools: mcp__<server>__* 通配符体验）：
-    // 已启用的可选工具包 + dogear-group/dogear-delegation/dogear-memory-review 常驻放行类别，
-    // 整包不弹确认（不区分包内读写工具，口径与旧 SDK 侧 conversation-runtime-service 一致）
-    if (isToolInEnabledPack(toolName, this.toolPackMap, this.config.enabledToolPacks)) {
-      return undefined;
-    }
-
     const appSettings = await loadSettings();
-    if (isToolPreapproved(appSettings.permissionRules?.allow, toolName)) {
-      return undefined;
+    const rules = appSettings.permissionRules;
+
+    if (this.currentPermissionMode === 'plan') {
+      return { block: true, reason: '当前处于仅规划模式，工具调用已阻止' };
+    }
+    if (isToolDenied(rules?.deny, toolName)) {
+      return { block: true, reason: `权限规则已禁止工具 ${toolName}` };
+    }
+    if (!isToolForcedAsk(rules?.ask, toolName)) {
+      if (this.currentPermissionMode === 'bypassPermissions' || this.currentPermissionMode === 'dontAsk' || this.currentPermissionMode === 'auto') {
+        return undefined;
+      }
+      if (isPermissionExempt(toolName) || this.sessionAllowedTools.has(toolName)) {
+        return undefined;
+      }
+      if (this.currentPermissionMode === 'acceptEdits' && isAutoAllowedEditTool(toolName, context.input)) {
+        return undefined;
+      }
+      if (isToolInEnabledPack(toolName, this.toolPackMap, this.config.enabledToolPacks)) {
+        return undefined;
+      }
+      if (isToolPreapproved(rules?.allow, toolName)) {
+        return undefined;
+      }
     }
 
     const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -502,6 +533,7 @@ export class PiSession extends EventEmitter {
     const text = typeof content === 'string' ? content : extractTextFromBlocks(content);
     const adapter = this.adapter;
     const isRunning = this.running || this.pendingSteerCount > 0;
+    if (!isRunning) this.liveTurnMessages = [];
 
     this.logger.info('发送用户消息到 pi 会话:', { length: text.length, isRunning, pendingSteer: this.pendingSteerCount });
 
@@ -602,13 +634,13 @@ export class PiSession extends EventEmitter {
     this.pendingPermissionRequests.clear();
   }
 
-  async setPermissionMode(mode: PermissionMode): Promise<void> {
+  async setPermissionMode(mode: PiPermissionMode): Promise<void> {
     this.currentPermissionMode = mode;
     this.logger.info('更改 pi 权限模式:', mode);
     this.emit('permissionModeChanged', { mode });
   }
 
-  getPermissionMode(): PermissionMode {
+  getPermissionMode(): PiPermissionMode {
     return this.currentPermissionMode;
   }
 

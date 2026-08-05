@@ -18,6 +18,7 @@ export type HistoryStatus = 'loading' | 'ok' | 'empty' | 'archived_legacy' | 'er
 export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
   const [historyStatus, setHistoryStatus] = useState<HistoryStatus>('loading');
   const [archivedAt, setArchivedAt] = useState<string | undefined>(undefined);
 
@@ -32,6 +33,7 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
       if (!conversationId) {
         setMessages([]);
         setHistoryStatus('empty');
+        setHistoryConversationId(null);
         setHistoryLoaded(true);
         return;
       }
@@ -45,6 +47,7 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
           setMessages([]);
           setArchivedAt(result.archivedAt);
           setHistoryStatus('archived_legacy');
+          setHistoryConversationId(conversationId);
           setHistoryLoaded(true);
           return;
         }
@@ -53,18 +56,21 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
           console.error('读取对话历史失败:', result.error);
           setMessages([]);
           setHistoryStatus('error');
+          setHistoryConversationId(conversationId);
           setHistoryLoaded(true);
           return;
         }
 
         setMessages(result.messages);
         setHistoryStatus(result.status);
+        setHistoryConversationId(conversationId);
         setHistoryLoaded(true);
       } catch (error) {
         if (cancelled) return;
         console.error('加载对话历史失败:', error);
         setMessages([]);
         setHistoryStatus('error');
+        setHistoryConversationId(conversationId);
         setHistoryLoaded(true);
       }
     };
@@ -76,5 +82,12 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
     };
   }, [conversationId]);
 
-  return { messages, setMessages, historyLoaded, setHistoryLoaded, historyStatus, archivedAt };
+  return {
+    messages,
+    setMessages,
+    historyLoaded: historyLoaded && historyConversationId === conversationId,
+    setHistoryLoaded,
+    historyStatus,
+    archivedAt,
+  };
 }

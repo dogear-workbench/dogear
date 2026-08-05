@@ -5,7 +5,7 @@ import { AgentTask, TaskType } from '../agents/task-types.js';
 import { sendToDebugWindow } from '../index.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
-import type { PermissionMode } from '@anthropic-ai/claude-agent-sdk';
+import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import { getAllTools } from '../agents/tools/tool-registry.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
@@ -244,7 +244,7 @@ export const agentRouter = {
 
   /** 更改权限模式 */
   setPermissionMode: t.procedure
-    .input<{ sessionId: string; mode: PermissionMode }>()
+    .input<{ sessionId: string; mode: PiPermissionMode }>()
     .action(async ({ input }) => {
       try {
         const activeSession = getPiSessionManager().getSession(input.sessionId);

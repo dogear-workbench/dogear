@@ -140,29 +140,43 @@ function onChildSessionInit(childId: string, sdkSessionId: string): void {
   }
 }
 
+/**
+ * 会话结算（complete/error）是本会话这一轮 prompt() 真正跑完的信号，是唯一安全的资源释放时机——
+ * markChildDelivered 发生在 SendMessage 工具调用中途（prompt() 仍在执行），此时 detach 会
+ * 触发 release() 归零后立即 close()/abort() 正在跑的这一轮，绝不能在那里做。
+ * 状态只在仍是 'running' 时才改写（保留"是否曾经交付"的语义），但 detach 无论如何都要执行一次——
+ * 哪怕 markChildDelivered/stopChild 已经改过 status，也可能还没释放过 attachment（如已释放，
+ * detachAttachment 本身幂等，重复调用是安全 no-op）。
+ */
 function onSessionComplete(childId: string): void {
   const c = childStates.get(childId);
-  if (!c || c.status !== 'running') return;
-  // 会话自然停了但没调 SendMessage(delivery:true) 交付
-  c.status = 'no_delivery';
-  c.finishedAt = Date.now();
-  c.errorMessage = '会话结束但未交付';
+  if (!c) return;
+  if (c.status === 'running') {
+    // 会话自然停了但没调 SendMessage(delivery:true) 交付
+    c.status = 'no_delivery';
+    c.finishedAt = Date.now();
+    c.errorMessage = '会话结束但未交付';
+    groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+    broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
+    broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  }
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-  broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
 }
 
 function onSessionError(childId: string, msg: unknown): void {
   const c = childStates.get(childId);
-  if (!c || c.status !== 'running') return;
-  c.status = 'failed';
-  c.finishedAt = Date.now();
-  c.errorMessage = extractErrorMessage(msg);
+  if (!c) return;
+  if (c.status === 'running') {
+    c.status = 'failed';
+    c.finishedAt = Date.now();
+    c.errorMessage = extractErrorMessage(msg);
+    groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+    broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
+    broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  }
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-  broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
 }
 
 function extractErrorMessage(msg: unknown): string {
@@ -288,24 +302,21 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
 export async function stopChild(childId: string, reason: 'cancelled' | 'timeout' = 'cancelled'): Promise<void> {
   const c = childStates.get(childId);
-  if (!c) return;
-  if (isTerminal(c.status)) return;
+  if (!c || isTerminal(c.status)) return;
 
   c.status = reason;
   c.finishedAt = Date.now();
   c.errorMessage = reason === 'timeout' ? '超时中断' : '被停止';
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+  broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
+  broadcastDeliveriesAwaitChanged(c.parentConversationId);
 
   const session = getPiSessionManager().getSession(c.sessionId);
   if (session) {
     try { await session.interrupt(); } catch (err) { logger.warn(`session.interrupt 失败 ${childId}`, err); }
   }
   try { conversationRuntimeService.detachAttachment(c.attachmentId); } catch (err) { logger.warn(`detachAttachment 失败 ${childId}`, err); }
-
-  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-
-  broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
 }
 
 /**
@@ -471,10 +482,7 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
   return 'queued';
 }
 
-/**
- * 中断指定发起会话的所有活跃 WaitForMessage 等待，并把它名下仍在跑的会话标记为取消。
- * 行为：不调用 session.interrupt（对方会话继续跑或自行结束；之后再交付会因父已放弃等待而只是普通推送）。
- */
+/** 中断指定发起会话的所有活跃 WaitForMessage 等待，并终止它名下仍在运行的 Pi 子会话。 */
 export function abortWaitsForParent(parentConversationId: string): {
   abortedWaits: number;
   cancelledChildren: number;
@@ -488,22 +496,14 @@ export function abortWaitsForParent(parentConversationId: string): {
     abortedWaits++;
   }
 
-  let cancelledChildren = 0;
-  for (const c of childStates.values()) {
-    if (c.parentConversationId !== parentConversationId || c.status !== 'running') continue;
-    c.status = 'cancelled';
-    c.finishedAt = Date.now();
-    c.errorMessage = '发起会话中断了等待';
-    if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
-    groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, c.childId);
-    broadcastChildStatusChanged(c.parentConversationId, c.childId, c.status, toSnapshot(c));
-    cancelledChildren++;
-  }
-  if (abortedWaits > 0 || cancelledChildren > 0) {
-    broadcastDeliveriesAwaitChanged(parentConversationId);
+  const childIds = Array.from(childStates.values())
+    .filter((c) => c.parentConversationId === parentConversationId && c.status === 'running')
+    .map((c) => c.childId);
+  for (const childId of childIds) {
+    void stopChild(childId, 'cancelled').catch((err) => logger.warn(`中断子会话失败 ${childId}`, err));
   }
 
-  return { abortedWaits, cancelledChildren };
+  return { abortedWaits, cancelledChildren: childIds.length };
 }
 
 /** 转义 XML 属性值中的特殊字符 */

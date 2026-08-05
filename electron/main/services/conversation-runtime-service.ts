@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
+import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
 import { loadSettings } from './settings-service.js';
@@ -10,10 +11,15 @@ export type RuntimeHolderType = 'desktop' | 'wechat-bot';
 export interface ConversationRuntimeAttachment {
   attachmentId: string;
   sessionId: string;
-  permissionMode: string;
+  permissionMode: PiPermissionMode;
   created: boolean;
   /** 复用已有 session 时，当前 turn 的进行中消息快照（供晚加入的渲染层重播） */
   snapshot: ExtendedSessionMessage[];
+  pendingPermissionRequests: Array<{
+    requestId: string;
+    toolName: string;
+    toolInput: unknown;
+  }>;
 }
 
 export interface ConversationRuntimeState {
@@ -66,6 +72,9 @@ class ConversationRuntimeService {
     } else {
       const appSettings = await loadSettings();
       const workspace = await workspaceJsonService.getById(workspaceId);
+      const permissionMode = conversation.role === 'sub'
+        ? appSettings.subAgent?.permissionMode ?? appSettings.ai.permissionMode
+        : appSettings.ai.permissionMode;
       session = piSessionManager.createSession({
         conversationId,
         modelSelection: conversation.modelSelection ?? null,
@@ -81,6 +90,8 @@ class ConversationRuntimeService {
         enabledToolPacks: appSettings.enabledToolPacks ?? [],
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
+        parentConversationId: conversation.parentConversationId ?? undefined,
+        permissionMode,
       });
       try {
         await session.start();
@@ -105,13 +116,14 @@ class ConversationRuntimeService {
     attachments.add(attachmentId);
     this.sessionAttachments.set(sessionId, attachments);
 
+    const liveSnapshot = session.getLiveSnapshot();
     return {
       attachmentId,
       sessionId,
-      // pi 阶段一无权限模式概念，固定回传 'default' 供前端展示
-      permissionMode: 'default',
+      permissionMode: session.getPermissionMode(),
       created,
-      snapshot: [],
+      snapshot: liveSnapshot.messages,
+      pendingPermissionRequests: liveSnapshot.permissionRequests,
     };
   }
 

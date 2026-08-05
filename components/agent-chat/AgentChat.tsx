@@ -84,7 +84,7 @@ export function AgentChat({
   }, [isLoading]);
 
   // 历史消息
-  const { messages, setMessages, setHistoryLoaded, historyStatus, archivedAt } =
+  const { messages, setMessages, historyLoaded, setHistoryLoaded, historyStatus, archivedAt } =
     useMessageHistory({ conversationId });
   // 旧 SDK 主会话迁移冻结的归档会话：只读展示历史，不建立 runtime、不允许发送/编辑重发/分叉
   const isArchivedLegacy = historyStatus === 'archived_legacy';
@@ -93,7 +93,7 @@ export function AgentChat({
 
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
-    useAgentSession({ conversationId, archived: isArchivedLegacy, setIsLoading });
+    useAgentSession({ conversationId, archived: isArchivedLegacy, historyLoaded, setIsLoading });
 
   // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，
   // 用后端权威运行态兜底；本地 isLoading 保留用于点击发送的乐观预置和失败恢复
@@ -127,9 +127,11 @@ export function AgentChat({
       toast.error('中断等待失败', { description: err });
       return;
     }
-    if (result.abortedWaits > 0) {
-      const { toast } = await import('sonner');
-      toast.success(`已中断 ${result.abortedWaits} 个等待，取消 ${result.cancelledChildren} 个子会话`);
+    const { toast } = await import('sonner');
+    if (result.abortedWaits > 0 || result.cancelledChildren > 0) {
+      toast.success(`已中断 ${result.abortedWaits} 个等待，正在终止 ${result.cancelledChildren} 个子会话`);
+    } else {
+      toast.info('当前没有可中断的等待或运行中的子会话');
     }
   }, [conversationId]);
 

@@ -27,18 +27,25 @@ export const conversationRuntimeRouter = {
           { webContentsId: context.sender.id },
         );
 
-        // 复用已有 session 时，把当前 turn 进行中的消息重播给调用者窗口
-        // 避免晚打开的渲染层丢失 stream
-        if (!result.created && result.snapshot.length > 0) {
+        // 复用已有 session 时，把当前 turn 的消息和待确认请求重播给调用者窗口。
+        if (!result.created && (result.snapshot.length > 0 || result.pendingPermissionRequests.length > 0)) {
           setTimeout(() => {
             if (context.sender.isDestroyed()) return;
             const h = getRendererHandlers<RendererHandlers>(context.sender);
-            for (const msg of result.snapshot) {
-              try {
+            try {
+              for (const msg of result.snapshot) {
                 h.queryBasedSessionMessage.send({ sessionId: result.sessionId, message: msg });
-              } catch {
-                // 窗口已销毁，忽略
               }
+              for (const request of result.pendingPermissionRequests) {
+                h.permissionRequest.send({
+                  sessionId: result.sessionId,
+                  requestId: request.requestId,
+                  toolName: request.toolName,
+                  toolInput: request.toolInput,
+                });
+              }
+            } catch {
+              // 窗口已销毁，忽略
             }
           }, 100);
         }

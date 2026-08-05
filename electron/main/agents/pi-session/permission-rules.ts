@@ -20,6 +20,21 @@ export function isToolPreapproved(allowRules: string[] | undefined, toolName: st
   return !!allowRules?.includes(toolName);
 }
 
+export function isToolDenied(denyRules: string[] | undefined, toolName: string): boolean {
+  return !!denyRules?.includes(toolName);
+}
+
+export function isToolForcedAsk(askRules: string[] | undefined, toolName: string): boolean {
+  return !!askRules?.includes(toolName);
+}
+
+const FILESYSTEM_BASH_COMMAND = /(?:^|[;&|]\s*)(?:mkdir|touch|rm|mv|cp|sed)\b/;
+
+export function isAutoAllowedEditTool(toolName: string, input: Record<string, unknown>): boolean {
+  if (toolName === 'write' || toolName === 'edit') return true;
+  return toolName === 'bash' && typeof input.command === 'string' && FILESYSTEM_BASH_COMMAND.test(input.command);
+}
+
 /**
  * 常驻放行工具包：只要挂了就不弹确认，不受 enabledToolPacks 开关控制
  * （dogear-group / dogear-delegation 按 conversation.groupId 存在挂载，dogear-memory-review 按 workspacePath 齐全挂载）。
