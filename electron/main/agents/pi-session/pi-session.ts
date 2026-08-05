@@ -62,7 +62,6 @@ export interface PiSessionConfig {
   workspacePath: string;
   workspaceId: string;
   harnessSessionId: string | null;
-  onHarnessSessionCreated: (sessionId: string) => Promise<void>;
   /** 用户在设置页开启的可选工具包名（对齐 tool-packs.ts 的 OPTIONAL_TOOL_PACKS[].name），缺省视为空数组 */
   enabledToolPacks: string[];
   /** 对话所属会话组 ID；存在时挂载 dogear-group / dogear-delegation */
@@ -212,7 +211,6 @@ export class PiSession extends EventEmitter {
       ? await repository.open(this.config.workspaceId, this.config.harnessSessionId)
       : await (async () => {
           const { session: created, info } = await repository.create(this.config.workspaceId);
-          await this.config.onHarnessSessionCreated(info.id);
           this.config.harnessSessionId = info.id;
           return created;
         })();

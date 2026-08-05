@@ -68,6 +68,7 @@ class ConversationRuntimeService {
     const piSessionManager = getPiSessionManager();
     let sessionId = piSessionManager.getSessionIdByConversation(conversationId);
     let session = sessionId ? piSessionManager.getSession(sessionId) : undefined;
+    const isRestore = !!conversation.sessionId;
     let created = false;
 
     if (sessionId && !session) {
@@ -89,11 +90,6 @@ class ConversationRuntimeService {
         workspacePath: workspace?.path ?? '',
         workspaceId,
         harnessSessionId: conversation.sessionId ?? null,
-        onHarnessSessionCreated: (harnessSessionId) =>
-          Promise.all([
-            conversationService.updateSessionId(workspaceId, conversationId, harnessSessionId),
-            conversationService.updateSdkSessionId(workspaceId, conversationId, harnessSessionId),
-          ]).then(() => undefined),
         enabledToolPacks: appSettings.enabledToolPacks ?? [],
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
@@ -103,14 +99,22 @@ class ConversationRuntimeService {
       try {
         await session.start();
       } catch (error) {
-        // start() 失败（如 Harness session 文件缺失/损坏）时，createSession 已注册的
-        // sessions/refCounts 条目从未 bindConversation，没有其他路径能回收，必须在这里主动清理。
         piSessionManager.closeSession(session.getSessionId());
+        if (isRestore) {
+          throw new Error('会话历史文件缺失或损坏，无法恢复会话');
+        }
         throw error;
+      }
+      if (!isRestore) {
+        await conversationService.updateSessionId(
+          workspaceId,
+          conversationId,
+          session.getSdkSessionId()!,
+        );
       }
       sessionId = session.getSessionId();
       piSessionManager.bindConversation(conversationId, sessionId);
-      created = true;
+      created = !isRestore;
     }
 
     if (!sessionId || !session) {
