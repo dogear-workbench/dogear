@@ -1,0 +1,24 @@
+# 话题级归档与删除实施计划
+
+**目标**：将归档唯一粒度改为话题，彻底移除单会话归档与其遗留空组，并保证删除操作清理所有关联数据。
+
+**架构思路**：内部继续使用 `groupId` 与现有组目录，Group 增加归档状态；由统一的话题生命周期协调层负责会话、运行时、用量、树、分类和组目录的级联清理。活跃与归档话题使用不同查询视图，归档会话只读。排除“继续沿用 Conversation.archivedAt 并在 UI 聚合”的方案，因为它不能建立唯一归档边界，也会继续造成空组与引用不一致。
+
+**涉及模块**：`types/group.ts`、`electron/main/types.ts`、`group-service.ts`、`topic-lifecycle-service.ts`、`conversation-service.ts`、`tipc/group.ts`、`tipc/conversations.ts`、`conversation-runtime-service.ts`、`group-store.ts`、`conversation-store.ts`、会话列表与聊天组件、会话树、智能分类、组存储迁移和项目规则。
+
+## 步骤索引
+
+- [ ] [Step 1: 话题数据模型、级联清理与旧归档迁移](./step1-data-lifecycle.md) — 建立 Group 归档状态和唯一的硬删除/迁移协调层。
+- [ ] [Step 2: TIPC 路由与前端状态切换](./step2-routes-stores.md) — 接通归档/恢复/删除话题与活跃数据过滤，移除单会话归档分流。
+- [ ] [Step 3: 左侧话题界面与只读归档浏览](./step3-ui-readonly.md) — 以话题替换归档区与操作菜单，并在归档状态下强制只读。
+- [ ] [Step 4: 完整性验收与规则固化](./step4-verification-rules.md) — 用删除矩阵验收所有关联存储，并将纪律写入项目规则和代码地图。
+
+## 全局决策
+
+- 面向用户的名称统一为“话题”；内部 ID、JSON 路径、既有技术函数可保留 `group`，避免无意义迁移。
+- `Group.archivedAt` 是唯一有效归档状态；不再新增或保留单会话归档功能。
+- 删除单会话和删除完整话题均为不可恢复的物理删除；后者必须复用同一个级联清理逻辑。
+- 归档仅改变可见性和可写性，必须保留文件夹、智能分类、摘要、背景与共享区；永久删除才移除它们。
+- 旧的全部 `Conversation.archivedAt` 记录在迁移中永久清理，包含其可定位的会话历史和用量；迁移可重试且不得留下孤儿引用。
+- 归档话题的会话可以浏览历史但不可 attach runtime、发送、创建会话或派遣子会话；恢复后才允许写入。
+- 每一步完成后必须回填对应 step 的“实施回填”和接力棒，再执行下一步。
