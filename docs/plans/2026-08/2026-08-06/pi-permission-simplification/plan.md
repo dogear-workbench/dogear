@@ -11,7 +11,7 @@
 - [x] [Step 1: 统一设置数据与兼容迁移](./step1-settings-contract.md) — 定义两种模式和基础工具映射，清除旧 SDK 主会话规则的读写路径。
 - [x] [Step 2: 落地 Pi 会话权限策略](./step2-pi-runtime-policy.md) — 重写 Harness Hook 判定、固定子会话自动执行并收窄 tipc 契约。
 - [x] [Step 3: 收敛设置与会话交互界面](./step3-ui-contract.md) — 提供基础工具配置和两态菜单，删除旧规则、Web 工具及“总是允许”交互。
-- [ ] [Step 4: 验证、清理与文档同步](./step4-verify-doc-sync.md) — 构建验证关键场景，清理遗留引用并同步项目索引。
+- [x] [Step 4: 验证、清理与文档同步](./step4-verify-doc-sync.md) — 构建验证关键场景，清理遗留引用并同步项目索引。
 
 ## 全局决策
 

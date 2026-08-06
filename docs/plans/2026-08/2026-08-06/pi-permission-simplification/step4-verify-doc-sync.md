@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 验证、清理与文档同步
-status: pending
+status: done
 ---
 
 ## 目标
@@ -29,11 +29,23 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
+- 与计划差异：手工验证项（配置兼容、策略矩阵、子会话不变量、双窗口同步）需要用户在运行环境中验证，本 step 以代码搜索 + 构建验证 + 测试运行 + 文档同步为主。
 - 改动文件清单：
+  1. `.claude/rules/codebase-map.md` — 更新 settings.ts 描述（删除 subAgent.permissionMode、新增 basicToolPermissions、permissionMode 两态）、settings-service.ts 描述（normalizeSettings 替代 appendPermissionAllowRules）、新增 permission-mode.ts 行、重写 permission-rules.ts 描述
+  2. `.claude/skills/codebase-map/SKILL.md` — 同步上述变更
+  3. `.claude/rules/session-runtime.md` — 更新权限模式段（两态、子会话固定 autoExecute、基础工具快照、三种权限响应）
+
+### 验证结果
+
+- 全仓搜索旧值（acceptEdits/bypassPermissions/dontAsk/plan/always_allow/permissionRules/subAgent.permissionMode/updatedInput）：源代码零残留（仅 dist/ 编译产物和 docs/plans/ 历史文档有引用，均不需处理）
+- bun test：91 pass / 6 fail（6 个失败为 pre-existing，与本次无关——git stash 验证确认）
+- bun run lint：0 errors / 70 pre-existing warnings
+- bun run build：✅
+- bun run build:electron：✅
+- doc-sync：codebase-map.md / SKILL.md / session-runtime.md 已同步
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：无后续 step。
+- 下个 step 该从哪里继续：全部 4 步已完成。
+- 待办或已知限制：6 个 pre-existing 测试失败（prompt 拼装 + usage 提取相关）与本次无关；手工验证项需用户在运行环境中确认。

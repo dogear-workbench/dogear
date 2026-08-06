@@ -93,7 +93,7 @@ const attachment = await runtimeService.attachConversation(
 
 ## 权限模式
 
-`attachConversation` 返回当前 `PiPermissionMode`。权限确认逻辑由 `PiSession`（`setPermissionMode`/`respondPermissionRequest`）统一处理；子会话默认模式取 `settings.subAgent.permissionMode`，再回退到全局设置。
+`attachConversation` 返回当前 `PiPermissionMode`（`default | autoExecute`）。权限确认逻辑由 `PiSession`（`setPermissionMode`/`respondPermissionRequest`）统一处理；子会话固定 `autoExecute`，不可更改。主会话模式由 `settings.ai.permissionMode` 决定，基础工具权限由根级 `basicToolPermissions` 映射控制（创建时快照传入，保存设置仅影响之后新建的会话）。`respondPermissionRequest` 只接受 `allow | deny | allow_session` 三种行为。
 
 ## 数据持久化
 
