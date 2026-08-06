@@ -40,7 +40,7 @@ import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/del
 import { createReviewToolDefs } from '../tools/review-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
-import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
+import { loadSettings } from '../../services/settings-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { getGroup } from '../../services/group-service.js';
@@ -550,7 +550,7 @@ export class PiSession extends EventEmitter {
   private async handleToolCall(context: HarnessToolCallEvent): Promise<HarnessToolCallResult | undefined> {
     const toolName = context.toolName;
     const appSettings = await loadSettings();
-    const rules = appSettings.permissionRules;
+    const rules = (appSettings as unknown as Record<string, unknown>).permissionRules as { allow?: string[]; deny?: string[]; ask?: string[] } | undefined;
 
     if (this.currentPermissionMode === 'plan') {
       return { block: true, reason: '当前处于仅规划模式，工具调用已阻止' };
@@ -752,9 +752,6 @@ export class PiSession extends EventEmitter {
       this.sessionAllowedTools.add(pending.toolName);
     } else if (behavior === 'always_allow') {
       this.sessionAllowedTools.add(pending.toolName);
-      appendPermissionAllowRules([pending.toolName]).catch((error) =>
-        this.logger.warn('持久化 always_allow 规则失败:', error),
-      );
     }
 
     pending.resolve(undefined);

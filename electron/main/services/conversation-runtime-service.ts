@@ -80,9 +80,10 @@ class ConversationRuntimeService {
     } else {
       const appSettings = await loadSettings();
       const workspace = await workspaceJsonService.getById(workspaceId);
-      const permissionMode = conversation.role === 'sub'
-        ? appSettings.subAgent?.permissionMode ?? appSettings.ai.permissionMode
+      const newMode = conversation.role === 'sub'
+        ? 'autoExecute' as const
         : appSettings.ai.permissionMode;
+      const permissionMode: PiPermissionMode = newMode === 'autoExecute' ? 'bypassPermissions' : 'default';
       session = piSessionManager.createSession({
         conversationId,
         modelSelection: conversation.modelSelection ?? null,

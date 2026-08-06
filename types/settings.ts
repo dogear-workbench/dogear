@@ -51,12 +51,24 @@ export function isProfileComplete(profile: ModelProfile): boolean {
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ThinkingType = 'adaptive' | 'enabled' | 'disabled';
 
+export type PiPermissionMode = 'default' | 'autoExecute';
+
+export type BasicToolName = 'read' | 'write' | 'edit' | 'bash' | 'Glob' | 'Grep' | 'Skill';
+export type BasicToolPermission = 'ask' | 'allow';
+export type BasicToolPermissions = Record<BasicToolName, BasicToolPermission>;
+
+export const BASIC_TOOL_NAMES: readonly BasicToolName[] = ['read', 'write', 'edit', 'bash', 'Glob', 'Grep', 'Skill'];
+
+export function createDefaultBasicToolPermissions(): BasicToolPermissions {
+  return { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定（推荐新装默认） */
     effort?: EffortLevel | null;
     maxTurns?: number; // Agent 最大执行轮次（不设置则不限制）
-    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'; // 默认权限模式
+    permissionMode: PiPermissionMode;
     defaultSystemPrompt?: string; // 全局默认系统提示词（替代硬编码的 basePrompt）
     settingSources?: ('user' | 'project')[]; // SDK 设置源
     defaultModelSelection: ModelSelection | null;
@@ -76,20 +88,13 @@ export interface AppSettings {
     /** 思考过程展示方式：summarized=显示摘要 / omitted=不展示。默认 summarized；thinkingType='disabled' 时无效 */
     thinkingDisplay?: 'summarized' | 'omitted';
   };
-  // 工具权限规则（声明式），通过 SDK settings.permissions 传递，在所有模式下生效
-  permissionRules?: {
-    allow?: string[];  // 自动允许的工具，如 ['Read', 'Glob', 'Grep']
-    deny?: string[];   // 自动拒绝的工具，如 ['Bash']
-    ask?: string[];    // 强制要求用户确认的工具
-  };
+  basicToolPermissions: BasicToolPermissions;
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
   /** 子会话派遣默认配置 */
   subAgent: {
     /** 默认模型；空时回退到 ai.defaultModelSelection */
     modelSelection?: ModelSelection | null;
-    /** 子会话默认权限模式；缺省 bypassPermissions */
-    permissionMode?: AppSettings['ai']['permissionMode'];
     /** 单个子会话最长允许跑的分钟数，默认 30 */
     timeoutMinutes: number;
     /** 提示缓存策略；缺省 '5m'。子会话通常一轮跑完，1h 只在极特殊场景有价值 */
@@ -132,10 +137,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     reviewModelSelection: null,
     categorizeModelSelection: null,
   },
+  basicToolPermissions: createDefaultBasicToolPermissions(),
   smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
   personas: [],
   subAgent: {
-    permissionMode: 'bypassPermissions',
     timeoutMinutes: 30,
     cachePolicy: '5m',
     loadCoreProfile: false,

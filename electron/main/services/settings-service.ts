@@ -7,7 +7,16 @@
 import path from 'path';
 import electron from 'electron';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
-import { DEFAULT_SETTINGS, deepMerge, type AppSettings } from './settings-types.js';
+import {
+  DEFAULT_SETTINGS,
+  deepMerge,
+  createDefaultBasicToolPermissions,
+  BASIC_TOOL_NAMES,
+  type AppSettings,
+  type PiPermissionMode,
+  type BasicToolPermissions,
+  type BasicToolPermission,
+} from './settings-types.js';
 
 const { app } = electron;
 
@@ -51,10 +60,9 @@ export async function loadSettings(): Promise<AppSettings> {
     return structuredClone(DEFAULT_SETTINGS);
   }
   const merged = deepMerge(saved, DEFAULT_SETTINGS);
-  // 一次性存量迁移：已经是 pi 格式但还没 piModels 的 Profile，用旧三档字段种初始清单。
-  // 幂等——piModels 已非空就跳过；迁移后落盘，下次启动直接命中。
-  const migrated = migratePiProfiles(merged);
-  if (migrated) {
+  const dirty = normalizeSettings(merged);
+  const piMigrated = migratePiProfiles(merged);
+  if (dirty || piMigrated) {
     await safeJsonWrite(getSettingsPath(), merged);
   }
   return merged;
@@ -79,30 +87,72 @@ function migratePiProfiles(settings: AppSettings): boolean {
   return changed;
 }
 
-/**
- * 写入设置到 JSON 文件
- * 自动创建 .dogear 目录
- */
-export async function saveSettings(settings: AppSettings): Promise<void> {
-  await safeJsonWrite(getSettingsPath(), settings);
+const OLD_AUTO_MODES = new Set(['bypassPermissions', 'dontAsk', 'auto', 'acceptEdits']);
+
+function normalizePermissionMode(raw: unknown): PiPermissionMode {
+  if (raw === 'default' || raw === 'autoExecute') return raw;
+  if (typeof raw === 'string' && OLD_AUTO_MODES.has(raw)) return 'autoExecute';
+  return 'default';
 }
 
-/**
- * 追加规则到 permissionRules.allow，自动去重。
- * 用于权限请求"始终允许"按钮的持久化。
- */
-export async function appendPermissionAllowRules(rules: string[]): Promise<void> {
-  if (!rules.length) return;
-  const current = await loadSettings();
-  const existing = new Set(current.permissionRules?.allow || []);
-  const before = existing.size;
-  for (const r of rules) existing.add(r);
-  if (existing.size === before) return; // 全部已存在，跳过写盘
-  await saveSettings({
-    ...current,
-    permissionRules: {
-      ...current.permissionRules,
-      allow: Array.from(existing),
-    },
-  });
+function normalizeBasicToolPermissions(raw: unknown): BasicToolPermissions {
+  const result = createDefaultBasicToolPermissions();
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    for (const key of BASIC_TOOL_NAMES) {
+      const val = obj[key];
+      if (val === 'ask' || val === 'allow') {
+        result[key] = val;
+      }
+    }
+  }
+  return result;
+}
+
+export function normalizeSettings(settings: AppSettings): boolean {
+  let changed = false;
+  const obj = settings as unknown as Record<string, unknown>;
+
+  if (!settings.ai || typeof settings.ai !== 'object' || Array.isArray(settings.ai)) {
+    obj.ai = structuredClone(DEFAULT_SETTINGS.ai);
+    changed = true;
+  } else {
+    const ai = settings.ai as unknown as Record<string, unknown>;
+    const newMode = normalizePermissionMode(ai.permissionMode);
+    if (ai.permissionMode !== newMode) {
+      ai.permissionMode = newMode;
+      changed = true;
+    }
+  }
+
+  const newPerms = normalizeBasicToolPermissions(obj.basicToolPermissions);
+  const currentPerms = obj.basicToolPermissions;
+  if (
+    !currentPerms ||
+    typeof currentPerms !== 'object' ||
+    Array.isArray(currentPerms) ||
+    JSON.stringify(currentPerms) !== JSON.stringify(newPerms)
+  ) {
+    obj.basicToolPermissions = newPerms;
+    changed = true;
+  }
+
+  if ('permissionRules' in settings) {
+    delete obj.permissionRules;
+    changed = true;
+  }
+
+  if (settings.subAgent && typeof settings.subAgent === 'object' && !Array.isArray(settings.subAgent)) {
+    const sub = settings.subAgent as unknown as Record<string, unknown>;
+    if ('permissionMode' in sub) {
+      delete sub.permissionMode;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
+export async function saveSettings(settings: AppSettings): Promise<void> {
+  await safeJsonWrite(getSettingsPath(), settings);
 }

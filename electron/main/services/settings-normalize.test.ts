@@ -1,0 +1,140 @@
+import { test, expect } from 'bun:test';
+import { normalizeSettings } from './settings-service.js';
+import { DEFAULT_SETTINGS, type AppSettings } from './settings-types.js';
+
+function baseSettings(): AppSettings {
+  return structuredClone(DEFAULT_SETTINGS);
+}
+
+test('旧自动执行模式（bypassPermissions/dontAsk/auto/acceptEdits）映射为 autoExecute', () => {
+  for (const oldMode of ['bypassPermissions', 'dontAsk', 'auto', 'acceptEdits']) {
+    const s = baseSettings();
+    (s.ai as Record<string, unknown>).permissionMode = oldMode;
+    const changed = normalizeSettings(s);
+    expect(changed).toBe(true);
+    expect(s.ai.permissionMode).toBe('autoExecute');
+  }
+});
+
+test('旧 plan 模式映射为 default', () => {
+  const s = baseSettings();
+  (s.ai as Record<string, unknown>).permissionMode = 'plan';
+  normalizeSettings(s);
+  expect(s.ai.permissionMode).toBe('default');
+});
+
+test('未知模式映射为 default', () => {
+  const s = baseSettings();
+  (s.ai as Record<string, unknown>).permissionMode = 'something-weird';
+  normalizeSettings(s);
+  expect(s.ai.permissionMode).toBe('default');
+});
+
+test('新模式值保持不变', () => {
+  for (const mode of ['default', 'autoExecute'] as const) {
+    const s = baseSettings();
+    s.ai.permissionMode = mode;
+    const changed = normalizeSettings(s);
+    expect(changed).toBe(false);
+    expect(s.ai.permissionMode).toBe(mode);
+  }
+});
+
+test('缺失 basicToolPermissions 时生成七项 ask 映射', () => {
+  const s = baseSettings();
+  delete (s as Record<string, unknown>).basicToolPermissions;
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.basicToolPermissions).toEqual({
+    read: 'ask', write: 'ask', edit: 'ask', bash: 'ask',
+    Glob: 'ask', Grep: 'ask', Skill: 'ask',
+  });
+});
+
+test('额外/无效基础工具键被清理，缺失键补齐', () => {
+  const s = baseSettings();
+  (s as Record<string, unknown>).basicToolPermissions = {
+    read: 'allow',
+    write: 'invalid-value',
+    bash: 'allow',
+    extraKey: 'allow',
+  };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.basicToolPermissions).toEqual({
+    read: 'allow', write: 'ask', edit: 'ask', bash: 'allow',
+    Glob: 'ask', Grep: 'ask', Skill: 'ask',
+  });
+});
+
+test('basicToolPermissions 结构损坏（数组/字符串/null）时恢复为安全默认', () => {
+  for (const bad of [[], 'ask', null, 42]) {
+    const s = baseSettings();
+    (s as Record<string, unknown>).basicToolPermissions = bad;
+    normalizeSettings(s);
+    expect(s.basicToolPermissions).toEqual({
+      read: 'ask', write: 'ask', edit: 'ask', bash: 'ask',
+      Glob: 'ask', Grep: 'ask', Skill: 'ask',
+    });
+  }
+});
+
+test('ai 对象结构损坏时恢复为安全默认', () => {
+  for (const bad of [null, [], 'string', 42]) {
+    const s = baseSettings();
+    (s as Record<string, unknown>).ai = bad;
+    const changed = normalizeSettings(s);
+    expect(changed).toBe(true);
+    expect(s.ai.permissionMode).toBe('default');
+    expect(s.ai.defaultSystemPrompt).toBe(DEFAULT_SETTINGS.ai.defaultSystemPrompt);
+  }
+});
+
+test('旧 permissionRules 被删除', () => {
+  const s = baseSettings();
+  (s as Record<string, unknown>).permissionRules = { allow: ['Read', 'Bash'], deny: ['Write'] };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect('permissionRules' in s).toBe(false);
+});
+
+test('旧 subAgent.permissionMode 被删除', () => {
+  const s = baseSettings();
+  (s.subAgent as Record<string, unknown>).permissionMode = 'bypassPermissions';
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect('permissionMode' in s.subAgent).toBe(false);
+});
+
+test('重复执行规范化不再产生改动（幂等）', () => {
+  const s = baseSettings();
+  (s.ai as Record<string, unknown>).permissionMode = 'bypassPermissions';
+  (s as Record<string, unknown>).permissionRules = { allow: ['Read'] };
+  (s.subAgent as Record<string, unknown>).permissionMode = 'dontAsk';
+  normalizeSettings(s);
+  const changed2 = normalizeSettings(s);
+  expect(changed2).toBe(false);
+});
+
+test('规范化不丢失无关的有效设置', () => {
+  const s = baseSettings();
+  s.ai.permissionMode = 'autoExecute';
+  s.subAgent.timeoutMinutes = 60;
+  s.enabledToolPacks = ['stock-analysis'];
+  s.personas = [{ id: 'p1', name: '测试', prompt: 'hi', createdAt: '2024-01-01' }];
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(false);
+  expect(s.subAgent.timeoutMinutes).toBe(60);
+  expect(s.enabledToolPacks).toEqual(['stock-analysis']);
+  expect(s.personas).toHaveLength(1);
+});
+
+test('合法的七项 allow 映射保持不变', () => {
+  const s = baseSettings();
+  s.basicToolPermissions = {
+    read: 'allow', write: 'allow', edit: 'allow', bash: 'allow',
+    Glob: 'allow', Grep: 'allow', Skill: 'allow',
+  };
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(false);
+});

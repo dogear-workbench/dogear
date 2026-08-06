@@ -75,10 +75,6 @@ export interface QueryBaseConfig {
   env: Record<string, string>;
   /** 推理努力程度。null/undefined 表示不传给 SDK，由模型自带默认决定 */
   effort: AppSettings['ai']['effort'];
-  /** 权限模式 */
-  permissionMode: AppSettings['ai']['permissionMode'];
-  /** 声明式权限规则（allow/deny 列表） */
-  permissionRules?: AppSettings['permissionRules'];
   /** 最大回合数（如果设置了的话） */
   maxTurns?: number;
   /** SDK CLI 路径（打包环境专用，开发环境为 undefined） */
@@ -194,8 +190,6 @@ export async function buildQueryBaseConfig(ctx: QueryRuntimeContext): Promise<Qu
   return {
     env,
     effort: appSettings.ai.effort ?? null,
-    permissionMode: appSettings.ai.permissionMode,
-    permissionRules: appSettings.permissionRules,
     maxTurns: appSettings.ai.maxTurns,
     pathToClaudeCodeExecutable,
     settingSources: appSettings.ai.settingSources,

@@ -47,12 +47,24 @@ export interface ModelProfile {
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ThinkingType = 'adaptive' | 'enabled' | 'disabled';
 
+export type PiPermissionMode = 'default' | 'autoExecute';
+
+export type BasicToolName = 'read' | 'write' | 'edit' | 'bash' | 'Glob' | 'Grep' | 'Skill';
+export type BasicToolPermission = 'ask' | 'allow';
+export type BasicToolPermissions = Record<BasicToolName, BasicToolPermission>;
+
+export const BASIC_TOOL_NAMES: readonly BasicToolName[] = ['read', 'write', 'edit', 'bash', 'Glob', 'Grep', 'Skill'];
+
+export function createDefaultBasicToolPermissions(): BasicToolPermissions {
+  return { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定 */
     effort?: EffortLevel | null;
     maxTurns?: number;
-    permissionMode: 'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions';
+    permissionMode: PiPermissionMode;
     defaultSystemPrompt?: string; // 全局默认系统提示词
     settingSources?: ('user' | 'project')[];
     defaultModelSelection: ModelSelection | null;
@@ -72,11 +84,7 @@ export interface AppSettings {
     /** 思考过程展示方式：summarized=显示摘要 / omitted=不展示。默认 summarized；thinkingType='disabled' 时无效 */
     thinkingDisplay?: 'summarized' | 'omitted';
   };
-  permissionRules?: {
-    allow?: string[];
-    ask?: string[];
-    deny?: string[];
-  };
+  basicToolPermissions: BasicToolPermissions;
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
   /** 智能分类设置 */
@@ -88,7 +96,6 @@ export interface AppSettings {
   /** 子会话派遣默认配置 */
   subAgent: {
     modelSelection?: ModelSelection | null;
-    permissionMode?: AppSettings['ai']['permissionMode'];
     /** 单个子会话最长允许跑的分钟数，默认 30 */
     timeoutMinutes: number;
     /** 提示缓存策略；缺省 '5m' */
@@ -126,9 +133,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     reviewModelSelection: null,
     categorizeModelSelection: null,
   },
+  basicToolPermissions: createDefaultBasicToolPermissions(),
   personas: [],
   subAgent: {
-    permissionMode: 'dontAsk',
     timeoutMinutes: 30,
     cachePolicy: '5m',
     loadCoreProfile: false,
