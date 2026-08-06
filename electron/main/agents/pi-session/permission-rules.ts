@@ -37,11 +37,12 @@ export function isAutoAllowedEditTool(toolName: string, input: Record<string, un
 
 /**
  * 常驻放行工具包：只要挂了就不弹确认，不受 enabledToolPacks 开关控制
- * （dogear-group / dogear-delegation 按 conversation.groupId 存在挂载，dogear-memory-review 按 workspacePath 齐全挂载）。
+ * （dogear-group / dogear-delegation / dogear-reference 按 conversation.groupId 存在挂载，dogear-memory-review 按 workspacePath 齐全挂载）。
  */
 export const ALWAYS_ALLOWED_TOOL_PACKS: ReadonlySet<string> = new Set([
   'dogear-group',
   'dogear-delegation',
+  'dogear-reference',
   'dogear-memory-review',
 ]);
 

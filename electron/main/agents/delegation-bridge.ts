@@ -226,8 +226,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     throw new Error(`outputPath "${spec.outputPath}" 已被子会话 ${claim.holderChildId} 占用`);
   }
 
-  // 先注册占位 state（attach 内部会调 buildConversationSessionConfig → getChildSnapshot
-  // 来读 task/outputPath 组装 subAgent 段，必须在 attach 之前可见）
+  // 先注册占位 state，保证启动中的子会话可被状态查询和停止逻辑识别。
   const now = Date.now();
   const state: ChildStateInternal = {
     childId,
@@ -264,7 +263,6 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   }
 
   state.attachmentId = attachment.attachmentId;
-  state.sessionId = attachment.sessionId;
 
   const timeoutMs = (settings.subAgent?.timeoutMinutes ?? 30) * 60_000;
   state.timeoutTimer = setTimeout(() => { void stopChild(childId, 'timeout'); }, timeoutMs);

@@ -94,6 +94,12 @@ class ConversationRuntimeService {
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
         parentConversationId: conversation.parentConversationId ?? undefined,
+        subAgent: conversation.role === 'sub'
+          ? {
+              task: conversation.contractMetadata?.task ?? '完成派出者交代的任务',
+              outputPath: conversation.contractMetadata?.expectedOutputPath ?? '（未指定；直接通过 SendMessage 交付）',
+            }
+          : undefined,
         permissionMode,
       });
       try {

@@ -25,6 +25,9 @@ import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
+import { buildToolPackGuide } from '../tool-pack-guide.js';
+import { buildGroupContextPrompt } from '../group-context-builder.js';
+import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, subAgentContractFor } from '../session-append-templates.js';
 import { isAutoAllowedEditTool, isPermissionExempt, isToolDenied, isToolForcedAsk, isToolInEnabledPack, isToolPreapproved } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -38,6 +41,9 @@ import { createReviewToolDefs } from '../tools/review-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, appendPermissionAllowRules } from '../../services/settings-service.js';
+import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
+import * as conversationService from '../../services/conversation-service.js';
+import { getGroup } from '../../services/group-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
 import {
@@ -71,6 +77,10 @@ export interface PiSessionConfig {
   /** role='sub' 时必需：派出当前会话的会话 conversationId（对齐 SubDelegationOpts.parentConversationId）。
    * 由 conversation-runtime-service.ts 从 conversation.parentConversationId 透传；role='main' 时不使用 */
   parentConversationId?: string;
+  subAgent?: {
+    task: string;
+    outputPath: string;
+  };
   permissionMode: PiPermissionMode;
 }
 
@@ -227,6 +237,32 @@ export class PiSession extends EventEmitter {
     this.currentResolvedProfile = profile;
 
     const piModels = buildPiModels(profile);
+    const isSubAgent = this.config.role === 'sub';
+    const shouldLoadCoreProfile = !isSubAgent || appSettings.subAgent?.loadCoreProfile === true;
+    const coreProfileText = shouldLoadCoreProfile
+      ? await loadCoreProfileForSession(this.config.workspacePath)
+      : null;
+    const groupContextText = this.config.groupId
+      ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId)
+      : '';
+    let groupNameForAppend: string | null = null;
+    if (!isSubAgent && this.config.groupId) {
+      try {
+        const conversations = await conversationService.getByWorkspaceId(this.config.workspaceId);
+        const hasSibling = conversations.some((conversation) =>
+          conversation.groupId === this.config.groupId
+          && conversation.role !== 'sub'
+          && conversation.id !== this.config.conversationId,
+        );
+        if (hasSibling) {
+          const group = await getGroup(this.config.workspaceId, this.config.groupId);
+          const title = group?.title?.trim();
+          groupNameForAppend = title || `未命名组（创建于 ${group ? new Date(group.createdAt).toLocaleString('zh-CN') : '未知时间'}）`;
+        }
+      } catch (error) {
+        this.logger.warn('计算组背景提示失败，跳过注入:', error);
+      }
+    }
 
     const projectClaudeMd = await readTextFileSafe(path.join(this.config.workspacePath, '.claude', 'CLAUDE.md'));
     const userClaudeMd = await readTextFileSafe(path.join(os.homedir(), '.claude', 'CLAUDE.md'));
@@ -240,14 +276,20 @@ export class PiSession extends EventEmitter {
     ], env);
     const skillIndexText = formatSkillIndexForPrompt(skillEntries);
 
-    // systemPrompt 拼装顺序（极简策略，不接 persona / temp_prompt，不迁移 SDK 的 6 段隐形系统契约）：
-    // config.systemPrompt（外部传入，tipc 那边拼的 preset）→ 项目 CLAUDE.md → 用户 CLAUDE.md → skill 索引
-    const systemPrompt = [
+    const promptParts = [
       this.config.systemPrompt ?? '',
       projectClaudeMd,
       userClaudeMd,
       skillIndexText,
-    ].filter(Boolean).join('\n\n');
+      coreProfileText ?? '',
+      buildToolPackGuide(this.config.enabledToolPacks, !!this.config.workspacePath),
+      groupContextText,
+    ];
+    if (!isSubAgent) promptParts.push(REFERENCE_APPEND);
+    if (groupNameForAppend) promptParts.push(groupAppendFor(groupNameForAppend));
+    if (!isSubAgent && this.config.workspacePath) promptParts.push(NOTES_GUIDANCE_APPEND);
+    if (isSubAgent && this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
+    const systemPrompt = promptParts.filter(Boolean).join('\n\n');
 
     // 工具集合：builtin-tools（Read/Write/Edit/Bash，harness 原生工具，env 经 toolContext 注入）
     // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具 + 按 enabledToolPacks/groupId 挂载的可选工具包，
