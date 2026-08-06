@@ -175,7 +175,8 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     defineTool(
       'CreateSession',
       '创建一个平级的新会话来协作处理任务。新会话与当前会话建立契约通道，可通过 SendMessage / WaitForMessage 双向通信。' +
-      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。',
+      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。' +
+      '创建后必须用 WaitForMessage 挂起等待交付，不要在创建后就结束本轮——子会话需要时间执行任务，你的回合应在 WaitForMessage 中挂起直到收到交付或超时。',
       z.object({
         task: z.string().min(1).describe('委派给新会话的任务描述（自然语言）'),
         outputPath: z.string().min(1).describe('建议新会话写入共享区的相对路径（如 hello.md），用于承载较长的交付内容'),

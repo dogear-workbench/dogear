@@ -27,7 +27,7 @@ import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult
 import { createSearchToolDefs } from './search-tools.js';
 import { buildToolPackGuide } from '../tool-pack-guide.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, subAgentContractFor } from '../session-append-templates.js';
+import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -290,6 +290,7 @@ export class PiSession extends EventEmitter {
     if (groupNameForAppend) promptParts.push(groupAppendFor(groupNameForAppend));
     if (!isSubAgent && this.config.workspacePath) promptParts.push(NOTES_GUIDANCE_APPEND);
     if (isSubAgent && this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
+    if (!isSubAgent && this.config.groupId) promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
     const systemPrompt = promptParts.filter(Boolean).join('\n\n');
 
     // 工具集合：builtin-tools（Read/Write/Edit/Bash，harness 原生工具，env 经 toolContext 注入）

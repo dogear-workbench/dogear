@@ -46,6 +46,20 @@ export const NOTES_GUIDANCE_APPEND =
   `不要为了凑数而写，也不要把工具用法、流程细节往里堆。`;
 
 /**
+ * 主会话协作规范（仅 role='main' 且有 groupId 时注入）。
+ * 告诉主 agent 派遣子会话后的协作纪律：CreateSession 后必须 WaitForMessage、交付通过工具返回、反问同样 WaitForMessage。
+ */
+export const MAIN_AGENT_DELEGATION_APPEND =
+  '\n## 主会话与子会话协作规范\n' +
+  '当你用 CreateSession 派遣子会话后，**必须紧接着调用 WaitForMessage 挂起等待**，不要在创建后就结束本轮。\n' +
+  '子会话执行任务需要时间，你的回合应在 WaitForMessage 中挂起，直到收到子会话的正式交付（delivery）或超时。\n\n' +
+  '**协作要点**：\n' +
+  '- 子会话完成后会用 SendMessage(..., { delivery: true }) 向你交付，你在 WaitForMessage 中收到结果。\n' +
+  '- 如果子会话有歧义需要反问你，它也会用 SendMessage 发来，你在 WaitForMessage 中收到后回复即可。\n' +
+  '- 同时派遣多个子会话时，可以用一个 WaitForMessage 等待它们中任意一个的消息（第一条到达即返回）。\n' +
+  '- 不要在 CreateSession 后直接 end_turn——那会让你的回合提前结束，子会话的交付无人接收。';
+
+/**
  * 子会话交付契约（仅 role='sub' 注入）。
  * 告诉子 agent 自己的任务 / 交付路径 / 如何用 SendMessage + WaitForMessage 与派出者协作。
  */
@@ -133,6 +147,14 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       template: subAgentContractFor({ task: '<任务描述>', outputPath: '<交付路径>' }),
       triggerDescription: '仅子会话（role=\'sub\'）注入。给子 agent 明确任务、建议交付路径，以及如何用 SendMessage(delivery:true) 交付、SendMessage+WaitForMessage 反问，禁止派孙子会话。',
       isDynamic: true,
+    },
+    {
+      key: 'main-agent-delegation',
+      label: '主会话协作规范',
+      category: 'sub-agent',
+      template: MAIN_AGENT_DELEGATION_APPEND,
+      triggerDescription: '仅主会话（role=\'main\'）且属于某个会话组时注入。告诉主 agent 派遣子会话后必须 WaitForMessage 挂起等待交付，不要在 CreateSession 后直接结束本轮。',
+      isDynamic: false,
     },
   ];
 }
