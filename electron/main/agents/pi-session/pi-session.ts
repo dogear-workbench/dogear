@@ -496,12 +496,13 @@ export class PiSession extends EventEmitter {
 
   /**
    * 一次完整 run（含所有工具调用和插话）彻底结束（Harness settled 事件，晚于 agent_end），
-   * 驱动 running=false 的最终结算。
+   * 驱动 running=false 的最终结算，并通知 Manager 收集 orphan 会话。
    */
   private handleSettled(): void {
     this.running = false;
     this.liveTurnMessages = [];
     this.syncSessionState();
+    this.emit('settled');
   }
 
   /**
@@ -637,9 +638,15 @@ export class PiSession extends EventEmitter {
   }
 
   /**
+   * 会话是否仍在运行（有活跃 turn 或 steer 队列）。供 PiSessionManager.release 归零时判断
+   * 是否走 orphan 保活路径——running 时保留不销毁，等 settled 后再由 maybeCollectOrphan 收集。
+   */
+  isRunning(): boolean {
+    return this.running || this.pendingSteerCount > 0;
+  }
+
+  /**
    * 空闲 = 无正在跑的 turn + 无 steer 队列 + 无挂起的权限请求。
-   * PiSessionManager.release 归零直接销毁（pi 阶段一无跑步机模式），但 isIdle 仍给上层一个
-   * "现在关掉是否安全"的判据。
    */
   isIdle(): boolean {
     return !this.running

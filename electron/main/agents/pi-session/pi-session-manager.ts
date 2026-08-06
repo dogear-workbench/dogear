@@ -40,8 +40,8 @@ type PiSessionBroadcaster = (
 
 export class PiSessionManager extends EventEmitter {
   private sessions: Map<string, PiSession> = new Map();
-  // 引用计数：release 归零即直接销毁，不做旧 SDK 主会话运行时那种"跑步机保活"
-  // （running/pending 时延迟关闭）——当前 pi 会话结构下尚未引入这层区分
+  // 引用计数：release 归零时，若 session 仍在 running 则进入 orphan 保活（B1），
+  // 等 settled 后由 maybeCollectOrphan 回收；否则直接销毁
   private refCounts: Map<string, number> = new Map();
   private conversationSessionMap: Map<string, string> = new Map();
   private broadcaster: PiSessionBroadcaster | null = null;
@@ -102,6 +102,13 @@ export class PiSessionManager extends EventEmitter {
       this.broadcaster?.(sessionId, 'sessionClosed', data);
     });
 
+    // orphan 保活收集（B1）：settled 时会话已自然跑完，如果 refCount 仍为 0 则回收
+    session.on('settled', () => {
+      this.maybeCollectOrphan(sessionId).catch((error) => {
+        this.logger.warn(`maybeCollectOrphan(${sessionId.substring(0, 8)}) 失败（已忽略）:`, error);
+      });
+    });
+
     // usage 提取（Step 6）：先 await 落盘再广播，否则前端 refetch 会读到尚未写入的 JSONL。
     // 落盘格式与旧 SDK 主会话运行时一致，前端 usage 徽章零改动复用。
     session.on('usage', async ({ conversationId, entry }: { conversationId?: string; entry: ConversationUsageEntry }) => {
@@ -137,7 +144,8 @@ export class PiSessionManager extends EventEmitter {
   }
 
   /**
-   * 减少引用计数。归零即销毁——阶段一没有需要"跑完再收尾"的后台副作用（无工具）。
+   * 减少引用计数。归零时：session 仍在 running 则进入 orphan 保活（不从 Map 删除、
+   * 不摘 conversationSessionMap），等 settled 后由 maybeCollectOrphan 收集；否则直接销毁。
    * @returns 剩余引用计数
    */
   async release(sessionId: string): Promise<number> {
@@ -147,7 +155,12 @@ export class PiSessionManager extends EventEmitter {
     this.refCounts.set(sessionId, next);
     this.logger.info(`release pi session ${sessionId.substring(0, 8)}: refCount ${count} -> ${next}`);
     if (next === 0) {
-      await this._destroySession(sessionId);
+      const session = this.sessions.get(sessionId);
+      if (session?.isRunning()) {
+        this.logger.info(`pi session ${sessionId.substring(0, 8)} 仍在运行，进入 orphan 保活`);
+      } else {
+        await this._destroySession(sessionId);
+      }
     }
     return next;
   }
@@ -155,6 +168,20 @@ export class PiSessionManager extends EventEmitter {
   /** 直接关闭会话（忽略引用计数） */
   async closeSession(sessionId: string): Promise<void> {
     await this._destroySession(sessionId);
+  }
+
+  /**
+   * 收集 orphan 会话：refCount==0 则销毁。由 PiSession 的 settled 事件触发，
+   * 用于在 orphan 保活的会话自然跑完后回收。如果期间被 re-attach（retain 过），
+   * refCount>0 则跳过。
+   */
+  async maybeCollectOrphan(sessionId: string): Promise<void> {
+    const count = this.refCounts.get(sessionId);
+    if (count === undefined) return;
+    if (count === 0) {
+      this.logger.info(`orphan pi session ${sessionId.substring(0, 8)} 已 settled，收集销毁`);
+      await this._destroySession(sessionId);
+    }
   }
 
   bindConversation(conversationId: string, sessionId: string): void {
