@@ -5,6 +5,7 @@
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { TaskStatus } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
+import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -69,7 +70,7 @@ export type RendererHandlers = {
   // 权限模式变更通知（后端→前端双向同步）
   permissionModeChanged: (data: {
     sessionId: string;
-    mode: string;
+    mode: PiPermissionMode;
   }) => void;
 
   // AskUserQuestion 事件（SDK AskUserQuestion 工具触发）

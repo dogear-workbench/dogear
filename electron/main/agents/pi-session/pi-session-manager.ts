@@ -34,7 +34,7 @@ function broadcastUsageEntryAdded(conversationId: string): void {
 /** 广播函数类型：将 session 事件（message/complete/error/permissionRequest 等）发给所有渲染层窗口 */
 type PiSessionBroadcaster = (
   sessionId: string,
-  event: 'message' | 'complete' | 'error' | 'permissionRequest' | 'pendingCountChanged' | 'sessionStateChanged' | 'sessionClosed',
+  event: 'message' | 'complete' | 'error' | 'permissionRequest' | 'permissionModeChanged' | 'pendingCountChanged' | 'sessionStateChanged' | 'sessionClosed',
   payload: unknown,
 ) => void;
 
@@ -77,6 +77,11 @@ export class PiSessionManager extends EventEmitter {
     session.on('permissionRequest', (data: { requestId: string; toolName: string; toolInput: unknown }) => {
       this.emit('sessionPermissionRequest', sessionId, data);
       this.broadcaster?.(sessionId, 'permissionRequest', data);
+    });
+
+    session.on('permissionModeChanged', (data: { mode: string }) => {
+      this.emit('sessionPermissionModeChanged', sessionId, data);
+      this.broadcaster?.(sessionId, 'permissionModeChanged', data);
     });
 
     // 插话队列长度变化（Step 5）：与 SDK 侧 pendingCountChanged 对称

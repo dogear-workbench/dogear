@@ -50,6 +50,9 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
       } else if (event === 'permissionRequest') {
         const data = payload as { requestId: string; toolName: string; toolInput: unknown };
         h.permissionRequest.send({ sessionId, requestId: data.requestId, toolName: data.toolName, toolInput: data.toolInput });
+      } else if (event === 'permissionModeChanged') {
+        const data = payload as { mode: PiPermissionMode };
+        h.permissionModeChanged.send({ sessionId, mode: data.mode });
       } else if (event === 'pendingCountChanged') {
         const data = payload as { count: number };
         h.pendingCountChanged.send({ sessionId, count: data.count });
@@ -251,6 +254,12 @@ export const agentRouter = {
       try {
         const activeSession = getPiSessionManager().getSession(input.sessionId);
         if (!activeSession) return { error: '会话不存在' };
+        const piSessionManager = getPiSessionManager();
+        const convId = piSessionManager.getConversationIdBySession(input.sessionId);
+        if (convId) {
+          const conv = await conversationService.getByIdGlobal(convId);
+          if (conv?.conv.role === 'sub') return { error: '子会话权限模式固定为 autoExecute，不可更改' };
+        }
         await activeSession.setPermissionMode(input.mode);
         return { success: true };
       } catch (error) {
@@ -259,14 +268,14 @@ export const agentRouter = {
       }
     }),
 
-  /** 响应权限确认请求（用户允许/拒绝/总是允许工具执行，可选编辑后的参数） */
+  /** 响应权限确认请求（允许/本会话允许/拒绝） */
   respondPermissionRequest: t.procedure
-    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session'; message?: string; updatedInput?: Record<string, unknown> }>()
+    .input<{ sessionId: string; requestId: string; behavior: 'allow' | 'deny' | 'allow_session'; message?: string }>()
     .action(async ({ input }) => {
       try {
         const activeSession = getPiSessionManager().getSession(input.sessionId);
         if (!activeSession) return { error: '会话不存在' };
-        activeSession.respondPermissionRequest(input.requestId, input.behavior, input.message, input.updatedInput);
+        activeSession.respondPermissionRequest(input.requestId, input.behavior, input.message);
         return { success: true };
       } catch (error) {
         console.error('响应权限请求失败:', error);

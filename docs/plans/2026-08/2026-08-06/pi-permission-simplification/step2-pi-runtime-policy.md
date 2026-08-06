@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 落地 Pi 会话权限策略
-status: pending
+status: done
 ---
 
 ## 目标
@@ -33,11 +33,20 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
+- 与计划差异：无重大差异。`permission-rules.ts` 从旧 SDK 规则文件完整重构为基础工具目录 + 纯函数判定，超出「重构」预期但符合全局决策。`pi-session-manager.ts` 的 broadcaster 事件联合类型和订阅也补了 `permissionModeChanged`（计划提到但未单列文件）。
 - 改动文件清单：
+  1. `electron/main/agents/pi-session/permission-mode.ts` — PiPermissionMode 从 6 态收窄为 `default | autoExecute`
+  2. `electron/main/agents/pi-session/permission-rules.ts` — 完整重构：删除全部旧 SDK 规则，新增 `isBasicToolName()`、`getBasicToolPermission()`、`decideToolPermission()` 纯函数
+  3. `electron/main/agents/pi-session/pi-session.ts` — handleToolCall 重写为纯函数调用；config 新增 basicToolPermissions 快照；registerPack 校验；memory 工具包经 registerPack 装配；setPermissionMode 子会话强制 autoExecute；respondPermissionRequest 移除 always_allow/updatedInput
+  4. `electron/main/services/conversation-runtime-service.ts` — 删除过渡映射，basicToolPermissions 快照传入
+  5. `electron/main/tipc/agent.ts` — permissionModeChanged 广播分支；setPermissionMode 子会话守卫；respondPermissionRequest 收窄三种行为
+  6. `electron/main/tipc/renderer-handlers.ts` — permissionModeChanged.mode 收窄为 PiPermissionMode
+  7. `electron/main/agents/pi-session/pi-session-manager.ts` — broadcaster 事件联合类型和订阅补 permissionModeChanged
+  8. `electron/main/agents/tools/tool-registry.ts` — SDK_BUILTIN_TOOLS 移除 WebSearch/WebFetch
+  9. `electron/main/agents/pi-session/permission-rules.test.ts`（新增）— 17 测试
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`decideToolPermission(toolName, mode, toolPackMap, sessionAllowedTools, basicToolPermissions) → 'allow' | 'ask'`；`respondPermissionRequest(requestId, behavior: 'allow' | 'deny' | 'allow_session', message?)`；tipc `setPermissionMode` 对子会话返回错误；`permissionModeChanged` 端到端接通。
+- 下个 step 该从哪里继续：前端 UI 适配——ChatInputArea 收窄为两态菜单、PermissionRequestCard 移除 always_allow/编辑参数、设置页移除旧规则、SubAgentTab 删权限模式、共享类型收窄。
+- 待办或已知限制：前端 `types/electron-api.ts` 的 PermissionMode 仍是 6 态（未动避免破坏 TS 编译），Step 3 需收窄；前端组件的旧 UI 逻辑 tipc 已拒绝但 UI 仍有对应按钮。

@@ -28,7 +28,7 @@ import { createSearchToolDefs } from './search-tools.js';
 import { buildToolPackGuide } from '../tool-pack-guide.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
 import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, subAgentContractFor } from '../session-append-templates.js';
-import { isAutoAllowedEditTool, isPermissionExempt, isToolDenied, isToolForcedAsk, isToolInEnabledPack, isToolPreapproved } from './permission-rules.js';
+import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
 import { createStockToolDefs } from '../tools/stock-tools.js';
@@ -53,7 +53,7 @@ import {
   extractPiUsageEntry,
   type PiUsageAccumulator,
 } from './usage-extractor.js';
-import type { ModelSelection, ModelProfile } from '../../services/settings-types.js';
+import type { ModelSelection, ModelProfile, BasicToolPermissions } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
@@ -82,6 +82,7 @@ export interface PiSessionConfig {
     outputPath: string;
   };
   permissionMode: PiPermissionMode;
+  basicToolPermissions: BasicToolPermissions;
 }
 
 export interface PiSessionLiveSnapshot {
@@ -113,9 +114,7 @@ enum PiSessionStatus {
 interface PendingPermissionRequest {
   resolve: (result: HarnessToolCallResult | undefined) => void;
   toolName: string;
-  /** tool_call hook 收到的原始 input 引用；agent-harness.js 里这个引用与后续 tool.execute 用的是同一个对象，
-   * 原地修改字段即可让"编辑参数后允许"生效，不需要额外的回写机制 */
-  args: unknown;
+  toolInput: unknown;
 }
 
 /** 从 SDK 风格的 ContentBlockParam[] 中提取纯文本（阶段一不支持图像，静默丢弃非文本块） */
@@ -151,6 +150,7 @@ export class PiSession extends EventEmitter {
   private currentModelSelection: ModelSelection | null = null;
   private currentResolvedProfile?: ModelProfile;
   private currentPermissionMode: PiPermissionMode = 'default';
+  private basicToolPermissions: BasicToolPermissions;
   // requestId -> 挂起的权限确认请求，等待前端 respondPermissionRequest 调用来 resolve
   private pendingPermissionRequests: Map<string, PendingPermissionRequest> = new Map();
   // 本会话进程内免确认的工具名集合（allow_session 语义，不落盘，关闭会话即失效）
@@ -181,6 +181,7 @@ export class PiSession extends EventEmitter {
     this.sessionId = sessionId;
     this.config = config;
     this.currentPermissionMode = config.permissionMode;
+    this.basicToolPermissions = config.basicToolPermissions;
     this.logger = this.logger.child(`pi-session-${sessionId.substring(0, 8)}`);
   }
 
@@ -199,7 +200,7 @@ export class PiSession extends EventEmitter {
       permissionRequests: Array.from(this.pendingPermissionRequests.entries()).map(([requestId, pending]) => ({
         requestId,
         toolName: pending.toolName,
-        toolInput: pending.args,
+        toolInput: pending.toolInput,
       })),
       sessionState: {
         running: this.running || this.pendingSteerCount > 0,
@@ -295,14 +296,22 @@ export class PiSession extends EventEmitter {
     // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具 + 按 enabledToolPacks/groupId 挂载的可选工具包，
     //   统一 ToolDef 形状，不需要 env context）
     const registerPack = (packName: string, defs: ToolDef[]): ToolDef[] => {
-      for (const def of defs) this.toolPackMap.set(def.name, packName);
+      for (const def of defs) {
+        if (isBasicToolName(def.name)) {
+          throw new Error(`基础工具 ${def.name} 不得归类到工具包 ${packName}`);
+        }
+        if (this.toolPackMap.has(def.name)) {
+          throw new Error(`工具 ${def.name} 重复归类到工具包 ${this.toolPackMap.get(def.name)} 与 ${packName}`);
+        }
+        this.toolPackMap.set(def.name, packName);
+      }
       return defs;
     };
 
     const toolDefs: ToolDef[] = [
       createSkillTool(skillEntries),
       ...createSearchToolDefs(this.config.workspacePath),
-      ...createMemoryToolDefs(this.config.workspacePath),
+      ...registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)),
     ];
 
     // 可选工具包（对齐旧 SDK 侧 enabledToolPacks 通配符体验）：article 依赖 workspacePath，其余四个不依赖
@@ -536,11 +545,15 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 工具调用权限拦截点（Harness tool_call hook）。对齐 SDK 侧 canUseTool 语义：
-   * 只读工具（read/Glob/Grep）和本会话/持久化规则已允许的工具直接放行；
-   * 其余工具 emit 'permissionRequest' 事件（走独立 IPC 通道，不经过 ExtendedSessionMessage 流，
-   * 与 SDK 侧 conversation-runtime-service 的 permissionRequest 广播路径完全对称），
-   * 挂起等待前端 respondPermissionRequest 调用来 resolve。
+   * 工具调用权限拦截点（Harness tool_call hook）。
+   *
+   * 策略：
+   * - 子会话或 autoExecute 模式：无条件放行。
+   * - 默认主会话：
+   *   - 已归类工具包的工具 → 自动放行。
+   *   - 基础工具 → 按快照映射（allow=放行，ask=挂起请求）。
+   *   - 本会话已允许的基础工具 → 放行。
+   *   - 未分类工具 → 保守请求确认。
    *
    * 与裸 Agent 的 beforeToolCall 不同，Harness 的 tool_call hook 不带 AbortSignal 参数，
    * 因此这里不再有 signal.addEventListener('abort', ...) 的自动拒绝兜底：当前唯一会触发
@@ -549,40 +562,21 @@ export class PiSession extends EventEmitter {
    */
   private async handleToolCall(context: HarnessToolCallEvent): Promise<HarnessToolCallResult | undefined> {
     const toolName = context.toolName;
-    const appSettings = await loadSettings();
-    const rules = (appSettings as unknown as Record<string, unknown>).permissionRules as { allow?: string[]; deny?: string[]; ask?: string[] } | undefined;
 
-    if (this.currentPermissionMode === 'plan') {
-      return { block: true, reason: '当前处于仅规划模式，工具调用已阻止' };
-    }
-    if (isToolDenied(rules?.deny, toolName)) {
-      return { block: true, reason: `权限规则已禁止工具 ${toolName}` };
-    }
-    if (!isToolForcedAsk(rules?.ask, toolName)) {
-      if (this.currentPermissionMode === 'bypassPermissions' || this.currentPermissionMode === 'dontAsk' || this.currentPermissionMode === 'auto') {
-        return undefined;
-      }
-      if (isPermissionExempt(toolName) || this.sessionAllowedTools.has(toolName)) {
-        return undefined;
-      }
-      if (this.currentPermissionMode === 'acceptEdits' && isAutoAllowedEditTool(toolName, context.input)) {
-        return undefined;
-      }
-      if (isToolInEnabledPack(toolName, this.toolPackMap, this.config.enabledToolPacks)) {
-        return undefined;
-      }
-      if (isToolPreapproved(rules?.allow, toolName)) {
-        return undefined;
-      }
-    }
+    const decision = decideToolPermission(
+      toolName,
+      this.currentPermissionMode,
+      this.toolPackMap,
+      this.sessionAllowedTools,
+      this.basicToolPermissions,
+    );
+    if (decision === 'allow') return undefined;
 
     const requestId = `perm-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     this.logger.info('权限确认请求:', { requestId, toolName });
 
     return new Promise<HarnessToolCallResult | undefined>((resolve) => {
-      // 必须先注册到 pending map 再 emit：respondPermissionRequest 可能被同步调用
-      // （例如测试场景），emit 在前会导致 map 里还查不到这个 requestId。
-      this.pendingPermissionRequests.set(requestId, { resolve, toolName, args: context.input });
+      this.pendingPermissionRequests.set(requestId, { resolve, toolName, toolInput: context.input });
 
       this.emit('permissionRequest', {
         requestId,
@@ -709,9 +703,10 @@ export class PiSession extends EventEmitter {
   }
 
   async setPermissionMode(mode: PiPermissionMode): Promise<void> {
-    this.currentPermissionMode = mode;
-    this.logger.info('更改 pi 权限模式:', mode);
-    this.emit('permissionModeChanged', { mode });
+    const effectiveMode = this.config.role === 'sub' ? 'autoExecute' : mode;
+    this.currentPermissionMode = effectiveMode;
+    this.logger.info('更改 pi 权限模式:', effectiveMode);
+    this.emit('permissionModeChanged', { mode: effectiveMode });
   }
 
   getPermissionMode(): PiPermissionMode {
@@ -719,17 +714,15 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 响应权限确认请求，支持四种行为语义：
-   * - allow：本次放行；有 updatedInput 时原地改写 context.args
-   * - allow_session：本次放行 + 本会话进程内记住该工具（不落盘，关闭会话即失效）
-   * - always_allow：本次放行 + 落盘到 settings.permissionRules.allow（工具粒度，跨会话保留）
+   * 响应权限确认请求：
+   * - allow：本次放行
+   * - allow_session：本次放行 + 本会话进程内记住该工具（仅基础工具有效；非基础工具降级为 allow）
    * - deny：tool_call hook 返回 block，工具收到一条 error 结果
    */
   respondPermissionRequest(
     requestId: string,
-    behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session',
+    behavior: 'allow' | 'deny' | 'allow_session',
     message?: string,
-    updatedInput?: Record<string, unknown>,
   ): void {
     const pending = this.pendingPermissionRequests.get(requestId);
     if (!pending) {
@@ -744,13 +737,7 @@ export class PiSession extends EventEmitter {
       return;
     }
 
-    if (updatedInput && pending.args && typeof pending.args === 'object') {
-      Object.assign(pending.args as Record<string, unknown>, updatedInput);
-    }
-
-    if (behavior === 'allow_session') {
-      this.sessionAllowedTools.add(pending.toolName);
-    } else if (behavior === 'always_allow') {
+    if (behavior === 'allow_session' && isBasicToolName(pending.toolName)) {
       this.sessionAllowedTools.add(pending.toolName);
     }
 

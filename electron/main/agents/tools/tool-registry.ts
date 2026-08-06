@@ -50,8 +50,6 @@ export const SDK_BUILTIN_TOOLS: ToolMeta[] = [
   { name: 'Bash', description: '执行终端命令', server: 'sdk', category: 'other' },
   { name: 'Write', description: '创建或覆盖文件', server: 'sdk', category: 'other' },
   { name: 'Edit', description: '编辑文件片段', server: 'sdk', category: 'other' },
-  { name: 'WebFetch', description: '抓取网页内容', server: 'sdk', category: 'other' },
-  { name: 'WebSearch', description: '搜索互联网', server: 'sdk', category: 'other' },
 ];
 
 /** 已注册的自定义工具 */
