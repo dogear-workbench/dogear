@@ -108,7 +108,7 @@ export function AgentChat({
   }, [isLoading]);
 
   // 历史消息
-  const { messages, setMessages, setHistoryLoaded } = useMessageHistory({ conversationId });
+  const { messages, setMessages, setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
   const topicArchived = topicState === 'archived';
   const isTopicReadOnly = topicArchived || topicState === 'missing';
@@ -397,7 +397,7 @@ export function AgentChat({
           </div>
         )}
 
-        {messages.length === 0 && !isReadOnly && !isTopicStatePending && (
+        {messages.length === 0 && historyStatus !== 'loading' && !isReadOnly && !isTopicStatePending && (
           <div className="text-center text-gray-500 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>

@@ -18,7 +18,7 @@
 - [x] [Step 2: B2 停止按钮死锁](./step2-interrupt-wait.md) — interrupt/close 接通 abortMessageWaits
 - [x] [Step 3: B4 派遣后 WaitForMessage](./step3-prompt-guide.md) — 工具描述 + 主会话 append 段引导
 - [x] [Step 4: B3 立即初始化](./step4-eager-attach.md) — 新建/打开会话先 attach 再切 UI
-- [ ] [Step 5: O1 切换闪烁](./step5-switch-flicker.md) — useMessageHistory 切换不立即清空
+- [x] [Step 5: O1 切换闪烁](./step5-switch-flicker.md) — useMessageHistory 切换不立即清空
 
 ## 全局决策
 
