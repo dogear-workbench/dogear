@@ -29,6 +29,7 @@ import { useTaskListAggregator } from './hooks/useTaskListAggregator';
 import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
 import { CollapseControlBar } from './CollapseControlBar';
 import { buildTurns } from './turns';
+import { useVirtualTurns } from './hooks/useVirtualTurns';
 import { streamReducer } from './transformers';
 import type { ExtendedSessionMessage } from '@/types/electron-api';
 import type { ChildStatus } from '@/types/delegation';
@@ -199,6 +200,27 @@ export function AgentChat({
     handleScroll,
     isFollowing,
   } = useChatScroll({ scrollAreaRef, isLoading });
+
+  // ─── 虚拟滚动 ───
+  // 计算 compact_boundary 折叠状态（提前到组件主体，供 buildTurns 和虚拟滚动共用）
+  const lastCompactBoundaryIdx = useMemo(
+    () => messages.reduce((acc, m, i) => (m.isCompactBoundary ? i : acc), -1),
+    [messages],
+  );
+  const hasCompactHistory = lastCompactBoundaryIdx > 0;
+  const collapsed = isHistoryCollapsed && hasCompactHistory;
+  const { turns: chatTurns } = useMemo(
+    () => buildTurns(messages, { collapsed }),
+    [messages, collapsed],
+  );
+  const {
+    visibleTurnIds,
+    turnHeights,
+    getTurnRef,
+  } = useVirtualTurns({
+    turns: chatTurns,
+    scrollContainerRef: scrollAreaRef,
+  });
 
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
@@ -419,13 +441,6 @@ export function AgentChat({
         )}
 
         {(() => {
-          // 找到最后一个 compact_boundary 的位置
-          const lastCompactIdx = messages.reduce(
-            (acc, m, i) => m.isCompactBoundary ? i : acc, -1
-          );
-          const hasCompactHistory = lastCompactIdx > 0;
-          const collapsed = isHistoryCollapsed && hasCompactHistory;
-
           // 渲染单条消息的辅助函数（messageIndex 始终为原始扁平下标）
           const renderMessage = (message: typeof messages[0], index: number) => (
             <MessageItem
@@ -444,30 +459,42 @@ export function AgentChat({
             />
           );
 
-          const { turns } = buildTurns(messages, { collapsed });
-
           return (
             <>
               {/* 压缩历史 banner / 收起条：普通块，不吸顶，在所有 section 之前 */}
               {hasCompactHistory && (
                 collapsed ? (
                   <CollapsedHistoryBanner
-                    count={lastCompactIdx}
+                    count={lastCompactBoundaryIdx}
                     onExpand={() => conversationId && toggleCollapse(conversationId)}
                   />
                 ) : (
                   <CollapseControlBar
-                    count={lastCompactIdx}
+                    count={lastCompactBoundaryIdx}
                     onCollapse={() => conversationId && toggleCollapse(conversationId)}
                   />
                 )
               )}
 
-              {turns.map((turn) => (
-                <section key={turn.turnId} className="agent-turn">
-                  {turn.memberIdxs.map((i) => renderMessage(messages[i], i))}
-                </section>
-              ))}
+              {chatTurns.map((turn) => {
+                if (visibleTurnIds.has(turn.turnId)) {
+                  return (
+                    <section
+                      key={turn.turnId}
+                      className="agent-turn"
+                      ref={getTurnRef(turn.turnId)}
+                    >
+                      {turn.memberIdxs.map((i) => renderMessage(messages[i], i))}
+                    </section>
+                  );
+                }
+                return (
+                  <div
+                    key={turn.turnId}
+                    style={{ height: turnHeights.get(turn.turnId) ?? 400 }}
+                  />
+                );
+              })}
             </>
           );
         })()}

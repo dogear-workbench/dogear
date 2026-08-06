@@ -15,7 +15,7 @@
 ## 步骤索引
 
 - [x] [Step 1: React.memo + 输入框隔离](./step1-memo-input-isolation.md) — MessageItem 加 memo、ChatInputArea 隔离渲染边界，立即解决输入和流式重渲染卡顿
-- [ ] [Step 2: useVirtualTurns 虚拟滚动调度](./step2-virtual-turns.md) — 新建 hook 实现轮次级虚拟滚动 + 高度缓存
+- [x] [Step 2: useVirtualTurns 虚拟滚动调度](./step2-virtual-turns.md) — 新建 hook 实现轮次级虚拟滚动 + 高度缓存
 - [ ] [Step 3: 交互适配](./step3-interaction-adaptation.md) — 搜索跳转、Minimap、compact 折叠、自动跟随适配虚拟滚动
 
 ## 全局决策
