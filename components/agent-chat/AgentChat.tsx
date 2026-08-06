@@ -108,7 +108,7 @@ export function AgentChat({
   }, [isLoading]);
 
   // 历史消息
-  const { messages, setMessages, historyLoaded, setHistoryLoaded } = useMessageHistory({ conversationId });
+  const { messages, setMessages, setHistoryLoaded } = useMessageHistory({ conversationId });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
   const topicArchived = topicState === 'archived';
   const isTopicReadOnly = topicArchived || topicState === 'missing';
@@ -143,8 +143,6 @@ export function AgentChat({
     useAgentSession({
       conversationId,
       archived: isReadOnly,
-      topicStateReady: !isTopicStatePending,
-      historyLoaded,
       setIsLoading,
       onLiveSnapshot: applyLiveSnapshot,
     });

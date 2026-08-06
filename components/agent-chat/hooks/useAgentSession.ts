@@ -16,8 +16,6 @@ export interface LivePermissionRequest {
 interface UseAgentSessionParams {
   conversationId: string | null;
   archived: boolean;
-  topicStateReady: boolean;
-  historyLoaded: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => void;
 }
@@ -25,8 +23,6 @@ interface UseAgentSessionParams {
 export function useAgentSession({
   conversationId,
   archived,
-  topicStateReady,
-  historyLoaded,
   setIsLoading,
   onLiveSnapshot,
 }: UseAgentSessionParams) {
@@ -51,12 +47,36 @@ export function useAgentSession({
     let cancelled = false;
 
     const startSession = async () => {
-      if (archived || !topicStateReady || !conversationId || !historyLoaded) return;
+      if (archived || !conversationId) return;
+
+      const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
+      if (!currentWorkspaceId) return;
+
+      // 检查 newConversation 预 attach 的结果，直接复用（跳过重复 attach）
+      const preAttached = useConversationStore.getState().preAttachedSession;
+      if (preAttached && preAttached.conversationId === conversationId) {
+        useConversationStore.getState().setPreAttachedSession(null);
+        if (cancelled) {
+          client.detachConversationRuntime({ attachmentId: preAttached.attachmentId });
+          return;
+        }
+        attachmentIdRef.current = preAttached.attachmentId;
+        setSessionId(preAttached.sessionId);
+        setPermissionMode(preAttached.permissionMode as PermissionMode);
+        useConversationStore.getState().setRunningState(conversationId, preAttached.sessionState.running);
+        useConversationStore.getState().setPendingActionState(conversationId, preAttached.sessionState.pendingAction);
+        onLiveSnapshot?.(preAttached.snapshot, preAttached.pendingPermissionRequests);
+        setIsSessionReady(true);
+        useSessionStore.getState().updateSession(
+          conversationId,
+          preAttached.sessionId,
+          preAttached.permissionMode,
+          preAttached.attachmentId,
+        );
+        return;
+      }
 
       try {
-        const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
-        if (!currentWorkspaceId) return;
-
         const response = await client.attachConversationRuntime({
           conversationId,
           workspaceId: currentWorkspaceId,
@@ -150,7 +170,7 @@ export function useAgentSession({
       setSessionId(null);
       setIsSessionReady(false);
     };
-  }, [conversationId, archived, topicStateReady, historyLoaded, sessionRestartTrigger, onLiveSnapshot]);
+  }, [conversationId, archived, sessionRestartTrigger, onLiveSnapshot]);
 
   // 订阅 pendingCountChanged：跟踪本会话的待处理插话队列长度
   useEffect(() => {

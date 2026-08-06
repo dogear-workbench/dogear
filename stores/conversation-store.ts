@@ -19,6 +19,20 @@ export interface PendingSendPayload {
   images?: Array<{ media_type: string; data: string }>;
 }
 
+/**
+ * newConversation 预 attach 的结果：让 useAgentSession 跳过重复 attach，直接复用。
+ * 消费后清空。conversationId 用于校验是否匹配当前对话。
+ */
+export interface PreAttachedSession {
+  conversationId: string;
+  attachmentId: string;
+  sessionId: string;
+  permissionMode: import('@/types/electron-api').PermissionMode;
+  snapshot: import('@/types/electron-api').ExtendedSessionMessage[];
+  pendingPermissionRequests: Array<{ requestId: string; toolName: string; toolInput: unknown }>;
+  sessionState: { running: boolean; pendingAction: boolean };
+}
+
 /** 对话树的扁平节点（供 @headless-tree/react 使用）。Phase 3：叶子节点装组而非对话。 */
 export interface ConversationFlatNode {
   id: string;
@@ -72,6 +86,8 @@ interface ConversationState {
   sessionRestartTrigger: number;
   /** 跨 profile 切换模型后待续发的载荷（useAgentSession 重启完成后自动消费） */
   pendingSendAfterRestart: PendingSendPayload | null;
+  /** newConversation 预 attach 的结果，useAgentSession 消费后清空 */
+  preAttachedSession: PreAttachedSession | null;
   /** 当前正在运行（有 Agent 活跃）的对话 ID 集合 */
   runningConversationIds: Set<string>;
   /** 当前有待处理操作（权限/AskUser）的对话 ID 集合 */
@@ -125,6 +141,8 @@ interface ConversationState {
   triggerSessionRestart: () => void;
   /** 设置跨 profile 切换后的待续发载荷（null 表示清除） */
   setPendingSendAfterRestart: (payload: PendingSendPayload | null) => void;
+  /** 设置预 attach 结果（null 表示清除） */
+  setPreAttachedSession: (payload: PreAttachedSession | null) => void;
   /** 设置对话运行状态 */
   setRunningState: (conversationId: string, isRunning: boolean) => void;
   /** 设置对话的待处理操作状态（权限/AskUser） */
@@ -262,6 +280,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   // 全局状态
   sessionRestartTrigger: 0,
   pendingSendAfterRestart: null,
+  preAttachedSession: null,
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
   botBoundConversationId: null,
@@ -392,6 +411,28 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (result.error || !result.conversationId) {
         toast.error('创建对话失败', { description: result.error || '未知错误' });
         return;
+      }
+
+      // 预 attach：在 selectConversation 前初始化 session，消除 isSessionReady 窗口期。
+      // useAgentSession effect 触发时检测到 preAttachedSession 直接复用，不重复 attach。
+      try {
+        const attachResult = await client.attachConversationRuntime({
+          conversationId: result.conversationId,
+          workspaceId: workspace.id,
+        });
+        if (!attachResult.error && attachResult.sessionId) {
+          get().setPreAttachedSession({
+            conversationId: result.conversationId,
+            attachmentId: attachResult.attachmentId!,
+            sessionId: attachResult.sessionId,
+            permissionMode: (attachResult.permissionMode || 'default') as import('@/types/electron-api').PermissionMode,
+            snapshot: (attachResult.snapshot ?? []) as import('@/types/electron-api').ExtendedSessionMessage[],
+            pendingPermissionRequests: attachResult.pendingPermissionRequests ?? [],
+            sessionState: attachResult.sessionState ?? { running: false, pendingAction: false },
+          });
+        }
+      } catch {
+        // 预 attach 失败不阻断流程，useAgentSession effect 会重试正常 attach
       }
 
       // 先获取新对话详情并选中（让 UI 立即响应）
@@ -712,6 +753,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set({ pendingSendAfterRestart: payload });
   },
 
+  setPreAttachedSession: (payload) => {
+    set({ preAttachedSession: payload });
+  },
+
   setRunningState: (conversationId: string, isRunning: boolean) => {
     set((state) => {
       const newSet = new Set(state.runningConversationIds);
@@ -779,6 +824,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     nodeMap: {},
     sessionRestartTrigger: 0,
     pendingSendAfterRestart: null,
+    preAttachedSession: null,
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),
     botBoundConversationId: null,
