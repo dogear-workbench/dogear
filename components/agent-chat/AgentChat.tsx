@@ -298,11 +298,26 @@ export function AgentChat({
     input: sendMessage.input,
   });
 
+  // 稳定化传给 ChatInputArea 的回调，避免每次渲染产生新引用导致 memo 失效
+  const handleSend = useCallback(() => {
+    scrollToBottom('instant');
+    sendMessage.handleSend();
+  }, [scrollToBottom, sendMessage.handleSend]);
+
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) scrollToBottom('instant');
+    sendMessage.handleKeyPress(e);
+  }, [scrollToBottom, sendMessage.handleKeyPress]);
+
+  const handleSelectionChange = useCallback((value: import('@/types/settings').ModelSelection | null) => {
+    if (conversationId) void setConvSelection(conversationId, value);
+  }, [conversationId, setConvSelection]);
+
   // 选择命令时更新 input
-  const handleSlashCommandSelect = (cmd: import('@/stores/slash-command-store').SlashCommandInfo) => {
+  const handleSlashCommandSelect = useCallback((cmd: import('@/stores/slash-command-store').SlashCommandInfo) => {
     const newInput = slashCommands.handleSlashCommandSelect(cmd);
     sendMessage.setInput(newInput);
-  };
+  }, [slashCommands.handleSlashCommandSelect, sendMessage.setInput]);
 
   // 消息搜索（传入 messages 以实时计算匹配）
   const search = useMessageSearch(messages);
@@ -552,7 +567,7 @@ export function AgentChat({
         placeholder={placeholder}
         showStatusHint={showStatusHint}
         currentSelection={currentConversation?.modelSelection ?? null}
-        onSelectionChange={(value) => { if (conversationId) void setConvSelection(conversationId, value); }}
+        onSelectionChange={handleSelectionChange}
         cachePolicy={currentConversation?.cachePolicy}
         workspaceId={currentConversation?.workspace_id ?? null}
         settings={settings}
@@ -562,11 +577,8 @@ export function AgentChat({
         isSubSession={currentConversation?.role === 'sub'}
         pendingImages={imageAttachment.pendingImages}
         imageInputRef={imageAttachment.imageInputRef}
-        handleSend={() => { scrollToBottom('instant'); sendMessage.handleSend(); }}
-        handleKeyPress={(e: React.KeyboardEvent) => {
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) scrollToBottom('instant');
-          sendMessage.handleKeyPress(e);
-        }}
+        handleSend={handleSend}
+        handleKeyPress={handleKeyPress}
         handleImageFiles={imageAttachment.handleImageFiles}
         removePendingImage={imageAttachment.removePendingImage}
         insertModeChangeNotice={sendMessage.insertModeChangeNotice}

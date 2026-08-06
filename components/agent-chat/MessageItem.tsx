@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -54,7 +54,7 @@ function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
   return result;
 }
 
-export function MessageItem({
+export const MessageItem = memo(function MessageItem({
   message,
   messageIndex,
   onFork,
@@ -369,4 +369,4 @@ export function MessageItem({
       )}
     </div>
   );
-}
+});

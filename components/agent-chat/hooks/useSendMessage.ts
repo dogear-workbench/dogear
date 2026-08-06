@@ -1,4 +1,4 @@
-import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -49,6 +49,10 @@ export function useSendMessage(params: UseSendMessageParams) {
 
   const [input, setInput] = useState('');
   const [lastAppliedSelection, setLastAppliedSelection] = useState<ModelSelection | null>(null);
+
+  // messages ref：让 handleSend useCallback 不直接依赖 messages 数组引用
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   // 从 conversation-store 获取 actions
   const forkConversation = useConversationStore((s) => s.forkConversation);
@@ -297,7 +301,7 @@ export function useSendMessage(params: UseSendMessageParams) {
   }, [sessionId, setInput, setMessages, setIsLoading]);
 
   // 发送消息
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     if (readOnly) return;
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
@@ -482,7 +486,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     }]);
 
     // 新对话自动标题：首条消息截取前 30 字
-    if (conversationTitle === '新对话' && messages.length === 0 && conversationId) {
+    if (conversationTitle === '新对话' && messagesRef.current.length === 0 && conversationId) {
       const titleText = userMessage.replace(/<[^>]+>/g, '').trim();
       const autoTitle = titleText.length > 30
         ? titleText.slice(0, 30) + '...'
@@ -526,15 +530,23 @@ export function useSendMessage(params: UseSendMessageParams) {
       ]);
       setIsLoading(false);
     }
-  };
+  }, [
+    readOnly, input, pendingImages, sessionId, isSessionReady, handleSlashCommand,
+    setInput, setPendingImages, conversationId, currentSelection, isLoading,
+    lastAppliedSelection, setMessages, setIsLoading, conversationTitle, updateConversationTitle,
+    triggerSessionRestart, referencedArticles, clearReferencedArticles,
+    quotedSnippets, clearQuotedSnippets, referencedFiles, clearReferencedFiles,
+    referencedConversations, clearReferencedConversations, referencedSharedFiles,
+    clearReferencedSharedFiles, forkConversation,
+  ]);
 
   // 键盘事件处理：Ctrl+Enter 发送，Enter 换行
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       handleSend();
     }
-  };
+  }, [handleSend]);
 
   return {
     input,

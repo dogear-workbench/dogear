@@ -1,4 +1,4 @@
-import type { RefObject } from 'react';
+import { memo, type RefObject } from 'react';
 import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -85,7 +85,7 @@ interface ChatInputAreaProps {
   onTogglePromptSidebar?: () => void;
 }
 
-export function ChatInputArea({
+export const ChatInputArea = memo(function ChatInputArea({
   input,
   setInput,
   pendingState,
@@ -463,4 +463,4 @@ export function ChatInputArea({
       )}
     </div>
   );
-}
+});
