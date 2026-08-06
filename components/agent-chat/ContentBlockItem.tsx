@@ -90,7 +90,7 @@ function parseErrorMessage(error: string): { title: string; description: string;
 export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageIndex, blockIndex, readOnly = false }: {
   block: ContentBlock;
   sessionId?: string | null;
-  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
+  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
   onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;

@@ -71,7 +71,7 @@ export function MessageItem({
   messageIndex?: number;
   onFork?: (assistantSdkUuid: string) => void;
   sessionId?: string | null;
-  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => void;
+  onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
   onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;

@@ -29,7 +29,6 @@ import { CachePolicySelector } from './CachePolicySelector';
 import type { PendingState } from './hooks/usePendingState';
 import type { SlashCommandInfo } from '@/stores/slash-command-store';
 
-// 权限模式 → 边框/图标颜色映射
 const PERMISSION_MODE_STYLES: Record<PermissionMode, {
   border: string;
   focusRing: string;
@@ -42,35 +41,11 @@ const PERMISSION_MODE_STYLES: Record<PermissionMode, {
     icon: 'text-orange-500',
     label: '需确认',
   },
-  bypassPermissions: {
+  autoExecute: {
     border: 'border-green-300 dark:border-green-500/60',
     focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-green-400 has-[[data-slot=input-group-control]:focus-visible]:ring-green-400/20',
     icon: 'text-green-500',
     label: '自动执行',
-  },
-  acceptEdits: {
-    border: 'border-input',
-    focusRing: '',
-    icon: 'text-muted-foreground',
-    label: '允许编辑',
-  },
-  plan: {
-    border: 'border-blue-300 dark:border-blue-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-blue-400 has-[[data-slot=input-group-control]:focus-visible]:ring-blue-400/20',
-    icon: 'text-blue-500',
-    label: '仅规划',
-  },
-  dontAsk: {
-    border: 'border-purple-300 dark:border-purple-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-purple-400 has-[[data-slot=input-group-control]:focus-visible]:ring-purple-400/20',
-    icon: 'text-purple-500',
-    label: '不询问',
-  },
-  auto: {
-    border: 'border-teal-300 dark:border-teal-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-teal-400 has-[[data-slot=input-group-control]:focus-visible]:ring-teal-400/20',
-    icon: 'text-teal-500',
-    label: '自动',
   },
 };
 
@@ -91,6 +66,7 @@ interface ChatInputAreaProps {
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
   hasPendingUserAction: boolean;
+  isSubSession?: boolean;
   pendingImages: PendingImage[];
   imageInputRef: RefObject<HTMLInputElement | null>;
   handleSend: () => void;
@@ -140,6 +116,7 @@ export function ChatInputArea({
   onSlashCommandSelect,
   onSlashMenuClose,
   onTogglePromptSidebar,
+  isSubSession,
 }: ChatInputAreaProps) {
   const isModelMissing = !currentSelection;
   const effectivePlaceholder = isModelMissing ? '请先选择模型' : placeholder;
@@ -389,12 +366,13 @@ export function ChatInputArea({
                     size="xs"
                     className={cn("gap-1", PERMISSION_MODE_STYLES[permissionMode]?.icon || 'text-muted-foreground')}
                     title="权限模式"
+                    disabled={isSubSession}
                   >
                     <Shield size={14} />
                     <span className="text-xs">
-                      {PERMISSION_MODE_STYLES[permissionMode]?.label || '需确认'}
+                      {isSubSession ? '自动执行（子会话固定）' : (PERMISSION_MODE_STYLES[permissionMode]?.label || '需确认')}
                     </span>
-                    <ChevronRight size={12} className="rotate-90" />
+                    {!isSubSession && <ChevronRight size={12} className="rotate-90" />}
                   </InputGroupButton>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="min-w-[120px]">
@@ -411,10 +389,8 @@ export function ChatInputArea({
                       }
                     }}
                   >
-                    <DropdownMenuRadioItem value="bypassPermissions">自动执行</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="acceptEdits">允许编辑</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="autoExecute">自动执行</DropdownMenuRadioItem>
                     <DropdownMenuRadioItem value="default">需确认</DropdownMenuRadioItem>
-                    <DropdownMenuRadioItem value="plan">仅规划</DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>

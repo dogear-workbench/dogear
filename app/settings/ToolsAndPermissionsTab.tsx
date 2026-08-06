@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Sparkles, ChevronDown, ChevronRight, Package, ShieldCheck, X } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronRight, Package } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
-import type { AppSettings } from '@/types/settings';
+import type { AppSettings, BasicToolName, BasicToolPermission } from '@/types/settings';
+import { BASIC_TOOL_NAMES } from '@/types/settings';
 
 interface ToolInfo { name: string; description: string; server: string }
 interface ToolGroup { server: string; label: string; tools: ToolInfo[] }
@@ -16,8 +17,6 @@ interface ToolPack {
   requirements?: string;
   enabled: boolean;
 }
-
-type ToolPermission = 'allow' | 'default' | 'ask' | 'deny';
 
 interface Props {
   local: AppSettings;
@@ -46,6 +45,16 @@ const RESIDENT_SERVERS: ResidentMeta[] = [
   },
 ];
 
+const BASIC_TOOL_META: Record<BasicToolName, { label: string; description: string }> = {
+  read: { label: 'Read', description: '读取文件内容' },
+  write: { label: 'Write', description: '创建或覆盖文件' },
+  edit: { label: 'Edit', description: '编辑文件片段' },
+  bash: { label: 'Bash', description: '执行终端命令' },
+  Glob: { label: 'Glob', description: '按模式搜索文件' },
+  Grep: { label: 'Grep', description: '搜索文件内容' },
+  Skill: { label: 'Skill', description: '加载技能指引' },
+};
+
 export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
   const [toolGroups, setToolGroups] = useState<ToolGroup[]>([]);
   const [packs, setPacks] = useState<ToolPack[]>([]);
@@ -70,9 +79,6 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
     return map;
   }, [toolGroups]);
 
-  const sdkGroup = groupByServer['sdk'];
-
-  // ── 工具包开关 ─────────────────────────────────────
   const enabledPackSet = new Set(local.enabledToolPacks ?? []);
   const togglePack = (name: string) => {
     const current = new Set(local.enabledToolPacks ?? []);
@@ -85,62 +91,30 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
     setExpandedServers((prev) => ({ ...prev, [server]: !prev[server] }));
   };
 
-  // ── SDK 工具权限 ──────────────────────────────────
-  const getSdkToolPermission = (tool: ToolInfo): ToolPermission => {
-    const rules = local.permissionRules;
-    if (rules?.allow?.includes(tool.name)) return 'allow';
-    if (rules?.ask?.includes(tool.name)) return 'ask';
-    if (rules?.deny?.includes(tool.name)) return 'deny';
-    return 'default';
+  const getBasicPermission = (name: BasicToolName): BasicToolPermission => {
+    return local.basicToolPermissions[name] ?? 'ask';
   };
 
-  const setSdkToolPermission = (tool: ToolInfo, perm: ToolPermission) => {
-    const rules = local.permissionRules || { allow: [], ask: [], deny: [] };
-    const allow = (rules.allow || []).filter((t) => t !== tool.name);
-    const ask = (rules.ask || []).filter((t) => t !== tool.name);
-    const deny = (rules.deny || []).filter((t) => t !== tool.name);
-    if (perm === 'allow') allow.push(tool.name);
-    if (perm === 'ask') ask.push(tool.name);
-    if (perm === 'deny') deny.push(tool.name);
-    setLocal((prev) => ({ ...prev, permissionRules: { allow, ask, deny } }));
-  };
-
-  const setSdkGroupPermission = (perm: ToolPermission) => {
-    if (!sdkGroup) return;
-    const rules = local.permissionRules || { allow: [], ask: [], deny: [] };
-    const sdkNames = new Set(sdkGroup.tools.map((t) => t.name));
-    const allow = (rules.allow || []).filter((t) => !sdkNames.has(t));
-    const ask = (rules.ask || []).filter((t) => !sdkNames.has(t));
-    const deny = (rules.deny || []).filter((t) => !sdkNames.has(t));
-    if (perm === 'allow') for (const t of sdkGroup.tools) allow.push(t.name);
-    if (perm === 'ask') for (const t of sdkGroup.tools) ask.push(t.name);
-    if (perm === 'deny') for (const t of sdkGroup.tools) deny.push(t.name);
-    setLocal((prev) => ({ ...prev, permissionRules: { allow, ask, deny } }));
-  };
-
-  const getSdkGroupPermission = (): ToolPermission => {
-    if (!sdkGroup) return 'default';
-    const perms = sdkGroup.tools.map((t) => getSdkToolPermission(t));
-    if (perms.length > 0 && perms.every((p) => p === 'allow')) return 'allow';
-    if (perms.length > 0 && perms.every((p) => p === 'ask')) return 'ask';
-    if (perms.length > 0 && perms.every((p) => p === 'deny')) return 'deny';
-    if (perms.every((p) => p === 'default')) return 'default';
-    return 'default';
-  };
-
-  // ── 细粒度允许规则（带括号模式）─────────────────────
-  const getFineGrainedAllowRules = (): string[] => {
-    const allow = local.permissionRules?.allow || [];
-    return allow.filter((r) => r.includes('('));
-  };
-
-  const removeFineGrainedRule = (rule: string) => {
-    const rules = local.permissionRules || { allow: [], ask: [], deny: [] };
-    const allow = (rules.allow || []).filter((r) => r !== rule);
+  const setBasicPermission = (name: BasicToolName, perm: BasicToolPermission) => {
     setLocal((prev) => ({
       ...prev,
-      permissionRules: { ...rules, allow },
+      basicToolPermissions: { ...prev.basicToolPermissions, [name]: perm },
     }));
+  };
+
+  const setAllBasic = (perm: BasicToolPermission) => {
+    setLocal((prev) => {
+      const updated = { ...prev.basicToolPermissions };
+      for (const name of BASIC_TOOL_NAMES) updated[name] = perm;
+      return { ...prev, basicToolPermissions: updated };
+    });
+  };
+
+  const allBasicPerm = (): BasicToolPermission | 'mixed' => {
+    const vals = BASIC_TOOL_NAMES.map(n => getBasicPermission(n));
+    if (vals.every(v => v === 'allow')) return 'allow';
+    if (vals.every(v => v === 'ask')) return 'ask';
+    return 'mixed';
   };
 
   if (loading) {
@@ -172,16 +146,90 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
     );
   };
 
-  const sdkPerm = getSdkGroupPermission();
+  const groupPerm = allBasicPerm();
 
   return (
     <div className="max-w-2xl py-6 px-6 space-y-8">
       <div>
         <h2 className="text-lg font-semibold mb-1">工具与权限</h2>
         <p className="text-sm text-muted-foreground">
-          统一管理 Agent 可用的能力：开关工具包决定有没有这组工具，开启即默认放行。SDK 内置工具支持细粒度四态权限。MCP 工具不再单独控制——和工具包开关绑定。
+          统一管理 Agent 可用的能力：基础工具可配置「自动放行 / 询问」；工具包开启即自动放行。设置仅影响之后新建或重启的会话。
         </p>
       </div>
+
+      {/* ── 基础工具权限 ───────────────────────────────────── */}
+      <section>
+        <div className="mb-2">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold">基础工具权限</h3>
+            <span className="text-xs text-muted-foreground">每项可设为「自动放行」或「询问」</span>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+            「自动放行」的工具有对应调用时直接执行；「询问」的工具会弹出权限确认卡片，可选择「允许一次」或「本会话允许」。
+            修改后需保存并重启会话才会生效。
+          </p>
+        </div>
+        <div className="border rounded-lg overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-semibold">全部基础工具</h4>
+              <span className="text-xs text-muted-foreground">({BASIC_TOOL_NAMES.length})</span>
+            </div>
+            <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5 flex-shrink-0">
+              {([
+                { value: 'allow' as const, label: '全部放行', color: 'text-green-700' },
+                { value: 'ask' as const, label: '全部询问', color: 'text-amber-600' },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  className={cn(
+                    'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
+                    groupPerm === opt.value
+                      ? `bg-background ${opt.color} shadow-sm`
+                      : 'text-muted-foreground hover:text-foreground'
+                  )}
+                  onClick={() => setAllBasic(opt.value)}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="divide-y">
+            {BASIC_TOOL_NAMES.map((name) => {
+              const meta = BASIC_TOOL_META[name];
+              const perm = getBasicPermission(name);
+              return (
+                <div key={name} className="flex items-center justify-between py-2 px-4">
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-mono">{meta.label}</span>
+                    <span className="text-xs text-muted-foreground ml-2">{meta.description}</span>
+                  </div>
+                  <div className="inline-flex h-7 items-center rounded-md bg-muted p-0.5 flex-shrink-0 ml-4">
+                    {([
+                      { value: 'allow' as const, label: '自动放行', color: 'text-green-700' },
+                      { value: 'ask' as const, label: '询问', color: 'text-amber-600' },
+                    ]).map((opt) => (
+                      <button
+                        key={opt.value}
+                        className={cn(
+                          'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-2.5 py-1 text-xs font-medium transition-all',
+                          perm === opt.value
+                            ? `bg-background ${opt.color} shadow-sm`
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                        onClick={() => setBasicPermission(name, opt.value)}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
 
       {/* ── 常驻能力 ───────────────────────────────────── */}
       <section>
@@ -315,125 +363,8 @@ export function ToolsAndPermissionsTab({ local, setLocal }: Props) {
         )}
       </section>
 
-      {/* ── SDK 内置工具权限 ───────────────────────────── */}
-      <section>
-        <div className="mb-2">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold">SDK 内置工具权限</h3>
-            <span className="text-xs text-muted-foreground">细粒度四态：自动允许 / 跟随模式 / 始终询问 / 禁止</span>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-            「跟随模式」由顶部权限模式决定（自动执行下放行）；「始终询问」即使在自动执行下也会弹确认。
-          </p>
-        </div>
-        {sdkGroup && (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 bg-muted/30">
-              <div className="flex items-center gap-2">
-                <h4 className="text-sm font-semibold">{sdkGroup.label}</h4>
-                <span className="text-xs text-muted-foreground">({sdkGroup.tools.length})</span>
-              </div>
-              <div className="inline-flex h-8 items-center rounded-md bg-muted p-0.5 flex-shrink-0">
-                {([
-                  { value: 'allow' as const, label: '全部允许', color: 'text-green-700' },
-                  { value: 'default' as const, label: '跟随模式', color: 'text-foreground' },
-                  { value: 'ask' as const, label: '始终询问', color: 'text-amber-600' },
-                  { value: 'deny' as const, label: '全部禁止', color: 'text-red-600' },
-                ]).map((opt) => (
-                  <button
-                    key={opt.value}
-                    className={cn(
-                      'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1 text-xs font-medium transition-all',
-                      sdkPerm === opt.value
-                        ? `bg-background ${opt.color} shadow-sm`
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                    onClick={() => setSdkGroupPermission(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="divide-y">
-              {sdkGroup.tools.map((tool) => {
-                const perm = getSdkToolPermission(tool);
-                return (
-                  <div key={tool.name} className="flex items-center justify-between py-2 px-4">
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-mono">{tool.name}</span>
-                      <span className="text-xs text-muted-foreground ml-2">{tool.description}</span>
-                    </div>
-                    <div className="inline-flex h-7 items-center rounded-md bg-muted p-0.5 flex-shrink-0 ml-4">
-                      {([
-                        { value: 'allow' as const, label: '自动允许', color: 'text-green-700' },
-                        { value: 'default' as const, label: '跟随模式', color: 'text-foreground' },
-                        { value: 'ask' as const, label: '始终询问', color: 'text-amber-600' },
-                        { value: 'deny' as const, label: '禁止', color: 'text-red-600' },
-                      ]).map((opt) => (
-                        <button
-                          key={opt.value}
-                          className={cn(
-                            'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-2.5 py-1 text-xs font-medium transition-all',
-                            perm === opt.value
-                              ? `bg-background ${opt.color} shadow-sm`
-                              : 'text-muted-foreground hover:text-foreground'
-                          )}
-                          onClick={() => setSdkToolPermission(tool, opt.value)}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </section>
-
-      {/* ── 细粒度允许规则 ───────────────────────────────────── */}
-      {(() => {
-        const fineGrainedRules = getFineGrainedAllowRules();
-        return (
-      <section>
-        <div className="flex items-center gap-2 mb-2">
-          <ShieldCheck className="w-4 h-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">细粒度允许规则</h3>
-          <span className="text-xs text-muted-foreground">
-            点击会话权限卡的"始终允许"后自动写入
-          </span>
-        </div>
-        <div className="border rounded-lg overflow-hidden">
-          {fineGrainedRules.length === 0 ? (
-            <div className="text-xs text-muted-foreground px-4 py-3">
-              暂无细粒度规则
-            </div>
-          ) : (
-            <div className="divide-y">
-              {fineGrainedRules.map((rule) => (
-                <div key={rule} className="flex items-center justify-between gap-3 px-4 py-2 text-xs">
-                  <span className="font-mono text-foreground truncate">{rule}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeFineGrainedRule(rule)}
-                    className="text-muted-foreground hover:text-red-600 shrink-0"
-                    title="删除此规则"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-        );
-      })()}
-
       <p className="text-xs text-muted-foreground">
-        提示：MCP 工具（股票/文章等）通过工具包开关整组管理，不再支持单工具权限。修改后需保存并重启会话才会生效。
+        提示：已启用的工具包在会话运行时自动放行，不会弹出权限确认卡片。修改后需保存并重启会话才会生效。
       </p>
     </div>
   );

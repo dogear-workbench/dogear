@@ -4,6 +4,7 @@
  */
 import { create } from 'zustand';
 import { toast } from 'sonner';
+import type { PiPermissionMode } from '@/types/settings';
 
 /** 常驻「首页」tab 的哨兵 id（非真实会话） */
 export const HOME_TAB_ID = '__home__';
@@ -15,7 +16,7 @@ export interface SessionTab {
   workspaceId: string;           // 会话所属工作区（里程碑 1.5：Tab 跨工作区保留）
   sessionId: string | null;      // agent session ID，初始为 null
   attachmentId: string | null;   // runtime attachment ID，用于 detach
-  permissionMode: string;        // 权限模式
+  permissionMode: PiPermissionMode;        // 权限模式
 }
 
 interface SessionState {
@@ -33,7 +34,7 @@ interface SessionState {
   /** 切换到指定标签页 */
   switchTab: (conversationId: string) => void;
   /** 更新标签页的 session 信息 */
-  updateSession: (conversationId: string, sessionId: string, permissionMode: string, attachmentId?: string) => void;
+  updateSession: (conversationId: string, sessionId: string, permissionMode: PiPermissionMode, attachmentId?: string) => void;
   /** 更新标签页标题 */
   updateTitle: (conversationId: string, title: string) => void;
   /** 获取指定标签页 */

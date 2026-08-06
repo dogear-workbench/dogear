@@ -43,10 +43,8 @@ const THINKING_TYPE_OPTIONS = [
 ] as const;
 
 const PERMISSION_MODE_OPTIONS = [
-  { value: 'default', label: '标准', description: '危险操作需用户确认（推荐）' },
-  { value: 'acceptEdits', label: '自动编辑', description: '文件编辑（Edit/Write）和 Bash 文件系统命令（mkdir/touch/rm/mv/cp/sed 等）自动通过，其余需确认' },
-  { value: 'plan', label: '仅规划', description: '只规划不执行，工具调用被阻止' },
-  { value: 'bypassPermissions', label: '自动执行', description: '⚠️ 跳过所有权限检查，仅在受控环境中使用' },
+  { value: 'default', label: '默认', description: '已注册工具包自动放行；基础工具按映射决定；其余需确认（推荐）' },
+  { value: 'autoExecute', label: '自动执行', description: '⚠️ 无条件放行所有工具调用，仅在受控环境中使用' },
 ] as const;
 
 // ═══ 深度比较 ════════════════════════════════════════
@@ -114,26 +112,13 @@ export default function SettingsPage() {
   };
 
   // ── 保存 ──
-  /**
-   * 过滤 mcp__ 开头的权限规则（包括组级 mcp__server 和具体 mcp__server__tool）
-   * MCP 工具不再单独控制，统一由工具包开关决定。
-   */
-  const sanitizeForSave = (s: AppSettings): AppSettings => {
-    const rules = s.permissionRules;
-    if (!rules) return s;
-    const allow = (rules.allow || []).filter((t) => !t.startsWith('mcp__'));
-    const deny = (rules.deny || []).filter((t) => !t.startsWith('mcp__'));
-    return { ...s, permissionRules: { allow, deny } };
-  };
-
   const handleSave = async () => {
-    await saveToStore(sanitizeForSave(local));
+    await saveToStore(local);
   };
 
   const handleSaveAndRestart = async () => {
-    await saveToStore(sanitizeForSave(local));
+    await saveToStore(local);
     await restartActiveSessions();
-    // 后端 sessionManager.closeAll() 不会通知前端，必须显式触发前端 useAgentSession 重建
     useConversationStore.getState().triggerSessionRestart();
     closeSettings();
   };
@@ -162,11 +147,10 @@ export default function SettingsPage() {
       setLocal(structuredClone(savedSettings));
       closeSettings();
     } else if (result === 'save') {
-      await saveToStore(sanitizeForSave(local));
+      await saveToStore(local);
     } else if (result === 'saveRestart') {
-      await saveToStore(sanitizeForSave(local));
+      await saveToStore(local);
       await restartActiveSessions();
-      // 后端 sessionManager.closeAll() 不会通知前端，必须显式触发前端 useAgentSession 重建
       useConversationStore.getState().triggerSessionRestart();
       closeSettings();
     }

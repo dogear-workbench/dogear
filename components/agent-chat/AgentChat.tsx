@@ -561,6 +561,7 @@ export function AgentChat({
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}
+        isSubSession={currentConversation?.role === 'sub'}
         pendingImages={imageAttachment.pendingImages}
         imageInputRef={imageAttachment.imageInputRef}
         handleSend={() => { scrollToBottom('instant'); sendMessage.handleSend(); }}

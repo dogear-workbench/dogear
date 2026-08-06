@@ -7,7 +7,7 @@
 import type { ModelSelection } from './settings';
 
 /** Pi 会话权限模式。 */
-export type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan' | 'dontAsk' | 'auto';
+export type PermissionMode = 'default' | 'autoExecute';
 
 /**
  * 工作区接口

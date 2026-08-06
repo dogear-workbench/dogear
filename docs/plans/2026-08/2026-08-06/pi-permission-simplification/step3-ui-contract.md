@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 收敛设置与会话交互界面
-status: pending
+status: done
 ---
 
 ## 目标
@@ -32,11 +32,23 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
+- 与计划差异：无重大差异。额外改动了 `AgentChat.tsx`（传入 isSubSession）、`ContentBlockItem.tsx`/`MessageItem.tsx`/`ToolGroupBlock.tsx`（onPermissionResolved callback 收窄）、`UsagePermissionWaits.tsx`（注释文案更新），均为计划改动的连带同步。
 - 改动文件清单：
+  1. `types/electron-api.ts` — PermissionMode 从 6 态收窄为两态
+  2. `app/settings/page.tsx` — PERMISSION_MODE_OPTIONS 两态；删除 sanitizeForSave
+  3. `app/settings/ToolsAndPermissionsTab.tsx` — 完整重写：七基础工具二态控件 + 批量切换 + 工具包只读列表；删除旧 SDK 四态区和细粒度规则区
+  4. `app/settings/SubAgentTab.tsx` — 删除权限模式单选，替换为只读说明
+  5. `components/agent-chat/ChatInputArea.tsx` — 两态样式/菜单；isSubSession prop 子会话 disabled
+  6. `components/agent-chat/AgentChat.tsx` — 传入 isSubSession
+  7. `components/agent-chat/PermissionRequestCard.tsx` — 完整重写为三按钮；非基础工具隐藏「本会话允许」；删除 always_allow/拒绝说明/编辑参数
+  8. `components/agent-chat/types.ts` — permissionResolved 联合类型保留 always_allow（历史兼容）
+  9. `components/agent-chat/hooks/useSendMessage.ts` — handlePermissionResolved 收窄三态；modeLabels 两态
+  10. `components/agent-chat/ContentBlockItem.tsx`/`MessageItem.tsx`/`ToolGroupBlock.tsx` — onPermissionResolved callback 收窄
+  11. `stores/session-store.ts` — permissionMode 类型收窄为 PiPermissionMode
+  12. `components/agent-chat/usage-badge/UsagePermissionWaits.tsx` — 注释文案更新
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：前端 `PermissionMode = 'default' | 'autoExecute'`（与后端统一）；`ChatInputArea.isSubSession?: boolean`；`PermissionRequestCard.onResolved: (requestId, behavior: 'allow' | 'deny' | 'allow_session') => void`；`SessionTab.permissionMode: PiPermissionMode`。
+- 下个 step 该从哪里继续：全仓搜索残留旧值（acceptEdits/bypassPermissions/dontAsk/plan/always_allow/permissionRules/subAgent.permissionMode/updatedInput），验证配置兼容和策略矩阵，执行完整测试，doc-sync。
+- 待办或已知限制：手工验证项需用户在实际运行环境中验证。

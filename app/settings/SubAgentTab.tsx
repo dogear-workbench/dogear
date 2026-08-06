@@ -6,12 +6,6 @@ interface SubAgentTabProps {
   setLocal: (updater: (prev: AppSettings) => AppSettings) => void;
 }
 
-const SUB_AGENT_PERMISSION_OPTIONS = [
-  { value: 'bypassPermissions', label: '自动执行（推荐）', description: '⚡ 跳过权限检查，子会话全自动跑完。适合被信任的派遣任务。' },
-  { value: 'acceptEdits',       label: '自动编辑',         description: '文件编辑/Bash 文件系统命令自动通过，其余需要在子会话 tab 内确认。' },
-  { value: 'default',           label: '标准',             description: '危险操作都要用户确认（在子会话 tab 内）。会拖慢派遣节奏。' },
-] as const;
-
 const CACHE_POLICY_OPTIONS = [
   { value: '5m', label: '5 分钟（推荐）', description: '缓存写入费用低。子会话通常一轮跑完就结束，5m 完全够用。' },
   { value: '1h', label: '1 小时',         description: '写入费用是 5m 的 1.6 倍。仅在你的派遣流程会跨很久（>10 分钟）多轮复用子会话时选。' },
@@ -76,28 +70,11 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
           />
         </div>
 
-        {/* 权限模式 */}
-        <div className="space-y-3">
-          <label className="text-sm font-medium">默认权限模式</label>
-          <div className="space-y-2">
-            {SUB_AGENT_PERMISSION_OPTIONS.map((opt) => (
-              <label
-                key={opt.value}
-                className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors"
-              >
-                <input
-                  type="radio"
-                  name="subAgentPermissionMode"
-                  className="mt-0.5"
-                  checked={(sub.permissionMode ?? 'bypassPermissions') === opt.value}
-                  onChange={() => updateSub({ permissionMode: opt.value })}
-                />
-                <div>
-                  <div className="text-sm font-medium">{opt.label}</div>
-                  <div className="text-xs text-muted-foreground">{opt.description}</div>
-                </div>
-              </label>
-            ))}
+        {/* 权限模式说明 */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">权限模式</label>
+          <div className="p-3 rounded-lg border bg-muted/30 text-sm text-muted-foreground">
+            子会话由主会话派遣，执行时固定为自动执行（autoExecute），不会弹出权限确认请求，也不可更改。
           </div>
         </div>
 

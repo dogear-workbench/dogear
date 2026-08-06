@@ -70,10 +70,8 @@ export function useSendMessage(params: UseSendMessageParams) {
 
   // 权限模式名称映射
   const modeLabels: Record<string, string> = {
-    'bypassPermissions': '自动执行',
-    'acceptEdits': '允许编辑',
-    'default': '需确认',
-    'plan': '仅规划',
+    'autoExecute': '自动执行',
+    'default': '默认',
   };
 
   // 检查是否有未处理的权限请求或 AskUser 问题，有则隐藏普通输入框
@@ -89,9 +87,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     setMessages(prev => {
       const updated = [...prev];
       const lastIdx = updated.length - 1;
-      const statusText = newMode === 'plan'
-        ? `权限模式已切换为「${modeLabels[newMode] || newMode}」— AI 将先描述计划而不执行操作。确认后可切换到「允许编辑」模式来执行。`
-        : `权限模式已切换为「${modeLabels[newMode] || newMode}」`;
+      const statusText = `权限模式已切换为「${modeLabels[newMode] || newMode}」`;
       const noticeBlock: ContentBlock = {
         type: 'status',
         status: statusText,
@@ -117,8 +113,7 @@ export function useSendMessage(params: UseSendMessageParams) {
   }, []);
 
   // 权限确认响应回调：更新消息中对应权限请求块的状态
-  // "总是允许"不再切换全局模式，而是通过 SDK 的 updatedPermissions 机制在会话内记住
-  const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'always_allow' | 'allow_session', denyMessage?: string) => {
+  const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => {
     if (readOnly) return;
     setMessages(prev => prev.map(msg => {
       if (!msg.contentBlocks) return msg;
@@ -128,7 +123,7 @@ export function useSendMessage(params: UseSendMessageParams) {
         ...msg,
         contentBlocks: msg.contentBlocks.map(b =>
           b.permissionRequestId === requestId
-            ? { ...b, permissionResolved: behavior, ...(denyMessage ? { permissionDenyMessage: denyMessage } : {}) }
+            ? { ...b, permissionResolved: behavior }
             : b
         ),
       };

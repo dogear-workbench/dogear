@@ -8,7 +8,7 @@ const DEFAULT_VISIBLE = 5;
 
 /**
  * 权限等待折叠区：按工具聚合权限请求次数 + 累计/平均等待时长。
- * 帮助识别"哪些工具频繁拦人 → 是不是该加 always_allow / 调权限模式"。
+ * 帮助识别“哪些工具频繁拦人 → 是不是该调成自动放行”。
  * 无任何权限等待时整块隐藏。
  */
 export function UsagePermissionWaits({ usage }: { usage: ConversationUsage }) {
