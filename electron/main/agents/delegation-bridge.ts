@@ -466,6 +466,24 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
   return 'queued';
 }
 
+/**
+ * 只 resolve 属于 parentConversationId 的 WaitForMessage 挂起等待（不碰子会话状态）。
+ * 给 interrupt()/close() 在 adapter.abort() 前调用：让卡在 WaitForMessage 工具调用里的
+ * prompt() 立即拿到 null 结果返回，Harness 的 waitForIdle() 才不会永久阻塞。
+ * 与 abortWaitsForParent 的区别：后者额外 cancel 子会话，供前端"中断等待"按钮使用。
+ */
+export function abortMessageWaits(parentConversationId: string): number {
+  let count = 0;
+  for (const [id, w] of messageWaiters) {
+    if (w.ownerConversationId !== parentConversationId) continue;
+    clearTimeout(w.timer);
+    messageWaiters.delete(id);
+    w.resolve(null);
+    count++;
+  }
+  return count;
+}
+
 /** 中断指定发起会话的所有活跃 WaitForMessage 等待，并终止它名下仍在运行的 Pi 子会话。 */
 export function abortWaitsForParent(parentConversationId: string): {
   abortedWaits: number;
