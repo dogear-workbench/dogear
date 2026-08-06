@@ -16,13 +16,6 @@ interface MinimapProps {
   onJumpToMessage: (messageIndex: number) => void;
 }
 
-interface MinimapTurn {
-  turnId: number;
-  userPreview: string | null;
-  assistantPreviews: string[]; // 同一 turn 内多条 assistant 合并展示
-  jumpTargetIdx: number; // 点击跳转到哪条消息
-}
-
 /**
  * 消息 Minimap 浮窗
  * - hover 触发按钮展开浮窗;点击按钮固定/取消固定
@@ -40,12 +33,12 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
   const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
 
   // Turn 分组: 复用共享 buildTurns，预览文案从 memberIdxs 派生
-  const { turns, turnByIndex } = useMemo(() => {
-    const { turns: rawTurns, turnByIndex } = buildTurns(messages, {
+  const turns = useMemo(() => {
+    const { turns: rawTurns } = buildTurns(messages, {
       collapsed: isHistoryCollapsed,
     });
 
-    const turns: MinimapTurn[] = rawTurns.map((t) => {
+    return rawTurns.map((t) => {
       const userPreview =
         t.headerIdx !== null
           ? extractMessagePreview(messages[t.headerIdx]) || '(空消息)'
@@ -68,42 +61,44 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
         jumpTargetIdx: t.headerIdx ?? t.memberIdxs[0],
       };
     });
-
-    return { turns, turnByIndex };
   }, [messages, isHistoryCollapsed]);
 
   const shouldShow = (hovering || pinned) && !hidden;
 
-  // 计算当前 viewport 垂直中心所在的消息 idx → 该 turn id
-  // 用 offsetTop(原位置)避免 sticky 干扰
+  // 计算当前 viewport 垂直中心所在的 turn
+  // 虚拟滚动下大部分 [data-message-id] 不渲染，改为从渲染的 [data-virtual-turn-id] section 中找中心
   const recomputeCurrentTurn = useCallback(() => {
     const viewport = scrollAreaRef.current?.querySelector(
       '[data-radix-scroll-area-viewport]',
     ) as HTMLElement | null;
     if (!viewport) return;
-    const content = viewport.firstElementChild as HTMLElement | null;
-    if (!content) return;
 
     const centerY = viewport.scrollTop + viewport.clientHeight / 2;
-    const nodes = content.querySelectorAll<HTMLElement>('[data-message-id]');
 
-    let hitIdx: number | null = null;
-    for (const node of nodes) {
-      const top = node.offsetTop;
-      const bottom = top + node.offsetHeight;
+    const sections = viewport.querySelectorAll<HTMLElement>('[data-virtual-turn-id]');
+    let hitTurnId: number | null = null;
+    for (const sec of sections) {
+      const top = sec.offsetTop;
+      const bottom = top + sec.offsetHeight;
       if (centerY >= top && centerY < bottom) {
-        const match = node.dataset.messageId?.match(/^msg-(\d+)$/);
-        if (match) hitIdx = Number(match[1]);
+        hitTurnId = Number(sec.dataset.virtualTurnId);
         break;
       }
     }
 
-    if (hitIdx === null) {
-      setCurrentTurnId(null);
-      return;
+    if (hitTurnId === null) {
+      // 中心可能落在占位 div 区间，回退：找最后一个 top < centerY 的 section
+      let fallback: number | null = null;
+      for (const sec of sections) {
+        if (sec.offsetTop < centerY) {
+          fallback = Number(sec.dataset.virtualTurnId);
+        } else break;
+      }
+      hitTurnId = fallback;
     }
-    setCurrentTurnId(turnByIndex.get(hitIdx) ?? null);
-  }, [scrollAreaRef, turnByIndex]);
+
+    setCurrentTurnId(hitTurnId);
+  }, [scrollAreaRef]);
 
   useEffect(() => {
     if (!shouldShow) return;

@@ -190,16 +190,7 @@ export function AgentChat({
     }
   }, [conversationId]);
 
-  // ─── 滚动控制（统一入口: useChatScroll）───
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  const {
-    showScrollBtn,
-    scrollToBottom,
-    scrollToMessage,
-    scrollToElement,
-    handleScroll,
-    isFollowing,
-  } = useChatScroll({ scrollAreaRef, isLoading });
 
   // ─── 虚拟滚动 ───
   // 计算 compact_boundary 折叠状态（提前到组件主体，供 buildTurns 和虚拟滚动共用）
@@ -209,7 +200,7 @@ export function AgentChat({
   );
   const hasCompactHistory = lastCompactBoundaryIdx > 0;
   const collapsed = isHistoryCollapsed && hasCompactHistory;
-  const { turns: chatTurns } = useMemo(
+  const { turns: chatTurns, turnByIndex } = useMemo(
     () => buildTurns(messages, { collapsed }),
     [messages, collapsed],
   );
@@ -217,10 +208,21 @@ export function AgentChat({
     visibleTurnIds,
     turnHeights,
     getTurnRef,
+    ensureTurnVisible,
   } = useVirtualTurns({
     turns: chatTurns,
     scrollContainerRef: scrollAreaRef,
   });
+
+  // ─── 滚动控制（统一入口: useChatScroll）───
+  const {
+    showScrollBtn,
+    scrollToBottom,
+    scrollToMessage,
+    scrollToElement,
+    handleScroll,
+    isFollowing,
+  } = useChatScroll({ scrollAreaRef, isLoading, turnByIndex, ensureTurnVisible });
 
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
@@ -361,11 +363,24 @@ export function AgentChat({
   // 搜索激活项切换时: 滚动到上 1/3 位置
   useEffect(() => {
     if (!search.activeMatch) return;
-    const el = document.querySelector(`[data-match-id="${search.activeMatch.id}"]`) as HTMLElement | null;
-    if (el) scrollToElement(el, { align: 'top-third' });
-  }, [search.activeMatch?.id, scrollToElement]);
+    const matchId = search.activeMatch.id;
+    const targetIdx = search.activeMatch.messageIndex;
+    const turnId = turnByIndex.get(targetIdx);
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-match-id="${matchId}"]`) as HTMLElement | null;
+      if (el) scrollToElement(el, { align: 'top-third' });
+    };
+    if (turnId !== undefined && !visibleTurnIds.has(turnId)) {
+      ensureTurnVisible(turnId);
+      requestAnimationFrame(tryScroll);
+    } else {
+      tryScroll();
+    }
+  }, [search.activeMatch?.id, scrollToElement, turnByIndex, visibleTurnIds, ensureTurnVisible]);
 
   // 搜索命中折叠段时自动展开 + 跳转
+  const scrollToMessageRef = useRef(scrollToMessage);
+  scrollToMessageRef.current = scrollToMessage;
   useEffect(() => {
     if (!search.activeMatch || !conversationId) return;
     const lastBoundaryIdx = messages.reduce(
@@ -375,10 +390,10 @@ export function AgentChat({
       useCompactCollapseStore.getState().setCollapsed(conversationId, false);
       const targetIdx = search.activeMatch.messageIndex;
       requestAnimationFrame(() => {
-        scrollToMessage(targetIdx, { align: 'top', flash: true });
+        scrollToMessageRef.current(targetIdx, { align: 'top', flash: true });
       });
     }
-  }, [search.activeMatch, conversationId, isHistoryCollapsed, messages, scrollToMessage]);
+  }, [search.activeMatch, conversationId, isHistoryCollapsed, messages]);
 
   return (
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
