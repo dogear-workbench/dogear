@@ -13,17 +13,9 @@ import * as bridge from '../delegation-bridge.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { hasDirectContractChannel } from '../../services/contract-channel-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  { name: 'CreateSession', description: '创建一个平级的新会话来协作处理任务', server: 'dogear-delegation', category: 'other' },
-  { name: 'CreateSessionBatch', description: '原子批量创建多个新会话（outputPath 冲突时整批回滚）', server: 'dogear-delegation', category: 'other' },
-  { name: 'SendMessage', description: '向已建立契约通道的会话发送消息', server: 'dogear-delegation', category: 'other' },
-  { name: 'WaitForMessage', description: '等待来自指定会话的下一条消息', server: 'dogear-delegation', category: 'other' },
-  { name: 'ListLinkedSessions', description: '列出与当前会话有直接契约通道的所有会话', server: 'dogear-delegation', category: 'other' },
-  { name: 'StopSession', description: '停止当前会话派出的某个会话', server: 'dogear-delegation', category: 'other' },
-]);
 
 const SEND_MESSAGE_DESC =
   '向已建立契约通道的会话发送消息。目标会话必须与当前会话有直接派出关系（当前会话派出的，或派出当前会话的）。' +
@@ -315,9 +307,9 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
   return [...mainOnlyTools, ...sharedTools];
 }
 
-/**
- * 创建协作通信专用 MCP Server（SDK 薄壳，签名和行为不变）
- */
-export function createDelegationTools(opts: DelegationToolsOpts) {
-  return toSdkServer('dogear-delegation', '2.0.0', createDelegationToolDefs(opts));
-}
+registerToolGroup({
+  server: 'dogear-delegation',
+  label: 'Agent 协作',
+  create: createDelegationToolDefs,
+  placeholder: [{ role: 'main', workspaceId: '', groupId: '', conversationId: '' }],
+});

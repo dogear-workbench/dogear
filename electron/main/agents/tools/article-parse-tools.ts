@@ -14,20 +14,6 @@ import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
 import { safeJsonWrite, safeFileWrite } from '../../services/safe-json.js';
-import { registerTools } from './tool-registry.js';
-
-// 注册工具元数据
-registerTools([
-  { name: 'ReadRawHtml',          description: '读取文章的原始 HTML（最多 50KB，截断防止 token 超限）',  server: 'dogear-article-parse', category: 'article' },
-  { name: 'ReadCurrentContent',   description: '读取当前已解析的文章内容（meta.json + content.md）',   server: 'dogear-article-parse', category: 'article' },
-  { name: 'ReadParserRules',      description: '读取解析规则文件（通用规则 + 匹配的平台规则）',           server: 'dogear-article-parse', category: 'article' },
-  { name: 'SaveParsedArticle',    description: '覆盖保存 AI 重新解析的文章结果（不修改 raw.html）',      server: 'dogear-article-parse', category: 'article' },
-  { name: 'ListPlatformScripts',  description: '列出所有已有的平台脚本（*.py 文件）',                   server: 'dogear-article-parse', category: 'article' },
-  { name: 'ReadPlatformScript',   description: '读取单个平台脚本的源码',                                server: 'dogear-article-parse', category: 'article' },
-  { name: 'RunPlatformScript',    description: '在 Python 沙箱里试跑脚本（支持候选源码，不落盘）',       server: 'dogear-article-parse', category: 'article' },
-  { name: 'UpdatePlatformScript', description: '落盘平台脚本文件（仅在 RunPlatformScript 成功后调用）',  server: 'dogear-article-parse', category: 'article' },
-  { name: 'ReadParseHistory',     description: '读取最近 N 条解析历史',                                 server: 'dogear-article-parse', category: 'article' },
-]);
 
 /** 安全校验：目标路径必须在允许的根目录之内 */
 function assertPathSafe(targetPath: string, allowedRoot: string): void {

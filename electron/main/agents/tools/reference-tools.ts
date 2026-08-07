@@ -15,29 +15,9 @@ import { getPiSessionRepository } from '../pi-session/pi-session-repository.js';
 import { readGroupBackground } from '../../services/memory/background-store.js';
 import { readGroupDigest } from '../../services/memory/group-digest-store.js';
 import * as conversationService from '../../services/conversation-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  {
-    name: 'ReadReferenceSession',
-    description: '读任意历史会话的去噪原文（可尾切 / 区间切）',
-    server: 'dogear-reference',
-    category: 'memory',
-  },
-  {
-    name: 'ReadGroupBackground',
-    description: '读本组 background.md（结构化背景：topic / progress / keyDecisions / openQuestions）',
-    server: 'dogear-reference',
-    category: 'memory',
-  },
-  {
-    name: 'ListSiblingSessions',
-    description: '列组内兄弟会话（含 isActive / hasDigestCoverage 标记，不含派出你的父会话本身）',
-    server: 'dogear-reference',
-    category: 'memory',
-  },
-]);
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
@@ -188,6 +168,9 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
   ];
 }
 
-export function createReferenceTools(opts: ReferenceToolsOpts) {
-  return toSdkServer('dogear-reference', '1.0.0', createReferenceToolDefs(opts));
-}
+registerToolGroup({
+  server: 'dogear-reference',
+  label: '跨会话引用',
+  create: createReferenceToolDefs,
+  placeholder: [{ workspaceId: '', groupId: '', parentConversationId: '' }],
+});

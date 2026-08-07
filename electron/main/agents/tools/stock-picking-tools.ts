@@ -3,23 +3,9 @@ import { preheatLongTermPool } from '../../services/stock/long-term-preheat-serv
 import type { LongTermPreheatResult, LongTermCandidateData } from '../../services/stock/long-term-preheat-service.js';
 import { rankByLongTerm } from '../../services/stock/long-term-rank-service.js';
 import type { RankByLongTermResult, LongTermWeights } from '../../services/stock/long-term-rank-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  {
-    name: 'PreheatLongTermPool',
-    description: '5 年长期视角候选池预热：硬筛（行业 + 卫生条件）→ 可获取性预检 → 5 年财报 → 周 K 趋势，耗时 3-5 分钟，上限 100 只',
-    server: 'dogear-stock-picking',
-    category: 'stock',
-  },
-  {
-    name: 'RankByLongTerm',
-    description: '对 PreheatLongTermPool 的候选池按长期 4 维度（ROE 均值 / 增长 CAGR / 长期趋势 / 稳定性）打分排序，秒级重排，权重可调',
-    server: 'dogear-stock-picking',
-    category: 'stock',
-  },
-]);
 
 // ============================================================
 // 辅助函数
@@ -202,6 +188,8 @@ export function createStockPickingToolDefs(): ToolDef[] {
   ];
 }
 
-export function createStockPickingTools() {
-  return toSdkServer('dogear-stock-picking', '2.0.0', createStockPickingToolDefs());
-}
+registerToolGroup({
+  server: 'dogear-stock-picking',
+  label: '候选池预热',
+  create: createStockPickingToolDefs,
+});

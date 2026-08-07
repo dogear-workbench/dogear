@@ -6,17 +6,9 @@
  */
 import { z } from 'zod';
 import { readCleanTranscript } from '../../agents/pi-session/transcript-adapter.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  {
-    name: 'CleanTranscript',
-    description: '对指定会话做确定性去噪，返回干净逐字稿',
-    server: 'dogear-memory-digest',
-    category: 'memory',
-  },
-]);
 
 export function createDigestToolDefs(
   workspaceId: string, _workspacePath: string, _onSaved?: () => void,
@@ -47,8 +39,9 @@ export function createDigestToolDefs(
   ];
 }
 
-export function createDigestTools(
-  workspaceId: string, workspacePath: string, onSaved?: () => void,
-) {
-  return toSdkServer('dogear-memory-digest', '1.0.0', createDigestToolDefs(workspaceId, workspacePath, onSaved));
-}
+registerToolGroup({
+  server: 'dogear-memory-digest',
+  label: '逐字稿清洗',
+  create: createDigestToolDefs,
+  placeholder: ['', ''],
+});

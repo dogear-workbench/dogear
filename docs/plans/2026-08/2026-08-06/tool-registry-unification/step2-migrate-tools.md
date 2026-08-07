@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 改造工具文件
-status: pending
+status: done
 ---
 
 ## 目标
@@ -63,7 +63,12 @@ memory-tools.ts 已在 Step 1 试点完成，可作为参照模板。
 ## 实施回填
 
 ### 实际改动
-（做完后填）
+13 个文件全部改造完成：
+- 文件 1-12（article/stock/stock-analysis/stock-announcement/stock-picking/group/delegation/reference/review/digest/group-digest/category）：各删 registerTools 块 + createXxxTools 死代码 + 清理 toSdkServer import，末尾加 registerToolGroup（含 placeholder）
+- 文件 13（article-parse-tools）：只删 registerTools 调用，保留 createArticleParseMcpServer 不动
+- 验证：grep registerTools / toSdkServer 全部 0 匹配；registerToolGroup 出现在 13 个工具文件 + 定义处
 
 ### 给下一步的接力棒
-（做完后填）
+- 所有工具文件已注册到注册中心，registerToolGroup 在模块加载时执行
+- 唯一编译错误：`agent.ts:10` 仍 import 已删除的 `getAllTools`——Step 3 修复
+- Step 3 需把 getRegisteredTools IPC 改为 `getAllToolGroups()`（已内置 placeholder 逻辑，不需要 extractToolInfo）

@@ -16,22 +16,9 @@ import { stockService } from '../../services/stock/stock-service.js';
 import { stockDataService } from '../../services/stock/stock-data-service.js';
 import { pythonBridge, DataSourceExhaustedError } from '../../services/stock/python-bridge.js';
 import { readFinancialsCache, writeFinancialsCache } from '../../services/stock/financials-cache-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-// 注册工具元数据到 registry
-registerTools([
-  { name: 'CalcIndicators', description: '计算股票技术指标（MACD/KDJ/RSI/BOLL/MA 等）', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'ScreenStocks', description: '全市场条件筛选股票', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'ListIndustries', description: '列出证监会行业分类（带分类代码前缀，如 J66货币金融服务；可关键词过滤，返回可直接喂给 ScreenStocks 的行业名）', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'GetFinancials', description: '获取个股财报数据', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'CompareIndustry', description: '个股行业对比分析', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'GetFundFlow', description: '查询个股/大盘/板块资金流向（东方财富数据源）', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'GetNorthboundHolding', description: '查询北向资金持股（个股或汇总）', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'DetectSignals', description: '检测股票技术信号（MACD金叉/KDJ超卖/RSI超买等）', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'EvalFormula', description: '执行自定义公式表达式（类通达信语法）', server: 'dogear-stock-analysis', category: 'stock' },
-  { name: 'SimpleBacktest', description: '基于公式的简单策略回测（历史K线验证买卖信号）', server: 'dogear-stock-analysis', category: 'stock' },
-]);
 
 // ============================================================
 // 常量
@@ -1152,6 +1139,8 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
   ];
 }
 
-export function createStockAnalysisTools() {
-  return toSdkServer('dogear-stock-analysis', '1.0.0', createStockAnalysisToolDefs());
-}
+registerToolGroup({
+  server: 'dogear-stock-analysis',
+  label: '股票分析',
+  create: createStockAnalysisToolDefs,
+});

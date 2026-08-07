@@ -12,45 +12,13 @@ import {
   readIndex, writeIndex, pushGroup, appendDecision, newCategory, mergeCategories,
 } from '../../services/memory/smart-category-store.js';
 import { loadSettings } from '../../services/settings-service.js';
-import { registerTools } from './tool-registry.js';
+import { registerToolGroup } from './tool-registry.js';
 import { mainLogger } from '../logger.js';
 import { getByWorkspaceId } from '../../services/conversation-service.js';
 import * as groupService from '../../services/group-service.js';
 import { deriveGroupTitle } from '../../services/group-helpers.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  {
-    name: 'ListCategories',
-    description: '读取当前工作区智能分类（含 anchorTags、样例组标题、atLimit/maxCategories）',
-    server: 'dogear-smart-category',
-    category: 'memory',
-  },
-  {
-    name: 'SaveCategoryJoin',
-    description: '把组归入现有分类（可选扩/覆写 anchorTags）',
-    server: 'dogear-smart-category',
-    category: 'memory',
-  },
-  {
-    name: 'SaveCategoryNew',
-    description: '新建分类并把组放入（可附 redistribute 迁移名单，达上限会被拒）',
-    server: 'dogear-smart-category',
-    category: 'memory',
-  },
-  {
-    name: 'SaveCategoryMerge',
-    description: '把两个现有分类合并成一个新分类，两者的组自动去重合并',
-    server: 'dogear-smart-category',
-    category: 'memory',
-  },
-  {
-    name: 'PruneCategoryTags',
-    description: '覆写指定分类的 anchorTags 数组（整体替换，最多 10 个）',
-    server: 'dogear-smart-category',
-    category: 'memory',
-  },
-]);
 
 const listArgs = z.object({
   workspaceId: z.string().describe('工作区 ID'),
@@ -339,6 +307,8 @@ export function createCategoryToolDefs(): ToolDef[] {
   ];
 }
 
-export function createCategoryTools() {
-  return toSdkServer('dogear-smart-category', '1.0.0', createCategoryToolDefs());
-}
+registerToolGroup({
+  server: 'dogear-smart-category',
+  label: '智能分类',
+  create: createCategoryToolDefs,
+});

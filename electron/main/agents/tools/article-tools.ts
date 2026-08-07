@@ -7,14 +7,8 @@
 
 import { z } from 'zod';
 import * as articleService from '../../services/article-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
-
-// 注册工具元数据到 registry
-registerTools([
-  { name: 'ReadArticle', description: '读取指定文章的完整 Markdown 内容和元数据', server: 'dogear-article', category: 'article' },
-  { name: 'ListArticles', description: '列出当前工作区中所有已保存的文章', server: 'dogear-article', category: 'article' },
-]);
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 /**
  * 创建文章阅读工具中立定义（ToolDef[]）
@@ -108,11 +102,9 @@ export function createArticleToolDefs(workspacePath: string): ToolDef[] {
   ];
 }
 
-/**
- * 创建文章阅读专用 MCP Server
- * @param workspacePath - 工作区路径
- * @returns MCP Server 配置
- */
-export function createArticleTools(workspacePath: string) {
-  return toSdkServer('dogear-article', '1.0.0', createArticleToolDefs(workspacePath));
-}
+registerToolGroup({
+  server: 'dogear-article',
+  label: '文章管理',
+  create: createArticleToolDefs,
+  placeholder: [''],
+});

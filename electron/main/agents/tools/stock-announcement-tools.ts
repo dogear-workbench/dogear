@@ -12,14 +12,8 @@
 import { z } from 'zod';
 import { listAnnouncements, readAnnouncement } from '../../services/stock/index.js';
 import type { AnnouncementType } from '../../services/stock/index.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
-
-// 注册工具元数据到 registry
-registerTools([
-  { name: 'ListAnnouncements', description: '查询股票公司公告列表（标题/日期/类型/PDF直链）', server: 'dogear-stock-announcement', category: 'stock' },
-  { name: 'ReadAnnouncement', description: '读取公司公告全文（PDF 解析为 markdown，本地懒缓存）', server: 'dogear-stock-announcement', category: 'stock' },
-]);
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 // ============================================================
 // 常量
@@ -148,10 +142,8 @@ export function createAnnouncementToolDefs(): ToolDef[] {
   ];
 }
 
-/**
- * 创建公司公告 MCP Server
- * @returns MCP Server 配置
- */
-export function createAnnouncementTools() {
-  return toSdkServer('dogear-stock-announcement', '1.0.0', createAnnouncementToolDefs());
-}
+registerToolGroup({
+  server: 'dogear-stock-announcement',
+  label: '公司公告',
+  create: createAnnouncementToolDefs,
+});

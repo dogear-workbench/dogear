@@ -17,18 +17,9 @@
 import { z } from 'zod';
 import { stockService } from '../../services/stock/stock-service.js';
 import { stockWatchlistService } from '../../services/stock/stock-watchlist-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-// 注册工具元数据到 registry
-registerTools([
-  { name: 'SearchStock', description: '搜索 A 股股票（名称/拼音/代码模糊匹配）', server: 'dogear-stock', category: 'stock' },
-  { name: 'GetStockQuote', description: '获取股票实时行情数据（支持批量）', server: 'dogear-stock', category: 'stock' },
-  { name: 'GetKLineData', description: '获取股票 K 线历史数据', server: 'dogear-stock', category: 'stock' },
-  { name: 'GetTimeline', description: '获取股票当日分时数据', server: 'dogear-stock', category: 'stock' },
-  { name: 'GetWatchlist', description: '获取用户的自选股列表', server: 'dogear-stock', category: 'stock' },
-  { name: 'ModifyWatchlist', description: '添加或删除自选股', server: 'dogear-stock', category: 'stock' },
-]);
 import { stockDataService } from '../../services/stock/stock-data-service.js';
 
 // ============================================================
@@ -456,10 +447,8 @@ export function createStockToolDefs(): ToolDef[] {
   ];
 }
 
-/**
- * 创建股票行情 MCP Server
- * @returns MCP Server 配置
- */
-export function createStockTools() {
-  return toSdkServer('dogear-stock', '1.0.0', createStockToolDefs());
-}
+registerToolGroup({
+  server: 'dogear-stock',
+  label: '股票行情',
+  create: createStockToolDefs,
+});

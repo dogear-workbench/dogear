@@ -9,16 +9,9 @@ import { z } from 'zod';
 import { listGroupDigests, readGroupDigest } from '../../services/memory/group-digest-store.js';
 import { readReport, saveReport } from '../../services/memory/review-store.js';
 import { readCleanTranscript } from '../pi-session/transcript-adapter.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  { name: 'ListDigests', description: '列出本工作区所有组卡（按组聚合，含 createdAt）', server: 'dogear-memory-review', category: 'memory' },
-  { name: 'ReadDigest', description: '读取单张组卡（含概述、items 多源 sources 与 keyOutputs）', server: 'dogear-memory-review', category: 'memory' },
-  { name: 'TraceSource', description: '按 uuid 回溯原始会话原文，供查证含义', server: 'dogear-memory-review', category: 'memory' },
-  { name: 'ReadReport', description: '读取当前首页报告（拿 updatedAt 与正文，用于增量）', server: 'dogear-memory-review', category: 'memory' },
-  { name: 'WriteReport', description: '覆盖写入首页报告（纯净 markdown，给用户看）', server: 'dogear-memory-review', category: 'memory' },
-]);
 
 function errText(prefix: string, error: unknown) {
   return {
@@ -143,6 +136,9 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
   ];
 }
 
-export function createReviewMcpServer(workspaceId: string, workspacePath: string, onSaved?: () => void) {
-  return toSdkServer('dogear-memory-review', '2.0.0', createReviewToolDefs(workspaceId, workspacePath, onSaved));
-}
+registerToolGroup({
+  server: 'dogear-memory-review',
+  label: '首页报告',
+  create: createReviewToolDefs,
+  placeholder: ['', ''],
+});

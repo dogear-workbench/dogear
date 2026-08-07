@@ -17,29 +17,9 @@ import {
   buildSessionUuidIndex, validateItemSources, type SourceProblem,
 } from '../../services/memory/source-fidelity.js';
 import { requireActiveGroup } from '../../services/group-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  {
-    name: 'ReadGroupDigest',
-    description: '读取本组现有的组卡（含 sourcesSeen / summary / items / keyOutputs / tags）',
-    server: 'dogear-group-digest',
-    category: 'memory',
-  },
-  {
-    name: 'SaveGroupDigest',
-    description: '写入本组组卡（sourcesSeen 由工具自动维护）',
-    server: 'dogear-group-digest',
-    category: 'memory',
-  },
-  {
-    name: 'SaveGroupBackground',
-    description: '写入本组 background.md（给组内新会话派子会话读的结构化背景）',
-    server: 'dogear-group-digest',
-    category: 'memory',
-  },
-]);
 
 function formatFidelityError(problems: SourceProblem[]): string {
   const lines: string[] = [`保真度校验失败，以下 ${problems.length} 条引用无效：`, ''];
@@ -214,17 +194,9 @@ export function createGroupDigestToolDefs(
   ];
 }
 
-export function createGroupDigestTools(
-  workspaceId: string,
-  workspacePath: string,
-  groupId: string,
-  dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>,
-  onDigestSaved?: () => void,
-  onBackgroundSaved?: () => void,
-) {
-  return toSdkServer(
-    'dogear-group-digest',
-    '1.0.0',
-    createGroupDigestToolDefs(workspaceId, workspacePath, groupId, dirtyConversations, onDigestSaved, onBackgroundSaved),
-  );
-}
+registerToolGroup({
+  server: 'dogear-group-digest',
+  label: '组卡管理',
+  create: createGroupDigestToolDefs,
+  placeholder: ['', '', '', []],
+});

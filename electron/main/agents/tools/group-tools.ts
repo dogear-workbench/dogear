@@ -1,14 +1,9 @@
 import { z } from 'zod';
 import * as groupSharedService from '../../services/group-shared-service.js';
 import { requireActiveGroup } from '../../services/group-service.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-registerTools([
-  { name: 'ListGroupFiles', description: '列出当前会话组共享区的所有文件', server: 'dogear-group', category: 'other' },
-  { name: 'ReadGroupFile', description: '读取共享区文件内容（按 relPath）', server: 'dogear-group', category: 'other' },
-  { name: 'WriteGroupFile', description: '写入共享区文件（覆盖已有内容）', server: 'dogear-group', category: 'other' },
-]);
 
 export function createGroupToolDefs(workspaceId: string, groupId: string): ToolDef[] {
   return [
@@ -88,6 +83,9 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
   ];
 }
 
-export function createGroupTools(workspaceId: string, groupId: string) {
-  return toSdkServer('dogear-group', '1.0.0', createGroupToolDefs(workspaceId, groupId));
-}
+registerToolGroup({
+  server: 'dogear-group',
+  label: '会话组共享区',
+  create: createGroupToolDefs,
+  placeholder: ['', ''],
+});
