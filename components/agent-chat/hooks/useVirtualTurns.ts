@@ -35,6 +35,8 @@ export function useVirtualTurns({
   const dirtyRef = useRef(false);
   const elementMapRef = useRef<Map<number, HTMLElement>>(new Map());
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
+  const prevTurnIdsRef = useRef<Set<number>>(new Set());
+  const lastTurnIdRef = useRef<number>(-1);
 
   const getViewport = useCallback((): HTMLElement | null => {
     const el = scrollContainerRef.current;
@@ -117,7 +119,20 @@ export function useVirtualTurns({
       if (!validIds.has(key)) cache.delete(key);
     }
 
-    dirtyRef.current = true;
+    lastTurnIdRef.current = turns.length > 0 ? turns[turns.length - 1].turnId : -1;
+
+    const prev = prevTurnIdsRef.current;
+    let turnIdChanged = prev.size !== validIds.size;
+    if (!turnIdChanged) {
+      for (const id of validIds) {
+        if (!prev.has(id)) { turnIdChanged = true; break; }
+      }
+    }
+    prevTurnIdsRef.current = validIds;
+
+    if (turnIdChanged) {
+      dirtyRef.current = true;
+    }
     scheduleFlush();
   }, [turns, estimate, scheduleFlush]);
 
@@ -127,8 +142,10 @@ export function useVirtualTurns({
     const current = cache.get(turnId);
     if (current === undefined || Math.abs(current - h) > 1) {
       cache.set(turnId, h);
-      dirtyRef.current = true;
-      scheduleFlush();
+      if (turnId !== lastTurnIdRef.current) {
+        dirtyRef.current = true;
+        scheduleFlush();
+      }
     }
   }, [scheduleFlush]);
 
