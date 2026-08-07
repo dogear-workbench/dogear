@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 改 IPC + 设置页数据流
-status: pending
+status: done
 ---
 
 ## 目标
@@ -63,7 +63,9 @@ getRegisteredTools: t.procedure.action(async () => {
 ## 实施回填
 
 ### 实际改动
-（做完后填）
+- `agent.ts`：删除顶部 `import { getAllTools }`，getRegisteredTools IPC 改为 Promise.all 触发 13 个工具文件加载 + `getAllToolGroups()` 返回
+- 编译通过，lint 0 error
 
 ### 给下一步的接力棒
-（做完后填）
+- IPC 数据流已打通，设置页将收到完整的工具分组数据
+- Step 4 修改提示词层面的 mcp__ 前缀引用

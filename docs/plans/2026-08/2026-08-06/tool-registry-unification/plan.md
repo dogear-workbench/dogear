@@ -16,8 +16,8 @@
 
 - [ ] [Step 1: 重写注册中心](./step1-rewrite-registry.md) — 新的 ToolGroupRegistration + registerToolGroup + getAllToolGroups
 - [x] [Step 2: 改造工具文件](./step2-migrate-tools.md) — 13 个文件删死代码 + 加 registerToolGroup
-- [ ] [Step 3: 改 IPC + 设置页数据流](./step3-fix-ipc.md) — getRegisteredTools 遍历注册中心
-- [ ] [Step 4: 命名修正](./step4-fix-naming.md) — tool-pack-guide 和 skill 的 mcp__ 前缀
+- [x] [Step 3: 改 IPC + 设置页数据流](./step3-fix-ipc.md) — getRegisteredTools 遍历注册中心
+- [x] [Step 4: 命名修正](./step4-fix-naming.md) — tool-pack-guide 和 skill 的 mcp__ 前缀
 
 ## 全局决策
 

@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 命名修正
-status: pending
+status: done
 ---
 
 ## 目标
@@ -71,7 +71,9 @@ lines.push('- 记忆系统（dogear-memory 工具组）：跨会话保存/查询
 ## 实施回填
 
 ### 实际改动
-（做完后填）
+- `tool-pack-guide.ts`：3 处 mcp__ 前缀改为「工具组」表述
+- `stock-analysis-skills-service.ts`：技能描述中的 mcp__ 引用改为工具组表述，同时去掊 SDK Tool Search 过时描述
+- `AgentsTab.tsx` 的通配符机制标记为已知技术债，不在本步骤范围
 
-### 给下一步的接力棒
-（做完后填）
+### 完成
+本计划全部 4 步完成。代码编译通过，lint 无新增 error。

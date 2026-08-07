@@ -7,7 +7,6 @@ import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js'
 import type { PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
-import { getAllTools } from '../agents/tools/tool-registry.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import * as conversationService from '../services/conversation-service.js';
@@ -501,14 +500,26 @@ export const agentRouter = {
       }
     }),
 
-  // 获取所有已注册的工具元数据（SDK 内置 + 自定义）
+  // 获取所有已注册的工具元数据（遍历注册中心，调工厂提取 name/description）
   getRegisteredTools: t.procedure
     .action(async () => {
-      // 触发工具文件的模块加载（确保 registerTools 被调用）
-      await import('../agents/tools/article-tools.js').catch(() => {});
-      await import('../agents/tools/stock-tools.js').catch(() => {});
-      await import('../agents/tools/stock-analysis-tools.js').catch(() => {});
-      return getAllTools();
+      await Promise.all([
+        import('../agents/tools/memory-tools.js'),
+        import('../agents/tools/article-tools.js'),
+        import('../agents/tools/stock-tools.js'),
+        import('../agents/tools/stock-analysis-tools.js'),
+        import('../agents/tools/stock-announcement-tools.js'),
+        import('../agents/tools/stock-picking-tools.js'),
+        import('../agents/tools/group-tools.js'),
+        import('../agents/tools/delegation-tools.js'),
+        import('../agents/tools/reference-tools.js'),
+        import('../agents/tools/review-tools.js'),
+        import('../agents/tools/digest-tools.js'),
+        import('../agents/tools/group-digest-tools.js'),
+        import('../agents/tools/category-tools.js'),
+      ]);
+      const { getAllToolGroups } = await import('../agents/tools/tool-registry.js');
+      return getAllToolGroups();
     }),
 
   // 获取可选工具包清单（含启用状态），供设置页 ToolPacksTab 使用

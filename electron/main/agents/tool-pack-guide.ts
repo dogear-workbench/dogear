@@ -32,16 +32,16 @@ export function buildToolPackGuide(
   // 常驻工具固定可见；可选工具包没有任何启用时也保留导览（让 Agent 知道至少有 memory）
   const lines: string[] = [];
   lines.push('\n## 可用工具类目');
-  lines.push('以下类目的 MCP 工具已注册到本会话，详细参数 schema 默认不在上下文里——需要时可直接调用，系统会按需加载。');
+  lines.push('以下类目的工具已注册到本会话，详细参数 schema 默认不在上下文里——需要时可直接调用，系统会按需加载。');
   lines.push('');
   lines.push('**常驻**');
-  lines.push('- 记忆系统（`mcp__dogear-memory__*`）：跨会话保存/查询用户偏好与反馈');
+  lines.push('- 记忆系统（dogear-memory 工具组）：跨会话保存/查询用户偏好与反馈');
 
   if (visiblePacks.length > 0) {
     lines.push('');
     lines.push('**已启用工具包**');
     for (const pack of visiblePacks) {
-      lines.push(`- ${pack.label}（\`mcp__${pack.mcpServerName}__*\`）：${pack.description}`);
+      lines.push(`- ${pack.label}（${pack.mcpServerName} 工具组）：${pack.description}`);
     }
   }
 
