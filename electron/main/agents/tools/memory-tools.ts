@@ -18,29 +18,8 @@
 import { z } from 'zod';
 import * as memoryService from '../../services/memory/memory-service.js';
 import * as memoryRecall from '../../services/memory/memory-recall.js';
-import { registerTools } from './tool-registry.js';
-import { defineTool, toSdkServer, type ToolDef } from '../pi/tool-adapter.js';
-
-registerTools([
-  {
-    name: 'RecallMemory',
-    description: '按关键词查询工作区级主题记忆',
-    server: 'dogear-memory',
-    category: 'memory',
-  },
-  {
-    name: 'SaveMemory',
-    description: '保存或更新主题记忆（仅在用户明确要求记住时使用）',
-    server: 'dogear-memory',
-    category: 'memory',
-  },
-  {
-    name: 'ForgetMemory',
-    description: '删除指定主题记忆',
-    server: 'dogear-memory',
-    category: 'memory',
-  },
-]);
+import { registerToolGroup } from './tool-registry.js';
+import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?: boolean }): ToolDef[] {
   const autonomous = opts?.autonomous === true;
@@ -281,6 +260,9 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
   return defs;
 }
 
-export function createMemoryTools(workspacePath: string, opts?: { autonomous?: boolean }) {
-  return toSdkServer('dogear-memory', '1.0.0', createMemoryToolDefs(workspacePath, opts));
-}
+registerToolGroup({
+  server: 'dogear-memory',
+  label: '记忆系统',
+  create: createMemoryToolDefs,
+  placeholder: [''],
+});

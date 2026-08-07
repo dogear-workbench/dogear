@@ -1,4 +1,3 @@
-import { createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { type AgentTool } from '@earendil-works/pi-agent-core';
 
@@ -7,7 +6,7 @@ export type ToolResult = {
   isError?: boolean;
 };
 
-/** 中立化工具描述符。schema 统一用 z.object({...})，toSdkServer 负责取 .shape 还原给 SDK */
+/** 中立化工具描述符。schema 统一用 z.object({...})，toPiTools 负责转成 pi AgentTool */
 export interface ToolDef {
   name: string;
   description: string;
@@ -24,16 +23,6 @@ export function defineTool<S extends z.ZodObject<z.ZodRawShape>>(
   handler: (args: z.infer<S>) => Promise<ToolResult>,
 ): ToolDef {
   return { name, description, schema, handler };
-}
-
-/** SDK tool() 第三参收 zod shape 对象，取 .shape 还原；产物与改造前逐字节等价 */
-export function toSdkServer(serverName: string, version: string, defs: ToolDef[]) {
-  return createSdkMcpServer({
-    name: serverName,
-    version,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    tools: defs.map((d) => tool(d.name, d.description, d.schema.shape, d.handler as any)),
-  });
 }
 
 export function toPiTools(defs: ToolDef[]): AgentTool[] {
