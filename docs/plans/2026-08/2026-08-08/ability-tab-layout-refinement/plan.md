@@ -28,7 +28,7 @@
 ## 步骤索引
 
 - [x] [Step 1: ToolDef 加 shortDescription 字段](./step1-tooldef-short-description.md) — 数据层改造 + 56 个 defineTool 调用补字段
-- [ ] [Step 2: 前端布局重构 + 详情浮窗](./step2-frontend-layout.md) — AbilityTab/AbilityCard 重构 + 新增 ToolDetailDialog + Skill 分类修正
+- [x] [Step 2: 前端布局重构 + 详情浮窗](./step2-frontend-layout.md) — AbilityTab/AbilityCard 重构 + 新增 ToolDetailDialog + Skill 分类修正
 - [ ] [Step 3: 验证与收尾](./step3-verify.md) — lint/build 通过，运行时检查
 
 ## 全局决策

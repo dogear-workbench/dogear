@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 前端布局重构 + 详情浮窗
-status: pending
+status: done
 ---
 
 ## 目标
@@ -69,7 +69,24 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-（待填）
+
+**新建文件：**
+- `app/settings/ToolDetailDialog.tsx`：Dialog + 工具名标题 + MarkdownRenderer 渲染完整 description
+- `app/settings/SegmentDetailDialog.tsx`：Dialog + label 标题 + triggerDescription 副标题 + `<pre>` 渲染 template 全文
+
+**改动文件：**
+- `app/settings/AbilityTab.tsx`：
+  - ToolInfo 接口加 `shortDescription: string`
+  - 外层 `max-w-3xl` → `max-w-5xl`
+  - ToolGroupList 去掉手风琴折叠（ChevronDown/ChevronRight + expandedServers + toggleExpand），改为平铺：server 做不可折叠小标题，工具行显示 `name + shortDescription`，点击行打开 ToolDetailDialog
+  - SegmentList 去掉 `<pre>` template 全文，每个 Segment 只显示 `label + triggerDescription`，点击行打开 SegmentDetailDialog
+  - 新增 `MEMORY_SKILL_NAMES = ['cross-session-review']` 常量
+  - 记忆系统卡片左栏加 Skill 区（cross-session-review 的 SkillRow）
+  - customSkills 过滤排除 `cross-session-review`
+  - 移除 ChevronDown/ChevronRight import、expandedServers/toggleExpand 状态
+- `app/settings/AbilityCard.tsx`：左右栏比例从 `md:min-w-[40%] md:flex-[2]` / `md:flex-1` 改为 `md:flex-1` / `md:flex-1`
 
 ### 给下一步的接力棒
-（待填）
+- ToolDetailDialog / SegmentDetailDialog 已就绪，后续如需复用直接 import
+- ToolGroupList / SegmentList 现在通过 `onToolClick` / `onSegmentClick` 回调通知父组件打开浮窗
+- 记忆系统卡片现在同时包含提示词段和 Skill（cross-session-review）

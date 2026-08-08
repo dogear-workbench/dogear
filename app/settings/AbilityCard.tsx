@@ -57,7 +57,7 @@ export function AbilityCard({
       </header>
 
       <div className="flex flex-col md:flex-row gap-4">
-        <div className="md:min-w-[40%] md:flex-[2] min-w-0 space-y-3">
+        <div className="md:flex-1 min-w-0 space-y-3">
           {leftContent}
         </div>
         {rightContent && (

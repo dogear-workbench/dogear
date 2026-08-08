@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ChevronDown,
-  ChevronRight,
   Download,
   RotateCcw,
   Eye,
@@ -12,6 +10,8 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { AbilityCard } from './AbilityCard';
 import { SkillDetailDialog } from './SkillDetailDialog';
+import { ToolDetailDialog } from './ToolDetailDialog';
+import { SegmentDetailDialog } from './SegmentDetailDialog';
 import type { SystemPromptSegment } from '@/types/system-prompt';
 import type { AppSettings } from '@/types/settings';
 
@@ -19,6 +19,7 @@ import type { AppSettings } from '@/types/settings';
 
 interface ToolInfo {
   name: string;
+  shortDescription: string;
   description: string;
   server: string;
 }
@@ -53,6 +54,7 @@ interface SkillTemplate {
 // ── 能力域分组常量 ────────────────────────────────────
 
 const MEMORY_SERVERS = ['dogear-memory'];
+const MEMORY_SKILL_NAMES = ['cross-session-review'];
 const DELEGATION_SERVERS = [
   'dogear-delegation',
   'dogear-group',
@@ -85,13 +87,11 @@ const CODE_WORKFLOW_TEMPLATES = [
 function ToolGroupList({
   servers,
   groupByServer,
-  expandedServers,
-  toggleExpand,
+  onToolClick,
 }: {
   servers: string[];
   groupByServer: Record<string, ToolGroup>;
-  expandedServers: Record<string, boolean>;
-  toggleExpand: (server: string) => void;
+  onToolClick: (tool: { name: string; description: string }) => void;
 }) {
   const visible = servers
     .map((s) => groupByServer[s])
@@ -105,55 +105,41 @@ function ToolGroupList({
   }
   return (
     <div className="space-y-2">
-      {visible.map((group) => {
-        const expanded = expandedServers[group.server] ?? false;
-        return (
-          <div
-            key={group.server}
-            className="border rounded-md overflow-hidden bg-background"
-          >
-            <button
-              type="button"
-              className="w-full flex items-center justify-between gap-2 px-3 py-2 bg-muted/30 text-left hover:bg-muted/50 transition-colors"
-              onClick={() => toggleExpand(group.server)}
-            >
-              <div className="flex items-center gap-2 min-w-0 flex-1">
-                {expanded ? (
-                  <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                ) : (
-                  <ChevronRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                )}
-                <span className="text-xs font-semibold truncate">
-                  {group.label || group.server}
-                </span>
-                <span className="text-[10px] text-muted-foreground font-mono shrink-0">
-                  {group.server}
-                </span>
-              </div>
-              <span className="text-[10px] text-muted-foreground shrink-0">
-                {group.tools.length} 个
-              </span>
-            </button>
-            {expanded && (
-              <div className="divide-y border-t">
-                {group.tools.map((t) => (
-                  <div
-                    key={`${group.server}::${t.name}`}
-                    className="flex items-start gap-2 px-3 py-1.5 text-xs"
-                  >
-                    <span className="font-mono text-foreground shrink-0">
-                      {t.name}
-                    </span>
-                    <span className="text-muted-foreground leading-relaxed">
-                      {t.description}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+      {visible.map((group) => (
+        <div
+          key={group.server}
+          className="rounded-md border bg-background overflow-hidden"
+        >
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/30">
+            <span className="text-xs font-semibold truncate">
+              {group.label || group.server}
+            </span>
+            <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+              {group.server}
+            </span>
+            <span className="text-[10px] text-muted-foreground shrink-0 ml-auto">
+              {group.tools.length} 个
+            </span>
           </div>
-        );
-      })}
+          <div className="divide-y">
+            {group.tools.map((t) => (
+              <button
+                key={`${group.server}::${t.name}`}
+                type="button"
+                className="w-full flex items-start gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors"
+                onClick={() => onToolClick({ name: t.name, description: t.description })}
+              >
+                <span className="text-xs font-mono text-foreground shrink-0">
+                  {t.name}
+                </span>
+                <span className="text-xs text-muted-foreground leading-relaxed">
+                  {t.shortDescription}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -212,9 +198,11 @@ function PackToggle({
 function SegmentList({
   segments,
   emptyHint,
+  onSegmentClick,
 }: {
   segments: SystemPromptSegment[];
   emptyHint?: string;
+  onSegmentClick: (segment: SystemPromptSegment) => void;
 }) {
   if (segments.length === 0) {
     return (
@@ -224,29 +212,26 @@ function SegmentList({
     );
   }
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {segments.map((seg) => (
-        <div key={seg.key} className="rounded-md border border-border/60 bg-muted/20 p-2.5">
-          <div className="flex items-center gap-1.5 flex-wrap mb-1">
-            <span className="text-xs font-semibold">{seg.label}</span>
-            {seg.isDynamic && (
-              <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
-                动态
-              </span>
-            )}
-            <code className="text-[10px] text-muted-foreground font-mono ml-auto">
-              {seg.key}
-            </code>
-          </div>
-          {seg.triggerDescription && (
-            <p className="text-[11px] text-muted-foreground/80 mb-1 leading-relaxed">
-              {seg.triggerDescription}
-            </p>
+        <button
+          key={seg.key}
+          type="button"
+          className="w-full flex items-center gap-1.5 flex-wrap rounded-md border border-border/60 bg-muted/20 p-2 text-left hover:bg-muted/40 transition-colors"
+          onClick={() => onSegmentClick(seg)}
+        >
+          <span className="text-xs font-semibold">{seg.label}</span>
+          {seg.isDynamic && (
+            <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
+              动态
+            </span>
           )}
-          <pre className="text-[11px] whitespace-pre-wrap font-mono leading-relaxed text-foreground/90 max-h-48 overflow-y-auto">
-            {seg.template}
-          </pre>
-        </div>
+          {seg.triggerDescription && (
+            <span className="text-[11px] text-muted-foreground/80 leading-relaxed">
+              {seg.triggerDescription}
+            </span>
+          )}
+        </button>
       ))}
     </div>
   );
@@ -379,8 +364,9 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [templates, setTemplates] = useState<SkillTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedServers, setExpandedServers] = useState<Record<string, boolean>>({});
   const [detailName, setDetailName] = useState<string | null>(null);
+  const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
+  const [detailSegment, setDetailSegment] = useState<SystemPromptSegment | null>(null);
   const [busyTemplate, setBusyTemplate] = useState<string | null>(null);
   const [busyDir, setBusyDir] = useState<string | null>(null);
 
@@ -450,10 +436,6 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     [templates],
   );
 
-  const toggleExpand = (server: string) => {
-    setExpandedServers((prev) => ({ ...prev, [server]: !prev[server] }));
-  };
-
   const isPackEnabled = (name: string): boolean => enabledPackSet.has(name);
 
   const togglePack = (name: string) => {
@@ -522,6 +504,14 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     [segments],
   );
 
+  const memorySkills = useMemo(
+    () =>
+      MEMORY_SKILL_NAMES.map((n) => templateByName[n]).filter(
+        (t): t is SkillTemplate => !!t,
+      ),
+    [templateByName],
+  );
+
   const delegationSegments = useMemo(
     () => segments.filter((s) => DELEGATION_CATEGORIES.includes(s.category)),
     [segments],
@@ -543,7 +533,8 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
       skills.filter(
         (s) =>
           (s.source === 'workspace' || s.source === 'user') &&
-          !allTemplateNames.has(s.name),
+          !allTemplateNames.has(s.name) &&
+          !MEMORY_SKILL_NAMES.includes(s.name),
       ),
     [skills, allTemplateNames],
   );
@@ -567,7 +558,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
   }
 
   return (
-    <div className="max-w-3xl py-6 px-6 space-y-6">
+    <div className="max-w-5xl py-6 px-6 space-y-6">
       <div>
         <h2 className="text-lg font-semibold mb-1">能力</h2>
         <p className="text-sm text-muted-foreground">
@@ -580,14 +571,48 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         title="记忆系统"
         badge={{ variant: 'resident' }}
         leftContent={
-          <div className="space-y-2">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              提示词段
-            </p>
-            <SegmentList
-              segments={memorySegments}
-              emptyHint="当前无注入的记忆引导段。"
-            />
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                提示词段
+              </p>
+              <SegmentList
+                segments={memorySegments}
+                emptyHint="当前无注入的记忆引导段。"
+                onSegmentClick={setDetailSegment}
+              />
+            </div>
+            {memorySkills.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  Skill
+                </p>
+                {memorySkills.map((tpl) => {
+                  const subscribed = subscribedSkillNames.has(tpl.name);
+                  const skillEntry = skills.find(
+                    (s) => s.name === tpl.name && s.source === 'workspace',
+                  );
+                  return (
+                    <SkillRow
+                      key={tpl.name}
+                      name={tpl.name}
+                      description={tpl.description}
+                      subscribed={subscribed}
+                      enabled={skillEntry?.enabled ?? false}
+                      showEnableToggle={subscribed}
+                      dir={skillEntry?.dir}
+                      busy={busyTemplate === tpl.name || busyDir === skillEntry?.dir}
+                      onDetail={setDetailName}
+                      onSubscribe={handleSubscribe}
+                      onToggleEnabled={(d) =>
+                        skillEntry &&
+                        handleToggleSkillEnabled(d, skillEntry.enabled)
+                      }
+                    />
+                  );
+                })}
+              </div>
+            )}
           </div>
         }
         rightContent={
@@ -598,8 +623,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
             <ToolGroupList
               servers={MEMORY_SERVERS}
               groupByServer={groupByServer}
-              expandedServers={expandedServers}
-              toggleExpand={toggleExpand}
+              onToolClick={setDetailTool}
             />
           </div>
         }
@@ -610,13 +634,14 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         title="Agent 协作"
         badge={{ variant: 'conditional' }}
         leftContent={
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               提示词段
             </p>
             <SegmentList
               segments={delegationSegments}
               emptyHint="当前无注入的协作提示词段。"
+              onSegmentClick={setDetailSegment}
             />
           </div>
         }
@@ -628,8 +653,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
             <ToolGroupList
               servers={DELEGATION_SERVERS}
               groupByServer={groupByServer}
-              expandedServers={expandedServers}
-              toggleExpand={toggleExpand}
+              onToolClick={setDetailTool}
             />
           </div>
         }
@@ -640,7 +664,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         title="股票分析"
         badge={{ variant: 'optional' }}
         leftContent={
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Skill
             </p>
@@ -680,8 +704,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
                 (s): s is string => !!s,
               )}
               groupByServer={groupByServer}
-              expandedServers={expandedServers}
-              toggleExpand={toggleExpand}
+              onToolClick={setDetailTool}
             />
           </div>
         }
@@ -692,7 +715,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         title="代码工作流"
         badge={{ variant: 'optional' }}
         leftContent={
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Skill（各复用基础工具）
             </p>
@@ -741,7 +764,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         title="文章"
         badge={{ variant: 'optional' }}
         leftContent={
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Skill
             </p>
@@ -777,8 +800,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
                 (s): s is string => !!s,
               )}
               groupByServer={groupByServer}
-              expandedServers={expandedServers}
-              toggleExpand={toggleExpand}
+              onToolClick={setDetailTool}
             />
           </div>
         }
@@ -817,6 +839,8 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
       )}
 
       <SkillDetailDialog name={detailName} onClose={() => setDetailName(null)} />
+      <ToolDetailDialog tool={detailTool} onClose={() => setDetailTool(null)} />
+      <SegmentDetailDialog segment={detailSegment} onClose={() => setDetailSegment(null)} />
     </div>
   );
 }
