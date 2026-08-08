@@ -29,7 +29,7 @@
 
 - [x] [Step 1: ToolDef 加 shortDescription 字段](./step1-tooldef-short-description.md) — 数据层改造 + 56 个 defineTool 调用补字段
 - [x] [Step 2: 前端布局重构 + 详情浮窗](./step2-frontend-layout.md) — AbilityTab/AbilityCard 重构 + 新增 ToolDetailDialog + Skill 分类修正
-- [ ] [Step 3: 验证与收尾](./step3-verify.md) — lint/build 通过，运行时检查
+- [x] [Step 3: 验证与收尾](./step3-verify.md) — lint/build 通过，运行时检查
 
 ## 全局决策
 
@@ -40,3 +40,16 @@
 - **浮窗组件**：新建 `ToolDetailDialog.tsx`（Dialog + 工具名标题 + 完整 description md 渲染）；提示词段详情复用 Dialog 风格但单独建组件或内联
 - **Skill 分类修正**：`cross-session-review` 归入记忆系统（它配合 RecallMemory/SaveMemory/ReadReport/WriteReport 使用）
 - **宽度**：去掉 `max-w-3xl`，改用 `max-w-5xl` 或不限制，让双栏有足够空间
+
+## 完成总结
+
+3 个 step 全部完成，2 次 git commit：
+
+1. **Step 1（数据层）**：`ToolDef` / `defineTool` 新增 `shortDescription` 字段，15 个工具文件共 56 个 `defineTool` 调用全部补写一句话精简描述。`ToolInfo` / `getAllToolGroups()` 透传。
+2. **Step 2（前端）**：AbilityTab 布局重构——工具从手风琴折叠改为平铺（name + shortDescription），点击弹 `ToolDetailDialog` 看完整 description；提示词段精简展示，点击弹 `SegmentDetailDialog` 看模板全文；双栏均衡（flex-1 / flex-1）；`cross-session-review` 归入记忆系统卡片；宽度 max-w-3xl → max-w-5xl。
+3. **Step 3（验证）**：lint 0 errors / build:electron 通过 / build:renderer 通过。
+
+**新增文件**：`ToolDetailDialog.tsx`、`SegmentDetailDialog.tsx`
+**改动文件**：`tool-adapter.ts`、`tool-registry.ts`、13 个工具文件、`AbilityTab.tsx`、`AbilityCard.tsx`
+
+运行时交互验证留给用户。
