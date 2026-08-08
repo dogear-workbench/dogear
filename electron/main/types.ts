@@ -250,7 +250,7 @@ export interface ChildStateSnapshot {
 export interface SystemPromptSegment {
   key: string;
   label: string;
-  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide';
+  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide' | 'memory';
   template: string;
   triggerDescription: string;
   isDynamic: boolean;

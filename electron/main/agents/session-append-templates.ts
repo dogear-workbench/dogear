@@ -38,6 +38,12 @@ export function groupAppendFor(groupName: string): string {
   );
 }
 
+/** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
+export const MEMORY_GUIDANCE_APPEND =
+  '\n## 记忆系统\n' +
+  '- 只记录有长期价值的信息（稳定的偏好、重要决策、反复出现的模式），不要存一次性对话内容\n' +
+  '- UpdateCoreProfile 是全量覆盖——调用前必须先 GetCoreProfile 拿现有内容合并后再写入';
+
 /** 共享区阶段总结引导（仅主会话 + 有工作区时注入）。 */
 export const NOTES_GUIDANCE_APPEND =
   `\n## 共享区阶段总结（可选）\n` +
@@ -57,7 +63,8 @@ export const MAIN_AGENT_DELEGATION_APPEND =
   '- 子会话完成后会用 SendMessage(..., { delivery: true }) 向你交付，你在 WaitForMessage 中收到结果。\n' +
   '- 如果子会话有歧义需要反问你，它也会用 SendMessage 发来，你在 WaitForMessage 中收到后回复即可。\n' +
   '- 同时派遣多个子会话时，可以用一个 WaitForMessage 等待它们中任意一个的消息（第一条到达即返回）。\n' +
-  '- 不要在 CreateSession 后直接 end_turn——那会让你的回合提前结束，子会话的交付无人接收。';
+  '- 不要在 CreateSession 后直接 end_turn——那会让你的回合提前结束，子会话的交付无人接收。\n' +
+  '- SendMessage 的 delivery 标记仅用于正式交付（任务完成通知），普通往来消息（提问、回复、追加信息）不要设 delivery。';
 
 /**
  * 子会话交付契约（仅 role='sub' 注入）。
@@ -73,7 +80,8 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
     `1. 先用 \`ListLinkedSessions\` 查到派出你的会话的 sessionId。\n` +
     `2. 完成任务后，用 \`SendMessage(sessionId, summary, { delivery: true })\` 向它交付结果；summary ≤500 字总结你做了什么。\n` +
     `3. 有歧义、缺少关键信息时，用 \`SendMessage(sessionId, question)\` 反问，然后 \`WaitForMessage([sessionId])\` 挂起等待回复，不要瞎猜。\n` +
-    `4. 你没有 CreateSession / CreateSessionBatch 工具，不能派遣孙子会话。\n`
+    `4. 你没有 CreateSession / CreateSessionBatch 工具，不能派遣孙子会话。\n` +
+    `- 使用 ReadReferenceSession 读历史会话时，原样交回给主 agent，不要臆断或省略。\n`
   );
 }
 
@@ -138,6 +146,14 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       category: 'notes',
       template: NOTES_GUIDANCE_APPEND,
       triggerDescription: '仅主会话 + 绑定了工作区时注入（子会话不写 notes）。引导 Agent 在阶段告一段落时主动写 `shared/_notes/` 阶段总结，供组卡提炼参考。',
+      isDynamic: false,
+    },
+    {
+      key: 'memory-guidance',
+      label: '记忆系统使用规范',
+      category: 'memory',
+      template: MEMORY_GUIDANCE_APPEND,
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。引导 Agent 正确使用记忆系统：只记长期价值信息、UpdateCoreProfile 前先 GetCoreProfile。',
       isDynamic: false,
     },
     {
