@@ -16,7 +16,7 @@
 
 - [x] [Step 1: 砍掉工具包导览 + 修正记忆提示词](./step1-toolpack-guide-and-memory.md) — 删 buildToolPackGuide，修正 MEMORY_GUIDANCE_APPEND，清 dead code
 - [x] [Step 2: 主会话注册 reference 工具](./step2-reference-tools-to-main.md) — ReadReferenceSession 等工具放开给主会话
-- [ ] [Step 3: 精简协作提示词 + 极简组上下文](./step3-collaboration-prompts.md) — 重写 4 段 append，极简化 group-context-builder
+- [x] [Step 3: 精简协作提示词 + 极简组上下文](./step3-collaboration-prompts.md) — 重写 4 段 append，极简化 group-context-builder
 
 ## 全局决策
 

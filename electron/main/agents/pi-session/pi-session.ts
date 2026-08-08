@@ -26,7 +26,7 @@ import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND } from '../session-append-templates.js';
+import { NOTES_GUIDANCE_APPEND, MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -41,8 +41,6 @@ import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
-import * as conversationService from '../../services/conversation-service.js';
-import { getGroup } from '../../services/group-service.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
 import {
@@ -245,24 +243,6 @@ export class PiSession extends EventEmitter {
     const groupContextText = this.config.groupId
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId)
       : '';
-    let groupNameForAppend: string | null = null;
-    if (!isSubAgent && this.config.groupId) {
-      try {
-        const conversations = await conversationService.getByWorkspaceId(this.config.workspaceId);
-        const hasSibling = conversations.some((conversation) =>
-          conversation.groupId === this.config.groupId
-          && conversation.role !== 'sub'
-          && conversation.id !== this.config.conversationId,
-        );
-        if (hasSibling) {
-          const group = await getGroup(this.config.workspaceId, this.config.groupId);
-          const title = group?.title?.trim();
-          groupNameForAppend = title || `未命名组（创建于 ${group ? new Date(group.createdAt).toLocaleString('zh-CN') : '未知时间'}）`;
-        }
-      } catch (error) {
-        this.logger.warn('计算组背景提示失败，跳过注入:', error);
-      }
-    }
 
     const projectClaudeMd = await readTextFileSafe(path.join(this.config.workspacePath, '.claude', 'CLAUDE.md'));
     const userClaudeMd = await readTextFileSafe(path.join(os.homedir(), '.claude', 'CLAUDE.md'));
@@ -284,8 +264,6 @@ export class PiSession extends EventEmitter {
       coreProfileText ?? '',
       groupContextText,
     ];
-    if (!isSubAgent) promptParts.push(REFERENCE_APPEND);
-    if (groupNameForAppend) promptParts.push(groupAppendFor(groupNameForAppend));
     if (!isSubAgent && this.config.workspacePath) {
       promptParts.push(NOTES_GUIDANCE_APPEND);
       promptParts.push(MEMORY_GUIDANCE_APPEND);

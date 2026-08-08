@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 精简协作提示词 + 极简组上下文
-status: pending
+status: done
 ---
 
 ## 目标
@@ -95,8 +95,18 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无。全部按计划执行
 - 改动文件清单：
+  1. `electron/main/agents/group-context-builder.ts`：砍掉文件清单和 token budget，精简到组名 + 一句 ListGroupFiles 引导（100→38 行）
+  2. `electron/main/agents/session-append-templates.ts`：删 REFERENCE_APPEND 和 groupAppendFor 两段，精简 MAIN_AGENT_DELEGATION_APPEND（5 条→1 句）和 subAgentContractFor（4 步→1 段），getSystemPromptSegments 从 7 条减到 5 条
+  3. `electron/main/agents/pi-session/pi-session.ts`：删掉两段对应的 import 和注入逻辑，清理未使用的 conversationService / getGroup import
 
 ### 给下一步的接力棒
-- 全部 step 完成后在此汇总
+- 全部 3 个 step 已完成
+- 最终状态：
+  - 工具包导览已删除
+  - 记忆提示词已修正（去 UpdateCoreProfile、加 RecallMemory 引导）
+  - 主会话可直接读历史会话（不再强制派子会话中转）
+  - 协作提示词从近 500 字精简到必要几句
+  - 组上下文从文件清单注入精简到组名 + 一句引导
+  - getSystemPromptSegments 从 8 条减到 5 条
