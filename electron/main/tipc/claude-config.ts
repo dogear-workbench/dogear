@@ -19,7 +19,8 @@ import {
 import {
   listSkillTemplates,
   subscribeSkillTemplate,
-} from '../services/stock-analysis-skills-service.js';
+  getTemplateContent,
+} from '../services/skill-template-service.js';
 
 const t = tipc.create();
 
@@ -208,12 +209,12 @@ export const claudeConfigRouter = {
     }),
 
   /**
-   * 列出可订阅的 Skill 模板（当前仅 stock-analysis）
+   * 列出可订阅的 Skill 模板（扫描 resources/skill-templates/）
    */
   listSkillTemplates: t.procedure
     .action(async () => {
       try {
-        const templates = listSkillTemplates();
+        const templates = await listSkillTemplates();
         return { templates };
       } catch (error) {
         console.error('列出 Skill 模板失败:', error);
@@ -237,6 +238,21 @@ export const claudeConfigRouter = {
         }
         console.error('订阅 Skill 模板失败:', error);
         return { error: message };
+      }
+    }),
+
+  /**
+   * 获取 Skill 模板源全文（浮窗详情用）
+   */
+  getSkillContent: t.procedure
+    .input<{ name: string }>()
+    .action(async ({ input }) => {
+      try {
+        const content = await getTemplateContent(input.name);
+        return { content };
+      } catch (error) {
+        console.error('读取 Skill 模板源失败:', error);
+        return { error: String(error) };
       }
     }),
 };
