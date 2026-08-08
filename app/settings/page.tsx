@@ -18,7 +18,7 @@ import { MemoryTab } from './MemoryTab';
 import { DigestsPanel } from './memory/DigestsPanel';
 import { ReviewPanel } from './memory/ReviewPanel';
 import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
-import { ToolsAndPermissionsTab } from './ToolsAndPermissionsTab';
+import { AbilityTab } from './AbilityTab';
 import { SkillTab } from './SkillTab';
 import { SubAgentTab } from './SubAgentTab';
 import { SystemPromptPreviewTab } from './SystemPromptPreviewTab';
@@ -524,7 +524,7 @@ export default function SettingsPage() {
 
         {/* ── Tab: 工具与权限 ── */}
         <TabsContent value="tools-and-permissions" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <ToolsAndPermissionsTab local={local} setLocal={setLocal} />
+          <AbilityTab local={local} setLocal={setLocal} />
         </TabsContent>
 
         {/* ── Tab: Skill 管理 ── */}

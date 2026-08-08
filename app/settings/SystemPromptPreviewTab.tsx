@@ -8,6 +8,10 @@ import type { SystemPromptSegment } from '@/types/system-prompt';
 type Category = SystemPromptSegment['category'];
 
 const CATEGORY_META: Record<Category, { label: string; className: string }> = {
+  memory: {
+    label: '记忆',
+    className: 'border-transparent bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300',
+  },
   'tool-guide': {
     label: '工具',
     className: 'border-transparent bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300',
@@ -30,9 +34,10 @@ const CATEGORY_META: Record<Category, { label: string; className: string }> = {
   },
 };
 
-const CATEGORY_ORDER: Category[] = ['tool-guide', 'reference', 'group', 'notes', 'sub-agent'];
+const CATEGORY_ORDER: Category[] = ['memory', 'tool-guide', 'reference', 'group', 'notes', 'sub-agent'];
 
 const CATEGORY_SECTION_TITLE: Record<Category, string> = {
+  memory: '记忆系统',
   'tool-guide': '工具包引导',
   reference: '引用注入',
   group: '组上下文',

@@ -11,7 +11,7 @@ export interface SystemPromptSegment {
   /** 展示名（中文） */
   label: string;
   /** 分类，前端可用于分组展示 */
-  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide';
+  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide' | 'memory';
   /** 完整模板正文（含占位符如 ${groupName}） */
   template: string;
   /** 什么条件下会被注入（中文，1-3 句话） */
