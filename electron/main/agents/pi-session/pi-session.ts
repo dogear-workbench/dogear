@@ -25,7 +25,6 @@ import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
-import { buildToolPackGuide } from '../tool-pack-guide.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
 import { REFERENCE_APPEND, groupAppendFor, NOTES_GUIDANCE_APPEND, MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
@@ -283,7 +282,6 @@ export class PiSession extends EventEmitter {
       userClaudeMd,
       skillIndexText,
       coreProfileText ?? '',
-      buildToolPackGuide(this.config.enabledToolPacks, !!this.config.workspacePath),
       groupContextText,
     ];
     if (!isSubAgent) promptParts.push(REFERENCE_APPEND);

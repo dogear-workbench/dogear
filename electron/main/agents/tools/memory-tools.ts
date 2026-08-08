@@ -24,13 +24,6 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?: boolean }): ToolDef[] {
   const autonomous = opts?.autonomous === true;
 
-  const saveMemoryDescription = autonomous
-    ? '保存新的主题记忆或覆盖现有主题。\n' +
-      'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
-      '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。'
-    : '保存新的主题记忆或覆盖现有主题。\n' +
-      'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
-      '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。';
 
   const defs: ToolDef[] = [
     // ========================================
@@ -90,7 +83,9 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
     defineTool(
       'SaveMemory',
       '保存主题记忆',
-      saveMemoryDescription,
+      '保存新的主题记忆或覆盖现有主题。\n' +
+      'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
+      '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。',
       z.object({
         slug: z
           .string()

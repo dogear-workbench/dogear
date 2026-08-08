@@ -9,7 +9,6 @@
  * 派新会话来间接使用它们，避免污染主上下文。
  */
 
-import { buildToolPackGuide } from './tool-pack-guide.js';
 import type { SystemPromptSegment } from '../types.js';
 
 /** 通用引用会话提示（组内会话默认加，主 agent 侧）。 */
@@ -42,7 +41,7 @@ export function groupAppendFor(groupName: string): string {
 export const MEMORY_GUIDANCE_APPEND =
   '\n## 记忆系统\n' +
   '- 只记录有长期价值的信息（稳定的偏好、重要决策、反复出现的模式），不要存一次性对话内容\n' +
-  '- UpdateCoreProfile 是全量覆盖——调用前必须先 GetCoreProfile 拿现有内容合并后再写入';
+  '- 讨论用户可能已有偏好的话题时，先 RecallMemory 查一下有没有相关记忆';
 
 /** 共享区阶段总结引导（仅主会话 + 有工作区时注入）。 */
 export const NOTES_GUIDANCE_APPEND =
@@ -106,15 +105,6 @@ const GROUP_CONTEXT_EXAMPLE =
 export function getSystemPromptSegments(): SystemPromptSegment[] {
   return [
     {
-      key: 'tool-pack-guide',
-      label: '可用工具类目导览',
-      category: 'tool-guide',
-      template: buildToolPackGuide([], false),
-      triggerDescription:
-        '每次会话启动时注入。根据用户在「设置 → 工具包」启用的类目动态生成，帮助 Agent 判断"要不要 search 工具"。常驻记忆系统始终列出；有工作区绑定时会追加 requiresWorkspace 的工具包。',
-      isDynamic: true,
-    },
-    {
       key: 'group-context',
       label: '会话组上下文（模板说明）',
       category: 'group',
@@ -153,7 +143,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '记忆系统使用规范',
       category: 'memory',
       template: MEMORY_GUIDANCE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。引导 Agent 正确使用记忆系统：只记长期价值信息、UpdateCoreProfile 前先 GetCoreProfile。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。引导 Agent 正确使用记忆系统：只记长期价值信息、讨论相关话题时先 RecallMemory 查询。',
       isDynamic: false,
     },
     {
