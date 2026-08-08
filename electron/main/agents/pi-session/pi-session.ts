@@ -363,8 +363,8 @@ export class PiSession extends EventEmitter {
           };
       toolDefs.push(...registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
 
-      // dogear-reference：只装到子会话（role='sub'），且必须拿到 parentConversationId 才能定位兄弟会话
-      if (this.config.role === 'sub' && this.config.parentConversationId) {
+      // dogear-reference：有 groupId 时主会话和子会话都注册
+      if (this.config.groupId) {
         toolDefs.push(...registerPack('dogear-reference', createReferenceToolDefs({
           workspaceId: this.config.workspaceId,
           workspacePath: this.config.workspacePath,

@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 主会话注册 reference 工具
-status: pending
+status: done
 ---
 
 ## 目标
@@ -53,10 +53,12 @@ if (this.config.groupId) {
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无差异，完全按计划执行
 - 改动文件清单：
+  1. `electron/main/agents/tools/reference-tools.ts`：`parentConversationId` 改为可选，ListSiblingSessions 无值时跳过排除逻辑，文件头注释更新
+  2. `electron/main/agents/pi-session/pi-session.ts`：注册条件从 `role==='sub' && parentConversationId` 改为 `groupId` 存在
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`createReferenceToolDefs` 签名为 `{ workspaceId, workspacePath, groupId, parentConversationId? }`
+- 下个 step 该从哪里继续：`session-append-templates.ts` 的 REFERENCE_APPEND / groupAppendFor / MAIN_AGENT_DELEGATION_APPEND / subAgentContractFor 全部待重写
+- 待办或已知限制：无

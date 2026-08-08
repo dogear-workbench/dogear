@@ -1,12 +1,12 @@
 /**
  * 引用会话/组背景 MCP Server 工具（dogear-reference）
  *
- * 只装到「子会话」——主 agent 靠 CreateSession 派新会话消化后回摘要，避免污染主上下文。
+ * 主会话和子会话都装——有 groupId 时自动注册。主 agent 可直接读历史会话和组背景，不必派子会话中转。
  *
  * 工具：
  * - ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
  * - ReadGroupBackground：读本组 background.md 的结构化字段
- * - ListSiblingSessions：列组内兄弟会话（不含派出这个子会话的父会话本身、不含子会话）
+ * - ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
  */
 import fs from 'node:fs/promises';
 import { z } from 'zod';
@@ -25,8 +25,8 @@ export interface ReferenceToolsOpts {
   workspaceId: string;
   workspacePath: string;
   groupId: string;
-  /** 派出这个子会话的父会话 conversationId，用于从兄弟列表里排除 */
-  parentConversationId: string;
+  /** 派出这个子会话的父会话 conversationId，用于从兄弟列表里排除。主会话没有父会话 */
+  parentConversationId?: string;
 }
 
 export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
@@ -116,8 +116,9 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
       z.object({}),
       async () => {
         try {
-          const parentConv = await conversationService.getById(workspaceId, parentConversationId);
-          const parentSessionId = parentConv?.sessionId ?? null;
+          const parentSessionId = parentConversationId
+            ? (await conversationService.getById(workspaceId, parentConversationId))?.sessionId ?? null
+            : null;
 
           const allConvs = await conversationService.getByWorkspaceId(workspaceId);
           const siblings = allConvs.filter((c) =>
@@ -173,5 +174,5 @@ registerToolGroup({
   server: 'dogear-reference',
   label: '跨会话引用',
   create: createReferenceToolDefs,
-  placeholder: [{ workspaceId: '', groupId: '', parentConversationId: '' }],
+  placeholder: [{ workspaceId: '', groupId: '' }],
 });
