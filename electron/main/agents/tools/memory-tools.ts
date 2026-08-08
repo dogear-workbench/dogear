@@ -38,6 +38,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
     // ========================================
     defineTool(
       'RecallMemory',
+      '按关键词查询历史记忆',
       '按关键词查询与主题相关的工作区级历史记忆。每个主题记忆包含关键词索引和 markdown 正文。\n' +
       '匹配规则：关键词做小写归一化 + 子串匹配，不做中文分词。\n' +
       '每次最多返回 5 个主题，超出会有 hint 提示。',
@@ -88,6 +89,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
     // ========================================
     defineTool(
       'SaveMemory',
+      '保存主题记忆',
       saveMemoryDescription,
       z.object({
         slug: z
@@ -134,6 +136,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
     // ========================================
     defineTool(
       'ForgetMemory',
+      '删除主题记忆',
       '删除指定 slug 的主题记忆。\n' +
       '此操作同时删除 markdown 文件和 index.json 中的条目。',
       z.object({
@@ -172,6 +175,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       // ========================================
       defineTool(
         'GetCoreProfile',
+        '读取核心画像',
         '读取本工作区的 core-profile（每个新会话自动注入的稳定身份画像）。\n' +
         '返回当前正文和 updated 时间戳；文件不存在或为空时返回明确提示。\n' +
         'UpdateCoreProfile 是全量覆盖，调用前应先调本工具拿现状再合并。',
@@ -216,6 +220,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       // ========================================
       defineTool(
         'UpdateCoreProfile',
+        '更新核心画像',
         '全量覆盖写入 core-profile。\n' +
         '⚠️ 是**全量覆盖**：必须先 GetCoreProfile 拿现有内容，把新增部分与之合并成完整版本再传入，否则会丢失已有内容。\n' +
         '写入成功后 updated 时间戳自动刷新。',

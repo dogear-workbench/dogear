@@ -80,6 +80,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'SearchStock',
+      '搜索 A 股股票',
       '搜索 A 股股票（支持名称、拼音首字母、股票代码模糊匹配）。\n' +
       '返回匹配的股票列表（最多 10 条），包含代码、名称、市场信息。',
       z.object({
@@ -120,6 +121,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetStockQuote',
+      '获取实时行情',
       '获取股票实时行情数据（支持批量查询，最多 10 只）。\n' +
       '返回当前价格、涨跌幅、成交量、成交额、最高最低价、换手率等详细数据。',
       z.object({
@@ -174,6 +176,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetKLineData',
+      '获取 K 线历史数据',
       '获取股票 K 线历史数据。\n' +
       '支持日K、周K、月K，返回开高低收、成交量、涨跌幅、换手率等字段。\n' +
       '数据会缓存到本地 JSONL 文件，重复查询直接读取本地数据，非常快。',
@@ -263,6 +266,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetTimeline',
+      '获取当日分时数据',
       '获取股票当日分时数据（逐分钟价格、均价、成交量）。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
@@ -323,6 +327,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetWatchlist',
+      '查看自选股列表',
       '获取用户的自选股列表。\n' +
       '返回所有已添加的自选股信息（代码、名称、市场、添加时间）。',
       z.object({}),
@@ -363,6 +368,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'ModifyWatchlist',
+      '添加或删除自选股',
       '添加或删除自选股。\n' +
       '添加时需提供 name（股票名称），可通过 SearchStock 工具获取。',
       z.object({

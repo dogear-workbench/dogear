@@ -11,6 +11,7 @@ import type { ToolDef } from '../pi/tool-adapter.js';
 /** 工具展示元数据（给设置页用，从 ToolDef 提取） */
 export interface ToolInfo {
   name: string;
+  shortDescription: string;
   description: string;
 }
 
@@ -50,7 +51,7 @@ export function getAllToolGroups(): ToolGroupInfo[] {
     let tools: ToolInfo[] = [];
     try {
       const defs = create(...(placeholder ?? []) as never[]);
-      tools = defs.map(d => ({ name: d.name, description: d.description }));
+      tools = defs.map(d => ({ name: d.name, shortDescription: d.shortDescription, description: d.description }));
     } catch {
       tools = [];
     }

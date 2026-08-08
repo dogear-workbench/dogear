@@ -35,6 +35,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
   return [
     defineTool(
       'ReadReferenceSession',
+      '读取会话去噪原文',
       '读指定 SDK 会话的去噪原文。'
         + '不传 tail/range 返回全量；tail=N 返回后 N 条；range=[start, end) 按去噪后 index 切。'
         + '返回值前几行是 meta（count / totalCount），下面才是正文。'
@@ -71,6 +72,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
 
     defineTool(
       'ReadGroupBackground',
+      '读取组背景摘要',
       '读本组 background.md（结构化背景）。'
         + '返回 topic / progress / keyDecisions[] / openQuestions[]。'
         + '当前组：closure 已注入，无需入参。'
@@ -108,6 +110,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
 
     defineTool(
       'ListSiblingSessions',
+      '列出组内兄弟会话',
       '列出本组的兄弟会话（不含派出你的父会话本身、不含子会话、不含已归档）。'
         + '每条给出 sessionId / conversationTitle / lastActivity / isActive（近 5 分钟有活动）/ hasDigestCoverage（是否已被组卡收录）。',
       z.object({}),

@@ -9,6 +9,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
   return [
     defineTool(
       'ListGroupFiles',
+      '列出共享区文件',
       '列出当前会话组共享区的所有文件（agent 写出的文件）。',
       z.object({}),
       async () => {
@@ -38,6 +39,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
 
     defineTool(
       'ReadGroupFile',
+      '读取共享区文件',
       '读取共享区文件内容（按相对路径）。',
       z.object({
         relPath: z.string().describe('共享区相对路径，例如 notes.md'),
@@ -59,6 +61,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
 
     defineTool(
       'WriteGroupFile',
+      '写入共享区文件',
       '写入共享区文件（覆盖已有内容）。',
       z.object({
         relPath: z.string().describe('共享区相对路径，例如 notes.md 或 ideas/2026-06-25.md'),

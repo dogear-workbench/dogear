@@ -166,6 +166,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'CalcIndicators',
+      '计算技术指标',
       '计算股票技术指标。返回精确的指标数值，用于技术分析。\n' +
       '支持指标: MA(均线), EMA(指数均线), MACD, KDJ, RSI, BOLL(布林带), WR(威廉), OBV(能量潮), ATR(真实波幅), VWAP\n' +
       '数据来源: 从已有 K 线数据获取，由 Python 计算引擎精确计算。',
@@ -276,6 +277,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'ScreenStocks',
+      '条件筛选全市场股票',
       '全市场 A 股条件筛选。\n' +
       '支持基本面条件（行业、PE、PB、市值、价格）和技术指标条件（RSI、MACD 等）。\n' +
       '注意: 技术指标筛选需要逐股获取K线数据，候选超过100只时会自动截断。',
@@ -380,6 +382,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetFinancials',
+      '获取个股财报数据',
       '获取个股财报数据（营收、净利润、ROE、毛利率、净利率、资产负债率、每股经营现金流等，' +
       '每项指标均附带 _yoy 同比%/_mom 环比%/_single_yoy 单季同比% 三个衍生字段）。\n' +
       '数据来源: 同花顺财报摘要新版接口（stock_financial_abstract_new_ths），失败时降级 baostock。',
@@ -478,6 +481,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'DetectSignals',
+      '检测技术信号',
       '检测股票近期技术信号。\n' +
       '内置信号: MACD金叉/死叉, KDJ金叉/超买/超卖, RSI超买/超卖, 布林上轨突破/下轨跌破, 成交量突破, 均线多头排列。\n' +
       '返回: 触发的信号列表（含信号名称、触发日期、指标数值）。',
@@ -558,6 +562,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'EvalFormula',
+      '执行公式表达式',
       '执行自定义公式表达式（类通达信 TDX 语法）。\n' +
       '支持变量: CLOSE, OPEN, HIGH, LOW, VOL, PE, PB, MARKET_CAP\n' +
       '支持函数: MA(CLOSE, N), EMA(CLOSE, N), RSI(N), MACD(fast, slow, signal), KDJ(n), BOLL(N, k), ATR(N), CROSS(A, B), MAX(HIGH, N), MIN(LOW, N)\n' +
@@ -652,6 +657,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'SimpleBacktest',
+      '策略回测',
       '基于公式表达式的简单策略回测。\n' +
       '在历史 K 线数据上模拟买卖操作，输出总收益率、年化收益率、最大回撤、夏普比率等绩效指标。\n' +
       '买卖公式使用类通达信（TDX）语法，支持技术指标函数（MA/EMA/RSI/MACD/KDJ/BOLL等）。\n' +
@@ -777,6 +783,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'ListIndustries',
+      '列出行业板块分类',
       '列出证监会行业分类（CSRC 一级/二级行业），用来查询"科技"、"消费"这类宽概念对应哪些细分分类名。\n' +
       '返回的每个 name 字段带分类代码前缀（如"J66货币金融服务"、"C27医药制造业"），可直接作为 ScreenStocks 的 industry 参数（精确等值匹配）。\n' +
       '⚠️ 命名与东方财富板块名不同：银行股在"J66货币金融服务"下（混少量非银金融），不叫"银行"；医药股在"C27医药制造业"下，不叫"医药"。\n' +
@@ -834,6 +841,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'CompareIndustry',
+      '个股与行业对比',
       '将个股与同行业其他股票对比，显示行业均值/中位数/排名。\n' +
       '数据源: baostock 行业快照（证监会行业分类），与 ScreenStocks 同口径。\n' +
       'PE/PB 统计自动剔除负值（亏损股）。\n' +
@@ -907,6 +915,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetFundFlow',
+      '查询资金流向',
       '查询资金流向数据（东方财富数据源）。一个工具聚合三种用途：\n' +
       '- type=individual: 个股资金流向，近 100 个交易日，需 stock+market\n' +
       '- type=market: 大盘（沪深两市整体）资金流向，近 100 个交易日\n' +
@@ -1033,6 +1042,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetNorthboundHolding',
+      '查询北向资金持股',
       '查询北向资金持股数据（东方财富数据源）。一个工具聚合两种用途：\n' +
       '- type=individual: 个股北向持股历史，需 stock（裸代码，如"600519"）\n' +
       '- type=summary: 沪深港通资金流向汇总历史，需 fund_type\n' +

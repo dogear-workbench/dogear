@@ -63,6 +63,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
   const sharedTools: ToolDef[] = [
     defineTool(
       'SendMessage',
+      '向指定会话发消息',
       SEND_MESSAGE_DESC,
       z.object({
         toSessionId: z.string().min(1).describe('目标会话的 sessionId（通过 CreateSession 返回值或 ListLinkedSessions 获取）'),
@@ -115,6 +116,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
     defineTool(
       'WaitForMessage',
+      '等待指定会话的消息',
       WAIT_FOR_MESSAGE_DESC,
       z.object({
         fromSessionIds: z.array(z.string().min(1)).min(1).describe('要等待其消息的会话 sessionId 列表'),
@@ -134,6 +136,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
     defineTool(
       'ListLinkedSessions',
+      '列出契约通道会话',
       LIST_LINKED_DESC,
       z.object({}),
       async () => {
@@ -164,6 +167,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
   const mainOnlyTools: ToolDef[] = [
     defineTool(
       'CreateSession',
+      '派出子会话执行任务',
       '创建一个平级的新会话来协作处理任务。新会话与当前会话建立契约通道，可通过 SendMessage / WaitForMessage 双向通信。' +
       'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。',
       z.object({
@@ -199,6 +203,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
     defineTool(
       'CreateSessionBatch',
+      '批量派出多个子会话',
       '原子批量创建多个新会话。先一次性 dry-run 校验所有 outputPath 不冲突，任何一个冲突则整批拒绝；' +
       '全部 ok 才依次拉起。中途任意一个拉起失败将回滚已创建的会话。',
       z.object({
@@ -264,6 +269,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
     defineTool(
       'StopSession',
+      '停止已派出的会话',
       '停止当前会话直接派出的某个会话（仅对 running 有效）。停止后该会话状态变为 cancelled。',
       z.object({
         sessionId: z.string().min(1).describe('要停止的会话 sessionId'),

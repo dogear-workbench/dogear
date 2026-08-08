@@ -52,6 +52,7 @@ export function createGroupDigestToolDefs(
   return [
     defineTool(
       'ReadGroupDigest',
+      '读取组摘要卡',
       '读取本组现有的组卡。无组卡时返回「(无组卡)」。groupId 必须等于上下文中给定的 groupId。',
       z.object({ groupId: z.string() }),
       async (args) => {
@@ -83,6 +84,7 @@ export function createGroupDigestToolDefs(
 
     defineTool(
       'SaveGroupDigest',
+      '保存组摘要卡',
       '写入本组组卡。sourcesSeen 由工具自动用 task payload 的 dirtyConversations 合并已有 sourcesSeen 后维护；重复写覆盖旧卡。',
       z.object({
         groupId: z.string(),
@@ -148,6 +150,7 @@ export function createGroupDigestToolDefs(
 
     defineTool(
       'SaveGroupBackground',
+      '保存组背景摘要',
       '写入本组 background.md（给下一个新会话读的结构化背景）。'
         + '4 字段：topic 一句话组主题；progress 2-3 句当前进展；'
         + 'keyDecisions 数组罗列已拍板的决策（避免下个新会话重议）；'

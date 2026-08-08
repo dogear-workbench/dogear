@@ -49,6 +49,7 @@ export function createAnnouncementToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'ListAnnouncements',
+      '查询公司公告列表',
       '查询指定股票在巨潮资讯网（cninfo.com.cn）披露的公司公告列表，返回标题、日期、类型和原始 PDF 直链（url）。\n' +
       '参数说明：\n' +
       '- code：股票代码（如 "600519"），必填。\n' +
@@ -104,6 +105,7 @@ export function createAnnouncementToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'ReadAnnouncement',
+      '读取公告全文',
       '读取一条公司公告的全文内容（PDF 解析为 markdown 文本，含标题、正文、表格）。首次读取会现下载 PDF 并解析，可能耗时几秒到十几秒；解析结果会缓存到本地，同一条公告再次读取会直接命中缓存、几乎瞬间返回。\n' +
       '参数说明：\n' +
       '- url：公告的 PDF 直链，必须原样取自 ListAnnouncements 返回结果中某一条的 url 字段。出于安全考虑只接受 static.cninfo.com.cn 域名，其他地址会被拒绝并返回错误。\n' +

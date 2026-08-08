@@ -91,6 +91,7 @@ export function createStockPickingToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'PreheatLongTermPool',
+      '预热长期候选池',
       '5 年长期视角候选池预热。硬筛条件只吃行业 + 卫生条件（excludeNegativePe / excludeSt），' +
       '不看价格/PE/市值等短期估值条件。\n' +
       '执行链路：全市场行业硬筛 → 可获取性预检（1 期财报）→ 5 年年报（ROE均值/CAGR/稳定性）→ 周 K 趋势指标（MA26/MA52/年内位置）→ 完整性检查。\n' +
@@ -137,6 +138,7 @@ export function createStockPickingToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'RankByLongTerm',
+      '长期评分排序',
       '对 PreheatLongTermPool 的候选池按 4 维度长期指标打分排序：ROE 均值（盈利能力）/ 增长 CAGR（成长性）/ 长期趋势（周 K MA26/MA52 + 年内位置）/ 稳定性（ROE 变异系数 + 净利下滑年数）。\n' +
       '使用方法: 从 PreheatLongTermPool 返回结果的 JSON 代码块中取 candidates 数组，原样传入本工具。\n' +
       '权重可反复调整秒级重跑（如偏重 ROE 则 roeMean=0.4、growth=0.2、trend=0.2、stability=0.2）；不传 weights 则用默认均等权重（各 0.25）。\n' +

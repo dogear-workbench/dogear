@@ -68,6 +68,7 @@ export function createSearchToolDefs(workspacePath: string): ToolDef[] {
   return [
     defineTool(
       'Glob',
+      '按通配符匹配文件路径',
       '按 glob 模式匹配工作区内的文件路径，支持 * / ? / ** 通配符（如 "**/*.ts"、"src/*.tsx"）。' +
       '返回匹配的相对路径列表（按路径排序，默认最多 100 条）。',
       z.object({
@@ -101,6 +102,7 @@ export function createSearchToolDefs(workspacePath: string): ToolDef[] {
 
     defineTool(
       'Grep',
+      '正则搜索文件内容',
       '在工作区文件内容中按正则表达式搜索匹配行，返回 "相对路径:行号: 内容"（超长行自动截断）。' +
       '可选 glob 参数按文件名过滤，可选 path 参数限定搜索的子目录。',
       z.object({

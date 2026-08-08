@@ -22,6 +22,7 @@ export function createArticleToolDefs(workspacePath: string): ToolDef[] {
     // ========================================
     defineTool(
       'ReadArticle',
+      '读取文章正文和元数据',
       '读取指定文章的完整 Markdown 内容和元数据。\n' +
       '返回的内容包括标题、作者、来源、原始 URL 和 Markdown 正文。',
       z.object({
@@ -61,6 +62,7 @@ export function createArticleToolDefs(workspacePath: string): ToolDef[] {
     // ========================================
     defineTool(
       'ListArticles',
+      '列出工作区所有文章',
       '列出当前工作区中所有已保存的文章（仅元数据，不含正文）。',
       z.object({}),
       async () => {

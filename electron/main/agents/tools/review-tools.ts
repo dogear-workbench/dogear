@@ -24,6 +24,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
   return [
     defineTool(
       'ListDigests',
+      '列出所有组摘要卡',
       '列出本工作区所有组卡（按组聚合）：每行格式「- groupId · createdAt · 标题 · N会话」。',
       z.object({}),
       async () => {
@@ -41,6 +42,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'ReadDigest',
+      '读取单张组摘要卡',
       '读取单张组卡，返回概述 + items（多源 sources，每条带 sources[{sessionId, uuid}]）+ keyOutputs 段。',
       z.object({ groupId: z.string().describe('组 ID') }),
       async (args) => {
@@ -69,6 +71,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'TraceSource',
+      '回溯消息原始出处',
       '按 uuid 回溯原始会话，返回该消息及前后对话原文。',
       z.object({
         sessionId: z.string().describe('出处的 SDK 会话 ID'),
@@ -93,6 +96,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'ReadReport',
+      '读取首页报告',
       '读取当前首页报告。返回 updatedAt（上次更新时间，用于判断哪些组卡是新的）和正文 markdown。无报告时返回「(无报告)」。',
       z.object({}),
       async () => {
@@ -113,6 +117,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'WriteReport',
+      '写入首页报告',
       '覆盖写入首页报告（updatedAt 由工具自动生成）。',
       z.object({
         markdown: z.string().min(1).describe('报告正文（纯净 markdown，无 frontmatter）'),
