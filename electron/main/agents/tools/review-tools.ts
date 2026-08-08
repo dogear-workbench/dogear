@@ -24,7 +24,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
   return [
     defineTool(
       'ListDigests',
-      '列出本工作区所有组卡（按组聚合）：每行格式「- groupId · createdAt · 标题 · N会话」。用它和报告的 updatedAt 对比，判断哪些是新组卡（createdAt 晚于 updatedAt 即新）。',
+      '列出本工作区所有组卡（按组聚合）：每行格式「- groupId · createdAt · 标题 · N会话」。',
       z.object({}),
       async () => {
         try {
@@ -69,7 +69,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'TraceSource',
-      '按 uuid 回溯原始会话，返回该消息及前后对话原文。拿不准某条含义时用它查证；找不到则不要据此条臆断。',
+      '按 uuid 回溯原始会话，返回该消息及前后对话原文。',
       z.object({
         sessionId: z.string().describe('出处的 SDK 会话 ID'),
         uuid: z.string().describe('出处 uuid（取自组卡 items.sources）'),
@@ -93,7 +93,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'ReadReport',
-      '读取当前首页报告。返回 updatedAt（上次更新时间，用于判断哪些组卡是新的）和正文 markdown。无报告时返回「(无报告)」，据此走全量分支。',
+      '读取当前首页报告。返回 updatedAt（上次更新时间，用于判断哪些组卡是新的）和正文 markdown。无报告时返回「(无报告)」。',
       z.object({}),
       async () => {
         try {
@@ -113,13 +113,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
 
     defineTool(
       'WriteReport',
-      '覆盖写入首页报告（updatedAt 由工具自动生成）。markdown 是给用户看的纯净报告，按四段结构写：' +
-      '「最近做了什么」（按主题合并，不按天罗列，不写"已完成"字眼）、' +
-      '「需要你处理」（没做的 + 搁置的，合并一类；已解决的直接删除）、' +
-      '「持续观察」（做完但等反馈验证效果的）、' +
-      '「建议」（不是待办复述，是主动推理的下一步方向 / 健壮性优化 / 风险点，用来启发用户）。' +
-      '不放链条 / refs / sessionId（那些进记忆）；不写"最新沉淀"段（沉淀走 SaveMemory）。' +
-      '报告是当前状态快照不是历史归档：每次重写都要主动裁剪——已解决的整条删除、已有结果的观察项归档到记忆或直接删、语义重复的合并、"和上次一样"的段落也要重新审视是否还该留，不能因为没变就默认保留。',
+      '覆盖写入首页报告（updatedAt 由工具自动生成）。',
       z.object({
         markdown: z.string().min(1).describe('报告正文（纯净 markdown，无 frontmatter）'),
       }),

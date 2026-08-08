@@ -168,9 +168,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       'CalcIndicators',
       '计算股票技术指标。返回精确的指标数值，用于技术分析。\n' +
       '支持指标: MA(均线), EMA(指数均线), MACD, KDJ, RSI, BOLL(布林带), WR(威廉), OBV(能量潮), ATR(真实波幅), VWAP\n' +
-      '数据来源: 从已有 K 线数据获取，由 Python 计算引擎精确计算。\n' +
-      '使用场景: 用户想了解某只股票的技术面状态、超买超卖、趋势方向等。\n' +
-      '建议: 分析个股时通常组合使用 MACD+KDJ+RSI+BOLL，不要只看单一指标。',
+      '数据来源: 从已有 K 线数据获取，由 Python 计算引擎精确计算。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
         code: z.string().describe('股票代码（如"600519"）'),
@@ -280,8 +278,6 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       'ScreenStocks',
       '全市场 A 股条件筛选。\n' +
       '支持基本面条件（行业、PE、PB、市值、价格）和技术指标条件（RSI、MACD 等）。\n' +
-      '先用基本面条件缩小范围，再用技术条件精选，性能更优。\n' +
-      '使用场景: 用户要求按特定条件选股，如"找PE低于20的消费股"。\n' +
       '注意: 技术指标筛选需要逐股获取K线数据，候选超过100只时会自动截断。',
       z.object({
         conditions: z.object({
@@ -386,8 +382,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       'GetFinancials',
       '获取个股财报数据（营收、净利润、ROE、毛利率、净利率、资产负债率、每股经营现金流等，' +
       '每项指标均附带 _yoy 同比%/_mom 环比%/_single_yoy 单季同比% 三个衍生字段）。\n' +
-      '数据来源: 同花顺财报摘要新版接口（stock_financial_abstract_new_ths），失败时降级 baostock。\n' +
-      '使用场景: 用户想了解某只股票的基本面数据、财务健康状况、同比环比变化趋势。',
+      '数据来源: 同花顺财报摘要新版接口（stock_financial_abstract_new_ths），失败时降级 baostock。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
         code: z.string().describe('股票代码（如"600519"）'),
@@ -485,7 +480,6 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       'DetectSignals',
       '检测股票近期技术信号。\n' +
       '内置信号: MACD金叉/死叉, KDJ金叉/超买/超卖, RSI超买/超卖, 布林上轨突破/下轨跌破, 成交量突破, 均线多头排列。\n' +
-      '使用场景: 用户想快速掌握某只股票近期有哪些技术信号触发。\n' +
       '返回: 触发的信号列表（含信号名称、触发日期、指标数值）。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
@@ -569,7 +563,6 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       '支持函数: MA(CLOSE, N), EMA(CLOSE, N), RSI(N), MACD(fast, slow, signal), KDJ(n), BOLL(N, k), ATR(N), CROSS(A, B), MAX(HIGH, N), MIN(LOW, N)\n' +
       '支持逻辑运算符: AND, OR, NOT\n' +
       '支持比较运算符: >, <, >=, <=, ==, !=\n' +
-      '使用场景: 验证或执行用户编写的自定义选股/信号公式；也可直接回答用户关于公式计算结果的问题。\n' +
       '示例: "RSI(14) < 30 AND PE < 20"，"CROSS(MACD.DIF, MACD.DEA)"',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
@@ -662,8 +655,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       '基于公式表达式的简单策略回测。\n' +
       '在历史 K 线数据上模拟买卖操作，输出总收益率、年化收益率、最大回撤、夏普比率等绩效指标。\n' +
       '买卖公式使用类通达信（TDX）语法，支持技术指标函数（MA/EMA/RSI/MACD/KDJ/BOLL等）。\n' +
-      '回测逻辑: 满足买入公式时全仓买入（收盘价），满足卖出公式时全仓卖出，单边手续费 0.1%。\n' +
-      '使用场景: 用户想验证某个技术指标策略的历史表现，如"MACD金叉买入、死叉卖出"。',
+      '回测逻辑: 满足买入公式时全仓买入（收盘价），满足卖出公式时全仓卖出，单边手续费 0.1%。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
         code: z.string().describe('股票代码（如"600519"）'),
@@ -787,10 +779,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       'ListIndustries',
       '列出证监会行业分类（CSRC 一级/二级行业），用来查询"科技"、"消费"这类宽概念对应哪些细分分类名。\n' +
       '返回的每个 name 字段带分类代码前缀（如"J66货币金融服务"、"C27医药制造业"），可直接作为 ScreenStocks 的 industry 参数（精确等值匹配）。\n' +
-      '⚠️ 命名与东方财富板块名不同：银行股在"J66货币金融服务"下（混少量非银金融），不叫"银行"；医药股在"C27医药制造业"下，不叫"医药"。用户传俗名时必须先查询映射，不要直接猜。\n' +
-      '使用场景：\n' +
-      '- 用户提到宽泛领域（"科技股"、"新能源"、"银行股"），先调本工具找对应分类名再筛选。\n' +
-      '- 不确定某个行业名是否存在或叫什么，先列一下再传给 ScreenStocks。\n' +
+      '⚠️ 命名与东方财富板块名不同：银行股在"J66货币金融服务"下（混少量非银金融），不叫"银行"；医药股在"C27医药制造业"下，不叫"医药"。\n' +
       '参数：\n' +
       '- keyword：可选，板块名子串过滤（大小写不敏感）。不传则返回全部（受 limit 截断）。\n' +
       '- limit：返回条数上限，默认 60，最多 200。带 keyword 时通常十几条就够，不带时可能有 90+ 板块，建议配合 keyword 使用。\n' +
@@ -847,9 +836,8 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       'CompareIndustry',
       '将个股与同行业其他股票对比，显示行业均值/中位数/排名。\n' +
       '数据源: baostock 行业快照（证监会行业分类），与 ScreenStocks 同口径。\n' +
-      'PE/PB 统计自动剔除负值（亏损股），行业内有极端值时请以中位数为准。\n' +
-      'rank 为升序位次（1 = 行业内最低），total 为参与统计的有效样本数。\n' +
-      '使用场景: 用户想知道某只股票在行业中的估值水平。',
+      'PE/PB 统计自动剔除负值（亏损股）。\n' +
+      'rank 为升序位次（1 = 行业内最低），total 为参与统计的有效样本数。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
         code: z.string().describe('股票代码'),
@@ -923,8 +911,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       '- type=individual: 个股资金流向，近 100 个交易日，需 stock+market\n' +
       '- type=market: 大盘（沪深两市整体）资金流向，近 100 个交易日\n' +
       '- type=sector: 板块资金流向排名（行业/概念/地域），需 indicator+sector_type\n' +
-      '字段单位：净额（元）、净占比（%）。主力=超大单+大单净流入，散户=中单+小单净流入。\n' +
-      '使用场景: 用户想了解某只股票/大盘/板块的主力资金动向。',
+      '字段单位：净额（元）、净占比（%）。主力=超大单+大单净流入，散户=中单+小单净流入。',
       z.object({
         type: z.enum(['individual', 'market', 'sector']).describe('查询类型：individual=个股 / market=大盘 / sector=板块排名'),
         stock: z.string().optional().describe('股票代码（如"600519"），type=individual 时必填'),

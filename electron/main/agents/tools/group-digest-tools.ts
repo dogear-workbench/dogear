@@ -152,8 +152,7 @@ export function createGroupDigestToolDefs(
         + '4 字段：topic 一句话组主题；progress 2-3 句当前进展；'
         + 'keyDecisions 数组罗列已拍板的决策（避免下个新会话重议）；'
         + 'openQuestions 数组罗列未决/搁置的问题。'
-        + 'groupId 必须等于上下文中给定的 groupId。'
-        + '写这个之前一定要先写 SaveGroupDigest；两个字段是不同视角的产物，不冲突不替代。',
+        + 'groupId 必须等于上下文中给定的 groupId。',
       z.object({
         groupId: z.string(),
         topic: z.string().min(1),

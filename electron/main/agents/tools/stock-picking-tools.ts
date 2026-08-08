@@ -96,7 +96,7 @@ export function createStockPickingToolDefs(): ToolDef[] {
       '执行链路：全市场行业硬筛 → 可获取性预检（1 期财报）→ 5 年年报（ROE均值/CAGR/稳定性）→ 周 K 趋势指标（MA26/MA52/年内位置）→ 完整性检查。\n' +
       'insufficientYears 是年报 <3 年的独立计数（与 failuresByCategory.financials 的技术失败分开统计）；两者都会从候选池剔除。\n' +
       '返回: markdown 展示表 + 结构化 JSON 代码块（candidates 数组，供 RankByLongTerm 直接使用）。\n' +
-      '耗时预算: 单行业 limit=50 约 3-5 分钟；limit 上限 100 只；一次只传一个行业，多板块请分开多次调用（或派子会话并行），后续合并 candidates。',
+      '耗时预算: 单行业 limit=50 约 3-5 分钟；limit 上限 100 只。',
       z.object({
         industries: z.array(z.string()).min(1)
           .describe('CSRC 行业分类名列表（带分类代码前缀，如"C27医药制造业"），不确定名称先调 ListIndustries 查询真实值域；传多个行业会分别硬筛后合并去重'),

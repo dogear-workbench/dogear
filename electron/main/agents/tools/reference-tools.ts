@@ -39,7 +39,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
         + '不传 tail/range 返回全量；tail=N 返回后 N 条；range=[start, end) 按去噪后 index 切。'
         + '返回值前几行是 meta（count / totalCount），下面才是正文。'
         + '正文里每块以 `## [role · ts · uuid] ` 开头。'
-        + '会话不存在或读失败时返回 error 字符串——原样交回给主 agent，不要臆断。',
+        + '会话不存在或读失败时返回 error 字符串。',
       z.object({
         sessionId: z.string().describe('目标会话的 SDK sessionId'),
         tail: z.number().int().positive().optional().describe('尾 N 条（去噪后计数）'),
@@ -74,8 +74,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
       '读本组 background.md（结构化背景）。'
         + '返回 topic / progress / keyDecisions[] / openQuestions[]。'
         + '当前组：closure 已注入，无需入参。'
-        + '如果 background 尚未生成（例如组卡刚创建、还没跑过组提炼），返回明确的 null 说明——'
-        + '此时可以退回 ReadGroupDigest 组卡 + ListSiblingSessions 拿组内会话再逐个 ReadReferenceSession 消化。',
+        + '如果 background 尚未生成（例如组卡刚创建、还没跑过组提炼），返回明确的 null 说明。',
       z.object({}),
       async () => {
         const bg = await readGroupBackground(workspaceId, groupId);
@@ -110,8 +109,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     defineTool(
       'ListSiblingSessions',
       '列出本组的兄弟会话（不含派出你的父会话本身、不含子会话、不含已归档）。'
-        + '每条给出 sessionId / conversationTitle / lastActivity / isActive（近 5 分钟有活动）/ hasDigestCoverage（是否已被组卡收录）。'
-        + '拿到 sessionId 后可以配合 ReadReferenceSession 逐个消化。',
+        + '每条给出 sessionId / conversationTitle / lastActivity / isActive（近 5 分钟有活动）/ hasDigestCoverage（是否已被组卡收录）。',
       z.object({}),
       async () => {
         try {

@@ -26,12 +26,9 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
 
   const saveMemoryDescription = autonomous
     ? '保存新的主题记忆或覆盖现有主题。\n' +
-      '本调用来自复盘 / 自动化任务：**判断标准以调用方提示词为准**，"仅在用户明确要求时才调用"那条规则只适用于交互式聊天场景，不适用于本任务，够格就放心写。\n' +
-      '保真契约仍然适用：拿不准某条根源 / 因果时用 TraceSource 查证，宁可不写也不瞎造。\n' +
       'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
       '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。'
     : '保存新的主题记忆或覆盖现有主题。\n' +
-      '⚠️ 仅在用户**明确表达**"记住 XX"、"把这个存到记忆里"等意图时调用，不要自行猜测。\n' +
       'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
       '写错可以通过 ForgetMemory 删除，但会污染 RecallMemory 的检索结果。';
 
@@ -42,9 +39,8 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
     defineTool(
       'RecallMemory',
       '按关键词查询与主题相关的工作区级历史记忆。每个主题记忆包含关键词索引和 markdown 正文。\n' +
-      '使用时机：在讨论具体主题（股票分析、架构设计、用户偏好等）的开头主动调用，不要等用户追问历史才查。\n' +
       '匹配规则：关键词做小写归一化 + 子串匹配，不做中文分词。\n' +
-      '每次最多返回 5 个主题，超出会有 hint 提示，请优化关键词再调。',
+      '每次最多返回 5 个主题，超出会有 hint 提示。',
       z.object({
         keywords: z
           .array(z.string())
@@ -138,7 +134,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
     // ========================================
     defineTool(
       'ForgetMemory',
-      '删除指定 slug 的主题记忆。仅在用户明确要求"忘记 XX"时使用。\n' +
+      '删除指定 slug 的主题记忆。\n' +
       '此操作同时删除 markdown 文件和 index.json 中的条目。',
       z.object({
         slug: z.string().describe('要删除的主题 slug'),
@@ -177,8 +173,8 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       defineTool(
         'GetCoreProfile',
         '读取本工作区的 core-profile（每个新会话自动注入的稳定身份画像）。\n' +
-        '返回当前正文和 updated 时间戳；文件不存在或为空时返回明确提示——**空是正常状态**，不代表没必要写，只是目前没有足够稳定的信号。\n' +
-        '任何 UpdateCoreProfile 调用前都必须先调本工具拿现状，再合并成完整版本传回去（Update 是全量覆盖）。',
+        '返回当前正文和 updated 时间戳；文件不存在或为空时返回明确提示。\n' +
+        'UpdateCoreProfile 是全量覆盖，调用前应先调本工具拿现状再合并。',
         z.object({}),
         async () => {
           try {
@@ -221,7 +217,6 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       defineTool(
         'UpdateCoreProfile',
         '全量覆盖写入 core-profile。\n' +
-        '⚠️ 触发门槛**极苛刻**——只有真正稳定、跨多次会话反复验证为真的身份 / 偏好 / 工作模式才够格（例如"不写单元测试""偏好薄 IO 厚提示词""使用中文回答"）。近期动态、进行中的任务、某次具体决定都不该进这里。**大多数复盘不该调用本工具**。\n' +
         '⚠️ 是**全量覆盖**：必须先 GetCoreProfile 拿现有内容，把新增部分与之合并成完整版本再传入，否则会丢失已有内容。\n' +
         '写入成功后 updated 时间戳自动刷新。',
         z.object({

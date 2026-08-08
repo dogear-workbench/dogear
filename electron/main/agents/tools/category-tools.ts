@@ -67,7 +67,7 @@ export function createCategoryToolDefs(): ToolDef[] {
   return [
     defineTool(
       'ListCategories',
-      '读取当前工作区的智能分类列表，返回 { categories: [{id, name, anchorTags, groupCount, sampleGroupTitles}], atLimit, maxCategories }。决策前必须调一次。',
+      '读取当前工作区的智能分类列表，返回 { categories: [{id, name, anchorTags, groupCount, sampleGroupTitles}], atLimit, maxCategories }。',
       listArgs,
       async (args) => {
         try {
@@ -171,7 +171,7 @@ export function createCategoryToolDefs(): ToolDef[] {
 
     defineTool(
       'SaveCategoryNew',
-      '新建分类并把 groupId 放进去。可选 redistribute 迁移名单（moveToCategoryId="__NEW__" 表示迁到刚新建的这个分类）。分类总数已达上限时会被直接拒绝——此时先调 SaveCategoryMerge 腾位置。',
+      '新建分类并把 groupId 放进去。可选 redistribute 迁移名单（moveToCategoryId="__NEW__" 表示迁到刚新建的这个分类）。',
       newArgs,
       async (args) => {
         try {

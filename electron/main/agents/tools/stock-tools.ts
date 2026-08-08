@@ -81,8 +81,7 @@ export function createStockToolDefs(): ToolDef[] {
     defineTool(
       'SearchStock',
       '搜索 A 股股票（支持名称、拼音首字母、股票代码模糊匹配）。\n' +
-      '返回匹配的股票列表（最多 10 条），包含代码、名称、市场信息。\n' +
-      '使用场景：用户提到股票名称但你不知道代码时，先搜索获取 market 和 code。',
+      '返回匹配的股票列表（最多 10 条），包含代码、名称、市场信息。',
       z.object({
         keyword: z.string().describe('搜索关键词（如"茅台"、"moutai"、"600519"）'),
       }),
@@ -122,8 +121,7 @@ export function createStockToolDefs(): ToolDef[] {
     defineTool(
       'GetStockQuote',
       '获取股票实时行情数据（支持批量查询，最多 10 只）。\n' +
-      '返回当前价格、涨跌幅、成交量、成交额、最高最低价、换手率等详细数据。\n' +
-      '使用场景：用户询问某只股票的当前价格或行情概况。',
+      '返回当前价格、涨跌幅、成交量、成交额、最高最低价、换手率等详细数据。',
       z.object({
         stocks: z.array(
           z.object({
@@ -178,8 +176,7 @@ export function createStockToolDefs(): ToolDef[] {
       'GetKLineData',
       '获取股票 K 线历史数据。\n' +
       '支持日K、周K、月K，返回开高低收、成交量、涨跌幅、换手率等字段。\n' +
-      '数据会缓存到本地 JSONL 文件，重复查询直接读取本地数据，非常快。\n' +
-      '使用场景：用户想了解股票的历史走势、分析趋势。',
+      '数据会缓存到本地 JSONL 文件，重复查询直接读取本地数据，非常快。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
         code: z.string().describe('股票代码（如"600519"）'),
@@ -266,8 +263,7 @@ export function createStockToolDefs(): ToolDef[] {
     // ========================================
     defineTool(
       'GetTimeline',
-      '获取股票当日分时数据（逐分钟价格、均价、成交量）。\n' +
-      '使用场景：用户想了解某只股票今天的盘中走势。',
+      '获取股票当日分时数据（逐分钟价格、均价、成交量）。',
       z.object({
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
         code: z.string().describe('股票代码（如"600519"）'),
@@ -328,8 +324,7 @@ export function createStockToolDefs(): ToolDef[] {
     defineTool(
       'GetWatchlist',
       '获取用户的自选股列表。\n' +
-      '返回所有已添加的自选股信息（代码、名称、市场、添加时间）。\n' +
-      '使用场景：用户询问"我的自选股有哪些"或需要批量查询自选股行情。',
+      '返回所有已添加的自选股信息（代码、名称、市场、添加时间）。',
       z.object({}),
       async () => {
         try {
@@ -369,9 +364,7 @@ export function createStockToolDefs(): ToolDef[] {
     defineTool(
       'ModifyWatchlist',
       '添加或删除自选股。\n' +
-      '⚠️ 此工具会修改用户数据，需要用户确认后才能执行。\n' +
-      '添加时需提供 name（股票名称），可通过 SearchStock 工具获取。\n' +
-      '使用场景：用户说"把茅台加到自选"或"把比亚迪从自选里删掉"。',
+      '添加时需提供 name（股票名称），可通过 SearchStock 工具获取。',
       z.object({
         action: z.enum(['add', 'remove']).describe('操作类型（add=添加 remove=删除）'),
         market: z.number().describe('市场代码（1=沪市 0=深市）'),

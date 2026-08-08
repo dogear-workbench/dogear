@@ -19,13 +19,11 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 const SEND_MESSAGE_DESC =
   '向已建立契约通道的会话发送消息。目标会话必须与当前会话有直接派出关系（当前会话派出的，或派出当前会话的）。' +
-  '可选 options.delivery=true 标记这是一次正式交付（任务完成通知），配合 WaitForMessage 使用；' +
-  '普通往来消息（提问、追加信息、回复）不要设 delivery。';
+  '可选 options.delivery=true 标记这是一次正式交付（任务完成通知），配合 WaitForMessage 使用。';
 
 const WAIT_FOR_MESSAGE_DESC =
   '挂起当前回合，等待来自指定 sessionId 列表中任意一方的下一条消息（第一条到达即返回，不等齐全部）。' +
-  '超时未收到任何消息则返回超时提示。常见用法：SendMessage 提问后立即 WaitForMessage 等回复；' +
-  '或创建新会话后 WaitForMessage 等它交付。';
+  '超时未收到任何消息则返回超时提示。';
 
 const LIST_LINKED_DESC = '列出当前会话所有直接契约通道对方（既包含当前会话派出的，也包含派出当前会话的），用于获取可通信的 sessionId。';
 
@@ -167,8 +165,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     defineTool(
       'CreateSession',
       '创建一个平级的新会话来协作处理任务。新会话与当前会话建立契约通道，可通过 SendMessage / WaitForMessage 双向通信。' +
-      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。' +
-      '创建后必须用 WaitForMessage 挂起等待交付，不要在创建后就结束本轮——子会话需要时间执行任务，你的回合应在 WaitForMessage 中挂起直到收到交付或超时。',
+      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。',
       z.object({
         task: z.string().min(1).describe('委派给新会话的任务描述（自然语言）'),
         outputPath: z.string().min(1).describe('建议新会话写入共享区的相对路径（如 hello.md），用于承载较长的交付内容'),
@@ -267,8 +264,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
     defineTool(
       'StopSession',
-      '停止当前会话直接派出的某个会话（仅对 running 有效）。停止后该会话状态变为 cancelled。' +
-      '需要停止派出你自己的会话，或提醒对方停止时，请改用 SendMessage 表达意图。',
+      '停止当前会话直接派出的某个会话（仅对 running 有效）。停止后该会话状态变为 cancelled。',
       z.object({
         sessionId: z.string().min(1).describe('要停止的会话 sessionId'),
       }),
