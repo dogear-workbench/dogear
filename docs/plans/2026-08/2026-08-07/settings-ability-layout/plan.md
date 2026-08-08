@@ -21,7 +21,7 @@
 - [x] [Step 2: 提示词补充](./step2-prompt-enhancement.md) — 记忆/协作/股票三处提示词补警告级约束
 - [x] [Step 3: Skill 模板源统一](./step3-skill-template-source.md) — 创建 resources/skill-templates/，迁移所有内置模板
 - [x] [Step 4: 能力 Tab 前端](./step4-ability-tab.md) — 重写能力 Tab 组件，能力域卡片 + 浮窗
-- [ ] [Step 5: 设置页 Tab 重组](./step5-settings-restructure.md) — Tab 合并/删除/重命名，基础工具移入基础设置
+- [x] [Step 5: 设置页 Tab 重组](./step5-settings-restructure.md) — Tab 合并/删除/重命名，基础工具移入基础设置
 
 ## 全局决策
 

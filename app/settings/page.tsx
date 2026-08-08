@@ -19,9 +19,8 @@ import { DigestsPanel } from './memory/DigestsPanel';
 import { ReviewPanel } from './memory/ReviewPanel';
 import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { AbilityTab } from './AbilityTab';
-import { SkillTab } from './SkillTab';
+import { BasicToolsSection } from './BasicToolsSection';
 import { SubAgentTab } from './SubAgentTab';
-import { SystemPromptPreviewTab } from './SystemPromptPreviewTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
 
@@ -240,13 +239,10 @@ export default function SettingsPage() {
         {/* 左侧导航 */}
         <TabsList className="flex flex-col h-auto items-stretch gap-1 rounded-none border-r bg-muted/30 p-2 w-36 flex-shrink-0">
           <TabsTrigger value="behavior" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            AI 行为
+            基础设置
           </TabsTrigger>
-          <TabsTrigger value="tools-and-permissions" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            工具与权限
-          </TabsTrigger>
-          <TabsTrigger value="skills" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            Skill 管理
+          <TabsTrigger value="abilities" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            能力
           </TabsTrigger>
           <TabsTrigger value="profiles" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             模型方案
@@ -272,18 +268,15 @@ export default function SettingsPage() {
           <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             子会话派遣
           </TabsTrigger>
-          <TabsTrigger value="system-prompt" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            系统提示词
-          </TabsTrigger>
           <TabsTrigger value="parse-history" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             解析历史
           </TabsTrigger>
         </TabsList>
 
-        {/* ── Tab: AI 行为 ── */}
+        {/* ── Tab: 基础设置 ── */}
         <TabsContent value="behavior" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <div className="max-w-2xl py-6 px-6">
-            <h2 className="text-lg font-semibold mb-1">AI 行为</h2>
+            <h2 className="text-lg font-semibold mb-1">基础设置</h2>
             <p className="text-sm text-muted-foreground mb-6">配置 Agent 的思考模式、执行力度和权限策略</p>
             <div className="space-y-6">
               {/* Effort 级别 */}
@@ -519,17 +512,14 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            <BasicToolsSection local={local} setLocal={setLocal} />
           </div>
         </TabsContent>
 
-        {/* ── Tab: 工具与权限 ── */}
-        <TabsContent value="tools-and-permissions" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+        {/* ── Tab: 能力 ── */}
+        <TabsContent value="abilities" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <AbilityTab local={local} setLocal={setLocal} />
-        </TabsContent>
-
-        {/* ── Tab: Skill 管理 ── */}
-        <TabsContent value="skills" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <SkillTab />
         </TabsContent>
 
         {/* ── Tab: 模型方案 ── */}
@@ -846,11 +836,6 @@ export default function SettingsPage() {
         {/* ── Tab: 子会话派遣 ── */}
         <TabsContent value="sub-agent" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <SubAgentTab local={local} setLocal={setLocal} />
-        </TabsContent>
-
-        {/* ── Tab: 系统提示词 ── */}
-        <TabsContent value="system-prompt" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <SystemPromptPreviewTab />
         </TabsContent>
 
         {/* ── Tab: 解析历史 ── */}
