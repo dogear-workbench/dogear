@@ -14,7 +14,7 @@ AI 驱动的个人工作台（文章阅读 + 股票分析）。包管理 Bun，�
 | UI | shadcn/ui + Radix UI + Tailwind CSS 4 + lucide-react |
 | 状态 | Zustand 5（`stores/` 目录） |
 | IPC | `@egoist/tipc`（类型安全） |
-| AI | 两个运行时并存：`@earendil-works/pi-ai` + `pi-agent-core`（主会话/子会话 PiSession + 四条后台一次性任务，见 `agents/pi-session/`、`agents/pi/`）/ `@anthropic-ai/claude-agent-sdk`（仅 PARSE_ARTICLE 后台任务） |
+| AI | `@earendil-works/pi-ai` + `pi-agent-core`（主会话/子会话 PiSession + 五条后台一次性任务，见 `agents/pi-session/`、`agents/pi/`） |
 | 存储 | JSON 文件（`.dogear/` 目录），不使用 SQLite |
 | 计算层 | Python 3 + pandas + numpy + lark（股票指标/选股/公式/回测） |
 | 文档解析 | epub2 / pdf-parse / @mozilla/readability + turndown |

@@ -376,7 +376,8 @@ app.on('second-instance', () => {
 
 // 当 Electron 完成初始化时创建窗口
 app.whenReady().then(async () => {
-  // 完全隐藏默认菜单栏
+  app.setAppUserModelId('com.dogear.app');
+
   Menu.setApplicationMenu(null);
 
   // 注册所有 IPC 处理器（通过 tipc）

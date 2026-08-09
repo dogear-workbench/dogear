@@ -9,10 +9,7 @@ paths:
 
 ## 通用原则
 
-- 主会话（及其派遣的子会话）已从 Claude Agent SDK 迁移到 `@earendil-works/pi-agent-core` 的 AgentHarness，运行时门面是 `electron/main/agents/pi-session/` 下的 `PiSession`/`PiSessionManager`，优先在此基础上扩展
-- `@anthropic-ai/claude-agent-sdk` 仅保留给 `PARSE_ARTICLE` 后台任务使用，修改该任务链路前先查 SDK 包接口：
-  - `node_modules/@anthropic-ai/claude-agent-sdk/sdk.d.ts` — 接口定义
-  - `node_modules/@anthropic-ai/claude-agent-sdk/sdk-tools.d.ts` — 工具类型
+- 全部 AI 能力（主会话、子会话、五条后台一次性任务）统一走 `@earendil-works/pi-agent-core` 的 AgentHarness，运行时门面是 `electron/main/agents/pi-session/` 下的 `PiSession`/`PiSessionManager`，优先在此基础上扩展
 - Agent 与渲染层通信通过 `electron/main/tipc/renderer-handlers.ts` 中定义的事件，不要自建 channel
 
 ## 目录约定

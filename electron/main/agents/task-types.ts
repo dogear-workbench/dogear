@@ -179,6 +179,8 @@ export interface ParseArticlePayload {
   scriptError?: { type: string; message: string };
   readabilityError?: string;
 
+  modelSelection?: ModelSelection | null;
+
   // V1 compat (kept temporarily)
   fixedParseSuccess?: boolean;
 }
@@ -239,10 +241,7 @@ export interface AgentWorkerConfig {
   taskId?: string;               // 当前处理任务 ID (可选)
   messagePort?: any;             // 通信端口
   workspacePath?: string;        // 工作区路径 (可选,用于 Worker 线程)
-  // Phase 0 新增：共享 query 配置所需的运行时上下文
   configDir: string;             // .dogear 配置目录路径（由主进程预计算后传入）
-  isPackaged: boolean;           // 是否打包环境（影响 CLI 路径）
-  cliPath?: string;              // SDK CLI 路径（打包环境必须，开发环境为 undefined）
 }
 
 /**

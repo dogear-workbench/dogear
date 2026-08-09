@@ -160,7 +160,7 @@ description: 当你不清楚某个文件/模块在哪、要做什么时主动调
 - `events.ts` — tipc 事件处理入口，监听主进程事件
 - `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）
 - `conversation-sort.ts` — sortConversationsWithDFS：组内会话排序纯函数，手动会话按 updated_at 倒序 + agent 派出会话按 DFS 紧跟派出者（parentSessionId 不在组时回落自然序）
-- `sdk/index.ts` + `sdk/query.ts` — Claude Agent SDK 的 query 函数封装
+- ~~`sdk/index.ts` + `sdk/query.ts`~~（已删除）
 
 ## 类型定义（types/）
 
@@ -251,7 +251,7 @@ description: 当你不清楚某个文件/模块在哪、要做什么时主动调
 ## Agent 框架（electron/main/agents/）
 
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
-- `agent-worker.ts` — Worker 线程执行器。**两个运行时并存**：四条后台一次性任务（GROUP_DIGEST / REVIEW / CATEGORIZE / CATEGORIZE_ORGANIZE）走 pi（`pi/run-once.ts`）；`PARSE_ARTICLE`（`:395`）仍走 Claude Agent SDK——依赖 SDK 的 plugins skill 发现机制，pi 无对应物；主会话已完整迁移到下方 `pi-session/`，不再经过 agent-worker
+- `agent-worker.ts` — Worker 线程执行器。五条后台一次性任务（GROUP_DIGEST / REVIEW / CATEGORIZE / CATEGORIZE_ORGANIZE / PARSE_ARTICLE）全部走 pi（`pi/run-once.ts`）；主会话已完整迁移到下方 `pi-session/`，不再经过 agent-worker
 - `pi/provider.ts` — pi 运行时的 provider 层：`resolvePiModel(appSettings, selection, subAgentFallback, fallback)` 按 profileId 解析出 `{ model, profile }`（`Model.id` 必须是真实模型 id，不是 profile/tier 组合）；`buildPiModels(profile)` 造 anthropic-messages 客户端。目前只跑 anthropic 格式，`apiFormat` 是二期的纯增量
 - `pi/run-once.ts` — pi 的一次性任务执行器：`runOnce({ systemPrompt, prompt, tools, model, profile, signal, maxTurns=30, onLog })`。**不抛出**，失败以 `{ ok:false, error, cancelled? }` 返回。pi 的 loop 故意没有轮次上限，这里在 `subscribe` 里数 `turn_start` 超限调 `agent.abort()`；`tool_execution_end` 带 `isError` 时以 `[tool-error]` 前缀走 onLog（四个 handler 都按该前缀落 WARN 级日志）
 - `pi/tool-adapter.ts` — 运行时中立的工具定义层：`defineTool` / `ToolDef` / `toSdkServer`（给 SDK）/ `toPiTools`（给 pi，走 `z.toJSONSchema()`）。工具 handler 一律沿用 `isError: true` 约定，`toPiTools` 负责在 pi 侧翻转成 `throw`。pi 侧工具名是裸名，不带 `mcp__server__` 前缀

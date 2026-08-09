@@ -1,11 +1,10 @@
 /**
  * Agent Worker 进程
- * 独立运行的后台进程,使用 Claude Agent SDK 处理 AI 任务
+ * 独立运行的后台进程,处理 AI 任务（全部走 pi 运行时）
  *
  * 功能:
  * - 接收来自主进程的任务
- * - 使用 Claude Agent SDK 处理任务
- * - 支持持续对话会话模式
+ * - 使用 pi runOnce / PiSession 处理任务
  * - 通过 MessagePort 返回结果
  */
 
@@ -38,10 +37,7 @@ class AgentWorker {
   // v2: 工作区路径配置
   private workspacePath: string = '';
 
-  // Phase 0: 共享 query 配置所需的运行时上下文
   private configDir: string = '';
-  private isPackaged: boolean = false;
-  private cliPath?: string;
 
   constructor(workerId: string) {
     this.workerId = workerId;
@@ -63,9 +59,8 @@ class AgentWorker {
 
       // Phase 0: 保存共享 query 配置的运行时上下文
       this.configDir = config.configDir;
-      this.isPackaged = config.isPackaged;
-      this.cliPath = config.cliPath;
-      this.logger.info('配置目录:', this.configDir, '| 打包环境:', this.isPackaged);
+
+      this.logger.info('配置目录:', this.configDir);
 
       this.isReady = true;
       this.sendMessage({
@@ -174,10 +169,10 @@ class AgentWorker {
   }
 
   /**
-   * 处理文章解析任务（V2：Skill 驱动解析系统）
+   * 处理文章解析任务（pi runOnce 驱动）
    *
    * 流程：
-   * - 加载 article-parser Skill（plugins: [{ type: 'local', path: skillsDir }]）
+   * - 手动读取 SKILL.md（剥 frontmatter）作为 systemPrompt
    * - AI 按 SKILL.md 定义的调试循环工作
    * - trigger 说明触发原因（script_failed / parse_failed / user_requested）
    *
@@ -210,20 +205,64 @@ class AgentWorker {
       parseStatus: 'ai_parsing',
     });
 
-    // 加载 query 基础配置
-    const { query } = await import('@anthropic-ai/claude-agent-sdk');
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
-    const baseConfig = await buildQueryBaseConfig({
-      configDir: this.configDir,
-      isPackaged: this.isPackaged,
-      cliPath: this.cliPath,
+    // 读取设置 + 解析模型
+    const { loadSettingsFromDir } = await import('./agent-query-config.js');
+    const { resolvePiModel } = await import('./pi/provider.js');
+    const appSettings = await loadSettingsFromDir(this.configDir);
+
+    const selection = payload.modelSelection
+      ?? appSettings.ai.defaultModelSelection;
+
+    let model: PiModelResult['model'];
+    let resolvedProfile: ModelProfile;
+    let thinkingLevel: ThinkingLevel;
+    try {
+      const r = resolvePiModel(appSettings, selection, null, null);
+      model = r.model;
+      resolvedProfile = r.profile;
+      thinkingLevel = r.thinkingLevel;
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      taskLogger.error('文章解析任务终止（模型解析失败）:', error);
+      const errorStatus = 'failed' as const;
+      await updateArticleParseStatus(workspacePath, articleId, errorStatus).catch(() => {});
+      this.sendMessage({ type: 'articleParseStatusChanged', articleId, workspacePath, parseStatus: errorStatus });
+      return { articleId, articleSaved: false, parseStatus: errorStatus, error };
+    }
+
+    // 手动读取 SKILL.md（剥 frontmatter）作为 systemPrompt
+    const skillSystemPrompt = await loadArticleParseSkill(skillsDir);
+
+    // 创建文章解析工具
+    const { createArticleParseToolDefs } = await import('./tools/article-parse-tools.js');
+    let articleSaved = false;
+    let scriptUpdated: string | null = null;
+    const toolDefs = createArticleParseToolDefs().map((def) => {
+      if (def.name === 'SaveParsedArticle') {
+        const orig = def.handler;
+        def.handler = async (args: any) => {
+          const result = await orig(args);
+          if (!result.isError) {
+            articleSaved = true;
+            taskLogger.info('文章已保存');
+          }
+          return result;
+        };
+      } else if (def.name === 'UpdatePlatformScript') {
+        const orig = def.handler;
+        def.handler = async (args: any) => {
+          const result = await orig(args);
+          if (!result.isError) {
+            scriptUpdated = `platforms/${args.platform}.py`;
+            taskLogger.info('平台脚本已更新:', scriptUpdated);
+          }
+          return result;
+        };
+      }
+      return def;
     });
 
-    // 创建文章解析 MCP Server
-    const { createArticleParseMcpServer } = await import('./tools/article-parse-tools.js');
-    const articleParseMcpServer = createArticleParseMcpServer();
-
-    // 构建 prompt（V2：直接指向 Skill，embed 触发上下文）
+    // 构建 prompt
     const prompt = buildV2ParsePrompt({
       articleId,
       articleDir,
@@ -235,74 +274,38 @@ class AgentWorker {
       readabilityError,
     });
 
-    let resultSummary = '';
-    let scriptUpdated: string | null = null;
-    let articleSaved = false;
+    const { runOnce } = await import('./pi/run-once.js');
+    const abortController = new AbortController();
+    this.currentAbortController = abortController;
+
+    const systemPrompt = `${skillSystemPrompt}
+
+你是一个后台文章解析 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。`;
 
     try {
-      const agentQuery = query({
+      const result = await runOnce({
+        systemPrompt,
         prompt,
-        options: {
-          // SDK 0.2.119+：bypassPermissions 会绕过 allowedTools 白名单，任何工具都被放行。
-          // 用 dontAsk 保留"不打扰用户"的语义，同时让 allowedTools 真正生效。
-          permissionMode: 'dontAsk',
-          env: baseConfig.env,
-          // effort 为 null/undefined 时不传给 SDK，由模型自带默认值决定
-          ...(baseConfig.effort ? { effort: baseConfig.effort } : {}),
-          ...(baseConfig.pathToClaudeCodeExecutable && {
-            pathToClaudeCodeExecutable: baseConfig.pathToClaudeCodeExecutable,
-          }),
-          plugins: [
-            { type: 'local' as const, path: skillsDir },
-          ],
-          mcpServers: {
-            'dogear-article-parse': articleParseMcpServer,
-          },
-          allowedTools: [
-            'mcp__dogear-article-parse__ReadRawHtml',
-            'mcp__dogear-article-parse__ReadCurrentContent',
-            'mcp__dogear-article-parse__ReadParserRules',
-            'mcp__dogear-article-parse__SaveParsedArticle',
-            'mcp__dogear-article-parse__ListPlatformScripts',
-            'mcp__dogear-article-parse__ReadPlatformScript',
-            'mcp__dogear-article-parse__RunPlatformScript',
-            'mcp__dogear-article-parse__UpdatePlatformScript',
-            'mcp__dogear-article-parse__ReadParseHistory',
-          ],
-          hooks: {
-            PostToolUse: [{
-              hooks: [async (input: any) => {
-                const { tool_name } = input;
-                if (tool_name === 'mcp__dogear-article-parse__SaveParsedArticle') {
-                  articleSaved = true;
-                  taskLogger.info('文章已保存');
-                } else if (tool_name === 'mcp__dogear-article-parse__UpdatePlatformScript') {
-                  const ti = input.tool_input || {};
-                  scriptUpdated = `platforms/${ti.platform}.py`;
-                  taskLogger.info('平台脚本已更新:', scriptUpdated);
-                }
-                return { continue: true };
-              }],
-            }],
-          },
+        tools: toolDefs,
+        model,
+        profile: resolvedProfile,
+        thinkingLevel,
+        signal: abortController.signal,
+        maxTurns: 30,
+        onLog: (m) => {
+          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
+          else taskLogger.info(m);
         },
       });
 
-      // 迭代消息
-      for await (const message of agentQuery) {
-        if (message.type === 'assistant') {
-          const msg = message as any;
-          const content = msg.message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text') {
-                resultSummary += block.text;
-              }
-            }
-          }
-        } else if (message.type === 'result') {
-          taskLogger.info('AI 解析完成');
+      if (!result.ok) {
+        if (result.cancelled) {
+          taskLogger.info('文章解析被取消:', articleId);
+        } else {
+          taskLogger.error('文章解析任务失败:', result.error);
         }
+      } else {
+        taskLogger.info('AI 解析完成');
       }
 
       // 追加历史记录
@@ -341,7 +344,6 @@ class AgentWorker {
         articleSaved,
         scriptUpdated,
         parseStatus: finalStatus,
-        summary: resultSummary.slice(0, 500),
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -377,6 +379,8 @@ class AgentWorker {
         parseStatus: errorStatus,
         error: errorMsg,
       };
+    } finally {
+      this.currentAbortController = null;
     }
   }
 
@@ -393,24 +397,20 @@ class AgentWorker {
     taskLogger.info('开始组级摘要卡任务:', groupId, '| workspace:', workspaceId, '| dirty:', dirtyConversations.length);
     const startedAt = Date.now();
 
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { loadSettingsFromDir } = await import('./agent-query-config.js');
     const { resolvePiModel } = await import('./pi/provider.js');
-    const baseConfig = await buildQueryBaseConfig({
-      configDir: this.configDir,
-      isPackaged: this.isPackaged,
-      cliPath: this.cliPath,
-    });
+    const appSettings = await loadSettingsFromDir(this.configDir);
 
     const selection = payload.modelSelection
-      ?? baseConfig.appSettings.ai.digestModelSelection
-      ?? baseConfig.appSettings.ai.defaultModelSelection;
+      ?? appSettings.ai.digestModelSelection
+      ?? appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
     let thinkingLevel: ThinkingLevel;
     try {
-      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      const r = resolvePiModel(appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
@@ -546,24 +546,20 @@ class AgentWorker {
     taskLogger.info('开始跨会话复盘任务:', '| workspace:', workspaceId);
     const startedAt = Date.now();
 
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { loadSettingsFromDir } = await import('./agent-query-config.js');
     const { resolvePiModel } = await import('./pi/provider.js');
-    const baseConfig = await buildQueryBaseConfig({
-      configDir: this.configDir,
-      isPackaged: this.isPackaged,
-      cliPath: this.cliPath,
-    });
+    const appSettings = await loadSettingsFromDir(this.configDir);
 
     const selection = payload.modelSelection
-      ?? baseConfig.appSettings.ai.reviewModelSelection
-      ?? baseConfig.appSettings.ai.defaultModelSelection;
+      ?? appSettings.ai.reviewModelSelection
+      ?? appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
     let thinkingLevel: ThinkingLevel;
     try {
-      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      const r = resolvePiModel(appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
@@ -653,24 +649,20 @@ class AgentWorker {
     taskLogger.info('开始智能分类任务:', '| workspace:', workspaceId, '| mode:', mode);
     const startedAt = Date.now();
 
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { loadSettingsFromDir } = await import('./agent-query-config.js');
     const { resolvePiModel } = await import('./pi/provider.js');
-    const baseConfig = await buildQueryBaseConfig({
-      configDir: this.configDir,
-      isPackaged: this.isPackaged,
-      cliPath: this.cliPath,
-    });
+    const appSettings = await loadSettingsFromDir(this.configDir);
 
     const selection = payload.modelSelection
-      ?? baseConfig.appSettings.ai.categorizeModelSelection
-      ?? baseConfig.appSettings.ai.defaultModelSelection;
+      ?? appSettings.ai.categorizeModelSelection
+      ?? appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
     let thinkingLevel: ThinkingLevel;
     try {
-      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      const r = resolvePiModel(appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
@@ -681,7 +673,7 @@ class AgentWorker {
       return { workspaceId, mode, decisions: AgentWorker.emptyCategorizeDecisions(), error };
     }
 
-    const threshold = baseConfig.appSettings.smartCategory?.threshold ?? 0.5;
+    const threshold = appSettings.smartCategory?.threshold ?? 0.5;
 
     // ──── 内部辅助：处理单张摘要卡（Step A + LLM）────
 
@@ -966,24 +958,20 @@ class AgentWorker {
     taskLogger.info('开始存量分类整理任务:', '| workspace:', workspaceId);
     const startedAt = Date.now();
 
-    const { buildQueryBaseConfig } = await import('./agent-query-config.js');
+    const { loadSettingsFromDir } = await import('./agent-query-config.js');
     const { resolvePiModel } = await import('./pi/provider.js');
-    const baseConfig = await buildQueryBaseConfig({
-      configDir: this.configDir,
-      isPackaged: this.isPackaged,
-      cliPath: this.cliPath,
-    });
+    const appSettings = await loadSettingsFromDir(this.configDir);
 
     const selection = payload.modelSelection
-      ?? baseConfig.appSettings.ai.categorizeModelSelection
-      ?? baseConfig.appSettings.ai.defaultModelSelection;
+      ?? appSettings.ai.categorizeModelSelection
+      ?? appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];
     let tier: string;
     let resolvedProfile: ModelProfile;
     let thinkingLevel: ThinkingLevel;
     try {
-      const r = resolvePiModel(baseConfig.appSettings, selection, null, null);
+      const r = resolvePiModel(appSettings, selection, null, null);
       model = r.model;
       tier = r.tier;
       resolvedProfile = r.profile;
@@ -1200,10 +1188,24 @@ interface V2PromptParams {
   readabilityError?: string;
 }
 
-function buildV2ParsePrompt(p: V2PromptParams): string {
-  return `你是文章解析器。article-parser Skill 已加载，请按 Skill 中的调试循环工作。
+/**
+ * 从 skillsDir/SKILL.md 读取文章解析 Skill 正文（剥 frontmatter），作为 systemPrompt 注入。
+ * 替代旧 SDK 的 plugins skill 发现机制。
+ */
+async function loadArticleParseSkill(skillsDir: string): Promise<string> {
+  const fs = await import('fs/promises');
+  const skillPath = path.join(skillsDir, 'SKILL.md');
+  try {
+    const raw = await fs.readFile(skillPath, 'utf-8');
+    const fmMatch = raw.match(/^---\n[\s\S]*?\n---\n/);
+    return fmMatch ? raw.slice(fmMatch[0].length) : raw;
+  } catch {
+    return '（SKILL.md 不存在，按通用常识解析文章）';
+  }
+}
 
-**任务上下文：**
+function buildV2ParsePrompt(p: V2PromptParams): string {
+  return `**任务上下文：**
 - articleId: ${p.articleId}
 - articleDir: ${p.articleDir}
 - url: ${p.url}
@@ -1213,7 +1215,7 @@ function buildV2ParsePrompt(p: V2PromptParams): string {
 ${p.scriptError ? `- 脚本错误：${p.scriptError.type} — ${p.scriptError.message}` : ''}
 ${p.readabilityError ? `- Readability 错误：${p.readabilityError}` : ''}
 
-现在按 SKILL.md 定义的步骤完成解析。
+现在按上述 Skill 定义的步骤完成解析。
 所有工具参数路径都要传入完整绝对路径。`;
 }
 

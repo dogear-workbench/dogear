@@ -2,7 +2,13 @@
  * Electron 主进程共享类型定义
  * 与 types/ 目录下的类型保持一致
  */
-import type { SDKPermissionDenial } from '@anthropic-ai/claude-agent-sdk';
+
+/** 权限拒绝记录（原 SDKPermissionDenial 的内联定义） */
+export type PermissionDenial = {
+  tool_name: string;
+  tool_use_id: string;
+  tool_input: Record<string, unknown>;
+};
 
 // ─── 用量监控类型（镜像自 types/usage.ts）───
 
@@ -66,7 +72,7 @@ export interface ConversationUsageEntry {
     totalDurationMs: number;
     usage: ConversationUsageEntry['usage'];
   }>;
-  permissionDenials?: SDKPermissionDenial[];
+  permissionDenials?: PermissionDenial[];
   permissionWaits?: PermissionWaitRecord[];
 }
 

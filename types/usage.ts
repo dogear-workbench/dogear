@@ -1,4 +1,9 @@
-import type { SDKPermissionDenial } from '@anthropic-ai/claude-agent-sdk';
+/** SDK 权限拒绝记录（原 SDKPermissionDenial 类型的内联定义） */
+export type PermissionDenial = {
+  tool_name: string;
+  tool_use_id: string;
+  tool_input: Record<string, unknown>;
+};
 
 /** 单个工具的本 entry 调用记录 */
 export interface ToolCallRecord {
@@ -89,7 +94,7 @@ export interface ConversationUsageEntry {
     totalDurationMs: number;
     usage: ConversationUsageEntry['usage'];
   }>;
-  permissionDenials?: SDKPermissionDenial[];
+  permissionDenials?: PermissionDenial[];
   /** 权限等待记录，由独立 JSONL 行（kind='permission'）聚合而来 */
   permissionWaits?: PermissionWaitRecord[];
 }

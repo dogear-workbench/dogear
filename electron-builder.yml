@@ -51,13 +51,6 @@ extraResources:
 
 # asar 配置
 asar: true
-# 从 asar 中解包的文件（子进程 spawn 无法访问 asar 内部文件）
-asarUnpack:
-  # Claude Agent SDK 主包（sdk.mjs 通过 spawn 启动子进程）
-  - node_modules/@anthropic-ai/claude-agent-sdk/**/*
-  # Claude Agent SDK Windows x64 原生二进制子包（0.2.113+ 分离的 claude.exe ~254MB）
-  # 未 unpack 会导致 asar 内的 .exe 无法被 spawn，子进程以 code 1 退出
-  - node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**/*
 
 # Windows 平台打包配置
 win:
