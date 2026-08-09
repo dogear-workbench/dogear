@@ -19,8 +19,6 @@ directories:
 files:
   # 编译后的 Electron 主进程 + preload 代码
   - dist/**/*
-  # Vite 前端构建产物
-  - out/**/*
   # Node.js 依赖包
   - node_modules/**/*
   # 包描述文件
@@ -48,6 +46,9 @@ extraResources:
     to: skill-templates/
     filter:
       - "**/*"
+  # 前端构建产物（移出 asar，支持热更新覆盖）
+  - from: out/
+    to: out/
 
 # asar 配置
 asar: true

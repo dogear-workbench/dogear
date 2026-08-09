@@ -21,6 +21,13 @@ const __dirname = dirname(__filename);
 // 判断是否为开发环境
 const isDev = process.env.NODE_ENV === 'development';
 
+function getRendererPath(): string {
+  if (isDev) {
+    return 'http://localhost:3000';
+  }
+  return path.join(process.resourcesPath, 'out', 'index.html');
+}
+
 // 开发环境使用独立的 userData 路径，避免与生产环境共享单实例锁文件和 Electron 缓存
 // Windows 文件系统不区分大小写：默认 dev (dogear) 和 prod (Dogear) 会指向同一个 AppData 目录
 // 改到 Dogear-Dev 后两者彻底隔离，允许 dev 和 prod 同时运行
@@ -80,7 +87,7 @@ function createWindow() {
   // 根据环境加载不同的页面
   if (isDev) {
     // 开发环境:加载 Vite 开发服务器
-    mainWindow.loadURL('http://localhost:3000');
+    mainWindow.loadURL(getRendererPath());
     // 打开开发者工具
     //mainWindow.webContents.openDevTools();
 
@@ -88,7 +95,7 @@ function createWindow() {
     // createDebugWindow();
   } else {
     // 生产环境:加载构建后的静态文件
-    mainWindow.loadFile(path.join(__dirname, '../../out/index.html'));
+    mainWindow.loadFile(getRendererPath());
   }
 
   getSessionNotificationService().registerMainWindow(mainWindow);
@@ -128,8 +135,8 @@ function createDebugWindow() {
 
   // 加载调试窗口页面（HashRouter 路由）
   const debugUrl = isDev
-    ? 'http://localhost:3000/#/debug'
-    : `file://${path.join(__dirname, '../../out/index.html')}#/debug`;
+    ? `${getRendererPath()}/#/debug`
+    : `file://${getRendererPath()}#/debug`;
   debugWindow.loadURL(debugUrl);
 
   // 调试窗口关闭时清理引用
@@ -183,8 +190,8 @@ export function createAgentMonitorWindow() {
 
   // 加载监控窗口页面（HashRouter 路由）
   const monitorUrl = isDev
-    ? 'http://localhost:3000/#/agent-monitor'
-    : `file://${path.join(__dirname, '../../out/index.html')}#/agent-monitor`;
+    ? `${getRendererPath()}/#/agent-monitor`
+    : `file://${getRendererPath()}#/agent-monitor`;
   agentMonitorWindow.loadURL(monitorUrl);
 
   // 监控窗口关闭时清理引用
@@ -235,8 +242,8 @@ export function createStockWindow() {
   });
 
   const stockUrl = isDev
-    ? 'http://localhost:3000/#/stocks'
-    : `file://${path.join(__dirname, '../../out/index.html')}#/stocks`;
+    ? `${getRendererPath()}/#/stocks`
+    : `file://${getRendererPath()}#/stocks`;
   stockWindow.loadURL(stockUrl);
 
   stockWindow.on('closed', () => {
@@ -270,8 +277,8 @@ export function createSessionWindow(conversationId: string, title: string) {
   });
 
   const url = isDev
-    ? `http://localhost:3000/#/session-window/${conversationId}`
-    : `file://${path.join(__dirname, '../../out/index.html')}#/session-window/${conversationId}`;
+    ? `${getRendererPath()}/#/session-window/${conversationId}`
+    : `file://${getRendererPath()}#/session-window/${conversationId}`;
   win.loadURL(url);
 
   sessionWindows.set(conversationId, win);
