@@ -15,7 +15,7 @@ interface WorkspaceState {
 
   // --- Actions ---
   /** 设置工作区，触发 files/conversations/articles 加载。skipSetDefault=true 时不修改默认工作区（独立窗口用） */
-  setWorkspace: (workspace: Workspace, options?: { skipSetDefault?: boolean }) => void;
+  setWorkspace: (workspace: Workspace, options?: { skipSetDefault?: boolean }) => Promise<void>;
   /** 加载工作区文件列表 */
   loadWorkspaceFiles: () => Promise<void>;
   /** 选择文件 */

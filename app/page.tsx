@@ -132,6 +132,29 @@ export default function Home() {
     return () => unsub();
   }, [openTab, removeSessionWindow]);
 
+  // 通知点击后定位到目标对话：顺序等待工作区切换完成再查找/选中对话，避免写入旧分片
+  useEffect(() => {
+    const unsub = rendererEvents.focusConversation.listen(({ workspaceId, conversationId }) => {
+      (async () => {
+        try {
+          const allResult = await client.getAll();
+          const targetWorkspace = allResult.workspaces?.find((w) => w.id === workspaceId);
+          if (!targetWorkspace) return;
+          const currentWs = useWorkspaceStore.getState().workspace;
+          if (currentWs?.id !== workspaceId) {
+            await setWorkspace(targetWorkspace);
+          }
+          const convResult = await client.getById({ workspaceId, conversationId });
+          if (!convResult.conversation) return;
+          useConversationStore.getState().selectConversation(convResult.conversation);
+        } catch (err) {
+          console.error('[focusConversation] 定位对话失败:', err);
+        }
+      })();
+    });
+    return () => unsub();
+  }, [setWorkspace]);
+
   // 正在加载默认工作区时显示加载状态
   if (loadingDefaultWs) {
     return (

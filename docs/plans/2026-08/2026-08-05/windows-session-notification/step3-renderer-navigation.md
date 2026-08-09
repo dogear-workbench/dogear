@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 渲染层跨工作区对话定位
-status: pending
+status: done
 ---
 
 ## 目标
@@ -40,11 +40,13 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
+- 与计划差异：无差异，完全按计划 checklist 实施
 - 改动文件清单：
+  - `stores/workspace-store.ts`：`setWorkspace` 接口签名由 `void` 改为 `Promise<void>`（实现本已是 async，无需改动）
+  - `app/page.tsx`：新增 `focusConversation` 监听 effect（紧随 `sessionWindowClosed` effect）
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`setWorkspace(ws, options?) => Promise<void>`；`rendererEvents.focusConversation.listen(cb)` 回调收到 `{ conversationId, workspaceId }`
+- 下个 step 该从哪里继续：Windows 手工验收清单（见上方 checklist 最后一条），验收通过后标记 step status 为 done
+- 待办或已知限制：手工验收未在子会话内执行（需真实 Windows 环境 + 通知权限）
