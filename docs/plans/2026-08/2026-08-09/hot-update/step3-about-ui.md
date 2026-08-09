@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 设置页「关于」Tab
-status: pending
+status: done
 ---
 
 ## 目标

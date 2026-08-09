@@ -24,7 +24,7 @@
 
 - [x] [Step 1: out/ 移出 asar + 主进程加载路径改造](./step1-out-of-asar.md) — 让前端产物可被覆盖
 - [x] [Step 2: 更新服务 + IPC 路由](./step2-update-service.md) — 主进程检查/下载/应用更新逻辑
-- [ ] [Step 3: 设置页「关于」Tab](./step3-about-ui.md) — 前端检查更新入口
+- [x] [Step 3: 设置页「关于」Tab](./step3-about-ui.md) — 前端检查更新入口
 - [ ] [Step 4: 智能发布脚本 + 本地 HTTP 服务](./step4-release-script.md) — 自动判断热更新/全量，产物发布
 
 ## 全局决策

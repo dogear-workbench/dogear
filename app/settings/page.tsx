@@ -21,6 +21,7 @@ import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { AbilityTab } from './AbilityTab';
 import { BasicToolsSection } from './BasicToolsSection';
 import { SubAgentTab } from './SubAgentTab';
+import { AboutTab } from './AboutTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
 
@@ -270,6 +271,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="parse-history" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             解析历史
+          </TabsTrigger>
+          <TabsTrigger value="about" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            关于
           </TabsTrigger>
         </TabsList>
 
@@ -841,6 +845,11 @@ export default function SettingsPage() {
         {/* ── Tab: 解析历史 ── */}
         <TabsContent value="parse-history" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <ArticleParseHistoryPanel />
+        </TabsContent>
+
+        {/* ── Tab: 关于 ── */}
+        <TabsContent value="about" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <AboutTab />
         </TabsContent>
       </Tabs>
     </div>
