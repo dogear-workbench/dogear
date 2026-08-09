@@ -15,15 +15,17 @@ interface ToolDetailDialogProps {
 export function ToolDetailDialog({ tool, onClose }: ToolDetailDialogProps) {
   return (
     <Dialog open={tool !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-5xl h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle className="font-mono">{tool?.name}</DialogTitle>
           <DialogDescription>工具完整说明（给 Agent 的描述全文）</DialogDescription>
         </DialogHeader>
-        <div className="overflow-y-auto" style={{ maxHeight: '80vh' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {tool && (
-            <div className="text-xs leading-relaxed prose prose-sm dark:prose-invert max-w-none">
-              <MarkdownRenderer content={tool.description || '(无描述)'} />
+            <div className="rounded-lg border bg-background p-4">
+              <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                <MarkdownRenderer content={tool.description || '(无描述)'} />
+              </div>
             </div>
           )}
         </div>

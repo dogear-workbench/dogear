@@ -5,6 +5,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import type { SystemPromptSegment } from '@/types/system-prompt';
 
 interface SegmentDetailDialogProps {
@@ -15,18 +16,20 @@ interface SegmentDetailDialogProps {
 export function SegmentDetailDialog({ segment, onClose }: SegmentDetailDialogProps) {
   return (
     <Dialog open={segment !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-5xl h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle>{segment?.label}</DialogTitle>
           <DialogDescription>
-            {segment?.triggerDescription || '提示词段模板全文（只读）'}
+            {segment?.triggerDescription || '提示词段全文（只读）'}
           </DialogDescription>
         </DialogHeader>
-        <div className="overflow-y-auto" style={{ maxHeight: '80vh' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {segment && (
-            <pre className="text-xs bg-muted p-3 rounded whitespace-pre-wrap font-mono leading-relaxed">
-              {segment.template || '(空模板)'}
-            </pre>
+            <div className="rounded-lg border bg-background p-4">
+              <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                <MarkdownRenderer content={segment.template || '(空模板)'} />
+              </div>
+            </div>
           )}
         </div>
       </DialogContent>

@@ -7,6 +7,7 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { client } from '@/lib/client';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 
 interface SkillDetailDialogProps {
   name: string | null;
@@ -51,12 +52,12 @@ export function SkillDetailDialog({ name, onClose }: SkillDetailDialogProps) {
 
   return (
     <Dialog open={name !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-5xl h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+        <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle className="font-mono">{name}</DialogTitle>
-          <DialogDescription>SKILL.md 模板源全文（只读）</DialogDescription>
+          <DialogDescription>SKILL.md 全文（只读）</DialogDescription>
         </DialogHeader>
-        <div className="overflow-y-auto" style={{ maxHeight: '80vh' }}>
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
           {loading && (
             <div className="text-sm text-muted-foreground py-8 text-center">
               加载中...
@@ -68,9 +69,11 @@ export function SkillDetailDialog({ name, onClose }: SkillDetailDialogProps) {
             </div>
           )}
           {!loading && !error && (
-            <pre className="text-xs bg-muted p-3 rounded whitespace-pre-wrap font-mono leading-relaxed">
-              {content || '(空文件)'}
-            </pre>
+            <div className="rounded-lg border bg-background p-4">
+              <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
+                <MarkdownRenderer content={content || '(空文件)'} />
+              </div>
+            </div>
           )}
         </div>
       </DialogContent>

@@ -72,6 +72,7 @@ const STOCK_PACK_NAMES = [
   'stock-announcement',
   'stock-picking',
 ];
+const STOCK_SKILL_NAMES = ['stock-analysis', 'stock-picking'];
 const ARTICLE_PACK_NAMES = ['article'];
 const CODE_WORKFLOW_TEMPLATES = [
   'brainstorming',
@@ -144,52 +145,112 @@ function ToolGroupList({
   );
 }
 
-// ── 工具包开关子组件 ──────────────────────────────────
+// ── 工具包+工具组合并列表子组件 ──────────────────────
 
-function PackToggle({
-  pack,
-  enabled,
-  onToggle,
+function PackGroupList({
+  packs,
+  packByNameMap,
+  groupByServer,
+  onToolClick,
+  active,
 }: {
-  pack: ToolPack;
-  enabled: boolean;
-  onToggle: (name: string) => void;
+  packs: ToolPack[];
+  packByNameMap: Record<string, ToolPack>;
+  groupByServer: Record<string, ToolGroup>;
+  onToolClick: (tool: { name: string; description: string }) => void;
+  active?: boolean;
+}) {
+  if (packs.length === 0) {
+    return (
+      <p className="text-xs text-muted-foreground px-1 py-2">
+        会话启动后才会注册具体工具，此处暂无明细。
+      </p>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      {packs.map((p) => {
+        const group = groupByServer[p.mcpServer];
+        return (
+          <div
+            key={p.name}
+            className={cn(
+              'rounded-md border overflow-hidden transition-colors',
+              active ? 'bg-muted/30 border-foreground/20' : 'bg-background',
+            )}
+          >
+            <div className="px-3 py-1.5 bg-muted/30">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold truncate">{p.label}</span>
+                <span className="text-[10px] text-muted-foreground font-mono shrink-0">
+                  {p.name}
+                </span>
+                {group && (
+                  <span className="text-[10px] text-muted-foreground shrink-0 ml-auto">
+                    {group.tools.length} 个
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+                {p.description}
+              </p>
+            </div>
+            {group && (
+              <div className="divide-y">
+                {group.tools.map((t) => (
+                  <button
+                    key={`${group.server}::${t.name}`}
+                    type="button"
+                    className="w-full flex items-start gap-2 px-3 py-1.5 text-left hover:bg-muted/30 transition-colors"
+                    onClick={() => onToolClick({ name: t.name, description: t.description })}
+                  >
+                    <span className="text-xs font-mono text-foreground shrink-0">
+                      {t.name}
+                    </span>
+                    <span className="text-xs text-muted-foreground leading-relaxed">
+                      {t.shortDescription}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── 域级总开关子组件 ────────────────────────────────
+
+function DomainToggle({
+  allOn,
+  onToggle,
+  busy,
+}: {
+  allOn: boolean;
+  onToggle: () => void;
+  busy?: boolean;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      disabled={busy}
       className={cn(
-        'flex items-start justify-between gap-2 p-2 rounded-md border transition-colors',
-        enabled ? 'bg-muted/30 border-foreground/20' : 'bg-background',
+        'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+        allOn ? 'bg-primary' : 'bg-muted',
+        busy && 'opacity-50 cursor-not-allowed',
       )}
+      onClick={onToggle}
+      aria-label={allOn ? '全部禁用' : '全部启用'}
     >
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-semibold">{pack.label}</span>
-          <span className="text-[10px] text-muted-foreground font-mono">
-            {pack.name}
-          </span>
-        </div>
-        <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">
-          {pack.description}
-        </p>
-      </div>
-      <button
-        type="button"
+      <span
         className={cn(
-          'relative inline-flex h-5 w-9 items-center rounded-full transition-colors flex-shrink-0 mt-0.5',
-          enabled ? 'bg-primary' : 'bg-muted',
+          'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+          allOn ? 'translate-x-4' : 'translate-x-1',
         )}
-        onClick={() => onToggle(pack.name)}
-        aria-label={`${enabled ? '禁用' : '启用'} ${pack.label}`}
-      >
-        <span
-          className={cn(
-            'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-            enabled ? 'translate-x-4' : 'translate-x-1',
-          )}
-        />
-      </button>
-    </div>
+      />
+    </button>
   );
 }
 
@@ -214,24 +275,33 @@ function SegmentList({
   return (
     <div className="space-y-1.5">
       {segments.map((seg) => (
-        <button
+        <div
           key={seg.key}
-          type="button"
-          className="w-full flex items-center gap-1.5 flex-wrap rounded-md border border-border/60 bg-muted/20 p-2 text-left hover:bg-muted/40 transition-colors"
-          onClick={() => onSegmentClick(seg)}
+          className="p-2 rounded-md border border-border/60 bg-muted/20"
         >
-          <span className="text-xs font-semibold">{seg.label}</span>
-          {seg.isDynamic && (
-            <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
-              动态
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold">{seg.label}</span>
+            {seg.isDynamic && (
+              <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
+                动态
+              </span>
+            )}
+            <button
+              type="button"
+              className="flex items-center gap-1 px-1.5 h-6 rounded text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors ml-auto"
+              onClick={() => onSegmentClick(seg)}
+              title="查看提示词段全文"
+            >
+              <Eye className="w-3 h-3" />
+              详情
+            </button>
+          </div>
           {seg.triggerDescription && (
-            <span className="text-[11px] text-muted-foreground/80 leading-relaxed">
+            <p className="text-xs text-muted-foreground/80 leading-relaxed mt-1">
               {seg.triggerDescription}
-            </span>
+            </p>
           )}
-        </button>
+        </div>
       ))}
     </div>
   );
@@ -267,82 +337,112 @@ function SkillRow({
   dir,
 }: SkillRowProps) {
   return (
-    <div className="flex items-start justify-between gap-2 p-2 rounded-md border bg-background">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-xs font-semibold font-mono">{name}</span>
-          {subscribed && (
-            <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
-              已订阅
-            </span>
+    <div className="p-2 rounded-md border bg-background">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-xs font-semibold font-mono">{name}</span>
+        {subscribed && (
+          <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+            已订阅
+          </span>
+        )}
+        {showEnableToggle && !enabled && (
+          <span className="text-[10px] px-1 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
+            已禁用
+          </span>
+        )}
+        <div className="flex items-center gap-1 shrink-0 ml-auto">
+          <button
+            type="button"
+            className="flex items-center gap-1 px-1.5 h-6 rounded text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+            onClick={() => onDetail(name)}
+            title="查看 SKILL.md 全文"
+          >
+            <Eye className="w-3 h-3" />
+            详情
+          </button>
+          {showSubscribe && (
+            <button
+              type="button"
+              disabled={busy}
+              className={cn(
+                'flex items-center gap-1 px-1.5 h-6 rounded border text-xs hover:bg-muted/50 transition-colors',
+                busy && 'opacity-50 cursor-not-allowed',
+              )}
+              onClick={() => onSubscribe(name, subscribed)}
+              title={subscribed ? '重新同步（覆盖本地修改）' : '订阅到工作区'}
+            >
+              {subscribed ? (
+                <>
+                  <RotateCcw className="w-3 h-3" />
+                  恢复
+                </>
+              ) : (
+                <>
+                  <Download className="w-3 h-3" />
+                  订阅
+                </>
+              )}
+            </button>
           )}
-          {showEnableToggle && !enabled && (
-            <span className="text-[10px] px-1 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
-              已禁用
-            </span>
+          {showEnableToggle && dir && onToggleEnabled && (
+            <button
+              type="button"
+              disabled={busy}
+              className={cn(
+                'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
+                enabled ? 'bg-primary' : 'bg-muted',
+                busy && 'opacity-50 cursor-not-allowed',
+              )}
+              onClick={() => onToggleEnabled(dir)}
+              aria-label={`${enabled ? '禁用' : '启用'} ${name}`}
+            >
+              <span
+                className={cn(
+                  'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
+                  enabled ? 'translate-x-4' : 'translate-x-1',
+                )}
+              />
+            </button>
           )}
         </div>
-        {description && (
-          <p className="text-[11px] text-muted-foreground leading-relaxed mt-0.5">
-            {description}
-          </p>
-        )}
       </div>
-      <div className="flex items-center gap-1 shrink-0">
+      {description && (
+        <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+          {description}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SkillRowCompact({
+  name,
+  description,
+  onDetail,
+}: {
+  name: string;
+  description?: string;
+  onDetail: (name: string) => void;
+}) {
+  return (
+    <div className="p-2 rounded-md border bg-background">
+      <div className="flex items-center gap-1.5">
+        <span className="text-xs font-semibold font-mono">{name}</span>
         <button
           type="button"
-          className="flex items-center gap-1 px-1.5 h-6 rounded text-[11px] text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors"
+          className="flex items-center gap-1 px-1.5 h-6 rounded text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors ml-auto"
           onClick={() => onDetail(name)}
           title="查看 SKILL.md 全文"
         >
           <Eye className="w-3 h-3" />
           详情
         </button>
-        {showSubscribe && (
-          <button
-            type="button"
-            disabled={busy}
-            className={cn(
-              'flex items-center gap-1 px-1.5 h-6 rounded border text-[11px] hover:bg-muted/50 transition-colors',
-              busy && 'opacity-50 cursor-not-allowed',
-            )}
-            onClick={() => onSubscribe(name, subscribed)}
-            title={subscribed ? '重新同步（覆盖本地修改）' : '订阅到工作区'}
-          >
-            {subscribed ? (
-              <>
-                <RotateCcw className="w-3 h-3" />
-                恢复
-              </>
-            ) : (
-              <>
-                <Download className="w-3 h-3" />
-                订阅
-              </>
-            )}
-          </button>
-        )}
-        {showEnableToggle && dir && onToggleEnabled && (
-          <button
-            type="button"
-            disabled={busy}
-            className={cn(
-              'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-              enabled ? 'bg-primary' : 'bg-muted',
-              busy && 'opacity-50 cursor-not-allowed',
-            )}
-            onClick={() => onToggleEnabled(dir)}
-            aria-label={`${enabled ? '禁用' : '启用'} ${name}`}
-          >
-            <span
-              className={cn(
-                'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-                enabled ? 'translate-x-4' : 'translate-x-1',
-              )}
-            />
-          </button>
-        )}
       </div>
+      {description && (
+        <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+          {description}
+        </p>
+      )}
     </div>
   );
 }
@@ -438,12 +538,8 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
 
   const isPackEnabled = (name: string): boolean => enabledPackSet.has(name);
 
-  const togglePack = (name: string) => {
-    const current = new Set(local.enabledToolPacks ?? []);
-    if (current.has(name)) current.delete(name);
-    else current.add(name);
-    setLocal((prev) => ({ ...prev, enabledToolPacks: Array.from(current) }));
-  };
+
+
 
   const handleSubscribe = async (name: string, isResync: boolean) => {
     if (!workspacePath) return;
@@ -497,6 +593,73 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     }
   };
 
+  const handleDomainToggle = async (
+    skillNames: string[],
+    packNames: string[],
+    on: boolean,
+  ) => {
+    if (!workspacePath) return;
+    setBusyDir('__bulk__');
+    try {
+      if (on) {
+        for (const name of skillNames) {
+          const wsSkill = skills.find(
+            (s) => s.name === name && s.source === 'workspace',
+          );
+          if (!wsSkill) {
+            await client.subscribeSkillTemplate({
+              workspacePath,
+              name,
+              overwrite: false,
+            });
+          }
+        }
+        const current = new Set(local.enabledToolPacks ?? []);
+        for (const n of packNames) current.add(n);
+        setLocal((prev) => ({ ...prev, enabledToolPacks: Array.from(current) }));
+        const fresh = (await client.listSkills({ workspaceId })) as any;
+        const freshSkills = (fresh?.skills ?? []) as SkillEntry[];
+        const toEnable = skillNames
+          .map((name) => {
+            const e = freshSkills.find(
+              (s) => s.name === name && s.source === 'workspace',
+            );
+            return e ? { dir: e.dir, enabled: e.enabled } : null;
+          })
+          .filter((e): e is { dir: string; enabled: boolean } => !!e && !e.enabled);
+        if (toEnable.length > 0) {
+          await Promise.all(
+            toEnable.map((e) =>
+              client.setSkillEnabled({ dir: e.dir, enabled: true, workspaceId }),
+            ),
+          );
+        }
+      } else {
+        const toDisable = skillNames
+          .map((name) => {
+            const e = skills.find(
+              (s) => s.name === name && s.source === 'workspace',
+            );
+            return e ? { dir: e.dir, enabled: e.enabled } : null;
+          })
+          .filter((e): e is { dir: string; enabled: boolean } => !!e && e.enabled);
+        if (toDisable.length > 0) {
+          await Promise.all(
+            toDisable.map((e) =>
+              client.setSkillEnabled({ dir: e.dir, enabled: false, workspaceId }),
+            ),
+          );
+        }
+        const current = new Set(local.enabledToolPacks ?? []);
+        for (const n of packNames) current.delete(n);
+        setLocal((prev) => ({ ...prev, enabledToolPacks: Array.from(current) }));
+      }
+      await reload();
+    } finally {
+      setBusyDir(null);
+    }
+  };
+
   // ── 过滤各能力域数据 ──
 
   const memorySegments = useMemo(
@@ -517,7 +680,43 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     [segments],
   );
 
-  const stockTemplate = templateByName['stock-analysis'];
+  const stockSkills = useMemo(() => {
+    const result: {
+      name: string;
+      description?: string;
+      isTemplate: boolean;
+      subscribed: boolean;
+      enabled: boolean;
+      dir?: string;
+    }[] = [];
+    for (const name of STOCK_SKILL_NAMES) {
+      const tpl = templateByName[name];
+      const wsSkill = skills.find(
+        (s) => s.name === name && s.source === 'workspace',
+      );
+      if (tpl) {
+        result.push({
+          name: tpl.name,
+          description: tpl.description,
+          isTemplate: true,
+          subscribed: subscribedSkillNames.has(tpl.name),
+          enabled: wsSkill?.enabled ?? false,
+          dir: wsSkill?.dir,
+        });
+      } else if (wsSkill) {
+        result.push({
+          name: wsSkill.name,
+          description: wsSkill.description,
+          isTemplate: false,
+          subscribed: false,
+          enabled: wsSkill.enabled,
+          dir: wsSkill.dir,
+        });
+      }
+    }
+    return result;
+  }, [templateByName, skills, subscribedSkillNames]);
+
   const articleTemplate = templateByName['article-parser'];
 
   const codeWorkflowTemplates = useMemo(
@@ -534,7 +733,8 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         (s) =>
           (s.source === 'workspace' || s.source === 'user') &&
           !allTemplateNames.has(s.name) &&
-          !MEMORY_SKILL_NAMES.includes(s.name),
+          !MEMORY_SKILL_NAMES.includes(s.name) &&
+          !STOCK_SKILL_NAMES.includes(s.name),
       ),
     [skills, allTemplateNames],
   );
@@ -549,6 +749,26 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     [packByName],
   );
 
+  const stockDomainOn = useMemo(() => {
+    const packsOn = STOCK_PACK_NAMES.every((n) => enabledPackSet.has(n));
+    const skillsOn = STOCK_SKILL_NAMES.every((name) => {
+      const e = skills.find((s) => s.name === name && s.source === 'workspace');
+      return e?.enabled === true;
+    });
+    return packsOn && skillsOn;
+  }, [enabledPackSet, skills]);
+
+  const codeDomainOn = useMemo(() => {
+    const existing = CODE_WORKFLOW_TEMPLATES.filter((n) =>
+      skills.some((s) => s.name === n && s.source === 'workspace'),
+    );
+    if (existing.length === 0) return false;
+    return existing.every((name) => {
+      const e = skills.find((s) => s.name === name && s.source === 'workspace');
+      return e?.enabled === true;
+    });
+  }, [skills]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-40">
@@ -558,7 +778,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
   }
 
   return (
-    <div className="max-w-5xl py-6 px-6 space-y-6">
+    <div className="w-full py-6 px-6 space-y-6">
       <div>
         <h2 className="text-lg font-semibold mb-1">能力</h2>
         <p className="text-sm text-muted-foreground">
@@ -663,49 +883,50 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
       <AbilityCard
         title="股票分析"
         badge={{ variant: 'optional' }}
+        actions={
+          <DomainToggle
+            allOn={stockDomainOn}
+            busy={busyDir === '__bulk__'}
+            onToggle={() =>
+              handleDomainToggle(STOCK_SKILL_NAMES, STOCK_PACK_NAMES, !stockDomainOn)
+            }
+          />
+        }
         leftContent={
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Skill
             </p>
-            {stockTemplate ? (
-              <SkillRow
-                name={stockTemplate.name}
-                description={stockTemplate.description}
-                subscribed={subscribedSkillNames.has(stockTemplate.name)}
-                busy={busyTemplate === stockTemplate.name}
-                onDetail={setDetailName}
-                onSubscribe={handleSubscribe}
-              />
+            {stockSkills.length === 0 ? (
+              <p className="text-xs text-muted-foreground">未发现股票相关 Skill。</p>
             ) : (
-              <p className="text-xs text-muted-foreground">未发现 stock-analysis 模板。</p>
+              stockSkills.map((sk) => (
+                <SkillRowCompact
+                  key={sk.name}
+                  name={sk.name}
+                  description={sk.description}
+                  onDetail={setDetailName}
+                />
+              ))
             )}
           </div>
         }
         rightContent={
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              工具包（开启即整组放行）
+              工具包
             </p>
             {stockPacks.length === 0 ? (
               <p className="text-xs text-muted-foreground">暂无股票工具包。</p>
             ) : (
-              stockPacks.map((p) => (
-                <PackToggle
-                  key={p.name}
-                  pack={p}
-                  enabled={isPackEnabled(p.name)}
-                  onToggle={togglePack}
-                />
-              ))
+              <PackGroupList
+                packs={stockPacks}
+                packByNameMap={packByName}
+                groupByServer={groupByServer}
+                onToolClick={setDetailTool}
+                active={stockDomainOn}
+              />
             )}
-            <ToolGroupList
-              servers={STOCK_PACK_NAMES.map((n) => packByName[n]?.mcpServer).filter(
-                (s): s is string => !!s,
-              )}
-              groupByServer={groupByServer}
-              onToolClick={setDetailTool}
-            />
           </div>
         }
       />
@@ -714,47 +935,38 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
       <AbilityCard
         title="代码工作流"
         badge={{ variant: 'optional' }}
+        actions={
+          <DomainToggle
+            allOn={codeDomainOn}
+            busy={busyDir === '__bulk__'}
+            onToggle={() =>
+              handleDomainToggle(CODE_WORKFLOW_TEMPLATES, [], !codeDomainOn)
+            }
+          />
+        }
         leftContent={
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-              Skill（各复用基础工具）
+              Skill
             </p>
             {codeWorkflowTemplates.length === 0 ? (
               <p className="text-xs text-muted-foreground">未发现代码工作流模板。</p>
             ) : (
-              <div className="space-y-1.5">
-                {codeWorkflowTemplates.map((tpl) => {
-                  const subscribed = subscribedSkillNames.has(tpl.name);
-                  const skillEntry = skills.find(
-                    (s) => s.name === tpl.name && s.source === 'workspace',
-                  );
-                  return (
-                    <SkillRow
-                      key={tpl.name}
-                      name={tpl.name}
-                      description={tpl.description}
-                      subscribed={subscribed}
-                      enabled={skillEntry?.enabled ?? false}
-                      showEnableToggle={subscribed}
-                      dir={skillEntry?.dir}
-                      busy={busyTemplate === tpl.name || busyDir === skillEntry?.dir}
-                      onDetail={setDetailName}
-                      onSubscribe={handleSubscribe}
-                      onToggleEnabled={(d) =>
-                        skillEntry &&
-                        handleToggleSkillEnabled(d, skillEntry.enabled)
-                      }
-                    />
-                  );
-                })}
-              </div>
+              codeWorkflowTemplates.map((tpl) => (
+                <SkillRowCompact
+                  key={tpl.name}
+                  name={tpl.name}
+                  description={tpl.description}
+                  onDetail={setDetailName}
+                />
+              ))
             )}
           </div>
         }
         rightContent={
           <p className="text-xs text-muted-foreground leading-relaxed p-2">
             这些 Skill 复用基础工具（Read / Edit / Bash / Grep / Glob），不额外注册工具组。
-            开关这些 Skill 等于开关对应的 SKILL.md 注入。
+            开关即控制所有 Skill 的注入。
           </p>
         }
       />
@@ -787,20 +999,12 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               工具包
             </p>
-            {articlePacks.map((p) => (
-              <PackToggle
-                key={p.name}
-                pack={p}
-                enabled={isPackEnabled(p.name)}
-                onToggle={togglePack}
-              />
-            ))}
-            <ToolGroupList
-              servers={ARTICLE_PACK_NAMES.map((n) => packByName[n]?.mcpServer).filter(
-                (s): s is string => !!s,
-              )}
+            <PackGroupList
+              packs={articlePacks}
+              packByNameMap={packByName}
               groupByServer={groupByServer}
               onToolClick={setDetailTool}
+              active={isPackEnabled('article')}
             />
           </div>
         }

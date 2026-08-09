@@ -41,7 +41,7 @@ export function AbilityCard({
     <section className="border rounded-lg p-4 space-y-3 bg-background">
       <header className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="text-sm font-semibold">{title}</h3>
+          <h3 className="text-base font-semibold">{title}</h3>
           {badge && (
             <span
               className={cn(
