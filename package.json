@@ -17,7 +17,9 @@
     "build": "bun run build:renderer && bun run build:electron",
     "dist": "bun run build && electron-builder",
     "postinstall": "electron-rebuild",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "release": "node scripts/release.mjs",
+    "serve-updates": "node scripts/serve-updates.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.82.1",

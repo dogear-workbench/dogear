@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 智能发布脚本 + 本地 HTTP 服务
-status: pending
+status: done
 ---
 
 ## 目标

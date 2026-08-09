@@ -50,6 +50,10 @@ data/dogear.db
 /claude_code_doc_md
 skills-lock.json
 
+# 热更新发布产物
+update-server/
+.release-state.json
+
 # git worktrees
 .worktrees/
 /python/article_parser

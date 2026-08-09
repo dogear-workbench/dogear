@@ -1,0 +1,178 @@
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(__dirname, '..');
+const PACKAGE_JSON = path.join(ROOT, 'package.json');
+const DIST_DIR = path.join(ROOT, 'dist');
+const OUT_DIR = path.join(ROOT, 'out');
+const RELEASE_DIR = path.join(ROOT, 'release');
+const UPDATE_SERVER_DIR = path.join(ROOT, 'update-server');
+const STATE_FILE = path.join(ROOT, '.release-state.json');
+const SERVER_URL = 'http://localhost:9527';
+
+function bumpPatch(version) {
+  const parts = version.split('.').map(Number);
+  parts[2] += 1;
+  return parts.join('.');
+}
+
+function run(cmd, label) {
+  console.log(`\n▶ ${label}`);
+  execSync(cmd, { cwd: ROOT, stdio: 'inherit' });
+}
+
+async function getAllFiles(dirPath) {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await getAllFiles(fullPath));
+    } else {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+async function hashDir(dirPath) {
+  const files = await getAllFiles(dirPath);
+  files.sort();
+  const hash = crypto.createHash('sha256');
+  for (const file of files) {
+    hash.update(path.relative(dirPath, file).replace(/\\/g, '/'));
+    hash.update(await fs.readFile(file));
+  }
+  return hash.digest('hex');
+}
+
+async function sha256File(filePath) {
+  return crypto.createHash('sha256').update(await fs.readFile(filePath)).digest('hex');
+}
+
+async function zipDir(srcDir, zipPath) {
+  const { default: AdmZip } = await import('adm-zip');
+  const zip = new AdmZip();
+  zip.addLocalFolder(srcDir);
+  zip.writeZip(zipPath);
+}
+
+async function main() {
+  const pkgRaw = await fs.readFile(PACKAGE_JSON, 'utf-8');
+  const pkg = JSON.parse(pkgRaw);
+  const oldVersion = pkg.version;
+  const newVersion = bumpPatch(oldVersion);
+  pkg.version = newVersion;
+  await fs.writeFile(PACKAGE_JSON, JSON.stringify(pkg, null, 2) + '\n');
+  console.log(`版本号: ${oldVersion} → ${newVersion}`);
+
+  run('bun run build:electron', '编译主进程 → dist/');
+  run('bun run build:renderer', '构建前端 → out/');
+
+  const distHash = await hashDir(DIST_DIR);
+  console.log(`\ndist/ hash: ${distHash.slice(0, 16)}…`);
+
+  let prevState = null;
+  try {
+    prevState = JSON.parse(await fs.readFile(STATE_FILE, 'utf-8'));
+  } catch {}
+
+  const isFirstRelease = !prevState;
+  const distChanged = isFirstRelease || prevState.distHash !== distHash;
+
+  await fs.mkdir(UPDATE_SERVER_DIR, { recursive: true });
+
+  let releaseType;
+
+  if (!distChanged) {
+    releaseType = 'hotfix';
+    console.log('\n✦ dist/ 未变化 → 热更新路径');
+
+    const zipName = `update-${newVersion}.zip`;
+    const zipPath = path.join(UPDATE_SERVER_DIR, zipName);
+
+    await zipDir(OUT_DIR, zipPath);
+    const zipSize = (await fs.stat(zipPath)).size;
+    const zipHash = await sha256File(zipPath);
+
+    const manifest = {
+      version: newVersion,
+      type: 'hotfix',
+      pubDate: new Date().toISOString(),
+      hotfix: {
+        url: `${SERVER_URL}/${zipName}`,
+        size: zipSize,
+        sha256: zipHash,
+      },
+    };
+    await fs.writeFile(
+      path.join(UPDATE_SERVER_DIR, 'manifest.json'),
+      JSON.stringify(manifest, null, 2),
+    );
+    console.log(`  ✓ ${zipName} (${(zipSize / 1024 / 1024).toFixed(2)} MB)`);
+  } else {
+    releaseType = 'full';
+    console.log(`\n✦ ${isFirstRelease ? '首次发布' : 'dist/ 已变化'} → 全量路径`);
+
+    run('bun run dist', '全量打包 (electron-builder)');
+
+    const releaseFiles = await fs.readdir(RELEASE_DIR);
+    const exeFile = releaseFiles.find(f => f.endsWith('.exe') && !f.endsWith('.blockmap'));
+    if (!exeFile) throw new Error('release/ 中未找到 .exe 文件');
+
+    const exeSrc = path.join(RELEASE_DIR, exeFile);
+    const exeDst = path.join(UPDATE_SERVER_DIR, exeFile);
+    await fs.copyFile(exeSrc, exeDst);
+
+    const exeSize = (await fs.stat(exeDst)).size;
+    const exeHash = await sha256File(exeDst);
+
+    for (const extra of releaseFiles) {
+      if (extra.endsWith('.exe.blockmap') || extra === 'latest.yml') {
+        await fs.copyFile(
+          path.join(RELEASE_DIR, extra),
+          path.join(UPDATE_SERVER_DIR, extra),
+        );
+      }
+    }
+
+    const manifest = {
+      version: newVersion,
+      type: 'full',
+      pubDate: new Date().toISOString(),
+      full: {
+        url: `${SERVER_URL}/${encodeURIComponent(exeFile)}`,
+        size: exeSize,
+        sha256: exeHash,
+      },
+    };
+    await fs.writeFile(
+      path.join(UPDATE_SERVER_DIR, 'manifest.json'),
+      JSON.stringify(manifest, null, 2),
+    );
+    console.log(`  ✓ ${exeFile} (${(exeSize / 1024 / 1024).toFixed(2)} MB)`);
+  }
+
+  await fs.writeFile(
+    STATE_FILE,
+    JSON.stringify({
+      distHash,
+      version: newVersion,
+      type: releaseType,
+      timestamp: new Date().toISOString(),
+    }, null, 2),
+  );
+
+  console.log(`\n✓ 发布完成: v${newVersion} (${releaseType})`);
+  console.log(`  产物目录: ${UPDATE_SERVER_DIR}`);
+  console.log(`  启动服务: bun run serve-updates`);
+}
+
+main().catch(err => {
+  console.error('\n✗ 发布失败:', err.message);
+  process.exit(1);
+});
