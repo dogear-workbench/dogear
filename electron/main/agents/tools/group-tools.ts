@@ -10,7 +10,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     defineTool(
       'ListGroupFiles',
       '列出共享区文件',
-      '列出当前会话组共享区的所有文件（agent 写出的文件）。',
+      '列出当前会话组共享区的所有文件（agent 写出的文件）。不要用于查看工作区项目文件。',
       z.object({}),
       async () => {
         try {
@@ -40,7 +40,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     defineTool(
       'ReadGroupFile',
       '读取共享区文件',
-      '读取共享区文件内容（按相对路径）。',
+      '读取会话组共享区的文件内容。仅用于读取共享区文件——工作区项目代码/文档请用 read 工具。',
       z.object({
         relPath: z.string().describe('共享区相对路径，例如 notes.md'),
       }),
@@ -62,7 +62,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     defineTool(
       'WriteGroupFile',
       '写入共享区文件',
-      '写入共享区文件（覆盖已有内容）。',
+      '写入会话组共享区的文件（覆盖已有内容）。工作区项目代码/文档请用 write 工具。',
       z.object({
         relPath: z.string().describe('共享区相对路径，例如 notes.md 或 ideas/2026-06-25.md'),
         content: z.string().describe('完整文件内容（UTF-8 文本）'),
