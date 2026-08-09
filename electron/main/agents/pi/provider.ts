@@ -92,6 +92,7 @@ export function resolvePiModel(
 
   const model = buildPiModel(profile, modelId, tier);
   const thinkingLevel: ModelThinkingLevel = appSettings.ai.effort ?? 'off';
+  model.reasoning = thinkingLevel !== 'off';
   return { model, profile, tier, thinkingLevel };
 }
 

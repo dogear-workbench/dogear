@@ -44,7 +44,7 @@ export interface ModelProfile {
   piModels?: string[];
 }
 
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
 export type ThinkingType = 'adaptive' | 'enabled' | 'disabled';
 
 export type PiPermissionMode = 'default' | 'autoExecute';

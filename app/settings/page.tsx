@@ -27,12 +27,12 @@ import { ModelSelector } from '@/components/ModelSelector';
 // ═══ 常量 ═══════════════════════════════════════════
 
 const EFFORT_OPTIONS = [
-  { value: null, label: '不指定' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'xhigh', label: '超高' },
-  { value: 'max', label: 'Max' },
+  { value: null, label: '默认' },
+  { value: 'off', label: '关闭' },
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' },
+  { value: 'max', label: '最高' },
 ] as const;
 
 const THINKING_TYPE_OPTIONS = [
@@ -283,7 +283,7 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">执行力度（effort）</label>
                 <p className="text-xs text-muted-foreground">
-                  选「不指定」时不传 effort 给 SDK，由模型自带默认值决定（一般更省 thinking token）。
+                  「默认」由模型自决思考深度；「关闭」不产生思考；其余级别控制思考投入程度。
                 </p>
                 <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
                   {EFFORT_OPTIONS.map(opt => (

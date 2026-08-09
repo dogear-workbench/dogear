@@ -48,7 +48,7 @@ export function isProfileComplete(profile: ModelProfile): boolean {
   return !!(profile.haikuModel && profile.sonnetModel && profile.opusModel);
 }
 
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
 export type ThinkingType = 'adaptive' | 'enabled' | 'disabled';
 
 export type PiPermissionMode = 'default' | 'autoExecute';
