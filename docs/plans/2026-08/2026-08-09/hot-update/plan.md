@@ -56,3 +56,28 @@ type 为 `hotfix` 时有 hotfix 字段；type 为 `full` 时有 full 字段（�
 
 ### 热更新应用方式
 覆盖文件后通过 `mainWindow.reload()` 刷新页面（不需要重启 Electron 进程）。若热更新涉及主进程代码则不会生效（那种情况已被发布脚本判定为 full）。
+
+## 完成总结
+
+### 实际改动汇总
+| Step | Commit | 改动 |
+|------|--------|------|
+| 1 | `ac15ec7` | out/ 移出 asar + getRendererPath() 统一路径管理 |
+| 2 | `76f8e96` | update-service.ts（6 函数）+ updater.ts（6 路由）+ settings 新字段 |
+| 3 | `4e47c40` | AboutTab.tsx（检查更新/下载进度/服务地址）+ 设置页接入 |
+| 4 | `963dfc4` | release.mjs（智能发布）+ serve-updates.mjs（本地 HTTP 9527）|
+
+### 与原计划的偏差
+1. **Step 2**：downloadFullUpdate + runInstaller 拆成两个函数（更清晰），多了 downloadAndRunFullUpdate 路由
+2. **Step 3**：serverUrl 不走 settings-store dirty 流程，通过独立 tipc 管理（避免误触覆盖）
+3. **Step 4**：manifest 不引用 blockmapUrl（update-service 不使用），但 blockmap + latest.yml 仍复制到 update-server/ 备用
+
+### 使用方式
+```bash
+# 发布新版本（自动判断热更新/全量）
+bun run release
+
+# 启动本地更新服务（端口 9527）
+bun run serve-updates
+```
+客户端：设置页 → 关于 Tab → 检查更新
