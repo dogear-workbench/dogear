@@ -12,6 +12,7 @@ import { getRendererHandlers } from '@egoist/tipc/main';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
 import { registerTipcHandlers } from './tipc/index.js';
 import type { RendererHandlers } from './tipc/renderer-handlers.js';
+import { getSessionNotificationService } from './services/session-notification-service.js';
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -89,6 +90,8 @@ function createWindow() {
     // 生产环境:加载构建后的静态文件
     mainWindow.loadFile(path.join(__dirname, '../../out/index.html'));
   }
+
+  getSessionNotificationService().registerMainWindow(mainWindow);
 }
 
 /**
@@ -263,6 +266,8 @@ export function createSessionWindow(conversationId: string, title: string) {
   win.loadURL(url);
 
   sessionWindows.set(conversationId, win);
+
+  getSessionNotificationService().registerSessionWindow(conversationId, win);
 
   // 提前记录 webContentsId，因为 'closed' 事件时 webContents 已销毁
   const webContentsId = win.webContents.id;
@@ -567,6 +572,12 @@ app.on('before-quit', async () => {
     shutdownPiSessionManager();
   } catch (error) {
     console.error('关闭 PiSessionManager 失败:', error);
+  }
+  // 通知服务 dispose：注销 Notification 监听、停止 flashFrame
+  try {
+    getSessionNotificationService().dispose();
+  } catch (error) {
+    console.error('通知服务 dispose 失败:', error);
   }
   // 关闭 Agent Worker 线程池
   await shutdownAgentManager();

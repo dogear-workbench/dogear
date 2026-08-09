@@ -1,0 +1,200 @@
+import { BrowserWindow, Notification } from 'electron';
+import { mainLogger } from '../agents/logger.js';
+
+export type SessionNotificationKind = 'complete' | 'permission';
+
+export interface SessionNotificationInput {
+  kind: SessionNotificationKind;
+  notificationId: string;
+  conversationId: string;
+  workspaceId: string;
+  title: string;
+  toolName?: string;
+  body?: string;
+}
+
+type LocateCallback = (conversationId: string, workspaceId: string) => void;
+
+const DEDUP_MAX = 500;
+
+class SessionNotificationService {
+  private mainWindow: BrowserWindow | null = null;
+  private sessionWindows = new Map<string, BrowserWindow>();
+  private locateCallback: LocateCallback | null = null;
+  private recentIds = new Set<string>();
+  private recentQueue: string[] = [];
+
+  registerMainWindow(win: BrowserWindow): void {
+    this.mainWindow = win;
+    win.on('focus', () => this.stopFlash());
+    win.on('closed', () => {
+      if (this.mainWindow === win) {
+        this.stopFlash();
+        this.mainWindow = null;
+      }
+    });
+  }
+
+  registerSessionWindow(conversationId: string, win: BrowserWindow): void {
+    this.sessionWindows.set(conversationId, win);
+    win.on('focus', () => this.stopFlash());
+    win.on('closed', () => {
+      const registered = this.sessionWindows.get(conversationId);
+      if (registered === win) {
+        this.sessionWindows.delete(conversationId);
+      }
+    });
+  }
+
+  setLocateCallback(cb: LocateCallback): void {
+    this.locateCallback = cb;
+  }
+
+  isForeground(): boolean {
+    const all = this.collectLiveWindows();
+    return all.some((w) => w.isVisible() && !w.isMinimized() && w.isFocused());
+  }
+
+  notify(input: SessionNotificationInput): void {
+    if (!this.shouldNotify(input.notificationId)) {
+      return;
+    }
+    if (this.isForeground()) {
+      return;
+    }
+
+    if (!Notification.isSupported()) {
+      mainLogger.warn('[session-notification] 当前系统不支持原生通知，跳过');
+      return;
+    }
+
+    const body = this.buildBody(input);
+
+    let notification: Notification;
+    try {
+      notification = new Notification({
+        title: input.title,
+        body,
+        silent: false,
+      });
+    } catch (err) {
+      mainLogger.error('[session-notification] 创建 Notification 失败:', err);
+      return;
+    }
+
+    notification.on('click', () => {
+      this.handleClick(input);
+    });
+
+    try {
+      notification.show();
+    } catch (err) {
+      mainLogger.error('[session-notification] 显示通知失败:', err);
+      return;
+    }
+
+    this.flashIfVisible();
+  }
+
+  dispose(): void {
+    this.stopFlash();
+    this.mainWindow = null;
+    this.sessionWindows.clear();
+    this.locateCallback = null;
+    this.recentIds.clear();
+    this.recentQueue.length = 0;
+  }
+
+  private shouldNotify(notificationId: string): boolean {
+    if (this.recentIds.has(notificationId)) {
+      return false;
+    }
+    this.recentIds.add(notificationId);
+    this.recentQueue.push(notificationId);
+    if (this.recentQueue.length > DEDUP_MAX) {
+      const oldest = this.recentQueue.shift()!;
+      this.recentIds.delete(oldest);
+    }
+    return true;
+  }
+
+  private collectLiveWindows(): BrowserWindow[] {
+    const wins: BrowserWindow[] = [];
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      wins.push(this.mainWindow);
+    }
+    for (const [, w] of this.sessionWindows) {
+      if (!w.isDestroyed()) wins.push(w);
+    }
+    return wins;
+  }
+
+  private buildBody(input: SessionNotificationInput): string {
+    if (input.kind === 'permission' && input.toolName) {
+      return `等待授权: ${input.toolName}`;
+    }
+    return input.body ?? '会话已结束';
+  }
+
+  private flashIfVisible(): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed() && this.mainWindow.isVisible()) {
+      try {
+        this.mainWindow.flashFrame(true);
+      } catch {
+        // flashFrame 失败不影响通知
+      }
+    }
+  }
+
+  private stopFlash(): void {
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      try {
+        this.mainWindow.flashFrame(false);
+      } catch {
+        // 忽略
+      }
+    }
+  }
+
+  private handleClick(input: SessionNotificationInput): void {
+    const sessionWin = this.sessionWindows.get(input.conversationId);
+    if (sessionWin && !sessionWin.isDestroyed()) {
+      try {
+        if (sessionWin.isMinimized()) sessionWin.restore();
+        if (!sessionWin.isVisible()) sessionWin.show();
+        sessionWin.focus();
+        return;
+      } catch (err) {
+        mainLogger.warn('[session-notification] 恢复独立会话窗口失败，降级到主窗口:', err);
+      }
+    }
+
+    if (this.mainWindow && !this.mainWindow.isDestroyed()) {
+      try {
+        if (this.mainWindow.isMinimized()) this.mainWindow.restore();
+        if (!this.mainWindow.isVisible()) this.mainWindow.show();
+        this.mainWindow.focus();
+      } catch (err) {
+        mainLogger.warn('[session-notification] 恢复主窗口失败:', err);
+        return;
+      }
+
+      if (this.locateCallback) {
+        try {
+          this.locateCallback(input.conversationId, input.workspaceId);
+        } catch (err) {
+          mainLogger.warn('[session-notification] 定位回调执行失败:', err);
+        }
+      }
+    }
+  }
+}
+
+let instance: SessionNotificationService | null = null;
+
+export function getSessionNotificationService(): SessionNotificationService {
+  if (!instance) {
+    instance = new SessionNotificationService();
+  }
+  return instance;
+}
