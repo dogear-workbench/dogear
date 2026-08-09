@@ -24,6 +24,7 @@ import { notesRouter } from './notes.js';
 import { groupRouter } from './group.js';
 import { delegationRouter } from './delegation.js';
 import { systemPromptRouter } from './system-prompt.js';
+import { updaterRouter } from './updater.js';
 
 export const router = {
   ...aiRouter,
@@ -50,6 +51,7 @@ export const router = {
   ...groupRouter,
   ...delegationRouter,
   ...systemPromptRouter,
+  ...updaterRouter,
 };
 
 export type Router = typeof router;

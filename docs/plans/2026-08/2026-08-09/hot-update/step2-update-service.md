@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 更新服务 + IPC 路由
-status: pending
+status: done
 ---
 
 ## 目标
@@ -45,7 +45,31 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-（待填）
+
+**新增文件：**
+- `electron/main/services/update-service.ts` — 热更新核心服务
+- `electron/main/tipc/updater.ts` — tipc 路由
+
+**修改文件：**
+- `electron/main/tipc/index.ts` — import + spread updaterRouter
+- `electron/main/tipc/renderer-handlers.ts` — 新增 `updateProgress` handler
+- `electron/main/services/settings-types.ts` — AppSettings 新增 `update?: { serverUrl: string }`，DEFAULT_SETTINGS 加默认值
+- `types/settings.ts` — 同步新增 `update` 字段（前端用）
+- `package.json` — 新增依赖 adm-zip + @types/adm-zip
 
 ### 给下一步的接力棒
-（待填）
+
+前端可用的 tipc 路由：
+- `getAppVersion()` → `{ version: string }`
+- `checkForUpdates()` → `{ hasUpdate, type?, info?, error? }`
+- `downloadAndApplyHotfix({ url, sha256 })` → 下载期间推送 `updateProgress` 事件 → `{ success, error? }`
+- `downloadAndRunFullUpdate({ url })` → 下载期间推送 `updateProgress` 事件 → `{ success, error? }`
+- `getUpdateConfig()` → `{ serverUrl }`
+- `setUpdateConfig({ serverUrl })` → `{ success, error? }`
+
+渲染层事件：
+- `updateProgress: { percent, transferred, total }` — 下载进度推送
+
+settings.json 新字段：`update.serverUrl`（默认 `http://localhost:9527`）
+
+热更新应用后需调用 `mainWindow.reload()` 刷新页面（Step 3 前端侧决定调用时机）

@@ -114,6 +114,10 @@ export interface AppSettings {
   };
   /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
   enabledToolPacks?: string[];
+  /** 热更新服务配置 */
+  update?: {
+    serverUrl: string;
+  };
   ui?: {
     messageDisplayMode: 'compact' | 'detailed'; // 工具/思考块显示模式
   };
@@ -148,6 +152,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
     loadArticleParse: false,
   },
   enabledToolPacks: [],
+  update: {
+    serverUrl: 'http://localhost:9527',
+  },
   ui: {
     messageDisplayMode: 'compact',
   },

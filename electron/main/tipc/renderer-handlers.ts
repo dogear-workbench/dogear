@@ -244,4 +244,11 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
+  // 热更新下载进度（主进程→渲染层推送）
+  updateProgress: (data: {
+    percent: number;
+    transferred: number;
+    total: number;
+  }) => void;
+
 };
