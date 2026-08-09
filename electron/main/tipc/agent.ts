@@ -10,6 +10,8 @@ import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import * as conversationService from '../services/conversation-service.js';
+import { getSessionNotificationService } from '../services/session-notification-service.js';
+import { mainLogger } from '../agents/logger.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import { getClaudeConfigDir, getSdkSessionsDir } from '../services/memory/session-paths.js';
 export { getClaudeConfigDir } from '../services/memory/session-paths.js';
@@ -36,6 +38,10 @@ const t = tipc.create();
 
 // 模块加载时注册广播函数：所有 session 的消息统一广播给所有渲染层窗口
 getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
+  if (event === 'complete' || event === 'permissionRequest') {
+    void handleSessionNotification(sessionId, event, payload);
+  }
+
   for (const win of electron.BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
@@ -65,6 +71,53 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
     } catch { /* 窗口已销毁，忽略 */ }
   }
 });
+
+const COMPLETE_BODY: Record<string, string> = {
+  success: 'AI 已完成回复',
+  failed: '会话执行失败，请查看详情',
+  cancelled: '会话已停止',
+};
+
+async function handleSessionNotification(
+  sessionId: string,
+  event: string,
+  payload: unknown,
+): Promise<void> {
+  try {
+    const convId = getPiSessionManager().getConversationIdBySession(sessionId);
+    if (!convId) return;
+
+    const lookup = await conversationService.getByIdGlobal(convId);
+    if (!lookup || lookup.conv.role !== 'main') return;
+
+    const service = getSessionNotificationService();
+
+    if (event === 'complete') {
+      const result = payload as PiSessionTurnResult;
+      const body = COMPLETE_BODY[result.subtype] ?? COMPLETE_BODY.success;
+      service.notify({
+        kind: 'complete',
+        notificationId: `${sessionId}-${Date.now()}`,
+        conversationId: convId,
+        workspaceId: lookup.workspaceId,
+        title: lookup.conv.title || '会话',
+        body,
+      });
+    } else if (event === 'permissionRequest') {
+      const data = payload as { requestId: string; toolName: string; toolInput: unknown };
+      service.notify({
+        kind: 'permission',
+        notificationId: data.requestId,
+        conversationId: convId,
+        workspaceId: lookup.workspaceId,
+        title: lookup.conv.title || '会话',
+        toolName: data.toolName,
+      });
+    }
+  } catch (err) {
+    mainLogger.warn('[session-notification] 广播通知分支失败:', err);
+  }
+}
 
 export const agentRouter = {
   // ── 旧版 Agent 任务 ──────────────────────────────────────

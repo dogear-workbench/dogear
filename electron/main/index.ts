@@ -92,6 +92,15 @@ function createWindow() {
   }
 
   getSessionNotificationService().registerMainWindow(mainWindow);
+
+  getSessionNotificationService().setLocateCallback((conversationId, workspaceId) => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      getRendererHandlers<RendererHandlers>(mainWindow.webContents).focusConversation.send({ conversationId, workspaceId });
+    } catch (err) {
+      console.error('[session-notification] focusConversation 发送失败:', err);
+    }
+  });
 }
 
 /**

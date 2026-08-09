@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 主会话事件通知与定位协议
-status: pending
+status: done
 ---
 
 ## 目标
@@ -33,11 +33,13 @@ status: pending
 
 ### 实际改动
 
-- 与计划差异：
-- 改动文件清单：
+- `renderer-handlers.ts`：新增 `focusConversation: (data: { conversationId, workspaceId }) => void`
+- `index.ts`：createWindow 内 `setLocateCallback` 接线，通过 `getRendererHandlers.focusConversation.send` 发定位事件
+- `agent.ts`：broadcaster 回调内、窗口循环外新增 `handleSessionNotification` fire-and-forget 分支；`complete` 和 `permissionRequest` 事件触发通知，仅 `role==='main'` 生效；complete ID 用 `sessionId-Date.now()`，permission ID 用 `requestId`
+- 与计划差异：无
 
 ### 给下一步的接力棒
 
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- `focusConversation({ conversationId, workspaceId })` 事件已就绪，仅在通知点击→主窗口恢复时发送
+- Step 3 在 `app/page.tsx` 监听该事件，`await setWorkspace` → `client.getById` → `selectConversation`
+- `setWorkspace` 需从 `void` 改为 `Promise<void>` 签名

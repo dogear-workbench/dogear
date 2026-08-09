@@ -238,4 +238,10 @@ export type RendererHandlers = {
     conversationId: string;
   }) => void;
 
+  // 通知点击后定位到目标对话（主窗口收到后切换到对应工作区并激活对话）
+  focusConversation: (data: {
+    conversationId: string;
+    workspaceId: string;
+  }) => void;
+
 };
