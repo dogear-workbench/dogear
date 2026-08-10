@@ -196,3 +196,12 @@ test('subAgent.profiles 结构完整时不产生改动', () => {
   expect(s.subAgent.profiles).toHaveLength(1);
   expect(s.subAgent.profiles[0].id).toBe('default');
 });
+
+test('subAgent.profiles 为空数组时补全默认 Profile', () => {
+  const s = baseSettings();
+  s.subAgent.profiles = [];
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles).toHaveLength(1);
+  expect(s.subAgent.profiles[0].id).toBe('default');
+});

@@ -177,6 +177,10 @@ export function normalizeSettings(settings: AppSettings): boolean {
           changed = true;
         }
       }
+      if (subAgent.profiles.length === 0) {
+        subAgent.profiles = [createDefaultSubAgentProfile()];
+        changed = true;
+      }
     } else {
       subAgent.profiles = [createDefaultSubAgentProfile()];
       changed = true;
