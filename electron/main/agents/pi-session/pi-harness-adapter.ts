@@ -63,6 +63,8 @@ export interface PiHarnessAdapterOptions {
   thinkingLevel: ModelThinkingLevel;
   /** 对齐旧 streamFn 里强制覆盖的 profile.apiTimeoutMs */
   timeoutMs?: number;
+  /** 子会话场景的白名单工具名集合；undefined 表示全部激活（主会话）。仅列出实际已注册的工具名 */
+  activeToolNames?: string[];
   /** 裸 Agent 事件透传（text/thinking/tool_execution_start/end/agent_end 等），语义与旧 agent.subscribe 完全一致 */
   onAgentEvent: (event: AgentEvent) => void;
   /** steer 队列真实长度变化（steer() 入队和 one-at-a-time drain 都会触发），替代旧的手动 +1/-1 计数 */
@@ -85,6 +87,7 @@ export class PiHarnessAdapter {
       model: options.model,
       thinkingLevel: options.thinkingLevel,
       streamOptions: options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : undefined,
+      activeToolNames: options.activeToolNames,
     });
 
     // 关键实现事实（已读 agent-harness.js 源码确认）：queue_update/settled/save_point/abort 等

@@ -20,7 +20,7 @@ import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { toPiTools, type ToolDef } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
-import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool } from './skill-loader.js';
+import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool, type SkillEntry } from './skill-loader.js';
 import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
@@ -50,7 +50,7 @@ import {
   extractPiUsageEntry,
   type PiUsageAccumulator,
 } from './usage-extractor.js';
-import type { ModelSelection, ModelProfile, BasicToolPermissions } from '../../services/settings-types.js';
+import type { ModelSelection, ModelProfile, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
@@ -76,6 +76,8 @@ export interface PiSessionConfig {
     task: string;
     outputPath: string;
   };
+  /** role='sub' 时传入的 Profile 配置，驱动提示词段/工具/skill 的按需加载 */
+  subAgentProfile?: SubAgentProfile;
   permissionMode: PiPermissionMode;
   basicToolPermissions: BasicToolPermissions;
 }
@@ -110,6 +112,45 @@ interface PendingPermissionRequest {
   resolve: (result: HarnessToolCallResult | undefined) => void;
   toolName: string;
   toolInput: unknown;
+}
+
+/**
+ * 子会话按 Profile 过滤 skill entries。
+ * 工作区 skill（workspace/.claude/skills）→ 仅保留 skills[] 中列出的；
+ * 自定义 skill（homedir/.claude/skills）→ 仅保留 customSkills[] 中列出的；
+ * article-parser skill → 仅当 article===true；
+ * review skill → 仅当 memory===true。
+ */
+function filterSkillsForSubAgent(
+  entries: SkillEntry[],
+  profile: SubAgentProfile,
+  scanDirs: { workspace: string; homedir: string; articleParser: string; review: string },
+): SkillEntry[] {
+  const ab = profile.enabledAbilities;
+  const isUnder = (filePath: string, dir: string): boolean => {
+    const rel = path.relative(dir, filePath);
+    return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+  };
+  return entries.filter((entry) => {
+    const fp = entry.bodyPath;
+    if (isUnder(fp, scanDirs.workspace)) return ab.skills?.includes(entry.name) ?? false;
+    if (isUnder(fp, scanDirs.homedir)) return ab.customSkills?.includes(entry.name) ?? false;
+    if (isUnder(fp, scanDirs.articleParser)) return ab.article === true;
+    if (isUnder(fp, scanDirs.review)) return ab.memory === true;
+    return false;
+  });
+}
+
+/**
+ * 计算子会话的 activeToolNames（白名单）。主会话返回 undefined = 全部激活。
+ * 基础工具取 profile.enabledBasicTools（read/write/edit/bash 等始终创建，靠白名单控制可见性）；
+ * 非基础工具取 toolDefs 中实际已创建的工具名（工具构建已按 Profile 过滤）。
+ */
+function computeSubAgentActiveTools(profile: SubAgentProfile, toolDefs: ToolDef[]): string[] {
+  const names = new Set<string>();
+  for (const name of profile.enabledBasicTools) names.add(name);
+  for (const def of toolDefs) names.add(def.name);
+  return [...names];
 }
 
 /** 从 SDK 风格的 ContentBlockParam[] 中提取纯文本（阶段一不支持图像，静默丢弃非文本块） */
@@ -234,125 +275,89 @@ export class PiSession extends EventEmitter {
 
     const piModels = buildPiModels(profile);
     const isSubAgent = this.config.role === 'sub';
-    const shouldLoadCoreProfile = !isSubAgent || appSettings.subAgent?.loadCoreProfile === true;
-    const coreProfileText = shouldLoadCoreProfile
+    const profile_ = this.config.subAgentProfile;
+
+    // ---- core-profile ----
+    // 主会话始终加载 core-profile；子会话不再加载（loadCoreProfile 字段已移除）
+    const coreProfileText = !isSubAgent
       ? await loadCoreProfileForSession(this.config.workspacePath)
       : null;
-    const groupContextText = this.config.groupId
-      ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId)
+
+    // ---- group context ----
+    // 主会话：有 groupId 则加载；子会话：groupFiles || reference 时加载
+    const needGroupContext = !isSubAgent
+      ? !!this.config.groupId
+      : !!(this.config.groupId && (profile_?.enabledAbilities.groupFiles || profile_?.enabledAbilities.reference));
+    const groupContextText = needGroupContext
+      ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!)
       : '';
 
+    // ---- agent.md ----
     const projectClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'workspaces', this.config.workspaceId, 'agent.md'));
     const userClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'agent.md'));
 
+    // ---- skill 索引 ----
     const env = new WorkspaceExecutionEnv(this.config.workspacePath);
-    const skillEntries = await loadSkillIndex([
-      path.join(this.config.workspacePath, '.claude', 'skills'),
-      path.join(os.homedir(), '.claude', 'skills'),
-      getArticleParserSkillsDir(),
-      getReviewSkillDir(),
+    const workspaceSkillsDir = path.join(this.config.workspacePath, '.claude', 'skills');
+    const homedirSkillsDir = path.join(os.homedir(), '.claude', 'skills');
+    const articleParserSkillsDir = getArticleParserSkillsDir();
+    const reviewSkillsDir = getReviewSkillDir();
+    const allSkillEntries = await loadSkillIndex([
+      workspaceSkillsDir,
+      homedirSkillsDir,
+      articleParserSkillsDir,
+      reviewSkillsDir,
     ], env);
-    const skillIndexText = formatSkillIndexForPrompt(skillEntries);
 
-    const promptParts = [
+    let skillEntries: SkillEntry[];
+    let skillIndexText: string;
+    if (isSubAgent && profile_) {
+      skillEntries = filterSkillsForSubAgent(allSkillEntries, profile_, {
+        workspace: workspaceSkillsDir,
+        homedir: homedirSkillsDir,
+        articleParser: articleParserSkillsDir,
+        review: reviewSkillsDir,
+      });
+      skillIndexText = formatSkillIndexForPrompt(skillEntries);
+    } else {
+      skillEntries = allSkillEntries;
+      skillIndexText = formatSkillIndexForPrompt(skillEntries);
+    }
+
+    // ---- 提示词拼装 ----
+    const promptParts: string[] = [
       projectClaudeMd,
       userClaudeMd,
       skillIndexText,
-      coreProfileText ?? '',
-      groupContextText,
     ];
-    if (!isSubAgent && this.config.workspacePath) {
-      promptParts.push(NOTES_GUIDANCE_APPEND);
-      promptParts.push(MEMORY_GUIDANCE_APPEND);
+    if (coreProfileText) promptParts.push(coreProfileText);
+    if (groupContextText) promptParts.push(groupContextText);
+
+    if (isSubAgent) {
+      const ab = profile_?.enabledAbilities ?? {};
+      if (ab.memory === true) promptParts.push(MEMORY_GUIDANCE_APPEND);
+      if (ab.groupFiles === true) promptParts.push(NOTES_GUIDANCE_APPEND);
+      if (this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
+    } else {
+      if (this.config.workspacePath) {
+        promptParts.push(NOTES_GUIDANCE_APPEND);
+        promptParts.push(MEMORY_GUIDANCE_APPEND);
+      }
+      if (this.config.groupId) promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
     }
-    if (isSubAgent && this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
-    if (!isSubAgent && this.config.groupId) promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
     const systemPrompt = promptParts.filter(Boolean).join('\n\n');
 
-    // 工具集合：builtin-tools（Read/Write/Edit/Bash，harness 原生工具，env 经 toolContext 注入）
-    // + toPiTools(Skill 工具 + Grep/Glob + dogear-memory 常驻工具 + 按 enabledToolPacks/groupId 挂载的可选工具包，
-    //   统一 ToolDef 形状，不需要 env context）
-    const registerPack = (packName: string, defs: ToolDef[]): ToolDef[] => {
-      for (const def of defs) {
-        if (isBasicToolName(def.name)) {
-          throw new Error(`基础工具 ${def.name} 不得归类到工具包 ${packName}`);
-        }
-        if (this.toolPackMap.has(def.name)) {
-          throw new Error(`工具 ${def.name} 重复归类到工具包 ${this.toolPackMap.get(def.name)} 与 ${packName}`);
-        }
-        this.toolPackMap.set(def.name, packName);
-      }
-      return defs;
-    };
+    let toolDefs: ToolDef[];
 
-    const toolDefs: ToolDef[] = [
-      createSkillTool(skillEntries),
-      ...createSearchToolDefs(this.config.workspacePath),
-      ...registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)),
-    ];
-
-    // 可选工具包（对齐旧 SDK 侧 enabledToolPacks 通配符体验）：article 依赖 workspacePath，其余四个不依赖
-    for (const pack of OPTIONAL_TOOL_PACKS) {
-      if (!this.config.enabledToolPacks.includes(pack.name)) continue;
-      switch (pack.name) {
-        case 'article':
-          if (this.config.workspacePath) {
-            toolDefs.push(...registerPack(pack.name, createArticleToolDefs(this.config.workspacePath)));
-          }
-          break;
-        case 'stock-quote':
-          toolDefs.push(...registerPack(pack.name, createStockToolDefs()));
-          break;
-        case 'stock-analysis':
-          toolDefs.push(...registerPack(pack.name, createStockAnalysisToolDefs()));
-          break;
-        case 'stock-announcement':
-          toolDefs.push(...registerPack(pack.name, createAnnouncementToolDefs()));
-          break;
-        case 'stock-picking':
-          toolDefs.push(...registerPack(pack.name, createStockPickingToolDefs()));
-          break;
-        default:
-          break;
-      }
+    if (isSubAgent && profile_) {
+      toolDefs = this.buildSubAgentToolDefs(profile_, skillEntries);
+    } else {
+      toolDefs = this.buildMainAgentToolDefs(skillEntries);
     }
 
-    // dogear-group / dogear-delegation：按 conversation.groupId 存在放行，role 透传 this.config.role
-    // 决定 dogear-delegation 拿主会话工具集（含 CreateSession/StopSession）还是子会话工具集（无法派孙子）
-    if (this.config.groupId) {
-      toolDefs.push(...registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
-      // 判别联合按 this.config.role 收窄：sub 分支需要 parentConversationId
-      const delegationOpts: DelegationToolsOpts = this.config.role === 'sub'
-        ? {
-            role: 'sub',
-            workspaceId: this.config.workspaceId,
-            groupId: this.config.groupId,
-            conversationId: this.config.conversationId,
-            parentConversationId: this.config.parentConversationId ?? '',
-          }
-        : {
-            role: 'main',
-            workspaceId: this.config.workspaceId,
-            groupId: this.config.groupId,
-            conversationId: this.config.conversationId,
-          };
-      toolDefs.push(...registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
-
-      // dogear-reference：有 groupId 时主会话和子会话都注册
-      if (this.config.groupId) {
-        toolDefs.push(...registerPack('dogear-reference', createReferenceToolDefs({
-          workspaceId: this.config.workspaceId,
-          workspacePath: this.config.workspacePath,
-          groupId: this.config.groupId,
-          parentConversationId: this.config.parentConversationId,
-        })));
-      }
-    }
-
-    // dogear-memory-review：按 workspacePath 齐全放行，onSaved 主会话场景不传（无需感知落盘时机）
-    if (this.config.workspacePath) {
-      toolDefs.push(...registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
-    }
+    const activeToolNames = isSubAgent && profile_
+      ? computeSubAgentActiveTools(profile_, toolDefs)
+      : undefined;
 
     const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
       ...createBuiltinFileTools(),
@@ -368,6 +373,7 @@ export class PiSession extends EventEmitter {
       model,
       thinkingLevel,
       timeoutMs: profile.apiTimeoutMs,
+      activeToolNames,
       onAgentEvent: (event) => this.handleAgentEvent(event),
       onSteerQueueChanged: (count) => this.handleSteerQueueChanged(count),
       onSettled: () => this.handleSettled(),
@@ -380,6 +386,158 @@ export class PiSession extends EventEmitter {
       skills: skillEntries.map((e) => e.name),
       claudeMd: { project: !!projectClaudeMd, user: !!userClaudeMd },
     });
+  }
+
+  /** 工具包注册辅助：校验并记录工具名→工具包标识映射，供权限批量免确认判定使用 */
+  private registerPack(packName: string, defs: ToolDef[]): ToolDef[] {
+    for (const def of defs) {
+      if (isBasicToolName(def.name)) {
+        throw new Error(`基础工具 ${def.name} 不得归类到工具包 ${packName}`);
+      }
+      if (this.toolPackMap.has(def.name)) {
+        throw new Error(`工具 ${def.name} 重复归类到工具包 ${this.toolPackMap.get(def.name)} 与 ${packName}`);
+      }
+      this.toolPackMap.set(def.name, packName);
+    }
+    return defs;
+  }
+
+  /**
+   * 主会话工具构建（行为与改造前完全一致）：
+   * Skill 工具 + Grep/Glob + dogear-memory 常驻 + 按 enabledToolPacks 挂载可选工具包
+   * + 按 groupId 挂载 dogear-group/delegation/reference + dogear-memory-review
+   */
+  private buildMainAgentToolDefs(skillEntries: SkillEntry[]): ToolDef[] {
+    const toolDefs: ToolDef[] = [
+      createSkillTool(skillEntries),
+      ...createSearchToolDefs(this.config.workspacePath),
+      ...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)),
+    ];
+
+    for (const pack of OPTIONAL_TOOL_PACKS) {
+      if (!this.config.enabledToolPacks.includes(pack.name)) continue;
+      switch (pack.name) {
+        case 'article':
+          if (this.config.workspacePath) {
+            toolDefs.push(...this.registerPack(pack.name, createArticleToolDefs(this.config.workspacePath)));
+          }
+          break;
+        case 'stock-quote':
+          toolDefs.push(...this.registerPack(pack.name, createStockToolDefs()));
+          break;
+        case 'stock-analysis':
+          toolDefs.push(...this.registerPack(pack.name, createStockAnalysisToolDefs()));
+          break;
+        case 'stock-announcement':
+          toolDefs.push(...this.registerPack(pack.name, createAnnouncementToolDefs()));
+          break;
+        case 'stock-picking':
+          toolDefs.push(...this.registerPack(pack.name, createStockPickingToolDefs()));
+          break;
+        default:
+          break;
+      }
+    }
+
+    if (this.config.groupId) {
+      toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
+      const delegationOpts: DelegationToolsOpts = {
+        role: 'main',
+        workspaceId: this.config.workspaceId,
+        groupId: this.config.groupId,
+        conversationId: this.config.conversationId,
+      };
+      toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
+      toolDefs.push(...this.registerPack('dogear-reference', createReferenceToolDefs({
+        workspaceId: this.config.workspaceId,
+        workspacePath: this.config.workspacePath,
+        groupId: this.config.groupId,
+        parentConversationId: this.config.parentConversationId,
+      })));
+    }
+
+    if (this.config.workspacePath) {
+      toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
+    }
+
+    return toolDefs;
+  }
+
+  /**
+   * 子会话工具构建（Profile 驱动）：
+   * - 基础工具（read/write/edit/bash/Glob/Grep）：始终全部创建，activeToolNames 控制可见性
+   * - Skill 工具：有 ≥1 skill 勾选时创建
+   * - dogear-memory + dogear-memory-review：仅当 memory===true
+   * - stock 工具包：仅当 stock===true
+   * - article 工具包：仅当 article===true
+   * - dogear-group：仅当 groupFiles===true
+   * - dogear-delegation：始终注册（固定）
+   * - dogear-reference：仅当 reference===true
+   */
+  private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[]): ToolDef[] {
+    const ab = profile.enabledAbilities;
+    const toolDefs: ToolDef[] = [];
+
+    // Grep/Glob：始终创建（基础工具，activeToolNames 控制可见性）
+    toolDefs.push(...createSearchToolDefs(this.config.workspacePath));
+
+    // Skill 工具：有 ≥1 skill 勾选时创建
+    if (skillEntries.length > 0) {
+      toolDefs.push(createSkillTool(skillEntries));
+    }
+
+    // dogear-memory + dogear-memory-review：仅当 memory===true
+    if (ab.memory === true) {
+      toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
+    }
+
+    // stock 工具包：仅当 stock===true
+    if (ab.stock === true) {
+      toolDefs.push(...this.registerPack('stock-quote', createStockToolDefs()));
+      toolDefs.push(...this.registerPack('stock-analysis', createStockAnalysisToolDefs()));
+      toolDefs.push(...this.registerPack('stock-announcement', createAnnouncementToolDefs()));
+      toolDefs.push(...this.registerPack('stock-picking', createStockPickingToolDefs()));
+    }
+
+    // article 工具包：仅当 article===true
+    if (ab.article === true && this.config.workspacePath) {
+      toolDefs.push(...this.registerPack('article', createArticleToolDefs(this.config.workspacePath)));
+    }
+
+    // dogear-group / dogear-delegation / dogear-reference
+    if (this.config.groupId) {
+      // dogear-group：仅当 groupFiles===true
+      if (ab.groupFiles === true) {
+        toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
+      }
+
+      // dogear-delegation：始终注册（固定）
+      const delegationOpts: DelegationToolsOpts = {
+        role: 'sub',
+        workspaceId: this.config.workspaceId,
+        groupId: this.config.groupId,
+        conversationId: this.config.conversationId,
+        parentConversationId: this.config.parentConversationId ?? '',
+      };
+      toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
+
+      // dogear-reference：仅当 reference===true
+      if (ab.reference === true) {
+        toolDefs.push(...this.registerPack('dogear-reference', createReferenceToolDefs({
+          workspaceId: this.config.workspaceId,
+          workspacePath: this.config.workspacePath,
+          groupId: this.config.groupId,
+          parentConversationId: this.config.parentConversationId,
+        })));
+      }
+    }
+
+    // dogear-memory-review：仅当 memory===true
+    if (ab.memory === true && this.config.workspacePath) {
+      toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
+    }
+
+    return toolDefs;
   }
 
   private handleAgentEvent(event: AgentEvent): void {

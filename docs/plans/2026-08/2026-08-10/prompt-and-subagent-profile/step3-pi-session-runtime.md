@@ -1,7 +1,7 @@
 ---
 step: 3
 title: PiSession 运行时改造
-status: pending
+status: done
 ---
 
 ## 目标
@@ -21,7 +21,7 @@ status: pending
 
 ### 3.1 PiSessionConfig 新增字段
 
-- [ ] `pi-session.ts` PiSessionConfig 接口新增：
+- [x] `pi-session.ts` PiSessionConfig 接口新增：
   ```typescript
   /** role='sub' 时传入的 Profile 配置，驱动提示词段/工具/skill 的按需加载 */
   subAgentProfile?: SubAgentProfile;
@@ -31,57 +31,37 @@ status: pending
 
 当前逻辑 `pi-session.ts:238-271` 不区分主/子会话的能力域加载。改为：
 
-- [ ] 子会话提示词拼装改为 Profile 驱动：
-  - agent.md（通用 + 工作区）：始终加载（同主会话）
-  - skill 索引：只包含 Profile 中勾选的 skill（skills + customSkills + memory 的 cross-session-review + stock 的 stock-analysis/stock-picking + article 的 article-parser）
-  - MEMORY_GUIDANCE_APPEND：仅当 `enabledAbilities.memory === true` 时注入
-  - NOTES_GUIDANCE_APPEND：仅当 `enabledAbilities.groupFiles === true` 时注入
-  - groupContextText：仅当 `enabledAbilities.groupFiles === true || enabledAbilities.reference === true` 时注入（子会话需要知道组背景才能用共享区/引用工具；不勾选则不注入以省 context）
-  - subAgentContractFor：始终注入（交付通信是固定的）
-- [ ] 主会话提示词拼装保持不变
+- [x] 子会话提示词拼装改为 Profile 驱动（pi-session.ts:325-342）：
+  - agent.md（通用 + 工作区）：始终加载
+  - MEMORY_GUIDANCE_APPEND：仅 memory===true
+  - NOTES_GUIDANCE_APPEND：仅 groupFiles===true
+  - groupContextText：仅 groupId && (groupFiles||reference)
+  - subAgentContractFor：始终注入
+- [x] 主会话提示词拼装保持不变
 
 ### 3.3 工具构建改造（start() 方法）
 
 当前逻辑 `pi-session.ts:273-355` 中，子会话和主会话走同一套工具构建。改为：
 
-- [ ] 基础工具（createBuiltinFileTools + createSearchToolDefs）：始终全部创建
-- [ ] Skill 工具（createSkillTool）：当 Profile 有 ≥1 个 skill 勾选时创建
-- [ ] dogear-memory：仅当 `enabledAbilities.memory === true` 时注册
-- [ ] dogear-memory-review：仅当 `enabledAbilities.memory === true` 时注册（归入记忆系统域）
-- [ ] stock 工具包：仅当 `enabledAbilities.stock === true` 时注册
-- [ ] article 工具包：仅当 `enabledAbilities.article === true` 时注册
-- [ ] dogear-group：仅当 `enabledAbilities.groupFiles === true` 时注册
-- [ ] dogear-delegation：始终注册（固定）
-- [ ] dogear-reference：仅当 `enabledAbilities.reference === true` 时注册
+- [x] buildSubAgentToolDefs() 方法（pi-session.ts:477）：基础工具始终创建、Skill 按 skill 勾选、memory/stock/article/group/reference 按能力域、delegation 固定
+- [x] buildMainAgentToolDefs() 方法（pi-session.ts:410）：保持原有逻辑
+- [x] registerPack 从局部函数提取为私有方法
 
 ### 3.4 activeToolNames 计算
 
-- [ ] 在 PiHarnessAdapter 构造前，根据 Profile 计算 activeToolNames：
-  ```typescript
-  const activeToolNames = isSubAgent
-    ? computeSubAgentActiveTools(profile, toolDefs)
-    : undefined; // 主会话不传 = 全部激活
-  ```
-- [ ] `computeSubAgentActiveTools` 逻辑：
-  - 基础工具：取 profile.enabledBasicTools（注意大小写映射：'read'→'Read', 'Glob'→'Glob' 等，需对齐工具实际名称）
-  - 交付通信：固定加入 SendMessage/WaitForMessage/ListLinkedSessions/StopSession
-  - 能力域：按 profile 映射加入对应工具名
-  - Skill 工具：有勾选 skill 时加入 'Skill'
+- [x] `computeSubAgentActiveTools(profile, toolDefs)` 函数（pi-session.ts:149）：enabledBasicTools Set + toolDefs 所有工具名去重
+- [x] 主会话 activeToolNames = undefined（全部激活）
 
 ### 3.5 PiHarnessAdapter 透传
 
-- [ ] `pi-harness-adapter.ts`：
-  - PiHarnessAdapterOptions 新增 `activeToolNames?: string[]`
-  - 构造 AgentHarness 时传入：`new AgentHarness({ ..., activeToolNames: options.activeToolNames })`
-- [ ] `pi-session.ts` 构造 PiHarnessAdapter 时传入 activeToolNames
+- [x] `pi-harness-adapter.ts:67`：PiHarnessAdapterOptions 新增 `activeToolNames?: string[]`
+- [x] `pi-harness-adapter.ts:90`：构造 AgentHarness 时传入 activeToolNames
+- [x] `pi-session.ts:376`：构造 PiHarnessAdapter 时传入 activeToolNames
 
 ### 3.6 skill 加载过滤
 
-- [ ] `pi-session.ts` 中 `loadSkillIndex` 调用后，子会话需要按 Profile 过滤 skill entries：
-  - 代码工作流 skill：只保留 `profile.enabledAbilities.skills` 中列出的
-  - 自定义 skill：只保留 `profile.enabledAbilities.customSkills` 中列出的
-  - 记忆/股票/文章 skill：按对应能力域开关决定
-- [ ] 过滤后的 entries 传给 `formatSkillIndexForPrompt` 和 `createSkillTool`
+- [x] `filterSkillsForSubAgent(entries, profile, scanDirs)` 函数（pi-session.ts:124）：使用 path.relative 安全判断 skill 目录归属，按 skills/customSkills/article/memory 过滤
+- [x] 过滤后的 entries 传给 formatSkillIndexForPrompt 和 createSkillTool
 
 ## 验证
 
@@ -93,9 +73,16 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- （待填）
+- `pi-session.ts` — 新增 subAgentProfile 字段（line 80）、filterSkillsForSubAgent 函数（line 124）、computeSubAgentActiveTools 函数（line 149）、buildMainAgentToolDefs 私有方法（line 410）、buildSubAgentToolDefs 私有方法（line 477）、registerPack 提取为私有方法（line 400）；start() 内提示词拼装按主/子分支（line 275-344）；修复 Step 2 遗留的 loadCoreProfile 编译错误
+- `pi-harness-adapter.ts` — PiHarnessAdapterOptions 新增 activeToolNames（line 67），构造 AgentHarness 传入（line 90）
 
 ### 给下一步的接力棒
-- PiSessionConfig.subAgentProfile 字段的完整签名
-- computeSubAgentActiveTools 函数的导出路径和签名
-- 子会话提示词拼装的实际代码位置和行号（供 Step 4 检查 Profile 索引注入的衔接点）
+- PiSessionConfig.subAgentProfile 字段在 `pi-session.ts:80`，类型 `SubAgentProfile | undefined`
+- computeSubAgentActiveTools 在 `pi-session.ts:149`，签名 `(profile: SubAgentProfile, toolDefs: ToolDef[]): string[]`
+- filterSkillsForSubAgent 在 `pi-session.ts:124`，签名 `(entries: SkillEntry[], profile: SubAgentProfile, scanDirs) => SkillEntry[]`
+- 子会话提示词拼装在 `pi-session.ts:325-344`
+- **已知编译错误（Step 4 修复）**：
+  1. `delegation-bridge.ts:191` — 读 `subAgent.modelSelection`
+  2. `delegation-bridge.ts:214` — 读 `subAgent.cachePolicy` → 固定 '5m'
+  3. `delegation-bridge.ts:267` — 读 `subAgent.timeoutMinutes`
+  4. `delegation-tools.ts:127` — 读 `subAgent.timeoutMinutes`
