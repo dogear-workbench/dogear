@@ -39,7 +39,7 @@ import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/del
 import { createReviewToolDefs } from '../tools/review-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
-import { loadSettings } from '../../services/settings-service.js';
+import { loadSettings, getConfigDir } from '../../services/settings-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
 import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
 import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
@@ -242,8 +242,8 @@ export class PiSession extends EventEmitter {
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId)
       : '';
 
-    const projectClaudeMd = await readTextFileSafe(path.join(this.config.workspacePath, '.claude', 'CLAUDE.md'));
-    const userClaudeMd = await readTextFileSafe(path.join(os.homedir(), '.claude', 'CLAUDE.md'));
+    const projectClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'workspaces', this.config.workspaceId, 'agent.md'));
+    const userClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'agent.md'));
 
     const env = new WorkspaceExecutionEnv(this.config.workspacePath);
     const skillEntries = await loadSkillIndex([
