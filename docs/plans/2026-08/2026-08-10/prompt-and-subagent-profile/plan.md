@@ -84,3 +84,23 @@ interface SubAgentProfile {
 ### Skill 工具激活条件
 
 当 `skills` 或 `customSkills` 中有 ≥1 个条目时，Skill 工具激活。Skill 索引只包含勾选的 skill。
+
+## 完成总结
+
+全部 5 个 step 已完成并提交。以下为实施概览：
+
+| Step | Commit | 内容 |
+|------|--------|------|
+| 1 | `a018150` | 提示词文件从 `.claude/CLAUDE.md` 迁移到 `.dogear/agent.md`（通用 + 工作区级） |
+| 2 | `9b91381` | SubAgentProfile 类型定义、subAgent 重构为 `{ profiles }`、归一化逻辑 |
+| 3 | `ba85aa0` | PiSession 按 Profile 驱动提示词段/工具/skill 加载 + activeToolNames 白名单 |
+| 4 | `989fd32` | 派遣链路 Profile 透传（CreateSession 加 profile 参数 → bridge → runtime → PiSession），主会话注入 Profile 索引 |
+| 5 | `ce5f1d8` | SubAgentTab 重构为 Profile 管理器（列表/增删改/编辑界面） |
+
+### 架构变更总结
+
+- **数据结构**：`AppSettings.subAgent` 从扁平配置（modelSelection/timeoutMinutes/cachePolicy/loadCoreProfile/loadSkills/loadArticleParse）重构为 `{ profiles: SubAgentProfile[] }`
+- **运行时**：子会话启动时按 Profile 驱动提示词段、工具集、skill 索引和 activeToolNames 白名单；主会话行为不变
+- **派遣链路**：CreateSession/CreateSessionBatch 加 `profile` 参数 → startChild 统一解析 → contractMetadata.subAgentProfileId 持久化 → conversation-runtime-service 消费 → PiSessionConfig.subAgentProfile
+- **主会话增强**：提示词末尾注入可用 Profile 索引表，让模型按任务描述选择合适 Profile
+- **设置页**：SubAgentTab 从单一配置页改为 Profile 列表管理器（增删改 + 能力域/Skill 可视化勾选）
