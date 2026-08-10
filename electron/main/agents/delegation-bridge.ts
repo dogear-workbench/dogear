@@ -17,6 +17,7 @@ import * as conversationService from '../services/conversation-service.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
+import { createDefaultSubAgentProfile } from '../services/settings-types.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 import type {
@@ -188,7 +189,12 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   if (!parent.groupId || parent.groupId !== groupId) throw new Error('子会话必须创建在发起会话所属的话题中');
   await requireActiveGroup(workspaceId, groupId);
 
-  const modelSel = settings.subAgent?.modelSelection
+  const profiles = settings.subAgent?.profiles ?? [];
+  const selectedProfile = (spec.profile
+    ? profiles.find((p) => p.id === spec.profile || p.name === spec.profile)
+    : null) ?? profiles.find((p) => p.id === 'default') ?? profiles[0] ?? createDefaultSubAgentProfile();
+
+  const modelSel = selectedProfile.modelSelection
     ?? parent.modelSelection
     ?? settings.ai.defaultModelSelection
     ?? null;
@@ -204,6 +210,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
         task: spec.task,
         expectedOutputPath: spec.outputPath,
         createdBy: 'agent',
+        subAgentProfileId: selectedProfile.id,
       }
     : undefined;
 
@@ -211,7 +218,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const childId = await conversationService.create(workspaceId, groupId, title, modelSel, {
     role: 'sub',
     parentConversationId,
-    cachePolicy: settings.subAgent?.cachePolicy ?? '5m',
+    cachePolicy: '5m',
     contractMetadata,
   });
   broadcastConversationListChanged(workspaceId);
@@ -264,7 +271,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   state.attachmentId = attachment.attachmentId;
 
-  const timeoutMs = (settings.subAgent?.timeoutMinutes ?? 30) * 60_000;
+  const timeoutMs = (selectedProfile.timeoutMinutes ?? 30) * 60_000;
   state.timeoutTimer = setTimeout(() => { void stopChild(childId, 'timeout'); }, timeoutMs);
 
   wireSession(childId, session);

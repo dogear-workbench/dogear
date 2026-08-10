@@ -120,11 +120,12 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       WAIT_FOR_MESSAGE_DESC,
       z.object({
         fromSessionIds: z.array(z.string().min(1)).min(1).describe('要等待其消息的会话 sessionId 列表'),
-        timeoutMs: z.number().int().positive().optional().describe('超时毫秒数；缺省走 settings.subAgent.timeoutMinutes'),
+        timeoutMs: z.number().int().positive().optional().describe('超时毫秒数；缺省走默认子会话 Profile 的 timeoutMinutes'),
       }),
       async (args) => {
         const settings = await loadSettings();
-        const effectiveTimeoutMs = args.timeoutMs ?? (settings.subAgent?.timeoutMinutes ?? 30) * 60_000;
+        const defaultProfile = settings.subAgent?.profiles?.find((p) => p.id === 'default') ?? settings.subAgent?.profiles?.[0];
+        const effectiveTimeoutMs = args.timeoutMs ?? (defaultProfile?.timeoutMinutes ?? 30) * 60_000;
         const result = await bridge.waitForMessage(opts.conversationId, args.fromSessionIds, effectiveTimeoutMs);
         if (!result) {
           return errorResult(`⏱ 等待超时（${effectiveTimeoutMs}ms），未收到来自 [${args.fromSessionIds.join(', ')}] 的消息`);
@@ -169,11 +170,13 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       'CreateSession',
       '派出子会话执行任务',
       '创建一个平级的新会话来协作处理任务。新会话与当前会话建立契约通道，可通过 SendMessage / WaitForMessage 双向通信。' +
-      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。',
+      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。' +
+      'profile 参数用于选择子会话 Profile（决定模型、工具集、能力域）；不传时用默认 Profile。',
       z.object({
         task: z.string().min(1).describe('委派给新会话的任务描述（自然语言）'),
         outputPath: z.string().min(1).describe('建议新会话写入共享区的相对路径（如 hello.md），用于承载较长的交付内容'),
         title: z.string().optional().describe('新会话标题；缺省由系统生成'),
+        profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
       }),
       async (args) => {
         try {
@@ -181,7 +184,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             parentConversationId: opts.conversationId,
             workspaceId: opts.workspaceId,
             groupId: opts.groupId,
-            spec: { task: args.task, outputPath: args.outputPath, title: args.title },
+            spec: { task: args.task, outputPath: args.outputPath, title: args.title, profile: args.profile },
           });
           const sessionId = await bridge.waitForChildSessionId(snapshot.childId);
           if (!sessionId) {
@@ -211,6 +214,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           task: z.string().min(1).describe('子任务描述'),
           outputPath: z.string().min(1).describe('建议写入共享区的相对路径'),
           title: z.string().optional().describe('会话标题；缺省自动生成'),
+          profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
         })).min(1).describe('批量创建条目列表'),
       }),
       async (args) => {
@@ -239,7 +243,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
                 parentConversationId: opts.conversationId,
                 workspaceId: opts.workspaceId,
                 groupId: opts.groupId,
-                spec: { task: item.task, outputPath: item.outputPath, title: item.title },
+                spec: { task: item.task, outputPath: item.outputPath, title: item.title, profile: item.profile },
               });
               started.push({ childId: snapshot.childId, outputPath: snapshot.outputPath, title: snapshot.title });
             } catch (err) {

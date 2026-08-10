@@ -5,6 +5,8 @@
  */
 
 import type { SystemPromptSegment } from '../types.js';
+import type { SubAgentProfile } from '../services/settings-types.js';
+import { createDefaultSubAgentProfile } from '../services/settings-types.js';
 
 /** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
 export const MEMORY_GUIDANCE_APPEND =
@@ -23,6 +25,26 @@ export const NOTES_GUIDANCE_APPEND =
 export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
   '用 CreateSession 派遣子会话后，必须紧接着调用 WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。';
+
+/**
+ * 生成可用的子会话 Profile 索引（仅主会话注入，让模型按描述选择 profile 参数）。
+ */
+export function buildSubAgentProfileIndex(profiles: SubAgentProfile[]): string {
+  if (profiles.length === 0) {
+    return (
+      '\n## 可用的子会话 Profile\n' +
+      '派遣子会话时可通过 profile 参数选择合适的 Profile（不指定时用「默认」）。'
+    );
+  }
+  const rows = profiles.map((p) => `| ${p.name} | ${p.description} |`).join('\n');
+  return (
+    '\n## 可用的子会话 Profile\n' +
+    '派遣子会话时可通过 profile 参数选择合适的 Profile（不指定时用「默认」）：\n\n' +
+    '| Profile | 说明 |\n' +
+    '|---------|------|\n' +
+    rows
+  );
+}
 
 /** 子会话交付契约（仅 role='sub' 注入）。 */
 export function subAgentContractFor(opts: { task: string; outputPath: string }): string {
@@ -82,10 +104,10 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
     },
     {
       key: 'main-agent-delegation',
-      label: '主会话协作规范',
+      label: '主会话协作规范 + 子会话 Profile 索引',
       category: 'sub-agent',
-      template: MAIN_AGENT_DELEGATION_APPEND,
-      triggerDescription: '仅主会话（role=\'main\'）且属于某个会话组时注入。告诉主 agent 派遣子会话后必须 WaitForMessage 挂起等待交付。',
+      template: MAIN_AGENT_DELEGATION_APPEND + '\n\n' + buildSubAgentProfileIndex([createDefaultSubAgentProfile()]),
+      triggerDescription: '仅主会话（role=\'main\'）且属于某个会话组时注入。告诉主 agent 派遣子会话后必须 WaitForMessage 挂起等待交付，并列出可用的子会话 Profile 供选择。',
       isDynamic: false,
     },
   ];

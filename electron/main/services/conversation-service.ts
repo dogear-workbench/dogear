@@ -29,6 +29,8 @@ export interface ContractMetadata {
   task: string;
   expectedOutputPath?: string;
   createdBy: 'agent' | 'human';
+  /** 派出时选用的子会话 Profile id；缺省视为默认 Profile */
+  subAgentProfileId?: string;
 }
 
 /** 单条对话的索引信息 */

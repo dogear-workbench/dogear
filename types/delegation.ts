@@ -18,6 +18,8 @@ export interface DelegateSpec {
   outputPath: string;
   /** 新会话标题，缺省由 bridge 生成 */
   title?: string;
+  /** 子会话 Profile 名称或 id；未指定时用默认 Profile */
+  profile?: string;
 }
 
 export interface ChildStateSnapshot {

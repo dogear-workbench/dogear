@@ -232,6 +232,8 @@ export interface DelegateSpec {
   task: string;
   outputPath: string;
   title?: string;
+  /** 子会话 Profile 名称或 id；未指定时用默认 Profile */
+  profile?: string;
 }
 
 export interface ChildStateSnapshot {

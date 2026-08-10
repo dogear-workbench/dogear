@@ -125,6 +125,7 @@ export interface ContractMetadata {
   task: string;                      // 派出时的任务描述
   expectedOutputPath?: string;       // 约定的交付路径
   createdBy: 'agent' | 'human';
+  subAgentProfileId?: string;        // 派出时选用的子会话 Profile id；缺省视为默认 Profile
 }
 
 /**

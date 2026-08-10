@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 派遣链路 + 主会话增强
-status: pending
+status: done
 ---
 
 ## 目标
@@ -73,8 +73,18 @@ CreateSession / CreateSessionBatch 加 `profile` 参数；整个派遣链路把 
 ## 实施回填（做完后填）
 
 ### 实际改动
-- （待填）
+- `types/delegation.ts` + `electron/main/types.ts` — DelegateSpec 新增 `profile?: string`
+- `conversation-service.ts` + `types/electron-api.ts` — ContractMetadata 新增 `subAgentProfileId?: string`
+- `delegation-bridge.ts` — startChild() 加 Profile 查找（spec.profile → id='default' → profiles[0] → 工厂默认）；modelSelection/timeoutMinutes 从选中 Profile 取；cachePolicy 固定 '5m'；contractMetadata 写 subAgentProfileId（修复 3 处编译错误）
+- `conversation-runtime-service.ts` — createSession 透传 `subAgentProfile`（按 contractMetadata.subAgentProfileId 查，回退 default）
+- `delegation-tools.ts` — CreateSession/CreateSessionBatch 加 `profile` 参数；WaitForMessage 超时改从默认 Profile 取
+- `session-append-templates.ts` — 新增 buildSubAgentProfileIndex()
+- `pi-session.ts` — 主会话在 MAIN_AGENT_DELEGATION_APPEND 后追加 Profile 索引表
+- **验收**：build:electron EXIT=0（0 错误）；settings 测试 17 pass；`computeSubAgentActiveTools` 顺手改进（修复 enabledBasicTools 含 Skill 但未勾选时 validateToolNames 报错）
 
 ### 给下一步的接力棒
-- Profile 索引注入的代码位置
-- delegation-tools 中 CreateSession/CreateSessionBatch 的最终参数 schema
+- Profile 索引注入：`pi-session.ts` 主会话分支（约 line 362-365）
+- CreateSession 最终 schema：`{ task, outputPath, title?, profile? }`；Batch items 同构
+- `buildSubAgentProfileIndex(profiles)` 在 `session-append-templates.ts`
+- **Step 5（设置页 UI）需展示 profiles 列表**：前端 LineageBar/AgentChat 尚未展示 subAgentProfileId（范围外）
+- 唯一残留扁平旧字段引用在 `settings-service.ts:155`（存量归一化迁移，预期保留）

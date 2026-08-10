@@ -26,7 +26,7 @@ import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { NOTES_GUIDANCE_APPEND, MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND } from '../session-append-templates.js';
+import { NOTES_GUIDANCE_APPEND, MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -143,13 +143,29 @@ function filterSkillsForSubAgent(
 
 /**
  * 计算子会话的 activeToolNames（白名单）。主会话返回 undefined = 全部激活。
- * 基础工具取 profile.enabledBasicTools（read/write/edit/bash 等始终创建，靠白名单控制可见性）；
- * 非基础工具取 toolDefs 中实际已创建的工具名（工具构建已按 Profile 过滤）。
+ *
+ * 基础文件工具（read/write/edit/bash）不在 toolDefs 中但始终创建，取 enabledBasicTools 的交集。
+ * toolDefs 中的 Glob/Grep 属基础工具，靠 enabledBasicTools 控制可见性。
+ * toolDefs 中的 Skill 工具如果已创建（有勾选 skill）则始终激活。
+ * 非基础工具（能力域工具）一旦创建即激活。
  */
 function computeSubAgentActiveTools(profile: SubAgentProfile, toolDefs: ToolDef[]): string[] {
   const names = new Set<string>();
-  for (const name of profile.enabledBasicTools) names.add(name);
-  for (const def of toolDefs) names.add(def.name);
+  const enabledBasicSet = new Set(profile.enabledBasicTools);
+  const BUILTIN_FILE_TOOLS = new Set(['read', 'write', 'edit', 'bash']);
+
+  for (const name of profile.enabledBasicTools) {
+    if (BUILTIN_FILE_TOOLS.has(name)) names.add(name);
+  }
+
+  for (const def of toolDefs) {
+    if (isBasicToolName(def.name) && def.name !== 'Skill') {
+      if (enabledBasicSet.has(def.name)) names.add(def.name);
+    } else {
+      names.add(def.name);
+    }
+  }
+
   return [...names];
 }
 
@@ -275,7 +291,7 @@ export class PiSession extends EventEmitter {
 
     const piModels = buildPiModels(profile);
     const isSubAgent = this.config.role === 'sub';
-    const profile_ = this.config.subAgentProfile;
+    const subAgentProfile = this.config.subAgentProfile;
 
     // ---- core-profile ----
     // 主会话始终加载 core-profile；子会话不再加载（loadCoreProfile 字段已移除）
@@ -287,7 +303,7 @@ export class PiSession extends EventEmitter {
     // 主会话：有 groupId 则加载；子会话：groupFiles || reference 时加载
     const needGroupContext = !isSubAgent
       ? !!this.config.groupId
-      : !!(this.config.groupId && (profile_?.enabledAbilities.groupFiles || profile_?.enabledAbilities.reference));
+      : !!(this.config.groupId && (subAgentProfile?.enabledAbilities.groupFiles || subAgentProfile?.enabledAbilities.reference));
     const groupContextText = needGroupContext
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!)
       : '';
@@ -311,8 +327,8 @@ export class PiSession extends EventEmitter {
 
     let skillEntries: SkillEntry[];
     let skillIndexText: string;
-    if (isSubAgent && profile_) {
-      skillEntries = filterSkillsForSubAgent(allSkillEntries, profile_, {
+    if (isSubAgent && subAgentProfile) {
+      skillEntries = filterSkillsForSubAgent(allSkillEntries, subAgentProfile, {
         workspace: workspaceSkillsDir,
         homedir: homedirSkillsDir,
         articleParser: articleParserSkillsDir,
@@ -334,7 +350,7 @@ export class PiSession extends EventEmitter {
     if (groupContextText) promptParts.push(groupContextText);
 
     if (isSubAgent) {
-      const ab = profile_?.enabledAbilities ?? {};
+      const ab = subAgentProfile?.enabledAbilities ?? {};
       if (ab.memory === true) promptParts.push(MEMORY_GUIDANCE_APPEND);
       if (ab.groupFiles === true) promptParts.push(NOTES_GUIDANCE_APPEND);
       if (this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
@@ -343,20 +359,23 @@ export class PiSession extends EventEmitter {
         promptParts.push(NOTES_GUIDANCE_APPEND);
         promptParts.push(MEMORY_GUIDANCE_APPEND);
       }
-      if (this.config.groupId) promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
+      if (this.config.groupId) {
+        promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
+        promptParts.push(buildSubAgentProfileIndex(appSettings.subAgent?.profiles ?? []));
+      }
     }
     const systemPrompt = promptParts.filter(Boolean).join('\n\n');
 
     let toolDefs: ToolDef[];
 
-    if (isSubAgent && profile_) {
-      toolDefs = this.buildSubAgentToolDefs(profile_, skillEntries);
+    if (isSubAgent && subAgentProfile) {
+      toolDefs = this.buildSubAgentToolDefs(subAgentProfile, skillEntries);
     } else {
       toolDefs = this.buildMainAgentToolDefs(skillEntries);
     }
 
-    const activeToolNames = isSubAgent && profile_
-      ? computeSubAgentActiveTools(profile_, toolDefs)
+    const activeToolNames = isSubAgent && subAgentProfile
+      ? computeSubAgentActiveTools(subAgentProfile, toolDefs)
       : undefined;
 
     const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
