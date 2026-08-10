@@ -166,7 +166,7 @@ description: 当你不清楚某个文件/模块在哪、要做什么时主动调
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `ai.ts` — AIInteraction / AIMessage
-- `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, timeoutMinutes, cachePolicy?, loadCoreProfile?, loadSkills?, loadArticleParse? }` 子会话派遣默认配置；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态）/ DEFAULT_SETTINGS / BUILTIN_DEFAULT_SYSTEM_PROMPT
+- `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, timeoutMinutes, cachePolicy?, loadCoreProfile?, loadSkills?, loadArticleParse? }` 子会话派遣默认配置；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
 - `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt/modelSelection/contractMetadata — 后者记录 agent 派出溯源：createdBy / parentSessionId / task）
 - `delegation.ts` — Agent 协作契约数据模型（ContractMetadata / ChildSessionState / 契约通道消息类型）
@@ -231,7 +231,7 @@ description: 当你不清楚某个文件/模块在哪、要做什么时主动调
 - `group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{groupId}/shared/`），供 group-tools 和前端 SharedAreaPanel 使用
 - `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：Phase 3 起 children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
-- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、defaultSystemPrompt、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
 - `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义（新增）
