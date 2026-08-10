@@ -98,8 +98,6 @@ export function resolvePiModel(
 
 /**
  * 按 profile 构建 pi Provider 并注册到新建的 models 管理器。
- * disableNonessentialTraffic / autoCompactWindow / subagentModelTier 是 claude CLI 的环境变量，
- * pi 运行时不使用，迁移完成后统一清理。
  */
 export function buildPiModels(profile: ModelProfile) {
   const wireApi = resolveWireApi(profile);

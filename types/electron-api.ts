@@ -53,7 +53,7 @@ export interface ExtendedSessionMessage {
     | 'notification'        // Notification hook 触发
     | 'task_notification'   // 子代理任务通知
     | 'ask_user_question'   // AskUserQuestion 工具触发
-    | 'prompt_suggestion';  // SDK 0.2.119+ 每轮结束后的下一步提示
+  ;
   content?: string;
   toolName?: string;
   toolInput?: any;
@@ -102,8 +102,6 @@ export interface ExtendedSessionMessage {
     options: Array<{ label: string; description?: string }>;
     multiSelect?: boolean;
   }>;
-  // 下一步建议（type='prompt_suggestion' 时使用）
-  suggestion?: string;
 }
 
 /**

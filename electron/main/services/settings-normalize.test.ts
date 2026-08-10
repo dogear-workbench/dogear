@@ -86,7 +86,7 @@ test('ai 对象结构损坏时恢复为安全默认', () => {
     const changed = normalizeSettings(s);
     expect(changed).toBe(true);
     expect(s.ai.permissionMode).toBe('default');
-    expect(s.ai.defaultSystemPrompt).toBe(DEFAULT_SETTINGS.ai.defaultSystemPrompt);
+    expect(s.ai.effort).toBe(null);
   }
 });
 
@@ -96,6 +96,24 @@ test('旧 permissionRules 被删除', () => {
   const changed = normalizeSettings(s);
   expect(changed).toBe(true);
   expect('permissionRules' in s).toBe(false);
+});
+
+test('遗留 SDK 设置字段被清理', () => {
+  const s = baseSettings();
+  const ai = s.ai as Record<string, unknown>;
+  ai.maxTurns = 50;
+  ai.defaultSystemPrompt = 'test';
+  ai.subagentModelTier = 'sonnet';
+  ai.excludeDynamicSections = true;
+  ai.promptSuggestionsEnabled = true;
+  ai.thinkingType = 'adaptive';
+  ai.thinkingBudgetTokens = 8000;
+  ai.thinkingDisplay = 'summarized';
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  for (const field of ['maxTurns', 'defaultSystemPrompt', 'subagentModelTier', 'excludeDynamicSections', 'promptSuggestionsEnabled', 'thinkingType', 'thinkingBudgetTokens', 'thinkingDisplay']) {
+    expect(field in s.ai).toBe(false);
+  }
 });
 
 test('旧 subAgent.permissionMode 被删除', () => {

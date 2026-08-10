@@ -59,8 +59,6 @@ export interface PiSessionConfig {
   conversationId: string;
   /** 对话级模型选择；为空时在 start() 内回退到 settings.ai.defaultModelSelection */
   modelSelection: ModelSelection | null;
-  /** 系统提示词。阶段一直接沿用全局默认提示词，不做人设/工作区/工具导览拼装 */
-  systemPrompt?: string;
   /** 所属工作区绝对路径，用于文件类工具（Read/Write/Edit/Bash/Grep/Glob）的边界校验和 memory 工具存储位置 */
   workspacePath: string;
   workspaceId: string;
@@ -257,7 +255,6 @@ export class PiSession extends EventEmitter {
     const skillIndexText = formatSkillIndexForPrompt(skillEntries);
 
     const promptParts = [
-      this.config.systemPrompt ?? '',
       projectClaudeMd,
       userClaudeMd,
       skillIndexText,

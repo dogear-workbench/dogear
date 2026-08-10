@@ -45,7 +45,6 @@ export interface ModelProfile {
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-export type ThinkingType = 'adaptive' | 'enabled' | 'disabled';
 
 export type PiPermissionMode = 'default' | 'autoExecute';
 
@@ -63,26 +62,12 @@ export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定 */
     effort?: EffortLevel | null;
-    maxTurns?: number;
     permissionMode: PiPermissionMode;
-    defaultSystemPrompt?: string; // 全局默认系统提示词
     settingSources?: ('user' | 'project')[];
     defaultModelSelection: ModelSelection | null;
     digestModelSelection: ModelSelection | null;
     reviewModelSelection: ModelSelection | null;
     categorizeModelSelection: ModelSelection | null;
-    /** 注入 CLAUDE_CODE_SUBAGENT_MODEL，决定 Agent 工具（原 Task）子代理模型 */
-    subagentModelTier?: ModelTier;
-    /** SDK 0.2.119+：true 时环境上下文移到首条 user message，改善 prompt 缓存命中率（默认 true） */
-    excludeDynamicSections?: boolean;
-    /** SDK 0.2.119+：启用 Agent 回答后的下一步建议气泡（默认 true） */
-    promptSuggestionsEnabled?: boolean;
-    /** 思考模式：adaptive=模型自决 / enabled=固定 budget / disabled=不思考。默认 adaptive */
-    thinkingType?: ThinkingType;
-    /** 思考预算 tokens，仅 thinkingType='enabled' 时生效 */
-    thinkingBudgetTokens?: number;
-    /** 思考过程展示方式：summarized=显示摘要 / omitted=不展示。默认 summarized；thinkingType='disabled' 时无效 */
-    thinkingDisplay?: 'summarized' | 'omitted';
   };
   basicToolPermissions: BasicToolPermissions;
   personas: Persona[]; // 人设列表
@@ -119,19 +104,11 @@ export interface AppSettings {
 // 常量
 // ============================================================
 
-/** 内置默认系统提示词（不可删除） */
-export const BUILTIN_DEFAULT_SYSTEM_PROMPT = '你是一个帮助用户阅读和分析电子书的 AI 助手。';
-
 export const DEFAULT_SETTINGS: AppSettings = {
   ai: {
     effort: null,
     permissionMode: 'default',
     settingSources: ['user', 'project'],
-    defaultSystemPrompt: BUILTIN_DEFAULT_SYSTEM_PROMPT,
-    excludeDynamicSections: true,
-    promptSuggestionsEnabled: true,
-    thinkingType: 'adaptive',
-    thinkingDisplay: 'summarized',
     defaultModelSelection: null,
     digestModelSelection: null,
     reviewModelSelection: null,

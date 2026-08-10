@@ -9,7 +9,7 @@ import { useUIStore } from '@/stores/ui-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
-import { DEFAULT_SETTINGS, BUILTIN_DEFAULT_SYSTEM_PROMPT, isProfileComplete } from '@/types/settings';
+import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceConfigTab } from './WorkspaceConfigTab';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { PersonaTab } from './PersonaTab';
@@ -34,12 +34,6 @@ const EFFORT_OPTIONS = [
   { value: 'medium', label: '中' },
   { value: 'high', label: '高' },
   { value: 'max', label: '最高' },
-] as const;
-
-const THINKING_TYPE_OPTIONS = [
-  { value: 'adaptive', label: '自适应', description: '模型自决何时思考、思考多深（推荐）' },
-  { value: 'enabled', label: '固定预算', description: '每轮固定花 N token 思考' },
-  { value: 'disabled', label: '关闭', description: '不思考，省 thinking token' },
 ] as const;
 
 const PERMISSION_MODE_OPTIONS = [
@@ -322,98 +316,6 @@ export default function SettingsPage() {
                 />
               </div>
 
-              {/* 子代理模型层级 */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">子代理模型</label>
-                <p className="text-xs text-muted-foreground">
-                  注入 CLAUDE_CODE_SUBAGENT_MODEL 环境变量，决定 Task 工具启动的子代理用哪一层。
-                  未指定时，若配置了「努力程度」会自动用 Sonnet（Haiku 不支持 effort 参数）。
-                </p>
-                <select
-                  className="h-9 w-full px-3 text-sm border rounded bg-background"
-                  value={local.ai.subagentModelTier || ''}
-                  onChange={(e) => updateAI({
-                    subagentModelTier: e.target.value ? e.target.value as 'haiku' | 'sonnet' | 'opus' : undefined
-                  })}
-                >
-                  <option value="">不指定</option>
-                  <option value="haiku">Haiku</option>
-                  <option value="sonnet">Sonnet</option>
-                  <option value="opus">Opus</option>
-                </select>
-              </div>
-
-              {/* 思考模式 */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">思考模式</label>
-                <p className="text-xs text-muted-foreground">
-                  控制 SDK 传给模型的 thinking 配置（ThinkingConfig.type）。
-                </p>
-                <select
-                  className="h-9 w-full px-3 text-sm border rounded bg-background"
-                  value={local.ai.thinkingType ?? 'adaptive'}
-                  onChange={(e) => updateAI({ thinkingType: e.target.value as 'adaptive' | 'enabled' | 'disabled' })}
-                >
-                  {THINKING_TYPE_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label} — {opt.description}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 思考预算（仅 enabled 模式） */}
-              {(local.ai.thinkingType ?? 'adaptive') === 'enabled' && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">思考预算（tokens）</label>
-                  <p className="text-xs text-muted-foreground">
-                    每轮固定花费的 thinking token 数量。建议 4000–16000；留空走 SDK 默认。
-                  </p>
-                  <input
-                    type="number"
-                    min={0}
-                    step={1000}
-                    placeholder="8000"
-                    className="h-9 w-full px-3 text-sm border rounded bg-background"
-                    value={local.ai.thinkingBudgetTokens ?? ''}
-                    onChange={(e) => {
-                      const v = e.target.value.trim();
-                      updateAI({ thinkingBudgetTokens: v === '' ? undefined : Number(v) });
-                    }}
-                  />
-                </div>
-              )}
-
-              {/* 思考过程展示（关闭模式下隐藏） */}
-              {(local.ai.thinkingType ?? 'adaptive') !== 'disabled' && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">思考过程展示</label>
-                  <p className="text-xs text-muted-foreground">
-                    控制模型 thinking 块的可见性。Opus 4.7 默认隐藏，开启「显示摘要」可看到推理过程。
-                  </p>
-                  <select
-                    className="h-9 w-full px-3 text-sm border rounded bg-background"
-                    value={local.ai.thinkingDisplay ?? 'summarized'}
-                    onChange={(e) => updateAI({ thinkingDisplay: e.target.value as 'summarized' | 'omitted' })}
-                  >
-                    <option value="summarized">显示摘要</option>
-                    <option value="omitted">不展示</option>
-                  </select>
-                </div>
-              )}
-
-              {/* maxTurns */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium">最大执行轮次</label>
-                <div className="flex items-center gap-3">
-                  <input type="number"
-                    className="h-9 w-32 px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={local.ai.maxTurns ?? ''}
-                    onChange={(e) => updateAI({ maxTurns: e.target.value ? Number(e.target.value) : undefined })}
-                    min={1} placeholder="不限制"
-                  />
-                  <span className="text-xs text-muted-foreground">限制 Agent 单次对话的执行轮次，防止无限循环</span>
-                </div>
-              </div>
-
               {/* 默认权限模式 */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">默认权限模式</label>
@@ -432,56 +334,6 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
-              {/* 默认系统提示词 */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium">默认系统提示词</label>
-                <p className="text-xs text-muted-foreground">
-                  此提示词作为所有对话的基础系统提示，追加到 Claude Code 预设之后。不可为空。
-                </p>
-                <textarea
-                  className="w-full min-h-[120px] px-3 py-2 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring resize-y font-mono"
-                  value={local.ai.defaultSystemPrompt || BUILTIN_DEFAULT_SYSTEM_PROMPT}
-                  onChange={(e) => updateAI({ defaultSystemPrompt: e.target.value || BUILTIN_DEFAULT_SYSTEM_PROMPT })}
-                  placeholder={BUILTIN_DEFAULT_SYSTEM_PROMPT}
-                />
-              </div>
-
-              {/* 下一步建议气泡（promptSuggestions） */}
-              <div className="space-y-3">
-                <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={local.ai.promptSuggestionsEnabled !== false}
-                    onChange={(e) => updateAI({ promptSuggestionsEnabled: e.target.checked })}
-                  />
-                  <div>
-                    <div className="text-sm font-medium">下一步建议气泡</div>
-                    <div className="text-xs text-muted-foreground">
-                      Agent 每轮回答后显示一条下一步提示气泡，点击可快速填入输入框（SDK 0.2.119+ 特性）
-                    </div>
-                  </div>
-                </label>
-              </div>
-
-              {/* 环境上下文挪到首条消息（excludeDynamicSections） */}
-              <div className="space-y-3">
-                <label className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5"
-                    checked={local.ai.excludeDynamicSections !== false}
-                    onChange={(e) => updateAI({ excludeDynamicSections: e.target.checked })}
-                  />
-                  <div>
-                    <div className="text-sm font-medium">优化 Prompt 缓存</div>
-                    <div className="text-xs text-muted-foreground">
-                      将环境上下文（工作目录、时间等）移到首条用户消息，避免每轮打穿缓存。一般建议开启（SDK 0.2.119+ 特性）
-                    </div>
-                  </div>
-                </label>
-              </div>
-
               {/* 消息显示模式 */}
               <div className="space-y-3">
                 <label className="text-sm font-medium">消息显示模式</label>
@@ -515,9 +367,9 @@ export default function SettingsPage() {
                   </label>
                 </div>
               </div>
-            </div>
 
-            <BasicToolsSection local={local} setLocal={setLocal} />
+              <BasicToolsSection local={local} setLocal={setLocal} />
+            </div>
           </div>
         </TabsContent>
 

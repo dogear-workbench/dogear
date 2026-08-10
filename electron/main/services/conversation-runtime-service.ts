@@ -86,7 +86,6 @@ class ConversationRuntimeService {
       session = piSessionManager.createSession({
         conversationId,
         modelSelection: conversation.modelSelection ?? null,
-        systemPrompt: appSettings.ai.defaultSystemPrompt,
         workspacePath: workspace?.path ?? '',
         workspaceId,
         harnessSessionId: conversation.sessionId ?? null,

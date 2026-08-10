@@ -142,6 +142,15 @@ export function normalizeSettings(settings: AppSettings): boolean {
     changed = true;
   }
 
+  const staleAiFields = ['maxTurns', 'defaultSystemPrompt', 'subagentModelTier', 'excludeDynamicSections', 'promptSuggestionsEnabled', 'thinkingType', 'thinkingBudgetTokens', 'thinkingDisplay'];
+  const aiObj = settings.ai as unknown as Record<string, unknown>;
+  for (const field of staleAiFields) {
+    if (field in aiObj) {
+      delete aiObj[field];
+      changed = true;
+    }
+  }
+
   if (settings.subAgent && typeof settings.subAgent === 'object' && !Array.isArray(settings.subAgent)) {
     const sub = settings.subAgent as unknown as Record<string, unknown>;
     if ('permissionMode' in sub) {

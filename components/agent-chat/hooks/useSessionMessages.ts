@@ -9,8 +9,6 @@ interface UseSessionMessagesParams {
   setMessages: Dispatch<SetStateAction<Message[]>>;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setHistoryLoaded: Dispatch<SetStateAction<boolean>>;
-  /** SDK 0.2.119+ 每轮结束后的下一步建议（每轮最多一条） */
-  onPromptSuggestion?: (suggestion: string) => void;
 }
 
 /**
@@ -22,7 +20,6 @@ export function useSessionMessages({
   setMessages,
   setIsLoading,
   setHistoryLoaded,
-  onPromptSuggestion,
 }: UseSessionMessagesParams): void {
   useEffect(() => {
     if (!sessionId) return;
@@ -33,15 +30,6 @@ export function useSessionMessages({
       const extendedMsg = data.message;
 
       if (extendedMsg.isReplay && !showReplayMessages) return;
-
-      // SDK 0.2.119+：下一步建议气泡（独立 UI 状态，不混入消息流）
-      if (extendedMsg.type === 'prompt_suggestion') {
-        const suggestion = (extendedMsg as { suggestion?: string }).suggestion;
-        if (typeof suggestion === 'string' && suggestion.trim()) {
-          onPromptSuggestion?.(suggestion);
-        }
-        return;
-      }
 
       // 插话场景：UI 已在 useSendMessage 中本地立即 push 了用户消息，
       // streamReducer 内部会按 sdk_uuid 做去重，不会重复 push
