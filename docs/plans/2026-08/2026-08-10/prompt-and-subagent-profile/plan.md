@@ -20,7 +20,7 @@
 - [x] [Step 2: 设置类型 + 归一化](./step2-settings-types.md) — SubAgentProfile 类型、AppSettings.subAgent 重构、旧字段归一化
 - [x] [Step 3: PiSession 运行时改造](./step3-pi-session-runtime.md) — Profile 驱动的提示词段/工具/skill 加载 + activeToolNames
 - [x] [Step 4: 派遣链路 + 主会话增强](./step4-delegation-chain.md) — CreateSession 加 profile 参数、链路透传、Profile 索引注入
-- [ ] [Step 5: 设置页 UI 重构](./step5-settings-ui.md) — SubAgentTab 改为 Profile 管理器
+- [x] [Step 5: 设置页 UI 重构](./step5-settings-ui.md) — SubAgentTab 改为 Profile 管理器
 
 ## 全局决策
 
