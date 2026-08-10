@@ -58,6 +58,27 @@ export function createDefaultBasicToolPermissions(): BasicToolPermissions {
   return { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
 }
 
+export interface SubAgentEnabledAbilities {
+  memory?: boolean;
+  stock?: boolean;
+  article?: boolean;
+  skills?: string[];
+  customSkills?: string[];
+  groupFiles?: boolean;
+  reference?: boolean;
+}
+
+export interface SubAgentProfile {
+  id: string;
+  name: string;
+  description: string;
+  modelSelection?: ModelSelection | null;
+  /** 单个子会话最长允许跑的分钟数，默认 30 */
+  timeoutMinutes: number;
+  enabledBasicTools: string[];
+  enabledAbilities: SubAgentEnabledAbilities;
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定 */
@@ -78,19 +99,9 @@ export interface AppSettings {
     threshold?: number;         // 0–1，默认 0.5
     maxCategories?: number;     // 默认 10
   };
-  /** 子会话派遣默认配置 */
+  /** 子会话派遣 Profile 列表 */
   subAgent: {
-    modelSelection?: ModelSelection | null;
-    /** 单个子会话最长允许跑的分钟数，默认 30 */
-    timeoutMinutes: number;
-    /** 提示缓存策略；缺省 '5m' */
-    cachePolicy?: '5m' | '1h';
-    /** 是否注入 core-profile.md；缺省 false */
-    loadCoreProfile?: boolean;
-    /** 是否加载 .claude/skills；缺省 false */
-    loadSkills?: boolean;
-    /** 是否挂载 dogear-article-parse；缺省 false */
-    loadArticleParse?: boolean;
+    profiles: SubAgentProfile[];
   };
   /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
   enabledToolPacks?: string[];
@@ -117,11 +128,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   basicToolPermissions: createDefaultBasicToolPermissions(),
   personas: [],
   subAgent: {
-    timeoutMinutes: 30,
-    cachePolicy: '5m',
-    loadCoreProfile: false,
-    loadSkills: false,
-    loadArticleParse: false,
+    profiles: [createDefaultSubAgentProfile()],
   },
   enabledToolPacks: [],
   update: {
@@ -156,6 +163,21 @@ export function isProfileComplete(profile: ModelProfile): boolean {
     return (profile.piModels?.length ?? 0) > 0;
   }
   return !!(profile.haikuModel && profile.sonnetModel && profile.opusModel);
+}
+
+/**
+ * 创建默认子会话 Profile 副本
+ */
+export function createDefaultSubAgentProfile(): SubAgentProfile {
+  return {
+    id: 'default',
+    name: '默认',
+    description: '标准派遣会话，具备全部基础工具和交付通信能力',
+    modelSelection: null,
+    timeoutMinutes: 30,
+    enabledBasicTools: ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'],
+    enabledAbilities: {},
+  };
 }
 
 /**

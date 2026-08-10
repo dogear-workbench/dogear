@@ -62,6 +62,42 @@ export function createDefaultBasicToolPermissions(): BasicToolPermissions {
   return { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
 }
 
+/**
+ * 创建默认子会话 Profile 副本
+ */
+export function createDefaultSubAgentProfile(): SubAgentProfile {
+  return {
+    id: 'default',
+    name: '默认',
+    description: '标准派遣会话，具备全部基础工具和交付通信能力',
+    modelSelection: null,
+    timeoutMinutes: 30,
+    enabledBasicTools: ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'],
+    enabledAbilities: {},
+  };
+}
+
+export interface SubAgentEnabledAbilities {
+  memory?: boolean;
+  stock?: boolean;
+  article?: boolean;
+  skills?: string[];
+  customSkills?: string[];
+  groupFiles?: boolean;
+  reference?: boolean;
+}
+
+export interface SubAgentProfile {
+  id: string;
+  name: string;
+  description: string;
+  modelSelection?: ModelSelection | null;
+  /** 单个子会话最长允许跑的分钟数，默认 30 */
+  timeoutMinutes: number;
+  enabledBasicTools: string[];
+  enabledAbilities: SubAgentEnabledAbilities;
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定（推荐新装默认） */
@@ -76,20 +112,9 @@ export interface AppSettings {
   basicToolPermissions: BasicToolPermissions;
   personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
-  /** 子会话派遣默认配置 */
+  /** 子会话派遣 Profile 列表 */
   subAgent: {
-    /** 默认模型；空时回退到 ai.defaultModelSelection */
-    modelSelection?: ModelSelection | null;
-    /** 单个子会话最长允许跑的分钟数，默认 30 */
-    timeoutMinutes: number;
-    /** 提示缓存策略；缺省 '5m'。子会话通常一轮跑完，1h 只在极特殊场景有价值 */
-    cachePolicy?: '5m' | '1h';
-    /** 是否注入工作区用户画像 core-profile.md；缺省 false */
-    loadCoreProfile?: boolean;
-    /** 是否加载 .claude/skills（brainstorming / staged-impl 等）；缺省 false */
-    loadSkills?: boolean;
-    /** 是否挂载 dogear-article-parse；缺省 false */
-    loadArticleParse?: boolean;
+    profiles: SubAgentProfile[];
   };
   /** 智能分类设置 */
   smartCategory?: {
@@ -122,11 +147,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
   personas: [],
   subAgent: {
-    timeoutMinutes: 30,
-    cachePolicy: '5m',
-    loadCoreProfile: false,
-    loadSkills: false,
-    loadArticleParse: false,
+    profiles: [createDefaultSubAgentProfile()],
   },
   enabledToolPacks: [],
   update: {

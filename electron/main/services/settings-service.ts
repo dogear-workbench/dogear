@@ -11,6 +11,7 @@ import {
   DEFAULT_SETTINGS,
   deepMerge,
   createDefaultBasicToolPermissions,
+  createDefaultSubAgentProfile,
   BASIC_TOOL_NAMES,
   type AppSettings,
   type PiPermissionMode,
@@ -151,12 +152,38 @@ export function normalizeSettings(settings: AppSettings): boolean {
     }
   }
 
-  if (settings.subAgent && typeof settings.subAgent === 'object' && !Array.isArray(settings.subAgent)) {
-    const sub = settings.subAgent as unknown as Record<string, unknown>;
-    if ('permissionMode' in sub) {
-      delete sub.permissionMode;
+  const subAgent = settings.subAgent as unknown as Record<string, unknown> | undefined;
+  if (subAgent && typeof subAgent === 'object' && !Array.isArray(subAgent)) {
+    if ('permissionMode' in subAgent) {
+      delete subAgent.permissionMode;
       changed = true;
     }
+    for (const staleField of ['cachePolicy', 'loadCoreProfile', 'loadSkills', 'loadArticleParse']) {
+      if (staleField in subAgent) {
+        delete subAgent[staleField];
+        changed = true;
+      }
+    }
+    if (Array.isArray(subAgent.profiles)) {
+      for (const profile of subAgent.profiles) {
+        if (!profile || typeof profile !== 'object' || Array.isArray(profile)) continue;
+        const p = profile as Record<string, unknown>;
+        if (!Array.isArray(p.enabledBasicTools)) {
+          p.enabledBasicTools = ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'];
+          changed = true;
+        }
+        if (!p.enabledAbilities || typeof p.enabledAbilities !== 'object' || Array.isArray(p.enabledAbilities)) {
+          p.enabledAbilities = {};
+          changed = true;
+        }
+      }
+    } else {
+      subAgent.profiles = [createDefaultSubAgentProfile()];
+      changed = true;
+    }
+  } else {
+    obj.subAgent = { profiles: [createDefaultSubAgentProfile()] };
+    changed = true;
   }
 
   return changed;

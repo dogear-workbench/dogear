@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 设置类型 + 归一化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -51,9 +51,18 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- （待填）
+- `settings-types.ts` — 新增 SubAgentEnabledAbilities + SubAgentProfile 接口、createDefaultSubAgentProfile() 工厂函数，subAgent 改为 `{ profiles: SubAgentProfile[] }`
+- `types/settings.ts` — 渲染进程同步新增类型和工厂函数
+- `settings-service.ts` — normalizeSettings 重构：旧字段清理(cachePolicy/loadCoreProfile/loadSkills/loadArticleParse) + profiles 补全/迁移
+- `settings-normalize.test.ts` — 3 个现有测试适配 + 3 个新增测试，17 pass
 
 ### 给下一步的接力棒
-- `SubAgentProfile` 类型的完整签名（供后续 step 引用）
-- `createDefaultSubAgentProfile()` 的导出路径
-- 归一化后的 `AppSettings.subAgent` 结构（供 pi-session.ts 和 delegation-bridge.ts 读取）
+- `SubAgentProfile` 在 `settings-types.ts:71` 和 `types/settings.ts:90` 定义
+- `createDefaultSubAgentProfile()` 在 `settings-types.ts:171` 和 `types/settings.ts:68` 导出
+- 归一化后 `AppSettings.subAgent = { profiles: SubAgentProfile[] }`
+- **已知编译错误（预期，需 step3-4 修复）**：
+  1. `delegation-bridge.ts:191` — 读 `subAgent.modelSelection` → 改为从选中 profile 读
+  2. `delegation-bridge.ts:214` — 读 `subAgent.cachePolicy` → 固定 '5m'
+  3. `delegation-bridge.ts:267` — 读 `subAgent.timeoutMinutes` → 从选中 profile 读
+  4. `pi-session.ts:237` — 读 `subAgent.loadCoreProfile` → 改为读 profile.enabledAbilities
+  5. `delegation-tools.ts:127` — 读 `subAgent.timeoutMinutes` → 从选中 profile 读
