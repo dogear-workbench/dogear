@@ -369,6 +369,8 @@ function createTray() {
     mainWindow?.show();
     mainWindow?.focus();
   });
+
+  getSessionNotificationService().registerTray(tray, iconPath);
 }
 
 // ==================== 应用生命周期 ====================

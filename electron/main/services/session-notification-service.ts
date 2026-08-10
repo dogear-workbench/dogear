@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification } from 'electron';
+import { BrowserWindow, nativeImage, Notification, Tray } from 'electron';
 import { mainLogger } from '../agents/logger.js';
 
 export type SessionNotificationKind = 'complete' | 'permission';
@@ -17,12 +17,18 @@ type LocateCallback = (conversationId: string, workspaceId: string) => void;
 
 const DEDUP_MAX = 500;
 
+const FLASH_INTERVAL = 500;
+
 class SessionNotificationService {
   private mainWindow: BrowserWindow | null = null;
   private sessionWindows = new Map<string, BrowserWindow>();
   private locateCallback: LocateCallback | null = null;
   private recentIds = new Set<string>();
   private recentQueue: string[] = [];
+  private tray: Tray | null = null;
+  private trayNormalIcon: string | Electron.NativeImage | null = null;
+  private trayFlashTimer: NodeJS.Timeout | null = null;
+  private trayFlashOn = false;
 
   registerMainWindow(win: BrowserWindow): void {
     this.mainWindow = win;
@@ -33,6 +39,12 @@ class SessionNotificationService {
         this.mainWindow = null;
       }
     });
+  }
+
+  registerTray(t: Tray, normalIcon: string | Electron.NativeImage): void {
+    this.tray = t;
+    this.trayNormalIcon = normalIcon;
+    t.on('mouse-down', () => this.stopFlash());
   }
 
   registerSessionWindow(conversationId: string, win: BrowserWindow): void {
@@ -98,6 +110,8 @@ class SessionNotificationService {
 
   dispose(): void {
     this.stopFlash();
+    this.tray = null;
+    this.trayNormalIcon = null;
     this.mainWindow = null;
     this.sessionWindows.clear();
     this.locateCallback = null;
@@ -144,6 +158,7 @@ class SessionNotificationService {
         // flashFrame 失败不影响通知
       }
     }
+    this.startTrayFlash();
   }
 
   private stopFlash(): void {
@@ -154,6 +169,42 @@ class SessionNotificationService {
         // 忽略
       }
     }
+    this.stopTrayFlash();
+  }
+
+  private startTrayFlash(): void {
+    if (!this.tray || this.tray.isDestroyed() || !this.trayNormalIcon) return;
+    if (this.trayFlashTimer) return;
+
+    const emptyIcon = nativeImage.createEmpty();
+    this.trayFlashOn = false;
+    this.trayFlashTimer = setInterval(() => {
+      if (!this.tray || this.tray.isDestroyed()) {
+        this.stopTrayFlash();
+        return;
+      }
+      this.trayFlashOn = !this.trayFlashOn;
+      try {
+        this.tray.setImage(this.trayFlashOn ? emptyIcon : this.trayNormalIcon!);
+      } catch {
+        this.stopTrayFlash();
+      }
+    }, FLASH_INTERVAL);
+  }
+
+  private stopTrayFlash(): void {
+    if (this.trayFlashTimer) {
+      clearInterval(this.trayFlashTimer);
+      this.trayFlashTimer = null;
+    }
+    if (this.tray && !this.tray.isDestroyed() && this.trayNormalIcon) {
+      try {
+        this.tray.setImage(this.trayNormalIcon);
+      } catch {
+        // 忽略
+      }
+    }
+    this.trayFlashOn = false;
   }
 
   private handleClick(input: SessionNotificationInput): void {
