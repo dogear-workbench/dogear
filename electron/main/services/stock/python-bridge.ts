@@ -83,6 +83,8 @@ const CRASH_COOLDOWN_MS = 30_000;
 const CRASH_THRESHOLD = 3;
 /** 关闭等待时间 */
 const SHUTDOWN_WAIT_MS = 2_000;
+/** 空闲超时自动关闭 Python 进程（5 分钟无调用） */
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 /** 开发模式 .py 变更防抖，覆盖编辑器保存时的多次触发 */
 const WATCH_DEBOUNCE_MS = 300;
 
@@ -107,6 +109,8 @@ class PythonBridge {
   private restartPending = false;
   /** 本次退出是热重启主动杀的，exit 处理里不能计入崩溃 */
   private intentionalRestart = false;
+  /** 空闲超时计时器，触发后自动关闭 Python 进程释放内存 */
+  private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // 注册应用退出时的清理
@@ -162,6 +166,7 @@ class PythonBridge {
     onProgress?: (progress: { current: number; total: number; message: string }) => void,
   ): Promise<T> {
     await this.ensureRunning();
+    this.resetIdleTimer();
 
     const id = uuidv4();
     const request: PythonRequest = { id, method, params };
@@ -227,6 +232,28 @@ class PythonBridge {
 
     this.process = null;
     this.rejectAllPending(new Error('Python Bridge 正在关闭'));
+    this.clearIdleTimer();
+  }
+
+  /**
+   * 重置空闲计时器：每次调用 Python 时调用，超时后自动关闭进程释放内存
+   */
+  private resetIdleTimer(): void {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      if (this.pendingRequests.size > 0) return;
+      this.log('⏸ IDLE_TIMEOUT — 自动关闭 Python 进程');
+      this.shutdown();
+    }, IDLE_TIMEOUT_MS);
+  }
+
+  /** 清除空闲计时器 */
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
   }
 
   // ----------------------------------------------------------
@@ -487,6 +514,7 @@ class PythonBridge {
     this.process.on('exit', (code, signal) => {
       this.log(`■ EXIT code=${code} signal=${signal} pending=${this.pendingRequests.size}`);
       this.process = null;
+      this.clearIdleTimer();
 
       // 热重启是主动杀的，计入崩溃会让连改三次文件直接触发断路器
       if (this.intentionalRestart) {
