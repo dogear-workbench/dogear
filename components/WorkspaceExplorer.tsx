@@ -10,6 +10,7 @@ import {
   ContextMenuItem, ContextMenuSeparator,
 } from '@/components/ui/context-menu';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
@@ -407,9 +408,19 @@ function TreeItemRow({
             新建文件夹
           </ContextMenuItem>
         )}
+        {data.nodeType === 'directory' && (
+          <ContextMenuItem onClick={() => {
+            addReferencedFile({ name: originalNode.name, path: originalNode.path, type: 'folder' });
+            toast.success(`已引用文件夹 ${originalNode.name}`);
+          }}>
+            <Quote className="w-4 h-4" />
+            引用文件夹到对话
+          </ContextMenuItem>
+        )}
         {data.nodeType === 'file' && (
           <ContextMenuItem onClick={() => {
             addReferencedFile({ name: originalNode.name, path: originalNode.path });
+            toast.success(`已引用 ${originalNode.name}`);
           }}>
             <Quote className="w-4 h-4" />
             引用到对话

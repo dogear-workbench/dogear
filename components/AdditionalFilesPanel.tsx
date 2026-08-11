@@ -249,8 +249,9 @@ function AdditionalFileTree({ dirPath }: AdditionalFileTreeProps) {
           node={node}
           level={0}
           onReference={(n) => {
-            addReferencedFile({ name: n.name, path: n.path });
-            toast.success(`已引用 ${n.name}`);
+            const isFolder = n.type === 'directory';
+            addReferencedFile({ name: n.name, path: n.path, ...(isFolder && { type: 'folder' as const }) });
+            toast.success(`已引用${isFolder ? '文件夹' : ''} ${n.name}`);
           }}
         />
       ))}
@@ -297,15 +298,13 @@ function FileTreeNode({ node, level, onReference }: FileTreeNodeProps) {
           <File className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
         )}
         <span className="flex-1 min-w-0 text-xs truncate">{node.name}</span>
-        {!isDir && (
-          <button
-            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-teal-100 hover:text-teal-700 transition-opacity shrink-0"
-            onClick={(e) => { e.stopPropagation(); onReference(node); }}
-            title="引用到对话"
-          >
-            <Quote className="w-3 h-3" />
-          </button>
-        )}
+        <button
+          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-teal-100 hover:text-teal-700 transition-opacity shrink-0"
+          onClick={(e) => { e.stopPropagation(); onReference(node); }}
+          title={isDir ? '引用文件夹到对话' : '引用到对话'}
+        >
+          <Quote className="w-3 h-3" />
+        </button>
       </div>
       {isDir && expanded && node.children && node.children.length > 0 && (
         <>

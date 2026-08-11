@@ -351,10 +351,10 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearQuotedSnippets();
     }
 
-    // 文件引用：独立 block，agent 通过 Read 工具读取文件内容
+    // 文件/文件夹引用：独立 block，agent 通过 Read 工具读取内容
     if (referencedFiles.length > 0) {
       const refLines = referencedFiles.map(f =>
-        `  <file name="${sanitize(f.name)}" path="${sanitize(f.path)}" />`
+        `  <file name="${sanitize(f.name)}" path="${sanitize(f.path)}"${f.type === 'folder' ? ' type="folder"' : ''} />`
       ).join('\n');
       textBlocks.push({
         text: `<referenced_files>\n${refLines}\n</referenced_files>`

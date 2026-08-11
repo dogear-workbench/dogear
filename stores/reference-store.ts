@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import type { ArticleMeta, QuoteSnippet } from '@/types/article';
 
-/** 文件引用 */
+/** 文件/文件夹引用 */
 export interface FileReference {
-  name: string;      // 文件名
+  name: string;      // 文件名或文件夹名
   path: string;      // 绝对路径
+  type?: 'file' | 'folder';  // 默认 'file'
 }
 
 /** 会话引用 */

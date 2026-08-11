@@ -201,14 +201,16 @@ export const ChatInputArea = memo(function ChatInputArea({
                         </Button>
                       </span>
                     ))}
-                    {/* 文件引用芯片 — 淡石板绿 */}
+                    {/* 文件/文件夹引用芯片 — 淡石板绿 */}
                     {referencedFiles.map(file => (
                       <span
                         key={file.path}
                         className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700"
                         title={file.path}
                       >
-                        <FileText className="w-3 h-3 flex-shrink-0" />
+                        {file.type === 'folder'
+                          ? <Folder className="w-3 h-3 flex-shrink-0" />
+                          : <FileText className="w-3 h-3 flex-shrink-0" />}
                         <span className="max-w-[160px] truncate">{file.name}</span>
                         <Button
                           variant="ghost"
