@@ -1,7 +1,7 @@
 ---
 step: 3
 title: staged-execution skill 调整
-status: pending
+status: done
 ---
 
 ## 目标
@@ -39,7 +39,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- （待填）
+- SKILL.md 9 处工具名去引用 + 铁律段 CreateSession 去引用（主会话补充，changes 文档遗漏处）
+- 改动覆盖：主/子分工表、分派规则（默认+批量）、执行循环（步骤 3-5/7a）、验收清单、失败处理、反模式
+- 唯一保留：ListLinkedSessions（分派规则交付要求中，子会话查父 sessionId 的具体操作步骤）
+- 验证：全文搜索确认工具名仅保留 1 处 ListLinkedSessions
 
 ### 给下一步的接力棒
 - 三层改动全部完成

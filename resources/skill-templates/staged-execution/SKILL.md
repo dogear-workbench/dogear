@@ -9,7 +9,7 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 
 ## 铁律
 
-**主会话不得直接 Edit/Write 业务代码。** 主会话只负责审核、分派、验收、回填计划文档、git commit。业务代码全部走子会话 CreateSession。
+**主会话不得直接 Edit/Write 业务代码。** 主会话只负责审核、分派、验收、回填计划文档、git commit。业务代码全部走子会话。
 
 违反这条 = 本 skill 失效。
 
@@ -39,19 +39,17 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 | 角色 | 职责 | 禁止 |
 |---|---|---|
 | **主会话** | 读 plan / 读 step / 决定分派策略 / 派子会话 / 等交付 / 验收 / 回填 stepN.md / 打勾 plan.md / git commit / **改 `.claude/**` 下所有文件** | 直接 Edit/Write 业务代码 |
-| **子会话** | 按 task 描述改代码 / SaveSharedNote 到 outputPath / SendMessage(父sessionId, summary, { delivery: true }) 交付 | 派孙会话（没 CreateSession 工具）/ 越 step 边界改动 / **动 `.claude/**` 下任何文件** |
+| **子会话** | 按 task 描述改代码 / 把交付文档写到共享区 / 向派出会话交付结果 | 越 step 边界改动 / 动 `.claude/**` 下任何文件 |
 
 ## 分派规则
 
 ### 默认：每 step 派 1 个子会话
 
-用 `CreateSession` 派出，参数：
-- `task`：**必须**包含以下三块（照抄，别自己简写）：
-  1. `docs/plans/**/stepN-*.md` 的完整绝对路径
-  2. plan.md「全局决策」段原文
-  3. 交付要求：「按 stepN.md 的 计划改动 段实施代码；完成后 SaveSharedNote 到 outputPath；然后先 ListLinkedSessions 拿派出者 sessionId，再用 SendMessage(sessionId, summary, { delivery: true }) 交回改动清单」
-- `outputPath`：约定为 `stepN-delivery.md`（保持组共享区可追溯）
-- `title`：`step N: <stepN.md 的 title>`
+派出子会话，task 描述包含以下三块（按模板填写，N 替换为实际步骤号）：
+1. stepN.md 的完整路径
+2. plan.md「全局决策」段原文
+3. 交付要求：「按 stepN.md 的「计划改动」段实施代码；完成后把交付文档写到共享区 stepN-delivery.md；然后用 ListLinkedSessions 查派出者 sessionId，向其交付改动清单」
+交付路径约定为 stepN-delivery.md，标题约定为「step N: <stepN.md 的 title>」
 
 ### 例外：主会话必须自己做的情形
 
@@ -76,10 +74,10 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 
 **其他一切情况必须派子会话。** 拿不准就派。
 
-### 什么时候分多个子会话（CreateSessionBatch）
+### 什么时候分多个子会话
 
 - 单 step 内明确列出 N 个**相互独立**的改动块（如"改 3 个 store 且互不依赖"）
-- 可以用 CreateSessionBatch 一次派 N 个，每个独立 outputPath
+- 可以批量派出 N 个，每个独立交付路径
 - **有依赖的改动不并行**——依赖顺序 = 该拆成多个 step，不是拆成并行子会话
 
 ## 执行循环（每 step 严格按序）
@@ -87,19 +85,19 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 ```
 1. 主会话读 stepN.md（全文） + plan.md「全局决策」段
 2. 主会话把 stepN.md status 改为 in_progress
-3. 主会话判定分派策略（默认单子会话；微改动自己做；独立多块 → CreateSessionBatch）
-4. CreateSession / CreateSessionBatch 派出，task 描述按上面「分派规则」的三块拼
-5. WaitForMessage 等交付（fromSessionIds=派出的子会话 sessionId 列表）
+3. 主会话判定分派策略（默认单子会话；微改动自己做；独立多块 → 批量派）
+4. 派出子会话，task 描述按上面「分派规则」的三块拼
+5. 等待子会话交付
 6. 主会话验收（下节详述）
 7a. 验收通过：
-    - 读子会话产出的 stepN-delivery.md，把关键内容回填到 stepN.md 的「实施回填」段
+    - 从共享区读交付文档，把关键内容回填到 stepN.md 的「实施回填」段
     - 把 stepN.md status 改为 done
     - plan.md 步骤索引对应 [ ] 改 [x]
     - git commit（下节详述）
     - 汇报用户「Step N 完成 → 具体做了什么 → 下一步是 Step N+1」，等用户确认再进下一 step
 7b. 验收不通过：
-    - 小问题：SendMessage 让子会话修（走契约通道，走 delivery=false 的普通消息）
-    - 大方向错：StopSession + 分析原因 + 重派或改 stepN.md
+    - 小问题：向子会话发消息让它修
+    - 大方向错：停掉子会话 + 分析原因 + 重派或改 stepN.md
     - 连续 3 次仍不通过：停下报告用户，不无限重试
 ```
 
@@ -107,7 +105,7 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 
 主会话拿到子会话交付后，逐条核对：
 
-- [ ] `stepN-delivery.md` 内容存在且格式合理（改动清单 + 关键签名 + 遗留问题）
+- [ ] 确认共享区有交付文档，读其内容，格式合理（改动清单 + 关键签名 + 遗留问题）
 - [ ] 交付里声称改的文件用 Read 抽查 2-3 个关键点（**用 Read 抽查而非重读全文**）
 - [ ] 有没有超出 stepN.md 计划改动范围的文件被动过？超出 = 不通过
 - [ ] 有没有留 `// TODO` / 半成品 stub？（违反项目 CLAUDE.md 硬性约定 = 不通过）
@@ -181,7 +179,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - 「顺手把 stepN+1 也一起改了，效率高」→ 越界改动 = 违规，回滚
 - 「commit 里带上这几天累积的改动一起提」→ 混提交 = 违规
 - 「lint 挂了，加个 // eslint-disable 先过」→ 掩盖问题 = 违规
-- 「子会话卡住了，我 SendMessage 疯狂指导它」→ 3 次不成 = 停下，不无限循环
+- 「子会话卡住了，我疯狂发消息指导它」→ 3 次不成 = 停下，不无限循环
 - 「这个 step 有 .claude/ 改动，顺手一起派给子会话吧」→ 会阻塞超时，拆两半：`.claude/` 主会话做，其他派子
 
 ## 用户信号说明你走错了
