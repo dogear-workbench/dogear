@@ -104,6 +104,7 @@ class ConversationRuntimeService {
           : undefined,
         permissionMode,
         basicToolPermissions: appSettings.basicToolPermissions,
+        rtkEnabled: appSettings.rtkEnabled ?? false,
         subAgentProfile: conversation.role === 'sub'
           ? (appSettings.subAgent?.profiles ?? []).find((p) => p.id === conversation.contractMetadata?.subAgentProfileId)
             ?? (appSettings.subAgent?.profiles ?? []).find((p) => p.id === 'default')

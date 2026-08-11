@@ -12,14 +12,14 @@ import { createBashTool, createEditTool, createReadTool, createWriteTool, type A
 import { rewriteWithRtk } from './rtk-rewrite.js';
 
 /** Read/Write/Edit/Bash 四个 harness 原生工具，文件操作和 bash cwd 边界由注入的 WorkspaceExecutionEnv 负责 */
-export function createBuiltinFileTools(): AgentHarnessTool<{ env: ExecutionEnv }>[] {
+export function createBuiltinFileTools(rtkEnabled: boolean = false): AgentHarnessTool<{ env: ExecutionEnv }>[] {
   return [
     createReadTool(),
     createWriteTool(),
     createEditTool(),
     createBashTool({
       prepare(execution) {
-        execution.command = rewriteWithRtk(execution.command);
+        if (rtkEnabled) execution.command = rewriteWithRtk(execution.command);
       },
     }),
   ];

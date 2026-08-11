@@ -82,6 +82,8 @@ export interface PiSessionConfig {
   subAgentProfile?: SubAgentProfile;
   permissionMode: PiPermissionMode;
   basicToolPermissions: BasicToolPermissions;
+  /** Bash 命令 RTK 前缀重写开关 */
+  rtkEnabled: boolean;
 }
 
 export interface PiSessionLiveSnapshot {
@@ -397,7 +399,7 @@ export class PiSession extends EventEmitter {
       : undefined;
 
     const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
-      ...createBuiltinFileTools(),
+      ...createBuiltinFileTools(this.config.rtkEnabled),
       ...toPiTools(toolDefs),
     ];
 
