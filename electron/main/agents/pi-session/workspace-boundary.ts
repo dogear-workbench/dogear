@@ -40,11 +40,26 @@ async function assertNoSymlinkEscape(workspacePath: string, resolved: string, or
 }
 
 /**
- * 将候选路径（相对或绝对）解析为工作区内的绝对路径，越权（含 `../` 穿越、符号链接逃逸）时抛出。
+ * 将候选路径（相对或绝对）解析为 roots 中任一根路径内的绝对路径。
+ * 逐根尝试，命中任一根即返回；全部不命中则抛路径越权。
+ */
+export async function resolveWithinPaths(roots: string[], candidatePath: string): Promise<string> {
+  for (const root of roots) {
+    const resolved = path.resolve(root, candidatePath);
+    try {
+      assertSyntacticallyWithin(root, resolved, candidatePath);
+      await assertNoSymlinkEscape(root, resolved, candidatePath);
+      return resolved;
+    } catch {
+      // continue to next root
+    }
+  }
+  throw new Error(`路径越权：不允许访问工作区外的文件: ${candidatePath}`);
+}
+
+/**
+ * 单根路径的薄封装，保持向后兼容（search-tools 等在 Step 2 切换）。
  */
 export async function resolveWithinWorkspace(workspacePath: string, candidatePath: string): Promise<string> {
-  const resolved = path.resolve(workspacePath, candidatePath);
-  assertSyntacticallyWithin(workspacePath, resolved, candidatePath);
-  await assertNoSymlinkEscape(workspacePath, resolved, candidatePath);
-  return resolved;
+  return resolveWithinPaths([workspacePath], candidatePath);
 }

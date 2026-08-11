@@ -10,12 +10,21 @@ import type { ModelSelection } from './settings';
 export type PermissionMode = 'default' | 'autoExecute';
 
 /**
+ * 附加路径（兼容格式）
+ */
+export interface AdditionalPathData {
+  path: string;
+  enabled: boolean;
+}
+
+/**
  * 工作区接口
  */
 export interface Workspace {
   id: string;
   name: string;
   path: string;
+  additional_paths: AdditionalPathData[];
   is_default: number;
   created_at: number;
 }

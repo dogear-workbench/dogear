@@ -60,6 +60,7 @@ export const workspaceRouter = {
           id: uuidv4(),
           name: selectedPath.split(/[/\\]/).filter(Boolean).pop() || '工作区',
           path: selectedPath,
+          additional_paths: [],
           is_default: 1,
           created_at: Date.now(),
         };

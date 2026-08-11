@@ -3,7 +3,7 @@
  *
  * 委托给 pi-agent-core 官方 NodeExecutionEnv 做实际的文件 IO / 子进程执行（跨平台 bash 探测、
  * 截断安全的读写、mutation queue 等都是它已经做好的），本类只加一层工作区边界校验：
- * 所有带路径参数的方法在委托前先过 resolveWithinWorkspace（含 `../` 穿越 + 符号链接逃逸检测）。
+ * 所有带路径参数的方法在委托前先过 resolveWithinPaths（含 `../` 穿越 + 符号链接逃逸检测）。
  *
  * Bash 的 shell 执行本身不做沙箱（与现有 SDK 侧 Bash 工具信任边界一致），
  * 只保证 exec 的 cwd 落在工作区内。
@@ -19,7 +19,7 @@ import {
   type ShellExecOptions,
 } from '@earendil-works/pi-agent-core';
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node';
-import { resolveWithinWorkspace } from './workspace-boundary.js';
+import { resolveWithinPaths } from './workspace-boundary.js';
 
 function boundaryError(error: unknown, path: string): FileError {
   const message = error instanceof Error ? error.message : String(error);
@@ -29,15 +29,21 @@ function boundaryError(error: unknown, path: string): FileError {
 export class WorkspaceExecutionEnv implements ExecutionEnv {
   readonly cwd: string;
   private readonly inner: NodeExecutionEnv;
+  private allowedPaths: string[];
 
-  constructor(private readonly workspacePath: string) {
-    this.cwd = workspacePath;
-    this.inner = new NodeExecutionEnv({ cwd: workspacePath });
+  constructor(allowedPaths: string[]) {
+    this.allowedPaths = allowedPaths;
+    this.cwd = allowedPaths[0];
+    this.inner = new NodeExecutionEnv({ cwd: allowedPaths[0] });
+  }
+
+  updateAllowedPaths(paths: string[]): void {
+    this.allowedPaths = paths;
   }
 
   private async guard(candidate: string): Promise<Result<string, FileError>> {
     try {
-      return ok(await resolveWithinWorkspace(this.workspacePath, candidate));
+      return ok(await resolveWithinPaths(this.allowedPaths, candidate));
     } catch (error) {
       return err(boundaryError(error, candidate));
     }

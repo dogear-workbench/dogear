@@ -15,11 +15,18 @@ const { app } = electron;
 // 类型定义
 // ============================================================
 
+/** 附加路径（内部存储格式） */
+export interface AdditionalPath {
+  path: string;
+  enabled: boolean;
+}
+
 /** 内部存储格式（JSON 文件中的单条工作区） */
 export interface WorkspaceData {
   id: string;
   name: string;
   path: string;
+  additionalPaths: AdditionalPath[];
   isDefault: boolean;
   createdAt: string; // ISO 8601 字符串
 }
@@ -30,11 +37,18 @@ export interface WorkspacesFile {
   workspaces: WorkspaceData[];
 }
 
+/** 附加路径（兼容格式，供 tipc / 前端使用） */
+export interface AdditionalPathData {
+  path: string;
+  enabled: boolean;
+}
+
 /** 向后兼容接口，供 tipc / 前端使用（与 types/electron-api.ts 中的 Workspace 一致） */
 export interface Workspace {
   id: string;
   name: string;
   path: string;
+  additional_paths: AdditionalPathData[];
   is_default: number;  // 0 或 1
   created_at: number;  // 时间戳（毫秒）
 }
@@ -75,6 +89,7 @@ export function toWorkspace(data: WorkspaceData): Workspace {
     id: data.id,
     name: data.name,
     path: data.path,
+    additional_paths: (data.additionalPaths ?? []).map((p) => ({ path: p.path, enabled: p.enabled })),
     is_default: data.isDefault ? 1 : 0,
     created_at: new Date(data.createdAt).getTime(),
   };
@@ -86,6 +101,7 @@ function toWorkspaceData(ws: Workspace): WorkspaceData {
     id: ws.id,
     name: ws.name,
     path: ws.path,
+    additionalPaths: (ws.additional_paths ?? []).map((p) => ({ path: p.path, enabled: p.enabled })),
     isDefault: ws.is_default === 1,
     createdAt: new Date(ws.created_at).toISOString(),
   };
@@ -172,6 +188,7 @@ export async function add(workspace: Omit<Workspace, 'id'> | Workspace): Promise
     id,
     name: workspace.name,
     path: workspace.path,
+    additionalPaths: (workspace.additional_paths ?? []).map((p) => ({ path: p.path, enabled: p.enabled })),
     isDefault: workspace.is_default === 1,
     createdAt: new Date(workspace.created_at).toISOString(),
   };

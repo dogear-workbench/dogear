@@ -313,7 +313,7 @@ export class PiSession extends EventEmitter {
     const userClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'agent.md'));
 
     // ---- skill 索引 ----
-    const env = new WorkspaceExecutionEnv(this.config.workspacePath);
+    const env = new WorkspaceExecutionEnv([this.config.workspacePath]);
     const workspaceSkillsDir = path.join(this.config.workspacePath, '.claude', 'skills');
     const homedirSkillsDir = path.join(os.homedir(), '.claude', 'skills');
     const articleParserSkillsDir = getArticleParserSkillsDir();
