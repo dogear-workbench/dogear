@@ -67,7 +67,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         toSessionId: z.string().min(1).describe('目标会话的 sessionId（通过 CreateSession 返回值或 ListLinkedSessions 获取）'),
         message: z.string().min(1).describe('消息内容'),
         options: z.object({
-          delivery: z.boolean().optional().describe('标记为正式交付（任务完成通知），配合 WaitForMessage 使用'),
+          delivery: z.boolean().optional().describe('标记为正式交付（任务完成通知）'),
         }).optional(),
       }),
       async (args) => {
