@@ -13,7 +13,7 @@
 - [x] [Step 3: skill 加载路径迁移](./step3-skill-paths.md) — pi-session 扫描目录改为模板源 + 工作区自定义目录，删掉订阅复制机制
 - [x] [Step 4: 能力配置拆到工作区级](./step4-workspace-abilities.md) — enabledToolPacks 从全局 settings 移到工作区 config，全链路改造
 - [x] [Step 5: 前端设置页改造](./step5-frontend.md) — AbilityTab 从订阅/重命名模型改为配置读写模型
-- [ ] [Step 6: 迁移逻辑 + 清理](./step6-migration.md) — 旧数据迁移到工作区 config，删除废弃代码和 `.claude` 依赖
+- [x] [Step 6: 迁移逻辑 + 清理](./step6-migration.md) — 旧数据迁移到工作区 config，删除废弃代码和 `.claude` 依赖
 
 ## 全局决策
 

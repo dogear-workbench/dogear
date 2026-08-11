@@ -107,6 +107,10 @@ export interface AppSettings {
   update?: {
     serverUrl: string;
   };
+  /** 一次性迁移标记 */
+  migrated?: {
+    workspaceConfig?: boolean;
+  };
 }
 
 // ============================================================
@@ -145,6 +149,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
   },
   smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
+  migrated: {},
 };
 
 // ============================================================

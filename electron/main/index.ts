@@ -460,6 +460,14 @@ app.whenReady().then(async () => {
     console.error('[migration-session-id] 失败:', error);
   }
 
+  // workspace config 迁移：enabledToolPacks + enabledSkills 从旧位置迁移到 workspace config.json
+  try {
+    const { migrateWorkspaceConfig } = await import('./services/migration-workspace-config.js');
+    await migrateWorkspaceConfig();
+  } catch (error) {
+    console.error('[migration-workspace-config] 失败:', error);
+  }
+
   // Phase 3 迁移：旧会话卡升级为组卡 + smart-categories/conversation-tree 字段升级
   try {
     const { runMigrationP3 } = await import('./services/memory/migration-p3.js');
