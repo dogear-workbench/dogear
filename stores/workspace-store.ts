@@ -30,6 +30,12 @@ interface WorkspaceState {
   openStockWindow: () => Promise<void>;
   /** 设置正在创建文件夹的父路径 */
   setCreatingFolderAt: (parentPath: string | null) => void;
+  /** 添加附加路径 */
+  addAdditionalPath: (path: string) => Promise<void>;
+  /** 移除附加路径 */
+  removeAdditionalPath: (path: string) => Promise<void>;
+  /** 切换附加路径开关 */
+  toggleAdditionalPath: (path: string, enabled: boolean) => Promise<void>;
   createFolder: (parentPath: string, name: string) => Promise<void>;
   renameItem: (itemPath: string, newName: string) => Promise<void>;
   moveItem: (sourcePath: string, targetPath: string, targetIndex?: number) => Promise<void>;
@@ -127,6 +133,54 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await client.openStockWindow();
     } catch (error) {
       console.error('打开自选股窗口失败:', error);
+    }
+  },
+
+  addAdditionalPath: async (path) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.addAdditionalPath({ workspaceId: workspace.id, path });
+      if (!result.success) {
+        toast.error('添加附加路径失败', { description: result.error });
+        return;
+      }
+      if (result.workspace) set({ workspace: result.workspace });
+    } catch (error) {
+      console.error('添加附加路径失败:', error);
+      toast.error('添加附加路径失败', { description: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  removeAdditionalPath: async (path) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.removeAdditionalPath({ workspaceId: workspace.id, path });
+      if (!result.success) {
+        toast.error('移除附加路径失败', { description: result.error });
+        return;
+      }
+      if (result.workspace) set({ workspace: result.workspace });
+    } catch (error) {
+      console.error('移除附加路径失败:', error);
+      toast.error('移除附加路径失败', { description: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  toggleAdditionalPath: async (path, enabled) => {
+    const { workspace } = get();
+    if (!workspace) return;
+    try {
+      const result = await client.toggleAdditionalPath({ workspaceId: workspace.id, path, enabled });
+      if (!result.success) {
+        toast.error('切换附加路径失败', { description: result.error });
+        return;
+      }
+      if (result.workspace) set({ workspace: result.workspace });
+    } catch (error) {
+      console.error('切换附加路径失败:', error);
+      toast.error('切换附加路径失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 

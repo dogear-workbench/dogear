@@ -14,6 +14,7 @@ import { scanOrphanWorkspaces, importOrphanToWorkspace } from '../services/works
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { WorkspaceFileNode } from '../types.js';
 import type { Workspace } from '../services/workspace-json-service.js';
+import path from 'path';
 
 const t = tipc.create();
 
@@ -217,5 +218,57 @@ export const workspaceRouter = {
         return { success: false, error: String(error) };
       }
     }),
+
+  pickDirectory: t.procedure
+    .action(async () => {
+      try {
+        const result = await dialog.showOpenDialog({
+          properties: ['openDirectory'],
+          title: '选择附加文件夹',
+        });
+        if (result.canceled || result.filePaths.length === 0) return { canceled: true };
+        return { canceled: false, path: result.filePaths[0] };
+      } catch (error) {
+        console.error('选择文件夹失败:', error);
+        return { canceled: true, error: String(error) };
+      }
+    }),
+
+  scanAdditionalPath: t.procedure
+    .input<{ dirPath: string }>()
+    .action(async ({ input }) => {
+      try {
+        const stat = await fs.stat(input.dirPath);
+        if (!stat.isDirectory()) return { files: [] as WorkspaceFileNode[] };
+        const files = await scanAbsDirectory(input.dirPath);
+        return { files };
+      } catch {
+        return { files: [] as WorkspaceFileNode[] };
+      }
+    }),
 };
+
+const HIDDEN_NAMES = ['.DS_Store', 'Thumbs.db', '.git', 'node_modules'];
+
+async function scanAbsDirectory(dirPath: string): Promise<WorkspaceFileNode[]> {
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  const nodes: WorkspaceFileNode[] = [];
+  for (const entry of entries) {
+    if (HIDDEN_NAMES.includes(entry.name) || entry.name.startsWith('.')) continue;
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.isDirectory()) {
+      const children = await scanAbsDirectory(fullPath);
+      nodes.push({ name: entry.name, path: fullPath, type: 'directory', children });
+    } else {
+      const ext = path.extname(entry.name).toLowerCase();
+      nodes.push({ name: entry.name, path: fullPath, type: 'file', ext });
+    }
+  }
+  nodes.sort((a, b) => {
+    if (a.type === 'directory' && b.type !== 'directory') return -1;
+    if (a.type !== 'directory' && b.type === 'directory') return 1;
+    return a.name.localeCompare(b.name, 'zh-CN');
+  });
+  return nodes;
+}
 

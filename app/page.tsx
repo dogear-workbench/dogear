@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
-import { ArticlePreview } from '@/components/ArticlePreview';
 import { PromptSidebar } from '@/components/PromptSidebar';
 import { SharedAreaPanel } from '@/components/SharedAreaPanel';
+import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
@@ -350,7 +350,7 @@ export default function Home() {
           {rightPanelTab === 'files' ? (
             <WorkspaceExplorer />
           ) : rightPanelTab === 'additional' ? (
-            <div>附加文件</div>
+            <AdditionalFilesPanel workspaceId={workspace.id} />
           ) : (
             <SharedAreaPanel workspaceId={workspace.id} groupId={currentGroupId} />
           )}
