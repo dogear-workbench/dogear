@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 能力配置拆到工作区级
-status: pending
+status: done
 ---
 
 ## 目标
@@ -50,8 +50,32 @@ status: pending
 
 ### 实际改动
 
-（待填）
+**4.1 数据读取链路改造**
+- `electron/main/services/conversation-runtime-service.ts`
+  - 新增 import `getWorkspaceConfig` from `workspace-config-service.js`
+  - 新增 `const wsConfig = await getWorkspaceConfig(workspaceId);`
+  - `enabledToolPacks: appSettings.enabledToolPacks ?? []` → `enabledToolPacks: wsConfig.enabledToolPacks`
+- `electron/main/agents/pi-session/pi-session.ts`：无需改动（接口签名不变）
+
+**4.2 全局 settings 清理**
+- `electron/main/services/settings-types.ts`
+  - 删除 `AppSettings.enabledToolPacks?: string[]` 字段
+  - 删除 `DEFAULT_SETTINGS.enabledToolPacks: []`
+- `types/settings.ts`（渲染层镜像，保持同步）
+  - 删除 `AppSettings.enabledToolPacks?: string[]` 字段
+  - 删除 `DEFAULT_SETTINGS.enabledToolPacks: []`
+- `electron/main/services/settings-service.ts`：`normalizeSettings` 中无 `enabledToolPacks` 相关逻辑，无需改动
+- `electron/main/services/settings-normalize.test.ts`：从「规范化不丢失无关的有效设置」测试中移除 `enabledToolPacks` 相关断言
+
+**4.3 tipc 路由**
+- `electron/main/tipc/agent.ts`：`listToolPacks` 路由改为接受 `{ workspaceId: string }` 输入，从 `getWorkspaceConfig` 读取启用状态（原来读 `loadSettings().enabledToolPacks`）
+- `electron/main/services/workspace-config.ts`：Step 1 已建 `getWorkspaceConfig` / `updateWorkspaceConfig`，无需改动
+- `electron/main/services/tool-packs.ts`：更新注释引用
 
 ### 给下一步的接力棒
 
-（待填）
+- `listToolPacks` 路由签名已改（需 `{ workspaceId }` 入参），前端 `AbilityTab.tsx:489` 的 `client.listToolPacks()` 调用需在 Step 5 更新为 `client.listToolPacks({ workspaceId })`
+- `AbilityTab.tsx` 中 `enabledPackSet` 来源于 `local.enabledToolPacks`（全局 settings），需改为从 `workspaceConfig.enabledToolPacks` 读取
+- `AbilityTab.tsx` 中 `handleDomainToggle` 写入 `local.enabledToolPacks`（全局 settings），需改为 `client.updateWorkspaceConfig({ workspaceId, config: { enabledToolPacks: [...] } })`
+- 全局 `settings.json` 中可能残留旧的 `enabledToolPacks` 字段，Step 6 迁移脚本需处理
+- `types/settings.ts` 已同步删除字段，Step 5 不用再动这个文件

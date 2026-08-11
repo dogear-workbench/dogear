@@ -473,11 +473,12 @@ export const agentRouter = {
 
   // 获取可选工具包清单（含启用状态），供设置页 ToolPacksTab 使用
   listToolPacks: t.procedure
-    .action(async () => {
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }) => {
       const { OPTIONAL_TOOL_PACKS } = await import('../services/tool-packs.js');
-      const { loadSettings } = await import('../services/settings-service.js');
-      const settings = await loadSettings();
-      const enabled = new Set(settings.enabledToolPacks ?? []);
+      const { getWorkspaceConfig } = await import('../services/workspace-config-service.js');
+      const wsConfig = await getWorkspaceConfig(input.workspaceId);
+      const enabled = new Set(wsConfig.enabledToolPacks);
       return OPTIONAL_TOOL_PACKS.map((pack) => ({
         name: pack.name,
         label: pack.label,

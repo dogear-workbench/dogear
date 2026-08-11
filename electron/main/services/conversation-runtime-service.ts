@@ -6,6 +6,7 @@ import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
 import { requireActiveGroup } from './group-service.js';
 import { loadSettings } from './settings-service.js';
+import { getWorkspaceConfig } from './workspace-config-service.js';
 
 export type RuntimeHolderType = 'desktop' | 'wechat-bot';
 
@@ -79,6 +80,7 @@ class ConversationRuntimeService {
       piSessionManager.retain(sessionId);
     } else {
       const appSettings = await loadSettings();
+      const wsConfig = await getWorkspaceConfig(workspaceId);
       const workspace = await workspaceJsonService.getById(workspaceId);
       const permissionMode: PiPermissionMode = conversation.role === 'sub'
         ? 'autoExecute'
@@ -90,7 +92,7 @@ class ConversationRuntimeService {
         additionalPaths: (workspace?.additional_paths ?? []).filter((p) => p.enabled).map((p) => p.path),
         workspaceId,
         harnessSessionId: conversation.sessionId ?? null,
-        enabledToolPacks: appSettings.enabledToolPacks ?? [],
+        enabledToolPacks: wsConfig.enabledToolPacks,
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
         parentConversationId: conversation.parentConversationId ?? undefined,

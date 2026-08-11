@@ -17,7 +17,7 @@
  */
 
 export interface ToolPackMeta {
-  /** 工具包名称（唯一标识，settings.enabledToolPacks 用此值） */
+  /** 工具包名称（唯一标识，workspace config 的 enabledToolPacks 用此值） */
   name: string;
   /** 中文显示名 */
   label: string;

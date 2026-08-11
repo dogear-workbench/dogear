@@ -122,8 +122,6 @@ export interface AppSettings {
     threshold?: number;         // 0–1，默认 0.5
     maxCategories?: number;     // 默认 10
   };
-  /** 启用的工具包名称列表，如 ['stock-analysis', 'stock-quote']。未列出的不会注册其 MCP server。 */
-  enabledToolPacks?: string[];
   /** 热更新服务配置 */
   update?: {
     serverUrl: string;
@@ -149,7 +147,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subAgent: {
     profiles: [createDefaultSubAgentProfile()],
   },
-  enabledToolPacks: [],
   update: {
     serverUrl: 'http://localhost:9527',
   },

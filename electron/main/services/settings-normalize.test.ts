@@ -138,12 +138,10 @@ test('规范化不丢失无关的有效设置', () => {
   const s = baseSettings();
   s.ai.permissionMode = 'autoExecute';
   s.subAgent.profiles[0].timeoutMinutes = 60;
-  s.enabledToolPacks = ['stock-analysis'];
   s.personas = [{ id: 'p1', name: '测试', prompt: 'hi', createdAt: '2024-01-01' }];
   const changed = normalizeSettings(s);
   expect(changed).toBe(false);
   expect(s.subAgent.profiles[0].timeoutMinutes).toBe(60);
-  expect(s.enabledToolPacks).toEqual(['stock-analysis']);
   expect(s.personas).toHaveLength(1);
 });
 
