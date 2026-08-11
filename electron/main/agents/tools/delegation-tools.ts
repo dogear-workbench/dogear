@@ -18,14 +18,12 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 
 const SEND_MESSAGE_DESC =
-  '向已建立契约通道的会话发送消息。目标会话必须与当前会话有直接派出关系（当前会话派出的，或派出当前会话的）。' +
-  '可选 options.delivery=true 标记这是一次正式交付（任务完成通知），配合 WaitForMessage 使用。';
+  '向与当前会话有直接派出关系的会话发送消息。仅用于与协作会话通信时。';
 
 const WAIT_FOR_MESSAGE_DESC =
-  '挂起当前回合，等待来自指定 sessionId 列表中任意一方的下一条消息（第一条到达即返回，不等齐全部）。' +
-  '超时未收到任何消息则返回超时提示。';
+  '挂起当前回合，等待指定会话列表中任一方的消息（第一条到达即返回）。仅用于派出子会话后等待其交付或回复时。';
 
-const LIST_LINKED_DESC = '列出当前会话所有直接契约通道对方（既包含当前会话派出的，也包含派出当前会话的），用于获取可通信的 sessionId。';
+const LIST_LINKED_DESC = '列出当前会话所有直接契约通道对方，用于获取可通信的 sessionId。';
 
 export interface MainDelegationOpts {
   role: 'main';
@@ -169,12 +167,10 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     defineTool(
       'CreateSession',
       '派出子会话执行任务',
-      '创建一个平级的新会话来协作处理任务。新会话与当前会话建立契约通道，可通过 SendMessage / WaitForMessage 双向通信。' +
-      'outputPath 用于建议新会话把较长的交付内容写到共享区（不可与其它在跑的会话冲突）；简短交付可以直接放进 SendMessage 里。' +
-      'profile 参数用于选择子会话 Profile（决定模型、工具集、能力域）；不传时用默认 Profile。',
+      '创建一个子会话来执行独立任务，与当前会话建立双向通信通道。仅用于需要把任务委派给独立会话处理时。',
       z.object({
         task: z.string().min(1).describe('委派给新会话的任务描述（自然语言）'),
-        outputPath: z.string().min(1).describe('建议新会话写入共享区的相对路径（如 hello.md），用于承载较长的交付内容'),
+        outputPath: z.string().min(1).describe('子会话交付文件写入共享区的相对路径（如 step1-delivery.md）'),
         title: z.string().optional().describe('新会话标题；缺省由系统生成'),
         profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
       }),
@@ -207,12 +203,11 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     defineTool(
       'CreateSessionBatch',
       '批量派出多个子会话',
-      '原子批量创建多个新会话。先一次性 dry-run 校验所有 outputPath 不冲突，任何一个冲突则整批拒绝；' +
-      '全部 ok 才依次拉起。中途任意一个拉起失败将回滚已创建的会话。',
+      '批量创建多个子会话（原子操作：要么全部成功，要么全部不创建）。仅用于需要同时派出多个互相独立的任务时。',
       z.object({
         items: z.array(z.object({
           task: z.string().min(1).describe('子任务描述'),
-          outputPath: z.string().min(1).describe('建议写入共享区的相对路径'),
+          outputPath: z.string().min(1).describe('子会话交付文件写入共享区的相对路径'),
           title: z.string().optional().describe('会话标题；缺省自动生成'),
           profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
         })).min(1).describe('批量创建条目列表'),
@@ -274,7 +269,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     defineTool(
       'StopSession',
       '停止已派出的会话',
-      '停止当前会话直接派出的某个会话（仅对 running 有效）。停止后该会话状态变为 cancelled。',
+      '停止当前会话直接派出的正在运行的子会话。仅用于需要中止子会话任务时。',
       z.object({
         sessionId: z.string().min(1).describe('要停止的会话 sessionId'),
       }),

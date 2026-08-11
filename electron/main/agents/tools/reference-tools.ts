@@ -36,16 +36,12 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     defineTool(
       'ReadReferenceSession',
       '读取会话去噪原文',
-      '读指定 SDK 会话的去噪原文。'
-        + '不传 tail/range 返回全量；tail=N 返回后 N 条；range=[start, end) 按去噪后 index 切。'
-        + '返回值前几行是 meta（count / totalCount），下面才是正文。'
-        + '正文里每块以 `## [role · ts · uuid] ` 开头。'
-        + '会话不存在或读失败时返回 error 字符串。',
+      '读指定会话的去噪原文（可尾切或区间切）。仅用于需要查看其他会话的完整对话内容时。',
       z.object({
         sessionId: z.string().describe('目标会话的 SDK sessionId'),
-        tail: z.number().int().positive().optional().describe('尾 N 条（去噪后计数）'),
-        rangeStart: z.number().int().nonnegative().optional().describe('起始 index（含），与 rangeEnd 配合使用，闭开区间 [rangeStart, rangeEnd)'),
-        rangeEnd: z.number().int().nonnegative().optional().describe('结束 index（不含），与 rangeStart 配合使用'),
+        tail: z.number().int().positive().optional().describe('返回最后 N 条；不传则返回全量'),
+        rangeStart: z.number().int().nonnegative().optional().describe('区间起始（含），与 rangeEnd 配合使用；不传则不切区间'),
+        rangeEnd: z.number().int().nonnegative().optional().describe('区间结束（不含），与 rangeStart 配合使用'),
       }),
       async (args) => {
         const range = (args.rangeStart != null && args.rangeEnd != null)
@@ -73,10 +69,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     defineTool(
       'ReadGroupBackground',
       '读取组背景摘要',
-      '读本组 background.md（结构化背景）。'
-        + '返回 topic / progress / keyDecisions[] / openQuestions[]。'
-        + '当前组：closure 已注入，无需入参。'
-        + '如果 background 尚未生成（例如组卡刚创建、还没跑过组提炼），返回明确的 null 说明。',
+      '读取当前会话组的结构化背景摘要（主题、进展、已拍板决策、待议问题）。仅用于需要了解当前组整体上下文时。',
       z.object({}),
       async () => {
         const bg = await readGroupBackground(workspaceId, groupId);
@@ -111,8 +104,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     defineTool(
       'ListSiblingSessions',
       '列出组内兄弟会话',
-      '列出本组的兄弟会话（不含派出你的父会话本身、不含子会话、不含已归档）。'
-        + '每条给出 sessionId / conversationTitle / lastActivity / isActive（近 5 分钟有活动）/ hasDigestCoverage（是否已被组卡收录）。',
+      '列出当前会话组内的兄弟会话（不含父/子会话和已归档）。仅用于需要了解组内还有哪些活跃会话时。',
       z.object({}),
       async () => {
         try {
