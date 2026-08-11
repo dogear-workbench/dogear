@@ -61,6 +61,8 @@ export interface PiSessionConfig {
   modelSelection: ModelSelection | null;
   /** 所属工作区绝对路径，用于文件类工具（Read/Write/Edit/Bash/Grep/Glob）的边界校验和 memory 工具存储位置 */
   workspacePath: string;
+  /** 已过滤 enabled 的附加路径绝对路径数组，与 workspacePath 一起构成 env 的 allowedPaths */
+  additionalPaths: string[];
   workspaceId: string;
   harnessSessionId: string | null;
   /** 用户在设置页开启的可选工具包名（对齐 tool-packs.ts 的 OPTIONAL_TOOL_PACKS[].name），缺省视为空数组 */
@@ -227,6 +229,8 @@ export class PiSession extends EventEmitter {
   // 工具名 → 所属工具包标识（OPTIONAL_TOOL_PACKS[].name 或 'dogear-group'/'dogear-delegation'/'dogear-memory-review'），
   // start() 组装 toolDefs 时同步填充，供 handleToolCall 的批量免确认判定使用
   private toolPackMap: Map<string, string> = new Map();
+  // start() 内创建的 env 引用，供热更新 allowedPaths
+  private env: WorkspaceExecutionEnv | null = null;
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -241,9 +245,19 @@ export class PiSession extends EventEmitter {
     return this.sessionId;
   }
 
+  /** 热更新附加路径：重算 [primary, ...enabled] 全量覆盖 env.allowedPaths */
+  updateWorkspacePaths(additionalPaths: string[]): void {
+    this.config.additionalPaths = additionalPaths;
+    this.env?.updateAllowedPaths([this.config.workspacePath, ...additionalPaths]);
+  }
+
   /** Harness 的真实持久化 sessionId；start() 内两条分支（open 已有 / create 新建）都会同步赋值 config.harnessSessionId，resolve 时必定可用 */
   getHarnessSessionId(): string | undefined {
     return this.config.harnessSessionId ?? undefined;
+  }
+
+  getWorkspaceId(): string {
+    return this.config.workspaceId;
   }
 
   getLiveSnapshot(): PiSessionLiveSnapshot {
@@ -313,7 +327,8 @@ export class PiSession extends EventEmitter {
     const userClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'agent.md'));
 
     // ---- skill 索引 ----
-    const env = new WorkspaceExecutionEnv([this.config.workspacePath]);
+    const env = new WorkspaceExecutionEnv([this.config.workspacePath, ...this.config.additionalPaths]);
+    this.env = env;
     const workspaceSkillsDir = path.join(this.config.workspacePath, '.claude', 'skills');
     const homedirSkillsDir = path.join(os.homedir(), '.claude', 'skills');
     const articleParserSkillsDir = getArticleParserSkillsDir();
@@ -429,7 +444,7 @@ export class PiSession extends EventEmitter {
   private buildMainAgentToolDefs(skillEntries: SkillEntry[]): ToolDef[] {
     const toolDefs: ToolDef[] = [
       createSkillTool(skillEntries),
-      ...createSearchToolDefs(this.config.workspacePath),
+      ...createSearchToolDefs([this.config.workspacePath, ...this.config.additionalPaths]),
       ...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)),
     ];
 
@@ -498,7 +513,7 @@ export class PiSession extends EventEmitter {
     const toolDefs: ToolDef[] = [];
 
     // Grep/Glob：始终创建（基础工具，activeToolNames 控制可见性）
-    toolDefs.push(...createSearchToolDefs(this.config.workspacePath));
+    toolDefs.push(...createSearchToolDefs([this.config.workspacePath, ...this.config.additionalPaths]));
 
     // Skill 工具：有 ≥1 skill 勾选时创建
     if (skillEntries.length > 0) {

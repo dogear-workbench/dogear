@@ -11,9 +11,18 @@ import * as conversationTreeService from '../services/conversation-tree-service.
 import * as conversationService from '../services/conversation-service.js';
 import { deleteUsage } from '../services/usage/usage-service.js';
 import { scanOrphanWorkspaces, importOrphanToWorkspace } from '../services/workspace-recovery-service.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { WorkspaceFileNode } from '../types.js';
+import type { Workspace } from '../services/workspace-json-service.js';
 
 const t = tipc.create();
+
+async function hotUpdateAdditionalPaths(workspaceId: string, workspace: Workspace): Promise<void> {
+  const enabledPaths = (workspace.additional_paths ?? [])
+    .filter((p) => p.enabled)
+    .map((p) => p.path);
+  getPiSessionManager().updateWorkspacePaths(workspaceId, enabledPaths);
+}
 
 export const workspaceRouter = {
   getAll: t.procedure
@@ -153,6 +162,59 @@ export const workspaceRouter = {
       } catch (error) {
         console.error('导入孤儿工作区失败:', error);
         return { importedCount: 0, error: String(error) };
+      }
+    }),
+
+  addAdditionalPath: t.procedure
+    .input<{ workspaceId: string; path: string }>()
+    .action(async ({ input }) => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { success: false, error: '工作区不存在' };
+        if (workspace.additional_paths.some((p) => p.path === input.path)) {
+          return { success: false, error: '附加路径已存在' };
+        }
+        workspace.additional_paths.push({ path: input.path, enabled: true });
+        await workspaceJsonService.update(input.workspaceId, workspace);
+        await hotUpdateAdditionalPaths(input.workspaceId, workspace);
+        return { success: true, workspace };
+      } catch (error) {
+        console.error('添加附加路径失败:', error);
+        return { success: false, error: String(error) };
+      }
+    }),
+
+  removeAdditionalPath: t.procedure
+    .input<{ workspaceId: string; path: string }>()
+    .action(async ({ input }) => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { success: false, error: '工作区不存在' };
+        workspace.additional_paths = workspace.additional_paths.filter((p) => p.path !== input.path);
+        await workspaceJsonService.update(input.workspaceId, workspace);
+        await hotUpdateAdditionalPaths(input.workspaceId, workspace);
+        return { success: true, workspace };
+      } catch (error) {
+        console.error('移除附加路径失败:', error);
+        return { success: false, error: String(error) };
+      }
+    }),
+
+  toggleAdditionalPath: t.procedure
+    .input<{ workspaceId: string; path: string; enabled: boolean }>()
+    .action(async ({ input }) => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { success: false, error: '工作区不存在' };
+        const target = workspace.additional_paths.find((p) => p.path === input.path);
+        if (!target) return { success: false, error: '附加路径不存在' };
+        target.enabled = input.enabled;
+        await workspaceJsonService.update(input.workspaceId, workspace);
+        await hotUpdateAdditionalPaths(input.workspaceId, workspace);
+        return { success: true, workspace };
+      } catch (error) {
+        console.error('切换附加路径失败:', error);
+        return { success: false, error: String(error) };
       }
     }),
 };

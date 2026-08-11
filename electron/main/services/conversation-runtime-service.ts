@@ -87,6 +87,7 @@ class ConversationRuntimeService {
         conversationId,
         modelSelection: conversation.modelSelection ?? null,
         workspacePath: workspace?.path ?? '',
+        additionalPaths: (workspace?.additional_paths ?? []).filter((p) => p.enabled).map((p) => p.path),
         workspaceId,
         harnessSessionId: conversation.sessionId ?? null,
         enabledToolPacks: appSettings.enabledToolPacks ?? [],

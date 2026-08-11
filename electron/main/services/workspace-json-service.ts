@@ -233,6 +233,19 @@ export async function remove(id: string): Promise<void> {
   await saveWorkspacesFile(file);
 }
 
+/**
+ * 更新工作区（全量覆盖写入）
+ * @param id - 要更新的工作区 ID
+ * @param ws - 新的工作区数据（兼容格式）
+ */
+export async function update(id: string, ws: Workspace): Promise<void> {
+  const file = await loadWorkspacesFile();
+  const idx = file.workspaces.findIndex((w) => w.id === id);
+  if (idx === -1) return;
+  file.workspaces[idx] = toWorkspaceData(ws);
+  await saveWorkspacesFile(file);
+}
+
 // ============================================================
 // 迁移
 // ============================================================

@@ -5,7 +5,7 @@
  * 项目也没有引入 glob 库依赖，这里用 Node 原生 fs 递归 + 手写 glob→正则转换实现，
  * 走既有的 ToolDef/zod 约定（toPiTools 转换），不新增依赖。
  *
- * 路径边界：根目录（可选 path 参数）和被遍历到的每一层都复用 resolveWithinWorkspace 校验；
+ * 路径边界：根目录（可选 path 参数）和被遍历到的每一层都复用 resolveWithinPaths 校验；
  * 遍历过程中遇到符号链接（文件或目录）一律跳过，不follow，避免通过工作区内的软链接读到区外内容。
  */
 import fs from 'fs/promises';
@@ -13,7 +13,7 @@ import path from 'path';
 import { z } from 'zod';
 import { truncateLine, GREP_MAX_LINE_LENGTH } from '@earendil-works/pi-agent-core';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
-import { resolveWithinWorkspace } from './workspace-boundary.js';
+import { resolveWithinPaths } from './workspace-boundary.js';
 
 /** 遍历时永远跳过的目录，避免扫进版本控制/依赖/内部数据目录 */
 const SKIP_DIR_NAMES = new Set(['node_modules', '.git', '.dogear']);
@@ -43,8 +43,8 @@ function globToRegExp(pattern: string): RegExp {
   return new RegExp(`^${out}$`);
 }
 
-/** 递归收集文件的相对路径（相对 workspacePath，统一用 / 分隔），跳过隐藏基础设施目录和符号链接 */
-async function walkFiles(workspacePath: string, dir: string, results: string[]): Promise<void> {
+/** 递归收集文件的相对路径（相对 root，统一用 / 分隔），跳过隐藏基础设施目录和符号链接 */
+async function walkFiles(rootPath: string, dir: string, results: string[]): Promise<void> {
   if (results.length >= MAX_WALK_FILES) return;
   let entries: import('fs').Dirent[];
   try {
@@ -57,14 +57,39 @@ async function walkFiles(workspacePath: string, dir: string, results: string[]):
     if (entry.isSymbolicLink()) continue;
     if (entry.isDirectory()) {
       if (SKIP_DIR_NAMES.has(entry.name)) continue;
-      await walkFiles(workspacePath, path.join(dir, entry.name), results);
+      await walkFiles(rootPath, path.join(dir, entry.name), results);
     } else if (entry.isFile()) {
-      results.push(path.relative(workspacePath, path.join(dir, entry.name)).replace(/\\/g, '/'));
+      results.push(path.relative(rootPath, path.join(dir, entry.name)).replace(/\\/g, '/'));
     }
   }
 }
 
-export function createSearchToolDefs(workspacePath: string): ToolDef[] {
+interface FileEntry {
+  display: string;
+  abs: string;
+}
+
+async function collectFiles(
+  roots: { abs: string; isPrimary: boolean }[],
+): Promise<FileEntry[]> {
+  const entries: FileEntry[] = [];
+  for (const root of roots) {
+    const temp: string[] = [];
+    await walkFiles(root.abs, root.abs, temp);
+    for (const rel of temp) {
+      const abs = path.join(root.abs, rel);
+      entries.push({
+        display: root.isPrimary ? rel : abs.replace(/\\/g, '/'),
+        abs,
+      });
+    }
+  }
+  return entries;
+}
+
+export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
+  const primaryPath = allowedPaths[0];
+  const allRoots = allowedPaths.map((abs, i) => ({ abs, isPrimary: i === 0 }));
   return [
     defineTool(
       'Glob',
@@ -78,13 +103,18 @@ export function createSearchToolDefs(workspacePath: string): ToolDef[] {
       }),
       async ({ pattern, path: subPath, limit }) => {
         try {
-          const root = subPath ? await resolveWithinWorkspace(workspacePath, subPath) : workspacePath;
           const regex = globToRegExp(pattern);
-          const all: string[] = [];
-          await walkFiles(workspacePath, root, all);
-          const prefix = subPath ? path.relative(workspacePath, root).replace(/\\/g, '/') : '';
-          const matched = all
-            .filter((rel) => regex.test(prefix ? rel.slice(prefix.length + 1) : rel))
+          let entries: FileEntry[];
+          if (subPath) {
+            const root = await resolveWithinPaths(allowedPaths, subPath);
+            const isPrimary = path.relative(primaryPath, root).startsWith('..') === false;
+            entries = await collectFiles([{ abs: root, isPrimary }]);
+          } else {
+            entries = await collectFiles(allRoots);
+          }
+          const matched = entries
+            .filter((e) => regex.test(e.display))
+            .map((e) => e.display)
             .sort();
           const capped = matched.slice(0, limit ?? 100);
           const text = capped.length > 0
@@ -123,32 +153,37 @@ export function createSearchToolDefs(workspacePath: string): ToolDef[] {
           };
         }
         try {
-          const root = subPath ? await resolveWithinWorkspace(workspacePath, subPath) : workspacePath;
-          const rootStat = await fs.stat(root);
-          const candidates: string[] = [];
-          if (rootStat.isFile()) {
-            candidates.push(path.relative(workspacePath, root).replace(/\\/g, '/'));
+          let entries: FileEntry[];
+          if (subPath) {
+            const root = await resolveWithinPaths(allowedPaths, subPath);
+            const rootStat = await fs.stat(root);
+            if (rootStat.isFile()) {
+              const isPrimary = path.relative(primaryPath, root).startsWith('..') === false;
+              entries = [{ display: isPrimary ? path.relative(primaryPath, root).replace(/\\/g, '/') : root.replace(/\\/g, '/'), abs: root }];
+            } else {
+              const isPrimary = path.relative(primaryPath, root).startsWith('..') === false;
+              entries = await collectFiles([{ abs: root, isPrimary }]);
+            }
           } else {
-            await walkFiles(workspacePath, root, candidates);
+            entries = await collectFiles(allRoots);
           }
           const globRegex = glob ? globToRegExp(glob) : null;
           const maxMatches = limit ?? 200;
           const matches: string[] = [];
-          for (const rel of candidates) {
+          for (const entry of entries) {
             if (matches.length >= maxMatches) break;
-            const basename = path.basename(rel);
+            const basename = path.basename(entry.abs);
             if (globRegex && !globRegex.test(basename)) continue;
-            const absPath = path.join(workspacePath, rel);
             let stat;
             try {
-              stat = await fs.stat(absPath);
+              stat = await fs.stat(entry.abs);
             } catch {
               continue;
             }
             if (stat.size > MAX_GREP_FILE_BYTES) continue;
             let text: string;
             try {
-              text = await fs.readFile(absPath, 'utf-8');
+              text = await fs.readFile(entry.abs, 'utf-8');
             } catch {
               continue;
             }
@@ -157,7 +192,7 @@ export function createSearchToolDefs(workspacePath: string): ToolDef[] {
               if (matches.length >= maxMatches) break;
               if (regex.test(lines[i])) {
                 const { text: truncated } = truncateLine(lines[i], GREP_MAX_LINE_LENGTH);
-                matches.push(`${rel}:${i + 1}: ${truncated}`);
+                matches.push(`${entry.display}:${i + 1}: ${truncated}`);
               }
             }
           }

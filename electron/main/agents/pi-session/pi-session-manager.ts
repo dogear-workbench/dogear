@@ -256,6 +256,18 @@ export class PiSessionManager extends EventEmitter {
   getActiveCount(): number {
     return this.sessions.size;
   }
+
+  /**
+   * 热更新指定 workspaceId 下所有活跃 PiSession 的附加路径。
+   * 每次调用都重算 [primary, ...enabled] 全量覆盖 env.allowedPaths。
+   */
+  updateWorkspacePaths(workspaceId: string, enabledPaths: string[]): void {
+    for (const session of this.sessions.values()) {
+      if (session.getWorkspaceId() === workspaceId) {
+        session.updateWorkspacePaths(enabledPaths);
+      }
+    }
+  }
 }
 
 let piSessionManagerInstance: PiSessionManager | null = null;

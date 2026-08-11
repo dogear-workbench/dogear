@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 数据模型 + 边界机制](./step1-data-boundary.md) — Workspace 加 additionalPaths 字段，边界校验改多根，WorkspaceExecutionEnv 改可变数组
-- [ ] [Step 2: Session 层 + IPC 热更新](./step2-session-ipc.md) — PiSession 传附加路径，IPC 增删改路由 + 热更新链路
+- [x] [Step 2: Session 层 + IPC 热更新](./step2-session-ipc.md) — PiSession 传附加路径，IPC 增删改路由 + 热更新链路
 - [ ] [Step 3: UI 布局调整](./step3-layout.md) — 左栏去 Tab 只留对话列表，右栏改三 Tab，文章预览隐藏
 - [ ] [Step 4: 附加文件面板](./step4-additional-panel.md) — AdditionalFilesPanel 新组件：路径卡片 + 文件树 + 添加/移除/开关
 - [ ] [Step 5: 引用机制扩展](./step5-reference.md) — reference-store 加文件/文件夹引用，ChatInputArea 芯片，文件树引用交互，消息注入
