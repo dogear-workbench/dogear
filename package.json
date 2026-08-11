@@ -1,6 +1,6 @@
 {
   "name": "dogear",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "description": "AI 驱动的个人工作台",
   "author": "Dogear Team",
   "main": "dist/main/index.js",
@@ -19,7 +19,8 @@
     "postinstall": "electron-rebuild",
     "lint": "eslint .",
     "release": "node scripts/release.mjs",
-    "serve-updates": "node scripts/serve-updates.mjs"
+    "serve-updates": "node scripts/serve-updates.mjs",
+    "kill": "node scripts/kill-processes.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "^0.82.1",

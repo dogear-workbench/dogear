@@ -3,6 +3,7 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { killBlockingProcesses } from './kill-processes.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -62,6 +63,9 @@ async function zipDir(srcDir, zipPath) {
 }
 
 async function main() {
+  console.log('\n▶ 清理占用进程...');
+  killBlockingProcesses();
+
   const pkgRaw = await fs.readFile(PACKAGE_JSON, 'utf-8');
   const pkg = JSON.parse(pkgRaw);
   const oldVersion = pkg.version;
@@ -118,11 +122,20 @@ async function main() {
     releaseType = 'full';
     console.log(`\n✦ ${isFirstRelease ? '首次发布' : 'dist/ 已变化'} → 全量路径`);
 
+    await fs.rm(RELEASE_DIR, { recursive: true, force: true }).catch(() => {});
     run('bun run dist', '全量打包 (electron-builder)');
 
+    for (const old of await fs.readdir(UPDATE_SERVER_DIR)) {
+      if (old.endsWith('.exe') || old.endsWith('.exe.blockmap') || old === 'latest.yml') {
+        await fs.unlink(path.join(UPDATE_SERVER_DIR, old)).catch(() => {});
+      }
+    }
+
     const releaseFiles = await fs.readdir(RELEASE_DIR);
-    const exeFile = releaseFiles.find(f => f.endsWith('.exe') && !f.endsWith('.blockmap'));
-    if (!exeFile) throw new Error('release/ 中未找到 .exe 文件');
+    const exeFile = releaseFiles.find(
+      f => f.endsWith('.exe') && !f.endsWith('.blockmap') && f.includes(newVersion),
+    );
+    if (!exeFile) throw new Error(`release/ 中未找到 v${newVersion} 的 .exe 文件`);
 
     const exeSrc = path.join(RELEASE_DIR, exeFile);
     const exeDst = path.join(UPDATE_SERVER_DIR, exeFile);
@@ -131,13 +144,21 @@ async function main() {
     const exeSize = (await fs.stat(exeDst)).size;
     const exeHash = await sha256File(exeDst);
 
-    for (const extra of releaseFiles) {
-      if (extra.endsWith('.exe.blockmap') || extra === 'latest.yml') {
-        await fs.copyFile(
-          path.join(RELEASE_DIR, extra),
-          path.join(UPDATE_SERVER_DIR, extra),
-        );
-      }
+    const blockmapFile = releaseFiles.find(
+      f => f.endsWith('.exe.blockmap') && f.includes(newVersion),
+    );
+    if (blockmapFile) {
+      await fs.copyFile(
+        path.join(RELEASE_DIR, blockmapFile),
+        path.join(UPDATE_SERVER_DIR, blockmapFile),
+      );
+    }
+    const ymlFile = releaseFiles.find(f => f === 'latest.yml');
+    if (ymlFile) {
+      await fs.copyFile(
+        path.join(RELEASE_DIR, ymlFile),
+        path.join(UPDATE_SERVER_DIR, ymlFile),
+      );
     }
 
     const manifest = {
