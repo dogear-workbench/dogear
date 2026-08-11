@@ -1,19 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Download,
-  RotateCcw,
-  Eye,
-} from 'lucide-react';
+import { Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { showConfirm } from '@/stores/confirm-store';
 import { AbilityCard } from './AbilityCard';
 import { SkillDetailDialog } from './SkillDetailDialog';
 import { ToolDetailDialog } from './ToolDetailDialog';
 import { SegmentDetailDialog } from './SegmentDetailDialog';
 import type { SystemPromptSegment } from '@/types/system-prompt';
 import type { AppSettings } from '@/types/settings';
+import type { WorkspaceConfig } from '@/types/electron-api';
 
 // ── 类型 ──────────────────────────────────────────────
 
@@ -38,8 +34,9 @@ interface ToolPack {
   requirements?: string;
   enabled: boolean;
 }
+type SkillSource = 'builtin' | 'custom' | 'user';
 interface SkillEntry {
-  source: 'workspace' | 'user' | 'plugin' | 'marketplace';
+  source: SkillSource;
   name: string;
   description?: string;
   dir: string;
@@ -74,6 +71,7 @@ const STOCK_PACK_NAMES = [
 ];
 const STOCK_SKILL_NAMES = ['stock-analysis', 'stock-picking'];
 const ARTICLE_PACK_NAMES = ['article'];
+const ARTICLE_SKILL_NAMES = ['article-parser'];
 const CODE_WORKFLOW_TEMPLATES = [
   'brainstorming',
   'codebase-map',
@@ -82,6 +80,12 @@ const CODE_WORKFLOW_TEMPLATES = [
   'staged-impl',
   'systematic-debugging',
 ];
+
+const SOURCE_LABELS: Record<SkillSource, string> = {
+  builtin: '内置',
+  custom: '自定义',
+  user: '用户级',
+};
 
 // ── 工具组列表子组件 ──────────────────────────────────
 
@@ -149,13 +153,11 @@ function ToolGroupList({
 
 function PackGroupList({
   packs,
-  packByNameMap,
   groupByServer,
   onToolClick,
   active,
 }: {
   packs: ToolPack[];
-  packByNameMap: Record<string, ToolPack>;
   groupByServer: Record<string, ToolGroup>;
   onToolClick: (tool: { name: string; description: string }) => void;
   active?: boolean;
@@ -312,42 +314,41 @@ function SegmentList({
 interface SkillRowProps {
   name: string;
   description?: string;
-  subscribed: boolean;
-  enabled?: boolean;
-  showEnableToggle?: boolean;
-  showSubscribe?: boolean;
+  source?: SkillSource;
+  enabled: boolean;
+  showToggle?: boolean;
   busy: boolean;
   onDetail: (name: string) => void;
-  onSubscribe: (name: string, isResync: boolean) => void;
-  onToggleEnabled?: (dir: string) => void;
-  dir?: string;
+  onToggle?: (name: string, enabled: boolean) => void;
 }
 
 function SkillRow({
   name,
   description,
-  subscribed,
+  source,
   enabled,
-  showEnableToggle,
-  showSubscribe = true,
+  showToggle = true,
   busy,
   onDetail,
-  onSubscribe,
-  onToggleEnabled,
-  dir,
+  onToggle,
 }: SkillRowProps) {
   return (
     <div className="p-2 rounded-md border bg-background">
       <div className="flex items-center gap-1.5 flex-wrap">
         <span className="text-xs font-semibold font-mono">{name}</span>
-        {subscribed && (
-          <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
-            已订阅
+        {source && (
+          <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">
+            {SOURCE_LABELS[source]}
           </span>
         )}
-        {showEnableToggle && !enabled && (
+        {showToggle && !enabled && (
           <span className="text-[10px] px-1 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400">
-            已禁用
+            未挂载
+          </span>
+        )}
+        {showToggle && enabled && (
+          <span className="text-[10px] px-1 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400">
+            已挂载
           </span>
         )}
         <div className="flex items-center gap-1 shrink-0 ml-auto">
@@ -360,31 +361,7 @@ function SkillRow({
             <Eye className="w-3 h-3" />
             详情
           </button>
-          {showSubscribe && (
-            <button
-              type="button"
-              disabled={busy}
-              className={cn(
-                'flex items-center gap-1 px-1.5 h-6 rounded border text-xs hover:bg-muted/50 transition-colors',
-                busy && 'opacity-50 cursor-not-allowed',
-              )}
-              onClick={() => onSubscribe(name, subscribed)}
-              title={subscribed ? '重新同步（覆盖本地修改）' : '订阅到工作区'}
-            >
-              {subscribed ? (
-                <>
-                  <RotateCcw className="w-3 h-3" />
-                  恢复
-                </>
-              ) : (
-                <>
-                  <Download className="w-3 h-3" />
-                  订阅
-                </>
-              )}
-            </button>
-          )}
-          {showEnableToggle && dir && onToggleEnabled && (
+          {showToggle && onToggle && (
             <button
               type="button"
               disabled={busy}
@@ -393,8 +370,8 @@ function SkillRow({
                 enabled ? 'bg-primary' : 'bg-muted',
                 busy && 'opacity-50 cursor-not-allowed',
               )}
-              onClick={() => onToggleEnabled(dir)}
-              aria-label={`${enabled ? '禁用' : '启用'} ${name}`}
+              onClick={() => onToggle(name, !enabled)}
+              aria-label={`${enabled ? '取消挂载' : '挂载'} ${name}`}
             >
               <span
                 className={cn(
@@ -415,38 +392,6 @@ function SkillRow({
   );
 }
 
-function SkillRowCompact({
-  name,
-  description,
-  onDetail,
-}: {
-  name: string;
-  description?: string;
-  onDetail: (name: string) => void;
-}) {
-  return (
-    <div className="p-2 rounded-md border bg-background">
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs font-semibold font-mono">{name}</span>
-        <button
-          type="button"
-          className="flex items-center gap-1 px-1.5 h-6 rounded text-xs text-muted-foreground hover:bg-muted/50 hover:text-foreground transition-colors ml-auto"
-          onClick={() => onDetail(name)}
-          title="查看 SKILL.md 全文"
-        >
-          <Eye className="w-3 h-3" />
-          详情
-        </button>
-      </div>
-      {description && (
-        <p className="text-xs text-muted-foreground leading-relaxed mt-1">
-          {description}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── 主组件 ────────────────────────────────────────────
 
 interface AbilityTabProps {
@@ -454,25 +399,33 @@ interface AbilityTabProps {
   setLocal: React.Dispatch<React.SetStateAction<AppSettings>>;
 }
 
-export function AbilityTab({ local, setLocal }: AbilityTabProps) {
+export function AbilityTab({ local: _local, setLocal: _setLocal }: AbilityTabProps) {
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id ?? null);
-  const workspacePath = useWorkspaceStore((s) => s.workspace?.path);
 
   const [toolGroups, setToolGroups] = useState<ToolGroup[]>([]);
   const [packs, setPacks] = useState<ToolPack[]>([]);
   const [segments, setSegments] = useState<SystemPromptSegment[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [templates, setTemplates] = useState<SkillTemplate[]>([]);
+  const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>({
+    enabledToolPacks: [],
+    enabledSkills: [],
+  });
   const [loading, setLoading] = useState(true);
   const [detailName, setDetailName] = useState<string | null>(null);
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
   const [detailSegment, setDetailSegment] = useState<SystemPromptSegment | null>(null);
-  const [busyTemplate, setBusyTemplate] = useState<string | null>(null);
-  const [busyDir, setBusyDir] = useState<string | null>(null);
+  const [busySkill, setBusySkill] = useState<string | null>(null);
+  const [busyBulk, setBusyBulk] = useState(false);
 
   const enabledPackSet = useMemo(
-    () => new Set(local.enabledToolPacks ?? []),
-    [local.enabledToolPacks],
+    () => new Set(workspaceConfig.enabledToolPacks),
+    [workspaceConfig.enabledToolPacks],
+  );
+
+  const enabledSkillSet = useMemo(
+    () => new Set(workspaceConfig.enabledSkills),
+    [workspaceConfig.enabledSkills],
   );
 
   const reload = useCallback(async () => {
@@ -484,21 +437,30 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         segmentsRes,
         skillsRes,
         templatesRes,
+        configRes,
       ] = await Promise.all([
         client.getRegisteredTools().then((r: any) => (Array.isArray(r) ? (r as ToolGroup[]) : [])),
-        client.listToolPacks().then((r: any) => (Array.isArray(r) ? (r as ToolPack[]) : [])),
+        workspaceId
+          ? client.listToolPacks({ workspaceId }).then((r: any) => (Array.isArray(r) ? (r as ToolPack[]) : []))
+          : Promise.resolve([] as ToolPack[]),
         client.getSystemPromptSegments().then((r: any) => {
           if (r && typeof r === 'object' && 'error' in r) return [] as SystemPromptSegment[];
           return (r?.segments ?? []) as SystemPromptSegment[];
         }),
-        client.listSkills({ workspaceId }).then((r: any) => (r?.skills ?? []) as SkillEntry[]),
+        workspaceId
+          ? client.listSkills({ workspaceId }).then((r: any) => (r?.skills ?? []) as SkillEntry[])
+          : Promise.resolve([] as SkillEntry[]),
         client.listSkillTemplates().then((r: any) => (r?.templates ?? []) as SkillTemplate[]),
+        workspaceId
+          ? client.getWorkspaceConfig({ workspaceId }).then((r: any) => (r?.config ?? { enabledToolPacks: [], enabledSkills: [] }) as WorkspaceConfig)
+          : Promise.resolve({ enabledToolPacks: [], enabledSkills: [] } as WorkspaceConfig),
       ]);
       setToolGroups(groupsRes);
       setPacks(packsRes);
       setSegments(segmentsRes);
       setSkills(skillsRes);
       setTemplates(templatesRes);
+      setWorkspaceConfig(configRes);
     } finally {
       setLoading(false);
     }
@@ -526,70 +488,37 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     return map;
   }, [templates]);
 
-  const subscribedSkillNames = useMemo(
-    () => new Set(skills.filter((s) => s.source === 'workspace').map((s) => s.name)),
-    [skills],
-  );
+  const skillByName = useMemo(() => {
+    const map: Record<string, SkillEntry> = {};
+    for (const s of skills) map[s.name] = s;
+    return map;
+  }, [skills]);
 
-  const allTemplateNames = useMemo(
-    () => new Set(templates.map((t) => t.name)),
-    [templates],
-  );
-
-  const isPackEnabled = (name: string): boolean => enabledPackSet.has(name);
+  const isSkillEnabled = (name: string): boolean => enabledSkillSet.has(name);
 
 
 
 
-  const handleSubscribe = async (name: string, isResync: boolean) => {
-    if (!workspacePath) return;
-    if (isResync) {
-      const ok = await showConfirm(
-        '重新同步模板',
-        `「恢复」会覆盖你对 ${name} 的本地修改，确定继续吗？`,
-      );
-      if (!ok) return;
-    }
-    setBusyTemplate(name);
+  const handleToggleSkill = async (name: string, enable: boolean) => {
+    if (!workspaceId) return;
+    setBusySkill(name);
     try {
-      const result = (await client.subscribeSkillTemplate({
-        workspacePath,
-        name,
-        overwrite: isResync,
-      })) as { success?: boolean; error?: string };
-      if (result.error === 'SKILL_EXISTS') {
-        const ok = await showConfirm('Skill 已存在', `${name} 已存在，是否覆盖？`);
-        if (!ok) return;
-        await client.subscribeSkillTemplate({
-          workspacePath,
-          name,
-          overwrite: true,
-        });
-      } else if (result.error) {
-        console.error('订阅失败:', result.error);
-        return;
+      const current = new Set(workspaceConfig.enabledSkills);
+      if (enable) {
+        current.add(name);
+      } else {
+        current.delete(name);
+      }
+      const res = await client.updateWorkspaceConfig({
+        workspaceId,
+        config: { enabledSkills: Array.from(current) },
+      });
+      if (res && typeof res === 'object' && 'config' in res) {
+        setWorkspaceConfig((res as any).config as WorkspaceConfig);
       }
       await reload();
     } finally {
-      setBusyTemplate(null);
-    }
-  };
-
-  const handleToggleSkillEnabled = async (dir: string, currentEnabled: boolean) => {
-    setBusyDir(dir);
-    try {
-      const result = (await client.setSkillEnabled({
-        dir,
-        enabled: !currentEnabled,
-        workspaceId,
-      })) as { success?: boolean; error?: string };
-      if (result.error) {
-        console.error('setSkillEnabled 失败:', result.error);
-      } else {
-        await reload();
-      }
-    } finally {
-      setBusyDir(null);
+      setBusySkill(null);
     }
   };
 
@@ -598,65 +527,28 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
     packNames: string[],
     on: boolean,
   ) => {
-    if (!workspacePath) return;
-    setBusyDir('__bulk__');
+    if (!workspaceId) return;
+    setBusyBulk(true);
     try {
+      const enabledSkills = new Set(workspaceConfig.enabledSkills);
+      const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
       if (on) {
-        for (const name of skillNames) {
-          const wsSkill = skills.find(
-            (s) => s.name === name && s.source === 'workspace',
-          );
-          if (!wsSkill) {
-            await client.subscribeSkillTemplate({
-              workspacePath,
-              name,
-              overwrite: false,
-            });
-          }
-        }
-        const current = new Set(local.enabledToolPacks ?? []);
-        for (const n of packNames) current.add(n);
-        setLocal((prev) => ({ ...prev, enabledToolPacks: Array.from(current) }));
-        const fresh = (await client.listSkills({ workspaceId })) as any;
-        const freshSkills = (fresh?.skills ?? []) as SkillEntry[];
-        const toEnable = skillNames
-          .map((name) => {
-            const e = freshSkills.find(
-              (s) => s.name === name && s.source === 'workspace',
-            );
-            return e ? { dir: e.dir, enabled: e.enabled } : null;
-          })
-          .filter((e): e is { dir: string; enabled: boolean } => !!e && !e.enabled);
-        if (toEnable.length > 0) {
-          await Promise.all(
-            toEnable.map((e) =>
-              client.setSkillEnabled({ dir: e.dir, enabled: true, workspaceId }),
-            ),
-          );
-        }
+        for (const n of skillNames) enabledSkills.add(n);
+        for (const n of packNames) enabledToolPacks.add(n);
       } else {
-        const toDisable = skillNames
-          .map((name) => {
-            const e = skills.find(
-              (s) => s.name === name && s.source === 'workspace',
-            );
-            return e ? { dir: e.dir, enabled: e.enabled } : null;
-          })
-          .filter((e): e is { dir: string; enabled: boolean } => !!e && e.enabled);
-        if (toDisable.length > 0) {
-          await Promise.all(
-            toDisable.map((e) =>
-              client.setSkillEnabled({ dir: e.dir, enabled: false, workspaceId }),
-            ),
-          );
-        }
-        const current = new Set(local.enabledToolPacks ?? []);
-        for (const n of packNames) current.delete(n);
-        setLocal((prev) => ({ ...prev, enabledToolPacks: Array.from(current) }));
+        for (const n of skillNames) enabledSkills.delete(n);
+        for (const n of packNames) enabledToolPacks.delete(n);
       }
+      await client.updateWorkspaceConfig({
+        workspaceId,
+        config: {
+          enabledSkills: Array.from(enabledSkills),
+          enabledToolPacks: Array.from(enabledToolPacks),
+        },
+      });
       await reload();
     } finally {
-      setBusyDir(null);
+      setBusyBulk(false);
     }
   };
 
@@ -681,41 +573,21 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
   );
 
   const stockSkills = useMemo(() => {
-    const result: {
-      name: string;
-      description?: string;
-      isTemplate: boolean;
-      subscribed: boolean;
-      enabled: boolean;
-      dir?: string;
-    }[] = [];
+    const result: { name: string; description?: string; source?: SkillSource; enabled: boolean }[] = [];
     for (const name of STOCK_SKILL_NAMES) {
       const tpl = templateByName[name];
-      const wsSkill = skills.find(
-        (s) => s.name === name && s.source === 'workspace',
-      );
-      if (tpl) {
+      const wsSkill = skillByName[name];
+      if (tpl || wsSkill) {
         result.push({
-          name: tpl.name,
-          description: tpl.description,
-          isTemplate: true,
-          subscribed: subscribedSkillNames.has(tpl.name),
-          enabled: wsSkill?.enabled ?? false,
-          dir: wsSkill?.dir,
-        });
-      } else if (wsSkill) {
-        result.push({
-          name: wsSkill.name,
-          description: wsSkill.description,
-          isTemplate: false,
-          subscribed: false,
-          enabled: wsSkill.enabled,
-          dir: wsSkill.dir,
+          name: tpl?.name ?? wsSkill!.name,
+          description: tpl?.description ?? wsSkill?.description,
+          source: wsSkill?.source ?? 'builtin',
+          enabled: enabledSkillSet.has(name),
         });
       }
     }
     return result;
-  }, [templateByName, skills, subscribedSkillNames]);
+  }, [templateByName, skillByName, enabledSkillSet]);
 
   const articleTemplate = templateByName['article-parser'];
 
@@ -728,15 +600,15 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
   );
 
   const customSkills = useMemo(
-    () =>
-      skills.filter(
-        (s) =>
-          (s.source === 'workspace' || s.source === 'user') &&
-          !allTemplateNames.has(s.name) &&
-          !MEMORY_SKILL_NAMES.includes(s.name) &&
-          !STOCK_SKILL_NAMES.includes(s.name),
-      ),
-    [skills, allTemplateNames],
+    () => {
+      const knownNames = new Set<string>([
+        ...templates.map((t) => t.name),
+        ...MEMORY_SKILL_NAMES,
+        ...STOCK_SKILL_NAMES,
+      ]);
+      return skills.filter((s) => !knownNames.has(s.name));
+    },
+    [skills, templates],
   );
 
   // pack 列表筛选
@@ -751,23 +623,21 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
 
   const stockDomainOn = useMemo(() => {
     const packsOn = STOCK_PACK_NAMES.every((n) => enabledPackSet.has(n));
-    const skillsOn = STOCK_SKILL_NAMES.every((name) => {
-      const e = skills.find((s) => s.name === name && s.source === 'workspace');
-      return e?.enabled === true;
-    });
+    const skillsOn = STOCK_SKILL_NAMES.every((name) => enabledSkillSet.has(name));
     return packsOn && skillsOn;
-  }, [enabledPackSet, skills]);
+  }, [enabledPackSet, enabledSkillSet]);
 
   const codeDomainOn = useMemo(() => {
-    const existing = CODE_WORKFLOW_TEMPLATES.filter((n) =>
-      skills.some((s) => s.name === n && s.source === 'workspace'),
-    );
+    const existing = CODE_WORKFLOW_TEMPLATES.filter((name) => enabledSkillSet.has(name));
     if (existing.length === 0) return false;
-    return existing.every((name) => {
-      const e = skills.find((s) => s.name === name && s.source === 'workspace');
-      return e?.enabled === true;
-    });
-  }, [skills]);
+    return existing.length === CODE_WORKFLOW_TEMPLATES.length;
+  }, [enabledSkillSet]);
+
+  const articleDomainOn = useMemo(() => {
+    const skillOn = ARTICLE_SKILL_NAMES.every((name) => enabledSkillSet.has(name));
+    const packsOn = ARTICLE_PACK_NAMES.every((n) => enabledPackSet.has(n));
+    return skillOn && packsOn;
+  }, [enabledSkillSet, enabledPackSet]);
 
   if (loading) {
     return (
@@ -807,30 +677,18 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   Skill
                 </p>
-                {memorySkills.map((tpl) => {
-                  const subscribed = subscribedSkillNames.has(tpl.name);
-                  const skillEntry = skills.find(
-                    (s) => s.name === tpl.name && s.source === 'workspace',
-                  );
-                  return (
-                    <SkillRow
-                      key={tpl.name}
-                      name={tpl.name}
-                      description={tpl.description}
-                      subscribed={subscribed}
-                      enabled={skillEntry?.enabled ?? false}
-                      showEnableToggle={subscribed}
-                      dir={skillEntry?.dir}
-                      busy={busyTemplate === tpl.name || busyDir === skillEntry?.dir}
-                      onDetail={setDetailName}
-                      onSubscribe={handleSubscribe}
-                      onToggleEnabled={(d) =>
-                        skillEntry &&
-                        handleToggleSkillEnabled(d, skillEntry.enabled)
-                      }
-                    />
-                  );
-                })}
+                {memorySkills.map((tpl) => (
+                  <SkillRow
+                    key={tpl.name}
+                    name={tpl.name}
+                    description={tpl.description}
+                    source={skillByName[tpl.name]?.source ?? 'builtin'}
+                    enabled={isSkillEnabled(tpl.name)}
+                    busy={busySkill === tpl.name}
+                    onDetail={setDetailName}
+                    onToggle={handleToggleSkill}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -886,7 +744,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         actions={
           <DomainToggle
             allOn={stockDomainOn}
-            busy={busyDir === '__bulk__'}
+            busy={busyBulk}
             onToggle={() =>
               handleDomainToggle(STOCK_SKILL_NAMES, STOCK_PACK_NAMES, !stockDomainOn)
             }
@@ -901,11 +759,15 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
               <p className="text-xs text-muted-foreground">未发现股票相关 Skill。</p>
             ) : (
               stockSkills.map((sk) => (
-                <SkillRowCompact
+                <SkillRow
                   key={sk.name}
                   name={sk.name}
                   description={sk.description}
+                  source={sk.source}
+                  enabled={sk.enabled}
+                  busy={busySkill === sk.name || busyBulk}
                   onDetail={setDetailName}
+                  onToggle={handleToggleSkill}
                 />
               ))
             )}
@@ -921,7 +783,6 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
             ) : (
               <PackGroupList
                 packs={stockPacks}
-                packByNameMap={packByName}
                 groupByServer={groupByServer}
                 onToolClick={setDetailTool}
                 active={stockDomainOn}
@@ -938,7 +799,7 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
         actions={
           <DomainToggle
             allOn={codeDomainOn}
-            busy={busyDir === '__bulk__'}
+            busy={busyBulk}
             onToggle={() =>
               handleDomainToggle(CODE_WORKFLOW_TEMPLATES, [], !codeDomainOn)
             }
@@ -953,11 +814,15 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
               <p className="text-xs text-muted-foreground">未发现代码工作流模板。</p>
             ) : (
               codeWorkflowTemplates.map((tpl) => (
-                <SkillRowCompact
+                <SkillRow
                   key={tpl.name}
                   name={tpl.name}
                   description={tpl.description}
+                  source={skillByName[tpl.name]?.source ?? 'builtin'}
+                  enabled={isSkillEnabled(tpl.name)}
+                  busy={busySkill === tpl.name || busyBulk}
                   onDetail={setDetailName}
+                  onToggle={handleToggleSkill}
                 />
               ))
             )}
@@ -975,6 +840,15 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
       <AbilityCard
         title="文章"
         badge={{ variant: 'optional' }}
+        actions={
+          <DomainToggle
+            allOn={articleDomainOn}
+            busy={busyBulk}
+            onToggle={() =>
+              handleDomainToggle(ARTICLE_SKILL_NAMES, ARTICLE_PACK_NAMES, !articleDomainOn)
+            }
+          />
+        }
         leftContent={
           <div className="space-y-1.5">
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -984,10 +858,11 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
               <SkillRow
                 name={articleTemplate.name}
                 description={articleTemplate.description}
-                subscribed={subscribedSkillNames.has(articleTemplate.name)}
-                busy={busyTemplate === articleTemplate.name}
+                source={skillByName[articleTemplate.name]?.source ?? 'builtin'}
+                enabled={isSkillEnabled(articleTemplate.name)}
+                busy={busySkill === articleTemplate.name}
                 onDetail={setDetailName}
-                onSubscribe={handleSubscribe}
+                onToggle={handleToggleSkill}
               />
             ) : (
               <p className="text-xs text-muted-foreground">未发现 article-parser 模板。</p>
@@ -1001,10 +876,9 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
             </p>
             <PackGroupList
               packs={articlePacks}
-              packByNameMap={packByName}
               groupByServer={groupByServer}
               onToolClick={setDetailTool}
-              active={isPackEnabled('article')}
+              active={articleDomainOn}
             />
           </div>
         }
@@ -1021,22 +895,18 @@ export function AbilityTab({ local, setLocal }: AbilityTabProps) {
                   key={skill.dir}
                   name={skill.name}
                   description={skill.description}
-                  subscribed={false}
+                  source={skill.source}
                   enabled={skill.enabled}
-                  showEnableToggle
-                  showSubscribe={false}
-                  dir={skill.dir}
-                  busy={busyDir === skill.dir}
+                  busy={busySkill === skill.name}
                   onDetail={setDetailName}
-                  onSubscribe={() => {}}
-                  onToggleEnabled={(d) => handleToggleSkillEnabled(d, skill.enabled)}
+                  onToggle={handleToggleSkill}
                 />
               ))}
             </div>
           }
           rightContent={
             <p className="text-xs text-muted-foreground leading-relaxed p-2">
-              工作区或用户目录下自建的 Skill（不在模板列表中）。开关即重命名 SKILL.md ↔ SKILL.md.disabled。
+              工作区或用户目录下自建的 Skill。开关即控制是否挂载到会话。
             </p>
           }
         />

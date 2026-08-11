@@ -36,7 +36,7 @@ const MAX_TIMEOUT = 180;
 
 interface SkillTemplateMeta { name: string; description: string; }
 interface SkillEntry {
-  source: string; name: string; description?: string;
+  source: 'builtin' | 'custom' | 'user'; name: string; description?: string;
   dir: string; enabled: boolean;
 }
 
@@ -116,7 +116,7 @@ function ProfileEditor({
   const codeWorkflowSkills = templates.filter((t) => CODE_WORKFLOW_TEMPLATES.includes(t.name));
   const templateNames = new Set(templates.map((t) => t.name));
   const customSkillList = skills.filter(
-    (s) => (s.source === 'workspace' || s.source === 'user') && !templateNames.has(s.name),
+    (s) => (s.source === 'custom' || s.source === 'user') && !templateNames.has(s.name),
   );
 
   return (
