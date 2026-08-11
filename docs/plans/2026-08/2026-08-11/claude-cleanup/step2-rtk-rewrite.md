@@ -1,7 +1,7 @@
 ---
 step: 2
 title: rtk 重写移植
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,7 +28,7 @@ interface BashExecution {
 
 ## 计划改动
 
-- [ ] `electron/main/agents/pi-session/rtk-rewrite.ts`（新建）
+- [x] `electron/main/agents/pi-session/rtk-rewrite.ts`（新建）
   - `RTK_TOOLS` 常量：`['git', 'gh', 'pnpm', 'npm', 'npx', 'yarn', 'bun', 'cargo', 'tsc', 'jest', 'vitest', 'playwright', 'pytest', 'rspec', 'prisma', 'prettier', 'eslint', 'next', 'docker', 'kubectl', 'curl', 'wget', 'ls', 'grep', 'find']`（与 PowerShell 版完全一致）
   - `rewriteWithRtk(command: string): string` — 移植拆分 + 加前缀逻辑
     1. 检测系统是否有 `rtk`（首次调用缓存，不每次 spawn）
@@ -36,7 +36,7 @@ interface BashExecution {
     3. 对每个片段检查第一个 token，在 `RTK_TOOLS` 中且不是 `rtk` 开头 → 加 `rtk ` 前缀
     4. 拼回完整命令
   - rtk 不在 PATH 时直接返回原 command（与 PowerShell 脚本行为一致）
-- [ ] `electron/main/agents/pi-session/builtin-tools.ts`
+- [x] `electron/main/agents/pi-session/builtin-tools.ts`
   - `createBashTool()` 改为 `createBashTool({ prepare(execution) { execution.command = rewriteWithRtk(execution.command); } })`
 
 ## 关键细节
@@ -70,8 +70,21 @@ command.split(/(\s*(?:&&|\|\||;|\|)\s*)/)
 
 ### 实际改动
 
-（待填）
+1. **新建 `electron/main/agents/pi-session/rtk-rewrite.ts`**
+   - `RTK_TOOLS`：`Set<string>`，与 PowerShell 版完全一致的 24 个工具名
+   - `isRtkAvailable()`：模块级 `rtkAvailable` 缓存，首次用 `execFileSync('rtk', ['--version'], { stdio: 'ignore' })` 探测；不可用时返回 `false` 并永久跳过
+   - `rewriteWithRtk(command)`：
+     - rtk 不可用 → 原样返回
+     - `command.split(/(\s*(?:&&|\|\||;|\|)\s*)/)` 拆分，偶数索引为命令片段
+     - 每片段 trim 前导空白取 firstToken，命中 RTK_TOOLS 且非 `rtk` 开头 → 前导空白 + `rtk ` + trimmed
+     - 拼回完整命令
+
+2. **修改 `electron/main/agents/pi-session/builtin-tools.ts`**
+   - 新增 `import { rewriteWithRtk } from './rtk-rewrite'`
+   - `createBashTool()` → `createBashTool({ prepare(execution) { execution.command = rewriteWithRtk(execution.command); } })`
 
 ### 给下一步的接力棒
 
-（待填）
+- rtk 检测结果在模块级缓存（`rtkAvailable` 变量），进程生命周期内只探测一次。如果后续步骤需要重置（如用户安装了 rtk 后），需暴露 reset 接口或改为动态检测。
+- `prepare` 回调签名是 `(execution, context, signal?)`，当前只用了 `execution.command`，`context` 和 `signal` 未使用但可扩展（如根据 workspace 配置决定是否启用 rtk）。
+- TypeScript 编译无新增错误（项目有若干 pre-existing TS errors，与本改动无关）。
