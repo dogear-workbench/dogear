@@ -4,13 +4,11 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, File as FileIcon, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
+import { RefreshCw, Loader2, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
 import { PromptSidebar } from '@/components/PromptSidebar';
-import { SubAgentPanel } from '@/components/agent-chat/SubAgentPanel';
 import { SharedAreaPanel } from '@/components/SharedAreaPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
@@ -32,11 +30,8 @@ export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
   const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
-  const openRightPanel = useUIStore((s) => s.openRightPanel);
   const rightPanelTab = useUIStore((s) => s.rightPanelTab);
   const setRightPanelTab = useUIStore((s) => s.setRightPanelTab);
-  const leftPanelTab = useUIStore((s) => s.leftPanelTab);
-  const setLeftPanelTab = useUIStore((s) => s.setLeftPanelTab);
   const leftPanelOpen = useUIStore((s) => s.leftPanelOpen);
   const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
 
@@ -79,7 +74,6 @@ export default function Home() {
       setLoadingDefaultWs(false);
     }
   }, []);
-  const selectedFile = useWorkspaceStore((s) => s.selectedFile);
   const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
   const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
   const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
@@ -88,7 +82,6 @@ export default function Home() {
   const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
 
   // 文章状态
-  const selectedArticle = useArticleStore((s) => s.selectedArticle);
   const showArticleUrlInput = useArticleStore((s) => s.showArticleUrlInput);
   const articleUrlInput = useArticleStore((s) => s.articleUrlInput);
   const parsingArticle = useArticleStore((s) => s.parsingArticle);
@@ -96,13 +89,6 @@ export default function Home() {
   const hideUrlInput = useArticleStore((s) => s.hideUrlInput);
   const setArticleUrlInput = useArticleStore((s) => s.setArticleUrlInput);
   const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
-
-  // 选中文章时自动展开右侧预览面板
-  useEffect(() => {
-    if (selectedArticle) {
-      openRightPanel();
-    }
-  }, [selectedArticle?.id, openRightPanel]);
 
   // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
@@ -213,7 +199,7 @@ export default function Home() {
             size="sm"
             className="h-8 gap-1.5"
             onClick={() => setWorkspaceRuleDialogOpen(true)}
-            title="编辑当前工作区的 .claude/CLAUDE.md"
+            title="编辑当前工作区的 agent.md"
           >
             <ScrollText className="w-4 h-4" />
             <span className="text-xs">工作区规则</span>
@@ -276,45 +262,14 @@ export default function Home() {
 
       {/* 主内容区域：三栏布局 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：Tab 分页（对话列表 / 文件树），可折叠（里程碑 1.5 Step A2.5） */}
+        {/* 左侧：对话列表，可折叠（里程碑 1.5 Step A2.5） */}
         <aside
           className={cn(
             'border-r bg-muted/30 flex flex-col transition-all duration-200 overflow-hidden',
             leftPanelOpen ? 'w-64' : 'w-0 border-r-0',
           )}
         >
-          {/* Tab 切换栏 */}
-          <div className="flex border-b flex-shrink-0">
-            <button
-              onClick={() => setLeftPanelTab('conversations')}
-              className={`flex-1 py-2 text-xs font-medium text-center transition-colors ${
-                leftPanelTab === 'conversations'
-                  ? 'text-foreground border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              对话
-            </button>
-            <button
-              onClick={() => setLeftPanelTab('explorer')}
-              className={`flex-1 py-2 text-xs font-medium text-center transition-colors ${
-                leftPanelTab === 'explorer'
-                  ? 'text-foreground border-b-2 border-primary'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              文件
-            </button>
-          </div>
-
-          {/* Tab 内容 */}
-          <div className="flex-1 overflow-hidden">
-            {leftPanelTab === 'conversations' ? (
-              <ConversationList />
-            ) : (
-              <WorkspaceExplorer />
-            )}
-          </div>
+          <ConversationList />
         </aside>
 
         {/* 中间：对话窗口 */}
@@ -349,7 +304,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 右侧：预览（书籍/文章）+ 子代理面板，通过 tab 切换 */}
+        {/* 右侧：文件 / 附加 / 共享区面板，通过 tab 切换 */}
         <aside className={cn(
           "border-l flex flex-col bg-background transition-all duration-200 overflow-hidden",
           rightPanelOpen ? 'w-96' : 'w-0 border-l-0'
@@ -357,26 +312,26 @@ export default function Home() {
           {/* Tab 切换栏 */}
           <div className="flex border-b shrink-0">
             <button
-              onClick={() => setRightPanelTab('preview')}
+              onClick={() => setRightPanelTab('files')}
               className={cn(
                 'flex-1 px-3 py-2 text-xs font-medium transition-colors',
-                rightPanelTab === 'preview'
+                rightPanelTab === 'files'
                   ? 'border-b-2 border-primary text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              预览
+              文件
             </button>
             <button
-              onClick={() => setRightPanelTab('subagents')}
+              onClick={() => setRightPanelTab('additional')}
               className={cn(
                 'flex-1 px-3 py-2 text-xs font-medium transition-colors',
-                rightPanelTab === 'subagents'
+                rightPanelTab === 'additional'
                   ? 'border-b-2 border-primary text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              子代理
+              附加
             </button>
             <button
               onClick={() => setRightPanelTab('shared')}
@@ -392,43 +347,12 @@ export default function Home() {
           </div>
 
           {/* Tab 内容 */}
-          {rightPanelTab === 'subagents' ? (
-            /* 子代理列表面板 */
-            <SubAgentPanel conversationId={activeTabId || undefined} />
-          ) : rightPanelTab === 'shared' ? (
-            /* 共享区面板 */
-            <SharedAreaPanel workspaceId={workspace.id} groupId={currentGroupId} />
+          {rightPanelTab === 'files' ? (
+            <WorkspaceExplorer />
+          ) : rightPanelTab === 'additional' ? (
+            <div>附加文件</div>
           ) : (
-            /* 文章/文件预览 */
-            <>
-              <div className="p-3 border-b flex items-center justify-between">
-                <h2 className="text-sm font-semibold">
-                  {selectedArticle ? '文章预览' : '文件预览'}
-                </h2>
-              </div>
-              <ScrollArea className="flex-1 overflow-hidden">
-                {selectedArticle ? (
-                  <ArticlePreview />
-                ) : selectedFile ? (
-                  <div className="p-4 space-y-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-16 bg-muted rounded flex items-center justify-center">
-                        <span className="text-xs text-muted-foreground">{selectedFile.ext?.slice(1).toUpperCase()}</span>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium truncate">{selectedFile.name}</h3>
-                        <p className="text-sm text-muted-foreground truncate">{selectedFile.path}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-                    <FileIcon className="w-12 h-12 mb-4 opacity-50" />
-                    <p className="text-sm text-center">选择左侧文章或文件查看详情</p>
-                  </div>
-                )}
-              </ScrollArea>
-            </>
+            <SharedAreaPanel workspaceId={workspace.id} groupId={currentGroupId} />
           )}
         </aside>
       </div>
