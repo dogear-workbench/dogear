@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 工作区级配置服务](./step1-workspace-config.md) — 新建 workspace-config-service，读写 `.dogear/workspaces/<id>/config.json`
+- [x] [Step 1: 工作区级配置服务](./step1-workspace-config.md) — 新建 workspace-config-service，读写 `.dogear/workspaces/<id>/config.json`
 - [ ] [Step 2: rtk 重写移植](./step2-rtk-rewrite.md) — `createBashTool` 的 `prepare` 回调替代 PowerShell hook
 - [ ] [Step 3: skill 加载路径迁移](./step3-skill-paths.md) — pi-session 扫描目录改为模板源 + 工作区自定义目录，删掉订阅复制机制
 - [ ] [Step 4: 能力配置拆到工作区级](./step4-workspace-abilities.md) — enabledToolPacks 从全局 settings 移到工作区 config，全链路改造

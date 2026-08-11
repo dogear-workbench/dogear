@@ -11,6 +11,7 @@ import { settingsRouter } from './settings.js';
 import { memoryRouter } from './memory.js';
 import { logRouter } from './log.js';
 import { claudeConfigRouter } from './claude-config.js';
+import { workspaceConfigRouter } from './workspace-config.js';
 import { stockRouter } from './stock.js';
 import { wechatRouter } from './wechat.js';
 import { conversationRuntimeRouter } from './conversation-runtime.js';
@@ -38,6 +39,7 @@ export const router = {
   ...memoryRouter,
   ...logRouter,
   ...claudeConfigRouter,
+  ...workspaceConfigRouter,
   ...stockRouter,
   ...wechatRouter,
   ...conversationRuntimeRouter,

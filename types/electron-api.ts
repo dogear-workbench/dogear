@@ -18,6 +18,14 @@ export interface AdditionalPathData {
 }
 
 /**
+ * 工作区配置（.dogear/workspaces/<id>/config.json）
+ */
+export interface WorkspaceConfig {
+  enabledToolPacks: string[];
+  enabledSkills: string[];
+}
+
+/**
  * 工作区接口
  */
 export interface Workspace {
