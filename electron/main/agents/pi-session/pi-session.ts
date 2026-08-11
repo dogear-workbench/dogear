@@ -41,8 +41,8 @@ import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
-import { getArticleParserSkillsDir } from '../../services/article-parser-skills-service.js';
-import { getReviewSkillDir } from '../../services/memory/review-skill-service.js';
+import { getTemplatesDir } from '../../services/skill-template-service.js';
+import { getWorkspaceConfig } from '../../services/workspace-config-service.js';
 import {
   createPiUsageAccumulator,
   accumulatePiUsage,
@@ -118,15 +118,14 @@ interface PendingPermissionRequest {
 
 /**
  * 子会话按 Profile 过滤 skill entries。
- * 工作区 skill（workspace/.claude/skills）→ 仅保留 skills[] 中列出的；
- * 自定义 skill（homedir/.claude/skills）→ 仅保留 customSkills[] 中列出的；
- * article-parser skill → 仅当 article===true；
- * review skill → 仅当 memory===true。
+ * builtin 段：article-parser 仅当 article===true，cross-session-review 仅当 memory===true，其余按 skills[] 匹配；
+ * custom 段：仅保留 skills[] 中列出的；
+ * user 段：仅保留 customSkills[] 中列出的。
  */
 function filterSkillsForSubAgent(
   entries: SkillEntry[],
   profile: SubAgentProfile,
-  scanDirs: { workspace: string; homedir: string; articleParser: string; review: string },
+  scanDirs: { builtin: string; custom: string; user: string },
 ): SkillEntry[] {
   const ab = profile.enabledAbilities;
   const isUnder = (filePath: string, dir: string): boolean => {
@@ -135,10 +134,13 @@ function filterSkillsForSubAgent(
   };
   return entries.filter((entry) => {
     const fp = entry.bodyPath;
-    if (isUnder(fp, scanDirs.workspace)) return ab.skills?.includes(entry.name) ?? false;
-    if (isUnder(fp, scanDirs.homedir)) return ab.customSkills?.includes(entry.name) ?? false;
-    if (isUnder(fp, scanDirs.articleParser)) return ab.article === true;
-    if (isUnder(fp, scanDirs.review)) return ab.memory === true;
+    if (isUnder(fp, scanDirs.builtin)) {
+      if (entry.name === 'article-parser') return ab.article === true;
+      if (entry.name === 'cross-session-review') return ab.memory === true;
+      return ab.skills?.includes(entry.name) ?? false;
+    }
+    if (isUnder(fp, scanDirs.custom)) return ab.skills?.includes(entry.name) ?? false;
+    if (isUnder(fp, scanDirs.user)) return ab.customSkills?.includes(entry.name) ?? false;
     return false;
   });
 }
@@ -329,29 +331,30 @@ export class PiSession extends EventEmitter {
     // ---- skill 索引 ----
     const env = new WorkspaceExecutionEnv([this.config.workspacePath, ...this.config.additionalPaths]);
     this.env = env;
-    const workspaceSkillsDir = path.join(this.config.workspacePath, '.claude', 'skills');
-    const homedirSkillsDir = path.join(os.homedir(), '.claude', 'skills');
-    const articleParserSkillsDir = getArticleParserSkillsDir();
-    const reviewSkillsDir = getReviewSkillDir();
+    const builtinSkillsDir = getTemplatesDir();
+    const customSkillsDir = path.join(getConfigDir(), 'workspaces', this.config.workspaceId, 'skills');
+    const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
     const allSkillEntries = await loadSkillIndex([
-      workspaceSkillsDir,
-      homedirSkillsDir,
-      articleParserSkillsDir,
-      reviewSkillsDir,
+      builtinSkillsDir,
+      customSkillsDir,
+      userSkillsDir,
     ], env);
+
+    const wsConfig = await getWorkspaceConfig(this.config.workspaceId);
+    const enabledSkillsSet = new Set(wsConfig.enabledSkills);
+    const filteredByConfig = allSkillEntries.filter((e) => enabledSkillsSet.has(e.name));
 
     let skillEntries: SkillEntry[];
     let skillIndexText: string;
     if (isSubAgent && subAgentProfile) {
-      skillEntries = filterSkillsForSubAgent(allSkillEntries, subAgentProfile, {
-        workspace: workspaceSkillsDir,
-        homedir: homedirSkillsDir,
-        articleParser: articleParserSkillsDir,
-        review: reviewSkillsDir,
+      skillEntries = filterSkillsForSubAgent(filteredByConfig, subAgentProfile, {
+        builtin: builtinSkillsDir,
+        custom: customSkillsDir,
+        user: userSkillsDir,
       });
       skillIndexText = formatSkillIndexForPrompt(skillEntries);
     } else {
-      skillEntries = allSkillEntries;
+      skillEntries = filteredByConfig;
       skillIndexText = formatSkillIndexForPrompt(skillEntries);
     }
 

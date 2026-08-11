@@ -10,7 +10,6 @@ import {
 } from '../services/claude-config-service.js';
 import {
   listSkillTemplates,
-  subscribeSkillTemplate,
   getTemplateContent,
 } from '../services/skill-template-service.js';
 
@@ -117,25 +116,6 @@ export const claudeConfigRouter = {
       } catch (error) {
         console.error('列出 Skill 模板失败:', error);
         return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 订阅 Skill 模板到工作区
-   */
-  subscribeSkillTemplate: t.procedure
-    .input<{ workspacePath: string; name: string; overwrite: boolean }>()
-    .action(async ({ input }) => {
-      try {
-        await subscribeSkillTemplate(input.workspacePath, input.name, input.overwrite);
-        return { success: true };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message === 'SKILL_EXISTS') {
-          return { error: 'SKILL_EXISTS' };
-        }
-        console.error('订阅 Skill 模板失败:', error);
-        return { error: message };
       }
     }),
 

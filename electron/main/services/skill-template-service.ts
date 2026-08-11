@@ -3,8 +3,7 @@
  *
  * 模板源统一存放在 resources/skill-templates/<name>/SKILL.md（开发时读源文件，
  * 构建时 electron-builder 打包到 process.resourcesPath/skill-templates/）。
- * 所有内置模板走订阅模式：用户在设置页订阅时复制到工作区 .claude/skills/<name>/，
- * 之后由 SDK settingSources=['project'] 自动加载，副本可任意编辑，恢复按钮强制覆盖回模板源。
+ * pi-session 直接从模板源扫描 builtin skill，不再复制到工作区目录。
  */
 
 import path from 'path';
@@ -18,7 +17,7 @@ export interface SkillTemplateMeta {
   description: string;
 }
 
-function getTemplatesDir(): string {
+export function getTemplatesDir(): string {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'skill-templates');
   }
@@ -54,57 +53,6 @@ export async function listSkillTemplates(): Promise<SkillTemplateMeta[]> {
     }
   }
   return result.sort((a, b) => a.name.localeCompare(b.name));
-}
-
-const EXTRA_FILES: Record<string, string[]> = {
-  'article-parser': ['common.md', 'platforms/wechat.py'],
-};
-
-export async function subscribeSkillTemplate(
-  workspacePath: string,
-  name: string,
-  overwrite: boolean,
-): Promise<void> {
-  const templatesDir = getTemplatesDir();
-  const srcSkillPath = path.join(templatesDir, name, 'SKILL.md');
-
-  const skillDir = path.join(workspacePath, '.claude', 'skills', name);
-  const destSkillPath = path.join(skillDir, 'SKILL.md');
-
-  if (!overwrite) {
-    try {
-      await fs.access(destSkillPath);
-      throw new Error('SKILL_EXISTS');
-    } catch (err) {
-      if (err instanceof Error && err.message === 'SKILL_EXISTS') throw err;
-    }
-  }
-
-  const content = await fs.readFile(srcSkillPath, 'utf-8');
-  await fs.mkdir(skillDir, { recursive: true });
-  await fs.writeFile(destSkillPath, content, 'utf-8');
-
-  const extras = EXTRA_FILES[name];
-  if (extras) {
-    for (const rel of extras) {
-      const srcExtra = path.join(templatesDir, name, rel);
-      const destExtra = path.join(skillDir, rel);
-      try {
-        const extraContent = await fs.readFile(srcExtra, 'utf-8');
-        await fs.mkdir(path.dirname(destExtra), { recursive: true });
-        await fs.writeFile(destExtra, extraContent, 'utf-8');
-      } catch {
-        // 附属文件缺失不阻塞
-      }
-    }
-  }
-}
-
-export async function restoreSkillTemplate(
-  workspacePath: string,
-  name: string,
-): Promise<void> {
-  await subscribeSkillTemplate(workspacePath, name, true);
 }
 
 export async function getTemplateContent(name: string): Promise<string> {

@@ -1,7 +1,7 @@
 ---
 step: 3
 title: skill 加载路径迁移
-status: pending
+status: done
 ---
 
 ## 目标
@@ -72,8 +72,39 @@ pi-session 的 skill 扫描目录从 `.claude/skills/` 改为模板源 + 工作�
 
 ### 实际改动
 
-（待填）
+**3.1 pi-session.ts**
+- 删除 `getArticleParserSkillsDir` / `getReviewSkillDir` 导入，新增 `getTemplatesDir` / `getWorkspaceConfig` 导入
+- `start()` skill 扫描目录改为 `getTemplatesDir()` (builtin) + `.dogear/workspaces/<id>/skills/` (custom) + `~/.claude/skills/` (user)
+- 扫描结果用 `wsConfig.enabledSkills` 过滤后再传给 `filterSkillsForSubAgent` 或直接使用
+- `filterSkillsForSubAgent` 签名改为 `{ builtin, custom, user }`；builtin 段对 article-parser / cross-session-review 做特殊能力检查，其余 builtin + custom 按 `skills[]` 匹配，user 按 `customSkills[]` 匹配
+
+**3.2 skill-service.ts**
+- `SkillSource` 类型从 `'workspace'|'user'|'plugin'|'marketplace'` 改为 `'builtin'|'custom'|'user'`
+- 删除全部 plugin/marketplace 逻辑（`scanMarketplaceSkills` / `listEnabledMarketplacePluginPaths` / `resolveEnabledMarketplacePlugins` / `readEnabledPlugins` 等）
+- `listSkills(workspaceId)` 扫描三个来源目录，用 `getWorkspaceConfig(workspaceId).enabledSkills` 标注每条 entry 的 enabled
+- `setSkillEnabled(skillName, enabled, workspaceId)` 改为读写 `workspace-config-service` 的 `enabledSkills` 数组
+- 删除物理重命名（SKILL.md ↔ SKILL.md.disabled）逻辑
+
+**3.3 skill-template-service.ts**
+- 导出 `getTemplatesDir()`（原为私有函数）
+- 删除 `subscribeSkillTemplate` / `restoreSkillTemplate` / `EXTRA_FILES`
+- 保留 `listSkillTemplates` / `getTemplateContent` / `getTemplatesDir`
+- 同步更新 `stock-analysis-skills-service.ts` 的 re-export（删除 subscribe/restore）
+
+**3.4 article-parser-skills-service.ts + review-skill-service.ts**
+- `article-parser-skills-service.ts`：保留 `getArticleParserSkillsDir()`（article-service.ts / tipc/article.ts 运行时依赖）；`ensureSkillsInitialized()` 不再复制 SKILL.md / common.md，仅初始化 wechat.py + history.jsonl
+- `review-skill-service.ts`：`ensureReviewSkillInitialized()` 改为 no-op（skill 由 pi-session 直接读模板源）；`getReviewSkillDir()` 保留导出但不再被 pi-session 使用
+
+**3.5 tipc 路由清理**
+- `claude-config.ts`：删除 `subscribeSkillTemplate` 路由和对应 import
+- `skill.ts`：`listSkills` 输入改为 `{ workspaceId }`（不再需要 resolveWorkspacePath）；`setSkillEnabled` 输入改为 `{ name, enabled, workspaceId }`，调用 workspace-config-service
+
+**偏差说明**
+- 计划要求删除 `getArticleParserSkillsDir()`，但该函数被 article-service.ts 和 tipc/article.ts 用于运行时 Python 脚本路径，这两个文件不在 step3 范围内。保留该函数，仅从 pi-session.ts 和 skill-service.ts 的 skill 扫描路径中移除。
 
 ### 给下一步的接力棒
 
-（待填）
+- `enabledSkills` 过滤已生效：空数组 = 不挂任何 skill，非空 = 只挂列表中的
+- `getTemplatesDir()` 已从 skill-template-service.ts 导出，可直接消费
+- tipc `setSkillEnabled` 的 input schema 变了（`dir` → `name` + `workspaceId`），前端调用方需同步更新（如果有）
+- article-parser 和 cross-session-review 模板必须存在于 `resources/skill-templates/` 下才能被 pi-session 扫描到

@@ -1,16 +1,12 @@
 /**
- * 跨会话复盘 Skill 目录管理（里程碑 2 Phase B）
+ * 跨会话复盘 Skill 运行时目录管理
  *
- * 在 <configDir>/skills/review/ 下幂等初始化 SKILL.md。
- * 模板内容从 resources/skill-templates/cross-session-review/SKILL.md 读取，
- * 该目录由 PiSession（pi-session.ts）纳入 skill 扫描路径，经 pi-agent-core 的
- * loadSkills 发现后注入 <available_skills> 索引，agent 通过 Skill 工具按需加载全文，
- * 配合 dogear-memory-review MCP 工具使用。
+ * SKILL.md 模板内容直接由 pi-session 从 resources/skill-templates/cross-session-review/ 读取，
+ * 不再复制到 .dogear/skills/review/。本模块的 ensureReviewSkillInitialized 保留为 no-op，
+ * 仅为 index.ts 启动序列兼容（不报错、不产生副作用）。
  */
 import path from 'path';
-import fs from 'fs/promises';
 import electron from 'electron';
-import { getTemplateContent } from '../skill-template-service.js';
 
 const { app } = electron;
 
@@ -21,25 +17,14 @@ function getConfigDir(): string {
   return path.join(process.cwd(), '.dogear');
 }
 
-/** 返回复盘 Skill 目录的绝对路径 */
+/** 返回复盘 Skill 运行时目录的绝对路径（仅用于向下兼容，pi-session 不再扫描此目录） */
 export function getReviewSkillDir(): string {
   return path.join(getConfigDir(), 'skills', 'review');
 }
 
 /**
- * 确保复盘 Skill 目录与 SKILL.md 存在。
- * 内容不一致则覆盖（提示词随版本演进，避免开发机残留旧 skill）。启动时调用一次，错误不应阻塞启动。
+ * no-op：复盘 Skill 现由 pi-session 直接从模板源加载，不再需要复制。
+ * 保留函数签名仅为 index.ts 启动序列兼容。
  */
 export async function ensureReviewSkillInitialized(): Promise<void> {
-  const skillDir = getReviewSkillDir();
-  await fs.mkdir(skillDir, { recursive: true });
-  const skillPath = path.join(skillDir, 'SKILL.md');
-  const templateContent = await getTemplateContent('cross-session-review');
-  let existing: string | null = null;
-  try {
-    existing = await fs.readFile(skillPath, 'utf-8');
-  } catch { /* 不存在 */ }
-  if (existing !== templateContent) {
-    await fs.writeFile(skillPath, templateContent, 'utf-8');
-  }
 }
