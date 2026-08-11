@@ -340,7 +340,7 @@ export class PiSession extends EventEmitter {
       builtinSkillsDir,
       customSkillsDir,
       userSkillsDir,
-    ], env);
+    ]);
 
     const wsConfig = await getWorkspaceConfig(this.config.workspaceId);
     const enabledSkillsSet = new Set(wsConfig.enabledSkills);

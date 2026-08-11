@@ -105,8 +105,6 @@ export class AgentManager extends EventEmitter {
    */
   async start() {
     this.logger.info('Agent 管理器启动');
-    // 预创建一个 Worker 以加快首次任务响应
-    await this.createWorker();
   }
 
   /**
@@ -625,13 +623,11 @@ export class AgentManager extends EventEmitter {
     const workersToRemove: string[] = [];
 
     for (const [workerId, wrapper] of this.workers) {
-      // 只清理空闲且超过超时时间的 Worker
-      // 至少保留一个 Worker
+      // 空闲超过超时时间的 Worker 直接清理，不保留
       if (
         wrapper.currentTaskId === null &&
         wrapper.isReady &&
-        now - wrapper.lastActivity > this.config.workerIdleTimeout &&
-        this.workers.size > 1
+        now - wrapper.lastActivity > this.config.workerIdleTimeout
       ) {
         workersToRemove.push(workerId);
       }
