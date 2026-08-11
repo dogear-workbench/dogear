@@ -42,3 +42,15 @@
 - `docs/standards/tool-description-changes.md` — 工具改动清单
 - `docs/standards/system-prompt-changes.md` — 提示词改动方案
 - `docs/standards/skill-staged-execution-changes.md` — skill 改动清单
+
+## 完成总结
+
+三层提示词体系优化全部落地，3 步 3 commit：
+
+| 层 | 改动 | 效果 |
+|---|---|---|
+| 工具描述 | 11 个工具重写为「做什么+何时做」，去掉参数语法/实现细节/返回格式/跨工具引用 | agent 只从工具描述看能力，不被实现细节干扰 |
+| 系统提示词 | 合并 group-context + notes-guidance 为一段（主/子都看到）；子会话契约从「建议」改为确定措辞 | 子会话能看到共享区写入说明+确定交付路径，消除交付文档写错位置的根因 |
+| skill | staged-execution 10 处工具名去引用，仅保留 ListLinkedSessions | 消除与工具描述/系统提示词层的重复 |
+
+**遗留**：SendMessage 的 delivery 参数 describe 仍含「配合 WaitForMessage 使用」跨工具引用（changes 文档未列此条，可后续补充）。
