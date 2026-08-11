@@ -5,7 +5,6 @@ import { AlertCircle, ClipboardList, ClipboardCheck, ClipboardEdit } from 'lucid
 import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
-import { SubAgentBlock } from './SubAgentBlock';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { TodoListBlock } from './TodoListBlock';
 import { CodeChangeBlock } from './CodeChangeBlock';
@@ -172,10 +171,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             isError={block.isError}
           />
         );
-      }
-      // 子代理调用使用专用的 SubAgentBlock 组件
-      if (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task') {
-        return <SubAgentBlock block={block} />;
       }
       // toolOutput 已通过 tool_result 合并到 tool_use block 中
       // 通过 toolOutput 是否存在决定状态：undefined=running, 否则success/error

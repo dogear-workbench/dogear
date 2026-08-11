@@ -103,7 +103,7 @@ subAgent: {
 | 文章 | 整体开关 | article-parser skill + article 工具包 | 关 |
 | 代码工作流 | 每个 skill 单独 | brainstorming / codebase-map / doc-sync / staged-execution / staged-impl / systematic-debugging（各自勾选） | 全关 |
 | 自定义 Skill | 每个 skill 单独 | 工作区或用户目录下自建的、不在模板列表中的 Skill（各自勾选） | 全关 |
-| 共享区文件 | 整体开关 | dogear-group（ListGroupFiles / ReadGroupFile / WriteGroupFile）+ NOTES_GUIDANCE_APPEND 提示词段 | 关 |
+| 共享区文件 | 整体开关 | dogear-group（ListGroupFiles / SaveSharedNote）+ NOTES_GUIDANCE_APPEND 提示词段 | 关 |
 | 引用回溯 | 整体开关 | dogear-reference（ReadReferenceSession / TraceSource / ReadGroupBackground / ListSiblingSessions 等） | 关 |
 
 ### 提示词-工具对齐规则

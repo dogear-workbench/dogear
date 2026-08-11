@@ -39,7 +39,7 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 | 角色 | 职责 | 禁止 |
 |---|---|---|
 | **主会话** | 读 plan / 读 step / 决定分派策略 / 派子会话 / 等交付 / 验收 / 回填 stepN.md / 打勾 plan.md / git commit / **改 `.claude/**` 下所有文件** | 直接 Edit/Write 业务代码 |
-| **子会话** | 按 task 描述改代码 / WriteGroupFile 到 outputPath / SendMessage(父sessionId, summary, { delivery: true }) 交付 | 派孙会话（没 CreateSession 工具）/ 越 step 边界改动 / **动 `.claude/**` 下任何文件** |
+| **子会话** | 按 task 描述改代码 / SaveSharedNote 到 outputPath / SendMessage(父sessionId, summary, { delivery: true }) 交付 | 派孙会话（没 CreateSession 工具）/ 越 step 边界改动 / **动 `.claude/**` 下任何文件** |
 
 ## 分派规则
 
@@ -49,7 +49,7 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 - `task`：**必须**包含以下三块（照抄，别自己简写）：
   1. `docs/plans/**/stepN-*.md` 的完整绝对路径
   2. plan.md「全局决策」段原文
-  3. 交付要求：「按 stepN.md 的 计划改动 段实施代码；完成后 WriteGroupFile 到 outputPath；然后先 ListLinkedSessions 拿派出者 sessionId，再用 SendMessage(sessionId, summary, { delivery: true }) 交回改动清单」
+  3. 交付要求：「按 stepN.md 的 计划改动 段实施代码；完成后 SaveSharedNote 到 outputPath；然后先 ListLinkedSessions 拿派出者 sessionId，再用 SendMessage(sessionId, summary, { delivery: true }) 交回改动清单」
 - `outputPath`：约定为 `stepN-delivery.md`（保持组共享区可追溯）
 - `title`：`step N: <stepN.md 的 title>`
 

@@ -30,7 +30,6 @@ import { StatusPulse } from '@/components/StatusPulse';
 import { useSessionStore, type SessionTab, HOME_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useUIStore } from '@/stores/ui-store';
 
 export function WorkspaceTabBar() {
   const allTabs = useSessionStore((s) => s.tabs);
@@ -83,7 +82,6 @@ export function WorkspaceTabBar() {
       }
     }
     closeTab(tab.conversationId);
-    useUIStore.getState().removeSubAgents(tab.conversationId);
   };
 
   const handleCloseTab = async (tab: SessionTab, e: React.MouseEvent) => {

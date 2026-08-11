@@ -38,7 +38,7 @@ function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
 
   for (const block of blocks) {
     const isSubAgent = block.type === 'tool_use'
-      && (block.isSubAgent || block.toolName === 'Agent' || block.toolName === 'Task');
+      && (block.toolName === 'Agent' || block.toolName === 'Task');
 
     if (block.type === 'tool_use' && !isSubAgent) {
       buffer.push(block);

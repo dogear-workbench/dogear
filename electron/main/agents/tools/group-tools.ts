@@ -10,7 +10,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     defineTool(
       'ListGroupFiles',
       '列出共享区文件',
-      '列出当前会话组共享区的所有文件（agent 写出的文件）。不要用于查看工作区项目文件。',
+      '列出当前会话组共享区的所有文件并返回内容。不要用于查看工作区项目文件。',
       z.object({}),
       async () => {
         try {
@@ -22,7 +22,14 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
             for (const f of files) {
               const kb = (f.size / 1024).toFixed(1);
               const date = new Date(f.mtime).toLocaleString('zh-CN', { hour12: false });
-              lines.push(`- ${f.relPath} (${kb} KB, ${date})`);
+              lines.push(`── ${f.relPath} (${kb} KB, ${date}) ──`);
+              try {
+                const content = await groupSharedService.readNativeFile(workspaceId, groupId, f.relPath);
+                lines.push(content);
+              } catch (error) {
+                lines.push(`⚠ 读取失败: ${error}`);
+              }
+              lines.push('');
             }
           }
           return {
@@ -38,30 +45,8 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     ),
 
     defineTool(
-      'ReadGroupFile',
-      '读取共享区文件',
-      '读取会话组共享区的文件内容。仅用于读取共享区文件——工作区项目代码/文档请用 read 工具。',
-      z.object({
-        relPath: z.string().describe('共享区相对路径，例如 notes.md'),
-      }),
-      async (args) => {
-        try {
-          const content = await groupSharedService.readNativeFile(workspaceId, groupId, args.relPath);
-          return {
-            content: [{ type: 'text' as const, text: content }],
-          };
-        } catch (error) {
-          return {
-            content: [{ type: 'text' as const, text: `读取文件失败: ${error}` }],
-            isError: true,
-          };
-        }
-      },
-    ),
-
-    defineTool(
-      'WriteGroupFile',
-      '写入共享区文件',
+      'SaveSharedNote',
+      '保存到共享区',
       '写入会话组共享区的文件（覆盖已有内容）。工作区项目代码/文档请用 write 工具。',
       z.object({
         relPath: z.string().describe('共享区相对路径，例如 notes.md 或 ideas/2026-06-25.md'),

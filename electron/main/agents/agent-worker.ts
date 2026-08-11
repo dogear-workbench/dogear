@@ -433,9 +433,9 @@ class AgentWorker {
       () => { backgroundSaved = true; },
     );
     const transcriptDefs = createDigestToolDefs(workspaceId, workspacePath);
-    // group-tools 有 3 个工具，但本任务只授权 ListGroupFiles + ReadGroupFile，不含 WriteGroupFile
+    // group-tools 有 2 个工具，digest 任务只需 ListGroupFiles
     const groupDefs = createGroupToolDefs(workspaceId, groupId)
-      .filter((t) => t.name === 'ListGroupFiles' || t.name === 'ReadGroupFile');
+      .filter((t) => t.name === 'ListGroupFiles');
 
     // 读取已有组卡 sourcesSeen（供 system prompt 注入）
     const { readGroupDigest, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
@@ -483,7 +483,7 @@ class AgentWorker {
       sourcesSeenText,
       `- 共享区文件清单（含 _notes/ 子目录）:`,
       sharedFileText,
-      `- shared/_notes/ 文件清单（请优先 ReadGroupFile 这些）:`,
+      `- shared/_notes/ 文件清单（通过 ListGroupFiles 可读取完整内容）:`,
       notesFileText,
       ...categoryVocabLines,
     ].join('\n');

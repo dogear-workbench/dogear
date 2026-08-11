@@ -81,9 +81,6 @@ export function createContentBlock(extendedMsg: {
   compactPreTokens?: number;
   [key: string]: any;
 }): ContentBlock {
-  // 检测子代理工具调用（SDK 过渡期 'Agent' / 'Task' 都可能出现）
-  const isAgentTool = extendedMsg.type === 'tool_use' && (extendedMsg.toolName === 'Agent' || extendedMsg.toolName === 'Task');
-
   return {
     type: extendedMsg.type as ContentBlock['type'],
     content: extendedMsg.content,
@@ -112,12 +109,6 @@ export function createContentBlock(extendedMsg: {
     // compact
     compactTrigger: extendedMsg.compactTrigger as 'manual' | 'auto' | undefined,
     compactPreTokens: extendedMsg.compactPreTokens,
-    // 子代理
-    ...(isAgentTool ? {
-      isSubAgent: true,
-      subAgentDescription: extendedMsg.toolInput?.description,
-      subAgentType: extendedMsg.toolInput?.subagent_type,
-    } : {}),
   };
 }
 
@@ -226,33 +217,6 @@ export function streamReducer(
           ...updatedBlocks[toolUseIdx],
           toolOutput: extendedMsg.toolOutput,
           isError: extendedMsg.isError,
-          ...(extendedMsg.subAgentId ? {
-            subAgentId: extendedMsg.subAgentId,
-            subAgentStatus: extendedMsg.subAgentStatus,
-            subAgentDurationMs: extendedMsg.subAgentDurationMs,
-            subAgentTokens: extendedMsg.subAgentTokens,
-            subAgentToolUseCount: extendedMsg.subAgentToolUseCount,
-            subAgentResultText: extendedMsg.subAgentResultText,
-          } : {}),
-        };
-        updated[lastIdx] = { ...lastMsg, contentBlocks: updatedBlocks };
-        return updated;
-      }
-    }
-
-    // task_notification → 更新 SubAgentBlock
-    if (extendedMsg.type === 'task_notification' && extendedMsg.toolUseId) {
-      const subIdx = blocks.findIndex(b => b.toolUseId === extendedMsg.toolUseId && b.isSubAgent);
-      if (subIdx >= 0) {
-        const updatedBlocks = [...blocks];
-        updatedBlocks[subIdx] = {
-          ...updatedBlocks[subIdx],
-          taskId: extendedMsg.taskId,
-          taskStatus: extendedMsg.taskStatus,
-          subAgentStatus: extendedMsg.taskStatus === 'completed' ? 'completed'
-            : extendedMsg.taskStatus === 'failed' ? 'failed'
-            : extendedMsg.taskStatus === 'stopped' ? 'failed'
-            : updatedBlocks[subIdx].subAgentStatus,
         };
         updated[lastIdx] = { ...lastMsg, contentBlocks: updatedBlocks };
         return updated;

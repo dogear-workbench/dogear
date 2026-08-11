@@ -1,21 +1,13 @@
 // electron/main/tipc/claude-config.ts
 import { tipc } from '@egoist/tipc/main';
 import {
-  getClaudeDirStatus,
-  initClaudeDir,
-  readClaudeMd,
-  writeClaudeMd,
-  readUserClaudeMd,
-  writeUserClaudeMd,
-  listAgentFiles,
-  readAgentFile,
-  writeAgentFile,
-  deleteAgentFile,
+  getAgentMdStatus,
+  initAgentMd,
+  readWorkspaceAgentMd,
+  writeWorkspaceAgentMd,
+  readUserAgentMd,
+  writeUserAgentMd,
 } from '../services/claude-config-service.js';
-import {
-  listAgentTemplates,
-  subscribeAgentTemplate,
-} from '../services/agent-templates-service.js';
 import {
   listSkillTemplates,
   subscribeSkillTemplate,
@@ -26,185 +18,91 @@ const t = tipc.create();
 
 export const claudeConfigRouter = {
   /**
-   * 获取工作区 .claude 目录状态
+   * 获取 agent.md 状态（工作区级 + 用户级）
    */
-  getClaudeDirStatus: t.procedure
-    .input<{ workspacePath: string }>()
+  getAgentMdStatus: t.procedure
+    .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const status = await getClaudeDirStatus(input.workspacePath);
+        const status = await getAgentMdStatus(input.workspaceId);
         return { status };
       } catch (error) {
-        console.error('获取 .claude 目录状态失败:', error);
+        console.error('获取 agent.md 状态失败:', error);
         return { error: String(error) };
       }
     }),
 
   /**
-   * 初始化工作区 .claude 目录
+   * 初始化工作区 agent.md
    */
-  initClaudeDir: t.procedure
-    .input<{ workspacePath: string }>()
+  initAgentMd: t.procedure
+    .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        await initClaudeDir(input.workspacePath);
+        await initAgentMd(input.workspaceId);
         return { success: true };
       } catch (error) {
-        console.error('初始化 .claude 目录失败:', error);
+        console.error('初始化 agent.md 失败:', error);
         return { error: String(error) };
       }
     }),
 
   /**
-   * 读取工作区 CLAUDE.md
+   * 读取工作区级 agent.md
    */
-  readClaudeMd: t.procedure
-    .input<{ workspacePath: string }>()
+  readWorkspaceAgentMd: t.procedure
+    .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const content = await readClaudeMd(input.workspacePath);
+        const content = await readWorkspaceAgentMd(input.workspaceId);
         return { content };
       } catch (error) {
-        console.error('读取 CLAUDE.md 失败:', error);
+        console.error('读取工作区 agent.md 失败:', error);
         return { error: String(error) };
       }
     }),
 
   /**
-   * 写入工作区 CLAUDE.md
+   * 写入工作区级 agent.md
    */
-  writeClaudeMd: t.procedure
-    .input<{ workspacePath: string; content: string }>()
+  writeWorkspaceAgentMd: t.procedure
+    .input<{ workspaceId: string; content: string }>()
     .action(async ({ input }) => {
       try {
-        await writeClaudeMd(input.workspacePath, input.content);
+        await writeWorkspaceAgentMd(input.workspaceId, input.content);
         return { success: true };
       } catch (error) {
-        console.error('写入 CLAUDE.md 失败:', error);
+        console.error('写入工作区 agent.md 失败:', error);
         return { error: String(error) };
       }
     }),
 
   /**
-   * 读取用户级 CLAUDE.md（~/.claude/CLAUDE.md）
+   * 读取用户级 agent.md（.dogear/agent.md）
    */
-  readUserClaudeMd: t.procedure
+  readUserAgentMd: t.procedure
     .action(async () => {
       try {
-        const content = await readUserClaudeMd();
+        const content = await readUserAgentMd();
         return { content };
       } catch (error) {
-        console.error('读取用户级 CLAUDE.md 失败:', error);
+        console.error('读取用户级 agent.md 失败:', error);
         return { error: String(error) };
       }
     }),
 
   /**
-   * 写入用户级 CLAUDE.md
+   * 写入用户级 agent.md
    */
-  writeUserClaudeMd: t.procedure
+  writeUserAgentMd: t.procedure
     .input<{ content: string }>()
     .action(async ({ input }) => {
       try {
-        await writeUserClaudeMd(input.content);
+        await writeUserAgentMd(input.content);
         return { success: true };
       } catch (error) {
-        console.error('写入用户级 CLAUDE.md 失败:', error);
+        console.error('写入用户级 agent.md 失败:', error);
         return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 列出工作区代理文件
-   */
-  listAgentFiles: t.procedure
-    .input<{ workspacePath: string }>()
-    .action(async ({ input }) => {
-      try {
-        const files = await listAgentFiles(input.workspacePath);
-        return { files };
-      } catch (error) {
-        console.error('列出代理文件失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 读取代理文件
-   */
-  readAgentFile: t.procedure
-    .input<{ workspacePath: string; fileName: string }>()
-    .action(async ({ input }) => {
-      try {
-        const content = await readAgentFile(input.workspacePath, input.fileName);
-        return { content };
-      } catch (error) {
-        console.error('读取代理文件失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 写入代理文件
-   */
-  writeAgentFile: t.procedure
-    .input<{ workspacePath: string; fileName: string; content: string }>()
-    .action(async ({ input }) => {
-      try {
-        await writeAgentFile(input.workspacePath, input.fileName, input.content);
-        return { success: true };
-      } catch (error) {
-        console.error('写入代理文件失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 删除代理文件
-   */
-  deleteAgentFile: t.procedure
-    .input<{ workspacePath: string; fileName: string }>()
-    .action(async ({ input }) => {
-      try {
-        await deleteAgentFile(input.workspacePath, input.fileName);
-        return { success: true };
-      } catch (error) {
-        console.error('删除代理文件失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 列出可订阅的代理模板
-   */
-  listAgentTemplates: t.procedure
-    .action(async () => {
-      try {
-        const templates = listAgentTemplates();
-        return { templates };
-      } catch (error) {
-        console.error('列出代理模板失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 订阅代理模板到工作区
-   * - overwrite=false 且文件已存在时返回 { error: 'AGENT_EXISTS' }，由前端弹 confirm 后重试
-   */
-  subscribeAgentTemplate: t.procedure
-    .input<{ workspacePath: string; fileName: string; overwrite: boolean }>()
-    .action(async ({ input }) => {
-      try {
-        await subscribeAgentTemplate(input.workspacePath, input.fileName, input.overwrite);
-        return { success: true };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message === 'AGENT_EXISTS') {
-          return { error: 'AGENT_EXISTS' };
-        }
-        console.error('订阅代理模板失败:', error);
-        return { error: message };
       }
     }),
 

@@ -10,12 +10,12 @@ const SAVE_BACKGROUND_SENTINEL = 'SaveGroupBackground';
 
 export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两个产物：「组级摘要卡」+「组背景」。一个组通常由多个相关会话组成。
 
-工具：ReadGroupDigest / CleanTranscript / SaveGroupDigest / SaveGroupBackground / ListGroupFiles / ReadGroupFile（仅这些）
+工具：ReadGroupDigest / CleanTranscript / SaveGroupDigest / SaveGroupBackground / ListGroupFiles（仅这些）
 
 步骤：
 1. 调 ReadGroupDigest(groupId) 看是否已有组卡，作为整合基础。
 2. 对每个 dirty 会话调 CleanTranscript(sessionId) 拿干净逐字稿。**未在 dirty 列表中的会话不需要重读**——它们的信息已在已有组卡里。
-3. 调 ListGroupFiles 看共享区；**优先利用** \`_notes/\` 子目录下用户和 agent 主动留下的阶段总结（ReadGroupFile 读关键 note）。CleanTranscript 输出作为补充/校验。
+3. 调 ListGroupFiles 看共享区（返回结果含每个文件的完整内容）；**优先利用** \`_notes/\` 子目录下用户和 agent 主动留下的阶段总结。CleanTranscript 输出作为补充/校验。
 4. 产物一：**组卡**（写给人 + 首页复盘用）。调 SaveGroupDigest({ groupId, title, summary, items, keyOutputs, tags })：
    - title：组的整体主题（一短句，复用现有 title 若仍准确）
    - summary：一两句，"这组讨论的核心 + 几条主线"
@@ -58,7 +58,7 @@ export async function loadGroupDigestPrompt(configDir: string): Promise<string> 
   const file = getGroupDigestPromptPath(configDir);
   try {
     const raw = await fs.readFile(file, 'utf-8');
-    if (raw.trim() && raw.includes(SAVE_BACKGROUND_SENTINEL)) return raw;
+    if (raw.trim() && raw.includes(SAVE_BACKGROUND_SENTINEL) && !raw.includes('ReadGroupFile')) return raw;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;
   }

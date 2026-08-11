@@ -224,38 +224,6 @@ export function AgentChat({
     },
   });
 
-  // 从 messages 的 ContentBlock 中提取子代理列表，按 conversationId 缓存到 ui-store
-  // 仅注册列表数据，不主动打开右侧面板（用户手动切到子代理 Tab 时仍可看到）
-  const convSessionId = currentConversation?.session_id;
-  useEffect(() => {
-    if (!conversationId || !convSessionId) return;
-    const agents: import('@/stores/ui-store').SubAgentInfo[] = [];
-    for (const msg of messages) {
-      if (!msg.contentBlocks) continue;
-      for (const block of msg.contentBlocks) {
-        if (!block.isSubAgent && block.toolName !== 'Agent' && block.toolName !== 'Task') continue;
-        if (!block.subAgentId) continue;
-        if (agents.some(a => a.agentId === block.subAgentId)) continue;
-        const hasOutput = block.toolOutput !== undefined || !!block.subAgentResultText;
-        const isCompleted = block.subAgentStatus === 'completed' || hasOutput;
-        const isFailed = block.subAgentStatus === 'failed' || block.isError;
-        agents.push({
-          agentId: block.subAgentId,
-          sessionId: convSessionId,
-          description: block.subAgentDescription || block.toolInput?.description || '子代理任务',
-          subagentType: block.subAgentType || block.toolInput?.subagent_type,
-          model: block.toolInput?.model,
-          status: isFailed ? 'failed' : isCompleted ? 'completed' : 'running',
-          durationMs: block.subAgentDurationMs,
-          tokens: block.subAgentTokens,
-          toolUseCount: block.subAgentToolUseCount,
-          resultText: block.subAgentResultText,
-        });
-      }
-    }
-    useUIStore.getState().setSubAgents(conversationId, agents);
-  }, [messages, convSessionId, conversationId]);
-
   // 图片附件
   const imageAttachment = useImageAttachment();
 

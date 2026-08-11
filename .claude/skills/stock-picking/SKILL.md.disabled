@@ -97,7 +97,7 @@ description: 用户提出"选股 / 圈股 / 挑几只 X 股 / 从 X 板块选几
 - 用 `CreateSessionBatch` 一次派 N 个子会话，每个 `outputPath` 用 `reports/<code>.md`
 - 每个子会话 task 描述明确带上：**该股票的代码/名称、Step 2 简表里的关键数据（`roeMean5y` / `netProfitCAGR5y` / `revenueCAGR5y` / `trendState` / `yearPositionPct` / `netProfitDeclineYears` / `reportYearsAvailable`）、要求输出的报告结构（见下方模板）、交付路径**
 - `WaitForMessage(fromSessionIds=[...])` 等所有子会话交付
-- 读所有子会话产出的报告（用 `ReadGroupFile`），组装成最终交付：
+- 读所有子会话产出的报告（用 `ListGroupFiles`），组装成最终交付：
   - 横向对比章节（长期基本面 / 长期技术面 / 长期催化剂 / 风险提示 四维度并排）
   - 【数据缺口】汇总表
   - 【最终推荐】1-2 只 + 理由（结合综合分和深挖后的判断）
@@ -127,7 +127,7 @@ description: 用户提出"选股 / 圈股 / 挑几只 X 股 / 从 X 板块选几
    - 若用户明确问"最近日 K 有没有信号"，可以再调 `DetectSignals`（`lookback=7`）作为参考，但要在报告里明确标"辅助信息，非选股依据"
    - 当天 PE、日 K 涨跌幅同理，只作为参考不作为评分
 
-6. **组装报告**写到 `shared/reports/<code>.md`（`WriteGroupFile`），格式见下方模板
+6. **组装报告**写到 `shared/reports/<code>.md`（`SaveSharedNote`），格式见下方模板
 
 **为什么可以并行**：数据源全部有本地缓存，子会话读缓存不撞任何上游 API。唯一并发瓶颈是 `ReadAnnouncement` 首次拉从未缓存过的 PDF（走巨潮 limiter 排队）。5 只子会话的量级完全 OK；超过 10 只就要评估是否分批。
 
@@ -283,7 +283,7 @@ description: 用户提出"选股 / 圈股 / 挑几只 X 股 / 从 X 板块选几
 **Agent（Step 3）**：
 > [用 `CreateSessionBatch` 一次派 3 个子会话，每个 outputPath=reports/<code>.md，task 里带上该股的 roeMean5y / netProfitCAGR5y / trendState / yearPositionPct / netProfitDeclineYears / reportYearsAvailable]
 > [WaitForMessage 等 3 只交付完]
-> [ReadGroupFile 读 3 份报告]
+> [ListGroupFiles 读 3 份报告]
 > [组装最终交付：横向对比 + 数据缺口汇总 + 最终推荐]
 >
 > ### 002XXX AA科技（综合分 82.3，Rank 1）

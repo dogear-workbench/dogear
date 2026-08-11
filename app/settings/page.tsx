@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -13,12 +13,12 @@ import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceConfigTab } from './WorkspaceConfigTab';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { PersonaTab } from './PersonaTab';
-import { AgentsTab } from './AgentsTab';
 import { MemoryTab } from './MemoryTab';
 import { DigestsPanel } from './memory/DigestsPanel';
 import { ReviewPanel } from './memory/ReviewPanel';
 import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { AbilityTab } from './AbilityTab';
+import { GeneralAgentMdDialog } from '@/components/GeneralAgentMdDialog';
 import { BasicToolsSection } from './BasicToolsSection';
 import { SubAgentTab } from './SubAgentTab';
 import { AboutTab } from './AboutTab';
@@ -77,6 +77,7 @@ export default function SettingsPage() {
   const [selectedProfileTab, setSelectedProfileTab] = useState<string>('default');
   // pi Profile 的模型 ID 输入框草稿（按 profileId 索引）
   const [piModelDrafts, setPiModelDrafts] = useState<Record<string, string>>({});
+  const [agentMdDialogOpen, setAgentMdDialogOpen] = useState(false);
 
   // 加载设置
   useEffect(() => { loadSettings(); }, [loadSettings]);
@@ -257,9 +258,6 @@ export default function SettingsPage() {
           <TabsTrigger value="digests" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             会话摘要
           </TabsTrigger>
-          <TabsTrigger value="agents" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            代理管理
-          </TabsTrigger>
           <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             子会话派遣
           </TabsTrigger>
@@ -369,6 +367,19 @@ export default function SettingsPage() {
               </div>
 
               <BasicToolsSection local={local} setLocal={setLocal} />
+
+              {/* 用户级 agent.md */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">用户级 Agent 指令</label>
+                <p className="text-xs text-muted-foreground">
+                  位于 <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
+                  对所有工作区生效。
+                </p>
+                <Button variant="outline" size="sm" onClick={() => setAgentMdDialogOpen(true)}>
+                  <FileText className="w-3.5 h-3.5 mr-1.5" />
+                  编辑用户级 agent.md
+                </Button>
+              </div>
             </div>
           </div>
         </TabsContent>
@@ -684,11 +695,6 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        {/* ── Tab: 代理管理 ── */}
-        <TabsContent value="agents" className="flex-1 flex overflow-hidden mt-0 p-0 data-[state=inactive]:hidden">
-          <AgentsTab />
-        </TabsContent>
-
         {/* ── Tab: 子会话派遣 ── */}
         <TabsContent value="sub-agent" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <SubAgentTab local={local} setLocal={setLocal} />
@@ -704,6 +710,8 @@ export default function SettingsPage() {
           <AboutTab />
         </TabsContent>
       </Tabs>
+
+      <GeneralAgentMdDialog open={agentMdDialogOpen} onOpenChange={setAgentMdDialogOpen} />
     </div>
   );
 }

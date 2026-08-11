@@ -17,7 +17,7 @@ export const MEMORY_GUIDANCE_APPEND =
 /** 共享区阶段总结引导（仅主会话 + 有工作区时注入）。 */
 export const NOTES_GUIDANCE_APPEND =
   `\n## 共享区阶段总结（可选）\n` +
-  `当某个阶段告一段落、或上下文用量已较高时，你可以主动调用 \`WriteGroupFile\` 把一份阶段总结写到 \`shared/_notes/<YYYY-MM-DD-HHmm>-<phase>.md\`，` +
+  `当某个阶段告一段落、或上下文用量已较高时，你可以主动调用 \`SaveSharedNote\` 把一份阶段总结写到 \`shared/_notes/<YYYY-MM-DD-HHmm>-<phase>.md\`，` +
   `frontmatter 带 \`summary:\` 一行。这不是强制——只在你判断「现在写下来对下次接续/组卡有价值」时做。` +
   `不要为了凑数而写，也不要把工具用法、流程细节往里堆。`;
 
@@ -52,7 +52,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
   return (
     `\n## 你是一个被派遣的子会话\n` +
     `**任务**：${task}\n\n` +
-    `**建议交付路径**：${outputPath}（内容较长时先用 WriteGroupFile 写进去，SendMessage 里只放摘要）\n\n` +
+    `**建议交付路径**：${outputPath}（内容较长时先用 SaveSharedNote 写进去，SendMessage 里只放摘要）\n\n` +
     `**交付流程**：完成后用 SendMessage 向派出你的会话交付结果（delivery: true）；有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
 }
