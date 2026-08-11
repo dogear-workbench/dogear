@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 系统提示词段合并
-status: pending
+status: done
 ---
 
 ## 目标
@@ -57,7 +57,14 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- （待填）
+- `group-context-builder.ts`：buildGroupContextPrompt 返回值合并阶段总结引导，补充共享区概念说明
+- `session-append-templates.ts`：删除 NOTES_GUIDANCE_APPEND 常量 + notes-guidance 段；subAgentContractFor 交付路径措辞强化（去掉「建议」、说明完整交付内容写共享区）；GROUP_CONTEXT_EXAMPLE 同步更新；triggerDescription 残留「建议」措辞一致性修正（主会话自做）
+- `pi-session.ts`：import 去掉 NOTES_GUIDANCE_APPEND；子会话注入点删除 groupFiles 分支；主会话注入点删除 NOTES_GUIDANCE_APPEND push（env 参数的历史未提交改动未纳入本次 commit）
+
+### 验证结果
+- `bun run build:electron` 编译通过
+- grep `NOTES_GUIDANCE_APPEND` 整个 `electron/main/agents/` 目录 → 0 结果
+- `bun run lint`：3 个改动文件无 error（仓库预存 4098 个 error 均在无关文件）
 
 ### 给下一步的接力棒
 - 系统提示词层已改完，子会话契约段已强化交付路径

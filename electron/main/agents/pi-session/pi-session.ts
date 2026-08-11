@@ -26,7 +26,7 @@ import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { NOTES_GUIDANCE_APPEND, MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex } from '../session-append-templates.js';
+import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -372,11 +372,9 @@ export class PiSession extends EventEmitter {
     if (isSubAgent) {
       const ab = subAgentProfile?.enabledAbilities ?? {};
       if (ab.memory === true) promptParts.push(MEMORY_GUIDANCE_APPEND);
-      if (ab.groupFiles === true) promptParts.push(NOTES_GUIDANCE_APPEND);
       if (this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
     } else {
       if (this.config.workspacePath) {
-        promptParts.push(NOTES_GUIDANCE_APPEND);
         promptParts.push(MEMORY_GUIDANCE_APPEND);
       }
       if (this.config.groupId) {

@@ -28,7 +28,8 @@ export async function buildGroupContextPrompt(
       `\n` +
       `**组**：${title}\n` +
       `\n` +
-      `遇到不清楚的背景，可以先看看共享区有没有相关文件（ListGroupFiles）。`
+      `共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先看看共享区有没有相关文件（ListGroupFiles）。\n` +
+      `当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（SaveSharedNote），方便下次接续或组卡提炼。这不是强制——只在你判断有价值时做。`
     );
   } catch (e) {
     logger.warn('构建组上下文失败，跳过注入:', e);

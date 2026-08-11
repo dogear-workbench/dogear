@@ -14,13 +14,6 @@ export const MEMORY_GUIDANCE_APPEND =
   '- 只记录有长期价值的信息（稳定的偏好、重要决策、反复出现的模式），不要存一次性对话内容\n' +
   '- 讨论用户可能已有偏好的话题时，先 RecallMemory 查一下有没有相关记忆';
 
-/** 共享区阶段总结引导（仅主会话 + 有工作区时注入）。 */
-export const NOTES_GUIDANCE_APPEND =
-  `\n## 共享区阶段总结（可选）\n` +
-  `当某个阶段告一段落、或上下文用量已较高时，你可以主动调用 \`SaveSharedNote\` 把一份阶段总结写到 \`shared/_notes/<YYYY-MM-DD-HHmm>-<phase>.md\`，` +
-  `frontmatter 带 \`summary:\` 一行。这不是强制——只在你判断「现在写下来对下次接续/组卡有价值」时做。` +
-  `不要为了凑数而写，也不要把工具用法、流程细节往里堆。`;
-
 /** 主会话协作规范（仅 role='main' 且有 groupId 时注入）。 */
 export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
@@ -52,7 +45,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
   return (
     `\n## 你是一个被派遣的子会话\n` +
     `**任务**：${task}\n\n` +
-    `**建议交付路径**：${outputPath}（内容较长时先用 SaveSharedNote 写进去，SendMessage 里只放摘要）\n\n` +
+    `**交付路径**：${outputPath}（把完整交付内容写到共享区这个路径，SendMessage 里只放摘要通知）\n\n` +
     `**交付流程**：完成后用 SendMessage 向派出你的会话交付结果（delivery: true）；有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
 }
@@ -63,7 +56,8 @@ const GROUP_CONTEXT_EXAMPLE =
   '\n' +
   '**组**：<组标题 或 未命名组（创建于 …）>\n' +
   '\n' +
-  '遇到不清楚的背景，可以先看看共享区有没有相关文件（ListGroupFiles）。';
+  '共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先看看共享区有没有相关文件（ListGroupFiles）。\n' +
+  '当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（SaveSharedNote），方便下次接续或组卡提炼。这不是强制——只在你判断有价值时做。';
 
 /**
  * 收集当前所有「系统级 append 段」的模板与触发说明，供设置页展示。
@@ -79,14 +73,6 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       isDynamic: true,
     },
     {
-      key: 'notes-guidance',
-      label: '共享区阶段总结引导',
-      category: 'notes',
-      template: NOTES_GUIDANCE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。引导 Agent 在阶段告一段落时主动写 `shared/_notes/` 阶段总结。',
-      isDynamic: false,
-    },
-    {
       key: 'memory-guidance',
       label: '记忆系统使用规范',
       category: 'memory',
@@ -99,7 +85,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '子会话交付契约',
       category: 'sub-agent',
       template: subAgentContractFor({ task: '<任务描述>', outputPath: '<交付路径>' }),
-      triggerDescription: '仅子会话（role=\'sub\'）注入。给子 agent 明确任务、建议交付路径，以及交付流程。',
+      triggerDescription: '仅子会话（role=\'sub\'）注入。给子 agent 明确任务、交付路径，以及交付流程。',
       isDynamic: true,
     },
     {

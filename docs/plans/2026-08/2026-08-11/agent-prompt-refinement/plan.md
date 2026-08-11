@@ -15,7 +15,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 工具描述改动](./step1-tool-descriptions.md) — 11 个工具按"做什么+何时做"重写，去掉参数/实现/跨工具引用
-- [ ] [Step 2: 系统提示词段合并](./step2-system-prompt.md) — 合并会话组上下文+阶段总结，强化子会话交付路径措辞
+- [x] [Step 2: 系统提示词段合并](./step2-system-prompt.md) — 合并会话组上下文+阶段总结，强化子会话交付路径措辞
 - [ ] [Step 3: staged-execution skill 调整](./step3-skill.md) — 去掉冗余工具名引用，改为行为描述
 
 ## 全局决策
