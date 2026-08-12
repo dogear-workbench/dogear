@@ -13,8 +13,7 @@ import { showConfirm } from '@/stores/confirm-store';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 import { ConversationRow } from '@/components/conversation-list/ConversationRow';
-import { openOrFocusConversation, useAppearanceCount } from '@/components/conversation-list/utils';
-import { AppearanceBadge } from '@/components/conversation-list/AppearanceBadge';
+import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { AddGroupToFolderMenu } from '@/components/conversation-list/AddGroupToFolderMenu';
 import { MoveGroupToFolderMenu } from '@/components/conversation-list/MoveGroupToFolderMenu';
 import { deriveGroupTitle } from './utils';
@@ -31,7 +30,6 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
   const currentGroupId = useGroupStore((s) => s.currentGroupId);
   const isExpanded = expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
-  const appearanceCount = useAppearanceCount(group.id);
   const removeGroupFromFolder = useConversationStore((s) => s.removeGroupFromFolder);
   const isArchived = mode === 'archived';
 
@@ -132,8 +130,7 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
                 />
               ) : (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground truncate">{deriveGroupTitle(group, conversations)}</span>
-                  {!isArchived && <AppearanceBadge count={appearanceCount} />}
+                  <span className="text-xs text-muted-foreground truncate">{deriveGroupTitle(group)}</span>
                 </div>
               )}
             </div>

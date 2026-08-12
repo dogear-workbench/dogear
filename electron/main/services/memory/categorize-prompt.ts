@@ -54,9 +54,12 @@ export const DEFAULT_CATEGORIZE_PROMPT = `# 智能分类决策
 
 ## 硬约束
 
+- **一个组只能在一个分类里**。加入新分类会自动从旧分类移除，不需要手动处理。
 - 所有 anchorTags 数组长度 ≤ 10（单分类上限），超了保存工具会返回 Error，需要按提示重新决策（换用 replaceAnchorTags 或减少标签数）。
 - 分类总数 ≤ maxCategories（以 ListCategories 返回的 atLimit / maxCategories 为准）。atLimit=true 时 SaveCategoryNew 会被直接拒绝，必须先 SaveCategoryMerge 或改走 SaveCategoryJoin。
 `;
+
+const SINGLE_REF_SENTINEL = '一个组只能在一个分类里';
 
 function getCategorizePromptPath(configDir: string): string {
   return path.join(configDir, 'categorize-prompt.md');
@@ -67,7 +70,7 @@ export async function loadCategorizePrompt(configDir: string): Promise<string> {
   const file = getCategorizePromptPath(configDir);
   try {
     const raw = await fs.readFile(file, 'utf-8');
-    if (raw.trim()) return raw;
+    if (raw.trim() && raw.includes(SINGLE_REF_SENTINEL)) return raw;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;
   }

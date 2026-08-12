@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import {
-  readIndex, writeIndex, pushGroup, appendDecision, newCategory, mergeCategories,
+  readIndex, writeIndex, pushGroup, removeGroupEverywhere, appendDecision, newCategory, mergeCategories,
 } from '../../services/memory/smart-category-store.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { registerToolGroup } from './tool-registry.js';
@@ -127,6 +127,7 @@ export function createCategoryToolDefs(): ToolDef[] {
           let idx = await readIndex(args.workspaceId);
           const nowIso = new Date().toISOString();
 
+          idx = removeGroupEverywhere(idx, args.groupId);
           const cat = idx.categories.find((c) => c.id === args.categoryId);
           if (!cat) {
             return { content: [{ type: 'text' as const, text: `Error: 分类 ${args.categoryId} 不存在` }], isError: true };
@@ -190,6 +191,7 @@ export function createCategoryToolDefs(): ToolDef[] {
           if (idx.categories.length >= maxCategories) {
             return { content: [{ type: 'text' as const, text: `Error: 已达分类上限 ${maxCategories}，必须 SaveCategoryJoin` }], isError: true };
           }
+          idx = removeGroupEverywhere(idx, args.groupId);
           const cat = newCategory(args.name, args.anchorTags);
           cat.groupIds = [args.groupId];
           idx.categories.push(cat);
