@@ -84,23 +84,20 @@
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
-- `ConversationList.tsx` — 对话列表主骨架（三态 Tab：三态 Tab 手动|智能|时间 + 归档段）
+- `ConversationList.tsx` — 对话列表主骨架（单一滚动视图：手动文件夹 → 近期 → 智能分类 + 归档 Popover 浮窗）
 - `conversation-list/` — 对话列表子组件（拆分；按组渲染）
   - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / 编辑/引用/删除 hover 按钮；agent 派出会话（contractMetadata.createdBy='agent'）显示 Bot 图标 + task tooltip；文件夹相关 ContextMenu 已上移到 GroupCard）
   - `ManualSection.tsx` — 手动文件夹区（headless-tree 仅在此用；children[__root__] 里的 folderId 节点及其子树，叶子渲染 GroupCard 装 groupId）
   - `SmartSection.tsx` — 智能分类视图（按 groupIds.length 倒序，空分类隐藏，渲染 GroupCard；useSmartCategoryStore.load 同步）
-  - `TimeSection.tsx` — 时间视图（按 group.updatedAt 分桶，30 天内 + 更早；< 5 天扣到 RecentVirtualGroup 不重复）
-  - `RecentVirtualGroup.tsx` — ⚡ 近期 < 5 天虚拟分组，按 group.updatedAt，smart/time 都显示
-  - `ArchiveSection.tsx` — 内联可折叠归档段，懒加载 listArchivedConversations（仍按 conversation 归档）
-  - `ViewTabs.tsx` — 三态切换（manual|smart|time），local state 不持久化
+  - `RecentVirtualGroup.tsx` — ⚡ 近期 < 5 天虚拟分组，按 group.updatedAt
+  - `ArchiveSection.tsx` — 归档段 Popover 浮窗（向上弹出，ScrollArea max-h-80 限高），懒加载 listArchivedConversations
   - `Toolbar.tsx` — 顶部"新建对话"按钮（"新建文件夹"按钮在 ManualSection 内）
-  - `AppearanceBadge.tsx` — ⟂N 角标（count≥5 变橙；用于组标题）
   - `AddGroupToFolderMenu.tsx` — 组级：多选 ContextMenuCheckboxItem 子菜单，调 addGroupToFolder
   - `MoveGroupToFolderMenu.tsx` — 组级：单选子菜单，调 moveGroupBetweenFolders
-  - `utils.ts` — getRelativeTime / getConversationTitle / RECENT_THRESHOLD_MS / TIME_BUCKET_THRESHOLD_MS / CONV_TREE_ROOT / openOrFocusConversation（统一 selectConversation + openTab 入口，接 nodeId 设 lastFocusedNodeId）/ useNodeHighlight（isOpen 淡色 + isSelected 深色）/ useAppearanceCount（按 groupId 计数手动文件夹数 + 智能分类数）
+  - `utils.ts` — getRelativeTime / getConversationTitle / RECENT_THRESHOLD_MS / CONV_TREE_ROOT / openOrFocusConversation（统一 selectConversation + openTab 入口，接 nodeId 设 lastFocusedNodeId）/ useNodeHighlight（isOpen 淡色 + isSelected 深色）
 - `group-list/` — 组级 UI 组件
-  - `GroupCard.tsx` — 组卡片（组标题 + AppearanceBadge + 展开/收起会话行；agent 派出会话平摊到组内，用 sortConversationsWithDFS 让子会话紧跟派出者；无 folderId 时显 AddGroupToFolderMenu / 有 folderId 时显 MoveGroupToFolderMenu + 从文件夹移除 + 删除组走 confirm-store 二次确认）
-  - `utils.ts` — 组 helpers（deriveGroupTitle 等）
+  - `GroupCard.tsx` — 组卡片（组标题 + 展开/收起会话行；agent 派出会话平摊到组内，用 sortConversationsWithDFS 让子会话紧跟派出者；无 folderId 时显 AddGroupToFolderMenu / 有 folderId 时显 MoveGroupToFolderMenu + 从文件夹移除 + 删除组走 confirm-store 二次确认）
+  - `utils.ts` — 组 helpers（deriveGroupTitle：group.title 直读，无 title 返回"未命名话题"）
 - `WorkspaceSwitcherPopover.tsx` — 顶部导航栏工作区切换器（选择/添加）
 - `WelcomeFirstRun.tsx` — 零工作区首次启动引导卡片
 - `WorkspaceRuleDialog.tsx` — 工作区规则 Dialog（agent.md 编辑器）
@@ -136,7 +133,7 @@
 - `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
 - `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、人设关联（updateConversationPersona）、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
-- `group-store.ts` — 会话组状态：groups[] + selectedGroupId + loadGroups / createGroup / updateGroup / deleteGroup / setSelectedGroupId
+- `group-store.ts` — 会话组状态：groups[] + selectedGroupId + loadGroups / createGroup / updateGroup / deleteGroup / setSelectedGroupId；load 时异步触发 autoArchiveStale，有归档则重新 listGroups 刷新
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
 - `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
@@ -221,8 +218,9 @@
   - 注：工作区主题记忆（memory-service / memory-recall / memory-fs / memory-indexer / memory-loader / memory-types）也在此目录
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `contract-channel-service.ts` — 契约通道校验（hasDirectContractChannel：只认直接派出关系，A 派 B 派 C 时 A 无法直连 C；SendMessage / StopSession 工具层前置校验）
-- `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup
+- `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup / archiveGroup / restoreGroup / listActiveGroups / touchGroup（会话活动时刷新 updatedAt）
 - `group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{groupId}/shared/`），供 group-tools 和前端 SharedAreaPanel 使用
+- `auto-archive-service.ts` — 自动归档：autoArchiveStaleGroups(wsId) 筛选 updatedAt 超 30 天且不在手动文件夹的活跃组，逐个 archiveGroup + removeGroupEverywhere，在 group-store.load 时异步触发
 - `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段）
@@ -295,7 +293,7 @@
   - 子会话交付 = `SendMessage(父sessionId, summary, { delivery: true })`，内部触发 bridge.markChildDelivered 同步 childStates 状态机与 UI 事件
 
 - `tools/review-tools.ts` — 首页报告 MCP 工具（dogear-memory-review server：ListDigests / ReadDigest / TraceSource / ReadReport / WriteReport）；零分析逻辑，分流靠提示词。配合 dogear-memory 的 RecallMemory/SaveMemory/ForgetMemory 实现「记忆 + 报告」双层写入
-- `tools/category-tools.ts` — 智能分类 MCP 工具（dogear-smart-category server：ListCategories 含样例组标题 / SaveCategoryJoin { categoryId, addAnchorTags? | replaceAnchorTags? } / SaveCategoryNew { name, anchorTags, redistribute? } 校验上限 / SaveCategoryMerge { fromIds (length=2), name, anchorTags } / PruneCategoryTags；三个 Save* 拆开是因为 GLM 等国内 Anthropic 兼容层不吃 discriminatedUnion 的 oneOf 和 tuple 的 prefixItems，全平台通吃；append 决策日志，入参和落库全用 groupId）
+- `tools/category-tools.ts` — 智能分类 MCP 工具（dogear-smart-category server：ListCategories 含样例组标题 / SaveCategoryJoin { categoryId, addAnchorTags? | replaceAnchorTags? } / SaveCategoryNew { name, anchorTags, redistribute? } 校验上限 / SaveCategoryMerge { fromIds (length=2), name, anchorTags } / PruneCategoryTags；三个 Save* 拆开是因为 GLM 等国内 Anthropic 兼容层不吃 discriminatedUnion 的 oneOf 和 tuple 的 prefixItems，全平台通吃；**单引用语义**：SaveCategoryJoin/SaveCategoryNew 先 removeGroupEverywhere 再加入，一个组只在一个分类；append 决策日志，入参和落库全用 groupId）
 
 > 组提炼链路：脏检查（group-digest-scanner）三触发点（启动扫/夜间03点/关会话）→ group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations[]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleGroupDigestTask 走 pi `runOnce`（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolvePiModel，方案不完整即返回明确 error；接 AbortController，cancelGroupDigest → agent.abort() 真正中断）→ agent 自调 CleanTranscript（对 dirty 会话逐个去噪）+ ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ ListGroupFiles（拉 `_notes/` 阶段总结、子会话 SendMessage delivery 产出）+ SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`。**SaveGroupDigest 落盘前过 source-fidelity 校验**：items 里每个 `sessionId#uuid` 必须真实存在于去噪逐字稿，否则拒绝落盘并回告 agent 哪条错、错在哪（wrong_session 直接给出正确 sessionId）。子会话（role='sub'）不进 sourcesSeen，其贡献通过 SendMessage delivery 汇入父会话产出。
 
