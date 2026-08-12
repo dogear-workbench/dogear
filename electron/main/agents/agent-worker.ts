@@ -678,7 +678,7 @@ class AgentWorker {
     // ──── 内部辅助：处理单张摘要卡（Step A + LLM）────
 
     const {
-      readIndex, writeIndex, pushGroup, appendDecision,
+      readIndex, writeIndex, pushGroup, removeGroupEverywhere, appendDecision,
     } = await import('../services/memory/smart-category-store.js');
     const { matchByThreshold, pickRedistributeCandidates } = await import('../services/memory/smart-category-engine.js');
     const { parseGroupDigest, getGroupsRootDir, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
@@ -743,21 +743,21 @@ class AgentWorker {
       let idx = await readIndex(workspaceId);
       const matches = matchByThreshold(card.tags, idx.categories, threshold);
       if (matches.length > 0) {
-        for (const m of matches) {
-          const cat = idx.categories.find((c) => c.id === m.categoryId);
-          if (cat) {
-            const updated = pushGroup(cat, groupId);
-            idx.categories = idx.categories.map((c) => (c.id === cat.id ? updated : c));
-          }
+        idx = removeGroupEverywhere(idx, groupId);
+        const best = matches[0];
+        const cat = idx.categories.find((c) => c.id === best.categoryId);
+        if (cat) {
+          const updated = pushGroup(cat, groupId);
+          idx.categories = idx.categories.map((c) => (c.id === cat.id ? updated : c));
         }
         idx = appendDecision(idx, {
           time: new Date().toISOString(),
           groupId,
           decision: 'match',
-          reason: `matched ${matches.map((m) => m.categoryId).join(',')}`,
+          reason: `matched ${best.categoryId}`,
         });
         await writeIndex(workspaceId, idx);
-        taskLogger.info('Step A 命中:', groupId, '→', matches.map((m) => m.categoryId));
+        taskLogger.info('Step A 命中:', groupId, '→', best.categoryId);
         return 'match';
       }
 
