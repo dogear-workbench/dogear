@@ -775,7 +775,7 @@ class AgentWorker {
           if (titleByGroup.has(gid)) continue;
           const g = groupMap.get(gid);
           if (!g) { titleByGroup.set(gid, '(未知组)'); continue; }
-          titleByGroup.set(gid, deriveGroupTitle(g, allConvs.filter((cv) => cv.groupId === gid)));
+          titleByGroup.set(gid, deriveGroupTitle(g));
         }
       }
       const candidatesForPrompt = candidates.map((c) => ({

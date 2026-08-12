@@ -7,6 +7,7 @@ import path from 'node:path';
  * 换指令名或语义调整时也要同步这个哨兵。
  */
 const SAVE_BACKGROUND_SENTINEL = 'SaveGroupBackground';
+const TITLE_SYNC_SENTINEL = '同步为话题组的显示名称';
 
 export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两个产物：「组级摘要卡」+「组背景」。一个组通常由多个相关会话组成。
 
@@ -17,7 +18,7 @@ export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两�
 2. 对每个 dirty 会话调 CleanTranscript(sessionId) 拿干净逐字稿。**未在 dirty 列表中的会话不需要重读**——它们的信息已在已有组卡里。
 3. 调 ListGroupFiles 看共享区（返回结果含每个文件的完整内容）；**优先利用** \`_notes/\` 子目录下用户和 agent 主动留下的阶段总结。CleanTranscript 输出作为补充/校验。
 4. 产物一：**组卡**（写给人 + 首页复盘用）。调 SaveGroupDigest({ groupId, title, summary, items, keyOutputs, tags })：
-   - title：组的整体主题（一短句，复用现有 title 若仍准确）
+   - title：组的整体主题（一短句）。此 title 会同步为话题组的显示名称，要简短准确。复用现有 title 若仍准确
    - summary：一两句，"这组讨论的核心 + 几条主线"
    - items：决策 / 想法 / 注意 / 搁置 四类，每条带 sources 数组（来自哪些 sessionId + uuid，可多源）
    - keyOutputs：共享区里有价值的产出文件（path + 一句话说明 + 出处 sessionId 可选）
@@ -58,7 +59,7 @@ export async function loadGroupDigestPrompt(configDir: string): Promise<string> 
   const file = getGroupDigestPromptPath(configDir);
   try {
     const raw = await fs.readFile(file, 'utf-8');
-    if (raw.trim() && raw.includes(SAVE_BACKGROUND_SENTINEL) && !raw.includes('ReadGroupFile')) return raw;
+    if (raw.trim() && raw.includes(SAVE_BACKGROUND_SENTINEL) && !raw.includes('ReadGroupFile') && raw.includes(TITLE_SYNC_SENTINEL)) return raw;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;
   }

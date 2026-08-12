@@ -313,6 +313,8 @@ export async function create(
   };
 
   await saveWorkspaceConversations(workspaceId, file);
+  const { touchGroup } = await import('./group-service.js');
+  await touchGroup(workspaceId, groupId);
   return id;
 }
 
@@ -436,6 +438,8 @@ export async function touch(workspaceId: string, id: string): Promise<void> {
 
   conv.updatedAt = new Date().toISOString();
   await saveWorkspaceConversations(workspaceId, file);
+  const { touchGroup } = await import('./group-service.js');
+  await touchGroup(workspaceId, conv.groupId);
 }
 
 /**

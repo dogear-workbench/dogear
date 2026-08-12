@@ -145,6 +145,14 @@ export async function restoreGroup(workspaceId: string, groupId: string): Promis
   return group;
 }
 
+export async function touchGroup(workspaceId: string, groupId: string): Promise<void> {
+  const file = await loadGroups(workspaceId);
+  const group = file.groups.find((item) => item.id === groupId);
+  if (!group || group.archivedAt !== undefined) return;
+  group.updatedAt = Date.now();
+  await saveGroups(workspaceId, file);
+}
+
 export async function deleteGroup(workspaceId: string, groupId: string): Promise<void> {
   const file = await loadGroups(workspaceId);
   const index = file.groups.findIndex((group) => group.id === groupId);

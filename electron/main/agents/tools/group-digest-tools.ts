@@ -16,7 +16,7 @@ import {
 import {
   buildSessionUuidIndex, validateItemSources, type SourceProblem,
 } from '../../services/memory/source-fidelity.js';
-import { requireActiveGroup } from '../../services/group-service.js';
+import { requireActiveGroup, updateGroup } from '../../services/group-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -139,6 +139,11 @@ export function createGroupDigestToolDefs(
           };
           await saveGroupDigest(workspaceId, card);
           onDigestSaved?.();
+          try {
+            await updateGroup(workspaceId, groupId, { title: args.title });
+          } catch (e) {
+            console.warn(`[SaveGroupDigest] 同步 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
+          }
           return {
             content: [{ type: 'text' as const, text: `已保存组卡 → ${getGroupDigestPath(workspaceId, groupId)}（${args.items.length} items / ${args.keyOutputs.length} keyOutputs）` }],
           };

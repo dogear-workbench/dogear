@@ -83,7 +83,7 @@ export function createCategoryToolDefs(): ToolDef[] {
             const groupIds = c.groupIds.filter((groupId) => activeGroupIds.has(groupId));
             const sampleTitles = groupIds.slice(-3).flatMap((groupId) => {
               const group = groupById.get(groupId);
-              return group ? [deriveGroupTitle(group, allConvs.filter((conv) => conv.groupId === groupId))] : [];
+              return group ? [deriveGroupTitle(group)] : [];
             });
             return {
               id: c.id,
