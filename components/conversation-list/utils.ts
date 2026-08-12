@@ -36,10 +36,6 @@ export function getConversationTitle(conversation: Conversation): string {
 export const RECENT_DAYS = 5;
 export const RECENT_THRESHOLD_MS = RECENT_DAYS * 86400_000;
 
-// 「30 天内 / 更早」阈值（TimeSection 用）
-export const TIME_BUCKET_DAYS = 30;
-export const TIME_BUCKET_THRESHOLD_MS = TIME_BUCKET_DAYS * 86400_000;
-
 // 对话树根节点哨兵 id（与后端 ROOT_ID 同步）
 export const CONV_TREE_ROOT = '__root__';
 

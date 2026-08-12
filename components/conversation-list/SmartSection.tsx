@@ -6,7 +6,6 @@ import { useConversationStore } from '@/stores/conversation-store';
 import type { SmartCategory } from '@/types/smart-category';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
-import { RecentVirtualGroup } from './RecentVirtualGroup';
 import { GroupCard } from '@/components/group-list/GroupCard';
 import { sortConversationsWithDFS } from '@/lib/conversation-sort';
 
@@ -40,7 +39,6 @@ export function SmartSection({ workspaceId }: SmartSectionProps) {
 
   return (
     <div>
-      <RecentVirtualGroup />
       {visible.map((cat) => (
         <CategoryGroup key={cat.id} cat={cat} groupById={groupById} conversations={conversations} />
       ))}

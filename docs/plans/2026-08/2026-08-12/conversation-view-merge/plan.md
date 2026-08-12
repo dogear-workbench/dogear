@@ -11,7 +11,7 @@
 - [x] [Step 1: 后端数据层基础](./step1-backend-foundation.md) — touchGroup + deriveGroupTitle 简化 + SaveGroupDigest 同步 group.title
 - [x] [Step 2: 智能分类单引用 + 去标识](./step2-smart-category-single-ref.md) — 单引用语义 + 删除 AppearanceBadge
 - [x] [Step 3: 自动归档](./step3-auto-archive.md) — 游离组 > 30天归档 + 归档时从智能分类移除
-- [ ] [Step 4: 视图合并 + 归档浮窗](./step4-view-merge.md) — 去掉三 tab + ArchiveSection 改 Popover
+- [x] [Step 4: 视图合并 + 归档浮窗](./step4-view-merge.md) — 去掉三 tab + ArchiveSection 改 Popover
 
 ## 全局决策
 

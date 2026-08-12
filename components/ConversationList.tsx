@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { MessageSquare } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -6,10 +6,8 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 
 import { Toolbar } from './conversation-list/Toolbar';
 import { ManualSection } from './conversation-list/ManualSection';
-import { ViewTabs } from './conversation-list/ViewTabs';
-import type { ListView } from './conversation-list/ViewTabs';
+import { RecentVirtualGroup } from './conversation-list/RecentVirtualGroup';
 import { SmartSection } from './conversation-list/SmartSection';
-import { TimeSection } from './conversation-list/TimeSection';
 import { ArchiveSection } from './conversation-list/ArchiveSection';
 
 /**
@@ -24,7 +22,6 @@ export function ConversationList() {
   const loadingConversations = useConversationStore((s) => s.loadingConversations);
   const conversations = useConversationStore((s) => s.conversations);
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id) ?? '';
-  const [view, setView] = useState<ListView>('manual');
 
   if (loadingConversations && conversations.length === 0) {
     return (
@@ -48,13 +45,9 @@ export function ConversationList() {
           </div>
         ) : (
           <>
-            <ViewTabs value={view} onChange={setView} />
-            {view === 'manual'
-              ? <ManualSection workspaceId={workspaceId} />
-              : view === 'smart'
-              ? <SmartSection workspaceId={workspaceId} />
-              : <TimeSection />
-            }
+            <ManualSection workspaceId={workspaceId} />
+            <RecentVirtualGroup />
+            <SmartSection workspaceId={workspaceId} />
           </>
         )}
       </ScrollArea>

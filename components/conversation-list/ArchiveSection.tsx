@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Archive, ChevronDown, ChevronRight } from 'lucide-react';
+import { Archive } from 'lucide-react';
+import {
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+} from '@/components/ui/popover';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { GroupCard } from '@/components/group-list/GroupCard';
 import { useGroupStore } from '@/stores/group-store';
@@ -17,7 +23,7 @@ interface ArchiveSectionProps {
 }
 
 export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [open, setOpen] = useState(false);
   const [topics, setTopics] = useState<ArchivedTopic[]>([]);
   const groups = useGroupStore((s) => s.groups);
 
@@ -47,23 +53,38 @@ export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
 
   return (
     <div className="border-t mt-auto">
-      <button
-        className="w-full flex items-center gap-1.5 py-2 px-3 text-xs text-muted-foreground hover:bg-muted/40 transition-colors"
-        onClick={() => setCollapsed((value) => !value)}
-      >
-        {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-        <Archive className="w-3.5 h-3.5" />
-        已归档话题
-        <span className="ml-auto opacity-70">{topics.length}</span>
-      </button>
-      {!collapsed && topics.map(({ group, conversations }) => (
-        <GroupCard
-          key={group.id}
-          group={group}
-          conversations={conversations}
-          mode="archived"
-        />
-      ))}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button className="w-full flex items-center gap-1.5 py-2 px-3 text-xs text-muted-foreground hover:bg-muted/40 transition-colors">
+            <Archive className="w-3.5 h-3.5" />
+            已归档话题
+            <span className="ml-auto opacity-70">{topics.length}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          align="start"
+          side="top"
+          sideOffset={0}
+          className="w-[var(--radix-popover-trigger-width)] p-0"
+        >
+          <ScrollArea className="max-h-80 overflow-hidden">
+            {topics.length === 0 ? (
+              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+                暂无归档话题
+              </div>
+            ) : (
+              topics.map(({ group, conversations }) => (
+                <GroupCard
+                  key={group.id}
+                  group={group}
+                  conversations={conversations}
+                  mode="archived"
+                />
+              ))
+            )}
+          </ScrollArea>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
