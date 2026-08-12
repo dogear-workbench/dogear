@@ -36,6 +36,16 @@ export const useGroupStore = create<GroupState>((set) => ({
     try {
       const r = await client.listGroups({ workspaceId });
       set({ groups: r.groups ?? [], loading: false });
+      client
+        .autoArchiveStale({ workspaceId })
+        .then((res) => {
+          if (res.archivedCount > 0) {
+            client.listGroups({ workspaceId }).then((r2) => {
+              set({ groups: r2.groups ?? [] });
+            });
+          }
+        })
+        .catch(() => {});
     } catch (e) {
       set({ loading: false });
       console.warn('[group-store] load 失败:', e);

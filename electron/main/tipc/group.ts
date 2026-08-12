@@ -1,6 +1,7 @@
 import electron from 'electron';
 import { tipc } from '@egoist/tipc/main';
 import * as groupService from '../services/group-service.js';
+import { autoArchiveStaleGroups } from '../services/auto-archive-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import * as conversationService from '../services/conversation-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
@@ -174,6 +175,18 @@ export const groupRouter = {
       } catch (error) {
         console.error('删除共享文件失败:', error);
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  autoArchiveStale: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const archivedCount = await autoArchiveStaleGroups(input.workspaceId);
+        return { archivedCount, error: undefined };
+      } catch (error) {
+        console.error('自动归档失败:', error);
+        return { archivedCount: 0, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 
