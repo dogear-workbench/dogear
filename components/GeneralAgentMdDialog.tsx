@@ -1,12 +1,12 @@
 /**
- * 用户级 agent.md 编辑 Dialog
+ * 通用级 agent.md 编辑 Dialog
  *
  * 编辑 .dogear/agent.md，对所有工作区生效。
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Pencil, Eye } from 'lucide-react';
+import { Loader2, Pencil, Eye, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -41,7 +41,7 @@ export function GeneralAgentMdDialog({ open, onOpenChange }: GeneralAgentMdDialo
       setContent(md || '');
       setSavedContent(md || '');
     } catch (err) {
-      console.error('加载用户级 agent.md 失败:', err);
+      console.error('加载通用级 agent.md 失败:', err);
       toast.error('加载失败', {
         description: err instanceof Error ? err.message : String(err),
       });
@@ -65,7 +65,7 @@ export function GeneralAgentMdDialog({ open, onOpenChange }: GeneralAgentMdDialo
       await client.writeUserAgentMd({ content });
       setSavedContent(content);
       setIsEditing(false);
-      toast.success('已保存用户级 agent.md');
+      toast.success('已保存通用级 agent.md');
     } catch (err) {
       console.error('保存失败:', err);
       toast.error('保存失败', {
@@ -76,9 +76,27 @@ export function GeneralAgentMdDialog({ open, onOpenChange }: GeneralAgentMdDialo
     }
   };
 
+  const handleRestoreTemplate = async () => {
+    const ok = await showConfirm(
+      '恢复为模板？',
+      '当前编辑区内容将被替换为模板内容，你需要手动保存才会生效。',
+    );
+    if (!ok) return;
+    try {
+      const res = await client.getUserAgentTemplate();
+      const tpl = ('content' in res ? res.content : '') as string;
+      setContent(tpl);
+      setIsEditing(true);
+    } catch (err) {
+      toast.error('加载模板失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   const handleCancelEdit = async () => {
     if (dirty) {
-      const ok = await showConfirm('放弃未保存的修改？', '你对用户级 agent.md 的改动还没保存。');
+      const ok = await showConfirm('放弃未保存的修改？', '你对通用级 agent.md 的改动还没保存。');
       if (!ok) return;
       setContent(savedContent);
     }
@@ -89,7 +107,7 @@ export function GeneralAgentMdDialog({ open, onOpenChange }: GeneralAgentMdDialo
     if (!next && dirty) {
       const ok = await showConfirm(
         '放弃未保存的修改？',
-        '你对用户级 agent.md 的改动还没保存，关闭将丢弃这些修改。',
+        '你对通用级 agent.md 的改动还没保存，关闭将丢弃这些修改。',
       );
       if (!ok) return;
       setContent(savedContent);
@@ -101,10 +119,10 @@ export function GeneralAgentMdDialog({ open, onOpenChange }: GeneralAgentMdDialo
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-6xl">
         <DialogHeader>
-          <DialogTitle>用户级 Agent 指令</DialogTitle>
+          <DialogTitle>通用级 Agent 指令</DialogTitle>
           <DialogDescription>
             编辑 <code className="text-xs bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
-            对所有工作区生效。会话启动时会自动加载为全局指令。
+            对所有工作区生效。会话启动时会自动加载为通用级指令。
           </DialogDescription>
         </DialogHeader>
 
@@ -115,10 +133,16 @@ export function GeneralAgentMdDialog({ open, onOpenChange }: GeneralAgentMdDialo
               {dirty && <span className="ml-2 text-amber-600">● 未保存</span>}
             </label>
             {!isEditing && (
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setIsEditing(true)}>
-                <Pencil className="w-3 h-3 mr-1" />
-                编辑
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={handleRestoreTemplate}>
+                  <RotateCcw className="w-3 h-3 mr-1" />
+                  恢复模板
+                </Button>
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setIsEditing(true)}>
+                  <Pencil className="w-3 h-3 mr-1" />
+                  编辑
+                </Button>
+              </div>
             )}
             {isEditing && (
               <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={handleCancelEdit}>

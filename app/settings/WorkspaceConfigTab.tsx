@@ -3,7 +3,7 @@
  *
  * 展示当前工作区 agent.md 状态。
  * 工作区级 agent.md 编辑器在顶部导航栏的 "工作区规则" Dialog（WorkspaceRuleDialog）。
- * 用户级 agent.md 编辑器在「基础设置」Tab 的 GeneralAgentMdDialog。
+ * 通用级 agent.md 编辑器在「基础设置」Tab 的 GeneralAgentMdDialog。
  */
 
 import { useState, useEffect, useCallback } from 'react';
@@ -102,7 +102,7 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
               <div className="flex items-center gap-2 ml-6">
                 <FileText className="w-3.5 h-3.5 text-muted-foreground" />
                 <span className={status.hasUserAgentMd ? '' : 'text-muted-foreground'}>
-                  用户级 agent.md {status.hasUserAgentMd ? '' : '（不存在）'}
+                  通用级 agent.md {status.hasUserAgentMd ? '' : '（不存在）'}
                 </span>
               </div>
 
@@ -128,7 +128,7 @@ export function WorkspaceConfigTab(_props: WorkspaceConfigTabProps) {
             <span className="font-medium">「工作区规则」</span> 按钮编辑。
           </p>
           <p className="text-muted-foreground text-xs leading-relaxed">
-            用户级 agent.md：前往 <span className="font-medium">「基础设置」</span> Tab 编辑。
+            通用级 agent.md：前往 <span className="font-medium">「基础设置」</span> Tab 编辑。
           </p>
         </div>
       </div>

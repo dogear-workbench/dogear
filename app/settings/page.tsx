@@ -396,16 +396,16 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* 用户级 agent.md */}
+              {/* 通用级 agent.md */}
               <div className="space-y-2">
-                <label className="text-sm font-medium">用户级 Agent 指令</label>
+                <label className="text-sm font-medium">通用级 Agent 指令</label>
                 <p className="text-xs text-muted-foreground">
                   位于 <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
                   对所有工作区生效。
                 </p>
                 <Button variant="outline" size="sm" onClick={() => setAgentMdDialogOpen(true)}>
                   <FileText className="w-3.5 h-3.5 mr-1.5" />
-                  编辑用户级 agent.md
+                  编辑通用级 agent.md
                 </Button>
               </div>
             </div>

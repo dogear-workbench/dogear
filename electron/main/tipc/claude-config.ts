@@ -7,6 +7,8 @@ import {
   writeWorkspaceAgentMd,
   readUserAgentMd,
   writeUserAgentMd,
+  readWorkspaceAgentTemplate,
+  readUserAgentTemplate,
 } from '../services/claude-config-service.js';
 import {
   listSkillTemplates,
@@ -101,6 +103,34 @@ export const claudeConfigRouter = {
         return { success: true };
       } catch (error) {
         console.error('写入用户级 agent.md 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /**
+   * 获取工作区级 agent.md 模板
+   */
+  getWorkspaceAgentTemplate: t.procedure
+    .action(async () => {
+      try {
+        const content = await readWorkspaceAgentTemplate();
+        return { content };
+      } catch (error) {
+        console.error('读取工作区 agent.md 模板失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  /**
+   * 获取用户级 agent.md 模板
+   */
+  getUserAgentTemplate: t.procedure
+    .action(async () => {
+      try {
+        const content = await readUserAgentTemplate();
+        return { content };
+      } catch (error) {
+        console.error('读取用户级 agent.md 模板失败:', error);
         return { error: String(error) };
       }
     }),

@@ -72,7 +72,13 @@ export async function initAgentMd(workspaceId: string): Promise<void> {
   try {
     await fs.access(filePath);
   } catch {
-    await fs.writeFile(filePath, '# 工作区指令\n\n在此编写给 AI 助手的工作区级别指令。\n', 'utf-8');
+    let template = '# 工作区指令\n\n在此编写给 AI 助手的工作区级别指令。\n';
+    try {
+      template = await readWorkspaceAgentTemplate();
+    } catch {
+      // 模板文件不存在，用内置占位
+    }
+    await fs.writeFile(filePath, template, 'utf-8');
   }
 }
 
@@ -117,4 +123,21 @@ export async function writeUserAgentMd(content: string): Promise<void> {
   const filePath = getUserAgentMdPath();
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   await fs.writeFile(filePath, content, 'utf-8');
+}
+
+// ============================================================
+// agent.md 模板（resources/agent-templates/）
+// ============================================================
+
+function getAgentTemplatesDir(): string {
+  if (app?.isPackaged) return path.join(process.resourcesPath, 'agent-templates');
+  return path.join(process.cwd(), 'resources', 'agent-templates');
+}
+
+export async function readWorkspaceAgentTemplate(): Promise<string> {
+  return fs.readFile(path.join(getAgentTemplatesDir(), 'workspace.md'), 'utf-8');
+}
+
+export async function readUserAgentTemplate(): Promise<string> {
+  return fs.readFile(path.join(getAgentTemplatesDir(), 'general.md'), 'utf-8');
 }

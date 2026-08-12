@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Pencil, Eye } from 'lucide-react';
+import { Loader2, Pencil, Eye, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -83,6 +83,24 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
     }
   };
 
+  const handleRestoreTemplate = async () => {
+    const ok = await showConfirm(
+      '恢复为模板？',
+      '当前编辑区内容将被替换为模板内容，你需要手动保存才会生效。',
+    );
+    if (!ok) return;
+    try {
+      const res = await client.getWorkspaceAgentTemplate();
+      const tpl = ('content' in res ? res.content : '') as string;
+      setContent(tpl);
+      setIsEditing(true);
+    } catch (err) {
+      toast.error('加载模板失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   const handleCancelEdit = async () => {
     if (dirty) {
       const ok = await showConfirm(
@@ -137,15 +155,26 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
                     )}
                   </label>
                   {!isEditing && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs"
-                      onClick={() => setIsEditing(true)}
-                    >
-                      <Pencil className="w-3 h-3 mr-1" />
-                      编辑
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={handleRestoreTemplate}
+                      >
+                        <RotateCcw className="w-3 h-3 mr-1" />
+                        恢复模板
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-2 text-xs"
+                        onClick={() => setIsEditing(true)}
+                      >
+                        <Pencil className="w-3 h-3 mr-1" />
+                        编辑
+                      </Button>
+                    </div>
                   )}
                   {isEditing && (
                     <Button

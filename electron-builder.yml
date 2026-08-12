@@ -46,6 +46,11 @@ extraResources:
     to: skill-templates/
     filter:
       - "**/*"
+  # agent.md 模板（工作区级 + 用户级，设置页「恢复模板」用）
+  - from: resources/agent-templates/
+    to: agent-templates/
+    filter:
+      - "**/*"
   # 前端构建产物（移出 asar，支持热更新覆盖）
   - from: out/
     to: out/
