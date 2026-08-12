@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Archive } from 'lucide-react';
 import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from '@/components/ui/popover';
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { GroupCard } from '@/components/group-list/GroupCard';
@@ -53,23 +55,21 @@ export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
 
   return (
     <div className="border-t mt-auto">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogTrigger asChild>
           <button className="w-full flex items-center gap-1.5 py-2 px-3 text-xs text-muted-foreground hover:bg-muted/40 transition-colors">
             <Archive className="w-3.5 h-3.5" />
             已归档话题
             <span className="ml-auto opacity-70">{topics.length}</span>
           </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="start"
-          side="top"
-          sideOffset={0}
-          className="w-[var(--radix-popover-trigger-width)] p-0"
-        >
-          <ScrollArea className="max-h-80 overflow-hidden">
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-md p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-3">
+            <DialogTitle className="text-sm">已归档话题</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="max-h-[60vh] px-2 pb-4">
             {topics.length === 0 ? (
-              <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+              <div className="px-3 py-8 text-center text-xs text-muted-foreground">
                 暂无归档话题
               </div>
             ) : (
@@ -83,8 +83,8 @@ export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
               ))
             )}
           </ScrollArea>
-        </PopoverContent>
-      </Popover>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
