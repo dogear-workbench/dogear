@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 门禁拆分 + 状态机 Windows 接入](./step1-gate-split.md) — 拆 isAgentIslandSupported，让状态机在 Windows 初始化，pushState 加 Windows 出口
-- [ ] [Step 2: Surface 核心协调器 + phase 边沿检测](./step2-surface-core.md) — 新增 WindowsAgentIslandSurface，接收 snapshot，检测 phase 转移边沿
+- [x] [Step 2: Surface 核心协调器 + phase 边沿检测](./step2-surface-core.md) — 新增 WindowsAgentIslandSurface，接收 snapshot，检测 phase 转移边沿
 - [ ] [Step 3: 托盘图标状态化 + tooltip](./step3-tray-icon.md) — SVG 动态生成图标，按 priorityStatus 叠加色点
 - [ ] [Step 4: 系统通知 + flashFrame + 提示音委托](./step4-notification-sound.md) — Electron Notification + flashFrame + IPC 委托渲染进程播放提示音
 - [ ] [Step 5: 悬停弹窗](./step5-hover-window.md) — tray mouse-enter/leave + 无边框窗口 + 会话列表 React 组件

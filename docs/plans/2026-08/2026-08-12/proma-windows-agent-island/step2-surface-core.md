@@ -1,7 +1,7 @@
 ---
 step: 2
 title: Surface 核心协调器 + phase 边沿检测
-status: pending
+status: done
 ---
 
 ## 目标
@@ -83,11 +83,17 @@ class WindowsAgentIslandSurface {
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无重大差异。占位体 `lastWindowsSnapshot` 变量被删除（surface 单例自维 `prevPhases`，不需要模块级缓存）。计划要求的边沿检测规则全部实现。
+- 改动文件清单（proma 仓库 C:/proma）：
+  1. `apps/electron/src/main/lib/windows-agent-island-surface.ts`（新增）— PhaseTransition 类型 + detectPhaseTransitions 纯函数 + WindowsAgentIslandSurface 类 + 单例
+  2. `apps/electron/src/main/lib/agent-island-service.ts` — 占位函数改为调用 `getWindowsAgentIslandSurface().onSnapshot(snapshot)`
+  3. `apps/electron/src/main/lib/windows-agent-island-surface.test.ts`（新增）— 16 个测试全通过
+  4. `apps/electron/package.json` — 0.17.18 → 0.17.19
 
 ### 给下一步的接力棒
-- `WindowsAgentIslandSurface` 的实例化位置和回调注入方式：
-- `PhaseTransition` 类型的最终定义：
-- `detectPhaseTransitions` 的签名：
-- 下个 step 该从哪里继续：
+- **实例化方式**：`getWindowsAgentIslandSurface()` 返回懒加载单例。在 `publishWindowsAgentIslandSnapshot` 中被首次调用时创建。
+- **回调注入方式**：Step 3/4/5 通过 `const surface = getWindowsAgentIslandSurface(); surface.onTrayUpdate = ...` 直接赋值。
+- **PhaseTransition 类型**：`{ sessionId, from: AgentIslandPhase, to: AgentIslandPhase, title, detail, interactionKind? }`
+- **detectPhaseTransitions 签名**：`(prevPhases: Map<string, AgentIslandPhase>, curr: NativeAgentIslandSnapshot) => PhaseTransition[]`
+- **onSnapshot 流程**：detect transitions → 更新 prevPhases → console.log → onTrayUpdate(pill) → 逐个 onNotification(transition) → onHoverWindowUpdate(snapshot)
+- 下个 step 从托盘图标接入 `surface.onTrayUpdate` 开始。
