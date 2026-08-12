@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 托盘图标状态化 + tooltip
-status: pending
+status: done
 ---
 
 ## 目标
@@ -66,10 +66,19 @@ export function generateTrayTooltip(pill: PillSnapshot): string
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异（2 处，均合理）：
+  1. **`generateTrayIconSvg` 的 `baseIconSvg` 改为可选参数**（带默认值 `BASE_TRAY_ICON_SVG`），比原计划两参必传更灵活。
+  2. **onTrayUpdate 连接点放在 index.ts 而非 surface.ts**：保持 surface 平台无关，平台特化连接放 index.ts 的 `if (process.platform === 'win32')` 块内。
+- 改动文件清单（proma 仓库 C:/proma）：
+  1. `apps/electron/src/main/lib/windows-tray-icon.ts`（新增）— PHASE_COLORS + BASE_ICON_PATHS + generateTrayIconSvg + generateTrayTooltip
+  2. `apps/electron/src/main/lib/windows-tray-icon.test.ts`（新增）— 13 个测试全通过
+  3. `apps/electron/src/main/tray.ts` — 暴露 updateTrayIcon/updateTrayTooltip；Windows 初始图标走 SVG（idle）
+  4. `apps/electron/src/main/index.ts` — win32 守卫下连接 surface.onTrayUpdate
+  5. `apps/electron/package.json` — 0.17.19 → 0.17.20
 
 ### 给下一步的接力棒
-- `updateTrayIcon` / `updateTrayTooltip` 的调用方式：
-- `generateTrayIconSvg` 的最终签名和基础 SVG 模板：
-- 下个 step 该从哪里继续：
+- **调用方式**：`updateTrayIcon(phase: TrayPhase)` 和 `updateTrayTooltip(text: string)` 从 tray.ts 导出，已被 index.ts 的 onTrayUpdate 回调使用。
+- **generateTrayIconSvg 签名**：`(phase: TrayPhase, baseIconSvg?: string) => string`，baseIconSvg 默认 BASE_TRAY_ICON_SVG。
+- **generateTrayTooltip 签名**：`(pill: AgentIslandPillSnapshot) => string`，runningCount = activeSessionCount - pendingInteractionCount。
+- **SVG→nativeImage 管道**：tray.ts 内部用 `svgToNativeImage()`（封装了 nativeImage.createFromDataURL）。
+- 下个 step 从 onNotification 回调接入系统通知 + flashFrame 开始。
