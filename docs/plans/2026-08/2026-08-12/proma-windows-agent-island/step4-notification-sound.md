@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 系统通知 + flashFrame + 提示音委托
-status: pending
+status: done
 ---
 
 ## 目标
@@ -92,10 +92,24 @@ interface SurfaceDeps {
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异（3 处，均合理）：
+  1. **SurfaceDeps 增加 `openSession` 方法**：通知 click 需要打开会话，纳入依赖注入。
+  2. **OPEN_SESSION handler 已完整实现**：为 Step 5 悬停窗预留（转发到 TRAY_IPC_CHANNELS.OPEN_AGENT_SESSION + show + focus）。
+  3. **渲染进程平台判断用 `detectIsWindows()`**（`@/lib/platform`，基于 navigator.userAgentData / navigator.platform），不用 `process.platform`（渲染进程不可用）。
+- 改动文件清单（proma 仓库 C:/proma，9 个文件）：
+  1. `apps/electron/src/types/settings.ts` — 新增 WINDOWS_AGENT_ISLAND_IPC_CHANNELS（PLAY_SOUND / OPEN_SESSION / PUSH_SNAPSHOT）
+  2. `apps/electron/src/main/lib/windows-agent-island-surface.ts` — SurfaceDeps 接口 + buildNotificationTitleBody / mapTransitionToSoundType / shouldFlashOnTransition / processNotification
+  3. `apps/electron/src/main/lib/windows-agent-island-surface.test.ts` — 新增 22 条测试（总计 34 pass）
+  4. `apps/electron/src/preload/index.ts` — onWindowsAgentIslandPlaySound / onWindowsAgentIslandPushSnapshot / openAgentIslandSession
+  5. `apps/electron/src/main/ipc.ts` — OPEN_SESSION handler
+  6. `apps/electron/src/main/index.ts` — win32 守卫下连接 surface.onNotification + SurfaceDeps 实现 + flashFrame 停止监听
+  7. `apps/electron/src/renderer/atoms/notifications.ts` — Windows 上 detectIsWindows() 跳过 Web Notification（提示音保留）
+  8. `apps/electron/src/renderer/hooks/useGlobalAgentListeners.ts` — onWindowsAgentIslandPlaySound IPC listener
+  9. `apps/electron/package.json` — 0.17.20 → 0.17.21
 
 ### 给下一步的接力棒
-- `SurfaceDeps` 接口的最终定义：
-- IPC 通道常量的最终命名：
-- 下个 step 该从哪里继续：
+- **SurfaceDeps 接口**：`{ isForeground, showNotification, flashFrame, sendPlaySound, notificationsEnabled, openSession }`
+- **IPC 通道**：`WINDOWS_AGENT_ISLAND_IPC_CHANNELS.PLAY_SOUND`（main→renderer 提示音）/ `OPEN_SESSION`（renderer→main 已实现）/ `PUSH_SNAPSHOT`（main→renderer 悬停窗用，Step 5 接入）
+- **preload bridge**：`onWindowsAgentIslandPushSnapshot(callback)` 已就绪，Step 5 悬停窗 React 组件直接监听
+- **onHoverWindowUpdate 回调**：WindowsAgentIslandSurface 已有此回调（V1 no-op），Step 5 需在 index.ts win32 块里注入：发送 PUSH_SNAPSHOT 到悬停窗
+- 下个 step 创建悬停窗 BrowserWindow + React 组件，注入 onHoverWindowUpdate。
