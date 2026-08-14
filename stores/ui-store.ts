@@ -4,9 +4,6 @@ interface UIState {
   settingsOpen: boolean;
   openSettings: () => void;
   closeSettings: () => void;
-  promptSidebarOpen: boolean;
-  togglePromptSidebar: () => void;
-  closePromptSidebar: () => void;
 
   // 左侧面板折叠（里程碑 1.5 Step A2.5）
   /** 左侧面板是否展开 */
@@ -37,9 +34,6 @@ export const useUIStore = create<UIState>((set) => ({
   settingsOpen: false,
   openSettings: () => set({ settingsOpen: true }),
   closeSettings: () => set({ settingsOpen: false }),
-  promptSidebarOpen: false,
-  togglePromptSidebar: () => set((s) => ({ promptSidebarOpen: !s.promptSidebarOpen })),
-  closePromptSidebar: () => set({ promptSidebarOpen: false }),
 
   // 左侧面板折叠（默认展开）
   leftPanelOpen: true,
@@ -57,7 +51,6 @@ export const useUIStore = create<UIState>((set) => ({
 
   reset: () => set({
     settingsOpen: false,
-    promptSidebarOpen: false,
     leftPanelOpen: true,
     rightPanelOpen: false,
     rightPanelTab: 'files',

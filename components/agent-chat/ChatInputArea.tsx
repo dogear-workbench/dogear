@@ -1,5 +1,5 @@
 import { memo, type RefObject } from 'react';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, Sparkles, FileText, MessageSquare, Folder } from 'lucide-react';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -81,8 +81,6 @@ interface ChatInputAreaProps {
   filterQuery: string;
   onSlashCommandSelect: (cmd: SlashCommandInfo) => void;
   onSlashMenuClose: () => void;
-  // 人设设置
-  onTogglePromptSidebar?: () => void;
 }
 
 export const ChatInputArea = memo(function ChatInputArea({
@@ -115,7 +113,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   filterQuery,
   onSlashCommandSelect,
   onSlashMenuClose,
-  onTogglePromptSidebar,
   isSubSession,
 }: ChatInputAreaProps) {
   const isModelMissing = !currentSelection;
@@ -396,21 +393,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              {/* 人设按钮 */}
-              {onTogglePromptSidebar && (
-                <>
-                  <span className="mx-0.5 h-4 w-px bg-border" />
-                  <InputGroupButton
-                    size="icon-xs"
-                    onClick={onTogglePromptSidebar}
-                    className="text-muted-foreground hover:text-foreground"
-                    title="对话人设设置"
-                  >
-                    <Sparkles size={14} />
-                  </InputGroupButton>
-                </>
-              )}
 
               {/* 上下文用量徽章 */}
               <UsageBadge conversationId={conversationId} />

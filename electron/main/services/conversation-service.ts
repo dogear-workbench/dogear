@@ -42,8 +42,6 @@ export interface ConversationIndex {
   parentConversationId: string | null;
   /** 分叉点标识；SDK 时代是 Claude JSONL 消息 uuid，Harness 迁移后是 fork 时使用的 SessionTreeEntry id */
   forkMessageSdkUuid: string | null;
-  personaId?: string;    // 关联的人设 ID
-  tempPrompt?: string;   // 对话规则（持久绑定此对话）
   modelSelection: ModelSelection | null;
   cachePolicy?: '5m' | '1h'; // 提示缓存策略；缺省视为 5m
   /** @deprecated SDK 时代"分叉待定，等首条消息才建会话"的状态位；Harness fork 已改为同步创建，不再产生新值 */
@@ -74,8 +72,6 @@ export interface ConversationCompat {
   session_id?: string;
   parent_conversation_id?: string;
   fork_message_sdk_uuid?: string;
-  persona_id?: string;
-  temp_prompt?: string;
   fork_pending?: boolean;
   created_at: number;
   updated_at: number;
@@ -83,8 +79,6 @@ export interface ConversationCompat {
   sessionId: string | null;
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
-  personaId: string | undefined;
-  tempPrompt: string | undefined;
   modelSelection: ModelSelection | null;
   cachePolicy: '5m' | '1h' | undefined;
   createdAt: string;
@@ -442,27 +436,6 @@ export async function touch(workspaceId: string, id: string): Promise<void> {
   await touchGroup(workspaceId, conv.groupId);
 }
 
-/**
- * 更新对话的人设关联和临时提示词
- */
-export async function updatePersona(
-  workspaceId: string,
-  id: string,
-  personaId?: string,
-  tempPrompt?: string,
-): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
-
-  conv.personaId = personaId;
-  conv.tempPrompt = tempPrompt;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-}
-
 export async function updateModelSelection(
   workspaceId: string,
   id: string,
@@ -550,8 +523,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     session_id: conv.sessionId || undefined,
     parent_conversation_id: conv.parentConversationId || undefined,
     fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
-    persona_id: conv.personaId || undefined,
-    temp_prompt: conv.tempPrompt || undefined,
     fork_pending: conv.forkPending || false,
     created_at: new Date(conv.createdAt).getTime(),
     updated_at: new Date(conv.updatedAt).getTime(),
@@ -560,8 +531,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     sessionId: conv.sessionId ?? null,
     parentConversationId: conv.parentConversationId,
     forkMessageSdkUuid: conv.forkMessageSdkUuid,
-    personaId: conv.personaId,
-    tempPrompt: conv.tempPrompt,
     modelSelection: conv.modelSelection ?? null,
     cachePolicy: conv.cachePolicy,
     createdAt: conv.createdAt,

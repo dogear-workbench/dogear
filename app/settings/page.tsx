@@ -10,9 +10,7 @@ import { useConfirmStore } from '@/stores/confirm-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
-import { WorkspaceConfigTab } from './WorkspaceConfigTab';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
-import { PersonaTab } from './PersonaTab';
 import { MemoryTab } from './MemoryTab';
 import { DigestsPanel } from './memory/DigestsPanel';
 import { ReviewPanel } from './memory/ReviewPanel';
@@ -242,12 +240,6 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="profiles" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             模型方案
-          </TabsTrigger>
-          <TabsTrigger value="personas" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            人设管理
-          </TabsTrigger>
-          <TabsTrigger value="workspace" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            工作区配置
           </TabsTrigger>
           <TabsTrigger value="workspace-management" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             工作区管理
@@ -680,16 +672,6 @@ export default function SettingsPage() {
               })}
             </Tabs>
           </div>
-        </TabsContent>
-
-        {/* ── Tab: 人设管理 ── */}
-        <TabsContent value="personas" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <PersonaTab local={local} setLocal={setLocal} />
-        </TabsContent>
-
-        {/* ── Tab: 工作区配置 ── */}
-        <TabsContent value="workspace" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <WorkspaceConfigTab local={local} setLocal={setLocal} />
         </TabsContent>
 
         {/* ── Tab: 工作区管理 ── */}

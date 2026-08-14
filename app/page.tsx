@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
-import { PromptSidebar } from '@/components/PromptSidebar';
 import { SharedAreaPanel } from '@/components/SharedAreaPanel';
 import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
@@ -356,9 +355,6 @@ export default function Home() {
           )}
         </aside>
       </div>
-
-      {/* 系统提示侧边栏 */}
-      <PromptSidebar />
 
       {/* 微信 Bot 控制 Dialog */}
       <WechatDialog open={wechatDialogOpen} onOpenChange={setWechatDialogOpen} />

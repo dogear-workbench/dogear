@@ -167,23 +167,6 @@ export const conversationsRouter = {
       }
     }),
 
-  updateConversationPersona: t.procedure
-    .input<{ workspaceId: string; conversationId: string; personaId?: string; tempPrompt?: string }>()
-    .action(async ({ input }) => {
-      try {
-        await conversationService.updatePersona(
-          input.workspaceId,
-          input.conversationId,
-          input.personaId,
-          input.tempPrompt,
-        );
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('更新对话人设失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
   setConversationModelSelection: t.procedure
     .input<{ workspaceId: string; conversationId: string; selection: import('../services/settings-types.js').ModelSelection | null }>()
     .action(async ({ input }) => {

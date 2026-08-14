@@ -15,15 +15,6 @@ export interface ModelSelection {
   tier: string;
 }
 
-/** 人设预设 */
-export interface Persona {
-  id: string;
-  name: string;
-  description?: string;
-  prompt: string;
-  createdAt: string; // ISO 8601
-}
-
 export interface ModelProfile {
   id: string;
   name: string;
@@ -91,7 +82,6 @@ export interface AppSettings {
     categorizeModelSelection: ModelSelection | null;
   };
   basicToolPermissions: BasicToolPermissions;
-  personas: Persona[]; // 人设列表
   profiles: Record<string, ModelProfile>;
   /** 智能分类设置 */
   smartCategory?: {
@@ -130,7 +120,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     categorizeModelSelection: null,
   },
   basicToolPermissions: createDefaultBasicToolPermissions(),
-  personas: [],
   subAgent: {
     profiles: [createDefaultSubAgentProfile()],
   },

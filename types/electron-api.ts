@@ -156,8 +156,6 @@ export interface Conversation {
   session_id?: string;               // Harness 持久化 sessionId（用于恢复/删除/分叉）
   parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
   fork_message_sdk_uuid?: string;    // 分叉点标识（Harness 迁移后是 SessionTreeEntry id）
-  persona_id?: string;               // 关联的人设 ID
-  temp_prompt?: string;              // 临时提示词（仅当前对话生效）
   modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
   cachePolicy?: '5m' | '1h';         // 提示缓存策略；缺省视为 5m
   fork_pending?: boolean;            // @deprecated SDK 时代的分叉待定态，Harness fork 已同步创建不再产生

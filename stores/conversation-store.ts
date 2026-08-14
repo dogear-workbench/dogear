@@ -131,8 +131,6 @@ interface ConversationState {
   moveGroupBetweenFolders: (groupId: string, fromFolderId: string, toFolderId: string) => Promise<void>;
   /** 更新对话标题 */
   updateConversationTitle: (conversationId: string, title: string) => Promise<void>;
-  /** 更新对话的人设关联和临时提示词 */
-  updateConversationPersona: (conversationId: string, personaId?: string, tempPrompt?: string) => Promise<void>;
   /** 更新对话的模型选择（null = 不指定） */
   setConversationModelSelection: (conversationId: string, selection: import('@/types/settings').ModelSelection | null) => Promise<void>;
   /** 更新对话的缓存策略（仅写库；切换是否需要重启会话由调用方处理） */
@@ -655,37 +653,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       });
     } catch (error) {
       console.error('更新对话标题失败:', error);
-    }
-  },
-
-  updateConversationPersona: async (conversationId, personaId, tempPrompt) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    const wsId = workspace.id;
-
-    try {
-      await client.updateConversationPersona({
-        workspaceId: wsId,
-        conversationId,
-        personaId,
-        tempPrompt,
-      });
-
-      set((state) => {
-        const slice = state.byWorkspace[wsId] ?? emptySlice();
-        const newConvs = slice.conversations.map((c) =>
-          c.id === conversationId ? { ...c, persona_id: personaId, temp_prompt: tempPrompt } : c
-        );
-        const newSelected = slice.selectedConversation?.id === conversationId
-          ? { ...slice.selectedConversation, persona_id: personaId, temp_prompt: tempPrompt }
-          : slice.selectedConversation;
-        return patchSlice(state, wsId, {
-          conversations: newConvs,
-          selectedConversation: newSelected,
-        });
-      });
-    } catch (error) {
-      console.error('更新对话人设失败:', error);
     }
   },
 

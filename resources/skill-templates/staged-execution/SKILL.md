@@ -38,8 +38,8 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 
 | 角色 | 职责 | 禁止 |
 |---|---|---|
-| **主会话** | 读 plan / 读 step / 决定分派策略 / 派子会话 / 等交付 / 验收 / 回填 stepN.md / 打勾 plan.md / git commit / **改 `.claude/**` 下所有文件** | 直接 Edit/Write 业务代码 |
-| **子会话** | 按 task 描述改代码 / 把交付文档写到共享区 / 向派出会话交付结果 | 越 step 边界改动 / 动 `.claude/**` 下任何文件 |
+| **主会话** | 读 plan / 读 step / 决定分派策略 / 派子会话 / 等交付 / 验收 / 回填 stepN.md / 打勾 plan.md / git commit | 直接 Edit/Write 业务代码 |
+| **子会话** | 按 task 描述改代码 / 把交付文档写到共享区 / 向派出会话交付结果 | 越 step 边界改动 |
 
 ## 分派规则
 
@@ -50,19 +50,6 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 2. plan.md「全局决策」段原文
 3. 交付要求：「按 stepN.md 的「计划改动」段实施代码；完成后把交付文档写到共享区 stepN-delivery.md；然后用 ListLinkedSessions 查派出者 sessionId，向其交付改动清单」
 交付路径约定为 stepN-delivery.md，标题约定为「step N: <stepN.md 的 title>」
-
-### 例外：主会话必须自己做的情形
-
-**`.claude/**` 下的所有文件**（skill、rule、CLAUDE.md、提示词、hooks、settings 等）**必须**由主会话直接 Edit，**不管改动多大都不派子会话**。
-
-原因：子会话启动时会加载 `.claude/`，如果同时有子会话在写这个目录会阻塞导致超时，严重时子会话直接卡死拿不到交付。
-
-处理：如果 stepN.md 的计划改动里同时包含业务代码和 `.claude/` 文件——**拆两半**：
-- `.claude/` 部分主会话自己 Edit
-- 业务代码部分派子会话
-- 派出时 task 描述里明确写「不要动 `.claude/` 下任何文件，那部分主会话已处理」
-
-不存在"例外的例外"——`.claude/` 铁定主会话做。
 
 ### 例外：主会话可以自己做的情形
 
@@ -108,7 +95,7 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 - [ ] 确认共享区有交付文档，读其内容，格式合理（改动清单 + 关键签名 + 遗留问题）
 - [ ] 交付里声称改的文件用 Read 抽查 2-3 个关键点（**用 Read 抽查而非重读全文**）
 - [ ] 有没有超出 stepN.md 计划改动范围的文件被动过？超出 = 不通过
-- [ ] 有没有留 `// TODO` / 半成品 stub？（违反项目 CLAUDE.md 硬性约定 = 不通过）
+- [ ] 有没有留 `// TODO` / 半成品 stub？（违反项目 agent.md 硬性约定 = 不通过）
 - [ ] `bun run lint` 通过（如果 stepN 涉及 TS 代码）
 - [ ] `bun run build:electron` 通过（如果改了 electron/ 下的文件）
 
@@ -132,8 +119,6 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 <1-2 句说这一步做了什么，用户视角>
 
 plan: <feature-name>/step<N>
-
-Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 `<type>` 用项目常用的 feat/fix/refactor/docs/chore。`<模块>` 参考项目现有 commit history 的命名（agent/review/digest/group/model 等）。
@@ -180,7 +165,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - 「commit 里带上这几天累积的改动一起提」→ 混提交 = 违规
 - 「lint 挂了，加个 // eslint-disable 先过」→ 掩盖问题 = 违规
 - 「子会话卡住了，我疯狂发消息指导它」→ 3 次不成 = 停下，不无限循环
-- 「这个 step 有 .claude/ 改动，顺手一起派给子会话吧」→ 会阻塞超时，拆两半：`.claude/` 主会话做，其他派子
 
 ## 用户信号说明你走错了
 
@@ -188,6 +172,6 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 - 「这个改动跟 step 计划的不一样」 → 越界了，回滚
 - 「commit 里怎么有那么多无关文件」 → 混提交，重新分割
 - 「跑一下 lint / build 看看」 → 你跳过了验收清单，补做
-- 「子会话怎么卡住不动了 / 超时了」 → 检查是不是让它改 `.claude/` 了，是的话立即停子会话，主会话自己 Edit .claude/ 部分
+
 
 看到这些信号：停，回本 skill 前置检查，找出跳过的环节。

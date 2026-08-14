@@ -3,7 +3,6 @@ import { Archive, ChevronDown, PanelRightOpen, PanelRightClose } from 'lucide-re
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
-import { useUIStore } from '@/stores/ui-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { AgentChatProps } from './types';
 import { MessageItem } from './MessageItem';
@@ -70,7 +69,6 @@ export function AgentChat({
   rightPanelToggle,
 }: AgentChatProps) {
   // UI 状态
-  const togglePromptSidebar = useUIStore((s) => s.togglePromptSidebar);
   const settings = useSettingsStore((s) => s.settings);
   const setConvSelection = useConversationStore((s) => s.setConversationModelSelection);
 
@@ -565,7 +563,6 @@ export function AgentChat({
         filterQuery={slashCommands.filterQuery}
         onSlashCommandSelect={handleSlashCommandSelect}
         onSlashMenuClose={slashCommands.closeSlashMenu}
-        onTogglePromptSidebar={togglePromptSidebar}
       />
       )}
     </div>

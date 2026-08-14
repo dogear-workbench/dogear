@@ -14,8 +14,6 @@
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
 - `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测，含默认系统提示词编辑）
-- `app/settings/PersonaTab.tsx` — 人设管理标签页（CRUD：左侧列表 + 右侧编辑表单，name/description/prompt）
-- `app/settings/WorkspaceConfigTab.tsx` — 工作区配置标签页（只读展示 .claude 目录状态）
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
 - `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（默认模型 / 权限模式 / 超时分钟数；写 `settings.subAgent`，单次派遣不可覆盖）
 - `app/settings/SystemPromptPreviewTab.tsx` — 系统提示词只读预览面板，拉后端 getSystemPromptSegments 展示 6 段隐形系统契约（tool-pack-guide / group-context / reference-append / group-append / notes-guidance / sub-agent-contract），按 category 分组 + 类别徽章 + 动态徽章 + 触发条件说明 + 等宽模板正文
@@ -83,7 +81,6 @@
 - `ToolBlock.tsx` — 工具块路由组件（顶层 components/，按工具名分发到专属 renderer 或 ToolDetailShell；图标走 lucide 简约样式，无边框包裹）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
-- `PromptSidebar.tsx` — 对话人设选择面板（人设列表单选、临时提示词、保存并重启会话、链接到设置页人设管理）
 - `ConversationList.tsx` — 对话列表主骨架（单一滚动视图：手动文件夹 → 近期 → 智能分类 + 归档 Popover 浮窗）
 - `conversation-list/` — 对话列表子组件（拆分；按组渲染）
   - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / 编辑/引用/删除 hover 按钮；agent 派出会话（contractMetadata.createdBy='agent'）显示 Bot 图标 + task tooltip；文件夹相关 ContextMenu 已上移到 GroupCard）
@@ -132,7 +129,7 @@
 
 - `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
-- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、人设关联（updateConversationPersona）、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
+- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
 - `group-store.ts` — 会话组状态：groups[] + selectedGroupId + loadGroups / createGroup / updateGroup / deleteGroup / setSelectedGroupId；load 时异步触发 autoArchiveStale，有归档则重新 listGroups 刷新
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
@@ -157,9 +154,9 @@
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `ai.ts` — AIInteraction / AIMessage
-- `settings.ts` — ModelTier / ModelSelection / Persona / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, timeoutMinutes, cachePolicy?, loadCoreProfile?, loadSkills?, loadArticleParse? }` 子会话派遣默认配置；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
+- `settings.ts` — ModelTier / ModelSelection / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, timeoutMinutes, cachePolicy?, loadCoreProfile?, loadSkills?, loadArticleParse? }` 子会话派遣默认配置；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
-- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 persona_id/temp_prompt/modelSelection/contractMetadata — 后者记录 agent 派出溯源：createdBy / parentSessionId / task）
+- `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 modelSelection/contractMetadata — 后者记录 agent 派出溯源：createdBy / parentSessionId / task）
 - `delegation.ts` — Agent 协作契约数据模型（ContractMetadata / ChildSessionState / 契约通道消息类型）
 - `stock.ts` — WatchlistItem / StockQuote / KLineDataPoint / TimelinePoint / MoneyFlowPoint / StockSearchResult / DailySnapshot / QUOTE_FIELD_MAP / RateLimiterStatus / Announcement / AnnouncementType / ListAnnouncementsOpts / AnnouncementDetail / CachedAnnouncementEntry
 - `usage.ts` — 会话用量数据模型（ConversationUsageEntry / CompactMarker / ContextSnapshot / ConversationUsage / UsageJsonlLine），主进程镜像在 `electron/main/types.ts`
@@ -173,7 +170,7 @@
 - `agent.ts` — Agent 会话管理（RPC：创建/发送/关闭会话、权限控制）
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
-- `conversations.ts` — 对话 CRUD + 分叉 + 人设关联（JSON 存储）
+- `conversations.ts` — 对话 CRUD + 分叉（JSON 存储）
 - `workspace.ts` — 工作区管理（列表、默认、文件夹选择、文件树）
 - `file.ts` — 文件操作（打开文件位置）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
@@ -188,7 +185,7 @@
 
 ## 业务服务（electron/main/services/）
 
-- `conversation-service.ts` — 对话索引 CRUD + 人设关联 + 对话级模型选择（`.dogear/conversations.json`），含 personaId/tempPrompt/modelSelection 字段；create() 时由 tipc 注入 settings.ai.defaultModelSelection 浅拷贝，createFork() 继承父对话 modelSelection；updateModelSelection 单独维护；含 usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
+- `conversation-service.ts` — 对话索引 CRUD + 对话级模型选择（`.dogear/conversations.json`），含 modelSelection 字段；create() 时由 tipc 注入 settings.ai.defaultModelSelection 浅拷贝，createFork() 继承父对话 modelSelection；updateModelSelection 单独维护；含 usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
 - `usage/` — 会话 token 用量采集与存储
   - `usage-extractor.ts` — 从 SDK result 提取 ConversationUsageEntry 纯函数（含 MODEL_CONTEXT_WINDOWS 兜底表、modelUsage 缺失合成、工具/子代理聚合）
   - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/deleteUsage）
@@ -223,7 +220,7 @@
 - `auto-archive-service.ts` — 自动归档：autoArchiveStaleGroups(wsId) 筛选 updatedAt 超 30 天且不在手动文件夹的活跃组，逐个 archiveGroup + removeGroupEverywhere，在 group-store.load 时异步触发
 - `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree
 - `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
-- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、personas、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
 - `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义
@@ -307,7 +304,7 @@
 
 - `settings.json` — 应用设置（ModelProfile、Thinking、permissionMode 等）
 - `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
-- `conversations.json` — 对话索引（id、标题、`sessionId: string | null`——Harness 会话稳定标识、`workspaceId`、`groupId`/`role`、分叉信息、personaId、tempPrompt、modelSelection、usageSummary）
+- `conversations.json` — 对话索引（id、标题、`sessionId: string | null`——Harness 会话稳定标识、`workspaceId`、`groupId`/`role`、分叉信息、modelSelection、usageSummary）
 - `conversations/` — 旧 SDK 主会话历史（迁移归档后的只读备份，不再回放/恢复，仅归档说明引用；新会话历史见下方 `workspaces/{workspaceId}/sessions/`）
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细（每行一条 entry 或 compact marker，删除对话/工作区时联动清理）
 - `workspaces/{workspaceId}/sessions/` — 主会话（及子会话）的 Harness JSONL 会话文件，`pi-session-repository.ts` 的 `JsonlSessionRepo` 按其 cwd 编码子目录 + 时间戳文件名布局管理；`conversations.json` 的 `sessionId` 字段指向这里，不保存绝对路径
