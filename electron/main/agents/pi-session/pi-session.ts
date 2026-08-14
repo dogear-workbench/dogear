@@ -186,6 +186,19 @@ function extractTextFromBlocks(blocks: ContentBlockParam[]): string {
   return texts.join('\n');
 }
 
+/** 口径对齐 pi-agent-core compaction 的 calculateContextTokens：totalTokens 优先，否则 input+output+cacheRead+cacheWrite */
+function extractLastContextTokens(messages: Extract<AgentEvent, { type: 'agent_end' }>['messages']): number | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i] as { role?: string; stopReason?: string };
+    if (msg.role !== 'assistant' || msg.stopReason === 'aborted' || msg.stopReason === 'error') continue;
+    const usage = (msg as AssistantMessage).usage;
+    if (!usage) continue;
+    const total = usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+    if (total > 0) return total;
+  }
+  return undefined;
+}
+
 /** 读文本文件，失败（不存在/无权限）静默返回空串。给 CLAUDE.md 这类"加分项"用，不阻塞会话启动 */
 async function readTextFileSafe(filePath: string): Promise<string> {
   try {
@@ -208,6 +221,11 @@ export class PiSession extends EventEmitter {
   private currentModelSelection: ModelSelection | null = null;
   // start() 时 resolvePiModel 解析出的模型 ID，供 usage 兜底显示
   private currentModelId?: string;
+  // 自动压缩判定用的窗口与百分比，start() 时从 resolvePiModel 结果赋值
+  private currentContextWindow = 0;
+  private currentAutoCompactPercent = 80;
+  // 最近一次 agent_end 逆序找到的可用 contextTokens（无可用 usage 时为 undefined），驱动 sendMessage 前的自动压缩
+  private lastContextTokens: number | undefined;
   private currentPermissionMode: PiPermissionMode = 'default';
   private basicToolPermissions: BasicToolPermissions;
   // requestId -> 挂起的权限确认请求，等待前端 respondPermissionRequest 调用来 resolve
@@ -307,6 +325,8 @@ export class PiSession extends EventEmitter {
 
     this.currentModelSelection = this.config.modelSelection ?? appSettings.ai.defaultModelSelection;
     this.currentModelId = model.id;
+    this.currentContextWindow = model.contextWindow;
+    this.currentAutoCompactPercent = profile.autoCompactPercent ?? 80;
 
     const piModels = buildPiModels(profile);
     const isSubAgent = this.config.role === 'sub';
@@ -626,6 +646,7 @@ export class PiSession extends EventEmitter {
         this.recordTurnCancelled('会话已中断');
       }
 
+      this.lastContextTokens = extractLastContextTokens(event.messages);
       this.emitUsageEntry();
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
@@ -792,6 +813,7 @@ export class PiSession extends EventEmitter {
     this.running = true;
     this.syncSessionState();
     try {
+      await this.maybeAutoCompact(adapter);
       await adapter.prompt(text);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -807,6 +829,35 @@ export class PiSession extends EventEmitter {
       this.emit('complete', result);
       this.currentTurnResult = null;
       this.syncSessionState();
+    }
+  }
+
+  /**
+   * 发消息前的自动压缩（仅非 steer 分支）：lastContextTokens 超过 contextWindow×autoCompactPercent% 时
+   * 先执行 harness compact。compact 与 prompt 同样要求 harness idle，而非 steer 分支到达这里时
+   * harness 必然 idle（running/steer 队列均为空），天然无竞态。失败（含 Nothing to compact）
+   * 尽力而为：warn + 短错误提示后继续 prompt，不中断发送。
+   */
+  private async maybeAutoCompact(adapter: PiHarnessAdapter): Promise<void> {
+    if (this.lastContextTokens === undefined) return;
+    const threshold = (this.currentContextWindow * this.currentAutoCompactPercent) / 100;
+    if (this.lastContextTokens <= threshold) return;
+
+    const preTokens = this.lastContextTokens;
+    this.emit('message', { type: 'compacting', timestamp: Date.now() } as ExtendedSessionMessage);
+    try {
+      await adapter.compact();
+      this.lastContextTokens = undefined;
+      this.emit('message', {
+        type: 'compact_boundary',
+        timestamp: Date.now(),
+        compactTrigger: 'auto',
+        compactPreTokens: preTokens,
+      } as ExtendedSessionMessage);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn('自动压缩失败已跳过:', reason);
+      this.emitErrorMessage(`自动压缩失败已跳过：${reason}`);
     }
   }
 

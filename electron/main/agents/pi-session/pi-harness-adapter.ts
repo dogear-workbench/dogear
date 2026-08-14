@@ -124,6 +124,11 @@ export class PiHarnessAdapter {
     await this.harness.steer(text);
   }
 
+  /** 转发 harness.compact()（要求 harness idle，非 idle 会抛 busy）；其余错误原样上抛，由调用方处置 */
+  async compact(): Promise<void> {
+    await this.harness.compact();
+  }
+
   /**
    * await 到 harness.abort() resolve 即代表当前 run（含正在跑的工具调用）已完全结束、
    * settled 已触发——这是 close()/interrupt() 等待落盘完成的唯一同步点（harness 无独立

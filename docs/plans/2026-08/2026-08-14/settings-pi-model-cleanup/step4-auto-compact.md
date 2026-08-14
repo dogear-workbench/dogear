@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 自动压缩接入
-status: pending
+status: done
 ---
 
 ## 目标
@@ -23,16 +23,16 @@ pi 会话在发消息前检测上下文用量，超过 `contextWindow × autoCom
 
 ## 计划改动
 
-- [ ] `electron/main/agents/pi-session/pi-harness-adapter.ts`：加 `async compact(): Promise<void>` 转发 `this.harness.compact()`（错误上抛由调用方处置）
-- [ ] `electron/main/agents/pi-session/pi-session.ts`：
+- [x] `electron/main/agents/pi-session/pi-harness-adapter.ts`：加 `async compact(): Promise<void>` 转发 `this.harness.compact()`（错误上抛由调用方处置）
+- [x] `electron/main/agents/pi-session/pi-session.ts`：
   - 实例字段：`lastContextTokens: number | undefined`、`currentModelId: string`、`currentContextWindow: number`（start() 里从 `resolvePiModel` 结果赋值；Step 1 已加 `currentModelId` 的话复用）
   - `handleAgentEvent` 的 `agent_end` 分支：从 `event.messages` 逆序找最后一条 `role === 'assistant'` 且 `stopReason` 非 aborted/error 且带 usage 的消息，算 contextTokens 存 `lastContextTokens`；找不到置 undefined
   - `sendMessage()` 非 steer 分支、`prompt()` 之前：
-    - `percent = currentResolvedProfile?.autoCompactPercent ?? 80`；`threshold = currentContextWindow * percent / 100`
+    - `percent = currentAutoCompactPercent`（start() 存的 `profile.autoCompactPercent ?? 80`）；`threshold = currentContextWindow * percent / 100`
     - `lastContextTokens !== undefined && lastContextTokens > threshold` 时：emit `'compacting'` 状态消息 → `await adapter.compact()` → 成功后 emit `{ type: 'compact_boundary', timestamp: Date.now(), compactTrigger: 'auto', compactPreTokens: lastContextTokens }` 并把 `lastContextTokens` 置 undefined（压缩后旧值失效）
     - compact 失败（含 Nothing to compact）：log warn + emit 一条 error 短消息「自动压缩失败已跳过：{原因}」，不中断，继续 `prompt()`（尽力而为；若上下文真超窗由模型错误自然浮现）
   - steer 分支不触发压缩（run 进行中，下一条非 steer 消息自然触发）
-- [ ] `docs/codebase-map.md`：若 agents/pi 或 pi-session 目录条目描述变化则同步（doc-sync）
+- [x] `docs/codebase-map.md`：若 agents/pi 或 pi-session 目录条目描述变化则同步（doc-sync）
 
 ## 验收
 
@@ -45,9 +45,20 @@ pi 会话在发消息前检测上下文用量，超过 `contextWindow × autoCom
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - step 文档笔误 `currentResolvedProfile?.autoCompactPercent`（Step 1 已删该字段）：按接力棒指示在 start() 存 `currentAutoCompactPercent: number`（= `profile.autoCompactPercent ?? 80`，resolvePiModel 返回的 profile）；同时存 `currentContextWindow = model.contextWindow`
+  - `maybeAutoCompact(adapter)` 实现为独立私有方法（在 try 内、prompt() 之前调用），内部全捕获不抛错，compact 失败走 emitErrorMessage 短提示
+  - contextTokens 口径模块级函数 `extractLastContextTokens`（pi-session.ts）：`usage.totalTokens || input + output + cacheRead + cacheWrite`，且 total>0 才采纳（对齐 pi compaction 的 calculateContextTokens + getAssistantUsage 判定）
+  - agent_end 无条件重算 lastContextTokens（找到存值、找不到置 undefined），压缩成功后置 undefined 只影响"本轮 prompt 前不再重复判"，语义与计划一致
+- 改动文件清单：`electron/main/agents/pi-session/pi-harness-adapter.ts`（加 compact() 转发）、`electron/main/agents/pi-session/pi-session.ts`（字段 + start() 赋值 + agent_end 提取 + sendMessage 接入 + maybeAutoCompact + extractLastContextTokens）、`docs/codebase-map.md`（pi-session.ts / pi-harness-adapter.ts 条目同步）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `PiHarnessAdapter.compact(): Promise<void>`（要求 harness idle，错误原样上抛）
+  - `PiSession` 实例字段：`currentContextWindow: number`（=0，start() 赋 model.contextWindow）、`currentAutoCompactPercent: number`（=80，start() 赋 profile.autoCompactPercent ?? 80）、`lastContextTokens: number | undefined`（agent_end 逆序找最后一条非 aborted/error 且带 usage 的 assistant 消息算出）
+  - emit 消息形状：`{ type: 'compacting', timestamp }`、`{ type: 'compact_boundary', timestamp, compactTrigger: 'auto', compactPreTokens }`（与 transformers.ts:135 及 task-types.ts 字段一致；历史路径 history-adapter.ts compactionToMessage 从 session tree 读，不重复）
+  - harness compact 期间的 steer 安全：steer() 只要求非 idle，phase='compaction' 时入队，compact 后的 prompt() 排空队列
+- 下个 step 该从哪里继续：本 step 是计划最后一个实施 step（plan.md 仅 Step 1-4）；后续仅剩 plan 索引勾选与整体验证（验收中的长对话手动场景）
 - 待办或已知限制：
+  - 压缩失败时 lastContextTokens 不清（下次 agent_end 会重算覆盖）；若连续多轮 turn 都失败会每条消息重试压缩并重复提示
+  - compact 的 LLM 调用产物不进 agent 事件流，usage 只落在 session JSONL 的 CompactionEntry（现有 usage 采集不统计压缩调用的 token）
+  - 手动 /compact 命令（useSendMessage.ts 前端拦截）仍走旧链路发 `/compact` 文本，pi 会话不识别斜杠命令，属既有状态未动
