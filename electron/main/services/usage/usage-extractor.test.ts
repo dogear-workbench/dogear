@@ -1,5 +1,6 @@
 import { test, expect } from 'bun:test';
-import { extractUsageEntry, MODEL_CONTEXT_WINDOWS } from './usage-extractor.ts';
+import { extractUsageEntry } from './usage-extractor.ts';
+import { lookupContextWindow } from '../../agents/pi/model-catalog.ts';
 
 test('从 result 消息提取 usage 三件套与时序', () => {
   const result = {
@@ -15,7 +16,7 @@ test('从 result 消息提取 usage 三件套与时序', () => {
   expect(entry.usage.inputTokens).toBe(100);
   expect(entry.usage.cacheReadInputTokens).toBe(900);
   expect(entry.turnIndex).toBe(1);
-  expect(entry.toolCalls).toEqual([{ name: 'Read', count: 2 }, { name: 'Grep', count: 1 }]);
+  expect(entry.toolActivity?.calls).toEqual([{ name: 'Read', count: 2 }, { name: 'Grep', count: 1 }]);
   expect(entry.totalCostUsd).toBe(0.01);
 });
 
@@ -29,8 +30,8 @@ test('GLM 缺 modelUsage 时用 usage 合成一份', () => {
   expect(entry.modelUsage['glm-4-plus'].inputTokens).toBe(10);
 });
 
-test('MODEL_CONTEXT_WINDOWS 含常见模型兜底', () => {
-  expect(MODEL_CONTEXT_WINDOWS['claude-opus-4-7']).toBeGreaterThan(0);
+test('lookupContextWindow 查 pi 目录表命中常见模型', () => {
+  expect(lookupContextWindow('claude-opus-4-7')).toBeGreaterThan(0);
 });
 
 test('Agent 工具调用单独拆到 subagentCalls，不混进 toolCalls', () => {
@@ -40,6 +41,6 @@ test('Agent 工具调用单独拆到 subagentCalls，不混进 toolCalls', () =>
     { type: 'tool_result', subAgentId: 'a1', subAgentTokens: 500, subAgentToolUseCount: 3, subAgentDurationMs: 200 },
   ] as any;
   const entry = extractUsageEntry(result, turnMsgs, 1);
-  expect(entry.toolCalls.find(t => t.name === 'Agent')).toBeUndefined();
+  expect(entry.toolActivity?.calls?.find(t => t.name === 'Agent')).toBeUndefined();
   expect(entry.subagentCalls?.[0].totalTokens).toBe(500);
 });

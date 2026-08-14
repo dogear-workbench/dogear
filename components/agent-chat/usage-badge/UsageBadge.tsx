@@ -7,7 +7,8 @@ import { formatTokens } from './usage-utils';
 
 /**
  * 输入框工具栏的用量徽章：进度条 + token 文字，hover 展开详情卡片。
- * 上下文占用来自 SDK 真实快照（context.used）；无快照时只显示统计、不画进度条。
+ * 上下文占用来自主进程写入的快照（context.used）；无快照时只显示统计、不画进度条。
+ * 占用超过自动压缩阈值（nearCompact）时变红提示「即将压缩」。
  */
 export function UsageBadge({ conversationId }: { conversationId: string | null }) {
   const { usage, context } = useConversationUsage(conversationId);
@@ -19,7 +20,9 @@ export function UsageBadge({ conversationId }: { conversationId: string | null }
   const limit = context.limit;
   const hasBar = used !== null && limit > 0;
   const ratio = hasBar ? Math.min(used / limit, 1) : 0;
-  const barColor = ratio > 0.85 ? 'bg-red-500' : ratio > 0.6 ? 'bg-amber-500' : 'bg-muted-foreground';
+  const barColor = context.nearCompact || ratio > 0.85
+    ? 'bg-red-500'
+    : ratio > 0.6 ? 'bg-amber-500' : 'bg-muted-foreground';
 
   return (
     <HoverCard openDelay={300}>

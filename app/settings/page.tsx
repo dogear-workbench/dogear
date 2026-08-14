@@ -22,6 +22,8 @@ import { SubAgentTab } from './SubAgentTab';
 import { AboutTab } from './AboutTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
+import { FALLBACK_CONTEXT_WINDOW, formatContextLabel, lookupContextWindow } from '@/lib/pi-model-catalog';
+import { formatTokens } from '@/components/agent-chat/usage-badge/usage-utils';
 
 // ═══ 常量 ═══════════════════════════════════════════
 
@@ -498,16 +500,30 @@ export default function SettingsPage() {
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
                       <p className="text-xs text-muted-foreground">
-                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID）。保存后在 ModelSelector 下拉里出现。
+                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID），右侧为查表得到的生效上下文窗口。保存后在 ModelSelector 下拉里出现。
                       </p>
                       <div className="space-y-2">
                         {(profile.piModels ?? []).length === 0 && (
                           <p className="text-xs text-muted-foreground italic">尚未添加任何模型</p>
                         )}
-                        {(profile.piModels ?? []).map(model => (
+                        {(profile.piModels ?? []).map(model => {
+                          const modelWindow = lookupContextWindow(model.id);
+                          return (
                           <div key={model.id} className="flex items-center gap-2">
                             <span className="flex-1 min-w-0 text-sm font-mono px-3 py-1.5 border rounded bg-muted/30 truncate">
                               {model.id}
+                            </span>
+                            <span
+                              className={cn(
+                                'shrink-0 text-xs tabular-nums px-2 py-1 rounded border',
+                                modelWindow !== undefined
+                                  ? 'text-muted-foreground'
+                                  : 'text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700',
+                              )}
+                            >
+                              {modelWindow !== undefined
+                                ? formatContextLabel(modelWindow)
+                                : `${formatContextLabel(FALLBACK_CONTEXT_WINDOW)} · 未识别`}
                             </span>
                             <input
                               type="text"
@@ -535,7 +551,8 @@ export default function SettingsPage() {
                               <Trash2 className="w-4 h-4 text-destructive" />
                             </Button>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
                         <input
@@ -590,24 +607,38 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium">自动压缩窗口 (tokens)</label>
+                      <label className="text-sm font-medium">自动压缩阈值（%）</label>
                       <p className="text-xs text-muted-foreground">
-                        CLAUDE_CODE_AUTO_COMPACT_WINDOW；留空按模型默认（标准 200K / 扩展 1M）。
-                        填 500000 = 到 50 万 token 时触发压缩。上限受模型实际上下文窗口约束。
+                        上下文占用超过模型窗口的该比例时，在下一条消息发送前自动压缩对话历史。
+                        范围 50–95，默认 80。
                       </p>
                       <Input
                         type="number"
-                        min={0}
-                        placeholder="留空 = 走 SDK 默认"
-                        value={profile.autoCompactWindow ?? ''}
+                        min={50}
+                        max={95}
+                        placeholder="80"
+                        value={profile.autoCompactPercent ?? ''}
                         onChange={(e) => {
                           const v = e.target.value;
                           updateProfileField(id, {
-                            autoCompactWindow: v === '' ? undefined : Math.max(0, Number(v) || 0),
+                            autoCompactPercent: v === '' ? undefined : Math.min(95, Math.max(50, Math.round(Number(v) || 80))),
                           });
                         }}
                         className="max-w-[240px]"
                       />
+                      {(() => {
+                        const first = (profile.piModels ?? [])[0];
+                        if (!first) return null;
+                        const recognized = lookupContextWindow(first.id) !== undefined;
+                        const contextWindow = recognized ? lookupContextWindow(first.id)! : FALLBACK_CONTEXT_WINDOW;
+                        const percent = profile.autoCompactPercent ?? 80;
+                        return (
+                          <p className="text-xs text-muted-foreground">
+                            {percent}%（{formatContextLabel(contextWindow)} 窗口 ≈ {formatTokens(Math.floor(contextWindow * percent / 100))} tokens 时触发）
+                            {!recognized && '，首模型未识别，按 200K 估算'}
+                          </p>
+                        );
+                      })()}
                     </div>
 
                     {/* 底部操作 */}

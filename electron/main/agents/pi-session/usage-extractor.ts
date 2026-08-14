@@ -22,7 +22,7 @@
 import type { AssistantMessage, Usage } from '@earendil-works/pi-ai';
 import type { ContextSnapshot, ConversationUsageEntry, ToolCallRecord, ToolActivity } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
-import { MODEL_CONTEXT_WINDOWS } from '../../services/usage/usage-extractor.js';
+import { lookupContextWindow } from '../pi/model-catalog.js';
 
 const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
 
@@ -68,7 +68,7 @@ export function extractPiContextSnapshot(message: AssistantMessage, turnIndex: n
 
   const model = message.responseModel || message.model;
   const totalTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-  const maxTokens = MODEL_CONTEXT_WINDOWS[model] ?? 0;
+  const maxTokens = lookupContextWindow(model) ?? 0;
 
   return {
     turnIndex,
@@ -151,7 +151,7 @@ export function extractPiUsageEntry(
       cacheCreationInputTokens: bucket.cacheCreationInputTokens,
       webSearchRequests: 0,
       costUSD: bucket.costUSD,
-      contextWindow: MODEL_CONTEXT_WINDOWS[modelId] ?? 0,
+      contextWindow: lookupContextWindow(modelId) ?? 0,
       maxOutputTokens: 0,
     };
   }
@@ -164,7 +164,7 @@ export function extractPiUsageEntry(
       cacheCreationInputTokens: 0,
       webSearchRequests: 0,
       costUSD: 0,
-      contextWindow: MODEL_CONTEXT_WINDOWS[model] ?? 0,
+      contextWindow: lookupContextWindow(model) ?? 0,
       maxOutputTokens: 0,
     };
   }

@@ -9,40 +9,32 @@ function snap(over: Partial<ContextSnapshot> = {}): ContextSnapshot {
   };
 }
 
-test('resolveContext 用快照的 totalTokens/maxTokens/percentage', () => {
+test('resolveContext 用快照的 totalTokens/maxTokens 按 used/limit 重算占比', () => {
   const r = resolveContext(snap());
   expect(r.used).toBe(34000);
   expect(r.limit).toBe(200000);
-  expect(r.percentage).toBe(17);
-  expect(r.label).toBe('200k');
-});
-test('resolveContext percentage 缺失时按 used/limit 推算', () => {
-  const r = resolveContext(snap({ percentage: 0 }));
   expect(Math.round(r.percentage)).toBe(17);
+  expect(r.label).toBe('200k');
+  expect(r.nearCompact).toBe(false);
 });
 test('resolveContext maxTokens 缺失只给 used、不画进度', () => {
   const r = resolveContext(snap({ maxTokens: 0 }));
   expect(r.used).toBe(34000);
   expect(r.limit).toBe(0);
   expect(r.label).toBe('');
+  expect(r.nearCompact).toBe(false);
 });
 test('resolveContext 无快照返回 used=null', () => {
   expect(resolveContext(undefined).used).toBeNull();
 });
-test('resolveContext autoCompactWindow 把上限收窄到用户设定值并重算占比', () => {
-  const r = resolveContext(snap({ maxTokens: 1_000_000, percentage: 3 }), 500_000);
-  expect(r.limit).toBe(500_000);
-  expect(r.label).toBe('500k');
-  expect(Math.round(r.percentage)).toBe(7); // 34000 / 500_000
+test('resolveContext 占用超过 autoCompactPercent 时 nearCompact=true', () => {
+  const r = resolveContext(snap({ totalTokens: 170_000, percentage: 85 }), 80);
+  expect(Math.round(r.percentage)).toBe(85);
+  expect(r.nearCompact).toBe(true);
 });
-test('resolveContext autoCompactWindow 超过模型上限被截断到 rawLimit', () => {
-  const r = resolveContext(snap({ maxTokens: 200_000 }), 900_000);
-  expect(r.limit).toBe(200_000);
-});
-test('resolveContext autoCompactWindow=0 走 SDK 上限', () => {
-  const r = resolveContext(snap(), 0);
-  expect(r.limit).toBe(200_000);
-  expect(r.percentage).toBe(17);
+test('resolveContext 自定义阈值生效（90 时 85% 尚未接近压缩）', () => {
+  const r = resolveContext(snap({ totalTokens: 170_000 }), 90);
+  expect(r.nearCompact).toBe(false);
 });
 test('formatTokens 千分位缩写', () => {
   expect(formatTokens(15632)).toBe('15.6k');

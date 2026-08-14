@@ -19,8 +19,8 @@ export interface ModelProfile {
   apiKey: string;
   baseUrl: string;
   apiTimeoutMs: number;
-  /** 自动压缩窗口 token 数（CLAUDE_CODE_AUTO_COMPACT_WINDOW）。空/0 走 SDK 默认（= 模型实际上下文窗口） */
-  autoCompactWindow?: number;
+  /** 自动压缩触发比例（50–95），缺省 80；阈值 = 上下文窗口 × 百分比 */
+  autoCompactPercent?: number;
   /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
   piWireApi?: 'anthropic-messages' | 'openai-responses';
   /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id */

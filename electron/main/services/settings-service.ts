@@ -102,7 +102,7 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
 /**
  * 遍历 profiles，无条件 pi 化：piModels 非数组或为空时用 haikuModel/sonnetModel/opusModel
  * 过滤空值后填入，再统一迁移为 { id, label? } 对象数组，然后删除旧 SDK 字段
- * （apiFormat/三档模型/disableNonessentialTraffic）。
+ * （apiFormat/三档模型/disableNonessentialTraffic/autoCompactWindow）。
  * 返回 true 表示发生了变化（需要落盘），false 表示无事可做。
  */
 export function migratePiProfiles(settings: AppSettings): boolean {
@@ -123,7 +123,7 @@ export function migratePiProfiles(settings: AppSettings): boolean {
       p.piModels = normalized;
       changed = true;
     }
-    for (const field of ['apiFormat', 'haikuModel', 'sonnetModel', 'opusModel', 'disableNonessentialTraffic']) {
+    for (const field of ['apiFormat', 'haikuModel', 'sonnetModel', 'opusModel', 'disableNonessentialTraffic', 'autoCompactWindow']) {
       if (field in p) {
         delete p[field];
         changed = true;

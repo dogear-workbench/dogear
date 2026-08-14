@@ -12,7 +12,7 @@
 
 - [x] [Step 1: SDK 痕迹清理](./step1-sdk-cleanup.md) — 删选择器/三档模型/非必要流量/相关类型与分支，migratePiProfiles 无条件 pi 化
 - [x] [Step 2: 模型改名](./step2-model-label.md) — piModels 改 `{id, label?}[]`，设置页行内改名，显示链统一 `label ?? id`
-- [ ] [Step 3: 查表扩展 + 压缩阈值百分比](./step3-context-catalog.md) — 新建 model-catalog 查全部厂商目录，autoCompactWindow 换 autoCompactPercent，usage 徽章改造
+- [x] [Step 3: 查表扩展 + 压缩阈值百分比](./step3-context-catalog.md) — 新建 model-catalog 查全部厂商目录，autoCompactWindow 换 autoCompactPercent，usage 徽章改造
 - [ ] [Step 4: 自动压缩接入](./step4-auto-compact.md) — adapter 暴露 compact()，pi-session 发消息前按百分比阈值触发压缩
 
 ## 全局决策

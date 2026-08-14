@@ -4,6 +4,7 @@ import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.l
 import { ANTHROPIC_MODELS } from '@earendil-works/pi-ai/providers/anthropic.models';
 import { OPENAI_MODELS } from '@earendil-works/pi-ai/providers/openai.models';
 import type { Api, Model, ModelThinkingLevel } from '@earendil-works/pi-ai';
+import { FALLBACK_CONTEXT_WINDOW, lookupCatalogEntry } from './model-catalog.js';
 import {
   isProfileComplete,
   type AppSettings,
@@ -30,14 +31,13 @@ function lookupCatalogModel(wireApi: 'anthropic-messages' | 'openai-responses', 
   return {
     reasoning: entry.reasoning,
     thinkingLevelMap: entry.thinkingLevelMap,
-    contextWindow: entry.contextWindow,
-    maxTokens: entry.maxTokens,
   };
 }
 
 function buildPiModel(profile: ModelProfile, modelId: string, tierOrLabel: string): Model<Api> {
   const wireApi = resolveWireApi(profile);
   const catalog = lookupCatalogModel(wireApi, modelId);
+  const catalogEntry = lookupCatalogEntry(modelId);
   return {
     // pi 直接把 id 当作请求体里的 model 字段发出去，必须是真实模型名
     id: modelId,
@@ -49,8 +49,8 @@ function buildPiModel(profile: ModelProfile, modelId: string, tierOrLabel: strin
     thinkingLevelMap: catalog?.thinkingLevelMap,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: catalog?.contextWindow ?? 200_000,
-    maxTokens: catalog?.maxTokens ?? 8192,
+    contextWindow: catalogEntry?.contextWindow ?? FALLBACK_CONTEXT_WINDOW,
+    maxTokens: catalogEntry?.maxTokens ?? 8192,
   };
 }
 

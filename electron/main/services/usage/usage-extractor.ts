@@ -1,18 +1,8 @@
 import type { ConversationUsageEntry, ToolActivity, ToolCallRecord } from '../../types.js';
+import { lookupContextWindow } from '../../agents/pi/model-catalog.js';
 
 /** 子代理工具名集合，与 SDK Task 工具命名保持一致但不直接导入以避免耦合 */
 const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
-
-/** 已知模型的 context window 大小（保守取值） */
-export const MODEL_CONTEXT_WINDOWS: Record<string, number> = {
-  'claude-opus-4-7': 200000,
-  'claude-opus-4-6': 200000,
-  'claude-sonnet-4-6': 200000,
-  'claude-sonnet-4-5': 200000,
-  'claude-haiku-4-5': 200000,
-  'glm-4-plus': 128000,
-  'glm-4.6': 200000,
-};
 
 /** 零值 usage 形状，用于子代理记录占位 */
 function zeroUsage(): ConversationUsageEntry['usage'] {
@@ -75,7 +65,7 @@ export function extractUsageEntry(
         cacheCreationInputTokens: u.cache_creation_input_tokens ?? 0,
         webSearchRequests: 0,
         costUSD: result.total_cost_usd ?? 0,
-        contextWindow: MODEL_CONTEXT_WINDOWS[model] ?? 0,
+        contextWindow: lookupContextWindow(model) ?? 0,
         maxOutputTokens: 0,
       },
     };

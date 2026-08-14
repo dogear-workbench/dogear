@@ -260,6 +260,24 @@ test('migratePiProfiles：旧三档种子填充产出对象数组', () => {
   expect('haikuModel' in p).toBe(false);
 });
 
+test('migratePiProfiles：旧 autoCompactWindow 字段被删除', () => {
+  const s = baseSettings();
+  const p = s.profiles.default as unknown as Record<string, unknown>;
+  p.autoCompactWindow = 500000;
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect('autoCompactWindow' in p).toBe(false);
+});
+
+test('migratePiProfiles：autoCompactPercent 不受迁移影响', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [{ id: 'gpt-5' }];
+  s.profiles.default.autoCompactPercent = 90;
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(false);
+  expect(s.profiles.default.autoCompactPercent).toBe(90);
+});
+
 test('migratePiProfiles：已迁移数据二次执行不再产生改动（幂等）', () => {
   const s = baseSettings();
   s.profiles.default.piModels = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7' }];
