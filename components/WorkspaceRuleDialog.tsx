@@ -33,13 +33,11 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
 
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
-  const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!workspace) return;
-    setLoading(true);
     try {
       const mdResult = await client.readWorkspaceAgentMd({ workspaceId: workspace.id });
       const md = ('content' in mdResult ? mdResult.content : null) as string | null;
@@ -50,8 +48,6 @@ export function WorkspaceRuleDialog({ open, onOpenChange }: WorkspaceRuleDialogP
       toast.error('加载失败', {
         description: err instanceof Error ? err.message : String(err),
       });
-    } finally {
-      setLoading(false);
     }
   }, [workspace]);
 
