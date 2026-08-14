@@ -70,20 +70,29 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 /**
- * 遍历 profiles，对 apiFormat==='pi' 且 piModels 空（缺字段或空数组）的 Profile：
- * 用 haikuModel/sonnetModel/opusModel 过滤空值 + 去重后写入 piModels。
+ * 遍历 profiles，无条件 pi 化：piModels 非数组或为空时用 haikuModel/sonnetModel/opusModel
+ * 过滤空值 + 去重后填入，然后删除旧 SDK 字段（apiFormat/三档模型/disableNonessentialTraffic）。
  * 返回 true 表示发生了变化（需要落盘），false 表示无事可做。
  */
 function migratePiProfiles(settings: AppSettings): boolean {
   let changed = false;
   for (const profile of Object.values(settings.profiles)) {
-    if (profile.apiFormat !== 'pi') continue;
-    if (profile.piModels && profile.piModels.length > 0) continue;
-    const seeds = [profile.haikuModel, profile.sonnetModel, profile.opusModel]
-      .filter((m): m is string => !!m && typeof m === 'string');
-    const deduped = Array.from(new Set(seeds));
-    profile.piModels = deduped;
-    changed = true;
+    const p = profile as unknown as Record<string, unknown>;
+    if (!Array.isArray(p.piModels) || p.piModels.length === 0) {
+      const seeds = [p.haikuModel, p.sonnetModel, p.opusModel]
+        .filter((m): m is string => !!m && typeof m === 'string');
+      // 种子全空且 piModels 本就是合法空数组时不写入，避免每次启动都无意义落盘
+      if (seeds.length > 0 || !Array.isArray(p.piModels)) {
+        p.piModels = Array.from(new Set(seeds));
+        changed = true;
+      }
+    }
+    for (const field of ['apiFormat', 'haikuModel', 'sonnetModel', 'opusModel', 'disableNonessentialTraffic']) {
+      if (field in p) {
+        delete p[field];
+        changed = true;
+      }
+    }
   }
   return changed;
 }

@@ -7,11 +7,9 @@
 // 类型定义（与 types/settings.ts 保持一致，主进程独立定义）
 // ============================================================
 
-export type ModelTier = 'haiku' | 'sonnet' | 'opus';
-
 export interface ModelSelection {
   profileId: string;
-  /** anthropic-sdk 分支是 ModelTier 三选一；pi 分支存 piModels 里的某个模型 ID 原文 */
+  /** 存 piModels 里的某个模型 ID 原文（pi 请求体 model 字段） */
   tier: string;
 }
 
@@ -20,18 +18,12 @@ export interface ModelProfile {
   name: string;
   apiKey: string;
   baseUrl: string;
-  haikuModel: string;
-  sonnetModel: string;
-  opusModel: string;
   apiTimeoutMs: number;
-  disableNonessentialTraffic: boolean;
   /** 自动压缩窗口 token 数（CLAUDE_CODE_AUTO_COMPACT_WINDOW）。空/0 走 SDK 默认（= 模型实际上下文窗口） */
   autoCompactWindow?: number;
-  /** 主会话运行时格式；缺省视为 'anthropic-sdk'。'pi' 路由到 PiSessionManager（pi-ai + pi-agent-core） */
-  apiFormat?: 'anthropic-sdk' | 'pi';
-  /** 仅 apiFormat==='pi' 时生效：pi 客户端的线协议；缺省视为 'anthropic-messages' */
+  /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
   piWireApi?: 'anthropic-messages' | 'openai-responses';
-  /** 仅 apiFormat==='pi' 时生效：pi 分支可用的模型 ID 清单（ModelSelection.tier 取值域） */
+  /** 可用的模型 ID 清单（ModelSelection.tier 取值域） */
   piModels?: string[];
 }
 
@@ -133,11 +125,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       name: '默认',
       apiKey: '',
       baseUrl: '',
-      haikuModel: '',
-      sonnetModel: '',
-      opusModel: '',
       apiTimeoutMs: 3000000,
-      disableNonessentialTraffic: true,
     },
   },
   smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
@@ -153,10 +141,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
  */
 export function isProfileComplete(profile: ModelProfile): boolean {
   if (!profile.apiKey || !profile.baseUrl) return false;
-  if (profile.apiFormat === 'pi') {
-    return (profile.piModels?.length ?? 0) > 0;
-  }
-  return !!(profile.haikuModel && profile.sonnetModel && profile.opusModel);
+  return (profile.piModels?.length ?? 0) > 0;
 }
 
 /**

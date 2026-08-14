@@ -9,7 +9,6 @@ import {
   type AppSettings,
   type ModelProfile,
   type ModelSelection,
-  type ModelTier,
 } from '../../services/settings-types.js';
 
 export interface PiModelResult {
@@ -68,32 +67,17 @@ export function resolvePiModel(
   const profile = appSettings.profiles[target.profileId];
   if (!profile) throw new Error(`模型方案「${target.profileId}」不存在`);
   if (!isProfileComplete(profile)) {
-    throw new Error(`模型方案「${profile.name}」配置不完整（缺 API Key / Base URL / 模型映射）`);
+    throw new Error(`模型方案「${profile.name}」配置不完整（缺 API Key / Base URL / 模型清单）`);
   }
 
-  let modelId: string;
-  let tier: string;
-  if (profile.apiFormat === 'pi') {
-    if (!(profile.piModels ?? []).includes(target.tier)) {
-      throw new Error(`模型「${target.tier}」不在方案「${profile.name}」的模型清单里`);
-    }
-    modelId = target.tier;
-    tier = target.tier;
-  } else {
-    // anthropic-sdk 路径的 tier 只会是 ModelTier 三选一，按需收窄
-    const tierMap: Record<ModelTier, string> = {
-      haiku: profile.haikuModel,
-      sonnet: profile.sonnetModel,
-      opus: profile.opusModel,
-    };
-    tier = target.tier;
-    modelId = tierMap[target.tier as ModelTier];
+  if (!(profile.piModels ?? []).includes(target.tier)) {
+    throw new Error(`模型「${target.tier}」不在方案「${profile.name}」的模型清单里`);
   }
 
-  const model = buildPiModel(profile, modelId, tier);
+  const model = buildPiModel(profile, target.tier, target.tier);
   const thinkingLevel: ModelThinkingLevel = appSettings.ai.effort ?? 'off';
   model.reasoning = thinkingLevel !== 'off';
-  return { model, profile, tier, thinkingLevel };
+  return { model, profile, tier: target.tier, thinkingLevel };
 }
 
 /**
@@ -102,14 +86,7 @@ export function resolvePiModel(
 export function buildPiModels(profile: ModelProfile) {
   const wireApi = resolveWireApi(profile);
   const api = wireApi === 'openai-responses' ? openAIResponsesApi() : anthropicMessagesApi();
-  const models =
-    profile.apiFormat === 'pi'
-      ? (profile.piModels ?? []).map((id) => buildPiModel(profile, id, id))
-      : [
-          buildPiModel(profile, profile.haikuModel, 'haiku'),
-          buildPiModel(profile, profile.sonnetModel, 'sonnet'),
-          buildPiModel(profile, profile.opusModel, 'opus'),
-        ];
+  const models = (profile.piModels ?? []).map((id) => buildPiModel(profile, id, id));
   const provider = createProvider({
     id: profile.id,
     name: profile.name,

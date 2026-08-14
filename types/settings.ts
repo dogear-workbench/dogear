@@ -1,8 +1,6 @@
-export type ModelTier = 'haiku' | 'sonnet' | 'opus';
-
 export interface ModelSelection {
   profileId: string;
-  /** anthropic-sdk 分支是 ModelTier 三选一；pi 分支存 piModels 里的某个模型 ID 原文 */
+  /** 存 piModels 里的某个模型 ID 原文（pi 请求体 model 字段） */
   tier: string;
 }
 
@@ -11,20 +9,12 @@ export interface ModelProfile {
   name: string;
   apiKey: string;
   baseUrl: string;
-  // 模型映射（对应 SDK 环境变量）
-  haikuModel: string;    // ANTHROPIC_DEFAULT_HAIKU_MODEL
-  sonnetModel: string;   // ANTHROPIC_DEFAULT_SONNET_MODEL
-  opusModel: string;     // ANTHROPIC_DEFAULT_OPUS_MODEL
-  // 高级配置
-  apiTimeoutMs: number;                // API_TIMEOUT_MS，默认 3000000
-  disableNonessentialTraffic: boolean; // CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC，默认 true
+  apiTimeoutMs: number; // API_TIMEOUT_MS，默认 3000000
   /** 自动压缩窗口 token 数（CLAUDE_CODE_AUTO_COMPACT_WINDOW）。空/0 走 SDK 默认（= 模型实际上下文窗口）。上限受模型本身约束 */
   autoCompactWindow?: number;
-  /** 主会话运行时格式；缺省视为 'anthropic-sdk'。'pi' 路由到 PiSessionManager（pi-ai + pi-agent-core） */
-  apiFormat?: 'anthropic-sdk' | 'pi';
-  /** 仅 apiFormat==='pi' 时生效：pi 客户端的线协议；缺省视为 'anthropic-messages' */
+  /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
   piWireApi?: 'anthropic-messages' | 'openai-responses';
-  /** 仅 apiFormat==='pi' 时生效：pi 分支可用的模型 ID 清单（ModelSelection.tier 取值域） */
+  /** 可用的模型 ID 清单（ModelSelection.tier 取值域） */
   piModels?: string[];
 }
 
@@ -33,10 +23,7 @@ export interface ModelProfile {
  */
 export function isProfileComplete(profile: ModelProfile): boolean {
   if (!profile.apiKey || !profile.baseUrl) return false;
-  if (profile.apiFormat === 'pi') {
-    return (profile.piModels?.length ?? 0) > 0;
-  }
-  return !!(profile.haikuModel && profile.sonnetModel && profile.opusModel);
+  return (profile.piModels?.length ?? 0) > 0;
 }
 
 export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
@@ -151,11 +138,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       name: '默认',
       apiKey: '',
       baseUrl: '',
-      haikuModel: '',
-      sonnetModel: '',
-      opusModel: '',
       apiTimeoutMs: 3000000,
-      disableNonessentialTraffic: true,
     },
   },
 };

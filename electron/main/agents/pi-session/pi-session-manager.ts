@@ -3,9 +3,8 @@
  *
  * 主会话（及其派遣的子会话）唯一的运行时管理器：conversation-runtime-service.ts 统一通过
  * getPiSessionManager() 管理会话生命周期（getSession/retain/release/closeSession/
- * bindConversation/getConversationIdBySession 等）。ModelProfile.apiFormat 字段仍然存在，
- * 但现在只服务模型选择器 UI 的三档 tier vs 自由 piModels 列表展示（见 pi/provider.ts、
- * lib/model-selection.ts），不再决定运行时路由——旧 SDK 主会话实现已随迁移完成整体移除。
+ * bindConversation/getConversationIdBySession 等）。所有会话统一走 pi 运行时
+ * （见 pi/provider.ts），旧 SDK 主会话实现已随迁移完成整体移除。
  */
 
 import { EventEmitter } from 'events';

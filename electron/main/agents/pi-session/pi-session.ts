@@ -50,7 +50,7 @@ import {
   extractPiUsageEntry,
   type PiUsageAccumulator,
 } from './usage-extractor.js';
-import type { ModelSelection, ModelProfile, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
+import type { ModelSelection, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
@@ -204,9 +204,10 @@ export class PiSession extends EventEmitter {
   // sendMessage() 调用 prompt() 前置 true，onSettled 回调置 false；见 syncSessionState()。
   private running = false;
   private status: PiSessionStatus = PiSessionStatus.IDLE;
-  // 缓存当前生效的 selection/profile，供 setModel 判断是否需要重启会话
+  // 缓存当前生效的 selection，供 setModel 判断是否需要重启会话
   private currentModelSelection: ModelSelection | null = null;
-  private currentResolvedProfile?: ModelProfile;
+  // start() 时 resolvePiModel 解析出的模型 ID，供 usage 兜底显示
+  private currentModelId?: string;
   private currentPermissionMode: PiPermissionMode = 'default';
   private basicToolPermissions: BasicToolPermissions;
   // requestId -> 挂起的权限确认请求，等待前端 respondPermissionRequest 调用来 resolve
@@ -305,7 +306,7 @@ export class PiSession extends EventEmitter {
     );
 
     this.currentModelSelection = this.config.modelSelection ?? appSettings.ai.defaultModelSelection;
-    this.currentResolvedProfile = profile;
+    this.currentModelId = model.id;
 
     const piModels = buildPiModels(profile);
     const isSubAgent = this.config.role === 'sub';
@@ -690,7 +691,7 @@ export class PiSession extends EventEmitter {
         accum,
         this.currentTurnMessages,
         this.usageTurnIndex,
-        this.currentResolvedProfile?.opusModel,
+        this.currentModelId,
       );
       entry.uuid = uuidv4();
       this.usageTurnIndex += 1;

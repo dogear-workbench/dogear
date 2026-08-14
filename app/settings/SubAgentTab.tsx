@@ -49,11 +49,7 @@ function resolveModelLabel(local: AppSettings, sel: ModelSelection | null | unde
   if (!sel) return '默认模型';
   const profile = local.profiles[sel.profileId];
   if (!profile) return '默认模型';
-  if (profile.apiFormat === 'pi') {
-    return (profile.piModels ?? []).includes(sel.tier) ? sel.tier : '默认模型';
-  }
-  const tierKey = `${sel.tier}Model` as 'haikuModel' | 'sonnetModel' | 'opusModel';
-  return profile[tierKey] ?? '默认模型';
+  return (profile.piModels ?? []).includes(sel.tier) ? sel.tier : '默认模型';
 }
 
 function countAbilityDomains(ab: SubAgentEnabledAbilities): number {

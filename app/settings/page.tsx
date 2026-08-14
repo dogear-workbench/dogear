@@ -155,8 +155,7 @@ export default function SettingsPage() {
     const id = crypto.randomUUID();
     const newProfile: ModelProfile = {
       id, name: '新方案', apiKey: '', baseUrl: '',
-      haikuModel: '', sonnetModel: '', opusModel: '',
-      apiTimeoutMs: 3000000, disableNonessentialTraffic: true,
+      apiTimeoutMs: 3000000, piWireApi: 'anthropic-messages',
     };
     setLocal(prev => ({
       ...prev,
@@ -481,130 +480,89 @@ export default function SettingsPage() {
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium">运行时格式</label>
+                      <label className="text-sm font-medium">上游协议</label>
                       <p className="text-xs text-muted-foreground">
-                        决定该方案的对话走哪套运行时。默认 anthropic-sdk（Claude Agent SDK，功能完整）；
-                        pi（pi-ai + pi-agent-core）已支持基础工具（Read/Write/Edit/Bash/Grep/Glob）、
-                        常驻记忆工具、skill 加载、权限卡片、插话队列，但暂不支持 fork/压缩/子会话派遣/
-                        group/reference/市场插件 skill/stock 等业务工具包。
+                        pi 客户端连接上游的线协议。anthropic-messages 走 Claude 兼容字段；
+                        openai-responses 走 OpenAI Responses API（适用于 GLM、DeepSeek、Qwen 等国产 OpenAI 兼容网关）。
                       </p>
                       <select
                         className="h-9 w-full px-3 text-sm border rounded bg-background"
-                        value={profile.apiFormat ?? 'anthropic-sdk'}
-                        onChange={(e) => updateProfileField(id, { apiFormat: e.target.value as 'anthropic-sdk' | 'pi' })}
+                        value={profile.piWireApi ?? 'anthropic-messages'}
+                        onChange={(e) => updateProfileField(id, { piWireApi: e.target.value as 'anthropic-messages' | 'openai-responses' })}
                       >
-                        <option value="anthropic-sdk">anthropic-sdk（默认）</option>
-                        <option value="pi">pi</option>
+                        <option value="anthropic-messages">anthropic-messages（默认）</option>
+                        <option value="openai-responses">openai-responses</option>
                       </select>
                     </div>
 
-                    {profile.apiFormat === 'pi' && (
-                      <>
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium">上游协议</label>
-                          <p className="text-xs text-muted-foreground">
-                            pi 客户端连接上游的线协议。anthropic-messages 走 Claude 兼容字段；
-                            openai-responses 走 OpenAI Responses API（适用于 GLM、DeepSeek、Qwen 等国产 OpenAI 兼容网关）。
-                          </p>
-                          <select
-                            className="h-9 w-full px-3 text-sm border rounded bg-background"
-                            value={profile.piWireApi ?? 'anthropic-messages'}
-                            onChange={(e) => updateProfileField(id, { piWireApi: e.target.value as 'anthropic-messages' | 'openai-responses' })}
-                          >
-                            <option value="anthropic-messages">anthropic-messages（默认）</option>
-                            <option value="openai-responses">openai-responses</option>
-                          </select>
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
-                          <p className="text-xs text-muted-foreground">
-                            该 Profile 可用的模型 ID 列表，每条既是模型标识也是显示名。保存后在 ModelSelector 下拉里出现。
-                          </p>
-                          <div className="space-y-2">
-                            {(profile.piModels ?? []).length === 0 && (
-                              <p className="text-xs text-muted-foreground italic">尚未添加任何模型</p>
-                            )}
-                            {(profile.piModels ?? []).map(modelId => (
-                              <div key={modelId} className="flex items-center gap-2">
-                                <span className="flex-1 text-sm font-mono px-3 py-1.5 border rounded bg-muted/30 truncate">
-                                  {modelId}
-                                </span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => updateProfileField(id, {
-                                    piModels: (profile.piModels ?? []).filter(m => m !== modelId),
-                                  })}
-                                >
-                                  <Trash2 className="w-4 h-4 text-destructive" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                          <div className="flex items-center gap-2 pt-1">
-                            <input
-                              type="text"
-                              className={inputCls}
-                              value={piModelDrafts[id] ?? ''}
-                              onChange={(e) => setPiModelDrafts(prev => ({ ...prev, [id]: e.target.value }))}
-                              placeholder="如 gpt-5、claude-sonnet-4-6 等"
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  const raw = (piModelDrafts[id] ?? '').trim();
-                                  if (!raw) return;
-                                  const existing = profile.piModels ?? [];
-                                  if (existing.includes(raw)) {
-                                    setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
-                                    return;
-                                  }
-                                  updateProfileField(id, { piModels: [...existing, raw] });
-                                  setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
-                                }
-                              }}
-                            />
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
+                      <p className="text-xs text-muted-foreground">
+                        该 Profile 可用的模型 ID 列表，每条既是模型标识也是显示名。保存后在 ModelSelector 下拉里出现。
+                      </p>
+                      <div className="space-y-2">
+                        {(profile.piModels ?? []).length === 0 && (
+                          <p className="text-xs text-muted-foreground italic">尚未添加任何模型</p>
+                        )}
+                        {(profile.piModels ?? []).map(modelId => (
+                          <div key={modelId} className="flex items-center gap-2">
+                            <span className="flex-1 text-sm font-mono px-3 py-1.5 border rounded bg-muted/30 truncate">
+                              {modelId}
+                            </span>
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              onClick={() => {
-                                const raw = (piModelDrafts[id] ?? '').trim();
-                                if (!raw) return;
-                                const existing = profile.piModels ?? [];
-                                if (existing.includes(raw)) {
-                                  setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
-                                  return;
-                                }
-                                updateProfileField(id, { piModels: [...existing, raw] });
-                                setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
-                              }}
+                              onClick={() => updateProfileField(id, {
+                                piModels: (profile.piModels ?? []).filter(m => m !== modelId),
+                              })}
                             >
-                              <Plus className="w-4 h-4 mr-1" />
-                              添加
+                              <Trash2 className="w-4 h-4 text-destructive" />
                             </Button>
                           </div>
-                        </div>
-                      </>
-                    )}
-
-                    {profile.apiFormat !== 'pi' && (
-                      <>
-                        {(['haikuModel', 'sonnetModel', 'opusModel'] as const).map(field => {
-                          const labels: Record<string, string> = { haikuModel: 'Haiku 模型', sonnetModel: 'Sonnet 模型', opusModel: 'Opus 模型' };
-                          const placeholders: Record<string, string> = { haikuModel: '如 claude-haiku-4-5', sonnetModel: '如 claude-sonnet-4-6', opusModel: '如 claude-opus-4-6' };
-                          return (
-                            <div key={field} className="space-y-1.5">
-                              <label className="text-sm font-medium">{labels[field]} <span className="text-destructive">*</span></label>
-                              <input type="text" className={inputCls}
-                                value={profile[field]}
-                                onChange={(e) => updateProfileField(id, { [field]: e.target.value })}
-                                placeholder={placeholders[field]}
-                              />
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          className={inputCls}
+                          value={piModelDrafts[id] ?? ''}
+                          onChange={(e) => setPiModelDrafts(prev => ({ ...prev, [id]: e.target.value }))}
+                          placeholder="如 gpt-5、claude-sonnet-4-6 等"
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              const raw = (piModelDrafts[id] ?? '').trim();
+                              if (!raw) return;
+                              const existing = profile.piModels ?? [];
+                              if (existing.includes(raw)) {
+                                setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
+                                return;
+                              }
+                              updateProfileField(id, { piModels: [...existing, raw] });
+                              setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
+                            }
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const raw = (piModelDrafts[id] ?? '').trim();
+                            if (!raw) return;
+                            const existing = profile.piModels ?? [];
+                            if (existing.includes(raw)) {
+                              setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
+                              return;
+                            }
+                            updateProfileField(id, { piModels: [...existing, raw] });
+                            setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
+                          }}
+                        >
+                          <Plus className="w-4 h-4 mr-1" />
+                          添加
+                        </Button>
+                      </div>
+                    </div>
 
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">API 超时时间（毫秒）</label>
@@ -613,25 +571,6 @@ export default function SettingsPage() {
                         onChange={(e) => updateProfileField(id, { apiTimeoutMs: Number(e.target.value) })}
                         min={1000}
                       />
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <label className="text-sm font-medium">禁用非必要流量</label>
-                        <p className="text-xs text-muted-foreground">关闭 SDK 的非必要网络请求</p>
-                      </div>
-                      <button type="button"
-                        className={cn(
-                          "relative inline-flex h-6 w-11 items-center rounded-full transition-colors",
-                          profile.disableNonessentialTraffic ? "bg-primary" : "bg-muted"
-                        )}
-                        onClick={() => updateProfileField(id, { disableNonessentialTraffic: !profile.disableNonessentialTraffic })}
-                      >
-                        <span className={cn(
-                          "inline-block h-4 w-4 transform rounded-full bg-white transition-transform",
-                          profile.disableNonessentialTraffic ? "translate-x-6" : "translate-x-1"
-                        )} />
-                      </button>
                     </div>
 
                     <div className="space-y-1.5">

@@ -11,7 +11,7 @@ import { Cpu, ChevronRight } from 'lucide-react';
 import { InputGroupButton } from '@/components/ui/input-group';
 import { cn } from '@/lib/utils';
 import { dedupeProfileTiers, sameSelection } from '@/lib/model-selection';
-import type { AppSettings, ModelSelection, ModelTier } from '@/types/settings';
+import type { AppSettings, ModelSelection } from '@/types/settings';
 
 interface Props {
   settings: AppSettings;
@@ -22,17 +22,10 @@ interface Props {
   disabled?: boolean;
 }
 
-function tierToModelKey(tier: ModelTier): 'haikuModel' | 'sonnetModel' | 'opusModel' {
-  return `${tier}Model` as 'haikuModel' | 'sonnetModel' | 'opusModel';
-}
-
 function resolveCurrentLabel(settings: AppSettings, value: ModelSelection): string {
   const profile = settings.profiles[value.profileId];
   if (!profile) return '已删除的模型';
-  if (profile.apiFormat === 'pi') {
-    return (profile.piModels ?? []).includes(value.tier) ? value.tier : '已删除的模型';
-  }
-  return profile[tierToModelKey(value.tier as ModelTier)] ?? '已删除的模型';
+  return (profile.piModels ?? []).includes(value.tier) ? value.tier : '已删除的模型';
 }
 
 export function ModelSelector({
