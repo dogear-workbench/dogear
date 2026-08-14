@@ -24,3 +24,16 @@
 - **pi 目录 import 清单**（去重后 10 个，-cn 重复目录不引入）：anthropic、openai、deepseek、zai、moonshotai、minimax、qwen-token-plan、xai、google、kimi-coding
 - **行号基准**：step 文档中的行号是 2026-08-14 快照，执行时以内容定位为准
 - 不写注释（项目规范）；step 完成后回填「实施回填」一节并勾选本索引
+
+## 完成总结
+
+**4 步全部完成**（2026-08-14，4 个 commit：bc45494 / 2c0ee4f / 5aa0db5 / dd4a976）。
+
+- Step 1：删除运行时格式选择器、三档模型、非必要流量开关及全部类型/迁移/消费分支；`migratePiProfiles` 无条件 pi 化，存量 profile 旧字段首次加载即删除
+- Step 2：`piModels` 改 `Array<{ id, label? }>`，设置页行内改名，全部显示链统一 `label ?? id`；`ModelSelection.tier` 恒存模型 ID，对话数据零改动
+- Step 3：新建 `pi/model-catalog.ts`（10 厂商目录 113 模型查表，渲染层同源副本 `lib/pi-model-catalog.ts`）；`autoCompactWindow` → `autoCompactPercent`（50–95 缺省 80）；usage 徽章按真实窗口算进度、超阈值变红
+- Step 4：adapter 暴露 `compact()`，pi 会话发消息前按 `contextWindow × percent%` 阈值自动压缩（compacting 提示 + compact_boundary 分隔线，失败降级不中断）
+
+**遗留待真机验证**（子会话只能静态核对）：`bun run dev` 设置页 UI（无旧选择器、窗口徽标、行内改名）、长对话调低 percent 触发真实压缩的端到端场景、kimi/glm 模型徽章显示真实窗口（262K 等）。
+
+**已知限制**：pi-ai 目录未收录的模型 ID（glm-4.6、deepseek-chat 旧名等）回落 200K 并在设置页标「未识别」；前端手动 `/compact` 在 pi 会话仍发字面文本（既有状态，未在本 plan 范围）。
