@@ -70,11 +70,12 @@ export function resolvePiModel(
     throw new Error(`模型方案「${profile.name}」配置不完整（缺 API Key / Base URL / 模型清单）`);
   }
 
-  if (!(profile.piModels ?? []).includes(target.tier)) {
+  const matched = (profile.piModels ?? []).find(m => m.id === target.tier);
+  if (!matched) {
     throw new Error(`模型「${target.tier}」不在方案「${profile.name}」的模型清单里`);
   }
 
-  const model = buildPiModel(profile, target.tier, target.tier);
+  const model = buildPiModel(profile, target.tier, matched.label ?? target.tier);
   const thinkingLevel: ModelThinkingLevel = appSettings.ai.effort ?? 'off';
   model.reasoning = thinkingLevel !== 'off';
   return { model, profile, tier: target.tier, thinkingLevel };
@@ -86,7 +87,7 @@ export function resolvePiModel(
 export function buildPiModels(profile: ModelProfile) {
   const wireApi = resolveWireApi(profile);
   const api = wireApi === 'openai-responses' ? openAIResponsesApi() : anthropicMessagesApi();
-  const models = (profile.piModels ?? []).map((id) => buildPiModel(profile, id, id));
+  const models = (profile.piModels ?? []).map((m) => buildPiModel(profile, m.id, m.label ?? m.id));
   const provider = createProvider({
     id: profile.id,
     name: profile.name,

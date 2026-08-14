@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { normalizeSettings } from './settings-service.js';
+import { normalizeSettings, normalizePiModels, migratePiProfiles } from './settings-service.js';
 import { DEFAULT_SETTINGS, type AppSettings } from './settings-types.js';
 
 function baseSettings(): AppSettings {
@@ -200,4 +200,69 @@ test('subAgent.profiles 为空数组时补全默认 Profile', () => {
   expect(changed).toBe(true);
   expect(s.subAgent.profiles).toHaveLength(1);
   expect(s.subAgent.profiles[0].id).toBe('default');
+});
+
+test('normalizePiModels：存量 string[] 迁移为 { id } 对象数组', () => {
+  expect(normalizePiModels(['gpt-5', 'glm-4.7'])).toEqual([{ id: 'gpt-5' }, { id: 'glm-4.7' }]);
+});
+
+test('normalizePiModels：对象元素保留 id 与合法 label，非法 label 被清洗', () => {
+  expect(normalizePiModels([
+    { id: 'gpt-5', label: '主力' },
+    { id: 'glm-4.7', label: '' },
+    { id: 'kimi', label: 42 },
+    { id: 'deepseek' },
+  ])).toEqual([
+    { id: 'gpt-5', label: '主力' },
+    { id: 'glm-4.7' },
+    { id: 'kimi' },
+    { id: 'deepseek' },
+  ]);
+});
+
+test('normalizePiModels：按 id 去重保首现顺序', () => {
+  expect(normalizePiModels([
+    'gpt-5',
+    { id: 'gpt-5', label: '后出现的重复项' },
+    'glm-4.7',
+    'gpt-5',
+  ])).toEqual([{ id: 'gpt-5' }, { id: 'glm-4.7' }]);
+});
+
+test('normalizePiModels：非法元素丢弃，非数组输入返回空数组', () => {
+  expect(normalizePiModels([null, 42, '', { label: '没有 id' }, { id: '' }])).toEqual([]);
+  expect(normalizePiModels(undefined)).toEqual([]);
+  expect(normalizePiModels('not-array')).toEqual([]);
+});
+
+test('normalizePiModels：已是规范形状时输出不变（幂等）', () => {
+  const input = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7' }];
+  expect(normalizePiModels(input)).toEqual(input);
+});
+
+test('migratePiProfiles：存量 string[] piModels 落盘前迁移为对象数组', () => {
+  const s = baseSettings();
+  (s.profiles.default as unknown as { piModels: unknown }).piModels = ['gpt-5', 'glm-4.7'];
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect(s.profiles.default.piModels).toEqual([{ id: 'gpt-5' }, { id: 'glm-4.7' }]);
+});
+
+test('migratePiProfiles：旧三档种子填充产出对象数组', () => {
+  const s = baseSettings();
+  const p = s.profiles.default as unknown as Record<string, unknown>;
+  p.haikuModel = 'm-haiku';
+  p.sonnetModel = 'm-sonnet';
+  p.opusModel = 'm-sonnet';
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect(s.profiles.default.piModels).toEqual([{ id: 'm-haiku' }, { id: 'm-sonnet' }]);
+  expect('haikuModel' in p).toBe(false);
+});
+
+test('migratePiProfiles：已迁移数据二次执行不再产生改动（幂等）', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7' }];
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(false);
 });

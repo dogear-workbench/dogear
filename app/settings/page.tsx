@@ -498,22 +498,38 @@ export default function SettingsPage() {
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
                       <p className="text-xs text-muted-foreground">
-                        该 Profile 可用的模型 ID 列表，每条既是模型标识也是显示名。保存后在 ModelSelector 下拉里出现。
+                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID）。保存后在 ModelSelector 下拉里出现。
                       </p>
                       <div className="space-y-2">
                         {(profile.piModels ?? []).length === 0 && (
                           <p className="text-xs text-muted-foreground italic">尚未添加任何模型</p>
                         )}
-                        {(profile.piModels ?? []).map(modelId => (
-                          <div key={modelId} className="flex items-center gap-2">
-                            <span className="flex-1 text-sm font-mono px-3 py-1.5 border rounded bg-muted/30 truncate">
-                              {modelId}
+                        {(profile.piModels ?? []).map(model => (
+                          <div key={model.id} className="flex items-center gap-2">
+                            <span className="flex-1 min-w-0 text-sm font-mono px-3 py-1.5 border rounded bg-muted/30 truncate">
+                              {model.id}
                             </span>
+                            <input
+                              type="text"
+                              className="h-9 w-44 px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+                              value={model.label ?? ''}
+                              placeholder={model.id}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                updateProfileField(id, {
+                                  piModels: (profile.piModels ?? []).map(m =>
+                                    m.id === model.id
+                                      ? (v === '' ? { id: m.id } : { id: m.id, label: v })
+                                      : m,
+                                  ),
+                                });
+                              }}
+                            />
                             <Button
                               variant="ghost"
                               size="sm"
                               onClick={() => updateProfileField(id, {
-                                piModels: (profile.piModels ?? []).filter(m => m !== modelId),
+                                piModels: (profile.piModels ?? []).filter(m => m.id !== model.id),
                               })}
                             >
                               <Trash2 className="w-4 h-4 text-destructive" />
@@ -534,11 +550,11 @@ export default function SettingsPage() {
                               const raw = (piModelDrafts[id] ?? '').trim();
                               if (!raw) return;
                               const existing = profile.piModels ?? [];
-                              if (existing.includes(raw)) {
+                              if (existing.some(m => m.id === raw)) {
                                 setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
                                 return;
                               }
-                              updateProfileField(id, { piModels: [...existing, raw] });
+                              updateProfileField(id, { piModels: [...existing, { id: raw }] });
                               setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
                             }
                           }}
@@ -550,11 +566,11 @@ export default function SettingsPage() {
                             const raw = (piModelDrafts[id] ?? '').trim();
                             if (!raw) return;
                             const existing = profile.piModels ?? [];
-                            if (existing.includes(raw)) {
+                            if (existing.some(m => m.id === raw)) {
                               setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
                               return;
                             }
-                            updateProfileField(id, { piModels: [...existing, raw] });
+                            updateProfileField(id, { piModels: [...existing, { id: raw }] });
                             setPiModelDrafts(prev => ({ ...prev, [id]: '' }));
                           }}
                         >

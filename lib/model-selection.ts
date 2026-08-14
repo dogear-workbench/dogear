@@ -1,7 +1,7 @@
 import type { ModelProfile, ModelSelection } from '@/types/settings';
 
 export function dedupeProfileTiers(profile: ModelProfile): Array<{ tier: string; modelId: string }> {
-  return (profile.piModels ?? []).map((id) => ({ tier: id, modelId: id }));
+  return (profile.piModels ?? []).map((m) => ({ tier: m.id, modelId: m.label ?? m.id }));
 }
 
 export function sameSelection(a: ModelSelection | null, b: ModelSelection | null): boolean {

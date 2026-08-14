@@ -70,11 +70,42 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 /**
+ * 把任意 piModels 原始值归一化为 { id, label? } 对象数组：
+ * string 元素转 { id }；对象元素仅保留非空 string 的 id 与非空 string 的 label；
+ * 按 id 去重保首现顺序；非法元素丢弃；非数组输入返回空数组。
+ */
+export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string }> {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: Array<{ id: string; label?: string }> = [];
+  for (const item of raw) {
+    let id: string;
+    let label: string | undefined;
+    if (typeof item === 'string') {
+      id = item;
+    } else if (item && typeof item === 'object') {
+      const obj = item as Record<string, unknown>;
+      if (typeof obj.id !== 'string' || obj.id === '') continue;
+      id = obj.id;
+      if (typeof obj.label === 'string' && obj.label !== '') label = obj.label;
+    } else {
+      continue;
+    }
+    if (id === '') continue;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(label === undefined ? { id } : { id, label });
+  }
+  return result;
+}
+
+/**
  * 遍历 profiles，无条件 pi 化：piModels 非数组或为空时用 haikuModel/sonnetModel/opusModel
- * 过滤空值 + 去重后填入，然后删除旧 SDK 字段（apiFormat/三档模型/disableNonessentialTraffic）。
+ * 过滤空值后填入，再统一迁移为 { id, label? } 对象数组，然后删除旧 SDK 字段
+ * （apiFormat/三档模型/disableNonessentialTraffic）。
  * 返回 true 表示发生了变化（需要落盘），false 表示无事可做。
  */
-function migratePiProfiles(settings: AppSettings): boolean {
+export function migratePiProfiles(settings: AppSettings): boolean {
   let changed = false;
   for (const profile of Object.values(settings.profiles)) {
     const p = profile as unknown as Record<string, unknown>;
@@ -83,9 +114,14 @@ function migratePiProfiles(settings: AppSettings): boolean {
         .filter((m): m is string => !!m && typeof m === 'string');
       // 种子全空且 piModels 本就是合法空数组时不写入，避免每次启动都无意义落盘
       if (seeds.length > 0 || !Array.isArray(p.piModels)) {
-        p.piModels = Array.from(new Set(seeds));
+        p.piModels = seeds;
         changed = true;
       }
+    }
+    const normalized = normalizePiModels(p.piModels);
+    if (JSON.stringify(normalized) !== JSON.stringify(p.piModels)) {
+      p.piModels = normalized;
+      changed = true;
     }
     for (const field of ['apiFormat', 'haikuModel', 'sonnetModel', 'opusModel', 'disableNonessentialTraffic']) {
       if (field in p) {

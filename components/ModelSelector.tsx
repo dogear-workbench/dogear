@@ -25,7 +25,8 @@ interface Props {
 function resolveCurrentLabel(settings: AppSettings, value: ModelSelection): string {
   const profile = settings.profiles[value.profileId];
   if (!profile) return '已删除的模型';
-  return (profile.piModels ?? []).includes(value.tier) ? value.tier : '已删除的模型';
+  const matched = (profile.piModels ?? []).find(m => m.id === value.tier);
+  return matched ? (matched.label ?? matched.id) : '已删除的模型';
 }
 
 export function ModelSelector({

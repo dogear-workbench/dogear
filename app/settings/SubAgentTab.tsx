@@ -49,7 +49,8 @@ function resolveModelLabel(local: AppSettings, sel: ModelSelection | null | unde
   if (!sel) return '默认模型';
   const profile = local.profiles[sel.profileId];
   if (!profile) return '默认模型';
-  return (profile.piModels ?? []).includes(sel.tier) ? sel.tier : '默认模型';
+  const matched = (profile.piModels ?? []).find(m => m.id === sel.tier);
+  return matched ? (matched.label ?? matched.id) : '默认模型';
 }
 
 function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
