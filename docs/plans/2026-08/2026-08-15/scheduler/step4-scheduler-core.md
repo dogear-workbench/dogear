@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 调度核心 + 启动集成
-status: pending
+status: done
 ---
 
 ## 目标
@@ -16,7 +16,7 @@ status: pending
 
 ## 计划改动
 
-- [ ] 新建 `electron/main/services/scheduler/scheduler-service.ts`（单例 `getSchedulerService()`）：
+- [x] 新建 `electron/main/services/scheduler/scheduler-service.ts`（单例 `getSchedulerService()`）：
   - `init(deps: { onMissed?: (entries) => void })` — `seedDefaultPlans()` → 启动错过判定 → 发 `on_app_start` 条件 → 启动 tick
   - `tick()`（`setInterval` 60s + `unref()`）遍历 enabled 计划的每条 trigger：
     - `daily_at` / `interval` / `once`：`nextDueAt` 到点且未被 runner 防重入拦截 → `fireTimeTrigger`（runPlan + `touchTriggerFired`；once 额外 `markOnceFired`）
@@ -29,8 +29,8 @@ status: pending
   - `getActivity()` — 汇总 runner.getActivity + lastTickAt
   - `stop()` — 清 interval（app 退出调用）
   - tick 里的重复触发防护：`touchTriggerFired` 后同分钟内 tick 不重复（lastFiredAt 对齐判断）
-- [ ] `electron/main/index.ts`：agentManager.start() 之后 `getSchedulerService().init(...)`（错过记录直接进 run-history，console.error 兜底）；`before-quit` 里调 `schedulerService.stop()`
-- [ ] 派发器细节：interval 规则的 `touchTriggerFired` 用「本次 due 时刻」而非 now，避免延迟 tick 造成漂移（time-rule-engine 的 nextDueAt 已按 lastFiredAt 推算，确认闭环）
+- [x] `electron/main/index.ts`：agentManager.start() 之后 `getSchedulerService().init(...)`（错过记录直接进 run-history，console.error 兜底）；`before-quit` 里调 `schedulerService.stop()`
+- [x] 派发器细节：interval 规则的 `touchTriggerFired` 用「本次 due 时刻」而非 now，避免延迟 tick 造成漂移（time-rule-engine 的 nextDueAt 已按 lastFiredAt 推算，确认闭环）
 
 ## 验证
 
@@ -42,9 +42,26 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - 时间触发改为「先 touch/markOnceFired 消费、再 runPlan」：被 runner 防重入拦截也消费，否则计划跑完后下一 tick 会因 due 未消费而同源二次触发（违背「忽略不排队」）
+  - on_window_close 用 `windowCloseAt(t, now - 2min)` 容差回看判定（tick 不对齐分钟边界，step1 的 `closeAt <= now` 字面实现会永久漏触发）；touch(closeAt) 保证幂等
+  - missed 处理补 `touchTriggerFired(planId, tid, missedAt)`（once 走 markOnceFired）：否则启动后首 tick 会把错过的 due 当到点正常触发（变相补跑）；disabled 计划不参与 missed 判定
+  - on_plan_done 链式只在 outcome 为 completed/failed 时触发（stopped 有断点未跑完，续跑完成再触发）
+  - tick 加 `ticking` 互斥防重入；window 闭时除清标记外同时调 `runner.requestStop`（no-op 安全）
 - 改动文件清单：
+  - 新增 `electron/main/services/scheduler/scheduler-service.ts`
+  - 修改 `electron/main/index.ts`（两处接线：whenReady 内 agentManager.start/createWindow/createTray 之后 init，:520；before-quit 内 stop，:595）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
+  - `getSchedulerService().init(deps?: { onMissed?: (entries: MissedRecord[]) => void })`（seed → cleanupHistory → missed（历史+touch 消费）→ onMissed 回调 → 订阅 plan_done → handleAppStart → 60s unref tick）
+  - `tick()` / `handleAppStart()` / `handleSessionClose(workspaceId?)`（暂无调用方，step5 迁移触发点③时接）/ `getActivity()`（runner + lastTickAt）/ `stop()`
+  - `MissedRecord = MissedTrigger & { planId, planName, trigger }`；窗口标记为内存 Set（key=planId:tid:窗口起始时刻，窗口闭时清理）
+  - `firePlan(planId, opts)`：重载最新 plan → enabled 校验 → runPlan；时间触发 touch 用分钟对齐 due 时刻（interval 防漂移闭环确认）
 - 下个 step 该从哪里继续：
+  - step5：删 index.ts 触发点①（:526 setTimeout 8s）/②（:537 digestNightlyTimer）/③（关会话路径改调 handleSessionClose）；tipc `scheduler.ts` + 前端 store/UI；savePlan 保留旧 lastFiredAt + on_plan_done 环检测
 - 待办或已知限制：
+  - step1-5 过渡态：现有触发点与出厂计划 on_app_start/on_session_close 并存会重复触发同类扫描（trigger 层串行队列/脏检查兜底，step5 迁移后消失）
+  - on_plan_done 运行时无环防护（依赖 tipc savePlan 环检测；当前无 UI 入口）
+  - interval 停机超一个周期后首 due 被钳到对齐 now，连续 tick 可能各触发一次（语义同原启动扫描，脏检查兜底）
+  - windowFiredKeys 进程内存态：窗口内重启会对该窗口再触发一次（窗口规则无持久化触发历史，设计如此）
+  - 验证为临时 bun 脚本驱动真实 scheduler-service（场景 A 真实 runner 链路 + 其余 stub runner），29 项断言全过，脚本已删；未跑完整 Electron 开发模式

@@ -517,6 +517,10 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  void import('./services/scheduler/scheduler-service.js')
+    .then((m) => m.getSchedulerService().init())
+    .catch((err) => console.error('调度器初始化失败:', err));
+
   // 首页报告文件监视：dashboard.md 任意写入都广播给前端实时刷新
   void import('./services/memory/dashboard-watcher.js')
     .then((m) => m.startDashboardWatcher())
@@ -587,6 +591,13 @@ app.on('before-quit', async () => {
   if (digestNightlyTimer) {
     clearInterval(digestNightlyTimer);
     digestNightlyTimer = null;
+  }
+  // 停止调度器（分钟 tick）
+  try {
+    const { getSchedulerService } = await import('./services/scheduler/scheduler-service.js');
+    getSchedulerService().stop();
+  } catch (error) {
+    console.error('停止调度器失败:', error);
   }
   // 销毁托盘图标
   if (tray && !tray.isDestroyed()) {
