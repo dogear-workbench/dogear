@@ -13,7 +13,7 @@
 - [x] [Step 3: 自定义任务类型 CUSTOM_AGENT](./step3-custom-agent.md) — agent-worker 新 handler：prompt + 模型 fallback + 按设置过滤的工具集
 - [x] [Step 4: 调度核心 + 启动集成](./step4-scheduler-core.md) — scheduler-service（tick 求值/窗口状态机/条件事件/错过判定）、index.ts 启动接线
 - [x] [Step 5: 触发点迁移 + tipc 路由](./step5-migrate-ipc.md) — 删三个硬编码触发点改走调度器、scheduler.ts 七个 RPC + 校验
-- [ ] [Step 6: 前端 store + 设置页「定时计划」Tab](./step6-settings-ui.md) — scheduler-store、计划列表 + 编辑器（任务编排/触发器多选/工作区选择）
+- [x] [Step 6: 前端 store + 设置页「定时计划」Tab](./step6-settings-ui.md) — scheduler-store、计划列表 + 编辑器（任务编排/触发器多选/工作区选择）
 - [ ] [Step 7: 执行历史页面 + 收尾](./step7-history-page.md) — 独立路由页面、状态徽章/分页/摘要展开、codebase-map 同步
 
 ## 全局决策

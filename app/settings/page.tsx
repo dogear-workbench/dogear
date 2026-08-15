@@ -15,6 +15,7 @@ import { MemoryTab } from './MemoryTab';
 import { DigestsPanel } from './memory/DigestsPanel';
 import { ReviewPanel } from './memory/ReviewPanel';
 import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
+import { SchedulerPanel } from './scheduler/SchedulerPanel';
 import { AbilityTab } from './AbilityTab';
 import { GeneralAgentMdDialog } from '@/components/GeneralAgentMdDialog';
 import { BasicToolsSection } from './BasicToolsSection';
@@ -251,6 +252,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="digests" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             会话摘要
+          </TabsTrigger>
+          <TabsTrigger value="scheduler" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            定时计划
           </TabsTrigger>
           <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             子会话派遣
@@ -654,6 +658,17 @@ export default function SettingsPage() {
               <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节阈值/模型/提示词，或立即重跑全量。</p>
               <SmartCategoryPanel />
             </div>
+          </div>
+        </TabsContent>
+
+        {/* ── Tab: 定时计划 ── */}
+        <TabsContent value="scheduler" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <div className="max-w-4xl py-6 px-6">
+            <h2 className="text-lg font-semibold mb-1">定时计划</h2>
+            <p className="text-sm text-muted-foreground mb-6">
+              按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭、链式）自动执行任务序列；多个触发器任一命中即触发，任务按顺序执行。
+            </p>
+            <SchedulerPanel />
           </div>
         </TabsContent>
 
