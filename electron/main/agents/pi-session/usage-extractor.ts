@@ -62,13 +62,18 @@ export function createPiUsageAccumulator(): PiUsageAccumulator {
 
 /** 把单条 AssistantMessage.usage 累加到累加器 */
 /** 从单条 assistant message 创建当前上下文用量快照。 */
-export function extractPiContextSnapshot(message: AssistantMessage, turnIndex: number): ContextSnapshot | null {
+export function extractPiContextSnapshot(
+  message: AssistantMessage,
+  turnIndex: number,
+  resolveWindow?: (modelId: string) => number,
+): ContextSnapshot | null {
   const usage = message.usage;
   if (!usage) return null;
 
   const model = message.responseModel || message.model;
   const totalTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
-  const maxTokens = lookupContextWindow(model) ?? 0;
+  const resolve = resolveWindow ?? ((id: string) => lookupContextWindow(id) ?? 0);
+  const maxTokens = resolve(model);
 
   return {
     turnIndex,
@@ -128,7 +133,9 @@ export function extractPiUsageEntry(
   turnMessages: ExtendedSessionMessage[],
   turnIndex: number,
   fallbackModelId?: string,
+  resolveWindow?: (modelId: string) => number,
 ): ConversationUsageEntry {
+  const resolve = resolveWindow ?? ((id: string) => lookupContextWindow(id) ?? 0);
   const usage: ConversationUsageEntry['usage'] = {
     inputTokens: accum.inputTokens,
     outputTokens: accum.outputTokens,
@@ -151,7 +158,7 @@ export function extractPiUsageEntry(
       cacheCreationInputTokens: bucket.cacheCreationInputTokens,
       webSearchRequests: 0,
       costUSD: bucket.costUSD,
-      contextWindow: lookupContextWindow(modelId) ?? 0,
+      contextWindow: resolve(modelId),
       maxOutputTokens: 0,
     };
   }
@@ -164,7 +171,7 @@ export function extractPiUsageEntry(
       cacheCreationInputTokens: 0,
       webSearchRequests: 0,
       costUSD: 0,
-      contextWindow: lookupContextWindow(model) ?? 0,
+      contextWindow: resolve(model),
       maxOutputTokens: 0,
     };
   }

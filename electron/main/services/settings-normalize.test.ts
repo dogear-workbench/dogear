@@ -240,6 +240,41 @@ test('normalizePiModels：已是规范形状时输出不变（幂等）', () => 
   expect(normalizePiModels(input)).toEqual(input);
 });
 
+test('normalizePiModels：正整数 contextWindow 保留', () => {
+  expect(normalizePiModels([{ id: 'glm-5.3', contextWindow: 358400 }])).toEqual([
+    { id: 'glm-5.3', contextWindow: 358400 },
+  ]);
+});
+
+test('normalizePiModels：0 / 负数 / 小数 / 字符串 / NaN 的 contextWindow 丢弃', () => {
+  expect(normalizePiModels([
+    { id: 'a', contextWindow: 0 },
+    { id: 'b', contextWindow: -200000 },
+    { id: 'c', contextWindow: 200000.5 },
+    { id: 'd', contextWindow: '200000' },
+    { id: 'e', contextWindow: NaN },
+    { id: 'f', contextWindow: null },
+  ])).toEqual([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }, { id: 'f' }]);
+});
+
+test('normalizePiModels：label 与 contextWindow 共存且未手填时字段不写入', () => {
+  expect(normalizePiModels([
+    { id: 'glm-5.3', label: '主力', contextWindow: 358400 },
+    { id: 'gpt-5', label: '备用' },
+  ])).toEqual([
+    { id: 'glm-5.3', label: '主力', contextWindow: 358400 },
+    { id: 'gpt-5', label: '备用' },
+  ]);
+});
+
+test('normalizePiModels：按 id 去重时首现条目的 contextWindow 生效', () => {
+  expect(normalizePiModels([
+    { id: 'glm-5.3', contextWindow: 358400 },
+    { id: 'glm-5.3', contextWindow: 999 },
+    { id: 'glm-5.3' },
+  ])).toEqual([{ id: 'glm-5.3', contextWindow: 358400 }]);
+});
+
 test('migratePiProfiles：存量 string[] piModels 落盘前迁移为对象数组', () => {
   const s = baseSettings();
   (s.profiles.default as unknown as { piModels: unknown }).piModels = ['gpt-5', 'glm-4.7'];

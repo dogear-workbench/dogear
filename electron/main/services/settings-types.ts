@@ -23,8 +23,8 @@ export interface ModelProfile {
   autoCompactPercent?: number;
   /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
   piWireApi?: 'anthropic-messages' | 'openai-responses';
-  /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id */
-  piModels?: Array<{ id: string; label?: string }>;
+  /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id；contextWindow 为手填生效窗口，优先于目录查表 */
+  piModels?: Array<{ id: string; label?: string; contextWindow?: number }>;
 }
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';

@@ -18,6 +18,7 @@ import type { PiPermissionMode } from './permission-mode.js';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
+import { lookupContextWindow } from '../pi/model-catalog.js';
 import { toPiTools, type ToolDef } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool, type SkillEntry } from './skill-loader.js';
@@ -224,6 +225,8 @@ export class PiSession extends EventEmitter {
   // 自动压缩判定用的窗口与百分比，start() 时从 resolvePiModel 结果赋值
   private currentContextWindow = 0;
   private currentAutoCompactPercent = 80;
+  // start() 时从 profile.piModels 提取的手填窗口（正整数才收），usage 提取时优先于目录查表
+  private manualWindows: Map<string, number> = new Map();
   // 最近一次 agent_end 逆序找到的可用 contextTokens（无可用 usage 时为 undefined），驱动 sendMessage 前的自动压缩
   private lastContextTokens: number | undefined;
   private currentPermissionMode: PiPermissionMode = 'default';
@@ -327,6 +330,11 @@ export class PiSession extends EventEmitter {
     this.currentModelId = model.id;
     this.currentContextWindow = model.contextWindow;
     this.currentAutoCompactPercent = profile.autoCompactPercent ?? 80;
+    this.manualWindows = new Map(
+      (profile.piModels ?? []).flatMap((m) =>
+        typeof m.contextWindow === 'number' && m.contextWindow > 0 ? [[m.id, m.contextWindow] as const] : [],
+      ),
+    );
 
     const piModels = buildPiModels(profile);
     const isSubAgent = this.config.role === 'sub';
@@ -606,7 +614,7 @@ export class PiSession extends EventEmitter {
       accumulatePiUsage(this.currentRunUsageAccum, assistantMessage);
 
       const conversationId = this.config.conversationId;
-      const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex);
+      const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex, (id) => this.resolveModelWindow(id));
       if (conversationId && snapshot) {
         this.emit('usageContext', { conversationId, snapshot });
       }
@@ -682,6 +690,11 @@ export class PiSession extends EventEmitter {
     } as ExtendedSessionMessage);
   }
 
+  /** 手填窗口优先于 pi-ai 目录查表，两者皆无时 0（前端显示 0%） */
+  private resolveModelWindow(modelId: string): number {
+    return this.manualWindows.get(modelId) ?? lookupContextWindow(modelId) ?? 0;
+  }
+
   private handleSteerQueueChanged(count: number): void {
     this.pendingSteerCount = count;
     this.emit('pendingCountChanged', { count });
@@ -713,6 +726,7 @@ export class PiSession extends EventEmitter {
         this.currentTurnMessages,
         this.usageTurnIndex,
         this.currentModelId,
+        (id) => this.resolveModelWindow(id),
       );
       entry.uuid = uuidv4();
       this.usageTurnIndex += 1;

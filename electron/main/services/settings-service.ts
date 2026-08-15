@@ -70,17 +70,18 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 /**
- * 把任意 piModels 原始值归一化为 { id, label? } 对象数组：
- * string 元素转 { id }；对象元素仅保留非空 string 的 id 与非空 string 的 label；
+ * 把任意 piModels 原始值归一化为 { id, label?, contextWindow? } 对象数组：
+ * string 元素转 { id }；对象元素仅保留非空 string 的 id、非空 string 的 label 与正整数的 contextWindow；
  * 按 id 去重保首现顺序；非法元素丢弃；非数组输入返回空数组。
  */
-export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string }> {
+export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number }> {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const result: Array<{ id: string; label?: string }> = [];
+  const result: Array<{ id: string; label?: string; contextWindow?: number }> = [];
   for (const item of raw) {
     let id: string;
     let label: string | undefined;
+    let contextWindow: number | undefined;
     if (typeof item === 'string') {
       id = item;
     } else if (item && typeof item === 'object') {
@@ -88,13 +89,19 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
       if (typeof obj.id !== 'string' || obj.id === '') continue;
       id = obj.id;
       if (typeof obj.label === 'string' && obj.label !== '') label = obj.label;
+      if (typeof obj.contextWindow === 'number' && Number.isInteger(obj.contextWindow) && obj.contextWindow > 0) {
+        contextWindow = obj.contextWindow;
+      }
     } else {
       continue;
     }
     if (id === '') continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    result.push(label === undefined ? { id } : { id, label });
+    const entry: { id: string; label?: string; contextWindow?: number } = { id };
+    if (label !== undefined) entry.label = label;
+    if (contextWindow !== undefined) entry.contextWindow = contextWindow;
+    result.push(entry);
   }
   return result;
 }

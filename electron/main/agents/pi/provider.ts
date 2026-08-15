@@ -34,14 +34,14 @@ function lookupCatalogModel(wireApi: 'anthropic-messages' | 'openai-responses', 
   };
 }
 
-function buildPiModel(profile: ModelProfile, modelId: string, tierOrLabel: string): Model<Api> {
+function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string; contextWindow?: number }): Model<Api> {
   const wireApi = resolveWireApi(profile);
-  const catalog = lookupCatalogModel(wireApi, modelId);
-  const catalogEntry = lookupCatalogEntry(modelId);
+  const catalog = lookupCatalogModel(wireApi, entry.id);
+  const catalogEntry = lookupCatalogEntry(entry.id);
   return {
     // pi 直接把 id 当作请求体里的 model 字段发出去，必须是真实模型名
-    id: modelId,
-    name: `${profile.name} / ${tierOrLabel}`,
+    id: entry.id,
+    name: `${profile.name} / ${entry.label ?? entry.id}`,
     api: wireApi,
     provider: profile.id,
     baseUrl: profile.baseUrl,
@@ -49,7 +49,7 @@ function buildPiModel(profile: ModelProfile, modelId: string, tierOrLabel: strin
     thinkingLevelMap: catalog?.thinkingLevelMap,
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: catalogEntry?.contextWindow ?? FALLBACK_CONTEXT_WINDOW,
+    contextWindow: entry.contextWindow ?? catalogEntry?.contextWindow ?? FALLBACK_CONTEXT_WINDOW,
     maxTokens: catalogEntry?.maxTokens ?? 8192,
   };
 }
@@ -75,7 +75,7 @@ export function resolvePiModel(
     throw new Error(`模型「${target.tier}」不在方案「${profile.name}」的模型清单里`);
   }
 
-  const model = buildPiModel(profile, target.tier, matched.label ?? target.tier);
+  const model = buildPiModel(profile, matched);
   const thinkingLevel: ModelThinkingLevel = appSettings.ai.effort ?? 'off';
   model.reasoning = thinkingLevel !== 'off';
   return { model, profile, tier: target.tier, thinkingLevel };
@@ -87,7 +87,7 @@ export function resolvePiModel(
 export function buildPiModels(profile: ModelProfile) {
   const wireApi = resolveWireApi(profile);
   const api = wireApi === 'openai-responses' ? openAIResponsesApi() : anthropicMessagesApi();
-  const models = (profile.piModels ?? []).map((m) => buildPiModel(profile, m.id, m.label ?? m.id));
+  const models = (profile.piModels ?? []).map((m) => buildPiModel(profile, m));
   const provider = createProvider({
     id: profile.id,
     name: profile.name,
