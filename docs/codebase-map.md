@@ -23,6 +23,13 @@
 - `app/settings/memory/SmartCategoryPanel.tsx` — 智能分类设置面板（挂在「会话摘要」Tab 末尾，按组分类）：文案强调「分类对象：会话组」/ 总开关 / 阈值 / 上限锁死 10 / 模型方案 + 档位 / 提示词折叠编辑器 / 立即重跑全部分类（confirm-store 二次确认）/ 活动状态 + 停止 / 当前分类列表（按 groupIds.length 计数）
 - `app/settings/memory/TopicsPanel.tsx` — 工作区主题记忆面板（列表 + 编辑器，接 memory-service）
 - `app/settings/memory/CoreProfilePanel.tsx` — 核心画像面板
+- `app/settings/scheduler/` — 定时计划设置组件（「定时计划」Tab 内容，拆分控制单文件体量）：
+  - `SchedulerPanel.tsx` — 计划列表（名称 / 启用 Switch / 任务序列 / 触发器摘要 / 下次运行相对时间 60s 刷新 / 编辑·删除·立即运行，删除与停用运行中计划走 confirm-store）+ 运行中徽章（activity 轮询）+ 「查看执行历史」（closeSettings + hash 跳 /run-history）
+  - `PlanEditor.tsx` — 计划编辑 Dialog（保存前客户端预校验 validateDraft 就地显示，环检测等其余交后端拒并 toast）
+  - `TaskListEditor.tsx` — 任务行编辑（builtin 四选一 / custom 子表单含 ModelSelector 与必选工作区 / 上下移删除）
+  - `TriggerListEditor.tsx` — 触发器编辑（时间规则 / 条件规则两组分区，八种触发器行内编辑 + 行尾实时摘要预览 + 删除）
+  - `utils.ts` — describeTrigger / describeTask / BUILTIN_TASK_LABELS 前端镜像、formatRelativeFuture、周几 chips、datetime-local 双向转换
+- `app/run-history/page.tsx` — 执行历史页面（路由 `/run-history`，HashRouter）：顶部计划下拉（服务端 planId 过滤）+ 状态筛选（客户端过滤）+ 「返回设置」（openSettings）+ 「正在运行」小节（复用 scheduler-store 的 activity 10s 轮询）+ 条目卡片（状态徽章 / 触发原因徽章 + triggerDesc / 起止时间耗时 / token 用量 / 摘要与错误折叠展开，见 HistoryEntryCard.tsx 与 utils.ts）+ 「加载更多」cursor 分页（cursor=上页末条 ts，before 语义）；missed 条目灰色「未运行」，运行中状态不落历史
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
@@ -141,6 +148,7 @@
 - `dashboard-store.ts` — 首页工作台状态：reportMarkdown/reportUpdatedAt（首页报告）+ notesContent（速记板）+ reviewActivity 轮询 + triggerReview/loadReport/loadNotes/flushNotes actions
 - `session-store.ts` — 多会话标签页：tabs[] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID` 哨兵（非真实会话）表示首页 tab，activeTabId 初始/关末 tab 后回退到该哨兵；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
 - `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）
+- `scheduler-store.ts` — 定时计划前端：plans（PlanWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity + 10s 轮询启停）/ history（倒序分页：loadHistory(planId?) + loadMoreHistory，cursor=上页末条 ts）+ 七个 scheduler RPC 封装（savePlan/deletePlan 失败 toast 后端文案）
 
 ## 工具函数（lib/）
 
@@ -163,6 +171,7 @@
 - `usage.ts` — 会话用量数据模型（ConversationUsageEntry / CompactMarker / ContextSnapshot / ConversationUsage / UsageJsonlLine），主进程镜像在 `electron/main/types.ts`
 - `system-prompt.ts` — SystemPromptSegment（key/label/category/template/triggerDescription/isDynamic），主进程镜像在 `electron/main/types.ts`
 - `smart-category.ts` — 智能分类数据模型（DigestTags / SmartCategory { groupIds[] } / CategorizeDecisionLog { groupId } / SmartCategoriesIndex / CategorizeActivity / CategorizeRecentEntry），主进程镜像在 `electron/main/types.ts`
+- `scheduler.ts` — 定时计划数据模型（Plan / PlanTask[builtin|custom] / Trigger 八种 / RunHistoryEntry / SchedulerActivity / PlanWithNextRun / HistoryPage），主进程镜像在 `electron/main/services/scheduler/types.ts`
 - `electron.d.ts` — window.ipcRenderer 全局类型声明
 
 ## IPC 路由（electron/main/tipc/）
@@ -182,6 +191,7 @@
 - `category.ts` — 智能分类：getCategories（含归档过滤，按 groupIds 存活性过滤）/ triggerCategorize { workspaceId, groupId, groupDigestPath } / triggerFullRebuild / cancelCategorize（无参全局单队列）/ getCategorizeActivity / get+setCategorizePrompt / get+setCategorizeModelSelection 整体模型选择 / get+setSmartCategorySettings（enabled/threshold/maxCategories，后端 clamp）；conversations.ts 也加了 addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders 三个 IPC 支持手动文件夹装 groupId + 多引用，以及 setConversationModelSelection 单独写对话级模型
 - `agent.ts` — Agent 会话管理，路由统一查 `getPiSessionManager()`（）：setSessionModel（接收 ModelSelection，返回 `{ ok:true; needsRestart? } | { ok:false; error }`；同 profile 换 tier 走 PiSession 快速路径，跨 profile 由前端触发会话重启）；`closeQueryBasedSession` = release 语义（refCount-1，归零即销毁），`forceCloseQueryBasedSession` = 强杀（`/clear` 走这条立刻销毁避免后台弹卡片）；路由名保留旧字样是历史兼容，内部实现已纯 pi
 - `system-prompt.ts` — 系统提示词模板查询（getSystemPromptSegments，返回 `{ segments } | { error }`，供设置页只读预览用户看不见的系统级 append 段）
+- `scheduler.ts` — 定时计划（listPlans 含现算 nextRunAt / savePlan 全量校验含环检测与触发态合并 / deletePlan / setPlanEnabled / runPlanNow 手动直跑不看 enabled / listRunHistory 倒序分页（planId 过滤 + before cursor）/ getSchedulerActivity 运行快照）
 - `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件 等）
 
 ## 业务服务（electron/main/services/）
@@ -214,6 +224,16 @@
   - `categorize-prompt.ts` — 分类提示词模板（DEFAULT_CATEGORIZE_PROMPT + loadCategorizePrompt 播种 `<configDir>/categorize-prompt.md` + saveCategorizePrompt）
   - `category-trigger.ts` — 分类编排（串行队列并发=1 + in-flight 去重；triggerCategorize(workspaceId, groupId, groupDigestPath) 单条 / triggerFullRebuild 工作区全量 / cancelCurrent 取消正在跑的任务）+ 活动采集 + outcome=match/join/new 时广播 categoriesUpdated
   - 注：工作区主题记忆（memory-service / memory-recall / memory-fs / memory-indexer / memory-loader / memory-types）也在此目录
+- `scheduler/` — 定时计划系统（计划 = 任务序列 + 触发器 OR，分钟级 tick 调度；单例 getSchedulerService 在 index.ts 启动接线 init）：
+  - `types.ts` — 数据模型（Plan / PlanTask[builtin|custom] / Trigger 八种 / RunHistoryEntry / SchedulerActivity），渲染层镜像 `types/scheduler.ts`
+  - `time-rule-engine.ts` — 时间规则纯函数（validateTrigger / nextDueAt / minNextDueAt / detectMissed / windowOpen / windowCloseAt / describeTrigger 中文摘要）
+  - `plan-store.ts` — `.dogear/plans.json` 读写（safe-json 原子写 + 变更互斥队列；首次缺失播种出厂「夜间维护」计划：group_digest→review 任务 + 03:00–05:00 窗口/启动/关会话三触发器；touchTriggerFired / markOnceFired / updatePlanRunState 细粒度变更）
+  - `plan-validate.ts` — 保存校验纯函数（assignPlanIds / mergeFiredState 按 trigger.id 保留旧触发态 / detectPlanCycle 整图 DFS 环检测 / validatePlanForSave 含中文错误文案）
+  - `scheduler-service.ts` — 调度核心（60s tick 逐触发器求值；窗口状态机开触发关停机；handleAppStart / handleSessionClose / on_plan_done 链式事件入口；启动错过检测记 missed 不补跑；runPlanManual 直调 runner 不看 enabled）
+  - `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加 + queryHistory 倒序分页（before 语义 cursor）+ 保留 3 个月自动清理
+  - `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 自定义任务的提示词模板与工具集组装（基础文件/搜索工具 + 常驻 memory/review 工具 + 工作区 enabledToolPacks 可选包，workspace 边界校验，不装 Bash）
+  - `runtime/plan-runner.ts` — 计划执行器（单例 getPlanRunner：防重入 / 串行消费任务队列 / runState 断点落盘续跑 / requestStop 停机 / interrupted 补记历史 / plan_done 事件供链式触发）
+  - `runtime/task-executor.ts` — 任务执行（builtin 四种直调现有 memory trigger 层并等队列空闲；custom 提交 CUSTOM_AGENT 到 agent-manager Worker 池等待回调，模型三级 fallback，token 用量提取入历史）
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session）
 - `contract-channel-service.ts` — 契约通道校验（hasDirectContractChannel：只认直接派出关系，A 派 B 派 C 时 A 无法直连 C；SendMessage / StopSession 工具层前置校验）
 - `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup / archiveGroup / restoreGroup / listActiveGroups / touchGroup（会话活动时刷新 updatedAt）
@@ -241,7 +261,7 @@
 ## Agent 框架（electron/main/agents/）
 
 - `agent-manager.ts` — Worker 线程池管理器，任务队列调度，空闲 Worker 60s 自动回收
-- `agent-worker.ts` — Worker 线程执行器。**两个运行时并存**：四条后台一次性任务（GROUP_DIGEST / REVIEW / CATEGORIZE / CATEGORIZE_ORGANIZE）走 pi（`pi/run-once.ts`）；`PARSE_ARTICLE` 仍走 Claude Agent SDK——依赖 SDK 的 plugins skill 发现机制，pi 无对应物；主会话已完整迁移到下方 `pi-session/`，不再经过 agent-worker
+- `agent-worker.ts` — Worker 线程执行器。**两个运行时并存**：五条后台一次性任务（GROUP_DIGEST / REVIEW / CATEGORIZE / CATEGORIZE_ORGANIZE 走调度器内置任务；CUSTOM_AGENT 为定时计划自定义任务，工具集按 `services/scheduler/custom-agent-tools.ts` 组装）都走 pi（`pi/run-once.ts`）；`PARSE_ARTICLE` 仍走 Claude Agent SDK——依赖 SDK 的 plugins skill 发现机制，pi 无对应物；主会话已完整迁移到下方 `pi-session/`，不再经过 agent-worker
 - `pi/provider.ts` — pi 运行时的 provider 层：`resolvePiModel(appSettings, selection, subAgentFallback, fallback)` 按 profileId 解析出 `{ model, profile }`（`Model.id` 必须是真实模型 id，不是 profile/tier 组合）；`buildPiModels(profile)` 按 profile.piWireApi 造 anthropic-messages / openai-responses 客户端
 - `pi/model-catalog.ts` — pi-ai 十个厂商目录（anthropic/openai/deepseek/zai/moonshotai/minimax/qwen-token-plan/xai/google/kimi-coding）合并的上下文窗口查表：`lookupContextWindow(modelId)` / `lookupCatalogEntry` / `FALLBACK_CONTEXT_WINDOW=200_000`；渲染层同源副本 `lib/pi-model-catalog.ts`（tsconfig 隔离无法共享，另有 `resolveModelWindow(entry)` 手填优先解析与 `parseContextInput` K/M 输入解析）；piModels 条目可带 `contextWindow` 手填窗口（主进程 provider 构造/usage 提取均按「手填 > 目录 > 200K」解析）
 - `pi/run-once.ts` — pi 的一次性任务执行器：`runOnce({ systemPrompt, prompt, tools, model, profile, signal, maxTurns=30, onLog })`。**不抛出**，失败以 `{ ok:false, error, cancelled? }` 返回。pi 的 loop 故意没有轮次上限，这里在 `subscribe` 里数 `turn_start` 超限调 `agent.abort()`；`tool_execution_end` 带 `isError` 时以 `[tool-error]` 前缀走 onLog（四个 handler 都按该前缀落 WARN 级日志）
@@ -294,7 +314,7 @@
 - `tools/review-tools.ts` — 首页报告 MCP 工具（dogear-memory-review server：ListDigests / ReadDigest / TraceSource / ReadReport / WriteReport）；零分析逻辑，分流靠提示词。配合 dogear-memory 的 RecallMemory/SaveMemory/ForgetMemory 实现「记忆 + 报告」双层写入
 - `tools/category-tools.ts` — 智能分类 MCP 工具（dogear-smart-category server：ListCategories 含样例组标题 / SaveCategoryJoin { categoryId, addAnchorTags? | replaceAnchorTags? } / SaveCategoryNew { name, anchorTags, redistribute? } 校验上限 / SaveCategoryMerge { fromIds (length=2), name, anchorTags } / PruneCategoryTags；三个 Save* 拆开是因为 GLM 等国内 Anthropic 兼容层不吃 discriminatedUnion 的 oneOf 和 tuple 的 prefixItems，全平台通吃；**单引用语义**：SaveCategoryJoin/SaveCategoryNew 先 removeGroupEverywhere 再加入，一个组只在一个分类；append 决策日志，入参和落库全用 groupId）
 
-> 组提炼链路：脏检查（group-digest-scanner）三触发点（启动扫/夜间03点/关会话）→ group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations[]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleGroupDigestTask 走 pi `runOnce`（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolvePiModel，方案不完整即返回明确 error；接 AbortController，cancelGroupDigest → agent.abort() 真正中断）→ agent 自调 CleanTranscript（对 dirty 会话逐个去噪）+ ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ ListGroupFiles（拉 `_notes/` 阶段总结、子会话 SendMessage delivery 产出）+ SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`。**SaveGroupDigest 落盘前过 source-fidelity 校验**：items 里每个 `sessionId#uuid` 必须真实存在于去噪逐字稿，否则拒绝落盘并回告 agent 哪条错、错在哪（wrong_session 直接给出正确 sessionId）。子会话（role='sub'）不进 sourcesSeen，其贡献通过 SendMessage delivery 汇入父会话产出。
+> 组提炼链路：触发已迁移到调度器（出厂「夜间维护」计划三触发点：03:00–05:00 窗口 / 应用启动 / 会话窗口关闭，见 `services/scheduler/`；设置页与 tipc digest.ts 的手动入口保留）→ 内置任务 group_digest 调 group-digest-scanner 扫脏 → group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations[]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（采集活动状态含 taskId 供「会话摘要」设置 Tab 轮询 + 停止）→ agent-worker.handleGroupDigestTask 走 pi `runOnce`（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolvePiModel，方案不完整即返回明确 error；接 AbortController，cancelGroupDigest → agent.abort() 真正中断）→ agent 自调 CleanTranscript（对 dirty 会话逐个去噪）+ ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ ListGroupFiles（拉 `_notes/` 阶段总结、子会话 SendMessage delivery 产出）+ SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`。**SaveGroupDigest 落盘前过 source-fidelity 校验**：items 里每个 `sessionId#uuid` 必须真实存在于去噪逐字稿，否则拒绝落盘并回告 agent 哪条错、错在哪（wrong_session 直接给出正确 sessionId）。子会话（role='sub'）不进 sourcesSeen，其贡献通过 SendMessage delivery 汇入父会话产出。
 
 > 首页报告链路（历史代号 review）：脏检查（review-scanner.isReportStale：最新组卡 updatedAt > 报告 updatedAt）→ review-trigger 串行起 REVIEW_SESSION 任务 → agent-worker.handleReviewSessionTask 走 pi `runOnce`（同样按 reviewModelSelection 三级 fallback 走 resolvePiModel，可取消）→ agent 自调 review-tools（ListDigests/ReadDigest/TraceSource）+ memory-tools（RecallMemory/SaveMemory/ForgetMemory）做**分流**：沉淀/有价值结论/注意事项进**记忆**（详细全集），需用户主动处理的待办/中断/搁置的简述进**报告**；最终 WriteReport 落 `dashboard.md`。首页 Dashboard 用 MarkdownRenderer 渲染 dashboard.md 给用户看；dashboard-watcher 监听文件变化推事件到前端；普通会话里说"聊聊首页"也能触发同一 skill。
 
@@ -307,6 +327,8 @@
 - `settings.json` — 应用设置（ModelProfile、Thinking、permissionMode 等）
 - `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
 - `conversations.json` — 对话索引（id、标题、`sessionId: string | null`——Harness 会话稳定标识、`workspaceId`、`groupId`/`role`、分叉信息、modelSelection、usageSummary）
+- `plans.json` — 定时计划存储（Plan[]：任务序列 + 触发器含 lastFiredAt/once.fired + runState 断点；首次缺失播种出厂「夜间维护」计划；scheduler/plan-store.ts 经 safe-json 原子写）
+- `run-history/YYYY-MM.jsonl` — 计划运行历史（任务级条目 + missed 错过条目，按月分文件，保留 3 个月自动清理；scheduler/run-history-store.ts）
 - `conversations/` — 旧 SDK 主会话历史（迁移归档后的只读备份，不再回放/恢复，仅归档说明引用；新会话历史见下方 `workspaces/{workspaceId}/sessions/`）
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细（每行一条 entry 或 compact marker，删除对话/工作区时联动清理）
 - `workspaces/{workspaceId}/sessions/` — 主会话（及子会话）的 Harness JSONL 会话文件，`pi-session-repository.ts` 的 `JsonlSessionRepo` 按其 cwd 编码子目录 + 时间戳文件名布局管理；`conversations.json` 的 `sessionId` 字段指向这里，不保存绝对路径

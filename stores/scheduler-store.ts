@@ -1,15 +1,27 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import type { Plan, PlanWithNextRun, SchedulerActivity } from '@/types/scheduler';
+import type {
+  Plan,
+  PlanWithNextRun,
+  RunHistoryEntry,
+  SchedulerActivity,
+} from '@/types/scheduler';
 
 const ACTIVITY_POLL_MS = 10_000;
+const HISTORY_PAGE_SIZE = 50;
 
 interface SchedulerStore {
   plans: PlanWithNextRun[];
   loading: boolean;
   loadingError: string | null;
   activity: SchedulerActivity | null;
+  history: RunHistoryEntry[];
+  historyPlanId: string | undefined;
+  historyCursor: number | undefined;
+  historyLoading: boolean;
+  historyError: string | null;
+  loadingMore: boolean;
   loadPlans: () => Promise<void>;
   savePlan: (plan: Plan) => Promise<boolean>;
   deletePlan: (planId: string) => Promise<void>;
@@ -18,16 +30,25 @@ interface SchedulerStore {
   refreshActivity: () => Promise<void>;
   startActivityPolling: () => void;
   stopActivityPolling: () => void;
+  loadHistory: (planId?: string) => Promise<void>;
+  loadMoreHistory: () => Promise<void>;
   reset: () => void;
 }
 
 let activityTimer: ReturnType<typeof setInterval> | null = null;
+let historySeq = 0;
 
 export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   plans: [],
   loading: false,
   loadingError: null,
   activity: null,
+  history: [],
+  historyPlanId: undefined,
+  historyCursor: undefined,
+  historyLoading: false,
+  historyError: null,
+  loadingMore: false,
 
   loadPlans: async () => {
     set({ loading: true, loadingError: null });
@@ -129,8 +150,69 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     activityTimer = null;
   },
 
+  loadHistory: async (planId) => {
+    const seq = ++historySeq;
+    set({
+      historyLoading: true,
+      historyError: null,
+      historyPlanId: planId,
+      historyCursor: undefined,
+      loadingMore: false,
+    });
+    try {
+      const r = await client.listRunHistory({ planId, limit: HISTORY_PAGE_SIZE });
+      if (seq !== historySeq) return;
+      if ('error' in r) {
+        set({ historyLoading: false, historyError: r.error, history: [] });
+        return;
+      }
+      set({ history: r.entries, historyCursor: r.nextCursor, historyLoading: false });
+    } catch (e) {
+      if (seq !== historySeq) return;
+      set({ historyLoading: false, historyError: String(e), history: [] });
+    }
+  },
+
+  loadMoreHistory: async () => {
+    const { historyCursor, historyPlanId, historyLoading, loadingMore } = get();
+    if (historyLoading || loadingMore || historyCursor === undefined) return;
+    set({ loadingMore: true });
+    try {
+      const r = await client.listRunHistory({
+        planId: historyPlanId,
+        cursor: historyCursor,
+        limit: HISTORY_PAGE_SIZE,
+      });
+      if ('error' in r) {
+        set({ loadingMore: false });
+        toast.error('加载更多历史失败', { description: r.error });
+        return;
+      }
+      set({
+        history: [...get().history, ...r.entries],
+        historyCursor: r.nextCursor,
+        loadingMore: false,
+      });
+    } catch (e) {
+      set({ loadingMore: false });
+      toast.error('加载更多历史失败', { description: String(e) });
+    }
+  },
+
   reset: () => {
     get().stopActivityPolling();
-    set({ plans: [], loading: false, loadingError: null, activity: null });
+    historySeq++;
+    set({
+      plans: [],
+      loading: false,
+      loadingError: null,
+      activity: null,
+      history: [],
+      historyPlanId: undefined,
+      historyCursor: undefined,
+      historyLoading: false,
+      historyError: null,
+      loadingMore: false,
+    });
   },
 }));
