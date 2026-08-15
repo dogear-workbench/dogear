@@ -58,6 +58,13 @@ export interface Plan {
   updatedAt: number;
 }
 
+export type PlanWithNextRun = Plan & { nextRunAt?: number };
+
+export interface HistoryPage {
+  entries: RunHistoryEntry[];
+  nextCursor?: number;
+}
+
 export type RunHistoryStatus = 'completed' | 'failed' | 'cancelled' | 'missed' | 'interrupted';
 export type RunTriggerReason = 'time' | 'condition' | 'manual';
 

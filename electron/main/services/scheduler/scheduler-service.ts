@@ -109,6 +109,16 @@ class SchedulerService {
     }
   }
 
+  async runPlanManual(planId: string): Promise<{ started: boolean }> {
+    const plans = await loadPlans();
+    const plan = plans.find((p) => p.id === planId);
+    if (!plan) {
+      mainLogger.warn(`[scheduler] 手动运行失败，计划不存在: ${planId}`);
+      return { started: false };
+    }
+    return this.runner.runPlan(plan, { triggerReason: 'manual', triggerDesc: '手动运行' });
+  }
+
   getActivity(): SchedulerActivity {
     const activity = this.runner.getActivity();
     return { ...activity, lastTickAt: this.lastTickAt };

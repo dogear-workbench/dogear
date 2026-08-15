@@ -50,9 +50,6 @@ let tray: TrayType | null = null;
 // 是否正在退出（区分"关闭窗口"和"真正退出"）
 let isQuitting = false;
 
-// 会话提炼夜间定时器（里程碑 2 Phase A）
-let digestNightlyTimer: NodeJS.Timeout | null = null;
-
 // 调试窗口实例(仅开发环境)
 let debugWindow: BrowserWindowType | null = null;
 
@@ -294,16 +291,29 @@ export function createSessionWindow(conversationId: string, title: string) {
     const { conversationRuntimeService } = await import('./services/conversation-runtime-service.js');
     conversationRuntimeService.detachByWebContentsId(webContentsId);
 
+    let workspaceId = '';
+    try {
+      const { getByIdGlobal } = await import('./services/conversation-service.js');
+      const result = await getByIdGlobal(conversationId);
+      workspaceId = result?.workspaceId || '';
+    } catch (err) {
+      console.error('[sessionWindowClosed] 获取 workspaceId 失败:', err);
+    }
+
+    // 触发点③：会话窗口关闭 → 调度器 on_session_close 条件（退出时不触发，避免退出前起一轮计划）
+    if (!isQuitting && workspaceId) {
+      void import('./services/scheduler/scheduler-service.js')
+        .then((m) => m.getSchedulerService().handleSessionClose(workspaceId))
+        .catch((err) => console.error('[scheduler] 会话关闭触发失败:', err));
+    }
+
     // 通知主窗口恢复 Tab（需要附带 workspaceId，以便正确回到对应工作区标签页）
     if (mainWindow && !mainWindow.isDestroyed()) {
       try {
-        const { getByIdGlobal } = await import('./services/conversation-service.js');
-        const result = await getByIdGlobal(conversationId);
-        const workspaceId = result?.workspaceId || '';
         const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
         h.sessionWindowClosed.send({ conversationId, title, workspaceId });
       } catch (err) {
-        console.error('[sessionWindowClosed] 获取 workspaceId 失败:', err);
+        console.error('[sessionWindowClosed] 通知主窗口失败:', err);
       }
     }
   });
@@ -526,37 +536,6 @@ app.whenReady().then(async () => {
     .then((m) => m.startDashboardWatcher())
     .catch((err) => console.error('启动 dashboard-watcher 失败:', err));
 
-  // ── 组级提炼/复盘三触发点（Phase 3）──
-  // 触发点①：启动后延迟扫一遍，backfill 存量组（低优先，不阻塞窗口）
-  setTimeout(() => {
-    void import('./services/memory/group-digest-trigger.js')
-      .then(async (m) => {
-        await m.triggerScanAll();
-        await m.whenGroupDigestIdle();
-        const r = await import('./services/memory/review-trigger.js');
-        await r.triggerReviewScan();
-      })
-      .catch((err) => console.error('启动组提炼/复盘扫描失败:', err));
-  }, 8000);
-
-  // 触发点②：夜间定时（每小时检查本地时间命中 03:xx，软件开着才跑；每天最多一次）
-  let lastNightlyDigestDay = '';
-  digestNightlyTimer = setInterval(() => {
-    const now = new Date();
-    if (now.getHours() !== 3) return;
-    const day = now.toISOString().slice(0, 10);
-    if (day === lastNightlyDigestDay) return;
-    lastNightlyDigestDay = day;
-    void import('./services/memory/group-digest-trigger.js')
-      .then(async (m) => {
-        await m.triggerScanAll();
-        await m.whenGroupDigestIdle();
-        const r = await import('./services/memory/review-trigger.js');
-        await r.triggerReviewScan();
-      })
-      .catch((err) => console.error('夜间组提炼/复盘扫描失败:', err));
-  }, 60 * 60 * 1000);
-
   // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出
   mainWindow!.on('close', (event) => {
     if (!isQuitting && tray && !tray.isDestroyed()) {
@@ -587,11 +566,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   // 标记为真正退出，使 close 事件不再拦截
   isQuitting = true;
-  // 停止会话提炼夜间定时器
-  if (digestNightlyTimer) {
-    clearInterval(digestNightlyTimer);
-    digestNightlyTimer = null;
-  }
   // 停止调度器（分钟 tick）
   try {
     const { getSchedulerService } = await import('./services/scheduler/scheduler-service.js');
