@@ -96,7 +96,8 @@ const BUILTIN_TEMPLATES: StockFormula[] = [
 // ============================================================
 
 function getConfigDir(): string {
-  if (app.isPackaged) {
+  if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
+  if (app?.isPackaged) {
     return path.join(path.dirname(app.getPath('exe')), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');

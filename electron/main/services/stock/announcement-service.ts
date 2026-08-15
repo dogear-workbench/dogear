@@ -105,7 +105,8 @@ const MIN_BJ_LIST_SIZE = 100;
 const ORG_MAP_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 function getConfigDir(): string {
-  if (app.isPackaged) {
+  if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
+  if (app?.isPackaged) {
     return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');

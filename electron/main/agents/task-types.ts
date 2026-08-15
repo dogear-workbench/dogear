@@ -26,7 +26,8 @@ export enum TaskType {
   GROUP_DIGEST_SESSION = 'group_digest_session', // 组级摘要卡提炼（Phase 3）
   REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
   CATEGORIZE_SESSION = 'categorize_session', // 智能分类决策
-  CATEGORIZE_ORGANIZE = 'categorize_organize' // 存量分类整理（压 anchorTags + 合并重合分类）
+  CATEGORIZE_ORGANIZE = 'categorize_organize', // 存量分类整理（压 anchorTags + 合并重合分类）
+  CUSTOM_AGENT = 'custom_agent' // 定时计划自定义 agent 任务（prompt 驱动的一次性执行）
 }
 
 /**
@@ -228,6 +229,18 @@ export interface CategorizeSessionPayload {
 export interface CategorizeOrganizeSessionPayload {
   workspaceId: string;       // 工作区 ID
   modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
+}
+
+/**
+ * 定时计划自定义 agent 任务负载（scheduler plan-runner 派发）
+ * 运行时上下文（configDir）由 Worker 实例字段提供，不放 payload
+ */
+export interface CustomAgentTaskPayload {
+  taskName: string;             // 任务显示名（PlanTask.name）
+  prompt: string;               // 用户编写的任务指令
+  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.ai.defaultModelSelection）
+  workspaceId: string;          // 工作区 ID（读工作区工具包开关用）
+  workspacePath: string;        // 工作区绝对路径（文件工具边界根）
 }
 
 /**

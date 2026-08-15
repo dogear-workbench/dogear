@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 自定义任务类型 CUSTOM_AGENT
-status: pending
+status: done
 ---
 
 ## 目标
@@ -38,9 +38,34 @@ agent-worker 新增 CUSTOM_AGENT handler：按 payload 组装系统提示词与�
 
 ### 实际改动
 - 与计划差异：
+  - 工具包开关实际在 workspace config（`enabledToolPacks`），AppSettings 无此字段：可选包（article/stock-*）改读 `.dogear/workspaces/<id>/config.json`（safeJsonRead 直读，不 import 带 electron 的 workspace-config-service）
+  - 记忆 + 报告工具恒装（tool-packs.ts 将其归为常驻、设计决策 4 点名为产物通道；收紧只需删 custom-agent-tools.ts 两行）
+  - 不装 Bash；basicToolPermissions 是交互式确认语义，headless 不用
+  - `buildCustomToolSet(workspaceId, workspacePath, configDir)`（签名按真实开关来源调整）
+  - runOnce 成功返回扩展 `lastText?/usage?`（向后兼容，供 summary/tokens）
+  - 股票链 worker-safe 修复（计划外必要前置）：5 个 stock 服务 getConfigDir 前置 DOGEAR_CONFIG_DIR；python-bridge constructor `app?.on` 等四处守卫 + getPythonDir 走 DOGEAR_PYTHON_DIR；agent-manager 注入 DOGEAR_PYTHON_DIR
+  - workspacePath 不存在 error 文案中文 `工作区路径不存在: <path>`
 - 改动文件清单：
+  - 新增 `electron/main/agents/tools/workspace-file-tools.ts`（Read/Write/Edit，workspace 边界）
+  - 新增 `electron/main/services/scheduler/custom-agent-prompt.ts`
+  - 新增 `electron/main/services/scheduler/custom-agent-tools.ts`
+  - 修改 `electron/main/agents/task-types.ts`（TaskType.CUSTOM_AGENT + CustomAgentTaskPayload）
+  - 修改 `electron/main/agents/pi/run-once.ts`（lastText/usage 提取）
+  - 修改 `electron/main/agents/agent-worker.ts`（handleCustomAgentTask + 分发）
+  - 修改 `electron/main/services/scheduler/runtime/task-executor.ts`（删本地占位，改正式类型）
+  - 修改 `electron/main/agents/agent-manager.ts`（worker env 注 DOGEAR_PYTHON_DIR）
+  - 修改 `electron/main/services/stock/{stock-data,stock-watchlist,announcement,financials-cache,formula}-service.ts` + `python-bridge.ts`（worker-safe）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
+  - 结果结构：成功 `{ ok:true, summary?(≤500字), tokens?{inputTokens,outputTokens,cacheReadInputTokens,cacheCreationInputTokens}, tier, profileName }`；失败 `{ ok:false, error }`；取消 `{ ok:false, error:'已取消', cancelled:true }`（worker 任务状态 COMPLETED+ok:false，task-executor 映射 failed，已实测）
+  - `buildCustomToolSet(workspaceId, workspacePath, configDir): Promise<ToolDef[]>`；`buildCustomAgentPrompt(payload): { systemPrompt, prompt }`
+  - `runOnce` 成功分支新增 `lastText?: string` / `usage?: RunOnceUsage`（口径同 accumulatePiUsage）
+  - worker env 新增 `DOGEAR_PYTHON_DIR`（主进程预计算打包态 python 目录）
 - 下个 step 该从哪里继续：
+  - step4：scheduler-service tick/条件事件 → `getPlanRunner().runPlan`；missed 用 appendHistoryEntry(kind:'missed')；自定义链路已全通无需再动
 - 待办或已知限制：
+  - maxTurns=30；summary 依赖模型遵守末尾自述提示词（缺省留空不算失败）
+  - Electron 打包态 DOGEAR_PYTHON_DIR 注入路径未实测（开发态逻辑已验）；真模型 API 未跑（mock 到模型 API 层，工具/映射全真实验证）
+  - worker 内 python-bridge 无 will-quit 钩子，靠 idleTimer 收尾
+  - agent-worker.ts 1416 行，后续加任务类型建议拆 handler 文件

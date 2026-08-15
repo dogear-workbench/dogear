@@ -57,7 +57,8 @@ const DEFAULT_WATCHLIST: Watchlist = {
  * 打包后：AppData/Roaming/Dogear/.dogear
  */
 function getConfigDir(): string {
-  if (app.isPackaged) {
+  if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
+  if (app?.isPackaged) {
     return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');

@@ -235,11 +235,15 @@ export class AgentManager extends EventEmitter {
       // 创建 Worker 实例
       // Worker 会自动继承主进程的 process.env (包括从 .env 加载的配置)
       // 设置 DOGEAR_CONFIG_DIR 供 Worker 中的 logger 使用（用顶部导入的 join/dirname）
+      // DOGEAR_PYTHON_DIR：Worker 线程拿不到 electron app（isPackaged 不可判），打包态 python 目录由主进程预计算
       const configDir = app.isPackaged
         ? join(app.getPath('userData'), '.dogear')
         : join(process.cwd(), '.dogear');
+      const pythonDir = app.isPackaged
+        ? join(process.resourcesPath ?? join(dirname(app.getPath('exe')), 'resources'), 'python')
+        : join(process.cwd(), 'python');
       const worker = new Worker(workerPath, {
-        env: { ...process.env, DOGEAR_CONFIG_DIR: configDir }
+        env: { ...process.env, DOGEAR_CONFIG_DIR: configDir, DOGEAR_PYTHON_DIR: pythonDir }
       });
 
       const wrapper: WorkerWrapper = {

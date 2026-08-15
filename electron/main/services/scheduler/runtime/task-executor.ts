@@ -2,8 +2,8 @@ import {
   TaskStatus,
   TaskType,
   type AgentTask,
+  type CustomAgentTaskPayload,
 } from '../../../agents/task-types.js';
-import type { ModelSelection } from '../../settings-types.js';
 import { loadSettings } from '../../settings-service.js';
 import {
   getById as getWorkspaceById,
@@ -103,16 +103,6 @@ async function runBuiltinTask(task: BuiltinPlanTask): Promise<TaskExecResult> {
   }
 }
 
-const CUSTOM_AGENT_TASK_TYPE = 'custom_agent' as TaskType;
-
-interface CustomAgentTaskPayload {
-  taskName: string;
-  prompt: string;
-  modelSelection?: ModelSelection;
-  workspaceId: string;
-  workspacePath: string;
-}
-
 function extractTokens(result: any): RunTokens | undefined {
   const usage = result?.tokens ?? result?.usage;
   if (!usage || typeof usage !== 'object') return undefined;
@@ -149,7 +139,7 @@ async function runCustomTask(task: CustomPlanTask): Promise<TaskExecResult> {
   };
   const agentTask: AgentTask = {
     id: `custom-agent-${task.id}-${Date.now()}`,
-    type: CUSTOM_AGENT_TASK_TYPE,
+    type: TaskType.CUSTOM_AGENT,
     status: TaskStatus.PENDING,
     payload,
     createdAt: Date.now(),

@@ -113,8 +113,8 @@ class PythonBridge {
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
-    // 注册应用退出时的清理
-    app.on('will-quit', () => {
+    // 注册应用退出时的清理（Worker 线程无 electron app，跳过）
+    app?.on('will-quit', () => {
       this.log('▲ APP_QUIT');
       this.stopWatching();
       this.shutdown();
@@ -125,9 +125,10 @@ class PythonBridge {
   private log(msg: string): void {
     try {
       if (!this.logPath) {
-        const dogearConfigDir = app.isPackaged
-          ? path.join(app.getPath('userData'), '.dogear')
-          : path.join(process.cwd(), '.dogear');
+        const dogearConfigDir = process.env.DOGEAR_CONFIG_DIR
+          ?? (app?.isPackaged
+            ? path.join(app.getPath('userData'), '.dogear')
+            : path.join(process.cwd(), '.dogear'));
         const logDir = path.join(dogearConfigDir, 'logs');
         fs.mkdirSync(logDir, { recursive: true });
         this.logPath = path.join(logDir, 'python-bridge.log');
@@ -265,7 +266,7 @@ class PythonBridge {
    * 打包后不生效；进程是懒启动的，这里只负责杀，下次 call 时自然重新 spawn。
    */
   private startWatching(): void {
-    if (app.isPackaged || this.watcher) return;
+    if (!app || app.isPackaged || this.watcher) return;
 
     const dir = this.getPythonDir();
     try {
@@ -387,7 +388,8 @@ class PythonBridge {
 
   /** 获取 Python 脚本目录 */
   private getPythonDir(): string {
-    if (!app.isPackaged) {
+    if (process.env.DOGEAR_PYTHON_DIR) return process.env.DOGEAR_PYTHON_DIR;
+    if (!app?.isPackaged) {
       // 开发模式：项目根目录/python/
       return path.join(process.cwd(), 'python');
     }
@@ -475,9 +477,10 @@ class PythonBridge {
 
     // Python 侧 get_dogear_root() 优先读 DOGEAR_CONFIG_DIR，不注入则回退到 ~/.dogear，
     // 导致 snapshot 落在用户目录、与 TS 侧项目目录 .dogear/stocks/ 分裂——每次都重新拉全 A（7 分钟），缓存失效
-    const dogearConfigDir = app.isPackaged
-      ? path.join(app.getPath('userData'), '.dogear')
-      : path.join(process.cwd(), '.dogear');
+    const dogearConfigDir = process.env.DOGEAR_CONFIG_DIR
+      ?? (app?.isPackaged
+        ? path.join(app.getPath('userData'), '.dogear')
+        : path.join(process.cwd(), '.dogear'));
 
     this.process = spawn(pythonCmd, [scriptPath], {
       stdio: ['pipe', 'pipe', 'pipe'],

@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 数据模型 + 时间引擎 + 计划存储](./step1-model-engine.md) — 类型定义、time-rule-engine 纯函数、plan-store 含出厂播种
 - [x] [Step 2: 运行历史存储 + 计划执行器](./step2-runner-history.md) — run-history-store（按月 JSONL）、plan-runner（串行消费/断点/停机/防重入）、内置任务对接现有 trigger 层
-- [ ] [Step 3: 自定义任务类型 CUSTOM_AGENT](./step3-custom-agent.md) — agent-worker 新 handler：prompt + 模型 fallback + 按设置过滤的工具集
+- [x] [Step 3: 自定义任务类型 CUSTOM_AGENT](./step3-custom-agent.md) — agent-worker 新 handler：prompt + 模型 fallback + 按设置过滤的工具集
 - [ ] [Step 4: 调度核心 + 启动集成](./step4-scheduler-core.md) — scheduler-service（tick 求值/窗口状态机/条件事件/错过判定）、index.ts 启动接线
 - [ ] [Step 5: 触发点迁移 + tipc 路由](./step5-migrate-ipc.md) — 删三个硬编码触发点改走调度器、scheduler.ts 七个 RPC + 校验
 - [ ] [Step 6: 前端 store + 设置页「定时计划」Tab](./step6-settings-ui.md) — scheduler-store、计划列表 + 编辑器（任务编排/触发器多选/工作区选择）
