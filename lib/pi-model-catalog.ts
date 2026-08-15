@@ -32,6 +32,20 @@ for (const source of CATALOG_SOURCES) {
   }
 }
 
+/** 生效窗口解析链：手填 > 目录查表 > 200K 兜底（与主进程 buildPiModel 保持一致） */
+export function resolveModelWindow(entry: { id: string; contextWindow?: number }): number {
+  return entry.contextWindow ?? lookupContextWindow(entry.id) ?? FALLBACK_CONTEXT_WINDOW;
+}
+
+/** '1M'/'1.5M'/'200K'/'1000000' → token 数（大小写不敏感、忽略首尾空格）；非法或非正数返回 undefined */
+export function parseContextInput(input: string): number | undefined {
+  const m = /^(\d+(?:\.\d+)?)([kKmM]?)$/.exec(input.trim());
+  if (!m) return undefined;
+  const multiplier = m[2].toLowerCase() === 'k' ? 1_000 : m[2].toLowerCase() === 'm' ? 1_000_000 : 1;
+  const result = Math.round(parseFloat(m[1]) * multiplier);
+  return Number.isFinite(result) && result > 0 ? result : undefined;
+}
+
 export function lookupContextWindow(modelId: string): number | undefined {
   return CONTEXT_WINDOWS[modelId];
 }

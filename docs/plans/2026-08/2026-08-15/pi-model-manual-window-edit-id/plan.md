@@ -14,7 +14,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 主进程数据层与窗口解析链路](./step1-main-process-window.md) — 类型扩展、normalizePiModels 放行、provider/usage 链路手填优先，补归一化测试
-- [ ] [Step 2: 设置页模型行 UI](./step2-settings-ui.md) — 渲染层辅助函数 + ID 可编辑 + 窗口徽标可编辑
+- [x] [Step 2: 设置页模型行 UI](./step2-settings-ui.md) — 渲染层辅助函数 + ID 可编辑 + 窗口徽标可编辑
 
 ## 全局决策
 
@@ -24,3 +24,7 @@
 - 手填对目录已识别模型同样生效（可覆盖目录值）
 - UI 输入支持 `1M` / `200K` / `1000000` 三种写法；清空 = 删除手填字段恢复查表；非法输入不生效
 - 不写新测试文件，只在 `settings-normalize.test.ts` 补 normalizePiModels 用例；保证现有测试不破
+
+## 完成总结
+
+两步全部完成：step1 `be3e553`（主进程类型/归一化/窗口解析链路 + 4 测试用例）、step2 本提交（渲染层类型同步、lib 辅助函数、PiModelRow 行组件、page.tsx 接线）。与设计无功能偏差。待真机验证清单在 step2-settings-ui.md「验证」段：glm-5.3 徽标手填、ID 编辑回退、usage 徽章按手填窗口计算、存量对话旧 id 报错重选。

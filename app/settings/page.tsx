@@ -22,7 +22,8 @@ import { SubAgentTab } from './SubAgentTab';
 import { AboutTab } from './AboutTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
-import { FALLBACK_CONTEXT_WINDOW, formatContextLabel, lookupContextWindow } from '@/lib/pi-model-catalog';
+import { formatContextLabel, lookupContextWindow, resolveModelWindow } from '@/lib/pi-model-catalog';
+import { PiModelRow } from './pi-model-row';
 import { formatTokens } from '@/components/agent-chat/usage-badge/usage-utils';
 
 // ═══ 常量 ═══════════════════════════════════════════
@@ -500,59 +501,25 @@ export default function SettingsPage() {
                     <div className="space-y-1.5">
                       <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
                       <p className="text-xs text-muted-foreground">
-                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID），右侧为查表得到的生效上下文窗口。保存后在 ModelSelector 下拉里出现。
+                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID）；点击右侧窗口徽标可手填上下文窗口（缺省查表，未识别按 200K）。保存后在 ModelSelector 下拉里出现。
                       </p>
                       <div className="space-y-2">
                         {(profile.piModels ?? []).length === 0 && (
                           <p className="text-xs text-muted-foreground italic">尚未添加任何模型</p>
                         )}
-                        {(profile.piModels ?? []).map(model => {
-                          const modelWindow = lookupContextWindow(model.id);
-                          return (
-                          <div key={model.id} className="flex items-center gap-2">
-                            <span className="flex-1 min-w-0 text-sm font-mono px-3 py-1.5 border rounded bg-muted/30 truncate">
-                              {model.id}
-                            </span>
-                            <span
-                              className={cn(
-                                'shrink-0 text-xs tabular-nums px-2 py-1 rounded border',
-                                modelWindow !== undefined
-                                  ? 'text-muted-foreground'
-                                  : 'text-yellow-700 dark:text-yellow-300 border-yellow-300 dark:border-yellow-700',
-                              )}
-                            >
-                              {modelWindow !== undefined
-                                ? formatContextLabel(modelWindow)
-                                : `${formatContextLabel(FALLBACK_CONTEXT_WINDOW)} · 未识别`}
-                            </span>
-                            <input
-                              type="text"
-                              className="h-9 w-44 px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
-                              value={model.label ?? ''}
-                              placeholder={model.id}
-                              onChange={(e) => {
-                                const v = e.target.value;
-                                updateProfileField(id, {
-                                  piModels: (profile.piModels ?? []).map(m =>
-                                    m.id === model.id
-                                      ? (v === '' ? { id: m.id } : { id: m.id, label: v })
-                                      : m,
-                                  ),
-                                });
-                              }}
-                            />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => updateProfileField(id, {
-                                piModels: (profile.piModels ?? []).filter(m => m.id !== model.id),
-                              })}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </div>
-                          );
-                        })}
+                        {(profile.piModels ?? []).map(model => (
+                          <PiModelRow
+                            key={model.id}
+                            entry={model}
+                            others={(profile.piModels ?? []).filter(m => m.id !== model.id)}
+                            onChange={(next) => updateProfileField(id, {
+                              piModels: (profile.piModels ?? []).map(m => m.id === model.id ? next : m),
+                            })}
+                            onRemove={() => updateProfileField(id, {
+                              piModels: (profile.piModels ?? []).filter(m => m.id !== model.id),
+                            })}
+                          />
+                        ))}
                       </div>
                       <div className="flex items-center gap-2 pt-1">
                         <input
@@ -629,13 +596,12 @@ export default function SettingsPage() {
                       {(() => {
                         const first = (profile.piModels ?? [])[0];
                         if (!first) return null;
-                        const recognized = lookupContextWindow(first.id) !== undefined;
-                        const contextWindow = recognized ? lookupContextWindow(first.id)! : FALLBACK_CONTEXT_WINDOW;
+                        const contextWindow = resolveModelWindow(first);
                         const percent = profile.autoCompactPercent ?? 80;
                         return (
                           <p className="text-xs text-muted-foreground">
                             {percent}%（{formatContextLabel(contextWindow)} 窗口 ≈ {formatTokens(Math.floor(contextWindow * percent / 100))} tokens 时触发）
-                            {!recognized && '，首模型未识别，按 200K 估算'}
+                            {first.contextWindow === undefined && lookupContextWindow(first.id) === undefined && '；首模型未识别按 200K 估算，可在模型行点击窗口徽标手填'}
                           </p>
                         );
                       })()}
