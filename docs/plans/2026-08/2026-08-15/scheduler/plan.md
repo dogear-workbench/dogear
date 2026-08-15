@@ -14,7 +14,7 @@
 - [x] [Step 4: 调度核心 + 启动集成](./step4-scheduler-core.md) — scheduler-service（tick 求值/窗口状态机/条件事件/错过判定）、index.ts 启动接线
 - [x] [Step 5: 触发点迁移 + tipc 路由](./step5-migrate-ipc.md) — 删三个硬编码触发点改走调度器、scheduler.ts 七个 RPC + 校验
 - [x] [Step 6: 前端 store + 设置页「定时计划」Tab](./step6-settings-ui.md) — scheduler-store、计划列表 + 编辑器（任务编排/触发器多选/工作区选择）
-- [ ] [Step 7: 执行历史页面 + 收尾](./step7-history-page.md) — 独立路由页面、状态徽章/分页/摘要展开、codebase-map 同步
+- [x] [Step 7: 执行历史页面 + 收尾](./step7-history-page.md) — 独立路由页面、状态徽章/分页/摘要展开、codebase-map 同步
 
 ## 全局决策
 
@@ -40,3 +40,20 @@
 **命名与规范**
 - 主进程单例 `getSchedulerService()`；tipc 路由 `scheduler.ts`；前端 `scheduler-store.ts`；历史页面路由 `/run-history`（HashRouter）。
 - 不写注释；不留半成品/空 stub；单文件 >300 行拆分。主进程改动需 `bun run build:electron` 验证编译。
+
+## 完成总结
+
+全部 7 步实施完毕（每步一个 commit：step1 9a9106f / step2 6c74af6 / step3 aa7abb1 / step4 5ed6cd8 / step5 ecd20cc / step6 bc5212d / step7 272edc7），lint 0 errors、`bun run build` 全量通过。
+
+**最终架构**：`electron/main/services/scheduler/`（types / time-rule-engine 纯函数时间引擎 / plan-store plans.json 存储 / plan-validate 保存校验 / scheduler-service 60s tick 调度核心 / run-history-store 按月 JSONL / custom-agent-prompt+tools 自定义任务装配 / runtime/plan-runner+task-executor 执行器）+ `tipc/scheduler.ts` 七 RPC + 前端 `scheduler-store` + 设置页「定时计划」Tab + `/run-history` 历史页。三个硬编码触发点已迁移为出厂「夜间维护」计划（03:00–05:00 窗口 / 应用启动 / 会话窗口关闭）。
+
+**实施中的关键修正**（各 step 交付文档有详）：
+- step3：股票链 6 文件 Worker 线程安全修复（env 优先 + app 可选链，主进程行为不变）+ agent-manager 注入 DOGEAR_PYTHON_DIR
+- step4：时间触发改消费式（先 touch 后 runPlan）防同源二次运行；on_window_close 2min 容差防 tick 秒偏差漏触发；missed 一律消费防变相补跑
+- step5：原触发点③调用处已在 fe2339a 被删，新挂独立会话窗口 closed 事件；tipc 校验纯逻辑拆 plan-validate.ts
+
+**已知边界**（详见各 step 交付文档）：
+- `triggerByConversation`（group-digest-trigger.ts）成死代码，留待 trigger 层收尾清理
+- once 已 fired 改时间不重置；编辑器 plans 快照不实时；on_plan_done 目标被删后保存被拒需先删该触发器
+- 状态筛选为客户端过滤（仅已加载条目）；同毫秒历史条目在分页边界可能被跳过
+- 完整 Electron dev 模式全链路回归（step7 交付文档末 10 项清单）尚未跑过，建议下次起 dev 时走查 `[scheduler]` 日志
