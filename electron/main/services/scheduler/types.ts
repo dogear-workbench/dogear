@@ -47,6 +47,7 @@ export type Trigger =
 export interface PlanRunState {
   pendingTasks: string[];
   cursor?: string;
+  cursorStartedAt?: number;
 }
 
 export interface Plan {

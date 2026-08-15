@@ -15,11 +15,12 @@ export function isReportStale(report: ReportDoc | null, latestDigestCreatedAt: s
   return latestDigestCreatedAt > report.updatedAt;
 }
 
-/** 遍历所有工作区，返回报告过时（且有组卡可生成）的工作区 */
-export async function findStaleWorkspaces(): Promise<StaleWorkspace[]> {
+/** 遍历所有工作区，返回报告过时（且有组卡可生成）的工作区（传 workspaceId 时只查该工作区） */
+export async function findStaleWorkspaces(workspaceId?: string): Promise<StaleWorkspace[]> {
   const all = await workspaceService.getAll();
   const out: StaleWorkspace[] = [];
   for (const ws of all) {
+    if (workspaceId !== undefined && ws.id !== workspaceId) continue;
     const digests = await listGroupDigests(ws.id);
     if (!digests.length) continue;
     const latest = digests.reduce((m, d) => (d.createdAt > m ? d.createdAt : m), digests[0].createdAt);

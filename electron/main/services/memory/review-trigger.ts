@@ -149,12 +149,12 @@ async function runOne(w: StaleWorkspace): Promise<void> {
   });
 }
 
-/** 触发点①/②：全量过时检查 → 入队 */
-export async function triggerReviewScan(): Promise<void> {
+/** 触发点①/②：全量过时检查 → 入队（传 workspaceId 时只查该工作区） */
+export async function triggerReviewScan(workspaceId?: string): Promise<void> {
   await whenMigrationReady();
   try {
     const { findStaleWorkspaces } = await import('./review-scanner.js');
-    const stale = await findStaleWorkspaces();
+    const stale = await findStaleWorkspaces(workspaceId);
     lastScan = { at: Date.now(), dirtyCount: stale.length };
     if (stale.length) {
       mainLogger.info(`[review] 过时检查发现 ${stale.length} 个工作区待复盘`);

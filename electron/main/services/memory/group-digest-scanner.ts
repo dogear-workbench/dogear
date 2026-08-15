@@ -164,11 +164,12 @@ export async function findDirtyGroup(
   };
 }
 
-/** 遍历所有工作区做脏检查 */
-export async function scanAllWorkspaces(): Promise<DirtyGroup[]> {
+/** 遍历所有工作区做脏检查（传 workspaceId 时只扫该工作区） */
+export async function scanAllWorkspaces(workspaceId?: string): Promise<DirtyGroup[]> {
   const all = await workspaceService.getAll();
   const out: DirtyGroup[] = [];
   for (const ws of all) {
+    if (workspaceId !== undefined && ws.id !== workspaceId) continue;
     out.push(...await findDirtyGroups(ws.id, ws.path));
   }
   return out;

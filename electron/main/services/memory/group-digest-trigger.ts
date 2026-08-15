@@ -249,11 +249,11 @@ async function chainCategorize(workspaceId: string, groupId: string, groupDigest
   }
 }
 
-/** 触发点①/②：扫所有工作区所有 group → dirty 的提交 */
-export async function triggerScanAll(): Promise<void> {
+/** 触发点①/②：扫所有工作区所有 group → dirty 的提交（传 workspaceId 时只扫该工作区） */
+export async function triggerScanAll(workspaceId?: string): Promise<void> {
   await whenMigrationReady();
-  mainLogger.info('[group-digest] 开始全量扫描');
-  const dirtyGroups = await scanAllWorkspaces();
+  mainLogger.info('[group-digest] 开始全量扫描', workspaceId ? `workspace=${workspaceId}` : '全部工作区');
+  const dirtyGroups = await scanAllWorkspaces(workspaceId);
   const dirtyCount = dirtyGroups.length;
   lastScan = { at: Date.now(), dirtyCount };
   schedulePersist();
