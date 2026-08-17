@@ -190,9 +190,18 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   await requireActiveGroup(workspaceId, groupId);
 
   const profiles = settings.subAgent?.profiles ?? [];
+  if (spec.profile) {
+    const named = profiles.find((p) => p.id === spec.profile || p.name === spec.profile);
+    if (named?.enabled === false) {
+      throw new Error(`子会话 Profile「${named.name}」已停用，请换用其他 Profile 或不指定 profile`);
+    }
+  }
   const selectedProfile = (spec.profile
     ? profiles.find((p) => p.id === spec.profile || p.name === spec.profile)
-    : null) ?? profiles.find((p) => p.id === 'default') ?? profiles[0] ?? createDefaultSubAgentProfile();
+    : null)
+    ?? profiles.find((p) => p.id === 'default' && p.enabled !== false)
+    ?? profiles.find((p) => p.enabled !== false)
+    ?? createDefaultSubAgentProfile();
 
   const modelSel = selectedProfile.modelSelection
     ?? parent.modelSelection

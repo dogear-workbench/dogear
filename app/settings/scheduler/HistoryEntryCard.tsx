@@ -13,7 +13,7 @@ import {
   formatRelativePast,
   formatTimeShort,
   formatTokenCount,
-} from './utils';
+} from './history-utils';
 
 function TimeLine({ entry }: { entry: RunHistoryEntry }) {
   const start = entry.startedAt ?? entry.ts;

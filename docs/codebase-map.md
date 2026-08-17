@@ -15,7 +15,7 @@
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
 - `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测，含默认系统提示词编辑）
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
-- `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（默认模型 / 权限模式 / 超时分钟数；写 `settings.subAgent`，单次派遣不可覆盖）
+- `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill）
 - `app/settings/pi-model-row.tsx` — 模型清单行组件 `PiModelRow`：ID 行内编辑（空/与同清单重复回退标红）、窗口徽标点击手填（`parseContextInput` 解析 1M/200K/262144 写法，清空恢复查表，手动角标）、显示名与删除
 - `app/settings/SystemPromptPreviewTab.tsx` — 系统提示词只读预览面板，拉后端 getSystemPromptSegments 展示 6 段隐形系统契约（tool-pack-guide / group-context / reference-append / group-append / notes-guidance / sub-agent-contract），按 category 分组 + 类别徽章 + 动态徽章 + 触发条件说明 + 等宽模板正文
 - `app/settings/memory/DigestsPanel.tsx` — 组卡设置面板（列组卡 + 详情视图 + 「组级提炼提示词」折叠编辑器接 group-digest-prompt / 活动状态 + 停止 / 单组「重新提炼」按钮走 triggerGroupDigest）
@@ -24,12 +24,14 @@
 - `app/settings/memory/TopicsPanel.tsx` — 工作区主题记忆面板（列表 + 编辑器，接 memory-service）
 - `app/settings/memory/CoreProfilePanel.tsx` — 核心画像面板
 - `app/settings/scheduler/` — 定时计划设置组件（「定时计划」Tab 内容，拆分控制单文件体量）：
-  - `SchedulerPanel.tsx` — 计划列表（名称 / 启用 Switch / 任务序列 / 触发器摘要 / 下次运行相对时间 60s 刷新 / 编辑·删除·立即运行，删除与停用运行中计划走 confirm-store）+ 运行中徽章（activity 轮询）+ 「查看执行历史」（closeSettings + hash 跳 /run-history）
+  - `SchedulerPanel.tsx` — 计划列表（名称 / 启用 Switch / 任务序列 / 触发器摘要 / 下次运行相对时间 60s 刷新 / 编辑·删除·立即运行，删除与停用运行中计划走 confirm-store）+ 运行中徽章（activity 轮询）+ 「查看执行历史」打开右侧 `HistorySheet`
   - `PlanEditor.tsx` — 计划编辑 Dialog（保存前客户端预校验 validateDraft 就地显示，环检测等其余交后端拒并 toast）
   - `TaskListEditor.tsx` — 任务行编辑（builtin 四选一 / custom 子表单含 ModelSelector 与必选工作区 / 上下移删除）
   - `TriggerListEditor.tsx` — 触发器编辑（时间规则 / 条件规则两组分区，八种触发器行内编辑 + 行尾实时摘要预览 + 删除）
   - `utils.ts` — describeTrigger / describeTask / BUILTIN_TASK_LABELS 前端镜像、formatRelativeFuture、周几 chips、datetime-local 双向转换
-- `app/run-history/page.tsx` — 执行历史页面（路由 `/run-history`，HashRouter）：顶部计划下拉（服务端 planId 过滤）+ 状态筛选（客户端过滤）+ 「返回设置」（openSettings）+ 「正在运行」小节（复用 scheduler-store 的 activity 10s 轮询）+ 条目卡片（状态徽章 / 触发原因徽章 + triggerDesc / 起止时间耗时 / token 用量 / 摘要与错误折叠展开，见 HistoryEntryCard.tsx 与 utils.ts）+ 「加载更多」cursor 分页（cursor=上页末条 ts，before 语义）；missed 条目灰色「未运行」，运行中状态不落历史
+  - `history-utils.ts` — 执行历史展示纯函数（时间/耗时/token 格式化、状态元信息）
+  - `HistoryEntryCard.tsx` — 历史条目卡片（状态徽章 / 触发原因 / 起止耗时 / token 用量 / 摘要与错误折叠）
+  - `HistorySheet.tsx` — 执行历史右侧滑出面板（Sheet）：计划/状态筛选 + 「正在运行」小节（读面板同源 activity 轮询）+ 条目卡片 + cursor 分页；原独立路由 `/run-history` 已删，旧 hash 由 `*` 兑底回首页
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
@@ -163,7 +165,7 @@
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `ai.ts` — AIInteraction / AIMessage
-- `settings.ts` — ModelTier / ModelSelection / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { modelSelection?, timeoutMinutes, cachePolicy?, loadCoreProfile?, loadSkills?, loadArticleParse? }` 子会话派遣默认配置；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
+- `settings.ts` — ModelTier / ModelSelection / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { profiles: SubAgentProfile[] }` 子会话派遣 Profile 清单，SubAgentProfile.enabled 仅非 default 有意义——停用后系统提示词索引不列出、startChild 拒绝；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
 - `electron-api.ts` — Workspace / WorkspaceFileNode / ExtendedSessionMessage / Citation / Conversation（含 modelSelection/contractMetadata — 后者记录 agent 派出溯源：createdBy / parentSessionId / task）
 - `delegation.ts` — Agent 协作契约数据模型（ContractMetadata / ChildSessionState / 契约通道消息类型）

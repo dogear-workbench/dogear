@@ -72,6 +72,8 @@ export interface SubAgentProfile {
   modelSelection?: ModelSelection | null;
   /** 单个子会话最长允许跑的分钟数，默认 30 */
   timeoutMinutes: number;
+  /** 仅非 default Profile 有意义：false 时 agent 侧不可见、不可派遣；缺省视为启用 */
+  enabled?: boolean;
   enabledBasicTools: string[];
   enabledAbilities: SubAgentEnabledAbilities;
 }

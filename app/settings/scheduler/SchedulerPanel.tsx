@@ -7,8 +7,8 @@ import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { useSchedulerStore } from '@/stores/scheduler-store';
-import { useUIStore } from '@/stores/ui-store';
 import type { PlanWithNextRun, SchedulerRunningPlan } from '@/types/scheduler';
+import { HistorySheet } from './HistorySheet';
 import { PlanEditor } from './PlanEditor';
 import { describeTask, describeTrigger, formatRelativeFuture } from './utils';
 import type { WorkspaceOption } from './utils';
@@ -26,11 +26,11 @@ export function SchedulerPanel() {
   const stopActivityPolling = useSchedulerStore((s) => s.stopActivityPolling);
 
   const confirm = useConfirmStore((s) => s.confirm);
-  const closeSettings = useUIStore((s) => s.closeSettings);
 
   const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PlanWithNextRun | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [, setDisplayTick] = useState(0);
 
   useEffect(() => {
@@ -88,10 +88,7 @@ export function SchedulerPanel() {
     if (ok === 'confirm') await deletePlan(plan.id);
   };
 
-  const handleViewHistory = () => {
-    closeSettings();
-    window.location.hash = '#/run-history';
-  };
+  const handleViewHistory = () => setHistoryOpen(true);
 
   return (
     <div className="space-y-3">
@@ -182,6 +179,8 @@ export function SchedulerPanel() {
         workspaces={workspaces}
         onOpenChange={setEditorOpen}
       />
+
+      <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Plus, Pencil, Trash2, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
+import { Switch } from '@/components/ui/switch';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { ModelSelector } from '@/components/ModelSelector';
 import {
@@ -332,6 +333,15 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
     setDraft({ ...profile, enabledAbilities: { ...profile.enabledAbilities } });
   };
 
+  const setProfileEnabled = (id: string, enabled: boolean) => {
+    setLocal((prev) => ({
+      ...prev,
+      subAgent: {
+        profiles: prev.subAgent.profiles.map((p) => (p.id === id ? { ...p, enabled } : p)),
+      },
+    }));
+  };
+
   const commitDraft = () => {
     if (!draft) return;
     setLocal((prev) => ({
@@ -402,7 +412,10 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
           return (
             <div
               key={profile.id}
-              className="flex items-start gap-3 p-3 rounded-lg border bg-background hover:border-foreground/20 transition-colors"
+              className={cn(
+                'flex items-start gap-3 p-3 rounded-lg border bg-background hover:border-foreground/20 transition-colors',
+                profile.enabled === false && 'opacity-60',
+              )}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
@@ -410,6 +423,11 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
                   {profile.id === 'default' && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                       默认
+                    </span>
+                  )}
+                  {profile.enabled === false && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                      已停用
                     </span>
                   )}
                 </div>
@@ -424,6 +442,14 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {profile.id !== 'default' && (
+                  <Switch
+                    className="mr-1"
+                    checked={profile.enabled !== false}
+                    onCheckedChange={(v) => setProfileEnabled(profile.id, v)}
+                    aria-label={profile.enabled !== false ? '停用该 Profile' : '启用该 Profile'}
+                  />
+                )}
                 <button
                   type="button"
                   onClick={() => startEdit(profile)}

@@ -23,13 +23,14 @@ export const MAIN_AGENT_DELEGATION_APPEND =
  * 生成可用的子会话 Profile 索引（仅主会话注入，让模型按描述选择 profile 参数）。
  */
 export function buildSubAgentProfileIndex(profiles: SubAgentProfile[]): string {
-  if (profiles.length === 0) {
+  const visible = profiles.filter((p) => p.enabled !== false);
+  if (visible.length === 0) {
     return (
       '\n## 可用的子会话 Profile\n' +
       '派遣子会话时可通过 profile 参数选择合适的 Profile（不指定时用「默认」）。'
     );
   }
-  const rows = profiles.map((p) => `| ${p.name} | ${p.description} |`).join('\n');
+  const rows = visible.map((p) => `| ${p.name} | ${p.description} |`).join('\n');
   return (
     '\n## 可用的子会话 Profile\n' +
     '派遣子会话时可通过 profile 参数选择合适的 Profile（不指定时用「默认」）：\n\n' +
