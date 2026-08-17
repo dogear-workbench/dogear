@@ -283,6 +283,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   pendingActionConversationIds: new Set<string>(),
   botBoundConversationId: null,
   childrenByParent: {},
+  childSnapshotsById: {},
 
   activateWorkspace: (workspaceId) => {
     if (!workspaceId) {
@@ -328,9 +329,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
       set((state) => patchSlice(state, wsId, { conversations, treeData, nodeMap }));
 
-      // 同步 group-store（避免组件分别拉取造成时序错位）
+      // 同步 group-store（避免组件分别拉取造成时序错位；首次同步时默认展开近期组）
       void import('./group-store').then(({ useGroupStore }) => {
-        useGroupStore.setState({ groups, loading: false });
+        useGroupStore.getState().syncGroups(wsId, groups);
       });
     } catch (error) {
       console.error('加载对话列表失败:', error);

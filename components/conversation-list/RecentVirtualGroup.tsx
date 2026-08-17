@@ -23,7 +23,7 @@ export function RecentVirtualGroup() {
   return (
     <div>
       <div
-        className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-xs font-medium text-muted-foreground hover:bg-muted/40 transition-colors"
+        className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors"
         onClick={() => setCollapsed((v) => !v)}
       >
         {collapsed

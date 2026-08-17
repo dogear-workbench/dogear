@@ -3,6 +3,9 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type { Group } from '@/types/group';
 
+// 「近期」阈值（设计 §4.1：< 5 天），与侧边栏近期虚拟组共用
+export const RECENT_THRESHOLD_MS = 5 * 86400_000;
+
 const getWorkspace = async () => {
   const { useWorkspaceStore } = await import('./workspace-store');
   return useWorkspaceStore.getState().workspace;
@@ -13,7 +16,10 @@ interface GroupState {
   currentGroupId: string | null;
   expandedGroupIds: Set<string>;
   loading: boolean;
+  /** 已应用过默认展开（近期组展开）的工作区，防止重复刷新时覆盖用户手动折叠 */
+  expandDefaultsAppliedFor: string | null;
 
+  syncGroups: (workspaceId: string, groups: Group[]) => void;
   load: (workspaceId: string) => Promise<void>;
   setCurrentGroup: (groupId: string | null) => void;
   toggleExpand: (groupId: string) => void;
@@ -30,18 +36,32 @@ export const useGroupStore = create<GroupState>((set) => ({
   currentGroupId: null,
   expandedGroupIds: new Set<string>(),
   loading: false,
+  expandDefaultsAppliedFor: null,
+
+  syncGroups: (workspaceId, groups) => {
+    set((state) => {
+      if (state.expandDefaultsAppliedFor === workspaceId) {
+        return { groups, loading: false };
+      }
+      const now = Date.now();
+      const expandedGroupIds = new Set(
+        groups.filter((g) => now - g.updatedAt <= RECENT_THRESHOLD_MS).map((g) => g.id)
+      );
+      return { groups, loading: false, expandedGroupIds, expandDefaultsAppliedFor: workspaceId };
+    });
+  },
 
   load: async (workspaceId) => {
     set({ loading: true });
     try {
       const r = await client.listGroups({ workspaceId });
-      set({ groups: r.groups ?? [], loading: false });
+      useGroupStore.getState().syncGroups(workspaceId, r.groups ?? []);
       client
         .autoArchiveStale({ workspaceId })
         .then((res) => {
           if (res.archivedCount > 0) {
             client.listGroups({ workspaceId }).then((r2) => {
-              set({ groups: r2.groups ?? [] });
+              useGroupStore.getState().syncGroups(workspaceId, r2.groups ?? []);
             });
           }
         })

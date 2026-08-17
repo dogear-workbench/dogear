@@ -32,9 +32,10 @@ export function getConversationTitle(conversation: Conversation): string {
   return `对话 ${date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}`;
 }
 
-// 「近期」阈值（设计 §4.1：< 5 天）
+// 「近期」阈值常量移至 group-store（默认展开逻辑共用），此处转发保持导入路径稳定
+export { RECENT_THRESHOLD_MS } from '@/stores/group-store';
+
 export const RECENT_DAYS = 5;
-export const RECENT_THRESHOLD_MS = RECENT_DAYS * 86400_000;
 
 // 对话树根节点哨兵 id（与后端 ROOT_ID 同步）
 export const CONV_TREE_ROOT = '__root__';
@@ -42,13 +43,17 @@ export const CONV_TREE_ROOT = '__root__';
 /**
  * 节点高亮状态：
  * - isOpen: conversationId 在 tabs 里（淡色背景，可能多节点）
- * - isSelected: 该节点是"最近被点击"的那一处（深色背景，唯一）
+ * - isSelected: 当前活动 tab 的会话（深色背景）；独立窗口打开的会话无 tab，退回「最近点击的节点」
  */
 export function useNodeHighlight(conversationId: string, nodeId: string): { isOpen: boolean; isSelected: boolean } {
   const tabs = useSessionStore((s) => s.tabs);
+  const activeTabId = useSessionStore((s) => s.activeTabId);
+  const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
   const lastFocusedNodeId = useSessionStore((s) => s.lastFocusedNodeId);
   const isOpen = tabs.some((t) => t.conversationId === conversationId);
-  const isSelected = lastFocusedNodeId === nodeId;
+  const isSelected =
+    activeTabId === conversationId ||
+    (sessionWindowIds.has(conversationId) && lastFocusedNodeId === nodeId);
   return { isOpen, isSelected };
 }
 
