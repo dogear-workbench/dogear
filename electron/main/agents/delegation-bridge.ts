@@ -113,6 +113,7 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
     finishedAt: c.finishedAt,
     summary: c.summary,
     errorMessage: c.errorMessage,
+    profileName: c.profileName,
     sessionId: c.sessionId,
   };
 }
@@ -254,6 +255,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     status: 'running',
     startedAt: now,
     workspaceId,
+    profileName: selectedProfile.name,
     attachmentId: '',
     sessionId: '',
   };

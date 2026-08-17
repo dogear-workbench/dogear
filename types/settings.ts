@@ -61,7 +61,6 @@ export interface SubAgentEnabledAbilities {
   article?: boolean;
   skills?: string[];
   customSkills?: string[];
-  groupFiles?: boolean;
   reference?: boolean;
 }
 

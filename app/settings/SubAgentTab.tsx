@@ -61,7 +61,6 @@ function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
   if (ab.article) n++;
   if (ab.skills?.length) n++;
   if (ab.customSkills?.length) n++;
-  if (ab.groupFiles) n++;
   if (ab.reference) n++;
   return n;
 }
@@ -76,14 +75,13 @@ function toggleInArray(arr: string[] | undefined, name: string): string[] {
 // ── Profile Editor ───────────────────────────────────
 
 const BOOLEAN_ABILITIES: {
-  key: 'memory' | 'stock' | 'article' | 'groupFiles' | 'reference';
+  key: 'memory' | 'stock' | 'article' | 'reference';
   label: string;
   desc: string;
 }[] = [
   { key: 'memory', label: '记忆系统', desc: 'RecallMemory / SaveMemory / ForgetMemory' },
   { key: 'stock', label: '股票分析', desc: '股票分析工具包' },
   { key: 'article', label: '文章', desc: '文章解析工具包' },
-  { key: 'groupFiles', label: '共享区文件', desc: 'dogear-group' },
   { key: 'reference', label: '引用回溯', desc: 'dogear-reference' },
 ];
 

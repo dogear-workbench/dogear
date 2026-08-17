@@ -228,6 +228,13 @@ export function normalizeSettings(settings: AppSettings): boolean {
           p.enabledAbilities = {};
           changed = true;
         }
+        if (p.enabledAbilities && typeof p.enabledAbilities === 'object' && !Array.isArray(p.enabledAbilities)) {
+          const ab = p.enabledAbilities as Record<string, unknown>;
+          if ('groupFiles' in ab) {
+            delete ab.groupFiles;
+            changed = true;
+          }
+        }
       }
       if (subAgent.profiles.length === 0) {
         subAgent.profiles = [createDefaultSubAgentProfile()];

@@ -17,7 +17,8 @@ export const MEMORY_GUIDANCE_APPEND =
 /** 主会话协作规范（仅 role='main' 且有 groupId 时注入）。 */
 export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
-  '用 CreateSession 派遣子会话后，必须紧接着调用 WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。';
+  '用 CreateSession 派遣子会话后，必须紧接着调用 WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。\n' +
+  'outputPath 是会话组共享区里的路径，不是工作区路径；task 里不要再指示子会话把交付文档写到工作区其他位置，交付物一律经共享区传递。';
 
 /**
  * 生成可用的子会话 Profile 索引（仅主会话注入，让模型按描述选择 profile 参数）。
@@ -46,7 +47,8 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
   return (
     `\n## 你是一个被派遣的子会话\n` +
     `**任务**：${task}\n\n` +
-    `**交付路径**：${outputPath}（把完整交付内容写到共享区这个路径，SendMessage 里只放摘要通知）\n\n` +
+    `**交付路径**：${outputPath}——用 SaveSharedNote 把完整交付内容写到共享区这个路径，SendMessage 里只放摘要通知\n\n` +
+    `**产出位置默认规则**：任务未明确指定文件位置时，产出的新文件（交付文档、报告、中间产物）一律用 SaveSharedNote 写到共享区；只有任务明确要求修改项目文件时才写工作区路径\n\n` +
     `**交付流程**：完成后用 SendMessage 向派出你的会话交付结果（delivery: true）；有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
 }

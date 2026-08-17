@@ -190,7 +190,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             );
           }
           return textResult(
-            `✅ 已创建新会话 ${sessionId}（${snapshot.title}）→ 建议交付路径 ${args.outputPath}\n` +
+            `✅ 已创建新会话 ${sessionId}（${snapshot.title}，profile: ${snapshot.profileName}）→ 建议交付路径 ${args.outputPath}\n` +
             `用 SendMessage("${sessionId}", ...) 与它通信；WaitForMessage(["${sessionId}"]) 等待它交付。`,
           );
         } catch (err) {
@@ -230,7 +230,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             return errorResult(lines.join('\n'));
           }
 
-          const started: { childId: string; outputPath: string; title: string }[] = [];
+          const started: { childId: string; outputPath: string; title: string; profileName: string }[] = [];
           for (let i = 0; i < args.items.length; i++) {
             const item = args.items[i];
             try {
@@ -240,7 +240,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
                 groupId: opts.groupId,
                 spec: { task: item.task, outputPath: item.outputPath, title: item.title, profile: item.profile },
               });
-              started.push({ childId: snapshot.childId, outputPath: snapshot.outputPath, title: snapshot.title });
+              started.push({ childId: snapshot.childId, outputPath: snapshot.outputPath, title: snapshot.title, profileName: snapshot.profileName });
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               await Promise.all(started.map((s) => bridge.stopChild(s.childId, 'cancelled').catch(() => { /* ignore */ })));
@@ -255,7 +255,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           for (let i = 0; i < started.length; i++) {
             const s = started[i];
             const sid = sessionIds[i];
-            lines.push(`- ${sid ?? '(sessionId 尚未就绪)'}（${s.title}）→ ${s.outputPath}`);
+            lines.push(`- ${sid ?? '(sessionId 尚未就绪)'}（${s.title}，profile: ${s.profileName}）→ ${s.outputPath}`);
           }
           lines.push('', '用 SendMessage / WaitForMessage 分别与它们通信（尚未就绪的稍后用 ListLinkedSessions 补查）。');
           return textResult(lines.join('\n'));

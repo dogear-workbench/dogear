@@ -249,6 +249,8 @@ export interface ChildStateSnapshot {
   finishedAt?: number;
   summary?: string;
   errorMessage?: string;
+  /** 实际命中的子会话 Profile 名（匹配不到时为 fallback 的「默认」） */
+  profileName: string;
   /** 该会话自身的 Harness sessionId；attachConversation 完成、PiSession 启动后立即同步赋值 */
   sessionId?: string;
 }

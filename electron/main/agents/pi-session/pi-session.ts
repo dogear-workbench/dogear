@@ -347,10 +347,8 @@ export class PiSession extends EventEmitter {
       : null;
 
     // ---- group context ----
-    // 主会话：有 groupId 则加载；子会话：groupFiles || reference 时加载
-    const needGroupContext = !isSubAgent
-      ? !!this.config.groupId
-      : !!(this.config.groupId && (subAgentProfile?.enabledAbilities.groupFiles || subAgentProfile?.enabledAbilities.reference));
+    // 有 groupId 就加载（子会话的 group 工具固定挂载，组上下文段同步固定注入）
+    const needGroupContext = !!this.config.groupId;
     const groupContextText = needGroupContext
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!)
       : '';
@@ -536,8 +534,7 @@ export class PiSession extends EventEmitter {
    * - dogear-memory + dogear-memory-review：仅当 memory===true
    * - stock 工具包：仅当 stock===true
    * - article 工具包：仅当 article===true
-   * - dogear-group：仅当 groupFiles===true
-   * - dogear-delegation：始终注册（固定）
+   * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施）
    * - dogear-reference：仅当 reference===true
    */
   private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[]): ToolDef[] {
@@ -572,10 +569,7 @@ export class PiSession extends EventEmitter {
 
     // dogear-group / dogear-delegation / dogear-reference
     if (this.config.groupId) {
-      // dogear-group：仅当 groupFiles===true
-      if (ab.groupFiles === true) {
-        toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
-      }
+      toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
 
       // dogear-delegation：始终注册（固定）
       const delegationOpts: DelegationToolsOpts = {
