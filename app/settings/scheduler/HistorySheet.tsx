@@ -31,12 +31,9 @@ function RunningSection() {
     <section className="rounded-md border p-3 space-y-2">
       <div className="text-xs font-medium text-muted-foreground">正在运行</div>
       {running.map((r) => (
-        <div key={r.planId} className="flex items-center gap-2 min-w-0">
+        <div key={r.taskId} className="flex items-center gap-2 min-w-0">
           <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground shrink-0" />
-          <span className="text-sm font-medium truncate">{r.planName}</span>
-          {r.currentTaskName && (
-            <span className="text-xs text-muted-foreground truncate">{r.currentTaskName}</span>
-          )}
+          <span className="text-sm font-medium truncate">{r.taskName}</span>
           <span className="ml-auto text-xs text-muted-foreground shrink-0 whitespace-nowrap">
             已运行 {formatDuration(Date.now() - r.startedAt)}
           </span>
@@ -52,7 +49,7 @@ interface HistorySheetProps {
 }
 
 export function HistorySheet({ open, onOpenChange }: HistorySheetProps) {
-  const plans = useSchedulerStore((s) => s.plans);
+  const tasks = useSchedulerStore((s) => s.tasks);
   const history = useSchedulerStore((s) => s.history);
   const historyLoading = useSchedulerStore((s) => s.historyLoading);
   const historyError = useSchedulerStore((s) => s.historyError);
@@ -62,13 +59,13 @@ export function HistorySheet({ open, onOpenChange }: HistorySheetProps) {
   const loadMoreHistory = useSchedulerStore((s) => s.loadMoreHistory);
   const refreshActivity = useSchedulerStore((s) => s.refreshActivity);
 
-  const [planFilter, setPlanFilter] = useState('');
+  const [taskFilter, setTaskFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<RunHistoryStatus | ''>('');
   const [, setDisplayTick] = useState(0);
 
   useEffect(() => {
     if (!open) return;
-    setPlanFilter('');
+    setTaskFilter('');
     setStatusFilter('');
     loadHistory();
   }, [open, loadHistory]);
@@ -79,13 +76,13 @@ export function HistorySheet({ open, onOpenChange }: HistorySheetProps) {
     return () => clearInterval(id);
   }, [open]);
 
-  const handlePlanFilterChange = (value: string) => {
-    setPlanFilter(value);
+  const handleTaskFilterChange = (value: string) => {
+    setTaskFilter(value);
     loadHistory(value || undefined);
   };
 
   const handleRefresh = () => {
-    loadHistory(planFilter || undefined);
+    loadHistory(taskFilter || undefined);
     refreshActivity();
   };
 
@@ -102,14 +99,14 @@ export function HistorySheet({ open, onOpenChange }: HistorySheetProps) {
           <div className="flex items-center gap-2 ml-auto">
             <select
               className={selectCls}
-              value={planFilter}
-              onChange={(e) => handlePlanFilterChange(e.target.value)}
-              aria-label="按计划筛选"
+              value={taskFilter}
+              onChange={(e) => handleTaskFilterChange(e.target.value)}
+              aria-label="按任务筛选"
             >
-              <option value="">全部计划</option>
-              {plans.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
+              <option value="">全部任务</option>
+              {tasks.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
                 </option>
               ))}
             </select>
@@ -130,7 +127,7 @@ export function HistorySheet({ open, onOpenChange }: HistorySheetProps) {
             </Button>
           </div>
         </div>
-        <SheetDescription className="sr-only">定时计划执行记录</SheetDescription>
+        <SheetDescription className="sr-only">定时任务执行记录</SheetDescription>
 
         <div className="flex-1 overflow-y-auto">
           <div className="p-4 space-y-3">

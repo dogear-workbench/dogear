@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import type { PlanWithNextRun, Trigger } from '@/types/scheduler';
+import type { Trigger } from '@/types/scheduler';
 import { WEEKDAY_CHIPS, datetimeLocalToTs, describeTrigger, tsToDatetimeLocal } from './utils';
 
 const TIME_TYPES = [
@@ -17,7 +17,6 @@ const COND_TYPES = [
   { value: 'on_app_start', label: '应用启动时' },
   { value: 'on_session_close', label: '会话关闭时' },
   { value: 'on_window_close', label: '窗口关闭时（带时间参数）' },
-  { value: 'on_plan_done', label: '其他计划完成后' },
 ] as const;
 
 const TYPE_LABELS: Record<Trigger['type'], string> = {
@@ -28,7 +27,6 @@ const TYPE_LABELS: Record<Trigger['type'], string> = {
   on_app_start: '启动时',
   on_session_close: '关会话',
   on_window_close: '窗口关闭',
-  on_plan_done: '链式',
 };
 
 const inputCls = 'h-7 px-2 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring';
@@ -68,16 +66,12 @@ function WeekdayChips({ value, onChange }: { value: number[] | undefined; onChan
 
 interface Props {
   triggers: Trigger[];
-  plans: PlanWithNextRun[];
-  selfPlanId: string;
   onChange: (triggers: Trigger[]) => void;
 }
 
-export function TriggerListEditor({ triggers, plans, selfPlanId, onChange }: Props) {
+export function TriggerListEditor({ triggers, onChange }: Props) {
   const [timeDraft, setTimeDraft] = useState<(typeof TIME_TYPES)[number]['value'] | ''>('');
   const [condDraft, setCondDraft] = useState<(typeof COND_TYPES)[number]['value'] | ''>('');
-  const otherPlans = plans.filter((p) => p.id !== selfPlanId);
-  const planNameOf = (planId: string) => plans.find((p) => p.id === planId)?.name;
 
   const patch = (id: string, updates: Partial<Trigger>) => {
     onChange(triggers.map((t) => (t.id === id ? ({ ...t, ...updates } as Trigger) : t)));
@@ -109,9 +103,6 @@ export function TriggerListEditor({ triggers, plans, selfPlanId, onChange }: Pro
         break;
       case 'on_window_close':
         trigger = { id, type: 'on_window_close', window: { start: '03:00', end: '05:00' } };
-        break;
-      case 'on_plan_done':
-        trigger = { id, type: 'on_plan_done', planId: otherPlans[0]?.id ?? '' };
         break;
     }
     onChange([...triggers, trigger]);
@@ -171,17 +162,6 @@ export function TriggerListEditor({ triggers, plans, selfPlanId, onChange }: Pro
           </>
         );
         break;
-      case 'on_plan_done':
-        controls = (
-          <select className={cn(inputCls, 'w-48')} value={t.planId}
-            onChange={(e) => patch(t.id, { planId: e.target.value })}>
-            {otherPlans.length === 0 && <option value="" disabled>暂无其他计划</option>}
-            {otherPlans.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        );
-        break;
       default:
         controls = null;
     }
@@ -189,7 +169,7 @@ export function TriggerListEditor({ triggers, plans, selfPlanId, onChange }: Pro
       <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5">
         <Badge variant="outline" className="text-[10px] shrink-0">{TYPE_LABELS[t.type]}</Badge>
         {controls}
-        <span className="ml-auto text-xs text-muted-foreground truncate">{describeTrigger(t, planNameOf)}</span>
+        <span className="ml-auto text-xs text-muted-foreground truncate">{describeTrigger(t)}</span>
         <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive shrink-0"
           onClick={() => remove(t.id)} title="删除规则">
           <Trash2 className="w-3.5 h-3.5" />
@@ -230,10 +210,7 @@ export function TriggerListEditor({ triggers, plans, selfPlanId, onChange }: Pro
             onChange={(e) => setCondDraft(e.target.value as (typeof COND_TYPES)[number]['value'] | '')}>
             <option value="" disabled>选择规则类型…</option>
             {COND_TYPES.map((opt) => (
-              <option key={opt.value} value={opt.value}
-                disabled={opt.value === 'on_plan_done' && otherPlans.length === 0}>
-                {opt.label}{opt.value === 'on_plan_done' && otherPlans.length === 0 ? '（暂无其他计划）' : ''}
-              </option>
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
           <Button variant="outline" size="sm" disabled={!condDraft}

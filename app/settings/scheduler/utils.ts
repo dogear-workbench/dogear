@@ -1,4 +1,4 @@
-import type { BuiltinTaskId, PlanTask, Trigger } from '@/types/scheduler';
+import type { Trigger } from '@/types/scheduler';
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -24,10 +24,7 @@ function formatDateTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function describeTrigger(
-  trigger: Trigger,
-  planNameOf?: (planId: string) => string | undefined,
-): string {
+export function describeTrigger(trigger: Trigger): string {
   switch (trigger.type) {
     case 'daily_at':
       return `${weekdaysLabel(trigger.weekdays)} ${trigger.at}`;
@@ -43,22 +40,7 @@ export function describeTrigger(
       return '应用启动时';
     case 'on_session_close':
       return '会话关闭时';
-    case 'on_plan_done': {
-      const name = planNameOf?.(trigger.planId);
-      return `计划「${name ?? trigger.planId.slice(0, 8)}…」完成后`;
-    }
   }
-}
-
-export const BUILTIN_TASK_LABELS: Record<BuiltinTaskId, string> = {
-  group_digest: '组卡提炼',
-  review: '复盘报告',
-  categorize: '智能分类',
-  categorize_organize: '分类整理',
-};
-
-export function describeTask(task: PlanTask): string {
-  return task.kind === 'builtin' ? BUILTIN_TASK_LABELS[task.builtinId] : task.name;
 }
 
 export function formatRelativeFuture(ts: number): string {

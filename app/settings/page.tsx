@@ -666,7 +666,7 @@ export default function SettingsPage() {
           <div className="max-w-4xl py-6 px-6">
             <h2 className="text-lg font-semibold mb-1">定时计划</h2>
             <p className="text-sm text-muted-foreground mb-6">
-              按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭、链式）自动执行任务序列；多个触发器任一命中即触发，任务按顺序执行。
+              每个任务一行：内置任务（组卡提炼 / 复盘报告 / 智能分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
             </p>
             <SchedulerPanel />
           </div>
