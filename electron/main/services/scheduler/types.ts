@@ -21,7 +21,8 @@ export type Trigger =
   | (TriggerBase & { type: 'once'; at: number; fired?: boolean })
   | (TriggerBase & { type: 'on_window_close'; window: WindowSpec })
   | (TriggerBase & { type: 'on_app_start' })
-  | (TriggerBase & { type: 'on_session_close' });
+  | (TriggerBase & { type: 'on_session_close' })
+  | (TriggerBase & { type: 'on_task_done'; taskId: string });
 
 export interface TaskRunState {
   /** 正在执行的任务开始时间（存在 = 上次被中断，下次触发先补记 interrupted 历史） */

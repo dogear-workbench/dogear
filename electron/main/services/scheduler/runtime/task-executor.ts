@@ -41,9 +41,13 @@ function waitForQueueIdle(isIdle: () => boolean): Promise<void> {
   });
 }
 
-export async function executeTask(task: ScheduledTask): Promise<TaskExecResult> {
+export interface TaskExecuteHooks {
+  onAgentTaskId?: (id: string) => void;
+}
+
+export async function executeTask(task: ScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
   if (task.kind === 'builtin') return runBuiltinTask(task);
-  return runCustomTask(task);
+  return runCustomTask(task, hooks);
 }
 
 async function runBuiltinTask(task: BuiltinScheduledTask): Promise<TaskExecResult> {
@@ -102,7 +106,7 @@ function extractTokens(result: any): RunTokens | undefined {
   return tokens;
 }
 
-async function runCustomTask(task: CustomScheduledTask): Promise<TaskExecResult> {
+async function runCustomTask(task: CustomScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
   const workspace = task.workspaceId !== undefined
     ? await getWorkspaceById(task.workspaceId)
     : await getDefaultWorkspace();
@@ -134,6 +138,7 @@ async function runCustomTask(task: CustomScheduledTask): Promise<TaskExecResult>
     payload,
     createdAt: Date.now(),
   };
+  hooks?.onAgentTaskId?.(agentTask.id);
   const { getAgentManager } = await import('../../../agents/agent-manager.js');
   return await new Promise<TaskExecResult>((resolve) => {
     getAgentManager().submitTask(agentTask, (_taskId, status, result, error) => {

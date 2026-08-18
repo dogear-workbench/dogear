@@ -126,7 +126,10 @@ function formatDateTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function describeTrigger(trigger: Trigger): string {
+export function describeTrigger(
+  trigger: Trigger,
+  taskNameOf?: (taskId: string) => string | undefined,
+): string {
   switch (trigger.type) {
     case 'daily_at':
       return `${weekdaysLabel(trigger.weekdays)} ${trigger.at}`;
@@ -142,6 +145,10 @@ export function describeTrigger(trigger: Trigger): string {
       return '应用启动时';
     case 'on_session_close':
       return '会话关闭时';
+    case 'on_task_done': {
+      const name = taskNameOf?.(trigger.taskId);
+      return name ? `任务「${name}」完成后` : '任务完成后';
+    }
   }
 }
 
@@ -318,6 +325,10 @@ export function validateTrigger(trigger: Trigger): string | null {
     case 'on_app_start':
     case 'on_session_close':
       return null;
+    case 'on_task_done': {
+      if (typeof trigger.taskId !== 'string' || trigger.taskId.length === 0) return '缺少目标任务';
+      return null;
+    }
     default:
       return '未知触发器类型';
   }

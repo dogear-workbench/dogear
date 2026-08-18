@@ -22,6 +22,9 @@ interface RunningInfo {
   taskId: string;
   taskName: string;
   startedAt: number;
+  task: ScheduledTask;
+  agentTaskId?: string;
+  stopRequested: boolean;
 }
 
 class TaskRunner extends EventEmitter {
@@ -36,6 +39,8 @@ class TaskRunner extends EventEmitter {
       taskId: task.id,
       taskName: task.name,
       startedAt: Date.now(),
+      task,
+      stopRequested: false,
     };
     this.running.set(task.id, info);
     void this.executeSingleTask(task, opts, info);
@@ -45,7 +50,40 @@ class TaskRunner extends EventEmitter {
   requestStop(taskId: string): void {
     const info = this.running.get(taskId);
     if (!info) return;
-    mainLogger.info(`[scheduler] 已请求停止任务（单任务模式下当前任务自然结束）: ${info.taskName} (${taskId})`);
+    info.stopRequested = true;
+    mainLogger.info(`[scheduler] 请求停止任务: ${info.taskName} (${taskId})`);
+    if (info.task.kind === 'custom') {
+      const agentTaskId = info.agentTaskId;
+      if (!agentTaskId) return;
+      void import('../../../agents/agent-manager.js')
+        .then(({ getAgentManager }) => {
+          getAgentManager().cancelTask(agentTaskId);
+        })
+        .catch((err) => mainLogger.warn('[scheduler] 取消自定义任务失败:', err));
+      return;
+    }
+    switch (info.task.builtinId) {
+      case 'group_digest':
+        void import('../../memory/group-digest-trigger.js')
+          .then((m) => m.cancelAllGroupDigest())
+          .catch((err) => mainLogger.warn('[scheduler] 停止组卡提炼失败:', err));
+        return;
+      case 'review':
+        void import('../../memory/review-trigger.js')
+          .then((m) => m.cancelAllReview())
+          .catch((err) => mainLogger.warn('[scheduler] 停止复盘失败:', err));
+        return;
+      case 'categorize':
+        void import('../../memory/category-trigger.js')
+          .then((m) => m.cancelAllCategorize())
+          .catch((err) => mainLogger.warn('[scheduler] 停止智能分类失败:', err));
+        return;
+      case 'categorize_organize':
+        void import('../../memory/category-trigger.js')
+          .then((m) => m.cancelCategorizeOrganize())
+          .catch((err) => mainLogger.warn('[scheduler] 停止分类整理失败:', err));
+        return;
+    }
   }
 
   getActivity(): SchedulerActivity {
@@ -110,13 +148,21 @@ class TaskRunner extends EventEmitter {
       await updateTaskRunState(task.id, { cursorStartedAt: startedAt });
       let res: TaskExecResult;
       try {
-        res = await executeTask(task);
+        res = await executeTask(task, {
+          onAgentTaskId: (id) => {
+            info.agentTaskId = id;
+          },
+        });
       } catch (err) {
         res = { status: 'failed', error: err instanceof Error ? err.message : String(err) };
       }
+      if (info.stopRequested && res.status === 'completed') {
+        res.summary = res.summary ? `${res.summary}（已被手动停止）` : '（已被手动停止）';
+      }
       await this.appendTaskEntry(task, startedAt, res, opts);
       await updateTaskRunState(task.id, undefined);
-      outcome = res.status === 'failed' ? 'failed' : 'completed';
+      // 被手动/窗口停止的运行不算「干净完成」，不链式触发 on_task_done 下游
+      outcome = res.status === 'completed' && !info.stopRequested ? 'completed' : 'failed';
     } catch (err) {
       outcome = 'failed';
       mainLogger.warn('[scheduler] 任务执行异常:', task.name, err);

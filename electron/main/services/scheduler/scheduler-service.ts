@@ -11,7 +11,7 @@ import {
   windowOpen,
   type MissedTrigger,
 } from './time-rule-engine.js';
-import { getTaskRunner, type RunTaskOptions } from './runtime/plan-runner.js';
+import { getTaskRunner, type RunTaskOptions, type TaskDoneEvent } from './runtime/plan-runner.js';
 
 const TICK_MS = 60_000;
 const WINDOW_CLOSE_TOLERANCE_MS = 2 * 60_000;
@@ -60,6 +60,12 @@ class SchedulerService {
       }
     }
     await this.handleAppStart().catch((err) => mainLogger.warn('[scheduler] on_app_start 触发失败:', err));
+    this.runner.on('task_done', (event: TaskDoneEvent) => {
+      if (event.outcome !== 'completed') return;
+      void this.fireTaskDoneDownstream(event.taskId).catch((err) =>
+        mainLogger.warn('[scheduler] on_task_done 触发下游失败:', err),
+      );
+    });
     this.lastTickAt = Date.now();
     this.tickTimer = setInterval(() => {
       void this.tick().catch((err) => mainLogger.warn('[scheduler] tick 异常:', err));
@@ -114,6 +120,33 @@ class SchedulerService {
       return { started: false };
     }
     return this.runner.runTask(task, { triggerReason: 'manual', triggerDesc: '手动运行' });
+  }
+
+  stopTask(taskId: string): { ok: boolean; error?: string } {
+    try {
+      this.runner.requestStop(taskId);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+
+  private async fireTaskDoneDownstream(upstreamId: string): Promise<void> {
+    const tasks = await loadTasks();
+    const upstream = tasks.find((t) => t.id === upstreamId);
+    if (!upstream) {
+      mainLogger.info(`[scheduler] on_task_done 上游任务已删除，跳过: ${upstreamId}`);
+      return;
+    }
+    for (const task of tasks) {
+      if (task.id === upstreamId || !task.enabled) continue;
+      const hit = task.triggers.some((t) => t.type === 'on_task_done' && t.taskId === upstreamId);
+      if (!hit) continue;
+      await this.fireTask(task.id, {
+        triggerReason: 'condition',
+        triggerDesc: `任务「${upstream.name}」完成后`,
+      });
+    }
   }
 
   getActivity(): SchedulerActivity {

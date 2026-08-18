@@ -238,3 +238,16 @@ export async function cancelCategorizeOrganize(): Promise<boolean> {
   if (current?.kind !== 'organize') return false;
   return cancelCurrent();
 }
+
+/** 一键停止：清空共享队列（含 incremental/full-rebuild/organize）+ 取消当前任务 */
+export function cancelAllCategorize(): { cancelledQueued: number; cancelledCurrent: boolean } {
+  const cancelledQueued = queue.length;
+  queue.length = 0;
+  inFlight.clear();
+  const cancelledCurrent = currentTaskId !== null;
+  if (cancelledCurrent) {
+    void cancelCurrent().catch((err) => mainLogger.warn('[smart-category] cancelTask 失败:', err));
+  }
+  mainLogger.info(`[smart-category] 一键停止: queue=${cancelledQueued}, current=${cancelledCurrent}`);
+  return { cancelledQueued, cancelledCurrent };
+}

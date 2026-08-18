@@ -170,3 +170,21 @@ export async function triggerReview(workspaceId: string, workspacePath: string):
   await whenMigrationReady();
   enqueueReviews([{ workspaceId, workspacePath }]);
 }
+
+/** 一键停止：清空待跑队列 + 取消当前正在跑的复盘（调度器「停止任务」语义要求整停） */
+export function cancelAllReview(): { cancelledQueued: number; cancelledCurrent: boolean } {
+  const cancelledQueued = queue.length;
+  queue.length = 0;
+  inFlight.clear();
+  const cur = current;
+  const cancelledCurrent = cur !== null;
+  if (cur) {
+    void import('../../agents/agent-manager.js')
+      .then(({ getAgentManager }) => {
+        getAgentManager().cancelTask(cur.taskId);
+      })
+      .catch((err) => mainLogger.warn('[review] cancelTask 失败:', err));
+  }
+  mainLogger.info(`[review] 一键停止: queue=${cancelledQueued}, current=${cancelledCurrent}`);
+  return { cancelledQueued, cancelledCurrent };
+}

@@ -43,6 +43,34 @@ export function mergeFiredState(next: ScheduledTask, old: ScheduledTask | undefi
 
 export interface TaskSaveContext {
   workspaceIds: Set<string>;
+  /** 保存后语境的全量任务（被保存任务已替换为新版本），用于 on_task_done 引用校验与环检测 */
+  allTasks: ScheduledTask[];
+}
+
+function detectTaskCycle(task: ScheduledTask, allTasks: ScheduledTask[]): string | null {
+  const byId = new Map(allTasks.map((t) => [t.id, t]));
+  const edgesOf = (id: string): string[] => {
+    const t = byId.get(id);
+    if (!t) return [];
+    return t.triggers.filter((tr) => tr.type === 'on_task_done').map((tr) => tr.taskId);
+  };
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const hasCycleFrom = (id: string): boolean => {
+    if (visiting.has(id)) return true;
+    if (visited.has(id)) return false;
+    visiting.add(id);
+    for (const next of edgesOf(id)) {
+      if (hasCycleFrom(next)) return true;
+    }
+    visiting.delete(id);
+    visited.add(id);
+    return false;
+  };
+  for (const next of edgesOf(task.id)) {
+    if (next === task.id || hasCycleFrom(next)) return '任务链触发不能构成循环';
+  }
+  return null;
 }
 
 export function validateTaskForSave(task: ScheduledTask, ctx: TaskSaveContext): string | null {
@@ -70,9 +98,13 @@ export function validateTaskForSave(task: ScheduledTask, ctx: TaskSaveContext): 
     return `工作区不存在 (${task.workspaceId})`;
   }
   if (!Array.isArray(task.triggers)) return '触发器列表无效';
+  const allTaskIds = new Set(ctx.allTasks.map((t) => t.id));
   for (const [i, trigger] of task.triggers.entries()) {
     const err = validateTrigger(trigger);
     if (err) return `触发器 ${i + 1}: ${err}`;
+    if (trigger.type === 'on_task_done' && !allTaskIds.has(trigger.taskId)) {
+      return `触发器 ${i + 1}: 目标任务不存在`;
+    }
   }
-  return null;
+  return detectTaskCycle(task, ctx.allTasks);
 }

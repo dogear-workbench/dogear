@@ -45,6 +45,7 @@ export const schedulerRouter = {
         const workspaces = await getAllWorkspaces().catch(() => []);
         const error = validateTaskForSave(prepared, {
           workspaceIds: new Set(workspaces.map((w) => w.id)),
+          allTasks,
         });
         if (error) return { ok: false, error };
         if (!isNew) mergeFiredState(prepared, existing.find((t) => t.id === prepared.id));
@@ -99,6 +100,17 @@ export const schedulerRouter = {
       } catch (error) {
         console.error('[scheduler] runTaskNow 失败:', error);
         return { started: false, error: String(error) };
+      }
+    }),
+
+  stopTask: t.procedure
+    .input<{ taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        return getSchedulerService().stopTask(input.taskId);
+      } catch (error) {
+        console.error('[scheduler] stopTask 失败:', error);
+        return { ok: false, error: String(error) };
       }
     }),
 
