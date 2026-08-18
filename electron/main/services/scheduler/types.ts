@@ -2,26 +2,6 @@ import type { ModelSelection } from '../settings-types.js';
 
 export type BuiltinTaskId = 'group_digest' | 'review' | 'categorize' | 'categorize_organize';
 
-export interface BuiltinPlanTask {
-  id: string;
-  kind: 'builtin';
-  builtinId: BuiltinTaskId;
-  /** 缺省 = 全部工作区（现有内置任务语义） */
-  workspaceId?: string;
-}
-
-export interface CustomPlanTask {
-  id: string;
-  kind: 'custom';
-  name: string;
-  prompt: string;
-  modelSelection?: ModelSelection;
-  /** 缺省 = 当前激活工作区 */
-  workspaceId?: string;
-}
-
-export type PlanTask = BuiltinPlanTask | CustomPlanTask;
-
 export interface WindowSpec {
   start: string;
   end: string;
@@ -41,25 +21,41 @@ export type Trigger =
   | (TriggerBase & { type: 'once'; at: number; fired?: boolean })
   | (TriggerBase & { type: 'on_window_close'; window: WindowSpec })
   | (TriggerBase & { type: 'on_app_start' })
-  | (TriggerBase & { type: 'on_session_close' })
-  | (TriggerBase & { type: 'on_plan_done'; planId: string });
+  | (TriggerBase & { type: 'on_session_close' });
 
-export interface PlanRunState {
-  pendingTasks: string[];
-  cursor?: string;
+export interface TaskRunState {
+  /** 正在执行的任务开始时间（存在 = 上次被中断，下次触发先补记 interrupted 历史） */
   cursorStartedAt?: number;
 }
 
-export interface Plan {
+export interface TaskBase {
   id: string;
   name: string;
   enabled: boolean;
-  tasks: PlanTask[];
   triggers: Trigger[];
-  runState?: PlanRunState;
+  /** builtin: undefined = 全部工作区；custom: 必填 */
+  workspaceId?: string;
+  runState?: TaskRunState;
   createdAt: number;
   updatedAt: number;
 }
+
+export interface BuiltinScheduledTask extends TaskBase {
+  kind: 'builtin';
+  builtinId: BuiltinTaskId;
+}
+
+export interface CustomScheduledTask extends TaskBase {
+  kind: 'custom';
+  prompt: string;
+  modelSelection?: ModelSelection;
+  /** undefined = 跟随工作区 enabledToolPacks */
+  toolPacksOverride?: string[];
+}
+
+export type ScheduledTask = BuiltinScheduledTask | CustomScheduledTask;
+
+export type ScheduledTaskWithNextRun = ScheduledTask & { nextRunAt?: number };
 
 export type RunHistoryStatus = 'completed' | 'failed' | 'cancelled' | 'missed' | 'interrupted';
 export type RunTriggerReason = 'time' | 'condition' | 'manual';
@@ -90,10 +86,8 @@ export interface RunHistoryEntry {
 }
 
 export interface SchedulerRunningPlan {
-  planId: string;
-  planName: string;
-  currentTaskId?: string;
-  currentTaskName?: string;
+  taskId: string;
+  taskName: string;
   startedAt: number;
 }
 

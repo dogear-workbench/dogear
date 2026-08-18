@@ -13,29 +13,18 @@ import {
 } from '../../workspace-json-service.js';
 import { mainLogger } from '../../../agents/logger.js';
 import type {
-  BuiltinPlanTask,
-  BuiltinTaskId,
-  CustomPlanTask,
-  PlanTask,
+  BuiltinScheduledTask,
+  CustomScheduledTask,
   RunTokens,
+  ScheduledTask,
 } from '../types.js';
+import { BUILTIN_LABELS } from '../builtin-task-meta.js';
 
 export interface TaskExecResult {
   status: 'completed' | 'failed' | 'cancelled';
   summary?: string;
   error?: string;
   tokens?: RunTokens;
-}
-
-const BUILTIN_LABELS: Record<BuiltinTaskId, string> = {
-  group_digest: '组卡提炼',
-  review: '复盘报告',
-  categorize: '智能分类',
-  categorize_organize: '分类整理',
-};
-
-export function taskDisplayName(task: PlanTask): string {
-  return task.kind === 'builtin' ? BUILTIN_LABELS[task.builtinId] : task.name;
 }
 
 const IDLE_POLL_MS = 500;
@@ -52,12 +41,12 @@ function waitForQueueIdle(isIdle: () => boolean): Promise<void> {
   });
 }
 
-export async function executeTask(task: PlanTask): Promise<TaskExecResult> {
+export async function executeTask(task: ScheduledTask): Promise<TaskExecResult> {
   if (task.kind === 'builtin') return runBuiltinTask(task);
   return runCustomTask(task);
 }
 
-async function runBuiltinTask(task: BuiltinPlanTask): Promise<TaskExecResult> {
+async function runBuiltinTask(task: BuiltinScheduledTask): Promise<TaskExecResult> {
   switch (task.builtinId) {
     case 'group_digest': {
       const { triggerScanAll, whenGroupDigestIdle, getGroupDigestActivity } =
@@ -113,7 +102,7 @@ function extractTokens(result: any): RunTokens | undefined {
   return tokens;
 }
 
-async function runCustomTask(task: CustomPlanTask): Promise<TaskExecResult> {
+async function runCustomTask(task: CustomScheduledTask): Promise<TaskExecResult> {
   const workspace = task.workspaceId !== undefined
     ? await getWorkspaceById(task.workspaceId)
     : await getDefaultWorkspace();
@@ -136,6 +125,7 @@ async function runCustomTask(task: CustomPlanTask): Promise<TaskExecResult> {
     modelSelection,
     workspaceId: workspace.id,
     workspacePath: workspace.path,
+    toolPacksOverride: task.toolPacksOverride,
   };
   const agentTask: AgentTask = {
     id: `custom-agent-${task.id}-${Date.now()}`,

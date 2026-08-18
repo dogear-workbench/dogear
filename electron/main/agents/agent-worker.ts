@@ -1105,7 +1105,7 @@ class AgentWorker {
 
     const { buildCustomToolSet } = await import('../services/scheduler/custom-agent-tools.js');
     const { buildCustomAgentPrompt } = await import('../services/scheduler/custom-agent-prompt.js');
-    const tools = await buildCustomToolSet(workspaceId, workspacePath, this.configDir);
+    const tools = await buildCustomToolSet(workspaceId, workspacePath, this.configDir, payload.toolPacksOverride);
     const { systemPrompt, prompt } = buildCustomAgentPrompt(payload);
     taskLogger.info('工具集组装完成:', tools.map((t) => t.name).join(', '));
 

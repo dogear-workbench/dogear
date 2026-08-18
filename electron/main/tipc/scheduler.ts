@@ -1,97 +1,101 @@
 import { tipc } from '@egoist/tipc/main';
-import { loadPlans, savePlans } from '../services/scheduler/plan-store.js';
+import { loadTasks, saveTasks } from '../services/scheduler/plan-store.js';
 import { queryHistory } from '../services/scheduler/run-history-store.js';
 import { minNextDueAt } from '../services/scheduler/time-rule-engine.js';
 import { getSchedulerService } from '../services/scheduler/scheduler-service.js';
 import {
-  assignPlanIds,
+  assignTaskIds,
   mergeFiredState,
-  validatePlanForSave,
+  sanitizeToolPacksOverride,
+  validateTaskForSave,
 } from '../services/scheduler/plan-validate.js';
 import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
-import type { Plan } from '../services/scheduler/types.js';
+import type { ScheduledTask } from '../services/scheduler/types.js';
 
 const t = tipc.create();
 
 export const schedulerRouter = {
-  listPlans: t.procedure
+  listTasks: t.procedure
     .action(async () => {
       try {
-        const plans = await loadPlans();
+        const tasks = await loadTasks();
         const now = Date.now();
-        return { plans: plans.map((p) => ({ ...p, nextRunAt: minNextDueAt(p, now) ?? undefined })) };
+        return { tasks: tasks.map((task) => ({ ...task, nextRunAt: minNextDueAt(task, now) ?? undefined })) };
       } catch (error) {
-        console.error('[scheduler] listPlans 失败:', error);
-        return { plans: [], error: String(error) };
+        console.error('[scheduler] listTasks 失败:', error);
+        return { tasks: [], error: String(error) };
       }
     }),
 
-  savePlan: t.procedure
-    .input<{ plan: Plan }>()
+  saveTask: t.procedure
+    .input<{ task: ScheduledTask }>()
     .action(async ({ input }) => {
       try {
-        const existing = await loadPlans();
-        const prepared = assignPlanIds(input.plan);
-        const isNew = !existing.some((p) => p.id === prepared.id);
-        const allPlans = isNew
+        const existing = await loadTasks();
+        let prepared = assignTaskIds(input.task);
+        if (prepared.kind === 'custom') {
+          prepared = { ...prepared, toolPacksOverride: sanitizeToolPacksOverride(prepared) };
+        }
+        const isNew = !existing.some((t) => t.id === prepared.id);
+        const allTasks = isNew
           ? [...existing, prepared]
-          : existing.map((p) => (p.id === prepared.id ? prepared : p));
+          : existing.map((t) => (t.id === prepared.id ? prepared : t));
         const workspaces = await getAllWorkspaces().catch(() => []);
-        const error = validatePlanForSave(prepared, {
-          allPlans,
+        const error = validateTaskForSave(prepared, {
           workspaceIds: new Set(workspaces.map((w) => w.id)),
         });
         if (error) return { ok: false, error };
-        if (!isNew) mergeFiredState(prepared, existing.find((p) => p.id === prepared.id));
-        await savePlans(allPlans);
+        if (!isNew) mergeFiredState(prepared, existing.find((t) => t.id === prepared.id));
+        await saveTasks(allTasks);
         return { ok: true };
       } catch (error) {
-        console.error('[scheduler] savePlan 失败:', error);
+        console.error('[scheduler] saveTask 失败:', error);
         return { ok: false, error: String(error) };
       }
     }),
 
-  deletePlan: t.procedure
-    .input<{ planId: string }>()
+  deleteTask: t.procedure
+    .input<{ taskId: string }>()
     .action(async ({ input }) => {
       try {
-        const plans = await loadPlans();
-        const next = plans.filter((p) => p.id !== input.planId);
-        if (next.length === plans.length) return { ok: false, error: '计划不存在' };
-        await savePlans(next);
+        const tasks = await loadTasks();
+        const target = tasks.find((t) => t.id === input.taskId);
+        if (!target) return { ok: false, error: '任务不存在' };
+        if (target.kind === 'builtin') return { ok: false, error: '内置任务不能删除' };
+        await saveTasks(tasks.filter((t) => t.id !== input.taskId));
         return { ok: true };
       } catch (error) {
-        console.error('[scheduler] deletePlan 失败:', error);
+        console.error('[scheduler] deleteTask 失败:', error);
         return { ok: false, error: String(error) };
       }
     }),
 
-  setPlanEnabled: t.procedure
-    .input<{ planId: string; enabled: boolean }>()
+  setTaskEnabled: t.procedure
+    .input<{ taskId: string; enabled: boolean }>()
     .action(async ({ input }) => {
       try {
-        const plans = await loadPlans();
-        const plan = plans.find((p) => p.id === input.planId);
-        if (!plan) return { ok: false, error: '计划不存在' };
-        if (plan.enabled !== input.enabled) {
-          plan.enabled = input.enabled;
-          plan.updatedAt = Date.now();
-          await savePlans(plans);
+        const tasks = await loadTasks();
+        const task = tasks.find((t) => t.id === input.taskId);
+        if (!task) return { ok: false, error: '任务不存在' };
+        if (task.enabled !== input.enabled) {
+          task.enabled = input.enabled;
+          task.updatedAt = Date.now();
+          await saveTasks(tasks);
         }
         return { ok: true };
       } catch (error) {
-        console.error('[scheduler] setPlanEnabled 失败:', error);
+        console.error('[scheduler] setTaskEnabled 失败:', error);
         return { ok: false, error: String(error) };
       }
     }),
 
-  runPlanNow: t.procedure
-    .input<{ planId: string }>()
+  runTaskNow: t.procedure
+    .input<{ taskId: string }>()
     .action(async ({ input }) => {
       try {
-        return await getSchedulerService().runPlanManual(input.planId);
+        return await getSchedulerService().runTaskManual(input.taskId);
       } catch (error) {
-        console.error('[scheduler] runPlanNow 失败:', error);
+        console.error('[scheduler] runTaskNow 失败:', error);
         return { started: false, error: String(error) };
       }
     }),

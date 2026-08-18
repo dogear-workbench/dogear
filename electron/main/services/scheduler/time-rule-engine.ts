@@ -1,4 +1,4 @@
-import type { Plan, Trigger, WindowSpec } from './types.js';
+import type { ScheduledTask, Trigger, WindowSpec } from './types.js';
 
 const MINUTE_MS = 60_000;
 
@@ -142,8 +142,6 @@ export function describeTrigger(trigger: Trigger): string {
       return '应用启动时';
     case 'on_session_close':
       return '会话关闭时';
-    case 'on_plan_done':
-      return `计划 ${trigger.planId} 完成后`;
   }
 }
 
@@ -215,9 +213,9 @@ export function windowStartAt(trigger: Trigger, now: number): number | null {
   return null;
 }
 
-export function minNextDueAt(plan: Plan, now: number): number | null {
+export function minNextDueAt(task: ScheduledTask, now: number): number | null {
   const candidates: number[] = [];
-  for (const t of plan.triggers) {
+  for (const t of task.triggers) {
     switch (t.type) {
       case 'daily_at': {
         const m = parseHHmm(t.at);
@@ -320,10 +318,6 @@ export function validateTrigger(trigger: Trigger): string | null {
     case 'on_app_start':
     case 'on_session_close':
       return null;
-    case 'on_plan_done': {
-      if (typeof trigger.planId !== 'string' || trigger.planId.length === 0) return '缺少依赖计划 ID';
-      return null;
-    }
     default:
       return '未知触发器类型';
   }

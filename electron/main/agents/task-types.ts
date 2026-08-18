@@ -232,15 +232,16 @@ export interface CategorizeOrganizeSessionPayload {
 }
 
 /**
- * 定时计划自定义 agent 任务负载（scheduler plan-runner 派发）
+ * 定时计划自定义 agent 任务负载（scheduler task-runner 派发）
  * 运行时上下文（configDir）由 Worker 实例字段提供，不放 payload
  */
 export interface CustomAgentTaskPayload {
-  taskName: string;             // 任务显示名（PlanTask.name）
+  taskName: string;             // 任务显示名（ScheduledTask.name）
   prompt: string;               // 用户编写的任务指令
   modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.ai.defaultModelSelection）
   workspaceId: string;          // 工作区 ID（读工作区工具包开关用）
   workspacePath: string;        // 工作区绝对路径（文件工具边界根）
+  toolPacksOverride?: string[]; // 任务级工具包覆盖（undefined = 跟随工作区 enabledToolPacks）
 }
 
 /**

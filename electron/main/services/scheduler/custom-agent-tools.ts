@@ -32,6 +32,7 @@ export async function buildCustomToolSet(
   workspaceId: string,
   workspacePath: string,
   configDir: string,
+  override?: string[],
 ): Promise<ToolDef[]> {
   const toolDefs: ToolDef[] = [
     ...createWorkspaceFileToolDefs(workspacePath),
@@ -40,7 +41,8 @@ export async function buildCustomToolSet(
     ...createReviewToolDefs(workspaceId, workspacePath),
   ];
 
-  const enabledPacks = new Set(await readEnabledToolPacks(configDir, workspaceId));
+  const packNames = override !== undefined ? override : await readEnabledToolPacks(configDir, workspaceId);
+  const enabledPacks = new Set(packNames.filter((p): p is string => typeof p === 'string'));
   if (enabledPacks.has('article')) {
     toolDefs.push(...createArticleToolDefs(workspacePath));
   }
