@@ -1,23 +1,56 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import { ModelSelector } from '@/components/ModelSelector';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { BuiltinTaskId } from '@/types/scheduler';
+import type { ModelSelection } from '@/types/settings';
 
 interface Props {
   builtinId: BuiltinTaskId;
 }
 
+const MODEL_IO = {
+  group_digest: { get: client.getDigestModelSelection, set: client.setDigestModelSelection },
+  review: { get: client.getReviewModelSelection, set: client.setReviewModelSelection },
+  categorize: { get: client.getCategorizeModelSelection, set: client.setCategorizeModelSelection },
+  categorize_organize: { get: client.getCategorizeModelSelection, set: client.setCategorizeModelSelection },
+} as const;
+
 export function BuiltinTaskDetailSection({ builtinId }: Props) {
+  const settings = useSettingsStore((s) => s.settings);
+  const [selection, setSelection] = useState<ModelSelection | null>(null);
   const [prompt, setPrompt] = useState('');
   const [tools, setTools] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    MODEL_IO[builtinId].get().then((r) => {
+      if (cancelled) return;
+      if ('selection' in r) setSelection(r.selection ?? null);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [builtinId]);
+
+  const handleSelectionChange = async (next: ModelSelection | null) => {
+    setSelection(next);
+    try {
+      const r = await MODEL_IO[builtinId].set({ selection: next });
+      if (!('success' in r)) toast.error('保存模型选择失败', { description: r.error });
+    } catch (e) {
+      toast.error('保存模型选择失败', { description: String(e) });
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +114,19 @@ export function BuiltinTaskDetailSection({ builtinId }: Props) {
 
   return (
     <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium shrink-0">模型</span>
+        <div className="min-w-[220px]">
+          <ModelSelector
+            settings={settings}
+            value={selection}
+            onChange={handleSelectionChange}
+            allowUnset={true}
+            triggerVariant="block"
+          />
+        </div>
+        <span className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</span>
+      </div>
       <div className="space-y-1.5">
         <div className="flex items-center gap-2">
           <label className="text-sm font-medium">提示词</label>

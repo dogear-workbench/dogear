@@ -27,6 +27,7 @@ interface SchedulerStore {
   deleteTask: (taskId: string) => Promise<void>;
   setTaskEnabled: (taskId: string, enabled: boolean) => Promise<void>;
   runTaskNow: (taskId: string) => Promise<void>;
+  stopTask: (taskId: string) => Promise<void>;
   refreshActivity: () => Promise<void>;
   startActivityPolling: () => void;
   stopActivityPolling: () => void;
@@ -124,6 +125,19 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       }
     } catch (e) {
       toast.error('启动运行失败', { description: String(e) });
+    }
+  },
+
+  stopTask: async (taskId) => {
+    try {
+      const r = await client.stopTask({ taskId });
+      if (!r.ok) {
+        toast.error('停止任务失败', { description: r.error });
+        return;
+      }
+      await get().refreshActivity();
+    } catch (e) {
+      toast.error('停止任务失败', { description: String(e) });
     }
   },
 

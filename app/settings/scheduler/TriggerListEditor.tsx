@@ -17,6 +17,7 @@ const COND_TYPES = [
   { value: 'on_app_start', label: '应用启动时' },
   { value: 'on_session_close', label: '会话关闭时' },
   { value: 'on_window_close', label: '窗口关闭时（带时间参数）' },
+  { value: 'on_task_done', label: '其他任务完成后' },
 ] as const;
 
 const TYPE_LABELS: Record<Trigger['type'], string> = {
@@ -27,6 +28,7 @@ const TYPE_LABELS: Record<Trigger['type'], string> = {
   on_app_start: '启动时',
   on_session_close: '关会话',
   on_window_close: '窗口关闭',
+  on_task_done: '任务完成',
 };
 
 const inputCls = 'h-7 px-2 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring';
@@ -67,9 +69,11 @@ function WeekdayChips({ value, onChange }: { value: number[] | undefined; onChan
 interface Props {
   triggers: Trigger[];
   onChange: (triggers: Trigger[]) => void;
+  tasks: { id: string; name: string }[];
+  selfTaskId?: string;
 }
 
-export function TriggerListEditor({ triggers, onChange }: Props) {
+export function TriggerListEditor({ triggers, onChange, tasks, selfTaskId }: Props) {
   const [timeDraft, setTimeDraft] = useState<(typeof TIME_TYPES)[number]['value'] | ''>('');
   const [condDraft, setCondDraft] = useState<(typeof COND_TYPES)[number]['value'] | ''>('');
 
@@ -78,6 +82,9 @@ export function TriggerListEditor({ triggers, onChange }: Props) {
   };
 
   const remove = (id: string) => onChange(triggers.filter((t) => t.id !== id));
+
+  const taskCandidates = tasks.filter((t) => t.id !== selfTaskId);
+  const taskNameOf = (id: string) => tasks.find((t) => t.id === id)?.name;
 
   const add = (type: Trigger['type']) => {
     const id = crypto.randomUUID();
@@ -103,6 +110,9 @@ export function TriggerListEditor({ triggers, onChange }: Props) {
         break;
       case 'on_window_close':
         trigger = { id, type: 'on_window_close', window: { start: '03:00', end: '05:00' } };
+        break;
+      case 'on_task_done':
+        trigger = { id, type: 'on_task_done', taskId: taskCandidates[0]?.id ?? '' };
         break;
     }
     onChange([...triggers, trigger]);
@@ -162,6 +172,22 @@ export function TriggerListEditor({ triggers, onChange }: Props) {
           </>
         );
         break;
+      case 'on_task_done': {
+        const known = taskCandidates.some((c) => c.id === t.taskId);
+        controls = (
+          <select
+            className={cn(inputCls, 'w-44')}
+            value={known ? t.taskId : ''}
+            onChange={(e) => patch(t.id, { taskId: e.target.value })}
+          >
+            {!known && <option value="" disabled>请选择任务</option>}
+            {taskCandidates.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        );
+        break;
+      }
       default:
         controls = null;
     }
@@ -169,7 +195,7 @@ export function TriggerListEditor({ triggers, onChange }: Props) {
       <div key={t.id} className="flex flex-wrap items-center gap-2 rounded-md border px-2 py-1.5">
         <Badge variant="outline" className="text-[10px] shrink-0">{TYPE_LABELS[t.type]}</Badge>
         {controls}
-        <span className="ml-auto text-xs text-muted-foreground truncate">{describeTrigger(t)}</span>
+        <span className="ml-auto text-xs text-muted-foreground truncate">{describeTrigger(t, taskNameOf)}</span>
         <Button variant="ghost" size="sm" className="h-6 w-6 p-0 text-destructive hover:text-destructive shrink-0"
           onClick={() => remove(t.id)} title="删除规则">
           <Trash2 className="w-3.5 h-3.5" />
@@ -210,7 +236,9 @@ export function TriggerListEditor({ triggers, onChange }: Props) {
             onChange={(e) => setCondDraft(e.target.value as (typeof COND_TYPES)[number]['value'] | '')}>
             <option value="" disabled>选择规则类型…</option>
             {COND_TYPES.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value} disabled={opt.value === 'on_task_done' && taskCandidates.length === 0}>
+                {opt.value === 'on_task_done' && taskCandidates.length === 0 ? `${opt.label}（暂无可选任务）` : opt.label}
+              </option>
             ))}
           </select>
           <Button variant="outline" size="sm" disabled={!condDraft}

@@ -56,6 +56,7 @@ function validateDraft(task: ScheduledTask, workspaces: WorkspaceOption[]): stri
         (t.type === 'on_window_close' && t.window.start === t.window.end)) {
       return `触发器 ${i + 1}: 窗口起止时间不能相同`;
     }
+    if (t.type === 'on_task_done' && !t.taskId) return `触发器 ${i + 1}: 请选择上游任务`;
   }
   return null;
 }
@@ -70,6 +71,7 @@ interface Props {
 export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
   const activeWorkspaceId = useWorkspaceStore((s) => s.workspace?.id);
   const settings = useSettingsStore((s) => s.settings);
+  const schedulerTasks = useSchedulerStore((s) => s.tasks);
   const saveTask = useSchedulerStore((s) => s.saveTask);
   const [draft, setDraft] = useState<ScheduledTask>(() => blankCustomTask(''));
   const [error, setError] = useState<string | null>(null);
@@ -195,6 +197,8 @@ export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
             <TriggerListEditor
               triggers={draft.triggers}
               onChange={(triggers) => patch({ triggers })}
+              tasks={schedulerTasks.map((t) => ({ id: t.id, name: t.name }))}
+              selfTaskId={draft.id || undefined}
             />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}

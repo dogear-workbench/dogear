@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Cog, History, Loader2, Pencil, Play, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Cog, History, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -22,6 +22,7 @@ export function SchedulerPanel() {
   const deleteTask = useSchedulerStore((s) => s.deleteTask);
   const setTaskEnabled = useSchedulerStore((s) => s.setTaskEnabled);
   const runTaskNow = useSchedulerStore((s) => s.runTaskNow);
+  const stopTask = useSchedulerStore((s) => s.stopTask);
   const startActivityPolling = useSchedulerStore((s) => s.startActivityPolling);
   const stopActivityPolling = useSchedulerStore((s) => s.stopActivityPolling);
 
@@ -134,7 +135,7 @@ export function SchedulerPanel() {
                 </div>
                 <div className="text-xs text-muted-foreground truncate">
                   {task.triggers.length > 0
-                    ? task.triggers.map((t) => describeTrigger(t)).join('；')
+                    ? task.triggers.map((t) => describeTrigger(t, (id) => tasks.find((x) => x.id === id)?.name)).join('；')
                     : '无触发器'}
                 </div>
               </div>
@@ -151,12 +152,21 @@ export function SchedulerPanel() {
                     <Pencil className="w-3.5 h-3.5 mr-1" />
                     编辑
                   </Button>
-                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
-                    onClick={() => runTaskNow(task.id)}
-                    title={task.enabled ? '立即运行' : '立即运行（任务已停用，本次仍会执行）'}>
-                    <Play className="w-3.5 h-3.5 mr-1" />
-                    运行
-                  </Button>
+                  {running ? (
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                      onClick={() => stopTask(task.id)}
+                      title="停止运行中的任务">
+                      <Square className="w-3.5 h-3.5 mr-1" />
+                      停止
+                    </Button>
+                  ) : (
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-xs"
+                      onClick={() => runTaskNow(task.id)}
+                      title={task.enabled ? '立即运行' : '立即运行（任务已停用，本次仍会执行）'}>
+                      <Play className="w-3.5 h-3.5 mr-1" />
+                      运行
+                    </Button>
+                  )}
                   {task.kind === 'custom' && (
                     <Button variant="ghost" size="sm" className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                       onClick={() => handleDelete(task)}>
