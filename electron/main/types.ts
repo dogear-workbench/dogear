@@ -260,7 +260,7 @@ export interface ChildStateSnapshot {
   /** resume 重调尝试次数 */
   retryCount?: number;
   /** 错误分类（transient/quota/cancelled） */
-  errorClass?: string;
+  errorClass?: 'transient' | 'quota' | 'cancelled';
   /** 已试过的模型链，profileId:tier 列表 */
   modelTried?: string[];
 }

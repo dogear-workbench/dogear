@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 重调层——错误分类 + resumeChild 复活 + 跨供应商降级链
-status: pending
+status: done
 ---
 
 ## 目标
@@ -50,13 +50,37 @@ status: pending
    - stopChild(cancelled) → 断言无 resume、waiter 收到 cancelled 通知
 3. dev 环境手动：断供应商 API key 派遣 → 观察 failed → 自动复活日志 → 连败后主会话收到结构化通知
 
-## 实施回填（做完后填）
+## 实施回填（已做完）
 
 ### 实际改动
 - 与计划差异：
+  - 纯逻辑拆到 `delegation-resume.ts`（决策/降级查找/提示词），错误分类 + MAX_RETRY + quota 关键词按接力棒放 `delegation-terminal.ts`；两者都从 bridge 消费
+  - 终态结算统一收敛为 `settleTerminal`（settling 锁防 interrupt 触发的 complete 与 stopChild 主流程双路并发）；stopChild 不再自己 notify/detach，交 settleTerminal 统一处理（重调优先于通知）
+  - wireSession 改为可卸载（sessionWirings）：复活复用同一 PiSession 时先 unwire 再 wire，防监听叠加导致双结算破坏 resume
+  - 降级路径细节：attachConversation 复用存活 session 时不重读 conversation.modelSelection，所以 quota 降级前先 detachAttachment 让旧 session 销毁，attach 才会以新模型重建（保留 harness 历史续跑）；transient 重试直接复用存活 session 保留内存上下文
+  - outputPath reclaim：claim 返回 file_exists 视为本会话部分产出继续复用（复活前刚 release，文件存在本身能挡住其他会话 claim）；仅 claimed_by_other 视为复活失败
+  - isNotifiableTerminal 扩为「除 done/running/interrupted 外全部终态」——cancelled（用户手动停）与 no_delivery 也 resolve waiter，与 plan.md「不重调（耗尽/用户取消/no_delivery）才 resolve waiter」对齐
+  - resumeChild 里按 modelSel 找 SubAgentProfile 用 `p.modelSelection?.profileId === modelSel.profileId`（modelSelection.profileId 指向 ModelProfile 供应商，不是 SubAgentProfile.id，两个命名空间）
+  - 集成测试 mock 抽共享模块 `delegation-test-mocks.ts`：bun test 单进程合跑多文件时 mock.module 先注册者被 bridge 单例绑定，两个测试文件必须注册同一份实现
 - 改动文件清单：
+  - `electron/main/agents/delegation-resume.ts`（新，50 行）：findFallbackModel / decideResumeOnError / buildResumePrompt
+  - `electron/main/agents/delegation-terminal.ts`：MAX_RETRY + set/getDelegationMaxRetry（测试注入）+ QUOTA_ERROR_KEYWORDS + isQuotaErrorMessage + classifyDelegationError；isNotifiableTerminal 扩范围；buildTerminalNotice 接收 errorClass/modelTried 并生成 quota 行动建议文案
+  - `electron/main/agents/delegation-bridge.ts`（470→768 行）：onSessionComplete 分类+errorClass 填充；settleTerminal/decideResume/resumeChild/isRetryableStatus；wireSession 可卸载 + sessionWirings；onChildSessionInit 允许复活后 harness sessionId 更新；startChild 初始化 modelTried/retryCount；stopChild 交 settleTerminal；notifyTerminalToWaiters 填真实 errorClass
+  - `electron/main/types.ts` + `types/delegation.ts`：ChildStateSnapshot.errorClass 收窄为 'transient' | 'quota' | 'cancelled'
+  - `electron/main/agents/delegation-test-mocks.ts`（新）：共享 mock（conversation-service 含 updateModelSelection、可变 settings、按 conv 复用 session 的 attachConversation）
+  - `electron/main/agents/delegation-resume.test.ts`（新，10 用例）：5 个验收场景 + stopChild(timeout) 复活 + 4 组纯函数矩阵
+  - `electron/main/agents/delegation-idle.test.ts`：改用共享 mock + setDelegationMaxRetry(0)（step1 测试聚焦通知语义，关重调）
+  - `tsconfig.electron.json`：exclude 增加 delegation-test-mocks.ts（bun:test 类型不进主进程构建）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `settleTerminal(c)`：终态统一结算（settling 锁 + decideResume + resumeChild 或 notify+unwire+detach）；stopChild/onSessionComplete 都只负责置态，结算全在这里
+  - `resumeChild(childId, { reason, modelOverride? })`：复活编排（降级先 updateModelSelection+detach 旧 session、reclaim outputPath、attach、重挂 idleWatch/timeoutTimer、发继续提示）
+  - `decideResumeOnError(errorClass, retryCount, modelTried, fallback)`（delegation-resume.ts）纯决策；`findFallbackModel(profiles, currentProfileId)` 返回异供应商 ModelSelection
+  - `setDelegationMaxRetry(n)`（delegation-terminal.ts）测试注入，生产恒 MAX_RETRY=2
+  - 通知范围已扩到 cancelled/no_delivery；通知文案 quota 分支含「已降级尝试 X → Y」/「无可降级 profile」行动建议（文案里引导 dogear__ResumeSession，step3 落地该工具）
+- 下个 step 该从哪里继续：step3 的 delegation-state.json 落盘需把 ChildStateInternal 的 retryCount/errorClass/modelTried/sessionId 一并持久化；ResumeSession 工具可复用 resumeChild 的编排（考虑把 resumeChild 导出或提取）；ListLinkedSessions 合并时注意 modelTried 展示
 - 待办或已知限制：
+  - dev 环境手动验收（断 API key 派遣→观察自动复活日志→连败后收结构化通知）未做，只完成 script 级测试
+  - resumeChild 未从 bridge 导出，step3 若需工具层调复活需先导出
+  - 全目录 `bun test electron/` 有 9 个既有失败（categorize-prompt 等记忆提示词测试，stash 验证与本次无关）

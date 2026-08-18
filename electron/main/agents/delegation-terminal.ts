@@ -1,14 +1,45 @@
 /**
- * 子会话终态通知构造（检测层）
+ * 子会话终态通知构造 + 错误分类（检测层 / 重调层共用）
  *
  * 终态联动：子会话走到失败终态（failed/hang/timeout）时秒级唤醒挂起在
  * dogear__WaitForMessage 的父会话，携带结构化死因（terminal）。
- * 本步不做重调与 quota 分类（Step 2 接管），errorClass 暂一律 'transient'。
+ * Step 2 起错误分类（transient/quota/cancelled）驱动重调决策，
+ * done/interrupted 以外的终态都会唤醒 waiter（含用户取消与 no_delivery）。
  */
 
+import type { PiSessionTurnResult } from './pi-session/pi-session.js';
 import type { ChildStatus } from '../types.js';
 
 export type DelegationErrorClass = 'transient' | 'quota' | 'cancelled';
+
+export const MAX_RETRY = 2;
+
+let effectiveMaxRetry = MAX_RETRY;
+
+/** 测试注入用：把重试上限临时调小以验证耗尽路径，生产路径不调用 */
+export function setDelegationMaxRetry(n: number): void {
+  effectiveMaxRetry = n;
+}
+
+export function getDelegationMaxRetry(): number {
+  return effectiveMaxRetry;
+}
+
+const QUOTA_ERROR_KEYWORDS = [
+  '429', 'rate limit', 'rate_limit', 'quota', 'insufficient', 'balance', '余额', '限流', '额度',
+];
+
+export function isQuotaErrorMessage(message: string): boolean {
+  const lower = message.toLowerCase();
+  return QUOTA_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+/** cancelled 错误 → 用户取消；message 命中 quota 关键词 → 供应商费率问题；其余 → 瞬时错误 */
+export function classifyDelegationError(result: PiSessionTurnResult): DelegationErrorClass {
+  if (result.error?.kind === 'cancelled') return 'cancelled';
+  if (result.error?.message && isQuotaErrorMessage(result.error.message)) return 'quota';
+  return 'transient';
+}
 
 export interface TerminalInfo {
   status: ChildStatus;
@@ -26,6 +57,8 @@ export interface TerminalNoticeInput {
   errorMessage?: string;
   startedAt: number;
   finishedAt?: number;
+  errorClass?: DelegationErrorClass;
+  modelTried?: string[];
 }
 
 export interface TerminalWaiterLike {
@@ -46,9 +79,9 @@ export function terminalStatusLabel(status: ChildStatus): string {
   return TERMINAL_STATUS_LABELS[status] ?? status;
 }
 
-/** Step 1 通知范围：失败终态（failed/hang/timeout）。done/cancelled/no_delivery 不在本步通知 */
+/** 通知范围：除 done（交付消息走 deliverMessage）/ interrupted / running 外的全部终态 */
 export function isNotifiableTerminal(status: ChildStatus): boolean {
-  return status === 'failed' || status === 'hang' || status === 'timeout';
+  return status !== 'done' && status !== 'running' && status !== 'interrupted';
 }
 
 export function formatDurationMs(ms: number): string {
@@ -66,7 +99,13 @@ export function formatDurationMs(ms: number): string {
 export function buildTerminalNotice(input: TerminalNoticeInput, attempts = 0): string {
   const duration = formatDurationMs((input.finishedAt ?? Date.now()) - input.startedAt);
   const reason = input.errorMessage ?? terminalStatusLabel(input.status);
-  return `子会话「${input.title}」${terminalStatusLabel(input.status)}：${reason}。已运行 ${duration}，自动重试 ${attempts} 次。`;
+  const base = `子会话「${input.title}」${terminalStatusLabel(input.status)}：${reason}。已运行 ${duration}，自动重试 ${attempts} 次。`;
+  if (input.errorClass !== 'quota') return base;
+  const tried = input.modelTried ?? [];
+  const detail = tried.length > 1
+    ? `疑似供应商费率上限，已降级尝试 ${tried.join(' → ')} 后仍失败`
+    : '疑似供应商费率上限，无可降级 profile';
+  return `${base}${detail}，建议更换供应商后用 dogear__ResumeSession 调起或重新派遣。`;
 }
 
 /** 找出等待指定子会话消息的所有 waiter key（owner 是其父会话且监听该 sessionId） */

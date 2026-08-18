@@ -2,7 +2,9 @@
  * Delegation Bridge — 主进程内 Agent 协作运行时
  * 维护会话创建/停止的状态机（childStates，用于 UI 展示 + no_delivery 检测）+
  * 通用消息投递与等待（messageWaiters，支撑 dogear__SendMessage / dogear__WaitForMessage）+
- * 监听 PiSession 的 complete / error 事件推进状态。
+ * 监听 PiSession 的 complete / error 事件推进状态；
+ * 失败终态按错误分类自动复活原会话续跑（transient 重试 / quota 跨供应商降级，
+ * 见 settleTerminal → resumeChild），耗尽才通知主会话。
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -17,7 +19,7 @@ import * as conversationService from '../services/conversation-service.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
-import { createDefaultSubAgentProfile } from '../services/settings-types.js';
+import { createDefaultSubAgentProfile, type ModelSelection } from '../services/settings-types.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 import type {
@@ -28,10 +30,19 @@ import type {
 import { createIdleWatch, type IdleWatch } from './delegation-idle.js';
 import {
   buildTerminalNotice,
+  classifyDelegationError,
   collectTerminalWaiterKeys,
   isNotifiableTerminal,
+  terminalStatusLabel,
+  type DelegationErrorClass,
   type TerminalInfo,
 } from './delegation-terminal.js';
+import {
+  buildResumePrompt,
+  decideResumeOnError,
+  findFallbackModel,
+  type ResumeDecision,
+} from './delegation-resume.js';
 
 const logger = mainLogger.child('delegation-bridge');
 
@@ -63,6 +74,8 @@ interface MessageWaiterInternal {
 const childStates = new Map<string, ChildStateInternal>();
 const messageWaiters = new Map<string, MessageWaiterInternal>();
 const sessionIdWaiters = new Map<string, Array<(sessionId: string) => void>>();
+const sessionWirings = new Map<string, () => void>();
+const settling = new Set<string>();
 
 // ─── 事件广播 helpers ───
 
@@ -145,19 +158,37 @@ function clearChildTimers(c: ChildStateInternal): void {
 // ─── session 事件 wiring ───
 
 function wireSession(childId: string, session: PiSession): void {
-  session.on('complete', (result: PiSessionTurnResult) => onSessionComplete(childId, result));
+  const onComplete = (result: PiSessionTurnResult) => onSessionComplete(childId, result);
   // 所有流事件（text/thinking delta、工具起止）都走 'message'，是滑动 idle 计时的打点源
-  session.on('message', () => onChildActivity(childId));
+  const onMessage = () => onChildActivity(childId);
+  session.on('complete', onComplete);
+  session.on('message', onMessage);
+  sessionWirings.set(childId, () => {
+    session.off('complete', onComplete);
+    session.off('message', onMessage);
+  });
   // PiSession 在 attachConversation 返回前已 start() 完成，getHarnessSessionId() 此时必定有值，
   // 这是常态路径而非兜底（PiSession 不 emit session_init 事件）
   const existing = session.getHarnessSessionId();
   if (existing) onChildSessionInit(childId, existing);
 }
 
+/** 摘除 wireSession 挂的 complete/message 监听，复活重挂前与真正终态时调用，防止监听叠加 */
+function unwireSession(childId: string): void {
+  const off = sessionWirings.get(childId);
+  if (off) {
+    off();
+    sessionWirings.delete(childId);
+  }
+}
+
 function onChildSessionInit(childId: string, sessionId: string): void {
   const c = childStates.get(childId);
-  if (!c || c.sessionId) return;
+  if (!c || c.sessionId === sessionId) return;
+  // 复活后 harness sessionId 变化时也要更新：waiter 的 fromSdkSessionIds 匹配依赖 c.sessionId 与实际一致
+  const hadPrevious = !!c.sessionId;
   c.sessionId = sessionId;
+  if (hadPrevious) return;
   const resolvers = sessionIdWaiters.get(childId);
   if (resolvers) {
     sessionIdWaiters.delete(childId);
@@ -186,20 +217,150 @@ function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
     const completion = classifyChildCompletion(result);
     c.status = completion.status;
     c.errorMessage = completion.errorMessage;
+    c.errorClass = classifyDelegationError(result);
     c.finishedAt = Date.now();
     groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
     broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
     broadcastDeliveriesAwaitChanged(c.parentConversationId);
   }
   clearChildTimers(c);
-  if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
-  if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
+  void settleTerminal(c);
+}
+
+function isRetryableStatus(status: ChildStatus): boolean {
+  return status === 'failed' || status === 'hang' || status === 'timeout';
+}
+
+async function decideResume(c: ChildStateInternal): Promise<ResumeDecision> {
+  if (c.errorClass !== 'quota') {
+    return decideResumeOnError(c.errorClass, c.retryCount ?? 0, c.modelTried ?? [], null);
+  }
+  const conv = await conversationService.getById(c.workspaceId, c.childId);
+  const currentProfileId = conv?.modelSelection?.profileId ?? '';
+  const settings = await loadSettings();
+  const fallback = findFallbackModel(settings.subAgent?.profiles ?? [], currentProfileId);
+  return decideResumeOnError('quota', c.retryCount ?? 0, c.modelTried ?? [], fallback);
 }
 
 /**
- * 终态联动：把失败终态（failed/hang/timeout）秒级透给挂起在 dogear__WaitForMessage 的父会话，
+ * 终态统一结算：重调优先于通知——可复活则 resumeChild（状态回 running，不 resolve waiter，
+ * 不 detach）；不可复活（耗尽/用户取消/no_delivery）才通知 waiter 并释放 attachment。
+ * settling 锁防 interrupt 触发的 complete 事件与 stopChild 主流程双路并发结算。
+ */
+async function settleTerminal(c: ChildStateInternal): Promise<void> {
+  if (settling.has(c.childId)) return;
+  settling.add(c.childId);
+  try {
+    if (isRetryableStatus(c.status) && (c.errorClass === 'transient' || c.errorClass === 'quota')) {
+      const decision = await decideResume(c);
+      if (decision.resume) {
+        const reason = c.status === 'timeout' ? '超时' : c.status === 'hang' ? '长时间无进展' : (c.errorMessage ?? terminalStatusLabel(c.status));
+        try {
+          await resumeChild(c.childId, { reason, modelOverride: decision.modelOverride ?? null });
+          return;
+        } catch (err) {
+          logger.warn(`子会话 ${c.childId} 自动复活失败，回退终态通知`, err);
+        }
+      }
+    }
+    if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
+    unwireSession(c.childId);
+    if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
+  } finally {
+    settling.delete(c.childId);
+  }
+}
+
+/**
+ * 复活原会话续跑（不新建副本）：降级时先换 conversation.modelSelection 再 attach
+ * （attach 复用存活 session，不重读模型，所以降级前必须先 detach 让旧 session 销毁重建）；
+ * 同模型重试则直接复用存活 session 保留内存上下文。所有 await 步骤成功后才提交状态，
+ * 失败时状态仍是终态，由调用方回退通知。
+ */
+async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null }): Promise<void> {
+  const c = childStates.get(childId);
+  if (!c || c.status === 'running') return;
+
+  if (opts.modelOverride) {
+    await conversationService.updateModelSelection(c.workspaceId, childId, opts.modelOverride);
+    if (c.attachmentId) {
+      try { conversationRuntimeService.detachAttachment(c.attachmentId); } catch { /* ignore */ }
+      c.attachmentId = '';
+      unwireSession(childId);
+    }
+  }
+
+  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+  const claim = await groupSharedService.claimOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+  // file_exists 视为本会话部分产出继续复用（复活前刚 release，其他会话拿不到 claim）；
+  // 真正占用冲突只有 claimed_by_other
+  if (!claim.ok && claim.reason === 'claimed_by_other') {
+    throw new Error(`outputPath "${c.outputPath}" 已被子会话 ${claim.holderChildId} 占用，无法复活`);
+  }
+
+  const oldAttachmentId = c.attachmentId;
+  const attachment = await conversationRuntimeService.attachConversation(childId, c.workspaceId, 'desktop', {});
+  const session = getPiSessionManager().getSession(attachment.sessionId);
+  if (!session) {
+    if (oldAttachmentId && oldAttachmentId !== attachment.attachmentId) {
+      try { conversationRuntimeService.detachAttachment(attachment.attachmentId); } catch { /* ignore */ }
+    }
+    throw new Error(`复活拉起 session 失败: ${attachment.sessionId}`);
+  }
+
+  const conv = await conversationService.getById(c.workspaceId, childId);
+  const modelSel = opts.modelOverride ?? conv?.modelSelection ?? null;
+  const settings = await loadSettings();
+  // modelSelection.profileId 指向 ModelProfile（供应商），不是 SubAgentProfile.id
+  const profile = modelSel
+    ? (settings.subAgent?.profiles ?? []).find((p) => p.modelSelection?.profileId === modelSel.profileId)
+    : undefined;
+
+  c.attachmentId = attachment.attachmentId;
+  if (oldAttachmentId && oldAttachmentId !== attachment.attachmentId) {
+    try { conversationRuntimeService.detachAttachment(oldAttachmentId); } catch { /* ignore */ }
+  }
+
+  const now = Date.now();
+  c.status = 'running';
+  c.errorMessage = undefined;
+  c.finishedAt = undefined;
+  c.lastActivityAt = now;
+  c.retryCount = (c.retryCount ?? 0) + 1;
+  if (modelSel) {
+    const tried = c.modelTried ?? [];
+    const key = `${modelSel.profileId}:${modelSel.tier}`;
+    if (!tried.includes(key)) tried.push(key);
+    c.modelTried = tried;
+  }
+  if (opts.modelOverride && profile) c.profileName = profile.name;
+
+  unwireSession(childId);
+  c.timeoutTimer = setTimeout(() => { void stopChild(childId, 'timeout'); }, (profile?.timeoutMinutes ?? 30) * 60_000);
+  c.idleWatch = createIdleWatch({
+    session,
+    onActivity: () => onChildActivity(childId),
+    onIdle: () => { void stopChild(childId, 'hang'); },
+  });
+  wireSession(childId, session);
+
+  broadcastChildStatusChanged(c.parentConversationId, childId, 'running', toSnapshot(c));
+  broadcastDeliveriesAwaitChanged(c.parentConversationId);
+
+  logger.info(`子会话 ${childId} 第 ${c.retryCount} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
+  session.sendMessage(buildResumePrompt(opts.reason, c.outputPath)).catch((error: unknown) => {
+    logger.error(`子会话 ${childId} 复活后 sendMessage 失败`, error);
+    onSessionComplete(childId, {
+      subtype: 'failed',
+      error: { kind: 'runtime', message: extractErrorMessage(error) },
+    });
+  });
+}
+
+/**
+ * 终态联动：把终态秒级透给挂起在 dogear__WaitForMessage 的父会话，
  * 替代旧「干等满超时只拿到 null」。幂等：waiter resolve 即删，多条终态路径重复调用是 no-op。
- * Step 2 接管重调后，本函数只在「不重调」分支被调，errorClass/attempts/modelTried 同步升级。
+ * 只在 settleTerminal 的「不重调」分支被调，errorClass/attempts/modelTried 填实际值。
  */
 function notifyTerminalToWaiters(c: ChildStateInternal): void {
   if (!c.sessionId) return;
@@ -216,7 +377,7 @@ function notifyTerminalToWaiters(c: ChildStateInternal): void {
       terminal: {
         status: c.status,
         errorMessage: c.errorMessage,
-        errorClass: 'transient',
+        errorClass: c.errorClass ?? 'transient',
         attempts: c.retryCount ?? 0,
         modelTried: c.modelTried ?? [],
       },
@@ -316,6 +477,8 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     attachmentId: '',
     sessionId: '',
     lastActivityAt: now,
+    retryCount: 0,
+    modelTried: modelSel ? [`${modelSel.profileId}:${modelSel.tier}`] : [],
   };
   childStates.set(childId, state);
 
@@ -366,6 +529,10 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   return toSnapshot(state);
 }
 
+/**
+ * 置入终态并结算：cancelled（用户主动停）不重调；hang/timeout 按 transient 处理（可复活）。
+ * 结算统一走 settleTerminal（重调优先于通知）。
+ */
 export async function stopChild(childId: string, reason: 'cancelled' | 'timeout' | 'hang' = 'cancelled'): Promise<void> {
   const c = childStates.get(childId);
   if (!c || isTerminal(c.status)) return;
@@ -373,17 +540,17 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
   c.status = reason;
   c.finishedAt = Date.now();
   c.errorMessage = reason === 'timeout' ? '超时中断' : reason === 'hang' ? '无进展中断' : '被停止';
+  c.errorClass = reason === 'cancelled' ? 'cancelled' : 'transient';
   clearChildTimers(c);
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
 
   const session = getPiSessionManager().getSession(c.sessionId);
   if (session) {
     try { await session.interrupt(); } catch (err) { logger.warn(`session.interrupt 失败 ${childId}`, err); }
   }
-  try { conversationRuntimeService.detachAttachment(c.attachmentId); } catch (err) { logger.warn(`detachAttachment 失败 ${childId}`, err); }
+  await settleTerminal(c);
 }
 
 /**
