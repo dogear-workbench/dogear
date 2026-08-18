@@ -7,7 +7,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
-import { safeJsonWrite, safeJsonRead } from './safe-json.js';
+import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
 import { readUsage } from './usage/usage-service.js';
 import { listActiveGroups, requireActiveGroup } from './group-service.js';
 import type { ConversationUsageEntry } from '../types.js';
@@ -167,6 +167,24 @@ async function saveWorkspaceConversations(workspaceId: string, data: WorkspaceCo
   await safeJsonWrite(getWorkspaceConversationsPath(workspaceId), data);
 }
 
+/**
+ * 读-改-写事务：同一工作区的 conversations.json 修改串行化，
+ * 防止并发写者（如 fire-and-forget 的 usage 结算）用旧快照覆盖彼此的字段
+ * （曾导致子会话 updateSessionId 写回被 applyUsageSummary 抹掉、sessionId 永久丢失）。
+ * 锁键加 '#txn' 后缀与 safeJsonWrite 内部的同路径写锁隔离——promise 链锁不可重入，同键嵌套会死锁。
+ */
+async function withConversationsTxn<T>(
+  workspaceId: string,
+  fn: (file: WorkspaceConversationsFile) => Promise<T>,
+): Promise<T> {
+  return withFileLock(getWorkspaceConversationsPath(workspaceId) + '#txn', async () => {
+    const file = await loadWorkspaceConversations(workspaceId);
+    const result = await fn(file);
+    await saveWorkspaceConversations(workspaceId, file);
+    return result;
+  });
+}
+
 // ============================================================
 // CRUD 操作
 // ============================================================
@@ -285,31 +303,32 @@ export async function create(
     contractMetadata?: ContractMetadata;
   },
 ): Promise<string> {
-  await requireActiveGroup(workspaceId, groupId);
-  const file = await loadWorkspaceConversations(workspaceId);
-  const id = uuidv4();
-  const now = new Date().toISOString();
+  return withConversationsTxn(workspaceId, async (file) => {
+    await requireActiveGroup(workspaceId, groupId);
+    const id = uuidv4();
+    const now = new Date().toISOString();
 
-  file.conversations[id] = {
-    id,
-    title,
-    sessionId: null,
-    workspaceId,
-    parentConversationId: options?.parentConversationId ?? null,
-    forkMessageSdkUuid: null,
-    modelSelection: modelSelection ? { ...modelSelection } : null,
-    cachePolicy: options?.cachePolicy ?? '5m',
-    groupId,
-    role: options?.role ?? 'main',
-    contractMetadata: options?.contractMetadata,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await saveWorkspaceConversations(workspaceId, file);
-  const { touchGroup } = await import('./group-service.js');
-  await touchGroup(workspaceId, groupId);
-  return id;
+    file.conversations[id] = {
+      id,
+      title,
+      sessionId: null,
+      workspaceId,
+      parentConversationId: options?.parentConversationId ?? null,
+      forkMessageSdkUuid: null,
+      modelSelection: modelSelection ? { ...modelSelection } : null,
+      cachePolicy: options?.cachePolicy ?? '5m',
+      groupId,
+      role: options?.role ?? 'main',
+      contractMetadata: options?.contractMetadata,
+      createdAt: now,
+      updatedAt: now,
+    };
+    return id;
+  }).then(async (id) => {
+    const { touchGroup } = await import('./group-service.js');
+    await touchGroup(workspaceId, groupId);
+    return id;
+  });
 }
 
 /**
@@ -327,45 +346,44 @@ export async function createFork(
   modelSelection: ModelSelection | null = null,
   cachePolicy: '5m' | '1h' = '5m',
 ): Promise<string> {
-  await requireActiveGroup(workspaceId, groupId);
-  const file = await loadWorkspaceConversations(workspaceId);
-  const id = uuidv4();
-  const now = new Date().toISOString();
-  const parent = file.conversations[parentConversationId];
+  return withConversationsTxn(workspaceId, async (file) => {
+    await requireActiveGroup(workspaceId, groupId);
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const parent = file.conversations[parentConversationId];
 
-  file.conversations[id] = {
-    id,
-    title,
-    sessionId,
-    workspaceId,
-    parentConversationId,
-    forkMessageSdkUuid,
-    modelSelection: modelSelection ? { ...modelSelection } : null,
-    contractMetadata: parent?.contractMetadata ? { ...parent.contractMetadata } : undefined,
-    cachePolicy,
-    groupId,
-    role: 'main',
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  await saveWorkspaceConversations(workspaceId, file);
-  return id;
+    file.conversations[id] = {
+      id,
+      title,
+      sessionId,
+      workspaceId,
+      parentConversationId,
+      forkMessageSdkUuid,
+      modelSelection: modelSelection ? { ...modelSelection } : null,
+      contractMetadata: parent?.contractMetadata ? { ...parent.contractMetadata } : undefined,
+      cachePolicy,
+      groupId,
+      role: 'main',
+      createdAt: now,
+      updatedAt: now,
+    };
+    return id;
+  });
 }
 
 /**
  * 更新对话标题
  */
 export async function updateTitle(workspaceId: string, id: string, title: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
 
-  conv.title = title;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
+    conv.title = title;
+    conv.updatedAt = new Date().toISOString();
+  });
 }
 
 /** 默认 title（新建对话时设置）——用于识别"用户尚未修改过 title"的状态 */
@@ -386,54 +404,58 @@ export async function autoUpdateTitleFromFirstMessage(
   id: string,
   messageText: string,
 ): Promise<boolean> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return false;
-  if (!conv.groupId) return false;
-  await requireActiveGroup(workspaceId, conv.groupId);
+  return withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return false;
+    if (!conv.groupId) return false;
+    await requireActiveGroup(workspaceId, conv.groupId);
 
-  // 仅默认 title 时才自动生成（保护用户已修改的标题）
-  if (conv.title !== DEFAULT_TITLE) return false;
+    // 仅默认 title 时才自动生成（保护用户已修改的标题）
+    if (conv.title !== DEFAULT_TITLE) return false;
 
-  const cleaned = messageText.replace(/\s+/g, ' ').trim();
-  if (!cleaned) return false;
+    const cleaned = messageText.replace(/\s+/g, ' ').trim();
+    if (!cleaned) return false;
 
-  const truncated = cleaned.length > AUTO_TITLE_MAX_LENGTH
-    ? cleaned.slice(0, AUTO_TITLE_MAX_LENGTH) + '…'
-    : cleaned;
+    const truncated = cleaned.length > AUTO_TITLE_MAX_LENGTH
+      ? cleaned.slice(0, AUTO_TITLE_MAX_LENGTH) + '…'
+      : cleaned;
 
-  conv.title = truncated;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-  return true;
+    conv.title = truncated;
+    conv.updatedAt = new Date().toISOString();
+    return true;
+  });
 }
 
 export async function updateSessionId(workspaceId: string, id: string, sessionId: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) throw new Error(`Conversation not found: ${id}`);
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) throw new Error(`Conversation not found: ${id}`);
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
 
-  conv.sessionId = sessionId;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
+    conv.sessionId = sessionId;
+    conv.updatedAt = new Date().toISOString();
+  });
 }
 
 /**
  * 仅更新 updatedAt 时间戳
  */
 export async function touch(workspaceId: string, id: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
+  let groupId: string | null = null;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
 
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
-  const { touchGroup } = await import('./group-service.js');
-  await touchGroup(workspaceId, conv.groupId);
+    conv.updatedAt = new Date().toISOString();
+    groupId = conv.groupId;
+  });
+  if (groupId) {
+    const { touchGroup } = await import('./group-service.js');
+    await touchGroup(workspaceId, groupId);
+  }
 }
 
 export async function updateModelSelection(
@@ -441,14 +463,14 @@ export async function updateModelSelection(
   id: string,
   modelSelection: ModelSelection | null,
 ): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
-  conv.modelSelection = modelSelection ? { ...modelSelection } : null;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
+    conv.modelSelection = modelSelection ? { ...modelSelection } : null;
+    conv.updatedAt = new Date().toISOString();
+  });
 }
 
 export async function updateCachePolicy(
@@ -456,14 +478,14 @@ export async function updateCachePolicy(
   id: string,
   policy: '5m' | '1h',
 ): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[id];
-  if (!conv) return;
-  if (!conv.groupId) throw new Error('对话未关联话题');
-  await requireActiveGroup(workspaceId, conv.groupId);
-  conv.cachePolicy = policy;
-  conv.updatedAt = new Date().toISOString();
-  await saveWorkspaceConversations(workspaceId, file);
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[id];
+    if (!conv) return;
+    if (!conv.groupId) throw new Error('对话未关联话题');
+    await requireActiveGroup(workspaceId, conv.groupId);
+    conv.cachePolicy = policy;
+    conv.updatedAt = new Date().toISOString();
+  });
 }
 
 /**
@@ -474,20 +496,19 @@ export async function updateCachePolicy(
  * 请使用 tipc 层的 deleteConversation RPC（会调用 SDK deleteSession）。
  */
 export async function deleteConversation(workspaceId: string, id: string): Promise<void> {
-  const file = await loadWorkspaceConversations(workspaceId);
-  if (!file.conversations[id]) return;
+  await withConversationsTxn(workspaceId, async (file) => {
+    if (!file.conversations[id]) return;
 
-  // 删除目标对话
-  delete file.conversations[id];
+    // 删除目标对话
+    delete file.conversations[id];
 
-  // 子分叉的 parentConversationId 置空
-  for (const conv of Object.values(file.conversations)) {
-    if (conv.parentConversationId === id) {
-      conv.parentConversationId = null;
+    // 子分叉的 parentConversationId 置空
+    for (const conv of Object.values(file.conversations)) {
+      if (conv.parentConversationId === id) {
+        conv.parentConversationId = null;
+      }
     }
-  }
-
-  await saveWorkspaceConversations(workspaceId, file);
+  });
 }
 
 
@@ -499,10 +520,10 @@ export async function importConversation(
   targetWorkspaceId: string,
   conv: ConversationIndex,
 ): Promise<void> {
-  const file = await loadWorkspaceConversations(targetWorkspaceId);
-  if (file.conversations[conv.id]) return; // 已存在则跳过
-  file.conversations[conv.id] = { ...conv, workspaceId: targetWorkspaceId };
-  await saveWorkspaceConversations(targetWorkspaceId, file);
+  await withConversationsTxn(targetWorkspaceId, async (file) => {
+    if (file.conversations[conv.id]) return; // 已存在则跳过
+    file.conversations[conv.id] = { ...conv, workspaceId: targetWorkspaceId };
+  });
 }
 
 // ============================================================
@@ -564,24 +585,24 @@ export async function applyUsageSummary(
   const found = await getByIdGlobal(conversationId);
   if (!found) return;
   const { workspaceId } = found;
-  const file = await loadWorkspaceConversations(workspaceId);
-  const conv = file.conversations[conversationId];
-  if (!conv) return;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const conv = file.conversations[conversationId];
+    if (!conv) return;
 
-  const prev = conv.usageSummary;
-  const lastContextSize =
-    entry.usage.inputTokens + entry.usage.cacheReadInputTokens + entry.usage.cacheCreationInputTokens;
-  const lastContextWindow = pickMainContextWindow(entry);
+    const prev = conv.usageSummary;
+    const lastContextSize =
+      entry.usage.inputTokens + entry.usage.cacheReadInputTokens + entry.usage.cacheCreationInputTokens;
+    const lastContextWindow = pickMainContextWindow(entry);
 
-  conv.usageSummary = {
-    turnCount: (prev?.turnCount ?? 0) + 1,
-    totalInputTokens: (prev?.totalInputTokens ?? 0) + entry.usage.inputTokens,
-    totalOutputTokens: (prev?.totalOutputTokens ?? 0) + entry.usage.outputTokens,
-    totalCacheReadTokens: (prev?.totalCacheReadTokens ?? 0) + entry.usage.cacheReadInputTokens,
-    lastContextSize,
-    lastContextWindow,
-  };
-  await saveWorkspaceConversations(workspaceId, file);
+    conv.usageSummary = {
+      turnCount: (prev?.turnCount ?? 0) + 1,
+      totalInputTokens: (prev?.totalInputTokens ?? 0) + entry.usage.inputTokens,
+      totalOutputTokens: (prev?.totalOutputTokens ?? 0) + entry.usage.outputTokens,
+      totalCacheReadTokens: (prev?.totalCacheReadTokens ?? 0) + entry.usage.cacheReadInputTokens,
+      lastContextSize,
+      lastContextWindow,
+    };
+  });
 }
 
 /**
@@ -595,22 +616,22 @@ export async function recomputeUsageSummaryIfStale(conversationId: string): Prom
   const usage = await readUsage(conversationId);
   if ((conv.usageSummary?.turnCount ?? 0) === usage.totals.turnCount) return;
 
-  const file = await loadWorkspaceConversations(workspaceId);
-  const target = file.conversations[conversationId];
-  if (!target) return;
+  await withConversationsTxn(workspaceId, async (file) => {
+    const target = file.conversations[conversationId];
+    if (!target) return;
 
-  const lastEntry = usage.entries[usage.entries.length - 1];
-  target.usageSummary = {
-    turnCount: usage.totals.turnCount,
-    totalInputTokens: usage.totals.inputTokens,
-    totalOutputTokens: usage.totals.outputTokens,
-    totalCacheReadTokens: usage.totals.cacheReadInputTokens,
-    lastContextSize: lastEntry
-      ? lastEntry.usage.inputTokens + lastEntry.usage.cacheReadInputTokens + lastEntry.usage.cacheCreationInputTokens
-      : undefined,
-    lastContextWindow: lastEntry ? pickMainContextWindow(lastEntry) : undefined,
-  };
-  await saveWorkspaceConversations(workspaceId, file);
+    const lastEntry = usage.entries[usage.entries.length - 1];
+    target.usageSummary = {
+      turnCount: usage.totals.turnCount,
+      totalInputTokens: usage.totals.inputTokens,
+      totalOutputTokens: usage.totals.outputTokens,
+      totalCacheReadTokens: usage.totals.cacheReadInputTokens,
+      lastContextSize: lastEntry
+        ? lastEntry.usage.inputTokens + lastEntry.usage.cacheReadInputTokens + lastEntry.usage.cacheCreationInputTokens
+        : undefined,
+      lastContextWindow: lastEntry ? pickMainContextWindow(lastEntry) : undefined,
+    };
+  });
 }
 
 // ============================================================
