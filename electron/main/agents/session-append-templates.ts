@@ -18,7 +18,8 @@ export const MEMORY_GUIDANCE_APPEND =
 export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
   '用 dogear__CreateSession 派遣子会话后，必须紧接着调用 dogear__WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。\n' +
-  'outputPath 是会话组共享区里的路径，不是工作区路径；task 里不要再指示子会话把交付文档写到工作区其他位置，交付物一律经共享区传递。';
+  'outputPath 是会话组共享区里的路径，不是工作区路径；task 里不要再指示子会话把交付文档写到工作区其他位置，交付物一律经共享区传递。\n' +
+  '重启或中断后，用 dogear__ResumeSession 调起之前的子会话继续（保留消息历史，它会检查进度后接着干），而不是重新 CreateSession。'
 
 /**
  * 生成可用的子会话 Profile 索引（仅主会话注入，让模型按描述选择 profile 参数）。

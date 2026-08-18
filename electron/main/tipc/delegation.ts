@@ -12,7 +12,7 @@ export const delegationRouter = {
     .input<{ parentConversationId: string }>()
     .action(async ({ input }) => {
       try {
-        const children = bridge.getChildrenByParent(input.parentConversationId);
+        const children = await bridge.getChildrenByParent(input.parentConversationId);
         return { children };
       } catch (error) {
         return { children: [], error: error instanceof Error ? error.message : String(error) };

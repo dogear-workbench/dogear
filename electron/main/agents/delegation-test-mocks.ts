@@ -6,9 +6,15 @@
 
 import { mock } from 'bun:test';
 import { EventEmitter } from 'events';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const dir = import.meta.dir;
+
+// delegation-state.json 落盘走 logger.getConfigDir 的 env 分支；单进程合跑时统一指到独立临时目录，
+// 避免测试写进真实 .dogear 目录，也避免与其他已设 env 的测试文件串目录
+process.env.DOGEAR_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dogear-delegation-test-'));
 
 export const sessions = new Map<string, any>();
 export const attachSessionByConv = new Map<string, string>();
@@ -78,9 +84,24 @@ export function installDelegationMocks(): void {
   }));
 
   mock.module(path.join(dir, '../services/conversation-service.js'), () => ({
-    create: async (_workspaceId: string, _groupId: string, _title: string, modelSel: any) => {
+    create: async (
+      _workspaceId: string,
+      _groupId: string,
+      _title: string,
+      modelSel: any,
+      options?: { role?: string; parentConversationId?: string; contractMetadata?: any },
+    ) => {
       const id = `child-${++childSeq}`;
-      convStore.set(id, { id, groupId: 'g1', modelSelection: modelSel ?? null });
+      convStore.set(id, {
+        id,
+        title: _title,
+        groupId: 'g1',
+        modelSelection: modelSel ?? null,
+        role: options?.role ?? 'main',
+        parentConversationId: options?.parentConversationId ?? null,
+        contractMetadata: options?.contractMetadata,
+        createdAt: new Date().toISOString(),
+      });
       return id;
     },
     getById: async (_workspaceId: string, id: string) => {
@@ -89,7 +110,30 @@ export function installDelegationMocks(): void {
       }
       return convStore.get(id) ?? null;
     },
-    deleteConversation: async () => {},
+    getByIdGlobal: async (id: string) => {
+      if (id.startsWith('parent-')) {
+        return { conv: { id, groupId: 'g1', sessionId: `sdk-${id}`, modelSelection: null }, workspaceId: 'ws-test' };
+      }
+      const conv = convStore.get(id);
+      return conv ? { conv, workspaceId: 'ws-test' } : null;
+    },
+    getBySessionId: async (sessionId: string) => {
+      if (sessionId.startsWith('sdk-parent-')) {
+        const id = sessionId.slice('sdk-'.length);
+        return { conv: { id, groupId: 'g1', sessionId, modelSelection: null }, workspaceId: 'ws-test' };
+      }
+      for (const conv of convStore.values()) {
+        if (conv.sessionId === sessionId) return { conv, workspaceId: 'ws-test' };
+      }
+      return null;
+    },
+    listByParent: async (_workspaceId: string, parentConversationId: string) =>
+      Array.from(convStore.values()).filter(
+        (c: any) => c.role === 'sub' && c.parentConversationId === parentConversationId,
+      ),
+    deleteConversation: async (_workspaceId: string, id: string) => {
+      convStore.delete(id);
+    },
     updateModelSelection: async (_workspaceId: string, id: string, modelSelection: any) => {
       updateModelSelectionCalls.push({ id, modelSelection });
       const conv = convStore.get(id);

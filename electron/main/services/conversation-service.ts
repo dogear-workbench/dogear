@@ -275,6 +275,20 @@ export async function getBySessionId(
 }
 
 /**
+ * 列出指定父会话名下的子会话（role='sub' 且 parentConversationId 匹配）。
+ * 只读无事务，供 delegation bridge 重启后补齐内存丢失的子会话索引。
+ */
+export async function listByParent(
+  workspaceId: string,
+  parentConversationId: string,
+): Promise<ConversationIndex[]> {
+  const file = await loadWorkspaceConversations(workspaceId);
+  return Object.values(file.conversations).filter(
+    (conv) => conv.role === 'sub' && conv.parentConversationId === parentConversationId,
+  );
+}
+
+/**
  * 批量按 conversationId 拿索引（找不到的跳过，不抛错）。供 ListCategories 拉样例标题用。
  * 跨工作区扫描，返回的列表顺序与传入 ids 顺序一致（缺失项不出现，不留 undefined 占位）。
  */

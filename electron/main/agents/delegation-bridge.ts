@@ -19,7 +19,7 @@ import * as conversationService from '../services/conversation-service.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
-import { createDefaultSubAgentProfile, type ModelSelection } from '../services/settings-types.js';
+import { createDefaultSubAgentProfile, type ModelSelection, type SubAgentProfile } from '../services/settings-types.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 import type {
@@ -43,6 +43,12 @@ import {
   findFallbackModel,
   type ResumeDecision,
 } from './delegation-resume.js';
+import {
+  conversationToSnapshot,
+  loadRestorableChildren,
+  persistDelegationState,
+  type PersistedChildState,
+} from './delegation-persist.js';
 
 const logger = mainLogger.child('delegation-bridge');
 
@@ -147,6 +153,44 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
 
 function isTerminal(status: ChildStatus): boolean {
   return status !== 'running';
+}
+
+// ─── 持久化（delegation-state.json 落盘 / 重启恢复） ───
+
+function toPersisted(c: ChildStateInternal): PersistedChildState {
+  return { ...toSnapshot(c), workspaceId: c.workspaceId };
+}
+
+async function persistChildStates(): Promise<void> {
+  await persistDelegationState(() => Array.from(childStates.values()).map(toPersisted));
+}
+
+/** 状态变更点统一入口：startChild 成功后 / 终态结算后 / markChildDelivered / resumeChild 后。fire-and-forget，失败只记日志 */
+function touchPersist(childId: string): void {
+  void persistChildStates().catch((err) => logger.warn(`delegation-state.json 落盘失败 (${childId})`, err));
+}
+
+/**
+ * 应用启动时调用一次：磁盘是重启后的权威来源，先清内存再灌回。
+ * running → interrupted（errorMessage '应用重启中断'），attachmentId 清空，
+ * conversation 已不存在的条目被 loadRestorableChildren 过滤；恢复后回写使磁盘与内存一致。
+ */
+export async function loadChildStates(): Promise<void> {
+  const { restored, hadEntries } = await loadRestorableChildren();
+  childStates.clear();
+  for (const p of restored) {
+    childStates.set(p.childId, { ...p, sessionId: p.sessionId ?? '', attachmentId: '' });
+  }
+  if (hadEntries) {
+    try {
+      await persistChildStates();
+    } catch (err) {
+      logger.warn('恢复后回写 delegation-state.json 失败', err);
+    }
+  }
+  if (restored.length > 0) {
+    logger.info(`delegation 状态恢复：${restored.length} 个子会话条目（running 已标记 interrupted）`);
+  }
 }
 
 function clearChildTimers(c: ChildStateInternal): void {
@@ -266,6 +310,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
     if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
+    touchPersist(c.childId);
   } finally {
     settling.delete(c.childId);
   }
@@ -275,9 +320,9 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
  * 复活原会话续跑（不新建副本）：降级时先换 conversation.modelSelection 再 attach
  * （attach 复用存活 session，不重读模型，所以降级前必须先 detach 让旧 session 销毁重建）；
  * 同模型重试则直接复用存活 session 保留内存上下文。所有 await 步骤成功后才提交状态，
- * 失败时状态仍是终态，由调用方回退通知。
+ * 失败时状态仍是终态，由调用方回退通知。dogear__ResumeSession 工具与终态自动重调都走这里。
  */
-async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null }): Promise<void> {
+export async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null }): Promise<void> {
   const c = childStates.get(childId);
   if (!c || c.status === 'running') return;
 
@@ -346,6 +391,7 @@ async function resumeChild(childId: string, opts: { reason: string; modelOverrid
 
   broadcastChildStatusChanged(c.parentConversationId, childId, 'running', toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  touchPersist(childId);
 
   logger.info(`子会话 ${childId} 第 ${c.retryCount} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
   session.sendMessage(buildResumePrompt(opts.reason, c.outputPath)).catch((error: unknown) => {
@@ -516,6 +562,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   broadcastChildStatusChanged(parentConversationId, childId, 'running', toSnapshot(state));
   broadcastDeliveriesAwaitChanged(parentConversationId);
+  touchPersist(childId);
 
   // fire-and-forget 发任务
   session.sendMessage(spec.task).catch((error: unknown) => {
@@ -567,14 +614,38 @@ export function markChildDelivered(childId: string, summary: string): void {
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, 'done', toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  touchPersist(childId);
 }
 
-export function getChildrenByParent(parentConversationId: string): ChildStateSnapshot[] {
-  const out: ChildStateSnapshot[] = [];
+/**
+ * 内存 childStates 为主，conversation-service 持久层补集合并：
+ * 重启后内存丢失的历史子会话仍能被 ListLinkedSessions / 前端列表看到。
+ * 去重键 childId，内存优先；持久层条目 task/outputPath 从 contractMetadata 补、
+ * profileName 从 subAgentProfileId 反查 settings，status 恒为 interrupted。
+ */
+export async function getChildrenByParent(parentConversationId: string): Promise<ChildStateSnapshot[]> {
+  const memoryChildren: ChildStateSnapshot[] = [];
+  let workspaceId: string | null = null;
   for (const c of childStates.values()) {
-    if (c.parentConversationId === parentConversationId) out.push(toSnapshot(c));
+    if (c.parentConversationId !== parentConversationId) continue;
+    memoryChildren.push(toSnapshot(c));
+    workspaceId ??= c.workspaceId;
   }
-  return out;
+
+  if (!workspaceId) {
+    const parent = await conversationService.getByIdGlobal(parentConversationId);
+    if (!parent) return memoryChildren;
+    workspaceId = parent.workspaceId;
+  }
+
+  const persisted = await conversationService.listByParent(workspaceId, parentConversationId);
+  const known = new Set(memoryChildren.map((c) => c.childId));
+  const extra = persisted.filter((conv) => !known.has(conv.id));
+  if (extra.length === 0) return memoryChildren;
+
+  const settings = await loadSettings();
+  const profiles: SubAgentProfile[] = settings.subAgent?.profiles ?? [];
+  return [...memoryChildren, ...extra.map((conv) => conversationToSnapshot(conv, profiles))];
 }
 
 export function getChildSnapshot(childId: string): ChildStateSnapshot | null {

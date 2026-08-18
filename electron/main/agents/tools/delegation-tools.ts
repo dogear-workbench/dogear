@@ -26,6 +26,9 @@ const WAIT_FOR_MESSAGE_DESC =
 
 const LIST_LINKED_DESC = '列出当前会话所有直接契约通道对方，用于获取可通信的 sessionId。';
 
+const RESUME_SESSION_DESC =
+  '调起之前派出但已中断/失败的子会话继续执行（保留消息历史，它会检查进度后接着干）。仅用于恢复中断的子会话时。';
+
 export interface MainDelegationOpts {
   role: 'main';
   workspaceId: string;
@@ -52,6 +55,11 @@ function errorResult(text: string) {
 
 function textResult(text: string) {
   return { content: [{ type: 'text' as const, text }] };
+}
+
+function truncateTask(task: string): string {
+  const one = task.replace(/\s+/g, ' ').trim();
+  return one.length > 60 ? one.slice(0, 60) + '…' : one;
 }
 
 export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
@@ -144,13 +152,17 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       z.object({}),
       async () => {
         if (opts.role === 'main') {
-          const children = bridge.getChildrenByParent(opts.conversationId);
+          const children = await bridge.getChildrenByParent(opts.conversationId);
           if (children.length === 0) {
             return textResult('（当前会话还没有建立任何契约通道）');
           }
-          const lines = children.map((c) =>
-            `- sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'} · ${c.title} · status=${c.status} · 你派出的`
-          );
+          const lines = children.map((c) => {
+            const parts = [`sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'}`, c.title, `status=${c.status}`];
+            if (c.outputPath) parts.push(`outputPath=${c.outputPath}`);
+            if (c.task) parts.push(`task=${truncateTask(c.task)}`);
+            parts.push('你派出的');
+            return `- ${parts.join(' · ')}`;
+          });
           return textResult(`共 ${children.length} 个契约通道：\n${lines.join('\n')}`);
         }
 
@@ -304,6 +316,44 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return errorResult(`停止失败: ${message}`);
+        }
+      },
+    ),
+
+    defineTool(
+      'dogear__ResumeSession',
+      '调起中断的子会话',
+      RESUME_SESSION_DESC,
+      z.object({
+        sessionId: z.string().min(1).describe('要调起的会话 sessionId（通过 dogear__ListLinkedSessions 获取）'),
+      }),
+      async (args) => {
+        const ownConv = await resolveOwnConversation();
+        const ownSessionId = ownConv?.sessionId;
+        if (!ownSessionId) {
+          return errorResult('当前会话尚未完成初始化（无 sessionId），暂时无法操作');
+        }
+        const target = await conversationService.getBySessionId(args.sessionId);
+        if (!target) {
+          return errorResult(`会话 ${args.sessionId} 不存在`);
+        }
+        if (target.conv.contractMetadata?.parentSessionId !== ownSessionId) {
+          return errorResult('只能调起由当前会话直接派出的会话');
+        }
+        const childId = bridge.getChildIdBySessionId(opts.conversationId, args.sessionId) ?? target.conv.id;
+        const snapshot = bridge.getChildSnapshot(childId);
+        if (!snapshot) {
+          return errorResult(`会话 ${args.sessionId} 不在运行时跟踪中（应用重启后未恢复或状态文件缺失）`);
+        }
+        if (snapshot.status === 'running') {
+          return textResult(`⚠ 该会话正在运行中，无需调起（${snapshot.title}）`);
+        }
+        try {
+          await bridge.resumeChild(childId, { reason: '主会话调起' });
+          return textResult(`✅ 已调起 ${args.sessionId}（${snapshot.title}），它将检查进度后继续`);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return errorResult(`调起失败: ${message}`);
         }
       },
     ),

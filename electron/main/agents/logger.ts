@@ -39,7 +39,7 @@ let _configDir: string | null = null;
  * Worker 线程中无法访问 electron app，通过 DOGEAR_CONFIG_DIR 环境变量获取
  * （由 agent-manager.ts 创建 Worker 时通过 process.env 传递）
  */
-function getConfigDir(): string {
+export function getConfigDir(): string {
   if (_configDir) return _configDir;
 
   // 优先使用环境变量（Worker 线程 + 主进程均可）

@@ -531,6 +531,11 @@ app.whenReady().then(async () => {
     .then((m) => m.getSchedulerService().init())
     .catch((err) => console.error('调度器初始化失败:', err));
 
+  // 恢复 delegation 子会话状态（running → interrupted，conversation 已删的过滤）
+  void import('./agents/delegation-bridge.js')
+    .then((m) => m.loadChildStates())
+    .catch((err) => console.error('delegation 状态恢复失败:', err));
+
   // 首页报告文件监视：dashboard.md 任意写入都广播给前端实时刷新
   void import('./services/memory/dashboard-watcher.js')
     .then((m) => m.startDashboardWatcher())
