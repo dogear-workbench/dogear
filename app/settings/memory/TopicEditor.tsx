@@ -81,7 +81,7 @@ export function TopicEditor({ edit, editDirty, saving, onChange, onSave, onDelet
         </div>
 
         <div className="space-y-1.5">
-          <label className="text-sm font-medium">关键词（供 RecallMemory 检索）</label>
+          <label className="text-sm font-medium">关键词（供 dogear__RecallMemory 检索）</label>
           <div className="flex flex-wrap gap-1.5 p-2 border rounded-md bg-background min-h-[44px]">
             {edit.keywords.map((kw) => (
               <span

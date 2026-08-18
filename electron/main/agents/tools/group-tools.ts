@@ -8,7 +8,7 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 export function createGroupToolDefs(workspaceId: string, groupId: string): ToolDef[] {
   return [
     defineTool(
-      'ListGroupFiles',
+      'dogear__ListGroupFiles',
       '列出共享区文件',
       '列出会话组共享区的所有文件并返回内容。仅用于查看同组会话放到共享区的文件时。',
       z.object({}),
@@ -45,7 +45,7 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     ),
 
     defineTool(
-      'SaveSharedNote',
+      'dogear__SaveSharedNote',
       '保存到共享区',
       '向会话组共享区写入文件（覆盖已有内容）。仅用于需要向同组其他会话传递文件时。',
       z.object({

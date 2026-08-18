@@ -5,10 +5,10 @@
  * Python 不可用时不影响基础行情查询功能。
  *
  * Phase 1 工具清单：
- *   - CalcIndicators — 计算技术指标（MACD/KDJ/RSI/BOLL/MA 等）
+ *   - dogear__CalcIndicators — 计算技术指标（MACD/KDJ/RSI/BOLL/MA 等）
  *
  * 后续 Phase 追加：
- *   - ScreenStocks / GetFinancials / CompareIndustry / DetectSignals / EvalFormula / SimpleBacktest
+ *   - dogear__ScreenStocks / dogear__GetFinancials / dogear__CompareIndustry / dogear__DetectSignals / dogear__EvalFormula / dogear__SimpleBacktest
  */
 
 import { z } from 'zod';
@@ -165,7 +165,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 计算技术指标
     // ========================================
     defineTool(
-      'CalcIndicators',
+      'dogear__CalcIndicators',
       '计算技术指标',
       '计算股票技术指标。返回精确的指标数值，用于技术分析。\n' +
       '支持指标: MA(均线), EMA(指数均线), MACD, KDJ, RSI, BOLL(布林带), WR(威廉), OBV(能量潮), ATR(真实波幅), VWAP\n' +
@@ -215,7 +215,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
           // 日K增量存储到本地
           if (periodMap[args.period] === 101) {
             stockDataService.appendKLine(args.market, args.code, klineData)
-              .catch((err: unknown) => console.warn('[CalcIndicators] K线存储失败:', err));
+              .catch((err: unknown) => console.warn('[dogear__CalcIndicators] K线存储失败:', err));
           }
 
           // 2. 调用 Python 计算
@@ -276,14 +276,14 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 全市场筛选
     // ========================================
     defineTool(
-      'ScreenStocks',
+      'dogear__ScreenStocks',
       '条件筛选全市场股票',
       '全市场 A 股条件筛选。\n' +
       '支持基本面条件（行业、PE、PB、市值、价格）和技术指标条件（RSI、MACD 等）。\n' +
       '注意: 技术指标筛选需要逐股获取K线数据，候选超过100只时会自动截断。',
       z.object({
         conditions: z.object({
-          industry: z.string().optional().describe('证监会行业分类名（带分类代码前缀，如"J66货币金融服务"、"C27医药制造业"），必须精确等值匹配；命名与东方财富板块名（"银行"、"食品饮料"）不同——不要直接传俗名，先调 ListIndustries 查真实值域'),
+          industry: z.string().optional().describe('证监会行业分类名（带分类代码前缀，如"J66货币金融服务"、"C27医药制造业"），必须精确等值匹配；命名与东方财富板块名（"银行"、"食品饮料"）不同——不要直接传俗名，先调 dogear__ListIndustries 查真实值域'),
           price_min: z.number().optional().describe('最低价格'),
           price_max: z.number().optional().describe('最高价格'),
           pe_min: z.number().optional().describe('最低市盈率'),
@@ -381,7 +381,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 获取财报数据
     // ========================================
     defineTool(
-      'GetFinancials',
+      'dogear__GetFinancials',
       '获取个股财报数据',
       '获取个股财报数据（营收、净利润、ROE、毛利率、净利率、资产负债率、每股经营现金流等，' +
       '每项指标均附带 _yoy 同比%/_mom 环比%/_single_yoy 单季同比% 三个衍生字段）。\n' +
@@ -424,7 +424,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
               await writeFinancialsCache(args.market, args.code, periods);
             } else if (missingCount === 0) {
               // 回源失败但条数够，用过期缓存兜底，好过什么都返回不了
-              console.warn(`[GetFinancials] ${args.code} 回源失败，降级用缓存: ${fetchError}`);
+              console.warn(`[dogear__GetFinancials] ${args.code} 回源失败，降级用缓存: ${fetchError}`);
               periods = hit.map((entry) => entry.data);
             } else {
               return {
@@ -480,7 +480,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 检测技术信号
     // ========================================
     defineTool(
-      'DetectSignals',
+      'dogear__DetectSignals',
       '检测技术信号',
       '检测股票近期技术信号。\n' +
       '内置信号: MACD金叉/死叉, KDJ金叉/超买/超卖, RSI超买/超卖, 布林上轨突破/下轨跌破, 成交量突破, 均线多头排列。\n' +
@@ -561,7 +561,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 执行公式表达式
     // ========================================
     defineTool(
-      'EvalFormula',
+      'dogear__EvalFormula',
       '执行公式表达式',
       '执行自定义公式表达式（类通达信 TDX 语法）。\n' +
       '支持变量: CLOSE, OPEN, HIGH, LOW, VOL, PE, PB, MARKET_CAP\n' +
@@ -656,7 +656,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 简单策略回测
     // ========================================
     defineTool(
-      'SimpleBacktest',
+      'dogear__SimpleBacktest',
       '策略回测',
       '基于公式表达式的简单策略回测。\n' +
       '在历史 K 线数据上模拟买卖操作，输出总收益率、年化收益率、最大回撤、夏普比率等绩效指标。\n' +
@@ -782,10 +782,10 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 列出行业板块
     // ========================================
     defineTool(
-      'ListIndustries',
+      'dogear__ListIndustries',
       '列出行业板块分类',
       '列出证监会行业分类（CSRC 一级/二级行业），用来查询"科技"、"消费"这类宽概念对应哪些细分分类名。\n' +
-      '返回的每个 name 字段带分类代码前缀（如"J66货币金融服务"、"C27医药制造业"），可直接作为 ScreenStocks 的 industry 参数（精确等值匹配）。\n' +
+      '返回的每个 name 字段带分类代码前缀（如"J66货币金融服务"、"C27医药制造业"），可直接作为 dogear__ScreenStocks 的 industry 参数（精确等值匹配）。\n' +
       '⚠️ 命名与东方财富板块名不同：银行股在"J66货币金融服务"下（混少量非银金融），不叫"银行"；医药股在"C27医药制造业"下，不叫"医药"。\n' +
       '参数：\n' +
       '- keyword：可选，板块名子串过滤（大小写不敏感）。不传则返回全部（受 limit 截断）。\n' +
@@ -824,7 +824,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
           if (result.truncated) {
             output += `\n\n(已按 limit=${args.limit} 截断，如需更多请调大 limit 或增加 keyword)`;
           }
-          output += '\n\n以上分类名可直接作为 ScreenStocks 的 industry 参数（精确等值匹配）。';
+          output += '\n\n以上分类名可直接作为 dogear__ScreenStocks 的 industry 参数（精确等值匹配）。';
 
           return { content: [{ type: 'text' as const, text: output }] };
         } catch (error) {
@@ -840,10 +840,10 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 行业对比
     // ========================================
     defineTool(
-      'CompareIndustry',
+      'dogear__CompareIndustry',
       '个股与行业对比',
       '将个股与同行业其他股票对比，显示行业均值/中位数/排名。\n' +
-      '数据源: baostock 行业快照（证监会行业分类），与 ScreenStocks 同口径。\n' +
+      '数据源: baostock 行业快照（证监会行业分类），与 dogear__ScreenStocks 同口径。\n' +
       'PE/PB 统计自动剔除负值（亏损股）。\n' +
       'rank 为升序位次（1 = 行业内最低），total 为参与统计的有效样本数。',
       z.object({
@@ -914,7 +914,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 资金流向
     // ========================================
     defineTool(
-      'GetFundFlow',
+      'dogear__GetFundFlow',
       '查询资金流向',
       '查询资金流向数据（东方财富数据源）。一个工具聚合三种用途：\n' +
       '- type=individual: 个股资金流向，近 100 个交易日，需 stock+market\n' +
@@ -1041,7 +1041,7 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
     // 工具: 北向资金持股
     // ========================================
     defineTool(
-      'GetNorthboundHolding',
+      'dogear__GetNorthboundHolding',
       '查询北向资金持股',
       '查询北向资金持股数据（东方财富数据源）。一个工具聚合两种用途：\n' +
       '- type=individual: 个股北向持股历史，需 stock（裸代码，如"600519"）\n' +

@@ -181,8 +181,8 @@ class AgentWorker {
    * - trigger 说明触发原因（script_failed / parse_failed / user_requested）
    *
    * 产出：
-   * - 若有改进：通过 SaveParsedArticle 覆盖 meta.json / content.md
-   * - 若发现新平台脚本模式：通过 UpdatePlatformScript 更新 platforms/<platform>.py
+   * - 若有改进：通过 dogear__SaveParsedArticle 覆盖 meta.json / content.md
+   * - 若发现新平台脚本模式：通过 dogear__UpdatePlatformScript 更新 platforms/<platform>.py
    * - history.jsonl 追加一行解析记录
    */
   private async handleParseArticleTask(task: AgentTask, taskLogger: any): Promise<any> {
@@ -242,7 +242,7 @@ class AgentWorker {
     let articleSaved = false;
     let scriptUpdated: string | null = null;
     const toolDefs = createArticleParseToolDefs().map((def) => {
-      if (def.name === 'SaveParsedArticle') {
+      if (def.name === 'dogear__SaveParsedArticle') {
         const orig = def.handler;
         def.handler = async (args: any) => {
           const result = await orig(args);
@@ -252,7 +252,7 @@ class AgentWorker {
           }
           return result;
         };
-      } else if (def.name === 'UpdatePlatformScript') {
+      } else if (def.name === 'dogear__UpdatePlatformScript') {
         const orig = def.handler;
         def.handler = async (args: any) => {
           const result = await orig(args);
@@ -284,7 +284,7 @@ class AgentWorker {
 
     const systemPrompt = `${skillSystemPrompt}
 
-你是一个后台文章解析 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。`;
+你是一个后台文章解析 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。`;
 
     try {
       const result = await runOnce({
@@ -391,7 +391,7 @@ class AgentWorker {
   /**
    * 处理组级摘要卡提炼任务（GROUP_DIGEST_SESSION，Phase 3）
    *
-   * 一次性 headless query：agent 自主调 ReadGroupDigest → CleanTranscript(dirty) → ListGroupFiles → SaveGroupDigest，
+   * 一次性 headless query：agent 自主调 dogear__ReadGroupDigest → dogear__CleanTranscript(dirty) → dogear__ListGroupFiles → dogear__SaveGroupDigest，
    * 整合多会话的逐字稿 + 共享区文件 → 组卡。模型按 digestModelSelection 覆盖（默认 haiku）。
    */
   private async handleGroupDigestTask(task: AgentTask, taskLogger: any): Promise<any> {
@@ -437,9 +437,9 @@ class AgentWorker {
       () => { backgroundSaved = true; },
     );
     const transcriptDefs = createDigestToolDefs(workspaceId, workspacePath);
-    // group-tools 有 2 个工具，digest 任务只需 ListGroupFiles
+    // group-tools 有 2 个工具，digest 任务只需 dogear__ListGroupFiles
     const groupDefs = createGroupToolDefs(workspaceId, groupId)
-      .filter((t) => t.name === 'ListGroupFiles');
+      .filter((t) => t.name === 'dogear__ListGroupFiles');
 
     // 读取已有组卡 sourcesSeen（供 system prompt 注入）
     const { readGroupDigest, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
@@ -487,7 +487,7 @@ class AgentWorker {
       sourcesSeenText,
       `- 共享区文件清单（含 _notes/ 子目录）:`,
       sharedFileText,
-      `- shared/_notes/ 文件清单（通过 ListGroupFiles 可读取完整内容）:`,
+      `- shared/_notes/ 文件清单（通过 dogear__ListGroupFiles 可读取完整内容）:`,
       notesFileText,
       ...categoryVocabLines,
     ].join('\n');
@@ -498,7 +498,7 @@ class AgentWorker {
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
-    const systemPrompt = '你是一个后台内容提炼 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+    const systemPrompt = '你是一个后台内容提炼 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
 
     try {
       const result = await runOnce({
@@ -539,8 +539,8 @@ class AgentWorker {
   /**
    * 处理首页报告任务（REVIEW_SESSION，历史代号 review）
    *
-   * 一次性 headless query：agent 自主调 ListDigests → ReadDigest → TraceSource → ReadReport/WriteReport
-   * + RecallMemory/SaveMemory/ForgetMemory，把新摘要卡分流为「更新记忆 + 重写首页报告」。
+   * 一次性 headless query：agent 自主调 dogear__ListDigests → dogear__ReadDigest → dogear__TraceSource → dogear__ReadReport/dogear__WriteReport
+   * + dogear__RecallMemory/dogear__SaveMemory/dogear__ForgetMemory，把新摘要卡分流为「更新记忆 + 重写首页报告」。
    * saved 表示是否写了报告。模型按 reviewModelTier 覆盖（默认 sonnet）。
    */
   private async handleReviewSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
@@ -589,7 +589,7 @@ class AgentWorker {
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
-    const systemPrompt = '你是一个后台内容复盘 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+    const systemPrompt = '你是一个后台内容复盘 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
 
     try {
       const result = await runOnce({
@@ -694,11 +694,11 @@ class AgentWorker {
     const { runOnce } = await import('./pi/run-once.js');
     const fs = await import('node:fs/promises');
 
-    // 授权子集：ListCategories / SaveCategoryJoin / SaveCategoryNew / SaveCategoryMerge（不含 PruneCategoryTags）
+    // 授权子集：dogear__ListCategories / dogear__SaveCategoryJoin / dogear__SaveCategoryNew / dogear__SaveCategoryMerge（不含 dogear__PruneCategoryTags）
     const sessionCategoryDefs = createCategoryToolDefs()
-      .filter((t) => ['ListCategories', 'SaveCategoryJoin', 'SaveCategoryNew', 'SaveCategoryMerge'].includes(t.name));
+      .filter((t) => ['dogear__ListCategories', 'dogear__SaveCategoryJoin', 'dogear__SaveCategoryNew', 'dogear__SaveCategoryMerge'].includes(t.name));
 
-    const systemPromptCategorize = '你是一个后台智能分类 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+    const systemPromptCategorize = '你是一个后台智能分类 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
 
     const abortController = new AbortController();
     this.currentAbortController = abortController;
@@ -815,8 +815,8 @@ class AgentWorker {
         '',
         `### 工作区上下文`,
         `- workspaceId: ${workspaceId}`,
-        `- 调 ListCategories 时使用此 workspaceId`,
-        `- 调 SaveCategory 时使用此 workspaceId 和 groupId=${groupId}`,
+        `- 调 dogear__ListCategories 时使用此 workspaceId`,
+        `- 调 dogear__SaveCategoryJoin / dogear__SaveCategoryNew / dogear__SaveCategoryMerge 时使用此 workspaceId 和 groupId=${groupId}`,
       ].join('\n');
 
       let decided: 'join' | 'new' | 'error' = 'error';
@@ -951,7 +951,7 @@ class AgentWorker {
   /**
    * 处理存量分类整理任务（CATEGORIZE_ORGANIZE）
    *
-   * 一次性 headless query：agent 自主调 ListCategories → PruneCategoryTags（压 anchorTags ≤10）
+   * 一次性 headless query：agent 自主调 dogear__ListCategories → dogear__PruneCategoryTags（压 anchorTags ≤10）
    * + SaveCategory(MERGE_CATEGORIES)（合并语义重合分类）。与 CATEGORIZE_SESSION 共享同一串行队列（互斥）。
    * 模型按 categorizeModelSelection 覆盖（默认 haiku）；可取消。
    */
@@ -998,18 +998,18 @@ class AgentWorker {
       '## 本次输入',
       `- workspaceId: ${workspaceId}`,
       `- 当前分类数: ${idxBefore.categories.length}`,
-      '- 调 ListCategories / PruneCategoryTags / SaveCategory 时使用此 workspaceId',
+      '- 调 dogear__ListCategories / dogear__PruneCategoryTags / dogear__SaveCategoryMerge 时使用此 workspaceId',
     ].join('\n');
 
-    // 授权子集：ListCategories / PruneCategoryTags / SaveCategoryMerge（不含 Join / New）
+    // 授权子集：dogear__ListCategories / dogear__PruneCategoryTags / dogear__SaveCategoryMerge（不含 Join / New）
     const categoryDefs = createCategoryToolDefs()
-      .filter((t) => ['ListCategories', 'PruneCategoryTags', 'SaveCategoryMerge'].includes(t.name));
+      .filter((t) => ['dogear__ListCategories', 'dogear__PruneCategoryTags', 'dogear__SaveCategoryMerge'].includes(t.name));
 
     const { runOnce } = await import('./pi/run-once.js');
     const abortController = new AbortController();
     this.currentAbortController = abortController;
 
-    const systemPrompt = '你是一个后台分类整理 agent。收到指令后，调用工具完成工作，直接使用工具裸名（不加任何前缀）。完成任务后直接结束，无需寒暄。';
+    const systemPrompt = '你是一个后台分类整理 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
 
     try {
       const result = await runOnce({

@@ -73,7 +73,7 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
   {
     name: 'stock-picking',
     label: '候选池预热',
-    description: '5 年长期视角候选池预热（PreheatLongTermPool）+ 综合评分排序（RankByLongTerm），配合选股 skill 使用',
+    description: '5 年长期视角候选池预热（dogear__PreheatLongTermPool）+ 综合评分排序（dogear__RankByLongTerm），配合选股 skill 使用',
     mcpServerName: 'dogear-stock-picking',
     toolCount: 2,
     requiresWorkspace: false,

@@ -1,8 +1,8 @@
 /**
  * 智能分类 MCP Server 工具（dogear-smart-category）
  *
- * CATEGORIZE_SESSION agent 用：ListCategories / SaveCategoryJoin / SaveCategoryNew / SaveCategoryMerge
- * CATEGORIZE_ORGANIZE agent 用：ListCategories / PruneCategoryTags / SaveCategoryMerge
+ * CATEGORIZE_SESSION agent 用：dogear__ListCategories / dogear__SaveCategoryJoin / dogear__SaveCategoryNew / dogear__SaveCategoryMerge
+ * CATEGORIZE_ORGANIZE agent 用：dogear__ListCategories / dogear__PruneCategoryTags / dogear__SaveCategoryMerge
  *
  * 三种保存动作拆成独立工具（原 SaveCategory 用 discriminatedUnion + tuple，
  * GLM 等国内 Anthropic 兼容层不吃 oneOf / prefixItems，拆开后 schema 纯 object 全平台通吃）。
@@ -66,7 +66,7 @@ const pruneArgs = z.object({
 export function createCategoryToolDefs(): ToolDef[] {
   return [
     defineTool(
-      'ListCategories',
+      'dogear__ListCategories',
       '查看智能分类列表',
       '读取当前工作区的智能分类列表，返回 { categories: [{id, name, anchorTags, groupCount, sampleGroupTitles}], atLimit, maxCategories }。',
       listArgs,
@@ -117,7 +117,7 @@ export function createCategoryToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'SaveCategoryJoin',
+      'dogear__SaveCategoryJoin',
       '归入已有分类',
       '把 groupId 归入现有分类 categoryId。可选 addAnchorTags（扩展该分类 anchorTags）或 replaceAnchorTags（整体覆写），二者互斥；不加标签则留空。该分类当前 anchorTags 已达 10 上限时必须用 replaceAnchorTags 才能加新标签。',
       joinArgs,
@@ -173,7 +173,7 @@ export function createCategoryToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'SaveCategoryNew',
+      'dogear__SaveCategoryNew',
       '新建分类并归入',
       '新建分类并把 groupId 放进去。可选 redistribute 迁移名单（moveToCategoryId="__NEW__" 表示迁到刚新建的这个分类）。',
       newArgs,
@@ -189,7 +189,7 @@ export function createCategoryToolDefs(): ToolDef[] {
           const nowIso = new Date().toISOString();
 
           if (idx.categories.length >= maxCategories) {
-            return { content: [{ type: 'text' as const, text: `Error: 已达分类上限 ${maxCategories}，必须 SaveCategoryJoin` }], isError: true };
+            return { content: [{ type: 'text' as const, text: `Error: 已达分类上限 ${maxCategories}，只能归入已有分类` }], isError: true };
           }
           idx = removeGroupEverywhere(idx, args.groupId);
           const cat = newCategory(args.name, args.anchorTags);
@@ -237,7 +237,7 @@ export function createCategoryToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'SaveCategoryMerge',
+      'dogear__SaveCategoryMerge',
       '合并两个分类',
       '把 fromIds 里的两个现有分类合并成一个新分类，两者的组自动去重合并进新分类。fromIds 必须是长度为 2 的字符串数组。批量整理场景无触发组时 groupId 传空字符串 ""。',
       mergeArgs,
@@ -276,7 +276,7 @@ export function createCategoryToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'PruneCategoryTags',
+      'dogear__PruneCategoryTags',
       '覆写分类标签',
       '覆写指定分类的 anchorTags 数组（不是增删，是整体替换）。最多 10 个。',
       pruneArgs,

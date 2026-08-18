@@ -1,9 +1,9 @@
 /**
  * 首页报告 MCP Server 工具（dogear-memory-review，历史代号 review）
  *
- * 工具：ListDigests / ReadDigest / TraceSource / ReadReport / WriteReport
+ * 工具：dogear__ListDigests / dogear__ReadDigest / dogear__TraceSource / dogear__ReadReport / dogear__WriteReport
  * 全是薄 IO，零分析逻辑——判断、归并、分流（沉淀进记忆 vs 待办进报告）全在提示词里引导 agent。
- * 沉淀进记忆由独立的 dogear-memory server（RecallMemory/SaveMemory/ForgetMemory）承担。
+ * 沉淀进记忆由独立的 dogear-memory server（dogear__RecallMemory/dogear__SaveMemory/dogear__ForgetMemory）承担。
  */
 import { z } from 'zod';
 import { listGroupDigests, readGroupDigest } from '../../services/memory/group-digest-store.js';
@@ -23,7 +23,7 @@ function errText(prefix: string, error: unknown) {
 export function createReviewToolDefs(workspaceId: string, _workspacePath: string, onSaved?: () => void): ToolDef[] {
   return [
     defineTool(
-      'ListDigests',
+      'dogear__ListDigests',
       '列出所有组摘要卡',
       '列出本工作区所有组卡（按组聚合）：每行格式「- groupId · createdAt · 标题 · N会话」。',
       z.object({}),
@@ -41,7 +41,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
     ),
 
     defineTool(
-      'ReadDigest',
+      'dogear__ReadDigest',
       '读取单张组摘要卡',
       '读取单张组卡，返回概述 + items（多源 sources，每条带 sources[{sessionId, uuid}]）+ keyOutputs 段。',
       z.object({ groupId: z.string().describe('组 ID') }),
@@ -70,7 +70,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
     ),
 
     defineTool(
-      'TraceSource',
+      'dogear__TraceSource',
       '回溯消息原始出处',
       '按 uuid 回溯原始会话，返回该消息及前后对话原文。',
       z.object({
@@ -95,7 +95,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
     ),
 
     defineTool(
-      'ReadReport',
+      'dogear__ReadReport',
       '读取首页报告',
       '读取当前首页报告。返回 updatedAt（上次更新时间，用于判断哪些组卡是新的）和正文 markdown。无报告时返回「(无报告)」。',
       z.object({}),
@@ -116,7 +116,7 @@ export function createReviewToolDefs(workspaceId: string, _workspacePath: string
     ),
 
     defineTool(
-      'WriteReport',
+      'dogear__WriteReport',
       '写入首页报告',
       '覆盖写入首页报告（updatedAt 由工具自动生成）。',
       z.object({

@@ -154,7 +154,7 @@ export interface ParsedUserMessage {
   senderSessionId?: string;
   /** 发送者显示名（拍照，避免后续重命名/删除后拿不到） */
   senderDisplayName?: string;
-  /** 是否为正式交付（SendMessage 的 delivery=true） */
+  /** 是否为正式交付（dogear__SendMessage 的 delivery=true） */
   senderIsDelivery?: boolean;
   /** /model 命令切换模型（如 anthropic/claude-sonnet-4.6） */
   modelSwitch?: string;

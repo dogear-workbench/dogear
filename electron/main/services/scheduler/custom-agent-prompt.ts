@@ -18,11 +18,11 @@ export function buildCustomAgentPrompt(payload: CustomAgentTaskPayload): CustomA
     '',
     `当前工作区根目录：${payload.workspacePath}`,
     '- 所有文件工具的路径都被限制在该工作区内（相对路径相对工作区根解析，越权访问会被拒绝）',
-    '- 任务产物（报告、笔记、数据文件、记忆等）必须用工具实际写入（Write / Edit / WriteReport / SaveMemory 等），只在回复里描述产物而没有落盘视为未完成',
+    '- 任务产物（报告、笔记、数据文件、记忆等）必须用工具实际写入（Write / Edit / dogear__WriteReport / dogear__SaveMemory 等），只在回复里描述产物而没有落盘视为未完成',
     '',
     '执行规则：',
     '- 这是一次性任务：理解指令后直接执行到底，不询问、不等待确认、不寒暄',
-    '- 工具调用直接使用工具裸名（不加任何前缀）',
+    '- 工具调用直接使用工具清单里给出的完整工具名',
     '- 结束时输出一段不超过 200 字的结果自述：做了什么、产物写到了哪里、是否遇到问题',
   ].join('\n');
 

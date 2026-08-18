@@ -31,7 +31,7 @@ test('isBasicToolName 正确识别基础工具', () => {
 });
 
 test('isBasicToolName 拒绝非基础工具', () => {
-  expect(isBasicToolName('RecallMemory')).toBe(false);
+  expect(isBasicToolName('dogear__RecallMemory')).toBe(false);
   expect(isBasicToolName('Bash')).toBe(false);
   expect(isBasicToolName('Read')).toBe(false);
   expect(isBasicToolName('')).toBe(false);
@@ -46,13 +46,13 @@ test('getBasicToolPermission 返回基础工具的权限值', () => {
 
 test('getBasicToolPermission 对非基础工具返回 undefined', () => {
   const map = allAsk();
-  expect(getBasicToolPermission(map, 'RecallMemory')).toBeUndefined();
+  expect(getBasicToolPermission(map, 'dogear__RecallMemory')).toBeUndefined();
   expect(getBasicToolPermission(map, 'Read')).toBeUndefined();
 });
 
 test('autoExecute 模式无条件放行所有工具', () => {
-  const packMap = new Map([['RecallMemory', 'dogear-memory']]);
-  for (const tool of ['read', 'write', 'bash', 'RecallMemory', 'unknownTool']) {
+  const packMap = new Map([['dogear__RecallMemory', 'dogear-memory']]);
+  for (const tool of ['read', 'write', 'bash', 'dogear__RecallMemory', 'unknownTool']) {
     expect(decideToolPermission(tool, 'autoExecute', packMap, emptyAllowed, allAsk())).toBe('allow');
   }
 });
@@ -85,9 +85,9 @@ test('默认模式：七个基础工具全部 allow 时全部放行', () => {
 });
 
 test('默认模式：工具包工具自动放行', () => {
-  const packMap = new Map([['RecallMemory', 'dogear-memory'], ['ReadArticle', 'article']]);
-  expect(decideToolPermission('RecallMemory', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
-  expect(decideToolPermission('ReadArticle', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
+  const packMap = new Map([['dogear__RecallMemory', 'dogear-memory'], ['dogear__ReadArticle', 'article']]);
+  expect(decideToolPermission('dogear__RecallMemory', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
+  expect(decideToolPermission('dogear__ReadArticle', 'default', packMap, emptyAllowed, allAsk())).toBe('allow');
 });
 
 test('默认模式：未分类工具返回 ask', () => {

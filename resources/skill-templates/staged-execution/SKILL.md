@@ -48,7 +48,7 @@ description: 按已有实施计划（docs/plans/**/stepN-*.md）分派子会话�
 派出子会话，task 描述包含以下三块（按模板填写，N 替换为实际步骤号）：
 1. stepN.md 的完整路径
 2. plan.md「全局决策」段原文
-3. 交付要求：「按 stepN.md 的「计划改动」段实施代码；完成后把交付文档写到共享区 stepN-delivery.md；然后用 ListLinkedSessions 查派出者 sessionId，向其交付改动清单」
+3. 交付要求：「按 stepN.md 的「计划改动」段实施代码；完成后把交付文档写到共享区 stepN-delivery.md；然后用 dogear__ListLinkedSessions 查派出者 sessionId，向其交付改动清单」
 交付路径约定为 stepN-delivery.md，标题约定为「step N: <stepN.md 的 title>」
 
 ### 例外：主会话可以自己做的情形

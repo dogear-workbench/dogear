@@ -1,5 +1,5 @@
 // 组卡引用保真度校验（纯函数 + IO 分离，与 transcript-cleaner.ts 同风格）
-// 确保 SaveGroupDigest 里的每个 sessionId#uuid 都真实存在于对应会话的去噪逐字稿
+// 确保 dogear__SaveGroupDigest 里的每个 sessionId#uuid 都真实存在于对应会话的去噪逐字稿
 // buildSessionUuidIndex 的实现现在在 pi-session/transcript-adapter.ts（Harness 类型不得泄漏出该目录），
 // 这里薄转发，validateItemSources 是纯函数，与数据来源无关，留在此文件。
 export { buildSessionUuidIndex } from '../../agents/pi-session/transcript-adapter.js';

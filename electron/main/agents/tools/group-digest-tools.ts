@@ -1,7 +1,7 @@
 /**
  * 组级摘要卡 MCP Server 工具（dogear-group-digest，Phase 3）
  *
- * GROUP_DIGEST_SESSION agent 用：ReadGroupDigest + SaveGroupDigest + SaveGroupBackground
+ * GROUP_DIGEST_SESSION agent 用：dogear__ReadGroupDigest + dogear__SaveGroupDigest + dogear__SaveGroupBackground
  * digest.md 是给人看 + 首页复盘用；background.md 是给「组内新会话」派子会话读的结构化背景
  */
 import { z } from 'zod';
@@ -35,7 +35,7 @@ function formatFidelityError(problems: SourceProblem[]): string {
   }
   lines.push('');
   lines.push('修复步骤：');
-  lines.push('1. 调 CleanTranscript(sessionId) 重新查证该会话，uuid 在 "## [role · ts · uuid]" 的第三段');
+  lines.push('1. 重新查证该会话的去噪逐字稿，uuid 在 "## [role · ts · uuid]" 的第三段');
   lines.push('2. wrong_session 类型只需把 source.sessionId 改为上面给出的正确会话 id');
   lines.push('3. 若确实查不到对应消息，删掉这条 source；若某条 item 的 sources 全部无效则删掉整条 item');
   return lines.join('\n');
@@ -51,7 +51,7 @@ export function createGroupDigestToolDefs(
 ): ToolDef[] {
   return [
     defineTool(
-      'ReadGroupDigest',
+      'dogear__ReadGroupDigest',
       '读取组摘要卡',
       '读取本组现有的组卡。无组卡时返回「(无组卡)」。groupId 必须等于上下文中给定的 groupId。',
       z.object({ groupId: z.string() }),
@@ -83,7 +83,7 @@ export function createGroupDigestToolDefs(
     ),
 
     defineTool(
-      'SaveGroupDigest',
+      'dogear__SaveGroupDigest',
       '保存组摘要卡',
       '写入本组组卡。sourcesSeen 由工具自动用 task payload 的 dirtyConversations 合并已有 sourcesSeen 后维护；重复写覆盖旧卡。',
       z.object({
@@ -142,7 +142,7 @@ export function createGroupDigestToolDefs(
           try {
             await updateGroup(workspaceId, groupId, { title: args.title });
           } catch (e) {
-            console.warn(`[SaveGroupDigest] 同步 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
+            console.warn(`[dogear__SaveGroupDigest] 同步 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
           }
           return {
             content: [{ type: 'text' as const, text: `已保存组卡 → ${getGroupDigestPath(workspaceId, groupId)}（${args.items.length} items / ${args.keyOutputs.length} keyOutputs）` }],
@@ -154,7 +154,7 @@ export function createGroupDigestToolDefs(
     ),
 
     defineTool(
-      'SaveGroupBackground',
+      'dogear__SaveGroupBackground',
       '保存组背景摘要',
       '写入本组 background.md（给下一个新会话读的结构化背景）。'
         + '4 字段：topic 一句话组主题；progress 2-3 句当前进展；'

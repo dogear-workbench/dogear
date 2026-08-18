@@ -346,7 +346,7 @@ def compare_industry(symbol: str, metrics: list[str] = None) -> dict:
     """
     将个股与同行业其他股票对比。
 
-    数据源：baostock 行业快照（snapshot.get_industry_snapshot），与 ScreenStocks 同口径。
+    数据源：baostock 行业快照（snapshot.get_industry_snapshot），与 dogear__ScreenStocks 同口径。
     原雪球接口（stock_individual_basic_info_xq / stock_individual_spot_xq）已失效，不再使用。
 
     Args:

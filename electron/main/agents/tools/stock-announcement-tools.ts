@@ -2,8 +2,8 @@
  * 公司公告 MCP Server 工具
  *
  * 提供 2 个工具，允许 Agent 查询股票的公司公告列表并读取全文：
- *   - ListAnnouncements  — 拉取公告元数据列表（标题/日期/类型/PDF直链）
- *   - ReadAnnouncement   — 读取指定公告全文（PDF 解析为 markdown，本地懒缓存）
+ *   - dogear__ListAnnouncements  — 拉取公告元数据列表（标题/日期/类型/PDF直链）
+ *   - dogear__ReadAnnouncement   — 读取指定公告全文（PDF 解析为 markdown，本地懒缓存）
  *
  * 数据源：巨潮资讯网（cninfo.com.cn），详见 announcement-service.ts。
  * 网络请求经过共享 rateLimiter 防护，无需在工具层额外限流。
@@ -48,7 +48,7 @@ export function createAnnouncementToolDefs(): ToolDef[] {
     // 工具 1: 查询公告列表
     // ========================================
     defineTool(
-      'ListAnnouncements',
+      'dogear__ListAnnouncements',
       '查询公司公告列表',
       '查询指定股票在巨潮资讯网（cninfo.com.cn）披露的公司公告列表，返回标题、日期、类型和原始 PDF 直链（url）。\n' +
       '参数说明：\n' +
@@ -94,7 +94,7 @@ export function createAnnouncementToolDefs(): ToolDef[] {
           content: [{
             type: 'text' as const,
             text: `${args.code}（${marketLabel}）公告列表（共 ${result.data.length} 条）：\n\n${lines.join('\n')}\n\n` +
-              '如需查看某条公告全文，调用 ReadAnnouncement 并把上面对应的 url、market 原样传入。',
+              '如需查看某条公告全文，调用 dogear__ReadAnnouncement 并把上面对应的 url、market 原样传入。',
           }],
         };
       }
@@ -104,18 +104,18 @@ export function createAnnouncementToolDefs(): ToolDef[] {
     // 工具 2: 读取公告全文
     // ========================================
     defineTool(
-      'ReadAnnouncement',
+      'dogear__ReadAnnouncement',
       '读取公告全文',
       '读取一条公司公告的全文内容（PDF 解析为 markdown 文本，含标题、正文、表格）。首次读取会现下载 PDF 并解析，可能耗时几秒到十几秒；解析结果会缓存到本地，同一条公告再次读取会直接命中缓存、几乎瞬间返回。\n' +
       '参数说明：\n' +
-      '- url：公告的 PDF 直链，必须原样取自 ListAnnouncements 返回结果中某一条的 url 字段。出于安全考虑只接受 static.cninfo.com.cn 域名，其他地址会被拒绝并返回错误。\n' +
+      '- url：公告的 PDF 直链，必须原样取自 dogear__ListAnnouncements 返回结果中某一条的 url 字段。出于安全考虑只接受 static.cninfo.com.cn 域名，其他地址会被拒绝并返回错误。\n' +
       '- code：股票代码，必须和该条公告所属股票一致（用于定位本地缓存目录）。\n' +
-      '- market：市场代码 sh/sz/bj，必须和该条公告所属市场一致——直接使用 ListAnnouncements 该条结果里的 market 字段值，本工具不做自动推断，传错会导致缓存目录错位。\n' +
+      '- market：市场代码 sh/sz/bj，必须和该条公告所属市场一致——直接使用 dogear__ListAnnouncements 该条结果里的 market 字段值，本工具不做自动推断，传错会导致缓存目录错位。\n' +
       '返回值是该公告的 markdown 全文。年报/半年报等长公告解析后文本可能非常长（几千到上万字）。',
       z.object({
-        url: z.string().describe('公告 PDF 直链，必须原样取自 ListAnnouncements 返回结果的 url 字段'),
+        url: z.string().describe('公告 PDF 直链，必须原样取自 dogear__ListAnnouncements 返回结果的 url 字段'),
         code: z.string().describe('股票代码（如 "600519"），需与该公告所属股票一致'),
-        market: z.enum(['sh', 'sz', 'bj']).describe('市场代码，需与该公告所属市场一致（取自 ListAnnouncements 该条结果的 market 字段）'),
+        market: z.enum(['sh', 'sz', 'bj']).describe('市场代码，需与该公告所属市场一致（取自 dogear__ListAnnouncements 该条结果的 market 字段）'),
       }),
       async (args) => {
         const result = await readAnnouncement(args.url, args.code, args.market);

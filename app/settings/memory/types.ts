@@ -23,7 +23,7 @@ export interface CoreProfile {
   updated: string;
 }
 
-/** slug 合法字符：小写字母数字连字符。与后端 memory-tools SaveMemory 的 zod 校验一致 */
+/** slug 合法字符：小写字母数字连字符。与后端 memory-tools dogear__SaveMemory 的 zod 校验一致 */
 export const SLUG_RE = /^[a-z0-9-]+$/;
 
 /** 核心档案建议字符数上限（软限制，超过仅提示不拦截保存） */

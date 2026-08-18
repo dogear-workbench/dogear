@@ -4,9 +4,9 @@
  * 主会话和子会话都装——有 groupId 时自动注册。主 agent 可直接读历史会话和组背景，不必派子会话中转。
  *
  * 工具：
- * - ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
- * - ReadGroupBackground：读本组 background.md 的结构化字段
- * - ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
+ * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
+ * - dogear__ReadGroupBackground：读本组 background.md 的结构化字段
+ * - dogear__ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
  */
 import fs from 'node:fs/promises';
 import { z } from 'zod';
@@ -34,7 +34,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
 
   return [
     defineTool(
-      'ReadReferenceSession',
+      'dogear__ReadReferenceSession',
       '读取会话去噪原文',
       '读指定会话的去噪原文（可尾切或区间切）。仅用于需要查看其他会话的完整对话内容时。',
       z.object({
@@ -67,7 +67,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     ),
 
     defineTool(
-      'ReadGroupBackground',
+      'dogear__ReadGroupBackground',
       '读取组背景摘要',
       '读取当前会话组的结构化背景摘要（主题、进展、已拍板决策、待议问题）。仅用于需要了解当前组整体上下文时。',
       z.object({}),
@@ -77,7 +77,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
           return {
             content: [{
               type: 'text' as const,
-              text: `(本组 background.md 尚未生成 · groupId=${groupId}) 请退回 ReadGroupDigest + ListSiblingSessions 兜底。`,
+              text: `(本组 background.md 尚未生成 · groupId=${groupId})`,
             }],
           };
         }
@@ -102,7 +102,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     ),
 
     defineTool(
-      'ListSiblingSessions',
+      'dogear__ListSiblingSessions',
       '列出组内兄弟会话',
       '列出当前会话组内的兄弟会话（不含父/子会话和已归档）。仅用于需要了解组内还有哪些活跃会话时。',
       z.object({}),

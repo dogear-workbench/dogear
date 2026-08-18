@@ -1,7 +1,7 @@
 """
 baostock 客户端封装
 
-选股 SOP（ScreenStocks / ListIndustries / GetFinancials）的唯一数据源。
+选股 SOP（dogear__ScreenStocks / dogear__ListIndustries / dogear__GetFinancials）的唯一数据源。
 东财 push2 系列接口被服务端反爬封禁，baostock 走独立 socket 长连接协议不受影响。
 
 与 akshare_client.py 的分工：

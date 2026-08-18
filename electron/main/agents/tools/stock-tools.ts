@@ -6,12 +6,12 @@
  * 无需在工具层额外限流。
  *
  * 工具清单：
- *   - SearchStock       — 搜索股票（模糊匹配名称/拼音/代码）
- *   - GetStockQuote     — 实时行情（单只或批量，最多 10 只）
- *   - GetKLineData      — K线历史（日/周/月K，可指定条数）
- *   - GetTimeline       — 当日分时数据
- *   - GetWatchlist      — 获取自选股列表
- *   - ModifyWatchlist   — 添加/删除自选股（写操作，需用户权限确认）
+ *   - dogear__SearchStock       — 搜索股票（模糊匹配名称/拼音/代码）
+ *   - dogear__GetStockQuote     — 实时行情（单只或批量，最多 10 只）
+ *   - dogear__GetKLineData      — K线历史（日/周/月K，可指定条数）
+ *   - dogear__GetTimeline       — 当日分时数据
+ *   - dogear__GetWatchlist      — 获取自选股列表
+ *   - dogear__ModifyWatchlist   — 添加/删除自选股（写操作，需用户权限确认）
  */
 
 import { z } from 'zod';
@@ -79,7 +79,7 @@ export function createStockToolDefs(): ToolDef[] {
     // 工具 1: 搜索股票
     // ========================================
     defineTool(
-      'SearchStock',
+      'dogear__SearchStock',
       '搜索 A 股股票',
       '搜索 A 股股票（支持名称、拼音首字母、股票代码模糊匹配）。\n' +
       '返回匹配的股票列表（最多 10 条），包含代码、名称、市场信息。',
@@ -120,7 +120,7 @@ export function createStockToolDefs(): ToolDef[] {
     // 工具 2: 获取实时行情
     // ========================================
     defineTool(
-      'GetStockQuote',
+      'dogear__GetStockQuote',
       '获取实时行情',
       '获取股票实时行情数据（支持批量查询，最多 10 只）。\n' +
       '返回当前价格、涨跌幅、成交量、成交额、最高最低价、换手率等详细数据。',
@@ -175,7 +175,7 @@ export function createStockToolDefs(): ToolDef[] {
     // 工具 3: 获取 K 线历史数据
     // ========================================
     defineTool(
-      'GetKLineData',
+      'dogear__GetKLineData',
       '获取 K 线历史数据',
       '获取股票 K 线历史数据。\n' +
       '支持日K、周K、月K，返回开高低收、成交量、涨跌幅、换手率等字段。\n' +
@@ -265,7 +265,7 @@ export function createStockToolDefs(): ToolDef[] {
     // 工具 4: 获取当日分时数据
     // ========================================
     defineTool(
-      'GetTimeline',
+      'dogear__GetTimeline',
       '获取当日分时数据',
       '获取股票当日分时数据（逐分钟价格、均价、成交量）。',
       z.object({
@@ -326,7 +326,7 @@ export function createStockToolDefs(): ToolDef[] {
     // 工具 5: 获取自选股列表
     // ========================================
     defineTool(
-      'GetWatchlist',
+      'dogear__GetWatchlist',
       '查看自选股列表',
       '获取用户的自选股列表。\n' +
       '返回所有已添加的自选股信息（代码、名称、市场、添加时间）。',
@@ -337,7 +337,7 @@ export function createStockToolDefs(): ToolDef[] {
 
           if (watchlist.items.length === 0) {
             return {
-              content: [{ type: 'text' as const, text: '自选股列表为空。可以使用 ModifyWatchlist 工具添加股票。' }],
+              content: [{ type: 'text' as const, text: '自选股列表为空。' }],
             };
           }
 
@@ -367,10 +367,10 @@ export function createStockToolDefs(): ToolDef[] {
     // 工具 6: 修改自选股（需权限确认）
     // ========================================
     defineTool(
-      'ModifyWatchlist',
+      'dogear__ModifyWatchlist',
       '添加或删除自选股',
       '添加或删除自选股。\n' +
-      '添加时需提供 name（股票名称），可通过 SearchStock 工具获取。',
+      '添加时需提供 name（股票名称），可通过 dogear__SearchStock 工具获取。',
       z.object({
         action: z.enum(['add', 'remove']).describe('操作类型（add=添加 remove=删除）'),
         market: z.number().describe('市场代码（1=沪市 0=深市）'),
@@ -382,7 +382,7 @@ export function createStockToolDefs(): ToolDef[] {
           if (args.action === 'add') {
             if (!args.name) {
               return {
-                content: [{ type: 'text' as const, text: '添加自选股时必须提供股票名称（name）。请先使用 SearchStock 搜索获取。' }],
+                content: [{ type: 'text' as const, text: '添加自选股时必须提供股票名称（name）。' }],
                 isError: true,
               };
             }

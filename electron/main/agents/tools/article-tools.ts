@@ -1,7 +1,7 @@
 /**
  * 文章阅读 MCP Server 工具
  *
- * 提供 ReadArticle 和 ListArticles 工具，允许 Agent 按需读取工作区中已保存的文章内容。
+ * 提供 dogear__ReadArticle 和 dogear__ListArticles 工具，允许 Agent 按需读取工作区中已保存的文章内容。
  * 用于「引用文章」功能：用户在对话中引用文章后，Agent 通过此工具获取文章的 Markdown 正文。
  */
 
@@ -21,12 +21,12 @@ export function createArticleToolDefs(workspacePath: string): ToolDef[] {
     // 工具 1: 读取文章内容
     // ========================================
     defineTool(
-      'ReadArticle',
+      'dogear__ReadArticle',
       '读取文章正文和元数据',
       '读取指定文章的完整 Markdown 内容和元数据。\n' +
       '返回的内容包括标题、作者、来源、原始 URL 和 Markdown 正文。',
       z.object({
-        articleId: z.string().describe('文章 ID（UUID 格式，从引用信息或 ListArticles 结果中获取）'),
+        articleId: z.string().describe('文章 ID（UUID 格式，从引用信息或 dogear__ListArticles 结果中获取）'),
       }),
       async (args) => {
         try {
@@ -61,7 +61,7 @@ export function createArticleToolDefs(workspacePath: string): ToolDef[] {
     // 工具 2: 列出工作区所有文章
     // ========================================
     defineTool(
-      'ListArticles',
+      'dogear__ListArticles',
       '列出工作区所有文章',
       '列出当前工作区中所有已保存的文章（仅元数据，不含正文）。',
       z.object({}),

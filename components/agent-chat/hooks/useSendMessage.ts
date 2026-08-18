@@ -330,7 +330,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     // 清理文本中的换行符
     const sanitize = (s: string) => s.replace(/[\r\n]+/g, ' ').trim();
 
-    // 整篇文章引用：独立 block，agent 通过 ReadArticle tool 读取
+    // 整篇文章引用：独立 block，agent 通过 dogear__ReadArticle tool 读取
     if (referencedArticles.length > 0) {
       const refLines = referencedArticles.map(a =>
         `  <article title="${sanitize(a.title)}" articleId="${a.id}"${a.siteName ? ` site="${sanitize(a.siteName)}"` : ''} />`

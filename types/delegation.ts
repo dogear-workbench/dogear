@@ -5,7 +5,7 @@
 
 export type ChildStatus =
   | 'running'      // 会话仍在跑
-  | 'done'         // 已通过 SendMessage(delivery:true) 交付
+  | 'done'         // 已通过 dogear__SendMessage(delivery:true) 交付
   | 'failed'       // agent 跑挂了或内部异常
   | 'timeout'      // 超过 subAgent.timeoutMinutes
   | 'cancelled'    // 被主动停止

@@ -1,7 +1,7 @@
 /**
  * Delegation Bridge — 主进程内 Agent 协作运行时
  * 维护会话创建/停止的状态机（childStates，用于 UI 展示 + no_delivery 检测）+
- * 通用消息投递与等待（messageWaiters，支撑 SendMessage / WaitForMessage）+
+ * 通用消息投递与等待（messageWaiters，支撑 dogear__SendMessage / dogear__WaitForMessage）+
  * 监听 PiSession 的 complete / error 事件推进状态。
  */
 
@@ -145,7 +145,7 @@ function onChildSessionInit(childId: string, sessionId: string): void {
 
 /**
  * 结构化 complete 是本会话这一轮 prompt() 真正跑完的信号，是唯一安全的资源释放时机——
- * markChildDelivered 发生在 SendMessage 工具调用中途（prompt() 仍在执行），此时 detach 会
+ * markChildDelivered 发生在 dogear__SendMessage 工具调用中途（prompt() 仍在执行），此时 detach 会
  * 触发 release() 归零后立即 close()/abort() 正在跑的这一轮，绝不能在那里做。
  * 状态只在仍是 'running' 时才改写（保留"是否曾经交付"的语义），但 detach 无论如何都要执行一次——
  * 哪怕 markChildDelivered/stopChild 已经改过 status，也可能还没释放过 attachment（如已释放，
@@ -322,7 +322,7 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
 }
 
 /**
- * 标记某个会话已通过 SendMessage(delivery:true) 完成交付（由 delegation-tools 调用）。
+ * 标记某个会话已通过 dogear__SendMessage(delivery:true) 完成交付（由 delegation-tools 调用）。
  * 只对仍处于 running 状态的会话生效，幂等安全。
  */
 export function markChildDelivered(childId: string, summary: string): void {
@@ -420,7 +420,7 @@ export function waitForChildSessionId(childId: string, timeoutMs = 15000): Promi
   });
 }
 
-// ─── 通用消息投递 / 等待（SendMessage / WaitForMessage 的运行时支撑） ───
+// ─── 通用消息投递 / 等待（dogear__SendMessage / dogear__WaitForMessage 的运行时支撑） ───
 
 /**
  * 挂起等待来自指定 sessionId 集合中任意一方的下一条消息。
@@ -456,7 +456,7 @@ export interface DeliverMessageOptions {
 }
 
 /**
- * 'waiter'：目标正在 WaitForMessage 挂起，消息直接送进它的等待结果
+ * 'waiter'：目标正在 dogear__WaitForMessage 挂起，消息直接送进它的等待结果
  * 'queued'：目标当前没有挂起等待，消息作为一条新输入推进目标会话的下一轮
  * 'target_inactive'：目标会话当前未运行（未打开/已关闭），消息未能送达
  */
@@ -485,8 +485,8 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
 }
 
 /**
- * 只 resolve 属于 parentConversationId 的 WaitForMessage 挂起等待（不碰子会话状态）。
- * 给 interrupt()/close() 在 adapter.abort() 前调用：让卡在 WaitForMessage 工具调用里的
+ * 只 resolve 属于 parentConversationId 的 dogear__WaitForMessage 挂起等待（不碰子会话状态）。
+ * 给 interrupt()/close() 在 adapter.abort() 前调用：让卡在 dogear__WaitForMessage 工具调用里的
  * prompt() 立即拿到 null 结果返回，Harness 的 waitForIdle() 才不会永久阻塞。
  * 与 abortWaitsForParent 的区别：后者额外 cancel 子会话，供前端"中断等待"按钮使用。
  */
@@ -502,7 +502,7 @@ export function abortMessageWaits(parentConversationId: string): number {
   return count;
 }
 
-/** 中断指定发起会话的所有活跃 WaitForMessage 等待，并终止它名下仍在运行的 Pi 子会话。 */
+/** 中断指定发起会话的所有活跃 dogear__WaitForMessage 等待，并终止它名下仍在运行的 Pi 子会话。 */
 export function abortWaitsForParent(parentConversationId: string): {
   abortedWaits: number;
   cancelledChildren: number;

@@ -903,7 +903,7 @@ export class PiSession extends EventEmitter {
     // 工具调用才能收到 blocked 结果继续走完当前这一轮；否则 adapter.abort() 内部
     // harness.waitForIdle() 会一直等这一轮结束，永久死锁（见 pi-harness-adapter.ts abort() 注释）。
     this.rejectAllPendingPermissionRequests('会话已关闭');
-    // resolve WaitForMessage 挂起等待，防止 adapter.abort() 内部 waitForIdle() 死锁
+    // resolve dogear__WaitForMessage 挂起等待，防止 adapter.abort() 内部 waitForIdle() 死锁
     await this.abortMessageWaitsForConversation();
     // await 到这里 resolve 即代表当前 run 已完全结束、settled 已触发，可以安全做收尾。
     await this.adapter?.abort();
@@ -932,7 +932,7 @@ export class PiSession extends EventEmitter {
     this.pendingSteerCount = 0;
     this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');
-    // resolve 所有 WaitForMessage 挂起等待，让卡在工具调用里的 prompt() 立即返回——
+    // resolve 所有 dogear__WaitForMessage 挂起等待，让卡在工具调用里的 prompt() 立即返回——
     // 否则 adapter.abort() 内部 waitForIdle() 会永远等这一轮结束，死锁。
     await this.abortMessageWaitsForConversation();
     await this.adapter?.abort();
@@ -947,7 +947,7 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * resolve 当前会话所有 WaitForMessage 挂起等待。动态 import 避免 pi-session → delegation-bridge
+   * resolve 当前会话所有 dogear__WaitForMessage 挂起等待。动态 import 避免 pi-session → delegation-bridge
    * → pi-session-manager → pi-session 的循环依赖。
    */
   private async abortMessageWaitsForConversation(): Promise<void> {

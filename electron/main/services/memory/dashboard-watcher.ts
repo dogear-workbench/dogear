@@ -1,6 +1,6 @@
 // 首页报告文件监视：监听 <configDir>/workspaces/<wsId>/dashboard.md 变更
 // 触发广播 reportUpdated，让前端 Dashboard 自动重新加载（覆盖 review-trigger、
-// 普通会话调 WriteReport、外部编辑等所有写入场景）。
+// 普通会话调 dogear__WriteReport、外部编辑等所有写入场景）。
 import fs from 'node:fs';
 import path from 'node:path';
 import { BrowserWindow } from 'electron';

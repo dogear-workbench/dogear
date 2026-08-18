@@ -2,9 +2,9 @@
  * Agent 协作模式通信工具（dogear-delegation MCP server，Step 2 重构）
  *
  * 语义从"父子专用"改为"平等会话间协作"：
- * - CreateSession / CreateSessionBatch / StopSession：仅挂主会话（role='main'）
- * - SendMessage / WaitForMessage / ListLinkedSessions：主/子会话都挂，靠工具子集防孙子
- *   （子会话没有 CreateSession，天然不能再往下派）
+ * - dogear__CreateSession / dogear__CreateSessionBatch / dogear__StopSession：仅挂主会话（role='main'）
+ * - dogear__SendMessage / dogear__WaitForMessage / dogear__ListLinkedSessions：主/子会话都挂，靠工具子集防孙子
+ *   （子会话没有 dogear__CreateSession，天然不能再往下派）
  *
  * 所有跨会话通信都必须先过 hasDirectContractChannel 校验（服务层，contract-channel-service.ts）。
  */
@@ -60,11 +60,11 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
   const sharedTools: ToolDef[] = [
     defineTool(
-      'SendMessage',
+      'dogear__SendMessage',
       '向指定会话发消息',
       SEND_MESSAGE_DESC,
       z.object({
-        toSessionId: z.string().min(1).describe('目标会话的 sessionId（通过 CreateSession 返回值或 ListLinkedSessions 获取）'),
+        toSessionId: z.string().min(1).describe('目标会话的 sessionId（通过 dogear__CreateSession 返回值或 dogear__ListLinkedSessions 获取）'),
         message: z.string().min(1).describe('消息内容'),
         options: z.object({
           delivery: z.boolean().optional().describe('标记为正式交付（任务完成通知）'),
@@ -113,7 +113,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     ),
 
     defineTool(
-      'WaitForMessage',
+      'dogear__WaitForMessage',
       '等待指定会话的消息',
       WAIT_FOR_MESSAGE_DESC,
       z.object({
@@ -134,7 +134,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     ),
 
     defineTool(
-      'ListLinkedSessions',
+      'dogear__ListLinkedSessions',
       '列出契约通道会话',
       LIST_LINKED_DESC,
       z.object({}),
@@ -165,7 +165,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
   const mainOnlyTools: ToolDef[] = [
     defineTool(
-      'CreateSession',
+      'dogear__CreateSession',
       '派出子会话执行任务',
       '创建一个子会话来执行独立任务，与当前会话建立双向通信通道。仅用于需要把任务委派给独立会话处理时。',
       z.object({
@@ -186,12 +186,12 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           if (!sessionId) {
             return textResult(
               `✅ 已创建新会话「${snapshot.title}」，但它的 sessionId 还没就绪。\n` +
-              `稍后用 ListLinkedSessions 查到 sessionId 后，再用 SendMessage / WaitForMessage 与它通信。`,
+              `稍后用 dogear__ListLinkedSessions 查到 sessionId 后，再用 dogear__SendMessage / dogear__WaitForMessage 与它通信。`,
             );
           }
           return textResult(
             `✅ 已创建新会话 ${sessionId}（${snapshot.title}，profile: ${snapshot.profileName}）→ 建议交付路径 ${args.outputPath}\n` +
-            `用 SendMessage("${sessionId}", ...) 与它通信；WaitForMessage(["${sessionId}"]) 等待它交付。`,
+            `用 dogear__SendMessage("${sessionId}", ...) 与它通信；dogear__WaitForMessage(["${sessionId}"]) 等待它交付。`,
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -201,7 +201,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     ),
 
     defineTool(
-      'CreateSessionBatch',
+      'dogear__CreateSessionBatch',
       '批量派出多个子会话',
       '批量创建多个子会话（原子操作：要么全部成功，要么全部不创建）。仅用于需要同时派出多个互相独立的任务时。',
       z.object({
@@ -257,7 +257,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             const sid = sessionIds[i];
             lines.push(`- ${sid ?? '(sessionId 尚未就绪)'}（${s.title}，profile: ${s.profileName}）→ ${s.outputPath}`);
           }
-          lines.push('', '用 SendMessage / WaitForMessage 分别与它们通信（尚未就绪的稍后用 ListLinkedSessions 补查）。');
+          lines.push('', '用 dogear__SendMessage / dogear__WaitForMessage 分别与它们通信（尚未就绪的稍后用 dogear__ListLinkedSessions 补查）。');
           return textResult(lines.join('\n'));
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -267,7 +267,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
     ),
 
     defineTool(
-      'StopSession',
+      'dogear__StopSession',
       '停止已派出的会话',
       '停止当前会话直接派出的正在运行的子会话。仅用于需要中止子会话任务时。',
       z.object({

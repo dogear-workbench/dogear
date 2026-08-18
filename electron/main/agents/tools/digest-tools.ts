@@ -1,8 +1,8 @@
 /**
  * 会话逐字稿清洗 MCP Server 工具（dogear-memory-digest）
  *
- * 仅保留 CleanTranscript——被 GROUP_DIGEST_SESSION agent 调用。
- * ReadExistingDigest / SaveDigest 已被 ReadGroupDigest / SaveGroupDigest 替代，已删除。
+ * 仅保留 dogear__CleanTranscript——被 GROUP_DIGEST_SESSION agent 调用。
+ * ReadExistingDigest / SaveDigest 已被 dogear__ReadGroupDigest / dogear__SaveGroupDigest 替代，已删除。
  */
 import { z } from 'zod';
 import { readCleanTranscript } from '../../agents/pi-session/transcript-adapter.js';
@@ -15,7 +15,7 @@ export function createDigestToolDefs(
 ): ToolDef[] {
   return [
     defineTool(
-      'CleanTranscript',
+      'dogear__CleanTranscript',
       '清洗会话逐字稿',
       '对指定会话做确定性去噪，返回干净逐字稿（已剥工具结果/系统行/思考块，保留用户+助手文字与一行工具骨架，每段带完整 uuid）。',
       z.object({ sessionId: z.string().describe('Harness 会话 ID') }),

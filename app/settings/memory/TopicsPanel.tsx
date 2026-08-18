@@ -119,7 +119,7 @@ export function TopicsPanel({ workspacePath }: Props) {
     if (s.keywords.length === 0) {
       await confirm({
         title: '校验失败',
-        description: '至少要有 1 个关键词供 RecallMemory 检索使用。',
+        description: '至少要有 1 个关键词供 dogear__RecallMemory 检索使用。',
         buttons: [{ label: '知道了', value: 'ok' }],
       });
       return false;

@@ -99,7 +99,7 @@ class ConversationRuntimeService {
         subAgent: conversation.role === 'sub'
           ? {
               task: conversation.contractMetadata?.task ?? '完成派出者交代的任务',
-              outputPath: conversation.contractMetadata?.expectedOutputPath ?? '（未指定；直接通过 SendMessage 交付）',
+              outputPath: conversation.contractMetadata?.expectedOutputPath ?? '（未指定；直接通过 dogear__SendMessage 交付）',
             }
           : undefined,
         permissionMode,

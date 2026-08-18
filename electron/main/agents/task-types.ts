@@ -202,7 +202,7 @@ export interface GroupDigestSessionPayload {
  */
 export interface ReviewSessionPayload {
   workspaceId: string;   // 工作区 ID（读摘要卡 / 落复盘卡）
-  workspacePath: string; // 工作区绝对路径（TraceSource 定位 JSONL 用）
+  workspacePath: string; // 工作区绝对路径（dogear__TraceSource 定位 JSONL 用）
   modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.reviewModelSelection）
 }
 

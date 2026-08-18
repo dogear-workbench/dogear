@@ -1,5 +1,5 @@
 /**
- * RecallMemory 工具的业务逻辑
+ * dogear__RecallMemory 工具的业务逻辑
  *
  * 匹配算法：小写归一化 + 子串匹配（不做中文分词）。
  * 排序：命中关键词数量降序 → 平手按 updated 降序。

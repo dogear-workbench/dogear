@@ -29,7 +29,7 @@ function assertPathSafe(targetPath: string, allowedRoot: string): void {
 export function createArticleParseToolDefs(): ToolDef[] {
   return [
     defineTool(
-      'ReadRawHtml',
+      'dogear__ReadRawHtml',
       '读取原始 HTML',
       '读取文章的原始 HTML（最多 50KB，截断防止 token 超限）\n' +
       '供 AI 在固定解析失败或质量不达标时，重新分析 HTML 结构，找到正文内容。',
@@ -58,7 +58,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'ReadCurrentContent',
+      'dogear__ReadCurrentContent',
       '读取当前已解析内容',
       '读取当前已解析的文章内容（meta.json + content.md 合并展示）\n' +
       '用于质量检查：判断标题、正文长度、内容完整性等是否达标。',
@@ -83,7 +83,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'ReadParserRules',
+      'dogear__ReadParserRules',
       '读取解析规则',
       '读取解析规则文件（通用规则 + 匹配的平台规则）\n' +
       '在开始解析前调用，获取已积累的解析经验和策略。',
@@ -103,7 +103,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
             if (platformContent) {
               result += `\n\n---\n\n# ${args.platform} 平台规则\n\n${platformContent}`;
             } else {
-              result += `\n\n---\n\n# ${args.platform} 平台规则\n\n（暂无此平台的专项规则。如需新增，使用 ReadPlatformScript / RunPlatformScript / UpdatePlatformScript 创建 Python 脚本）`;
+              result += `\n\n---\n\n# ${args.platform} 平台规则\n\n（暂无此平台的专项规则。如需新增，使用 dogear__ReadPlatformScript / dogear__RunPlatformScript / dogear__UpdatePlatformScript 创建 Python 脚本）`;
             }
           }
 
@@ -115,7 +115,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'SaveParsedArticle',
+      'dogear__SaveParsedArticle',
       '保存解析结果',
       '覆盖保存 AI 重新解析的文章结果\n' +
       '只更新 meta.json 和 content.md，保留原始 raw.html 不变。\n' +
@@ -160,7 +160,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'ListPlatformScripts',
+      'dogear__ListPlatformScripts',
       '列出平台脚本',
       '列出所有已有的平台脚本（*.py 文件）',
       z.object({
@@ -198,7 +198,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'ReadPlatformScript',
+      'dogear__ReadPlatformScript',
       '读取平台脚本',
       '读取单个平台脚本的源码',
       z.object({
@@ -229,7 +229,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'RunPlatformScript',
+      'dogear__RunPlatformScript',
       '试跑平台脚本',
       '在 Python 沙箱里试跑平台脚本。支持两种模式：\n' +
       '- 生产模式：传 skillsDir+platform+articleDir，跑已落盘的脚本对当前 raw.html\n' +
@@ -293,15 +293,15 @@ export function createArticleParseToolDefs(): ToolDef[] {
             }],
           };
         } catch (error) {
-          return { content: [{ type: 'text' as const, text: `❌ RunPlatformScript 失败: ${error}` }], isError: true };
+          return { content: [{ type: 'text' as const, text: `❌ dogear__RunPlatformScript 失败: ${error}` }], isError: true };
         }
       }
     ),
 
     defineTool(
-      'UpdatePlatformScript',
+      'dogear__UpdatePlatformScript',
       '落盘平台脚本',
-      '落盘平台脚本。只在 RunPlatformScript 试跑成功后调用。\n' +
+      '落盘平台脚本。只在 dogear__RunPlatformScript 试跑成功后调用。\n' +
       '路径白名单：只能写 platforms/<name>.py；name 必须是 [a-z0-9_-]{1,32}。',
       z.object({
         skillsDir: z.string().describe('Skill 目录的绝对路径'),
@@ -354,7 +354,7 @@ export function createArticleParseToolDefs(): ToolDef[] {
     ),
 
     defineTool(
-      'ReadParseHistory',
+      'dogear__ReadParseHistory',
       '读取解析历史',
       '读取最近 N 条解析历史（history.jsonl 的尾部）',
       z.object({

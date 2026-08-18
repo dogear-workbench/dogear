@@ -79,7 +79,7 @@ const BOOLEAN_ABILITIES: {
   label: string;
   desc: string;
 }[] = [
-  { key: 'memory', label: '记忆系统', desc: 'RecallMemory / SaveMemory / ForgetMemory' },
+  { key: 'memory', label: '记忆系统', desc: 'dogear__RecallMemory / dogear__SaveMemory / dogear__ForgetMemory' },
   { key: 'stock', label: '股票分析', desc: '股票分析工具包' },
   { key: 'article', label: '文章', desc: '文章解析工具包' },
   { key: 'reference', label: '引用回溯', desc: 'dogear-reference' },

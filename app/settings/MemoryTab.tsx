@@ -75,7 +75,7 @@ export function MemoryTab() {
       </div>
       <p className="text-sm text-muted-foreground mb-6">
         为当前工作区维护核心档案和主题记忆。核心档案每次会话启动时注入系统提示词，
-        主题记忆通过 Agent 的 RecallMemory 工具按关键词检索。
+        主题记忆通过 Agent 的 dogear__RecallMemory 工具按关键词检索。
       </p>
 
       <Tabs defaultValue="core">

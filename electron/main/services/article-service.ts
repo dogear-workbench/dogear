@@ -538,7 +538,7 @@ export async function saveArticleFromScript(params: {
 
 /**
  * AI 介入时创建文章目录骨架：写 raw.html + stub meta.json，不写 content.md。
- * AI 任务完成后会通过 SaveParsedArticle 工具覆盖 meta 和 content。
+ * AI 任务完成后会通过 dogear__SaveParsedArticle 工具覆盖 meta 和 content。
  * 返回 articleDir 的绝对路径。
  */
 export async function saveRawHtmlStub(params: {
