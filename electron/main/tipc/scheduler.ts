@@ -10,7 +10,9 @@ import {
   validateTaskForSave,
 } from '../services/scheduler/plan-validate.js';
 import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
-import type { ScheduledTask } from '../services/scheduler/types.js';
+import { getConfigDir } from '../services/settings-service.js';
+import { BUILTIN_TASK_META } from '../services/scheduler/builtin-task-meta.js';
+import type { BuiltinTaskId, ScheduledTask } from '../services/scheduler/types.js';
 
 const t = tipc.create();
 
@@ -118,6 +120,50 @@ export const schedulerRouter = {
       } catch (error) {
         console.error('[scheduler] getSchedulerActivity 失败:', error);
         return { activity: { running: [], lastTickAt: 0 }, error: String(error) };
+      }
+    }),
+
+  getBuiltinTaskDetail: t.procedure
+    .input<{ builtinId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const meta = BUILTIN_TASK_META[input.builtinId as BuiltinTaskId];
+        if (!meta) return { prompt: '', tools: [], error: `未知内置任务: ${input.builtinId}` };
+        const prompt = await meta.loadPrompt(getConfigDir());
+        return { prompt, tools: meta.tools };
+      } catch (error) {
+        console.error('[scheduler] getBuiltinTaskDetail 失败:', error);
+        return { prompt: '', tools: [], error: String(error) };
+      }
+    }),
+
+  saveBuiltinPrompt: t.procedure
+    .input<{ builtinId: string; prompt: string }>()
+    .action(async ({ input }) => {
+      try {
+        const meta = BUILTIN_TASK_META[input.builtinId as BuiltinTaskId];
+        if (!meta) return { ok: false, error: `未知内置任务: ${input.builtinId}` };
+        if (!input.prompt.trim()) return { ok: false, error: '提示词不能为空' };
+        await meta.savePrompt(getConfigDir(), input.prompt);
+        return { ok: true };
+      } catch (error) {
+        console.error('[scheduler] saveBuiltinPrompt 失败:', error);
+        return { ok: false, error: String(error) };
+      }
+    }),
+
+  resetBuiltinPrompt: t.procedure
+    .input<{ builtinId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const meta = BUILTIN_TASK_META[input.builtinId as BuiltinTaskId];
+        if (!meta) return { ok: false, prompt: '', error: `未知内置任务: ${input.builtinId}` };
+        const prompt = await meta.defaultPrompt(getConfigDir());
+        await meta.savePrompt(getConfigDir(), prompt);
+        return { ok: true, prompt };
+      } catch (error) {
+        console.error('[scheduler] resetBuiltinPrompt 失败:', error);
+        return { ok: false, prompt: '', error: String(error) };
       }
     }),
 };

@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 内置任务提示词与工具清单 IPC
-status: pending
+status: done
 ---
 
 ## 目标
@@ -55,10 +55,10 @@ interface BuiltinTaskMeta {
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：第 1、2 子块（review-prompt / organize-prompt 磁盘化）零改动——实读确认两模块已有完整 DEFAULT + load 播种 + save 覆写机制；defaultPrompt 保留 step 文档签名但实现忽略 configDir 参数；旧 prompt 编辑入口（category/digest/review tipc）未删，与新三件套同磁盘模板，Step 4 后再评估去留；工具清单与 agent-worker 真实注册核对（group_digest 5 / review 10 / categorize 4 / categorize_organize 3）
+- 改动文件清单：`electron/main/services/scheduler/builtin-task-meta.ts`（扩展 BuiltinTaskMeta + BUILTIN_TASK_META 四条目，复用既有 prompt 模块函数）、`electron/main/tipc/scheduler.ts`（新增 getBuiltinTaskDetail / saveBuiltinPrompt / resetBuiltinPrompt 三路由）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`getBuiltinTaskDetail({builtinId}) → {prompt, tools, error?}`；`saveBuiltinPrompt({builtinId, prompt}) → {ok, error?}`（空白拒绝）；`resetBuiltinPrompt({builtinId}) → {ok, prompt, error?}`；非法 builtinId 返回 `error: '未知内置任务: <id>'` 不抛异常
+- 下个 step 该从哪里继续：Step 3 前端对接 IPC 全集见共享区 step2-delivery.md「接力棒」节；渲染层 label 走任务 name（seed 后 name === label）、工具清单走 getBuiltinTaskDetail 返回值，不必双份同步 BUILTIN_TASK_META 常量
+- 待办或已知限制：lint 0 errors / 74 warnings 与 Step 1 基线一致（全为渲染层既有 any）；详细交接见共享区 step2-delivery.md
