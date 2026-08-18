@@ -386,6 +386,9 @@ export function AgentChat({
           <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childStatusStyles[childSnapshot.status]}`} title={childSnapshot.errorMessage || childSnapshot.summary}>
             <p className="font-medium">{childStatusLabels[childSnapshot.status]}</p>
             {childSnapshot.errorMessage && <p className="mt-0.5">{childSnapshot.errorMessage}</p>}
+            {childSnapshot.status === 'interrupted' && (
+              <p className="mt-0.5">父会话中可用 dogear__ResumeSession 调起续跑</p>
+            )}
           </div>
         )}
         {/* 旧 SDK 主会话迁移冻结提示：只读展示，不回放 JSONL、不允许发送/编辑重发/分叉 */}

@@ -199,7 +199,7 @@
 
 ## 业务服务（electron/main/services/）
 
-- `conversation-service.ts` — 对话索引 CRUD + 对话级模型选择（`.dogear/conversations.json`），含 modelSelection 字段；create() 时由 tipc 注入 settings.ai.defaultModelSelection 浅拷贝，createFork() 继承父对话 modelSelection；updateModelSelection 单独维护；含 usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
+- `conversation-service.ts` — 对话索引 CRUD + 对话级模型选择（`.dogear/conversations.json`），含 modelSelection 字段；create() 时由 tipc 注入 settings.ai.defaultModelSelection 浅拷贝，createFork() 继承父对话 modelSelection；updateModelSelection 单独维护；listByParent(workspaceId, parentConversationId) 只读查某父会话全部 role='sub' 对话（调度站 getChildrenByParent 持久层补集数据源）；含 usageSummary（applyUsageSummary 增量、recomputeUsageSummaryIfStale 懒重算）
 - `usage/` — 会话 token 用量采集与存储
   - `usage-extractor.ts` — 从 SDK result 提取 ConversationUsageEntry 纯函数（contextWindow 查 `pi/model-catalog.ts` 目录表、modelUsage 缺失合成、工具/子代理聚合）
   - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/deleteUsage）
@@ -287,6 +287,8 @@
   - `usage-extractor.ts` — pi usage 采集：`accumulatePiUsage`/`extractPiUsageEntry`/`extractPiContextSnapshot`，字段映射对齐旧 SDK 口径供前端 usage 徽章零改动复用
   - `workspace-boundary.ts` — `resolveWithinWorkspace(workspacePath, candidatePath)`：路径边界校验（含符号链接逃逸拦截），供内建/搜索工具与 workspace-execution-env.ts 共用
   - `workspace-execution-env.ts` — `WorkspaceExecutionEnv`（实现 `ExecutionEnv`）：委托官方 `NodeExecutionEnv` 做实际文件 IO/子进程执行，每个带路径参数的方法前加边界校验
+- `delegation-bridge.ts` — **子会话调度站核心状态机**（单例，所有 child 会话的检测/重调/降级/持久化都经此）：检测（wireSession 挂子会话 message 流 + createIdleWatch 滑动无进展计时 + timeout 双计时器，10 分钟无流事件判 hang）；重调（settleTerminal 终态统一结算：transient 在 MAX_RETRY 内自动 resumeChild 复活原会话，quota 错误 findFallbackModel 跨供应商降级）；降级（不重调的终态 notifyTerminalToWaiters 带结构化通知 {errorClass, attempts, modelTried} 秒级唤醒父会话的 dogear__WaitForMessage）；持久化（touchPersist 状态变化全量覆写 delegation-state.json，loadChildStates 启动恢复 running→interrupted）；另导出 startChild / stopChild / markChildDelivered / getChildrenByParent（async：内存为主 + conversation-service listByParent 持久层补集合并）/ waitForMessage / deliverMessage / abortWaitsForParent（前端「中断等待」按钮：取消该父会话全部等待并终止其运行中子会话）
+- `delegation-idle.ts` / `delegation-terminal.ts` / `delegation-resume.ts` / `delegation-persist.ts` / `delegation-lifecycle.ts` — 调度站纯逻辑层：滑动 idle 计时（createIdleWatch，超时可注入）/ 错误分类（classifyDelegationError：quota 关键词表 + MAX_RETRY + isNotifiableTerminal + buildTerminalNotice 通知文案）/ 重调决策（decideResumeOnError + findFallbackModel 异供应商降级 + buildResumePrompt 续跑提示词）/ 持久化读写（persistDelegationState 锁内全量写 + loadRestorableChildren 恢复过滤 + conversationToSnapshot 持久层补集条目转换）/ 完成事件分类（classifyChildCompletion → no_delivery/failed/cancelled）
 - `session-append-templates.ts` — 系统级 append 段模板集中处（REFERENCE_APPEND / groupAppendFor / NOTES_GUIDANCE_APPEND / subAgentContractFor），buildSystemPrompt 直接引用；末尾 getSystemPromptSegments() 收集 6 段模板 + 触发条件说明供设置页只读预览
 - `agent-query-config.ts` — 共享的 SDK `query()` 配置构建器 + 设置读取入口（无 electron 依赖，Worker 线程内安全导入）：两类调用方共用——`PARSE_ARTICLE` 用它构建真正的 SDK query() 配置（主会话已迁移到 pi-session/，不再依赖本文件）；`GROUP_DIGEST`/`REVIEW`/`CATEGORIZE`/`CATEGORIZE_ORGANIZE` 四条 pi 后台任务只借用 `buildQueryBaseConfig` 读取 `appSettings`，再喂给 `pi/provider.ts` 的 `resolvePiModel`，本身不发起 SDK query()
 - `task-types.ts` — 任务类型（SUMMARIZE/PARSE_ARTICLE/GROUP_DIGEST_SESSION/REVIEW_SESSION/CATEGORIZE_SESSION）和消息定义（含 ExtendedSessionMessage、各 Payload 源定义；GroupDigest/Review/CategorizeSessionPayload 用统一 modelSelection?: ModelSelection 字段；GroupDigestSessionPayload 携带 groupId + dirtyConversations[] + hasExistingCard）
@@ -309,10 +311,11 @@
 - `tools/group-tools.ts` — 会话组共享区 MCP 工具（dogear-group server：dogear__ListGroupFiles（列出+返回内容）/ dogear__SaveSharedNote；供 working agent 主动写 `_notes/` 阶段总结）
 - `tools/reference-tools.ts` — 引用会话 / 组背景 MCP 工具（dogear-reference server，**只装到子会话**）：dogear__ReadReferenceSession 读任意 sessionId 的去噪原文（可尾切 / 区间切）/ dogear__ReadGroupBackground 读本组 background.md 结构化字段 / dogear__ListSiblingSessions 列组内兄弟会话；主 agent 靠 dogear__CreateSession 派子会话消化后回摘要，避免污染主上下文
 - `tools/delegation-tools.ts` — Agent 协作 MCP 工具（dogear-delegation server）：
-  - 主会话工具集：`dogear__CreateSession` / `dogear__CreateSessionBatch` / `dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions` / `dogear__StopSession`
-  - 子会话工具集：`dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions`（无 Create*/Stop，不能派孙子）
+  - 主会话工具集：`dogear__CreateSession` / `dogear__CreateSessionBatch` / `dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions` / `dogear__ResumeSession` / `dogear__StopSession`
+  - 子会话工具集：`dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions`（无 Create*/Resume/Stop，不能派孙子）
   - `dogear__SendMessage(toSessionId, message, options?)` — options.delivery=true 标记交付；工具层先过 `hasDirectContractChannel` 校验（仅直接派出关系）
-  - `dogear__WaitForMessage(fromSessionIds[], timeoutMs?)` — 不按 delivery 过滤，取第一条到达消息返回
+  - `dogear__WaitForMessage(fromSessionIds[], timeoutMs?)` — 不按 delivery 过滤，取第一条到达消息返回；等待中子会话终态时会先收到结构化终态通知（死因 + 重试次数 + 降级轨迹）而非干等超时
+  - `dogear__ResumeSession(sessionId)` — 调起中断/失败的子会话续跑（复用原会话消息历史不新建副本，走 bridge.resumeChild；重启后靠 loadChildStates 恢复的条目才能调起）；重试/quota 耗尽的终态通知文案会引导用它
   - 子会话交付 = `dogear__SendMessage(父sessionId, summary, { delivery: true })`，内部触发 bridge.markChildDelivered 同步 childStates 状态机与 UI 事件
 
 - `tools/review-tools.ts` — 首页报告 MCP 工具（dogear-memory-review server：dogear__ListDigests / dogear__ReadDigest / dogear__TraceSource / dogear__ReadReport / dogear__WriteReport）；零分析逻辑，分流靠提示词。配合 dogear-memory 的 dogear__RecallMemory/dogear__SaveMemory/dogear__ForgetMemory 实现「记忆 + 报告」双层写入
@@ -331,6 +334,7 @@
 - `settings.json` — 应用设置（ModelProfile、Thinking、permissionMode 等）
 - `workspaces.json` — 工作区索引（id、名称、路径、默认标记）
 - `conversations.json` — 对话索引（id、标题、`sessionId: string | null`——Harness 会话稳定标识、`workspaceId`、`groupId`/`role`、分叉信息、modelSelection、usageSummary）
+- `delegation-state.json` — 子会话调度站状态持久化（全局单文件不分 workspace，`{version, children}` 每 child 一条：task/outputPath/status/sessionId/retryCount/modelTried 等；delegation-persist 锁内全量覆写；应用启动 loadChildStates 恢复——conversation 已删条目过滤、running 转 interrupted；done/终态条目长期保留不自动清理，条目数与子会话数一一对应不会重复增长）
 - `plans.json` — 定时任务存储（`{version:2, tasks}` 容器，一行一任务：触发器含 lastFiredAt/once.fired，runState 仅 cursorStartedAt 断点；首次缺失 seed 内置四任务；读到旧数组格式自动按任务拆条迁移；scheduler/plan-store.ts 经 safe-json 原子写）
 - `run-history/YYYY-MM.jsonl` — 计划运行历史（任务级条目 + missed 错过条目，按月分文件，保留 3 个月自动清理；scheduler/run-history-store.ts）
 - `conversations/` — 旧 SDK 主会话历史（迁移归档后的只读备份，不再回放/恢复，仅归档说明引用；新会话历史见下方 `workspaces/{workspaceId}/sessions/`）

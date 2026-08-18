@@ -33,7 +33,7 @@ function getChildStatusPresentation(snapshot?: ChildStateSnapshot): { label: str
     case 'hang':
       return { label: '无进展中断', className: 'text-red-600 bg-red-50 dark:bg-red-950/30', title: reason || '子会话长时间无流事件，判定供应商 hang 住' };
     case 'interrupted':
-      return { label: '已中断', className: 'text-muted-foreground bg-muted', title: reason || '子会话因应用重启中断' };
+      return { label: '已中断', className: 'text-muted-foreground bg-muted', title: `${reason || '子会话因应用重启中断'}；父会话可用 dogear__ResumeSession 调起续跑` };
   }
   return null;
 }
@@ -109,7 +109,7 @@ export function ConversationRow({
         <StatusPulse isPending={isPending} />
       ) : childSnapshot?.status === 'done' ? (
         <CircleCheck className="w-4 h-4 flex-shrink-0 text-emerald-600" />
-      ) : childSnapshot?.status === 'cancelled' ? (
+      ) : childSnapshot?.status === 'cancelled' || childSnapshot?.status === 'interrupted' ? (
         <Ban className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
       ) : childSnapshot ? (
         <CircleAlert className="w-4 h-4 flex-shrink-0 text-red-500" />
