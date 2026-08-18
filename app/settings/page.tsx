@@ -13,7 +13,6 @@ import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { MemoryTab } from './MemoryTab';
 import { DigestsPanel } from './memory/DigestsPanel';
-import { ReviewPanel } from './memory/ReviewPanel';
 import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
 import { SchedulerPanel } from './scheduler/SchedulerPanel';
 import { AbilityTab } from './AbilityTab';
@@ -645,17 +644,12 @@ export default function SettingsPage() {
           <div className="max-w-4xl py-6 px-6 space-y-10">
             <div>
               <h2 className="text-lg font-semibold mb-1">会话摘要</h2>
-              <p className="text-sm text-muted-foreground mb-6">后台自动把每个会话提炼成摘要卡，可在此查看、重新提炼、配置提炼方案与提示词。</p>
+              <p className="text-sm text-muted-foreground mb-6">后台自动把每个会话提炼成摘要卡，可在此查看组卡详情，或对单个组补跑提炼；提炼模型与提示词在「定时计划」的任务编辑器中配置。</p>
               <DigestsPanel />
             </div>
             <div>
-              <h2 className="text-lg font-semibold mb-1">跨会话复盘</h2>
-              <p className="text-sm text-muted-foreground mb-6">后台综合本工作区的摘要卡，滚动维护一张复盘卡（首页仪表盘呈现）。可在此配置复盘方案、档位与提示词，或立即复盘。</p>
-              <ReviewPanel />
-            </div>
-            <div>
               <h2 className="text-lg font-semibold mb-1">智能分类</h2>
-              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节阈值/模型/提示词，或立即重跑全量。</p>
+              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节匹配阈值、查看分类结果，全量重跑与整理在「定时计划」中运行。</p>
               <SmartCategoryPanel />
             </div>
           </div>

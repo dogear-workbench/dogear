@@ -13,7 +13,7 @@
 
 - [x] [Step 1: 主进程——stopTask 链路 + on_task_done 引擎](./step1-main-process.md) — requestStop 真实现、两个 cancelAll 新增、task_done 监听、环检测、tipc 路由
 - [x] [Step 2: 渲染层——调度器接线](./step2-scheduler-ui.md) — 停止按钮、任务链触发器 UI、内置任务模型选择
-- [ ] [Step 3: 会话摘要 Tab 删减 + 文档同步](./step3-digest-panel-trim.md) — 三面板删 agent 入口、ReviewPanel 删除、codebase-map 同步
+- [x] [Step 3: 会话摘要 Tab 删减 + 文档同步](./step3-digest-panel-trim.md) — 三面板删 agent 入口、ReviewPanel 删除、codebase-map 同步
 
 ## 全局决策
 
