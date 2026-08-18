@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 任务编辑器完整化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -40,10 +40,10 @@ TaskEditor 补全两块：内置任务的提示词编辑（读写磁盘模板 + 
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① 子块 3 零新增路由——复用既有 client.listToolPacks({workspaceId})（agent.ts:475，返回 5 包元数据 + enabled），electron/ 目录零改动；② 包清单走 listToolPacks 动态源，渲染层未硬编码 5 个包名常量（源头 OPTIONAL_TOOL_PACKS 与主进程 KNOWN_TOOL_PACKS 同步演进，新增可选包自动出现开关）；③ 拆为两个子组件 BuiltinTaskDetailSection / CustomToolPacksSection 而非堆进 TaskEditor（主文件仅 +9 行）；④ 「重置为跟随工作区」不加 confirm（草稿操作随保存落库，与「恢复默认」立即写盘性质不同）
+- 改动文件清单：app/settings/scheduler/BuiltinTaskDetailSection.tsx（新，提示词编辑/恢复默认/只读工具清单）、CustomToolPacksSection.tsx（新，基础工具组只读 + 5 包开关 + 跟随/override 语义）、TaskEditor.tsx（两分支接线）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：CustomToolPacksSection 接 workspaceId/override/onChange；内置提示词保存/恢复默认是立即写盘，工具 override 是草稿随「保存」落库（两个保存语义不同，UI 已分别标注）；加载完成前 Switch 禁用（避免空集合起步丢工作区已启用包）
+- 下个 step 该从哪里继续：Step 5 回归走查验证要点见共享区 step4-delivery.md 末节（同磁盘模板双入口、override 落库后 buildCustomToolSet 生效、切换工作区开关态刷新）；doc-sync 同步 codebase-map
+- 待办或已知限制：packs 加载失败静默降级为「暂无可选工具包」（重开对话框即重试）；新建任务未选工作区时工具区不渲染；详细交接见共享区 step4-delivery.md

@@ -11,7 +11,7 @@
 - [x] [Step 1: 主进程模型迁移全链路](./step1-main-model-migration.md) — 类型重定义、plans.json 迁移与内置 seed、单任务执行、去链式、既有 IPC 适配
 - [x] [Step 2: 内置任务提示词与工具清单 IPC](./step2-builtin-prompt-tools.md) — review/organize 模板磁盘化补齐、内置任务元数据、三个新 IPC 路由
 - [x] [Step 3: 前端列表与基础编辑](./step3-frontend-list-editor-base.md) — 渲染层类型、store、列表行=任务、编辑器骨架、触发器去链式
-- [ ] [Step 4: 任务编辑器完整化](./step4-frontend-editor-full.md) — 内置提示词编辑/恢复默认/只读工具清单、自定义任务工具包开关
+- [x] [Step 4: 任务编辑器完整化](./step4-frontend-editor-full.md) — 内置提示词编辑/恢复默认/只读工具清单、自定义任务工具包开关
 - [ ] [Step 5: 回归走查与文档同步](./step5-regression-docsync.md) — dev 走查迁移/常驻/工具 override 生效、doc-sync
 
 ## 全局决策

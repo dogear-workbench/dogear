@@ -20,6 +20,8 @@ import type {
   ScheduledTask,
   ScheduledTaskWithNextRun,
 } from '@/types/scheduler';
+import { BuiltinTaskDetailSection } from './BuiltinTaskDetailSection';
+import { CustomToolPacksSection } from './CustomToolPacksSection';
 import { TriggerListEditor } from './TriggerListEditor';
 import type { WorkspaceOption } from './utils';
 
@@ -129,6 +131,7 @@ export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
                   ))}
                 </select>
               </div>
+              <BuiltinTaskDetailSection builtinId={draft.builtinId} />
             </>
           ) : (
             <>
@@ -178,6 +181,13 @@ export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
                   ))}
                 </select>
               </div>
+              {draft.workspaceId && (
+                <CustomToolPacksSection
+                  workspaceId={draft.workspaceId}
+                  override={draft.toolPacksOverride}
+                  onChange={(v) => patch({ toolPacksOverride: v })}
+                />
+              )}
             </>
           )}
           <div className="space-y-1.5">
