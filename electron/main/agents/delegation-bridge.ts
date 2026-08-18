@@ -25,6 +25,13 @@ import type {
   ChildStateSnapshot,
   DelegateSpec,
 } from '../types.js';
+import { createIdleWatch, type IdleWatch } from './delegation-idle.js';
+import {
+  buildTerminalNotice,
+  collectTerminalWaiterKeys,
+  isNotifiableTerminal,
+  type TerminalInfo,
+} from './delegation-terminal.js';
 
 const logger = mainLogger.child('delegation-bridge');
 
@@ -34,12 +41,15 @@ interface ChildStateInternal extends ChildStateSnapshot {
   /** 该会话自身的 Harness sessionId；attachConversation 完成后立即同步赋值 */
   sessionId: string;
   timeoutTimer?: NodeJS.Timeout;
+  idleWatch?: IdleWatch;
 }
 
 export interface WaitForMessageResult {
   fromSessionId: string;
   message: string;
   delivery: boolean;
+  /** 子会话失败终态（failed/hang/timeout）的结构化死因；正常消息/交付不带此字段 */
+  terminal?: TerminalInfo;
 }
 
 interface MessageWaiterInternal {
@@ -115,6 +125,10 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
     errorMessage: c.errorMessage,
     profileName: c.profileName,
     sessionId: c.sessionId,
+    lastActivityAt: c.lastActivityAt,
+    retryCount: c.retryCount,
+    errorClass: c.errorClass,
+    modelTried: c.modelTried,
   };
 }
 
@@ -122,10 +136,18 @@ function isTerminal(status: ChildStatus): boolean {
   return status !== 'running';
 }
 
+function clearChildTimers(c: ChildStateInternal): void {
+  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+  c.idleWatch?.dispose();
+  c.idleWatch = undefined;
+}
+
 // ─── session 事件 wiring ───
 
 function wireSession(childId: string, session: PiSession): void {
   session.on('complete', (result: PiSessionTurnResult) => onSessionComplete(childId, result));
+  // 所有流事件（text/thinking delta、工具起止）都走 'message'，是滑动 idle 计时的打点源
+  session.on('message', () => onChildActivity(childId));
   // PiSession 在 attachConversation 返回前已 start() 完成，getHarnessSessionId() 此时必定有值，
   // 这是常态路径而非兜底（PiSession 不 emit session_init 事件）
   const existing = session.getHarnessSessionId();
@@ -141,6 +163,12 @@ function onChildSessionInit(childId: string, sessionId: string): void {
     sessionIdWaiters.delete(childId);
     for (const resolve of resolvers) resolve(sessionId);
   }
+}
+
+function onChildActivity(childId: string): void {
+  const c = childStates.get(childId);
+  if (!c || c.status !== 'running') return;
+  c.lastActivityAt = Date.now();
 }
 
 /**
@@ -163,8 +191,37 @@ function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
     broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
     broadcastDeliveriesAwaitChanged(c.parentConversationId);
   }
-  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+  clearChildTimers(c);
+  if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
   if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
+}
+
+/**
+ * 终态联动：把失败终态（failed/hang/timeout）秒级透给挂起在 dogear__WaitForMessage 的父会话，
+ * 替代旧「干等满超时只拿到 null」。幂等：waiter resolve 即删，多条终态路径重复调用是 no-op。
+ * Step 2 接管重调后，本函数只在「不重调」分支被调，errorClass/attempts/modelTried 同步升级。
+ */
+function notifyTerminalToWaiters(c: ChildStateInternal): void {
+  if (!c.sessionId) return;
+  const keys = collectTerminalWaiterKeys(messageWaiters, c.parentConversationId, c.sessionId);
+  for (const key of keys) {
+    const w = messageWaiters.get(key);
+    if (!w) continue;
+    clearTimeout(w.timer);
+    messageWaiters.delete(key);
+    w.resolve({
+      fromSessionId: c.sessionId,
+      message: buildTerminalNotice(c, c.retryCount ?? 0),
+      delivery: false,
+      terminal: {
+        status: c.status,
+        errorMessage: c.errorMessage,
+        errorClass: 'transient',
+        attempts: c.retryCount ?? 0,
+        modelTried: c.modelTried ?? [],
+      },
+    });
+  }
 }
 
 function extractErrorMessage(error: unknown): string {
@@ -258,6 +315,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     profileName: selectedProfile.name,
     attachmentId: '',
     sessionId: '',
+    lastActivityAt: now,
   };
   childStates.set(childId, state);
 
@@ -285,6 +343,12 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const timeoutMs = (selectedProfile.timeoutMinutes ?? 30) * 60_000;
   state.timeoutTimer = setTimeout(() => { void stopChild(childId, 'timeout'); }, timeoutMs);
 
+  state.idleWatch = createIdleWatch({
+    session,
+    onActivity: () => onChildActivity(childId),
+    onIdle: () => { void stopChild(childId, 'hang'); },
+  });
+
   wireSession(childId, session);
 
   broadcastChildStatusChanged(parentConversationId, childId, 'running', toSnapshot(state));
@@ -302,17 +366,18 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   return toSnapshot(state);
 }
 
-export async function stopChild(childId: string, reason: 'cancelled' | 'timeout' = 'cancelled'): Promise<void> {
+export async function stopChild(childId: string, reason: 'cancelled' | 'timeout' | 'hang' = 'cancelled'): Promise<void> {
   const c = childStates.get(childId);
   if (!c || isTerminal(c.status)) return;
 
   c.status = reason;
   c.finishedAt = Date.now();
-  c.errorMessage = reason === 'timeout' ? '超时中断' : '被停止';
-  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+  c.errorMessage = reason === 'timeout' ? '超时中断' : reason === 'hang' ? '无进展中断' : '被停止';
+  clearChildTimers(c);
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
+  if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
 
   const session = getPiSessionManager().getSession(c.sessionId);
   if (session) {
@@ -331,7 +396,7 @@ export function markChildDelivered(childId: string, summary: string): void {
   c.status = 'done';
   c.summary = summary;
   c.finishedAt = Date.now();
-  if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
+  clearChildTimers(c);
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, 'done', toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);

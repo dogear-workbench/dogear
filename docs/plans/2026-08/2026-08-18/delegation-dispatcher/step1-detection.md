@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 检测层——终态联动 + 滑动 idle 计时
-status: pending
+status: done
 ---
 
 ## 目标
@@ -43,9 +43,26 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - idle 计时与终态通知拆成两个独立新模块 `delegation-idle.ts` / `delegation-terminal.ts`（纯逻辑无服务依赖），而不是直接写在 bridge 内——为了 script 级测试可 mock（bridge 直接 mock 需拦截 electron/tipc）
+  - `ChildStateInternal.idleTimer?` 实际为 `idleWatch?: IdleWatch`（listener + timer 同生命周期单句柄，dispose 一并摘 listener）；idle 阈值经 `setDelegationIdleTimeoutMs()` 可变 getter 注入（测试用，不进设置页）
+  - 终态通知除 `onSessionComplete` 外也在 `stopChild`（hang/timeout 路径）直接发——避免依赖 interrupt 后 complete 事件必然到来的空窗；notify 幂等（waiter resolve 即删）
+  - `markChildDelivered` 同步补了 idle 清理（计划未列，防交付后 idleTimer 空挂）
 - 改动文件清单：
+  - `electron/main/agents/delegation-idle.ts`（新）：`IDLE_TIMEOUT_MS`、`createIdleWatch({session,onActivity,onIdle,timeoutMs?})`
+  - `electron/main/agents/delegation-terminal.ts`（新）：`DelegationErrorClass`、`TerminalInfo`、`isNotifiableTerminal()`、`buildTerminalNotice()`、`collectTerminalWaiterKeys()`、`formatTerminalSummary()`
+  - `electron/main/agents/delegation-bridge.ts`：wireSession 挂 message（L150）、onChildActivity（L168）、notifyTerminalToWaiters（L204）、startChild 挂 idleWatch（L346）、stopChild 扩 hang（L369-380）、`WaitForMessageResult.terminal?`（L52）
+  - `electron/main/types.ts` / `types/delegation.ts`：ChildStatus 加 `hang|interrupted`；ChildStateSnapshot 加 `lastActivityAt/retryCount/errorClass/modelTried`
+  - `electron/main/agents/tools/delegation-tools.ts`：WaitForMessage 区分超时 vs 终态通知文案
+  - `components/agent-chat/AgentChat.tsx`、`components/conversation-list/ConversationRow.tsx`：新状态值兼容
+  - `electron/main/agents/delegation-idle.test.ts`（新）：4 用例全过
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `TerminalInfo = { status: ChildStatus; errorMessage?; errorClass?: DelegationErrorClass; attempts: number; modelTried: string[] }`（delegation-terminal.ts）
+  - `WaitForMessageResult.terminal?: TerminalInfo`（bridge 导出）
+  - Step 2 在 `notifyTerminalToWaiters`（bridge L204）接管重调：决定 resume 则回 running、不调 notify；quota 分类填 `errorClass`、resume 计数填 `attempts/retryCount`、模型链填 `modelTried`
+- 下个 step 该从哪里继续：`onSessionComplete` / `stopChild` 的终态分支 → 错误分类（quota 关键词表 + `DelegationErrorClass`）→ `resumeChild`
 - 待办或已知限制：
+  - cancelled / no_delivery 终态本步不通知（范围外；用户中断由 abortWaitsForParent resolve null 兜底）
+  - errorClass 暂一律 'transient'，attempts 恒 0、modelTried 恒空
+  - 集成测试对 `@egoist/tipc/main` 需 mock.module（CJS 包 require electron 绕过 electron mock）

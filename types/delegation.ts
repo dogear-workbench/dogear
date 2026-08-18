@@ -9,7 +9,9 @@ export type ChildStatus =
   | 'failed'       // agent 跑挂了或内部异常
   | 'timeout'      // 超过 subAgent.timeoutMinutes
   | 'cancelled'    // 被主动停止
-  | 'no_delivery'; // 会话自然结束但没交付
+  | 'no_delivery'  // 会话自然结束但没交付
+  | 'hang'         // 长时间无流事件，判定供应商 hang 住
+  | 'interrupted'; // 应用重启导致的中断（持久化恢复时标记）
 
 export interface DelegateSpec {
   /** 委派给新会话的任务描述（自然语言） */
@@ -39,4 +41,12 @@ export interface ChildStateSnapshot {
   profileName: string;
   /** 该会话自身的 Harness sessionId；attachConversation 完成、PiSession 启动后立即同步赋值 */
   sessionId?: string;
+  /** 最近一次流事件时间戳（滑动 idle 计时打点，检测 hang 用） */
+  lastActivityAt?: number;
+  /** resume 重调尝试次数 */
+  retryCount?: number;
+  /** 错误分类（transient/quota/cancelled） */
+  errorClass?: string;
+  /** 已试过的模型链，profileId:tier 列表 */
+  modelTried?: string[];
 }

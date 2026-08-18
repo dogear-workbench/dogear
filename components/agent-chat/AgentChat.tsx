@@ -41,6 +41,8 @@ const childStatusLabels: Record<ChildStatus, string> = {
   timeout: '子会话已超时',
   cancelled: '子会话已取消',
   no_delivery: '子会话结束但未交付',
+  hang: '子会话无进展中断',
+  interrupted: '子会话已中断',
 };
 
 const childStatusStyles: Record<ChildStatus, string> = {
@@ -50,6 +52,8 @@ const childStatusStyles: Record<ChildStatus, string> = {
   timeout: 'bg-red-50 border-red-200 text-red-800',
   cancelled: 'bg-muted border-border text-muted-foreground',
   no_delivery: 'bg-amber-50 border-amber-200 text-amber-800',
+  hang: 'bg-red-50 border-red-200 text-red-800',
+  interrupted: 'bg-muted border-border text-muted-foreground',
 };
 
 /**

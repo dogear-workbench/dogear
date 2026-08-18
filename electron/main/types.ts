@@ -226,7 +226,9 @@ export type ChildStatus =
   | 'failed'
   | 'timeout'
   | 'cancelled'
-  | 'no_delivery';
+  | 'no_delivery'
+  | 'hang'
+  | 'interrupted';
 
 export interface DelegateSpec {
   task: string;
@@ -253,6 +255,14 @@ export interface ChildStateSnapshot {
   profileName: string;
   /** 该会话自身的 Harness sessionId；attachConversation 完成、PiSession 启动后立即同步赋值 */
   sessionId?: string;
+  /** 最近一次流事件时间戳（滑动 idle 计时打点，检测 hang 用） */
+  lastActivityAt?: number;
+  /** resume 重调尝试次数 */
+  retryCount?: number;
+  /** 错误分类（transient/quota/cancelled） */
+  errorClass?: string;
+  /** 已试过的模型链，profileId:tier 列表 */
+  modelTried?: string[];
 }
 
 // ─── 系统提示词展示段（镜像自 types/system-prompt.ts）───

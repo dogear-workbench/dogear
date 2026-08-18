@@ -15,7 +15,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 检测层——终态联动 + 滑动 idle 计时](./step1-detection.md) — 子会话死亡秒级唤醒等待中的主会话，hang 无进展检测
+- [x] [Step 1: 检测层——终态联动 + 滑动 idle 计时](./step1-detection.md) — 子会话死亡秒级唤醒等待中的主会话，hang 无进展检测
 - [ ] [Step 2: 重调层——错误分类 + resumeChild 复活 + 跨供应商降级链](./step2-resume.md) — 死亡后自动复活原会话续跑，费率错误自动换异供应商
 - [ ] [Step 3: 持久层 + 工具层——状态落盘 + ListLinkedSessions 合并 + ResumeSession](./step3-persistence-tools.md) — 重启不失忆，主会话可调起中断的子会话
 - [ ] [Step 4: 前端状态展示 + 回归走查 + 文档同步](./step4-regression.md) — 新状态值 UI、全链路验收

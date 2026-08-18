@@ -15,6 +15,7 @@ import { loadSettings } from '../../services/settings-service.js';
 import { hasDirectContractChannel } from '../../services/contract-channel-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
+import { formatTerminalSummary } from '../delegation-terminal.js';
 
 
 const SEND_MESSAGE_DESC =
@@ -127,6 +128,9 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         const result = await bridge.waitForMessage(opts.conversationId, args.fromSessionIds, effectiveTimeoutMs);
         if (!result) {
           return errorResult(`⏱ 等待超时（${effectiveTimeoutMs}ms），未收到来自 [${args.fromSessionIds.join(', ')}] 的消息`);
+        }
+        if (result.terminal) {
+          return textResult(`⚠ 子会话终态通知 来自 ${result.fromSessionId}：\n${result.message}\n\n${formatTerminalSummary(result.terminal)}`);
         }
         const label = result.delivery ? '📦 交付' : '📨 消息';
         return textResult(`${label} 来自 ${result.fromSessionId}：\n${result.message}`);

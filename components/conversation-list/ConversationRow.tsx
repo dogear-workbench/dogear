@@ -30,6 +30,10 @@ function getChildStatusPresentation(snapshot?: ChildStateSnapshot): { label: str
       return { label: '已取消', className: 'text-muted-foreground bg-muted', title: reason || '子会话已取消' };
     case 'no_delivery':
       return { label: '未交付', className: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30', title: reason || '子会话结束但未正式交付' };
+    case 'hang':
+      return { label: '无进展中断', className: 'text-red-600 bg-red-50 dark:bg-red-950/30', title: reason || '子会话长时间无流事件，判定供应商 hang 住' };
+    case 'interrupted':
+      return { label: '已中断', className: 'text-muted-foreground bg-muted', title: reason || '子会话因应用重启中断' };
   }
   return null;
 }
