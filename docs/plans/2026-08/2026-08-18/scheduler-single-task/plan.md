@@ -12,7 +12,7 @@
 - [x] [Step 2: 内置任务提示词与工具清单 IPC](./step2-builtin-prompt-tools.md) — review/organize 模板磁盘化补齐、内置任务元数据、三个新 IPC 路由
 - [x] [Step 3: 前端列表与基础编辑](./step3-frontend-list-editor-base.md) — 渲染层类型、store、列表行=任务、编辑器骨架、触发器去链式
 - [x] [Step 4: 任务编辑器完整化](./step4-frontend-editor-full.md) — 内置提示词编辑/恢复默认/只读工具清单、自定义任务工具包开关
-- [ ] [Step 5: 回归走查与文档同步](./step5-regression-docsync.md) — dev 走查迁移/常驻/工具 override 生效、doc-sync
+- [x] [Step 5: 回归走查与文档同步](./step5-regression-docsync.md) — dev 走查迁移/常驻/工具 override 生效、doc-sync
 
 ## 全局决策
 
@@ -80,3 +80,35 @@ type TaskRunState = { cursorStartedAt?: number };   // cursor 即任务自身，
 - 传递链：任务 `toolPacksOverride` → `CustomAgentTaskPayload`（`agents/task-types.ts` 加字段）→ worker 侧调用 `buildCustomToolSet` 处
 
 ### 主进程改动需 `bun run build:electron` 后才对 Electron 生效；前端 Vite 热重载
+
+## 完成总结
+
+五个 step 全部完成（2026-08-18），链式触发器与任务队列已从代码库清除，定时计划功能切换为「一行一任务」模型。
+
+### 实际改动汇总
+
+| 层 | 改动 |
+|----|------|
+| 主进程数据层 | `types.ts` 重写为 ScheduledTask 双变体；`plan-store.ts` 读时一次性迁移+seed（`{version:2, tasks}` 容器，模块级 readyPromise 防并发）；`plan-validate.ts` 重写（validateTaskForSave / KNOWN_TOOL_PACKS / sanitizeToolPacksOverride）；新增 `builtin-task-meta.ts`（内置任务元数据：label / prompt 读写 / 工具清单） |
+| 主进程运行时 | `plan-runner.ts` 重写为单任务 TaskRunner（按 task.id 防重入、cursorStartedAt 断点补记 interrupted）；`task-executor.ts` custom 分支携 toolPacksOverride；`custom-agent-tools.ts` override 完全替代工作区包选择；`scheduler-service.ts` 去链式（删 plan_done 监听，全链按单任务迭代）；`time-rule-engine.ts` 删 on_plan_done 分支 |
+| IPC | `tipc/scheduler.ts` 路由改名 listTasks/saveTask/deleteTask/setTaskEnabled/runTaskNow（deleteTask 拒 builtin），新增内置提示词三件套 getBuiltinTaskDetail/saveBuiltinPrompt/resetBuiltinPrompt |
+| 渲染层 | `types/scheduler.ts` 双份同步；`scheduler-store.ts` 对接新路由；SchedulerPanel 行=任务；新建 TaskEditor/BuiltinTaskDetailSection/CustomToolPacksSection，删 PlanEditor/TaskListEditor；TriggerListEditor 去链式选项；HistorySheet 按任务筛选 |
+| 回归走查（step 5） | 数据级验证：旧格式迁移（拆条命名 / on_plan_done 过滤 / 空计划丢弃 / version:2 / 二次 load 幂等 / builtin 冲突去重 / 全新安装 seed）33 项断言全过；静态验证：残留 grep 干净、build:electron / vite build / lint 全过、dist 抽查 override 传递链与 10 路由齐全；`docs/codebase-map.md` 同步 8 处 scheduler 条目 |
+
+### 与原计划的偏差
+
+1. **store 导出函数改名**：loadPlans→loadTasks、savePlans→saveTasks（文件名 plan-store/plan-validate/plan-runner 按计划保留）
+2. **seed 并入 loadTasks 一次性 ensure**，独立 seedDefaultPlans 删除；模块级 promise 保证并发安全、失败可重试
+3. **迁移 builtin 任务 name 取固定 label**（组卡提炼/复盘报告），不拼 `plan.name·` 前缀——与「validate 要求 builtin name === label」不变量一致；`${plan.name}·显示名` 规则仅用于 custom。迁移对同一 builtinId 去重保首条，去重后 seed 判定自然不补建
+4. **TaskRunOutcome 收窄为 completed | failed**（单任务无 stopped；task_done 事件保留作调试口）
+5. **sanitizeToolPacksOverride 落在 tipc saveTask**（保存时过滤未知包名），validate 只做形状校验
+6. **review/organize 提示词磁盘机制现状已齐备**，step 2 前两个子块零改动；旧 prompt 编辑入口（category/digest/review tipc）未删，与新三件套读写同一磁盘模板，现有设置页继续用
+7. **渲染层未双份同步 BUILTIN_TASK_META**：label 走任务 name，工具清单走 getBuiltinTaskDetail 返回值；utils.ts 的 BUILTIN_TASK_LABELS 一并删除（消费方已删，新模型 name 即 label）
+8. **工具包区未新增路由**：复用既有 listToolPacks（自带 enabled 态），包清单动态源、未硬编码包名，未来新增可选包自动出现开关
+9. **store 历史字段 historyPlanId→historyTaskId**（client 形参 planId 未改，语义=任务 id）；HistoryEntryCard/history-utils 零改动天然兼容（旧历史靠 planName 冗余展示）
+10. **工具 override 为草稿语义**（随「保存」落库），内置提示词保存/恢复默认为立即写盘语义，两种保存文案已分别标注
+
+### 遗留事项
+
+- GUI 交互级走查未自动化（编辑器打开/开关拨动/立即运行观察历史等），清单见共享区 step5-delivery.md「剩余人工验证清单」
+- `lib/client.ts` 的 Router 类型由主进程派生，渲染层 IDE 提示依赖 build:electron 产物；全仓 15 个既有基线 tsc 错误、74 个 lint warning 均为未触碰文件的历史问题

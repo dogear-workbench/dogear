@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 回归走查与文档同步
-status: pending
+status: done
 ---
 
 ## 目标
@@ -51,10 +51,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① 子块 1 预期名称「夜间维护·组卡提炼」与实现不符——builtin 迁移取固定 label 是 step1 已定不变量（validate 强制 name === label），文档预期系规划笔误非 bug，验收认可按实际行为验证；② 迁移验证走 dist 编译产物 + DOGEAR_CONFIG_DIR 环境变量重定向（比提取逻辑到临时脚本更可信）；③ 子块 2「立即运行等价」/子块 4「override 运行时生效」/子块 5 边界行为为 GUI 级，无 GUI 会话无法验证，整理 12 条人工清单移交；④ 代码零改动——走查未发现问题
+- 改动文件清单：docs/codebase-map.md（8 处 scheduler 条目同步，未触碰 sidebar 遗留段落）、docs/plans/.../plan.md（末尾完成总结）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：无代码改动；IPC 全集 10 路由与数据格式见 step2/step3 交付文档
+- 下个 step 该从哪里继续：无后续 step，计划完结。GUI 交互级验证 12 条清单见共享区 step5-delivery.md「C 层」，待人工走查
+- 待办或已知限制：doGEAR_CONFIG_DIR 环境变量可重定向 config 目录（本次验证发现的机制）；lint 74 warnings / tsc 15 errors 均为未触碰文件历史基线；详细验证结果见共享区 step5-delivery.md
