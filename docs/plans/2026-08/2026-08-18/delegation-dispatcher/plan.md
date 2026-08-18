@@ -51,3 +51,23 @@ terminal?: {
 
 **继续提示模板**（resumeChild 发给子会话的固定文案）：
 > 你刚才因{原因}中断。请检查已完成的部分和共享区已有的产出（若 outputPath 已有部分内容，先读取确认进度），从中断处继续完成任务，不要从头重做。
+
+## 完成总结（2026-08-18）
+
+四步全部按计划落地，42 项 script 测试全过（新增 17 用例）、lint 0 errors、build:electron 通过：
+
+| Step | Commit | 内容 |
+|---|---|---|
+| 1 检测层 | `72bde61` | delegation-idle / delegation-terminal 纯逻辑模块；失败终态秒级 resolve waiter 带 terminal；10 分钟滑动 idle 判 hang |
+| 2 重调层 | `4367964` | 错误分类（transient/quota/cancelled）+ settleTerminal 统一结算（重调优先于通知）+ resumeChild 复活编排 + 跨供应商降级链 |
+| 3 持久层+工具层 | `d258919` | delegation-state.json 落盘（'#txn' 锁）+ loadChildStates 启动恢复 + ListLinkedSessions 持久层合并 + dogear__ResumeSession |
+| 4 前端+回归 | `32ccb80` | interrupted 状态 UI 提示（ResumeSession 调起指引）+ 老链路回归测试 + codebase-map 同步 |
+
+**与原计划的主要偏差**（详见各 step 回填段）：
+- 拆出 5 个纯逻辑模块（idle/terminal/resume/persist/test-mocks）而非全写 bridge——可测性优先；bridge 839 行（编排强耦合内部状态，拆分边界合理）
+- settleTerminal 统一结算函数（计划未明确）——settling 锁防 interrupt 触发的 complete 与 stopChild 主流程双路并发
+- 降级必须销毁旧 session（实施期发现：attachConversation 复用分支不重读 modelSelection）
+
+**遗留**：
+- dev 环境手动走查 6 项待用户实测（正常态全链路 / idle 无误杀 / 真实断网复活 / 真实限流降级 / ResumeSession 端到端 / outputPath claim 冲突）——见 step4-regression.md 回归覆盖表
+- delegation-state.json 终态条目不自动清理（下版本按 finishedAt 清理）
