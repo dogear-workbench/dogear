@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 前端列表与基础编辑
-status: pending
+status: done
 ---
 
 ## 目标
@@ -62,10 +62,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① utils.ts 的 BUILTIN_TASK_LABELS 一并删除（唯一消费方是被删的 TaskListEditor，新模型 builtin name 即 label）；② store 内部历史字段 historyPlanId 改名 historyTaskId（client 形参 planId 不变，避免 TaskId 存 plan 字段的困惑）；③ HistoryEntryCard / history-utils 零改动即天然兼容（卡片主标题本就显示 planName）；④ 渲染层 types 比主进程多保留 HistoryPage（listRunHistory 分页结构，主进程定义在 run-history-store）
+- 改动文件清单：types/scheduler.ts（重写同步）、stores/scheduler-store.ts（tasks + 新路由）、SchedulerPanel.tsx（行=任务）、TaskEditor.tsx（新建，替代 PlanEditor）、PlanEditor.tsx（删）、TaskListEditor.tsx（删）、TriggerListEditor.tsx（去链式）、utils.ts、app/settings/page.tsx（tab 文案）、HistorySheet.tsx（按任务筛选 + 新 activity 结构）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：store 暴露 tasks/loadTasks/saveTask/deleteTask/setTaskEnabled/runTaskNow/refreshActivity/loadHistory(historyTaskId)/reset；TaskEditor 已按 builtin/custom 两分支组织，draft 经 structuredClone 完整保留 toolPacksOverride（保存链路无需再动）；前端无需预清洗包名（主进程 saveTask 内 sanitize）
+- 下个 step 该从哪里继续：Step 4 在 TaskEditor builtin 分支加提示词区（三 IPC 签名见 step2-delivery），custom 分支加工具包开关区；可选包集合 KNOWN_TOOL_PACKS 在主进程 plan-validate.ts，如渲染层要用需同步进 types/scheduler.ts 双份；工作区 enabledToolPacks 渲染层读取入口待确认/补轻量路由
+- 待办或已知限制：运行时验证（迁移后首次打开设置页、开关/立即运行/历史）留给 Step 5；tsc 全仓 15 个既有基线错误均在未触碰文件；详细交接见共享区 step3-delivery.md
