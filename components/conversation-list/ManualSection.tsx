@@ -1,10 +1,11 @@
-import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Folder, FolderOpen, FolderPlus, ChevronRight, ChevronDown, Trash2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useSectionCollapseStore } from '@/stores/section-collapse-store';
 import type { ConversationFlatNode } from '@/stores/conversation-store';
 import { useTree } from '@headless-tree/react';
 import {
@@ -144,7 +145,6 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   const renameFolder = useConversationStore((s) => s.renameFolder);
 
   const [creatingFolderAt, setCreatingFolderAt] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
 
   const nodeMapRef = useRef(nodeMap);
   nodeMapRef.current = nodeMap;
@@ -189,6 +189,14 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   useLayoutEffect(() => {
     tree.rebuildTree();
   }, [nodeMap, tree]);
+
+  const folderReveal = useSectionCollapseStore((s) => s.folderReveal);
+  useEffect(() => {
+    if (!folderReveal) return;
+    for (const folderId of folderReveal.folderIds) {
+      tree.getItemInstance(folderId).expand();
+    }
+  }, [folderReveal, tree]);
 
   const items = tree.getItems();
 
@@ -261,15 +269,9 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
     return { insertAfterEntryIndex, indent: (parentLevel + 1) * 16 + 8 };
   }, [creatingFolderAt, topEntries]);
 
-  const folderCount = useMemo(
-    () => Object.values(nodeMap).filter((n) => n.nodeType === 'folder' && n.id !== CONV_TREE_ROOT).length,
-    [nodeMap],
-  );
-  const hasFolders = folderCount > 0;
-
   if (topEntries.length === 0 && !creatingFolderAt) {
     return (
-      <div className="px-3 py-4">
+      <div className="px-3 py-2">
         <button
           className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
           onClick={() => setCreatingFolderAt(CONV_TREE_ROOT)}
@@ -285,44 +287,14 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
   }
 
   return (
-    <div>
-      {hasFolders && (
-        <div
-          className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors"
-          onClick={() => setCollapsed((v) => !v)}
-        >
-          {collapsed
-            ? <ChevronRight className="w-3 h-3" />
-            : <ChevronDown className="w-3 h-3" />
-          }
-          <Folder className="w-3 h-3 text-amber-500" />
-          <span>手动分组</span>
-          <span className="ml-auto text-[10px] opacity-70">{folderCount}</span>
-        </div>
-      )}
-      {!collapsed && (
-        <div {...tree.getContainerProps('手动文件夹区')}>
-          {topEntries.map((entry, i) => (
-            <React.Fragment key={entry.item.getId()}>
-              <FolderTreeItem
-                item={entry.item}
-                parentId={itemParentMap[entry.item.getId()] ?? CONV_TREE_ROOT}
-              />
-              {newFolderInsertInfo && i === newFolderInsertInfo.insertAfterEntryIndex && (
-                <NewFolderInput
-                  indent={newFolderInsertInfo.indent}
-                  onConfirm={async (name) => {
-                    await createFolder(name, creatingFolderAt === CONV_TREE_ROOT ? undefined : creatingFolderAt!);
-                    setCreatingFolderAt(null);
-                  }}
-                  onCancel={() => setCreatingFolderAt(null)}
-                />
-              )}
-            </React.Fragment>
-          ))}
-
-          {/* 没有任何文件夹时，新建文件夹输入框单独渲染在最前 */}
-          {newFolderInsertInfo && newFolderInsertInfo.insertAfterEntryIndex === -1 && (
+    <div {...tree.getContainerProps('手动文件夹区')}>
+      {topEntries.map((entry, i) => (
+        <React.Fragment key={entry.item.getId()}>
+          <FolderTreeItem
+            item={entry.item}
+            parentId={itemParentMap[entry.item.getId()] ?? CONV_TREE_ROOT}
+          />
+          {newFolderInsertInfo && i === newFolderInsertInfo.insertAfterEntryIndex && (
             <NewFolderInput
               indent={newFolderInsertInfo.indent}
               onConfirm={async (name) => {
@@ -332,20 +304,30 @@ export function ManualSection({ workspaceId: _workspaceId }: ManualSectionProps)
               onCancel={() => setCreatingFolderAt(null)}
             />
           )}
+        </React.Fragment>
+      ))}
 
-          {hasFolders && (
-            <div className="px-3 py-1">
-              <button
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                onClick={() => setCreatingFolderAt(CONV_TREE_ROOT)}
-              >
-                <FolderPlus className="w-3.5 h-3.5" />
-                新建文件夹
-              </button>
-            </div>
-          )}
-        </div>
+      {/* 没有任何文件夹时，新建文件夹输入框单独渲染在最前 */}
+      {newFolderInsertInfo && newFolderInsertInfo.insertAfterEntryIndex === -1 && (
+        <NewFolderInput
+          indent={newFolderInsertInfo.indent}
+          onConfirm={async (name) => {
+            await createFolder(name, creatingFolderAt === CONV_TREE_ROOT ? undefined : creatingFolderAt!);
+            setCreatingFolderAt(null);
+          }}
+          onCancel={() => setCreatingFolderAt(null)}
+        />
       )}
+
+      <div className="px-3 py-1">
+        <button
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          onClick={() => setCreatingFolderAt(CONV_TREE_ROOT)}
+        >
+          <FolderPlus className="w-3.5 h-3.5" />
+          新建文件夹
+        </button>
+      </div>
     </div>
   );
 }

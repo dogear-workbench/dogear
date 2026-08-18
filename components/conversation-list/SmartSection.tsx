@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Tag, ChevronDown, ChevronRight } from 'lucide-react';
 import { useSmartCategoryStore } from '@/stores/smart-category-store';
 import { useGroupStore } from '@/stores/group-store';
@@ -8,6 +8,7 @@ import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 import { GroupCard } from '@/components/group-list/GroupCard';
 import { sortConversationsWithDFS } from '@/lib/conversation-sort';
+import { useSectionCollapseStore } from '@/stores/section-collapse-store';
 
 interface SmartSectionProps {
   workspaceId: string;
@@ -60,7 +61,8 @@ function CategoryGroup({
   groupById: Map<string, Group>;
   conversations: Conversation[];
 }) {
-  const [collapsed, setCollapsed] = useState(false);
+  const expanded = useSectionCollapseStore((s) => s.expandedSmartCategoryIds.has(cat.id));
+  const toggleExpanded = useSectionCollapseStore((s) => s.toggleSmartCategory);
 
   const groupsInCat = useMemo(() => {
     return cat.groupIds
@@ -75,17 +77,17 @@ function CategoryGroup({
     <div>
       <div
         className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors"
-        onClick={() => setCollapsed((v) => !v)}
+        onClick={() => toggleExpanded(cat.id)}
       >
-        {collapsed
-          ? <ChevronRight className="w-3 h-3" />
-          : <ChevronDown className="w-3 h-3" />
+        {expanded
+          ? <ChevronDown className="w-3 h-3" />
+          : <ChevronRight className="w-3 h-3" />
         }
         <Tag className="w-3 h-3 text-sky-500" />
         <span className="truncate">{cat.name}</span>
         <span className="ml-auto text-[10px] opacity-70">{groupsInCat.length}</span>
       </div>
-      {!collapsed && groupsInCat.map((g) => (
+      {expanded && groupsInCat.map((g) => (
         <GroupCard
           key={`${cat.id}:${g.id}`}
           group={g}

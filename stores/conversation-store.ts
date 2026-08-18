@@ -44,7 +44,7 @@ export interface ConversationFlatNode {
   folder?: ConversationFolder;
 }
 
-const CONV_TREE_ROOT = '__root__';
+export const CONV_TREE_ROOT = '__root__';
 
 /**
  * 单个工作区的对话分片（里程碑 1.5 Phase 2 Step A2.2）
@@ -160,6 +160,14 @@ const getWorkspace = async () => {
   const { useWorkspaceStore } = await import('./workspace-store');
   return useWorkspaceStore.getState().workspace;
 };
+
+/** 活跃会话切换时在左侧列表中定位话题：展开所在分区与话题卡片，让高亮可见 */
+function revealTopicInList(groupId: string | null | undefined) {
+  if (!groupId) return;
+  void import('./section-collapse-store').then(({ useSectionCollapseStore }) => {
+    useSectionCollapseStore.getState().revealTopic(groupId);
+  });
+}
 
 /**
  * 对 children 数组进行分区排序：文件夹在前，对话在后
@@ -329,7 +337,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
       set((state) => patchSlice(state, wsId, { conversations, treeData, nodeMap }));
 
-      // 同步 group-store（避免组件分别拉取造成时序错位；首次同步时默认展开近期组）
+      // 同步 group-store（避免组件分别拉取造成时序错位）
       void import('./group-store').then(({ useGroupStore }) => {
         useGroupStore.getState().syncGroups(wsId, groups);
       });
@@ -381,10 +389,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       set((state) => patchSlice(state, wsId, { selectedConversation: null }));
       return;
     }
-    // 已是当前选中则跳过（避免重复 set 与多余请求）
-    if (get().byWorkspace[wsId]?.selectedConversation?.id === conversationId) return;
+    const curSlice = get().byWorkspace[wsId];
+    const alreadySelected = curSlice?.selectedConversation?.id === conversationId;
+    if (alreadySelected) {
+      revealTopicInList(curSlice!.selectedConversation!.groupId);
+      return;
+    }
     // 先从当前分片找；跨工作区切 Tab 时分片可能尚未加载，回退后端查询
-    let conv = (get().byWorkspace[wsId]?.conversations ?? []).find((c) => c.id === conversationId) ?? null;
+    let conv = (curSlice?.conversations ?? []).find((c) => c.id === conversationId) ?? null;
     if (!conv) {
       try {
         const fresh = await client.getById({ conversationId, workspaceId: wsId });
@@ -394,6 +406,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (conv) {
       const selected = conv;
       set((state) => patchSlice(state, wsId, { selectedConversation: selected }));
+      revealTopicInList(selected.groupId);
     }
   },
 

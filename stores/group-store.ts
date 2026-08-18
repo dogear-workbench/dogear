@@ -16,13 +16,12 @@ interface GroupState {
   currentGroupId: string | null;
   expandedGroupIds: Set<string>;
   loading: boolean;
-  /** 已应用过默认展开（近期组展开）的工作区，防止重复刷新时覆盖用户手动折叠 */
-  expandDefaultsAppliedFor: string | null;
 
   syncGroups: (workspaceId: string, groups: Group[]) => void;
   load: (workspaceId: string) => Promise<void>;
   setCurrentGroup: (groupId: string | null) => void;
   toggleExpand: (groupId: string) => void;
+  expandGroup: (groupId: string) => void;
   createGroup: (title?: string) => Promise<Group | null>;
   updateGroup: (groupId: string, patch: { title?: string }) => Promise<void>;
   archiveTopic: (groupId: string) => Promise<boolean>;
@@ -36,19 +35,9 @@ export const useGroupStore = create<GroupState>((set) => ({
   currentGroupId: null,
   expandedGroupIds: new Set<string>(),
   loading: false,
-  expandDefaultsAppliedFor: null,
 
-  syncGroups: (workspaceId, groups) => {
-    set((state) => {
-      if (state.expandDefaultsAppliedFor === workspaceId) {
-        return { groups, loading: false };
-      }
-      const now = Date.now();
-      const expandedGroupIds = new Set(
-        groups.filter((g) => now - g.updatedAt <= RECENT_THRESHOLD_MS).map((g) => g.id)
-      );
-      return { groups, loading: false, expandedGroupIds, expandDefaultsAppliedFor: workspaceId };
-    });
+  syncGroups: (_workspaceId, groups) => {
+    set({ groups, loading: false });
   },
 
   load: async (workspaceId) => {
@@ -81,6 +70,15 @@ export const useGroupStore = create<GroupState>((set) => ({
       const next = new Set(state.expandedGroupIds);
       if (next.has(groupId)) next.delete(groupId);
       else next.add(groupId);
+      return { expandedGroupIds: next };
+    });
+  },
+
+  expandGroup: (groupId) => {
+    set((state) => {
+      if (state.expandedGroupIds.has(groupId)) return {};
+      const next = new Set(state.expandedGroupIds);
+      next.add(groupId);
       return { expandedGroupIds: next };
     });
   },
