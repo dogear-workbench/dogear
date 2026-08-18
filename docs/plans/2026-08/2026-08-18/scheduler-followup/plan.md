@@ -25,3 +25,13 @@
 - **DigestsPanel 轮询**：保留 2s 轮询但只拉组卡列表（去 activity 半边），保证后台提炼时列表自动刷新
 - **commit 边界**：工作区现有 dogear__ 前缀与 sidebar 折叠两批未提交改动，本计划文件与其交集仅 `docs/codebase-map.md`——Step 3 提交前先确认前两批已提交（或单独提交本计划改动，避免混批）
 - 工具名展示（内置任务工具清单）已自动带 `dogear__` 前缀，本计划不做任何适配
+
+## 完成总结
+
+三 step 全部完成（2026-08-18），commit：12e03eb（主进程）/ 6889975（渲染层接线）/ f484254（Tab 删减 + 文档）。
+
+- **stopTask 链路**：requestStop 按 builtinId 五路分派（custom→cancelTask、group_digest→cancelAllGroupDigest、review→cancelAllReview、categorize→cancelAllCategorize、organize→cancelCategorizeOrganize）；前端任务行运行中显示停止按钮；custom 取消记 cancelled、builtin 停止记 completed+「（已被手动停止）」
+- **on_task_done 任务链**：仅上游干净完成触发下游（被停止/失败不连锁，与计划字面的一处收紧，验收采纳）；saveTask 拦截悬空引用与环（含自引用）；触发器编辑器支持下拉选任务
+- **模型选择收敛**：内置任务编辑器集成三组模型选择（categorize 与 organize 共用 categorizeModelSelection），onChange 即写盘；DigestsPanel/SmartCategoryPanel 模型行删除，ReviewPanel 整体删除（净删 ~600 行 UI）
+- **交付偏差**：① outcome 收紧（见上）；② inFlight.clear() 防入队去重集泄漏；③ TaskSaveContext 传 allTasks 全量（环检测需要边表）
+- **遗留**：smart-category-store 运行类 action 已无 UI 消费（死代码，待后续清理）；requestStop 与 agent 提交间极小竞态窗口（与既有 group-digest 特征一致，未处理）；GUI 交互级验证（停止按钮实际效果、任务链触发、模型选择迁移后首次加载）留人工走查
