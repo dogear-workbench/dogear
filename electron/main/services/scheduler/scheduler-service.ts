@@ -211,13 +211,17 @@ class SchedulerService {
       case 'window': {
         if (!windowOpen(trigger, now)) {
           this.clearWindowFiredKeys(task.id, trigger.id);
-          this.runner.requestStop(task.id);
+          this.runner.requestStop(task.id, trigger.id);
           return;
         }
         const key = `${task.id}:${trigger.id}:${currentWindowStartTs(trigger.start, now)}`;
         if (this.windowFiredKeys.has(key)) return;
         this.windowFiredKeys.add(key);
-        await this.fireTask(task.id, { triggerReason: 'time', triggerDesc: describeTrigger(trigger) });
+        await this.fireTask(task.id, {
+          triggerReason: 'time',
+          triggerDesc: describeTrigger(trigger),
+          triggerId: trigger.id,
+        });
         return;
       }
       case 'on_window_close': {
@@ -225,7 +229,11 @@ class SchedulerService {
         if (closeAt === null || closeAt > now) return;
         if (trigger.lastFiredAt !== undefined && closeAt <= trigger.lastFiredAt) return;
         await touchTriggerFired(task.id, trigger.id, closeAt);
-        await this.fireTask(task.id, { triggerReason: 'time', triggerDesc: describeTrigger(trigger) });
+        await this.fireTask(task.id, {
+          triggerReason: 'time',
+          triggerDesc: describeTrigger(trigger),
+          triggerId: trigger.id,
+        });
         return;
       }
       default:
@@ -242,6 +250,7 @@ class SchedulerService {
     const started = await this.fireTask(task.id, {
       triggerReason: 'time',
       triggerDesc: describeTrigger(trigger),
+      triggerId: trigger.id,
     });
     if (!started) {
       mainLogger.info(`[scheduler] 任务运行中，时间触发被忽略: ${task.name} (${describeTrigger(trigger)})`);

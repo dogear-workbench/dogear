@@ -9,7 +9,10 @@ import { executeTask, type TaskExecResult } from './task-executor.js';
 export interface RunTaskOptions {
   triggerReason: 'time' | 'condition' | 'manual';
   triggerDesc?: string;
+  triggerId?: string;
 }
+
+type StopReason = 'manual' | 'window';
 
 export type TaskRunOutcome = 'completed' | 'failed';
 
@@ -24,7 +27,9 @@ interface RunningInfo {
   startedAt: number;
   task: ScheduledTask;
   agentTaskId?: string;
+  sourceTriggerId?: string;
   stopRequested: boolean;
+  stopReason: StopReason;
 }
 
 class TaskRunner extends EventEmitter {
@@ -40,18 +45,24 @@ class TaskRunner extends EventEmitter {
       taskName: task.name,
       startedAt: Date.now(),
       task,
+      sourceTriggerId: opts.triggerId,
       stopRequested: false,
+      stopReason: 'manual',
     };
     this.running.set(task.id, info);
     void this.executeSingleTask(task, opts, info);
     return { started: true };
   }
 
-  requestStop(taskId: string): void {
+  requestStop(taskId: string, sourceTriggerId?: string): void {
     const info = this.running.get(taskId);
     if (!info) return;
+    if (sourceTriggerId !== undefined && info.sourceTriggerId !== sourceTriggerId) return;
     info.stopRequested = true;
-    mainLogger.info(`[scheduler] 请求停止任务: ${info.taskName} (${taskId})`);
+    info.stopReason = sourceTriggerId !== undefined ? 'window' : 'manual';
+    mainLogger.info(
+      `[scheduler] 请求停止任务: ${info.taskName} (${taskId}) 来源=${info.stopReason}`,
+    );
     if (info.task.kind === 'custom') {
       const agentTaskId = info.agentTaskId;
       if (!agentTaskId) return;
@@ -157,7 +168,8 @@ class TaskRunner extends EventEmitter {
         res = { status: 'failed', error: err instanceof Error ? err.message : String(err) };
       }
       if (info.stopRequested && res.status === 'completed') {
-        res.summary = res.summary ? `${res.summary}（已被手动停止）` : '（已被手动停止）';
+        const suffix = info.stopReason === 'window' ? '（已超出时间窗口，自动停止）' : '（已被手动停止）';
+        res.summary = res.summary ? `${res.summary}${suffix}` : suffix;
       }
       await this.appendTaskEntry(task, startedAt, res, opts);
       await updateTaskRunState(task.id, undefined);
