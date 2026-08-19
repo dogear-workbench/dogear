@@ -1,6 +1,6 @@
 {
   "name": "dogear",
-  "version": "0.1.40",
+  "version": "0.1.42",
   "description": "AI 驱动的个人工作台",
   "author": "Dogear Team",
   "main": "dist/main/index.js",
