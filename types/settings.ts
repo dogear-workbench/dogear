@@ -104,8 +104,6 @@ export interface AppSettings {
   update?: {
     serverUrl: string;
   };
-  /** Bash 命令 RTK 前缀重写开关（需系统安装 rtk 才生效） */
-  rtkEnabled?: boolean;
   ui?: {
     messageDisplayMode: 'compact' | 'detailed'; // 工具/思考块显示模式
   };
@@ -129,7 +127,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   update: {
     serverUrl: 'http://localhost:9527',
   },
-  rtkEnabled: false,
   ui: {
     messageDisplayMode: 'compact',
   },

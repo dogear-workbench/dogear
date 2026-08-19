@@ -90,8 +90,6 @@ export interface AppSettings {
   update?: {
     serverUrl: string;
   };
-  /** Bash 命令 RTK 前缀重写开关（需系统安装 rtk 才生效） */
-  rtkEnabled?: boolean;
   /** 一次性迁移标记 */
   migrated?: {
     workspaceConfig?: boolean;
@@ -119,7 +117,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   update: {
     serverUrl: 'http://localhost:9527',
   },
-  rtkEnabled: false,
   profiles: {
     default: {
       id: 'default',

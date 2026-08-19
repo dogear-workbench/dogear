@@ -365,34 +365,6 @@ export default function SettingsPage() {
 
               <BasicToolsSection local={local} setLocal={setLocal} />
 
-              {/* RTK 命令重写 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    className={cn(
-                      'relative inline-flex h-5 w-9 items-center rounded-full transition-colors shrink-0',
-                      local.rtkEnabled ? 'bg-primary' : 'bg-muted',
-                    )}
-                    onClick={() => setLocal(prev => ({ ...prev, rtkEnabled: !prev.rtkEnabled }))}
-                    aria-label="RTK 命令重写"
-                  >
-                    <span
-                      className={cn(
-                        'inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform',
-                        local.rtkEnabled ? 'translate-x-4' : 'translate-x-1',
-                      )}
-                    />
-                  </button>
-                  <div>
-                    <div className="text-sm font-medium">RTK 命令重写</div>
-                    <div className="text-xs text-muted-foreground">
-                      开启后，会话中的 Bash 命令（git、bun、grep 等）自动加 rtk 前缀。需系统已安装 rtk，未安装时静默跳过不报错。
-                    </div>
-                  </div>
-                </div>
-              </div>
-
               {/* 通用级 agent.md */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">通用级 Agent 指令</label>

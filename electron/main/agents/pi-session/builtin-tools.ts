@@ -9,18 +9,13 @@
  * AgentHarness 时通过 toolContext: { env } 注入。
  */
 import { createBashTool, createEditTool, createReadTool, createWriteTool, type AgentHarnessTool, type ExecutionEnv } from '@earendil-works/pi-agent-core';
-import { rewriteWithRtk } from './rtk-rewrite.js';
 
 /** Read/Write/Edit/Bash 四个 harness 原生工具，文件操作和 bash cwd 边界由注入的 WorkspaceExecutionEnv 负责 */
-export function createBuiltinFileTools(rtkEnabled: boolean = false): AgentHarnessTool<{ env: ExecutionEnv }>[] {
+export function createBuiltinFileTools(): AgentHarnessTool<{ env: ExecutionEnv }>[] {
   return [
     createReadTool(),
     createWriteTool(),
     createEditTool(),
-    createBashTool({
-      prepare(execution) {
-        if (rtkEnabled) execution.command = rewriteWithRtk(execution.command);
-      },
-    }),
+    createBashTool(),
   ];
 }
