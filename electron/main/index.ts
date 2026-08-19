@@ -536,6 +536,11 @@ app.whenReady().then(async () => {
     .then((m) => m.loadChildStates())
     .catch((err) => console.error('delegation 状态恢复失败:', err));
 
+  // sessionId 丢失自愈：按 harness 文件创建时间对齐回填
+  void import('./services/session-id-repair.js')
+    .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
+    .catch((err) => console.error('sessionId 自愈扫描失败:', err));
+
   // 首页报告文件监视：dashboard.md 任意写入都广播给前端实时刷新
   void import('./services/memory/dashboard-watcher.js')
     .then((m) => m.startDashboardWatcher())

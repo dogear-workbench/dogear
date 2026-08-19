@@ -178,8 +178,25 @@ async function withConversationsTxn<T>(
   fn: (file: WorkspaceConversationsFile) => Promise<T>,
 ): Promise<T> {
   return withFileLock(getWorkspaceConversationsPath(workspaceId) + '#txn', async () => {
+    const filePath = getWorkspaceConversationsPath(workspaceId);
+    // 观测：事务持锁期间文件 mtime 被外部（跨进程/外部工具）改动 → 本事务的 load→save 会覆盖他人写入
+    let observedMtimeMs: number | null = null;
+    try {
+      observedMtimeMs = (await fs.stat(filePath)).mtimeMs;
+    } catch { /* 文件尚未创建 */ }
     const file = await loadWorkspaceConversations(workspaceId);
     const result = await fn(file);
+    if (observedMtimeMs !== null) {
+      try {
+        const currentMtimeMs = (await fs.stat(filePath)).mtimeMs;
+        if (currentMtimeMs !== observedMtimeMs) {
+          console.error(
+            `[conversation-service] conversations.json 在事务持锁期间被外部修改（${filePath}），` +
+            `本次写入可能覆盖外部改动。写入方调用栈:\n${new Error().stack}`,
+          );
+        }
+      } catch { /* 文件被删，safeJsonWrite 会重建 */ }
+    }
     await saveWorkspaceConversations(workspaceId, file);
     return result;
   });
@@ -450,6 +467,26 @@ export async function updateSessionId(workspaceId: string, id: string, sessionId
     conv.sessionId = sessionId;
     conv.updatedAt = new Date().toISOString();
   });
+}
+
+/**
+ * 批量回填丢失的 sessionId（启动自愈用）：只填当前为 null 的条目，不覆盖已有值。
+ * 与 updateSessionId 不同，不做 requireActiveGroup——归档话题里的会话同样需要修复。
+ */
+export async function repairSessionIds(
+  workspaceId: string,
+  assignments: Record<string, string>,
+): Promise<number> {
+  let repaired = 0;
+  await withConversationsTxn(workspaceId, async (file) => {
+    for (const [id, sessionId] of Object.entries(assignments)) {
+      const conv = file.conversations[id];
+      if (!conv || conv.sessionId) continue;
+      conv.sessionId = sessionId;
+      repaired++;
+    }
+  });
+  return repaired;
 }
 
 /**
