@@ -123,6 +123,24 @@ export function injectTaskSummary(messages: Message[]): Message[] {
   if (lastTaskMsgIdx < 0) return messages;
 
   const taskList = tasks.map(({ id, subject, activeForm, status }) => ({ id, subject, activeForm, status }));
+  const existingSummary = messages[lastTaskMsgIdx].contentBlocks?.find(
+    (block) => block.type === 'task_summary',
+  );
+  const hasSummaryElsewhere = messages.some(
+    (message, index) => index !== lastTaskMsgIdx && message.contentBlocks?.some((block) => block.type === 'task_summary'),
+  );
+
+  // The summary is derived UI state. Preserve the existing message array when it
+  // already represents the current task list, so the synchronizing effect stays
+  // idempotent instead of scheduling another React update after every render.
+  if (
+    existingSummary &&
+    !hasSummaryElsewhere &&
+    JSON.stringify(existingSummary.tasks) === JSON.stringify(taskList)
+  ) {
+    return messages;
+  }
+
   const result = messages.map((m, i) => {
     const hasOld = m.contentBlocks?.some((b) => b.type === 'task_summary') ?? false;
     if (i === lastTaskMsgIdx) {

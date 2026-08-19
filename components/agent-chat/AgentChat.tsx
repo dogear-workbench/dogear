@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
-import { useConversationStore } from '@/stores/conversation-store';
+import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { AgentChatProps } from './types';
 import { MessageItem } from './MessageItem';
@@ -55,6 +54,10 @@ const childStatusStyles: Record<ChildStatus, string> = {
   hang: 'bg-red-50 border-red-200 text-red-800',
   interrupted: 'bg-muted border-border text-muted-foreground',
 };
+
+// Zustand selectors must return a cached reference when no notices exist.
+// Allocating `[]` inside the selector makes React treat every store snapshot as changed.
+const EMPTY_FAILOVER_NOTICES: FailoverNotice[] = [];
 
 /**
  * Agent 聊天组件
@@ -149,7 +152,7 @@ export function AgentChat({
     (s) => (conversationId ? s.childrenByParent[conversationId] : undefined) ?? null,
   );
   const failoverNotices = useConversationStore(
-    (s) => (conversationId ? s.failoverNoticesByConversation[conversationId] : undefined) ?? [],
+    (s) => (conversationId ? s.failoverNoticesByConversation[conversationId] : undefined) ?? EMPTY_FAILOVER_NOTICES,
   );
   const { awaitCount, doneCount, issueCount } = useMemo(() => {
     if (!childrenForThis) return { awaitCount: 0, doneCount: 0, issueCount: 0 };
@@ -369,9 +372,10 @@ export function AgentChat({
       />
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
-      <ScrollArea
+      <div
         ref={scrollAreaRef}
-        className="h-full pr-12"
+        data-radix-scroll-area-viewport=""
+        className="h-full pr-12 overflow-y-auto"
         onScrollCapture={handleScroll}
       >
         <div className="px-6">
@@ -490,7 +494,7 @@ export function AgentChat({
         />
 
         </div>
-      </ScrollArea>
+      </div>
 
       {/* 右侧工具轨道：w-12 透明浮层，顶部+底部两组按钮 */}
       <div className="absolute top-0 right-0 bottom-0 w-12 flex flex-col pointer-events-none z-10">
