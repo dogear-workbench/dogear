@@ -644,6 +644,13 @@ export class PiSession extends EventEmitter {
         }
       } else if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'aborted') {
         this.recordTurnCancelled('会话已中断');
+      } else if (lastMessage?.role === 'assistant' && lastMessage.stopReason === 'length') {
+        // 输出 token 上限截断（常见于 thinking 耗尽预算、正文一字未出），pi 按正常回合收流
+        const truncMsg = '模型输出被截断（stopReason=length，输出达到上限）';
+        if (this.recordTurnFailure('model', truncMsg)) {
+          this.logger.error('pi 模型输出被截断');
+          this.emitErrorMessage(truncMsg);
+        }
       }
 
       this.lastContextTokens = extractLastContextTokens(event.messages);
