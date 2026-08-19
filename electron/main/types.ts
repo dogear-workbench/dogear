@@ -236,6 +236,8 @@ export interface DelegateSpec {
   title?: string;
   /** 子会话 Profile 名称或 id；未指定时用默认 Profile */
   profile?: string;
+  /** 显式指定的模型 ID（piModels 里的模型 id 原文）；在所有完整 ModelProfile 的 piModels 里解析为 profileId+tier，解析不到则创建失败 */
+  model?: string;
 }
 
 export interface ChildStateSnapshot {

@@ -158,7 +158,7 @@ function ProfileEditor({
       <div className="space-y-1.5">
         <label className="text-xs font-medium">模型</label>
         <p className="text-xs text-muted-foreground">
-          子会话使用的模型。不指定时回退到上级 AI 行为的默认模型。
+          子会话使用的模型。不指定时跟随主会话当前使用的模型，主会话未设置时用全局默认模型。
         </p>
         <ModelSelector
           settings={local}

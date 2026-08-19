@@ -19,7 +19,7 @@ import * as conversationService from '../services/conversation-service.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
-import { createDefaultSubAgentProfile, type ModelSelection, type SubAgentProfile } from '../services/settings-types.js';
+import { createDefaultSubAgentProfile, isProfileComplete, type AppSettings, type ModelSelection, type SubAgentProfile } from '../services/settings-types.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 import type {
@@ -440,6 +440,23 @@ function extractErrorMessage(error: unknown): string {
   return typeof error === 'string' ? error : '未知错误';
 }
 
+/**
+ * 按模型 ID（tier）在所有完整 ModelProfile 的 piModels 里解析出 profileId+tier；
+ * 同一模型存在于多个 profile 时取第一个匹配；解析不到时抛错并列出可用模型，供 agent 自纠。
+ */
+function resolveModelByTier(settings: AppSettings, tier: string): ModelSelection {
+  const available = new Set<string>();
+  for (const [profileId, profile] of Object.entries(settings.profiles ?? {})) {
+    if (!isProfileComplete(profile)) continue;
+    for (const m of profile.piModels ?? []) {
+      if (m.id === tier) return { profileId, tier: m.id };
+    }
+    for (const m of profile.piModels ?? []) available.add(m.id);
+  }
+  const list = [...available].join('、') || '（无）';
+  throw new Error(`模型 "${tier}" 不存在。可用模型：${list}`);
+}
+
 // ─── 创建 / 停止会话 ───
 
 export interface StartChildOptions {
@@ -472,7 +489,8 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     ?? profiles.find((p) => p.enabled !== false)
     ?? createDefaultSubAgentProfile();
 
-  const modelSel = selectedProfile.modelSelection
+  const modelSel = (spec.model ? resolveModelByTier(settings, spec.model) : null)
+    ?? selectedProfile.modelSelection
     ?? parent.modelSelection
     ?? settings.ai.defaultModelSelection
     ?? null;

@@ -189,6 +189,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         outputPath: z.string().min(1).describe('子会话交付文件写入共享区的相对路径（如 step1-delivery.md）'),
         title: z.string().optional().describe('新会话标题；缺省由系统生成'),
         profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
+        model: z.string().min(1).optional().describe('指定模型 ID（如 gemini-2.5-pro）；不填则按 Profile → 主会话模型的默认逻辑'),
       }),
       async (args) => {
         try {
@@ -196,7 +197,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             parentConversationId: opts.conversationId,
             workspaceId: opts.workspaceId,
             groupId: opts.groupId,
-            spec: { task: args.task, outputPath: args.outputPath, title: args.title, profile: args.profile },
+            spec: { task: args.task, outputPath: args.outputPath, title: args.title, profile: args.profile, model: args.model },
           });
           const sessionId = await bridge.waitForChildSessionId(snapshot.childId);
           if (!sessionId) {
@@ -226,6 +227,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           outputPath: z.string().min(1).describe('子会话交付文件写入共享区的相对路径'),
           title: z.string().optional().describe('会话标题；缺省自动生成'),
           profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
+          model: z.string().min(1).optional().describe('指定模型 ID（如 gemini-2.5-pro）；不填则按 Profile → 主会话模型的默认逻辑'),
         })).min(1).describe('批量创建条目列表'),
       }),
       async (args) => {
@@ -254,7 +256,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
                 parentConversationId: opts.conversationId,
                 workspaceId: opts.workspaceId,
                 groupId: opts.groupId,
-                spec: { task: item.task, outputPath: item.outputPath, title: item.title, profile: item.profile },
+                spec: { task: item.task, outputPath: item.outputPath, title: item.title, profile: item.profile, model: item.model },
               });
               started.push({ childId: snapshot.childId, outputPath: snapshot.outputPath, title: snapshot.title, profileName: snapshot.profileName });
             } catch (err) {

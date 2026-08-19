@@ -314,6 +314,7 @@
 - `tools/reference-tools.ts` — 引用会话 / 组背景 MCP 工具（dogear-reference server，**只装到子会话**）：dogear__ReadReferenceSession 读任意 sessionId 的去噪原文（可尾切 / 区间切）/ dogear__ReadGroupBackground 读本组 background.md 结构化字段 / dogear__ListSiblingSessions 列组内兄弟会话；主 agent 靠 dogear__CreateSession 派子会话消化后回摘要，避免污染主上下文
 - `tools/delegation-tools.ts` — Agent 协作 MCP 工具（dogear-delegation server）：
   - 主会话工具集：`dogear__CreateSession` / `dogear__CreateSessionBatch` / `dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions` / `dogear__ResumeSession` / `dogear__StopSession`
+  - `dogear__CreateSession(task, outputPath, title?, profile?, model?)` / `dogear__CreateSessionBatch(items[])` — model 为模型 ID 单字符串，bridge.resolveModelByTier 在所有完整 ModelProfile 的 piModels 里解析出 profileId+tier（找不到则报错并列出可用模型）；模型优先级 spec.model > profile.modelSelection > 主会话模型 > 全局默认
   - 子会话工具集：`dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions`（无 Create*/Resume/Stop，不能派孙子）
   - `dogear__SendMessage(toSessionId, message, options?)` — options.delivery=true 标记交付；工具层先过 `hasDirectContractChannel` 校验（仅直接派出关系）
   - `dogear__WaitForMessage(fromSessionIds[], timeoutMs?)` — 不按 delivery 过滤，取第一条到达消息返回；等待中子会话终态时会先收到结构化终态通知（死因 + 重试次数 + 降级轨迹）而非干等超时
