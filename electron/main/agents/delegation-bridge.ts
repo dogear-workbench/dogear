@@ -7,6 +7,8 @@
  * 见 settleTerminal → resumeChild），耗尽才通知主会话。
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
 import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
@@ -14,8 +16,9 @@ import { getRendererHandlers } from '@egoist/tipc/main';
 import type { PiSession, PiSessionTurnResult } from './pi-session/pi-session.js';
 import { classifyChildCompletion } from './delegation-lifecycle.js';
 import { getPiSessionManager } from './pi-session/pi-session-manager.js';
-import { mainLogger } from './logger.js';
+import { getConfigDir, mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
+import type { ConversationIndex } from '../services/conversation-service.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
@@ -44,12 +47,6 @@ import {
   type ResumeDecision,
 } from './delegation-resume.js';
 import { findNextFailover } from './model-failover.js';
-import {
-  conversationToSnapshot,
-  loadRestorableChildren,
-  persistDelegationState,
-  type PersistedChildState,
-} from './delegation-persist.js';
 
 const logger = mainLogger.child('delegation-bridge');
 
@@ -161,47 +158,15 @@ function isTerminal(status: ChildStatus): boolean {
   return status !== 'running';
 }
 
-// ─── 持久化（delegation-state.json 落盘 / 重启恢复） ───
-
-function toPersisted(c: ChildStateInternal): PersistedChildState {
-  return { ...toSnapshot(c), workspaceId: c.workspaceId };
-}
-
-async function persistChildStates(): Promise<void> {
-  await persistDelegationState(() => Array.from(childStates.values()).map(toPersisted));
-}
-
-/** 状态变更点统一入口：startChild 成功后 / 终态结算后 / markChildDelivered / resumeChild 后。fire-and-forget，失败只记日志 */
-function touchPersist(childId: string): void {
-  void persistChildStates().catch((err) => logger.warn(`delegation-state.json 落盘失败 (${childId})`, err));
-}
-
-/**
- * 应用启动时调用一次：磁盘是重启后的权威来源，先清内存再灌回。
- * running → stopped（lastError 标记应用重启中断），attachmentId 清空，
- * conversation 已不存在的条目被 loadRestorableChildren 过滤；恢复后回写使磁盘与内存一致。
- */
-export async function loadChildStates(): Promise<void> {
-  const { restored, hadEntries } = await loadRestorableChildren();
-  childStates.clear();
-  for (const p of restored) {
-    childStates.set(p.childId, {
-      ...p,
-      delivered: p.delivered ?? false,
-      sessionId: p.sessionId ?? '',
-      attachmentId: '',
-      consecutiveFails: 0,
-    });
-  }
-  if (hadEntries) {
-    try {
-      await persistChildStates();
-    } catch (err) {
-      logger.warn('恢复后回写 delegation-state.json 失败', err);
+/** 旧持久层遗留的 delegation-state.json 一次性清理：存在则删除，失败只记日志（文件不存在静默跳过） */
+export async function cleanupLegacyStateFile(): Promise<void> {
+  try {
+    await fs.promises.unlink(path.join(getConfigDir(), 'delegation-state.json'));
+    logger.info('已清理旧版 delegation-state.json（持久层已移除）');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn('清理旧版 delegation-state.json 失败', err);
     }
-  }
-  if (restored.length > 0) {
-    logger.info(`delegation 状态恢复：${restored.length} 个子会话条目（running 已标记为 stopped）`);
   }
 }
 
@@ -328,7 +293,6 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
     if (isNotifiableTerminal(c.terminalReason)) notifyTerminalToWaiters(c);
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
-    touchPersist(c.childId);
   } finally {
     settling.delete(c.childId);
   }
@@ -410,7 +374,6 @@ export async function resumeChild(childId: string, opts: { reason: string; model
 
   broadcastChildStatusChanged(c.parentConversationId, childId, 'running', toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  touchPersist(childId);
 
   logger.info(`子会话 ${childId} 第 ${c.consecutiveFails} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
   session.sendMessage(buildResumePrompt(opts.reason, c.outputPath)).catch((error: unknown) => {
@@ -608,7 +571,6 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   broadcastChildStatusChanged(parentConversationId, childId, 'running', toSnapshot(state));
   broadcastDeliveriesAwaitChanged(parentConversationId);
-  touchPersist(childId);
 
   // fire-and-forget 发任务
   session.sendMessage(spec.task).catch((error: unknown) => {
@@ -659,11 +621,36 @@ export function markChildDelivered(childId: string): void {
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
-  touchPersist(childId);
 }
 
 /**
- * 内存 childStates 为主，conversation-service 持久层补集合并：
+ * conversation 补集条目（内存不跟踪的历史子会话）转 snapshot 形状。
+ * status 恒为 stopped、delivered 恒为 false、lastError 恒为 undefined：不在内存即代表本进程未在跑它，
+ * 是否交付由主会话上下文记忆与共享区文件判定。
+ */
+function conversationToSnapshot(
+  conv: ConversationIndex,
+  profiles: SubAgentProfile[],
+): ChildStateSnapshot {
+  const profileId = conv.contractMetadata?.subAgentProfileId;
+  const profile = profileId ? profiles.find((p) => p.id === profileId) : undefined;
+  return {
+    childId: conv.id,
+    parentConversationId: conv.parentConversationId ?? '',
+    groupId: conv.groupId ?? '',
+    outputPath: conv.contractMetadata?.expectedOutputPath ?? '',
+    task: conv.contractMetadata?.task ?? '',
+    title: conv.title,
+    status: 'stopped',
+    delivered: false,
+    startedAt: Date.parse(conv.createdAt) || 0,
+    profileName: profile?.name ?? '默认',
+    sessionId: conv.sessionId ?? undefined,
+  };
+}
+
+/**
+ * 内存 childStates 为主，conversation-service 补集合并：
  * 重启后内存丢失的历史子会话仍能被 ListLinkedSessions / 前端列表看到。
  * 去重键 childId，内存优先；补集按 updatedAt 降序只保留最近 10 条，
  * task/outputPath 从 contractMetadata 补、profileName 从 subAgentProfileId 反查 settings，

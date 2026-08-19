@@ -6,15 +6,9 @@
 
 import { mock } from 'bun:test';
 import { EventEmitter } from 'events';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 const dir = import.meta.dir;
-
-// delegation-state.json 落盘走 logger.getConfigDir 的 env 分支；单进程合跑时统一指到独立临时目录，
-// 避免测试写进真实 .dogear 目录，也避免与其他已设 env 的测试文件串目录
-process.env.DOGEAR_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dogear-delegation-test-'));
 
 export const sessions = new Map<string, any>();
 export const attachSessionByConv = new Map<string, string>();

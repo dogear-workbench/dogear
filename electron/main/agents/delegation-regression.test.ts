@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import fs from 'node:fs';
-import path from 'node:path';
 import {
+  convStore,
   installDelegationMocks,
   makeProfile,
   nextParentConversationId,
@@ -14,33 +13,7 @@ installDelegationMocks();
 
 const bridge = await import('./delegation-bridge.js');
 const terminal = await import('./delegation-terminal.js');
-
-const statePath = path.join(process.env.DOGEAR_CONFIG_DIR!, 'delegation-state.json');
-
-function readStateChildren(): any[] {
-  if (!fs.existsSync(statePath)) return [];
-  return (JSON.parse(fs.readFileSync(statePath, 'utf-8')) as { children?: any[] }).children ?? [];
-}
-
-async function waitForFileStatus(childId: string, status: string, timeoutMs = 2000): Promise<any> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const entry = readStateChildren().find((c: any) => c.childId === childId);
-    if (entry?.status === status) return entry;
-    await sleep(20);
-  }
-  return null;
-}
-
-async function waitForFileDelivered(childId: string, timeoutMs = 2000): Promise<any> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const entry = readStateChildren().find((c: any) => c.childId === childId);
-    if (entry?.delivered === true) return entry;
-    await sleep(20);
-  }
-  return null;
-}
+const convService = await import('../services/conversation-service.js');
 
 beforeEach(() => {
   setMockSettings({
@@ -107,29 +80,32 @@ test('abortWaitsForParent 老链路：等待 resolve null、运行中子会话�
   bridge.abortMessageWaits(other.parentConversationId);
 });
 
-test('delegation-state.json 每 child 恒一条：多次状态变化不产生重复条目，stopped 终态可补交付', async () => {
-  const before = new Set(readStateChildren().map((c: any) => c.childId));
+test('getChildrenByParent 补集截断：内存不跟踪的历史子会话超过 10 条时只返回最近 10 条', async () => {
+  const parentConversationId = nextParentConversationId();
+  const ids: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const id = await convService.create('ws-test', 'g1', `历史子会话 ${i}`, null, {
+      role: 'sub',
+      parentConversationId,
+      contractMetadata: {
+        parentSessionId: `sdk-${parentConversationId}`,
+        task: `历史任务 ${i}`,
+        expectedOutputPath: `hist-${i}.md`,
+        createdBy: 'agent',
+        subAgentProfileId: 'p-a',
+      },
+    });
+    convStore.get(id).updatedAt = new Date(Date.now() + i * 60_000).toISOString();
+    ids.push(id);
+  }
 
-  const a = await startTestChild(bridge, 'p-a');
-  const b = await startTestChild(bridge, 'p-a');
-
-  a.session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal Server Error' } });
-  expect(await waitForFileStatus(a.snapshot.childId, 'stopped')).not.toBeNull();
-
-  bridge.markChildDelivered(a.snapshot.childId);
-  const deliveredEntry = await waitForFileDelivered(a.snapshot.childId);
-  expect(deliveredEntry).not.toBeNull();
-  expect(bridge.getChildSnapshot(a.snapshot.childId)!.status).toBe('stopped');
-  expect(bridge.getChildSnapshot(a.snapshot.childId)!.delivered).toBe(true);
-
-  await bridge.resumeChild(a.snapshot.childId, { reason: '回归测试调起' });
-  expect(await waitForFileStatus(a.snapshot.childId, 'running')).not.toBeNull();
-
-  await bridge.stopChild(b.snapshot.childId, 'cancelled');
-  expect(await waitForFileStatus(b.snapshot.childId, 'stopped')).not.toBeNull();
-
-  const children = readStateChildren();
-  const ids = children.map((c: any) => c.childId);
-  expect(new Set(ids).size).toBe(ids.length);
-  expect(children.filter((c: any) => !before.has(c.childId)).length).toBe(2);
+  const children = await bridge.getChildrenByParent(parentConversationId);
+  expect(children.length).toBe(10);
+  expect(children.every((c: any) => c.status === 'stopped' && c.delivered === false)).toBe(true);
+  expect(children.map((c: any) => c.task)).toEqual([
+    '历史任务 11', '历史任务 10', '历史任务 9', '历史任务 8', '历史任务 7',
+    '历史任务 6', '历史任务 5', '历史任务 4', '历史任务 3', '历史任务 2',
+  ]);
+  expect(children.find((c: any) => c.childId === ids[0])).toBeUndefined();
+  expect(children.find((c: any) => c.childId === ids[1])).toBeUndefined();
 });

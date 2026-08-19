@@ -531,10 +531,10 @@ app.whenReady().then(async () => {
     .then((m) => m.getSchedulerService().init())
     .catch((err) => console.error('调度器初始化失败:', err));
 
-  // 恢复 delegation 子会话状态（running → interrupted，conversation 已删的过滤）
+  // 一次性清理旧持久层遗留的 delegation-state.json（重启后的历史子会话由 conversation 补集提供）
   void import('./agents/delegation-bridge.js')
-    .then((m) => m.loadChildStates())
-    .catch((err) => console.error('delegation 状态恢复失败:', err));
+    .then((m) => m.cleanupLegacyStateFile())
+    .catch((err) => console.error('清理旧版 delegation-state.json 失败:', err));
 
   // sessionId 丢失自愈：按 harness 文件创建时间对齐回填
   void import('./services/session-id-repair.js')
