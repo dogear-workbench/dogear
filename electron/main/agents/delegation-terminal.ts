@@ -100,6 +100,9 @@ export function buildTerminalNotice(input: TerminalNoticeInput, attempts = 0): s
   const duration = formatDurationMs((input.finishedAt ?? Date.now()) - input.startedAt);
   const reason = input.errorMessage ?? terminalStatusLabel(input.status);
   const base = `子会话「${input.title}」${terminalStatusLabel(input.status)}：${reason}。已运行 ${duration}，自动重试 ${attempts} 次。`;
+  if (input.status === 'no_delivery') {
+    return `${base}结束不代表未完成：建议先用 dogear__ReadReferenceSession 查看其最后进展、dogear__ListGroupFiles 检查共享区是否已有交付，确认确实未完成后再重派或用 dogear__ResumeSession 调起。`;
+  }
   if (input.errorClass !== 'quota') return base;
   const tried = input.modelTried ?? [];
   const detail = tried.length > 1
