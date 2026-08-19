@@ -100,7 +100,7 @@ export function buildTerminalNotice(input: TerminalNoticeInput, attempts = 0): s
   const reason = input.lastError ?? terminalStatusLabel(input.terminalReason);
   const base = `子会话「${input.title}」${terminalStatusLabel(input.terminalReason)}：${reason}。已运行 ${duration}，自动重试 ${attempts} 次。`;
   if (input.terminalReason === 'no_delivery') {
-    return `${base}结束不代表未完成：建议先用 dogear__ReadReferenceSession 查看其最后进展、dogear__ListGroupFiles 检查共享区是否已有交付，确认确实未完成后再重派或用 dogear__ResumeSession 调起。`;
+    return `${base}结束不代表未完成：建议先用 dogear__ReadReferenceSession 查看其最后进展、dogear__ListGroupFiles 列共享区文件清单确认是否已有交付文件，确认确实未完成后再重派或用 dogear__ResumeSession 调起。`;
   }
   if (input.errorClass !== 'quota') return base;
   const tried = input.modelTried ?? [];

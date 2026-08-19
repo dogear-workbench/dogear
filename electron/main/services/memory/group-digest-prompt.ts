@@ -9,6 +9,9 @@ import path from 'node:path';
 const SAVE_BACKGROUND_SENTINEL = 'dogear__SaveGroupBackground';
 const TITLE_SYNC_SENTINEL = '同步为话题组的显示名称';
 
+// 旧版默认模板里「ListGroupFiles 返回全部内容」的说法在新工具行为下已不成立，命中即重播种
+const LEGACY_LIST_FULL_CONTENT = '返回结果含每个文件的完整内容';
+
 export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两个产物：「组级摘要卡」+「组背景」。一个组通常由多个相关会话组成。
 
 工具：dogear__ReadGroupDigest / dogear__CleanTranscript / dogear__SaveGroupDigest / dogear__SaveGroupBackground / dogear__ListGroupFiles（仅这些）
@@ -16,7 +19,7 @@ export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两�
 步骤：
 1. 调 dogear__ReadGroupDigest(groupId) 看是否已有组卡，作为整合基础。
 2. 对每个 dirty 会话调 dogear__CleanTranscript(sessionId) 拿干净逐字稿。**未在 dirty 列表中的会话不需要重读**——它们的信息已在已有组卡里。
-3. 调 dogear__ListGroupFiles 看共享区（返回结果含每个文件的完整内容）；**优先利用** \`_notes/\` 子目录下用户和 agent 主动留下的阶段总结。dogear__CleanTranscript 输出作为补充/校验。
+3. 调 dogear__ListGroupFiles 列共享区文件清单，对需要的文件传 relPath 读取完整内容；**优先利用** \`_notes/\` 子目录下用户和 agent 主动留下的阶段总结。dogear__CleanTranscript 输出作为补充/校验。
 4. 产物一：**组卡**（写给人 + 首页复盘用）。调 dogear__SaveGroupDigest({ groupId, title, summary, items, keyOutputs, tags })：
    - title：组的整体主题（一短句）。此 title 会同步为话题组的显示名称，要简短准确。复用现有 title 若仍准确
    - summary：一两句，"这组讨论的核心 + 几条主线"
@@ -59,6 +62,10 @@ export async function loadGroupDigestPrompt(configDir: string): Promise<string> 
   const file = getGroupDigestPromptPath(configDir);
   try {
     const raw = await fs.readFile(file, 'utf-8');
+    if (raw.includes(LEGACY_LIST_FULL_CONTENT)) {
+      await fs.writeFile(file, DEFAULT_GROUP_DIGEST_PROMPT, 'utf-8');
+      return DEFAULT_GROUP_DIGEST_PROMPT;
+    }
     if (raw.trim() && raw.includes(SAVE_BACKGROUND_SENTINEL) && !raw.includes('ReadGroupFile') && raw.includes(TITLE_SYNC_SENTINEL)) return raw;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;

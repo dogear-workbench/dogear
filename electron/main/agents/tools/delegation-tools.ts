@@ -24,10 +24,11 @@ const SEND_MESSAGE_DESC =
 const WAIT_FOR_MESSAGE_DESC =
   '挂起当前回合，等待指定会话列表中任一方的消息（第一条到达即返回）。仅用于派出子会话后等待其交付或回复时。';
 
-const LIST_LINKED_DESC = '列出当前会话所有直接契约通道对方，用于获取可通信的 sessionId。';
+const LIST_LINKED_DESC =
+  '列出当前会话所有直接契约通道对方（sessionId、运行状态、交付标记）。判定规则：status=running → 在跑，等它通知即可；status=stopped 且你收到过它的 delivery 消息、或共享区已有其交付文件 → 已完成，不要重派或调起；status=stopped 且无交付 → 可用 dogear__ResumeSession 调起，它会自检进度从中断处续跑。delivered 是本进程运行时视角，应用重启后一律为 false——此时以你的上下文记忆 / 共享区文件为准。';
 
 const RESUME_SESSION_DESC =
-  '调起之前派出但已中断/失败的子会话继续执行（保留消息历史，它会检查进度后接着干）。仅用于恢复中断的子会话时。';
+  '调起之前派出、当前已停止且未交付的子会话继续执行：保留消息历史，它会自检进度并从中断处续跑。仅用于恢复已停止的子会话时。';
 
 export interface MainDelegationOpts {
   role: 'main';
@@ -157,7 +158,12 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             return textResult('（当前会话还没有建立任何契约通道）');
           }
           const lines = children.map((c) => {
-            const parts = [`sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'}`, c.title, `status=${c.status}`];
+            const parts = [
+              `sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'}`,
+              c.title,
+              `status=${c.status}`,
+              c.delivered ? '✅已交付' : '⚠未交付',
+            ];
             if (c.outputPath) parts.push(`outputPath=${c.outputPath}`);
             if (c.task) parts.push(`task=${truncateTask(c.task)}`);
             parts.push('你派出的');
@@ -345,7 +351,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         const childId = bridge.getChildIdBySessionId(opts.conversationId, args.sessionId) ?? target.conv.id;
         const snapshot = bridge.getChildSnapshot(childId);
         if (!snapshot) {
-          return errorResult(`会话 ${args.sessionId} 不在运行时跟踪中（应用重启后未恢复或状态文件缺失）`);
+          return errorResult(`会话 ${args.sessionId} 不在本进程运行时跟踪中（应用重启后跟踪不保留，请先用 dogear__ListLinkedSessions 查）`);
         }
         if (snapshot.status === 'running') {
           return textResult(`⚠ 该会话正在运行中，无需调起（${snapshot.title}）`);

@@ -487,7 +487,7 @@ class AgentWorker {
       sourcesSeenText,
       `- 共享区文件清单（含 _notes/ 子目录）:`,
       sharedFileText,
-      `- shared/_notes/ 文件清单（通过 dogear__ListGroupFiles 可读取完整内容）:`,
+      `- shared/_notes/ 文件清单（dogear__ListGroupFiles 传 relPath 可读单个文件内容）:`,
       notesFileText,
       ...categoryVocabLines,
     ].join('\n');

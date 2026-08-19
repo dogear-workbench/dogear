@@ -12,7 +12,7 @@
 
 - [x] [Step 1: 状态模型精简与重试语义](./step1-state-model.md) — ChildStatus 收敛 running/stopped、delivered 独立事实、consecutiveFails 连续计数、修复交付 guard bug
 - [x] [Step 2: 持久层删除](./step2-remove-persistence.md) — delegation-persist.ts 删除、启动清理旧文件、补集截断
-- [ ] [Step 3: 工具层与提示词](./step3-tools-prompts.md) — ListLinkedSessions 判定规则、ListGroupFiles relPath、契约提示词对齐
+- [x] [Step 3: 工具层与提示词](./step3-tools-prompts.md) — ListLinkedSessions 判定规则、ListGroupFiles relPath、契约提示词对齐
 - [ ] [Step 4: UI 与收尾](./step4-ui-cleanup.md) — Network 图标、删状态文字徽章、codebase-map 同步、全量验证
 
 ## 全局决策

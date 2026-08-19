@@ -9,28 +9,40 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
   return [
     defineTool(
       'dogear__ListGroupFiles',
-      '列出共享区文件',
-      '列出会话组共享区的所有文件并返回内容。仅用于查看同组会话放到共享区的文件时。',
-      z.object({}),
-      async () => {
+      '列出共享区文件清单',
+      '列出会话组共享区的文件清单；传 relPath 读取单个共享区文件的完整内容。仅用于查看同组会话放到共享区的文件时。',
+      z.object({
+        relPath: z.string().min(1).optional().describe('要读取完整内容的共享区文件相对路径；不传则只列文件清单（relPath + 大小 + 修改时间）'),
+      }),
+      async (args) => {
         try {
+          if (args.relPath) {
+            try {
+              const content = await groupSharedService.readNativeFile(workspaceId, groupId, args.relPath);
+              return {
+                content: [{ type: 'text' as const, text: content }],
+              };
+            } catch (error: any) {
+              const reason = error?.code === 'ENOENT'
+                ? `共享区不存在文件 ${args.relPath}`
+                : `读取 ${args.relPath} 失败: ${error instanceof Error ? error.message : String(error)}`;
+              return {
+                content: [{ type: 'text' as const, text: reason }],
+                isError: true as const,
+              };
+            }
+          }
           const { files } = await groupSharedService.listNativeFiles(workspaceId, groupId);
-          const lines: string[] = [`📁 会话组共享区（共 ${files.length} 个文件）`, ''];
+          const lines: string[] = [`📁 会话组共享区文件清单（共 ${files.length} 个文件）`, ''];
           if (files.length === 0) {
             lines.push('暂无文件');
           } else {
             for (const f of files) {
               const kb = (f.size / 1024).toFixed(1);
               const date = new Date(f.mtime).toLocaleString('zh-CN', { hour12: false });
-              lines.push(`── ${f.relPath} (${kb} KB, ${date}) ──`);
-              try {
-                const content = await groupSharedService.readNativeFile(workspaceId, groupId, f.relPath);
-                lines.push(content);
-              } catch (error) {
-                lines.push(`⚠ 读取失败: ${error}`);
-              }
-              lines.push('');
+              lines.push(`- ${f.relPath} (${kb} KB, ${date})`);
             }
+            lines.push('', '需要某个文件的完整内容时，传 relPath 参数读取。');
           }
           return {
             content: [{ type: 'text' as const, text: lines.join('\n') }],

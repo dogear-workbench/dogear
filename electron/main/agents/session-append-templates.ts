@@ -19,7 +19,9 @@ export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
   '用 dogear__CreateSession 派遣子会话后，必须紧接着调用 dogear__WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。\n' +
   'outputPath 是会话组共享区里的路径，不是工作区路径；task 里不要再指示子会话把交付文档写到工作区其他位置，交付物一律经共享区传递。\n' +
-  '重启或中断后，用 dogear__ResumeSession 调起之前的子会话继续（保留消息历史，它会检查进度后接着干），而不是重新 CreateSession。'
+  '交付以收到子会话的 delivery 消息为准。应用重启后运行时状态不保留，重启前已交付的子会话会重新显示为未交付——此时以你的上下文记忆和共享区文件为准，不要盲目重派。\n' +
+  '看共享区用 dogear__ListGroupFiles：不带参数列文件清单，传 relPath 读单个文件的完整内容。\n' +
+  '重启或中断后，用 dogear__ResumeSession 调起之前 stopped 且未交付的子会话继续（保留消息历史，它会自检进度从中断处续跑），而不是重新 CreateSession。'
 
 /**
  * 生成可用的子会话 Profile 索引（仅主会话注入，让模型按描述选择 profile 参数）。
@@ -49,6 +51,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
     `\n## 你是一个被派遣的子会话\n` +
     `**任务**：${task}\n\n` +
     `**交付路径**：${outputPath}——用 dogear__SaveSharedNote 把完整交付内容写到共享区这个路径，dogear__SendMessage 里只放摘要通知\n\n` +
+    `**共享区已有产出**：需要了解背景时用 dogear__ListGroupFiles 列共享区文件清单，传 relPath 读单个文件内容。\n\n` +
     `**产出位置默认规则**：任务未明确指定文件位置时，产出的新文件（交付文档、报告、中间产物）一律用 dogear__SaveSharedNote 写到共享区；只有任务明确要求修改项目文件时才写工作区路径\n\n` +
     `**交付流程**：完成后用 dogear__SendMessage 向派出你的会话交付结果（delivery: true）；有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
@@ -60,7 +63,7 @@ const GROUP_CONTEXT_EXAMPLE =
   '\n' +
   '**组**：<组标题 或 未命名组（创建于 …）>\n' +
   '\n' +
-  '共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先看看共享区有没有相关文件（dogear__ListGroupFiles）。\n' +
+  '共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先用 dogear__ListGroupFiles 列共享区文件清单，需要细看时传 relPath 读单个文件。\n' +
   '当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续或组卡提炼。这不是强制——只在你判断有价值时做。';
 
 /**
@@ -73,7 +76,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '会话组上下文（模板说明）',
       category: 'group',
       template: GROUP_CONTEXT_EXAMPLE,
-      triggerDescription: '会话属于某个组时注入。列出组标题，引导 Agent 用 dogear__ListGroupFiles 按需查看共享区文件。',
+      triggerDescription: '会话属于某个组时注入。列出组标题，引导 Agent 用 dogear__ListGroupFiles 列共享区文件清单、传 relPath 按需读单个文件。',
       isDynamic: true,
     },
     {
