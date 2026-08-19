@@ -19,6 +19,10 @@ beforeEach(() => {
   setMockSettings({
     subAgent: { profiles: [makeProfile('p-a', 'prov-a', 't1'), makeProfile('p-b', 'prov-b', 't2')] },
     ai: { defaultModelSelection: null },
+    failover: { enabled: true, chain: [
+      { profileId: 'prov-a', tier: 't1' },
+      { profileId: 'prov-b', tier: 't2' },
+    ] },
   });
   updateModelSelectionCalls.length = 0;
   sendCalls.length = 0;
@@ -35,18 +39,6 @@ test('classifyDelegationError：cancelled 优先，quota 关键词命中，其�
   expect(terminalMod.classifyDelegationError({ subtype: 'failed', error: { kind: 'model', message: '账户余额不足' } })).toBe('quota');
   expect(terminalMod.classifyDelegationError({ subtype: 'failed', error: { kind: 'model', message: '500 Internal' } })).toBe('transient');
   expect(terminalMod.classifyDelegationError({ subtype: 'success' })).toBe('transient');
-});
-
-test('findFallbackModel 跳过停用/同供应商/无模型配置的 profile', () => {
-  const profiles = [
-    { ...makeProfile('x', 'prov-x', 't'), enabled: false },
-    makeProfile('a', 'prov-a', 't'),
-    { ...makeProfile('b', 'prov-b', 't'), modelSelection: null },
-    makeProfile('c', 'prov-c', 't'),
-  ];
-  expect(resumeMod.findFallbackModel(profiles, 'prov-a')?.profileId).toBe('prov-c');
-  expect(resumeMod.findFallbackModel(profiles, 'prov-c')?.profileId).toBe('prov-a');
-  expect(resumeMod.findFallbackModel([makeProfile('only', 'prov-only', 't')], 'prov-only')).toBeNull();
 });
 
 test('decideResumeOnError 决策矩阵', () => {
@@ -116,7 +108,7 @@ test('连续 failed 超过 MAX_RETRY 后通知：terminal.attempts 等于重试�
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
 });
 
-test('quota 错误降级到异供应商，降级后仍 quota 即耗尽通知', async () => {
+test('quota 错误沿 failover 链降级到异供应商，降级后仍 quota 即链耗尽通知', async () => {
   const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
 
   session.emit('complete', {
@@ -148,10 +140,11 @@ test('quota 错误降级到异供应商，降级后仍 quota 即耗尽通知', a
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
 });
 
-test('quota 但所有 profile 同一家供应商：立即通知且文案含无可降级', async () => {
+test('quota 但降级链无可切换供应商：立即通知且文案提示链无可用', async () => {
   setMockSettings({
-    subAgent: { profiles: [makeProfile('p-a', 'prov-a', 't1'), makeProfile('p-a2', 'prov-a', 't1b')] },
+    subAgent: { profiles: [makeProfile('p-a', 'prov-a', 't1'), makeProfile('p-b', 'prov-b', 't2')] },
     ai: { defaultModelSelection: null },
+    failover: { enabled: true, chain: [{ profileId: 'prov-a', tier: 't1' }] },
   });
   const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
   const waitPromise = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
@@ -163,7 +156,32 @@ test('quota 但所有 profile 同一家供应商：立即通知且文案含无�
   const result = await waitPromise;
 
   expect(result!.terminal?.errorClass).toBe('quota');
-  expect(result!.message).toContain('无可降级');
+  expect(result!.message).toContain('降级链无可用供应商');
+  expect(updateModelSelectionCalls.length).toBe(0);
+  expect(sendCalls.length).toBe(1);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
+});
+
+test('failover 开关关闭：quota 直接终态通知不降级', async () => {
+  setMockSettings({
+    subAgent: { profiles: [makeProfile('p-a', 'prov-a', 't1'), makeProfile('p-b', 'prov-b', 't2')] },
+    ai: { defaultModelSelection: null },
+    failover: { enabled: false, chain: [
+      { profileId: 'prov-a', tier: 't1' },
+      { profileId: 'prov-b', tier: 't2' },
+    ] },
+  });
+  const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
+  const waitPromise = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
+
+  session.emit('complete', {
+    subtype: 'failed',
+    error: { kind: 'model', message: '429 rate limit exceeded' },
+  });
+  const result = await waitPromise;
+
+  expect(result!.terminal?.errorClass).toBe('quota');
+  expect(result!.message).toContain('降级链无可用供应商');
   expect(updateModelSelectionCalls.length).toBe(0);
   expect(sendCalls.length).toBe(1);
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');

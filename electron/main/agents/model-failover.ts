@@ -1,7 +1,8 @@
 /**
- * 模型故障转移（主会话路径）：quota 类 turn 失败时沿全局 failover 链顺位切换供应商，
+ * 模型故障转移：quota 类 turn 失败时沿全局 failover 链顺位切换供应商，
  * 销毁重建 session 后发续跑提示从断点继续。切换是会话级 modelSelection 变更（不自动切回），
- * 用户可在模型选择器手动改回。子会话不经过本模块（delegation-bridge 有自己的降级编排）。
+ * 用户可在模型选择器手动改回。子会话只复用 findNextFailover 做链查找
+ * （delegation-bridge decideResume），不经过 maybeFailoverMainSession 编排。
  */
 
 import { isQuotaErrorMessage } from './delegation-terminal.js';

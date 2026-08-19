@@ -3,9 +3,11 @@
  *
  * 错误分类后的「要不要复活 / 要不要换供应商」决策与继续提示词构造。
  * 编排（重新 attach、计时器重挂、消息发送）在 delegation-bridge.ts 的 resumeChild。
+ * quota 降级来源是全局 failover 链：调用方传入 model-failover.ts findNextFailover 的结果，
+ * subAgent.profiles 回归纯功能配置，不再承担降级链职责。
  */
 
-import type { ModelSelection, SubAgentProfile } from '../services/settings-types.js';
+import type { FailoverEntry, ModelSelection } from '../services/settings-types.js';
 import { getDelegationMaxRetry } from './delegation-terminal.js';
 
 export interface ResumeDecision {
@@ -13,26 +15,15 @@ export interface ResumeDecision {
   modelOverride?: ModelSelection | null;
 }
 
-/** 按列表顺序找第一个「已启用且配置了异供应商模型」的 profile，返回其 modelSelection */
-export function findFallbackModel(profiles: SubAgentProfile[], currentProfileId: string): ModelSelection | null {
-  for (const p of profiles) {
-    if (p.enabled === false) continue;
-    if (!p.modelSelection) continue;
-    if (p.modelSelection.profileId === currentProfileId) continue;
-    return p.modelSelection;
-  }
-  return null;
-}
-
 /**
  * transient：retryCount 未耗尽即复活（不换模型）。
- * quota：只降级一次——fallback 缺失、已试过 fallback、或重试数超上限都视为耗尽。
+ * quota：fallback（findNextFailover 结果）缺失、已试过、或重试数超上限都视为链耗尽。
  */
 export function decideResumeOnError(
   errorClass: string | undefined,
   retryCount: number,
   modelTried: string[],
-  fallback: ModelSelection | null,
+  fallback: FailoverEntry | null,
 ): ResumeDecision {
   if (errorClass === 'cancelled' || !errorClass) return { resume: false };
   if (errorClass === 'transient') {

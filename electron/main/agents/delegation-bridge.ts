@@ -3,7 +3,7 @@
  * 维护会话创建/停止的状态机（childStates，用于 UI 展示 + no_delivery 检测）+
  * 通用消息投递与等待（messageWaiters，支撑 dogear__SendMessage / dogear__WaitForMessage）+
  * 监听 PiSession 的 complete / error 事件推进状态；
- * 失败终态按错误分类自动复活原会话续跑（transient 重试 / quota 跨供应商降级，
+ * 失败终态按错误分类自动复活原会话续跑（transient 重试 / quota 沿全局 failover 链跨供应商降级，
  * 见 settleTerminal → resumeChild），耗尽才通知主会话。
  */
 
@@ -40,9 +40,9 @@ import {
 import {
   buildResumePrompt,
   decideResumeOnError,
-  findFallbackModel,
   type ResumeDecision,
 } from './delegation-resume.js';
+import { findNextFailover } from './model-failover.js';
 import {
   conversationToSnapshot,
   loadRestorableChildren,
@@ -282,8 +282,12 @@ async function decideResume(c: ChildStateInternal): Promise<ResumeDecision> {
   const conv = await conversationService.getById(c.workspaceId, c.childId);
   const currentProfileId = conv?.modelSelection?.profileId ?? '';
   const settings = await loadSettings();
-  const fallback = findFallbackModel(settings.subAgent?.profiles ?? [], currentProfileId);
-  return decideResumeOnError('quota', c.retryCount ?? 0, c.modelTried ?? [], fallback);
+  if (!settings.failover?.enabled) {
+    return decideResumeOnError('quota', c.retryCount ?? 0, c.modelTried ?? [], null);
+  }
+  const tried = new Set((c.modelTried ?? []).map((key) => key.slice(0, key.indexOf(':'))));
+  const entry = findNextFailover(settings.failover.chain, currentProfileId, tried);
+  return decideResumeOnError('quota', c.retryCount ?? 0, c.modelTried ?? [], entry);
 }
 
 /**

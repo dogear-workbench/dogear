@@ -27,7 +27,11 @@ export const runtimeDetachCalls: Array<{ conversationId: string; holderType: str
 let childSeq = 0;
 let parentSeq = 0;
 let attachSeq = 0;
-let mockSettings: any = { subAgent: { profiles: [] }, ai: { defaultModelSelection: null } };
+let mockSettings: any = {
+  subAgent: { profiles: [] },
+  ai: { defaultModelSelection: null },
+  failover: { enabled: false, chain: [] },
+};
 
 export function setMockSettings(settings: any): void {
   mockSettings = settings;

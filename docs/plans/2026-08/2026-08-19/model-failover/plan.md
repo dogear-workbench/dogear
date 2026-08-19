@@ -17,7 +17,7 @@
 
 - [x] [Step 1: 设置层 + 设置页 failover 配置](./step1-settings.md) — 类型/normalize/设置页 UI（开关 + 供应商链列表 + 模型下拉 + 排序）
 - [x] [Step 2: failover 核心 + 主会话自动切换](./step2-main-failover.md) — 纯逻辑链查找 + 主会话 quota 编排（切换/重建/续跑）+ 前端切换提示条
-- [ ] [Step 3: 子会话统一走全局链 + 回归](./step3-sub-unify.md) — decideResume 改走 failover 链、废弃 findFallbackModel、测试回归、文档同步
+- [x] [Step 3: 子会话统一走全局链 + 回归](./step3-sub-unify.md) — decideResume 改走 failover 链、废弃 findFallbackModel、测试回归、文档同步
 
 ## 全局决策
 

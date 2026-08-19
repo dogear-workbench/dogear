@@ -104,7 +104,7 @@ export function buildTerminalNotice(input: TerminalNoticeInput, attempts = 0): s
   const tried = input.modelTried ?? [];
   const detail = tried.length > 1
     ? `疑似供应商费率上限，已降级尝试 ${tried.join(' → ')} 后仍失败`
-    : '疑似供应商费率上限，无可降级 profile';
+    : '疑似供应商费率上限，降级链无可用供应商';
   return `${base}${detail}，建议更换供应商后用 dogear__ResumeSession 调起或重新派遣。`;
 }
 
