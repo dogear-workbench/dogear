@@ -35,24 +35,12 @@ import type { LivePermissionRequest } from './hooks/useAgentSession';
 
 const childStatusLabels: Record<ChildStatus, string> = {
   running: '子会话运行中',
-  done: '子会话已交付',
-  failed: '子会话运行失败',
-  timeout: '子会话已超时',
-  cancelled: '子会话已取消',
-  no_delivery: '子会话结束但未交付',
-  hang: '子会话无进展中断',
-  interrupted: '子会话已中断',
+  stopped: '子会话已停止',
 };
 
 const childStatusStyles: Record<ChildStatus, string> = {
   running: 'bg-orange-50 border-orange-200 text-orange-800',
-  done: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-  failed: 'bg-red-50 border-red-200 text-red-800',
-  timeout: 'bg-red-50 border-red-200 text-red-800',
-  cancelled: 'bg-muted border-border text-muted-foreground',
-  no_delivery: 'bg-amber-50 border-amber-200 text-amber-800',
-  hang: 'bg-red-50 border-red-200 text-red-800',
-  interrupted: 'bg-muted border-border text-muted-foreground',
+  stopped: 'bg-muted border-border text-muted-foreground',
 };
 
 // Zustand selectors must return a cached reference when no notices exist.
@@ -390,12 +378,9 @@ export function AgentChat({
           />
         )}
         {childSnapshot && (
-          <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childStatusStyles[childSnapshot.status]}`} title={childSnapshot.errorMessage || childSnapshot.summary}>
-            <p className="font-medium">{childStatusLabels[childSnapshot.status]}</p>
-            {childSnapshot.errorMessage && <p className="mt-0.5">{childSnapshot.errorMessage}</p>}
-            {childSnapshot.status === 'interrupted' && (
-              <p className="mt-0.5">父会话中可用 dogear__ResumeSession 调起续跑</p>
-            )}
+          <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childSnapshot.delivered ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : childStatusStyles[childSnapshot.status]}`} title={childSnapshot.lastError || undefined}>
+            <p className="font-medium">{childSnapshot.delivered ? '子会话已交付' : childStatusLabels[childSnapshot.status]}</p>
+            {childSnapshot.lastError && <p className="mt-0.5">{childSnapshot.lastError}</p>}
           </div>
         )}
         {/* 旧 SDK 主会话迁移冻结提示：只读展示，不回放 JSONL、不允许发送/编辑重发/分叉 */}

@@ -5,13 +5,10 @@
 
 export type ChildStatus =
   | 'running'      // 会话仍在跑
-  | 'done'         // 已通过 dogear__SendMessage(delivery:true) 交付
-  | 'failed'       // agent 跑挂了或内部异常
-  | 'timeout'      // 超过 subAgent.timeoutMinutes
-  | 'cancelled'    // 被主动停止
-  | 'no_delivery'  // 会话自然结束但没交付
-  | 'hang'         // 长时间无流事件，判定供应商 hang 住
-  | 'interrupted'; // 应用重启导致的中断（持久化恢复时标记）
+  | 'stopped';     // 不在跑（死因见 lastError）
+
+/** stopped 时的死因（调度内部字段，不进快照） */
+export type ChildTerminalReason = 'failed' | 'hang' | 'timeout' | 'cancelled' | 'no_delivery';
 
 export interface DelegateSpec {
   /** 委派给新会话的任务描述（自然语言） */
@@ -33,20 +30,16 @@ export interface ChildStateSnapshot {
   task: string;
   title: string;
   status: ChildStatus;
+  /** 交付事实（dogear__SendMessage delivery:true 单调落上，与状态机独立） */
+  delivered: boolean;
   startedAt: number;
   finishedAt?: number;
-  summary?: string;
-  errorMessage?: string;
+  /** stopped 时的死因文本 */
+  lastError?: string;
   /** 实际命中的子会话 Profile 名（匹配不到时为 fallback 的「默认」） */
   profileName: string;
   /** 该会话自身的 Harness sessionId；attachConversation 完成、PiSession 启动后立即同步赋值 */
   sessionId?: string;
   /** 最近一次流事件时间戳（滑动 idle 计时打点，检测 hang 用） */
   lastActivityAt?: number;
-  /** resume 重调尝试次数 */
-  retryCount?: number;
-  /** 错误分类（transient/quota/cancelled） */
-  errorClass?: 'transient' | 'quota' | 'cancelled';
-  /** 已试过的模型链，profileId:tier 列表 */
-  modelTried?: string[];
 }

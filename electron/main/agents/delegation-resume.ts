@@ -16,21 +16,21 @@ export interface ResumeDecision {
 }
 
 /**
- * transient：retryCount 未耗尽即复活（不换模型）。
- * quota：fallback（findNextFailover 结果）缺失、已试过、或重试数超上限都视为链耗尽。
+ * transient：consecutiveFails 未耗尽即复活（不换模型）。
+ * quota：fallback（findNextFailover 结果）缺失、已试过、或连续失败数超上限都视为链耗尽。
  */
 export function decideResumeOnError(
   errorClass: string | undefined,
-  retryCount: number,
+  consecutiveFails: number,
   modelTried: string[],
   fallback: FailoverEntry | null,
 ): ResumeDecision {
   if (errorClass === 'cancelled' || !errorClass) return { resume: false };
   if (errorClass === 'transient') {
-    return retryCount < getDelegationMaxRetry() ? { resume: true } : { resume: false };
+    return consecutiveFails < getDelegationMaxRetry() ? { resume: true } : { resume: false };
   }
   if (errorClass !== 'quota') return { resume: false };
-  if (retryCount >= getDelegationMaxRetry() + 1) return { resume: false };
+  if (consecutiveFails >= getDelegationMaxRetry() + 1) return { resume: false };
   if (!fallback) return { resume: false };
   if (modelTried.includes(`${fallback.profileId}:${fallback.tier}`)) return { resume: false };
   return { resume: true, modelOverride: fallback };

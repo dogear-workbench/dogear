@@ -30,7 +30,8 @@ test('message 流事件持续重置 idleTimer，活跃会话不判 hang', async 
   expect(bridge.getChildSnapshot(snapshot.childId)!.lastActivityAt!).toBeGreaterThan(before!);
 
   await sleep(250);
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('hang');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.lastError).toBe('无进展中断');
   expect(sessions.get(sessionId)).toBeDefined();
 });
 
@@ -42,14 +43,14 @@ test('无流事件到期触发 hang 终态并唤醒 waiter 带 terminal', async 
   const result = await waitPromise;
 
   expect(result).not.toBeNull();
-  expect(result!.terminal?.status).toBe('hang');
+  expect(result!.terminal?.terminalReason).toBe('hang');
   expect(result!.terminal?.errorClass).toBe('transient');
   expect(result!.terminal?.attempts).toBe(0);
   expect(result!.delivery).toBe(false);
   expect(result!.message).toContain('无进展中断');
   expect(result!.fromSessionId).toBe(sessionId);
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('hang');
-  expect(bridge.getChildSnapshot(snapshot.childId)!.errorMessage).toBe('无进展中断');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.lastError).toBe('无进展中断');
 });
 
 test('complete(failed) 终态秒级唤醒 waiter 带 terminal', async () => {
@@ -62,11 +63,11 @@ test('complete(failed) 终态秒级唤醒 waiter 带 terminal', async () => {
   });
   const result = await waitPromise;
 
-  expect(result!.terminal?.status).toBe('failed');
-  expect(result!.terminal?.errorMessage).toBe('模型请求失败');
+  expect(result!.terminal?.terminalReason).toBe('failed');
+  expect(result!.terminal?.lastError).toBe('模型请求失败');
   expect(result!.message).toContain('模型请求失败');
   expect(result!.message).toContain('子会话');
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
 });
 
 test('等待其他子会话的 waiter 不被终态通知误伤', async () => {

@@ -42,15 +42,16 @@ test('classifyDelegationError：cancelled 优先，quota 关键词命中，其�
 });
 
 test('decideResumeOnError 决策矩阵', () => {
+  const max = terminalMod.getDelegationMaxRetry();
   expect(resumeMod.decideResumeOnError('cancelled', 0, [], null)).toEqual({ resume: false });
   expect(resumeMod.decideResumeOnError(undefined, 0, [], null)).toEqual({ resume: false });
-  expect(resumeMod.decideResumeOnError('transient', 1, [], null)).toEqual({ resume: true });
-  expect(resumeMod.decideResumeOnError('transient', 2, [], null)).toEqual({ resume: false });
+  expect(resumeMod.decideResumeOnError('transient', max - 1, [], null)).toEqual({ resume: true });
+  expect(resumeMod.decideResumeOnError('transient', max, [], null)).toEqual({ resume: false });
   const fb = { profileId: 'prov-b', tier: 't2' };
   expect(resumeMod.decideResumeOnError('quota', 0, ['prov-a:t1'], fb)).toEqual({ resume: true, modelOverride: fb });
   expect(resumeMod.decideResumeOnError('quota', 0, ['prov-a:t1', 'prov-b:t2'], fb)).toEqual({ resume: false });
   expect(resumeMod.decideResumeOnError('quota', 0, [], null)).toEqual({ resume: false });
-  expect(resumeMod.decideResumeOnError('quota', 3, [], fb)).toEqual({ resume: false });
+  expect(resumeMod.decideResumeOnError('quota', max + 1, [], fb)).toEqual({ resume: false });
 });
 
 test('buildResumePrompt 含死因、outputPath 与继续指示', () => {
@@ -73,8 +74,6 @@ test('transient failed 自动复活原会话：状态回 running、waiter 不被
 
   const snap = bridge.getChildSnapshot(snapshot.childId)!;
   expect(snap.status).toBe('running');
-  expect(snap.retryCount).toBe(1);
-  expect(snap.modelTried).toEqual(['prov-a:t1']);
 
   const raced = await Promise.race([waitPromise, sleep(150).then(() => 'pending')]);
   expect(raced).toBe('pending');
@@ -87,6 +86,7 @@ test('transient failed 自动复活原会话：状态回 running、waiter 不被
 });
 
 test('连续 failed 超过 MAX_RETRY 后通知：terminal.attempts 等于重试上限', async () => {
+  terminalMod.setDelegationMaxRetry(2);
   const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
   const waitPromise = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
 
@@ -96,16 +96,16 @@ test('连续 failed 超过 MAX_RETRY 后通知：terminal.attempts 等于重试�
 
   session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
   await sleep(60);
-  expect(bridge.getChildSnapshot(snapshot.childId)!.retryCount).toBe(2);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
 
   session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
   const result = await waitPromise;
 
-  expect(result!.terminal?.status).toBe('failed');
+  expect(result!.terminal?.terminalReason).toBe('failed');
   expect(result!.terminal?.attempts).toBe(2);
   expect(result!.terminal?.errorClass).toBe('transient');
   expect(result!.message).toContain('自动重试 2 次');
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
 });
 
 test('quota 错误沿 failover 链降级到异供应商，降级后仍 quota 即链耗尽通知', async () => {
@@ -121,7 +121,6 @@ test('quota 错误沿 failover 链降级到异供应商，降级后仍 quota 即
   expect(updateModelSelectionCalls[0].modelSelection).toEqual({ profileId: 'prov-b', tier: 't2' });
   const snap = bridge.getChildSnapshot(snapshot.childId)!;
   expect(snap.status).toBe('running');
-  expect(snap.modelTried).toEqual(['prov-a:t1', 'prov-b:t2']);
   expect(snap.profileName).toBe('p-b 档');
   expect(sendCalls[1].text).toContain('从中断处继续完成任务');
 
@@ -137,7 +136,7 @@ test('quota 错误沿 failover 链降级到异供应商，降级后仍 quota 即
   expect(result!.message).toContain('已降级尝试 prov-a:t1 → prov-b:t2');
   expect(result!.message).toContain('dogear__ResumeSession');
   expect(updateModelSelectionCalls.length).toBe(1);
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
 });
 
 test('quota 但降级链无可切换供应商：立即通知且文案提示链无可用', async () => {
@@ -159,7 +158,7 @@ test('quota 但降级链无可切换供应商：立即通知且文案提示链�
   expect(result!.message).toContain('降级链无可用供应商');
   expect(updateModelSelectionCalls.length).toBe(0);
   expect(sendCalls.length).toBe(1);
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
 });
 
 test('failover 开关关闭：quota 直接终态通知不降级', async () => {
@@ -184,7 +183,7 @@ test('failover 开关关闭：quota 直接终态通知不降级', async () => {
   expect(result!.message).toContain('降级链无可用供应商');
   expect(updateModelSelectionCalls.length).toBe(0);
   expect(sendCalls.length).toBe(1);
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('failed');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
 });
 
 test('stopChild(cancelled) 不自动复活，waiter 收到 cancelled 通知', async () => {
@@ -194,11 +193,11 @@ test('stopChild(cancelled) 不自动复活，waiter 收到 cancelled 通知', as
   await bridge.stopChild(snapshot.childId, 'cancelled');
   const result = await waitPromise;
 
-  expect(result!.terminal?.status).toBe('cancelled');
+  expect(result!.terminal?.terminalReason).toBe('cancelled');
   expect(result!.terminal?.errorClass).toBe('cancelled');
   expect(result!.terminal?.attempts).toBe(0);
   expect(result!.message).toContain('被停止');
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('cancelled');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
   expect(sendCalls.length).toBe(1);
 });
 
@@ -210,8 +209,51 @@ test('stopChild(timeout) 按 transient 自动复活', async () => {
 
   const snap = bridge.getChildSnapshot(snapshot.childId)!;
   expect(snap.status).toBe('running');
-  expect(snap.retryCount).toBe(1);
   expect(sendCalls.length).toBe(2);
   expect(sendCalls[1].text).toContain('你刚才因超时中断');
   expect(snap.sessionId).toBe(sessionId);
+});
+
+test('complete success 清零 consecutiveFails：后续失败从 0 重新计数', async () => {
+  terminalMod.setDelegationMaxRetry(1);
+  const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
+
+  session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
+  await sleep(60);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
+
+  const waitNoDelivery = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
+  session.emit('complete', { subtype: 'success' });
+  const noDelivery = await waitNoDelivery;
+  expect(noDelivery!.terminal?.terminalReason).toBe('no_delivery');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+
+  await bridge.resumeChild(snapshot.childId, { reason: '测试调起' });
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
+
+  const waitFinal = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
+  session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal' } });
+  const final = await waitFinal;
+
+  expect(final!.terminal?.terminalReason).toBe('failed');
+  expect(final!.terminal?.attempts).toBe(1);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+});
+
+test('no_delivery 终态后补交付：markChildDelivered 在 stopped 状态下落上交付事实', async () => {
+  const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
+
+  const waitNoDelivery = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
+  session.emit('complete', { subtype: 'success' });
+  const noDelivery = await waitNoDelivery;
+  expect(noDelivery!.terminal?.terminalReason).toBe('no_delivery');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.delivered).toBe(false);
+
+  bridge.markChildDelivered(snapshot.childId);
+  const snap = bridge.getChildSnapshot(snapshot.childId)!;
+  expect(snap.status).toBe('stopped');
+  expect(snap.delivered).toBe(true);
+
+  bridge.markChildDelivered(snapshot.childId);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.delivered).toBe(true);
 });

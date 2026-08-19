@@ -46,7 +46,7 @@ export async function readPersistedChildren(): Promise<PersistedChildState[]> {
 
 /**
  * 重启恢复用的过滤与转换：conversation 已不存在的条目丢弃；
- * running 的改 interrupted（重启不自动续跑——主会话自身也断了，无人接收交付）。
+ * running 的改 stopped（重启不自动续跑——主会话自身也断了，无人接收交付）。
  */
 export async function loadRestorableChildren(): Promise<{ restored: PersistedChildState[]; hadEntries: boolean }> {
   const persisted = await readPersistedChildren();
@@ -56,9 +56,9 @@ export async function loadRestorableChildren(): Promise<{ restored: PersistedChi
     const conv = await conversationService.getById(p.workspaceId, p.childId);
     if (!conv) continue;
     if (p.status === 'running') {
-      restored.push({ ...p, status: 'interrupted', errorMessage: '应用重启中断' });
+      restored.push({ ...p, status: 'stopped', lastError: '应用重启中断', delivered: p.delivered ?? false });
     } else {
-      restored.push(p);
+      restored.push({ ...p, delivered: p.delivered ?? false });
     }
   }
   return { restored, hadEntries: true };
@@ -66,7 +66,8 @@ export async function loadRestorableChildren(): Promise<{ restored: PersistedChi
 
 /**
  * 持久层补集条目（内存不跟踪的历史子会话）转 snapshot 形状。
- * status 恒为 interrupted：不在内存即代表本进程未在跑它。
+ * status 恒为 stopped、delivered 恒为 false：不在内存即代表本进程未在跑它，
+ * 是否交付由主会话上下文记忆与共享区文件判定。
  */
 export function conversationToSnapshot(
   conv: ConversationIndex,
@@ -81,7 +82,8 @@ export function conversationToSnapshot(
     outputPath: conv.contractMetadata?.expectedOutputPath ?? '',
     task: conv.contractMetadata?.task ?? '',
     title: conv.title,
-    status: 'interrupted',
+    status: 'stopped',
+    delivered: false,
     startedAt: Date.parse(conv.createdAt) || 0,
     profileName: profile?.name ?? '默认',
     sessionId: conv.sessionId ?? undefined,

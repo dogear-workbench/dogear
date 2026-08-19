@@ -32,6 +32,16 @@ async function waitForFileStatus(childId: string, status: string, timeoutMs = 20
   return null;
 }
 
+async function waitForFileDelivered(childId: string, timeoutMs = 2000): Promise<any> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const entry = readStateChildren().find((c: any) => c.childId === childId);
+    if (entry?.delivered === true) return entry;
+    await sleep(20);
+  }
+  return null;
+}
+
 beforeEach(() => {
   setMockSettings({
     subAgent: { profiles: [makeProfile('p-a', 'prov-a', 't1')] },
@@ -88,8 +98,8 @@ test('abortWaitsForParent 老链路：等待 resolve null、运行中子会话�
 
   expect(await myWait).toBeNull();
   await sleep(100);
-  expect(bridge.getChildSnapshot(mine.snapshot.childId)!.status).toBe('cancelled');
-  expect(bridge.getChildSnapshot(mine.snapshot.childId)!.errorMessage).toBe('被停止');
+  expect(bridge.getChildSnapshot(mine.snapshot.childId)!.status).toBe('stopped');
+  expect(bridge.getChildSnapshot(mine.snapshot.childId)!.lastError).toBe('被停止');
 
   const raced = await Promise.race([otherWait, sleep(150).then(() => 'pending')]);
   expect(raced).toBe('pending');
@@ -97,24 +107,26 @@ test('abortWaitsForParent 老链路：等待 resolve null、运行中子会话�
   bridge.abortMessageWaits(other.parentConversationId);
 });
 
-test('delegation-state.json 每 child 恒一条：多次状态变化不产生重复条目，终态条目保留', async () => {
+test('delegation-state.json 每 child 恒一条：多次状态变化不产生重复条目，stopped 终态可补交付', async () => {
   const before = new Set(readStateChildren().map((c: any) => c.childId));
 
   const a = await startTestChild(bridge, 'p-a');
   const b = await startTestChild(bridge, 'p-a');
 
   a.session.emit('complete', { subtype: 'failed', error: { kind: 'model', message: '500 Internal Server Error' } });
-  expect(await waitForFileStatus(a.snapshot.childId, 'failed')).not.toBeNull();
+  expect(await waitForFileStatus(a.snapshot.childId, 'stopped')).not.toBeNull();
+
+  bridge.markChildDelivered(a.snapshot.childId);
+  const deliveredEntry = await waitForFileDelivered(a.snapshot.childId);
+  expect(deliveredEntry).not.toBeNull();
+  expect(bridge.getChildSnapshot(a.snapshot.childId)!.status).toBe('stopped');
+  expect(bridge.getChildSnapshot(a.snapshot.childId)!.delivered).toBe(true);
 
   await bridge.resumeChild(a.snapshot.childId, { reason: '回归测试调起' });
   expect(await waitForFileStatus(a.snapshot.childId, 'running')).not.toBeNull();
 
-  bridge.markChildDelivered(a.snapshot.childId, '回归交付摘要');
-  const doneEntry = await waitForFileStatus(a.snapshot.childId, 'done');
-  expect(doneEntry.summary).toBe('回归交付摘要');
-
   await bridge.stopChild(b.snapshot.childId, 'cancelled');
-  expect(await waitForFileStatus(b.snapshot.childId, 'cancelled')).not.toBeNull();
+  expect(await waitForFileStatus(b.snapshot.childId, 'stopped')).not.toBeNull();
 
   const children = readStateChildren();
   const ids = children.map((c: any) => c.childId);

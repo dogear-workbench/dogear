@@ -53,26 +53,25 @@ test('startChild 后 delegation-state.json 落盘且字段完整', async () => {
   expect(entry.task).toBe('测试任务');
   expect(entry.title).toBe(snapshot.title);
   expect(entry.status).toBe('running');
+  expect(entry.delivered).toBe(false);
   expect(entry.profileName).toBe('p-a 档');
   expect(entry.sessionId).toBe(sessionId);
-  expect(entry.retryCount).toBe(0);
-  expect(entry.modelTried).toEqual(['prov-a:t1']);
   expect(typeof entry.startedAt).toBe('number');
 });
 
-test('loadChildStates 把 running 恢复为 interrupted 并回写文件', async () => {
+test('loadChildStates 把 running 恢复为 stopped 并回写文件', async () => {
   const { snapshot } = await startTestChild(bridge, 'p-a');
   await waitForEntry(snapshot.childId);
 
   await bridge.loadChildStates();
 
   const snap = bridge.getChildSnapshot(snapshot.childId)!;
-  expect(snap.status).toBe('interrupted');
-  expect(snap.errorMessage).toBe('应用重启中断');
+  expect(snap.status).toBe('stopped');
+  expect(snap.lastError).toBe('应用重启中断');
   expect(snap.task).toBe('测试任务');
   expect(snap.outputPath).toBe(snapshot.outputPath);
   expect(snap.sessionId).toBe(snapshot.sessionId);
-  expect(readStateFile().children.find((c: any) => c.childId === snapshot.childId)?.status).toBe('interrupted');
+  expect(readStateFile().children.find((c: any) => c.childId === snapshot.childId)?.status).toBe('stopped');
 });
 
 test('conversation 已删除的条目恢复时被过滤', async () => {
@@ -116,7 +115,8 @@ test('getChildrenByParent 合并持久层补集，内存条目优先去重', asy
   expect(mem.task).toBe('内存任务');
 
   const disk = children.find((c) => c.childId === diskConvId)!;
-  expect(disk.status).toBe('interrupted');
+  expect(disk.status).toBe('stopped');
+  expect(disk.delivered).toBe(false);
   expect(disk.task).toBe('持久层任务');
   expect(disk.outputPath).toBe('disk-out.md');
   expect(disk.profileName).toBe('p-a 档');

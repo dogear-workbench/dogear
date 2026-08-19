@@ -25,6 +25,7 @@ import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 import type {
   ChildStatus,
   ChildStateSnapshot,
+  ChildTerminalReason,
   DelegateSpec,
 } from '../types.js';
 import { createIdleWatch, type IdleWatch } from './delegation-idle.js';
@@ -57,6 +58,14 @@ interface ChildStateInternal extends ChildStateSnapshot {
   attachmentId: string;
   /** 该会话自身的 Harness sessionId；attachConversation 完成后立即同步赋值 */
   sessionId: string;
+  /** stopped 时的死因，仅供调度内部重试决策与通知判定，不进快照 */
+  terminalReason?: ChildTerminalReason;
+  /** 错误分类（transient/quota/cancelled），驱动重调决策 */
+  errorClass?: DelegationErrorClass;
+  /** 已试过的模型链（quota 降级防重），profileId:tier 列表 */
+  modelTried?: string[];
+  /** 连续失败次数：complete 正常到达（subtype=success）时清零 */
+  consecutiveFails: number;
   timeoutTimer?: NodeJS.Timeout;
   idleWatch?: IdleWatch;
 }
@@ -115,7 +124,7 @@ function broadcastDeliveriesAwaitChanged(parentConversationId: string): void {
   for (const c of childStates.values()) {
     if (c.parentConversationId !== parentConversationId) continue;
     if (c.status === 'running') runningCount++;
-    else if (c.status === 'done') doneCount++;
+    else if (c.delivered) doneCount++;
   }
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
@@ -138,16 +147,13 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
     task: c.task,
     title: c.title,
     status: c.status,
+    delivered: c.delivered,
     startedAt: c.startedAt,
     finishedAt: c.finishedAt,
-    summary: c.summary,
-    errorMessage: c.errorMessage,
+    lastError: c.lastError,
     profileName: c.profileName,
     sessionId: c.sessionId,
     lastActivityAt: c.lastActivityAt,
-    retryCount: c.retryCount,
-    errorClass: c.errorClass,
-    modelTried: c.modelTried,
   };
 }
 
@@ -172,14 +178,20 @@ function touchPersist(childId: string): void {
 
 /**
  * 应用启动时调用一次：磁盘是重启后的权威来源，先清内存再灌回。
- * running → interrupted（errorMessage '应用重启中断'），attachmentId 清空，
+ * running → stopped（lastError 标记应用重启中断），attachmentId 清空，
  * conversation 已不存在的条目被 loadRestorableChildren 过滤；恢复后回写使磁盘与内存一致。
  */
 export async function loadChildStates(): Promise<void> {
   const { restored, hadEntries } = await loadRestorableChildren();
   childStates.clear();
   for (const p of restored) {
-    childStates.set(p.childId, { ...p, sessionId: p.sessionId ?? '', attachmentId: '' });
+    childStates.set(p.childId, {
+      ...p,
+      delivered: p.delivered ?? false,
+      sessionId: p.sessionId ?? '',
+      attachmentId: '',
+      consecutiveFails: 0,
+    });
   }
   if (hadEntries) {
     try {
@@ -189,7 +201,7 @@ export async function loadChildStates(): Promise<void> {
     }
   }
   if (restored.length > 0) {
-    logger.info(`delegation 状态恢复：${restored.length} 个子会话条目（running 已标记 interrupted）`);
+    logger.info(`delegation 状态恢复：${restored.length} 个子会话条目（running 已标记为 stopped）`);
   }
 }
 
@@ -258,9 +270,11 @@ function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
   const c = childStates.get(childId);
   if (!c) return;
   if (c.status === 'running') {
-    const completion = classifyChildCompletion(result);
-    c.status = completion.status;
-    c.errorMessage = completion.errorMessage;
+    if (result.subtype === 'success') c.consecutiveFails = 0;
+    const completion = classifyChildCompletion(result, c.delivered);
+    c.status = 'stopped';
+    c.terminalReason = completion.terminalReason;
+    c.lastError = completion.lastError;
     c.errorClass = classifyDelegationError(result);
     c.finishedAt = Date.now();
     groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
@@ -271,23 +285,23 @@ function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
   void settleTerminal(c);
 }
 
-function isRetryableStatus(status: ChildStatus): boolean {
-  return status === 'failed' || status === 'hang' || status === 'timeout';
+function isRetryableTerminal(reason: ChildTerminalReason | undefined): boolean {
+  return reason === 'failed' || reason === 'hang' || reason === 'timeout';
 }
 
 async function decideResume(c: ChildStateInternal): Promise<ResumeDecision> {
   if (c.errorClass !== 'quota') {
-    return decideResumeOnError(c.errorClass, c.retryCount ?? 0, c.modelTried ?? [], null);
+    return decideResumeOnError(c.errorClass, c.consecutiveFails, c.modelTried ?? [], null);
   }
   const conv = await conversationService.getById(c.workspaceId, c.childId);
   const currentProfileId = conv?.modelSelection?.profileId ?? '';
   const settings = await loadSettings();
   if (!settings.failover?.enabled) {
-    return decideResumeOnError('quota', c.retryCount ?? 0, c.modelTried ?? [], null);
+    return decideResumeOnError('quota', c.consecutiveFails, c.modelTried ?? [], null);
   }
   const tried = new Set((c.modelTried ?? []).map((key) => key.slice(0, key.indexOf(':'))));
   const entry = findNextFailover(settings.failover.chain, currentProfileId, tried);
-  return decideResumeOnError('quota', c.retryCount ?? 0, c.modelTried ?? [], entry);
+  return decideResumeOnError('quota', c.consecutiveFails, c.modelTried ?? [], entry);
 }
 
 /**
@@ -299,10 +313,10 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
   if (settling.has(c.childId)) return;
   settling.add(c.childId);
   try {
-    if (isRetryableStatus(c.status) && (c.errorClass === 'transient' || c.errorClass === 'quota')) {
+    if (isRetryableTerminal(c.terminalReason) && (c.errorClass === 'transient' || c.errorClass === 'quota')) {
       const decision = await decideResume(c);
       if (decision.resume) {
-        const reason = c.status === 'timeout' ? '超时' : c.status === 'hang' ? '长时间无进展' : (c.errorMessage ?? terminalStatusLabel(c.status));
+        const reason = c.terminalReason === 'timeout' ? '超时' : c.terminalReason === 'hang' ? '长时间无进展' : (c.lastError ?? terminalStatusLabel(c.terminalReason));
         try {
           await resumeChild(c.childId, { reason, modelOverride: decision.modelOverride ?? null });
           return;
@@ -311,7 +325,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
         }
       }
     }
-    if (isNotifiableTerminal(c.status)) notifyTerminalToWaiters(c);
+    if (isNotifiableTerminal(c.terminalReason)) notifyTerminalToWaiters(c);
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
     touchPersist(c.childId);
@@ -372,10 +386,11 @@ export async function resumeChild(childId: string, opts: { reason: string; model
 
   const now = Date.now();
   c.status = 'running';
-  c.errorMessage = undefined;
+  c.terminalReason = undefined;
+  c.lastError = undefined;
   c.finishedAt = undefined;
   c.lastActivityAt = now;
-  c.retryCount = (c.retryCount ?? 0) + 1;
+  c.consecutiveFails += 1;
   if (modelSel) {
     const tried = c.modelTried ?? [];
     const key = `${modelSel.profileId}:${modelSel.tier}`;
@@ -397,7 +412,7 @@ export async function resumeChild(childId: string, opts: { reason: string; model
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
   touchPersist(childId);
 
-  logger.info(`子会话 ${childId} 第 ${c.retryCount} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
+  logger.info(`子会话 ${childId} 第 ${c.consecutiveFails} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
   session.sendMessage(buildResumePrompt(opts.reason, c.outputPath)).catch((error: unknown) => {
     logger.error(`子会话 ${childId} 复活后 sendMessage 失败`, error);
     onSessionComplete(childId, {
@@ -422,13 +437,21 @@ function notifyTerminalToWaiters(c: ChildStateInternal): void {
     messageWaiters.delete(key);
     w.resolve({
       fromSessionId: c.sessionId,
-      message: buildTerminalNotice(c, c.retryCount ?? 0),
+      message: buildTerminalNotice({
+        title: c.title,
+        terminalReason: c.terminalReason,
+        lastError: c.lastError,
+        startedAt: c.startedAt,
+        finishedAt: c.finishedAt,
+        errorClass: c.errorClass,
+        modelTried: c.modelTried,
+      }, c.consecutiveFails),
       delivery: false,
       terminal: {
-        status: c.status,
-        errorMessage: c.errorMessage,
+        terminalReason: c.terminalReason,
+        lastError: c.lastError,
         errorClass: c.errorClass ?? 'transient',
-        attempts: c.retryCount ?? 0,
+        attempts: c.consecutiveFails,
         modelTried: c.modelTried ?? [],
       },
     });
@@ -539,13 +562,14 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     task: spec.task,
     title,
     status: 'running',
+    delivered: false,
     startedAt: now,
     workspaceId,
     profileName: selectedProfile.name,
     attachmentId: '',
     sessionId: '',
     lastActivityAt: now,
-    retryCount: 0,
+    consecutiveFails: 0,
     modelTried: modelSel ? [`${modelSel.profileId}:${modelSel.tier}`] : [],
   };
   childStates.set(childId, state);
@@ -606,9 +630,10 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
   const c = childStates.get(childId);
   if (!c || isTerminal(c.status)) return;
 
-  c.status = reason;
+  c.status = 'stopped';
+  c.terminalReason = reason;
   c.finishedAt = Date.now();
-  c.errorMessage = reason === 'timeout' ? '超时中断' : reason === 'hang' ? '无进展中断' : '被停止';
+  c.lastError = reason === 'timeout' ? '超时中断' : reason === 'hang' ? '无进展中断' : '被停止';
   c.errorClass = reason === 'cancelled' ? 'cancelled' : 'transient';
   clearChildTimers(c);
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
@@ -624,17 +649,15 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
 
 /**
  * 标记某个会话已通过 dogear__SendMessage(delivery:true) 完成交付（由 delegation-tools 调用）。
- * 只对仍处于 running 状态的会话生效，幂等安全。
+ * 交付是独立单调事实：guard 只挡重复标记，不挡状态——no_delivery 终态后补交付也能落上；
+ * 不改 status/timers/finishedAt，complete 事件才是安全的资源收尾点。
  */
-export function markChildDelivered(childId: string, summary: string): void {
+export function markChildDelivered(childId: string): void {
   const c = childStates.get(childId);
-  if (!c || c.status !== 'running') return;
-  c.status = 'done';
-  c.summary = summary;
-  c.finishedAt = Date.now();
-  clearChildTimers(c);
+  if (!c || c.delivered) return;
+  c.delivered = true;
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-  broadcastChildStatusChanged(c.parentConversationId, childId, 'done', toSnapshot(c));
+  broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
   touchPersist(childId);
 }
@@ -642,8 +665,9 @@ export function markChildDelivered(childId: string, summary: string): void {
 /**
  * 内存 childStates 为主，conversation-service 持久层补集合并：
  * 重启后内存丢失的历史子会话仍能被 ListLinkedSessions / 前端列表看到。
- * 去重键 childId，内存优先；持久层条目 task/outputPath 从 contractMetadata 补、
- * profileName 从 subAgentProfileId 反查 settings，status 恒为 interrupted。
+ * 去重键 childId，内存优先；补集按 updatedAt 降序只保留最近 10 条，
+ * task/outputPath 从 contractMetadata 补、profileName 从 subAgentProfileId 反查 settings，
+ * status 恒为 stopped、delivered 恒为 false（交付判定靠主会话上下文记忆与共享区文件，不在运行时）。
  */
 export async function getChildrenByParent(parentConversationId: string): Promise<ChildStateSnapshot[]> {
   const memoryChildren: ChildStateSnapshot[] = [];
@@ -667,7 +691,10 @@ export async function getChildrenByParent(parentConversationId: string): Promise
 
   const settings = await loadSettings();
   const profiles: SubAgentProfile[] = settings.subAgent?.profiles ?? [];
-  return [...memoryChildren, ...extra.map((conv) => conversationToSnapshot(conv, profiles))];
+  const recent = [...extra]
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 10);
+  return [...memoryChildren, ...recent.map((conv) => conversationToSnapshot(conv, profiles))];
 }
 
 export function getChildSnapshot(childId: string): ChildStateSnapshot | null {

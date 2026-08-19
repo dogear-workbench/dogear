@@ -99,9 +99,9 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
 
         const delivery = args.options?.delivery === true;
 
-        // 若我是被派出的会话，且这是发给派出我的会话的正式交付，同步 bridge 的状态机（UI/no_delivery 检测依赖它）
+        // 若我是被派出的会话，且这是发给派出我的会话的正式交付，同步 bridge 的交付事实（UI/统计依赖它）
         if (opts.role === 'sub' && delivery && target.conv.id === opts.parentConversationId) {
-          bridge.markChildDelivered(opts.conversationId, args.message);
+          bridge.markChildDelivered(opts.conversationId);
         }
 
         const outcome = bridge.deliverMessage({

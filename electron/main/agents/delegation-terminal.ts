@@ -3,16 +3,16 @@
  *
  * 终态联动：子会话走到失败终态（failed/hang/timeout）时秒级唤醒挂起在
  * dogear__WaitForMessage 的父会话，携带结构化死因（terminal）。
- * Step 2 起错误分类（transient/quota/cancelled）驱动重调决策，
- * done/interrupted 以外的终态都会唤醒 waiter（含用户取消与 no_delivery）。
+ * 错误分类（transient/quota/cancelled）驱动重调决策；
+ * stopped 且带 terminalReason 的终态都会唤醒 waiter（含用户取消与 no_delivery）。
  */
 
 import type { PiSessionTurnResult } from './pi-session/pi-session.js';
-import type { ChildStatus } from '../types.js';
+import type { ChildTerminalReason } from '../types.js';
 
 export type DelegationErrorClass = 'transient' | 'quota' | 'cancelled';
 
-export const MAX_RETRY = 2;
+export const MAX_RETRY = 3;
 
 let effectiveMaxRetry = MAX_RETRY;
 
@@ -42,19 +42,19 @@ export function classifyDelegationError(result: PiSessionTurnResult): Delegation
 }
 
 export interface TerminalInfo {
-  status: ChildStatus;
-  errorMessage?: string;
+  terminalReason?: ChildTerminalReason;
+  lastError?: string;
   errorClass?: DelegationErrorClass;
-  /** resume 尝试次数（Step 2 起计数，本步恒 0） */
+  /** 连续失败次数（complete 正常到达时清零） */
   attempts: number;
-  /** 已试过的模型链，`profileId:tier` 列表（Step 2 起填充，本步恒空） */
+  /** 已试过的模型链，`profileId:tier` 列表 */
   modelTried: string[];
 }
 
 export interface TerminalNoticeInput {
   title: string;
-  status: ChildStatus;
-  errorMessage?: string;
+  terminalReason?: ChildTerminalReason;
+  lastError?: string;
   startedAt: number;
   finishedAt?: number;
   errorClass?: DelegationErrorClass;
@@ -66,22 +66,21 @@ export interface TerminalWaiterLike {
   fromSdkSessionIds: Set<string>;
 }
 
-const TERMINAL_STATUS_LABELS: Partial<Record<ChildStatus, string>> = {
+const TERMINAL_REASON_LABELS: Record<ChildTerminalReason, string> = {
   failed: '运行失败',
   hang: '无进展中断',
   timeout: '超时中断',
   cancelled: '已取消',
-  interrupted: '已中断',
   no_delivery: '结束但未交付',
 };
 
-export function terminalStatusLabel(status: ChildStatus): string {
-  return TERMINAL_STATUS_LABELS[status] ?? status;
+export function terminalStatusLabel(reason: ChildTerminalReason | undefined): string {
+  return (reason && TERMINAL_REASON_LABELS[reason]) ?? '已结束';
 }
 
-/** 通知范围：除 done（交付消息走 deliverMessage）/ interrupted / running 外的全部终态 */
-export function isNotifiableTerminal(status: ChildStatus): boolean {
-  return status !== 'done' && status !== 'running' && status !== 'interrupted';
+/** 通知范围：stopped 且带死因；success+delivered（无 terminalReason）不打扰 waiter，交付走 deliverMessage */
+export function isNotifiableTerminal(reason: ChildTerminalReason | undefined): boolean {
+  return reason !== undefined;
 }
 
 export function formatDurationMs(ms: number): string {
@@ -98,9 +97,9 @@ export function formatDurationMs(ms: number): string {
 
 export function buildTerminalNotice(input: TerminalNoticeInput, attempts = 0): string {
   const duration = formatDurationMs((input.finishedAt ?? Date.now()) - input.startedAt);
-  const reason = input.errorMessage ?? terminalStatusLabel(input.status);
-  const base = `子会话「${input.title}」${terminalStatusLabel(input.status)}：${reason}。已运行 ${duration}，自动重试 ${attempts} 次。`;
-  if (input.status === 'no_delivery') {
+  const reason = input.lastError ?? terminalStatusLabel(input.terminalReason);
+  const base = `子会话「${input.title}」${terminalStatusLabel(input.terminalReason)}：${reason}。已运行 ${duration}，自动重试 ${attempts} 次。`;
+  if (input.terminalReason === 'no_delivery') {
     return `${base}结束不代表未完成：建议先用 dogear__ReadReferenceSession 查看其最后进展、dogear__ListGroupFiles 检查共享区是否已有交付，确认确实未完成后再重派或用 dogear__ResumeSession 调起。`;
   }
   if (input.errorClass !== 'quota') return base;
@@ -128,8 +127,8 @@ export function collectTerminalWaiterKeys<W extends TerminalWaiterLike>(
 
 /** dogear__WaitForMessage 工具结果里附带的死因摘要 */
 export function formatTerminalSummary(terminal: TerminalInfo): string {
-  const lines = [`状态: ${terminalStatusLabel(terminal.status)}`];
-  if (terminal.errorMessage) lines.push(`死因: ${terminal.errorMessage}`);
+  const lines = [`状态: ${terminalStatusLabel(terminal.terminalReason)}`];
+  if (terminal.lastError) lines.push(`死因: ${terminal.lastError}`);
   lines.push(`自动重试: ${terminal.attempts} 次`);
   if (terminal.modelTried.length > 0) lines.push(`已试模型: ${terminal.modelTried.join(' → ')}`);
   return lines.join('\n');

@@ -16,24 +16,15 @@ import { getConversationTitle, getRelativeTime, openOrFocusConversation, useNode
 
 function getChildStatusPresentation(snapshot?: ChildStateSnapshot): { label: string; className: string; title: string } | null {
   if (!snapshot) return null;
-  const reason = snapshot.errorMessage;
+  const reason = snapshot.lastError;
   switch (snapshot.status) {
     case 'running':
       return { label: '子会话运行中', className: 'text-orange-600 bg-orange-50 dark:bg-orange-950/30', title: '子会话正在运行' };
-    case 'done':
-      return { label: '已交付', className: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30', title: snapshot.summary || '子会话已正式交付' };
-    case 'failed':
-      return { label: '运行失败', className: 'text-red-600 bg-red-50 dark:bg-red-950/30', title: reason || '子会话运行失败' };
-    case 'timeout':
-      return { label: '已超时', className: 'text-red-600 bg-red-50 dark:bg-red-950/30', title: reason || '子会话超时中断' };
-    case 'cancelled':
-      return { label: '已取消', className: 'text-muted-foreground bg-muted', title: reason || '子会话已取消' };
-    case 'no_delivery':
-      return { label: '未交付', className: 'text-amber-700 bg-amber-50 dark:bg-amber-950/30', title: reason || '子会话结束但未正式交付' };
-    case 'hang':
-      return { label: '无进展中断', className: 'text-red-600 bg-red-50 dark:bg-red-950/30', title: reason || '子会话长时间无流事件，判定供应商 hang 住' };
-    case 'interrupted':
-      return { label: '已中断', className: 'text-muted-foreground bg-muted', title: `${reason || '子会话因应用重启中断'}；父会话可用 dogear__ResumeSession 调起续跑` };
+    case 'stopped':
+      if (snapshot.delivered) {
+        return { label: '已交付', className: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30', title: '子会话已正式交付' };
+      }
+      return { label: '已停止', className: 'text-muted-foreground bg-muted', title: reason || '子会话已停止' };
   }
   return null;
 }
@@ -107,9 +98,9 @@ export function ConversationRow({
     >
       {isDisplayRunning ? (
         <StatusPulse isPending={isPending} />
-      ) : childSnapshot?.status === 'done' ? (
+      ) : childSnapshot?.delivered ? (
         <CircleCheck className="w-4 h-4 flex-shrink-0 text-emerald-600" />
-      ) : childSnapshot?.status === 'cancelled' || childSnapshot?.status === 'interrupted' ? (
+      ) : childSnapshot?.status === 'stopped' ? (
         <Ban className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
       ) : childSnapshot ? (
         <CircleAlert className="w-4 h-4 flex-shrink-0 text-red-500" />

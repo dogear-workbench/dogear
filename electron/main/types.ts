@@ -222,13 +222,10 @@ export interface NativeFileEntry {
 
 export type ChildStatus =
   | 'running'
-  | 'done'
-  | 'failed'
-  | 'timeout'
-  | 'cancelled'
-  | 'no_delivery'
-  | 'hang'
-  | 'interrupted';
+  | 'stopped';
+
+/** stopped 时的死因（调度内部字段，不进快照）：驱动重试决策与终态通知判定 */
+export type ChildTerminalReason = 'failed' | 'hang' | 'timeout' | 'cancelled' | 'no_delivery';
 
 export interface DelegateSpec {
   task: string;
@@ -249,22 +246,18 @@ export interface ChildStateSnapshot {
   task: string;
   title: string;
   status: ChildStatus;
+  /** 交付事实（dogear__SendMessage delivery:true 单调落上，与状态机独立） */
+  delivered: boolean;
   startedAt: number;
   finishedAt?: number;
-  summary?: string;
-  errorMessage?: string;
+  /** stopped 时的死因文本 */
+  lastError?: string;
   /** 实际命中的子会话 Profile 名（匹配不到时为 fallback 的「默认」） */
   profileName: string;
   /** 该会话自身的 Harness sessionId；attachConversation 完成、PiSession 启动后立即同步赋值 */
   sessionId?: string;
   /** 最近一次流事件时间戳（滑动 idle 计时打点，检测 hang 用） */
   lastActivityAt?: number;
-  /** resume 重调尝试次数 */
-  retryCount?: number;
-  /** 错误分类（transient/quota/cancelled） */
-  errorClass?: 'transient' | 'quota' | 'cancelled';
-  /** 已试过的模型链，profileId:tier 列表 */
-  modelTried?: string[];
 }
 
 // ─── 系统提示词展示段（镜像自 types/system-prompt.ts）───

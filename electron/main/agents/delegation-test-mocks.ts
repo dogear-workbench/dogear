@@ -99,6 +99,7 @@ export function installDelegationMocks(): void {
       options?: { role?: string; parentConversationId?: string; contractMetadata?: any },
     ) => {
       const id = `child-${++childSeq}`;
+      const now = new Date().toISOString();
       convStore.set(id, {
         id,
         title: _title,
@@ -107,7 +108,8 @@ export function installDelegationMocks(): void {
         role: options?.role ?? 'main',
         parentConversationId: options?.parentConversationId ?? null,
         contractMetadata: options?.contractMetadata,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
       });
       return id;
     },
