@@ -38,3 +38,11 @@
     DetailPrint "Git 已安装: $1"
   ${EndIf}
 !macroend
+
+; createDesktopShortcut 为 false 时模板的卸载清理会被跳过，在这里补上
+!macro customUnInstall
+  ${IfNot} ${isKeepShortcuts}
+    WinShell::UninstShortcut "$oldDesktopLink"
+    Delete "$oldDesktopLink"
+  ${EndIf}
+!macroend

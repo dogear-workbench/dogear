@@ -76,8 +76,8 @@ nsis:
   perMachine: false
   # 允许用户更改安装路径
   allowToChangeInstallationDirectory: true
-  # 创建桌面快捷方式
-  createDesktopShortcut: true
+  # 不创建桌面快捷方式（仅开始菜单）
+  createDesktopShortcut: false
   # 创建开始菜单快捷方式
   createStartMenuShortcut: true
   # 自定义 NSIS 安装脚本（Git 检测+安装）
