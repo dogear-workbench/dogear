@@ -122,7 +122,7 @@ async function main() {
     releaseType = 'full';
     console.log(`\n✦ ${isFirstRelease ? '首次发布' : 'dist/ 已变化'} → 全量路径`);
 
-    await fs.rm(RELEASE_DIR, { recursive: true, force: true }).catch(() => {});
+    await fs.mkdir(RELEASE_DIR, { recursive: true });
     run('bun run dist', '全量打包 (electron-builder)');
 
     for (const old of await fs.readdir(UPDATE_SERVER_DIR)) {
