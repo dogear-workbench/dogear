@@ -13,7 +13,7 @@
 - [x] [Step 1: 状态模型精简与重试语义](./step1-state-model.md) — ChildStatus 收敛 running/stopped、delivered 独立事实、consecutiveFails 连续计数、修复交付 guard bug
 - [x] [Step 2: 持久层删除](./step2-remove-persistence.md) — delegation-persist.ts 删除、启动清理旧文件、补集截断
 - [x] [Step 3: 工具层与提示词](./step3-tools-prompts.md) — ListLinkedSessions 判定规则、ListGroupFiles relPath、契约提示词对齐
-- [ ] [Step 4: UI 与收尾](./step4-ui-cleanup.md) — Network 图标、删状态文字徽章、codebase-map 同步、全量验证
+- [x] [Step 4: UI 与收尾](./step4-ui-cleanup.md) — Network 图标、删状态文字徽章、codebase-map 同步、全量验证
 
 ## 全局决策
 
@@ -24,3 +24,9 @@
 - **补集**：`conversationToSnapshot` 产出 status 恒 stopped、delivered 恒 false、lastError 恒 undefined；按 `updatedAt` 降序截断 10 条
 - **工具守纪**：isError / 空返回只陈述事实不引导改用其他工具；新参数描述限定场景（防 8-18 前缀改革的死循环复发）
 - **分步纪律**：Step 1 不碰 persist 相关代码（touchPersist 保留调用），Step 2 统一删——每步独立可编译可测试
+
+## 完成总结
+
+- **实际改动汇总**：① Step 1 状态模型精简——`ChildStatus` 收敛 running/stopped，死因降为内部 `terminalReason`，`delivered` 成为独立单调事实（修复 no_delivery 终态后补交付被 guard 挡掉的卡死 bug），`retryCount` → `consecutiveFails`（success 清零，上限 3），前端 ConversationRow/AgentChat 最小适配；② Step 2 持久层删除——delegation-persist.ts 删除，启动 `cleanupLegacyStateFile` 一次性清理旧 delegation-state.json，重启恢复走 conversation 补集（updatedAt 降序截 10 条，转 stopped/delivered=false 快照）；③ Step 3 工具与提示词——ListLinkedSessions 写明交付判定规则（running 等通知 / stopped+交付勿动 / stopped+无交付可调起，delivered 为运行时视角）+ 渲染加交付标记，ListGroupFiles 默认列清单 + relPath 读单文件，契约/组卡提示词对齐（含 group-digest-prompt 旧特征哨兵重播种）；④ Step 4 UI 收尾——ConversationRow 子会话图标换 Network（isAgentConversation 提前到 isFork 前，手动分叉保留 GitBranch 紫），删状态文字徽章与 CircleAlert 死分支，codebase-map.md 同步
+- **与原计划的偏差**：无实质偏差。AgentChat 状态文案 map 核对后确认 Step 1 已对齐，未改（计划内预期路径）；Step 4 顺带删除不可达的 CircleAlert 分支与相应 import（新模型下 childSnapshot 状态只剩两态，该分支必死）；dev 走查项（子会话 Network 图标 / 无徽章 / 补交付绿勾 / 重启补集 ResumeSession / 旧状态文件启动清理）需 GUI，留主会话/用户执行，见共享区 step4-delivery.md
+- **已知遗留（均非本计划产物）**：codebase-map.md:172 types/delegation.ts 条目仍写 ChildSessionState（计划前已过期）；docs/standards/tool-description-guide.md 里 ListGroupFiles 示例描述过时（Step 3 已记录）；package.json 0.1.40→0.1.41 为其他流程改动

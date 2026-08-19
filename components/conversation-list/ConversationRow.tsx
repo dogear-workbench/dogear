@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  Ban, Bot, CircleAlert, CircleCheck, GitBranch, MessagesSquare, MoreHorizontal, Workflow,
+  Ban, Bot, CircleCheck, GitBranch, MessagesSquare, MoreHorizontal, Network,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
@@ -11,23 +11,7 @@ import { StatusPulse } from '@/components/StatusPulse';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { Conversation } from '@/components/ConversationList';
-import type { ChildStateSnapshot } from '@/types/delegation';
 import { getConversationTitle, getRelativeTime, openOrFocusConversation, useNodeHighlight } from './utils';
-
-function getChildStatusPresentation(snapshot?: ChildStateSnapshot): { label: string; className: string; title: string } | null {
-  if (!snapshot) return null;
-  const reason = snapshot.lastError;
-  switch (snapshot.status) {
-    case 'running':
-      return { label: '子会话运行中', className: 'text-orange-600 bg-orange-50 dark:bg-orange-950/30', title: '子会话正在运行' };
-    case 'stopped':
-      if (snapshot.delivered) {
-        return { label: '已交付', className: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30', title: '子会话已正式交付' };
-      }
-      return { label: '已停止', className: 'text-muted-foreground bg-muted', title: reason || '子会话已停止' };
-  }
-  return null;
-}
 
 export interface ConversationRowProps {
   conv: Conversation;
@@ -61,7 +45,6 @@ export function ConversationRow({
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isBotBound = conv.id === botBoundId;
-  const childStatus = getChildStatusPresentation(childSnapshot);
   const isChildRunning = childSnapshot?.status === 'running';
   const isDisplayRunning = isRunning || isChildRunning;
 
@@ -102,12 +85,10 @@ export function ConversationRow({
         <CircleCheck className="w-4 h-4 flex-shrink-0 text-emerald-600" />
       ) : childSnapshot?.status === 'stopped' ? (
         <Ban className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-      ) : childSnapshot ? (
-        <CircleAlert className="w-4 h-4 flex-shrink-0 text-red-500" />
+      ) : isAgentConversation ? (
+        <Network className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
       ) : isFork ? (
         <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600' : 'text-purple-400')} />
-      ) : isAgentConversation ? (
-        <Workflow className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
       ) : (
         <MessagesSquare className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
       )}
@@ -137,11 +118,6 @@ export function ConversationRow({
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span>{getRelativeTime(conv.updated_at)}</span>
           {isDisplayRunning && isPending && <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded">等待确认</span>}
-          {childStatus && (
-            <span className={cn('text-[10px] px-1 rounded truncate max-w-28', childStatus.className)} title={childStatus.title}>
-              {childStatus.label}
-            </span>
-          )}
         </div>
       </div>
       {!readOnly && (
