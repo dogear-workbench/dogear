@@ -8,6 +8,7 @@
  * Bash 的 shell 执行本身不做沙箱（与现有 SDK 侧 Bash 工具信任边界一致），
  * 只保证 exec 的 cwd 落在工作区内。
  */
+import path from 'path';
 import {
   ok,
   err,
@@ -30,6 +31,7 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
   readonly cwd: string;
   private readonly inner: NodeExecutionEnv;
   private allowedPaths: string[];
+  private tempRoots: string[] = [];
 
   constructor(allowedPaths: string[]) {
     this.allowedPaths = allowedPaths;
@@ -41,7 +43,16 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
     this.allowedPaths = paths;
   }
 
+  private isOwnTemp(candidate: string): boolean {
+    const normalized = path.resolve(candidate).toLowerCase();
+    return this.tempRoots.some(root => {
+      const r = root.toLowerCase();
+      return normalized === r || normalized.startsWith(r + path.sep);
+    });
+  }
+
   private async guard(candidate: string): Promise<Result<string, FileError>> {
+    if (this.isOwnTemp(candidate)) return ok(path.resolve(candidate));
     try {
       return ok(await resolveWithinPaths(this.allowedPaths, candidate));
     } catch (error) {
@@ -126,13 +137,17 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
     return this.inner.remove(g.value, options);
   }
 
-  /** 临时文件落在系统 tmp 目录，不是工作区内容，不做边界校验（bash 输出溢出时使用） */
+  /** temp 路径记入白名单：pi-agent-core 的 bash 输出溢出暂存会经 appendFile/readTextFile 过 guard，不放行会整条命令报路径越权 */
   async createTempDir(prefix?: string): Promise<Result<string, FileError>> {
-    return this.inner.createTempDir(prefix);
+    const result = await this.inner.createTempDir(prefix);
+    if (result.ok) this.tempRoots.push(result.value);
+    return result;
   }
 
   async createTempFile(options?: { prefix?: string; suffix?: string }): Promise<Result<string, FileError>> {
-    return this.inner.createTempFile(options);
+    const result = await this.inner.createTempFile(options);
+    if (result.ok) this.tempRoots.push(path.dirname(result.value));
+    return result;
   }
 
   async exec(
