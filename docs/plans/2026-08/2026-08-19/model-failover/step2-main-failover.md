@@ -1,7 +1,7 @@
 ---
 step: 2
 title: failover 核心 + 主会话自动切换
-status: pending
+status: done
 ---
 
 ## 目标
@@ -22,7 +22,7 @@ status: pending
 
 ## 计划改动
 
-- [ ] 新 `electron/main/agents/model-failover.ts`（纯逻辑 + 编排，<300 行）：
+- [x] 新 `electron/main/agents/model-failover.ts`（纯逻辑 + 编排，<300 行）：
   - `findNextFailover(chain, currentProfileId, tried): FailoverEntry | null`——plan.md 全局决策的切换语义；tried 为已试 profileId 集合
   - `buildFailoverContinuePrompt(toLabel: string): string`——续跑提示（「你因供应商费率限制中断，模型已切换为 {toLabel}，请检查已完成部分从中断处继续」同款语义）
   - `maybeFailoverMainSession(sessionId: string, result: PiSessionTurnResult): Promise<boolean>`——主会话编排：
@@ -32,22 +32,41 @@ status: pending
     4. tried 集合记录原供应商；广播 failoverNotice
     5. 对 runtime-service / conversation-service 用 `await import()` 防循环依赖
   - `clearFailoverTried(conversationId)`——turn 成功完成时清空（broadcaster complete(success) 分支调用）
-- [ ] `electron/main/tipc/agent.ts`：broadcaster 的 complete 分支追加 `void maybeFailoverMainSession(sessionId, payload)`（role='main' 且 success 时 `clearFailoverTried`）；保持薄，不写业务
-- [ ] `electron/main/tipc/renderer-handlers.ts`：新增 `failoverNotice: (data: { conversationId: string; fromLabel: string; toLabel: string; at: number }) => void`
-- [ ] broadcaster 内触发 `h.failoverNotice.send(...)`（fromLabel/toLabel 从 profiles 反查 name）
-- [ ] 前端：`stores/conversation-store.ts`（或文件内独立小节）订阅 `failoverNotice`，存 `failoverNoticesByConversation: Record<string, FailoverNotice[]>`（保留最近 5 条）；`components/AgentChat.tsx` 渲染非持久提示条（消息流末尾、输入区上方，黄色系信息样式，含 from → to 与时间），不写入会话持久层
-- [ ] 测试 `electron/main/agents/model-failover.test.ts`（installDelegationMocks 基建 + DOGEAR_CONFIG_DIR）：
+- [x] `electron/main/tipc/agent.ts`：broadcaster 的 complete 分支追加 `void maybeFailoverMainSession(sessionId, payload)`（role='main' 且 success 时 `clearFailoverTried`）；保持薄，不写业务
+- [x] `electron/main/tipc/renderer-handlers.ts`：新增 `failoverNotice: (data: { conversationId: string; fromLabel: string; toLabel: string; at: number }) => void`
+- [x] broadcaster 内触发 `h.failoverNotice.send(...)`（fromLabel/toLabel 从 profiles 反查 name）
+- [x] 前端：`stores/conversation-store.ts`（或文件内独立小节）订阅 `failoverNotice`，存 `failoverNoticesByConversation: Record<string, FailoverNotice[]>`（保留最近 5 条）；`components/AgentChat.tsx` 渲染非持久提示条（消息流末尾、输入区上方，黄色系信息样式，含 from → to 与时间），不写入会话持久层
+- [x] 测试 `electron/main/agents/model-failover.test.ts`（installDelegationMocks 基建 + DOGEAR_CONFIG_DIR）：
   - findNextFailover 矩阵：顺位下一个 / 当前不在链走链头 / tried 跳过 / 全 tried 返回 null / 空链返回 null
   - maybeFailoverMainSession：quota → updateModelSelection 收到链下一家 + detach/attach 调用序列 + sendMessage 收到续跑提示；transient/关闭开关/cancelled → false 且零调用；链耗尽 → false；二次 quota → 切到第三家（tried 生效）；complete(success) → tried 清空
-- [ ] 验证：`bun test electron/main/agents/` 全 pass；lint / build:electron / 前端 tsc 零新增；dev 手动——造一家假 key 供应商排进链第二位，主会话用主供应商跑长任务，改坏主供应商 key 触发 quota（或直接用假 key 主供应商），观察自动切换续跑 + 提示条
+- [x] 验证：`bun test electron/main/agents/` 全 pass；lint / build:electron / 前端 tsc 零新增；dev 手动——造一家假 key 供应商排进链第二位，主会话用主供应商跑长任务，改坏主供应商 key 触发 quota（或直接用假 key 主供应商），观察自动切换续跑 + 提示条（dev 走查项待主会话/用户手动验证）
 
 ## 实施回填（做完后填）
 
 ### 实际改动
 - 与计划差异：
+  1. `clearFailoverTried` 额外导出 session 入口版 `clearFailoverTriedBySession(sessionId)`——broadcaster 只握 sessionId，内部经 getConversationIdBySession 转换，agent.ts 接入保持两行
+  2. 续跑提示失败的双路触发：PiSession.sendMessage 内部 catch 后 finally 必 emit complete(failed)，prompt 层错误天然经 broadcaster 再进 failover；仅前置 throw（未启动/已关闭）走 model-failover 内 catch 手动递归
+  3. runtime-service 新增公开方法 `detachByConversationHolder(conversationId, holderType): { count; webContentsId? }`（conversation-runtime-service.ts:212）——attachmentMap 私有，按对话+holder 批量 detach 只能加公开方法，顺带返回首个匹配 attachment 的 webContentsId 供重建透传
+  4. 共享 mock 增量扩展：pi-session-manager mock 补 getConversationIdBySession（新 sessionOwnerConv 反查 Map）、tipc mock 补 failoverNotice handler、runtime mock 补 detachByConversationHolder（删 attachSessionByConv 条目模拟销毁重建）——既有 bridge 测试不受影响（48 pass 验证）
 - 改动文件清单：
+  - 新增 `electron/main/agents/model-failover.ts`（149 行）+ `electron/main/agents/model-failover.test.ts`（6 用例）
+  - 修改 `electron/main/services/conversation-runtime-service.ts`（+20 行）
+  - 修改 `electron/main/tipc/agent.ts`（broadcaster +2 分支，import +1 行）
+  - 修改 `electron/main/tipc/renderer-handlers.ts`（+9 行类型）
+  - 修改 `stores/conversation-store.ts`（FailoverNotice 类型 + state + pushFailoverNotice + 订阅，5 处）
+  - 修改 `components/agent-chat/AgentChat.tsx`（提示条 + selector，+18 行）
+  - 修改 `electron/main/agents/delegation-test-mocks.ts`（mock 扩展，+12 行）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `findNextFailover(chain: FailoverEntry[], currentProfileId: string, tried: ReadonlySet<string>): FailoverEntry | null`——step3 子会话路径 decideResume 的 quota 分支改调此函数（换掉 findFallbackModel），tried 传 modelTried 解析出的 profileId 集合
+  - `buildFailoverContinuePrompt(toLabel: string): string`——子会话 resume 续跑提示可复用
+  - `maybeFailoverMainSession / clearFailoverTriedBySession` 已在 agent.ts broadcaster 接线完毕，step3 无需再动主会话路径
+  - 前端 `FailoverNotice { fromLabel; toLabel; at }` 在 stores/conversation-store.ts，`failoverNoticesByConversation` 每会话留最近 5 条；renderer-handlers.ts 的 `failoverNotice` 事件已注册
+- 下个 step 该从哪里继续：delegation-bridge.ts `decideResume`（:234）quota 分支——findFallbackModel(subAgent.profiles) 改为 loadSettings().failover 链 + findNextFailover；resumeChild 的 modelOverride 传链下一家 { profileId, tier }
 - 待办或已知限制：
+  - wechat-bot holder 的主会话：failover 只 detach desktop holder，bot attachment 仍持有旧 session（refCount 不归零不销毁）→ attach 复用旧 session 新模型不生效，续跑提示发旧模型直到链耗尽（罕见场景，未处理）
+  - 同会话多窗口：detach 全部 desktop attachment 后仅重建一个（透传首个 webContentsId），另一窗口消息流断到刷新/重聚焦
+  - pendingSteerCount>0 的 orphan 保活：release 归零但 session running → 不销毁，attach 复用旧 session（新模型不生效，下次 quota 继续顺位，settled 后 maybeCollectOrphan 回收）
+  - dev 端到端（真 quota 触发切换 + 提示条 + 断点续跑不重跑）待主会话/用户手动验证

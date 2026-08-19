@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, ChevronDown, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -147,6 +147,9 @@ export function AgentChat({
   // 主会话派出的子会话快照（用于 StreamingIndicator 显示「等待 N 个交付」+ 中断按钮）
   const childrenForThis = useConversationStore(
     (s) => (conversationId ? s.childrenByParent[conversationId] : undefined) ?? null,
+  );
+  const failoverNotices = useConversationStore(
+    (s) => (conversationId ? s.failoverNoticesByConversation[conversationId] : undefined) ?? [],
   );
   const { awaitCount, doneCount, issueCount } = useMemo(() => {
     if (!childrenForThis) return { awaitCount: 0, doneCount: 0, issueCount: 0 };
@@ -527,6 +530,19 @@ export function AgentChat({
         </div>
       </div>
       </div>
+
+      {/* 模型故障转移提示条（内存级，不进消息流也不落盘；输入区上方） */}
+      {failoverNotices.length > 0 && (
+        <div className="px-4 py-2 border-t bg-amber-50/70 flex flex-col gap-1">
+          {failoverNotices.map((notice) => (
+            <div key={notice.at} className="flex items-center gap-1.5 text-xs text-amber-800">
+              <ArrowLeftRight size={12} className="flex-shrink-0" />
+              <span>{notice.fromLabel} 费率受限，已自动切换 {notice.toLabel} 继续运行</span>
+              <span className="text-amber-500">{new Date(notice.at).toLocaleTimeString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 输入区域 */}
       {isTopicStatePending ? (

@@ -58,6 +58,13 @@ interface WorkspaceConversationSlice {
   loadingConversations: boolean;
 }
 
+/** 主会话模型故障转移提示（内存级，不写入会话持久层；刷新即失） */
+export interface FailoverNotice {
+  fromLabel: string;
+  toLabel: string;
+  at: number;
+}
+
 function emptySlice(): WorkspaceConversationSlice {
   return {
     conversations: [],
@@ -97,6 +104,8 @@ interface ConversationState {
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
   childrenByParent: Record<string, ChildStateSnapshot[]>;
   childSnapshotsById: Record<string, ChildStateSnapshot>;
+  /** 主会话 failover 切换提示（按会话 id 分组，每会话保留最近 5 条） */
+  failoverNoticesByConversation: Record<string, FailoverNotice[]>;
 
   // --- Actions ---
   /** 切换激活工作区：把顶层镜像指向该工作区的分片（不触发加载） */
@@ -151,6 +160,8 @@ interface ConversationState {
   refreshAllChildren: () => Promise<void>;
   /** 把一条 childStatusChanged 事件应用到 childrenByParent */
   applyChildSnapshot: (snapshot: ChildStateSnapshot) => void;
+  /** 追加一条 failover 切换提示（保留最近 5 条） */
+  pushFailoverNotice: (conversationId: string, notice: FailoverNotice) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -292,6 +303,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   botBoundConversationId: null,
   childrenByParent: {},
   childSnapshotsById: {},
+  failoverNoticesByConversation: {},
 
   activateWorkspace: (workspaceId) => {
     if (!workspaceId) {
@@ -795,6 +807,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 
+  pushFailoverNotice: (conversationId, notice) => {
+    set((state) => {
+      const list = state.failoverNoticesByConversation[conversationId] ?? [];
+      const next = [...list, notice].slice(-5);
+      return { failoverNoticesByConversation: { ...state.failoverNoticesByConversation, [conversationId]: next } };
+    });
+  },
+
   reset: () => set({
     byWorkspace: {},
     activeWorkspaceId: null,
@@ -811,6 +831,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     botBoundConversationId: null,
     childrenByParent: {},
     childSnapshotsById: {},
+    failoverNoticesByConversation: {},
   }),
 }));
 
@@ -842,6 +863,15 @@ if (typeof window !== 'undefined') {
     // 子会话状态变化（delegation-bridge → applyChildSnapshot）
     rendererEvents.childStatusChanged.listen((data) => {
       useConversationStore.getState().applyChildSnapshot(data.snapshot);
+    });
+
+    // 主会话 failover 切换提示（model-failover → pushFailoverNotice）
+    rendererEvents.failoverNotice.listen((data) => {
+      useConversationStore.getState().pushFailoverNotice(data.conversationId, {
+        fromLabel: data.fromLabel,
+        toLabel: data.toLabel,
+        at: data.at,
+      });
     });
   });
 

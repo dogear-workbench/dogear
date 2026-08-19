@@ -12,6 +12,7 @@ import { conversationRuntimeService } from '../services/conversation-runtime-ser
 import * as conversationService from '../services/conversation-service.js';
 import { getSessionNotificationService } from '../services/session-notification-service.js';
 import { mainLogger } from '../agents/logger.js';
+import { maybeFailoverMainSession, clearFailoverTriedBySession } from '../agents/model-failover.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import { getClaudeConfigDir, getSdkSessionsDir } from '../services/memory/session-paths.js';
 export { getClaudeConfigDir } from '../services/memory/session-paths.js';
@@ -40,6 +41,15 @@ const t = tipc.create();
 getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
   if (event === 'complete' || event === 'permissionRequest') {
     void handleSessionNotification(sessionId, event, payload);
+  }
+
+  if (event === 'complete') {
+    const result = payload as PiSessionTurnResult;
+    if (result.subtype === 'success') {
+      void clearFailoverTriedBySession(sessionId);
+    } else {
+      void maybeFailoverMainSession(sessionId, result);
+    }
   }
 
   for (const win of electron.BrowserWindow.getAllWindows()) {

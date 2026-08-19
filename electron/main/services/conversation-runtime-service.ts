@@ -196,6 +196,25 @@ class ConversationRuntimeService {
   }
 
   /**
+   * 按对话 + 持有者类型批量 detach（failover 重建 session 前让 desktop 引用归零销毁），
+   * 返回清理数与首个匹配 attachment 的 webContentsId（供重建时透传窗口归属）
+   */
+  detachByConversationHolder(
+    conversationId: string,
+    holderType: RuntimeHolderType,
+  ): { count: number; webContentsId?: number } {
+    let count = 0;
+    let webContentsId: number | undefined;
+    for (const [attachmentId, meta] of this.attachmentMap) {
+      if (meta.conversationId !== conversationId || meta.holderType !== holderType) continue;
+      if (webContentsId === undefined) webContentsId = meta.webContentsId;
+      this.detachAttachment(attachmentId);
+      count++;
+    }
+    return { count, webContentsId };
+  }
+
+  /**
    * 按 webContentsId 批量 detach（窗口关闭时主进程主动调用，避免渲染进程 cleanup 不可靠）
    */
   detachByWebContentsId(webContentsId: number): number {

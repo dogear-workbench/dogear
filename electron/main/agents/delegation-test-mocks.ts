@@ -18,9 +18,11 @@ process.env.DOGEAR_CONFIG_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dogear-de
 
 export const sessions = new Map<string, any>();
 export const attachSessionByConv = new Map<string, string>();
+export const sessionOwnerConv = new Map<string, string>();
 export const convStore = new Map<string, any>();
 export const updateModelSelectionCalls: Array<{ id: string; modelSelection: any }> = [];
 export const sendCalls: Array<{ sessionId: string; text: string }> = [];
+export const runtimeDetachCalls: Array<{ conversationId: string; holderType: string }> = [];
 
 let childSeq = 0;
 let parentSeq = 0;
@@ -80,6 +82,7 @@ export function installDelegationMocks(): void {
       childStatusChanged: { send: () => {} },
       conversationListChanged: { send: () => {} },
       deliveriesAwaitChanged: { send: () => {} },
+      failoverNotice: { send: () => {} },
     }),
   }));
 
@@ -157,16 +160,22 @@ export function installDelegationMocks(): void {
 
   mock.module(path.join(dir, '../services/conversation-runtime-service.js'), () => ({
     conversationRuntimeService: {
-      attachConversation: async (childId: string) => {
-        let sessionId = attachSessionByConv.get(childId);
+      attachConversation: async (conversationId: string) => {
+        let sessionId = attachSessionByConv.get(conversationId);
         if (!sessionId) {
-          sessionId = `sdk-${childId}-${Math.random().toString(36).slice(2, 6)}`;
+          sessionId = `sdk-${conversationId}-${Math.random().toString(36).slice(2, 6)}`;
           sessions.set(sessionId, makeFakeSession(sessionId));
-          attachSessionByConv.set(childId, sessionId);
+          attachSessionByConv.set(conversationId, sessionId);
+          sessionOwnerConv.set(sessionId, conversationId);
         }
         return { sessionId, attachmentId: `att-${++attachSeq}` };
       },
       detachAttachment: () => {},
+      detachByConversationHolder: (conversationId: string, holderType: string) => {
+        runtimeDetachCalls.push({ conversationId, holderType });
+        const existed = attachSessionByConv.delete(conversationId);
+        return { count: existed ? 1 : 0, webContentsId: undefined };
+      },
     },
   }));
 
@@ -174,6 +183,7 @@ export function installDelegationMocks(): void {
     getPiSessionManager: () => ({
       getSession: (sessionId: string) => sessions.get(sessionId),
       getSessionIdByConversation: () => undefined,
+      getConversationIdBySession: (sessionId: string) => sessionOwnerConv.get(sessionId),
     }),
   }));
 }

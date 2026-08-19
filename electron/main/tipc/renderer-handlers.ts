@@ -224,6 +224,14 @@ export type RendererHandlers = {
     doneCount: number;
   }) => void;
 
+  // 主会话模型故障转移发生（quota 后自动切换供应商继续）
+  failoverNotice: (data: {
+    conversationId: string;
+    fromLabel: string;
+    toLabel: string;
+    at: number;
+  }) => void;
+
   // 会话运行/挂起操作状态变化（跑步机模式：后端唯一权威判定，一次事件同步驱动前端全局
   // running/pendingAction Set 与 session 内 pendingState，状态跟上次不同才 emit）
   sessionStateChanged: (data: {
