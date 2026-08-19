@@ -34,4 +34,25 @@
 
 ## 完成总结
 
-（全部完成后回填）
+2026-08-19 全部 3 step 实施完成，3 个 commit（ebd5797 / 62b394e / 2a86c71），验收全绿（agents 48 pass、lint 0 errors、build:electron 通过、tsc 零新增）。
+
+### 落地架构
+- **设置层**：`AppSettings.failover`（开关 + 供应商链），normalizeFailoverChain 每次 loadSettings 自愈（缺失生成链/新供应商追加链尾/删除移出/tier 回退/去重；piModels 为空的供应商不进链）；设置页 FailoverSection.tsx 可编辑（开关/链列表/每家模型下拉/上移下移）
+- **主会话**：model-failover.ts maybeFailoverMainSession——broadcaster complete(failed) 钩子进入，quota 且开关开且链有下一个 → updateModelSelection → detachByConversationHolder('desktop') 销毁旧 session → attach 重建 → failoverNotice 广播（AgentChat 黄色提示条）→ fire-and-forget 续跑提示；tried 内存级 per-conversation，complete(success) 清空
+- **子会话**：decideResume quota 分支改走全局链（findNextFailover，tried 从 modelTried 解析）；开关关闭/链耗尽直接终态通知；findFallbackModel 已删，subAgent.profiles 回归纯功能配置
+
+### 与计划的差异要点
+- step1：UI 抽独立组件；piModels 为空的供应商不进链（保 normalize 幂等）；原生 select（项目无 Radix Select）
+- step2：clearFailoverTriedBySession 额外导出（broadcaster 只握 sessionId）；runtime-service 新增 detachByConversationHolder（attachmentMap 私有）；续跑提示失败双路闭环（PiSession 内部 catch 必 emit complete(failed) + 前置 throw 手动递归）
+- step3：按计划实施，无重大差异
+
+### 遗留（待用户 dev 手动验证）
+- 设置层：落盘/自动生成链/追加/移出/回退 6 项走查
+- 主会话：假 key 触发真实 quota 观察自动切换续跑 + 提示条 + 链耗尽报错 + 手动改回 + transient 不切 + 开关关闭回到现状
+- 子会话：假 key 主供应商观察降级到链下一家续跑、modelTried 含两家、再 quota 耗尽收终态通知
+
+### 已知限制
+- wechat-bot holder 主会话切换后新模型不生效（旧 session 被 bot attachment 保活，罕见未处理）；同会话多窗口只重建一个；orphan 保活场景 attach 复用旧 session
+
+### 记忆
+- 新增 `model-failover-design` 记忆；`delegation-dispatcher-design` 已标注降级链语义被本设计取代
