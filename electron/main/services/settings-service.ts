@@ -12,6 +12,7 @@ import {
   deepMerge,
   createDefaultBasicToolPermissions,
   createDefaultSubAgentProfile,
+  normalizeFailoverChain,
   BASIC_TOOL_NAMES,
   type AppSettings,
   type PiPermissionMode,
@@ -246,6 +247,12 @@ export function normalizeSettings(settings: AppSettings): boolean {
     }
   } else {
     obj.subAgent = { profiles: [createDefaultSubAgentProfile()] };
+    changed = true;
+  }
+
+  const newFailover = normalizeFailoverChain(settings.profiles, settings.failover);
+  if (JSON.stringify(newFailover) !== JSON.stringify(settings.failover)) {
+    obj.failover = newFailover;
     changed = true;
   }
 

@@ -24,6 +24,7 @@ import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel'
 import { ModelSelector } from '@/components/ModelSelector';
 import { formatContextLabel, lookupContextWindow, resolveModelWindow } from '@/lib/pi-model-catalog';
 import { PiModelRow } from './pi-model-row';
+import { FailoverSection } from './FailoverSection';
 import { formatTokens } from '@/components/agent-chat/usage-badge/usage-utils';
 
 // ═══ 常量 ═══════════════════════════════════════════
@@ -598,6 +599,8 @@ export default function SettingsPage() {
                 );
               })}
             </Tabs>
+
+            <FailoverSection local={local} setLocal={setLocal} />
           </div>
         </TabsContent>
 

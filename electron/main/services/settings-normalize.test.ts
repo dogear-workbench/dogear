@@ -1,9 +1,29 @@
 import { test, expect } from 'bun:test';
 import { normalizeSettings, normalizePiModels, migratePiProfiles } from './settings-service.js';
-import { DEFAULT_SETTINGS, type AppSettings } from './settings-types.js';
+import { normalizeFailoverChain } from './settings-types.js';
+import { DEFAULT_SETTINGS, type AppSettings, type ModelProfile } from './settings-types.js';
 
 function baseSettings(): AppSettings {
   return structuredClone(DEFAULT_SETTINGS);
+}
+
+function makeProfile(id: string, models: string[]): ModelProfile {
+  return {
+    id,
+    name: id,
+    apiKey: 'k',
+    baseUrl: 'https://example.com',
+    apiTimeoutMs: 3000000,
+    piModels: models.map((m) => ({ id: m })),
+  };
+}
+
+function threeProfiles(): Record<string, ModelProfile> {
+  return {
+    glm: makeProfile('glm', ['glm-a', 'glm-b']),
+    deepseek: makeProfile('deepseek', ['ds-a']),
+    proma: makeProfile('proma', ['pr-a', 'pr-b']),
+  };
 }
 
 test('旧自动执行模式（bypassPermissions/dontAsk/auto/acceptEdits）映射为 autoExecute', () => {
@@ -318,4 +338,132 @@ test('migratePiProfiles：已迁移数据二次执行不再产生改动（幂等
   s.profiles.default.piModels = [{ id: 'gpt-5', label: '主力' }, { id: 'glm-4.7' }];
   const changed = migratePiProfiles(s);
   expect(changed).toBe(false);
+});
+
+// ── normalizeFailoverChain ───────────────────────────
+
+test('normalizeFailoverChain：failover 缺失时按 profiles 顺序生成完整链（enabled: false，tier 取首个）', () => {
+  const result = normalizeFailoverChain(threeProfiles(), undefined);
+  expect(result).toEqual({
+    enabled: false,
+    chain: [
+      { profileId: 'glm', tier: 'glm-a' },
+      { profileId: 'deepseek', tier: 'ds-a' },
+      { profileId: 'proma', tier: 'pr-a' },
+    ],
+  });
+});
+
+test('normalizeFailoverChain：已有链的 enabled 与顺序保留，新增供应商追加链尾', () => {
+  const profiles = threeProfiles();
+  const result = normalizeFailoverChain(profiles, {
+    enabled: true,
+    chain: [{ profileId: 'deepseek', tier: 'ds-a' }, { profileId: 'glm', tier: 'glm-b' }],
+  });
+  expect(result.enabled).toBe(true);
+  expect(result.chain).toEqual([
+    { profileId: 'deepseek', tier: 'ds-a' },
+    { profileId: 'glm', tier: 'glm-b' },
+    { profileId: 'proma', tier: 'pr-a' },
+  ]);
+});
+
+test('normalizeFailoverChain：已删除的供应商移出链', () => {
+  const profiles: Record<string, ModelProfile> = { glm: makeProfile('glm', ['glm-a']) };
+  const result = normalizeFailoverChain(profiles, {
+    enabled: true,
+    chain: [{ profileId: 'glm', tier: 'glm-a' }, { profileId: 'gone', tier: 'x' }],
+  });
+  expect(result.chain).toEqual([{ profileId: 'glm', tier: 'glm-a' }]);
+});
+
+test('normalizeFailoverChain：tier 失效时回退该家 piModels 首个', () => {
+  const result = normalizeFailoverChain(threeProfiles(), {
+    enabled: false,
+    chain: [{ profileId: 'glm', tier: 'not-exist' }],
+  });
+  expect(result.chain[0]).toEqual({ profileId: 'glm', tier: 'glm-a' });
+});
+
+test('normalizeFailoverChain：chain 内 profileId 去重保首现', () => {
+  const result = normalizeFailoverChain(threeProfiles(), {
+    enabled: false,
+    chain: [
+      { profileId: 'glm', tier: 'glm-b' },
+      { profileId: 'glm', tier: 'glm-a' },
+    ],
+  });
+  expect(result.chain).toEqual([
+    { profileId: 'glm', tier: 'glm-b' },
+    { profileId: 'deepseek', tier: 'ds-a' },
+    { profileId: 'proma', tier: 'pr-a' },
+  ]);
+});
+
+test('normalizeFailoverChain：piModels 为空的供应商不进链、存量条目被移出', () => {
+  const profiles: Record<string, ModelProfile> = {
+    glm: makeProfile('glm', ['glm-a']),
+    empty: makeProfile('empty', []),
+  };
+  const result = normalizeFailoverChain(profiles, {
+    enabled: false,
+    chain: [{ profileId: 'empty', tier: 'x' }],
+  });
+  expect(result.chain).toEqual([{ profileId: 'glm', tier: 'glm-a' }]);
+});
+
+test('normalizeFailoverChain：迁移前的 string[] piModels 也能取到 tier', () => {
+  const profiles: Record<string, ModelProfile> = {
+    legacy: { ...makeProfile('legacy', []), piModels: ['old-a', 'old-b'] as unknown as ModelProfile['piModels'] },
+  };
+  const result = normalizeFailoverChain(profiles, undefined);
+  expect(result.chain).toEqual([{ profileId: 'legacy', tier: 'old-a' }]);
+});
+
+test('normalizeFailoverChain：结构损坏（非对象/缺 profileId/数组 chain）时安全重建', () => {
+  for (const bad of [null, 42, 'x', { enabled: 'yes', chain: 'not-array' }] as unknown as Parameters<typeof normalizeFailoverChain>[1][]) {
+    const result = normalizeFailoverChain(threeProfiles(), bad);
+    expect(result).toEqual({
+      enabled: false,
+      chain: [
+        { profileId: 'glm', tier: 'glm-a' },
+        { profileId: 'deepseek', tier: 'ds-a' },
+        { profileId: 'proma', tier: 'pr-a' },
+      ],
+    });
+  }
+});
+
+test('normalizeFailoverChain：已是规范形状时输出不变（幂等）', () => {
+  const input = {
+    enabled: true,
+    chain: [
+      { profileId: 'glm', tier: 'glm-b' },
+      { profileId: 'deepseek', tier: 'ds-a' },
+      { profileId: 'proma', tier: 'pr-b' },
+    ],
+  };
+  expect(normalizeFailoverChain(threeProfiles(), input)).toEqual(input);
+});
+
+test('normalizeSettings：failover 缺失且存在可用供应商时生成链并落盘标记', () => {
+  const s = baseSettings();
+  s.profiles = threeProfiles();
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.failover).toEqual({
+    enabled: false,
+    chain: [
+      { profileId: 'glm', tier: 'glm-a' },
+      { profileId: 'deepseek', tier: 'ds-a' },
+      { profileId: 'proma', tier: 'pr-a' },
+    ],
+  });
+});
+
+test('normalizeSettings：默认设置（无 piModels 供应商）failover 保持空链不产生改动', () => {
+  const s = baseSettings();
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(false);
+  expect(s.failover).toEqual({ enabled: false, chain: [] });
 });

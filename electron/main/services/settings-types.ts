@@ -41,6 +41,16 @@ export function createDefaultBasicToolPermissions(): BasicToolPermissions {
   return { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
 }
 
+export interface FailoverEntry {
+  profileId: string;
+  tier: string;
+}
+
+export interface FailoverConfig {
+  enabled: boolean;
+  chain: FailoverEntry[];
+}
+
 export interface SubAgentEnabledAbilities {
   memory?: boolean;
   stock?: boolean;
@@ -86,6 +96,7 @@ export interface AppSettings {
   subAgent: {
     profiles: SubAgentProfile[];
   };
+  failover?: FailoverConfig;
   /** 热更新服务配置 */
   update?: {
     serverUrl: string;
@@ -114,6 +125,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subAgent: {
     profiles: [createDefaultSubAgentProfile()],
   },
+  failover: { enabled: false, chain: [] },
   update: {
     serverUrl: 'http://localhost:9527',
   },
@@ -133,6 +145,51 @@ export const DEFAULT_SETTINGS: AppSettings = {
 // ============================================================
 // 纯函数
 // ============================================================
+
+/**
+ * piModels 在磁盘上可能仍是迁移前的 string[]（normalize 先于 migratePiProfiles 执行），两种形状都取 id
+ */
+function piModelIds(profile: ModelProfile | undefined): string[] {
+  const raw: unknown[] = Array.isArray(profile?.piModels) ? ((profile as ModelProfile).piModels as unknown[]) : [];
+  return raw
+    .map((m) => (typeof m === 'string' ? m : (m as { id?: unknown } | null | undefined)?.id))
+    .filter((id): id is string => typeof id === 'string' && id !== '');
+}
+
+/**
+ * 规范化 failover 链：条目按 profileId 去重；profile 已删或 piModels 为空时移出链；
+ * tier 失效回退该家首个模型；按 profiles 顺序把未入链的供应商追加链尾；failover 缺失时生成完整链（enabled: false）。
+ * 纯函数，不修改入参。
+ */
+export function normalizeFailoverChain(
+  profiles: Record<string, ModelProfile>,
+  failover: FailoverConfig | undefined,
+): FailoverConfig {
+  const idsByProfile = new Map<string, string[]>();
+  for (const [id, profile] of Object.entries(profiles)) {
+    idsByProfile.set(id, piModelIds(profile));
+  }
+
+  const seen = new Set<string>();
+  const chain: FailoverEntry[] = [];
+  const rawChain: unknown[] = Array.isArray(failover?.chain) ? (failover?.chain as unknown[]) : [];
+  for (const raw of rawChain) {
+    if (!raw || typeof raw !== 'object') continue;
+    const { profileId, tier } = raw as Partial<FailoverEntry>;
+    if (typeof profileId !== 'string' || profileId === '' || seen.has(profileId)) continue;
+    const ids = idsByProfile.get(profileId);
+    if (!ids || ids.length === 0) continue;
+    seen.add(profileId);
+    chain.push({ profileId, tier: typeof tier === 'string' && ids.includes(tier) ? tier : ids[0] });
+  }
+
+  for (const [id, ids] of idsByProfile) {
+    if (ids.length === 0 || seen.has(id)) continue;
+    chain.push({ profileId: id, tier: ids[0] });
+  }
+
+  return { enabled: failover?.enabled === true, chain };
+}
 
 /**
  * 检查 Profile 是否配置完整

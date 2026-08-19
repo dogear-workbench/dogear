@@ -55,6 +55,16 @@ export function createDefaultSubAgentProfile(): SubAgentProfile {
   };
 }
 
+export interface FailoverEntry {
+  profileId: string;
+  tier: string;
+}
+
+export interface FailoverConfig {
+  enabled: boolean;
+  chain: FailoverEntry[];
+}
+
 export interface SubAgentEnabledAbilities {
   memory?: boolean;
   stock?: boolean;
@@ -94,6 +104,7 @@ export interface AppSettings {
   subAgent: {
     profiles: SubAgentProfile[];
   };
+  failover?: FailoverConfig;
   /** 智能分类设置 */
   smartCategory?: {
     enabled?: boolean;          // 默认 true
@@ -124,6 +135,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   subAgent: {
     profiles: [createDefaultSubAgentProfile()],
   },
+  failover: { enabled: false, chain: [] },
   update: {
     serverUrl: 'http://localhost:9527',
   },
