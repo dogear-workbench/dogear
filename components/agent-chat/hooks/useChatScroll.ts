@@ -58,7 +58,7 @@ export function useChatScroll({
     return (
       (scrollAreaRef.current?.querySelector(
         '[data-radix-scroll-area-viewport]',
-      ) as HTMLElement | null) ?? null
+      ) as HTMLElement | null) ?? scrollAreaRef.current ?? null
     );
   }, [scrollAreaRef]);
 
