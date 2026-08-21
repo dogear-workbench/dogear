@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
-import { SharedAreaPanel } from '@/components/SharedAreaPanel';
+import { TopicPanel } from '@/components/TopicPanel';
 import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
@@ -333,15 +333,15 @@ export default function Home() {
               附加
             </button>
             <button
-              onClick={() => setRightPanelTab('shared')}
+              onClick={() => setRightPanelTab('topic')}
               className={cn(
                 'flex-1 px-3 py-2 text-xs font-medium transition-colors',
-                rightPanelTab === 'shared'
+                rightPanelTab === 'topic'
                   ? 'border-b-2 border-primary text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              共享区
+              话题
             </button>
           </div>
 
@@ -351,7 +351,7 @@ export default function Home() {
           ) : rightPanelTab === 'additional' ? (
             <AdditionalFilesPanel workspaceId={workspace.id} />
           ) : (
-            <SharedAreaPanel workspaceId={workspace.id} groupId={currentGroupId} />
+            <TopicPanel workspaceId={workspace.id} groupId={currentGroupId} />
           )}
         </aside>
       </div>

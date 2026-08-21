@@ -116,9 +116,9 @@ export function AdditionalFilesPanel({ workspaceId: _workspaceId }: AdditionalFi
             </button>
           </div>
         ) : (
-          <div className="p-2 space-y-2">
+          <div className="py-1">
             {additionalPaths.map((ap) => (
-              <AdditionalPathCard
+              <AdditionalFolderSection
                 key={ap.path}
                 path={ap.path}
                 enabled={ap.enabled}
@@ -135,7 +135,7 @@ export function AdditionalFilesPanel({ workspaceId: _workspaceId }: AdditionalFi
   );
 }
 
-interface AdditionalPathCardProps {
+interface AdditionalFolderSectionProps {
   path: string;
   enabled: boolean;
   expanded: boolean;
@@ -144,51 +144,53 @@ interface AdditionalPathCardProps {
   onToggleExpand: () => void;
 }
 
-function AdditionalPathCard({
+function AdditionalFolderSection({
   path,
   enabled,
   expanded,
   onToggle,
   onRemove,
   onToggleExpand,
-}: AdditionalPathCardProps) {
+}: AdditionalFolderSectionProps) {
   const dirName = path.split(/[/\\]/).filter(Boolean).pop() || path;
 
   return (
-    <div className={cn('rounded-md border overflow-hidden', !enabled && 'opacity-50')}>
-      <div className="flex items-center gap-2 px-2 py-1.5 bg-muted/30">
-        <Switch
-          checked={enabled}
-          onCheckedChange={onToggle}
-          className="scale-90"
-        />
-        <button
-          className="flex items-center gap-1 flex-1 min-w-0 text-left"
-          onClick={enabled ? onToggleExpand : undefined}
-          disabled={!enabled}
-        >
-          {enabled && (
-            expanded ? (
-              <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
-            )
-          )}
+    <div className={cn(!enabled && 'opacity-50')}>
+      <div
+        className="group flex items-center gap-1 px-2 py-1 rounded cursor-pointer hover:bg-muted/40 transition-colors"
+        onClick={enabled ? onToggleExpand : undefined}
+      >
+        {enabled ? (
+          expanded ? (
+            <ChevronDown className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted-foreground" />
+          )
+        ) : (
+          <span className="w-3.5 h-3.5 shrink-0" />
+        )}
+        {expanded ? (
+          <FolderOpen className="w-3.5 h-3.5 shrink-0 text-blue-500" />
+        ) : (
           <Folder className="w-3.5 h-3.5 shrink-0 text-blue-500" />
-          <div className="flex-1 min-w-0">
-            <div className="text-xs font-medium truncate">{dirName}</div>
-            <div className="text-[10px] text-muted-foreground/70 truncate" title={path}>
-              {path}
-            </div>
-          </div>
-        </button>
+        )}
+        <div className="flex-1 min-w-0" title={path}>
+          <div className="text-xs font-medium truncate">{dirName}</div>
+        </div>
         <button
-          className="p-0.5 rounded hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0"
+          className="p-0.5 rounded hover:bg-destructive/10 hover:text-destructive transition-colors shrink-0 opacity-0 group-hover:opacity-100"
           onClick={(e) => { e.stopPropagation(); onRemove(); }}
           title="移除"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
+        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+          <Switch
+            checked={enabled}
+            onCheckedChange={onToggle}
+            className="scale-75"
+          />
+        </div>
       </div>
 
       {enabled && expanded && (
@@ -242,7 +244,7 @@ function AdditionalFileTree({ dirPath }: AdditionalFileTreeProps) {
   }
 
   return (
-    <div className="py-1">
+    <div>
       {files.map((node) => (
         <FileTreeNode
           key={node.path}

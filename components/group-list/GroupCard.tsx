@@ -130,7 +130,7 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
                 />
               ) : (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground truncate">{deriveGroupTitle(group)}</span>
+                  <span className="text-xs text-muted-foreground truncate" title={deriveGroupTitle(group)}>{deriveGroupTitle(group)}</span>
                 </div>
               )}
             </div>

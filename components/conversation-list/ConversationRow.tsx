@@ -109,7 +109,10 @@ export function ConversationRow({
           />
         ) : (
           <div className="flex items-center gap-1">
-            <div className={cn('text-sm truncate', isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground')}>
+            <div
+              className={cn('text-sm truncate', isSelected ? 'text-blue-700 dark:text-blue-300 font-medium' : 'text-foreground')}
+              title={getConversationTitle(conv)}
+            >
               {getConversationTitle(conv)}
             </div>
             {isBotBound && <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />}

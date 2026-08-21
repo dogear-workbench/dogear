@@ -3,6 +3,7 @@ import { tipc } from '@egoist/tipc/main';
 import * as groupService from '../services/group-service.js';
 import { autoArchiveStaleGroups } from '../services/auto-archive-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
+import { readGroupBackground } from '../services/memory/background-store.js';
 import * as conversationService from '../services/conversation-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
@@ -187,6 +188,18 @@ export const groupRouter = {
       } catch (error) {
         console.error('自动归档失败:', error);
         return { archivedCount: 0, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  readGroupBackground: t.procedure
+    .input<{ workspaceId: string; groupId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const background = await readGroupBackground(input.workspaceId, input.groupId);
+        return { background, error: undefined };
+      } catch (error) {
+        console.error('读取话题背景失败:', error);
+        return { background: null, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

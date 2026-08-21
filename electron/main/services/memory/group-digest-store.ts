@@ -80,6 +80,15 @@ export function getGroupDigestPath(wsId: string, groupId: string): string {
   return path.join(getGroupDir(wsId, groupId), 'digest.md');
 }
 
+export async function readGroupDigestRaw(wsId: string, groupId: string): Promise<string | null> {
+  try {
+    return await fs.readFile(getGroupDigestPath(wsId, groupId), 'utf-8');
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
 // ─── 纯函数：序列化 / 解析 ───
 
 export function serializeGroupDigest(card: GroupDigestCard): string {

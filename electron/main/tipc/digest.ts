@@ -1,7 +1,7 @@
 // electron/main/tipc/digest.ts
 // 组级摘要卡 IPC（Phase 3）：列出/读取组卡 + 触发/取消 + 提示词 + 模型选择 + 活动轮询
 import { tipc } from '@egoist/tipc/main';
-import { listGroupDigests, readGroupDigest } from '../services/memory/group-digest-store.js';
+import { listGroupDigests, readGroupDigest, readGroupDigestRaw } from '../services/memory/group-digest-store.js';
 import {
   triggerScanAll, triggerByGroup, getGroupDigestActivity, cancelAllGroupDigest,
 } from '../services/memory/group-digest-trigger.js';
@@ -34,6 +34,18 @@ export const digestRouter = {
         return { card };
       } catch (error) {
         console.error('[digest] readGroupDigest 失败:', error);
+        return { error: String(error) };
+      }
+    }),
+
+  readGroupDigestRaw: t.procedure
+    .input<{ workspaceId: string; groupId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const content = await readGroupDigestRaw(input.workspaceId, input.groupId);
+        return { content };
+      } catch (error) {
+        console.error('[digest] readGroupDigestRaw 失败:', error);
         return { error: String(error) };
       }
     }),
