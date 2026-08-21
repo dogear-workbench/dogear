@@ -875,12 +875,27 @@ if (typeof window !== 'undefined') {
     });
   });
 
-  // Tab 焦点联动：activeTabId 变化（点 Tab/关 Tab 自动切/关其他/独立窗口收回等所有入口）
-  // 时同步左侧对话列表的选中高亮，使「当前焦点会话」与列表高亮始终一致
+  // Tab 焦点联动：activeTabId 变化（点 Tab/关 Tab 自动切/关其他/独立窗口收回等所有入口）时，
+  // 若焦点 tab 属于其他工作区须先 await setWorkspace 再 focusConversationById——先高亮会用旧工作区分片查丢会话
   useSessionStore.subscribe((state, prev) => {
-    if (state.activeTabId !== prev.activeTabId) {
-      useConversationStore.getState().focusConversationById(state.activeTabId);
-    }
+    if (state.activeTabId === prev.activeTabId) return;
+    const tabId = state.activeTabId;
+    void (async () => {
+      const { useWorkspaceStore } = await import('./workspace-store');
+      const tab = tabId ? useSessionStore.getState().getTab(tabId) : undefined;
+      const currentWsId = useWorkspaceStore.getState().workspace?.id;
+      if (tab?.workspaceId && tab.workspaceId !== currentWsId) {
+        try {
+          const { workspaces } = await client.getAll();
+          if (useSessionStore.getState().activeTabId !== tabId) return;
+          const target = workspaces?.find((w) => w.id === tab.workspaceId);
+          if (target) await useWorkspaceStore.getState().setWorkspace(target);
+        } catch (err) {
+          console.error('[焦点联动] 切换工作区失败:', err);
+        }
+      }
+      useConversationStore.getState().focusConversationById(tabId);
+    })();
   });
 
   // 初始化时查询 bot 绑定状态（避免页面刷新后丢失）

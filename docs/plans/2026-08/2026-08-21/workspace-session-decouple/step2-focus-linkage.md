@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 焦点联动与切换器降级
-status: pending
+status: done
 ---
 
 ## 目标
@@ -67,10 +67,23 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：三点写法说明（零实质偏离）
+  1. `client` 直接用顶部已有 import，未动态 import（step 文档已预告此写法）
+  2. `await client.getAll()` 后加一行复查 `useSessionStore.getState().activeTabId !== tabId` 则 return——快速连点两个跨工作区 tab 时旧订阅的 getAll 晚返回会覆盖新焦点的工作区，此复查是验收项「最终左右与最后一个 tab 一致」的直接保障（step「竞态自查」条目的落地，非扩大改动面）
+  3. `getTab(tabId)` 前置 `tabId ?` 判空：`activeTabId: string | null` 直传 `getTab(conversationId: string)` 会类型报错
+- 改动文件清单：`components/WorkspaceTabBar.tsx`（handleTabClick 删成同步一行 + 删 `useWorkspaceStore` import 与 `currentWorkspaceId`；`client`/`toast` 因关闭/弹出功能保留）、`stores/conversation-store.ts`（底部订阅 async 化，+21/-28）
+- 竞态自查结论（step 要求项）：
+  - **时序铁律成立**：`setWorkspace` 内 `activateWorkspace`（同步切分片镜像）+ `set({workspace})` 均在首个 `await client.setDefault` 之前同步完成，故 `await setWorkspace` 返回时 focusConversationById 的 getWorkspace 必读到新工作区；loadConversations fire-and-forget 未完成时分片为空 → focusConversationById 走既有 getById 兜底
+  - **快速连点**：两次订阅各自 async；getAll 后的 activeTabId 复查让旧订阅在焦点已变时放弃 setWorkspace+focus；若两次复查都通过（真并发 setWorkspace），`await import` 微任务 FIFO 保证后发起的 activateWorkspace 后执行覆盖 → 最终全局 = 最后点击的工作区
+  - **残余已知限制**：并发窗口内两个 setDefault IPC 完成顺序不定 → 极端情况下「下次启动默认工作区」可能记为先点的（仅影响启动默认，不影响 UI 一致性）；旧订阅晚到的 focusById 在新工作区查旧 tab → getById 失败 → 静默保持原选中，无副作用
+  - **首页 tab**：getTab(HOME_TAB_ID)=undefined → 跳过工作区联动直接 focus('__home__') → getById 失败保持原选中，与现状一致
+  - **真删工作区**：getAll 找不到 target → 静默不切不 toast → 高亮保持，符合设计「错误处理 3」
+- lint：0 errors / 74 warnings（全存量 no-explicit-any，与 Step 1 基线一致）；tsc 13 处存量错误均不在本次两文件（git diff 确认相关文件无未提交改动）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `WorkspaceTabBar.handleTabClick` 现为同步 `(tab: SessionTab) => { switchTab(tab.conversationId); }`
+  - conversation-store 底部订阅（stores/conversation-store.ts:878 起）：`activeTabId` 变化 → async：`getTab(tabId)` → 需要时 `getAll` + 复查 activeTabId + `await setWorkspace(target)` → `focusConversationById(tabId)`——先切后高亮唯一入口，点 tab/关 tab 自动切/独立窗口收回全走这里
+  - `setWorkspace(workspace, { skipSetDefault? })`：activateWorkspace+set 同步在前、setDefault await 在中、loadWorkspaceFiles/loadConversations fire-and-forget 在后
+- 下个 step 该从哪里继续（按设计模块边界推断为跨工作区引用链路）：`stores/reference-store.ts` 补 `workspaceId` 字段 → `ConversationRow` 引用按钮存入 → `WorkspaceExplorer`/`AdditionalFilesPanel` 引用校验（≠焦点 tab.workspaceId → toast 拒绝）→ `useSendMessage.ts:368` 标签带 `workspaceId` 属性 → 后端 `reference-tools.ts`/`session-append-templates.ts`（后端改完记得 `bun run build:electron`）
+- 待办或已知限制：手动验收 7 项（含 Step 1 复测）需主会话跑 dev 人工验证；并发 setDefault 顺序小概率残留（见上）；「话题面板跟随焦点会话 groupId 精确定位」设计标注为未来扩展未做

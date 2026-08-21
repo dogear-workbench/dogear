@@ -3,7 +3,7 @@
  *
  * 职责：
  * - 渲染活跃会话标签页（来自 session-store）
- * - 点击 Tab：切换聚焦，如 tab 所属工作区与当前不同，先切工作区再聚焦
+ * - 点击 Tab：纯切换焦点（跨工作区的左右面板同步由 conversation-store 焦点联动处理）
  * - 关闭 Tab：释放后端 Query 会话（closeQueryBasedSession），再从 UI 移除
  * - 显示 StatusPulse 指示运行/等待确认状态
  * - 右键菜单：弹出到独立窗口、关闭标签页、关闭其他标签页
@@ -29,7 +29,6 @@ import {
 import { StatusPulse } from '@/components/StatusPulse';
 import { useSessionStore, type SessionTab, HOME_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 
 export function WorkspaceTabBar() {
   const allTabs = useSessionStore((s) => s.tabs);
@@ -41,34 +40,12 @@ export function WorkspaceTabBar() {
 
   const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
   const runningConversationIds = useConversationStore((s) => s.runningConversationIds);
-  const currentWorkspaceId = useWorkspaceStore((s) => s.workspace?.id);
 
   // 过滤掉已弹到独立窗口的 Tab（保持 AgentChat 挂载但不显示标签头）
   const tabs = allTabs.filter((t) => !sessionWindowIds.has(t.conversationId));
 
-  /** Tab 点击：如 workspaceId 不同则先切换工作区，再聚焦 Tab */
-  const handleTabClick = async (tab: SessionTab) => {
-    if (tab.workspaceId && tab.workspaceId !== currentWorkspaceId) {
-      // 跨工作区切换：拉取目标工作区信息
-      try {
-        const result = await client.getAll();
-        const targetWs = result.workspaces?.find((w) => w.id === tab.workspaceId);
-        if (targetWs) {
-          await useWorkspaceStore.getState().setWorkspace(targetWs);
-        } else {
-          toast.warning('目标工作区不存在', {
-            description: '该会话所属工作区可能已被删除',
-          });
-          return;
-        }
-      } catch (err) {
-        console.error('切换工作区失败:', err);
-        toast.error('切换工作区失败', {
-          description: err instanceof Error ? err.message : String(err),
-        });
-        return;
-      }
-    }
+  /** Tab 点击：纯切换焦点，跨工作区的左右面板同步由 conversation-store 焦点联动接管 */
+  const handleTabClick = (tab: SessionTab) => {
     switchTab(tab.conversationId);
   };
 
