@@ -11,7 +11,7 @@
 - [x] [Step 1: AgentChat workspaceId 解耦](./step1-chat-workspace-decouple.md) — 三个 hooks 改用 tab 携带的 workspaceId，消除切换误判与 detach
 - [x] [Step 2: 焦点联动与切换器降级](./step2-focus-linkage.md) — 点 tab 直接 switchTab，联动由订阅接管（先切工作区后高亮）
 - [x] [Step 3: 跨工作区会话引用](./step3-cross-ws-reference.md) — 引用标签带 workspaceId，ReadReferenceSession 支持指定工作区
-- [ ] [Step 4: 临时态文件引用校验](./step4-ref-guard.md) — 浏览工作区 ≠ 焦点工作区时拦截右栏文件引用
+- [x] [Step 4: 临时态文件引用校验](./step4-ref-guard.md) — 浏览工作区 ≠ 焦点工作区时拦截右栏文件引用
 
 ## 全局决策
 
@@ -22,3 +22,13 @@
 5. 不写单测，按各 step 的验收清单手动验收
 6. 引用校验提示文案统一：`该文件属于其他工作区，无法引用到当前会话`（附当前焦点会话所属工作区名）
 7. 遇到设计未覆盖的边界：记入 step 文档「实施回填」，不擅自扩大改动面
+
+## 完成总结（2026-08-21）
+
+四个 step 全部实施完成，提交链：Step 1 `3a7d085` → Step 2 `a1b165f` → Step 3 `c1c7884` → Step 4（见 git log）。
+
+- **达成效果**：切换工作区对已挂载会话零事件（不误报「此话题已删除」、不 detach 杀 agent）；tab 跨工作区并存；焦点会话驱动左右面板同步（先切工作区后高亮）；跨工作区会话引用全链路透传 workspaceId；临时态文件引用 toast 拒绝
+- **代码级验收**：每 step diff 与计划比对吻合、无越界改动、lint 0 errors（74 warnings 全存量）、涉及后端的 Step 3 已 build:electron
+- **待人工终验**（需重启应用）：设计文档「验收路径」四条全链路 + 各 step 验收清单（关键场景：A 跑长任务切 B 再回、临时态跨工作区引用会话可读原文、临时态右栏文件引用被拒、同工作区引用回归）
+- **遗留决策点**：文章引用（WorkspaceExplorer toggleReferenceArticle）临时态未拦——step4 计划列表未含，补拦只需一行 guard 前置，待拍板
+- **已知限制**（设计标注未来扩展，均未做）：引用芯片 UI 无工作区徽标；话题面板 currentGroupId 跨工作区 tab 时为 null；sessionRestartTrigger 全局广播保持现状
