@@ -61,6 +61,7 @@ export function AgentChat({
   showStatusHint = true,
   showReplayMessages = true,
   conversationIdOverride,
+  workspaceId,
   rightPanelToggle,
 }: AgentChatProps) {
   // UI 状态
@@ -73,7 +74,7 @@ export function AgentChat({
   const conversationId = conversationIdOverride || storeConversationId;
   const conversations = useConversationStore((s) => s.conversations);
   const selectConversation = useConversationStore((s) => s.selectConversation);
-  const { conversation: currentConversation, topicState } = useTopicArchiveState(conversationId);
+  const { conversation: currentConversation, topicState } = useTopicArchiveState(conversationId, workspaceId);
   const childSnapshot = useConversationStore((s) => conversationId ? s.childSnapshotsById[conversationId] : undefined);
 
   // compact_boundary 折叠状态（默认折叠，每个对话独立）
@@ -89,7 +90,7 @@ export function AgentChat({
   const [isLoading, setIsLoading] = useState(false);
 
   // 历史消息
-  const { messages, setMessages, setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId });
+  const { messages, setMessages, setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
   const topicArchived = topicState === 'archived';
   const isTopicReadOnly = topicArchived || topicState === 'missing';
@@ -126,6 +127,7 @@ export function AgentChat({
       archived: isReadOnly,
       setIsLoading,
       onLiveSnapshot: applyLiveSnapshot,
+      workspaceId,
     });
 
   // 外部启动的会话（agent 派子会话 / 微信 bot / fork 自动发送）本地 isLoading 不会点亮，

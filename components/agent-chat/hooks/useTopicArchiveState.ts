@@ -7,10 +7,11 @@ import type { Conversation } from '@/components/ConversationList';
 
 type TopicState = 'loading' | 'active' | 'archived' | 'missing';
 
-export function useTopicArchiveState(conversationId: string | null) {
+export function useTopicArchiveState(conversationId: string | null, workspaceId?: string | null) {
   const selectedConversation = useConversationStore((state) => state.selectedConversation);
   const conversations = useConversationStore((state) => state.conversations);
-  const workspaceId = useWorkspaceStore((state) => state.workspace?.id ?? null);
+  const globalWsId = useWorkspaceStore((state) => state.workspace?.id ?? null);
+  const effectiveWsId = workspaceId ?? globalWsId;
   const groups = useGroupStore((state) => state.groups);
   const [resolvedConversation, setResolvedConversation] = useState<Conversation | null>(null);
   const [topicState, setTopicState] = useState<TopicState>(conversationId ? 'loading' : 'active');
@@ -32,7 +33,7 @@ export function useTopicArchiveState(conversationId: string | null) {
       return;
     }
 
-    if (!workspaceId) {
+    if (!effectiveWsId) {
       setTopicState('loading');
       return;
     }
@@ -42,7 +43,7 @@ export function useTopicArchiveState(conversationId: string | null) {
       try {
         let currentConversation = knownConversation;
         if (!currentConversation) {
-          const response = await client.getById({ conversationId, workspaceId });
+          const response = await client.getById({ conversationId, workspaceId: effectiveWsId });
           if (cancelled) return;
           currentConversation = response.conversation ?? null;
           setResolvedConversation(currentConversation);
@@ -53,7 +54,7 @@ export function useTopicArchiveState(conversationId: string | null) {
           return;
         }
 
-        const response = await client.getGroup({ workspaceId, groupId: currentConversation.groupId });
+        const response = await client.getGroup({ workspaceId: effectiveWsId, groupId: currentConversation.groupId });
         if (cancelled) return;
         if (!response.group) {
           setTopicState('missing');
@@ -69,7 +70,7 @@ export function useTopicArchiveState(conversationId: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [conversationId, groups, knownConversation, workspaceId]);
+  }, [conversationId, groups, knownConversation, effectiveWsId]);
 
   return { conversation, topicState };
 }

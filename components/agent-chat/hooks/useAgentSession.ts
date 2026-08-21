@@ -18,6 +18,7 @@ interface UseAgentSessionParams {
   archived: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => void;
+  workspaceId?: string | null;
 }
 
 export function useAgentSession({
@@ -25,6 +26,7 @@ export function useAgentSession({
   archived,
   setIsLoading,
   onLiveSnapshot,
+  workspaceId,
 }: UseAgentSessionParams) {
   // 监听 sessionRestartTrigger，变化时重建会话
   const sessionRestartTrigger = useConversationStore((s) => s.sessionRestartTrigger);
@@ -49,7 +51,7 @@ export function useAgentSession({
     const startSession = async () => {
       if (archived || !conversationId) return;
 
-      const currentWorkspaceId = useWorkspaceStore.getState().workspace?.id;
+      const currentWorkspaceId = workspaceId ?? useWorkspaceStore.getState().workspace?.id;
       if (!currentWorkspaceId) return;
 
       // 检查 newConversation 预 attach 的结果，直接复用（跳过重复 attach）

@@ -5,6 +5,7 @@ import type { Message } from '../types';
 
 interface UseMessageHistoryParams {
   conversationId: string | null;
+  workspaceId?: string | null;
 }
 
 export type HistoryStatus = 'loading' | 'ok' | 'empty' | 'error';
@@ -14,7 +15,7 @@ export type HistoryStatus = 'loading' | 'ok' | 'empty' | 'error';
  * 以 conversationId 为唯一入口调用 getConversationHistory：主进程按 Conversation 状态
  * 返回 ok（正常历史）/ empty（新对话尚无 sessionId）/ error（读取失败）三种状态。
  */
-export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
+export function useMessageHistory({ conversationId, workspaceId }: UseMessageHistoryParams) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const [historyConversationId, setHistoryConversationId] = useState<string | null>(null);
@@ -35,9 +36,9 @@ export function useMessageHistory({ conversationId }: UseMessageHistoryParams) {
         return;
       }
 
-      const workspaceId = useWorkspaceStore.getState().workspace?.id || '';
+      const wsId = workspaceId ?? (useWorkspaceStore.getState().workspace?.id || '');
       try {
-        const result = await client.getConversationHistory({ conversationId, workspaceId });
+        const result = await client.getConversationHistory({ conversationId, workspaceId: wsId });
         if (cancelled) return;
 
         if (result.status === 'error') {

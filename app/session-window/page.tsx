@@ -17,6 +17,7 @@ export function SessionWindowPage() {
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
+  const [windowWorkspaceId, setWindowWorkspaceId] = useState<string | null>(null);
 
   const conversations = useConversationStore((s) => s.conversations);
   const loadConversations = useConversationStore((s) => s.loadConversations);
@@ -28,6 +29,7 @@ export function SessionWindowPage() {
     if (!conversationId) return;
     setReady(false);
     setInitError(null);
+    setWindowWorkspaceId(null);
 
     async function init() {
       // 1. 加载设置
@@ -41,6 +43,7 @@ export function SessionWindowPage() {
         setInitError(`找不到对话: ${conversationId}`);
         return;
       }
+      setWindowWorkspaceId(result.workspaceId);
 
       // 3. 获取完整工作区对象并设置到 store（skipSetDefault 避免影响主窗口的默认工作区）
       const { workspaces } = await client.getAll();
@@ -106,6 +109,7 @@ export function SessionWindowPage() {
           ) : conversationId ? (
             <AgentChat
               conversationIdOverride={conversationId}
+              workspaceId={windowWorkspaceId}
               showStatusHint={false}
               rightPanelToggle={{
                 open: rightPanelOpen,

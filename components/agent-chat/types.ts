@@ -113,6 +113,8 @@ export interface AgentChatProps {
   showReplayMessages?: boolean;
   /** 覆盖 conversationId（多标签页模式下使用） */
   conversationIdOverride?: string;
+  /** 会话所属工作区（tab 携带；缺省回落全局 workspace store，兼容不传 props 的调用点） */
+  workspaceId?: string | null;
   /** 右侧面板折叠控制（主页/独立会话窗口传入，渲染到右侧工具轨道顶部） */
   rightPanelToggle?: {
     open: boolean;
