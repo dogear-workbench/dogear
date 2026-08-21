@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 跨工作区会话引用
-status: pending
+status: done
 ---
 
 ## 目标
@@ -42,10 +42,20 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异（三点，零实质偏离）：
+  1. **焦点工作区取法弃用 selectedConversation**，只用 `getTab(conversationId)?.workspaceId ?? 全局 workspace.id` 双重回落——Step 2 后临时态下 conversation-store 顶层分片已切到浏览工作区，selectedConversation 语义错误；tab.workspaceId 是唯一权威（全局决策 2）
+  2. 未改 session-append-templates.ts：按本 step 关键决策「引导文案放注入 text 动态生成」执行，静态模板会污染所有会话，覆盖了设计文档的静态方案
+  3. 跨工作区注记拼在 `</referenced_conversations>` 同一 text block 尾部，不新增 block
+- 改动文件清单：`stores/reference-store.ts`（+workspaceId 必填）、`components/conversation-list/ConversationRow.tsx`（蛇形 workspace_id 转驼峰）、`components/agent-chat/hooks/useSendMessage.ts`（标签带 workspaceId + 动态注记）、`electron/main/agents/tools/reference-tools.ts`（schema 可选参数 + handler `args.workspaceId ?? closure`）
+- 边界记录：focusWorkspaceId 全空（极早期）不加注记但标签仍带 workspaceId，保守降级；传无效 workspaceId → readCleanTranscript 返回 ok:false → isError: true，容错安全；引用芯片 UI 未显示工作区徽标（未来扩展）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  ```ts
+  ConversationReference { conversationId, title, sessionId: string | null, workspaceId: string }
+  // 注入标签：
+  <conversation title="..." conversationId="..." sessionId="..." workspaceId="..." />
+  // 后端：ReadReferenceSession({ sessionId, workspaceId?, tail?, rangeStart?, rangeEnd? })
+  ```
+- 下个 step 该从哪里继续：Step 4 拦另一条链路——临时态（浏览 B、焦点 A）右栏文件/文件夹引用进 A 会话会路径错乱，在 `WorkspaceExplorer.tsx` / `AdditionalFilesPanel.tsx` 引用入口（addReferencedFile 调用处前置）校验「被引用项工作区 ≠ 焦点 tab.workspaceId → toast 拒绝」；焦点 tab 用 `getTab(activeTabId)?.workspaceId`，HOME_TAB_ID 时 undefined 不拦；拒绝文案统一全局决策 6；后端不改文件则无需 build:electron
+- 待办或已知限制：手动验收 4 项（同工作区回归 / 跨工作区全链路 / 芯片移除回归 / 子会话带参调用）需重启应用后人工验证；lint 0 errors + build:electron 已过

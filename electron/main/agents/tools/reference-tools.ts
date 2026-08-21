@@ -39,6 +39,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
       '读指定会话的去噪原文（可尾切或区间切）。仅用于需要查看其他会话的完整对话内容时。',
       z.object({
         sessionId: z.string().describe('目标会话的 SDK sessionId'),
+        workspaceId: z.string().optional().describe('目标会话所属工作区 id；引用跨工作区会话时从 <conversation> 标签取'),
         tail: z.number().int().positive().optional().describe('返回最后 N 条；不传则返回全量'),
         rangeStart: z.number().int().nonnegative().optional().describe('区间起始（含），与 rangeEnd 配合使用；不传则不切区间'),
         rangeEnd: z.number().int().nonnegative().optional().describe('区间结束（不含），与 rangeStart 配合使用'),
@@ -47,7 +48,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
         const range = (args.rangeStart != null && args.rangeEnd != null)
           ? [args.rangeStart, args.rangeEnd] as [number, number]
           : undefined;
-        const r = await readCleanTranscript(workspaceId, args.sessionId, {
+        const r = await readCleanTranscript(args.workspaceId ?? workspaceId, args.sessionId, {
           tail: args.tail,
           range,
         });

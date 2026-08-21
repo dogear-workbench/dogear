@@ -5,6 +5,8 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useSlashCommandStore } from '@/stores/slash-command-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import { useSessionStore } from '@/stores/session-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { sameSelection } from '@/lib/model-selection';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
@@ -364,11 +366,20 @@ export function useSendMessage(params: UseSendMessageParams) {
 
     // 会话引用：独立 block，agent 可通过 sessionId 读取历史会话上下文
     if (referencedConversations.length > 0) {
+      const focusWorkspaceId = conversationId
+        ? useSessionStore.getState().getTab(conversationId)?.workspaceId
+          ?? useWorkspaceStore.getState().workspace?.id
+        : useWorkspaceStore.getState().workspace?.id;
       const convLines = referencedConversations.map(c =>
-        `  <conversation title="${sanitize(c.title)}" conversationId="${c.conversationId}" sessionId="${c.sessionId || ''}" />`
+        `  <conversation title="${sanitize(c.title)}" conversationId="${c.conversationId}" sessionId="${c.sessionId || ''}" workspaceId="${c.workspaceId}" />`
       ).join('\n');
+      const hasCrossWorkspaceRef = !!focusWorkspaceId
+        && referencedConversations.some(c => c.workspaceId !== focusWorkspaceId);
+      const crossWsNote = hasCrossWorkspaceRef
+        ? '\n（注：引用的会话可能属于其他工作区，读取其原文时请把 workspaceId 参数一并传给 ReadReferenceSession）'
+        : '';
       textBlocks.push({
-        text: `<referenced_conversations>\n${convLines}\n</referenced_conversations>`
+        text: `<referenced_conversations>\n${convLines}\n</referenced_conversations>${crossWsNote}`
       });
       clearReferencedConversations();
     }

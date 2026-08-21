@@ -10,7 +10,7 @@
 
 - [x] [Step 1: AgentChat workspaceId 解耦](./step1-chat-workspace-decouple.md) — 三个 hooks 改用 tab 携带的 workspaceId，消除切换误判与 detach
 - [x] [Step 2: 焦点联动与切换器降级](./step2-focus-linkage.md) — 点 tab 直接 switchTab，联动由订阅接管（先切工作区后高亮）
-- [ ] [Step 3: 跨工作区会话引用](./step3-cross-ws-reference.md) — 引用标签带 workspaceId，ReadReferenceSession 支持指定工作区
+- [x] [Step 3: 跨工作区会话引用](./step3-cross-ws-reference.md) — 引用标签带 workspaceId，ReadReferenceSession 支持指定工作区
 - [ ] [Step 4: 临时态文件引用校验](./step4-ref-guard.md) — 浏览工作区 ≠ 焦点工作区时拦截右栏文件引用
 
 ## 全局决策

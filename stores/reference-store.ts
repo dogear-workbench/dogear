@@ -13,6 +13,7 @@ export interface ConversationReference {
   conversationId: string;
   title: string;
   sessionId: string | null;
+  workspaceId: string;
 }
 
 /** 共享文件引用（会话组共享区） */

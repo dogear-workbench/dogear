@@ -157,6 +157,7 @@ export function ConversationRow({
             conversationId: conv.id,
             title: getConversationTitle(conv),
             sessionId: conv.session_id || null,
+            workspaceId: conv.workspace_id,
           });
         }}>
           引用到当前对话
