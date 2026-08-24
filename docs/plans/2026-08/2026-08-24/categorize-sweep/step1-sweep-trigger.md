@@ -1,7 +1,7 @@
 ---
 step: 1
 title: trigger 层补漏编排
-status: in_progress
+status: done
 ---
 
 ## 目标
@@ -32,10 +32,10 @@ status: in_progress
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① entry 的 groupId 取 `card.groupId`（对齐 full-rebuild 惯例）；② `parseGroupDigest` 返回 null 同读失败 warn 跳过（不计 noTags）；③ readdir 根目录失败静默返回空结果（对齐 full-rebuild silent catch）；④ 额外补 3 个纯函数单测（smart-category-engine.test.ts）
+- 改动文件清单：`electron/main/services/memory/smart-category-engine.ts`（末尾 +collectSweepTargets）、`electron/main/services/memory/category-trigger.ts`（triggerCategorize 后 +triggerCategorizeSweep，63 行）、`electron/main/services/memory/smart-category-engine.test.ts`（+3 单测）；`bun run build:electron` 通过，tsc --noEmit 干净；category-trigger.test.ts 在 bun test 直跑下的 electron 模块报错为存量环境问题（HEAD 同样失败）
 
 ### 给下一步的接力棒
-- 关键签名：`triggerCategorizeSweep(...)` 的返回结构（若与计划有出入以实际为准）
-- 下个 step 该从哪里继续：`task-executor.ts:83-89` categorize 分支
-- 待办或已知限制：
+- 关键签名：`triggerCategorizeSweep(workspaceId: string): Promise<{ disabled: boolean; pending: number; noTags: number }>`；`collectSweepTargets(entries, mountedGroupIds): { sweep: Array<{ groupId: string; digestPath: string }>; noTags: number; archived: number }`（archived 计数已返回，RPC 暂不用）
+- 下个 step 该从哪里继续：`task-executor.ts:83-89` categorize 分支（builtinId `'categorize'` 不变，重映射到 triggerCategorizeSweep）
+- 待办或已知限制：孤儿组目录（有 digest.md 但 groups.json 无此组）会入队但被 runOne 的 `!group` 守卫安全 skip（复用现有行为）；sweep 读组卡 ENOENT 也 warn（按计划字面实现，若 scheduler 高频触发嫌吵可后续降噪）

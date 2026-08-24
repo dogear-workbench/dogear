@@ -212,6 +212,69 @@ export async function triggerCategorize(workspaceId: string, groupId: string, gr
   enqueue({ kind: 'incremental', workspaceId, groupId, groupDigestPath });
 }
 
+/**
+ * 补漏触发：幂等差集扫描（有 tags 的活跃组卡 − 分类挂载并集），逐组入队 incremental。
+ * 差集为空即 no-op；无 tags 只计数引导重提炼，不入队。
+ */
+export async function triggerCategorizeSweep(
+  workspaceId: string,
+): Promise<{ disabled: boolean; pending: number; noTags: number }> {
+  await whenMigrationReady();
+
+  const { loadSettings } = await import('../settings-service.js');
+  const settings = await loadSettings();
+  if (settings.smartCategory?.enabled === false) return { disabled: true, pending: 0, noTags: 0 };
+
+  const fs = await import('node:fs/promises');
+  const { getGroupsRootDir, getGroupDigestPath, parseGroupDigest } = await import('./group-digest-store.js');
+  const { getGroup } = await import('../group-service.js');
+  const { readIndex } = await import('./smart-category-store.js');
+  const { collectSweepTargets } = await import('./smart-category-engine.js');
+
+  const entries: Array<{ groupId: string; hasTags: boolean; archived: boolean; digestPath: string }> = [];
+  let dirents: import('node:fs').Dirent[];
+  try {
+    dirents = await fs.readdir(getGroupsRootDir(workspaceId), { withFileTypes: true });
+  } catch {
+    return { disabled: false, pending: 0, noTags: 0 };
+  }
+  for (const dirent of dirents) {
+    if (!dirent.isDirectory() || dirent.name.startsWith('_')) continue;
+    const digestPath = getGroupDigestPath(workspaceId, dirent.name);
+    let raw: string;
+    try {
+      raw = await fs.readFile(digestPath, 'utf-8');
+    } catch (err) {
+      mainLogger.warn('[smart-category] sweep 读组卡失败，跳过:', digestPath, err);
+      continue;
+    }
+    const card = parseGroupDigest(raw);
+    if (!card?.groupId) {
+      mainLogger.warn('[smart-category] sweep 解析组卡失败，跳过:', digestPath);
+      continue;
+    }
+    const group = await getGroup(workspaceId, card.groupId);
+    entries.push({
+      groupId: card.groupId,
+      hasTags: card.tags !== undefined,
+      archived: group?.archivedAt !== undefined,
+      digestPath,
+    });
+  }
+
+  const idx = await readIndex(workspaceId);
+  const mountedGroupIds = new Set<string>();
+  for (const cat of idx.categories) {
+    for (const gid of cat.groupIds) mountedGroupIds.add(gid);
+  }
+
+  const { sweep, noTags } = collectSweepTargets(entries, mountedGroupIds);
+  for (const g of sweep) {
+    void triggerCategorize(workspaceId, g.groupId, g.digestPath);
+  }
+  return { disabled: false, pending: sweep.length, noTags };
+}
+
 /** 手动触发：清空 + 全量重做（设置页"立即重跑全部分类"按钮用） */
 export async function triggerFullRebuild(workspaceId: string): Promise<void> {
   await whenMigrationReady();

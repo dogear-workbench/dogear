@@ -64,3 +64,27 @@ export function normalizeTags(tags: DigestTags): DigestTags {
     scores,
   };
 }
+
+// 补漏差集：有 tags 的活跃组卡 − 分类挂载并集（纯函数，可单测）
+// 无 tags 只计数引导重提炼，不入队；归档/已挂载剔除
+export function collectSweepTargets(
+  entries: Array<{ groupId: string; hasTags: boolean; archived: boolean; digestPath: string }>,
+  mountedGroupIds: Set<string>,
+): { sweep: Array<{ groupId: string; digestPath: string }>; noTags: number; archived: number } {
+  const sweep: Array<{ groupId: string; digestPath: string }> = [];
+  let noTags = 0;
+  let archived = 0;
+  for (const e of entries) {
+    if (e.archived) {
+      archived++;
+      continue;
+    }
+    if (mountedGroupIds.has(e.groupId)) continue;
+    if (!e.hasTags) {
+      noTags++;
+      continue;
+    }
+    sweep.push({ groupId: e.groupId, digestPath: e.digestPath });
+  }
+  return { sweep, noTags, archived };
+}

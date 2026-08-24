@@ -1,5 +1,5 @@
 import { test, expect } from 'bun:test';
-import { matchByThreshold, pickRedistributeCandidates, normalizeTag, normalizeTags } from './smart-category-engine.ts';
+import { matchByThreshold, pickRedistributeCandidates, normalizeTag, normalizeTags, collectSweepTargets } from './smart-category-engine.ts';
 import type { SmartCategory, DigestTags } from '../../types.ts';
 
 const cats: SmartCategory[] = [
@@ -110,4 +110,33 @@ test('pickRedistributeCandidates 同 overlap 时按 id 字典序', () => {
   const r = pickRedistributeCandidates(tieCats, ['t1']);
   expect(r).toHaveLength(2);
   expect(r.map((x) => x.categoryId)).toEqual(['c_a', 'c_b']); // 字典序前两个
+});
+
+test('collectSweepTargets 差集：归档/已挂载剔除，无 tags 只计数', () => {
+  const entries = [
+    { groupId: 'g1', hasTags: true, archived: false, digestPath: '/p/g1/digest.md' },
+    { groupId: 'g2', hasTags: true, archived: false, digestPath: '/p/g2/digest.md' },
+    { groupId: 'g3', hasTags: false, archived: false, digestPath: '/p/g3/digest.md' },
+    { groupId: 'g4', hasTags: true, archived: true, digestPath: '/p/g4/digest.md' },
+    { groupId: 'g5', hasTags: false, archived: true, digestPath: '/p/g5/digest.md' },
+  ];
+  const r = collectSweepTargets(entries, new Set(['g1']));
+  expect(r.sweep).toEqual([{ groupId: 'g2', digestPath: '/p/g2/digest.md' }]);
+  expect(r.noTags).toBe(1);
+  expect(r.archived).toBe(2);
+});
+
+test('collectSweepTargets 差集为空返回空 sweep', () => {
+  const entries = [{ groupId: 'g1', hasTags: true, archived: false, digestPath: '/p/g1/digest.md' }];
+  const r = collectSweepTargets(entries, new Set(['g1']));
+  expect(r.sweep).toEqual([]);
+  expect(r.noTags).toBe(0);
+  expect(r.archived).toBe(0);
+});
+
+test('collectSweepTargets 已挂载的无 tags 组不计 noTags', () => {
+  const entries = [{ groupId: 'g1', hasTags: false, archived: false, digestPath: '/p/g1/digest.md' }];
+  const r = collectSweepTargets(entries, new Set(['g1']));
+  expect(r.sweep).toEqual([]);
+  expect(r.noTags).toBe(0);
 });
