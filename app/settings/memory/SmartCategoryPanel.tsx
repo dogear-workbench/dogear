@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
-import { RefreshCw, ChevronDown, Brain, Tag } from 'lucide-react';
+import { RefreshCw, ChevronDown, Brain, Tag, Radar, RotateCcw, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSmartCategoryStore } from '@/stores/smart-category-store';
+import { showConfirm } from '@/stores/confirm-store';
 
 // Switch 不在 components/ui，用与 settings/page.tsx 一致的内联 toggle 实现
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
@@ -34,6 +36,8 @@ export function SmartCategoryPanel() {
 
   const categories = useSmartCategoryStore((s) => s.categories);
   const load = useSmartCategoryStore((s) => s.load);
+  const sweep = useSmartCategoryStore((s) => s.sweep);
+  const triggerFullRebuild = useSmartCategoryStore((s) => s.triggerFullRebuild);
 
   // ── 设置状态 ──
   const [enabled, setEnabled] = useState(true);
@@ -41,6 +45,7 @@ export function SmartCategoryPanel() {
   const [maxCategories] = useState(10); // 锁死，Phase 后续再开放
   const [categoriesOpen, setCategoriesOpen] = useState(true);
   const [loadingCategories, setLoadingCategories] = useState(false);
+  const [sweeping, setSweeping] = useState(false);
 
   // ── 初始拉取 ──
   useEffect(() => {
@@ -76,6 +81,43 @@ export function SmartCategoryPanel() {
     }
   };
 
+  const handleSweep = async () => {
+    if (!workspaceId || sweeping) return;
+    setSweeping(true);
+    try {
+      const r = await sweep(workspaceId);
+      if (!r) {
+        toast.error('补挂失败，请重试');
+        return;
+      }
+      if (r.disabled) {
+        toast.info('智能分类已禁用');
+        return;
+      }
+      const noTagsSuffix = r.noTags > 0 ? `（${r.noTags} 组组卡缺 tags，需重提炼）` : '';
+      if (r.pending === 0) {
+        toast.success(`差集为空，无需补挂${noTagsSuffix}`);
+      } else {
+        toast.success(`已入队补挂 ${r.pending} 组${noTagsSuffix}`);
+      }
+    } finally {
+      setSweeping(false);
+    }
+  };
+
+  const handleRebuild = async () => {
+    if (!workspaceId) return;
+    const r = await client.listGroups({ workspaceId });
+    const groupCount = Array.isArray(r.groups) ? r.groups.length : 0;
+    const ok = await showConfirm(
+      '全量重置分类',
+      `清空现有智能分类并重新决策全部组卡（当前工作区 ${groupCount} 组，约 10-30 分钟）。通常只需在分类混乱时使用，日常补漏请用「补挂漏网组」。`,
+    );
+    if (!ok) return;
+    await triggerFullRebuild(workspaceId);
+    toast.success('已开始全量重置分类');
+  };
+
   if (!workspaceId) {
     return <div className="text-sm text-muted-foreground py-8 text-center">请先选择一个工作区</div>;
   }
@@ -84,7 +126,7 @@ export function SmartCategoryPanel() {
     <div className="space-y-4">
       <p className="text-xs text-muted-foreground">
         分类对象：<b>话题</b>（一个话题可包含多个对话）。话题摘要产生 / 更新后自动决策，命中现有分类或另起新类。
-        模型、提示词与全量重跑 / 整理入口在「定时计划」。
+        模型、提示词与整理入口在「定时计划」；漏网组可在此补挂。
       </p>
 
       <div className="flex flex-wrap items-center gap-6 rounded-md border bg-muted/30 px-3 py-3">
@@ -115,6 +157,22 @@ export function SmartCategoryPanel() {
           />
           <span className="text-xs">（先锁死，看后续）</span>
         </label>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" onClick={handleSweep} disabled={sweeping}>
+          {sweeping ? (
+            <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+          ) : (
+            <Radar className="w-4 h-4 mr-1" />
+          )}
+          补挂漏网组
+        </Button>
+        <Button variant="outline" size="sm" onClick={handleRebuild}>
+          <RotateCcw className="w-4 h-4 mr-1" />
+          全量重置分类
+        </Button>
+        <span className="text-xs text-muted-foreground">补挂幂等可常用；全量重置为破坏性长任务，仅在分类混乱时使用</span>
       </div>
 
       <div className="rounded-md border">

@@ -624,7 +624,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="text-lg font-semibold mb-1">智能分类</h2>
-              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节匹配阈值、查看分类结果，全量重跑与整理在「定时计划」中运行。</p>
+              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节匹配阈值、查看分类结果、补挂漏网组或全量重置；模型、提示词与整理在「定时计划」中配置。</p>
               <SmartCategoryPanel />
             </div>
           </div>
