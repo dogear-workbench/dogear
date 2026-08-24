@@ -28,3 +28,13 @@
 - **无 tags 组卡不入队、不产生决策记录**：只计数（noTags），引导用户重提炼，不在分类活动里制造 skip 噪音
 - **full-rebuild 代码不动**（staging 原子性保留），只改设置页按钮文案；tipc `triggerFullRebuild` RPC 保留
 - 命名约定：主进程 `triggerCategorizeSweep`，UI 文案「补挂漏网组」「全量重置分类」
+
+## 完成总结
+
+2026-08-24 实施完毕，三 step 各一次子会话交付、全部验收通过，commits：d1a4bee / 2a32477 / 26afa58。
+
+- **Step 1**：`collectSweepTargets` 纯函数 + `triggerCategorizeSweep`（幂等差集扫描，逐组复用 incremental job），附 3 个单测
+- **Step 2**：categorize builtin 改调 sweep + waitForQueueIdle + 三态 summary；label 改「智能分类（补挂）」；计划外补了 plan-store 的 builtin name 同步迁移（否则改名后旧 plans.json 无法保存编辑）
+- **Step 3**：设置页「补挂漏网组」主按钮（toast 三分支）+「全量重置分类」outline 按钮（showConfirm 成本提示）；对 f484254 入口收敛的定向回退
+
+遗留：运行时手验（按钮 toast / 确认框 / 定时任务页跑一轮「智能分类（补挂）」看 run-history）需重启应用后做；sweep 为全局开关（不分工作区）。
