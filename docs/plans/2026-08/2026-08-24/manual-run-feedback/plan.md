@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 主进程侧——改名/历史/事件](./step1-backend.md) — label「补分类」+ summary 人话 + job source 标记 + 完成点写 run-history + 广播 manualTaskDone
-- [ ] [Step 2: 前端侧——删按钮/监听/模型提示](./step2-frontend.md) — 删面板按钮与 sweep RPC/store action + 全局监听 toast + 弹窗/提示模型名 + 介绍文案
+- [x] [Step 2: 前端侧——删按钮/监听/模型提示](./step2-frontend.md) — 删面板按钮与 sweep RPC/store action + 全局监听 toast + 弹窗/提示模型名 + 介绍文案
 
 ## 全局决策
 
@@ -23,3 +23,12 @@
 - **失败/取消也写历史**（status: 'failed' / 'cancelled' + error），取消不 toast 成功
 - **模型回退链**：分类 → `categorizeModelSelection` ?? `defaultModelSelection`；提炼 → `digestModelSelection` ?? `defaultModelSelection`；显示格式对照 BuiltinTaskDetailSection 现有逻辑
 - **删除物清单**（step2）：面板 sweep 按钮/handleSweep/sweeping、store `sweep` action 与 `CategorizeSweepResult`、tipc `triggerCategorizeSweep` RPC；**主进程 `triggerCategorizeSweep` 函数与 `collectSweepTargets` 保留**（task-executor 消费）
+
+## 完成总结
+
+2026-08-24 实施完毕，两 step 各一次子会话交付、验收通过，commits：8f4fb57（step1，含 amend 补齐漏 add 的 tipc 两文件）/ step2（见 git log）。
+
+- **Step 1**：label「补分类」+ summary 人话化；job `source?: 'manual'` 仅手动 RPC 入口传；两 trigger 完成点（含失败/取消/静默跳过）写 run-history 伪计划记录 + 广播 manualTaskDone
+- **Step 2**：删面板补分类按钮与 sweep RPC/store action；全局 manualTaskDone → toast（main.tsx 顶层挂载）；确认弹窗/重新提炼提示注明模型与修改入口（resolveModelLabel 拍平共享）；文案收口「补挂」「差集」零残留
+
+遗留：运行时手验待重启应用；同键 in-flight 去重吞手动触发无记录（现状行为）。

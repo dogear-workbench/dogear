@@ -4,8 +4,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
+import { resolveModelLabel } from '@/lib/model-selection';
 import { useConfirmStore } from '@/stores/confirm-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import type { ModelSelection } from '@/types/settings';
 
 interface GroupDigestSummary {
   groupId: string;
@@ -52,8 +55,16 @@ export function DigestsPanel() {
   const workspaceId = workspace?.id;
   const workspacePath = workspace?.path;
   const confirm = useConfirmStore((s) => s.confirm);
+  const settings = useSettingsStore((s) => s.settings);
   const [list, setList] = useState<GroupDigestSummary[]>([]);
   const [selected, setSelected] = useState<GroupDigestCard | null>(null);
+  const [digestModel, setDigestModel] = useState<ModelSelection | null>(null);
+
+  useEffect(() => {
+    client.getDigestModelSelection().then((r) => {
+      if ('selection' in r) setDigestModel(r.selection ?? null);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -79,10 +90,12 @@ export function DigestsPanel() {
 
   const handleReDigest = async (groupId: string) => {
     if (!workspaceId || !workspacePath) return;
+    const modelSel = digestModel ?? settings.ai.defaultModelSelection;
+    const modelLabel = modelSel ? resolveModelLabel(settings, modelSel) : '默认模型（未设置）';
     await client.triggerGroupDigest({ workspaceId, workspacePath, groupId });
     await confirm({
       title: '已加入提炼队列',
-      description: '该组将在后台重新提炼，列表会自动刷新。',
+      description: `该组将在后台重新提炼（使用模型 ${modelLabel}，可在 定时计划 → 组卡提炼 → 详情 中修改），列表会自动刷新。`,
       buttons: [{ label: '知道了', value: 'ok' }],
     });
   };

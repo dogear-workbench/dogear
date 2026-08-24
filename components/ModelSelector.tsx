@@ -10,7 +10,7 @@ import {
 import { Cpu, ChevronRight } from 'lucide-react';
 import { InputGroupButton } from '@/components/ui/input-group';
 import { cn } from '@/lib/utils';
-import { dedupeProfileTiers, sameSelection } from '@/lib/model-selection';
+import { dedupeProfileTiers, sameSelection, resolveModelLabel } from '@/lib/model-selection';
 import type { AppSettings, ModelSelection } from '@/types/settings';
 
 interface Props {
@@ -20,13 +20,6 @@ interface Props {
   allowUnset?: boolean;
   triggerVariant?: 'inline' | 'block';
   disabled?: boolean;
-}
-
-function resolveCurrentLabel(settings: AppSettings, value: ModelSelection): string {
-  const profile = settings.profiles[value.profileId];
-  if (!profile) return '已删除的模型';
-  const matched = (profile.piModels ?? []).find(m => m.id === value.tier);
-  return matched ? (matched.label ?? matched.id) : '已删除的模型';
 }
 
 export function ModelSelector({
@@ -39,7 +32,7 @@ export function ModelSelector({
 }: Props) {
   const profiles = Object.values(settings.profiles);
   const currentLabel = value
-    ? resolveCurrentLabel(settings, value)
+    ? resolveModelLabel(settings, value)
     : (allowUnset ? '不指定' : '请选择模型');
 
   return (

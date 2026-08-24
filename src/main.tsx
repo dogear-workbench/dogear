@@ -2,7 +2,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { toast } from 'sonner';
+import { setupManualTaskToasts } from '@/lib/manual-task-toasts';
 import './globals.css';
+
+setupManualTaskToasts();
 
 // ==================== 全局异常捕获 ====================
 

@@ -2,12 +2,6 @@ import { create } from 'zustand';
 import { client } from '@/lib/client';
 import type { CategorizeActivity, SmartCategory } from '@/types/smart-category';
 
-export interface CategorizeSweepResult {
-  disabled: boolean;
-  pending: number;
-  noTags: number;
-}
-
 interface SmartCategoryStore {
   categories: SmartCategory[];
   loading: boolean;
@@ -17,8 +11,6 @@ interface SmartCategoryStore {
   load: (workspaceId: string) => Promise<void>;
   /** 触发全量重建（清空 + 重决策所有摘要卡） */
   triggerFullRebuild: (workspaceId: string) => Promise<void>;
-  /** 补挂漏网组：对有组卡但未挂进任何分类的组编排增量决策，失败返回 null */
-  sweep: (workspaceId: string) => Promise<CategorizeSweepResult | null>;
   /** 触发存量分类整理（压 anchorTags + 合并语义重合分类，与 per-group 共享队列互斥） */
   triggerOrganize: (workspaceId: string) => Promise<void>;
   /** 取消当前正在跑的任务（全局单队列，无需 workspaceId） */
@@ -56,20 +48,6 @@ export const useSmartCategoryStore = create<SmartCategoryStore>((set) => ({
       await client.triggerFullRebuild({ workspaceId });
     } catch (e) {
       console.warn('[smart-category] triggerFullRebuild 失败:', e);
-    }
-  },
-
-  sweep: async (workspaceId) => {
-    try {
-      const r = await client.triggerCategorizeSweep({ workspaceId });
-      if ('error' in r) {
-        console.warn('[smart-category] sweep 失败:', r.error);
-        return null;
-      }
-      return { disabled: r.disabled, pending: r.pending, noTags: r.noTags };
-    } catch (e) {
-      console.warn('[smart-category] sweep 失败:', e);
-      return null;
     }
   },
 

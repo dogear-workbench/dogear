@@ -624,7 +624,7 @@ export default function SettingsPage() {
             </div>
             <div>
               <h2 className="text-lg font-semibold mb-1">智能分类</h2>
-              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节匹配阈值、查看分类结果、补挂漏网组或全量重置；模型、提示词与整理在「定时计划」中配置。</p>
+              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节匹配阈值、查看分类结果或全量重置；模型、提示词、补分类与整理在「定时计划」中配置。</p>
               <SmartCategoryPanel />
             </div>
           </div>
@@ -635,7 +635,7 @@ export default function SettingsPage() {
           <div className="max-w-4xl py-6 px-6">
             <h2 className="text-lg font-semibold mb-1">定时计划</h2>
             <p className="text-sm text-muted-foreground mb-6">
-              每个任务一行：内置任务（组卡提炼 / 复盘报告 / 智能分类（补挂） / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
+              每个任务一行：内置任务（组卡提炼 / 复盘报告 / 补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
             </p>
             <SchedulerPanel />
           </div>

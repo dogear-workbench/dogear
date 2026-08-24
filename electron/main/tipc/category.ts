@@ -2,7 +2,6 @@ import { tipc } from '@egoist/tipc/main';
 import { readIndex } from '../services/memory/smart-category-store.js';
 import {
   triggerCategorize,
-  triggerCategorizeSweep,
   triggerFullRebuild,
   triggerCategorizeOrganize,
   cancelCurrent,
@@ -61,22 +60,10 @@ export const categoryRouter = {
     .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        await triggerFullRebuild(input.workspaceId);
+        await triggerFullRebuild(input.workspaceId, 'manual');
         return { success: true };
       } catch (error) {
         console.error('[category] triggerFullRebuild 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  triggerCategorizeSweep: t.procedure
-    .input<{ workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const result = await triggerCategorizeSweep(input.workspaceId);
-        return { ...result };
-      } catch (error) {
-        console.error('[category] triggerCategorizeSweep 失败:', error);
         return { error: String(error) };
       }
     }),
