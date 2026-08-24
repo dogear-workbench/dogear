@@ -172,6 +172,7 @@ export interface CategorizeDecisionLog {
 export interface SmartCategoriesIndex {
   categories: SmartCategory[];
   recentDecisions: CategorizeDecisionLog[];   // 环形，最多 20 条
+  schemaVersion?: 2;                          // migration-p3 幂等标记，writeIndex 落盘时统一补写
 }
 
 /** 智能分类任务一次执行的结果记录（环形缓冲项） */

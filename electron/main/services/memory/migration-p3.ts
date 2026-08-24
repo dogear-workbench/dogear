@@ -288,7 +288,7 @@ async function moveToOrphan(digestsDir: string, oldPath: string, sessionId: stri
 
 // ─── 步骤 2: smart-categories.json conversationIds → groupIds ───
 
-async function migrateSmartCategories(
+export async function migrateSmartCategories(
   configDir: string,
   wsId: string,
   convs: ConversationIndex[],
@@ -320,13 +320,15 @@ async function migrateSmartCategories(
   }
 
   const categories = Array.isArray(data.categories) ? data.categories : [];
+  // 防御：新格式数据（只有 groupIds、无 conversationIds）误入迁移时，
+  // 不能用空映射结果覆盖现有挂载——只做合并，永不丢已有 groupIds
   const upgraded = categories.map((cat: any) => {
-    const oldIds: string[] = Array.isArray(cat.conversationIds) ? cat.conversationIds : [];
-    const groupIds = [...new Set(
-      oldIds.map((cid: string) => convToGroup.get(cid)).filter((gid): gid is string => !!gid),
-    )];
-    const { conversationIds: _removed, ...rest } = cat;
-    return { ...rest, groupIds };
+    const { conversationIds: oldIds, groupIds: existingIds, ...rest } = cat;
+    const mapped = (Array.isArray(oldIds) ? oldIds : [])
+      .map((cid: string) => convToGroup.get(cid))
+      .filter((gid): gid is string => !!gid);
+    const kept = Array.isArray(existingIds) ? existingIds : [];
+    return { ...rest, groupIds: [...new Set([...kept, ...mapped])] };
   });
 
   const upgraded_data = {

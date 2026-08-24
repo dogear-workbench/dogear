@@ -29,7 +29,8 @@ export async function readIndex(wsId: string): Promise<SmartCategoriesIndex> {
 }
 
 export async function writeIndex(wsId: string, idx: SmartCategoriesIndex): Promise<void> {
-  await safeJsonWrite(getIndexPath(wsId), idx);
+  // 统一补写幂等标记：缺 schemaVersion 的文件会被 migration-p3 当旧格式重写 groupIds
+  await safeJsonWrite(getIndexPath(wsId), { ...idx, schemaVersion: 2 });
 }
 
 // 纯函数：把 groupId 加进指定分类（去重）
