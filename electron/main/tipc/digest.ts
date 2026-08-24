@@ -60,7 +60,7 @@ export const digestRouter = {
     .input<{ workspaceId: string; workspacePath: string; groupId: string }>()
     .action(async ({ input }) => {
       try {
-        await triggerByGroup(input.workspaceId, input.workspacePath, input.groupId);
+        await triggerByGroup(input.workspaceId, input.workspacePath, input.groupId, 'manual');
         return { success: true };
       } catch (error) {
         console.error('[digest] triggerGroupDigest 失败:', error);

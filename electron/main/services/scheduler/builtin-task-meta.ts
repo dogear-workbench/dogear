@@ -39,7 +39,7 @@ export const BUILTIN_TASK_IDS: readonly BuiltinTaskId[] = [
 export const BUILTIN_LABELS: Record<BuiltinTaskId, string> = {
   group_digest: '组卡提炼',
   review: '复盘报告',
-  categorize: '智能分类（补挂）',
+  categorize: '补分类',
   categorize_organize: '分类整理',
 };
 

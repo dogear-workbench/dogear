@@ -10,7 +10,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 主进程侧——改名/历史/事件](./step1-backend.md) — label「补分类」+ summary 人话 + job source 标记 + 完成点写 run-history + 广播 manualTaskDone
+- [x] [Step 1: 主进程侧——改名/历史/事件](./step1-backend.md) — label「补分类」+ summary 人话 + job source 标记 + 完成点写 run-history + 广播 manualTaskDone
 - [ ] [Step 2: 前端侧——删按钮/监听/模型提示](./step2-frontend.md) — 删面板按钮与 sweep RPC/store action + 全局监听 toast + 弹窗/提示模型名 + 介绍文案
 
 ## 全局决策

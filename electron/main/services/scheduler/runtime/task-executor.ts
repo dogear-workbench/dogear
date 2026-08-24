@@ -98,9 +98,12 @@ async function runBuiltinTask(task: BuiltinScheduledTask): Promise<TaskExecResul
       const pending = results.reduce((sum, r) => sum + r.pending, 0);
       const noTags = results.reduce((sum, r) => sum + r.noTags, 0);
       if (pending === 0 && noTags === 0) {
-        return { status: 'completed', summary: '差集为空，无需补挂' };
+        return { status: 'completed', summary: '没有未分类的话题' };
       }
-      return { status: 'completed', summary: `已补挂 ${pending} 组，${noTags} 组缺 tags 需重提炼` };
+      const parts: string[] = [];
+      if (pending > 0) parts.push(`已为 ${pending} 个话题补分类`);
+      if (noTags > 0) parts.push(`${noTags} 个话题缺标签需重新提炼`);
+      return { status: 'completed', summary: parts.join('，') };
     }
     case 'categorize_organize': {
       const { triggerCategorizeOrganize, getCategorizeActivity } =

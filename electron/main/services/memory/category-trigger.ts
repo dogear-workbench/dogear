@@ -1,18 +1,23 @@
 // 智能分类触发编排：incremental（单会话）+ full-rebuild（工作区全量）+ organize（存量整理）
+import { randomUUID } from 'node:crypto';
 import {
   TaskType, TaskStatus, type AgentTask, type CategorizeSessionPayload, type CategorizeOrganizeSessionPayload,
 } from '../../agents/task-types.js';
 import { mainLogger } from '../../agents/logger.js';
+import { formatDurationMs } from '../../agents/delegation-terminal.js';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 import type { CategorizeActivity, CategorizeRecentEntry } from '../../types.js';
+import type { RunHistoryEntry } from '../scheduler/types.js';
+import { appendHistoryEntry } from '../scheduler/run-history-store.js';
 import { whenMigrationReady } from './migration-gate.js';
 
-type CategorizeJob =
+type CategorizeJob = (
   | { kind: 'incremental'; workspaceId: string; groupId: string; groupDigestPath: string }
   | { kind: 'full-rebuild'; workspaceId: string }
-  | { kind: 'organize'; workspaceId: string };
+  | { kind: 'organize'; workspaceId: string }
+) & { source?: 'manual' };
 
 const inFlight = new Set<string>();
 const queue: CategorizeJob[] = [];
@@ -97,6 +102,12 @@ async function pump(): Promise<void> {
 async function runOne(job: CategorizeJob): Promise<void> {
   const startedAt = Date.now();
 
+  const reportManual = (outcome: CategorizeOutcome, decisions: Record<string, number> | undefined, error?: string) => {
+    if (job.kind === 'full-rebuild' && job.source === 'manual') {
+      void recordManualFullRebuild(job.workspaceId, startedAt, outcome, decisions, error);
+    }
+  };
+
   const pushRecent = (outcome: CategorizeOutcome, extra: Partial<CategorizeRecentEntry>) => {
     recent.unshift({
       workspaceId: job.workspaceId,
@@ -126,6 +137,7 @@ async function runOne(job: CategorizeJob): Promise<void> {
   const ws = await getWorkspaceById(job.workspaceId);
   if (!ws) {
     pushRecent('error', { error: `工作区未找到: ${job.workspaceId}` });
+    reportManual('error', undefined, `工作区未找到: ${job.workspaceId}`);
     return;
   }
 
@@ -176,11 +188,12 @@ async function runOne(job: CategorizeJob): Promise<void> {
     getAgentManager().submitTask(task, (_taskId, status, result, error) => {
       if (status === TaskStatus.COMPLETED || status === TaskStatus.FAILED || status === TaskStatus.CANCELLED) {
         const outcome = classifyCategorizeOutcome(result, error, status, job.kind === 'organize');
+        const runError = error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined);
         pushRecent(outcome, {
           decisions: result?.decisions,
           tier: result?.tier,
           profileName: result?.profileName,
-          error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
+          error: runError,
         });
         // 索引真的改了才广播（match/join/new/done；full-rebuild 全 skip 也替换了索引需广播）
         const indexChanged = outcome === 'match' || outcome === 'join' || outcome === 'new' || outcome === 'done'
@@ -196,14 +209,77 @@ async function runOne(job: CategorizeJob): Promise<void> {
             }
           }
         }
+        reportManual(outcome, result?.decisions, runError);
         resolve();
       }
     }).catch((err) => {
       mainLogger.warn('[smart-category] 提交任务失败:', jobKey(job), err);
       pushRecent('error', { error: String(err) });
+      reportManual('error', undefined, String(err));
       resolve();
     });
   });
+}
+
+function manualOutcomeStatus(outcome: CategorizeOutcome): 'completed' | 'failed' | 'cancelled' {
+  if (outcome === 'cancelled') return 'cancelled';
+  if (outcome === 'error') return 'failed';
+  return 'completed';
+}
+
+async function recordManualFullRebuild(
+  workspaceId: string,
+  startedAt: number,
+  outcome: CategorizeOutcome,
+  decisions: Record<string, number> | undefined,
+  error?: string,
+): Promise<void> {
+  const status = manualOutcomeStatus(outcome);
+  const endedAt = Date.now();
+  const durationMs = endedAt - startedAt;
+  const total = Object.values(decisions ?? {}).reduce((s, n) => s + (typeof n === 'number' ? n : 0), 0);
+  const summary = status === 'completed'
+    ? `已为 ${total} 个话题重建分类，耗时 ${formatDurationMs(durationMs)}`
+    : status === 'cancelled'
+      ? `已取消，已处理 ${total} 个话题，耗时 ${formatDurationMs(durationMs)}`
+      : undefined;
+  const entryError = error ?? (status === 'cancelled' ? '已取消' : undefined);
+  const payload = {
+    kind: 'full-rebuild' as const,
+    planId: 'manual-full-rebuild' as const,
+    planName: '全量重置分类',
+    status,
+    workspaceId,
+    durationMs,
+    summary,
+    error: entryError,
+  };
+  try {
+    const entry: RunHistoryEntry = {
+      id: randomUUID(),
+      ts: endedAt,
+      planId: payload.planId,
+      planName: payload.planName,
+      kind: 'task',
+      status,
+      triggerReason: 'manual',
+      startedAt,
+      endedAt,
+      summary,
+      error: entryError,
+    };
+    await appendHistoryEntry(entry);
+  } catch (err) {
+    mainLogger.warn('[smart-category] 写手动运行历史失败:', err);
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      getRendererHandlers<RendererHandlers>(win.webContents).manualTaskDone.send(payload);
+    } catch {
+      // ignore destroyed windows
+    }
+  }
 }
 
 /** 手动触发：单条增量决策（组 digest saved 后串联） */
@@ -275,10 +351,10 @@ export async function triggerCategorizeSweep(
   return { disabled: false, pending: sweep.length, noTags };
 }
 
-/** 手动触发：清空 + 全量重做（设置页"立即重跑全部分类"按钮用） */
-export async function triggerFullRebuild(workspaceId: string): Promise<void> {
+/** 手动触发：清空 + 全量重做（设置页「全量重置分类」按钮用；source='manual' 时终态写运行历史并广播） */
+export async function triggerFullRebuild(workspaceId: string, source?: 'manual'): Promise<void> {
   await whenMigrationReady();
-  enqueue({ kind: 'full-rebuild', workspaceId });
+  enqueue({ kind: 'full-rebuild', workspaceId, source });
 }
 
 /**

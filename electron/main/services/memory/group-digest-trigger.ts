@@ -1,5 +1,6 @@
 // 组级摘要卡提炼触发编排（Phase 3 Step 2）：替代旧 digest-trigger
 // 串行队列并发=1 + in-flight 去重（按 ${workspaceId}:${groupId}）
+import { randomUUID } from 'node:crypto';
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -11,7 +12,13 @@ import {
 } from './group-digest-scanner.js';
 import { readGroupDigest, getGroupDigestPath } from './group-digest-store.js';
 import { mainLogger } from '../../agents/logger.js';
+import { formatDurationMs } from '../../agents/delegation-terminal.js';
+import { BrowserWindow } from 'electron';
+import { getRendererHandlers } from '@egoist/tipc/main';
+import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
 import { getConfigDir } from '../settings-service.js';
+import type { RunHistoryEntry } from '../scheduler/types.js';
+import { appendHistoryEntry } from '../scheduler/run-history-store.js';
 import { whenMigrationReady } from './migration-gate.js';
 
 export type GroupDigestOutcome = 'saved' | 'no-card' | 'error';
@@ -42,6 +49,7 @@ interface QueueEntry {
   groupId: string;
   /** 手动入口：跳过脏检查强制重跑，且按全量会话重看 */
   force?: boolean;
+  source?: 'manual';
 }
 
 const inFlight = new Set<string>();
@@ -200,7 +208,10 @@ async function runOne(e: QueueEntry): Promise<void> {
   // 脏检查（force 时跳过，见 triggerByGroup）
   const dirtyGroup = await findDirtyGroup(workspaceId, workspacePath, groupId, e.force);
   if (!dirtyGroup) {
-    // 不脏，跳过（不入 recent）
+    // 不脏，跳过（不入 recent）；手动重新提炼不可静默吞掉，记失败历史+通知
+    if (e.source === 'manual') {
+      void recordManualRedigest(e, startedAt, 'failed', 'error', '话题不存在、已归档或会话文件不可读');
+    }
     return;
   }
 
@@ -233,23 +244,106 @@ async function runOne(e: QueueEntry): Promise<void> {
         status === TaskStatus.CANCELLED
       ) {
         const outcome = status === TaskStatus.CANCELLED ? 'error' : classifyGroupDigestOutcome(result, error);
+        const runError = error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined);
         pushRecent(outcome, {
           tier: result?.tier,
           profileName: result?.profileName,
-          error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
+          error: runError,
         });
         if (status === TaskStatus.COMPLETED && outcome === 'saved') {
           const groupDigestPath = getGroupDigestPath(workspaceId, groupId);
           void chainCategorize(workspaceId, groupId, groupDigestPath);
+        }
+        if (e.source === 'manual') {
+          const manualStatus: 'completed' | 'failed' | 'cancelled' =
+            status === TaskStatus.CANCELLED ? 'cancelled'
+              : outcome === 'error' ? 'failed'
+                : 'completed';
+          void recordManualRedigest(e, startedAt, manualStatus, outcome, runError);
         }
         resolve();
       }
     }).catch((err) => {
       mainLogger.warn('[group-digest] 提交任务失败:', entryKey(e), err);
       pushRecent('error', { error: String(err) });
+      if (e.source === 'manual') {
+        void recordManualRedigest(e, startedAt, 'failed', 'error', String(err));
+      }
       resolve();
     });
   });
+}
+
+async function resolveManualDigestTitle(e: QueueEntry): Promise<string> {
+  try {
+    const { getGroup } = await import('../group-service.js');
+    const group = await getGroup(e.workspaceId, e.groupId);
+    if (group?.title?.trim()) return group.title.trim();
+  } catch {
+    // 组元数据读不到时回退组卡标题
+  }
+  try {
+    const card = await readGroupDigest(e.workspaceId, e.groupId);
+    if (card?.title?.trim()) return card.title.trim();
+  } catch {
+    // 回退 groupId 短码
+  }
+  return `group:${e.groupId.slice(-8)}`;
+}
+
+async function recordManualRedigest(
+  e: QueueEntry,
+  startedAt: number,
+  status: 'completed' | 'failed' | 'cancelled',
+  outcome: GroupDigestOutcome,
+  error?: string,
+): Promise<void> {
+  const endedAt = Date.now();
+  const durationMs = endedAt - startedAt;
+  const planName = `重新提炼：${await resolveManualDigestTitle(e)}`;
+  const summary =
+    status === 'cancelled' ? `已取消，耗时 ${formatDurationMs(durationMs)}`
+      : status === 'failed' ? undefined
+        : outcome === 'saved' ? `已更新组卡，耗时 ${formatDurationMs(durationMs)}`
+          : `未产出组卡，耗时 ${formatDurationMs(durationMs)}`;
+  const entryError = error ?? (status === 'cancelled' ? '已取消' : undefined);
+  const payload = {
+    kind: 'redigest' as const,
+    planId: 'manual-redigest' as const,
+    planName,
+    status,
+    workspaceId: e.workspaceId,
+    groupId: e.groupId,
+    durationMs,
+    summary,
+    error: entryError,
+  };
+  try {
+    const entry: RunHistoryEntry = {
+      id: randomUUID(),
+      ts: endedAt,
+      planId: payload.planId,
+      planName,
+      kind: 'task',
+      status,
+      triggerReason: 'manual',
+      startedAt,
+      endedAt,
+      summary,
+      error: entryError,
+    };
+    await appendHistoryEntry(entry);
+  } catch (err) {
+    mainLogger.warn('[group-digest] 写手动运行历史失败:', err);
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      getRendererHandlers<RendererHandlers>(win.webContents).manualTaskDone.send(payload);
+    } catch {
+      // ignore destroyed windows
+    }
+  }
 }
 
 /** 组卡 saved 后异步串联触发分类，不阻塞 digest 队列 */
@@ -301,10 +395,10 @@ export async function triggerByConversation(convId: string): Promise<void> {
   }
 }
 
-/** 手动入口：指定单个 group，强制重跑（用户点了就是要重提炼，不看脏不脏） */
-export async function triggerByGroup(workspaceId: string, workspacePath: string, groupId: string): Promise<void> {
+/** 手动入口：指定单个 group，强制重跑（用户点了就是要重提炼，不看脏不脏）；source='manual' 时终态写运行历史并广播 */
+export async function triggerByGroup(workspaceId: string, workspacePath: string, groupId: string, source?: 'manual'): Promise<void> {
   await whenMigrationReady();
-  enqueue({ workspaceId, workspacePath, groupId, force: true });
+  enqueue({ workspaceId, workspacePath, groupId, force: true, source });
 }
 
 /**

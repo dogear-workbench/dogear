@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 主进程侧——改名/历史/事件
-status: in_progress
+status: done
 ---
 
 ## 目标
@@ -35,10 +35,11 @@ label 改「补分类」+ summary 人话；job 加 manual 标记；全量重置/
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① summary 按非零子句拼接（避免「0 个话题」噪音）；② 补了计划未点名的失败终态点（findDirtyGroup null 静默跳过、submitTask reject、工作区未找到早退）；③ redigest 组标题在完成点解析（group.title → 组卡 title → groupId 短码，读到新标题更贴近结果）；④ formatDurationMs 复用 delegation-terminal.ts；⑤ package.json bump 0.1.46（计划外，与近期实践一致）
+- 改动文件清单：`builtin-task-meta.ts`（label「补分类」）/ `task-executor.ts`（summary 人话化）/ `category-trigger.ts`（source 标记 + reportManual 三终态点 + recordManualFullRebuild）/ `group-digest-trigger.ts`（同理 + resolveManualDigestTitle）/ `tipc/renderer-handlers.ts`（manualTaskDone 定义）/ `tipc/category.ts` + `tipc/digest.ts`（手动入口传 'manual'）/ `package.json`
+- 验证：build:electron 通过；lint 0 errors 且改动文件零告警；engine 单测 14 pass
 
 ### 给下一步的接力棒
-- 关键签名：`manualTaskDone` payload 结构（step2 渲染层监听要用）
-- 下个 step 该从哪里继续：`SmartCategoryPanel.tsx` 按钮区（81 行起）
-- 待办或已知限制：
+- 关键签名：`rendererEvents.manualTaskDone.listen(cb)`（@/lib/events，类型自动来自 RendererHandlers）→ payload `{ kind: 'full-rebuild'|'redigest'; planId; planName; status: 'completed'|'failed'|'cancelled'; workspaceId; groupId?; durationMs; summary?; error? }`；成功文案建议 `planName + '完成，耗时 X'`，failed 用 error，cancelled 轻提示
+- 下个 step 该从哪里继续：`SmartCategoryPanel.tsx` 按钮区（81 行起）删 sweep 按钮；store/tipc 同步删；确认弹窗/提示加模型名
+- 待办或已知限制：① run-history 伪 planId 展示效果需重启应用手验（定时「补分类」不应产生 manual 记录）；② 同键 in-flight 去重会吞重复手动触发且无记录（现状行为未改）；③ redigest no-card 完成态 summary 为「未产出组卡」，step2 可按需分流
