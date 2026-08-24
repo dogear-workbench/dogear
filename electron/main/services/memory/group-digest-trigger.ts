@@ -61,8 +61,13 @@ interface DigestActivityDoc {
   version: 1;
   recent: GroupDigestRecentEntry[];
   lastScan: GroupDigestActivity['lastScan'];
+  failStreaks?: Record<string, number>;
   updatedAt: number;
 }
+
+// 连续 no-card/error 达到此次数后暂停该组自动提炼（手动重新提炼不受限并清零）
+const FAIL_SUSPEND_AFTER = 3;
+const failStreaks = new Map<string, number>();
 
 function getActivityPath(): string {
   return path.join(getConfigDir(), 'digest-activity.json');
@@ -84,6 +89,7 @@ async function persistActivity(): Promise<void> {
       version: 1,
       recent: recent.slice(0, RECENT_MAX),
       lastScan,
+      failStreaks: Object.fromEntries([...failStreaks.entries()].filter(([, n]) => n > 0)),
       updatedAt: Date.now(),
     };
     await fs.writeFile(getActivityPath(), JSON.stringify(doc, null, 2), 'utf-8');
@@ -99,6 +105,11 @@ try {
   if (doc && doc.version === 1) {
     if (Array.isArray(doc.recent)) recent.push(...doc.recent.slice(0, RECENT_MAX));
     if (doc.lastScan) lastScan = doc.lastScan;
+    if (doc.failStreaks) {
+      for (const [k, n] of Object.entries(doc.failStreaks)) {
+        if (typeof n === 'number' && n > 0) failStreaks.set(k, n);
+      }
+    }
   }
 } catch {
   // 文件不存在或损坏：用默认空状态
@@ -131,6 +142,7 @@ export function getGroupDigestActivity(): GroupDigestActivity {
 function enqueue(e: QueueEntry): void {
   const k = entryKey(e);
   if (inFlight.has(k)) return;
+  if (e.force) failStreaks.delete(k);
   inFlight.add(k);
   queue.push(e);
   void pump();
@@ -162,6 +174,12 @@ async function pump(): Promise<void> {
 async function runOne(e: QueueEntry): Promise<void> {
   const startedAt = Date.now();
   const { workspaceId, workspacePath, groupId } = e;
+  const k = entryKey(e);
+
+  if (!e.force && (failStreaks.get(k) ?? 0) >= FAIL_SUSPEND_AFTER) {
+    mainLogger.warn(`[group-digest] ${k} 连续 ${failStreaks.get(k)} 次未产出组卡，暂停自动提炼（手动重新提炼可重试）`);
+    return;
+  }
 
   const pushRecent = (outcome: GroupDigestOutcome, extra: Partial<GroupDigestRecentEntry>) => {
     recent.unshift({
@@ -174,6 +192,8 @@ async function runOne(e: QueueEntry): Promise<void> {
     });
     if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
     current = null;
+    if (outcome === 'saved') failStreaks.delete(k);
+    else failStreaks.set(k, (failStreaks.get(k) ?? 0) + 1);
     schedulePersist();
   };
 

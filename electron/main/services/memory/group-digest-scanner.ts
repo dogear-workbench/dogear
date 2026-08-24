@@ -5,6 +5,7 @@ import * as workspaceService from '../workspace-json-service.js';
 import * as groupService from '../group-service.js';
 import { getPiSessionRepository } from '../../agents/pi-session/pi-session-repository.js';
 import { readGroupDigest, type GroupDigestCard } from './group-digest-store.js';
+import { mainLogger } from '../../agents/logger.js';
 
 export interface DirtyGroupConversation {
   conversationId: string;
@@ -94,10 +95,13 @@ export async function findDirtyGroups(wsId: string, wsPath: string): Promise<Dir
           mtime: stat.mtimeMs,
         });
       } catch {
-        // session 不存在或无法访问，跳过该会话
+        mainLogger.warn(`[group-digest] session 文件不可读，跳过该会话: ws=${wsId} group=${group.id} sessionId=${conv.sessionId}`);
       }
     }
-    if (currentMainConvs.length === 0) continue;
+    if (currentMainConvs.length === 0) {
+      mainLogger.warn(`[group-digest] 组内所有会话文件均不可读，该组不会入队提炼（组卡无法生成）: ws=${wsId} group=${group.id}`);
+      continue;
+    }
 
     const card = await readGroupDigest(wsId, group.id);
     const seenOnly = currentMainConvs.map((c) => ({ sessionId: c.sessionId, mtime: c.mtime }));
@@ -142,10 +146,13 @@ export async function findDirtyGroup(
         mtime: stat.mtimeMs,
       });
     } catch {
-      // session 不存在，跳过
+      mainLogger.warn(`[group-digest] session 文件不可读，跳过该会话: ws=${wsId} group=${groupId} sessionId=${conv.sessionId}`);
     }
   }
-  if (currentMainConvs.length === 0) return null;
+  if (currentMainConvs.length === 0) {
+    mainLogger.warn(`[group-digest] 组内所有会话文件均不可读，该组不会提炼（组卡无法生成）: ws=${wsId} group=${groupId}`);
+    return null;
+  }
 
   const card = await readGroupDigest(wsId, groupId);
   if (!force) {

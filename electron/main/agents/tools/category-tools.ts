@@ -19,6 +19,15 @@ import * as groupService from '../../services/group-service.js';
 import { deriveGroupTitle } from '../../services/group-helpers.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
+/**
+ * 索引读写通道：默认磁盘直读写；full-rebuild 等需要原子性的场景注入 staging 实现，
+ * 让 LLM 工具调用与决策代码操作同一份内存索引，结束时一次性落盘替换。
+ */
+export interface CategoryIndexIo {
+  read(): Promise<import('../../types.js').SmartCategoriesIndex>;
+  write(idx: import('../../types.js').SmartCategoriesIndex): Promise<void>;
+}
+
 
 const listArgs = z.object({
   workspaceId: z.string().describe('工作区 ID'),
@@ -63,7 +72,10 @@ const pruneArgs = z.object({
   reason: z.string().optional().describe('简短决策理由（供审计）'),
 });
 
-export function createCategoryToolDefs(): ToolDef[] {
+export function createCategoryToolDefs(idxIo?: CategoryIndexIo): ToolDef[] {
+  const readIdx = (wsId: string) => (idxIo ? idxIo.read() : readIndex(wsId));
+  const writeIdx = (wsId: string, idx: import('../../types.js').SmartCategoriesIndex) =>
+    (idxIo ? idxIo.write(idx) : writeIndex(wsId, idx));
   return [
     defineTool(
       'dogear__ListCategories',
@@ -72,7 +84,7 @@ export function createCategoryToolDefs(): ToolDef[] {
       listArgs,
       async (args) => {
         try {
-          const idx = await readIndex(args.workspaceId);
+          const idx = await readIdx(args.workspaceId);
           const [allConvs, activeGroups] = await Promise.all([
             getByWorkspaceId(args.workspaceId),
             groupService.listActiveGroups(args.workspaceId),
@@ -124,7 +136,7 @@ export function createCategoryToolDefs(): ToolDef[] {
       async (args) => {
         try {
           await groupService.requireActiveGroup(args.workspaceId, args.groupId);
-          let idx = await readIndex(args.workspaceId);
+          let idx = await readIdx(args.workspaceId);
           const nowIso = new Date().toISOString();
 
           idx = removeGroupEverywhere(idx, args.groupId);
@@ -158,7 +170,7 @@ export function createCategoryToolDefs(): ToolDef[] {
             reason: args.reason,
           });
 
-          await writeIndex(args.workspaceId, idx);
+          await writeIdx(args.workspaceId, idx);
           return { content: [{ type: 'text' as const, text: 'OK' }] };
         } catch (error) {
           return {
@@ -183,7 +195,7 @@ export function createCategoryToolDefs(): ToolDef[] {
           for (const move of args.redistribute ?? []) {
             await groupService.requireActiveGroup(args.workspaceId, move.groupId);
           }
-          let idx = await readIndex(args.workspaceId);
+          let idx = await readIdx(args.workspaceId);
           const settings = await loadSettings();
           const maxCategories = settings.smartCategory?.maxCategories ?? 10;
           const nowIso = new Date().toISOString();
@@ -222,7 +234,7 @@ export function createCategoryToolDefs(): ToolDef[] {
             reason: args.reason,
           });
 
-          await writeIndex(args.workspaceId, idx);
+          await writeIdx(args.workspaceId, idx);
           return { content: [{ type: 'text' as const, text: 'OK' }] };
         } catch (error) {
           return {
@@ -243,7 +255,7 @@ export function createCategoryToolDefs(): ToolDef[] {
       mergeArgs,
       async (args) => {
         try {
-          let idx = await readIndex(args.workspaceId);
+          let idx = await readIdx(args.workspaceId);
           const nowIso = new Date().toISOString();
 
           // zod .length(2) 已保证运行时长度，这里做类型层的 tuple 断言
@@ -261,7 +273,7 @@ export function createCategoryToolDefs(): ToolDef[] {
             reason: args.reason,
           });
 
-          await writeIndex(args.workspaceId, idx);
+          await writeIdx(args.workspaceId, idx);
           return { content: [{ type: 'text' as const, text: 'OK' }] };
         } catch (error) {
           return {
@@ -282,7 +294,7 @@ export function createCategoryToolDefs(): ToolDef[] {
       pruneArgs,
       async (args) => {
         try {
-          let idx = await readIndex(args.workspaceId);
+          let idx = await readIdx(args.workspaceId);
           const cat = idx.categories.find((c) => c.id === args.categoryId);
           if (!cat) {
             return { content: [{ type: 'text' as const, text: `Error: 分类 ${args.categoryId} 不存在` }], isError: true };
@@ -296,7 +308,7 @@ export function createCategoryToolDefs(): ToolDef[] {
             decision: 'prune',
             reason: args.reason,
           });
-          await writeIndex(args.workspaceId, idx);
+          await writeIdx(args.workspaceId, idx);
           return {
             content: [{ type: 'text' as const, text: 'OK' }],
           };

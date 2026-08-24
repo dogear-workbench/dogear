@@ -16,8 +16,19 @@ test('首次加载播种默认提示词', async () => {
   expect(onDisk).toBe(DEFAULT_REVIEW_PROMPT);
 });
 
-test('save 后 load 往返一致', async () => {
+test('save 后 load 往返一致（含哨兵的自定义内容原样返回）', async () => {
   const dir = await tmpDir();
-  await saveReviewPrompt(dir, '自定义复盘提示词');
-  expect(await loadReviewPrompt(dir)).toBe('自定义复盘提示词');
+  const custom = `自定义复盘提示词
+
+## 沉淀契约
+（自定义正文）
+`;
+  await saveReviewPrompt(dir, custom);
+  expect(await loadReviewPrompt(dir)).toBe(custom);
+});
+
+test('不含哨兵的旧版内容会被重播种为最新默认', async () => {
+  const dir = await tmpDir();
+  await saveReviewPrompt(dir, '旧版内容，没有沉淀契约段落');
+  expect(await loadReviewPrompt(dir)).toBe(DEFAULT_REVIEW_PROMPT);
 });

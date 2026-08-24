@@ -114,16 +114,20 @@ export const DEFAULT_REVIEW_PROMPT = `# 首页报告 / 跨会话记忆维护
 注意示例的取舍：整份报告 4 段共约 10 行；「最近动向」用一句话带过而非清单；每个 bullet 只讲一件事；「建议」是完整句子而非短语。
 `;
 
+// 新版含沉淀契约 / core-profile 契约，旧版无此段落则重播种
+const SEDIMENT_CONTRACT_SENTINEL = '## 沉淀契约';
+
 function getReviewPromptPath(configDir: string): string {
   return path.join(configDir, 'review-prompt.md');
 }
 
 /** 读取复盘提示词；缺失则播种 DEFAULT 后返回 */
+/** 读取提示词模板；缺失或旧版（不含沉淀契约）则播种 DEFAULT */
 export async function loadReviewPrompt(configDir: string): Promise<string> {
   const file = getReviewPromptPath(configDir);
   try {
     const raw = await fs.readFile(file, 'utf-8');
-    if (raw.trim()) return raw;
+    if (raw.includes(SEDIMENT_CONTRACT_SENTINEL)) return raw;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;
   }

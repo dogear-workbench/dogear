@@ -6,8 +6,9 @@ export const DEFAULT_ORGANIZE_PROMPT = `# 智能分类存量整理
 
 你是「分类整理师」。本次是**一次性**整理当前工作区所有智能分类，目标：
 
-1. 把每个分类的 anchorTags 压到 ≤10 个：挑最具代表性、最能提升未来阈值匹配命中率的保留，去掉冗余/泛词/低区分度的。
+1. 审查每个分类的 anchorTags 质量：去掉泛词 / 同义重复 / 低区分度词（如“调试”、“bugfix”、“修复”这类哪个分类都可能出现的词），保留 / 换上最具代表性、最能提升未来阈值匹配命中率的词，数量保持 ≤10。
 2. 扫描所有分类，找出语义高度重合的分类对（样例组标题和 anchorTags 高度重合）并合并。
+3. 清理空壳分类：groupCount=0（没有任何活跃组）的分类，若与某个现有分类语义相近就合并进去；两个都空的也可互相合并成一个仍有意义的分类。
 
 跟单组归类决策不同：这里不是"给新组卡找归宿"，而是整理已有的分类体系本身。
 
@@ -22,12 +23,13 @@ export const DEFAULT_ORGANIZE_PROMPT = `# 智能分类存量整理
 ## 流程
 
 1. 调 dogear__ListCategories 拿到全部分类。
-2. 逐个分类检查 anchorTags 数：
-   - >10 → 调 dogear__PruneCategoryTags 覆写为最具代表性的 ≤10 个（去掉同义重复、过泛的词，例如"调试"、"bugfix"、"修复"这类每个分类都可能出现的词）。
-   - ≤10 → 跳过，不用调用。
+2. 逐个分类审查 anchorTags 质量：
+   - 含泛词 / 同义重复 / 低区分度词 → 调 dogear__PruneCategoryTags 覆写为精简后的完整数组（整体替换，不是增删）。
+   - 标签集已经精炼 → 跳过，不用调用。
 3. 再扫一遍所有分类（含刚整理过的），找语义高度重合的分类对：样例组标题相似 + anchorTags 大量重叠 → 调 dogear__SaveCategoryMerge 合并成一个新分类。
    - 一次只能合并两个分类；如果有多组可合并的候选，可以多次调用。
-4. 处理完所有分类后即可结束，不需要循环重复检查、不需要等待确认。
+4. 最后看是否还有 groupCount=0 的空壳分类残留，按目标 3 清理。
+5. 处理完所有分类后即可结束，不需要循环重复检查、不需要等待确认。
 
 ## 硬约束
 
@@ -45,12 +47,21 @@ function getOrganizePromptPath(configDir: string): string {
   return path.join(configDir, 'organize-prompt.md');
 }
 
-/** 读取提示词模板；缺失则播种 DEFAULT 后返回 */
+// 旧版目标描述是“把 anchorTags 压到 ≤10”（不可能任务：写入路径已强制 ≤10），命中即重播种
+const LEGACY_COMPRESS_GOAL = '把每个分类的 anchorTags 压到 ≤10';
+// 新版含空壳分类清理指令，作为有效版本哨兵
+const EMPTY_CATEGORY_SENTINEL = '清理空壳分类';
+
+/** 读取提示词模板；缺失或旧版则播种 DEFAULT */
 export async function loadOrganizePrompt(configDir: string): Promise<string> {
   const file = getOrganizePromptPath(configDir);
   try {
     const raw = await fs.readFile(file, 'utf-8');
-    if (raw.trim()) return raw;
+    if (raw.includes(LEGACY_COMPRESS_GOAL)) {
+      await fs.writeFile(file, DEFAULT_ORGANIZE_PROMPT, 'utf-8');
+      return DEFAULT_ORGANIZE_PROMPT;
+    }
+    if (raw.trim() && raw.includes(EMPTY_CATEGORY_SENTINEL)) return raw;
   } catch (err: any) {
     if (err?.code !== 'ENOENT') throw err;
   }

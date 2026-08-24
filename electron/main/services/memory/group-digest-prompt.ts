@@ -25,7 +25,7 @@ export const DEFAULT_GROUP_DIGEST_PROMPT = `你在为一个**会话组**写两�
    - summary：一两句，"这组讨论的核心 + 几条主线"
    - items：决策 / 想法 / 注意 / 搁置 四类，每条带 sources 数组（来自哪些 sessionId + uuid，可多源）
    - keyOutputs：共享区里有价值的产出文件（path + 一句话说明 + 出处 sessionId 可选）
-   - tags：1 主 + 0~3 辅 + 0~1 适配度，覆盖整组主题
+   - tags（**必填**）：1 主 + 0~3 辅 + 0~1 适配度，覆盖整组主题。缺 tags 的组卡不会进入智能分类流程，任何情况下都要提供
    - sourcesSeen 由工具自动维护，你无需提供
 5. 产物二：**组背景** background.md（写给下一个新会话的 agent 读，帮它快速续上）。**紧接着**调 dogear__SaveGroupBackground({ groupId, topic, progress, keyDecisions, openQuestions })：
    - topic：一句话组主题（可复用组卡的 title）

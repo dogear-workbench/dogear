@@ -694,8 +694,33 @@ class AgentWorker {
     const { runOnce } = await import('./pi/run-once.js');
     const fs = await import('node:fs/promises');
 
+    // full-rebuild 走 staging：决策全部落在内存索引，任务正常结束后一次性落盘替换，
+    // 执行期间磁盘旧分类保持可见，取消/失败不动旧索引（对齐 conversation 先备份后替换的原子语义）
+    let stagingIdx: import('../types.js').SmartCategoriesIndex | null = null;
+    if (mode === 'full-rebuild') {
+      const existingIndex = await readIndex(workspaceId);
+      const activeGroupIds = new Set(
+        (await groupService.listActiveGroups(workspaceId)).map((group) => group.id),
+      );
+      stagingIdx = {
+        categories: existingIndex.categories
+          .map((category) => ({ ...category, groupIds: category.groupIds.filter((groupId) => !activeGroupIds.has(groupId)) }))
+          .filter((category) => category.groupIds.length > 0),
+        recentDecisions: [],
+      };
+    }
+    const categoryIo: import('./tools/category-tools.js').CategoryIndexIo = stagingIdx !== null
+      ? {
+        read: async () => stagingIdx!,
+        write: async (idx) => { stagingIdx = idx; },
+      }
+      : {
+        read: () => readIndex(workspaceId),
+        write: (idx) => writeIndex(workspaceId, idx),
+      };
+
     // 授权子集：dogear__ListCategories / dogear__SaveCategoryJoin / dogear__SaveCategoryNew / dogear__SaveCategoryMerge（不含 dogear__PruneCategoryTags）
-    const sessionCategoryDefs = createCategoryToolDefs()
+    const sessionCategoryDefs = createCategoryToolDefs(categoryIo)
       .filter((t) => ['dogear__ListCategories', 'dogear__SaveCategoryJoin', 'dogear__SaveCategoryNew', 'dogear__SaveCategoryMerge'].includes(t.name));
 
     const systemPromptCategorize = '你是一个后台智能分类 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
@@ -732,19 +757,19 @@ class AgentWorker {
       // 无 tags 早退（agent 没遵守提示词、或老卡未补标签）
       if (!card.tags) {
         taskLogger.info('组卡无 tags，记 skip:', groupId);
-        let idx0 = await readIndex(workspaceId);
+        let idx0 = await categoryIo.read();
         idx0 = appendDecision(idx0, {
           time: new Date().toISOString(),
           groupId,
           decision: 'skip',
           reason: 'digest 缺 tags',
         });
-        await writeIndex(workspaceId, idx0);
+        await categoryIo.write(idx0);
         return 'skip';
       }
 
       // Step A 纯阈值匹配
-      let idx = await readIndex(workspaceId);
+      let idx = await categoryIo.read();
       const matches = matchByThreshold(card.tags, idx.categories, threshold);
       if (matches.length > 0) {
         idx = removeGroupEverywhere(idx, groupId);
@@ -760,7 +785,7 @@ class AgentWorker {
           decision: 'match',
           reason: `matched ${best.categoryId}`,
         });
-        await writeIndex(workspaceId, idx);
+        await categoryIo.write(idx);
         taskLogger.info('Step A 命中:', groupId, '→', best.categoryId);
         return 'match';
       }
@@ -843,18 +868,18 @@ class AgentWorker {
         }
         const errorMsg = queryResult.error;
         taskLogger.error('LLM 决策失败:', errorMsg);
-        let idx4 = await readIndex(workspaceId);
+        let idx4 = await categoryIo.read();
         idx4 = appendDecision(idx4, {
           time: new Date().toISOString(),
           groupId,
           decision: 'error',
           reason: errorMsg,
         });
-        await writeIndex(workspaceId, idx4);
+        await categoryIo.write(idx4);
         decided = 'error';
       } else {
         // 检查最新决策日志判断结果
-        const idx2 = await readIndex(workspaceId);
+        const idx2 = await categoryIo.read();
         // trigger 保证 categorize 串行（同一工作区并发=1），
         // 同一 groupId 在 query 完成前不会有其他 SaveCategory 调用。
         // appendDecision 是头插法 → find 命中的即本次最新决策。
@@ -870,7 +895,7 @@ class AgentWorker {
             decision: 'error',
             reason: 'LLM 未调 SaveCategory',
           });
-          await writeIndex(workspaceId, idx3);
+          await categoryIo.write(idx3);
           decided = 'error';
         }
       }
@@ -890,18 +915,7 @@ class AgentWorker {
         const r = await decideForGroup(payload.groupDigestPath, payload.groupId);
         decisions[r]++;
       } else {
-        const existingIndex = await readIndex(workspaceId);
-        const activeGroupIds = new Set(
-          (await groupService.listActiveGroups(workspaceId)).map((group) => group.id),
-        );
-        const preservedCategories = existingIndex.categories
-          .map((category) => ({
-            ...category,
-            groupIds: category.groupIds.filter((groupId) => !activeGroupIds.has(groupId)),
-          }))
-          .filter((category) => category.groupIds.length > 0);
-        taskLogger.info('full-rebuild: 重建活跃话题分类并保留归档引用');
-        await writeIndex(workspaceId, { categories: preservedCategories, recentDecisions: [] });
+        taskLogger.info('full-rebuild: 内存中重建活跃话题分类（保留归档引用），完成后一次性落盘');
 
         const groupsRoot = getGroupsRootDir(workspaceId);
         let dirents: import('node:fs').Dirent[];
@@ -932,6 +946,11 @@ class AgentWorker {
           const r = await decideForGroup(c.path, c.groupId);
           decisions[r]++;
         }
+        if (abortController.signal.aborted) {
+          taskLogger.info('full-rebuild: 中途取消，丢弃 staging 结果，磁盘分类索引保持原样');
+          return { workspaceId, mode, decisions, cancelled: true };
+        }
+        await writeIndex(workspaceId, stagingIdx!);
       }
 
       taskLogger.info('智能分类任务完成，耗时:', Date.now() - startedAt, 'ms', '| decisions:', decisions, '| tier:', tier);

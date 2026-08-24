@@ -182,8 +182,10 @@ async function runOne(job: CategorizeJob): Promise<void> {
           profileName: result?.profileName,
           error: error ?? result?.error ?? (status === TaskStatus.CANCELLED ? '已取消' : undefined),
         });
-        // 索引真的改了才广播（match/join/new/done），skip/error/cancelled 不广播
-        if (outcome === 'match' || outcome === 'join' || outcome === 'new' || outcome === 'done') {
+        // 索引真的改了才广播（match/join/new/done；full-rebuild 全 skip 也替换了索引需广播）
+        const indexChanged = outcome === 'match' || outcome === 'join' || outcome === 'new' || outcome === 'done'
+          || (job.kind !== 'incremental' && outcome === 'skip');
+        if (indexChanged) {
           for (const win of BrowserWindow.getAllWindows()) {
             if (win.isDestroyed()) continue;
             try {
