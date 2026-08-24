@@ -17,7 +17,7 @@
 ## 步骤索引
 
 - [x] [Step 1: trigger 层补漏编排](./step1-sweep-trigger.md) — `triggerCategorizeSweep` 差集扫描 + 逐组入队 + engine 纯函数
-- [ ] [Step 2: scheduler 接线](./step2-scheduler-remap.md) — categorize builtin 改调 sweep，meta/描述更新
+- [x] [Step 2: scheduler 接线](./step2-scheduler-remap.md) — categorize builtin 改调 sweep，meta/描述更新
 - [ ] [Step 3: 手动入口与 UI](./step3-tipc-ui.md) — sweep RPC + 设置页「补挂漏网组」按钮 + full-rebuild 改名
 
 ## 全局决策

@@ -41,6 +41,15 @@ function waitForQueueIdle(isIdle: () => boolean): Promise<void> {
   });
 }
 
+async function resolveTaskWorkspaces(workspaceId: string | undefined): Promise<{ workspaces: Workspace[]; error?: string }> {
+  if (workspaceId !== undefined) {
+    const ws = await getWorkspaceById(workspaceId);
+    if (!ws) return { workspaces: [], error: `工作区不存在: ${workspaceId}` };
+    return { workspaces: [ws] };
+  }
+  return { workspaces: await getAllWorkspaces() };
+}
+
 export interface TaskExecuteHooks {
   onAgentTaskId?: (id: string) => void;
 }
@@ -70,28 +79,42 @@ async function runBuiltinTask(task: BuiltinScheduledTask): Promise<TaskExecResul
       });
       return { status: 'completed', summary: `发现 ${staleCount} 个过时工作区，队列已清空` };
     }
-    case 'categorize':
-    case 'categorize_organize': {
-      const { triggerFullRebuild, triggerCategorizeOrganize, getCategorizeActivity } =
+    case 'categorize': {
+      const { triggerCategorizeSweep, getCategorizeActivity } =
         await import('../../memory/category-trigger.js');
-      const label = BUILTIN_LABELS[task.builtinId];
-      let workspaces: Workspace[];
-      if (task.workspaceId !== undefined) {
-        const ws = await getWorkspaceById(task.workspaceId);
-        if (!ws) return { status: 'failed', error: `工作区不存在: ${task.workspaceId}` };
-        workspaces = [ws];
-      } else {
-        workspaces = await getAllWorkspaces();
-      }
+      const { workspaces, error } = await resolveTaskWorkspaces(task.workspaceId);
+      if (error) return { status: 'failed', error };
+      const results: Array<{ disabled: boolean; pending: number; noTags: number }> = [];
       for (const ws of workspaces) {
-        if (task.builtinId === 'categorize') await triggerFullRebuild(ws.id);
-        else await triggerCategorizeOrganize(ws.id);
+        results.push(await triggerCategorizeSweep(ws.id));
       }
       await waitForQueueIdle(() => {
         const a = getCategorizeActivity();
         return a.current === null && a.queueDepth === 0;
       });
-      return { status: 'completed', summary: `已对 ${workspaces.length} 个工作区触发${label}` };
+      if (results.length > 0 && results.every((r) => r.disabled)) {
+        return { status: 'completed', summary: '智能分类已禁用，跳过' };
+      }
+      const pending = results.reduce((sum, r) => sum + r.pending, 0);
+      const noTags = results.reduce((sum, r) => sum + r.noTags, 0);
+      if (pending === 0 && noTags === 0) {
+        return { status: 'completed', summary: '差集为空，无需补挂' };
+      }
+      return { status: 'completed', summary: `已补挂 ${pending} 组，${noTags} 组缺 tags 需重提炼` };
+    }
+    case 'categorize_organize': {
+      const { triggerCategorizeOrganize, getCategorizeActivity } =
+        await import('../../memory/category-trigger.js');
+      const { workspaces, error } = await resolveTaskWorkspaces(task.workspaceId);
+      if (error) return { status: 'failed', error };
+      for (const ws of workspaces) {
+        await triggerCategorizeOrganize(ws.id);
+      }
+      await waitForQueueIdle(() => {
+        const a = getCategorizeActivity();
+        return a.current === null && a.queueDepth === 0;
+      });
+      return { status: 'completed', summary: `已对 ${workspaces.length} 个工作区触发${BUILTIN_LABELS.categorize_organize}` };
     }
   }
 }

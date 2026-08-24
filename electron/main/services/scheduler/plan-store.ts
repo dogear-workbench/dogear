@@ -130,6 +130,14 @@ async function ensureStoreReady(): Promise<void> {
       } else if (isLooseObject(raw) && raw.version === 2 && Array.isArray(raw.tasks)) {
         tasks = raw.tasks as ScheduledTask[];
         needWrite = false;
+        // builtin 任务 name 由 label 派生，label 改名后旧数据需同步，否则 validateTaskForSave 会拒绝保存
+        for (const t of tasks) {
+          if (t?.kind !== 'builtin' || typeof t.builtinId !== 'string') continue;
+          const builtinId = t.builtinId as BuiltinTaskId;
+          if (!BUILTIN_TASK_IDS.includes(builtinId) || t.name === BUILTIN_LABELS[builtinId]) continue;
+          t.name = BUILTIN_LABELS[builtinId];
+          needWrite = true;
+        }
       } else {
         tasks = [];
         needWrite = true;
