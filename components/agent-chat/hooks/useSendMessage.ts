@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -19,7 +19,7 @@ interface UseSendMessageParams {
   sessionId: string | null;
   isSessionReady: boolean;
   isLoading: boolean;
-  messages: Message[];
+  getMessages: () => Message[];
   transcript: UseTranscriptStateResult;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   permissionMode: PermissionMode;
@@ -41,7 +41,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     sessionId,
     isSessionReady,
     isLoading,
-    messages,
+    getMessages,
     transcript,
     setIsLoading,
     setPermissionMode: _setPermissionMode,
@@ -66,10 +66,6 @@ export function useSendMessage(params: UseSendMessageParams) {
 
   const [input, setInput] = useState('');
   const [lastAppliedSelection, setLastAppliedSelection] = useState<ModelSelection | null>(null);
-
-  // messages ref：让 handleSend useCallback 不直接依赖 messages 数组引用
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
 
   // 从 conversation-store 获取 actions
   const forkConversation = useConversationStore((s) => s.forkConversation);
@@ -426,7 +422,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     });
 
     // 新对话自动标题：首条消息截取前 30 字
-    if (conversationTitle === '新对话' && messagesRef.current.length === 0 && conversationId) {
+    if (conversationTitle === '新对话' && getMessages().length === 0 && conversationId) {
       const titleText = userMessage.replace(/<[^>]+>/g, '').trim();
       const autoTitle = titleText.length > 30
         ? titleText.slice(0, 30) + '...'
@@ -472,7 +468,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     readOnly, input, pendingImages, sessionId, isSessionReady, handleSlashCommand,
     setInput, setPendingImages, conversationId, currentSelection, isLoading,
     lastAppliedSelection, pushLocalUser, pushLiveAssistant, replaceLastLiveAssistant,
-    setIsLoading, conversationTitle, updateConversationTitle,
+    setIsLoading, conversationTitle, updateConversationTitle, getMessages,
     triggerSessionRestart, referencedArticles, clearReferencedArticles,
     quotedSnippets, clearQuotedSnippets, referencedFiles, clearReferencedFiles,
     referencedConversations, clearReferencedConversations, referencedSharedFiles,

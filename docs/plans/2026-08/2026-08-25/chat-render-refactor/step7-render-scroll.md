@@ -1,7 +1,7 @@
 ---
 step: 7
 title: 渲染边界拆分与滚动修复
-status: pending
+status: done
 ---
 
 ## 目标
@@ -42,13 +42,22 @@ status: pending
 - 手动全场景（纲领阶段 6 列表的前置抽查）：滚动条拖拽不被拉回；流式中向上滚读历史平滑；搜索跳转、minimap 跳转正常；compact 折叠/展开不跳位；权限卡片交互正常。
 - `bun run build:renderer` 通过。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- `useTranscriptState.ts` 将内部 React state 改为 hook 私有 external store + `useSyncExternalStore`：AgentChat 只订阅结构快照（stableHistory、structuredLiveTail、pendingActions、structuralVersion），LiveTail 独立订阅 liveTail；全部 step4-6 写入口和 step5/6 调度状态保持不变。
+- 新增 `StableHistory.tsx`（memo）：承接历史 turns、虚拟占位、compact 控件、MessageItem、TodoListBlock；新增 `LiveTail.tsx`（memo）：独立订阅 liveTail、渲染当前 run 和 StreamingIndicator。
+- AgentChat 删除合成 messages 的渲染依赖，viewport 内仍保持 `.px-6` 为 firstElementChild，StableHistory/LiveTail 平铺；搜索从 stableHistory 与 live getter 读取；useSendMessage 使用 getMessages 避免订阅 live delta。
+- `useChatScroll.ts` 增加 `shouldLeaveFollowModeForScroll` 与 scrollTop 基线，非 programmatic 向上滚动切 manual，保留距底 64px 恢复 auto；`useVirtualTurns.ts` 删除最后 turn 特殊高度豁免；`useMessageSearch.ts` 改按 stable/live 快照搜索。
+- 新增 useChatScroll.test.ts，覆盖滚动条向上拖拽特征、程序滚动和向下滚动。
+- 与计划差异：采用计划 A 的 hook 私有 external store，不进入 Zustand；AgentChat/useTranscriptState 仍超过 300 行，未继续拆生命周期状态以避免重做 step6；未实施 step8/9。
+- 验证：指定测试 20 pass ✓ / build:renderer ✓ / lint 0 errors（74 个存量 warnings）/ git diff --check ✓。
 
 ### 给下一步的接力棒
-- liveTail state 下沉的最终方案：
-- StableHistory/LiveTail 的 props 契约：
+- liveTail state 下沉方案：`useTranscriptState` 内部 `TranscriptStore` 保存 core；AgentChat 订阅 `getStructuralSnapshot`，LiveTail 通过 `useTranscriptLiveTail(transcriptStore)` 订阅 `getLiveSnapshot`。纯 text/thinking delta 不改变结构快照引用，因此父组件和 StableHistory 不提交；结构事件才触发父层。
+- StableHistory props：turns、messagesById、visibleTurnIds、turnHeights、getTurnRef、compact 控件、稳定交互回调、search/session/readOnly/agent 属性、taskTodos/lastTaskMessageId。
+- LiveTail props：transcriptStore、pending/children/abort 状态、同组交互回调、search/session/readOnly/agent 属性、taskTodos/lastTaskMessageId。
 - 待办或已知限制：
+  - 尚未进行 Electron GUI/React Profiler 人工回归，重点验证流式拖动滚动条、折叠展开、搜索/minimap、权限/AskUser。
+  - rAF/50ms/500ms 与 external store 提交频率尚未用浏览器 profiler/fake timer 实测。
+  - step8 订阅收窄、step9 基准和虚拟化决策待后续步骤。

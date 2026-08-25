@@ -10,7 +10,7 @@ export interface SearchMatch {
   textEnd: number;
 }
 
-export function useMessageSearch(messages: Message[]) {
+export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Message[]) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<SearchMatch[]>([]);
@@ -46,9 +46,10 @@ export function useMessageSearch(messages: Message[]) {
       const q = query.toLowerCase();
       const result: SearchMatch[] = [];
 
-      messages.forEach((msg, i) => {
-        if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary) return;
-        const messageId = msg.id ?? `idx-${i}`;
+      const messages = [...stableHistory, ...getLiveTail()];
+      messages.forEach((msg) => {
+        if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary || !msg.id) return;
+        const messageId = msg.id;
 
         // 用户消息: 用统一的 searchable text(与 MessageItem 渲染 offset 对齐)
         if (msg.role === 'user' && msg.content) {
@@ -94,7 +95,7 @@ export function useMessageSearch(messages: Message[]) {
       setActiveIndex(0);
     }, 150);
     return () => clearTimeout(timer);
-  }, [query, messages]);
+  }, [query, stableHistory, getLiveTail]);
 
   return {
     isOpen,

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useSyncExternalStore } from 'react';
 import type { Message, ContentBlock } from '../types';
 import { streamReducer, generateLocalMessageId } from '../transformers';
 import type { LivePermissionRequest } from './useAgentSession';
@@ -364,13 +364,77 @@ export function promoteCore(core: TranscriptCore): TranscriptCore {
   return withChanges(core, [...core.stable, ...live], []);
 }
 
+export interface TranscriptStoreApi {
+  subscribe: (listener: () => void) => () => void;
+  getLiveSnapshot: () => Message[];
+}
+
+interface TranscriptStructuralSnapshot {
+  stableHistory: Message[];
+  structuredLiveTail: Message[];
+  pendingActions: PendingAction[];
+  structuralVersion: number;
+}
+
+interface TranscriptStore extends TranscriptStoreApi {
+  core: TranscriptCore;
+  structuralSnapshot: TranscriptStructuralSnapshot;
+  listeners: Set<() => void>;
+  getStructuralSnapshot: () => TranscriptStructuralSnapshot;
+}
+
+function createTranscriptStore(): TranscriptStore {
+  const store = {
+    core: initialTranscriptCore(),
+    structuralSnapshot: {
+      stableHistory: [],
+      structuredLiveTail: [],
+      pendingActions: [],
+      structuralVersion: 0,
+    },
+    listeners: new Set<() => void>(),
+    subscribe(listener: () => void) {
+      store.listeners.add(listener);
+      return () => store.listeners.delete(listener);
+    },
+    getLiveSnapshot: () => store.core.live,
+    getStructuralSnapshot: () => store.structuralSnapshot,
+  } as TranscriptStore;
+  return store;
+}
+
+function publishTranscriptStore(store: TranscriptStore, next: TranscriptCore): void {
+  const prev = store.core;
+  if (next === prev) return;
+  store.core = next;
+  const structuralChanged = next.stable !== prev.stable
+    || next.pendingActions !== prev.pendingActions
+    || next.structuralVersion !== prev.structuralVersion;
+  if (structuralChanged) {
+    const structuredLiveTail = next.structuralVersion !== prev.structuralVersion
+      ? next.live
+      : store.structuralSnapshot.structuredLiveTail;
+    store.structuralSnapshot = {
+      stableHistory: next.stable,
+      structuredLiveTail,
+      pendingActions: next.pendingActions,
+      structuralVersion: next.structuralVersion,
+    };
+  }
+  for (const listener of store.listeners) listener();
+}
+
+export function useTranscriptLiveTail(store: TranscriptStoreApi): Message[] {
+  return useSyncExternalStore(store.subscribe, store.getLiveSnapshot, store.getLiveSnapshot);
+}
+
 export interface UseTranscriptStateResult {
   stableHistory: Message[];
-  liveTail: Message[];
   pendingActions: PendingAction[];
   structuralVersion: number;
   structuredLiveTail: Message[];
-  messages: Message[];
+  transcriptStore: TranscriptStoreApi;
+  getMessages: () => Message[];
   loadHistory: (msgs: Message[]) => void;
   enqueueStreamEvent: (e: TranscriptEvent, sideEffect?: StreamEventSideEffect) => void;
   applySnapshot: (events: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => void;
@@ -416,12 +480,14 @@ function createTranscriptInit(key: string | null, now: number): TranscriptInitSt
 }
 
 export function useTranscriptState(showReplayMessages: boolean, visible = true, conversationId: string | null = null): UseTranscriptStateResult {
-  const [core, setCore] = useState<TranscriptCore>(initialTranscriptCore);
-  const coreRef = useRef(core);
+  const storeRef = useRef<TranscriptStore | null>(null);
+  if (storeRef.current === null) storeRef.current = createTranscriptStore();
+  const store = storeRef.current;
+  const structural = useSyncExternalStore(store.subscribe, store.getStructuralSnapshot, store.getStructuralSnapshot);
+  const coreRef = useRef(store.core);
   const showReplayRef = useRef(showReplayMessages);
   showReplayRef.current = showReplayMessages;
   const settledRef = useRef(false);
-  const [structuredLive, setStructuredLive] = useState<Message[]>(core.live);
   const visibleRef = useRef(visible);
   const pendingEventsRef = useRef<PendingStreamEvent[]>([]);
   const rafRef = useRef<number | null>(null);
@@ -433,14 +499,10 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true, 
   const pendingCompleteRef = useRef(false);
 
   const commit = useCallback((next: TranscriptCore) => {
-    const prev = coreRef.current;
-    if (next === prev) return;
+    if (next === coreRef.current) return;
     coreRef.current = next;
-    setCore(next);
-    if (next.structuralVersion !== prev.structuralVersion || next.structuralSig !== prev.structuralSig) {
-      setStructuredLive(next.live);
-    }
-  }, []);
+    publishTranscriptStore(store, next);
+  }, [store]);
 
   const flushPending = useCallback(() => {
     if (!initRef.current.ready) return;
@@ -760,15 +822,15 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true, 
     tryPromote();
   }, [commit, flushPending, tryPromote]);
 
-  const messages = useMemo(() => [...core.stable, ...core.live], [core.stable, core.live]);
+  const getMessages = useCallback(() => [...coreRef.current.stable, ...coreRef.current.live], []);
 
   return {
-    stableHistory: core.stable,
-    liveTail: core.live,
-    pendingActions: core.pendingActions,
-    structuralVersion: core.structuralVersion,
-    structuredLiveTail: structuredLive,
-    messages,
+    stableHistory: structural.stableHistory,
+    pendingActions: structural.pendingActions,
+    structuralVersion: structural.structuralVersion,
+    structuredLiveTail: structural.structuredLiveTail,
+    transcriptStore: store,
+    getMessages,
     loadHistory,
     enqueueStreamEvent,
     applySnapshot,

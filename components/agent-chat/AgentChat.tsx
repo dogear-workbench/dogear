@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight } from 'lucide-react';
 import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { AgentChatProps, Message } from './types';
-import { MessageItem } from './MessageItem';
+import { LiveTail } from './LiveTail';
+import { StableHistory } from './StableHistory';
 import { ChatInputArea } from './ChatInputArea';
 import { useMessageHistory } from './hooks/useMessageHistory';
 import { useAgentSession } from './hooks/useAgentSession';
@@ -16,7 +17,6 @@ import { useSendMessage } from './hooks/useSendMessage';
 import { useTranscriptState } from './hooks/useTranscriptState';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
-import { StreamingIndicator } from './StreamingIndicator';
 import { LineageBar } from './LineageBar';
 import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
@@ -24,11 +24,8 @@ import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
-import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
-import { CollapseControlBar } from './CollapseControlBar';
 import { buildTurns } from './turns';
 import { aggregateTasks } from './task-aggregator';
-import { TodoListBlock } from './TodoListBlock';
 import { useVirtualTurns } from './hooks/useVirtualTurns';
 import type { ExtendedSessionMessage } from '@/types/electron-api';
 import type { ChildStatus } from '@/types/delegation';
@@ -91,10 +88,9 @@ export function AgentChat({
   // 加载状态
   const [isLoading, setIsLoading] = useState(false);
 
-  // transcript 状态（stableHistory / liveTail / pendingActions）：消息写入口全部收敛到该 hook，
-  // messages 为兼容期合成视图（step 7 拆掉）
+  // transcript 状态：消息写入口全部收敛到该 hook，结构快照与 live tail 分别订阅
   const transcript = useTranscriptState(showReplayMessages, visible, conversationId);
-  const { messages, stableHistory, liveTail, structuredLiveTail, structuralVersion, applySnapshot } = transcript;
+  const { stableHistory, structuredLiveTail, structuralVersion, transcriptStore, getMessages, applySnapshot } = transcript;
 
   const { setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
@@ -166,14 +162,14 @@ export function AgentChat({
   // ─── 虚拟滚动 ───
   // 计算 compact_boundary 折叠状态（提前到组件主体，供 buildTurns 和虚拟滚动共用）
   const lastCompactBoundaryIdx = useMemo(
-    () => messages.reduce((acc, m, i) => (m.isCompactBoundary ? i : acc), -1),
-    [messages],
+    () => stableHistory.reduce((acc, m, i) => (m.isCompactBoundary ? i : acc), -1),
+    [stableHistory],
   );
   const hasCompactHistory = lastCompactBoundaryIdx > 0;
   const collapsed = isHistoryCollapsed && hasCompactHistory;
-  const { turns: chatTurns, byMessageId, indexById } = useMemo(
-    () => buildTurns(messages, { collapsed }),
-    [messages, collapsed],
+  const { turns: chatTurns, byMessageId } = useMemo(
+    () => buildTurns(stableHistory, { collapsed }),
+    [stableHistory, collapsed],
   );
 
   // task 清单纯派生：依赖结构快照（stable 引用 + 结构变化才换引用的 live 尾），
@@ -195,19 +191,19 @@ export function AgentChat({
         b.type === 'tool_use' &&
         (b.toolName === 'TaskCreate' || b.toolName === 'TaskUpdate')
       )) {
-        return msg.id ?? `idx-${i}`;
+        return msg.id ?? null;
       }
     }
     return null;
   }, [stableHistory, structuralVersion]);
-  // 吸附点落在折叠隐藏区（byMessageId 只含可见消息）时不渲染，对齐旧注入块随消息隐藏的行为
-  const showTaskSummary = tasks.length > 0 && lastTaskMessageId !== null && byMessageId.has(lastTaskMessageId);
 
   const messagesById = useMemo(() => {
     const map = new Map<string, Message>();
-    messages.forEach((m, i) => map.set(m.id ?? `idx-${i}`, m));
+    for (const message of stableHistory) {
+      if (message.id) map.set(message.id, message);
+    }
     return map;
-  }, [messages]);
+  }, [stableHistory]);
   const {
     visibleTurnIds,
     turnHeights,
@@ -249,7 +245,7 @@ export function AgentChat({
     sessionId,
     isSessionReady,
     isLoading,
-    messages,
+    getMessages,
     transcript,
     setIsLoading,
     permissionMode,
@@ -314,8 +310,8 @@ export function AgentChat({
     sendMessage.setInput(newInput);
   }, [slashCommands.handleSlashCommandSelect, sendMessage.setInput]);
 
-  // 消息搜索（传入 messages 以实时计算匹配）
-  const search = useMessageSearch(messages);
+  // 搜索 query 变化时读取 stable history 与 live tail 快照
+  const search = useMessageSearch(stableHistory, transcriptStore.getLiveSnapshot);
   // 解构出稳定引用，避免 useEffect deps 依赖整个 search 对象
   const openSearch = search.open;
 
@@ -360,17 +356,27 @@ export function AgentChat({
   scrollToMessageRef.current = scrollToMessage;
   useEffect(() => {
     if (!search.activeMatch || !conversationId) return;
-    const lastBoundaryIdx = messages.reduce(
+    const lastBoundaryIdx = stableHistory.reduce(
       (acc, m, i) => m.isCompactBoundary ? i : acc, -1
     );
-    const matchIdx = messages.findIndex((m, i) => (m.id ?? `idx-${i}`) === search.activeMatch!.messageId);
+    const matchIdx = stableHistory.findIndex((m) => m.id === search.activeMatch!.messageId);
     if (lastBoundaryIdx > 0 && matchIdx >= 0 && matchIdx < lastBoundaryIdx && isHistoryCollapsed) {
       useCompactCollapseStore.getState().setCollapsed(conversationId, false);
       requestAnimationFrame(() => {
         scrollToMessageRef.current(search.activeMatch!.messageId, { align: 'top', flash: true });
       });
     }
-  }, [search.activeMatch, conversationId, isHistoryCollapsed, messages]);
+  }, [search.activeMatch, conversationId, isHistoryCollapsed, stableHistory]);
+
+  const isAgentConversation = currentConversation?.contractMetadata?.createdBy === 'agent';
+  const hasMessages = stableHistory.length > 0 || structuredLiveTail.length > 0;
+  const fallbackLastBlockType = stableHistory[stableHistory.length - 1]?.contentBlocks?.slice(-1)[0]?.type;
+  const handleExpandHistory = useCallback(() => {
+    if (conversationId) toggleCollapse(conversationId);
+  }, [conversationId, toggleCollapse]);
+  const handleCollapseHistory = useCallback(() => {
+    if (conversationId) toggleCollapse(conversationId);
+  }, [conversationId, toggleCollapse]);
 
   return (
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
@@ -427,96 +433,55 @@ export function AgentChat({
           </div>
         )}
 
-        {messages.length === 0 && historyStatus !== 'loading' && !isReadOnly && !isTopicStatePending && (
+        {hasMessages === false && historyStatus !== 'loading' && !isReadOnly && !isTopicStatePending && (
           <div className="text-center text-gray-500 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>
         )}
 
-        {(() => {
-          // 渲染单条消息的辅助函数（messageId 为磁盘对齐稳定 ID，无 id 时用下标兜底仅作防御）
-          const renderMessage = (message: typeof messages[0], index: number) => {
-            const mid = message.id ?? `idx-${index}`;
-            return (
-              <MessageItem
-                key={mid}
-                message={message}
-                messageId={mid}
-                onFork={isReadOnly ? undefined : sendMessage.handleFork}
-                sessionId={sessionId}
-                onPermissionResolved={handlePermissionResolvedWithScroll}
-                onAskUserResolved={handleAskUserResolvedWithScroll}
-                onInterrupt={sendMessage.handleInterrupt}
-                searchQuery={search.query || undefined}
-                activeMatchId={search.activeMatch?.id ?? null}
-                isAgentConversation={currentConversation?.contractMetadata?.createdBy === 'agent'}
-                readOnly={isReadOnly}
-              />
-            );
-          };
-
-          return (
-            <>
-              {/* 压缩历史 banner / 收起条：普通块，不吸顶，在所有 section 之前 */}
-              {hasCompactHistory && (
-                collapsed ? (
-                  <CollapsedHistoryBanner
-                    count={lastCompactBoundaryIdx}
-                    onExpand={() => conversationId && toggleCollapse(conversationId)}
-                  />
-                ) : (
-                  <CollapseControlBar
-                    count={lastCompactBoundaryIdx}
-                    onCollapse={() => conversationId && toggleCollapse(conversationId)}
-                  />
-                )
-              )}
-
-              {chatTurns.map((turn) => {
-                if (visibleTurnIds.has(turn.turnId)) {
-                  return (
-                    <section
-                      key={turn.turnId}
-                      className="agent-turn"
-                      ref={getTurnRef(turn.turnId)}
-                    >
-                      {turn.memberIds.map((mid) => {
-                        const idx = indexById.get(mid) ?? -1;
-                        return (
-                          <Fragment key={mid}>
-                            {renderMessage(messages[idx], idx)}
-                            {showTaskSummary && mid === lastTaskMessageId && (
-                              <TodoListBlock todos={taskTodos} />
-                            )}
-                          </Fragment>
-                        );
-                      })}
-                    </section>
-                  );
-                }
-                return (
-                  <div
-                    key={turn.turnId}
-                    style={{ height: turnHeights.get(turn.turnId) ?? 400 }}
-                  />
-                );
-              })}
-            </>
-          );
-        })()}
-
-        {/* 运行状态指示器 */}
-        <StreamingIndicator
+        <StableHistory
+          turns={chatTurns}
+          messagesById={messagesById}
+          visibleTurnIds={visibleTurnIds}
+          turnHeights={turnHeights}
+          getTurnRef={getTurnRef}
+          hasCompactHistory={hasCompactHistory}
+          collapsed={collapsed}
+          compactBoundaryCount={lastCompactBoundaryIdx}
+          onExpandHistory={handleExpandHistory}
+          onCollapseHistory={handleCollapseHistory}
+          onFork={sendMessage.handleFork}
+          onPermissionResolved={handlePermissionResolvedWithScroll}
+          onAskUserResolved={handleAskUserResolvedWithScroll}
+          onInterrupt={sendMessage.handleInterrupt}
+          searchQuery={search.query || undefined}
+          activeMatchId={search.activeMatch?.id ?? null}
+          readOnly={isReadOnly}
+          sessionId={sessionId}
+          isAgentConversation={isAgentConversation}
+          taskTodos={taskTodos}
+          lastTaskMessageId={lastTaskMessageId}
+        />
+        <LiveTail
+          transcriptStore={transcriptStore}
           pendingState={pendingState}
           pendingCount={pendingCount}
-          lastBlockType={
-            (liveTail.length ? liveTail[liveTail.length - 1] : stableHistory[stableHistory.length - 1])
-              ?.contentBlocks?.slice(-1)[0]?.type
-          }
+          fallbackLastBlockType={fallbackLastBlockType}
           awaitCount={awaitCount}
           doneCount={doneCount}
           issueCount={issueCount}
           onAbortWait={isReadOnly ? undefined : handleAbortWait}
+          onFork={sendMessage.handleFork}
+          onPermissionResolved={handlePermissionResolvedWithScroll}
+          onAskUserResolved={handleAskUserResolvedWithScroll}
+          onInterrupt={sendMessage.handleInterrupt}
+          searchQuery={search.query || undefined}
+          activeMatchId={search.activeMatch?.id ?? null}
+          readOnly={isReadOnly}
+          sessionId={sessionId}
+          isAgentConversation={isAgentConversation}
+          taskTodos={taskTodos}
+          lastTaskMessageId={lastTaskMessageId}
         />
 
         </div>

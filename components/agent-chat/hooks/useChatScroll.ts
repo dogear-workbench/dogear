@@ -44,6 +44,10 @@ interface UseChatScrollReturn {
  *
  * 对齐方式默认 'top-third': 目标第一行落在可见区顶部下方 1/3 处
  */
+export function shouldLeaveFollowModeForScroll(previousScrollTop: number, scrollTop: number, programmatic: boolean): boolean {
+  return !programmatic && scrollTop < previousScrollTop;
+}
+
 export function useChatScroll({
   scrollAreaRef,
   isLoading,
@@ -53,6 +57,7 @@ export function useChatScroll({
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const followModeRef = useRef<'auto' | 'manual'>('manual');
   const programmaticRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
 
   const getViewport = useCallback((): HTMLElement | null => {
     return scrollAreaRef.current;
@@ -66,6 +71,7 @@ export function useChatScroll({
     const vp = getViewport();
     if (!vp) return;
     programmaticRef.current = true;
+    lastScrollTopRef.current = top;
     if (behavior === 'instant') {
       vp.scrollTop = top;
       requestAnimationFrame(() => { programmaticRef.current = false; });
@@ -87,7 +93,15 @@ export function useChatScroll({
       }
     });
     obs.observe(content);
-    return () => obs.disconnect();
+    const onScroll = () => {
+      lastScrollTopRef.current = vp.scrollTop;
+    };
+    lastScrollTopRef.current = vp.scrollTop;
+    vp.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      obs.disconnect();
+      vp.removeEventListener('scroll', onScroll);
+    };
   }, [getViewport]);
 
   // isLoading false→true 时切换到自动跟随并触底一次；true→false 不做任何动作
@@ -138,9 +152,15 @@ export function useChatScroll({
   }, [getViewport]);
 
   const handleScroll = useCallback(() => {
-    if (programmaticRef.current) return;
     const vp = getViewport();
     if (!vp) return;
+    const previousScrollTop = lastScrollTopRef.current;
+    const isProgrammatic = programmaticRef.current;
+    lastScrollTopRef.current = vp.scrollTop;
+    if (shouldLeaveFollowModeForScroll(previousScrollTop, vp.scrollTop, isProgrammatic)) {
+      setFollowMode('manual');
+    }
+    if (isProgrammatic) return;
     const distance = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
     setShowScrollBtn(distance >= 50);
     if (followModeRef.current === 'manual' && distance <= 64) {

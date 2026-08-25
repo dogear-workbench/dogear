@@ -36,7 +36,6 @@ export function useVirtualTurns({
   const elementMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const prevTurnIdsRef = useRef<Set<string>>(new Set());
-  const lastTurnIdRef = useRef<string | null>(null);
 
   const getViewport = useCallback((): HTMLElement | null => {
     return scrollContainerRef.current;
@@ -114,8 +113,6 @@ export function useVirtualTurns({
       if (!validIds.has(key)) cache.delete(key);
     }
 
-    lastTurnIdRef.current = turns.length > 0 ? turns[turns.length - 1].turnId : null;
-
     const prev = prevTurnIdsRef.current;
     let turnIdChanged = prev.size !== validIds.size;
     if (!turnIdChanged) {
@@ -137,10 +134,8 @@ export function useVirtualTurns({
     const current = cache.get(turnId);
     if (current === undefined || Math.abs(current - h) > 1) {
       cache.set(turnId, h);
-      if (turnId !== lastTurnIdRef.current) {
-        dirtyRef.current = true;
-        scheduleFlush();
-      }
+      dirtyRef.current = true;
+      scheduleFlush();
     }
   }, [scheduleFlush]);
 

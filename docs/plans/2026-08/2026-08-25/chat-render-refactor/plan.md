@@ -14,7 +14,7 @@
 - [x] [Step 4: TranscriptState 拆分](./step4-transcript-state.md) — stableHistory/liveTail 数据模型 + 全事件归属表，对外提供兼容合成视图
 - [x] [Step 5: 流事件批处理](./step5-stream-batching.md) — rAF buffer + setTimeout 兜底、终态/交互事件直通、隐藏 tab 降频
 - [x] [Step 6: 合并协议与 live tail 提升](./step6-merge-promote.md) — history/snapshot 到齐合并去重、settled 且无 pendingActions 时提升
-- [ ] [Step 7: 渲染边界拆分与滚动修复](./step7-render-scroll.md) — StableHistory/LiveTail 组件、scrollbar 拖拽识别、useVirtualTurns 收窄到历史区
+- [x] [Step 7: 渲染边界拆分与滚动修复](./step7-render-scroll.md) — StableHistory/LiveTail 组件、scrollbar 拖拽识别、useVirtualTurns 收窄到历史区
 - [ ] [Step 8: 订阅收窄与多 tab 修复](./step8-subscriptions.md) — useTopicArchiveState 窄化、minimap/boundary 的 conversationId 显式传参
 - [ ] [Step 9: 基准验证与虚拟化决策](./step9-benchmark.md) — 跑基准场景，决定保留手写虚拟化 / 完整 DOM / 迁移 Virtuoso
 
