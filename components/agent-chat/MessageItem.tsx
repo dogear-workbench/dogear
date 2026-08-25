@@ -1,5 +1,5 @@
 import { useState, memo } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2 } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -7,9 +7,23 @@ import { ContentBlockItem } from './ContentBlockItem';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage } from './utils';
+import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { Message, ContentBlock } from './types';
+
+/** failover 续跑提示（主进程注入的哨兵 user 消息）：系统提示条样式，剥掉哨兵不显示 */
+function FailoverContinueNotice({ content, timestamp }: { content: string; timestamp?: number }) {
+  return (
+    <div className="w-full my-2 flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary/60 border border-dashed border-border text-xs text-muted-foreground">
+      <ArrowLeftRight size={12} className="flex-shrink-0" />
+      <span className="flex-1 min-w-0">{stripFailoverContinueSentinel(content)}</span>
+      {typeof timestamp === 'number' && (
+        <span className="text-muted-foreground/60 flex-shrink-0">{new Date(timestamp).toLocaleTimeString()}</span>
+      )}
+    </div>
+  );
+}
 
 /**
  * 将连续的 tool_use（中间可夹 thinking）合并为 tool_group 虚拟 block。
@@ -104,6 +118,11 @@ export const MessageItem = memo(function MessageItem({
         </Collapsible>
       </div>
     );
+  }
+
+  // failover 续跑提示：哨兵前缀标识，渲染为系统提示条而非用户气泡
+  if (isUser && isFailoverContinueMessage(message.content)) {
+    return <FailoverContinueNotice content={message.content} timestamp={message.timestamp} />;
   }
 
   // SDK 注入的用户消息（/model 命令、命令输出等）：渲染为居中内联系统指示，

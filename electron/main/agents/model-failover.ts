@@ -24,8 +24,10 @@ export function findNextFailover(
   return ordered.find((entry) => entry.profileId !== currentProfileId && !tried.has(entry.profileId)) ?? null;
 }
 
+export const FAILOVER_CONTINUE_SENTINEL = '[system:failover-continue]';
+
 export function buildFailoverContinuePrompt(toLabel: string): string {
-  return `你因供应商费率限制中断，模型已切换为 ${toLabel}，请检查已完成部分，从中断处继续完成任务（不要重跑已完成的步骤，也不要重复已产生副作用的操作）。`;
+  return `${FAILOVER_CONTINUE_SENTINEL}你因供应商费率限制中断，模型已切换为 ${toLabel}，请检查已完成部分，从中断处继续完成任务（不要重跑已完成的步骤，也不要重复已产生副作用的操作）。`;
 }
 
 export function clearFailoverTried(conversationId: string): void {

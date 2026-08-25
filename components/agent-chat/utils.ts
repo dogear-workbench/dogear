@@ -1,4 +1,5 @@
 import type { ParsedUserMessage, ParsedSlashCommand } from './types';
+import { isFailoverContinueMessage } from '@/lib/failover-markers';
 
 /**
  * 格式化模型名称为简短显示
@@ -138,6 +139,7 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
  * 成命令芯片,正文不参与搜索
  */
 export function getUserMessageSearchableText(content: string): string {
+  if (isFailoverContinueMessage(content)) return '';
   const slash = parseSlashCommandMessage(content);
   if (slash.isCommand) return '';
   return parseUserMessageReferences(content).userMessage;
@@ -168,6 +170,7 @@ export function parseSlashCommandMessage(content: string): ParsedSlashCommand {
  */
 export function isSdkInjectedUserMessage(content: string): boolean {
   if (!content) return false;
+  if (isFailoverContinueMessage(content)) return true;
   // <command-name>/xxx</command-name>
   if (/<command-name>/.test(content)) return true;
   // <local-command-stdout>...</local-command-stdout>

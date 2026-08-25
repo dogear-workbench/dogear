@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight } from 'lucide-react';
+import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight, X } from 'lucide-react';
 import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import type { AgentChatProps, Message } from './types';
@@ -123,6 +123,7 @@ export function AgentChat({
   const failoverNotices = useConversationStore(
     (s) => (conversationId ? s.failoverNoticesByConversation[conversationId] : undefined) ?? EMPTY_FAILOVER_NOTICES,
   );
+  const dismissFailoverNotice = useConversationStore((s) => s.dismissFailoverNotice);
   const { awaitCount, doneCount, issueCount } = useMemo(() => {
     if (!childrenForThis) return { awaitCount: 0, doneCount: 0, issueCount: 0 };
     let awaiting = 0;
@@ -504,7 +505,7 @@ export function AgentChat({
       </div>
       </div>
 
-      {/* 模型故障转移提示条（内存级，不进消息流也不落盘；输入区上方） */}
+      {/* 模型故障转移提示条（内存级，不进消息流也不落盘；单条可关闭，60s 自动过期） */}
       {failoverNotices.length > 0 && (
         <div className="px-4 py-2 border-t bg-amber-50/70 flex flex-col gap-1">
           {failoverNotices.map((notice) => (
@@ -512,6 +513,13 @@ export function AgentChat({
               <ArrowLeftRight size={12} className="flex-shrink-0" />
               <span>{notice.fromLabel} 费率受限，已自动切换 {notice.toLabel} 继续运行</span>
               <span className="text-amber-500">{new Date(notice.at).toLocaleTimeString()}</span>
+              <button
+                onClick={() => conversationId && dismissFailoverNotice(conversationId, notice.at)}
+                className="ml-auto p-0.5 rounded hover:bg-amber-100 text-amber-600 transition-colors"
+                title="关闭"
+              >
+                <X size={12} />
+              </button>
             </div>
           ))}
         </div>

@@ -71,11 +71,21 @@ test('findNextFailover 矩阵：顺位 / 不在链走链头 / tried 跳过 / 全
   expect(failoverMod.findNextFailover([], 'a', new Set())).toBeNull();
 });
 
-test('buildFailoverContinuePrompt 含新供应商与断点续跑指示', () => {
+test('buildFailoverContinuePrompt 含哨兵前缀、新供应商与断点续跑指示', () => {
   const prompt = failoverMod.buildFailoverContinuePrompt('B 家');
+  expect(prompt.startsWith(failoverMod.FAILOVER_CONTINUE_SENTINEL)).toBeTrue();
   expect(prompt).toContain('B 家');
   expect(prompt).toContain('从中断处继续');
   expect(prompt).toContain('不要重跑');
+});
+
+test('哨兵与渲染层镜像 lib/failover-markers 保持一致（防静默漂移）', async () => {
+  const markers = await import('../../../lib/failover-markers.js');
+  expect(markers.FAILOVER_CONTINUE_SENTINEL).toBe(failoverMod.FAILOVER_CONTINUE_SENTINEL);
+  expect(markers.isFailoverContinueMessage(failoverMod.buildFailoverContinuePrompt('X'))).toBeTrue();
+  expect(markers.stripFailoverContinueSentinel(failoverMod.buildFailoverContinuePrompt('X'))).not.toContain(
+    failoverMod.FAILOVER_CONTINUE_SENTINEL,
+  );
 });
 
 test('quota 失败切换链下一家：updateModelSelection + detach desktop + 重建 session + 续跑提示', async () => {

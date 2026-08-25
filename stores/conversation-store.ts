@@ -105,8 +105,10 @@ interface ConversationState {
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
   childrenByParent: Record<string, ChildStateSnapshot[]>;
   childSnapshotsById: Record<string, ChildStateSnapshot>;
-  /** 主会话 failover 切换提示（按会话 id 分组，每会话保留最近 5 条） */
+  /** 主会话 failover 切换提示（按会话 id 分组，每会话仅保留最新一条） */
   failoverNoticesByConversation: Record<string, FailoverNotice[]>;
+  /** failover 横幅自动过期时长（ms），测试可调 */
+  failoverNoticeTtlMs: number;
 
   // --- Actions ---
   /** 切换激活工作区：把顶层镜像指向该工作区的分片（不触发加载） */
@@ -161,8 +163,10 @@ interface ConversationState {
   refreshAllChildren: () => Promise<void>;
   /** 把一条 childStatusChanged 事件应用到 childrenByParent */
   applyChildSnapshot: (snapshot: ChildStateSnapshot) => void;
-  /** 追加一条 failover 切换提示（保留最近 5 条） */
+  /** 追加一条 failover 切换提示（同一会话新切换覆盖旧条，仅保留最新一条；60s 自动过期） */
   pushFailoverNotice: (conversationId: string, notice: FailoverNotice) => void;
+  /** 清除会话的 failover 切换提示（关闭按钮 / 自动过期） */
+  dismissFailoverNotice: (conversationId: string, at: number) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -809,11 +813,27 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 
+  /** failover 横幅存活时长：到期自动清除（测试可注入更短值） */
+  failoverNoticeTtlMs: 60_000,
+
   pushFailoverNotice: (conversationId, notice) => {
+    set((state) => ({
+      failoverNoticesByConversation: { ...state.failoverNoticesByConversation, [conversationId]: [notice] },
+    }));
+    setTimeout(() => {
+      useConversationStore.getState().dismissFailoverNotice(conversationId, notice.at);
+    }, useConversationStore.getState().failoverNoticeTtlMs);
+  },
+
+  dismissFailoverNotice: (conversationId, at) => {
     set((state) => {
-      const list = state.failoverNoticesByConversation[conversationId] ?? [];
-      const next = [...list, notice].slice(-5);
-      return { failoverNoticesByConversation: { ...state.failoverNoticesByConversation, [conversationId]: next } };
+      const list = state.failoverNoticesByConversation[conversationId];
+      if (!list || !list.some((n) => n.at === at)) return state;
+      const next = { ...state.failoverNoticesByConversation };
+      const rest = list.filter((n) => n.at !== at);
+      if (rest.length === 0) delete next[conversationId];
+      else next[conversationId] = rest;
+      return { failoverNoticesByConversation: next };
     });
   },
 
@@ -834,6 +854,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     childrenByParent: {},
     childSnapshotsById: {},
     failoverNoticesByConversation: {},
+    failoverNoticeTtlMs: 60_000,
   }),
 }));
 

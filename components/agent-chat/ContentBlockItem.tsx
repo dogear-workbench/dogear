@@ -1,7 +1,7 @@
 import { ToolBlock } from '@/components/ToolBlock';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, ClipboardList, ClipboardCheck, ClipboardEdit } from 'lucide-react';
+import { AlertCircle, ArrowLeftRight, ClipboardList, ClipboardCheck, ClipboardEdit } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
@@ -9,6 +9,8 @@ import { ToolGroupBlock } from './ToolGroupBlock';
 import { TodoListBlock } from './TodoListBlock';
 import { CodeChangeBlock } from './CodeChangeBlock';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import { useConversationStore } from '@/stores/conversation-store';
+import { isQuotaErrorText, hasFailoverTakeover } from '@/lib/failover-markers';
 import { useConversationId } from './conversation-id-context';
 import type { ContentBlock } from './types';
 
@@ -84,6 +86,45 @@ function parseErrorMessage(error: string): { title: string; description: string;
     return { title: '错误', description: error };
   }
   return { title: '错误', description: error.substring(0, 100) + '...', detail: error };
+}
+
+function ErrorAlertBlock({ block }: { block: ContentBlock }) {
+  const conversationId = useConversationId();
+  const notices = useConversationStore(
+    (s) => (conversationId ? s.failoverNoticesByConversation[conversationId] : undefined),
+  );
+  const errorText = block.error || '未知错误';
+
+  // quota 失败且 failover 已接管（notice 在错误后短窗口内到达）：降级为一行摘要，不展示 429 技术详情
+  if (isQuotaErrorText(errorText) && hasFailoverTakeover(notices, block.timestamp)) {
+    return (
+      <div className="my-1 flex items-center gap-2 text-xs text-muted-foreground">
+        <ArrowLeftRight size={12} className="flex-shrink-0" />
+        <span>请求因供应商费率受限中断，已自动切换模型续跑</span>
+      </div>
+    );
+  }
+
+  const { title, description, detail } = parseErrorMessage(errorText);
+  return (
+    <Alert variant="destructive" className="my-1">
+      <AlertCircle className="h-4 w-4" />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        <p>{description}</p>
+        {detail && (
+          <details className="mt-2">
+            <summary className="text-xs cursor-pointer opacity-70 hover:opacity-100">
+              技术详情
+            </summary>
+            <pre className="mt-1 text-xs bg-destructive/10 rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+              {detail}
+            </pre>
+          </details>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
 }
 
 export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, readOnly = false }: {
@@ -331,31 +372,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         </div>
       ) : null;
 
-    case 'error': {
-      // 解析常见 API/SDK 错误，提取用户友好的描述
-      const errorText = block.error || '未知错误';
-      const { title: errorTitle, description: errorDescription, detail: errorDetail } = parseErrorMessage(errorText);
-
-      return (
-        <Alert variant="destructive" className="my-1">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>{errorTitle}</AlertTitle>
-          <AlertDescription>
-            <p>{errorDescription}</p>
-            {errorDetail && (
-              <details className="mt-2">
-                <summary className="text-xs cursor-pointer opacity-70 hover:opacity-100">
-                  技术详情
-                </summary>
-                <pre className="mt-1 text-xs bg-destructive/10 rounded p-2 whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
-                  {errorDetail}
-                </pre>
-              </details>
-            )}
-          </AlertDescription>
-        </Alert>
-      );
-    }
+    case 'error':
+      return <ErrorAlertBlock block={block} />;
 
     case 'result':
       // result 类型不显示任何内容，只是标志消息结束

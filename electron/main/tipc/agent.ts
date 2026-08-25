@@ -39,7 +39,9 @@ const t = tipc.create();
 
 // 模块加载时注册广播函数：所有 session 的消息统一广播给所有渲染层窗口
 getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
-  if (event === 'complete' || event === 'permissionRequest') {
+  // failed 通知需等 failover 编排返回后再决定发不发（接管则跳过），
+  // 其余事件保持原样即时通知
+  if (event === 'permissionRequest') {
     void handleSessionNotification(sessionId, event, payload);
   }
 
@@ -47,8 +49,11 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
     const result = payload as PiSessionTurnResult;
     if (result.subtype === 'success') {
       void clearFailoverTriedBySession(sessionId);
+      void handleSessionNotification(sessionId, event, payload);
     } else {
-      void maybeFailoverMainSession(sessionId, result);
+      void maybeFailoverMainSession(sessionId, result).then((tookOver) => {
+        if (!tookOver) void handleSessionNotification(sessionId, event, payload);
+      });
     }
   }
 
