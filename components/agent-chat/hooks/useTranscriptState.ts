@@ -133,10 +133,51 @@ export function loadHistoryCore(core: TranscriptCore, msgs: Message[]): Transcri
   return { stable: msgs, live: [], pendingActions: [], structuralVersion: core.structuralVersion + 1, structuralSig: sig };
 }
 
+function messageEntryIds(message: Message): string[] {
+  if (message.entryIds && message.entryIds.length > 0) return message.entryIds;
+  return message.id ? [message.id] : [];
+}
+
+export function findHistoryOverlapIndex(history: Message[], turnEntryIds: string[]): number {
+  if (turnEntryIds.length === 0) return -1;
+  const turnIds = new Set(turnEntryIds);
+  for (let index = history.length - 1; index >= 0; index--) {
+    if (messageEntryIds(history[index]).some((id) => turnIds.has(id))) return index;
+  }
+  return -1;
+}
+
+export function mergeHistorySnapshotCore(
+  history: Message[],
+  snapshotEvents: TranscriptEvent[],
+  turnEntryIds: string[],
+  pendingPermissionRequests: LivePermissionRequest[],
+  showReplayMessages: boolean,
+): TranscriptCore {
+  const overlapIndex = findHistoryOverlapIndex(history, turnEntryIds);
+  const stable = overlapIndex >= 0 ? history.slice(0, overlapIndex) : history.slice();
+  let next = initialTranscriptCore();
+  if (turnEntryIds.length > 0) {
+    for (const event of snapshotEvents) {
+      next = applyEventToCore(next, event, showReplayMessages);
+    }
+  }
+  for (const request of pendingPermissionRequests) {
+    next = appendPendingBlockCore(next, buildPermissionBlock({
+      requestId: request.requestId,
+      toolName: request.toolName,
+      toolInput: request.toolInput,
+    }));
+  }
+  return withChanges(next, stable, next.live, next.pendingActions);
+}
+
 export function pushLocalUserCore(core: TranscriptCore, msg: Message): TranscriptCore {
-  return core.live.length
-    ? withChanges(core, core.stable, [...core.live, msg])
-    : withChanges(core, [...core.stable, msg], core.live);
+  if (core.live.length) {
+    const promoted = promoteCore(core);
+    return withChanges(promoted, [...promoted.stable, msg], promoted.live);
+  }
+  return withChanges(core, [...core.stable, msg], core.live);
 }
 
 export function pushLiveAssistantCore(core: TranscriptCore, msg: Message): TranscriptCore {
@@ -332,7 +373,7 @@ export interface UseTranscriptStateResult {
   messages: Message[];
   loadHistory: (msgs: Message[]) => void;
   enqueueStreamEvent: (e: TranscriptEvent, sideEffect?: StreamEventSideEffect) => void;
-  applySnapshot: (events: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[]) => void;
+  applySnapshot: (events: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => void;
   pushLocalUser: (msg: Message) => void;
   pushLiveAssistant: (msg: Message) => void;
   replaceLastLiveAssistant: (msg: Message) => void;
@@ -345,7 +386,36 @@ export interface UseTranscriptStateResult {
   onSessionComplete: () => void;
 }
 
-export function useTranscriptState(showReplayMessages: boolean, visible = true): UseTranscriptStateResult {
+interface TranscriptInitState {
+  key: string | null;
+  history?: Message[];
+  snapshotEvents?: TranscriptEvent[];
+  turnEntryIds: string[];
+  pendingPermissionRequests: LivePermissionRequest[];
+  startedAt: number;
+  ready: boolean;
+  timedOut: boolean;
+}
+
+export function shouldFinalizeTranscriptInit(init: TranscriptInitState, now: number, timeoutMs = 2000): boolean {
+  return !init.ready && now - init.startedAt >= timeoutMs;
+}
+
+function createTranscriptInit(key: string | null, now: number): TranscriptInitState {
+  const empty = key === null;
+  return {
+    key,
+    history: empty ? [] : undefined,
+    snapshotEvents: empty ? [] : undefined,
+    turnEntryIds: [],
+    pendingPermissionRequests: [],
+    startedAt: now,
+    ready: empty,
+    timedOut: false,
+  };
+}
+
+export function useTranscriptState(showReplayMessages: boolean, visible = true, conversationId: string | null = null): UseTranscriptStateResult {
   const [core, setCore] = useState<TranscriptCore>(initialTranscriptCore);
   const coreRef = useRef(core);
   const showReplayRef = useRef(showReplayMessages);
@@ -356,6 +426,11 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
   const pendingEventsRef = useRef<PendingStreamEvent[]>([]);
   const rafRef = useRef<number | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initRef = useRef<TranscriptInitState>(createTranscriptInit(conversationId, Date.now()));
+  const initTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tryPromoteRef = useRef<() => void>(() => {});
+  const pendingInitMutationsRef = useRef<Array<(value: TranscriptCore) => TranscriptCore>>([]);
+  const pendingCompleteRef = useRef(false);
 
   const commit = useCallback((next: TranscriptCore) => {
     const prev = coreRef.current;
@@ -368,6 +443,7 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
   }, []);
 
   const flushPending = useCallback(() => {
+    if (!initRef.current.ready) return;
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -381,6 +457,50 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
       commit(applyEventToCore(coreRef.current, event, showReplayRef.current));
     });
   }, [commit]);
+
+  const finishInitialization = useCallback((force = false) => {
+    const init = initRef.current;
+    if (init.ready || (!force && (init.history === undefined || init.snapshotEvents === undefined))) return;
+    const nextInit = { ...init, ready: true, timedOut: force && (init.history === undefined || init.snapshotEvents === undefined) };
+    initRef.current = nextInit;
+    const merged = mergeHistorySnapshotCore(
+      init.history ?? [],
+      init.snapshotEvents ?? [],
+      init.turnEntryIds,
+      init.pendingPermissionRequests,
+      showReplayRef.current,
+    );
+    let nextCore = merged;
+    for (const mutation of pendingInitMutationsRef.current.splice(0, pendingInitMutationsRef.current.length)) {
+      nextCore = mutation(nextCore);
+    }
+    commit(nextCore);
+    flushPending();
+    if (pendingCompleteRef.current) {
+      pendingCompleteRef.current = false;
+      commit(settleTailCore(coreRef.current));
+    }
+    tryPromoteRef.current();
+  }, [commit, flushPending]);
+
+  useEffect(() => {
+    initRef.current = createTranscriptInit(conversationId, Date.now());
+    pendingEventsRef.current.splice(0, pendingEventsRef.current.length);
+    pendingInitMutationsRef.current.splice(0, pendingInitMutationsRef.current.length);
+    pendingCompleteRef.current = false;
+    settledRef.current = false;
+    commit(initialTranscriptCore());
+    if (initTimerRef.current !== null) clearTimeout(initTimerRef.current);
+    if (conversationId !== null) {
+      initTimerRef.current = setTimeout(() => finishInitialization(true), 2000);
+    }
+    return () => {
+      if (initTimerRef.current !== null) {
+        clearTimeout(initTimerRef.current);
+        initTimerRef.current = null;
+      }
+    };
+  }, [conversationId, commit, finishInitialization]);
 
   const scheduleFlush = useCallback(() => {
     if (pendingEventsRef.current.length === 0) return;
@@ -427,15 +547,48 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
   useEffect(() => () => {
     if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
     if (timeoutRef.current !== null) clearTimeout(timeoutRef.current);
+    if (initTimerRef.current !== null) clearTimeout(initTimerRef.current);
   }, []);
 
   const loadHistory = useCallback((msgs: Message[]) => {
+    const init = initRef.current;
+    if (!init.ready) {
+      initRef.current = { ...init, history: msgs };
+      finishInitialization();
+      return;
+    }
+    if (init.timedOut) {
+      const nextInit = { ...init, history: msgs };
+      initRef.current = nextInit;
+      if (nextInit.snapshotEvents !== undefined) {
+        const wasSettled = settledRef.current || pendingCompleteRef.current;
+        commit(mergeHistorySnapshotCore(
+          msgs,
+          nextInit.snapshotEvents,
+          nextInit.turnEntryIds,
+          nextInit.pendingPermissionRequests,
+          showReplayRef.current,
+        ));
+        initRef.current = { ...nextInit, timedOut: false };
+        if (wasSettled) {
+          pendingCompleteRef.current = false;
+          commit(settleTailCore(coreRef.current));
+        }
+        flushPending();
+        tryPromoteRef.current();
+        return;
+      }
+    }
     flushPending();
     settledRef.current = false;
     commit(loadHistoryCore(coreRef.current, msgs));
-  }, [commit, flushPending]);
+  }, [commit, finishInitialization, flushPending]);
 
   const enqueueStreamEvent = useCallback((e: TranscriptEvent, sideEffect?: StreamEventSideEffect) => {
+    if (!initRef.current.ready) {
+      pendingEventsRef.current.push({ event: e, sideEffect });
+      return;
+    }
     settledRef.current = false;
     if (!isDeltaStreamEvent(e)) {
       flushPending();
@@ -447,7 +600,45 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
     scheduleFlush();
   }, [commit, flushPending, scheduleFlush]);
 
-  const applySnapshot = useCallback((events: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[]) => {
+  const applySnapshot = useCallback((events: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds: string[] = []) => {
+    const init = initRef.current;
+    if (!init.ready) {
+      initRef.current = {
+        ...init,
+        snapshotEvents: events,
+        turnEntryIds,
+        pendingPermissionRequests,
+      };
+      finishInitialization();
+      return;
+    }
+    if (init.timedOut) {
+      const nextInit = {
+        ...init,
+        snapshotEvents: events,
+        turnEntryIds,
+        pendingPermissionRequests,
+      };
+      initRef.current = nextInit;
+      if (nextInit.history !== undefined) {
+        const wasSettled = settledRef.current || pendingCompleteRef.current;
+        commit(mergeHistorySnapshotCore(
+          nextInit.history,
+          events,
+          turnEntryIds,
+          pendingPermissionRequests,
+          showReplayRef.current,
+        ));
+        initRef.current = { ...nextInit, timedOut: false };
+        if (wasSettled) {
+          pendingCompleteRef.current = false;
+          commit(settleTailCore(coreRef.current));
+        }
+        flushPending();
+        tryPromoteRef.current();
+        return;
+      }
+    }
     flushPending();
     if (events.length === 0 && pendingPermissionRequests.length === 0) return;
     settledRef.current = false;
@@ -463,41 +654,72 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
       }));
     }
     commit(next);
-  }, [commit, flushPending]);
+  }, [commit, finishInitialization, flushPending]);
 
   const pushLocalUser = useCallback((msg: Message) => {
+    if (!initRef.current.ready) {
+      pendingInitMutationsRef.current.push((value) => pushLocalUserCore(value, msg));
+      settledRef.current = false;
+      return;
+    }
     flushPending();
     settledRef.current = false;
     commit(pushLocalUserCore(coreRef.current, msg));
   }, [commit, flushPending]);
 
   const pushLiveAssistant = useCallback((msg: Message) => {
+    if (!initRef.current.ready) {
+      pendingInitMutationsRef.current.push((value) => pushLiveAssistantCore(value, msg));
+      settledRef.current = false;
+      return;
+    }
     flushPending();
     settledRef.current = false;
     commit(pushLiveAssistantCore(coreRef.current, msg));
   }, [commit, flushPending]);
 
   const replaceLastLiveAssistant = useCallback((msg: Message) => {
+    if (!initRef.current.ready) {
+      pendingInitMutationsRef.current.push((value) => replaceLastLiveAssistantCore(value, msg));
+      return;
+    }
     flushPending();
     commit(replaceLastLiveAssistantCore(coreRef.current, msg));
   }, [commit, flushPending]);
 
   const insertLocalBlock = useCallback((block: ContentBlock) => {
+    if (!initRef.current.ready) {
+      pendingInitMutationsRef.current.push((value) => insertLocalBlockCore(value, block));
+      settledRef.current = false;
+      return;
+    }
     flushPending();
     settledRef.current = false;
     commit(insertLocalBlockCore(coreRef.current, block));
   }, [commit, flushPending]);
 
   const registerPermission = useCallback((data: { requestId: string; toolName: string; toolInput: unknown; decisionReason?: string }) => {
+    const block = buildPermissionBlock(data);
+    if (!initRef.current.ready) {
+      pendingInitMutationsRef.current.push((value) => appendPendingBlockCore(value, block));
+      settledRef.current = false;
+      return;
+    }
     flushPending();
     settledRef.current = false;
-    commit(appendPendingBlockCore(coreRef.current, buildPermissionBlock(data)));
+    commit(appendPendingBlockCore(coreRef.current, block));
   }, [commit, flushPending]);
 
   const registerAskUser = useCallback((data: { requestId: string; questions: NonNullable<ContentBlock['askUserQuestions']> }) => {
+    const block = buildAskUserBlock(data);
+    if (!initRef.current.ready) {
+      pendingInitMutationsRef.current.push((value) => appendPendingBlockCore(value, block));
+      settledRef.current = false;
+      return;
+    }
     flushPending();
     settledRef.current = false;
-    commit(appendPendingBlockCore(coreRef.current, buildAskUserBlock(data)));
+    commit(appendPendingBlockCore(coreRef.current, block));
   }, [commit, flushPending]);
 
   const tryPromote = useCallback(() => {
@@ -507,6 +729,7 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
     settledRef.current = false;
     commit(promoteCore(cur));
   }, [commit]);
+  tryPromoteRef.current = tryPromote;
 
   const resolvePermission = useCallback((requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => {
     flushPending();
@@ -527,6 +750,10 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true):
   }, [commit, flushPending, tryPromote]);
 
   const onSessionComplete = useCallback(() => {
+    if (!initRef.current.ready) {
+      pendingCompleteRef.current = true;
+      return;
+    }
     flushPending();
     settledRef.current = true;
     commit(settleTailCore(coreRef.current));

@@ -5,7 +5,8 @@ import { rendererEvents } from '@/lib/events';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
-import type { ExtendedSessionMessage, PermissionMode } from '@/types/electron-api';
+import type { TranscriptEvent } from './useTranscriptState';
+import type { PermissionMode } from '@/types/electron-api';
 
 export interface LivePermissionRequest {
   requestId: string;
@@ -17,7 +18,7 @@ interface UseAgentSessionParams {
   conversationId: string | null;
   archived: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
-  onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => void;
+  onLiveSnapshot?: (snapshot: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => void;
   workspaceId?: string | null;
 }
 

@@ -93,7 +93,7 @@ export function AgentChat({
 
   // transcript 状态（stableHistory / liveTail / pendingActions）：消息写入口全部收敛到该 hook，
   // messages 为兼容期合成视图（step 7 拆掉）
-  const transcript = useTranscriptState(showReplayMessages, visible);
+  const transcript = useTranscriptState(showReplayMessages, visible, conversationId);
   const { messages, stableHistory, liveTail, structuredLiveTail, structuralVersion, applySnapshot } = transcript;
 
   const { setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
@@ -102,8 +102,8 @@ export function AgentChat({
   const isTopicReadOnly = topicArchived || topicState === 'missing';
   const isReadOnly = isTopicReadOnly;
 
-  const applyLiveSnapshot = useCallback((snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => {
-    applySnapshot(snapshot, pendingPermissionRequests);
+  const applyLiveSnapshot = useCallback((snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => {
+    applySnapshot(snapshot, pendingPermissionRequests, turnEntryIds);
   }, [applySnapshot]);
 
   // 会话生命周期

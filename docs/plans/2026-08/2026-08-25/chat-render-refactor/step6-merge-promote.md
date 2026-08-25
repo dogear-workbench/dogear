@@ -1,7 +1,7 @@
 ---
 step: 6
 title: 合并协议与 live tail 提升
-status: pending
+status: done
 ---
 
 ## 目标
@@ -46,13 +46,22 @@ status: pending
 - 新一轮 run 开始（连续提问）：旧 turn 提升完整、新 turn 正常开启。
 - 2s 超时兜底：断点模拟 attach 慢/失败，会话仍可渲染历史。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- `useTranscriptState.ts` 新增 `findHistoryOverlapIndex`/`mergeHistorySnapshotCore`：按历史消息 `entryIds`（user 回退 id）与 snapshot `turnEntryIds` 集合交集，从命中消息起按消息粒度截断，再按顺序重放 snapshot；空 turnEntryIds 不截断且不重放 snapshot。
+- 新增 init 状态机：history、snapshotEvents、turnEntryIds、pendingPermissionRequests 分侧暂存；双方到齐后合并，初始化期间的流事件和本地 mutation 按序应用；conversationId 非空时 2 秒超时兜底，迟到另一侧仍可补合并。
+- 初始化期间缓存流事件、本地 user/assistant、local block、权限/AskUser 和 complete；complete 早到会在 init 完成后继续 settle/promote。新 user 遇旧 live 时先 promote，避免连续 run 混入。
+- `AgentChat.tsx` 透传 conversationId 和 turnEntryIds；`useAgentSession.ts` 的 snapshot 回调改用 TranscriptEvent 公共形状并透传 turnEntryIds。
+- 测试覆盖 entryIds/turnEntryIds 裁剪、空 turnEntryIds、snapshot 顺序、pending 权限、2 秒门槛、旧 live promote 后新 user。
+- 与计划差异：继续复用 step5 enqueue buffer，history 仍经 useMessageHistory.loadHistory 桥接；未做 step7 渲染边界、step8 订阅收窄或 step9 基准。
+- 验证：指定测试 18 pass ✓ / build:renderer ✓ / lint 0 errors（74 个存量 warnings）/ git diff --check ✓。
 
 ### 给下一步的接力棒
-- init 状态机的最终形态与超时值：
-- tryPromote 的全部触发点：
+- init 状态机：`TranscriptInitState { key, history?, snapshotEvents?, turnEntryIds, pendingPermissionRequests, startedAt, ready, timedOut }`；conversationId 为空立即 ready；非空等待 history 与 snapshot，2 秒后以缺失侧空值完成，迟到侧到达后按 entryIds 再合并。
+- 合并算法：历史尾部反向找与 turnEntryIds 交集的消息，截断该消息及之后；stable 为前缀；snapshot events 用 applyEventToCore 重放到 live；pendingPermissionRequests 用 permission block 登记 pendingActions。空 turnEntryIds 时保留完整 history、live 为空。
+- tryPromote 触发点：complete/onSessionComplete；permission/AskUser resolve；markAllPendingCancelled；init 合并/超时完成后若 complete 早到；新 user push 前强制提升旧 live。提升前关闭 live 尾部 isStreaming，追加 stable，清空 live，structuralVersion 增加。
 - 待办或已知限制：
+  - 尚未进行 Electron GUI 手工回归（运行中子会话切换、权限卡片晚到、连续提问、重复渲染）。
+  - 超时/迟到逻辑尚未用真实 fake timer React 测试；当前以纯函数和路径测试覆盖。
+  - step7 前仍保留兼容 messages 合成；主进程/渲染端 ExtendedSessionMessage 存量联合不一致仍待后续统一。

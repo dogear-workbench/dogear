@@ -11,6 +11,9 @@ import {
   settleTailCore,
   isDeltaStreamEvent,
   drainPendingStreamEvents,
+  mergeHistorySnapshotCore,
+  findHistoryOverlapIndex,
+  shouldFinalizeTranscriptInit,
   type PendingStreamEvent,
 } from './useTranscriptState';
 
@@ -69,6 +72,63 @@ describe('useTranscriptState core', () => {
 
     expect(order).toEqual(['text', 'text-effect', 'tool_result', 'result-effect']);
     expect(pending).toEqual([]);
+  });
+
+  test('按 entryIds 交集从历史尾部截断并重放 snapshot 顺序', () => {
+    const history: Message[] = [
+      { role: 'user', content: 'old', id: 'u-old' },
+      { role: 'assistant', content: 'done', id: 'a-old', entryIds: ['a-old', 'a-turn'] },
+      { role: 'user', content: 'next', id: 'u-next' },
+    ];
+    const snapshot = [
+      event('text', { content: 'live-' }),
+      event('text', { content: 'tail' }),
+      event('message_id', { role: 'assistant', uuid: 'a-live' }),
+    ];
+    const merged = mergeHistorySnapshotCore(history, snapshot, ['a-turn', 'a-live'], [{
+      requestId: 'perm-snapshot',
+      toolName: 'Bash',
+      toolInput: { command: 'pwd' },
+    }], true);
+
+    expect(findHistoryOverlapIndex(history, ['a-turn', 'a-live'])).toBe(1);
+    expect(merged.stable.map((message) => message.id)).toEqual(['u-old']);
+    expect(merged.live[0].content).toBe('live-tail');
+    expect(merged.live[0].entryIds).toEqual(['a-live']);
+    expect(merged.pendingActions).toEqual([{ requestId: 'perm-snapshot', kind: 'permission' }]);
+    expect(merged.live[0].contentBlocks?.some((block) => block.permissionRequestId === 'perm-snapshot')).toBe(true);
+  });
+
+  test('空 turnEntryIds 不截断历史且不重放 snapshot', () => {
+    const history: Message[] = [{ role: 'user', content: 'keep', id: 'u-1' }];
+    const merged = mergeHistorySnapshotCore(history, [event('text', { content: 'ignored' })], [], [], true);
+
+    expect(merged.stable).toEqual(history);
+    expect(merged.live).toEqual([]);
+  });
+
+  test('初始化超时或 attach 失败可强制结束门槛', () => {
+    const init = {
+      key: 'conversation-1',
+      startedAt: 100,
+      turnEntryIds: [],
+      pendingPermissionRequests: [],
+      ready: false,
+      timedOut: false,
+    };
+    expect(shouldFinalizeTranscriptInit(init, 2099)).toBe(false);
+    expect(shouldFinalizeTranscriptInit(init, 2100)).toBe(true);
+    expect(shouldFinalizeTranscriptInit({ ...init, ready: true }, 10000)).toBe(false);
+  });
+
+  test('新 user 到达时先提升未完成的旧 live', () => {
+    let core = initialTranscriptCore();
+    core = pushLiveAssistantCore(core, assistant());
+    core = pushLocalUserCore(core, { role: 'user', content: 'new', id: 'u-new' });
+
+    expect(core.live).toEqual([]);
+    expect(core.stable.map((message) => message.id)).toEqual(['a-local', 'u-new']);
+    expect(core.stable[0].isStreaming).toBe(false);
   });
 
   test('权限请求登记、解决和 promote 状态一致', () => {
