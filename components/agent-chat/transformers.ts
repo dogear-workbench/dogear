@@ -128,6 +128,9 @@ export function streamReducer(
   // 重放消息过滤
   if (extendedMsg.isReplay && !showReplayMessages) return null;
 
+  // 消息级稳定 ID 广播（主进程 message_end 后 emit），消费留待后续 step；流式期间先静默忽略
+  if (extendedMsg.type === 'message_id') return null;
+
   const updated = [...prev];
   const lastIdx = updated.length - 1;
 
@@ -153,18 +156,6 @@ export function streamReducer(
         timestamp: ts,
       }],
     }));
-    return updated;
-  }
-
-  // assistant_uuid 处理
-  if (extendedMsg.type === 'assistant_uuid') {
-    if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-      updated[lastIdx] = {
-        ...updated[lastIdx],
-        sdkUuid: extendedMsg.uuid,
-        ...(extendedMsg.model ? { model: extendedMsg.model } : {}),
-      };
-    }
     return updated;
   }
 

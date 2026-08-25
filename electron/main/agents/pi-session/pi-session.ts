@@ -12,7 +12,7 @@ import os from 'os';
 import path from 'path';
 import fs from 'fs/promises';
 import { v4 as uuidv4 } from 'uuid';
-import type { AgentEvent, AgentHarnessTool, ExecutionEnv } from '@earendil-works/pi-agent-core';
+import type { AgentEvent, AgentHarnessTool, ExecutionEnv, Session, JsonlSessionMetadata, AgentMessage } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { PiPermissionMode } from './permission-mode.js';
 import type { AssistantMessage } from '@earendil-works/pi-ai';
@@ -87,6 +87,8 @@ export interface PiSessionConfig {
 
 export interface PiSessionLiveSnapshot {
   messages: ExtendedSessionMessage[];
+  /** 本 run 已落盘 entry 的 SessionTreeEntry.id 序列（与 messages 同生命周期），供前端历史去重/ID 对齐 */
+  turnEntryIds: string[];
   permissionRequests: Array<{
     requestId: string;
     toolName: string;
@@ -242,6 +244,12 @@ export class PiSession extends EventEmitter {
   // 本轮 emit 出去的 ExtendedSessionMessage 快照，agent_end 时喂给 extractPiUsageEntry 聚合 toolActivity
   private currentTurnMessages: ExtendedSessionMessage[] = [];
   private liveTurnMessages: ExtendedSessionMessage[] = [];
+  // message 对象 → SessionTreeEntry.id（Proxy 拦截 appendMessage 返回值记录），message_end 时反查广播 message_id
+  private messageEntryIds = new WeakMap<object, string>();
+  // 本 run 已落盘 entry 的 id 累积，生命周期与 liveTurnMessages 完全一致，snapshot 携带给前端
+  private turnEntryIds: string[] = [];
+  // 最近一次 harness compact 的 compaction entry id（session_compact own 事件捕获，maybeAutoCompact 消费后置空）
+  private lastCompactionEntryId: string | null = null;
   // usage 提取粒度对齐 SDK result：每次 sendMessage（agent_end）产一条 entry，自增
   private usageTurnIndex = 0;
   // 本轮累加器：message_end 时累加 AssistantMessage.usage，agent_end 时取出转 entry 后置 null
@@ -287,6 +295,7 @@ export class PiSession extends EventEmitter {
   getLiveSnapshot(): PiSessionLiveSnapshot {
     return {
       messages: [...this.liveTurnMessages],
+      turnEntryIds: [...this.turnEntryIds],
       permissionRequests: Array.from(this.pendingPermissionRequests.entries()).map(([requestId, pending]) => ({
         requestId,
         toolName: pending.toolName,
@@ -308,13 +317,25 @@ export class PiSession extends EventEmitter {
     this.logger.info('=== 启动 pi 会话 ===', { sessionId: this.sessionId });
 
     const repository = getPiSessionRepository();
-    const session = this.config.harnessSessionId
+    const rawSession = this.config.harnessSessionId
       ? await repository.open(this.config.workspaceId, this.config.harnessSessionId)
       : await (async () => {
           const { session: created, info } = await repository.create(this.config.workspaceId);
           this.config.harnessSessionId = info.id;
           return created;
         })();
+    // 拦截 appendMessage 返回值（SessionTreeEntry.id）：harness 先落盘后 emit message_end 且
+    // 同一 message 引用，message_end 时从 WeakMap 反查出 entryId 广播 message_id（见 handleAgentEvent）
+    const session: Session<JsonlSessionMetadata> = new Proxy(rawSession, {
+      get: (target, prop) => {
+        if (prop !== 'appendMessage') return Reflect.get(target, prop) as unknown;
+        return async (message: AgentMessage): Promise<string> => {
+          const entryId = await target.appendMessage(message);
+          this.messageEntryIds.set(message, entryId);
+          return entryId;
+        };
+      },
+    });
 
     const appSettings = await loadSettings();
     const { model, profile, tier, thinkingLevel } = resolvePiModel(
@@ -437,6 +458,7 @@ export class PiSession extends EventEmitter {
       timeoutMs: profile.apiTimeoutMs,
       activeToolNames,
       onAgentEvent: (event) => this.handleAgentEvent(event),
+      onSessionCompact: (compactionEntryId) => { this.lastCompactionEntryId = compactionEntryId; },
       onSteerQueueChanged: (count) => this.handleSteerQueueChanged(count),
       onSettled: () => this.handleSettled(),
       onToolCall: (event) => this.handleToolCall(event),
@@ -599,16 +621,39 @@ export class PiSession extends EventEmitter {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
-    // message_end：单次 LLM call 结束，AssistantMessage.usage 携带本轮 token 用量，累加进 currentRunUsageAccum
-    if (event.type === 'message_end' && event.message && (event.message as { role?: string }).role === 'assistant') {
-      const assistantMessage = event.message as AssistantMessage;
-      if (!this.currentRunUsageAccum) this.currentRunUsageAccum = createPiUsageAccumulator();
-      accumulatePiUsage(this.currentRunUsageAccum, assistantMessage);
+    if (event.type === 'message_end' && event.message) {
+      const role = (event.message as { role?: string }).role;
+      // message_end：单次 LLM call 结束，AssistantMessage.usage 携带本轮 token 用量，累加进 currentRunUsageAccum
+      if (role === 'assistant') {
+        const assistantMessage = event.message as AssistantMessage;
+        if (!this.currentRunUsageAccum) this.currentRunUsageAccum = createPiUsageAccumulator();
+        accumulatePiUsage(this.currentRunUsageAccum, assistantMessage);
 
-      const conversationId = this.config.conversationId;
-      const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex, (id) => this.resolveModelWindow(id));
-      if (conversationId && snapshot) {
-        this.emit('usageContext', { conversationId, snapshot });
+        const conversationId = this.config.conversationId;
+        const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex, (id) => this.resolveModelWindow(id));
+        if (conversationId && snapshot) {
+          this.emit('usageContext', { conversationId, snapshot });
+        }
+      }
+
+      // user/assistant 落盘完成后广播 message_id（uuid = SessionTreeEntry.id，与历史 sdkUuid 同源），
+      // 同时进 liveTurnMessages 保证 snapshot 重放路径一致；toolResult 的 entry 并入 tool_use 块（toolUseId 键），无需独立 ID
+      if (role === 'user' || role === 'assistant') {
+        const entryId = this.messageEntryIds.get(event.message);
+        if (entryId) {
+          const idMessage: ExtendedSessionMessage = {
+            type: 'message_id',
+            uuid: entryId,
+            role,
+            ...(role === 'assistant' ? { model: (event.message as AssistantMessage).model } : {}),
+            timestamp: event.message.timestamp,
+          };
+          this.liveTurnMessages.push(idMessage);
+          this.turnEntryIds.push(entryId);
+          this.emit('message', idMessage);
+        } else {
+          this.logger.warn('message_end 未命中 entryId 缓存，跳过 message_id 广播');
+        }
       }
     }
 
@@ -707,6 +752,7 @@ export class PiSession extends EventEmitter {
   private handleSettled(): void {
     this.running = false;
     this.liveTurnMessages = [];
+    this.turnEntryIds = [];
     this.syncSessionState();
     this.emit('settled');
   }
@@ -810,7 +856,10 @@ export class PiSession extends EventEmitter {
     const text = typeof content === 'string' ? content : extractTextFromBlocks(content);
     const adapter = this.adapter;
     const isRunning = this.running || this.pendingSteerCount > 0;
-    if (!isRunning) this.liveTurnMessages = [];
+    if (!isRunning) {
+      this.liveTurnMessages = [];
+      this.turnEntryIds = [];
+    }
 
     this.logger.info('发送用户消息到 pi 会话:', { length: text.length, isRunning, pendingSteer: this.pendingSteerCount });
 
@@ -861,9 +910,12 @@ export class PiSession extends EventEmitter {
     try {
       await adapter.compact();
       this.lastContextTokens = undefined;
+      const compactionEntryId = this.lastCompactionEntryId;
+      this.lastCompactionEntryId = null;
       this.emit('message', {
         type: 'compact_boundary',
         timestamp: Date.now(),
+        ...(compactionEntryId ? { uuid: compactionEntryId } : {}),
         compactTrigger: 'auto',
         compactPreTokens: preTokens,
       } as ExtendedSessionMessage);

@@ -13,6 +13,10 @@ export interface Message {
   // SDK 消息 UUID（用于分叉定位，v4 新增）
   sdkUuid?: string;
   forkPointSdkUuid?: string; // 用户消息上记录对应的分叉点 assistant UUID
+  // 消息级稳定 ID = 主进程 SessionTreeEntry.id；assistant 合并消息 = 最后一个 entry id（与 sdkUuid 同值）
+  id?: string;
+  // assistant 合并消息覆盖的全部 SessionTreeEntry id（按落盘顺序）；user/compaction 为单元素
+  entryIds?: string[];
   // AI 模型名称
   model?: string;
   // 用户附带的图片（预览用）

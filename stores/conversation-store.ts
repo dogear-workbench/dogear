@@ -29,6 +29,7 @@ export interface PreAttachedSession {
   sessionId: string;
   permissionMode: import('@/types/electron-api').PermissionMode;
   snapshot: import('@/types/electron-api').ExtendedSessionMessage[];
+  turnEntryIds: string[];
   pendingPermissionRequests: Array<{ requestId: string; toolName: string; toolInput: unknown }>;
   sessionState: { running: boolean; pendingAction: boolean };
 }
@@ -451,6 +452,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             sessionId: attachResult.sessionId,
             permissionMode: (attachResult.permissionMode || 'default') as import('@/types/electron-api').PermissionMode,
             snapshot: (attachResult.snapshot ?? []) as import('@/types/electron-api').ExtendedSessionMessage[],
+            turnEntryIds: attachResult.turnEntryIds ?? [],
             pendingPermissionRequests: attachResult.pendingPermissionRequests ?? [],
             sessionState: attachResult.sessionState ?? { running: false, pendingAction: false },
           });

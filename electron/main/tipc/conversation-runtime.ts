@@ -34,6 +34,7 @@ export const conversationRuntimeRouter = {
           permissionMode: result.permissionMode,
           created: result.created,
           snapshot: result.snapshot,
+          turnEntryIds: result.turnEntryIds,
           pendingPermissionRequests: result.pendingPermissionRequests,
           sessionState: result.sessionState,
         };

@@ -29,7 +29,7 @@ function CompactBoundaryDivider({ block }: { block: ContentBlock }) {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
         </svg>
         对话已压缩
-        {block.compactTrigger === 'manual' ? '（手动）' : '（自动）'}
+        {block.compactTrigger === 'manual' ? '（手动）' : block.compactTrigger === 'auto' ? '（自动）' : ''}
         {block.compactPreTokens && (
           <span className="text-muted-foreground/60">· 压缩前 {block.compactPreTokens.toLocaleString()} tokens</span>
         )}

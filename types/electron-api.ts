@@ -61,7 +61,7 @@ export interface WorkspaceFileNode {
  * 用于显示完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request'
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'message_id' | 'permission_request'
     // Hook 事件类型
     | 'session_start'       // SessionStart hook 触发
     | 'session_end'         // SessionEnd hook 触发
@@ -85,8 +85,10 @@ export interface ExtendedSessionMessage {
   citations?: Citation[];
   // 是否为重放的历史消息（SDK resume 时使用）
   isReplay?: boolean;
-  // 消息 UUID（SDK 提供）
+  // 消息级稳定 ID：message_id 事件 = harness SessionTreeEntry.id（与历史 sdkUuid 同源）；compact_boundary = compaction entry id
   uuid?: string;
+  // message_id 事件指向的落盘消息角色（user 无 model）
+  role?: 'user' | 'assistant';
   // AI 使用的实际模型名称
   model?: string;
   // 权限请求相关字段（type='permission_request' 时使用）

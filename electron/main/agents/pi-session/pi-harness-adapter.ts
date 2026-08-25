@@ -67,6 +67,8 @@ export interface PiHarnessAdapterOptions {
   activeToolNames?: string[];
   /** 裸 Agent 事件透传（text/thinking/tool_execution_start/end/agent_end 等），语义与旧 agent.subscribe 完全一致 */
   onAgentEvent: (event: AgentEvent) => void;
+  /** harness compact 完成（session_compact own 事件，先于 compact() resolve）回调，携带 compaction entry id */
+  onSessionCompact?: (compactionEntryId: string) => void;
   /** steer 队列真实长度变化（steer() 入队和 one-at-a-time drain 都会触发），替代旧的手动 +1/-1 计数 */
   onSteerQueueChanged: (steerCount: number) => void;
   /** 一次完整 run（含所有工具调用和插话）彻底结束，晚于 agent_end，用于驱动 running=false 的最终结算 */
@@ -103,6 +105,10 @@ export class PiHarnessAdapter {
       }
       if (event.type === 'queue_update') {
         options.onSteerQueueChanged(event.steer.length);
+        return;
+      }
+      if (event.type === 'session_compact') {
+        options.onSessionCompact?.(event.compactionEntry.id);
         return;
       }
       if (event.type === 'settled') {

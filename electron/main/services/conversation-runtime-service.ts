@@ -17,6 +17,8 @@ export interface ConversationRuntimeAttachment {
   created: boolean;
   /** 复用已有 session 时，当前 turn 的进行中消息快照（供晚加入的渲染层重播） */
   snapshot: ExtendedSessionMessage[];
+  /** 快照对应 run 已落盘 entry 的 SessionTreeEntry.id 序列（与 snapshot 同生命周期） */
+  turnEntryIds: string[];
   pendingPermissionRequests: Array<{
     requestId: string;
     toolName: string;
@@ -147,6 +149,7 @@ class ConversationRuntimeService {
       permissionMode: session.getPermissionMode(),
       created,
       snapshot: liveSnapshot.messages,
+      turnEntryIds: liveSnapshot.turnEntryIds,
       pendingPermissionRequests: liveSnapshot.permissionRequests,
       sessionState: liveSnapshot.sessionState,
     };

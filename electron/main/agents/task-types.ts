@@ -93,7 +93,7 @@ export interface Citation {
  * 用于向前端传递完整的 AI 操作（工具调用、思考过程等）
  */
 export interface ExtendedSessionMessage {
-  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'assistant_uuid' | 'permission_request'
+  type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'message_id' | 'permission_request'
     // Hook 事件类型
     | 'session_start'       // SessionStart hook 触发
     | 'session_end'         // SessionEnd hook 触发
@@ -117,7 +117,8 @@ export interface ExtendedSessionMessage {
   timestamp: number;
   citations?: Citation[];          // 引用信息
   isReplay?: boolean;              // 是否为重放的历史消息（SDK resume 时使用）
-  uuid?: string;                   // 消息 UUID（SDK 提供）
+  uuid?: string;                   // 消息级稳定 ID：message_id 事件 = harness SessionTreeEntry.id（与历史 sdkUuid 同源）；compact_boundary = compaction entry id
+  role?: 'user' | 'assistant';     // message_id 事件指向的落盘消息角色（user 无 model）
   model?: string;                  // AI 使用的实际模型名称
   // 权限请求相关字段（type='permission_request' 时使用）
   permissionRequestId?: string;    // 请求 ID（用于回传结果）

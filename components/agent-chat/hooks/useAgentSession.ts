@@ -17,7 +17,7 @@ interface UseAgentSessionParams {
   conversationId: string | null;
   archived: boolean;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
-  onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => void;
+  onLiveSnapshot?: (snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => void;
   workspaceId?: string | null;
 }
 
@@ -67,7 +67,7 @@ export function useAgentSession({
         setPermissionMode(preAttached.permissionMode as PermissionMode);
         useConversationStore.getState().setRunningState(conversationId, preAttached.sessionState.running);
         useConversationStore.getState().setPendingActionState(conversationId, preAttached.sessionState.pendingAction);
-        onLiveSnapshot?.(preAttached.snapshot, preAttached.pendingPermissionRequests);
+        onLiveSnapshot?.(preAttached.snapshot, preAttached.pendingPermissionRequests, preAttached.turnEntryIds);
         setIsSessionReady(true);
         useSessionStore.getState().updateSession(
           conversationId,
@@ -120,6 +120,7 @@ export function useAgentSession({
         onLiveSnapshot?.(
           response.snapshot ?? [],
           response.pendingPermissionRequests ?? [],
+          response.turnEntryIds,
         );
         setIsSessionReady(true);
 

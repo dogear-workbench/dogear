@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 主进程消息级稳定 ID 管道
-status: pending
+status: done
 ---
 
 ## 目标
@@ -40,13 +40,20 @@ status: pending
 - 手动跑一个会话（含工具调用），主进程日志确认：每条 message_end 后 emit 了 message_id；user 与 assistant 都有；snapshot.turnEntryIds 与落盘 JSONL 尾部 entry id 对得上。
 - 重新打开同一会话：getConversationHistory 返回的 user 消息有 id、assistant 有 entryIds。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - compact_boundary 的 uuid 采用「订阅 harness own 事件 `session_compact`」路径：实测 harness `compact()` 不返回 compactionEntry（仅返回内部结果对象），返回值路径不可行；`session_compact` 在 `compact()` resolve 前被 await 分发，时序安全。
+  - compact trigger 历史映射采用「去掉 manual/auto 标注」：fromHook 只区分「是否由 session_before_compact hook 提供」，Dogear 未注册该 hook 且无手动入口，无法如实区分；同步把渲染层 CompactBoundaryDivider 改为三态，避免 undefined 错标「（自动）」。
+  - message_end 的 role=toolResult 不广播 message_id 也不进 turnEntryIds（历史侧 toolResult entry 并入 tool_use 块不独立成消息，保持 live/历史同构）。
+  - streamReducer 增加 message_id 静默过滤分支（计划外防御：主进程开始广播后若不过滤会在尾部产生垃圾 block）。
+- 改动文件清单（业务 12 文件 +119/-39）：pi-session.ts（Proxy 拦截 appendMessage + WeakMap 反查 + message_id 广播 + turnEntryIds 累积器 + compact_boundary 补 uuid）、pi-harness-adapter.ts（onSessionCompact 回调）、history-adapter.ts（user/compaction 填 id、assistant 合并收完整 entryIds、去 trigger 映射）、task-types.ts / electron-api.ts / conversation-runtime-service.ts / conversation-runtime.ts（类型链透传：assistant_uuid→message_id、新增 role、snapshot 加 turnEntryIds）、transformers.ts（删 assistant_uuid 死分支 + message_id 静默过滤）、ContentBlockItem.tsx（trigger 三态化）、types.ts（Message 补 id/entryIds）、useAgentSession.ts（onLiveSnapshot 第三参）、conversation-store.ts（PreAttachedSession 透传）。验证：build:electron ✓ / lint 0 errors（74 warnings 全存量）/ turns.test.ts 8 pass ✓ / 核心机制（Proxy 透传、WeakMap 命中、turnEntryIds↔JSONL 对齐）InMemorySessionRepo + bun 脚本实测通过。
 
 ### 给下一步的接力棒
-- message_id 事件的最终字段清单与 emit 时机：
-- snapshot.turnEntryIds 的确切形状：
+- message_id 事件字段：`{ type: 'message_id', uuid: SessionTreeEntry.id, role: 'user'|'assistant', model?: string（仅 assistant）, timestamp: number（pi-ai message.timestamp 创建时刻，非 emit 时刻） }`。emit 时机 = message_end 落盘后同步广播（harness 先 appendMessage 后 emit 且同 message 引用，WeakMap 必命中，miss 时 warn 跳过）；同时 push 进 liveTurnMessages，snapshot 重放路径一致；到达位置在尾部 assistant 的 usage 之后、下一组 delta 之前。前端 streamReducer 目前 `return null` 静默过滤，消费逻辑留 step 4/6。
+- snapshot.turnEntryIds 的确切形状：本 run 已落盘 user/assistant entry id 按落盘顺序的 string[]，与 messages 同生命周期（非运行态 sendMessage 清空、settled 清空、steer 不清空）；不含 toolResult entry 与 compaction entry；与磁盘 JSONL 尾部逐个相等（已实测）。历史侧 HistoryMessage/Message 新增 `id?`（assistant 合并消息 = 最后 entry id，与 sdkUuid 同值）与 `entryIds?`（user/compaction 单元素，assistant 按落盘顺序全集），fork 的 sdkUuid 语义不变。
 - 待办或已知限制：
+  - Electron 端到端人工验证待补：真实会话（含工具调用）日志确认每条 message_end 有 message_id、snapshot.turnEntryIds 与 JSONL 尾部对齐、重开会话 user 有 id / assistant 有 entryIds。
+  - 主进程/前端两份 ExtendedSessionMessage 联合不一致（前端缺 compact_boundary/compacting/local_command_output）为存量类型债，建议 step 2/4 一并统一。
+  - 挂起权限确认 / abort 中途的 turn，已完成部分照常产生 message_id（与磁盘一致）。

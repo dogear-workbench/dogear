@@ -40,6 +40,10 @@ export interface HistoryMessage {
   contentBlocks?: HistoryContentBlock[];
   /** Harness SessionTreeEntry id（仅助手消息填充），供前端"分叉"按钮作为稳定 entry 定位信息回传 */
   sdkUuid?: string;
+  /** 消息级稳定 ID = SessionTreeEntry.id；assistant 合并消息 = 最后一个 entry id（与 sdkUuid 同值） */
+  id?: string;
+  /** assistant 合并消息覆盖的全部 SessionTreeEntry id（按落盘顺序）；user/compaction 为单元素 */
+  entryIds?: string[];
   model?: string;
   images?: Array<{ preview: string }>;
   isCompactBoundary?: boolean;
@@ -66,14 +70,17 @@ function extractToolResultText(content: (TextContent | ImageContent)[]): string 
 
 function compactionToMessage(entry: CompactionEntry): HistoryMessage {
   const ts = new Date(entry.timestamp).getTime();
-  const trigger: 'manual' | 'auto' = entry.fromHook ? 'auto' : 'manual';
+  // fromHook 只区分"是否由 session_before_compact hook 提供"，Dogear 未注册该 hook 且
+  // 无法区分手动/自动，不映射 trigger（渲染层对 undefined 不标注，避免错标 manual）
   return {
     role: 'assistant',
     content: '',
     timestamp: ts,
+    id: entry.id,
+    entryIds: [entry.id],
     isCompactBoundary: true,
-    compactMetadata: { trigger, preTokens: entry.tokensBefore },
-    contentBlocks: [{ type: 'compact_boundary', compactTrigger: trigger, compactPreTokens: entry.tokensBefore, timestamp: ts }],
+    compactMetadata: { preTokens: entry.tokensBefore },
+    contentBlocks: [{ type: 'compact_boundary', compactPreTokens: entry.tokensBefore, timestamp: ts }],
   };
 }
 
@@ -124,6 +131,8 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
         role: 'user',
         content: text,
         timestamp: um.timestamp,
+        id: messageEntry.id,
+        entryIds: [messageEntry.id],
         ...(images.length > 0 ? { images } : {}),
       });
       continue;
@@ -158,6 +167,8 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
       current.contentBlocks = [...(current.contentBlocks ?? []), ...blocks];
       current.content += text;
       current.sdkUuid = messageEntry.id;
+      current.id = messageEntry.id;
+      current.entryIds = [...(current.entryIds ?? []), messageEntry.id];
       if (am.model) current.model = am.model;
     } else {
       flush();
@@ -167,6 +178,8 @@ export async function buildSessionHistory(workspaceId: string, sessionId: string
         timestamp: am.timestamp,
         contentBlocks: blocks.length > 0 ? blocks : undefined,
         sdkUuid: messageEntry.id,
+        id: messageEntry.id,
+        entryIds: [messageEntry.id],
         model: am.model,
       };
     }
