@@ -24,6 +24,15 @@ function formatDateTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function daysOfMonthLabel(daysOfMonth: (number | 'last')[]): string {
+  const hasLast = daysOfMonth.includes('last');
+  const nums = [...new Set(daysOfMonth.filter((d): d is number => typeof d === 'number'))].sort((a, b) => a - b);
+  if (hasLast && nums.length === 0) return '每月末';
+  const parts = nums.map(String);
+  if (hasLast) parts.push('末');
+  return `每月 ${parts.join('/')} 号`;
+}
+
 export function describeTrigger(
   trigger: Trigger,
   taskNameOf?: (taskId: string) => string | undefined,
@@ -31,8 +40,12 @@ export function describeTrigger(
   switch (trigger.type) {
     case 'daily_at':
       return `${weekdaysLabel(trigger.weekdays)} ${trigger.at}`;
-    case 'interval':
-      return `每 ${trigger.minutes} 分钟`;
+    case 'monthly_at':
+      return `${daysOfMonthLabel(trigger.daysOfMonth)} ${trigger.at}`;
+    case 'interval': {
+      const days = weekdaysLabel(trigger.weekdays);
+      return days === '每天' ? `每 ${trigger.minutes} 分钟` : `${days}每 ${trigger.minutes} 分钟`;
+    }
     case 'window':
       return `${weekdaysLabel(trigger.weekdays)}窗口 ${trigger.start}–${trigger.end}`;
     case 'once':

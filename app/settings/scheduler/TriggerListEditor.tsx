@@ -7,11 +7,15 @@ import type { Trigger } from '@/types/scheduler';
 import { WEEKDAY_CHIPS, datetimeLocalToTs, describeTrigger, tsToDatetimeLocal } from './utils';
 
 const TIME_TYPES = [
-  { value: 'daily_at', label: '每天固定时刻' },
+  { value: 'daily_at', label: '每天定点' },
+  { value: 'weekly_at_entry', label: '每周定点' },
+  { value: 'monthly_at', label: '每月定点' },
   { value: 'interval', label: '固定间隔' },
   { value: 'window', label: '时间窗口' },
   { value: 'once', label: '单次时刻' },
 ] as const;
+
+const TIME_TRIGGER_TYPES: readonly Trigger['type'][] = ['daily_at', 'monthly_at', 'interval', 'window', 'once'];
 
 const COND_TYPES = [
   { value: 'on_app_start', label: '应用启动时' },
@@ -22,6 +26,7 @@ const COND_TYPES = [
 
 const TYPE_LABELS: Record<Trigger['type'], string> = {
   daily_at: '每天时刻',
+  monthly_at: '每月时刻',
   interval: '固定间隔',
   window: '时间窗口',
   once: '单次',
@@ -32,6 +37,14 @@ const TYPE_LABELS: Record<Trigger['type'], string> = {
 };
 
 const inputCls = 'h-7 px-2 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring';
+
+const MONTH_GRID: (number | 'last')[] = [...Array.from({ length: 31 }, (_, i) => i + 1), 'last'];
+
+function sameWeekdays(a: number[] | undefined, b: number[]): boolean {
+  if (!a || a.length !== b.length) return false;
+  const sorted = [...a].sort((x, y) => x - y);
+  return sorted.every((v, i) => v === b[i]);
+}
 
 function WeekdayChips({ value, onChange }: { value: number[] | undefined; onChange: (v: number[] | undefined) => void }) {
   const selected = value ?? [0, 1, 2, 3, 4, 5, 6];
@@ -66,6 +79,34 @@ function WeekdayChips({ value, onChange }: { value: number[] | undefined; onChan
   );
 }
 
+interface PresetOption {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}
+
+function PresetChips({ options }: { options: PresetOption[] }) {
+  return (
+    <div className="flex items-center gap-1">
+      {options.map((opt) => (
+        <button
+          key={opt.label}
+          type="button"
+          className={cn(
+            'h-6 rounded-full border px-2 text-xs transition-colors',
+            opt.active
+              ? 'bg-primary text-primary-foreground border-primary'
+              : 'text-muted-foreground hover:bg-muted',
+          )}
+          onClick={opt.onClick}
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 interface Props {
   triggers: Trigger[];
   onChange: (triggers: Trigger[]) => void;
@@ -86,12 +127,18 @@ export function TriggerListEditor({ triggers, onChange, tasks, selfTaskId }: Pro
   const taskCandidates = tasks.filter((t) => t.id !== selfTaskId);
   const taskNameOf = (id: string) => tasks.find((t) => t.id === id)?.name;
 
-  const add = (type: Trigger['type']) => {
+  const add = (type: (typeof TIME_TYPES)[number]['value'] | (typeof COND_TYPES)[number]['value']) => {
     const id = crypto.randomUUID();
     let trigger: Trigger;
     switch (type) {
       case 'daily_at':
         trigger = { id, type: 'daily_at', at: '08:00' };
+        break;
+      case 'weekly_at_entry':
+        trigger = { id, type: 'daily_at', at: '08:00', weekdays: [1] };
+        break;
+      case 'monthly_at':
+        trigger = { id, type: 'monthly_at', at: '08:00', daysOfMonth: [1] };
         break;
       case 'interval':
         trigger = { id, type: 'interval', minutes: 60 };
@@ -118,6 +165,31 @@ export function TriggerListEditor({ triggers, onChange, tasks, selfTaskId }: Pro
     onChange([...triggers, trigger]);
   };
 
+  const dailyPresetOptions = (t: Extract<Trigger, { type: 'daily_at' }>): PresetOption[] => [
+    { label: '每天', active: !t.weekdays || t.weekdays.length === 0, onClick: () => patch(t.id, { weekdays: undefined }) },
+    { label: '工作日', active: sameWeekdays(t.weekdays, [1, 2, 3, 4, 5]), onClick: () => patch(t.id, { weekdays: [1, 2, 3, 4, 5] }) },
+    { label: '周末', active: sameWeekdays(t.weekdays, [0, 6]), onClick: () => patch(t.id, { weekdays: [0, 6] }) },
+  ];
+
+  const monthlyPresetOptions = (t: Extract<Trigger, { type: 'monthly_at' }>): PresetOption[] => [
+    { label: '月初', active: t.daysOfMonth.length === 1 && t.daysOfMonth[0] === 1, onClick: () => patch(t.id, { daysOfMonth: [1] }) },
+    { label: '月中', active: t.daysOfMonth.length === 1 && t.daysOfMonth[0] === 15, onClick: () => patch(t.id, { daysOfMonth: [15] }) },
+    { label: '月末', active: t.daysOfMonth.length === 1 && t.daysOfMonth[0] === 'last', onClick: () => patch(t.id, { daysOfMonth: ['last'] }) },
+  ];
+
+  const toggleDayOfMonth = (t: Extract<Trigger, { type: 'monthly_at' }>, d: number | 'last') => {
+    const cur = t.daysOfMonth;
+    if (cur.includes(d)) {
+      if (cur.length <= 1) return;
+      patch(t.id, { daysOfMonth: cur.filter((x) => x !== d) });
+      return;
+    }
+    const nums = cur.filter((x): x is number => typeof x === 'number');
+    if (typeof d === 'number') nums.push(d);
+    nums.sort((a, b) => a - b);
+    patch(t.id, { daysOfMonth: cur.includes('last') ? [...nums, 'last'] : nums });
+  };
+
   const renderRow = (t: Trigger) => {
     let controls: React.ReactNode = null;
     switch (t.type) {
@@ -126,7 +198,34 @@ export function TriggerListEditor({ triggers, onChange, tasks, selfTaskId }: Pro
           <>
             <input type="time" className={inputCls} value={t.at}
               onChange={(e) => e.target.value && patch(t.id, { at: e.target.value })} />
+            <PresetChips options={dailyPresetOptions(t)} />
             <WeekdayChips value={t.weekdays} onChange={(v) => patch(t.id, { weekdays: v })} />
+          </>
+        );
+        break;
+      case 'monthly_at':
+        controls = (
+          <>
+            <input type="time" className={inputCls} value={t.at}
+              onChange={(e) => e.target.value && patch(t.id, { at: e.target.value })} />
+            <PresetChips options={monthlyPresetOptions(t)} />
+            <div className="grid w-48 grid-cols-7 gap-1">
+              {MONTH_GRID.map((d) => (
+                <button
+                  key={String(d)}
+                  type="button"
+                  className={cn(
+                    'h-6 rounded-md border text-xs transition-colors',
+                    t.daysOfMonth.includes(d)
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'text-muted-foreground hover:bg-muted',
+                  )}
+                  onClick={() => toggleDayOfMonth(t, d)}
+                >
+                  {d === 'last' ? '末' : d}
+                </button>
+              ))}
+            </div>
           </>
         );
         break;
@@ -136,6 +235,7 @@ export function TriggerListEditor({ triggers, onChange, tasks, selfTaskId }: Pro
             <input type="number" min={1} className={cn(inputCls, 'w-20')} value={t.minutes || ''}
               onChange={(e) => patch(t.id, { minutes: Number(e.target.value) || 0 })} />
             <span className="text-xs text-muted-foreground">分钟</span>
+            <WeekdayChips value={t.weekdays} onChange={(v) => patch(t.id, { weekdays: v })} />
           </>
         );
         break;
@@ -204,8 +304,8 @@ export function TriggerListEditor({ triggers, onChange, tasks, selfTaskId }: Pro
     );
   };
 
-  const timeTriggers = triggers.filter((t) => ['daily_at', 'interval', 'window', 'once'].includes(t.type));
-  const condTriggers = triggers.filter((t) => !['daily_at', 'interval', 'window', 'once'].includes(t.type));
+  const timeTriggers = triggers.filter((t) => TIME_TRIGGER_TYPES.includes(t.type));
+  const condTriggers = triggers.filter((t) => !TIME_TRIGGER_TYPES.includes(t.type));
 
   return (
     <div className="space-y-4">

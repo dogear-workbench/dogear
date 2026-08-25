@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 模型与调度引擎](./step1-model-engine.md) — Trigger 类型扩展 + time-rule-engine 的 monthly 计算/校验/missed + interval 平移 + service 接入
-- [ ] [Step 2: 触发器编辑 UI](./step2-trigger-ui.md) — TriggerListEditor 六入口、三档定点控件、间隔周几圆点、describeTrigger 同步
+- [x] [Step 2: 触发器编辑 UI](./step2-trigger-ui.md) — TriggerListEditor 六入口、三档定点控件、间隔周几圆点、describeTrigger 同步
 - [ ] [Step 3: 重叠软警告](./step3-overlap-warning.md) — 保存时检测定点类规则同刻交集，showConfirm 确认
 
 ## 全局决策
