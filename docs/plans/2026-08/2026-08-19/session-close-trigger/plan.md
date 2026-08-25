@@ -21,7 +21,7 @@
 
 - [x] [Step 1: 调度器重构 + triggerContext 贯通 + 精准提炼入口](./step1-scheduler-context.md) — handleSessionClose 新签名/退出标志/工作区过滤，triggerContext 并入 hooks，triggerByConversation 补脏判定，group_digest 精准分支
 - [x] [Step 2: 触发点下沉 pi-session-manager + failover 排除](./step2-manager-hook.md) — _destroySession 加 source，自然销毁后通知调度器，detach 链路透传 source 排除 failover 换血
-- [ ] [Step 3: 清理旧触发点 + 端到端验证](./step3-cleanup-verify.md) — 删 index.ts 旧调用，行为矩阵（含 failover / failStreaks 边界）逐项验证，doc-sync
+- [x] [Step 3: 清理旧触发点 + 端到端验证](./step3-cleanup-verify.md) — 删 index.ts 旧调用，行为矩阵（含 failover / failStreaks 边界）逐项验证，doc-sync
 
 ## 全局决策
 
@@ -31,3 +31,9 @@
 - `triggerContext` 类型：`{ conversationId: string }`，并入 `TaskExecuteHooks` 透传，仅 group_digest 消费，其余任务类型忽略；不进前端类型
 - 前端零改动（`types/scheduler.ts` 不动）
 - 主进程代码改动后需 `bun run build:electron` 重新编译才能验证
+
+## 完成总结
+
+- **Step 1**（调度器重构 + triggerContext 贯通 + 精准提炼入口）：`handleSessionClose(conversationId)` 新签名落地——quitting 拦截、经 conversation-service 解析 workspace 严格过滤、`triggerContext.conversationId` 经 fireTask → runTask → executeTask hooks 透传，group_digest 带 context 时走 `triggerByConversation`（含脏判定）单组精准提炼。
+- **Step 2**（触发点下沉 pi-session-manager + failover 排除）：`_destroySession(sessionId, source)` 区分自然销毁/强杀，natural 时对绑定 conversation 逐个 fire-and-forget 通知调度器；detach 链路（detachAttachment / detachByConversationHolder）透传 source，failover 换血传 forced 不触发。
+- **Step 3**（清理旧触发点 + 端到端验证）：删除 index.ts 独立窗口 closed 事件旧触发段消除双发，行为矩阵九项代码级走查全部成立，codebase-map.md 五处条目同步，lint 0 errors + build:electron 通过。（本 step commit 后回填）

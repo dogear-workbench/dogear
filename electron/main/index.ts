@@ -300,13 +300,6 @@ export function createSessionWindow(conversationId: string, title: string) {
       console.error('[sessionWindowClosed] 获取 workspaceId 失败:', err);
     }
 
-    // 触发点③：会话窗口关闭 → 调度器 on_session_close 条件（退出时不触发，避免退出前起一轮计划）
-    if (!isQuitting && workspaceId) {
-      void import('./services/scheduler/scheduler-service.js')
-        .then((m) => m.getSchedulerService().handleSessionClose(conversationId))
-        .catch((err) => console.error('[scheduler] 会话关闭触发失败:', err));
-    }
-
     // 通知主窗口恢复 Tab（需要附带 workspaceId，以便正确回到对应工作区标签页）
     if (mainWindow && !mainWindow.isDestroyed()) {
       try {
