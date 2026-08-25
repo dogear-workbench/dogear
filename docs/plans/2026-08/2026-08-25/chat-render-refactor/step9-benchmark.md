@@ -1,7 +1,7 @@
 ---
 step: 9
 title: 基准验证与虚拟化决策
-status: pending
+status: done
 ---
 
 ## 目标
@@ -40,12 +40,17 @@ status: pending
 - turns.test.ts 通过；消息 reducer、稳定 ID、任务派生、流式批处理的补充测试（step 2/3/4/5 各自补充过，本 step 汇总确认）。
 - 真实长会话手动性能验收。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-- 与计划差异：
-- 决策结果与数据：
-- 改动文件清单：
+- 新增 `scripts/chat-render-benchmark.ts`，新增 `bun run bench:chat-render` 命令；脚本仅手动运行，不进入 renderer 生产入口，不引入 Virtuoso 或其他生产依赖。
+- 基准确定性生成 50/100/300 轮 JSONL fixture，A 使用当前手写虚拟化的 400px 轮高、800px viewport 和 1 viewport buffer，B 计入完整 DOM；同时测 buildTurns/aggregateTasks 纯函数耗时。运行结束后已清理 `tmp/chat-render-benchmark/` 生成物。
+- 与计划差异：未新增真实会话 seed 到业务存储；没有 React Profiler、Chrome Performance、DOM layout/paint、FPS 或 Electron GUI 自动采集能力，因此不编造这些指标，也未引入 react-virtuoso。
+- 决策结果与数据：保留当前手写虚拟化 A。实际运行 `bun run bench:chat-render`：300 轮/600 条消息时，A 渲染 8 轮/16 条消息并保留 292 个高度占位，B 渲染 300 轮/600 条消息；buildTurns 约 0.109ms，aggregateTasks 约 0.181ms。50/100 轮同样保持 A 的固定可见窗口优势。纯函数开销未发现瓶颈，但不等同于真实 React/DOM 性能。
+- 纲领完成标准：delta buffer、StableHistory/LiveTail 边界、task/search/minimap 派生、滚动拖拽、entryIds 合并、pending 晚到、隐藏 tab 兜底均已由代码与自动测试覆盖；真实 GUI/Profiler 视觉和性能项仍未完成。
+- 验证：指定测试 20 pass ✓ / build:renderer ✓ / lint 0 errors（74 个存量 warnings）/ git diff --check ✓。
+- 改动文件清单：`scripts/chat-render-benchmark.ts`、`package.json`、本文档及 `plan.md` 完成总结。
 
 ### 给下一步的接力棒
-- 后续事项（Virtuoso 迁移 / 已知问题移交）：
+- 后续事项：本计划不迁移 Virtuoso；只有未来真实浏览器/Electron 指标证明 A 不达标且瓶颈明确位于历史 DOM layout/paint 时，另开独立 step 评估迁移。继续保留当前手写虚拟化，不叠加第二套 virtualizer。
+- 已知问题移交：`/compact` 前端发送字面文本的遗留缺陷不在本重构中修复；React Profiler/Chrome Performance、真实长会话 GUI、窗口最小化恢复、动态高度/图片/折叠视觉回归需后续手工验收。

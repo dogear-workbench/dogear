@@ -21,6 +21,7 @@
     "lint": "eslint .",
     "release": "node scripts/release.mjs",
     "serve-updates": "node scripts/serve-updates.mjs",
+    "bench:chat-render": "bun run scripts/chat-render-benchmark.ts",
     "kill": "node scripts/kill-processes.mjs"
   },
   "dependencies": {

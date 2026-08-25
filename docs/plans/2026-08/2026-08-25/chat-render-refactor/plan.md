@@ -16,7 +16,13 @@
 - [x] [Step 6: 合并协议与 live tail 提升](./step6-merge-promote.md) — history/snapshot 到齐合并去重、settled 且无 pendingActions 时提升
 - [x] [Step 7: 渲染边界拆分与滚动修复](./step7-render-scroll.md) — StableHistory/LiveTail 组件、scrollbar 拖拽识别、useVirtualTurns 收窄到历史区
 - [x] [Step 8: 订阅收窄与多 tab 修复](./step8-subscriptions.md) — useTopicArchiveState 窄化、minimap/boundary 的 conversationId 显式传参
-- [ ] [Step 9: 基准验证与虚拟化决策](./step9-benchmark.md) — 跑基准场景，决定保留手写虚拟化 / 完整 DOM / 迁移 Virtuoso
+- [x] [Step 9: 基准验证与虚拟化决策](./step9-benchmark.md) — 跑基准场景，决定保留手写虚拟化 / 完整 DOM / 迁移 Virtuoso
+
+## 完成总结
+
+- 9 个步骤已完成并分别提交；稳定 ID 管道、前端身份/key、task 派生、TranscriptState、流事件批处理、history/snapshot 合并、StableHistory/LiveTail 渲染边界、订阅收窄和基准决策均已落地。
+- 基准结论：保留当前手写虚拟化，不引入 react-virtuoso。300 轮合成数据下 A 仅渲染 8 轮/16 条消息，B 渲染 300 轮/600 条消息；该结论基于渲染数据量和纯函数开销，真实 React/DOM/GUI 指标尚未采集。
+- 已知问题：`/compact` 前端发送字面文本的遗留缺陷未修复；真实 Electron GUI、React Profiler、Chrome Performance、动态高度/图片/最小化恢复等需后续手工验收。
 
 ## 全局决策
 
