@@ -21,3 +21,17 @@
 - weekdays 复用现有 `validWeekdays` 校验（0–6、非空）；weekdaysLabel 的 每天/工作日/周末 归纳逻辑复用
 - 主进程改动需 `bun run build:electron` 后生效；不写单测，临时验证脚本跑完即删（沿用 2026-08-15 scheduler 计划的做法）
 - 警告一律走 `stores/confirm-store.ts` 的 `showConfirm`，禁用 window.confirm
+
+## 完成总结（2026-08-25）
+
+三步全部完成，四个 commit：
+
+1. **Step 1 模型与调度引擎**（08fd8e5）：Trigger 联合双处加 `monthly_at`、interval 加可选 `weekdays`；time-rule-engine 新增 monthly 62 天扫描 / missed 回扫 / interval 限星期按日平移，nextDueAt / minNextDueAt / detectMissed / validateTrigger / describeTrigger 全分支接入；scheduler-service 到点判定归入 monthly_at。临时脚本 45 case 验证后即删。
+2. **Step 2 触发器编辑 UI**（84c7600）：时间规则入口扩为六项（每周定点落库 daily_at + weekdays[1]）；daily 行预设 chips（每天/工作日/周末）与周几圆点并排；monthly 行月初/月中/月末预设与 1–31+末 多选网格双向联动、永非空去重；interval 行加周几圆点（全选存 undefined）；渲染层 describeTrigger 与主进程逐字一致，SchedulerPanel 摘要零改动自动生效。
+3. **Step 3 重叠软警告**（8503f1e）：`utils.ts` 的 `findTriggerOverlaps`（daily×daily 按 weekdays 归一化交集、monthly×monthly 按 daysOfMonth 交集、daily×monthly 同 at 即报、interval 仅完全重复）；TaskEditor 保存前 `showConfirm` 软警告，取消则中止。临时脚本 19 case 验证后即删。
+
+**落地效果**：零迁移，旧 daily_at / interval 数据行为不变；每月定点支持多选几号与月末（小月/闰年自适应跳过或命中）；间隔可限星期（落非限定日顺延到下一限定日同 HH:mm）；保存时重叠规则软提示。lint 0 errors、build:electron / tsc 均通过。
+
+**已知限制（设计内）**：重叠时刻任务会执行两次（软警告不阻断）；interval / window 与定点的碰巧同分钟不检测；每次保存重叠任务都会弹警告。
+
+**建议实测**：六入口添加/编辑/保存重启数据不丢、预设↔网格/圆点联动、重叠警告三组场景的取消/确认路径（详见共享区 step2/step3 交付文档）。
