@@ -1,23 +1,23 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { rendererEvents } from '@/lib/events';
-import type { Message } from '../types';
-import { streamReducer } from '../transformers';
+import type { TranscriptEvent } from './useTranscriptState';
 
 interface UseSessionMessagesParams {
   sessionId: string | null;
   showReplayMessages: boolean;
-  setMessages: Dispatch<SetStateAction<Message[]>>;
+  applyStreamEvent: (e: TranscriptEvent) => void;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setHistoryLoaded: Dispatch<SetStateAction<boolean>>;
 }
 
 /**
- * 监听会话消息流，处理各种消息类型并更新消息状态
+ * 监听会话消息流：事件按归属表分流进 transcript（stable/live/pendingActions），
+ * 本 hook 只保留流式加载态与 historyLoaded 的副作用
  */
 export function useSessionMessages({
   sessionId,
   showReplayMessages,
-  setMessages,
+  applyStreamEvent,
   setIsLoading,
   setHistoryLoaded,
 }: UseSessionMessagesParams): void {
@@ -31,13 +31,7 @@ export function useSessionMessages({
 
       if (extendedMsg.isReplay && !showReplayMessages) return;
 
-      // 插话场景：UI 已在 useSendMessage 中本地立即 push 了用户消息，
-      // streamReducer 内部会按 sdk_uuid 做去重，不会重复 push
-      setMessages(prev => {
-        const result = streamReducer(prev, extendedMsg, showReplayMessages);
-        if (result === null) return prev;
-        return result;
-      });
+      applyStreamEvent(extendedMsg);
 
       if (extendedMsg.type === 'user') {
         setHistoryLoaded(true);
@@ -52,5 +46,5 @@ export function useSessionMessages({
     return () => {
       unsubscribe();
     };
-  }, [sessionId, showReplayMessages]);
+  }, [sessionId, showReplayMessages, applyStreamEvent]);
 }

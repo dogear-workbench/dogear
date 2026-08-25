@@ -13,6 +13,7 @@ import { useSessionMessages } from './hooks/useSessionMessages';
 import { useSessionEvents } from './hooks/useSessionEvents';
 import { useImageAttachment } from './hooks/useImageAttachment';
 import { useSendMessage } from './hooks/useSendMessage';
+import { useTranscriptState } from './hooks/useTranscriptState';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
 import { StreamingIndicator } from './StreamingIndicator';
@@ -29,7 +30,6 @@ import { buildTurns } from './turns';
 import { aggregateTasks } from './task-aggregator';
 import { TodoListBlock } from './TodoListBlock';
 import { useVirtualTurns } from './hooks/useVirtualTurns';
-import { streamReducer } from './transformers';
 import type { ExtendedSessionMessage } from '@/types/electron-api';
 import type { ChildStatus } from '@/types/delegation';
 import type { LivePermissionRequest } from './hooks/useAgentSession';
@@ -90,34 +90,20 @@ export function AgentChat({
   // 加载状态
   const [isLoading, setIsLoading] = useState(false);
 
-  // 历史消息
-  const { messages, setMessages, setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId });
+  // transcript 状态（stableHistory / liveTail / pendingActions）：消息写入口全部收敛到该 hook，
+  // messages 为兼容期合成视图（step 7 拆掉）
+  const transcript = useTranscriptState(showReplayMessages);
+  const { messages, stableHistory, liveTail, structuredLiveTail, structuralVersion, applySnapshot } = transcript;
+
+  const { setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
   const topicArchived = topicState === 'archived';
   const isTopicReadOnly = topicArchived || topicState === 'missing';
   const isReadOnly = isTopicReadOnly;
 
   const applyLiveSnapshot = useCallback((snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[]) => {
-    if (snapshot.length === 0 && pendingPermissionRequests.length === 0) return;
-    setMessages((previous) => {
-      let next = previous;
-      for (const message of snapshot) {
-        const reduced = streamReducer(next, message, showReplayMessages);
-        if (reduced) next = reduced;
-      }
-      for (const request of pendingPermissionRequests) {
-        const reduced = streamReducer(next, {
-          type: 'permission_request',
-          timestamp: Date.now(),
-          permissionRequestId: request.requestId,
-          permissionToolName: request.toolName,
-          permissionInput: request.toolInput,
-        }, showReplayMessages);
-        if (reduced) next = reduced;
-      }
-      return next;
-    });
-  }, [setMessages, showReplayMessages]);
+    applySnapshot(snapshot, pendingPermissionRequests);
+  }, [applySnapshot]);
 
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
@@ -189,16 +175,20 @@ export function AgentChat({
     [messages, collapsed],
   );
 
-  // task 清单纯派生：渲染期吸附到最后一条含 Task* 的 assistant 消息之后，不写回 messages
-  //（messages 引用每帧变的过渡期妥协，step 4 拆分后改依赖 stableHistory 结构快照）
-  const tasks = useMemo(() => aggregateTasks(messages), [messages]);
+  // task 清单纯派生：依赖结构快照（stable 引用 + 结构变化才换引用的 live 尾），
+  // 纯 text/thinking delta 帧不再全表扫描
+  const structuredMessages = useMemo(
+    () => [...stableHistory, ...structuredLiveTail],
+    [stableHistory, structuredLiveTail],
+  );
+  const tasks = useMemo(() => aggregateTasks(structuredMessages), [stableHistory, structuralVersion]);
   const taskTodos = useMemo(
     () => tasks.map(({ subject, activeForm, status }) => ({ content: subject, activeForm: activeForm || subject, status })),
     [tasks],
   );
   const lastTaskMessageId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
+    for (let i = structuredMessages.length - 1; i >= 0; i--) {
+      const msg = structuredMessages[i];
       if (msg.role !== 'assistant' || !msg.contentBlocks) continue;
       if (msg.contentBlocks.some((b) =>
         b.type === 'tool_use' &&
@@ -208,7 +198,7 @@ export function AgentChat({
       }
     }
     return null;
-  }, [messages]);
+  }, [stableHistory, structuralVersion]);
   // 吸附点落在折叠隐藏区（byMessageId 只含可见消息）时不渲染，对齐旧注入块随消息隐藏的行为
   const showTaskSummary = tasks.length > 0 && lastTaskMessageId !== null && byMessageId.has(lastTaskMessageId);
 
@@ -240,7 +230,7 @@ export function AgentChat({
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
     sessionId,
-    setMessages,
+    transcript,
     setIsLoading,
     setPermissionMode,
     onScrollToAction: () => {
@@ -259,7 +249,7 @@ export function AgentChat({
     isSessionReady,
     isLoading,
     messages,
-    setMessages,
+    transcript,
     setIsLoading,
     permissionMode,
     setPermissionMode,
@@ -291,7 +281,7 @@ export function AgentChat({
   useSessionMessages({
     sessionId,
     showReplayMessages,
-    setMessages,
+    applyStreamEvent: transcript.applyStreamEvent,
     setIsLoading,
     setHistoryLoaded,
   });
@@ -519,7 +509,8 @@ export function AgentChat({
           pendingState={pendingState}
           pendingCount={pendingCount}
           lastBlockType={
-            messages[messages.length - 1]?.contentBlocks?.slice(-1)[0]?.type
+            (liveTail.length ? liveTail[liveTail.length - 1] : stableHistory[stableHistory.length - 1])
+              ?.contentBlocks?.slice(-1)[0]?.type
           }
           awaitCount={awaitCount}
           doneCount={doneCount}

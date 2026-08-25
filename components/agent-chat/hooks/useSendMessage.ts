@@ -12,6 +12,7 @@ import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
 import type { Message, ContentBlock } from '../types';
 import { generateLocalMessageId } from '../transformers';
+import type { UseTranscriptStateResult } from './useTranscriptState';
 import type { PendingImage } from './useImageAttachment';
 
 interface UseSendMessageParams {
@@ -19,7 +20,7 @@ interface UseSendMessageParams {
   isSessionReady: boolean;
   isLoading: boolean;
   messages: Message[];
-  setMessages: Dispatch<SetStateAction<Message[]>>;
+  transcript: UseTranscriptStateResult;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   permissionMode: PermissionMode;
   setPermissionMode: Dispatch<SetStateAction<PermissionMode>>;
@@ -33,6 +34,7 @@ interface UseSendMessageParams {
 /**
  * 消息发送相关逻辑 Hook
  * 包含：分叉、消息发送、权限/AskUser 响应回调、模式切换通知
+ * 消息写入全部走 transcript 写入口，本 hook 不再直接持有 setMessages
  */
 export function useSendMessage(params: UseSendMessageParams) {
   const {
@@ -40,7 +42,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     isSessionReady,
     isLoading,
     messages,
-    setMessages,
+    transcript,
     setIsLoading,
     setPermissionMode: _setPermissionMode,
     conversationId,
@@ -49,6 +51,18 @@ export function useSendMessage(params: UseSendMessageParams) {
     currentSelection,
     readOnly,
   } = params;
+
+  const {
+    loadHistory,
+    pushLocalUser,
+    pushLiveAssistant,
+    replaceLastLiveAssistant,
+    insertLocalBlock,
+    resolvePermission,
+    resolveAskUser,
+    markAllPendingCancelled,
+    pendingActions,
+  } = transcript;
 
   const [input, setInput] = useState('');
   const [lastAppliedSelection, setLastAppliedSelection] = useState<ModelSelection | null>(null);
@@ -82,79 +96,28 @@ export function useSendMessage(params: UseSendMessageParams) {
   };
 
   // 检查是否有未处理的权限请求或 AskUser 问题，有则隐藏普通输入框
-  const hasPendingUserAction = messages.some(msg =>
-    msg.contentBlocks?.some(b =>
-      (b.type === 'permission_request' && !b.permissionResolved) ||
-      (b.type === 'ask_user_question' && !b.askUserResolved)
-    )
-  );
+  const hasPendingUserAction = pendingActions.length > 0;
 
   // 在对话中插入模式切换通知
   const insertModeChangeNotice = useCallback((newMode: string) => {
-    setMessages(prev => {
-      const updated = [...prev];
-      const lastIdx = updated.length - 1;
-      const statusText = `权限模式已切换为「${modeLabels[newMode] || newMode}」`;
-      const noticeBlock: ContentBlock = {
-        type: 'status',
-        status: statusText,
-        timestamp: Date.now(),
-      };
-      // 插入到当前 assistant 消息中，或创建新 assistant 消息
-      if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-        const lastMsg = updated[lastIdx];
-        updated[lastIdx] = {
-          ...lastMsg,
-          contentBlocks: [...(lastMsg.contentBlocks || []), noticeBlock],
-        };
-      } else {
-        updated.push({
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          id: generateLocalMessageId(),
-          contentBlocks: [noticeBlock],
-        });
-      }
-      return updated;
+    insertLocalBlock({
+      type: 'status',
+      status: `权限模式已切换为「${modeLabels[newMode] || newMode}」`,
+      timestamp: Date.now(),
     });
-  }, []);
+  }, [insertLocalBlock]);
 
   // 权限确认响应回调：更新消息中对应权限请求块的状态
   const handlePermissionResolved = useCallback(async (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => {
     if (readOnly) return;
-    setMessages(prev => prev.map(msg => {
-      if (!msg.contentBlocks) return msg;
-      const hasTarget = msg.contentBlocks.some(b => b.permissionRequestId === requestId);
-      if (!hasTarget) return msg;
-      return {
-        ...msg,
-        contentBlocks: msg.contentBlocks.map(b =>
-          b.permissionRequestId === requestId
-            ? { ...b, permissionResolved: behavior }
-            : b
-        ),
-      };
-    }));
-  }, [readOnly, setMessages]);
+    resolvePermission(requestId, behavior);
+  }, [readOnly, resolvePermission]);
 
   // AskUserQuestion 响应回调：更新消息中对应问答块的状态
   const handleAskUserResolved = useCallback((requestId: string, answers: Record<string, string>) => {
     if (readOnly) return;
-    setMessages(prev => prev.map(msg => {
-      if (!msg.contentBlocks) return msg;
-      const hasTarget = msg.contentBlocks.some(b => b.askUserRequestId === requestId);
-      if (!hasTarget) return msg;
-      return {
-        ...msg,
-        contentBlocks: msg.contentBlocks.map(b =>
-          b.askUserRequestId === requestId
-            ? { ...b, askUserResolved: true, askUserAnswers: answers }
-            : b
-        ),
-      };
-    }));
-  }, [readOnly, setMessages]);
+    resolveAskUser(requestId, answers);
+  }, [readOnly, resolveAskUser]);
 
   // 中断当前执行：发 IPC + 本地把所有未 resolved 的 pending block 标为已取消，
   // 让 hasPendingUserAction 立刻变假、输入框立刻回来（否则依赖后端事件闭环时序，UI 卡在"等确认"）
@@ -167,24 +130,9 @@ export function useSendMessage(params: UseSendMessageParams) {
     } catch (e) {
       console.warn('[interrupt-trace] 中断会话失败:', e);
     }
-    setMessages(prev => prev.map(msg => {
-      if (!msg.contentBlocks) return msg;
-      let changed = false;
-      const blocks = msg.contentBlocks.map(b => {
-        if (b.type === 'permission_request' && !b.permissionResolved) {
-          changed = true;
-          return { ...b, permissionResolved: 'deny' as const, permissionDenyMessage: '已中断' };
-        }
-        if (b.type === 'ask_user_question' && !b.askUserResolved) {
-          changed = true;
-          return { ...b, askUserResolved: true, askUserCancelled: true };
-        }
-        return b;
-      });
-      return changed ? { ...msg, contentBlocks: blocks } : msg;
-    }));
+    markAllPendingCancelled();
     setIsLoading(false);
-  }, [readOnly, sessionId, setMessages, setIsLoading]);
+  }, [readOnly, sessionId, markAllPendingCancelled, setIsLoading]);
 
   /**
    * 从某条 assistant 消息处分叉新对话
@@ -210,7 +158,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       case '/clear': {
         // 前端清空消息 + 强制终止旧会话（跑步机模式下 release 不会打断执行中的任务，
         // 但 /clear 语义是"立即重置"，必须忽略引用计数强杀，避免旧任务在后台继续跑）
-        setMessages([]);
+        loadHistory([]);
         setIsLoading(false);
         try {
           await client.forceCloseQueryBasedSession({ sessionId });
@@ -225,28 +173,9 @@ export function useSendMessage(params: UseSendMessageParams) {
       case '/compact': {
         // 直接发送给 SDK 处理（SDK 内置命令）
         setInput('');
-        // 插入状态提示
-        setMessages(prev => {
-          const compactingBlock: ContentBlock = {
-            type: 'compacting',
-            timestamp: Date.now(),
-          };
-          const lastIdx = prev.length - 1;
-          if (lastIdx >= 0 && prev[lastIdx].role === 'assistant') {
-            const updated = [...prev];
-            updated[lastIdx] = {
-              ...prev[lastIdx],
-              contentBlocks: [...(prev[lastIdx].contentBlocks || []), compactingBlock],
-            };
-            return updated;
-          }
-          return [...prev, {
-            role: 'assistant' as const,
-            content: '',
-            timestamp: Date.now(),
-            id: generateLocalMessageId(),
-            contentBlocks: [compactingBlock],
-          }];
+        insertLocalBlock({
+          type: 'compacting',
+          timestamp: Date.now(),
         });
         try {
           await client.sendQueryBasedSessionMessage({ sessionId, content: '/compact' });
@@ -259,14 +188,9 @@ export function useSendMessage(params: UseSendMessageParams) {
       case '/search': {
         if (!args) return false; // 没有关键词则不拦截
         const searchPrompt = `请搜索与「${args}」相关的内容，查找相关段落并总结结果。`;
-        // 替换 input 为搜索提示，走正常发送流程
         setInput('');
-        // 直接发送构造的 prompt
-        setMessages(prev => [
-          ...prev,
-          { role: 'user' as const, content: `/search ${args}`, timestamp: Date.now(), id: generateLocalMessageId() },
-          { role: 'assistant' as const, content: '', timestamp: Date.now(), id: generateLocalMessageId(), isStreaming: true, contentBlocks: [] },
-        ]);
+        pushLocalUser({ role: 'user', content: `/search ${args}`, timestamp: Date.now(), id: generateLocalMessageId() });
+        pushLiveAssistant({ role: 'assistant', content: '', timestamp: Date.now(), id: generateLocalMessageId(), isStreaming: true, contentBlocks: [] });
         setIsLoading(true);
         try {
           await client.sendQueryBasedSessionMessage({ sessionId, content: searchPrompt });
@@ -286,10 +210,7 @@ export function useSendMessage(params: UseSendMessageParams) {
         if (sdkCmd) {
           // SDK 命令：直接透传给 SDK，以系统消息样式展示
           setInput('');
-          setMessages(prev => [
-            ...prev,
-            { role: 'user' as const, content: trimmed, timestamp: Date.now(), id: generateLocalMessageId(), isMeta: true },
-          ]);
+          pushLocalUser({ role: 'user', content: trimmed, timestamp: Date.now(), id: generateLocalMessageId(), isMeta: true });
           setIsLoading(true);
           try {
             await client.sendQueryBasedSessionMessage({ sessionId, content: trimmed });
@@ -303,7 +224,7 @@ export function useSendMessage(params: UseSendMessageParams) {
         return false;
       }
     }
-  }, [sessionId, setInput, setMessages, setIsLoading]);
+  }, [sessionId, setInput, loadHistory, insertLocalBlock, pushLocalUser, pushLiveAssistant, setIsLoading]);
 
   // 发送消息
   const handleSend = useCallback(async () => {
@@ -429,7 +350,7 @@ export function useSendMessage(params: UseSendMessageParams) {
 
     if (isLoading) {
       // Agent 运行中 → 立即在 UI 显示用户消息；后端 pendingMessages 队列会在下一轮窗口消费
-      setMessages(prev => [...prev, newUserMessage]);
+      pushLocalUser(newUserMessage);
 
       client.sendQueryBasedSessionMessage({
         sessionId: sessionId!,
@@ -461,17 +382,18 @@ export function useSendMessage(params: UseSendMessageParams) {
       if (result.needsRestart) {
         // 跨 profile 切换：把消息插入 UI（用户能看到自己写的内容已"在路上"）+
         // 把待发载荷塞进 store，让 useAgentSession 在新 session ready 后自动续发
-        setMessages(prev => [...prev, newUserMessage, {
-          role: 'assistant' as const,
-          content: '' as string,
+        pushLocalUser(newUserMessage);
+        pushLiveAssistant({
+          role: 'assistant',
+          content: '',
           timestamp: Date.now(),
           id: generateLocalMessageId(),
           contentBlocks: [{
-            type: 'status' as const,
+            type: 'status',
             status: '正在切换模型方案，稍候自动发送…',
             timestamp: Date.now(),
-          }],
-        }]);
+          } as ContentBlock],
+        });
         if (conversationId) {
           useConversationStore.getState().setPendingSendAfterRestart({
             conversationId,
@@ -493,14 +415,15 @@ export function useSendMessage(params: UseSendMessageParams) {
     }
 
     // Agent 空闲 → 正常流程：插入用户消息 + assistant 占位
-    setMessages(prev => [...prev, newUserMessage, {
-      role: 'assistant' as const,
-      content: '' as string,
+    pushLocalUser(newUserMessage);
+    pushLiveAssistant({
+      role: 'assistant',
+      content: '',
       timestamp: Date.now(),
       id: generateLocalMessageId(),
       isStreaming: true,
       contentBlocks: [] as ContentBlock[],
-    }]);
+    });
 
     // 新对话自动标题：首条消息截取前 30 字
     if (conversationTitle === '新对话' && messagesRef.current.length === 0 && conversationId) {
@@ -532,26 +455,24 @@ export function useSendMessage(params: UseSendMessageParams) {
       });
     } catch (error) {
       console.error('发送消息失败:', error);
-      setMessages(prev => [
-        ...prev.slice(0, -1), // 移除占位消息
-        {
-          role: 'assistant',
-          content: `错误: ${error instanceof Error ? error.message : String(error)}`,
-          timestamp: Date.now(),
-          id: generateLocalMessageId(),
-          contentBlocks: [{
-            type: 'error',
-            error: error instanceof Error ? error.message : String(error),
-            timestamp: Date.now()
-          }]
-        }
-      ]);
+      replaceLastLiveAssistant({
+        role: 'assistant',
+        content: `错误: ${error instanceof Error ? error.message : String(error)}`,
+        timestamp: Date.now(),
+        id: generateLocalMessageId(),
+        contentBlocks: [{
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error),
+          timestamp: Date.now()
+        }]
+      });
       setIsLoading(false);
     }
   }, [
     readOnly, input, pendingImages, sessionId, isSessionReady, handleSlashCommand,
     setInput, setPendingImages, conversationId, currentSelection, isLoading,
-    lastAppliedSelection, setMessages, setIsLoading, conversationTitle, updateConversationTitle,
+    lastAppliedSelection, pushLocalUser, pushLiveAssistant, replaceLastLiveAssistant,
+    setIsLoading, conversationTitle, updateConversationTitle,
     triggerSessionRestart, referencedArticles, clearReferencedArticles,
     quotedSnippets, clearQuotedSnippets, referencedFiles, clearReferencedFiles,
     referencedConversations, clearReferencedConversations, referencedSharedFiles,

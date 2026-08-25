@@ -2,11 +2,11 @@ import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { rendererEvents } from '@/lib/events';
 import type { PermissionMode } from '@/types/electron-api';
-import type { Message, ContentBlock } from '../types';
+import type { UseTranscriptStateResult } from './useTranscriptState';
 
 interface UseSessionEventsParams {
   sessionId: string | null;
-  setMessages: Dispatch<SetStateAction<Message[]>>;
+  transcript: UseTranscriptStateResult;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setPermissionMode: Dispatch<SetStateAction<PermissionMode>>;
   /** 权限请求/AskUser 到达时通知调用方触发滚动 */
@@ -19,7 +19,7 @@ interface UseSessionEventsParams {
  */
 export function useSessionEvents({
   sessionId,
-  setMessages,
+  transcript,
   setIsLoading,
   setPermissionMode,
   onScrollToAction,
@@ -33,70 +33,29 @@ export function useSessionEvents({
   useEffect(() => {
     if (!sessionId) return;
 
-    // 1. 监听会话完成事件
+    // 1. 监听会话完成事件：关闭尾部流式并触发提升检查（settled 且无 pending → promote）
     const unsubComplete = rendererEvents.queryBasedSessionComplete.listen((data) => {
       if (data.sessionId !== sessionId) return;
 
       console.log('收到会话完成事件:', data);
 
-      // 结束加载状态
       setIsLoading(false);
-
-      // 更新最后一条消息的流式状态
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastIdx = updated.length - 1;
-        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            isStreaming: false
-          };
-        }
-        return updated;
-      });
+      transcript.onSessionComplete();
     });
 
-    // 2. 监听权限请求
+    // 2. 监听权限请求：写 pendingActions + live tail 挂占位 block
     const unsubPermReq = rendererEvents.permissionRequest.listen((data) => {
       if (data.sessionId !== sessionId) return;
 
       console.log('📋 收到权限确认请求:', data);
 
-      // 将权限请求作为内容块插入到当前 assistant 消息中
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastIdx = updated.length - 1;
-        const newBlock: ContentBlock = {
-          type: 'permission_request',
-          timestamp: Date.now(),
-          permissionRequestId: data.requestId,
-          permissionToolName: data.toolName,
-          permissionInput: data.toolInput,
-          permissionDecisionReason: data.decisionReason,
-        };
-
-        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-          const lastMsg = updated[lastIdx];
-          updated[lastIdx] = {
-            ...lastMsg,
-            contentBlocks: [...(lastMsg.contentBlocks || []), newBlock],
-          };
-        } else {
-          // 外部启动的会话（agent 派子会话等）没有本地插入的 assistant 占位，
-          // 直接 push 一个新 assistant 消息挂块，避免权限请求被丢弃导致会话卡死
-          updated.push({
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-            isStreaming: true,
-            contentBlocks: [newBlock],
-          });
-        }
-
-        return updated;
+      transcript.registerPermission({
+        requestId: data.requestId,
+        toolName: data.toolName,
+        toolInput: data.toolInput,
+        decisionReason: data.decisionReason,
       });
 
-      // 通知滚动到权限请求位置
       onScrollToActionRef.current?.();
     });
 
@@ -107,44 +66,17 @@ export function useSessionEvents({
       setPermissionMode(data.mode as PermissionMode);
     });
 
-    // 4. 监听 AskUser 问题
+    // 4. 监听 AskUser 问题：写 pendingActions + live tail 挂占位 block
     const unsubAskUser = rendererEvents.askUserQuestion.listen((data) => {
       if (data.sessionId !== sessionId) return;
 
       console.log('❓ 收到 AskUserQuestion 请求:', data);
 
-      // 将问答请求作为内容块插入到当前 assistant 消息中
-      setMessages(prev => {
-        const updated = [...prev];
-        const lastIdx = updated.length - 1;
-        const newBlock: ContentBlock = {
-          type: 'ask_user_question',
-          timestamp: Date.now(),
-          askUserRequestId: data.requestId,
-          askUserQuestions: data.questions,
-        };
-
-        if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-          const lastMsg = updated[lastIdx];
-          updated[lastIdx] = {
-            ...lastMsg,
-            contentBlocks: [...(lastMsg.contentBlocks || []), newBlock],
-          };
-        } else {
-          // 同权限请求：外部启动的会话没 assistant 占位，push 新消息挂块避免丢失
-          updated.push({
-            role: 'assistant',
-            content: '',
-            timestamp: Date.now(),
-            isStreaming: true,
-            contentBlocks: [newBlock],
-          });
-        }
-
-        return updated;
+      transcript.registerAskUser({
+        requestId: data.requestId,
+        questions: data.questions,
       });
 
-      // 通知滚动到 AskUser 请求位置
       onScrollToActionRef.current?.();
     });
 
@@ -152,7 +84,6 @@ export function useSessionEvents({
     const unsubNotify = rendererEvents.agentNotification.listen((data) => {
       if (data.sessionId !== sessionId) return;
       console.log('🔔 收到 Agent 通知:', data);
-      // 通过 Sonner toast 展示 Agent 通知
       toast.info(data.title || 'Agent 通知', {
         description: data.message,
       });

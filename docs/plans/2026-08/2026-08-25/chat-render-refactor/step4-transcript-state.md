@@ -1,7 +1,7 @@
 ---
 step: 4
 title: TranscriptState 拆分
-status: pending
+status: done
 ---
 
 ## 目标
@@ -58,13 +58,27 @@ status: pending
 - 手动全链路回归：普通对话、插话（排队→消费）、权限卡片（含外部启动会话无 assistant 占位的 push 路径）、AskUser、中断、/clear、/compact、模型切换重启（needsRestart 路径）、切换会话、错误路径（发送失败移除占位）。
 - 行为与现状一致：本 step 是结构迁移，无用户可见变化（除 hasPendingUserAction 语义等价替换）。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
+- 新增 `components/agent-chat/hooks/useTranscriptState.ts` 与 `useTranscriptState.test.ts`；修改 `AgentChat.tsx`、`useMessageHistory.ts`、`useSessionMessages.ts`、`useSessionEvents.ts`、`useSendMessage.ts`。共 7 个前端文件。
+- `useTranscriptState` 集中维护 `stableHistory`、`liveTail`、`pendingActions`，通过 `useRef` 镜像读取最新 core；对外提供 `messages = [...stableHistory, ...liveTail]` 兼容视图、`structuralVersion`、`structuredLiveTail` 以及所有消息写入口。事件分流复用 `streamReducer`，本地用户/助手、权限/AskUser、取消、历史加载、snapshot、完成提升均不再直接写 messages。
+- `useMessageHistory` 删除内部 messages state，历史到达后调用 `loadHistory`；`useSessionMessages` 逐事件调用 `applyStreamEvent`；`useSessionEvents` 改写 pendingActions 与占位 block；`useSendMessage` 删除 setMessages 参数和写回，权限/AskUser/中断/本地占位/错误/模式通知统一走 transcript。
+- task 派生改为依赖 `stableHistory + structuralVersion`，结构快照覆盖 TaskCreate/TaskUpdate 的 input 与 tool output；纯 text/thinking delta 不提升版本。StreamingIndicator 的 lastBlockType 优先取 liveTail。
 - 与计划差异：
-- 改动文件清单：
+  1. 接口额外提供 `pushLiveAssistant` 与 `replaceLastLiveAssistant`，覆盖本地 assistant 占位和发送失败替换。
+  2. `pushLocalUser` 按尾部容器规则写入：liveTail 非空时追加 liveTail，否则追加 stableHistory，以保持插话与空闲发送的原扁平顺序；message_id(user) 同时尝试 live/stable 两侧。
+  3. `applySnapshot` 仍按事件直接重放，不消费 turnEntryIds，不做 step6 的 history/snapshot 去重。
+  4. 验收时补充修复 settled 时序：新一轮本地发送、snapshot、流事件、本地块和权限/AskUser 登记都会清除旧 settled 标记，避免运行中的权限解决触发提前 promote；Task 工具块指纹包含 tool output 内容而非仅存在性。
+- 验证：`bun run build:renderer` ✓、`bun run lint` 0 errors（74 个存量 warnings）、turns.test.ts + useTranscriptState.test.ts 共 13 pass、无 TODO/FIXME、components/agent-chat 内无实际 setMessages 调用。Electron GUI 全链路尚未人工回归。
 
 ### 给下一步的接力棒
-- useTranscriptState 的最终接口签名与 structuralVersion 触发点清单：
-- pendingActions 的数据结构与占位 block 的关联方式：
+- useTranscriptState 最终接口：`stableHistory`、`liveTail`、`pendingActions`、`structuralVersion`、`structuredLiveTail`、`messages`；`loadHistory`、`applyStreamEvent`、`applySnapshot(events, pendingPermissionRequests)`、`pushLocalUser`、`pushLiveAssistant`、`replaceLastLiveAssistant`、`insertLocalBlock`、`registerPermission`、`registerAskUser`、`resolvePermission`、`resolveAskUser`、`markAllPendingCancelled`、`onSessionComplete`。`tryPromote` 为内部实现。
+- structuralVersion 触发点：历史加载（无条件）、stable 追加/本地块、live 新 assistant/user/block、compact boundary、result 结构变化、权限/AskUser 占位、TaskCreate/TaskUpdate input 变化、Task tool output 变化、promote；纯 text/thinking delta、message_id 的 id/sdkUuid/entryIds/model/timestamp 更新、resolved/isQueued 更新不触发。`structuredLiveTail` 只在结构签名变化时替换引用。
+- pendingActions 结构为 `{ requestId: string, kind: 'permission' | 'ask_user' }`；permission block 通过 `permissionRequestId` 关联，AskUser block 通过 `askUserRequestId` 关联。请求挂到尾部 assistant；无 assistant 时新建 live streaming assistant。决议更新两侧 block 并移除对应 action；中断标记 deny/cancelled 并清空。
 - 待办或已知限制：
+  - history/snapshot 重叠去重与竞态留 step6；兼容 `messages` 仍每次合成，渲染边界留 step7。
+  - `messagesById` 继续依赖实时 messages，保证 text delta 时 minimap 文案及时更新。
+  - 主进程/渲染端 ExtendedSessionMessage 联合仍有存量不一致；本 step 只在 transcript 输入边界使用公共事件形状。
+  - 普通对话、插话、权限、AskUser、中断、clear、compact、模型重启、切换会话、发送失败等 GUI 回归待人工抽查。
+  - `useTranscriptState.ts` 目前把 core 纯函数与 hook 放在同一文件，当前测试覆盖核心转移逻辑；继续增长时可拆分 core 文件。
