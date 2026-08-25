@@ -13,7 +13,7 @@ interface MinimapProps {
   hidden?: boolean;
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   /** 跳转到指定消息(由 useChatScroll 的 scrollToMessage 提供) */
-  onJumpToMessage: (messageIndex: number) => void;
+  onJumpToMessage: (messageId: string) => void;
 }
 
 /**
@@ -25,40 +25,42 @@ interface MinimapProps {
 export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessage }: MinimapProps) {
   const [hovering, setHovering] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const [currentTurnId, setCurrentTurnId] = useState<number | null>(null);
+  const [currentTurnId, setCurrentTurnId] = useState<string | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // compact 折叠状态：折叠时，最后一个 compact_boundary 之前的消息不进入 minimap
   const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
   const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
 
-  // Turn 分组: 复用共享 buildTurns，预览文案从 memberIdxs 派生
+  // Turn 分组: 复用共享 buildTurns，预览文案从 memberIds 派生
   const turns = useMemo(() => {
-    const { turns: rawTurns } = buildTurns(messages, {
+    const { turns: rawTurns, indexById } = buildTurns(messages, {
       collapsed: isHistoryCollapsed,
     });
 
     return rawTurns.map((t) => {
+      const headerMsg = t.headerId !== null ? messages[indexById.get(t.headerId) ?? -1] : undefined;
       const userPreview =
-        t.headerIdx !== null
-          ? extractMessagePreview(messages[t.headerIdx]) || '(空消息)'
+        headerMsg
+          ? extractMessagePreview(headerMsg) || '(空消息)'
           : null;
 
-      const assistantPreviews = t.memberIdxs
-        .filter((i) => {
-          if (i === t.headerIdx) return false;
-          const m = messages[i];
+      const assistantPreviews = t.memberIds
+        .filter((id) => {
+          if (id === t.headerId) return false;
+          const m = messages[indexById.get(id) ?? -1];
+          if (!m) return false;
           if (m.isMeta || m.isCompactBoundary || m.isCompactSummary) return false;
           if (m.role === 'user' && isSdkInjectedUserMessage(m.content)) return false;
           return true;
         })
-        .map((i) => extractMessagePreview(messages[i]) || '(AI 回复)');
+        .map((id) => extractMessagePreview(messages[indexById.get(id) ?? -1]) || '(AI 回复)');
 
       return {
         turnId: t.turnId,
         userPreview,
         assistantPreviews,
-        jumpTargetIdx: t.headerIdx ?? t.memberIdxs[0],
+        jumpTargetId: t.headerId ?? t.memberIds[0],
       };
     });
   }, [messages, isHistoryCollapsed]);
@@ -74,22 +76,22 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
     const centerY = viewport.scrollTop + viewport.clientHeight / 2;
 
     const sections = viewport.querySelectorAll<HTMLElement>('[data-virtual-turn-id]');
-    let hitTurnId: number | null = null;
+    let hitTurnId: string | null = null;
     for (const sec of sections) {
       const top = sec.offsetTop;
       const bottom = top + sec.offsetHeight;
       if (centerY >= top && centerY < bottom) {
-        hitTurnId = Number(sec.dataset.virtualTurnId);
+        hitTurnId = sec.dataset.virtualTurnId ?? null;
         break;
       }
     }
 
     if (hitTurnId === null) {
       // 中心可能落在占位 div 区间，回退：找最后一个 top < centerY 的 section
-      let fallback: number | null = null;
+      let fallback: string | null = null;
       for (const sec of sections) {
         if (sec.offsetTop < centerY) {
-          fallback = Number(sec.dataset.virtualTurnId);
+          fallback = sec.dataset.virtualTurnId ?? null;
         } else break;
       }
       hitTurnId = fallback;
@@ -159,7 +161,7 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
             return (
               <button
                 key={turn.turnId}
-                onClick={() => onJumpToMessage(turn.jumpTargetIdx)}
+                onClick={() => onJumpToMessage(turn.jumpTargetId)}
                 className={cn(
                   'w-full text-left rounded-md border transition-colors p-2',
                   'hover:bg-muted',

@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 主进程消息级稳定 ID 管道](./step1-main-process-message-id.md) — 拦截 entryId、emit `message_id` 事件、snapshot 附 turnEntryIds、历史侧 user/compact 补 ID
-- [ ] [Step 2: 前端消息身份与渲染 key 体系](./step2-frontend-identity-keys.md) — key/id 职责分离、定位链（data-message-id / 搜索 / minimap / turnByIndex）迁移、turnId 稳定化
+- [x] [Step 2: 前端消息身份与渲染 key 体系](./step2-frontend-identity-keys.md) — key/id 职责分离、定位链（data-message-id / 搜索 / minimap / turnByIndex）迁移、turnId 稳定化
 - [ ] [Step 3: task summary 派生化](./step3-task-derived-state.md) — 断掉 useTaskListAggregator 写回链路，minimap 复用共享 turns
 - [ ] [Step 4: TranscriptState 拆分](./step4-transcript-state.md) — stableHistory/liveTail 数据模型 + 全事件归属表，对外提供兼容合成视图
 - [ ] [Step 5: 流事件批处理](./step5-stream-batching.md) — rAF buffer + setTimeout 兜底、终态/交互事件直通、隐藏 tab 降频

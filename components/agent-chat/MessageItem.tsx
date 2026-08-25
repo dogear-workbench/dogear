@@ -56,7 +56,7 @@ function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
 
 export const MessageItem = memo(function MessageItem({
   message,
-  messageIndex,
+  messageId,
   onFork,
   sessionId,
   onPermissionResolved,
@@ -68,7 +68,7 @@ export const MessageItem = memo(function MessageItem({
   readOnly = false,
 }: {
   message: Message;
-  messageIndex?: number;
+  messageId?: string;
   onFork?: (assistantSdkUuid: string) => void;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
@@ -154,7 +154,7 @@ export const MessageItem = memo(function MessageItem({
         // sticky 在最外层: 用 margin 而非 padding,避免 padding 区出现多余底色
         isUser && 'sticky top-0 z-10',
       )}
-      data-message-id={messageIndex !== undefined ? `msg-${messageIndex}` : undefined}
+      data-message-id={message.id ?? messageId}
     >
       {isUser ? (
         // 用户消息: 加粗外框+阴影+完全不透明,遮挡后面滚过的 AI 回答
@@ -246,8 +246,8 @@ export const MessageItem = memo(function MessageItem({
                         isStickyExpanded && "max-h-[40vh] overflow-y-auto"
                       )}
                     >
-                      {searchQuery && messageIndex !== undefined
-                        ? highlightText(parsed.userMessage, searchQuery, `${messageIndex}-u`, activeMatchId ?? null)
+                      {searchQuery && messageId
+                        ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
                         : parsed.userMessage
                       }
                     </div>
@@ -316,7 +316,7 @@ export const MessageItem = memo(function MessageItem({
                       onInterrupt={onInterrupt}
                       searchQuery={searchQuery}
                       activeMatchId={activeMatchId}
-                      messageIndex={messageIndex}
+                      messageId={messageId}
                       readOnly={readOnly}
                     />
                   ))}
@@ -326,7 +326,7 @@ export const MessageItem = memo(function MessageItem({
                   content={message.content}
                   className="text-sm"
                   searchQuery={searchQuery}
-                  matchIdPrefix={messageIndex !== undefined ? `${messageIndex}-c` : undefined}
+                  matchIdPrefix={messageId !== undefined ? `${messageId}-c` : undefined}
                   activeMatchId={activeMatchId}
                 />
               ) : null;

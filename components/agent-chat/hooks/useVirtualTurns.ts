@@ -11,12 +11,12 @@ export interface UseVirtualTurnsParams {
 }
 
 export interface UseVirtualTurnsResult {
-  visibleTurnIds: Set<number>;
-  turnHeights: Map<number, number>;
+  visibleTurnIds: Set<string>;
+  turnHeights: Map<string, number>;
   /** 返回缓存的 ref callback，避免每次渲染产生新引用 */
-  getTurnRef: (turnId: number) => (el: HTMLElement | null) => void;
-  registerTurnElement: (turnId: number, el: HTMLElement | null) => void;
-  ensureTurnVisible: (turnId: number) => void;
+  getTurnRef: (turnId: string) => (el: HTMLElement | null) => void;
+  registerTurnElement: (turnId: string, el: HTMLElement | null) => void;
+  ensureTurnVisible: (turnId: string) => void;
 }
 
 export function useVirtualTurns({
@@ -26,17 +26,17 @@ export function useVirtualTurns({
 }: UseVirtualTurnsParams): UseVirtualTurnsResult {
   const estimate = estimateTurnHeight;
 
-  const heightCacheRef = useRef<Map<number, number>>(new Map());
-  const [turnHeights, setTurnHeights] = useState<Map<number, number>>(new Map());
-  const [visibleTurnIds, setVisibleTurnIds] = useState<Set<number>>(new Set());
+  const heightCacheRef = useRef<Map<string, number>>(new Map());
+  const [turnHeights, setTurnHeights] = useState<Map<string, number>>(new Map());
+  const [visibleTurnIds, setVisibleTurnIds] = useState<Set<string>>(new Set());
 
-  const forcedVisibleRef = useRef<Set<number>>(new Set());
+  const forcedVisibleRef = useRef<Set<string>>(new Set());
   const rafIdRef = useRef<number | null>(null);
   const dirtyRef = useRef(false);
-  const elementMapRef = useRef<Map<number, HTMLElement>>(new Map());
+  const elementMapRef = useRef<Map<string, HTMLElement>>(new Map());
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
-  const prevTurnIdsRef = useRef<Set<number>>(new Set());
-  const lastTurnIdRef = useRef<number>(-1);
+  const prevTurnIdsRef = useRef<Set<string>>(new Set());
+  const lastTurnIdRef = useRef<string | null>(null);
 
   const getViewport = useCallback((): HTMLElement | null => {
     return scrollContainerRef.current;
@@ -52,7 +52,7 @@ export function useVirtualTurns({
     const { scrollTop, clientHeight } = vp;
     const cache = heightCacheRef.current;
 
-    const visible = new Set<number>();
+    const visible = new Set<string>();
     const forced = forcedVisibleRef.current;
     let cumul = 0;
     const viewTop = scrollTop - clientHeight * BUFFER_TURNS;
@@ -114,7 +114,7 @@ export function useVirtualTurns({
       if (!validIds.has(key)) cache.delete(key);
     }
 
-    lastTurnIdRef.current = turns.length > 0 ? turns[turns.length - 1].turnId : -1;
+    lastTurnIdRef.current = turns.length > 0 ? turns[turns.length - 1].turnId : null;
 
     const prev = prevTurnIdsRef.current;
     let turnIdChanged = prev.size !== validIds.size;
@@ -131,7 +131,7 @@ export function useVirtualTurns({
     scheduleFlush();
   }, [turns, estimate, scheduleFlush]);
 
-  const measureElement = useCallback((turnId: number, el: HTMLElement) => {
+  const measureElement = useCallback((turnId: string, el: HTMLElement) => {
     const h = el.getBoundingClientRect().height;
     const cache = heightCacheRef.current;
     const current = cache.get(turnId);
@@ -150,20 +150,20 @@ export function useVirtualTurns({
       for (const entry of entries) {
         const turnId = (entry.target as HTMLElement).dataset.virtualTurnId;
         if (turnId === undefined) continue;
-        measureElement(Number(turnId), entry.target as HTMLElement);
+        measureElement(turnId, entry.target as HTMLElement);
       }
     });
     resizeObserverRef.current = obs;
     return obs;
   }, [measureElement]);
 
-  const registerTurnElement = useCallback((turnId: number, el: HTMLElement | null) => {
+  const registerTurnElement = useCallback((turnId: string, el: HTMLElement | null) => {
     const elementMap = elementMapRef.current;
     const prev = elementMap.get(turnId);
 
     if (el) {
       if (prev === el) return;
-      el.dataset.virtualTurnId = String(turnId);
+      el.dataset.virtualTurnId = turnId;
       elementMap.set(turnId, el);
       measureElement(turnId, el);
       ensureResizeObserver().observe(el);
@@ -175,7 +175,7 @@ export function useVirtualTurns({
     }
   }, [measureElement, ensureResizeObserver]);
 
-  const ensureTurnVisible = useCallback((turnId: number) => {
+  const ensureTurnVisible = useCallback((turnId: string) => {
     forcedVisibleRef.current.add(turnId);
     recompute();
     requestAnimationFrame(() => {
@@ -184,8 +184,8 @@ export function useVirtualTurns({
   }, [recompute]);
 
   // 缓存 per-turnId 的 ref callback，避免每次渲染产生新引用
-  const turnRefCacheRef = useRef<Map<number, (el: HTMLElement | null) => void>>(new Map());
-  const getTurnRef = useCallback((turnId: number) => {
+  const turnRefCacheRef = useRef<Map<string, (el: HTMLElement | null) => void>>(new Map());
+  const getTurnRef = useCallback((turnId: string) => {
     let cb = turnRefCacheRef.current.get(turnId);
     if (!cb) {
       cb = (el: HTMLElement | null) => registerTurnElement(turnId, el);

@@ -185,7 +185,7 @@ export function AgentChat({
   );
   const hasCompactHistory = lastCompactBoundaryIdx > 0;
   const collapsed = isHistoryCollapsed && hasCompactHistory;
-  const { turns: chatTurns, turnByIndex } = useMemo(
+  const { turns: chatTurns, byMessageId, indexById } = useMemo(
     () => buildTurns(messages, { collapsed }),
     [messages, collapsed],
   );
@@ -207,7 +207,7 @@ export function AgentChat({
     scrollToElement,
     handleScroll,
     isFollowing,
-  } = useChatScroll({ scrollAreaRef, isLoading, turnByIndex, ensureTurnVisible });
+  } = useChatScroll({ scrollAreaRef, isLoading, byMessageId, ensureTurnVisible });
 
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
@@ -322,8 +322,8 @@ export function AgentChat({
   useEffect(() => {
     if (!search.activeMatch) return;
     const matchId = search.activeMatch.id;
-    const targetIdx = search.activeMatch.messageIndex;
-    const turnId = turnByIndex.get(targetIdx);
+    const targetId = search.activeMatch.messageId;
+    const turnId = byMessageId.get(targetId);
     const tryScroll = () => {
       const el = document.querySelector(`[data-match-id="${matchId}"]`) as HTMLElement | null;
       if (el) scrollToElement(el, { align: 'top-third' });
@@ -334,7 +334,7 @@ export function AgentChat({
     } else {
       tryScroll();
     }
-  }, [search.activeMatch?.id, scrollToElement, turnByIndex, visibleTurnIds, ensureTurnVisible]);
+  }, [search.activeMatch?.id, scrollToElement, byMessageId, visibleTurnIds, ensureTurnVisible]);
 
   // 搜索命中折叠段时自动展开 + 跳转
   const scrollToMessageRef = useRef(scrollToMessage);
@@ -344,11 +344,11 @@ export function AgentChat({
     const lastBoundaryIdx = messages.reduce(
       (acc, m, i) => m.isCompactBoundary ? i : acc, -1
     );
-    if (lastBoundaryIdx > 0 && search.activeMatch.messageIndex < lastBoundaryIdx && isHistoryCollapsed) {
+    const matchIdx = messages.findIndex((m, i) => (m.id ?? `idx-${i}`) === search.activeMatch!.messageId);
+    if (lastBoundaryIdx > 0 && matchIdx >= 0 && matchIdx < lastBoundaryIdx && isHistoryCollapsed) {
       useCompactCollapseStore.getState().setCollapsed(conversationId, false);
-      const targetIdx = search.activeMatch.messageIndex;
       requestAnimationFrame(() => {
-        scrollToMessageRef.current(targetIdx, { align: 'top', flash: true });
+        scrollToMessageRef.current(search.activeMatch!.messageId, { align: 'top', flash: true });
       });
     }
   }, [search.activeMatch, conversationId, isHistoryCollapsed, messages]);
@@ -415,23 +415,26 @@ export function AgentChat({
         )}
 
         {(() => {
-          // 渲染单条消息的辅助函数（messageIndex 始终为原始扁平下标）
-          const renderMessage = (message: typeof messages[0], index: number) => (
-            <MessageItem
-              key={index}
-              message={message}
-              messageIndex={index}
-              onFork={isReadOnly ? undefined : sendMessage.handleFork}
-              sessionId={sessionId}
-              onPermissionResolved={handlePermissionResolvedWithScroll}
-              onAskUserResolved={handleAskUserResolvedWithScroll}
-              onInterrupt={sendMessage.handleInterrupt}
-              searchQuery={search.query || undefined}
-              activeMatchId={search.activeMatch?.id ?? null}
-              isAgentConversation={currentConversation?.contractMetadata?.createdBy === 'agent'}
-              readOnly={isReadOnly}
-            />
-          );
+          // 渲染单条消息的辅助函数（messageId 为磁盘对齐稳定 ID，无 id 时用下标兜底仅作防御）
+          const renderMessage = (message: typeof messages[0], index: number) => {
+            const mid = message.id ?? `idx-${index}`;
+            return (
+              <MessageItem
+                key={mid}
+                message={message}
+                messageId={mid}
+                onFork={isReadOnly ? undefined : sendMessage.handleFork}
+                sessionId={sessionId}
+                onPermissionResolved={handlePermissionResolvedWithScroll}
+                onAskUserResolved={handleAskUserResolvedWithScroll}
+                onInterrupt={sendMessage.handleInterrupt}
+                searchQuery={search.query || undefined}
+                activeMatchId={search.activeMatch?.id ?? null}
+                isAgentConversation={currentConversation?.contractMetadata?.createdBy === 'agent'}
+                readOnly={isReadOnly}
+              />
+            );
+          };
 
           return (
             <>
@@ -458,7 +461,7 @@ export function AgentChat({
                       className="agent-turn"
                       ref={getTurnRef(turn.turnId)}
                     >
-                      {turn.memberIdxs.map((i) => renderMessage(messages[i], i))}
+                      {turn.memberIds.map((mid) => renderMessage(messages[indexById.get(mid) ?? -1], indexById.get(mid) ?? -1))}
                     </section>
                   );
                 }
@@ -509,7 +512,7 @@ export function AgentChat({
             messages={messages}
             hidden={search.isOpen}
             scrollAreaRef={scrollAreaRef}
-            onJumpToMessage={(idx) => scrollToMessage(idx, { align: 'top', flash: true })}
+            onJumpToMessage={(id) => scrollToMessage(id, { align: 'top', flash: true })}
           />
         </div>
 

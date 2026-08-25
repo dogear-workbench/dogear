@@ -2,17 +2,19 @@ import { isSdkInjectedUserMessage } from './utils';
 import type { Message } from './types';
 
 export interface Turn {
-  turnId: number;
-  /** 吸顶的用户消息下标；null = 无头轮（开头 assistant / 折叠后的 boundary 段） */
-  headerIdx: number | null;
-  /** 本轮所有被渲染消息的原始扁平下标，按顺序，含 header */
-  memberIdxs: number[];
+  turnId: string;
+  /** 吸顶的用户消息稳定 ID；null = 无头轮（开头 assistant / 折叠后的 boundary 段） */
+  headerId: string | null;
+  /** 本轮所有被渲染消息的稳定 ID，按顺序，含 header */
+  memberIds: string[];
 }
 
 export interface BuildTurnsResult {
   turns: Turn[];
-  /** 原始扁平下标 → turnId（仅含被渲染的消息） */
-  turnByIndex: Map<number, number>;
+  /** 消息稳定 ID → turnId（仅含被渲染的消息） */
+  byMessageId: Map<string, string>;
+  /** 消息稳定 ID → 原始扁平下标（渲染/预览反查消息对象用） */
+  indexById: Map<string, number>;
 }
 
 function isHeader(msg: Message): boolean {
@@ -30,8 +32,8 @@ export function buildTurns(
   opts: { collapsed: boolean },
 ): BuildTurnsResult {
   const turns: Turn[] = [];
-  const turnByIndex = new Map<number, number>();
-  let currentTid = -1;
+  const byMessageId = new Map<string, string>();
+  const indexById = new Map<string, number>();
 
   let hiddenUntilIdx = -1;
   if (opts.collapsed) {
@@ -46,17 +48,17 @@ export function buildTurns(
   messages.forEach((msg, i) => {
     if (i < hiddenUntilIdx) return; // 折叠隐藏区，不渲染
 
+    const id = msg.id ?? `idx-${i}`;
+    indexById.set(id, i);
     if (isHeader(msg)) {
-      currentTid += 1;
-      turns.push({ turnId: currentTid, headerIdx: i, memberIdxs: [i] });
-    } else if (currentTid === -1) {
-      currentTid = 0;
-      turns.push({ turnId: 0, headerIdx: null, memberIdxs: [i] });
+      turns.push({ turnId: `turn-${id}`, headerId: id, memberIds: [id] });
+    } else if (turns.length === 0) {
+      turns.push({ turnId: `turn-${id}`, headerId: null, memberIds: [id] });
     } else {
-      turns[turns.length - 1].memberIdxs.push(i);
+      turns[turns.length - 1].memberIds.push(id);
     }
-    turnByIndex.set(i, currentTid);
+    byMessageId.set(id, turns[turns.length - 1].turnId);
   });
 
-  return { turns, turnByIndex };
+  return { turns, byMessageId, indexById };
 }

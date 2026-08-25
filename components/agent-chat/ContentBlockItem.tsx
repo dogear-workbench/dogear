@@ -86,7 +86,7 @@ function parseErrorMessage(error: string): { title: string; description: string;
   return { title: '错误', description: error.substring(0, 100) + '...', detail: error };
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageIndex, blockIndex, readOnly = false }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, readOnly = false }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
@@ -94,7 +94,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
-  messageIndex?: number;
+  messageId?: string;
   blockIndex?: number;
   readOnly?: boolean;
 }) {
@@ -109,7 +109,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           onInterrupt={onInterrupt}
           searchQuery={searchQuery}
           activeMatchId={activeMatchId}
-          messageIndex={messageIndex}
+          messageId={messageId}
           blockIndex={blockIndex}
           readOnly={readOnly}
         />
@@ -396,7 +396,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           content={block.content}
           className="text-sm"
           searchQuery={searchQuery}
-          matchIdPrefix={messageIndex !== undefined && blockIndex !== undefined ? `${messageIndex}-${blockIndex}` : undefined}
+          matchIdPrefix={messageId !== undefined && blockIndex !== undefined ? `${messageId}-${blockIndex}` : undefined}
           activeMatchId={activeMatchId}
         />
       ) : null;

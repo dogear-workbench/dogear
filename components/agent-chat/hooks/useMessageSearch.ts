@@ -4,7 +4,7 @@ import { getUserMessageSearchableText } from '../utils';
 
 export interface SearchMatch {
   id: string;
-  messageIndex: number;
+  messageId: string;
   blockIndex: number; // -1=用户消息文本, -2=AI消息content字段, >=0=contentBlock索引
   textStart: number;
   textEnd: number;
@@ -46,8 +46,9 @@ export function useMessageSearch(messages: Message[]) {
       const q = query.toLowerCase();
       const result: SearchMatch[] = [];
 
-      messages.forEach((msg, messageIndex) => {
+      messages.forEach((msg, i) => {
         if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary) return;
+        const messageId = msg.id ?? `idx-${i}`;
 
         // 用户消息: 用统一的 searchable text(与 MessageItem 渲染 offset 对齐)
         if (msg.role === 'user' && msg.content) {
@@ -56,7 +57,7 @@ export function useMessageSearch(messages: Message[]) {
             let idx = 0;
             const lower = pureText.toLowerCase();
             while ((idx = lower.indexOf(q, idx)) !== -1) {
-              result.push({ id: `${messageIndex}-u-${idx}`, messageIndex, blockIndex: -1, textStart: idx, textEnd: idx + q.length });
+              result.push({ id: `${messageId}-u-${idx}`, messageId, blockIndex: -1, textStart: idx, textEnd: idx + q.length });
               idx += q.length;
             }
           }
@@ -72,7 +73,7 @@ export function useMessageSearch(messages: Message[]) {
             const lower = text.toLowerCase();
             let idx = 0;
             while ((idx = lower.indexOf(q, idx)) !== -1) {
-              result.push({ id: `${messageIndex}-${blockIndex}-${idx}`, messageIndex, blockIndex, textStart: idx, textEnd: idx + q.length });
+              result.push({ id: `${messageId}-${blockIndex}-${idx}`, messageId, blockIndex, textStart: idx, textEnd: idx + q.length });
               idx += q.length;
             }
           });
@@ -83,7 +84,7 @@ export function useMessageSearch(messages: Message[]) {
           const lower = msg.content.toLowerCase();
           let idx = 0;
           while ((idx = lower.indexOf(q, idx)) !== -1) {
-            result.push({ id: `${messageIndex}-c-${idx}`, messageIndex, blockIndex: -2, textStart: idx, textEnd: idx + q.length });
+            result.push({ id: `${messageId}-c-${idx}`, messageId, blockIndex: -2, textStart: idx, textEnd: idx + q.length });
             idx += q.length;
           }
         }

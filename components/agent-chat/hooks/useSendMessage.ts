@@ -11,6 +11,7 @@ import { sameSelection } from '@/lib/model-selection';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
 import type { Message, ContentBlock } from '../types';
+import { generateLocalMessageId } from '../transformers';
 import type { PendingImage } from './useImageAttachment';
 
 interface UseSendMessageParams {
@@ -111,6 +112,7 @@ export function useSendMessage(params: UseSendMessageParams) {
           role: 'assistant',
           content: '',
           timestamp: Date.now(),
+          id: generateLocalMessageId(),
           contentBlocks: [noticeBlock],
         });
       }
@@ -242,6 +244,7 @@ export function useSendMessage(params: UseSendMessageParams) {
             role: 'assistant' as const,
             content: '',
             timestamp: Date.now(),
+            id: generateLocalMessageId(),
             contentBlocks: [compactingBlock],
           }];
         });
@@ -261,8 +264,8 @@ export function useSendMessage(params: UseSendMessageParams) {
         // 直接发送构造的 prompt
         setMessages(prev => [
           ...prev,
-          { role: 'user' as const, content: `/search ${args}`, timestamp: Date.now() },
-          { role: 'assistant' as const, content: '', timestamp: Date.now(), isStreaming: true, contentBlocks: [] },
+          { role: 'user' as const, content: `/search ${args}`, timestamp: Date.now(), id: generateLocalMessageId() },
+          { role: 'assistant' as const, content: '', timestamp: Date.now(), id: generateLocalMessageId(), isStreaming: true, contentBlocks: [] },
         ]);
         setIsLoading(true);
         try {
@@ -285,7 +288,7 @@ export function useSendMessage(params: UseSendMessageParams) {
           setInput('');
           setMessages(prev => [
             ...prev,
-            { role: 'user' as const, content: trimmed, timestamp: Date.now(), isMeta: true },
+            { role: 'user' as const, content: trimmed, timestamp: Date.now(), id: generateLocalMessageId(), isMeta: true },
           ]);
           setIsLoading(true);
           try {
@@ -420,6 +423,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       role: 'user',
       content: messageToSend,
       timestamp: Date.now(),
+      id: generateLocalMessageId(),
       ...(imagesToSend.length > 0 && { images: imagesToSend.map(img => ({ preview: img.preview })) }),
     };
 
@@ -461,6 +465,7 @@ export function useSendMessage(params: UseSendMessageParams) {
           role: 'assistant' as const,
           content: '' as string,
           timestamp: Date.now(),
+          id: generateLocalMessageId(),
           contentBlocks: [{
             type: 'status' as const,
             status: '正在切换模型方案，稍候自动发送…',
@@ -492,6 +497,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       role: 'assistant' as const,
       content: '' as string,
       timestamp: Date.now(),
+      id: generateLocalMessageId(),
       isStreaming: true,
       contentBlocks: [] as ContentBlock[],
     }]);
@@ -532,6 +538,7 @@ export function useSendMessage(params: UseSendMessageParams) {
           role: 'assistant',
           content: `错误: ${error instanceof Error ? error.message : String(error)}`,
           timestamp: Date.now(),
+          id: generateLocalMessageId(),
           contentBlocks: [{
             type: 'error',
             error: error instanceof Error ? error.message : String(error),

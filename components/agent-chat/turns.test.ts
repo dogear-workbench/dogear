@@ -1,76 +1,115 @@
-import { test, expect } from 'bun:test';
+import { test, expect, beforeEach } from 'bun:test';
 import { buildTurns } from './turns.ts';
 import type { Message } from './types.ts';
 
+let seq = 0;
+beforeEach(() => { seq = 0; });
+
 const u = (content: string, extra: Partial<Message> = {}): Message =>
-  ({ role: 'user', content, ...extra } as Message);
+  ({ role: 'user', content, id: `u${++seq}`, ...extra } as Message);
 const a = (content = 'reply', extra: Partial<Message> = {}): Message =>
-  ({ role: 'assistant', content, ...extra } as Message);
+  ({ role: 'assistant', content, id: `a${++seq}`, ...extra } as Message);
 
 test('单轮：user + assistant', () => {
-  const { turns, turnByIndex } = buildTurns([u('hi'), a()], { collapsed: false });
-  expect(turns).toEqual([{ turnId: 0, headerIdx: 0, memberIdxs: [0, 1] }]);
-  expect(turnByIndex.get(0)).toBe(0);
-  expect(turnByIndex.get(1)).toBe(0);
+  const { turns, byMessageId } = buildTurns([u('hi'), a()], { collapsed: false });
+  expect(turns).toEqual([{ turnId: 'turn-u1', headerId: 'u1', memberIds: ['u1', 'a2'] }]);
+  expect(byMessageId.get('u1')).toBe('turn-u1');
+  expect(byMessageId.get('a2')).toBe('turn-u1');
 });
 
 test('多轮：每条 user 开新轮', () => {
-  const { turns } = buildTurns([u('q1'), a(), u('q2'), a(), a()], { collapsed: false });
+  const msgs = [u('q1'), a(), u('q2'), a(), a()];
+  const { turns } = buildTurns(msgs, { collapsed: false });
   expect(turns).toEqual([
-    { turnId: 0, headerIdx: 0, memberIdxs: [0, 1] },
-    { turnId: 1, headerIdx: 2, memberIdxs: [2, 3, 4] },
+    { turnId: 'turn-u1', headerId: 'u1', memberIds: ['u1', 'a2'] },
+    { turnId: 'turn-u3', headerId: 'u3', memberIds: ['u3', 'a4', 'a5'] },
   ]);
 });
 
 test('插话：isQueued 的 user 照常另起一轮', () => {
   const msgs = [u('q1'), a(), u('打断一下', { isQueued: true } as Partial<Message>), a()];
   const { turns } = buildTurns(msgs, { collapsed: false });
-  expect(turns.map(t => t.headerIdx)).toEqual([0, 2]);
-  expect(turns[1].memberIdxs).toEqual([2, 3]);
+  expect(turns.map(t => t.headerId)).toEqual(['u1', 'u3']);
+  expect(turns[1].memberIds).toEqual(['u3', 'a4']);
 });
 
 test('开头是 assistant：形成无头轮', () => {
   const { turns } = buildTurns([a('恢复的回复'), u('q1'), a()], { collapsed: false });
-  expect(turns[0]).toEqual({ turnId: 0, headerIdx: null, memberIdxs: [0] });
-  expect(turns[1]).toEqual({ turnId: 1, headerIdx: 1, memberIdxs: [1, 2] });
+  expect(turns[0]).toEqual({ turnId: 'turn-a1', headerId: null, memberIds: ['a1'] });
+  expect(turns[1]).toEqual({ turnId: 'turn-u2', headerId: 'u2', memberIds: ['u2', 'a3'] });
 });
 
 test('注入消息（/model）不作 header，附着当前轮', () => {
   const msgs = [u('q1'), a(), u('/model sonnet'), a()];
   const { turns } = buildTurns(msgs, { collapsed: false });
   expect(turns).toHaveLength(1);
-  expect(turns[0].memberIdxs).toEqual([0, 1, 2, 3]);
+  expect(turns[0].memberIds).toEqual(['u1', 'a2', 'u3', 'a4']);
 });
 
 test('meta 消息不作 header，附着当前轮', () => {
-  const msgs = [u('q1'), { role: 'assistant', content: 'm', isMeta: true } as Message, a()];
+  const msgs = [u('q1'), { role: 'assistant', content: 'm', id: 'm2', isMeta: true } as Message, a()];
   const { turns } = buildTurns(msgs, { collapsed: false });
   expect(turns).toHaveLength(1);
-  expect(turns[0].memberIdxs).toEqual([0, 1, 2]);
+  expect(turns[0].memberIds).toEqual(['u1', 'm2', 'a2']);
 });
 
 test('折叠：最后一个 boundary 之前的消息被隐藏，boundary 入无头轮', () => {
   const msgs = [
     u('old-q'), a('old-a'),
-    { role: 'assistant', content: '', isCompactBoundary: true } as Message,
+    { role: 'assistant', content: '', id: 'b3', isCompactBoundary: true } as Message,
     u('new-q'), a('new-a'),
   ];
-  const { turns, turnByIndex } = buildTurns(msgs, { collapsed: true });
-  // 下标 0、1 被隐藏，不出现在任何 turn
-  expect(turnByIndex.has(0)).toBe(false);
-  expect(turnByIndex.has(1)).toBe(false);
-  // boundary(2) 是首个可见且非 header → 无头轮
-  expect(turns[0]).toEqual({ turnId: 0, headerIdx: null, memberIdxs: [2] });
-  expect(turns[1]).toEqual({ turnId: 1, headerIdx: 3, memberIdxs: [3, 4] });
+  const { turns, byMessageId } = buildTurns(msgs, { collapsed: true });
+  expect(byMessageId.has('u1')).toBe(false);
+  expect(byMessageId.has('a2')).toBe(false);
+  expect(turns[0]).toEqual({ turnId: 'turn-b3', headerId: null, memberIds: ['b3'] });
+  expect(turns[1]).toEqual({ turnId: 'turn-u3', headerId: 'u3', memberIds: ['u3', 'a4'] });
 });
 
 test('未折叠：boundary 之前的轮正常保留', () => {
   const msgs = [
     u('old-q'), a('old-a'),
-    { role: 'assistant', content: '', isCompactBoundary: true } as Message,
+    { role: 'assistant', content: '', id: 'b3', isCompactBoundary: true } as Message,
     u('new-q'), a('new-a'),
   ];
   const { turns } = buildTurns(msgs, { collapsed: false });
-  expect(turns[0]).toEqual({ turnId: 0, headerIdx: 0, memberIdxs: [0, 1, 2] });
-  expect(turns[1]).toEqual({ turnId: 1, headerIdx: 3, memberIdxs: [3, 4] });
+  expect(turns[0]).toEqual({ turnId: 'turn-u1', headerId: 'u1', memberIds: ['u1', 'a2', 'b3'] });
+  expect(turns[1]).toEqual({ turnId: 'turn-u3', headerId: 'u3', memberIds: ['u3', 'a4'] });
+});
+
+test('折叠/展开切换后同一消息的 turnId 不变', () => {
+  const msgs = [
+    u('old-q'), a('old-a'),
+    { role: 'assistant', content: '', id: 'b3', isCompactBoundary: true } as Message,
+    u('new-q'), a('new-a'), u('new-q2'), a(),
+  ];
+  const collapsedRes = buildTurns(msgs, { collapsed: true });
+  const expandedRes = buildTurns(msgs, { collapsed: false });
+  // boundary 之后的轮次不受折叠隐藏区影响，turnId 逐一相等
+  for (const id of ['u3', 'a4', 'u5', 'a6']) {
+    expect(collapsedRes.byMessageId.get(id)).toBe(expandedRes.byMessageId.get(id));
+  }
+  // 收益验证：折叠/展开切换后 useVirtualTurns 的高度缓存键（turnId）不因编号重排而全变
+  const collapsedIds = collapsedRes.turns.map(t => t.turnId);
+  const expandedIds = expandedRes.turns.map(t => t.turnId);
+  expect(collapsedIds).toEqual(['turn-b3', 'turn-u3', 'turn-u5']);
+  expect(expandedIds.slice(1)).toEqual(['turn-u3', 'turn-u5']);
+});
+
+test('indexById 反查：id → 原始扁平下标', () => {
+  const msgs = [u('q1'), a(), u('q2'), a()];
+  const { indexById } = buildTurns(msgs, { collapsed: false });
+  expect(indexById.get('u1')).toBe(0);
+  expect(indexById.get('a2')).toBe(1);
+  expect(indexById.get('u3')).toBe(2);
+});
+
+test('无 id 消息兜底：idx- 前缀仍唯一可用', () => {
+  const msgs = [
+    { role: 'user', content: 'q' } as Message,
+    { role: 'assistant', content: 'r' } as Message,
+  ];
+  const { turns, byMessageId } = buildTurns(msgs, { collapsed: false });
+  expect(turns[0].turnId).toBe('turn-idx-0');
+  expect(byMessageId.get('idx-1')).toBe('turn-idx-0');
 });

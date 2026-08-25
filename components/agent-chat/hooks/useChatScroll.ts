@@ -3,10 +3,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 interface UseChatScrollOptions {
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean; // AI 是否在回答中
-  /** messageIndex → turnId 映射（来自 buildTurns），用于虚拟滚动跳转 */
-  turnByIndex?: Map<number, number>;
+  /** 消息稳定 ID → turnId 映射（来自 buildTurns），用于虚拟滚动跳转 */
+  byMessageId?: Map<string, string>;
   /** 强制某轮进入可见范围（来自 useVirtualTurns），跳转前调用 */
-  ensureTurnVisible?: (turnId: number) => void;
+  ensureTurnVisible?: (turnId: string) => void;
 }
 
 export interface ScrollOptions {
@@ -18,7 +18,7 @@ export interface ScrollOptions {
 interface UseChatScrollReturn {
   showScrollBtn: boolean;
   scrollToBottom: (behavior?: ScrollBehavior) => void;
-  scrollToMessage: (messageIndex: number, opts?: ScrollOptions) => void;
+  scrollToMessage: (messageId: string, opts?: ScrollOptions) => void;
   scrollToElement: (el: HTMLElement, opts?: ScrollOptions) => void;
   handleScroll: () => void;
   isFollowing: () => boolean;
@@ -47,7 +47,7 @@ interface UseChatScrollReturn {
 export function useChatScroll({
   scrollAreaRef,
   isLoading,
-  turnByIndex,
+  byMessageId,
   ensureTurnVisible,
 }: UseChatScrollOptions): UseChatScrollReturn {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
@@ -200,20 +200,20 @@ export function useChatScroll({
   );
 
   const scrollToMessage = useCallback(
-    (messageIndex: number, opts?: ScrollOptions) => {
+    (messageId: string, opts?: ScrollOptions) => {
       const vp = getViewport();
       if (!vp) return;
       const tryScroll = () => {
         const el = vp.querySelector(
-          `[data-message-id="msg-${messageIndex}"]`,
+          `[data-message-id="${messageId}"]`,
         ) as HTMLElement | null;
         if (el) scrollToElement(el, opts);
       };
 
-      if (turnByIndex && ensureTurnVisible) {
-        const turnId = turnByIndex.get(messageIndex);
+      if (byMessageId && ensureTurnVisible) {
+        const turnId = byMessageId.get(messageId);
         const el = vp.querySelector(
-          `[data-message-id="msg-${messageIndex}"]`,
+          `[data-message-id="${messageId}"]`,
         ) as HTMLElement | null;
         if (!el && turnId !== undefined) {
           ensureTurnVisible(turnId);
@@ -223,7 +223,7 @@ export function useChatScroll({
       }
       tryScroll();
     },
-    [getViewport, scrollToElement, turnByIndex, ensureTurnVisible],
+    [getViewport, scrollToElement, byMessageId, ensureTurnVisible],
   );
 
   return {

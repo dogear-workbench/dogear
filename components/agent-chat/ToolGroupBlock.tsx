@@ -14,7 +14,7 @@ interface ToolGroupBlockProps {
   onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
-  messageIndex?: number;
+  messageId?: string;
   blockIndex?: number;
   readOnly?: boolean;
 }
@@ -33,7 +33,7 @@ export function ToolGroupBlock({
   onInterrupt,
   searchQuery,
   activeMatchId,
-  messageIndex,
+  messageId,
   blockIndex,
   readOnly,
 }: ToolGroupBlockProps) {
@@ -89,7 +89,7 @@ export function ToolGroupBlock({
             onInterrupt={onInterrupt}
             searchQuery={searchQuery}
             activeMatchId={activeMatchId}
-            messageIndex={messageIndex}
+            messageId={messageId}
             blockIndex={blockIndex !== undefined ? blockIndex * 100 + idx : idx}
             readOnly={readOnly}
           />

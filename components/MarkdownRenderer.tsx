@@ -13,7 +13,7 @@ interface MarkdownRendererProps {
   className?: string;
   /** 搜索关键词，用于高亮显示 */
   searchQuery?: string;
-  /** match id 前缀，格式 `${messageIndex}-${blockIndex}` */
+  /** match id 前缀，格式 `${messageId}-${blockIndex}` */
   matchIdPrefix?: string;
   /** 当前激活的 match id */
   activeMatchId?: string | null;

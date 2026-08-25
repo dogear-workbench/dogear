@@ -7,6 +7,7 @@ import type { Message, ContentBlock } from './types';
 export function createUserMessage(opts: {
   content: string;
   timestamp: number;
+  id?: string;
   isMeta?: boolean;
   isCompactSummary?: boolean;
   isQueued?: boolean;
@@ -16,6 +17,7 @@ export function createUserMessage(opts: {
     role: 'user',
     content: opts.content,
     timestamp: opts.timestamp,
+    id: opts.id,
     isMeta: opts.isMeta,
     isCompactSummary: opts.isCompactSummary,
     isQueued: opts.isQueued,
@@ -29,6 +31,7 @@ export function createUserMessage(opts: {
 export function createAssistantMessage(opts: {
   content: string;
   timestamp: number;
+  id?: string;
   contentBlocks?: ContentBlock[];
   sdkUuid?: string;
   model?: string;
@@ -40,6 +43,7 @@ export function createAssistantMessage(opts: {
     role: 'assistant',
     content: opts.content,
     timestamp: opts.timestamp,
+    id: opts.id,
     contentBlocks: opts.contentBlocks,
     sdkUuid: opts.sdkUuid,
     model: opts.model,
@@ -47,6 +51,23 @@ export function createAssistantMessage(opts: {
     isCompactBoundary: opts.isCompactBoundary,
     compactMetadata: opts.compactMetadata,
   };
+}
+
+export function generateLocalMessageId(): string {
+  return `local-${crypto.randomUUID()}`;
+}
+
+function isLocalId(id: string | undefined): boolean {
+  return !id || id.startsWith('local-');
+}
+
+// assistant 消息的稳定 id 终化：= entryIds 最后一个（历史 sdkUuid 规则）。
+// 流式期间 message_id 只覆盖 sdkUuid/entryIds 不改 id（避免每 entry 换 key 引发 remount）。
+function finalizeAssistantId(msg: Message): Message {
+  if (msg.role !== 'assistant') return msg;
+  if (!isLocalId(msg.id)) return msg;
+  if (!msg.entryIds || msg.entryIds.length === 0) return msg;
+  return { ...msg, id: msg.entryIds[msg.entryIds.length - 1] };
 }
 
 /**
@@ -128,22 +149,67 @@ export function streamReducer(
   // 重放消息过滤
   if (extendedMsg.isReplay && !showReplayMessages) return null;
 
-  // 消息级稳定 ID 广播（主进程 message_end 后 emit），消费留待后续 step；流式期间先静默忽略
-  if (extendedMsg.type === 'message_id') return null;
-
   const updated = [...prev];
   const lastIdx = updated.length - 1;
 
+  // 消息级稳定 ID 广播（主进程 message_end 落盘后 emit）
+  if (extendedMsg.type === 'message_id') {
+    const uuid = extendedMsg.uuid;
+    if (!uuid) return null;
+
+    if (extendedMsg.role === 'assistant') {
+      if (lastIdx < 0) return null;
+      const lastMsg = updated[lastIdx];
+      if (lastMsg.role !== 'assistant' || !lastMsg.isStreaming) return null;
+      const prevEntryIds = lastMsg.entryIds || [];
+      if (lastMsg.sdkUuid === uuid && prevEntryIds[prevEntryIds.length - 1] === uuid) {
+        return null;
+      }
+      updated[lastIdx] = {
+        ...lastMsg,
+        sdkUuid: uuid,
+        entryIds: [...prevEntryIds.filter((e) => e !== uuid), uuid],
+        ...(extendedMsg.model ? { model: extendedMsg.model } : {}),
+        ...(typeof extendedMsg.timestamp === 'number' ? { timestamp: extendedMsg.timestamp } : {}),
+      };
+      return updated;
+    }
+
+    if (extendedMsg.role === 'user') {
+      let targetIdx = -1;
+      for (let i = updated.length - 1; i >= 0; i--) {
+        if (updated[i].role === 'user') { targetIdx = i; break; }
+      }
+      // 仅升级本地乐观 push（无 id / local- 前缀）；已升级或历史消息不动，
+      // 防止后续 meta 注入消息的 message_id 错误覆盖
+      if (targetIdx === -1 || !isLocalId(updated[targetIdx].id)) return null;
+      updated[targetIdx] = { ...updated[targetIdx], id: uuid, entryIds: [uuid] };
+      // 插话/steer 场景：前一条 assistant 已停止累积 entryIds，此刻终化其 id
+      if (targetIdx - 1 >= 0) {
+        updated[targetIdx - 1] = finalizeAssistantId(updated[targetIdx - 1]);
+      }
+      return updated;
+    }
+
+    return null;
+  }
+
+  // run 结束：尾部 assistant 终化稳定 id（key 从 local-* 原地换为磁盘 id，仅此一次）
+  if (extendedMsg.type === 'result' && lastIdx >= 0) {
+    updated[lastIdx] = finalizeAssistantId(updated[lastIdx]);
+  }
+
   // 运行时 compact_boundary：插入独立的分隔消息（带 isCompactBoundary 标记）
   if (extendedMsg.type === 'compact_boundary') {
-    // 关闭可能正在流式输出的 assistant 消息
+    // 关闭可能正在流式输出的 assistant 消息，并终化其稳定 id
     if (lastIdx >= 0 && updated[lastIdx].role === 'assistant' && updated[lastIdx].isStreaming) {
-      updated[lastIdx] = { ...updated[lastIdx], isStreaming: false };
+      updated[lastIdx] = finalizeAssistantId({ ...updated[lastIdx], isStreaming: false });
     }
     const ts = extendedMsg.timestamp || Date.now();
     updated.push(createAssistantMessage({
       content: '',
       timestamp: ts,
+      id: extendedMsg.uuid || generateLocalMessageId(),
       isCompactBoundary: true,
       compactMetadata: {
         trigger: extendedMsg.compactTrigger,
@@ -283,6 +349,7 @@ export function streamReducer(
   updated.push(createAssistantMessage({
     content: extendedMsg.type === 'text' ? (extendedMsg.content || '') : '',
     timestamp: Date.now(),
+    id: generateLocalMessageId(),
     isStreaming: extendedMsg.type !== 'result',
     contentBlocks: [newBlock],
     model: extendedMsg.model,
