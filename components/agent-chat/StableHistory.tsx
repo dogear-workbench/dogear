@@ -9,9 +9,6 @@ import { TodoListBlock } from './TodoListBlock';
 interface StableHistoryProps {
   turns: Turn[];
   messagesById: Map<string, Message>;
-  visibleTurnIds: Set<string>;
-  turnHeights: Map<string, number>;
-  getTurnRef: (turnId: string) => (el: HTMLElement | null) => void;
   hasCompactHistory: boolean;
   collapsed: boolean;
   compactBoundaryCount: number;
@@ -33,9 +30,6 @@ interface StableHistoryProps {
 export const StableHistory = memo(function StableHistory({
   turns,
   messagesById,
-  visibleTurnIds,
-  turnHeights,
-  getTurnRef,
   hasCompactHistory,
   collapsed,
   compactBoundaryCount,
@@ -61,11 +55,8 @@ export const StableHistory = memo(function StableHistory({
         <CollapseControlBar count={compactBoundaryCount} onCollapse={onCollapseHistory} />
       ))}
       {turns.map((turn) => {
-        if (!visibleTurnIds.has(turn.turnId)) {
-          return <div key={turn.turnId} style={{ height: turnHeights.get(turn.turnId) ?? 400 }} />;
-        }
         return (
-          <section key={turn.turnId} className="agent-turn" ref={getTurnRef(turn.turnId)}>
+          <section key={turn.turnId} className="agent-turn">
             {turn.memberIds.map((messageId) => {
               const message = messagesById.get(messageId);
               if (!message) return null;

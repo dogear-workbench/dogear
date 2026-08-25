@@ -3,10 +3,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 interface UseChatScrollOptions {
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   isLoading: boolean; // AI 是否在回答中
-  /** 消息稳定 ID → turnId 映射（来自 buildTurns），用于虚拟滚动跳转 */
-  byMessageId?: Map<string, string>;
-  /** 强制某轮进入可见范围（来自 useVirtualTurns），跳转前调用 */
-  ensureTurnVisible?: (turnId: string) => void;
 }
 
 export interface ScrollOptions {
@@ -51,8 +47,6 @@ export function shouldLeaveFollowModeForScroll(previousScrollTop: number, scroll
 export function useChatScroll({
   scrollAreaRef,
   isLoading,
-  byMessageId,
-  ensureTurnVisible,
 }: UseChatScrollOptions): UseChatScrollReturn {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const followModeRef = useRef<'auto' | 'manual'>('manual');
@@ -223,27 +217,12 @@ export function useChatScroll({
     (messageId: string, opts?: ScrollOptions) => {
       const vp = getViewport();
       if (!vp) return;
-      const tryScroll = () => {
-        const el = vp.querySelector(
-          `[data-message-id="${messageId}"]`,
-        ) as HTMLElement | null;
-        if (el) scrollToElement(el, opts);
-      };
-
-      if (byMessageId && ensureTurnVisible) {
-        const turnId = byMessageId.get(messageId);
-        const el = vp.querySelector(
-          `[data-message-id="${messageId}"]`,
-        ) as HTMLElement | null;
-        if (!el && turnId !== undefined) {
-          ensureTurnVisible(turnId);
-          requestAnimationFrame(tryScroll);
-          return;
-        }
-      }
-      tryScroll();
+      const el = vp.querySelector(
+        `[data-message-id="${messageId}"]`,
+      ) as HTMLElement | null;
+      if (el) scrollToElement(el, opts);
     },
-    [getViewport, scrollToElement, byMessageId, ensureTurnVisible],
+    [getViewport, scrollToElement],
   );
 
   return {

@@ -26,7 +26,6 @@ import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { ConversationIdProvider } from './conversation-id-context';
 import { buildTurns } from './turns';
 import { aggregateTasks } from './task-aggregator';
-import { useVirtualTurns } from './hooks/useVirtualTurns';
 import type { ExtendedSessionMessage } from '@/types/electron-api';
 import type { ChildStatus } from '@/types/delegation';
 import type { LivePermissionRequest } from './hooks/useAgentSession';
@@ -165,7 +164,7 @@ export function AgentChat({
   );
   const hasCompactHistory = lastCompactBoundaryIdx > 0;
   const collapsed = isHistoryCollapsed && hasCompactHistory;
-  const { turns: chatTurns, byMessageId } = useMemo(
+  const { turns: chatTurns } = useMemo(
     () => buildTurns(stableHistory, { collapsed }),
     [stableHistory, collapsed],
   );
@@ -202,16 +201,6 @@ export function AgentChat({
     }
     return map;
   }, [stableHistory]);
-  const {
-    visibleTurnIds,
-    turnHeights,
-    getTurnRef,
-    ensureTurnVisible,
-  } = useVirtualTurns({
-    turns: chatTurns,
-    scrollContainerRef: scrollAreaRef,
-  });
-
   // ─── 滚动控制（统一入口: useChatScroll）───
   const {
     showScrollBtn,
@@ -220,7 +209,7 @@ export function AgentChat({
     scrollToElement,
     handleScroll,
     isFollowing,
-  } = useChatScroll({ scrollAreaRef, isLoading, byMessageId, ensureTurnVisible });
+  } = useChatScroll({ scrollAreaRef, isLoading });
 
   // 事件监听（完成、权限、AskUser、通知）
   useSessionEvents({
@@ -335,19 +324,9 @@ export function AgentChat({
   useEffect(() => {
     if (!search.activeMatch) return;
     const matchId = search.activeMatch.id;
-    const targetId = search.activeMatch.messageId;
-    const turnId = byMessageId.get(targetId);
-    const tryScroll = () => {
-      const el = document.querySelector(`[data-match-id="${matchId}"]`) as HTMLElement | null;
-      if (el) scrollToElement(el, { align: 'top-third' });
-    };
-    if (turnId !== undefined && !visibleTurnIds.has(turnId)) {
-      ensureTurnVisible(turnId);
-      requestAnimationFrame(tryScroll);
-    } else {
-      tryScroll();
-    }
-  }, [search.activeMatch?.id, scrollToElement, byMessageId, visibleTurnIds, ensureTurnVisible]);
+    const el = document.querySelector(`[data-match-id="${matchId}"]`) as HTMLElement | null;
+    if (el) scrollToElement(el, { align: 'top-third' });
+  }, [search.activeMatch?.id, scrollToElement]);
 
   // 搜索命中折叠段时自动展开 + 跳转
   const scrollToMessageRef = useRef(scrollToMessage);
@@ -442,9 +421,6 @@ export function AgentChat({
         <StableHistory
           turns={chatTurns}
           messagesById={messagesById}
-          visibleTurnIds={visibleTurnIds}
-          turnHeights={turnHeights}
-          getTurnRef={getTurnRef}
           hasCompactHistory={hasCompactHistory}
           collapsed={collapsed}
           compactBoundaryCount={lastCompactBoundaryIdx}

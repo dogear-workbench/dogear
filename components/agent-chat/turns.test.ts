@@ -89,7 +89,7 @@ test('折叠/展开切换后同一消息的 turnId 不变', () => {
   for (const id of ['u3', 'a4', 'u5', 'a6']) {
     expect(collapsedRes.byMessageId.get(id)).toBe(expandedRes.byMessageId.get(id));
   }
-  // 收益验证：折叠/展开切换后 useVirtualTurns 的高度缓存键（turnId）不因编号重排而全变
+  // 收益验证：折叠/展开切换后 turn 的 React key 不因编号重排而全变（避免 remount）
   const collapsedIds = collapsedRes.turns.map(t => t.turnId);
   const expandedIds = expandedRes.turns.map(t => t.turnId);
   expect(collapsedIds).toEqual(['turn-b3', 'turn-u3', 'turn-u5']);
