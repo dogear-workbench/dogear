@@ -124,7 +124,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           .map((t) => ({ content: t.subject, activeForm: t.subject, status: t.status }));
         return <TodoListBlock todos={todos} />;
       }
-      // TaskCreate / TaskUpdate：紧凑单行渲染（最终聚合走 task_summary 块）
+      // TaskCreate / TaskUpdate：紧凑单行渲染（最终聚合走 AgentChat 渲染期派生的任务卡片）
       if (block.toolName === 'TaskCreate') {
         const input = (block.toolInput as any) || {};
         const subject = input.subject || '新任务';
@@ -187,15 +187,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           citations={block.citations}
         />
       );
-    }
-
-    case 'task_summary': {
-      const todos = (block.tasks || []).map((t) => ({
-        content: t.subject,
-        activeForm: t.activeForm || t.subject,
-        status: t.status,
-      }));
-      return <TodoListBlock todos={todos} />;
     }
 
     case 'tool_result':

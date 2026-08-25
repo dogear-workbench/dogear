@@ -1,7 +1,7 @@
 ---
 step: 3
 title: task summary 派生化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,13 +36,20 @@ status: pending
 - 手动：跑一段含 TaskCreate/TaskUpdate 的会话，任务卡片在流式期间实时更新、位置吸附正确；TaskCreate 全回滚后卡片消失；compact 折叠后卡片随隐藏区隐藏；无任务会话无渲染残留。
 - 性能观察（非正式基准）：流式期间 React DevTools Profiler 确认不再出现二次 setMessages 波形。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
+- 改动 7 文件 +1 删除（+90/-186）：删除 hooks/useTaskListAggregator.ts（二次 setMessages 写回链路彻底移除）；task-aggregator.ts 删 injectTaskSummary（aggregateTasks 原样保留）；types.ts 删 'task_summary' 联合与 tasks? 字段；ContentBlockItem.tsx 删 case；AgentChat.tsx 新增纯派生（tasks/taskTodos/lastTaskMessageId/showTaskSummary/messagesById）+ 渲染循环 Fragment 内吸附消息后插 TodoListBlock（折叠隐藏区由 byMessageId 判定自动跳过）；MessageMinimap.tsx 改收 turns + messagesById 删内部 buildTurns；docs/codebase-map.md 同步三行过时描述。
 - 与计划差异：
-- 改动文件清单：
+  1. 卡片位于吸附消息 footer 之后（渲染期插入 vs 旧行为在 footer 之前的 block 列表末尾），同组件同吸附消息，视觉等效；实测观感受影响可在 MessageItem 内插 slot，未做。
+  2. aggregateTasks 本无 task_summary 跳过判断，无需删。
+  3. 计划外附带收益：MessageMinimap 删除 useConversationStore/useCompactCollapseStore 全局订阅（改收 AgentChat 的 chatTurns），顺带修复 step2 交接记录的多 tab 折叠态不一致存量问题——注意 step8 计划里 minimap 相关项需重新评估剩余范围（boundary 组件与 useTopicArchiveState 仍待做）。
+- 验证：build:renderer ✓ / lint 0 errors ✓ / turns.test.ts 11 pass ✓ / tsc 无新增错误；useTaskListAggregator/injectTaskSummary 全仓零残留。手工 GUI 验证（流式任务卡片实时更新/吸附/回滚消失/折叠隐藏/Profiler 无二次 setMessages 波形）待人工补验。
 
 ### 给下一步的接力棒
-- aggregateTasks 的调用点与新依赖：
-- tasks/lastTaskMessageId 的派生输入（为 step 4 改依赖结构快照做铺垫）：
+- aggregateTasks 唯一调用点：AgentChat.tsx `useMemo(() => aggregateTasks(messages), [messages])`；taskTodos 映射 {content: subject, activeForm: activeForm||subject, status}；lastTaskMessageId 逆序找最后含 TaskCreate/TaskUpdate tool_use 块的 assistant 消息（`msg.id ?? idx-${i}`）。
+- 派生输入（step 4 改依赖 [stableHistory, structuralVersion] 的铺nite）：aggregateTasks 与 lastTaskMessageId 都只消费 assistant 消息的 tool_use 块结构（text/thinking delta 不影响结果）→ 纯 delta 帧可跳过重算；messagesById（minimap 查询句柄，key = `id ?? idx-i`）也随 messages 每帧重建，step 4 后随结构快照重建；showTaskSummary 还依赖 byMessageId（折叠态）→ derived 输入 = 消息结构 + 折叠状态，不依赖内容 delta。
 - 待办或已知限制：
+  - 每帧全表扫描（aggregateTasks + 逆序扫 + Map 重建）流式期间仍跑，step 4 structuralVersion 落地后消除（刻意的迁移顺序）。
+  - TaskState 接口未导出，AgentChat 用解构映射；step 4 挪派生逻辑进 transcript 层时可顺手导出。
+  - MessageMinimap 的 props 契约变更为 { turns, messagesById, hidden, scrollAreaRef, onJumpToMessage }，无全局订阅。

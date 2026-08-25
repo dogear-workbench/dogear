@@ -47,8 +47,7 @@ export interface ContentBlock {
     | 'ask_user_question'
     // SDK 系统消息类型（斜杠命令相关）
     | 'compact_boundary' | 'compacting' | 'local_command_output'
-    | 'tool_group'  // 虚拟分组类型，仅在前端渲染前预处理时生成
-    | 'task_summary';  // 虚拟聚合块，累积 Task* CRUD 调用形成当前任务清单
+    | 'tool_group';  // 虚拟分组类型，仅在前端渲染前预处理时生成
   id?: string;
   content?: string;
   toolName?: string;
@@ -97,13 +96,6 @@ export interface ContentBlock {
   compactPreTokens?: number;           // 压缩前 token 数
   /** tool_group 内部的子 block 列表（虚拟类型，不持久化） */
   children?: ContentBlock[];
-  /** task_summary 块：当前会话累积的任务清单（虚拟，不持久化） */
-  tasks?: Array<{
-    id: string;
-    subject: string;
-    activeForm?: string;
-    status: 'pending' | 'in_progress' | 'completed';
-  }>;
 }
 
 export interface AgentChatProps {

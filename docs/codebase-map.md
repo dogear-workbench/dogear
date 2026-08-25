@@ -55,11 +55,11 @@
   - `LineageBar.tsx` — 溯源条：当前对话 contractMetadata 存在（agent 派出）时顶部显示「由 \[派出者标题\] 派出：\[task\]」，点击跳转派出者会话；派出者已删除时显示灰色占位
   - `highlight.ts` — 搜索高亮工具（mark 黄底 + active 橙底 ring）
   - `minimap-utils.ts` — 消息预览提取工具函数
-  - `transformers.ts` — 消息转换工具（历史回放末尾调 injectTaskSummary 吸附任务汇总块）
-  - `task-aggregator.ts` — Task\* CRUD 聚合纯函数（aggregateTasks / injectTaskSummary），把分散的 TaskCreate/TaskUpdate 合成单个 task_summary 虚拟块
-  - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary/task_summary 等字段）
+  - `transformers.ts` — 消息转换工具（streamReducer 消费主进程事件流，含 message_id 终化）
+  - `task-aggregator.ts` — Task\* CRUD 聚合纯函数（aggregateTasks），把分散的 TaskCreate/TaskUpdate 合成当前任务清单，由 AgentChat 渲染期派生吸附渲染
+  - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary 等字段）
   - `utils.ts` — 工具函数（getUserMessageSearchableText 等）
-  - `hooks/` — 自定义 hooks（12 个）
+  - `hooks/` — 自定义 hooks（11 个）
     - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）+ 订阅 pendingCountChanged 暴露 pendingCount
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
@@ -70,7 +70,6 @@
     - `useChatScroll.ts` — 统一滚动控制（followMode 状态机 auto/manual，wheel/touch/keydown 判定用户介入，ResizeObserver 续滚，scrollToMessage/scrollToElement）
     - `useMessageSearch.ts` — 消息搜索（文本匹配、高亮、激活项追踪）
     - `useSubAgentMessages.ts` — 子 Agent 消息流处理
-    - `useTaskListAggregator.ts` — 流式 task_summary 维护（监听 messages，签名比较防抖，把吸附位置随最后一次 Task\* 调用迁移）
     - `usePendingState.ts` — 纯函数 derivePendingState({ isRunning, pendingCount }) → 'idle' | 'running' | 'flushing'
   - `tool-renderers/` — 工具块专属渲染器（由 ToolBlock 路由分发）
     - `ToolDetailShell.tsx` — 统一展开容器（ToolSection / KeyValueList / OutputBox），bg-card+border 替代 bg-muted/20，主内容用 text-foreground

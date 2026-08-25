@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react';
 import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight } from 'lucide-react';
 import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import type { AgentChatProps } from './types';
+import type { AgentChatProps, Message } from './types';
 import { MessageItem } from './MessageItem';
 import { ChatInputArea } from './ChatInputArea';
 import { useMessageHistory } from './hooks/useMessageHistory';
@@ -23,10 +23,11 @@ import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
-import { useTaskListAggregator } from './hooks/useTaskListAggregator';
 import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
 import { CollapseControlBar } from './CollapseControlBar';
 import { buildTurns } from './turns';
+import { aggregateTasks } from './task-aggregator';
+import { TodoListBlock } from './TodoListBlock';
 import { useVirtualTurns } from './hooks/useVirtualTurns';
 import { streamReducer } from './transformers';
 import type { ExtendedSessionMessage } from '@/types/electron-api';
@@ -118,8 +119,6 @@ export function AgentChat({
     });
   }, [setMessages, showReplayMessages]);
 
-  useTaskListAggregator(messages, setMessages);
-
   // 会话生命周期
   const { sessionId, isSessionReady, permissionMode, setPermissionMode, pendingCount } =
     useAgentSession({
@@ -189,6 +188,35 @@ export function AgentChat({
     () => buildTurns(messages, { collapsed }),
     [messages, collapsed],
   );
+
+  // task 清单纯派生：渲染期吸附到最后一条含 Task* 的 assistant 消息之后，不写回 messages
+  //（messages 引用每帧变的过渡期妥协，step 4 拆分后改依赖 stableHistory 结构快照）
+  const tasks = useMemo(() => aggregateTasks(messages), [messages]);
+  const taskTodos = useMemo(
+    () => tasks.map(({ subject, activeForm, status }) => ({ content: subject, activeForm: activeForm || subject, status })),
+    [tasks],
+  );
+  const lastTaskMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg.role !== 'assistant' || !msg.contentBlocks) continue;
+      if (msg.contentBlocks.some((b) =>
+        b.type === 'tool_use' &&
+        (b.toolName === 'TaskCreate' || b.toolName === 'TaskUpdate')
+      )) {
+        return msg.id ?? `idx-${i}`;
+      }
+    }
+    return null;
+  }, [messages]);
+  // 吸附点落在折叠隐藏区（byMessageId 只含可见消息）时不渲染，对齐旧注入块随消息隐藏的行为
+  const showTaskSummary = tasks.length > 0 && lastTaskMessageId !== null && byMessageId.has(lastTaskMessageId);
+
+  const messagesById = useMemo(() => {
+    const map = new Map<string, Message>();
+    messages.forEach((m, i) => map.set(m.id ?? `idx-${i}`, m));
+    return map;
+  }, [messages]);
   const {
     visibleTurnIds,
     turnHeights,
@@ -461,7 +489,17 @@ export function AgentChat({
                       className="agent-turn"
                       ref={getTurnRef(turn.turnId)}
                     >
-                      {turn.memberIds.map((mid) => renderMessage(messages[indexById.get(mid) ?? -1], indexById.get(mid) ?? -1))}
+                      {turn.memberIds.map((mid) => {
+                        const idx = indexById.get(mid) ?? -1;
+                        return (
+                          <Fragment key={mid}>
+                            {renderMessage(messages[idx], idx)}
+                            {showTaskSummary && mid === lastTaskMessageId && (
+                              <TodoListBlock todos={taskTodos} />
+                            )}
+                          </Fragment>
+                        );
+                      })}
                     </section>
                   );
                 }
@@ -509,7 +547,8 @@ export function AgentChat({
             </button>
           )}
           <MessageMinimap
-            messages={messages}
+            turns={chatTurns}
+            messagesById={messagesById}
             hidden={search.isOpen}
             scrollAreaRef={scrollAreaRef}
             onJumpToMessage={(id) => scrollToMessage(id, { align: 'top', flash: true })}

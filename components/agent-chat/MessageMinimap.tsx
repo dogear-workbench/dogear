@@ -3,13 +3,14 @@ import { Map as MapIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { extractMessagePreview } from './minimap-utils';
 import { isSdkInjectedUserMessage } from './utils';
-import { buildTurns } from './turns';
-import { useConversationStore } from '@/stores/conversation-store';
-import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import type { Turn } from './turns';
 import type { Message } from './types';
 
 interface MinimapProps {
-  messages: Message[];
+  /** AgentChat 已算好的 turns（含折叠态），避免重复 buildTurns */
+  turns: Turn[];
+  /** 预览文案按 memberIds 查消息对象用 */
+  messagesById: Map<string, Message>;
   hidden?: boolean;
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   /** 跳转到指定消息(由 useChatScroll 的 scrollToMessage 提供) */
@@ -22,48 +23,41 @@ interface MinimapProps {
  * - 按轮次(user + assistant)聚合展示,点击跳转到该轮次 user 消息
  * - 当前视口中心所在 turn 淡蓝背景高亮
  */
-export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessage }: MinimapProps) {
+export function MessageMinimap({ turns, messagesById, hidden, scrollAreaRef, onJumpToMessage }: MinimapProps) {
   const [hovering, setHovering] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [currentTurnId, setCurrentTurnId] = useState<string | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // compact 折叠状态：折叠时，最后一个 compact_boundary 之前的消息不进入 minimap
-  const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
-  const isHistoryCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
+  // 预览文案从传入 turns 的 memberIds 派生
+  const turnPreviews = useMemo(() => turns.map((t) => {
+    const headerMsg = t.headerId !== null ? messagesById.get(t.headerId) : undefined;
+    const userPreview =
+      headerMsg
+        ? extractMessagePreview(headerMsg) || '(空消息)'
+        : null;
 
-  // Turn 分组: 复用共享 buildTurns，预览文案从 memberIds 派生
-  const turns = useMemo(() => {
-    const { turns: rawTurns, indexById } = buildTurns(messages, {
-      collapsed: isHistoryCollapsed,
-    });
+    const assistantPreviews = t.memberIds
+      .filter((id) => {
+        if (id === t.headerId) return false;
+        const m = messagesById.get(id);
+        if (!m) return false;
+        if (m.isMeta || m.isCompactBoundary || m.isCompactSummary) return false;
+        if (m.role === 'user' && isSdkInjectedUserMessage(m.content)) return false;
+        return true;
+      })
+      .map((id) => {
+        const m = messagesById.get(id);
+        return m ? extractMessagePreview(m) || '(AI 回复)' : '(AI 回复)';
+      });
 
-    return rawTurns.map((t) => {
-      const headerMsg = t.headerId !== null ? messages[indexById.get(t.headerId) ?? -1] : undefined;
-      const userPreview =
-        headerMsg
-          ? extractMessagePreview(headerMsg) || '(空消息)'
-          : null;
-
-      const assistantPreviews = t.memberIds
-        .filter((id) => {
-          if (id === t.headerId) return false;
-          const m = messages[indexById.get(id) ?? -1];
-          if (!m) return false;
-          if (m.isMeta || m.isCompactBoundary || m.isCompactSummary) return false;
-          if (m.role === 'user' && isSdkInjectedUserMessage(m.content)) return false;
-          return true;
-        })
-        .map((id) => extractMessagePreview(messages[indexById.get(id) ?? -1]) || '(AI 回复)');
-
-      return {
-        turnId: t.turnId,
-        userPreview,
-        assistantPreviews,
-        jumpTargetId: t.headerId ?? t.memberIds[0],
-      };
-    });
-  }, [messages, isHistoryCollapsed]);
+    return {
+      turnId: t.turnId,
+      userPreview,
+      assistantPreviews,
+      jumpTargetId: t.headerId ?? t.memberIds[0],
+    };
+  }), [turns, messagesById]);
 
   const shouldShow = (hovering || pinned) && !hidden;
 
@@ -128,7 +122,7 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
     }
   };
 
-  if (hidden || turns.length < 3) return null;
+  if (hidden || turnPreviews.length < 3) return null;
 
   return (
     <div
@@ -155,7 +149,7 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
       {/* 浮窗: 按轮次展示,每个轮次一张卡片 */}
       {shouldShow && (
         <div className="absolute top-0 right-10 w-64 max-h-[500px] overflow-y-auto rounded-md border border-border bg-background/95 backdrop-blur-sm shadow-lg p-1 space-y-1">
-          {turns.map((turn) => {
+          {turnPreviews.map((turn) => {
             const isCurrent = turn.turnId === currentTurnId;
             const assistantMerged = turn.assistantPreviews.join('\n');
             return (
