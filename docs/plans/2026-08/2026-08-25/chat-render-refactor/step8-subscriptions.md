@@ -1,7 +1,7 @@
 ---
 step: 8
 title: 订阅收窄与多 tab 修复
-status: pending
+status: done
 ---
 
 ## 目标
@@ -37,12 +37,20 @@ status: pending
 - 多 tab 场景：tab A 折叠历史、tab B 展开，切 tab 折叠状态各自正确（修复前 B 会错读 A 的）；minimap 在非选中 tab 也高亮正确轮次。
 - 左侧会话列表操作（重命名、归档其他会话）不再触发 AgentChat 树渲染（Profiler 抽查）。
 
-## 实施回填（做完后填）
+## 实施回填
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- `useTopicArchiveState.ts` 按 conversationId 精确选择 conversation，按当前 groupId 精确选择 group，effect 不再依赖整张 groups/conversations 表。
+- 新增 `conversation-id-context.tsx` 局部 Context；AgentChat Provider 覆盖 StableHistory/LiveTail 及深层 MessageItem/ContentBlockItem。CompactBoundaryDivider、PermissionRequestCard 使用当前 tab ID，不再读取 selectedConversation。
+- MessageMinimap 增加显式 conversationId prop；AgentChat 删除 conversations 全表订阅，LineageBar 父会话通过 getState 快照解析与跳转；ChatInputArea 下沉 settings 订阅；useSendMessage 标题判断改发送时 getState 快照。
+- debug 页面补传 selectedConversation 的显式 conversationIdOverride，保持调试入口原有行为。
+- 与计划差异：PermissionRequestCard 同步修复了同样的多 tab selectedConversation 串线；settings 未保留在 AgentChat 顶层，已下沉到输入区；未改 transcript 协议、step9 基准或虚拟化。
+- 验证：指定测试 20 pass ✓ / build:renderer ✓ / lint 0 errors（74 个存量 warnings）/ git diff --check ✓。
 
 ### 给下一步的接力棒
-- 订阅变更清单（供 step 9 基准时对照）：
+- 订阅变更：AgentChat 删除 selectedConversation、conversations 全表和顶层 settings 订阅；useTopicArchiveState 精确选 conversation/group；LineageBar 不再订阅 conversations；ChatInputArea 自行订阅 settings；useSendMessage 删除 title 订阅；MessageMinimap 无 Zustand 订阅；深层 compact/permission 通过 Context 获取 conversationId。
+- 当前 tab ID 传递：主页面 tab、session-window、debug 均显式传入 AgentChat；MessageMinimap 直接收 prop；CompactBoundaryDivider/PermissionRequestCard 从局部 Context 读取。
 - 待办或已知限制：
+  - 尚未进行 Electron GUI/React Profiler 人工回归，需抽查多 tab 折叠/minimap 高亮以及左侧会话列表操作。
+  - LineageBar 父会话使用 AgentChat 渲染时的 getState 快照，不再订阅父列表更新；这是收窄订阅的取舍。
+  - step9 基准与虚拟化决策待后续执行。

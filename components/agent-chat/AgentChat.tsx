@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight } from 'lucide-react';
 import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
-import { useSettingsStore } from '@/stores/settings-store';
 import type { AgentChatProps, Message } from './types';
 import { LiveTail } from './LiveTail';
 import { StableHistory } from './StableHistory';
@@ -24,6 +23,7 @@ import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import { ConversationIdProvider } from './conversation-id-context';
 import { buildTurns } from './turns';
 import { aggregateTasks } from './task-aggregator';
 import { useVirtualTurns } from './hooks/useVirtualTurns';
@@ -63,17 +63,15 @@ export function AgentChat({
   rightPanelToggle,
   visible = true,
 }: AgentChatProps) {
-  // UI 状态
-  const settings = useSettingsStore((s) => s.settings);
+  const conversationId = conversationIdOverride ?? null;
   const setConvSelection = useConversationStore((s) => s.setConversationModelSelection);
 
-  // 从 store 获取状态
-  const storeConversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
-  // 多标签页模式下使用 override，否则使用 store 中的选中对话
-  const conversationId = conversationIdOverride || storeConversationId;
-  const conversations = useConversationStore((s) => s.conversations);
-  const selectConversation = useConversationStore((s) => s.selectConversation);
   const { conversation: currentConversation, topicState } = useTopicArchiveState(conversationId, workspaceId);
+  const lineageParent = useMemo(() => {
+    const parentSessionId = currentConversation?.contractMetadata?.parentSessionId;
+    if (!parentSessionId) return null;
+    return useConversationStore.getState().conversations.find((conversation) => conversation.session_id === parentSessionId) ?? null;
+  }, [currentConversation]);
   const childSnapshot = useConversationStore((s) => conversationId ? s.childSnapshotsById[conversationId] : undefined);
 
   // compact_boundary 折叠状态（默认折叠，每个对话独立）
@@ -404,9 +402,10 @@ export function AgentChat({
         {currentConversation && (
           <LineageBar
             conversation={currentConversation}
+            parentConversation={lineageParent}
             onOpenParent={(parentId) => {
-              const parent = conversations.find((c) => c.id === parentId);
-              if (parent) void selectConversation(parent);
+              const parent = useConversationStore.getState().conversations.find((c) => c.id === parentId);
+              if (parent) void useConversationStore.getState().selectConversation(parent);
             }}
           />
         )}
@@ -439,6 +438,7 @@ export function AgentChat({
           </div>
         )}
 
+        <ConversationIdProvider conversationId={conversationId}>
         <StableHistory
           turns={chatTurns}
           messagesById={messagesById}
@@ -483,7 +483,7 @@ export function AgentChat({
           taskTodos={taskTodos}
           lastTaskMessageId={lastTaskMessageId}
         />
-
+        </ConversationIdProvider>
         </div>
       </div>
 
@@ -506,6 +506,7 @@ export function AgentChat({
           <MessageMinimap
             turns={chatTurns}
             messagesById={messagesById}
+            conversationId={conversationId}
             hidden={search.isOpen}
             scrollAreaRef={scrollAreaRef}
             onJumpToMessage={(id) => scrollToMessage(id, { align: 'top', flash: true })}
@@ -564,7 +565,6 @@ export function AgentChat({
         onSelectionChange={handleSelectionChange}
         cachePolicy={currentConversation?.cachePolicy}
         workspaceId={currentConversation?.workspace_id ?? null}
-        settings={settings}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}

@@ -70,7 +70,6 @@ export function useSendMessage(params: UseSendMessageParams) {
   // 从 conversation-store 获取 actions
   const forkConversation = useConversationStore((s) => s.forkConversation);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
-  const conversationTitle = useConversationStore((s) => s.selectedConversation?.title);
   const triggerSessionRestart = useConversationStore((s) => s.triggerSessionRestart);
 
   // 从 reference-store 获取引用数据和清理方法
@@ -421,7 +420,9 @@ export function useSendMessage(params: UseSendMessageParams) {
       contentBlocks: [] as ContentBlock[],
     });
 
-    // 新对话自动标题：首条消息截取前 30 字
+    const conversationTitle = conversationId
+      ? useConversationStore.getState().conversations.find((conversation) => conversation.id === conversationId)?.title
+      : undefined;
     if (conversationTitle === '新对话' && getMessages().length === 0 && conversationId) {
       const titleText = userMessage.replace(/<[^>]+>/g, '').trim();
       const autoTitle = titleText.length > 30
@@ -468,7 +469,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     readOnly, input, pendingImages, sessionId, isSessionReady, handleSlashCommand,
     setInput, setPendingImages, conversationId, currentSelection, isLoading,
     lastAppliedSelection, pushLocalUser, pushLiveAssistant, replaceLastLiveAssistant,
-    setIsLoading, conversationTitle, updateConversationTitle, getMessages,
+    setIsLoading, updateConversationTitle, getMessages,
     triggerSessionRestart, referencedArticles, clearReferencedArticles,
     quotedSnippets, clearQuotedSnippets, referencedFiles, clearReferencedFiles,
     referencedConversations, clearReferencedConversations, referencedSharedFiles,

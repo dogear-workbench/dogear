@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useGroupStore } from '@/stores/group-store';
@@ -8,21 +8,22 @@ import type { Conversation } from '@/components/ConversationList';
 type TopicState = 'loading' | 'active' | 'archived' | 'missing';
 
 export function useTopicArchiveState(conversationId: string | null, workspaceId?: string | null) {
-  const selectedConversation = useConversationStore((state) => state.selectedConversation);
-  const conversations = useConversationStore((state) => state.conversations);
+  const knownConversation = useConversationStore((state) => (
+    conversationId
+      ? state.conversations.find((conversation) => conversation.id === conversationId) ?? null
+      : null
+  ));
   const globalWsId = useWorkspaceStore((state) => state.workspace?.id ?? null);
   const effectiveWsId = workspaceId ?? globalWsId;
-  const groups = useGroupStore((state) => state.groups);
   const [resolvedConversation, setResolvedConversation] = useState<Conversation | null>(null);
   const [topicState, setTopicState] = useState<TopicState>(conversationId ? 'loading' : 'active');
 
-  const knownConversation = useMemo(() => {
-    if (!conversationId) return null;
-    if (selectedConversation?.id === conversationId) return selectedConversation;
-    return conversations.find((conversation) => conversation.id === conversationId) ?? null;
-  }, [conversationId, conversations, selectedConversation]);
-
   const conversation = knownConversation ?? resolvedConversation;
+  const groupId = conversation?.groupId ?? null;
+  const group = useGroupStore((state) => (
+    groupId ? state.groups.find((candidate) => candidate.id === groupId) : undefined
+  ));
+  const currentGroup = group;
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +42,7 @@ export function useTopicArchiveState(conversationId: string | null, workspaceId?
     setTopicState('loading');
     const resolve = async () => {
       try {
-        let currentConversation = knownConversation;
+        let currentConversation = conversation;
         if (!currentConversation) {
           const response = await client.getById({ conversationId, workspaceId: effectiveWsId });
           if (cancelled) return;
@@ -54,13 +55,18 @@ export function useTopicArchiveState(conversationId: string | null, workspaceId?
           return;
         }
 
-        const response = await client.getGroup({ workspaceId: effectiveWsId, groupId: currentConversation.groupId });
+        let resolvedGroup = currentGroup;
+        if (!resolvedGroup) {
+          const response = await client.getGroup({ workspaceId: effectiveWsId, groupId: currentConversation.groupId });
+          if (cancelled) return;
+          resolvedGroup = response.group ?? undefined;
+        }
         if (cancelled) return;
-        if (!response.group) {
+        if (!resolvedGroup) {
           setTopicState('missing');
           return;
         }
-        setTopicState(response.group.archivedAt === undefined ? 'active' : 'archived');
+        setTopicState(resolvedGroup.archivedAt === undefined ? 'active' : 'archived');
       } catch {
         if (!cancelled) setTopicState('missing');
       }
@@ -70,7 +76,7 @@ export function useTopicArchiveState(conversationId: string | null, workspaceId?
     return () => {
       cancelled = true;
     };
-  }, [conversationId, groups, knownConversation, effectiveWsId]);
+  }, [conversationId, conversation, currentGroup, effectiveWsId]);
 
   return { conversation, topicState };
 }

@@ -11,6 +11,7 @@ interface MinimapProps {
   turns: Turn[];
   /** 预览文案按 memberIds 查消息对象用 */
   messagesById: Map<string, Message>;
+  conversationId: string | null;
   hidden?: boolean;
   scrollAreaRef: React.RefObject<HTMLDivElement | null>;
   /** 跳转到指定消息(由 useChatScroll 的 scrollToMessage 提供) */
@@ -23,7 +24,7 @@ interface MinimapProps {
  * - 按轮次(user + assistant)聚合展示,点击跳转到该轮次 user 消息
  * - 当前视口中心所在 turn 淡蓝背景高亮
  */
-export function MessageMinimap({ turns, messagesById, hidden, scrollAreaRef, onJumpToMessage }: MinimapProps) {
+export function MessageMinimap({ turns, messagesById, conversationId, hidden, scrollAreaRef, onJumpToMessage }: MinimapProps) {
   const [hovering, setHovering] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [currentTurnId, setCurrentTurnId] = useState<string | null>(null);
@@ -93,6 +94,10 @@ export function MessageMinimap({ turns, messagesById, hidden, scrollAreaRef, onJ
 
     setCurrentTurnId(hitTurnId);
   }, [scrollAreaRef]);
+
+  useEffect(() => {
+    setCurrentTurnId(null);
+  }, [conversationId]);
 
   useEffect(() => {
     if (!shouldShow) return;

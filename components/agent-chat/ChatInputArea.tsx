@@ -19,8 +19,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { client } from '@/lib/client';
 import { useReferenceStore } from '@/stores/reference-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { PermissionMode } from '@/types/electron-api';
-import type { AppSettings, ModelSelection } from '@/types/settings';
+import type { ModelSelection } from '@/types/settings';
 import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import { UsageBadge } from './usage-badge/UsageBadge';
@@ -62,7 +63,6 @@ interface ChatInputAreaProps {
   onSelectionChange: (s: ModelSelection | null) => void;
   cachePolicy: '5m' | '1h' | undefined;
   workspaceId: string | null;
-  settings: AppSettings;
   permissionMode: PermissionMode;
   setPermissionMode: (mode: PermissionMode) => void;
   hasPendingUserAction: boolean;
@@ -96,7 +96,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   onSelectionChange,
   cachePolicy,
   workspaceId,
-  settings,
   permissionMode,
   setPermissionMode,
   hasPendingUserAction,
@@ -115,6 +114,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   onSlashMenuClose,
   isSubSession,
 }: ChatInputAreaProps) {
+  const settings = useSettingsStore((s) => s.settings);
   const isModelMissing = !currentSelection;
   const effectivePlaceholder = isModelMissing ? '请先选择模型' : placeholder;
   // 从 reference store 读取引用数据

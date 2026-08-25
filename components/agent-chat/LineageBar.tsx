@@ -1,10 +1,9 @@
-import { useMemo } from 'react';
 import { CornerDownRight } from 'lucide-react';
-import { useConversationStore } from '@/stores/conversation-store';
 import type { Conversation } from '@/components/ConversationList';
 
 interface LineageBarProps {
   conversation: Conversation;
+  parentConversation?: Conversation | null;
   onOpenParent?: (parentConversationId: string) => void;
 }
 
@@ -13,14 +12,9 @@ interface LineageBarProps {
  * 顶部显示"由 [派出者标题] 派出：[task]"，可点跳转到派出者会话。
  * 派出者不存在（已删除或不在当前工作区）时显示灰色"派出者已删除"。
  */
-export function LineageBar({ conversation, onOpenParent }: LineageBarProps) {
-  const conversations = useConversationStore((s) => s.conversations);
-
+export function LineageBar({ conversation, parentConversation, onOpenParent }: LineageBarProps) {
   const meta = conversation.contractMetadata;
-  const parent = useMemo(() => {
-    if (!meta?.parentSessionId) return null;
-    return conversations.find((c) => c.session_id === meta.parentSessionId) ?? null;
-  }, [meta?.parentSessionId, conversations]);
+  const parent = parentConversation ?? null;
 
   if (!meta) return null;
 

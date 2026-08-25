@@ -1,9 +1,9 @@
 import { Check, X, ShieldAlert, ShieldCheck, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { client } from '@/lib/client';
-import { useConversationStore } from '@/stores/conversation-store';
 import { BASIC_TOOL_NAMES } from '@/types/settings';
 import type { PermissionWaitRecord } from '@/types/usage';
+import { useConversationId } from './conversation-id-context';
 import type { ContentBlock } from './types';
 
 const BASIC_TOOL_SET = new Set<string>(BASIC_TOOL_NAMES);
@@ -19,12 +19,13 @@ export function PermissionRequestCard({
   onResolved: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
   readOnly?: boolean;
 }) {
+  const conversationId = useConversationId();
   const isResolved = !!block.permissionResolved;
 
   const isBasicTool = !!block.permissionToolName && BASIC_TOOL_SET.has(block.permissionToolName);
 
   const reportWait = (decision: PermissionWaitRecord['decision']) => {
-    const cid = useConversationStore.getState().selectedConversation?.id;
+    const cid = conversationId;
     const requestedAt = block.timestamp;
     const toolName = block.permissionToolName;
     if (!cid || !requestedAt || !toolName) return;

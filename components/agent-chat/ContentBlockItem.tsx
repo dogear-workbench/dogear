@@ -8,12 +8,12 @@ import { PermissionRequestCard } from './PermissionRequestCard';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { TodoListBlock } from './TodoListBlock';
 import { CodeChangeBlock } from './CodeChangeBlock';
-import { useConversationStore } from '@/stores/conversation-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
+import { useConversationId } from './conversation-id-context';
 import type { ContentBlock } from './types';
 
 function CompactBoundaryDivider({ block }: { block: ContentBlock }) {
-  const conversationId = useConversationStore((s) => s.selectedConversation?.id) || null;
+  const conversationId = useConversationId();
   const isCollapsed = useCompactCollapseStore((s) => s.isCollapsed(conversationId));
   const toggle = useCompactCollapseStore((s) => s.toggle);
   return (

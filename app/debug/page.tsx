@@ -1,5 +1,6 @@
 
 import { useEffect, useState } from 'react';
+import { useConversationStore } from '@/stores/conversation-store';
 import { AgentChat } from '@/components/AgentChat';
 
 // 局部类型声明：旧版调试 API（已从全局 preload 类型中移除）
@@ -25,6 +26,7 @@ interface TaskStatus {
 
 export default function DebugPage() {
   const [agentStatus, setAgentStatus] = useState<TaskStatus | null>(null);
+  const conversationId = useConversationStore((s) => s.selectedConversation?.id ?? null);
 
   // 加载 Agent 状态
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function DebugPage() {
         <AgentChat
           placeholder="输入消息测试 Agent... (Enter 发送, Shift+Enter 换行)"
           showStatusHint={false}
+          conversationIdOverride={conversationId}
           visible
         />
       </div>
