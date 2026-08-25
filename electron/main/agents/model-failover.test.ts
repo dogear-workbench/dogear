@@ -3,6 +3,7 @@ import {
   installDelegationMocks,
   attachSessionByConv,
   convStore,
+  conversationListChangedCalls,
   runtimeDetachCalls,
   sendCalls,
   setMockSettings,
@@ -54,6 +55,7 @@ beforeEach(() => {
   updateModelSelectionCalls.length = 0;
   sendCalls.length = 0;
   runtimeDetachCalls.length = 0;
+  conversationListChangedCalls.length = 0;
 });
 
 test('findNextFailover 矩阵：顺位 / 不在链走链头 / tried 跳过 / 全 tried / 空链', () => {
@@ -85,6 +87,7 @@ test('quota 失败切换链下一家：updateModelSelection + detach desktop + �
   expect(updateModelSelectionCalls).toEqual([
     { id: conversationId, modelSelection: { profileId: 'prov-b', tier: 'tb' } },
   ]);
+  expect(conversationListChangedCalls).toEqual(['ws-test']);
   expect(runtimeDetachCalls).toEqual([{ conversationId, holderType: 'desktop' }]);
   expect(attachSessionByConv.get(conversationId)).not.toBe(sessionId);
 
@@ -132,6 +135,7 @@ test('transient / cancelled / 开关关闭 / 链耗尽 / 子会话：不触发�
   expect(await failoverMod.maybeFailoverMainSession(sub.sessionId, QUOTA_FAILED)).toBeFalse();
 
   expect(updateModelSelectionCalls).toEqual([]);
+  expect(conversationListChangedCalls).toEqual([]);
   expect(runtimeDetachCalls).toEqual([]);
   expect(sendCalls).toEqual([]);
 });

@@ -867,13 +867,15 @@ if (typeof window !== 'undefined') {
       useConversationStore.getState().applyChildSnapshot(data.snapshot);
     });
 
-    // 主会话 failover 切换提示（model-failover → pushFailoverNotice）
+    // 主会话 failover 切换提示（model-failover → pushFailoverNotice）。
+    // failover 在主进程换了 sessionId 重建 session，渲染层必须重 attach 才能续接流式事件
     rendererEvents.failoverNotice.listen((data) => {
       useConversationStore.getState().pushFailoverNotice(data.conversationId, {
         fromLabel: data.fromLabel,
         toLabel: data.toLabel,
         at: data.at,
       });
+      useConversationStore.getState().triggerSessionRestart();
     });
   });
 

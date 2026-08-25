@@ -17,6 +17,7 @@ export const convStore = new Map<string, any>();
 export const updateModelSelectionCalls: Array<{ id: string; modelSelection: any }> = [];
 export const sendCalls: Array<{ sessionId: string; text: string }> = [];
 export const runtimeDetachCalls: Array<{ conversationId: string; holderType: string }> = [];
+export const conversationListChangedCalls: string[] = [];
 
 let childSeq = 0;
 let parentSeq = 0;
@@ -72,13 +73,13 @@ export async function startTestChild(bridge: any, profile?: string) {
 
 export function installDelegationMocks(): void {
   mock.module('electron', () => ({
-    BrowserWindow: { getAllWindows: () => [] },
+    BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: {} }] },
   }));
 
   mock.module('@egoist/tipc/main', () => ({
     getRendererHandlers: () => ({
       childStatusChanged: { send: () => {} },
-      conversationListChanged: { send: () => {} },
+      conversationListChanged: { send: (data: { workspaceId: string }) => { conversationListChangedCalls.push(data.workspaceId); } },
       deliveriesAwaitChanged: { send: () => {} },
       failoverNotice: { send: () => {} },
     }),
