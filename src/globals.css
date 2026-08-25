@@ -172,11 +172,11 @@
   }
 
   :root ::-webkit-scrollbar-thumb {
-    background: #D0CCC7;
+    background: #A8A29A;
   }
 
   :root ::-webkit-scrollbar-thumb:hover {
-    background: #B0ACA7;
+    background: #78716C;
   }
 
   /* 文字选中高亮 — 燃烧橙 */
