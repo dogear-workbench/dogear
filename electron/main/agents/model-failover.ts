@@ -99,7 +99,7 @@ export async function maybeFailoverMainSession(sessionId: string, result: PiSess
       });
 
       const { conversationRuntimeService } = await import('../services/conversation-runtime-service.js');
-      const { count, webContentsId } = conversationRuntimeService.detachByConversationHolder(conversationId, 'desktop');
+      const { count, webContentsId } = conversationRuntimeService.detachByConversationHolder(conversationId, 'desktop', 'forced');
       if (count === 0) {
         mainLogger.warn(`[model-failover] 会话 ${conversationId} 无 desktop attachment，仅更新 modelSelection`);
       }

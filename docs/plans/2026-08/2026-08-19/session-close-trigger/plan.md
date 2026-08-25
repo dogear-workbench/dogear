@@ -20,7 +20,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 调度器重构 + triggerContext 贯通 + 精准提炼入口](./step1-scheduler-context.md) — handleSessionClose 新签名/退出标志/工作区过滤，triggerContext 并入 hooks，triggerByConversation 补脏判定，group_digest 精准分支
-- [ ] [Step 2: 触发点下沉 pi-session-manager + failover 排除](./step2-manager-hook.md) — _destroySession 加 source，自然销毁后通知调度器，detach 链路透传 source 排除 failover 换血
+- [x] [Step 2: 触发点下沉 pi-session-manager + failover 排除](./step2-manager-hook.md) — _destroySession 加 source，自然销毁后通知调度器，detach 链路透传 source 排除 failover 换血
 - [ ] [Step 3: 清理旧触发点 + 端到端验证](./step3-cleanup-verify.md) — 删 index.ts 旧调用，行为矩阵（含 failover / failStreaks 边界）逐项验证，doc-sync
 
 ## 全局决策

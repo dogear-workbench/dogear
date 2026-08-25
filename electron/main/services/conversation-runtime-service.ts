@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
+import { getPiSessionManager, type SessionCloseSource } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import * as workspaceJsonService from './workspace-json-service.js';
@@ -178,7 +178,7 @@ class ConversationRuntimeService {
     return this.attachmentMap.get(attachmentId);
   }
 
-  detachAttachment(attachmentId: string): boolean {
+  detachAttachment(attachmentId: string, source: SessionCloseSource = 'natural'): boolean {
     const meta = this.attachmentMap.get(attachmentId);
     if (!meta) return false;
 
@@ -191,7 +191,7 @@ class ConversationRuntimeService {
       }
     }
 
-    getPiSessionManager().release(meta.sessionId);
+    getPiSessionManager().release(meta.sessionId, source);
     return true;
   }
 
@@ -202,13 +202,14 @@ class ConversationRuntimeService {
   detachByConversationHolder(
     conversationId: string,
     holderType: RuntimeHolderType,
+    source: SessionCloseSource = 'natural',
   ): { count: number; webContentsId?: number } {
     let count = 0;
     let webContentsId: number | undefined;
     for (const [attachmentId, meta] of this.attachmentMap) {
       if (meta.conversationId !== conversationId || meta.holderType !== holderType) continue;
       if (webContentsId === undefined) webContentsId = meta.webContentsId;
-      this.detachAttachment(attachmentId);
+      this.detachAttachment(attachmentId, source);
       count++;
     }
     return { count, webContentsId };

@@ -37,6 +37,8 @@ type PiSessionBroadcaster = (
   payload: unknown,
 ) => void;
 
+export type SessionCloseSource = 'natural' | 'forced';
+
 export class PiSessionManager extends EventEmitter {
   private sessions: Map<string, PiSession> = new Map();
   // 引用计数：release 归零时，若 session 仍在 running 则进入 orphan 保活（B1），
@@ -147,7 +149,7 @@ export class PiSessionManager extends EventEmitter {
    * 不摘 conversationSessionMap），等 settled 后由 maybeCollectOrphan 收集；否则直接销毁。
    * @returns 剩余引用计数
    */
-  async release(sessionId: string): Promise<number> {
+  async release(sessionId: string, source: SessionCloseSource = 'natural'): Promise<number> {
     const count = this.refCounts.get(sessionId);
     if (count === undefined) return 0;
     const next = Math.max(0, count - 1);
@@ -158,7 +160,7 @@ export class PiSessionManager extends EventEmitter {
       if (session?.isRunning()) {
         this.logger.info(`pi session ${sessionId.substring(0, 8)} 仍在运行，进入 orphan 保活`);
       } else {
-        await this._destroySession(sessionId);
+        await this._destroySession(sessionId, source);
       }
     }
     return next;
@@ -166,7 +168,7 @@ export class PiSessionManager extends EventEmitter {
 
   /** 直接关闭会话（忽略引用计数） */
   async closeSession(sessionId: string): Promise<void> {
-    await this._destroySession(sessionId);
+    await this._destroySession(sessionId, 'forced');
   }
 
   /**
@@ -179,7 +181,7 @@ export class PiSessionManager extends EventEmitter {
     if (count === undefined) return;
     if (count === 0) {
       this.logger.info(`orphan pi session ${sessionId.substring(0, 8)} 已 settled，收集销毁`);
-      await this._destroySession(sessionId);
+      await this._destroySession(sessionId, 'natural');
     }
   }
 
@@ -210,12 +212,16 @@ export class PiSessionManager extends EventEmitter {
    * 摘除动作本身不耗时，保证即使 session.close() 卡住，这个 sessionId 在 manager
    * 层面也已经不可再被外部拿到（不会被重复 retain/release）。
    */
-  private async _destroySession(sessionId: string): Promise<void> {
+  private async _destroySession(sessionId: string, source: SessionCloseSource): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
+    const conversationIds: string[] = [];
     for (const [convId, sid] of this.conversationSessionMap) {
-      if (sid === sessionId) this.conversationSessionMap.delete(convId);
+      if (sid === sessionId) {
+        this.conversationSessionMap.delete(convId);
+        conversationIds.push(convId);
+      }
     }
     this.sessions.delete(sessionId);
     this.refCounts.delete(sessionId);
@@ -228,6 +234,18 @@ export class PiSessionManager extends EventEmitter {
       this.logger.warn('pi 会话关闭时出错（已忽略）:', error);
     }
     this.logger.info('pi 会话已关闭:', sessionId.substring(0, 8));
+
+    // 动态 import 规避调度器加载时序/循环依赖；fire-and-forget，失败不阻塞销毁
+    if (source === 'natural' && conversationIds.length > 0) {
+      for (const conversationId of conversationIds) {
+        this.logger.info('会话自然销毁，通知调度器', conversationId);
+        void import('../../services/scheduler/scheduler-service.js')
+          .then((m) => m.getSchedulerService().handleSessionClose(conversationId))
+          .catch((error: unknown) => {
+            this.logger.warn(`通知调度器会话关闭失败（已忽略）: ${conversationId}`, error);
+          });
+      }
+    }
   }
 
   /**
