@@ -392,7 +392,7 @@ class AgentWorker {
    * 处理组级摘要卡提炼任务（GROUP_DIGEST_SESSION，Phase 3）
    *
    * 一次性 headless query：agent 自主调 dogear__ReadGroupDigest → dogear__CleanTranscript(dirty) → dogear__ListGroupFiles → dogear__SaveGroupDigest，
-   * 整合多会话的逐字稿 + 共享区文件 → 组卡。模型按 digestModelSelection 覆盖（默认 haiku）。
+   * 整合多会话的逐字稿 + 共享区文件 → 组卡。模型依次回退：payload.modelSelection → digestModelSelection → defaultModelSelection。
    */
   private async handleGroupDigestTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').GroupDigestSessionPayload;
@@ -644,7 +644,7 @@ class AgentWorker {
    *
    * full-rebuild 模式：清空 smart-categories.json，按 createdAt 升序对所有摘要卡走相同决策流程
    *
-   * 模型按 categorizeModelTier（默认 haiku）覆盖；可取消。
+   * 模型依次回退：payload.modelSelection → categorizeModelSelection → defaultModelSelection；可取消。
    */
   private async handleCategorizeSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').CategorizeSessionPayload;
@@ -972,7 +972,7 @@ class AgentWorker {
    *
    * 一次性 headless query：agent 自主调 dogear__ListCategories → dogear__PruneCategoryTags（压 anchorTags ≤10）
    * + SaveCategory(MERGE_CATEGORIES)（合并语义重合分类）。与 CATEGORIZE_SESSION 共享同一串行队列（互斥）。
-   * 模型按 categorizeModelSelection 覆盖（默认 haiku）；可取消。
+   * 模型依次回退：payload.modelSelection → categorizeModelSelection → defaultModelSelection；可取消。
    */
   private async handleCategorizeOrganizeTask(task: AgentTask, taskLogger: any): Promise<any> {
     const payload = task.payload as import('./task-types.js').CategorizeOrganizeSessionPayload;

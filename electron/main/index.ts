@@ -471,6 +471,15 @@ app.whenReady().then(async () => {
     console.error('[migration-workspace-config] 失败:', error);
   }
 
+  // 存量对话 modelSelection 旧三档 tier（haiku/sonnet/opus）映射为 piModels 真实模型 id
+  try {
+    const { migrateLegacyModelSelections } = await import('./services/conversation-service.js');
+    const migrated = await migrateLegacyModelSelections();
+    if (migrated > 0) console.log(`[migration-model-selection] ${migrated} 条对话的 modelSelection 已迁移`);
+  } catch (error) {
+    console.error('[migration-model-selection] 失败:', error);
+  }
+
   // Phase 3 迁移：旧会话卡升级为组卡 + smart-categories/conversation-tree 字段升级
   try {
     const { runMigrationP3 } = await import('./services/memory/migration-p3.js');

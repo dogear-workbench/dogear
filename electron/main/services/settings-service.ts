@@ -107,10 +107,14 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
   return result;
 }
 
+export const LEGACY_MODEL_TIERS = new Set(['haiku', 'sonnet', 'opus']);
+
 /**
  * 遍历 profiles，无条件 pi 化：piModels 非数组或为空时用 haikuModel/sonnetModel/opusModel
  * 过滤空值后填入，再统一迁移为 { id, label? } 对象数组，然后删除旧 SDK 字段
- * （apiFormat/三档模型/disableNonessentialTraffic/autoCompactWindow）。
+ * （apiFormat/三档模型/disableNonessentialTraffic/autoCompactWindow）；
+ * 随后把 settings 内所有 ModelSelection 残留的旧三档 tier（haiku/sonnet/opus）映射为
+ * piModels 里的真实模型 id（子串匹配），无匹配时置 null 回退默认选择。
  * 返回 true 表示发生了变化（需要落盘），false 表示无事可做。
  */
 export function migratePiProfiles(settings: AppSettings): boolean {
@@ -138,8 +142,26 @@ export function migratePiProfiles(settings: AppSettings): boolean {
       }
     }
   }
+
+  for (const key of ['defaultModelSelection', 'digestModelSelection', 'reviewModelSelection', 'categorizeModelSelection'] as const) {
+    const sel = settings.ai[key];
+    if (!sel || !LEGACY_MODEL_TIERS.has(sel.tier)) continue;
+    const models = settings.profiles[sel.profileId]?.piModels ?? [];
+    const matched = models.find(m => m.id.toLowerCase().includes(sel.tier));
+    settings.ai[key] = matched ? { ...sel, tier: matched.id } : null;
+    changed = true;
+  }
+  for (const subProfile of settings.subAgent?.profiles ?? []) {
+    const sel = subProfile.modelSelection;
+    if (!sel || !LEGACY_MODEL_TIERS.has(sel.tier)) continue;
+    const models = settings.profiles[sel.profileId]?.piModels ?? [];
+    const matched = models.find(m => m.id.toLowerCase().includes(sel.tier));
+    subProfile.modelSelection = matched ? { ...sel, tier: matched.id } : null;
+    changed = true;
+  }
   return changed;
 }
+
 
 const OLD_AUTO_MODES = new Set(['bypassPermissions', 'dontAsk', 'auto', 'acceptEdits']);
 

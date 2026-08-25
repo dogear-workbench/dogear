@@ -5,9 +5,11 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
+import type { Dirent } from 'fs';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
+import { loadSettings, LEGACY_MODEL_TIERS } from './settings-service.js';
 import { readUsage } from './usage/usage-service.js';
 import { listActiveGroups, requireActiveGroup } from './group-service.js';
 import type { ConversationUsageEntry } from '../types.js';
@@ -522,6 +524,49 @@ export async function updateModelSelection(
     conv.modelSelection = modelSelection ? { ...modelSelection } : null;
     conv.updatedAt = new Date().toISOString();
   });
+}
+
+/**
+ * 存量对话的 modelSelection 残留旧三档 tier（haiku/sonnet/opus）时，
+ * 按当前 settings.profiles 的 piModels 子串匹配映射为真实模型 id，
+ * 无匹配时置 null 回退默认选择。幂等：已迁移/无残留的 workspace 不写盘。
+ * 返回迁移的对话条数。
+ */
+export async function migrateLegacyModelSelections(): Promise<number> {
+  const settings = await loadSettings();
+  const workspacesDir = path.join(getConfigDir(), 'workspaces');
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(workspacesDir, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
+
+  const mapSelection = (sel: ModelSelection): ModelSelection | null => {
+    const models = settings.profiles[sel.profileId]?.piModels ?? [];
+    const matched = models.find(m => m.id.toLowerCase().includes(sel.tier));
+    return matched ? { ...sel, tier: matched.id } : null;
+  };
+
+  let migrated = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const wsId = entry.name;
+    const preview = await loadWorkspaceConversations(wsId);
+    const hasLegacy = Object.values(preview.conversations).some(
+      (conv) => conv.modelSelection && LEGACY_MODEL_TIERS.has(conv.modelSelection.tier),
+    );
+    if (!hasLegacy) continue;
+    await withConversationsTxn(wsId, async (file) => {
+      for (const conv of Object.values(file.conversations)) {
+        const sel = conv.modelSelection;
+        if (!sel || !LEGACY_MODEL_TIERS.has(sel.tier)) continue;
+        conv.modelSelection = mapSelection(sel);
+        migrated++;
+      }
+    });
+  }
+  return migrated;
 }
 
 export async function updateCachePolicy(

@@ -340,6 +340,54 @@ test('migratePiProfiles：已迁移数据二次执行不再产生改动（幂等
   expect(changed).toBe(false);
 });
 
+test('migratePiProfiles：ai.*ModelSelection 残留旧三档 tier 时按 piModels 子串映射为真实模型 id', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [
+    { id: 'anthropic/claude-haiku-4.5' },
+    { id: 'anthropic/claude-sonnet-4.6' },
+    { id: 'anthropic/claude-opus-4.7' },
+  ];
+  s.ai.digestModelSelection = { profileId: 'default', tier: 'haiku' };
+  s.ai.categorizeModelSelection = { profileId: 'default', tier: 'sonnet' };
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect(s.ai.digestModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
+  expect(s.ai.categorizeModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-sonnet-4.6' });
+});
+
+test('migratePiProfiles：旧 tier 在 piModels 无子串匹配时置 null 回退默认选择', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [{ id: 'glm-4.7' }];
+  s.ai.digestModelSelection = { profileId: 'default', tier: 'haiku' };
+  s.ai.reviewModelSelection = { profileId: 'ghost', tier: 'opus' };
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect(s.ai.digestModelSelection).toBeNull();
+  expect(s.ai.reviewModelSelection).toBeNull();
+});
+
+test('migratePiProfiles：已是 piModels 模型 id 的 selection 不受影响', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [{ id: 'glm-4.7' }];
+  s.ai.defaultModelSelection = { profileId: 'default', tier: 'glm-4.7' };
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(false);
+  expect(s.ai.defaultModelSelection).toEqual({ profileId: 'default', tier: 'glm-4.7' });
+});
+
+test('migratePiProfiles：subAgent Profile 的 modelSelection 残留旧 tier 一并迁移', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [{ id: 'deepseek-v4-pro' }];
+  s.subAgent.profiles.push({
+    ...s.subAgent.profiles[0]!,
+    id: 'explore',
+    modelSelection: { profileId: 'default', tier: 'opus' },
+  });
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[1]!.modelSelection).toBeNull();
+});
+
 // ── normalizeFailoverChain ───────────────────────────
 
 test('normalizeFailoverChain：failover 缺失时按 profiles 顺序生成完整链（enabled: false，tier 取首个）', () => {
