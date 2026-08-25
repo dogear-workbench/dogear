@@ -249,6 +249,38 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
 }
 
 /**
+ * 读取会话 JSONL 最后一条 ENTRY 的 turnIndex + 1，作为重建会话时 usageTurnIndex 的起始值。
+ * 文件不存在 / 无 ENTRY 行 / 解析失败一律回退 0。
+ */
+export async function readNextTurnIndex(conversationId: string): Promise<number> {
+  try {
+    assertSafeId(conversationId);
+  } catch {
+    return 0;
+  }
+
+  let content: string;
+  try {
+    content = await fs.readFile(usageFilePath(conversationId), 'utf-8');
+  } catch {
+    return 0;
+  }
+
+  let last = -1;
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as UsageJsonlLine;
+      if (parsed.kind === 'entry' && typeof parsed.turnIndex === 'number') last = parsed.turnIndex;
+    } catch {
+      // 跳过无法解析的行
+    }
+  }
+  return last >= 0 ? last + 1 : 0;
+}
+
+/**
  * 删除对话的用量 JSONL 文件。
  * ENOENT 静默忽略，其他错误 warn，不抛异常。
  */

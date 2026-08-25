@@ -87,7 +87,7 @@ class ConversationRuntimeService {
       const permissionMode: PiPermissionMode = conversation.role === 'sub'
         ? 'autoExecute'
         : appSettings.ai.permissionMode;
-      session = piSessionManager.createSession({
+      session = await piSessionManager.createSession({
         conversationId,
         modelSelection: conversation.modelSelection ?? null,
         workspacePath: workspace?.path ?? '',

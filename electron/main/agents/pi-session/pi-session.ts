@@ -53,6 +53,7 @@ import {
 } from './usage-extractor.js';
 import type { ModelSelection, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
+import type { CompactMarker } from '../../types.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
 export interface PiSessionConfig {
@@ -83,6 +84,8 @@ export interface PiSessionConfig {
   subAgentProfile?: SubAgentProfile;
   permissionMode: PiPermissionMode;
   basicToolPermissions: BasicToolPermissions;
+  /** usage turnIndex 起始值：manager 建会话时从该会话 usage JSONL 尾部 ENTRY 读出（+1），缺省 0（全新会话） */
+  usageTurnIndexStart?: number;
 }
 
 export interface PiSessionLiveSnapshot {
@@ -250,10 +253,13 @@ export class PiSession extends EventEmitter {
   private turnEntryIds: string[] = [];
   // 最近一次 harness compact 的 compaction entry id（session_compact own 事件捕获，maybeAutoCompact 消费后置空）
   private lastCompactionEntryId: string | null = null;
-  // usage 提取粒度对齐 SDK result：每次 sendMessage（agent_end）产一条 entry，自增
+  // usage 提取粒度对齐 SDK result：每次 sendMessage（agent_end）产一条 entry，自增；
+  // 起始值由 manager 从会话 usage JSONL 续号注入，重启/failover 不归零
   private usageTurnIndex = 0;
   // 本轮累加器：message_end 时累加 AssistantMessage.usage，agent_end 时取出转 entry 后置 null
   private currentRunUsageAccum: PiUsageAccumulator | null = null;
+  // 本轮最后一条 CTX 快照的 totalTokens（message_end 时更新），agent_end 时附到 entry.lastContextTokens 后置空
+  private currentRunContextTokens: number | undefined;
   private currentTurnResult: PiSessionTurnResult | null = null;
   // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
   // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
@@ -270,6 +276,7 @@ export class PiSession extends EventEmitter {
     this.config = config;
     this.currentPermissionMode = config.permissionMode;
     this.basicToolPermissions = config.basicToolPermissions;
+    this.usageTurnIndex = config.usageTurnIndexStart ?? 0;
     this.logger = this.logger.child(`pi-session-${sessionId.substring(0, 8)}`);
   }
 
@@ -632,6 +639,7 @@ export class PiSession extends EventEmitter {
         const conversationId = this.config.conversationId;
         const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex, (id) => this.resolveModelWindow(id));
         if (conversationId && snapshot) {
+          this.currentRunContextTokens = snapshot.totalTokens;
           this.emit('usageContext', { conversationId, snapshot });
         }
       }
@@ -702,6 +710,7 @@ export class PiSession extends EventEmitter {
       this.emitUsageEntry();
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
+      this.currentRunContextTokens = undefined;
     }
   }
 
@@ -772,6 +781,7 @@ export class PiSession extends EventEmitter {
         this.usageTurnIndex,
         this.currentModelId,
         (id) => this.resolveModelWindow(id),
+        this.currentRunContextTokens,
       );
       entry.uuid = uuidv4();
       this.usageTurnIndex += 1;
@@ -885,6 +895,7 @@ export class PiSession extends EventEmitter {
       }
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
+      this.currentRunContextTokens = undefined;
       this.running = false;
     } finally {
       const result = this.currentTurnResult ?? { subtype: 'success' };
@@ -919,6 +930,19 @@ export class PiSession extends EventEmitter {
         compactTrigger: 'auto',
         compactPreTokens: preTokens,
       } as ExtendedSessionMessage);
+      const conversationId = this.config.conversationId;
+      if (conversationId) {
+        this.emit('usageCompact', {
+          conversationId,
+          marker: {
+            uuid: uuidv4(),
+            timestamp: Date.now(),
+            afterTurnIndex: this.usageTurnIndex - 1,
+            trigger: 'auto' as const,
+            preTokens,
+          } satisfies CompactMarker,
+        });
+      }
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.logger.warn('自动压缩失败已跳过:', reason);

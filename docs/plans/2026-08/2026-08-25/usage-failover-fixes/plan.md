@@ -10,7 +10,7 @@
 
 - [x] [Step 1: failover 渲染重连](./step1-failover-reconnect.md) — failoverNotice 触发前端重连新 session，附带修模型选择器刷新
 - [x] [Step 2: failover 提示改造](./step2-failover-notice.md) — 续跑提示消息特殊渲染、横幅单条可关、quota 失败降噪
-- [ ] [Step 3: usage 落盘修复](./step3-usage-pipeline.md) — turnIndex 续号、跳过 0% 快照、CompactMarker 落盘、lastContextSize 口径
+- [x] [Step 3: usage 落盘修复](./step3-usage-pipeline.md) — turnIndex 续号、跳过 0% 快照、CompactMarker 落盘、lastContextSize 口径
 - [ ] [Step 4: 设置「用量」Tab](./step4-usage-tab.md) — 按会话汇总列表 + 逐轮明细组件（TurnDetailList）
 - [ ] [Step 5: 徽章弹层重构](./step5-badge-popover.md) — hover 改点击、当前轮概览、删死组件与误报
 

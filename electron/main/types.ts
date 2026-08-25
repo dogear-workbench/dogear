@@ -44,6 +44,8 @@ export interface ConversationUsageEntry {
   isError: boolean;
   apiErrorStatus?: number;
   totalCostUsd: number;
+  /** 本轮最后一次 LLM call 请求时点的真实上下文占用（轮内最后一条 CTX 的 totalTokens）；历史 entry 可能缺失 */
+  lastContextTokens?: number;
   usage: {
     inputTokens: number;
     outputTokens: number;

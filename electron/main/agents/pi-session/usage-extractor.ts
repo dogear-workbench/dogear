@@ -60,13 +60,14 @@ export function createPiUsageAccumulator(): PiUsageAccumulator {
   };
 }
 
-/** 把单条 AssistantMessage.usage 累加到累加器 */
 /** 从单条 assistant message 创建当前上下文用量快照。 */
 export function extractPiContextSnapshot(
   message: AssistantMessage,
   turnIndex: number,
   resolveWindow?: (modelId: string) => number,
 ): ContextSnapshot | null {
+  // 失败消息（如 quota 错误的空 assistant）不产快照，避免落盘 total=0 pct=0 的假 CTX
+  if (message.errorMessage) return null;
   const usage = message.usage;
   if (!usage) return null;
 
@@ -86,6 +87,7 @@ export function extractPiContextSnapshot(
   };
 }
 
+/** 把单条 AssistantMessage.usage 累加到累加器 */
 export function accumulatePiUsage(accum: PiUsageAccumulator, message: AssistantMessage): void {
   const u: Usage | undefined = message.usage;
   const input = u?.input ?? 0;
@@ -127,6 +129,8 @@ export function accumulatePiUsage(accum: PiUsageAccumulator, message: AssistantM
 /**
  * 把本轮累加器 + 本轮 emit 过的 ExtendedSessionMessage 列表转成 ConversationUsageEntry。
  * 与 SDK 侧 extractUsageEntry 输出结构完全一致，下游 usage-service / 前端徽章零改动。
+ * lastContextTokens：本轮最后一条 CTX 快照的 totalTokens（请求时点真实上下文占用），
+ * 供 applyUsageSummary 写入 conversations.json 的 lastContextSize；无值时不附字段。
  */
 export function extractPiUsageEntry(
   accum: PiUsageAccumulator,
@@ -134,6 +138,7 @@ export function extractPiUsageEntry(
   turnIndex: number,
   fallbackModelId?: string,
   resolveWindow?: (modelId: string) => number,
+  lastContextTokens?: number,
 ): ConversationUsageEntry {
   const resolve = resolveWindow ?? ((id: string) => lookupContextWindow(id) ?? 0);
   const usage: ConversationUsageEntry['usage'] = {
@@ -192,7 +197,7 @@ export function extractPiUsageEntry(
     terminalReason = 'completed';
   }
 
-  return {
+  const entry: ConversationUsageEntry = {
     uuid: '',
     turnIndex,
     timestamp: Date.now(),
@@ -207,6 +212,8 @@ export function extractPiUsageEntry(
     modelUsage,
     toolActivity,
   };
+  if (lastContextTokens !== undefined) entry.lastContextTokens = lastContextTokens;
+  return entry;
 }
 
 /** 与 SDK 侧 extractUsageEntry 的 toolActivity 聚合口径一致：按工具名计数，Read 工具收集 file_path（去重保序） */

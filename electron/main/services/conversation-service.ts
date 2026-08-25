@@ -686,8 +686,10 @@ export async function applyUsageSummary(
     if (!conv) return;
 
     const prev = conv.usageSummary;
-    const lastContextSize =
-      entry.usage.inputTokens + entry.usage.cacheReadInputTokens + entry.usage.cacheCreationInputTokens;
+    // lastContextSize 口径：轮内最后一条 CTX 的 totalTokens（真实上下文占用）；
+    // 历史 entry 无该字段时回退旧口径（轮内累加值，计费语义，虚高但兼容）
+    const lastContextSize = entry.lastContextTokens
+      ?? entry.usage.inputTokens + entry.usage.cacheReadInputTokens + entry.usage.cacheCreationInputTokens;
     const lastContextWindow = pickMainContextWindow(entry);
 
     conv.usageSummary = {
@@ -723,7 +725,8 @@ export async function recomputeUsageSummaryIfStale(conversationId: string): Prom
       totalOutputTokens: usage.totals.outputTokens,
       totalCacheReadTokens: usage.totals.cacheReadInputTokens,
       lastContextSize: lastEntry
-        ? lastEntry.usage.inputTokens + lastEntry.usage.cacheReadInputTokens + lastEntry.usage.cacheCreationInputTokens
+        ? lastEntry.lastContextTokens
+          ?? lastEntry.usage.inputTokens + lastEntry.usage.cacheReadInputTokens + lastEntry.usage.cacheCreationInputTokens
         : undefined,
       lastContextWindow: lastEntry ? pickMainContextWindow(lastEntry) : undefined,
     };

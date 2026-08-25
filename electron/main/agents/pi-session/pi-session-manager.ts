@@ -13,10 +13,10 @@ import { getRendererHandlers } from '@egoist/tipc/main';
 import { v4 as uuidv4 } from 'uuid';
 import { mainLogger } from '../logger.js';
 import { PiSession, type PiSessionConfig, type PiSessionTurnResult } from './pi-session.js';
-import { appendContext as appendUsageContext, appendEntry as appendUsageEntry } from '../../services/usage/usage-service.js';
+import { appendContext as appendUsageContext, appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker, readNextTurnIndex } from '../../services/usage/usage-service.js';
 import { applyUsageSummary } from '../../services/conversation-service.js';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
-import type { ContextSnapshot, ConversationUsageEntry } from '../../types.js';
+import type { CompactMarker, ContextSnapshot, ConversationUsageEntry } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 
 function broadcastUsageEntryAdded(conversationId: string): void {
@@ -52,11 +52,13 @@ export class PiSessionManager extends EventEmitter {
     this.broadcaster = fn;
   }
 
-  createSession(config: PiSessionConfig): PiSession {
+  async createSession(config: PiSessionConfig): Promise<PiSession> {
     const sessionId = uuidv4();
     this.logger.info('创建 pi 会话:', sessionId.substring(0, 8));
 
-    const session = new PiSession(sessionId, config);
+    // usageTurnIndex 续号：会话 JSONL 尾部 ENTRY 的 turnIndex + 1，空文件/读失败回退 0
+    const usageTurnIndexStart = await readNextTurnIndex(config.conversationId);
+    const session = new PiSession(sessionId, { ...config, usageTurnIndexStart });
 
     session.on('message', (message: ExtendedSessionMessage) => {
       this.emit('sessionMessage', sessionId, message);
@@ -122,6 +124,13 @@ export class PiSessionManager extends EventEmitter {
     session.on('usageContext', async ({ conversationId, snapshot }: { conversationId?: string; snapshot: ContextSnapshot }) => {
       if (!conversationId) return;
       await appendUsageContext(conversationId, snapshot);
+      broadcastUsageEntryAdded(conversationId);
+    });
+
+    // 自动压缩标记落盘（pi-session maybeAutoCompact 发出）：与 entry/context 同一 JSONL
+    session.on('usageCompact', async ({ conversationId, marker }: { conversationId?: string; marker: CompactMarker }) => {
+      if (!conversationId) return;
+      await appendUsageCompactMarker(conversationId, marker);
       broadcastUsageEntryAdded(conversationId);
     });
 
