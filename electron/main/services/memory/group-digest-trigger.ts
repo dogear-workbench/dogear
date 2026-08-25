@@ -389,6 +389,12 @@ export async function triggerByConversation(convId: string): Promise<void> {
     const ws = await getWorkspaceById(found.workspaceId);
     if (!ws) return;
 
+    const dirty = await findDirtyGroup(found.workspaceId, ws.path, found.conv.groupId, false);
+    if (!dirty) {
+      mainLogger.info('[group-digest] 会话所属组不脏，跳过', convId);
+      return;
+    }
+
     enqueue({ workspaceId: found.workspaceId, workspacePath: ws.path, groupId: found.conv.groupId });
   } catch (err) {
     mainLogger.warn('[group-digest] triggerByConversation 失败:', convId, err);

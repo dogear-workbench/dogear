@@ -50,20 +50,31 @@ async function resolveTaskWorkspaces(workspaceId: string | undefined): Promise<{
   return { workspaces: await getAllWorkspaces() };
 }
 
+export interface TriggerContext {
+  conversationId: string;
+}
+
 export interface TaskExecuteHooks {
   onAgentTaskId?: (id: string) => void;
+  triggerContext?: TriggerContext;
 }
 
 export async function executeTask(task: ScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
-  if (task.kind === 'builtin') return runBuiltinTask(task);
+  if (task.kind === 'builtin') return runBuiltinTask(task, hooks);
   return runCustomTask(task, hooks);
 }
 
-async function runBuiltinTask(task: BuiltinScheduledTask): Promise<TaskExecResult> {
+async function runBuiltinTask(task: BuiltinScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
   switch (task.builtinId) {
     case 'group_digest': {
-      const { triggerScanAll, whenGroupDigestIdle, getGroupDigestActivity } =
+      const { triggerScanAll, triggerByConversation, whenGroupDigestIdle, getGroupDigestActivity } =
         await import('../../memory/group-digest-trigger.js');
+      const convId = hooks?.triggerContext?.conversationId;
+      if (convId !== undefined) {
+        await triggerByConversation(convId);
+        await whenGroupDigestIdle();
+        return { status: 'completed', summary: '已对会话所在组触发精准提炼，队列已清空' };
+      }
       await triggerScanAll(task.workspaceId);
       const dirtyCount = getGroupDigestActivity().lastScan?.dirtyCount ?? 0;
       await whenGroupDigestIdle();

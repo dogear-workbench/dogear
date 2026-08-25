@@ -4,12 +4,13 @@ import { mainLogger } from '../../../agents/logger.js';
 import type { RunHistoryEntry, ScheduledTask, SchedulerActivity } from '../types.js';
 import { updateTaskRunState } from '../plan-store.js';
 import { appendHistoryEntry } from '../run-history-store.js';
-import { executeTask, type TaskExecResult } from './task-executor.js';
+import { executeTask, type TaskExecResult, type TriggerContext } from './task-executor.js';
 
 export interface RunTaskOptions {
   triggerReason: 'time' | 'condition' | 'manual';
   triggerDesc?: string;
   triggerId?: string;
+  triggerContext?: TriggerContext;
 }
 
 type StopReason = 'manual' | 'window';
@@ -163,6 +164,7 @@ class TaskRunner extends EventEmitter {
           onAgentTaskId: (id) => {
             info.agentTaskId = id;
           },
+          triggerContext: opts.triggerContext,
         });
       } catch (err) {
         res = { status: 'failed', error: err instanceof Error ? err.message : String(err) };

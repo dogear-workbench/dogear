@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { app } from 'electron';
 import { mainLogger } from '../../agents/logger.js';
 import type { RunHistoryEntry, ScheduledTask, SchedulerActivity, Trigger } from './types.js';
 import { loadTasks, markOnceFired, touchTriggerFired } from './plan-store.js';
@@ -15,6 +16,8 @@ import { getTaskRunner, type RunTaskOptions, type TaskDoneEvent } from './runtim
 
 const TICK_MS = 60_000;
 const WINDOW_CLOSE_TOLERANCE_MS = 2 * 60_000;
+
+let quitting = false;
 
 export interface MissedRecord extends MissedTrigger {
   taskId: string;
@@ -47,6 +50,9 @@ class SchedulerService {
   async init(deps: SchedulerInitDeps = {}): Promise<void> {
     if (this.started) return;
     this.started = true;
+    app.once('before-quit', () => {
+      quitting = true;
+    });
     const bootAt = Date.now();
     const tasks = await loadTasks();
     await cleanupHistory().catch((err) => mainLogger.warn('[scheduler] 清理运行历史失败:', err));
@@ -102,13 +108,24 @@ class SchedulerService {
     }
   }
 
-  async handleSessionClose(workspaceId?: string): Promise<void> {
+  async handleSessionClose(conversationId: string): Promise<void> {
+    if (quitting) return;
+    const { getByIdGlobal } = await import('../conversation-service.js');
+    const found = await getByIdGlobal(conversationId).catch(() => null);
+    if (!found) {
+      mainLogger.info(`[scheduler] on_session_close：会话不存在或已删除，跳过: ${conversationId}`);
+      return;
+    }
     const tasks = await loadTasks();
-    const desc = workspaceId !== undefined ? `会话关闭时（工作区 ${workspaceId}）` : '会话关闭时';
     for (const task of tasks) {
       if (!task.enabled) continue;
+      if (task.workspaceId !== found.workspaceId) continue;
       if (!task.triggers.some((t) => t.type === 'on_session_close')) continue;
-      await this.fireTask(task.id, { triggerReason: 'condition', triggerDesc: desc });
+      await this.fireTask(task.id, {
+        triggerReason: 'condition',
+        triggerDesc: `会话关闭时（工作区 ${found.workspaceId}，会话「${found.conv.title}」）`,
+        triggerContext: { conversationId },
+      });
     }
   }
 
