@@ -64,6 +64,7 @@ export function AgentChat({
   conversationIdOverride,
   workspaceId,
   rightPanelToggle,
+  visible = true,
 }: AgentChatProps) {
   // UI 状态
   const settings = useSettingsStore((s) => s.settings);
@@ -92,7 +93,7 @@ export function AgentChat({
 
   // transcript 状态（stableHistory / liveTail / pendingActions）：消息写入口全部收敛到该 hook，
   // messages 为兼容期合成视图（step 7 拆掉）
-  const transcript = useTranscriptState(showReplayMessages);
+  const transcript = useTranscriptState(showReplayMessages, visible);
   const { messages, stableHistory, liveTail, structuredLiveTail, structuralVersion, applySnapshot } = transcript;
 
   const { setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
@@ -281,7 +282,7 @@ export function AgentChat({
   useSessionMessages({
     sessionId,
     showReplayMessages,
-    applyStreamEvent: transcript.applyStreamEvent,
+    enqueueStreamEvent: transcript.enqueueStreamEvent,
     setIsLoading,
     setHistoryLoaded,
   });

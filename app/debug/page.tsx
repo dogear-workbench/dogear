@@ -70,6 +70,7 @@ export default function DebugPage() {
         <AgentChat
           placeholder="输入消息测试 Agent... (Enter 发送, Shift+Enter 换行)"
           showStatusHint={false}
+          visible
         />
       </div>
     </div>

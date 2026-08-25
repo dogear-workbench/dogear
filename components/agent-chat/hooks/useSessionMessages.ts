@@ -5,7 +5,7 @@ import type { TranscriptEvent } from './useTranscriptState';
 interface UseSessionMessagesParams {
   sessionId: string | null;
   showReplayMessages: boolean;
-  applyStreamEvent: (e: TranscriptEvent) => void;
+  enqueueStreamEvent: (e: TranscriptEvent, sideEffect?: () => void) => void;
   setIsLoading: Dispatch<SetStateAction<boolean>>;
   setHistoryLoaded: Dispatch<SetStateAction<boolean>>;
 }
@@ -17,7 +17,7 @@ interface UseSessionMessagesParams {
 export function useSessionMessages({
   sessionId,
   showReplayMessages,
-  applyStreamEvent,
+  enqueueStreamEvent,
   setIsLoading,
   setHistoryLoaded,
 }: UseSessionMessagesParams): void {
@@ -31,20 +31,20 @@ export function useSessionMessages({
 
       if (extendedMsg.isReplay && !showReplayMessages) return;
 
-      applyStreamEvent(extendedMsg);
+      enqueueStreamEvent(extendedMsg, () => {
+        if (extendedMsg.type === 'user') {
+          setHistoryLoaded(true);
+        }
 
-      if (extendedMsg.type === 'user') {
-        setHistoryLoaded(true);
-      }
-
-      if (extendedMsg.type === 'result') {
-        setIsLoading(false);
-        setHistoryLoaded(true);
-      }
+        if (extendedMsg.type === 'result') {
+          setIsLoading(false);
+          setHistoryLoaded(true);
+        }
+      });
     });
 
     return () => {
       unsubscribe();
     };
-  }, [sessionId, showReplayMessages, applyStreamEvent]);
+  }, [sessionId, showReplayMessages, enqueueStreamEvent]);
 }

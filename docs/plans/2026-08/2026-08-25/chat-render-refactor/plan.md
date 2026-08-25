@@ -12,7 +12,7 @@
 - [x] [Step 2: 前端消息身份与渲染 key 体系](./step2-frontend-identity-keys.md) — key/id 职责分离、定位链（data-message-id / 搜索 / minimap / turnByIndex）迁移、turnId 稳定化
 - [x] [Step 3: task summary 派生化](./step3-task-derived-state.md) — 断掉 useTaskListAggregator 写回链路，minimap 复用共享 turns
 - [x] [Step 4: TranscriptState 拆分](./step4-transcript-state.md) — stableHistory/liveTail 数据模型 + 全事件归属表，对外提供兼容合成视图
-- [ ] [Step 5: 流事件批处理](./step5-stream-batching.md) — rAF buffer + setTimeout 兜底、终态/交互事件直通、隐藏 tab 降频
+- [x] [Step 5: 流事件批处理](./step5-stream-batching.md) — rAF buffer + setTimeout 兜底、终态/交互事件直通、隐藏 tab 降频
 - [ ] [Step 6: 合并协议与 live tail 提升](./step6-merge-promote.md) — history/snapshot 到齐合并去重、settled 且无 pendingActions 时提升
 - [ ] [Step 7: 渲染边界拆分与滚动修复](./step7-render-scroll.md) — StableHistory/LiveTail 组件、scrollbar 拖拽识别、useVirtualTurns 收窄到历史区
 - [ ] [Step 8: 订阅收窄与多 tab 修复](./step8-subscriptions.md) — useTopicArchiveState 窄化、minimap/boundary 的 conversationId 显式传参

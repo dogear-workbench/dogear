@@ -296,6 +296,7 @@ export default function Home() {
                   placeholder="向 AI 助手提问..."
                   showStatusHint={false}
                   conversationIdOverride={tab.conversationId}
+                  visible={activeTabId === tab.conversationId && !sessionWindowIds.has(tab.conversationId)}
                   workspaceId={tab.workspaceId}
                   rightPanelToggle={{ open: rightPanelOpen, onToggle: toggleRightPanel }}
                 />

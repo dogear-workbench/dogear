@@ -109,6 +109,7 @@ export function SessionWindowPage() {
           ) : conversationId ? (
             <AgentChat
               conversationIdOverride={conversationId}
+              visible
               workspaceId={windowWorkspaceId}
               showStatusHint={false}
               rightPanelToggle={{

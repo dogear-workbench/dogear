@@ -9,6 +9,9 @@ import {
   pushLocalUserCore,
   resolvePermissionCore,
   settleTailCore,
+  isDeltaStreamEvent,
+  drainPendingStreamEvents,
+  type PendingStreamEvent,
 } from './useTranscriptState';
 
 const assistant = (blocks: Message['contentBlocks'] = []): Message => ({
@@ -50,6 +53,22 @@ describe('useTranscriptState core', () => {
       toolOutput: 'Task #1 created successfully: task',
     }), true);
     expect(core.structuralVersion).toBeGreaterThan(afterTaskCreate);
+  });
+
+  test('流事件分流与队列 drain 保持顺序并在事件后执行副作用', () => {
+    expect(isDeltaStreamEvent(event('text'))).toBe(true);
+    expect(isDeltaStreamEvent(event('thinking'))).toBe(true);
+    expect(isDeltaStreamEvent(event('result'))).toBe(false);
+    expect(isDeltaStreamEvent(event('permission_request'))).toBe(false);
+
+    const pending: PendingStreamEvent[] = [];
+    const order: string[] = [];
+    pending.push({ event: event('text'), sideEffect: () => order.push('text-effect') });
+    pending.push({ event: event('tool_result'), sideEffect: () => order.push('result-effect') });
+    drainPendingStreamEvents(pending, (item) => order.push(item.type));
+
+    expect(order).toEqual(['text', 'text-effect', 'tool_result', 'result-effect']);
+    expect(pending).toEqual([]);
   });
 
   test('权限请求登记、解决和 promote 状态一致', () => {

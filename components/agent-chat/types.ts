@@ -111,6 +111,8 @@ export interface AgentChatProps {
   conversationIdOverride?: string;
   /** 会话所属工作区（tab 携带；缺省回落全局 workspace store，兼容不传 props 的调用点） */
   workspaceId?: string | null;
+  /** 是否处于可见 tab；隐藏 tab 使用低频流刷新 */
+  visible?: boolean;
   /** 右侧面板折叠控制（主页/独立会话窗口传入，渲染到右侧工具轨道顶部） */
   rightPanelToggle?: {
     open: boolean;
