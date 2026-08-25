@@ -39,12 +39,7 @@ export function useVirtualTurns({
   const lastTurnIdRef = useRef<number>(-1);
 
   const getViewport = useCallback((): HTMLElement | null => {
-    const el = scrollContainerRef.current;
-    if (!el) return null;
-    return (
-      (el.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement | null) ??
-      el
-    );
+    return scrollContainerRef.current;
   }, [scrollContainerRef]);
 
   const recompute = useCallback(() => {

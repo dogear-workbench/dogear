@@ -55,11 +55,7 @@ export function useChatScroll({
   const programmaticRef = useRef(false);
 
   const getViewport = useCallback((): HTMLElement | null => {
-    return (
-      (scrollAreaRef.current?.querySelector(
-        '[data-radix-scroll-area-viewport]',
-      ) as HTMLElement | null) ?? scrollAreaRef.current ?? null
-    );
+    return scrollAreaRef.current;
   }, [scrollAreaRef]);
 
   const setFollowMode = (mode: 'auto' | 'manual') => {

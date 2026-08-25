@@ -300,6 +300,12 @@ export function AgentChat({
   // 解构出稳定引用，避免 useEffect deps 依赖整个 search 对象
   const openSearch = search.open;
 
+  // 历史加载完成后触底；followMode=auto 让虚拟占位测量回流时由 ResizeObserver 续滚校正
+  useEffect(() => {
+    if (historyStatus === 'loading' || !conversationId) return;
+    scrollToBottom('instant');
+  }, [conversationId, historyStatus, scrollToBottom]);
+
   // Ctrl+F 唤起搜索浮条
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -364,7 +370,7 @@ export function AgentChat({
       <div className="relative flex-1 overflow-hidden">
       <div
         ref={scrollAreaRef}
-        data-radix-scroll-area-viewport=""
+        data-chat-scroll-viewport=""
         className="h-full pr-12 overflow-y-auto"
         onScrollCapture={handleScroll}
       >

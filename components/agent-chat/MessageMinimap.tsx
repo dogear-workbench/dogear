@@ -68,10 +68,7 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
   // 计算当前 viewport 垂直中心所在的 turn
   // 虚拟滚动下大部分 [data-message-id] 不渲染，改为从渲染的 [data-virtual-turn-id] section 中找中心
   const recomputeCurrentTurn = useCallback(() => {
-    const viewport =
-      (scrollAreaRef.current?.querySelector(
-        '[data-radix-scroll-area-viewport]',
-      ) as HTMLElement | null) ?? scrollAreaRef.current;
+    const viewport = scrollAreaRef.current;
     if (!viewport) return;
 
     const centerY = viewport.scrollTop + viewport.clientHeight / 2;
@@ -103,10 +100,7 @@ export function MessageMinimap({ messages, hidden, scrollAreaRef, onJumpToMessag
 
   useEffect(() => {
     if (!shouldShow) return;
-    const viewport =
-      (scrollAreaRef.current?.querySelector(
-        '[data-radix-scroll-area-viewport]',
-      ) as HTMLElement | null) ?? scrollAreaRef.current;
+    const viewport = scrollAreaRef.current;
     if (!viewport) return;
 
     requestAnimationFrame(recomputeCurrentTurn);
