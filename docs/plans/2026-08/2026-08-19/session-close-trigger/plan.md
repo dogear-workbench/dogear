@@ -34,6 +34,6 @@
 
 ## 完成总结
 
-- **Step 1**（调度器重构 + triggerContext 贯通 + 精准提炼入口）：`handleSessionClose(conversationId)` 新签名落地——quitting 拦截、经 conversation-service 解析 workspace 严格过滤、`triggerContext.conversationId` 经 fireTask → runTask → executeTask hooks 透传，group_digest 带 context 时走 `triggerByConversation`（含脏判定）单组精准提炼。
-- **Step 2**（触发点下沉 pi-session-manager + failover 排除）：`_destroySession(sessionId, source)` 区分自然销毁/强杀，natural 时对绑定 conversation 逐个 fire-and-forget 通知调度器；detach 链路（detachAttachment / detachByConversationHolder）透传 source，failover 换血传 forced 不触发。
-- **Step 3**（清理旧触发点 + 端到端验证）：删除 index.ts 独立窗口 closed 事件旧触发段消除双发，行为矩阵九项代码级走查全部成立，codebase-map.md 五处条目同步，lint 0 errors + build:electron 通过。（本 step commit 后回填）
+- **Step 1**（6311fe2，调度器重构 + triggerContext 贯通 + 精准提炼入口）：`handleSessionClose(conversationId)` 新签名落地——quitting 拦截、经 conversation-service 解析 workspace 严格过滤、`triggerContext.conversationId` 经 fireTask → runTask → executeTask hooks 透传，group_digest 带 context 时走 `triggerByConversation`（含脏判定）单组精准提炼。
+- **Step 2**（22fb083，触发点下沉 pi-session-manager + failover 排除）：`_destroySession(sessionId, source)` 区分自然销毁/强杀，natural 时对绑定 conversation 逐个 fire-and-forget 通知调度器；detach 链路（detachAttachment / detachByConversationHolder）透传 source，failover 换血传 forced 不触发。
+- **Step 3**（f6e22b3，清理旧触发点 + 端到端验证）：删除 index.ts 独立窗口 closed 事件旧触发段消除双发，行为矩阵九项代码级走查全部成立，codebase-map.md 五处条目同步，lint 0 errors + build:electron 通过。
