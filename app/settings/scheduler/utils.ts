@@ -33,6 +33,54 @@ function daysOfMonthLabel(daysOfMonth: (number | 'last')[]): string {
   return `每月 ${parts.join('/')} 号`;
 }
 
+function normalizeWeekdays(weekdays?: number[]): number[] {
+  if (!weekdays || weekdays.length === 0) return [0, 1, 2, 3, 4, 5, 6];
+  return [...new Set(weekdays)].sort((a, b) => a - b);
+}
+
+function weekdaysIntersect(a?: number[], b?: number[]): boolean {
+  const sa = new Set(normalizeWeekdays(a));
+  return normalizeWeekdays(b).some((d) => sa.has(d));
+}
+
+function sameWeekdays(a?: number[], b?: number[]): boolean {
+  const na = normalizeWeekdays(a);
+  const nb = normalizeWeekdays(b);
+  return na.length === nb.length && na.every((d, i) => d === nb[i]);
+}
+
+function daysOfMonthIntersect(a: (number | 'last')[], b: (number | 'last')[]): boolean {
+  const sa = new Set(a.map(String));
+  return b.some((d) => sa.has(String(d)));
+}
+
+export function findTriggerOverlaps(triggers: Trigger[]): string[] | null {
+  const overlaps: string[] = [];
+  const timeTriggers = triggers.filter(
+    (t): t is Extract<Trigger, { type: 'daily_at' | 'monthly_at' | 'interval' }> =>
+      t.type === 'daily_at' || t.type === 'monthly_at' || t.type === 'interval',
+  );
+  for (let i = 0; i < timeTriggers.length; i += 1) {
+    for (let j = i + 1; j < timeTriggers.length; j += 1) {
+      const a = timeTriggers[i];
+      const b = timeTriggers[j];
+      let overlapped = false;
+      if (a.type === 'interval' || b.type === 'interval') {
+        overlapped = a.type === 'interval' && b.type === 'interval'
+          && a.minutes === b.minutes && sameWeekdays(a.weekdays, b.weekdays);
+      } else if (a.type === 'daily_at' && b.type === 'daily_at') {
+        overlapped = a.at === b.at && weekdaysIntersect(a.weekdays, b.weekdays);
+      } else if (a.type === 'monthly_at' && b.type === 'monthly_at') {
+        overlapped = a.at === b.at && daysOfMonthIntersect(a.daysOfMonth, b.daysOfMonth);
+      } else {
+        overlapped = a.at === b.at;
+      }
+      if (overlapped) overlaps.push(`${describeTrigger(a)} × ${describeTrigger(b)}`);
+    }
+  }
+  return overlaps.length > 0 ? overlaps : null;
+}
+
 export function describeTrigger(
   trigger: Trigger,
   taskNameOf?: (taskId: string) => string | undefined,

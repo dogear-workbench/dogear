@@ -14,6 +14,7 @@ import { ModelSelector } from '@/components/ModelSelector';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSchedulerStore } from '@/stores/scheduler-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { showConfirm } from '@/stores/confirm-store';
 import { cn } from '@/lib/utils';
 import type {
   CustomScheduledTask,
@@ -23,6 +24,7 @@ import type {
 import { BuiltinTaskDetailSection } from './BuiltinTaskDetailSection';
 import { CustomToolPacksSection } from './CustomToolPacksSection';
 import { TriggerListEditor } from './TriggerListEditor';
+import { findTriggerOverlaps } from './utils';
 import type { WorkspaceOption } from './utils';
 
 const selectCls = 'h-8 px-2 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring w-52';
@@ -93,6 +95,14 @@ export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
     if (err) {
       setError(err);
       return;
+    }
+    const overlaps = findTriggerOverlaps(draft.triggers);
+    if (overlaps) {
+      const proceed = await showConfirm(
+        '存在重叠的时间规则',
+        `以下规则会在某些时刻同时触发，任务将执行两次：${overlaps.join('；')}`,
+      );
+      if (!proceed) return;
     }
     setSaving(true);
     const ok = await saveTask(draft);
