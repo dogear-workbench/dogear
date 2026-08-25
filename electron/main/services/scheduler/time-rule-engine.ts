@@ -72,6 +72,40 @@ function nextDailyOccurrence(
   return null;
 }
 
+function isLastDayOfMonth(ts: number): boolean {
+  const d = new Date(ts);
+  d.setDate(d.getDate() + 1);
+  return d.getDate() === 1;
+}
+
+function monthlyDayOk(daysOfMonth: (number | 'last')[], ts: number): boolean {
+  const d = new Date(ts);
+  if (daysOfMonth.includes(d.getDate())) return true;
+  return daysOfMonth.includes('last') && isLastDayOfMonth(ts);
+}
+
+function nextMonthlyOccurrence(
+  minutes: number,
+  daysOfMonth: (number | 'last')[],
+  now: number,
+  anchor: number | null,
+): number | null {
+  if (anchor === null) {
+    for (let off = 0; off <= 62; off++) {
+      const occ = occurrenceOnDay(now, off, minutes);
+      if (!monthlyDayOk(daysOfMonth, occ)) continue;
+      if (occ >= now) return occ;
+    }
+    return null;
+  }
+  for (let off = -62; off <= 62; off++) {
+    const occ = occurrenceOnDay(now, off, minutes);
+    if (!monthlyDayOk(daysOfMonth, occ)) continue;
+    if (occ > anchor) return occ;
+  }
+  return null;
+}
+
 function missedDailyAt(at: string, weekdays: number[] | undefined, anchor: number | null, bootAt: number): number | null {
   const m = parseHHmm(at);
   if (m === null) return null;
@@ -85,13 +119,46 @@ function missedDailyAt(at: string, weekdays: number[] | undefined, anchor: numbe
   return null;
 }
 
-function missedIntervalAt(minutes: number, anchor: number | null, bootAt: number): number | null {
+function shiftIntervalToWeekday(due: number, weekdays: number[] | undefined): number {
+  if (!weekdays) return due;
+  for (let off = 0; off <= 7; off++) {
+    if (!weekdayOk(weekdays, dayOfWeekOnDay(due, off))) continue;
+    return occurrenceOnDay(due, off, minutesOfDay(due));
+  }
+  return due;
+}
+
+function missedMonthlyAt(
+  daysOfMonth: (number | 'last')[],
+  at: string,
+  anchor: number | null,
+  bootAt: number,
+): number | null {
+  const m = parseHHmm(at);
+  if (m === null) return null;
+  for (let off = 0; off >= -62; off--) {
+    const occ = occurrenceOnDay(bootAt, off, m);
+    if (!monthlyDayOk(daysOfMonth, occ)) continue;
+    if (occ > bootAt) continue;
+    if (anchor !== null && occ <= anchor) return null;
+    return occ;
+  }
+  return null;
+}
+
+function missedIntervalAt(
+  minutes: number,
+  weekdays: number[] | undefined,
+  anchor: number | null,
+  bootAt: number,
+): number | null {
   if (anchor === null || !Number.isFinite(minutes) || minutes <= 0) return null;
   const step = minutes * MINUTE_MS;
   const span = bootAt - anchor;
   if (span < step) return null;
   const k = Math.floor(span / step);
-  return anchor + k * step;
+  const shifted = shiftIntervalToWeekday(anchor + k * step, weekdays);
+  return shifted <= bootAt ? shifted : null;
 }
 
 function missedWindowCloseAt(spec: WindowSpec, anchor: number | null, bootAt: number): number | null {
@@ -126,6 +193,15 @@ function formatDateTime(ts: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function daysOfMonthLabel(daysOfMonth: (number | 'last')[]): string {
+  const hasLast = daysOfMonth.includes('last');
+  const nums = [...new Set(daysOfMonth.filter((d): d is number => typeof d === 'number'))].sort((a, b) => a - b);
+  if (hasLast && nums.length === 0) return '每月末';
+  const parts = nums.map(String);
+  if (hasLast) parts.push('末');
+  return `每月 ${parts.join('/')} 号`;
+}
+
 export function describeTrigger(
   trigger: Trigger,
   taskNameOf?: (taskId: string) => string | undefined,
@@ -133,8 +209,12 @@ export function describeTrigger(
   switch (trigger.type) {
     case 'daily_at':
       return `${weekdaysLabel(trigger.weekdays)} ${trigger.at}`;
-    case 'interval':
-      return `每 ${trigger.minutes} 分钟`;
+    case 'monthly_at':
+      return `${daysOfMonthLabel(trigger.daysOfMonth)} ${trigger.at}`;
+    case 'interval': {
+      const days = weekdaysLabel(trigger.weekdays);
+      return days === '每天' ? `每 ${trigger.minutes} 分钟` : `${days}每 ${trigger.minutes} 分钟`;
+    }
     case 'window':
       return `${weekdaysLabel(trigger.weekdays)}窗口 ${trigger.start}–${trigger.end}`;
     case 'once':
@@ -160,11 +240,16 @@ export function nextDueAt(trigger: Trigger, now: number): number | null {
       if (m === null) return null;
       return nextDailyOccurrence(m, trigger.weekdays, now, anchor);
     }
+    case 'monthly_at': {
+      const m = parseHHmm(trigger.at);
+      if (m === null) return null;
+      return nextMonthlyOccurrence(m, trigger.daysOfMonth, now, anchor);
+    }
     case 'interval': {
       if (!Number.isFinite(trigger.minutes) || trigger.minutes <= 0) return null;
       const aligned = alignToMinute(now);
-      if (anchor === null) return aligned;
-      return Math.max(anchor + trigger.minutes * MINUTE_MS, aligned);
+      if (anchor === null) return shiftIntervalToWeekday(aligned, trigger.weekdays);
+      return shiftIntervalToWeekday(Math.max(anchor + trigger.minutes * MINUTE_MS, aligned), trigger.weekdays);
     }
     case 'once':
       return trigger.fired ? null : trigger.at;
@@ -231,10 +316,18 @@ export function minNextDueAt(task: ScheduledTask, now: number): number | null {
         if (occ !== null) candidates.push(occ);
         break;
       }
+      case 'monthly_at': {
+        const m = parseHHmm(t.at);
+        if (m === null) break;
+        const occ = nextMonthlyOccurrence(m, t.daysOfMonth, now, null);
+        if (occ !== null) candidates.push(occ);
+        break;
+      }
       case 'interval': {
         if (!Number.isFinite(t.minutes) || t.minutes <= 0) break;
         const base = t.lastFiredAt != null ? t.lastFiredAt + t.minutes * MINUTE_MS : null;
-        candidates.push(base != null && base > now ? base : alignToMinute(now));
+        const due = base != null && base > now ? base : alignToMinute(now);
+        candidates.push(shiftIntervalToWeekday(due, t.weekdays));
         break;
       }
       case 'once': {
@@ -270,8 +363,10 @@ export function detectMissed(
     let missedAt: number | null = null;
     if (t.type === 'daily_at') {
       missedAt = missedDailyAt(t.at, t.weekdays, anchor, bootAt);
+    } else if (t.type === 'monthly_at') {
+      missedAt = missedMonthlyAt(t.daysOfMonth, t.at, anchor, bootAt);
     } else if (t.type === 'interval') {
-      missedAt = missedIntervalAt(t.minutes, anchor, bootAt);
+      missedAt = missedIntervalAt(t.minutes, t.weekdays, anchor, bootAt);
     } else if (t.type === 'once') {
       if (!t.fired && t.at <= bootAt) missedAt = t.at;
     } else if (t.type === 'on_window_close') {
@@ -304,9 +399,25 @@ export function validateTrigger(trigger: Trigger): string | null {
       if (parseHHmm(trigger.at) === null) return '时间格式须为 HH:mm';
       return validWeekdays(trigger.weekdays);
     }
+    case 'monthly_at': {
+      if (parseHHmm(trigger.at) === null) return '时间格式须为 HH:mm';
+      if (!Array.isArray(trigger.daysOfMonth) || trigger.daysOfMonth.length === 0) {
+        return 'daysOfMonth 不能为空';
+      }
+      const seen = new Set<string>();
+      for (const d of trigger.daysOfMonth) {
+        if (d !== 'last' && (!Number.isInteger(d) || d < 1 || d > 31)) {
+          return 'daysOfMonth 取值须为 1-31 或 last';
+        }
+        const key = String(d);
+        if (seen.has(key)) return 'daysOfMonth 不能重复';
+        seen.add(key);
+      }
+      return null;
+    }
     case 'interval': {
       if (!Number.isInteger(trigger.minutes) || trigger.minutes <= 0) return '间隔分钟数须为正整数';
-      return null;
+      return validWeekdays(trigger.weekdays);
     }
     case 'window': {
       const err = validWindowTimes(trigger.start, trigger.end);

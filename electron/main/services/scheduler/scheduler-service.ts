@@ -200,6 +200,7 @@ class SchedulerService {
   private async evaluateTrigger(task: ScheduledTask, trigger: Trigger, now: number): Promise<void> {
     switch (trigger.type) {
       case 'daily_at':
+      case 'monthly_at':
       case 'interval':
       case 'once': {
         const due = nextDueAt(trigger, now);

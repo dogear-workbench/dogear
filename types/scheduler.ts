@@ -16,7 +16,8 @@ interface TriggerBase {
 
 export type Trigger =
   | (TriggerBase & { type: 'daily_at'; at: string; weekdays?: number[] })
-  | (TriggerBase & { type: 'interval'; minutes: number })
+  | (TriggerBase & { type: 'monthly_at'; at: string; daysOfMonth: (number | 'last')[] })
+  | (TriggerBase & { type: 'interval'; minutes: number; weekdays?: number[] })
   | (TriggerBase & { type: 'window'; start: string; end: string; weekdays?: number[] })
   | (TriggerBase & { type: 'once'; at: number; fired?: boolean })
   | (TriggerBase & { type: 'on_window_close'; window: WindowSpec })
