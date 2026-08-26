@@ -1,4 +1,9 @@
 import { ToolDetailShell, ToolSection, KeyValueList, OutputBox } from './ToolDetailShell';
+import { PathChip, resolvePathInWorkspace, useWorkspacePath } from '../path-link';
+import { useWorkspaceId } from '../workspace-id-context';
+
+const PREVIEW_EXT_RE = /\.(md|markdown|txt|json)$/i;
+const HIT_LINE_RE = /^(.+?):(\d+):(.*)$/;
 
 interface Props {
   toolInput?: Record<string, any>;
@@ -7,6 +12,9 @@ interface Props {
 }
 
 export function GrepRenderer({ toolInput, toolOutput, isError }: Props) {
+  const workspaceId = useWorkspaceId();
+  const workspacePath = useWorkspacePath(workspaceId);
+
   const pattern: string = toolInput?.pattern ?? '';
   const path: string = toolInput?.path ?? '';
   const glob: string = toolInput?.glob ?? '';
@@ -27,6 +35,25 @@ export function GrepRenderer({ toolInput, toolOutput, isError }: Props) {
         : '';
 
   const lines = outputText ? outputText.split('\n').filter(Boolean) : [];
+
+  const renderHitLine = (line: string) => {
+    const m = workspacePath ? HIT_LINE_RE.exec(line) : null;
+    const filePath = m?.[1] ?? '';
+    const resolved =
+      m && workspacePath && PREVIEW_EXT_RE.test(filePath)
+        ? resolvePathInWorkspace(filePath, workspacePath)
+        : null;
+    if (m && workspaceId && resolved) {
+      return (
+        <>
+          <PathChip text={filePath} resolved={resolved} workspaceId={workspaceId} />
+          <span className="text-muted-foreground">:{m[2]}:</span>
+          <span>{highlightPattern(m[3], pattern)}</span>
+        </>
+      );
+    }
+    return highlightPattern(line, pattern);
+  };
 
   return (
     <ToolDetailShell>
@@ -52,9 +79,9 @@ export function GrepRenderer({ toolInput, toolOutput, isError }: Props) {
           {isError ? (
             <OutputBox content={outputText} isError maxHeightClass="max-h-60" />
           ) : (
-            <div className="font-mono text-foreground space-y-0.5 max-h-80 overflow-auto break-all">
+            <div className="font-mono text-xs text-foreground space-y-0.5 max-h-80 overflow-auto break-all">
               {lines.map((l, i) => (
-                <div key={i}>{highlightPattern(l, pattern)}</div>
+                <div key={i}>{renderHitLine(l)}</div>
               ))}
             </div>
           )}

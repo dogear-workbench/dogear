@@ -1,4 +1,8 @@
 import { ToolDetailShell, ToolSection, OutputBox } from './ToolDetailShell';
+import { PathChip, resolvePathInWorkspace, useWorkspacePath } from '../path-link';
+import { useWorkspaceId } from '../workspace-id-context';
+
+const PREVIEW_EXT_RE = /\.(md|markdown|txt|json)$/i;
 
 interface Props {
   toolInput?: Record<string, any>;
@@ -7,6 +11,9 @@ interface Props {
 }
 
 export function GlobRenderer({ toolInput, toolOutput, isError }: Props) {
+  const workspaceId = useWorkspaceId();
+  const workspacePath = useWorkspacePath(workspaceId);
+
   const pattern: string = toolInput?.pattern ?? '';
   const path: string = toolInput?.path ?? '';
 
@@ -21,6 +28,15 @@ export function GlobRenderer({ toolInput, toolOutput, isError }: Props) {
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
+
+  const renderFileLine = (f: string) => {
+    const resolved =
+      workspacePath && PREVIEW_EXT_RE.test(f) ? resolvePathInWorkspace(f, workspacePath) : null;
+    if (workspaceId && resolved) {
+      return <PathChip text={f} resolved={resolved} workspaceId={workspaceId} />;
+    }
+    return <span className="break-all">{f}</span>;
+  };
 
   return (
     <ToolDetailShell>
@@ -38,9 +54,9 @@ export function GlobRenderer({ toolInput, toolOutput, isError }: Props) {
           {isError ? (
             <OutputBox content={outputText} isError maxHeightClass="max-h-60" />
           ) : (
-            <div className="font-mono text-foreground space-y-0.5 max-h-80 overflow-auto break-all">
+            <div className="text-foreground space-y-0.5 max-h-80 overflow-auto break-all">
               {files.map((f, i) => (
-                <div key={i}>{f}</div>
+                <div key={i} className="font-mono text-xs">{renderFileLine(f)}</div>
               ))}
             </div>
           )}

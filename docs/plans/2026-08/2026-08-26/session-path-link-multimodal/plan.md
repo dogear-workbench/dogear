@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 引用解析修复](./step1-reference-parse-fix.md) — 修 conversation/file 正则 + 新增 shared_files 解析 + 剥离跨工作区提示，芯片恢复显示
 - [x] [Step 2: 路径按钮基础设施 + 正文挂载](./step2-pathtext-context.md) — PathText 组件 + WorkspaceIdContext + MarkdownRenderer 正文路径胶囊
-- [ ] [Step 3: 工具块路径按钮与专属渲染器](./step3-tool-renderers.md) — write/edit 专属渲染器（CodeChangeBlock 退役）+ Read/Glob/Grep/通用工具挂载 + 摘要修复
+- [x] [Step 3: 工具块路径按钮与专属渲染器](./step3-tool-renderers.md) — write/edit 专属渲染器（CodeChangeBlock 退役）+ Read/Glob/Grep/通用工具挂载 + 摘要修复
 - [ ] [Step 4: 图片多模态链路](./step4-image-multimodal.md) — pi-session 丢图断点修复 + adapter images 透传 + GLM 实测
 
 ## 全局决策

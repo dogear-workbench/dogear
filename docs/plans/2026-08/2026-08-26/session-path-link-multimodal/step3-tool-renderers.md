@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 工具块路径按钮与专属渲染器
-status: pending
+status: done
 ---
 
 ## 目标
@@ -49,10 +49,10 @@ write/edit 走新专属渲染器（常显路径 + 打开按钮，CodeChangeBlock
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① FileChangeRenderer 注册在 ToolBlock specializedRenderer 层（step 允许的一致性选择，normalizeToolName 一处归一双覆盖 pi 小写与旧大写，ContentBlockItem 只做删除）；② 标题行 PathChip 未做——CollapsibleBlock 标题是 button，嵌 PathChip 属非法 HTML 嵌套，标题改为常显纯文本摘要「Write · foo.md · 写入 1.2 KB」+ 状态图标，chip 在展开态文件区；③ write 快照预览按钮限 md/markdown（沿用 CodeChangeBlock isMarkdown 先例）；④ Step 2 接力棒有误：useWorkspaceId 实际在 workspace-id-context.tsx 导出，path-link 只 import 未 re-export；⑤ formatByteSize/getEditCount 从 FileChangeRenderer 导出供 ToolBlock 摘要复用
+- 改动文件清单：新建 `tool-renderers/FileChangeRenderer.tsx`（140 行）；`components/ToolBlock.tsx`（:17 导入、:88-100 摘要、:183-186 分发注册）；`ContentBlockItem.tsx`（删特判）；删 `CodeChangeBlock.tsx`；`tool-renderers/ToolDetailShell.tsx`（KeyValueList/OutputBox 过 PathText）；`ReadRenderer.tsx`/`GlobRenderer.tsx`/`GrepRenderer.tsx`（换 PathChip，Grep 三段解析 `HIT_LINE_RE` 失败降级整行）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：渲染链路 ContentBlockItem（无特判）→ ToolBlock（normalizeToolName 归一，:183 分发）→ FileChangeRenderer（kind='write'|'edit'）；chip 判定三条件：`PREVIEW_EXT_RE.test(p) && (resolved = resolvePathInWorkspace(p, workspacePath)) && workspaceId`；自由文本统一过 PathText 或 OutputBox（内部已过）
+- 下个 step 该从哪里继续：step4-image-multimodal.md（pi-session 丢图断点 + adapter images 透传 + GLM 实测，改主进程需 build:electron）
+- 待办或已知限制：① GUI 手工回归待运行时实测（标题摘要/快照按钮/chip 视觉）；② PREVIEW_EXT_RE 在 4 个 renderer 各自重复定义，后续可从 path-link 统一导出；③ write 快照只覆盖 md（txt/json 无打开动作）；④ Bash 黑底命令框退役改通用渲染，GUI 回归留意观感

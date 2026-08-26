@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { PathText } from '../path-link';
 
 /**
  * 工具详情统一外壳
@@ -51,7 +52,7 @@ export function KeyValueList({ data }: { data: Record<string, any> }) {
         <div key={k} className="flex gap-2 items-baseline">
           <dt className="text-muted-foreground font-mono shrink-0">{k}</dt>
           <dd className="text-foreground font-mono break-all whitespace-pre-wrap min-w-0 flex-1">
-            {typeof v === 'string' ? v : JSON.stringify(v)}
+            {typeof v === 'string' ? <PathText text={v} /> : JSON.stringify(v)}
           </dd>
         </div>
       ))}
@@ -79,7 +80,7 @@ export function OutputBox({
           : 'bg-muted/40 text-foreground',
       )}
     >
-      {content}
+      <PathText text={content} />
     </pre>
   );
 }

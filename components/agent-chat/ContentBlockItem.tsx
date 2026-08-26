@@ -7,7 +7,6 @@ import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { TodoListBlock } from './TodoListBlock';
-import { CodeChangeBlock } from './CodeChangeBlock';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { isQuotaErrorText, hasFailoverTakeover } from '@/lib/failover-markers';
@@ -201,16 +200,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
               </span>
             )}
           </div>
-        );
-      }
-      if (['Edit', 'Write', 'Bash'].includes(block.toolName || '')) {
-        return (
-          <CodeChangeBlock
-            toolName={block.toolName!}
-            toolInput={block.toolInput as Record<string, any> | undefined}
-            toolOutput={typeof block.toolOutput === 'string' ? block.toolOutput : undefined}
-            isError={block.isError}
-          />
         );
       }
       // toolOutput 已通过 tool_result 合并到 tool_use block 中

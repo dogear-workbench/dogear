@@ -14,6 +14,7 @@ import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
+import { FileChangeRenderer, formatByteSize, getEditCount } from './agent-chat/tool-renderers/FileChangeRenderer';
 
 /**
  * 工具调用状态
@@ -86,13 +87,18 @@ function getToolSummary(
       }
       return fileName;
 
-    case "Write":
-      const writeFile = toolInput.file_path || "";
-      return writeFile.split("/").pop() || writeFile;
+    case "Write": {
+      const writeFile = toolInput.file_path || toolInput.path || "";
+      const writeName = writeFile.split(/[\\/]/).pop() || writeFile;
+      const writeContent = typeof toolInput.content === "string" ? toolInput.content : "";
+      return `${writeName} · 写入 ${formatByteSize(writeContent)}`;
+    }
 
-    case "Edit":
-      const editFile = toolInput.file_path || "";
-      return editFile.split("/").pop() || editFile;
+    case "Edit": {
+      const editFile = toolInput.file_path || toolInput.path || "";
+      const editName = editFile.split(/[\\/]/).pop() || editFile;
+      return `${editName} · 替换 ${getEditCount(toolInput)} 处`;
+    }
 
     case "Bash":
       const cmd = toolInput.command || "";
@@ -174,6 +180,9 @@ export function ToolBlock({
 
   // Tier 1 专属渲染器
   const specializedRenderer = (() => {
+    if (canonicalName === 'Write' || canonicalName === 'Edit') {
+      return <FileChangeRenderer kind={canonicalName === 'Write' ? 'write' : 'edit'} toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+    }
     if (canonicalName === 'Read') {
       return <ReadRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
