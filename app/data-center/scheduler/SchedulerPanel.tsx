@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Cog, History, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
+import { Cog, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -10,7 +10,6 @@ import { useConfirmStore } from '@/stores/confirm-store';
 import { useSchedulerStore } from '@/stores/scheduler-store';
 import type { ScheduledTaskWithNextRun, SchedulerRunningPlan } from '@/types/scheduler';
 import type { Workspace } from '@/types/electron-api';
-import { HistorySheet } from './HistorySheet';
 import { TaskEditor } from './TaskEditor';
 import { describeTrigger, formatRelativeFuture } from './utils';
 import type { WorkspaceOption } from './utils';
@@ -41,7 +40,6 @@ export function SchedulerPanel({ workspaces }: Props) {
   );
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTaskWithNextRun | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string>('all');
   const [, setDisplayTick] = useState(0);
 
@@ -99,8 +97,6 @@ export function SchedulerPanel({ workspaces }: Props) {
     if (ok === 'confirm') await deleteTask(task.id);
   };
 
-  const handleViewHistory = () => setHistoryOpen(true);
-
   return (
     <div className="space-y-3">
       <div className="mb-3">
@@ -113,10 +109,6 @@ export function SchedulerPanel({ workspaces }: Props) {
         <Button size="sm" onClick={() => { setEditingTask(null); setEditorOpen(true); }}>
           <Plus className="w-4 h-4 mr-1" />
           新建任务
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleViewHistory}>
-          <History className="w-4 h-4 mr-1" />
-          查看执行历史
         </Button>
         <Select value={workspaceId} onValueChange={setWorkspaceId}>
           <SelectTrigger size="sm" className="ml-auto w-[180px]">
@@ -220,8 +212,6 @@ export function SchedulerPanel({ workspaces }: Props) {
         defaultWorkspaceId={workspaceId === 'all' ? '' : workspaceId}
         onOpenChange={setEditorOpen}
       />
-
-      <HistorySheet open={historyOpen} onOpenChange={setHistoryOpen} />
     </div>
   );
 }
