@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 路径按钮基础设施 + 正文挂载
-status: pending
+status: done
 ---
 
 ## 目标
@@ -35,10 +35,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① plan 全局决策写的 `useWorkspaceStore.getState().workspaces` 不存在（store 只有焦点单数 workspace），实现为 `useWorkspacePath` hook：焦点 id 匹配同步响应式取，否则模块级缓存 + `client.getAll()` IPC 拉全表（useSyncExternalStore 共享，WorkspaceSwitcherPopover/session-window 同款）；② 绝对路径同样要求白名单扩展名（设计文档渲染条件如此，`C:\ws\src\xx.ts` 纯文本）；③ 额外导出 `resolvePathInWorkspace`/`useWorkspacePath` 供 Step 3 复用；④ WorkspaceIdProvider value 为 `string | null`；⑤ 行内 code 识别收窄为「string children + 无 className + 不在 pre 内」
+- 改动文件清单：新建 `components/agent-chat/workspace-id-context.tsx`（Provider + useWorkspaceId）、`components/agent-chat/path-link.tsx`（:9 PathSegment、:16-18 三个正则、:20 resolvePathInWorkspace、:51 splitPathSegments、:79 useWorkspacePath、:115 PathChip、:141 PathText）；`AgentChat.tsx`（:27 导入、:360/:572 Provider 包顶层）；`MarkdownRenderer.tsx`（:27-38 wrapChildren 全量走 PathText、:40-66 CodeBlockContext+CodeWithPath+MarkdownCode、:121 pre 内 Provider 标记、code 注册）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`splitPathSegments(text, workspacePath): PathSegment[]`，`PathSegment = { type: 'text'|'path'; text; resolved?; fileName? }`（path 段 resolved 是 posix 风格绝对路径，可直接传 open()）；`resolvePathInWorkspace(candidate, workspacePath): string | null`；`PathChip({ text, resolved, fileName?, workspaceId })` 点击内置 open；`PathText({ text, searchQuery?, matchIdPrefix?, activeMatchId? })`；`useWorkspaceId()` + `useWorkspacePath(workspaceId)`——AgentChat 已包 Provider，ContentBlockItem/ToolBlock/tool-renderers 子树直接消费，无 Provider 时自动降级纯文本
+- 下个 step 该从哪里继续：step3-tool-renderers.md 计划改动段；分发入口 `ContentBlockItem.tsx:199`（大小写不敏感路由）与 `ToolBlock.tsx:134-148`；getToolSummary 摘要取 `file_path || path`
+- 待办或已知限制：① 搜索高亮 matchId 偏移在含路径段落进一步近似错位（跳转有 if(el) 守卫不崩溃，plan 拍板取舍）；② workspacePathsCache 无失效（新建工作区后非焦点旧 tab 查不到，低频接受）；③ 不支持含空格路径（设计文档排除项）；④ td/th 不做路径识别（与原高亮范围一致）；⑤ GUI 手工回归留待 step3/4 完成后统一实测

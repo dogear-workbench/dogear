@@ -24,6 +24,7 @@ import { MessageMinimap } from './MessageMinimap';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { ConversationIdProvider } from './conversation-id-context';
+import { WorkspaceIdProvider } from './workspace-id-context';
 import { buildTurns } from './turns';
 import { aggregateTasks } from './task-aggregator';
 import type { ExtendedSessionMessage } from '@/types/electron-api';
@@ -357,6 +358,7 @@ export function AgentChat({
   }, [conversationId, toggleCollapse]);
 
   return (
+    <WorkspaceIdProvider workspaceId={workspaceId ?? null}>
     <div className="relative flex flex-col h-full bg-white rounded-lg border">
       {/* SearchBar 挂在最外层 relative 容器，避免被内部 overflow-hidden 裁剪 */}
       <SearchBar
@@ -567,5 +569,6 @@ export function AgentChat({
       />
       )}
     </div>
+    </WorkspaceIdProvider>
   );
 }
