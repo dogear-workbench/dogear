@@ -3,6 +3,7 @@ import { Cog, History, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import { useConfirmStore } from '@/stores/confirm-store';
@@ -17,11 +18,10 @@ import type { WorkspaceOption } from './utils';
 const ACTIVITY_POLL_MS = 10_000;
 
 interface Props {
-  workspaceId: string | 'all';
   workspaces: Workspace[];
 }
 
-export function SchedulerPanel({ workspaceId, workspaces }: Props) {
+export function SchedulerPanel({ workspaces }: Props) {
   const tasks = useSchedulerStore((s) => s.tasks);
   const loading = useSchedulerStore((s) => s.loading);
   const loadingError = useSchedulerStore((s) => s.loadingError);
@@ -42,6 +42,7 @@ export function SchedulerPanel({ workspaceId, workspaces }: Props) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTaskWithNextRun | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string>('all');
   const [, setDisplayTick] = useState(0);
 
   useEffect(() => {
@@ -102,6 +103,12 @@ export function SchedulerPanel({ workspaceId, workspaces }: Props) {
 
   return (
     <div className="space-y-3">
+      <div className="mb-3">
+        <h2 className="text-lg font-semibold mb-1">定时计划</h2>
+        <p className="text-sm text-muted-foreground">
+          每个任务一行：内置任务（组卡提炼 / 复盘报告 / 补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
+        </p>
+      </div>
       <div className="flex items-center gap-2">
         <Button size="sm" onClick={() => { setEditingTask(null); setEditorOpen(true); }}>
           <Plus className="w-4 h-4 mr-1" />
@@ -111,7 +118,18 @@ export function SchedulerPanel({ workspaceId, workspaces }: Props) {
           <History className="w-4 h-4 mr-1" />
           查看执行历史
         </Button>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => loadTasks()} title="刷新任务列表">
+        <Select value={workspaceId} onValueChange={setWorkspaceId}>
+          <SelectTrigger size="sm" className="ml-auto w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部工作区</SelectItem>
+            {workspaces.map((w) => (
+              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="sm" onClick={() => loadTasks()} title="刷新任务列表">
           <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
         </Button>
       </div>

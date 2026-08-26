@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 基础组件准备](./step1-ui-components.md) — tabs 加 underline 变体 + 新装 shadcn Select
-- [ ] [Step 2: 页面骨架重构](./step2-page-shell.md) — 删 header、顶部下划线导航 6 tab、工作区筛选下沉四个 panel、执行历史 tab 占位
+- [x] [Step 2: 页面骨架重构](./step2-page-shell.md) — 删 header、顶部下划线导航 6 tab、工作区筛选下沉四个 panel、执行历史 tab 占位
 - [ ] [Step 3: 执行历史面板化](./step3-history-panel.md) — HistorySheet 拆壳平铺为 history-panel，筛选换 Select，接 useVisiblePolling
 - [ ] [Step 4: 任务编辑二级页](./step4-task-editor-page.md) — Dialog 改页面内 TaskEditorPage，左提示词右参数，BuiltinTaskDetailSection 拆分
 - [ ] [Step 5: 触发器编辑器重构](./step5-trigger-editor.md) — 摘要行 + 展开编辑 + DropdownMenu 分组添加

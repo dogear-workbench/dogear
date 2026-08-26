@@ -3,6 +3,7 @@ import { FileText, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
 import { resolveModelLabel } from '@/lib/model-selection';
@@ -54,11 +55,11 @@ const KIND_VARIANT: Record<string, 'default' | 'secondary' | 'outline'> = {
 };
 
 interface DigestsPanelProps {
-  workspaceId: string | 'all';
   workspaces: Workspace[];
 }
 
-export function DigestsPanel({ workspaceId, workspaces }: DigestsPanelProps) {
+export function DigestsPanel({ workspaces }: DigestsPanelProps) {
+  const [workspaceId, setWorkspaceId] = useState<string>('all');
   const isAll = workspaceId === 'all';
   const confirm = useConfirmStore((s) => s.confirm);
   const settings = useSettingsStore((s) => s.settings);
@@ -136,7 +137,25 @@ export function DigestsPanel({ workspaceId, workspaces }: DigestsPanelProps) {
   };
 
   return (
-    <div className="flex gap-6">
+    <div>
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">组卡</h2>
+        <Select value={workspaceId} onValueChange={setWorkspaceId}>
+          <SelectTrigger size="sm" className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部工作区</SelectItem>
+            {workspaces.map((w) => (
+              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <p className="text-sm text-muted-foreground mb-6 mt-1">
+        后台自动把每个会话提炼成摘要卡，可查看组卡详情或对单个组补跑提炼；提炼模型与提示词在「定时计划」的任务编辑器中配置。
+      </p>
+      <div className="flex gap-6">
       {/* 左侧：组卡列表 */}
       <div className="w-64 shrink-0 space-y-1 max-h-[60vh] overflow-y-auto">
         {list.length === 0 ? (
@@ -239,6 +258,7 @@ export function DigestsPanel({ workspaceId, workspaces }: DigestsPanelProps) {
             )}
           </div>
         )}
+      </div>
       </div>
     </div>
   );

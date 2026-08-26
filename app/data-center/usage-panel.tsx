@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { resolveModelLabel } from '@/lib/model-selection';
@@ -49,11 +50,11 @@ function fmtLastActive(ts: number): string {
 }
 
 interface UsagePanelProps {
-  workspaceId: string | 'all';
   workspaces: Workspace[];
 }
 
-export function UsagePanel({ workspaceId, workspaces }: UsagePanelProps) {
+export function UsagePanel({ workspaces }: UsagePanelProps) {
+  const [workspaceId, setWorkspaceId] = useState<string>('all');
   const isAll = workspaceId === 'all';
   const settings = useSettingsStore((s) => s.settings);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -187,8 +188,21 @@ export function UsagePanel({ workspaceId, workspaces }: UsagePanelProps) {
 
   return (
     <div className="max-w-4xl px-6 py-6">
-      <h2 className="mb-1 text-lg font-semibold">用量</h2>
-      <p className="mb-4 text-sm text-muted-foreground">
+      <div className="flex items-center justify-between gap-4">
+        <h2 className="text-lg font-semibold">用量</h2>
+        <Select value={workspaceId} onValueChange={setWorkspaceId}>
+          <SelectTrigger size="sm" className="w-[180px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">全部工作区</SelectItem>
+            {workspaces.map((w) => (
+              <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <p className="mb-4 mt-1 text-sm text-muted-foreground">
         按时段汇总 token 消耗（计费口径：input + output + 缓存读，跨轮累加）。
         时间页显示该时段内的用量，「全部」为会话全量累计；点击会话展开逐轮明细。
       </p>

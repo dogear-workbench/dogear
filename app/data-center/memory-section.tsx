@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { FolderOpen, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { client } from '@/lib/client';
 import { useConfirmStore } from '@/stores/confirm-store';
@@ -10,13 +11,13 @@ import { TopicsPanel } from './topics-panel';
 import { SmartCategoryPanel } from './smart-category-panel';
 
 interface Props {
-  workspaceId: string | 'all';
   workspaces: Workspace[];
 }
 
-export function MemorySection({ workspaceId, workspaces }: Props) {
+export function MemorySection({ workspaces }: Props) {
   const confirm = useConfirmStore((s) => s.confirm);
   const [rebuilding, setRebuilding] = useState(false);
+  const [workspaceId, setWorkspaceId] = useState<string>('all');
 
   const workspace = workspaceId === 'all'
     ? undefined
@@ -63,19 +64,41 @@ export function MemorySection({ workspaceId, workspaces }: Props) {
     }
   };
 
+  const header = (
+    <div className="flex items-center justify-between gap-4">
+      <h2 className="text-lg font-semibold">记忆</h2>
+      <Select value={workspaceId} onValueChange={setWorkspaceId}>
+        <SelectTrigger size="sm" className="w-[180px]">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">全部工作区</SelectItem>
+          {workspaces.map((w) => (
+            <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   if (!workspace || !workspacePath) {
     return (
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        <div className="text-center space-y-2">
-          <FolderOpen className="w-10 h-10 mx-auto opacity-50" />
-          <p className="text-sm">记忆按工作区组织，请在右上角选择具体工作区</p>
+      <div>
+        {header}
+        <div className="flex items-center justify-center text-muted-foreground py-16">
+          <div className="text-center space-y-2">
+            <FolderOpen className="w-10 h-10 mx-auto opacity-50" />
+            <p className="text-sm">记忆按工作区组织，请在上方选择具体工作区</p>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div>
+      {header}
+      <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
           为「{workspace.name}」维护核心档案与主题记忆。核心档案每次会话启动时注入系统提示词，
@@ -106,6 +129,7 @@ export function MemorySection({ workspaceId, workspaces }: Props) {
           <SmartCategoryPanel workspaceId={workspace.id} />
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 }
