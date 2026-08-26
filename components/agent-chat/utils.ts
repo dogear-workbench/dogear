@@ -25,6 +25,7 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
     snippetRefs: [],
     fileRefs: [],
     conversationRefs: [],
+    sharedFileRefs: [],
     userMessage: content,
   };
 
@@ -48,12 +49,13 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   const xmlFileRegex = /<referenced_files>\s*([\s\S]*?)\s*<\/referenced_files>/;
   const xmlFileMatch = content.match(xmlFileRegex);
   if (xmlFileMatch) {
-    const fileTagRegex = /<file\s+name="([^"]+)"\s+path="([^"]+)"\s*\/>/g;
+    const fileTagRegex = /<file\s+name="([^"]+)"\s+path="([^"]+)"(?:\s+type="([^"]+)")?\s*\/>/g;
     let tagMatch;
     while ((tagMatch = fileTagRegex.exec(xmlFileMatch[1])) !== null) {
       result.fileRefs.push({
         name: tagMatch[1],
         path: tagMatch[2],
+        type: tagMatch[3] === 'folder' ? 'folder' : undefined,
       });
     }
     content = content.replace(xmlFileMatch[0], '');
@@ -63,16 +65,39 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   const xmlConvRegex = /<referenced_conversations>\s*([\s\S]*?)\s*<\/referenced_conversations>/;
   const xmlConvMatch = content.match(xmlConvRegex);
   if (xmlConvMatch) {
-    const convTagRegex = /<conversation\s+title="([^"]+)"\s+conversationId="([^"]+)"(?:\s+sessionId="([^"]+)")?\s*\/>/g;
+    const convTagRegex = /<conversation\s+title="([^"]+)"\s+conversationId="([^"]+)"(?:\s+sessionId="([^"]*)")?(?:\s+workspaceId="([^"]*)")?\s*\/>/g;
     let tagMatch;
     while ((tagMatch = convTagRegex.exec(xmlConvMatch[1])) !== null) {
       result.conversationRefs.push({
         title: tagMatch[1],
         conversationId: tagMatch[2],
         sessionId: tagMatch[3] || undefined,
+        workspaceId: tagMatch[4] || undefined,
       });
     }
     content = content.replace(xmlConvMatch[0], '');
+    // 发送端在跨工作区引用时紧跟块后注入的中文提示，取稳定前缀匹配，后缀措辞变化不影响
+    content = content.replace(/\n?（注：引用的会话可能属于其他工作区[^\n]*/g, '');
+  }
+
+  // 匹配 <referenced_shared_files>...</referenced_shared_files>
+  const xmlSharedFileRegex = /<referenced_shared_files>\s*([\s\S]*?)\s*<\/referenced_shared_files>/;
+  const xmlSharedFileMatch = content.match(xmlSharedFileRegex);
+  if (xmlSharedFileMatch) {
+    const sharedFileTagRegex = /<shared_file\s+group_id="([^"]+)"\s+rel_path="([^"]+)"\s+abs_path="([^"]+)"\s*\/>/g;
+    let tagMatch;
+    while ((tagMatch = sharedFileTagRegex.exec(xmlSharedFileMatch[1])) !== null) {
+      result.sharedFileRefs.push({
+        groupId: tagMatch[1],
+        relPath: tagMatch[2],
+        absPath: tagMatch[3],
+      });
+    }
+    // 属性不全的条目被严格正则跳过；只要存在跳过的条目就不剥外层，避免信息静默丢失
+    const tagCount = (xmlSharedFileMatch[1].match(/<shared_file\b/g) || []).length;
+    if (result.sharedFileRefs.length === tagCount) {
+      content = content.replace(xmlSharedFileMatch[0], '');
+    }
   }
 
   // 匹配 <sender kind="..." session_id="..." name="..." delivery="..."/>

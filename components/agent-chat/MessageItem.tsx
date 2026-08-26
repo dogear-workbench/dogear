@@ -1,5 +1,5 @@
 import { useState, memo } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -10,6 +10,7 @@ import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, 
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { Message, ContentBlock } from './types';
 
 /** failover 续跑提示（主进程注入的哨兵 user 消息）：系统提示条样式，剥掉哨兵不显示 */
@@ -93,6 +94,7 @@ export const MessageItem = memo(function MessageItem({
 }) {
   const isUser = message.role === 'user';
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
+  const currentWorkspaceId = useWorkspaceStore(s => s.workspace?.id);
 
   // sticky 展开/收起状态（用户消息默认折叠为 2 行）
   const [isStickyExpanded, setIsStickyExpanded] = useState(false);
@@ -187,7 +189,8 @@ export const MessageItem = memo(function MessageItem({
                   parsed.articleRefs.length > 0 ||
                   parsed.snippetRefs.length > 0 ||
                   parsed.fileRefs.length > 0 ||
-                  parsed.conversationRefs.length > 0;
+                  parsed.conversationRefs.length > 0 ||
+                  parsed.sharedFileRefs.length > 0;
                 return (
                   <div className="relative">
                     {/* Sender 徽章：agent 跨会话消息 / 用户在 agent 会话里介入 */}
@@ -238,7 +241,9 @@ export const MessageItem = memo(function MessageItem({
                             className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700"
                             title={ref.path}
                           >
-                            <FileText className="w-3 h-3 flex-shrink-0" />
+                            {ref.type === 'folder'
+                              ? <Folder className="w-3 h-3 flex-shrink-0" />
+                              : <FileText className="w-3 h-3 flex-shrink-0" />}
                             <span className="max-w-[160px] truncate">{ref.name}</span>
                           </span>
                         ))}
@@ -250,6 +255,19 @@ export const MessageItem = memo(function MessageItem({
                           >
                             <MessageSquare className="w-3 h-3 flex-shrink-0" />
                             <span className="max-w-[160px] truncate">{ref.title}</span>
+                            {ref.workspaceId && ref.workspaceId !== currentWorkspaceId && (
+                              <span className="px-1 rounded bg-purple-100 text-purple-500 text-[10px] flex-shrink-0">跨工作区</span>
+                            )}
+                          </span>
+                        ))}
+                        {parsed.sharedFileRefs.map((ref, i) => (
+                          <span
+                            key={`shared-file-${i}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700"
+                            title={ref.absPath}
+                          >
+                            <Share2 className="w-3 h-3 flex-shrink-0" />
+                            <span className="max-w-[160px] truncate">{`共享文件 · ${ref.relPath}`}</span>
                           </span>
                         ))}
                       </div>

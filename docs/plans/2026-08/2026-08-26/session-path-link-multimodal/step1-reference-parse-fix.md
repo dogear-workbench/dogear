@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 引用解析修复
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,10 +36,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无实质差异。补充：① conversation 正则 sessionId 捕获组从 `[^"]+` 改为 `[^"]*`（发送端可能生成 `sessionId=""`，旧行为下这类条目也丢，属同根 bug 顺手修复）；② 跨工作区提示剥离条件挂在「外层 conversation 块匹配到」而非 refs 数量，防块内条目全不匹配时提示残留；③「缺属性不剥外层」实现为提取数 vs `<shared_file\b` 出现数比对，一致才剥，有效条目仍进 refs
+- 改动文件清单：`components/agent-chat/utils.ts`（:28 sharedFileRefs 初始化、:54 file type 组、:58 type 折叠、:68 conversation 正则、:75 workspaceId、:79-80 跨区提示剥离、:84-101 shared_files 块）、`components/agent-chat/types.ts`（:136-157 三个接口扩展）、`components/agent-chat/MessageItem.tsx`（:2 Folder/Share2 图标、:5 workspace-store、:97 currentWorkspaceId、:188-193 hasRefs、:243-247 folder 图标、:258-260 跨工作区徽标、:263-273 共享文件芯片）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`ParsedUserMessage.sharedFileRefs: ParsedSharedFileRef[]`，`ParsedSharedFileRef { groupId: string; relPath: string; absPath: string }`；`ParsedFileRef.type?: 'file' | 'folder'`（仅 'folder' 值会被解析端保留，其余落 undefined）；`ParsedConversationRef.workspaceId?: string`（空串归一化为 undefined）。MessageItem 已有 `currentWorkspaceId`（:97）可复用
+- 下个 step 该从哪里继续：路径链接正则（MarkdownRenderer 层）与多模态渲染，见 plan.md 对应 step
+- 待办或已知限制：① 属性顺序仍依赖发送端固定生成顺序（title→conversationId→sessionId→workspaceId / group_id→rel_path→abs_path），发送端换序会静默丢引用；② 共享文件芯片无点击打开（计划如此）；③ 跨工作区徽标依赖渲染时 workspace store 的当前值，历史消息在切换工作区后徽标会跟随变化（符合预期）
