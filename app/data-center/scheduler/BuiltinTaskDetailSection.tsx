@@ -21,36 +21,12 @@ const MODEL_IO = {
   categorize_organize: { get: client.getCategorizeModelSelection, set: client.setCategorizeModelSelection },
 } as const;
 
-export function BuiltinTaskDetailSection({ builtinId }: Props) {
-  const settings = useSettingsStore((s) => s.settings);
-  const [selection, setSelection] = useState<ModelSelection | null>(null);
+export function BuiltinPromptSection({ builtinId }: Props) {
   const [prompt, setPrompt] = useState('');
-  const [tools, setTools] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    MODEL_IO[builtinId].get().then((r) => {
-      if (cancelled) return;
-      if ('selection' in r) setSelection(r.selection ?? null);
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [builtinId]);
-
-  const handleSelectionChange = async (next: ModelSelection | null) => {
-    setSelection(next);
-    try {
-      const r = await MODEL_IO[builtinId].set({ selection: next });
-      if (!('success' in r)) toast.error('保存模型选择失败', { description: r.error });
-    } catch (e) {
-      toast.error('保存模型选择失败', { description: String(e) });
-    }
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -64,7 +40,6 @@ export function BuiltinTaskDetailSection({ builtinId }: Props) {
         return;
       }
       setPrompt(r.prompt);
-      setTools(r.tools ?? []);
     }).catch((e) => {
       if (cancelled) return;
       setLoading(false);
@@ -113,53 +88,105 @@ export function BuiltinTaskDetailSection({ builtinId }: Props) {
   };
 
   return (
-    <>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium shrink-0">模型</span>
-        <div className="min-w-[220px]">
-          <ModelSelector
-            settings={settings}
-            value={selection}
-            onChange={handleSelectionChange}
-            allowUnset={true}
-            triggerVariant="block"
+    <div className="flex-1 min-h-0 flex flex-col gap-1.5">
+      <div className="flex items-center gap-2">
+        <label className="text-sm font-medium">提示词</label>
+        <Badge variant="subtle" className="text-[10px] px-1.5 py-0">全局模板</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        全局模板，影响该内置任务的所有触发入口（含其他工作区与后台自动运行）；「保存提示词」独立于页面级「保存」按钮。
+      </p>
+      {loading ? (
+        <div className="flex-1 min-h-[220px] rounded-md border flex items-center justify-center text-xs text-muted-foreground">
+          提示词加载中…
+        </div>
+      ) : error ? (
+        <p className="text-sm text-destructive">{error}</p>
+      ) : (
+        <>
+          <Textarea
+            className="flex-1 min-h-[220px] resize-none field-sizing-fixed text-sm font-mono"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
           />
-        </div>
-        <span className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</span>
-      </div>
-      <div className="space-y-1.5">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">提示词</label>
-          <Badge variant="subtle" className="text-[10px] px-1.5 py-0">全局模板</Badge>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          全局模板，影响该内置任务的所有触发入口（含其他工作区与后台自动运行）；保存提示词独立于下方「保存」按钮。
-        </p>
-        {loading ? (
-          <div className="h-[220px] rounded-md border flex items-center justify-center text-xs text-muted-foreground">
-            提示词加载中…
+          <div className="flex gap-2">
+            <Button size="sm" onClick={handleSavePrompt} disabled={saving || resetting}>
+              {saving ? '保存中…' : '保存提示词'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={handleResetPrompt} disabled={saving || resetting}>
+              {resetting ? '恢复中…' : '恢复默认'}
+            </Button>
           </div>
-        ) : error ? (
-          <p className="text-sm text-destructive">{error}</p>
-        ) : (
-          <>
-            <Textarea
-              className="min-h-[220px] text-sm font-mono"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleSavePrompt} disabled={saving || resetting}>
-                {saving ? '保存中…' : '保存提示词'}
-              </Button>
-              <Button size="sm" variant="outline" onClick={handleResetPrompt} disabled={saving || resetting}>
-                {resetting ? '恢复中…' : '恢复默认'}
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-      <div className="space-y-1.5">
+        </>
+      )}
+    </div>
+  );
+}
+
+export function BuiltinParamsSection({ builtinId }: Props) {
+  const settings = useSettingsStore((s) => s.settings);
+  const [selection, setSelection] = useState<ModelSelection | null>(null);
+  const [tools, setTools] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    MODEL_IO[builtinId].get().then((r) => {
+      if (cancelled) return;
+      if ('selection' in r) setSelection(r.selection ?? null);
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [builtinId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    client.getBuiltinTaskDetail({ builtinId }).then((r) => {
+      if (cancelled) return;
+      setLoading(false);
+      if (r.error) {
+        setError(r.error);
+        return;
+      }
+      setTools(r.tools ?? []);
+    }).catch((e) => {
+      if (cancelled) return;
+      setLoading(false);
+      setError(String(e));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [builtinId]);
+
+  const handleSelectionChange = async (next: ModelSelection | null) => {
+    setSelection(next);
+    try {
+      const r = await MODEL_IO[builtinId].set({ selection: next });
+      if (!('success' in r)) toast.error('保存模型选择失败', { description: r.error });
+    } catch (e) {
+      toast.error('保存模型选择失败', { description: String(e) });
+    }
+  };
+
+  return (
+    <>
+      <section className="rounded-lg border bg-card p-3 space-y-2">
+        <label className="text-sm font-medium">模型</label>
+        <ModelSelector
+          settings={settings}
+          value={selection}
+          onChange={handleSelectionChange}
+          allowUnset={true}
+          triggerVariant="block"
+        />
+        <p className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</p>
+      </section>
+      <section className="rounded-lg border bg-card p-3 space-y-2">
         <label className="text-sm font-medium">可用工具</label>
         {loading ? (
           <p className="text-xs text-muted-foreground">工具清单加载中…</p>
@@ -174,7 +201,7 @@ export function BuiltinTaskDetailSection({ builtinId }: Props) {
             ))}
           </div>
         )}
-      </div>
+      </section>
     </>
   );
 }

@@ -51,12 +51,8 @@ export default function DataCenterPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="scheduler" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <div className="h-full overflow-y-auto">
-            <div className="max-w-4xl py-6 px-6">
-              <SchedulerPanel workspaces={workspaces} />
-            </div>
-          </div>
+        <TabsContent value="scheduler" forceMount className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
+          <SchedulerPanel workspaces={workspaces} />
         </TabsContent>
 
         <TabsContent value="history" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
