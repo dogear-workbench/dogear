@@ -62,6 +62,8 @@
   - `SubAgentBlock.tsx` — 子 Agent 块
   - `LineageBar.tsx` — 溯源条：当前对话 contractMetadata 存在（agent 派出）时顶部显示「由 \[派出者标题\] 派出：\[task\]」，点击跳转派出者会话；派出者已删除时显示灰色占位
   - `highlight.ts` — 搜索高亮工具（mark 黄底 + active 橙底 ring）
+  - `path-link.tsx` — 工作区路径胶囊基础设施：splitPathSegments/resolvePathInWorkspace 纯函数（白名单扩展名 + resolve 后区内才可点，前缀 lowercase 比较）、PathChip 可点胶囊（点击 markdown-preview-store.open 弹浮窗）、PathText 正文增强（先切路径再搜索高亮）、useWorkspacePath（焦点工作区响应式取 + 否则 client.getAll 缓存）
+  - `workspace-id-context.tsx` — 会话所属工作区 Context（AgentChat 顶层包 Provider，tool-renderers/MarkdownRenderer 子树消费；无 Provider 时自动降级纯文本）
   - `minimap-utils.ts` — 消息预览提取工具函数
   - `transformers.ts` — 消息转换工具（streamReducer 消费主进程事件流，含 message_id 终化）
   - `task-aggregator.ts` — Task\* CRUD 聚合纯函数（aggregateTasks），把分散的 TaskCreate/TaskUpdate 合成当前任务清单，由 AgentChat 渲染期派生吸附渲染
@@ -85,6 +87,7 @@
     - `GlobRenderer.tsx` — Glob 工具：pattern 徽章 + 匹配文件路径列表
     - `GrepRenderer.tsx` — Grep 工具：pattern 徽章 + 命中行 + 关键词高亮
     - `SkillRenderer.tsx` — Skill 工具：lucide Zap 琥珀色图标 + Skill 名 + 参数 + 输出
+    - `FileChangeRenderer.tsx` — Write/Edit 工具：pi(path/edits[]) 与旧 SDK(file_path/old_string) 双兼容，write 快照预览（openInline 零 IO，仅 md/markdown）+ 内容区，edit PathChip 读盘 + 红/绿 diff 区；导出 formatByteSize/getEditCount 供 ToolBlock 摘要复用（替代已删除的 CodeChangeBlock）
   - `usage-badge/` — 会话 token 用量监控（输入框工具栏徽章 + HoverCard 详情）
     - `UsageBadge.tsx` — 徽章本体：进度条 + token 文字，hover/click 固定展开 HoverCard
     - `UsageHoverCard.tsx` — 详情卡容器（组合下列四块）
@@ -94,7 +97,7 @@
     - `useConversationUsage.ts` — hook：getUsage 拉取 + usageEntryAdded 订阅刷新 + 从 latestContext 派生上下文占用/上限
     - `UsageContextBreakdown.tsx` — 上下文构成细分（SDK categories 按类别 token 占比条）
     - `usage-utils.ts` — 派生纯函数（resolveContext/ContextInfo/formatTokens/cacheHitRate），含单测
-- `ToolBlock.tsx` — 工具块路由组件（顶层 components/，按工具名分发到专属 renderer 或 ToolDetailShell；图标走 lucide 简约样式，无边框包裹）
+- `ToolBlock.tsx` — 工具块路由组件（顶层 components/，normalizeToolName 归一后分发到专属 renderer：Read/Glob/Grep/Skill/Write/Edit（FileChangeRenderer），其余走 ToolDetailShell；图标走 lucide 简约样式，无边框包裹；getToolSummary 摘要兼容 file_path/path 双入参）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `AdditionalFilesPanel.tsx` — 右侧「附加」tab：附加路径手风琴列表（文件夹分节行样式与文件树一致，行尾 Switch 启停 + hover 删除，展开后文件树占满面板，可多节同时展开）
 - `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readGroupBackground 结构化内嵌：主题/进展/已拍板决策/待议问题）+ 组卡提炼（摘要 line-clamp 预览，点击 readGroupDigestRaw 拿原文走 MarkdownFileDialog 浮窗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）
@@ -117,7 +120,7 @@
 - `WelcomeFirstRun.tsx` — 零工作区首次启动引导卡片
 - `WorkspaceRuleDialog.tsx` — 工作区规则 Dialog（agent.md 编辑器）
 - `EmptyFocusState.tsx` — 无聚焦对话时的占位
-- `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮
+- `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮；p/li 文本过 PathText（工作区白名单路径渲染可点胶囊），行内 code 命中路径同样胶囊（CodeBlockContext 区分裸代码块）
 - `ModelSelector.tsx` — 通用模型选择下拉（按 Profile 分组、按 modelId 去重、可选「不指定」、inline/block 两种触发器）
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 - `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸

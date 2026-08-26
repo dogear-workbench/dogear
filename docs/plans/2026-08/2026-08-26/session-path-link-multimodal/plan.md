@@ -13,6 +13,15 @@
 - [x] [Step 3: 工具块路径按钮与专属渲染器](./step3-tool-renderers.md) — write/edit 专属渲染器（CodeChangeBlock 退役）+ Read/Glob/Grep/通用工具挂载 + 摘要修复
 - [x] [Step 4: 图片多模态链路](./step4-image-multimodal.md) — pi-session 丢图断点修复 + adapter images 透传 + GLM 实测
 
+## 完成总结
+
+四步全部完成并提交：bb0f6a9（引用解析修复）→ b090720（PathText 路径胶囊基础设施）→ 4d72ad1（工具块专属渲染器）→ 99a746a（图片多模态链路）。
+
+- A 线（路径直开）：PathText/PathChip + WorkspaceIdContext 全链路就绪，正文/行内 code/Read/Glob/Grep/write/edit/工具入参输出均有可点路径胶囊，CodeChangeBlock 退役
+- B 线（引用修复）：四类引用芯片恢复显示，旧消息向后兼容
+- C 线（多模态）：代码层已打通，待用户重启应用后 GUI 实测（清单见 step4 实施回填；glm-5.3-flash 对 tool result 图的支持待实测确认）
+- 主要取舍：搜索高亮 matchId 在含路径段落近似错位（跳转有守卫）；不支持含空格路径；图片 base64 全量落 JSONL
+
 ## 全局决策
 
 - **路径识别规则**（全步骤统一，实现放 PathText 同文件导出的纯函数）：① 绝对路径 `[A-Za-z]:[\\/]` 开头或 `/` 开头；② 相对路径必须含 `/` 或 `\` 且以 `.md/.markdown/.txt/.json` 结尾。渲染条件：`path.resolve(workspaceRoot, p)` 后以 `workspace.path + 分隔符`（或恰好相等）开头，前缀比较 lowercase（Windows）；条件不满足一律纯文本。
