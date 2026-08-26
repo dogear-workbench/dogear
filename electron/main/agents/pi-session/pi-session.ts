@@ -15,7 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AgentEvent, AgentHarnessTool, ExecutionEnv, Session, JsonlSessionMetadata, AgentMessage } from '@earendil-works/pi-agent-core';
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { PiPermissionMode } from './permission-mode.js';
-import type { AssistantMessage } from '@earendil-works/pi-ai';
+import type { AssistantMessage, ImageContent } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { lookupContextWindow } from '../pi/model-catalog.js';
@@ -179,15 +179,19 @@ function computeSubAgentActiveTools(profile: SubAgentProfile, toolDefs: ToolDef[
   return [...names];
 }
 
-/** 从 SDK 风格的 ContentBlockParam[] 中提取纯文本（阶段一不支持图像，静默丢弃非文本块） */
-function extractTextFromBlocks(blocks: ContentBlockParam[]): string {
+/** 把 SDK 风格的 ContentBlockParam[] 拆成 text + pi-ai ImageContent[]（tipc 传来的 Anthropic 形状 base64 image 块在此转换；url 形状与其他非文本块不支持，静默丢弃） */
+function splitContentBlocks(blocks: ContentBlockParam[]): { text: string; images: ImageContent[] } {
   const texts: string[] = [];
+  const images: ImageContent[] = [];
   for (const block of blocks) {
-    if (block && typeof block === 'object' && 'type' in block && block.type === 'text') {
+    if (!block || typeof block !== 'object' || !('type' in block)) continue;
+    if (block.type === 'text') {
       texts.push((block as { text: string }).text);
+    } else if (block.type === 'image' && block.source.type === 'base64') {
+      images.push({ type: 'image', data: block.source.data, mimeType: block.source.media_type });
     }
   }
-  return texts.join('\n');
+  return { text: texts.join('\n'), images };
 }
 
 /** 口径对齐 pi-agent-core compaction 的 calculateContextTokens：totalTokens 优先，否则 input+output+cacheRead+cacheWrite */
@@ -863,7 +867,8 @@ export class PiSession extends EventEmitter {
       throw new Error('会话尚未启动');
     }
 
-    const text = typeof content === 'string' ? content : extractTextFromBlocks(content);
+    const { text, images } =
+      typeof content === 'string' ? { text: content, images: [] as ImageContent[] } : splitContentBlocks(content);
     const adapter = this.adapter;
     const isRunning = this.running || this.pendingSteerCount > 0;
     if (!isRunning) {
@@ -871,13 +876,18 @@ export class PiSession extends EventEmitter {
       this.turnEntryIds = [];
     }
 
-    this.logger.info('发送用户消息到 pi 会话:', { length: text.length, isRunning, pendingSteer: this.pendingSteerCount });
+    this.logger.info('发送用户消息到 pi 会话:', {
+      length: text.length,
+      imageCount: images.length,
+      isRunning,
+      pendingSteer: this.pendingSteerCount,
+    });
 
     if (isRunning) {
       // 插话路径：steer 在当前 assistant turn 结束后注入（one-at-a-time 模式下排在已有队列后面）。
       // pendingSteerCount / pendingCountChanged / syncSessionState 由 onSteerQueueChanged
       // 回调（Harness queue_update 事件）驱动，这里不再手动计数。
-      await adapter.steer(text);
+      await adapter.steer(text, images);
       return;
     }
 
@@ -886,7 +896,7 @@ export class PiSession extends EventEmitter {
     this.syncSessionState();
     try {
       await this.maybeAutoCompact(adapter);
-      await adapter.prompt(text);
+      await adapter.prompt(text, images);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (this.recordTurnFailure('runtime', message)) {

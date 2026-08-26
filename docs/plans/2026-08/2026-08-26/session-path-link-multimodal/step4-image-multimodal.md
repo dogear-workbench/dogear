@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 图片多模态链路
-status: pending
+status: done
 ---
 
 ## 目标
@@ -41,10 +41,13 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无实质差异。额外两处低风险增强：日志增加 `imageCount` 字段（pi-session.ts:875-880）；string 直入分支用 `images: [] as ImageContent[]` 解构统一后续路径。url 形状 image 块不支持、静默丢弃（与旧丢弃行为一致，仅注释说明）
 - 改动文件清单：
+  - `electron/main/agents/pi-session/pi-session.ts`：:18 导入 ImageContent；:182-196 extractTextFromBlocks → splitContentBlocks；:870-871 sendMessage 解构 text+images；:875-880 日志加 imageCount；:890 steer(text, images)；:899 prompt(text, images)
+  - `electron/main/agents/pi-session/pi-harness-adapter.ts`：:18 导入 ImageContent；:125-127 prompt 签名 + harness.prompt(text, {images})；:129-131 steer 签名 + harness.steer(text, {images})
+- 验证：bun run build:electron ✅；bun run lint 0 errors（两文件在 eslint ignore 列表，类型检查由 tsc 承担）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`splitContentBlocks(ContentBlockParam[]) → {text, images: ImageContent[]}`（Anthropic base64 块 → pi-ai {type:'image', data, mimeType}）；`adapter.prompt/steer(text, images?)` 透传 harness options
+- 下个 step 该从哪里继续：本计划最后一步，无后续 step；GUI 实测见 step4-delivery.md 遗留清单
+- 待办或已知限制：图片 base64 全量落 JSONL（已接受取舍）；url 形状 image 块静默丢弃；glm-5.3-flash 对 tool result image 块的支持待实测

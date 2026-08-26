@@ -15,7 +15,7 @@ import {
   type Session,
   type JsonlSessionMetadata,
 } from '@earendil-works/pi-agent-core';
-import type { Api, Model, Models, ModelThinkingLevel } from '@earendil-works/pi-ai';
+import type { Api, ImageContent, Model, Models, ModelThinkingLevel } from '@earendil-works/pi-ai';
 import { mainLogger } from '../logger.js';
 
 const logger = mainLogger.child('pi-harness-adapter');
@@ -122,12 +122,12 @@ export class PiHarnessAdapter {
     );
   }
 
-  async prompt(text: string): Promise<void> {
-    await this.harness.prompt(text);
+  async prompt(text: string, images?: ImageContent[]): Promise<void> {
+    await this.harness.prompt(text, { images });
   }
 
-  async steer(text: string): Promise<void> {
-    await this.harness.steer(text);
+  async steer(text: string, images?: ImageContent[]): Promise<void> {
+    await this.harness.steer(text, { images });
   }
 
   /** 转发 harness.compact()（要求 harness idle，非 idle 会抛 busy）；其余错误原样上抛，由调用方处置 */
