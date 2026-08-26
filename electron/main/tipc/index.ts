@@ -27,6 +27,7 @@ import { delegationRouter } from './delegation.js';
 import { systemPromptRouter } from './system-prompt.js';
 import { updaterRouter } from './updater.js';
 import { schedulerRouter } from './scheduler.js';
+import { windowsRouter } from './windows.js';
 
 export const router = {
   ...aiRouter,
@@ -56,6 +57,7 @@ export const router = {
   ...systemPromptRouter,
   ...updaterRouter,
   ...schedulerRouter,
+  ...windowsRouter,
 };
 
 export type Router = typeof router;

@@ -272,4 +272,10 @@ export type RendererHandlers = {
     total: number;
   }) => void;
 
+  // 设置已落盘（设置窗口发起保存，主窗口收到后刷新 settings store；restartSessions=true 时重启活跃会话）
+  settingsChanged: (data: { restartSessions: boolean }) => void;
+
+  // 设置窗口关闭请求（close guard 拦截后询问渲染进程 dirty 状态）
+  settingsCloseRequested: () => void;
+
 };

@@ -8,7 +8,7 @@ interface SettingsState {
   loaded: boolean;
 
   loadSettings: () => Promise<void>;
-  saveSettings: (settings: AppSettings) => Promise<void>;
+  saveSettings: (settings: AppSettings, options?: { restartSessions?: boolean }) => Promise<void>;
   restartActiveSessions: () => Promise<{ closedCount?: number }>;
 }
 
@@ -25,8 +25,8 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     }
   },
 
-  saveSettings: async (settings: AppSettings) => {
-    await client.updateSettings({ settings });
+  saveSettings: async (settings: AppSettings, options?) => {
+    await client.updateSettings({ settings, restartSessions: options?.restartSessions ?? false });
     set({ settings });
   },
 

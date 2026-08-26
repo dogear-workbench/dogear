@@ -22,13 +22,15 @@ export const settingsRouter = {
     }),
 
   /**
-   * 更新应用设置
+   * 更新应用设置（落盘后广播 settingsChanged 给主窗口；restartSessions=true 时主窗口同时重启活跃会话）
    */
   updateSettings: t.procedure
-    .input<{ settings: AppSettings }>()
+    .input<{ settings: AppSettings; restartSessions?: boolean }>()
     .action(async ({ input }) => {
       try {
         await saveSettings(input.settings);
+        const { broadcastSettingsChanged } = await import('../index.js');
+        broadcastSettingsChanged(input.restartSessions ?? false);
         return { success: true };
       } catch (error) {
         console.error('更新设置失败:', error);

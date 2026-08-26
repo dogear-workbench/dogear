@@ -1,6 +1,6 @@
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useDashboardStore } from '@/stores/dashboard-store';
-import { useUIStore } from '@/stores/ui-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 
 interface ReportSectionProps {
   workspaceId: string;
@@ -8,7 +8,7 @@ interface ReportSectionProps {
 
 export function ReportSection({ workspaceId: _workspaceId }: ReportSectionProps) {
   const reportMarkdown = useDashboardStore((s) => s.reportMarkdown);
-  const openSettings = useUIStore((s) => s.openSettings);
+  const openSettingsWindow = useWorkspaceStore((s) => s.openSettingsWindow);
 
   if (reportMarkdown) {
     return <MarkdownRenderer content={reportMarkdown} stripHtmlComments />;
@@ -20,7 +20,7 @@ export function ReportSection({ workspaceId: _workspaceId }: ReportSectionProps)
         还没有报告，去
         <button
           type="button"
-          onClick={() => openSettings()}
+          onClick={() => openSettingsWindow()}
           className="mx-1 underline underline-offset-2 hover:text-foreground transition-colors"
         >
           设置 → 会话摘要

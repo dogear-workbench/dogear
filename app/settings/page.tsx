@@ -1,13 +1,13 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useUIStore } from '@/stores/ui-store';
 import { useConfirmStore } from '@/stores/confirm-store';
-import { useConversationStore } from '@/stores/conversation-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
@@ -65,12 +65,10 @@ function deepEqual(a: unknown, b: unknown): boolean {
 // ═══ 主组件 ══════════════════════════════════════════
 
 export default function SettingsPage() {
-  const closeSettings = useUIStore((s) => s.closeSettings);
   const savedSettings = useSettingsStore((s) => s.settings);
   const loaded = useSettingsStore((s) => s.loaded);
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const saveToStore = useSettingsStore((s) => s.saveSettings);
-  const restartActiveSessions = useSettingsStore((s) => s.restartActiveSessions);
 
   // 本地编辑副本
   const [local, setLocal] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -115,10 +113,8 @@ export default function SettingsPage() {
   };
 
   const handleSaveAndRestart = async () => {
-    await saveToStore(local);
-    await restartActiveSessions();
-    useConversationStore.getState().triggerSessionRestart();
-    closeSettings();
+    await saveToStore(local, { restartSessions: true });
+    await client.forceCloseSettingsWindow();
   };
 
   const handleCancel = () => {
@@ -129,7 +125,7 @@ export default function SettingsPage() {
   const confirmDialog = useConfirmStore((s) => s.confirm);
   const handleClose = async () => {
     if (!isDirty) {
-      closeSettings();
+      await client.forceCloseSettingsWindow();
       return;
     }
     const result = await confirmDialog({
@@ -143,17 +139,26 @@ export default function SettingsPage() {
     });
     if (result === 'discard') {
       setLocal(structuredClone(savedSettings));
-      closeSettings();
+      await client.forceCloseSettingsWindow();
     } else if (result === 'save') {
       await saveToStore(local);
+      await client.forceCloseSettingsWindow();
     } else if (result === 'saveRestart') {
-      await saveToStore(local);
-      await restartActiveSessions();
-      useConversationStore.getState().triggerSessionRestart();
-      closeSettings();
+      await saveToStore(local, { restartSessions: true });
+      await client.forceCloseSettingsWindow();
     }
     // null（点击遮罩/ESC）= 留在设置页
   };
+
+  // 主进程 close guard 询问（点 X / 返回按钮都走这条链路）
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+  useEffect(() => {
+    const unsub = rendererEvents.settingsCloseRequested.listen(() => {
+      void handleCloseRef.current();
+    });
+    return () => unsub();
+  }, []);
 
   // ── Profile helpers ──
   const addNewProfile = () => {
@@ -215,7 +220,7 @@ export default function SettingsPage() {
     <div className="h-screen flex flex-col">
       {/* ── 顶部固定栏 ── */}
       <header className="h-12 border-b flex items-center px-4 gap-3 bg-background flex-shrink-0">
-        <Button variant="ghost" size="sm" onClick={handleClose}>
+        <Button variant="ghost" size="sm" onClick={() => void client.requestCloseSettingsWindow()}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <h1 className="font-semibold flex-1">设置</h1>

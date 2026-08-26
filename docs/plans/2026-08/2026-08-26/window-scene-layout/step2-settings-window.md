@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 设置窗口化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -56,9 +56,35 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - settingsCloseRequested 未走裸 `webContents.send('settings:close-requested')`，统一走 rendererHandlers 机制（对齐 categoriesUpdated 发送路径，计划已预授权此选择）
+  - 广播目标不用 url 筛选，改为 index.ts 导出 `broadcastSettingsChanged()`，按 mainWindow 引用定向发送（两个备选方案中取更精确者，避免会话窗口重复执行 restartActiveSessions）
+  - `closeAllChildWindows()` 追加 settingsWindow 强关（照抄 stockWindow 生命周期管理；forceClose 跳过 dirty 拦截，与原 overlay 模式下主窗口关闭即丢 dirty 的行为等价）
+  - 计划未列出的 `components/dashboard/ReportSection.tsx` 也引用 openSettings，属「全局残留清零」范围，一并改为 openSettingsWindow
+  - settings/page.tsx 的 settingsCloseRequested 监听用 ref 持最新 handleClose（避免每次渲染重订阅）
 - 改动文件清单：
+  - `electron/main/index.ts` — settingsWindow 单例 + settingsSkipCloseGuard + createSettingsWindow（1000×760，title「设置」，照抄自选股模板）/ requestCloseSettingsWindow / forceCloseSettingsWindow / broadcastSettingsChanged；closeAllChildWindows 追加强关
+  - `electron/main/tipc/windows.ts`（新建）— openSettingsWindow / requestCloseSettingsWindow / forceCloseSettingsWindow 三 procedure
+  - `electron/main/tipc/index.ts` — 注册 windowsRouter
+  - `electron/main/tipc/settings.ts` — updateSettings 加可选 restartSessions 入参，落盘后调 broadcastSettingsChanged
+  - `electron/main/tipc/renderer-handlers.ts` — 加 settingsChanged / settingsCloseRequested 事件类型
+  - `src/App.tsx` — 删 overlay 块与 useUIStore 引用；加 /settings 路由（* 兜底前）
+  - `stores/ui-store.ts` — 删 settingsOpen / openSettings / closeSettings（含 reset 引用）
+  - `stores/workspace-store.ts` — 加 openSettingsWindow（照抄 openStockWindow）
+  - `app/page.tsx` — header 设置按钮改调 openSettingsWindow
+  - `components/dashboard/ReportSection.tsx` — openSettings → openSettingsWindow（残留清零）
+  - `stores/settings-store.ts` — saveSettings 加 options?.restartSessions，透传 client.updateSettings
+  - `app/settings/page.tsx` — 返回按钮改 client.requestCloseSettingsWindow()；新增 settingsCloseRequested 监听（ref 模式）；handleClose 三路 confirm 后均 forceClose；handleSaveAndRestart 改 saveToStore({restartSessions:true}) + forceClose，删本地 restartActiveSessions / triggerSessionRestart / closeSettings
+  - `lib/setup-settings-sync.ts`（新建）— 监听 settingsChanged：loadSettings；restartSessions 时 restartActiveSessions + triggerSessionRestart（照 setupManualTaskToasts 动态 import 惯例）
+  - `src/main.tsx` — 顶层挂载 setupSettingsSync()
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：windows.ts 三个 procedure 名、settingsChanged payload 形状
-- 下个 step 该从哪里继续：
+- 关键签名 / 数据结构：
+  - windows.ts 三 procedure：`openSettingsWindow()` / `requestCloseSettingsWindow()` / `forceCloseSettingsWindow()`，均无入参返回 `{success:true}`
+  - 事件：`settingsChanged: {restartSessions: boolean}`（仅发主窗口）；`settingsCloseRequested: void`（仅发设置窗口）
+  - index.ts 导出：`createSettingsWindow` / `requestCloseSettingsWindow` / `forceCloseSettingsWindow` / `broadcastSettingsChanged(restartSessions: boolean)`
+  - settings-store：`saveSettings(settings, options?: {restartSessions?: boolean})`
+- 下个 step 该从哪里继续：step3（数据中心）照 step3-datacenter-core.md 开工；新窗口照抄 index.ts 里 settingsWindow 模板（模块级单例 + focus + HashRouter URL + closed 置 null）；若数据中心窗口也要 close guard 可复用 skipGuard 模式
 - 待办或已知限制：
+  - 主窗口手输 #/settings 会渲染 SettingsPage，返回按钮调 requestCloseSettingsWindow 但无窗口实例，no-op（需 GUI 验证，边缘场景）
+  - updateSettings 后端落盘失败返回 {error} 时 settings-store 未 toast（沿袭原行为，非本次引入）
+  - GUI 手动验收（三按钮流程、会话重挂载观察）未在子会话环境执行，需人工确认

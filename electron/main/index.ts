@@ -56,6 +56,12 @@ let debugWindow: BrowserWindowType | null = null;
 // 自选股窗口实例
 let stockWindow: BrowserWindowType | null = null;
 
+// 设置窗口实例
+let settingsWindow: BrowserWindowType | null = null;
+
+// 设置窗口 close guard 直通标志（forceClose 时跳过 dirty 拦截）
+let settingsSkipCloseGuard = false;
+
 // 会话窗口映射（conversationId → BrowserWindow）
 const sessionWindows = new Map<string, BrowserWindowType>();
 
@@ -189,6 +195,80 @@ export function createStockWindow() {
   });
 }
 
+/**
+ * 创建设置窗口（单例，已存在则聚焦）
+ */
+export function createSettingsWindow() {
+  if (settingsWindow) {
+    settingsWindow.focus();
+    return;
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 1000,
+    height: 760,
+    title: '设置',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const settingsUrl = isDev
+    ? `${getRendererPath()}/#/settings`
+    : `file://${getRendererPath()}#/settings`;
+  settingsWindow.loadURL(settingsUrl);
+
+  settingsWindow.on('close', (e) => {
+    if (settingsSkipCloseGuard) return;
+    e.preventDefault();
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      try {
+        getRendererHandlers<RendererHandlers>(settingsWindow.webContents).settingsCloseRequested.send();
+      } catch (err) {
+        console.error('[settingsWindow] 发送关闭请求失败:', err);
+      }
+    }
+  });
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null;
+    settingsSkipCloseGuard = false;
+  });
+}
+
+/**
+ * 请求关闭设置窗口（触发 close guard，由渲染进程决定 dirty 处理）
+ */
+export function requestCloseSettingsWindow() {
+  if (!settingsWindow || settingsWindow.isDestroyed()) return;
+  settingsWindow.close();
+}
+
+/**
+ * 强制关闭设置窗口（跳过 dirty 拦截）
+ */
+export function forceCloseSettingsWindow() {
+  if (!settingsWindow || settingsWindow.isDestroyed()) return;
+  settingsSkipCloseGuard = true;
+  settingsWindow.close();
+}
+
+/**
+ * 设置已落盘，通知主窗口刷新（restartSessions=true 时同时重启活跃会话）
+ * 目标是主窗口而非发起保存的设置窗口（后者本地 store 已同步）
+ */
+export function broadcastSettingsChanged(restartSessions: boolean) {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
+    h.settingsChanged.send({ restartSessions });
+  } catch (err) {
+    console.error('[settingsWindow] 广播 settingsChanged 失败:', err);
+  }
+}
+
 
 /**
  * 创建独立会话窗口
@@ -259,6 +339,9 @@ export function createSessionWindow(conversationId: string, title: string) {
 function closeAllChildWindows() {
   if (stockWindow && !stockWindow.isDestroyed()) {
     stockWindow.close();
+  }
+  if (settingsWindow && !settingsWindow.isDestroyed()) {
+    forceCloseSettingsWindow();
   }
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.close();
