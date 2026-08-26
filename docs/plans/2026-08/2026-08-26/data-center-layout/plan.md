@@ -23,3 +23,13 @@
 - **校验逻辑原样保留**：`validateDraft`、`findTriggerOverlaps`、重叠时 `showConfirm` 流程不改语义
 - **不写注释**、单文件超 300 行考虑拆分（TriggerListEditor 重构后若超限拆子组件文件）
 - 每步完成后跑 `bun run lint` + `bun run dev:renderer` 目测验证
+
+## 完成总结（2026-08-27）
+
+5 个 step 全部完成，每个 step 独立 commit：step1 `52936ac` → step2 `355f9ee` → step3 `d6027a0` → step4 `84d7178` → step5 `b84dd79`。
+
+**交付内容**：数据中心顶部下划线导航 6 平级面板（组卡/用量/定时计划/执行历史/解析历史/记忆），删页面内重复 header；工作区筛选下沉各 panel（shadcn Select，page.tsx 统一加载下传）；执行历史从二级 Sheet 升一级面板（10s 轮询自动刷新）；任务编辑 Dialog → 页面内二级页（左列大提示词区 + 右列 w-80 参数栏，scheduler tab forceMount 保草稿）；触发器编辑器「摘要行 + 展开」重构（单条展开、DropdownMenu 分组添加）；数据中心窗口内原生 `<select>` 清零。
+
+**计划外修正**（均记录在各 step 实施回填）：MemorySection 空态补筛选入口；history-panel 挂载补 loadTasks；scheduler TabsContent 加 forceMount（否则切 tab 丢草稿）；内置任务编辑页右列保留触发器卡片（原 Dialog 两分支共用，不补则功能回退）；TriggerRow 超 300 行红线多拆 TriggerControls.tsx。
+
+**遗留**：子会话无法做 GUI 验证，dev 肉眼验证清单待用户统一过一遍（见 step4/step5 交付文档）；跨 tab 时 scheduler 轮询照跑（forceMount 副作用，轻量）；on_task_done 上游任务被删时 validateDraft 不拦（原版同语义，未改）。
