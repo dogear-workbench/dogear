@@ -85,7 +85,6 @@ export function createContentBlock(extendedMsg: {
   error?: string;
   isError?: boolean;
   timestamp?: number;
-  citations?: any[];
   isReplay?: boolean;
   sessionStartSource?: string;
   sessionEndReason?: string;
@@ -113,7 +112,6 @@ export function createContentBlock(extendedMsg: {
     error: extendedMsg.error,
     isError: extendedMsg.isError,
     timestamp: extendedMsg.timestamp || Date.now(),
-    citations: extendedMsg.citations,
     isReplay: extendedMsg.isReplay,
     // Hook 事件
     sessionStartSource: extendedMsg.sessionStartSource,

@@ -225,7 +225,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           toolOutput={block.toolOutput}
           status={toolStatus}
           isError={block.isError}
-          citations={block.citations}
         />
       );
     }

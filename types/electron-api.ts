@@ -81,8 +81,6 @@ export interface ExtendedSessionMessage {
   // 工具执行是否出错（用于 tool_result 类型）
   isError?: boolean;
   timestamp: number;
-  // 引用信息（用于书籍问答）
-  citations?: Citation[];
   // 是否为重放的历史消息（SDK resume 时使用）
   isReplay?: boolean;
   // 消息级稳定 ID：message_id 事件 = harness SessionTreeEntry.id（与历史 sdkUuid 同源）；compact_boundary = compaction entry id
@@ -121,18 +119,6 @@ export interface ExtendedSessionMessage {
     options: Array<{ label: string; description?: string }>;
     multiSelect?: boolean;
   }>;
-}
-
-/**
- * 引用信息
- * 用于标注答案来源，支持点击跳转到原文位置
- */
-export interface Citation {
-  chapterId: string;
-  chapterTitle: string;
-  chapterNumber?: number;
-  position?: { start: number; end: number };
-  text?: string;  // 引用的文本片段
 }
 
 /**

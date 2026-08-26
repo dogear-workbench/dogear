@@ -1,5 +1,3 @@
-import { Citation } from '@/types/electron-api';
-
 /**
  * 扩展的消息类型
  */
@@ -58,7 +56,6 @@ export interface ContentBlock {
   error?: string;
   isError?: boolean;   // 工具执行是否出错
   timestamp: number;
-  citations?: Citation[];
   // 是否为重放的历史消息（SDK resume 时使用）
   isReplay?: boolean;
   // 权限请求相关字段（type='permission_request' 时使用）

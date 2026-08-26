@@ -77,18 +77,6 @@ export interface ReadingAssistPayload {
 }
 
 /**
- * 引用信息
- * 用于标注答案来源，支持点击跳转到原文位置
- */
-export interface Citation {
-  chapterId: string;
-  chapterTitle: string;
-  chapterNumber?: number;
-  position?: { start: number; end: number };
-  text?: string;
-}
-
-/**
  * 扩展的会话消息类型
  * 用于向前端传递完整的 AI 操作（工具调用、思考过程等）
  */
@@ -115,7 +103,6 @@ export interface ExtendedSessionMessage {
   error?: string;
   isError?: boolean;               // 工具执行是否出错（用于 tool_result 类型）
   timestamp: number;
-  citations?: Citation[];          // 引用信息
   isReplay?: boolean;              // 是否为重放的历史消息（SDK resume 时使用）
   uuid?: string;                   // 消息级稳定 ID：message_id 事件 = harness SessionTreeEntry.id（与历史 sdkUuid 同源）；compact_boundary = compaction entry id
   role?: 'user' | 'assistant';     // message_id 事件指向的落盘消息角色（user 无 model）
