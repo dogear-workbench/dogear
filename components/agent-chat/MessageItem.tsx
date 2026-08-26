@@ -51,10 +51,7 @@ function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
   };
 
   for (const block of blocks) {
-    const isSubAgent = block.type === 'tool_use'
-      && (block.toolName === 'Agent' || block.toolName === 'Task');
-
-    if (block.type === 'tool_use' && !isSubAgent) {
+    if (block.type === 'tool_use') {
       buffer.push(block);
       toolCount++;
     } else if (block.type === 'thinking' && buffer.length > 0) {

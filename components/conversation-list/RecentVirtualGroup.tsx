@@ -3,7 +3,7 @@ import { Zap, ChevronDown, ChevronRight } from 'lucide-react';
 import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useSectionCollapseStore } from '@/stores/section-collapse-store';
-import { RECENT_THRESHOLD_MS } from './utils';
+import { RECENT_THRESHOLD_MS, RECENT_DAYS } from './utils';
 import { GroupCard } from '@/components/group-list/GroupCard';
 import { sortConversationsWithDFS } from '@/lib/conversation-sort';
 
@@ -33,7 +33,7 @@ export function RecentVirtualGroup() {
           : <ChevronRight className="w-3 h-3" />
         }
         <Zap className="w-3 h-3 text-yellow-500" />
-        <span>近期（&lt; 5 天）</span>
+        <span>近期（&lt; {RECENT_DAYS} 天）</span>
         <span className="ml-auto text-[10px] opacity-70">{recent.length}</span>
       </div>
       {expanded && recent.map((group) => (

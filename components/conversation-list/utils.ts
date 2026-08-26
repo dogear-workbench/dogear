@@ -35,7 +35,7 @@ export function getConversationTitle(conversation: Conversation): string {
 // 「近期」阈值常量移至 group-store（默认展开逻辑共用），此处转发保持导入路径稳定
 export { RECENT_THRESHOLD_MS } from '@/stores/group-store';
 
-export const RECENT_DAYS = 5;
+export const RECENT_DAYS = 7;
 
 // 对话树根节点哨兵 id（与后端 ROOT_ID 同步）
 export const CONV_TREE_ROOT = '__root__';

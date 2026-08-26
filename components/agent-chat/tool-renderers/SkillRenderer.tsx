@@ -7,8 +7,8 @@ interface Props {
 }
 
 export function SkillRenderer({ toolInput, toolOutput, isError }: Props) {
-  const skillName: string = toolInput?.skill ?? '未知 Skill';
-  const argsText: string = toolInput?.args ?? '';
+  // pi 的 Skill 工具参数是 name，旧 SDK 会话历史是 skill
+  const skillName: string = toolInput?.name ?? toolInput?.skill ?? '未知 Skill';
 
   const outputText =
     typeof toolOutput === 'string'
@@ -18,7 +18,6 @@ export function SkillRenderer({ toolInput, toolOutput, isError }: Props) {
         : '';
 
   const data: Record<string, string> = { skill: skillName };
-  if (argsText) data.args = argsText;
 
   return (
     <ToolDetailShell>

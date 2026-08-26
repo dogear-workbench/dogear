@@ -31,6 +31,7 @@
   - `history-utils.ts` — 执行历史展示纯函数（时间/耗时/token 格式化、状态元信息）
   - `HistoryEntryCard.tsx` — 历史条目卡片（状态徽章 / 触发原因 / 起止耗时 / token 用量 / 摘要与错误折叠）
   - `HistorySheet.tsx` — 执行历史右侧滑出面板（Sheet）：任务/状态筛选（下拉只列现存任务，旧历史条目靠 planName 冗余字段展示）+ 「正在运行」小节（读面板同源 activity 轮询）+ 条目卡片 + cursor 分页；原独立路由 `/run-history` 已删，旧 hash 由 `*` 兑底回首页
+- `app/settings/UsageTab.tsx` — 「用量」Tab：内层时间分页（今日=本地 0 点 / 7 天 / 30 天滚动窗口 / 全部=usageSummary 全量累计），时段页走 getUsageStats，顶部合计行 + 会话行时段消耗 + 展开逐轮明细同时段过滤（TurnDetailList 传 sinceMs）
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
 - `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
@@ -96,7 +97,7 @@
   - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / 编辑/引用/删除 hover 按钮；agent 派出会话（contractMetadata.createdBy='agent'）显示 Bot 图标 + task tooltip；文件夹相关 ContextMenu 已上移到 GroupCard）
   - `ManualSection.tsx` — 手动文件夹区（无「手动分组」总标题，文件夹平铺；headless-tree 仅在此用；children\[**root**\] 里的 folderId 节点及其子树，叶子渲染 GroupCard 装 groupId；订阅 section-collapse-store.folderReveal 展开祖先文件夹链）
   - `SmartSection.tsx` — 智能分类视图（默认折叠，展开状态在 section-collapse-store；按 groupIds.length 倒序，空分类隐藏，渲染 GroupCard；useSmartCategoryStore.load 同步）
-  - `RecentVirtualGroup.tsx` — ⚡ 近期 &lt; 5 天虚拟分组（默认展开到话题卡，折叠状态在 section-collapse-store），按 group.updatedAt
+  - `RecentVirtualGroup.tsx` — ⚡ 近期 &lt; 7 天虚拟分组（默认展开到话题卡，折叠状态在 section-collapse-store），按 group.updatedAt；阈值 RECENT_THRESHOLD_MS 在 group-store，文案由 RECENT_DAYS 派生
   - `ArchiveSection.tsx` — 归档段 Popover 浮窗（向上弹出，ScrollArea max-h-80 限高），懒加载 listArchivedConversations
   - `Toolbar.tsx` — 顶部"新建对话"按钮（"新建文件夹"按钮在 ManualSection 内）
   - `AddGroupToFolderMenu.tsx` — 组级：多选 ContextMenuCheckboxItem 子菜单，调 addGroupToFolder
@@ -190,7 +191,7 @@
 - `file.ts` — 文件操作（打开文件位置）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
 - `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
-- `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL）
+- `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL；getUsageStats：按 sinceMs 一次性聚合工作区各会话的时段用量，供设置-用量页时间分页）
 - `group.ts` — 会话组 +话题生命周期 +共享区：listGroups / getGroup / createGroup / updateGroup / archiveTopic / restoreTopic / listArchivedTopics / deleteTopic / readGroupBackground（读 background.md 供前端话题面板）/ listSharedFiles / read+write+deleteSharedFile / openSharedAreaInExplorer / autoArchiveStale
 - `digest.ts` — 组卡巡检（listGroupDigests / readGroupDigest / readGroupDigestRaw 读原文供前端浮窗 / triggerGroupDigestScan 全工作区扫脏 / triggerGroupDigest 单组重跑 / getGroupDigestActivity 活动轮询 / get+setGroupDigestPrompt 提示词读写 / cancelGroupDigest 单任务取消 / cancelAllGroupDigest 一键停（清队列+取消当前）/ get+setDigestModelSelection 沿用旧的 settings.ai.digestModelSelection 配置项）
 - `review.ts` — 首页报告（历史代号 review）：getReport 读 `dashboard.md` / triggerReview 触发生成 / getReviewActivity 活动轮询 / get+setReviewPrompt 提示词 / get+setReviewModelSelection 整体模型选择 / cancelReview 取消
@@ -206,7 +207,7 @@
 - `session-id-repair.ts` — sessionId 丢失启动自愈（index.ts 启动时 fire-and-forget）：扫全 workspace 的 null sessionId 会话，按 harness 文件名时间戳与 conversation.createdAt ±2s 对齐回填；不经 JsonlSessionRepo.list（其 cwd 过滤跨环境行为不一致，直接解析文件名）
 - `usage/` — 会话 token 用量采集与存储
   - `usage-extractor.ts` — 从 SDK result 提取 ConversationUsageEntry 纯函数（contextWindow 查 `pi/model-catalog.ts` 目录表、modelUsage 缺失合成、工具/子代理聚合）
-  - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/deleteUsage）
+  - `usage-service.ts` — 用量 JSONL 读写删（`.dogear/usage/{conversationId}.jsonl`，appendEntry/appendCompactMarker/appendContext/readUsage/readUsageSince（轻量扫描聚合计时段轮次）/deleteUsage）
 - `memory/` — 会话清洗 + 组级提炼闭环（按「组」粒度）
   - `session-paths.ts` — 会话路径解析共享 util（getClaudeConfigDir / getSdkSessionsDir / getSessionJsonlPath）：服务 PARSE_ARTICLE 及 `agent.ts` 的 `getSubAgentHistory`/`getSdkSessions`（子代理历史文件路径），与主会话 pi-session/ 的 Harness 会话路径（`pi-session-repository.ts` 的 `getSessionsRoot`）是两套不同的存储位置
   - `transcript-cleaner.ts` — 会话 JSONL 确定性去噪（cleanTranscriptFromLines 纯函数 + cleanTranscript IO，剥工具结果/系统行/思考块，保留用户+助手文字与一行工具骨架，\~20x 压缩）

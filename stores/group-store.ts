@@ -3,8 +3,8 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type { Group } from '@/types/group';
 
-// 「近期」阈值（设计 §4.1：< 5 天），与侧边栏近期虚拟组共用
-export const RECENT_THRESHOLD_MS = 5 * 86400_000;
+// 「近期」阈值，与侧边栏近期虚拟组共用
+export const RECENT_THRESHOLD_MS = 7 * 86400_000;
 
 const getWorkspace = async () => {
   const { useWorkspaceStore } = await import('./workspace-store');

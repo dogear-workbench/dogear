@@ -1,10 +1,9 @@
 "use client";
 
-import { Check, X, Loader2, FileText, FolderSearch, Search, Globe, Link2, Bot, ClipboardList, HelpCircle, Zap, Wrench, Plug } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
-import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import {
   ToolDetailShell,
   ToolSection,
@@ -30,7 +29,6 @@ interface ToolBlockProps {
   toolOutput?: any;
   status?: ToolStatus;
   isError?: boolean;
-  citations?: any[];
   className?: string;
 }
 
@@ -41,23 +39,28 @@ interface ToolIconSpec {
 
 const TOOL_ICONS: Record<string, ToolIconSpec> = {
   Read: { Icon: FileText, className: 'text-sky-600' },
+  Write: { Icon: PenLine, className: 'text-emerald-600' },
+  Edit: { Icon: FileEdit, className: 'text-orange-600' },
+  Bash: { Icon: Terminal, className: 'text-green-600' },
   Glob: { Icon: FolderSearch, className: 'text-indigo-600' },
   Grep: { Icon: Search, className: 'text-violet-600' },
-  WebSearch: { Icon: Globe, className: 'text-cyan-600' },
-  WebFetch: { Icon: Link2, className: 'text-cyan-600' },
-  Task: { Icon: Bot, className: 'text-purple-600' },
-  TodoWrite: { Icon: ClipboardList, className: 'text-amber-600' },
-  TaskList: { Icon: ClipboardList, className: 'text-amber-600' },
-  TaskGet: { Icon: ClipboardList, className: 'text-amber-600' },
-  AskUserQuestion: { Icon: HelpCircle, className: 'text-blue-600' },
   Skill: { Icon: Zap, className: 'text-amber-600' },
 };
 
+// pi-agent-core 基础工具名是小写（read/bash），旧 SDK 会话历史是大写，统一归一化到大写再匹配
+const TOOL_NAME_ALIASES: Record<string, string> = {
+  read: 'Read',
+  write: 'Write',
+  edit: 'Edit',
+  bash: 'Bash',
+};
+
+function normalizeToolName(toolName: string): string {
+  return TOOL_NAME_ALIASES[toolName] ?? toolName;
+}
+
 function getToolIcon(toolName: string): ToolIconSpec {
   if (TOOL_ICONS[toolName]) return TOOL_ICONS[toolName];
-  if (toolName.startsWith('mcp__')) {
-    return { Icon: Plug, className: 'text-teal-600' };
-  }
   return { Icon: Wrench, className: 'text-slate-600' };
 }
 
@@ -71,9 +74,10 @@ function getToolSummary(
   toolInput?: any,
   _toolOutput?: any
 ): string {
+  const canonicalName = normalizeToolName(toolName);
   if (!toolInput) return "";
 
-  switch (toolName) {
+  switch (canonicalName) {
     case "Read":
       const filePath = toolInput.file_path || toolInput.path || "";
       const fileName = filePath.split("/").pop() || filePath;
@@ -103,48 +107,9 @@ function getToolSummary(
     case "Glob":
       return toolInput.pattern || "";
 
-    case "WebSearch":
-      return toolInput.query || "";
-
-    case "WebFetch":
-      const url = toolInput.url || "";
-      try {
-        const hostname = new URL(url).hostname;
-        return hostname;
-      } catch {
-        return url.substring(0, 30) + "...";
-      }
-
-    case "Task":
-      return toolInput.description || toolInput.prompt?.substring(0, 40) || "";
-
-    case "TodoWrite":
-      const todos = toolInput.todos || [];
-      return `${todos.length} 个任务`;
-
-    case "TaskCreate":
-      return toolInput.subject || "";
-
-    case "TaskUpdate":
-      return toolInput.taskId
-        ? `${toolInput.taskId}${toolInput.status ? ` → ${toolInput.status}` : ''}`
-        : "";
-
-    case "TaskGet":
-      return toolInput.taskId || "";
-
-    case "TaskList":
-      return "查询任务列表";
-
-    case "AskUserQuestion":
-      const questions = toolInput.questions || [];
-      return `${questions.length} 个问题`;
-
     case "Skill":
-      // Skill 工具：显示调用的 skill 名称
-      const skillName = toolInput.skill || "";
-      const skillArgs = toolInput.args || "";
-      return skillArgs ? `${skillName} ${skillArgs}` : skillName;
+      // pi 的 Skill 工具参数是 name，旧 SDK 会话历史是 skill
+      return toolInput.name || toolInput.skill || "";
 
     default:
       // 对于未知工具，尝试提取第一个字符串属性
@@ -198,36 +163,27 @@ export function ToolBlock({
   toolOutput,
   status = "success",
   isError = false,
-  citations,
   className,
 }: ToolBlockProps) {
   const actualStatus: ToolStatus = isError ? "error" : status;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
-  const iconSpec = getToolIcon(toolName);
-  const getCategoryLabel = useToolRegistryStore(s => s.getCategoryLabel);
-  const categoryLabel = getCategoryLabel(toolName);
-
-  // 优先级：具体工具名（去掉 mcp__server__ 前缀）> 类别名
-  // 让用户能看出 Read/Edit/Bash 这种 SDK 工具的具体名称，而不是统一"SDK 内置工具"
-  const niceName = toolName.startsWith('mcp__')
-    ? toolName.split('__').slice(2).join('__') || categoryLabel
-    : toolName;
-  const headLabel = niceName || categoryLabel;
-  const titleText = summary ? `${headLabel} · ${summary}` : headLabel;
+  const canonicalName = normalizeToolName(toolName);
+  const iconSpec = getToolIcon(canonicalName);
+  const titleText = summary ? `${canonicalName} · ${summary}` : canonicalName;
 
   // Tier 1 专属渲染器
   const specializedRenderer = (() => {
-    if (toolName === 'Read') {
+    if (canonicalName === 'Read') {
       return <ReadRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
-    if (toolName === 'Glob') {
+    if (canonicalName === 'Glob') {
       return <GlobRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
-    if (toolName === 'Grep') {
+    if (canonicalName === 'Grep') {
       return <GrepRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
-    if (toolName === 'Skill') {
+    if (canonicalName === 'Skill') {
       return <SkillRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
     return null;
@@ -259,17 +215,6 @@ export function ToolBlock({
           {toolOutput !== undefined && toolOutput !== null && toolOutput !== '' && (
             <ToolSection label={isError ? '错误' : '输出'}>
               <OutputBox content={formattedOutput} isError={isError} />
-            </ToolSection>
-          )}
-          {citations && citations.length > 0 && (
-            <ToolSection label="引用">
-              <div className="flex flex-wrap gap-1">
-                {citations.map((c, i) => (
-                  <span key={i} className="px-1.5 py-0.5 bg-muted rounded text-muted-foreground text-xs">
-                    {c.chapterTitle || `引用 ${i + 1}`}
-                  </span>
-                ))}
-              </div>
             </ToolSection>
           )}
         </ToolDetailShell>

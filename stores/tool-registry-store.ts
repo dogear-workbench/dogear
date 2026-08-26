@@ -28,6 +28,13 @@ interface ToolRegistryState {
   getCategoryLabel: (toolName: string) => string;
 }
 
+// pi-agent-core 基础工具不在注册中心（那里只有业务工具组），内置分类兜底；大小写两套兼容新旧会话历史
+const BASIC_TOOL_LABEL = '基础工具';
+const BASIC_TOOL_NAMES = new Set([
+  'read', 'write', 'edit', 'bash', 'Read', 'Write', 'Edit', 'Bash',
+  'Glob', 'Grep', 'Skill',
+]);
+
 export const useToolRegistryStore = create<ToolRegistryState>((set, get) => ({
   toolNameToServer: new Map(),
   serverLabels: {},
@@ -68,14 +75,8 @@ export const useToolRegistryStore = create<ToolRegistryState>((set, get) => ({
     // 1. 精确匹配
     const direct = toolNameToServer.get(toolName);
     if (direct) return serverLabels[direct] || direct;
-    // 2. mcp__{server}__xxx 前缀解析
-    if (toolName.startsWith('mcp__')) {
-      const parts = toolName.split('__');
-      if (parts.length >= 3) {
-        const server = parts[1];
-        return serverLabels[server] || server;
-      }
-    }
+    // 2. 基础工具内置分类（注册中心只有业务工具组，查不到 read/bash/Glob 等）
+    if (BASIC_TOOL_NAMES.has(toolName)) return BASIC_TOOL_LABEL;
     // 3. 兜底
     return '其他工具';
   },
