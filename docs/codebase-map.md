@@ -20,20 +20,23 @@
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
 - `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill）
 - `app/settings/pi-model-row.tsx` — 模型清单行组件 `PiModelRow`：ID 行内编辑（空/与同清单重复回退标红）、窗口徽标点击手填（`parseContextInput` 解析 1M/200K/262144 写法，清空恢复查表，手动角标）、显示名与删除
-- `app/data-center/` — 数据中心独立窗口（顶部工作区筛选器「全部/各工作区」+ 左侧纵向 tab；面板统一收 `workspaceId: string | 'all'` 与 `workspaces` props，不读 workspace-store；轮询统一走 useVisiblePolling；设置加载由页面 loadSettings 负责）：
-  - `page.tsx` — 骨架：header 标题 + 工作区 Select（本地 state，切 tab 不丢）+ 左侧 Tabs（组卡/用量/定时计划/解析历史/记忆）；Radix 切 tab 卸载重建面板（轮询随卸载停止）
+- `app/data-center/` — 数据中心独立窗口（顶部下划线式 tab 导航 6 面板；workspaces 由 page.tsx 加载一次下传，各 panel 只自持 `workspaceId: 'all' | id` 筛选状态不读 workspace-store；轮询统一走 useVisiblePolling；设置加载由页面 loadSettings 负责）：
+  - `page.tsx` — 骨架：顶部 TabsList variant=underline（组卡/用量/定时计划/执行历史/解析历史/记忆）；TabsContent 统一 `flex-1 overflow-hidden` + 内层滚动层；scheduler tab 加 forceMount（编辑页草稿切 tab 不丢，代价是跨 tab 轮询持续）
+  - `history-panel.tsx` — 执行历史一级面板（挂载即 loadTasks + loadHistory；任务/状态筛选 shadcn Select、状态纯前端过滤；refreshActivity 10s 可见轮询；分钟 tick 刷新中/待跑时间）
   - `digests-panel.tsx` — 组卡查看面板（列表 + 详情 + 单组重新提炼；2s 可见轮询；「全部」模式行内显示工作区名；选中态记 groupId+workspaceId 双键）
   - `usage-panel.tsx` — 用量面板（时间分页今日/7天/30天/全部；'all' 时不传 workspaceId 走后端聚合；'all' 会话列表前端逐工作区拉取合并；全部模式会话行显示工作区名 Badge）
   - `scheduler/` — 定时计划组件目录（自设置页整体迁入，文件名不变）：
-    - `SchedulerPanel.tsx` — 任务列表（收 workspaceId/workspaces props；activity 10s 轮询走 useVisiblePolling；选具体工作区时列表前端过滤 `!task.workspaceId || === 筛选值`，新建任务默认预填筛选工作区）+ HistorySheet / TaskEditor 挂载
-    - `TaskEditor.tsx` — 任务编辑 Dialog（builtin 分支名称只读 + 工作区 + 触发器 + 内置详情区；custom 分支名称/prompt/ModelSelector/必选工作区/触发器/工具包区；validateDraft 预校验；defaultWorkspaceId props 预填新建任务）
-    - `BuiltinTaskDetailSection.tsx` — 内置任务详情区（模型选择行 + 提示词模板读写 + 只读工具清单）
+    - `SchedulerPanel.tsx` — 任务列表与编辑态切换（收 workspaces props、workspaceId 内置；activity 10s 轮询走 useVisiblePolling；editing 非 null 时整面板渲染 TaskEditorPage；列表态滚动层 + max-w 容器自带）
+    - `TaskEditorPage.tsx` — 任务编辑页面内二级页（面包屑工具栏 + 左列名称/大提示词区 + 右列 w-80 参数卡片（模型/工作区/工具/触发器）；builtin 分支左列 BuiltinPromptSection、custom 分支大 textarea；validateDraft 预校验 + 重叠 showConfirm；返回直接丢草稿）
+    - `BuiltinTaskDetailSection.tsx` — 内置任务两导出：BuiltinPromptSection（提示词模板读写，保存独立于页面保存）+ BuiltinParamsSection（模型选择即写盘 + 只读工具清单）
     - `CustomToolPacksSection.tsx` — 自定义任务工具包区（生效集 = toolPacksOverride ?? 工作区启用集）
-    - `TriggerListEditor.tsx` — 触发器编辑（八种触发器行内编辑含 on_task_done）
+    - `TriggerListEditor.tsx` — 触发器编辑（摘要行列表 + DropdownMenu 分「时间规则/条件事件」两组添加，新条目展开态插入，单条展开）
+    - `TriggerRow.tsx` — 单条触发器摘要行（类型图标 + describeTrigger + 删除）+ Collapsible 展开态「标签在上、控件在下」小表单（含月日全宽网格、on_task_done shadcn Select）
+    - `TriggerControls.tsx` — 触发器编辑共享控件（inputCls / MONTH_GRID / WeekdayChips / PresetChips / Field）
     - `utils.ts` — describeTrigger、formatRelativeFuture、周几 chips、datetime-local 双向转换、WorkspaceOption
-    - `history-utils.ts` / `HistoryEntryCard.tsx` / `HistorySheet.tsx` — 执行历史右侧滑出面板（任务/状态筛选 + 正在运行小节 + 条目卡片 + cursor 分页）
+  - `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（history-panel 使用，随迁至 data-center 根）
   - `parse-history-panel.tsx` — 文章解析历史面板（全局 history.jsonl，手动刷新，无轮询）
-  - `memory-section.tsx` — 记忆 tab 容器（'all' 时空态提示选具体工作区；头部重建索引按钮 rebuildMemoryIndex；内层三节 Tabs）
+  - `memory-section.tsx` — 记忆 tab 容器（收 workspaces props、筛选内置；'all' 时空态也渲染标题行 + 筛选；头部重建索引按钮 rebuildMemoryIndex；内层三节 Tabs）
   - `core-profile-panel.tsx` — 核心画像编辑面板（workspacePath props）
   - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表 + 编辑器（workspacePath props，slug 校验/覆盖确认/删除二次确认）
   - `smart-category-panel.tsx` — 智能分类配置（workspaceId props；总开关/阈值/上限锁死/分类列表折叠刷新/全量重置 showConfirm；categoriesUpdated 广播自动 reload）
