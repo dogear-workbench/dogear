@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { client } from '@/lib/client';
 import { useConfirmStore } from '@/stores/confirm-store';
-import { SLUG_RE, type TopicIndexEntry } from './types';
-import { TopicsList } from './TopicsList';
-import { TopicEditor, type EditState } from './TopicEditor';
+import { SLUG_RE, type TopicIndexEntry } from './memory-types';
+import { TopicsList } from './topics-list';
+import { TopicEditor, type EditState } from './topic-editor';
 
 interface Props {
   workspacePath: string;

@@ -13,7 +13,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { ModelSelector } from '@/components/ModelSelector';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSchedulerStore } from '@/stores/scheduler-store';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { cn } from '@/lib/utils';
 import type {
@@ -67,11 +66,11 @@ interface Props {
   open: boolean;
   task: ScheduledTaskWithNextRun | null;
   workspaces: WorkspaceOption[];
+  defaultWorkspaceId?: string;
   onOpenChange: (open: boolean) => void;
 }
 
-export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
-  const activeWorkspaceId = useWorkspaceStore((s) => s.workspace?.id);
+export function TaskEditor({ open, task, workspaces, defaultWorkspaceId, onOpenChange }: Props) {
   const settings = useSettingsStore((s) => s.settings);
   const schedulerTasks = useSchedulerStore((s) => s.tasks);
   const saveTask = useSchedulerStore((s) => s.saveTask);
@@ -81,10 +80,10 @@ export function TaskEditor({ open, task, workspaces, onOpenChange }: Props) {
 
   useEffect(() => {
     if (open) {
-      setDraft(task ? toDraft(task) : blankCustomTask(activeWorkspaceId ?? ''));
+      setDraft(task ? toDraft(task) : blankCustomTask(defaultWorkspaceId ?? ''));
       setError(null);
     }
-  }, [open, task, activeWorkspaceId]);
+  }, [open, task, defaultWorkspaceId]);
 
   const patch = (updates: Partial<ScheduledTask>) => {
     setDraft((d) => ({ ...d, ...updates }) as ScheduledTask);

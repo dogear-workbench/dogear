@@ -8,7 +8,6 @@ import type {
   SchedulerActivity,
 } from '@/types/scheduler';
 
-const ACTIVITY_POLL_MS = 10_000;
 const HISTORY_PAGE_SIZE = 50;
 
 interface SchedulerStore {
@@ -29,14 +28,11 @@ interface SchedulerStore {
   runTaskNow: (taskId: string) => Promise<void>;
   stopTask: (taskId: string) => Promise<void>;
   refreshActivity: () => Promise<void>;
-  startActivityPolling: () => void;
-  stopActivityPolling: () => void;
   loadHistory: (taskId?: string) => Promise<void>;
   loadMoreHistory: () => Promise<void>;
   reset: () => void;
 }
 
-let activityTimer: ReturnType<typeof setInterval> | null = null;
 let historySeq = 0;
 
 export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
@@ -150,20 +146,6 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     }
   },
 
-  startActivityPolling: () => {
-    if (activityTimer !== null) return;
-    get().refreshActivity();
-    activityTimer = setInterval(() => {
-      get().refreshActivity();
-    }, ACTIVITY_POLL_MS);
-  },
-
-  stopActivityPolling: () => {
-    if (activityTimer === null) return;
-    clearInterval(activityTimer);
-    activityTimer = null;
-  },
-
   loadHistory: async (taskId) => {
     const seq = ++historySeq;
     set({
@@ -214,7 +196,6 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   },
 
   reset: () => {
-    get().stopActivityPolling();
     historySeq++;
     set({
       tasks: [],

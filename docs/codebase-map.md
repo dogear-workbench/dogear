@@ -4,36 +4,40 @@
 
 ## 入口与路由（src/）
 
-- `src/main.tsx` — Vite 入口，挂载 React 到 `#root`
-- `src/App.tsx` — React Router 配置 + 设置 overlay + 全局 ConfirmDialog
+- `src/main.tsx` — Vite 入口，挂载 React 到 `#root`，顶层挂载 setupManualTaskToasts / setupSettingsSync（动态 import 避免非主窗口加载副作用）
+- `src/App.tsx` — React Router 配置（HashRouter 路由：`/` 主工作区、`/session-window/:id` 独立会话窗口、`/settings` 设置窗口、`/data-center` 数据中心窗口、`/stocks` 自选股、`/wechat`、`/debug`）+ 全局 ConfirmDialog + Toaster
 - `src/globals.css` — Tailwind CSS 4 全局样式
+
+## 渲染层 Hooks（hooks/）
+
+- `hooks/use-visible-polling.ts` — `useVisiblePolling(fn, intervalMs)`：数据中心统一轮询钩子，挂载且可见立即执行一次并起 interval；visibilitychange 隐藏停、恢复可见立即拉一次对齐；fn 用 ref 转发（变化不重置计时）；调用方自行处理 props 变化的立即刷新（参考 digests-panel 的 loadList effect）
 
 ## 页面（app/）
 
-- `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）
+- `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）；header 含设置（openSettingsWindow）与数据中心（openDataCenterWindow）按钮，各开独立窗口
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
-- `app/settings/page.tsx` — 设置页面（全屏 overlay，纵向 Tab + 表单模式 + dirty 检测，含默认系统提示词编辑）
+- `app/settings/page.tsx` — 设置窗口（独立 BrowserWindow + dirty 关闭拦截：主进程 close guard 发 settingsCloseRequested，渲染层监听后不 dirty 直接 forceClose、dirty 弹三按钮 confirm；顶栏保存/取消/保存并重启会话）；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
 - `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill）
 - `app/settings/pi-model-row.tsx` — 模型清单行组件 `PiModelRow`：ID 行内编辑（空/与同清单重复回退标红）、窗口徽标点击手填（`parseContextInput` 解析 1M/200K/262144 写法，清空恢复查表，手动角标）、显示名与删除
-- `app/settings/SystemPromptPreviewTab.tsx` — 系统提示词只读预览面板，拉后端 getSystemPromptSegments 展示 6 段隐形系统契约（tool-pack-guide / group-context / reference-append / group-append / notes-guidance / sub-agent-contract），按 category 分组 + 类别徽章 + 动态徽章 + 触发条件说明 + 等宽模板正文
-- `app/settings/memory/DigestsPanel.tsx` — 组卡查看面板（组卡列表 + 详情视图\[概述/想法·注意·决策/关键产出/回溯链接\] + 单组「重新提炼」按钮走 triggerGroupDigest；2s 轮询 listGroupDigests 自动刷新列表。模型、提示词、停止与整批重跑入口已收敛到定时计划）
-- `app/settings/memory/SmartCategoryPanel.tsx` — 智能分类行为配置（挂在「会话摘要」Tab 末尾，按组分类）：文案强调「分类对象：话题」/ 总开关 / 阈值 / 上限锁死 10 / 当前分类列表（折叠 + 刷新，按 groupIds.length 计数）/ 「全量重置分类」showConfirm 确认（含所用模型名）后触发；补分类/模型/提示词/整理入口均在定时计划
-- `app/settings/memory/TopicsPanel.tsx` — 工作区主题记忆面板（列表 + 编辑器，接 memory-service）
-- `app/settings/memory/CoreProfilePanel.tsx` — 核心画像面板
-- `app/settings/scheduler/` — 定时任务设置组件（「定时计划」Tab 内容，拆分控制单文件体量）：
-  - `SchedulerPanel.tsx` — 任务列表（一行一任务：名称 \[builtin 行首 Cog 图标\] / 启用 Switch / 触发器摘要 / 下次运行相对时间 60s 刷新 / 编辑·运行按钮，删除按钮仅 custom 任务且走 confirm-store）+ 运行中徽章（activity 轮询）+ 「查看执行历史」打开右侧 `HistorySheet`
-  - `TaskEditor.tsx` — 任务编辑 Dialog（builtin 分支：名称只读固定 label + 工作区 + 触发器 + 内置详情区；custom 分支：名称 / prompt / ModelSelector / 必选工作区 / 触发器 + 工具包区；保存前客户端预校验 validateDraft 就地显示，其余交后端拒并 toast）
-  - `BuiltinTaskDetailSection.tsx` — 内置任务详情区：模型选择行（MODEL_IO 按 builtinId 映射 digest/review/categorize 三组模型 IPC，onChange 即写盘）+ 加载磁盘提示词模板 +「全局模板」影响范围说明，保存提示词 / 恢复默认（confirm 后立即写盘，独立于任务保存按钮）+ 只读工具清单 Badge
-  - `CustomToolPacksSection.tsx` — 自定义任务工具包区：基础工具组静态文案 + 可选包 Switch（包清单走 listToolPacks 动态源），生效集 = toolPacksOverride ?? 工作区启用集，拨动以工作区集合起步写 override，「重置为跟随工作区」清回 undefined
-  - `TriggerListEditor.tsx` — 触发器编辑（时间规则 / 条件规则两组分区，八种触发器行内编辑含 on_task_done 选其他任务 + 行尾实时摘要预览 + 删除，无链式）
-  - `utils.ts` — describeTrigger、formatRelativeFuture、周几 chips、datetime-local 双向转换
-  - `history-utils.ts` — 执行历史展示纯函数（时间/耗时/token 格式化、状态元信息）
-  - `HistoryEntryCard.tsx` — 历史条目卡片（状态徽章 / 触发原因 / 起止耗时 / token 用量 / 摘要与错误折叠）
-  - `HistorySheet.tsx` — 执行历史右侧滑出面板（Sheet）：任务/状态筛选（下拉只列现存任务，旧历史条目靠 planName 冗余字段展示）+ 「正在运行」小节（读面板同源 activity 轮询）+ 条目卡片 + cursor 分页；原独立路由 `/run-history` 已删，旧 hash 由 `*` 兑底回首页
-- `app/settings/UsageTab.tsx` — 「用量」Tab：内层时间分页（今日=本地 0 点 / 7 天 / 30 天滚动窗口 / 全部=usageSummary 全量累计），时段页走 getUsageStats，顶部合计行 + 会话行时段消耗 + 展开逐轮明细同时段过滤（TurnDetailList 传 sinceMs）
+- `app/data-center/` — 数据中心独立窗口（顶部工作区筛选器「全部/各工作区」+ 左侧纵向 tab；面板统一收 `workspaceId: string | 'all'` 与 `workspaces` props，不读 workspace-store；轮询统一走 useVisiblePolling；设置加载由页面 loadSettings 负责）：
+  - `page.tsx` — 骨架：header 标题 + 工作区 Select（本地 state，切 tab 不丢）+ 左侧 Tabs（组卡/用量/定时计划/解析历史/记忆）；Radix 切 tab 卸载重建面板（轮询随卸载停止）
+  - `digests-panel.tsx` — 组卡查看面板（列表 + 详情 + 单组重新提炼；2s 可见轮询；「全部」模式行内显示工作区名；选中态记 groupId+workspaceId 双键）
+  - `usage-panel.tsx` — 用量面板（时间分页今日/7天/30天/全部；'all' 时不传 workspaceId 走后端聚合；'all' 会话列表前端逐工作区拉取合并；全部模式会话行显示工作区名 Badge）
+  - `scheduler/` — 定时计划组件目录（自设置页整体迁入，文件名不变）：
+    - `SchedulerPanel.tsx` — 任务列表（收 workspaceId/workspaces props；activity 10s 轮询走 useVisiblePolling；选具体工作区时列表前端过滤 `!task.workspaceId || === 筛选值`，新建任务默认预填筛选工作区）+ HistorySheet / TaskEditor 挂载
+    - `TaskEditor.tsx` — 任务编辑 Dialog（builtin 分支名称只读 + 工作区 + 触发器 + 内置详情区；custom 分支名称/prompt/ModelSelector/必选工作区/触发器/工具包区；validateDraft 预校验；defaultWorkspaceId props 预填新建任务）
+    - `BuiltinTaskDetailSection.tsx` — 内置任务详情区（模型选择行 + 提示词模板读写 + 只读工具清单）
+    - `CustomToolPacksSection.tsx` — 自定义任务工具包区（生效集 = toolPacksOverride ?? 工作区启用集）
+    - `TriggerListEditor.tsx` — 触发器编辑（八种触发器行内编辑含 on_task_done）
+    - `utils.ts` — describeTrigger、formatRelativeFuture、周几 chips、datetime-local 双向转换、WorkspaceOption
+    - `history-utils.ts` / `HistoryEntryCard.tsx` / `HistorySheet.tsx` — 执行历史右侧滑出面板（任务/状态筛选 + 正在运行小节 + 条目卡片 + cursor 分页）
+  - `parse-history-panel.tsx` — 文章解析历史面板（全局 history.jsonl，手动刷新，无轮询）
+  - `memory-section.tsx` — 记忆 tab 容器（'all' 时空态提示选具体工作区；头部重建索引按钮 rebuildMemoryIndex；内层三节 Tabs）
+  - `core-profile-panel.tsx` — 核心画像编辑面板（workspacePath props）
+  - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表 + 编辑器（workspacePath props，slug 校验/覆盖确认/删除二次确认）
+  - `smart-category-panel.tsx` — 智能分类配置（workspaceId props；总开关/阈值/上限锁死/分类列表折叠刷新/全量重置 showConfirm；categoriesUpdated 广播自动 reload）
 - `app/stocks/page.tsx` — 自选股行情页面，双栏布局（自选股列表 + 个股详情）
-- `app/agent-monitor/page.tsx` — Agent Worker 池状态监控仪表板
 - `app/debug/page.tsx` — 开发调试窗口，集成 AgentChat 测试
 
 ## 业务组件（components/）
@@ -114,7 +118,6 @@
 - `ModelSelector.tsx` — 通用模型选择下拉（按 Profile 分组、按 modelId 去重、可选「不指定」、inline/block 两种触发器）
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 - `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸
-- `ArticleParseHistoryPanel.tsx` — 网络文章解析历史面板，追踪 script/readability/ai 状态
 - `dashboard/` — 首页工作台（固定「首页」tab 内容）
   - `Dashboard.tsx` — 容器（@container 自适应：窄屏堆叠 / 宽屏左报告右速记），按 workspace.id 拉 loadReport + loadNotes
   - `ReportSection.tsx` — 首页报告区（MarkdownRenderer 渲染 `dashboard.md` 正文 + 刷新按钮触发 triggerReview + 相对时间）
@@ -138,27 +141,28 @@
 
 ## 状态管理（stores/）
 
-- `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）
+- `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）；窗口入口 actions：openSettingsWindow / openStockWindow / openDataCenterWindow（主进程单例窗口，已存在则 focus）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
 - `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；focusConversationById（Tab 焦点联动入口）在活跃会话切换时调 revealTopicInList 展开左侧列表定位话题；底部 activeTabId 订阅 async 化焦点联动：tab 属其他工作区时先 `await setWorkspace(目标)` 后 focusConversationById（先切后高亮时序铁律，点 tab/关 tab/独立窗口收回唯一入口）；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；导出 CONV_TREE_ROOT 根哨兵；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
 - `group-store.ts` — 会话组状态：groups\[\] + currentGroupId + expandedGroupIds（默认全折叠）+ syncGroups（conversation-store loadConversations 拉完 groups 后同步写入，不碰展开状态）+ expandGroup（reveal 单向展开）/ createGroup / updateGroup / archiveTopic / restoreTopic / deleteTopic；RECENT_THRESHOLD_MS 常量在此；load 时异步触发 autoArchiveStale，有归档则重新拉取
 - `section-collapse-store.ts` — 左侧列表分区折叠状态：recentExpanded（「近期」默认展开）/ expandedSmartCategoryIds（智能分类默认全折叠）/ folderReveal（nonce 供 ManualSection 订阅后逐层 expand 祖先文件夹链）；revealTopic(groupId) 在活跃会话切换时展开话题所在全部分区与话题卡片，数据源动态 import group/smart-category/workspace/conversation 四个 store
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）、会话引用（ConversationReference，含 workspaceId 支持跨工作区，去重按 conversationId）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
-- `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式）
-- `ui-store.ts` — UI 状态：设置 overlay 开关、右侧面板折叠（rightPanelOpen）
+- `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式；saveSettings 可选 `{restartSessions}` 透传主进程，触发 settingsChanged 广播）
+- `ui-store.ts` — UI 状态：右侧面板折叠（rightPanelOpen）
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
 - `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
 - `dashboard-store.ts` — 首页工作台状态：reportMarkdown/reportUpdatedAt（首页报告）+ notesContent（速记板）+ reviewActivity 轮询 + triggerReview/loadReport/loadNotes/flushNotes actions
 - `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID` 哨兵（非真实会话）表示首页 tab，activeTabId 初始/关末 tab 后回退到该哨兵；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
-- `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 设置页面板），全量重置入口在设置页面板，补分类定时任务与整理在定时计划
-- `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity + 10s 轮询启停）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
+- `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，两窗口独立实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
+- `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity，10s 轮询由数据中心面板 useVisiblePolling 驱动）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
 
 ## 工具函数（lib/）
 
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
 - `utils.ts` — cn() 类名合并工具
 - `events.ts` — tipc 事件处理入口，监听主进程事件
+- `setup-settings-sync.ts` — setupSettingsSync()（src/main.tsx 顶层挂载，非设置窗口均加载）：监听 settingsChanged 事件 loadSettings；restartSessions 时 restartActiveSessions + triggerSessionRestart
 - `manual-task-toasts.ts` — setupManualTaskToasts()（src/main.tsx 顶层挂载）：监听 manualTaskDone 出完成/失败/取消 toast；导出 formatDurationMs
 - `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）/ resolveModelLabel（selection → 展示名，ModelSelector 与设置页提示文案共用）
 - `conversation-sort.ts` — sortConversationsWithDFS：组内会话排序纯函数，手动会话按 updated_at 倒序 + agent 派出会话按 DFS 紧跟派出者（parentSessionId 不在组时回落自然序）
@@ -183,6 +187,7 @@
 ## IPC 路由（electron/main/tipc/）
 
 - `index.ts` — 路由注册中枢，聚合所有子路由
+- `windows.ts` — 窗口管理路由：openSettingsWindow / requestCloseSettingsWindow（走 close guard）/ forceCloseSettingsWindow / openDataCenterWindow；动态 import index.js 避免循环依赖，BrowserWindow 单例（设置 1000×760 带 dirty guard、数据中心 1200×800）在 electron/main/index.ts
 - `agent.ts` — Agent 会话管理（RPC：创建/发送/关闭会话、权限控制）
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
@@ -191,9 +196,9 @@
 - `file.ts` — 文件操作（打开文件位置）
 - `explorer.ts` — 工作区文件树操作（创建/重命名/移动/复制/删除）
 - `stock.ts` — 自选股行情 + 分析（12+RPC：自选股CRUD、批量行情、单股行情+自动快照、K线、分时、资金流向、每日快照查询、搜索、限流状态 + 指标计算、筛选、财务、回测等）
-- `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL；getUsageStats：按 sinceMs 一次性聚合工作区各会话的时段用量，供设置-用量页时间分页）
+- `usage.ts` — 会话用量查询（getUsage：懒重算 usageSummary 后读 JSONL；getUsageStats 入参 `{workspaceId?, sinceMs}`：不传 workspaceId 时逐工作区聚合 flat，返回 stats 每行带 workspaceId 归属标识，供数据中心用量页时间分页）
 - `group.ts` — 会话组 +话题生命周期 +共享区：listGroups / getGroup / createGroup / updateGroup / archiveTopic / restoreTopic / listArchivedTopics / deleteTopic / readGroupBackground（读 background.md 供前端话题面板）/ listSharedFiles / read+write+deleteSharedFile / openSharedAreaInExplorer / autoArchiveStale
-- `digest.ts` — 组卡巡检（listGroupDigests / readGroupDigest / readGroupDigestRaw 读原文供前端浮窗 / triggerGroupDigestScan 全工作区扫脏 / triggerGroupDigest 单组重跑 / getGroupDigestActivity 活动轮询 / get+setGroupDigestPrompt 提示词读写 / cancelGroupDigest 单任务取消 / cancelAllGroupDigest 一键停（清队列+取消当前）/ get+setDigestModelSelection 沿用旧的 settings.ai.digestModelSelection 配置项）
+- `digest.ts` — 组卡巡检（listGroupDigests 入参 `{workspaceId?}`：不传 = 遍历 workspaces.json 聚合全工作区按 updatedAt 全局降序，返回行带 workspaceId 归属标识 / readGroupDigest / readGroupDigestRaw 读原文供前端浮窗 / triggerGroupDigestScan 全工作区扫脏 / triggerGroupDigest 单组重跑 / getGroupDigestActivity 活动轮询 / get+setGroupDigestPrompt 提示词读写 / cancelGroupDigest 单任务取消 / cancelAllGroupDigest 一键停（清队列+取消当前）/ get+setDigestModelSelection 沿用旧的 settings.ai.digestModelSelection 配置项）
 - `review.ts` — 首页报告（历史代号 review）：getReport 读 `dashboard.md` / triggerReview 触发生成 / getReviewActivity 活动轮询 / get+setReviewPrompt 提示词 / get+setReviewModelSelection 整体模型选择 / cancelReview 取消
 - `category.ts` — 智能分类：getCategories（含归档过滤，按 groupIds 存活性过滤）/ triggerCategorize { workspaceId, groupId, groupDigestPath } / triggerFullRebuild（手动入口传 source 'manual'，完成写 run-history 伪计划记录并广播 manualTaskDone）/ cancelCategorize（无参全局单队列）/ getCategorizeActivity / get+setCategorizePrompt / get+setCategorizeModelSelection 整体模型选择 / get+setSmartCategorySettings（enabled/threshold/maxCategories，后端 clamp）；conversations.ts 也加了 addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders 三个 IPC 支持手动文件夹装 groupId + 多引用，以及 setConversationModelSelection 单独写对话级模型
 - `agent.ts` — Agent 会话管理，路由统一查 `getPiSessionManager()`（）：setSessionModel（接收 ModelSelection，返回 `{ ok:true; needsRestart? } | { ok:false; error }`；同 profile 换 tier 走 PiSession 快速路径，跨 profile 由前端触发会话重启）；`closeQueryBasedSession` = release 语义（refCount-1，归零即销毁），`forceCloseQueryBasedSession` = 强杀（`/clear` 走这条立刻销毁避免后台弹卡片）；路由名保留旧字样是历史兼容，内部实现已纯 pi；broadcaster complete 分支挂 model-failover 钩子——success 走 clearFailoverTriedBySession 清 tried，failed 走 maybeFailoverMainSession 主会话 quota 自动切换（见 `agents/model-failover.ts`）
@@ -355,7 +360,7 @@
 
 - `tools/category-tools.ts` — 智能分类 MCP 工具（dogear-smart-category server：dogear__ListCategories 含样例组标题 / dogear__SaveCategoryJoin { categoryId, addAnchorTags? | replaceAnchorTags? } / dogear__SaveCategoryNew { name, anchorTags, redistribute? } 校验上限 / dogear__SaveCategoryMerge { fromIds (length=2), name, anchorTags } / dogear__PruneCategoryTags；三个 Save\* 拆开是因为 GLM 等国内 Anthropic 兼容层不吃 discriminatedUnion 的 oneOf 和 tuple 的 prefixItems，全平台通吃；**单引用语义**：dogear__SaveCategoryJoin/dogear__SaveCategoryNew 先 removeGroupEverywhere 再加入，一个组只在一个分类；append 决策日志，入参和落库全用 groupId）
 
-> 组提炼链路：触发已迁移到调度器（内置任务 group_digest / review 的默认触发器：03:00–05:00 窗口 / 应用启动 / 会话自然销毁（on_session_close，触发点在 pi-session-manager.\_destroySession，主窗口关 tab / 独立窗口 / orphan 跑完回收统一覆盖，failover 换血与强杀不触发）三触发点，见 `services/scheduler/`；带 triggerContext 时走 triggerByConversation 精准提炼单组，否则全量扫描；停止 / 立即运行 / 整批重跑入口已收敛到定时计划，tipc digest.ts 路由保留供单组重跑与调度器复用）→ 内置任务 group_digest 调 group-digest-scanner 扫脏 → group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations\[\]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（活动状态采集含 taskId，供整停链路取消当前任务；「会话摘要」设置 Tab 只 2s 轮询组卡列表）→ agent-worker.handleGroupDigestTask 走 pi `runOnce`（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolvePiModel，方案不完整即返回明确 error；接 AbortController，cancelGroupDigest → agent.abort() 真正中断）→ agent 自调 dogear__CleanTranscript（对 dirty 会话逐个去噪）+ dogear__ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ dogear__ListGroupFiles（拉 `_notes/` 阶段总结、子会话 dogear__SendMessage delivery 产出）+ dogear__SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`。**dogear__SaveGroupDigest 落盘前过 source-fidelity 校验**：items 里每个 `sessionId#uuid` 必须真实存在于去噪逐字稿，否则拒绝落盘并回告 agent 哪条错、错在哪（wrong_session 直接给出正确 sessionId）。子会话（role='sub'）不进 sourcesSeen，其贡献通过 dogear__SendMessage delivery 汇入父会话产出。
+> 组提炼链路：触发已迁移到调度器（内置任务 group_digest / review 的默认触发器：03:00–05:00 窗口 / 应用启动 / 会话自然销毁（on_session_close，触发点在 pi-session-manager.\_destroySession，主窗口关 tab / 独立窗口 / orphan 跑完回收统一覆盖，failover 换血与强杀不触发）三触发点，见 `services/scheduler/`；带 triggerContext 时走 triggerByConversation 精准提炼单组，否则全量扫描；停止 / 立即运行 / 整批重跑入口已收敛到定时计划，tipc digest.ts 路由保留供单组重跑与调度器复用）→ 内置任务 group_digest 调 group-digest-scanner 扫脏 → group-digest-trigger 串行起 GROUP_DIGEST_SESSION 任务，payload 携带 groupId + dirtyConversations\[\]（每条含 conversationId/sessionId/mtime）+ hasExistingCard（活动状态采集含 taskId，供整停链路取消当前任务；数据中心组卡面板 2s 可见轮询组卡列表）→ agent-worker.handleGroupDigestTask 走 pi `runOnce`（按 payload.modelSelection ?? settings.digestModelSelection ?? settings.defaultModelSelection 走 resolvePiModel，方案不完整即返回明确 error；接 AbortController，cancelGroupDigest → agent.abort() 真正中断）→ agent 自调 dogear__CleanTranscript（对 dirty 会话逐个去噪）+ dogear__ReadGroupDigest（拿上次组卡 summary/items/keyOutputs 增量参考）+ dogear__ListGroupFiles（拉 `_notes/` 阶段总结、子会话 dogear__SendMessage delivery 产出）+ dogear__SaveGroupDigest（新组卡覆写，工具自动合并 sourcesSeen）→ 组卡落 `<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md`。**dogear__SaveGroupDigest 落盘前过 source-fidelity 校验**：items 里每个 `sessionId#uuid` 必须真实存在于去噪逐字稿，否则拒绝落盘并回告 agent 哪条错、错在哪（wrong_session 直接给出正确 sessionId）。子会话（role='sub'）不进 sourcesSeen，其贡献通过 dogear__SendMessage delivery 汇入父会话产出。
 
 > 首页报告链路（历史代号 review）：脏检查（review-scanner.isReportStale：最新组卡 updatedAt &gt; 报告 updatedAt）→ review-trigger 串行起 REVIEW_SESSION 任务 → agent-worker.handleReviewSessionTask 走 pi `runOnce`（同样按 reviewModelSelection 三级 fallback 走 resolvePiModel，可取消）→ agent 自调 review-tools（dogear__ListDigests/dogear__ReadDigest/dogear__TraceSource）+ memory-tools（dogear__RecallMemory/dogear__SaveMemory/dogear__ForgetMemory）做**分流**：沉淀/有价值结论/注意事项进**记忆**（详细全集），需用户主动处理的待办/中断/搁置的简述进**报告**；最终 dogear__WriteReport 落 `dashboard.md`。首页 Dashboard 用 MarkdownRenderer 渲染 dashboard.md 给用户看；dashboard-watcher 监听文件变化推事件到前端；普通会话里说"聊聊首页"也能触发同一 skill。
 

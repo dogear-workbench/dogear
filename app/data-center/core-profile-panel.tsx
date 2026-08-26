@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
-import { CORE_PROFILE_SOFT_LIMIT } from './types';
+import { CORE_PROFILE_SOFT_LIMIT } from './memory-types';
 
 interface Props {
   workspacePath: string;

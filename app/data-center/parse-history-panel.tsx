@@ -19,7 +19,7 @@ interface ParseHistoryEntry {
   raw?: string;
 }
 
-export function ArticleParseHistoryPanel() {
+export function ParseHistoryPanel() {
   const [entries, setEntries] = useState<ParseHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -38,7 +38,7 @@ export function ArticleParseHistoryPanel() {
   }, []);
 
   return (
-    <div className="p-4 space-y-3">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">文章解析历史</h2>
         <Button size="sm" variant="outline" onClick={load} disabled={loading}>

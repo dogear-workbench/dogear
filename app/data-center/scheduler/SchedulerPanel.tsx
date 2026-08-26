@@ -3,17 +3,25 @@ import { Cog, History, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
+import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { useSchedulerStore } from '@/stores/scheduler-store';
 import type { ScheduledTaskWithNextRun, SchedulerRunningPlan } from '@/types/scheduler';
+import type { Workspace } from '@/types/electron-api';
 import { HistorySheet } from './HistorySheet';
 import { TaskEditor } from './TaskEditor';
 import { describeTrigger, formatRelativeFuture } from './utils';
 import type { WorkspaceOption } from './utils';
 
-export function SchedulerPanel() {
+const ACTIVITY_POLL_MS = 10_000;
+
+interface Props {
+  workspaceId: string | 'all';
+  workspaces: Workspace[];
+}
+
+export function SchedulerPanel({ workspaceId, workspaces }: Props) {
   const tasks = useSchedulerStore((s) => s.tasks);
   const loading = useSchedulerStore((s) => s.loading);
   const loadingError = useSchedulerStore((s) => s.loadingError);
@@ -23,12 +31,14 @@ export function SchedulerPanel() {
   const setTaskEnabled = useSchedulerStore((s) => s.setTaskEnabled);
   const runTaskNow = useSchedulerStore((s) => s.runTaskNow);
   const stopTask = useSchedulerStore((s) => s.stopTask);
-  const startActivityPolling = useSchedulerStore((s) => s.startActivityPolling);
-  const stopActivityPolling = useSchedulerStore((s) => s.stopActivityPolling);
+  const refreshActivity = useSchedulerStore((s) => s.refreshActivity);
 
   const confirm = useConfirmStore((s) => s.confirm);
 
-  const [workspaces, setWorkspaces] = useState<WorkspaceOption[]>([]);
+  const workspaceOptions: WorkspaceOption[] = useMemo(
+    () => workspaces.map((w) => ({ id: w.id, name: w.name })),
+    [workspaces],
+  );
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<ScheduledTaskWithNextRun | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -36,15 +46,9 @@ export function SchedulerPanel() {
 
   useEffect(() => {
     loadTasks();
-    client
-      .getAll()
-      .then((r) => {
-        if (r.workspaces) setWorkspaces(r.workspaces.map((w) => ({ id: w.id, name: w.name })));
-      })
-      .catch(() => {});
-    startActivityPolling();
-    return () => stopActivityPolling();
-  }, [loadTasks, startActivityPolling, stopActivityPolling]);
+  }, [loadTasks]);
+
+  useVisiblePolling(() => refreshActivity(), ACTIVITY_POLL_MS);
 
   useEffect(() => {
     const id = setInterval(() => setDisplayTick((t) => t + 1), 60_000);
@@ -56,6 +60,13 @@ export function SchedulerPanel() {
     for (const r of activity?.running ?? []) map.set(r.taskId, r);
     return map;
   }, [activity]);
+
+  const visibleTasks = useMemo(
+    () => workspaceId === 'all'
+      ? tasks
+      : tasks.filter((t) => !t.workspaceId || t.workspaceId === workspaceId),
+    [tasks, workspaceId],
+  );
 
   const handleToggle = async (task: ScheduledTaskWithNextRun, enabled: boolean) => {
     if (!enabled && runningMap.has(task.id)) {
@@ -116,9 +127,12 @@ export function SchedulerPanel() {
           暂无任务，点击「新建任务」创建第一个定时任务
         </p>
       )}
+      {tasks.length > 0 && visibleTasks.length === 0 && (
+        <p className="text-sm text-muted-foreground py-8 text-center">该工作区暂无任务</p>
+      )}
 
       <div className="space-y-2">
-        {tasks.map((task) => {
+        {visibleTasks.map((task) => {
           const running = runningMap.get(task.id);
           return (
             <div key={task.id} className={cn('rounded-md border p-3 flex items-start gap-3', !task.enabled && 'opacity-60')}>
@@ -184,7 +198,8 @@ export function SchedulerPanel() {
       <TaskEditor
         open={editorOpen}
         task={editingTask}
-        workspaces={workspaces}
+        workspaces={workspaceOptions}
+        defaultWorkspaceId={workspaceId === 'all' ? '' : workspaceId}
         onOpenChange={setEditorOpen}
       />
 

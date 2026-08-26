@@ -1,7 +1,7 @@
 /**
- * MemoryTab 内部数据类型（轻量 interface，不镜像到 types/electron-api.ts）
+ * 数据中心记忆面板内部数据类型（轻量 interface，不镜像到 types/electron-api.ts）
  *
- * 原则：只在设置页记忆管理内部使用；如其他渲染层文件需要 Topic，
+ * 原则：只在数据中心记忆面板内部使用；如其他渲染层文件需要 Topic，
  * 再考虑镜像到全局类型文件。
  */
 export interface TopicIndexEntry {

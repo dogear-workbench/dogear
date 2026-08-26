@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
 import { resolveModelLabel } from '@/lib/model-selection';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSmartCategoryStore } from '@/stores/smart-category-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { showConfirm } from '@/stores/confirm-store';
@@ -33,10 +32,11 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
   );
 }
 
-export function SmartCategoryPanel() {
-  const workspace = useWorkspaceStore((s) => s.workspace);
-  const workspaceId = workspace?.id;
+interface Props {
+  workspaceId: string;
+}
 
+export function SmartCategoryPanel({ workspaceId }: Props) {
   const categories = useSmartCategoryStore((s) => s.categories);
   const load = useSmartCategoryStore((s) => s.load);
   const triggerFullRebuild = useSmartCategoryStore((s) => s.triggerFullRebuild);
@@ -52,8 +52,6 @@ export function SmartCategoryPanel() {
 
   // ── 初始拉取 ──
   useEffect(() => {
-    if (!workspaceId) return;
-
     client.getSmartCategorySettings().then((r) => {
       if (typeof r.enabled === 'boolean') setEnabled(r.enabled);
       if (typeof r.threshold === 'number') setThreshold(r.threshold);
@@ -79,7 +77,6 @@ export function SmartCategoryPanel() {
   };
 
   const handleReloadCategories = async () => {
-    if (!workspaceId) return;
     setLoadingCategories(true);
     try {
       await load(workspaceId);
@@ -89,7 +86,6 @@ export function SmartCategoryPanel() {
   };
 
   const handleRebuild = async () => {
-    if (!workspaceId) return;
     const r = await client.listGroups({ workspaceId });
     const groupCount = Array.isArray(r.groups) ? r.groups.length : 0;
     const modelSel = categorizeModel ?? settings.ai.defaultModelSelection;
@@ -102,10 +98,6 @@ export function SmartCategoryPanel() {
     await triggerFullRebuild(workspaceId);
     toast.success('已开始全量重置分类');
   };
-
-  if (!workspaceId) {
-    return <div className="text-sm text-muted-foreground py-8 text-center">请先选择一个工作区</div>;
-  }
 
   return (
     <div className="space-y-4">

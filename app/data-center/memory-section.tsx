@@ -3,15 +3,25 @@ import { FolderOpen, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { client } from '@/lib/client';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConfirmStore } from '@/stores/confirm-store';
-import { CoreProfilePanel } from './memory/CoreProfilePanel';
-import { TopicsPanel } from './memory/TopicsPanel';
-export function MemoryTab() {
-  const workspace = useWorkspaceStore((s) => s.workspace);
-  const workspacePath = workspace?.path;
+import type { Workspace } from '@/types/electron-api';
+import { CoreProfilePanel } from './core-profile-panel';
+import { TopicsPanel } from './topics-panel';
+import { SmartCategoryPanel } from './smart-category-panel';
+
+interface Props {
+  workspaceId: string | 'all';
+  workspaces: Workspace[];
+}
+
+export function MemorySection({ workspaceId, workspaces }: Props) {
   const confirm = useConfirmStore((s) => s.confirm);
   const [rebuilding, setRebuilding] = useState(false);
+
+  const workspace = workspaceId === 'all'
+    ? undefined
+    : workspaces.find((w) => w.id === workspaceId);
+  const workspacePath = workspace?.path;
 
   const handleRebuildIndex = async () => {
     if (!workspacePath) return;
@@ -53,35 +63,35 @@ export function MemoryTab() {
     }
   };
 
-  if (!workspacePath) {
+  if (!workspace || !workspacePath) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground">
         <div className="text-center space-y-2">
           <FolderOpen className="w-10 h-10 mx-auto opacity-50" />
-          <p className="text-sm">请先选择一个工作区</p>
+          <p className="text-sm">记忆按工作区组织，请在右上角选择具体工作区</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-4xl py-6 px-6">
-      <div className="flex items-center justify-between mb-1">
-        <h2 className="text-lg font-semibold">记忆管理</h2>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          为「{workspace.name}」维护核心档案与主题记忆。核心档案每次会话启动时注入系统提示词，
+          主题记忆通过 Agent 的 dogear__RecallMemory 工具按关键词检索。
+        </p>
         <Button variant="outline" size="sm" onClick={handleRebuildIndex} disabled={rebuilding}>
           <RefreshCw className={rebuilding ? 'w-4 h-4 mr-1 animate-spin' : 'w-4 h-4 mr-1'} />
           {rebuilding ? '重建中...' : '重建索引'}
         </Button>
       </div>
-      <p className="text-sm text-muted-foreground mb-6">
-        为当前工作区维护核心档案和主题记忆。核心档案每次会话启动时注入系统提示词，
-        主题记忆通过 Agent 的 dogear__RecallMemory 工具按关键词检索。
-      </p>
 
       <Tabs defaultValue="core">
         <TabsList>
           <TabsTrigger value="core">核心档案</TabsTrigger>
           <TabsTrigger value="topics">主题记忆</TabsTrigger>
+          <TabsTrigger value="smart-category">智能分类</TabsTrigger>
         </TabsList>
 
         <TabsContent value="core" className="pt-4">
@@ -92,6 +102,9 @@ export function MemoryTab() {
           <TopicsPanel workspacePath={workspacePath} />
         </TabsContent>
 
+        <TabsContent value="smart-category" className="pt-4">
+          <SmartCategoryPanel workspaceId={workspace.id} />
+        </TabsContent>
       </Tabs>
     </div>
   );

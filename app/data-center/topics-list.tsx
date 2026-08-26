@@ -2,7 +2,7 @@ import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
-import type { TopicIndexEntry } from './types';
+import type { TopicIndexEntry } from './memory-types';
 
 interface Props {
   topics: TopicIndexEntry[];

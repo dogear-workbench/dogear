@@ -11,7 +11,7 @@
 - [x] [Step 1: 止血与清理](./step1-quickfix-cleanup.md) — MarkdownFileDialog 非模态 + 删除 Agent 监控全链路
 - [x] [Step 2: 设置窗口化](./step2-settings-window.md) — 设置迁独立窗口 + settingsChanged 跨窗口联动 + dirty 关闭拦截
 - [x] [Step 3: 数据中心骨架与核心面板](./step3-datacenter-core.md) — 窗口骨架 + 工作区筛选 + 组卡/用量面板 + 轮询纪律落地
-- [ ] [Step 4: 数据中心其余面板与设置瘦身收尾](./step4-datacenter-rest.md) — 定时/历史/解析/记忆平移 + 设置页删已迁 tab + doc-sync
+- [x] [Step 4: 数据中心其余面板与设置瘦身收尾](./step4-datacenter-rest.md) — 定时/历史/解析/记忆平移 + 设置页删已迁 tab + doc-sync
 
 ## 全局决策
 
@@ -39,3 +39,16 @@
 | SystemPromptPreviewTab | 留设置（系统契约查看与配置强相关） |
 | 「重新提炼」入口 | 双入口保留：话题面板单组 + 数据中心全库 |
 | 跨工作区聚合接口缺口 | step3 实施时逐个检查，缺则补 RPC，语义为「不传 workspaceId = 全部」 |
+
+## 完成总结
+
+四步全部完成（2026-08-26）：
+
+1. **止血与清理**（step1）：MarkdownFileDialog 改非模态；Agent 监控全链路删除（路由/窗口/组件/stores）
+2. **设置窗口化**（step2）：设置迁独立窗口（dirty close guard + settingsCloseRequested + 三按钮 confirm）；settingsChanged 广播跨窗口联动（setup-settings-sync 挂顶层）；ui-store 删 overlay 态
+3. **数据中心骨架与核心面板**（step3）：1200×800 独立窗口 + 工作区筛选器（默认全部）；组卡/用量面板平移（listGroupDigests / getUsageStats 扩展「不传 workspaceId = 全工作区聚合」约定，返回行带 workspaceId 归属）；useVisiblePolling 统一轮询纪律（不可见停、恢复立拉）
+4. **其余面板与瘦身收尾**（step4）：定时计划（含执行历史）、解析历史、记忆三面板（主题/画像/智能分类）平移数据中心；设置页删五个已迁 tab 收敛为纯设置；scheduler-store 轮询死代码清理；doc-sync 一次补齐 step1–4
+
+最终形态：主窗口（会话 + 话题面板双入口重新提炼）、数据中心窗口（组卡/用量/定时计划/解析历史/记忆五区 + 工作区筛选器）、设置窗口（基础/能力/模型方案/工作区管理/子会话派遣/关于）。全局决策全部落地：窗口间零直接通信、面板 props 传 workspaceId 不读 workspace-store、轮询全走 useVisiblePolling、RPC 失败 toast 后端文案、删除走 confirm-store。
+
+遗留：GUI 三窗口并行冒烟需人工跑 `bun run dev` 验证；getDetailedStatus 无调用方可后续顺手清理。

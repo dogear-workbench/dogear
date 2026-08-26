@@ -11,17 +11,11 @@ import { useConfirmStore } from '@/stores/confirm-store';
 import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
-import { MemoryTab } from './MemoryTab';
-import { DigestsPanel } from './memory/DigestsPanel';
-import { SmartCategoryPanel } from './memory/SmartCategoryPanel';
-import { SchedulerPanel } from './scheduler/SchedulerPanel';
 import { AbilityTab } from './AbilityTab';
 import { GeneralAgentMdDialog } from '@/components/GeneralAgentMdDialog';
 import { BasicToolsSection } from './BasicToolsSection';
 import { SubAgentTab } from './SubAgentTab';
-import { UsageTab } from './UsageTab';
 import { AboutTab } from './AboutTab';
-import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
 import { formatContextLabel, lookupContextWindow, resolveModelWindow } from '@/lib/pi-model-catalog';
 import { PiModelRow } from './pi-model-row';
@@ -253,23 +247,8 @@ export default function SettingsPage() {
           <TabsTrigger value="workspace-management" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             工作区管理
           </TabsTrigger>
-          <TabsTrigger value="memory" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            记忆管理
-          </TabsTrigger>
-          <TabsTrigger value="digests" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            会话摘要
-          </TabsTrigger>
-          <TabsTrigger value="scheduler" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            定时计划
-          </TabsTrigger>
           <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             子会话派遣
-          </TabsTrigger>
-          <TabsTrigger value="usage" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            用量
-          </TabsTrigger>
-          <TabsTrigger value="parse-history" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            解析历史
           </TabsTrigger>
           <TabsTrigger value="about" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             关于
@@ -618,51 +597,9 @@ export default function SettingsPage() {
           <WorkspaceManagementTab />
         </TabsContent>
 
-        {/* ── Tab: 记忆管理 ── */}
-        <TabsContent value="memory" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <MemoryTab />
-        </TabsContent>
-
-        {/* ── Tab: 会话摘要 ── */}
-        <TabsContent value="digests" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <div className="max-w-4xl py-6 px-6 space-y-10">
-            <div>
-              <h2 className="text-lg font-semibold mb-1">会话摘要</h2>
-              <p className="text-sm text-muted-foreground mb-6">后台自动把每个会话提炼成摘要卡，可在此查看组卡详情，或对单个组补跑提炼；提炼模型与提示词在「定时计划」的任务编辑器中配置。</p>
-              <DigestsPanel />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold mb-1">智能分类</h2>
-              <p className="text-sm text-muted-foreground mb-6">每张新摘要卡产生后自动决策归类。本工作区独立，分类由 agent 全权决定；用户可在此调节匹配阈值、查看分类结果或全量重置；模型、提示词、补分类与整理在「定时计划」中配置。</p>
-              <SmartCategoryPanel />
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ── Tab: 定时计划 ── */}
-        <TabsContent value="scheduler" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <div className="max-w-4xl py-6 px-6">
-            <h2 className="text-lg font-semibold mb-1">定时计划</h2>
-            <p className="text-sm text-muted-foreground mb-6">
-              每个任务一行：内置任务（组卡提炼 / 复盘报告 / 补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
-            </p>
-            <SchedulerPanel />
-          </div>
-        </TabsContent>
-
         {/* ── Tab: 子会话派遣 ── */}
         <TabsContent value="sub-agent" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <SubAgentTab local={local} setLocal={setLocal} />
-        </TabsContent>
-
-        {/* ── Tab: 用量 ── */}
-        <TabsContent value="usage" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <UsageTab />
-        </TabsContent>
-
-        {/* ── Tab: 解析历史 ── */}
-        <TabsContent value="parse-history" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <ArticleParseHistoryPanel />
         </TabsContent>
 
         {/* ── Tab: 关于 ── */}
