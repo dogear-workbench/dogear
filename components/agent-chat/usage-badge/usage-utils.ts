@@ -6,11 +6,12 @@ export function formatLabel(window: number): string {
   return `${Math.round(window / 1000)}k`;
 }
 
-/** token 数缩写：15632→'15.6k'，900000→'900k'，<1000 原样 */
+/** token 数缩写：15632→'15.6k'，900000→'900k'，1234567→'1.23M'，≥ 1B→'1.2G'，<1000 原样 */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
-  const k = (n / 1000).toFixed(1).replace(/\.0$/, '');
-  return `${k}k`;
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`;
+  return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')}G`;
 }
 
 /**

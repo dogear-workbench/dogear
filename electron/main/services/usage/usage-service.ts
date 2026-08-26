@@ -248,6 +248,63 @@ export async function readUsage(conversationId: string): Promise<ConversationUsa
   };
 }
 
+export interface UsagePeriodStats {
+  conversationId: string;
+  turnCount: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  lastTimestamp: number;
+}
+
+/**
+ * 轻量扫描单个会话的 usage JSONL，聚合 timestamp >= sinceMs 的轮次。
+ * 文件不存在 / 无命中轮次时返回 null（调用方据此把会话排除出时段列表）。
+ */
+export async function readUsageSince(
+  conversationId: string,
+  sinceMs: number,
+): Promise<UsagePeriodStats | null> {
+  try {
+    assertSafeId(conversationId);
+  } catch (err) {
+    logger.warn('readUsageSince id 校验失败', err);
+    return null;
+  }
+
+  let content: string;
+  try {
+    content = await fs.readFile(usageFilePath(conversationId), 'utf-8');
+  } catch {
+    return null;
+  }
+
+  let turnCount = 0;
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let cacheReadInputTokens = 0;
+  let lastTimestamp = 0;
+
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as UsageJsonlLine;
+      if (parsed.kind !== 'entry' || parsed.timestamp < sinceMs) continue;
+      turnCount += 1;
+      inputTokens += parsed.usage.inputTokens;
+      outputTokens += parsed.usage.outputTokens;
+      cacheReadInputTokens += parsed.usage.cacheReadInputTokens;
+      if (parsed.timestamp > lastTimestamp) lastTimestamp = parsed.timestamp;
+    } catch {
+      // 跳过无法解析的行
+    }
+  }
+
+  if (turnCount === 0) return null;
+  return { conversationId, turnCount, inputTokens, outputTokens, cacheReadInputTokens, lastTimestamp };
+}
+
 /**
  * 读取会话 JSONL 最后一条 ENTRY 的 turnIndex + 1，作为重建会话时 usageTurnIndex 的起始值。
  * 文件不存在 / 无 ENTRY 行 / 解析失败一律回退 0。

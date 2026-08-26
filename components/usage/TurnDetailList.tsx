@@ -148,19 +148,28 @@ function CompactBoundaryRow({ marker }: { marker: CompactMarker }) {
   );
 }
 
-export function TurnDetailList({ conversationId }: { conversationId: string }) {
+export function TurnDetailList({ conversationId, sinceMs }: { conversationId: string; sinceMs?: number }) {
   const { usage } = useConversationUsage(conversationId);
 
   if (!usage) {
     return <p className="py-2 text-xs text-muted-foreground">加载用量明细…</p>;
   }
-  if (usage.entries.length === 0 && usage.compactMarkers.length === 0) {
+
+  const scoped: ConversationUsage = sinceMs != null
+    ? {
+        ...usage,
+        entries: usage.entries.filter((e) => e.timestamp >= sinceMs!),
+        compactMarkers: usage.compactMarkers.filter((m) => m.timestamp >= sinceMs!),
+      }
+    : usage;
+
+  if (scoped.entries.length === 0 && scoped.compactMarkers.length === 0) {
     return <p className="py-2 text-xs text-muted-foreground">暂无用量记录</p>;
   }
 
   return (
     <div className="space-y-0.5">
-      {buildTimeline(usage).map((item) =>
+      {buildTimeline(scoped).map((item) =>
         item.kind === 'entry' ? (
           <TurnRow key={item.entry.uuid} entry={item.entry} segmented={item.segmented} />
         ) : (
