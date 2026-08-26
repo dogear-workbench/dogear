@@ -1,16 +1,22 @@
 import { Gauge } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { useConversationUsage } from './useConversationUsage';
-import { UsageHoverCard } from './UsageHoverCard';
+import { UsagePopoverContent } from './UsagePopoverContent';
 import { formatTokens } from './usage-utils';
 
 /**
- * 输入框工具栏的用量徽章：进度条 + token 文字，hover 展开详情卡片。
+ * 输入框工具栏的用量徽章：进度条 + token 文字，点击弹出用量详情。
  * 上下文占用来自主进程写入的快照（context.used）；无快照时只显示统计、不画进度条。
  * 占用超过自动压缩阈值（nearCompact）时变红提示「即将压缩」。
  */
-export function UsageBadge({ conversationId }: { conversationId: string | null }) {
+export function UsageBadge({
+  conversationId,
+  isStreaming = false,
+}: {
+  conversationId: string | null;
+  isStreaming?: boolean;
+}) {
   const { usage, context } = useConversationUsage(conversationId);
 
   const lastEntry = usage?.entries[usage.entries.length - 1];
@@ -25,8 +31,8 @@ export function UsageBadge({ conversationId }: { conversationId: string | null }
     : ratio > 0.6 ? 'bg-amber-500' : 'bg-muted-foreground';
 
   return (
-    <HoverCard openDelay={300}>
-      <HoverCardTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           type="button"
           className="flex items-center gap-1.5 h-6 px-1.5 rounded text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -46,10 +52,10 @@ export function UsageBadge({ conversationId }: { conversationId: string | null }
             {hasBar ? ` / ${formatTokens(limit)}` : ''}
           </span>
         </button>
-      </HoverCardTrigger>
-      <HoverCardContent align="end" className="w-[560px] p-0 text-xs">
-        <UsageHoverCard usage={usage} context={context} lastEntry={lastEntry} />
-      </HoverCardContent>
-    </HoverCard>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[460px] p-0 text-xs">
+        <UsagePopoverContent usage={usage} context={context} lastEntry={lastEntry} isStreaming={isStreaming} />
+      </PopoverContent>
+    </Popover>
   );
 }

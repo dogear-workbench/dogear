@@ -395,7 +395,7 @@ export const ChatInputArea = memo(function ChatInputArea({
               </DropdownMenu>
 
               {/* 上下文用量徽章 */}
-              <UsageBadge conversationId={conversationId} />
+              <UsageBadge conversationId={conversationId} isStreaming={pendingState === 'running'} />
 
               {/* 发送/停止按钮（右侧） */}
               <div className="ml-auto">

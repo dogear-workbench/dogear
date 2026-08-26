@@ -12,7 +12,7 @@
 - [x] [Step 2: failover 提示改造](./step2-failover-notice.md) — 续跑提示消息特殊渲染、横幅单条可关、quota 失败降噪
 - [x] [Step 3: usage 落盘修复](./step3-usage-pipeline.md) — turnIndex 续号、跳过 0% 快照、CompactMarker 落盘、lastContextSize 口径
 - [x] [Step 4: 设置「用量」Tab](./step4-usage-tab.md) — 按会话汇总列表 + 逐轮明细组件（TurnDetailList）
-- [ ] [Step 5: 徽章弹层重构](./step5-badge-popover.md) — hover 改点击、当前轮概览、删死组件与误报
+- [x] [Step 5: 徽章弹层重构](./step5-badge-popover.md) — hover 改点击、当前轮概览、删死组件与误报
 
 ## 全局决策
 
@@ -24,3 +24,15 @@
 - **Popover** 用 shadcn/ui 现成组件，不引入新依赖。
 - 主进程广播类改动参照 `conversationListChanged` 在 delegation-bridge 里的既有发送方式。
 - 每个 step 一个 commit，message 格式 `feat/fix: <描述>`。
+
+## 完成总结
+
+五个 step 全部完成（2026-08-26）：
+
+1. **failover 渲染重连**（c2feb44）：failoverNotice 到达即 bump sessionRestartTrigger 复用手动切模型重连通道，流式无缝续接；updateModelSelection 后广播 conversationListChanged 刷新模型选择器。
+2. **failover 提示改造**（4c00b86）：续跑提示哨兵 `[system:failover-continue]` 渲染为系统提示条；横幅同会话单条可关 60s 过期；quota 失败系统通知延后由接管结果决定、红色 Alert 降级一行摘要；链耗尽保留完整报错。
+3. **usage 落盘修复**（be0b2b9）：turnIndex 从 JSONL 尾部续号不再归零；失败轮跳过 0% 假快照；CompactMarker 经 usageCompact 事件落盘；entry.lastContextTokens 修正 lastContextSize 口径；修复 usage-service 既有失败 fixture。
+4. **设置「用量」Tab**（5cfdb2c）：UsageTab 按会话汇总 + TurnDetailList 逐轮明细（token/缓存/命中率/工具/轮末上下文，含重启分段线与压缩分界行）。
+5. **徽章弹层重构**（本 commit）：HoverCard → 点击 Popover，当前轮 modelUsage 逐桶概览为体 + 流式中提示 + 底部会话累计；删 7 个死组件与 4 个孤儿聚合函数。
+
+**遗留**：bun test 全量 9 个 delegation mock 污染失败为仓库既有债（建议另立 step 修 delegation-test-mocks）；Alert 先红后降级 1-3s 闪现；存量数据不迁移；实机手动回归（quota failover 链切换、重启后 turnIndex、用量 Tab 观感、徽章弹层交互）待补。
