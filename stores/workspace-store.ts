@@ -22,8 +22,6 @@ interface WorkspaceState {
   selectFile: (file: WorkspaceFileNode) => Promise<void>;
   /** 清除文件选中状态 */
   clearSelectedFile: () => void;
-  /** 打开 Agent 监控窗口 */
-  openMonitorWindow: () => Promise<void>;
   /** 清空工作区（回到选择页），同时关闭所有会话并重置所有相关 store */
   clearWorkspace: () => Promise<void>;
   /** 打开自选股窗口 */
@@ -101,14 +99,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   },
 
   clearSelectedFile: () => set({ selectedFile: null }),
-
-  openMonitorWindow: async () => {
-    try {
-      await client.openMonitorWindow();
-    } catch (error) {
-      console.error('打开监控窗口失败:', error);
-    }
-  },
 
   clearWorkspace: async () => {
     const { useConversationStore } = await import('./conversation-store');

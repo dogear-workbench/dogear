@@ -53,9 +53,6 @@ let isQuitting = false;
 // 调试窗口实例(仅开发环境)
 let debugWindow: BrowserWindowType | null = null;
 
-// Agent 监控窗口实例
-let agentMonitorWindow: BrowserWindowType | null = null;
-
 // 自选股窗口实例
 let stockWindow: BrowserWindowType | null = null;
 
@@ -163,62 +160,6 @@ export function sendToDebugWindow(channel: string, ...args: any[]) {
 }
 
 /**
- * 创建 Agent 监控窗口
- * 用于可视化显示 Agent 管理器的运行状态
- */
-export function createAgentMonitorWindow() {
-  // 如果监控窗口已存在,聚焦它
-  if (agentMonitorWindow) {
-    agentMonitorWindow.focus();
-    return;
-  }
-
-  agentMonitorWindow = new BrowserWindow({
-    width: 1000,
-    height: 700,
-    title: 'Agent 监控面板',
-    parent: mainWindow || undefined,
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  // 加载监控窗口页面（HashRouter 路由）
-  const monitorUrl = isDev
-    ? `${getRendererPath()}/#/agent-monitor`
-    : `file://${getRendererPath()}#/agent-monitor`;
-  agentMonitorWindow.loadURL(monitorUrl);
-
-  // 监控窗口关闭时清理引用
-  agentMonitorWindow.on('closed', () => {
-    agentMonitorWindow = null;
-  });
-
-  // 开发环境打开开发者工具
-  if (isDev) {
-    agentMonitorWindow.webContents.openDevTools();
-  }
-}
-
-/**
- * 获取 Agent 监控窗口实例
- */
-export function getAgentMonitorWindow(): BrowserWindowType | null {
-  return agentMonitorWindow;
-}
-
-/**
- * 发送消息到 Agent 监控窗口
- */
-export function sendToAgentMonitorWindow(channel: string, ...args: any[]) {
-  if (agentMonitorWindow && !agentMonitorWindow.isDestroyed()) {
-    agentMonitorWindow.webContents.send(channel, ...args);
-  }
-}
-
-/**
  * 创建自选股窗口
  */
 export function createStockWindow() {
@@ -318,9 +259,6 @@ export function createSessionWindow(conversationId: string, title: string) {
 function closeAllChildWindows() {
   if (stockWindow && !stockWindow.isDestroyed()) {
     stockWindow.close();
-  }
-  if (agentMonitorWindow && !agentMonitorWindow.isDestroyed()) {
-    agentMonitorWindow.close();
   }
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.close();

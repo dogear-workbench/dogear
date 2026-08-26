@@ -4,7 +4,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, Activity, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
+import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { TopicPanel } from '@/components/TopicPanel';
@@ -75,7 +75,6 @@ export default function Home() {
   }, []);
   const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
   const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
-  const openMonitorWindow = useWorkspaceStore((s) => s.openMonitorWindow);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
   const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
@@ -208,10 +207,6 @@ export default function Home() {
           <Button variant="outline" size="sm" onClick={openSettings}>
             <Settings className="w-4 h-4 mr-2" />
             设置
-          </Button>
-          <Button variant="outline" size="sm" onClick={openMonitorWindow}>
-            <Activity className="w-4 h-4 mr-2" />
-            Agent 监控
           </Button>
           <Button variant="outline" size="sm" onClick={openStockWindow}>
             <TrendingUp className="w-4 h-4 mr-2" />

@@ -36,7 +36,11 @@ export function MarkdownFileDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => { if (!open) close(); }}>
-      <DialogContent className="sm:max-w-6xl h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+      <DialogContent
+        className="sm:max-w-6xl h-[80vh] flex flex-col gap-0 p-0 overflow-hidden"
+        onInteractOutside={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => e.preventDefault()}
+      >
         <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle className="truncate pr-8">{fileName ?? '预览'}</DialogTitle>
         </DialogHeader>

@@ -164,13 +164,6 @@ export const agentRouter = {
   getDetailedStatus: t.procedure
     .action(async () => getAgentManager().getDetailedStatus()),
 
-  openMonitorWindow: t.procedure
-    .action(async () => {
-      const { createAgentMonitorWindow } = await import('../index.js');
-      createAgentMonitorWindow();
-      return { success: true };
-    }),
-
   openStockWindow: t.procedure
     .action(async () => {
       const { createStockWindow } = await import('../index.js');
