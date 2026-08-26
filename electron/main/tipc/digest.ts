@@ -2,6 +2,7 @@
 // 组级摘要卡 IPC（Phase 3）：列出/读取组卡 + 触发/取消 + 提示词 + 模型选择 + 活动轮询
 import { tipc } from '@egoist/tipc/main';
 import { listGroupDigests, readGroupDigest, readGroupDigestRaw } from '../services/memory/group-digest-store.js';
+import type { GroupDigestSummary } from '../services/memory/group-digest-store.js';
 import {
   triggerScanAll, triggerByGroup, getGroupDigestActivity, cancelAllGroupDigest,
 } from '../services/memory/group-digest-trigger.js';
@@ -15,11 +16,22 @@ const t = tipc.create();
 
 export const digestRouter = {
   listGroupDigests: t.procedure
-    .input<{ workspaceId: string }>()
+    .input<{ workspaceId?: string }>()
     .action(async ({ input }) => {
       try {
-        const digests = await listGroupDigests(input.workspaceId);
-        return { digests };
+        if (input.workspaceId) {
+          const digests = await listGroupDigests(input.workspaceId);
+          return { digests: digests.map((d) => ({ ...d, workspaceId: input.workspaceId! })) };
+        }
+        const { getAll } = await import('../services/workspace-json-service.js');
+        const workspaces = await getAll();
+        const all: Array<GroupDigestSummary & { workspaceId: string }> = [];
+        for (const ws of workspaces) {
+          const digests = await listGroupDigests(ws.id);
+          for (const d of digests) all.push({ ...d, workspaceId: ws.id });
+        }
+        all.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+        return { digests: all };
       } catch (error) {
         console.error('[digest] listGroupDigests 失败:', error);
         return { error: String(error) };

@@ -28,6 +28,8 @@ interface WorkspaceState {
   openStockWindow: () => Promise<void>;
   /** 打开设置窗口（单例） */
   openSettingsWindow: () => Promise<void>;
+  /** 打开数据中心窗口（单例） */
+  openDataCenterWindow: () => Promise<void>;
   /** 设置正在创建文件夹的父路径 */
   setCreatingFolderAt: (parentPath: string | null) => void;
   /** 添加附加路径 */
@@ -133,6 +135,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       await client.openSettingsWindow();
     } catch (error) {
       console.error('打开设置窗口失败:', error);
+    }
+  },
+
+  openDataCenterWindow: async () => {
+    try {
+      await client.openDataCenterWindow();
+    } catch (error) {
+      console.error('打开数据中心窗口失败:', error);
     }
   },
 

@@ -59,6 +59,9 @@ let stockWindow: BrowserWindowType | null = null;
 // 设置窗口实例
 let settingsWindow: BrowserWindowType | null = null;
 
+// 数据中心窗口实例
+let dataCenterWindow: BrowserWindowType | null = null;
+
 // 设置窗口 close guard 直通标志（forceClose 时跳过 dirty 拦截）
 let settingsSkipCloseGuard = false;
 
@@ -239,6 +242,36 @@ export function createSettingsWindow() {
 }
 
 /**
+ * 创建数据中心窗口（单例，已存在则聚焦）
+ */
+export function createDataCenterWindow() {
+  if (dataCenterWindow) {
+    dataCenterWindow.focus();
+    return;
+  }
+
+  dataCenterWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    title: '数据中心',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const dataCenterUrl = isDev
+    ? `${getRendererPath()}/#/data-center`
+    : `file://${getRendererPath()}#/data-center`;
+  dataCenterWindow.loadURL(dataCenterUrl);
+
+  dataCenterWindow.on('closed', () => {
+    dataCenterWindow = null;
+  });
+}
+
+/**
  * 请求关闭设置窗口（触发 close guard，由渲染进程决定 dirty 处理）
  */
 export function requestCloseSettingsWindow() {
@@ -342,6 +375,9 @@ function closeAllChildWindows() {
   }
   if (settingsWindow && !settingsWindow.isDestroyed()) {
     forceCloseSettingsWindow();
+  }
+  if (dataCenterWindow && !dataCenterWindow.isDestroyed()) {
+    dataCenterWindow.close();
   }
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.close();

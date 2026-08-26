@@ -27,4 +27,12 @@ export const windowsRouter = {
       forceCloseSettingsWindow();
       return { success: true };
     }),
+
+  /** 打开数据中心窗口（单例，已存在则聚焦） */
+  openDataCenterWindow: t.procedure
+    .action(async () => {
+      const { createDataCenterWindow } = await import('../index.js');
+      createDataCenterWindow();
+      return { success: true };
+    }),
 };

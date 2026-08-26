@@ -27,6 +27,7 @@
     "lib/**/*.ts",
     "lib/**/*.tsx",
     "stores/**/*.ts",
+    "hooks/**/*.ts",
     "types/**/*.ts"
   ],
   "exclude": ["node_modules", "dist", "out", "electron"]

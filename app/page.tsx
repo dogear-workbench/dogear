@@ -4,7 +4,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText } from 'lucide-react';
+import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { TopicPanel } from '@/components/TopicPanel';
@@ -76,6 +76,7 @@ export default function Home() {
   const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
   const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
+  const openDataCenterWindow = useWorkspaceStore((s) => s.openDataCenterWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
   const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
 
@@ -211,6 +212,10 @@ export default function Home() {
           <Button variant="outline" size="sm" onClick={openStockWindow}>
             <TrendingUp className="w-4 h-4 mr-2" />
             自选股
+          </Button>
+          <Button variant="outline" size="sm" onClick={openDataCenterWindow}>
+            <Database className="w-4 h-4 mr-2" />
+            数据中心
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWechatDialogOpen(true)}>
             <MessageCircle className="w-4 h-4 mr-2" />

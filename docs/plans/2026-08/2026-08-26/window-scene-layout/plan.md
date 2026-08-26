@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 止血与清理](./step1-quickfix-cleanup.md) — MarkdownFileDialog 非模态 + 删除 Agent 监控全链路
 - [x] [Step 2: 设置窗口化](./step2-settings-window.md) — 设置迁独立窗口 + settingsChanged 跨窗口联动 + dirty 关闭拦截
-- [ ] [Step 3: 数据中心骨架与核心面板](./step3-datacenter-core.md) — 窗口骨架 + 工作区筛选 + 组卡/用量面板 + 轮询纪律落地
+- [x] [Step 3: 数据中心骨架与核心面板](./step3-datacenter-core.md) — 窗口骨架 + 工作区筛选 + 组卡/用量面板 + 轮询纪律落地
 - [ ] [Step 4: 数据中心其余面板与设置瘦身收尾](./step4-datacenter-rest.md) — 定时/历史/解析/记忆平移 + 设置页删已迁 tab + doc-sync
 
 ## 全局决策
