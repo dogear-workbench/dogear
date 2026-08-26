@@ -547,8 +547,6 @@ export function AgentChat({
         showStatusHint={showStatusHint}
         currentSelection={currentConversation?.modelSelection ?? null}
         onSelectionChange={handleSelectionChange}
-        cachePolicy={currentConversation?.cachePolicy}
-        workspaceId={currentConversation?.workspace_id ?? null}
         permissionMode={permissionMode}
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}

@@ -45,7 +45,6 @@ export interface ConversationIndex {
   /** 分叉点标识；SDK 时代是 Claude JSONL 消息 uuid，Harness 迁移后是 fork 时使用的 SessionTreeEntry id */
   forkMessageSdkUuid: string | null;
   modelSelection: ModelSelection | null;
-  cachePolicy?: '5m' | '1h'; // 提示缓存策略；缺省视为 5m
   /** @deprecated SDK 时代"分叉待定，等首条消息才建会话"的状态位；Harness fork 已改为同步创建，不再产生新值 */
   forkPending?: boolean;
   /** @deprecated 仅为话题生命周期 v1 迁移读取；所有存量清理后可随迁移代码移除。 */
@@ -82,7 +81,6 @@ export interface ConversationCompat {
   parentConversationId: string | null;
   forkMessageSdkUuid: string | null;
   modelSelection: ModelSelection | null;
-  cachePolicy: '5m' | '1h' | undefined;
   createdAt: string;
   updatedAt: string;
   usageSummary?: {
@@ -332,7 +330,6 @@ export async function create(
   options?: {
     role?: 'main' | 'sub';
     parentConversationId?: string;
-    cachePolicy?: '5m' | '1h';
     contractMetadata?: ContractMetadata;
   },
 ): Promise<string> {
@@ -349,7 +346,6 @@ export async function create(
       parentConversationId: options?.parentConversationId ?? null,
       forkMessageSdkUuid: null,
       modelSelection: modelSelection ? { ...modelSelection } : null,
-      cachePolicy: options?.cachePolicy ?? '5m',
       groupId,
       role: options?.role ?? 'main',
       contractMetadata: options?.contractMetadata,
@@ -377,7 +373,6 @@ export async function createFork(
   sessionId: string,
   forkMessageSdkUuid: string,
   modelSelection: ModelSelection | null = null,
-  cachePolicy: '5m' | '1h' = '5m',
 ): Promise<string> {
   return withConversationsTxn(workspaceId, async (file) => {
     await requireActiveGroup(workspaceId, groupId);
@@ -394,7 +389,6 @@ export async function createFork(
       forkMessageSdkUuid,
       modelSelection: modelSelection ? { ...modelSelection } : null,
       contractMetadata: parent?.contractMetadata ? { ...parent.contractMetadata } : undefined,
-      cachePolicy,
       groupId,
       role: 'main',
       createdAt: now,
@@ -569,21 +563,6 @@ export async function migrateLegacyModelSelections(): Promise<number> {
   return migrated;
 }
 
-export async function updateCachePolicy(
-  workspaceId: string,
-  id: string,
-  policy: '5m' | '1h',
-): Promise<void> {
-  await withConversationsTxn(workspaceId, async (file) => {
-    const conv = file.conversations[id];
-    if (!conv) return;
-    if (!conv.groupId) throw new Error('对话未关联话题');
-    await requireActiveGroup(workspaceId, conv.groupId);
-    conv.cachePolicy = policy;
-    conv.updatedAt = new Date().toISOString();
-  });
-}
-
 /**
  * 删除对话（硬删除：从索引中彻底移除）
  * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
@@ -649,7 +628,6 @@ export function toCompat(conv: ConversationIndex): ConversationCompat {
     parentConversationId: conv.parentConversationId,
     forkMessageSdkUuid: conv.forkMessageSdkUuid,
     modelSelection: conv.modelSelection ?? null,
-    cachePolicy: conv.cachePolicy,
     createdAt: conv.createdAt,
     updatedAt: conv.updatedAt,
     usageSummary: conv.usageSummary,

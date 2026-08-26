@@ -500,7 +500,6 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const childId = await conversationService.create(workspaceId, groupId, title, modelSel, {
     role: 'sub',
     parentConversationId,
-    cachePolicy: '5m',
     contractMetadata,
   });
   broadcastConversationListChanged(workspaceId);

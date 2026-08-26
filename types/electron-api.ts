@@ -145,7 +145,6 @@ export interface Conversation {
   parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
   fork_message_sdk_uuid?: string;    // 分叉点标识（Harness 迁移后是 SessionTreeEntry id）
   modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
-  cachePolicy?: '5m' | '1h';         // 提示缓存策略；缺省视为 5m
   fork_pending?: boolean;            // @deprecated SDK 时代的分叉待定态，Harness fork 已同步创建不再产生
   groupId: string;                   // 所属会话组 ID
   role: 'main' | 'sub';             // P1 只产生 'main'

@@ -1104,11 +1104,6 @@ export class PiSession extends EventEmitter {
     return { ok: true };
   }
 
-  /** pi 阶段一无缓存策略概念（不涉及 SDK 的 1h prompt cache 环境变量），恒不需要重启 */
-  setCachePolicy(): { ok: true; needsRestart: boolean } {
-    return { ok: true, needsRestart: false };
-  }
-
   isSessionActive(): boolean {
     return this.status !== PiSessionStatus.CLOSED;
   }
