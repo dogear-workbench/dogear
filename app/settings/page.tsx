@@ -19,6 +19,7 @@ import { AbilityTab } from './AbilityTab';
 import { GeneralAgentMdDialog } from '@/components/GeneralAgentMdDialog';
 import { BasicToolsSection } from './BasicToolsSection';
 import { SubAgentTab } from './SubAgentTab';
+import { UsageTab } from './UsageTab';
 import { AboutTab } from './AboutTab';
 import { ArticleParseHistoryPanel } from '@/components/ArticleParseHistoryPanel';
 import { ModelSelector } from '@/components/ModelSelector';
@@ -258,6 +259,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             子会话派遣
+          </TabsTrigger>
+          <TabsTrigger value="usage" className="justify-start px-3 py-2 data-[state=active]:bg-background">
+            用量
           </TabsTrigger>
           <TabsTrigger value="parse-history" className="justify-start px-3 py-2 data-[state=active]:bg-background">
             解析历史
@@ -644,6 +648,11 @@ export default function SettingsPage() {
         {/* ── Tab: 子会话派遣 ── */}
         <TabsContent value="sub-agent" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <SubAgentTab local={local} setLocal={setLocal} />
+        </TabsContent>
+
+        {/* ── Tab: 用量 ── */}
+        <TabsContent value="usage" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <UsageTab />
         </TabsContent>
 
         {/* ── Tab: 解析历史 ── */}
