@@ -121,14 +121,51 @@ describe('useTranscriptState core', () => {
     expect(shouldFinalizeTranscriptInit({ ...init, ready: true }, 10000)).toBe(false);
   });
 
-  test('新 user 到达时先提升未完成的旧 live', () => {
+  test('新 user 到达时先提升未完成的旧 live，新消息成为新 live 的 header', () => {
     let core = initialTranscriptCore();
     core = pushLiveAssistantCore(core, assistant());
     core = pushLocalUserCore(core, { role: 'user', content: 'new', id: 'u-new' });
 
-    expect(core.live).toEqual([]);
-    expect(core.stable.map((message) => message.id)).toEqual(['a-local', 'u-new']);
+    expect(core.stable.map((message) => message.id)).toEqual(['a-local']);
     expect(core.stable[0].isStreaming).toBe(false);
+    expect(core.live.map((message) => message.id)).toEqual(['u-new']);
+  });
+
+  test('空闲发送：pushLocalUser 只落 live，stable 不变', () => {
+    let core = initialTranscriptCore();
+    core = pushLiveAssistantCore(core, assistant());
+    core = promoteCore(core);
+    const versionBefore = core.structuralVersion;
+
+    core = pushLocalUserCore(core, user());
+
+    expect(core.stable.map((message) => message.id)).toEqual(['a-local']);
+    expect(core.live.map((message) => message.id)).toEqual(['u-local']);
+    expect(core.structuralVersion).toBe(versionBefore + 1);
+  });
+
+  test('插话：旧 live 整体提升进 stable，新 user 落 live', () => {
+    let core = initialTranscriptCore();
+    core = pushLocalUserCore(core, { role: 'user', content: 'first', id: 'u-1' });
+    core = pushLiveAssistantCore(core, assistant());
+
+    core = pushLocalUserCore(core, { role: 'user', content: 'second', id: 'u-2' });
+
+    expect(core.stable.map((message) => message.id)).toEqual(['u-1', 'a-local']);
+    expect(core.stable[1].isStreaming).toBe(false);
+    expect(core.live.map((message) => message.id)).toEqual(['u-2']);
+  });
+
+  test('wechat-bot user 事件落 live 而非 stable', () => {
+    let core = initialTranscriptCore();
+
+    core = applyEventToCore(core, event('user', { source: 'wechat-bot', content: 'hi' }), true);
+
+    expect(core.stable).toEqual([]);
+    expect(core.live).toHaveLength(1);
+    expect(core.live[0].role).toBe('user');
+    expect(core.live[0].content).toBe('hi');
+    expect(core.live[0].source).toBe('wechat-bot');
   });
 
   test('权限请求登记、解决和 promote 状态一致', () => {

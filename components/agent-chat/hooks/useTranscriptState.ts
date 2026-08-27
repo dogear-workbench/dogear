@@ -70,7 +70,8 @@ function messageFingerprint(m: Message): string {
 }
 
 export function structureSignature(stable: Message[], live: Message[]): string {
-  // 写入口只动 stable 尾部（append/挂块），中段结构不可变，签名取长度 + 尾消息指纹即可
+  // 写入口只动 stable 尾部（append/挂块）或 live（整 turn 写入，pushLocalUser/重放），stable 中段结构不可变，
+  // 签名取 stable 长度 + 尾消息指纹 + live 全量指纹即可
   const stablePart = stable.length ? `${stable.length}:${messageFingerprint(stable[stable.length - 1])}` : '0';
   return `${stablePart}|${live.map(messageFingerprint).join('/')}`;
 }
@@ -113,15 +114,14 @@ export function applyEventToCore(
   if ((extendedMsg as { isReplay?: boolean }).isReplay && !showReplayMessages) return core;
 
   if (extendedMsg.type === 'message_id' && extendedMsg.role === 'user') {
-    // 本地乐观 user 落在「尾部容器」：插话时在 live 尾（前有流式 assistant），空闲发送时在 stable 尾
+    // 本地乐观 user 恒落 live；promote 可能先于 message_id 到达（user 已提升进 stable），故保留 stable fallback
     const viaLive = reduceInto(core, core.live, extendedMsg, showReplayMessages, 'live');
     if (viaLive !== core) return viaLive;
     return reduceInto(core, core.stable, extendedMsg, showReplayMessages, 'stable');
   }
 
   if (extendedMsg.type === 'user') {
-    const target = core.live.length ? core.live : core.stable;
-    return reduceInto(core, target, extendedMsg, showReplayMessages, core.live.length ? 'live' : 'stable');
+    return reduceInto(core, core.live, extendedMsg, showReplayMessages, 'live');
   }
 
   return reduceInto(core, core.live, extendedMsg, showReplayMessages, 'live');
@@ -175,9 +175,9 @@ export function mergeHistorySnapshotCore(
 export function pushLocalUserCore(core: TranscriptCore, msg: Message): TranscriptCore {
   if (core.live.length) {
     const promoted = promoteCore(core);
-    return withChanges(promoted, [...promoted.stable, msg], promoted.live);
+    return withChanges(promoted, promoted.stable, [msg]);
   }
-  return withChanges(core, [...core.stable, msg], core.live);
+  return withChanges(core, core.stable, [...core.live, msg]);
 }
 
 export function pushLiveAssistantCore(core: TranscriptCore, msg: Message): TranscriptCore {
