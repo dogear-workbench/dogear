@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 能力 tab 重构
-status: pending
+status: done
 ---
 
 ## 目标
@@ -21,15 +21,15 @@ AbilityTab 重构为：顶部工作区 Select + 「提示词 + Skill」/「工�
 
 ## 计划改动
 
-- [ ] 新建 `app/settings/AbilitySkillView.tsx`（视图 A「提示词 + Skill」）
+- [x] 新建 `app/settings/AbilitySkillView.tsx`（视图 A「提示词 + Skill」）
   - 三段：`内置 · 全局生效`（SegmentList 渲染 4 段提示词，标题旁标注「动态注入」）→ `可选 Skill · 按工作区挂载`（listSkillTemplates 全部，即股票×2 / 文章×1 / 代码工作流×6）→ `自定义 Skill · 按工作区挂载`（listSkills 里 source==='custom'，排除与模板重名的）
   - skill 行（改造 SkillRow）：名称 + 描述 + 来源徽标（可选/自定义）+ 挂载开关 + 关联工具组徽标（`SKILL_PACK_MAP[name]` 查 packs 得 mcpServer + label，`groupByServer` 得工具数；无映射不显示）+ 详情按钮
   - 工具组徽标为 button：显示 `label ×N` + 该包 enabled 状态色（未启用用警示色），点击回调 `onJumpToGroup(mcpServer)`
-- [ ] 新建 `app/settings/AbilityToolGroupView.tsx`（视图 B「工具组」）
+- [x] 新建 `app/settings/AbilityToolGroupView.tsx`（视图 B「工具组」）
   - 上段 `常驻 · 全局`：四个常驻 server（固定列表常量：server + label + 注入条件描述——memory「主会话且绑定工作区」、delegation/group「会话属于组」、reference 按现状）无开关，组行点击展开工具列表（getRegisteredTools 数据），工具行点击开 ToolDetailDialog；无注册数据时显示「会话启动后才有工具明细」
   - 下段 `可选 · 按工作区挂载`：listToolPacks 的 5 个包，每包独立开关（只写 enabledToolPacks）+ 组行展开工具列表
   - 组容器加 `data-server` 属性 + 接收 `highlightServer` prop，命中时 `ring-2 ring-primary` + `rounded-md`，配合 `scrollIntoView`
-- [ ] 重写 `app/settings/AbilityTab.tsx`（编排层）
+- [x] 重写 `app/settings/AbilityTab.tsx`（编排层）
   - 状态：`workspaces` / `workspaceId`（getAll + getDefault 初始化，default 为 null 选第一个；无工作区 workspaceId=null）、`view: 'prompt' | 'tools'`（默认 'prompt'）、`highlightServer`（string|null）、数据六件套（toolGroups / packs / segments / templates / skills / workspaceConfig）+ busy
   - 加载：workspaceId 变化 → 重拉 packs / skills / config；segments / templates / toolGroups 与工作区无关只拉一次
   - 联动开关（skill 行）：按全局决策规则计算下一组 `{enabledSkills, enabledToolPacks}` → `updateWorkspaceConfig` → 用返回 config 更新 workspaceConfig state（packs 的 enabled 标注同步刷新——重拉 packs 或本地合并均可）
@@ -37,8 +37,8 @@ AbilityTab 重构为：顶部工作区 Select + 「提示词 + Skill」/「工�
   - 跳转：`onJumpToGroup(server)` → `setView('tools')` + `setHighlightServer(server)`，视图 B 渲染后 `requestAnimationFrame` 内 `scrollIntoView`，2s 后清 highlight
   - 零工作区：视图 A 可选/自定义段显示「请先在工作区管理创建工作区」、开关禁用；提示词段与视图 B 常驻段正常
   - 顶部：标题说明 + 工作区 Select（shadcn Select，参考 data-center 面板用法）+ 胶囊 segmented
-- [ ] 删除 `app/settings/AbilityCard.tsx`
-- [ ] 清理 `AbilityTab` 旧域常量：`MEMORY_SKILL_NAMES` / `DELEGATION_CATEGORIES` / `STOCK_PACK_NAMES` / `STOCK_SKILL_NAMES` / `ARTICLE_PACK_NAMES` / `ARTICLE_SKILL_NAMES` / `CODE_WORKFLOW_TEMPLATES` / 域开关 useMemo（stockDomainOn 等）全部废弃；常驻 server 列表保留为新常量
+- [x] 删除 `app/settings/AbilityCard.tsx`
+- [x] 清理 `AbilityTab` 旧域常量：`MEMORY_SKILL_NAMES` / `DELEGATION_CATEGORIES` / `STOCK_PACK_NAMES` / `STOCK_SKILL_NAMES` / `ARTICLE_PACK_NAMES` / `ARTICLE_SKILL_NAMES` / `CODE_WORKFLOW_TEMPLATES` / 域开关 useMemo（stockDomainOn 等）全部废弃；常驻 server 列表保留为新常量
 
 ## 验证
 
@@ -55,9 +55,26 @@ AbilityTab 重构为：顶部工作区 Select + 「提示词 + Skill」/「工�
 
 ### 实际改动
 - 与计划差异：
+  - 新增 `app/settings/ability-types.ts` 共享类型/常量文件（SKILL_PACK_MAP、RESIDENT_GROUPS、SKILL_SOURCE_LABELS + 五个数据类型），供 AbilityTab / 两个视图文件共用，避免类型循环 import。
+  - 自定义 Skill 段过滤条件用 `source !== 'builtin'`（custom + user 级）而非计划原文的 `source === 'custom'`——否则 `~/.claude/skills` 的 user 级 skill 会失去显示/挂载入口（功能回退）。仍排除与模板重名。
+  - 开关组件用现成 shadcn `Switch`（components/ui/switch.tsx）替代旧自绘 toggle，视觉一致且少重复代码。
+  - 可选包数量在无注册数据时 fallback 到 `pack.toolCount`；常驻组无注册数据时不显示数量。
+  - packs 的 enabled 标注在开关后用返回 merged config 本地合并刷新（未重拉 IPC）。
 - 改动文件清单：
+  - 新增 `app/settings/ability-types.ts`、`app/settings/AbilitySkillView.tsx`、`app/settings/AbilityToolGroupView.tsx`
+  - 重写 `app/settings/AbilityTab.tsx`
+  - 删除 `app/settings/AbilityCard.tsx`
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `ability-types.ts` 导出：`ToolInfo/ToolGroup/ToolPack/SkillSource/SkillEntry/SkillTemplate` 类型 + `SKILL_PACK_MAP`（skill→包名数组）+ `RESIDENT_GROUPS`（4 个常驻 server：dogear-memory/delegation/group/reference，含中文 label + injectNote）+ `SKILL_SOURCE_LABELS`。
+  - `AbilityTabProps = { local: AppSettings; setLocal: ... }`（保持 page.tsx 调用不变，内部未使用）。
+  - `AbilitySkillViewProps = { segments, templates, skills, enabledSkills: Set<string>, packs, groupByServer, workspaceId, busySkill, onSegmentClick, onSkillDetail, onToggleSkill, onJumpToGroup }`。
+  - `AbilityToolGroupViewProps = { groupByServer, packs, workspaceId, highlightServer, busyPack, onToolClick, onTogglePack, onHighlightEnd }`。
+  - 跳转：`onJumpToGroup(server)` → `setView('tools')` + `setHighlightServer(server)` → 视图 B `useEffect` 内 rAF `scrollIntoView({behavior:'smooth',block:'center'})`（`[data-server]` 定位）+ 2s 后 `onHighlightEnd()` 清除，cleanup 里 cancel/clear。
+  - 联动：开 skill → enabledSkills ∪ {name}、enabledToolPacks ∪ 关联包；关 skill → 删 skill 后按剩余已启用 skill 的映射并集保留共享包。写入 `updateWorkspaceConfig` 后用返回 config 更新 state + packs.enabled 本地合并。
+  - workspaceId：mount 时 `client.getAll()` + `client.getDefault()`（default 不在列表/为 null 时选第一个，零工作区 → null），本地 state + 顶部 shadcn Select（显示名 + 默认标记）。
+- 下个 step 该从哪里继续：`app/settings/SubAgentTab.tsx` 的 workspaceId 本地初始化与相关清理（step4-subagent-cleanup.md）。
 - 待办或已知限制：
+  - 无 GUI 环境，`bun run dev` 人工验证未执行；已用 lint（0 error）+ `tsc --noEmit`（新文件 0 error）+ `vite build`（成功）替代验证。
+  - 切换工作区时整页 loading（与旧行为一致）；highlight 2s 内切回视图 A 再切回 B，ring 仍显示直到定时器清除（可接受）。

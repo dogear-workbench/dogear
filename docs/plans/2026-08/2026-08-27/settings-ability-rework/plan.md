@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 主进程数据层——skill 目录全局化 + 死链路清理](./step1-skill-paths.md) — custom skill 目录改 `.dogear/skills/`，article-parser 运行时搬家，删 cross-session-review
 - [x] [Step 2: 设置页布局改造](./step2-layout.md) — 左侧竖排导航改顶部下划线 tab，各 tab 内容居中
-- [ ] [Step 3: 能力 tab 重构](./step3-ability-tab.md) — 双胶囊视图 + 工作区 Select + 联动开关 + 跳转定位
+- [x] [Step 3: 能力 tab 重构](./step3-ability-tab.md) — 双胶囊视图 + 工作区 Select + 联动开关 + 跳转定位
 - [ ] [Step 4: SubAgentTab 修复 + 收尾](./step4-subagent-cleanup.md) — 子会话派遣 workspaceId 本地初始化 + lint + doc-sync
 
 ## 全局决策
