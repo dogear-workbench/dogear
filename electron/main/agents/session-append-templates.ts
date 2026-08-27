@@ -18,6 +18,7 @@ export const MEMORY_GUIDANCE_APPEND =
 export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
   '用 dogear__CreateSession 派遣子会话后，必须紧接着调用 dogear__WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。\n' +
+  '单个子会话派单后可直接 dogear__WaitForMessage() 免传 fromSessionIds 等待交付，不必抄写 sessionId；不传参数即等待所有运行中的直属子会话。\n' +
   'outputPath 是会话组共享区里的路径，不是工作区路径；task 里不要再指示子会话把交付文档写到工作区其他位置，交付物一律经共享区传递。\n' +
   '交付以收到子会话的 delivery 消息为准。应用重启后运行时状态不保留，重启前已交付的子会话会重新显示为未交付——此时以你的上下文记忆和共享区文件为准，不要盲目重派。\n' +
   '看共享区用 dogear__ListGroupFiles：不带参数列文件清单，传 relPath 读单个文件的完整内容。\n' +

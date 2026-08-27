@@ -12,7 +12,7 @@
 ## 步骤索引
 
 - [x] [Step 1: fromSessionIds 入口校验，非法 ID 秒级报错](./step1-validate-session-ids.md) — 抄错 ID 时立刻返回错误 + 正确的契约通道清单
-- [ ] [Step 2: fromSessionIds 可选化（免传 = 等所有运行中直属子会话）](./step2-optional-from-ids.md) — schema optional + 展开逻辑 + 提示词模板同步
+- [x] [Step 2: fromSessionIds 可选化（免传 = 等所有运行中直属子会话）](./step2-optional-from-ids.md) — schema optional + 展开逻辑 + 提示词模板同步
 
 ## 全局决策
 
@@ -26,3 +26,12 @@
 ## 背景（为什么做）
 
 2026-08-27 实际事故：主会话 CreateSession 返回 `...67f235`，WaitForMessage 手抄成 `...67f35e`——`waitForMessage`（`delegation-bridge.ts:767-785`）对 fromSdkSessionIds 零校验，静默挂满 600s 超时，子会话早已交付却无人接收。用户拍板 A+B 方案。
+
+## 完成总结
+
+两步全部完成（2026-08-27，commit 11e3cd9 + 后续）：
+
+1. **Step 1**：`dogear__WaitForMessage` handler 入口新增契约通道校验——`resolveOwnConversation()` 后逐 ID 调 `hasDirectContractChannel`，非法 ID 立即 isError 并附全部契约通道四字段清单（主/子会话文案分支），不再静默空等。校验语义只看契约存在性不看运行状态，stopped 合法 ID 照常可等。
+2. **Step 2**：`fromSessionIds` 改 `.optional()`（保留 min(1)，空数组被 zod 拒）。免传时闭包 helper `expandWaitTargets()` 展开：主会话 = 所有 running 且 sessionId 就绪的直属子会话（为空立即报错附全量状态 + ResumeSession 建议）；子会话 = 派出方单元素。展开路径跳过契约校验（bridge 自家快照可信），显式传入才走校验。`WAIT_FOR_MESSAGE_DESC`、CreateSession 成功文案、`MAIN_AGENT_DELEGATION_APPEND` 三处提示词同步免传用法。
+
+回归 24 pass / lint 0 errors / build:electron 通过。遗留：免传等待只含调用时刻已 running 的子会话，等待期间新建的不在本次范围（超时后再等一次即可）；新代码需重启应用后生效。
