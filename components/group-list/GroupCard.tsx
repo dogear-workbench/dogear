@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Archive, ArchiveRestore, ChevronDown, ChevronRight, FolderOutput, MoreHorizontal, Plus } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
@@ -8,10 +8,11 @@ import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { useGroupStore } from '@/stores/group-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useSectionCollapseStore } from '@/stores/section-collapse-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { showConfirm } from '@/stores/confirm-store';
 import type { Group } from '@/types/group';
-import type { Conversation } from '@/components/ConversationList';
+import type { ConversationTreeNode } from '@/lib/conversation-sort';
 import { ConversationRow } from '@/components/conversation-list/ConversationRow';
 import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { AddGroupToFolderMenu } from '@/components/conversation-list/AddGroupToFolderMenu';
@@ -20,18 +21,25 @@ import { deriveGroupTitle } from './utils';
 
 interface GroupCardProps {
   group: Group;
-  conversations: Conversation[];
+  tree: ConversationTreeNode[];
   folderId?: string;
   mode?: 'active' | 'archived';
 }
 
-export function GroupCard({ group, conversations, folderId, mode = 'active' }: GroupCardProps) {
+function countTreeConversations(nodes: ConversationTreeNode[]): number {
+  return nodes.reduce((total, node) => total + 1 + countTreeConversations(node.children), 0);
+}
+
+export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardProps) {
   const expandedGroupIds = useGroupStore((s) => s.expandedGroupIds);
   const currentGroupId = useGroupStore((s) => s.currentGroupId);
   const isExpanded = expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
   const removeGroupFromFolder = useConversationStore((s) => s.removeGroupFromFolder);
+  const subExpandedConvIds = useSectionCollapseStore((s) => s.subExpandedConvIds);
+  const toggleSubExpand = useSectionCollapseStore((s) => s.toggleSubExpand);
   const isArchived = mode === 'archived';
+  const totalCount = useMemo(() => countTreeConversations(tree), [tree]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -79,11 +87,11 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
   const handleArchive = useCallback(async () => {
     const confirmed = await showConfirm(
       '归档话题',
-      `归档后将保留话题内 ${conversations.length} 个对话及共享区，仅可查看历史；恢复话题后才能继续工作。`,
+      `归档后将保留话题内 ${totalCount} 个对话及共享区，仅可查看历史；恢复话题后才能继续工作。`,
     );
     if (!confirmed) return;
     await useGroupStore.getState().archiveTopic(group.id);
-  }, [conversations.length, group.id]);
+  }, [totalCount, group.id]);
 
   const handleRestore = useCallback(async () => {
     await useGroupStore.getState().restoreTopic(group.id);
@@ -92,11 +100,32 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
   const handleDelete = useCallback(async () => {
     const confirmed = await showConfirm(
       '永久删除话题',
-      `将永久删除话题内 ${conversations.length} 个对话及共享区。此操作不可恢复。`,
+      `将永久删除话题内 ${totalCount} 个对话及共享区。此操作不可恢复。`,
     );
     if (!confirmed) return;
     await useGroupStore.getState().deleteTopic(group.id);
-  }, [conversations.length, group.id]);
+  }, [totalCount, group.id]);
+
+  const renderNodes = (nodes: ConversationTreeNode[], indent: number): ReactNode[] =>
+    nodes.map((node) => {
+      const hasChildren = node.children.length > 0;
+      const subExpanded = hasChildren && subExpandedConvIds.has(node.conv.id);
+      return (
+        <Fragment key={node.conv.id}>
+          <ConversationRow
+            conv={node.conv}
+            nodeId={`topic:${group.id}:${node.conv.id}`}
+            indent={indent}
+            readOnly={isArchived}
+            expandToggle={hasChildren ? {
+              expanded: subExpanded,
+              onToggle: () => toggleSubExpand(node.conv.id),
+            } : undefined}
+          />
+          {subExpanded && renderNodes(node.children, indent + 16)}
+        </Fragment>
+      );
+    });
 
   return (
     <div className="mb-0.5">
@@ -104,7 +133,7 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
         <ContextMenuTrigger asChild>
           <div
             className={cn(
-              'flex items-center gap-2 py-1 pr-2 pl-2 cursor-pointer hover:bg-muted/30 group rounded-sm mx-1',
+              'relative flex items-center gap-2 py-1 pr-2 pl-2 cursor-pointer hover:bg-muted/30 group rounded-sm mx-1',
               isSelected && 'bg-muted/40',
             )}
             onClick={handleHeaderClick}
@@ -134,38 +163,44 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
                 </div>
               )}
             </div>
-            <span className="text-xs text-muted-foreground flex-shrink-0">{conversations.length}</span>
-            {!isArchived && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void handleNewConversation();
-                }}
-                title="在话题内新建对话"
+            <span className="text-xs text-muted-foreground flex-shrink-0">{totalCount}</span>
+            {!isEditing && (
+              <div
+                className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pl-2.5 pr-0.5 rounded-sm bg-gradient-to-l from-background via-background to-transparent opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-data-[state=open]:opacity-100 group-data-[state=open]:pointer-events-auto transition-opacity"
               >
-                <Plus className="w-3 h-3" />
-              </Button>
+                {!isArchived && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void handleNewConversation();
+                    }}
+                    title="在话题内新建对话"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    event.currentTarget.dispatchEvent(new MouseEvent('contextmenu', {
+                      bubbles: true,
+                      clientX: rect.left,
+                      clientY: rect.bottom,
+                    }));
+                  }}
+                  title="话题操作"
+                >
+                  <MoreHorizontal className="w-3 h-3" />
+                </Button>
+              </div>
             )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-              onClick={(event) => {
-                event.stopPropagation();
-                const rect = event.currentTarget.getBoundingClientRect();
-                event.currentTarget.dispatchEvent(new MouseEvent('contextmenu', {
-                  bubbles: true,
-                  clientX: rect.left,
-                  clientY: rect.bottom,
-                }));
-              }}
-              title="话题操作"
-            >
-              <MoreHorizontal className="w-3 h-3" />
-            </Button>
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
@@ -209,15 +244,7 @@ export function GroupCard({ group, conversations, folderId, mode = 'active' }: G
         </ContextMenuContent>
       </ContextMenu>
 
-      {isExpanded && conversations.map((conversation) => (
-        <ConversationRow
-          key={conversation.id}
-          conv={conversation}
-          nodeId={`topic:${group.id}:${conversation.id}`}
-          indent={24}
-          readOnly={isArchived}
-        />
-      ))}
+      {isExpanded && renderNodes(tree, 24)}
     </div>
   );
 }

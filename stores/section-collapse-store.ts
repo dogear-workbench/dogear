@@ -11,8 +11,11 @@ interface SectionCollapseState {
   recentExpanded: boolean;
   expandedSmartCategoryIds: Set<string>;
   folderReveal: FolderReveal | null;
+  subExpandedConvIds: Set<string>;
   toggleRecent: () => void;
   toggleSmartCategory: (categoryId: string) => void;
+  toggleSubExpand: (convId: string) => void;
+  expandSubConv: (convId: string) => void;
   revealTopic: (groupId: string) => Promise<void>;
 }
 
@@ -22,6 +25,7 @@ export const useSectionCollapseStore = create<SectionCollapseState>((set, get) =
   recentExpanded: true,
   expandedSmartCategoryIds: new Set<string>(),
   folderReveal: null,
+  subExpandedConvIds: new Set<string>(),
 
   toggleRecent: () => set((s) => ({ recentExpanded: !s.recentExpanded })),
 
@@ -31,6 +35,22 @@ export const useSectionCollapseStore = create<SectionCollapseState>((set, get) =
     else next.add(categoryId);
     return { expandedSmartCategoryIds: next };
   }),
+
+  toggleSubExpand: (convId) => set((s) => {
+    const next = new Set(s.subExpandedConvIds);
+    if (next.has(convId)) next.delete(convId);
+    else next.add(convId);
+    return { subExpandedConvIds: next };
+  }),
+
+  expandSubConv: (convId) => {
+    if (get().subExpandedConvIds.has(convId)) return;
+    set((s) => {
+      const next = new Set(s.subExpandedConvIds);
+      next.add(convId);
+      return { subExpandedConvIds: next };
+    });
+  },
 
   revealTopic: async (groupId) => {
     if (!groupId) return;

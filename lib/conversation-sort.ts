@@ -1,11 +1,16 @@
 import type { Conversation } from '@/components/ConversationList';
 
+export interface ConversationTreeNode {
+  conv: Conversation;
+  children: ConversationTreeNode[];
+}
+
 /**
- * 组内会话排序：手动会话按时间倒序；agent 会话按 DFS 紧跟派出者。
- * 派出者不在当前列表（已删除/不在同组）时，该 agent 会话回落到自然时间序位置。
- * 输入不可变，返回新数组。
+ * 组内会话树：手动会话按 updated_at 倒序作为根；agent 派出会话挂在派出者下（created_at 升序）。
+ * 派出者不在当前列表（已删除/不在同组）时，该 agent 会话回落到自然时间序位置作为根。
+ * 输入不可变，返回新结构。
  */
-export function sortConversationsWithDFS(conversations: Conversation[]): Conversation[] {
+export function buildConversationTree(conversations: Conversation[]): ConversationTreeNode[] {
   const base = [...conversations].sort((a, b) => b.updated_at - a.updated_at);
 
   const bySessionId = new Map<string, Conversation>();
@@ -35,20 +40,19 @@ export function sortConversationsWithDFS(conversations: Conversation[]): Convers
     list.sort((a, b) => a.created_at - b.created_at);
   }
 
-  const roots = base.filter((c) => !isChild(c));
-
-  const result: Conversation[] = [];
-  const visited = new Set<string>();
-  const visit = (c: Conversation): void => {
-    if (visited.has(c.id)) return;
-    visited.add(c.id);
-    result.push(c);
-    const children = c.session_id ? childrenBySessionId.get(c.session_id) : undefined;
-    if (children) {
-      for (const child of children) visit(child);
-    }
+  const nodeByConvId = new Map<string, ConversationTreeNode>();
+  const build = (c: Conversation): ConversationTreeNode => {
+    const memo = nodeByConvId.get(c.id);
+    if (memo) return memo;
+    const node: ConversationTreeNode = { conv: c, children: [] };
+    nodeByConvId.set(c.id, node);
+    node.children = ((c.session_id ? childrenBySessionId.get(c.session_id) : undefined) ?? []).map(build);
+    return node;
   };
-  for (const root of roots) visit(root);
 
-  return result;
+  const roots = base.filter((c) => !isChild(c)).map(build);
+  for (const c of base) {
+    if (!nodeByConvId.has(c.id)) roots.push(build(c));
+  }
+  return roots;
 }

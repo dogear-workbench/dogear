@@ -7,7 +7,7 @@ import type { SmartCategory } from '@/types/smart-category';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 import { GroupCard } from '@/components/group-list/GroupCard';
-import { sortConversationsWithDFS } from '@/lib/conversation-sort';
+import { buildConversationTree } from '@/lib/conversation-sort';
 import { useSectionCollapseStore } from '@/stores/section-collapse-store';
 
 interface SmartSectionProps {
@@ -91,7 +91,7 @@ function CategoryGroup({
         <GroupCard
           key={`${cat.id}:${g.id}`}
           group={g}
-          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === g.id))}
+          tree={buildConversationTree(conversations.filter((c) => c.groupId === g.id))}
         />
       ))}
     </div>

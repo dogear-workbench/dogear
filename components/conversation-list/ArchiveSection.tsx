@@ -11,13 +11,13 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { client } from '@/lib/client';
 import { GroupCard } from '@/components/group-list/GroupCard';
 import { useGroupStore } from '@/stores/group-store';
-import { sortConversationsWithDFS } from '@/lib/conversation-sort';
+import { buildConversationTree, type ConversationTreeNode } from '@/lib/conversation-sort';
 import type { Group } from '@/types/group';
 import type { Conversation } from '@/components/ConversationList';
 
 interface ArchivedTopic {
   group: Group;
-  conversations: Conversation[];
+  tree: ConversationTreeNode[];
 }
 
 interface ArchiveSectionProps {
@@ -42,7 +42,7 @@ export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
         (result.topics ?? [])
           .map((topic) => ({
             group: topic.group,
-            conversations: sortConversationsWithDFS(topic.conversations as Conversation[]),
+            tree: buildConversationTree(topic.conversations as Conversation[]),
           }))
           .sort((a, b) => (b.group.archivedAt ?? 0) - (a.group.archivedAt ?? 0)),
       );
@@ -73,11 +73,11 @@ export function ArchiveSection({ workspaceId }: ArchiveSectionProps) {
                 暂无归档话题
               </div>
             ) : (
-              topics.map(({ group, conversations }) => (
+              topics.map(({ group, tree }) => (
                 <GroupCard
                   key={group.id}
                   group={group}
-                  conversations={conversations}
+                  tree={tree}
                   mode="archived"
                 />
               ))

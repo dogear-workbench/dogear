@@ -5,7 +5,7 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useSectionCollapseStore } from '@/stores/section-collapse-store';
 import { RECENT_THRESHOLD_MS, RECENT_DAYS } from './utils';
 import { GroupCard } from '@/components/group-list/GroupCard';
-import { sortConversationsWithDFS } from '@/lib/conversation-sort';
+import { buildConversationTree } from '@/lib/conversation-sort';
 
 export function RecentVirtualGroup() {
   const groups = useGroupStore((s) => s.groups);
@@ -40,7 +40,7 @@ export function RecentVirtualGroup() {
         <GroupCard
           key={group.id}
           group={group}
-          conversations={sortConversationsWithDFS(conversations.filter((c) => c.groupId === group.id))}
+          tree={buildConversationTree(conversations.filter((c) => c.groupId === group.id))}
         />
       ))}
     </div>

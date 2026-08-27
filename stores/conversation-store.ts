@@ -183,6 +183,17 @@ function revealTopicInList(groupId: string | null | undefined) {
   });
 }
 
+/** 焦点会话是 agent 派出子会话时展开其父会话的折叠区，否则高亮会被折叠藏住 */
+function expandSubParentIfNeeded(conv: Conversation, conversations: Conversation[]) {
+  const meta = conv.contractMetadata;
+  if (meta?.createdBy !== 'agent' || !meta.parentSessionId) return;
+  const parent = conversations.find((c) => c.session_id === meta.parentSessionId);
+  if (!parent) return;
+  void import('./section-collapse-store').then(({ useSectionCollapseStore }) => {
+    useSectionCollapseStore.getState().expandSubConv(parent.id);
+  });
+}
+
 /**
  * 对 children 数组进行分区排序：文件夹在前，对话在后
  * 各分区内部保持原始数组顺序（即用户拖拽排定的顺序）
@@ -408,6 +419,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     const alreadySelected = curSlice?.selectedConversation?.id === conversationId;
     if (alreadySelected) {
       revealTopicInList(curSlice!.selectedConversation!.groupId);
+      expandSubParentIfNeeded(curSlice!.selectedConversation!, curSlice?.conversations ?? []);
       return;
     }
     // 先从当前分片找；跨工作区切 Tab 时分片可能尚未加载，回退后端查询
@@ -422,6 +434,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       const selected = conv;
       set((state) => patchSlice(state, wsId, { selectedConversation: selected }));
       revealTopicInList(selected.groupId);
+      expandSubParentIfNeeded(selected, curSlice?.conversations ?? []);
     }
   },
 

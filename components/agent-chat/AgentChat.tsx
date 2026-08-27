@@ -16,7 +16,6 @@ import { useSendMessage } from './hooks/useSendMessage';
 import { useTranscriptState } from './hooks/useTranscriptState';
 import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
-import { LineageBar } from './LineageBar';
 import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
@@ -67,11 +66,6 @@ export function AgentChat({
   const setConvSelection = useConversationStore((s) => s.setConversationModelSelection);
 
   const { conversation: currentConversation, topicState } = useTopicArchiveState(conversationId, workspaceId);
-  const lineageParent = useMemo(() => {
-    const parentSessionId = currentConversation?.contractMetadata?.parentSessionId;
-    if (!parentSessionId) return null;
-    return useConversationStore.getState().conversations.find((conversation) => conversation.session_id === parentSessionId) ?? null;
-  }, [currentConversation]);
   const childSnapshot = useConversationStore((s) => conversationId ? s.childSnapshotsById[conversationId] : undefined);
 
   // compact_boundary 折叠状态（默认折叠，每个对话独立）
@@ -380,17 +374,6 @@ export function AgentChat({
         onScrollCapture={handleScroll}
       >
         <div className="px-6">
-        {/* 会话溯源条（agent 派出会话，contractMetadata 存在时渲染） */}
-        {currentConversation && (
-          <LineageBar
-            conversation={currentConversation}
-            parentConversation={lineageParent}
-            onOpenParent={(parentId) => {
-              const parent = useConversationStore.getState().conversations.find((c) => c.id === parentId);
-              if (parent) void useConversationStore.getState().selectConversation(parent);
-            }}
-          />
-        )}
         {childSnapshot && (
           <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childSnapshot.delivered ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : childStatusStyles[childSnapshot.status]}`} title={childSnapshot.lastError || undefined}>
             <p className="font-medium">{childSnapshot.delivered ? '子会话已交付' : childStatusLabels[childSnapshot.status]}</p>

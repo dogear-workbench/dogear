@@ -17,7 +17,7 @@ import {
 } from '@headless-tree/core';
 import type { ItemInstance } from '@headless-tree/core';
 import { GroupCard } from '@/components/group-list/GroupCard';
-import { sortConversationsWithDFS } from '@/lib/conversation-sort';
+import { buildConversationTree } from '@/lib/conversation-sort';
 import { CONV_TREE_ROOT } from './utils';
 
 function NewFolderInput({
@@ -127,10 +127,10 @@ function FolderTreeItem({
   // group leaf
   if (!data.group) return null;
   const folderId = parentId !== CONV_TREE_ROOT ? parentId : undefined;
-  const convs = sortConversationsWithDFS(conversations.filter((c) => c.groupId === data.group!.id));
+  const convs = buildConversationTree(conversations.filter((c) => c.groupId === data.group!.id));
   return (
     <div style={{ paddingLeft: `${paddingLeft}px` }}>
-      <GroupCard group={data.group} conversations={convs} folderId={folderId} />
+      <GroupCard group={data.group} tree={convs} folderId={folderId} />
     </div>
   );
 }
