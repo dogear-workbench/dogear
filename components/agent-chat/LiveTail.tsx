@@ -55,27 +55,31 @@ export const LiveTail = memo(function LiveTail({
 
   return (
     <>
-      {liveTail.map((message) => {
-        if (!message.id) return null;
-        return (
-          <Fragment key={message.id}>
-            <MessageItem
-              message={message}
-              messageId={message.id}
-              onFork={readOnly ? undefined : onFork}
-              sessionId={sessionId}
-              onPermissionResolved={onPermissionResolved}
-              onAskUserResolved={onAskUserResolved}
-              onInterrupt={onInterrupt}
-              searchQuery={searchQuery}
-              activeMatchId={activeMatchId}
-              isAgentConversation={isAgentConversation}
-              readOnly={readOnly}
-            />
-            {lastTaskMessageId === message.id && <TodoListBlock todos={taskTodos} />}
-          </Fragment>
-        );
-      })}
+      {liveTail.length > 0 && (
+        <section className="agent-turn">
+          {liveTail.map((message) => {
+            if (!message.id) return null;
+            return (
+              <Fragment key={message.id}>
+                <MessageItem
+                  message={message}
+                  messageId={message.id}
+                  onFork={readOnly ? undefined : onFork}
+                  sessionId={sessionId}
+                  onPermissionResolved={onPermissionResolved}
+                  onAskUserResolved={onAskUserResolved}
+                  onInterrupt={onInterrupt}
+                  searchQuery={searchQuery}
+                  activeMatchId={activeMatchId}
+                  isAgentConversation={isAgentConversation}
+                  readOnly={readOnly}
+                />
+                {lastTaskMessageId === message.id && <TodoListBlock todos={taskTodos} />}
+              </Fragment>
+            );
+          })}
+        </section>
+      )}
       <StreamingIndicator
         pendingState={pendingState}
         pendingCount={pendingCount}
