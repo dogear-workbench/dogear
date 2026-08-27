@@ -9,6 +9,9 @@ import type { PiPermissionMode } from '@/types/settings';
 /** 常驻「首页」tab 的哨兵 id（非真实会话） */
 export const HOME_TAB_ID = '__home__';
 
+/** 常驻「笔记」tab 的哨兵 id（非真实会话） */
+export const NOTES_TAB_ID = '__notes__';
+
 /** 单个会话标签页信息 */
 export interface SessionTab {
   conversationId: string;
@@ -21,7 +24,7 @@ export interface SessionTab {
 
 interface SessionState {
   tabs: SessionTab[];
-  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 HOME_TAB_ID 哨兵）
+  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 HOME/NOTES_TAB_ID 哨兵）
   /** 当前在独立窗口中打开的会话 ID 集合 */
   sessionWindowIds: Set<string>;
   /** 最近一次"被点击"的对话列表节点 id（用于双层高亮区分"焦点节点" vs "已打开同会话其他节点"） */

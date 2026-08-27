@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 数据地基——类型 + 服务层 + IPC 路由](./step1-data-foundation.md) — notes-store/notes-service/index.json/软删除 + tipc CRUD，冒烟脚本验证
-- [ ] [Step 2: 前端骨架——notes-store + NOTES_TAB_ID + 时间流只读](./step2-frontend-skeleton.md) — 哨兵 Tab、固定 Tab 区、卡片列表
+- [x] [Step 2: 前端骨架——notes-store + NOTES_TAB_ID + 时间流只读](./step2-frontend-skeleton.md) — 哨兵 Tab、固定 Tab 区、卡片列表
 - [ ] [Step 3: 卡片详情与编辑](./step3-note-editor.md) — MDXEditor 正文 + 元数据/待办编辑 + 新建
 - [ ] [Step 4: 视图完善——待办聚合/标签/回收站/搜索](./step4-views.md) — 待办视图按 hasPlan 分组、软删除恢复、内存搜索
 - [ ] [Step 5: 首页捕捉框 + 老速记板链路清理](./step5-capture-box.md) — 速记板替换为捕捉框，删除全部旧链路

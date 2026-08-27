@@ -14,7 +14,7 @@
  * - 对话创建（由对话列表处理）
  */
 
-import { ExternalLink, X, Home } from 'lucide-react';
+import { ExternalLink, X, Home, StickyNote } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { StatusPulse } from '@/components/StatusPulse';
-import { useSessionStore, type SessionTab, HOME_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, type SessionTab, HOME_TAB_ID, NOTES_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 
 export function WorkspaceTabBar() {
@@ -110,6 +110,17 @@ export function WorkspaceTabBar() {
         >
           <Home className="w-3.5 h-3.5" />
           <span>首页</span>
+        </button>
+        <button
+          onClick={() => switchTab(NOTES_TAB_ID)}
+          className={cn(
+            'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
+            activeTabId === NOTES_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+          )}
+          title="笔记"
+        >
+          <StickyNote className="w-3.5 h-3.5" />
+          <span>笔记</span>
         </button>
         {tabs.map((tab) => {
           const isActive = activeTabId === tab.conversationId;

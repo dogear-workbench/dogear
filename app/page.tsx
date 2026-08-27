@@ -16,12 +16,13 @@ import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { Dashboard } from '@/components/dashboard/Dashboard';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
+import { NotesPanel } from '@/components/notes/NotesPanel';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, HOME_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, HOME_TAB_ID, NOTES_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 
@@ -284,6 +285,13 @@ export default function Home() {
               style={{ display: activeTabId === HOME_TAB_ID ? 'flex' : 'none' }}
             >
               <Dashboard />
+            </div>
+            {/* 笔记：固定 Tab，与首页同构常驻挂载 */}
+            <div
+              className="absolute inset-0 flex flex-col"
+              style={{ display: activeTabId === NOTES_TAB_ID ? 'flex' : 'none' }}
+            >
+              <NotesPanel />
             </div>
             {/* 会话：各自按 activeTabId 切显示，保持 AgentChat 挂载 */}
             {allTabs.map((tab) => (
