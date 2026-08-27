@@ -157,7 +157,7 @@ export interface ParseArticlePayload {
   articleDir: string;        // 绝对路径：<workspace>/.dogear/articles/<id>
   workspacePath: string;     // 工作区路径（saveArticle 需要）
   url: string;
-  skillsDir: string;         // 全局 Skill 目录：<configDir>/skills/article-parser
+  skillsDir: string;         // 解析器运行时目录：<configDir>/article-parser（旧环境回退 <configDir>/skills/article-parser）
 
   // V2: trigger context
   platform: string | null;

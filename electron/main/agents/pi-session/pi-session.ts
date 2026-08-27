@@ -124,7 +124,7 @@ interface PendingPermissionRequest {
 
 /**
  * 子会话按 Profile 过滤 skill entries。
- * builtin 段：article-parser 仅当 article===true，cross-session-review 仅当 memory===true，其余按 skills[] 匹配；
+ * builtin 段：article-parser 仅当 article===true，其余按 skills[] 匹配；
  * custom 段：仅保留 skills[] 中列出的；
  * user 段：仅保留 customSkills[] 中列出的。
  */
@@ -142,7 +142,6 @@ function filterSkillsForSubAgent(
     const fp = entry.bodyPath;
     if (isUnder(fp, scanDirs.builtin)) {
       if (entry.name === 'article-parser') return ab.article === true;
-      if (entry.name === 'cross-session-review') return ab.memory === true;
       return ab.skills?.includes(entry.name) ?? false;
     }
     if (isUnder(fp, scanDirs.custom)) return ab.skills?.includes(entry.name) ?? false;
@@ -391,7 +390,7 @@ export class PiSession extends EventEmitter {
     const env = new WorkspaceExecutionEnv([this.config.workspacePath, ...this.config.additionalPaths]);
     this.env = env;
     const builtinSkillsDir = getTemplatesDir();
-    const customSkillsDir = path.join(getConfigDir(), 'workspaces', this.config.workspaceId, 'skills');
+    const customSkillsDir = path.join(getConfigDir(), 'skills');
     const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
     const allSkillEntries = await loadSkillIndex([
       builtinSkillsDir,

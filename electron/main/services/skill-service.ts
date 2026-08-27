@@ -4,7 +4,7 @@
  * 职责：
  * - 扫描三个来源目录的 SKILL.md：
  *   - builtin：resources/skill-templates/<name>/SKILL.md（只读模板源）
- *   - custom：.dogear/workspaces/<id>/skills/<name>/SKILL.md
+ *   - custom：.dogear/skills/<name>/SKILL.md（全局目录，与工作区无关）
  *   - user：~/.claude/skills/<name>/SKILL.md
  * - 列出所有 skill 并标注 source + enabled
  * - 启用/禁用：通过 workspace-config-service 的 enabledSkills 数组控制
@@ -114,14 +114,12 @@ export async function listSkills(workspaceId: string | null | undefined): Promis
   }
   result.push(...builtinEntries);
 
-  if (workspaceId) {
-    const customSkillsDir = path.join(getConfigDir(), 'workspaces', workspaceId, 'skills');
-    const customEntries = await scanSkillsDir(customSkillsDir, 'custom');
-    for (const entry of customEntries) {
-      entry.enabled = enabledSkillsSet.has(entry.name);
-    }
-    result.push(...customEntries);
+  const customSkillsDir = path.join(getConfigDir(), 'skills');
+  const customEntries = await scanSkillsDir(customSkillsDir, 'custom');
+  for (const entry of customEntries) {
+    entry.enabled = enabledSkillsSet.has(entry.name);
   }
+  result.push(...customEntries);
 
   const userSkillsDir = path.join(os.homedir(), '.claude', 'skills');
   const userEntries = await scanSkillsDir(userSkillsDir, 'user');

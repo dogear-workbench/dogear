@@ -1,9 +1,8 @@
 /**
- * 跨会话复盘 Skill 运行时目录管理
+ * 跨会话复盘 Skill 运行时目录管理（历史遗留，已无运行时职责）
  *
- * SKILL.md 模板内容直接由 pi-session 从 resources/skill-templates/cross-session-review/ 读取，
- * 不再复制到 .dogear/skills/review/。本模块的 ensureReviewSkillInitialized 保留为 no-op，
- * 仅为 index.ts 启动序列兼容（不报错、不产生副作用）。
+ * 复盘功能由调度器内置任务 review（review-prompt.ts）承载，skill 版已删除。
+ * 本模块的 ensureReviewSkillInitialized 保留为 no-op，仅为 index.ts 启动序列兼容。
  */
 import path from 'path';
 import electron from 'electron';
@@ -17,14 +16,13 @@ function getConfigDir(): string {
   return path.join(process.cwd(), '.dogear');
 }
 
-/** 返回复盘 Skill 运行时目录的绝对路径（仅用于向下兼容，pi-session 不再扫描此目录） */
+/** 返回历史遗留目录路径（无调用方，仅向下兼容保留） */
 export function getReviewSkillDir(): string {
   return path.join(getConfigDir(), 'skills', 'review');
 }
 
 /**
- * no-op：复盘 Skill 现由 pi-session 直接从模板源加载，不再需要复制。
- * 保留函数签名仅为 index.ts 启动序列兼容。
+ * no-op：保留函数签名仅为 index.ts 启动序列兼容。
  */
 export async function ensureReviewSkillInitialized(): Promise<void> {
 }

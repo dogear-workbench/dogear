@@ -79,7 +79,7 @@ export function createSkillTool(entries: SkillEntry[]) {
     'Skill',
     '加载 skill 指引全文',
     '加载指定 skill 的完整指引内容（SKILL.md 全文）。name 必须是 <available_skills> 索引中列出的 skill 名称。',
-    z.object({ name: z.string().describe('skill 名称，如 article-parser / cross-session-review') }),
+    z.object({ name: z.string().describe('skill 名称，如 article-parser / brainstorming') }),
     async ({ name }) => {
       const entry = entries.find((e) => e.name === name);
       if (!entry) {
