@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 卡片详情与编辑
-status: pending
+status: done
 ---
 
 ## 目标
@@ -17,13 +17,13 @@ status: pending
 
 ## 计划改动
 
-- [ ] `components/notes/NoteEditor.tsx`：详情区组件
+- [x] `components/notes/NoteEditor.tsx`：详情区组件
   - 正文：MDXEditor（插件同速记板），onChange 800ms 防抖 updateNote
   - 元数据区：tags chip 编辑（输入回车增、x 删）；links 编辑（下拉前缀 article:/stock:/plan: + 值输入；plan 类型给文件路径）
   - 待办区：列表（勾选框切 status、文本可编辑、删除按钮）；「加待办」行；待办行展开可填 plan 路径（选填）
-- [ ] `components/notes/NotesPanel.tsx`：点列表项 → 右侧（或覆盖式）打开 NoteEditor；顶栏「新建卡片」按钮（create 空卡后直接进编辑态）
-- [ ] `stores/notes-store.ts`：补 `activeNoteId`、`createNote`/`updateNote` action；编辑后本地乐观更新 + notes-changed 事件兜底刷新
-- [ ] 新建卡片默认 frontmatter：id/created/updated 自动，tags/links/todos 为空数组
+- [x] `components/notes/NotesPanel.tsx`：点列表项 → 右侧（或覆盖式）打开 NoteEditor；顶栏「新建卡片」按钮（create 空卡后直接进编辑态）
+- [x] `stores/notes-store.ts`：补 `activeNoteId`、`createNote`/`updateNote` action；编辑后本地乐观更新 + notes-changed 事件兜底刷新
+- [x] 新建卡片默认 frontmatter：id/created/updated 自动，tags/links/todos 为空数组
 
 ## 验证
 
@@ -33,9 +33,16 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. 布局采用三栏（视图栏 | 列表 w-72 | 详情 flex-1）而非覆盖式：详情打开时列表保持可见可切换
+  2. todo 勾选框做成三态循环（pending → in_progress → done → pending）覆盖全部 status；in_progress 文本琥珀色、done 删除线区分
+  3. tags/links/todo 增删与 status 切换立即保存（immediate flush），仅正文与 todo 文本/plan 输入走 800ms 防抖——离散点击立即落盘，输入类操作合并写
+  4. 切换工作区自动关闭详情，防跨工作区 noteId 悬空
 - 改动文件清单：
+  - stores/notes-store.ts（改）：+activeNoteId / setActiveNoteId / createNote / updateNote，导出 NotePatch
+  - components/notes/NoteEditor.tsx（新）：详情区组件（元数据区 + 正文 + 待办区）
+  - components/notes/NotesPanel.tsx（改）：列表项可点击 + active 高亮、顶栏「新建卡片」、三栏布局
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：见共享区 notes/step3-delivery.md
+- 下个 step 该从哪里继续：Step 4（Agent 工具），与本步无代码耦合，仅共享 updateNote 语义
+- 待办或已知限制：见共享区 notes/step3-delivery.md

@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
-import { Clock, ListTodo, Tags, Trash2, Loader2 } from 'lucide-react';
+import { Clock, ListTodo, Plus, Tags, Trash2, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useNotesStore } from '@/stores/notes-store';
+import { NoteEditor } from '@/components/notes/NoteEditor';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { NoteMeta } from '@/types/note';
@@ -23,11 +25,14 @@ function formatTime(iso: string): string {
   });
 }
 
-function NoteCardItem({ note }: { note: NoteMeta }) {
+function NoteCardItem({ note, active, onOpen }: { note: NoteMeta; active: boolean; onOpen: () => void }) {
   const undoneCount = note.todos.filter((t) => t.status !== 'done').length;
 
   return (
-    <div className="px-4 py-3 hover:bg-muted/30">
+    <button
+      onClick={onOpen}
+      className={cn('w-full text-left px-4 py-3 hover:bg-muted/30', active && 'bg-muted/50')}
+    >
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground shrink-0">{formatTime(note.created)}</span>
         {note.todos.length > 0 && (
@@ -50,7 +55,7 @@ function NoteCardItem({ note }: { note: NoteMeta }) {
         </div>
       </div>
       <p className="mt-1 text-sm line-clamp-1">{note.title || '（无内容）'}</p>
-    </div>
+    </button>
   );
 }
 
@@ -62,8 +67,22 @@ export function NotesPanel() {
   const loadedWorkspacePath = useNotesStore((s) => s.loadedWorkspacePath);
   const loadNotes = useNotesStore((s) => s.loadNotes);
   const subscribeNotesChanged = useNotesStore((s) => s.subscribeNotesChanged);
+  const activeNoteId = useNotesStore((s) => s.activeNoteId);
+  const setActiveNoteId = useNotesStore((s) => s.setActiveNoteId);
+  const createNote = useNotesStore((s) => s.createNote);
 
   const isActive = activeTabId === NOTES_TAB_ID;
+  const workspacePath = workspace?.path ?? null;
+
+  // 详情归属特定工作区的卡片，切工作区时关闭，避免跨区 id 悬空
+  useEffect(() => {
+    setActiveNoteId(null);
+  }, [workspacePath, setActiveNoteId]);
+
+  const handleCreate = () => {
+    if (!workspace) return;
+    void createNote(workspace.path);
+  };
 
   useEffect(() => {
     return subscribeNotesChanged();
@@ -98,23 +117,56 @@ export function NotesPanel() {
         })}
       </nav>
 
-      <div className="flex-1 overflow-y-auto min-w-0">
-        {loading ? (
-          <div className="h-full flex items-center justify-center">
-            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-          </div>
-        ) : notes.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-            暂无笔记
-          </div>
-        ) : (
-          <div className="divide-y">
-            {notes.map((note) => (
-              <NoteCardItem key={note.id} note={note} />
-            ))}
-          </div>
+      <div
+        className={cn(
+          'flex flex-col min-w-0 min-h-0',
+          activeNoteId ? 'w-72 shrink-0 border-r' : 'flex-1',
         )}
+      >
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b shrink-0">
+          <span className="text-xs font-medium text-muted-foreground">时间流</span>
+          <Button
+            variant="outline"
+            size="xs"
+            onClick={handleCreate}
+            disabled={!workspace}
+          >
+            <Plus className="w-3 h-3" />
+            新建卡片
+          </Button>
+        </div>
+        <div className="flex-1 overflow-y-auto min-h-0">
+          {loading ? (
+            <div className="h-full flex items-center justify-center">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : notes.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+              暂无笔记
+            </div>
+          ) : (
+            <div className="divide-y">
+              {notes.map((note) => (
+                <NoteCardItem
+                  key={note.id}
+                  note={note}
+                  active={note.id === activeNoteId}
+                  onOpen={() => setActiveNoteId(note.id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {activeNoteId && workspace && (
+        <NoteEditor
+          key={activeNoteId}
+          workspacePath={workspace.path}
+          noteId={activeNoteId}
+          onClose={() => setActiveNoteId(null)}
+        />
+      )}
     </div>
   );
 }
