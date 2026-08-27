@@ -137,9 +137,8 @@ export function DigestsPanel({ workspaces }: DigestsPanelProps) {
   };
 
   return (
-    <div>
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">组卡</h2>
+    <div className="mx-auto max-w-5xl px-6 py-6">
+      <div className="flex items-center justify-end gap-4">
         <Select value={workspaceId} onValueChange={setWorkspaceId}>
           <SelectTrigger size="sm" className="w-[180px]">
             <SelectValue />
@@ -152,7 +151,7 @@ export function DigestsPanel({ workspaces }: DigestsPanelProps) {
           </SelectContent>
         </Select>
       </div>
-      <p className="text-sm text-muted-foreground mb-6 mt-1">
+      <p className="text-sm text-muted-foreground mb-6">
         后台自动把每个会话提炼成摘要卡，可查看组卡详情或对单个组补跑提炼；提炼模型与提示词在「定时计划」的任务编辑器中配置。
       </p>
       <div className="flex gap-6">

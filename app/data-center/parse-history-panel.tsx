@@ -38,9 +38,8 @@ export function ParseHistoryPanel() {
   }, []);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">文章解析历史</h2>
+    <div className="mx-auto max-w-4xl px-6 py-6 space-y-3">
+      <div className="flex items-center justify-end">
         <Button size="sm" variant="outline" onClick={load} disabled={loading}>
           <RefreshCw className={`mr-2 h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           刷新

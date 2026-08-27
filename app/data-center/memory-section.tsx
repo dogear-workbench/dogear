@@ -65,8 +65,7 @@ export function MemorySection({ workspaces }: Props) {
   };
 
   const header = (
-    <div className="flex items-center justify-between gap-4">
-      <h2 className="text-lg font-semibold">记忆</h2>
+    <div className="flex items-center justify-end gap-4">
       <Select value={workspaceId} onValueChange={setWorkspaceId}>
         <SelectTrigger size="sm" className="w-[180px]">
           <SelectValue />
@@ -83,7 +82,7 @@ export function MemorySection({ workspaces }: Props) {
 
   if (!workspace || !workspacePath) {
     return (
-      <div>
+      <div className="mx-auto max-w-4xl px-6 py-6">
         {header}
         <div className="flex items-center justify-center text-muted-foreground py-16">
           <div className="text-center space-y-2">
@@ -96,7 +95,7 @@ export function MemorySection({ workspaces }: Props) {
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-4xl px-6 py-6">
       {header}
       <div className="space-y-4">
       <div className="flex items-center justify-between">

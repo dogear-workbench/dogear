@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Check, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { ModelSelector } from '@/components/ModelSelector';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -23,6 +25,7 @@ const MODEL_IO = {
 
 export function BuiltinPromptSection({ builtinId }: Props) {
   const [prompt, setPrompt] = useState('');
+  const [editing, setEditing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -92,6 +95,15 @@ export function BuiltinPromptSection({ builtinId }: Props) {
       <div className="flex items-center gap-2">
         <label className="text-sm font-medium">提示词</label>
         <Badge variant="subtle" className="text-[10px] px-1.5 py-0">全局模板</Badge>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto h-6 px-2 text-xs"
+          onClick={() => setEditing((v) => !v)}
+        >
+          {editing ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
+          {editing ? '完成' : '编辑'}
+        </Button>
       </div>
       <p className="text-xs text-muted-foreground">
         全局模板，影响该内置任务的所有触发入口（含其他工作区与后台自动运行）；「保存提示词」独立于页面级「保存」按钮。
@@ -104,19 +116,30 @@ export function BuiltinPromptSection({ builtinId }: Props) {
         <p className="text-sm text-destructive">{error}</p>
       ) : (
         <>
-          <Textarea
-            className="flex-1 min-h-[220px] resize-none field-sizing-fixed text-sm font-mono"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-          />
-          <div className="flex gap-2">
-            <Button size="sm" onClick={handleSavePrompt} disabled={saving || resetting}>
-              {saving ? '保存中…' : '保存提示词'}
-            </Button>
-            <Button size="sm" variant="outline" onClick={handleResetPrompt} disabled={saving || resetting}>
-              {resetting ? '恢复中…' : '恢复默认'}
-            </Button>
-          </div>
+          {editing ? (
+            <>
+              <Textarea
+                className="flex-1 min-h-[220px] resize-none field-sizing-fixed text-sm font-mono"
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setEditing(false); }}
+              />
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleSavePrompt} disabled={saving || resetting}>
+                  {saving ? '保存中…' : '保存提示词'}
+                </Button>
+                <Button size="sm" variant="outline" onClick={handleResetPrompt} disabled={saving || resetting}>
+                  {resetting ? '恢复中…' : '恢复默认'}
+                </Button>
+              </div>
+            </>
+          ) : (
+            <div className="max-h-80 overflow-y-auto rounded-md border p-3">
+              {prompt.trim()
+                ? <MarkdownRenderer content={prompt} />
+                : <p className="text-xs text-muted-foreground">提示词为空，点「编辑」填写</p>}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -175,8 +198,8 @@ export function BuiltinParamsSection({ builtinId }: Props) {
 
   return (
     <>
-      <section className="rounded-lg border bg-card p-3 space-y-2">
-        <label className="text-sm font-medium">模型</label>
+      <section className="space-y-2">
+        <label className="text-xs text-muted-foreground">模型</label>
         <ModelSelector
           settings={settings}
           value={selection}
@@ -186,8 +209,8 @@ export function BuiltinParamsSection({ builtinId }: Props) {
         />
         <p className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</p>
       </section>
-      <section className="rounded-lg border bg-card p-3 space-y-2">
-        <label className="text-sm font-medium">可用工具</label>
+      <section className="space-y-2">
+        <label className="text-xs text-muted-foreground">可用工具</label>
         {loading ? (
           <p className="text-xs text-muted-foreground">工具清单加载中…</p>
         ) : error ? (

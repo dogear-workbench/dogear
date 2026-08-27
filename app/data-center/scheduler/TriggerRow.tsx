@@ -57,7 +57,7 @@ export function TriggerRow({ trigger: t, open, onOpenChange, patch, onRemove, ta
   const Icon = TYPE_ICONS[t.type];
   return (
     <Collapsible open={open} onOpenChange={onOpenChange}>
-      <div className="rounded-md border">
+      <div className="rounded-md bg-muted/40">
         <div className="flex items-center">
           <CollapsibleTrigger asChild>
             <button type="button" className="flex h-8 min-w-0 flex-1 items-center gap-2 px-2 text-left">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, ChevronRight, Cog, Sparkles } from 'lucide-react';
+import { ArrowLeft, Check, ChevronRight, Cog, Pencil, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ModelSelector } from '@/components/ModelSelector';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSchedulerStore } from '@/stores/scheduler-store';
 import { showConfirm } from '@/stores/confirm-store';
@@ -75,6 +76,9 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [promptEditing, setPromptEditing] = useState(
+    () => task === 'new' || (task.kind === 'custom' && !task.prompt.trim()),
+  );
 
   const patch = (updates: Partial<ScheduledTask>) => {
     setDraft((d) => ({ ...d, ...updates }) as ScheduledTask);
@@ -147,22 +151,42 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
                 </div>
               </div>
               <div className="flex-1 min-h-0 flex flex-col gap-1.5">
-                <label className="text-sm font-medium">提示词</label>
-                <Textarea
-                  className="flex-1 min-h-0 resize-none field-sizing-fixed text-sm font-mono"
-                  value={draft.prompt}
-                  onChange={(e) => patch({ prompt: e.target.value })}
-                  placeholder="任务的完整提示词，将交给 AI 执行"
-                />
+                <div className="flex items-center gap-2">
+                  <label className="text-sm font-medium">提示词</label>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => setPromptEditing((v) => !v)}
+                  >
+                    {promptEditing ? <Check className="size-3.5" /> : <Pencil className="size-3.5" />}
+                    {promptEditing ? '完成' : '编辑'}
+                  </Button>
+                </div>
+                {promptEditing ? (
+                  <Textarea
+                    className="flex-1 min-h-0 resize-none field-sizing-fixed text-sm font-mono"
+                    value={draft.prompt}
+                    onChange={(e) => patch({ prompt: e.target.value })}
+                    onKeyDown={(e) => { if (e.key === 'Escape') setPromptEditing(false); }}
+                    placeholder="任务的完整提示词，将交给 AI 执行"
+                  />
+                ) : (
+                  <div className="max-h-80 overflow-y-auto rounded-md border p-3">
+                    {draft.prompt.trim()
+                      ? <MarkdownRenderer content={draft.prompt} />
+                      : <p className="text-xs text-muted-foreground">提示词为空，点「编辑」填写</p>}
+                  </div>
+                )}
               </div>
             </>
           )}
         </div>
-        <div className="w-80 shrink-0 space-y-4 overflow-y-auto border-l p-4">
+        <div className="w-80 shrink-0 space-y-5 overflow-y-auto border-l p-4">
           {draft.kind === 'builtin' ? (
             <>
-              <section className="rounded-lg border bg-card p-3 space-y-2">
-                <label className="text-sm font-medium">工作区</label>
+              <section className="space-y-2">
+                <label className="text-xs text-muted-foreground">工作区</label>
                 <Select
                   value={draft.workspaceId ?? 'all'}
                   onValueChange={(v) => patch({ workspaceId: v === 'all' ? undefined : v })}
@@ -179,8 +203,8 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
                 </Select>
               </section>
               <BuiltinParamsSection builtinId={draft.builtinId} />
-              <section className="rounded-lg border bg-card p-3 space-y-2">
-                <label className="text-sm font-medium">触发器（任一命中即触发）</label>
+              <section className="space-y-2">
+                <label className="text-xs text-muted-foreground">触发器（任一命中即触发）</label>
                 <TriggerListEditor
                   triggers={draft.triggers}
                   onChange={(triggers) => patch({ triggers })}
@@ -191,8 +215,8 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
             </>
           ) : (
             <>
-              <section className="rounded-lg border bg-card p-3 space-y-2">
-                <label className="text-sm font-medium">模型</label>
+              <section className="space-y-2">
+                <label className="text-xs text-muted-foreground">模型</label>
                 <ModelSelector
                   settings={settings}
                   value={draft.modelSelection ?? null}
@@ -202,8 +226,8 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
                 />
                 <p className="text-xs text-muted-foreground">选「不指定」时回退到默认模型</p>
               </section>
-              <section className="rounded-lg border bg-card p-3 space-y-2">
-                <label className="text-sm font-medium">工作区</label>
+              <section className="space-y-2">
+                <label className="text-xs text-muted-foreground">工作区</label>
                 <Select
                   value={draft.workspaceId || undefined}
                   onValueChange={(v) => patch({ workspaceId: v })}
@@ -219,16 +243,14 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
                 </Select>
               </section>
               {draft.workspaceId && (
-                <section className="rounded-lg border bg-card p-3">
-                  <CustomToolPacksSection
-                    workspaceId={draft.workspaceId}
-                    override={draft.toolPacksOverride}
-                    onChange={(v) => patch({ toolPacksOverride: v })}
-                  />
-                </section>
+                <CustomToolPacksSection
+                  workspaceId={draft.workspaceId}
+                  override={draft.toolPacksOverride}
+                  onChange={(v) => patch({ toolPacksOverride: v })}
+                />
               )}
-              <section className="rounded-lg border bg-card p-3 space-y-2">
-                <label className="text-sm font-medium">触发器（任一命中即触发）</label>
+              <section className="space-y-2">
+                <label className="text-xs text-muted-foreground">触发器（任一命中即触发）</label>
                 <TriggerListEditor
                   triggers={draft.triggers}
                   onChange={(triggers) => patch({ triggers })}

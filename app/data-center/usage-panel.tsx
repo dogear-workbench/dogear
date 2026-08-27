@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+} from '@/components/ui/pagination';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
@@ -31,6 +37,8 @@ function periodSinceMs(period: PeriodKey): number | null {
   return null;
 }
 
+const PAGE_SIZE = 20;
+
 interface PeriodStats {
   conversationId: string;
   workspaceId: string;
@@ -55,6 +63,7 @@ interface UsagePanelProps {
 
 export function UsagePanel({ workspaces }: UsagePanelProps) {
   const [workspaceId, setWorkspaceId] = useState<string>('all');
+  const [page, setPage] = useState(1);
   const isAll = workspaceId === 'all';
   const settings = useSettingsStore((s) => s.settings);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -171,6 +180,10 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
       .filter((r): r is NonNullable<typeof r> => r !== null);
   }, [conversations, stats, convById, isAllPeriod]);
 
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   const summary = useMemo(() => {
     let tokens = 0;
     let turns = 0;
@@ -187,10 +200,9 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
   const showLoading = isAllPeriod ? loading : loading || statsLoading;
 
   return (
-    <div className="max-w-4xl px-6 py-6">
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-lg font-semibold">用量</h2>
-        <Select value={workspaceId} onValueChange={setWorkspaceId}>
+    <div className="mx-auto max-w-4xl px-6 py-6">
+      <div className="flex items-center justify-end gap-4">
+        <Select value={workspaceId} onValueChange={(v) => { setWorkspaceId(v); setPage(1); }}>
           <SelectTrigger size="sm" className="w-[180px]">
             <SelectValue />
           </SelectTrigger>
@@ -207,7 +219,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
         时间页显示该时段内的用量，「全部」为会话全量累计；点击会话展开逐轮明细。
       </p>
 
-      <Tabs value={period} onValueChange={(v) => setPeriod(v as PeriodKey)}>
+      <Tabs value={period} onValueChange={(v) => { setPeriod(v as PeriodKey); setPage(1); }}>
         <TabsList className="mb-4">
           {PERIODS.map((p) => (
             <TabsTrigger key={p.key} value={p.key}>
@@ -226,6 +238,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
           {isAllPeriod ? '暂无会话' : '该时段暂无用量记录'}
         </p>
       ) : (
+        <>
         <div className="space-y-2">
           {summary.sessionCount > 0 && (
             <div className="flex items-center gap-3 px-4 py-2 text-xs text-muted-foreground">
@@ -236,7 +249,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
               <span>· {summary.sessionCount} 个会话</span>
             </div>
           )}
-          {rows.map((row) => {
+          {pageRows.map((row) => {
             const conv = row.conv;
             const expanded = expandedId === conv.id;
             const selection = conv.modelSelection ?? settings.ai.defaultModelSelection;
@@ -292,6 +305,47 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
             );
           })}
         </div>
+        {rows.length > PAGE_SIZE && (
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">共 {rows.length} 个会话</span>
+            <Pagination className="mx-0 w-auto justify-end">
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationLink
+                    href="#"
+                    size="default"
+                    className={cn('gap-1', safePage <= 1 && 'pointer-events-none opacity-50')}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setPage(safePage - 1);
+                    }}
+                  >
+                    <ChevronLeft className="size-4" />
+                    上一页
+                  </PaginationLink>
+                </PaginationItem>
+                <PaginationItem className="self-center px-2 text-xs text-muted-foreground">
+                  第 {safePage} / {totalPages} 页
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationLink
+                    href="#"
+                    size="default"
+                    className={cn('gap-1', safePage >= totalPages && 'pointer-events-none opacity-50')}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setPage(safePage + 1);
+                    }}
+                  >
+                    下一页
+                    <ChevronRight className="size-4" />
+                  </PaginationLink>
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

@@ -83,11 +83,9 @@ export function HistoryPanel() {
   );
 
   return (
-    <div className="max-w-4xl px-6 py-6 space-y-3">
-      <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-lg font-semibold">执行历史</h2>
-        <div className="flex items-center gap-2 ml-auto">
-          <Select value={taskFilter} onValueChange={handleTaskFilterChange}>
+    <div className="mx-auto max-w-4xl px-6 py-6 space-y-3">
+      <div className="flex items-center justify-end gap-2 mb-3">
+        <Select value={taskFilter} onValueChange={handleTaskFilterChange}>
             <SelectTrigger size="sm" className="w-[180px]" aria-label="按任务筛选">
               <SelectValue />
             </SelectTrigger>
@@ -111,7 +109,6 @@ export function HistoryPanel() {
           <Button variant="ghost" size="sm" onClick={handleRefresh} title="刷新">
             <RefreshCw className={cn('w-3.5 h-3.5', historyLoading && 'animate-spin')} />
           </Button>
-        </div>
       </div>
 
       <RunningSection />

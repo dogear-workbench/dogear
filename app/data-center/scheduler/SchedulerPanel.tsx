@@ -109,10 +109,9 @@ export function SchedulerPanel({ workspaces }: Props) {
 
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-4xl px-6 py-6">
+      <div className="mx-auto max-w-4xl px-6 py-6">
         <div className="space-y-3">
           <div className="mb-3">
-            <h2 className="text-lg font-semibold mb-1">定时计划</h2>
             <p className="text-sm text-muted-foreground">
               每个任务一行：内置任务（组卡提炼 / 复盘报告 / 补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
             </p>

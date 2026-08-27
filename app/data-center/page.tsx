@@ -39,9 +39,7 @@ export default function DataCenterPage() {
 
         <TabsContent value="digests" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="h-full overflow-y-auto">
-            <div className="max-w-5xl py-6 px-6">
-              <DigestsPanel workspaces={workspaces} />
-            </div>
+            <DigestsPanel workspaces={workspaces} />
           </div>
         </TabsContent>
 
@@ -63,17 +61,13 @@ export default function DataCenterPage() {
 
         <TabsContent value="parse-history" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="h-full overflow-y-auto">
-            <div className="max-w-4xl py-6 px-6">
-              <ParseHistoryPanel />
-            </div>
+            <ParseHistoryPanel />
           </div>
         </TabsContent>
 
         <TabsContent value="memory" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="h-full overflow-y-auto">
-            <div className="max-w-4xl py-6 px-6">
-              <MemorySection workspaces={workspaces} />
-            </div>
+            <MemorySection workspaces={workspaces} />
           </div>
         </TabsContent>
       </Tabs>
