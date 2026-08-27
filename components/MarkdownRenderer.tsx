@@ -1,11 +1,10 @@
 
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import 'highlight.js/styles/github-dark.css';
-import { PathText, PathChip, splitPathSegments, useWorkspacePath } from './agent-chat/path-link';
-import { useWorkspaceId } from './agent-chat/workspace-id-context';
+import { highlightText } from './agent-chat/highlight';
 
 interface MarkdownRendererProps {
   /** Markdown 文本内容 */
@@ -23,7 +22,7 @@ interface MarkdownRendererProps {
 }
 
 /**
- * 对 children 中的 string 类型子节点应用路径识别（PathText 内部兼顾搜索高亮：先切路径，再对剩余文本高亮）
+ * 对 children 中的 string 类型子节点应用搜索高亮（不再做正文路径识别：工具块外路径存在性与否不可信）
  */
 function wrapChildren(
   children: React.ReactNode,
@@ -31,39 +30,12 @@ function wrapChildren(
   prefix?: string,
   activeId?: string | null
 ): React.ReactNode {
+  const canHighlight = !!query?.trim() && !!prefix;
   return React.Children.map(children, child =>
     typeof child === 'string' && child
-      ? <PathText text={child} searchQuery={query} matchIdPrefix={prefix} activeMatchId={activeId} />
+      ? (canHighlight ? <>{highlightText(child, query!, prefix!, activeId ?? null)}</> : child)
       : child
   );
-}
-
-const CodeBlockContext = createContext(false);
-
-function CodeWithPath({ text, codeProps }: { text: string; codeProps: React.ComponentPropsWithoutRef<'code'> }) {
-  const workspaceId = useWorkspaceId();
-  const workspacePath = useWorkspacePath(workspaceId);
-  const segments = useMemo(() => splitPathSegments(text, workspacePath), [text, workspacePath]);
-  if (!segments.some((s) => s.type === 'path')) {
-    return <code {...codeProps}>{text}</code>;
-  }
-  return (
-    <>
-      {segments.map((seg, i) =>
-        seg.type === 'path' && workspaceId && seg.resolved
-          ? <PathChip key={i} text={seg.text} resolved={seg.resolved} fileName={seg.fileName} workspaceId={workspaceId} />
-          : <code key={i} {...codeProps}>{seg.text}</code>
-      )}
-    </>
-  );
-}
-
-function MarkdownCode({ children, className, ...props }: React.ComponentPropsWithoutRef<'code'>) {
-  const inCodeBlock = useContext(CodeBlockContext);
-  if (typeof children === 'string' && !inCodeBlock && !className) {
-    return <CodeWithPath text={children} codeProps={props} />;
-  }
-  return <code className={className} {...props}>{children}</code>;
 }
 
 /**
@@ -105,13 +77,12 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         {children}
       </td>
     ),
-    // 代码块：添加圆角和溢出滚动；Provider 标记内部 code 为代码块（裸 ``` 无 language 类时行内路径识别不介入）
+    // 代码块：添加圆角和溢出滚动
     pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
       <pre className="rounded-lg overflow-x-auto p-4 my-3 bg-gray-900 text-gray-100" {...props}>
-        <CodeBlockContext.Provider value={true}>{children}</CodeBlockContext.Provider>
+        {children}
       </pre>
     ),
-    code: MarkdownCode,
     // 链接：拦截默认导航，改为外部浏览器打开
     a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => (
       <a

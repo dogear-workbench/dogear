@@ -3,7 +3,6 @@ import { FileText } from 'lucide-react';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
-import { highlightText } from './highlight';
 import { useWorkspaceId } from './workspace-id-context';
 
 export interface PathSegment {
@@ -133,17 +132,13 @@ export function PathChip({ text, resolved, fileName, workspaceId }: {
   );
 }
 
-export function PathText({ text, searchQuery, matchIdPrefix, activeMatchId }: {
+export function PathText({ text }: {
   text: string;
-  searchQuery?: string;
-  matchIdPrefix?: string;
-  activeMatchId?: string | null;
 }) {
   const workspaceId = useWorkspaceId();
   const workspacePath = useWorkspacePath(workspaceId);
   const segments = useMemo(() => splitPathSegments(text, workspacePath), [text, workspacePath]);
-  const canHighlight = !!searchQuery?.trim() && !!matchIdPrefix;
-  if (segments.length === 1 && segments[0].type === 'text' && !canHighlight) {
+  if (segments.length === 1 && segments[0].type === 'text') {
     return <>{text}</>;
   }
   return (
@@ -152,10 +147,7 @@ export function PathText({ text, searchQuery, matchIdPrefix, activeMatchId }: {
         if (seg.type === 'path' && workspaceId && seg.resolved) {
           return <PathChip key={i} text={seg.text} resolved={seg.resolved} fileName={seg.fileName} workspaceId={workspaceId} />;
         }
-        const body = canHighlight
-          ? highlightText(seg.text, searchQuery!, matchIdPrefix!, activeMatchId ?? null)
-          : seg.text;
-        return <span key={i}>{body}</span>;
+        return <span key={i}>{seg.text}</span>;
       })}
     </>
   );
