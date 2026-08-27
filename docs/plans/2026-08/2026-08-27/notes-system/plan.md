@@ -15,7 +15,7 @@
 - [x] [Step 3: 卡片详情与编辑](./step3-note-editor.md) — MDXEditor 正文 + 元数据/待办编辑 + 新建
 - [x] [Step 4: 视图完善——待办聚合/标签/回收站/搜索](./step4-views.md) — 待办视图按 hasPlan 分组、软删除恢复、内存搜索
 - [x] [Step 5: 首页捕捉框 + 老速记板链路清理](./step5-capture-box.md) — 速记板替换为捕捉框，删除全部旧链路
-- [ ] [Step 6: Agent 工具面 + 聊完存卡纪律](./step6-agent-tools.md) — dogear-notes server 七工具 + 提示模板 + 端到端验证
+- [x] [Step 6: Agent 工具面 + 聊完存卡纪律](./step6-agent-tools.md) — dogear-notes server 七工具 + 提示模板 + 端到端验证
 
 ## 全局决策
 

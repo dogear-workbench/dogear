@@ -27,7 +27,7 @@ import { createBuiltinFileTools } from './builtin-tools.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex } from '../session-append-templates.js';
+import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -38,6 +38,7 @@ import { createStockPickingToolDefs } from '../tools/stock-picking-tools.js';
 import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createReviewToolDefs } from '../tools/review-tools.js';
+import { createNotesToolDefs } from '../tools/notes-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
@@ -432,6 +433,7 @@ export class PiSession extends EventEmitter {
     } else {
       if (this.config.workspacePath) {
         promptParts.push(MEMORY_GUIDANCE_APPEND);
+        promptParts.push(NOTES_DISCIPLINE_APPEND);
       }
       if (this.config.groupId) {
         promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
@@ -552,6 +554,7 @@ export class PiSession extends EventEmitter {
 
     if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
+      toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath)));
     }
 
     return toolDefs;

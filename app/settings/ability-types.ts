@@ -46,6 +46,7 @@ export const SKILL_PACK_MAP: Record<string, string[]> = {
 
 export const RESIDENT_GROUPS = [
   { server: 'dogear-memory', label: '记忆系统', injectNote: '主会话且绑定工作区时注册' },
+  { server: 'dogear-notes', label: '笔记卡片', injectNote: '主会话且绑定工作区时注册' },
   { server: 'dogear-delegation', label: 'Agent 协作', injectNote: '会话属于组时注册' },
   { server: 'dogear-group', label: '会话组共享区', injectNote: '会话属于组时注册' },
   { server: 'dogear-reference', label: '跨会话引用', injectNote: '会话属于组时注册' },
