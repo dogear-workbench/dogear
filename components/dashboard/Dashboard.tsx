@@ -2,20 +2,18 @@ import { useEffect } from 'react';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useDashboardStore } from '@/stores/dashboard-store';
 import { ReportSection } from './ReportSection';
-import { ScratchpadSection } from './ScratchpadSection';
+import { CaptureBox } from './CaptureBox';
 
 export function Dashboard() {
   const workspace = useWorkspaceStore((s) => s.workspace);
   const setCurrentWorkspace = useDashboardStore((s) => s.setCurrentWorkspace);
   const loadReport = useDashboardStore((s) => s.loadReport);
-  const loadNotes = useDashboardStore((s) => s.loadNotes);
 
   useEffect(() => {
     if (!workspace?.id) return;
     setCurrentWorkspace(workspace.id);
     loadReport(workspace.id);
-    loadNotes(workspace.id);
-  }, [workspace?.id, setCurrentWorkspace, loadReport, loadNotes]);
+  }, [workspace?.id, setCurrentWorkspace, loadReport]);
 
   if (!workspace) {
     return (
@@ -33,7 +31,7 @@ export function Dashboard() {
             <ReportSection workspaceId={workspace.id} />
           </div>
           <div className="min-w-0 min-h-0 overflow-y-auto">
-            <ScratchpadSection workspaceId={workspace.id} />
+            <CaptureBox />
           </div>
         </div>
       </div>

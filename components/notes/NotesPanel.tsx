@@ -59,7 +59,9 @@ export function NotesPanel() {
 
   const handleCreate = () => {
     if (!workspace) return;
-    void createNote(workspace.path);
+    void createNote(workspace.path).then((note) => {
+      if (note) setActiveNoteId(note.id);
+    });
   };
 
   useEffect(() => {

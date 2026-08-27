@@ -17,8 +17,8 @@ interface NotesState {
   /** 监听主进程 notesChanged 广播，工作区匹配时重新拉取列表；返回取消订阅函数 */
   subscribeNotesChanged: () => () => void;
   setActiveNoteId: (noteId: string | null) => void;
-  /** 新建空白卡片并进入编辑态；本地立即插入列表，刷新由 notesChanged 兜底 */
-  createNote: (workspacePath: string) => Promise<Note | null>;
+  /** 新建卡片（默认空白卡）并本地插入列表，刷新由 notesChanged 兜底；是否进入编辑态由调用方决定 */
+  createNote: (workspacePath: string, input?: { content?: string; tags?: string[] }) => Promise<Note | null>;
   /** 保存局部 patch（tags/links/todos 整体深替换）；成功后本地同步列表条目 */
   updateNote: (workspacePath: string, noteId: string, patch: NotePatch) => Promise<Note | null>;
 }
@@ -56,12 +56,12 @@ export const useNotesStore = create<NotesState>((set, get) => ({
 
   setActiveNoteId: (noteId) => set({ activeNoteId: noteId }),
 
-  createNote: async (workspacePath) => {
+  createNote: async (workspacePath, input) => {
     try {
-      const result = await client.createNote({ workspacePath, input: { content: '' } });
+      const result = await client.createNote({ workspacePath, input: { content: '', ...input } });
       if ('note' in result && result.note) {
         const note = result.note;
-        set({ notes: [note, ...get().notes], activeNoteId: note.id });
+        set({ notes: [note, ...get().notes] });
         return note;
       }
       if ('error' in result) console.error('[notes] createNote 失败:', result.error);

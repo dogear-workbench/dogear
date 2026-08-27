@@ -22,8 +22,6 @@ interface DashboardState {
   reportMarkdown: string | null;
   reportUpdatedAt: string | null;
   reviewActivity: ReviewActivity | null;
-  notesContent: string;
-  notesSaving: boolean;
   // 正在复盘的工作区 id（null 表示无）。组件按 wsId 派生自己的「复盘中」状态，
   // 避免全局布尔在多工作区间串台。
   reviewRunningWorkspaceId: string | null;
@@ -32,8 +30,6 @@ interface DashboardState {
 
   setCurrentWorkspace: (workspaceId: string) => void;
   loadReport: (workspaceId: string) => Promise<void>;
-  loadNotes: (workspaceId: string) => Promise<void>;
-  flushNotes: (workspaceId: string, content: string) => Promise<void>;
   triggerReview: (workspaceId: string, workspacePath: string) => Promise<void>;
 }
 
@@ -73,8 +69,6 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
   reportMarkdown: null,
   reportUpdatedAt: null,
   reviewActivity: null,
-  notesContent: '',
-  notesSaving: false,
   reviewRunningWorkspaceId: null,
   currentWorkspaceId: null,
 
@@ -94,28 +88,6 @@ export const useDashboardStore = create<DashboardState>((set, get) => ({
       }
     } catch (error) {
       console.error('[dashboard] loadReport 失败:', error);
-    }
-  },
-
-  loadNotes: async (workspaceId) => {
-    try {
-      const result = await client.getNotes({ workspaceId });
-      if ('content' in result) {
-        set({ notesContent: result.content ?? '' });
-      }
-    } catch (error) {
-      console.error('[dashboard] loadNotes 失败:', error);
-    }
-  },
-
-  flushNotes: async (workspaceId, content) => {
-    set({ notesSaving: true });
-    try {
-      await client.saveNotes({ workspaceId, content });
-    } catch (error) {
-      console.error('[dashboard] flushNotes 失败:', error);
-    } finally {
-      set({ notesSaving: false });
     }
   },
 

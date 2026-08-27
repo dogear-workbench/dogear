@@ -1,5 +1,4 @@
 import { tipc } from '@egoist/tipc/main';
-import { readNotes, saveNotes } from '../services/memory/notes-store.js';
 import {
   createNote,
   getNote,
@@ -21,31 +20,9 @@ import type { TodoStatus } from '../services/notes/note-types.js';
 
 const t = tipc.create();
 
-// 旧版速记板路由（单文件自由笔记）；笔记 Tab 上线后随 ScratchpadSection 在 Step 5 统一移除
+// ─── 卡片笔记 CRUD（.dogear/notes/ 一卡一 md 文件） ───
+
 export const notesRouter = {
-  getNotes: t.procedure
-    .input<{ workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        return { content: await readNotes(input.workspaceId) };
-      } catch (e) {
-        return { error: String(e) };
-      }
-    }),
-
-  saveNotes: t.procedure
-    .input<{ workspaceId: string; content: string }>()
-    .action(async ({ input }) => {
-      try {
-        await saveNotes(input.workspaceId, input.content);
-        return { success: true };
-      } catch (e) {
-        return { error: String(e) };
-      }
-    }),
-
-  // ─── 卡片笔记 CRUD（.dogear/notes/ 一卡一 md 文件） ───
-
   createNote: t.procedure
     .input<{ workspacePath: string; input: CreateNoteInput }>()
     .action(async ({ input }) => {
