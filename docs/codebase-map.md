@@ -87,7 +87,7 @@
     - `GlobRenderer.tsx` — Glob 工具：pattern 徽章 + 匹配文件路径列表
     - `GrepRenderer.tsx` — Grep 工具：pattern 徽章 + 命中行 + 关键词高亮
     - `SkillRenderer.tsx` — Skill 工具：lucide Zap 琥珀色图标 + Skill 名 + 参数 + 输出
-    - `FileChangeRenderer.tsx` — Write/Edit 工具：pi(path/edits[]) 与旧 SDK(file_path/old_string) 双兼容，write 快照预览（openInline 零 IO，仅 md/markdown）+ 内容区，edit PathChip 读盘 + 红/绿 diff 区；导出 formatByteSize/getEditCount 供 ToolBlock 摘要复用（替代已删除的 CodeChangeBlock）
+    - `FileChangeRenderer.tsx` — Write/Edit 工具：pi(path/edits[]) 与旧 SDK(file_path/old_string) 双兼容，write 内容区，edit PathChip 读盘 + 红/绿 diff 区（快照预览入口已上移至 ToolBlock 标题行）；导出 formatByteSize/getEditCount 供 ToolBlock 摘要复用（替代已删除的 CodeChangeBlock）
   - `usage-badge/` — 会话 token 用量监控（输入框工具栏徽章 + HoverCard 详情）
     - `UsageBadge.tsx` — 徽章本体：进度条 + token 文字，hover/click 固定展开 HoverCard
     - `UsageHoverCard.tsx` — 详情卡容器（组合下列四块）
@@ -97,7 +97,7 @@
     - `useConversationUsage.ts` — hook：getUsage 拉取 + usageEntryAdded 订阅刷新 + 从 latestContext 派生上下文占用/上限
     - `UsageContextBreakdown.tsx` — 上下文构成细分（SDK categories 按类别 token 占比条）
     - `usage-utils.ts` — 派生纯函数（resolveContext/ContextInfo/formatTokens/cacheHitRate），含单测
-- `ToolBlock.tsx` — 工具块路由组件（顶层 components/，normalizeToolName 归一后分发到专属 renderer：Read/Glob/Grep/Skill/Write/Edit（FileChangeRenderer），其余走 ToolDetailShell；图标走 lucide 简约样式，无边框包裹；getToolSummary 摘要兼容 file_path/path 双入参）
+- `ToolBlock.tsx` — 工具块路由组件（顶层 components/，normalizeToolName 归一后分发到专属 renderer：Read/Glob/Grep/Skill/Write/Edit（FileChangeRenderer），其余走 ToolDetailShell；图标走 lucide 简约样式，无边框包裹；getToolSummary 摘要兼容 file_path/path 双入参；标题行 headerActions Eye 预览按钮（buildPreviewAction：Read(.md/.txt/.json)/Write(.md)/Skill/dogear__ListGroupFiles(relPath) 走 openInline 快照，Edit 读盘，仅 success 且非 error 显示，span+stopPropagation 规避嵌套 button）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `AdditionalFilesPanel.tsx` — 右侧「附加」tab：附加路径手风琴列表（文件夹分节行样式与文件树一致，行尾 Switch 启停 + hover 删除，展开后文件树占满面板，可多节同时展开）
 - `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readGroupBackground 结构化内嵌：主题/进展/已拍板决策/待议问题）+ 组卡提炼（摘要 line-clamp 预览，点击 readGroupDigestRaw 拿原文走 MarkdownFileDialog 浮窗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）

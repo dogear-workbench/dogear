@@ -1,9 +1,12 @@
 "use client";
 
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
+import { resolvePathInWorkspace, useWorkspacePath } from './agent-chat/path-link';
+import { useWorkspaceId } from './agent-chat/workspace-id-context';
 import {
   ToolDetailShell,
   ToolSection,
@@ -63,6 +66,86 @@ function normalizeToolName(toolName: string): string {
 function getToolIcon(toolName: string): ToolIconSpec {
   if (TOOL_ICONS[toolName]) return TOOL_ICONS[toolName];
   return { Icon: Wrench, className: 'text-slate-600' };
+}
+
+interface ToolPreviewAction {
+  tooltip: string;
+  open: () => void;
+}
+
+const READ_EDIT_PREVIEW_EXT_RE = /\.(md|markdown|txt|json)$/i;
+const WRITE_PREVIEW_EXT_RE = /\.(md|markdown)$/i;
+
+function buildPreviewAction(opts: {
+  toolName: string;
+  toolInput?: any;
+  toolOutput?: any;
+  workspaceId: string | null;
+  workspacePath: string | null;
+}): ToolPreviewAction | null {
+  const canonicalName = normalizeToolName(opts.toolName);
+  const input = opts.toolInput;
+  const outputText = typeof opts.toolOutput === 'string' ? opts.toolOutput : '';
+  const path = input?.file_path ?? input?.path ?? '';
+  const fileName = path.split(/[\\/]/).pop() || path;
+
+  if (canonicalName === 'Read') {
+    if (path && READ_EDIT_PREVIEW_EXT_RE.test(path) && outputText) {
+      return {
+        tooltip: `预览 ${fileName}`,
+        open: () => useMarkdownPreviewStore.getState().openInline(fileName, outputText),
+      };
+    }
+    return null;
+  }
+
+  if (canonicalName === 'Write') {
+    const content = typeof input?.content === 'string' ? input.content : '';
+    if (path && WRITE_PREVIEW_EXT_RE.test(path) && content) {
+      return {
+        tooltip: `预览 ${fileName}`,
+        open: () => useMarkdownPreviewStore.getState().openInline(fileName, content),
+      };
+    }
+    return null;
+  }
+
+  if (canonicalName === 'Edit') {
+    const resolved = opts.workspacePath && path && READ_EDIT_PREVIEW_EXT_RE.test(path)
+      ? resolvePathInWorkspace(path, opts.workspacePath)
+      : null;
+    if (opts.workspaceId && resolved) {
+      return {
+        tooltip: `预览 ${fileName}`,
+        open: () => useMarkdownPreviewStore.getState().open(opts.workspaceId!, resolved, fileName),
+      };
+    }
+    return null;
+  }
+
+  if (canonicalName === 'Skill') {
+    const skillName = input?.name ?? input?.skill ?? 'Skill';
+    if (outputText) {
+      return {
+        tooltip: `预览 ${skillName}`,
+        open: () => useMarkdownPreviewStore.getState().openInline(`${skillName} · skill`, outputText),
+      };
+    }
+    return null;
+  }
+
+  if (opts.toolName === 'dogear__ListGroupFiles') {
+    const relPath = typeof input?.relPath === 'string' ? input.relPath : '';
+    if (relPath && outputText) {
+      return {
+        tooltip: `预览 ${relPath}`,
+        open: () => useMarkdownPreviewStore.getState().openInline(relPath, outputText),
+      };
+    }
+    return null;
+  }
+
+  return null;
 }
 
 
@@ -172,6 +255,11 @@ export function ToolBlock({
   className,
 }: ToolBlockProps) {
   const actualStatus: ToolStatus = isError ? "error" : status;
+  const workspaceId = useWorkspaceId();
+  const workspacePath = useWorkspacePath(workspaceId);
+  const previewAction = actualStatus === 'success' && !isError
+    ? buildPreviewAction({ toolName, toolInput, toolOutput, workspaceId, workspacePath })
+    : null;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
   const canonicalName = normalizeToolName(toolName);
@@ -210,6 +298,27 @@ export function ToolBlock({
         actualStatus === 'running' && 'text-sky-600',
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
+      headerActions={previewAction && (
+        <span
+          role="button"
+          tabIndex={0}
+          title={previewAction.tooltip}
+          onClick={(e) => {
+            e.stopPropagation();
+            previewAction.open();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              e.stopPropagation();
+              previewAction.open();
+            }
+          }}
+          className="flex-shrink-0 inline-flex items-center justify-center p-0.5 rounded text-muted-foreground/40 hover:text-sky-600 hover:bg-sky-50 transition-colors cursor-pointer"
+        >
+          <Eye className="w-3.5 h-3.5" />
+        </span>
+      )}
       previewLines={0}
       defaultOpen={false}
       className={className}

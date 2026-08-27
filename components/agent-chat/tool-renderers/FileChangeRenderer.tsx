@@ -1,11 +1,8 @@
 import { useMemo } from 'react';
-import { Eye } from 'lucide-react';
-import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { PathChip, resolvePathInWorkspace, useWorkspacePath } from '../path-link';
 import { useWorkspaceId } from '../workspace-id-context';
 import { ToolDetailShell, ToolSection, OutputBox } from './ToolDetailShell';
 
-const MD_EXT_RE = /\.(md|markdown)$/i;
 const PREVIEW_EXT_RE = /\.(md|markdown|txt|json)$/i;
 
 interface NormalizedEdit {
@@ -52,10 +49,6 @@ export function FileChangeRenderer({ kind, toolInput, toolOutput, isError }: Pro
         ? JSON.stringify(toolOutput, null, 2)
         : '';
 
-  const openSnapshot = () => {
-    useMarkdownPreviewStore.getState().openInline(fileName, content);
-  };
-
   return (
     <ToolDetailShell>
       {path && (
@@ -65,17 +58,6 @@ export function FileChangeRenderer({ kind, toolInput, toolOutput, isError }: Pro
               <PathChip text={path} resolved={resolved} fileName={fileName} workspaceId={workspaceId} />
             ) : (
               <span className="text-foreground break-all">{path}</span>
-            )}
-            {kind === 'write' && MD_EXT_RE.test(path) && content && (
-              <button
-                type="button"
-                onClick={openSnapshot}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-sky-200 bg-sky-50 text-xs text-sky-700 hover:bg-sky-100 hover:border-sky-300 transition-colors"
-                title="快照预览（渲染写入时的内容，不读盘）"
-              >
-                <Eye size={12} className="shrink-0" />
-                快照预览
-              </button>
             )}
           </div>
         </ToolSection>
