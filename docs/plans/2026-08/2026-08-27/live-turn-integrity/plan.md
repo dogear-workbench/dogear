@@ -26,6 +26,18 @@
 - **`structureSignature` 注释需同步更新**（「写入口只动 stable 尾部」的描述在 Step 1 后不再完整成立，pushLocalUser 改为只动 live）。
 - 已知次要问题不在本次范围：`handleSend` 中自动标题条件 `getMessages().length === 0` 在 push 之后恒 false（既有 bug，与本次改动无关，不动）。
 
+## 完成总结（2026-08-27）
+
+三个 step 全部完成，各一个 commit：
+
+- **step1（542d97f）**：`pushLocalUserCore` 两分支 + `applyEventToCore` `type:'user'` 分支统一落 live（插话 = 旧 turn promote + 新 user 为新 live header）。附带修复 wechat-bot 带实体 user 事件重放进 stable 被丢弃的问题。
+- **step2（ad84bc4）**：新增纯函数 `reinsertCutUsers`，`mergeHistorySnapshotCore` 重放后从磁盘切掉段捞回运行中 turn 的 user header，锚点（前一条磁盘 assistant 末 entryId）回看完整 history 解析、归位插入重放产物。实施时修正计划两处：锚点必须回看完整 history（cut 只含尾部命中点之后的段，插话 user 的锚 assistant 在 stable 侧）；捞回范围限 turnEntryIds 成员并按 id 去重。
+- **step3（e104702）**：LiveTail 渲染体包 `<section className="agent-turn">`（含空守卫），与 StableHistory turn 结构对齐，恢复 sticky 包含块 = 完整运行中 turn。
+
+自动化验证全绿：useTranscriptState 单测 13/13、components/agent-chat/ 33/33、tsc 无新增错误、lint 0 error。手工回归 6 项（见 step3 文档）待 Electron 内验证。
+
+已知限制（未动，可开后续 step）：attach 窗口落在「同 run 已有 assistant 落盘 + 后续流式」时，stable 尾保留 run 前缀与重放产物重复（既有行为）；wechat user 无 id 窗口期 LiveTail 短暂不渲染（路径实际未激活）。
+
 ## 根因摘要（供 step 文档引用）
 
 - sticky 失效机理（已 Electron 实证）：`pushLocalUserCore` 在 live 为空时把 user 消息 push 进 stable 尾部 → StableHistory 按 buildTurns 把它渲染成只含一条消息的矮 `section.agent-turn`（StableHistory.tsx:59）→ 流式回复在 LiveTail 裸渲染（LiveTail.tsx:58，无 section）→ user 消息的 sticky 包含块高度塌缩为 0，回复超一屏后直接滚出视口。
