@@ -147,6 +147,43 @@ export function findHistoryOverlapIndex(history: Message[], turnEntryIds: string
   return -1;
 }
 
+// 磁盘切掉段（overlap 命中及其后）里运行中 turn 的 user header 捞回：desktop 自发消息在事件流里只有
+// message_id(user) 事件、reducer 不产实体，重放后 live 缺 user。锚点取 user 前面最近一条磁盘 assistant
+// 的末尾 entryId，且需回看完整 history：命中点之前的同 run assistant 留在 stable 侧，但其 entry 仍被
+// 重放产物覆盖，锚点能解析。只捞 turnEntryIds 成员；wechat-bot 等带实体的 user 重放已落 live，按 id 去重。
+export function reinsertCutUsers(live: Message[], history: Message[], cutFrom: number, turnEntryIds: string[]): Message[] {
+  const turnIds = new Set(turnEntryIds);
+  const result = [...live];
+  let anchorId: string | null = null;
+  let anchorDirty = true;
+  let insertAt = 0;
+  history.forEach((msg, index) => {
+    if (msg.role === 'assistant') {
+      const ids = messageEntryIds(msg);
+      if (ids.length > 0) {
+        anchorId = ids[ids.length - 1];
+        anchorDirty = true;
+      }
+      return;
+    }
+    if (index < cutFrom || msg.role !== 'user' || !msg.id) return;
+    if (!messageEntryIds(msg).some((id) => turnIds.has(id))) return;
+    if (result.some((m) => m.id === msg.id)) return;
+    if (anchorDirty) {
+      if (anchorId === null) {
+        insertAt = 0;
+      } else {
+        const anchor = anchorId;
+        insertAt = result.findIndex((m) => m.role === 'assistant' && messageEntryIds(m).includes(anchor)) + 1;
+      }
+      anchorDirty = false;
+    }
+    result.splice(insertAt, 0, { ...msg, isQueued: undefined });
+    insertAt += 1;
+  });
+  return result;
+}
+
 export function mergeHistorySnapshotCore(
   history: Message[],
   snapshotEvents: TranscriptEvent[],
@@ -156,11 +193,13 @@ export function mergeHistorySnapshotCore(
 ): TranscriptCore {
   const overlapIndex = findHistoryOverlapIndex(history, turnEntryIds);
   const stable = overlapIndex >= 0 ? history.slice(0, overlapIndex) : history.slice();
+  const cutFrom = overlapIndex >= 0 ? overlapIndex : history.length;
   let next = initialTranscriptCore();
   if (turnEntryIds.length > 0) {
     for (const event of snapshotEvents) {
       next = applyEventToCore(next, event, showReplayMessages);
     }
+    next = withChanges(next, next.stable, reinsertCutUsers(next.live, history, cutFrom, turnEntryIds));
   }
   for (const request of pendingPermissionRequests) {
     next = appendPendingBlockCore(next, buildPermissionBlock({

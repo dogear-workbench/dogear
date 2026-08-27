@@ -12,7 +12,7 @@
 ## 步骤索引
 
 - [x] [Step 1: user 消息写入路径统一进 live](./step1-user-write-live.md) — 改 `pushLocalUserCore` 两分支 + `applyEventToCore` user 分支 target，修 sticky 劈分与 wechat-bot 重放丢弃
-- [ ] [Step 2: 重放捞回 user header](./step2-replay-user-header.md) — `mergeHistorySnapshotCore` 从磁盘切掉段捞回 user 消息，entryId 锚点归位
+- [x] [Step 2: 重放捞回 user header](./step2-replay-user-header.md) — `mergeHistorySnapshotCore` 从磁盘切掉段捞回 user 消息，entryId 锚点归位
 - [ ] [Step 3: LiveTurn 包 agent-turn + 回归验证](./step3-livetail-section.md) — 渲染侧恢复 sticky 吸附范围，全量回归
 
 ## 全局决策

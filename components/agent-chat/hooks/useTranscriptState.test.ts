@@ -107,6 +107,71 @@ describe('useTranscriptState core', () => {
     expect(merged.live).toEqual([]);
   });
 
+  test('重放捞回磁盘切掉段的 user header 到 live 开头并剥离 isQueued', () => {
+    const history: Message[] = [
+      { role: 'user', content: 'old-q', id: 'u-old' },
+      { role: 'assistant', content: 'old-a', id: 'a-old', entryIds: ['a-old'] },
+      { role: 'user', content: 'run-q', id: 'entry-u', entryIds: ['entry-u'], isQueued: true },
+    ];
+    const snapshot = [
+      event('message_id', { role: 'user', uuid: 'entry-u' }),
+      event('text', { content: 'live-' }),
+      event('text', { content: 'tail' }),
+    ];
+    const merged = mergeHistorySnapshotCore(history, snapshot, ['entry-u'], [], true);
+
+    expect(merged.stable.map((message) => message.id)).toEqual(['u-old', 'a-old']);
+    expect(merged.live).toHaveLength(2);
+    expect(merged.live[0].role).toBe('user');
+    expect(merged.live[0].id).toBe('entry-u');
+    expect(merged.live[0].isQueued).toBeUndefined();
+    expect(merged.live[1].content).toBe('live-tail');
+  });
+
+  test('交错插话的 user 捞回后锚定在前一条 run assistant 之后', () => {
+    const history: Message[] = [
+      { role: 'user', content: 'q0', id: 'e-u0' },
+      { role: 'assistant', content: 'a0', id: 'e-a0', entryIds: ['e-a0'] },
+      { role: 'user', content: 'q1', id: 'e-u1', entryIds: ['e-u1'] },
+      { role: 'assistant', content: 'a1', id: 'e-a1', entryIds: ['e-a1'] },
+      { role: 'user', content: 'q2', id: 'e-u2', entryIds: ['e-u2'] },
+    ];
+    const snapshot = [
+      event('message_id', { role: 'user', uuid: 'e-u1' }),
+      event('text', { content: 'one' }),
+      event('message_id', { role: 'assistant', uuid: 'e-a1' }),
+      event('message_id', { role: 'user', uuid: 'e-u2' }),
+      event('text', { content: 'two' }),
+    ];
+    const merged = mergeHistorySnapshotCore(history, snapshot, ['e-u1', 'e-a1', 'e-u2'], [], true);
+
+    expect(merged.stable.map((message) => message.id)).toEqual(['e-u0', 'e-a0', 'e-u1', 'e-a1']);
+    expect(merged.live).toHaveLength(2);
+    expect(merged.live[0].role).toBe('assistant');
+    expect(merged.live[0].entryIds).toEqual(['e-a1']);
+    expect(merged.live[0].content).toBe('onetwo');
+    expect(merged.live[1].role).toBe('user');
+    expect(merged.live[1].id).toBe('e-u2');
+  });
+
+  test('wechat-bot user 已由重放事件落 live 时捞回按 id 去重跳过', () => {
+    const history: Message[] = [
+      { role: 'user', content: 'hi', id: 'e-w', entryIds: ['e-w'] },
+    ];
+    const snapshot = [
+      event('user', { source: 'wechat-bot', content: 'hi' }),
+      event('message_id', { role: 'user', uuid: 'e-w' }),
+      event('text', { content: 'reply' }),
+    ];
+    const merged = mergeHistorySnapshotCore(history, snapshot, ['e-w'], [], true);
+
+    expect(merged.stable).toEqual([]);
+    expect(merged.live.filter((message) => message.role === 'user')).toHaveLength(1);
+    expect(merged.live[0].id).toBe('e-w');
+    expect(merged.live[0].content).toBe('hi');
+    expect(merged.live[1].content).toBe('reply');
+  });
+
   test('初始化超时或 attach 失败可强制结束门槛', () => {
     const init = {
       key: 'conversation-1',
