@@ -11,7 +11,7 @@
 - [x] [Step 1: 主进程数据层——skill 目录全局化 + 死链路清理](./step1-skill-paths.md) — custom skill 目录改 `.dogear/skills/`，article-parser 运行时搬家，删 cross-session-review
 - [x] [Step 2: 设置页布局改造](./step2-layout.md) — 左侧竖排导航改顶部下划线 tab，各 tab 内容居中
 - [x] [Step 3: 能力 tab 重构](./step3-ability-tab.md) — 双胶囊视图 + 工作区 Select + 联动开关 + 跳转定位
-- [ ] [Step 4: SubAgentTab 修复 + 收尾](./step4-subagent-cleanup.md) — 子会话派遣 workspaceId 本地初始化 + lint + doc-sync
+- [x] [Step 4: SubAgentTab 修复 + 收尾](./step4-subagent-cleanup.md) — 子会话派遣 workspaceId 本地初始化 + lint + doc-sync
 
 ## 全局决策
 
@@ -34,3 +34,17 @@
 - **跳转高亮**：`highlightServer` state，目标组容器加 `ring-2 ring-primary` 类，`scrollIntoView({ behavior: 'smooth' })`，2s 后 setTimeout 清除。
 - **custom skill 全局目录**：`getConfigDir()/skills`（即 `.dogear/skills/`）；article-parser 运行时迁往 `.dogear/article-parser/`；`.dogear/skills/review/` 死遗留删除。
 - **验证方式**：主进程改动后 `bun run build:electron`；前端改动跑 `bun run dev` 开设置窗口人工验证；每步结束跑 `bun run lint`。
+
+## 完成总结
+
+2026-08-27 四步全部完成：
+
+- **Step 1**（`755ac9d`）：custom skill 目录全局化到 `.dogear/skills/`；article-parser 运行时迁往 `.dogear/article-parser/`（带存在性回退 + 一次性迁移）；删 cross-session-review 模板/特判及 review/stock-analysis 死遗留。
+- **Step 2**（`5344e44`）：设置页左侧竖排导航改顶部下划线 tab，各 tab 内容 mx-auto 居中，纯样式无逻辑改动。
+- **Step 3**（`8e5713e`）：能力 tab 重构为双胶囊视图（提示词+Skill / 工具组），拆出 AbilitySkillView / AbilityToolGroupView / ability-types；skill 开关联动 enabledSkills + enabledToolPacks（共享包保留）；工具组徽标跳转定位高亮；删 AbilityCard 与旧域常量。
+- **Step 4**：SubAgentTab workspaceId 改挂载时本地解析（修设置窗口自定义 skill 列表拿不到的 bug）；doc-sync 同步 codebase-map。
+
+遗留事项：
+- 无 GUI 环境未人工冒烟，建议开发者跑 `bun run dev` 过一遍：设置页六 tab 切换、能力页开关读写与跳转高亮、Profile 编辑器 skill 列表。
+- `review-skill-service.ts` 整文件 no-op + `index.ts:484` 启动调用待后续单独小步连删。
+- WorkspaceManagementTab 的 currentWorkspace 在设置窗口恒 null 小瑕疵，待后续处理。

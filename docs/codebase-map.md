@@ -16,9 +16,13 @@
 
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）；header 含设置（openSettingsWindow）与数据中心（openDataCenterWindow）按钮，各开独立窗口
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
-- `app/settings/page.tsx` — 设置窗口（独立 BrowserWindow + dirty 关闭拦截：主进程 close guard 发 settingsCloseRequested，渲染层监听后不 dirty 直接 forceClose、dirty 弹三按钮 confirm；顶栏保存/取消/保存并重启会话）；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
+- `app/settings/page.tsx` — 设置窗口（独立 BrowserWindow + dirty 关闭拦截：主进程 close guard 发 settingsCloseRequested，渲染层监听后不 dirty 直接 forceClose、dirty 弹三按钮 confirm；顶栏保存/取消/保存并重启会话）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
+- `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置窗口无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；双胶囊 segmented 切「Skill / 工具组」两视图；数据加载分流、skill 联动开关（开：skills ∪ 关联工具包；关：按剩余已启用 skill 保留共享包）、包独立开关、SkillRow 工具组徽标点击跳转定位（setView('tools') + highlightServer，目标组 scrollIntoView + 2s ring 高亮）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
+- `app/settings/AbilitySkillView.tsx` — 能力视图 A（Skill）：内置提示词段（只读列表）→ 可选 Skill（builtin 模板全量）→ 自定义 Skill（source !== 'builtin'，排除与模板重名）三段；SkillRow 含 source 徽标 + Switch 开关 + 关联工具组徽标按钮
+- `app/settings/AbilityToolGroupView.tsx` — 能力视图 B（工具组）：常驻组（4 个 dogear-* server，无开关、可展开、含注入条件说明）+ 可选包（独立开关、可展开）；组容器 data-server 定位 + highlight ring + scrollIntoView
+- `app/settings/ability-types.ts` — 能力页共享类型与常量：ToolInfo/ToolGroup/ToolPack/SkillSource/SkillEntry/SkillTemplate 类型、SKILL_PACK_MAP（skill → 关联工具包）、RESIDENT_GROUPS（4 常驻 server + 中文 label + 注入条件）、SKILL_SOURCE_LABELS
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
-- `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill）
+- `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill；skill 列表按挂载时本地解析的工作区拉取——getAll + getDefault、default null 时选第一个、零工作区传 null——不依赖 workspace-store）
 - `app/settings/pi-model-row.tsx` — 模型清单行组件 `PiModelRow`：ID 行内编辑（空/与同清单重复回退标红）、窗口徽标点击手填（`parseContextInput` 解析 1M/200K/262144 写法，清空恢复查表，手动角标）、显示名与删除
 - `app/data-center/` — 数据中心独立窗口（顶部下划线式 tab 导航 6 面板；workspaces 由 page.tsx 加载一次下传，各 panel 只自持 `workspaceId: 'all' | id` 筛选状态不读 workspace-store；轮询统一走 useVisiblePolling；设置加载由页面 loadSettings 负责）：
   - `page.tsx` — 骨架：顶部 TabsList variant=underline（组卡/用量/定时计划/执行历史/解析历史/记忆）；TabsContent 统一 `flex-1 overflow-hidden` + 内层滚动层；scheduler tab 加 forceMount（编辑页草稿切 tab 不丢，代价是跨 tab 轮询持续）
@@ -236,7 +240,7 @@
   - `review-store.ts` — 首页报告存储：ReportDoc { updatedAt, markdown } 落 `<configDir>/workspaces/<wsId>/dashboard.md`
   - `review-scanner.ts` — 报告脏检查：isReportStale 纯函数（最新组卡 updatedAt vs 报告 updatedAt）
   - `review-prompt.ts` — 报告提示词模板（引导 agent 分流为「记忆 dogear__SaveMemory + 报告 dogear__WriteReport」，读组卡驱动）
-  - `review-skill-service.ts` — `<configDir>/skills/review/SKILL.md` 初始化，供普通会话「聊聊首页」交互式触发
+  - `review-skill-service.ts` — 历史 no-op 遗留：跨会话复盘 skill 已删（功能由调度器内置任务 review / review-prompt.ts 承载），`ensureReviewSkillInitialized` 保留空实现仅为 index.ts 启动序列兼容
   - `review-trigger.ts` — 报告生成编排（串行队列 + in-flight 去重；triggerReview 提交 REVIEW_SESSION 任务）+ 活动采集
   - `smart-category-store.ts` — 智能分类索引读写（`<configDir>/workspaces/<wsId>/smart-categories.json`）+ 纯函数 helpers（pushGroup / removeGroupEverywhere / appendDecision 环形 20 条 / newCategory）
   - `smart-category-engine.ts` — 决策纯函数：matchByThreshold（Step A 阈值匹配，0 LLM）+ pickRedistributeCandidates（Step C 邻近候选召回）+ normalizeTag/normalizeTags（标签归一化）
@@ -264,7 +268,8 @@
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段；normalize 尾部挂 settings-types.ts 的 normalizeFailoverChain 维护全局模型故障转移链——类型 FailoverEntry/FailoverConfig（AppSettings.failover）：新供应商追加链尾、删除供应商移出链、tier 失效回退该家首个 piModel、piModels 为空的供应商不进链，链序与 enabled 完全保留）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
-- `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义
+- `skill-service.ts` — Skill 管理服务：`listSkills(workspaceId)` 扫三源目录的 SKILL.md（builtin `resources/skill-templates/` 只读模板；custom `.dogear/skills/` 全局目录，与工作区无关；user `~/.claude/skills/`）标注 source + enabled（enabled 按传入 workspaceId 的 enabledSkills，null 时全 false）；`setSkillEnabled` 读写 workspace-config 的 enabledSkills 数组
+- `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义；运行时目录 `.dogear/article-parser/`（`getArticleParserSkillsDir()` 同步解析 + 旧目录存在性回退），`ensureSkillsInitialized` 首跑 `migrateLegacyDirs()` 一次性整目录迁移（旧 `.dogear/skills/article-parser/` rename 到新目录，幂等，失败仅 warn 不抛）
 - `workspace-service.ts` — 获取当前默认工作区（thin wrapper）
 - `workspace-fs-service.ts` — 文件树扫描和文件系统操作（安全路径验证）
 - `safe-json.ts` — 安全 JSON 存储（原子写入+备份+互斥锁），防止数据丢失
@@ -294,7 +299,7 @@
 
 - `pi-session/` — **主会话（及其派遣的子会话）运行时门面**，基于 pi-agent-core 的 AgentHarness：
 
-  - `pi-session.ts` — `PiSession`（EventEmitter）：唯一门面类，`start()` 组装 systemPrompt/工具集/权限映射并创建 `PiHarnessAdapter`，`sendMessage`/`steer`/`interrupt`/`close`/`setPermissionMode`/`respondPermissionRequest` 覆盖完整生命周期、插话、权限确认、usage 采集；非 steer 发消息前按 `contextWindow×autoCompactPercent%` 阈值自动压缩（emit 'compacting'/'compact_boundary'，失败仅提示不阻断）
+  - `pi-session.ts` — `PiSession`（EventEmitter）：唯一门面类，`start()` 组装 systemPrompt/工具集/权限映射并创建 `PiHarnessAdapter`，skill 索引扫三源（builtin 模板 / custom `.dogear/skills/` 全局目录 / user `~/.claude/skills/`）按工作区 enabledSkills 过滤后拼 `<available_skills>`，子会话再按 Profile enabledAbilities 过滤（builtin 源看 skills[]、custom 源看 skills[]、user 源看 customSkills[]）；`sendMessage`/`steer`/`interrupt`/`close`/`setPermissionMode`/`respondPermissionRequest` 覆盖完整生命周期、插话、权限确认、usage 采集；非 steer 发消息前按 `contextWindow×autoCompactPercent%` 阈值自动压缩（emit 'compacting'/'compact_boundary'，失败仅提示不阻断）
   - `pi-session-manager.ts` — `PiSessionManager`（单例 `getPiSessionManager()`）：conversation-runtime-service 唯一入口，引用计数式生命周期（`retain`/`release` 归零即销毁——running 时入 orphan 保活等 settled 后 maybeCollectOrphan 回收，无跑步机保活），`_destroySession(sessionId, source)` 区分自然销毁/强杀：natural 时对绑定的 conversation 逐个 fire-and-forget 通知调度器 handleSessionClose（on_session_close 触发点，failedover/closeSession/closeAll 均 forced 或不走此路不触发），`bindConversation` 维护 conversationId↔sessionId 映射，订阅 PiSession 事件转发到渲染层
   - `pi-session-repository.ts` — `PiSessionRepository`（单例）：按 workspaceId 缓存 `JsonlSessionRepo` 实例，封装 `create`/`open`/`delete`/`fork`/`getSessionPath`，session 根目录固定 `<configDir>/workspaces/<workspaceId>/sessions/`
   - `pi-harness-adapter.ts` — `PiHarnessAdapter`：构造 `AgentHarness` 并做事件订阅分发，暴露 `prompt`/`steer`/`compact`/`abort`，是 pi-session.ts 与 Harness 裸类型之间的唯一隔离层（Harness 类型不得外泄）

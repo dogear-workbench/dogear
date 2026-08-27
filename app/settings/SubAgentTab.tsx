@@ -3,7 +3,6 @@ import { Plus, Pencil, Trash2, Check, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { Switch } from '@/components/ui/switch';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { ModelSelector } from '@/components/ModelSelector';
 import {
   createDefaultSubAgentProfile,
@@ -277,21 +276,32 @@ function ProfileEditor({
 // ── Main Component ───────────────────────────────────
 
 export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
-  const workspaceId = useWorkspaceStore((s) => s.workspace?.id ?? null);
   const [templates, setTemplates] = useState<SkillTemplateMeta[]>([]);
   const [skills, setSkills] = useState<SkillEntry[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<SubAgentProfile | null>(null);
 
   useEffect(() => {
-    Promise.all([
-      client.listSkillTemplates().then((r: any) => (r?.templates ?? []) as SkillTemplateMeta[]),
-      client.listSkills({ workspaceId }).then((r: any) => (r?.skills ?? []) as SkillEntry[]),
-    ]).then(([t, s]) => {
+    let cancelled = false;
+    (async () => {
+      const [allRes, defaultWs] = await Promise.all([client.getAll(), client.getDefault()]);
+      const list = allRes?.workspaces ?? [];
+      const defaultId = defaultWs?.id ?? null;
+      const initial =
+        defaultId && list.some((w) => w.id === defaultId)
+          ? defaultId
+          : list[0]?.id ?? null;
+
+      const [t, s] = await Promise.all([
+        client.listSkillTemplates().then((r: any) => (r?.templates ?? []) as SkillTemplateMeta[]),
+        client.listSkills({ workspaceId: initial }).then((r: any) => (r?.skills ?? []) as SkillEntry[]),
+      ]);
+      if (cancelled) return;
       setTemplates(t);
       setSkills(s);
-    });
-  }, [workspaceId]);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const profiles = local.subAgent.profiles;
 
