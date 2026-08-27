@@ -27,3 +27,22 @@
 6. **错误处理**：tipc 路由 try/catch 返回 `{error}`（照抄现有 `notes.ts:6-27` 骨架）；Agent 工具 zod 校验 + `isError: true` 不抛异常
 7. **不写单测**；每步验证方式在 step 文档内写明（bun 冒烟脚本用完即删 / `bun run build:electron` / 应用内手测）
 8. **主进程改动每步都要 `bun run build:electron` 后再手测**；提交前 `bun run lint`
+
+## 完成总结（2026-08-27）
+
+六步全部落地，8 个 commit（1 docs + 7 feat），每步验收（改动范围核对 + 代码抽查 + lint + build:electron）通过后独立提交。
+
+**已交付链路**：
+- 数据层：`.dogear/notes/` 一卡一 md（frontmatter 元数据 + todos 行内 JSON），index.json 原子写缓存、损坏全量重建，软删除 `.trash/`；notes-service 11 方法 + tipc 11 路由 + notesChanged 广播（step1，冒烟 44 断言）
+- 前端：「首页|笔记|会话」固定 Tab，NotesPanel 四视图（时间流/待办聚合 hasPlan 分组/标签/回收站）+ 300ms 防抖搜索；NoteEditor（MDXEditor 照抄速记板插件、800ms 防抖 + 卸载 flush、三态待办）（step2-4）
+- 捕捉框：首页右栏 Enter 成卡（#tag 解析、IME 保护）+ 最近 5 卡缩略跳详情；老速记板全链路删除零残留（step5）
+- Agent：dogear-notes 7 工具（zod 严格校验、isError 不抛异常）主会话绑定工作区即挂载；提示注入「方案落盘后存卡 + hasPlan 待办按 staged-execution 领取执行」纪律（step6，工具层冒烟 19 断言）
+
+**已知限制（一期拍板从简）**：
+- 编辑器保存失败静默（仅 console.error，UI 仍显示已保存），后续可接 toast
+- todos 为整体深替换，todo 级 patch 未做（agent 改单个待办走 get→改→全量提交）
+- searchNotes 无 snippet；list 不校验索引条目对应文件存在（外部删文件出幽灵条目，详情时暴露）
+- notes 工具仅主会话挂载（子会话/调度器未挂，待 Profile 开关需求）
+- 回收站无自动清理；restore 遇主目录同名文件抛错
+
+**端到端手测待执行**（需重启 dev 让主进程产物生效）：捕捉框建卡 → 笔记 Tab 时间流/待办视图同步 → 编辑器改卡持久 → 回收站恢复/彻底删除（确认弹窗）→ 设置能力 tab 见 dogear-notes 组 → 真实主会话让 agent 建卡/勾待办全链路
