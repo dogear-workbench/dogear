@@ -231,33 +231,20 @@ export default function SettingsPage() {
         </div>
       </header>
 
-      {/* ── 主体：纵向 Tabs ── */}
-      <Tabs defaultValue="behavior" orientation="vertical" className="flex-1 flex overflow-hidden">
-        {/* 左侧导航 */}
-        <TabsList className="flex flex-col h-auto items-stretch gap-1 rounded-none border-r bg-muted/30 p-2 w-36 flex-shrink-0">
-          <TabsTrigger value="behavior" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            基础设置
-          </TabsTrigger>
-          <TabsTrigger value="abilities" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            能力
-          </TabsTrigger>
-          <TabsTrigger value="profiles" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            模型方案
-          </TabsTrigger>
-          <TabsTrigger value="workspace-management" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            工作区管理
-          </TabsTrigger>
-          <TabsTrigger value="sub-agent" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            子会话派遣
-          </TabsTrigger>
-          <TabsTrigger value="about" className="justify-start px-3 py-2 data-[state=active]:bg-background">
-            关于
-          </TabsTrigger>
+      {/* ── 主体：顶部下划线 Tabs ── */}
+      <Tabs defaultValue="behavior" className="flex-1 flex flex-col overflow-hidden">
+        <TabsList variant="underline" className="justify-start px-6 flex-shrink-0">
+          <TabsTrigger variant="underline" value="behavior">基础设置</TabsTrigger>
+          <TabsTrigger variant="underline" value="abilities">能力</TabsTrigger>
+          <TabsTrigger variant="underline" value="profiles">模型方案</TabsTrigger>
+          <TabsTrigger variant="underline" value="workspace-management">工作区管理</TabsTrigger>
+          <TabsTrigger variant="underline" value="sub-agent">子会话派遣</TabsTrigger>
+          <TabsTrigger variant="underline" value="about">关于</TabsTrigger>
         </TabsList>
 
         {/* ── Tab: 基础设置 ── */}
         <TabsContent value="behavior" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <div className="max-w-2xl py-6 px-6">
+          <div className="max-w-2xl mx-auto py-6 px-6">
             <h2 className="text-lg font-semibold mb-1">基础设置</h2>
             <p className="text-sm text-muted-foreground mb-6">配置 Agent 的思考模式、执行力度和权限策略</p>
             <div className="space-y-6">
@@ -377,7 +364,7 @@ export default function SettingsPage() {
 
         {/* ── Tab: 模型方案 ── */}
         <TabsContent value="profiles" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <div className="max-w-2xl py-6 px-6">
+          <div className="max-w-2xl mx-auto py-6 px-6">
             <h2 className="text-lg font-semibold mb-1">模型方案</h2>
             <p className="text-sm text-muted-foreground mb-6">管理 API 配置方案，切换不同的模型和服务地址</p>
 

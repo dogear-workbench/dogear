@@ -358,7 +358,7 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
   };
 
   return (
-    <div className="max-w-2xl py-6 px-6 space-y-4">
+    <div className="max-w-2xl mx-auto py-6 px-6 space-y-4">
       <div>
         <h2 className="text-lg font-semibold mb-1">子会话派遣</h2>
         <p className="text-sm text-muted-foreground">

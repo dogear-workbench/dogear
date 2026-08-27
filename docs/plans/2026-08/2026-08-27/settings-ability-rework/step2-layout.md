@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 设置页布局改造
-status: pending
+status: done
 ---
 
 ## 目标
@@ -18,7 +18,7 @@ status: pending
 
 ## 计划改动
 
-- [ ] `app/settings/page.tsx`
+- [x] `app/settings/page.tsx`
   - `Tabs` 去掉 `orientation="vertical"`；`TabsList` 改 `variant="underline" className="justify-start px-6 flex-shrink-0"`（照抄 data-center），六个 `TabsTrigger` 加 `variant="underline"`
   - 每个 `TabsContent` 保持 `flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden`，内容容器加 `mx-auto`：
     - behavior：`max-w-2xl` → `max-w-2xl mx-auto`（py-6 px-6 保留）
@@ -38,10 +38,15 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无。Tabs 容器 className 由 `flex-1 flex overflow-hidden` 改为 data-center 同款 `flex-1 flex flex-col overflow-hidden`（计划虽未逐字写明，但属「外层结构变为竖排」的必要部分）；另按计划改了 WorkspaceManagementTab / SubAgentTab / AboutTab / AbilityTab 四个组件的顶层容器（计划正文明确列出）。
 - 改动文件清单：
+  - `app/settings/page.tsx` — Tabs 去 orientation，TabsList/TabsTrigger 改 underline variant；behavior、profiles 内容容器加 mx-auto
+  - `app/settings/WorkspaceManagementTab.tsx` — 容器 `max-w-3xl mx-auto py-6 px-6 space-y-8`
+  - `app/settings/SubAgentTab.tsx` — 容器 `max-w-2xl mx-auto py-6 px-6 space-y-4`
+  - `app/settings/AboutTab.tsx` — 容器 `max-w-2xl mx-auto py-6 px-6`
+  - `app/settings/AbilityTab.tsx` — 容器 `w-full py-6 px-6 space-y-6` → `max-w-3xl mx-auto py-6 px-6 space-y-6`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：AbilityTab 顶层容器现为 `max-w-3xl mx-auto py-6 px-6 space-y-6`（app/settings/AbilityTab.tsx:651），内部逻辑未动，Step 3 重构内容时可直接替换内部结构。
+- 下个 step 该从哪里继续：Step 3 从 `app/settings/AbilityTab.tsx` 的主 return 开始重构能力域内容；布局壳（顶部 underline tab + 居中容器）已就绪。
+- 待办或已知限制：无 GUI 环境，未做人工目视验证（lint 0 error、vite build 通过）；`bunx tsc --noEmit` 报的 AboutTab.tsx:54 等错误均为预存问题，与本 step 无关。

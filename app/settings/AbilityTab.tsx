@@ -648,7 +648,7 @@ export function AbilityTab({ local: _local, setLocal: _setLocal }: AbilityTabPro
   }
 
   return (
-    <div className="w-full py-6 px-6 space-y-6">
+    <div className="max-w-3xl mx-auto py-6 px-6 space-y-6">
       <div>
         <h2 className="text-lg font-semibold mb-1">能力</h2>
         <p className="text-sm text-muted-foreground">

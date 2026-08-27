@@ -126,7 +126,7 @@ export function AboutTab() {
   const busy = checking || downloading || reloading;
 
   return (
-    <div className="max-w-2xl py-6 px-6">
+    <div className="max-w-2xl mx-auto py-6 px-6">
       <h2 className="text-lg font-semibold mb-1">关于</h2>
       <p className="text-sm text-muted-foreground mb-6">版本信息与更新检查</p>
 

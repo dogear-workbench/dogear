@@ -203,7 +203,7 @@ export function WorkspaceManagementTab() {
   const missingPythonPkgs = envDeps.filter((d) => d.installable && !d.installed);
 
   return (
-    <div className="max-w-3xl py-6 px-6 space-y-8">
+    <div className="max-w-3xl mx-auto py-6 px-6 space-y-8">
       <div>
         <h2 className="text-lg font-semibold mb-1">工作区管理</h2>
         <p className="text-sm text-muted-foreground">
