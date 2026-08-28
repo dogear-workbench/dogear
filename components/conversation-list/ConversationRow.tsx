@@ -1,13 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  Ban, Bot, ChevronDown, ChevronRight, CircleCheck, GitBranch, MessagesSquare, MoreHorizontal, Network,
+  Bot, ChevronDown, ChevronRight, GitBranch, MessagesSquare, MoreHorizontal, Network,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { StatusPulse } from '@/components/StatusPulse';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import type { Conversation } from '@/components/ConversationList';
@@ -24,8 +23,18 @@ export interface ConversationRowProps {
   onClick?: () => void;
   indent?: number;
   readOnly?: boolean;
+  childCount?: number;
   expandToggle?: ConversationRowExpandToggle;
 }
+
+const STATUS_META = {
+  pending: { dot: 'bg-blue-500', text: 'text-blue-600', label: '等待确认', pulse: true },
+  running: { dot: 'bg-orange-500', text: 'text-orange-600', label: '运行中', pulse: true },
+  delivered: { dot: 'bg-emerald-500', text: 'text-emerald-600', label: '已交付', pulse: false },
+  stopped: { dot: 'bg-muted-foreground/60', text: 'text-muted-foreground', label: '已停止', pulse: false },
+} as const;
+
+type RowStatus = keyof typeof STATUS_META | null;
 
 export function ConversationRow({
   conv,
@@ -33,6 +42,7 @@ export function ConversationRow({
   onClick,
   indent = 8,
   readOnly = false,
+  childCount,
   expandToggle,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
@@ -54,6 +64,15 @@ export function ConversationRow({
   const isBotBound = conv.id === botBoundId;
   const isChildRunning = childSnapshot?.status === 'running';
   const isDisplayRunning = isRunning || isChildRunning;
+  const hasChildren = !!expandToggle;
+
+  const status: RowStatus = isDisplayRunning
+    ? (isPending ? 'pending' : 'running')
+    : childSnapshot?.delivered
+      ? 'delivered'
+      : childSnapshot?.status === 'stopped'
+        ? 'stopped'
+        : null;
 
   const startEditing = useCallback(() => {
     setEditTitle(getConversationTitle(conv));
@@ -75,6 +94,12 @@ export function ConversationRow({
     else openOrFocusConversation(conv, nodeId);
   }, [conv, nodeId, onClick]);
 
+  const typeIcon = isAgentConversation
+    ? <Network className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
+    : isFork
+      ? <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600' : 'text-purple-400')} />
+      : <MessagesSquare className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />;
+
   const row = (
     <div
       className={cn(
@@ -86,32 +111,27 @@ export function ConversationRow({
       style={{ paddingLeft: `${indent}px` }}
       onClick={handleClick}
     >
-      {expandToggle && (
+      {isDisplayRunning && (
+        <span className={cn(
+          'absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full',
+          isPending ? 'bg-blue-500' : 'bg-orange-500',
+        )} />
+      )}
+      {hasChildren ? (
         <span
-          className="flex items-center justify-center w-4 h-4 flex-shrink-0"
+          className="relative flex items-center justify-center w-4 h-4 flex-shrink-0"
+          title="展开/收起子会话"
           onClick={(event) => {
             event.stopPropagation();
-            expandToggle.onToggle();
+            expandToggle?.onToggle();
           }}
         >
           {expandToggle.expanded
-            ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
-            : <ChevronRight className="w-3 h-3 text-muted-foreground" />}
+            ? <ChevronDown className="absolute w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+            : <ChevronRight className="absolute w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />}
+          <span className="group-hover:opacity-0 transition-opacity">{typeIcon}</span>
         </span>
-      )}
-      {isDisplayRunning ? (
-        <StatusPulse isPending={isPending} />
-      ) : childSnapshot?.delivered ? (
-        <CircleCheck className="w-4 h-4 flex-shrink-0 text-emerald-600" />
-      ) : childSnapshot?.status === 'stopped' ? (
-        <Ban className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-      ) : isAgentConversation ? (
-        <Network className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
-      ) : isFork ? (
-        <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600' : 'text-purple-400')} />
-      ) : (
-        <MessagesSquare className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
-      )}
+      ) : typeIcon}
       <div className="flex-1 min-w-0">
         {isEditing ? (
           <input
@@ -138,33 +158,47 @@ export function ConversationRow({
             {isBotBound && <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />}
           </div>
         )}
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span>{getRelativeTime(conv.updated_at)}</span>
-          {isDisplayRunning && isPending && <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded">等待确认</span>}
+        <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+          <span className="shrink-0">{getRelativeTime(conv.updated_at)}</span>
+          {status && (
+            <span className="flex items-center gap-1 shrink-0">
+              <span>·</span>
+              <span className={cn(
+                'w-1.5 h-1.5 rounded-full flex-shrink-0',
+                STATUS_META[status].dot,
+                STATUS_META[status].pulse && 'animate-pulse',
+              )} />
+              <span className={STATUS_META[status].text}>{STATUS_META[status].label}</span>
+            </span>
+          )}
+          {hasChildren && childCount != null && childCount > 0 && (
+            <span className="shrink-0">· {childCount} 个子会话</span>
+          )}
+          {!readOnly && !isEditing && (
+            <span className="ml-auto flex items-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-data-[state=open]:opacity-100 group-data-[state=open]:pointer-events-auto transition-opacity shrink-0">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-5 w-5 p-0 text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  event.currentTarget.dispatchEvent(new MouseEvent('contextmenu', {
+                    bubbles: true,
+                    clientX: rect.left,
+                    clientY: rect.bottom,
+                  }));
+                }}
+                title="对话操作"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </Button>
+            </span>
+          )}
         </div>
       </div>
-      {!readOnly && !isEditing && (
-        <div
-          className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 pl-2.5 pr-0.5 rounded-sm bg-gradient-to-l from-background via-background to-transparent opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-data-[state=open]:opacity-100 group-data-[state=open]:pointer-events-auto transition-opacity"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              const rect = event.currentTarget.getBoundingClientRect();
-              event.currentTarget.dispatchEvent(new MouseEvent('contextmenu', {
-                bubbles: true,
-                clientX: rect.left,
-                clientY: rect.bottom,
-              }));
-            }}
-            title="对话操作"
-          >
-            <MoreHorizontal className="w-3 h-3" />
-          </Button>
-        </div>
+      {hasChildren && !expandToggle?.expanded && (
+        <span className="absolute inset-x-1.5 bottom-0 h-1 pointer-events-none rounded-b-sm shadow-[0_2px_2px_-1px_rgba(0,0,0,0.14),0_4px_5px_-2px_rgba(0,0,0,0.1)] transition-shadow group-hover:shadow-[0_2px_3px_-1px_rgba(0,0,0,0.22),0_5px_7px_-2px_rgba(0,0,0,0.14)]" />
       )}
     </div>
   );

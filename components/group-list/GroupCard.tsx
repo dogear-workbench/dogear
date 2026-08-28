@@ -117,6 +117,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
             nodeId={`topic:${group.id}:${node.conv.id}`}
             indent={indent}
             readOnly={isArchived}
+            childCount={hasChildren ? node.children.length : undefined}
             expandToggle={hasChildren ? {
               expanded: subExpanded,
               onToggle: () => toggleSubExpand(node.conv.id),
@@ -138,10 +139,12 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
             )}
             onClick={handleHeaderClick}
           >
-            {isExpanded
-              ? <ChevronDown className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
-              : <ChevronRight className="w-3 h-3 flex-shrink-0 text-muted-foreground" />
-            }
+            <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
+              {isExpanded
+                ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
+                : <ChevronRight className="w-3 h-3 text-muted-foreground" />
+              }
+            </span>
             <div className="flex-1 min-w-0">
               {isEditing ? (
                 <input
@@ -244,7 +247,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
         </ContextMenuContent>
       </ContextMenu>
 
-      {isExpanded && renderNodes(tree, 24)}
+      {isExpanded && renderNodes(tree, 8)}
     </div>
   );
 }
