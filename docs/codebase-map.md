@@ -17,10 +17,10 @@
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）；header 含设置（openSettingsWindow）与数据中心（openDataCenterWindow）按钮，各开独立窗口
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
 - `app/settings/page.tsx` — 设置窗口（独立 BrowserWindow + dirty 关闭拦截：主进程 close guard 发 settingsCloseRequested，渲染层监听后不 dirty 直接 forceClose、dirty 弹三按钮 confirm；顶栏保存/取消/保存并重启会话）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
-- `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置窗口无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；双胶囊 segmented 切「Skill / 工具组」两视图；数据加载分流、skill 联动开关（开：skills ∪ 关联工具包；关：按剩余已启用 skill 保留共享包）、包独立开关、SkillRow 工具组徽标点击跳转定位（setView('tools') + highlightServer，目标组 scrollIntoView + 2s ring 高亮）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
-- `app/settings/AbilitySkillView.tsx` — 能力视图 A（Skill）：内置提示词段（只读列表）→ 可选 Skill（builtin 模板全量）→ 自定义 Skill（source !== 'builtin'，排除与模板重名）三段；SkillRow 含 source 徽标 + Switch 开关 + 关联工具组徽标按钮
-- `app/settings/AbilityToolGroupView.tsx` — 能力视图 B（工具组）：常驻组（4 个 dogear-* server，无开关、可展开、含注入条件说明）+ 可选包（独立开关、可展开）；组容器 data-server 定位 + highlight ring + scrollIntoView
-- `app/settings/ability-types.ts` — 能力页共享类型与常量：ToolInfo/ToolGroup/ToolPack/SkillSource/SkillEntry/SkillTemplate 类型、SKILL_PACK_MAP（skill → 关联工具包）、RESIDENT_GROUPS（4 常驻 server + 中文 label + 注入条件）、SKILL_SOURCE_LABELS
+- `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置窗口无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；按能力域分块单视图（无视图切换）；数据加载分流、applySkillToggles 统一开关（单 skill / 域整体：开 = skills ∪ 关联工具包，关 = 按剩余已启用 skill 保留共享包，一次 updateWorkspaceConfig 提交）、包徽标跳转定位（展开目标域 + 包，highlightServer scrollIntoView + 2s ring 高亮）；容器 max-w-[1600px] 自适应 + 域块网格 xl:grid-cols-2（多包域全宽）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
+- `app/settings/AbilityDomainCard.tsx` — 可选能力域块组件：域头（统计 + skill 数 >1 时显示整体开关）+ 展开后左右分区（md:grid-cols-2 对半：左 skill 控制层 / 右工具包折叠列表，包无独立开关、状态随 skill 联动）；无工具包域 skill 走网格（sm:grid-cols-2 xl:grid-cols-3）；PackPanel 折叠头 data-server 定位
+- `app/settings/AbilityResidentSection.tsx` — 常驻能力块：默认收起统计行，展开后提示词段列表（只读）+ 常驻工具组折叠列表（只读）两栏
+- `app/settings/ability-types.ts` — 能力页共享类型与常量：ToolInfo/ToolGroup/ToolPack/SkillSource/SkillEntry/SkillTemplate/Domain* 类型、SKILL_PACK_MAP（skill → 关联工具包）、RESIDENT_GROUPS（4 常驻 server + 中文 label + 注入条件）、SKILL_SOURCE_LABELS、ABILITY_DOMAINS（股票/文章/代码工作流三域硬编码）+ CUSTOM/GENERIC 兜底域 + buildDomainViews（templates/skills/packs/config → 域视图数组，未归类模板进通用域）
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
 - `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill；skill 列表按挂载时本地解析的工作区拉取——getAll + getDefault、default null 时选第一个、零工作区传 null——不依赖 workspace-store）
 - `app/settings/pi-model-row.tsx` — 模型清单行组件 `PiModelRow`：ID 行内编辑（空/与同清单重复回退标红）、窗口徽标点击手填（`parseContextInput` 解析 1M/200K/262144 写法，清空恢复查表，手动角标）、显示名与删除
@@ -202,6 +202,10 @@
 - `smart-category.ts` — 智能分类数据模型（DigestTags / SmartCategory { groupIds\[\] } / CategorizeDecisionLog { groupId } / SmartCategoriesIndex / CategorizeActivity / CategorizeRecentEntry），主进程镜像在 `electron/main/types.ts`
 - `scheduler.ts` — 定时任务数据模型（ScheduledTask 两变体 builtin|custom / Trigger 八种含 on_task_done 任务链 / TaskRunState / RunHistoryEntry / SchedulerActivity / ScheduledTaskWithNextRun / HistoryPage），主进程镜像在 `electron/main/services/scheduler/types.ts`
 - `electron.d.ts` — window.ipcRenderer 全局类型声明
+
+## Electron 主进程入口（electron/main/index.ts）
+
+窗口创建与生命周期；渲染层加载统一走 `getRendererPath()`（dev 为 `http://localhost:3000`，生产为 `app://dogear/index.html` 自定义协议）。`app://` 注册为 standard+secure scheme，handler 从 `process.resourcesPath/out/` 响应文件（字体扩展名显式映射 MIME，`.ttf` 等需 `font/ttf` 否则 `@font-face` 拒载；含路径穿越防护）——替代原 `file://` 加载，消除 opaque origin 下 CSS 字体等 CORS 严格资源被拦的问题；主窗口 + debug/stocks/settings/data-center/session-window 各子窗口均为 `${getRendererPath()}#/路由` 拼接
 
 ## IPC 路由（electron/main/tipc/）
 
