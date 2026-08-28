@@ -133,12 +133,12 @@
   - `ReportSection.tsx` — 首页报告区（MarkdownRenderer 渲染 `dashboard.md` 正文 + 刷新按钮触发 triggerReview + 相对时间）
   - `CaptureBox.tsx` — 快速捕捉框（Enter 成卡：`#标签` 解析为 tags、剩余为正文、isComposing 防 IME 误提交；下方最近 5 卡缩略，点击跳笔记 Tab 详情）
 - `notes/` — 笔记卡片模块（固定「笔记」tab 内容，数据见 services/notes/）
-  - `NotesPanel.tsx` — 编排容器：左窄视图栏（时间流/待办/标签/回收站）+ 顶栏搜索（300ms 防抖 searchNotes，seq 竞态保护）+ 列表/详情三栏切换；点标签过滤时间流
-  - `NoteEditor.tsx` — 卡片详情编辑：元数据区（标签 chips + article:/stock:/plan: 三前缀链接）+ MDXEditor 正文（插件同速记板旧配置）+ 三态待办区；800ms 防抖保存 + 卸载 flush，父组件 key={noteId} 挂载换卡即重挂载
+  - `NotesPanel.tsx` — 编排容器：左窄视图栏（时间流/待办/标签/回收站）+ 顶栏搜索（300ms 防抖 searchNotes，seq 竞态保护）+ 列表/详情三栏切换；点标签过滤时间流；handleDelete 统一收口删除（showConfirm 轻确认 → deleteNote → 删的是当前详情卡时关闭详情）
+  - `NoteEditor.tsx` — 卡片详情编辑：元数据区（标签 chips + article:/stock:/plan: 三前缀链接）+ MDXEditor 正文（插件同速记板旧配置）+ 三态待办区；header 删除按钮（onDelete 回调交父层处理）；800ms 防抖保存 + 卸载 flush，父组件 key={noteId} 挂载换卡即重挂载
   - `TodosView.tsx` — 待办聚合视图（listTodos；「可执行（有 plan）」在前普通在后，组内按卡片聚合可跳详情；勾选 = getNote 全量 todos → 置 done → updateNote 整体回写）
   - `TagsView.tsx` — 标签列表（计数），点击过滤时间流
   - `TrashView.tsx` — 回收站（listTrashNotes + 恢复；彻底删除走 confirm-store showConfirm 二次确认）
-  - `NoteCardItem.tsx` / `NoteState.tsx` — 列表卡片行（时间/标题/标签/待办计数）与空态/加载态复用组件
+  - `NoteCardItem.tsx` / `NoteState.tsx` — 列表卡片行（时间/标题/标签/待办计数，外层 div+role=button，hover 出现删除按钮）与空态/加载态复用组件
 - `wechat/` — 微信 Bot 模块
   - `WechatDialog.tsx` — 微信认证 Dialog（QR码扫描 / Bot 控制面板）
   - `BotControlPanel.tsx` — Bot 控制面板（名称、轮询状态、连接错误、断开连接）
@@ -170,7 +170,7 @@
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
 - `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
 - `dashboard-store.ts` — 首页工作台状态：reportMarkdown/reportUpdatedAt（首页报告）+ reviewActivity 轮询 + triggerReview/loadReport actions
-- `notes-store.ts` — 笔记卡片前端：notes（created 倒序）/loading/loadedWorkspacePath/activeNoteId + loadNotes（listNotes）/subscribeNotesChanged（notesChanged 广播按 workspacePath 匹配重拉）/setActiveNoteId/createNote（支持 {content, tags} 输入，不自动激活——新建即编辑由 NotesPanel 控制）/updateNote（本地乐观更新，广播兜底）
+- `notes-store.ts` — 笔记卡片前端：notes（created 倒序）/loading/loadedWorkspacePath/activeNoteId + loadNotes（listNotes）/subscribeNotesChanged（notesChanged 广播按 workspacePath 匹配重拉）/setActiveNoteId/createNote（支持 {content, tags} 输入，不自动激活——新建即编辑由 NotesPanel 控制）/updateNote（本地乐观更新，广播兜底）/deleteNote（软删除，成功后本地移除）
 - `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID`/`NOTES_TAB_ID` 哨兵（非真实会话）分别表示首页/笔记固定 tab，activeTabId 初始/关末 tab 后回退到 HOME；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
 - `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，两窗口独立实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
 - `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity，10s 轮询由数据中心面板 useVisiblePolling 驱动）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
