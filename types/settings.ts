@@ -117,6 +117,8 @@ export interface AppSettings {
   };
   ui?: {
     messageDisplayMode: 'compact' | 'detailed'; // 工具/思考块显示模式
+    /** 界面整体缩放档位；缺省视为 medium */
+    fontSize?: 'small' | 'medium' | 'large';
   };
 }
 
@@ -141,6 +143,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   ui: {
     messageDisplayMode: 'compact',
+    fontSize: 'medium',
   },
   profiles: {
     default: {

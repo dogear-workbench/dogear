@@ -263,7 +263,7 @@ export function ArticlePreview() {
 
       {/* Markdown 正文区域 */}
       <div className="p-4 relative" ref={contentRef} onMouseUp={handleMouseUp}>
-        <MarkdownRenderer content={article.content} />
+        <MarkdownRenderer content={article.content} className="font-reading" />
 
         {/* 浮动引用按钮 */}
         {tooltipPos && (

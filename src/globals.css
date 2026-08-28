@@ -4,6 +4,14 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@font-face {
+  font-family: "LXGW WenKai";
+  src: url("../resources/fonts/LXGWWenKai-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 /* ═══════════════════════════════════════════════
    Dogear Editorial Design System
    杂志编辑室风格 — 暗色主题优先
@@ -11,9 +19,9 @@
 
 @theme inline {
   /* 字体 */
-  --font-display: "Playfair Display", "Noto Serif SC", Georgia, "Times New Roman", serif;
-  --font-sans: "DM Sans", "Noto Sans SC", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --font-display: Georgia, "LXGW WenKai", "Times New Roman", serif;
+  --font-sans: "LXGW WenKai", system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: ui-monospace, Consolas, monospace;
 
   /* 色彩映射 */
   --color-background: var(--background);
@@ -200,7 +208,18 @@
 
   /* 显示字体（标题用） */
   .font-display {
-    font-family: "Playfair Display", "Noto Serif SC", Georgia, "Times New Roman", serif;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+
+  /* Long-form reading uses a softer CJK typeface without changing application controls. */
+  .font-reading {
+    font-family: "LXGW WenKai", Georgia, "Times New Roman", serif;
+    font-size: 1.0625rem;
+    line-height: 1.9;
+  }
+
+  .font-reading :is(pre, code) {
+    font-family: ui-monospace, Consolas, monospace;
   }
 }
 

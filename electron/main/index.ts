@@ -4,9 +4,9 @@
  */
 
 import electron, { type BrowserWindow as BrowserWindowType, type Tray as TrayType } from 'electron';
-const { app, BrowserWindow, Menu, Tray } = electron;
+const { app, BrowserWindow, Menu, Tray, protocol, net } = electron;
 import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname } from 'path';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
@@ -25,8 +25,13 @@ function getRendererPath(): string {
   if (isDev) {
     return 'http://localhost:3000';
   }
-  return path.join(process.resourcesPath, 'out', 'index.html');
+  return 'app://dogear/index.html';
 }
+
+// file:// 页面 origin 为 opaque(null)，CSS 字体等 CORS 严格资源会被拦，改用 standard scheme 的 app://
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+]);
 
 // 开发环境使用独立的 userData 路径，避免与生产环境共享单实例锁文件和 Electron 缓存
 // Windows 文件系统不区分大小写：默认 dev (dogear) 和 prod (Dogear) 会指向同一个 AppData 目录
@@ -87,18 +92,14 @@ function createWindow() {
     },
   });
 
-  // 根据环境加载不同的页面
+  // 根据环境加载页面（dev 走 Vite dev server，生产走 app:// 自定义协议）
+  mainWindow.loadURL(getRendererPath());
   if (isDev) {
-    // 开发环境:加载 Vite 开发服务器
-    mainWindow.loadURL(getRendererPath());
     // 打开开发者工具
     //mainWindow.webContents.openDevTools();
 
     // 创建调试窗口
     // createDebugWindow();
-  } else {
-    // 生产环境:加载构建后的静态文件
-    mainWindow.loadFile(getRendererPath());
   }
 
   getSessionNotificationService().registerMainWindow(mainWindow);
@@ -137,9 +138,7 @@ function createDebugWindow() {
   });
 
   // 加载调试窗口页面（HashRouter 路由）
-  const debugUrl = isDev
-    ? `${getRendererPath()}/#/debug`
-    : `file://${getRendererPath()}#/debug`;
+  const debugUrl = `${getRendererPath()}#/debug`;
   debugWindow.loadURL(debugUrl);
 
   // 调试窗口关闭时清理引用
@@ -188,9 +187,7 @@ export function createStockWindow() {
     },
   });
 
-  const stockUrl = isDev
-    ? `${getRendererPath()}/#/stocks`
-    : `file://${getRendererPath()}#/stocks`;
+  const stockUrl = `${getRendererPath()}#/stocks`;
   stockWindow.loadURL(stockUrl);
 
   stockWindow.on('closed', () => {
@@ -218,9 +215,7 @@ export function createSettingsWindow() {
     },
   });
 
-  const settingsUrl = isDev
-    ? `${getRendererPath()}/#/settings`
-    : `file://${getRendererPath()}#/settings`;
+  const settingsUrl = `${getRendererPath()}#/settings`;
   settingsWindow.loadURL(settingsUrl);
 
   settingsWindow.on('close', (e) => {
@@ -261,9 +256,7 @@ export function createDataCenterWindow() {
     },
   });
 
-  const dataCenterUrl = isDev
-    ? `${getRendererPath()}/#/data-center`
-    : `file://${getRendererPath()}#/data-center`;
+  const dataCenterUrl = `${getRendererPath()}#/data-center`;
   dataCenterWindow.loadURL(dataCenterUrl);
 
   dataCenterWindow.on('closed', () => {
@@ -327,9 +320,7 @@ export function createSessionWindow(conversationId: string, title: string) {
     },
   });
 
-  const url = isDev
-    ? `${getRendererPath()}/#/session-window/${conversationId}`
-    : `file://${getRendererPath()}#/session-window/${conversationId}`;
+  const url = `${getRendererPath()}#/session-window/${conversationId}`;
   win.loadURL(url);
 
   sessionWindows.set(conversationId, win);
@@ -444,8 +435,30 @@ app.on('second-instance', () => {
 });
 
 // 当 Electron 完成初始化时创建窗口
+const FONT_MIME: Record<string, string> = {
+  '.ttf': 'font/ttf',
+  '.otf': 'font/otf',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
+
 app.whenReady().then(async () => {
   app.setAppUserModelId('com.dogear.app');
+
+  protocol.handle('app', async (request) => {
+    const { pathname } = new URL(request.url);
+    const outDir = path.join(process.resourcesPath, 'out');
+    const filePath = path.resolve(outDir, '.' + decodeURIComponent(pathname));
+    if (!filePath.startsWith(outDir + path.sep)) {
+      return new Response(null, { status: 403 });
+    }
+    const resp = await net.fetch(pathToFileURL(filePath).toString());
+    const fontMime = FONT_MIME[path.extname(filePath).toLowerCase()];
+    if (fontMime) {
+      return new Response(resp.body, { headers: { 'content-type': fontMime } });
+    }
+    return resp;
+  });
 
   Menu.setApplicationMenu(null);
 

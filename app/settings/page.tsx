@@ -38,6 +38,12 @@ const PERMISSION_MODE_OPTIONS = [
   { value: 'autoExecute', label: '自动执行', description: '⚠️ 无条件放行所有工具调用，仅在受控环境中使用' },
 ] as const;
 
+const FONT_SIZE_OPTIONS = [
+  { value: 'small' as const, label: '小' },
+  { value: 'medium' as const, label: '中' },
+  { value: 'large' as const, label: '大' },
+];
+
 // ═══ 深度比较 ════════════════════════════════════════
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -336,6 +342,29 @@ export default function SettingsPage() {
                       <div className="text-xs text-muted-foreground">工具调用和思考块默认展开，显示完整输入/输出</div>
                     </div>
                   </label>
+                </div>
+              </div>
+
+              {/* 界面大小 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">界面大小</label>
+                <p className="text-xs text-muted-foreground">
+                  全局缩放文字、图标和间距（图表与终端字号不变），对所有窗口生效；默认为「中」。
+                </p>
+                <div className="inline-flex h-10 items-center justify-center rounded-md bg-muted p-1">
+                  {FONT_SIZE_OPTIONS.map(opt => (
+                    <button key={opt.value}
+                      className={cn(
+                        'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-4 py-1.5 text-sm font-medium transition-all',
+                        (local.ui?.fontSize ?? 'medium') === opt.value
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      )}
+                      onClick={() => updateUI({ fontSize: opt.value })}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 

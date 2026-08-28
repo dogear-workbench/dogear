@@ -101,6 +101,11 @@ export interface AppSettings {
   update?: {
     serverUrl: string;
   };
+  ui?: {
+    messageDisplayMode: 'compact' | 'detailed';
+    /** 界面整体缩放档位；缺省视为 medium */
+    fontSize?: 'small' | 'medium' | 'large';
+  };
   /** 一次性迁移标记 */
   migrated?: {
     workspaceConfig?: boolean;
@@ -128,6 +133,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   failover: { enabled: false, chain: [] },
   update: {
     serverUrl: 'http://localhost:9527',
+  },
+  ui: {
+    messageDisplayMode: 'compact',
+    fontSize: 'medium',
   },
   profiles: {
     default: {
