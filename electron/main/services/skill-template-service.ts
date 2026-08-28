@@ -25,10 +25,10 @@ export function getTemplatesDir(): string {
 }
 
 function parseDescription(content: string): string {
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   if (!fmMatch) return '';
   const descLine = fmMatch[1]
-    .split('\n')
+    .split(/\r?\n/)
     .find((l) => l.startsWith('description:'));
   if (!descLine) return '';
   return descLine.slice('description:'.length).trim();

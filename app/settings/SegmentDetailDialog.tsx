@@ -16,7 +16,7 @@ interface SegmentDetailDialogProps {
 export function SegmentDetailDialog({ segment, onClose }: SegmentDetailDialogProps) {
   return (
     <Dialog open={segment !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-5xl h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+      <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
           <DialogTitle>{segment?.label}</DialogTitle>
           <DialogDescription>
@@ -24,13 +24,7 @@ export function SegmentDetailDialog({ segment, onClose }: SegmentDetailDialogPro
           </DialogDescription>
         </DialogHeader>
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-          {segment && (
-            <div className="rounded-lg border bg-background p-4">
-              <div className="text-sm leading-relaxed prose prose-sm dark:prose-invert max-w-none">
-                <MarkdownRenderer content={segment.template || '(空模板)'} />
-              </div>
-            </div>
-          )}
+          {segment && <MarkdownRenderer content={segment.template || '(空模板)'} />}
         </div>
       </DialogContent>
     </Dialog>
