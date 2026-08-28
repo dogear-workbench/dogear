@@ -26,7 +26,7 @@ export default function DataCenterPage() {
   }, [settingsLoaded, loadSettings]);
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-full flex flex-col">
       <Tabs defaultValue="digests" className="flex-1 flex flex-col overflow-hidden">
         <TabsList variant="underline" className="justify-start px-6 flex-shrink-0">
           <TabsTrigger variant="underline" value="digests">组卡</TabsTrigger>

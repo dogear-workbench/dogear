@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 设置回退 overlay 并拆除设置窗口链路](./step1-settings-overlay.md) — 渲染层恢复 overlay + 主进程删 settingsWindow/三个 IPC/settingsCloseRequested
-- [ ] [Step 2: 数据中心固定 tab 化](./step2-datacenter-tab.md) — 哨兵 tab + WorkspaceTabBar 按钮 + 内容挂载 + h-screen 适配
+- [x] [Step 2: 数据中心固定 tab 化](./step2-datacenter-tab.md) — 哨兵 tab + WorkspaceTabBar 按钮 + 内容挂载 + h-screen 适配
 - [ ] [Step 3: 构建验证与 doc-sync](./step3-verify-docsync.md) — lint / build:electron / build + codebase-map 同步
 
 ## 全局决策

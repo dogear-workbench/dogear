@@ -14,6 +14,7 @@ import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { Dashboard } from '@/components/dashboard/Dashboard';
+import DataCenterPage from '@/app/data-center/page';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { NotesPanel } from '@/components/notes/NotesPanel';
@@ -22,7 +23,7 @@ import { NotesPanel } from '@/components/notes/NotesPanel';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, HOME_TAB_ID, NOTES_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 
@@ -77,7 +78,6 @@ export default function Home() {
   const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
   const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
-  const openDataCenterWindow = useWorkspaceStore((s) => s.openDataCenterWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
   const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
 
@@ -93,6 +93,7 @@ export default function Home() {
   // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
   const activeTabId = useSessionStore((s) => s.activeTabId);
+  const switchTab = useSessionStore((s) => s.switchTab);
   const openTab = useSessionStore((s) => s.openTab);
   const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
@@ -214,7 +215,7 @@ export default function Home() {
             <TrendingUp className="w-4 h-4 mr-2" />
             自选股
           </Button>
-          <Button variant="outline" size="sm" onClick={openDataCenterWindow}>
+          <Button variant="outline" size="sm" onClick={() => switchTab(DATA_CENTER_TAB_ID)}>
             <Database className="w-4 h-4 mr-2" />
             数据中心
           </Button>
@@ -292,6 +293,13 @@ export default function Home() {
               style={{ display: activeTabId === NOTES_TAB_ID ? 'flex' : 'none' }}
             >
               <NotesPanel />
+            </div>
+            {/* 数据中心：固定 Tab，与首页/笔记同构常驻挂载 */}
+            <div
+              className="absolute inset-0 flex flex-col"
+              style={{ display: activeTabId === DATA_CENTER_TAB_ID ? 'flex' : 'none' }}
+            >
+              <DataCenterPage />
             </div>
             {/* 会话：各自按 activeTabId 切显示，保持 AgentChat 挂载 */}
             {allTabs.map((tab) => (

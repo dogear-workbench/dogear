@@ -12,6 +12,9 @@ export const HOME_TAB_ID = '__home__';
 /** 常驻「笔记」tab 的哨兵 id（非真实会话） */
 export const NOTES_TAB_ID = '__notes__';
 
+/** 常驻「数据中心」tab 的哨兵 id（非真实会话） */
+export const DATA_CENTER_TAB_ID = '__data_center__';
+
 /** 单个会话标签页信息 */
 export interface SessionTab {
   conversationId: string;

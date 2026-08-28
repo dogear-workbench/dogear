@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 数据中心固定 tab 化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -31,10 +31,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无，六项全部按计划落地；数据中心 tab 外层用 div（button 不能嵌套 button，与会话 tab 同构）
+- 改动文件清单：`stores/session-store.ts` / `components/WorkspaceTabBar.tsx` / `app/page.tsx` / `stores/workspace-store.ts` / `app/data-center/page.tsx` / `src/App.tsx`
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`DATA_CENTER_TAB_ID = '__data_center__'`（session-store.ts:16 纯哨兵）；数据中心 tab 弹出按钮直接 `client.openDataCenterWindow()`，workspace-store 已无此方法
+- 下个 step 该从哪里继续：step3 无遗留前置，`/data-center` 路由已包 h-screen 壳
+- 待办或已知限制：tab 与独立窗口是两个实例，两边同时编辑同一定时任务会后保存者覆盖（设计文档已接受的代价）；常驻挂载导致主窗口启动即 SchedulerPanel 轮询（已接受）
