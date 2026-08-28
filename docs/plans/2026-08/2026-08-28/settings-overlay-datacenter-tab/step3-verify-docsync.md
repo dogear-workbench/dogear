@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 构建验证与 doc-sync
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,8 +25,8 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无（lint / build:electron / build 全通过；残留 grep 零命中）
+- 改动文件清单：`docs/codebase-map.md`（12 处描述同步：App.tsx 路由+overlay、page.tsx header、settings/page.tsx 形态、AbilityTab 措辞、data-center 目录定位、ui-store、session-store 哨兵、smart-category-store 同实例、setup-settings-sync 自收自发、主进程窗口列表、windows.ts 路由、workspace-store actions）
 
 ### 给下一步的接力棒
-- 待办或已知限制：
+- 待办或已知限制：无

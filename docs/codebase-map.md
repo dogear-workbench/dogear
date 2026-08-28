@@ -5,7 +5,7 @@
 ## 入口与路由（src/）
 
 - `src/main.tsx` — Vite 入口，挂载 React 到 `#root`，顶层挂载 setupManualTaskToasts / setupSettingsSync（动态 import 避免非主窗口加载副作用）
-- `src/App.tsx` — React Router 配置（HashRouter 路由：`/` 主工作区、`/session-window/:id` 独立会话窗口、`/settings` 设置窗口、`/data-center` 数据中心窗口、`/stocks` 自选股、`/wechat`、`/debug`）+ 全局 ConfirmDialog + Toaster
+- `src/App.tsx` — React Router 配置（HashRouter 路由：`/` 主工作区、`/session-window/:id` 独立会话窗口、`/data-center` 数据中心独立窗口、`/stocks` 自选股、`/wechat`、`/debug`）+ 设置全屏 overlay（ui-store settingsOpen 时 fixed inset-0 z-50 渲染 SettingsPage，底层页面不卸载）+ 全局 ConfirmDialog + Toaster
 - `src/globals.css` — Tailwind CSS 4 全局样式
 
 ## 渲染层 Hooks（hooks/）
@@ -14,17 +14,17 @@
 
 ## 页面（app/）
 
-- `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）；header 含设置（openSettingsWindow）与数据中心（openDataCenterWindow）按钮，各开独立窗口
+- `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）；header 设置按钮开全屏 overlay（ui-store openSettings）、数据中心按钮切主窗口固定 tab（switchTab(DATA_CENTER_TAB_ID)）；内容区常驻挂载 Dashboard / NotesPanel / DataCenterPage 三个哨兵 tab + 会话 tabs，按 activeTabId 切 display
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
-- `app/settings/page.tsx` — 设置窗口（独立 BrowserWindow + dirty 关闭拦截：主进程 close guard 发 settingsCloseRequested，渲染层监听后不 dirty 直接 forceClose、dirty 弹三按钮 confirm；顶栏保存/取消/保存并重启会话）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
-- `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置窗口无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；按能力域分块单视图（无视图切换）；数据加载分流、applySkillToggles 统一开关（单 skill / 域整体：开 = skills ∪ 关联工具包，关 = 按剩余已启用 skill 保留共享包，一次 updateWorkspaceConfig 提交）、包徽标跳转定位（展开目标域 + 包，highlightServer scrollIntoView + 2s ring 高亮）；容器 max-w-[1600px] 自适应 + 域块网格 xl:grid-cols-2（多包域全宽）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
+- `app/settings/page.tsx` — 设置页（主窗口全屏 overlay 形态：返回按钮/关闭均调 handleClose，不 dirty 直接 closeSettings、dirty 弹三按钮 confirm 后关 overlay；顶栏保存/取消/保存并重启会话；保存联动走 updateSettings → broadcastSettingsChanged → setup-settings-sync，同窗口自收自发）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
+- `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置 overlay 无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；按能力域分块单视图（无视图切换）；数据加载分流、applySkillToggles 统一开关（单 skill / 域整体：开 = skills ∪ 关联工具包，关 = 按剩余已启用 skill 保留共享包，一次 updateWorkspaceConfig 提交）、包徽标跳转定位（展开目标域 + 包，highlightServer scrollIntoView + 2s ring 高亮）；容器 max-w-[1600px] 自适应 + 域块网格 xl:grid-cols-2（多包域全宽）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
 - `app/settings/AbilityDomainCard.tsx` — 可选能力域块组件：域头（统计 + skill 数 >1 时显示整体开关）+ 展开后左右分区（md:grid-cols-2 对半：左 skill 控制层 / 右工具包折叠列表，包无独立开关、状态随 skill 联动）；无工具包域 skill 走网格（sm:grid-cols-2 xl:grid-cols-3）；PackPanel 折叠头 data-server 定位
 - `app/settings/AbilityResidentSection.tsx` — 常驻能力块：默认收起统计行，展开后提示词段列表（只读）+ 常驻工具组折叠列表（只读）两栏
 - `app/settings/ability-types.ts` — 能力页共享类型与常量：ToolInfo/ToolGroup/ToolPack/SkillSource/SkillEntry/SkillTemplate/Domain* 类型、SKILL_PACK_MAP（skill → 关联工具包）、RESIDENT_GROUPS（4 常驻 server + 中文 label + 注入条件）、SKILL_SOURCE_LABELS、ABILITY_DOMAINS（股票/文章/代码工作流三域硬编码）+ CUSTOM/GENERIC 兜底域 + buildDomainViews（templates/skills/packs/config → 域视图数组，未归类模板进通用域）
 - `app/settings/WorkspaceManagementTab.tsx` — 工作区管理标签页（列表 + 删除 + 孤儿恢复 + 环境依赖检查）
 - `app/settings/SubAgentTab.tsx` — 子会话派遣标签页（Profile 列表管理：非 default Profile 行内启用 Switch，停用后 agent 侧不可见不可派遣、行置灰加「已停用」徽标；ProfileEditor 编辑名称/模型/超时/基础工具/能力域/Skill；skill 列表按挂载时本地解析的工作区拉取——getAll + getDefault、default null 时选第一个、零工作区传 null——不依赖 workspace-store）
 - `app/settings/pi-model-row.tsx` — 模型清单行组件 `PiModelRow`：ID 行内编辑（空/与同清单重复回退标红）、窗口徽标点击手填（`parseContextInput` 解析 1M/200K/262144 写法，清空恢复查表，手动角标）、显示名与删除
-- `app/data-center/` — 数据中心独立窗口（顶部下划线式 tab 导航 6 面板；workspaces 由 page.tsx 加载一次下传，各 panel 只自持 `workspaceId: 'all' | id` 筛选状态不读 workspace-store；轮询统一走 useVisiblePolling；设置加载由页面 loadSettings 负责）：
+- `app/data-center/` — 数据中心（主窗口固定 tab 常驻挂载，tab 上 hover 可弹独立窗口；顶部下划线式 tab 导航 6 面板；workspaces 由 page.tsx 加载一次下传，各 panel 只自持 `workspaceId: 'all' | id` 筛选状态不读 workspace-store；轮询统一走 useVisiblePolling；设置加载由页面 loadSettings 负责）：
   - `page.tsx` — 骨架：顶部 TabsList variant=underline（组卡/用量/定时计划/执行历史/解析历史/记忆）；TabsContent 统一 `flex-1 overflow-hidden` + 内层滚动层；scheduler tab 加 forceMount（编辑页草稿切 tab 不丢，代价是跨 tab 轮询持续）
   - `history-panel.tsx` — 执行历史一级面板（挂载即 loadTasks + loadHistory；任务/状态筛选 shadcn Select、状态纯前端过滤；refreshActivity 10s 可见轮询；分钟 tick 刷新中/待跑时间）
   - `digests-panel.tsx` — 组卡查看面板（列表 + 详情 + 单组重新提炼；2s 可见轮询；「全部」模式行内显示工作区名；选中态记 groupId+workspaceId 双键）
@@ -158,7 +158,7 @@
 
 ## 状态管理（stores/）
 
-- `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）；窗口入口 actions：openSettingsWindow / openStockWindow / openDataCenterWindow（主进程单例窗口，已存在则 focus）
+- `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）；窗口入口 actions：openStockWindow（主进程单例窗口，已存在则 focus）
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
 - `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；focusConversationById（Tab 焦点联动入口）在活跃会话切换时调 revealTopicInList 展开左侧列表定位话题，并经 expandSubParentIfNeeded 展开 agent 子会话的父折叠区；底部 activeTabId 订阅 async 化焦点联动：tab 属其他工作区时先 `await setWorkspace(目标)` 后 focusConversationById（先切后高亮时序铁律，点 tab/关 tab/独立窗口收回唯一入口）；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；导出 CONV_TREE_ROOT 根哨兵；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
 - `group-store.ts` — 会话组状态：groups\[\] + currentGroupId + expandedGroupIds（默认全折叠）+ syncGroups（conversation-store loadConversations 拉完 groups 后同步写入，不碰展开状态）+ expandGroup（reveal 单向展开）/ createGroup / updateGroup / archiveTopic / restoreTopic / deleteTopic；RECENT_THRESHOLD_MS 常量在此；load 时异步触发 autoArchiveStale，有归档则重新拉取
@@ -166,13 +166,13 @@
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）、会话引用（ConversationReference，含 workspaceId 支持跨工作区，去重按 conversationId）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
 - `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式；saveSettings 可选 `{restartSessions}` 透传主进程，触发 settingsChanged 广播）
-- `ui-store.ts` — UI 状态：右侧面板折叠（rightPanelOpen）
+- `ui-store.ts` — UI 状态：设置全屏 overlay（settingsOpen/openSettings/closeSettings，reset 归 false）+ 右侧面板折叠（rightPanelOpen）
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
 - `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
 - `dashboard-store.ts` — 首页工作台状态：reportMarkdown/reportUpdatedAt（首页报告）+ reviewActivity 轮询 + triggerReview/loadReport actions
 - `notes-store.ts` — 笔记卡片前端：notes（created 倒序）/loading/loadedWorkspacePath/activeNoteId + loadNotes（listNotes）/subscribeNotesChanged（notesChanged 广播按 workspacePath 匹配重拉）/setActiveNoteId/createNote（支持 {content, tags} 输入，不自动激活——新建即编辑由 NotesPanel 控制）/updateNote（本地乐观更新，广播兜底）/deleteNote（软删除，成功后本地移除）
-- `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID`/`NOTES_TAB_ID` 哨兵（非真实会话）分别表示首页/笔记固定 tab，activeTabId 初始/关末 tab 后回退到 HOME；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
-- `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，两窗口独立实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
+- `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID`/`NOTES_TAB_ID`/`DATA_CENTER_TAB_ID` 哨兵（非真实会话）分别表示首页/笔记/数据中心固定 tab，activeTabId 初始/关末 tab 后回退到 HOME；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
+- `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，数据中心在主窗口 tab 后两处同实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
 - `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity，10s 轮询由数据中心面板 useVisiblePolling 驱动）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
 
 ## 工具函数（lib/）
@@ -180,7 +180,7 @@
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
 - `utils.ts` — cn() 类名合并工具
 - `events.ts` — tipc 事件处理入口，监听主进程事件
-- `setup-settings-sync.ts` — setupSettingsSync()（src/main.tsx 顶层挂载，非设置窗口均加载）：监听 settingsChanged 事件 loadSettings；restartSessions 时 restartActiveSessions + triggerSessionRestart
+- `setup-settings-sync.ts` — setupSettingsSync()（src/main.tsx 顶层挂载）：监听 settingsChanged 事件 loadSettings；restartSessions 时 restartActiveSessions + triggerSessionRestart（设置 overlay 与主窗口同上下文，广播自收自发）
 - `manual-task-toasts.ts` — setupManualTaskToasts()（src/main.tsx 顶层挂载）：监听 manualTaskDone 出完成/失败/取消 toast；导出 formatDurationMs
 - `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）/ resolveModelLabel（selection → 展示名，ModelSelector 与设置页提示文案共用）
 - `conversation-sort.ts` — buildConversationTree：组内会话树纯函数（递归 ConversationTreeNode），手动会话按 updated_at 倒序作为根 + agent 派出会话挂派出者下（created_at 升序、支持多层派遣链，parentSessionId 不在组时回落自然序作根）
@@ -205,12 +205,12 @@
 
 ## Electron 主进程入口（electron/main/index.ts）
 
-窗口创建与生命周期；渲染层加载统一走 `getRendererPath()`（dev 为 `http://localhost:3000`，生产为 `app://dogear/index.html` 自定义协议）。`app://` 注册为 standard+secure scheme，handler 从 `process.resourcesPath/out/` 响应文件（字体扩展名显式映射 MIME，`.ttf` 等需 `font/ttf` 否则 `@font-face` 拒载；含路径穿越防护）——替代原 `file://` 加载，消除 opaque origin 下 CSS 字体等 CORS 严格资源被拦的问题；主窗口 + debug/stocks/settings/data-center/session-window 各子窗口均为 `${getRendererPath()}#/路由` 拼接
+窗口创建与生命周期；渲染层加载统一走 `getRendererPath()`（dev 为 `http://localhost:3000`，生产为 `app://dogear/index.html` 自定义协议）。`app://` 注册为 standard+secure scheme，handler 从 `process.resourcesPath/out/` 响应文件（字体扩展名显式映射 MIME，`.ttf` 等需 `font/ttf` 否则 `@font-face` 拒载；含路径穿越防护）——替代原 `file://` 加载，消除 opaque origin 下 CSS 字体等 CORS 严格资源被拦的问题；主窗口 + debug/stocks/data-center/session-window 各子窗口均为 `${getRendererPath()}#/路由` 拼接；broadcastSettingsChanged 定向发主窗口驱动设置刷新与会话重启
 
 ## IPC 路由（electron/main/tipc/）
 
 - `index.ts` — 路由注册中枢，聚合所有子路由
-- `windows.ts` — 窗口管理路由：openSettingsWindow / requestCloseSettingsWindow（走 close guard）/ forceCloseSettingsWindow / openDataCenterWindow；动态 import index.js 避免循环依赖，BrowserWindow 单例（设置 1000×760 带 dirty guard、数据中心 1200×800）在 electron/main/index.ts
+- `windows.ts` — 窗口管理路由：openDataCenterWindow；动态 import index.js 避免循环依赖，BrowserWindow 单例（数据中心 1200×800）在 electron/main/index.ts
 - `agent.ts` — Agent 会话管理（RPC：创建/发送/关闭会话、权限控制）
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
