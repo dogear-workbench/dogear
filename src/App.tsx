@@ -9,8 +9,11 @@ import { SessionWindowPage } from '@/app/session-window/page';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { useUIStore } from '@/stores/ui-store';
 
 export function App() {
+  const settingsOpen = useUIStore((s) => s.settingsOpen);
+
   return (
     <ErrorBoundary fallback="app">
       <HashRouter>
@@ -20,11 +23,18 @@ export function App() {
           <Route path="/stocks" element={<ErrorBoundary fallback="page"><StockPage /></ErrorBoundary>} />
           <Route path="/wechat" element={<ErrorBoundary fallback="page"><WechatPage /></ErrorBoundary>} />
           <Route path="/session-window/:conversationId" element={<ErrorBoundary fallback="page"><SessionWindowPage /></ErrorBoundary>} />
-          <Route path="/settings" element={<ErrorBoundary fallback="page"><SettingsPage /></ErrorBoundary>} />
           <Route path="/data-center" element={<ErrorBoundary fallback="page"><DataCenterPage /></ErrorBoundary>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>
+
+      {settingsOpen && (
+        <div className="fixed inset-0 z-50 bg-background">
+          <ErrorBoundary fallback="page">
+            <SettingsPage />
+          </ErrorBoundary>
+        </div>
+      )}
 
       <ConfirmDialog />
       <Toaster />

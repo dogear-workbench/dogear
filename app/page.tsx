@@ -27,7 +27,7 @@ import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 
 export default function Home() {
-  const openSettingsWindow = useWorkspaceStore((s) => s.openSettingsWindow);
+  const openSettings = useUIStore((s) => s.openSettings);
   const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
   const rightPanelTab = useUIStore((s) => s.rightPanelTab);
@@ -206,7 +206,7 @@ export default function Home() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={openSettingsWindow}>
+          <Button variant="outline" size="sm" onClick={openSettings}>
             <Settings className="w-4 h-4 mr-2" />
             设置
           </Button>

@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 
 interface UIState {
+  // 设置全屏 overlay
+  settingsOpen: boolean;
+  openSettings: () => void;
+  closeSettings: () => void;
+
   // 左侧面板折叠（里程碑 1.5 Step A2.5）
   /** 左侧面板是否展开 */
   leftPanelOpen: boolean;
@@ -27,6 +32,10 @@ interface UIState {
 }
 
 export const useUIStore = create<UIState>((set) => ({
+  settingsOpen: false,
+  openSettings: () => set({ settingsOpen: true }),
+  closeSettings: () => set({ settingsOpen: false }),
+
   // 左侧面板折叠（默认展开）
   leftPanelOpen: true,
   toggleLeftPanel: () => set((s) => ({ leftPanelOpen: !s.leftPanelOpen })),
@@ -42,6 +51,7 @@ export const useUIStore = create<UIState>((set) => ({
   setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
 
   reset: () => set({
+    settingsOpen: false,
     leftPanelOpen: true,
     rightPanelOpen: false,
     rightPanelTab: 'files',
