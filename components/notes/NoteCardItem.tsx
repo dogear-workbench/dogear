@@ -1,5 +1,7 @@
+import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import type { NoteMeta } from '@/types/note';
 
 export function formatNoteTime(iso: string): string {
@@ -15,15 +17,27 @@ interface NoteCardItemProps {
   note: NoteMeta;
   active: boolean;
   onOpen: () => void;
+  onDelete?: () => void;
 }
 
-export function NoteCardItem({ note, active, onOpen }: NoteCardItemProps) {
+export function NoteCardItem({ note, active, onOpen, onDelete }: NoteCardItemProps) {
   const undoneCount = note.todos.filter((t) => t.status !== 'done').length;
 
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onOpen}
-      className={cn('w-full text-left px-4 py-3 hover:bg-muted/30', active && 'bg-muted/50')}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+      className={cn(
+        'group w-full text-left px-4 py-3 hover:bg-muted/30 cursor-pointer focus-visible:outline-none',
+        active && 'bg-muted/50',
+      )}
     >
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted-foreground shrink-0">{formatNoteTime(note.created)}</span>
@@ -44,9 +58,23 @@ export function NoteCardItem({ note, active, onOpen }: NoteCardItemProps) {
               {tag}
             </Badge>
           ))}
+          {onDelete && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
+              title="移入回收站"
+              className="opacity-0 group-hover:opacity-100 shrink-0"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          )}
         </div>
       </div>
       <p className="mt-1 text-sm line-clamp-1">{note.title || '（无内容）'}</p>
-    </button>
+    </div>
   );
 }

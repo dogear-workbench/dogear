@@ -5,6 +5,7 @@ import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useNotesStore } from '@/stores/notes-store';
+import { showConfirm } from '@/stores/confirm-store';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { NoteCardItem } from '@/components/notes/NoteCardItem';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
@@ -40,6 +41,7 @@ export function NotesPanel() {
   const activeNoteId = useNotesStore((s) => s.activeNoteId);
   const setActiveNoteId = useNotesStore((s) => s.setActiveNoteId);
   const createNote = useNotesStore((s) => s.createNote);
+  const deleteNote = useNotesStore((s) => s.deleteNote);
 
   const [view, setView] = useState<NotesView>('timeline');
   const [searchDraft, setSearchDraft] = useState('');
@@ -62,6 +64,17 @@ export function NotesPanel() {
     void createNote(workspace.path).then((note) => {
       if (note) setActiveNoteId(note.id);
     });
+  };
+
+  const handleDelete = async (note: NoteMeta) => {
+    if (!workspace) return;
+    const ok = await showConfirm(
+      '移入回收站',
+      `「${note.title || '（无内容）'}」将移入回收站，可从回收站恢复。`,
+    );
+    if (!ok) return;
+    const success = await deleteNote(workspace.path, note.id);
+    if (success && note.id === activeNoteId) setActiveNoteId(null);
   };
 
   useEffect(() => {
@@ -159,6 +172,7 @@ export function NotesPanel() {
               note={note}
               active={note.id === activeNoteId}
               onOpen={() => setActiveNoteId(note.id)}
+              onDelete={() => void handleDelete(note)}
             />
           ))}
         </div>
@@ -174,6 +188,7 @@ export function NotesPanel() {
             note={note}
             active={note.id === activeNoteId}
             onOpen={() => setActiveNoteId(note.id)}
+            onDelete={() => void handleDelete(note)}
           />
         ))}
       </div>
@@ -265,6 +280,10 @@ export function NotesPanel() {
           workspacePath={workspace.path}
           noteId={activeNoteId}
           onClose={() => setActiveNoteId(null)}
+          onDelete={() => {
+            const meta = notes.find((n) => n.id === activeNoteId);
+            if (meta) void handleDelete(meta);
+          }}
         />
       )}
     </div>

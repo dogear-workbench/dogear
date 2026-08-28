@@ -17,7 +17,7 @@ import {
   Separator,
 } from '@mdxeditor/editor';
 import '@mdxeditor/editor/style.css';
-import { ArrowLeft, ChevronDown, ChevronRight, Link2, Loader2, Plus, Tags, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Link2, Loader2, Plus, Tags, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { Badge } from '@/components/ui/badge';
@@ -73,10 +73,11 @@ interface NoteEditorProps {
   workspacePath: string;
   noteId: string;
   onClose: () => void;
+  onDelete?: () => void;
 }
 
 // 父组件以 key={noteId} 挂载：换卡即重挂载，规避 MDXEditor 非受控内容重置
-export function NoteEditor({ workspacePath, noteId, onClose }: NoteEditorProps) {
+export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [tags, setTags] = useState<string[]>([]);
@@ -225,6 +226,17 @@ export function NoteEditor({ workspacePath, noteId, onClose }: NoteEditorProps) 
         <span className="flex-1" />
         {touched && (
           <span className="text-xs text-muted-foreground">{saving ? '保存中…' : '已保存'}</span>
+        )}
+        {onDelete && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            onClick={onDelete}
+            title="移入回收站"
+            className="text-destructive hover:text-destructive"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
         )}
       </header>
 

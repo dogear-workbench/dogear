@@ -21,6 +21,8 @@ interface NotesState {
   createNote: (workspacePath: string, input?: { content?: string; tags?: string[] }) => Promise<Note | null>;
   /** 保存局部 patch（tags/links/todos 整体深替换）；成功后本地同步列表条目 */
   updateNote: (workspacePath: string, noteId: string, patch: NotePatch) => Promise<Note | null>;
+  /** 软删除移入回收站；成功后本地移除，时间流最终一致靠 notesChanged 广播兜底 */
+  deleteNote: (workspacePath: string, noteId: string) => Promise<boolean>;
 }
 
 export const useNotesStore = create<NotesState>((set, get) => ({
@@ -85,6 +87,21 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     } catch (error) {
       console.error('[notes] updateNote 失败:', error);
       return null;
+    }
+  },
+
+  deleteNote: async (workspacePath, noteId) => {
+    try {
+      const result = await client.deleteNote({ workspacePath, noteId });
+      if ('success' in result && result.success) {
+        set({ notes: get().notes.filter((n) => n.id !== noteId) });
+        return true;
+      }
+      if ('error' in result) console.error('[notes] deleteNote 失败:', result.error);
+      return false;
+    } catch (error) {
+      console.error('[notes] deleteNote 失败:', error);
+      return false;
     }
   },
 }));
