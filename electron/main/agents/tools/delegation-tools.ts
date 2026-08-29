@@ -142,7 +142,11 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           // 自动调起判断留在工具层（deliverMessage 保持同步纯投递）：只对「我直接派出的停机子会话」生效
           if (target.conv.contractMetadata?.parentSessionId === ownSessionId) {
             const childId = bridge.getChildIdBySessionId(opts.conversationId, args.toSessionId) ?? target.conv.id;
-            const snapshot = bridge.getChildSnapshot(childId);
+            let snapshot = bridge.getChildSnapshot(childId);
+            if (!snapshot) {
+              // 应用重启后内存跟踪丢失：从磁盘 conversation 记录降级重建后再判断
+              snapshot = await bridge.rehydrateChildState(target.workspaceId, target.conv);
+            }
             if (snapshot && snapshot.status !== 'running') {
               try {
                 await bridge.resumeChildAndDeliver(childId, {
@@ -409,7 +413,10 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           return errorResult('只能停止由当前会话直接派出的会话');
         }
         const childId = bridge.getChildIdBySessionId(opts.conversationId, args.sessionId) ?? target.conv.id;
-        const snapshot = bridge.getChildSnapshot(childId);
+        let snapshot = bridge.getChildSnapshot(childId);
+        if (!snapshot) {
+          snapshot = await bridge.rehydrateChildState(target.workspaceId, target.conv);
+        }
         if (!snapshot) {
           return errorResult(`会话 ${args.sessionId} 当前不在运行时跟踪中（可能已结束或应用重启过）`);
         }
@@ -447,9 +454,13 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           return errorResult('只能调起由当前会话直接派出的会话');
         }
         const childId = bridge.getChildIdBySessionId(opts.conversationId, args.sessionId) ?? target.conv.id;
-        const snapshot = bridge.getChildSnapshot(childId);
+        let snapshot = bridge.getChildSnapshot(childId);
         if (!snapshot) {
-          return errorResult(`会话 ${args.sessionId} 不在本进程运行时跟踪中（应用重启后跟踪不保留，请先用 dogear__ListLinkedSessions 查）`);
+          // 应用重启后内存跟踪丢失：从磁盘 conversation 记录降级重建（conversation 也查不到时才报不存在）
+          snapshot = await bridge.rehydrateChildState(target.workspaceId, target.conv);
+        }
+        if (!snapshot) {
+          return errorResult(`会话 ${args.sessionId} 不存在`);
         }
         if (snapshot.status === 'running') {
           return textResult(`⚠ 该会话正在运行中，无需调起（${snapshot.title}）`);

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import {
+  convStore,
   installDelegationMocks,
   makeProfile,
+  nextParentConversationId,
   sendCalls,
   setMockSettings,
   sleep,
@@ -295,4 +297,113 @@ test('SendMessage 打停机的父会话（非我派出）：不触发自动调�
   expect(result.content[0].text).toContain('对方暂时收不到');
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
   expect(sendCalls.length).toBe(1);
+});
+
+// 模拟重启：不经 startChild，直接往磁盘 conversation 存储塞一条带契约的历史记录（内存 childStates 天然无条目）
+function seedHydratedChild(childId: string, sessionId: string, overrides?: { outputPath?: string | null; profileId?: string }) {
+  const parentConversationId = nextParentConversationId();
+  const conv: any = {
+    id: childId,
+    title: '重启前派出的子会话',
+    groupId: 'g1',
+    role: 'sub',
+    parentConversationId,
+    sessionId,
+    contractMetadata: {
+      parentSessionId: `sdk-${parentConversationId}`,
+      task: '重启前的任务',
+      expectedOutputPath: 'out-hydrated.md',
+      createdBy: 'agent',
+      subAgentProfileId: 'p-a',
+    },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  if (overrides?.outputPath !== undefined) {
+    if (overrides.outputPath === null) delete conv.contractMetadata.expectedOutputPath;
+    else conv.contractMetadata.expectedOutputPath = overrides.outputPath;
+  }
+  if (overrides?.profileId) conv.contractMetadata.subAgentProfileId = overrides.profileId;
+  convStore.set(childId, conv);
+  return parentConversationId;
+}
+
+test('应用重启后 ResumeSession：内存跟踪丢失，从磁盘 conversation 重建并调起成功', async () => {
+  const tools = await import('./tools/delegation-tools.js');
+  const childId = 'child-rehydrated-resume';
+  const parentConversationId = seedHydratedChild(childId, 'sdk-hydrated-resume');
+  expect(bridge.getChildSnapshot(childId)).toBeNull();
+
+  const resume = tools.createDelegationToolDefs({ role: 'main', workspaceId: 'ws-test', groupId: 'g1', conversationId: parentConversationId })
+    .find((d) => d.name === 'dogear__ResumeSession')!;
+  const result = await resume.handler({ sessionId: 'sdk-hydrated-resume' });
+
+  expect(result.isError).toBeUndefined();
+  expect(result.content[0].text).toContain('已调起');
+  const snap = bridge.getChildSnapshot(childId)!;
+  expect(snap.status).toBe('running');
+  expect(snap.delivered).toBe(false);
+  expect(snap.task).toBe('重启前的任务');
+  expect(snap.outputPath).toBe('out-hydrated.md');
+  expect(snap.profileName).toBe('p-a 档');
+  expect(sendCalls.length).toBe(1);
+  expect(sendCalls[0].text).toContain('从中断处继续完成任务');
+
+  // 复活后 harness sessionId 会更新（attach 回写 conv），与进程内行为一致；用新 sessionId 再调应提示运行中
+  const again = await resume.handler({ sessionId: snap.sessionId! });
+  expect(again.content[0].text).toContain('正在运行中，无需调起');
+  convStore.delete(childId);
+});
+
+test('应用重启后 ResumeSession：conversation 记录也不存在 → 报「不存在」', async () => {
+  const tools = await import('./tools/delegation-tools.js');
+  const parentConversationId = nextParentConversationId();
+
+  const resume = tools.createDelegationToolDefs({ role: 'main', workspaceId: 'ws-test', groupId: 'g1', conversationId: parentConversationId })
+    .find((d) => d.name === 'dogear__ResumeSession')!;
+  const result = await resume.handler({ sessionId: 'sdk-never-existed' });
+
+  expect(result.isError).toBe(true);
+  expect(result.content[0].text).toContain('不存在');
+});
+
+test('rehydrateChildState：非 agent 派出的会话记录不可重建，返回 null', async () => {
+  const conv: any = { id: 'child-manual-main', title: '手动会话', groupId: 'g1', role: 'main', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  expect(await bridge.rehydrateChildState('ws-test', conv)).toBeNull();
+  expect(bridge.getChildSnapshot('child-manual-main')).toBeNull();
+});
+
+test('应用重启后 SendMessage 打停机子会话：rehydrate 后自动调起生效', async () => {
+  const tools = await import('./tools/delegation-tools.js');
+  const childId = 'child-rehydrated-send';
+  const parentConversationId = seedHydratedChild(childId, 'sdk-hydrated-send', { outputPath: null, profileId: 'p-b' });
+
+  const send = tools.createDelegationToolDefs({ role: 'main', workspaceId: 'ws-test', groupId: 'g1', conversationId: parentConversationId })
+    .find((d) => d.name === 'dogear__SendMessage')!;
+  const result = await send.handler({ toSessionId: 'sdk-hydrated-send', message: '重启后的追问', options: { delivery: false } });
+
+  expect(result.isError).toBeUndefined();
+  expect(result.content[0].text).toContain('已自动调起');
+  const snap = bridge.getChildSnapshot(childId)!;
+  expect(snap.status).toBe('running');
+  expect(snap.outputPath).toBe('');
+  expect(sendCalls.length).toBe(1);
+  expect(sendCalls[0].text).toContain('重启后的追问');
+  expect(sendCalls[0].text).not.toContain('从中断处继续完成任务');
+  convStore.delete(childId);
+});
+
+test('应用重启后 StopSession 打已停子会话：rehydrate 后提示无需停止', async () => {
+  const tools = await import('./tools/delegation-tools.js');
+  const childId = 'child-rehydrated-stop';
+  const parentConversationId = seedHydratedChild(childId, 'sdk-hydrated-stop');
+
+  const stop = tools.createDelegationToolDefs({ role: 'main', workspaceId: 'ws-test', groupId: 'g1', conversationId: parentConversationId })
+    .find((d) => d.name === 'dogear__StopSession')!;
+  const result = await stop.handler({ sessionId: 'sdk-hydrated-stop' });
+
+  expect(result.isError).toBeUndefined();
+  expect(result.content[0].text).toContain('无需停止');
+  expect(bridge.getChildSnapshot(childId)!.status).toBe('stopped');
+  convStore.delete(childId);
 });

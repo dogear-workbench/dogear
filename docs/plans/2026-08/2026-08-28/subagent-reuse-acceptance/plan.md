@@ -10,7 +10,7 @@
 
 - [x] [Step 1: CreateSession outputPath 可选化](./step1-output-path-optional.md) — 通讯型交付的机制前提
 - [x] [Step 2: SendMessage 自动调起停机子会话](./step2-sendmessage-auto-resume.md) — 核心开路：追问不再吃闭门羹
-- [ ] [Step 3: ResumeSession 重启降级恢复](./step3-resume-after-restart.md) — 重启后复用能力不清零
+- [x] [Step 3: ResumeSession 重启降级恢复](./step3-resume-after-restart.md) — 重启后复用能力不清零
 - [ ] [Step 4: 提示词层全套](./step4-prompt-updates.md) — 复用判断框架 + 验收闭环 + 契约弹性化
 - [ ] [Step 5: 端到端验证 + Profile 手动调整](./step5-e2e-and-profile.md) — 走查闭环 + settings 调整
 

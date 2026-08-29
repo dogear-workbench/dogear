@@ -691,6 +691,30 @@ export async function getChildrenByParent(parentConversationId: string): Promise
   return [...memoryChildren, ...recent.map((conv) => conversationToSnapshot(conv, profiles))];
 }
 
+/**
+ * 应用重启后（内存 childStates 清空）从磁盘 conversation 记录降级重建跟踪条目：
+ * status 恒 stopped、delivered 恒 false（运行时视角语义，同 conversationToSnapshot），不挂计时器、不广播
+ * （UI 列表由 getChildrenByParent 的磁盘补集覆盖，rehydrate 不产生可见状态变化，resumeChild 复活时才广播 running）；
+ * 之后 resumeChild 与进程内路径完全一致（re-claim outputPath、重挂 timeout/idle 计时器均由其负责）。
+ * 幂等：已在跟踪中直接返回现有快照；非 agent 派出的会话不可重建，返回 null。
+ */
+export async function rehydrateChildState(workspaceId: string, conv: ConversationIndex): Promise<ChildStateSnapshot | null> {
+  const existing = childStates.get(conv.id);
+  if (existing) return toSnapshot(existing);
+  if (conv.role !== 'sub' || !conv.contractMetadata) return null;
+  const settings = await loadSettings();
+  const profiles: SubAgentProfile[] = settings.subAgent?.profiles ?? [];
+  const c: ChildStateInternal = {
+    ...conversationToSnapshot(conv, profiles),
+    sessionId: conv.sessionId ?? '',
+    workspaceId,
+    attachmentId: '',
+    consecutiveFails: 0,
+  };
+  childStates.set(c.childId, c);
+  return toSnapshot(c);
+}
+
 export function getChildSnapshot(childId: string): ChildStateSnapshot | null {
   const c = childStates.get(childId);
   return c ? toSnapshot(c) : null;
