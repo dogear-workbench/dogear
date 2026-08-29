@@ -85,6 +85,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       '保存主题记忆',
       '保存新的主题记忆或覆盖现有主题。\n' +
       'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
+      '⚠️ 记忆标准严苛：只有踩过的坑（非显而易见的根因与解法）、稳定使用模式、硬决策够格；实施流水账、方案细节（docs/plans 承载）、脑暴思路（笔记承载）不要存进来。\n' +
       '写错可以通过 dogear__ForgetMemory 删除，但会污染 dogear__RecallMemory 的检索结果。',
       z.object({
         slug: z

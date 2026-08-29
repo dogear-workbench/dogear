@@ -11,12 +11,14 @@ import { createDefaultSubAgentProfile } from '../services/settings-types.js';
 /** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
 export const MEMORY_GUIDANCE_APPEND =
   '\n## 记忆系统\n' +
-  '- 只记录有长期价值的信息（稳定的偏好、重要决策、反复出现的模式），不要存一次性对话内容\n' +
+  '- 记忆是给未来 agent 用的「怎么做」知识，标准严苛：只有踩过的坑（非显而易见的根因与解法）、稳定的使用模式、影响未来实施判断的硬决策才够格\n' +
+  '- 不进记忆：一次性实施/修复流水账（docs/plans 和代码承载）、脑暴/思路/方案（用 dogear__CreateNote 存笔记卡片给用户）、尚未收敛的探索\n' +
   '- 讨论用户可能已有偏好的话题时，先 dogear__RecallMemory 查一下有没有相关记忆';
 
 /** 主会话笔记存卡纪律（仅 role='main' 且有工作区时注入）。 */
 export const NOTES_DISCIPLINE_APPEND =
   '\n## 笔记存卡纪律\n' +
+  '- 笔记是给用户的工作台：方案卡片、脑暴思路、待办追踪都进这里，用户可见可管理\n' +
   '- 与用户聊完方案/设计并落盘 plan 文档后，调 dogear__CreateNote 存一张卡片：正文一句话摘要，todos 含「实施 <计划名>」且 plan 字段填 plan.md 路径\n' +
   '- 用户说「把待办里能做的做了」时，用 dogear__ListTodos(hasPlan=true) 找可实施项，按 staged-execution 纪律执行，完成后 dogear__UpdateNote 置 done 并 dogear__AppendNote 结果摘要\n' +
   '- 普通待办（无 plan）只读不动';
@@ -92,7 +94,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '记忆系统使用规范',
       category: 'memory',
       template: MEMORY_GUIDANCE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。引导 Agent 只记长期价值信息、讨论相关话题时先 dogear__RecallMemory 查询。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。记忆标准严苛（踩坑/稳定模式/硬决策），脑暴思路走笔记；讨论相关话题时先 dogear__RecallMemory 查询。',
       isDynamic: false,
     },
     {
@@ -100,7 +102,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '笔记存卡纪律',
       category: 'notes',
       template: NOTES_DISCIPLINE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。引导 Agent 聊完方案落盘 plan 后存卡，按「可实施待办」实施并在完成后回写状态、追加结果摘要。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（方案卡片/脑暴思路/待办追踪）；聊完方案落盘 plan 后存卡，按「可实施待办」实施并在完成后回写状态、追加结果摘要。',
       isDynamic: false,
     },
     {
