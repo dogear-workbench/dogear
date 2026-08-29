@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { ConversationUsage } from '@/types/usage';
 
+const CHIP_LIMIT = 8;
+
 /** 按工具调用分组：跨所有轮次累加同名工具次数 */
 function aggregateTools(usage: ConversationUsage): Array<[string, number]> {
   const map = new Map<string, number>();
@@ -12,36 +14,43 @@ function aggregateTools(usage: ConversationUsage): Array<[string, number]> {
   return [...map.entries()].sort((a, b) => b[1] - a[1]);
 }
 
+/** 按工具调用汇总（紧凑 chips 流式排布，默认 8 个 + 展开剩余） */
 export function UsageByTool({ usage }: { usage: ConversationUsage }) {
   const [expanded, setExpanded] = useState(false);
   const tools = aggregateTools(usage);
-  const visible = expanded ? tools : tools.slice(0, 5);
+  const visible = expanded ? tools : tools.slice(0, CHIP_LIMIT);
   const hidden = tools.length - visible.length;
 
+  if (tools.length === 0) return null;
+
   return (
-    <div className="p-3 space-y-1">
-      <div className="text-muted-foreground mb-1">按工具调用</div>
-      {tools.length === 0 ? (
-        <div className="text-muted-foreground">—</div>
-      ) : (
-        <>
-          {visible.map(([name, count]) => (
-            <div key={name} className="flex justify-between gap-2">
-              <span className="truncate" title={name}>{name}</span>
-              <span className="tabular-nums text-muted-foreground shrink-0">{count} ×</span>
-            </div>
-          ))}
-          {tools.length > 5 && (
-            <button
-              type="button"
-              onClick={() => setExpanded(e => !e)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {expanded ? '（收起）' : `（+${hidden} 个，展开）`}
-            </button>
-          )}
-        </>
-      )}
+    <div className="p-3">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[11px] text-muted-foreground">
+        <span className="shrink-0">工具</span>
+        {visible.map(([name, count]) => (
+          <span key={name} className="tabular-nums" title={name}>
+            <span className="font-mono">{name}</span> ×{count}
+          </span>
+        ))}
+        {hidden > 0 && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="hover:text-foreground"
+          >
+            +{hidden}
+          </button>
+        )}
+        {expanded && tools.length > CHIP_LIMIT && (
+          <button
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="hover:text-foreground"
+          >
+            收起
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -3,12 +3,16 @@ import type { ContextInfo } from './usage-utils';
 import { formatTokens, cacheHitRate } from './usage-utils';
 import { UsageSummaryHeader } from './UsageSummaryHeader';
 import { UsageByTool } from './UsageByTool';
+import { TurnDetailList } from '@/components/usage/TurnDetailList';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { ChevronRight } from 'lucide-react';
 
 interface Props {
   usage: ConversationUsage;
   context: ContextInfo;
   lastEntry: ConversationUsageEntry;
   isStreaming: boolean;
+  conversationId: string | null;
 }
 
 function fmtTime(ts: number): string {
@@ -49,18 +53,35 @@ function ModelBucketRows({ entry }: { entry: ConversationUsageEntry }) {
   );
 }
 
-/** Popover 主容器：头部上下文 / 当前轮概览 / 流式中提示 / 按工具折叠区 / 会话累计小字 */
-export function UsagePopoverContent({ usage, context, lastEntry, isStreaming }: Props) {
+/** Popover 主容器：头部上下文 / 会话累计（计费口径，对齐用量页）/ 当前轮概览 / 每轮明细折叠 / 工具 chips */
+export function UsagePopoverContent({ usage, context, lastEntry, isStreaming, conversationId }: Props) {
   const totals = usage.totals;
   const hitRate = Math.round(cacheHitRate(totals) * 100);
+  const sessionTotal = totals.inputTokens + totals.outputTokens + totals.cacheReadInputTokens;
+  const llmCallCount = usage.entries.reduce((n, e) => n + (e.numTurns || 0), 0);
 
   return (
     <div className="divide-y">
       <UsageSummaryHeader context={context} />
       <div className="p-3 space-y-1.5">
+        <div className="flex items-baseline justify-between">
+          <span className="text-muted-foreground">会话累计消耗</span>
+          <span className="tabular-nums font-medium">{formatTokens(sessionTotal)}</span>
+        </div>
+        <div className="tabular-nums text-muted-foreground">
+          {totals.turnCount} 轮 · {llmCallCount} 次模型调用 · 缓存命中 {hitRate}%
+        </div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 tabular-nums text-muted-foreground">
+          <Row label="Input" value={formatTokens(totals.inputTokens)} />
+          <Row label="Output" value={formatTokens(totals.outputTokens)} />
+          <Row label="缓存读" value={formatTokens(totals.cacheReadInputTokens)} />
+          <Row label="缓存写" value={formatTokens(totals.cacheCreationInputTokens)} />
+        </div>
+      </div>
+      <div className="p-3 space-y-1.5">
         <div className="text-muted-foreground mb-1">
           {isStreaming ? '最近完成轮' : '当前轮'}
-          <span className="ml-1 tabular-nums">#{lastEntry.turnIndex} · {fmtTime(lastEntry.timestamp)}</span>
+          <span className="ml-1 tabular-nums">第 {lastEntry.turnIndex + 1} 轮 · {fmtTime(lastEntry.timestamp)}</span>
         </div>
         <ModelBucketRows entry={lastEntry} />
         {isStreaming && (
@@ -74,18 +95,20 @@ export function UsagePopoverContent({ usage, context, lastEntry, isStreaming }: 
           </div>
         )}
       </div>
+      {conversationId && (
+        <Collapsible>
+          <CollapsibleTrigger className="group flex w-full items-center gap-1 p-3 text-muted-foreground hover:text-foreground">
+            <ChevronRight size={14} className="transition-transform group-data-[state=open]:rotate-90" />
+            每轮明细（{usage.entries.length} 轮）
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="max-h-64 overflow-y-auto px-3 pb-3">
+              <TurnDetailList conversationId={conversationId} />
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
+      )}
       <UsageByTool usage={usage} />
-      <div className="p-3 space-y-1 text-[11px] text-muted-foreground">
-        <div>
-          会话累计 {totals.turnCount} 轮 · 缓存命中率 <span className="tabular-nums">{hitRate}%</span>
-        </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 tabular-nums">
-          <Row label="Input total" value={formatTokens(totals.inputTokens)} />
-          <Row label="Cache reads" value={formatTokens(totals.cacheReadInputTokens)} />
-          <Row label="Output total" value={formatTokens(totals.outputTokens)} />
-          <Row label="Cache writes" value={formatTokens(totals.cacheCreationInputTokens)} />
-        </div>
-      </div>
     </div>
   );
 }

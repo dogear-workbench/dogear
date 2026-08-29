@@ -92,14 +92,12 @@
     - `GrepRenderer.tsx` — Grep 工具：pattern 徽章 + 命中行 + 关键词高亮
     - `SkillRenderer.tsx` — Skill 工具：lucide Zap 琥珀色图标 + Skill 名 + 参数 + 输出
     - `FileChangeRenderer.tsx` — Write/Edit 工具：pi(path/edits[]) 与旧 SDK(file_path/old_string) 双兼容，write 内容区，edit PathChip 读盘 + 红/绿 diff 区（快照预览入口已上移至 ToolBlock 标题行）；导出 formatByteSize/getEditCount 供 ToolBlock 摘要复用（替代已删除的 CodeChangeBlock）
-  - `usage-badge/` — 会话 token 用量监控（输入框工具栏徽章 + HoverCard 详情）
-    - `UsageBadge.tsx` — 徽章本体：进度条 + token 文字，hover/click 固定展开 HoverCard
-    - `UsageHoverCard.tsx` — 详情卡容器（组合下列四块）
-    - `UsageSummaryHeader.tsx` — 头部：上下文进度（SDK 真实快照）+ 会话级缓存命中率 + 累计轮数/API用时/首token + token 合计（不显示金额）
-    - `UsageByModel.tsx` / `UsageByTool.tsx` — 按模型轮数 / 按工具次数聚合（工具 Top5 折叠）
-    - `UsageEntryList.tsx` / `UsageEntryRow.tsx` — 明细列表（默认5条+全部展开，压缩 marker 特殊行）+ 单行 click 展开二级明细（5m/1h缓存、子代理、权限拒绝）
+  - `usage-badge/` — 会话 token 用量监控（输入框工具栏徽章 + Popover 详情）
+    - `UsageBadge.tsx` — 徽章本体：上下文进度条 + token 文字（只显示上下文占用，费用口径收在弹层），点击弹 UsagePopoverContent
+    - `UsagePopoverContent.tsx` — 弹层主容器：头部上下文占用 / 会话累计消耗（计费口径合计 in+out+缓存读，对齐用量页，附轮次·模型调用次数·缓存命中率·四格分层）/ 当前轮逐模型分桶（轮次序号自然语言「第 N 轮」，turnIndex+1）/ 每轮明细 Collapsible（复用 components/usage/TurnDetailList）/ 末尾工具 chips 紧凑行
+    - `UsageSummaryHeader.tsx` — 弹层头部：当前上下文占用与上限百分比
+    - `UsageByTool.tsx` — 按工具次数聚合（紧凑 chips 流式排布，默认 8 个+展开剩余）
     - `useConversationUsage.ts` — hook：getUsage 拉取 + usageEntryAdded 订阅刷新 + 从 latestContext 派生上下文占用/上限
-    - `UsageContextBreakdown.tsx` — 上下文构成细分（SDK categories 按类别 token 占比条）
     - `usage-utils.ts` — 派生纯函数（resolveContext/ContextInfo/formatTokens/cacheHitRate），含单测
 - `ToolBlock.tsx` — 工具块路由组件（顶层 components/，normalizeToolName 归一后分发到专属 renderer：Read/Glob/Grep/Skill/Write/Edit（FileChangeRenderer），其余走 ToolDetailShell；图标走 lucide 简约样式，无边框包裹；getToolSummary 摘要兼容 file_path/path 双入参；标题行 headerActions Eye 预览按钮（buildPreviewAction：Read(.md/.txt/.json)/Write(.md)/Skill/dogear__ListGroupFiles(relPath) 走 openInline 快照，Edit 读盘，仅 success 且非 error 显示，span+stopPropagation 规避嵌套 button）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建

@@ -54,7 +54,7 @@ export function UsageBadge({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[460px] p-0 text-xs">
-        <UsagePopoverContent usage={usage} context={context} lastEntry={lastEntry} isStreaming={isStreaming} />
+        <UsagePopoverContent usage={usage} context={context} lastEntry={lastEntry} isStreaming={isStreaming} conversationId={conversationId} />
       </PopoverContent>
     </Popover>
   );

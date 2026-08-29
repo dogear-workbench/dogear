@@ -87,7 +87,7 @@ function TurnRow({ entry, segmented }: { entry: ConversationUsageEntry; segmente
           ) : (
             <CheckCircle2 size={12} className="shrink-0 text-green-600" />
           )}
-          <span className="shrink-0 tabular-nums text-muted-foreground">#{entry.turnIndex}</span>
+          <span className="shrink-0 tabular-nums text-muted-foreground">第 {entry.turnIndex + 1} 轮</span>
           <span className="shrink-0 tabular-nums text-muted-foreground">{fmtTime(entry.timestamp)}</span>
           {models.map((m) => (
             <Badge key={m} variant="subtle" className="max-w-40 truncate px-1.5 py-0 text-[10px] font-normal" title={m}>
