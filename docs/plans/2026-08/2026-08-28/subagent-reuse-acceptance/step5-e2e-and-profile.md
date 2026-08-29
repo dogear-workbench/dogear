@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 端到端验证 + Profile 手动调整
-status: pending
+status: in_progress
 ---
 
 ## 目标
@@ -16,11 +16,11 @@ status: pending
 
 ## 计划改动
 
-- [ ] settings 手动调整（用户操作或主会话代改）：
+- [x] settings 手动调整（用户操作或主会话代改）：
   - 「默认」：`enabledAbilities.reference: true`；description 补「实施完成后交付通知与摘要走共享区或正文」
   - 「探索」：description 补「交付默认在消息正文，复杂报告才写共享区」；article 开关用户定
   - 实施 Profile 模型档位是否提档：用户定（改 modelSelection.tier）
-- [ ] `bun run build:electron` 重编译，重启应用使主进程改动生效
+- [x] `bun run build:electron` 重编译，重启应用使主进程改动生效（编译已完成；重启待用户操作）
 - [ ] e2e 走查（在真实主会话里逐项验证）：
   1. 派一个无 outputPath 的调研子会话（通讯型）→ 确认创建成功、契约无「交付路径」行
   2. 子会话正文交付 → 主会话收到 delivery + 自述
