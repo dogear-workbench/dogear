@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 任务数据层与队列执行器
-status: pending
+status: done
 ---
 
 ## 目标
@@ -31,9 +31,31 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - `originSessionId` 不作为工具入参（计划字面是 `CreateTask({ title, planPath, originSessionId })`）：照 step3 source 决策由挂载点闭包注入 conversationId，不让 LLM 抄会话 ID
+  - tipc 路由名带 `Collab` 前缀（`listCollabTasks`/`getCollabTask`/`reviewCollabTask`）：`listTasks` 等已被 scheduler 路由占用
+  - 数据层拆 `task-store.ts`（纯逻辑零 Electron 依赖）+ `task-service.ts`（广播包装），对齐 notes-store/notes-service 惯例；service 层写操作后广播 `tasksChanged`（计划未列，供 Step 5 实时刷新，notes-service 同款惯例）
+  - 执行会话拉起后自动 `setPermissionMode('autoExecute')`（无人值守不弹权限确认），任务轮结束后恢复原模式
 - 改动文件清单：
+  - 新 `electron/main/services/task-store.ts`：Task 类型/状态机/.dogear/tasks.json 读写（带锁事务 + 原子写）
+  - 新 `electron/main/services/task-service.ts`：store 之上的广播聚合层
+  - 新 `electron/main/services/task-queue.ts`：串行队列执行器（创建执行会话、结果提取、通知、启动恢复）
+  - 新 `electron/main/agents/tools/task-tools.ts`：dogear__CreateTask / dogear__ListTasks + registerToolGroup
+  - 新 `electron/main/tipc/tasks.ts` + `tipc/index.ts` 挂载
+  - 改 `electron/main/tipc/renderer-handlers.ts`：tasksChanged 事件
+  - 改 `electron/main/agents/pi-session/pi-session.ts`：主会话挂载 dogear-tasks（notes 旁）
+  - 改 `electron/main/index.ts`：启动恢复 + 队列 kick
+  - 新 `electron/main/services/task-store.test.ts`：状态机/存储 8 测
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `Task { id, title, status: queued|running|review|done|rejected, planPath, originSessionId?, execSessionId?, result?, createdAt, updatedAt }`（ISO 时间串；id 8 位 base36）
+  - tipc：`listCollabTasks({ workspacePath }) → { groups }`；`getCollabTask({ workspacePath, taskId }) → { detail: Task & { planContent, planError? } }`；`reviewCollabTask({ workspacePath, taskId, action: 'approve'|'reject' }) → { task }`
+  - 渲染层事件 `tasksChanged({ workspacePath })`，任务写操作后必发
+  - 重挂队列：`getTaskQueue().kick()`；启动恢复走 `recoverAndStartTaskQueue()`
+- 下个 step 该从哪里继续：TaskPanel UI（列表分组用 listCollabTasks，审核按钮用 reviewCollabTask，订阅 tasksChanged 刷新）；通知点击目前定位到执行会话（focusConversation），深链待审任务详情可在渲染层用 notificationId 前缀 `task-` 识别
 - 待办或已知限制：
+  - 执行结果摘要靠提示词约定（回复末尾 `<task-result>` 标签），无专用工具；未命中标签时回退本轮文本尾部（截 2000 字）
+  - 执行超时硬编码 60 分钟（`task-queue.ts` EXEC_TIMEOUT_MS），未接设置项
+  - rejected → queued 迁移服务层已开放（手动重挂用），UI 未暴露
+  - 执行会话与普通主会话同构出现在会话列表，无特殊标识
+  - 全量 bun test 有 8 个存量失败（settings-service 导出与测试不同步），与本 step 无关

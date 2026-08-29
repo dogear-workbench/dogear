@@ -546,6 +546,11 @@ app.whenReady().then(async () => {
     .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
     .catch((err) => console.error('sessionId 自愈扫描失败:', err));
 
+  // 任务队列启动：各工作区遗留 running 任务回 queued 后开跑
+  void import('./services/task-queue.js')
+    .then((m) => m.recoverAndStartTaskQueue())
+    .catch((err) => console.error('任务队列启动失败:', err));
+
   // 首页报告文件监视：dashboard.md 任意写入都广播给前端实时刷新
   void import('./services/memory/dashboard-watcher.js')
     .then((m) => m.startDashboardWatcher())

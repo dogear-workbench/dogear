@@ -22,6 +22,7 @@ import { digestRouter } from './digest.js';
 import { reviewRouter } from './review.js';
 import { categoryRouter } from './category.js';
 import { notesRouter } from './notes.js';
+import { tasksRouter } from './tasks.js';
 import { groupRouter } from './group.js';
 import { delegationRouter } from './delegation.js';
 import { systemPromptRouter } from './system-prompt.js';
@@ -52,6 +53,7 @@ export const router = {
   ...reviewRouter,
   ...categoryRouter,
   ...notesRouter,
+  ...tasksRouter,
   ...groupRouter,
   ...delegationRouter,
   ...systemPromptRouter,

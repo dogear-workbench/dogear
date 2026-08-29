@@ -39,6 +39,7 @@ import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createReviewToolDefs } from '../tools/review-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
+import { createTaskToolDefs } from '../tools/task-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
@@ -555,6 +556,10 @@ export class PiSession extends EventEmitter {
     if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
       toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath, {
+        workspaceId: this.config.workspaceId,
+        conversationId: this.config.conversationId,
+      })));
+      toolDefs.push(...this.registerPack('dogear-tasks', createTaskToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
       })));
