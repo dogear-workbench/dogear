@@ -270,7 +270,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
       '创建一个子会话来执行独立任务，与当前会话建立双向通信通道。仅用于需要把任务委派给独立会话处理时。',
       z.object({
         task: z.string().min(1).describe('委派给新会话的任务描述（自然语言）'),
-        outputPath: z.string().min(1).describe('子会话交付文件写入共享区的相对路径（如 step1-delivery.md）'),
+        outputPath: z.string().min(1).optional().describe('子会话交付文件写入共享区的相对路径；可省略——省略时为通讯型交付（答案直接放交付消息正文），适合问答、验证类任务'),
         title: z.string().optional().describe('新会话标题；缺省由系统生成'),
         profile: z.string().optional().describe('子会话 Profile 名称或 id；未指定时用默认 Profile'),
         model: z.string().min(1).optional().describe('指定模型 ID（如 gemini-2.5-pro）；不填则按 Profile → 主会话模型的默认逻辑'),
@@ -290,8 +290,9 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
               `稍后用 dogear__ListLinkedSessions 查到 sessionId 后，再用 dogear__SendMessage / dogear__WaitForMessage 与它通信。`,
             );
           }
+          const outputHint = args.outputPath ? `→ 建议交付路径 ${args.outputPath}` : '→ 通讯型交付（答案直接放交付消息正文）';
           return textResult(
-            `✅ 已创建新会话 ${sessionId}（${snapshot.title}，profile: ${snapshot.profileName}）→ 建议交付路径 ${args.outputPath}\n` +
+            `✅ 已创建新会话 ${sessionId}（${snapshot.title}，profile: ${snapshot.profileName}）${outputHint}\n` +
             `用 dogear__SendMessage("${sessionId}", ...) 与它通信；dogear__WaitForMessage(["${sessionId}"]) 等待它交付，或直接 dogear__WaitForMessage() 不传参等待它。`,
           );
         } catch (err) {

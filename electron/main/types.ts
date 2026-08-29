@@ -232,7 +232,8 @@ export type ChildTerminalReason = 'failed' | 'hang' | 'timeout' | 'cancelled' | 
 
 export interface DelegateSpec {
   task: string;
-  outputPath: string;
+  /** 交付文件在共享区的相对路径；缺省 = 通讯型交付（答案在交付消息正文） */
+  outputPath?: string;
   title?: string;
   /** 子会话 Profile 名称或 id；未指定时用默认 Profile */
   profile?: string;

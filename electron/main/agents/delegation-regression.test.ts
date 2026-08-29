@@ -80,6 +80,34 @@ test('abortWaitsForParent 老链路：等待 resolve null、运行中子会话�
   bridge.abortMessageWaits(other.parentConversationId);
 });
 
+test('通讯型交付（无 outputPath）：创建、交付、停止后复活全流程空路径不误判', async () => {
+  const parentConversationId = nextParentConversationId();
+
+  const snapshot = await bridge.startChild({
+    parentConversationId,
+    workspaceId: 'ws-test',
+    groupId: 'g1',
+    spec: { task: '问答任务', profile: 'p-a' },
+  });
+  expect(snapshot.outputPath).toBe('');
+  expect(snapshot.sessionId).toBeTruthy();
+
+  bridge.markChildDelivered(snapshot.childId);
+  expect(bridge.getChildSnapshot(snapshot.childId)!.delivered).toBe(true);
+
+  await bridge.stopChild(snapshot.childId, 'cancelled');
+  await bridge.resumeChild(snapshot.childId, { reason: '测试调起' });
+  const resumed = bridge.getChildSnapshot(snapshot.childId)!;
+  expect(resumed.status).toBe('running');
+  expect(resumed.outputPath).toBe('');
+
+  const children = await bridge.getChildrenByParent(parentConversationId);
+  expect(children.length).toBe(1);
+  expect(children[0].outputPath).toBe('');
+
+  bridge.abortMessageWaits(parentConversationId);
+});
+
 test('getChildrenByParent 补集截断：内存不跟踪的历史子会话超过 10 条时只返回最近 10 条', async () => {
   const parentConversationId = nextParentConversationId();
   const ids: string[] = [];

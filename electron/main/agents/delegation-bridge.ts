@@ -317,12 +317,15 @@ export async function resumeChild(childId: string, opts: { reason: string; model
     }
   }
 
-  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-  const claim = await groupSharedService.claimOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
-  // file_exists 视为本会话部分产出继续复用（复活前刚 release，其他会话拿不到 claim）；
-  // 真正占用冲突只有 claimed_by_other
-  if (!claim.ok && claim.reason === 'claimed_by_other') {
-    throw new Error(`outputPath "${c.outputPath}" 已被子会话 ${claim.holderChildId} 占用，无法复活`);
+  // 通讯型交付无路径占用，跳过 release/re-claim 对（避免对空串的 file_exists 误判）
+  if (c.outputPath) {
+    groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+    const claim = await groupSharedService.claimOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+    // file_exists 视为本会话部分产出继续复用（复活前刚 release，其他会话拿不到 claim）；
+    // 真正占用冲突只有 claimed_by_other
+    if (!claim.ok && claim.reason === 'claimed_by_other') {
+      throw new Error(`outputPath "${c.outputPath}" 已被子会话 ${claim.holderChildId} 占用，无法复活`);
+    }
   }
 
   const oldAttachmentId = c.attachmentId;
@@ -482,6 +485,8 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     ?? null;
 
   const title = spec.title ?? `子会话: ${spec.task.slice(0, 30)}`;
+  // 空 outputPath = 通讯型交付：不进占用表（claim 对空串会误判 file_exists）
+  const outputPath = spec.outputPath ?? '';
 
   if (!parent.sessionId) {
     logger.warn(`发起会话 ${parentConversationId} 尚无 sessionId，新会话 ${title} 将不写入 contractMetadata（无法溯源派出者）`);
@@ -504,14 +509,16 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   });
   broadcastConversationListChanged(workspaceId);
 
-  // claim outputPath，失败则回滚
-  const claim = await groupSharedService.claimOutputPath(workspaceId, groupId, spec.outputPath, childId);
-  if (!claim.ok) {
-    try { await conversationService.deleteConversation(workspaceId, childId); } catch (err) { logger.warn('回滚 conversation 失败', err); }
-    if (claim.reason === 'file_exists') {
-      throw new Error(`outputPath "${spec.outputPath}" 对应文件已存在`);
+  // claim outputPath，失败则回滚；通讯型交付无路径可占，跳过
+  if (outputPath) {
+    const claim = await groupSharedService.claimOutputPath(workspaceId, groupId, outputPath, childId);
+    if (!claim.ok) {
+      try { await conversationService.deleteConversation(workspaceId, childId); } catch (err) { logger.warn('回滚 conversation 失败', err); }
+      if (claim.reason === 'file_exists') {
+        throw new Error(`outputPath "${outputPath}" 对应文件已存在`);
+      }
+      throw new Error(`outputPath "${outputPath}" 已被子会话 ${claim.holderChildId} 占用`);
     }
-    throw new Error(`outputPath "${spec.outputPath}" 已被子会话 ${claim.holderChildId} 占用`);
   }
 
   // 先注册占位 state，保证启动中的子会话可被状态查询和停止逻辑识别。
@@ -520,7 +527,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     childId,
     parentConversationId,
     groupId,
-    outputPath: spec.outputPath,
+    outputPath,
     task: spec.task,
     title,
     status: 'running',
@@ -542,7 +549,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
     attachment = await conversationRuntimeService.attachConversation(childId, workspaceId, 'desktop', {});
   } catch (err) {
     childStates.delete(childId);
-    groupSharedService.releaseOutputPath(workspaceId, groupId, spec.outputPath, childId);
+    groupSharedService.releaseOutputPath(workspaceId, groupId, outputPath, childId);
     try { await conversationService.deleteConversation(workspaceId, childId); } catch { /* ignore */ }
     throw err;
   }
@@ -550,7 +557,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   const session = getPiSessionManager().getSession(attachment.sessionId);
   if (!session) {
     childStates.delete(childId);
-    groupSharedService.releaseOutputPath(workspaceId, groupId, spec.outputPath, childId);
+    groupSharedService.releaseOutputPath(workspaceId, groupId, outputPath, childId);
     try { conversationRuntimeService.detachAttachment(attachment.attachmentId); } catch { /* ignore */ }
     throw new Error(`session 拉起失败: ${attachment.sessionId}`);
   }
@@ -617,7 +624,7 @@ export function markChildDelivered(childId: string): void {
   const c = childStates.get(childId);
   if (!c || c.delivered) return;
   c.delivered = true;
-  groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
+  if (c.outputPath) groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
 }
