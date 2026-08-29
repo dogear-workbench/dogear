@@ -98,12 +98,17 @@ function createWindow() {
 
   getSessionNotificationService().registerMainWindow(mainWindow);
 
-  getSessionNotificationService().setLocateCallback((conversationId, workspaceId) => {
+  getSessionNotificationService().setLocateCallback((conversationId, workspaceId, taskId) => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
-      getRendererHandlers<RendererHandlers>(mainWindow.webContents).focusConversation.send({ conversationId, workspaceId });
+      const handlers = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
+      if (taskId) {
+        handlers.focusTask.send({ taskId, workspaceId });
+      } else {
+        handlers.focusConversation.send({ conversationId, workspaceId });
+      }
     } catch (err) {
-      console.error('[session-notification] focusConversation 发送失败:', err);
+      console.error('[session-notification] focus 事件发送失败:', err);
     }
   });
 }

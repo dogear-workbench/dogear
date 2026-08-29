@@ -11,9 +11,11 @@ export interface SessionNotificationInput {
   title: string;
   toolName?: string;
   body?: string;
+  // 任务通知携带 taskId：点击深链任务视图，跳过独立会话窗口分支
+  taskId?: string;
 }
 
-type LocateCallback = (conversationId: string, workspaceId: string) => void;
+type LocateCallback = (conversationId: string, workspaceId: string, taskId?: string) => void;
 
 const DEDUP_MAX = 500;
 
@@ -208,15 +210,17 @@ class SessionNotificationService {
   }
 
   private handleClick(input: SessionNotificationInput): void {
-    const sessionWin = this.sessionWindows.get(input.conversationId);
-    if (sessionWin && !sessionWin.isDestroyed()) {
-      try {
-        if (sessionWin.isMinimized()) sessionWin.restore();
-        if (!sessionWin.isVisible()) sessionWin.show();
-        sessionWin.focus();
-        return;
-      } catch (err) {
-        mainLogger.warn('[session-notification] 恢复独立会话窗口失败，降级到主窗口:', err);
+    if (!input.taskId) {
+      const sessionWin = this.sessionWindows.get(input.conversationId);
+      if (sessionWin && !sessionWin.isDestroyed()) {
+        try {
+          if (sessionWin.isMinimized()) sessionWin.restore();
+          if (!sessionWin.isVisible()) sessionWin.show();
+          sessionWin.focus();
+          return;
+        } catch (err) {
+          mainLogger.warn('[session-notification] 恢复独立会话窗口失败，降级到主窗口:', err);
+        }
       }
     }
 
@@ -232,7 +236,7 @@ class SessionNotificationService {
 
       if (this.locateCallback) {
         try {
-          this.locateCallback(input.conversationId, input.workspaceId);
+          this.locateCallback(input.conversationId, input.workspaceId, input.taskId);
         } catch (err) {
           mainLogger.warn('[session-notification] 定位回调执行失败:', err);
         }

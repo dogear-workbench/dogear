@@ -271,6 +271,9 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
+  // 任务通知点击深链（主窗口收到后切换到笔记页任务视图并选中该任务）
+  focusTask: (data: { taskId: string; workspaceId: string }) => void;
+
   // 热更新下载进度（主进程→渲染层推送）
   updateProgress: (data: {
     percent: number;

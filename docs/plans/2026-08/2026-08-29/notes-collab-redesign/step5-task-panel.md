@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 任务视图
-status: pending
+status: done
 ---
 
 ## 目标
@@ -32,9 +32,32 @@ TaskPanel 上线：任务列表按状态分组、详情聚合（plan 渲染/执�
 
 ### 实际改动
 - 与计划差异：
+  1. 列表分组渲染为 5 组（queued/running/review/done/rejected 各自独立），计划字面「done(+rejected)」——rejected 并入 done 会让失败与成功任务混排，独立「已打回」组更清晰
+  2. 打回操作加 showConfirm 二次确认（通过不加）：打回即审核终结，误触会丢失当次 review 机会
+  3. 详情拆为独立 TaskDetail.tsx（TaskPanel.tsx 专注骨架+列表），避免单文件逼近 300 行红线；TaskDetail 以 key={taskId} 挂载，换任务即重挂载
+  4. 审核成功后用 tipc 返回的 task 本地同步 detail，列表刷新由 tasksChanged 广播兜底
+  5. plan/结果渲染复用 MarkdownRenderer（react-markdown，与聊天消息同源）
 - 改动文件清单：
+  - 新 `types/task.ts`（镜像主进程 Task/TaskGroups/TaskDetail）
+  - 新 `stores/task-store.ts`（groups/activeTaskId + loadTasks/subscribeTasksChanged，仿 notes-store）
+  - 新 `stores/task-focus-store.ts`（深链请求 focusReq{taskId,seq}，seq 递增不需清除）
+  - 新 `components/notes/TaskStatusBadge.tsx` / `TaskPanel.tsx` / `TaskDetail.tsx`
+  - 改 `components/notes/NotesPanel.tsx`（任务分支接通 TaskPanel、[任务] 按钮 review 徽章、激活时惰性 loadTasks+订阅广播、深链请求切 mode）
+  - 改 `app/page.tsx`（监听 focusTask：切工作区→切 NOTES tab→requestTaskFocus）
+  - 改 `electron/main/tipc/renderer-handlers.ts`（新 focusTask 事件）
+  - 改 `electron/main/services/session-notification-service.ts`（SessionNotificationInput 加 taskId；taskId 通知跳过独立窗口分支，直接主窗口深链）
+  - 改 `electron/main/index.ts`（setLocateCallback 按 taskId 分流 focusTask/focusConversation）
+  - 改 `electron/main/services/task-queue.ts`（notify 携带 taskId）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `useTaskStore`（stores/task-store.ts）：`{ groups, loading, loadedWorkspacePath, activeTaskId, loadTasks(wsPath), subscribeTasksChanged(): () => void, setActiveTaskId }`
+  - `useTaskFocusStore`（stores/task-focus-store.ts）：`{ focusReq: { taskId, seq } | null, requestTaskFocus(taskId) }`；消费方 NotesPanel（切 mode）与 TaskPanel（选中任务）各自响应同一请求
+  - 深链全链路：task-queue notify(taskId) → 通知点击 → session-notification-service（taskId 直达主窗口）→ index.ts 分流 `focusTask({ taskId, workspaceId })` → page.tsx 切工作区+切 NOTES tab+requestTaskFocus
+  - 会话跳转复用 `jumpToSourceConversation({ conversationId, title })`（lib/reference-guard.ts），执行会话链接同款
+- 下个 step 该从哪里继续：本计划全部 step 完成，闭环
 - 待办或已知限制：
+  - review 徽章计数依赖 NotesPanel 激活后加载过任务列表（与 notes 惰性加载同模式）；从未打开笔记页时主进程通知是唯一提醒通道
+  - rejected 任务无 UI 重挂入口（按全局决策：重挂 = 用户改 plan 后让 agent 重新 CreateTask）
+  - TaskPanel 列表骨架与笔记视图 aside/分隔条约 25 行平行重复（两视图解耦的取舍）
+  - 存量未动：执行超时 60min 硬编码、执行会话无特殊标识（step4 遗留）

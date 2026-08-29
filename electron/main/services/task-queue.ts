@@ -228,6 +228,7 @@ class TaskQueueExecutor {
       workspaceId,
       title,
       body,
+      taskId: task.id,
     });
   }
 }

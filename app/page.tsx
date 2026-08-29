@@ -26,6 +26,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionStore, HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useTaskFocusStore } from '@/stores/task-focus-store';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
@@ -136,6 +137,28 @@ export default function Home() {
           useConversationStore.getState().selectConversation(convResult.conversation);
         } catch (err) {
           console.error('[focusConversation] 定位对话失败:', err);
+        }
+      })();
+    });
+    return () => unsub();
+  }, [setWorkspace]);
+
+  // 任务通知点击：确保工作区就绪后切到笔记页任务视图并选中该任务
+  useEffect(() => {
+    const unsub = rendererEvents.focusTask.listen(({ taskId, workspaceId }) => {
+      (async () => {
+        try {
+          const allResult = await client.getAll();
+          const targetWorkspace = allResult.workspaces?.find((w) => w.id === workspaceId);
+          if (!targetWorkspace) return;
+          const currentWs = useWorkspaceStore.getState().workspace;
+          if (currentWs?.id !== workspaceId) {
+            await setWorkspace(targetWorkspace);
+          }
+          useSessionStore.getState().switchTab(NOTES_TAB_ID);
+          useTaskFocusStore.getState().requestTaskFocus(taskId);
+        } catch (err) {
+          console.error('[focusTask] 定位任务失败:', err);
         }
       })();
     });

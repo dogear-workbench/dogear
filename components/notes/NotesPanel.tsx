@@ -16,7 +16,10 @@ import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useNotesStore } from '@/stores/notes-store';
+import { useTaskStore } from '@/stores/task-store';
+import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { showConfirm } from '@/stores/confirm-store';
+import { TaskPanel } from '@/components/notes/TaskPanel';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { NoteCardItem } from '@/components/notes/NoteCardItem';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
@@ -62,6 +65,13 @@ export function NotesPanel() {
   const createNote = useNotesStore((s) => s.createNote);
   const deleteNote = useNotesStore((s) => s.deleteNote);
 
+  const taskGroups = useTaskStore((s) => s.groups);
+  const taskLoadedWorkspacePath = useTaskStore((s) => s.loadedWorkspacePath);
+  const loadTasks = useTaskStore((s) => s.loadTasks);
+  const subscribeTasksChanged = useTaskStore((s) => s.subscribeTasksChanged);
+  const taskFocusReq = useTaskFocusStore((s) => s.focusReq);
+  const reviewCount = taskGroups?.review.length ?? 0;
+
   const [mode, setMode] = useState<PanelMode>('notes');
   const [view, setView] = useState<NotesView>('timeline');
   const [listHidden, setListHidden] = useState(false);
@@ -106,6 +116,20 @@ export function NotesPanel() {
   useEffect(() => {
     return subscribeNotesChanged();
   }, [subscribeNotesChanged]);
+
+  useEffect(() => {
+    return subscribeTasksChanged();
+  }, [subscribeTasksChanged]);
+
+  useEffect(() => {
+    if (!isActive || !workspace || taskLoadedWorkspacePath === workspace.path) return;
+    void loadTasks(workspace.path);
+  }, [isActive, workspace, taskLoadedWorkspacePath, loadTasks]);
+
+  // 任务通知深链：切到任务视图（选中任务由 TaskPanel 响应同一请求）
+  useEffect(() => {
+    if (taskFocusReq) setMode('tasks');
+  }, [taskFocusReq]);
 
   useEffect(() => {
     if (!isActive || !workspace || loadedWorkspacePath === workspace.path) return;
@@ -246,6 +270,11 @@ export function NotesPanel() {
             >
               <Icon className="w-3.5 h-3.5" />
               {label}
+              {id === 'tasks' && reviewCount > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold leading-none text-white">
+                  {reviewCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -280,9 +309,17 @@ export function NotesPanel() {
       </header>
 
       {mode === 'tasks' ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-          任务视图规划中，敬请期待
-        </div>
+        workspacePath ? (
+          <TaskPanel
+            workspacePath={workspacePath}
+            listHidden={listHidden}
+            onToggleListHidden={toggleListHidden}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+            请先选择工作区
+          </div>
+        )
       ) : (
         <div className="flex-1 flex min-h-0">
           <aside
