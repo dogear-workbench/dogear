@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 笔记页骨架与 Bear 化编辑区
-status: pending
+status: done
 ---
 
 ## 目标
@@ -37,9 +37,26 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - 卡片「摘要」未做：NoteMeta 无摘要字段（index.json 不含正文），本步约束不进主进程，降级为「标题+时间+标签」；后续可在主进程索引加 excerpt
+  - meta 行的 🔗（来源）与 💬（会话引用）按钮未渲染（Step 3 实装，不留死按钮）；hover 按钮区容器已预留
+  - 沉浸快捷键定为 Ctrl+\（计划未定具体键位）
+  - 存量「待办/标签/回收站」视图保留为列表区顶部二级切换（计划未提及去向，删除会丢回收站功能）
 - 改动文件清单：
+  - `components/notes/NotesPanel.tsx`：骨架重做（顶栏 [笔记][任务] 切换+搜索+新建 / 列表 300px / 分隔条双击+Ctrl+\ 隐藏列表 / 详情区 flex-1，任务 tab 占位）
+  - `components/notes/NoteEditor.tsx`：重做（独立标题输入、meta 小灰行、760px 正文、notes-prose 排版、聚焦浮现工具栏、移除待办区、保存状态机重写、Esc/Ctrl+Enter）
+  - `components/notes/NoteMetaSection.tsx`（新）：meta 展开区的标签/引用编辑（从原编辑器抽出）
+  - `components/notes/NoteCardItem.tsx`：卡片改「标题主体+时间+标签」，hover 按钮区预留引用位，移除待办数
+  - `src/globals.css`：`.notes-editor` 聚焦工具栏 CSS（focus-within）+ `.notes-prose` 排版
+- 保存 bug 根因：flush 中 `void updateNote().finally(() => setSaving(false))` 从不检查返回值，失败时 saving 复位而 touched 仍 true → header 固定显示「已保存」；且 pendingRef 在请求前置空，失败即丢数据。修法：await 返回值，成功 → saved 闪现 1.5s；失败 → patch 回填 pendingRef（与新输入合并）+ error 态持续显示，下次输入/保存自动重试
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `NoteEditor` props 未变（workspacePath/noteId/onClose/onDelete），父组件仍 key={noteId} 重挂
+  - `NoteMetaSection` props：`{ tags, links, onTagsChange, onLinksChange }`，变更即 imme 立即保存
+  - 标题模型：frontmatter 无标题字段，标题=正文首个 ATX 标题行；`splitLeadingHeading(content)` 剥离为标题输入，保存时 `joinHeading` 拼回；titleDirty/hadHeading 两 ref 控制「存量无标题笔记不自动前置 H1」
+  - `NoteEditor.saveState: 'idle' | 'saving' | 'saved' | 'error'`，显示在 meta 行右侧
+- 下个 step 该从哪里继续：Step 3 在两处挂引用按钮——`NoteCardItem` hover 按钮容器（已留空 div）、`NoteEditor` meta 行（日期与 #N 之间）；锚定数据走 reference-store 的 NoteReference API（Step 1 已备）
 - 待办或已知限制：
+  - MDXEditor 内部 dialog 若在自己处理 Esc 后未阻止冒泡，按 Esc 会同时关闭 dialog 并返回列表（已用 defaultPrevented 防御，radix 层是否 preventDefault 未逐版本验证）
+  - 工具栏随内容滚动（MDXEditor topArea sticky 受包含块限制），长文中部不可见；换 Tiptap 时升级气泡
+  - 并发 flush 乱序写回风险与原版相同（同字段旧盖新，低概率），未加锁

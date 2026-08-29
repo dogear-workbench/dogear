@@ -21,8 +21,6 @@ interface NoteCardItemProps {
 }
 
 export function NoteCardItem({ note, active, onOpen, onDelete }: NoteCardItemProps) {
-  const undoneCount = note.todos.filter((t) => t.status !== 'done').length;
-
   return (
     <div
       role="button"
@@ -39,25 +37,19 @@ export function NoteCardItem({ note, active, onOpen, onDelete }: NoteCardItemPro
         active && 'bg-muted/50',
       )}
     >
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground shrink-0">{formatNoteTime(note.created)}</span>
-        {note.todos.length > 0 && (
-          <span
-            className={cn(
-              'text-xs shrink-0 tabular-nums',
-              undoneCount > 0 ? 'text-amber-600' : 'text-muted-foreground',
-            )}
-            title="未完成/全部待办"
-          >
-            {undoneCount}/{note.todos.length}
-          </span>
-        )}
-        <div className="flex-1 flex justify-end gap-1 flex-wrap min-w-0">
-          {note.tags.map((tag) => (
-            <Badge key={tag} variant="subtle" className="px-1.5 py-0 text-[10px] font-normal">
-              {tag}
-            </Badge>
-          ))}
+      <div className="flex items-start gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium line-clamp-1">{note.title || '（无标题）'}</p>
+          <div className="mt-1 flex items-center gap-1.5 flex-wrap min-w-0">
+            <span className="text-xs text-muted-foreground shrink-0">{formatNoteTime(note.created)}</span>
+            {note.tags.map((tag) => (
+              <Badge key={tag} variant="subtle" className="px-1.5 py-0 text-[10px] font-normal">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-0.5 shrink-0">
           {onDelete && (
             <Button
               variant="ghost"
@@ -67,14 +59,13 @@ export function NoteCardItem({ note, active, onOpen, onDelete }: NoteCardItemPro
                 onDelete();
               }}
               title="移入回收站"
-              className="opacity-0 group-hover:opacity-100 shrink-0"
+              className="opacity-0 group-hover:opacity-100"
             >
               <Trash2 className="w-3.5 h-3.5" />
             </Button>
           )}
         </div>
       </div>
-      <p className="mt-1 text-sm line-clamp-1">{note.title || '（无内容）'}</p>
     </div>
   );
 }

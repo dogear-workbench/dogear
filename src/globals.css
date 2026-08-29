@@ -223,6 +223,49 @@
   }
 }
 
+/* ─── 笔记编辑区（Bear 化） ─── */
+.notes-editor .mdxeditor-toolbar {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.15s ease, visibility 0.15s ease;
+}
+
+.notes-editor:focus-within .mdxeditor-toolbar {
+  opacity: 1;
+  visibility: visible;
+}
+
+.notes-prose {
+  font-family: "LXGW WenKai", Georgia, "Times New Roman", serif;
+  font-size: 1.0625rem;
+  line-height: 1.9;
+}
+
+.notes-prose p {
+  margin-block: 0.625em;
+}
+
+.notes-prose h1 {
+  font-size: 1.4em;
+  margin-block: 1.2em 0.6em;
+}
+
+.notes-prose h2 {
+  font-size: 1.25em;
+  margin-block: 1.1em 0.5em;
+}
+
+.notes-prose h3 {
+  font-size: 1.125em;
+  margin-block: 1em 0.4em;
+}
+
+.notes-prose h4,
+.notes-prose h5,
+.notes-prose h6 {
+  margin-block: 0.875em 0.375em;
+}
+
 /* ─── Minimap 消息闪烁动画 ─── */
 @keyframes minimap-flash {
   0%, 100% { background-color: transparent; }

@@ -13,7 +13,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 引用队列锚定化](./step1-anchor-references.md) — 5 类引用加归属会话，根治漂移；顺带 NoteReference 类型
-- [ ] [Step 2: 笔记页骨架与 Bear 化编辑区](./step2-notes-layout.md) — 顶栏/列表 300px/独立标题/meta 小灰行/760px 正文/聚焦工具栏/待办移出
+- [x] [Step 2: 笔记页骨架与 Bear 化编辑区](./step2-notes-layout.md) — 顶栏/列表 300px/独立标题/meta 小灰行/760px 正文/聚焦工具栏/待办移出
 - [ ] [Step 3: 协作闭环 UI](./step3-collab-ui.md) — 笔记引用按钮+跳转锚定、笔记芯片与 XML、来源身份证与来源行
 - [ ] [Step 4: 任务数据层与队列执行器](./step4-task-engine.md) — Task 存储、状态机、串行队列、自动创建执行会话、通知、tipc、agent 工具
 - [ ] [Step 5: 任务视图](./step5-task-panel.md) — TaskPanel 列表分组+详情（plan 渲染/会话链接/结果/审核）、顶栏接通、通知深链
