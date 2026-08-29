@@ -1,5 +1,5 @@
 import { useState, memo } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2 } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
@@ -190,7 +190,8 @@ export const MessageItem = memo(function MessageItem({
                   parsed.snippetRefs.length > 0 ||
                   parsed.fileRefs.length > 0 ||
                   parsed.conversationRefs.length > 0 ||
-                  parsed.sharedFileRefs.length > 0;
+                  parsed.sharedFileRefs.length > 0 ||
+                  parsed.noteRefs.length > 0;
                 return (
                   <div className="relative">
                     {/* Sender 徽章：agent 跨会话消息 / 用户在 agent 会话里介入 */}
@@ -268,6 +269,16 @@ export const MessageItem = memo(function MessageItem({
                           >
                             <Share2 className="w-3 h-3 flex-shrink-0" />
                             <span className="max-w-[160px] truncate">{`共享文件 · ${ref.relPath}`}</span>
+                          </span>
+                        ))}
+                        {parsed.noteRefs.map((ref, i) => (
+                          <span
+                            key={`note-${i}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 border border-rose-200 rounded-full text-xs text-rose-700"
+                            title={`引用笔记: ${ref.title}`}
+                          >
+                            <StickyNote className="w-3 h-3 flex-shrink-0" />
+                            <span className="max-w-[160px] truncate">{ref.title}</span>
                           </span>
                         ))}
                       </div>

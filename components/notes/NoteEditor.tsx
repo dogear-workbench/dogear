@@ -18,12 +18,13 @@ import {
   type MDXEditorMethods,
 } from '@mdxeditor/editor';
 import '@mdxeditor/editor/style.css';
-import { ArrowLeft, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Trash2, MessagesSquare, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { NoteMetaSection } from '@/components/notes/NoteMetaSection';
 import { useNotesStore, type NotePatch } from '@/stores/notes-store';
+import { referenceNoteIntoFocus, jumpToSourceConversation } from '@/lib/reference-guard';
 import type { Note } from '@/types/note';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error';
@@ -240,6 +241,26 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
 
             <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
               <span title={`创建于 ${formatTime(note.created)}`}>{formatMetaDate(note.created)}</span>
+              {note.source && (
+                <button
+                  onClick={() => jumpToSourceConversation(note.source!)}
+                  title={`来自会话「${note.source.title || '未命名会话'}」· ${new Date(note.source.date).toLocaleDateString('zh-CN')}，点击跳转`}
+                  className="cursor-pointer hover:text-foreground"
+                >
+                  <Link2 className="w-3 h-3" />
+                </button>
+              )}
+              <button
+                onClick={() => void referenceNoteIntoFocus({
+                  noteId: note.id,
+                  title: titleDraft.trim() || note.title,
+                  workspacePath,
+                })}
+                title="引用到最近的会话"
+                className="cursor-pointer hover:text-foreground"
+              >
+                <MessagesSquare className="w-3 h-3" />
+              </button>
               <button
                 onClick={() => setMetaExpanded((v) => !v)}
                 title={tags.length > 0 ? `${tags.length} 个标签，点击展开标签与引用` : '添加标签'}

@@ -1,5 +1,5 @@
-import { memo, useMemo, type RefObject } from 'react';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder } from 'lucide-react';
+import { memo, useMemo, useEffect, useRef, type RefObject } from 'react';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder, StickyNote } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { client } from '@/lib/client';
 import { useReferenceStore } from '@/stores/reference-store';
+import { useInputFocusStore } from '@/stores/input-focus-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
@@ -123,6 +124,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   const removeReferencedConversation = useReferenceStore((s) => s.removeReferencedConversation);
   const allReferencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
   const removeReferencedSharedFile = useReferenceStore((s) => s.removeReferencedSharedFile);
+  const allReferencedNotes = useReferenceStore((s) => s.referencedNotes);
+  const removeReferencedNote = useReferenceStore((s) => s.removeReferencedNote);
   const referencedArticles = useMemo(
     () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
     [allReferencedArticles, conversationId]
@@ -143,6 +146,18 @@ export const ChatInputArea = memo(function ChatInputArea({
     () => allReferencedSharedFiles.filter((f) => f.anchorConversationId === conversationId),
     [allReferencedSharedFiles, conversationId]
   );
+  const referencedNotes = useMemo(
+    () => allReferencedNotes.filter((n) => n.anchorConversationId === conversationId),
+    [allReferencedNotes, conversationId]
+  );
+
+  // 引用跳转等场景的聚焦请求：seq 变化即聚焦本会话输入框
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const focusSeq = useInputFocusStore((s) => (conversationId ? s.focusSeq[conversationId] : undefined));
+  useEffect(() => {
+    if (focusSeq === undefined) return;
+    textareaRef.current?.focus();
+  }, [focusSeq]);
 
   return (
     <div className="p-3">
@@ -171,10 +186,10 @@ export const ChatInputArea = memo(function ChatInputArea({
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
             )}>
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
-            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || pendingImages.length > 0) && (
+            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 引用芯片 */}
-                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0) && (
+                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
                     {/* 文章引用芯片 — 淡蓝 */}
                     {referencedArticles.map(article => (
@@ -272,6 +287,25 @@ export const ChatInputArea = memo(function ChatInputArea({
                         </Button>
                       </span>
                     ))}
+                    {/* 笔记引用芯片 — 玫粉 */}
+                    {referencedNotes.map(note => (
+                      <span
+                        key={note.noteId}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 border border-rose-200 rounded-full text-xs text-rose-700"
+                        title={`引用笔记: ${note.title}`}
+                      >
+                        <StickyNote className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[160px] truncate">{note.title}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeReferencedNote(note.noteId)}
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-rose-100"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </span>
+                    ))}
                   </div>
                 )}
 
@@ -302,6 +336,7 @@ export const ChatInputArea = memo(function ChatInputArea({
 
             {/* 无边框 Textarea */}
             <InputGroupTextarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyPress}

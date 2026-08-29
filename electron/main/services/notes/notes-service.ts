@@ -7,7 +7,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { Note, NoteMeta, NoteTodoEntry, TodoItem, TodoStatus } from './note-types.js';
+import type { Note, NoteMeta, NoteSource, NoteTodoEntry, TodoItem, TodoStatus } from './note-types.js';
 import {
   getNotesDir,
   getTrashDir,
@@ -32,6 +32,8 @@ export interface CreateNoteInput {
   tags?: string[];
   links?: string[];
   todos?: TodoItem[];
+  /** 来源身份证（Agent 存卡时传入；用户手记不传） */
+  source?: NoteSource;
 }
 
 export type NotePatch = Partial<Pick<Note, 'content' | 'tags' | 'links' | 'todos'>>;
@@ -62,6 +64,7 @@ export async function createNote(workspacePath: string, input: CreateNoteInput):
     tags: normalizeTags(input.tags),
     links: normalizeLinks(input.links),
     todos: normalizeTodos(input.todos),
+    ...(input.source ? { source: input.source } : {}),
     content: input.content,
   };
   await writeNoteFile(path.join(getNotesDir(workspacePath), note.file), note);

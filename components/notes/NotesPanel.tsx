@@ -25,6 +25,7 @@ import { TagsView } from '@/components/notes/TagsView';
 import { TrashView } from '@/components/notes/TrashView';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { referenceNoteIntoFocus } from '@/lib/reference-guard';
 import type { NoteMeta } from '@/types/note';
 
 const VIEWS = [
@@ -95,6 +96,11 @@ export function NotesPanel() {
     if (!ok) return;
     const success = await deleteNote(workspace.path, note.id);
     if (success && note.id === activeNoteId) setActiveNoteId(null);
+  };
+
+  const handleReference = (note: NoteMeta) => {
+    if (!workspace) return;
+    void referenceNoteIntoFocus({ noteId: note.id, title: note.title, workspacePath: workspace.path });
   };
 
   useEffect(() => {
@@ -189,6 +195,7 @@ export function NotesPanel() {
               active={note.id === activeNoteId}
               onOpen={() => setActiveNoteId(note.id)}
               onDelete={() => void handleDelete(note)}
+              onReference={() => handleReference(note)}
             />
           ))}
         </div>
@@ -205,6 +212,7 @@ export function NotesPanel() {
             active={note.id === activeNoteId}
             onOpen={() => setActiveNoteId(note.id)}
             onDelete={() => void handleDelete(note)}
+            onReference={() => handleReference(note)}
           />
         ))}
       </div>

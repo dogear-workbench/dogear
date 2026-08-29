@@ -146,12 +146,18 @@ export interface ParsedSharedFileRef {
   relPath: string;
   absPath: string;
 }
+export interface ParsedNoteRef {
+  noteId: string;
+  title: string;
+  workspacePath: string;
+}
 export interface ParsedUserMessage {
   articleRefs: ParsedArticleRef[];
   snippetRefs: ParsedSnippetRef[];
   fileRefs: ParsedFileRef[];
   conversationRefs: ParsedConversationRef[];
   sharedFileRefs: ParsedSharedFileRef[];
+  noteRefs: ParsedNoteRef[];
   userMessage: string;
   /** 跨会话消息来源标记；未标记默认按 role 推断（agent = 跨会话代表发来，human = 用户手打） */
   senderKind?: 'agent' | 'human';

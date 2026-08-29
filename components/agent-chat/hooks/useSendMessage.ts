@@ -83,6 +83,8 @@ export function useSendMessage(params: UseSendMessageParams) {
   const clearReferencedConversationsFor = useReferenceStore((s) => s.clearReferencedConversationsFor);
   const allReferencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
   const clearReferencedSharedFilesFor = useReferenceStore((s) => s.clearReferencedSharedFilesFor);
+  const allReferencedNotes = useReferenceStore((s) => s.referencedNotes);
+  const clearReferencedNotesFor = useReferenceStore((s) => s.clearReferencedNotesFor);
   const referencedArticles = useMemo(
     () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
     [allReferencedArticles, conversationId]
@@ -102,6 +104,10 @@ export function useSendMessage(params: UseSendMessageParams) {
   const referencedSharedFiles = useMemo(
     () => allReferencedSharedFiles.filter((f) => f.anchorConversationId === conversationId),
     [allReferencedSharedFiles, conversationId]
+  );
+  const referencedNotes = useMemo(
+    () => allReferencedNotes.filter((n) => n.anchorConversationId === conversationId),
+    [allReferencedNotes, conversationId]
   );
 
   // 权限模式名称映射
@@ -334,6 +340,17 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearReferencedSharedFilesFor(conversationId!);
     }
 
+    // 笔记引用：独立 block，agent 通过 dogear__GetNote(noteId) 读全文（GetNote 按 workspacePath 挂载，守卫已保证同工作区）
+    if (referencedNotes.length > 0) {
+      const refLines = referencedNotes.map(n =>
+        `  <note noteId="${sanitize(n.noteId)}" title="${sanitize(n.title)}" workspacePath="${sanitize(n.workspacePath)}" />`
+      ).join('\n');
+      textBlocks.push({
+        text: `<referenced_notes>\n${refLines}\n</referenced_notes>`
+      });
+      clearReferencedNotesFor(conversationId!);
+    }
+
     // 用户消息作为最后一个 block
     if (userMessage) {
       textBlocks.push({ text: userMessage });
@@ -493,7 +510,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     triggerSessionRestart, referencedArticles, clearReferencedArticlesFor,
     quotedSnippets, clearQuotedSnippetsFor, referencedFiles, clearReferencedFilesFor,
     referencedConversations, clearReferencedConversationsFor, referencedSharedFiles,
-    clearReferencedSharedFilesFor, forkConversation,
+    clearReferencedSharedFilesFor, referencedNotes, clearReferencedNotesFor, forkConversation,
   ]);
 
   // 键盘事件处理：Ctrl+Enter 发送，Enter 换行

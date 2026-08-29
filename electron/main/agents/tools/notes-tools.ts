@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import * as notesService from '../../services/notes/notes-service.js';
-import type { NoteMeta, TodoItem } from '../../services/notes/note-types.js';
+import * as conversationService from '../../services/conversation-service.js';
+import type { NoteMeta, NoteSource, TodoItem } from '../../services/notes/note-types.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -45,6 +46,7 @@ function metaHeader(note: NoteMeta) {
   ];
   if (note.tags.length > 0) rows.push(`标签: ${note.tags.join(' / ')}`);
   if (note.links.length > 0) rows.push(`引用: ${note.links.join('、')}`);
+  if (note.source) rows.push(`来源: 会话「${note.source.title || '未命名'}」（${note.source.conversationId}，${new Date(note.source.date).toLocaleString('zh-CN')}）`);
   if (note.todos.length > 0) rows.push('待办:', ...todoLines(note.todos).map((l) => `  ${l}`));
   return rows.join('\n');
 }
@@ -53,18 +55,41 @@ function notFound(noteId: string) {
   return errorResult(`未找到卡片 ${noteId}，可先用 dogear__SearchNotes 确认卡片 ID。`);
 }
 
+/** 挂载上下文：存在时 CreateNote 自动写入来源身份证，agent 无需也不应传会话标识 */
+export interface NotesToolSourceContext {
+  workspaceId: string;
+  conversationId: string;
+}
+
+/** 查当前会话标题快照，组装 source；会话已不存在时返回 undefined（不写来源） */
+async function resolveSource(ctx: NotesToolSourceContext): Promise<NoteSource | undefined> {
+  try {
+    const conv = await conversationService.getById(ctx.workspaceId, ctx.conversationId);
+    if (!conv) return undefined;
+    return {
+      conversationId: ctx.conversationId,
+      title: conv.title,
+      date: new Date().toISOString(),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * 创建笔记卡片工具中立定义（ToolDef[]）
  * @param workspacePath - 工作区路径
+ * @param sourceContext - 来源会话上下文，主会话挂载点传入
  */
-export function createNotesToolDefs(workspacePath: string): ToolDef[] {
+export function createNotesToolDefs(workspacePath: string, sourceContext?: NotesToolSourceContext): ToolDef[] {
   return [
     defineTool(
       'dogear__CreateNote',
       '创建笔记卡片',
       '在工作区创建一张新的 Markdown 笔记卡片。\n' +
         '正文首行会成为卡片标题；todos 用于结构化待办，带 plan 字段的待办视为「可实施待办」。\n' +
-        '聊完方案/设计并落盘 plan 文档后，应存一张卡片：正文一句话摘要，todos 含「实施 <计划名>」且 plan 填 plan 文档路径。',
+        '聊完方案/设计并落盘 plan 文档后，应存一张卡片：正文一句话摘要，todos 含「实施 <计划名>」且 plan 填 plan 文档路径。\n' +
+        '存卡后在回复中告知用户存了什么（标题与卡片 ID），用户需要知情。',
       z.object({
         content: z.string().min(1).describe('卡片正文（Markdown），首行会成为卡片标题'),
         tags: z.array(z.string().min(1)).optional().describe('标签列表'),
@@ -73,11 +98,13 @@ export function createNotesToolDefs(workspacePath: string): ToolDef[] {
       }),
       async (args) => {
         try {
+          const source = sourceContext ? await resolveSource(sourceContext) : undefined;
           const note = await notesService.createNote(workspacePath, {
             content: args.content,
             tags: args.tags,
             links: args.links,
             todos: args.todos?.map((t) => ({ id: t.id ?? '', text: t.text, status: t.status ?? 'pending', plan: t.plan })),
+            source,
           });
           return {
             content: [{

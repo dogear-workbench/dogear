@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { Trash2, MessagesSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,9 +18,11 @@ interface NoteCardItemProps {
   active: boolean;
   onOpen: () => void;
   onDelete?: () => void;
+  /** 有值时 hover 区显示「引用进会话」按钮（回收站等场景不传） */
+  onReference?: () => void;
 }
 
-export function NoteCardItem({ note, active, onOpen, onDelete }: NoteCardItemProps) {
+export function NoteCardItem({ note, active, onOpen, onDelete, onReference }: NoteCardItemProps) {
   return (
     <div
       role="button"
@@ -50,6 +52,20 @@ export function NoteCardItem({ note, active, onOpen, onDelete }: NoteCardItemPro
           </div>
         </div>
         <div className="flex gap-0.5 shrink-0">
+          {onReference && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                onReference();
+              }}
+              title="引用到最近的会话"
+              className="opacity-0 group-hover:opacity-100"
+            >
+              <MessagesSquare className="w-3.5 h-3.5" />
+            </Button>
+          )}
           {onDelete && (
             <Button
               variant="ghost"

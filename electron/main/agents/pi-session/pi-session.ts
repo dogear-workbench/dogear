@@ -554,7 +554,10 @@ export class PiSession extends EventEmitter {
 
     if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
-      toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath)));
+      toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath, {
+        workspaceId: this.config.workspaceId,
+        conversationId: this.config.conversationId,
+      })));
     }
 
     return toolDefs;

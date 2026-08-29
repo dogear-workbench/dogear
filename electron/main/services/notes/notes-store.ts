@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { safeFileWrite, safeJsonWrite } from '../safe-json.js';
-import type { Note, NoteMeta, TodoItem } from './note-types.js';
+import type { Note, NoteMeta, NoteSource, TodoItem } from './note-types.js';
 
 export const NOTES_DIR = '.dogear/notes';
 export const TRASH_DIR_NAME = '.trash';
@@ -58,6 +58,7 @@ interface ParsedFrontmatter {
   tags: string[];
   links: string[];
   todos: TodoItem[];
+  source?: NoteSource;
 }
 
 /** 解析卡片文件原文为结构化 Note；解析失败抛错（调用方决定跳过还是报错） */
@@ -75,6 +76,7 @@ export function parseNoteFile(raw: string): Note {
     tags: fm.tags,
     links: fm.links,
     todos: fm.todos,
+    ...(fm.source ? { source: fm.source } : {}),
     content,
   };
 }
@@ -88,6 +90,7 @@ function parseFrontmatterLines(text: string): ParsedFrontmatter {
     links: [],
     todos: [],
   };
+  const source: Partial<NoteSource> = {};
   const lines = text.split(/\r?\n/);
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -125,7 +128,19 @@ function parseFrontmatterLines(text: string): ParsedFrontmatter {
       case 'links':
         result.links = parseStringArray(rawValue);
         break;
+      case 'source_conversation':
+        source.conversationId = parseScalar(rawValue);
+        break;
+      case 'source_title':
+        source.title = parseScalar(rawValue);
+        break;
+      case 'source_date':
+        source.date = parseScalar(rawValue);
+        break;
     }
+  }
+  if (source.conversationId) {
+    result.source = { conversationId: source.conversationId, title: source.title ?? '', date: source.date ?? result.created };
   }
   return result;
 }
@@ -225,6 +240,11 @@ export function serializeNoteFile(note: Omit<Note, 'file' | 'title'>): string {
   lines.push(`updated: ${quoteIfNeeded(note.updated)}`);
   if (note.tags.length > 0) lines.push(`tags: ${serializeStringArray(note.tags)}`);
   if (note.links.length > 0) lines.push(`links: ${serializeStringArray(note.links)}`);
+  if (note.source) {
+    lines.push(`source_conversation: ${quoteIfNeeded(note.source.conversationId)}`);
+    lines.push(`source_title: ${quoteIfNeeded(note.source.title)}`);
+    lines.push(`source_date: ${quoteIfNeeded(note.source.date)}`);
+  }
   if (note.todos.length > 0) {
     lines.push('todos:');
     for (const todo of note.todos) lines.push(`  - ${JSON.stringify(cleanTodo(todo))}`);
@@ -348,6 +368,7 @@ export function noteToIndexItem(note: Note): NoteMeta {
     tags: [...note.tags],
     links: [...note.links],
     todos: note.todos.map((t) => ({ ...t })),
+    ...(note.source ? { source: { ...note.source } } : {}),
   };
 }
 

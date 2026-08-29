@@ -16,6 +16,8 @@ export const NOTES_TAB_ID = '__notes__';
 /** 常驻「数据中心」tab 的哨兵 id（非真实会话） */
 export const DATA_CENTER_TAB_ID = '__data_center__';
 
+const SENTINEL_TAB_IDS = new Set([HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID]);
+
 /** 单个会话标签页信息 */
 export interface SessionTab {
   conversationId: string;
@@ -29,6 +31,8 @@ export interface SessionTab {
 interface SessionState {
   tabs: SessionTab[];
   activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 HOME/NOTES_TAB_ID 哨兵）
+  /** 最近一次激活的真实会话 tab id；切到哨兵 tab 不清膛，笔记页引用按钮以它为锚定目标 */
+  lastActiveConversationTabId: string | null;
   /** 当前在独立窗口中打开的会话 ID 集合 */
   sessionWindowIds: Set<string>;
   /** 最近一次"被点击"的对话列表节点 id（用于双层高亮区分"焦点节点" vs "已打开同会话其他节点"） */
@@ -64,13 +68,14 @@ const MAX_TABS = 10;
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
   activeTabId: HOME_TAB_ID,
+  lastActiveConversationTabId: null,
   sessionWindowIds: new Set<string>(),
   lastFocusedNodeId: null,
 
   openTab: (conversationId, title, workspaceId) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
     if (existing) {
-      set({ activeTabId: conversationId });
+      set({ activeTabId: conversationId, lastActiveConversationTabId: conversationId });
       return true;
     }
     if (get().tabs.length >= MAX_TABS) {
@@ -90,6 +95,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         permissionMode: 'default',
       }],
       activeTabId: conversationId,
+      lastActiveConversationTabId: conversationId,
     }));
     return true;
   },
@@ -102,12 +108,21 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       if (state.activeTabId === conversationId) {
         newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : HOME_TAB_ID;
       }
-      return { tabs: newTabs, activeTabId: newActive };
+      // 最近活跃会话被关时回退到剩余 tab 中最新的一个（数组尾部最近打开）
+      const newLastActive = state.lastActiveConversationTabId === conversationId
+        ? newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : null
+        : state.lastActiveConversationTabId;
+      return { tabs: newTabs, activeTabId: newActive, lastActiveConversationTabId: newLastActive };
     });
   },
 
   switchTab: (conversationId) => {
-    set({ activeTabId: conversationId });
+    // 哨兵 tab（首页/笔记/数据中心）激活不影响「最近活跃会话」记录
+    const isConversation = !SENTINEL_TAB_IDS.has(conversationId);
+    set({
+      activeTabId: conversationId,
+      ...(isConversation ? { lastActiveConversationTabId: conversationId } : {}),
+    });
   },
 
   updateSession: (conversationId, sessionId, permissionMode, attachmentId) => {
@@ -159,6 +174,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   reset: () => set({
     tabs: [],
     activeTabId: HOME_TAB_ID,
+    lastActiveConversationTabId: null,
     sessionWindowIds: new Set<string>(),
     lastFocusedNodeId: null,
   }),

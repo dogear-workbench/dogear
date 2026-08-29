@@ -15,6 +15,16 @@ export interface TodoItem {
   plan?: string;
 }
 
+/** 来源身份证：仅 Agent 存卡时写入，记录诞生会话（用户手记不记） */
+export interface NoteSource {
+  /** 来源对话 ID（tab 主键，failover 不漂移；agent sessionId 会随重启更换，不做跳回 key） */
+  conversationId: string;
+  /** 落卡时会话标题快照 */
+  title: string;
+  /** 落卡时间 ISO */
+  date: string;
+}
+
 export interface NoteMeta {
   id: string;
   file: string;
@@ -24,6 +34,7 @@ export interface NoteMeta {
   tags: string[];
   links: string[];
   todos: TodoItem[];
+  source?: NoteSource;
 }
 
 export interface Note extends NoteMeta {
