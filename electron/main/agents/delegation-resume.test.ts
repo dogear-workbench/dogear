@@ -257,3 +257,42 @@ test('no_delivery 终态后补交付：markChildDelivered 在 stopped 状态下�
   bridge.markChildDelivered(snapshot.childId);
   expect(bridge.getChildSnapshot(snapshot.childId)!.delivered).toBe(true);
 });
+
+test('SendMessage 打停机已交付子会话：自动调起复活，唤醒消息为追问原文而非中断模板', async () => {
+  const tools = await import('./tools/delegation-tools.js');
+  const { snapshot, parentConversationId, sessionId } = await startTestChild(bridge, 'p-a');
+
+  bridge.markChildDelivered(snapshot.childId);
+  await bridge.stopChild(snapshot.childId, 'cancelled');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.delivered).toBe(true);
+
+  const send = tools.createDelegationToolDefs({ role: 'main', workspaceId: 'ws-test', groupId: 'g1', conversationId: parentConversationId })
+    .find((d) => d.name === 'dogear__SendMessage')!;
+  const result = await send.handler({ toSessionId: sessionId, message: '追问：请把结论按表格重排', options: { delivery: false } });
+
+  expect(result.isError).toBeUndefined();
+  expect(result.content[0].text).toContain('已自动调起');
+  const snap = bridge.getChildSnapshot(snapshot.childId)!;
+  expect(snap.status).toBe('running');
+  expect(snap.delivered).toBe(true);
+  expect(sendCalls.length).toBe(2);
+  expect(sendCalls[1].text).toContain('追问：请把结论按表格重排');
+  expect(sendCalls[1].text).toContain('<sender kind="agent"');
+  expect(sendCalls[1].text).not.toContain('你刚才因');
+  expect(sendCalls[1].text).not.toContain('从中断处继续完成任务');
+});
+
+test('SendMessage 打停机的父会话（非我派出）：不触发自动调起，提示稍后重试', async () => {
+  const tools = await import('./tools/delegation-tools.js');
+  const { snapshot, parentConversationId, sessionId } = await startTestChild(bridge, 'p-a');
+
+  const send = tools.createDelegationToolDefs({ role: 'sub', workspaceId: 'ws-test', groupId: 'g1', conversationId: snapshot.childId, parentConversationId })
+    .find((d) => d.name === 'dogear__SendMessage')!;
+  const result = await send.handler({ toSessionId: `sdk-${parentConversationId}`, message: '向父会话追问', options: { delivery: false } });
+
+  expect(result.isError).toBeUndefined();
+  expect(result.content[0].text).toContain('对方暂时收不到');
+  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
+  expect(sendCalls.length).toBe(1);
+});

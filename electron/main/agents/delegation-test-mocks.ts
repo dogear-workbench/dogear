@@ -168,6 +168,9 @@ export function installDelegationMocks(): void {
           sessions.set(sessionId, makeFakeSession(sessionId));
           attachSessionByConv.set(conversationId, sessionId);
           sessionOwnerConv.set(sessionId, conversationId);
+          // 对齐真实 attach：sessionId 回写 conversation，getBySessionId 才能反查到子会话
+          const conv = convStore.get(conversationId);
+          if (conv) conv.sessionId = sessionId;
         }
         return { sessionId, attachmentId: `att-${++attachSeq}` };
       },

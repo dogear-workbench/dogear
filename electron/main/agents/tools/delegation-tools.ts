@@ -123,6 +123,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         }
 
         const delivery = args.options?.delivery === true;
+        const label = delivery ? '交付' : '消息';
 
         // 若我是被派出的会话，且这是发给派出我的会话的正式交付，同步 bridge 的交付事实（UI/统计依赖它）
         if (opts.role === 'sub' && delivery && target.conv.id === opts.parentConversationId) {
@@ -138,9 +139,27 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         });
 
         if (outcome === 'target_inactive') {
+          // 自动调起判断留在工具层（deliverMessage 保持同步纯投递）：只对「我直接派出的停机子会话」生效
+          if (target.conv.contractMetadata?.parentSessionId === ownSessionId) {
+            const childId = bridge.getChildIdBySessionId(opts.conversationId, args.toSessionId) ?? target.conv.id;
+            const snapshot = bridge.getChildSnapshot(childId);
+            if (snapshot && snapshot.status !== 'running') {
+              try {
+                await bridge.resumeChildAndDeliver(childId, {
+                  fromSessionId: ownSessionId,
+                  fromLabel: ownConv?.title || '未知会话',
+                  message: args.message,
+                  delivery,
+                });
+                return textResult(`✅ 目标会话已停机，已自动调起并送达${label}（${snapshot.title}），消息将作为它复活后的首轮输入`);
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                return errorResult(`自动调起停机子会话失败: ${message}`);
+              }
+            }
+          }
           return textResult('⚠ 消息已校验通过，但目标会话当前未在运行（可能已关闭），对方暂时收不到，请稍后重试');
         }
-        const label = delivery ? '交付' : '消息';
         const via = outcome === 'waiter' ? '（对方正在等待，已直接送达）' : '（已加入对方下一轮输入）';
         return textResult(`✅ 已发送${label}给 ${args.toSessionId} ${via}`);
       },

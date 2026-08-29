@@ -304,7 +304,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
  * 同模型重试则直接复用存活 session 保留内存上下文。所有 await 步骤成功后才提交状态，
  * 失败时状态仍是终态，由调用方回退通知。dogear__ResumeSession 工具与终态自动重调都走这里。
  */
-export async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null }): Promise<void> {
+export async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null; wakeupMessage?: string }): Promise<void> {
   const c = childStates.get(childId);
   if (!c || c.status === 'running') return;
 
@@ -379,7 +379,8 @@ export async function resumeChild(childId: string, opts: { reason: string; model
   broadcastDeliveriesAwaitChanged(c.parentConversationId);
 
   logger.info(`子会话 ${childId} 第 ${c.consecutiveFails} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
-  session.sendMessage(buildResumePrompt(opts.reason, c.outputPath)).catch((error: unknown) => {
+  const wakeInput = opts.wakeupMessage ?? buildResumePrompt(opts.reason, c.outputPath);
+  session.sendMessage(wakeInput).catch((error: unknown) => {
     logger.error(`子会话 ${childId} 复活后 sendMessage 失败`, error);
     onSessionComplete(childId, {
       subtype: 'failed',
@@ -821,8 +822,7 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
   const session = localSessionId ? getPiSessionManager().getSession(localSessionId) : undefined;
   if (!session) return 'target_inactive';
 
-  const senderTag = `<sender kind="agent" session_id="${escapeXmlAttr(opts.fromSessionId)}" name="${escapeXmlAttr(opts.fromLabel)}" delivery="${opts.delivery ? 'true' : 'false'}"/>`;
-  const text = `${senderTag}\n${opts.message}`;
+  const text = `${buildSenderTag(opts.fromSessionId, opts.fromLabel, opts.delivery)}\n${opts.message}`;
   session.sendMessage(text).catch((err: unknown) => {
     logger.warn(`deliverMessage 推送失败 (${opts.toConversationId})`, err);
   });
@@ -878,4 +878,25 @@ function escapeXmlAttr(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function buildSenderTag(fromSessionId: string, fromLabel: string, delivery: boolean): string {
+  return `<sender kind="agent" session_id="${escapeXmlAttr(fromSessionId)}" name="${escapeXmlAttr(fromLabel)}" delivery="${delivery ? 'true' : 'false'}"/>`;
+}
+
+/**
+ * SendMessage 打停机直派子会话时的自动调起编排（工具层调用）：复用 resumeChild 拉起会话，
+ * 唤醒输入用 sender 标签包装的追问原文而非「中断续跑」模板——追问语境下「你因中断停止」是错误提示。
+ * 不在本进程运行时跟踪（如应用重启后）直接抛错，由工具层回退为「暂收不到」提示。
+ */
+export async function resumeChildAndDeliver(
+  childId: string,
+  deliverOpts: Omit<DeliverMessageOptions, 'toConversationId'>,
+): Promise<void> {
+  const c = childStates.get(childId);
+  if (!c) throw new Error(`会话 ${childId} 不在本进程运行时跟踪中，无法自动调起`);
+  await resumeChild(childId, {
+    reason: '主会话 SendMessage 自动调起',
+    wakeupMessage: `${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery)}\n${deliverOpts.message}`,
+  });
 }
