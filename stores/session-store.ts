@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import type { PiPermissionMode } from '@/types/settings';
+import { useReferenceStore } from './reference-store';
 
 /** 常驻「首页」tab 的哨兵 id（非真实会话） */
 export const HOME_TAB_ID = '__home__';
@@ -94,6 +95,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   closeTab: (conversationId) => {
+    useReferenceStore.getState().clearAllFor(conversationId);
     set((state) => {
       const newTabs = state.tabs.filter((t) => t.conversationId !== conversationId);
       let newActive = state.activeTabId;

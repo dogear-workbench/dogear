@@ -16,7 +16,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
-import { guardReferenceIntoFocus } from '@/lib/reference-guard';
+import { guardReferenceIntoFocus, requireAnchorConversationId } from '@/lib/reference-guard';
 import type { WorkspaceFileNode } from '@/types/electron-api';
 import type { ArticleMeta } from '@/types/article';
 import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
@@ -358,7 +358,10 @@ function TreeItemRow({
   const handleOpenInExplorer = () => openInExplorer(originalNode.path);
   const handleQuoteToChat = () => {
     const articleMeta = buildArticleMeta(originalNode);
-    if (articleMeta) toggleReferenceArticle(articleMeta);
+    if (!articleMeta) return;
+    const anchorId = requireAnchorConversationId();
+    if (!anchorId) return;
+    toggleReferenceArticle(articleMeta, anchorId);
   };
   const handleNewSubFolder = () => {
     onSetCreatingFolder(originalNode.path);
@@ -412,7 +415,9 @@ function TreeItemRow({
         {data.nodeType === 'directory' && (
           <ContextMenuItem onClick={() => {
             if (!guardReferenceIntoFocus()) return;
-            addReferencedFile({ name: originalNode.name, path: originalNode.path, type: 'folder' });
+            const anchorId = requireAnchorConversationId();
+            if (!anchorId) return;
+            addReferencedFile({ name: originalNode.name, path: originalNode.path, type: 'folder' }, anchorId);
             toast.success(`已引用文件夹 ${originalNode.name}`);
           }}>
             <Quote className="w-4 h-4" />
@@ -422,7 +427,9 @@ function TreeItemRow({
         {data.nodeType === 'file' && (
           <ContextMenuItem onClick={() => {
             if (!guardReferenceIntoFocus()) return;
-            addReferencedFile({ name: originalNode.name, path: originalNode.path });
+            const anchorId = requireAnchorConversationId();
+            if (!anchorId) return;
+            addReferencedFile({ name: originalNode.name, path: originalNode.path }, anchorId);
             toast.success(`已引用 ${originalNode.name}`);
           }}>
             <Quote className="w-4 h-4" />

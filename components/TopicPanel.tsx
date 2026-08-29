@@ -8,6 +8,7 @@ import { client } from '@/lib/client';
 import { useGroupStore } from '@/stores/group-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import { requireAnchorConversationId } from '@/lib/reference-guard';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
@@ -243,6 +244,8 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
                     onDelete={() => handleDeleteFile(f.relPath)}
                     onReference={() => {
                       if (!groupId || !sharedDir) return;
+                      const anchorId = requireAnchorConversationId();
+                      if (!anchorId) return;
                       const absPath = sharedDir.endsWith('/') || sharedDir.endsWith('\\')
                         ? `${sharedDir}${f.relPath}`
                         : `${sharedDir}/${f.relPath}`;
@@ -250,7 +253,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
                         groupId,
                         relPath: f.relPath,
                         absPath,
-                      });
+                      }, anchorId);
                       toast.success(`已引用 ${f.relPath}`);
                     }}
                   />

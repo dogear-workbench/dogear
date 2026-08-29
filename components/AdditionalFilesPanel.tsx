@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useReferenceStore } from '@/stores/reference-store';
-import { guardReferenceIntoFocus } from '@/lib/reference-guard';
+import { guardReferenceIntoFocus, requireAnchorConversationId } from '@/lib/reference-guard';
 import { showConfirm } from '@/stores/confirm-store';
 import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -253,8 +253,10 @@ function AdditionalFileTree({ dirPath }: AdditionalFileTreeProps) {
           level={0}
           onReference={(n) => {
             if (!guardReferenceIntoFocus()) return;
+            const anchorId = requireAnchorConversationId();
+            if (!anchorId) return;
             const isFolder = n.type === 'directory';
-            addReferencedFile({ name: n.name, path: n.path, ...(isFolder && { type: 'folder' as const }) });
+            addReferencedFile({ name: n.name, path: n.path, ...(isFolder && { type: 'folder' as const }) }, anchorId);
             toast.success(`已引用${isFolder ? '文件夹' : ''} ${n.name}`);
           }}
         />

@@ -1,11 +1,15 @@
 import { create } from 'zustand';
 import type { ArticleMeta, QuoteSnippet } from '@/types/article';
 
+/** 带锚定归属的文章引用（ArticleMeta 为主进程存储格式，锚定字段只在渲染层附加） */
+export type AnchoredArticle = ArticleMeta & { anchorConversationId: string };
+
 /** 文件/文件夹引用 */
 export interface FileReference {
   name: string;      // 文件名或文件夹名
   path: string;      // 绝对路径
   type?: 'file' | 'folder';  // 默认 'file'
+  anchorConversationId: string;
 }
 
 /** 会话引用 */
@@ -14,6 +18,7 @@ export interface ConversationReference {
   title: string;
   sessionId: string | null;
   workspaceId: string;
+  anchorConversationId: string;
 }
 
 /** 共享文件引用（会话组共享区） */
@@ -21,47 +26,65 @@ export interface SharedFileReference {
   groupId: string;
   relPath: string;
   absPath: string;
+  anchorConversationId: string;
+}
+
+/** 笔记引用 */
+export interface NoteReference {
+  noteId: string;
+  title: string;
+  workspacePath: string;
+  anchorConversationId: string;
 }
 
 interface ReferenceState {
   // --- 状态 ---
-  referencedArticles: ArticleMeta[];
+  referencedArticles: AnchoredArticle[];
   quotedSnippets: QuoteSnippet[];
   referencedFiles: FileReference[];
   referencedConversations: ConversationReference[];
   referencedSharedFiles: SharedFileReference[];
+  referencedNotes: NoteReference[];
 
   // --- Actions ---
   /** 引用/取消引用文章 */
-  toggleReferenceArticle: (article: ArticleMeta) => void;
+  toggleReferenceArticle: (article: ArticleMeta, anchorConversationId: string) => void;
   /** 移除单篇引用文章 */
   removeReferencedArticle: (articleId: string) => void;
-  /** 清空所有引用文章 */
-  clearReferencedArticles: () => void;
+  /** 清空锚定指定会话的引用文章 */
+  clearReferencedArticlesFor: (conversationId: string) => void;
   /** 添加引用片段 */
-  addQuotedSnippet: (params: { articleId: string; articleTitle: string; text: string }) => void;
+  addQuotedSnippet: (params: { articleId: string; articleTitle: string; text: string }, anchorConversationId: string) => void;
   /** 移除单条引用片段 */
   removeQuotedSnippet: (snippetId: string) => void;
-  /** 清空所有引用片段 */
-  clearQuotedSnippets: () => void;
+  /** 清空锚定指定会话的引用片段 */
+  clearQuotedSnippetsFor: (conversationId: string) => void;
   /** 添加文件引用 */
-  addReferencedFile: (file: FileReference) => void;
+  addReferencedFile: (file: Omit<FileReference, 'anchorConversationId'>, anchorConversationId: string) => void;
   /** 移除文件引用 */
   removeReferencedFile: (filePath: string) => void;
-  /** 清空所有文件引用 */
-  clearReferencedFiles: () => void;
+  /** 清空锚定指定会话的文件引用 */
+  clearReferencedFilesFor: (conversationId: string) => void;
   /** 添加会话引用（去重） */
-  addReferencedConversation: (conv: ConversationReference) => void;
+  addReferencedConversation: (conv: Omit<ConversationReference, 'anchorConversationId'>, anchorConversationId: string) => void;
   /** 移除会话引用 */
   removeReferencedConversation: (conversationId: string) => void;
-  /** 清空所有会话引用 */
-  clearReferencedConversations: () => void;
+  /** 清空锚定指定会话的会话引用 */
+  clearReferencedConversationsFor: (conversationId: string) => void;
   /** 添加共享文件引用（去重） */
-  addReferencedSharedFile: (file: SharedFileReference) => void;
+  addReferencedSharedFile: (file: Omit<SharedFileReference, 'anchorConversationId'>, anchorConversationId: string) => void;
   /** 移除共享文件引用 */
   removeReferencedSharedFile: (absPath: string) => void;
-  /** 清空所有共享文件引用 */
-  clearReferencedSharedFiles: () => void;
+  /** 清空锚定指定会话的共享文件引用 */
+  clearReferencedSharedFilesFor: (conversationId: string) => void;
+  /** 添加笔记引用（去重） */
+  addReferencedNote: (note: Omit<NoteReference, 'anchorConversationId'>, anchorConversationId: string) => void;
+  /** 移除笔记引用 */
+  removeReferencedNote: (noteId: string) => void;
+  /** 清空锚定指定会话的笔记引用 */
+  clearReferencedNotesFor: (conversationId: string) => void;
+  /** 清掉锚定指定会话的全部引用项（会话 tab 关闭时调用） */
+  clearAllFor: (conversationId: string) => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -72,14 +95,15 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   referencedFiles: [],
   referencedConversations: [],
   referencedSharedFiles: [],
+  referencedNotes: [],
 
-  toggleReferenceArticle: (article) => {
+  toggleReferenceArticle: (article, anchorConversationId) => {
     set((state) => {
       const exists = state.referencedArticles.some((a) => a.id === article.id);
       if (exists) {
         return { referencedArticles: state.referencedArticles.filter((a) => a.id !== article.id) };
       } else {
-        return { referencedArticles: [...state.referencedArticles, article] };
+        return { referencedArticles: [...state.referencedArticles, { ...article, anchorConversationId }] };
       }
     });
   },
@@ -90,12 +114,17 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     }));
   },
 
-  clearReferencedArticles: () => set({ referencedArticles: [] }),
+  clearReferencedArticlesFor: (conversationId) => {
+    set((state) => ({
+      referencedArticles: state.referencedArticles.filter((a) => a.anchorConversationId !== conversationId),
+    }));
+  },
 
-  addQuotedSnippet: (params) => {
+  addQuotedSnippet: (params, anchorConversationId) => {
     const snippet: QuoteSnippet = {
       id: `snippet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       ...params,
+      anchorConversationId,
     };
     set((state) => ({
       quotedSnippets: [...state.quotedSnippets, snippet],
@@ -108,13 +137,17 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     }));
   },
 
-  clearQuotedSnippets: () => set({ quotedSnippets: [] }),
+  clearQuotedSnippetsFor: (conversationId) => {
+    set((state) => ({
+      quotedSnippets: state.quotedSnippets.filter((s) => s.anchorConversationId !== conversationId),
+    }));
+  },
 
-  addReferencedFile: (file) => {
+  addReferencedFile: (file, anchorConversationId) => {
     set((state) => {
       // 去重：同路径不重复添加
       if (state.referencedFiles.some(f => f.path === file.path)) return state;
-      return { referencedFiles: [...state.referencedFiles, file] };
+      return { referencedFiles: [...state.referencedFiles, { ...file, anchorConversationId }] };
     });
   },
 
@@ -124,12 +157,16 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     }));
   },
 
-  clearReferencedFiles: () => set({ referencedFiles: [] }),
+  clearReferencedFilesFor: (conversationId) => {
+    set((state) => ({
+      referencedFiles: state.referencedFiles.filter((f) => f.anchorConversationId !== conversationId),
+    }));
+  },
 
-  addReferencedConversation: (conv) => {
+  addReferencedConversation: (conv, anchorConversationId) => {
     set((state) => {
       if (state.referencedConversations.some(c => c.conversationId === conv.conversationId)) return state;
-      return { referencedConversations: [...state.referencedConversations, conv] };
+      return { referencedConversations: [...state.referencedConversations, { ...conv, anchorConversationId }] };
     });
   },
 
@@ -139,12 +176,16 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     }));
   },
 
-  clearReferencedConversations: () => set({ referencedConversations: [] }),
+  clearReferencedConversationsFor: (conversationId) => {
+    set((state) => ({
+      referencedConversations: state.referencedConversations.filter(c => c.anchorConversationId !== conversationId),
+    }));
+  },
 
-  addReferencedSharedFile: (file) => {
+  addReferencedSharedFile: (file, anchorConversationId) => {
     set((state) => {
       if (state.referencedSharedFiles.some(f => f.absPath === file.absPath)) return state;
-      return { referencedSharedFiles: [...state.referencedSharedFiles, file] };
+      return { referencedSharedFiles: [...state.referencedSharedFiles, { ...file, anchorConversationId }] };
     });
   },
 
@@ -154,7 +195,41 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     }));
   },
 
-  clearReferencedSharedFiles: () => set({ referencedSharedFiles: [] }),
+  clearReferencedSharedFilesFor: (conversationId) => {
+    set((state) => ({
+      referencedSharedFiles: state.referencedSharedFiles.filter(f => f.anchorConversationId !== conversationId),
+    }));
+  },
+
+  addReferencedNote: (note, anchorConversationId) => {
+    set((state) => {
+      if (state.referencedNotes.some(n => n.noteId === note.noteId)) return state;
+      return { referencedNotes: [...state.referencedNotes, { ...note, anchorConversationId }] };
+    });
+  },
+
+  removeReferencedNote: (noteId) => {
+    set((state) => ({
+      referencedNotes: state.referencedNotes.filter(n => n.noteId !== noteId),
+    }));
+  },
+
+  clearReferencedNotesFor: (conversationId) => {
+    set((state) => ({
+      referencedNotes: state.referencedNotes.filter(n => n.anchorConversationId !== conversationId),
+    }));
+  },
+
+  clearAllFor: (conversationId) => {
+    set((state) => ({
+      referencedArticles: state.referencedArticles.filter((a) => a.anchorConversationId !== conversationId),
+      quotedSnippets: state.quotedSnippets.filter((s) => s.anchorConversationId !== conversationId),
+      referencedFiles: state.referencedFiles.filter((f) => f.anchorConversationId !== conversationId),
+      referencedConversations: state.referencedConversations.filter((c) => c.anchorConversationId !== conversationId),
+      referencedSharedFiles: state.referencedSharedFiles.filter((f) => f.anchorConversationId !== conversationId),
+      referencedNotes: state.referencedNotes.filter((n) => n.anchorConversationId !== conversationId),
+    }));
+  },
 
   reset: () => set({
     referencedArticles: [],
@@ -162,5 +237,6 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     referencedFiles: [],
     referencedConversations: [],
     referencedSharedFiles: [],
+    referencedNotes: [],
   }),
 }));

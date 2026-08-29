@@ -1,4 +1,4 @@
-import { memo, type RefObject } from 'react';
+import { memo, useMemo, type RefObject } from 'react';
 import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -112,17 +112,37 @@ export const ChatInputArea = memo(function ChatInputArea({
   const settings = useSettingsStore((s) => s.settings);
   const isModelMissing = !currentSelection;
   const effectivePlaceholder = isModelMissing ? '请先选择模型' : placeholder;
-  // 从 reference store 读取引用数据
-  const referencedArticles = useReferenceStore((s) => s.referencedArticles);
+  // 从 reference store 读取引用数据，只取锚定本会话的项
+  const allReferencedArticles = useReferenceStore((s) => s.referencedArticles);
   const removeReferencedArticle = useReferenceStore((s) => s.removeReferencedArticle);
-  const quotedSnippets = useReferenceStore((s) => s.quotedSnippets);
+  const allQuotedSnippets = useReferenceStore((s) => s.quotedSnippets);
   const removeQuotedSnippet = useReferenceStore((s) => s.removeQuotedSnippet);
-  const referencedFiles = useReferenceStore((s) => s.referencedFiles);
+  const allReferencedFiles = useReferenceStore((s) => s.referencedFiles);
   const removeReferencedFile = useReferenceStore((s) => s.removeReferencedFile);
-  const referencedConversations = useReferenceStore((s) => s.referencedConversations);
+  const allReferencedConversations = useReferenceStore((s) => s.referencedConversations);
   const removeReferencedConversation = useReferenceStore((s) => s.removeReferencedConversation);
-  const referencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
+  const allReferencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
   const removeReferencedSharedFile = useReferenceStore((s) => s.removeReferencedSharedFile);
+  const referencedArticles = useMemo(
+    () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
+    [allReferencedArticles, conversationId]
+  );
+  const quotedSnippets = useMemo(
+    () => allQuotedSnippets.filter((s) => s.anchorConversationId === conversationId),
+    [allQuotedSnippets, conversationId]
+  );
+  const referencedFiles = useMemo(
+    () => allReferencedFiles.filter((f) => f.anchorConversationId === conversationId),
+    [allReferencedFiles, conversationId]
+  );
+  const referencedConversations = useMemo(
+    () => allReferencedConversations.filter((c) => c.anchorConversationId === conversationId),
+    [allReferencedConversations, conversationId]
+  );
+  const referencedSharedFiles = useMemo(
+    () => allReferencedSharedFiles.filter((f) => f.anchorConversationId === conversationId),
+    [allReferencedSharedFiles, conversationId]
+  );
 
   return (
     <div className="p-3">

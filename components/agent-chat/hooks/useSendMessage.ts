@@ -1,4 +1,4 @@
-import { useState, useCallback, type Dispatch, type SetStateAction } from 'react';
+import { useState, useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -72,17 +72,37 @@ export function useSendMessage(params: UseSendMessageParams) {
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
   const triggerSessionRestart = useConversationStore((s) => s.triggerSessionRestart);
 
-  // 从 reference-store 获取引用数据和清理方法
-  const referencedArticles = useReferenceStore((s) => s.referencedArticles);
-  const quotedSnippets = useReferenceStore((s) => s.quotedSnippets);
-  const clearReferencedArticles = useReferenceStore((s) => s.clearReferencedArticles);
-  const clearQuotedSnippets = useReferenceStore((s) => s.clearQuotedSnippets);
-  const referencedFiles = useReferenceStore((s) => s.referencedFiles);
-  const clearReferencedFiles = useReferenceStore((s) => s.clearReferencedFiles);
-  const referencedConversations = useReferenceStore((s) => s.referencedConversations);
-  const clearReferencedConversations = useReferenceStore((s) => s.clearReferencedConversations);
-  const referencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
-  const clearReferencedSharedFiles = useReferenceStore((s) => s.clearReferencedSharedFiles);
+  // 从 reference-store 获取引用数据和清理方法，只取/只清锚定本会话的项
+  const allReferencedArticles = useReferenceStore((s) => s.referencedArticles);
+  const allQuotedSnippets = useReferenceStore((s) => s.quotedSnippets);
+  const clearReferencedArticlesFor = useReferenceStore((s) => s.clearReferencedArticlesFor);
+  const clearQuotedSnippetsFor = useReferenceStore((s) => s.clearQuotedSnippetsFor);
+  const allReferencedFiles = useReferenceStore((s) => s.referencedFiles);
+  const clearReferencedFilesFor = useReferenceStore((s) => s.clearReferencedFilesFor);
+  const allReferencedConversations = useReferenceStore((s) => s.referencedConversations);
+  const clearReferencedConversationsFor = useReferenceStore((s) => s.clearReferencedConversationsFor);
+  const allReferencedSharedFiles = useReferenceStore((s) => s.referencedSharedFiles);
+  const clearReferencedSharedFilesFor = useReferenceStore((s) => s.clearReferencedSharedFilesFor);
+  const referencedArticles = useMemo(
+    () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
+    [allReferencedArticles, conversationId]
+  );
+  const quotedSnippets = useMemo(
+    () => allQuotedSnippets.filter((s) => s.anchorConversationId === conversationId),
+    [allQuotedSnippets, conversationId]
+  );
+  const referencedFiles = useMemo(
+    () => allReferencedFiles.filter((f) => f.anchorConversationId === conversationId),
+    [allReferencedFiles, conversationId]
+  );
+  const referencedConversations = useMemo(
+    () => allReferencedConversations.filter((c) => c.anchorConversationId === conversationId),
+    [allReferencedConversations, conversationId]
+  );
+  const referencedSharedFiles = useMemo(
+    () => allReferencedSharedFiles.filter((f) => f.anchorConversationId === conversationId),
+    [allReferencedSharedFiles, conversationId]
+  );
 
   // 权限模式名称映射
   const modeLabels: Record<string, string> = {
@@ -259,7 +279,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       textBlocks.push({
         text: `<referenced_articles>\n${refLines}\n</referenced_articles>`
       });
-      clearReferencedArticles();
+      clearReferencedArticlesFor(conversationId!);
     }
 
     // 文字片段引用：独立 block，直接内联内容
@@ -269,7 +289,7 @@ export function useSendMessage(params: UseSendMessageParams) {
           text: `<quoted_snippet source="${sanitize(s.articleTitle)}">\n${sanitize(s.text)}\n</quoted_snippet>`
         });
       }
-      clearQuotedSnippets();
+      clearQuotedSnippetsFor(conversationId!);
     }
 
     // 文件/文件夹引用：独立 block，agent 通过 Read 工具读取内容
@@ -280,7 +300,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       textBlocks.push({
         text: `<referenced_files>\n${refLines}\n</referenced_files>`
       });
-      clearReferencedFiles();
+      clearReferencedFilesFor(conversationId!);
     }
 
     // 会话引用：独立 block，agent 可通过 sessionId 读取历史会话上下文
@@ -300,7 +320,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       textBlocks.push({
         text: `<referenced_conversations>\n${convLines}\n</referenced_conversations>${crossWsNote}`
       });
-      clearReferencedConversations();
+      clearReferencedConversationsFor(conversationId!);
     }
 
     // 共享文件引用：独立 block，agent 通过 Read 工具读取绝对路径
@@ -311,7 +331,7 @@ export function useSendMessage(params: UseSendMessageParams) {
       textBlocks.push({
         text: `<referenced_shared_files>\n${refLines}\n</referenced_shared_files>`
       });
-      clearReferencedSharedFiles();
+      clearReferencedSharedFilesFor(conversationId!);
     }
 
     // 用户消息作为最后一个 block
@@ -470,10 +490,10 @@ export function useSendMessage(params: UseSendMessageParams) {
     setInput, setPendingImages, conversationId, currentSelection, isLoading,
     lastAppliedSelection, pushLocalUser, pushLiveAssistant, replaceLastLiveAssistant,
     setIsLoading, updateConversationTitle, getMessages,
-    triggerSessionRestart, referencedArticles, clearReferencedArticles,
-    quotedSnippets, clearQuotedSnippets, referencedFiles, clearReferencedFiles,
-    referencedConversations, clearReferencedConversations, referencedSharedFiles,
-    clearReferencedSharedFiles, forkConversation,
+    triggerSessionRestart, referencedArticles, clearReferencedArticlesFor,
+    quotedSnippets, clearQuotedSnippetsFor, referencedFiles, clearReferencedFilesFor,
+    referencedConversations, clearReferencedConversationsFor, referencedSharedFiles,
+    clearReferencedSharedFilesFor, forkConversation,
   ]);
 
   // 键盘事件处理：Ctrl+Enter 发送，Enter 换行

@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import { requireAnchorConversationId } from '@/lib/reference-guard';
 import type { Conversation } from '@/components/ConversationList';
 import { getConversationTitle, getRelativeTime, openOrFocusConversation, useNodeHighlight } from './utils';
 
@@ -211,12 +212,14 @@ export function ConversationRow({
       <ContextMenuContent onCloseAutoFocus={(event) => event.preventDefault()}>
         <ContextMenuItem onClick={startEditing}>重命名</ContextMenuItem>
         <ContextMenuItem onClick={() => {
+          const anchorId = requireAnchorConversationId();
+          if (!anchorId) return;
           useReferenceStore.getState().addReferencedConversation({
             conversationId: conv.id,
             title: getConversationTitle(conv),
             sessionId: conv.session_id || null,
             workspaceId: conv.workspace_id,
-          });
+          }, anchorId);
         }}>
           引用到当前对话
         </ContextMenuItem>

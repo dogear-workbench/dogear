@@ -36,4 +36,5 @@ export interface QuoteSnippet {
   articleId: string;             // 来源文章 ID
   articleTitle: string;          // 来源文章标题
   text: string;                  // 选中的文字内容
+  anchorConversationId: string;  // 锚定的会话 id
 }

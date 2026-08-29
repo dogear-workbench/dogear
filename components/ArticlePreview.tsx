@@ -7,6 +7,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import { requireAnchorConversationId } from '@/lib/reference-guard';
 import type { ArticleParseStatus } from '@/types/article';
 
 /** 解析状态 Badge 的展示配置 */
@@ -175,12 +176,14 @@ export function ArticlePreview() {
    */
   const handleQuote = useCallback(() => {
     if (!article || !selectedText) return;
+    const anchorId = requireAnchorConversationId();
+    if (!anchorId) return;
 
     addQuotedSnippet({
       articleId: article.id,
       articleTitle: article.title,
       text: selectedText,
-    });
+    }, anchorId);
 
     // 清除选区和浮动按钮
     window.getSelection()?.removeAllRanges();
