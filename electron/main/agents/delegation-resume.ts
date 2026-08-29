@@ -37,5 +37,8 @@ export function decideResumeOnError(
 }
 
 export function buildResumePrompt(reason: string, outputPath: string): string {
-  return `你刚才因${reason}中断。请检查已完成的部分和共享区已有的产出（若共享区文件 ${outputPath} 已有部分内容，先读取确认进度），从中断处继续完成任务，不要从头重做。`;
+  const fileHint = outputPath
+    ? `和共享区已有的产出（若共享区文件 ${outputPath} 已有部分内容，先读取确认进度）`
+    : '';
+  return `你刚才因${reason}中断。请检查已完成的部分${fileHint}，从中断处继续完成任务，不要从头重做。`;
 }

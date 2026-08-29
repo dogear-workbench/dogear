@@ -28,10 +28,18 @@ export const MAIN_AGENT_DELEGATION_APPEND =
   '\n## 主会话与子会话协作规范\n' +
   '用 dogear__CreateSession 派遣子会话后，必须紧接着调用 dogear__WaitForMessage 挂起等待，不要在创建后直接结束本轮——否则子会话的交付无人接收。\n' +
   '单个子会话派单后可直接 dogear__WaitForMessage() 免传 fromSessionIds 等待交付，不必抄写 sessionId；不传参数即等待所有运行中的直属子会话。\n' +
-  'outputPath 是会话组共享区里的路径，不是工作区路径；task 里不要再指示子会话把交付文档写到工作区其他位置，交付物一律经共享区传递。\n' +
-  '交付以收到子会话的 delivery 消息为准。应用重启后运行时状态不保留，重启前已交付的子会话会重新显示为未交付——此时以你的上下文记忆和共享区文件为准，不要盲目重派。\n' +
+  'outputPath 是会话组共享区里的路径，不是工作区路径，可省略（省略 = 通讯型交付，答案直接放交付消息正文）；指定了 outputPath 时，task 里不要再指示子会话把交付文档写到工作区其他位置，文件类交付物一律经共享区传递。\n' +
+  '交付以收到子会话的 delivery 消息为准（送达事实）；是否合格由你验收判断（见下方「验收闭环」）。应用重启后运行时状态不保留，重启前已交付的子会话会重新显示为未交付——此时以你的上下文记忆和共享区文件为准，不要盲目重派。\n' +
   '看共享区用 dogear__ListGroupFiles：不带参数列文件清单，传 relPath 读单个文件的完整内容。\n' +
-  '重启或中断后，用 dogear__ResumeSession 调起之前 stopped 且未交付的子会话继续（保留消息历史，它会自检进度从中断处续跑），而不是重新 CreateSession。'
+  '重启或中断后，用 dogear__ResumeSession 调起之前 stopped 且未交付的子会话继续（保留消息历史，它会自检进度从中断处续跑），而不是重新 CreateSession。\n' +
+  '\n### 子会话复用判断\n' +
+  '需要子会话继续做事时，先判断复用原子会话还是新派：\n' +
+  '- 追问深挖（调研结果展开、验证结论）→ 优先原子会话，它的上下文还在\n' +
+  '- 失败/超时 → 先向原子会话发消息查询情况，它对自己的进度最清楚；盲目重派会丢掉已积累的上下文\n' +
+  '- 新任务与原子会话上下文无关（如一次性实施已完成）→ 新派\n' +
+  '- 追问链已很长、上下文价值稀释（auto-compact 有损压缩累积损耗）→ 换新会话从共享区产出起步\n' +
+  '\n### 验收闭环\n' +
+  '收到交付 ≠ 接受交付。读交付物（共享区文件或消息正文），对照任务目标检查，三分支处理：合格 → 接受，继续主线；有缺口 → 用 dogear__SendMessage 向原子会话追问返工（已停机会话会自动调起，消息不会丢失）；方向全错 → 重派新会话。'
 
 /**
  * 生成可用的子会话 Profile 索引（仅主会话注入，让模型按描述选择 profile 参数）。
@@ -54,16 +62,20 @@ export function buildSubAgentProfileIndex(profiles: SubAgentProfile[]): string {
   );
 }
 
-/** 子会话交付契约（仅 role='sub' 注入）。 */
+/** 子会话交付契约（仅 role='sub' 注入）；outputPath 为空 = 通讯型交付，不渲染「交付路径」行。 */
 export function subAgentContractFor(opts: { task: string; outputPath: string }): string {
   const { task, outputPath } = opts;
+  const hasPath = outputPath.trim().length > 0;
+  const deliveryShape = hasPath
+    ? `**交付路径**：${outputPath}——复杂产出（报告/代码改动说明）用 dogear__SaveSharedNote 把完整交付内容写到共享区这个路径，dogear__SendMessage 里只放摘要通知；简单问答/验证类可直接在交付消息正文交付\n\n`
+    : `**交付形态**：未指定交付文件，交付内容直接写在交付消息正文（dogear__SendMessage）\n\n`;
   return (
     `\n## 你是一个被派遣的子会话\n` +
     `**任务**：${task}\n\n` +
-    `**交付路径**：${outputPath}——用 dogear__SaveSharedNote 把完整交付内容写到共享区这个路径，dogear__SendMessage 里只放摘要通知\n\n` +
+    deliveryShape +
     `**共享区已有产出**：需要了解背景时用 dogear__ListGroupFiles 列共享区文件清单，传 relPath 读单个文件内容。\n\n` +
     `**产出位置默认规则**：任务未明确指定文件位置时，产出的新文件（交付文档、报告、中间产物）一律用 dogear__SaveSharedNote 写到共享区；只有任务明确要求修改项目文件时才写工作区路径\n\n` +
-    `**交付流程**：完成后用 dogear__SendMessage 向派出你的会话交付结果（delivery: true）；有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
+    `**交付流程**：完成后用 dogear__SendMessage 向派出你的会话交付结果（delivery: true）。交付消息须结构化自述：目标达成情况 / 未完成或跳过部分 / caveats / 交付物形态与位置（共享区 xxx.md 或本消息正文）。有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
 }
 

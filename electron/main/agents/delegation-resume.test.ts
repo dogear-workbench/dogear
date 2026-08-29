@@ -64,6 +64,13 @@ test('buildResumePrompt 含死因、outputPath 与继续指示', () => {
   expect(prompt).toContain('不要从头重做');
 });
 
+test('buildResumePrompt 空 outputPath 不渲染共享区文件提示', () => {
+  const prompt = resumeMod.buildResumePrompt('超时', '');
+  expect(prompt).toContain('你刚才因超时中断');
+  expect(prompt).toContain('从中断处继续完成任务');
+  expect(prompt).not.toContain('共享区文件');
+});
+
 test('transient failed 自动复活原会话：状态回 running、waiter 不被 resolve、发送继续提示', async () => {
   const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge, 'p-a');
   const waitPromise = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
