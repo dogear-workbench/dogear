@@ -264,6 +264,98 @@
   accent-color: var(--primary);
 }
 
+.notes-editor .ProseMirror ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--muted-foreground);
+}
+
+/* ─── 选中浮层工具栏 ─── */
+.notes-bubble {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.14);
+}
+
+.notes-bubble button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: calc(var(--radius) - 4px);
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+
+.notes-bubble button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.notes-bubble button[data-active='true'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.notes-bubble-linkrow {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.notes-bubble-linkrow input {
+  width: 200px;
+  padding: 0 6px;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  color: var(--popover-foreground);
+}
+
+.notes-bubble-linkrow input::placeholder {
+  color: var(--muted-foreground);
+}
+
+/* ─── / 插入菜单 ─── */
+.notes-slash-menu {
+  width: 200px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.14);
+}
+
+.notes-slash-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: calc(var(--radius) - 4px);
+  font-size: 13px;
+  text-align: left;
+  color: var(--popover-foreground);
+  cursor: pointer;
+}
+
+.notes-slash-menu button[data-selected='true'] {
+  background: var(--accent);
+}
+
+.notes-slash-menu-empty {
+  padding: 6px 8px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
 .notes-editor .ProseMirror table {
   border-collapse: collapse;
   table-layout: fixed;

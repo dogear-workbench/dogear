@@ -5,6 +5,8 @@ import { TableKit } from '@tiptap/extension-table';
 import { Image } from '@tiptap/extension-image';
 import { Placeholder } from '@tiptap/extensions';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
+import { SlashMenu } from '@/components/notes/tiptap/SlashMenu';
+import { BubbleToolbar } from '@/components/notes/tiptap/BubbleToolbar';
 
 interface TiptapEditorProps {
   initialMarkdown: string;
@@ -26,12 +28,13 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady }: TiptapEdito
       TaskItem.configure({ nested: true }),
       TableKit,
       Image,
-      Placeholder.configure({ placeholder: '写点什么…' }),
+      Placeholder.configure({ placeholder: '输入 # 变标题、/ 插入块、- [ ] 加待办…' }),
       Markdown.configure({
         html: true,
         transformPastedText: true,
         transformCopiedText: true,
       }),
+      SlashMenu,
     ],
     editorProps: {
       attributes: {
@@ -42,5 +45,10 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady }: TiptapEdito
     onCreate: ({ editor }) => onReady?.(editor),
   });
 
-  return <EditorContent editor={editor} className="notes-editor" />;
+  return (
+    <>
+      <EditorContent editor={editor} className="notes-editor" />
+      {editor && <BubbleToolbar editor={editor} />}
+    </>
+  );
 }
