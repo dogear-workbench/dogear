@@ -14,6 +14,16 @@ export const todosRouter = {
       }
     }),
 
+  listDeletedTodos: t.procedure
+    .input<{ workspacePath: string }>()
+    .action(async ({ input }) => {
+      try {
+        return { todos: await todoService.listDeletedTodos(input.workspacePath) };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
   createTodo: t.procedure
     .input<{
       workspacePath: string;

@@ -1,6 +1,7 @@
 import { tipc } from '@egoist/tipc/main';
 import {
   listTasksGrouped,
+  listDeletedTasks,
   getTaskDetail,
   reviewTask,
   executeTask,
@@ -19,6 +20,16 @@ export const tasksRouter = {
     .action(async ({ input }) => {
       try {
         return { groups: await listTasksGrouped(input.workspacePath) };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
+  listDeletedCollabTasks: t.procedure
+    .input<{ workspacePath: string }>()
+    .action(async ({ input }) => {
+      try {
+        return { tasks: await listDeletedTasks(input.workspacePath) };
       } catch (e) {
         return { error: String(e) };
       }

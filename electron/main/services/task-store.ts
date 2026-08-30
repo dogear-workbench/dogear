@@ -151,6 +151,14 @@ export async function listTasks(workspacePath: string): Promise<Task[]> {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+/** 回收站：已删除任务，最近删除在前 */
+export async function listDeletedTasks(workspacePath: string): Promise<Task[]> {
+  const file = await readTasksFile(workspacePath);
+  return file.tasks
+    .filter((t) => t.deletedAt)
+    .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''));
+}
+
 export async function listTasksGrouped(workspacePath: string): Promise<TaskGroups> {
   const tasks = await listTasks(workspacePath);
   const groups: TaskGroups = { backlog: [], queued: [], running: [], review: [], done: [], rejected: [] };

@@ -139,6 +139,14 @@ export async function listTodos(workspacePath: string): Promise<HumanTodo[]> {
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+/** 回收站：已删除待办，最近删除在前 */
+export async function listDeletedTodos(workspacePath: string): Promise<HumanTodo[]> {
+  const file = await readTodosFile(workspacePath);
+  return file.todos
+    .filter((t) => t.deletedAt)
+    .sort((a, b) => (b.deletedAt ?? '').localeCompare(a.deletedAt ?? ''));
+}
+
 export async function getTodo(workspacePath: string, todoId: string): Promise<HumanTodo | null> {
   const file = await readTodosFile(workspacePath);
   const todo = file.todos.find((t) => t.id === todoId);

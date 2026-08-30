@@ -41,6 +41,7 @@ export async function createTask(workspacePath: string, input: taskStore.CreateT
 
 export const listTasks = taskStore.listTasks;
 export const listTasksGrouped = taskStore.listTasksGrouped;
+export const listDeletedTasks = taskStore.listDeletedTasks;
 export const getTask = taskStore.getTask;
 export const getTaskDetail = taskStore.getTaskDetail;
 

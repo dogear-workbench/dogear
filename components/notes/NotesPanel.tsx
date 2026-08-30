@@ -256,7 +256,7 @@ export function NotesPanel() {
       return <TodosPanel workspacePath={workspacePath} onOpenNote={openNoteFromTodos} />;
     }
     if (view === 'tags') return <TagsView onPickTag={handlePickTag} />;
-    return <TrashView workspacePath={workspacePath} />;
+    return <TrashView workspacePath={workspacePath} query={searchDraft} />;
   };
 
   return (

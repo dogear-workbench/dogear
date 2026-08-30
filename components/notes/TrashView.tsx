@@ -1,120 +1,285 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { RotateCcw, Trash2 } from 'lucide-react';
 import { client } from '@/lib/client';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
 import { formatNoteTime } from '@/components/notes/NoteCardItem';
 import { showConfirm } from '@/stores/confirm-store';
 import type { NoteMeta } from '@/types/note';
+import type { HumanTodo } from '@/types/todo';
+import type { Task } from '@/types/task';
 
 interface TrashViewProps {
   workspacePath: string;
+  query?: string;
 }
 
-export function TrashView({ workspacePath }: TrashViewProps) {
-  const [items, setItems] = useState<NoteMeta[]>([]);
+type BusyKey = `note:${string}` | `todo:${string}` | `task:${string}`;
+
+interface TrashRowProps {
+  primary: string;
+  meta: string;
+  busy: boolean;
+  /** 笔记段保持常显按钮（沿用旧样式），待办/任务段 hover 浮出 */
+  hoverActions: boolean;
+  onRestore: () => void;
+  onPurge: () => void;
+}
+
+function TrashRow({ primary, meta, busy, hoverActions, onRestore, onPurge }: TrashRowProps) {
+  return (
+    <div className="group flex items-center gap-1.5 px-4 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm line-clamp-1">{primary}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{meta}</p>
+      </div>
+      <div
+        className={cn(
+          'flex items-center shrink-0',
+          hoverActions &&
+            'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity',
+        )}
+      >
+        <Button variant="ghost" size="icon-xs" disabled={busy} onClick={onRestore} title="恢复">
+          <RotateCcw className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          disabled={busy}
+          onClick={onPurge}
+          title="彻底删除"
+          className="text-destructive hover:text-destructive"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({ label, count }: { label: string; count: number }) {
+  return (
+    <div className="sticky top-0 z-10 flex items-center gap-1.5 bg-muted/40 px-4 py-1 text-xs font-medium text-muted-foreground">
+      {label}
+      <span className="tabular-nums">{count}</span>
+    </div>
+  );
+}
+
+export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
+  const [notes, setNotes] = useState<NoteMeta[]>([]);
+  const [todos, setTodos] = useState<HumanTodo[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<BusyKey | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void (async () => {
-      try {
-        const result = await client.listTrashNotes({ workspacePath });
-        if (cancelled) return;
-        if ('notes' in result) {
-          setItems(result.notes ?? []);
-        } else {
-          console.error('[notes] listTrashNotes 失败:', result.error);
-        }
-      } catch (error) {
-        if (!cancelled) console.error('[notes] listTrashNotes 失败:', error);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+      const [noteRes, todoRes, taskRes] = await Promise.all([
+        client.listTrashNotes({ workspacePath }).catch((error) => {
+          console.error('[notes] listTrashNotes 失败:', error);
+          return null;
+        }),
+        client.listDeletedTodos({ workspacePath }).catch((error) => {
+          console.error('[todos] listDeletedTodos 失败:', error);
+          return null;
+        }),
+        client.listDeletedCollabTasks({ workspacePath }).catch((error) => {
+          console.error('[tasks] listDeletedCollabTasks 失败:', error);
+          return null;
+        }),
+      ]);
+      if (cancelled) return;
+      if (noteRes && 'notes' in noteRes) setNotes(noteRes.notes ?? []);
+      if (todoRes && 'todos' in todoRes) setTodos(todoRes.todos ?? []);
+      if (taskRes && 'tasks' in taskRes) setTasks(taskRes.tasks ?? []);
+      setLoading(false);
     })();
     return () => {
       cancelled = true;
     };
   }, [workspacePath]);
 
-  const removeFromLocal = (noteId: string) => {
-    setItems((prev) => prev.filter((it) => it.id !== noteId));
-  };
+  const q = query.trim().toLowerCase();
+  const filteredNotes = useMemo(
+    () => (q ? notes.filter((n) => (n.title || '').toLowerCase().includes(q)) : notes),
+    [notes, q],
+  );
+  const filteredTodos = useMemo(
+    () => (q ? todos.filter((t) => t.text.toLowerCase().includes(q)) : todos),
+    [todos, q],
+  );
+  const filteredTasks = useMemo(
+    () => (q ? tasks.filter((t) => t.title.toLowerCase().includes(q)) : tasks),
+    [tasks, q],
+  );
 
-  // 时间流列表的刷新交给 notesChanged 广播，这里只做本地移除避免重复拉取
-  const handleRestore = async (note: NoteMeta) => {
-    setBusyId(note.id);
+  // 恢复/彻底删除后各 service 广播对应 changed 事件，原视图列表由 store 订阅自动刷新，这里只做本地移除
+  const withBusy = async (key: BusyKey, fn: () => Promise<boolean>) => {
+    setBusyKey(key);
     try {
-      const result = await client.restoreNote({ workspacePath, noteId: note.id });
-      if ('success' in result && result.success) {
-        removeFromLocal(note.id);
-      } else if ('error' in result) {
-        console.error('[notes] restoreNote 失败:', result.error);
+      if (await fn()) {
+        if (key.startsWith('note:')) setNotes((prev) => prev.filter((it) => it.id !== key.slice(5)));
+        else if (key.startsWith('todo:')) setTodos((prev) => prev.filter((it) => it.id !== key.slice(5)));
+        else setTasks((prev) => prev.filter((it) => it.id !== key.slice(5)));
       }
-    } catch (error) {
-      console.error('[notes] restoreNote 失败:', error);
     } finally {
-      setBusyId(null);
+      setBusyKey(null);
     }
   };
 
-  const handlePurge = async (note: NoteMeta) => {
-    const ok = await showConfirm('彻底删除', `「${note.title || '（无内容）'}」将被永久删除，不可恢复。`);
-    if (!ok) return;
-    setBusyId(note.id);
-    try {
-      const result = await client.purgeNote({ workspacePath, noteId: note.id });
-      if ('success' in result && result.success) {
-        removeFromLocal(note.id);
-      } else if ('error' in result) {
-        console.error('[notes] purgeNote 失败:', result.error);
+  const handleRestoreNote = (note: NoteMeta) =>
+    withBusy(`note:${note.id}`, async () => {
+      try {
+        const result = await client.restoreNote({ workspacePath, noteId: note.id });
+        if ('success' in result && result.success) return true;
+        if ('error' in result) console.error('[notes] restoreNote 失败:', result.error);
+        return false;
+      } catch (error) {
+        console.error('[notes] restoreNote 失败:', error);
+        return false;
       }
-    } catch (error) {
-      console.error('[notes] purgeNote 失败:', error);
-    } finally {
-      setBusyId(null);
-    }
-  };
+    });
+
+  const handlePurgeNote = (note: NoteMeta) =>
+    withBusy(`note:${note.id}`, async () => {
+      const ok = await showConfirm('彻底删除', `「${note.title || '（无内容）'}」将被永久删除，不可恢复。`);
+      if (!ok) return false;
+      try {
+        const result = await client.purgeNote({ workspacePath, noteId: note.id });
+        if ('success' in result && result.success) return true;
+        if ('error' in result) console.error('[notes] purgeNote 失败:', result.error);
+        return false;
+      } catch (error) {
+        console.error('[notes] purgeNote 失败:', error);
+        return false;
+      }
+    });
+
+  const handleRestoreTodo = (todo: HumanTodo) =>
+    withBusy(`todo:${todo.id}`, async () => {
+      try {
+        const result = await client.restoreTodo({ workspacePath, todoId: todo.id });
+        if ('todo' in result) return true;
+        if ('error' in result) console.error('[todos] restoreTodo 失败:', result.error);
+        return false;
+      } catch (error) {
+        console.error('[todos] restoreTodo 失败:', error);
+        return false;
+      }
+    });
+
+  const handlePurgeTodo = (todo: HumanTodo) =>
+    withBusy(`todo:${todo.id}`, async () => {
+      const ok = await showConfirm('彻底删除', `「${todo.text}」将被永久删除，不可恢复。`);
+      if (!ok) return false;
+      try {
+        const result = await client.purgeTodo({ workspacePath, todoId: todo.id });
+        if ('success' in result && result.success) return true;
+        if ('error' in result) console.error('[todos] purgeTodo 失败:', result.error);
+        return false;
+      } catch (error) {
+        console.error('[todos] purgeTodo 失败:', error);
+        return false;
+      }
+    });
+
+  const handleRestoreTask = (task: Task) =>
+    withBusy(`task:${task.id}`, async () => {
+      try {
+        const result = await client.restoreCollabTask({ workspacePath, taskId: task.id });
+        if ('task' in result) return true;
+        if ('error' in result) console.error('[tasks] restoreCollabTask 失败:', result.error);
+        return false;
+      } catch (error) {
+        console.error('[tasks] restoreCollabTask 失败:', error);
+        return false;
+      }
+    });
+
+  const handlePurgeTask = (task: Task) =>
+    withBusy(`task:${task.id}`, async () => {
+      const ok = await showConfirm('彻底删除', `「${task.title}」将被永久删除，不可恢复。`);
+      if (!ok) return false;
+      try {
+        const result = await client.purgeCollabTask({ workspacePath, taskId: task.id });
+        if ('success' in result && result.success) return true;
+        if ('error' in result) console.error('[tasks] purgeCollabTask 失败:', result.error);
+        return false;
+      } catch (error) {
+        console.error('[tasks] purgeCollabTask 失败:', error);
+        return false;
+      }
+    });
+
+  if (loading) return <NoteLoading />;
+
+  const empty = notes.length === 0 && todos.length === 0 && tasks.length === 0;
+  if (empty) return <NoteEmpty text="回收站为空" />;
+
+  const noMatch =
+    filteredNotes.length === 0 && filteredTodos.length === 0 && filteredTasks.length === 0;
+  if (noMatch) return <NoteEmpty text="无匹配结果" />;
 
   return (
     <div className="flex-1 overflow-y-auto min-h-0">
-      {loading ? (
-        <NoteLoading />
-      ) : items.length === 0 ? (
-        <NoteEmpty text="回收站为空" />
-      ) : (
-        <div className="divide-y">
-          {items.map((note) => (
-            <div key={note.id} className="flex items-center gap-1.5 px-4 py-2.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm line-clamp-1">{note.title || '（无内容）'}</p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  更新于 {formatNoteTime(note.updated)}
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                disabled={busyId === note.id}
-                onClick={() => void handleRestore(note)}
-                title="恢复到时间流"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                disabled={busyId === note.id}
-                onClick={() => void handlePurge(note)}
-                title="彻底删除"
-                className="text-destructive hover:text-destructive"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            </div>
-          ))}
-        </div>
+      {filteredNotes.length > 0 && (
+        <section>
+          <SectionHeader label="笔记" count={filteredNotes.length} />
+          <div className="divide-y">
+            {filteredNotes.map((note) => (
+              <TrashRow
+                key={note.id}
+                primary={note.title || '（无内容）'}
+                meta={`更新于 ${formatNoteTime(note.updated)}`}
+                busy={busyKey === `note:${note.id}`}
+                hoverActions={false}
+                onRestore={() => void handleRestoreNote(note)}
+                onPurge={() => void handlePurgeNote(note)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {filteredTodos.length > 0 && (
+        <section>
+          <SectionHeader label="待办" count={filteredTodos.length} />
+          <div className="divide-y">
+            {filteredTodos.map((todo) => (
+              <TrashRow
+                key={todo.id}
+                primary={todo.text}
+                meta={todo.deletedAt ? `删除于 ${formatNoteTime(todo.deletedAt)}` : ''}
+                busy={busyKey === `todo:${todo.id}`}
+                hoverActions
+                onRestore={() => void handleRestoreTodo(todo)}
+                onPurge={() => void handlePurgeTodo(todo)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+      {filteredTasks.length > 0 && (
+        <section>
+          <SectionHeader label="任务" count={filteredTasks.length} />
+          <div className="divide-y">
+            {filteredTasks.map((task) => (
+              <TrashRow
+                key={task.id}
+                primary={task.title}
+                meta={task.deletedAt ? `删除于 ${formatNoteTime(task.deletedAt)}` : ''}
+                busy={busyKey === `task:${task.id}`}
+                hoverActions
+                onRestore={() => void handleRestoreTask(task)}
+                onPurge={() => void handlePurgeTask(task)}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
