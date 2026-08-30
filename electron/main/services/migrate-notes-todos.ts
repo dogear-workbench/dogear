@@ -1,148 +1,103 @@
 /**
- * 存量笔记 frontmatter todos 迁移：可实施待办（带 plan）→ 任务体系，普通待办 → 人待办
+ * 待办实体退役迁移：todos.json 的遗留人待办条目 → 笔记正文勾选项
  *
- * - 幂等：frontmatter 无 todos 的文件直接跳过；迁完重写文件（洗掉 todos 块）并刷新索引
- * - todos 从文件原文直接提取（notes-store 已忽略 todos 行，不依赖 Note.todos 类型）
- * - in_progress 带 plan 归 backlog（未完成即未决定执行）；plan 文件缺失时仍创建任务保留记录
- * - 逐文件「创建实体 → 回写」两步，进程崩溃窗口内可能重复创建实体（概率低，可手动删）
+ * - 幂等：todos.json 不存在直接跳过；跑完全部条目后原子改名 .migrated 防重跑
+ * - 带 noteId 且笔记存在 → appendNote 并入该卡正文尾部一行；无 noteId 或笔记缺失 → createNote 新卡（tags 置 ['待办']）
+ * - done → `- [x]`，pending → `- [ ]`；due 取日期部分行尾加 ` 📅 YYYY-MM-DD`
+ * - 回收站条目（deletedAt 非空）不迁，随文件改名一并退役
+ * - 单条失败 warn 跳过不阻断；改名前清理遗留 .migrated（上次 rename 半途失败的残档）
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import * as taskService from './task-service.js';
-import * as todoStore from './todo-service.js';
+import * as notesService from './notes/notes-service.js';
 import * as workspaceJsonService from './workspace-json-service.js';
-import {
-  getNotesDir,
-  listNoteFiles,
-  parseNoteFile,
-  writeNoteFile,
-  updateIndexEntry,
-  noteToIndexItem,
-} from './notes/notes-store.js';
-import { broadcastNotesChanged } from './notes/notes-service.js';
 import { mainLogger } from '../agents/logger.js';
 
 const log = mainLogger.child('migrate-notes-todos');
 
-export interface MigrateNotesTodosResult {
-  scannedNotes: number;
-  migratedNotes: number;
-  createdTasks: number;
-  createdHumanTodos: number;
+export interface MigrateTodosToNotesResult {
+  migratedTodos: number;
+  appendedNotes: number;
+  createdNotes: number;
+  skipped: number;
 }
 
 interface LegacyTodo {
-  text: string;
-  status: 'pending' | 'in_progress' | 'done';
-  plan?: string;
+  text?: string;
+  status?: 'pending' | 'done';
+  due?: string;
+  noteId?: string;
+  deletedAt?: string;
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+function todosJsonPath(workspacePath: string): string {
+  return path.join(workspacePath, '.dogear', 'todos.json');
+}
+
+function todoLine(text: string, status: string, due?: string): string {
+  const box = status === 'done' ? '- [x]' : '- [ ]';
+  const date = due?.match(/^(\d{4}-\d{2}-\d{2})/)?.[1];
+  return `${box} ${text}${date ? ` 📅 ${date}` : ''}`;
+}
+
+function emptyResult(): MigrateTodosToNotesResult {
+  return { migratedTodos: 0, appendedNotes: 0, createdNotes: 0, skipped: 0 };
+}
+
+export async function migrateTodosToNotes(workspacePath: string): Promise<MigrateTodosToNotesResult> {
+  const source = todosJsonPath(workspacePath);
+  const raw = await fs.readFile(source, 'utf-8').catch(() => null);
+  if (raw === null) return emptyResult();
+
+  let todos: LegacyTodo[];
   try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
+    const parsed = JSON.parse(raw) as { todos?: LegacyTodo[] };
+    todos = Array.isArray(parsed.todos) ? parsed.todos : [];
+  } catch (err) {
+    log.warn(`todos.json 解析失败，跳过迁移: ${workspacePath}`, err);
+    return emptyResult();
   }
-}
 
-/** 从文件原文的 frontmatter 提取旧版 todos 块（每行一个 JSON 对象） */
-function extractFrontmatterTodos(raw: string): LegacyTodo[] {
-  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!match) return [];
-  const jsonLines: string[] = [];
-  let inTodos = false;
-  for (const line of match[1].split(/\r?\n/)) {
-    if (line.trim() === 'todos:') {
-      inTodos = true;
+  const result = emptyResult();
+  for (const todo of todos) {
+    const text = (todo.text ?? '').trim();
+    if (todo.deletedAt || !text) {
+      result.skipped++;
       continue;
     }
-    if (inTodos) {
-      if (/^\s+-\s/.test(line)) {
-        jsonLines.push(line.replace(/^\s+-\s*/, ''));
-        continue;
-      }
-      inTodos = false;
-    }
-  }
-  const todos: LegacyTodo[] = [];
-  for (const json of jsonLines) {
     try {
-      const obj = JSON.parse(json) as Partial<LegacyTodo>;
-      if (typeof obj.text !== 'string' || !obj.text) continue;
-      const status = obj.status === 'in_progress' || obj.status === 'done' ? obj.status : 'pending';
-      const todo: LegacyTodo = { text: obj.text, status };
-      if (typeof obj.plan === 'string' && obj.plan) todo.plan = obj.plan;
-      todos.push(todo);
-    } catch {
-      log.warn(`todo 行解析失败，跳过: ${json.slice(0, 80)}`);
-    }
-  }
-  return todos;
-}
-
-export async function migrateNotesTodos(workspacePath: string): Promise<MigrateNotesTodosResult> {
-  const notesDir = getNotesDir(workspacePath);
-  const files = await listNoteFiles(notesDir);
-  const result: MigrateNotesTodosResult = { scannedNotes: files.length, migratedNotes: 0, createdTasks: 0, createdHumanTodos: 0 };
-
-  for (const file of files) {
-    const filePath = path.join(notesDir, file);
-    const raw = await fs.readFile(filePath, 'utf-8').catch(() => null);
-    if (raw === null) continue;
-    const todos = extractFrontmatterTodos(raw);
-    if (todos.length === 0) continue;
-    const note = parseNoteFile(raw);
-
-    for (const todo of todos) {
-      try {
-        if (todo.plan) {
-          const planPath = path.resolve(workspacePath, todo.plan);
-          const exists = await fileExists(planPath);
-          if (!exists) log.warn(`plan 文件缺失，仍创建任务保留记录: ${planPath}`);
-          await taskService.createTask(workspacePath, {
-            title: todo.text,
-            planPath,
-            noteId: note.id,
-            status: todo.status === 'done' ? 'done' : 'backlog',
-            skipPlanCheck: !exists,
-          });
-          result.createdTasks++;
-        } else {
-          await todoStore.createTodo(workspacePath, {
-            text: todo.text,
-            noteId: note.id,
-            source: 'manual',
-            status: todo.status === 'done' ? 'done' : 'pending',
-          });
-          result.createdHumanTodos++;
-        }
-      } catch (err) {
-        log.error(`卡片 ${note.id} 待办「${todo.text}」迁移失败，跳过该条`, err);
+      const line = todoLine(text, todo.status ?? 'pending', todo.due);
+      if (todo.noteId && (await notesService.appendNote(workspacePath, todo.noteId, line))) {
+        result.appendedNotes++;
+      } else {
+        await notesService.createNote(workspacePath, { content: line, tags: ['待办'] });
+        result.createdNotes++;
       }
+      result.migratedTodos++;
+    } catch (err) {
+      log.warn(`待办「${text}」迁移失败，跳过该条`, err);
     }
-
-    await writeNoteFile(filePath, note);
-    await updateIndexEntry(workspacePath, noteToIndexItem(note));
-    result.migratedNotes++;
-    log.info(`卡片 ${note.id}《${note.title}》已迁移 ${todos.length} 条待办`);
   }
 
-  if (result.migratedNotes > 0) await broadcastNotesChanged(workspacePath);
+  const migrated = `${source}.migrated`;
+  await fs.unlink(migrated).catch(() => {});
+  await fs.rename(source, migrated);
   return result;
 }
 
 /** 应用启动入口：遍历全部工作区执行迁移，单工作区失败不影响其他 */
-export async function migrateNotesTodosAllWorkspaces(): Promise<void> {
+export async function migrateTodosToNotesAllWorkspaces(): Promise<void> {
   const workspaces = await workspaceJsonService.getAll();
   for (const ws of workspaces) {
     try {
-      const result = await migrateNotesTodos(ws.path);
-      if (result.migratedNotes > 0) {
-        log.info(`工作区 ${ws.id} 迁移完成：${result.migratedNotes} 张卡片，${result.createdTasks} 个任务，${result.createdHumanTodos} 条人待办`);
+      const result = await migrateTodosToNotes(ws.path);
+      if (result.migratedTodos > 0 || result.skipped > 0) {
+        log.info(
+          `工作区 ${ws.id} 待办迁移完成：${result.appendedNotes} 条并入卡片，${result.createdNotes} 条建新卡，${result.skipped} 条跳过`,
+        );
       }
     } catch (err) {
-      log.error(`工作区 ${ws.id} 笔记 todos 迁移失败`, err);
+      log.error(`工作区 ${ws.id} 待办迁移失败`, err);
     }
   }
 }

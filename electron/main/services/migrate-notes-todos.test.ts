@@ -2,10 +2,8 @@ import { test, expect, beforeEach } from 'bun:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { migrateNotesTodos } from './migrate-notes-todos.js';
-import { listTasksGrouped, getTask } from './task-store.js';
-import { listTodos } from './todo-service.js';
-import { getNotesDir, readNoteFile, readIndex } from './notes/notes-store.js';
+import { migrateTodosToNotes } from './migrate-notes-todos.js';
+import { getNotesDir, listNoteFiles, readNoteFile, readIndex } from './notes/notes-store.js';
 
 let workspacePath: string;
 
@@ -13,106 +11,106 @@ beforeEach(async () => {
   workspacePath = await fs.mkdtemp(path.join(os.tmpdir(), 'dogear-migrate-test-'));
 });
 
-async function seedNote(noteId: string, todoLines: string[]): Promise<void> {
-  await fs.mkdir(path.join(workspacePath, 'docs', 'plans'), { recursive: true });
-  await fs.writeFile(path.join(workspacePath, 'docs', 'plans', 'p.md'), '# 计划');
+async function seedNote(noteId: string, content: string): Promise<void> {
   const raw = [
     '---',
     `id: ${noteId}`,
     'created: 2026-08-01T00:00:00.000Z',
     'updated: 2026-08-02T00:00:00.000Z',
-    'tags: [设计]',
-    ...((todoLines.length > 0 ? ['todos:'] : []) as string[]),
-    ...todoLines.map((l) => `  - ${l}`),
     '---',
     '',
-    '正文第一行',
+    content,
     '',
   ].join('\n');
   await fs.mkdir(getNotesDir(workspacePath), { recursive: true });
   await fs.writeFile(path.join(getNotesDir(workspacePath), `20260801-000000-${noteId}.md`), raw);
 }
 
-test('迁移：带 plan 的 pending/done 入任务体系，无 plan 转人待办，frontmatter 清 todos', async () => {
-  await seedNote(
-    'note0001',
-    [
-      '{"id":"t1","text":"实施 A","status":"pending","plan":"docs/plans/p.md"}',
-      '{"id":"t2","text":"实施 B","status":"done","plan":"docs/plans/p.md"}',
-      '{"id":"t3","text":"记得买咖啡","status":"pending"}',
-    ],
+async function seedTodos(todos: object[]): Promise<void> {
+  await fs.mkdir(path.join(workspacePath, '.dogear'), { recursive: true });
+  await fs.writeFile(
+    path.join(workspacePath, '.dogear', 'todos.json'),
+    JSON.stringify({ version: 1, todos }),
   );
+}
 
-  const result = await migrateNotesTodos(workspacePath);
-  expect(result.migratedNotes).toBe(1);
-  expect(result.createdTasks).toBe(2);
-  expect(result.createdHumanTodos).toBe(1);
+test('带 noteId 的待办并入已有卡片尾部一行（pending/done/due）', async () => {
+  await seedNote('note0001', '已有正文');
+  await seedTodos([
+    { id: 't1', text: '记得买咖啡', status: 'pending', noteId: 'note0001' },
+    { id: 't2', text: '交报告', status: 'done', due: '2026-09-01T00:00:00.000Z', noteId: 'note0001' },
+  ]);
 
-  const groups = await listTasksGrouped(workspacePath);
-  expect(groups.backlog).toHaveLength(1);
-  expect(groups.backlog[0].title).toBe('实施 A');
-  expect(groups.backlog[0].noteId).toBe('note0001');
-  expect(groups.backlog[0].planPath).toBe(path.join(workspacePath, 'docs', 'plans', 'p.md'));
-  expect(groups.done).toHaveLength(1);
-  expect(groups.done[0].title).toBe('实施 B');
+  const result = await migrateTodosToNotes(workspacePath);
+  expect(result.migratedTodos).toBe(2);
+  expect(result.appendedNotes).toBe(2);
+  expect(result.createdNotes).toBe(0);
 
-  const humanTodos = await listTodos(workspacePath);
-  expect(humanTodos).toHaveLength(1);
-  expect(humanTodos[0].text).toBe('记得买咖啡');
-  expect(humanTodos[0].source).toBe('manual');
+  const note = await readNoteFile(
+    path.join(getNotesDir(workspacePath), '20260801-000000-note0001.md'),
+  );
+  expect(note?.content).toContain('已有正文');
+  expect(note?.content).toContain('- [ ] 记得买咖啡');
+  expect(note?.content).toContain('- [x] 交报告 📅 2026-09-01');
+});
 
-  const noteFile = path.join(getNotesDir(workspacePath), '20260801-000000-note0001.md');
-  const note = await readNoteFile(noteFile);
-  expect(note?.tags).toEqual(['设计']);
-  expect(note?.content).toContain('正文第一行');
-  const rawAfter = await fs.readFile(noteFile, 'utf-8');
-  expect(rawAfter).not.toContain('todos:');
+test('无 noteId 的待办建新卡（tags 待办，索引入）', async () => {
+  await seedTodos([{ id: 't1', text: '记得买咖啡', status: 'pending' }]);
+
+  const result = await migrateTodosToNotes(workspacePath);
+  expect(result.createdNotes).toBe(1);
+  expect(result.appendedNotes).toBe(0);
+
   const index = await readIndex(workspacePath);
-  expect(index.items[0].tags).toEqual(['设计']);
+  expect(index.items).toHaveLength(1);
+  expect(index.items[0].tags).toEqual(['待办']);
+  const file = path.join(getNotesDir(workspacePath), index.items[0].file);
+  const note = await readNoteFile(file);
+  expect(note?.content).toContain('- [ ] 记得买咖啡');
 });
 
-test('迁移幂等：跑过一次后再次迁移跳过', async () => {
-  await seedNote('note0002', ['{"id":"t1","text":"实施 A","status":"pending","plan":"docs/plans/p.md"}']);
+test('noteId 指向不存在的笔记时退化为建新卡', async () => {
+  await seedTodos([{ id: 't1', text: '悬空待办', status: 'pending', noteId: 'ghost01' }]);
 
-  await migrateNotesTodos(workspacePath);
-  const second = await migrateNotesTodos(workspacePath);
-  expect(second.migratedNotes).toBe(0);
-  expect(second.createdTasks).toBe(0);
-
-  const groups = await listTasksGrouped(workspacePath);
-  expect(groups.backlog).toHaveLength(1);
+  const result = await migrateTodosToNotes(workspacePath);
+  expect(result.migratedTodos).toBe(1);
+  expect(result.appendedNotes).toBe(0);
+  expect(result.createdNotes).toBe(1);
 });
 
-test('plan 文件缺失仍创建任务保留记录，in_progress 归 backlog', async () => {
-  await seedNote('note0003', ['{"id":"t1","text":"实施 C","status":"in_progress","plan":"docs/plans/gone.md"}']);
+test('已删条目（deletedAt）跳过不迁', async () => {
+  await seedTodos([
+    { id: 't1', text: '已删待办', status: 'pending', deletedAt: '2026-08-30T00:00:00.000Z' },
+    { id: 't2', text: '存活待办', status: 'pending' },
+  ]);
 
-  const result = await migrateNotesTodos(workspacePath);
-  expect(result.createdTasks).toBe(1);
-  const groups = await listTasksGrouped(workspacePath);
-  expect(groups.backlog[0].title).toBe('实施 C');
-  expect((await getTask(workspacePath, groups.backlog[0].id))?.planPath).toBe(
-    path.join(workspacePath, 'docs', 'plans', 'gone.md'),
-  );
+  const result = await migrateTodosToNotes(workspacePath);
+  expect(result.migratedTodos).toBe(1);
+  expect(result.skipped).toBe(1);
+
+  const index = await readIndex(workspacePath);
+  expect(index.items).toHaveLength(1);
+  const note = await readNoteFile(path.join(getNotesDir(workspacePath), index.items[0].file));
+  expect(note?.content).not.toContain('已删待办');
 });
 
-test('无 todos 的笔记跳过，回收站目录不扫描', async () => {
-  await seedNote('note0004', []);
-  const trashDir = path.join(getNotesDir(workspacePath), '.trash');
-  await fs.mkdir(trashDir, { recursive: true });
-  const raw = [
-    '---',
-    'id: note0005',
-    'created: 2026-08-01T00:00:00.000Z',
-    'updated: 2026-08-02T00:00:00.000Z',
-    'todos:',
-    '  - {"id":"t1","text":"回收站里的待办","status":"pending"}',
-    '---',
-    '',
-  ].join('\n');
-  await fs.writeFile(path.join(trashDir, '20260801-000000-note0005.md'), raw);
+test('幂等：迁完 todos.json 改名 .migrated，重跑零操作', async () => {
+  await seedTodos([{ id: 't1', text: '记得买咖啡', status: 'pending' }]);
 
-  const result = await migrateNotesTodos(workspacePath);
-  expect(result.migratedNotes).toBe(0);
-  expect(result.createdTasks).toBe(0);
-  expect(result.createdHumanTodos).toBe(0);
+  await migrateTodosToNotes(workspacePath);
+  await expect(fs.access(path.join(workspacePath, '.dogear', 'todos.json'))).rejects.toThrow();
+  await fs.access(path.join(workspacePath, '.dogear', 'todos.json.migrated'));
+
+  const second = await migrateTodosToNotes(workspacePath);
+  expect(second.migratedTodos).toBe(0);
+  expect(second.createdNotes).toBe(0);
+
+  const files = await listNoteFiles(getNotesDir(workspacePath));
+  expect(files).toHaveLength(1);
+});
+
+test('todos.json 不存在时零操作', async () => {
+  const result = await migrateTodosToNotes(workspacePath);
+  expect(result.migratedTodos).toBe(0);
+  await expect(fs.access(path.join(workspacePath, '.dogear', 'todos.json.migrated'))).rejects.toThrow();
 });

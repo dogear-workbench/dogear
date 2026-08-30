@@ -39,7 +39,6 @@ import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createReviewToolDefs } from '../tools/review-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
-import { createTodoToolDefs } from '../tools/todo-tools.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
@@ -560,7 +559,6 @@ export class PiSession extends EventEmitter {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
       })));
-      toolDefs.push(...this.registerPack('dogear-todos', createTodoToolDefs(this.config.workspacePath)));
       toolDefs.push(...this.registerPack('dogear-tasks', createTaskToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,

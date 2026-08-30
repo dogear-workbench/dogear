@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ListTodo,
   Loader2,
   NotebookPen,
   Plus,
@@ -17,7 +16,6 @@ import { useNotesStore } from '@/stores/notes-store';
 import { useTaskStore } from '@/stores/task-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { TaskPanel } from '@/components/notes/TaskPanel';
-import { TodosPanel } from '@/components/notes/TodosPanel';
 import { TagFilterMenu } from '@/components/notes/TagFilterMenu';
 import { TrashView } from '@/components/notes/TrashView';
 import { NotesTimelinePane } from '@/components/notes/NotesTimelinePane';
@@ -25,18 +23,16 @@ import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { NoteMeta } from '@/types/note';
 
-type PanelMode = 'notes' | 'todos' | 'tasks' | 'trash';
+type PanelMode = 'notes' | 'tasks' | 'trash';
 
 const MODES = [
   { id: 'notes', label: '笔记', icon: NotebookPen },
-  { id: 'todos', label: '待办', icon: ListTodo },
   { id: 'tasks', label: '任务', icon: SquareCheckBig },
   { id: 'trash', label: '回收站', icon: Trash2 },
 ] as const;
 
 const SEARCH_PLACEHOLDER: Record<PanelMode, string> = {
   notes: '搜索标题与正文',
-  todos: '过滤待办',
   tasks: '过滤任务',
   trash: '过滤回收站',
 };
@@ -167,7 +163,7 @@ export function NotesPanel() {
 
   const toggleListHidden = useCallback(() => setListHidden((v) => !v), []);
 
-  // 待办/任务侧笔记 chip：切回笔记 mode 并打开卡片
+  // 任务侧笔记 chip：切回笔记 mode 并打开卡片
   const openNoteFromPanels = (noteId: string) => {
     setMode('notes');
     setActiveNoteId(noteId);
@@ -196,13 +192,6 @@ export function NotesPanel() {
       return (
         <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
           请先选择工作区
-        </div>
-      );
-    }
-    if (mode === 'todos') {
-      return (
-        <div className="flex-1 flex flex-col min-h-0">
-          <TodosPanel workspacePath={workspacePath} query={searchDraft} onOpenNote={openNoteFromPanels} />
         </div>
       );
     }

@@ -130,15 +130,15 @@
   - `Dashboard.tsx` — 容器（@container 自适应：窄屏堆叠 / 宽屏左报告右捕捉框），按 workspace.id 拉 loadReport
   - `ReportSection.tsx` — 首页报告区（MarkdownRenderer 渲染 `dashboard.md` 正文 + 刷新按钮触发 triggerReview + 相对时间）
   - `CaptureBox.tsx` — 快速捕捉框（Enter 成卡：`#标签` 解析为 tags、剩余为正文、isComposing 防 IME 误提交；下方最近 5 卡缩略，点击跳笔记 Tab 详情）
-- `notes/` — 笔记卡片模块（固定「笔记」tab 内容，数据见 services/notes/；三实体分离后为四 mode 顶栏：笔记/待办/任务/回收站）
-  - `NotesPanel.tsx` — 编排容器：四 mode 顶栏（笔记|待办|任务/回收站，任务 mode 保留 review 数徽章 + 通知深链切 mode）+ 常驻搜索框按 mode 分域（笔记走 searchNotes 300ms 防抖 + seq 竞态保护，query+tag 叠加；待办/任务/回收站传 query 给对应面板前端过滤，不发 IPC）+ 笔记 mode 专属 # 标签下拉（TagFilterMenu）与选中标签 chip（可单独点掉）+ 右侧「新建卡片」仅笔记 mode；二级 tab（时间流/待办/标签/回收站）已撤，时间流独占列表区；switchMode 切换清空搜索状态；Ctrl+\ 列表显隐（笔记 aside 与任务 TaskPanel 共用）
+- `notes/` — 笔记卡片模块（固定「笔记」tab 内容，数据见 services/notes/；待办实体退役后为三 mode 顶栏：笔记/任务/回收站）
+  - `NotesPanel.tsx` — 编排容器：三 mode 顶栏（笔记|任务|回收站，任务 mode 保留 review 数徽章 + 通知深链切 mode）+ 常驻搜索框按 mode 分域（笔记走 searchNotes 300ms 防抖 + seq 竞态保护，query+tag 叠加；任务/回收站传 query 给对应面板前端过滤，不发 IPC）+ 笔记 mode 专属 # 标签下拉（TagFilterMenu）与选中标签 chip（可单独点掉）+ 右侧「新建卡片」仅笔记 mode；时间流独占笔记列表区；switchMode 切换清空搜索状态；Ctrl+\ 列表显隐（笔记 aside 与任务 TaskPanel 共用）
   - `NotesTimelinePane.tsx` — 笔记 mode 内容区：时间流 aside（300px 可隐藏）+ 拖拽分隔线（双击切换）+ NoteEditor 详情区；搜索过滤结果（filter/filterResults props）与全量列表双分支渲染；handleDelete（showConfirm 轻确认 → deleteNote → 详情卡联动关闭）与 handleReference（referenceNoteIntoFocus）收口在此
-  - `NoteEditor.tsx` — 卡片详情编辑：元数据区（标签 chips + article:/stock:/plan: 三前缀链接）+ MDXEditor 正文（插件同速记板旧配置）+ 三态待办区；header 删除按钮（onDelete 回调交父层处理）；800ms 防抖保存 + 卸载 flush，父组件 key={noteId} 挂载换卡即重挂载
+  - `NoteEditor.tsx` — 卡片详情编辑：标题剥离（正文首个 ATX 标题行拆为独立标题输入）+ 元数据区 NoteMetaSection（标签 chips + article:/stock:/plan: 三前缀链接）+ TiptapEditor 正文；header 删除按钮（onDelete 回调交父层处理）；800ms 防抖保存 + 卸载 flush，父组件 key={noteId} 挂载换卡即重挂载
+  - `TiptapEditor.tsx` + `tiptap/` — Tiptap 3 所见即所得正文编辑器（markdown 真源，tiptap-markdown 往返序列化）：input rules（`# `/`- [ ] `/`**` 等敲完即渲染）、正文 `- [ ]` 勾选项可点选落盘（待办=正文 checkbox，无独立待办实体）、BubbleToolbar 选中浮出（粗斜/行内代码/删除线/链接）、SlashMenu `/` 插入菜单、粘贴 markdown 自动解析
   - `TagFilterMenu.tsx` — # 标签下拉 Popover：从 notes store 聚合 tag→计数（计数降序），点选 toggle 过滤、选中项高亮打勾
   - `NoteCardItem.tsx` — 时间流卡片行，会话列表化样式（同 ConversationRow）：标题全宽 truncate + meta 行相对时间（getRelativeTime）+ hover 浮出引用/删除按钮（ml-auto opacity-0 pointer-events-none → group-hover）；不显示标签 Badge；导出 formatNoteTime 供 TrashView/TaskPanel 复用
-  - `TodosPanel.tsx` / `TodoItem.tsx` — 待办 mode（HumanTodo 独立存储，非卡内 todos）：props `{ workspacePath, query?, onOpenNote }` 自包含订阅 + 惰性加载 + filterByQuery 前端过滤；顶部快速输入行（Enter/Plus 即建）；pending 按 due 升序（过期标红且置顶）→ 无 due 靠后，done 折叠区默认收起；TodoItem 行内编辑文本/due、agent 来源 Bot 图标、笔记 chip（点击 onOpenNote 跳卡片）、hover 浮出操作
   - `TaskPanel.tsx` — 任务 mode（协作任务六分组 backlog/queued/running/review/done/rejected）：props `{ workspacePath, query?, listHidden, onToggleListHidden, onOpenNote }`；query 对 title/planPath 前端模糊过滤；backlog 行来源笔记 chip + plan 路径 + hover「执行」按钮（executeTask 进队列），详情页 TaskDetail 常显执行按钮兜底
-  - `TrashView.tsx` — 回收站 mode（独立占满内容区）：三段聚合（笔记/待办/任务，三源 Promise.all 并行拉取独立容错，段标题 sticky 带计数，空段不渲染）；query 前端过滤（各段主文本 includes）；恢复/彻底删除（purge 前 showConfirm），busyKey 防双击；恢复/删除后本地移除，原视图刷新靠 changed 广播
+  - `TrashView.tsx` — 回收站 mode（独立占满内容区）：两段聚合（笔记/任务，Promise.all 并行拉取独立容错，段标题 sticky 带计数，空段不渲染）；query 前端过滤（各段主文本 includes）；恢复/彻底删除（purge 前 showConfirm），busyKey 防双击；恢复/删除后本地移除，原视图刷新靠 changed 广播
   - `NoteState.tsx` — 空态/加载态复用组件
 - `wechat/` — 微信 Bot 模块
   - `WechatDialog.tsx` — 微信认证 Dialog（QR码扫描 / Bot 控制面板）
@@ -174,7 +174,6 @@
 - `notes-store.ts` — 笔记卡片前端：notes（created 倒序）/loading/loadedWorkspacePath/activeNoteId + loadNotes（listNotes）/subscribeNotesChanged（notesChanged 广播按 workspacePath 匹配重拉）/setActiveNoteId/createNote（支持 {content, tags} 输入，不自动激活——新建即编辑由 NotesPanel 控制）/updateNote（本地乐观更新，广播兜底）/deleteNote（软删除，成功后本地移除）
 - `task-store.ts` — 协作任务前端：groups（TaskGroups 六分组）/loading/loadedWorkspacePath/activeTaskId + loadTasks（listCollabTasks）/executeTask（tipc executeCollabTask 内部已 kick 队列，成功即 loadTasks 刷新，失败返 false 由组件 toast）/subscribeTasksChanged（广播匹配重拉）/setActiveTaskId
 - `task-focus-store.ts` — 任务通知深链请求（focusReq {taskId, seq}，seq 递增使同一任务重复通知可再触发；NotesPanel 切任务 mode、TaskPanel 选中任务各自响应）
-- `todo-store.ts` — 人待办前端：todos/loading/loadedWorkspacePath + loadTodos（listTodos）/createTodo（成功本地插入，广播兑底）/updateTodo/setTodoStatus/softDeleteTodo（本地移除）/subscribeTodosChanged；导出 filterByQuery(todos, query) 供 TodosPanel 分域搜索
 - `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID`/`NOTES_TAB_ID`/`DATA_CENTER_TAB_ID` 哨兵（非真实会话）分别表示首页/笔记/数据中心固定 tab，activeTabId 初始/关末 tab 后回退到 HOME；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
 - `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，数据中心在主窗口 tab 后两处同实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
 - `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity，10s 轮询由数据中心面板 useVisiblePolling 驱动）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
@@ -194,9 +193,8 @@
 ## 类型定义（types/）
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
-- `note.ts` — TodoStatus / TodoItem（卡内待办，status 三态，可选 plan——有 plan 即「可实施待办」；写入侧已废弃仅解析容忍旧文件）/ NoteMeta（id/file/title/created/updated/tags/links/todos）/ Note，主进程镜像在 `electron/main/services/notes/note-types.ts`
+- `note.ts` — NoteMeta（id/file/title/created/updated/tags/links）/ Note，主进程镜像在 `electron/main/services/notes/note-types.ts`；旧卡内 todos 类型链（TodoStatus/TodoItem/NoteMeta.todos）已随待办实体退役删除，frontmatter 遇 todos: 块直接忽略
 - `task.ts` — 协作任务数据模型：TaskStatus（backlog/queued/running/review/done/rejected）/ Task（title/planPath/noteId?/originSessionId?/execSessionId?/result?/deletedAt?）/ TaskGroups，主进程真源在 `electron/main/services/task-store.ts`
-- `todo.ts` — 人待办数据模型：HumanTodo（text/status: pending|done/due?/noteId?/source: manual|agent/createdAt/updatedAt/deletedAt?），主进程真源在 `electron/main/services/todo-service.ts`
 - `ai.ts` — AIInteraction / AIMessage
 - `settings.ts` — ModelTier / ModelSelection / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { profiles: SubAgentProfile[] }` 子会话派遣 Profile 清单，SubAgentProfile.enabled 仅非 default 有意义——停用后系统提示词索引不列出、startChild 拒绝；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
@@ -222,7 +220,6 @@
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
 - `notes.ts` — 笔记卡片 CRUD（createNote/getNote/listNotes/updateNote/appendNote/deleteNote/restoreNote/purgeNote/listTrashNotes/searchNotes，输入首参 workspacePath）；写操作后主进程广播 notesChanged 事件
 - `tasks.ts` — 协作任务路由：listCollabTasks（六分组）/listDeletedCollabTasks/getCollabTask/reviewCollabTask/executeCollabTask（backlog→queued + kick 队列）/deleteCollabTask（软删）/restoreCollabTask/purgeCollabTask
-- `todos.ts` — 人待办路由：listTodos/listDeletedTodos/createTodo/updateTodo（patch {text?, due?}，due null 清除）/setTodoStatus/deleteTodo（软删）/restoreTodo/purgeTodo，全部直调 todo-service
 - `conversations.ts` — 对话 CRUD + 分叉（JSON 存储）
 - `workspace.ts` — 工作区管理（列表、默认、文件夹选择、文件树）
 - `file.ts` — 文件操作（打开文件位置）
@@ -236,7 +233,7 @@
 - `agent.ts` — Agent 会话管理，路由统一查 `getPiSessionManager()`（）：setSessionModel（接收 ModelSelection，返回 `{ ok:true; needsRestart? } | { ok:false; error }`；同 profile 换 tier 走 PiSession 快速路径，跨 profile 由前端触发会话重启）；`closeQueryBasedSession` = release 语义（refCount-1，归零即销毁），`forceCloseQueryBasedSession` = 强杀（`/clear` 走这条立刻销毁避免后台弹卡片）；路由名保留旧字样是历史兼容，内部实现已纯 pi；broadcaster complete 分支挂 model-failover 钩子——success 走 clearFailoverTriedBySession 清 tried，failed 走 maybeFailoverMainSession 主会话 quota 自动切换（见 `agents/model-failover.ts`）
 - `system-prompt.ts` — 系统提示词模板查询（getSystemPromptSegments，返回 `{ segments } | { error }`，供设置页只读预览用户看不见的系统级 append 段）
 - `scheduler.ts` — 定时任务（listTasks 含现算 nextRunAt / saveTask 全量校验含触发态合并、on_task_done 引用与环检测、toolPacksOverride 清洗，builtin 名称锁定 / deleteTask 拒 builtin「内置任务不能删除」/ setTaskEnabled / runTaskNow 手动直跑不看 enabled / stopTask 整停（清队列+取消当前）/ listRunHistory 倒序分页（planId 过滤=任务 id + before cursor）/ getSchedulerActivity 运行快照 / getBuiltinTaskDetail + saveBuiltinPrompt + resetBuiltinPrompt 内置任务提示词三件套）
-- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件、failoverNotice 主会话供应商切换提示条、tasksChanged/todosChanged 协作任务与人待办变更、manualTaskDone 手动全量重置/重新提炼完成 toast 等）
+- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件、failoverNotice 主会话供应商切换提示条、tasksChanged 协作任务变更、manualTaskDone 手动全量重置/重新提炼完成 toast 等）
 
 ## 业务服务（electron/main/services/）
 
@@ -291,13 +288,12 @@
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
 - `notes/` — 笔记卡片数据层（存储 `<workspacePath>/.dogear/notes/` 一卡一 md，frontmatter 承载元数据，文件为真源）
-  - `notes-store.ts` — IO 原语：路径/文件名生成（`<YYYYMMDD-HHmmss>-<shortid8>.md`）/手写 frontmatter 解析序列化（YAML 兼容子集，todos 每行一个 JSON 对象，零依赖）/原子写/index.json 维护（不回退 .bak，损坏全量重建）/.trash 移动
-  - `notes-service.ts` — CRUD 语义（唯一写入口）：create/get（永远读文件同步刷索引）/list（走索引）/update（tags/links 整体深替换；todos 写入侧已废弃，写入恒置空）/append/remove 软删除/restore/purge/listTrash/search（tag 精确 + query 标题正文不区分大小写）；写后广播 notesChanged；note-types.ts 为 types/note.ts 主进程镜像
+  - `notes-store.ts` — IO 原语：路径/文件名生成（`<YYYYMMDD-HHmmss>-<shortid8>.md`）/手写 frontmatter 解析序列化（YAML 兼容子集，零依赖，遇 todos: 块直接忽略）/原子写/index.json 维护（不回退 .bak，损坏全量重建）/.trash 移动
+  - `notes-service.ts` — CRUD 语义（唯一写入口）：create/get（永远读文件同步刷索引）/list（走索引）/update（tags/links 整体深替换）/append/remove 软删除/restore/purge/listTrash/search（tag 精确 + query 标题正文不区分大小写）；写后广播 notesChanged；note-types.ts 为 types/note.ts 主进程镜像
 - `task-store.ts` — 协作任务存储层（`.dogear/tasks.json`）：六状态机（ALLOWED_TRANSITIONS：backlog→queued 等）+ createTask/listTasks/listDeletedTasks（软删过滤，deletedAt 倒序）/listTasksGrouped/getTaskDetail/reviewTask/markTaskRunning/completeTask/rejectTask/executeTask（backlog→queued）/softDeleteTask/restoreTask/purgeTask/recoverInterruptedTasks；原子写 + 文件锁
 - `task-service.ts` — 协作任务广播包装层：create/review/markRunning/complete/reject/execute/delete/restore/purge 透传 task-store 并广播 tasksChanged
 - `task-queue.ts` — 任务串行队列执行器（drain 循环一次跑一个 queued 任务）：创建执行会话（role='main'）→ 按任务提示词实施 → 结果写回（<task-result> 标签提取，回退尾部文本）→ review + 系统通知；超时兜底 session.interrupt；kick() 唤醒，service 层不 import 队列避免循环依赖，由调用方 tipc/工具层 kick
-- `todo-service.ts` — 人待办存储层（`.dogear/todos.json`，零 Electron 依赖）：createTodo/listTodos/listDeletedTodos/getTodo/updateTodoText/updateTodoDue/setTodoStatus/softDeleteTodo/restoreTodo/purgeTodo；写函数尾部广播 todosChanged
-- `migrate-notes-todos.ts` — 存量卡内 todos 一次性迁移（启动 fire-and-forget，幂等）：带 plan → createTask(backlog|done, noteId, planPath)，无 plan → createTodo(manual)；迁完清空 frontmatter todos 并回写
+- `migrate-notes-todos.ts` — 待办实体退役迁移（启动 fire-and-forget，幂等）：todos.json 人待办 → 笔记正文勾选项（带 noteId 且笔记存在 appendNote 并入尾部，否则 createNote 新卡 tags ['待办']；done → `- [x]`、due → 行尾 ` 📅 YYYY-MM-DD`）；跑完 todos.json 原子改名 .migrated 防重跑；单条失败 warn 跳过
 - `skill-service.ts` — Skill 管理服务：`listSkills(workspaceId)` 扫三源目录的 SKILL.md（builtin `resources/skill-templates/` 只读模板；custom `.dogear/skills/` 全局目录，与工作区无关；user `~/.claude/skills/`）标注 source + enabled（enabled 按传入 workspaceId 的 enabledSkills，null 时全 false）；`setSkillEnabled` 读写 workspace-config 的 enabledSkills 数组
 - `article-parser-skills-service.ts` — 网络文章解析 Skills 和 MCP 工具定义；运行时目录 `.dogear/article-parser/`（`getArticleParserSkillsDir()` 同步解析 + 旧目录存在性回退），`ensureSkillsInitialized` 首跑 `migrateLegacyDirs()` 一次性整目录迁移（旧 `.dogear/skills/article-parser/` rename 到新目录，幂等，失败仅 warn 不抛）
 - `workspace-service.ts` — 获取当前默认工作区（thin wrapper）
@@ -364,9 +360,8 @@
 
 - `tools/article-tools.ts` — 文章阅读工具（dogear__ReadArticle / dogear__ListArticles）
 
-- `tools/notes-tools.ts` — 笔记卡片 MCP 工具（dogear-notes server，主会话且绑定工作区时挂载：dogear__CreateNote / dogear__GetNote / dogear__SearchNotes / dogear__AppendNote / dogear__UpdateNote / dogear__DeleteNote 软删除；卡内 todos 入参已移除，可实施待办分流见 dogear__CreateTask）；直调 notes-service 不绕 tipc；配合 session-append-templates 的 NOTES_DISCIPLINE_APPEND 存卡纪律（方案落盘后存卡、CreateTask(autoExecute=false) 落积压、琐事走 dogear-todos）
+- `tools/notes-tools.ts` — 笔记卡片 MCP 工具（dogear-notes server，主会话且绑定工作区时挂载：dogear__CreateNote / dogear__GetNote / dogear__SearchNotes / dogear__AppendNote / dogear__UpdateNote / dogear__DeleteNote 软删除；可实施工作分流见 dogear__CreateTask）；直调 notes-service 不绕 tipc；配合 session-append-templates 的 NOTES_DISCIPLINE_APPEND 存卡纪律（方案落盘后存卡、CreateTask(autoExecute=false) 落积压、琐事备忘存卡片正文用 - [ ] 勾选项）
 - `tools/task-tools.ts` — 协作任务 MCP 工具（dogear-tasks server：dogear__CreateTask（autoExecute 默认 false → status:'backlog' 落积压；true 才 kick 队列）/ dogear__ListTasks（含 backlog 分组）/ dogear__ExecuteTask（backlog→queued + kick））
-- `tools/todo-tools.ts` — 人待办 MCP 工具（mcp__dogear-todos__createTodo（source 恒 'agent'）/ mcp__dogear-todos__completeTodo / mcp__dogear-todos__listHumanTodos（未完成在前）；zod 严格校验，错误 isError: true）
 
 - `tools/stock-tools.ts` — 自选股工具（dogear__SearchStock / dogear__GetStockQuote / dogear__GetKLineData / dogear__GetTimeline / dogear__GetWatchlist / dogear__ModifyWatchlist）
 

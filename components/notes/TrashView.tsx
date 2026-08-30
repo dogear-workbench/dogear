@@ -7,7 +7,6 @@ import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
 import { formatNoteTime } from '@/components/notes/NoteCardItem';
 import { showConfirm } from '@/stores/confirm-store';
 import type { NoteMeta } from '@/types/note';
-import type { HumanTodo } from '@/types/todo';
 import type { Task } from '@/types/task';
 
 interface TrashViewProps {
@@ -15,13 +14,13 @@ interface TrashViewProps {
   query?: string;
 }
 
-type BusyKey = `note:${string}` | `todo:${string}` | `task:${string}`;
+type BusyKey = `note:${string}` | `task:${string}`;
 
 interface TrashRowProps {
   primary: string;
   meta: string;
   busy: boolean;
-  /** 笔记段保持常显按钮（沿用旧样式），待办/任务段 hover 浮出 */
+  /** 笔记段保持常显按钮（沿用旧样式），任务段 hover 浮出 */
   hoverActions: boolean;
   onRestore: () => void;
   onPurge: () => void;
@@ -70,7 +69,6 @@ function SectionHeader({ label, count }: { label: string; count: number }) {
 
 export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
-  const [todos, setTodos] = useState<HumanTodo[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<BusyKey | null>(null);
@@ -79,13 +77,9 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
     let cancelled = false;
     setLoading(true);
     void (async () => {
-      const [noteRes, todoRes, taskRes] = await Promise.all([
+      const [noteRes, taskRes] = await Promise.all([
         client.listTrashNotes({ workspacePath }).catch((error) => {
           console.error('[notes] listTrashNotes 失败:', error);
-          return null;
-        }),
-        client.listDeletedTodos({ workspacePath }).catch((error) => {
-          console.error('[todos] listDeletedTodos 失败:', error);
           return null;
         }),
         client.listDeletedCollabTasks({ workspacePath }).catch((error) => {
@@ -95,7 +89,6 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
       ]);
       if (cancelled) return;
       if (noteRes && 'notes' in noteRes) setNotes(noteRes.notes ?? []);
-      if (todoRes && 'todos' in todoRes) setTodos(todoRes.todos ?? []);
       if (taskRes && 'tasks' in taskRes) setTasks(taskRes.tasks ?? []);
       setLoading(false);
     })();
@@ -109,10 +102,6 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
     () => (q ? notes.filter((n) => (n.title || '').toLowerCase().includes(q)) : notes),
     [notes, q],
   );
-  const filteredTodos = useMemo(
-    () => (q ? todos.filter((t) => t.text.toLowerCase().includes(q)) : todos),
-    [todos, q],
-  );
   const filteredTasks = useMemo(
     () => (q ? tasks.filter((t) => t.title.toLowerCase().includes(q)) : tasks),
     [tasks, q],
@@ -124,7 +113,6 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
     try {
       if (await fn()) {
         if (key.startsWith('note:')) setNotes((prev) => prev.filter((it) => it.id !== key.slice(5)));
-        else if (key.startsWith('todo:')) setTodos((prev) => prev.filter((it) => it.id !== key.slice(5)));
         else setTasks((prev) => prev.filter((it) => it.id !== key.slice(5)));
       }
     } finally {
@@ -160,34 +148,6 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
       }
     });
 
-  const handleRestoreTodo = (todo: HumanTodo) =>
-    withBusy(`todo:${todo.id}`, async () => {
-      try {
-        const result = await client.restoreTodo({ workspacePath, todoId: todo.id });
-        if ('todo' in result) return true;
-        if ('error' in result) console.error('[todos] restoreTodo 失败:', result.error);
-        return false;
-      } catch (error) {
-        console.error('[todos] restoreTodo 失败:', error);
-        return false;
-      }
-    });
-
-  const handlePurgeTodo = (todo: HumanTodo) =>
-    withBusy(`todo:${todo.id}`, async () => {
-      const ok = await showConfirm('彻底删除', `「${todo.text}」将被永久删除，不可恢复。`);
-      if (!ok) return false;
-      try {
-        const result = await client.purgeTodo({ workspacePath, todoId: todo.id });
-        if ('success' in result && result.success) return true;
-        if ('error' in result) console.error('[todos] purgeTodo 失败:', result.error);
-        return false;
-      } catch (error) {
-        console.error('[todos] purgeTodo 失败:', error);
-        return false;
-      }
-    });
-
   const handleRestoreTask = (task: Task) =>
     withBusy(`task:${task.id}`, async () => {
       try {
@@ -218,11 +178,10 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
 
   if (loading) return <NoteLoading />;
 
-  const empty = notes.length === 0 && todos.length === 0 && tasks.length === 0;
+  const empty = notes.length === 0 && tasks.length === 0;
   if (empty) return <NoteEmpty text="回收站为空" />;
 
-  const noMatch =
-    filteredNotes.length === 0 && filteredTodos.length === 0 && filteredTasks.length === 0;
+  const noMatch = filteredNotes.length === 0 && filteredTasks.length === 0;
   if (noMatch) return <NoteEmpty text="无匹配结果" />;
 
   return (
@@ -240,24 +199,6 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
                 hoverActions={false}
                 onRestore={() => void handleRestoreNote(note)}
                 onPurge={() => void handlePurgeNote(note)}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-      {filteredTodos.length > 0 && (
-        <section>
-          <SectionHeader label="待办" count={filteredTodos.length} />
-          <div className="divide-y">
-            {filteredTodos.map((todo) => (
-              <TrashRow
-                key={todo.id}
-                primary={todo.text}
-                meta={todo.deletedAt ? `删除于 ${formatNoteTime(todo.deletedAt)}` : ''}
-                busy={busyKey === `todo:${todo.id}`}
-                hoverActions
-                onRestore={() => void handleRestoreTodo(todo)}
-                onPurge={() => void handlePurgeTodo(todo)}
               />
             ))}
           </div>

@@ -551,10 +551,10 @@ app.whenReady().then(async () => {
     .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
     .catch((err) => console.error('sessionId 自愈扫描失败:', err));
 
-  // 存量笔记 todos 迁移：可实施待办入任务体系、普通待办转人待办（幂等，迁完清 frontmatter）
+  // 待办实体退役迁移：todos.json 人待办并入笔记正文勾选项（幂等，迁完改名 .migrated）
   void import('./services/migrate-notes-todos.js')
-    .then((m) => m.migrateNotesTodosAllWorkspaces())
-    .catch((err) => console.error('笔记 todos 迁移失败:', err));
+    .then((m) => m.migrateTodosToNotesAllWorkspaces())
+    .catch((err) => console.error('待办迁移失败:', err));
 
   // 任务队列启动：各工作区遗留 running 任务回 queued 后开跑
   void import('./services/task-queue.js')

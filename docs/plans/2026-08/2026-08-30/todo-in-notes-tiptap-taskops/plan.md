@@ -16,7 +16,7 @@
 - [x] [Step 2: plan 文档路径链接可点](./step2-plan-path-links.md) — MarkdownRenderer 可选路径链接 + TaskDetail 接入
 - [x] [Step 3: Tiptap 编辑器核心替换](./step3-tiptap-core.md) — 依赖安装、NoteEditor 正文区换 Tiptap、markdown 往返与 checkbox
 - [x] [Step 4: Tiptap 交互完善](./step4-tiptap-polish.md) — BubbleMenu、`/` 插入菜单、排版打磨
-- [ ] [Step 5: 待办实体退役](./step5-todo-retire.md) — 数据迁移 + 全链路删除 + 提示词更新
+- [x] [Step 5: 待办实体退役](./step5-todo-retire.md) — 数据迁移 + 全链路删除 + 提示词更新
 
 ## 全局决策
 

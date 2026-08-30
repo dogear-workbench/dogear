@@ -22,7 +22,6 @@ import { digestRouter } from './digest.js';
 import { reviewRouter } from './review.js';
 import { categoryRouter } from './category.js';
 import { notesRouter } from './notes.js';
-import { todosRouter } from './todos.js';
 import { tasksRouter } from './tasks.js';
 import { groupRouter } from './group.js';
 import { delegationRouter } from './delegation.js';
@@ -54,7 +53,6 @@ export const router = {
   ...reviewRouter,
   ...categoryRouter,
   ...notesRouter,
-  ...todosRouter,
   ...tasksRouter,
   ...groupRouter,
   ...delegationRouter,
