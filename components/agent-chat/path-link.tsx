@@ -14,7 +14,7 @@ export interface PathSegment {
 
 const PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/]|[\\/])[A-Za-z0-9_.\-~@$()+\\/]*|[A-Za-z0-9_.\-~@$()+]*[\\/][A-Za-z0-9_.\-~@$()+\\/]*/g;
 const TRAILING_PUNCT_RE = /[.,;:!?)\]}'"]+$/;
-const ALLOWED_EXT_RE = /\.(md|markdown|txt|json)$/i;
+export const ALLOWED_EXT_RE = /\.(md|markdown|txt|json)$/i;
 
 export function resolvePathInWorkspace(candidate: string, workspacePath: string): string | null {
   const root = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
@@ -110,6 +110,26 @@ export function useWorkspacePath(workspaceId: string | null): string | null {
     if (!workspacePathsCache.map.has(workspaceId)) ensureWorkspacePaths();
   }, [workspaceId, focused]);
   return focused?.path ?? cached;
+}
+
+export function useWorkspaceIdByPath(workspacePath: string | null): string | null {
+  const focused = useWorkspaceStore((s) => (workspacePath && s.workspace?.path === workspacePath ? s.workspace : null));
+  const cached = useSyncExternalStore(
+    subscribeWorkspacePaths,
+    () => {
+      if (!workspacePath) return null;
+      for (const [id, p] of workspacePathsCache.map) {
+        if (p === workspacePath) return id;
+      }
+      return null;
+    },
+    () => null,
+  );
+  useEffect(() => {
+    if (!workspacePath || focused) return;
+    if (workspacePathsCache.map.size === 0) ensureWorkspacePaths();
+  }, [workspacePath, focused]);
+  return focused?.id ?? cached;
 }
 
 export function PathChip({ text, resolved, fileName, workspaceId }: {
