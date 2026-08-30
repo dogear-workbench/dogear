@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileText, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -23,12 +23,14 @@ const TASK_GROUPS: Array<{ status: TaskStatus; label: string }> = [
 
 interface TaskPanelProps {
   workspacePath: string;
+  /** 顶栏分域搜索词，前端 title/plan 模糊过滤 */
+  query?: string;
   listHidden: boolean;
   onToggleListHidden: () => void;
   onOpenNote: (noteId: string) => void;
 }
 
-export function TaskPanel({ workspacePath, listHidden, onToggleListHidden, onOpenNote }: TaskPanelProps) {
+export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden, onOpenNote }: TaskPanelProps) {
   const groups = useTaskStore((s) => s.groups);
   const loading = useTaskStore((s) => s.loading);
   const loadedWorkspacePath = useTaskStore((s) => s.loadedWorkspacePath);
@@ -59,12 +61,23 @@ export function TaskPanel({ workspacePath, listHidden, onToggleListHidden, onOpe
     if (!ok) toast.error('执行失败', { description: '任务无法进入队列' });
   };
 
-  const renderGroups = () => {
+  const q = query?.trim().toLowerCase() ?? '';
+  const filteredGroups = useMemo(() => {
     if (!groups) return null;
-    const total = TASK_GROUPS.reduce((n, g) => n + groups[g.status].length, 0);
-    if (total === 0) return <NoteEmpty text="暂无任务，可在会话中让 Agent 创建" />;
+    if (!q) return groups;
+    const match = (t: Task) =>
+      t.title.toLowerCase().includes(q) || t.planPath.toLowerCase().includes(q);
+    const out = { ...groups };
+    for (const g of TASK_GROUPS) out[g.status] = groups[g.status].filter(match);
+    return out;
+  }, [groups, q]);
+
+  const renderGroups = () => {
+    if (!filteredGroups) return null;
+    const total = TASK_GROUPS.reduce((n, g) => n + filteredGroups[g.status].length, 0);
+    if (total === 0) return <NoteEmpty text={q ? '无匹配任务' : '暂无任务，可在会话中让 Agent 创建'} />;
     return TASK_GROUPS.map(({ status, label }) => {
-      const tasks = groups[status];
+      const tasks = filteredGroups[status];
       if (tasks.length === 0) return null;
       return (
         <div key={status}>

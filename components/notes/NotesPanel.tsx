@@ -1,13 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  Clock,
   ListTodo,
   Loader2,
   NotebookPen,
   Plus,
   Search,
   SquareCheckBig,
-  Tags,
   Trash2,
   X,
 } from 'lucide-react';
@@ -18,36 +16,32 @@ import { Input } from '@/components/ui/input';
 import { useNotesStore } from '@/stores/notes-store';
 import { useTaskStore } from '@/stores/task-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
-import { showConfirm } from '@/stores/confirm-store';
 import { TaskPanel } from '@/components/notes/TaskPanel';
-import { NoteEditor } from '@/components/notes/NoteEditor';
-import { NoteCardItem } from '@/components/notes/NoteCardItem';
-import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
 import { TodosPanel } from '@/components/notes/TodosPanel';
-import { TagsView } from '@/components/notes/TagsView';
+import { TagFilterMenu } from '@/components/notes/TagFilterMenu';
 import { TrashView } from '@/components/notes/TrashView';
+import { NotesTimelinePane } from '@/components/notes/NotesTimelinePane';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { referenceNoteIntoFocus } from '@/lib/reference-guard';
 import type { NoteMeta } from '@/types/note';
 
-const VIEWS = [
-  { id: 'timeline', label: '时间流', icon: Clock },
-  { id: 'todos', label: '待办', icon: ListTodo },
-  { id: 'tags', label: '标签', icon: Tags },
-  { id: 'trash', label: '回收站', icon: Trash2 },
-] as const;
-
-type NotesView = (typeof VIEWS)[number]['id'];
-
-type PanelMode = 'notes' | 'tasks';
+type PanelMode = 'notes' | 'todos' | 'tasks' | 'trash';
 
 const MODES = [
   { id: 'notes', label: '笔记', icon: NotebookPen },
+  { id: 'todos', label: '待办', icon: ListTodo },
   { id: 'tasks', label: '任务', icon: SquareCheckBig },
+  { id: 'trash', label: '回收站', icon: Trash2 },
 ] as const;
 
-interface NoteFilter {
+const SEARCH_PLACEHOLDER: Record<PanelMode, string> = {
+  notes: '搜索标题与正文',
+  todos: '过滤待办',
+  tasks: '过滤任务',
+  trash: '过滤回收站',
+};
+
+export interface NoteFilter {
   query?: string;
   tag?: string;
 }
@@ -55,15 +49,11 @@ interface NoteFilter {
 export function NotesPanel() {
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const workspace = useWorkspaceStore((s) => s.workspace);
-  const notes = useNotesStore((s) => s.notes);
-  const loading = useNotesStore((s) => s.loading);
   const loadedWorkspacePath = useNotesStore((s) => s.loadedWorkspacePath);
   const loadNotes = useNotesStore((s) => s.loadNotes);
   const subscribeNotesChanged = useNotesStore((s) => s.subscribeNotesChanged);
-  const activeNoteId = useNotesStore((s) => s.activeNoteId);
   const setActiveNoteId = useNotesStore((s) => s.setActiveNoteId);
   const createNote = useNotesStore((s) => s.createNote);
-  const deleteNote = useNotesStore((s) => s.deleteNote);
 
   const taskGroups = useTaskStore((s) => s.groups);
   const taskLoadedWorkspacePath = useTaskStore((s) => s.loadedWorkspacePath);
@@ -73,14 +63,13 @@ export function NotesPanel() {
   const reviewCount = taskGroups?.review.length ?? 0;
 
   const [mode, setMode] = useState<PanelMode>('notes');
-  const [view, setView] = useState<NotesView>('timeline');
   const [listHidden, setListHidden] = useState(false);
   const [searchDraft, setSearchDraft] = useState('');
+  const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [filter, setFilter] = useState<NoteFilter | null>(null);
   const [filterResults, setFilterResults] = useState<NoteMeta[]>([]);
   const [filterLoading, setFilterLoading] = useState(false);
   const searchSeqRef = useRef(0);
-  const activeQueryRef = useRef<string | null>(null);
 
   const isActive = activeTabId === NOTES_TAB_ID;
   const workspacePath = workspace?.path ?? null;
@@ -95,22 +84,6 @@ export function NotesPanel() {
     void createNote(workspace.path).then((note) => {
       if (note) setActiveNoteId(note.id);
     });
-  };
-
-  const handleDelete = async (note: NoteMeta) => {
-    if (!workspace) return;
-    const ok = await showConfirm(
-      '移入回收站',
-      `「${note.title || '（无内容）'}」将移入回收站，可从回收站恢复。`,
-    );
-    if (!ok) return;
-    const success = await deleteNote(workspace.path, note.id);
-    if (success && note.id === activeNoteId) setActiveNoteId(null);
-  };
-
-  const handleReference = (note: NoteMeta) => {
-    if (!workspace) return;
-    void referenceNoteIntoFocus({ noteId: note.id, title: note.title, workspacePath: workspace.path });
   };
 
   useEffect(() => {
@@ -140,7 +113,6 @@ export function NotesPanel() {
     async (next: NoteFilter) => {
       if (!workspace) return;
       const seq = ++searchSeqRef.current;
-      activeQueryRef.current = next.query ?? null;
       setFilter(next);
       setFilterLoading(true);
       try {
@@ -164,45 +136,40 @@ export function NotesPanel() {
     [workspace],
   );
 
-  // 搜索词变化 300ms 防抖触发关键词搜索；清空时仅退出 query 过滤，不打断标签过滤
+  // 笔记 mode：query/tag 叠加搜索（300ms 防抖）；双空退出过滤。其余 mode 的 query 由对应面板前端过滤，不走 IPC
   useEffect(() => {
+    if (mode !== 'notes') return;
     const query = searchDraft.trim();
-    if (!query) {
-      if (activeQueryRef.current) {
-        activeQueryRef.current = null;
-        searchSeqRef.current += 1;
-        setFilter(null);
-        setFilterResults([]);
-        setFilterLoading(false);
-      }
+    if (!query && !selectedTag) {
+      searchSeqRef.current += 1;
+      setFilter(null);
+      setFilterResults([]);
+      setFilterLoading(false);
       return;
     }
-    const timer = setTimeout(() => void runSearch({ query }), 300);
+    const timer = setTimeout(() => void runSearch({ query, tag: selectedTag ?? undefined }), 300);
     return () => clearTimeout(timer);
-  }, [searchDraft, workspace, runSearch]);
+  }, [searchDraft, selectedTag, mode, runSearch]);
 
-  const switchView = (next: NotesView) => {
-    setView(next);
-    searchSeqRef.current += 1;
-    activeQueryRef.current = null;
+  const switchMode = (next: PanelMode) => {
+    if (next === mode) return;
+    setMode(next);
     setSearchDraft('');
+    setSelectedTag(null);
     setFilter(null);
     setFilterResults([]);
     setFilterLoading(false);
   };
 
-  const handlePickTag = (tag: string) => {
-    setView('timeline');
-    setSearchDraft('');
-    void runSearch({ tag });
+  const toggleTag = (tag: string) => {
+    setSelectedTag((prev) => (prev === tag ? null : tag));
   };
 
   const toggleListHidden = useCallback(() => setListHidden((v) => !v), []);
 
-  // 任务侧笔记 chip：切回笔记 mode 的时间流并打开卡片（同 openNoteFromTodos 模式）
-  const openNoteFromTasks = (noteId: string) => {
+  // 待办/任务侧笔记 chip：切回笔记 mode 并打开卡片
+  const openNoteFromPanels = (noteId: string) => {
     setMode('notes');
-    switchView('timeline');
     setActiveNoteId(noteId);
   };
 
@@ -213,57 +180,48 @@ export function NotesPanel() {
     }
   };
 
-  const renderTimeline = () => {
-    if (filter) {
-      if (filterLoading && filterResults.length === 0) return <NoteLoading />;
-      if (filterResults.length === 0) return <NoteEmpty text="无匹配结果" />;
+  const renderContent = () => {
+    if (mode === 'notes') {
       return (
-        <div className="divide-y">
-          {filterResults.map((note) => (
-            <NoteCardItem
-              key={note.id}
-              note={note}
-              active={note.id === activeNoteId}
-              onOpen={() => setActiveNoteId(note.id)}
-              onDelete={() => void handleDelete(note)}
-              onReference={() => handleReference(note)}
-            />
-          ))}
+        <NotesTimelinePane
+          listHidden={listHidden}
+          onToggleListHidden={toggleListHidden}
+          filter={filter}
+          filterResults={filterResults}
+          filterLoading={filterLoading}
+        />
+      );
+    }
+    if (!workspacePath) {
+      return (
+        <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
+          请先选择工作区
         </div>
       );
     }
-    if (loading) return <NoteLoading />;
-    if (notes.length === 0) return <NoteEmpty text="暂无笔记" />;
+    if (mode === 'todos') {
+      return (
+        <div className="flex-1 flex flex-col min-h-0">
+          <TodosPanel workspacePath={workspacePath} query={searchDraft} onOpenNote={openNoteFromPanels} />
+        </div>
+      );
+    }
+    if (mode === 'tasks') {
+      return (
+        <TaskPanel
+          workspacePath={workspacePath}
+          query={searchDraft}
+          listHidden={listHidden}
+          onToggleListHidden={toggleListHidden}
+          onOpenNote={openNoteFromPanels}
+        />
+      );
+    }
     return (
-      <div className="divide-y">
-        {notes.map((note) => (
-          <NoteCardItem
-            key={note.id}
-            note={note}
-            active={note.id === activeNoteId}
-            onOpen={() => setActiveNoteId(note.id)}
-            onDelete={() => void handleDelete(note)}
-            onReference={() => handleReference(note)}
-          />
-        ))}
+      <div className="flex-1 flex flex-col min-h-0">
+        <TrashView workspacePath={workspacePath} query={searchDraft} />
       </div>
     );
-  };
-
-  const renderList = () => {
-    if (view === 'timeline') {
-      return workspacePath ? renderTimeline() : <NoteEmpty text="请先选择工作区" />;
-    }
-    if (!workspacePath) return <NoteEmpty text="请先选择工作区" />;
-    if (view === 'todos') {
-      const openNoteFromTodos = (noteId: string) => {
-        switchView('timeline');
-        setActiveNoteId(noteId);
-      };
-      return <TodosPanel workspacePath={workspacePath} onOpenNote={openNoteFromTodos} />;
-    }
-    if (view === 'tags') return <TagsView onPickTag={handlePickTag} />;
-    return <TrashView workspacePath={workspacePath} query={searchDraft} />;
   };
 
   return (
@@ -273,7 +231,7 @@ export function NotesPanel() {
           {MODES.map(({ id, label, icon: Icon }) => (
             <button
               key={id}
-              onClick={() => setMode(id)}
+              onClick={() => switchMode(id)}
               className={cn(
                 'flex items-center gap-1 px-2.5 py-1 rounded text-xs cursor-pointer',
                 mode === id
@@ -291,28 +249,39 @@ export function NotesPanel() {
             </button>
           ))}
         </div>
+        <div className="relative flex-1 max-w-96 min-w-0">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            value={searchDraft}
+            onChange={(e) => setSearchDraft(e.target.value)}
+            placeholder={SEARCH_PLACEHOLDER[mode]}
+            className="h-7 pl-7 pr-7 text-xs md:text-xs"
+          />
+          {filterLoading ? (
+            <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />
+          ) : searchDraft ? (
+            <button
+              onClick={() => setSearchDraft('')}
+              title="清除搜索"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted"
+            >
+              <X className="w-3 h-3 text-muted-foreground" />
+            </button>
+          ) : null}
+        </div>
         {mode === 'notes' && (
           <>
-            <div className="relative flex-1 max-w-96 min-w-0">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
-              <Input
-                value={searchDraft}
-                onChange={(e) => setSearchDraft(e.target.value)}
-                placeholder="搜索标题与正文"
-                className="h-7 pl-7 pr-7 text-xs md:text-xs"
-              />
-              {filterLoading ? (
-                <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 animate-spin text-muted-foreground" />
-              ) : searchDraft ? (
-                <button
-                  onClick={() => setSearchDraft('')}
-                  title="清除搜索"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 p-0.5 rounded hover:bg-muted"
-                >
-                  <X className="w-3 h-3 text-muted-foreground" />
-                </button>
-              ) : null}
-            </div>
+            <TagFilterMenu selected={selectedTag} onToggle={toggleTag} />
+            {selectedTag && (
+              <button
+                onClick={() => setSelectedTag(null)}
+                title="移除标签过滤"
+                className="flex items-center gap-0.5 h-7 px-2 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 cursor-pointer shrink-0 max-w-36"
+              >
+                <span className="truncate">#{selectedTag}</span>
+                <X className="w-3 h-3 shrink-0" />
+              </button>
+            )}
             <Button variant="outline" size="xs" onClick={handleCreate} disabled={!workspace}>
               <Plus className="w-3 h-3" />
               新建卡片
@@ -321,76 +290,7 @@ export function NotesPanel() {
         )}
       </header>
 
-      {mode === 'tasks' ? (
-        workspacePath ? (
-          <TaskPanel
-            workspacePath={workspacePath}
-            listHidden={listHidden}
-            onToggleListHidden={toggleListHidden}
-            onOpenNote={openNoteFromTasks}
-          />
-        ) : (
-          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-            请先选择工作区
-          </div>
-        )
-      ) : (
-        <div className="flex-1 flex min-h-0">
-          <aside
-            className={cn(
-              'flex flex-col min-h-0 shrink-0 overflow-hidden transition-[width] duration-200',
-              listHidden ? 'w-0 border-r-0' : 'w-[300px] border-r',
-            )}
-          >
-            <div className="flex items-center gap-0.5 px-2 py-1.5 border-b shrink-0">
-              {VIEWS.map(({ id, label, icon: Icon }) => (
-                <button
-                  key={id}
-                  onClick={() => switchView(id)}
-                  title={label}
-                  className={cn(
-                    'flex flex-1 items-center justify-center gap-1 px-1 py-1 rounded text-xs cursor-pointer',
-                    view === id
-                      ? 'bg-muted/60 font-medium text-foreground'
-                      : 'text-muted-foreground hover:bg-muted/40',
-                  )}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{label}</span>
-                </button>
-              ))}
-            </div>
-            <div className="flex-1 overflow-y-auto min-h-0">{renderList()}</div>
-          </aside>
-
-          <div
-            className="w-1 shrink-0 cursor-col-resize group/sep relative flex items-center justify-center"
-            onDoubleClick={toggleListHidden}
-            title="双击隐藏/显示列表（Ctrl+\\）"
-          >
-            <div className="w-px h-full bg-border group-hover/sep:bg-primary/50 transition-colors" />
-          </div>
-
-          <section className="flex-1 min-w-0 min-h-0 flex flex-col">
-            {activeNoteId && workspace ? (
-              <NoteEditor
-                key={activeNoteId}
-                workspacePath={workspace.path}
-                noteId={activeNoteId}
-                onClose={() => setActiveNoteId(null)}
-                onDelete={() => {
-                  const meta = notes.find((n) => n.id === activeNoteId);
-                  if (meta) void handleDelete(meta);
-                }}
-              />
-            ) : (
-              <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-                {loading ? '加载中…' : '选择左侧卡片，或新建一张'}
-              </div>
-            )}
-          </section>
-        </div>
-      )}
+      {renderContent()}
     </div>
   );
 }

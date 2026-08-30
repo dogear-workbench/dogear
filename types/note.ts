@@ -42,10 +42,3 @@ export interface NoteMeta {
 export interface Note extends NoteMeta {
   content: string;               // Markdown 正文，不做结构约定
 }
-
-/** 跨卡片待办聚合项（listTodos 返回） */
-export interface NoteTodoEntry {
-  noteId: string;
-  noteTitle: string;
-  todo: TodoItem;
-}

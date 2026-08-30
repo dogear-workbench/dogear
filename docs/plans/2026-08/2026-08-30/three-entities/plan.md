@@ -13,7 +13,7 @@
 - [x] [Step 3: 待办 mode 视图](./step3-todos-panel.md) — todo-store + TodosPanel（快速输入/排序/双链跳转/软删）
 - [x] [Step 4: 回收站三段](./step4-trash-sections.md) — TrashView 扩展为笔记/待办/任务三段聚合
 - [x] [Step 5: 任务积压分组](./step5-task-backlog-panel.md) — TaskPanel 加 backlog 分组与「执行」按钮
-- [ ] [Step 6: 顶栏收口组装与 e2e](./step6-notes-panel-assembly.md) — 四 mode 顶栏、分域搜索、卡片会话化、标签合流、删旧组件、e2e 走查
+- [x] [Step 6: 顶栏收口组装与 e2e](./step6-notes-panel-assembly.md) — 四 mode 顶栏、分域搜索、卡片会话化、标签合流、删旧组件、e2e 走查
 
 ## 全局决策
 
@@ -27,3 +27,12 @@
 - **主进程改动**每 step 完成后 `bun run build:electron`
 - **NoteEditor 不动**：撑大 bug 已修复（`NoteEditor.tsx:308` mt-2 外包 div），本计划不触碰该文件
 - 完成后 doc-sync 同步 `docs/codebase-map.md`
+
+## 完成总结
+
+六步全部完成（2026-08-30），提交序列：step1 `9db614e` → step2 `5628b3d` → step3 `5f4de72` → step4 `acde5f2` → step5 `00fa8f0` → step6（本次）。
+
+- **数据层**：Task 状态机扩展 backlog/软删/noteId，todo-service 人待办存储（todos.json 原子写），启动幂等迁移存量笔记 frontmatter todos；顺修 EMPTY_TASKS 共享常量污染 bug
+- **IPC/工具**：tipc todos 路由组 + tasks 扩展四路由；agent 工具 dogear-todos 三工具、CreateTask autoExecute 默认落积压；提示词存卡纪律重写四步动线
+- **前端**：TodosPanel 待办 mode（due 排序标红/agent 图标/笔记 chip）、回收站三段聚合、任务积压分组（hover 执行）、四 mode 顶栏 + 分域搜索 + # 标签下拉、卡片会话化；删 TodosView/TagsView
+- **遗留**：真机 e2e 走查待用户重启应用后按 step6 交付文档对照表过一遍；agent.md 安装版实例副本未同步（与工作区副本漂移）；工具命名两套风格并存（mcp__dogear-todos__* vs dogear__Xxx）后续可统一

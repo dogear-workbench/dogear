@@ -1,7 +1,7 @@
 import { Trash2, MessagesSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { getRelativeTime } from '@/components/conversation-list/utils';
 import type { NoteMeta } from '@/types/note';
 
 export function formatNoteTime(iso: string): string {
@@ -23,6 +23,7 @@ interface NoteCardItemProps {
 }
 
 export function NoteCardItem({ note, active, onOpen, onDelete, onReference }: NoteCardItemProps) {
+  const title = note.title || '（无标题）';
   return (
     <div
       role="button"
@@ -39,47 +40,40 @@ export function NoteCardItem({ note, active, onOpen, onDelete, onReference }: No
         active && 'bg-muted/50',
       )}
     >
-      <div className="flex items-start gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium line-clamp-1">{note.title || '（无标题）'}</p>
-          <div className="mt-1 flex items-center gap-1.5 flex-wrap min-w-0">
-            <span className="text-xs text-muted-foreground shrink-0">{formatNoteTime(note.created)}</span>
-            {note.tags.map((tag) => (
-              <Badge key={tag} variant="subtle" className="px-1.5 py-0 text-[10px] font-normal">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        </div>
-        <div className="flex gap-0.5 shrink-0">
-          {onReference && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                onReference();
-              }}
-              title="引用到最近的会话"
-              className="opacity-0 group-hover:opacity-100"
-            >
-              <MessagesSquare className="w-3.5 h-3.5" />
-            </Button>
-          )}
-          {onDelete && (
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-              title="移入回收站"
-              className="opacity-0 group-hover:opacity-100"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-          )}
+      <div className="min-w-0">
+        <p className="text-sm font-medium truncate" title={title}>
+          {title}
+        </p>
+        <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+          <span className="shrink-0">{getRelativeTime(new Date(note.created).getTime())}</span>
+          <span className="ml-auto flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity shrink-0">
+            {onReference && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onReference();
+                }}
+                title="引用到最近的会话"
+              >
+                <MessagesSquare className="w-3.5 h-3.5" />
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                title="移入回收站"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
+            )}
+          </span>
         </div>
       </div>
     </div>
