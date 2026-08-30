@@ -301,39 +301,42 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
               />
             )}
 
-            <MDXEditor
-              ref={editorRef}
-              markdown={editorMarkdown}
-              onChange={handleEditorChange}
-              placeholder="写点什么…"
-              contentEditableClassName="notes-prose prose dark:prose-invert max-w-none px-4 py-3 mt-2 min-h-72 focus:outline-none"
-              className="notes-editor mt-2"
-              plugins={[
-                headingsPlugin(),
-                listsPlugin(),
-                quotePlugin(),
-                thematicBreakPlugin(),
-                linkPlugin(),
-                linkDialogPlugin(),
-                markdownShortcutPlugin(),
-                toolbarPlugin({
-                  toolbarClassName: 'border-b border-border bg-muted/30',
-                  toolbarContents: () => (
-                    <>
-                      <UndoRedo />
-                      <Separator />
-                      <BoldItalicUnderlineToggles />
-                      <Separator />
-                      <BlockTypeSelect />
-                      <Separator />
-                      <ListsToggle />
-                      <Separator />
-                      <CreateLink />
-                    </>
-                  ),
-                }),
-              ]}
-            />
+            {/* 间距类不能进 MDXEditor className：会被复制到挂往 body 的 popup 容器上，撑出页面级滚动条 */}
+            <div className="mt-2">
+              <MDXEditor
+                ref={editorRef}
+                markdown={editorMarkdown}
+                onChange={handleEditorChange}
+                placeholder="写点什么…"
+                contentEditableClassName="notes-prose prose dark:prose-invert max-w-none px-4 py-3 mt-2 min-h-72 focus:outline-none"
+                className="notes-editor"
+                plugins={[
+                  headingsPlugin(),
+                  listsPlugin(),
+                  quotePlugin(),
+                  thematicBreakPlugin(),
+                  linkPlugin(),
+                  linkDialogPlugin(),
+                  markdownShortcutPlugin(),
+                  toolbarPlugin({
+                    toolbarClassName: 'border-b border-border bg-muted/30',
+                    toolbarContents: () => (
+                      <>
+                        <UndoRedo />
+                        <Separator />
+                        <BoldItalicUnderlineToggles />
+                        <Separator />
+                        <BlockTypeSelect />
+                        <Separator />
+                        <ListsToggle />
+                        <Separator />
+                        <CreateLink />
+                      </>
+                    ),
+                  }),
+                ]}
+              />
+            </div>
           </div>
         </div>
       )}
