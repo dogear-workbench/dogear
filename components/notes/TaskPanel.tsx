@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileText, Play } from 'lucide-react';
+import { Ban, Check, FileText, MoreHorizontal, Play, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useTaskStore } from '@/stores/task-store';
 import { useNotesStore } from '@/stores/notes-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
+import { showConfirm } from '@/stores/confirm-store';
 import { TaskDetail } from '@/components/notes/TaskDetail';
 import { TaskStatusBadge } from '@/components/notes/TaskStatusBadge';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
@@ -36,6 +43,9 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
   const loadedWorkspacePath = useTaskStore((s) => s.loadedWorkspacePath);
   const loadTasks = useTaskStore((s) => s.loadTasks);
   const executeTask = useTaskStore((s) => s.executeTask);
+  const completeTask = useTaskStore((s) => s.completeTask);
+  const cancelTask = useTaskStore((s) => s.cancelTask);
+  const deleteTask = useTaskStore((s) => s.deleteTask);
   const activeTaskId = useTaskStore((s) => s.activeTaskId);
   const setActiveTaskId = useTaskStore((s) => s.setActiveTaskId);
   const focusReq = useTaskFocusStore((s) => s.focusReq);
@@ -59,6 +69,26 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
   const handleExecute = async (taskId: string) => {
     const ok = await executeTask(workspacePath, taskId);
     if (!ok) toast.error('执行失败', { description: '任务无法进入队列' });
+  };
+
+  const handleCancel = async (taskId: string) => {
+    const ok = await cancelTask(workspacePath, taskId);
+    if (!ok) toast.error('取消失败', { description: '任务未能取消' });
+  };
+
+  const handleComplete = async (task: Task) => {
+    const ok = await showConfirm('手动完成', `确定把「${task.title}」标记为已完成？将跳过执行。`);
+    if (!ok) return;
+    const done = await completeTask(workspacePath, task.id);
+    if (!done) toast.error('操作失败', { description: '任务未能标记完成' });
+  };
+
+  const handleDelete = async (task: Task) => {
+    const ok = await showConfirm('删除任务', `确定删除「${task.title}」？删除后可在回收站恢复。`);
+    if (!ok) return;
+    const done = await deleteTask(workspacePath, task.id);
+    if (!done) toast.error('删除失败', { description: '任务删除失败' });
+    else if (activeTaskId === task.id) setActiveTaskId(null);
   };
 
   const q = query?.trim().toLowerCase() ?? '';
@@ -92,6 +122,9 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
                 active={task.id === activeTaskId}
                 onOpen={() => setActiveTaskId(task.id)}
                 onExecute={() => handleExecute(task.id)}
+                onCancel={() => handleCancel(task.id)}
+                onComplete={() => handleComplete(task)}
+                onDelete={() => handleDelete(task)}
                 onOpenNote={onOpenNote}
               />
             ))}
@@ -145,11 +178,15 @@ interface TaskCardItemProps {
   active: boolean;
   onOpen: () => void;
   onExecute: () => Promise<void>;
+  onCancel: () => Promise<void>;
+  onComplete: () => Promise<void>;
+  onDelete: () => Promise<void>;
   onOpenNote: (noteId: string) => void;
 }
 
-function TaskCardItem({ task, active, onOpen, onExecute, onOpenNote }: TaskCardItemProps) {
+function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, onDelete, onOpenNote }: TaskCardItemProps) {
   const [executing, setExecuting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const noteTitle = useNotesStore((s) =>
     task.noteId ? (s.notes.find((n) => n.id === task.noteId)?.title ?? null) : null,
   );
@@ -159,6 +196,14 @@ function TaskCardItem({ task, active, onOpen, onExecute, onOpenNote }: TaskCardI
     setExecuting(true);
     void onExecute().finally(() => setExecuting(false));
   };
+
+  const handleCancel = () => {
+    if (cancelling) return;
+    setCancelling(true);
+    void onCancel().finally(() => setCancelling(false));
+  };
+
+  const hoverBtn = 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity';
 
   return (
     <div
@@ -183,7 +228,7 @@ function TaskCardItem({ task, active, onOpen, onExecute, onOpenNote }: TaskCardI
             variant="secondary"
             size="xs"
             disabled={executing}
-            className="opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity"
+            className={hoverBtn}
             onClick={(e) => {
               e.stopPropagation();
               handleExecute();
@@ -194,6 +239,47 @@ function TaskCardItem({ task, active, onOpen, onExecute, onOpenNote }: TaskCardI
             执行
           </Button>
         )}
+        {(task.status === 'queued' || task.status === 'running') && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={cancelling}
+            className={hoverBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleCancel();
+            }}
+            title="取消并回积压"
+          >
+            <Ban className="w-3 h-3" />
+            取消
+          </Button>
+        )}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn(hoverBtn, 'h-6 w-6')}
+              onClick={(e) => e.stopPropagation()}
+              title="更多操作"
+            >
+              <MoreHorizontal className="w-3.5 h-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[140px]">
+            {task.status === 'backlog' && (
+              <DropdownMenuItem onClick={() => void onComplete()}>
+                <Check className="w-3.5 h-3.5" />
+                手动完成
+              </DropdownMenuItem>
+            )}
+            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void onDelete()}>
+              <Trash2 className="w-3.5 h-3.5" />
+              删除
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <TaskStatusBadge status={task.status} />
       </div>
       {task.status === 'backlog' && (

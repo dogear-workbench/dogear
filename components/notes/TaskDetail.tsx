@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Check, MessageSquare, Play, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Ban, Check, MessageSquare, Play, RotateCcw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,11 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
   const [reviewing, setReviewing] = useState(false);
   const groups = useTaskStore((s) => s.groups);
   const executeTask = useTaskStore((s) => s.executeTask);
+  const completeTask = useTaskStore((s) => s.completeTask);
+  const cancelTask = useTaskStore((s) => s.cancelTask);
+  const deleteTask = useTaskStore((s) => s.deleteTask);
   const [executing, setExecuting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
 
   // groups 引用变化（队列写回任务状态后 tasksChanged 广播 → 列表重拉）时重拉详情，状态流转实时可见
   useEffect(() => {
@@ -80,6 +84,35 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
     }
   }, [workspacePath, taskId, executing, executeTask]);
 
+  const handleComplete = useCallback(async () => {
+    const ok = await showConfirm('手动完成', `确定把「${detail?.title ?? '该任务'}」标记为已完成？将跳过执行。`);
+    if (!ok) return;
+    const done = await completeTask(workspacePath, taskId);
+    if (!done) toast.error('操作失败', { description: '任务未能标记完成' });
+  }, [workspacePath, taskId, detail, completeTask]);
+
+  const handleCancel = useCallback(async () => {
+    if (cancelling) return;
+    setCancelling(true);
+    try {
+      const ok = await cancelTask(workspacePath, taskId);
+      if (!ok) toast.error('取消失败', { description: '任务未能取消' });
+    } finally {
+      setCancelling(false);
+    }
+  }, [workspacePath, taskId, cancelling, cancelTask]);
+
+  const handleDelete = useCallback(async () => {
+    const ok = await showConfirm('删除任务', `确定删除「${detail?.title ?? '该任务'}」？删除后可在回收站恢复。`);
+    if (!ok) return;
+    const done = await deleteTask(workspacePath, taskId);
+    if (!done) {
+      toast.error('删除失败', { description: '任务删除失败' });
+      return;
+    }
+    onBack();
+  }, [workspacePath, taskId, detail, deleteTask, onBack]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -123,6 +156,36 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
                   <Play className="w-3.5 h-3.5" />
                   执行
                 </Button>
+                <Button size="sm" variant="outline" onClick={() => void handleComplete()}>
+                  <Check className="w-3.5 h-3.5" />
+                  手动完成
+                </Button>
+                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  删除
+                </Button>
+              </div>
+            )}
+
+            {(detail.status === 'queued' || detail.status === 'running') && (
+              <div className="mt-4 flex items-center gap-2">
+                <Button size="sm" variant="outline" disabled={cancelling} onClick={() => void handleCancel()}>
+                  <Ban className="w-3.5 h-3.5" />
+                  取消
+                </Button>
+                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  删除
+                </Button>
+              </div>
+            )}
+
+            {(detail.status === 'done' || detail.status === 'rejected') && (
+              <div className="mt-4 flex items-center gap-2">
+                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  删除
+                </Button>
               </div>
             )}
 
@@ -135,6 +198,10 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
                 <Button size="sm" variant="outline" disabled={reviewing} onClick={() => void handleReview('reject')}>
                   <RotateCcw className="w-3.5 h-3.5" />
                   打回
+                </Button>
+                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
+                  <Trash2 className="w-3.5 h-3.5" />
+                  删除
                 </Button>
               </div>
             )}
@@ -167,7 +234,7 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
             <div className="mt-6">
               <p className="mb-2 text-xs font-medium text-muted-foreground">计划文档</p>
               {detail.planContent ? (
-                <MarkdownRenderer content={detail.planContent} />
+                <MarkdownRenderer content={detail.planContent} workspacePath={workspacePath} />
               ) : (
                 <p className="text-sm text-destructive">{detail.planError ?? 'plan 内容为空'}</p>
               )}

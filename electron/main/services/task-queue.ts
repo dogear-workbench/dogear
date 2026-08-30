@@ -178,6 +178,12 @@ class TaskQueueExecutor {
     }
 
     const summary = extractResultSummary(outcome.text);
+    // 取消竞态保护：写回前重查状态，已被取消（回 backlog）则丢弃结果
+    const current = await taskService.getTask(workspacePath, task.id);
+    if (!current || current.status !== 'running') {
+      log.info(`任务 ${task.id} 已被用户取消（当前 ${current?.status ?? '不存在'}），丢弃执行结果`);
+      return;
+    }
     const reviewed = await taskService.completeTask(workspacePath, task.id, summary);
     log.info(`任务 ${task.id} 执行完成，进入 review（执行会话 ${execId}）`);
     this.notify(reviewed, workspaceId, `任务待审核：${reviewed.title}`, firstLine(reviewed.result ?? ''));
@@ -212,6 +218,11 @@ class TaskQueueExecutor {
 
   private async safeReject(ctx: QueuedWork, reason: string): Promise<void> {
     try {
+      const current = await taskService.getTask(ctx.workspacePath, ctx.task.id);
+      if (current && !['queued', 'running'].includes(current.status)) {
+        log.info(`任务 ${ctx.task.id} 当前状态为 ${current.status}，跳过置 rejected（可能已被取消）`);
+        return;
+      }
       const rejected = await taskService.rejectTask(ctx.workspacePath, ctx.task.id, reason);
       log.warn(`任务 ${ctx.task.id} 置为 rejected: ${reason}`);
       this.notify(rejected, ctx.workspaceId, `任务执行失败：${rejected.title}`, firstLine(reason));
@@ -238,6 +249,19 @@ let executor: TaskQueueExecutor | null = null;
 export function getTaskQueue(): TaskQueueExecutor {
   if (!executor) executor = new TaskQueueExecutor();
   return executor;
+}
+
+/** 中断执行会话当前轮（任务取消用）；会话不存在时静默跳过，状态迁移由调用方负责 */
+export async function interruptTaskExecSession(conversationId: string): Promise<void> {
+  const piSessionManager = getPiSessionManager();
+  const sessionId = piSessionManager.getSessionIdByConversation(conversationId);
+  const session = sessionId ? piSessionManager.getSession(sessionId) : undefined;
+  if (!session) return;
+  try {
+    await session.interrupt();
+  } catch (err) {
+    log.warn(`中断执行会话 ${conversationId} 失败`, err);
+  }
 }
 
 /** 应用启动：各工作区遗留 running 置回 queued 后 kick 队列 */

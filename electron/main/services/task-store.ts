@@ -63,9 +63,9 @@ interface TasksFile {
 const TASKS_FILE = 'tasks.json';
 
 const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
-  backlog: ['queued'],
-  queued: ['running', 'rejected'],
-  running: ['review', 'queued', 'rejected'],
+  backlog: ['queued', 'done'],
+  queued: ['running', 'rejected', 'backlog'],
+  running: ['review', 'queued', 'rejected', 'backlog'],
   review: ['done', 'rejected'],
   done: [],
   rejected: ['queued'],
@@ -231,6 +231,14 @@ export async function rejectTask(workspacePath: string, taskId: string, reason: 
 
 export async function executeTask(workspacePath: string, taskId: string): Promise<Task> {
   return transition(workspacePath, taskId, ['backlog'], 'queued');
+}
+
+export async function completeTaskManually(workspacePath: string, taskId: string): Promise<Task> {
+  return transition(workspacePath, taskId, ['backlog'], 'done', { result: '手动标记完成' });
+}
+
+export async function cancelTask(workspacePath: string, taskId: string): Promise<Task> {
+  return transition(workspacePath, taskId, ['queued', 'running'], 'backlog');
 }
 
 export async function softDeleteTask(workspacePath: string, taskId: string): Promise<Task> {

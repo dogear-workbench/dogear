@@ -14,6 +14,12 @@ interface TaskState {
   loadTasks: (workspacePath: string) => Promise<void>;
   /** backlog 任务入队执行；成功后立即重拉分组，广播兜底 */
   executeTask: (workspacePath: string, taskId: string) => Promise<boolean>;
+  /** backlog 任务手动标记完成（跳过执行） */
+  completeTask: (workspacePath: string, taskId: string) => Promise<boolean>;
+  /** 排队中/执行中任务取消，回积压 */
+  cancelTask: (workspacePath: string, taskId: string) => Promise<boolean>;
+  /** 任意状态软删除任务进回收站 */
+  deleteTask: (workspacePath: string, taskId: string) => Promise<boolean>;
   /** 监听主进程 tasksChanged 广播，工作区匹配时重新拉取分组；返回取消订阅函数 */
   subscribeTasksChanged: () => () => void;
   setActiveTaskId: (taskId: string | null) => void;
@@ -52,6 +58,51 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return false;
     } catch (error) {
       console.error('[tasks] executeCollabTask 失败:', error);
+      return false;
+    }
+  },
+
+  completeTask: async (workspacePath, taskId) => {
+    try {
+      const result = await client.completeCollabTask({ workspacePath, taskId });
+      if ('task' in result) {
+        await get().loadTasks(workspacePath);
+        return true;
+      }
+      console.error('[tasks] completeCollabTask 失败:', result.error);
+      return false;
+    } catch (error) {
+      console.error('[tasks] completeCollabTask 失败:', error);
+      return false;
+    }
+  },
+
+  cancelTask: async (workspacePath, taskId) => {
+    try {
+      const result = await client.cancelCollabTask({ workspacePath, taskId });
+      if ('task' in result) {
+        await get().loadTasks(workspacePath);
+        return true;
+      }
+      console.error('[tasks] cancelCollabTask 失败:', result.error);
+      return false;
+    } catch (error) {
+      console.error('[tasks] cancelCollabTask 失败:', error);
+      return false;
+    }
+  },
+
+  deleteTask: async (workspacePath, taskId) => {
+    try {
+      const result = await client.deleteCollabTask({ workspacePath, taskId });
+      if ('task' in result) {
+        await get().loadTasks(workspacePath);
+        return true;
+      }
+      console.error('[tasks] deleteCollabTask 失败:', result.error);
+      return false;
+    } catch (error) {
+      console.error('[tasks] deleteCollabTask 失败:', error);
       return false;
     }
   },

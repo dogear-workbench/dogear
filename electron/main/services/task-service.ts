@@ -75,6 +75,18 @@ export async function executeTask(workspacePath: string, taskId: string): Promis
   return task;
 }
 
+export async function completeTaskManually(workspacePath: string, taskId: string): Promise<taskStore.Task> {
+  const task = await taskStore.completeTaskManually(workspacePath, taskId);
+  broadcastTasksChanged(workspacePath);
+  return task;
+}
+
+export async function cancelTask(workspacePath: string, taskId: string): Promise<taskStore.Task> {
+  const task = await taskStore.cancelTask(workspacePath, taskId);
+  broadcastTasksChanged(workspacePath);
+  return task;
+}
+
 export async function deleteTask(workspacePath: string, taskId: string): Promise<taskStore.Task> {
   const task = await taskStore.softDeleteTask(workspacePath, taskId);
   broadcastTasksChanged(workspacePath);

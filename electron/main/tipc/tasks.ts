@@ -3,14 +3,17 @@ import {
   listTasksGrouped,
   listDeletedTasks,
   getTaskDetail,
+  getTask,
   reviewTask,
   executeTask,
+  completeTaskManually,
+  cancelTask,
   deleteTask,
   restoreTask,
   purgeTask,
   type ReviewAction,
 } from '../services/task-service.js';
-import { getTaskQueue } from '../services/task-queue.js';
+import { getTaskQueue, interruptTaskExecSession } from '../services/task-queue.js';
 
 const t = tipc.create();
 
@@ -64,6 +67,34 @@ export const tasksRouter = {
         const task = await executeTask(input.workspacePath, input.taskId);
         getTaskQueue().kick();
         return { task };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
+  completeCollabTask: t.procedure
+    .input<{ workspacePath: string; taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        return { task: await completeTaskManually(input.workspacePath, input.taskId) };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
+  cancelCollabTask: t.procedure
+    .input<{ workspacePath: string; taskId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const task = await getTask(input.workspacePath, input.taskId);
+        if (!task) return { error: `任务 ${input.taskId} 不存在` };
+        if (!['queued', 'running'].includes(task.status)) {
+          return { error: `仅排队中/执行中的任务可取消，当前状态为 ${task.status}` };
+        }
+        if (task.status === 'running' && task.execSessionId) {
+          await interruptTaskExecSession(task.execSessionId);
+        }
+        return { task: await cancelTask(input.workspacePath, input.taskId) };
       } catch (e) {
         return { error: String(e) };
       }
