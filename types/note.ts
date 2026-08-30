@@ -5,16 +5,6 @@
  * 修改时两边同步。
  */
 
-/** 待办状态；「可实施待办」= 有 plan 字段（数据判定，非文本理解） */
-export type TodoStatus = 'pending' | 'in_progress' | 'done';
-
-export interface TodoItem {
-  id: string;                    // 卡内唯一标识（精确操作、幂等）
-  text: string;                  // 待办内容
-  status: TodoStatus;
-  plan?: string;                 // 落盘 plan 的相对路径，有值即可领取执行
-}
-
 /** 来源身份证：仅 Agent 存卡时写入，记录诞生会话（用户手记不记） */
 export interface NoteSource {
   /** 来源对话 ID（tab 主键，failover 不漂移；agent sessionId 会随重启更换，不做跳回 key） */
@@ -34,7 +24,6 @@ export interface NoteMeta {
   updated: string;               // ISO 时间戳
   tags: string[];
   links: string[];               // 结构化引用：article:<id> / stock:<code> / plan:<path>
-  todos: TodoItem[];
   source?: NoteSource;
 }
 

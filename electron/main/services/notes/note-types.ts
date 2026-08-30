@@ -6,15 +6,6 @@
  * 修改时两边同步。
  */
 
-export type TodoStatus = 'pending' | 'in_progress' | 'done';
-
-export interface TodoItem {
-  id: string;
-  text: string;
-  status: TodoStatus;
-  plan?: string;
-}
-
 /** 来源身份证：仅 Agent 存卡时写入，记录诞生会话（用户手记不记） */
 export interface NoteSource {
   /** 来源对话 ID（tab 主键，failover 不漂移；agent sessionId 会随重启更换，不做跳回 key） */
@@ -33,7 +24,6 @@ export interface NoteMeta {
   updated: string;
   tags: string[];
   links: string[];
-  todos: TodoItem[];
   source?: NoteSource;
 }
 

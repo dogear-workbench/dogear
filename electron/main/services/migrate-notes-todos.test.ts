@@ -61,12 +61,14 @@ test('迁移：带 plan 的 pending/done 入任务体系，无 plan 转人待办
   expect(humanTodos[0].text).toBe('记得买咖啡');
   expect(humanTodos[0].source).toBe('manual');
 
-  const note = await readNoteFile(path.join(getNotesDir(workspacePath), '20260801-000000-note0001.md'));
-  expect(note?.todos).toHaveLength(0);
+  const noteFile = path.join(getNotesDir(workspacePath), '20260801-000000-note0001.md');
+  const note = await readNoteFile(noteFile);
   expect(note?.tags).toEqual(['设计']);
   expect(note?.content).toContain('正文第一行');
+  const rawAfter = await fs.readFile(noteFile, 'utf-8');
+  expect(rawAfter).not.toContain('todos:');
   const index = await readIndex(workspacePath);
-  expect(index.items[0].todos).toHaveLength(0);
+  expect(index.items[0].tags).toEqual(['设计']);
 });
 
 test('迁移幂等：跑过一次后再次迁移跳过', async () => {

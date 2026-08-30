@@ -2,14 +2,14 @@
  * 笔记 IO 原语层：路径、frontmatter 解析/序列化、文件读写、回收站移动、index.json 维护
  *
  * - 真源永远是 md 文件；index.json 只是缓存
- * - frontmatter 手写解析（零依赖）：标量 / 内联数组 / todos 块列表（每行一个 JSON 对象）
+ * - frontmatter 手写解析（零依赖）：标量 / 内联数组；旧版 todos 块直接忽略（容忍旧文件）
  * - 写文件走 safe-json 的原子写；Windows rename 冲突已在 safe-json 内处理
  */
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { safeFileWrite, safeJsonWrite } from '../safe-json.js';
-import type { Note, NoteMeta, NoteSource, TodoItem } from './note-types.js';
+import type { Note, NoteMeta, NoteSource } from './note-types.js';
 
 export const NOTES_DIR = '.dogear/notes';
 export const TRASH_DIR_NAME = '.trash';
@@ -57,7 +57,6 @@ interface ParsedFrontmatter {
   updated: string;
   tags: string[];
   links: string[];
-  todos: TodoItem[];
   source?: NoteSource;
 }
 
@@ -75,7 +74,6 @@ export function parseNoteFile(raw: string): Note {
     updated: fm.updated,
     tags: fm.tags,
     links: fm.links,
-    todos: fm.todos,
     ...(fm.source ? { source: fm.source } : {}),
     content,
   };
@@ -88,7 +86,6 @@ function parseFrontmatterLines(text: string): ParsedFrontmatter {
     updated: new Date(0).toISOString(),
     tags: [],
     links: [],
-    todos: [],
   };
   const source: Partial<NoteSource> = {};
   const lines = text.split(/\r?\n/);
@@ -101,15 +98,7 @@ function parseFrontmatterLines(text: string): ParsedFrontmatter {
     const key = trimmed.slice(0, colonIdx).trim();
     const rawValue = trimmed.slice(colonIdx + 1).trim();
     if (key === 'todos') {
-      if (rawValue.startsWith('[') && rawValue.endsWith(']')) {
-        result.todos = parseTodoInlineArray(rawValue);
-        continue;
-      }
-      while (i + 1 < lines.length && /^\s+-\s/.test(lines[i + 1])) {
-        i++;
-        const todo = parseTodoLine(lines[i]);
-        if (todo) result.todos.push(todo);
-      }
+      while (i + 1 < lines.length && /^\s+-\s/.test(lines[i + 1])) i++;
       continue;
     }
     switch (key) {
@@ -143,31 +132,6 @@ function parseFrontmatterLines(text: string): ParsedFrontmatter {
     result.source = { conversationId: source.conversationId, title: source.title ?? '', date: source.date ?? result.created };
   }
   return result;
-}
-
-function parseTodoLine(line: string): TodoItem | null {
-  const json = line.replace(/^\s*-\s*/, '').trim();
-  try {
-    const obj = JSON.parse(json) as Partial<TodoItem>;
-    if (typeof obj.text !== 'string' || !obj.text) return null;
-    const todo: TodoItem = { id: String(obj.id ?? ''), text: obj.text, status: 'pending' };
-    if (obj.status === 'in_progress' || obj.status === 'done') todo.status = obj.status;
-    if (typeof obj.plan === 'string' && obj.plan) todo.plan = obj.plan;
-    return todo;
-  } catch {
-    console.warn('[notes-store] todo 行解析失败，跳过:', json.slice(0, 80));
-    return null;
-  }
-}
-
-function parseTodoInlineArray(rawValue: string): TodoItem[] {
-  const items = splitArrayItems(rawValue.slice(1, -1));
-  const todos: TodoItem[] = [];
-  for (const item of items) {
-    const todo = parseTodoLine(`- ${item}`);
-    if (todo) todos.push(todo);
-  }
-  return todos;
 }
 
 function parseScalar(rawValue: string): string {
@@ -357,7 +321,6 @@ export function noteToIndexItem(note: Note): NoteMeta {
     updated: note.updated,
     tags: [...note.tags],
     links: [...note.links],
-    todos: note.todos.map((t) => ({ ...t })),
     ...(note.source ? { source: { ...note.source } } : {}),
   };
 }

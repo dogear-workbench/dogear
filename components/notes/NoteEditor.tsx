@@ -1,28 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  MDXEditor,
-  headingsPlugin,
-  listsPlugin,
-  quotePlugin,
-  thematicBreakPlugin,
-  linkPlugin,
-  linkDialogPlugin,
-  markdownShortcutPlugin,
-  toolbarPlugin,
-  UndoRedo,
-  BoldItalicUnderlineToggles,
-  BlockTypeSelect,
-  ListsToggle,
-  CreateLink,
-  Separator,
-  type MDXEditorMethods,
-} from '@mdxeditor/editor';
-import '@mdxeditor/editor/style.css';
+import type { Editor } from '@tiptap/react';
 import { ArrowLeft, Loader2, Trash2, MessagesSquare, Link2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { NoteMetaSection } from '@/components/notes/NoteMetaSection';
+import { TiptapEditor } from '@/components/notes/TiptapEditor';
 import { useNotesStore, type NotePatch } from '@/stores/notes-store';
 import { referenceNoteIntoFocus, jumpToSourceConversation } from '@/lib/reference-guard';
 import type { Note } from '@/types/note';
@@ -65,7 +48,7 @@ interface NoteEditorProps {
   onDelete?: () => void;
 }
 
-// 父组件以 key={noteId} 挂载：换卡即重挂载，规避 MDXEditor 非受控内容重置
+// 父组件以 key={noteId} 挂载：换卡即重挂载，编辑器内容随初值重建，避免串卡
 export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -85,7 +68,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
   const editorBodyRef = useRef('');
   const shouldFocusTitleRef = useRef(false);
   const titleInputRef = useRef<HTMLInputElement>(null);
-  const editorRef = useRef<MDXEditorMethods>(null);
+  const tiptapRef = useRef<Editor | null>(null);
 
   const updateNote = useNotesStore((s) => s.updateNote);
 
@@ -232,7 +215,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
-                  editorRef.current?.focus();
+                  tiptapRef.current?.commands.focus('end');
                 }
               }}
               placeholder="无标题"
@@ -301,40 +284,14 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
               />
             )}
 
-            {/* 间距类不能进 MDXEditor className：会被复制到挂往 body 的 popup 容器上，撑出页面级滚动条 */}
+            {/* 间距类只放外层容器，不进编辑器 attributes（Step 4 挂 body 浮层时同理） */}
             <div className="mt-2">
-              <MDXEditor
-                ref={editorRef}
-                markdown={editorMarkdown}
+              <TiptapEditor
+                initialMarkdown={editorMarkdown}
                 onChange={handleEditorChange}
-                placeholder="写点什么…"
-                contentEditableClassName="notes-prose prose dark:prose-invert max-w-none px-4 py-3 mt-2 min-h-72 focus:outline-none"
-                className="notes-editor"
-                plugins={[
-                  headingsPlugin(),
-                  listsPlugin(),
-                  quotePlugin(),
-                  thematicBreakPlugin(),
-                  linkPlugin(),
-                  linkDialogPlugin(),
-                  markdownShortcutPlugin(),
-                  toolbarPlugin({
-                    toolbarClassName: 'border-b border-border bg-muted/30',
-                    toolbarContents: () => (
-                      <>
-                        <UndoRedo />
-                        <Separator />
-                        <BoldItalicUnderlineToggles />
-                        <Separator />
-                        <BlockTypeSelect />
-                        <Separator />
-                        <ListsToggle />
-                        <Separator />
-                        <CreateLink />
-                      </>
-                    ),
-                  }),
-                ]}
+                onReady={(editor) => {
+                  tiptapRef.current = editor;
+                }}
               />
             </div>
           </div>

@@ -57,7 +57,6 @@ export async function createNote(workspacePath: string, input: CreateNoteInput):
     updated: now.toISOString(),
     tags: normalizeTags(input.tags),
     links: normalizeLinks(input.links),
-    todos: [],
     ...(input.source ? { source: input.source } : {}),
     content: input.content,
   };
@@ -100,7 +99,6 @@ export async function updateNote(workspacePath: string, noteId: string, patch: N
   }
   if (patch.tags !== undefined) updated.tags = normalizeTags(patch.tags);
   if (patch.links !== undefined) updated.links = normalizeLinks(patch.links);
-  updated.todos = [];
 
   await writeNoteFile(path.join(getNotesDir(workspacePath), updated.file), updated);
   await updateIndexEntry(workspacePath, noteToIndexItem(updated));

@@ -1,7 +1,8 @@
 /**
  * 存量笔记 frontmatter todos 迁移：可实施待办（带 plan）→ 任务体系，普通待办 → 人待办
  *
- * - 幂等：frontmatter 无 todos 的文件直接跳过；迁完置空 todos 回写文件并刷新索引
+ * - 幂等：frontmatter 无 todos 的文件直接跳过；迁完重写文件（洗掉 todos 块）并刷新索引
+ * - todos 从文件原文直接提取（notes-store 已忽略 todos 行，不依赖 Note.todos 类型）
  * - in_progress 带 plan 归 backlog（未完成即未决定执行）；plan 文件缺失时仍创建任务保留记录
  * - 逐文件「创建实体 → 回写」两步，进程崩溃窗口内可能重复创建实体（概率低，可手动删）
  */
@@ -13,7 +14,7 @@ import * as workspaceJsonService from './workspace-json-service.js';
 import {
   getNotesDir,
   listNoteFiles,
-  readNoteFile,
+  parseNoteFile,
   writeNoteFile,
   updateIndexEntry,
   noteToIndexItem,
@@ -30,6 +31,12 @@ export interface MigrateNotesTodosResult {
   createdHumanTodos: number;
 }
 
+interface LegacyTodo {
+  text: string;
+  status: 'pending' | 'in_progress' | 'done';
+  plan?: string;
+}
+
 async function fileExists(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
@@ -39,6 +46,41 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
+/** 从文件原文的 frontmatter 提取旧版 todos 块（每行一个 JSON 对象） */
+function extractFrontmatterTodos(raw: string): LegacyTodo[] {
+  const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!match) return [];
+  const jsonLines: string[] = [];
+  let inTodos = false;
+  for (const line of match[1].split(/\r?\n/)) {
+    if (line.trim() === 'todos:') {
+      inTodos = true;
+      continue;
+    }
+    if (inTodos) {
+      if (/^\s+-\s/.test(line)) {
+        jsonLines.push(line.replace(/^\s+-\s*/, ''));
+        continue;
+      }
+      inTodos = false;
+    }
+  }
+  const todos: LegacyTodo[] = [];
+  for (const json of jsonLines) {
+    try {
+      const obj = JSON.parse(json) as Partial<LegacyTodo>;
+      if (typeof obj.text !== 'string' || !obj.text) continue;
+      const status = obj.status === 'in_progress' || obj.status === 'done' ? obj.status : 'pending';
+      const todo: LegacyTodo = { text: obj.text, status };
+      if (typeof obj.plan === 'string' && obj.plan) todo.plan = obj.plan;
+      todos.push(todo);
+    } catch {
+      log.warn(`todo 行解析失败，跳过: ${json.slice(0, 80)}`);
+    }
+  }
+  return todos;
+}
+
 export async function migrateNotesTodos(workspacePath: string): Promise<MigrateNotesTodosResult> {
   const notesDir = getNotesDir(workspacePath);
   const files = await listNoteFiles(notesDir);
@@ -46,10 +88,13 @@ export async function migrateNotesTodos(workspacePath: string): Promise<MigrateN
 
   for (const file of files) {
     const filePath = path.join(notesDir, file);
-    const note = await readNoteFile(filePath);
-    if (!note || note.todos.length === 0) continue;
+    const raw = await fs.readFile(filePath, 'utf-8').catch(() => null);
+    if (raw === null) continue;
+    const todos = extractFrontmatterTodos(raw);
+    if (todos.length === 0) continue;
+    const note = parseNoteFile(raw);
 
-    for (const todo of note.todos) {
+    for (const todo of todos) {
       try {
         if (todo.plan) {
           const planPath = path.resolve(workspacePath, todo.plan);
@@ -77,11 +122,10 @@ export async function migrateNotesTodos(workspacePath: string): Promise<MigrateN
       }
     }
 
-    const cleaned: typeof note = { ...note, todos: [] };
-    await writeNoteFile(filePath, cleaned);
-    await updateIndexEntry(workspacePath, noteToIndexItem(cleaned));
+    await writeNoteFile(filePath, note);
+    await updateIndexEntry(workspacePath, noteToIndexItem(note));
     result.migratedNotes++;
-    log.info(`卡片 ${note.id}《${note.title}》已迁移 ${note.todos.length} 条待办`);
+    log.info(`卡片 ${note.id}《${note.title}》已迁移 ${todos.length} 条待办`);
   }
 
   if (result.migratedNotes > 0) await broadcastNotesChanged(workspacePath);
