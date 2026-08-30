@@ -70,7 +70,11 @@ export function TodoItem({ todo, noteTitle, onToggle, onUpdate, onDelete, onOpen
         title={done ? '标记为未完成' : '标记完成'}
         className="w-3.5 h-3.5 shrink-0"
       />
-      {todo.source === 'agent' && <Bot className="w-3.5 h-3.5 shrink-0 text-purple-500" title="Agent 记录" />}
+      {todo.source === 'agent' && (
+        <span title="Agent 记录" className="flex shrink-0">
+          <Bot className="w-3.5 h-3.5 text-purple-500" />
+        </span>
+      )}
       {editing ? (
         <input
           ref={editRef}

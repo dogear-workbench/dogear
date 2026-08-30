@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Check, MessageSquare, RotateCcw } from 'lucide-react';
+import { ArrowLeft, Check, MessageSquare, Play, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,8 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
   const groups = useTaskStore((s) => s.groups);
+  const executeTask = useTaskStore((s) => s.executeTask);
+  const [executing, setExecuting] = useState(false);
 
   // groups 引用变化（队列写回任务状态后 tasksChanged 广播 → 列表重拉）时重拉详情，状态流转实时可见
   useEffect(() => {
@@ -67,6 +69,17 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
     [workspacePath, taskId, reviewing],
   );
 
+  const handleExecute = useCallback(async () => {
+    if (executing) return;
+    setExecuting(true);
+    try {
+      const ok = await executeTask(workspacePath, taskId);
+      if (!ok) toast.error('执行失败', { description: '任务无法进入队列' });
+    } finally {
+      setExecuting(false);
+    }
+  }, [workspacePath, taskId, executing, executeTask]);
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -103,6 +116,15 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
                 <ArrowLeft className="w-3.5 h-3.5" />
               </Button>
             </div>
+
+            {detail.status === 'backlog' && (
+              <div className="mt-4 flex items-center gap-2">
+                <Button size="sm" disabled={executing} onClick={() => void handleExecute()}>
+                  <Play className="w-3.5 h-3.5" />
+                  执行
+                </Button>
+              </div>
+            )}
 
             {detail.status === 'review' && (
               <div className="mt-4 flex items-center gap-2">

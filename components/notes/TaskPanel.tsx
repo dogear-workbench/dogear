@@ -1,6 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { FileText, Play } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import { useTaskStore } from '@/stores/task-store';
+import { useNotesStore } from '@/stores/notes-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { TaskDetail } from '@/components/notes/TaskDetail';
 import { TaskStatusBadge } from '@/components/notes/TaskStatusBadge';
@@ -9,6 +13,7 @@ import { formatNoteTime } from '@/components/notes/NoteCardItem';
 import type { Task, TaskStatus } from '@/types/task';
 
 const TASK_GROUPS: Array<{ status: TaskStatus; label: string }> = [
+  { status: 'backlog', label: '积压' },
   { status: 'queued', label: '排队中' },
   { status: 'running', label: '执行中' },
   { status: 'review', label: '待审核' },
@@ -20,13 +25,15 @@ interface TaskPanelProps {
   workspacePath: string;
   listHidden: boolean;
   onToggleListHidden: () => void;
+  onOpenNote: (noteId: string) => void;
 }
 
-export function TaskPanel({ workspacePath, listHidden, onToggleListHidden }: TaskPanelProps) {
+export function TaskPanel({ workspacePath, listHidden, onToggleListHidden, onOpenNote }: TaskPanelProps) {
   const groups = useTaskStore((s) => s.groups);
   const loading = useTaskStore((s) => s.loading);
   const loadedWorkspacePath = useTaskStore((s) => s.loadedWorkspacePath);
   const loadTasks = useTaskStore((s) => s.loadTasks);
+  const executeTask = useTaskStore((s) => s.executeTask);
   const activeTaskId = useTaskStore((s) => s.activeTaskId);
   const setActiveTaskId = useTaskStore((s) => s.setActiveTaskId);
   const focusReq = useTaskFocusStore((s) => s.focusReq);
@@ -47,6 +54,11 @@ export function TaskPanel({ workspacePath, listHidden, onToggleListHidden }: Tas
     if (focusReq) setActiveTaskId(focusReq.taskId);
   }, [focusReq, setActiveTaskId]);
 
+  const handleExecute = async (taskId: string) => {
+    const ok = await executeTask(workspacePath, taskId);
+    if (!ok) toast.error('执行失败', { description: '任务无法进入队列' });
+  };
+
   const renderGroups = () => {
     if (!groups) return null;
     const total = TASK_GROUPS.reduce((n, g) => n + groups[g.status].length, 0);
@@ -66,6 +78,8 @@ export function TaskPanel({ workspacePath, listHidden, onToggleListHidden }: Tas
                 task={task}
                 active={task.id === activeTaskId}
                 onOpen={() => setActiveTaskId(task.id)}
+                onExecute={() => handleExecute(task.id)}
+                onOpenNote={onOpenNote}
               />
             ))}
           </div>
@@ -113,7 +127,26 @@ export function TaskPanel({ workspacePath, listHidden, onToggleListHidden }: Tas
   );
 }
 
-function TaskCardItem({ task, active, onOpen }: { task: Task; active: boolean; onOpen: () => void }) {
+interface TaskCardItemProps {
+  task: Task;
+  active: boolean;
+  onOpen: () => void;
+  onExecute: () => Promise<void>;
+  onOpenNote: (noteId: string) => void;
+}
+
+function TaskCardItem({ task, active, onOpen, onExecute, onOpenNote }: TaskCardItemProps) {
+  const [executing, setExecuting] = useState(false);
+  const noteTitle = useNotesStore((s) =>
+    task.noteId ? (s.notes.find((n) => n.id === task.noteId)?.title ?? null) : null,
+  );
+
+  const handleExecute = () => {
+    if (executing) return;
+    setExecuting(true);
+    void onExecute().finally(() => setExecuting(false));
+  };
+
   return (
     <div
       role="button"
@@ -132,8 +165,47 @@ function TaskCardItem({ task, active, onOpen }: { task: Task; active: boolean; o
     >
       <div className="flex items-center gap-2">
         <p className="flex-1 min-w-0 text-sm font-medium line-clamp-1">{task.title}</p>
+        {task.status === 'backlog' && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={executing}
+            className="opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleExecute();
+            }}
+            title="进入队列执行"
+          >
+            <Play className="w-3 h-3" />
+            执行
+          </Button>
+        )}
         <TaskStatusBadge status={task.status} />
       </div>
+      {task.status === 'backlog' && (
+        <div className="mt-1 flex items-center gap-2 text-xs">
+          {task.noteId && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (noteTitle && task.noteId) onOpenNote(task.noteId);
+              }}
+              title={noteTitle ? `打开卡片：${noteTitle}` : '关联笔记在回收站或已删除'}
+              className={cn(
+                'flex items-center gap-1 min-w-0 max-w-28 rounded px-1 py-0.5 shrink-0',
+                noteTitle ? 'text-primary hover:bg-muted' : 'text-muted-foreground/60 cursor-not-allowed',
+              )}
+            >
+              <FileText className="w-3 h-3 shrink-0" />
+              <span className="truncate">{noteTitle ?? '笔记缺失'}</span>
+            </button>
+          )}
+          <span className="min-w-0 flex-1 truncate text-muted-foreground" title={task.planPath}>
+            {task.planPath}
+          </span>
+        </div>
+      )}
       <p className="mt-1 text-xs text-muted-foreground">{formatNoteTime(task.updatedAt)}</p>
     </div>
   );

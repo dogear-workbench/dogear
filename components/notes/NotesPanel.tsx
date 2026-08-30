@@ -199,6 +199,13 @@ export function NotesPanel() {
 
   const toggleListHidden = useCallback(() => setListHidden((v) => !v), []);
 
+  // 任务侧笔记 chip：切回笔记 mode 的时间流并打开卡片（同 openNoteFromTodos 模式）
+  const openNoteFromTasks = (noteId: string) => {
+    setMode('notes');
+    switchView('timeline');
+    setActiveNoteId(noteId);
+  };
+
   const handlePanelKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
       e.preventDefault();
@@ -320,6 +327,7 @@ export function NotesPanel() {
             workspacePath={workspacePath}
             listHidden={listHidden}
             onToggleListHidden={toggleListHidden}
+            onOpenNote={openNoteFromTasks}
           />
         ) : (
           <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">

@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import type { TaskStatus } from '@/types/task';
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; className: string }> = {
+  backlog: { label: '积压', className: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
   queued: { label: '排队中', className: 'bg-muted text-muted-foreground' },
   running: { label: '执行中', className: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
   review: { label: '待审核', className: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },

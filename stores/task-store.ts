@@ -12,6 +12,8 @@ interface TaskState {
   activeTaskId: string | null;
 
   loadTasks: (workspacePath: string) => Promise<void>;
+  /** backlog 任务入队执行；成功后立即重拉分组，广播兜底 */
+  executeTask: (workspacePath: string, taskId: string) => Promise<boolean>;
   /** 监听主进程 tasksChanged 广播，工作区匹配时重新拉取分组；返回取消订阅函数 */
   subscribeTasksChanged: () => () => void;
   setActiveTaskId: (taskId: string | null) => void;
@@ -36,6 +38,21 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       console.error('[tasks] listCollabTasks 失败:', error);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  executeTask: async (workspacePath, taskId) => {
+    try {
+      const result = await client.executeCollabTask({ workspacePath, taskId });
+      if ('task' in result) {
+        await get().loadTasks(workspacePath);
+        return true;
+      }
+      console.error('[tasks] executeCollabTask 失败:', result.error);
+      return false;
+    } catch (error) {
+      console.error('[tasks] executeCollabTask 失败:', error);
+      return false;
     }
   },
 
