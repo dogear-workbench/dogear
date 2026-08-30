@@ -211,6 +211,9 @@ export type RendererHandlers = {
   // 实施任务数据变更（task-service 写操作后广播，前端 store 收到后重新拉取列表）
   tasksChanged: (data: { workspacePath: string }) => void;
 
+  // 人待办数据变更（todo-service 写操作后广播，前端 store 收到后重新拉取列表）
+  todosChanged: (data: { workspacePath: string }) => void;
+
   // 微信 Bot 自动初始化数据（startPolling 成功后推送）
   wechatBotAutoInit: (data: {
     status: {

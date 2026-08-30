@@ -1,13 +1,33 @@
 /**
- * 人待办存储原语层：HumanTodo CRUD + 软删除 + .dogear/todos.json 读写（零 Electron 依赖）
+ * 人待办存储原语层：HumanTodo CRUD + 软删除 + .dogear/todos.json 读写
  *
  * - 写操作统一走 mutateTodos（withFileLock 串行化 + 原子落盘），模式同 task-store
- * - 广播不在本层（与 task-service 的 service 包装层分开，待办视图接入时补）
+ * - 所有写操作完成后广播 todosChanged（覆盖 UI / Agent 所有写入方）；非 Electron 环境（冒烟脚本）静默跳过
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
+import type { RendererHandlers } from '../tipc/renderer-handlers.js';
+
+async function broadcastTodosChanged(workspacePath: string): Promise<void> {
+  try {
+    const [{ BrowserWindow }, { getRendererHandlers }] = await Promise.all([
+      import('electron'),
+      import('@egoist/tipc/main'),
+    ]);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try {
+        getRendererHandlers<RendererHandlers>(win.webContents).todosChanged.send({ workspacePath });
+      } catch {
+        // 窗口已销毁，忽略
+      }
+    }
+  } catch {
+    // 非 Electron 环境（冒烟脚本）无窗口可广播
+  }
+}
 
 export type HumanTodoStatus = 'pending' | 'done';
 
@@ -107,6 +127,7 @@ export async function createTodo(workspacePath: string, input: CreateTodoInput):
   await mutateTodos(workspacePath, (todos) => {
     todos.push(todo);
   });
+  broadcastTodosChanged(workspacePath);
   return { ...todo };
 }
 
@@ -143,6 +164,7 @@ async function patchTodo(workspacePath: string, todoId: string, patch: TodoPatch
     todo.updatedAt = new Date().toISOString();
     return { ...todo };
   });
+  broadcastTodosChanged(workspacePath);
 }
 
 export async function updateTodoText(workspacePath: string, todoId: string, text: string): Promise<HumanTodo> {
@@ -165,6 +187,7 @@ export async function softDeleteTodo(workspacePath: string, todoId: string): Pro
     if (!todo.deletedAt) todo.deletedAt = new Date().toISOString();
     return { ...todo };
   });
+  broadcastTodosChanged(workspacePath);
 }
 
 export async function restoreTodo(workspacePath: string, todoId: string): Promise<HumanTodo> {
@@ -176,13 +199,16 @@ export async function restoreTodo(workspacePath: string, todoId: string): Promis
     todo.updatedAt = new Date().toISOString();
     return { ...todo };
   });
+  broadcastTodosChanged(workspacePath);
 }
 
 export async function purgeTodo(workspacePath: string, todoId: string): Promise<boolean> {
-  return mutateTodos(workspacePath, (todos) => {
+  const purged = await mutateTodos(workspacePath, (todos) => {
     const idx = todos.findIndex((t) => t.id === todoId);
     if (idx < 0) return false;
     todos.splice(idx, 1);
     return true;
   });
+  if (purged) broadcastTodosChanged(workspacePath);
+  return purged;
 }

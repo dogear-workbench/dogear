@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 数据层与迁移](./step1-data-layer-migration.md) — Task 加 backlog 状态与新字段、todo-service 新建、存量笔记 todos 迁移、notes-service 瘦身
 - [x] [Step 2: IPC 路由与 agent 工具、提示词纪律](./step2-ipc-agent-tools.md) — todos 路由新建、tasks/notes 路由调整、dogear-todos 工具组、存卡纪律重写
-- [ ] [Step 3: 待办 mode 视图](./step3-todos-panel.md) — todo-store + TodosPanel（快速输入/排序/双链跳转/软删）
+- [x] [Step 3: 待办 mode 视图](./step3-todos-panel.md) — todo-store + TodosPanel（快速输入/排序/双链跳转/软删）
 - [ ] [Step 4: 回收站三段](./step4-trash-sections.md) — TrashView 扩展为笔记/待办/任务三段聚合
 - [ ] [Step 5: 任务积压分组](./step5-task-backlog-panel.md) — TaskPanel 加 backlog 分组与「执行」按钮
 - [ ] [Step 6: 顶栏收口组装与 e2e](./step6-notes-panel-assembly.md) — 四 mode 顶栏、分域搜索、卡片会话化、标签合流、删旧组件、e2e 走查

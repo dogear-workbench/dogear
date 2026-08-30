@@ -23,7 +23,7 @@ import { TaskPanel } from '@/components/notes/TaskPanel';
 import { NoteEditor } from '@/components/notes/NoteEditor';
 import { NoteCardItem } from '@/components/notes/NoteCardItem';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
-import { TodosView } from '@/components/notes/TodosView';
+import { TodosPanel } from '@/components/notes/TodosPanel';
 import { TagsView } from '@/components/notes/TagsView';
 import { TrashView } from '@/components/notes/TrashView';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
@@ -248,7 +248,13 @@ export function NotesPanel() {
       return workspacePath ? renderTimeline() : <NoteEmpty text="请先选择工作区" />;
     }
     if (!workspacePath) return <NoteEmpty text="请先选择工作区" />;
-    if (view === 'todos') return <TodosView workspacePath={workspacePath} onOpenNote={setActiveNoteId} />;
+    if (view === 'todos') {
+      const openNoteFromTodos = (noteId: string) => {
+        switchView('timeline');
+        setActiveNoteId(noteId);
+      };
+      return <TodosPanel workspacePath={workspacePath} onOpenNote={openNoteFromTodos} />;
+    }
     if (view === 'tags') return <TagsView onPickTag={handlePickTag} />;
     return <TrashView workspacePath={workspacePath} />;
   };
