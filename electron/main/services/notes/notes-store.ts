@@ -245,18 +245,8 @@ export function serializeNoteFile(note: Omit<Note, 'file' | 'title'>): string {
     lines.push(`source_title: ${quoteIfNeeded(note.source.title)}`);
     lines.push(`source_date: ${quoteIfNeeded(note.source.date)}`);
   }
-  if (note.todos.length > 0) {
-    lines.push('todos:');
-    for (const todo of note.todos) lines.push(`  - ${JSON.stringify(cleanTodo(todo))}`);
-  }
   lines.push('---', '');
   return lines.join('\n') + note.content;
-}
-
-function cleanTodo(todo: TodoItem): TodoItem {
-  const clean: TodoItem = { id: todo.id, text: todo.text, status: todo.status };
-  if (todo.plan) clean.plan = todo.plan;
-  return clean;
 }
 
 function serializeStringArray(items: string[]): string {

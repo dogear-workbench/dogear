@@ -13,6 +13,10 @@ import {
   completeTask,
   rejectTask,
   recoverInterruptedTasks,
+  executeTask,
+  softDeleteTask,
+  restoreTask,
+  purgeTask,
 } from './task-store.js';
 
 let workspacePath: string;
@@ -111,4 +115,46 @@ test('getTaskDetail 聚合 plan 内容，plan 丢失时带 planError', async () 
   const broken = await getTaskDetail(workspacePath, id);
   expect(broken?.planContent).toBeNull();
   expect(broken?.planError).toContain('读取失败');
+});
+
+test('createTask 支持 backlog 初始状态与 noteId，executeTask 入队', async () => {
+  const task = await createTask(workspacePath, { title: '积压任务', planPath, noteId: 'note-1', status: 'backlog' });
+  expect(task.status).toBe('backlog');
+  expect(task.noteId).toBe('note-1');
+  expect((await listTasksGrouped(workspacePath)).backlog).toHaveLength(1);
+
+  await expect(markTaskRunning(workspacePath, task.id, 'exec')).rejects.toThrow();
+  const queued = await executeTask(workspacePath, task.id);
+  expect(queued.status).toBe('queued');
+  await expect(executeTask(workspacePath, task.id)).rejects.toThrow();
+});
+
+test('createTask skipPlanCheck 允许 plan 缺失落盘', async () => {
+  const task = await createTask(workspacePath, {
+    title: '历史任务',
+    planPath: path.join(workspacePath, 'gone.md'),
+    status: 'done',
+    skipPlanCheck: true,
+  });
+  expect(task.status).toBe('done');
+});
+
+test('软删任务从列表隐藏，恢复还原，彻底删除移出', async () => {
+  const a = await seedQueued();
+  const deleted = await softDeleteTask(workspacePath, a);
+  expect(deleted.deletedAt).toBeTruthy();
+  expect(await listTasks(workspacePath)).toHaveLength(0);
+  expect((await listTasksGrouped(workspacePath)).queued).toHaveLength(0);
+  expect(await getTask(workspacePath, a)).not.toBeNull();
+
+  await softDeleteTask(workspacePath, a);
+  const restored = await restoreTask(workspacePath, a);
+  expect(restored.deletedAt).toBeUndefined();
+  expect(await listTasks(workspacePath)).toHaveLength(1);
+  await expect(restoreTask(workspacePath, a)).rejects.toThrow();
+
+  expect(await purgeTask(workspacePath, a)).toBe(true);
+  expect(await getTask(workspacePath, a)).toBeNull();
+  expect(await purgeTask(workspacePath, a)).toBe(false);
+  await expect(softDeleteTask(workspacePath, a)).rejects.toThrow();
 });

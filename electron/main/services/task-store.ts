@@ -9,7 +9,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
 
-export type TaskStatus = 'queued' | 'running' | 'review' | 'done' | 'rejected';
+export type TaskStatus = 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
 
 export interface Task {
   id: string;
@@ -19,14 +19,24 @@ export interface Task {
   originSessionId?: string;
   execSessionId?: string;
   result?: string;
+  /** 来源笔记卡片 ID */
+  noteId?: string;
   createdAt: string;
   updatedAt: string;
+  /** 软删除 → 回收站 */
+  deletedAt?: string;
 }
 
 export interface CreateTaskInput {
   title: string;
   planPath: string;
   originSessionId?: string;
+  /** 来源笔记卡片 ID */
+  noteId?: string;
+  /** 初始状态；done 仅存量迁移用 */
+  status?: 'queued' | 'backlog' | 'done';
+  /** 跳过 plan 文件存在性检查（存量迁移时 plan 可能已被清理，仍需保留任务记录） */
+  skipPlanCheck?: boolean;
 }
 
 export type ReviewAction = 'approve' | 'reject';
@@ -37,6 +47,7 @@ export interface TaskDetail extends Task {
 }
 
 export interface TaskGroups {
+  backlog: Task[];
   queued: Task[];
   running: Task[];
   review: Task[];
@@ -52,6 +63,7 @@ interface TasksFile {
 const TASKS_FILE = 'tasks.json';
 
 const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  backlog: ['queued'],
   queued: ['running', 'rejected'],
   running: ['review', 'queued', 'rejected'],
   review: ['done', 'rejected'],
@@ -59,7 +71,10 @@ const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   rejected: ['queued'],
 };
 
-const EMPTY_TASKS: TasksFile = { version: 1, tasks: [] };
+// 缺省值每次新建而非共享常量：mutateTasks 会原地 push，共享常量会被首次读污染并跨工作区泄漏
+function emptyTasksFile(): TasksFile {
+  return { version: 1, tasks: [] };
+}
 
 function getTasksFilePath(workspacePath: string): string {
   return path.join(workspacePath, '.dogear', TASKS_FILE);
@@ -73,7 +88,7 @@ function generateTaskId(): string {
 }
 
 async function readTasksFile(workspacePath: string): Promise<TasksFile> {
-  return safeJsonRead(getTasksFilePath(workspacePath), EMPTY_TASKS);
+  return safeJsonRead(getTasksFilePath(workspacePath), emptyTasksFile());
 }
 
 // safeJsonWrite 内部会对同一路径 withFileLock，在 mutateTasks 持锁期间调用会重入死锁，
@@ -111,14 +126,15 @@ function requireTitle(title: string): string {
 
 export async function createTask(workspacePath: string, input: CreateTaskInput): Promise<Task> {
   const title = requireTitle(input.title);
-  await fs.access(input.planPath);
+  if (!input.skipPlanCheck) await fs.access(input.planPath);
   const now = new Date().toISOString();
   const task: Task = {
     id: generateTaskId(),
     title,
-    status: 'queued',
+    status: input.status ?? 'queued',
     planPath: input.planPath,
     ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
+    ...(input.noteId ? { noteId: input.noteId } : {}),
     createdAt: now,
     updatedAt: now,
   };
@@ -130,12 +146,14 @@ export async function createTask(workspacePath: string, input: CreateTaskInput):
 
 export async function listTasks(workspacePath: string): Promise<Task[]> {
   const file = await readTasksFile(workspacePath);
-  return [...file.tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return file.tasks
+    .filter((t) => !t.deletedAt)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 export async function listTasksGrouped(workspacePath: string): Promise<TaskGroups> {
   const tasks = await listTasks(workspacePath);
-  const groups: TaskGroups = { queued: [], running: [], review: [], done: [], rejected: [] };
+  const groups: TaskGroups = { backlog: [], queued: [], running: [], review: [], done: [], rejected: [] };
   for (const task of tasks) groups[task.status].push(task);
   return groups;
 }
@@ -201,6 +219,39 @@ export async function rejectTask(workspacePath: string, taskId: string, reason: 
   const task = await getTask(workspacePath, taskId);
   if (!task) throw new Error(`任务 ${taskId} 不存在`);
   return transition(workspacePath, taskId, ['queued', 'running'], 'rejected', { result: reason });
+}
+
+export async function executeTask(workspacePath: string, taskId: string): Promise<Task> {
+  return transition(workspacePath, taskId, ['backlog'], 'queued');
+}
+
+export async function softDeleteTask(workspacePath: string, taskId: string): Promise<Task> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`任务 ${taskId} 不存在`);
+    if (!task.deletedAt) task.deletedAt = new Date().toISOString();
+    return { ...task };
+  });
+}
+
+export async function restoreTask(workspacePath: string, taskId: string): Promise<Task> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`任务 ${taskId} 不存在`);
+    if (!task.deletedAt) throw new Error(`任务 ${taskId} 不在回收站`);
+    delete task.deletedAt;
+    task.updatedAt = new Date().toISOString();
+    return { ...task };
+  });
+}
+
+export async function purgeTask(workspacePath: string, taskId: string): Promise<boolean> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const idx = tasks.findIndex((t) => t.id === taskId);
+    if (idx < 0) return false;
+    tasks.splice(idx, 1);
+    return true;
+  });
 }
 
 /** 应用启动时把遗留 running 置回 queued，返回恢复数 */

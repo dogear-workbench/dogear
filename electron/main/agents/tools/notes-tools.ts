@@ -10,20 +10,6 @@ const LINK_SCHEMA = z
   .regex(/^(article|stock|plan):.+/)
   .describe('引用格式：article:<文章id> / stock:<股票代码> / plan:<plan文档路径>');
 
-const TODO_SCHEMA = z.object({
-  id: z.string().optional().describe('待办 ID，新建时省略会自动生成 t1/t2…'),
-  text: z.string().min(1).describe('待办内容'),
-  status: z.enum(['pending', 'in_progress', 'done']).optional().describe('省略时默认 pending'),
-  plan: z.string().optional().describe('关联 plan 文档路径；带 plan 的待办才是可实施待办'),
-});
-
-const UPDATE_TODO_SCHEMA = z.object({
-  id: z.string().min(1).describe('待办 ID，必须与原待办一致'),
-  text: z.string().min(1).describe('待办内容'),
-  status: z.enum(['pending', 'in_progress', 'done']).describe('pending / in_progress / done'),
-  plan: z.string().optional().describe('关联 plan 文档路径'),
-});
-
 function errorResult(text: string) {
   return { content: [{ type: 'text' as const, text }], isError: true as const };
 }
@@ -87,14 +73,11 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
       'dogear__CreateNote',
       '创建笔记卡片',
       '在工作区创建一张新的 Markdown 笔记卡片。\n' +
-        '正文首行会成为卡片标题；todos 用于结构化待办，带 plan 字段的待办视为「可实施待办」。\n' +
-        '聊完方案/设计并落盘 plan 文档后，应存一张卡片：正文一句话摘要，todos 含「实施 <计划名>」且 plan 填 plan 文档路径。\n' +
-        '存卡后在回复中告知用户存了什么（标题与卡片 ID），用户需要知情。',
+        '正文首行会成为卡片标题。',
       z.object({
         content: z.string().min(1).describe('卡片正文（Markdown），首行会成为卡片标题'),
         tags: z.array(z.string().min(1)).optional().describe('标签列表'),
         links: z.array(LINK_SCHEMA).optional().describe('引用列表'),
-        todos: z.array(TODO_SCHEMA).optional().describe('待办列表'),
       }),
       async (args) => {
         try {
@@ -103,7 +86,6 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
             content: args.content,
             tags: args.tags,
             links: args.links,
-            todos: args.todos?.map((t) => ({ id: t.id ?? '', text: t.text, status: t.status ?? 'pending', plan: t.plan })),
             source,
           });
           return {
@@ -200,23 +182,21 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
     defineTool(
       'dogear__UpdateNote',
       '更新笔记卡片',
-      '更新卡片的内容、标签、引用或待办。tags/links/todos 都是整体替换：修改某个待办（如置 done）时，先用 dogear__GetNote 取完整待办列表，改动目标项后连同其余待办一起全量提交。',
+      '更新卡片的内容、标签或引用。tags/links 都是整体替换。',
       z.object({
         noteId: z.string().min(1).describe('卡片 ID'),
         patch: z.object({
           content: z.string().optional().describe('整体替换正文（首行会成为新标题）'),
           tags: z.array(z.string().min(1)).optional().describe('整体替换标签列表'),
           links: z.array(LINK_SCHEMA).optional().describe('整体替换引用列表'),
-          todos: z.array(UPDATE_TODO_SCHEMA).optional()
-            .describe('整体替换待办列表，每项都必须带 id/text/status，未涉及的待办原样带上'),
         }).describe('要更新的字段，未给出的字段保持不变'),
       }),
       async (args) => {
         const { patch } = args;
         const hasField = patch.content !== undefined || patch.tags !== undefined ||
-          patch.links !== undefined || patch.todos !== undefined;
+          patch.links !== undefined;
         if (!hasField) {
-          return errorResult('patch 为空：至少要提供 content / tags / links / todos 之一。');
+          return errorResult('patch 为空：至少要提供 content / tags / links 之一。');
         }
         try {
           const note = await notesService.updateNote(workspacePath, args.noteId, patch);

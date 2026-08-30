@@ -7,7 +7,7 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { Note, NoteMeta, NoteSource, NoteTodoEntry, TodoItem, TodoStatus } from './note-types.js';
+import type { Note, NoteMeta, NoteSource, NoteTodoEntry, TodoStatus } from './note-types.js';
 import {
   getNotesDir,
   getTrashDir,
@@ -31,12 +31,11 @@ export interface CreateNoteInput {
   content: string;
   tags?: string[];
   links?: string[];
-  todos?: TodoItem[];
   /** 来源身份证（Agent 存卡时传入；用户手记不传） */
   source?: NoteSource;
 }
 
-export type NotePatch = Partial<Pick<Note, 'content' | 'tags' | 'links' | 'todos'>>;
+export type NotePatch = Partial<Pick<Note, 'content' | 'tags' | 'links'>>;
 
 export interface SearchNotesInput {
   query?: string;
@@ -63,7 +62,7 @@ export async function createNote(workspacePath: string, input: CreateNoteInput):
     updated: now.toISOString(),
     tags: normalizeTags(input.tags),
     links: normalizeLinks(input.links),
-    todos: normalizeTodos(input.todos),
+    todos: [],
     ...(input.source ? { source: input.source } : {}),
     content: input.content,
   };
@@ -106,7 +105,7 @@ export async function updateNote(workspacePath: string, noteId: string, patch: N
   }
   if (patch.tags !== undefined) updated.tags = normalizeTags(patch.tags);
   if (patch.links !== undefined) updated.links = normalizeLinks(patch.links);
-  if (patch.todos !== undefined) updated.todos = normalizeTodos(patch.todos);
+  updated.todos = [];
 
   await writeNoteFile(path.join(getNotesDir(workspacePath), updated.file), updated);
   await updateIndexEntry(workspacePath, noteToIndexItem(updated));
@@ -236,32 +235,6 @@ function normalizeLinks(links: string[] | undefined): string[] {
   return result;
 }
 
-function normalizeTodos(todos: TodoItem[] | undefined): TodoItem[] {
-  if (!todos) return [];
-  const usedIds = new Set<string>();
-  const result: TodoItem[] = [];
-  for (const todo of todos) {
-    if (!todo || typeof todo.text !== 'string' || !todo.text.trim()) {
-      throw new Error('待办必须有非空 text');
-    }
-    if (todo.status !== undefined && !['pending', 'in_progress', 'done'].includes(todo.status)) {
-      throw new Error(`非法待办状态「${todo.status}」`);
-    }
-    let id = typeof todo.id === 'string' && todo.id ? todo.id : '';
-    if (!id) {
-      let n = 1;
-      while (usedIds.has(`t${n}`)) n++;
-      id = `t${n}`;
-    }
-    while (usedIds.has(id)) id = `t${generateShortId()}`;
-    usedIds.add(id);
-    const clean: TodoItem = { id, text: todo.text, status: todo.status ?? 'pending' };
-    if (typeof todo.plan === 'string' && todo.plan) clean.plan = todo.plan;
-    result.push(clean);
-  }
-  return result;
-}
-
 /** 索引优先定位主目录卡片文件；索引缺失/文件丢失时扫描目录按 id 兜底 */
 async function locateNoteFile(workspacePath: string, noteId: string): Promise<string | null> {
   const notesDir = getNotesDir(workspacePath);
@@ -306,7 +279,7 @@ async function syncIndexEntry(workspacePath: string, note: Note): Promise<void> 
   await updateIndexEntry(workspacePath, noteToIndexItem(note));
 }
 
-async function broadcastNotesChanged(workspacePath: string): Promise<void> {
+export async function broadcastNotesChanged(workspacePath: string): Promise<void> {
   try {
     const [{ BrowserWindow }, { getRendererHandlers }] = await Promise.all([
       import('electron'),
