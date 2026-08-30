@@ -38,12 +38,14 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
     defineTool(
       'dogear__CreateTask',
       '挂载实施任务',
-      '将一个已有 plan 文档挂载为实施任务并进入执行队列。系统会串行执行：自动创建一个执行会话按 plan 实施，完成后任务进入待审核状态并通过系统通知用户。\n' +
+      '将一个已有 plan 文档挂载为实施任务。默认落积压（backlog），不立即执行；用户明确说去做/现在执行时传 autoExecute=true 直接进入执行队列。\n' +
+        '队列串行执行：自动创建一个执行会话按 plan 实施，完成后任务进入待审核状态并通过系统通知用户。\n' +
         '前提：plan 文档已落盘（如 docs/plans/...）；与用户聊透方案、plan 写完后再挂载。\n' +
-        '挂载后在回复中告知用户任务已排队（标题与任务 ID）。',
+        '落积压时告知用户任务已存入积压（标题与任务 ID），入队时告知已排队。',
       z.object({
         title: z.string().min(1).describe('任务标题，简短概括要实施的内容'),
         planPath: z.string().min(1).describe('plan 文档的绝对路径'),
+        autoExecute: z.boolean().optional().describe('是否直接进入执行队列；默认 false 落积压（积压是常态，执行是决定）'),
       }),
       async (args) => {
         try {
@@ -52,15 +54,20 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
           return errorResult(`plan 文件不存在: ${args.planPath}，请先落盘 plan 文档再挂载任务。`);
         }
         try {
+          const autoExecute = args.autoExecute === true;
           const task = await taskService.createTask(workspacePath, {
             title: args.title,
             planPath: args.planPath,
             originSessionId: sourceContext?.conversationId,
+            status: autoExecute ? 'queued' : 'backlog',
           });
-          getTaskQueue().kick();
+          if (autoExecute) getTaskQueue().kick();
           return textResult(
-            `✅ 任务已挂载排队\n- 任务 ID: ${task.id}\n- 标题: ${task.title}\n- plan: ${task.planPath}\n` +
-            '队列串行执行：轮到后会自动创建执行会话按 plan 实施，完成进入待审核并系统通知。',
+            autoExecute
+              ? `✅ 任务已挂载排队\n- 任务 ID: ${task.id}\n- 标题: ${task.title}\n- plan: ${task.planPath}\n` +
+                '队列串行执行：轮到后会自动创建执行会话按 plan 实施，完成进入待审核并系统通知。'
+              : `✅ 任务已存入积压\n- 任务 ID: ${task.id}\n- 标题: ${task.title}\n- plan: ${task.planPath}\n` +
+                '积压任务不会自动执行；用户确认后可用 dogear__ExecuteTask 转入队列。',
           );
         } catch (error) {
           return errorResult(`挂载任务失败: ${error}`);
@@ -69,11 +76,32 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
     ),
 
     defineTool(
+      'dogear__ExecuteTask',
+      '执行积压任务',
+      '将一个积压（backlog）任务转入执行队列（queued），轮到后会自动创建执行会话按 plan 实施。仅对 backlog 状态任务有效。',
+      z.object({
+        taskId: z.string().min(1).describe('任务 ID（dogear__ListTasks 查看）'),
+      }),
+      async (args) => {
+        try {
+          const task = await taskService.executeTask(workspacePath, args.taskId);
+          getTaskQueue().kick();
+          return textResult(
+            `✅ 任务已转入队列\n- 任务 ID: ${task.id}\n- 标题: ${task.title}\n- plan: ${task.planPath}\n` +
+            '队列串行执行：轮到后会自动创建执行会话按 plan 实施，完成进入待审核并系统通知。',
+          );
+        } catch (error) {
+          return errorResult(`执行任务失败: ${error}`);
+        }
+      },
+    ),
+
+    defineTool(
       'dogear__ListTasks',
       '列出实施任务',
-      '列出实施任务及其状态（queued 排队 / running 执行中 / review 待审核 / done 已通过 / rejected 已打回）。status 省略时列出全部。',
+      '列出实施任务及其状态（backlog 积压 / queued 排队 / running 执行中 / review 待审核 / done 已通过 / rejected 已打回）。status 省略时列出全部；看积压用 status=\'backlog\'。',
       z.object({
-        status: z.enum(['queued', 'running', 'review', 'done', 'rejected']).optional().describe('按状态过滤'),
+        status: z.enum(['backlog', 'queued', 'running', 'review', 'done', 'rejected']).optional().describe('按状态过滤'),
       }),
       async (args) => {
         try {

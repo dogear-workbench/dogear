@@ -1,13 +1,13 @@
 /**
  * 笔记 Service：CRUD 语义聚合入口（唯一写入入口）
  *
- * - md 文件是唯一真源；get 永远读文件并同步刷新索引；list/search/listTodos 走 index.json
+ * - md 文件是唯一真源；get 永远读文件并同步刷新索引；list/search 走 index.json
  * - 所有写操作完成后广播 notesChanged 事件（覆盖 UI / Agent / 外部编辑所有写入方）
  * - 所有方法第一参数是 workspacePath；目录不存在时查询返回 null/[]，写入自动创建
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { Note, NoteMeta, NoteSource, NoteTodoEntry, TodoStatus } from './note-types.js';
+import type { Note, NoteMeta, NoteSource } from './note-types.js';
 import {
   getNotesDir,
   getTrashDir,
@@ -40,11 +40,6 @@ export type NotePatch = Partial<Pick<Note, 'content' | 'tags' | 'links'>>;
 export interface SearchNotesInput {
   query?: string;
   tag?: string;
-}
-
-export interface ListTodosInput {
-  status?: TodoStatus;
-  hasPlan?: boolean;
 }
 
 const LINK_RE = /^(article|stock|plan):.+/;
@@ -185,19 +180,6 @@ export async function searchNotes(workspacePath: string, input: SearchNotesInput
     if (note && note.content.toLowerCase().includes(query)) matched.push(item);
   }
   return matched;
-}
-
-export async function listNoteTodos(workspacePath: string, input: ListTodosInput): Promise<NoteTodoEntry[]> {
-  const items = await listNotes(workspacePath);
-  const entries: NoteTodoEntry[] = [];
-  for (const item of items) {
-    for (const todo of item.todos) {
-      if (input.status && todo.status !== input.status) continue;
-      if (input.hasPlan !== undefined && Boolean(todo.plan) !== input.hasPlan) continue;
-      entries.push({ noteId: item.id, noteTitle: item.title, todo });
-    }
-  }
-  return entries;
 }
 
 // ─── 内部工具 ───

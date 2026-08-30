@@ -10,13 +10,10 @@ import {
   purgeNote,
   listTrashNotes,
   searchNotes,
-  listNoteTodos,
   type CreateNoteInput,
   type NotePatch,
   type SearchNotesInput,
-  type ListTodosInput,
 } from '../services/notes/notes-service.js';
-import type { TodoStatus } from '../services/notes/note-types.js';
 
 const t = tipc.create();
 
@@ -119,17 +116,6 @@ export const notesRouter = {
       try {
         const condition: SearchNotesInput = { query: input.query, tag: input.tag };
         return { notes: await searchNotes(input.workspacePath, condition) };
-      } catch (e) {
-        return { error: String(e) };
-      }
-    }),
-
-  listTodos: t.procedure
-    .input<{ workspacePath: string; status?: TodoStatus; hasPlan?: boolean }>()
-    .action(async ({ input }) => {
-      try {
-        const condition: ListTodosInput = { status: input.status, hasPlan: input.hasPlan };
-        return { todos: await listNoteTodos(input.workspacePath, condition) };
       } catch (e) {
         return { error: String(e) };
       }

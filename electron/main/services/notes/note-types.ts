@@ -41,8 +41,4 @@ export interface Note extends NoteMeta {
   content: string;
 }
 
-export interface NoteTodoEntry {
-  noteId: string;
-  noteTitle: string;
-  todo: TodoItem;
-}
+

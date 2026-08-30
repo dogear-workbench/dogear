@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import * as notesService from '../../services/notes/notes-service.js';
 import * as conversationService from '../../services/conversation-service.js';
-import type { NoteMeta, NoteSource, TodoItem } from '../../services/notes/note-types.js';
+import type { NoteMeta, NoteSource } from '../../services/notes/note-types.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -14,16 +14,6 @@ function errorResult(text: string) {
   return { content: [{ type: 'text' as const, text }], isError: true as const };
 }
 
-function statusMark(status: TodoItem['status']) {
-  return status === 'done' ? '[x]' : status === 'in_progress' ? '[~]' : '[ ]';
-}
-
-function todoLines(todos: TodoItem[]) {
-  return todos.map(
-    (t) => `${statusMark(t.status)} ${t.id} ${t.text}${t.plan ? `（plan: ${t.plan}）` : ''}`,
-  );
-}
-
 function metaHeader(note: NoteMeta) {
   const rows = [
     `🗂 卡片 ${note.id}`,
@@ -33,7 +23,6 @@ function metaHeader(note: NoteMeta) {
   if (note.tags.length > 0) rows.push(`标签: ${note.tags.join(' / ')}`);
   if (note.links.length > 0) rows.push(`引用: ${note.links.join('、')}`);
   if (note.source) rows.push(`来源: 会话「${note.source.title || '未命名'}」（${note.source.conversationId}，${new Date(note.source.date).toLocaleString('zh-CN')}）`);
-  if (note.todos.length > 0) rows.push('待办:', ...todoLines(note.todos).map((l) => `  ${l}`));
   return rows.join('\n');
 }
 
@@ -103,7 +92,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
     defineTool(
       'dogear__GetNote',
       '读取笔记卡片',
-      '读取指定卡片的元数据（frontmatter：标签/引用/待办）和完整正文。',
+      '读取指定卡片的元数据（frontmatter：标签/引用）和完整正文。',
       z.object({
         noteId: z.string().min(1).describe('卡片 ID'),
       }),
@@ -138,10 +127,9 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
             return { content: [{ type: 'text' as const, text: '未找到匹配的卡片。' }] };
           }
           const list = notes.map((n) => {
-            const done = n.todos.filter((t) => t.status === 'done').length;
             return `${n.id} 《${n.title}》\n` +
               `   更新: ${new Date(n.updated).toLocaleString('zh-CN')}` +
-              ` | 标签: ${n.tags.join('/') || '无'} | 待办: ${done}/${n.todos.length}`;
+              ` | 标签: ${n.tags.join('/') || '无'}`;
           }).join('\n');
           return {
             content: [{
@@ -229,39 +217,6 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
           };
         } catch (error) {
           return errorResult(`删除卡片失败: ${error}`);
-        }
-      },
-    ),
-
-    defineTool(
-      'dogear__ListTodos',
-      '列出笔记待办',
-      '跨所有卡片列出待办。hasPlan=true 只看可实施待办（带 plan，可以按 staged-execution 纪律实施）；hasPlan=false 只看普通待办（只读不动）；status 按状态过滤。',
-      z.object({
-        status: z.enum(['pending', 'in_progress', 'done']).optional().describe('按状态过滤'),
-        hasPlan: z.boolean().optional().describe('true=只看可实施待办（带 plan）；false=只看普通待办'),
-      }),
-      async (args) => {
-        try {
-          const entries = await notesService.listNoteTodos(workspacePath, args);
-          if (entries.length === 0) {
-            return { content: [{ type: 'text' as const, text: '没有匹配的待办。' }] };
-          }
-          const byNote = new Map<string, { title: string; lines: string[] }>();
-          for (const { noteId, noteTitle, todo } of entries) {
-            const group = byNote.get(noteId) ?? { title: noteTitle, lines: [] };
-            group.lines.push(`  ${todoLines([todo])[0]}`);
-            byNote.set(noteId, group);
-          }
-          const sections = [...byNote.entries()].map(([noteId, g]) => `《${g.title}》（卡片 ${noteId}）\n${g.lines.join('\n')}`);
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `📝 共 ${entries.length} 条待办（${byNote.size} 张卡片）：\n\n${sections.join('\n\n')}`,
-            }],
-          };
-        } catch (error) {
-          return errorResult(`列出待办失败: ${error}`);
         }
       },
     ),

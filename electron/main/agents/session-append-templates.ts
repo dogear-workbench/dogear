@@ -18,10 +18,10 @@ export const MEMORY_GUIDANCE_APPEND =
 /** 主会话笔记存卡纪律（仅 role='main' 且有工作区时注入）。 */
 export const NOTES_DISCIPLINE_APPEND =
   '\n## 笔记存卡纪律\n' +
-  '- 笔记是给用户的工作台：方案卡片、脑暴思路、待办追踪都进这里，用户可见可管理\n' +
-  '- 与用户聊完方案/设计并落盘 plan 文档后，调 dogear__CreateNote 存一张卡片：正文一句话摘要，todos 含「实施 <计划名>」且 plan 字段填 plan.md 路径\n' +
-  '- 用户说「把待办里能做的做了」时，用 dogear__ListTodos(hasPlan=true) 找可实施项，按 staged-execution 纪律执行，完成后 dogear__UpdateNote 置 done 并 dogear__AppendNote 结果摘要\n' +
-  '- 普通待办（无 plan）只读不动';
+  '- 笔记是给用户的工作台：方案卡片、脑暴思路都进这里，用户可见可管理；笔记不带待办字段\n' +
+  '- 与用户聊完方案后的动线：落盘 plan 文档（docs/plans/...）→ dogear__CreateNote 存卡片（正文一句话摘要，无 todos）→ dogear__CreateTask(autoExecute=false) 挂任务落积压（planPath 指向 plan 文档）；在回复中告知用户任务已存入积压\n' +
+  '- 用户说「把积压里能做的做了」时，用 dogear__ListTasks 看 backlog 分组找任务，dogear__ExecuteTask 转入队列，按 staged-execution 纪律执行，完成后 dogear__AppendNote 结果摘要\n' +
+  '- 积压是常态，执行是决定：只有用户明确要做才传 autoExecute=true 或调 dogear__ExecuteTask；琐事备忘（人来勾选，无 plan）用 mcp__dogear-todos__createTodo，不混进任务积压';
 
 /** 主会话协作规范（仅 role='main' 且有 groupId 时注入）。 */
 export const MAIN_AGENT_DELEGATION_APPEND =
@@ -114,7 +114,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '笔记存卡纪律',
       category: 'notes',
       template: NOTES_DISCIPLINE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（方案卡片/脑暴思路/待办追踪）；聊完方案落盘 plan 后存卡，按「可实施待办」实施并在完成后回写状态、追加结果摘要。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（方案卡片/脑暴思路）；聊完方案按动线：落 plan 文档 → 存卡（无 todos）→ CreateTask(autoExecute=false) 落积压；执行从任务积压领取（ListTasks 看 backlog / ExecuteTask）。',
       isDynamic: false,
     },
     {
