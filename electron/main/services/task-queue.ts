@@ -4,7 +4,7 @@
  *
  * - 串行：单实例 drain 循环，一次只跑一个任务
  * - 结束信号：await sendMessage 即一轮跑完（finally 中 emit complete 后 promise 才 resolve），
- *   辅以一次性 complete 监听拿 PiSessionTurnResult 判定成败；超时兜底走 session.interrupt()
+ *   辅以一次性 complete 监听拿 PiSessionTurnResult 判定成败；空闲超时兜底（长时间无任何消息，防多 step 长任务被整轮墙钟误杀）走 session.interrupt()
  *   注入 cancelled 终局，避免 adapter.prompt 卡死导致队列永久阻塞
  * - 结果摘要：执行提示词约定 agent 在回复末尾输出 <task-result> 标签段，主进程从本轮 text
  *   增量累积中提取；未命中标签时回退本轮文本尾部
@@ -22,7 +22,7 @@ import type { Task } from './task-service.js';
 
 const log = mainLogger.child('task-queue');
 
-const EXEC_TIMEOUT_MS = 60 * 60_000;
+const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
 
 const RESULT_TAG_RE = /<task-result>([\s\S]*?)<\/task-result>/;
 
@@ -54,16 +54,22 @@ function firstLine(text: string, max = 80): string {
 function buildExecutionPrompt(task: Task): string {
   return [
     '<task-execution>',
-    '你是自动创建的任务执行会话，负责按既定计划实施。用户可能打开本会话查看过程或插话，插话按正常对话回应。',
+    '你是任务系统自动创建的执行会话，全权负责把下述计划实施完毕。无人值守：用户不在线，不要中途停下等确认，推进到整个计划完成。',
+    '用户可能打开本会话查看过程或插话，插话按正常对话回应。',
     '',
     `任务标题：${task.title}`,
     `任务 ID：${task.id}`,
     `计划文档：${task.planPath}`,
     '',
+    '执行模式：',
+    '- 计划为 stepN 分步结构（stepN-*.md）时，你是 staged-execution skill 语境里的「主会话」：逐 step 派子会话实施、验收、回填 stepN.md、逐 step commit，不等用户确认直接进下一步',
+    '- 单文档小计划直接自己实施',
+    '- 派出子会话后必须用 dogear__WaitForMessage 挂起等待交付，不要停回复等待——你结束回合即任务轮结束，任务会直接进入待审核',
+    '',
     '执行要求：',
     '1. 先读计划文档再实施；计划引用的其他文件按需读取',
     '2. 计划文档不存在或明显无法实施时不要硬做，直接说明原因结束本轮',
-    '3. 实施完成后，在回复末尾用 <task-result></task-result> 标签输出结果摘要（做了什么、关键改动位置、遗留问题）；系统会把这段写回任务结果供用户审核',
+    '3. 整个计划实施完成后，在回复末尾用 <task-result></task-result> 标签输出结果摘要（做了什么、关键改动位置、遗留问题）；系统会把这段写回任务结果供用户审核',
     '</task-execution>',
   ].join('\n');
 }
@@ -195,21 +201,28 @@ class TaskQueueExecutor {
     const onComplete = (r: PiSessionTurnResult) => {
       turnResult = r;
     };
+    // 空闲保险丝而非整轮墙钟：正常推进（含挂起等子会话）持续有消息流动续命，仅真卡死时静默到上限 interrupt 解锁队列
+    const fireIdleTimeout = () => {
+      log.warn(`任务 ${task.id} 执行会话 ${EXEC_IDLE_TIMEOUT_MS}ms 无任何消息，判定卡死，中断执行会话`);
+      void session.interrupt().catch(() => {});
+    };
+    let idleTimer = setTimeout(fireIdleTimeout, EXEC_IDLE_TIMEOUT_MS);
+    const resetIdleTimer = () => {
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(fireIdleTimeout, EXEC_IDLE_TIMEOUT_MS);
+    };
     const onMessage = (m: ExtendedSessionMessage) => {
+      resetIdleTimer();
       if (m.type === 'text') text += m.content ?? '';
     };
     session.once('complete', onComplete);
     session.on('message', onMessage);
-    const timeoutTimer = setTimeout(() => {
-      log.warn(`任务 ${task.id} 执行超时（${EXEC_TIMEOUT_MS}ms），中断执行会话`);
-      void session.interrupt().catch(() => {});
-    }, EXEC_TIMEOUT_MS);
     try {
       await session.sendMessage(buildExecutionPrompt(task));
     } catch (err) {
       turnResult = { subtype: 'failed', error: { kind: 'runtime', message: errorMessage(err) } };
     } finally {
-      clearTimeout(timeoutTimer);
+      clearTimeout(idleTimer);
       session.off('complete', onComplete);
       session.off('message', onMessage);
     }
