@@ -5,6 +5,7 @@
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
+import type { TerminalStreamEvent } from '../services/terminal-stream-service.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -214,5 +215,8 @@ export type RendererHandlers = {
 
   // 话题组数据变更（共享区文件/话题背景/组卡写点广播，TopicPanel 匹配当前组后重拉）
   groupDataChanged: (data: { workspaceId: string; groupId: string }) => void;
+
+  // 终端流增量（terminal-stream-service 广播，渲染端按 conversationId 过滤、toolCallId 定位卡片）
+  terminalStreamAppend: (data: TerminalStreamEvent) => void;
 
 };

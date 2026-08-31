@@ -29,6 +29,7 @@ import { systemPromptRouter } from './system-prompt.js';
 import { updaterRouter } from './updater.js';
 import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
+import { terminalRouter } from './terminal.js';
 
 export const router = {
   ...aiRouter,
@@ -60,6 +61,7 @@ export const router = {
   ...updaterRouter,
   ...schedulerRouter,
   ...windowsRouter,
+  ...terminalRouter,
 };
 
 export type Router = typeof router;
