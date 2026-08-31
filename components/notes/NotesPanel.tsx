@@ -56,6 +56,7 @@ export function NotesPanel() {
   const loadTasks = useTaskStore((s) => s.loadTasks);
   const subscribeTasksChanged = useTaskStore((s) => s.subscribeTasksChanged);
   const taskFocusReq = useTaskFocusStore((s) => s.focusReq);
+  const activeNoteId = useNotesStore((s) => s.activeNoteId);
   const reviewCount = taskGroups?.review.length ?? 0;
 
   const [mode, setMode] = useState<PanelMode>('notes');
@@ -99,6 +100,11 @@ export function NotesPanel() {
   useEffect(() => {
     if (taskFocusReq) setMode('tasks');
   }, [taskFocusReq]);
+
+  // 卡片跳转深链：切回笔记视图（选中卡片由 NotesTimelinePane 响应 activeNoteId）
+  useEffect(() => {
+    if (activeNoteId) setMode('notes');
+  }, [activeNoteId]);
 
   useEffect(() => {
     if (!isActive || !workspace || loadedWorkspacePath === workspace.path) return;

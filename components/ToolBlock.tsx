@@ -1,10 +1,18 @@
 "use client";
 
 import type { ComponentType } from 'react';
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, Network, Brain, StickyNote, ListTodo } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
+import { client } from '@/lib/client';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
+import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
+import { useNotesStore } from '@/stores/notes-store';
+import { useTaskFocusStore } from '@/stores/task-focus-store';
+import { useConversationStore } from '@/stores/conversation-store';
+import type { Conversation } from '@/components/ConversationList';
+import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
 import { resolvePathInWorkspace, useWorkspacePath } from './agent-chat/path-link';
 import { useWorkspaceId } from './agent-chat/workspace-id-context';
@@ -219,6 +227,104 @@ function buildPreviewAction(opts: {
   return null;
 }
 
+interface ToolResultAction {
+  icon: LucideIcon;
+  tooltip: string;
+  open: () => void;
+}
+
+function extractOutputId(outputText: string, re: RegExp): string {
+  return outputText.match(re)?.[1] ?? '';
+}
+
+async function findConversationBySessionId(workspaceId: string, sessionId: string): Promise<Conversation | null> {
+  const local = useConversationStore.getState().conversations.find((c) => c.session_id === sessionId);
+  if (local) return local;
+  try {
+    const result = await client.getByWorkspaceId({ workspaceId });
+    return (result.conversations ?? []).find((c) => c.session_id === sessionId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function buildResultAction(opts: {
+  toolName: string;
+  toolInput?: any;
+  toolOutput?: any;
+  workspaceId: string | null;
+  workspacePath: string | null;
+}): ToolResultAction | null {
+  const canonicalName = normalizeToolName(opts.toolName);
+  const input = opts.toolInput;
+  const outputText = formatToolOutput(opts.toolName, opts.toolOutput);
+
+  if (canonicalName === 'dogear__CreateNote' || canonicalName === 'dogear__UpdateNote' || canonicalName === 'dogear__AppendNote') {
+    const workspacePath = opts.workspacePath;
+    const noteId = (typeof input?.noteId === 'string' && input.noteId)
+      || extractOutputId(outputText, /已创建卡片 ([^\s（「」"\\]+)/);
+    if (!noteId || !workspacePath) return null;
+    return {
+      icon: ExternalLink,
+      tooltip: '打开卡片',
+      open: () => {
+        void (async () => {
+          const result = await client.getNote({ workspacePath, noteId }).catch(() => null);
+          if (!result || !('note' in result) || !result.note) {
+            toast.warning('卡片不存在或已删除');
+            return;
+          }
+          useSessionStore.getState().switchTab(NOTES_TAB_ID);
+          useNotesStore.getState().setActiveNoteId(noteId);
+        })();
+      },
+    };
+  }
+
+  if (canonicalName === 'dogear__CreateTask' || canonicalName === 'dogear__ExecuteTask') {
+    const workspacePath = opts.workspacePath;
+    const taskId = (typeof input?.taskId === 'string' && input.taskId)
+      || extractOutputId(outputText, /任务 ID: ([^\s"\\]+)/);
+    if (!taskId || !workspacePath) return null;
+    return {
+      icon: ExternalLink,
+      tooltip: '打开任务',
+      open: () => {
+        void (async () => {
+          const result = await client.getCollabTask({ workspacePath, taskId }).catch(() => null);
+          if (!result || !('detail' in result) || !result.detail) {
+            toast.warning('任务不存在或已删除');
+            return;
+          }
+          useSessionStore.getState().switchTab(NOTES_TAB_ID);
+          useTaskFocusStore.getState().requestTaskFocus(taskId);
+        })();
+      },
+    };
+  }
+
+  if (canonicalName === 'dogear__CreateSession') {
+    const workspaceId = opts.workspaceId;
+    const sessionId = extractOutputId(outputText, /已创建新会话 ([^\s（「」"\\]+)/);
+    if (!sessionId || !workspaceId) return null;
+    return {
+      icon: ExternalLink,
+      tooltip: '打开子会话',
+      open: () => {
+        void (async () => {
+          const conv = await findConversationBySessionId(workspaceId, sessionId);
+          if (!conv) {
+            toast.warning('子会话不存在或已删除');
+            return;
+          }
+          openOrFocusConversation(conv, conv.groupId ? `topic:${conv.groupId}:${conv.id}` : undefined);
+        })();
+      },
+    };
+  }
+
+  return null;
+}
 
 /**
  * 获取工具摘要信息
@@ -316,6 +422,34 @@ function StatusIcon({ status }: { status: ToolStatus }) {
   }
 }
 
+function ToolHeaderActionButton({ icon: Icon, tooltip, onOpen }: {
+  icon: LucideIcon;
+  tooltip: string;
+  onOpen: () => void;
+}) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      title={tooltip}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpen();
+        }
+      }}
+      className="flex-shrink-0 inline-flex items-center justify-center p-0.5 rounded text-muted-foreground/40 hover:text-sky-600 hover:bg-sky-50 dark:hover:text-sky-400 dark:hover:bg-sky-950 transition-colors cursor-pointer"
+    >
+      <Icon className="w-3.5 h-3.5" />
+    </span>
+  );
+}
+
 /**
  * 工具块组件
  * 使用 CollapsibleBlock 渐隐预览样式，无边框无背景色
@@ -333,6 +467,9 @@ export function ToolBlock({
   const workspacePath = useWorkspacePath(workspaceId);
   const previewAction = actualStatus === 'success' && !isError
     ? buildPreviewAction({ toolName, toolInput, toolOutput, workspaceId, workspacePath })
+    : null;
+  const jumpAction = actualStatus === 'success' && !isError
+    ? buildResultAction({ toolName, toolInput, toolOutput, workspaceId, workspacePath })
     : null;
   const summary = getToolSummary(toolName, toolInput, toolOutput);
   const formattedOutput = formatToolOutput(toolName, toolOutput);
@@ -381,25 +518,14 @@ export function ToolBlock({
         actualStatus === 'running' && 'text-sky-600',
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
-      headerActions={previewAction && (
-        <span
-          role="button"
-          tabIndex={0}
-          title={previewAction.tooltip}
-          onClick={(e) => {
-            e.stopPropagation();
-            previewAction.open();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              e.stopPropagation();
-              previewAction.open();
-            }
-          }}
-          className="flex-shrink-0 inline-flex items-center justify-center p-0.5 rounded text-muted-foreground/40 hover:text-sky-600 hover:bg-sky-50 transition-colors cursor-pointer"
-        >
-          <Eye className="w-3.5 h-3.5" />
+      headerActions={(previewAction || jumpAction) && (
+        <span className="inline-flex items-center gap-0.5">
+          {previewAction && (
+            <ToolHeaderActionButton icon={Eye} tooltip={previewAction.tooltip} onOpen={previewAction.open} />
+          )}
+          {jumpAction && (
+            <ToolHeaderActionButton icon={jumpAction.icon} tooltip={jumpAction.tooltip} onOpen={jumpAction.open} />
+          )}
         </span>
       )}
       previewLines={0}

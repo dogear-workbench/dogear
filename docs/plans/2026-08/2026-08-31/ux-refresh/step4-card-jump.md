@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 卡片跳转动作
-status: pending
+status: done
 ---
 
 ## 目标
