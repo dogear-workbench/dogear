@@ -46,9 +46,11 @@ function persistWidth(tab: CompanionTab, width: number) {
 interface CompanionPanelProps {
   workspaceId: string;
   groupId: string | null;
+  /** 独立窗口模式：忽略折叠/宽度记忆，占满容器且无拖拽把手（伴随工作台窗口用，默认面板模式不变） */
+  full?: boolean;
 }
 
-export function CompanionPanel({ workspaceId, groupId }: CompanionPanelProps) {
+export function CompanionPanel({ workspaceId, groupId, full = false }: CompanionPanelProps) {
   const open = useUIStore((s) => s.rightPanelOpen);
   const tab = useUIStore((s) => s.rightPanelTab);
   const setTab = useUIStore((s) => s.setRightPanelTab);
@@ -92,15 +94,17 @@ export function CompanionPanel({ workspaceId, groupId }: CompanionPanelProps) {
     <aside
       className={cn(
         'relative flex flex-col bg-sidebar overflow-hidden shrink-0',
-        open ? 'border-l' : 'border-l-0',
+        full ? 'flex-1 min-w-0' : open ? 'border-l' : 'border-l-0',
         dragging ? 'transition-none' : 'transition-[width] duration-200',
       )}
-      style={{ width: open ? width : 0 }}
+      style={full ? undefined : { width: open ? width : 0 }}
     >
-      <div
-        className="absolute left-0 top-0 bottom-0 w-1 z-10 cursor-col-resize hover:bg-primary/40"
-        onMouseDown={onHandleMouseDown}
-      />
+      {!full && (
+        <div
+          className="absolute left-0 top-0 bottom-0 w-1 z-10 cursor-col-resize hover:bg-primary/40"
+          onMouseDown={onHandleMouseDown}
+        />
+      )}
       <div className="flex border-b shrink-0">
         {TABS.map(({ id, label }) => (
           <button

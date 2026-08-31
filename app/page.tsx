@@ -4,7 +4,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database } from 'lucide-react';
+import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
@@ -237,6 +237,17 @@ export default function Home() {
           <Button variant="outline" size="sm" onClick={() => switchTab(DATA_CENTER_TAB_ID)}>
             <Database className="w-4 h-4 mr-2" />
             数据中心
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              client.openWorkbenchWindow().catch((err) => console.error('打开伴随工作台失败:', err));
+            }}
+            title="打开伴随工作台窗口"
+          >
+            <PictureInPicture2 className="w-4 h-4 mr-2" />
+            工作台
           </Button>
           <Button variant="outline" size="sm" onClick={() => setWechatDialogOpen(true)}>
             <MessageCircle className="w-4 h-4 mr-2" />

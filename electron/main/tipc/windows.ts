@@ -11,4 +11,12 @@ export const windowsRouter = {
       createDataCenterWindow();
       return { success: true };
     }),
+
+  /** 打开伴随工作台窗口（单例，已存在则聚焦） */
+  openWorkbenchWindow: t.procedure
+    .action(async () => {
+      const { createWorkbenchWindow } = await import('../index.js');
+      await createWorkbenchWindow();
+      return { success: true };
+    }),
 };

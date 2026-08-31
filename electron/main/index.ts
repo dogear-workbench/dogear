@@ -87,6 +87,9 @@ let stockWindow: BrowserWindowType | null = null;
 // 数据中心窗口实例
 let dataCenterWindow: BrowserWindowType | null = null;
 
+// 伴随工作台窗口实例
+let workbenchWindow: BrowserWindowType | null = null;
+
 // 会话窗口映射（conversationId → BrowserWindow）
 const sessionWindows = new Map<string, BrowserWindowType>();
 
@@ -248,6 +251,77 @@ export function createDataCenterWindow() {
 }
 
 /**
+ * 创建伴随工作台窗口（单例，已存在则聚焦）
+ * 位置记忆：moved/resized 防抖存 window-state.json，创建时读取并用 screen 校验可视范围
+ */
+export async function createWorkbenchWindow() {
+  if (workbenchWindow) {
+    if (workbenchWindow.isMinimized()) workbenchWindow.restore();
+    workbenchWindow.focus();
+    return;
+  }
+
+  const { loadWindowBounds, saveWindowBounds } = await import('./services/window-state-service.js');
+  const saved = await loadWindowBounds('workbench-window');
+  const hasPosition = !!saved && saved.x !== null && saved.y !== null;
+
+  workbenchWindow = new BrowserWindow({
+    width: saved?.width ?? 560,
+    height: saved?.height ?? 840,
+    x: hasPosition ? saved!.x ?? undefined : undefined,
+    y: hasPosition ? saved!.y ?? undefined : undefined,
+    title: '伴随工作台',
+    webPreferences: {
+      preload: path.join(__dirname, '../preload/index.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  const workbenchUrl = `${getRendererPath()}#/workbench-window`;
+  workbenchWindow.loadURL(workbenchUrl);
+
+  if (hasPosition) {
+    const bounds = workbenchWindow.getBounds();
+    const { screen } = electron;
+    const workArea = screen.getDisplayMatching(bounds).workArea;
+    const overlapX = Math.min(bounds.x + bounds.width, workArea.x + workArea.width) - Math.max(bounds.x, workArea.x);
+    const overlapY = Math.min(bounds.y + bounds.height, workArea.y + workArea.height) - Math.max(bounds.y, workArea.y);
+    if (overlapX < 60 || overlapY < 60) {
+      workbenchWindow.center();
+    }
+  }
+
+  let saveTimer: NodeJS.Timeout | null = null;
+  const persistBounds = () => {
+    if (!workbenchWindow || workbenchWindow.isDestroyed()) return;
+    if (workbenchWindow.isMinimized() || workbenchWindow.isMaximized() || workbenchWindow.isFullScreen()) return;
+    const { x, y, width, height } = workbenchWindow.getBounds();
+    void saveWindowBounds('workbench-window', { x, y, width, height });
+  };
+  const schedulePersistBounds = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      persistBounds();
+    }, 500);
+  };
+  workbenchWindow.on('moved', schedulePersistBounds);
+  workbenchWindow.on('resized', schedulePersistBounds);
+  workbenchWindow.on('close', () => {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    persistBounds();
+  });
+
+  workbenchWindow.on('closed', () => {
+    workbenchWindow = null;
+  });
+}
+
+/**
  * 设置已落盘，通知所有窗口刷新（restartSessions=true 时同时重启活跃会话）
  * 发起保存的窗口 store 已同步，重复 loadSettings 幂等无妨；
  * 广播到全部窗口是主题/字号等 UI 设置跨窗口即时生效的前提
@@ -337,6 +411,9 @@ function closeAllChildWindows() {
   }
   if (dataCenterWindow && !dataCenterWindow.isDestroyed()) {
     dataCenterWindow.close();
+  }
+  if (workbenchWindow && !workbenchWindow.isDestroyed()) {
+    workbenchWindow.close();
   }
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.close();

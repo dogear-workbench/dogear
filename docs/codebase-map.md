@@ -5,7 +5,7 @@
 ## 入口与路由（src/）
 
 - `src/main.tsx` — Vite 入口，挂载 React 到 `#root`，顶层挂载 setupManualTaskToasts / setupSettingsSync（动态 import 避免非主窗口加载副作用）
-- `src/App.tsx` — React Router 配置（HashRouter 路由：`/` 主工作区、`/session-window/:id` 独立会话窗口、`/data-center` 数据中心独立窗口、`/stocks` 自选股、`/wechat`、`/debug`）+ 设置全屏 overlay（ui-store settingsOpen 时 fixed inset-0 z-50 渲染 SettingsPage，底层页面不卸载）+ 全局 ConfirmDialog + Toaster
+- `src/App.tsx` — React Router 配置（HashRouter 路由：`/` 主工作区、`/session-window/:id` 独立会话窗口、`/data-center` 数据中心独立窗口、`/workbench-window` 伴随工作台独立窗口、`/stocks` 自选股、`/wechat`、`/debug`）+ 设置全屏 overlay（ui-store settingsOpen 时 fixed inset-0 z-50 渲染 SettingsPage，底层页面不卸载）+ 全局 ConfirmDialog + Toaster
 - `src/globals.css` — Tailwind CSS 4 全局样式
 
 ## 渲染层 Hooks（hooks/）
@@ -16,6 +16,7 @@
 
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 文件树/预览）；header 设置按钮开全屏 overlay（ui-store openSettings）、数据中心按钮切主窗口固定 tab（switchTab(DATA_CENTER_TAB_ID)）；内容区常驻挂载 Dashboard / NotesPanel / DataCenterPage 三个哨兵 tab + 会话 tabs，按 activeTabId 切 display
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化）
+- `app/workbench-window/page.tsx` — 伴随工作台独立窗口（WorkbenchWindowPage，主进程单例 BrowserWindow 路由 `#/workbench-window`）：初始化链路 getDefault → setWorkspace(skipSetDefault) → loadConversations，随后终端默认固定模式 pinConversation(conversations[0].id)（最近活跃会话）+ 默认切终端 tab；渲染 `<CompanionPanel full>` 四 tab 占满窗口，topic tab 的 groupId 跟随终端钉住的会话
 - `app/settings/page.tsx` — 设置页（主窗口全屏 overlay 形态：返回按钮/关闭均调 handleClose，不 dirty 直接 closeSettings、dirty 弹三按钮 confirm 后关 overlay；顶栏保存/取消/保存并重启会话；保存联动走 updateSettings → broadcastSettingsChanged → setup-settings-sync，同窗口自收自发）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
 - `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置 overlay 无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；按能力域分块单视图（无视图切换）；数据加载分流、applySkillToggles 统一开关（单 skill / 域整体：开 = skills ∪ 关联工具包，关 = 按剩余已启用 skill 保留共享包，一次 updateWorkspaceConfig 提交）、包徽标跳转定位（展开目标域 + 包，highlightServer scrollIntoView + 2s ring 高亮）；容器 max-w-[1600px] 自适应 + 域块网格 xl:grid-cols-2（多包域全宽）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
 - `app/settings/AbilityDomainCard.tsx` — 可选能力域块组件：域头（统计 + skill 数 >1 时显示整体开关）+ 展开后左右分区（md:grid-cols-2 对半：左 skill 控制层 / 右工具包折叠列表，包无独立开关、状态随 skill 联动）；无工具包域 skill 走网格（sm:grid-cols-2 xl:grid-cols-3）；PackPanel 折叠头 data-server 定位
@@ -103,6 +104,10 @@
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `AdditionalFilesPanel.tsx` — 右侧「附加」tab：附加路径手风琴列表（文件夹分节行样式与文件树一致，行尾 Switch 启停 + hover 删除，展开后文件树占满面板，可多节同时展开）
 - `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readGroupBackground 结构化内嵌：主题/进展/已拍板决策/待议问题）+ 组卡提炼（摘要 line-clamp 预览，点击 readGroupDigestRaw 拿原文走 MarkdownFileDialog 浮窗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）；订阅 groupDataChanged（共享区写点/背景/组卡落盘广播）匹配当前组重拉三份数据
+- `companion/` — 右侧伴随面板模块（组件只依赖 store + tipc client，无主窗口特有上下文，可被 workbench-window 独立窗口复用）
+  - `CompanionPanel.tsx` — 四 tab 容器（文件/附加/话题/终端）：props `{ workspaceId, groupId, full? }`，full=true 独立窗口模式（占满容器、无拖拽把手、忽略折叠与宽度记忆）；面板模式宽度 localStorage 记忆 key `companion-width:{tab}`（240~720 clamp，拖拽结束才写）、左缘拖拽把手、折叠由 ui-store.rightPanelOpen 控制；tab 分发 WorkspaceExplorer / AdditionalFilesPanel / TopicPanel / TerminalPanel，tab 状态 ui-store.rightPanelTab（每渲染进程独立实例，主窗口与工作台窗口互不影响）
+  - `TerminalPanel.tsx` — 终端命令流面板（无 props）：头部固定/跟随切换（terminal-store followMode/pinnedConversationId）+ 固定态 shadcn Select 会话下拉（选项=conversation-store conversations）+ 清屏；会话有效性 = session-store.tabs 或 conversation-store.conversations 命中；滚动跟随 hook（ResizeObserver 续滚/上滚退出/回底恢复）；展开状态 Map 覆写，默认展开=运行中或末尾 5 条
+  - `TerminalCard.tsx` — 单命令卡片（React.memo）：头可点切换展开，状态徽章四态（运行中/0/exit N/已终止），Ansi（ansi-to-react inline style）渲染输出；折叠态只渲染 text 尾部 3000 字符控制 DOM 规模
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `ConversationList.tsx` — 对话列表主骨架（单一滚动视图：手动文件夹 → 近期 → 智能分类 + 归档 Popover 浮窗）
 - `conversation-list/` — 对话列表子组件（拆分；按组渲染）
@@ -177,6 +182,7 @@
 - `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID`/`NOTES_TAB_ID`/`DATA_CENTER_TAB_ID` 哨兵（非真实会话）分别表示首页/笔记/数据中心固定 tab，activeTabId 初始/关末 tab 后回退到 HOME；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
 - `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，数据中心在主窗口 tab 后两处同实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
 - `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity，10s 轮询由数据中心面板 useVisiblePolling 驱动）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
+- `terminal-store.ts` — 终端面板前端：buffers Map（conversationId → TerminalEntry[]，镜像主进程缓冲）+ runningIds Map（区分运行中/异常终止徽章）+ followMode/pinnedConversationId（跟随/固定，pinConversation/setFollowMode）；ensureBuffer 拉历史（inflight 去重）+ handleStreamEvent 增量应用（start/append/replace/end 全不可变更新）；模块级订阅 terminalStreamAppend（面板未打开也不丢事件）
 
 ## 工具函数（lib/）
 
@@ -209,12 +215,13 @@
 
 ## Electron 主进程入口（electron/main/index.ts）
 
-窗口创建与生命周期；渲染层加载统一走 `getRendererPath()`（dev 为 `http://localhost:3000`，生产为 `app://dogear/index.html` 自定义协议）。`app://` 注册为 standard+secure scheme，handler 从 `process.resourcesPath/out/` 响应文件（字体扩展名显式映射 MIME，`.ttf` 等需 `font/ttf` 否则 `@font-face` 拒载；含路径穿越防护）——替代原 `file://` 加载，消除 opaque origin 下 CSS 字体等 CORS 严格资源被拦的问题；主窗口 + debug/stocks/data-center/session-window 各子窗口均为 `${getRendererPath()}#/路由` 拼接；broadcastSettingsChanged 定向发主窗口驱动设置刷新与会话重启
+窗口创建与生命周期；渲染层加载统一走 `getRendererPath()`（dev 为 `http://localhost:3000`，生产为 `app://dogear/index.html` 自定义协议）。`app://` 注册为 standard+secure scheme，handler 从 `process.resourcesPath/out/` 响应文件（字体扩展名显式映射 MIME，`.ttf` 等需 `font/ttf` 否则 `@font-face` 拒载；含路径穿越防护）——替代原 `file://` 加载，消除 opaque origin 下 CSS 字体等 CORS 严格资源被拦的问题；主窗口 + debug/stocks/data-center/session-window/workbench-window 各子窗口均为 `${getRendererPath()}#/路由` 拼接；broadcastSettingsChanged 定向发主窗口驱动设置刷新与会话重启
 
 ## IPC 路由（electron/main/tipc/）
 
 - `index.ts` — 路由注册中枢，聚合所有子路由
-- `windows.ts` — 窗口管理路由：openDataCenterWindow；动态 import index.js 避免循环依赖，BrowserWindow 单例（数据中心 1200×800）在 electron/main/index.ts
+- `windows.ts` — 窗口管理路由：openDataCenterWindow / openWorkbenchWindow；动态 import index.js 避免循环依赖，BrowserWindow 单例（数据中心 1200×800、伴随工作台默认 560×840 + 位置记忆）在 electron/main/index.ts
+- `terminal.ts` — 终端命令流查询：getTerminalBuffer({ conversationId }) 返回 TerminalEntry[]（主进程缓冲快照，供前端首屏拉历史，后续增量走 terminalStreamAppend 事件）
 - `agent.ts` — Agent 会话管理（RPC：创建/发送/关闭会话、权限控制）
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
@@ -233,7 +240,7 @@
 - `agent.ts` — Agent 会话管理，路由统一查 `getPiSessionManager()`（）：setSessionModel（接收 ModelSelection，返回 `{ ok:true; needsRestart? } | { ok:false; error }`；同 profile 换 tier 走 PiSession 快速路径，跨 profile 由前端触发会话重启）；`closeQueryBasedSession` = release 语义（refCount-1，归零即销毁），`forceCloseQueryBasedSession` = 强杀（`/clear` 走这条立刻销毁避免后台弹卡片）；路由名保留旧字样是历史兼容，内部实现已纯 pi；broadcaster complete 分支挂 model-failover 钩子——success 走 clearFailoverTriedBySession 清 tried，failed 走 maybeFailoverMainSession 主会话 quota 自动切换（见 `agents/model-failover.ts`）
 - `system-prompt.ts` — 系统提示词模板查询（getSystemPromptSegments，返回 `{ segments } | { error }`，供设置页只读预览用户看不见的系统级 append 段）
 - `scheduler.ts` — 定时任务（listTasks 含现算 nextRunAt / saveTask 全量校验含触发态合并、on_task_done 引用与环检测、toolPacksOverride 清洗，builtin 名称锁定 / deleteTask 拒 builtin「内置任务不能删除」/ setTaskEnabled / runTaskNow 手动直跑不看 enabled / stopTask 整停（清队列+取消当前）/ listRunHistory 倒序分页（planId 过滤=任务 id + before cursor）/ getSchedulerActivity 运行快照 / getBuiltinTaskDetail + saveBuiltinPrompt + resetBuiltinPrompt 内置任务提示词三件套）
-- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件、failoverNotice 主会话供应商切换提示条、tasksChanged 协作任务变更、manualTaskDone 手动全量重置/重新提炼完成 toast 等）
+- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件、failoverNotice 主会话供应商切换提示条、tasksChanged 协作任务变更、manualTaskDone 手动全量重置/重新提炼完成 toast、terminalStreamAppend 终端命令流增量等）
 
 ## 业务服务（electron/main/services/）
 
@@ -287,6 +294,8 @@
 - `renderer-broadcast.ts` — 主进程→渲染层广播收口：broadcastToWindows 全窗口遍历；broadcastConversationListChanged（immediate / debounced 500ms 尾部去抖两档，会话与组列表域）；broadcastGroupDataChanged（TopicPanel 三数据域）
 - `workspace-watcher.ts` — 工作区文件树监视：每工作区递归 fs.watch 只处理 rename 事件（增删改名，忽略 change），路径段 `.` 开头或 node_modules 丢弃，500ms 尾部去抖后广播 workspaceFilesChanged；随 workspaces.json 增删起停，监听错误静默降级关闭
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段；normalize 尾部挂 settings-types.ts 的 normalizeFailoverChain 维护全局模型故障转移链——类型 FailoverEntry/FailoverConfig（AppSettings.failover）：新供应商追加链尾、删除供应商移出链、tier 失效回退该家首个 piModel、piModels 为空的供应商不进链，链序与 enabled 完全保留）
+- `terminal-stream-service.ts` — bash 命令终端流主进程缓冲：模块级 Map（conversationId → entries 上限 200 条 + byToolCallId 索引，单命令 text 上限 256K 字符保尾部），handleToolStart/Update/End 由 pi-session bash 旁路喂数；update 前缀 diff 成 append/replace 广播 terminalStreamAppend 到全窗口；getTerminalBuffer 快照、clearConversation 随会话销毁清缓冲
+- `window-state-service.ts` — 窗口位置记忆通用小工具：`.dogear/window-state.json` 按 key 存 {x,y,width,height}（safe-json 原子写），load/saveWindowBounds；当前仅 workbench-window 使用
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
 - `notes/` — 笔记卡片数据层（存储 `<workspacePath>/.dogear/notes/` 一卡一 md，frontmatter 承载元数据，文件为真源）
