@@ -24,9 +24,9 @@ export function TodoListBlock({ todos }: TodoListBlockProps) {
         {todos.map((t, i) => (
           <li key={i} className="flex items-start gap-2">
             <span className="mt-0.5 flex-none">
-              {t.status === 'completed' && <Check className="w-3.5 h-3.5 text-emerald-600" />}
+              {t.status === 'completed' && <Check className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
               {t.status === 'in_progress' && (
-                <Circle className="w-3.5 h-3.5 text-sky-600 fill-sky-600" />
+                <Circle className="w-3.5 h-3.5 text-sky-600 fill-sky-600 dark:text-sky-400 dark:fill-sky-400" />
               )}
               {t.status === 'pending' && <Circle className="w-3.5 h-3.5 text-muted-foreground" />}
             </span>

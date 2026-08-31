@@ -178,7 +178,7 @@ export const MessageItem = memo(function MessageItem({
         // 用户消息: 加粗外框+阴影+完全不透明,遮挡后面滚过的 AI 回答
         <div className="relative border-2 border-muted-foreground/25 rounded-lg px-4 py-2 bg-background shadow-md">
           {message.source === 'wechat-bot' && (
-            <Bot className="w-3 h-3 text-green-500 absolute top-2 right-2" />
+            <Bot className="w-3 h-3 text-green-500 dark:text-green-400 absolute top-2 right-2" />
           )}
           <div className="min-w-0">
             {(
@@ -219,7 +219,7 @@ export const MessageItem = memo(function MessageItem({
                         {parsed.articleRefs.map((ref, i) => (
                           <span
                             key={`article-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-300"
                             title={ref.title}
                           >
                             <span className="max-w-[160px] truncate">{ref.title}</span>
@@ -229,7 +229,7 @@ export const MessageItem = memo(function MessageItem({
                         {parsed.snippetRefs.map((ref, i) => (
                           <span
                             key={`snippet-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600 dark:bg-slate-800/60 dark:border-slate-700 dark:text-slate-300"
                             title={`来自《${ref.articleTitle}》: ${ref.text}`}
                           >
                             <span className="max-w-[120px] truncate">{`"${ref.text}"`}</span>
@@ -239,7 +239,7 @@ export const MessageItem = memo(function MessageItem({
                         {parsed.fileRefs.map((ref, i) => (
                           <span
                             key={`file-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-300"
                             title={ref.path}
                           >
                             {ref.type === 'folder'
@@ -251,20 +251,20 @@ export const MessageItem = memo(function MessageItem({
                         {parsed.conversationRefs.map((ref, i) => (
                           <span
                             key={`conv-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700 dark:bg-purple-950/40 dark:border-purple-800/60 dark:text-purple-300"
                             title={ref.title}
                           >
                             <MessageSquare className="w-3 h-3 flex-shrink-0" />
                             <span className="max-w-[160px] truncate">{ref.title}</span>
                             {ref.workspaceId && ref.workspaceId !== currentWorkspaceId && (
-                              <span className="px-1 rounded bg-purple-100 text-purple-500 text-[10px] flex-shrink-0">跨工作区</span>
+                              <span className="px-1 rounded bg-purple-100 text-purple-500 text-[10px] flex-shrink-0 dark:bg-purple-900/40 dark:text-purple-300">跨工作区</span>
                             )}
                           </span>
                         ))}
                         {parsed.sharedFileRefs.map((ref, i) => (
                           <span
                             key={`shared-file-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded-full text-xs text-amber-700 dark:bg-amber-950/40 dark:border-amber-800/60 dark:text-amber-300"
                             title={ref.absPath}
                           >
                             <Share2 className="w-3 h-3 flex-shrink-0" />
@@ -274,7 +274,7 @@ export const MessageItem = memo(function MessageItem({
                         {parsed.noteRefs.map((ref, i) => (
                           <span
                             key={`note-${i}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 border border-rose-200 rounded-full text-xs text-rose-700"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 border border-rose-200 rounded-full text-xs text-rose-700 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300"
                             title={`引用笔记: ${ref.title}`}
                           >
                             <StickyNote className="w-3 h-3 flex-shrink-0" />

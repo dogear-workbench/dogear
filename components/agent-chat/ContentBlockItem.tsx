@@ -170,7 +170,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         const subject = input.subject || '新任务';
         return (
           <div className="flex items-center gap-2 py-0.5 text-xs">
-            <ClipboardList className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
+            <ClipboardList className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 flex-shrink-0" />
             <span className="text-muted-foreground">新建任务</span>
             <span className="text-foreground truncate">{subject}</span>
           </div>
@@ -183,8 +183,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         };
         const statusColors: Record<string, string> = {
           pending: 'text-muted-foreground',
-          in_progress: 'text-amber-600',
-          completed: 'text-emerald-600',
+          in_progress: 'text-amber-600 dark:text-amber-400',
+          completed: 'text-emerald-600 dark:text-emerald-400',
           deleted: 'text-destructive',
         };
         const status = input.status;

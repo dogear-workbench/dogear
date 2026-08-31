@@ -98,8 +98,8 @@ export function PermissionRequestCard({
     <div className="py-2">
       <div className="flex items-center gap-2 mb-2">
         {isResolved && block.permissionResolved !== 'deny'
-          ? <ShieldCheck size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-emerald-500'} />
-          : <ShieldAlert size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-amber-500'} />
+          ? <ShieldCheck size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-emerald-500 dark:text-emerald-400'} />
+          : <ShieldAlert size={16} className={isResolved ? 'text-muted-foreground/50' : 'text-amber-500 dark:text-amber-400'} />
         }
         <span className={`text-sm font-medium ${isResolved ? 'text-muted-foreground/60' : 'text-foreground'}`}>
           {isResolved ? resolvedText() : '请求执行权限'}

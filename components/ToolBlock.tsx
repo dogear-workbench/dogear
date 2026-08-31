@@ -55,13 +55,13 @@ interface ToolIconSpec {
 }
 
 const TOOL_ICONS: Record<string, ToolIconSpec> = {
-  Read: { Icon: FileText, className: 'text-sky-600' },
-  Write: { Icon: PenLine, className: 'text-emerald-600' },
-  Edit: { Icon: FileEdit, className: 'text-orange-600' },
-  Bash: { Icon: Terminal, className: 'text-green-600' },
-  Glob: { Icon: FolderSearch, className: 'text-indigo-600' },
-  Grep: { Icon: Search, className: 'text-violet-600' },
-  Skill: { Icon: Zap, className: 'text-amber-600' },
+  Read: { Icon: FileText, className: 'text-sky-600 dark:text-sky-400' },
+  Write: { Icon: PenLine, className: 'text-emerald-600 dark:text-emerald-400' },
+  Edit: { Icon: FileEdit, className: 'text-orange-600 dark:text-orange-400' },
+  Bash: { Icon: Terminal, className: 'text-green-600 dark:text-green-400' },
+  Glob: { Icon: FolderSearch, className: 'text-indigo-600 dark:text-indigo-400' },
+  Grep: { Icon: Search, className: 'text-violet-600 dark:text-violet-400' },
+  Skill: { Icon: Zap, className: 'text-amber-600 dark:text-amber-400' },
 };
 
 // pi-agent-core 基础工具名是小写（read/bash），旧 SDK 会话历史是大写，统一归一化到大写再匹配
@@ -91,7 +91,7 @@ function normalizeToolName(toolName: string): string {
 function getToolIcon(toolName: string): ToolIconSpec {
   if (TOOL_ICONS[toolName]) return TOOL_ICONS[toolName];
   if (DOGEAR_TOOL_ICONS[toolName]) return DOGEAR_TOOL_ICONS[toolName];
-  return { Icon: Wrench, className: 'text-slate-600' };
+  return { Icon: Wrench, className: 'text-slate-600 dark:text-slate-400' };
 }
 
 interface CardRendererProps {
@@ -514,8 +514,8 @@ export function ToolBlock({
       icon={iconNode}
       title={titleText}
       titleClassName={cn(
-        actualStatus === 'error' && 'text-red-600',
-        actualStatus === 'running' && 'text-sky-600',
+        actualStatus === 'error' && 'text-red-600 dark:text-red-400',
+        actualStatus === 'running' && 'text-sky-600 dark:text-sky-400',
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
       headerActions={(previewAction || jumpAction) && (

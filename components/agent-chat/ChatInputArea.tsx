@@ -38,13 +38,13 @@ const PERMISSION_MODE_STYLES: Record<PermissionMode, {
 }> = {
   default: {
     border: 'border-orange-300 dark:border-orange-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-orange-400 has-[[data-slot=input-group-control]:focus-visible]:ring-orange-400/20',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-orange-400 has-[[data-slot=input-group-control]:focus-visible]:ring-orange-400/20 dark:has-[[data-slot=input-group-control]:focus-visible]:border-orange-500 dark:has-[[data-slot=input-group-control]:focus-visible]:ring-orange-500/20',
     icon: 'text-orange-500',
     label: '需确认',
   },
   autoExecute: {
     border: 'border-green-300 dark:border-green-500/60',
-    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-green-400 has-[[data-slot=input-group-control]:focus-visible]:ring-green-400/20',
+    focusRing: 'has-[[data-slot=input-group-control]:focus-visible]:border-green-400 has-[[data-slot=input-group-control]:focus-visible]:ring-green-400/20 dark:has-[[data-slot=input-group-control]:focus-visible]:border-green-500 dark:has-[[data-slot=input-group-control]:focus-visible]:ring-green-500/20',
     icon: 'text-green-500',
     label: '自动执行',
   },
@@ -195,7 +195,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     {referencedArticles.map(article => (
                       <span
                         key={article.id}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-sky-50 border border-sky-200 rounded-full text-xs text-sky-700 dark:bg-sky-950/40 dark:border-sky-800/60 dark:text-sky-300"
                         title={article.title}
                       >
                         <span className="max-w-[160px] truncate">{article.title}</span>
@@ -203,7 +203,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedArticle(article.id)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-sky-100"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-sky-100 dark:hover:bg-sky-900/40"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -213,7 +213,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     {quotedSnippets.map(snippet => (
                       <span
                         key={snippet.id}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 border border-slate-200 rounded-full text-xs text-slate-600 dark:bg-slate-800/60 dark:border-slate-700 dark:text-slate-300"
                         title={`来自《${snippet.articleTitle}》: ${snippet.text}`}
                       >
                         <span className="max-w-[120px] truncate">{`"${snippet.text}"`}</span>
@@ -222,7 +222,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeQuotedSnippet(snippet.id)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-slate-200"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -232,7 +232,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     {referencedFiles.map(file => (
                       <span
                         key={file.path}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-teal-50 border border-teal-200 rounded-full text-xs text-teal-700 dark:bg-teal-950/40 dark:border-teal-800/60 dark:text-teal-300"
                         title={file.path}
                       >
                         {file.type === 'folder'
@@ -243,7 +243,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedFile(file.path)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-teal-100"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-teal-100 dark:hover:bg-teal-900/40"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -253,7 +253,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     {referencedConversations.map(conv => (
                       <span
                         key={conv.conversationId}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded-full text-xs text-purple-700 dark:bg-purple-950/40 dark:border-purple-800/60 dark:text-purple-300"
                         title={`引用会话: ${conv.title}`}
                       >
                         <MessageSquare className="w-3 h-3 flex-shrink-0" />
@@ -262,7 +262,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedConversation(conv.conversationId)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-purple-100"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-purple-100 dark:hover:bg-purple-900/40"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -272,7 +272,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     {referencedSharedFiles.map(file => (
                       <span
                         key={file.absPath}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-lime-50 border border-lime-200 rounded-full text-xs text-lime-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-lime-50 border border-lime-200 rounded-full text-xs text-lime-700 dark:bg-lime-950/40 dark:border-lime-800/60 dark:text-lime-300"
                         title={file.absPath}
                       >
                         <Folder className="w-3 h-3 flex-shrink-0" />
@@ -281,7 +281,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedSharedFile(file.absPath)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-lime-100"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-lime-100 dark:hover:bg-lime-900/40"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -291,7 +291,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     {referencedNotes.map(note => (
                       <span
                         key={note.noteId}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 border border-rose-200 rounded-full text-xs text-rose-700"
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-rose-50 border border-rose-200 rounded-full text-xs text-rose-700 dark:bg-rose-950/40 dark:border-rose-800/60 dark:text-rose-300"
                         title={`引用笔记: ${note.title}`}
                       >
                         <StickyNote className="w-3 h-3 flex-shrink-0" />
@@ -300,7 +300,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                           variant="ghost"
                           size="icon-xs"
                           onClick={() => removeReferencedNote(note.noteId)}
-                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-rose-100"
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-rose-100 dark:hover:bg-rose-900/40"
                         >
                           <X className="w-3 h-3" />
                         </Button>
@@ -317,7 +317,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                         <img
                           src={img.preview}
                           alt={`待发送 ${i + 1}`}
-                          className="w-16 h-16 object-cover rounded-md border border-gray-200"
+                          className="w-16 h-16 object-cover rounded-md border border-gray-200 dark:border-gray-700"
                         />
                         <Button
                           variant="destructive"
@@ -481,7 +481,7 @@ export const ChatInputArea = memo(function ChatInputArea({
           {showStatusHint && (
             <div className="mt-1.5 px-1 flex items-center gap-2 text-xs text-muted-foreground">
               <span>{sessionId ? `${sessionId.substring(0, 8)}...` : '连接中...'}</span>
-              {isSessionReady && <span className="text-green-600">● 就绪</span>}
+              {isSessionReady && <span className="text-green-600 dark:text-green-400">● 就绪</span>}
             </div>
           )}
         </>

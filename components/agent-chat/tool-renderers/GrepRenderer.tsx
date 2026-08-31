@@ -59,7 +59,7 @@ export function GrepRenderer({ toolInput, toolOutput, isError }: Props) {
     <ToolDetailShell>
       <ToolSection label="模式">
         <div className="flex flex-wrap items-baseline gap-2 font-mono">
-          <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200/60">
+          <span className="px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/60">
             {pattern}
           </span>
           {path && <span className="text-muted-foreground">in {path}</span>}
@@ -98,7 +98,7 @@ function highlightPattern(line: string, pattern: string) {
     const parts = line.split(re);
     return parts.map((part, i) =>
       i % 2 === 1 ? (
-        <mark key={i} className="bg-amber-200/60 text-foreground rounded px-0.5">
+        <mark key={i} className="bg-amber-200/60 text-foreground rounded px-0.5 dark:bg-amber-500/30">
           {part}
         </mark>
       ) : (

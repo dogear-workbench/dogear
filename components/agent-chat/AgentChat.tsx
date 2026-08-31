@@ -36,7 +36,7 @@ const childStatusLabels: Record<ChildStatus, string> = {
 };
 
 const childStatusStyles: Record<ChildStatus, string> = {
-  running: 'bg-orange-50 border-orange-200 text-orange-800',
+  running: 'bg-orange-50 border-orange-200 text-orange-800 dark:bg-orange-950/40 dark:border-orange-800/60 dark:text-orange-300',
   stopped: 'bg-muted border-border text-muted-foreground',
 };
 
@@ -375,18 +375,18 @@ export function AgentChat({
       >
         <div className="px-6">
         {childSnapshot && (
-          <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childSnapshot.delivered ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : childStatusStyles[childSnapshot.status]}`} title={childSnapshot.lastError || undefined}>
+          <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childSnapshot.delivered ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-300' : childStatusStyles[childSnapshot.status]}`} title={childSnapshot.lastError || undefined}>
             <p className="font-medium">{childSnapshot.delivered ? '子会话已交付' : childStatusLabels[childSnapshot.status]}</p>
             {childSnapshot.lastError && <p className="mt-0.5">{childSnapshot.lastError}</p>}
           </div>
         )}
         {/* 旧 SDK 主会话迁移冻结提示：只读展示，不回放 JSONL、不允许发送/编辑重发/分叉 */}
         {topicArchived && (
-          <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800">
+          <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-800 dark:bg-amber-950/40 dark:border-amber-800/60 dark:text-amber-300">
             <Archive size={14} className="flex-shrink-0 mt-0.5" />
             <div>
               <p className="font-medium">此话题已归档</p>
-              <p className="mt-0.5 text-amber-700">历史记录仅供查看；恢复话题后才能发送消息、编辑重发、分叉或调整模型与权限。</p>
+              <p className="mt-0.5 text-amber-700 dark:text-amber-300/80">历史记录仅供查看；恢复话题后才能发送消息、编辑重发、分叉或调整模型与权限。</p>
             </div>
           </div>
         )}
@@ -398,7 +398,7 @@ export function AgentChat({
         )}
 
         {hasMessages === false && historyStatus !== 'loading' && !isReadOnly && !isTopicStatePending && (
-          <div className="text-center text-gray-500 mt-20">
+          <div className="text-center text-gray-500 dark:text-gray-400 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>
         )}
@@ -492,15 +492,15 @@ export function AgentChat({
 
       {/* 模型故障转移提示条（内存级，不进消息流也不落盘；单条可关闭，60s 自动过期） */}
       {failoverNotices.length > 0 && (
-        <div className="px-4 py-2 border-t bg-amber-50/70 flex flex-col gap-1">
+        <div className="px-4 py-2 border-t bg-amber-50/70 dark:bg-amber-950/30 flex flex-col gap-1">
           {failoverNotices.map((notice) => (
-            <div key={notice.at} className="flex items-center gap-1.5 text-xs text-amber-800">
+            <div key={notice.at} className="flex items-center gap-1.5 text-xs text-amber-800 dark:text-amber-300">
               <ArrowLeftRight size={12} className="flex-shrink-0" />
               <span>{notice.fromLabel} 费率受限，已自动切换 {notice.toLabel} 继续运行</span>
               <span className="text-amber-500">{new Date(notice.at).toLocaleTimeString()}</span>
               <button
                 onClick={() => conversationId && dismissFailoverNotice(conversationId, notice.at)}
-                className="ml-auto p-0.5 rounded hover:bg-amber-100 text-amber-600 transition-colors"
+                className="ml-auto p-0.5 rounded hover:bg-amber-100 text-amber-600 dark:hover:bg-amber-900/50 dark:text-amber-400 transition-colors"
                 title="关闭"
               >
                 <X size={12} />

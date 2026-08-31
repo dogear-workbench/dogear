@@ -27,8 +27,8 @@ export function highlightText(
         key: `mark-${counter}`,
         'data-match-id': matchId,
         className: isActive
-          ? 'bg-orange-400 text-white rounded px-0.5 ring-2 ring-orange-600'
-          : 'bg-yellow-200 text-foreground rounded px-0.5',
+          ? 'bg-orange-400 text-white rounded px-0.5 ring-2 ring-orange-600 dark:bg-orange-500/60 dark:ring-orange-400'
+          : 'bg-yellow-200 text-foreground rounded px-0.5 dark:bg-yellow-400/30 dark:text-yellow-50',
       }, text.slice(idx, idx + q.length))
     );
     lastEnd = idx + q.length;

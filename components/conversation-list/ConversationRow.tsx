@@ -29,9 +29,9 @@ export interface ConversationRowProps {
 }
 
 const STATUS_META = {
-  pending: { dot: 'bg-blue-500', text: 'text-blue-600', label: '等待确认', pulse: true },
-  running: { dot: 'bg-orange-500', text: 'text-orange-600', label: '运行中', pulse: true },
-  delivered: { dot: 'bg-emerald-500', text: 'text-emerald-600', label: '已交付', pulse: false },
+  pending: { dot: 'bg-blue-500', text: 'text-blue-600 dark:text-blue-400', label: '等待确认', pulse: true },
+  running: { dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400', label: '运行中', pulse: true },
+  delivered: { dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400', label: '已交付', pulse: false },
   stopped: { dot: 'bg-muted-foreground/60', text: 'text-muted-foreground', label: '已停止', pulse: false },
 } as const;
 
@@ -96,10 +96,10 @@ export function ConversationRow({
   }, [conv, nodeId, onClick]);
 
   const typeIcon = isAgentConversation
-    ? <Network className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />
+    ? <Network className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground')} />
     : isFork
-      ? <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600' : 'text-purple-400')} />
-      : <MessagesSquare className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600' : 'text-muted-foreground')} />;
+      ? <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600 dark:text-purple-300' : 'text-purple-400')} />
+      : <MessagesSquare className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground')} />;
 
   const row = (
     <div

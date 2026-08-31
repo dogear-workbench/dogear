@@ -93,7 +93,7 @@ export function OutputBox({
         'font-mono whitespace-pre-wrap break-all rounded px-2 py-1.5 overflow-auto',
         maxHeightClass,
         isError
-          ? 'bg-red-50 text-red-900 border border-red-200/60'
+          ? 'bg-red-50 text-red-900 border border-red-200/60 dark:bg-red-950/40 dark:text-red-300 dark:border-red-800/60'
           : 'bg-muted/40 text-foreground',
       )}
     >

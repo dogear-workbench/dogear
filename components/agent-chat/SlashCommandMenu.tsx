@@ -114,8 +114,8 @@ export function SlashCommandMenu({
             <span className={cn(
               'text-[10px] px-1.5 py-0.5 rounded',
               cmd.source === 'sdk'
-                ? 'bg-blue-50 text-blue-600 border border-blue-200'
-                : 'bg-green-50 text-green-600 border border-green-200'
+                ? 'bg-blue-50 text-blue-600 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60'
+                : 'bg-green-50 text-green-600 border border-green-200 dark:bg-green-950/40 dark:text-green-300 dark:border-green-800/60'
             )}>
               {cmd.source === 'sdk' ? 'SDK' : '自定义'}
             </span>

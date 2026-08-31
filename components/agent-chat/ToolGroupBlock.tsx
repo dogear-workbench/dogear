@@ -71,8 +71,8 @@ export function ToolGroupBlock({
       icon={<Boxes size={14} className="text-muted-foreground/70" />}
       title={title}
       titleClassName={cn(
-        status === 'running' && 'text-sky-600',
-        status === 'error' && 'text-red-600',
+        status === 'running' && 'text-sky-600 dark:text-sky-400',
+        status === 'error' && 'text-red-600 dark:text-red-400',
       )}
       statusIcon={statusIcon}
       previewLines={0}

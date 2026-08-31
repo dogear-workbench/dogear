@@ -42,7 +42,7 @@ export function GlobRenderer({ toolInput, toolOutput, isError }: Props) {
     <ToolDetailShell>
       <ToolSection label="模式">
         <div className="flex flex-wrap items-baseline gap-2 font-mono">
-          <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200/60">
+          <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200/60 dark:bg-sky-950/40 dark:text-sky-300 dark:border-sky-800/60">
             {pattern}
           </span>
           {path && <span className="text-muted-foreground">in {path}</span>}
