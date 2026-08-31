@@ -299,6 +299,13 @@
   color: var(--accent-foreground);
 }
 
+.notes-bubble-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: var(--border);
+}
+
 .notes-bubble-linkrow {
   display: flex;
   align-items: center;

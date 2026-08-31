@@ -7,6 +7,7 @@ import { Placeholder } from '@tiptap/extensions';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { SlashMenu } from '@/components/notes/tiptap/SlashMenu';
 import { BubbleToolbar } from '@/components/notes/tiptap/BubbleToolbar';
+import { MarkdownPasteGuard } from '@/components/notes/tiptap/markdown-paste-guard';
 import { TableToolbar } from '@/components/notes/tiptap/TableToolbar';
 
 interface TiptapEditorProps {
@@ -36,6 +37,7 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady }: TiptapEdito
         transformCopiedText: true,
       }),
       SlashMenu,
+      MarkdownPasteGuard,
     ],
     editorProps: {
       attributes: {

@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import type { Editor } from '@tiptap/react';
 import { BubbleMenu } from '@tiptap/react/menus';
-import { Bold, Code, Italic, Link2, Strikethrough, X } from 'lucide-react';
+import { Bold, Code, Italic, Link2, RemoveFormatting, Strikethrough, WandSparkles, X } from 'lucide-react';
+import { getMarkdownParser } from './markdown-paste-guard';
 export function BubbleToolbar({ editor }: { editor: Editor }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const [href, setHref] = useState('');
@@ -46,6 +47,20 @@ export function BubbleToolbar({ editor }: { editor: Editor }) {
 
   const toggleMark = (fn: (chain: ReturnType<Editor['chain']>) => unknown) => () => {
     fn(editor.chain().focus());
+  };
+
+  const renderAsMarkdown = () => {
+    const { from, to } = editor.state.selection;
+    if (from === to) return;
+    const parser = getMarkdownParser(editor);
+    if (!parser) return;
+    const text = editor.state.doc.textBetween(from, to, '\n');
+    const html = parser.parse(text, { inline: true });
+    editor.chain().focus().insertContentAt({ from, to }, html).run();
+  };
+
+  const clearFormatting = () => {
+    editor.chain().focus().clearNodes().unsetAllMarks().run();
   };
 
   return (
@@ -128,6 +143,13 @@ export function BubbleToolbar({ editor }: { editor: Editor }) {
             title="链接"
           >
             <Link2 className="w-4 h-4" />
+          </button>
+          <span className="notes-bubble-sep" />
+          <button type="button" onClick={renderAsMarkdown} title="按 Markdown 渲染">
+            <WandSparkles className="w-4 h-4" />
+          </button>
+          <button type="button" onClick={clearFormatting} title="清除格式">
+            <RemoveFormatting className="w-4 h-4" />
           </button>
         </>
       )}
