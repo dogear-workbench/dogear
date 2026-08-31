@@ -12,6 +12,7 @@ import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
 import { loadSettings, LEGACY_MODEL_TIERS } from './settings-service.js';
 import { readUsage } from './usage/usage-service.js';
 import { listActiveGroups, requireActiveGroup } from './group-service.js';
+import { broadcastConversationListChanged } from './renderer-broadcast.js';
 import type { ConversationUsageEntry } from '../types.js';
 import type { ModelSelection } from './settings-types.js';
 
@@ -356,6 +357,7 @@ export async function create(
   }).then(async (id) => {
     const { touchGroup } = await import('./group-service.js');
     await touchGroup(workspaceId, groupId);
+    broadcastConversationListChanged(workspaceId);
     return id;
   });
 }
@@ -374,7 +376,7 @@ export async function createFork(
   forkMessageSdkUuid: string,
   modelSelection: ModelSelection | null = null,
 ): Promise<string> {
-  return withConversationsTxn(workspaceId, async (file) => {
+  const id = await withConversationsTxn(workspaceId, async (file) => {
     await requireActiveGroup(workspaceId, groupId);
     const id = uuidv4();
     const now = new Date().toISOString();
@@ -396,6 +398,8 @@ export async function createFork(
     };
     return id;
   });
+  broadcastConversationListChanged(workspaceId);
+  return id;
 }
 
 /**
@@ -411,6 +415,7 @@ export async function updateTitle(workspaceId: string, id: string, title: string
     conv.title = title;
     conv.updatedAt = new Date().toISOString();
   });
+  broadcastConversationListChanged(workspaceId);
 }
 
 /** 默认 title（新建对话时设置）——用于识别"用户尚未修改过 title"的状态 */
@@ -431,7 +436,7 @@ export async function autoUpdateTitleFromFirstMessage(
   id: string,
   messageText: string,
 ): Promise<boolean> {
-  return withConversationsTxn(workspaceId, async (file) => {
+  const updated = await withConversationsTxn(workspaceId, async (file) => {
     const conv = file.conversations[id];
     if (!conv) return false;
     if (!conv.groupId) return false;
@@ -451,6 +456,8 @@ export async function autoUpdateTitleFromFirstMessage(
     conv.updatedAt = new Date().toISOString();
     return true;
   });
+  if (updated) broadcastConversationListChanged(workspaceId, 'debounced');
+  return updated;
 }
 
 export async function updateSessionId(workspaceId: string, id: string, sessionId: string): Promise<void> {
@@ -463,6 +470,7 @@ export async function updateSessionId(workspaceId: string, id: string, sessionId
     conv.sessionId = sessionId;
     conv.updatedAt = new Date().toISOString();
   });
+  broadcastConversationListChanged(workspaceId, 'debounced');
 }
 
 /**
@@ -482,6 +490,7 @@ export async function repairSessionIds(
       repaired++;
     }
   });
+  if (repaired > 0) broadcastConversationListChanged(workspaceId, 'debounced');
   return repaired;
 }
 
@@ -503,6 +512,7 @@ export async function touch(workspaceId: string, id: string): Promise<void> {
     const { touchGroup } = await import('./group-service.js');
     await touchGroup(workspaceId, groupId);
   }
+  broadcastConversationListChanged(workspaceId, 'debounced');
 }
 
 export async function updateModelSelection(
@@ -518,6 +528,7 @@ export async function updateModelSelection(
     conv.modelSelection = modelSelection ? { ...modelSelection } : null;
     conv.updatedAt = new Date().toISOString();
   });
+  broadcastConversationListChanged(workspaceId, 'debounced');
 }
 
 /**
@@ -559,6 +570,7 @@ export async function migrateLegacyModelSelections(): Promise<number> {
         migrated++;
       }
     });
+    broadcastConversationListChanged(wsId, 'debounced');
   }
   return migrated;
 }
@@ -584,6 +596,7 @@ export async function deleteConversation(workspaceId: string, id: string): Promi
       }
     }
   });
+  broadcastConversationListChanged(workspaceId);
 }
 
 
@@ -599,6 +612,7 @@ export async function importConversation(
     if (file.conversations[conv.id]) return; // 已存在则跳过
     file.conversations[conv.id] = { ...conv, workspaceId: targetWorkspaceId };
   });
+  broadcastConversationListChanged(targetWorkspaceId);
 }
 
 // ============================================================
@@ -679,6 +693,7 @@ export async function applyUsageSummary(
       lastContextWindow,
     };
   });
+  broadcastConversationListChanged(workspaceId, 'debounced');
 }
 
 /**
@@ -709,6 +724,7 @@ export async function recomputeUsageSummaryIfStale(conversationId: string): Prom
       lastContextWindow: lastEntry ? pickMainContextWindow(lastEntry) : undefined,
     };
   });
+  broadcastConversationListChanged(workspaceId, 'debounced');
 }
 
 // ============================================================
@@ -780,6 +796,7 @@ export async function migrateOrphanConversations(workspaceId: string): Promise<n
 
   if (count > 0) {
     await saveWorkspaceConversations(workspaceId, file);
+    broadcastConversationListChanged(workspaceId, 'debounced');
   }
   return count;
 }

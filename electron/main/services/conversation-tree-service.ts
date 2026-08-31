@@ -9,6 +9,7 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
+import { broadcastConversationListChanged } from './renderer-broadcast.js';
 
 const { app } = electron;
 
@@ -151,6 +152,7 @@ export async function createFolder(
   tree.children[id] = [];
 
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
   return id;
 }
 
@@ -164,6 +166,7 @@ export async function renameFolder(
   if (!tree.folders[folderId]) return;
   tree.folders[folderId].name = newName;
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }
 
 /**
@@ -192,6 +195,7 @@ export async function deleteFolder(
   delete tree.children[folderId];
 
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }
 
 // ============================================================
@@ -251,7 +255,10 @@ export async function removeGroupFromTree(
       mutated = true;
     }
   }
-  if (mutated) await saveTree(workspaceId, tree);
+  if (mutated) {
+    await saveTree(workspaceId, tree);
+    broadcastConversationListChanged(workspaceId);
+  }
 }
 
 /**
@@ -299,6 +306,7 @@ export async function moveItem(
   tree.children[targetParentId] = [...folderIds, ...convIds];
 
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }
 
 /**
@@ -318,6 +326,7 @@ export async function addGroupToFolder(
   const insertIndex = folderFirstInsertIndex(children, tree.folders);
   children.splice(insertIndex, 0, groupId);
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }
 
 /** 从指定文件夹移除组（不动其他文件夹的引用） */
@@ -333,6 +342,7 @@ export async function removeGroupFromFolder(
   if (idx === -1) return;
   children.splice(idx, 1);
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }
 
 /** 从一个文件夹移到另一个（remove + add 合并一次写入） */
@@ -359,6 +369,7 @@ export async function moveGroupBetweenFolders(
     toChildren.splice(insertIndex, 0, groupId);
   }
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }
 
 /**
@@ -410,4 +421,5 @@ export async function mergeTree(workspaceId: string, sourceTree: ConversationTre
   tree.children[ROOT_ID] = [...folderIds, ...convIds];
 
   await saveTree(workspaceId, tree);
+  broadcastConversationListChanged(workspaceId);
 }

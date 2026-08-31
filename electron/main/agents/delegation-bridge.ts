@@ -115,26 +115,6 @@ function broadcastConversationListChanged(workspaceId: string): void {
   }
 }
 
-function broadcastDeliveriesAwaitChanged(parentConversationId: string): void {
-  let runningCount = 0;
-  let doneCount = 0;
-  for (const c of childStates.values()) {
-    if (c.parentConversationId !== parentConversationId) continue;
-    if (c.status === 'running') runningCount++;
-    else if (c.delivered) doneCount++;
-  }
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      getRendererHandlers<RendererHandlers>(win.webContents).deliveriesAwaitChanged.send({
-        parentConversationId, runningCount, doneCount,
-      });
-    } catch (err) {
-      logger.warn('broadcastDeliveriesAwaitChanged failed', err);
-    }
-  }
-}
-
 function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
   return {
     childId: c.childId,
@@ -244,7 +224,6 @@ function onSessionComplete(childId: string, result: PiSessionTurnResult): void {
     c.finishedAt = Date.now();
     groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
     broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-    broadcastDeliveriesAwaitChanged(c.parentConversationId);
   }
   clearChildTimers(c);
   void settleTerminal(c);
@@ -376,7 +355,6 @@ export async function resumeChild(childId: string, opts: { reason: string; model
   wireSession(childId, session);
 
   broadcastChildStatusChanged(c.parentConversationId, childId, 'running', toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
 
   logger.info(`子会话 ${childId} 第 ${c.consecutiveFails} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
   const wakeInput = opts.wakeupMessage ?? buildResumePrompt(opts.reason, c.outputPath);
@@ -577,7 +555,6 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   wireSession(childId, session);
 
   broadcastChildStatusChanged(parentConversationId, childId, 'running', toSnapshot(state));
-  broadcastDeliveriesAwaitChanged(parentConversationId);
 
   // fire-and-forget 发任务
   session.sendMessage(spec.task).catch((error: unknown) => {
@@ -607,7 +584,6 @@ export async function stopChild(childId: string, reason: 'cancelled' | 'timeout'
   clearChildTimers(c);
   groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
 
   const session = getPiSessionManager().getSession(c.sessionId);
   if (session) {
@@ -627,7 +603,6 @@ export function markChildDelivered(childId: string): void {
   c.delivered = true;
   if (c.outputPath) groupSharedService.releaseOutputPath(c.workspaceId, c.groupId, c.outputPath, childId);
   broadcastChildStatusChanged(c.parentConversationId, childId, c.status, toSnapshot(c));
-  broadcastDeliveriesAwaitChanged(c.parentConversationId);
 }
 
 /**

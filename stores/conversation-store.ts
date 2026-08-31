@@ -476,14 +476,11 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         // 预 attach 失败不阻断流程，useAgentSession effect 会重试正常 attach
       }
 
-      // 先获取新对话详情并选中（让 UI 立即响应）
+      // 先获取新对话详情并选中（让 UI 立即响应；列表刷新由 conversationListChanged 事件回环）
       const newConversation = await client.getById({ conversationId: result.conversationId, workspaceId: workspace.id });
       if (newConversation.conversation) {
         get().selectConversation(newConversation.conversation);
       }
-
-      // 后台刷新对话列表（不阻塞用户）
-      get().loadConversations();
     } catch (error) {
       console.error('创建对话失败:', error);
       toast.error('创建对话失败', { description: error instanceof Error ? error.message : String(error) });
@@ -510,8 +507,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (curSlice?.selectedConversation?.id === conversationId) {
         set((state) => patchSlice(state, wsId, { selectedConversation: null }));
       }
-
-      await get().loadConversations();
     } catch (error) {
       console.error('删除对话失败:', error);
       toast.error('删除对话失败', {
@@ -541,8 +536,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         set((state) => patchSlice(state, wsId, { selectedConversation: null }));
       }
     }
-
-    await get().loadConversations();
   },
 
   forkConversation: async (params) => {
@@ -577,10 +570,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      // 刷新对话列表
-      await get().loadConversations();
-
-      // 切换到新创建的分叉对话
+      // 切换到新创建的分叉对话（列表刷新由 conversationListChanged 事件回环）
       const newConvResult = await client.getById({ conversationId: forkResult.conversationId, workspaceId: workspace.id });
       if (newConvResult.conversation) {
         // 用 selectConversation 以打开标签页
@@ -597,7 +587,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.createConversationFolder({ workspaceId: workspace.id, name, parentId });
-      await get().loadConversations();
     } catch (error) {
       console.error('创建文件夹失败:', error);
     }
@@ -608,7 +597,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.renameConversationFolder({ workspaceId: workspace.id, folderId, name: newName });
-      await get().loadConversations();
     } catch (error) {
       console.error('重命名文件夹失败:', error);
     }
@@ -619,7 +607,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.deleteConversationFolder({ workspaceId: workspace.id, folderId });
-      await get().loadConversations();
     } catch (error) {
       console.error('删除文件夹失败:', error);
     }
@@ -630,7 +617,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.moveConversationItem({ workspaceId: workspace.id, itemId, targetParentId, targetIndex });
-      await get().loadConversations();
     } catch (error) {
       console.error('移动失败:', error);
     }
@@ -641,7 +627,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.addGroupToFolder({ workspaceId: workspace.id, groupId, folderId });
-      await get().loadConversations();
     } catch (error) {
       console.error('添加组到文件夹失败:', error);
     }
@@ -652,7 +637,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.removeGroupFromFolder({ workspaceId: workspace.id, groupId, folderId });
-      await get().loadConversations();
     } catch (error) {
       console.error('从文件夹移除组失败:', error);
     }
@@ -663,7 +647,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     if (!workspace) return;
     try {
       await client.moveGroupBetweenFolders({ workspaceId: workspace.id, groupId, fromFolderId, toFolderId });
-      await get().loadConversations();
     } catch (error) {
       console.error('在文件夹间移动组失败:', error);
     }

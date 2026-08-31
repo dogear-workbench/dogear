@@ -301,7 +301,7 @@ export default function Home() {
           {/* 标签页头（抽取为独立组件：里程碑 1.5 Step A2.3） */}
           <WorkspaceTabBar />
 
-          {/* 标签页内容：Dashboard + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowReady 后才 closeTab 卸载） */}
+          {/* 标签页内容：Dashboard + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowClosed 恢复前不卸载） */}
           <div className="flex-1 overflow-hidden relative">
             {/* 首页：activeTabId 为哨兵时显示 */}
             <div

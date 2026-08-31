@@ -195,6 +195,7 @@ export async function add(workspace: Omit<Workspace, 'id'> | Workspace): Promise
 
   file.workspaces.push(newData);
   await saveWorkspacesFile(file);
+  void import('./workspace-watcher.js').then((m) => m.syncWorkspaceWatchers()).catch(() => {});
   return id;
 }
 
@@ -231,6 +232,7 @@ export async function remove(id: string): Promise<void> {
   }
 
   await saveWorkspacesFile(file);
+  void import('./workspace-watcher.js').then((m) => m.syncWorkspaceWatchers()).catch(() => {});
 }
 
 /**

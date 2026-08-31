@@ -138,11 +138,9 @@ export const agentRouter = {
   // ── 旧版 Agent 任务 ──────────────────────────────────────
   submitTask: t.procedure
     .input<{ task: AgentTask }>()
-    .action(async ({ input, context }) => {
+    .action(async ({ input }) => {
       const agentManager = getAgentManager();
-      const handlers = getRendererHandlers<RendererHandlers>(context.sender);
       const taskId = await agentManager.submitTask(input.task, (taskId, status, result, error) => {
-        handlers.agentTaskUpdate.send({ taskId, status, result, error });
         sendToDebugWindow('debug:taskUpdate', { taskId, status, result, error });
         if (result?.message) {
           sendToDebugWindow('debug:agentMessage', { role: 'assistant', content: result.message, timestamp: Date.now() });

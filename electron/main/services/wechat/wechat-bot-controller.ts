@@ -122,11 +122,6 @@ class WechatBotController {
       return;
     }
 
-    // 广播运行状态 → running
-    if (this.state.activeConversationId) {
-      this.broadcastConversationRunning(this.state.activeConversationId, true);
-    }
-
     this.waitingForAgent = true;
     session.sendMessage(text).catch((err: unknown) => {
       log.error('[bot] 发送消息给 Agent 失败:', err);
@@ -341,17 +336,6 @@ class WechatBotController {
 
   async handleAgentComplete(): Promise<void> {
     this.waitingForAgent = false;
-  }
-
-  /** 广播对话运行状态 */
-  private broadcastConversationRunning(conversationId: string, isRunning: boolean): void {
-    for (const win of electron.BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue;
-      try {
-        const h = getRendererHandlers<RendererHandlers>(win.webContents);
-        h.conversationRunningStateChanged.send({ conversationId, isRunning });
-      } catch { /* ignore */ }
-    }
   }
 
   /** 广播 bot 绑定的对话变更 */

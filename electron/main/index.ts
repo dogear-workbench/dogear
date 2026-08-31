@@ -566,6 +566,16 @@ app.whenReady().then(async () => {
     .then((m) => m.startDashboardWatcher())
     .catch((err) => console.error('启动 dashboard-watcher 失败:', err));
 
+  // 工作区文件树监视：每工作区递归 fs.watch，随 workspaces.json 增删起停
+  void import('./services/workspace-watcher.js')
+    .then((m) => m.syncWorkspaceWatchers())
+    .catch((err) => console.error('启动 workspace-watcher 失败:', err));
+
+  // 话题自动归档：启动跑一次 + 每 24h 一次（归档广播由 group-service 发出）
+  void import('./services/auto-archive-service.js')
+    .then((m) => m.startAutoArchiveTimer())
+    .catch((err) => console.error('启动自动归档定时失败:', err));
+
   // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出
   mainWindow!.on('close', (event) => {
     if (!isQuitting && tray && !tray.isDestroyed()) {
@@ -620,6 +630,14 @@ app.on('before-quit', async () => {
     getSessionNotificationService().dispose();
   } catch (error) {
     console.error('通知服务 dispose 失败:', error);
+  }
+  // 停止工作区文件树监视
+  try {
+    void import('./services/workspace-watcher.js')
+      .then((m) => m.stopAllWorkspaceWatchers())
+      .catch(() => {});
+  } catch {
+    // ignore
   }
   // 关闭 Agent Worker 线程池
   await shutdownAgentManager();

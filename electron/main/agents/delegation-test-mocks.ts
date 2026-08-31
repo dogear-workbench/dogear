@@ -80,7 +80,6 @@ export function installDelegationMocks(): void {
     getRendererHandlers: () => ({
       childStatusChanged: { send: () => {} },
       conversationListChanged: { send: (data: { workspaceId: string }) => { conversationListChangedCalls.push(data.workspaceId); } },
-      deliveriesAwaitChanged: { send: () => {} },
       failoverNotice: { send: () => {} },
     }),
   }));

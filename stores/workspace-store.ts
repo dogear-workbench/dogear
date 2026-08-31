@@ -254,3 +254,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 }));
+
+// 监听主进程 workspace-watcher 广播的文件树结构变更（增删改名），匹配当前工作区才重拉
+if (typeof window !== 'undefined') {
+  import('@/lib/events').then(({ rendererEvents }) => {
+    rendererEvents.workspaceFilesChanged.listen((data) => {
+      const { workspace } = useWorkspaceStore.getState();
+      if (workspace?.id !== data.workspaceId) return;
+      useWorkspaceStore.getState().loadWorkspaceFiles();
+    });
+  });
+}

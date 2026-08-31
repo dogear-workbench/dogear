@@ -3,6 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDataDir } from '../conversation-service.js';
+import { broadcastGroupDataChanged } from '../renderer-broadcast.js';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
 import type { DigestTags } from '../../types.js';
 
@@ -215,6 +216,7 @@ function strOf(v: Frontmatter[string] | undefined): string {
 export async function saveGroupDigest(wsId: string, card: GroupDigestCard): Promise<void> {
   await fs.mkdir(getGroupDir(wsId, card.groupId), { recursive: true });
   await fs.writeFile(getGroupDigestPath(wsId, card.groupId), serializeGroupDigest(card), 'utf-8');
+  broadcastGroupDataChanged(wsId, card.groupId);
 }
 
 export async function readGroupDigest(wsId: string, groupId: string): Promise<GroupDigestCard | null> {

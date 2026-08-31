@@ -77,7 +77,6 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
         await useConversationStore.getState().selectConversation(detail.conversation);
         openOrFocusConversation(detail.conversation, `topic:${group.id}:${detail.conversation.id}`);
       }
-      await useConversationStore.getState().loadConversations();
       if (!useGroupStore.getState().expandedGroupIds.has(group.id)) {
         useGroupStore.getState().toggleExpand(group.id);
       }

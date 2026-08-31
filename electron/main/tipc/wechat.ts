@@ -163,8 +163,6 @@ export const wechatRouter = {
         onMessage: async (messages) => {
           // 持久化到 _bot_ 会话
           await wechatMessageStore.appendMessages('_bot_', messages as any[]);
-          // 推送到渲染层（仅微信窗口存活时）
-          safeSend(() => handlers.wechatNewMessage.send({ messages: messages as any[] }));
           // 每条消息过 bot controller
           for (const msg of messages) {
             await wechatBotController.handleIncomingMessage({

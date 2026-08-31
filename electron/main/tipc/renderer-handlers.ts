@@ -3,7 +3,6 @@
  * 用于 getRendererHandlers<T> 和 createEventHandlers<T> 的类型约束
  */
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
-import type { TaskStatus } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 
@@ -12,26 +11,6 @@ import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
  * 每个属性是一个函数签名，参数即为事件的 payload
  */
 export type RendererHandlers = {
-  // Agent 任务状态更新
-  agentTaskUpdate: (data: {
-    taskId: string;
-    status: TaskStatus;
-    result?: unknown;
-    error?: string;
-  }) => void;
-
-  // Agent 流式文本块
-  agentStreamChunk: (data: {
-    taskId: string;
-    chunk: string;
-  }) => void;
-
-  // 旧版 Agent 会话消息
-  agentSessionMessage: (data: {
-    sessionId: string;
-    message: string;
-  }) => void;
-
   // 基于 Query 的会话消息
   queryBasedSessionMessage: (data: {
     sessionId: string;
@@ -94,25 +73,6 @@ export type RendererHandlers = {
     mcpServers: Array<{ name: string; status: string }>;
   }) => void;
 
-  // 子代理开始运行
-  subAgentStarted: (data: {
-    parentSessionId: string;
-    agentId: string;
-    description: string;
-    subagentType?: string;
-  }) => void;
-
-  // 子代理运行完成
-  subAgentCompleted: (data: {
-    parentSessionId: string;
-    agentId: string;
-    status: string;
-    durationMs?: number;
-    tokens?: number;
-    toolUseCount?: number;
-    resultText?: string;
-  }) => void;
-
   // === 文章解析状态（Phase 3） ===
 
   // 文章解析状态变化（脚本/AI 质量检查/重新解析后端广播）
@@ -123,23 +83,6 @@ export type RendererHandlers = {
   }) => void;
 
   // === 微信 iLink ===
-
-  // 收到新微信消息
-  wechatNewMessage: (data: {
-    messages: Array<{
-      id: string;
-      contextToken: string;
-      senderId: string;
-      senderName: string;
-      content: string;
-      messageType: string;
-      timestamp: number;
-      isGroup: boolean;
-      groupId?: string;
-      groupName?: string;
-      isOutgoing: boolean;
-    }>;
-  }) => void;
 
   // 微信认证状态变化
   wechatAuthStatus: (data: {
@@ -155,12 +98,6 @@ export type RendererHandlers = {
     errorMessage?: string;
   }) => void;
 
-  // 对话运行状态变化（主进程统一管理，不依赖渲染层 tab 是否打开）
-  conversationRunningStateChanged: (data: {
-    conversationId: string;
-    isRunning: boolean;
-  }) => void;
-
   // 微信 Bot 绑定对话变更
   wechatBotBindingChanged: (data: {
     conversationId: string | null;
@@ -173,12 +110,7 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
-  // 独立会话窗口 attach 完成（通知主窗口可以安全关闭标签页）
-  sessionWindowReady: (data: {
-    conversationId: string;
-  }) => void;
-
-  // 对话列表变更通知（主进程侧创建/删除对话后广播，前端应刷新列表）
+  // 对话列表变更通知（service 层写入后广播，前端应刷新列表）
   conversationListChanged: (data: {
     workspaceId: string;
   }) => void;
@@ -236,13 +168,6 @@ export type RendererHandlers = {
     snapshot: ChildStateSnapshot;
   }) => void;
 
-  // 父会话等待中的子会话数量变化
-  deliveriesAwaitChanged: (data: {
-    parentConversationId: string;
-    runningCount: number;
-    doneCount: number;
-  }) => void;
-
   // 主会话模型故障转移发生（quota 后自动切换供应商继续）
   failoverNotice: (data: {
     conversationId: string;
@@ -283,5 +208,11 @@ export type RendererHandlers = {
 
   // 设置已落盘（设置保存发起，主窗口收到后刷新 settings store；restartSessions=true 时重启活跃会话）
   settingsChanged: (data: { restartSessions: boolean }) => void;
+
+  // 工作区文件树结构变更（workspace-watcher 监听 rename 事件去抖后广播，前端匹配当前工作区重拉文件树）
+  workspaceFilesChanged: (data: { workspaceId: string }) => void;
+
+  // 话题组数据变更（共享区文件/话题背景/组卡写点广播，TopicPanel 匹配当前组后重拉）
+  groupDataChanged: (data: { workspaceId: string; groupId: string }) => void;
 
 };

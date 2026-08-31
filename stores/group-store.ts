@@ -15,10 +15,8 @@ interface GroupState {
   groups: Group[];
   currentGroupId: string | null;
   expandedGroupIds: Set<string>;
-  loading: boolean;
 
   syncGroups: (workspaceId: string, groups: Group[]) => void;
-  load: (workspaceId: string) => Promise<void>;
   setCurrentGroup: (groupId: string | null) => void;
   toggleExpand: (groupId: string) => void;
   expandGroup: (groupId: string) => void;
@@ -34,31 +32,9 @@ export const useGroupStore = create<GroupState>((set) => ({
   groups: [],
   currentGroupId: null,
   expandedGroupIds: new Set<string>(),
-  loading: false,
 
   syncGroups: (_workspaceId, groups) => {
-    set({ groups, loading: false });
-  },
-
-  load: async (workspaceId) => {
-    set({ loading: true });
-    try {
-      const r = await client.listGroups({ workspaceId });
-      useGroupStore.getState().syncGroups(workspaceId, r.groups ?? []);
-      client
-        .autoArchiveStale({ workspaceId })
-        .then((res) => {
-          if (res.archivedCount > 0) {
-            client.listGroups({ workspaceId }).then((r2) => {
-              useGroupStore.getState().syncGroups(workspaceId, r2.groups ?? []);
-            });
-          }
-        })
-        .catch(() => {});
-    } catch (e) {
-      set({ loading: false });
-      console.warn('[group-store] load 失败:', e);
-    }
+    set({ groups });
   },
 
   setCurrentGroup: (groupId) => {

@@ -102,7 +102,7 @@
 - `ToolBlock.tsx` — 工具块路由组件（顶层 components/，normalizeToolName 归一后分发到专属 renderer：Read/Glob/Grep/Skill/Write/Edit（FileChangeRenderer），其余走 ToolDetailShell；图标走 lucide 简约样式，无边框包裹；getToolSummary 摘要兼容 file_path/path 双入参；标题行 headerActions Eye 预览按钮（buildPreviewAction：Read(.md/.txt/.json)/Write(.md)/Skill/dogear__ListGroupFiles(relPath) 走 openInline 快照，Edit 读盘，仅 success 且非 error 显示，span+stopPropagation 规避嵌套 button）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建
 - `AdditionalFilesPanel.tsx` — 右侧「附加」tab：附加路径手风琴列表（文件夹分节行样式与文件树一致，行尾 Switch 启停 + hover 删除，展开后文件树占满面板，可多节同时展开）
-- `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readGroupBackground 结构化内嵌：主题/进展/已拍板决策/待议问题）+ 组卡提炼（摘要 line-clamp 预览，点击 readGroupDigestRaw 拿原文走 MarkdownFileDialog 浮窗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）
+- `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readGroupBackground 结构化内嵌：主题/进展/已拍板决策/待议问题）+ 组卡提炼（摘要 line-clamp 预览，点击 readGroupDigestRaw 拿原文走 MarkdownFileDialog 浮窗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）；订阅 groupDataChanged（共享区写点/背景/组卡落盘广播）匹配当前组重拉三份数据
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `ConversationList.tsx` — 对话列表主骨架（单一滚动视图：手动文件夹 → 近期 → 智能分类 + 归档 Popover 浮窗）
 - `conversation-list/` — 对话列表子组件（拆分；按组渲染）
@@ -137,7 +137,7 @@
   - `TiptapEditor.tsx` + `tiptap/` — Tiptap 3 所见即所得正文编辑器（markdown 真源，tiptap-markdown 往返序列化）：input rules（`# `/`- [ ] `/`**` 等敲完即渲染）、正文 `- [ ]` 勾选项可点选落盘（待办=正文 checkbox，无独立待办实体）、BubbleToolbar 选中浮出（粗斜/行内代码/删除线/链接）、SlashMenu `/` 插入菜单、粘贴 markdown 自动解析
   - `TagFilterMenu.tsx` — # 标签下拉 Popover：从 notes store 聚合 tag→计数（计数降序），点选 toggle 过滤、选中项高亮打勾
   - `NoteCardItem.tsx` — 时间流卡片行，会话列表化样式（同 ConversationRow）：标题全宽 truncate + meta 行相对时间（getRelativeTime）+ hover 浮出引用/删除按钮（ml-auto opacity-0 pointer-events-none → group-hover）；不显示标签 Badge；导出 formatNoteTime 供 TrashView/TaskPanel 复用
-  - `TaskPanel.tsx` — 任务 mode（协作任务六分组常量 plan「计划」/backlog「待办」/queued/running/review/done，rejected 不单列——filteredGroups 组装时并入 plan 组尾部）：props `{ workspacePath, query?, listHidden, onToggleListHidden, onOpenNote }`；query 对 title/planPath 前端模糊过滤（planPath 判空跳过）；卡片标题行仅标题+徽标，操作按钮全部下沉 meta 行 hover 浮出（plan/rejected「移到待办」、backlog「执行」+···菜单（手动完成/删除）、queued/running「取消」、done「移回计划」、review 菜单删除）；meta 行无 planPath 显「无文档」灰字，存量任务保留 noteId chip；详情页 TaskDetail：删除按钮收进 meta 行返回箭头旁（全状态可用），状态分支 plan/rejected 移到待办+手动完成 / done 移回计划 / 其余照旧，plan 态无文档显挂文档引导文案
+  - `TaskPanel.tsx` — 任务 mode（协作任务六分组常量 plan「计划」/backlog「待办」/queued/running/review/done，rejected 不单列——filteredGroups 组装时并入 plan 组尾部）：props `{ workspacePath, query?, listHidden, onToggleListHidden }`；query 对 title/planPath 前端模糊过滤（planPath 判空跳过）；卡片标题行仅标题+徽标，meta 行仅时间（左）+ hover 按钮（右）：常显操作 plan/rejected「移到待办」、backlog「执行」，其余全部收进 ···菜单（queued/running 取消、done 移回计划、backlog 手动完成、全状态删除），无 planPath/笔记关联显示；详情页 TaskDetail：meta 行时间+删除+返回，planPath 小字挂「计划文档」小节标题旁，状态分支 plan/rejected 移到待办+手动完成 / done 移回计划 / 其余照旧，plan 态无文档显挂文档引导文案
   - `TrashView.tsx` — 回收站 mode（独立占满内容区）：两段聚合（笔记/任务，Promise.all 并行拉取独立容错，段标题 sticky 带计数，空段不渲染）；query 前端过滤（各段主文本 includes）；恢复/彻底删除（purge 前 showConfirm），busyKey 防双击；恢复/删除后本地移除，原视图刷新靠 changed 广播
   - `NoteState.tsx` — 空态/加载态复用组件
 - `wechat/` — 微信 Bot 模块
@@ -159,10 +159,10 @@
 
 ## 状态管理（stores/）
 
-- `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）；窗口入口 actions：openStockWindow（主进程单例窗口，已存在则 focus）
+- `workspace-store.ts` — 工作区状态：文件树、选中文件、文件操作（CRUD/移动）；窗口入口 actions：openStockWindow（主进程单例窗口，已存在则 focus）；模块级订阅 workspaceFilesChanged（主进程 workspace-watcher 广播）匹配当前工作区重拉文件树
 - `article-store.ts` — 文章状态：选中文章、文章解析、URL 输入框
-- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；focusConversationById（Tab 焦点联动入口）在活跃会话切换时调 revealTopicInList 展开左侧列表定位话题，并经 expandSubParentIfNeeded 展开 agent 子会话的父折叠区；底部 activeTabId 订阅 async 化焦点联动：tab 属其他工作区时先 `await setWorkspace(目标)` 后 focusConversationById（先切后高亮时序铁律，点 tab/关 tab/独立窗口收回唯一入口）；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；导出 CONV_TREE_ROOT 根哨兵；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
-- `group-store.ts` — 会话组状态：groups\[\] + currentGroupId + expandedGroupIds（默认全折叠）+ syncGroups（conversation-store loadConversations 拉完 groups 后同步写入，不碰展开状态）+ expandGroup（reveal 单向展开）/ createGroup / updateGroup / archiveTopic / restoreTopic / deleteTopic；RECENT_THRESHOLD_MS 常量在此；load 时异步触发 autoArchiveStale，有归档则重新拉取
+- `conversation-store.ts` — 对话状态：对话列表、选中对话、分叉参数、编辑重发、对话级模型（setConversationModelSelection）、会话重启触发（sessionRestartTrigger）；loadConversations 并行拉 conversations + tree + groups 后一次写完并同步 group-store；focusConversationById（Tab 焦点联动入口）在活跃会话切换时调 revealTopicInList 展开左侧列表定位话题，并经 expandSubParentIfNeeded 展开 agent 子会话的父折叠区；底部 activeTabId 订阅 async 化焦点联动：tab 属其他工作区时先 `await setWorkspace(目标)` 后 focusConversationById（先切后高亮时序铁律，点 tab/关 tab/独立窗口收回唯一入口）；三个 folder actions 已改名（addGroupToFolder / moveGroupBetweenFolders / removeGroupFromFolder）；导出 CONV_TREE_ROOT 根哨兵；列表刷新统一走 conversationListChanged 事件回环（主进程 service 写点广播，含任务队列建会话 / touch / 改名 / 归档等后台路径），各写 action 内不再手动 loadConversations；`runningConversationIds` / `pendingActionConversationIds` 两个 Set 唯一订阅源是后端 `sessionStateChanged` / `sessionClosed`（废弃旧 `conversationRunningStateChanged` 前端订阅，删除乐观直写以避免双源 race）
+- `group-store.ts` — 会话组状态：groups\[\] + currentGroupId + expandedGroupIds（默认全折叠）+ syncGroups（conversation-store loadConversations 拉完 groups 后同步写入，不碰展开状态）+ expandGroup（reveal 单向展开）/ createGroup / updateGroup / archiveTopic / restoreTopic / deleteTopic；RECENT_THRESHOLD_MS 常量在此；自动归档由主进程定时触发（见 auto-archive-service）
 - `section-collapse-store.ts` — 左侧列表分区折叠状态：recentExpanded（「近期」默认展开）/ expandedSmartCategoryIds（智能分类默认全折叠）/ folderReveal（nonce 供 ManualSection 订阅后逐层 expand 祖先文件夹链）/ subExpandedConvIds（会话行子会话折叠区，默认全折叠，expandSubConv 供焦点联动单向展开）；revealTopic(groupId) 在活跃会话切换时展开话题所在全部分区与话题卡片，数据源动态 import group/smart-category/workspace/conversation 四个 store
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）、会话引用（ConversationReference，含 workspaceId 支持跨工作区，去重按 conversationId）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
@@ -194,7 +194,7 @@
 
 - `article.ts` — ArticleMeta / Article / QuoteSnippet
 - `note.ts` — NoteMeta（id/file/title/created/updated/tags/links）/ Note，主进程镜像在 `electron/main/services/notes/note-types.ts`；旧卡内 todos 类型链（TodoStatus/TodoItem/NoteMeta.todos）已随待办实体退役删除，frontmatter 遇 todos: 块直接忽略
-- `task.ts` — 协作任务数据模型：TaskStatus（plan/backlog/queued/running/review/done/rejected）/ Task（title/planPath?/noteId?/originSessionId?/execSessionId?/result?/deletedAt?）/ TaskGroups，主进程真源在 `electron/main/services/task-store.ts`
+- `task.ts` — 协作任务数据模型：TaskStatus（plan/backlog/queued/running/review/done/rejected）/ Task（title/planPath?/originSessionId?/execSessionId?/result?/deletedAt?）/ TaskGroups，主进程真源在 `electron/main/services/task-store.ts`
 - `ai.ts` — AIInteraction / AIMessage
 - `settings.ts` — ModelTier / ModelSelection / ModelProfile / AppSettings（含 defaultModelSelection 与 digest/review/categorizeModelSelection 各自独立；含 `subAgent = { profiles: SubAgentProfile[] }` 子会话派遣 Profile 清单，SubAgentProfile.enabled 仅非 default 有意义——停用后系统提示词索引不列出、startChild 拒绝；根级 `basicToolPermissions` 七工具映射；`ai.permissionMode` 为 `default | autoExecute` 两态；`ai.effort` 控制推理努力程度）/ DEFAULT_SETTINGS
 - `agents.ts` — TaskStatus / TaskType / AgentTask / ForkParams
@@ -255,7 +255,7 @@
   - `background-store.ts` — 组背景 background.md：结构化 frontmatter（topic / progress / keyDecisions / openQuestions），落 `<wsData>/groups/<groupId>/background.md`，供组内新会话派子会话查阅
   - `migration-gate.ts` — 启动闸门：whenMigrationReady() 阻塞组提炼 / 分类 trigger，直到 markMigrationComplete() 被调用
   - `migration-p4.ts` — 幂等迁移：组卡从 `<wsData>/digests/<groupId>.md` 迁到 `<wsData>/groups/<groupId>/digest.md`，删除 `digests/_cleaned/`（不再留盘干净逐字稿）
-  - `dashboard-watcher.ts` — dashboard.md 文件监听（chokidar，变更时向前端广播 dashboardChanged 事件，触发 dashboard-store 重新拉取）
+  - `dashboard-watcher.ts` — dashboard.md 文件监听（递归 fs.watch + 300ms 去抖，变更时全窗口广播 reportUpdated 事件，触发 dashboard-store 重新拉取）
   - `review-store.ts` — 首页报告存储：ReportDoc { updatedAt, markdown } 落 `<configDir>/workspaces/<wsId>/dashboard.md`
   - `review-scanner.ts` — 报告脏检查：isReportStale 纯函数（最新组卡 updatedAt vs 报告 updatedAt）
   - `review-prompt.ts` — 报告提示词模板（引导 agent 分流为「记忆 dogear__SaveMemory + 报告 dogear__WriteReport」，读组卡驱动）
@@ -279,11 +279,13 @@
   - `runtime/task-executor.ts` — 任务执行（builtin 四种直调现有 memory trigger 层并等队列空闲；group_digest 带 hooks.triggerContext 时走 triggerByConversation 精准提炼、summary 定性描述，否则全量扫描引用 dirtyCount；custom 提交 CUSTOM_AGENT 到 agent-manager Worker 池等待回调，payload 携带 toolPacksOverride，hooks.onAgentTaskId 回填 id 供停止取消，模型三级 fallback，token 用量提取入历史）
 - `conversation-runtime-service.ts` — 会话运行时管理（多附件绑定 desktop/wechat-bot、会话快照、复用 session；detach 链路 detachAttachment / detachByConversationHolder 带可选 source 参数透传到 release——failover 换血传 forced 使其不触发调度器 on_session_close，closeConversation 走 closeSession 强杀同样不触发）
 - `contract-channel-service.ts` — 契约通道校验（hasDirectContractChannel：只认直接派出关系，A 派 B 派 C 时 A 无法直连 C；dogear__SendMessage / dogear__StopSession 工具层前置校验）
-- `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup / archiveGroup / restoreGroup / listActiveGroups / touchGroup（会话活动时刷新 updatedAt）
-- `group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{groupId}/shared/`），供 group-tools 和前端 TopicPanel 使用
-- `auto-archive-service.ts` — 自动归档：autoArchiveStaleGroups(wsId) 筛选 updatedAt 超 30 天且不在手动文件夹的活跃组，逐个 archiveGroup + removeGroupEverywhere，在 group-store.load 时异步触发
-- `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree
-- `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）
+- `group-service.ts` — 会话组 CRUD（`.dogear/groups/{workspaceId}.json`）：listGroups / getGroup / createGroup / updateGroup / deleteGroup / archiveGroup / restoreGroup / listActiveGroups / touchGroup（会话活动时刷新 updatedAt）；全部写方法尾部广播 conversationListChanged（结构操作 immediate，touchGroup 500ms 去抖）
+- `group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{groupId}/shared/`），供 group-tools 和前端 TopicPanel 使用；writeNativeFile / deleteNativeFile 尾部广播 groupDataChanged
+- `auto-archive-service.ts` — 自动归档：autoArchiveStaleGroups(wsId) 筛选 updatedAt 超 30 天且不在手动文件夹的活跃组，逐个 archiveGroup + removeGroupEverywhere；startAutoArchiveTimer 主进程启动跑一次 + 每 24h 一次（归档广播由 group-service 发出）
+- `conversation-tree-service.ts` — 手动文件夹树（`.dogear/workspaces/{wsId}/conversation-tree.json`）：children 装 groupId（schemaVersion=2）；listFolders / addGroupToFolder / removeGroupFromFolder / moveGroupBetweenFolders / initializeTree；结构写方法（文件夹 CRUD / 移动 / 组挂载）尾部广播 conversationListChanged（sortGroupsByUpdatedAt 是读路径懒重排，不广播防回环）
+- `workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`）；add / remove 尾部触发 workspace-watcher 增删起停
+- `renderer-broadcast.ts` — 主进程→渲染层广播收口：broadcastToWindows 全窗口遍历；broadcastConversationListChanged（immediate / debounced 500ms 尾部去抖两档，会话与组列表域）；broadcastGroupDataChanged（TopicPanel 三数据域）
+- `workspace-watcher.ts` — 工作区文件树监视：每工作区递归 fs.watch 只处理 rename 事件（增删改名，忽略 change），路径段 `.` 开头或 node_modules 丢弃，500ms 尾部去抖后广播 workspaceFilesChanged；随 workspaces.json 增删起停，监听错误静默降级关闭
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段；normalize 尾部挂 settings-types.ts 的 normalizeFailoverChain 维护全局模型故障转移链——类型 FailoverEntry/FailoverConfig（AppSettings.failover）：新供应商追加链尾、删除供应商移出链、tier 失效回退该家首个 piModel、piModels 为空的供应商不进链，链序与 enabled 完全保留）
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理

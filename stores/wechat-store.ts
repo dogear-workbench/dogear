@@ -55,7 +55,6 @@ interface WechatState {
   botUseConversation: (index: number) => Promise<{ success: boolean; error?: string }>;
 
   // 事件回调
-  handleNewMessages: (messages: WechatMessage[]) => void;
   handleAuthStatusChange: (state: string, botName?: string, errorMessage?: string) => void;
   handleConnectionStatusChange: (polling: boolean, lastPollAt?: string, errorMessage?: string) => void;
 }
@@ -210,21 +209,6 @@ export const useWechatStore = create<WechatState>((set, get) => ({
   },
 
   // === 事件回调 ===
-
-  handleNewMessages: (newMessages: WechatMessage[]) => {
-    const { messages, contextToken } = get();
-
-    // 更新 contextToken（用最新收到的消息）
-    const lastIncoming = [...newMessages].reverse().find(m => !m.isOutgoing);
-    const updates: Partial<WechatState> = {
-      messages: [...messages, ...newMessages],
-    };
-    if (lastIncoming) {
-      updates.contextToken = lastIncoming.contextToken || contextToken;
-      updates.lastSenderId = lastIncoming.senderId;
-    }
-    set(updates);
-  },
 
   handleAuthStatusChange: (state: string, botName?: string, errorMessage?: string) => {
     set({

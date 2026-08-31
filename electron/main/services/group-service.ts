@@ -2,6 +2,7 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonRead, safeJsonWrite } from './safe-json.js';
+import { broadcastConversationListChanged } from './renderer-broadcast.js';
 import type { Group } from '../types.js';
 
 const { app } = electron;
@@ -101,6 +102,7 @@ export async function createGroup(workspaceId: string, init?: { title?: string }
   };
   file.groups.push(group);
   await saveGroups(workspaceId, file);
+  broadcastConversationListChanged(workspaceId);
   return group;
 }
 
@@ -117,6 +119,7 @@ export async function updateGroup(
   group.updatedAt = Date.now();
 
   await saveGroups(workspaceId, file);
+  broadcastConversationListChanged(workspaceId);
   return group;
 }
 
@@ -130,6 +133,7 @@ export async function archiveGroup(workspaceId: string, groupId: string): Promis
     group.updatedAt = now;
     await saveGroups(workspaceId, file);
   }
+  broadcastConversationListChanged(workspaceId);
   return group;
 }
 
@@ -142,6 +146,7 @@ export async function restoreGroup(workspaceId: string, groupId: string): Promis
     group.updatedAt = Date.now();
     await saveGroups(workspaceId, file);
   }
+  broadcastConversationListChanged(workspaceId);
   return group;
 }
 
@@ -151,6 +156,7 @@ export async function touchGroup(workspaceId: string, groupId: string): Promise<
   if (!group || group.archivedAt !== undefined) return;
   group.updatedAt = Date.now();
   await saveGroups(workspaceId, file);
+  broadcastConversationListChanged(workspaceId, 'debounced');
 }
 
 export async function deleteGroup(workspaceId: string, groupId: string): Promise<void> {
@@ -159,4 +165,5 @@ export async function deleteGroup(workspaceId: string, groupId: string): Promise
   if (index === -1) return;
   file.groups.splice(index, 1);
   await saveGroups(workspaceId, file);
+  broadcastConversationListChanged(workspaceId);
 }

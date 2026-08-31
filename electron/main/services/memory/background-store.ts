@@ -4,6 +4,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
+import { broadcastGroupDataChanged } from '../renderer-broadcast.js';
 import { getGroupDir } from './group-digest-store.js';
 
 export interface GroupBackground {
@@ -84,4 +85,5 @@ export async function readGroupBackground(wsId: string, groupId: string): Promis
 export async function saveGroupBackground(wsId: string, bg: GroupBackground): Promise<void> {
   await fs.mkdir(getGroupDir(wsId, bg.groupId), { recursive: true });
   await fs.writeFile(getBackgroundPath(wsId, bg.groupId), serializeGroupBackground(bg), 'utf-8');
+  broadcastGroupDataChanged(wsId, bg.groupId);
 }

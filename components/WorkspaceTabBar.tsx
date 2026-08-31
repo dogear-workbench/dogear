@@ -88,7 +88,7 @@ export function WorkspaceTabBar() {
       title: tab.conversationTitle,
     });
     // 标记为独立窗口，AgentChat 保持挂载以便 attachment 平滑过渡，
-    // 收到 sessionWindowReady 事件后才安全关闭标签页
+    // 直到 sessionWindowClosed 事件通知窗口关闭后才安全关闭标签页
     addSessionWindow(tab.conversationId);
   };
 

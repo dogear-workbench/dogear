@@ -5,6 +5,7 @@ import {
   ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Lightbulb, Link2, ScrollText, Trash2,
 } from 'lucide-react';
 import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { useGroupStore } from '@/stores/group-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -48,7 +49,6 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
   const groups = useGroupStore((s) => s.groups);
   const groupTitle = groups.find((g) => g.id === groupId)?.title || '未命名话题';
 
-  const [refreshKey, setRefreshKey] = useState(0);
   const [nativeFiles, setNativeFiles] = useState<NativeFileEntry[]>([]);
   const [sharedDir, setSharedDir] = useState<string>('');
   const [background, setBackground] = useState<GroupBackgroundInfo | null>(null);
@@ -58,14 +58,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
   const [digestOpen, setDigestOpen] = useState(true);
   const [filesOpen, setFilesOpen] = useState(true);
 
-  useEffect(() => {
-    const gid = groupId;
-    if (!gid) {
-      setNativeFiles([]);
-      setBackground(null);
-      setDigest(null);
-      return;
-    }
+  const loadPanelData = (gid: string) => {
     client.listSharedFiles({ workspaceId, groupId: gid }).then((r) => {
       if (r.error) toast.error('加载文件列表失败', { description: r.error });
       else {
@@ -85,7 +78,27 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
         setDigest(null);
       }
     });
-  }, [workspaceId, groupId, refreshKey]);
+  };
+
+  useEffect(() => {
+    const gid = groupId;
+    if (!gid) {
+      setNativeFiles([]);
+      setBackground(null);
+      setDigest(null);
+      return;
+    }
+    loadPanelData(gid);
+  }, [workspaceId, groupId]);
+
+  // 主进程广播的组数据变更（共享区文件/话题背景/组卡写点），当前展示组匹配才重拉
+  useEffect(() => {
+    const unsub = rendererEvents.groupDataChanged.listen((data) => {
+      if (data.workspaceId !== workspaceId || data.groupId !== groupId) return;
+      loadPanelData(groupId);
+    });
+    return () => unsub();
+  }, [workspaceId, groupId]);
 
   const handleOpenInExplorer = async () => {
     const gid = groupId;
@@ -123,7 +136,6 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
     if (!ok) return;
     const r = await client.deleteSharedFile({ workspaceId, groupId: gid, relPath });
     if (r.error) toast.error('删除失败', { description: r.error });
-    else setRefreshKey((k) => k + 1);
   };
 
   return (

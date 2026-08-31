@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
+import { broadcastGroupDataChanged } from './renderer-broadcast.js';
 import type { NativeFileEntry } from '../types.js';
 
 export const NOTES_DIR_NAME = '_notes';
@@ -75,12 +76,14 @@ export async function writeNativeFile(workspaceId: string, groupId: string, relP
   const abs = safeResolve(sharedDir, relPath);
   await fs.mkdir(path.dirname(abs), { recursive: true });
   await fs.writeFile(abs, content, 'utf-8');
+  broadcastGroupDataChanged(workspaceId, groupId);
 }
 
 export async function deleteNativeFile(workspaceId: string, groupId: string, relPath: string): Promise<void> {
   const sharedDir = await getSharedDir(workspaceId, groupId);
   const abs = safeResolve(sharedDir, relPath);
   await fs.rm(abs, { force: true });
+  broadcastGroupDataChanged(workspaceId, groupId);
 }
 
 // ─── 子会话 outputPath 占用表（进程级内存，重启清空）───
