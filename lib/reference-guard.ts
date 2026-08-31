@@ -115,18 +115,32 @@ export async function referenceNoteIntoFocus(note: { noteId: string; title: stri
   useInputFocusStore.getState().requestFocus(tab.conversationId);
 }
 
-/** 从笔记详情跳回产生它的会话 tab（卡片来源身份证入口） */
-export function jumpToSourceConversation(source: { conversationId: string; title: string }): void {
+/** 从笔记/任务详情跳到来源会话：已开 tab 聚焦，独立窗口唤起窗口，未开走完整打开链路 */
+export async function jumpToSourceConversation(source: { conversationId: string; title: string }): Promise<void> {
   const { getTab, isInSessionWindow } = useSessionStore.getState();
-  const tab = getTab(source.conversationId);
-  if (!tab) {
-    toast.info('来源会话未打开', { description: `「${source.title || '未命名会话'}」未在标签页中打开` });
+  if (getTab(source.conversationId)) {
+    useSessionStore.getState().switchTab(source.conversationId);
+    useInputFocusStore.getState().requestFocus(source.conversationId);
     return;
   }
   if (isInSessionWindow(source.conversationId)) {
-    toast.info('来源会话已在独立窗口打开');
+    void client.openSessionWindow({ conversationId: source.conversationId, title: source.title || '未命名会话' });
     return;
   }
-  useSessionStore.getState().switchTab(source.conversationId);
-  useInputFocusStore.getState().requestFocus(source.conversationId);
+
+  const conversationStore = useConversationStore.getState();
+  let conv = conversationStore.conversations.find((c) => c.id === source.conversationId);
+  if (!conv && conversationStore.conversations.length === 0) {
+    await conversationStore.loadConversations();
+    conv = useConversationStore.getState().conversations.find((c) => c.id === source.conversationId);
+  }
+  if (!conv) {
+    toast.info('会话不存在或已删除', { description: `「${source.title || '未命名会话'}」无法打开` });
+    return;
+  }
+
+  const { getConversationTitle } = await import('@/components/conversation-list/utils');
+  // 先 openTab 让 tab 带上 conv.workspace_id，跨工作区焦点联动依赖 tab.workspaceId 判定
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
+  await useConversationStore.getState().selectConversation(conv);
 }

@@ -232,7 +232,7 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
             {detail.execSessionId && (
               <button
                 onClick={() =>
-                  jumpToSourceConversation({
+                  void jumpToSourceConversation({
                     conversationId: detail.execSessionId!,
                     title: `任务: ${detail.title}`,
                   })

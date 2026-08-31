@@ -226,7 +226,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
               <span title={`创建于 ${formatTime(note.created)}`}>{formatMetaDate(note.created)}</span>
               {note.source && (
                 <button
-                  onClick={() => jumpToSourceConversation(note.source!)}
+                  onClick={() => void jumpToSourceConversation(note.source!)}
                   title={`来自会话「${note.source.title || '未命名会话'}」· ${new Date(note.source.date).toLocaleDateString('zh-CN')}，点击跳转`}
                   className="cursor-pointer hover:text-foreground"
                 >

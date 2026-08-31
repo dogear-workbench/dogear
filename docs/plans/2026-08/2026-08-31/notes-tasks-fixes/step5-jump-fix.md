@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 会话定位修复
-status: pending
+status: done
 ---
 
 ## 目标
@@ -16,14 +16,14 @@ status: pending
 - 关键决策回顾：note.source / task.originSessionId / task.execSessionId 全是 conversationId（挂载点闭包注入），无需换 key。
 
 ## 计划改动
-- [ ] `lib/reference-guard.ts` `jumpToSourceConversation` 重写为 async：
+- [x] `lib/reference-guard.ts` `jumpToSourceConversation` 重写为 async：
   1. tab 已开 → `switchTab` + `requestFocus`（现状保留）
   2. `isInSessionWindow(id)` → `client.openSessionWindow({ conversationId, title })` focus 现有窗口（title 用传入 source.title 或会话标题）
   3. 未开 → `useConversationStore.getState().conversations.find(c => c.id === id)`；列表为空先 `await loadConversations()` 再查（冷启动首跳场景）；命中 → `selectConversation(conv)` + `useSessionStore.getState().openTab(conv.id, 标题, conv.workspace_id)`（标题用 `getConversationTitle(conv)` 语义——该函数在 conversation-list/utils，可复制或动态 import，避免静态依赖 components）
   4. 仍未命中 → toast「会话不存在或已删除」
   - openTab 返回 false（tab 满）时已有 store 层 toast，直接返回
-- [ ] 调用点签名适配：`NoteEditor.tsx:229`（`onClick={() => jumpToSourceConversation(note.source!)}`）与 `TaskDetail.tsx:212`（同款同步调用）——改 `void jumpToSourceConversation(...)` 兼容 async；接口参数 `{ conversationId, title }` 不变
-- [ ] `client.openSessionWindow` 确认存在且语义为「已开则 focus」（查 `lib/client.ts` / `electron/main/tipc/windows.ts`；若只有「新开窗口」语义，独立窗口分支维持 toast 提示并注明）
+- [x] 调用点签名适配：`NoteEditor.tsx:229`（`onClick={() => jumpToSourceConversation(note.source!)}`）与 `TaskDetail.tsx:212`（同款同步调用）——改 `void jumpToSourceConversation(...)` 兼容 async；接口参数 `{ conversationId, title }` 不变
+- [x] `client.openSessionWindow` 确认存在且语义为「已开则 focus」（实现在 `electron/main/tipc/agent.ts:478` → `electron/main/index.ts:244` `createSessionWindow`：同 conversationId 已开窗口则 `existing.focus()` 返回，title 仅新建窗口时使用）
 
 ## 验证
 - `bun run dev`：笔记详情点来源图标 → 会话 tab 打开并聚焦（目标会话此前未开 tab）
@@ -35,9 +35,14 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. `openTab` 先于 `selectConversation` 执行（计划文案两者并列）：`selectConversation` 内部会以「当前工作区 id」调 openTab，若先调它，跨工作区场景 tab 会带上错误 workspaceId，导致焦点联动（依赖 `tab.workspaceId` 判定）失效；先 openTab(conv.id, title, conv.workspace_id) 再 selectConversation（其内部 openTab 防重变 no-op）可保证 tab 始终携带正确工作区。顺带避免了标题被 selectConversation 内部写成 `conversation.title || '新对话'` 而丢失 `getConversationTitle` 的兜底命名。
+  2. 冷启动重查条件按计划严格为「列表为空」；列表非空但查不到（含已删除）直接 toast，不额外拉一次全量。
 - 改动文件清单：
+  - `lib/reference-guard.ts` — `jumpToSourceConversation` 重写为 async 四分支（tab 已开 → switchTab+requestFocus；独立窗口 → openSessionWindow；未开 → 查列表（空则先 loadConversations）→ openTab+selectConversation；未命中 → toast「会话不存在或已删除」）；`getConversationTitle` 经动态 import 引入，避免 lib → components 静态依赖
+  - `components/notes/NoteEditor.tsx:229` — 调用点加 `void`
+  - `components/notes/TaskDetail.tsx:235` — 同上
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`jumpToSourceConversation(source: { conversationId: string; title: string }): Promise<void>`（参数不变，返回 Promise）；调用点必须 `void jumpToSourceConversation(...)`
+- 下个 step 该从哪里继续：本 step 独立完成，无后续依赖；后续任何「按 conversationId 跳会话」的需求直接复用该函数
+- 待办或已知限制：跨工作区来源会话依赖现有 conversation-store 焦点联动兜底（本步已通过 openTab 携带 conv.workspace_id 打通）；纯前端改动，无需 build:electron
