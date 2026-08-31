@@ -14,6 +14,9 @@ import {
   rejectTask,
   recoverInterruptedTasks,
   executeTask,
+  completeTaskManually,
+  moveTaskToBacklog,
+  moveTaskToPlan,
   softDeleteTask,
   restoreTask,
   purgeTask,
@@ -157,4 +160,98 @@ test('软删任务从列表隐藏，恢复还原，彻底删除移出', async ()
   expect(await getTask(workspacePath, a)).toBeNull();
   expect(await purgeTask(workspacePath, a)).toBe(false);
   await expect(softDeleteTask(workspacePath, a)).rejects.toThrow();
+});
+
+const T0 = '2026-01-01T00:00:00.000Z';
+
+async function seedTasksFileV1(): Promise<string> {
+  const tasksPath = path.join(workspacePath, '.dogear', 'tasks.json');
+  await fs.mkdir(path.dirname(tasksPath), { recursive: true });
+  await fs.writeFile(
+    tasksPath,
+    JSON.stringify({
+      version: 1,
+      tasks: [
+        { id: 't1', title: '旧积压', status: 'backlog', planPath, createdAt: T0, updatedAt: T0 },
+        { id: 't2', title: '旧完成', status: 'done', planPath, createdAt: T0, updatedAt: T0 },
+      ],
+    }),
+    'utf-8',
+  );
+  return tasksPath;
+}
+
+async function readTasksFileRaw(tasksPath: string): Promise<{ version: number; tasks: Array<{ id: string; status: string }> }> {
+  return JSON.parse(await fs.readFile(tasksPath, 'utf-8'));
+}
+
+test('version 1 存量迁移：backlog 转 plan，其他态不动，写回 version 2 且幂等', async () => {
+  const tasksPath = await seedTasksFileV1();
+
+  const groups = await listTasksGrouped(workspacePath);
+  expect(groups.plan.map((t) => t.id)).toEqual(['t1']);
+  expect(groups.done.map((t) => t.id)).toEqual(['t2']);
+
+  const raw = await readTasksFileRaw(tasksPath);
+  expect(raw.version).toBe(2);
+  expect(raw.tasks.find((t) => t.id === 't1')?.status).toBe('plan');
+  expect(raw.tasks.find((t) => t.id === 't2')?.status).toBe('done');
+
+  await listTasksGrouped(workspacePath);
+  const raw2 = await readTasksFileRaw(tasksPath);
+  expect(raw2.version).toBe(2);
+  expect(raw2.tasks.find((t) => t.id === 't2')?.status).toBe('done');
+});
+
+test('createTask upsert：plan 态同标题更新 planPath 不新建；其他态同标题仍新建', async () => {
+  const placeholder = await createTask(workspacePath, { title: '同一件事', status: 'plan' });
+  expect(placeholder.planPath).toBeUndefined();
+
+  const again = await createTask(workspacePath, { title: '同一件事', planPath, status: 'plan' });
+  expect(again.id).toBe(placeholder.id);
+  expect(again.planPath).toBe(planPath);
+  expect(await listTasks(workspacePath)).toHaveLength(1);
+
+  const backlogSameTitle = await createTask(workspacePath, { title: '同一件事', planPath, status: 'backlog' });
+  expect(backlogSameTitle.id).toBe(placeholder.id);
+  expect(backlogSameTitle.status).toBe('plan');
+  expect(await listTasks(workspacePath)).toHaveLength(1);
+
+  const backlogTask = await createTask(workspacePath, { title: '另一件事', planPath, status: 'backlog' });
+  const sameTitlePlan = await createTask(workspacePath, { title: '另一件事', planPath, status: 'plan' });
+  expect(sameTitlePlan.id).not.toBe(backlogTask.id);
+  expect(await listTasks(workspacePath)).toHaveLength(3);
+});
+
+test('占位任务：无 planPath 可创建，getTaskDetail 无 planError，归入 plan 分组', async () => {
+  const task = await createTask(workspacePath, { title: '占位', status: 'plan' });
+  expect(task.planPath).toBeUndefined();
+  const detail = await getTaskDetail(workspacePath, task.id);
+  expect(detail?.planContent).toBeNull();
+  expect(detail?.planError).toBeUndefined();
+  expect((await listTasksGrouped(workspacePath)).plan).toHaveLength(1);
+});
+
+test('executeTask 接受 plan 态直接入队', async () => {
+  const task = await createTask(workspacePath, { title: '直接执行', planPath, status: 'plan' });
+  const queued = await executeTask(workspacePath, task.id);
+  expect(queued.status).toBe('queued');
+});
+
+test('moveTaskToBacklog / moveTaskToPlan 三栏往返', async () => {
+  const created = await createTask(workspacePath, { title: '计划任务', planPath, status: 'plan' });
+  const toBacklog = await moveTaskToBacklog(workspacePath, created.id);
+  expect(toBacklog.status).toBe('backlog');
+  await expect(moveTaskToPlan(workspacePath, created.id)).rejects.toThrow();
+
+  const done = await completeTaskManually(workspacePath, created.id);
+  expect(done.status).toBe('done');
+  const backToPlan = await moveTaskToPlan(workspacePath, created.id);
+  expect(backToPlan.status).toBe('plan');
+
+  await executeTask(workspacePath, created.id);
+  const rejected = await rejectTask(workspacePath, created.id, '打回');
+  expect(rejected.status).toBe('rejected');
+  const rePlan = await moveTaskToPlan(workspacePath, created.id);
+  expect(rePlan.status).toBe('plan');
 });

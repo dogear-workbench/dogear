@@ -5,13 +5,14 @@
  * 修改时两边同步。
  */
 
-export type TaskStatus = 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
+export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
 
 export interface Task {
   id: string;
   title: string;
   status: TaskStatus;
-  planPath: string;
+  /** 计划文档路径；占位任务尚无文档时缺省 */
+  planPath?: string;
   originSessionId?: string;
   execSessionId?: string;
   result?: string;
@@ -30,6 +31,7 @@ export interface TaskDetail extends Task {
 }
 
 export interface TaskGroups {
+  plan: Task[];
   backlog: Task[];
   queued: Task[];
   running: Task[];

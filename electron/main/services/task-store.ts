@@ -1,21 +1,22 @@
 /**
  * 任务存储原语层：Task CRUD + 状态机 + .dogear/tasks.json 读写（零 Electron 依赖）
  *
- * - 状态机 queued → running → review → done/rejected；running 可回 queued（重启恢复），rejected 可回 queued（手动重挂）
- * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）
+ * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划），running 可回 queued（重启恢复）
+ * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）；读写前 ensureMigrated 做 version 1 → 2 存量迁移（backlog → plan）
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
 
-export type TaskStatus = 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
+export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
 
 export interface Task {
   id: string;
   title: string;
   status: TaskStatus;
-  planPath: string;
+  /** 计划文档路径；占位任务尚无文档时缺省 */
+  planPath?: string;
   originSessionId?: string;
   execSessionId?: string;
   result?: string;
@@ -29,12 +30,12 @@ export interface Task {
 
 export interface CreateTaskInput {
   title: string;
-  planPath: string;
+  planPath?: string;
   originSessionId?: string;
   /** 来源笔记卡片 ID */
   noteId?: string;
   /** 初始状态；done 仅存量迁移用 */
-  status?: 'queued' | 'backlog' | 'done';
+  status?: 'queued' | 'backlog' | 'plan' | 'done';
   /** 跳过 plan 文件存在性检查（存量迁移时 plan 可能已被清理，仍需保留任务记录） */
   skipPlanCheck?: boolean;
 }
@@ -47,6 +48,7 @@ export interface TaskDetail extends Task {
 }
 
 export interface TaskGroups {
+  plan: Task[];
   backlog: Task[];
   queued: Task[];
   running: Task[];
@@ -56,24 +58,25 @@ export interface TaskGroups {
 }
 
 interface TasksFile {
-  version: 1;
+  version: 2;
   tasks: Task[];
 }
 
 const TASKS_FILE = 'tasks.json';
 
 const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
+  plan: ['backlog', 'queued', 'done'],
   backlog: ['queued', 'done'],
   queued: ['running', 'rejected', 'backlog'],
   running: ['review', 'queued', 'rejected', 'backlog'],
   review: ['done', 'rejected'],
-  done: [],
-  rejected: ['queued'],
+  done: ['plan'],
+  rejected: ['plan'],
 };
 
 // 缺省值每次新建而非共享常量：mutateTasks 会原地 push，共享常量会被首次读污染并跨工作区泄漏
 function emptyTasksFile(): TasksFile {
-  return { version: 1, tasks: [] };
+  return { version: 2, tasks: [] };
 }
 
 function getTasksFilePath(workspacePath: string): string {
@@ -89,6 +92,33 @@ function generateTaskId(): string {
 
 async function readTasksFile(workspacePath: string): Promise<TasksFile> {
   return safeJsonRead(getTasksFilePath(workspacePath), emptyTasksFile());
+}
+
+const migrations = new Map<string, Promise<void>>();
+
+async function ensureMigrated(workspacePath: string): Promise<void> {
+  const pending = migrations.get(workspacePath);
+  if (pending) return pending;
+  const run = (async () => {
+    const filePath = getTasksFilePath(workspacePath);
+    await withFileLock(filePath, async () => {
+      const file = await readTasksFile(workspacePath);
+      if (file.version >= 2) return;
+      const now = new Date().toISOString();
+      for (const task of file.tasks) {
+        if (task.status !== 'backlog') continue;
+        task.status = 'plan';
+        task.updatedAt = now;
+      }
+      file.version = 2;
+      await writeTasksFileLocked(filePath, file);
+    });
+  })().catch((err) => {
+    migrations.delete(workspacePath);
+    throw err;
+  });
+  migrations.set(workspacePath, run);
+  return run;
 }
 
 // safeJsonWrite 内部会对同一路径 withFileLock，在 mutateTasks 持锁期间调用会重入死锁，
@@ -109,6 +139,7 @@ async function writeTasksFileLocked(filePath: string, file: TasksFile): Promise<
 }
 
 async function mutateTasks<T>(workspacePath: string, fn: (tasks: Task[]) => T): Promise<T> {
+  await ensureMigrated(workspacePath);
   const filePath = getTasksFilePath(workspacePath);
   return withFileLock(filePath, async () => {
     const file = await readTasksFile(workspacePath);
@@ -126,25 +157,32 @@ function requireTitle(title: string): string {
 
 export async function createTask(workspacePath: string, input: CreateTaskInput): Promise<Task> {
   const title = requireTitle(input.title);
-  if (!input.skipPlanCheck) await fs.access(input.planPath);
+  if (!input.skipPlanCheck && input.planPath) await fs.access(input.planPath);
   const now = new Date().toISOString();
-  const task: Task = {
-    id: generateTaskId(),
-    title,
-    status: input.status ?? 'queued',
-    planPath: input.planPath,
-    ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
-    ...(input.noteId ? { noteId: input.noteId } : {}),
-    createdAt: now,
-    updatedAt: now,
-  };
-  await mutateTasks(workspacePath, (tasks) => {
+  return mutateTasks(workspacePath, (tasks) => {
+    const existing = tasks.find((t) => t.status === 'plan' && !t.deletedAt && t.title === title);
+    if (existing) {
+      if (input.planPath) existing.planPath = input.planPath;
+      existing.updatedAt = now;
+      return { ...existing };
+    }
+    const task: Task = {
+      id: generateTaskId(),
+      title,
+      status: input.status ?? 'queued',
+      ...(input.planPath ? { planPath: input.planPath } : {}),
+      ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
+      ...(input.noteId ? { noteId: input.noteId } : {}),
+      createdAt: now,
+      updatedAt: now,
+    };
     tasks.push(task);
+    return { ...task };
   });
-  return { ...task };
 }
 
 export async function listTasks(workspacePath: string): Promise<Task[]> {
+  await ensureMigrated(workspacePath);
   const file = await readTasksFile(workspacePath);
   return file.tasks
     .filter((t) => !t.deletedAt)
@@ -153,6 +191,7 @@ export async function listTasks(workspacePath: string): Promise<Task[]> {
 
 /** 回收站：已删除任务，最近删除在前 */
 export async function listDeletedTasks(workspacePath: string): Promise<Task[]> {
+  await ensureMigrated(workspacePath);
   const file = await readTasksFile(workspacePath);
   return file.tasks
     .filter((t) => t.deletedAt)
@@ -161,12 +200,13 @@ export async function listDeletedTasks(workspacePath: string): Promise<Task[]> {
 
 export async function listTasksGrouped(workspacePath: string): Promise<TaskGroups> {
   const tasks = await listTasks(workspacePath);
-  const groups: TaskGroups = { backlog: [], queued: [], running: [], review: [], done: [], rejected: [] };
+  const groups: TaskGroups = { plan: [], backlog: [], queued: [], running: [], review: [], done: [], rejected: [] };
   for (const task of tasks) groups[task.status].push(task);
   return groups;
 }
 
 export async function getTask(workspacePath: string, taskId: string): Promise<Task | null> {
+  await ensureMigrated(workspacePath);
   const file = await readTasksFile(workspacePath);
   const task = file.tasks.find((t) => t.id === taskId);
   return task ? { ...task } : null;
@@ -175,6 +215,7 @@ export async function getTask(workspacePath: string, taskId: string): Promise<Ta
 export async function getTaskDetail(workspacePath: string, taskId: string): Promise<TaskDetail | null> {
   const task = await getTask(workspacePath, taskId);
   if (!task) return null;
+  if (!task.planPath) return { ...task, planContent: null };
   try {
     const planContent = await fs.readFile(task.planPath, 'utf-8');
     return { ...task, planContent };
@@ -230,11 +271,19 @@ export async function rejectTask(workspacePath: string, taskId: string, reason: 
 }
 
 export async function executeTask(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['backlog'], 'queued');
+  return transition(workspacePath, taskId, ['plan', 'backlog'], 'queued');
 }
 
 export async function completeTaskManually(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['backlog'], 'done', { result: '手动标记完成' });
+  return transition(workspacePath, taskId, ['plan', 'backlog'], 'done', { result: '手动标记完成' });
+}
+
+export async function moveTaskToBacklog(workspacePath: string, taskId: string): Promise<Task> {
+  return transition(workspacePath, taskId, ['plan'], 'backlog');
+}
+
+export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<Task> {
+  return transition(workspacePath, taskId, ['done', 'rejected'], 'plan');
 }
 
 export async function cancelTask(workspacePath: string, taskId: string): Promise<Task> {

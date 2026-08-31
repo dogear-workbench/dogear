@@ -11,6 +11,8 @@ import {
   deleteTask,
   restoreTask,
   purgeTask,
+  moveTaskToBacklog,
+  moveTaskToPlan,
   type ReviewAction,
 } from '../services/task-service.js';
 import { getTaskQueue, interruptTaskExecSession } from '../services/task-queue.js';
@@ -77,6 +79,20 @@ export const tasksRouter = {
     .action(async ({ input }) => {
       try {
         return { task: await completeTaskManually(input.workspacePath, input.taskId) };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
+  moveCollabTask: t.procedure
+    .input<{ workspacePath: string; taskId: string; to: 'backlog' | 'plan' }>()
+    .action(async ({ input }) => {
+      try {
+        const task =
+          input.to === 'backlog'
+            ? await moveTaskToBacklog(input.workspacePath, input.taskId)
+            : await moveTaskToPlan(input.workspacePath, input.taskId);
+        return { task };
       } catch (e) {
         return { error: String(e) };
       }

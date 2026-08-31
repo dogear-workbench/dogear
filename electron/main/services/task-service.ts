@@ -87,6 +87,18 @@ export async function cancelTask(workspacePath: string, taskId: string): Promise
   return task;
 }
 
+export async function moveTaskToBacklog(workspacePath: string, taskId: string): Promise<taskStore.Task> {
+  const task = await taskStore.moveTaskToBacklog(workspacePath, taskId);
+  broadcastTasksChanged(workspacePath);
+  return task;
+}
+
+export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<taskStore.Task> {
+  const task = await taskStore.moveTaskToPlan(workspacePath, taskId);
+  broadcastTasksChanged(workspacePath);
+  return task;
+}
+
 export async function deleteTask(workspacePath: string, taskId: string): Promise<taskStore.Task> {
   const task = await taskStore.softDeleteTask(workspacePath, taskId);
   broadcastTasksChanged(workspacePath);

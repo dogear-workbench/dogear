@@ -11,6 +11,7 @@
  */
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
+import fs from 'node:fs/promises';
 import { conversationRuntimeService } from './conversation-runtime-service.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { PiSession, PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
@@ -129,6 +130,16 @@ class TaskQueueExecutor {
 
   private async executeOne(ctx: QueuedWork): Promise<void> {
     const { workspacePath, workspaceId, task } = ctx;
+    if (!task.planPath) {
+      await this.safeReject(ctx, '任务尚无 plan 文档，请先补文档再执行');
+      return;
+    }
+    try {
+      await fs.access(task.planPath);
+    } catch {
+      await this.safeReject(ctx, '任务尚无 plan 文档，请先补文档再执行');
+      return;
+    }
     const origin = task.originSessionId
       ? await conversationService.getByIdGlobal(task.originSessionId)
       : null;

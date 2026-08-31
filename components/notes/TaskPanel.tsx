@@ -96,7 +96,7 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
     if (!groups) return null;
     if (!q) return groups;
     const match = (t: Task) =>
-      t.title.toLowerCase().includes(q) || t.planPath.toLowerCase().includes(q);
+      t.title.toLowerCase().includes(q) || t.planPath?.toLowerCase().includes(q);
     const out = { ...groups };
     for (const g of TASK_GROUPS) out[g.status] = groups[g.status].filter(match);
     return out;
