@@ -223,16 +223,19 @@ export function createDataCenterWindow() {
 }
 
 /**
- * 设置已落盘，通知主窗口刷新（restartSessions=true 时同时重启活跃会话）
- * 目标是主窗口而非发起保存的设置窗口（后者本地 store 已同步）
+ * 设置已落盘，通知所有窗口刷新（restartSessions=true 时同时重启活跃会话）
+ * 发起保存的窗口 store 已同步，重复 loadSettings 幂等无妨；
+ * 广播到全部窗口是主题/字号等 UI 设置跨窗口即时生效的前提
  */
 export function broadcastSettingsChanged(restartSessions: boolean) {
-  if (!mainWindow || mainWindow.isDestroyed()) return;
-  try {
-    const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
-    h.settingsChanged.send({ restartSessions });
-  } catch (err) {
-    console.error('[settings] 广播 settingsChanged 失败:', err);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      const h = getRendererHandlers<RendererHandlers>(win.webContents);
+      h.settingsChanged.send({ restartSessions });
+    } catch (err) {
+      console.error('[settings] 广播 settingsChanged 失败:', err);
+    }
   }
 }
 
@@ -533,6 +536,15 @@ app.whenReady().then(async () => {
     enableAutoCleanup: true
   });
   await agentManager.start();
+
+  // 启动时应用外观主题（nativeTheme.themeSource 管系统跟随与原生标题栏深浅）
+  try {
+    const { loadSettings, applyThemeSource } = await import('./services/settings-service.js');
+    const appSettings = await loadSettings();
+    applyThemeSource(appSettings.appearance?.theme);
+  } catch (error) {
+    console.error('初始化主题失败:', error);
+  }
 
   createWindow();
   createTray();

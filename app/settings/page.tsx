@@ -43,6 +43,12 @@ const FONT_SIZE_OPTIONS = [
   { value: 'large' as const, label: '大' },
 ];
 
+const THEME_OPTIONS = [
+  { value: 'light' as const, label: '亮色', description: '暖纸底色，适合明亮环境' },
+  { value: 'dark' as const, label: '暗色', description: '墨蓝底色，适合夜间与暗光环境' },
+  { value: 'system' as const, label: '跟随系统', description: '随操作系统深浅模式自动切换' },
+];
+
 // ═══ 深度比较 ════════════════════════════════════════
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -104,6 +110,13 @@ export default function SettingsPage() {
     setLocal(prev => ({
       ...prev,
       ui: { ...(prev.ui ?? { messageDisplayMode: 'compact' }), ...patch }
+    }));
+  };
+
+  const updateAppearance = (patch: Partial<NonNullable<AppSettings['appearance']>>) => {
+    setLocal(prev => ({
+      ...prev,
+      appearance: { ...(prev.appearance ?? { theme: 'light' }), ...patch }
     }));
   };
 
@@ -357,6 +370,26 @@ export default function SettingsPage() {
                     >
                       {opt.label}
                     </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 主题 */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">主题</label>
+                <p className="text-xs text-muted-foreground">切换亮/暗配色，保存后立即应用到所有窗口；默认为「亮色」。</p>
+                <div className="space-y-2">
+                  {THEME_OPTIONS.map(opt => (
+                    <label key={opt.value} className="flex items-start gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/50 transition-colors">
+                      <input type="radio" name="appearanceTheme" className="mt-0.5"
+                        checked={(local.appearance?.theme ?? 'light') === opt.value}
+                        onChange={() => updateAppearance({ theme: opt.value })}
+                      />
+                      <div>
+                        <div className="text-sm font-medium">{opt.label}</div>
+                        <div className="text-xs text-muted-foreground">{opt.description}</div>
+                      </div>
+                    </label>
                   ))}
                 </div>
               </div>

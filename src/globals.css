@@ -14,7 +14,7 @@
 
 /* ═══════════════════════════════════════════════
    Dogear Editorial Design System
-   杂志编辑室风格 — 暗色主题优先
+   杂志编辑室风格 — 暖纸亮 / 墨蓝暗双主题
    ═══════════════════════════════════════════════ */
 
 @theme inline {
@@ -66,28 +66,32 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
-/* ─── 亮色主题（保留基础兼容） ─── */
+/* ─── 暖纸亮色主题 ─── */
 :root {
   --radius: 0.5rem;
 
-  --background: #FAF9F6;
-  --foreground: #1A1A1A;
-  --card: #FFFFFF;
-  --card-foreground: #1A1A1A;
-  --popover: #FFFFFF;
-  --popover-foreground: #1A1A1A;
+  --background: #F6F1E7;
+  --foreground: #33302B;
+  --card: #FCF9F2;
+  --card-foreground: #33302B;
+  --popover: #FCF9F2;
+  --popover-foreground: #33302B;
   --primary: #E8590C;
   --primary-foreground: #FFFFFF;
-  --secondary: #F0EEEB;
-  --secondary-foreground: #1A1A1A;
-  --muted: #F0EEEB;
-  --muted-foreground: #8A8580;
-  --accent: #F0EEEB;
-  --accent-foreground: #1A1A1A;
+  --secondary: #EDE7D9;
+  --secondary-foreground: #33302B;
+  --muted: #EDE7D9;
+  --muted-foreground: #7A756D;
+  --accent: #EDE7D9;
+  --accent-foreground: #33302B;
   --destructive: #E5484D;
-  --border: #E0DDD8;
-  --input: #E0DDD8;
+  --border: #E1DACB;
+  --input: #E1DACB;
   --ring: #E8590C;
+
+  --reading-foreground: #4A453D;
+  --scrollbar-thumb: #B5AC9C;
+  --scrollbar-thumb-hover: #8F8676;
 
   --chart-1: #E8590C;
   --chart-2: #30A46C;
@@ -95,36 +99,40 @@
   --chart-4: #F59E0B;
   --chart-5: #8B5CF6;
 
-  --sidebar: #F5F4F1;
-  --sidebar-foreground: #1A1A1A;
+  --sidebar: #F1EBDF;
+  --sidebar-foreground: #33302B;
   --sidebar-primary: #E8590C;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #F0EEEB;
-  --sidebar-accent-foreground: #1A1A1A;
-  --sidebar-border: #E0DDD8;
+  --sidebar-accent: #E9E2D3;
+  --sidebar-accent-foreground: #33302B;
+  --sidebar-border: #E1DACB;
   --sidebar-ring: #E8590C;
 }
 
-/* ─── 暗色主题（主力） ─── */
+/* ─── 墨蓝暗色主题 ─── */
 .dark {
-  --background: #0C0C0C;
-  --foreground: #EDEBE8;
-  --card: #161616;
-  --card-foreground: #EDEBE8;
-  --popover: #161616;
-  --popover-foreground: #EDEBE8;
-  --primary: #E8590C;
+  --background: #1E242C;
+  --foreground: #C6CBD2;
+  --card: #252C36;
+  --card-foreground: #C6CBD2;
+  --popover: #252C36;
+  --popover-foreground: #C6CBD2;
+  --primary: #F06A1F;
   --primary-foreground: #FFFFFF;
-  --secondary: #1E1E1E;
-  --secondary-foreground: #EDEBE8;
-  --muted: #1E1E1E;
-  --muted-foreground: #9A9590;
-  --accent: #1E1E1E;
-  --accent-foreground: #EDEBE8;
+  --secondary: #2A3140;
+  --secondary-foreground: #C6CBD2;
+  --muted: #2A3140;
+  --muted-foreground: #7E8894;
+  --accent: #2E3644;
+  --accent-foreground: #C6CBD2;
   --destructive: #E5484D;
-  --border: #2A2A2A;
-  --input: #2A2A2A;
-  --ring: #E8590C;
+  --border: #343D49;
+  --input: #343D49;
+  --ring: #F06A1F;
+
+  --reading-foreground: #AEB4BD;
+  --scrollbar-thumb: #343D49;
+  --scrollbar-thumb-hover: #46525F;
 
   --chart-1: #E8590C;
   --chart-2: #30A46C;
@@ -132,14 +140,14 @@
   --chart-4: #F59E0B;
   --chart-5: #8B5CF6;
 
-  --sidebar: #111111;
-  --sidebar-foreground: #EDEBE8;
-  --sidebar-primary: #E8590C;
+  --sidebar: #1A2027;
+  --sidebar-foreground: #C6CBD2;
+  --sidebar-primary: #F06A1F;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #1E1E1E;
-  --sidebar-accent-foreground: #EDEBE8;
-  --sidebar-border: #2A2A2A;
-  --sidebar-ring: #E8590C;
+  --sidebar-accent: #2A3140;
+  --sidebar-accent-foreground: #C6CBD2;
+  --sidebar-border: #2C3541;
+  --sidebar-ring: #F06A1F;
 }
 
 /* ─── 基础层 ─── */
@@ -162,29 +170,14 @@
     background: transparent;
   }
 
+  /* 变量驱动：html 自身滚动条不会命中 .dark 后代选择器 */
   ::-webkit-scrollbar-thumb {
-    background: #2A2A2A;
+    background: var(--scrollbar-thumb);
     border-radius: 3px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #3A3A3A;
-  }
-
-  .dark ::-webkit-scrollbar-thumb {
-    background: #2A2A2A;
-  }
-
-  .dark ::-webkit-scrollbar-thumb:hover {
-    background: #3A3A3A;
-  }
-
-  :root ::-webkit-scrollbar-thumb {
-    background: #A8A29A;
-  }
-
-  :root ::-webkit-scrollbar-thumb:hover {
-    background: #78716C;
+    background: var(--scrollbar-thumb-hover);
   }
 
   /* 文字选中高亮 — 燃烧橙 */
@@ -194,7 +187,7 @@
   }
 
   .dark ::selection {
-    background: rgba(232, 89, 12, 0.35);
+    background: rgba(240, 106, 31, 0.35);
   }
 }
 
@@ -216,6 +209,7 @@
     font-family: "LXGW WenKai", Georgia, "Times New Roman", serif;
     font-size: 1.0625rem;
     line-height: 1.9;
+    color: var(--reading-foreground);
   }
 
   .font-reading :is(pre, code) {

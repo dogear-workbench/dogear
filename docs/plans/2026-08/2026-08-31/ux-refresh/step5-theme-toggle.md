@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 主题切换与变量重调
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,9 +28,20 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  1. 主题选项 UI 未用 shadcn RadioGroup 组件，而是复用设置页既有的「原生 radio + 卡片行」模式（与权限模式/消息显示模式同构），保持设置页视觉语言一致；语义同为三选一 RadioGroup。
+  2. 多窗口同步除渲染层双源驱动外，还需把 `broadcastSettingsChanged` 从仅主窗口扩展到全部 BrowserWindow（计划验证项「数据中心/独立会话窗口同步」的必要条件，原链路只发主窗口）。
+  3. `nativeTheme.themeSource` 同步点收敛在 `saveSettings()` 内（全部保存路径都过这里），而非仅 tipc settings 路由；另在启动 `whenReady` 中应用一次保重启记忆。
+  4. 滚动条双态色改为变量驱动（`--scrollbar-thumb(-hover)`），修复了存量问题：原 `.dark`/`:root` 级联覆盖无法命中 html 自身滚动条。
+- 改动文件清单：`src/globals.css`（两套变量重调 + 滚动条/selection 双态 + `.font-reading` 正文色）；`types/settings.ts` 与 `electron/main/services/settings-types.ts`（双端 appearance + ThemePreference + DEFAULT）；`electron/main/services/settings-service.ts`（applyThemeSource + saveSettings 挂钩 + normalizeSettings 校验）；`electron/main/index.ts`（启动应用主题 + 广播全窗口）；`lib/setup-settings-sync.ts`（applyTheme 双源驱动）；`app/settings/page.tsx`（主题三态选择）；`electron/main/services/settings-normalize.test.ts`（补 appearance 校验测试）。
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `AppSettings.appearance?: { theme: 'light' | 'dark' | 'system' }`（双端类型同名同构，DEFAULT `'light'`）
+  - 主进程 `applyThemeSource(theme: unknown): void`（electron/main/services/settings-service.ts，非法值回退 'light'，settings-service 已引 nativeTheme）
+  - 渲染层 `applyTheme(theme, systemDark)`（lib/setup-settings-sync.ts）：`dark = theme === 'dark' || (theme !== 'light' && systemDark)`，toggle html 的 `.dark` class；settings store 订阅 + `matchMedia('change')` 双源
+  - CSS 变量新增：`--reading-foreground`（亮 #4A453D / 暗 #AEB4BD）、`--scrollbar-thumb(-hover)`；对比度实测：亮 11.6:1 / 暗 9.6:1，reading 正文 8.4:1 / 7.5:1
+- 下个 step 该从哪里继续：Step 6 清理硬编码色（notes-editor pre 背景 #0d1117、Step 4 差分红绿底 dark: 变体、minimap-flash 黄色等），墨蓝底上已有变量基建可依赖
 - 待办或已知限制：
+  - 暗色用户启动时有一瞬亮色闪烁（loadSettings 异步后才 toggle .dark）；如需消除可在 index.html 加 localStorage 预置脚本（本步未做）
+  - chart 色两态一致未区分（数据可视化色保持可辨识性）；notes-editor pre 仍硬编码 GitHub dark 配色（Step 6 范围）
+  - restartSessions=true 广播全窗口后，各窗口各自调 restartActiveSessions（主进程 closeAll 幂等，第二次 closedCount=0，无副作用）

@@ -20,7 +20,7 @@ import {
   type BasicToolPermission,
 } from './settings-types.js';
 
-const { app } = electron;
+const { app, nativeTheme } = electron;
 
 // 重新导出所有纯类型和纯函数，保持现有导入路径兼容
 export * from './settings-types.js';
@@ -218,6 +218,17 @@ export function normalizeSettings(settings: AppSettings): boolean {
     changed = true;
   }
 
+  if (obj.appearance !== undefined && (typeof obj.appearance !== 'object' || Array.isArray(obj.appearance))) {
+    obj.appearance = { theme: 'light' };
+    changed = true;
+  } else if (obj.appearance && typeof obj.appearance === 'object') {
+    const ap = obj.appearance as Record<string, unknown>;
+    if (ap.theme !== 'light' && ap.theme !== 'dark' && ap.theme !== 'system') {
+      ap.theme = 'light';
+      changed = true;
+    }
+  }
+
   const staleAiFields = ['maxTurns', 'defaultSystemPrompt', 'subagentModelTier', 'excludeDynamicSections', 'promptSuggestionsEnabled', 'thinkingType', 'thinkingBudgetTokens', 'thinkingDisplay'];
   const aiObj = settings.ai as unknown as Record<string, unknown>;
   for (const field of staleAiFields) {
@@ -281,6 +292,16 @@ export function normalizeSettings(settings: AppSettings): boolean {
   return changed;
 }
 
+/**
+ * 把外观主题同步到 Electron nativeTheme（跟随系统 + 原生标题栏深浅）
+ * themeSource 可在 app ready 前设置
+ */
+export function applyThemeSource(theme: unknown): void {
+  const t = theme === 'light' || theme === 'dark' || theme === 'system' ? theme : 'light';
+  if (nativeTheme.themeSource !== t) nativeTheme.themeSource = t;
+}
+
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await safeJsonWrite(getSettingsPath(), settings);
+  applyThemeSource(settings.appearance?.theme);
 }

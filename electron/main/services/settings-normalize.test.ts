@@ -60,6 +60,22 @@ test('新模式值保持不变', () => {
   }
 });
 
+test('appearance 非法结构重置，非法 theme 回退 light，合法值保持', () => {
+  const s1 = baseSettings();
+  (s1 as Record<string, unknown>).appearance = 'dark';
+  expect(normalizeSettings(s1)).toBe(true);
+  expect(s1.appearance).toEqual({ theme: 'light' });
+
+  const s2 = baseSettings();
+  (s2.appearance as { theme: string }).theme = 'blue';
+  expect(normalizeSettings(s2)).toBe(true);
+  expect(s2.appearance?.theme).toBe('light');
+
+  const s3 = baseSettings();
+  s3.appearance = { theme: 'system' };
+  expect(normalizeSettings(s3)).toBe(false);
+});
+
 test('缺失 basicToolPermissions 时生成七项 ask 映射', () => {
   const s = baseSettings();
   delete (s as Record<string, unknown>).basicToolPermissions;

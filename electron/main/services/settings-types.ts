@@ -29,6 +29,8 @@ export interface ModelProfile {
 
 export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 export type PiPermissionMode = 'default' | 'autoExecute';
 
 export type BasicToolName = 'read' | 'write' | 'edit' | 'bash' | 'Glob' | 'Grep' | 'Skill';
@@ -106,6 +108,10 @@ export interface AppSettings {
     /** 界面整体缩放档位；缺省视为 medium */
     fontSize?: 'small' | 'medium' | 'large';
   };
+  /** 外观主题；缺省视为 light */
+  appearance?: {
+    theme: ThemePreference;
+  };
   /** 一次性迁移标记 */
   migrated?: {
     workspaceConfig?: boolean;
@@ -137,6 +143,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     messageDisplayMode: 'compact',
     fontSize: 'medium',
+  },
+  appearance: {
+    theme: 'light',
   },
   profiles: {
     default: {

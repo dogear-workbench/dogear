@@ -12,7 +12,7 @@
 - [x] [Step 2: Edit 行级差分](./step2-edit-diff.md) — 零依赖 LCS 差分纯函数 + FileChangeRenderer 接入
 - [x] [Step 3: 成果卡片渲染器](./step3-result-cards.md) — 四组 dogear__ 工具专属渲染 + 图标 + 摘要
 - [x] [Step 4: 卡片跳转动作](./step4-card-jump.md) — 笔记/任务/子会话三路深链
-- [ ] [Step 5: 主题切换与变量重调](./step5-theme-toggle.md) — 暖纸亮/墨蓝暗变量 + 三态开关 + nativeTheme
+- [x] [Step 5: 主题切换与变量重调](./step5-theme-toggle.md) — 暖纸亮/墨蓝暗变量 + 三态开关 + nativeTheme
 - [ ] [Step 6: 硬编码色清理](./step6-hardcoded-colors.md) — 核心区域暗色适配
 
 ## 全局决策

@@ -26,6 +26,8 @@ export function isProfileComplete(profile: ModelProfile): boolean {
   return (profile.piModels?.length ?? 0) > 0;
 }
 
+export type ThemePreference = 'light' | 'dark' | 'system';
+
 export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
 
 export type PiPermissionMode = 'default' | 'autoExecute';
@@ -120,6 +122,10 @@ export interface AppSettings {
     /** 界面整体缩放档位；缺省视为 medium */
     fontSize?: 'small' | 'medium' | 'large';
   };
+  /** 外观主题；缺省视为 light */
+  appearance?: {
+    theme: ThemePreference;
+  };
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -144,6 +150,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     messageDisplayMode: 'compact',
     fontSize: 'medium',
+  },
+  appearance: {
+    theme: 'light',
   },
   profiles: {
     default: {
