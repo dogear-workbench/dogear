@@ -17,7 +17,7 @@ import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
-import { FileChangeRenderer, formatByteSize, getEditCount } from './agent-chat/tool-renderers/FileChangeRenderer';
+import { FileChangeRenderer, formatByteSize, getEditLineStats } from './agent-chat/tool-renderers/FileChangeRenderer';
 
 /**
  * 工具调用状态
@@ -180,7 +180,8 @@ function getToolSummary(
     case "Edit": {
       const editFile = toolInput.file_path || toolInput.path || "";
       const editName = editFile.split(/[\\/]/).pop() || editFile;
-      return `${editName} · 替换 ${getEditCount(toolInput)} 处`;
+      const { added, removed } = getEditLineStats(toolInput);
+      return `${editName} · +${added} −${removed} 行`;
     }
 
     case "Bash":
