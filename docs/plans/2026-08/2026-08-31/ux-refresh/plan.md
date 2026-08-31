@@ -22,3 +22,16 @@
 - **验证方式**：`bun run dev` 人工验收（项目无单测）；Step 5 涉及主进程改动需 `bun run build:electron`。
 - **双态样式约定**：Step 2/3 新写的颜色一律同时写 `dark:` 变体（即使 Step 5 才改暗色变量，先双写不留债）。
 - **接力纪律**：每步完成后回填 stepN.md「实施回填」+ 本索引打勾；下一步只读当前 step + 上一棒的「给下一步的接力棒」。
+
+## 完成总结
+
+2026-08-31 全部 6 步实施完毕（commit 1e0a965 → ff71828），lint 0 errors、build:electron 通过、settings 测试 48 pass。
+
+- **Step 1 列表层级**：话题标题 13px foreground medium + 选中主色竖条，会话行零改动。
+- **Step 2 Edit 差分**：零依赖 line-diff.ts（LCS + 前后缀裁剪，中文细粒度），超 500 行降级整块；摘要 `+N −M 行`。
+- **Step 3 成果卡片**：9 个 dogear__ 工具三表接入（图标/标题/分发），4 renderer + ChipList。
+- **Step 4 卡片跳转**：buildResultAction 三路深链（笔记/任务/子会话），失败 toast 降级；NotesPanel 补 activeNoteId mode 切换（部分暂存提交，遗留 onOpenNote 删除属 task-meta-cleanup）。
+- **Step 5 双主题**：暖纸亮/墨蓝暗全套变量（含 --reading-foreground/滚动条变量），三态开关 + nativeTheme 联动 + 全窗口广播同步。
+- **Step 6 暗色适配**：17 文件核心区域 dark: 双写清零孤儿类；边角 16 处孤儿留后续批次（清单见 step6 交付）。
+
+**遗留**：暗色启动一瞬闪烁（未做 index.html 预置）；禁改五文件（task-meta-cleanup 遗留改动）的暗色适配未做；边角硬编码色 16 处；暗色人工走查待用户 dev 环境过目。
