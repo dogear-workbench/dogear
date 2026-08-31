@@ -120,10 +120,9 @@ test('getTaskDetail 聚合 plan 内容，plan 丢失时带 planError', async () 
   expect(broken?.planError).toContain('读取失败');
 });
 
-test('createTask 支持 backlog 初始状态与 noteId，executeTask 入队', async () => {
-  const task = await createTask(workspacePath, { title: '积压任务', planPath, noteId: 'note-1', status: 'backlog' });
+test('createTask 支持 backlog 初始状态，executeTask 入队', async () => {
+  const task = await createTask(workspacePath, { title: '积压任务', planPath, status: 'backlog' });
   expect(task.status).toBe('backlog');
-  expect(task.noteId).toBe('note-1');
   expect((await listTasksGrouped(workspacePath)).backlog).toHaveLength(1);
 
   await expect(markTaskRunning(workspacePath, task.id, 'exec')).rejects.toThrow();

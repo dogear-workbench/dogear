@@ -150,13 +150,6 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
 
             <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
               <span title={`创建于 ${formatNoteTime(detail.createdAt)}`}>{formatNoteTime(detail.createdAt)}</span>
-              {detail.planPath ? (
-                <span className="min-w-0 truncate" title={detail.planPath}>
-                  {detail.planPath}
-                </span>
-              ) : (
-                <span className="italic">尚无计划文档</span>
-              )}
               <span className="flex-1" />
               <Button
                 variant="ghost"
@@ -255,7 +248,14 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
             )}
 
             <div className="mt-6">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">计划文档</p>
+              <div className="mb-2 flex items-center gap-2 min-w-0">
+                <p className="shrink-0 text-xs font-medium text-muted-foreground">计划文档</p>
+                {detail.planPath && (
+                  <span className="min-w-0 truncate text-[11px] text-muted-foreground/60" title={detail.planPath}>
+                    {detail.planPath}
+                  </span>
+                )}
+              </div>
               {detail.planContent ? (
                 <MarkdownRenderer
                   content={detail.planContent}

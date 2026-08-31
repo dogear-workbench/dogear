@@ -169,12 +169,6 @@ export function NotesPanel() {
 
   const toggleListHidden = useCallback(() => setListHidden((v) => !v), []);
 
-  // 任务侧笔记 chip：切回笔记 mode 并打开卡片
-  const openNoteFromPanels = (noteId: string) => {
-    setMode('notes');
-    setActiveNoteId(noteId);
-  };
-
   const handlePanelKeyDown = (e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
       e.preventDefault();
@@ -208,7 +202,6 @@ export function NotesPanel() {
           query={searchDraft}
           listHidden={listHidden}
           onToggleListHidden={toggleListHidden}
-          onOpenNote={openNoteFromPanels}
         />
       );
     }

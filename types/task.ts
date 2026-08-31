@@ -16,8 +16,6 @@ export interface Task {
   originSessionId?: string;
   execSessionId?: string;
   result?: string;
-  /** 来源笔记卡片 ID */
-  noteId?: string;
   createdAt: string;
   updatedAt: string;
   /** 软删除 → 回收站 */

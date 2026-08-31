@@ -20,8 +20,6 @@ export interface Task {
   originSessionId?: string;
   execSessionId?: string;
   result?: string;
-  /** 来源笔记卡片 ID */
-  noteId?: string;
   createdAt: string;
   updatedAt: string;
   /** 软删除 → 回收站 */
@@ -32,8 +30,6 @@ export interface CreateTaskInput {
   title: string;
   planPath?: string;
   originSessionId?: string;
-  /** 来源笔记卡片 ID */
-  noteId?: string;
   /** 初始状态；done 仅存量迁移用 */
   status?: 'queued' | 'backlog' | 'plan' | 'done';
   /** 跳过 plan 文件存在性检查（存量迁移时 plan 可能已被清理，仍需保留任务记录） */
@@ -172,7 +168,6 @@ export async function createTask(workspacePath: string, input: CreateTaskInput):
       status: input.status ?? 'queued',
       ...(input.planPath ? { planPath: input.planPath } : {}),
       ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
-      ...(input.noteId ? { noteId: input.noteId } : {}),
       createdAt: now,
       updatedAt: now,
     };
