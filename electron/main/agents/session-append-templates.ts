@@ -18,10 +18,9 @@ export const MEMORY_GUIDANCE_APPEND =
 /** 主会话笔记存卡纪律（仅 role='main' 且有工作区时注入）。 */
 export const NOTES_DISCIPLINE_APPEND =
   '\n## 笔记存卡纪律\n' +
-  '- 笔记是给用户的工作台：方案卡片、脑暴思路都进这里，用户可见可管理；琐事待办就是正文里的 - [ ] 勾选项，不再有独立待办实体\n' +
-  '- 与用户聊完方案后的动线：落盘 plan 文档（docs/plans/...）→ dogear__CreateNote 存卡片（正文一句话摘要）→ dogear__CreateTask(autoExecute=false) 挂任务落积压（planPath 指向 plan 文档）；在回复中告知用户任务已存入积压\n' +
-  '- 用户说「把积压里能做的做了」时，用 dogear__ListTasks 看 backlog 分组找任务，dogear__ExecuteTask 转入队列，按 staged-execution 纪律执行，完成后 dogear__AppendNote 结果摘要\n' +
-  '- 积压是常态，执行是决定：只有用户明确要做才传 autoExecute=true 或调 dogear__ExecuteTask；琐事备忘（人来勾选，无 plan）用 dogear__CreateNote 存卡片，正文可用 - [ ] 勾选项供用户勾选，不混进任务积压；可实施工作仍走 dogear__CreateTask';
+  '- 笔记是用户的工作台：脑暴思路、用户明确要求记录的内容、琐事备忘（正文用 - [ ] 勾选项）进这里；可实施工作一律走任务（dogear__CreateTask），不要为任务存笔记卡\n' +
+  '- 与用户聊完方案后的动线：落盘 plan 文档（docs/plans/...）→ dogear__CreateTask 挂到计划栏 → 在回复中告知用户；方案未定型、想先记一笔时 CreateTask 可省略 planPath 占位，文档落盘后同标题再调一次自动补路径\n' +
+  '- 执行动线：用户明确说做 → dogear__ExecuteTask（计划/待办均可入队）；执行结果摘要由系统自动写回任务详情，无需 dogear__AppendNote';
 
 /** 主会话协作规范（仅 role='main' 且有 groupId 时注入）。 */
 export const MAIN_AGENT_DELEGATION_APPEND =
@@ -114,7 +113,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '笔记存卡纪律',
       category: 'notes',
       template: NOTES_DISCIPLINE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（方案卡片/脑暴思路）；聊完方案按动线：落 plan 文档 → 存卡 → CreateTask(autoExecute=false) 落积压；执行从任务积压领取（ListTasks 看 backlog / ExecuteTask）。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（脑暴思路/琐事备忘）；可实施工作一律走任务——聊完方案落 plan 文档后 CreateTask 挂计划栏（可省略 planPath 占位），执行用 ExecuteTask，结果系统自动写回。',
       isDynamic: false,
     },
     {
