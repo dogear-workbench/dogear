@@ -168,7 +168,7 @@ export default function Home() {
   // 正在加载默认工作区时显示加载状态
   if (loadingDefaultWs) {
     return (
-      <div className="h-screen flex items-center justify-center">
+      <div className="h-full flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -184,7 +184,7 @@ export default function Home() {
     }
     // 有历史工作区但当前未激活 → 简单提示并提供 Popover 入口
     return (
-      <div className="h-screen flex items-center justify-center bg-muted/20">
+      <div className="h-full flex items-center justify-center bg-muted/20">
         <div className="max-w-md w-full bg-background rounded-xl border shadow-lg p-8 space-y-4 text-center">
           <h2 className="text-lg font-semibold">请选择一个工作区继续</h2>
           <p className="text-sm text-muted-foreground">
@@ -199,7 +199,7 @@ export default function Home() {
   }
 
   return (
-    <main className="h-screen flex flex-col">
+    <main className="h-full flex flex-col">
       {/* 顶部导航栏 */}
       <header className="h-12 border-b flex items-center justify-between px-4 bg-background">
         <div className="flex items-center gap-2">
@@ -289,7 +289,7 @@ export default function Home() {
         {/* 左侧：对话列表，可折叠（里程碑 1.5 Step A2.5） */}
         <aside
           className={cn(
-            'border-r bg-muted/30 flex flex-col transition-all duration-200 overflow-hidden',
+            'border-r bg-sidebar flex flex-col transition-all duration-200 overflow-hidden',
             leftPanelOpen ? 'w-64' : 'w-0 border-r-0',
           )}
         >
@@ -346,7 +346,7 @@ export default function Home() {
 
         {/* 右侧：文件 / 附加 / 共享区面板，通过 tab 切换 */}
         <aside className={cn(
-          "border-l flex flex-col bg-background transition-all duration-200 overflow-hidden",
+          "border-l flex flex-col bg-sidebar transition-all duration-200 overflow-hidden",
           rightPanelOpen ? 'w-96' : 'w-0 border-l-0'
         )}>
           {/* Tab 切换栏 */}

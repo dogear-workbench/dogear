@@ -44,7 +44,7 @@ const FONT_SIZE_OPTIONS = [
 ];
 
 const THEME_OPTIONS = [
-  { value: 'light' as const, label: '亮色', description: '暖纸底色，适合明亮环境' },
+  { value: 'light' as const, label: '亮色', description: '柔雾浅灰底色，适合长时间阅读' },
   { value: 'dark' as const, label: '暗色', description: '墨蓝底色，适合夜间与暗光环境' },
   { value: 'system' as const, label: '跟随系统', description: '随操作系统深浅模式自动切换' },
 ];
@@ -210,7 +210,7 @@ export default function SettingsPage() {
   // ── 加载中 ──
   if (!loaded) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-full">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-foreground mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">加载设置...</p>
@@ -223,7 +223,7 @@ export default function SettingsPage() {
   const inputCls = "h-9 w-full px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring";
 
   return (
-    <div className="h-screen flex flex-col">
+    <div className="h-full flex flex-col">
       {/* ── 顶部固定栏 ── */}
       <header className="h-12 border-b flex items-center px-4 gap-3 bg-background flex-shrink-0">
         <Button variant="ghost" size="sm" onClick={() => void handleCloseRef.current()}>

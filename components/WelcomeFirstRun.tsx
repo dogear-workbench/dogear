@@ -46,7 +46,7 @@ export function WelcomeFirstRun() {
   };
 
   return (
-    <div className="h-screen flex items-center justify-center bg-muted/20 p-8">
+    <div className="h-full flex items-center justify-center bg-muted/20 p-8">
       <div className="max-w-lg w-full bg-background rounded-xl border shadow-lg p-8 space-y-6">
         <div className="flex items-center justify-center w-16 h-16 mx-auto rounded-full bg-primary/10">
           <Sparkles className="w-8 h-8 text-primary" />

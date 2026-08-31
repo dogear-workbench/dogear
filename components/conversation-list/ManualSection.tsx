@@ -60,7 +60,7 @@ function NewFolderInput({
             onCancel();
           }
         }}
-        className="flex-1 min-w-0 bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
+        className="flex-1 min-w-0 bg-background border border-primary rounded px-1.5 py-0.5 text-[13px] outline-none"
         placeholder="文件夹名称"
       />
     </div>
@@ -104,10 +104,10 @@ function FolderTreeItem({
         {item.isRenaming() ? (
           <input
             {...item.getRenameInputProps()}
-            className="flex-1 min-w-0 bg-background border border-primary rounded px-1.5 py-0.5 text-sm outline-none"
+            className="flex-1 min-w-0 bg-background border border-primary rounded px-1.5 py-0.5 text-[13px] outline-none"
           />
         ) : (
-          <span className="text-sm truncate flex-1">{data.name}</span>
+          <span className="text-[13px] font-medium truncate flex-1">{data.name}</span>
         )}
         <Button
           variant="ghost"

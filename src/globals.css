@@ -14,7 +14,7 @@
 
 /* ═══════════════════════════════════════════════
    Dogear Editorial Design System
-   杂志编辑室风格 — 暖纸亮 / 墨蓝暗双主题
+   杂志编辑室风格 — 柔雾亮 / 墨蓝暗双主题
    ═══════════════════════════════════════════════ */
 
 @theme inline {
@@ -66,47 +66,49 @@
   --radius-4xl: calc(var(--radius) + 16px);
 }
 
-/* ─── 暖纸亮色主题 ─── */
+/* ─── 米纸亮色主题 ─── */
 :root {
   --radius: 0.5rem;
 
-  --background: #F6F1E7;
+  --background: #F5F1E8;
   --foreground: #33302B;
-  --card: #FCF9F2;
+  --card: #FBF8F1;
   --card-foreground: #33302B;
-  --popover: #FCF9F2;
+  --popover: #FBF8F1;
   --popover-foreground: #33302B;
-  --primary: #E8590C;
+  --primary: #A6533C;
   --primary-foreground: #FFFFFF;
   --secondary: #EDE7D9;
   --secondary-foreground: #33302B;
   --muted: #EDE7D9;
   --muted-foreground: #7A756D;
-  --accent: #EDE7D9;
+  --accent: #E8E2D2;
   --accent-foreground: #33302B;
-  --destructive: #E5484D;
-  --border: #E1DACB;
-  --input: #E1DACB;
-  --ring: #E8590C;
+  --destructive: #B94D52;
+  --border: #DFD8C6;
+  --input: #DFD8C6;
+  --ring: #A6533C;
 
   --reading-foreground: #4A453D;
-  --scrollbar-thumb: #B5AC9C;
-  --scrollbar-thumb-hover: #8F8676;
+  --code-background: #EDE8DC;
+  --code-foreground: #33302B;
+  --scrollbar-thumb: #B8AE99;
+  --scrollbar-thumb-hover: #9A9080;
 
-  --chart-1: #E8590C;
-  --chart-2: #30A46C;
-  --chart-3: #3B82F6;
-  --chart-4: #F59E0B;
-  --chart-5: #8B5CF6;
+  --chart-1: #A6533C;
+  --chart-2: #287765;
+  --chart-3: #3D6F93;
+  --chart-4: #A8762A;
+  --chart-5: #7564A1;
 
-  --sidebar: #F1EBDF;
+  --sidebar: #F0EBDE;
   --sidebar-foreground: #33302B;
-  --sidebar-primary: #E8590C;
+  --sidebar-primary: #A6533C;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #E9E2D3;
+  --sidebar-accent: #E6E0CF;
   --sidebar-accent-foreground: #33302B;
-  --sidebar-border: #E1DACB;
-  --sidebar-ring: #E8590C;
+  --sidebar-border: #DFD8C6;
+  --sidebar-ring: #A6533C;
 }
 
 /* ─── 墨蓝暗色主题 ─── */
@@ -131,6 +133,8 @@
   --ring: #F06A1F;
 
   --reading-foreground: #AEB4BD;
+  --code-background: #0D1117;
+  --code-foreground: #E6EDF3;
   --scrollbar-thumb: #343D49;
   --scrollbar-thumb-hover: #46525F;
 
@@ -158,6 +162,28 @@
 
   body {
     @apply bg-background text-foreground font-sans;
+    height: 100%;
+  }
+
+  html {
+    height: 100%;
+  }
+
+  /* 自绘标题栏让位（titleBarStyle hidden 窗口）：顶部留出系统按钮条高度并作为窗口拖拽区 */
+  #root {
+    height: 100%;
+    padding-top: env(titlebar-area-height, 0px);
+  }
+
+  #root::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(titlebar-area-height, 0px);
+    -webkit-app-region: drag;
+    z-index: 9999;
   }
 
   /* 滚动条美化 — 编辑室风格：细窄、暗色、融入背景 */
@@ -180,9 +206,9 @@
     background: var(--scrollbar-thumb-hover);
   }
 
-  /* 文字选中高亮 — 燃烧橙 */
+  /* 文字选中高亮 */
   ::selection {
-    background: rgba(232, 89, 12, 0.3);
+    background: rgba(166, 83, 60, 0.22);
     color: inherit;
   }
 
@@ -214,6 +240,137 @@
 
   .font-reading :is(pre, code) {
     font-family: ui-monospace, Consolas, monospace;
+  }
+
+  /* 阅读代码块沿用主题背景，避免亮色模式出现强烈的纯黑区域。 */
+  .font-reading pre {
+    background: var(--code-background) !important;
+    color: var(--code-foreground) !important;
+    border: 1px solid var(--border);
+  }
+
+  .font-reading pre .hljs {
+    background: transparent !important;
+    color: var(--code-foreground);
+  }
+
+  .font-reading :not(pre) > code {
+    background: var(--secondary);
+    color: #7C4637;
+    border-radius: 0.25rem;
+    padding: 0.1em 0.3em;
+  }
+
+  .font-reading .hljs-doctag,
+  .font-reading .hljs-keyword,
+  .font-reading .hljs-meta .hljs-keyword,
+  .font-reading .hljs-template-tag,
+  .font-reading .hljs-template-variable,
+  .font-reading .hljs-type,
+  .font-reading .hljs-variable.language_ {
+    color: #94503C;
+  }
+
+  .font-reading .hljs-title,
+  .font-reading .hljs-title.class_,
+  .font-reading .hljs-title.class_.inherited__,
+  .font-reading .hljs-title.function_ {
+    color: #715C96;
+  }
+
+  .font-reading .hljs-attr,
+  .font-reading .hljs-attribute,
+  .font-reading .hljs-literal,
+  .font-reading .hljs-meta,
+  .font-reading .hljs-number,
+  .font-reading .hljs-operator,
+  .font-reading .hljs-variable,
+  .font-reading .hljs-selector-attr,
+  .font-reading .hljs-selector-class,
+  .font-reading .hljs-selector-id {
+    color: #336C87;
+  }
+
+  .font-reading .hljs-regexp,
+  .font-reading .hljs-string,
+  .font-reading .hljs-meta .hljs-string {
+    color: #287160;
+  }
+
+  .font-reading .hljs-built_in,
+  .font-reading .hljs-symbol {
+    color: #946523;
+  }
+
+  .font-reading .hljs-comment,
+  .font-reading .hljs-code,
+  .font-reading .hljs-formula {
+    color: #6E7971;
+  }
+
+  .font-reading .hljs-name,
+  .font-reading .hljs-quote,
+  .font-reading .hljs-selector-tag,
+  .font-reading .hljs-selector-pseudo {
+    color: #47735E;
+  }
+
+  .dark .font-reading :not(pre) > code {
+    color: #F2B28E;
+  }
+
+  .dark .font-reading .hljs-doctag,
+  .dark .font-reading .hljs-keyword,
+  .dark .font-reading .hljs-meta .hljs-keyword,
+  .dark .font-reading .hljs-template-tag,
+  .dark .font-reading .hljs-template-variable,
+  .dark .font-reading .hljs-type,
+  .dark .font-reading .hljs-variable.language_ {
+    color: #FF7B72;
+  }
+
+  .dark .font-reading .hljs-title,
+  .dark .font-reading .hljs-title.class_,
+  .dark .font-reading .hljs-title.class_.inherited__,
+  .dark .font-reading .hljs-title.function_ {
+    color: #D2A8FF;
+  }
+
+  .dark .font-reading .hljs-attr,
+  .dark .font-reading .hljs-attribute,
+  .dark .font-reading .hljs-literal,
+  .dark .font-reading .hljs-meta,
+  .dark .font-reading .hljs-number,
+  .dark .font-reading .hljs-operator,
+  .dark .font-reading .hljs-variable,
+  .dark .font-reading .hljs-selector-attr,
+  .dark .font-reading .hljs-selector-class,
+  .dark .font-reading .hljs-selector-id {
+    color: #79C0FF;
+  }
+
+  .dark .font-reading .hljs-regexp,
+  .dark .font-reading .hljs-string,
+  .dark .font-reading .hljs-meta .hljs-string {
+    color: #A5D6FF;
+  }
+
+  .dark .font-reading .hljs-built_in,
+  .dark .font-reading .hljs-symbol {
+    color: #FFA657;
+  }
+
+  .dark .font-reading .hljs-comment,
+  .dark .font-reading .hljs-code,
+  .dark .font-reading .hljs-formula {
+    color: #8B949E;
+  }
+
+  .dark .font-reading .hljs-name,
+  .dark .font-reading .hljs-quote,
+  .dark .font-reading .hljs-selector-tag,
+  .dark .font-reading .hljs-selector-pseudo {
+    color: #7EE787;
   }
 }
 

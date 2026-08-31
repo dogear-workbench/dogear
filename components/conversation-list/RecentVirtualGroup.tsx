@@ -25,7 +25,7 @@ export function RecentVirtualGroup() {
   return (
     <div>
       <div
-        className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-xs font-semibold text-foreground hover:bg-muted/40 transition-colors"
+        className="flex items-center gap-1.5 py-1.5 px-3 cursor-pointer select-none text-[11px] font-semibold tracking-wider text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
         onClick={() => toggleExpanded()}
       >
         {expanded

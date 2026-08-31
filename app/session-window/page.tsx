@@ -71,7 +71,7 @@ export function SessionWindowPage() {
   const title = conversations.find(c => c.id === conversationId)?.title || '会话窗口';
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* 头部栏 */}
       <header className="h-10 border-b flex items-center px-3 gap-2 flex-shrink-0">
         <Button

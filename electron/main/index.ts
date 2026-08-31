@@ -4,7 +4,7 @@
  */
 
 import electron, { type BrowserWindow as BrowserWindowType, type Tray as TrayType } from 'electron';
-const { app, BrowserWindow, Menu, Tray, protocol, net } = electron;
+const { app, BrowserWindow, Menu, Tray, protocol, net, nativeTheme } = electron;
 import * as path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname } from 'path';
@@ -26,6 +26,29 @@ function getRendererPath(): string {
     return 'http://localhost:3000';
   }
   return 'app://dogear/index.html';
+}
+
+const TITLE_BAR_HEIGHT = 36;
+const TITLE_BAR_SCHEMES = {
+  light: { color: '#F5F1E8', symbolColor: '#33302B' },
+  dark: { color: '#1E242C', symbolColor: '#C6CBD2' },
+};
+
+function currentTitleBarOverlay() {
+  const scheme = nativeTheme.shouldUseDarkColors ? TITLE_BAR_SCHEMES.dark : TITLE_BAR_SCHEMES.light;
+  return { ...scheme, height: TITLE_BAR_HEIGHT };
+}
+
+function syncTitleBarOverlay() {
+  const overlay = currentTitleBarOverlay();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      win.setTitleBarOverlay(overlay);
+    } catch {
+      // 未启用 overlay 的窗口（原生标题栏）忽略
+    }
+  }
 }
 
 // file:// 页面 origin 为 opaque(null)，CSS 字体等 CORS 严格资源会被拦，改用 standard scheme 的 app://
@@ -76,6 +99,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: currentTitleBarOverlay(),
     webPreferences: {
       // 预加载脚本路径
       preload: path.join(__dirname, '../preload/index.js'),
@@ -257,6 +282,8 @@ export function createSessionWindow(conversationId: string, title: string) {
     width: 1200,
     height: 800,
     title: `会话: ${title}`,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: currentTitleBarOverlay(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -545,6 +572,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('初始化主题失败:', error);
   }
+  nativeTheme.on('updated', syncTitleBarOverlay);
 
   createWindow();
   createTray();

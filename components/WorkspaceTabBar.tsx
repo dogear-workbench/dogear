@@ -98,7 +98,7 @@ export function WorkspaceTabBar() {
   };
 
   return (
-    <ScrollArea className="border-b bg-muted/30">
+    <ScrollArea className="border-b bg-sidebar">
       <div className="flex items-center">
         <button
           onClick={() => switchTab(HOME_TAB_ID)}

@@ -38,7 +38,7 @@ export default function StockPage() {
   }, [loadWatchlist, refreshQuotes]);
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* 顶栏 */}
       <header className="flex items-center gap-2 px-4 h-12 border-b shrink-0">
         <h1 className="text-sm font-medium">自选股行情</h1>

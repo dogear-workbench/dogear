@@ -23,7 +23,7 @@ export function App() {
           <Route path="/stocks" element={<ErrorBoundary fallback="page"><StockPage /></ErrorBoundary>} />
           <Route path="/wechat" element={<ErrorBoundary fallback="page"><WechatPage /></ErrorBoundary>} />
           <Route path="/session-window/:conversationId" element={<ErrorBoundary fallback="page"><SessionWindowPage /></ErrorBoundary>} />
-          <Route path="/data-center" element={<div className="h-screen"><ErrorBoundary fallback="page"><DataCenterPage /></ErrorBoundary></div>} />
+          <Route path="/data-center" element={<div className="h-full"><ErrorBoundary fallback="page"><DataCenterPage /></ErrorBoundary></div>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>
