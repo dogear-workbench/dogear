@@ -6,9 +6,6 @@ import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
-import { TopicPanel } from '@/components/TopicPanel';
-import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
@@ -18,6 +15,7 @@ import DataCenterPage from '@/app/data-center/page';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { NotesPanel } from '@/components/notes/NotesPanel';
+import { CompanionPanel } from '@/components/companion/CompanionPanel';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -32,8 +30,6 @@ export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
   const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
-  const rightPanelTab = useUIStore((s) => s.rightPanelTab);
-  const setRightPanelTab = useUIStore((s) => s.setRightPanelTab);
   const leftPanelOpen = useUIStore((s) => s.leftPanelOpen);
   const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
 
@@ -344,57 +340,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 右侧：文件 / 附加 / 共享区面板，通过 tab 切换 */}
-        <aside className={cn(
-          "border-l flex flex-col bg-sidebar transition-all duration-200 overflow-hidden",
-          rightPanelOpen ? 'w-96' : 'w-0 border-l-0'
-        )}>
-          {/* Tab 切换栏 */}
-          <div className="flex border-b shrink-0">
-            <button
-              onClick={() => setRightPanelTab('files')}
-              className={cn(
-                'flex-1 px-3 py-2 text-xs font-medium transition-colors',
-                rightPanelTab === 'files'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              文件
-            </button>
-            <button
-              onClick={() => setRightPanelTab('additional')}
-              className={cn(
-                'flex-1 px-3 py-2 text-xs font-medium transition-colors',
-                rightPanelTab === 'additional'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              附加
-            </button>
-            <button
-              onClick={() => setRightPanelTab('topic')}
-              className={cn(
-                'flex-1 px-3 py-2 text-xs font-medium transition-colors',
-                rightPanelTab === 'topic'
-                  ? 'border-b-2 border-primary text-foreground'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-            >
-              话题
-            </button>
-          </div>
-
-          {/* Tab 内容 */}
-          {rightPanelTab === 'files' ? (
-            <WorkspaceExplorer />
-          ) : rightPanelTab === 'additional' ? (
-            <AdditionalFilesPanel workspaceId={workspace.id} />
-          ) : (
-            <TopicPanel workspaceId={workspace.id} groupId={currentGroupId} />
-          )}
-        </aside>
+        {/* 右侧：文件 / 附加 / 话题 / 终端面板，通过 tab 切换，左缘可拖宽 */}
+        <CompanionPanel workspaceId={workspace.id} groupId={currentGroupId} />
       </div>
 
       {/* 微信 Bot 控制 Dialog */}
