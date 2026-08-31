@@ -7,6 +7,7 @@ import { Placeholder } from '@tiptap/extensions';
 import { Markdown, type MarkdownStorage } from 'tiptap-markdown';
 import { SlashMenu } from '@/components/notes/tiptap/SlashMenu';
 import { BubbleToolbar } from '@/components/notes/tiptap/BubbleToolbar';
+import { TableToolbar } from '@/components/notes/tiptap/TableToolbar';
 
 interface TiptapEditorProps {
   initialMarkdown: string;
@@ -26,7 +27,7 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady }: TiptapEdito
       StarterKit,
       TaskList,
       TaskItem.configure({ nested: true }),
-      TableKit,
+      TableKit.configure({ table: { resizable: true } }),
       Image,
       Placeholder.configure({ placeholder: '输入 # 变标题、/ 插入块、- [ ] 加待办…' }),
       Markdown.configure({
@@ -48,6 +49,7 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady }: TiptapEdito
   return (
     <>
       <EditorContent editor={editor} className="notes-editor" />
+      {editor && <TableToolbar editor={editor} />}
       {editor && <BubbleToolbar editor={editor} />}
     </>
   );

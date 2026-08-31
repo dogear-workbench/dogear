@@ -224,6 +224,10 @@
 }
 
 /* ─── 笔记编辑区（Tiptap） ─── */
+.notes-editor {
+  position: relative;
+}
+
 .notes-editor .ProseMirror {
   outline: none;
 }
@@ -378,8 +382,55 @@
   text-align: left;
 }
 
+.notes-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -2px;
+  width: 2px;
+  background: var(--primary);
+  pointer-events: none;
+}
+
+.notes-editor .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+
+.notes-editor .ProseMirror .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  pointer-events: none;
+}
+
+.notes-table-toolbar {
+  position: absolute;
+  z-index: 20;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s;
+}
+
+.notes-table-toolbar[data-visible='true'] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.notes-table-toolbar button {
+  width: auto;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
 .notes-editor .ProseMirror pre {
-  background: var(--muted);
+  background: #0d1117;
+  color: #e6edf3;
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   overflow-x: auto;
@@ -391,6 +442,7 @@
   background: none;
   padding: 0;
   font-size: inherit;
+  color: inherit;
 }
 
 .notes-editor .ProseMirror img {
