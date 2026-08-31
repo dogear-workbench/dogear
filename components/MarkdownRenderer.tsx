@@ -29,6 +29,8 @@ interface MarkdownRendererProps {
   stripHtmlComments?: boolean;
   /** 传入即开启路径链接：正文裸路径与相对路径 md 链接渲染为可点胶囊（浮窗预览）；仅 plan 文档等路径可信场景开启 */
   workspacePath?: string;
+  /** 相对链接解析基准目录（如 plan 文档所在目录），缺省用 workspacePath；正文裸路径始终以 workspacePath 为基准 */
+  baseDir?: string;
 }
 
 /**
@@ -56,7 +58,7 @@ function wrapChildren(
  * 支持 GFM 语法（表格、删除线等）、代码高亮、图片防盗链、链接安全拦截
  * 支持搜索高亮（searchQuery + matchIdPrefix + activeMatchId）
  */
-export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath }: MarkdownRendererProps) {
+export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir }: MarkdownRendererProps) {
   const workspaceId = useWorkspaceIdByPath(workspacePath ?? null);
 
   const processedContent = useMemo(
@@ -85,12 +87,13 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
 
   const openPathPreview = useMemo(() => {
     if (!workspacePath) return null;
+    const base = baseDir ?? workspacePath;
     return (href: string): string | null => {
-      const resolved = resolvePathInWorkspace(href, workspacePath);
+      const resolved = resolvePathInWorkspace(href, base);
       if (!resolved || !ALLOWED_EXT_RE.test(resolved)) return null;
       return resolved;
     };
-  }, [workspacePath]);
+  }, [workspacePath, baseDir]);
 
   // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
   // 只有搜索/路径链接相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）

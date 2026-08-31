@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 编辑器三修](./step1-editor-fixes.md) — 表格操作浮条 + 列宽拖拽、代码块深色化、插入菜单定位修复
 - [x] [Step 2: 任务数据层三栏重构](./step2-task-data.md) — 状态机加 plan、version 迁移、upsert 占位、执行防御、moveTask IPC
-- [ ] [Step 3: 任务 UI 三栏与详情渲染](./step3-task-ui.md) — 分组重排、按钮布局调整、MarkdownRenderer baseDir、详情删除按钮
+- [x] [Step 3: 任务 UI 三栏与详情渲染](./step3-task-ui.md) — 分组重排、按钮布局调整、MarkdownRenderer baseDir、详情删除按钮
 - [ ] [Step 4: agent 工具与提示词](./step4-agent-tools.md) — CreateTask upsert / ExecuteTask 扩 plan、存卡纪律改写（不污染笔记）
 - [ ] [Step 5: 会话定位修复](./step5-jump-fix.md) — jumpToSourceConversation 未开 tab 走完整打开链路
 

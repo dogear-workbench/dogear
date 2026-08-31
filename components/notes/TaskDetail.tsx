@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Ban, Check, MessageSquare, Play, RotateCcw, Trash2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Ban, Check, MessageSquare, Play, RotateCcw, Trash2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
@@ -28,6 +28,7 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
   const completeTask = useTaskStore((s) => s.completeTask);
   const cancelTask = useTaskStore((s) => s.cancelTask);
   const deleteTask = useTaskStore((s) => s.deleteTask);
+  const moveTask = useTaskStore((s) => s.moveTask);
   const [executing, setExecuting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
@@ -102,6 +103,14 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
     }
   }, [workspacePath, taskId, cancelling, cancelTask]);
 
+  const handleMove = useCallback(
+    async (to: 'backlog' | 'plan') => {
+      const ok = await moveTask(workspacePath, taskId, to);
+      if (!ok) toast.error('操作失败', { description: '任务状态未变更' });
+    },
+    [workspacePath, taskId, moveTask],
+  );
+
   const handleDelete = useCallback(async () => {
     const ok = await showConfirm('删除任务', `确定删除「${detail?.title ?? '该任务'}」？删除后可在回收站恢复。`);
     if (!ok) return;
@@ -141,14 +150,40 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
 
             <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">
               <span title={`创建于 ${formatNoteTime(detail.createdAt)}`}>{formatNoteTime(detail.createdAt)}</span>
-              <span className="min-w-0 truncate" title={detail.planPath}>
-                {detail.planPath}
-              </span>
+              {detail.planPath ? (
+                <span className="min-w-0 truncate" title={detail.planPath}>
+                  {detail.planPath}
+                </span>
+              ) : (
+                <span className="italic">尚无计划文档</span>
+              )}
               <span className="flex-1" />
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void handleDelete()}
+                title="删除任务"
+                className="text-destructive hover:text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </Button>
               <Button variant="ghost" size="icon-xs" onClick={onBack} title="返回列表（Esc）">
                 <ArrowLeft className="w-3.5 h-3.5" />
               </Button>
             </div>
+
+            {(detail.status === 'plan' || detail.status === 'rejected') && (
+              <div className="mt-4 flex items-center gap-2">
+                <Button size="sm" onClick={() => void handleMove('backlog')}>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                  移到待办
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void handleComplete()}>
+                  <Check className="w-3.5 h-3.5" />
+                  手动完成
+                </Button>
+              </div>
+            )}
 
             {detail.status === 'backlog' && (
               <div className="mt-4 flex items-center gap-2">
@@ -160,10 +195,6 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
                   <Check className="w-3.5 h-3.5" />
                   手动完成
                 </Button>
-                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                  删除
-                </Button>
               </div>
             )}
 
@@ -173,18 +204,14 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
                   <Ban className="w-3.5 h-3.5" />
                   取消
                 </Button>
-                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                  删除
-                </Button>
               </div>
             )}
 
-            {(detail.status === 'done' || detail.status === 'rejected') && (
+            {detail.status === 'done' && (
               <div className="mt-4 flex items-center gap-2">
-                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                  删除
+                <Button size="sm" variant="outline" onClick={() => void handleMove('plan')}>
+                  <Undo2 className="w-3.5 h-3.5" />
+                  移回计划
                 </Button>
               </div>
             )}
@@ -198,10 +225,6 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
                 <Button size="sm" variant="outline" disabled={reviewing} onClick={() => void handleReview('reject')}>
                   <RotateCcw className="w-3.5 h-3.5" />
                   打回
-                </Button>
-                <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={() => void handleDelete()}>
-                  <Trash2 className="w-3.5 h-3.5" />
-                  删除
                 </Button>
               </div>
             )}
@@ -234,7 +257,15 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
             <div className="mt-6">
               <p className="mb-2 text-xs font-medium text-muted-foreground">计划文档</p>
               {detail.planContent ? (
-                <MarkdownRenderer content={detail.planContent} workspacePath={workspacePath} />
+                <MarkdownRenderer
+                  content={detail.planContent}
+                  workspacePath={workspacePath}
+                  baseDir={detail.planPath ? detail.planPath.replace(/[\\/][^\\/]*$/, '') : undefined}
+                />
+              ) : detail.status === 'plan' ? (
+                <p className="text-sm text-muted-foreground">
+                  还没有计划文档。可在会话中让 Agent 为该任务挂载文档；若无需计划，可直接移到待办执行。
+                </p>
               ) : (
                 <p className="text-sm text-destructive">{detail.planError ?? 'plan 内容为空'}</p>
               )}

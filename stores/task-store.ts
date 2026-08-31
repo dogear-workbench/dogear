@@ -20,6 +20,8 @@ interface TaskState {
   cancelTask: (workspacePath: string, taskId: string) => Promise<boolean>;
   /** 任意状态软删除任务进回收站 */
   deleteTask: (workspacePath: string, taskId: string) => Promise<boolean>;
+  /** 计划↔待办流转：plan（含 rejected）→ backlog 或 done → plan */
+  moveTask: (workspacePath: string, taskId: string, to: 'backlog' | 'plan') => Promise<boolean>
   /** 监听主进程 tasksChanged 广播，工作区匹配时重新拉取分组；返回取消订阅函数 */
   subscribeTasksChanged: () => () => void;
   setActiveTaskId: (taskId: string | null) => void;
@@ -103,6 +105,21 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return false;
     } catch (error) {
       console.error('[tasks] deleteCollabTask 失败:', error);
+      return false;
+    }
+  },
+
+  moveTask: async (workspacePath, taskId, to) => {
+    try {
+      const result = await client.moveCollabTask({ workspacePath, taskId, to });
+      if ('task' in result) {
+        await get().loadTasks(workspacePath);
+        return true;
+      }
+      console.error('[tasks] moveCollabTask 失败:', result.error);
+      return false;
+    } catch (error) {
+      console.error('[tasks] moveCollabTask 失败:', error);
       return false;
     }
   },

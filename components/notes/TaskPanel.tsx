@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Ban, Check, FileText, MoreHorizontal, Play, Trash2 } from 'lucide-react';
+import { ArrowRight, Ban, Check, FileText, MoreHorizontal, Play, Trash2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -20,12 +20,12 @@ import { formatNoteTime } from '@/components/notes/NoteCardItem';
 import type { Task, TaskStatus } from '@/types/task';
 
 const TASK_GROUPS: Array<{ status: TaskStatus; label: string }> = [
-  { status: 'backlog', label: '积压' },
+  { status: 'plan', label: '计划' },
+  { status: 'backlog', label: '待办' },
   { status: 'queued', label: '排队中' },
   { status: 'running', label: '执行中' },
   { status: 'review', label: '待审核' },
   { status: 'done', label: '已完成' },
-  { status: 'rejected', label: '已打回' },
 ];
 
 interface TaskPanelProps {
@@ -46,6 +46,7 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
   const completeTask = useTaskStore((s) => s.completeTask);
   const cancelTask = useTaskStore((s) => s.cancelTask);
   const deleteTask = useTaskStore((s) => s.deleteTask);
+  const moveTask = useTaskStore((s) => s.moveTask);
   const activeTaskId = useTaskStore((s) => s.activeTaskId);
   const setActiveTaskId = useTaskStore((s) => s.setActiveTaskId);
   const focusReq = useTaskFocusStore((s) => s.focusReq);
@@ -91,14 +92,19 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
     else if (activeTaskId === task.id) setActiveTaskId(null);
   };
 
+  const handleMove = async (taskId: string, to: 'backlog' | 'plan') => {
+    const ok = await moveTask(workspacePath, taskId, to);
+    if (!ok) toast.error('操作失败', { description: '任务状态未变更' });
+  };
+
   const q = query?.trim().toLowerCase() ?? '';
   const filteredGroups = useMemo(() => {
     if (!groups) return null;
-    if (!q) return groups;
     const match = (t: Task) =>
       t.title.toLowerCase().includes(q) || t.planPath?.toLowerCase().includes(q);
     const out = { ...groups };
     for (const g of TASK_GROUPS) out[g.status] = groups[g.status].filter(match);
+    out.plan = [...out.plan, ...groups.rejected.filter(match)];
     return out;
   }, [groups, q]);
 
@@ -125,6 +131,7 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
                 onCancel={() => handleCancel(task.id)}
                 onComplete={() => handleComplete(task)}
                 onDelete={() => handleDelete(task)}
+                onMove={(to) => handleMove(task.id, to)}
                 onOpenNote={onOpenNote}
               />
             ))}
@@ -181,12 +188,14 @@ interface TaskCardItemProps {
   onCancel: () => Promise<void>;
   onComplete: () => Promise<void>;
   onDelete: () => Promise<void>;
+  onMove: (to: 'backlog' | 'plan') => Promise<void>;
   onOpenNote: (noteId: string) => void;
 }
 
-function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, onDelete, onOpenNote }: TaskCardItemProps) {
+function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, onDelete, onMove, onOpenNote }: TaskCardItemProps) {
   const [executing, setExecuting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [moving, setMoving] = useState(false);
   const noteTitle = useNotesStore((s) =>
     task.noteId ? (s.notes.find((n) => n.id === task.noteId)?.title ?? null) : null,
   );
@@ -201,6 +210,12 @@ function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, o
     if (cancelling) return;
     setCancelling(true);
     void onCancel().finally(() => setCancelling(false));
+  };
+
+  const handleMove = (to: 'backlog' | 'plan') => {
+    if (moving) return;
+    setMoving(true);
+    void onMove(to).finally(() => setMoving(false));
   };
 
   const hoverBtn = 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity';
@@ -223,6 +238,47 @@ function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, o
     >
       <div className="flex items-center gap-2">
         <p className="flex-1 min-w-0 text-sm font-medium line-clamp-1">{task.title}</p>
+        <TaskStatusBadge status={task.status} />
+      </div>
+      <div className="mt-1 flex items-center gap-2 text-xs">
+        {task.noteId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              if (noteTitle && task.noteId) onOpenNote(task.noteId);
+            }}
+            title={noteTitle ? `打开卡片：${noteTitle}` : '关联笔记在回收站或已删除'}
+            className={cn(
+              'flex items-center gap-1 min-w-0 max-w-28 rounded px-1 py-0.5 shrink-0',
+              noteTitle ? 'text-primary hover:bg-muted' : 'text-muted-foreground/60 cursor-not-allowed',
+            )}
+          >
+            <FileText className="w-3 h-3 shrink-0" />
+            <span className="truncate">{noteTitle ?? '笔记缺失'}</span>
+          </button>
+        )}
+        <span
+          className={cn('min-w-0 flex-1 truncate', task.planPath ? 'text-muted-foreground' : 'italic text-muted-foreground/60')}
+          title={task.planPath}
+        >
+          {task.planPath ?? '无文档'}
+        </span>
+        {(task.status === 'plan' || task.status === 'rejected') && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={moving}
+            className={hoverBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleMove('backlog');
+            }}
+            title="确认计划，移到待办"
+          >
+            <ArrowRight className="w-3 h-3" />
+            移到待办
+          </Button>
+        )}
         {task.status === 'backlog' && (
           <Button
             variant="secondary"
@@ -249,63 +305,57 @@ function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, o
               e.stopPropagation();
               handleCancel();
             }}
-            title="取消并回积压"
+            title="取消并回待办"
           >
             <Ban className="w-3 h-3" />
             取消
           </Button>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              className={cn(hoverBtn, 'h-6 w-6')}
-              onClick={(e) => e.stopPropagation()}
-              title="更多操作"
-            >
-              <MoreHorizontal className="w-3.5 h-3.5" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-[140px]">
-            {task.status === 'backlog' && (
-              <DropdownMenuItem onClick={() => void onComplete()}>
-                <Check className="w-3.5 h-3.5" />
-                手动完成
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void onDelete()}>
-              <Trash2 className="w-3.5 h-3.5" />
-              删除
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <TaskStatusBadge status={task.status} />
-      </div>
-      {task.status === 'backlog' && (
-        <div className="mt-1 flex items-center gap-2 text-xs">
-          {task.noteId && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                if (noteTitle && task.noteId) onOpenNote(task.noteId);
-              }}
-              title={noteTitle ? `打开卡片：${noteTitle}` : '关联笔记在回收站或已删除'}
-              className={cn(
-                'flex items-center gap-1 min-w-0 max-w-28 rounded px-1 py-0.5 shrink-0',
-                noteTitle ? 'text-primary hover:bg-muted' : 'text-muted-foreground/60 cursor-not-allowed',
+        {task.status === 'done' && (
+          <Button
+            variant="secondary"
+            size="xs"
+            disabled={moving}
+            className={hoverBtn}
+            onClick={(e) => {
+              e.stopPropagation();
+              handleMove('plan');
+            }}
+            title="移回计划重新处理"
+          >
+            <Undo2 className="w-3 h-3" />
+            移回计划
+          </Button>
+        )}
+        {(task.status === 'backlog' || task.status === 'review') && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={cn(hoverBtn, 'h-6 w-6')}
+                onClick={(e) => e.stopPropagation()}
+                title="更多操作"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[140px]">
+              {task.status === 'backlog' && (
+                <DropdownMenuItem onClick={() => void onComplete()}>
+                  <Check className="w-3.5 h-3.5" />
+                  手动完成
+                </DropdownMenuItem>
               )}
-            >
-              <FileText className="w-3 h-3 shrink-0" />
-              <span className="truncate">{noteTitle ?? '笔记缺失'}</span>
-            </button>
-          )}
-          <span className="min-w-0 flex-1 truncate text-muted-foreground" title={task.planPath}>
-            {task.planPath}
-          </span>
-        </div>
-      )}
-      <p className="mt-1 text-xs text-muted-foreground">{formatNoteTime(task.updatedAt)}</p>
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={() => void onDelete()}>
+                <Trash2 className="w-3.5 h-3.5" />
+                删除
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        <span className="shrink-0 text-muted-foreground">{formatNoteTime(task.updatedAt)}</span>
+      </div>
     </div>
   );
 }

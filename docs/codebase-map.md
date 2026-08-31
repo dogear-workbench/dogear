@@ -122,7 +122,7 @@
 - `WelcomeFirstRun.tsx` — 零工作区首次启动引导卡片
 - `WorkspaceRuleDialog.tsx` — 工作区规则 Dialog（agent.md 编辑器）
 - `EmptyFocusState.tsx` — 无聚焦对话时的占位
-- `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮；p/li 文本仅搜索高亮（highlightText，不再做正文路径识别：agent 提到的路径可能未落盘，可点胶囊只保留在工具块内）
+- `MarkdownRenderer.tsx` — Markdown 渲染器，GFM + 代码高亮；p/li 文本仅搜索高亮（highlightText，不再做正文路径识别：agent 提到的路径可能未落盘，可点胶囊只保留在工具块内）；传 workspacePath 开启路径链接时可选 baseDir 作相对链接解析基准（如 plan 文档所在目录），正文裸路径始终以 workspacePath 为基准
 - `ModelSelector.tsx` — 通用模型选择下拉（按 Profile 分组、按 modelId 去重、可选「不指定」、inline/block 两种触发器）
 - `ConfirmDialog.tsx` — 全局确认弹窗（基于 shadcn AlertDialog，由 confirm-store 驱动）
 - `StatusPulse.tsx` — 状态脉冲指示器（蓝色=等待确认，橙色=运行中），支持 sm/md 两种尺寸
@@ -137,7 +137,7 @@
   - `TiptapEditor.tsx` + `tiptap/` — Tiptap 3 所见即所得正文编辑器（markdown 真源，tiptap-markdown 往返序列化）：input rules（`# `/`- [ ] `/`**` 等敲完即渲染）、正文 `- [ ]` 勾选项可点选落盘（待办=正文 checkbox，无独立待办实体）、BubbleToolbar 选中浮出（粗斜/行内代码/删除线/链接）、SlashMenu `/` 插入菜单、粘贴 markdown 自动解析
   - `TagFilterMenu.tsx` — # 标签下拉 Popover：从 notes store 聚合 tag→计数（计数降序），点选 toggle 过滤、选中项高亮打勾
   - `NoteCardItem.tsx` — 时间流卡片行，会话列表化样式（同 ConversationRow）：标题全宽 truncate + meta 行相对时间（getRelativeTime）+ hover 浮出引用/删除按钮（ml-auto opacity-0 pointer-events-none → group-hover）；不显示标签 Badge；导出 formatNoteTime 供 TrashView/TaskPanel 复用
-  - `TaskPanel.tsx` — 任务 mode（协作任务六分组 backlog/queued/running/review/done/rejected）：props `{ workspacePath, query?, listHidden, onToggleListHidden, onOpenNote }`；query 对 title/planPath 前端模糊过滤；backlog 行来源笔记 chip + plan 路径 + hover「执行」按钮（executeTask 进队列），详情页 TaskDetail 常显执行按钮兜底
+  - `TaskPanel.tsx` — 任务 mode（协作任务六分组常量 plan「计划」/backlog「待办」/queued/running/review/done，rejected 不单列——filteredGroups 组装时并入 plan 组尾部）：props `{ workspacePath, query?, listHidden, onToggleListHidden, onOpenNote }`；query 对 title/planPath 前端模糊过滤（planPath 判空跳过）；卡片标题行仅标题+徽标，操作按钮全部下沉 meta 行 hover 浮出（plan/rejected「移到待办」、backlog「执行」+···菜单（手动完成/删除）、queued/running「取消」、done「移回计划」、review 菜单删除）；meta 行无 planPath 显「无文档」灰字，存量任务保留 noteId chip；详情页 TaskDetail：删除按钮收进 meta 行返回箭头旁（全状态可用），状态分支 plan/rejected 移到待办+手动完成 / done 移回计划 / 其余照旧，plan 态无文档显挂文档引导文案
   - `TrashView.tsx` — 回收站 mode（独立占满内容区）：两段聚合（笔记/任务，Promise.all 并行拉取独立容错，段标题 sticky 带计数，空段不渲染）；query 前端过滤（各段主文本 includes）；恢复/彻底删除（purge 前 showConfirm），busyKey 防双击；恢复/删除后本地移除，原视图刷新靠 changed 广播
   - `NoteState.tsx` — 空态/加载态复用组件
 - `wechat/` — 微信 Bot 模块
@@ -172,7 +172,7 @@
 - `stock-store.ts` — 自选股状态：watchlist/quotes/K线/分时/资金流向/搜索/RateLimiter 状态
 - `dashboard-store.ts` — 首页工作台状态：reportMarkdown/reportUpdatedAt（首页报告）+ reviewActivity 轮询 + triggerReview/loadReport actions
 - `notes-store.ts` — 笔记卡片前端：notes（created 倒序）/loading/loadedWorkspacePath/activeNoteId + loadNotes（listNotes）/subscribeNotesChanged（notesChanged 广播按 workspacePath 匹配重拉）/setActiveNoteId/createNote（支持 {content, tags} 输入，不自动激活——新建即编辑由 NotesPanel 控制）/updateNote（本地乐观更新，广播兜底）/deleteNote（软删除，成功后本地移除）
-- `task-store.ts` — 协作任务前端：groups（TaskGroups 七分组，含 plan）/loading/loadedWorkspacePath/activeTaskId + loadTasks（listCollabTasks）/executeTask（tipc executeCollabTask 内部已 kick 队列，成功即 loadTasks 刷新，失败返 false 由组件 toast）/subscribeTasksChanged（广播匹配重拉）/setActiveTaskId
+- `task-store.ts` — 协作任务前端：groups（TaskGroups 七分组，含 plan）/loading/loadedWorkspacePath/activeTaskId + loadTasks（listCollabTasks）/executeTask（tipc executeCollabTask 内部已 kick 队列，成功即 loadTasks 刷新，失败返 false 由组件 toast）/moveTask（tipc moveCollabTask，plan↔backlog 流转）/subscribeTasksChanged（广播匹配重拉）/setActiveTaskId
 - `task-focus-store.ts` — 任务通知深链请求（focusReq {taskId, seq}，seq 递增使同一任务重复通知可再触发；NotesPanel 切任务 mode、TaskPanel 选中任务各自响应）
 - `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `HOME_TAB_ID`/`NOTES_TAB_ID`/`DATA_CENTER_TAB_ID` 哨兵（非真实会话）分别表示首页/笔记/数据中心固定 tab，activeTabId 初始/关末 tab 后回退到 HOME；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
 - `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，数据中心在主窗口 tab 后两处同实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
