@@ -21,7 +21,7 @@ import type { RunHistoryEntry } from '../scheduler/types.js';
 import { appendHistoryEntry } from '../scheduler/run-history-store.js';
 import { whenMigrationReady } from './migration-gate.js';
 
-export type GroupDigestOutcome = 'saved' | 'no-card' | 'error';
+export type GroupDigestOutcome = 'saved' | 'no-card' | 'error' | 'suspended';
 
 export interface GroupDigestRecentEntry {
   workspaceId: string;
@@ -185,7 +185,22 @@ async function runOne(e: QueueEntry): Promise<void> {
   const k = entryKey(e);
 
   if (!e.force && (failStreaks.get(k) ?? 0) >= FAIL_SUSPEND_AFTER) {
-    mainLogger.warn(`[group-digest] ${k} 连续 ${failStreaks.get(k)} 次未产出组卡，暂停自动提炼（手动重新提炼可重试）`);
+    const streak = failStreaks.get(k)!;
+    mainLogger.warn(`[group-digest] ${k} 连续 ${streak} 次未产出组卡，暂停自动提炼（手动重新提炼可重试）`);
+    const last = recent[0];
+    const dup = last?.workspaceId === workspaceId && last?.groupId === groupId && last?.outcome === 'suspended';
+    if (!dup) {
+      recent.unshift({
+        workspaceId,
+        groupId,
+        finishedAt: Date.now(),
+        outcome: 'suspended',
+        durationMs: 0,
+        error: `连续 ${streak} 次未产出组卡，自动提炼已暂停（手动重新提炼可重试）`,
+      });
+      if (recent.length > RECENT_MAX) recent.length = RECENT_MAX;
+      schedulePersist();
+    }
     return;
   }
 

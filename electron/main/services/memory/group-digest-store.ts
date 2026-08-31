@@ -3,7 +3,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getWorkspaceDataDir } from '../conversation-service.js';
-import { broadcastGroupDataChanged } from '../renderer-broadcast.js';
+import { broadcastGroupDataChanged } from '../renderer-broadcast-lazy.js';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
 import type { DigestTags } from '../../types.js';
 

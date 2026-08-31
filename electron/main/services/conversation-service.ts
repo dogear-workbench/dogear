@@ -12,7 +12,7 @@ import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
 import { loadSettings, LEGACY_MODEL_TIERS } from './settings-service.js';
 import { readUsage } from './usage/usage-service.js';
 import { listActiveGroups, requireActiveGroup } from './group-service.js';
-import { broadcastConversationListChanged } from './renderer-broadcast.js';
+import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
 import type { ConversationUsageEntry } from '../types.js';
 import type { ModelSelection } from './settings-types.js';
 

@@ -4,7 +4,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
-import { broadcastGroupDataChanged } from '../renderer-broadcast.js';
+import { broadcastGroupDataChanged } from '../renderer-broadcast-lazy.js';
 import { getGroupDir } from './group-digest-store.js';
 
 export interface GroupBackground {

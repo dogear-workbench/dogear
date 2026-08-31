@@ -9,7 +9,7 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
-import { broadcastConversationListChanged } from './renderer-broadcast.js';
+import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
 
 const { app } = electron;
 

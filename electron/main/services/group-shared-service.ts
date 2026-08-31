@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import electron from 'electron';
-import { broadcastGroupDataChanged } from './renderer-broadcast.js';
+import { broadcastGroupDataChanged } from './renderer-broadcast-lazy.js';
 import type { NativeFileEntry } from '../types.js';
 
 export const NOTES_DIR_NAME = '_notes';

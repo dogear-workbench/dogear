@@ -119,7 +119,7 @@ class SchedulerService {
     const tasks = await loadTasks();
     for (const task of tasks) {
       if (!task.enabled) continue;
-      if (task.workspaceId !== found.workspaceId) continue;
+      if (task.workspaceId && task.workspaceId !== found.workspaceId) continue;
       if (!task.triggers.some((t) => t.type === 'on_session_close')) continue;
       await this.fireTask(task.id, {
         triggerReason: 'condition',
