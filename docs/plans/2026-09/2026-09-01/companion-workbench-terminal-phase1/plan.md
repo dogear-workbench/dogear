@@ -18,7 +18,7 @@
 
 - [x] [Step 1: 主进程终端流服务](./step1-terminal-stream-service.md) — pi-session 分流 bash 流式事件，terminal-stream 服务缓冲/广播/历史 RPC
 - [x] [Step 2: 右侧栏容器化 + 宽度记忆](./step2-right-panel-resize.md) — aside 抽组件、拖拽调宽、各 tab 记忆宽度、加终端 tab 占位
-- [ ] [Step 3: 终端面板（跟随/固定 + 卡片流渲染）](./step3-terminal-panel.md) — 拉历史+订阅增量、ANSI 渲染、命令卡片流、跟随活动会话/固定会话切换
+- [x] [Step 3: 终端面板（跟随/固定 + 卡片流渲染）](./step3-terminal-panel.md) — 拉历史+订阅增量、ANSI 渲染、命令卡片流、跟随活动会话/固定会话切换
 - [ ] [Step 4: 伴随工作台窗口](./step4-workbench-window.md) — 单例窗口 + 记住位置 + 同构 tab 页面 + header 入口
 
 ## 全局决策
