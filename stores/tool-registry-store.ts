@@ -5,7 +5,7 @@ import { client } from '@/lib/client';
 interface ToolGroup {
   server: string;
   label: string;
-  tools: Array<{ name: string; description: string; server: string; category: string }>;
+  tools: Array<{ name: string; shortDescription: string; description: string }>;
 }
 
 interface ToolRegistryState {

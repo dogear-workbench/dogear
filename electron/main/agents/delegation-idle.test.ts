@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { installDelegationMocks, sessions, sleep, startTestChild } from './delegation-test-mocks.js';
 
-installDelegationMocks();
+await installDelegationMocks();
 
 const bridge = await import('./delegation-bridge.js');
 const idle = await import('./delegation-idle.js');

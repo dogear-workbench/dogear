@@ -23,7 +23,7 @@ interface StableHistoryProps {
   readOnly: boolean;
   sessionId: string | null;
   isAgentConversation: boolean;
-  taskTodos: Array<{ content: string; activeForm: string; status: string }>;
+  taskTodos: Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>;
   lastTaskMessageId: string | null;
 }
 

@@ -27,7 +27,7 @@ export interface ModelProfile {
   piModels?: Array<{ id: string; label?: string; contextWindow?: number }>;
 }
 
-export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 

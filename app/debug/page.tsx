@@ -26,7 +26,7 @@ interface TaskStatus {
 
 export default function DebugPage() {
   const [agentStatus, setAgentStatus] = useState<TaskStatus | null>(null);
-  const conversationId = useConversationStore((s) => s.selectedConversation?.id ?? null);
+  const conversationId = useConversationStore((s) => s.selectedConversation?.id ?? undefined);
 
   // 加载 Agent 状态
   useEffect(() => {
@@ -48,7 +48,7 @@ export default function DebugPage() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-900 text-white">
+    <div className="flex flex-col h-full bg-gray-900 text-white">
       {/* 头部:标题和状态 */}
       <div className="flex-none p-4 border-b border-gray-700">
         <div className="flex items-center justify-between">

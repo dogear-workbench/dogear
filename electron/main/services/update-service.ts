@@ -30,6 +30,7 @@ export interface CheckResult {
   hasUpdate: boolean;
   type?: 'hotfix' | 'full';
   info?: ManifestInfo;
+  error?: string;
 }
 
 export type ProgressCallback = (percent: number, transferred: number, total: number) => void;

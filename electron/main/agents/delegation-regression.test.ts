@@ -9,7 +9,7 @@ import {
   startTestChild,
 } from './delegation-test-mocks.js';
 
-installDelegationMocks();
+await installDelegationMocks();
 
 const bridge = await import('./delegation-bridge.js');
 const terminal = await import('./delegation-terminal.js');

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { createChart, CandlestickSeries, HistogramSeries, LineSeries } from 'lightweight-charts';
-import type { IChartApi } from 'lightweight-charts';
+import type { IChartApi, Time, UTCTimestamp, LineData } from 'lightweight-charts';
 import { useStockStore } from '@/stores/stock-store';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -39,7 +39,7 @@ const MA_CONFIG = [
  * - 日K/周K/月K: "2026-03-20" → 直接使用（BusinessDay string）
  * - 分钟K: "2026-03-20 09:31" → 转为 UTCTimestamp（秒数）
  */
-function toChartTime(dateStr: string): string | number {
+function toChartTime(dateStr: string): Time {
   if (dateStr.includes(' ')) {
     // 分钟级数据，含时间部分，转为 Unix 秒（UTC+8）
     const [datePart, timePart] = dateStr.split(' ');
@@ -47,7 +47,7 @@ function toChartTime(dateStr: string): string | number {
     const [h, min] = timePart.split(':').map(Number);
     // 构造北京时间 Date，然后取 UTC 秒数
     const dt = new Date(y, m - 1, d, h, min);
-    return Math.floor(dt.getTime() / 1000) as number;
+    return Math.floor(dt.getTime() / 1000) as UTCTimestamp;
   }
   // 日K/周K/月K，纯日期字符串
   return dateStr;
@@ -55,7 +55,7 @@ function toChartTime(dateStr: string): string | number {
 
 /** 计算移动平均线 */
 function calculateMA(data: KLineDataPoint[], period: number) {
-  const result: { time: string | number; value: number }[] = [];
+  const result: LineData<Time>[] = [];
   for (let i = period - 1; i < data.length; i++) {
     let sum = 0;
     for (let j = i - period + 1; j <= i; j++) {
@@ -143,7 +143,7 @@ export function KLineChart() {
     });
     volumeSeries.setData(
       klineData.map((d) => ({
-        time: toChartTime(d.date) as any,
+        time: toChartTime(d.date),
         value: d.volume,
         color: d.close >= d.open ? '#ef444480' : '#22c55e80',
       })),

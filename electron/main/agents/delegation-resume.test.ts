@@ -11,7 +11,7 @@ import {
   updateModelSelectionCalls,
 } from './delegation-test-mocks.js';
 
-installDelegationMocks();
+await installDelegationMocks();
 
 const bridge = await import('./delegation-bridge.js');
 const resumeMod = await import('./delegation-resume.js');

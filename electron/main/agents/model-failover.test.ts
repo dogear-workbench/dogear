@@ -10,7 +10,7 @@ import {
   updateModelSelectionCalls,
 } from './delegation-test-mocks.js';
 
-installDelegationMocks();
+await installDelegationMocks();
 
 const failoverMod = await import('./model-failover.js');
 const { conversationRuntimeService } = await import('../services/conversation-runtime-service.js');

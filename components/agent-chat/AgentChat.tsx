@@ -26,7 +26,7 @@ import { ConversationIdProvider } from './conversation-id-context';
 import { WorkspaceIdProvider } from './workspace-id-context';
 import { buildTurns } from './turns';
 import { aggregateTasks } from './task-aggregator';
-import type { ExtendedSessionMessage } from '@/types/electron-api';
+import type { TranscriptEvent } from './hooks/useTranscriptState';
 import type { ChildStatus } from '@/types/delegation';
 import type { LivePermissionRequest } from './hooks/useAgentSession';
 
@@ -90,7 +90,7 @@ export function AgentChat({
   const isTopicReadOnly = topicArchived || topicState === 'missing';
   const isReadOnly = isTopicReadOnly;
 
-  const applyLiveSnapshot = useCallback((snapshot: ExtendedSessionMessage[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => {
+  const applyLiveSnapshot = useCallback((snapshot: TranscriptEvent[], pendingPermissionRequests: LivePermissionRequest[], turnEntryIds?: string[]) => {
     applySnapshot(snapshot, pendingPermissionRequests, turnEntryIds);
   }, [applySnapshot]);
 
@@ -126,7 +126,7 @@ export function AgentChat({
     let issues = 0;
     for (const c of childrenForThis) {
       if (c.status === 'running') awaiting++;
-      else if (c.status === 'done') done++;
+      else if (c.delivered) done++;
       else issues++;
     }
     return { awaitCount: awaiting, doneCount: done, issueCount: issues };
@@ -353,7 +353,7 @@ export function AgentChat({
 
   return (
     <WorkspaceIdProvider workspaceId={workspaceId ?? null}>
-    <div className="relative flex flex-col h-full bg-white rounded-lg border">
+    <div className="relative flex flex-col h-full bg-card rounded-lg border shadow-sm">
       {/* SearchBar 挂在最外层 relative 容器，避免被内部 overflow-hidden 裁剪 */}
       <SearchBar
         isOpen={search.isOpen}

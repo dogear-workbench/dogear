@@ -1,7 +1,14 @@
 /**
  * delegation 系列集成测试的共享 mock。
- * bun test 单进程合跑多个测试文件时，同一模块的 mock.module 先注册者生效——
+ * bun test 单进程合跑多个测试文件时 mock.module 是进程级全局、不可逆、后注册者覆盖，
  * 所有测试文件必须经由本模块注册同一份实现，避免 bridge 单例绑定到不一致的 mock。
+ *
+ * 顺序约束（bun 1.3 行为）：
+ * - CJS 模块（electron）一旦被真实加载，后续 mock 的 named export 会失效，
+ *   因此 electron/tipc stub 必须在本模块顶层（同步、最早）注册，禁止静态 import 任何会拉起真实 electron 的模块；
+ * - mock 工厂必须 spread 真实模块的完整导出面只覆盖需要的 key，否则合跑时后加载的测试文件
+ *   对 getWorkspaceDataDir / migratePiProfiles / electron default 的导入会链接失败；
+ * 真实模块只能在 electron mock 注册之后动态 import。
  */
 
 import { mock } from 'bun:test';
@@ -9,6 +16,57 @@ import { EventEmitter } from 'events';
 import path from 'node:path';
 
 const dir = import.meta.dir;
+
+// 真实模块引用必须用单一 promise + 快照：mock 注册后 import 会拿到 mock 自身（live binding 也会被替换），
+// 并发 install 共享同一次加载，快照在首次 mock.module 注册之前完成
+let realCsSpread: Record<string, unknown> = {};
+let realSettingsSpread: Record<string, unknown> = {};
+let realGetByIdGlobal: ((id: string) => Promise<unknown>) | null = null;
+let realModulesPromise: Promise<void> | null = null;
+
+function loadRealServiceModules(): Promise<void> {
+  if (!realModulesPromise) {
+    realModulesPromise = (async () => {
+      const [cs, ss] = await Promise.all([
+        import(path.join(dir, '../services/conversation-service.js')),
+        import(path.join(dir, '../services/settings-service.js')),
+      ]);
+      realCsSpread = { ...cs };
+      realSettingsSpread = { ...ss };
+      realGetByIdGlobal = cs.getByIdGlobal;
+    })();
+  }
+  return realModulesPromise;
+}
+
+const browserWindowStub = { getAllWindows: () => [{ isDestroyed: () => false, webContents: {} }] };
+const electronStub = {
+  BrowserWindow: browserWindowStub,
+  app: {},
+  nativeTheme: {},
+  ipcMain: { on: () => {}, handle: () => {}, removeHandler: () => {} },
+  ipcRenderer: {},
+  dialog: {},
+  shell: {},
+  Menu: {},
+  webContents: {},
+};
+
+mock.module('electron', () => ({
+  ...electronStub,
+  default: electronStub,
+}));
+
+// 真实 tipc/main 顶层 named import electron 的 ipcMain，静态加载会链接失败，手工补齐全部运行时导出
+mock.module('@egoist/tipc/main', () => ({
+  tipc: { create: () => ({ procedure: {} }) },
+  registerIpcMain: () => {},
+  getRendererHandlers: () => ({
+    childStatusChanged: { send: () => {} },
+    conversationListChanged: { send: () => {} },
+    failoverNotice: { send: () => {} },
+  }),
+}));
 
 export const sessions = new Map<string, any>();
 export const attachSessionByConv = new Map<string, string>();
@@ -71,12 +129,15 @@ export async function startTestChild(bridge: any, profile?: string) {
   return { parentConversationId, snapshot, sessionId, session: sessions.get(sessionId) };
 }
 
-export function installDelegationMocks(): void {
-  mock.module('electron', () => ({
-    BrowserWindow: { getAllWindows: () => [{ isDestroyed: () => false, webContents: {} }] },
-  }));
+export async function installDelegationMocks(): Promise<void> {
+  // 真实模块只能在 electron mock（本模块顶层已注册）之后动态加载：
+  // 1) 避免真实 electron CJS 进入模块图导致后续 named mock 失效；
+  // 2) spread 完整导出面，只覆盖 delegation 需要的 key，保住合跑时其他测试文件的 named import。
+  await loadRealServiceModules();
 
   mock.module('@egoist/tipc/main', () => ({
+    tipc: { create: () => ({ procedure: {} }) },
+    registerIpcMain: () => {},
     getRendererHandlers: () => ({
       childStatusChanged: { send: () => {} },
       conversationListChanged: { send: (data: { workspaceId: string }) => { conversationListChangedCalls.push(data.workspaceId); } },
@@ -85,6 +146,7 @@ export function installDelegationMocks(): void {
   }));
 
   mock.module(path.join(dir, '../services/conversation-service.js'), () => ({
+    ...realCsSpread,
     create: async (
       _workspaceId: string,
       _groupId: string,
@@ -118,7 +180,9 @@ export function installDelegationMocks(): void {
         return { conv: { id, groupId: 'g1', sessionId: `sdk-${id}`, modelSelection: null }, workspaceId: 'ws-test' };
       }
       const conv = convStore.get(id);
-      return conv ? { conv, workspaceId: 'ws-test' } : null;
+      if (conv) return { conv, workspaceId: 'ws-test' };
+      // delegation 内存数据 miss 时回落真实实现：合跑时 usage-service 等测试靠真实磁盘读写验证 applyUsageSummary
+      return realGetByIdGlobal!(id);
     },
     getBySessionId: async (sessionId: string) => {
       if (sessionId.startsWith('sdk-parent-')) {
@@ -155,6 +219,7 @@ export function installDelegationMocks(): void {
   }));
 
   mock.module(path.join(dir, '../services/settings-service.js'), () => ({
+    ...realSettingsSpread,
     loadSettings: async () => mockSettings,
   }));
 

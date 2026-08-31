@@ -28,7 +28,7 @@ export function isProfileComplete(profile: ModelProfile): boolean {
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 
-export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'max';
+export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export type PiPermissionMode = 'default' | 'autoExecute';
 
