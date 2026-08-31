@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye } from "lucide-react";
+import type { ComponentType } from 'react';
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, Network, Brain, StickyNote, ListTodo } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
@@ -14,6 +15,10 @@ import {
   OutputBox,
 } from './agent-chat/tool-renderers/ToolDetailShell';
 import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
+import { SubAgentCardRenderer } from './agent-chat/tool-renderers/SubAgentCardRenderer';
+import { MemoryCardRenderer } from './agent-chat/tool-renderers/MemoryCardRenderer';
+import { NoteCardRenderer } from './agent-chat/tool-renderers/NoteCardRenderer';
+import { TaskCardRenderer } from './agent-chat/tool-renderers/TaskCardRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
@@ -59,14 +64,80 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   bash: 'Bash',
 };
 
+const DOGEAR_TOOL_ICONS: Record<string, ToolIconSpec> = {
+  dogear__CreateSession: { Icon: Network, className: 'text-sky-600 dark:text-sky-400' },
+  dogear__CreateSessionBatch: { Icon: Network, className: 'text-sky-600 dark:text-sky-400' },
+  dogear__SaveMemory: { Icon: Brain, className: 'text-teal-600 dark:text-teal-400' },
+  dogear__ForgetMemory: { Icon: Brain, className: 'text-teal-600 dark:text-teal-400' },
+  dogear__CreateNote: { Icon: StickyNote, className: 'text-amber-600 dark:text-amber-400' },
+  dogear__UpdateNote: { Icon: StickyNote, className: 'text-amber-600 dark:text-amber-400' },
+  dogear__AppendNote: { Icon: StickyNote, className: 'text-amber-600 dark:text-amber-400' },
+  dogear__CreateTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
+  dogear__ExecuteTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
+};
+
 function normalizeToolName(toolName: string): string {
   return TOOL_NAME_ALIASES[toolName] ?? toolName;
 }
 
 function getToolIcon(toolName: string): ToolIconSpec {
   if (TOOL_ICONS[toolName]) return TOOL_ICONS[toolName];
+  if (DOGEAR_TOOL_ICONS[toolName]) return DOGEAR_TOOL_ICONS[toolName];
   return { Icon: Wrench, className: 'text-slate-600' };
 }
+
+interface CardRendererProps {
+  toolInput?: Record<string, any>;
+  toolOutput?: any;
+  isError?: boolean;
+}
+
+interface DogearCardTitle {
+  label: string;
+  detail: string;
+}
+
+function truncateOneLine(text: string, max: number): string {
+  const one = text.replace(/\s+/g, ' ').trim();
+  return one.length > max ? one.slice(0, max) + '…' : one;
+}
+
+function firstLineTitle(content: string): string {
+  return content.split('\n')[0]?.replace(/^#{1,6}\s*/, '').trim() ?? '';
+}
+
+const DOGEAR_CARD_TITLES: Record<string, (input?: Record<string, any>) => DogearCardTitle> = {
+  dogear__CreateSession: (input) => ({
+    label: '派遣子会话',
+    detail: typeof input?.task === 'string' ? truncateOneLine(input.task, 30) : '',
+  }),
+  dogear__CreateSessionBatch: (input) => ({
+    label: '派遣子会话',
+    detail: `${Array.isArray(input?.items) ? input.items.length : '?'} 个子任务`,
+  }),
+  dogear__SaveMemory: (input) => ({ label: '保存记忆', detail: input?.title ?? '' }),
+  dogear__ForgetMemory: (input) => ({ label: '删除记忆', detail: input?.slug ?? '' }),
+  dogear__CreateNote: (input) => ({
+    label: '创建笔记',
+    detail: typeof input?.content === 'string' ? firstLineTitle(input.content) : '',
+  }),
+  dogear__UpdateNote: (input) => ({ label: '更新笔记', detail: input?.noteId ?? '' }),
+  dogear__AppendNote: (input) => ({ label: '追加笔记', detail: input?.noteId ?? '' }),
+  dogear__CreateTask: (input) => ({ label: '挂载任务', detail: input?.title ?? '' }),
+  dogear__ExecuteTask: (input) => ({ label: '执行任务', detail: input?.taskId ?? '' }),
+};
+
+const DOGEAR_CARD_RENDERERS: Record<string, ComponentType<CardRendererProps>> = {
+  dogear__CreateSession: SubAgentCardRenderer,
+  dogear__CreateSessionBatch: SubAgentCardRenderer,
+  dogear__SaveMemory: MemoryCardRenderer,
+  dogear__ForgetMemory: MemoryCardRenderer,
+  dogear__CreateNote: NoteCardRenderer,
+  dogear__UpdateNote: NoteCardRenderer,
+  dogear__AppendNote: NoteCardRenderer,
+  dogear__CreateTask: TaskCardRenderer,
+  dogear__ExecuteTask: TaskCardRenderer,
+};
 
 interface ToolPreviewAction {
   tooltip: string;
@@ -159,6 +230,8 @@ function getToolSummary(
   _toolOutput?: any
 ): string {
   const canonicalName = normalizeToolName(toolName);
+  const dogearTitle = DOGEAR_CARD_TITLES[canonicalName];
+  if (dogearTitle) return dogearTitle(toolInput).detail;
   if (!toolInput) return "";
 
   switch (canonicalName) {
@@ -265,7 +338,12 @@ export function ToolBlock({
   const formattedOutput = formatToolOutput(toolName, toolOutput);
   const canonicalName = normalizeToolName(toolName);
   const iconSpec = getToolIcon(canonicalName);
-  const titleText = summary ? `${canonicalName} · ${summary}` : canonicalName;
+  const dogearCard = DOGEAR_CARD_TITLES[canonicalName]?.(toolInput);
+  const titleText = dogearCard
+    ? `${dogearCard.label}${dogearCard.detail ? ` · ${dogearCard.detail}` : ''}`
+    : summary
+      ? `${canonicalName} · ${summary}`
+      : canonicalName;
 
   // Tier 1 专属渲染器
   const specializedRenderer = (() => {
@@ -283,6 +361,10 @@ export function ToolBlock({
     }
     if (canonicalName === 'Skill') {
       return <SkillRenderer toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+    }
+    const DogearCard = DOGEAR_CARD_RENDERERS[canonicalName];
+    if (DogearCard) {
+      return <DogearCard toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
     }
     return null;
   })();

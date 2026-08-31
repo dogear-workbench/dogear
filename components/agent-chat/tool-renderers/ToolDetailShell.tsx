@@ -60,6 +60,23 @@ export function KeyValueList({ data }: { data: Record<string, any> }) {
   );
 }
 
+/** 标签 chip 列表（关键词/标签等小颗粒元数据） */
+export function ChipList({ items, className }: { items: string[]; className?: string }) {
+  if (items.length === 0) return null;
+  return (
+    <div className={cn('flex flex-wrap gap-1', className)}>
+      {items.map((item, i) => (
+        <span
+          key={i}
+          className="inline-flex max-w-full items-center rounded-full border border-border/60 bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground break-all"
+        >
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 /** 等宽输出框，支持高度限制 + 错误着色 */
 export function OutputBox({
   content,
