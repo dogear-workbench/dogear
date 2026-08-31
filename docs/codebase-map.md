@@ -187,7 +187,7 @@
 - `manual-task-toasts.ts` — setupManualTaskToasts()（src/main.tsx 顶层挂载）：监听 manualTaskDone 出完成/失败/取消 toast；导出 formatDurationMs
 - `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）/ resolveModelLabel（selection → 展示名，ModelSelector 与设置页提示文案共用）
 - `conversation-sort.ts` — buildConversationTree：组内会话树纯函数（递归 ConversationTreeNode），手动会话按 updated_at 倒序作为根 + agent 派出会话挂派出者下（created_at 升序、支持多层派遣链，parentSessionId 不在组时回落自然序作根）
-- `reference-guard.ts` — guardReferenceIntoFocus()：右栏文件/文件夹/附加路径引用前置校验——浏览工作区 ≠ 焦点 tab.workspaceId 时 toast 拒绝（附焦点会话工作区名），HOME tab 无焦点会话放行；WorkspaceExplorer / AdditionalFilesPanel 引用入口共用
+- `reference-guard.ts` — guardReferenceIntoFocus()：右栏文件/文件夹/附加路径引用前置校验——浏览工作区 ≠ 焦点 tab.workspaceId 时 toast 拒绝（附焦点会话工作区名），HOME tab 无焦点会话放行；WorkspaceExplorer / AdditionalFilesPanel 引用入口共用；jumpToSourceConversation()（async）：笔记/任务详情跳来源会话——已开 tab 聚焦，独立窗口唤起 focus，未开 tab 查会话列表（冷启动先拉取）openTab + selectConversation，跨工作区由焦点联动兑底
 - `sdk/index.ts` + `sdk/query.ts` — Claude Agent SDK 的 query 函数封装
 
 ## 类型定义（types/）
@@ -360,8 +360,8 @@
 
 - `tools/article-tools.ts` — 文章阅读工具（dogear__ReadArticle / dogear__ListArticles）
 
-- `tools/notes-tools.ts` — 笔记卡片 MCP 工具（dogear-notes server，主会话且绑定工作区时挂载：dogear__CreateNote / dogear__GetNote / dogear__SearchNotes / dogear__AppendNote / dogear__UpdateNote / dogear__DeleteNote 软删除；可实施工作分流见 dogear__CreateTask）；直调 notes-service 不绕 tipc；配合 session-append-templates 的 NOTES_DISCIPLINE_APPEND 存卡纪律（方案落盘后存卡、CreateTask(autoExecute=false) 落积压、琐事备忘存卡片正文用 - [ ] 勾选项）
-- `tools/task-tools.ts` — 协作任务 MCP 工具（dogear-tasks server：dogear__CreateTask（autoExecute 默认 false → status:'backlog' 落积压；true 才 kick 队列）/ dogear__ListTasks（含 backlog 分组）/ dogear__ExecuteTask（backlog→queued + kick））
+- `tools/notes-tools.ts` — 笔记卡片 MCP 工具（dogear-notes server，主会话且绑定工作区时挂载：dogear__CreateNote / dogear__GetNote / dogear__SearchNotes / dogear__AppendNote / dogear__UpdateNote / dogear__DeleteNote 软删除；可实施工作分流见 dogear__CreateTask）；直调 notes-service 不绕 tipc；配合 session-append-templates 的 NOTES_DISCIPLINE_APPEND 存卡纪律（可实施工作一律走任务不存卡、方案落盘后 CreateTask 挂计划栏可占位、琐事备忘存卡片正文用 - [ ] 勾选项）
+- `tools/task-tools.ts` — 协作任务 MCP 工具（dogear-tasks server：dogear__CreateTask（默认落计划栏，planPath 可省略占位，同标题 plan 态自动补路径；autoExecute=true 先落 plan 再 executeTask 两步入队）/ dogear__ListTasks（七态过滤，plan 计划 / backlog 待办）/ dogear__ExecuteTask（plan/backlog→queued + kick，占位任务即时报错））
 
 - `tools/stock-tools.ts` — 自选股工具（dogear__SearchStock / dogear__GetStockQuote / dogear__GetKLineData / dogear__GetTimeline / dogear__GetWatchlist / dogear__ModifyWatchlist）
 
