@@ -6,7 +6,7 @@ import type { EditorView } from '@tiptap/pm/view';
 type MarkdownParser = { parse: (text: string, options?: { inline?: boolean }) => string };
 
 export const getMarkdownParser = (editor: Editor): MarkdownParser | undefined =>
-  (editor.storage as unknown as { markdown?: MarkdownParser }).markdown;
+  (editor.storage as unknown as { markdown?: { parser?: MarkdownParser } }).markdown?.parser;
 
 const elementFromString = (value: string): HTMLElement =>
   new DOMParser().parseFromString(`<body>${value}</body>`, 'text/html').body;

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import type { Editor } from '@tiptap/react';
-import { createPortal } from 'react-dom';
 
 interface TableToolbarProps {
   editor: Editor;
@@ -34,6 +33,7 @@ export function TableToolbar({ editor }: TableToolbarProps) {
         return;
       }
       const dom = editor.view.nodeDOM($from.before(depth));
+      // rect 基准 .notes-editor 与外层 relative 壳完全重叠；仅读 rect，DOM 不能挂进 .notes-editor（EditorContent 卸载时 tiptap 会搬空容器内子节点，portal 挂入会致 React removeChild 崩错）
       const container = editor.view.dom.parentElement;
       if (!(dom instanceof HTMLElement) || !container) {
         setVisible(false);
@@ -56,10 +56,7 @@ export function TableToolbar({ editor }: TableToolbarProps) {
     };
   }, [editor]);
 
-  const container = editor.view.dom.parentElement;
-  if (!container) return null;
-
-  return createPortal(
+  return (
     <div
       className="notes-table-toolbar notes-bubble"
       data-visible={visible}
@@ -76,7 +73,6 @@ export function TableToolbar({ editor }: TableToolbarProps) {
           {action.label}
         </button>
       ))}
-    </div>,
-    container,
+    </div>
   );
 }

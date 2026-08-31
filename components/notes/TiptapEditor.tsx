@@ -49,10 +49,10 @@ export function TiptapEditor({ initialMarkdown, onChange, onReady }: TiptapEdito
   });
 
   return (
-    <>
+    <div className="relative">
       <EditorContent editor={editor} className="notes-editor" />
       {editor && <TableToolbar editor={editor} />}
       {editor && <BubbleToolbar editor={editor} />}
-    </>
+    </div>
   );
 }
