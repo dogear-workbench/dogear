@@ -138,6 +138,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
             )}
             onClick={handleHeaderClick}
           >
+            {isSelected && <span className="absolute left-0 top-1/2 -translate-y-1/2 h-4 w-0.5 rounded-full bg-primary" />}
             <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
               {isExpanded
                 ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
@@ -161,7 +162,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
                 />
               ) : (
                 <div className="flex items-center gap-1">
-                  <span className="text-xs text-muted-foreground truncate" title={deriveGroupTitle(group)}>{deriveGroupTitle(group)}</span>
+                  <span className="text-[13px] text-foreground font-medium truncate" title={deriveGroupTitle(group)}>{deriveGroupTitle(group)}</span>
                 </div>
               )}
             </div>
