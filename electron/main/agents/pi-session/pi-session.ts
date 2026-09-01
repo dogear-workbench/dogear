@@ -25,6 +25,7 @@ import { handleToolStart as terminalHandleToolStart, handleToolUpdate as termina
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool, type SkillEntry } from './skill-loader.js';
 import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
+import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
@@ -156,7 +157,8 @@ function filterSkillsForSubAgent(
 /**
  * 计算子会话的 activeToolNames（白名单）。主会话返回 undefined = 全部激活。
  *
- * 基础文件工具（read/write/edit/bash）不在 toolDefs 中但始终创建，取 enabledBasicTools 的交集。
+ * 基础文件工具（read/write/edit/bash）不在 toolDefs 中但始终创建，取 enabledBasicTools 的交集；
+ * read_terminal/kill_terminal 无独立开关，跟随 bash 联动激活。
  * toolDefs 中的 Glob/Grep 属基础工具，靠 enabledBasicTools 控制可见性。
  * toolDefs 中的 Skill 工具如果已创建（有勾选 skill）则始终激活。
  * 非基础工具（能力域工具）一旦创建即激活。
@@ -164,10 +166,14 @@ function filterSkillsForSubAgent(
 function computeSubAgentActiveTools(profile: SubAgentProfile, toolDefs: ToolDef[]): string[] {
   const names = new Set<string>();
   const enabledBasicSet = new Set(profile.enabledBasicTools);
-  const BUILTIN_FILE_TOOLS = new Set(['read', 'write', 'edit', 'bash']);
+  const BUILTIN_FILE_TOOLS = new Set(['read', 'write', 'edit', 'bash', 'read_terminal', 'kill_terminal']);
 
   for (const name of profile.enabledBasicTools) {
     if (BUILTIN_FILE_TOOLS.has(name)) names.add(name);
+    if (name === 'bash') {
+      names.add('read_terminal');
+      names.add('kill_terminal');
+    }
   }
 
   for (const def of toolDefs) {
@@ -457,7 +463,10 @@ export class PiSession extends EventEmitter {
       : undefined;
 
     const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
-      ...createBuiltinFileTools(),
+      ...createBuiltinFileTools({
+        conversationId: this.config.conversationId,
+        workspaceRoots: [this.config.workspacePath, ...this.config.additionalPaths].filter(Boolean),
+      }),
       ...toPiTools(toolDefs),
     ];
 
@@ -1040,6 +1049,7 @@ export class PiSession extends EventEmitter {
     this.pendingSteerCount = 0;
     this.running = false;
     terminalClearConversation(this.config.conversationId);
+    killConversationTerminals(this.config.conversationId);
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
     // 必须在 abort() 完成之后才摘监听器：abort 过程中 harness 仍可能 emit 最后的
     // agent_end/settled/usage 等事件，提前摘掉会让这些事件被静默丢弃。

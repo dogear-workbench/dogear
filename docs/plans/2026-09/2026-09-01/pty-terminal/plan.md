@@ -13,7 +13,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 主进程 PTY 服务 + tipc 通道](./step1-pty-service.md) — 纯新增，PTY 实例管理/缓冲/广播与上行通道，不碰现有逻辑
-- [ ] [Step 2: bash 双轨 + agent 管理工具 + 生命周期](./step2-bash-tool.md) — 包装 createBashTool 分流 run_in_background，新增 read_terminal/kill_terminal，会话 close 杀 PTY
+- [x] [Step 2: bash 双轨 + agent 管理工具 + 生命周期](./step2-bash-tool.md) — 包装 createBashTool 分流 run_in_background，新增 read_terminal/kill_terminal，会话 close 杀 PTY
 - [ ] [Step 3: 渲染层终端面板](./step3-renderer.md) — terminal-store 重写、xterm 组件、底部子 tab 栏（我的/会话两组）、跟随固定保留
 - [ ] [Step 4: 一期删除 + 打包善后](./step4-cleanup.md) — 删卡片流全家、asarUnpack、agent.md RTK 修正、回归验证
 
