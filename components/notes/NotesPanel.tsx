@@ -63,7 +63,7 @@ export function NotesPanel() {
   const activeNoteId = useNotesStore((s) => s.activeNoteId);
   const reviewCount = taskGroups?.review.length ?? 0;
 
-  const [mode, setMode] = useState<PanelMode>('notes');
+  const [mode, setMode] = useState<PanelMode>('report');
   const [listHidden, setListHidden] = useState(false);
   const [searchDraft, setSearchDraft] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
