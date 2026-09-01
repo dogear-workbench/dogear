@@ -139,7 +139,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
   };
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       {/* 顶部头 */}
       <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
         <span className="text-sm font-semibold truncate" title={groupTitle}>{groupTitle}</span>

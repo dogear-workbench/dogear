@@ -7,6 +7,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { useUIStore } from '@/stores/ui-store';
+import { TitleBar } from '@/components/TitleBar';
 
 export function WorkbenchWindowPage() {
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export function WorkbenchWindowPage() {
 
   return (
     <div className="h-full flex bg-background">
+      <TitleBar title="伴随工作台" />
       {initError ? (
         <div className="flex-1 flex items-center justify-center px-6 text-sm text-muted-foreground text-center">
           {initError}

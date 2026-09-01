@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useDashboardStore } from '@/stores/dashboard-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -6,9 +7,16 @@ interface ReportSectionProps {
   workspaceId: string;
 }
 
-export function ReportSection({ workspaceId: _workspaceId }: ReportSectionProps) {
+export function ReportSection({ workspaceId }: ReportSectionProps) {
   const reportMarkdown = useDashboardStore((s) => s.reportMarkdown);
+  const setCurrentWorkspace = useDashboardStore((s) => s.setCurrentWorkspace);
+  const loadReport = useDashboardStore((s) => s.loadReport);
   const openSettings = useUIStore((s) => s.openSettings);
+
+  useEffect(() => {
+    setCurrentWorkspace(workspaceId);
+    loadReport(workspaceId);
+  }, [workspaceId, setCurrentWorkspace, loadReport]);
 
   if (reportMarkdown) {
     return <MarkdownRenderer content={reportMarkdown} stripHtmlComments />;
@@ -25,7 +33,7 @@ export function ReportSection({ workspaceId: _workspaceId }: ReportSectionProps)
         >
           设置 → 会话摘要
         </button>
-        生成，或在对话里说"聊聊首页"
+        生成
       </p>
     </div>
   );

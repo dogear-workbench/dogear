@@ -10,7 +10,7 @@ import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
-import { Dashboard } from '@/components/dashboard/Dashboard';
+import { TitleBar } from '@/components/TitleBar';
 import DataCenterPage from '@/app/data-center/page';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
@@ -21,7 +21,7 @@ import { CompanionPanel } from '@/components/companion/CompanionPanel';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
@@ -90,12 +90,13 @@ export default function Home() {
   // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
   const activeTabId = useSessionStore((s) => s.activeTabId);
-  const switchTab = useSessionStore((s) => s.switchTab);
   const openTab = useSessionStore((s) => s.openTab);
   const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
+  const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
+  const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
 
-  // 当前激活对话对应的组 ID（HOME_TAB_ID 哨兵或 groupId 空时为 null）
+  // 当前激活对话对应的组 ID（哨兵 tab 或 groupId 空时为 null）
   const activeConv = useConversationStore((s) =>
     s.conversations.find((c) => c.id === activeTabId) ?? null
   );
@@ -196,6 +197,7 @@ export default function Home() {
 
   return (
     <main className="h-full flex flex-col">
+      <TitleBar title="Dogear" />
       {/* 顶部导航栏 */}
       <header className="h-12 border-b flex items-center justify-between px-4 bg-background">
         <div className="flex items-center gap-2">
@@ -212,7 +214,6 @@ export default function Home() {
               <PanelLeftOpen className="w-4 h-4" />
             )}
           </Button>
-          <h1 className="font-semibold">Dogear</h1>
           <WorkspaceSwitcherPopover />
           <Button
             variant="ghost"
@@ -234,7 +235,7 @@ export default function Home() {
             <TrendingUp className="w-4 h-4 mr-2" />
             自选股
           </Button>
-          <Button variant="outline" size="sm" onClick={() => switchTab(DATA_CENTER_TAB_ID)}>
+          <Button variant="outline" size="sm" onClick={openDataCenterTab}>
             <Database className="w-4 h-4 mr-2" />
             数据中心
           </Button>
@@ -308,29 +309,24 @@ export default function Home() {
           {/* 标签页头（抽取为独立组件：里程碑 1.5 Step A2.3） */}
           <WorkspaceTabBar />
 
-          {/* 标签页内容：Dashboard + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowClosed 恢复前不卸载） */}
+          {/* 标签页内容：笔记 + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowClosed 恢复前不卸载） */}
           <div className="flex-1 overflow-hidden relative">
-            {/* 首页：activeTabId 为哨兵时显示 */}
-            <div
-              className="absolute inset-0 flex flex-col"
-              style={{ display: activeTabId === HOME_TAB_ID ? 'flex' : 'none' }}
-            >
-              <Dashboard />
-            </div>
-            {/* 笔记：固定 Tab，与首页同构常驻挂载 */}
+            {/* 笔记：固定 Tab，常驻挂载 */}
             <div
               className="absolute inset-0 flex flex-col"
               style={{ display: activeTabId === NOTES_TAB_ID ? 'flex' : 'none' }}
             >
               <NotesPanel />
             </div>
-            {/* 数据中心：固定 Tab，与首页/笔记同构常驻挂载 */}
-            <div
-              className="absolute inset-0 flex flex-col"
-              style={{ display: activeTabId === DATA_CENTER_TAB_ID ? 'flex' : 'none' }}
-            >
-              <DataCenterPage />
-            </div>
+            {/* 数据中心：可开关 Tab，打开期间常驻挂载，关闭即卸载 */}
+            {dataCenterTabOpen && (
+              <div
+                className="absolute inset-0 flex flex-col"
+                style={{ display: activeTabId === DATA_CENTER_TAB_ID ? 'flex' : 'none' }}
+              >
+                <DataCenterPage />
+              </div>
+            )}
             {/* 会话：各自按 activeTabId 切显示，保持 AgentChat 挂载 */}
             {allTabs.map((tab) => (
               <div
@@ -351,8 +347,10 @@ export default function Home() {
           </div>
         </section>
 
-        {/* 右侧：文件 / 附加 / 话题 / 终端面板，通过 tab 切换，左缘可拖宽 */}
-        <CompanionPanel workspaceId={workspace.id} groupId={currentGroupId} />
+        {/* 右侧：伴随面板（仅会话 tab 显示；开关状态保留，切回会话 tab 按原状态恢复） */}
+        {activeTabId !== null && !isSentinelTabId(activeTabId) && (
+          <CompanionPanel workspaceId={workspace.id} groupId={currentGroupId} />
+        )}
       </div>
 
       {/* 微信 Bot 控制 Dialog */}

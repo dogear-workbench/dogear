@@ -5,6 +5,7 @@ import { useStockStore } from '@/stores/stock-store';
 import { WatchList } from '@/components/stock/WatchList';
 import { StockDetail } from '@/components/stock/StockDetail';
 import { StockSearch } from '@/components/stock/StockSearch';
+import { TitleBar } from '@/components/TitleBar';
 
 /**
  * 股票主页面
@@ -39,9 +40,9 @@ export default function StockPage() {
 
   return (
     <div className="h-full flex flex-col bg-background">
+      <TitleBar title="自选股行情" />
       {/* 顶栏 */}
       <header className="flex items-center gap-2 px-4 h-12 border-b shrink-0">
-        <h1 className="text-sm font-medium">自选股行情</h1>
         <div className="flex-1" />
         <Button variant="ghost" size="icon" onClick={() => setSearchOpen(true)}>
           <Search className="w-4 h-4" />

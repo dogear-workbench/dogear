@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { TitleBar } from '@/components/TitleBar';
 
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -72,6 +73,7 @@ export function SessionWindowPage() {
 
   return (
     <div className="h-full flex flex-col bg-background">
+      <TitleBar title={title} />
       {/* 头部栏 */}
       <header className="h-10 border-b flex items-center px-3 gap-2 flex-shrink-0">
         <Button
@@ -83,14 +85,13 @@ export function SessionWindowPage() {
         >
           {leftPanelOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
         </Button>
-        <span className="text-sm font-medium truncate flex-1">{title}</span>
       </header>
 
       {/* 主体 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧：可折叠的工作区文件树 */}
         {leftPanelOpen && (
-          <aside className="w-56 border-r bg-muted/30 overflow-hidden flex-shrink-0">
+          <aside className="w-56 border-r bg-muted/30 overflow-hidden flex-shrink-0 flex flex-col">
             <WorkspaceExplorer />
           </aside>
         )}

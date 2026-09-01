@@ -7,6 +7,7 @@ import WechatPage from '@/app/wechat/page';
 import DataCenterPage from '@/app/data-center/page';
 import { WorkbenchWindowPage } from '@/app/workbench-window/page';
 import { SessionWindowPage } from '@/app/session-window/page';
+import { TitleBar } from '@/components/TitleBar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -24,7 +25,14 @@ export function App() {
           <Route path="/stocks" element={<ErrorBoundary fallback="page"><StockPage /></ErrorBoundary>} />
           <Route path="/wechat" element={<ErrorBoundary fallback="page"><WechatPage /></ErrorBoundary>} />
           <Route path="/session-window/:conversationId" element={<ErrorBoundary fallback="page"><SessionWindowPage /></ErrorBoundary>} />
-          <Route path="/data-center" element={<div className="h-full"><ErrorBoundary fallback="page"><DataCenterPage /></ErrorBoundary></div>} />
+          <Route path="/data-center" element={(
+            <div className="h-full flex flex-col">
+              <TitleBar title="数据中心" />
+              <div className="flex-1 min-h-0">
+                <ErrorBoundary fallback="page"><DataCenterPage /></ErrorBoundary>
+              </div>
+            </div>
+          )} />
           <Route path="/workbench-window" element={<div className="h-full"><ErrorBoundary fallback="page"><WorkbenchWindowPage /></ErrorBoundary></div>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

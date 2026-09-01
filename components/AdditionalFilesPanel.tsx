@@ -81,7 +81,7 @@ export function AdditionalFilesPanel({ workspaceId: _workspaceId }: AdditionalFi
   }, []);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between px-3 py-2 border-b">
         <span className="text-sm font-medium">附加文件</span>
         <div className="flex items-center gap-1">

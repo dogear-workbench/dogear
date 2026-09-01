@@ -1,17 +1,15 @@
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import { useSessionStore, HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useInputFocusStore } from '@/stores/input-focus-store';
 
-const SENTINEL_TAB_IDS = new Set([HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID]);
-
-/** 当前焦点会话 id；哨兵 tab（首页/笔记/数据中心）返回 null；独立窗口回退到其唯一会话 */
+/** 当前焦点会话 id；哨兵 tab（笔记/数据中心）返回 null；独立窗口回退到其唯一会话 */
 export function getFocusConversationId(): string | null {
   const { activeTabId } = useSessionStore.getState();
-  if (activeTabId && !SENTINEL_TAB_IDS.has(activeTabId)) return activeTabId;
+  if (activeTabId && !isSentinelTabId(activeTabId)) return activeTabId;
   if (window.location.hash.startsWith('#/session-window/')) {
     return useConversationStore.getState().selectedConversation?.id ?? null;
   }

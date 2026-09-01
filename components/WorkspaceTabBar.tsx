@@ -14,7 +14,7 @@
  * - 对话创建（由对话列表处理）
  */
 
-import { ExternalLink, X, Home, StickyNote, Database } from 'lucide-react';
+import { ExternalLink, X, StickyNote, Database } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { StatusPulse } from '@/components/StatusPulse';
-import { useSessionStore, type SessionTab, HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 
 export function WorkspaceTabBar() {
@@ -37,6 +37,8 @@ export function WorkspaceTabBar() {
   const switchTab = useSessionStore((s) => s.switchTab);
   const closeTab = useSessionStore((s) => s.closeTab);
   const addSessionWindow = useSessionStore((s) => s.addSessionWindow);
+  const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
+  const closeDataCenterTab = useSessionStore((s) => s.closeDataCenterTab);
 
   const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
   const runningConversationIds = useConversationStore((s) => s.runningConversationIds);
@@ -101,17 +103,6 @@ export function WorkspaceTabBar() {
     <ScrollArea className="border-b bg-sidebar">
       <div className="flex items-center">
         <button
-          onClick={() => switchTab(HOME_TAB_ID)}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
-            activeTabId === HOME_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
-          )}
-          title="首页"
-        >
-          <Home className="w-3.5 h-3.5" />
-          <span>首页</span>
-        </button>
-        <button
           onClick={() => switchTab(NOTES_TAB_ID)}
           className={cn(
             'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
@@ -122,27 +113,39 @@ export function WorkspaceTabBar() {
           <StickyNote className="w-3.5 h-3.5" />
           <span>笔记</span>
         </button>
-        <div
-          onClick={() => switchTab(DATA_CENTER_TAB_ID)}
-          className={cn(
-            'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
-            activeTabId === DATA_CENTER_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
-          )}
-          title="数据中心"
-        >
-          <Database className="w-3.5 h-3.5" />
-          <span>数据中心</span>
-          <button
-            className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-            title="弹出为独立窗口"
-            onClick={(e) => {
-              e.stopPropagation();
-              client.openDataCenterWindow();
-            }}
+        {dataCenterTabOpen && (
+          <div
+            onClick={() => switchTab(DATA_CENTER_TAB_ID)}
+            className={cn(
+              'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
+              activeTabId === DATA_CENTER_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+            )}
+            title="数据中心"
           >
-            <ExternalLink className="w-3 h-3" />
-          </button>
-        </div>
+            <Database className="w-3.5 h-3.5" />
+            <span>数据中心</span>
+            <button
+              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="弹出为独立窗口"
+              onClick={(e) => {
+                e.stopPropagation();
+                client.openDataCenterWindow();
+              }}
+            >
+              <ExternalLink className="w-3 h-3" />
+            </button>
+            <button
+              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="关闭数据中心"
+              onClick={(e) => {
+                e.stopPropagation();
+                closeDataCenterTab();
+              }}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
         {tabs.map((tab) => {
           const isActive = activeTabId === tab.conversationId;
           const isRunning = runningConversationIds.has(tab.conversationId);

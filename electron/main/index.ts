@@ -207,6 +207,8 @@ export function createStockWindow() {
     width: 1200,
     height: 800,
     title: '自选股行情',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: currentTitleBarOverlay(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -235,6 +237,8 @@ export function createDataCenterWindow() {
     width: 1200,
     height: 800,
     title: '数据中心',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: currentTitleBarOverlay(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -271,6 +275,8 @@ export async function createWorkbenchWindow() {
     x: hasPosition ? saved!.x ?? undefined : undefined,
     y: hasPosition ? saved!.y ?? undefined : undefined,
     title: '伴随工作台',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: currentTitleBarOverlay(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,

@@ -7,16 +7,28 @@ import { toast } from 'sonner';
 import type { PiPermissionMode } from '@/types/settings';
 import { useReferenceStore } from './reference-store';
 
-/** 常驻「首页」tab 的哨兵 id（非真实会话） */
-export const HOME_TAB_ID = '__home__';
-
 /** 常驻「笔记」tab 的哨兵 id（非真实会话） */
 export const NOTES_TAB_ID = '__notes__';
 
-/** 常驻「数据中心」tab 的哨兵 id（非真实会话） */
+/** 常驻「数据中心」tab 的哨兵 id（非真实会话，tab 可开关） */
 export const DATA_CENTER_TAB_ID = '__data_center__';
 
-const SENTINEL_TAB_IDS = new Set([HOME_TAB_ID, NOTES_TAB_ID, DATA_CENTER_TAB_ID]);
+const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID]);
+
+/** 是否哨兵 tab（笔记/数据中心等非真实会话 tab） */
+export function isSentinelTabId(id: string): boolean {
+  return SENTINEL_TAB_IDS.has(id);
+}
+
+const DATA_CENTER_TAB_OPEN_KEY = 'data-center-tab-open';
+
+function readDataCenterTabOpen(): boolean {
+  try {
+    return localStorage.getItem(DATA_CENTER_TAB_OPEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
 
 /** 单个会话标签页信息 */
 export interface SessionTab {
@@ -30,13 +42,15 @@ export interface SessionTab {
 
 interface SessionState {
   tabs: SessionTab[];
-  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 HOME/NOTES_TAB_ID 哨兵）
+  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 NOTES/DATA_CENTER 哨兵）
   /** 最近一次激活的真实会话 tab id；切到哨兵 tab 不清膛，笔记页引用按钮以它为锚定目标 */
   lastActiveConversationTabId: string | null;
   /** 当前在独立窗口中打开的会话 ID 集合 */
   sessionWindowIds: Set<string>;
   /** 最近一次"被点击"的对话列表节点 id（用于双层高亮区分"焦点节点" vs "已打开同会话其他节点"） */
   lastFocusedNodeId: string | null;
+  /** 数据中心 tab 是否打开（可开关，状态记忆在 localStorage） */
+  dataCenterTabOpen: boolean;
 
   /** 打开标签页（已存在则切换到该标签） */
   openTab: (conversationId: string, title: string, workspaceId: string) => boolean;
@@ -58,6 +72,10 @@ interface SessionState {
   isInSessionWindow: (conversationId: string) => boolean;
   /** 设置最近聚焦的节点 id */
   setLastFocusedNodeId: (nodeId: string | null) => void;
+  /** 打开数据中心 tab（不存在则挂载）并切换过去 */
+  openDataCenterTab: () => void;
+  /** 关闭数据中心 tab（卸载）；若当前正在看则回退到最近会话 tab 或笔记 */
+  closeDataCenterTab: () => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -67,10 +85,11 @@ const MAX_TABS = 10;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
-  activeTabId: HOME_TAB_ID,
+  activeTabId: NOTES_TAB_ID,
   lastActiveConversationTabId: null,
   sessionWindowIds: new Set<string>(),
   lastFocusedNodeId: null,
+  dataCenterTabOpen: readDataCenterTabOpen(),
 
   openTab: (conversationId, title, workspaceId) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
@@ -106,7 +125,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const newTabs = state.tabs.filter((t) => t.conversationId !== conversationId);
       let newActive = state.activeTabId;
       if (state.activeTabId === conversationId) {
-        newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : HOME_TAB_ID;
+        newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : NOTES_TAB_ID;
       }
       // 最近活跃会话被关时回退到剩余 tab 中最新的一个（数组尾部最近打开）
       const newLastActive = state.lastActiveConversationTabId === conversationId
@@ -117,8 +136,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   switchTab: (conversationId) => {
-    // 哨兵 tab（首页/笔记/数据中心）激活不影响「最近活跃会话」记录
-    const isConversation = !SENTINEL_TAB_IDS.has(conversationId);
+    // 哨兵 tab（笔记/数据中心）激活不影响「最近活跃会话」记录
+    const isConversation = !isSentinelTabId(conversationId);
     set({
       activeTabId: conversationId,
       ...(isConversation ? { lastActiveConversationTabId: conversationId } : {}),
@@ -171,11 +190,34 @@ export const useSessionStore = create<SessionState>((set, get) => ({
 
   setLastFocusedNodeId: (nodeId) => set({ lastFocusedNodeId: nodeId }),
 
+  openDataCenterTab: () => {
+    set({ dataCenterTabOpen: true, activeTabId: DATA_CENTER_TAB_ID });
+    try {
+      localStorage.setItem(DATA_CENTER_TAB_OPEN_KEY, '1');
+    } catch {}
+  },
+
+  closeDataCenterTab: () => {
+    set((state) => {
+      let newActive = state.activeTabId;
+      if (state.activeTabId === DATA_CENTER_TAB_ID) {
+        const fallback = state.lastActiveConversationTabId;
+        const tab = fallback ? state.tabs.find((t) => t.conversationId === fallback) : undefined;
+        newActive = tab && !state.sessionWindowIds.has(fallback!) ? fallback! : NOTES_TAB_ID;
+      }
+      return { dataCenterTabOpen: false, activeTabId: newActive };
+    });
+    try {
+      localStorage.setItem(DATA_CENTER_TAB_OPEN_KEY, '0');
+    } catch {}
+  },
+
   reset: () => set({
     tabs: [],
-    activeTabId: HOME_TAB_ID,
+    activeTabId: NOTES_TAB_ID,
     lastActiveConversationTabId: null,
     sessionWindowIds: new Set<string>(),
     lastFocusedNodeId: null,
+    dataCenterTabOpen: readDataCenterTabOpen(),
   }),
 }));
