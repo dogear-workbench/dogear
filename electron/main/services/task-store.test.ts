@@ -79,6 +79,23 @@ test('生命周期：running → rejected，review 可打回', async () => {
   expect(rejected2.status).toBe('rejected');
 });
 
+test('生命周期：rejected 可移待办/手动完成（手动处置打回任务）', async () => {
+  const id = await seedQueued();
+  await markTaskRunning(workspacePath, id, 'exec-6');
+  await rejectTask(workspacePath, id, '费率上限中断');
+
+  const backlog = await moveTaskToBacklog(workspacePath, id);
+  expect(backlog.status).toBe('backlog');
+  expect(backlog.result).toBe('费率上限中断');
+
+  await executeTask(workspacePath, id);
+  await markTaskRunning(workspacePath, id, 'exec-7');
+  await rejectTask(workspacePath, id, '再次失败');
+  const done = await completeTaskManually(workspacePath, id);
+  expect(done.status).toBe('done');
+  expect(done.result).toBe('手动标记完成');
+});
+
 test('状态机：非法迁移抛错', async () => {
   const id = await seedQueued();
   await expect(completeTask(workspacePath, id, '跳过 running')).rejects.toThrow();

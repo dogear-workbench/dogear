@@ -1,7 +1,7 @@
 /**
  * 任务存储原语层：Task CRUD + 状态机 + .dogear/tasks.json 读写（零 Electron 依赖）
  *
- * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划），running 可回 queued（重启恢复）
+ * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划）或 backlog/done（手动处置打回任务），running 可回 queued（重启恢复）
  * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）；读写前 ensureMigrated 做 version 1 → 2 存量迁移（backlog → plan）
  */
 import fs from 'node:fs/promises';
@@ -67,7 +67,7 @@ const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   running: ['review', 'queued', 'rejected', 'backlog'],
   review: ['done', 'rejected'],
   done: ['plan'],
-  rejected: ['plan'],
+  rejected: ['plan', 'backlog', 'done'],
 };
 
 // 缺省值每次新建而非共享常量：mutateTasks 会原地 push，共享常量会被首次读污染并跨工作区泄漏
@@ -270,11 +270,11 @@ export async function executeTask(workspacePath: string, taskId: string): Promis
 }
 
 export async function completeTaskManually(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan', 'backlog'], 'done', { result: '手动标记完成' });
+  return transition(workspacePath, taskId, ['plan', 'backlog', 'rejected'], 'done', { result: '手动标记完成' });
 }
 
 export async function moveTaskToBacklog(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan'], 'backlog');
+  return transition(workspacePath, taskId, ['plan', 'rejected'], 'backlog');
 }
 
 export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<Task> {

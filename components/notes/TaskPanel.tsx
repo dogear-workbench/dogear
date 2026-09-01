@@ -66,33 +66,33 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
   }, [focusReq, setActiveTaskId]);
 
   const handleExecute = async (taskId: string) => {
-    const ok = await executeTask(workspacePath, taskId);
-    if (!ok) toast.error('执行失败', { description: '任务无法进入队列' });
+    const err = await executeTask(workspacePath, taskId);
+    if (err) toast.error('执行失败', { description: err });
   };
 
   const handleCancel = async (taskId: string) => {
-    const ok = await cancelTask(workspacePath, taskId);
-    if (!ok) toast.error('取消失败', { description: '任务未能取消' });
+    const err = await cancelTask(workspacePath, taskId);
+    if (err) toast.error('取消失败', { description: err });
   };
 
   const handleComplete = async (task: Task) => {
     const ok = await showConfirm('手动完成', `确定把「${task.title}」标记为已完成？将跳过执行。`);
     if (!ok) return;
-    const done = await completeTask(workspacePath, task.id);
-    if (!done) toast.error('操作失败', { description: '任务未能标记完成' });
+    const err = await completeTask(workspacePath, task.id);
+    if (err) toast.error('操作失败', { description: err });
   };
 
   const handleDelete = async (task: Task) => {
     const ok = await showConfirm('删除任务', `确定删除「${task.title}」？删除后可在回收站恢复。`);
     if (!ok) return;
-    const done = await deleteTask(workspacePath, task.id);
-    if (!done) toast.error('删除失败', { description: '任务删除失败' });
+    const err = await deleteTask(workspacePath, task.id);
+    if (err) toast.error('删除失败', { description: err });
     else if (activeTaskId === task.id) setActiveTaskId(null);
   };
 
   const handleMove = async (taskId: string, to: 'backlog' | 'plan') => {
-    const ok = await moveTask(workspacePath, taskId, to);
-    if (!ok) toast.error('操作失败', { description: '任务状态未变更' });
+    const err = await moveTask(workspacePath, taskId, to);
+    if (err) toast.error('操作失败', { description: err });
   };
 
   const q = query?.trim().toLowerCase() ?? '';

@@ -78,8 +78,8 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
     if (executing) return;
     setExecuting(true);
     try {
-      const ok = await executeTask(workspacePath, taskId);
-      if (!ok) toast.error('执行失败', { description: '任务无法进入队列' });
+      const err = await executeTask(workspacePath, taskId);
+      if (err) toast.error('执行失败', { description: err });
     } finally {
       setExecuting(false);
     }
@@ -88,16 +88,16 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
   const handleComplete = useCallback(async () => {
     const ok = await showConfirm('手动完成', `确定把「${detail?.title ?? '该任务'}」标记为已完成？将跳过执行。`);
     if (!ok) return;
-    const done = await completeTask(workspacePath, taskId);
-    if (!done) toast.error('操作失败', { description: '任务未能标记完成' });
+    const err = await completeTask(workspacePath, taskId);
+    if (err) toast.error('操作失败', { description: err });
   }, [workspacePath, taskId, detail, completeTask]);
 
   const handleCancel = useCallback(async () => {
     if (cancelling) return;
     setCancelling(true);
     try {
-      const ok = await cancelTask(workspacePath, taskId);
-      if (!ok) toast.error('取消失败', { description: '任务未能取消' });
+      const err = await cancelTask(workspacePath, taskId);
+      if (err) toast.error('取消失败', { description: err });
     } finally {
       setCancelling(false);
     }
@@ -105,8 +105,8 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
 
   const handleMove = useCallback(
     async (to: 'backlog' | 'plan') => {
-      const ok = await moveTask(workspacePath, taskId, to);
-      if (!ok) toast.error('操作失败', { description: '任务状态未变更' });
+      const err = await moveTask(workspacePath, taskId, to);
+      if (err) toast.error('操作失败', { description: err });
     },
     [workspacePath, taskId, moveTask],
   );
@@ -114,9 +114,9 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
   const handleDelete = useCallback(async () => {
     const ok = await showConfirm('删除任务', `确定删除「${detail?.title ?? '该任务'}」？删除后可在回收站恢复。`);
     if (!ok) return;
-    const done = await deleteTask(workspacePath, taskId);
-    if (!done) {
-      toast.error('删除失败', { description: '任务删除失败' });
+    const err = await deleteTask(workspacePath, taskId);
+    if (err) {
+      toast.error('删除失败', { description: err });
       return;
     }
     onBack();
