@@ -39,7 +39,10 @@ export function App() {
       </HashRouter>
 
       {settingsOpen && (
-        <div className="fixed inset-0 z-50 bg-background">
+        <div
+          className="fixed inset-0 z-50 bg-background"
+          style={{ paddingTop: 'env(titlebar-area-height, 36px)' }}
+        >
           <ErrorBoundary fallback="page">
             <SettingsPage />
           </ErrorBoundary>
