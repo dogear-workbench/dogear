@@ -1,7 +1,13 @@
-import { useEffect } from 'react';
-import { Loader2, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ChevronDown, Loader2, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { selectTerminalGroups, useTerminalStore, type TerminalMeta } from '@/stores/terminal-store';
@@ -31,6 +37,12 @@ function EmptyState() {
   );
 }
 
+function StatusIndicator({ running, spinner }: { running: boolean; spinner: boolean }) {
+  if (running && spinner) return <Loader2 className="w-3 h-3 animate-spin shrink-0" />;
+  if (running) return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-orange-500 animate-pulse" />;
+  return <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-muted-foreground" />;
+}
+
 interface TerminalTabProps {
   active: boolean;
   label: string;
@@ -50,18 +62,18 @@ function TerminalTab({ active, label, title, running, spinner = false, exitCode,
       title={title ?? label}
       onClick={onSelect}
       className={cn(
-        'group flex items-center gap-1 h-7 pl-2 pr-1 rounded-md text-xs shrink-0 max-w-44 cursor-pointer select-none',
-        active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
-        !running && 'opacity-55',
+        'group flex items-center gap-1 h-7 w-32 px-2 rounded-md text-xs shrink-0 cursor-pointer select-none',
+        running ? 'text-foreground' : 'text-muted-foreground',
+        active ? 'bg-muted' : 'hover:bg-muted/60',
       )}
     >
-      {spinner && running && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
+      <StatusIndicator running={running} spinner={spinner} />
       <span className="truncate">{label}</span>
-      {!running && exitCode !== undefined && <span className="text-[10px] whitespace-nowrap">exit {exitCode}</span>}
+      {!running && exitCode !== undefined && <span className="text-[10px] whitespace-nowrap shrink-0">exit {exitCode}</span>}
       <button
         type="button"
         title="结束并关闭"
-        className="p-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 hover:bg-background/80 transition-opacity"
+        className="ml-auto p-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 hover:bg-background/80 transition-opacity"
         onClick={(e) => {
           e.stopPropagation();
           onClose();
@@ -71,6 +83,36 @@ function TerminalTab({ active, label, title, running, spinner = false, exitCode,
       </button>
     </div>
   );
+}
+
+interface TabEntry {
+  meta: TerminalMeta;
+  label: string;
+  fullLabel: string;
+  spinner: boolean;
+}
+
+const TAB_STEP = 130;
+const RESERVE_BASE = 44;
+const RESERVE_OVERFLOW = 86;
+
+function computeVisibleCount(containerWidth: number, tabCount: number): number {
+  const base = Math.floor((containerWidth - RESERVE_BASE) / TAB_STEP);
+  if (tabCount <= base) return base;
+  return Math.max(0, Math.floor((containerWidth - RESERVE_BASE - RESERVE_OVERFLOW) / TAB_STEP));
+}
+
+/** 激活保底：激活 tab 落在溢出区时强制换入可见区末位，挤出的进下拉 */
+function splitTabs(ordered: TabEntry[], visibleCount: number, activeId: string | null): { visible: TabEntry[]; overflow: TabEntry[] } {
+  const count = Math.min(ordered.length, Math.max(0, visibleCount));
+  if (ordered.length <= count) return { visible: ordered, overflow: [] };
+  const activeIndex = ordered.findIndex((t) => t.meta.terminalId === activeId);
+  if (activeIndex >= count) {
+    const visible = count > 0 ? [...ordered.slice(0, count - 1), ordered[activeIndex]] : [ordered[activeIndex]];
+    const visibleIds = new Set(visible.map((t) => t.meta.terminalId));
+    return { visible, overflow: ordered.filter((t) => !visibleIds.has(t.meta.terminalId)) };
+  }
+  return { visible: ordered.slice(0, count), overflow: ordered.slice(count) };
 }
 
 export function TerminalPanel() {
@@ -87,6 +129,9 @@ export function TerminalPanel() {
   const anchor = followMode === 'follow' ? activeTabId : pinnedId;
   const { mine, session, active } = selectTerminalGroups(terminals, anchor, activeTerminalId);
 
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const [barWidth, setBarWidth] = useState<number | null>(null);
+
   useEffect(() => {
     void useTerminalStore.getState().ensureTerminals();
   }, []);
@@ -95,21 +140,48 @@ export function TerminalPanel() {
     useTerminalStore.getState().reconcileActive(anchor);
   }, [terminals, anchor]);
 
+  useLayoutEffect(() => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) setBarWidth(entry.contentRect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const pinnedConv = conversations.find((c) => c.id === pinnedId);
   const activeTab = tabs.find((t) => t.conversationId === activeTabId);
   const isPinned = followMode === 'pin';
 
-  const renderTab = (meta: TerminalMeta, isSessionGroup: boolean, index: number) => (
+  const orderedTabs: TabEntry[] = [
+    ...mine.map((meta, i) => ({
+      meta,
+      label: i === 0 ? '$ shell' : `$ shell ${i + 1}`,
+      fullLabel: i === 0 ? '$ shell' : `$ shell ${i + 1}`,
+      spinner: false,
+    })),
+    ...session.map((meta) => ({
+      meta,
+      label: shortCommand(meta.command),
+      fullLabel: meta.command,
+      spinner: true,
+    })),
+  ];
+  const visibleCount = barWidth === null ? orderedTabs.length : computeVisibleCount(barWidth, orderedTabs.length);
+  const { visible, overflow } = splitTabs(orderedTabs, visibleCount, active?.terminalId ?? null);
+
+  const renderTab = (entry: TabEntry) => (
     <TerminalTab
-      key={meta.terminalId}
-      active={active?.terminalId === meta.terminalId}
-      label={isSessionGroup ? shortCommand(meta.command) : index === 0 ? '$ shell' : `$ shell ${index + 1}`}
-      title={isSessionGroup ? meta.command : undefined}
-      running={!meta.exited}
-      spinner={isSessionGroup}
-      exitCode={meta.exitCode}
-      onSelect={() => useTerminalStore.getState().setActive(meta.terminalId)}
-      onClose={() => void useTerminalStore.getState().killTerminal(meta.terminalId)}
+      key={entry.meta.terminalId}
+      active={active?.terminalId === entry.meta.terminalId}
+      label={entry.label}
+      title={entry.fullLabel}
+      running={!entry.meta.exited}
+      spinner={entry.spinner}
+      exitCode={entry.meta.exitCode}
+      onSelect={() => useTerminalStore.getState().setActive(entry.meta.terminalId)}
+      onClose={() => void useTerminalStore.getState().killTerminal(entry.meta.terminalId)}
     />
   );
 
@@ -158,10 +230,51 @@ export function TerminalPanel() {
       <div className="flex-1 min-h-0 relative bg-background">
         {active ? <XtermTerminal key={active.terminalId} terminalId={active.terminalId} /> : <EmptyState />}
       </div>
-      <div className="flex items-center gap-0.5 h-9 border-t px-1.5 shrink-0 overflow-x-auto">
-        {mine.map((meta, i) => renderTab(meta, false, i))}
-        {mine.length > 0 && session.length > 0 && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
-        {session.map((meta, i) => renderTab(meta, true, i))}
+      <div ref={tabBarRef} className="flex items-center gap-0.5 h-9 border-t px-1.5 shrink-0 overflow-hidden">
+        {visible.map(renderTab)}
+        {overflow.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                title={`${overflow.length} 个终端收起`}
+                className="flex items-center gap-1 h-7 px-2 rounded-md text-xs shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+              >
+                <span>更多</span>
+                <ChevronDown className="w-3.5 h-3.5" />
+                <span className="min-w-4 h-4 px-1 rounded-full bg-muted-foreground/15 text-[10px] leading-4 flex items-center justify-center">
+                  {overflow.length}
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="top" align="end" className="max-w-sm">
+              {overflow.map((entry) => (
+                <DropdownMenuItem
+                  key={entry.meta.terminalId}
+                  className={cn('group gap-2 text-xs', entry.meta.exited ? 'text-muted-foreground' : 'text-foreground')}
+                  onSelect={() => useTerminalStore.getState().setActive(entry.meta.terminalId)}
+                >
+                  <StatusIndicator running={!entry.meta.exited} spinner={entry.spinner} />
+                  <span className="flex-1 min-w-0 whitespace-normal break-all">{entry.fullLabel}</span>
+                  {entry.meta.exited && entry.meta.exitCode !== undefined && (
+                    <span className="text-[10px] whitespace-nowrap shrink-0">exit {entry.meta.exitCode}</span>
+                  )}
+                  <button
+                    type="button"
+                    title="结束并关闭"
+                    className="p-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 hover:bg-background/80 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void useTerminalStore.getState().killTerminal(entry.meta.terminalId);
+                    }}
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         <button
           type="button"
           title="新建 shell"
