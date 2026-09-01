@@ -25,6 +25,7 @@ export interface ConversationRowProps {
   indent?: number;
   readOnly?: boolean;
   childCount?: number;
+  childRunning?: boolean;
   expandToggle?: ConversationRowExpandToggle;
 }
 
@@ -44,6 +45,7 @@ export function ConversationRow({
   indent = 8,
   readOnly = false,
   childCount,
+  childRunning,
   expandToggle,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
@@ -173,7 +175,15 @@ export function ConversationRow({
             </span>
           )}
           {hasChildren && childCount != null && childCount > 0 && (
-            <span className="shrink-0">· {childCount} 个子会话</span>
+            <span className="flex items-center gap-1 shrink-0">
+              <span>· {childCount} 个子会话</span>
+              {childRunning && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-orange-500 animate-pulse"
+                  title="有子会话运行中"
+                />
+              )}
+            </span>
           )}
           {!readOnly && !isEditing && (
             <span className="ml-auto flex items-center opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto group-data-[state=open]:opacity-100 group-data-[state=open]:pointer-events-auto transition-opacity shrink-0">

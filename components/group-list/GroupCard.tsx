@@ -36,6 +36,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
   const isExpanded = expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
   const removeGroupFromFolder = useConversationStore((s) => s.removeGroupFromFolder);
+  const runningIds = useConversationStore((s) => s.runningConversationIds);
   const subExpandedConvIds = useSectionCollapseStore((s) => s.subExpandedConvIds);
   const toggleSubExpand = useSectionCollapseStore((s) => s.toggleSubExpand);
   const isArchived = mode === 'archived';
@@ -109,6 +110,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
     nodes.map((node) => {
       const hasChildren = node.children.length > 0;
       const subExpanded = hasChildren && subExpandedConvIds.has(node.conv.id);
+      const childRunning = hasChildren && node.children.some((child) => runningIds.has(child.conv.id));
       return (
         <Fragment key={node.conv.id}>
           <ConversationRow
@@ -117,6 +119,7 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
             indent={indent}
             readOnly={isArchived}
             childCount={hasChildren ? node.children.length : undefined}
+            childRunning={childRunning || undefined}
             expandToggle={hasChildren ? {
               expanded: subExpanded,
               onToggle: () => toggleSubExpand(node.conv.id),
