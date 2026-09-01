@@ -4,10 +4,13 @@ import path from 'path';
 import { EventEmitter } from 'events';
 import { promisify } from 'util';
 import * as pty from 'node-pty';
+import xtermHeadless from '@xterm/headless';
+import type { Terminal as HeadlessTerminal } from '@xterm/headless';
 import { v4 as uuidv4 } from 'uuid';
 import { resolveWithinPaths } from '../agents/pi-session/workspace-boundary.js';
 
 const execFileP = promisify(execFile);
+const { Terminal } = xtermHeadless;
 
 export type PtyEvent =
   | { type: 'created'; terminalId: string; conversationId: string | null; command: string }
@@ -55,6 +58,7 @@ export interface PtyCreateOptions {
 interface PtyInstance extends PtyTerminalInfo {
   buffer: string;
   proc: pty.IPty;
+  screen: HeadlessTerminal;
 }
 
 // 按 UTF-16 字符数封顶，防长输出进程把内存吃满
@@ -134,7 +138,7 @@ function capBuffer(buffer: string): string {
 }
 
 function toInfo(instance: PtyInstance): PtyTerminalInfo {
-  const { proc: _proc, ...info } = instance;
+  const { proc: _proc, screen: _screen, ...info } = instance;
   return info;
 }
 
@@ -154,6 +158,8 @@ export async function createTerminal(options: PtyCreateOptions): Promise<string>
   });
 
   const terminalId = uuidv4();
+  // WHY: ConPTY 在 resize 时整屏重发且重绘帧会滚动/清屏污染 scrollback；读端用固定超大屏（任何重绘帧的换行数都够不到屏底），永不跟随 resize，人机两侧内容一致且历史完整
+  const screen = new Terminal({ scrollback: 2000, cols: 200, rows: 100, allowProposedApi: true });
   const instance: PtyInstance = {
     terminalId,
     conversationId: options.conversationId,
@@ -165,6 +171,7 @@ export async function createTerminal(options: PtyCreateOptions): Promise<string>
     buffer: '',
     exited: false,
     proc,
+    screen,
   };
   instances.set(terminalId, instance);
 
@@ -176,6 +183,7 @@ export async function createTerminal(options: PtyCreateOptions): Promise<string>
 
   proc.onData((data) => {
     instance.buffer = capBuffer(instance.buffer + data);
+    instance.screen.write(data);
     broadcast({ type: 'data', terminalId, data });
   });
 
@@ -217,6 +225,14 @@ export function killTerminal(terminalId: string): void {
   const instance = instances.get(terminalId);
   if (!instance) return;
   instances.delete(terminalId);
+  if (!process.versions.bun) {
+    try {
+      // WHY: ConPTY kill 有 ~5s 清理宽限期，先发 SIGINT 让前台进程立即中断；bun 运行时对 ConPTY write 有兼容缺陷故跳过
+      instance.proc.write('\x03');
+    } catch {
+      // 失败无碍后续 kill
+    }
+  }
   try {
     instance.proc.kill();
   } catch (error) {
@@ -237,6 +253,19 @@ export function killAll(): void {
 /** 尾部缓冲；实例不存在返回 null */
 export function getBuffer(terminalId: string): string | null {
   return instances.get(terminalId)?.buffer ?? null;
+}
+
+/** 屏幕模型重建的文本（scrollback + 可见屏），重绘帧已被吸收不产生重复 */
+export function getScreenText(terminalId: string): string | null {
+  const instance = instances.get(terminalId);
+  if (!instance) return null;
+  const buffer = instance.screen.buffer.active;
+  const lines: string[] = [];
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i);
+    lines.push(line ? line.translateToString(true) : '');
+  }
+  return lines.join('\n').trim();
 }
 
 export function listTerminals(conversationId?: string): PtyTerminalInfo[] {

@@ -13,7 +13,7 @@ type TerminalFixture = {
 };
 
 let createTerminalImpl: (options: Record<string, unknown>) => Promise<string> = async () => 'tid-default';
-let bufferFixture: string = '';
+let screenTextFixture: string = '';
 let terminalsFixture: TerminalFixture[] = [];
 
 const createTerminalCalls: Record<string, unknown>[] = [];
@@ -24,7 +24,7 @@ mock.module('../../services/pty-service.js', () => ({
     createTerminalCalls.push(options);
     return createTerminalImpl(options);
   },
-  getBuffer: () => bufferFixture,
+  getScreenText: () => screenTextFixture,
   killTerminal: (id: string) => {
     killTerminalCalls.push(id);
   },
@@ -64,7 +64,7 @@ beforeEach(() => {
   createTerminalCalls.length = 0;
   killTerminalCalls.length = 0;
   createTerminalImpl = async () => 'tid-new';
-  bufferFixture = '';
+  screenTextFixture = '';
   terminalsFixture = [];
 });
 
@@ -134,16 +134,14 @@ test('read_terminal 无参：仅列出当前会话名下的终端概览', async 
   expect(text).not.toContain('tid-b');
 });
 
-test('read_terminal 带 id：strip-ANSI + \\r 覆盖处理 + 状态行', async () => {
+test('read_terminal 带 id：屏幕模型文本直读 + 状态行', async () => {
   terminalsFixture = [makeTerminal({ terminalId: 'tid-a', command: 'vite', exited: true, exitCode: 0 })];
-  bufferFixture = '\x1b]0;title\x07\x1b[32m20%\x1b[0m\r40%\r60%\r\ndone \x1b[1mbold\x1b[0m\nnext line\r\n';
+  screenTextFixture = '60%\ndone bold\nnext line\n';
   const { readTerminal } = getTools();
   const result = await readTerminal.execute('call-5', { terminalId: 'tid-a' }, undefined, undefined, noopContext);
   const text = (result.content[0] as { text: string }).text;
   expect(text).not.toContain('\x1b');
   expect(text).toContain('60%');
-  expect(text).not.toContain('20%');
-  expect(text).not.toContain('40%');
   expect(text).toContain('done bold');
   expect(text).toContain('next line');
   expect(text).toContain('vite');
@@ -152,7 +150,7 @@ test('read_terminal 带 id：strip-ANSI + \\r 覆盖处理 + 状态行', async (
 
 test('read_terminal 超长输出截断到上限并保留尾部', async () => {
   terminalsFixture = [makeTerminal({ terminalId: 'tid-a' })];
-  bufferFixture = `head-${'x'.repeat(20 * 1024)}-tail-marker`;
+  screenTextFixture = `head-${'x'.repeat(20 * 1024)}-tail-marker`;
   const { readTerminal } = getTools();
   const result = await readTerminal.execute('call-6', { terminalId: 'tid-a' }, undefined, undefined, noopContext);
   const text = (result.content[0] as { text: string }).text;

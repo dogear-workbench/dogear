@@ -1,6 +1,6 @@
 import { test, expect, afterEach } from 'bun:test';
 import os from 'os';
-import { createTerminal, writeTerminal, killTerminal, killConversationTerminals, killAll, getBuffer, listTerminals } from './pty-service.js';
+import { createTerminal, writeTerminal, killTerminal, killConversationTerminals, killAll, getBuffer, getScreenText, listTerminals, resizeTerminal } from './pty-service.js';
 
 function tmpCwd(): string {
   return os.tmpdir();
@@ -71,6 +71,22 @@ test('buffer 尾部截断到 100KB', async () => {
   expect(buffer!.length).toBeGreaterThan(0);
   expect(buffer!.trimEnd().endsWith('0123456789')).toBe(true);
 });
+
+test('resize 触发 ConPTY 整屏重发后，getScreenText 不产生重复行', async () => {
+  const id = await createTerminal({
+    conversationId: 'conv-resize',
+    cwd: tmpCwd(),
+    command: 'for i in 1 2 3 4 5 6 7 8; do echo "dup-check-$i"; done; sleep 8',
+  });
+  await waitUntil(() => getScreenText(id)?.includes('dup-check-8'));
+  resizeTerminal(id, 120, 40);
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  resizeTerminal(id, 60, 15);
+  await new Promise((resolve) => setTimeout(resolve, 800));
+  const text = getScreenText(id) ?? '';
+  const count = (text.match(/dup-check-1\b/g) ?? []).length;
+  expect(count).toBe(1);
+}, 20000);
 
 test('cwd 越出 workspaceRoots 时拒绝创建', async () => {
   expect(createTerminal({ conversationId: null, cwd: os.tmpdir(), workspaceRoots: ['C:/definitely-not-a-root'] })).rejects.toThrow(/路径越权/);

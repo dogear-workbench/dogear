@@ -25,7 +25,7 @@ function getEntry(terminalId: string): XtermEntry {
   host.className = 'h-full w-full';
   const term = new Terminal({
     scrollback: 5000,
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     cursorBlink: true,
   });
@@ -80,17 +80,26 @@ export function XtermTerminal({ terminalId }: { terminalId: string }) {
       });
     });
 
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
     const syncSize = () => {
       if (!entry.opened) return;
       try {
+        // WHY: 面板被拖到内容不可读时跳过 fit 与 resize，保持上次尺寸；避免无意义 ConPTY 重绘及展开时 scrollback 被清
+        const dims = entry.fit.proposeDimensions();
+        if (!dims || dims.cols < 20 || dims.rows < 8) return;
         entry.fit.fit();
       } catch {
         return;
       }
       if (entry.term.cols === entry.lastCols && entry.term.rows === entry.lastRows) return;
-      entry.lastCols = entry.term.cols;
-      entry.lastRows = entry.term.rows;
-      client.ptyResize({ terminalId, cols: entry.term.cols, rows: entry.term.rows }).catch(() => {});
+      // WHY: 每次 ptyResize 都触发 ConPTY 整屏重绘且重绘帧会污染 scrollback，合并拖动/挂载期的连续 resize 只发最终尺寸
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        entry.lastCols = entry.term.cols;
+        entry.lastRows = entry.term.rows;
+        client.ptyResize({ terminalId, cols: entry.term.cols, rows: entry.term.rows }).catch(() => {});
+      }, 150);
     };
     syncSize();
 
@@ -98,6 +107,7 @@ export function XtermTerminal({ terminalId }: { terminalId: string }) {
     observer.observe(container);
 
     return () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
       offSink();
       dataListener.dispose();
       observer.disconnect();

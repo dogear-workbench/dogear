@@ -19,7 +19,7 @@ import {
 } from '@earendil-works/pi-agent-core';
 import {
   createTerminal,
-  getBuffer,
+  getScreenText,
   killTerminal,
   listTerminals,
 } from '../../services/pty-service.js';
@@ -94,18 +94,9 @@ const readTerminalSchema = Type.Object({
 
 const READ_TERMINAL_MAX_CHARS = 8 * 1024;
 
-function stripAnsi(text: string): string {
-  return text
-    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
-    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
-    .replace(/\x1b[@-Z\\-_]/g, '')
-    .replace(/\r\n/g, '\n')
-    .replace(/^.*\r/gm, '')
-    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
-}
-
 function tailText(text: string, max = READ_TERMINAL_MAX_CHARS): string {
-  return text.length > max ? `${text.slice(0, 32)}\n...(中间输出已截断)...\n${text.slice(text.length - max)}` : text;
+  const collapsed = text.replace(/\n{3,}/g, '\n\n');
+  return collapsed.length > max ? `${collapsed.slice(0, 32)}\n...(中间输出已截断)...\n${collapsed.slice(collapsed.length - max)}` : collapsed;
 }
 
 function formatTerminalStatus(info: { command: string; exited: boolean; exitCode?: number }): string {
@@ -134,8 +125,8 @@ function createReadTerminalTool(options?: BuiltinFileToolsOptions): HarnessTool<
       if (!info) {
         throw new Error(`终端不存在: ${terminalId}`);
       }
-      const buffer = getBuffer(terminalId) ?? '';
-      const text = tailText(stripAnsi(buffer));
+      const screenText = getScreenText(terminalId) ?? '';
+      const text = tailText(screenText);
       return {
         content: [{ type: 'text', text: `[${formatTerminalStatus(info)}]\n${text || '(暂无输出)'}` }],
         details: null,
