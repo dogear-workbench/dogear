@@ -17,6 +17,16 @@
 - [x] [Step 3: 渲染层终端面板](./step3-renderer.md) — terminal-store 重写、xterm 组件、底部子 tab 栏（我的/会话两组）、跟随固定保留
 - [x] [Step 4: 一期删除 + 打包善后](./step4-cleanup.md) — 删卡片流全家、asarUnpack、agent.md RTK 修正、回归验证
 
+## 完成总结
+
+四步全部完成，每步独立 commit：`7a691fa`（PTY 服务+tipc）、`52b03f2`（bash 双轨+管理工具）、`4812a95`（渲染层 xterm 面板）、`bf7d72b`（一期删除+打包）。
+
+**最终架构**：双轨 bash——同步命令零变化走原 createBashTool 路径；`run_in_background: true` 走主进程 pty-service（Git Bash 优先探测/100KB 尾部缓冲/全窗口广播）立即返回，agent 用 read_terminal（strip-ANSI+8KB 尾部，按会话归属过滤）/kill_terminal 管理；渲染层 xterm.js 实例缓存面板，「我的 shell」与「会话后台终端」两组 tab 共存，跟随/固定沿用一期；会话 close 杀其名下 PTY，app 退出全杀；工作台窗口同构复用。
+
+**实施中的关键发现**：node-pty Windows 需双 error listener 压制 uncaught；工具层错误通道是 throw 而非返回对象（agent-loop 硬编码 isError:false）；stripAnsi 必须先做 CRLF→LF 归一否则 Windows 输出整行误删；xterm 实例换容器用 host div 搬家而非重复 open；hydration 需要 pending 队列防历史/实时乱序。
+
+**遗留待用户验证**：真机完整链路（agent 后台命令出 tab/键盘交互/Ctrl+C/关会话 tab 消失/双窗口同看/后开窗口灌历史）；`bun run dist` 安装包 node-pty asarUnpack 生效。后续可调项：read_terminal 截断 8KB 首版值、终端无 TTL 回收（自然退出实例留 Map 到 tab × 或会话清理）。
+
 ## 全局决策
 
 - **工具族归属**：read_terminal/kill_terminal 与 bash 同族，进 `builtin-tools.ts` 的 tools 数组，不走 registerTools 能力域机制；需加进子会话 `BUILTIN_FILE_TOOLS` 白名单（`computeSubAgentActiveTools`，'bash' 硬编码处）。前端工具面板是否展示这俩：实施时查 bash 当前呈现方式，与其对齐
