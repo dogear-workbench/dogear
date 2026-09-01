@@ -30,6 +30,7 @@ import { updaterRouter } from './updater.js';
 import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
 import { terminalRouter } from './terminal.js';
+import { ptyRouter, registerPtyBroadcaster } from './pty.js';
 
 export const router = {
   ...aiRouter,
@@ -62,6 +63,7 @@ export const router = {
   ...schedulerRouter,
   ...windowsRouter,
   ...terminalRouter,
+  ...ptyRouter,
 };
 
 export type Router = typeof router;
@@ -70,4 +72,6 @@ export function registerTipcHandlers() {
   registerIpcMain(router);
   // Phase 3: 注册文章解析状态变化的全局监听器（AgentManager → 所有窗口）
   registerArticleParseStatusListener();
+  // 终端二期：PTY 事件 → 渲染层广播桥接
+  registerPtyBroadcaster();
 }

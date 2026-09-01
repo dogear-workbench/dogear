@@ -741,6 +741,13 @@ app.on('before-quit', async () => {
     tray.destroy();
     tray = null;
   }
+  // 杀掉所有 PTY 终端实例（agent 后台命令 + 用户 shell）
+  try {
+    const { killAll } = await import('./services/pty-service.js');
+    killAll();
+  } catch (error) {
+    console.error('关闭 PTY 终端失败:', error);
+  }
   // 关闭所有 pi 会话
   try {
     const { shutdownPiSessionManager } = await import('./agents/pi-session/pi-session-manager.js');

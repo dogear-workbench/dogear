@@ -219,4 +219,17 @@ export type RendererHandlers = {
   // 终端流增量（terminal-stream-service 广播，渲染端按 conversationId 过滤、toolCallId 定位卡片）
   terminalStreamAppend: (data: TerminalStreamEvent) => void;
 
+  // PTY 终端实例创建（pty-service 广播，渲染端建 tab）
+  ptyCreated: (data: {
+    terminalId: string;
+    conversationId: string | null;
+    command: string;
+  }) => void;
+
+  // PTY 原始输出增量（保留 ANSI，xterm.write 直写）
+  ptyData: (data: { terminalId: string; data: string }) => void;
+
+  // PTY 进程退出
+  ptyExit: (data: { terminalId: string; exitCode: number }) => void;
+
 };
