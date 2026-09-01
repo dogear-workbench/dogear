@@ -42,6 +42,7 @@ export function WorkbenchWindowPage() {
         if (convs.length > 0) {
           useTerminalStore.getState().pinConversation(convs[0].id);
         }
+        void useTerminalStore.getState().ensureTerminals();
         useUIStore.getState().setRightPanelTab('terminal');
 
         setWorkspaceId(ws.id);

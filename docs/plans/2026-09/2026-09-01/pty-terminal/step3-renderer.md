@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 渲染层终端面板
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,19 +25,32 @@ status: pending
   - 头部 h-9：跟随/固定切换 + 会话下拉（固定态）——照搬一期实现（Pin/PinOff 图标、Select）删清屏按钮（终端内容自持，无清屏语义）
   - 身体：activeTerminal 对应的 XtermTerminal；无实例时空态「点下方 + 打开 shell，或让 agent 后台运行命令」
   - 底部子 tab 栏：左「我的」（$ shell，多个则 $ shell 2 递增）+ 分隔 + 右「会话」（command 短名，运行中 Loader2 转圈，退出变灰 + exit code）；tab 点 × kill；最右 `+` 开新 shell；会话切换时 activeTerminalId 若失效则默认选「会话」组最新或置空
-- [ ] 工作台窗口（一期 step4 的窗口初始化代码）：确认 `pinConversation` 调用仍生效 + 挂 ensureTerminals 拉列表
+- [x] 工作台窗口（一期 step4 的窗口初始化代码）：确认 `pinConversation` 调用仍生效 + 挂 ensureTerminals 拉列表
 
 ## 验证
-- [ ] `bunx tsc --noEmit` + `bun run lint` + store 冒烟 `terminal-store.test.ts`（事件路由、分组过滤、activeTerminal 切换）
-- [ ] 真机完整链路：开 shell 敲命令/Ctrl+C、agent 后台跑 `bun run dev` 出 tab 且输出滚动、用户 Ctrl+C 后 agent read_terminal 见退出码、关会话其终端 tab 消失、工作台窗口同看同输、后开窗口灌历史
+- [x] `bunx tsc --noEmit` + `bun run lint` + store 冒烟 `terminal-store.test.ts`（事件路由、分组过滤、activeTerminal 切换）——全量 bun test 264 pass 0 fail 1 skip，step2 遗留的 2 个 pre-existing 失败已消解
+- [ ] 真机完整链路：开 shell 敲命令/Ctrl+C、agent 后台跑 `bun run dev` 出 tab 且输出滚动、用户 Ctrl+C 后 agent read_terminal 见退出码、关会话其终端 tab 消失、工作台窗口同看同输、后开窗口灌历史——需运行中 Electron 应用，留待 step4 后统一真机回归
 
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异（详见共享区 pty/step3-delivery.md）：
+  - activeTerminal 失效回退链「会话最新 → 我的最新 → null」（避免有 shell 却显空态）；reconcileActive 下沉为 store action 便于测试
+  - xterm 宿主用自持 host div 搬家（attach=appendChild/detach=remove）而非重复 open——xterm 对同一实例重复 open 有尺寸测量问题
+  - hydration 乱序防护：getPtyBuffer 往返期间实时数据进 pending 队列，灌完按序 flush，保证历史→实时严格有序
+  - openUserShell cwd 取 workspace-store 的 workspace.path；无工作区时 toast 报错不发 create
+  - ptyCreated 不自动激活（agent 起 tab 不抢用户焦点；openUserShell 例外）；ptyExit 停写双保险
+  - 新增导出 dispatchPtyData/selectTerminalGroups 纯函数供测试驱动（ptyData 订阅仅 window 环境建立）
 - 改动文件清单：
+  - 重写 `stores/terminal-store.ts`（元数据 + 事件路由 + actions）、`components/companion/TerminalPanel.tsx`（头部/身体/底部子 tab 栏）、`stores/terminal-store.test.ts`（5 新用例）
+  - 新建 `components/companion/XtermTerminal.tsx`（entryCache + FitAddon + DOM renderer + hydration）
+  - 修改 `app/workbench-window/page.tsx`（ensureTerminals 一行）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+- 关键签名 / 数据结构：`selectTerminalGroups(terminals, anchor, activeTerminalId)`、`registerDataSink(terminalId, cb) → () => void`；XtermTerminal entryCache 模块级永不 dispose
+- 下个 step 该从哪里继续：Step 4 删一期——TerminalCard.tsx / ansi-to-react / tipc/terminal.ts + 注册行 + terminalStreamAppend + forwardBashTerminalEvent 整体删（doClose 的 killConversationTerminals 别动）；getTerminalBuffer 渲染层已无消费者
 - 待办或已知限制：
+  - 真机完整链路未验（需运行中应用），step4 后统一回归
+  - `$ shell N` 标签按当前顺序派生，关中间 shell 后重编号（纯显示层）
+  - 窄栏多 tab 靠横向滚动兜底（未做收缩折叠）
+  - step2 遗留 terminal-store.test 2 个 pre-existing 失败已查明根因（conversation-store.test 全局 mock 污染 + 旧用例未 await）并随重写消解

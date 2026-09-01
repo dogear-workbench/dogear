@@ -1,120 +1,130 @@
 import { create } from 'zustand';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
-import type { TerminalEntry, TerminalStreamEvent } from '../electron/main/services/terminal-stream-service';
-
-const MAX_ENTRIES = 200;
+import { useWorkspaceStore } from './workspace-store';
 
 export type TerminalFollowMode = 'follow' | 'pin';
 
+export interface TerminalMeta {
+  terminalId: string;
+  conversationId: string | null;
+  command: string;
+  exited: boolean;
+  exitCode?: number;
+}
+
+export interface TerminalGroups {
+  mine: TerminalMeta[];
+  session: TerminalMeta[];
+  active: TerminalMeta | null;
+}
+
 interface TerminalState {
-  /** conversationId -> 命令条目（镜像主进程缓冲，事件驱动保持一致） */
-  buffers: Map<string, TerminalEntry[]>;
-  /** conversationId -> 运行中 toolCallId 集合（TerminalEntry 无 running 字段，靠此区分运行中/异常终止） */
-  runningIds: Map<string, Set<string>>;
+  terminals: Map<string, TerminalMeta>;
+  activeTerminalId: string | null;
   followMode: TerminalFollowMode;
   pinnedConversationId: string | null;
-  /** 拉一次历史缓冲（已有缓冲或拉取中则跳过） */
-  ensureBuffer: (conversationId: string) => Promise<void>;
-  /** 终端流事件入口（模块级订阅转发到这里，面板未打开也不丢事件） */
-  handleStreamEvent: (event: TerminalStreamEvent) => void;
+  openUserShell: () => Promise<void>;
+  killTerminal: (terminalId: string) => Promise<void>;
+  setActive: (terminalId: string | null) => void;
   pinConversation: (conversationId: string) => void;
   setFollowMode: (mode: TerminalFollowMode) => void;
-  /** 清空某会话的本地终端展示 */
-  clearBuffer: (conversationId: string) => void;
+  ensureTerminals: () => Promise<void>;
+  reconcileActive: (anchor: string | null) => void;
+  handlePtyCreated: (event: { terminalId: string; conversationId: string | null; command: string }) => void;
+  handlePtyExit: (event: { terminalId: string; exitCode: number }) => void;
 }
 
-function findEntryIndex(entries: TerminalEntry[], toolCallId: string): number {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].toolCallId === toolCallId) return i;
-  }
-  return -1;
-}
-
-function applyEvent(entries: TerminalEntry[], event: TerminalStreamEvent): TerminalEntry[] {
-  switch (event.type) {
-    case 'start': {
-      const next = [...entries, {
-        toolCallId: event.toolCallId,
-        command: event.command,
-        startedAt: event.startedAt,
-        text: '',
-      }];
-      return next.length > MAX_ENTRIES ? next.slice(next.length - MAX_ENTRIES) : next;
-    }
-    case 'append': {
-      const idx = findEntryIndex(entries, event.toolCallId);
-      if (idx < 0) return entries;
-      const next = entries.slice();
-      next[idx] = { ...next[idx], text: next[idx].text + event.suffix };
-      return next;
-    }
-    case 'replace': {
-      const idx = findEntryIndex(entries, event.toolCallId);
-      if (idx < 0) return entries;
-      const next = entries.slice();
-      next[idx] = { ...next[idx], text: event.text };
-      return next;
-    }
-    case 'end': {
-      const idx = findEntryIndex(entries, event.toolCallId);
-      if (idx < 0) return entries;
-      const next = entries.slice();
-      next[idx] = { ...next[idx], exitCode: event.exitCode };
-      return next;
+/** 「会话」组可见性：conversationId 命中当前锚点（跟随态=activeTabId，固定态=pinnedId）；「我的」组=conversationId null 全显示 */
+export function selectTerminalGroups(
+  terminals: Map<string, TerminalMeta>,
+  anchor: string | null,
+  activeTerminalId: string | null,
+): TerminalGroups {
+  const mine: TerminalMeta[] = [];
+  const session: TerminalMeta[] = [];
+  for (const meta of terminals.values()) {
+    if (meta.conversationId === null) {
+      mine.push(meta);
+    } else if (anchor !== null && meta.conversationId === anchor) {
+      session.push(meta);
     }
   }
+  const visibleIds = new Set([...mine, ...session].map((m) => m.terminalId));
+  const stored = activeTerminalId !== null && visibleIds.has(activeTerminalId)
+    ? terminals.get(activeTerminalId)
+    : undefined;
+  const active = stored ?? session[session.length - 1] ?? mine[mine.length - 1] ?? null;
+  return { mine, session, active };
 }
 
-const inflight = new Map<string, Promise<void>>();
-const EMPTY_ENTRIES: TerminalEntry[] = [];
+type DataSink = (data: string) => void;
+const dataSinks = new Map<string, Set<DataSink>>();
+
+/** xterm 组件收实时流的注册口；返回解绑函数。store 自身不攒内容 */
+export function registerDataSink(terminalId: string, sink: DataSink): () => void {
+  let sinks = dataSinks.get(terminalId);
+  if (!sinks) {
+    sinks = new Set();
+    dataSinks.set(terminalId, sinks);
+  }
+  sinks.add(sink);
+  return () => {
+    const current = dataSinks.get(terminalId);
+    if (!current) return;
+    current.delete(sink);
+    if (current.size === 0) dataSinks.delete(terminalId);
+  };
+}
+
+export function dispatchPtyData(terminalId: string, data: string): void {
+  const sinks = dataSinks.get(terminalId);
+  if (!sinks) return;
+  for (const sink of sinks) sink(data);
+}
+
+function upsertMeta(map: Map<string, TerminalMeta>, meta: TerminalMeta): Map<string, TerminalMeta> {
+  const next = new Map(map);
+  next.set(meta.terminalId, meta);
+  return next;
+}
 
 export const useTerminalStore = create<TerminalState>((set, get) => ({
-  buffers: new Map(),
-  runningIds: new Map(),
+  terminals: new Map(),
+  activeTerminalId: null,
   followMode: 'follow',
   pinnedConversationId: null,
 
-  ensureBuffer: async (conversationId) => {
-    if (get().buffers.has(conversationId)) return;
-    const pending = inflight.get(conversationId);
-    if (pending) return pending;
-    const task = (async () => {
-      try {
-        const entries = await client.getTerminalBuffer({ conversationId });
-        set((state) => {
-          const next = new Map(state.buffers);
-          next.set(conversationId, entries);
-          return { buffers: next };
-        });
-      } finally {
-        inflight.delete(conversationId);
-      }
-    })();
-    inflight.set(conversationId, task);
-    return task;
+  openUserShell: async () => {
+    const cwd = useWorkspaceStore.getState().workspace?.path;
+    if (!cwd) {
+      toast.error('打开终端失败', { description: '请先打开工作区' });
+      return;
+    }
+    try {
+      const terminalId = await client.ptyCreate({ conversationId: null, cwd });
+      get().handlePtyCreated({ terminalId, conversationId: null, command: '' });
+      set({ activeTerminalId: terminalId });
+    } catch (error) {
+      toast.error('打开终端失败', { description: error instanceof Error ? error.message : String(error) });
+    }
   },
 
-  handleStreamEvent: (event) => {
+  killTerminal: async (terminalId) => {
+    try {
+      await client.ptyKill({ terminalId });
+    } catch (error) {
+      console.warn('[terminal] kill 失败:', error);
+    }
     set((state) => {
-      const prevEntries = state.buffers.get(event.conversationId) ?? EMPTY_ENTRIES;
-      const nextEntries = applyEvent(prevEntries, event);
-      let buffers = state.buffers;
-      if (nextEntries !== prevEntries) {
-        buffers = new Map(state.buffers);
-        buffers.set(event.conversationId, nextEntries);
-      }
-      let runningIds = state.runningIds;
-      if (event.type === 'start' || event.type === 'end') {
-        const nextSet = new Set(state.runningIds.get(event.conversationId));
-        if (event.type === 'start') nextSet.add(event.toolCallId);
-        else nextSet.delete(event.toolCallId);
-        runningIds = new Map(state.runningIds);
-        runningIds.set(event.conversationId, nextSet);
-      }
-      if (buffers === state.buffers && runningIds === state.runningIds) return state;
-      return { buffers, runningIds };
+      if (!state.terminals.has(terminalId)) return state;
+      const next = new Map(state.terminals);
+      next.delete(terminalId);
+      return { terminals: next };
     });
   },
+
+  setActive: (terminalId) => set({ activeTerminalId: terminalId }),
 
   pinConversation: (conversationId) =>
     set({ followMode: 'pin', pinnedConversationId: conversationId }),
@@ -124,20 +134,64 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       ? { followMode: 'follow', pinnedConversationId: null }
       : { followMode: 'pin' }),
 
-  clearBuffer: (conversationId) =>
+  ensureTerminals: async () => {
+    try {
+      const list = await client.listPtyTerminals({});
+      set((state) => {
+        const next = new Map(state.terminals);
+        for (const info of list) {
+          next.set(info.terminalId, {
+            terminalId: info.terminalId,
+            conversationId: info.conversationId,
+            command: info.command,
+            exited: info.exited,
+            exitCode: info.exitCode,
+          });
+        }
+        return { terminals: next };
+      });
+    } catch (error) {
+      console.warn('[terminal] 拉取终端列表失败:', error);
+    }
+  },
+
+  reconcileActive: (anchor) => {
+    const { terminals, activeTerminalId } = get();
+    const { active } = selectTerminalGroups(terminals, anchor, activeTerminalId);
+    const nextId = active?.terminalId ?? null;
+    if (nextId !== activeTerminalId) set({ activeTerminalId: nextId });
+  },
+
+  handlePtyCreated: (event) => {
+    set((state) => ({
+      terminals: upsertMeta(state.terminals, {
+        terminalId: event.terminalId,
+        conversationId: event.conversationId,
+        command: event.command,
+        exited: false,
+      }),
+    }));
+  },
+
+  handlePtyExit: (event) => {
     set((state) => {
-      const buffers = new Map(state.buffers);
-      buffers.set(conversationId, []);
-      const runningIds = new Map(state.runningIds);
-      runningIds.set(conversationId, new Set());
-      return { buffers, runningIds };
-    }),
+      const prev = state.terminals.get(event.terminalId);
+      if (!prev) return state;
+      return { terminals: upsertMeta(state.terminals, { ...prev, exited: true, exitCode: event.exitCode }) };
+    });
+  },
 }));
 
 if (typeof window !== 'undefined') {
   import('@/lib/events').then(({ rendererEvents }) => {
-    rendererEvents.terminalStreamAppend.listen((event) => {
-      useTerminalStore.getState().handleStreamEvent(event);
+    rendererEvents.ptyCreated.listen((event) => {
+      useTerminalStore.getState().handlePtyCreated(event);
+    });
+    rendererEvents.ptyData.listen((event) => {
+      dispatchPtyData(event.terminalId, event.data);
+    });
+    rendererEvents.ptyExit.listen((event) => {
+      useTerminalStore.getState().handlePtyExit(event);
     });
   });
 }

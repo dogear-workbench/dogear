@@ -1,93 +1,119 @@
 import { describe, expect, test } from 'bun:test';
-import type { TerminalStreamEvent } from '../electron/main/services/terminal-stream-service';
-import { useTerminalStore } from './terminal-store';
+import {
+  dispatchPtyData,
+  registerDataSink,
+  selectTerminalGroups,
+  useTerminalStore,
+  type TerminalMeta,
+} from './terminal-store';
 
-const ev = (e: { conversationId?: string } & Record<string, unknown>) =>
-  ({ conversationId: 'c1', ...e }) as TerminalStreamEvent;
-
-function dispatch(e: TerminalStreamEvent) {
-  useTerminalStore.getState().handleStreamEvent(e);
+function meta(partial: Partial<TerminalMeta> & { terminalId: string }): TerminalMeta {
+  return { conversationId: null, command: '', exited: false, ...partial };
 }
 
-function buffer(id = 'c1') {
-  return useTerminalStore.getState().buffers.get(id);
+function resetStore() {
+  useTerminalStore.setState({
+    terminals: new Map(),
+    activeTerminalId: null,
+    followMode: 'follow',
+    pinnedConversationId: null,
+  });
 }
 
-function mockWindow(invoke: () => Promise<unknown>) {
-  (globalThis as unknown as { window: unknown }).window = { ipcRenderer: { invoke } };
-}
-
-function unmockWindow() {
-  delete (globalThis as unknown as { window?: unknown }).window;
+function terminals() {
+  return useTerminalStore.getState().terminals;
 }
 
 describe('terminal-store', () => {
-  test('start/append/replace/end 全流程', () => {
-    dispatch(ev({ type: 'start', toolCallId: 't1', command: 'bun test', startedAt: 1000 }));
-    dispatch(ev({ type: 'append', toolCallId: 't1', suffix: 'hello ' }));
-    dispatch(ev({ type: 'append', toolCallId: 't1', suffix: 'world' }));
-    let entries = buffer()!;
-    expect(entries).toHaveLength(1);
-    expect(entries[0].text).toBe('hello world');
-    expect(entries[0].exitCode).toBeUndefined();
-    expect(useTerminalStore.getState().runningIds.get('c1')?.has('t1')).toBe(true);
+  test('ptyCreated/ptyExit 事件更新元数据，未知 id 的 exit 被忽略', () => {
+    resetStore();
+    useTerminalStore.getState().handlePtyCreated({ terminalId: 't1', conversationId: 'c1', command: 'bun run dev' });
+    let t1 = terminals().get('t1')!;
+    expect(t1.conversationId).toBe('c1');
+    expect(t1.command).toBe('bun run dev');
+    expect(t1.exited).toBe(false);
+    expect(t1.exitCode).toBeUndefined();
 
-    dispatch(ev({ type: 'replace', toolCallId: 't1', text: 'replaced' }));
-    entries = buffer()!;
-    expect(entries[0].text).toBe('replaced');
+    useTerminalStore.getState().handlePtyExit({ terminalId: 't1', exitCode: 3 });
+    t1 = terminals().get('t1')!;
+    expect(t1.exited).toBe(true);
+    expect(t1.exitCode).toBe(3);
 
-    dispatch(ev({ type: 'end', toolCallId: 't1', exitCode: 0 }));
-    entries = buffer()!;
-    expect(entries[0].exitCode).toBe(0);
-    expect(useTerminalStore.getState().runningIds.get('c1')?.has('t1')).toBe(false);
+    useTerminalStore.getState().handlePtyExit({ terminalId: 'ghost', exitCode: 1 });
+    expect(terminals().has('ghost')).toBe(false);
   });
 
-  test('未知 toolCallId 的 append/replace/end 被忽略', () => {
-    const before = useTerminalStore.getState().buffers.get('c1');
-    dispatch(ev({ type: 'append', toolCallId: 'ghost', suffix: 'x' }));
-    dispatch(ev({ type: 'end', toolCallId: 'ghost', exitCode: 1 }));
-    expect(useTerminalStore.getState().buffers.get('c1')).toBe(before);
+  test('registerDataSink 按 terminalId 路由实时流，解绑后不再收到', () => {
+    resetStore();
+    const got: string[] = [];
+    const gotOther: string[] = [];
+    const off = registerDataSink('t1', (data) => got.push(data));
+    const offOther = registerDataSink('t2', (data) => gotOther.push(data));
+
+    dispatchPtyData('t1', 'hello');
+    dispatchPtyData('t1', ' world');
+    dispatchPtyData('t2', 'other');
+    expect(got).toEqual(['hello', ' world']);
+    expect(gotOther).toEqual(['other']);
+
+    off();
+    dispatchPtyData('t1', 'dropped');
+    expect(got).toEqual(['hello', ' world']);
+    offOther();
   });
 
-  test('多会话隔离', () => {
-    dispatch(ev({ conversationId: 'c2', type: 'start', toolCallId: 't2', command: 'ls', startedAt: 1 }));
-    expect(buffer('c2')![0].command).toBe('ls');
-    expect(buffer('c1')!.some((e) => e.toolCallId === 't2')).toBe(false);
-  });
-
-  test('clearBuffer 清空条目与运行态', () => {
-    dispatch(ev({ type: 'start', toolCallId: 't3', command: 'top', startedAt: 1 }));
-    useTerminalStore.getState().clearBuffer('c1');
-    expect(buffer()).toHaveLength(0);
-    expect(useTerminalStore.getState().runningIds.get('c1')?.size).toBe(0);
-  });
-
-  test('ensureBuffer 拉历史且已有 buffer 时跳过', async () => {
-    mockWindow(async () => [
-      { toolCallId: 'h1', command: 'history-cmd', startedAt: 42, exitCode: 0, text: 'old output' },
+  test('selectTerminalGroups 分组过滤：我的全显示，会话组只留命中锚点的', () => {
+    const map = new Map<string, TerminalMeta>([
+      ['shell1', meta({ terminalId: 'shell1' })],
+      ['shell2', meta({ terminalId: 'shell2' })],
+      ['agentA', meta({ terminalId: 'agentA', conversationId: 'c1', command: 'bun run dev' })],
+      ['agentB', meta({ terminalId: 'agentB', conversationId: 'c2', command: 'watch' })],
     ]);
-    useTerminalStore.getState().buffers.delete('c9');
-    await useTerminalStore.getState().ensureBuffer('c9');
-    expect(buffer('c9')![0].command).toBe('history-cmd');
-    await useTerminalStore.getState().ensureBuffer('c9');
-    expect(buffer('c9')).toHaveLength(1);
-    unmockWindow();
-    useTerminalStore.getState().buffers.delete('c9');
+
+    const groups = selectTerminalGroups(map, 'c1', null);
+    expect(groups.mine.map((m) => m.terminalId)).toEqual(['shell1', 'shell2']);
+    expect(groups.session.map((m) => m.terminalId)).toEqual(['agentA']);
+
+    const other = selectTerminalGroups(map, 'c2', null);
+    expect(other.session.map((m) => m.terminalId)).toEqual(['agentB']);
+
+    const none = selectTerminalGroups(map, null, null);
+    expect(none.mine).toHaveLength(2);
+    expect(none.session).toHaveLength(0);
   });
 
-  test('ensureBuffer 并发去重', async () => {
-    let calls = 0;
-    mockWindow(async () => {
-      calls++;
-      return [];
-    });
-    useTerminalStore.getState().buffers.delete('c8');
-    await Promise.all([
-      useTerminalStore.getState().ensureBuffer('c8'),
-      useTerminalStore.getState().ensureBuffer('c8'),
-    ]);
-    expect(calls).toBe(1);
-    unmockWindow();
-    useTerminalStore.getState().buffers.delete('c8');
+  test('activeTerminal 切换：可见时保持，失效时优先「会话」最新，再回退「我的」最新', async () => {
+    resetStore();
+    useTerminalStore.getState().handlePtyCreated({ terminalId: 'shell1', conversationId: null, command: '' });
+    useTerminalStore.getState().handlePtyCreated({ terminalId: 'agentA', conversationId: 'c1', command: 'dev' });
+    useTerminalStore.getState().handlePtyCreated({ terminalId: 'agentB', conversationId: 'c1', command: 'watch' });
+    useTerminalStore.getState().handlePtyCreated({ terminalId: 'agentC', conversationId: 'c3', command: 'serve' });
+
+    useTerminalStore.getState().setActive('agentA');
+    useTerminalStore.getState().reconcileActive('c1');
+    expect(useTerminalStore.getState().activeTerminalId).toBe('agentA');
+
+    useTerminalStore.getState().reconcileActive('c3');
+    expect(useTerminalStore.getState().activeTerminalId).toBe('agentC');
+
+    useTerminalStore.getState().reconcileActive('c2');
+    expect(useTerminalStore.getState().activeTerminalId).toBe('shell1');
+
+    useTerminalStore.getState().reconcileActive('c1');
+    expect(useTerminalStore.getState().activeTerminalId).toBe('shell1');
+
+    await useTerminalStore.getState().killTerminal('agentB');
+    expect(terminals().has('agentB')).toBe(false);
+  });
+
+  test('killTerminal 本地移除元数据', async () => {
+    resetStore();
+    (globalThis as unknown as { window?: unknown }).window = {
+      ipcRenderer: { invoke: async () => undefined },
+    };
+    useTerminalStore.getState().handlePtyCreated({ terminalId: 'shell1', conversationId: null, command: '' });
+    await useTerminalStore.getState().killTerminal('shell1');
+    expect(terminals().has('shell1')).toBe(false);
+    delete (globalThis as unknown as { window?: unknown }).window;
   });
 });

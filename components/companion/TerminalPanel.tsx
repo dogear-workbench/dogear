@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pin, PinOff, SquareTerminal, Trash2 } from 'lucide-react';
+import { useEffect } from 'react';
+import { Loader2, Pin, PinOff, Plus, SquareTerminal, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
-import { useTerminalStore } from '@/stores/terminal-store';
+import { selectTerminalGroups, useTerminalStore, type TerminalMeta } from '@/stores/terminal-store';
 import type { Conversation } from '@/types/electron-api';
-import { TerminalCard } from './TerminalCard';
-
-const KEEP_EXPANDED = 5;
-const FOLLOW_BOTTOM_THRESHOLD = 48;
-const TIME_TICK_MS = 30_000;
+import { XtermTerminal } from './XtermTerminal';
 
 /** 与 components/conversation-list/utils.getConversationTitle 同逻辑的兜底命名（companion 可移植纪律：不引 components 依赖链） */
 function conversationTitle(conv: Conversation): string {
@@ -21,70 +17,58 @@ function conversationTitle(conv: Conversation): string {
   return `对话 ${date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}`;
 }
 
-function useFollowScroll(resetKey: string | null) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const followRef = useRef(true);
-  const programmaticRef = useRef(false);
-  const lastScrollTopRef = useRef(0);
-
-  useEffect(() => {
-    const vp = scrollRef.current;
-    if (!vp) return;
-    const content = vp.firstElementChild;
-    if (!content) return;
-    const obs = new ResizeObserver(() => {
-      if (!followRef.current) return;
-      programmaticRef.current = true;
-      lastScrollTopRef.current = vp.scrollHeight;
-      vp.scrollTop = vp.scrollHeight;
-      requestAnimationFrame(() => {
-        programmaticRef.current = false;
-      });
-    });
-    obs.observe(content);
-    return () => obs.disconnect();
-  }, []);
-
-  useEffect(() => {
-    const vp = scrollRef.current;
-    if (!vp) return;
-    const onWheel = (e: WheelEvent) => {
-      if (e.deltaY < 0) followRef.current = false;
-    };
-    vp.addEventListener('wheel', onWheel, { passive: true, capture: true });
-    return () => vp.removeEventListener('wheel', onWheel, { capture: true });
-  }, []);
-
-  useEffect(() => {
-    followRef.current = true;
-    const vp = scrollRef.current;
-    if (!vp) return;
-    programmaticRef.current = true;
-    lastScrollTopRef.current = vp.scrollHeight;
-    vp.scrollTop = vp.scrollHeight;
-    requestAnimationFrame(() => {
-      programmaticRef.current = false;
-    });
-  }, [resetKey]);
-
-  const handleScroll = useCallback(() => {
-    const vp = scrollRef.current;
-    if (!vp) return;
-    const prev = lastScrollTopRef.current;
-    lastScrollTopRef.current = vp.scrollTop;
-    if (!programmaticRef.current && vp.scrollTop < prev - 1) followRef.current = false;
-    const distance = vp.scrollHeight - vp.scrollTop - vp.clientHeight;
-    if (!followRef.current && distance <= FOLLOW_BOTTOM_THRESHOLD) followRef.current = true;
-  }, []);
-
-  return { scrollRef, handleScroll };
+function shortCommand(command: string): string {
+  const text = command.replace(/\s+/g, ' ').trim();
+  return text.length > 16 ? `${text.slice(0, 16)}…` : text;
 }
 
-function EmptyState({ text }: { text: string }) {
+function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground select-none">
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground select-none">
       <SquareTerminal className="w-6 h-6" />
-      <span className="text-xs">{text}</span>
+      <span className="text-xs">点下方 + 打开 shell，或让 agent 后台运行命令</span>
+    </div>
+  );
+}
+
+interface TerminalTabProps {
+  active: boolean;
+  label: string;
+  title?: string;
+  running: boolean;
+  spinner?: boolean;
+  exitCode?: number;
+  onSelect: () => void;
+  onClose: () => void;
+}
+
+function TerminalTab({ active, label, title, running, spinner = false, exitCode, onSelect, onClose }: TerminalTabProps) {
+  return (
+    <div
+      role="tab"
+      aria-selected={active}
+      title={title ?? label}
+      onClick={onSelect}
+      className={cn(
+        'group flex items-center gap-1 h-7 pl-2 pr-1 rounded-md text-xs shrink-0 max-w-44 cursor-pointer select-none',
+        active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted/60',
+        !running && 'opacity-55',
+      )}
+    >
+      {spinner && running && <Loader2 className="w-3 h-3 animate-spin shrink-0" />}
+      <span className="truncate">{label}</span>
+      {!running && exitCode !== undefined && <span className="text-[10px] whitespace-nowrap">exit {exitCode}</span>}
+      <button
+        type="button"
+        title="结束并关闭"
+        className="p-0.5 rounded shrink-0 opacity-0 group-hover:opacity-100 hover:bg-background/80 transition-opacity"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        <X className="w-3 h-3" />
+      </button>
     </div>
   );
 }
@@ -94,55 +78,40 @@ export function TerminalPanel() {
   const pinnedId = useTerminalStore((s) => s.pinnedConversationId);
   const setFollowMode = useTerminalStore((s) => s.setFollowMode);
   const pinConversation = useTerminalStore((s) => s.pinConversation);
+  const terminals = useTerminalStore((s) => s.terminals);
+  const activeTerminalId = useTerminalStore((s) => s.activeTerminalId);
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const tabs = useSessionStore((s) => s.tabs);
   const conversations = useConversationStore((s) => s.conversations);
 
-  const [expandedOverrides, setExpandedOverrides] = useState<Map<string, boolean>>(new Map());
-  const [timeTick, setTimeTick] = useState(0);
-
-  const conversationId = followMode === 'follow' ? activeTabId : pinnedId;
-  const conversationExists =
-    conversationId != null &&
-    (tabs.some((t) => t.conversationId === conversationId) ||
-      conversations.some((c) => c.id === conversationId));
-
-  const entries = useTerminalStore((s) =>
-    conversationId ? s.buffers.get(conversationId) : undefined,
-  );
-  const runningIds = useTerminalStore((s) =>
-    conversationId ? s.runningIds.get(conversationId) : undefined,
-  );
-
-  const { scrollRef, handleScroll } = useFollowScroll(conversationExists ? conversationId : null);
+  const anchor = followMode === 'follow' ? activeTabId : pinnedId;
+  const { mine, session, active } = selectTerminalGroups(terminals, anchor, activeTerminalId);
 
   useEffect(() => {
-    if (conversationExists && conversationId) {
-      void useTerminalStore.getState().ensureBuffer(conversationId);
-    }
-  }, [conversationId, conversationExists]);
-
-  useEffect(() => {
-    setExpandedOverrides(new Map());
-  }, [conversationId]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setTimeTick((n) => n + 1), TIME_TICK_MS);
-    return () => clearInterval(timer);
+    void useTerminalStore.getState().ensureTerminals();
   }, []);
 
-  const toggleExpanded = useCallback((toolCallId: string, current: boolean) => {
-    setExpandedOverrides((prev) => {
-      const next = new Map(prev);
-      next.set(toolCallId, !current);
-      return next;
-    });
-  }, []);
+  useEffect(() => {
+    useTerminalStore.getState().reconcileActive(anchor);
+  }, [terminals, anchor]);
 
-  const activeTab = tabs.find((t) => t.conversationId === activeTabId);
   const pinnedConv = conversations.find((c) => c.id === pinnedId);
+  const activeTab = tabs.find((t) => t.conversationId === activeTabId);
   const isPinned = followMode === 'pin';
-  const list = entries ?? [];
+
+  const renderTab = (meta: TerminalMeta, isSessionGroup: boolean, index: number) => (
+    <TerminalTab
+      key={meta.terminalId}
+      active={active?.terminalId === meta.terminalId}
+      label={isSessionGroup ? shortCommand(meta.command) : index === 0 ? '$ shell' : `$ shell ${index + 1}`}
+      title={isSessionGroup ? meta.command : undefined}
+      running={!meta.exited}
+      spinner={isSessionGroup}
+      exitCode={meta.exitCode}
+      onSelect={() => useTerminalStore.getState().setActive(meta.terminalId)}
+      onClose={() => void useTerminalStore.getState().killTerminal(meta.terminalId)}
+    />
+  );
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -185,42 +154,22 @@ export function TerminalPanel() {
             {activeTab ? activeTab.conversationTitle : '跟随当前会话'}
           </div>
         )}
+      </div>
+      <div className="flex-1 min-h-0 relative bg-background">
+        {active ? <XtermTerminal key={active.terminalId} terminalId={active.terminalId} /> : <EmptyState />}
+      </div>
+      <div className="flex items-center gap-0.5 h-9 border-t px-1.5 shrink-0 overflow-x-auto">
+        {mine.map((meta, i) => renderTab(meta, false, i))}
+        {mine.length > 0 && session.length > 0 && <div className="w-px h-4 bg-border mx-1 shrink-0" />}
+        {session.map((meta, i) => renderTab(meta, true, i))}
         <button
           type="button"
-          title="清屏"
-          disabled={!conversationExists}
-          className="p-1.5 rounded-md shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 disabled:pointer-events-none"
-          onClick={() => {
-            if (conversationId) useTerminalStore.getState().clearBuffer(conversationId);
-          }}
+          title="新建 shell"
+          className="ml-auto p-1.5 rounded-md shrink-0 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          onClick={() => void useTerminalStore.getState().openUserShell()}
         >
-          <Trash2 className="w-3.5 h-3.5" />
+          <Plus className="w-4 h-4" />
         </button>
-      </div>
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto" onScroll={handleScroll}>
-        <div className="flex flex-col gap-2 p-2">
-          {!conversationExists ? (
-            <EmptyState text="打开会话后查看命令执行" />
-          ) : list.length === 0 ? (
-            <EmptyState text="该会话暂无命令执行" />
-          ) : (
-            list.map((entry, i) => {
-              const running = runningIds?.has(entry.toolCallId) ?? false;
-              const defaultExpanded = running || i >= list.length - KEEP_EXPANDED;
-              const expanded = expandedOverrides.get(entry.toolCallId) ?? defaultExpanded;
-              return (
-                <TerminalCard
-                  key={entry.toolCallId}
-                  entry={entry}
-                  running={running}
-                  expanded={expanded}
-                  timeTick={timeTick}
-                  onToggle={toggleExpanded}
-                />
-              );
-            })
-          )}
-        </div>
       </div>
     </div>
   );
