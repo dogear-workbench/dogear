@@ -29,7 +29,6 @@ import { systemPromptRouter } from './system-prompt.js';
 import { updaterRouter } from './updater.js';
 import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
-import { terminalRouter } from './terminal.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
 
 export const router = {
@@ -62,7 +61,6 @@ export const router = {
   ...updaterRouter,
   ...schedulerRouter,
   ...windowsRouter,
-  ...terminalRouter,
   ...ptyRouter,
 };
 

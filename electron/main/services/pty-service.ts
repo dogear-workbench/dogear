@@ -57,7 +57,7 @@ interface PtyInstance extends PtyTerminalInfo {
   proc: pty.IPty;
 }
 
-// 按 UTF-16 字符数封顶，与 terminal-stream-service 同策略
+// 按 UTF-16 字符数封顶，防长输出进程把内存吃满
 const MAX_BUFFER_CHARS = 100 * 1024;
 
 const instances = new Map<string, PtyInstance>();

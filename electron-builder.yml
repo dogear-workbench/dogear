@@ -58,6 +58,10 @@ extraResources:
 # asar 配置
 asar: true
 
+# 原生模块解包（.node 二进制无法从 asar 内加载）
+asarUnpack:
+  - "**/node-pty/**"
+
 # Windows 平台打包配置
 win:
   target:

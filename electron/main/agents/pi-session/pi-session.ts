@@ -21,7 +21,6 @@ import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { lookupContextWindow } from '../pi/model-catalog.js';
 import { toPiTools, type ToolDef } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
-import { handleToolStart as terminalHandleToolStart, handleToolUpdate as terminalHandleToolUpdate, handleToolEnd as terminalHandleToolEnd, clearConversation as terminalClearConversation } from '../../services/terminal-stream-service.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool, type SkillEntry } from './skill-loader.js';
 import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
@@ -652,7 +651,6 @@ export class PiSession extends EventEmitter {
   }
 
   private handleAgentEvent(event: AgentEvent): void {
-    this.forwardBashTerminalEvent(event);
     if (event.type === 'message_end' && event.message) {
       const role = (event.message as { role?: string }).role;
       // message_end：单次 LLM call 结束，AssistantMessage.usage 携带本轮 token 用量，累加进 currentRunUsageAccum
@@ -736,31 +734,6 @@ export class PiSession extends EventEmitter {
       this.currentTurnMessages = [];
       this.currentRunUsageAccum = null;
       this.currentRunContextTokens = undefined;
-    }
-  }
-
-  /** bash 工具流式输出旁路：转发给 terminal-stream-service 做增量缓冲与广播，不影响主消息流 */
-  private forwardBashTerminalEvent(event: AgentEvent): void {
-    if (event.type !== 'tool_execution_start' && event.type !== 'tool_execution_update' && event.type !== 'tool_execution_end') return;
-    if (event.toolName !== 'bash') return;
-    if (event.type === 'tool_execution_start') {
-      const command = typeof (event.args as { command?: unknown } | undefined)?.command === 'string'
-        ? (event.args as { command: string }).command
-        : '';
-      terminalHandleToolStart(this.config.conversationId, event.toolCallId, command, Date.now());
-    } else if (event.type === 'tool_execution_update') {
-      const text = (event.partialResult as { content?: Array<{ text?: unknown }> } | undefined)?.content?.[0]?.text;
-      if (typeof text === 'string' && text) {
-        terminalHandleToolUpdate(this.config.conversationId, event.toolCallId, text);
-      }
-    } else if (event.type === 'tool_execution_end') {
-      const resultText = (event.result as { content?: Array<{ text?: unknown }> } | undefined)?.content?.[0]?.text;
-      terminalHandleToolEnd(
-        this.config.conversationId,
-        event.toolCallId,
-        event.isError,
-        typeof resultText === 'string' ? resultText : '',
-      );
     }
   }
 
@@ -1048,7 +1021,6 @@ export class PiSession extends EventEmitter {
     this.status = PiSessionStatus.CLOSED;
     this.pendingSteerCount = 0;
     this.running = false;
-    terminalClearConversation(this.config.conversationId);
     killConversationTerminals(this.config.conversationId);
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
     // 必须在 abort() 完成之后才摘监听器：abort 过程中 harness 仍可能 emit 最后的

@@ -106,8 +106,8 @@
 - `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readGroupBackground 结构化内嵌：主题/进展/已拍板决策/待议问题）+ 组卡提炼（摘要 line-clamp 预览，点击 readGroupDigestRaw 拿原文走 MarkdownFileDialog 浮窗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）；订阅 groupDataChanged（共享区写点/背景/组卡落盘广播）匹配当前组重拉三份数据
 - `companion/` — 右侧伴随面板模块（组件只依赖 store + tipc client，无主窗口特有上下文，可被 workbench-window 独立窗口复用）
   - `CompanionPanel.tsx` — 四 tab 容器（文件/附加/话题/终端）：props `{ workspaceId, groupId, full? }`，full=true 独立窗口模式（占满容器、无拖拽把手、忽略折叠与宽度记忆）；面板模式宽度 localStorage 记忆 key `companion-width:{tab}`（240~720 clamp，拖拽结束才写）、左缘拖拽把手、折叠由 ui-store.rightPanelOpen 控制；tab 分发 WorkspaceExplorer / AdditionalFilesPanel / TopicPanel / TerminalPanel，tab 状态 ui-store.rightPanelTab（每渲染进程独立实例，主窗口与工作台窗口互不影响）
-  - `TerminalPanel.tsx` — 终端命令流面板（无 props）：头部固定/跟随切换（terminal-store followMode/pinnedConversationId）+ 固定态 shadcn Select 会话下拉（选项=conversation-store conversations）+ 清屏；会话有效性 = session-store.tabs 或 conversation-store.conversations 命中；滚动跟随 hook（ResizeObserver 续滚/上滚退出/回底恢复）；展开状态 Map 覆写，默认展开=运行中或末尾 5 条
-  - `TerminalCard.tsx` — 单命令卡片（React.memo）：头可点切换展开，状态徽章四态（运行中/0/exit N/已终止），Ansi（ansi-to-react inline style）渲染输出；折叠态只渲染 text 尾部 3000 字符控制 DOM 规模
+  - `TerminalPanel.tsx` — 终端面板（无 props）：头部 h-9 固定/跟随切换（terminal-store followMode/pinnedConversationId）+ 固定态 shadcn Select 会话下拉（选项=conversation-store conversations）；身体 active 存在渲染 `<XtermTerminal key={terminalId}>` 否则空态；挂载时 ensureTerminals() 恢复实例清单，terminals/锚点变化时 reconcileActive() 修剪失效 active（回退链：会话最新→我的最新→null）；底部子 tab 栏左「我的」shell 右「会话」终端（command 短名 + 运行中 Loader/退出 exit N 灰化），tab hover × killTerminal，最右 + openUserShell
+  - `XtermTerminal.tsx` — xterm 宿主组件（props `{ terminalId }`）：模块级 entryCache 永不 dispose，tab 切换 attach/detach（自持 host div 搬家，Terminal.open() 只调一次）；挂载 getPtyBuffer 灌历史后接实时流（sink 先注册，历史未返回期数据进 pending 队列灌完 flush 防乱序）；onData→ptyWrite（exited 拦截），ResizeObserver→fit→尺寸变化才 ptyResize；ptyExit 后底部终态条
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮
 - `ConversationList.tsx` — 对话列表主骨架（单一滚动视图：手动文件夹 → 近期 → 智能分类 + 归档 Popover 浮窗）
 - `conversation-list/` — 对话列表子组件（拆分；按组渲染）
@@ -181,7 +181,7 @@
 - `session-store.ts` — 多会话标签页：tabs\[\] + activeTabId + sessionWindowIds + lastFocusedNodeId（UI 状态：对话列表节点双层高亮区分"被点击的那一处" vs "已打开的同会话其他节点"）；导出 `NOTES_TAB_ID`/`DATA_CENTER_TAB_ID` 哨兵（非真实会话）+ `isSentinelTabId()` 判定函数，activeTabId 初始/关末 tab 后回退到 NOTES；`dataCenterTabOpen`（localStorage `data-center-tab-open` 记忆）+ openDataCenterTab/closeDataCenterTab（关闭时 active 在数据中心则回退最近会话 tab 或笔记）；`SessionTab` 无 `isStreaming` 字段运行态一律读 `conversation-store.runningConversationIds`）
 - `smart-category-store.ts` — 智能分类前端：categories / activity / load / triggerFullRebuild / cancel / refreshActivity / reset；模块加载时订阅 categoriesUpdated 事件自动 reload（dynamic import @/lib/events 避免 SSR 爆）。UI 消费仅 categories/loading/load（会话列表 SmartSection + 数据中心面板，数据中心在主窗口 tab 后两处同实例），全量重置入口在数据中心面板，补分类定时任务与整理在定时计划
 - `scheduler-store.ts` — 定时任务前端：tasks（ScheduledTaskWithNextRun，nextRunAt 现算不落盘）/ activity（refreshActivity，10s 轮询由数据中心面板 useVisiblePolling 驱动）/ history（倒序分页：loadHistory(historyTaskId?) + loadMoreHistory，cursor=上页末条 ts）+ 任务 RPC 封装（saveTask/deleteTask/stopTask 失败 toast 后端文案）
-- `terminal-store.ts` — 终端面板前端：buffers Map（conversationId → TerminalEntry[]，镜像主进程缓冲）+ runningIds Map（区分运行中/异常终止徽章）+ followMode/pinnedConversationId（跟随/固定，pinConversation/setFollowMode）；ensureBuffer 拉历史（inflight 去重）+ handleStreamEvent 增量应用（start/append/replace/end 全不可变更新）；模块级订阅 terminalStreamAppend（面板未打开也不丢事件）
+- `terminal-store.ts` — 终端面板前端：terminals Map（terminalId → TerminalMeta：conversationId/command/exited/exitCode，不存内容流）+ activeTerminalId + followMode/pinnedConversationId（跟随/固定，pinConversation/setFollowMode）；openUserShell（cwd 取 workspace.path，ptyCreate conversationId:null）/killTerminal/setActive/ensureTerminals（listPtyTerminals 全量 upsert，后开窗口恢复）/reconcileActive；registerDataSink(terminalId, cb) 收流注册口 + dispatchPtyData 按终端路由（XtermTerminal 消费）；模块级订阅 ptyCreated/ptyData/ptyExit（dynamic import @/lib/events）
 
 ## 工具函数（lib/）
 
@@ -220,7 +220,7 @@
 
 - `index.ts` — 路由注册中枢，聚合所有子路由
 - `windows.ts` — 窗口管理路由：openDataCenterWindow / openWorkbenchWindow；动态 import index.js 避免循环依赖，BrowserWindow 单例（数据中心 1200×800、伴随工作台默认 560×840 + 位置记忆）在 electron/main/index.ts
-- `terminal.ts` — 终端命令流查询：getTerminalBuffer({ conversationId }) 返回 TerminalEntry[]（主进程缓冲快照，供前端首屏拉历史，后续增量走 terminalStreamAppend 事件）
+- `pty.ts` — 真 PTY 终端路由：ptyCreate（conversationId 可 null=用户 shell）/ptyWrite/ptyResize/ptyKill/getPtyBuffer（返回快照 buffer+cols+rows+exited+exitCode，后开窗口灌历史）/listPtyTerminals（可按 conversationId 过滤）；另导出 registerPtyBroadcaster（registerTipcHandlers 调用）：把 pty-service 的 PtyEvent 桥接成 ptyCreated/ptyData/ptyExit 三个渲染层广播
 - `agent.ts` — Agent 会话管理（RPC：创建/发送/关闭会话、权限控制）
 - `ai.ts` — 通用 AI 接口（chat / summarize，占位实现）
 - `article.ts` — 网络文章管理（抓取解析、列表、详情、删除）
@@ -239,7 +239,7 @@
 - `agent.ts` — Agent 会话管理，路由统一查 `getPiSessionManager()`（）：setSessionModel（接收 ModelSelection，返回 `{ ok:true; needsRestart? } | { ok:false; error }`；同 profile 换 tier 走 PiSession 快速路径，跨 profile 由前端触发会话重启）；`closeQueryBasedSession` = release 语义（refCount-1，归零即销毁），`forceCloseQueryBasedSession` = 强杀（`/clear` 走这条立刻销毁避免后台弹卡片）；路由名保留旧字样是历史兼容，内部实现已纯 pi；broadcaster complete 分支挂 model-failover 钩子——success 走 clearFailoverTriedBySession 清 tried，failed 走 maybeFailoverMainSession 主会话 quota 自动切换（见 `agents/model-failover.ts`）
 - `system-prompt.ts` — 系统提示词模板查询（getSystemPromptSegments，返回 `{ segments } | { error }`，供设置页只读预览用户看不见的系统级 append 段）
 - `scheduler.ts` — 定时任务（listTasks 含现算 nextRunAt / saveTask 全量校验含触发态合并、on_task_done 引用与环检测、toolPacksOverride 清洗，builtin 名称锁定 / deleteTask 拒 builtin「内置任务不能删除」/ setTaskEnabled / runTaskNow 手动直跑不看 enabled / stopTask 整停（清队列+取消当前）/ listRunHistory 倒序分页（planId 过滤=任务 id + before cursor）/ getSchedulerActivity 运行快照 / getBuiltinTaskDetail + saveBuiltinPrompt + resetBuiltinPrompt 内置任务提示词三件套）
-- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件、failoverNotice 主会话供应商切换提示条、tasksChanged 协作任务变更、manualTaskDone 手动全量重置/重新提炼完成 toast、terminalStreamAppend 终端命令流增量等）
+- `renderer-handlers.ts` — main→renderer 事件定义（分析更新、会话消息、权限请求、usageEntryAdded、categoriesUpdated、pendingCountChanged、sessionStateChanged / sessionClosed 跑步机状态原子事件、failoverNotice 主会话供应商切换提示条、tasksChanged 协作任务变更、manualTaskDone 手动全量重置/重新提炼完成 toast、ptyCreated/ptyData/ptyExit 真 PTY 终端三事件等）
 
 ## 业务服务（electron/main/services/）
 
@@ -293,7 +293,7 @@
 - `renderer-broadcast.ts` — 主进程→渲染层广播收口：broadcastToWindows 全窗口遍历；broadcastConversationListChanged（immediate / debounced 500ms 尾部去抖两档，会话与组列表域）；broadcastGroupDataChanged（TopicPanel 三数据域）
 - `workspace-watcher.ts` — 工作区文件树监视：每工作区递归 fs.watch 只处理 rename 事件（增删改名，忽略 change），路径段 `.` 开头或 node_modules 丢弃，500ms 尾部去抖后广播 workspaceFilesChanged；随 workspaces.json 增删起停，监听错误静默降级关闭
 - `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段；normalize 尾部挂 settings-types.ts 的 normalizeFailoverChain 维护全局模型故障转移链——类型 FailoverEntry/FailoverConfig（AppSettings.failover）：新供应商追加链尾、删除供应商移出链、tier 失效回退该家首个 piModel、piModels 为空的供应商不进链，链序与 enabled 完全保留）
-- `terminal-stream-service.ts` — bash 命令终端流主进程缓冲：模块级 Map（conversationId → entries 上限 200 条 + byToolCallId 索引，单命令 text 上限 256K 字符保尾部），handleToolStart/Update/End 由 pi-session bash 旁路喂数；update 前缀 diff 成 append/replace 广播 terminalStreamAppend 到全窗口；getTerminalBuffer 快照、clearConversation 随会话销毁清缓冲
+- `pty-service.ts` — 真 PTY 实例管理（node-pty）：模块级 Map（terminalId → instance + buffer，按 UTF-16 字符 100K 封顶保尾部）；createTerminal（detectShell：Windows 优先 Git Bash，排除 WSL bash.exe，找不到报错提示装 Git for Windows；resolveCwd 经 workspaceRoots 边界校验）/writeTerminal（exited 幂等）/resizeTerminal/killTerminal/killConversationTerminals（doClose 随会话销毁清）/killAll/getBuffer/listTerminals；事件经 setPtyEventBroadcaster 上抛（桥接在 tipc/pty.ts 的 registerPtyBroadcaster）
 - `window-state-service.ts` — 窗口位置记忆通用小工具：`.dogear/window-state.json` 按 key 存 {x,y,width,height}（safe-json 原子写），load/saveWindowBounds；当前仅 workbench-window 使用
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
@@ -346,7 +346,7 @@
   - `permission-mode.ts` — `PiPermissionMode` 类型定义（`default | autoExecute`）
   - `permission-rules.ts` — 基础工具权限判定纯函数：`isBasicToolName`、`getBasicToolPermission`、`decideToolPermission`（autoExecute 放行 / 工具包放行 / 基础工具按快照映射 / 其余 ask）
   - `skill-loader.ts` — 薄封装 pi-agent-core 的 `loadSkills`/`formatSkillInvocation`：`loadSkillIndex` 扫描目录产出 `SkillEntry[]`，拼 `<available_skills>` 索引文本，`createSkillTool` 提供懒加载 Skill 工具
-  - `builtin-tools.ts` — `createBuiltinFileTools()`：复用 pi-agent-core 官方工厂函数返回 Read/Write/Edit/Bash 四个 harness 原生工具
+  - `builtin-tools.ts` — `createBuiltinFileTools(options?)`：Read/Write/Edit 复用 pi-agent-core 官方工厂；bash 双轨（`createPtyBashTool`，schema 兼容 command/timeout + run_in_background——falsy 透传委托原版零变化，truthy 调 pty-service.createTerminal 后台起终端立即返回 terminalId）+ read_terminal（无参=本会话终端概览，带 terminalId=stripAnsi 后尾部 8KB 快照）/kill_terminal（校验归属后杀）；conversationId/workspaceRoots 由 pi-session 组装时闭包注入；错误用 throw（AgentHarnessTool 层无 isError 字段，agent-loop 只在 execute throw 时置 isError）
   - `search-tools.ts` — `createSearchToolDefs(workspacePath)`：手写 Glob/Grep 工具，路径边界委托 workspace-boundary.ts
   - `usage-extractor.ts` — pi usage 采集：`accumulatePiUsage`/`extractPiUsageEntry`/`extractPiContextSnapshot`，字段映射对齐旧 SDK 口径供前端 usage 徽章零改动复用
   - `workspace-boundary.ts` — `resolveWithinWorkspace(workspacePath, candidatePath)`：路径边界校验（含符号链接逃逸拦截），供内建/搜索工具与 workspace-execution-env.ts 共用
