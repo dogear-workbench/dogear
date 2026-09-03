@@ -21,3 +21,13 @@
 4. **patch 合一**：Windows 路径归一（6 处，从旧 patch 原样复用，因目标文件 byte-identical）+ pause 透出（4 行）合入同一个 patch 文件，锁 0.83.0。bun patch 头部带 hash，禁止手改版本号，必须走 `bun patch` 流程。
 5. **本 patch 与 pause 方案在 0.84 迁移后作废**：新 harness（main 分支）无 shouldStopAfterTurn，迁移时 pause 要重新设计（见会话组共享区 pi-0.84-migration-research.md B 节末）。写代码时 pause 逻辑集中放 adapter/session，不要散落。
 6. 调研依据：共享区 `pi-interjection-research.md`（插话/abort 机制）、`pi-upgrade-research.md`（升级与 patch 方案，本 plan 的 patch 行号出处）。
+
+## 完成总结（2026-09-03）
+
+四个 step 全部完成，逐 step 提交：b444658（升级 0.83.0 + Windows 6 处路径 patch）→ 8968065（patch 透出 shouldStopAfterTurn，4 行）→ 10d03f2（adapter/session paused 状态机 + pauseQueryBasedSession IPC）→ eb849d3（前端暂停按钮/徽标/插话 toast + codebase-map 同步）。
+
+验证：pi-session 35 测试全绿、全量 268 pass 0 fail、build:electron 与渲染层 tsc 过、lint 0 error（99 warning 基线不变）、patch 破坏性重装自动重应用、dev server 实启无编译错。
+
+关键实施发现（已回填各 stepN.md）：① bun patch --commit 不自动清理旧条目/旧 patch，需手动删；② 恢复 run 内消息顺序实测「恢复消息 → 暂停前插话 → assistant」与决策 3 预期相反（计划对 agent-loop.js:83 解读有误，runAgentLoop 先拼 prompt 后 drain；插话无丢失，接受不补偿）；③ 异常收尾（failed/cancelled）不进 paused、清标志回 idle；④ sessionStateChanged 广播是前端实时感知 paused 的唯一通道，payload 已带 paused。
+
+遗留：无阻塞项；人工点击级 E2E 未做（无人值守，以代码级推演代替，未覆盖项见共享区 step4-delivery.md）；整套 patch 与 pause 方案在 0.84 迁移时作废重设。
