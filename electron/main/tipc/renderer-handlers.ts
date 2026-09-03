@@ -190,6 +190,7 @@ export type RendererHandlers = {
     conversationId: string;
     running: boolean;
     pendingAction: boolean;
+    paused: boolean;
   }) => void;
 
   // 会话已终止（PiSession.close() 收尾完成后 emit 一次）

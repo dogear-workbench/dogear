@@ -94,7 +94,7 @@ export class PiSessionManager extends EventEmitter {
     });
 
     // 跑步机状态原子事件（Step 5）：驱动前端 running/pendingAction 两个 Set
-    session.on('sessionStateChanged', (data: { conversationId: string; running: boolean; pendingAction: boolean }) => {
+    session.on('sessionStateChanged', (data: { conversationId: string; running: boolean; pendingAction: boolean; paused: boolean }) => {
       this.emit('sessionStateChanged', sessionId, data);
       this.broadcaster?.(sessionId, 'sessionStateChanged', data);
     });

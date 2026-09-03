@@ -78,6 +78,7 @@ export interface PiHarnessAdapterOptions {
 
 export class PiHarnessAdapter {
   private harness: AgentHarness<{ env: ExecutionEnv }>;
+  private pauseRequested = false;
 
   constructor(options: PiHarnessAdapterOptions) {
     this.harness = new AgentHarness<{ env: ExecutionEnv }>({
@@ -90,6 +91,7 @@ export class PiHarnessAdapter {
       thinkingLevel: options.thinkingLevel,
       streamOptions: options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : undefined,
       activeToolNames: options.activeToolNames,
+      shouldStopAfterTurn: () => this.pauseRequested,
     });
 
     // 关键实现事实（已读 agent-harness.js 源码确认）：queue_update/settled/save_point/abort 等
@@ -120,6 +122,18 @@ export class PiHarnessAdapter {
     this.harness.on('tool_call', (event) =>
       options.onToolCall({ toolCallId: event.toolCallId, toolName: event.toolName, input: event.input }),
     );
+  }
+
+  requestPause(): void {
+    this.pauseRequested = true;
+  }
+
+  clearPause(): void {
+    this.pauseRequested = false;
+  }
+
+  isPauseRequested(): boolean {
+    return this.pauseRequested;
   }
 
   async prompt(text: string, images?: ImageContent[]): Promise<void> {

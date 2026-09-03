@@ -27,6 +27,7 @@ export interface ConversationRuntimeAttachment {
   sessionState: {
     running: boolean;
     pendingAction: boolean;
+    paused: boolean;
   };
 }
 

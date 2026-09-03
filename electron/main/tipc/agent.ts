@@ -77,7 +77,7 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
         const data = payload as { count: number };
         h.pendingCountChanged.send({ sessionId, count: data.count });
       } else if (event === 'sessionStateChanged') {
-        const data = payload as { conversationId: string; running: boolean; pendingAction: boolean };
+        const data = payload as { conversationId: string; running: boolean; pendingAction: boolean; paused: boolean };
         h.sessionStateChanged.send(data);
       } else if (event === 'sessionClosed') {
         const data = payload as { conversationId: string };
@@ -301,6 +301,21 @@ export const agentRouter = {
         return { success: true };
       } catch (error) {
         console.error('中断会话失败:', error);
+        return { error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 请求暂停：不打断当前 turn，完成后进入 paused（accepted=false 表示会话不在运行中） */
+  pauseQueryBasedSession: t.procedure
+    .input<{ sessionId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const activeSession = getPiSessionManager().getSession(input.sessionId);
+        if (!activeSession) return { error: '会话不存在' };
+        const accepted = activeSession.requestPause();
+        return { success: accepted };
+      } catch (error) {
+        console.error('请求暂停会话失败:', error);
         return { error: error instanceof Error ? error.message : String(error) };
       }
     }),

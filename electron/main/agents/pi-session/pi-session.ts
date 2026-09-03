@@ -104,6 +104,7 @@ export interface PiSessionLiveSnapshot {
   sessionState: {
     running: boolean;
     pendingAction: boolean;
+    paused: boolean;
   };
 }
 
@@ -253,9 +254,10 @@ export class PiSession extends EventEmitter {
   // steer 队列长度，由 adapter 的 onSteerQueueChanged 回调（Harness queue_update 事件）镜像，
   // 不再手动 +1/-1：queue_update 在 steer() 入队和 one-at-a-time drain 时都会触发，是权威数据源。
   private pendingSteerCount = 0;
-  // sessionStateChanged 去重：记录上次广播的 running/pendingAction
+  // sessionStateChanged 去重：记录上次广播的 running/pendingAction/paused
   private lastEmittedRunning = false;
   private lastEmittedPendingAction = false;
+  private lastEmittedPaused = false;
   // 本轮 emit 出去的 ExtendedSessionMessage 快照，agent_end 时喂给 extractPiUsageEntry 聚合 toolActivity
   private currentTurnMessages: ExtendedSessionMessage[] = [];
   private liveTurnMessages: ExtendedSessionMessage[] = [];
@@ -321,8 +323,9 @@ export class PiSession extends EventEmitter {
         toolInput: pending.toolInput,
       })),
       sessionState: {
-        running: this.running || this.pendingSteerCount > 0,
+        running: !this.isPaused() && (this.running || this.pendingSteerCount > 0),
         pendingAction: this.pendingSteerCount > 0,
+        paused: this.isPaused(),
       },
     };
   }
@@ -784,11 +787,16 @@ export class PiSession extends EventEmitter {
   /**
    * 一次完整 run（含所有工具调用和插话）彻底结束（Harness settled 事件，晚于 agent_end），
    * 驱动 running=false 的最终结算，并通知 Manager 收集 orphan 会话。
+   * pauseRequested 为 true 且本轮正常收尾 → 进入 paused（标志保留到 sendMessage 恢复时清除）；
+   * 异常收尾（failed/cancelled）不清入 paused，回 idle。
    */
   private handleSettled(): void {
     this.running = false;
     this.liveTurnMessages = [];
     this.turnEntryIds = [];
+    if (this.currentTurnResult) {
+      this.adapter?.clearPause();
+    }
     this.syncSessionState();
     this.emit('settled');
   }
@@ -819,19 +827,22 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 去重广播当前跑步机状态（running/pendingAction），驱动前端 running/pendingAction 两个 Set。
-   * running = this.running（onSettled 镜像的 harness phase）|| pendingSteerCount>0；pendingAction = pendingSteerCount>0。
+   * 去重广播当前跑步机状态（running/pendingAction/paused），驱动前端 running/pendingAction 两个 Set。
+   * running = !paused && (this.running（onSettled 镜像的 harness phase）|| pendingSteerCount>0)；
+   * pendingAction = pendingSteerCount>0；paused 见 isPaused()。
    * close() 不走这里，靠 sessionClosed 让前端清 Set。
    */
   private syncSessionState(): void {
     const conversationId = this.config.conversationId;
     if (!conversationId) return;
-    const running = this.running || this.pendingSteerCount > 0;
+    const paused = this.isPaused();
+    const running = !paused && (this.running || this.pendingSteerCount > 0);
     const pendingAction = this.pendingSteerCount > 0;
-    if (running !== this.lastEmittedRunning || pendingAction !== this.lastEmittedPendingAction) {
+    if (running !== this.lastEmittedRunning || pendingAction !== this.lastEmittedPendingAction || paused !== this.lastEmittedPaused) {
       this.lastEmittedRunning = running;
       this.lastEmittedPendingAction = pendingAction;
-      this.emit('sessionStateChanged', { conversationId, running, pendingAction });
+      this.lastEmittedPaused = paused;
+      this.emit('sessionStateChanged', { conversationId, running, pendingAction, paused });
     }
   }
 
@@ -893,7 +904,13 @@ export class PiSession extends EventEmitter {
     const { text, images } =
       typeof content === 'string' ? { text: content, images: [] as ImageContent[] } : splitContentBlocks(content);
     const adapter = this.adapter;
-    const isRunning = this.running || this.pendingSteerCount > 0;
+    // paused 优先于 isRunning：暂停时 harness 已 idle，必须走 prompt（idle 下 steer 抛 invalid_state），
+    // 且 pendingSteerCount>0（暂停前插话仍在队列）也不能把分支带进 steer
+    const isPaused = adapter.isPauseRequested();
+    const isRunning = !isPaused && (this.running || this.pendingSteerCount > 0);
+    if (isPaused) {
+      adapter.clearPause();
+    }
     if (!isRunning) {
       this.liveTurnMessages = [];
       this.turnEntryIds = [];
@@ -940,9 +957,9 @@ export class PiSession extends EventEmitter {
 
   /**
    * 发消息前的自动压缩（仅非 steer 分支）：lastContextTokens 超过 contextWindow×autoCompactPercent% 时
-   * 先执行 harness compact。compact 与 prompt 同样要求 harness idle，而非 steer 分支到达这里时
-   * harness 必然 idle（running/steer 队列均为空），天然无竞态。失败（含 Nothing to compact）
-   * 尽力而为：warn + 短错误提示后继续 prompt，不中断发送。
+   * 先执行 harness compact。compact 与 prompt 同样要求 harness idle，非 steer 分支到达这里时
+   * harness 必然 idle（普通 idle 发送自不待言，paused 恢复时 settled 已把 phase 复位 idle），天然无竞态。
+   * 失败（含 Nothing to compact）尽力而为：warn + 短错误提示后继续 prompt，不中断发送。
    */
   private async maybeAutoCompact(adapter: PiHarnessAdapter): Promise<void> {
     if (this.lastContextTokens === undefined) return;
@@ -984,20 +1001,41 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 会话是否仍在运行（有活跃 turn 或 steer 队列）。供 PiSessionManager.release 归零时判断
-   * 是否走 orphan 保活路径——running 时保留不销毁，等 settled 后再由 maybeCollectOrphan 收集。
+   * 请求在当前 turn 完成后暂停（不打断正在执行的工具）。仅 running 态受理，重复调用幂等。
+   * 返回是否受理；受理后等 settled 时进入 paused 并广播。
    */
-  isRunning(): boolean {
-    return this.running || this.pendingSteerCount > 0;
+  requestPause(): boolean {
+    if (this.status === PiSessionStatus.CLOSED || !this.adapter) return false;
+    if (!this.isRunning()) return false;
+    this.adapter.requestPause();
+    return true;
   }
 
   /**
-   * 空闲 = 无正在跑的 turn + 无 steer 队列 + 无挂起的权限请求。
+   * paused 态 = 已请求暂停且 run 已收尾（settled）。
+   * running 期间 pauseRequested 已置位但尚未生效，不算 paused；恢复由 sendMessage 清标志后走 prompt。
+   */
+  isPaused(): boolean {
+    return this.adapter?.isPauseRequested() === true && !this.running;
+  }
+
+  /**
+   * 会话是否仍在运行（有活跃 turn 或 steer 队列）。供 PiSessionManager.release 归零时判断
+   * 是否走 orphan 保活路径——running 时保留不销毁，等 settled 后再由 maybeCollectOrphan 收集。
+   * paused 时返回 false：暂停会话无 attachment 后允许直接销毁（重连时从历史 resume，暂停态自然消失）。
+   */
+  isRunning(): boolean {
+    return !this.isPaused() && (this.running || this.pendingSteerCount > 0);
+  }
+
+  /**
+   * 空闲 = 无正在跑的 turn + 无 steer 队列 + 无挂起的权限请求 + 非 paused。
    */
   isIdle(): boolean {
     return !this.running
       && this.pendingSteerCount === 0
-      && this.pendingPermissionRequests.size === 0;
+      && this.pendingPermissionRequests.size === 0
+      && !this.isPaused();
   }
 
   /**
@@ -1041,6 +1079,8 @@ export class PiSession extends EventEmitter {
    * 因此用户连点两次"中断"不会死锁或产生不一致状态。
    */
   async interrupt(): Promise<void> {
+    // 暂停态下中断等价取消暂停：清标志；且此时无 run，不会再有 settled 链驱动广播，需同步 syncSessionState
+    this.adapter?.clearPause();
     // 不依赖 tool_call hook 收到 abort 信号（Harness 的 tool_call hook 不带 signal 参数），
     // 主动拒绝所有待处理权限请求兜底，避免中断后仍有请求悬挂等待
     if (this.running || this.pendingSteerCount > 0) this.recordTurnCancelled('用户中断');
@@ -1051,6 +1091,7 @@ export class PiSession extends EventEmitter {
     // 否则 adapter.abort() 内部 waitForIdle() 会永远等这一轮结束，死锁。
     await this.abortMessageWaitsForConversation();
     await this.adapter?.abort();
+    this.syncSessionState();
   }
 
   private rejectAllPendingPermissionRequests(reason: string): void {

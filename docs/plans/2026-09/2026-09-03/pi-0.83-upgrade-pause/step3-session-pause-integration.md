@@ -1,7 +1,7 @@
 ---
 step: 3
 title: PiSession 暂停状态机与 IPC
-status: pending
+status: done
 ---
 
 ## 目标
@@ -32,9 +32,13 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  1. 恢复 run 内顺序实测为「恢复消息 → 暂停前插话 → assistant」，与本计划「暂停前插话 → 恢复消息」相反（agent-loop 实际行为：runAgentLoop 先 push prompt 消息入 context，runLoop 开头才 drain steer 队列）；插话无丢失无重复，未做补偿（patch 0.84 作废）
+  2. 补充异常收尾（failed/cancelled）不进 paused：handleSettled 查 currentTurnResult 非空则 clearPause 回 idle
+  3. interrupt() 末尾补 syncSessionState()（paused 态无 run 无 settled 链，必须显式广播撤下）
+  4. requestPause 返回受理 boolean；sessionStateChanged 广播 payload 同步加 paused（Step 4 实时感知唯一通道）
+- 改动文件清单：pi-harness-adapter.ts（pauseRequested + requestPause/clearPause/isPauseRequested + shouldStopAfterTurn 透传）、pi-session.ts（requestPause/isPaused 公开、handleSettled paused 判定、sendMessage paused 优先分支、interrupt 清标志+同步广播、isRunning/isIdle 加 !isPaused、sessionState/广播带 paused）、pi-session-manager.ts 与 renderer-handlers.ts 与 conversation-runtime-service.ts（类型加 paused）、tipc/agent.ts（新路由 pauseQueryBasedSession + broadcaster payload）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：PiSession.requestPause(): boolean（仅 running 受理、幂等）；isPaused(): boolean（标志置位 && !running）；sessionState = { running, pendingAction, paused }（getLiveSnapshot / attach 返回 / sessionStateChanged 广播三处同构）；IPC pauseQueryBasedSession({ sessionId }) → { success } | { error }
+- 下个 step 该从哪里继续：前端 UI（Step 4）——暂停按钮接 pauseQueryBasedSession，paused 状态从 attach/广播/snapshot 三处取，文案「完成当前步骤后暂停」，恢复 = 直接 sendMessage，paused 态点中断 = 取消暂停+丢弃队列（主进程已兜住）
+- 待办或已知限制：恢复 run 内插话顺序与计划描述相反（见上）；paused 会话无 attachment 后 release 直接销毁（重连 resume 历史、暂停态消失，属预期）；完整推演见共享区 step3-delivery.md
