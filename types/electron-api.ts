@@ -53,6 +53,7 @@ export interface WorkspaceFileNode {
     siteName: string | null;
     fetchedAt: number;
     wordCount: number;
+    parseStatus?: string;
   };
 }
 

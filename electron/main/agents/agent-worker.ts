@@ -320,6 +320,7 @@ class AgentWorker {
         platform,
         trigger,
         triggeredAi: true,
+        layer: 'ai',
         scriptUpdated,
         articleSaved,
         parseStatus: articleSaved ? 'ai_enhanced' : 'quality_warning',
@@ -361,6 +362,7 @@ class AgentWorker {
         platform,
         trigger,
         triggeredAi: true,
+        layer: 'ai',
         scriptUpdated: null,
         articleSaved: false,
         parseStatus: 'failed',
@@ -1348,6 +1350,7 @@ interface ParseHistoryEntry {
   platform?: string | null;
   trigger?: string;
   triggeredAi?: boolean;
+  layer?: 'script' | 'readability' | 'browser' | 'ai';
   scriptUpdated: string | null;
   articleSaved: boolean;
   parseStatus: string;

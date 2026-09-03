@@ -1,6 +1,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Globe, User, Calendar, ExternalLink, FileText, Quote, Loader2, Sparkles, CheckCircle2, AlertTriangle, XCircle, Zap } from 'lucide-react';
+import { Globe, User, Calendar, ExternalLink, FileText, Quote, Loader2, Sparkles, CheckCircle2, AlertTriangle, XCircle, Zap, Lock, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -28,6 +28,12 @@ const PARSE_STATUS_CONFIG: Record<ArticleParseStatus, {
     title: '固定解析成功，质量达标',
     className: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-50',
     Icon: CheckCircle2,
+  },
+  need_login: {
+    label: '需要登录',
+    title: '该页面需要登录后才能读取，登录后可点击重试',
+    className: 'bg-orange-50 text-orange-700 border-orange-200 hover:bg-orange-50',
+    Icon: Lock,
   },
   ai_parsing: {
     label: 'AI 检查中',
@@ -109,6 +115,8 @@ function SelectionTooltip({
 export function ArticlePreview() {
   const article = useArticleStore((s) => s.selectedArticle);
   const loading = useArticleStore((s) => s.loadingArticleDetail);
+  const parsingArticle = useArticleStore((s) => s.parsingArticle);
+  const retryAfterLogin = useArticleStore((s) => s.retryAfterLogin);
   const addQuotedSnippet = useReferenceStore((s) => s.addQuotedSnippet);
 
   // 浮动按钮状态
@@ -254,14 +262,29 @@ export function ArticlePreview() {
           </p>
         )}
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => window.open(article.url, '_blank')}
-        >
-          <ExternalLink className="w-3 h-3 mr-1" />
-          查看原文
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.open(article.url, '_blank')}
+          >
+            <ExternalLink className="w-3 h-3 mr-1" />
+            查看原文
+          </Button>
+          {article.parseStatus === 'need_login' && (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={parsingArticle}
+              onClick={() => void retryAfterLogin()}
+            >
+              {parsingArticle
+                ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                : <RefreshCw className="w-3 h-3 mr-1" />}
+              我已登录，重试
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Markdown 正文区域 */}

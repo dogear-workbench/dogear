@@ -6,6 +6,7 @@
 export type ArticleParseStatus =
   | 'script_ok'        // 平台脚本解析成功（零 AI）
   | 'fixed'            // 固定解析成功，未经 AI 处理
+  | 'need_login'       // 浏览器层检测到登录墙，等待用户登录后手动重试
   | 'ai_parsing'       // AI 正在后台检查/解析中
   | 'ai_enhanced'      // AI 已介入并改进了解析结果
   | 'quality_warning'  // 质量检查未通过但 AI 未能改善

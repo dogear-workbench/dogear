@@ -15,10 +15,14 @@ import type { WorkspaceFileNode } from '../types.js';
 export type ArticleParseStatus =
   | 'script_ok'        // 新增：平台脚本解析成功（零 AI）
   | 'fixed'
+  | 'need_login'
   | 'ai_parsing'
   | 'ai_enhanced'
   | 'quality_warning'
   | 'failed';
+
+/** 解析路径标记（parse history 的 layer 字段，与成功态枚举解耦） */
+export type ArticleParseLayer = 'script' | 'readability' | 'browser' | 'ai';
 
 /** 文章元数据（存储在 meta.json） */
 export interface ArticleMeta {
@@ -571,6 +575,7 @@ export async function saveArticleFromScript(params: {
 /**
  * AI 介入时创建文章目录骨架：写 raw.html + stub meta.json，不写 content.md。
  * AI 任务完成后会通过 dogear__SaveParsedArticle 工具覆盖 meta 和 content。
+ * need_login 分支传入自定义 title/parseStatus 复用同一落盘结构。
  * 返回 articleDir 的绝对路径。
  */
 export async function saveRawHtmlStub(params: {
@@ -578,20 +583,22 @@ export async function saveRawHtmlStub(params: {
   articleId: string;
   url: string;
   rawHtml: string;
+  title?: string;
+  parseStatus?: ArticleParseStatus;
 }): Promise<string> {
   const articleDir = path.join(params.workspacePath, ARTICLES_DIR, params.articleId);
 
   const stubMeta: ArticleMeta = {
     id: params.articleId,
     url: params.url,
-    title: '(AI 解析中...)',
+    title: params.title ?? '(AI 解析中...)',
     author: null,
     siteName: null,
     excerpt: null,
     wordCount: 0,
     fetchedAt: Date.now(),
     language: null,
-    parseStatus: 'ai_parsing',
+    parseStatus: params.parseStatus ?? 'ai_parsing',
   };
 
   await safeJsonWrite(path.join(articleDir, 'meta.json'), stubMeta);
@@ -806,6 +813,7 @@ async function scanArticleDirectory(
             siteName: meta.siteName,
             fetchedAt: meta.fetchedAt,
             wordCount: meta.wordCount,
+            parseStatus: meta.parseStatus,
           },
         });
       } catch {

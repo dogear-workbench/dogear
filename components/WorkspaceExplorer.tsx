@@ -3,7 +3,7 @@ import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useR
 import {
   Globe, Folder, FolderOpen, File,
   ChevronRight, ChevronDown, FolderPlus, RefreshCw,
-  Quote, Trash2, Pencil, ExternalLink,
+  Quote, Trash2, Pencil, ExternalLink, Lock,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -491,6 +491,11 @@ function TreeItemRow({
             {/* 文章显示站点名和相对时间 */}
             {data.nodeType === 'article' && originalNode.articleMeta && (
               <div className="text-xs text-muted-foreground truncate">
+                {originalNode.articleMeta.parseStatus === 'need_login' && (
+                  <span title="需要登录" className="inline-flex items-center mr-1 align-[-2px]">
+                    <Lock className="w-3 h-3 text-orange-500" />
+                  </span>
+                )}
                 {originalNode.articleMeta.siteName && (
                   <span>{originalNode.articleMeta.siteName}</span>
                 )}

@@ -79,7 +79,14 @@ export type RendererHandlers = {
   articleParseStatusChanged: (data: {
     articleId: string;
     workspacePath: string;
-    parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
+    parseStatus: 'script_ok' | 'fixed' | 'need_login' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
+  }) => void;
+
+  // 浏览器解析遇登录墙（解析编排广播，前端 toast 提示 + 文章条目展示需要登录状态）
+  browserLoginRequired: (data: {
+    articleId: string;
+    url: string;
+    workspaceId: string;
   }) => void;
 
   // === 微信 iLink ===

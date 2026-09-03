@@ -6,6 +6,8 @@ import { tipc, getRendererHandlers } from '@egoist/tipc/main';
 import { v4 as uuidv4 } from 'uuid';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as articleService from '../services/article-service.js';
+import type { ArticleParseLayer } from '../services/article-service.js';
+import { readArticleWithBrowser } from '../services/browser/browser-article-service.js';
 import { getAgentManager } from '../agents/agent-manager.js';
 import { TaskType, TaskStatus, type AgentTask, type ParseArticlePayload } from '../agents/task-types.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
@@ -27,7 +29,7 @@ export function registerArticleParseStatusListener() {
   getAgentManager().on('articleParseStatusChanged', (data: {
     articleId: string;
     workspacePath: string;
-    parseStatus: 'script_ok' | 'fixed' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
+    parseStatus: 'script_ok' | 'fixed' | 'need_login' | 'ai_parsing' | 'ai_enhanced' | 'quality_warning' | 'failed';
   }) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (win.isDestroyed()) continue;
@@ -45,6 +47,22 @@ export function registerArticleParseStatusListener() {
 // ============================================================
 // V2 主流程辅助函数
 // ============================================================
+
+/** 向所有渲染窗口广播登录墙事件（need_login 时调用，前端 toast + 条目状态） */
+function broadcastBrowserLoginRequired(data: {
+  articleId: string;
+  url: string;
+  workspaceId: string;
+}) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try {
+      getRendererHandlers<RendererHandlers>(win.webContents).browserLoginRequired.send(data);
+    } catch (err) {
+      console.warn('[article] 广播登录墙事件到窗口失败:', err);
+    }
+  }
+}
 
 /**
  * 将 AI 解析任务提交到 AgentManager Worker 池。
@@ -91,8 +109,23 @@ function submitAiParseTask(params: {
 
 /**
  * 向解析历史 JSONL 文件追加一条记录（不阻塞主流程）。
+ * layer 标记本次解析发生在哪一层：script / readability / browser / ai。
  */
-async function appendParseHistoryEntry(entry: Record<string, unknown>) {
+interface ParseHistoryRecord {
+  timestamp: string;
+  articleId: string;
+  url: string;
+  platform: string | null;
+  trigger: 'auto' | 'script_failed' | 'parse_failed' | 'user_requested';
+  triggeredAi: boolean;
+  parseStatus: string;
+  layer: ArticleParseLayer;
+  browserError?: string;
+  readabilityError?: string;
+  durationMs: number;
+}
+
+async function appendParseHistoryEntry(entry: ParseHistoryRecord) {
   try {
     const skillsDir = getArticleParserSkillsDir();
     const historyPath = path.join(skillsDir, 'history.jsonl');
@@ -112,7 +145,8 @@ export const articleRouter = {
    * 优先级：
    *   1. 平台脚本（Python）— 零 AI，最快
    *   2. Readability — 本地 HTML 解析
-   *   3. AI 兜底 — 两者均失败时创建 stub 并提交 Agent 任务
+   *   3. 浏览器渲染解析 — 静态解析失败时的兜底；登录墙走人工流程
+   *   4. AI 兜底 — 浏览器也失败时创建 stub 并提交 Agent 任务
    */
   parseArticle: t.procedure
     .input<{ url: string; workspaceId: string }>()
@@ -160,6 +194,7 @@ export const articleRouter = {
               trigger: 'auto',
               triggeredAi: false,
               parseStatus: 'script_ok',
+              layer: 'script',
               durationMs: scriptAttempt.durationMs,
             });
             return { article: meta };
@@ -179,6 +214,7 @@ export const articleRouter = {
             trigger: 'auto',
             triggeredAi: false,
             parseStatus: 'fixed',
+            layer: 'readability',
             durationMs: 0,
           });
           return { article: result.meta };
@@ -186,8 +222,100 @@ export const articleRouter = {
           readabilityError = String(err);
         }
 
-        // 4. 两者均失败 → 创建 stub 并提交 AI 任务
+        // 3.5 浏览器渲染解析（need_login 走人工流程不走 AI，其余失败类继续交给 AI 兜底）
         const articleId = uuidv4();
+        const browserResult = await readArticleWithBrowser(input.url, {
+          taskMeta: { kind: 'article', articleId },
+        });
+
+        if (browserResult.ok) {
+          // 展开失败时 service 已把提示拼进 excerpt，状态用 quality_warning 标记正文可能不完整
+          const parseStatus = browserResult.meta.qualityHint
+            ? ('quality_warning' as const)
+            : ('fixed' as const);
+          const meta: articleService.ArticleMeta = {
+            id: articleId,
+            url: browserResult.meta.url,
+            title: browserResult.meta.title,
+            author: browserResult.meta.author,
+            siteName: browserResult.meta.siteName,
+            excerpt: browserResult.meta.excerpt,
+            wordCount: browserResult.meta.wordCount,
+            fetchedAt: Date.now(),
+            language: browserResult.meta.language,
+            parseStatus,
+          };
+          await articleService.saveArticle(workspace.path, {
+            meta,
+            content: browserResult.meta.content,
+            rawHtml,
+          });
+          void appendParseHistoryEntry({
+            timestamp: new Date().toISOString(),
+            articleId,
+            url: input.url,
+            platform,
+            trigger: 'auto',
+            triggeredAi: false,
+            parseStatus,
+            layer: 'browser',
+            durationMs: 0,
+          });
+          return { article: meta };
+        }
+
+        let loginHost = input.url;
+        try {
+          loginHost = new URL(input.url).hostname;
+        } catch { /* 保持原 URL */ }
+
+        if (browserResult.errorClass === 'need_login') {
+          const stubTitle = `需要登录：${loginHost}`;
+          await articleService.saveRawHtmlStub({
+            workspacePath: workspace.path,
+            articleId,
+            url: input.url,
+            rawHtml,
+            title: stubTitle,
+            parseStatus: 'need_login',
+          });
+          broadcastBrowserLoginRequired({
+            articleId,
+            url: input.url,
+            workspaceId: input.workspaceId,
+          });
+          void appendParseHistoryEntry({
+            timestamp: new Date().toISOString(),
+            articleId,
+            url: input.url,
+            platform,
+            trigger: 'auto',
+            triggeredAi: false,
+            parseStatus: 'need_login',
+            layer: 'browser',
+            browserError: browserResult.message,
+            durationMs: 0,
+          });
+          return {
+            article: {
+              id: articleId,
+              url: input.url,
+              title: stubTitle,
+              author: null,
+              siteName: null,
+              excerpt: null,
+              wordCount: 0,
+              fetchedAt: Date.now(),
+              language: null,
+              parseStatus: 'need_login',
+            } as articleService.ArticleMeta,
+          };
+        }
+
+        // 4. 浏览器也失败（timeout/parse_empty/browser_crash）→ 创建 stub 并提交 AI 任务
+        const readabilityErrorWithBrowser = readabilityError
+          ? `${readabilityError}；浏览器层失败：${browserResult.message}`
+          : `浏览器层失败：${browserResult.message}`;
         const articleDir = await articleService.saveRawHtmlStub({
           workspacePath: workspace.path,
           articleId,
@@ -212,7 +340,7 @@ export const articleRouter = {
             scriptAttempt && !scriptAttempt.ok && scriptAttempt.errorType !== 'NoScript'
               ? { type: scriptAttempt.errorType ?? 'Unknown', message: scriptAttempt.errorMessage ?? '' }
               : undefined,
-          readabilityError,
+          readabilityError: readabilityErrorWithBrowser,
         });
 
         void appendParseHistoryEntry({
@@ -223,6 +351,8 @@ export const articleRouter = {
           trigger,
           triggeredAi: true,
           parseStatus: 'ai_parsing',
+          layer: 'ai',
+          readabilityError: readabilityErrorWithBrowser,
           durationMs: 0,
         });
 

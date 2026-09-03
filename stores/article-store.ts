@@ -26,6 +26,8 @@ interface ArticleState {
   setArticleUrlInput: (value: string) => void;
   /** 提交 URL 解析文章 */
   submitArticleUrl: () => Promise<void>;
+  /** 登录墙手动重试：重新解析当前选中的 need_login 文章 */
+  retryAfterLogin: () => Promise<void>;
   /** 清除选中的文章 */
   clearSelectedArticle: () => void;
   /** 重置所有状态到初始值 */
@@ -110,7 +112,9 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
         toast.error('文章解析失败', { description: result.error });
         return;
       }
-      toast.success('文章保存成功');
+      if (result.article?.parseStatus !== 'need_login') {
+        toast.success('文章保存成功');
+      }
       // 关闭输入框
       set({ showArticleUrlInput: false, articleUrlInput: '' });
       // 刷新文件树
@@ -122,6 +126,43 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
       }
     } catch (error) {
       console.error('解析文章失败:', error);
+      toast.error('文章解析失败', { description: error instanceof Error ? error.message : String(error) });
+    } finally {
+      set({ parsingArticle: false });
+    }
+  },
+
+  retryAfterLogin: async () => {
+    const article = get().selectedArticle;
+    if (!article) return;
+    const workspaceId = await getWorkspaceId();
+    if (!workspaceId) return;
+
+    try {
+      set({ parsingArticle: true });
+      const result = await client.parseArticle({ url: article.url, workspaceId });
+      if (result.error) {
+        toast.error('文章解析失败', { description: result.error });
+        return;
+      }
+      // 新结果落盘后清理旧的 need_login stub，避免树里残留重复条目
+      if (result.article && result.article.id !== article.id) {
+        await client.deleteArticle({ workspaceId, articleId: article.id }).catch((error) => {
+          console.warn('清理旧登录墙条目失败:', error);
+        });
+      }
+      if (result.article?.parseStatus === 'need_login') {
+        toast.info('登录态未生效', { description: '请确认已在浏览器窗口完成登录，再点击重试' });
+      } else {
+        toast.success('文章保存成功');
+      }
+      const { useWorkspaceStore } = await import('./workspace-store');
+      useWorkspaceStore.getState().loadWorkspaceFiles();
+      if (result.article) {
+        get().selectArticle(result.article);
+      }
+    } catch (error) {
+      console.error('重试解析文章失败:', error);
       toast.error('文章解析失败', { description: error instanceof Error ? error.message : String(error) });
     } finally {
       set({ parsingArticle: false });
@@ -153,5 +194,13 @@ if (typeof window !== 'undefined' && window.ipcRenderer) {
         selectedArticle: { ...state.selectedArticle, parseStatus: data.parseStatus },
       });
     }
+  });
+
+  // 浏览器层遇登录墙：主进程已把浏览器窗口置前并落 need_login stub，这里提示用户
+  rendererEvents.browserLoginRequired.listen(() => {
+    toast.info('该页面需要登录，已为你打开浏览器窗口');
+    void import('./workspace-store').then(({ useWorkspaceStore }) => {
+      useWorkspaceStore.getState().loadWorkspaceFiles();
+    });
   });
 }
