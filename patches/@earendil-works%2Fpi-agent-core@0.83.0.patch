@@ -1,3 +1,26 @@
+diff --git a/node_modules/@earendil-works/pi-agent-core/.bun-tag-77a6472c6b13c827 b/.bun-tag-77a6472c6b13c827
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/dist/harness/agent-harness.js b/dist/harness/agent-harness.js
+index 3185d8123df55559673dbe8991a475de23c3b15a..254fecff78fa36ff5aa9bc6b690804f409ec9ce1 100644
+--- a/dist/harness/agent-harness.js
++++ b/dist/harness/agent-harness.js
+@@ -154,6 +154,7 @@ export class AgentHarness {
+         this.validateToolNames(this.activeToolNames);
+         this.steeringQueueMode = options.steeringMode ?? "one-at-a-time";
+         this.followUpQueueMode = options.followUpMode ?? "one-at-a-time";
++        this.shouldStopAfterTurn = options.shouldStopAfterTurn;
+     }
+     getHandlers(type) {
+         return this.handlers.get(type);
+@@ -405,6 +406,7 @@ export class AgentHarness {
+             },
+             getSteeringMessages: async () => this.drainQueuedMessages(this.steerQueue, this.steeringQueueMode),
+             getFollowUpMessages: async () => this.drainQueuedMessages(this.followUpQueue, this.followUpQueueMode),
++            shouldStopAfterTurn: this.shouldStopAfterTurn,
+         };
+     }
+     validateUniqueNames(names, message) {
 diff --git a/dist/harness/env/nodejs.js b/dist/harness/env/nodejs.js
 index b552266b5b615c1f5e2b64fdaf683921d6f361ad..91c777bbbcbbfdba2b36fcc24fbb25a65b4bd3ba 100644
 --- a/dist/harness/env/nodejs.js
@@ -55,3 +78,23 @@ index 5b94819ba70f183c190843107f3f69fca2200a21..695b133bd12d2115f1f61560075d40d9
      if (normalizedPath === normalizedRoot)
          return "";
      return normalizedPath.startsWith(`${normalizedRoot}/`)
+diff --git a/dist/harness/types.d.ts b/dist/harness/types.d.ts
+index d7881ffd6ce7b951aaa6f9e24f65aa0dc6b3ac7a..967bf31524d0f1274e40117c7e1686dad1487058 100644
+--- a/dist/harness/types.d.ts
++++ b/dist/harness/types.d.ts
+@@ -1,6 +1,6 @@
+ import type { ImageContent, Model, Models, RetryPolicy, SimpleStreamOptions, TextContent, Transport, Usage } from "@earendil-works/pi-ai";
+ import type { Static, TSchema } from "typebox";
+-import type { AgentEvent, AgentMessage, AgentTool, AgentToolResult, AgentToolUpdateCallback, QueueMode, ThinkingLevel } from "../index.ts";
++import type { AgentEvent, AgentMessage, AgentTool, AgentToolResult, AgentToolUpdateCallback, QueueMode, ShouldStopAfterTurnContext, ThinkingLevel } from "../index.ts";
+ import type { Session } from "./session/session.ts";
+ /** Result of a fallible operation. Expected failures are returned as `ok: false` instead of thrown. */
+ export type Result<TValue, TError> = {
+@@ -669,6 +669,7 @@ interface AgentHarnessOptionsBase<TContext extends object | undefined, TSkill ex
+     activeToolNames?: string[];
+     steeringMode?: QueueMode;
+     followUpMode?: QueueMode;
++    shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext) => boolean | Promise<boolean>;
+ }
+ export type AgentHarnessOptions<TContext extends object | undefined = undefined, TSkill extends Skill = Skill, TPromptTemplate extends PromptTemplate = PromptTemplate, TTool extends AgentHarnessTool<TContext> = AgentHarnessTool<TContext>> = AgentHarnessOptionsBase<TContext, TSkill, TPromptTemplate, TTool> & ([TContext] extends [undefined] ? {
+     /** Context-free harnesses do not need a tool context. */

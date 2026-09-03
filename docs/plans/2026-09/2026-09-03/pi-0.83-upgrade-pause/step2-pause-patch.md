@@ -1,7 +1,7 @@
 ---
 step: 2
 title: patch 透出 shouldStopAfterTurn
-status: pending
+status: done
 ---
 
 ## 目标
@@ -43,10 +43,11 @@ shouldStopAfterTurn: this.shouldStopAfterTurn,
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① import 未单独加 `../types.ts` 行，而是并入现有 `../index.ts` import 行（index.d.ts `export * from "./types.ts"` re-export，与 QueueMode 同源，语义等价）；② 实际行号 constructor 落 :157、createLoopConfig 落 :409（计划估 :136/:396）；③ 重开编辑目录再 commit 使 patch 头部带 `.bun-tag-xxx` diff（bun 自动行为）
+- 改动文件清单：patches/@earendil-works%2Fpi-agent-core@0.83.0.patch（新增 2 diff 块 4 行：types.d.ts import+选项、agent-harness.js :157 存字段+:409 透传）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`AgentHarnessOptions.shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext) => boolean | Promise<boolean>`；context = `{ message: AssistantMessage; toolResults: ToolResultMessage[]; context: AgentContext; newMessages: AgentMessage[] }`（包根 dist/types.d.ts:96-107）。返回 true → loop emit agent_end 干净收尾，steer/followUp 队列保留
+- 契约：回调不得 throw/reject（上游 JSDoc：抛异常打断低层 loop）；回调内只读 pauseRequested 标志返回 boolean，副作用（广播 paused、清标志）放 settled 之后
+- 下个 step 该从哪里继续：Step 3 在 adapter 构造 AgentHarnessOptions 时传 `shouldStopAfterTurn: () => this.pauseRequested`；sendMessage 分支 paused 优先于 isRunning，paused 走 prompt() 不能 steer；UI 文案「完成当前步骤后暂停」
+- 待办或已知限制：验证过破坏性重装（rm 包 + bun install）后 patch 自动重新应用；0.84 迁移时本 patch 作废
