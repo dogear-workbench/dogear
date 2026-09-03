@@ -22,7 +22,7 @@ function toLinks(links: any): string[] {
 function PreviewSection({ label, content }: { label: string; content: string }) {
   return (
     <ToolSection label={label}>
-      <div className="whitespace-pre-wrap break-all text-foreground/90 line-clamp-3 bg-muted/30 rounded px-2 py-1.5">
+      <div className="whitespace-pre-wrap break-all text-foreground/90 max-h-40 overflow-y-auto bg-muted/30 rounded px-2 py-1.5">
         {content}
       </div>
     </ToolSection>

@@ -30,7 +30,7 @@ import { TaskCardRenderer } from './agent-chat/tool-renderers/TaskCardRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
-import { FileChangeRenderer, formatByteSize, getEditLineStats } from './agent-chat/tool-renderers/FileChangeRenderer';
+import { FileChangeRenderer, getEditLineStats } from './agent-chat/tool-renderers/FileChangeRenderer';
 
 /**
  * 工具调用状态
@@ -353,7 +353,9 @@ function getToolSummary(
       const writeFile = toolInput.file_path || toolInput.path || "";
       const writeName = writeFile.split(/[\\/]/).pop() || writeFile;
       const writeContent = typeof toolInput.content === "string" ? toolInput.content : "";
-      return `${writeName} · 写入 ${formatByteSize(writeContent)}`;
+      return writeContent
+        ? `${writeName} · 写入 ${writeContent.split("\n").length} 行`
+        : writeName;
     }
 
     case "Edit": {

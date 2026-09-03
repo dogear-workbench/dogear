@@ -12,11 +12,11 @@ export interface PathSegment {
   fileName?: string;
 }
 
-const PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/]|[\\/])[A-Za-z0-9_.\-~@$()+\\/]*|[A-Za-z0-9_.\-~@$()+]*[\\/][A-Za-z0-9_.\-~@$()+\\/]*/g;
+const PATH_TOKEN_RE = /(?:[A-Za-z]:[\\/]|[\\/])[A-Za-z0-9_.\-~@$()+\\/]*/g;
 const TRAILING_PUNCT_RE = /[.,;:!?)\]}'"]+$/;
 export const ALLOWED_EXT_RE = /\.(md|markdown|txt|json)$/i;
 
-export function resolvePathInWorkspace(candidate: string, workspacePath: string): string | null {
+export function resolvePathInWorkspace(candidate: string, workspacePath: string, allowRelative = false): string | null {
   const root = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
   if (!root) return null;
   const posix = candidate.replace(/\\/g, '/');
@@ -27,6 +27,7 @@ export function resolvePathInWorkspace(candidate: string, workspacePath: string)
     prefix = drive ? `${drive[1]}:/` : '/';
     parts = posix.slice(prefix.length).split('/');
   } else {
+    if (!allowRelative) return null;
     const rootDrive = /^([A-Za-z]):\//.exec(root);
     if (rootDrive) prefix = `${rootDrive[1]}:/`;
     else if (root.startsWith('/')) prefix = '/';

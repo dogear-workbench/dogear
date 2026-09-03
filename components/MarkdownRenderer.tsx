@@ -1,9 +1,10 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import 'highlight.js/styles/github-dark.css';
+import { Check, Copy } from 'lucide-react';
+import '@/src/hljs-theme.css';
 import { highlightText } from './agent-chat/highlight';
 import {
   ALLOWED_EXT_RE,
@@ -53,6 +54,36 @@ function wrapChildren(
   );
 }
 
+function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = () => {
+    const text = preRef.current?.textContent ?? '';
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+
+  return (
+    <pre
+      ref={preRef}
+      className="group/code relative rounded-lg border border-border bg-card my-3 overflow-x-auto p-3.5 text-[13px] font-mono"
+      {...props}
+    >
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="absolute top-2 right-2 z-10 rounded-md border border-border bg-background/80 p-1 text-muted-foreground opacity-0 transition-opacity group-hover/code:opacity-100 hover:bg-muted hover:text-foreground cursor-pointer"
+      >
+        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+      </button>
+      {children}
+    </pre>
+  );
+}
+
 /**
  * 通用 Markdown 渲染组件
  * 支持 GFM 语法（表格、删除线等）、代码高亮、图片防盗链、链接安全拦截
@@ -89,7 +120,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
     if (!workspacePath) return null;
     const base = baseDir ?? workspacePath;
     return (href: string): string | null => {
-      const resolved = resolvePathInWorkspace(href, base);
+      const resolved = resolvePathInWorkspace(href, base, true);
       if (!resolved || !ALLOWED_EXT_RE.test(resolved)) return null;
       return resolved;
     };
@@ -124,12 +155,15 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         {children}
       </td>
     ),
-    // 代码块：添加圆角和溢出滚动
-    pre: ({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>) => (
-      <pre className="rounded-lg overflow-x-auto p-4 my-3 bg-gray-900 text-gray-100" {...props}>
-        {children}
-      </pre>
-    ),
+    pre: CodeBlock,
+    // 行内 code：无 language-/hljs class 且无换行的给浅底胶囊；块内 code（含无语言围栏块）不干预，样式由 pre 控制继承
+    code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
+      const isBlock = (className && /language-|hljs/.test(className)) || (typeof children === 'string' && children.includes('\n'));
+      if (isBlock) {
+        return <code className={className} {...props}>{children}</code>;
+      }
+      return <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] font-mono" {...props}>{children}</code>;
+    },
     // 链接：路径链接模式下相对路径解析成功且白名单内 → 胶囊开浮窗；失败回退纯文本；外部 URL 维持浏览器打开
     a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => {
       if (openPathPreview && href && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {

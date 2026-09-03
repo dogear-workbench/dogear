@@ -111,11 +111,6 @@ export function FileChangeRenderer({ kind, toolInput, toolOutput, isError }: Pro
   );
 }
 
-export function formatByteSize(text: string): string {
-  const bytes = new TextEncoder().encode(text).length;
-  return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} 字节`;
-}
-
 export function getEditLineStats(
   toolInput?: Record<string, any>,
 ): { added: number; removed: number } {

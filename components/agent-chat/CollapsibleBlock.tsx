@@ -44,19 +44,19 @@ export function CollapsibleBlock({
 }: CollapsibleBlockProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   const contentRef = useRef<HTMLDivElement>(null);
+  const [clampPx, setClampPx] = useState<number | null>(null);
   const [needsCollapse, setNeedsCollapse] = useState(false);
 
-  // 检测内容是否超出预览行数
   useEffect(() => {
     if (contentRef.current) {
       const lineHeight = parseFloat(getComputedStyle(contentRef.current).lineHeight) || 20;
       const maxHeight = lineHeight * previewLines;
+      setClampPx(maxHeight);
       setNeedsCollapse(contentRef.current.scrollHeight > maxHeight + 4);
     }
   }, [children, previewLines]);
 
-  // 预览区域的最大高度（行数 × 行高）
-  const previewMaxHeight = `${previewLines * 1.4}em`;
+  const previewMaxHeight = clampPx != null ? `${clampPx}px` : `${previewLines * 1.4}em`;
 
   return (
     <div className={cn('group/collapsible', className)}>
