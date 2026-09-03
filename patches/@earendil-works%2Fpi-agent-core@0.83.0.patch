@@ -1,6 +1,3 @@
-diff --git a/node_modules/@earendil-works/pi-agent-core/.bun-tag-e499507601f5dafe b/.bun-tag-e499507601f5dafe
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/dist/harness/env/nodejs.js b/dist/harness/env/nodejs.js
 index b552266b5b615c1f5e2b64fdaf683921d6f361ad..91c777bbbcbbfdba2b36fcc24fbb25a65b4bd3ba 100644
 --- a/dist/harness/env/nodejs.js
