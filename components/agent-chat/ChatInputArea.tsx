@@ -1,5 +1,6 @@
-import { memo, useMemo, useEffect, useRef, type RefObject } from 'react';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder, StickyNote } from 'lucide-react';
+import { memo, useMemo, useEffect, useRef, useState, useCallback, type RefObject } from 'react';
+import { toast } from 'sonner';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder, StickyNote, Pause } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -54,6 +55,7 @@ interface ChatInputAreaProps {
   input: string;
   setInput: (value: string) => void;
   pendingState: PendingState;
+  isPaused: boolean;
   isSessionReady: boolean;
   sessionId: string | null;
   conversationId: string | null;
@@ -85,6 +87,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   input,
   setInput,
   pendingState,
+  isPaused,
   isSessionReady,
   sessionId,
   conversationId,
@@ -158,6 +161,31 @@ export const ChatInputArea = memo(function ChatInputArea({
     if (focusSeq === undefined) return;
     textareaRef.current?.focus();
   }, [focusSeq]);
+
+  // 暂停请求已受理但未到 turn 边界期间（running 仍 true）显示「暂停中…」，paused 广播后自动复位
+  const [pauseRequested, setPauseRequested] = useState(false);
+  useEffect(() => {
+    if (pendingState !== 'running') setPauseRequested(false);
+  }, [pendingState]);
+
+  const handlePause = useCallback(async () => {
+    if (!sessionId) return;
+    try {
+      const result = await client.pauseQueryBasedSession({ sessionId });
+      if ('error' in result) {
+        toast.error('暂停请求失败', { description: result.error });
+        return;
+      }
+      if (!result.success) {
+        toast.info('当前没有运行中的任务');
+        return;
+      }
+      setPauseRequested(true);
+    } catch (e) {
+      console.warn('暂停请求失败:', e);
+      toast.error('暂停请求失败');
+    }
+  }, [sessionId]);
 
   return (
     <div className="p-3">
@@ -439,7 +467,19 @@ export const ChatInputArea = memo(function ChatInputArea({
               <UsageBadge conversationId={conversationId} isStreaming={pendingState === 'running'} />
 
               {/* 发送/停止按钮（右侧） */}
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-1">
+                {pendingState === 'running' && (
+                  <InputGroupButton
+                    size="xs"
+                    onClick={() => { void handlePause(); }}
+                    disabled={pauseRequested}
+                    title={pauseRequested ? '暂停中…（完成当前步骤后暂停）' : '暂停（完成当前步骤后暂停）'}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Pause size={14} />
+                    <span className="text-xs">{pauseRequested ? '暂停中…' : '暂停'}</span>
+                  </InputGroupButton>
+                )}
                 {(input.trim() || pendingImages.length > 0) ? (
                   // 有输入内容 → 始终显示发送按钮（运行中时插话发送，Agent 在下一轮窗口接收）
                   <InputGroupButton
@@ -481,7 +521,14 @@ export const ChatInputArea = memo(function ChatInputArea({
           {showStatusHint && (
             <div className="mt-1.5 px-1 flex items-center gap-2 text-xs text-muted-foreground">
               <span>{sessionId ? `${sessionId.substring(0, 8)}...` : '连接中...'}</span>
-              {isSessionReady && <span className="text-green-600 dark:text-green-400">● 就绪</span>}
+              {isPaused ? (
+                <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                  <Pause size={12} />
+                  已暂停 · 发送消息继续
+                </span>
+              ) : (
+                isSessionReady && <span className="text-green-600 dark:text-green-400">● 就绪</span>
+              )}
             </div>
           )}
         </>

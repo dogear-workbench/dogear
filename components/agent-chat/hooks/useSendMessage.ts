@@ -383,6 +383,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     if (isLoading) {
       // Agent 运行中 → 立即在 UI 显示用户消息；后端 pendingMessages 队列会在下一轮窗口消费
       pushLocalUser(newUserMessage);
+      toast.info('插话已发送，将在当前步骤（含全部工具调用）完成后送达');
 
       client.sendQueryBasedSessionMessage({
         sessionId: sessionId!,

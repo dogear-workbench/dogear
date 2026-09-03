@@ -68,6 +68,7 @@ export function useAgentSession({
         setPermissionMode(preAttached.permissionMode as PermissionMode);
         useConversationStore.getState().setRunningState(conversationId, preAttached.sessionState.running);
         useConversationStore.getState().setPendingActionState(conversationId, preAttached.sessionState.pendingAction);
+        useConversationStore.getState().setPausedState(conversationId, preAttached.sessionState.paused);
         onLiveSnapshot?.(preAttached.snapshot, preAttached.pendingPermissionRequests, preAttached.turnEntryIds);
         setIsSessionReady(true);
         useSessionStore.getState().updateSession(
@@ -117,6 +118,7 @@ export function useAgentSession({
         if (response.sessionState) {
           useConversationStore.getState().setRunningState(conversationId, response.sessionState.running);
           useConversationStore.getState().setPendingActionState(conversationId, response.sessionState.pendingAction);
+          useConversationStore.getState().setPausedState(conversationId, response.sessionState.paused);
         }
         onLiveSnapshot?.(
           response.snapshot ?? [],

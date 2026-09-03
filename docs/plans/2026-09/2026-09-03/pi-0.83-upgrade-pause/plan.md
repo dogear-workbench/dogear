@@ -11,7 +11,7 @@
 - [x] [Step 1: 升级 0.83.0 并重做 Windows patch](./step1-upgrade-repatch.md) — 改依赖版本，bun patch 流程重做 6 处路径归一
 - [x] [Step 2: patch 透出 shouldStopAfterTurn](./step2-pause-patch.md) — 同一 patch 追加 4 行，把 pause 钩子接到 harness 选项
 - [x] [Step 3: PiSession 暂停状态机与 IPC](./step3-session-pause-integration.md) — adapter 暴露 pause 控制，pi-session 加 paused 状态与恢复分支
-- [ ] [Step 4: 前端暂停交互与回归](./step4-ui-and-regression.md) — 暂停按钮、暂停态展示、全量回归
+- [x] [Step 4: 前端暂停交互与回归](./step4-ui-and-regression.md) — 暂停按钮、暂停态展示、全量回归
 
 ## 全局决策
 

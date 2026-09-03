@@ -109,6 +109,9 @@ export function AgentChat({
   const isRunningInStore = useConversationStore((s) =>
     conversationId ? s.runningConversationIds.has(conversationId) : false,
   );
+  const isPausedInStore = useConversationStore((s) =>
+    conversationId ? s.pausedConversationIds.has(conversationId) : false,
+  );
   const pendingState = derivePendingState({ isRunning: isLoading || isRunningInStore, pendingCount });
 
   // 主会话派出的子会话快照（用于 StreamingIndicator 显示「等待 N 个交付」+ 中断按钮）
@@ -525,6 +528,7 @@ export function AgentChat({
         input={sendMessage.input}
         setInput={sendMessage.setInput}
         pendingState={pendingState}
+        isPaused={isPausedInStore}
         isSessionReady={isSessionReady}
         sessionId={sessionId}
         conversationId={conversationId}

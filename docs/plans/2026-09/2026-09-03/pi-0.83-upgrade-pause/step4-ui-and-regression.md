@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 前端暂停交互与回归
-status: pending
+status: done
 ---
 
 ## 目标
@@ -30,9 +30,18 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - 「暂停中…」用 ChatInputArea 本地 `pauseRequested` state（pendingState 离开 running 即复位），未动全局 pendingAction 机制——全局层无对应概念，本地态最小且自清理
+  - paused 展示放输入区下方状态行（sessionId 旁，对齐「● 就绪」样式），消息流内 StreamingIndicator 不动（paused 时 running 已 false，指示器自然消失；暂停前插话遗留时仍显示队列提示，语义正确）
+  - 插话提示：插话发送路径加 toast.info「将在当前步骤（含全部工具调用）完成后送达」（原无任何发送后提示，非改写）
+  - paused 态发送消息无需前端分支：isLoading=false 自然走空闲路径（模型 reconcile 可用，paused 期间换模型合法），主进程 sendMessage paused 分支清标志 + prompt
 - 改动文件清单：
+  - `stores/conversation-store.ts`：`pausedConversationIds` Set + `setPausedState`；sessionStateChanged/sessionClosed 订阅同步 paused；PreAttachedSession.sessionState 类型与预 attach 兑底补 paused；reset() 补初始值
+  - `components/agent-chat/hooks/useAgentSession.ts`：pre-attach 与正常 attach 两处同步 pausedConversationIds
+  - `components/agent-chat/AgentChat.tsx`：读 isPausedInStore 传 ChatInputArea
+  - `components/agent-chat/ChatInputArea.tsx`：暂停按钮（running 时，受理后「暂停中…」disabled）+ 状态行 paused 徽标「已暂停 · 发送消息继续」
+  - `components/agent-chat/hooks/useSendMessage.ts`：插话发送 toast.info
+  - `docs/codebase-map.md`：pi-session pause 能力 + pauseQueryBasedSession 路由 + conversation-store 三 Set + ChatInputArea 暂停交互
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 本计划全部 step 完成；0.84 迁移时整体作废（全局决策 5）
+- 未人工验证项：dev 手工场景链以代码级推演 + 类型检查代替（详见共享区 step4-delivery.md）

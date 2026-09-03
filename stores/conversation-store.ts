@@ -31,7 +31,7 @@ export interface PreAttachedSession {
   snapshot: import('@/types/electron-api').ExtendedSessionMessage[];
   turnEntryIds: string[];
   pendingPermissionRequests: Array<{ requestId: string; toolName: string; toolInput: unknown }>;
-  sessionState: { running: boolean; pendingAction: boolean };
+  sessionState: { running: boolean; pendingAction: boolean; paused: boolean };
 }
 
 /** 对话树的扁平节点（供 @headless-tree/react 使用）。Phase 3：叶子节点装组而非对话。 */
@@ -100,6 +100,8 @@ interface ConversationState {
   runningConversationIds: Set<string>;
   /** 当前有待处理操作（权限/AskUser）的对话 ID 集合 */
   pendingActionConversationIds: Set<string>;
+  /** 当前已暂停（turn 完成后暂停，发消息即恢复）的对话 ID 集合 */
+  pausedConversationIds: Set<string>;
   /** 微信 Bot 当前绑定的对话 ID（null 表示未绑定） */
   botBoundConversationId: string | null;
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
@@ -155,6 +157,8 @@ interface ConversationState {
   setRunningState: (conversationId: string, isRunning: boolean) => void;
   /** 设置对话的待处理操作状态（权限/AskUser） */
   setPendingActionState: (conversationId: string, isPending: boolean) => void;
+  /** 设置对话的暂停状态 */
+  setPausedState: (conversationId: string, isPaused: boolean) => void;
   /** 设置 Bot 绑定的对话 ID */
   setBotBoundConversation: (conversationId: string | null) => void;
   /** 从 bridge 拉取所有子会话快照（loadConversations 后台调一次） */
@@ -314,6 +318,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   preAttachedSession: null,
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
+  pausedConversationIds: new Set<string>(),
   botBoundConversationId: null,
   childrenByParent: {},
   childSnapshotsById: {},
@@ -469,7 +474,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
             snapshot: (attachResult.snapshot ?? []) as import('@/types/electron-api').ExtendedSessionMessage[],
             turnEntryIds: attachResult.turnEntryIds ?? [],
             pendingPermissionRequests: attachResult.pendingPermissionRequests ?? [],
-            sessionState: attachResult.sessionState ?? { running: false, pendingAction: false },
+            sessionState: attachResult.sessionState ?? { running: false, pendingAction: false, paused: false },
           });
         }
       } catch {
@@ -740,6 +745,15 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 
+  setPausedState: (conversationId: string, isPaused: boolean) => {
+    set((state) => {
+      const newSet = new Set(state.pausedConversationIds);
+      if (isPaused) newSet.add(conversationId);
+      else newSet.delete(conversationId);
+      return { pausedConversationIds: newSet };
+    });
+  },
+
   setBotBoundConversation: (conversationId: string | null) => {
     set({ botBoundConversationId: conversationId });
   },
@@ -816,6 +830,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     preAttachedSession: null,
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),
+    pausedConversationIds: new Set<string>(),
     botBoundConversationId: null,
     childrenByParent: {},
     childSnapshotsById: {},
@@ -831,12 +846,14 @@ if (typeof window !== 'undefined') {
     rendererEvents.sessionStateChanged.listen((data) => {
       useConversationStore.getState().setRunningState(data.conversationId, data.running);
       useConversationStore.getState().setPendingActionState(data.conversationId, data.pendingAction);
+      useConversationStore.getState().setPausedState(data.conversationId, data.paused);
     });
 
     // 会话已终止：running/pendingAction 都清零，不再等待对应的 sessionStateChanged:false
     rendererEvents.sessionClosed.listen((data) => {
       useConversationStore.getState().setRunningState(data.conversationId, false);
       useConversationStore.getState().setPendingActionState(data.conversationId, false);
+      useConversationStore.getState().setPausedState(data.conversationId, false);
     });
 
     // 微信 Bot 绑定对话变更
