@@ -5,6 +5,7 @@
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
+import type { BrowserActionEvent } from '../services/browser/browser-action-stream.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -234,5 +235,8 @@ export type RendererHandlers = {
 
   // PTY 进程退出
   ptyExit: (data: { terminalId: string; exitCode: number }) => void;
+
+  // 浏览器动作流增量事件（action-stream 广播，browser-store 追加渲染）
+  browserActionAdded: (data: BrowserActionEvent) => void;
 
 };

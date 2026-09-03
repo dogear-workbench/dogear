@@ -30,6 +30,7 @@ import { updaterRouter } from './updater.js';
 import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
+import { browserRouter, registerBrowserActionBridge } from './browser.js';
 
 export const router = {
   ...aiRouter,
@@ -62,6 +63,7 @@ export const router = {
   ...schedulerRouter,
   ...windowsRouter,
   ...ptyRouter,
+  ...browserRouter,
 };
 
 export type Router = typeof router;
@@ -72,4 +74,6 @@ export function registerTipcHandlers() {
   registerArticleParseStatusListener();
   // 终端二期：PTY 事件 → 渲染层广播桥接
   registerPtyBroadcaster();
+  // 浏览器动作流：Agent 工具源接线 + 渲染层增量广播桥接
+  registerBrowserActionBridge();
 }

@@ -5,8 +5,9 @@ import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
 import { TopicPanel } from '@/components/TopicPanel';
 import { TerminalPanel } from '@/components/companion/TerminalPanel';
+import { BrowserPanel } from '@/components/companion/BrowserPanel';
 
-export type CompanionTab = 'files' | 'additional' | 'topic' | 'terminal';
+export type CompanionTab = 'files' | 'additional' | 'topic' | 'terminal' | 'browser';
 
 const MIN_WIDTH = 240;
 const MAX_WIDTH = 720;
@@ -15,6 +16,7 @@ const DEFAULT_WIDTHS: Record<CompanionTab, number> = {
   additional: 384,
   topic: 384,
   terminal: 560,
+  browser: 384,
 };
 
 const TABS: { id: CompanionTab; label: string }[] = [
@@ -22,6 +24,7 @@ const TABS: { id: CompanionTab; label: string }[] = [
   { id: 'additional', label: '附加' },
   { id: 'topic', label: '话题' },
   { id: 'terminal', label: '终端' },
+  { id: 'browser', label: '浏览器' },
 ];
 
 const widthStorageKey = (tab: CompanionTab) => `companion-width:${tab}`;
@@ -127,8 +130,10 @@ export function CompanionPanel({ workspaceId, groupId, full = false }: Companion
         <AdditionalFilesPanel workspaceId={workspaceId} />
       ) : tab === 'topic' ? (
         <TopicPanel workspaceId={workspaceId} groupId={groupId} />
-      ) : (
+      ) : tab === 'terminal' ? (
         <TerminalPanel />
+      ) : (
+        <BrowserPanel />
       )}
     </aside>
   );

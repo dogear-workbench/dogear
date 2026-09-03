@@ -8,6 +8,7 @@ import * as workspaceJsonService from '../services/workspace-json-service.js';
 import * as articleService from '../services/article-service.js';
 import type { ArticleParseLayer } from '../services/article-service.js';
 import { readArticleWithBrowser } from '../services/browser/browser-article-service.js';
+import { recordBrowserAction } from '../services/browser/browser-action-stream.js';
 import { getAgentManager } from '../agents/agent-manager.js';
 import { TaskType, TaskStatus, type AgentTask, type ParseArticlePayload } from '../agents/task-types.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
@@ -226,6 +227,9 @@ export const articleRouter = {
         const articleId = uuidv4();
         const browserResult = await readArticleWithBrowser(input.url, {
           taskMeta: { kind: 'article', articleId },
+          onAction: (event) => {
+            recordBrowserAction({ source: 'parseArticle', ...event });
+          },
         });
 
         if (browserResult.ok) {

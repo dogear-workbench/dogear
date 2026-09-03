@@ -47,6 +47,21 @@ class BrowserManager {
     });
   }
 
+  /** 只读状态快照（动作流/伴随面板查询用，不触碰队列与生命周期） */
+  getSnapshot(): {
+    running: boolean;
+    launched: boolean;
+    queued: number;
+    holder: BrowserTaskMeta | null;
+  } {
+    return {
+      running: this.holder !== null,
+      launched: this.context !== null && this.page !== null,
+      queued: this.queue.length,
+      holder: this.holder ? { ...this.holder } : null,
+    };
+  }
+
   async bringToFront(): Promise<void> {
     const ctx = this.context;
     const page = this.page;

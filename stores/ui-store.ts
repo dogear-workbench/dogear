@@ -23,10 +23,10 @@ interface UIState {
   closeRightPanel: () => void;
 
   // 右侧面板当前 tab
-  /** 右侧面板当前 tab：文件 / 附加 / 话题 / 终端 */
-  rightPanelTab: 'files' | 'additional' | 'topic' | 'terminal';
+  /** 右侧面板当前 tab：文件 / 附加 / 话题 / 终端 / 浏览器 */
+  rightPanelTab: 'files' | 'additional' | 'topic' | 'terminal' | 'browser';
   /** 切换右侧面板 tab */
-  setRightPanelTab: (tab: 'files' | 'additional' | 'topic' | 'terminal') => void;
+  setRightPanelTab: (tab: 'files' | 'additional' | 'topic' | 'terminal' | 'browser') => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }

@@ -12,7 +12,7 @@
 - [x] [Step 2: readArticle 核心服务](./step2-article-service.md) — 渲染等待、展开启发式、登录墙检测、复用静态解析后段落盘
 - [x] [Step 3: tipc 编排接入 + 登录墙前端流程](./step3-tipc-login-flow.md) — 链路插入、`need_login` 状态、窗口置前 + toast + 重试按钮
 - [x] [Step 4: Agent 工具包 + 权限映射](./step4-agent-tools.md) — readArticle 声明式 + 原子工具集 + observe 压缩 + permission-rules
-- [ ] [Step 5: 伴随面板动作流](./step5-action-panel.md) — action-stream 环形缓冲 + 广播 + BrowserPanel 第五 tab
+- [x] [Step 5: 伴随面板动作流](./step5-action-panel.md) — action-stream 环形缓冲 + 广播 + BrowserPanel 第五 tab
 - [ ] [Step 6: 测试基建与基线](./step6-eval-baseline.md) — 六类测试页 + 15 任务 + runner + 便宜档成功率基线
 
 ## 全局决策
