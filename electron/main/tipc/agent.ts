@@ -436,6 +436,7 @@ export const agentRouter = {
       await Promise.all([
         import('../agents/tools/memory-tools.js'),
         import('../agents/tools/article-tools.js'),
+        import('../agents/tools/browser-tools.js'),
         import('../agents/tools/stock-tools.js'),
         import('../agents/tools/stock-analysis-tools.js'),
         import('../agents/tools/stock-announcement-tools.js'),

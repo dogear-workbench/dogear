@@ -79,4 +79,12 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
     requiresWorkspace: false,
     requirements: '需要 Python 3.10+（复用股票分析计算层）',
   },
+  {
+    name: 'browser',
+    label: '浏览器',
+    description: '受控浏览器读取网页：一键读文章（readArticle，含展开与登录墙引导）+ 导航/观察/点击/填表等原子探索工具',
+    mcpServerName: 'dogear-browser',
+    toolCount: 9,
+    requiresWorkspace: false,
+  },
 ];

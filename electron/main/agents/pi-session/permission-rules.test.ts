@@ -110,3 +110,42 @@ test('会话允许集不共享：不同 Set 实例互不影响', () => {
   expect(decideToolPermission('bash', 'default', emptyPackMap, allowedA, allAsk())).toBe('allow');
   expect(decideToolPermission('bash', 'default', emptyPackMap, allowedB, allAsk())).toBe('ask');
 });
+
+const browserPackMap = new Map(
+  [
+    'dogear__browser__readArticle',
+    'dogear__browser__navigate',
+    'dogear__browser__observe_page',
+    'dogear__browser__click',
+    'dogear__browser__fill',
+    'dogear__browser__read_text',
+    'dogear__browser__wait_for',
+    'dogear__browser__screenshot',
+    'dogear__browser__close',
+  ].map((name) => [name, 'browser']),
+);
+
+test('默认模式：浏览器只读工具随工具包放行', () => {
+  for (const tool of [
+    'dogear__browser__navigate',
+    'dogear__browser__observe_page',
+    'dogear__browser__read_text',
+    'dogear__browser__wait_for',
+    'dogear__browser__screenshot',
+    'dogear__browser__close',
+  ]) {
+    expect(decideToolPermission(tool, 'default', browserPackMap, emptyAllowed, allAsk())).toBe('allow');
+  }
+});
+
+test('默认模式：readArticle/click/fill 逐次确认，工具包启用不覆盖', () => {
+  for (const tool of ['dogear__browser__readArticle', 'dogear__browser__click', 'dogear__browser__fill']) {
+    expect(decideToolPermission(tool, 'default', browserPackMap, emptyAllowed, allAsk())).toBe('ask');
+  }
+});
+
+test('autoExecute 模式：浏览器全部工具放行（含交互三工具）', () => {
+  for (const tool of browserPackMap.keys()) {
+    expect(decideToolPermission(tool, 'autoExecute', browserPackMap, emptyAllowed, allAsk())).toBe('allow');
+  }
+});

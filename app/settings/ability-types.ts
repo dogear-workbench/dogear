@@ -41,7 +41,7 @@ export interface SkillTemplate {
 export const SKILL_PACK_MAP: Record<string, string[]> = {
   'stock-analysis': ['stock-quote', 'stock-analysis', 'stock-announcement'],
   'stock-picking': ['stock-picking'],
-  'article-parser': ['article'],
+  'article-parser': ['article', 'browser'],
 };
 
 export const RESIDENT_GROUPS = [
@@ -75,7 +75,7 @@ export const ABILITY_DOMAINS: AbilityDomainMeta[] = [
   {
     id: 'article',
     label: '文章解析',
-    description: '已抓取文章的读取与管理',
+    description: '文章读取、网页渲染解析与管理（含受控浏览器工具包）',
     skills: ['article-parser'],
   },
   {

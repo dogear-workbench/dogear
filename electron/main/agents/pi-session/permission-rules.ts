@@ -18,6 +18,13 @@ export function getBasicToolPermission(
 
 export type ToolPermissionDecision = 'allow' | 'ask';
 
+// 浏览器交互三工具：default 模式逐次确认，工具包启用不覆盖；autoExecute 模式在函数入口已全放行
+const BROWSER_INTERACTIVE_TOOLS: ReadonlySet<string> = new Set([
+  'dogear__browser__readArticle',
+  'dogear__browser__click',
+  'dogear__browser__fill',
+]);
+
 export function decideToolPermission(
   toolName: string,
   mode: 'default' | 'autoExecute',
@@ -26,6 +33,7 @@ export function decideToolPermission(
   basicToolPermissions: BasicToolPermissions,
 ): ToolPermissionDecision {
   if (mode === 'autoExecute') return 'allow';
+  if (BROWSER_INTERACTIVE_TOOLS.has(toolName)) return 'ask';
   if (toolPackMap.has(toolName)) return 'allow';
   if (isBasicToolName(toolName)) {
     if (sessionAllowedTools.has(toolName) || basicToolPermissions[toolName] === 'allow') {

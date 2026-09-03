@@ -32,6 +32,7 @@ import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPE
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
+import { createBrowserToolDefs } from '../tools/browser-tools.js';
 import { createStockToolDefs } from '../tools/stock-tools.js';
 import { createStockAnalysisToolDefs } from '../tools/stock-analysis-tools.js';
 import { createAnnouncementToolDefs } from '../tools/stock-announcement-tools.js';
@@ -527,6 +528,9 @@ export class PiSession extends EventEmitter {
           if (this.config.workspacePath) {
             toolDefs.push(...this.registerPack(pack.name, createArticleToolDefs(this.config.workspacePath)));
           }
+          break;
+        case 'browser':
+          toolDefs.push(...this.registerPack(pack.name, createBrowserToolDefs({ conversationId: this.config.conversationId })));
           break;
         case 'stock-quote':
           toolDefs.push(...this.registerPack(pack.name, createStockToolDefs()));

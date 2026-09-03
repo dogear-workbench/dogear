@@ -5,7 +5,7 @@
  * - 基础文件工具 Read/Write/Edit + Glob/Grep：恒装，workspace 边界校验；不装 Bash
  * - 常驻能力域工具（与主会话同语义，tool-packs.ts 明确将其排除在可选工具包外）：
  *   dogear-memory（Recall/Save/Forget，autonomous 契约）+ dogear-memory-review（报告读写）
- * - 可选工具包（article / stock-quote / stock-analysis / stock-announcement / stock-picking）：
+ * - 可选工具包（article / browser / stock-quote / stock-analysis / stock-announcement / stock-picking）：
  *   按工作区 config.json 的 enabledToolPacks 过滤，与设置页 ToolPacksTab 同源
  */
 import path from 'node:path';
@@ -16,6 +16,7 @@ import { createSearchToolDefs } from '../../agents/pi-session/search-tools.js';
 import { createMemoryToolDefs } from '../../agents/tools/memory-tools.js';
 import { createReviewToolDefs } from '../../agents/tools/review-tools.js';
 import { createArticleToolDefs } from '../../agents/tools/article-tools.js';
+import { createBrowserToolDefs } from '../../agents/tools/browser-tools.js';
 import { createStockToolDefs } from '../../agents/tools/stock-tools.js';
 import { createStockAnalysisToolDefs } from '../../agents/tools/stock-analysis-tools.js';
 import { createAnnouncementToolDefs } from '../../agents/tools/stock-announcement-tools.js';
@@ -45,6 +46,9 @@ export async function buildCustomToolSet(
   const enabledPacks = new Set(packNames.filter((p): p is string => typeof p === 'string'));
   if (enabledPacks.has('article')) {
     toolDefs.push(...createArticleToolDefs(workspacePath));
+  }
+  if (enabledPacks.has('browser')) {
+    toolDefs.push(...createBrowserToolDefs());
   }
   if (enabledPacks.has('stock-quote')) {
     toolDefs.push(...createStockToolDefs());
