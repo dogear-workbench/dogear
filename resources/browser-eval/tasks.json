@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "notes": "浏览器文章读取评测任务集。url 中 {{BASE}} 由 runner 替换为测试页目录的 file:// URL。type=pipeline 为零模型管线断言（run-pipeline.mjs 执行）；type=agent 为需模型驱动浏览器工具的探索任务（基线采集用，runner 跳过）。",
+  "tasks": [
+    {
+      "id": "spa-pipeline-read",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/spa-article.html",
+      "scenario": "正文由 JS 延迟 2s 注入，管线渲染等待应等到正文",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-SPA-1"],
+        "wordCountMin": 350,
+        "titleContains": "SPA"
+      }
+    },
+    {
+      "id": "spa-pipeline-noexpand-hint",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/spa-article.html",
+      "scenario": "无展开候选的页面：记录 qualityHint 恒存在的确定性行为",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-SPA-2"],
+        "qualityHint": "present"
+      }
+    },
+    {
+      "id": "collapsed-pipeline-expand",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/collapsed.html",
+      "scenario": "摘要可见正文隐藏，展开启发式点击「展开全文」后可见字数变长",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-COLLAPSED-1"],
+        "wordCountMin": 420,
+        "qualityHint": "absent"
+      }
+    },
+    {
+      "id": "collapsed-pipeline-full",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/collapsed.html",
+      "scenario": "展开后尾部标记可达，验证全文提取",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-COLLAPSED-2"],
+        "qualityHint": "absent"
+      }
+    },
+    {
+      "id": "paged-pipeline-longest",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/paged.html",
+      "scenario": "三页翻页：管线点击「下一页」后停在字数变长的第 2 页，不做拼接",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-PAGED-2"],
+        "notContains": ["DOGEAR-EVAL-MARK-PAGED-1", "DOGEAR-EVAL-MARK-PAGED-3"],
+        "wordCountMin": 380,
+        "qualityHint": "absent"
+      }
+    },
+    {
+      "id": "paged-pipeline-title",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/paged.html",
+      "scenario": "翻页页标题与第 2 页标记同时成立",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-PAGED-2"],
+        "titleContains": "翻页"
+      }
+    },
+    {
+      "id": "login-pipeline-needlogin",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/login-wall.html",
+      "scenario": "密码框存在且无可见正文，DOM 登录墙检测应命中 need_login",
+      "expect": {
+        "ok": false,
+        "errorClass": "need_login"
+      }
+    },
+    {
+      "id": "lazy-pipeline-read",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/lazy-images.html",
+      "scenario": "懒加载图片长文，文字正文应完整提取（图片不参与字数）",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-LAZY-1"],
+        "wordCountMin": 450
+      }
+    },
+    {
+      "id": "odd-pipeline-readability",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/odd-container.html",
+      "scenario": "非标准容器：Readability 兜底应选中正文并剥离侧栏噪音",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-ODD-1"],
+        "notContains": ["DOGEAR-EVAL-MARK-ODD-NOISE"],
+        "wordCountMin": 350
+      }
+    },
+    {
+      "id": "spa-agent-find-mark",
+      "type": "agent",
+      "action": "explore",
+      "url": "{{BASE}}/spa-article.html",
+      "goal": "页面正文延迟 2 秒才注入。用 dogear-browser 工具（navigate 后 wait_for）等到正文出现，再用 read_text 读正文，找到标记文本 DOGEAR-EVAL-MARK-SPA-2",
+      "expect": {
+        "found": ["DOGEAR-EVAL-MARK-SPA-2"]
+      }
+    },
+    {
+      "id": "collapsed-agent-explore",
+      "type": "agent",
+      "action": "explore",
+      "url": "{{BASE}}/collapsed.html",
+      "goal": "正文默认隐藏。用 observe_page 找到「展开全文」按钮并 click，再用 read_text 读正文，找到标记文本 DOGEAR-EVAL-MARK-COLLAPSED-2",
+      "expect": {
+        "found": ["DOGEAR-EVAL-MARK-COLLAPSED-2"]
+      }
+    },
+    {
+      "id": "paged-agent-explore",
+      "type": "agent",
+      "action": "explore",
+      "url": "{{BASE}}/paged.html",
+      "goal": "文章分 3 页展示。用 observe_page 找到「下一页」按钮，连续 click 两次直到按钮消失，用 read_text 确认当前在第 3 页，找到标记文本 DOGEAR-EVAL-MARK-PAGED-3",
+      "expect": {
+        "found": ["DOGEAR-EVAL-MARK-PAGED-3"]
+      }
+    },
+    {
+      "id": "login-agent-flow",
+      "type": "agent",
+      "action": "explore",
+      "url": "{{BASE}}/login-wall.html",
+      "goal": "页面被登录墙保护。用 observe_page 找到密码输入框，fill 任意值后 click 登录按钮，再用 readArticle 或 read_text 读取正文，找到标记文本 DOGEAR-EVAL-MARK-LOGIN-OK-1",
+      "expect": {
+        "found": ["DOGEAR-EVAL-MARK-LOGIN-OK-1"]
+      }
+    },
+    {
+      "id": "lazy-agent-explore",
+      "type": "agent",
+      "action": "explore",
+      "url": "{{BASE}}/lazy-images.html",
+      "goal": "长文含懒加载图片。navigate 后用 wait_for 等尾部文本出现，read_text 确认正文完整，找到标记文本 DOGEAR-EVAL-MARK-LAZY-2",
+      "expect": {
+        "found": ["DOGEAR-EVAL-MARK-LAZY-2"]
+      }
+    },
+    {
+      "id": "odd-agent-explore",
+      "type": "agent",
+      "action": "explore",
+      "url": "{{BASE}}/odd-container.html",
+      "goal": "正文容器为非标准结构且周边有导航与侧栏噪音。用 read_text 读取正文区域，找到标记文本 DOGEAR-EVAL-MARK-ODD-2，且不要被侧栏的 DOGEAR-EVAL-MARK-ODD-NOISE 干扰",
+      "expect": {
+        "found": ["DOGEAR-EVAL-MARK-ODD-2"]
+      }
+    }
+  ]
+}

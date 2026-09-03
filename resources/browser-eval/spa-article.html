@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>SPA 渲染评测：延迟注入正文</title>
+</head>
+<body>
+<div id="app">加载中，请稍候。</div>
+<script>
+const PARA = '本段为浏览器评测固定文本，用于统计正文字数与验证内容提取，请忽略语义。';
+setTimeout(() => {
+  const parts = [];
+  for (let i = 0; i < 12; i++) {
+    parts.push('<p>' + PARA + '</p>');
+  }
+  parts.splice(2, 0, '<p>起始标记：DOGEAR-EVAL-MARK-SPA-1。</p>');
+  parts.push('<p>深度标记：DOGEAR-EVAL-MARK-SPA-2，全文至此结束。</p>');
+  document.getElementById('app').innerHTML =
+    '<article><h1>SPA 渲染评测文章</h1>' + parts.join('') + '</article>';
+}, 2000);
+</script>
+</body>
+</html>

@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>懒加载图片评测：长文</title>
+</head>
+<body>
+<article>
+  <h1>懒加载图片评测文章</h1>
+  <div id="body-content"></div>
+</article>
+<script>
+const PARA = '本段为浏览器评测固定文本，用于统计正文字数与验证内容提取，请忽略语义。';
+const IMG = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==';
+const nodes = ['<p>起始标记：DOGEAR-EVAL-MARK-LAZY-1。</p>'];
+for (let i = 0; i < 15; i++) {
+  nodes.push('<p>第 ' + (i + 1) + ' 段。' + PARA + '</p>');
+  if (i % 2 === 1) {
+    nodes.push('<img class="lazy-img" alt="评测插图" data-src="' + IMG + '">');
+  }
+}
+nodes.push('<p>深度标记：DOGEAR-EVAL-MARK-LAZY-2，全文至此结束。</p>');
+document.getElementById('body-content').innerHTML = nodes.join('');
+const io = new IntersectionObserver((entries) => {
+  entries.forEach((en) => {
+    if (en.isIntersecting) {
+      en.target.src = en.target.dataset.src;
+      io.unobserve(en.target);
+    }
+  });
+});
+document.querySelectorAll('img.lazy-img').forEach((img) => io.observe(img));
+</script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>登录墙评测：受保护文章</title>
+</head>
+<body>
+<div id="login-box">
+  <h1>请登录后阅读</h1>
+  <form id="login-form">
+    <label for="pwd">密码</label>
+    <input type="password" id="pwd" name="password" placeholder="输入任意密码">
+    <button type="submit">登录</button>
+  </form>
+</div>
+<div id="secret-body" style="display:none"></div>
+<script>
+const PARA = '本段为浏览器评测固定文本，用于统计正文字数与验证内容提取，请忽略语义。';
+const parts = [
+  '<h1>登录墙评测文章</h1>',
+  '<p>起始标记：DOGEAR-EVAL-MARK-LOGIN-OK-1。</p>'
+];
+for (let i = 0; i < 10; i++) {
+  parts.push('<p>' + PARA + '</p>');
+}
+parts.push('<p>深度标记：DOGEAR-EVAL-MARK-LOGIN-2，全文至此结束。</p>');
+document.getElementById('secret-body').innerHTML = parts.join('');
+function unlock() {
+  document.getElementById('login-box').style.display = 'none';
+  document.getElementById('secret-body').style.display = 'block';
+}
+if (sessionStorage.getItem('dogear-eval-auth') === '1') unlock();
+document.getElementById('login-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  sessionStorage.setItem('dogear-eval-auth', '1');
+  unlock();
+});
+</script>
+</body>
+</html>
