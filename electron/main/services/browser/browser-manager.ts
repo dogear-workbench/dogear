@@ -1,0 +1,257 @@
+import { execFile } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { promisify } from 'util';
+import { chromium, type BrowserContext, type Page } from 'playwright';
+import { getConfigDir } from '../settings-service.js';
+
+const execFileP = promisify(execFile);
+
+export interface BrowserTaskMeta {
+  kind: 'article' | 'agent';
+  conversationId?: string;
+  articleId?: string;
+}
+
+export interface BrowserLease {
+  page: Page;
+  release: () => void;
+}
+
+interface PendingAcquire {
+  meta: BrowserTaskMeta;
+  resolve: (lease: BrowserLease) => void;
+  reject: (err: Error) => void;
+}
+
+const IDLE_CLOSE_MS = Number(process.env.DOGEAR_BROWSER_IDLE_CLOSE_MS) || 3 * 60 * 1000;
+const DISPOSE_CLOSE_TIMEOUT_MS = 3000;
+
+class BrowserManager {
+  private profileDir = path.join(getConfigDir(), 'browser-profile');
+  private context: BrowserContext | null = null;
+  private page: Page | null = null;
+  private holder: BrowserTaskMeta | null = null;
+  private queue: PendingAcquire[] = [];
+  private idleTimer: NodeJS.Timeout | null = null;
+  private launchPromise: Promise<void> | null = null;
+  private intentionalClose = false;
+  private disposed = false;
+
+  async acquire(meta: BrowserTaskMeta): Promise<BrowserLease> {
+    if (this.disposed) throw new Error('[browser-manager] 实例已销毁，无法获取任务');
+    this.clearIdleTimer();
+    return new Promise<BrowserLease>((resolve, reject) => {
+      this.queue.push({ meta, resolve, reject });
+      void this.pump();
+    });
+  }
+
+  async bringToFront(): Promise<void> {
+    const ctx = this.context;
+    const page = this.page;
+    if (!ctx || !page) throw new Error('[browser-manager] 浏览器未启动，无法置前窗口');
+    const cdp = await ctx.newCDPSession(page);
+    try {
+      const { windowId } = await cdp.send('Browser.getWindowForTarget');
+      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+    await page.bringToFront();
+  }
+
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.clearIdleTimer();
+    for (const pending of this.queue.splice(0)) {
+      pending.reject(new Error('[browser-manager] 应用退出，任务取消'));
+    }
+    this.holder = null;
+    const ctx = this.context;
+    this.context = null;
+    this.page = null;
+    if (!ctx) return;
+    this.intentionalClose = true;
+    let closed = false;
+    await Promise.race([
+      ctx.close()
+        .catch((err) => {
+          console.warn('[browser-manager] 退出关闭浏览器失败:', err instanceof Error ? err.message : err);
+        })
+        .finally(() => {
+          closed = true;
+        }),
+      new Promise<void>((resolve) => setTimeout(resolve, DISPOSE_CLOSE_TIMEOUT_MS)),
+    ]);
+    if (!closed) {
+      await this.killProfileProcesses().catch(() => {});
+    }
+  }
+
+  private async pump(): Promise<void> {
+    if (this.holder || this.queue.length === 0) return;
+    const next = this.queue.shift()!;
+    try {
+      await this.ensureLaunched();
+    } catch (err) {
+      next.reject(err instanceof Error ? err : new Error(String(err)));
+      void this.pump();
+      return;
+    }
+    if (!this.page) {
+      next.reject(new Error('[browser-manager] 启动完成但 page 缺失'));
+      return;
+    }
+    this.holder = next.meta;
+    const page = this.page;
+    let released = false;
+    next.resolve({
+      page,
+      release: () => {
+        if (released) return;
+        released = true;
+        this.handleRelease();
+      },
+    });
+  }
+
+  private handleRelease(): void {
+    this.holder = null;
+    if (this.disposed) return;
+    if (this.queue.length > 0) {
+      void this.pump();
+    } else {
+      this.armIdleTimer();
+    }
+  }
+
+  private armIdleTimer(): void {
+    this.clearIdleTimer();
+    this.idleTimer = setTimeout(() => {
+      this.idleTimer = null;
+      console.log('[browser-manager] 空闲超时，关闭浏览器实例');
+      void this.closeContext();
+    }, IDLE_CLOSE_MS);
+    this.idleTimer.unref?.();
+  }
+
+  private clearIdleTimer(): void {
+    if (this.idleTimer) {
+      clearTimeout(this.idleTimer);
+      this.idleTimer = null;
+    }
+  }
+
+  private async ensureLaunched(): Promise<void> {
+    if (this.context && this.page) return;
+    if (this.launchPromise) {
+      await this.launchPromise;
+      return;
+    }
+    const promise = this.launch();
+    this.launchPromise = promise;
+    try {
+      await promise;
+    } finally {
+      if (this.launchPromise === promise) this.launchPromise = null;
+    }
+  }
+
+  private async launch(): Promise<void> {
+    this.intentionalClose = false;
+    fs.mkdirSync(this.profileDir, { recursive: true });
+    try {
+      this.context = await chromium.launchPersistentContext(this.profileDir, this.buildLaunchOptions());
+    } catch (err) {
+      if (!this.isSingletonError(err)) throw err;
+      console.warn('[browser-manager] profile 锁残留，清理后重试启动');
+      await this.recoverSingletonLock();
+      this.context = await chromium.launchPersistentContext(this.profileDir, this.buildLaunchOptions());
+    }
+    this.page = this.context.pages()[0] ?? (await this.context.newPage());
+    this.context.on('close', () => this.handleContextClosed());
+    await this.minimizeWindow();
+    console.log('[browser-manager] 浏览器实例已启动:', this.profileDir);
+  }
+
+  // --start-minimized 在部分 Chromium 版本被忽略，启动后 CDP 主动最小化兜底
+  private async minimizeWindow(): Promise<void> {
+    const ctx = this.context;
+    const page = this.page;
+    if (!ctx || !page) return;
+    const cdp = await ctx.newCDPSession(page);
+    try {
+      const { windowId } = await cdp.send('Browser.getWindowForTarget');
+      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'minimized' } });
+    } catch {
+      // 最小化失败不阻断启动
+    } finally {
+      await cdp.detach().catch(() => {});
+    }
+  }
+
+  // headful 常驻最小化：任务栏可见不抢屏，登录墙时 bringToFront 还原窗口
+  private buildLaunchOptions() {
+    return {
+      headless: false,
+      args: ['--start-minimized'],
+    };
+  }
+
+  private handleContextClosed(): void {
+    if (this.intentionalClose || this.disposed) return;
+    console.warn('[browser-manager] 浏览器意外退出，标记失效，下次 acquire 自动重启');
+    this.context = null;
+    this.page = null;
+    this.clearIdleTimer();
+  }
+
+  private async closeContext(): Promise<void> {
+    const ctx = this.context;
+    if (!ctx) return;
+    this.context = null;
+    this.page = null;
+    this.intentionalClose = true;
+    try {
+      await ctx.close();
+    } catch (err) {
+      console.warn('[browser-manager] 关闭浏览器实例失败:', err instanceof Error ? err.message : err);
+    } finally {
+      this.intentionalClose = false;
+    }
+  }
+
+  private isSingletonError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return /singleton/i.test(message);
+  }
+
+  private async recoverSingletonLock(): Promise<void> {
+    await this.killProfileProcesses().catch(() => {});
+    for (const name of ['SingletonLock', 'SingletonCookie', 'SingletonSocket']) {
+      await fs.promises.rm(path.join(this.profileDir, name), { force: true }).catch(() => {});
+    }
+  }
+
+  private async killProfileProcesses(): Promise<void> {
+    if (process.platform === 'win32') {
+      const pattern = this.profileDir.replace(/'/g, "''");
+      const script =
+        `Get-CimInstance Win32_Process -Filter "Name='chrome.exe'" | ` +
+        `Where-Object { $_.CommandLine -like '*${pattern}*' } | ` +
+        'ForEach-Object { Stop-Process -Id $_.ProcessId -Force }';
+      await execFileP('powershell.exe', ['-NoProfile', '-Command', script]);
+    } else {
+      await execFileP('pkill', ['-f', this.profileDir]);
+    }
+  }
+}
+
+let instance: BrowserManager | null = null;
+
+export function getBrowserManager(): BrowserManager {
+  if (!instance) instance = new BrowserManager();
+  return instance;
+}

@@ -748,6 +748,13 @@ app.on('before-quit', async () => {
   } catch (error) {
     console.error('关闭 PTY 终端失败:', error);
   }
+  // 强杀受控浏览器实例
+  try {
+    const { getBrowserManager } = await import('./services/browser/browser-manager.js');
+    await getBrowserManager().dispose();
+  } catch (error) {
+    console.error('关闭受控浏览器失败:', error);
+  }
   // 关闭所有 pi 会话
   try {
     const { shutdownPiSessionManager } = await import('./agents/pi-session/pi-session-manager.js');
