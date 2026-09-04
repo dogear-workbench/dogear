@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notes": "浏览器文章读取评测任务集。url 中 {{BASE}} 由 runner 替换为测试页目录的 file:// URL。type=pipeline 为零模型管线断言（run-pipeline.mjs 执行）；type=agent 为需模型驱动浏览器工具的探索任务（基线采集用，runner 跳过）。",
+  "notes": "浏览器文章读取评测任务集。url 中 {{BASE}} 由 runner 替换为测试页目录的 file:// URL。type=pipeline 为零模型管线断言（run-pipeline.mjs 执行）；type=antibot 为 fetch 白名单分流断言（runner 自建本地 http server，对普通 fetch 返回 403、对真实浏览器导航返回文章页）；type=agent 为需模型驱动浏览器工具的探索任务（基线采集用，runner 跳过）。",
   "tasks": [
     {
       "id": "spa-pipeline-read",
@@ -133,6 +133,16 @@
         "contains": ["DOGEAR-EVAL-MARK-ODD-1"],
         "notContains": ["DOGEAR-EVAL-MARK-ODD-NOISE"],
         "wordCountMin": 350
+      }
+    },
+    {
+      "id": "antibot-pipeline-fallback",
+      "type": "antibot",
+      "action": "readArticle",
+      "scenario": "fetch 层被 403 反爬拦截：错误应结构化为 FetchError(status=403) 并命中白名单，分流后浏览器层应救活页面",
+      "expect": {
+        "ok": true,
+        "contains": ["DOGEAR-EVAL-MARK-ANTIBOT-1"]
       }
     },
     {

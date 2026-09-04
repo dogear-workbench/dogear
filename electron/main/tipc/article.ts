@@ -123,6 +123,7 @@ interface ParseHistoryRecord {
   layer: ArticleParseLayer;
   browserError?: string;
   readabilityError?: string;
+  fetchError?: string;
   durationMs: number;
 }
 
@@ -137,6 +138,172 @@ async function appendParseHistoryEntry(entry: ParseHistoryRecord) {
   } catch {
     // history write failure should never block main flow
   }
+}
+
+function hostOfUrl(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
+/** FetchError 摘要：错误描述后附结构化字段，便于排查与历史检索 */
+function describeFetchError(err: unknown): string {
+  if (err instanceof articleService.FetchError) {
+    const fields = [
+      err.status !== undefined ? `status=${err.status}` : null,
+      err.code !== undefined ? `code=${err.code}` : null,
+    ].filter(Boolean).join(' ');
+    return `抓取失败: ${err.message}${fields ? `（${fields}）` : ''}`;
+  }
+  return `抓取失败: ${String(err)}`;
+}
+
+/**
+ * 浏览器层编排（fetch 成功后的静态解析兜底与 fetch 白名单分流共用）：
+ * 调用 readArticleWithBrowser，成功落盘、need_login 走人工流程；
+ * 失败只返回结果不记 history，由调用方决定后续（提 AI / 直接报错）。
+ */
+async function runBrowserArticleStage(params: {
+  url: string;
+  workspaceId: string;
+  workspacePath: string;
+  platform: string | null;
+  rawHtml: string | null;
+  articleId: string;
+  historyLayer: Extract<ArticleParseLayer, 'browser' | 'fetch_fail_browser'>;
+}): Promise<
+  | { kind: 'ok'; article: articleService.ArticleMeta }
+  | { kind: 'need_login'; article: articleService.ArticleMeta }
+  | { kind: 'failed'; errorClass: string; message: string }
+> {
+  const browserResult = await readArticleWithBrowser(params.url, {
+    taskMeta: { kind: 'article', articleId: params.articleId },
+    onAction: (event) => {
+      recordBrowserAction({ source: 'parseArticle', ...event });
+    },
+  });
+
+  if (browserResult.ok) {
+    // 展开失败时 service 已把提示拼进 excerpt，状态用 quality_warning 标记正文可能不完整
+    const parseStatus = browserResult.meta.qualityHint
+      ? ('quality_warning' as const)
+      : ('fixed' as const);
+    const meta: articleService.ArticleMeta = {
+      id: params.articleId,
+      url: browserResult.meta.url,
+      title: browserResult.meta.title,
+      author: browserResult.meta.author,
+      siteName: browserResult.meta.siteName,
+      excerpt: browserResult.meta.excerpt,
+      wordCount: browserResult.meta.wordCount,
+      fetchedAt: Date.now(),
+      language: browserResult.meta.language,
+      parseStatus,
+    };
+    await articleService.saveArticle(params.workspacePath, {
+      meta,
+      content: browserResult.meta.content,
+      ...(params.rawHtml !== null ? { rawHtml: params.rawHtml } : {}),
+    });
+    void appendParseHistoryEntry({
+      timestamp: new Date().toISOString(),
+      articleId: params.articleId,
+      url: params.url,
+      platform: params.platform,
+      trigger: 'auto',
+      triggeredAi: false,
+      parseStatus,
+      layer: params.historyLayer,
+      durationMs: 0,
+    });
+    return { kind: 'ok', article: meta };
+  }
+
+  if (browserResult.errorClass === 'need_login') {
+    const stubTitle = `需要登录：${hostOfUrl(params.url)}`;
+    await articleService.saveRawHtmlStub({
+      workspacePath: params.workspacePath,
+      articleId: params.articleId,
+      url: params.url,
+      ...(params.rawHtml !== null ? { rawHtml: params.rawHtml } : {}),
+      title: stubTitle,
+      parseStatus: 'need_login',
+    });
+    broadcastBrowserLoginRequired({
+      articleId: params.articleId,
+      url: params.url,
+      workspaceId: params.workspaceId,
+    });
+    void appendParseHistoryEntry({
+      timestamp: new Date().toISOString(),
+      articleId: params.articleId,
+      url: params.url,
+      platform: params.platform,
+      trigger: 'auto',
+      triggeredAi: false,
+      parseStatus: 'need_login',
+      layer: params.historyLayer,
+      browserError: browserResult.message,
+      durationMs: 0,
+    });
+    return {
+      kind: 'need_login',
+      article: {
+        id: params.articleId,
+        url: params.url,
+        title: stubTitle,
+        author: null,
+        siteName: null,
+        excerpt: null,
+        wordCount: 0,
+        fetchedAt: Date.now(),
+        language: null,
+        parseStatus: 'need_login',
+      } as articleService.ArticleMeta,
+    };
+  }
+
+  return { kind: 'failed', errorClass: browserResult.errorClass, message: browserResult.message };
+}
+
+/**
+ * fetch 白名单失败分流：跳过平台脚本与 Readability（无 HTML 可用），直接进浏览器层。
+ * 成功/need_login 正常返回；其余失败直接报错，不建 stub 不提 AI
+ * （fetch 都拿不到的页面 AI 只能空壳硬猜）。
+ */
+async function parseArticleViaBrowserAfterFetchFail(
+  input: { url: string; workspaceId: string },
+  workspacePath: string,
+): Promise<{ article: articleService.ArticleMeta } | { error: string }> {
+  const articleId = uuidv4();
+  const platform = articleService.detectPlatform(input.url);
+  const outcome = await runBrowserArticleStage({
+    url: input.url,
+    workspaceId: input.workspaceId,
+    workspacePath,
+    platform,
+    rawHtml: null,
+    articleId,
+    historyLayer: 'fetch_fail_browser',
+  });
+  if (outcome.kind !== 'failed') {
+    return { article: outcome.article };
+  }
+  void appendParseHistoryEntry({
+    timestamp: new Date().toISOString(),
+    articleId,
+    url: input.url,
+    platform,
+    trigger: 'auto',
+    triggeredAi: false,
+    parseStatus: 'failed',
+    layer: 'fetch_fail_browser',
+    browserError: outcome.message,
+    durationMs: 0,
+  });
+  return { error: `浏览器解析失败（${outcome.errorClass}）：${outcome.message}` };
 }
 
 export const articleRouter = {
@@ -156,12 +323,29 @@ export const articleRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        // 1. 一次性抓取原始 HTML（平台脚本和 Readability 共用，避免重复请求）
+        // 1. 一次性抓取原始 HTML（平台脚本和 Readability 共用，避免重复请求）；
+        // 轻反爬类失败（403/429/503/超时/连接重置）分流进浏览器层
         let rawHtml: string;
         try {
           rawHtml = await articleService.fetchRawHtml(input.url);
         } catch (fetchError) {
-          return { error: `抓取失败: ${fetchError}` };
+          if (!articleService.isBrowserRetryableFetchError(fetchError)) {
+            const message = describeFetchError(fetchError);
+            void appendParseHistoryEntry({
+              timestamp: new Date().toISOString(),
+              articleId: '',
+              url: input.url,
+              platform: articleService.detectPlatform(input.url),
+              trigger: 'auto',
+              triggeredAi: false,
+              parseStatus: 'failed',
+              layer: 'fetch_fail',
+              fetchError: message,
+              durationMs: 0,
+            });
+            return { error: message };
+          }
+          return await parseArticleViaBrowserAfterFetchFail(input, workspace.path);
         }
 
         const platform = articleService.detectPlatform(input.url);
@@ -225,101 +409,25 @@ export const articleRouter = {
 
         // 3.5 浏览器渲染解析（need_login 走人工流程不走 AI，其余失败类继续交给 AI 兜底）
         const articleId = uuidv4();
-        const browserResult = await readArticleWithBrowser(input.url, {
-          taskMeta: { kind: 'article', articleId },
-          onAction: (event) => {
-            recordBrowserAction({ source: 'parseArticle', ...event });
-          },
+        const outcome = await runBrowserArticleStage({
+          url: input.url,
+          workspaceId: input.workspaceId,
+          workspacePath: workspace.path,
+          platform,
+          rawHtml,
+          articleId,
+          historyLayer: 'browser',
         });
 
-        if (browserResult.ok) {
-          // 展开失败时 service 已把提示拼进 excerpt，状态用 quality_warning 标记正文可能不完整
-          const parseStatus = browserResult.meta.qualityHint
-            ? ('quality_warning' as const)
-            : ('fixed' as const);
-          const meta: articleService.ArticleMeta = {
-            id: articleId,
-            url: browserResult.meta.url,
-            title: browserResult.meta.title,
-            author: browserResult.meta.author,
-            siteName: browserResult.meta.siteName,
-            excerpt: browserResult.meta.excerpt,
-            wordCount: browserResult.meta.wordCount,
-            fetchedAt: Date.now(),
-            language: browserResult.meta.language,
-            parseStatus,
-          };
-          await articleService.saveArticle(workspace.path, {
-            meta,
-            content: browserResult.meta.content,
-            rawHtml,
-          });
-          void appendParseHistoryEntry({
-            timestamp: new Date().toISOString(),
-            articleId,
-            url: input.url,
-            platform,
-            trigger: 'auto',
-            triggeredAi: false,
-            parseStatus,
-            layer: 'browser',
-            durationMs: 0,
-          });
-          return { article: meta };
-        }
-
-        let loginHost = input.url;
-        try {
-          loginHost = new URL(input.url).hostname;
-        } catch { /* 保持原 URL */ }
-
-        if (browserResult.errorClass === 'need_login') {
-          const stubTitle = `需要登录：${loginHost}`;
-          await articleService.saveRawHtmlStub({
-            workspacePath: workspace.path,
-            articleId,
-            url: input.url,
-            rawHtml,
-            title: stubTitle,
-            parseStatus: 'need_login',
-          });
-          broadcastBrowserLoginRequired({
-            articleId,
-            url: input.url,
-            workspaceId: input.workspaceId,
-          });
-          void appendParseHistoryEntry({
-            timestamp: new Date().toISOString(),
-            articleId,
-            url: input.url,
-            platform,
-            trigger: 'auto',
-            triggeredAi: false,
-            parseStatus: 'need_login',
-            layer: 'browser',
-            browserError: browserResult.message,
-            durationMs: 0,
-          });
-          return {
-            article: {
-              id: articleId,
-              url: input.url,
-              title: stubTitle,
-              author: null,
-              siteName: null,
-              excerpt: null,
-              wordCount: 0,
-              fetchedAt: Date.now(),
-              language: null,
-              parseStatus: 'need_login',
-            } as articleService.ArticleMeta,
-          };
+        if (outcome.kind !== 'failed') {
+          return { article: outcome.article };
         }
 
         // 4. 浏览器也失败（timeout/parse_empty/browser_crash）→ 创建 stub 并提交 AI 任务
+        const browserFailureSuffix = `浏览器层失败：${outcome.message}`;
         const readabilityErrorWithBrowser = readabilityError
-          ? `${readabilityError}；浏览器层失败：${browserResult.message}`
-          : `浏览器层失败：${browserResult.message}`;
+          ? `${readabilityError}；${browserFailureSuffix}`
+          : browserFailureSuffix;
         const articleDir = await articleService.saveRawHtmlStub({
           workspacePath: workspace.path,
           articleId,

@@ -22,7 +22,13 @@ export type ArticleParseStatus =
   | 'failed';
 
 /** 解析路径标记（parse history 的 layer 字段，与成功态枚举解耦） */
-export type ArticleParseLayer = 'script' | 'readability' | 'browser' | 'ai';
+export type ArticleParseLayer =
+  | 'script'
+  | 'readability'
+  | 'browser'
+  | 'ai'
+  | 'fetch_fail_browser'
+  | 'fetch_fail';
 
 /** 文章元数据（存储在 meta.json） */
 export interface ArticleMeta {
@@ -227,20 +233,74 @@ export function detectPlatform(url: string): string | null {
   }
 }
 
+/** fetch 失败的结构化错误：白名单分流只认 status / code 字段，不解析错误字符串 */
+export class FetchError extends Error {
+  readonly status?: number;
+  readonly code?: string;
+
+  constructor(message: string, fields?: { status?: number; code?: string }) {
+    super(message);
+    this.name = 'FetchError';
+    if (fields?.status !== undefined) this.status = fields.status;
+    if (fields?.code !== undefined) this.code = fields.code;
+  }
+}
+
+/** 命中即可尝试浏览器层救活的 HTTP 状态（轻反爬挑战 / 限流） */
+const BROWSER_RETRY_HTTP_STATUS = new Set([403, 429, 503]);
+
+/** 命中即可尝试浏览器层救活的网络错误码（超时类 / 连接重置） */
+const BROWSER_RETRY_NET_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_HEADERS_TIMEOUT',
+  'UND_ERR_BODY_TIMEOUT',
+]);
+
+/** 判断 fetch 失败是否应分流进浏览器层重试（只认 FetchError 结构化字段） */
+export function isBrowserRetryableFetchError(err: unknown): boolean {
+  if (!(err instanceof FetchError)) return false;
+  if (err.status !== undefined) return BROWSER_RETRY_HTTP_STATUS.has(err.status);
+  if (err.code !== undefined) return BROWSER_RETRY_NET_CODES.has(err.code);
+  return false;
+}
+
+function toFetchError(err: unknown): FetchError {
+  const message = err instanceof Error ? err.message : String(err);
+  const cause = (err as { cause?: { code?: string } }).cause;
+  return new FetchError(message, {
+    code: cause?.code ?? (err as { code?: string }).code,
+  });
+}
+
 /**
  * 仅抓取 URL 的原始 HTML，不做解析。
  * 供主流程在尝试平台脚本前预取，避免后续 Readability 重复抓取。
+ * 失败抛 FetchError（HTTP 非 2xx 带 status，网络异常带 code）。
  */
 export async function fetchRawHtml(url: string): Promise<string> {
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      },
+    });
+  } catch (err) {
+    throw toFetchError(err);
   }
-  return response.text();
+  if (!response.ok) {
+    throw new FetchError(`HTTP ${response.status} ${response.statusText}`, {
+      status: response.status,
+    });
+  }
+  try {
+    return await response.text();
+  } catch (err) {
+    throw toFetchError(err);
+  }
 }
 
 /** tryPlatformScript 的返回值类型 */
@@ -476,15 +536,7 @@ export async function fetchAndParseArticle(
   if (options?.rawHtml !== undefined) {
     html = options.rawHtml;
   } else {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      },
-    });
-    if (!response.ok) {
-      throw new Error(`抓取失败: HTTP ${response.status} ${response.statusText}`);
-    }
-    html = await response.text();
+    html = await fetchRawHtml(url);
   }
 
   // 2. DOM 预处理 + Readability + Turndown + 结果组装（核心管线已抽为纯函数）
@@ -515,7 +567,7 @@ export async function fetchAndParseArticle(
  */
 export async function saveArticle(
   workspacePath: string,
-  articleData: { meta: ArticleMeta; content: string; rawHtml: string }
+  articleData: { meta: ArticleMeta; content: string; rawHtml?: string }
 ): Promise<void> {
   const articleDir = path.join(workspacePath, ARTICLES_DIR, articleData.meta.id);
 
@@ -525,8 +577,10 @@ export async function saveArticle(
   // 写入 content.md（Markdown 正文）
   await safeFileWrite(path.join(articleDir, 'content.md'), articleData.content);
 
-  // 写入 raw.html（原始 HTML，便于后续重新解析）
-  await safeFileWrite(path.join(articleDir, 'raw.html'), articleData.rawHtml);
+  // 写入 raw.html（原始 HTML，便于后续重新解析）；fetch 分流路径无预取 HTML 时省略
+  if (articleData.rawHtml !== undefined) {
+    await safeFileWrite(path.join(articleDir, 'raw.html'), articleData.rawHtml);
+  }
 
   // 更新排序索引
   await addToOrder(workspacePath, ARTICLES_DIR, articleData.meta.id, false);
@@ -582,7 +636,7 @@ export async function saveRawHtmlStub(params: {
   workspacePath: string;
   articleId: string;
   url: string;
-  rawHtml: string;
+  rawHtml?: string;
   title?: string;
   parseStatus?: ArticleParseStatus;
 }): Promise<string> {
@@ -602,7 +656,9 @@ export async function saveRawHtmlStub(params: {
   };
 
   await safeJsonWrite(path.join(articleDir, 'meta.json'), stubMeta);
-  await safeFileWrite(path.join(articleDir, 'raw.html'), params.rawHtml);
+  if (params.rawHtml !== undefined) {
+    await safeFileWrite(path.join(articleDir, 'raw.html'), params.rawHtml);
+  }
   await addToOrder(params.workspacePath, ARTICLES_DIR, params.articleId, false);
 
   return articleDir;
