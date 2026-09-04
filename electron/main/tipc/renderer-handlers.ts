@@ -205,6 +205,12 @@ export type RendererHandlers = {
     workspaceId: string;
   }) => void;
 
+  // 全局焦点会话变化（focused-conversation-service 值变化时广播，伴随工作台窗口跟随当前活跃会话）
+  focusedConversationChanged: (data: {
+    conversationId: string;
+    workspaceId: string;
+  }) => void;
+
   // 任务通知点击深链（主窗口收到后切换到笔记页任务视图并选中该任务）
   focusTask: (data: { taskId: string; workspaceId: string }) => void;
 

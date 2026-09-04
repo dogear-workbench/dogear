@@ -115,7 +115,12 @@ function splitTabs(ordered: TabEntry[], visibleCount: number, activeId: string |
   return { visible: ordered.slice(0, count), overflow: ordered.slice(count) };
 }
 
-export function TerminalPanel() {
+interface TerminalPanelProps {
+  /** 窗口级终端跟随锚点（伴随工作台传全局焦点会话 id）；缺省回退主窗口 activeTabId */
+  terminalAnchor?: string | null;
+}
+
+export function TerminalPanel({ terminalAnchor }: TerminalPanelProps) {
   const followMode = useTerminalStore((s) => s.followMode);
   const pinnedId = useTerminalStore((s) => s.pinnedConversationId);
   const setFollowMode = useTerminalStore((s) => s.setFollowMode);
@@ -123,10 +128,10 @@ export function TerminalPanel() {
   const terminals = useTerminalStore((s) => s.terminals);
   const activeTerminalId = useTerminalStore((s) => s.activeTerminalId);
   const activeTabId = useSessionStore((s) => s.activeTabId);
-  const tabs = useSessionStore((s) => s.tabs);
   const conversations = useConversationStore((s) => s.conversations);
 
-  const anchor = followMode === 'follow' ? activeTabId : pinnedId;
+  const windowAnchor = terminalAnchor ?? activeTabId;
+  const anchor = followMode === 'follow' ? windowAnchor : pinnedId;
   const { mine, session, active } = selectTerminalGroups(terminals, anchor, activeTerminalId);
 
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -151,7 +156,7 @@ export function TerminalPanel() {
   }, []);
 
   const pinnedConv = conversations.find((c) => c.id === pinnedId);
-  const activeTab = tabs.find((t) => t.conversationId === activeTabId);
+  const anchorConv = conversations.find((c) => c.id === windowAnchor);
   const isPinned = followMode === 'pin';
 
   const orderedTabs: TabEntry[] = [
@@ -200,9 +205,7 @@ export function TerminalPanel() {
               setFollowMode('follow');
               return;
             }
-            const target = activeTabId && tabs.some((t) => t.conversationId === activeTabId)
-              ? activeTabId
-              : pinnedId;
+            const target = anchorConv ? windowAnchor : pinnedId;
             if (target) pinConversation(target);
           }}
         >
@@ -223,7 +226,7 @@ export function TerminalPanel() {
           </Select>
         ) : (
           <div className="flex-1 min-w-0 truncate text-xs text-muted-foreground">
-            {activeTab ? activeTab.conversationTitle : '跟随当前会话'}
+            {anchorConv ? conversationTitle(anchorConv) : '跟随当前会话'}
           </div>
         )}
       </div>

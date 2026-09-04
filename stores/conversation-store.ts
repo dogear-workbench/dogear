@@ -891,6 +891,10 @@ if (typeof window !== 'undefined') {
     void (async () => {
       const { useWorkspaceStore } = await import('./workspace-store');
       const tab = tabId ? useSessionStore.getState().getTab(tabId) : undefined;
+      // 全局焦点上报：真实会话 tab 才上报（哨兵/空 tab 不上报，保持最近焦点语义），fire-and-forget 失败静默
+      if (tab) {
+        void client.setFocusedConversation({ conversationId: tabId!, workspaceId: tab.workspaceId }).catch(() => {});
+      }
       const currentWsId = useWorkspaceStore.getState().workspace?.id;
       if (tab?.workspaceId && tab.workspaceId !== currentWsId) {
         try {

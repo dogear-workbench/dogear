@@ -61,6 +61,8 @@ export function SessionWindowPage() {
       const conv = useConversationStore.getState().conversations.find(c => c.id === conversationId);
       if (conv) {
         await selectConversation(conv);
+        // 一会话一窗口：激活即成为全局焦点（伴随工作台跟随），后续无变化；上报幂等失败静默
+        void client.setFocusedConversation({ conversationId: conv.id, workspaceId: result.workspaceId }).catch(() => {});
       }
 
       // 5. 标记就绪 → 才渲染 AgentChat

@@ -49,11 +49,13 @@ function persistWidth(tab: CompanionTab, width: number) {
 interface CompanionPanelProps {
   workspaceId: string;
   groupId: string | null;
+  /** 终端跟随锚点（伴随工作台窗口传全局焦点会话 id；缺省用主窗口 activeTabId） */
+  terminalAnchor?: string | null;
   /** 独立窗口模式：忽略折叠/宽度记忆，占满容器且无拖拽把手（伴随工作台窗口用，默认面板模式不变） */
   full?: boolean;
 }
 
-export function CompanionPanel({ workspaceId, groupId, full = false }: CompanionPanelProps) {
+export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = false }: CompanionPanelProps) {
   const open = useUIStore((s) => s.rightPanelOpen);
   const tab = useUIStore((s) => s.rightPanelTab);
   const setTab = useUIStore((s) => s.setRightPanelTab);
@@ -131,7 +133,7 @@ export function CompanionPanel({ workspaceId, groupId, full = false }: Companion
       ) : tab === 'topic' ? (
         <TopicPanel workspaceId={workspaceId} groupId={groupId} />
       ) : tab === 'terminal' ? (
-        <TerminalPanel />
+        <TerminalPanel terminalAnchor={terminalAnchor} />
       ) : (
         <BrowserPanel />
       )}
