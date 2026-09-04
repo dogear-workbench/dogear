@@ -6,6 +6,7 @@ import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import type { BrowserActionEvent } from '../services/browser/browser-action-stream.js';
+import type { BrowserDownloadEvent } from '../services/browser/browser-download-service.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -245,5 +246,8 @@ export type RendererHandlers = {
 
   // 浏览器动作流增量事件（action-stream 广播，browser-store 追加渲染）
   browserActionAdded: (data: BrowserActionEvent) => void;
+
+  // 受控浏览器组件下载进度（download-service 广播，前端全局 toast + 解析入口状态文案）
+  browserDownloadProgress: (data: BrowserDownloadEvent) => void;
 
 };

@@ -15,6 +15,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { useArticleStore } from '@/stores/article-store';
+import { useBrowserDownloadState } from '@/lib/browser-download';
 import { useReferenceStore } from '@/stores/reference-store';
 import { guardReferenceIntoFocus, requireReferenceAnchorId } from '@/lib/reference-guard';
 import type { WorkspaceFileNode } from '@/types/electron-api';
@@ -261,6 +262,7 @@ function ArticleUrlInput({ indent }: { indent: number }) {
   const submitArticleUrl = useArticleStore(s => s.submitArticleUrl);
   const hideUrlInput = useArticleStore(s => s.hideUrlInput);
   const parsingArticle = useArticleStore(s => s.parsingArticle);
+  const download = useBrowserDownloadState();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -284,7 +286,9 @@ function ArticleUrlInput({ indent }: { indent: number }) {
         ref={inputRef}
         type="url"
         className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
-        placeholder="粘贴文章 URL，Enter 解析"
+        placeholder={download.downloading
+          ? `正在下载浏览器组件${download.percent >= 0 ? `（${download.percent}%）` : ''}…`
+          : '粘贴文章 URL，Enter 解析'}
         value={articleUrlInput}
         onChange={e => setArticleUrlInput(e.target.value)}
         onKeyDown={handleKeyDown}

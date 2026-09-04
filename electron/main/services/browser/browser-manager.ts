@@ -4,6 +4,10 @@ import path from 'path';
 import { promisify } from 'util';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { getConfigDir } from '../settings-service.js';
+import {
+  chromiumInstallStatus,
+  ensureChromiumInstalled,
+} from './browser-download-service.js';
 
 const execFileP = promisify(execFile);
 
@@ -177,18 +181,79 @@ class BrowserManager {
   private async launch(): Promise<void> {
     this.intentionalClose = false;
     fs.mkdirSync(this.profileDir, { recursive: true });
-    try {
-      this.context = await chromium.launchPersistentContext(this.profileDir, this.buildLaunchOptions());
-    } catch (err) {
-      if (!this.isSingletonError(err)) throw err;
-      console.warn('[browser-manager] profile 锁残留，清理后重试启动');
-      await this.recoverSingletonLock();
-      this.context = await chromium.launchPersistentContext(this.profileDir, this.buildLaunchOptions());
+    const candidates = this.buildLaunchCandidates();
+    const failures: string[] = [];
+    for (const candidate of candidates) {
+      try {
+        await candidate.prepare?.();
+      } catch (err) {
+        failures.push(`${candidate.label}: ${errorMessage(err)}`);
+        continue;
+      }
+      const context = await this.startContext(candidate.options, failures, candidate.label);
+      if (!context) continue;
+      this.context = context;
+      break;
+    }
+    if (!this.context) {
+      throw new Error(
+        `受控浏览器启动失败（${failures.join('；')}）。可检查网络后重试，或安装 Edge/Chrome 后重试`,
+      );
     }
     this.page = this.context.pages()[0] ?? (await this.context.newPage());
     this.context.on('close', () => this.handleContextClosed());
     await this.minimizeWindow();
     console.log('[browser-manager] 浏览器实例已启动:', this.profileDir);
+  }
+
+  private async startContext(
+    options: Parameters<typeof chromium.launchPersistentContext>[1],
+    failures: string[],
+    label: string,
+  ): Promise<BrowserContext | null> {
+    try {
+      return await chromium.launchPersistentContext(this.profileDir, options);
+    } catch (err) {
+      if (!this.isSingletonError(err)) {
+        failures.push(`${label}: ${errorMessage(err)}`);
+        return null;
+      }
+      console.warn('[browser-manager] profile 锁残留，清理后重试启动');
+      await this.recoverSingletonLock();
+      try {
+        return await chromium.launchPersistentContext(this.profileDir, options);
+      } catch (retryErr) {
+        failures.push(`${label}: ${errorMessage(retryErr)}`);
+        return null;
+      }
+    }
+  }
+
+  private buildLaunchCandidates(): Array<{
+    label: string;
+    options: Parameters<typeof chromium.launchPersistentContext>[1];
+    prepare?: () => Promise<void>;
+  }> {
+    const base = this.buildLaunchOptions();
+    return [
+      {
+        label: '内置浏览器组件',
+        options: base,
+        prepare: async () => {
+          const status = chromiumInstallStatus();
+          if (!status.installed) {
+            throw new Error(status.error ?? `未安装（期望位置 ${status.executablePath}）`);
+          }
+        },
+      },
+      { label: '系统 Edge', options: { ...base, channel: 'msedge' } },
+      { label: '系统 Chrome', options: { ...base, channel: 'chrome' } },
+      {
+        label: '内置浏览器组件（新下载）',
+        options: base,
+        prepare: () => ensureChromiumInstalled(),
+      },
+    ];
   }
 
   // --start-minimized 在部分 Chromium 版本被忽略，启动后 CDP 主动最小化兜底
@@ -262,6 +327,10 @@ class BrowserManager {
       await execFileP('pkill', ['-f', this.profileDir]);
     }
   }
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 let instance: BrowserManager | null = null;

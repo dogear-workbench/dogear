@@ -6,6 +6,7 @@ import {
   recordBrowserAction,
   setBrowserActionBroadcaster,
 } from '../services/browser/browser-action-stream.js';
+import { setBrowserDownloadBroadcaster } from '../services/browser/browser-download-service.js';
 import { setBrowserToolsActionListener } from '../agents/tools/browser-tools.js';
 
 const t = tipc.create();
@@ -23,6 +24,9 @@ export function registerBrowserActionBridge(): void {
   bridgeRegistered = true;
   setBrowserActionBroadcaster((event) => {
     broadcastToWindows((h) => h.browserActionAdded.send(event));
+  });
+  setBrowserDownloadBroadcaster((event) => {
+    broadcastToWindows((h) => h.browserDownloadProgress.send(event));
   });
   setBrowserToolsActionListener((event) => {
     recordBrowserAction({

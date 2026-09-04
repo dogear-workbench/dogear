@@ -10,6 +10,7 @@ import { useReferenceStore } from '@/stores/reference-store';
 import { requireReferenceAnchorId } from '@/lib/reference-guard';
 import { useSessionStore } from '@/stores/session-store';
 import { useInputFocusStore } from '@/stores/input-focus-store';
+import { useBrowserDownloadState } from '@/lib/browser-download';
 import type { ArticleParseStatus } from '@/types/article';
 
 /** 解析状态 Badge 的展示配置 */
@@ -119,6 +120,7 @@ export function ArticlePreview() {
   const loading = useArticleStore((s) => s.loadingArticleDetail);
   const parsingArticle = useArticleStore((s) => s.parsingArticle);
   const retryAfterLogin = useArticleStore((s) => s.retryAfterLogin);
+  const download = useBrowserDownloadState();
   const addQuotedSnippet = useReferenceStore((s) => s.addQuotedSnippet);
 
   // 浮动按钮状态
@@ -290,7 +292,9 @@ export function ArticlePreview() {
               {parsingArticle
                 ? <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                 : <RefreshCw className="w-3 h-3 mr-1" />}
-              我已登录，重试
+              {download.downloading
+                ? `正在下载浏览器组件${download.percent >= 0 ? `（${download.percent}%）` : ''}…`
+                : '我已登录，重试'}
             </Button>
           )}
         </div>
