@@ -7,7 +7,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
-import { requireAnchorConversationId } from '@/lib/reference-guard';
+import { requireReferenceAnchorId } from '@/lib/reference-guard';
+import { useSessionStore } from '@/stores/session-store';
+import { useInputFocusStore } from '@/stores/input-focus-store';
 import type { ArticleParseStatus } from '@/types/article';
 
 /** 解析状态 Badge 的展示配置 */
@@ -184,7 +186,8 @@ export function ArticlePreview() {
    */
   const handleQuote = useCallback(() => {
     if (!article || !selectedText) return;
-    const anchorId = requireAnchorConversationId();
+    // 文章 tab 是哨兵 tab，无焦点会话：锚定回退到最近活跃会话
+    const anchorId = requireReferenceAnchorId();
     if (!anchorId) return;
 
     addQuotedSnippet({
@@ -197,6 +200,12 @@ export function ArticlePreview() {
     window.getSelection()?.removeAllRanges();
     setTooltipPos(null);
     setSelectedText('');
+
+    // 主窗口文章 tab 场景：切回目标会话让引用可见；独立窗口右栏引用留在原会话
+    if (!window.location.hash.startsWith('#/session-window/')) {
+      useSessionStore.getState().switchTab(anchorId);
+      useInputFocusStore.getState().requestFocus(anchorId);
+    }
   }, [article, selectedText, addQuotedSnippet]);
 
   // 切换文章时清除浮动按钮

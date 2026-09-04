@@ -215,6 +215,7 @@ class AgentWorker {
     const appSettings = await loadSettingsFromDir(this.configDir);
 
     const selection = payload.modelSelection
+      ?? appSettings.ai.parseModelSelection
       ?? appSettings.ai.defaultModelSelection;
 
     let model: PiModelResult['model'];

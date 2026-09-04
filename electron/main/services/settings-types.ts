@@ -85,6 +85,8 @@ export interface AppSettings {
     digestModelSelection: ModelSelection | null;
     reviewModelSelection: ModelSelection | null;
     categorizeModelSelection: ModelSelection | null;
+    /** 文章解析 AI 兑底任务专用模型；null 时回退 defaultModelSelection */
+    parseModelSelection: ModelSelection | null;
   };
   basicToolPermissions: BasicToolPermissions;
   profiles: Record<string, ModelProfile>;
@@ -131,6 +133,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     digestModelSelection: null,
     reviewModelSelection: null,
     categorizeModelSelection: null,
+    parseModelSelection: null,
   },
   basicToolPermissions: createDefaultBasicToolPermissions(),
   subAgent: {

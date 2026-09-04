@@ -382,6 +382,19 @@ test('migratePiProfiles：旧 tier 在 piModels 无子串匹配时置 null 回�
   expect(s.ai.reviewModelSelection).toBeNull();
 });
 
+test('migratePiProfiles：parseModelSelection 残留旧 tier 时同步迁移/置 null', () => {
+  const s = baseSettings();
+  s.profiles.default.piModels = [{ id: 'anthropic/claude-haiku-4.5' }, { id: 'glm-4.7' }];
+  s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
+  const changed = migratePiProfiles(s);
+  expect(changed).toBe(true);
+  expect(s.ai.parseModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
+
+  s.ai.parseModelSelection = { profileId: 'default', tier: 'opus' };
+  migratePiProfiles(s);
+  expect(s.ai.parseModelSelection).toBeNull();
+});
+
 test('migratePiProfiles：已是 piModels 模型 id 的 selection 不受影响', () => {
   const s = baseSettings();
   s.profiles.default.piModels = [{ id: 'glm-4.7' }];

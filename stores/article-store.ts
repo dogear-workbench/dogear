@@ -49,7 +49,10 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
 
   selectArticle: async (articleMeta) => {
     const workspaceId = await getWorkspaceId();
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      console.warn('selectArticle: 无活跃工作区，忽略');
+      return;
+    }
 
     try {
       set({ loadingArticleDetail: true });
@@ -62,6 +65,10 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
         return;
       }
       set({ selectedArticle: result.article || null });
+      if (result.article) {
+        const { useSessionStore, ARTICLE_TAB_ID } = await import('./session-store');
+        useSessionStore.getState().switchTab(ARTICLE_TAB_ID);
+      }
     } catch (error) {
       console.error('获取文章详情失败:', error);
     } finally {
@@ -81,9 +88,9 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
         toast.error('删除文章失败', { description: result.error });
         return;
       }
-      // 如果删除的是当前选中的文章，清除选中状态
+      // 如果删除的是当前选中的文章，清除选中状态（含文章 tab 回退）
       if (get().selectedArticle && get().selectedArticle!.id && articlePath.includes(get().selectedArticle!.id)) {
-        set({ selectedArticle: null });
+        get().clearSelectedArticle();
       }
       // 刷新文件树
       const { useWorkspaceStore } = await import('./workspace-store');
@@ -169,7 +176,17 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     }
   },
 
-  clearSelectedArticle: () => set({ selectedArticle: null }),
+  clearSelectedArticle: () => {
+    set({ selectedArticle: null });
+    // 文章 tab 随选中态卸载；若当前正停留在文章 tab，回退到最近会话 tab 或笔记
+    void import('./session-store').then(({ useSessionStore, ARTICLE_TAB_ID, NOTES_TAB_ID }) => {
+      const s = useSessionStore.getState();
+      if (s.activeTabId !== ARTICLE_TAB_ID) return;
+      const fallback = s.lastActiveConversationTabId;
+      const tab = fallback ? s.tabs.find((t) => t.conversationId === fallback) : undefined;
+      s.switchTab(tab && !s.sessionWindowIds.has(fallback!) ? fallback! : NOTES_TAB_ID);
+    });
+  },
 
   reset: () => set({
     selectedArticle: null,

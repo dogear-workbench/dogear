@@ -143,7 +143,7 @@ export function migratePiProfiles(settings: AppSettings): boolean {
     }
   }
 
-  for (const key of ['defaultModelSelection', 'digestModelSelection', 'reviewModelSelection', 'categorizeModelSelection'] as const) {
+  for (const key of ['defaultModelSelection', 'digestModelSelection', 'reviewModelSelection', 'categorizeModelSelection', 'parseModelSelection'] as const) {
     const sel = settings.ai[key];
     if (!sel || !LEGACY_MODEL_TIERS.has(sel.tier)) continue;
     const models = settings.profiles[sel.profileId]?.piModels ?? [];

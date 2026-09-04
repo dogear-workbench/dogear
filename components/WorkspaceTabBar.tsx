@@ -14,7 +14,7 @@
  * - 对话创建（由对话列表处理）
  */
 
-import { ExternalLink, X, StickyNote, Database } from 'lucide-react';
+import { ExternalLink, X, StickyNote, Database, Newspaper } from 'lucide-react';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { cn } from '@/lib/utils';
@@ -27,8 +27,9 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { StatusPulse } from '@/components/StatusPulse';
-import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useArticleStore } from '@/stores/article-store';
 
 export function WorkspaceTabBar() {
   const allTabs = useSessionStore((s) => s.tabs);
@@ -39,6 +40,8 @@ export function WorkspaceTabBar() {
   const addSessionWindow = useSessionStore((s) => s.addSessionWindow);
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
   const closeDataCenterTab = useSessionStore((s) => s.closeDataCenterTab);
+  const selectedArticle = useArticleStore((s) => s.selectedArticle);
+  const clearSelectedArticle = useArticleStore((s) => s.clearSelectedArticle);
 
   const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
   const runningConversationIds = useConversationStore((s) => s.runningConversationIds);
@@ -140,6 +143,30 @@ export function WorkspaceTabBar() {
               onClick={(e) => {
                 e.stopPropagation();
                 closeDataCenterTab();
+              }}
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+        {/* 文章：有选中文章才显示，关闭即清空选中 */}
+        {selectedArticle !== null && (
+          <div
+            onClick={() => switchTab(ARTICLE_TAB_ID)}
+            className={cn(
+              'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
+              activeTabId === ARTICLE_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+            )}
+            title={selectedArticle.title}
+          >
+            <Newspaper className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">{selectedArticle.title}</span>
+            <button
+              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              title="关闭文章"
+              onClick={(e) => {
+                e.stopPropagation();
+                clearSelectedArticle();
               }}
             >
               <X className="w-3 h-3" />

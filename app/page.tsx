@@ -4,7 +4,7 @@ import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, Globe, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database, PictureInPicture2 } from 'lucide-react';
+import { RefreshCw, Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
@@ -16,12 +16,13 @@ import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { NotesPanel } from '@/components/notes/NotesPanel';
 import { CompanionPanel } from '@/components/companion/CompanionPanel';
+import { ArticlePreview } from '@/components/ArticlePreview';
 
 // Zustand stores
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
@@ -78,14 +79,8 @@ export default function Home() {
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
   const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
 
-  // 文章状态
-  const showArticleUrlInput = useArticleStore((s) => s.showArticleUrlInput);
-  const articleUrlInput = useArticleStore((s) => s.articleUrlInput);
-  const parsingArticle = useArticleStore((s) => s.parsingArticle);
-  const showUrlInput = useArticleStore((s) => s.showUrlInput);
-  const hideUrlInput = useArticleStore((s) => s.hideUrlInput);
-  const setArticleUrlInput = useArticleStore((s) => s.setArticleUrlInput);
-  const submitArticleUrl = useArticleStore((s) => s.submitArticleUrl);
+  // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
+  const selectedArticle = useArticleStore((s) => s.selectedArticle);
 
   // 多标签页状态（Tab 栏 UI 已抽取到 WorkspaceTabBar；这里只留内容区渲染需要的字段）
   const allTabs = useSessionStore((s) => s.tabs);
@@ -261,34 +256,6 @@ export default function Home() {
               <RefreshCw className="w-4 h-4" />
             )}
           </Button>
-          {showArticleUrlInput ? (
-            <div className="flex items-center gap-1">
-              <input
-                type="url"
-                className="h-8 px-2 text-sm border rounded bg-background w-64 focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder="输入文章 URL..."
-                value={articleUrlInput}
-                onChange={(e) => setArticleUrlInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') submitArticleUrl();
-                  if (e.key === 'Escape') hideUrlInput();
-                }}
-                disabled={parsingArticle}
-                autoFocus
-              />
-              <Button size="sm" onClick={submitArticleUrl} disabled={parsingArticle || !articleUrlInput.trim()}>
-                {parsingArticle ? <Loader2 className="w-4 h-4 animate-spin" /> : '解析'}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={hideUrlInput} disabled={parsingArticle}>
-                取消
-              </Button>
-            </div>
-          ) : (
-            <Button size="sm" variant="outline" onClick={showUrlInput}>
-              <Globe className="w-4 h-4 mr-2" />
-              导入文章
-            </Button>
-          )}
         </div>
       </header>
 
@@ -325,6 +292,15 @@ export default function Home() {
                 style={{ display: activeTabId === DATA_CENTER_TAB_ID ? 'flex' : 'none' }}
               >
                 <DataCenterPage />
+              </div>
+            )}
+            {/* 文章：选中即挂载（切会话 tab 保持挂载不重加载），清空选中即卸载 */}
+            {selectedArticle !== null && (
+              <div
+                className="absolute inset-0 flex flex-col"
+                style={{ display: activeTabId === ARTICLE_TAB_ID ? 'flex' : 'none' }}
+              >
+                <ArticlePreview />
               </div>
             )}
             {/* 会话：各自按 activeTabId 切显示，保持 AgentChat 挂载 */}

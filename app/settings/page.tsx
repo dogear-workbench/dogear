@@ -195,13 +195,14 @@ export default function SettingsPage() {
     setLocal(prev => {
       const { [profileId]: _removed, ...rest } = prev.profiles;
       const newAi = { ...prev.ai };
-      const clearIfMatch = (key: 'defaultModelSelection' | 'digestModelSelection' | 'reviewModelSelection' | 'categorizeModelSelection') => {
+      const clearIfMatch = (key: 'defaultModelSelection' | 'digestModelSelection' | 'reviewModelSelection' | 'categorizeModelSelection' | 'parseModelSelection') => {
         if (newAi[key]?.profileId === profileId) newAi[key] = null;
       };
       clearIfMatch('defaultModelSelection');
       clearIfMatch('digestModelSelection');
       clearIfMatch('reviewModelSelection');
       clearIfMatch('categorizeModelSelection');
+      clearIfMatch('parseModelSelection');
       return { ...prev, profiles: rest, ai: newAi };
     });
     setSelectedProfileTab('default');
@@ -294,6 +295,21 @@ export default function SettingsPage() {
                   settings={local}
                   value={local.ai.defaultModelSelection}
                   onChange={(v) => updateAI({ defaultModelSelection: v })}
+                  allowUnset={true}
+                  triggerVariant="block"
+                />
+              </div>
+
+              {/* 文章解析模型 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">文章解析模型</label>
+                <p className="text-xs text-muted-foreground">
+                  文章导入固定解析不达标时的 AI 兑底任务使用此模型，适合配置便宜档；选「不指定」时回退到默认模型。
+                </p>
+                <ModelSelector
+                  settings={local}
+                  value={local.ai.parseModelSelection}
+                  onChange={(v) => updateAI({ parseModelSelection: v })}
                   allowUnset={true}
                   triggerVariant="block"
                 />

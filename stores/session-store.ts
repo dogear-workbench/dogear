@@ -13,7 +13,10 @@ export const NOTES_TAB_ID = '__notes__';
 /** 常驻「数据中心」tab 的哨兵 id（非真实会话，tab 可开关） */
 export const DATA_CENTER_TAB_ID = '__data_center__';
 
-const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID]);
+/** 「文章阅读」tab 的哨兵 id（非真实会话，挂载由 article-store.selectedArticle 驱动） */
+export const ARTICLE_TAB_ID = '__article__';
+
+const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID]);
 
 /** 是否哨兵 tab（笔记/数据中心等非真实会话 tab） */
 export function isSentinelTabId(id: string): boolean {

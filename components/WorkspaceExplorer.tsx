@@ -3,7 +3,7 @@ import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useR
 import {
   Globe, Folder, FolderOpen, File,
   ChevronRight, ChevronDown, FolderPlus, RefreshCw,
-  Quote, Trash2, Pencil, ExternalLink, Lock,
+  Quote, Trash2, Pencil, ExternalLink, Lock, Loader2,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -16,7 +16,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
-import { guardReferenceIntoFocus, requireAnchorConversationId } from '@/lib/reference-guard';
+import { guardReferenceIntoFocus, requireReferenceAnchorId } from '@/lib/reference-guard';
 import type { WorkspaceFileNode } from '@/types/electron-api';
 import type { ArticleMeta } from '@/types/article';
 import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
@@ -253,6 +253,64 @@ function NewFolderInput({ onConfirm, onCancel, indent }: NewFolderInputProps) {
   );
 }
 
+// ---- 导入文章内联 URL 输入 ----
+
+function ArticleUrlInput({ indent }: { indent: number }) {
+  const articleUrlInput = useArticleStore(s => s.articleUrlInput);
+  const setArticleUrlInput = useArticleStore(s => s.setArticleUrlInput);
+  const submitArticleUrl = useArticleStore(s => s.submitArticleUrl);
+  const hideUrlInput = useArticleStore(s => s.hideUrlInput);
+  const parsingArticle = useArticleStore(s => s.parsingArticle);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (inputRef.current) inputRef.current.focus();
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (articleUrlInput.trim()) void submitArticleUrl();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      hideUrlInput();
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1 py-1 pr-2" style={{ paddingLeft: `${indent}px` }}>
+      <Globe className="w-4 h-4 shrink-0 text-green-500" />
+      <input
+        ref={inputRef}
+        type="url"
+        className="flex-1 min-w-0 bg-background border border-primary rounded px-1 py-0 text-sm outline-none"
+        placeholder="粘贴文章 URL，Enter 解析"
+        value={articleUrlInput}
+        onChange={e => setArticleUrlInput(e.target.value)}
+        onKeyDown={handleKeyDown}
+        disabled={parsingArticle}
+      />
+      {parsingArticle && <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin text-muted-foreground" />}
+    </div>
+  );
+}
+
+/** 文章区空态引导：导入第一篇文章 */
+function ImportArticleGuide({ indent }: { indent: number }) {
+  const showUrlInput = useArticleStore(s => s.showUrlInput);
+  return (
+    <div className="py-1 pr-2" style={{ paddingLeft: `${indent}px` }}>
+      <button
+        className="flex items-center gap-1.5 px-2 py-1 rounded border border-dashed text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
+        onClick={() => showUrlInput()}
+      >
+        <Globe className="w-3.5 h-3.5" />
+        导入第一篇文章
+      </button>
+    </div>
+  );
+}
+
 // ---- 树节点行渲染组件 ----
 
 interface TreeItemRowProps {
@@ -274,6 +332,7 @@ function TreeItemRow({
   // Store hooks
   const selectedFile = useWorkspaceStore(s => s.selectedFile);
   const selectedArticle = useArticleStore(s => s.selectedArticle);
+  const showUrlInput = useArticleStore(s => s.showUrlInput);
   const toggleReferenceArticle = useReferenceStore(s => s.toggleReferenceArticle);
   const addReferencedFile = useReferenceStore(s => s.addReferencedFile);
   const deleteItem = useWorkspaceStore(s => s.deleteItem);
@@ -310,17 +369,31 @@ function TreeItemRow({
             {count}
           </span>
         )}
-        {/* 分区头的新建文件夹按钮 */}
-        <button
-          className="ml-auto p-0.5 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
-          onClick={(e) => {
-            e.stopPropagation();
-            onSetCreatingFolder(isArticlesHeader ? '.dogear/articles' : '.');
-          }}
-          title={isArticlesHeader ? '新建文章文件夹' : '新建文件夹'}
-        >
-          <FolderPlus className="w-3.5 h-3.5" />
-        </button>
+        {/* 分区头操作按钮：文章区有导入，两区都有新建文件夹 */}
+        <div className="ml-auto flex items-center gap-0.5">
+          {isArticlesHeader && (
+            <button
+              className="p-0.5 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                showUrlInput();
+              }}
+              title="导入文章"
+            >
+              <Globe className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            className="p-0.5 rounded hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSetCreatingFolder(isArticlesHeader ? '.dogear/articles' : '.');
+            }}
+            title={isArticlesHeader ? '新建文章文件夹' : '新建文件夹'}
+          >
+            <FolderPlus className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     );
   }
@@ -359,9 +432,12 @@ function TreeItemRow({
   const handleQuoteToChat = () => {
     const articleMeta = buildArticleMeta(originalNode);
     if (!articleMeta) return;
-    const anchorId = requireAnchorConversationId();
+    // 文章 tab 等哨兵场景无焦点会话：锚定回退到最近活跃会话
+    const anchorId = requireReferenceAnchorId();
     if (!anchorId) return;
+    const already = useReferenceStore.getState().referencedArticles.some(a => a.id === articleMeta.id);
     toggleReferenceArticle(articleMeta, anchorId);
+    toast.success(already ? `已取消引用 ${originalNode.name}` : `已引用文章 ${originalNode.name}`);
   };
   const handleNewSubFolder = () => {
     onSetCreatingFolder(originalNode.path);
@@ -415,7 +491,7 @@ function TreeItemRow({
         {data.nodeType === 'directory' && (
           <ContextMenuItem onClick={() => {
             if (!guardReferenceIntoFocus()) return;
-            const anchorId = requireAnchorConversationId();
+            const anchorId = requireReferenceAnchorId();
             if (!anchorId) return;
             addReferencedFile({ name: originalNode.name, path: originalNode.path, type: 'folder' }, anchorId);
             toast.success(`已引用文件夹 ${originalNode.name}`);
@@ -427,7 +503,7 @@ function TreeItemRow({
         {data.nodeType === 'file' && (
           <ContextMenuItem onClick={() => {
             if (!guardReferenceIntoFocus()) return;
-            const anchorId = requireAnchorConversationId();
+            const anchorId = requireReferenceAnchorId();
             if (!anchorId) return;
             addReferencedFile({ name: originalNode.name, path: originalNode.path }, anchorId);
             toast.success(`已引用 ${originalNode.name}`);
@@ -529,6 +605,7 @@ export function WorkspaceExplorer() {
   const creatingFolderAt = useWorkspaceStore(s => s.creatingFolderAt);
   const setCreatingFolderAt = useWorkspaceStore(s => s.setCreatingFolderAt);
   const selectArticle = useArticleStore(s => s.selectArticle);
+  const showArticleUrlInput = useArticleStore(s => s.showArticleUrlInput);
 
   // 构建扁平节点映射
   const { nodeMap, articleCount, fileCount } = useMemo(
@@ -901,6 +978,14 @@ export function WorkspaceExplorer() {
                   }}
                   onCancel={() => setCreatingFolderAt(null)}
                 />
+              )}
+              {/* 文章区头部下方：导入 URL 输入框 / 空态引导 */}
+              {item.getId() === ARTICLES_SECTION_ID && (
+                showArticleUrlInput ? (
+                  <ArticleUrlInput indent={24} />
+                ) : articleCount === 0 && !loadingFiles ? (
+                  <ImportArticleGuide indent={24} />
+                ) : null
               )}
             </React.Fragment>
           ))}

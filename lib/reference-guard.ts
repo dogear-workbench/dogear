@@ -25,6 +25,26 @@ export function requireAnchorConversationId(): string | null {
   return id;
 }
 
+/**
+ * 取可写入引用的锚定会话：会话 tab / 独立窗口焦点优先，哨兵 tab（文章等）回退最近活跃会话；
+ * 无可用目标时 toast 拒绝并返回 null
+ */
+export function requireReferenceAnchorId(): string | null {
+  const direct = getFocusConversationId();
+  if (direct) return direct;
+  const { lastActiveConversationTabId, getTab, isInSessionWindow } = useSessionStore.getState();
+  const tab = lastActiveConversationTabId ? getTab(lastActiveConversationTabId) : undefined;
+  if (tab && !isInSessionWindow(tab.conversationId)) {
+    if (tab.workspaceId !== useWorkspaceStore.getState().workspace?.id) {
+      toast.warning('无法引用', { description: '最近活跃会话属于其他工作区，请先切换到该会话再引用' });
+      return null;
+    }
+    return tab.conversationId;
+  }
+  toast.warning('请先打开会话再引用');
+  return null;
+}
+
 /** 校验右栏引用项能否进当前焦点会话；放行返回 true，跨工作区 toast 拒绝并返回 false */
 export function guardReferenceIntoFocus(): boolean {
   const { activeTabId, getTab } = useSessionStore.getState();
