@@ -57,6 +57,10 @@ export async function markTaskRunning(workspacePath: string, taskId: string, exe
   return task;
 }
 
+export function touchRunningTask(workspacePath: string, taskId: string): Promise<boolean> {
+  return taskStore.touchRunningTask(workspacePath, taskId);
+}
+
 export async function completeTask(workspacePath: string, taskId: string, result: string): Promise<taskStore.Task> {
   const task = await taskStore.completeTask(workspacePath, taskId, result);
   broadcastTasksChanged(workspacePath);
@@ -117,9 +121,13 @@ export async function purgeTask(workspacePath: string, taskId: string): Promise<
   return purged;
 }
 
-/** 应用启动时把遗留 running 置回 queued，返回恢复数 */
-export async function recoverInterruptedTasks(workspacePath: string): Promise<number> {
-  const recovered = await taskStore.recoverInterruptedTasks(workspacePath);
-  if (recovered > 0) broadcastTasksChanged(workspacePath);
-  return recovered;
+const RECOVER_STALE_MS = 10 * 60_000;
+
+/** 应用启动时恢复：仅心跳陈旧的 running 置回 queued，新鲜的返回 skipped 由调用方延迟复查 */
+export async function recoverInterruptedTasks(
+  workspacePath: string,
+): Promise<{ recovered: number; skipped: taskStore.Task[] }> {
+  const result = await taskStore.recoverInterruptedTasks(workspacePath, RECOVER_STALE_MS);
+  if (result.recovered > 0) broadcastTasksChanged(workspacePath);
+  return result;
 }

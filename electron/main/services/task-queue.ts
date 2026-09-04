@@ -25,6 +25,13 @@ const log = mainLogger.child('task-queue');
 
 const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
 
+// 会话索引存在跨进程并发写窗口（旧快照短暂覆盖/读失败静默返空），origin 瞬时缺失重试可自愈，避免误拒
+const ORIGIN_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
+
+const TASK_TOUCH_INTERVAL_MS = 60_000;
+
+const RECOVER_RECHECK_DELAY_MS = 12 * 60_000;
+
 const RESULT_TAG_RE = /<task-result>([\s\S]*?)<\/task-result>/;
 
 const RESULT_TAIL_MAX = 2000;
@@ -50,6 +57,19 @@ function extractResultSummary(text: string): string {
 function firstLine(text: string, max = 80): string {
   const line = text.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? '';
   return line.length > max ? line.slice(0, max) + '…' : line;
+}
+
+async function resolveOriginWithRetry(originSessionId: string) {
+  for (let attempt = 0; ; attempt++) {
+    const origin = await conversationService.getByIdGlobal(originSessionId);
+    if (origin) return origin;
+    if (attempt >= ORIGIN_RETRY_DELAYS_MS.length) return null;
+    const delay = ORIGIN_RETRY_DELAYS_MS[attempt];
+    log.warn(
+      `产生任务的会话 ${originSessionId} 未查到（第 ${attempt + 1}/${ORIGIN_RETRY_DELAYS_MS.length + 1} 次），${delay}ms 后重试`,
+    );
+    await new Promise((resolve) => setTimeout(resolve, delay));
+  }
 }
 
 function buildExecutionPrompt(task: Task): string {
@@ -140,11 +160,20 @@ class TaskQueueExecutor {
       await this.safeReject(ctx, '任务尚无 plan 文档，请先补文档再执行');
       return;
     }
-    const origin = task.originSessionId
-      ? await conversationService.getByIdGlobal(task.originSessionId)
-      : null;
-    if (!origin?.conv.groupId) {
-      await this.safeReject(ctx, '找不到产生任务的会话或其所属话题，无法创建执行会话');
+    if (!task.originSessionId) {
+      await this.safeReject(ctx, '任务缺少产生会话记录（originSessionId），无法创建执行会话');
+      return;
+    }
+    const origin = await resolveOriginWithRetry(task.originSessionId);
+    if (!origin) {
+      await this.safeReject(
+        ctx,
+        `找不到产生任务的会话 ${task.originSessionId}（已重试 ${ORIGIN_RETRY_DELAYS_MS.length} 次，会话索引可能异常），无法创建执行会话`,
+      );
+      return;
+    }
+    if (!origin.conv.groupId) {
+      await this.safeReject(ctx, '产生任务的会话不属于任何话题，无法创建执行会话');
       return;
     }
 
@@ -182,7 +211,7 @@ class TaskQueueExecutor {
     const previousPermissionMode = session.getPermissionMode();
     session.setPermissionMode('autoExecute');
 
-    const outcome = await this.runExecutionTurn(session, running);
+    const outcome = await this.runExecutionTurn(session, running, workspacePath);
     void session.setPermissionMode(previousPermissionMode).catch(() => {});
 
     // 一轮已 complete，无需保活；用户插话导致的剩余轮次由 orphan 保活机制自然收尾
@@ -206,7 +235,11 @@ class TaskQueueExecutor {
     this.notify(reviewed, workspaceId, `任务待审核：${reviewed.title}`, firstLine(reviewed.result ?? ''));
   }
 
-  private async runExecutionTurn(session: PiSession, task: Task): Promise<{ subtype: PiSessionTurnResult['subtype']; error?: { message: string }; text: string }> {
+  private async runExecutionTurn(
+    session: PiSession,
+    task: Task,
+    workspacePath: string,
+  ): Promise<{ subtype: PiSessionTurnResult['subtype']; error?: { message: string }; text: string }> {
     let turnResult: PiSessionTurnResult = { subtype: 'success' };
     let text = '';
     const onComplete = (r: PiSessionTurnResult) => {
@@ -222,8 +255,18 @@ class TaskQueueExecutor {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(fireIdleTimeout, EXEC_IDLE_TIMEOUT_MS);
     };
+    let lastTouchMs = 0;
+    const maybeTouchHeartbeat = () => {
+      const now = Date.now();
+      if (now - lastTouchMs < TASK_TOUCH_INTERVAL_MS) return;
+      lastTouchMs = now;
+      taskService
+        .touchRunningTask(workspacePath, task.id)
+        .catch((err) => log.warn(`任务 ${task.id} 心跳写失败`, err));
+    };
     const onMessage = (m: ExtendedSessionMessage) => {
       resetIdleTimer();
+      maybeTouchHeartbeat();
       if (m.type === 'text') text += m.content ?? '';
     };
     session.once('complete', onComplete);
@@ -288,13 +331,31 @@ export async function interruptTaskExecSession(conversationId: string): Promise<
   }
 }
 
-/** 应用启动：各工作区遗留 running 置回 queued 后 kick 队列 */
+/** 应用启动：心跳陈旧的遗留 running 置回 queued；新鲜心跳（他实例执行中）跳过并延迟复查一次 */
 export async function recoverAndStartTaskQueue(): Promise<void> {
   const workspaces = await workspaceJsonService.getAll();
   for (const ws of workspaces) {
     try {
-      const recovered = await taskService.recoverInterruptedTasks(ws.path);
+      const { recovered, skipped } = await taskService.recoverInterruptedTasks(ws.path);
       if (recovered > 0) log.info(`工作区 ${ws.id} 恢复 ${recovered} 个中断任务回 queued`);
+      if (skipped.length > 0) {
+        log.info(
+          `工作区 ${ws.id} 有 ${skipped.length} 个 running 任务心跳新鲜（他实例执行中），${RECOVER_RECHECK_DELAY_MS / 60_000} 分钟后复查`,
+        );
+        setTimeout(() => {
+          void (async () => {
+            try {
+              const { recovered: recheckRecovered } = await taskService.recoverInterruptedTasks(ws.path);
+              if (recheckRecovered > 0) {
+                log.info(`工作区 ${ws.id} 复查恢复 ${recheckRecovered} 个中断任务回 queued`);
+                getTaskQueue().kick();
+              }
+            } catch (err) {
+              log.warn(`工作区 ${ws.id} 复查恢复失败`, err);
+            }
+          })();
+        }, RECOVER_RECHECK_DELAY_MS);
+      }
     } catch (err) {
       log.warn(`工作区 ${ws.id} 任务恢复失败`, err);
     }

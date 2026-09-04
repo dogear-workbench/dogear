@@ -19,6 +19,8 @@ export interface Task {
   planPath?: string;
   originSessionId?: string;
   execSessionId?: string;
+  /** running 期间执行侧心跳，跨实例判断「还在跑」防启动恢复误伤 */
+  lastActiveAt?: string;
   result?: string;
   createdAt: string;
   updatedAt: string;
@@ -222,6 +224,7 @@ export async function getTaskDetail(workspacePath: string, taskId: string): Prom
 interface TransitionPatch {
   execSessionId?: string;
   result?: string;
+  lastActiveAt?: string;
 }
 
 async function transition(
@@ -241,6 +244,7 @@ async function transition(
     task.updatedAt = new Date().toISOString();
     if (patch?.execSessionId !== undefined) task.execSessionId = patch.execSessionId;
     if (patch?.result !== undefined) task.result = patch.result;
+    if (patch?.lastActiveAt !== undefined) task.lastActiveAt = patch.lastActiveAt;
     return { ...task };
   });
 }
@@ -250,7 +254,10 @@ export async function reviewTask(workspacePath: string, taskId: string, action: 
 }
 
 export async function markTaskRunning(workspacePath: string, taskId: string, execSessionId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['queued'], 'running', { execSessionId });
+  return transition(workspacePath, taskId, ['queued'], 'running', {
+    execSessionId,
+    lastActiveAt: new Date().toISOString(),
+  });
 }
 
 export async function completeTask(workspacePath: string, taskId: string, result: string): Promise<Task> {
@@ -314,17 +321,39 @@ export async function purgeTask(workspacePath: string, taskId: string): Promise<
   });
 }
 
-/** 应用启动时把遗留 running 置回 queued，返回恢复数 */
-export async function recoverInterruptedTasks(workspacePath: string): Promise<number> {
+/** 执行侧心跳续命：仅 running 态生效，非 running（已写回/取消）时返回 false */
+export async function touchRunningTask(workspacePath: string, taskId: string): Promise<boolean> {
   return mutateTasks(workspacePath, (tasks) => {
-    const now = new Date().toISOString();
-    let count = 0;
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task || task.status !== 'running') return false;
+    task.lastActiveAt = new Date().toISOString();
+    return true;
+  });
+}
+
+/**
+ * 应用启动恢复：心跳（lastActiveAt，缺失回退 updatedAt）陈旧于 staleMs 的 running 置回 queued。
+ * 新鲜心跳 = 另一实例仍在执行，误置回会触发重复执行（历史事故：执行会话在跑、任务被二次拾起误拒）。
+ */
+export async function recoverInterruptedTasks(
+  workspacePath: string,
+  staleMs: number,
+): Promise<{ recovered: number; skipped: Task[] }> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const now = Date.now();
+    const skipped: Task[] = [];
+    let recovered = 0;
     for (const task of tasks) {
       if (task.status !== 'running') continue;
+      const lastMs = Date.parse(task.lastActiveAt ?? task.updatedAt);
+      if (Number.isFinite(lastMs) && now - lastMs < staleMs) {
+        skipped.push({ ...task });
+        continue;
+      }
       task.status = 'queued';
-      task.updatedAt = now;
-      count++;
+      task.updatedAt = new Date().toISOString();
+      recovered++;
     }
-    return count;
+    return { recovered, skipped };
   });
 }

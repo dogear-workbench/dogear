@@ -10,6 +10,7 @@ import {
   getTaskDetail,
   reviewTask,
   markTaskRunning,
+  touchRunningTask,
   completeTask,
   rejectTask,
   recoverInterruptedTasks,
@@ -103,17 +104,45 @@ test('状态机：非法迁移抛错', async () => {
   await expect(markTaskRunning(workspacePath, 'ghost', 'exec')).rejects.toThrow();
 });
 
-test('recoverInterruptedTasks：running 回 queued，其他状态不动', async () => {
+test('recoverInterruptedTasks：新鲜心跳跳过，陈旧心跳恢复，其他状态不动', async () => {
   const a = await seedQueued();
   const b = await createTask(workspacePath, { title: '已在审', planPath });
   await markTaskRunning(workspacePath, a, 'exec-4');
   await markTaskRunning(workspacePath, b.id, 'exec-5');
   await completeTask(workspacePath, b.id, '待审');
 
-  const recovered = await recoverInterruptedTasks(workspacePath);
-  expect(recovered).toBe(1);
+  const fresh = await recoverInterruptedTasks(workspacePath, 10 * 60_000);
+  expect(fresh.recovered).toBe(0);
+  expect(fresh.skipped.map((t) => t.id)).toEqual([a]);
+  expect((await getTask(workspacePath, a))?.status).toBe('running');
+
+  const stale = await recoverInterruptedTasks(workspacePath, 0);
+  expect(stale.recovered).toBe(1);
   expect((await getTask(workspacePath, a))?.status).toBe('queued');
   expect((await getTask(workspacePath, b.id))?.status).toBe('review');
+});
+
+test('recoverInterruptedTasks：无 lastActiveAt 旧数据回退 updatedAt 判断', async () => {
+  const id = await seedQueued();
+  await markTaskRunning(workspacePath, id, 'exec-old');
+  const file = JSON.parse(await fs.readFile(path.join(workspacePath, '.dogear', 'tasks.json'), 'utf-8'));
+  for (const task of file.tasks) {
+    delete task.lastActiveAt;
+    task.updatedAt = new Date(Date.now() - 60 * 60_000).toISOString();
+  }
+  await fs.writeFile(path.join(workspacePath, '.dogear', 'tasks.json'), JSON.stringify(file, null, 2));
+
+  const result = await recoverInterruptedTasks(workspacePath, 10 * 60_000);
+  expect(result.recovered).toBe(1);
+  expect((await getTask(workspacePath, id))?.status).toBe('queued');
+});
+
+test('touchRunningTask：仅 running 态续命', async () => {
+  const id = await seedQueued();
+  expect(await touchRunningTask(workspacePath, id)).toBe(false);
+  await markTaskRunning(workspacePath, id, 'exec-t');
+  expect(await touchRunningTask(workspacePath, id)).toBe(true);
+  expect((await getTask(workspacePath, id))?.lastActiveAt).toBeTruthy();
 });
 
 test('listTasksGrouped 按状态分组', async () => {
