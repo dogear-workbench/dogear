@@ -19,7 +19,8 @@ export const MEMORY_GUIDANCE_APPEND =
 export const NOTES_DISCIPLINE_APPEND =
   '\n## 笔记存卡纪律\n' +
   '- 笔记是用户的工作台：脑暴思路、用户明确要求记录的内容、琐事备忘（正文用 - [ ] 勾选项）进这里；可实施工作一律走任务（dogear__CreateTask），不要为任务存笔记卡\n' +
-  '- 与用户聊完方案后的动线：落盘 plan 文档（docs/plans/...）→ dogear__CreateTask 挂到计划栏 → 在回复中告知用户；方案未定型、想先记一笔时 CreateTask 可省略 planPath 占位，文档落盘后同标题再调一次自动补路径\n' +
+  '- 与用户聊完方案后的动线：落盘设计文档（docs/plans/...）→ 过「是否分步骤」判断 → dogear__CreateTask 挂到计划栏 → 在回复中告知用户；方案未定型、想先记一笔时 CreateTask 可省略 planPath 占位，文档落盘后同标题再调一次自动补路径\n' +
+  '- 是否分步骤判断：满足任一（改动跨 ≥3 文件且步骤有依赖 / 需跨会话续做 / 架构层变更）→ 先用 staged-impl 写实施计划（plan.md + stepN-*.md），CreateTask 的 planPath 指向 plan.md；都不满足 → 回复里明说「不分步骤，理由」——「不分」也是决策，不能默默跳过\n' +
   '- 执行动线：用户明确说做 → dogear__ExecuteTask（计划/待办均可入队）；执行结果摘要由系统自动写回任务详情，无需 dogear__AppendNote';
 
 /** 主会话协作规范（仅 role='main' 且有 groupId 时注入）。 */
@@ -113,7 +114,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '笔记存卡纪律',
       category: 'notes',
       template: NOTES_DISCIPLINE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（脑暴思路/琐事备忘）；可实施工作一律走任务——聊完方案落 plan 文档后 CreateTask 挂计划栏（可省略 planPath 占位），执行用 ExecuteTask，结果系统自动写回。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（脑暴思路/琐事备忘）；可实施工作一律走任务——聊完方案落设计文档、过「是否分步骤」判断后 CreateTask 挂计划栏（可省略 planPath 占位），执行用 ExecuteTask，结果系统自动写回。',
       isDynamic: false,
     },
     {
