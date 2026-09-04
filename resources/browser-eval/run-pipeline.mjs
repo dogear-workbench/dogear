@@ -209,12 +209,12 @@ async function runAntibotTask(expect) {
 const rows = [];
 let passed = 0;
 let failed = 0;
-let skipped = 0;
+let agentCount = 0;
 
 for (const task of tasks) {
   if (task.type === 'agent') {
-    skipped++;
-    rows.push({ id: task.id, status: 'SKIPPED-agent-not-configured', detail: 'Agent 任务层基线未配置，见 baseline.md' });
+    agentCount++;
+    rows.push({ id: task.id, status: 'SKIP-agent', detail: '模型任务不在零模型管线回归内，由 run-agent.mjs 单独采集，基线见 baseline.md' });
     continue;
   }
   const startedAt = Date.now();
@@ -270,5 +270,5 @@ console.log('\n===== 浏览器文章读取管线回归报告 =====');
 for (const row of rows) {
   console.log(`[${row.status}] ${row.id} — ${row.detail}`);
 }
-console.log(`\n合计：${tasks.length} 任务 | PASS ${passed} | FAIL ${failed} | SKIP ${skipped}`);
+console.log(`\n合计：${passed + failed} 管线任务 | PASS ${passed} | FAIL ${failed}${agentCount > 0 ? `（另有 ${agentCount} 个 agent 任务由 run-agent.mjs 采集，基线见 baseline.md）` : ''}`);
 process.exit(failed > 0 ? 1 : 0);
