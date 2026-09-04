@@ -39,6 +39,8 @@ export type BasicToolPermissions = Record<BasicToolName, BasicToolPermission>;
 
 export const BASIC_TOOL_NAMES: readonly BasicToolName[] = ['read', 'write', 'edit', 'bash', 'Glob', 'Grep', 'Skill'];
 
+export const BROWSER_PARSE_SUB_AGENT_PROFILE_ID = 'browser-parse';
+
 export function createDefaultBasicToolPermissions(): BasicToolPermissions {
   return { read: 'ask', write: 'ask', edit: 'ask', bash: 'ask', Glob: 'ask', Grep: 'ask', Skill: 'ask' };
 }
@@ -60,6 +62,7 @@ export interface SubAgentEnabledAbilities {
   skills?: string[];
   customSkills?: string[];
   reference?: boolean;
+  browser?: boolean;
 }
 
 export interface SubAgentProfile {
@@ -137,7 +140,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   },
   basicToolPermissions: createDefaultBasicToolPermissions(),
   subAgent: {
-    profiles: [createDefaultSubAgentProfile()],
+    profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()],
   },
   failover: { enabled: false, chain: [] },
   update: {
@@ -232,6 +235,21 @@ export function createDefaultSubAgentProfile(): SubAgentProfile {
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'],
     enabledAbilities: {},
+  };
+}
+
+/**
+ * 创建内置「浏览器解析」子会话 Profile 副本；normalize 保证存在，UI 禁止删除（同 default）
+ */
+export function createBrowserParseSubAgentProfile(): SubAgentProfile {
+  return {
+    id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
+    name: '浏览器解析',
+    description: '挂载浏览器工具包执行网页抓取与解析，建议选择便宜档模型以节省成本',
+    modelSelection: null,
+    timeoutMinutes: 30,
+    enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
+    enabledAbilities: { browser: true },
   };
 }
 

@@ -591,6 +591,7 @@ export class PiSession extends EventEmitter {
    * - dogear-memory + dogear-memory-review：仅当 memory===true
    * - stock 工具包：仅当 stock===true
    * - article 工具包：仅当 article===true
+   * - browser 工具包：仅当 browser===true
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施）
    * - dogear-reference：仅当 reference===true
    */
@@ -622,6 +623,11 @@ export class PiSession extends EventEmitter {
     // article 工具包：仅当 article===true
     if (ab.article === true && this.config.workspacePath) {
       toolDefs.push(...this.registerPack('article', createArticleToolDefs(this.config.workspacePath)));
+    }
+
+    // browser 工具包：仅当 browser===true（Profile 级独立生效，不受 enabledToolPacks 约束）
+    if (ab.browser === true) {
+      toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId })));
     }
 
     // dogear-group / dogear-delegation / dogear-reference

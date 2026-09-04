@@ -11,7 +11,7 @@
 - [x] [Step 1: P0 Chromium 分发修复](./step1-chromium-distribution.md) — 懒下载（npmmirror→官方 CDN fallback）+ channel:msedge→chrome 降级链 + 进度 UI
 - [x] [Step 2: 解析质量三连](./step2-article-quality.md) — ② 登录墙盲区 ③ qualityHint 误示 ① 翻页拼接（含 URL 跳转型），测试断言同步
 - [x] [Step 3: 轻反爬前移](./step3-antibot-prefetch.md) — fetchRawHtml 错误结构化 + tipc 白名单分流进浏览器层
-- [ ] [Step 4: 子会话浏览器能力配置面](./step4-subagent-browser-ability.md) — SubAgentEnabledAbilities.browser 四处 + 「浏览器解析」Profile 模板
+- [x] [Step 4: 子会话浏览器能力配置面](./step4-subagent-browser-ability.md) — SubAgentEnabledAbilities.browser 四处 + 「浏览器解析」Profile 模板
 - [ ] [Step 5: Agent 基线采集](./step5-agent-baseline.md) — runner agent 模式 + 6 任务成功率回填 baseline.md
 
 ## 全局决策

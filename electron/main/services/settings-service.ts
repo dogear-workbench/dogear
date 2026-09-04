@@ -12,6 +12,8 @@ import {
   deepMerge,
   createDefaultBasicToolPermissions,
   createDefaultSubAgentProfile,
+  createBrowserParseSubAgentProfile,
+  BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
   normalizeFailoverChain,
   BASIC_TOOL_NAMES,
   type AppSettings,
@@ -268,18 +270,27 @@ export function normalizeSettings(settings: AppSettings): boolean {
             delete ab.groupFiles;
             changed = true;
           }
+          if ('browser' in ab && typeof ab.browser !== 'boolean') {
+            delete ab.browser;
+            changed = true;
+          }
         }
       }
       if (subAgent.profiles.length === 0) {
-        subAgent.profiles = [createDefaultSubAgentProfile()];
+        subAgent.profiles = [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()];
+        changed = true;
+      }
+      const existingProfiles = subAgent.profiles as unknown[];
+      if (!existingProfiles.some((p) => p !== null && typeof p === 'object' && (p as { id?: unknown }).id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID)) {
+        existingProfiles.push(createBrowserParseSubAgentProfile());
         changed = true;
       }
     } else {
-      subAgent.profiles = [createDefaultSubAgentProfile()];
+      subAgent.profiles = [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()];
       changed = true;
     }
   } else {
-    obj.subAgent = { profiles: [createDefaultSubAgentProfile()] };
+    obj.subAgent = { profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()] };
     changed = true;
   }
 

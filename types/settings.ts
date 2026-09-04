@@ -57,6 +57,23 @@ export function createDefaultSubAgentProfile(): SubAgentProfile {
   };
 }
 
+export const BROWSER_PARSE_SUB_AGENT_PROFILE_ID = 'browser-parse';
+
+/**
+ * 创建内置「浏览器解析」子会话 Profile 副本（与主进程 settings-types.ts 保持一致）
+ */
+export function createBrowserParseSubAgentProfile(): SubAgentProfile {
+  return {
+    id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
+    name: '浏览器解析',
+    description: '挂载浏览器工具包执行网页抓取与解析，建议选择便宜档模型以节省成本',
+    modelSelection: null,
+    timeoutMinutes: 30,
+    enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
+    enabledAbilities: { browser: true },
+  };
+}
+
 export interface FailoverEntry {
   profileId: string;
   tier: string;
@@ -74,6 +91,7 @@ export interface SubAgentEnabledAbilities {
   skills?: string[];
   customSkills?: string[];
   reference?: boolean;
+  browser?: boolean;
 }
 
 export interface SubAgentProfile {
@@ -144,7 +162,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   basicToolPermissions: createDefaultBasicToolPermissions(),
   smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
   subAgent: {
-    profiles: [createDefaultSubAgentProfile()],
+    profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()],
   },
   failover: { enabled: false, chain: [] },
   update: {

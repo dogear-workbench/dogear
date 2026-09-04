@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { ModelSelector } from '@/components/ModelSelector';
 import {
   createDefaultSubAgentProfile,
+  BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
   type AppSettings,
   type ModelSelection,
   type SubAgentProfile,
@@ -61,6 +62,7 @@ function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
   if (ab.skills?.length) n++;
   if (ab.customSkills?.length) n++;
   if (ab.reference) n++;
+  if (ab.browser) n++;
   return n;
 }
 
@@ -74,7 +76,7 @@ function toggleInArray(arr: string[] | undefined, name: string): string[] {
 // ── Profile Editor ───────────────────────────────────
 
 const BOOLEAN_ABILITIES: {
-  key: 'memory' | 'stock' | 'article' | 'reference';
+  key: 'memory' | 'stock' | 'article' | 'reference' | 'browser';
   label: string;
   desc: string;
 }[] = [
@@ -82,6 +84,7 @@ const BOOLEAN_ABILITIES: {
   { key: 'stock', label: '股票分析', desc: '股票分析工具包' },
   { key: 'article', label: '文章', desc: '文章解析工具包' },
   { key: 'reference', label: '引用回溯', desc: 'dogear-reference' },
+  { key: 'browser', label: '浏览器', desc: 'dogear-browser 浏览器工具包' },
 ];
 
 function ProfileEditor({
@@ -433,6 +436,11 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
                       默认
                     </span>
                   )}
+                  {profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                      内置
+                    </span>
+                  )}
                   {profile.enabled === false && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                       已停用
@@ -469,14 +477,20 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
                 <button
                   type="button"
                   onClick={() => deleteProfile(profile.id)}
-                  disabled={profile.id === 'default'}
+                  disabled={profile.id === 'default' || profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID}
                   className={cn(
                     'flex items-center justify-center w-8 h-8 rounded-md transition-colors',
-                    profile.id === 'default'
+                    profile.id === 'default' || profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID
                       ? 'opacity-30 cursor-not-allowed'
                       : 'hover:bg-destructive/10 hover:text-destructive',
                   )}
-                  title={profile.id === 'default' ? '默认 Profile 不可删除' : '删除'}
+                  title={
+                    profile.id === 'default'
+                      ? '默认 Profile 不可删除'
+                      : profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID
+                        ? '内置 Profile 不可删除'
+                        : '删除'
+                  }
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
