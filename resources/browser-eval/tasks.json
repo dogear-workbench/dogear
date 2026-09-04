@@ -20,11 +20,11 @@
       "type": "pipeline",
       "action": "readArticle",
       "url": "{{BASE}}/spa-article.html",
-      "scenario": "无展开候选的页面：记录 qualityHint 恒存在的确定性行为",
+      "scenario": "无展开候选的完整页面：不应误示 qualityHint",
       "expect": {
         "ok": true,
         "contains": ["DOGEAR-EVAL-MARK-SPA-2"],
-        "qualityHint": "present"
+        "qualityHint": "absent"
       }
     },
     {
@@ -57,12 +57,15 @@
       "type": "pipeline",
       "action": "readArticle",
       "url": "{{BASE}}/paged.html",
-      "scenario": "三页翻页：管线点击「下一页」后停在字数变长的第 2 页，不做拼接",
+      "scenario": "三页翻页：翻页循环拼接全量内容，三页标记全部存在",
       "expect": {
         "ok": true,
-        "contains": ["DOGEAR-EVAL-MARK-PAGED-2"],
-        "notContains": ["DOGEAR-EVAL-MARK-PAGED-1", "DOGEAR-EVAL-MARK-PAGED-3"],
-        "wordCountMin": 380,
+        "contains": [
+          "DOGEAR-EVAL-MARK-PAGED-1",
+          "DOGEAR-EVAL-MARK-PAGED-2",
+          "DOGEAR-EVAL-MARK-PAGED-3"
+        ],
+        "wordCountMin": 1000,
         "qualityHint": "absent"
       }
     },
@@ -71,11 +74,29 @@
       "type": "pipeline",
       "action": "readArticle",
       "url": "{{BASE}}/paged.html",
-      "scenario": "翻页页标题与第 2 页标记同时成立",
+      "scenario": "翻页拼接后标题取第一页，且拼接内容完整",
       "expect": {
         "ok": true,
-        "contains": ["DOGEAR-EVAL-MARK-PAGED-2"],
+        "contains": ["DOGEAR-EVAL-MARK-PAGED-1", "DOGEAR-EVAL-MARK-PAGED-3"],
         "titleContains": "翻页"
+      }
+    },
+    {
+      "id": "paged-url-pipeline-concat",
+      "type": "pipeline",
+      "action": "readArticle",
+      "url": "{{BASE}}/paged-url.html",
+      "scenario": "URL 跳转型三页翻页：点击后真导航，拼接全量内容，标题取第一页",
+      "expect": {
+        "ok": true,
+        "contains": [
+          "DOGEAR-EVAL-MARK-PAGEDURL-1",
+          "DOGEAR-EVAL-MARK-PAGEDURL-2",
+          "DOGEAR-EVAL-MARK-PAGEDURL-3"
+        ],
+        "wordCountMin": 1000,
+        "titleContains": "URL 翻页",
+        "qualityHint": "absent"
       }
     },
     {
@@ -83,7 +104,7 @@
       "type": "pipeline",
       "action": "readArticle",
       "url": "{{BASE}}/login-wall.html",
-      "scenario": "密码框存在且无可见正文，DOM 登录墙检测应命中 need_login",
+      "scenario": "密码框存在且隐藏正文藏在标准容器（article）内，可见性度量后 DOM 登录墙检测应命中 need_login",
       "expect": {
         "ok": false,
         "errorClass": "need_login"
