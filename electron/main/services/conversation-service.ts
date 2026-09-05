@@ -10,6 +10,7 @@ import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
 import { loadSettings, LEGACY_MODEL_TIERS } from './settings-service.js';
+import { mainLogger } from '../agents/logger.js';
 import { readUsage } from './usage/usage-service.js';
 import { listActiveGroups, requireActiveGroup } from './group-service.js';
 import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
@@ -17,6 +18,8 @@ import type { ConversationUsageEntry } from '../types.js';
 import type { ModelSelection } from './settings-types.js';
 
 const { app } = electron;
+
+const sessionIdAuditLogger = mainLogger.child('ConvTxn');
 
 // ============================================================
 // 类型定义
@@ -173,8 +176,9 @@ async function saveWorkspaceConversations(workspaceId: string, data: WorkspaceCo
  * 防止并发写者（如 fire-and-forget 的 usage 结算）用旧快照覆盖彼此的字段
  * （曾导致子会话 updateSessionId 写回被 applyUsageSummary 抹掉、sessionId 永久丢失）。
  * 锁键加 '#txn' 后缀与 safeJsonWrite 内部的同路径写锁隔离——promise 链锁不可重入，同键嵌套会死锁。
+ * 导出供测试直接构造写事务（验证 sessionId 置空审计埋点）。
  */
-async function withConversationsTxn<T>(
+export async function withConversationsTxn<T>(
   workspaceId: string,
   fn: (file: WorkspaceConversationsFile) => Promise<T>,
 ): Promise<T> {
@@ -186,7 +190,23 @@ async function withConversationsTxn<T>(
       observedMtimeMs = (await fs.stat(filePath)).mtimeMs;
     } catch { /* 文件尚未创建 */ }
     const file = await loadWorkspaceConversations(workspaceId);
+    // sessionId 置空审计：正常代码无合法置空路径，一旦出现即覆盖者复发，WARN 落盘供人工回填
+    const sessionIdsBefore = new Map<string, string | null>();
+    for (const [id, conv] of Object.entries(file.conversations)) {
+      sessionIdsBefore.set(id, conv.sessionId ?? null);
+    }
     const result = await fn(file);
+    for (const [id, before] of sessionIdsBefore) {
+      const conv = file.conversations[id];
+      if (!conv) continue;
+      const after = conv.sessionId ?? null;
+      if (before && !after) {
+        sessionIdAuditLogger.warn(
+          `[txn 审计] 会话 ${id}（title: ${conv.title}）sessionId 从 ${before} 被置空，` +
+          `原值可用于人工回填。调用栈:\n${new Error().stack}`,
+        );
+      }
+    }
     if (observedMtimeMs !== null) {
       try {
         const currentMtimeMs = (await fs.stat(filePath)).mtimeMs;

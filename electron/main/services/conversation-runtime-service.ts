@@ -4,6 +4,7 @@ import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
+import { recoverAlignedHarnessForConversation } from './session-id-repair.js';
 import { requireActiveGroup } from './group-service.js';
 import { loadSettings } from './settings-service.js';
 import { getWorkspaceConfig } from './workspace-config-service.js';
@@ -72,7 +73,7 @@ class ConversationRuntimeService {
     const piSessionManager = getPiSessionManager();
     let sessionId = piSessionManager.getSessionIdByConversation(conversationId);
     let session = sessionId ? piSessionManager.getSession(sessionId) : undefined;
-    const isRestore = !!conversation.sessionId;
+    let isRestore = !!conversation.sessionId;
     let created = false;
 
     if (sessionId && !session) {
@@ -82,6 +83,15 @@ class ConversationRuntimeService {
     if (sessionId && session) {
       piSessionManager.retain(sessionId);
     } else {
+      // sessionId 丢失防线：有历史轮次的会话不新建空壳 harness，先按时间对齐回填真实 id 走恢复
+      let harnessSessionId = conversation.sessionId ?? null;
+      if (!harnessSessionId) {
+        const recovered = await recoverAlignedHarnessForConversation(workspaceId, conversation);
+        if (recovered) {
+          harnessSessionId = recovered;
+          isRestore = true;
+        }
+      }
       const appSettings = await loadSettings();
       const wsConfig = await getWorkspaceConfig(workspaceId);
       const workspace = await workspaceJsonService.getById(workspaceId);
@@ -94,7 +104,7 @@ class ConversationRuntimeService {
         workspacePath: workspace?.path ?? '',
         additionalPaths: (workspace?.additional_paths ?? []).filter((p) => p.enabled).map((p) => p.path),
         workspaceId,
-        harnessSessionId: conversation.sessionId ?? null,
+        harnessSessionId,
         enabledToolPacks: wsConfig.enabledToolPacks,
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
