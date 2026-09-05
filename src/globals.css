@@ -587,13 +587,13 @@
 }
 
 .notes-editor .ProseMirror pre {
-  background: var(--card);
+  background: var(--code-background);
   border: 1px solid var(--border);
   color: var(--foreground);
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
   overflow-x: auto;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
 }
 

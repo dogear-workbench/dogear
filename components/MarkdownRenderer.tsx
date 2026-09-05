@@ -69,7 +69,7 @@ function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>
   return (
     <pre
       ref={preRef}
-      className="group/code relative rounded-lg border border-border bg-card my-3 overflow-x-auto p-3.5 text-[13px] font-mono"
+      className="group/code relative rounded-lg border border-border bg-[var(--code-background)] text-foreground my-3 overflow-x-auto p-3.5 text-sm font-mono"
       {...props}
     >
       <button

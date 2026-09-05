@@ -1,6 +1,6 @@
 .hljs {
   color: var(--foreground);
-  background: var(--card);
+  background: transparent;
 }
 
 .hljs-comment,
@@ -67,7 +67,7 @@
 
 .dark .hljs {
   color: var(--foreground);
-  background: var(--card);
+  background: transparent;
 }
 
 .dark .hljs-comment,
