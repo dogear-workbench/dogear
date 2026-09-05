@@ -1,0 +1,9 @@
+{
+  "name": "com.dogear.nmhost",
+  "description": "Dogear 浏览器扩展 Native Messaging 宿主",
+  "path": "nm-host.bat",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://jpabfficjncbbbkkdgjkhkmpmgehbfaa/"
+  ]
+}

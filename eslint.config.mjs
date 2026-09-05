@@ -12,6 +12,7 @@ const eslintConfig = defineConfig([
     "release/**",
     ".worktrees/**",
     "python/**",
+    "extension/**",
   ]),
   {
     rules: {
