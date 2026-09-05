@@ -11,7 +11,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { z } from 'zod';
-import type { Page } from 'playwright';
+import type { Page } from 'patchright';
 import {
   getBrowserManager,
   type BrowserLease,

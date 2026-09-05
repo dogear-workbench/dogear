@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from 'patchright';
 import { parseArticleHtml, type ParsedArticleData } from '../article-service.js';
 import { getBrowserManager, type BrowserTaskMeta } from './browser-manager.js';
 

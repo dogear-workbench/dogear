@@ -2,7 +2,7 @@ import { execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
-import { chromium, type BrowserContext, type Page } from 'playwright';
+import { chromium, type BrowserContext, type Page } from 'patchright';
 import { getConfigDir } from '../settings-service.js';
 import {
   chromiumInstallStatus,
@@ -30,6 +30,21 @@ interface PendingAcquire {
 
 const IDLE_CLOSE_MS = Number(process.env.DOGEAR_BROWSER_IDLE_CLOSE_MS) || 3 * 60 * 1000;
 const DISPOSE_CLOSE_TIMEOUT_MS = 3000;
+const BROWSER_PROXY_SERVER = '127.0.0.1:7897';
+const PAC_PROXY_DOMAINS = [
+  'google.com',
+  'googleusercontent.com',
+  'gstatic.com',
+  'googleapis.com',
+  'ggpht.com',
+  'duckduckgo.com',
+];
+
+function buildProxyPacUrl(): string {
+  const rules = PAC_PROXY_DOMAINS.map((d) => `dnsDomainIs(host,".${d}")||host==="${d}"`).join('||');
+  const script = `function FindProxyForURL(url,host){if(${rules})return "PROXY ${BROWSER_PROXY_SERVER}";return "DIRECT";}`;
+  return `data:text/plain,${encodeURIComponent(script)}`;
+}
 
 class BrowserManager {
   private profileDir = path.join(getConfigDir(), 'browser-profile');
@@ -274,9 +289,10 @@ class BrowserManager {
 
   // headful 常驻最小化：任务栏可见不抢屏，登录墙时 bringToFront 还原窗口
   private buildLaunchOptions() {
+    const args: string[] = ['--start-minimized', `--proxy-pac-url=${buildProxyPacUrl()}`];
     return {
       headless: false,
-      args: ['--start-minimized'],
+      args,
     };
   }
 
