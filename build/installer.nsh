@@ -39,10 +39,18 @@
   ${EndIf}
 !macroend
 
+!macro customInstall
+  ; 浏览器 NM host 注册：与 dev 注册脚本同键名，后写者胜，--unregister 后回落安装版
+  WriteRegStr HKCU "Software\Google\Chrome\NativeMessagingHosts\com.dogear.nmhost" "" "$INSTDIR\resources\nm-host\com.dogear.nmhost.json"
+  WriteRegStr HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.dogear.nmhost" "" "$INSTDIR\resources\nm-host\com.dogear.nmhost.json"
+!macroend
+
 ; createDesktopShortcut 为 false 时模板的卸载清理会被跳过，在这里补上
 !macro customUnInstall
   ${IfNot} ${isKeepShortcuts}
     WinShell::UninstShortcut "$oldDesktopLink"
     Delete "$oldDesktopLink"
   ${EndIf}
+  DeleteRegKey HKCU "Software\Google\Chrome\NativeMessagingHosts\com.dogear.nmhost"
+  DeleteRegKey HKCU "Software\Microsoft\Edge\NativeMessagingHosts\com.dogear.nmhost"
 !macroend

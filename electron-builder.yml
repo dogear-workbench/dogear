@@ -51,6 +51,11 @@ extraResources:
     to: agent-templates/
     filter:
       - "**/*"
+  # 浏览器扩展 NM host（manifest 为构建生成物，dist 前由 build-nm-manifest.mjs 生成）
+  - from: resources/nm-host/
+    to: nm-host/
+    filter:
+      - "**/*"
   # 前端构建产物（移出 asar，支持热更新覆盖）
   - from: out/
     to: out/
