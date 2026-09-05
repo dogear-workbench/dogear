@@ -516,6 +516,14 @@ app.whenReady().then(async () => {
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
 
+  // 浏览器扩展网关（pipe server，接收 NM bridge 转发的帧流）
+  try {
+    const { initBrowserGateway } = await import('./services/browser/browser-gateway.js');
+    initBrowserGateway(app.getVersion());
+  } catch (error) {
+    console.error('初始化浏览器扩展网关失败:', error);
+  }
+
   // 初始化配置目录路径（供 logger 和 Worker 使用）
   try {
     const { initConfigDir } = await import('./agents/logger.js');

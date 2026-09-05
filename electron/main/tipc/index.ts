@@ -31,7 +31,7 @@ import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
 import { focusRouter } from './focus.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
-import { browserRouter, registerBrowserActionBridge } from './browser.js';
+import { browserRouter, registerBrowserActionBridge, registerExtensionStatusBridge } from './browser.js';
 
 export const router = {
   ...aiRouter,
@@ -78,4 +78,6 @@ export function registerTipcHandlers() {
   registerPtyBroadcaster();
   // 浏览器动作流：Agent 工具源接线 + 渲染层增量广播桥接
   registerBrowserActionBridge();
+  // 浏览器扩展连接状态：gateway → 渲染层广播桥接
+  registerExtensionStatusBridge();
 }

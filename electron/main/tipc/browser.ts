@@ -7,6 +7,10 @@ import {
   setBrowserActionBroadcaster,
 } from '../services/browser/browser-action-stream.js';
 import { setBrowserDownloadBroadcaster } from '../services/browser/browser-download-service.js';
+import {
+  getExtensionStatus,
+  setExtensionStatusBroadcaster,
+} from '../services/browser/browser-gateway.js';
 import { setBrowserToolsActionListener } from '../agents/tools/browser-tools.js';
 
 const t = tipc.create();
@@ -40,7 +44,16 @@ export function registerBrowserActionBridge(): void {
   });
 }
 
+/** 扩展状态广播接线（registerTipcHandlers 调用一次） */
+export function registerExtensionStatusBridge(): void {
+  setExtensionStatusBroadcaster((status) => {
+    broadcastToWindows((h) => h.extensionStatusChanged.send(status));
+  });
+}
+
 export const browserRouter = {
+  getExtensionStatus: t.procedure.action(async () => getExtensionStatus()),
+
   getBrowserActions: t.procedure
     .input<{ limit?: number }>()
     .action(async ({ input }) => {

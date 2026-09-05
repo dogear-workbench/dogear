@@ -7,6 +7,7 @@ import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import type { BrowserActionEvent } from '../services/browser/browser-action-stream.js';
 import type { BrowserDownloadEvent } from '../services/browser/browser-download-service.js';
+import type { ExtensionStatus } from '../services/browser/browser-gateway.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -249,5 +250,8 @@ export type RendererHandlers = {
 
   // 受控浏览器组件下载进度（download-service 广播，前端全局 toast + 解析入口状态文案）
   browserDownloadProgress: (data: BrowserDownloadEvent) => void;
+
+  // 浏览器扩展连接状态变化（browser-gateway 广播，设置页状态行渲染；payload 为全量状态快照）
+  extensionStatusChanged: (data: ExtensionStatus) => void;
 
 };
