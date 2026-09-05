@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, FileText } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, FileText, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConfirmStore } from '@/stores/confirm-store';
@@ -20,6 +20,7 @@ import { formatContextLabel, lookupContextWindow, resolveModelWindow } from '@/l
 import { PiModelRow } from './pi-model-row';
 import { FailoverSection } from './FailoverSection';
 import { formatTokens } from '@/components/agent-chat/usage-badge/usage-utils';
+import { playDogearSound } from '@/lib/dogear-sound';
 
 // ═══ 常量 ═══════════════════════════════════════════
 
@@ -117,6 +118,21 @@ export default function SettingsPage() {
     setLocal(prev => ({
       ...prev,
       appearance: { ...(prev.appearance ?? { theme: 'light' }), ...patch }
+    }));
+  };
+
+  const updateSound = (patch: Partial<NonNullable<NonNullable<AppSettings['ui']>['sound']>>) => {
+    setLocal(prev => ({
+      ...prev,
+      ui: {
+        ...(prev.ui ?? { messageDisplayMode: 'compact' }),
+        sound: {
+          enabled: prev.ui?.sound?.enabled ?? true,
+          volume: prev.ui?.sound?.volume ?? 0.25,
+          backgroundOnly: prev.ui?.sound?.backgroundOnly ?? true,
+          ...patch,
+        },
+      },
     }));
   };
 
@@ -387,6 +403,59 @@ export default function SettingsPage() {
                       {opt.label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Dogear 提示音 */}
+              <div className="space-y-3">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <label className="text-sm font-medium flex items-center gap-2">
+                      <Volume2 className="w-4 h-4" />
+                      Dogear 提示音
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      使用应用内合成音效，不调用 Windows 通知或系统提示音。会话完成、等待授权和手动任务完成时触发。
+                    </p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4"
+                    checked={local.ui?.sound?.enabled ?? true}
+                    onChange={(e) => updateSound({ enabled: e.target.checked })}
+                  />
+                </div>
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-3 pl-0">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={local.ui?.sound?.backgroundOnly ?? true}
+                      onChange={(e) => updateSound({ backgroundOnly: e.target.checked })}
+                    />
+                    仅当 Dogear 不在前台时播放
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    音量
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      className="w-28"
+                      value={Math.round((local.ui?.sound?.volume ?? 0.25) * 100)}
+                      onChange={(e) => updateSound({ volume: Number(e.target.value) / 100 })}
+                    />
+                    <span className="w-9 text-xs text-muted-foreground">{Math.round((local.ui?.sound?.volume ?? 0.25) * 100)}%</span>
+                  </label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => playDogearSound('complete', { force: true })}
+                    disabled={(local.ui?.sound?.enabled ?? true) === false}
+                  >
+                    试听
+                  </Button>
                 </div>
               </div>
 

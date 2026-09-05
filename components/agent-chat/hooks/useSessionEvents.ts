@@ -1,6 +1,7 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import { rendererEvents } from '@/lib/events';
+import { playDogearSound } from '@/lib/dogear-sound';
 import type { PermissionMode } from '@/types/electron-api';
 import type { UseTranscriptStateResult } from './useTranscriptState';
 
@@ -41,6 +42,7 @@ export function useSessionEvents({
 
       setIsLoading(false);
       transcript.onSessionComplete();
+      playDogearSound('complete');
     });
 
     // 2. 监听权限请求：写 pendingActions + live tail 挂占位 block
@@ -55,6 +57,8 @@ export function useSessionEvents({
         toolInput: data.toolInput,
         decisionReason: data.decisionReason,
       });
+
+      playDogearSound('permission');
 
       onScrollToActionRef.current?.();
     });

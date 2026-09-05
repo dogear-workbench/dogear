@@ -141,6 +141,12 @@ export interface AppSettings {
     messageDisplayMode: 'compact' | 'detailed'; // 工具/思考块显示模式
     /** 界面整体缩放档位；缺省视为 medium */
     fontSize?: 'small' | 'medium' | 'large';
+    /** Dogear 自己播放的提示音 */
+    sound?: {
+      enabled: boolean;
+      volume: number;
+      backgroundOnly: boolean;
+    };
   };
   /** 外观主题；缺省视为 light */
   appearance?: {
@@ -171,6 +177,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     messageDisplayMode: 'compact',
     fontSize: 'medium',
+    sound: { enabled: true, volume: 0.25, backgroundOnly: true },
   },
   appearance: {
     theme: 'light',

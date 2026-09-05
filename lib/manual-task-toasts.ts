@@ -1,4 +1,5 @@
 import { toast } from 'sonner';
+import { playDogearSound } from '@/lib/dogear-sound';
 
 export function formatDurationMs(ms: number): string {
   if (ms < 0) ms = 0;
@@ -16,6 +17,7 @@ export function setupManualTaskToasts() {
   import('@/lib/events').then(({ rendererEvents }) => {
     rendererEvents.manualTaskDone.listen((p) => {
       if (p.status === 'failed') {
+        playDogearSound('error');
         toast.error(`${p.planName}失败`, { description: p.error ?? '未知错误' });
         return;
       }
@@ -26,6 +28,7 @@ export function setupManualTaskToasts() {
       toast.success(`${p.planName}完成，耗时 ${formatDurationMs(p.durationMs)}`, {
         description: p.summary,
       });
+      playDogearSound('complete');
     });
   });
 }
