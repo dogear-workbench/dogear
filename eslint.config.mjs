@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     ".worktrees/**",
     "python/**",
     "extension/**",
+    "resources/nm-host/**",
   ]),
   {
     rules: {

@@ -29,7 +29,7 @@ export const settingsRouter = {
     .action(async ({ input }) => {
       try {
         await saveSettings(input.settings);
-        const { broadcastSettingsChanged } = await import('../index.js');
+        const { broadcastSettingsChanged } = await import('../main-app.js');
         broadcastSettingsChanged(input.restartSessions ?? false);
         return { success: true };
       } catch (error) {

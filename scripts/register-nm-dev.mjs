@@ -37,7 +37,8 @@ mkdirSync(`${root}build\\nm-host-dev`, { recursive: true })
 const batContent = [
   '@echo off',
   'cd /d "%~dp0..\\..\\"',
-  '"node_modules\\electron\\dist\\electron.exe" . --nm-host-bridge',
+  'set ELECTRON_RUN_AS_NODE=1',
+  '"node_modules\\electron\\dist\\electron.exe" resources\\nm-host\\nm-bridge-worker.cjs',
   ''
 ].join('\r\n')
 writeFileSync(`${devDir}\\nm-host-dev.bat`, batContent, 'utf8')

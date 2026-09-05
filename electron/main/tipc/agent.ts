@@ -2,7 +2,7 @@
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
 import { getAgentManager } from '../agents/agent-manager.js';
 import { AgentTask, TaskType } from '../agents/task-types.js';
-import { sendToDebugWindow } from '../index.js';
+import { sendToDebugWindow } from '../main-app.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
@@ -164,7 +164,7 @@ export const agentRouter = {
 
   openStockWindow: t.procedure
     .action(async () => {
-      const { createStockWindow } = await import('../index.js');
+      const { createStockWindow } = await import('../main-app.js');
       createStockWindow();
       return { success: true };
     }),
@@ -492,7 +492,7 @@ export const agentRouter = {
   openSessionWindow: t.procedure
     .input<{ conversationId: string; title: string }>()
     .action(async ({ input }) => {
-      const { createSessionWindow } = await import('../index.js');
+      const { createSessionWindow } = await import('../main-app.js');
       createSessionWindow(input.conversationId, input.title);
       return { success: true };
     }),

@@ -76,6 +76,10 @@ gateway 状态变更 → tipc 事件推送 → 设置页（挂载时查询一次
 - **正文抽取跨域受限页**（chrome:// 等）：executeScript 报错 → SW 回 `{ type:'tab_snapshot', title, url, textPreview: '' , extractError }`（P0 协议加可选 `extractError?: string`），状态行仍显示已连接
 - **dev 与安装版共存**：HKCU 指向同一 host 名，后写者胜——dev 注册脚本与安装器写同一键，注册脚本覆盖即切 dev，`--unregister` 后回落安装版
 
+## 实施修正（2026-09-05，step2 实测）
+
+Electron 主进程（app 模式）在 Windows 上启动时会向 stdout 固有写入 2 字节 `\r\n`（发生在任何用户代码之前，实测 ELECTRON_NO_ATTACH_CONSOLE / --disable-logging 等开关均无效），污染 NM 长度前缀帧流 → 浏览器侧解析必挂，且污染发生在进程底层、bridge/gateway/扩展任何一侧都无法拦截。据此 NM host 启动形态改为 `ELECTRON_RUN_AS_NODE=1` + 同一 electron.exe 直接跑纯 Node bridge 脚本（`resources/nm-host/nm-bridge-worker.cjs`，纯 CJS 零依赖，位于 asar 外；安装版 bat 与 dev 注册脚本生成的 bat 均指向它，同源防漂移），实测 stdout 纯净、冷启动更快、零额外分发。原 `--nm-host-bridge` app 模式分流（index.ts → nm-bridge.ts）保留为防御路径不删。附带坑：Electron 主进程的 process.stdin/stdout 包装层不可用（立即 EOF），stdio 转发需 `fs.createReadStream/WriteStream(null, { fd })` 直读句柄。
+
 ## 验收清单
 
 1. dev：`bun run dev` + `node scripts/register-nm-dev.mjs` → Edge 加载 `extension/` → 点「连接此标签页」→ 设置页状态行 ✅ + 标题/URL/正文预览；等 30s SW 死 → 状态行回「未连接」

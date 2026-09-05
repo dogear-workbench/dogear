@@ -7,7 +7,7 @@ export const windowsRouter = {
   /** 打开数据中心窗口（单例，已存在则聚焦） */
   openDataCenterWindow: t.procedure
     .action(async () => {
-      const { createDataCenterWindow } = await import('../index.js');
+      const { createDataCenterWindow } = await import('../main-app.js');
       createDataCenterWindow();
       return { success: true };
     }),
@@ -15,7 +15,7 @@ export const windowsRouter = {
   /** 打开伴随工作台窗口（单例，已存在则聚焦） */
   openWorkbenchWindow: t.procedure
     .action(async () => {
-      const { createWorkbenchWindow } = await import('../index.js');
+      const { createWorkbenchWindow } = await import('../main-app.js');
       await createWorkbenchWindow();
       return { success: true };
     }),
