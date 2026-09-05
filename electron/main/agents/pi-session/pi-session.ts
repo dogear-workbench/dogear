@@ -910,9 +910,10 @@ export class PiSession extends EventEmitter {
     const { text, images } =
       typeof content === 'string' ? { text: content, images: [] as ImageContent[] } : splitContentBlocks(content);
     const adapter = this.adapter;
-    // paused 优先于 isRunning：暂停时 harness 已 idle，必须走 prompt（idle 下 steer 抛 invalid_state），
-    // 且 pendingSteerCount>0（暂停前插话仍在队列）也不能把分支带进 steer
-    const isPaused = adapter.isPauseRequested();
+    // paused（= pauseRequested 且 run 已收尾）优先于 isRunning：此时 harness 已 idle，必须走 prompt
+    // （idle 下 steer 抛 invalid_state），且 pendingSteerCount>0（暂停前插话仍在队列）也不能把分支带进 steer。
+    // running 中已点暂停的窗口期发消息仍走 steer 插话：pauseRequested 保留，turn 边界照样收尾进 paused，插话存队列等恢复 run 注入
+    const isPaused = this.isPaused();
     const isRunning = !isPaused && (this.running || this.pendingSteerCount > 0);
     if (isPaused) {
       adapter.clearPause();
