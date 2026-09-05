@@ -13,6 +13,7 @@ import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
 import { GeneralAgentMdDialog } from '@/components/GeneralAgentMdDialog';
 import { BasicToolsSection } from './BasicToolsSection';
+import { ExtensionStatusLine } from './ExtensionStatusLine';
 import { SubAgentTab } from './SubAgentTab';
 import { AboutTab } from './AboutTab';
 import { ModelSelector } from '@/components/ModelSelector';
@@ -519,6 +520,13 @@ export default function SettingsPage() {
                       <option value="google">Google</option>
                       <option value="bing">Bing</option>
                     </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">浏览器扩展</label>
+                    <p className="text-xs text-muted-foreground">
+                      连接后 Dogear 可读取扩展所在浏览器当前标签页的标题、网址与正文预览。
+                    </p>
+                    <ExtensionStatusLine />
                   </div>
                 </div>
               </div>

@@ -11,7 +11,7 @@
 - [x] [Step 1: 扩展仓库骨架 + NM host 布局 + dev 注册脚本](./step1-extension-skeleton.md) — extension/ 四件套 + key 固定 ID + 帧协议模块 + register-nm-dev
 - [x] [Step 2: bridge 分流 + named pipe 转发](./step2-bridge-pipe.md) — 主入口最前分流，stdio ↔ pipe 双向转发，stdin EOF 退出（实施修正：NM host 改 ELECTRON_RUN_AS_NODE worker 形态）
 - [x] [Step 3: browser-gateway 服务 + tipc 状态接口](./step3-gateway-tipc.md) — pipe server + 单会话状态机 + 查询/推送
-- [ ] [Step 4: 设置页状态行 + dev 端到端验收](./step4-status-ui-e2e.md) — 状态行 UI + 全链路 dev 验收 + 回归
+- [x] [Step 4: 设置页状态行 + dev 端到端验收](./step4-status-ui-e2e.md) — 状态行 UI + 全链路 dev 验收 + 回归（headful CDP 自动化 5 用例全绿，4 项人工遗留见 step4 回填）
 - [ ] [Step 5: NSIS 注册表 + extraResources + 打包验证](./step5-nsis-dist.md) — 安装版两键写入/清除 + dist 全链路验证
 
 ## 全局决策
