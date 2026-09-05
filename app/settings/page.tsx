@@ -451,7 +451,7 @@ export default function SettingsPage() {
                     type="button"
                     size="sm"
                     variant="outline"
-                    onClick={() => playDogearSound('complete', { force: true })}
+                    onClick={() => playDogearSound('complete', { force: true, volume: local.ui?.sound?.volume })}
                     disabled={(local.ui?.sound?.enabled ?? true) === false}
                   >
                     试听
