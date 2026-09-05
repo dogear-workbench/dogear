@@ -15,6 +15,9 @@ const managerUrl = pathToFileURL(
 const articleServiceUrl = pathToFileURL(
   path.join(projectRoot, 'dist', 'main', 'services', 'article-service.js'),
 ).href;
+const searchServiceUrl = pathToFileURL(
+  path.join(projectRoot, 'dist', 'main', 'services', 'browser', 'browser-search-service.js'),
+).href;
 
 const profileDir = mkdtempSync(path.join(os.tmpdir(), 'dogear-eval-profile-'));
 process.env.DOGEAR_CONFIG_DIR = profileDir;
@@ -22,6 +25,7 @@ process.env.DOGEAR_CONFIG_DIR = profileDir;
 const { readArticleWithBrowser } = await import(serviceUrl);
 const { getBrowserManager } = await import(managerUrl);
 const { fetchRawHtml, FetchError, isBrowserRetryableFetchError } = await import(articleServiceUrl);
+const { searchWeb, clampMaxResults } = await import(searchServiceUrl);
 
 const tasks = JSON.parse(readFileSync(path.join(here, 'tasks.json'), 'utf-8')).tasks;
 const resolveUrl = (tpl) => tpl.replace('{{BASE}}', pathToFileURL(here.replace(/[\\/]$/, '')).href);
@@ -118,6 +122,308 @@ function startAntibotServer() {
 async function closeServer(server) {
   server.closeAllConnections();
   await new Promise((resolve) => server.close(resolve));
+}
+
+const SORRY_SERP_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>关于此网页上的异常流量</title></head>
+<body>
+<div>
+  <p>我们的系统检测到您的计算机网络发出异常流量。此网页用于确认这些请求是由您而不是自动程序发出的。</p>
+  <p>DOGEAR-EVAL-MARK-SORRY-PAGE 该页面模拟 Google 验证页，URL 含 /sorry/ 特征。</p>
+</div>
+</body>
+</html>`;
+
+const EMPTY_SERP_HTML = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>未找到结果</title></head>
+<body>
+<p>未找到与搜索匹配的结果。DOGEAR-EVAL-MARK-EMPTY-SERP 页面无任何 SERP 结构。</p>
+</body>
+</html>`;
+
+function startSerpServer() {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const route = (req.url || '').split('?')[0];
+      const sendHtml = (html) => {
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(html);
+      };
+      if (route.startsWith('/sorry/')) {
+        sendHtml(SORRY_SERP_HTML);
+        return;
+      }
+      if (route.startsWith('/empty/')) {
+        sendHtml(EMPTY_SERP_HTML);
+        return;
+      }
+      if (route.startsWith('/ddg/')) {
+        sendHtml(readFileSync(path.join(here, 'serp-ddg.html'), 'utf-8'));
+        return;
+      }
+      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
+      res.end('Not Found');
+    });
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }));
+  });
+}
+
+function assertSearchOutcome(failures, outcome, expect) {
+  if (expect.ok !== undefined && outcome.ok !== expect.ok) {
+    failures.push(`ok 期望 ${expect.ok} 实际 ${outcome.ok}${outcome.ok ? '' : `（errorClass=${outcome.errorClass}，${outcome.message}）`}`);
+  }
+  if (expect.engine !== undefined && outcome.engine !== expect.engine) {
+    failures.push(`engine 期望 ${expect.engine} 实际 ${outcome.engine}`);
+  }
+  if (expect.ok === false) {
+    if (expect.errorClass !== undefined && outcome.errorClass !== expect.errorClass) {
+      failures.push(`errorClass 期望 ${expect.errorClass} 实际 ${outcome.errorClass}（${outcome.message}）`);
+    }
+    if (expect.degradationCount !== undefined && outcome.degradations.length !== expect.degradationCount) {
+      failures.push(`degradations 长度期望 ${expect.degradationCount} 实际 ${outcome.degradations.length}`);
+    }
+    if (expect.messageContains && !outcome.message.includes(expect.messageContains)) {
+      failures.push(`message 应包含「${expect.messageContains}」，实际「${outcome.message}」`);
+    }
+  }
+  if (expect.ok === true) {
+    const results = outcome.results;
+    if (expect.count !== undefined && results.length !== expect.count) {
+      failures.push(`结果条数期望 ${expect.count} 实际 ${results.length}`);
+    }
+    if (expect.maxCount !== undefined && results.length > expect.maxCount) {
+      failures.push(`结果条数 ${results.length} 应 ≤ ${expect.maxCount}`);
+    }
+    results.forEach((r, i) => {
+      if (r.rank !== i + 1) failures.push(`rank 应从 1 连续递增：results[${i}].rank=${r.rank}`);
+      if (!r.title || !r.url || r.snippet === undefined) failures.push(`results[${i}] 字段缺失：${JSON.stringify(r)}`);
+      if (!/^https?:/i.test(r.url)) failures.push(`results[${i}].url 应为 http(s) 绝对地址：${r.url}`);
+    });
+    for (const marker of expect.titlesContain ?? []) {
+      if (!results.some((r) => r.title.includes(marker))) failures.push(`结果标题应包含「${marker}」`);
+    }
+    for (const bad of expect.urlExcludes ?? []) {
+      if (results.some((r) => r.url.includes(bad))) failures.push(`结果 URL 不应包含「${bad}」`);
+    }
+    if (expect.degradationsEmpty && outcome.degradations.length !== 0) {
+      failures.push(`degradations 应为空，实际 ${JSON.stringify(outcome.degradations)}`);
+    }
+    for (const d of expect.degradations ?? []) {
+      const found = outcome.degradations.find((x) => x.from === d.from && x.to === d.to);
+      if (!found) {
+        failures.push(`应有降级记录 ${d.from}→${d.to}，实际 ${JSON.stringify(outcome.degradations)}`);
+      } else if (d.reasonContains && !found.reason.includes(d.reasonContains)) {
+        failures.push(`降级原因应包含「${d.reasonContains}」，实际「${found.reason}」`);
+      }
+    }
+  }
+}
+
+async function runSearchTasks() {
+  const { server, port } = await startSerpServer();
+  const serpBase = `http://127.0.0.1:${port}`;
+  const googleMockUrl = resolveUrl('{{BASE}}/serp-google.html');
+  const ddgMockUrl = resolveUrl('{{BASE}}/serp-ddg.html');
+  const bingMockUrl = resolveUrl('{{BASE}}/serp-bing.html');
+
+  const searchCases = [
+    {
+      id: 'search-google-parse',
+      scenario: 'Google mock SERP：5 条自然结果，顶部广告位与混排赞助商样本剔除',
+      run: () => searchWeb('量子计算', { engine: 'google', serpUrls: { google: googleMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'google',
+        count: 5,
+        titlesContain: ['DOGEAR-SERP-G1', 'DOGEAR-SERP-G5'],
+        urlExcludes: ['ad.example-google-ads.com', 'ad.example-inline.com'],
+        degradationsEmpty: true,
+      },
+    },
+    {
+      id: 'search-ddg-parse',
+      scenario: 'DDG mock SERP：uddg 重定向参数解码为真实 URL，y.js 广告剔除',
+      run: () => searchWeb('暗能量', { engine: 'ddg', serpUrls: { ddg: ddgMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'ddg',
+        count: 5,
+        titlesContain: ['DOGEAR-SERP-D1', 'DOGEAR-SERP-D3', 'DOGEAR-SERP-D5'],
+        urlExcludes: ['y.js', 'ad-ddg-example.com'],
+        degradationsEmpty: true,
+      },
+      extraCheck: (failures, outcome) => {
+        const first = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-D1'));
+        if (!first || first.url !== 'https://example.org/ddg-result-1') {
+          failures.push(`uddg 参数应解码为 https://example.org/ddg-result-1，实际 ${first?.url}`);
+        }
+        const direct = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-D3'));
+        if (!direct || direct.url !== 'https://example.org/ddg-result-3-direct') {
+          failures.push(`直接 https 链接应原样保留，实际 ${direct?.url}`);
+        }
+      },
+    },
+    {
+      id: 'search-bing-parse',
+      scenario: 'Bing mock SERP：6 条 b_algo 结果，b_ad 广告类剔除',
+      run: () => searchWeb('深海', { engine: 'bing', serpUrls: { bing: bingMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 6,
+        titlesContain: ['DOGEAR-SERP-B1', 'DOGEAR-SERP-B6'],
+        urlExcludes: ['ad-bing.example.com'],
+        degradationsEmpty: true,
+      },
+    },
+    {
+      id: 'search-maxresults-clip',
+      scenario: 'maxResults=3 真实裁剪 + clampMaxResults 夹紧（默认 8、下限 1、上限 15）',
+      run: () => searchWeb('深海', { engine: 'bing', maxResults: 3, serpUrls: { bing: bingMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 3,
+        titlesContain: ['DOGEAR-SERP-B1'],
+      },
+      extraCheck: (failures, outcome) => {
+        const cases = [
+          [undefined, 8],
+          [0, 1],
+          [-5, 1],
+          [3, 3],
+          [8, 8],
+          [16, 15],
+          [99, 15],
+        ];
+        for (const [input, want] of cases) {
+          const got = clampMaxResults(input);
+          if (got !== want) failures.push(`clampMaxResults(${input}) 期望 ${want} 实际 ${got}`);
+        }
+        if (outcome.results.some((r) => r.title.includes('DOGEAR-SERP-B4'))) {
+          failures.push('maxResults=3 不应包含第 4 条及之后的结果');
+        }
+      },
+    },
+    {
+      id: 'search-auto-proxy-sorry-degrade',
+      scenario: 'auto + 代理可达：Google 验证页（/sorry/）触发降级，DDG 兜底成功',
+      run: (base) =>
+        searchWeb('暗能量', {
+          engine: 'auto',
+          proxyServer: `127.0.0.1:${base.port}`,
+          serpUrls: {
+            google: `${base.url}/sorry/?q={q}`,
+            ddg: `${base.url}/ddg/?q={q}`,
+          },
+        }),
+      expect: {
+        ok: true,
+        engine: 'ddg',
+        count: 5,
+        titlesContain: ['DOGEAR-SERP-D1'],
+        degradations: [{ from: 'google', to: 'ddg', reasonContains: '验证页' }],
+      },
+    },
+    {
+      id: 'search-auto-proxy-unreachable',
+      scenario: 'auto + 代理不可达：健康探测失败，跳过代理引擎直接 Bing',
+      run: () =>
+        searchWeb('深海', {
+          engine: 'auto',
+          proxyServer: '127.0.0.1:1',
+          serpUrls: { bing: bingMockUrl },
+        }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 6,
+        degradationsEmpty: true,
+      },
+    },
+    {
+      id: 'search-auto-no-proxy-config',
+      scenario: 'auto + 未配置代理：直接使用 Bing，不做探测',
+      run: () => searchWeb('深海', { engine: 'auto', serpUrls: { bing: bingMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 6,
+        degradationsEmpty: true,
+      },
+    },
+    {
+      id: 'search-parse-empty-degrade',
+      scenario: 'Google 解析空（parse_empty）降级 DDG 成功，降级原因记录',
+      run: (base) =>
+        searchWeb('量子计算', {
+          engine: 'google',
+          serpUrls: {
+            google: `${base.url}/empty/?q={q}`,
+            ddg: `${base.url}/ddg/?q={q}`,
+          },
+        }),
+      expect: {
+        ok: true,
+        engine: 'ddg',
+        count: 5,
+        degradations: [{ from: 'google', to: 'ddg', reasonContains: '解析为空' }],
+      },
+    },
+    {
+      id: 'search-parse-empty-all-fail',
+      scenario: '三级引擎全部解析空：整体失败 errorClass=parse_empty，降级链完整记录',
+      run: (base) =>
+        searchWeb('量子计算', {
+          engine: 'google',
+          serpUrls: {
+            google: `${base.url}/empty/?q={q}`,
+            ddg: `${base.url}/empty/?q={q}`,
+            bing: `${base.url}/empty/?q={q}`,
+          },
+        }),
+      expect: {
+        ok: false,
+        engine: 'bing',
+        errorClass: 'parse_empty',
+        degradationCount: 2,
+        messageContains: '解析出结果',
+      },
+    },
+  ];
+
+  const base = { port, url: serpBase };
+  try {
+    for (const c of searchCases) {
+      const startedAt = Date.now();
+      let failures;
+      let outcome;
+      try {
+        outcome = await c.run(base);
+        failures = [];
+        if (c.expect) assertSearchOutcome(failures, outcome, c.expect);
+        if (c.extraCheck) c.extraCheck(failures, outcome);
+      } catch (err) {
+        failures = [`runner 异常：${err instanceof Error ? err.message : String(err)}`];
+      }
+      const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
+      if (failures.length === 0) {
+        passed++;
+        const summary = outcome?.ok
+          ? `ok engine=${outcome.engine} results=${outcome.results.length}`
+          : `errorClass=${outcome?.errorClass}`;
+        rows.push({ id: c.id, status: 'PASS', detail: `${summary}（${seconds}s）` });
+      } else {
+        failed++;
+        rows.push({ id: c.id, status: 'FAIL', detail: `${failures.join('；')}（${seconds}s）` });
+      }
+    }
+  } finally {
+    await closeServer(server);
+  }
 }
 
 async function runAntibotTask(expect) {
@@ -260,13 +566,15 @@ for (const task of tasks) {
   }
 }
 
+await runSearchTasks();
+
 await getBrowserManager().dispose();
 try {
   rmSync(profileDir, { recursive: true, force: true });
 } catch {
 }
 
-console.log('\n===== 浏览器文章读取管线回归报告 =====');
+console.log('\n===== 浏览器管线回归报告（文章读取 + 搜索） =====');
 for (const row of rows) {
   console.log(`[${row.status}] ${row.id} — ${row.detail}`);
 }
