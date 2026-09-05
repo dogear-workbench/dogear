@@ -161,7 +161,7 @@ async function downloadToFile(
   }
   const total = Number(response.headers.get('content-length')) || -1;
   let received = 0;
-  const body = Readable.fromWeb(response.body as import('stream/web').ReadableStream);
+  const body = Readable.fromWeb(response.body as unknown as import('stream/web').ReadableStream);
   body.on('data', (chunk: Buffer) => {
     received += chunk.length;
     onChunk(received, total);

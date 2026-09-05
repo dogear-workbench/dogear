@@ -34,3 +34,20 @@
 5. **Agent 基线采集**：run-agent.mjs（electron stub/hooks 进程内起 PiSession，autoExecute）+ 便宜档 glm-4.5-air，6/6 任务 PASS（成功率 100%，~13k tokens 总消耗），baseline.md 回填销项。
 
 三期候选方向见设计文档「三期预告」。
+
+## 验收记录（2026-09-05，主会话代跑）
+
+**结论：通过**。产物链路全部实证，发现并修复 14 处前端 tsc 类型错误（commit 见 git log）。
+
+| 项 | 结果 |
+|---|---|
+| lint / tsc×2 / build:electron | 0 errors（修复后；99 warnings 为存量 any） |
+| 单测（bun test） | 273 pass / 0 fail / 1 skip |
+| 管线回归 | 11/11 PASS |
+| Edge 降级档真实路径 | ✅ `PLAYWRIGHT_BROWSERS_PATH` 空目录模拟干净机器 → 内置缓存档正确判未装 → 自动降级系统 Edge（UA Edg/152）导航正常 |
+| 懒下载档真实路径 | ✅ npmmirror 主源 201MB / 17s，进度事件广播正常，解压校验通过，`chromiumInstallStatus` 翻转 installed，临时目录零残留 |
+| 真实站点端到端 | ✅ 中文维基百科词条 1.1s 解析成功（title/wordCount 正确）——补齐了管线与 agent 基线均为 mock 页的空白 |
+
+**验收中修复**：`stores/article-store.ts` 13 处（一期 step3 把 parseArticle 返回改为判别联合后前端未收窄，`if (result.error)` → `if ('error' in result)`，运行时无影响）；`browser-download-service.ts` 1 处（ReadableStream cast 经 unknown 中转）。根因：step 验收清单只跑 `tsconfig.electron.json` 不跑前端 tsc，两期潜伏。
+
+**低风险未覆盖项**（发版前干净 VM 冒烟兑底）：系统 Chrome 档（本机未装，机制同 Edge）；官方 CDN fallback（npmmirror 成功不触发）；下载进度 UI 肉眼确认。

@@ -115,7 +115,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     try {
       set({ parsingArticle: true });
       const result = await client.parseArticle({ url: articleUrlInput.trim(), workspaceId });
-      if (result.error) {
+      if ('error' in result) {
         toast.error('文章解析失败', { description: result.error });
         return;
       }
@@ -148,7 +148,7 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
     try {
       set({ parsingArticle: true });
       const result = await client.parseArticle({ url: article.url, workspaceId });
-      if (result.error) {
+      if ('error' in result) {
         toast.error('文章解析失败', { description: result.error });
         return;
       }
