@@ -17,7 +17,7 @@
 - `app/page.tsx` — 主工作区页面，三栏布局（对话列表 + AI助手 + 伴随面板）；TitleBar 自绘标题栏显示「Dogear」；header 数据中心按钮 openDataCenterTab（可开关 tab）；内容区常驻挂载 NotesPanel（固定 tab）+ DataCenterPage（dataCenterTabOpen 时挂载）+ 会话 tabs，按 activeTabId 切 display；哨兵 tab（笔记/数据中心）下 CompanionPanel 不渲染
 - `app/session-window/page.tsx` — 独立会话窗口（路由参数 `conversationId`，可折叠文件树 + 聊天 + 预览，独立渲染进程初始化；selectConversation 成功后上报全局焦点 setFocusedConversation，伴随工作台跟随）
 - `app/workbench-window/page.tsx` — 伴随工作台独立窗口（WorkbenchWindowPage，主进程单例 BrowserWindow 路由 `#/workbench-window`）：初始化链路 getDefault → setWorkspace(skipSetDefault)，默认跟随模式（不 pin 死）；订阅主进程 `focusedConversationChanged` 广播 + 冷启动 getFocusedConversation 拉取全局焦点会话（RPC 响应仅无值时生效防回退），锚点 `focusedConv?.conversationId ?? conversations[0].id`；焦点属于其他工作区时 setWorkspace(skipSetDefault) 整窗跟随切换；渲染 `<CompanionPanel full terminalAnchor=锚点>`，topic tab 的 groupId 与终端跟随锚点同源
-- `app/settings/page.tsx` — 设置页（主窗口全屏 overlay 形态：返回按钮/关闭均调 handleClose，不 dirty 直接 closeSettings、dirty 弹三按钮 confirm 后关 overlay；顶栏保存/取消/保存并重启会话；保存联动走 updateSettings → broadcastSettingsChanged → setup-settings-sync，同窗口自收自发）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）
+- `app/settings/page.tsx` — 设置页（主窗口全屏 overlay 形态：返回按钮/关闭均调 handleClose，不 dirty 直接 closeSettings、dirty 弹三按钮 confirm 后关 overlay；顶栏保存/取消/保存并重启会话；保存联动走 updateSettings → broadcastSettingsChanged → setup-settings-sync，同窗口自收自发）；布局为顶部下划线式 TabsList（variant=underline）+ TabsContent 内层滚动，内容容器 max-w-* mx-auto 居中；纯设置 tab：基础设置 / 能力 / 模型方案 / 工作区管理 / 子会话派遣 / 关于（原记忆/摘要/定时/用量/解析历史 tab 已迁数据中心）；基础设置 tab 内含「受控浏览器」小节（代理地址 browserProxyServer 输入 + 默认引擎 browserSearchEngine 下拉）
 - `app/settings/AbilityTab.tsx` — 能力标签页编排层：workspaceId 本地 state（挂载时 getAll + getDefault，default 不在列表选第一个，零工作区 null；设置 overlay 无 workspace-store 初始化链路，不依赖 store）+ 工作区 Select；按能力域分块单视图（无视图切换）；数据加载分流、applySkillToggles 统一开关（单 skill / 域整体：开 = skills ∪ 关联工具包，关 = 按剩余已启用 skill 保留共享包，一次 updateWorkspaceConfig 提交）、包徽标跳转定位（展开目标域 + 包，highlightServer scrollIntoView + 2s ring 高亮）；容器 max-w-[1600px] 自适应 + 域块网格 xl:grid-cols-2（多包域全宽）；挂 SkillDetailDialog / ToolDetailDialog / SegmentDetailDialog 三个弹窗
 - `app/settings/AbilityDomainCard.tsx` — 可选能力域块组件：域头（统计 + skill 数 >1 时显示整体开关）+ 展开后左右分区（md:grid-cols-2 对半：左 skill 控制层 / 右工具包折叠列表，包无独立开关、状态随 skill 联动）；无工具包域 skill 走网格（sm:grid-cols-2 xl:grid-cols-3）；PackPanel 折叠头 data-server 定位
 - `app/settings/AbilityResidentSection.tsx` — 常驻能力块：默认收起统计行，展开后提示词段列表（只读）+ 常驻工具组折叠列表（只读）两栏
@@ -294,11 +294,18 @@
 - `renderer-broadcast.ts` — 主进程→渲染层广播收口：broadcastToWindows 全窗口遍历；broadcastConversationListChanged（immediate / debounced 500ms 尾部去抖两档，会话与组列表域）；broadcastGroupDataChanged（TopicPanel 三数据域）
 - `focused-conversation-service.ts` — 全局焦点会话状态（「最近一次被激活的会话」语义，跨窗口共享）：内存态 `{conversationId, workspaceId} | null`，setFocusedConversation 值变化才广播 focusedConversationChanged 到所有窗口（伴随工作台据此跟随，含跨工作区整窗切换）；哨兵 tab 不上报故焦点自然保持，会话删除后悬空焦点由渲染层 find 不到自然空态
 - `workspace-watcher.ts` — 工作区文件树监视：每工作区递归 fs.watch 只处理 rename 事件（增删改名，忽略 change），路径段 `.` 开头或 node_modules 丢弃，500ms 尾部去抖后广播 workspaceFilesChanged；随 workspaces.json 增删起停，监听错误静默降级关闭
-- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段；normalize 尾部挂 settings-types.ts 的 normalizeFailoverChain 维护全局模型故障转移链——类型 FailoverEntry/FailoverConfig（AppSettings.failover）：新供应商追加链尾、删除供应商移出链、tier 失效回退该家首个 piModel、piModels 为空的供应商不进链，链序与 enabled 完全保留）
+- `settings-service.ts` — 应用设置 JSON 存储（`.dogear/settings.json`，含 permissionMode、basicToolPermissions；导出 normalizeSettings 做幂等历史设置迁移与结构修复，清理遗留 SDK 字段；normalize 尾部挂 settings-types.ts 的 normalizeFailoverChain 维护全局模型故障转移链——类型 FailoverEntry/FailoverConfig（AppSettings.failover）：新供应商追加链尾、删除供应商移出链、tier 失效回退该家首个 piModel、piModels 为空的供应商不进链，链序与 enabled 完全保留）；浏览器搜索设置项 browserProxyServer（空=禁用代理引擎仅 Bing）与 browserSearchEngine（auto/google/bing，默认 auto）也在此维护
 - `pty-service.ts` — 真 PTY 实例管理（node-pty）：模块级 Map（terminalId → instance + buffer，按 UTF-16 字符 100K 封顶保尾部）；createTerminal（detectShell：Windows 优先 Git Bash，排除 WSL bash.exe，找不到报错提示装 Git for Windows；resolveCwd 经 workspaceRoots 边界校验）/writeTerminal（exited 幂等）/resizeTerminal/killTerminal/killConversationTerminals（doClose 随会话销毁清）/killAll/getBuffer/listTerminals；事件经 setPtyEventBroadcaster 上抛（桥接在 tipc/pty.ts 的 registerPtyBroadcaster）
 - `window-state-service.ts` — 窗口位置记忆通用小工具：`.dogear/window-state.json` 按 key 存 {x,y,width,height}（safe-json 原子写），load/saveWindowBounds；当前仅 workbench-window 使用
 - `ai-service.ts` — AI 接口占位（chat / summarize）
 - `article-service.ts` — 网络文章抓取（V2：平台脚本优先 + Readability 兜底 + AI 失败才介入），微信公众号特殊处理
+- `browser/` — 受控浏览器（真实 Chromium + patchright 反检测 fork，headful + 持久 profile；lease 语义 acquire/release，空闲约 3min 自动关）：
+  - `browser-manager.ts` — 单例 getBrowserManager：ensureLaunched（patchright chromium.launch；Chromium 缺失时经 browser-download-service 自动安装）、PAC 按域代理注入（读 settings.browserProxyServer，data URL 内嵌：.google 系 + duckduckgo.com 走代理、其余 DIRECT，不受系统代理开关影响）、acquire(taskMeta) 排队发 lease（page 复用）
+  - `browser-article-service.ts` — readArticleWithBrowser：渲染等待 + 展开全文启发式点击 + 翻页拼接 + DOM 登录墙检测（need_login 引导窗口人工登录，profile 记住登录态），错误归类不抛
+  - `browser-search-service.ts` — searchWeb(query, opts)：引擎编排（auto 按 browserProxyServer 探测 2s 定链 / 显式引擎），降级链 Google → DDG(html) → Bing cn，验证页（/sorry/）与代理故障检测，逐级降级记录原因，三级全失败才失败；不抛，错误归类（empty_query/parse_empty/timeout/browser_crash）；serpUrls 参数仅测试注入用，不暴露给工具
+  - `serp-parsers.ts` — 三引擎 SERP 解析器（evaluate 内 DOM 查询，new Function 写法）：Google（#search/#rso div.g 多候选 + 广告剔除）、DDG（div.result + uddg 重定向解码 + y.js 广告剔除）、Bing（li.b_algo + b_ad 剔除）
+  - `browser-action-stream.ts` — 浏览器动作事件汇总出口（navigate/wait/click/observe/parse…，kind=article|agent，供伴随面板动作流消费）
+  - `browser-download-service.ts` — Chromium 自动下载（npmmirror/playwright-cdn 双源 + 进度广播）
 - `notes/` — 笔记卡片数据层（存储 `<workspacePath>/.dogear/notes/` 一卡一 md，frontmatter 承载元数据，文件为真源）
   - `notes-store.ts` — IO 原语：路径/文件名生成（`<YYYYMMDD-HHmmss>-<shortid8>.md`）/手写 frontmatter 解析序列化（YAML 兼容子集，零依赖，遇 todos: 块直接忽略）/原子写/index.json 维护（不回退 .bak，损坏全量重建）/.trash 移动
   - `notes-service.ts` — CRUD 语义（唯一写入口）：create/get（永远读文件同步刷索引）/list（走索引）/update（tags/links 整体深替换）/append/remove 软删除/restore/purge/listTrash/search（tag 精确 + query 标题正文不区分大小写）；写后广播 notesChanged；note-types.ts 为 types/note.ts 主进程镜像
@@ -372,6 +379,8 @@
 
 - `tools/article-tools.ts` — 文章阅读工具（dogear__ReadArticle / dogear__ListArticles）
 
+- `tools/browser-tools.ts` — 受控浏览器 MCP 工具（dogear-browser server，跟随 browser 能力域，组内 10 工具）：声明式入口 dogear__browser__readArticle（复用 browser-article-service，need_login 引导人工登录）+ dogear__browser__search（复用 browser-search-service，从设置读 browserSearchEngine/browserProxyServer 传入）+ 原子探索 8 工具（navigate/observe_page/click/fill/read_text/wait_for/screenshot/close，ref 编号定位、单步 30s 超时）；全部动作经 setBrowserToolsActionListener 转发（source=readArticle|search|navigate…）
+
 - `tools/notes-tools.ts` — 笔记卡片 MCP 工具（dogear-notes server，主会话且绑定工作区时挂载：dogear__CreateNote / dogear__GetNote / dogear__SearchNotes / dogear__AppendNote / dogear__UpdateNote / dogear__DeleteNote 软删除；可实施工作分流见 dogear__CreateTask）；直调 notes-service 不绕 tipc；配合 session-append-templates 的 NOTES_DISCIPLINE_APPEND 存卡纪律（可实施工作一律走任务不存卡、方案落盘后 CreateTask 挂计划栏可占位、琐事备忘存卡片正文用 - [ ] 勾选项）
 - `tools/task-tools.ts` — 协作任务 MCP 工具（dogear-tasks server：dogear__CreateTask（默认落计划栏，planPath 可省略占位，同标题 plan 态自动补路径；autoExecute=true 先落 plan 再 executeTask 两步入队）/ dogear__ListTasks（七态过滤，plan 计划 / backlog 待办）/ dogear__ExecuteTask（plan/backlog→queued + kick，占位任务即时报错））
 
@@ -419,6 +428,15 @@
 > 智能分类链路（按组）：group-digest-trigger 任务成功保存组卡后 → chainCategorize 检查 smartCategory.enabled + 组卡 tags 存在 → category-trigger.triggerCategorize(workspaceId, groupId, groupDigestPath) 串行起 CATEGORIZE_SESSION 任务 → agent-worker.handleCategorizeSessionTask：Step A 跑 matchByThreshold 阈值匹配（0 LLM），命中即 push 到对应分类记 'match'；无匹配则上 LLM（走 pi `runOnce`，按 categorizeModelSelection 三级 fallback 走 resolvePiModel，可取消）→ agent 自调 category-tools（dogear__ListCategories 看现有分类 + 样例组标题 / SaveCategory 决策 JOIN_EXISTING 或 NEW_CATEGORY，新建时附带 redistribute 候选迁移；入参用 groupId）→ smart-categories.json 落 `<configDir>/workspaces/<wsId>/`（category.groupIds\[\]）。outcome=match/join/new 时 broadcast categoriesUpdated，前端 useSmartCategoryStore 自动 reload。手动文件夹装 groupId（tree children 从 conversationId 改为 groupId），通过 conversations.ts 的 addGroupToFolder/removeGroupFromFolder/moveGroupBetweenFolders IPC 支持多引用。
 
 > 模型选择链路：对话创建时 tipc 把 settings.ai.defaultModelSelection 浅拷贝到 conversation.modelSelection（fork 则继承父对话）→ ChatInputArea 输入框工具栏的 ModelSelector（按 Profile 分组、按 modelId 去重、空选时红字「请先选择模型」+ textarea/send 全 disable）→ 用户切换时 conversation-store.setConversationModelSelection 写库 + 同步顶层镜像 → useSendMessage 发送前 reconcile：null 拦截 toast、有变更则 client.setSessionModel(selection)；同 profile 换 tier 走 PiSession 快速路径，跨 profile 后端返回 needsRestart → triggerSessionRestart + 让用户重发；插话路径（pendingState!='idle'）跳过 reconcile 沿用会话原模型。usePendingState 派生 idle/running/flushing；StreamingIndicator flushing 态显示「队列还有 N 条插话待回复…」。
+
+## 测试基建（resources/）
+
+- `resources/browser-eval/` — 受控浏览器评测集（runner 一律 node 执行，bun 下 patchright acquire 永久挂起；`DOGEAR_CONFIG_DIR` 临时目录隔离）：
+  - `run-pipeline.mjs` — 零模型管线回归（10 文章读取断言 + 1 antibot 分流断言 + 9 search 断言：三引擎 mock 解析 / maxResults 裁剪 / 降级链编排 / parse_empty 路径；自建本地 http server 模拟 403 反爬、Google 验证页、空 SERP）
+  - `run-agent.mjs` — agent 基线采集（electron-stub hooks 进程内起 PiSession 子会话，便宜档模型启发式选中；断言 expect.found 标记 / expect.tools 必调用工具 / expect.minUrls 去重 URL 下限；--only / --model 可选）
+  - `tasks.json` — 任务清单（pipeline / antibot / agent 三类；agent 含 6 探索任务 + 2 search 任务，search 类无 url 字段走真实搜索引擎）
+  - `baseline.md` — 基线记录（管线 / agent / WebSearch 真实冒烟结果与已知限制，含 Google goto 降质形态限制）
+  - 文章测试页 7 个（SPA 延迟注入 / 折叠正文 / 翻页×2 / 登录墙 / 懒加载 / 非标准容器）+ mock SERP 页 3 个（serp-google/-ddg/-bing，meta charset 必带）
 
 ## 数据存储（`.dogear/` 目录）
 

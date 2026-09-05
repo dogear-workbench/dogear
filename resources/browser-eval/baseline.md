@@ -1,6 +1,6 @@
-# 浏览器文章读取评测基线（Step 6 / 二期 Step 5）
+# 浏览器文章读取评测基线（Step 6 / 二期 Step 5 / WebSearch Step 4）
 
-日期：2026-09-03（管线）/ 2026-09-04（agent 基线）
+日期：2026-09-03（管线）/ 2026-09-04（agent 基线）/ 2026-09-05（WebSearch agent 基线 + 真实冒烟）
  runner（均**用 node 运行**，不要用 bun，原因见「已知限制」）：
 
 - 管线回归（零模型）：`node resources/browser-eval/run-pipeline.mjs`
@@ -52,6 +52,30 @@
 - tokens 为 pi usage 采集口径（input+output，不含 cache）；总消耗约 13k in / 0.9k out，便宜档下成本可忽略。
 - 观测：readArticle 作为工具描述里的首选入口，会把部分探索任务退化为管线能力（任务 2 仅 1 步）——对成功率是加分项，对「纯探索步数」基线是干扰项，解读步数时需注意。
 
+## WebSearch agent 基线（browser-search Step 4 采集）
+
+- 任务：tasks.json 新增 2 个 search 类 agent 任务（无 url 字段，走真实搜索引擎，goal 由 runner 原样发送不拼页面 URL），断言字段 `expect.tools`（必调用工具）+ `expect.minUrls`（工具输出+回复中去重 http(s) URL 数下限），与既有 `expect.found` 标记断言并存。
+- 执行方式：与既有 agent 任务一致（PiSession 子会话，「浏览器解析」Profile，autoExecute），代理未配置（临时 profile 复制真实 settings.json，browserProxyServer 为空 → search 工具走 Bing 直连）。
+- 模型：`default:glm-4.5-air`（便宜档启发式自动选中，同上）。
+- 结果：**2/2 PASS，成功率 100%**（连续两轮结果一致，可重复）。
+
+| # | 任务 | 结果 | 步数 | 耗时 | tokens(in+out) | 说明 |
+|---|------|------|------|------|------|------|
+| 7 | search-agent-top-results | PASS | 1 | 20.1s | 71+410 | 一次 search 调用后直接列结果，tools+minUrls≥3 断言命中 |
+| 8 | search-agent-read-article | PASS | 2 | 16.3s | 186+200 | search 定位 developer.mozilla.org URL 后 readArticle，发现→阅读闭环成立 |
+
+- 注：第二轮 top-results tokens（71 in）明显低于首轮同任务（约 4.6k in），为 pi usage 事件采集口径波动（不含 cache），非行为差异；两轮均 PASS。
+
+### WebSearch 真实冒烟（Step 4，node 直调 searchWeb，临时 DOGEAR_CONFIG_DIR 隔离）
+
+| # | 场景 | 结果 | 引擎 | 条数 | 耗时 | 关键观测 |
+|---|------|------|------|------|------|------|
+| a | Bing cn 直连（auto + 未配置代理） | OK | bing | 8 | 1.1s | 结构化结果（标题/URL/摘要齐全），中文查询正常 |
+| b1 | Google 经代理 127.0.0.1:7897 | OK（降级） | ddg | 8 | 2.3s | 导航成功、无 /sorry/ 验证页，但 SERP 解析空（见已知限制 6）→ 自动降级 DDG，降级原因正确记录 |
+| b2 | DDG 经代理 | OK | ddg | 8 | 0.0s | 复用已开实例，真实 URL + 摘要，结果质量好 |
+| b3 | auto 完整链经代理（附加样本） | OK（降级） | ddg | 8 | 1.9s | 探测 proxy_ok → Google 解析空 → 降级 DDG 成功，链路与记录行为正确 |
+| c | auto + 代理不可达（127.0.0.1:9） | OK | bing | 8 | 0.6s | 探测失败直接落 Bing，无长等待（对比 Google 导航超时路径） |
+
 ### 二期采集条件销项
 
 1. ✅ `SubAgentEnabledAbilities` 增加 browser 字段 + settings UI 配置入口（step4 交付）
@@ -65,3 +89,4 @@
 3. 无展开候选页面 `qualityHint` 恒存在（「未能通过页面按钮展开全文」），对本来完整的文章会误示「可能不完整」；任务 2 已将该行为固化为断言，二期若优化需同步调整断言。
 4. 翻页拼接与 URL 跳转型翻页：一期记录「未做/未覆盖」，已由二期前序 step 补做并通过（见管线节二期注记与 tasks.json 现行断言）。
 5. run-agent.mjs 在纯 node 进程内起 PiSession，依赖 node module hooks 把 `electron` 重定向到 `electron-stub.mjs`（pi-session 静态依赖链 delegation-tools → delegation-bridge → @egoist/tipc/main 顶层 `import { ipcMain } from 'electron'`，裸 node 无法加载；stub 仅服务评测，不影响产品代码）。会话 JSONL/settings 全部写入 `DOGEAR_CONFIG_DIR` 临时目录，仅从真实 `.dogear/settings.json` 复制模型 API 配置。
+6. **Google 引擎当前返回链接降质形态（goto 中间跳转），解析必空 → 恒降级 DDG**（2026-09-05 真机冒烟实测）。导航成功、无 /sorry/ 验证页，但当前布局结果块已不再用 `div.g` 容器（解析器 4 个候选全空），且块内 h3 链接的 href 全部是 `https://www.google.com/goto?url=<加密串>` 中间跳转形态（cite 仅显示用截断域名，非完整 URL）；同一查询两次会话渲染块数不稳（4 块/2 块），符合 Google 对自动化怀疑的温和降质特征。不改解析器去适配 goto 形态：即使适配也拿不到真实目标 URL，投入产出不成立，且按红线不绕风控；现行为（检测到 → 记录原因 → DDG 兜底）完全符合设计容错路径。Google 可用性预期靠 profile 登录 + 长期使用改善 IP/指纹信誉（运行期事项），届时若 DOM 回到常规形态且解析仍空，再校准块选择器（候选应加 `#rso > div` 而非继续依赖 `div.g`）。在 Google 恢复前，auto 引擎实际由 DDG 兜底承担，效果不受影响。

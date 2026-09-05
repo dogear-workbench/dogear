@@ -113,8 +113,9 @@ async function runAgentTask(task, modelSelection, subAgentProfile) {
   let timeouted = false;
   try {
     await session.start();
-    const url = resolveUrl(task.url);
-    const goal = `${task.goal}\n\n页面 URL：${url}\n找到后在最终回复中原样引用该标记文本。`;
+    const goal = task.url
+      ? `${task.goal}\n\n页面 URL：${resolveUrl(task.url)}\n找到后在最终回复中原样引用该标记文本。`
+      : task.goal;
     await Promise.race([
       session.sendMessage(goal),
       new Promise((_, reject) => setTimeout(() => reject(new Error(`任务超时（${TASK_TIMEOUT_MS / 60000} 分钟）`)), TASK_TIMEOUT_MS)),
@@ -136,8 +137,17 @@ async function runAgentTask(task, modelSelection, subAgentProfile) {
     return { id: task.id, status: 'FAIL', reason: `turn_${turnResult.subtype}：${msg}`, steps, seconds, toolCalls, tokensIn, tokensOut, missing: [] };
   }
   const missing = (task.expect?.found ?? []).filter((mark) => !allText.includes(mark));
-  if (missing.length > 0) {
-    return { id: task.id, status: 'FAIL', reason: `断言未命中，缺标记：${missing.join('、')}`, steps, seconds, toolCalls, tokensIn, tokensOut, missing };
+  const missingTools = (task.expect?.tools ?? []).filter((name) => !toolCalls.includes(name));
+  const uniqueUrls = new Set(allText.match(/https?:\/\/[^\s"'<>\)\]]+/g) ?? []);
+  const minUrls = task.expect?.minUrls ?? 0;
+  const urlShortfall = uniqueUrls.size < minUrls ? minUrls - uniqueUrls.size : 0;
+  if (missing.length > 0 || missingTools.length > 0 || urlShortfall > 0) {
+    const parts = [
+      missing.length > 0 ? `缺标记：${missing.join('、')}` : '',
+      missingTools.length > 0 ? `未调用工具：${missingTools.join('、')}` : '',
+      urlShortfall > 0 ? `去重 URL 数 ${uniqueUrls.size} 不足 ${minUrls}` : '',
+    ].filter(Boolean);
+    return { id: task.id, status: 'FAIL', reason: `断言未命中，${parts.join('；')}`, steps, seconds, toolCalls, tokensIn, tokensOut, missing };
   }
   return { id: task.id, status: 'PASS', reason: '', steps, seconds, toolCalls, tokensIn, tokensOut, missing: [] };
 }

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "notes": "浏览器文章读取评测任务集。url 中 {{BASE}} 由 runner 替换为测试页目录的 file:// URL。type=pipeline 为零模型管线断言（run-pipeline.mjs 执行）；type=antibot 为 fetch 白名单分流断言（runner 自建本地 http server，对普通 fetch 返回 403、对真实浏览器导航返回文章页）；type=agent 为需模型驱动浏览器工具的探索任务（基线采集用，runner 跳过）。",
+  "notes": "浏览器文章读取评测任务集。url 中 {{BASE}} 由 runner 替换为测试页目录的 file:// URL。type=pipeline 为零模型管线断言（run-pipeline.mjs 执行）；type=antibot 为 fetch 白名单分流断言（runner 自建本地 http server，对普通 fetch 返回 403、对真实浏览器导航返回文章页）；type=agent 为需模型驱动浏览器工具的探索任务（基线采集用，runner 跳过），其中 search 类任务无 url 字段、走真实搜索引擎（依赖网络与代理配置），断言用 expect.tools（必调用工具）与 expect.minUrls（回复/工具输出去重 URL 数下限）。",
   "tasks": [
     {
       "id": "spa-pipeline-read",
@@ -203,6 +203,26 @@
       "goal": "正文容器为非标准结构且周边有导航与侧栏噪音。用 read_text 读取正文区域，找到标记文本 DOGEAR-EVAL-MARK-ODD-2，且不要被侧栏的 DOGEAR-EVAL-MARK-ODD-NOISE 干扰",
       "expect": {
         "found": ["DOGEAR-EVAL-MARK-ODD-2"]
+      }
+    },
+    {
+      "id": "search-agent-top-results",
+      "type": "agent",
+      "action": "search",
+      "goal": "不知道具体网址时需要先搜索发现内容。用 dogear__browser__search 工具搜索关键词「playwright patchright 反检测」，把搜索返回的前 5 条结果在最终回复中逐条列出，每条包含标题、完整 URL 和一句话摘要",
+      "expect": {
+        "tools": ["dogear__browser__search"],
+        "minUrls": 3
+      }
+    },
+    {
+      "id": "search-agent-read-article",
+      "type": "agent",
+      "action": "search",
+      "goal": "搜索发现与阅读的组合任务。先用 dogear__browser__search 搜索「MDN Fetch API 文档」，从结果中挑一条 developer.mozilla.org 的文档 URL，再用 dogear__browser__readArticle 读取该页面。最终回复中给出：所选结果的完整 URL、读取到的文章标题、以及不超过三句话的内容摘要",
+      "expect": {
+        "tools": ["dogear__browser__search", "dogear__browser__readArticle"],
+        "minUrls": 2
       }
     }
   ]
