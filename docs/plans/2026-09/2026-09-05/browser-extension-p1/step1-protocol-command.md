@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 帧协议 v2 + gateway 命令通道
-status: pending
+status: done
 ---
 
 ## 目标
@@ -30,9 +30,22 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. `extension/src/nm-protocol.js` 无需改动：protocolVersion 只是 hello 消息字段，帧编解码器不动（已在交付文档说明）
+  2. 验证脚本因本机安装版 Dogear 占用真实 pipe（不能杀），改为：拷贝编译产物到临时目录 + 仅替换临时拷贝的 pipe 路径常量为测试路径，产品代码零污染，验证的仍是同一份编译产物逻辑
+  3. 失败 command_result 若缺/非法 errorCode，防御性兜底 `stale_protocol` + error 文案兜底「扩展返回了不合规的失败结果」（error 文案保证 step4 展示不误导；errorCode 不新造值）
+  4. takeOver 除 handleDisconnect 外也 rejectAllPending（计划要求项，补齐「连接切换」场景）
 - 改动文件清单：
+  - `electron/main/services/browser/nm-protocol.ts:8-39`：ProtocolVersion=2、CommandKind、CommandErrorCode（12 值联合）、ExtensionCommand、CommandResult
+  - `electron/main/services/browser/browser-gateway.ts:28-56`（CommandError/PendingCommand/超时与 errorCode 全集常量/pending map）、`:87-94`（rejectAllPending）、`:96-124`（takeOver 记录 protocolVersion + 清 pending）、`:142-176`（parseErrorCode + handleCommandResult）、`:185-190`（hello 解析 protocolVersion）、`:192-194`（command_result 分支）、`:206-212`（handleDisconnect 清 pending）、`:214-243`（sendExtensionCommand）
+  - `extension/src/background.js:90`：hello 帧加 protocolVersion: 2
+- 验证：自建 node 冒烟 14/14 PASS（not_connected / 响应 resolve / 超时+迟到回包忽略 / legacy v1 stale_protocol / 断连 reject / takeOver 清 pending+goodbye / 并发 requestId 关联 / guard_password 错误透传）；回归 build:electron ✓、lint 0 errors（本次改动文件零告警）✓、run-pipeline 20/20 ✓
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `sendExtensionCommand(kind: CommandKind, params: Record<string, unknown>, timeoutMs = 30000): Promise<CommandResult>`——成功 resolve `{requestId, ok: true, data?}`；失败 reject `{errorCode: CommandErrorCode, error: string}`（CommandError，gateway.ts:28）
+  - 命令帧（主→扩展）：`{type:'command', requestId, tabId, url, kind, params}`，tabId/url 取自当前连接状态
+  - 结果帧（扩展→主）：`{type:'command_result', requestId, ok: boolean, data?, error?, errorCode?}`——**ok 必须严格布尔**（gateway 用 `=== true` 判断），失败必须带 12 值 errorCode 之一，error 建议中文文案（gateway 原样透传给工具层）
+  - `ExtensionStatus` connected 分支新增 `protocolVersion: number`（tipc extensionStatusChanged 推送 payload 已带，设置页可直接展示）
+  - requestId 格式 `${Date.now()}-${seq}`，扩展侧只需原样回传
+- 下个 step 该从哪里继续：step2 在扩展侧收 command 帧 → 校验 tabId/url → executeScript → 回 command_result；注意 command_result 的 ok 布尔 + errorCode 契约；若 url 快照未就绪（连接初期 url 为空串），扩展侧 url 前缀校验需容忍空串
+- 待办或已知限制：gateway 命令前置校验 permission_denied（纵深防御）属 step3 授权模型；本验证未跑真机扩展（headful 链路属 step4 验收）；真实 pipe 被安装版占用的环境下 dev 实验需注意两实例 pipe 冲突

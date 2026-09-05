@@ -5,6 +5,40 @@ const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 export type NmMessage = Record<string, unknown>;
 
+export const ProtocolVersion = 2;
+
+export type CommandKind = 'observe' | 'click' | 'fill' | 'read_text';
+
+export type CommandErrorCode =
+  | 'not_connected'
+  | 'stale_protocol'
+  | 'timeout'
+  | 'disconnected'
+  | 'stale_tab'
+  | 'navigated_away'
+  | 'tab_closed'
+  | 'permission_denied'
+  | 'ref_expired'
+  | 'value_mismatch'
+  | 'guard_password'
+  | 'guard_submit';
+
+export interface ExtensionCommand {
+  requestId: string;
+  tabId: number;
+  url: string;
+  kind: CommandKind;
+  params: Record<string, unknown>;
+}
+
+export interface CommandResult {
+  requestId: string;
+  ok: boolean;
+  data?: unknown;
+  error?: string;
+  errorCode?: CommandErrorCode;
+}
+
 export interface NmDecoder {
   onFrame(handler: (message: NmMessage) => void): void;
   push(chunk: Uint8Array): void;

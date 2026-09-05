@@ -87,6 +87,7 @@ async function connect() {
   port.postMessage({
     type: 'hello',
     extensionVersion: chrome.runtime.getManifest().version,
+    protocolVersion: 2,
     tabId: tab.id
   })
 }

@@ -4,6 +4,10 @@ import {
   encodeNmFrame,
   makeNmDecoder,
   NM_GATEWAY_PIPE_PATH,
+  ProtocolVersion,
+  type CommandErrorCode,
+  type CommandKind,
+  type CommandResult,
   type NmMessage,
 } from './nm-protocol.js';
 
@@ -12,6 +16,7 @@ export type ExtensionStatus =
   | {
       status: 'connected';
       extensionVersion: string;
+      protocolVersion: number;
       tabId: number;
       title: string;
       url: string;
@@ -19,6 +24,36 @@ export type ExtensionStatus =
       extractError?: string;
       connectedAt: number;
     };
+
+export interface CommandError {
+  errorCode: CommandErrorCode;
+  error: string;
+}
+
+interface PendingCommand {
+  resolve: (result: CommandResult) => void;
+  reject: (error: CommandError) => void;
+  timer: NodeJS.Timeout;
+}
+
+const DEFAULT_COMMAND_TIMEOUT_MS = 30000;
+const COMMAND_ERROR_CODES: readonly CommandErrorCode[] = [
+  'not_connected',
+  'stale_protocol',
+  'timeout',
+  'disconnected',
+  'stale_tab',
+  'navigated_away',
+  'tab_closed',
+  'permission_denied',
+  'ref_expired',
+  'value_mismatch',
+  'guard_password',
+  'guard_submit',
+];
+
+const pendingCommands = new Map<string, PendingCommand>();
+let commandSeq = 0;
 
 const logger = mainLogger.child('browser-gateway');
 
@@ -49,16 +84,27 @@ function safeWrite(socket: net.Socket, message: NmMessage): void {
   socket.write(encodeNmFrame(message));
 }
 
-function takeOver(socket: net.Socket, extensionVersion: string, tabId: number): void {
+function rejectAllPending(error: CommandError): void {
+  if (pendingCommands.size === 0) return;
+  for (const pending of pendingCommands.values()) {
+    clearTimeout(pending.timer);
+    pending.reject(error);
+  }
+  pendingCommands.clear();
+}
+
+function takeOver(socket: net.Socket, extensionVersion: string, protocolVersion: number, tabId: number): void {
   if (activeSocket && activeSocket !== socket && !activeSocket.destroyed) {
     safeWrite(activeSocket, { type: 'goodbye' });
     activeSocket.destroy();
     logger.info('单会话接管：旧连接已发送 goodbye 并关闭');
   }
+  rejectAllPending({ errorCode: 'disconnected', error: '扩展连接已切换，命令已取消' });
   activeSocket = socket;
   setStatus({
     status: 'connected',
     extensionVersion,
+    protocolVersion,
     tabId,
     title: '',
     url: '',
@@ -66,7 +112,7 @@ function takeOver(socket: net.Socket, extensionVersion: string, tabId: number): 
     connectedAt: Date.now(),
   });
   safeWrite(socket, { type: 'welcome', appVersion: gatewayAppVersion });
-  logger.info('扩展已连接', `v${extensionVersion}`, `tabId=${tabId}`);
+  logger.info('扩展已连接', `v${extensionVersion}`, `protocol=${protocolVersion}`, `tabId=${tabId}`);
 }
 
 function applySnapshot(message: NmMessage): void {
@@ -93,6 +139,42 @@ function applySnapshot(message: NmMessage): void {
   logger.info('标签页快照已更新', url, `tabId=${tabId}`);
 }
 
+function parseErrorCode(value: unknown): CommandErrorCode {
+  return typeof value === 'string' && (COMMAND_ERROR_CODES as readonly string[]).includes(value)
+    ? (value as CommandErrorCode)
+    : 'stale_protocol';
+}
+
+function handleCommandResult(message: NmMessage): void {
+  const requestId = typeof message.requestId === 'string' ? message.requestId : null;
+  if (!requestId) {
+    logger.warn('command_result 缺少 requestId，已忽略');
+    return;
+  }
+  const pending = pendingCommands.get(requestId);
+  if (!pending) {
+    logger.warn('command_result 未命中等待中的命令（迟到或未知），已忽略', `requestId=${requestId}`);
+    return;
+  }
+  pendingCommands.delete(requestId);
+  clearTimeout(pending.timer);
+  if (message.ok === true) {
+    pending.resolve({
+      requestId,
+      ok: true,
+      ...(message.data !== undefined ? { data: message.data } : {}),
+    });
+    return;
+  }
+  pending.reject({
+    errorCode: parseErrorCode(message.errorCode),
+    error:
+      typeof message.error === 'string' && message.error.length > 0
+        ? message.error
+        : '扩展返回了不合规的失败结果',
+  });
+}
+
 function handleFrame(socket: net.Socket, message: NmMessage): void {
   const type = message.type;
   if (type === 'hello') {
@@ -102,11 +184,16 @@ function handleFrame(socket: net.Socket, message: NmMessage): void {
       logger.warn('hello 缺少必要字段，已忽略');
       return;
     }
-    takeOver(socket, extensionVersion, tabId);
+    const protocolVersion = typeof message.protocolVersion === 'number' ? message.protocolVersion : 1;
+    takeOver(socket, extensionVersion, protocolVersion, tabId);
     return;
   }
   if (type === 'tab_snapshot') {
     applySnapshot(message);
+    return;
+  }
+  if (type === 'command_result') {
+    handleCommandResult(message);
     return;
   }
   if (type === 'protocol_error') {
@@ -119,8 +206,36 @@ function handleFrame(socket: net.Socket, message: NmMessage): void {
 function handleDisconnect(socket: net.Socket): void {
   if (activeSocket !== socket) return;
   activeSocket = null;
+  rejectAllPending({ errorCode: 'disconnected', error: '扩展连接已断开' });
   setStatus({ status: 'disconnected' });
   logger.info('扩展连接断开');
+}
+
+export function sendExtensionCommand(
+  kind: CommandKind,
+  params: Record<string, unknown>,
+  timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+): Promise<CommandResult> {
+  const socket = activeSocket;
+  if (!socket || socket.destroyed) {
+    return Promise.reject({ errorCode: 'not_connected', error: '扩展未连接' } satisfies CommandError);
+  }
+  if (currentStatus.status !== 'connected' || currentStatus.protocolVersion < ProtocolVersion) {
+    return Promise.reject({
+      errorCode: 'stale_protocol',
+      error: '扩展版本过旧，请在浏览器扩展管理页重载 Dogear 扩展',
+    } satisfies CommandError);
+  }
+  const requestId = `${Date.now()}-${++commandSeq}`;
+  const { tabId, url } = currentStatus;
+  return new Promise<CommandResult>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingCommands.delete(requestId);
+      reject({ errorCode: 'timeout', error: '命令执行超时' } satisfies CommandError);
+    }, timeoutMs);
+    pendingCommands.set(requestId, { resolve, reject, timer });
+    safeWrite(socket, { type: 'command', requestId, tabId, url, kind, params });
+  });
 }
 
 function handleConnection(socket: net.Socket): void {

@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 帧协议 v2 + gateway 命令通道](./step1-protocol-command.md) — protocolVersion 协商、command/command_result 帧、sendExtensionCommand + pending map + 断连/超时清理（纯主进程侧，可单测）
+- [x] [Step 1: 帧协议 v2 + gateway 命令通道](./step1-protocol-command.md) — protocolVersion 协商、command/command_result 帧、sendExtensionCommand + pending map + 断连/超时清理（纯主进程侧，可单测）
 - [ ] [Step 2: 扩展侧命令执行 + 风险护栏](./step2-extension-actions.md) — dom-actions.js 四纯函数平移（含 ref 属性机制、fill input 事件派发）、background 命令分发（tabId/url 竞态校验、guard_password/guard_submit）、命令成功回推 tab_snapshot
 - [ ] [Step 3: 域名授权链路](./step3-host-permission.md) — manifest optional_host_permissions、popup 授权/撤销 UI、授权状态帧与 gateway 汇聚（authorizedOrigins + 设置页展示）、gateway 命令前置 origin 校验
 - [ ] [Step 4: 工具层 + 能力域 + save_article](./step4-tools-profile.md) — dogear-extension 工具组四工具、extension 能力字段（双份类型 + normalize + SubAgentTab + 浏览器解析 Profile）、动作流 source='extension'、dogear__browser__save_article（B 项）
