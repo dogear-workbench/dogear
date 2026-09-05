@@ -114,6 +114,7 @@ test('会话允许集不共享：不同 Set 实例互不影响', () => {
 const browserPackMap = new Map(
   [
     'dogear__browser__readArticle',
+    'dogear__browser__search',
     'dogear__browser__navigate',
     'dogear__browser__observe_page',
     'dogear__browser__click',
@@ -127,6 +128,7 @@ const browserPackMap = new Map(
 
 test('默认模式：浏览器只读工具随工具包放行', () => {
   for (const tool of [
+    'dogear__browser__search',
     'dogear__browser__navigate',
     'dogear__browser__observe_page',
     'dogear__browser__read_text',

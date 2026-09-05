@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { promisify } from 'util';
 import { chromium, type BrowserContext, type Page } from 'patchright';
-import { getConfigDir } from '../settings-service.js';
+import { getConfigDir, loadSettings } from '../settings-service.js';
 import {
   chromiumInstallStatus,
   ensureChromiumInstalled,
@@ -30,7 +30,6 @@ interface PendingAcquire {
 
 const IDLE_CLOSE_MS = Number(process.env.DOGEAR_BROWSER_IDLE_CLOSE_MS) || 3 * 60 * 1000;
 const DISPOSE_CLOSE_TIMEOUT_MS = 3000;
-const BROWSER_PROXY_SERVER = '127.0.0.1:7897';
 const PAC_PROXY_DOMAINS = [
   'google.com',
   'googleusercontent.com',
@@ -40,9 +39,11 @@ const PAC_PROXY_DOMAINS = [
   'duckduckgo.com',
 ];
 
-function buildProxyPacUrl(): string {
+function buildProxyPacUrl(proxyServer: string | undefined): string | null {
+  const proxy = (proxyServer ?? '').trim().replace(/["\\]/g, '');
+  if (!proxy) return null;
   const rules = PAC_PROXY_DOMAINS.map((d) => `dnsDomainIs(host,".${d}")||host==="${d}"`).join('||');
-  const script = `function FindProxyForURL(url,host){if(${rules})return "PROXY ${BROWSER_PROXY_SERVER}";return "DIRECT";}`;
+  const script = `function FindProxyForURL(url,host){if(${rules})return "PROXY ${proxy}";return "DIRECT";}`;
   return `data:text/plain,${encodeURIComponent(script)}`;
 }
 
@@ -196,7 +197,8 @@ class BrowserManager {
   private async launch(): Promise<void> {
     this.intentionalClose = false;
     fs.mkdirSync(this.profileDir, { recursive: true });
-    const candidates = this.buildLaunchCandidates();
+    const proxyServer = await loadSettings().then((s) => s.browserProxyServer).catch(() => undefined);
+    const candidates = this.buildLaunchCandidates(proxyServer);
     const failures: string[] = [];
     for (const candidate of candidates) {
       try {
@@ -244,12 +246,12 @@ class BrowserManager {
     }
   }
 
-  private buildLaunchCandidates(): Array<{
+  private buildLaunchCandidates(proxyServer: string | undefined): Array<{
     label: string;
     options: Parameters<typeof chromium.launchPersistentContext>[1];
     prepare?: () => Promise<void>;
   }> {
-    const base = this.buildLaunchOptions();
+    const base = this.buildLaunchOptions(proxyServer);
     return [
       {
         label: '内置浏览器组件',
@@ -287,9 +289,11 @@ class BrowserManager {
     }
   }
 
-  // headful 常驻最小化：任务栏可见不抢屏，登录墙时 bringToFront 还原窗口
-  private buildLaunchOptions() {
-    const args: string[] = ['--start-minimized', `--proxy-pac-url=${buildProxyPacUrl()}`];
+  // headful 常驻最小化：任务栏可见不抢屏，登录墙时 bringToFront 还原窗口；代理未配置时不注入 PAC，全直连
+  private buildLaunchOptions(proxyServer: string | undefined) {
+    const args: string[] = ['--start-minimized'];
+    const pacUrl = buildProxyPacUrl(proxyServer);
+    if (pacUrl) args.push(`--proxy-pac-url=${pacUrl}`);
     return {
       headless: false,
       args,

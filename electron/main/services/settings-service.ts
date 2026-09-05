@@ -231,6 +231,15 @@ export function normalizeSettings(settings: AppSettings): boolean {
     }
   }
 
+  if (obj.browserSearchEngine !== 'auto' && obj.browserSearchEngine !== 'google' && obj.browserSearchEngine !== 'bing') {
+    obj.browserSearchEngine = 'auto';
+    changed = true;
+  }
+  if (obj.browserProxyServer !== undefined && typeof obj.browserProxyServer !== 'string') {
+    delete obj.browserProxyServer;
+    changed = true;
+  }
+
   const staleAiFields = ['maxTurns', 'defaultSystemPrompt', 'subagentModelTier', 'excludeDynamicSections', 'promptSuggestionsEnabled', 'thinkingType', 'thinkingBudgetTokens', 'thinkingDisplay'];
   const aiObj = settings.ai as unknown as Record<string, unknown>;
   for (const field of staleAiFields) {

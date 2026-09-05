@@ -32,6 +32,8 @@ export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export type PiPermissionMode = 'default' | 'autoExecute';
 
+export type BrowserSearchEngine = 'auto' | 'google' | 'bing';
+
 export type BasicToolName = 'read' | 'write' | 'edit' | 'bash' | 'Glob' | 'Grep' | 'Skill';
 export type BasicToolPermission = 'ask' | 'allow';
 export type BasicToolPermissions = Record<BasicToolName, BasicToolPermission>;
@@ -152,6 +154,10 @@ export interface AppSettings {
   appearance?: {
     theme: ThemePreference;
   };
+  /** 受控浏览器代理地址（host:port）；空 = 禁用代理引擎，搜索仅 Bing */
+  browserProxyServer?: string;
+  /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
+  browserSearchEngine: BrowserSearchEngine;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -182,6 +188,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     theme: 'light',
   },
+  browserSearchEngine: 'auto',
   profiles: {
     default: {
       id: 'default',

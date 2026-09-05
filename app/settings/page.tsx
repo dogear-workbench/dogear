@@ -481,6 +481,48 @@ export default function SettingsPage() {
 
               <BasicToolsSection local={local} setLocal={setLocal} />
 
+              {/* 受控浏览器 */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">受控浏览器</label>
+                <p className="text-xs text-muted-foreground">
+                  Agent 浏览器工具（读文章 / 网页搜索）共用的代理与搜索引擎配置。
+                </p>
+                <div className="space-y-4 rounded-lg border p-4">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">代理地址</label>
+                    <p className="text-xs text-muted-foreground">
+                      仅 Google / DuckDuckGo 搜索请求经此代理分流，读文章与 Bing 直连不受影响；
+                      留空 = 禁用代理引擎，搜索仅使用 Bing。
+                    </p>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      value={local.browserProxyServer ?? ''}
+                      onChange={(e) => setLocal(prev => ({ ...prev, browserProxyServer: e.target.value }))}
+                      placeholder="127.0.0.1:7890"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">默认搜索引擎</label>
+                    <p className="text-xs text-muted-foreground">
+                      auto = 代理可用时用 Google，不可用时自动改用 Bing；搜索失败时按 Google → DuckDuckGo → Bing 自动降级。
+                    </p>
+                    <select
+                      className="h-9 w-full px-3 text-sm border rounded bg-background"
+                      value={local.browserSearchEngine}
+                      onChange={(e) => setLocal(prev => ({
+                        ...prev,
+                        browserSearchEngine: e.target.value as AppSettings['browserSearchEngine'],
+                      }))}
+                    >
+                      <option value="auto">auto（智能选择）</option>
+                      <option value="google">Google</option>
+                      <option value="bing">Bing</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               {/* 通用级 agent.md */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">通用级 Agent 指令</label>

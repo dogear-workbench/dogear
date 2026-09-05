@@ -22,6 +22,12 @@ import {
   type BrowserArticleAction,
   type BrowserArticleActionEvent,
 } from '../../services/browser/browser-article-service.js';
+import {
+  searchWeb,
+  type SearchAction,
+  type SearchActionEvent,
+} from '../../services/browser/browser-search-service.js';
+import { loadSettings } from '../../services/settings-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
@@ -35,8 +41,15 @@ const POLL_INTERVAL_MS = 400;
 const REF_ATTR = 'data-dogear-ref';
 const MAIN_CONTAINER_SELECTOR = 'article, main, [role="main"], #content, .content';
 
+const SEARCH_ENGINE_LABELS: Record<string, string> = {
+  google: 'Google',
+  ddg: 'DuckDuckGo',
+  bing: 'Bing',
+};
+
 export type BrowserToolsAction =
   | BrowserArticleAction
+  | SearchAction
   | 'fill'
   | 'read_text'
   | 'wait_for'
@@ -68,6 +81,17 @@ function emitAction(event: BrowserToolsActionEvent): void {
 function forwardArticleAction(event: BrowserArticleActionEvent): void {
   emitAction({
     source: 'readArticle',
+    taskMeta: event.taskMeta,
+    action: event.action,
+    url: event.url,
+    detail: event.detail,
+    result: event.result,
+  });
+}
+
+function forwardSearchAction(event: SearchActionEvent): void {
+  emitAction({
+    source: 'search',
     taskMeta: event.taskMeta,
     action: event.action,
     url: event.url,
@@ -351,7 +375,62 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 2: 导航
+    // 工具 2: 网页搜索（声明式，发现入口）
+    // ========================================
+    defineTool(
+      'dogear__browser__search',
+      '搜索网页并返回结果列表',
+      '通过受控浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 受控浏览器」配置。\n' +
+        '使用纪律：\n' +
+        '- 需要发现内容（不知道具体 URL）时先用本工具搜索，搜到再用 dogear__browser__readArticle 阅读。\n' +
+        '- 关键词用空格分隔核心词，避免整句提问，与普通搜索引擎用法一致。\n' +
+        '- 本工具失败时可降级用 dogear__browser__navigate 打开搜索引擎结果页，再用 dogear__browser__observe_page / read_text 等原子工具手动探索。\n' +
+        '- 返回降级提示且提到验证页时，告知用户可在受控浏览器窗口人工完成一次验证（profile 会记住）后重试。',
+      z.object({
+        query: z.string().trim().min(1).describe('搜索关键词，不能为空'),
+        maxResults: z.number().int().min(1).max(15).optional().describe('返回结果条数上限（1-15），默认 8'),
+      }),
+      async (args) => {
+        const taskMeta = meta();
+        const settings = await loadSettings();
+        const outcome = await searchWeb(args.query, {
+          engine: settings.browserSearchEngine,
+          maxResults: args.maxResults,
+          proxyServer: settings.browserProxyServer,
+          taskMeta,
+          onAction: forwardSearchAction,
+        });
+        if (!outcome.ok) {
+          emitAction({
+            source: 'search',
+            taskMeta,
+            action: 'parse',
+            detail: outcome.message,
+            result: outcome.errorClass,
+          });
+          const fallbackHint =
+            outcome.errorClass === 'empty_query' || outcome.errorClass === 'parse_empty'
+              ? ''
+              : '\n可降级用 dogear__browser__navigate 打开搜索引擎结果页，再用 dogear__browser__observe_page / read_text 等原子工具手动探索。';
+          return isErrorResult(`搜索失败（${outcome.errorClass}）：${outcome.message}${fallbackHint}`);
+        }
+        const lines = outcome.results.map(
+          (r) => `${r.rank}. ${r.title}\n   ${r.url}\n   ${r.snippet}`,
+        );
+        const degradeNote =
+          outcome.degradations.length > 0
+            ? `\n⚠️ 降级记录：${outcome.degradations
+                .map((d) => `${SEARCH_ENGINE_LABELS[d.from]} → ${SEARCH_ENGINE_LABELS[d.to]}（${d.reason}）`)
+                .join('；')}\n如涉及验证页，可在受控浏览器窗口人工完成一次验证，profile 会记住。`
+            : '';
+        return textResult(
+          `🔍 搜索完成\n引擎: ${SEARCH_ENGINE_LABELS[outcome.engine]}\n关键词: ${outcome.query}\n结果数: ${outcome.results.length}${degradeNote}\n\n${lines.join('\n\n')}`,
+        );
+      },
+    ),
+
+    // ========================================
+    // 工具 3: 导航
     // ========================================
     defineTool(
       'dogear__browser__navigate',
@@ -383,7 +462,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 3: 观察页面可交互元素
+    // 工具 4: 观察页面可交互元素
     // ========================================
     defineTool(
       'dogear__browser__observe_page',
@@ -415,7 +494,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 4: 点击元素
+    // 工具 5: 点击元素
     // ========================================
     defineTool(
       'dogear__browser__click',
@@ -468,7 +547,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 5: 填写输入框
+    // 工具 6: 填写输入框
     // ========================================
     defineTool(
       'dogear__browser__fill',
@@ -509,7 +588,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 6: 读取文本
+    // 工具 7: 读取文本
     // ========================================
     defineTool(
       'dogear__browser__read_text',
@@ -546,7 +625,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 7: 等待条件
+    // 工具 8: 等待条件
     // ========================================
     defineTool(
       'dogear__browser__wait_for',
@@ -591,7 +670,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 8: 截图
+    // 工具 9: 截图
     // ========================================
     defineTool(
       'dogear__browser__screenshot',
@@ -617,7 +696,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 9: 结束浏览器任务
+    // 工具 10: 结束浏览器任务
     // ========================================
     defineTool(
       'dogear__browser__close',

@@ -10,7 +10,7 @@
 
 - [x] [Step 1: patchright 引入验证 + PAC 代理改造](./step1-patchright-pac.md) — 风险最高先做：换 chromium import、pipeline 11/11 回归、launch 注入 PAC
 - [x] [Step 2: browser-search-service + SERP 测试基建](./step2-search-service.md) — 引擎编排降级链 + 3 个 SERP 解析器 + mock 页 + 管线断言
-- [ ] [Step 3: 工具注册 + 设置项 + 设置 UI](./step3-tool-settings.md) — dogear__browser__search 落地 + 代理/引擎两个设置项 + 浏览器设置小节
+- [x] [Step 3: 工具注册 + 设置项 + 设置 UI](./step3-tool-settings.md) — dogear__browser__search 落地 + 代理/引擎两个设置项 + 浏览器设置小节
 - [ ] [Step 4: agent 基线 + 真实冒烟 + 收尾](./step4-baseline-smoke.md) — run-agent 加 search 任务、真实引擎冒烟、baseline 回填、doc-sync
 
 ## 全局决策

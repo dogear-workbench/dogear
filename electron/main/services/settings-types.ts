@@ -33,6 +33,8 @@ export type ThemePreference = 'light' | 'dark' | 'system';
 
 export type PiPermissionMode = 'default' | 'autoExecute';
 
+export type BrowserSearchEngine = 'auto' | 'google' | 'bing';
+
 export type BasicToolName = 'read' | 'write' | 'edit' | 'bash' | 'Glob' | 'Grep' | 'Skill';
 export type BasicToolPermission = 'ask' | 'allow';
 export type BasicToolPermissions = Record<BasicToolName, BasicToolPermission>;
@@ -123,6 +125,10 @@ export interface AppSettings {
   appearance?: {
     theme: ThemePreference;
   };
+  /** 受控浏览器代理地址（host:port，可含 http/socks5 前缀）；空/缺省 = 禁用代理引擎，搜索仅 Bing */
+  browserProxyServer?: string;
+  /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
+  browserSearchEngine: BrowserSearchEngine;
   /** 一次性迁移标记 */
   migrated?: {
     workspaceConfig?: boolean;
@@ -160,6 +166,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   appearance: {
     theme: 'light',
   },
+  browserSearchEngine: 'auto',
   profiles: {
     default: {
       id: 'default',
