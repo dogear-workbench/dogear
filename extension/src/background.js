@@ -1,4 +1,5 @@
 import { extractTabSnapshot } from './content-extract.js'
+import { observeFn, clickFn, fillFn, readTextFn } from './dom-actions.js'
 
 const NM_HOST_NAME = 'com.dogear.nmhost'
 
@@ -60,6 +61,134 @@ async function sendTabSnapshot() {
   })
 }
 
+const COMMAND_FUNCS = {
+  observe: observeFn,
+  click: clickFn,
+  fill: fillFn,
+  read_text: readTextFn
+}
+
+function postResult(msg, payload) {
+  if (!port) return
+  try {
+    port.postMessage({ type: 'command_result', requestId: msg.requestId, ...payload })
+  } catch {
+  }
+}
+
+function fail(msg, errorCode, error) {
+  postResult(msg, { ok: false, errorCode, error })
+}
+
+function isPermissionError(text) {
+  return /cannot access|permission|not allowed/i.test(text)
+}
+
+const INJECT_TIMEOUT_MS = 8000
+const INJECT_TIMEOUT_MSG = 'dogear_inject_timeout'
+
+// 点击触发导航会销毁注入上下文，executeScript 的 Promise 永不 settle，必须外层加超时竞赛
+function executeScriptWithTimeout(tabId, func, args) {
+  let timer
+  return Promise.race([
+    chrome.scripting.executeScript({ target: { tabId }, func, args }),
+    new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(INJECT_TIMEOUT_MSG)), INJECT_TIMEOUT_MS)
+    })
+  ]).finally(() => clearTimeout(timer))
+}
+
+async function resolveLostClickResult(msg) {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    let tabAfter
+    try {
+      tabAfter = await chrome.tabs.get(msg.tabId)
+    } catch {
+      return { ok: false, errorCode: 'tab_closed', error: '标签页已关闭' }
+    }
+    if (msg.url && tabAfter.url && !tabAfter.url.startsWith(msg.url)) {
+      return { ok: true, data: { clicked: true, navigated: true, urlAfter: tabAfter.url, verification: 'lost' } }
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return {
+    ok: false,
+    errorCode: 'navigated_away',
+    error: '页面在命令执行期间发生变化，无法完成命令，请重新观察后再操作'
+  }
+}
+
+async function handleCommand(msg) {
+  if (!port) return
+  if (state.tabId == null || msg.tabId !== state.tabId) {
+    fail(msg, 'stale_tab', '命令指向的标签页与当前受控标签页不一致')
+    return
+  }
+  const func = COMMAND_FUNCS[msg.kind]
+  if (!func) {
+    fail(msg, 'stale_protocol', '未知命令类型，请在浏览器扩展管理页重载 Dogear 扩展')
+    return
+  }
+  let tab
+  try {
+    tab = await chrome.tabs.get(msg.tabId)
+  } catch {
+    fail(msg, 'tab_closed', '标签页已关闭')
+    return
+  }
+  if (msg.url && tab.url && !tab.url.startsWith(msg.url)) {
+    fail(msg, 'navigated_away', '页面已离开命令发起时的地址，请重新观察后再操作')
+    return
+  }
+  const p = msg.params || {}
+  const args = (
+    msg.kind === 'observe'
+      ? [p.region, p.text_filter]
+      : msg.kind === 'click'
+        ? [p.ref]
+        : msg.kind === 'fill'
+          ? [p.ref, p.value]
+          : [p.ref]
+  ).map((v) => (v === undefined ? null : v))
+  let result = null
+  let injectTimedOut = false
+  try {
+    const [injection] = await executeScriptWithTimeout(msg.tabId, func, args)
+    result = injection?.result ?? null
+  } catch (err) {
+    const text = String(err?.message ?? err)
+    if (text === INJECT_TIMEOUT_MSG) {
+      injectTimedOut = true
+    } else if (isPermissionError(text)) {
+      fail(msg, 'permission_denied', '当前页面域名未授权，无法在该页面执行命令')
+      return
+    } else {
+      postResult(
+        msg,
+        msg.kind === 'click'
+          ? await resolveLostClickResult(msg)
+          : { ok: false, errorCode: 'navigated_away', error: '页面在命令执行期间发生变化，无法完成命令，请重新观察后再操作' },
+      )
+      return
+    }
+  }
+  if (result == null || injectTimedOut) {
+    postResult(
+      msg,
+      msg.kind === 'click'
+        ? await resolveLostClickResult(msg)
+        : { ok: false, errorCode: 'navigated_away', error: '页面在命令执行期间发生变化，无法完成命令，请重新观察后再操作' },
+    )
+    return
+  }
+  if (result && result.errorCode) {
+    fail(msg, result.errorCode, result.error || '命令执行失败')
+    return
+  }
+  postResult(msg, { ok: true, data: result })
+  if (msg.kind === 'observe' || msg.kind === 'read_text') sendTabSnapshot()
+}
+
 async function connect() {
   disconnectPort()
   const tab = await getActiveTab()
@@ -101,6 +230,10 @@ function onHostMessage(message) {
   if (message?.type === 'goodbye') {
     disconnectPort()
     setStatus({ status: 'idle', error: '' })
+    return
+  }
+  if (message?.type === 'command') {
+    handleCommand(message)
   }
 }
 
