@@ -39,6 +39,11 @@ export interface CommandResult {
   errorCode?: CommandErrorCode;
 }
 
+export interface PermissionStateMessage {
+  type: 'permission_state';
+  origins: string[];
+}
+
 export interface NmDecoder {
   onFrame(handler: (message: NmMessage) => void): void;
   push(chunk: Uint8Array): void;

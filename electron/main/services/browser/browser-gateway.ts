@@ -23,6 +23,7 @@ export type ExtensionStatus =
       textPreview: string;
       extractError?: string;
       connectedAt: number;
+      authorizedOrigins: string[];
     };
 
 export interface CommandError {
@@ -110,6 +111,7 @@ function takeOver(socket: net.Socket, extensionVersion: string, protocolVersion:
     url: '',
     textPreview: '',
     connectedAt: Date.now(),
+    authorizedOrigins: [],
   });
   safeWrite(socket, { type: 'welcome', appVersion: gatewayAppVersion });
   logger.info('扩展已连接', `v${extensionVersion}`, `protocol=${protocolVersion}`, `tabId=${tabId}`);
@@ -137,6 +139,32 @@ function applySnapshot(message: NmMessage): void {
     ...(extractError !== undefined ? { extractError } : {}),
   });
   logger.info('标签页快照已更新', url, `tabId=${tabId}`);
+}
+
+function extractOrigin(url: string): string | null {
+  try {
+    const origin = new URL(url).origin;
+    return origin === 'null' ? null : origin;
+  } catch {
+    return null;
+  }
+}
+
+function isOriginAuthorized(url: string, authorizedOrigins: string[]): boolean {
+  if (authorizedOrigins.includes('<all_urls>')) return true;
+  const origin = extractOrigin(url);
+  return origin !== null && authorizedOrigins.includes(origin);
+}
+
+function applyPermissionState(message: NmMessage): void {
+  if (currentStatus.status !== 'connected') {
+    logger.warn('未连接状态下收到 permission_state，已忽略');
+    return;
+  }
+  const raw = Array.isArray(message.origins) ? message.origins : [];
+  const origins = raw.filter((item): item is string => typeof item === 'string');
+  setStatus({ ...currentStatus, authorizedOrigins: origins });
+  logger.info('授权域名列表已更新:', origins.length > 0 ? origins.join(', ') : '(空)');
 }
 
 function parseErrorCode(value: unknown): CommandErrorCode {
@@ -196,6 +224,10 @@ function handleFrame(socket: net.Socket, message: NmMessage): void {
     handleCommandResult(message);
     return;
   }
+  if (type === 'permission_state') {
+    applyPermissionState(message);
+    return;
+  }
   if (type === 'protocol_error') {
     logger.warn('收到坏帧，已忽略:', String(message.error));
     return;
@@ -224,6 +256,12 @@ export function sendExtensionCommand(
     return Promise.reject({
       errorCode: 'stale_protocol',
       error: '扩展版本过旧，请在浏览器扩展管理页重载 Dogear 扩展',
+    } satisfies CommandError);
+  }
+  if (!isOriginAuthorized(currentStatus.url, currentStatus.authorizedOrigins)) {
+    return Promise.reject({
+      errorCode: 'permission_denied',
+      error: '当前标签页域名未授权，请在浏览器扩展 Dogear 弹窗中授权此域名后重试',
     } satisfies CommandError);
   }
   const requestId = `${Date.now()}-${++commandSeq}`;

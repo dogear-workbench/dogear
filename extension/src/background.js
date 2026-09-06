@@ -68,6 +68,35 @@ const COMMAND_FUNCS = {
   read_text: readTextFn
 }
 
+function patternToOrigin(pattern) {
+  return pattern.endsWith('/*') ? pattern.slice(0, -2) : pattern
+}
+
+async function sendPermissionState() {
+  if (!port) return
+  let origins = null
+  try {
+    const all = await chrome.permissions.getAll()
+    origins = (Array.isArray(all?.origins) ? all.origins : [])
+      .filter((p) => typeof p === 'string' && (p === '<all_urls>' || p.endsWith('/*')))
+      .map(patternToOrigin)
+    chrome.storage.local.set({ authorizedOrigins: origins }).catch(() => {})
+  } catch {
+    try {
+      const stored = await chrome.storage.local.get('authorizedOrigins')
+      origins = Array.isArray(stored?.authorizedOrigins)
+        ? stored.authorizedOrigins.filter((o) => typeof o === 'string')
+        : []
+    } catch {
+      return
+    }
+  }
+  try {
+    port.postMessage({ type: 'permission_state', origins })
+  } catch {
+  }
+}
+
 function postResult(msg, payload) {
   if (!port) return
   try {
@@ -219,12 +248,14 @@ async function connect() {
     protocolVersion: 2,
     tabId: tab.id
   })
+  sendPermissionState()
 }
 
 function onHostMessage(message) {
   if (message?.type === 'welcome') {
     setStatus({ status: 'connected', appVersion: message.appVersion ?? '', error: '' })
     sendTabSnapshot()
+    sendPermissionState()
     return
   }
   if (message?.type === 'goodbye') {
@@ -249,9 +280,22 @@ function onHostDisconnect() {
   }
 }
 
+chrome.permissions.onAdded.addListener(() => {
+  sendPermissionState()
+})
+
+chrome.permissions.onRemoved.addListener(() => {
+  sendPermissionState()
+})
+
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'dogear_connect') {
     connect()
+    sendResponse({ ok: true })
+    return
+  }
+  if (message?.type === 'dogear_permission_changed') {
+    sendPermissionState()
     sendResponse({ ok: true })
     return
   }

@@ -32,11 +32,31 @@
     .ok { color: #059669; }
     .err { color: #dc2626; }
     .muted { color: #6b7280; }
+    #perm {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid #e5e7eb;
+      line-height: 1.6;
+    }
+    .perm-origin {
+      font-weight: 600;
+      color: #374151;
+      word-break: break-all;
+      margin-bottom: 8px;
+    }
+    .perm-granted { color: #059669; }
+    button.secondary {
+      background: #e5e7eb;
+      color: #374151;
+    }
+    button.secondary:hover { background: #d1d5db; }
+    button.secondary:disabled { background: #f3f4f6; color: #9ca3af; }
   </style>
 </head>
 <body>
   <button id="connect">连接此标签页</button>
   <div id="status" class="muted">未连接</div>
+  <div id="perm" class="muted">授权状态读取中…</div>
   <script src="popup.js"></script>
 </body>
 </html>

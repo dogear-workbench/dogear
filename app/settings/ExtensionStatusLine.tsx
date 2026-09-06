@@ -35,6 +35,17 @@ export function ExtensionStatusLine() {
       {status.extractError && (
         <p className="text-xs text-muted-foreground">该页面内容无法读取</p>
       )}
+      {status.authorizedOrigins.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+          <span>已授权域名：</span>
+          {status.authorizedOrigins.map((origin) => (
+            <span key={origin} className="rounded-md bg-muted px-1.5 py-0.5 font-mono">
+              {origin}
+            </span>
+          ))}
+          <span>（撤销请在扩展弹窗中操作）</span>
+        </div>
+      )}
       {status.textPreview && (
         <p className="text-xs text-muted-foreground whitespace-pre-wrap line-clamp-4">
           正文预览：{status.textPreview}
