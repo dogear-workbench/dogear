@@ -33,6 +33,7 @@ import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
 import { createBrowserToolDefs } from '../tools/browser-tools.js';
+import { createExtensionToolDefs } from '../tools/extension-tools.js';
 import { createStockToolDefs } from '../tools/stock-tools.js';
 import { createStockAnalysisToolDefs } from '../tools/stock-analysis-tools.js';
 import { createAnnouncementToolDefs } from '../tools/stock-announcement-tools.js';
@@ -533,7 +534,10 @@ export class PiSession extends EventEmitter {
           }
           break;
         case 'browser':
-          toolDefs.push(...this.registerPack(pack.name, createBrowserToolDefs({ conversationId: this.config.conversationId })));
+          toolDefs.push(...this.registerPack(pack.name, createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath })));
+          break;
+        case 'extension':
+          toolDefs.push(...this.registerPack(pack.name, createExtensionToolDefs({ conversationId: this.config.conversationId })));
           break;
         case 'stock-quote':
           toolDefs.push(...this.registerPack(pack.name, createStockToolDefs()));
@@ -592,6 +596,7 @@ export class PiSession extends EventEmitter {
    * - stock 工具包：仅当 stock===true
    * - article 工具包：仅当 article===true
    * - browser 工具包：仅当 browser===true
+   * - extension 工具包：仅当 extension===true
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施）
    * - dogear-reference：仅当 reference===true
    */
@@ -627,7 +632,12 @@ export class PiSession extends EventEmitter {
 
     // browser 工具包：仅当 browser===true（Profile 级独立生效，不受 enabledToolPacks 约束）
     if (ab.browser === true) {
-      toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId })));
+      toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath })));
+    }
+
+    // extension 工具包：仅当 extension===true
+    if (ab.extension === true) {
+      toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
     }
 
     // dogear-group / dogear-delegation / dogear-reference

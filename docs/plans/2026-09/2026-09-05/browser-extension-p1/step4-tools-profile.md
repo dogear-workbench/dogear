@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 工具层 + 能力域 + save_article
-status: pending
+status: done
 ---
 
 ## 目标
@@ -39,9 +39,15 @@ agent 可用的四件套落地：dogear-extension 工具组（observe/click/fill
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  1. browser-action-stream.ts 零改动——source 实为 string 宽类型（非枚举），'extension' 天然合法，渲染层未消费 source 字段，无实际改动点
+  2. save_article 的 workspacePath 显式传参（createBrowserToolDefs opts + pi-session/custom-agent-tools 传参），不用 getCurrentWorkspace 动态取默认工作区（多工作区场景会存错）；rawHtml 必填传空串
+  3. tipc/agent.ts getRegisteredTools 动态 import 列表补 extension-tools.js（验证要求的必要接线，计划未列）
+  4. extension-tools 动作流为 recordBrowserAction 直调（无既有 hook，行为等价，零 tipc 改动）
+  5. 错误文案为映射表固定文案，不透传原始 error（permission_denied 与 step3 gateway 文案一致）
+- 改动文件清单：extension-tools.ts（新）、browser-tools.ts（+save_article :704-746、签名 :309）、settings-types.ts（:68/:267）、types/settings.ts（:97/:75）、settings-service.ts（:286-289）、pi-session.ts（:36/:539/:638-641/:537/:635）、SubAgentTab.tsx（:66/:80/:89）、tipc/agent.ts（:455）、custom-agent-tools.ts（:51）
+- 验证：静态 node 25/25（注册中心/normalize 幂等/12 errorCode 映射/save_article 四件落盘）+ headful Edge 16/16（四工具真实链路 + guard 双护栏 + ref_expired/navigated_away + 动作流）+ 回归 lint 0 errors / build:electron / tsc noEmit / 管线 20/20 全绿；环境已清理（HKCU 键删、Edge 按命令行特征杀、.tmp-step4 删）；详细交付见会话组共享区 step4-delivery.md
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名：createExtensionToolDefs({conversationId})（extension-tools.ts:185）；ERROR_MESSAGES 映射表（:25）可复用于伴随面板文案；runCommand(kind, params, extract) 统一 sendExtensionCommand + isError 转换；save_article 入库目标为会话工作区 `<ws>/.dogear/articles/{id}/`
+- 下个 step 该从哪里继续：按 plan.md 后续 step 推进；浏览器解析 Profile 已具备完整「observe/read_text → save_article」工具集，验收闭环直接用该 Profile 派子会话
+- 待办或已知限制：跨路径导航后命令 navigated_away 且 agent 无法自行重连（需用户扩展弹窗重连，P2 处理导航同步）；主会话 case 'extension' 无 UI 开关入口（对称性预留，子会话能力域为主链路）；验证踩坑（HKCU 被 HKLM 安装版压制需 PowerShell 写、bat 生成转义、connect 时 active tab 必须是受控页）详见共享区 step4-delivery.md 接力棒段

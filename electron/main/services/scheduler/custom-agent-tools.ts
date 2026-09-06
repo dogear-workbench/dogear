@@ -48,7 +48,7 @@ export async function buildCustomToolSet(
     toolDefs.push(...createArticleToolDefs(workspacePath));
   }
   if (enabledPacks.has('browser')) {
-    toolDefs.push(...createBrowserToolDefs());
+    toolDefs.push(...createBrowserToolDefs({ workspacePath }));
   }
   if (enabledPacks.has('stock-quote')) {
     toolDefs.push(...createStockToolDefs());

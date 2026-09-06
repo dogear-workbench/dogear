@@ -283,6 +283,10 @@ export function normalizeSettings(settings: AppSettings): boolean {
             delete ab.browser;
             changed = true;
           }
+          if ('extension' in ab && typeof ab.extension !== 'boolean') {
+            delete ab.extension;
+            changed = true;
+          }
         }
       }
       if (subAgent.profiles.length === 0) {

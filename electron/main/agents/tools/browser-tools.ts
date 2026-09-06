@@ -28,6 +28,7 @@ import {
   type SearchActionEvent,
 } from '../../services/browser/browser-search-service.js';
 import { loadSettings } from '../../services/settings-service.js';
+import { saveArticleFromScript } from '../../services/article-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
@@ -305,8 +306,9 @@ function formatObserve(payload: ObservePayload): string {
   return `${header}\n${lines.join('\n')}\n\nclick / fill / read_text 请使用上面的 ref 编号定位元素。`;
 }
 
-export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolDef[] {
+export function createBrowserToolDefs(opts?: { conversationId?: string; workspacePath?: string }): ToolDef[] {
   const conversationId = opts?.conversationId;
+  const workspacePath = opts?.workspacePath;
   const meta = () => buildTaskMeta(conversationId);
 
   return [
@@ -696,7 +698,56 @@ export function createBrowserToolDefs(opts?: { conversationId?: string }): ToolD
     ),
 
     // ========================================
-    // 工具 10: 结束浏览器任务
+    // 工具 10: 文章入库
+    // ========================================
+    defineTool(
+      'dogear__browser__save_article',
+      '把网页文章保存到工作区文章库',
+      '把已获取的文章内容保存为工作区文章（写入 meta 与 Markdown 正文，出现在文章列表中）。' +
+        '典型场景：用浏览器工具读取网页全文后入库，闭环「读 → 存」。title/url/content 为必填。',
+      z.object({
+        title: z.string().trim().min(1).describe('文章标题'),
+        url: z.string().url().describe('文章来源 URL'),
+        content: z.string().trim().min(1).describe('文章 Markdown 正文'),
+        author: z.string().optional().describe('作者（未知则不传）'),
+        siteName: z.string().optional().describe('站点名（未知则不传）'),
+        excerpt: z.string().optional().describe('摘要（未知则不传）'),
+      }),
+      async (args) => {
+        const taskMeta = meta();
+        try {
+          if (!workspacePath) {
+            return isErrorResult('保存失败：当前会话未关联工作区，无法入库');
+          }
+          const article = await saveArticleFromScript({
+            workspacePath,
+            url: args.url,
+            rawHtml: '',
+            title: args.title,
+            content: args.content,
+            author: args.author ?? null,
+            siteName: args.siteName ?? null,
+            excerpt: args.excerpt ?? null,
+            language: null,
+          });
+          emitAction({
+            source: 'save_article',
+            taskMeta,
+            action: 'parse',
+            url: args.url,
+            detail: args.title,
+            result: `id=${article.id} wordCount=${article.wordCount}`,
+          });
+          return textResult(`已入库：${article.title}（${article.wordCount} 字，id ${article.id}）`);
+        } catch (err) {
+          emitAction({ source: 'save_article', taskMeta, action: 'parse', url: args.url, result: 'error' });
+          return isErrorResult(`保存失败：${err instanceof Error ? err.message : String(err)}`);
+        }
+      },
+    ),
+
+    // ========================================
+    // 工具 11: 结束浏览器任务
     // ========================================
     defineTool(
       'dogear__browser__close',

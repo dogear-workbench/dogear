@@ -63,6 +63,7 @@ function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
   if (ab.customSkills?.length) n++;
   if (ab.reference) n++;
   if (ab.browser) n++;
+  if (ab.extension) n++;
   return n;
 }
 
@@ -76,7 +77,7 @@ function toggleInArray(arr: string[] | undefined, name: string): string[] {
 // ── Profile Editor ───────────────────────────────────
 
 const BOOLEAN_ABILITIES: {
-  key: 'memory' | 'stock' | 'article' | 'reference' | 'browser';
+  key: 'memory' | 'stock' | 'article' | 'reference' | 'browser' | 'extension';
   label: string;
   desc: string;
 }[] = [
@@ -85,6 +86,7 @@ const BOOLEAN_ABILITIES: {
   { key: 'article', label: '文章', desc: '文章解析工具包' },
   { key: 'reference', label: '引用回溯', desc: 'dogear-reference' },
   { key: 'browser', label: '浏览器', desc: 'dogear-browser 浏览器工具包' },
+  { key: 'extension', label: '浏览器扩展', desc: 'dogear-extension 扩展工具包（真实浏览器已连接标签页，仅限已授权域名）' },
 ];
 
 function ProfileEditor({
