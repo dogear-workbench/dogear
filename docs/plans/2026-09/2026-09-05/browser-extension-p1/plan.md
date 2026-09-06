@@ -12,7 +12,7 @@
 - [x] [Step 2: 扩展侧命令执行 + 风险护栏](./step2-extension-actions.md) — dom-actions.js 四纯函数平移（含 ref 属性机制、fill input 事件派发）、background 命令分发（tabId/url 竞态校验、guard_password/guard_submit）、命令成功回推 tab_snapshot
 - [x] [Step 3: 域名授权链路](./step3-host-permission.md) — manifest optional_host_permissions、popup 授权/撤销 UI、授权状态帧与 gateway 汇聚（authorizedOrigins + 设置页展示）、gateway 命令前置 origin 校验
 - [x] [Step 4: 工具层 + 能力域 + save_article](./step4-tools-profile.md) — dogear-extension 工具组四工具、extension 能力字段（双份类型 + normalize + SubAgentTab + 浏览器解析 Profile）、动作流 source='extension'、dogear__browser__save_article（B 项）
-- [ ] [Step 5: 端到端验收](./step5-e2e-acceptance.md) — headful 真实链路全用例（授权/observe/click/导航/read_text/护栏/四类竞态）、「搜索→readText→save_article」子会话闭环、全量回归
+- [x] [Step 5: 端到端验收](./step5-e2e-acceptance.md) — headful 真实链路全用例（授权/observe/click/导航/read_text/护栏/四类竞态）、「搜索→readText→save_article」子会话闭环、全量回归
 
 ## 全局决策
 
@@ -28,4 +28,16 @@
 
 ## 完成总结
 
-（全部完成后填）
+**状态：全部完成**（2026-09-06，5 step 全绿，commit bd123c7 / 70d678a / e8ff838 / 245dabc / 本步收口 commit）。
+
+**交付**：P0 单向快照链路升级为双向命令通道——agent 在用户真实浏览器的已授权页面上 observe/click/fill/read_text（L0/L1 护栏内自动执行），浏览器子会话「读到→存入文章库」断链补齐（dogear__browser__save_article）。
+
+- **帧协议 v2**：protocolVersion 协商 + command/command_result 帧 + gateway pending map 全生命周期清理（30s 超时/断连/接管），旧扩展 stale_protocol 快速失败
+- **扩展命令执行**：无常驻 content script，executeScript 注入纯 DOM 函数；ref `data-dogear-ref` 页面自持；guard_password/guard_submit 硬护栏；竞态四类 + 导航 lost 兜底（8s 注入超时竞赛 + URL 轮询）
+- **域名授权**：popup 真实手势授权/撤销（optional_host_permissions）、permission_state 帧汇聚、gateway 前置 origin 校验（未授权快速失败不发出命令）、设置页 chip 展示、SW 冷启恢复
+- **工具层**：dogear-extension 四工具（12 errorCode 全量中文映射）+ extension 能力域（双份类型/normalize/Profile 模板/SubAgentTab）+ save_article（workspacePath 显式传参）
+- **验收**：逐步冒烟 + 最终 HEAD 上 49/49（含 stale_tab 真机构造、PiSession 装配反射验证、observe→read_text→save_article 序列闭环）；回归 lint 0 errors / build:electron / tsc / 管线 20/20；版本 bump 0.1.102；codebase-map 已同步
+
+**人工遗留**（见 step5-e2e-acceptance.md 回填）：真实 PiSession agent loop 全链路（需关闭安装版后 dev electron）、Chrome 侧全链路（137+ 无法自动化）、真实 toolbar 手势、原生权限弹窗真人过一遍、设置页 chip 视觉、发布链路（0.1.102 安装包）。
+
+**P2 输入**：导航后快照不自动更新（agent 无法自行恢复需用户重连）、自动重连/多 tab 多会话、guard_password 误拦登录页用户名框细化、老版本扩展升级引导消解。
