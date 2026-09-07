@@ -12,7 +12,17 @@
 - [x] [Step 2: A2 observe 透出 href](./step2-observe-href.md) — 链接元素序列化加绝对 URL，agent 可直链导航
 - [x] [Step 3: A3 read_state 通用命令](./step3-read-state.md) — 读 SPA `__INITIAL_STATE__`，双模式 + 风控同待遇
 - [x] [Step 4: B reddit/zhihu 站内搜索引擎](./step4-site-search.md) — search 加 site 参数 + PAC + `site:` 降级
-- [ ] [Step 5: 验收收口](./step5-acceptance.md) — 全量冒烟 + 真机验收清单 + doc-sync
+- [x] [Step 5: 验收收口](./step5-acceptance.md) — 全量冒烟 + 真机验收清单 + doc-sync（真机清单待用户在场执行）
+
+## 完成总结
+
+P3 五步全部完成并逐 step commit（e08bf33 / 7a95b82 / 263704a / f9f4b57 + 前置 f1c6cec）。A 段扩展通道三硬伤修复：独占 gate（不排队、断连清零、空闲 10min 释放）、observe 透 href（绝对 URL 直链导航）、read_state 通用命令（协议 v3、world:MAIN 注入、预算按 URL 去重）；B 段 search 加 site 参数（reddit/zhihu 站内引擎 + site: 降级链 + PAC reddit 系分流）。自动化验证全绿（9 冒烟 + pipeline 25/25 + bun test 286 + lint）。
+
+**实施中的两个计划外生产级发现**：① __INITIAL_STATE__ 在页面主世界，扩展侧需 world:'MAIN' 注入（step3）；② patchright 的 page.evaluate 落隔离世界读不到页面脚本写入的 window 全局，知乎 state 读取改 CDP Runtime.evaluate 直连（step4，已沉淀记忆）。
+
+**待用户执行**：真机验收清单（step5 文档），核心是「扩展重载（协议 v3）→ 小红书详情可达 → reddit/zhihu 站内搜索出互动量结果」；真机探得的小红书 __INITIAL_STATE__ 字段路径回填工具描述示例。
+
+**已知限制**：releaseChannel 生产路径无调用方（释放靠空闲超时/断连）；知乎 state walk 是通用启发式待真机微调；extension-tools.ts ~660 行可考虑拆分；patchright 升级需复测 CDP 路径。
 
 ## 全局决策
 

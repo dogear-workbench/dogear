@@ -135,7 +135,7 @@ export function controlledBrowserBlock(url: string): string | null {
   if (!policy) return null;
   return (
     `受控浏览器禁止访问该站点（${policy.matchOrigins.join('、')}）。` +
-    '此类登录态站点已绑定用户真实浏览器的扩展通道，请改用 dogear__extension__navigate / observe_page / click / read_text ' +
+    '此类登录态站点已绑定用户真实浏览器的扩展通道，请改用 dogear__extension__navigate / observe_page / click / fill / read_text / read_state ' +
     '在扩展已连接且授权的标签页上操作'
   );
 }
