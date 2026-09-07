@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 帧协议 navigate 命令 + gateway 路由](./step1-protocol-navigate.md) — CommandKind 加 navigate、快照帧加 generation、gateway 目标域名授权校验与 navigation_blocked（纯主进程 + 协议，可单测）
 - [x] [Step 2: 扩展侧 URL 自动跟踪 + ref 代际](./step2-extension-tracking.md) — navigate 真实导航执行、tabs.onUpdated URL 变化监听 + 快照自动重采（节流）+ 代际重置、observe_page 导航后可用、命令前校验自愈
-- [ ] [Step 3: 站点策略 + 工具层节奏预算](./step3-tools-policy.md) — site-policy.ts（小红书第一份）、extension-tools 随机延迟/预算计数/风控信号检测/navigate 工具/双链路引导文案、动作账本加字段、Profile 描述更新
+- [x] [Step 3: 站点策略 + 工具层节奏预算](./step3-tools-policy.md) — site-policy.ts（小红书第一份）、extension-tools 随机延迟/预算计数/风控信号检测/navigate 工具/双链路引导文案、动作账本加字段、Profile 描述更新
 - [ ] [Step 4: 端到端验收](./step4-e2e-acceptance.md) — headful 真机用例矩阵（导航跟踪/SPA/预算/风控/竞态回归）+ 小红书真实调研一次（保守低频）+ 全量回归
 
 ## 全局决策

@@ -1,9 +1,10 @@
 /**
  * 浏览器扩展 MCP Server 工具
  *
- * 提供 dogear__extension__* 工具组：observe_page / click / fill / read_text。
+ * 提供 dogear__extension__* 工具组：navigate / observe_page / click / fill / read_text。
  * 作用于用户真实浏览器的已连接标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 仅限已授权域名；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
+ * 站点策略命中（如小红书）：操作间随机延迟、单会话搜索/笔记预算、风控信号即停。
  * 错误一律转中文 isError 文案不抛异常（13 个 errorCode 映射全覆盖）。
  */
 
@@ -17,6 +18,22 @@ import { recordBrowserAction } from '../../services/browser/browser-action-strea
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
 import type { CommandErrorCode, CommandKind } from '../../services/browser/nm-protocol.js';
+import {
+  checkNoteBudget,
+  checkSearchBudget,
+  consumeNote,
+  consumeSearch,
+  getSitePolicy,
+  isRiskBlocked,
+  isSearchResultUrl,
+  markRiskBlocked,
+  matchRiskKeywords,
+  originOf,
+  randomInRange,
+  riskBlockedMessage,
+  sleep,
+  type SitePolicy,
+} from '../../services/browser/site-policy.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
@@ -39,12 +56,22 @@ const ERROR_MESSAGES: Record<CommandErrorCode, string> = {
 };
 
 function commandErrorMessage(err: unknown): string {
-  const code = (err as Partial<CommandError> | null)?.errorCode;
+  const e = (err ?? null) as Partial<CommandError> | null;
+  const code = e?.errorCode;
+  const detail = typeof e?.error === 'string' && e.error ? e.error : undefined;
+  const currentUrl = typeof e?.currentUrl === 'string' && e.currentUrl ? e.currentUrl : undefined;
+  if (code === 'navigated_away' || code === 'ref_expired') {
+    const base = ERROR_MESSAGES[code];
+    return currentUrl ? `${base}（当前页面: ${currentUrl}）` : base;
+  }
+  if (code === 'navigation_blocked') {
+    if (!detail || detail.includes('目标域名未授权')) return ERROR_MESSAGES.navigation_blocked;
+    return `无法导航：${detail}`;
+  }
   if (typeof code === 'string' && code in ERROR_MESSAGES) {
     return ERROR_MESSAGES[code as CommandErrorCode];
   }
-  const detail = (err as Partial<CommandError> | null)?.error;
-  return `浏览器扩展命令执行失败：${typeof detail === 'string' && detail ? detail : String(err)}`;
+  return `浏览器扩展命令执行失败：${detail ?? String(err)}`;
 }
 
 function isErrorResult(message: string): ToolResult {
@@ -64,18 +91,26 @@ function currentUrl(): string | undefined {
   return status.status === 'connected' ? status.url : undefined;
 }
 
+interface ActionExtra {
+  url?: string;
+  detail?: string;
+  result?: string;
+  urlBefore?: string;
+  urlAfter?: string;
+  errorCode?: string;
+  durationMs?: number;
+}
+
 function emitAction(
   taskMeta: BrowserTaskMeta,
   action: BrowserActionType,
-  extra?: { url?: string; detail?: string; result?: string },
+  extra?: ActionExtra,
 ): void {
   recordBrowserAction({
     source: 'extension',
     taskMeta,
     action,
-    ...(extra?.url !== undefined ? { url: extra.url } : {}),
-    ...(extra?.detail !== undefined ? { detail: extra.detail } : {}),
-    ...(extra?.result !== undefined ? { result: extra.result } : {}),
+    ...extra,
   });
 }
 
@@ -131,13 +166,72 @@ async function runCommand<T>(
   kind: CommandKind,
   params: Record<string, unknown>,
   extract: (data: unknown) => T,
-): Promise<{ ok: true; value: T } | { ok: false; message: string }> {
+): Promise<{ ok: true; value: T } | { ok: false; message: string; errorCode?: string }> {
   try {
     const result = await sendExtensionCommand(kind, params);
     return { ok: true, value: extract(result.data) };
   } catch (err) {
-    return { ok: false, message: commandErrorMessage(err) };
+    const errorCode = (err as Partial<CommandError> | null)?.errorCode;
+    return {
+      ok: false,
+      message: commandErrorMessage(err),
+      ...(typeof errorCode === 'string' ? { errorCode } : {}),
+    };
   }
+}
+
+interface PolicyGateContext {
+  policy: SitePolicy;
+  origin: string | null;
+}
+
+type GateResult = { ctx: PolicyGateContext | null } | { blocked: string };
+
+/** 页面 URL 命中站点策略时的统一入口：风控前置拒绝 → 随机延迟（延迟期间不产动作流事件） */
+async function policyGate(conversationId: string | undefined, pageUrl: string): Promise<GateResult> {
+  const policy = getSitePolicy(pageUrl);
+  if (!policy) return { ctx: null };
+  const origin = originOf(pageUrl);
+  if (isRiskBlocked(conversationId, origin)) {
+    return { blocked: riskBlockedMessage() };
+  }
+  await sleep(randomInRange(policy.delayMs));
+  return { ctx: { policy, origin } };
+}
+
+/** navigate 目标 URL 命中站点策略时的入口：拒绝检查 → 预算检查 → 搜索类用 searchDelayMs */
+async function navigateGate(
+  conversationId: string | undefined,
+  targetUrl: string,
+): Promise<{ ctx: PolicyGateContext | null; isSearch: boolean } | { blocked: string; reason: 'risk' | 'budget' }> {
+  const policy = getSitePolicy(targetUrl);
+  if (!policy) return { ctx: null, isSearch: false };
+  const origin = originOf(targetUrl);
+  if (isRiskBlocked(conversationId, origin)) {
+    return { blocked: riskBlockedMessage(), reason: 'risk' };
+  }
+  const isSearch = isSearchResultUrl(policy, targetUrl);
+  if (isSearch) {
+    const budgetMessage = checkSearchBudget(conversationId, policy);
+    if (budgetMessage) return { blocked: budgetMessage, reason: 'budget' };
+  }
+  await sleep(randomInRange(isSearch ? policy.searchDelayMs : policy.delayMs));
+  return { ctx: { policy, origin }, isSearch };
+}
+
+function scanAndMarkRisk(
+  conversationId: string | undefined,
+  ctx: PolicyGateContext,
+  text: string,
+): string[] | null {
+  const hits = matchRiskKeywords(ctx.policy, text);
+  if (hits.length === 0) return null;
+  markRiskBlocked(conversationId, ctx.origin);
+  return hits;
+}
+
+function riskSignalMessage(hits: string[]): string {
+  return `页面内容命中风控信号（${hits.join('、')}）。已停止本会话对该站点的自动操作，请人工检查浏览器页面`;
 }
 
 function formatObserve(payload: ObservePayload): string {
@@ -181,13 +275,70 @@ function formatClick(ref: string, data: ClickPayload): string {
 }
 
 const SHARED_SCOPE_NOTE =
-  '作用于用户真实浏览器的已连接标签页，仅限已授权域名；点击/填充自动执行但拦截提交类操作。';
+  '作用于用户真实浏览器的已连接标签页，仅限已授权域名；点击/填充自动执行但拦截提交类操作。' +
+  '用户浏览器已连接且目标站需登录态时优先本工具组，公开网页读取用 dogear__browser__*。';
 
 export function createExtensionToolDefs(opts?: { conversationId?: string }): ToolDef[] {
   const conversationId = opts?.conversationId;
   const meta = () => buildTaskMeta(conversationId);
 
   return [
+    defineTool(
+      'dogear__extension__navigate',
+      '让用户浏览器导航到指定 URL',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '让受控标签页导航到目标 URL，需目标域名已在扩展弹窗授权。' +
+        '小红书搜索可直达 https://www.xiaohongshu.com/search_result?keyword=关键词。' +
+        '受节奏保护的站点（如小红书）导航前会自动等待随机时长，搜索导航另计入会话搜索预算（超限拒绝）。' +
+        '导航后旧元素引用失效，需重新 observe_page。',
+      z.object({
+        url: z.string().describe('目标页面完整 URL（含 http/https）'),
+      }),
+      async (args) => {
+        const taskMeta = meta();
+        const gate = await navigateGate(conversationId, args.url);
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'navigate', {
+            url: currentUrl(),
+            detail: args.url,
+            result: gate.reason === 'risk' ? 'risk_blocked' : 'budget_exceeded',
+          });
+          return isErrorResult(gate.blocked);
+        }
+        const urlBefore = currentUrl();
+        const startedAt = Date.now();
+        const r = await runCommand('navigate', { targetUrl: args.url }, (data) => {
+          const url = (data as { url?: unknown } | null)?.url;
+          return typeof url === 'string' ? url : undefined;
+        });
+        if (!r.ok) {
+          emitAction(taskMeta, 'navigate', {
+            url: urlBefore,
+            detail: args.url,
+            result: 'error',
+            urlBefore,
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`导航失败：${r.message}`);
+        }
+        if (gate.isSearch) consumeSearch(conversationId);
+        const urlAfter = r.value ?? currentUrl();
+        emitAction(taskMeta, 'navigate', {
+          url: urlAfter,
+          detail: args.url,
+          result: 'navigated',
+          urlBefore,
+          ...(urlAfter ? { urlAfter } : {}),
+          durationMs: Date.now() - startedAt,
+        });
+        const redirectNote = urlAfter && urlAfter !== args.url ? `（发生重定向，最终地址 ${urlAfter}）` : '';
+        return textResult(
+          `已在用户浏览器打开目标页面${redirectNote}。旧页面元素引用已失效，请先 observe_page 获取新页面元素。`,
+        );
+      },
+    ),
+
     defineTool(
       'dogear__extension__observe_page',
       '列出用户浏览器页面的可交互元素',
@@ -204,13 +355,44 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       }),
       async (args) => {
         const taskMeta = meta();
-        emitAction(taskMeta, 'observe', {
-          url: currentUrl(),
-          detail: args.text_filter || args.region || '',
-        });
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'observe', {
+            url: pageUrl,
+            detail: args.text_filter || args.region || '',
+            result: 'risk_blocked',
+          });
+          return isErrorResult(gate.blocked);
+        }
+        const detail = args.text_filter || args.region || '';
+        const startedAt = Date.now();
         const r = await runCommand('observe', { region: args.region, text_filter: args.text_filter }, parseObservePayload);
-        if (!r.ok) return isErrorResult(`观察页面失败：${r.message}`);
-        return textResult(formatObserve(r.value));
+        if (!r.ok) {
+          emitAction(taskMeta, 'observe', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`观察页面失败：${r.message}`);
+        }
+        const text = formatObserve(r.value);
+        if (gate.ctx) {
+          const hits = scanAndMarkRisk(conversationId, gate.ctx, text);
+          if (hits) {
+            emitAction(taskMeta, 'observe', {
+              url: pageUrl,
+              detail,
+              result: 'risk_signal',
+              durationMs: Date.now() - startedAt,
+            });
+            return isErrorResult(riskSignalMessage(hits));
+          }
+        }
+        emitAction(taskMeta, 'observe', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
+        return textResult(text);
       },
     ),
 
@@ -225,15 +407,31 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       }),
       async (args) => {
         const taskMeta = meta();
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        const startedAt = Date.now();
         const r = await runCommand('click', { ref: args.ref }, (data) => (data ?? {}) as ClickPayload);
         if (!r.ok) {
-          emitAction(taskMeta, 'click', { url: currentUrl(), detail: args.ref, result: 'error' });
+          emitAction(taskMeta, 'click', {
+            url: pageUrl,
+            detail: args.ref,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
           return isErrorResult(`点击失败：${r.message}`);
         }
         emitAction(taskMeta, 'click', {
-          url: r.value.urlAfter ?? currentUrl(),
+          url: r.value.urlAfter ?? pageUrl,
           detail: args.ref,
           result: 'clicked',
+          urlBefore: r.value.urlBefore,
+          ...(r.value.urlAfter ? { urlAfter: r.value.urlAfter } : {}),
+          durationMs: Date.now() - startedAt,
         });
         return textResult(formatClick(args.ref, r.value));
       },
@@ -251,12 +449,30 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       }),
       async (args) => {
         const taskMeta = meta();
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'fill', { url: pageUrl, detail: args.ref, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        const startedAt = Date.now();
         const r = await runCommand('fill', { ref: args.ref, value: args.value }, () => undefined);
         if (!r.ok) {
-          emitAction(taskMeta, 'fill', { url: currentUrl(), detail: args.ref, result: 'error' });
+          emitAction(taskMeta, 'fill', {
+            url: pageUrl,
+            detail: args.ref,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
           return isErrorResult(`填写失败：${r.message}`);
         }
-        emitAction(taskMeta, 'fill', { url: currentUrl(), detail: args.ref, result: 'filled' });
+        emitAction(taskMeta, 'fill', {
+          url: pageUrl,
+          detail: args.ref,
+          result: 'filled',
+          durationMs: Date.now() - startedAt,
+        });
         return textResult(
           `已向 ${args.ref} 填写文本，值已生效。如需提交，请 observe_page 后查看提交按钮；` +
             `提交类操作会被拦截，请引导用户手动完成提交。`,
@@ -269,21 +485,64 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       '读取用户浏览器页面元素或正文文本',
       `${SHARED_SCOPE_NOTE}\n` +
         '读取指定 ref 元素的纯文本；不传 ref 则读取正文容器（article/main 等中字数最大者）。' +
-        '文本超过 8000 字符时截断并提示，可用 observe_page 定位子元素分次读取。',
+        '文本超过 8000 字符时截断并提示，可用 observe_page 定位子元素分次读取（带 ref 的分次读取不计笔记预算）。' +
+        '受节奏保护的站点（如小红书）无 ref 读取计 1 篇笔记，计入会话笔记预算（超限拒绝）。',
       z.object({
         ref: z.string().optional().describe('要读取的元素 ref；不传则读正文容器'),
       }),
       async (args) => {
         const taskMeta = meta();
-        emitAction(taskMeta, 'read_text', { url: currentUrl(), detail: args.ref || 'main' });
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'read_text', {
+            url: pageUrl,
+            detail: args.ref || 'main',
+            result: 'risk_blocked',
+          });
+          return isErrorResult(gate.blocked);
+        }
+        const detail = args.ref || 'main';
+        const countAsNote = gate.ctx !== null && !args.ref;
+        if (countAsNote && gate.ctx) {
+          const budgetMessage = checkNoteBudget(conversationId, gate.ctx.policy);
+          if (budgetMessage) {
+            emitAction(taskMeta, 'read_text', { url: pageUrl, detail, result: 'budget_exceeded' });
+            return isErrorResult(budgetMessage);
+          }
+        }
+        const startedAt = Date.now();
         const r = await runCommand('read_text', { ref: args.ref }, (data) => (data ?? {}) as ReadTextPayload);
-        if (!r.ok) return isErrorResult(`读取失败：${r.message}`);
+        if (!r.ok) {
+          emitAction(taskMeta, 'read_text', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`读取失败：${r.message}`);
+        }
         const text = r.value.text ?? '';
+        if (gate.ctx) {
+          const hits = scanAndMarkRisk(conversationId, gate.ctx, text);
+          if (hits) {
+            emitAction(taskMeta, 'read_text', {
+              url: pageUrl,
+              detail,
+              result: 'risk_signal',
+              durationMs: Date.now() - startedAt,
+            });
+            return isErrorResult(riskSignalMessage(hits));
+          }
+        }
+        if (countAsNote) consumeNote(conversationId);
         const totalLength = typeof r.value.totalLength === 'number' ? r.value.totalLength : text.length;
         const truncated =
           totalLength > READ_MAX_CHARS
             ? `\n\n（已截断：原文共 ${totalLength} 字符，显示前 ${READ_MAX_CHARS}；可用 observe_page 定位子元素分次读取）`
             : '';
+        emitAction(taskMeta, 'read_text', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
         return textResult(`${text}${truncated}`);
       },
     ),

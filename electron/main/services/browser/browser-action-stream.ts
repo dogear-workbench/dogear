@@ -26,6 +26,11 @@ export interface BrowserActionEvent {
   detail?: string;
   result?: string;
   source?: string;
+  conversationId?: string;
+  urlBefore?: string;
+  urlAfter?: string;
+  errorCode?: string;
+  durationMs?: number;
 }
 
 export interface BrowserActionInput {
@@ -35,6 +40,10 @@ export interface BrowserActionInput {
   url?: string;
   detail?: string;
   result?: string;
+  urlBefore?: string;
+  urlAfter?: string;
+  errorCode?: string;
+  durationMs?: number;
 }
 
 export interface BrowserStreamStatus {
@@ -69,10 +78,17 @@ export function recordBrowserAction(input: BrowserActionInput): void {
     seq: nextSeq++,
     ts: Date.now(),
     action: input.action,
+    ...(input.taskMeta.kind === 'agent' && input.taskMeta.conversationId
+      ? { conversationId: input.taskMeta.conversationId }
+      : {}),
     ...(input.url !== undefined ? { url: input.url } : {}),
     ...(input.detail !== undefined ? { detail: input.detail } : {}),
     ...(input.result !== undefined ? { result: input.result } : {}),
     ...(input.source !== undefined ? { source: input.source } : {}),
+    ...(input.urlBefore !== undefined ? { urlBefore: input.urlBefore } : {}),
+    ...(input.urlAfter !== undefined ? { urlAfter: input.urlAfter } : {}),
+    ...(input.errorCode !== undefined ? { errorCode: input.errorCode } : {}),
+    ...(input.durationMs !== undefined ? { durationMs: input.durationMs } : {}),
   };
   buffer.push(event);
   if (buffer.length > MAX_EVENTS) buffer.splice(0, buffer.length - MAX_EVENTS);

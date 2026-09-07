@@ -260,7 +260,7 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
   return {
     id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
     name: '浏览器解析',
-    description: '挂载浏览器工具包执行网页抓取与解析，建议选择便宜档模型以节省成本',
+    description: '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页',
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
