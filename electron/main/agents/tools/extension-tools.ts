@@ -4,7 +4,7 @@
  * 提供 dogear__extension__* 工具组：observe_page / click / fill / read_text。
  * 作用于用户真实浏览器的已连接标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 仅限已授权域名；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
- * 错误一律转中文 isError 文案不抛异常（12 个 errorCode 映射全覆盖）。
+ * 错误一律转中文 isError 文案不抛异常（13 个 errorCode 映射全覆盖）。
  */
 
 import { z } from 'zod';
@@ -35,6 +35,7 @@ const ERROR_MESSAGES: Record<CommandErrorCode, string> = {
   value_mismatch: '填写后页面当前值与输入不一致（页面可能改写了内容），请检查后重试',
   guard_password: '密码类输入本阶段禁止，请手动填写密码',
   guard_submit: '提交类操作本阶段未开放，请手动完成提交',
+  navigation_blocked: '目标域名未授权，请在扩展弹窗授权后重试',
 };
 
 function commandErrorMessage(err: unknown): string {

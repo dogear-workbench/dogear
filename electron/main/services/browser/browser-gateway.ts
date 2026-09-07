@@ -24,6 +24,7 @@ export type ExtensionStatus =
       extractError?: string;
       connectedAt: number;
       authorizedOrigins: string[];
+      generation: number;
     };
 
 export interface CommandError {
@@ -32,6 +33,7 @@ export interface CommandError {
 }
 
 interface PendingCommand {
+  kind: CommandKind;
   resolve: (result: CommandResult) => void;
   reject: (error: CommandError) => void;
   timer: NodeJS.Timeout;
@@ -51,6 +53,7 @@ const COMMAND_ERROR_CODES: readonly CommandErrorCode[] = [
   'value_mismatch',
   'guard_password',
   'guard_submit',
+  'navigation_blocked',
 ];
 
 const pendingCommands = new Map<string, PendingCommand>();
@@ -112,6 +115,7 @@ function takeOver(socket: net.Socket, extensionVersion: string, protocolVersion:
     textPreview: '',
     connectedAt: Date.now(),
     authorizedOrigins: [],
+    generation: 0,
   });
   safeWrite(socket, { type: 'welcome', appVersion: gatewayAppVersion });
   logger.info('扩展已连接', `v${extensionVersion}`, `protocol=${protocolVersion}`, `tabId=${tabId}`);
@@ -130,12 +134,14 @@ function applySnapshot(message: NmMessage): void {
     typeof message.extractError === 'string' && message.extractError.length > 0
       ? message.extractError
       : undefined;
+  const generation = typeof message.generation === 'number' ? message.generation : currentStatus.generation;
   setStatus({
     ...currentStatus,
     tabId,
     title,
     url,
     textPreview,
+    generation,
     ...(extractError !== undefined ? { extractError } : {}),
   });
   logger.info('标签页快照已更新', url, `tabId=${tabId}`);
@@ -156,6 +162,25 @@ function isOriginAuthorized(url: string, authorizedOrigins: string[]): boolean {
   return origin !== null && authorizedOrigins.includes(origin);
 }
 
+export function validateNavigateTarget(targetUrl: unknown, authorizedOrigins: string[]): CommandError | null {
+  if (typeof targetUrl !== 'string' || targetUrl.length === 0) {
+    return { errorCode: 'navigation_blocked', error: 'navigate 缺少有效的目标地址' };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return { errorCode: 'navigation_blocked', error: '目标地址不是合法 URL' };
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return { errorCode: 'navigation_blocked', error: '仅支持 http/https 目标地址' };
+  }
+  if (!isOriginAuthorized(parsed.href, authorizedOrigins)) {
+    return { errorCode: 'navigation_blocked', error: '目标域名未授权，请在扩展弹窗授权后重试' };
+  }
+  return null;
+}
+
 function applyPermissionState(message: NmMessage): void {
   if (currentStatus.status !== 'connected') {
     logger.warn('未连接状态下收到 permission_state，已忽略');
@@ -165,6 +190,13 @@ function applyPermissionState(message: NmMessage): void {
   const origins = raw.filter((item): item is string => typeof item === 'string');
   setStatus({ ...currentStatus, authorizedOrigins: origins });
   logger.info('授权域名列表已更新:', origins.length > 0 ? origins.join(', ') : '(空)');
+}
+
+function applyNavigateUrl(data: unknown): void {
+  const url = (data as { url?: unknown } | null | undefined)?.url;
+  if (typeof url !== 'string' || url.length === 0) return;
+  if (currentStatus.status !== 'connected') return;
+  setStatus({ ...currentStatus, url });
 }
 
 function parseErrorCode(value: unknown): CommandErrorCode {
@@ -187,6 +219,7 @@ function handleCommandResult(message: NmMessage): void {
   pendingCommands.delete(requestId);
   clearTimeout(pending.timer);
   if (message.ok === true) {
+    if (pending.kind === 'navigate') applyNavigateUrl(message.data);
     pending.resolve({
       requestId,
       ok: true,
@@ -258,7 +291,10 @@ export function sendExtensionCommand(
       error: '扩展版本过旧，请在浏览器扩展管理页重载 Dogear 扩展',
     } satisfies CommandError);
   }
-  if (!isOriginAuthorized(currentStatus.url, currentStatus.authorizedOrigins)) {
+  if (kind === 'navigate') {
+    const blocked = validateNavigateTarget(params.targetUrl, currentStatus.authorizedOrigins);
+    if (blocked) return Promise.reject(blocked);
+  } else if (!isOriginAuthorized(currentStatus.url, currentStatus.authorizedOrigins)) {
     return Promise.reject({
       errorCode: 'permission_denied',
       error: '当前标签页域名未授权，请在浏览器扩展 Dogear 弹窗中授权此域名后重试',
@@ -271,7 +307,7 @@ export function sendExtensionCommand(
       pendingCommands.delete(requestId);
       reject({ errorCode: 'timeout', error: '命令执行超时' } satisfies CommandError);
     }, timeoutMs);
-    pendingCommands.set(requestId, { resolve, reject, timer });
+    pendingCommands.set(requestId, { kind, resolve, reject, timer });
     safeWrite(socket, { type: 'command', requestId, tabId, url, kind, params });
   });
 }

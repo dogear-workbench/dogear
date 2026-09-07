@@ -7,7 +7,7 @@ export type NmMessage = Record<string, unknown>;
 
 export const ProtocolVersion = 2;
 
-export type CommandKind = 'observe' | 'click' | 'fill' | 'read_text';
+export type CommandKind = 'observe' | 'click' | 'fill' | 'read_text' | 'navigate';
 
 export type CommandErrorCode =
   | 'not_connected'
@@ -21,7 +21,8 @@ export type CommandErrorCode =
   | 'ref_expired'
   | 'value_mismatch'
   | 'guard_password'
-  | 'guard_submit';
+  | 'guard_submit'
+  | 'navigation_blocked';
 
 export interface ExtensionCommand {
   requestId: string;
@@ -42,6 +43,20 @@ export interface CommandResult {
 export interface PermissionStateMessage {
   type: 'permission_state';
   origins: string[];
+}
+
+export interface NavigateCommandParams {
+  targetUrl: string;
+}
+
+export interface TabSnapshotMessage {
+  type: 'tab_snapshot';
+  tabId: number;
+  title: string;
+  url: string;
+  textPreview: string;
+  extractError?: string;
+  generation: number;
 }
 
 export interface NmDecoder {
