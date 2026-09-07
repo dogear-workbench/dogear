@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 端到端验收
-status: pending
+status: done
 ---
 
 ## 目标
@@ -35,9 +35,13 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - 层 3 拓扑改版（无人值守约束下由主会话拍板）：放弃「关闭安装版腾出真实 pipe」方案（安装版即子会话宿主，不可触碰），改为 **dist 拷贝树**（pipe 常量替换为独立 TCP 端口 + main-app.js configDir 计算优先读 DOGEAR_CONFIG_DIR 的临时补丁）+ node_modules electron.exe 以 NODE_ENV=development + 独立 DOGEAR_CONFIG_DIR/cwd 运行完整 dev 应用，l3-entry 测试入口 append 进拷贝树 main 入口：在 electron 主进程内直起 PiSession（浏览器解析 Profile）真实 agent loop —— 安装版全程未触碰，dev/prod 因 userData（Dogear-Dev）天然共存
+  - 层 3 验证条件（测试层注入，如实记录）：真实用户 settings 中「浏览器解析」Profile 为旧版配置（仅 browser:true 无 extension），且双工具组并存时便宜档模型会误选 dogear__browser__* —— l3-entry 强制 browser:false + extension:true（extension-only 条件）；工具组选择策略记入 P3 输入
+  - 未真机收紧 riskKeywords：实测命中「验证码」为小红书未登录首访验证码页（真实风控，非误报），现有子串匹配语义正确，不做代码改动
+  - 真机用例矩阵在 P1 step5 driver 拓扑基础上重建并扩展（新增策略域 18780 第三测试源 + takeOver 计数桩 + busy 页竞态窗口构造），断言 76/76；层 1 装配断言 10/10；层 3 实测 12/12（含真实小红书风控命中即停）
+- 改动文件清单：docs/codebase-map.md（navigate/site-policy/代际语义/账本新字段/链路流同步）；docs/plans/.../step4-e2e-acceptance.md（本回填）；docs/plans/.../plan.md（步骤索引 + 完成总结）。验证脚本（.tmp-step4/ 驱动器，不提交）；产品代码零改动（P2 step1-3 已收全）
 
 ### 给下一步的接力棒
-- 人工遗留清单：（无法自动化项）
-- 真机观察记录：（小红书调研的实际行为、风控信号、参数体感——P3 校准输入）
-- 后续（P3 输入）：
+- 人工遗留清单：见共享区 step4-delivery.md（小红书登录态调研、Chrome 侧链路、toolbar 手势等）
+- 真机观察记录：见共享区 step4-delivery.md（navigate 实测 64.8s/账本 1652ms、observe 29.8s、验证码风控真实命中即停、预算/账本字段全落账）
+- 后续（P3 输入）：风控关键词整句匹配评估（真实误报样本不足，维持现状）、双工具组并存时的选择策略（extension 优先引导）、老用户 settings normalize 补全 browser-parse enabledAbilities、延迟参数真机调参

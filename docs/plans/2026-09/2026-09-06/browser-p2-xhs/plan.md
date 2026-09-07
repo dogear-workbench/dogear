@@ -11,7 +11,7 @@
 - [x] [Step 1: 帧协议 navigate 命令 + gateway 路由](./step1-protocol-navigate.md) — CommandKind 加 navigate、快照帧加 generation、gateway 目标域名授权校验与 navigation_blocked（纯主进程 + 协议，可单测）
 - [x] [Step 2: 扩展侧 URL 自动跟踪 + ref 代际](./step2-extension-tracking.md) — navigate 真实导航执行、tabs.onUpdated URL 变化监听 + 快照自动重采（节流）+ 代际重置、observe_page 导航后可用、命令前校验自愈
 - [x] [Step 3: 站点策略 + 工具层节奏预算](./step3-tools-policy.md) — site-policy.ts（小红书第一份）、extension-tools 随机延迟/预算计数/风控信号检测/navigate 工具/双链路引导文案、动作账本加字段、Profile 描述更新
-- [ ] [Step 4: 端到端验收](./step4-e2e-acceptance.md) — headful 真机用例矩阵（导航跟踪/SPA/预算/风控/竞态回归）+ 小红书真实调研一次（保守低频）+ 全量回归
+- [x] [Step 4: 端到端验收](./step4-e2e-acceptance.md) — headful 真机用例矩阵（导航跟踪/SPA/预算/风控/竞态回归）+ 小红书真实调研一次（保守低频）+ 全量回归
 
 ## 全局决策
 
@@ -29,4 +29,6 @@
 
 ## 完成总结
 
-（全部完成后回填）
+（2026-09-07 收口）P2 四步全部完成：帧协议 navigate 命令 + 扩展侧 URL 自动跟踪/ref 代际 + 站点策略工具层节奏预算 + 端到端验收。
+
+**验收结果**（HEAD be564e7 + 文档收口）：真机用例矩阵 76/76（导航工作流无重连、SPA pushState 跟踪+代际误杀、未授权域/javascript: 拒绝、预算超限+新会话恢复、风控即停+会话级拒绝、延迟区间、P1 竞态四类回归+stale_protocol+SW 冷启）；层 1 PiSession 装配断言 10/10；层 2 agent 调用序真实链路 7/7；层 3 真实 agent loop（dev electron 拷贝树 + 小红书实测）12/12 —— navigate 实测命中真实风控信号「验证码」即停，全链路按设计工作。全量回归：lint 0 errors / build:electron / tsc noEmit / 管线 20/20 / 四 smoke 脚本全 PASS。小红书登录态调研列入人工遗留（未登录首访即验证码，内容不可得）。实测详情与 P3 输入见共享区 step4-delivery.md。
