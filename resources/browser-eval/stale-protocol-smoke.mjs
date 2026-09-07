@@ -70,12 +70,12 @@ check('B: 旧协议 hello 后 status=connected 且版本记 1', (() => {
   return s.status === 'connected' && s.protocolVersion === 1;
 })());
 const bCode = await errCodeOf(sendExtensionCommand('observe', {}));
-check('B: protocolVersion 1 < 2 → stale_protocol', bCode === 'stale_protocol');
+check('B: protocolVersion 1 < 3 → stale_protocol', bCode === 'stale_protocol');
 
 const caseC = await connectSocket();
 const decoderC = makeNmDecoder();
 caseC.on('data', (c) => decoderC.push(c));
-caseC.write(encodeNmFrame({ type: 'hello', extensionVersion: '0.0.0', protocolVersion: 2, tabId: TAB_ID }));
+caseC.write(encodeNmFrame({ type: 'hello', extensionVersion: '0.0.0', protocolVersion: 3, tabId: TAB_ID }));
 caseC.write(encodeNmFrame({ type: 'permission_state', origins: ['https://www.example.com'] }));
 caseC.write(
   encodeNmFrame({ type: 'tab_snapshot', tabId: TAB_ID, title: 't', url: 'https://www.example.com/x', textPreview: '' }),
@@ -83,7 +83,7 @@ caseC.write(
 await new Promise((resolve) => {
   const poll = setInterval(() => {
     const s = getExtensionStatus();
-    if (s.status === 'connected' && s.protocolVersion === 2 && s.url === 'https://www.example.com/x') {
+    if (s.status === 'connected' && s.protocolVersion === 3 && s.url === 'https://www.example.com/x') {
       clearInterval(poll);
       resolve();
     }

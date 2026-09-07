@@ -83,7 +83,7 @@ const welcome = new Promise((resolve) => {
   socket.on('data', (chunk) => decoder.push(chunk));
 });
 socket.write(
-  encodeNmFrame({ type: 'hello', extensionVersion: '0.0.0-step3', protocolVersion: 2, tabId: TAB_ID }),
+  encodeNmFrame({ type: 'hello', extensionVersion: '0.0.0-step3', protocolVersion: 3, tabId: TAB_ID }),
 );
 await welcome;
 
@@ -214,6 +214,12 @@ check(
 );
 const noteRef = await call(CONV_LAT, 'read_text', { ref: 'e1' });
 check('S3-5 带 ref 分次读取不计笔记预算', !isErr(noteRef));
+const rsShared = await call(CONV_LAT, 'read_state', {});
+check(
+  'S3-6 read_state 与 read_text 共用笔记预算池（超限同样拒绝）',
+  isErr(rsShared) && textOf(rsShared).includes('已用 2/2'),
+  textOf(rsShared),
+);
 
 resetChannel();
 const CONV_RISK = 'conv-risk';
@@ -277,6 +283,7 @@ check('S6-2 非法 URL 文案透传 detail', isErr(badUrl) && textOf(badUrl).inc
 const unauthorized = await call(CONV_PLAIN, 'navigate', { url: 'https://unauthorized.example.com/page' });
 check('S6-3 未授权域文案保持「目标域名未授权」', isErr(unauthorized) && textOf(unauthorized).includes('目标域名未授权'));
 
+
 responder = (cmd) => {
   if (cmd.kind === 'navigate') {
     reply(cmd, {
@@ -309,6 +316,82 @@ check(
   textOf(expiredObserve),
 );
 responder = defaultSuccess;
+resetChannel();
+const CONV_RS = 'conv-read-state';
+await setGatewayPage('https://slow.example.com/note/rs1', ['https://slow.example.com']);
+responder = (cmd) => {
+  if (cmd.kind === 'read_state') reply(cmd, { ok: true, data: { summary: 'feed：array，长度 3' } });
+  else defaultSuccess(cmd);
+};
+t0 = Date.now();
+const rsDelay = await call(CONV_RS, 'read_state', {});
+check(
+  'R1 read_state 过 policyGate 随机延迟（≥200ms）',
+  !isErr(rsDelay) && Date.now() - t0 >= 200,
+  `elapsed=${Date.now() - t0}ms`,
+);
+const rsSame1 = await call(CONV_RS, 'read_state', { path: 'home.feed.0' });
+const rsSame2 = await call(CONV_RS, 'read_state', {});
+check('R2 同页多次 read_state 均成功（同 URL 不重复计数）', !isErr(rsSame1) && !isErr(rsSame2));
+await setGatewayPage('https://slow.example.com/note/rs2');
+const rsNewUrl = await call(CONV_RS, 'read_state', {});
+check('R3 新页面 URL 计第 2 次笔记（预算 2/2 用满）', !isErr(rsNewUrl));
+await setGatewayPage('https://slow.example.com/note/rs3');
+const rsOver = await call(CONV_RS, 'read_state', {});
+check(
+  'R4 第 3 个页面超限拒绝 + 结构化文案',
+  isErr(rsOver) && textOf(rsOver).includes('已用 2/2') && textOf(rsOver).includes('剩余额度 0'),
+  textOf(rsOver),
+);
+
+resetChannel();
+const CONV_RSRISK = 'conv-rs-risk';
+await setGatewayPage('https://slow.example.com/note/rsrisk', ['https://slow.example.com']);
+responder = (cmd) => {
+  if (cmd.kind === 'read_state') {
+    reply(cmd, { ok: true, data: { json: '{"tip":"请完成 verify-risk-token 验证"}', truncated: false, totalLength: 40 } });
+  } else {
+    defaultSuccess(cmd);
+  }
+};
+const rsRisk = await call(CONV_RSRISK, 'read_state', { path: 'tip' });
+check(
+  'R5 read_state 返回内容风控扫描命中即停',
+  isErr(rsRisk) && textOf(rsRisk).includes('verify-risk-token') && textOf(rsRisk).includes('人工检查'),
+  textOf(rsRisk),
+);
+const rsRiskNext = await call(CONV_RSRISK, 'read_state', {});
+check('R6 命中后同会话同域名 read_state 前置拒绝', isErr(rsRiskNext));
+
+resetChannel();
+const CONV_RSINFO = 'conv-rs-info';
+await setGatewayPage('https://slow.example.com/note/rsinfo', ['https://slow.example.com']);
+responder = (cmd) => {
+  if (cmd.kind !== 'read_state') return defaultSuccess(cmd);
+  if (cmd.params.path === 'missing_probe') reply(cmd, { ok: true, data: { missing: true } });
+  else reply(cmd, { ok: true, data: { notFound: true, availableKeys: ['home', 'user'] } });
+};
+const rsMissing = await call(CONV_RSINFO, 'read_state', { path: 'missing_probe' });
+check(
+  'R7 missing → isError 引导改用 observe/read_text',
+  isErr(rsMissing) && textOf(rsMissing).includes('__INITIAL_STATE__') && textOf(rsMissing).includes('observe_page'),
+  textOf(rsMissing),
+);
+const rsNotFound = await call(CONV_RSINFO, 'read_state', { path: 'nope' });
+check(
+  'R8 notFound → isError + 该层可用 key 清单',
+  isErr(rsNotFound) && textOf(rsNotFound).includes('home、user') && textOf(rsNotFound).includes('修正 path'),
+  textOf(rsNotFound),
+);
+const rsEvents = getBrowserActionHistory().filter((e) => e.action === 'read_state' && e.source === 'extension');
+check(
+  'R9 read_state 动作流：成功/missing_state/path_not_found/budget_exceeded/risk_signal 标记齐全',
+  rsEvents.some((e) => e.conversationId === CONV_RS && !e.result) &&
+    rsEvents.some((e) => e.result === 'missing_state') &&
+    rsEvents.some((e) => e.result === 'path_not_found') &&
+    rsEvents.some((e) => e.result === 'budget_exceeded') &&
+    rsEvents.some((e) => e.result === 'risk_signal'),
+);
 
 const history = getBrowserActionHistory().filter((e) => e.source === 'extension');
 const latNavEvents = history.filter((e) => e.action === 'navigate' && e.conversationId === CONV_LAT);

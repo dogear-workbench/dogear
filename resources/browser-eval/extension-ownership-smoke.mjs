@@ -96,7 +96,7 @@ function connectAndHello(extensionVersion) {
       });
       socket.on('data', (chunk) => decoder.push(chunk));
       socket.write(
-        encodeNmFrame({ type: 'hello', extensionVersion, protocolVersion: 2, tabId: TAB_ID }),
+        encodeNmFrame({ type: 'hello', extensionVersion, protocolVersion: 3, tabId: TAB_ID }),
       );
     });
   });

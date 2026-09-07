@@ -1,7 +1,7 @@
 /**
  * 浏览器扩展 MCP Server 工具
  *
- * 提供 dogear__extension__* 工具组：navigate / observe_page / click / fill / read_text。
+ * 提供 dogear__extension__* 工具组：navigate / observe_page / click / fill / read_text / read_state。
  * 作用于用户真实浏览器的已连接标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 仅限已授权域名；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
  * 站点策略命中（如小红书）：操作间随机延迟、单会话搜索/笔记预算、风控信号即停。
@@ -163,6 +163,20 @@ interface ReadTextPayload {
   text?: string;
   totalLength?: number;
 }
+
+interface ReadStatePayload {
+  missing?: boolean;
+  notFound?: boolean;
+  availableKeys?: unknown[];
+  notSerializable?: boolean;
+  summary?: string;
+  json?: string;
+  truncated?: boolean;
+  totalLength?: number;
+}
+
+/** read_state 笔记预算按页面 URL 计数（同页多 path 探索不重复计）；与 read_text 的「无 ref 计数」语义互不影响 */
+const readStateCountedUrlByConv = new Map<string, string>();
 
 async function runCommand<T>(
   kind: CommandKind,
@@ -574,6 +588,105 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
             : '';
         emitAction(taskMeta, 'read_text', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
         return textResult(`${text}${truncated}`);
+      },
+    ),
+
+    defineTool(
+      'dogear__extension__read_state',
+      '读取用户浏览器页面 SPA 内存状态',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '读取当前页面 window.__INITIAL_STATE__（小红书/知乎类 SPA 的数据源），双模式：' +
+        '不传 path 返回顶层概要（每个 key 的类型/子项数或长度）；传 path（点分路径，纯数字段为数组下标）返回该子树 JSON（超 8000 字符截断）。' +
+        '读内存 JSON 零网络请求，适合避开 feed 页重渲染与元素上限；页面无 __INITIAL_STATE__ 时明确报错。' +
+        '小红书示例：搜索页数据在 __INITIAL_STATE__，先无 path 看顶层概要，再按 key 下钻到卡片数组。',
+      z.object({
+        path: z
+          .string()
+          .optional()
+          .describe('点分路径（如 "home.feed.0"），纯数字段为数组下标；不传则返回顶层概要'),
+      }),
+      async (args) => {
+        const detail = args.path || '顶层概要';
+        const busy = acquireGate('read_state', detail, currentUrl());
+        if (busy) return busy;
+        const taskMeta = meta();
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'read_state', { url: pageUrl, detail, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        const isNewPageUrl = pageUrl !== undefined && readStateCountedUrlByConv.get(conversationId ?? '') !== pageUrl;
+        if (gate.ctx && isNewPageUrl) {
+          const budgetMessage = checkNoteBudget(conversationId, gate.ctx.policy);
+          if (budgetMessage) {
+            emitAction(taskMeta, 'read_state', { url: pageUrl, detail, result: 'budget_exceeded' });
+            return isErrorResult(budgetMessage);
+          }
+        }
+        const startedAt = Date.now();
+        const r = await runCommand('read_state', { path: args.path }, (data) => (data ?? {}) as ReadStatePayload);
+        if (!r.ok) {
+          emitAction(taskMeta, 'read_state', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`读取失败：${r.message}`);
+        }
+        const v = r.value;
+        const failNote = (result: string, message: string): ToolResult => {
+          emitAction(taskMeta, 'read_state', { url: pageUrl, detail, result, durationMs: Date.now() - startedAt });
+          return isErrorResult(message);
+        };
+        if (v.missing) {
+          return failNote(
+            'missing_state',
+            '本页无 __INITIAL_STATE__（非 SPA 页面或框架未挂载数据源），请改用 observe_page / read_text',
+          );
+        }
+        if (v.notFound) {
+          const keys = (v.availableKeys ?? [])
+            .filter((k): k is string => typeof k === 'string')
+            .join('、');
+          return failNote(
+            'path_not_found',
+            `__INITIAL_STATE__ 中不存在路径 "${args.path}"（该层可用 key：${keys || '（无）'}），请修正 path 后重试`,
+          );
+        }
+        if (v.notSerializable) {
+          return failNote('not_serializable', '该子树无法 JSON 序列化（可能含循环引用），请换更深的子路径缩小范围后重试');
+        }
+        const text = v.summary ?? v.json ?? '';
+        if (gate.ctx) {
+          const hits = scanAndMarkRisk(conversationId, gate.ctx, text);
+          if (hits) {
+            emitAction(taskMeta, 'read_state', {
+              url: pageUrl,
+              detail,
+              result: 'risk_signal',
+              durationMs: Date.now() - startedAt,
+            });
+            return isErrorResult(riskSignalMessage(hits));
+          }
+        }
+        if (gate.ctx && isNewPageUrl) {
+          consumeNote(conversationId);
+          readStateCountedUrlByConv.set(conversationId ?? '', pageUrl ?? '');
+        }
+        emitAction(taskMeta, 'read_state', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
+        if (v.summary !== undefined) {
+          return textResult(
+            `页面 __INITIAL_STATE__ 顶层概要：\n${v.summary || '（空对象）'}\n\n传 path（如 "key.subkey.0"）可下钻查看子树，纯数字段为数组下标。`,
+          );
+        }
+        const truncatedNote =
+          v.truncated && typeof v.totalLength === 'number'
+            ? `\n\n（已截断：原文共 ${v.totalLength} 字符，显示前 8000；可换更深的子路径缩小范围）`
+            : '';
+        return textResult(`${text}${truncatedNote}`);
       },
     ),
   ];

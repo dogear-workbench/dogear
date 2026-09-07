@@ -11,6 +11,7 @@ export type BrowserActionType =
   | 'parse'
   | 'fill'
   | 'read_text'
+  | 'read_state'
   | 'wait_for'
   | 'screenshot'
   | 'close';

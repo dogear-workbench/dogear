@@ -173,6 +173,56 @@ export async function fillFn(ref, value) {
   return { applied: true }
 }
 
+// __INITIAL_STATE__ 是页面主世界的全局，须以 world:'MAIN' 注入（隔离世界读不到）
+export function readStateFn(path) {
+  const state = window.__INITIAL_STATE__
+  if (state === null || state === undefined) return { missing: true }
+  const typeLabel = (v) => {
+    if (v === null) return 'null'
+    if (Array.isArray(v)) return 'array'
+    return typeof v === 'object' ? 'object' : typeof v
+  }
+  if (!path) {
+    const lines = []
+    for (const key of Object.keys(state)) {
+      const v = state[key]
+      const t = typeLabel(v)
+      let size
+      if (t === 'array') size = `长度 ${v.length}`
+      else if (t === 'object') size = `子项 ${Object.keys(v).length}`
+      else if (t === 'string') size = `长度 ${v.length}`
+      else size = String(v)
+      lines.push(`${key}：${t}，${size}`)
+    }
+    return { summary: lines.join('\n') }
+  }
+  const segments = String(path)
+    .split('.')
+    .filter((s) => s !== '')
+  let cur = state
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]
+    if (cur === null || typeof cur !== 'object') return { notFound: true, availableKeys: [] }
+    const next = cur[seg]
+    if (next === undefined) return { notFound: true, availableKeys: Object.keys(cur) }
+    cur = next
+  }
+  let raw
+  try {
+    raw = JSON.stringify(cur)
+  } catch {
+    return { notSerializable: true }
+  }
+  if (raw === undefined || raw === null) return { notSerializable: true }
+  const totalLength = raw.length
+  const truncated = totalLength > 8000
+  return {
+    json: truncated ? raw.slice(0, 8000) + '…（截断）' : raw,
+    truncated,
+    totalLength,
+  }
+}
+
 export function readTextFn(ref) {
   if (ref) {
     if (!/^e\d+(@\d+)?$/.test(String(ref))) {

@@ -1,5 +1,5 @@
 import { extractTabSnapshot } from './content-extract.js'
-import { observeFn, clickFn, fillFn, readTextFn } from './dom-actions.js'
+import { observeFn, clickFn, fillFn, readTextFn, readStateFn } from './dom-actions.js'
 import {
   bumpGeneration,
   currentGeneration,
@@ -74,7 +74,8 @@ const COMMAND_FUNCS = {
   observe: observeFn,
   click: clickFn,
   fill: fillFn,
-  read_text: readTextFn
+  read_text: readTextFn,
+  read_state: readStateFn
 }
 
 function patternToOrigin(pattern) {
@@ -126,10 +127,10 @@ const INJECT_TIMEOUT_MS = 8000
 const INJECT_TIMEOUT_MSG = 'dogear_inject_timeout'
 
 // 点击触发导航会销毁注入上下文，executeScript 的 Promise 永不 settle，必须外层加超时竞赛
-function executeScriptWithTimeout(tabId, func, args) {
+function executeScriptWithTimeout(tabId, func, args, world) {
   let timer
   return Promise.race([
-    chrome.scripting.executeScript({ target: { tabId }, func, args }),
+    chrome.scripting.executeScript({ target: { tabId }, func, args, ...(world ? { world } : {}) }),
     new Promise((resolve, reject) => {
       timer = setTimeout(() => reject(new Error(INJECT_TIMEOUT_MSG)), INJECT_TIMEOUT_MS)
     })
@@ -190,7 +191,7 @@ async function handleCommand(msg) {
     fail(msg, 'tab_closed', '标签页已关闭')
     return
   }
-  const readSafe = msg.kind === 'observe' || msg.kind === 'read_text'
+  const readSafe = msg.kind === 'observe' || msg.kind === 'read_text' || msg.kind === 'read_state'
   if (!readSafe && msg.url && tab.url && !tab.url.startsWith(msg.url)) {
     bumpGeneration(msg.tabId, tab.url)
     sendTabSnapshot()
@@ -217,12 +218,15 @@ async function handleCommand(msg) {
         ? [p.ref]
         : msg.kind === 'fill'
           ? [p.ref, p.value]
-          : [p.ref]
+          : msg.kind === 'read_state'
+            ? [p.path]
+            : [p.ref]
   ).map((v) => (v === undefined ? null : v))
+  const injectWorld = msg.kind === 'read_state' ? 'MAIN' : undefined
   let result = null
   let injectTimedOut = false
   try {
-    const [injection] = await executeScriptWithTimeout(msg.tabId, func, args)
+    const [injection] = await executeScriptWithTimeout(msg.tabId, func, args, injectWorld)
     result = injection?.result ?? null
   } catch (err) {
     const text = String(err?.message ?? err)
@@ -255,7 +259,7 @@ async function handleCommand(msg) {
     return
   }
   postResult(msg, { ok: true, data: result })
-  if (msg.kind === 'observe' || msg.kind === 'read_text') sendTabSnapshot()
+  if (msg.kind === 'observe' || msg.kind === 'read_text' || msg.kind === 'read_state') sendTabSnapshot()
 }
 
 async function connect() {
@@ -286,7 +290,7 @@ async function connect() {
   port.postMessage({
     type: 'hello',
     extensionVersion: chrome.runtime.getManifest().version,
-    protocolVersion: 2,
+    protocolVersion: 3,
     tabId: tab.id
   })
   sendPermissionState()

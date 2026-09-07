@@ -5,9 +5,9 @@ const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 export type NmMessage = Record<string, unknown>;
 
-export const ProtocolVersion = 2;
+export const ProtocolVersion = 3;
 
-export type CommandKind = 'observe' | 'click' | 'fill' | 'read_text' | 'navigate';
+export type CommandKind = 'observe' | 'click' | 'fill' | 'read_text' | 'navigate' | 'read_state';
 
 export type CommandErrorCode =
   | 'not_connected'
@@ -47,6 +47,10 @@ export interface PermissionStateMessage {
 
 export interface NavigateCommandParams {
   targetUrl: string;
+}
+
+export interface ReadStateCommandParams {
+  path?: string;
 }
 
 export interface TabSnapshotMessage {
