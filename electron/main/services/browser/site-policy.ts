@@ -129,3 +129,13 @@ export function markRiskBlocked(conversationId: string | undefined, origin: stri
 export function riskBlockedMessage(): string {
   return '该站点此前已触发风控信号，本会话已停止对它的自动操作，请人工检查浏览器页面后再决定是否继续';
 }
+
+export function controlledBrowserBlock(url: string): string | null {
+  const policy = getSitePolicy(url);
+  if (!policy) return null;
+  return (
+    `受控浏览器禁止访问该站点（${policy.matchOrigins.join('、')}）。` +
+    '此类登录态站点已绑定用户真实浏览器的扩展通道，请改用 dogear__extension__navigate / observe_page / click / read_text ' +
+    '在扩展已连接且授权的标签页上操作'
+  );
+}

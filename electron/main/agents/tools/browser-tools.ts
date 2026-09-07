@@ -22,6 +22,7 @@ import {
   type BrowserArticleAction,
   type BrowserArticleActionEvent,
 } from '../../services/browser/browser-article-service.js';
+import { controlledBrowserBlock } from '../../services/browser/site-policy.js';
 import {
   searchWeb,
   type SearchAction,
@@ -322,6 +323,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
         '使用纪律：\n' +
         '- 需要读取网页文章内容时优先调用本工具，不要直接从原子工具开始。\n' +
         '- 仅当本工具失败（timeout / parse_empty）或需要登录后才能交互探索时，才降级使用 navigate → observe_page → click / read_text 等原子工具。\n' +
+        '- 小红书等登录态站点禁止本通道（调用会被直接拒绝），请改用 dogear__extension__* 扩展通道在用户真实浏览器上操作。\n' +
         '- 返回 need_login 时：浏览器窗口已打开并停留在目标页，必须告知用户「浏览器窗口已打开，请在窗口中完成登录，登录完成后告诉我重试」；用户完成登录后重新调用本工具即可（登录态已持久化）。\n' +
         '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。',
       z.object({
@@ -329,6 +331,11 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
       }),
       async (args) => {
         const taskMeta = meta();
+        const blocked = controlledBrowserBlock(args.url);
+        if (blocked) {
+          emitAction({ source: 'readArticle', taskMeta, action: 'parse', url: args.url, detail: blocked, result: 'site_forbidden' });
+          return isErrorResult(blocked);
+        }
         const result = await readArticleWithBrowser(args.url, {
           taskMeta,
           onAction: forwardArticleAction,
@@ -437,12 +444,17 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
     defineTool(
       'dogear__browser__navigate',
       '浏览器导航到 URL',
-      '让受控浏览器导航到指定 URL，返回最终 URL、页面标题与正文字数摘要。仅用于 readArticle 失败后的手动探索流程；单纯读文章请用 dogear__browser__readArticle。',
+      '让受控浏览器导航到指定 URL，返回最终 URL、页面标题与正文字数摘要。仅用于 readArticle 失败后的手动探索流程；单纯读文章请用 dogear__browser__readArticle。小红书等登录态站点禁止本通道，请用 dogear__extension__* 扩展通道。',
       z.object({
         url: z.string().url().describe('目标页面完整 URL（含 http/https）'),
       }),
       async (args) => {
         const taskMeta = meta();
+        const blocked = controlledBrowserBlock(args.url);
+        if (blocked) {
+          emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url, detail: blocked, result: 'site_forbidden' });
+          return isErrorResult(blocked);
+        }
         emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url });
         const r = await runWithLease(taskMeta, async (page) => {
           await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: NAVIGATE_TIMEOUT_MS });
