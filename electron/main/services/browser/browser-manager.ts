@@ -37,6 +37,9 @@ const PAC_PROXY_DOMAINS = [
   'googleapis.com',
   'ggpht.com',
   'duckduckgo.com',
+  'reddit.com',
+  'redditstatic.com',
+  'redd.it',
 ];
 
 function buildProxyPacUrl(proxyServer: string | undefined): string | null {

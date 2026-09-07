@@ -8,9 +8,11 @@ import {
   type ParsedSerpItem,
   type SerpParseFn,
 } from './serp-parsers.js';
+import { runSiteAttempt, SITE_SEARCH_CONFIG, type SiteSearchId } from './site-search.js';
 
 export type SearchEngineId = 'google' | 'ddg' | 'bing';
 export type SearchEngineConfig = 'auto' | SearchEngineId;
+export type SearchTarget = SearchEngineId | SiteSearchId;
 
 export type SearchErrorClass = 'empty_query' | 'parse_empty' | 'timeout' | 'browser_crash';
 
@@ -19,25 +21,26 @@ export interface SearchResultItem {
   title: string;
   url: string;
   snippet: string;
+  meta?: string;
 }
 
 export interface SearchDegradation {
-  from: SearchEngineId;
-  to: SearchEngineId;
+  from: SearchTarget;
+  to: SearchTarget;
   reason: string;
 }
 
 export type SearchOutcome =
   | {
       ok: true;
-      engine: SearchEngineId;
+      engine: SearchTarget;
       query: string;
       results: SearchResultItem[];
       degradations: SearchDegradation[];
     }
   | {
       ok: false;
-      engine: SearchEngineId;
+      engine: SearchTarget;
       query: string;
       errorClass: SearchErrorClass;
       message: string;
@@ -60,10 +63,13 @@ export interface SearchSerpUrls {
   google?: string;
   ddg?: string;
   bing?: string;
+  reddit?: string;
+  zhihu?: string;
 }
 
 export interface SearchWebOptions {
   engine?: SearchEngineConfig;
+  site?: SiteSearchId;
   maxResults?: number;
   proxyServer?: string;
   taskMeta?: BrowserTaskMeta;
@@ -83,10 +89,12 @@ const SERP_URL_TEMPLATES: Record<SearchEngineId, string> = {
   bing: 'https://cn.bing.com/search?q={q}',
 };
 
-const ENGINE_LABELS: Record<SearchEngineId, string> = {
+const ENGINE_LABELS: Record<SearchTarget, string> = {
   google: 'Google',
   ddg: 'DuckDuckGo',
   bing: 'Bing',
+  reddit: 'Reddit',
+  zhihu: '知乎',
 };
 
 const PARSE_FNS: Record<SearchEngineId, SerpParseFn> = {
@@ -216,6 +224,7 @@ async function runEngineAttempt(
 
 /**
  * 浏览器搜索：引擎编排（auto 代理探测 / 降级链 Google → DDG → Bing）+ 验证页检测 + SERP 解析。
+ * 传 site 时先走站内引擎（reddit/zhihu），失败自动降级 site: 通用链，原因记入 degradations。
  * 不 throw，错误归类在返回值里；三级全失败才整体失败。
  */
 export async function searchWeb(query: string, options?: SearchWebOptions): Promise<SearchOutcome> {
@@ -246,6 +255,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
 
   const chain = await buildEngineChain(engineConfig, options?.proxyServer, emit);
   const degradations: SearchDegradation[] = [];
+  let effectiveQuery = trimmed;
 
   try {
     emit({ action: 'wait', detail: '等待浏览器实例' });
@@ -273,13 +283,52 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
     const lease = acquired.lease;
     const page = lease.page;
     try {
+      const site = options?.site;
+      if (site) {
+        if (remainingMs() <= 0) {
+          return {
+            ok: false,
+            engine: site,
+            query: trimmed,
+            errorClass: 'timeout',
+            message: `搜索任务超时（任务上限 ${TASK_TIMEOUT_MS / 1000} 秒）`,
+            degradations,
+          };
+        }
+        const siteAttempt = await runSiteAttempt(
+          site,
+          page,
+          trimmed,
+          options?.serpUrls?.[site],
+          emit,
+          remainingMs(),
+        );
+        if (siteAttempt.ok) {
+          const results = siteAttempt.items.slice(0, maxResults).map((item, idx) => ({
+            rank: idx + 1,
+            title: item.title,
+            url: item.url,
+            snippet: item.snippet,
+            ...(item.meta ? { meta: item.meta } : {}),
+          }));
+          return { ok: true, engine: site, query: trimmed, results, degradations };
+        }
+        const siteConfig = SITE_SEARCH_CONFIG[site];
+        effectiveQuery = `${trimmed} site:${siteConfig.domain}`;
+        degradations.push({ from: site, to: chain[0], reason: siteAttempt.reason });
+        emit({
+          action: 'observe',
+          detail: `${siteConfig.label} 站内搜索失败，降级为通用搜索「${effectiveQuery}」：${siteAttempt.reason}`,
+          result: 'degrade',
+        });
+      }
       for (let i = 0; i < chain.length; i++) {
         const engine = chain[i];
         if (remainingMs() <= 0) {
           return {
             ok: false,
             engine,
-            query: trimmed,
+            query: effectiveQuery,
             errorClass: 'timeout',
             message: `搜索任务超时（任务上限 ${TASK_TIMEOUT_MS / 1000} 秒）`,
             degradations,
@@ -288,7 +337,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
         const attempt = await runEngineAttempt(
           engine,
           page,
-          trimmed,
+          effectiveQuery,
           options?.serpUrls,
           emit,
           remainingMs(),
@@ -300,7 +349,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
             url: item.url,
             snippet: item.snippet,
           }));
-          return { ok: true, engine, query: trimmed, results, degradations };
+          return { ok: true, engine, query: effectiveQuery, results, degradations };
         }
         const next = chain[i + 1];
         if (!next) {
@@ -315,7 +364,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
           return {
             ok: false,
             engine,
-            query: trimmed,
+            query: effectiveQuery,
             errorClass,
             message,
             degradations,
@@ -331,7 +380,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
       return {
         ok: false,
         engine: chain[chain.length - 1],
-        query: trimmed,
+        query: effectiveQuery,
         errorClass: 'parse_empty',
         message: '搜索引擎链为空，无法执行搜索',
         degradations,
@@ -346,7 +395,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
       return {
         ok: false,
         engine: chain[chain.length - 1],
-        query: trimmed,
+        query: effectiveQuery,
         errorClass: 'timeout',
         message: `浏览器搜索任务超时：${message}`,
         degradations,
@@ -356,7 +405,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
     return {
       ok: false,
       engine: chain[chain.length - 1],
-      query: trimmed,
+      query: effectiveQuery,
       errorClass: 'browser_crash',
       message: `浏览器搜索失败：${message}`,
       degradations,

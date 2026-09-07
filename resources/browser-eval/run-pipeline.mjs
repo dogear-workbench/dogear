@@ -163,6 +163,9 @@ function startSerpServer() {
         sendHtml(readFileSync(path.join(here, 'serp-ddg.html'), 'utf-8'));
         return;
       }
+      if (route.startsWith('/hang/')) {
+        return;
+      }
       res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
       res.end('Not Found');
     });
@@ -228,6 +231,9 @@ async function runSearchTasks() {
   const googleMockUrl = resolveUrl('{{BASE}}/serp-google.html');
   const ddgMockUrl = resolveUrl('{{BASE}}/serp-ddg.html');
   const bingMockUrl = resolveUrl('{{BASE}}/serp-bing.html');
+  const redditMockUrl = resolveUrl('{{BASE}}/serp-reddit.html');
+  const zhihuStateMockUrl = resolveUrl('{{BASE}}/serp-zhihu-state.html');
+  const zhihuDomMockUrl = resolveUrl('{{BASE}}/serp-zhihu-dom.html');
 
   const searchCases = [
     {
@@ -391,6 +397,145 @@ async function runSearchTasks() {
         errorClass: 'parse_empty',
         degradationCount: 2,
         messageContains: '解析出结果',
+      },
+    },
+    {
+      id: 'search-site-reddit-parse',
+      scenario: 'Reddit 站内搜索（old.reddit mock）：meta 带 subreddit/score/评论数/时间，缺失元数据不硬造',
+      run: () => searchWeb('装修翻车', { site: 'reddit', serpUrls: { reddit: redditMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'reddit',
+        count: 5,
+        titlesContain: ['DOGEAR-SERP-R1', 'DOGEAR-SERP-R5'],
+        degradationsEmpty: true,
+      },
+      extraCheck: (failures, outcome) => {
+        const first = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-R1'));
+        if (!first) {
+          failures.push('应有 DOGEAR-SERP-R1 结果');
+        } else {
+          if (!first.meta || !first.meta.includes('r/HomeImprovement') || !first.meta.includes('1,247 points') || !first.meta.includes('318 comments')) {
+            failures.push(`R1 meta 应含 subreddit/score/评论数，实际「${first.meta}」`);
+          }
+          if (!first.meta.includes('2026年8月30日')) {
+            failures.push(`R1 meta 应优先取 time 的 title 人类可读时间，实际「${first.meta}」`);
+          }
+        }
+        const bare = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-R3'));
+        if (!bare) {
+          failures.push('应有 DOGEAR-SERP-R3 结果');
+        } else {
+          if (bare.meta && bare.meta.includes('points')) failures.push(`R3 无 score 元素时 meta 不应硬造，实际「${bare.meta}」`);
+          if (!bare.meta || !bare.meta.includes('56 comments')) failures.push(`R3 meta 应保留评论数，实际「${bare.meta}」`);
+        }
+        const naked = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-R4'));
+        if (naked && naked.meta) failures.push(`R4 无任何元数据时不应有 meta，实际「${naked.meta}」`);
+      },
+    },
+    {
+      id: 'search-site-zhihu-state-parse',
+      scenario: '知乎站内搜索：优先 __INITIAL_STATE__，卡片带作者/赞同数，HTML 摘要去标签，question/无 URL 卡片不入选',
+      run: () => searchWeb('装修避坑', { site: 'zhihu', serpUrls: { zhihu: zhihuStateMockUrl } }),
+      expect: {
+        ok: true,
+        engine: 'zhihu',
+        count: 3,
+        titlesContain: ['DOGEAR-SERP-Z1', 'DOGEAR-SERP-Z2', 'DOGEAR-SERP-Z3'],
+        degradationsEmpty: true,
+      },
+      extraCheck: (failures, outcome) => {
+        if (outcome.results.some((r) => r.title.includes('DOGEAR-SERP-Z-DECOY') || r.title.includes('DOGEAR-SERP-Z-ORPHAN'))) {
+          failures.push('question 类型与无 URL 卡片不应入选');
+        }
+        const first = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-Z1'));
+        if (!first) {
+          failures.push('应有 DOGEAR-SERP-Z1 结果');
+        } else {
+          if (!first.meta || !first.meta.includes('老王聊装修') || !first.meta.includes('赞同 12345')) {
+            failures.push(`Z1 meta 应含作者与赞同数，实际「${first.meta}」`);
+          }
+          if (first.url !== 'https://www.zhihu.com/question/5566001/answer/1001') {
+            failures.push(`Z1 url 应拼为 answer 页，实际 ${first.url}`);
+          }
+        }
+        const article = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-Z2'));
+        if (!article || article.url !== 'https://zhuanlan.zhihu.com/p/7788') {
+          failures.push(`Z2 应为专栏 URL，实际 ${article?.url}`);
+        }
+      },
+    },
+    {
+      id: 'search-site-zhihu-dom-fallback',
+      scenario: '知乎无 __INITIAL_STATE__：DOM 卡片兑底，meta 从作者/赞同取到什么算什么',
+      run: () => searchWeb('全屋定制', { site: 'zhihu', serpUrls: { zhihu: zhihuDomMockUrl }, maxResults: 3 }),
+      expect: {
+        ok: true,
+        engine: 'zhihu',
+        count: 3,
+        titlesContain: ['DOGEAR-SERP-ZD1', 'DOGEAR-SERP-ZD2', 'DOGEAR-SERP-ZD3'],
+        degradationsEmpty: true,
+      },
+      extraCheck: (failures, outcome) => {
+        const first = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-ZD1'));
+        if (!first?.meta?.includes('设计师阿伟') || !first.meta.includes('赞同')) {
+          failures.push(`ZD1 meta 应含作者与赞同，实际「${first?.meta}」`);
+        }
+        const second = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-ZD2'));
+        if (!second?.meta?.includes('水电工老李') || second.meta.includes('赞同')) {
+          failures.push(`ZD2 meta 应只有作者无赞同，实际「${second?.meta}」`);
+        }
+        const naked = outcome.results.find((r) => r.title.includes('DOGEAR-SERP-ZD3'));
+        if (naked && naked.meta) failures.push(`ZD3 无作者无赞同不应有 meta，实际「${naked.meta}」`);
+      },
+    },
+    {
+      id: 'search-site-reddit-empty-degrade',
+      scenario: 'Reddit 站内解析空：降级「site:reddit.com」通用链成功，degradations 记录站点→引擎',
+      run: (base) =>
+        searchWeb('装修翻车', {
+          site: 'reddit',
+          engine: 'bing',
+          serpUrls: {
+            reddit: `${base.url}/empty/?q={q}`,
+            bing: bingMockUrl,
+          },
+        }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 6,
+        degradations: [{ from: 'reddit', to: 'bing', reasonContains: '解析为空' }],
+      },
+      extraCheck: (failures, outcome) => {
+        if (!outcome.query.includes('site:reddit.com')) {
+          failures.push(`降级后 query 应为 site: 语法，实际「${outcome.query}」`);
+        }
+        if (outcome.results.some((r) => r.meta)) failures.push('通用引擎结果不应带 meta');
+      },
+    },
+    {
+      id: 'search-site-reddit-navfail-degrade',
+      scenario: 'Reddit 站内导航失败（服务器挂起超时，模拟代理退出）：降级 site: 通用链成功',
+      run: (base) =>
+        searchWeb('renovation mistakes', {
+          site: 'reddit',
+          engine: 'bing',
+          serpUrls: {
+            reddit: `${base.url}/hang/?q={q}`,
+            bing: bingMockUrl,
+          },
+        }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 6,
+        degradations: [{ from: 'reddit', to: 'bing', reasonContains: '导航失败' }],
+      },
+      extraCheck: (failures, outcome) => {
+        if (!outcome.query.includes('site:reddit.com')) {
+          failures.push(`降级后 query 应为 site: 语法，实际「${outcome.query}」`);
+        }
       },
     },
   ];

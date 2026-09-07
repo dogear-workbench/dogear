@@ -47,6 +47,8 @@ const SEARCH_ENGINE_LABELS: Record<string, string> = {
   google: 'Google',
   ddg: 'DuckDuckGo',
   bing: 'Bing',
+  reddit: 'Reddit',
+  zhihu: '知乎',
 };
 
 export type BrowserToolsAction =
@@ -390,13 +392,16 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
       'dogear__browser__search',
       '搜索网页并返回结果列表',
       '通过受控浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 受控浏览器」配置。\n' +
+        '传 site="reddit" 或 site="zhihu" 时走站内搜索：reddit 用 old.reddit（结果带 score/评论数/subreddit），zhihu 用知乎搜索页（结果带作者/赞同数）；站内失败自动降级为「关键词 site:域名」通用搜索（丢互动量但保可用，降级原因见返回）。\n' +
         '使用纪律：\n' +
         '- 需要发现内容（不知道具体 URL）时先用本工具搜索，搜到再用 dogear__browser__readArticle 阅读。\n' +
+        '- 需要站内互动量排序（高赞/高票）或某个站的垂直内容时传 site；不传 site 走通用引擎，行为不变。\n' +
         '- 关键词用空格分隔核心词，避免整句提问，与普通搜索引擎用法一致。\n' +
         '- 本工具失败时可降级用 dogear__browser__navigate 打开搜索引擎结果页，再用 dogear__browser__observe_page / read_text 等原子工具手动探索。\n' +
         '- 返回降级提示且提到验证页时，告知用户可在受控浏览器窗口人工完成一次验证（profile 会记住）后重试。',
       z.object({
         query: z.string().trim().min(1).describe('搜索关键词，不能为空'),
+        site: z.enum(['reddit', 'zhihu']).optional().describe('站内搜索引擎：需要站内互动量排序（高赞/高票）时用它；不传走通用引擎'),
         maxResults: z.number().int().min(1).max(15).optional().describe('返回结果条数上限（1-15），默认 8'),
       }),
       async (args) => {
@@ -404,6 +409,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
         const settings = await loadSettings();
         const outcome = await searchWeb(args.query, {
           engine: settings.browserSearchEngine,
+          site: args.site,
           maxResults: args.maxResults,
           proxyServer: settings.browserProxyServer,
           taskMeta,
@@ -424,7 +430,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
           return isErrorResult(`搜索失败（${outcome.errorClass}）：${outcome.message}${fallbackHint}`);
         }
         const lines = outcome.results.map(
-          (r) => `${r.rank}. ${r.title}\n   ${r.url}\n   ${r.snippet}`,
+          (r) => `${r.rank}. ${r.title}\n   ${r.url}\n   ${r.snippet}${r.meta ? `\n   ${r.meta}` : ''}`,
         );
         const degradeNote =
           outcome.degradations.length > 0

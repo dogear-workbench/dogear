@@ -2,6 +2,7 @@ export interface ParsedSerpItem {
   title: string;
   url: string;
   snippet: string;
+  meta?: string;
 }
 
 export type SerpParseFn = () => ParsedSerpItem[];
@@ -101,6 +102,98 @@ export const parseDdgSerp = new Function(`return () => {
   return items;
 }`)() as SerpParseFn;
 
+export const parseRedditSerp = new Function(`return () => {
+  const norm = (t) => (t || '').replace(/\\s+/g, ' ').trim();
+  const pickBlocks = (selectors) => {
+    for (const sel of selectors) {
+      const found = Array.from(document.querySelectorAll(sel));
+      if (found.length > 0) return found;
+    }
+    return [];
+  };
+  const metaPartsOf = (block) => {
+    const parts = [];
+    const sub = block.querySelector('a.search-subreddit-link') || block.querySelector('.search-result-meta a[href*="/r/"]');
+    const subText = sub ? norm(sub.textContent) : '';
+    if (subText) parts.push('r/' + subText.replace(/^r\\//i, ''));
+    const score = block.querySelector('.search-score');
+    if (score) parts.push(norm(score.textContent));
+    const comments = block.querySelector('.search-comments');
+    if (comments) parts.push(norm(comments.textContent));
+    const time = block.querySelector('time');
+    const timeText = time ? (time.getAttribute('title') || time.getAttribute('datetime') || norm(time.textContent)) : '';
+    if (timeText) parts.push(timeText);
+    return parts;
+  };
+  const items = [];
+  const seen = new Set();
+  for (const block of pickBlocks(['div.search-result-link', 'div.search-result'])) {
+    const link = block.querySelector('a.search-title[href]') || block.querySelector('a.search-link[href]') || block.querySelector('a[href]');
+    if (!link) continue;
+    const url = link.href || '';
+    if (!/^https?:/i.test(url) || seen.has(url)) continue;
+    const title = norm(link.textContent);
+    if (!title) continue;
+    seen.add(url);
+    const body = block.querySelector('.search-result-body');
+    const snippet = body ? norm(body.textContent).slice(0, 300) : '';
+    const parts = metaPartsOf(block);
+    const item = { title, url, snippet };
+    if (parts.length > 0) item.meta = parts.join(' · ');
+    items.push(item);
+  }
+  return items;
+}`)() as SerpParseFn;
+
+export const parseZhihuSerp = new Function(`return () => {
+  const norm = (t) => (t || '').replace(/\\s+/g, ' ').trim();
+  const stripHtml = (t) => norm(String(t || '').replace(/<[^>]*>/g, ' '));
+  const pickBlocks = (selectors) => {
+    for (const sel of selectors) {
+      const found = Array.from(document.querySelectorAll(sel));
+      if (found.length > 0) return found;
+    }
+    return [];
+  };
+  const voteOf = (block) => {
+    const metaEl = block.querySelector('meta[itemprop="upvoteCount"]');
+    const raw = metaEl ? norm(metaEl.getAttribute('content')) : '';
+    if (raw) return '赞同 ' + raw;
+    const button = block.querySelector('.VoteButton--up');
+    if (button) {
+      const text = norm(button.textContent).replace(/^赞同\\s*/, '');
+      return text ? '赞同 ' + text : '赞同';
+    }
+    return '';
+  };
+  const authorOf = (block) => {
+    const el = block.querySelector('.AuthorInfo-name .UserLink-link') || block.querySelector('.AuthorInfo-name') || block.querySelector('.UserLink-link');
+    return el ? norm(el.textContent) : '';
+  };
+  const items = [];
+  const seen = new Set();
+  for (const block of pickBlocks(['div.SearchResult-Card', '.ContentItem'])) {
+    const link = block.querySelector('.ContentItem-title a[href]') || block.querySelector('h2 a[href]');
+    if (!link) continue;
+    const url = link.href || '';
+    if (!/^https?:/i.test(url) || seen.has(url)) continue;
+    const title = norm(link.textContent);
+    if (!title) continue;
+    seen.add(url);
+    const rich = block.querySelector('.RichContent-inner .RichText') || block.querySelector('.RichText') || block.querySelector('.RichContent-inner');
+    const snippet = rich ? stripHtml(rich.textContent).slice(0, 300) : '';
+    const parts = [];
+    const author = authorOf(block);
+    if (author) parts.push(author);
+    const vote = voteOf(block);
+    if (vote) parts.push(vote);
+    const item = { title, url, snippet };
+    if (parts.length > 0) item.meta = parts.join(' · ');
+    items.push(item);
+  }
+  return items;
+}`)() as SerpParseFn;
+
 export const parseBingSerp = new Function(`return () => {
   const pickBlocks = (selectors) => {
     for (const sel of selectors) {
@@ -134,3 +227,48 @@ export const parseBingSerp = new Function(`return () => {
   }
   return items;
 }`)() as SerpParseFn;
+
+export const extractZhihuStateCards = new Function(`return () => {
+  const state = window.__INITIAL_STATE__;
+  if (!state || typeof state !== 'object') return null;
+  const norm = (t) => (t == null ? '' : String(t)).replace(/\\s+/g, ' ').trim();
+  const stripHtml = (t) => norm(String(t || '').replace(/<[^>]*>/g, ' '));
+  const CARD_TYPES = { answer: 1, article: 1, post: 1, zvideo: 1 };
+  const MAX_NODES = 20000;
+  const MAX_CARDS = 50;
+  const cards = [];
+  const visited = new Set();
+  let nodeCount = 0;
+  const pushCard = (obj) => {
+    if (!obj || typeof obj !== 'object' || cards.length >= MAX_CARDS) return;
+    if (!obj.type || !CARD_TYPES[obj.type]) return;
+    const title = norm(obj.title) || (obj.question ? norm(obj.question.title) : '');
+    if (!title) return;
+    let url = '';
+    if (obj.type === 'article' || obj.type === 'post') url = 'https://zhuanlan.zhihu.com/p/' + obj.id;
+    else if (obj.question && obj.question.id != null) url = 'https://www.zhihu.com/question/' + obj.question.id + '/answer/' + obj.id;
+    else if (typeof obj.url === 'string') url = obj.url;
+    if (!url || !/^https?:/i.test(url)) return;
+    const parts = [];
+    if (obj.author && norm(obj.author.name)) parts.push(norm(obj.author.name));
+    if (typeof obj.voteupCount === 'number') parts.push('赞同 ' + obj.voteupCount);
+    cards.push({ title, url, snippet: stripHtml(obj.excerpt || obj.content).slice(0, 300), meta: parts.join(' · ') });
+  };
+  const visit = (node, depth) => {
+    if (nodeCount > MAX_NODES || cards.length >= MAX_CARDS) return;
+    if (!node || typeof node !== 'object' || depth > 8 || visited.has(node)) return;
+    visited.add(node);
+    nodeCount++;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child, depth + 1);
+      return;
+    }
+    if (node.object && typeof node.object === 'object') pushCard(node.object);
+    pushCard(node);
+    for (const key of Object.keys(node)) visit(node[key], depth + 1);
+  };
+  visit(state, 0);
+  if (cards.length === 0) return null;
+  const seenUrls = new Set();
+  return cards.filter((c) => !seenUrls.has(c.url) && seenUrls.add(c.url));
+}`)() as () => ParsedSerpItem[] | null;
