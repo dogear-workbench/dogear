@@ -10,6 +10,7 @@ import {
   type CommandResult,
   type NmMessage,
 } from './nm-protocol.js';
+import { resetChannel } from './extension-ownership.js';
 
 export type ExtensionStatus =
   | { status: 'disconnected' }
@@ -278,6 +279,7 @@ function handleDisconnect(socket: net.Socket): void {
   activeSocket = null;
   rejectAllPending({ errorCode: 'disconnected', error: '扩展连接已断开' });
   setStatus({ status: 'disconnected' });
+  resetChannel();
   logger.info('扩展连接断开');
 }
 

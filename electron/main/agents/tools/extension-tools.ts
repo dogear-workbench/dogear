@@ -16,6 +16,7 @@ import {
 } from '../../services/browser/browser-gateway.js';
 import { recordBrowserAction } from '../../services/browser/browser-action-stream.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
+import { acquireChannel, resetChannel } from '../../services/browser/extension-ownership.js';
 import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
 import type { CommandErrorCode, CommandKind } from '../../services/browser/nm-protocol.js';
 import {
@@ -234,6 +235,11 @@ function riskSignalMessage(hits: string[]): string {
   return `页面内容命中风控信号（${hits.join('、')}）。已停止本会话对该站点的自动操作，请人工检查浏览器页面`;
 }
 
+function busyChannelMessage(idleMs: number): string {
+  const minutes = Math.max(1, Math.floor(idleMs / 60_000));
+  return `扩展通道正被另一个会话使用（已空闲 ${minutes} 分钟），请等它完成后再试；若需并行调研，请改串行派遣或使用受控浏览器工具`;
+}
+
 function formatObserve(payload: ObservePayload): string {
   if (payload.elements.length === 0) return '页面无匹配的可交互元素。';
   const lines = payload.elements.map((el) => {
@@ -276,11 +282,22 @@ function formatClick(ref: string, data: ClickPayload): string {
 
 const SHARED_SCOPE_NOTE =
   '作用于用户真实浏览器的已连接标签页，仅限已授权域名；点击/填充自动执行但拦截提交类操作。' +
+  '扩展通道同一时间仅一个会话可用，被其他会话占用时会直接报错（不排队）。' +
   '用户浏览器已连接且目标站需登录态时优先本工具组，公开网页读取用 dogear__browser__*。';
 
 export function createExtensionToolDefs(opts?: { conversationId?: string }): ToolDef[] {
   const conversationId = opts?.conversationId;
   const meta = () => buildTaskMeta(conversationId);
+
+  /** 各 handler 统一前置：断连清零独占 → 有 conversationId 时获取通道（busy 即拒，不排队） */
+  function acquireGate(action: BrowserActionType, detail: string, url?: string): ToolResult | null {
+    if (getExtensionStatus().status === 'disconnected') resetChannel();
+    if (!conversationId) return null;
+    const r = acquireChannel(conversationId, Date.now());
+    if (r.ok) return null;
+    emitAction(meta(), action, { ...(url !== undefined ? { url } : {}), detail, result: 'busy' });
+    return isErrorResult(busyChannelMessage(r.idleMs));
+  }
 
   return [
     defineTool(
@@ -295,6 +312,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         url: z.string().describe('目标页面完整 URL（含 http/https）'),
       }),
       async (args) => {
+        const busy = acquireGate('navigate', args.url);
+        if (busy) return busy;
         const taskMeta = meta();
         const gate = await navigateGate(conversationId, args.url);
         if ('blocked' in gate) {
@@ -354,6 +373,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         text_filter: z.string().optional().describe('子串过滤：只返回文本或提示信息包含该子串的元素'),
       }),
       async (args) => {
+        const busy = acquireGate('observe', args.text_filter || args.region || '', currentUrl());
+        if (busy) return busy;
         const taskMeta = meta();
         const pageUrl = currentUrl();
         const gate = await policyGate(conversationId, pageUrl ?? '');
@@ -406,6 +427,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         ref: z.string().describe('observe_page 返回的元素 ref（如 "e3"）'),
       }),
       async (args) => {
+        const busy = acquireGate('click', args.ref, currentUrl());
+        if (busy) return busy;
         const taskMeta = meta();
         const pageUrl = currentUrl();
         const gate = await policyGate(conversationId, pageUrl ?? '');
@@ -448,6 +471,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         value: z.string().describe('要填写的文本'),
       }),
       async (args) => {
+        const busy = acquireGate('fill', args.ref, currentUrl());
+        if (busy) return busy;
         const taskMeta = meta();
         const pageUrl = currentUrl();
         const gate = await policyGate(conversationId, pageUrl ?? '');
@@ -491,6 +516,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         ref: z.string().optional().describe('要读取的元素 ref；不传则读正文容器'),
       }),
       async (args) => {
+        const busy = acquireGate('read_text', args.ref || 'main', currentUrl());
+        if (busy) return busy;
         const taskMeta = meta();
         const pageUrl = currentUrl();
         const gate = await policyGate(conversationId, pageUrl ?? '');

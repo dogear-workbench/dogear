@@ -33,6 +33,9 @@ const streamUrl = pathToFileURL(path.join(distCopy, 'main', 'services', 'browser
 const { initBrowserGateway, getExtensionStatus } = await import(gatewayUrl);
 const { createExtensionToolDefs } = await import(toolsUrl);
 const sitePolicy = await import(sitePolicyUrl);
+const { resetChannel } = await import(
+  pathToFileURL(path.join(distCopy, 'main', 'services', 'browser', 'extension-ownership.js')).href
+);
 const { getBrowserActionHistory } = await import(streamUrl);
 const { encodeNmFrame, makeNmDecoder } = await import(
   pathToFileURL(path.join(distCopy, 'main', 'services', 'browser', 'nm-protocol.js')).href
@@ -212,6 +215,7 @@ check(
 const noteRef = await call(CONV_LAT, 'read_text', { ref: 'e1' });
 check('S3-5 带 ref 分次读取不计笔记预算', !isErr(noteRef));
 
+resetChannel();
 const CONV_RISK = 'conv-risk';
 await setGatewayPage('https://slow.example.com/note/9');
 responder = (cmd) => {
@@ -243,6 +247,7 @@ await setGatewayPage('https://www.google.com/search?q=dogear', ['https://www.goo
 const otherDomain = await call(CONV_RISK, 'observe_page', {});
 check('S4-5 其他域名不受该会话风控标记影响', !isErr(otherDomain), textOf(otherDomain));
 
+resetChannel();
 const CONV_PLAIN = 'conv-plain';
 responder = defaultSuccess;
 t0 = Date.now();

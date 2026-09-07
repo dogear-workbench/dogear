@@ -260,7 +260,7 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
   return {
     id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
     name: '浏览器解析',
-    description: '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页',
+    description: '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣或使用受控浏览器',
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
