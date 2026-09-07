@@ -1,5 +1,13 @@
 import { extractTabSnapshot } from './content-extract.js'
 import { observeFn, clickFn, fillFn, readTextFn } from './dom-actions.js'
+import {
+  bumpGeneration,
+  currentGeneration,
+  navigateTab,
+  parseRefGeneration,
+  resetGeneration,
+  scheduleTrackedSnapshot
+} from './nav-tracker.js'
 
 const NM_HOST_NAME = 'com.dogear.nmhost'
 
@@ -57,6 +65,7 @@ async function sendTabSnapshot() {
     title: snapshot.title ?? '',
     url: snapshot.url ?? '',
     textPreview: snapshot.textPreview ?? '',
+    generation: currentGeneration(tabId),
     ...(extractError ? { extractError } : {})
   })
 }
@@ -153,6 +162,22 @@ async function handleCommand(msg) {
     fail(msg, 'stale_tab', '命令指向的标签页与当前受控标签页不一致')
     return
   }
+  if (msg.kind === 'navigate') {
+    const targetUrl = (msg.params || {}).targetUrl
+    if (typeof targetUrl !== 'string' || !targetUrl) {
+      fail(msg, 'navigation_blocked', 'navigate 缺少有效的目标地址')
+      return
+    }
+    const navigated = await navigateTab(msg.tabId, targetUrl)
+    if (navigated.errorCode) {
+      fail(msg, navigated.errorCode, navigated.error)
+      return
+    }
+    bumpGeneration(msg.tabId, navigated.url)
+    sendTabSnapshot()
+    postResult(msg, { ok: true, data: { url: navigated.url } })
+    return
+  }
   const func = COMMAND_FUNCS[msg.kind]
   if (!func) {
     fail(msg, 'stale_protocol', '未知命令类型，请在浏览器扩展管理页重载 Dogear 扩展')
@@ -165,14 +190,29 @@ async function handleCommand(msg) {
     fail(msg, 'tab_closed', '标签页已关闭')
     return
   }
-  if (msg.url && tab.url && !tab.url.startsWith(msg.url)) {
-    fail(msg, 'navigated_away', '页面已离开命令发起时的地址，请重新观察后再操作')
+  const readSafe = msg.kind === 'observe' || msg.kind === 'read_text'
+  if (!readSafe && msg.url && tab.url && !tab.url.startsWith(msg.url)) {
+    bumpGeneration(msg.tabId, tab.url)
+    sendTabSnapshot()
+    postResult(msg, {
+      ok: false,
+      errorCode: 'navigated_away',
+      error: `页面已离开命令发起时的地址（当前: ${tab.url}），已回推新页面快照，请重新观察后再操作`,
+      currentUrl: tab.url
+    })
     return
   }
   const p = msg.params || {}
+  if (msg.kind === 'click' || msg.kind === 'fill') {
+    const refGen = parseRefGeneration(p.ref)
+    if (refGen !== null && refGen !== currentGeneration(msg.tabId)) {
+      fail(msg, 'ref_expired', `ref "${p.ref}" 已过期（页面已导航或更新），请重新观察后再操作`)
+      return
+    }
+  }
   const args = (
     msg.kind === 'observe'
-      ? [p.region, p.text_filter]
+      ? [p.region, p.text_filter, currentGeneration(msg.tabId)]
       : msg.kind === 'click'
         ? [p.ref]
         : msg.kind === 'fill'
@@ -233,6 +273,7 @@ async function connect() {
     error: '',
     appVersion: ''
   })
+  resetGeneration(tab.id, tab.url ?? '')
   try {
     port = chrome.runtime.connectNative(NM_HOST_NAME)
   } catch {
@@ -279,6 +320,14 @@ function onHostDisconnect() {
     setStatus({ status: 'idle', error: '' })
   }
 }
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (!port || state.tabId == null || tabId !== state.tabId) return
+  const url = changeInfo?.url
+  if (typeof url !== 'string' || !url) return
+  bumpGeneration(tabId, url)
+  scheduleTrackedSnapshot(sendTabSnapshot)
+})
 
 chrome.permissions.onAdded.addListener(() => {
   sendPermissionState()

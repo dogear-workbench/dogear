@@ -1,5 +1,6 @@
 // 各函数经 chrome.scripting.executeScript 序列化后注入页面执行，函数体内不得引用模块作用域
-export function observeFn(region, textFilter) {
+export function observeFn(region, textFilter, generation) {
+  const gen = typeof generation === 'number' && Number.isInteger(generation) && generation >= 0 ? generation : 0
   document.querySelectorAll('[data-dogear-ref]').forEach((el) => el.removeAttribute('data-dogear-ref'))
   const selector =
     'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="tab"], ' +
@@ -62,7 +63,7 @@ export function observeFn(region, textFilter) {
     matched.push(el)
   }
   const elements = matched.slice(0, 120).map((el, i) => {
-    const ref = 'e' + (i + 1)
+    const ref = 'e' + (i + 1) + '@' + gen
     el.setAttribute('data-dogear-ref', ref)
     return {
       ref,
@@ -72,11 +73,11 @@ export function observeFn(region, textFilter) {
       hint: hintOf(el),
     }
   })
-  return { total: matched.length, regionCounts, elements }
+  return { total: matched.length, regionCounts, elements, generation: gen }
 }
 
 export async function clickFn(ref) {
-  if (!/^e\d+$/.test(String(ref))) {
+  if (!/^e\d+(@\d+)?$/.test(String(ref))) {
     return { errorCode: 'ref_expired', error: `ref "${ref}" 不存在或已失效，请重新观察页面后再操作` }
   }
   const selector = `[data-dogear-ref="${ref}"]`
@@ -121,7 +122,7 @@ export async function clickFn(ref) {
 }
 
 export async function fillFn(ref, value) {
-  if (!/^e\d+$/.test(String(ref))) {
+  if (!/^e\d+(@\d+)?$/.test(String(ref))) {
     return { errorCode: 'ref_expired', error: `ref "${ref}" 不存在或已失效，请重新观察页面后再操作` }
   }
   const el = document.querySelector(`[data-dogear-ref="${ref}"]`)
@@ -166,7 +167,7 @@ export async function fillFn(ref, value) {
 
 export function readTextFn(ref) {
   if (ref) {
-    if (!/^e\d+$/.test(String(ref))) {
+    if (!/^e\d+(@\d+)?$/.test(String(ref))) {
       return { errorCode: 'ref_expired', error: `ref "${ref}" 不存在或已失效，请重新观察页面后再操作` }
     }
     const el = document.querySelector(`[data-dogear-ref="${ref}"]`)

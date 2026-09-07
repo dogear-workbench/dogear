@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 扩展侧 URL 自动跟踪 + ref 代际
-status: pending
+status: done
 ---
 
 ## 目标
@@ -35,9 +35,27 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. ref 格式选 `eN@G`（嵌代际字符串）而非命令 payload 加 generation 字段——gateway 与工具层对 ref 是不透明字符串透传，对 P1 兼容破坏最小（两侧零改动，真机双向兼容已验）；旧格式无代际视作 gen 0（页面校验正则放宽为 `/^e\d+(@\d+)?$/`，代际比对在 background 层做，页面函数不感知代际）
+  2. 计划外最小改动 `browser-gateway.ts`：CommandError 加可选 currentUrl + handleCommandResult 失败分支透传——全局决策「payload 附 currentUrl」的 gateway 侧落地，否则该字段发出即被丢弃；对齐 step1「协议字段 gateway 侧落地」先例，可选字段向后兼容
+  3. pushState 无需补 history 钩子：Edge 152 的 tabs.onUpdated 带 changeInfo.url 触发（真机 TRACK-1 确认）
+  4. 新增 `nav-tracker.js` 拆分代际/防抖/navigate 逻辑（background.js 保持命令分发职责内聚，354 行）；新增 `nav-tracker-smoke.mjs` 纯函数单测
 - 改动文件清单：
+  - `extension/src/nav-tracker.js`（新增）：代际 Map（lastGenUrl 去重幂等 bump）、800ms 防抖、waitForTabComplete（15s 超时 + abort）、navigateTab
+  - `extension/src/background.js`：快照带 generation、navigate 分支、URL 校验读写分类（observe/read_text 放行；click/fill 拒绝+bump+回推快照+currentUrl）、click/fill 代际校验、connect 重置、顶层 onUpdated 监听
+  - `extension/src/dom-actions.js`：observeFn 加 generation 参 + ref `eN@G` + 返回带 generation；三函数 ref 正则放宽
+  - `electron/main/services/browser/browser-gateway.ts`：CommandError.currentUrl 可选字段 + 透传
+  - `resources/browser-eval/nav-tracker-smoke.mjs`（新增）：15 项纯函数单测
+  - `extension/src/nm-protocol.js` 零改动（纯字节编解码，帧 roundtrip 单测证明）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - ref 格式 `eN@G`（agent 从 observe 原样透传到 click/fill/read_text，代际对 agent 透明）；旧格式 `eN` = gen 0，gen>0 时被拒（误杀安全方向）
+  - generation 唯一递增时机 = 受控 tab URL 变化（onUpdated.url 与 navigate 完成双路径 lastGenUrl 去重幂等）；observe/read_text 后快照刷新不递增；SW 冷启重置 0（已验）
+  - navigate 成功约定不变：command_result data={url}；随后含递增 generation 的 tab_snapshot
+  - 拒绝自愈契约：navigated_away 的 command_result 附 currentUrl + 同帧 tab_snapshot；gateway CommandError 已带 currentUrl，工具层文案消费留 step3
+- 下个 step 该从哪里继续：step3 navigate 工具（extension-tools.ts）——① 工具签名 + zod 校验（URL 形态先行校验，缓解 navigation_blocked 文案不准的 step1 遗留）② commandErrorMessage 对 navigated_away/ref_expired 拼接 err.currentUrl ③ navigate 工具的动作流埋点（recordBrowserAction）
 - 待办或已知限制：
+  - navigate 等待 complete 上限 15s，慢站可能未加载完即返回（data.url 为当时值，agent 端 observe 可校准）
+  - 800ms 防抖窗口内连续路由只推最终快照（中间态不可见，符合设计）
+  - generation 单 tab 内存态；多 tab 绑定需重新设计
+  - Edge NM host 验证基建的三个坑已沉淀在共享区 step2-delivery.md（bat 不可用/manifest 必须 description/C# NamedPipeClientStream 挂起用 TCP 绕开）
