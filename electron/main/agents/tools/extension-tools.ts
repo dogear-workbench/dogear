@@ -121,6 +121,7 @@ interface ObserveElement {
   role: string;
   text: string;
   hint: string;
+  href?: string;
 }
 
 interface ObservePayload {
@@ -245,7 +246,8 @@ function formatObserve(payload: ObservePayload): string {
   const lines = payload.elements.map((el) => {
     const text = el.text ? `"${el.text}"` : '（无文本）';
     const hint = el.hint ? ` hint="${el.hint}"` : '';
-    return `[${el.ref}] ${el.tag}(${el.role}) ${text}${hint}`;
+    const href = el.href ? ` href="${el.href}"` : '';
+    return `[${el.ref}] ${el.tag}(${el.role}) ${text}${hint}${href}`;
   });
   let header: string;
   if (payload.total <= payload.elements.length) {
@@ -363,6 +365,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       '列出用户浏览器页面的可交互元素',
       `${SHARED_SCOPE_NOTE}\n` +
         '列出当前已连接标签页中可见的可交互元素（链接/按钮/输入框等），每条含 ref 编号、标签、角色、文本（截断 80 字）与提示信息。' +
+        '链接元素带 href，可将其传给 navigate 直达目标页（推荐优先于点击）。' +
         'ref 用于 click / fill / read_text 定位。元素最多 120 个，超出时传 region（视口上/中/下分块）或 text_filter 缩小范围重查。' +
         '页面导航后 ref 失效，需重新调用本工具。',
       z.object({

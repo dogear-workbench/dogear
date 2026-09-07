@@ -1,7 +1,7 @@
 ---
 step: 2
 title: A2 observe 透出 href
-status: pending
+status: done
 ---
 
 ## 目标
@@ -26,9 +26,19 @@ observe_page 返回的 `<a>` 元素带绝对 URL（截断 400），agent 拿到�
 
 ### 实际改动
 - 与计划差异：
+  1. `nm-protocol.ts` / `extension/src/nm-protocol.js` 无需改动：计划预期「ObserveElement 类型加 href」落在 nm-protocol.ts，实际该文件无此类型（observe 结果 data 以 `unknown` 透传），JS 侧也无 schema 校验（纯帧编解码）——类型对齐点实际只有 extension-tools.ts 一处
+  2. 新增 `resources/browser-eval/observe-href-smoke.mjs`：计划只要求「核对现有冒烟」，但现有冒烟走 mock gateway 响应、覆盖不到 observeFn 的 href 序列化，故新增 stub DOM 冒烟直接驱动 observeFn（9 断言，node 执行）
 - 改动文件清单：
+  - `extension/src/dom-actions.js`：observeFn 加 `hrefOf`（仅 `tag === 'a'` 取 IDL 属性 `el.href`，空值/非链接不带字段，超 400 截断以 `…` 结尾）
+  - `electron/main/agents/tools/extension-tools.ts`：`ObserveElement` 加 `href?: string`；`formatObserve` 行尾拼 ` href="..."`（有值才拼）；observe_page 描述补「链接元素带 href，可将其传给 navigate 直达目标页（推荐优先于点击）」
+  - `resources/browser-eval/observe-href-smoke.mjs`（新）
+- 协议版本号：未递增（无新 kind，响应 data 仅增可选字段，旧扩展响应不含 href 时 parseObservePayload 照常工作，单向兼容成立）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：（真机重载扩展验证留 step5 验收清单）
+  - observe 元素序列化：`{ref, tag, role, text, hint, href?}`；href 为 IDL 属性 `el.href`（相对链接已由浏览器解析为绝对 URL），仅 `<a>` 元素带，超 400 字符截断以 `…` 结尾
+  - formatObserve 行格式：`[ref] tag(role) "text" hint="..." href="..."`（hint/href 有值才拼）
+- 下个 step 该从哪里继续：P3 后续 step（read_state 等）， observe 链路无需再动
+- 待办或已知限制：
+  - `el.href` 的 IDL 绝对 URL 解析行为未在真浏览器验证（stub 冒烟直接给绝对 URL 模拟），真机重载扩展验证留 step5 验收清单
+  - `<a href="#">` / `javascript:` 伪协议等也会透出（el.href 原样返回），未做过滤，agent 侧按需判断

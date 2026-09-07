@@ -34,6 +34,12 @@ export function observeFn(region, textFilter, generation) {
   }
   const hintOf = (el) =>
     el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || ''
+  const hrefOf = (el) => {
+    if (el.tagName.toLowerCase() !== 'a') return null
+    const raw = el.href || ''
+    if (!raw) return null
+    return raw.length > 400 ? raw.slice(0, 400) + '…' : raw
+  }
   const textOf = (el) => {
     const raw = (el.tagName.toLowerCase() === 'input' ? el.value : el.innerText) || ''
     return raw.trim().replace(/\s+/g, ' ').slice(0, 80)
@@ -65,12 +71,14 @@ export function observeFn(region, textFilter, generation) {
   const elements = matched.slice(0, 120).map((el, i) => {
     const ref = 'e' + (i + 1) + '@' + gen
     el.setAttribute('data-dogear-ref', ref)
+    const href = hrefOf(el)
     return {
       ref,
       tag: el.tagName.toLowerCase(),
       role: el.getAttribute('role') || defaultRole(el),
       text: textOf(el),
       hint: hintOf(el),
+      ...(href ? { href } : {}),
     }
   })
   return { total: matched.length, regionCounts, elements, generation: gen }
