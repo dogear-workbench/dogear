@@ -24,7 +24,11 @@ import {
 
 const { app, nativeTheme } = electron;
 
-const LEGACY_BROWSER_PARSE_DESCRIPTION = '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页';
+const LEGACY_BROWSER_PARSE_DESCRIPTIONS = new Set([
+  '挂载浏览器工具包执行网页抓取与解析，建议选择便宜档模型以节省成本',
+  '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页',
+  '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣或使用受控浏览器',
+]);
 
 // 重新导出所有纯类型和纯函数，保持现有导入路径兼容
 export * from './settings-types.js';
@@ -292,7 +296,7 @@ export function normalizeSettings(settings: AppSettings): boolean {
           // 内置 Profile 升级新增能力键时，旧数据只补缺失键；显式 false 是用户关闭，不覆盖
           if (p.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID) {
             // 内置描述变更只迁移已知旧值，用户自定义描述不动
-            if (p.description === LEGACY_BROWSER_PARSE_DESCRIPTION) {
+            if (typeof p.description === 'string' && LEGACY_BROWSER_PARSE_DESCRIPTIONS.has(p.description)) {
               p.description = createBrowserParseSubAgentProfile().description;
               changed = true;
             }

@@ -1,7 +1,7 @@
 ---
 step: 4
 title: Profile 方法论重构 + 迁移 + 首批档案
-status: pending
+status: done
 ---
 
 ## 目标
@@ -32,10 +32,13 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无实质差异；发现区标注 id 按主会话核实结论用「p3验收」（非工具追加的会话 id 前 8 位）；description 重写后约 250 字（原文案 + 方法论 + 独占提示）
+- 改动文件清单：`electron/main/services/settings-types.ts`（description 重写）、`electron/main/services/settings-service.ts`（LEGACY_BROWSER_PARSE_DESCRIPTION 单常量 → LEGACY_BROWSER_PARSE_DESCRIPTIONS 三值 Set）、`.dogear/site-knowledge/xiaohongshu.com.md`（新建，用户数据不进 git）、`resources/browser-eval/profile-migration-smoke.mjs`（+8 迁移断言）
+- 验证：lint 0 errors；build:electron 通过；bun test 285 pass 0 fail（settings-normalize.test.ts 无 description 内容断言，无需同步）；profile-migration-smoke 11/11；site-knowledge-smoke 26/26、extension-site-tools-smoke 16/16 无回归；readSiteKnowledge('www.xiaohongshu.com') exists:true
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 迁移机制：`LEGACY_BROWSER_PARSE_DESCRIPTIONS`（settings-service.ts 顶部）三值集合，命中即迁到内置新值；后续再改 description 只需往集合里加旧值 + 更新 profile-migration-smoke 的 LEGACY_DESCRIPTIONS
+- 档案：正式地图两路径已落盘；后续验收发现的新结构经 site_finding 进发现区，人工/主会话审核后手动合并进正式区（无工具写入口，故意设计）
+- 沙箱 caveat：eval 环境全局注入了 DOGEAR_CONFIG_DIR 指向 AppData，验证项目根 .dogear 档案时需显式覆盖该变量；真实 dev 环境无此变量
+- 待办（并入 step5）：zhihu serp-parser 复测定位、reddit 站内 + 降级链验收、step5 文档收口
+- 详细交付：会话组共享区 step4-delivery.md
