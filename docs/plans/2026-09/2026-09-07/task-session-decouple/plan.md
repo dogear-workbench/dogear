@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 状态机与存储层](./step1-store.md) — interrupted 状态 + 新迁移边 + interruptTask/reportTaskResult，删心跳，重写启动恢复
-- [ ] [Step 2: 申报工具与队列加固](./step2-queue-tool.md) — dogear__ReportTaskResult 工具、执行提示词申报约定、队列防卡死与留痕、safeInterrupt 分流
+- [x] [Step 2: 申报工具与队列加固](./step2-queue-tool.md) — dogear__ReportTaskResult 工具、执行提示词申报约定、队列防卡死与留痕、safeInterrupt 分流
 - [ ] [Step 3: 前端展示与操作](./step3-ui.md) — TaskPanel interrupted 分组/徽标/详情操作，类型镜像同步
 
 ## 全局决策

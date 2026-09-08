@@ -280,6 +280,18 @@ export async function reportTaskResult(workspacePath: string, execSessionId: str
   });
 }
 
+/** 留痕原语：把执行结果摘要附加到 result（任务已不在 running 时的丢弃路径，不改状态） */
+export async function appendResultNote(workspacePath: string, taskId: string, note: string): Promise<Task | null> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) return null;
+    const stamp = `[执行结果留痕 ${new Date().toISOString()}] ${note || '（执行会话未输出结果摘要，请打开执行会话查看过程）'}`;
+    task.result = task.result ? `${task.result}\n\n${stamp}` : stamp;
+    task.updatedAt = new Date().toISOString();
+    return { ...task };
+  });
+}
+
 export async function rejectTask(workspacePath: string, taskId: string, reason: string): Promise<Task> {
   const task = await getTask(workspacePath, taskId);
   if (!task) throw new Error(`任务 ${taskId} 不存在`);
@@ -336,16 +348,18 @@ export async function purgeTask(workspacePath: string, taskId: string): Promise<
 }
 
 /** 应用启动恢复：遗留 running 无条件置 interrupted（交用户手动处置，不自动重跑），中断原因写入 result */
-export async function recoverInterruptedTasks(workspacePath: string): Promise<{ recovered: number }> {
+export async function recoverInterruptedTasks(
+  workspacePath: string,
+): Promise<{ recovered: number; recoveredTasks: Task[] }> {
   return mutateTasks(workspacePath, (tasks) => {
-    let recovered = 0;
+    const recoveredTasks: Task[] = [];
     for (const task of tasks) {
       if (task.status !== 'running' || task.deletedAt) continue;
       task.status = 'interrupted';
       task.result = `应用重启时任务执行中断（${new Date().toISOString()}）`;
       task.updatedAt = new Date().toISOString();
-      recovered++;
+      recoveredTasks.push({ ...task });
     }
-    return { recovered };
+    return { recovered: recoveredTasks.length, recoveredTasks };
   });
 }

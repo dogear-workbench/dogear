@@ -136,9 +136,9 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
     defineTool(
       'dogear__ListTasks',
       '列出实施任务',
-      '列出实施任务及其状态（plan 计划 / backlog 待办 / queued 排队 / running 执行中 / review 待审核 / done 已通过 / rejected 已打回）。status 省略时列出全部；看计划用 status=\'plan\'，看待办用 status=\'backlog\'。',
+      '列出实施任务及其状态（plan 计划 / backlog 待办 / queued 排队 / running 执行中 / review 待审核 / done 已通过 / rejected 已打回 / interrupted 已中断）。status 省略时列出全部；看计划用 status=\'plan\'，看待办用 status=\'backlog\'，看中断待处理用 status=\'interrupted\'。',
       z.object({
-        status: z.enum(['plan', 'backlog', 'queued', 'running', 'review', 'done', 'rejected']).optional().describe('按状态过滤'),
+        status: z.enum(['plan', 'backlog', 'queued', 'running', 'review', 'done', 'rejected', 'interrupted']).optional().describe('按状态过滤'),
       }),
       async (args) => {
         try {
@@ -150,6 +150,37 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
           return textResult(`共 ${filtered.length} 个任务：\n\n${filtered.map(taskLine).join('\n')}`);
         } catch (error) {
           return errorResult(`列出任务失败: ${error}`);
+        }
+      },
+    ),
+
+    defineTool(
+      'dogear__ReportTaskResult',
+      '申报任务执行结果',
+      '申报任务执行结果（仅任务执行会话可用）：整个计划实施完成后调用，按当前会话归属校验，命中后任务进入待审核（review）并系统通知用户。\n' +
+        'result 摘要要说清做了什么、关键改动位置、遗留问题，用户只凭这段做审核。任务已被中断时继续工作并申报同样有效（中断后让会话继续，完成后申报回写）。',
+      z.object({
+        result: z.string().min(1).describe('结果摘要：做了什么、关键改动位置、遗留问题'),
+      }),
+      async (args) => {
+        if (!sourceContext) return errorResult('当前上下文缺少会话标识，无法申报任务结果。');
+        try {
+          const task = await taskService.reportTaskResult(workspacePath, sourceContext.conversationId, args.result.trim());
+          if (!task) {
+            const mine = (await taskService.listTasks(workspacePath)).find(
+              (t) => t.execSessionId === sourceContext.conversationId,
+            );
+            if (mine && ['review', 'done'].includes(mine.status)) {
+              return textResult(`任务《${mine.title}》的结果已回写（当前状态 ${mine.status}），无需重复申报。`);
+            }
+            return errorResult('当前会话不是任何待回写任务（running/interrupted/rejected）的执行会话，无法申报结果。');
+          }
+          return textResult(
+            `✅ 结果已回写\n- 任务 ID: ${task.id}\n- 标题: ${task.title}\n- 状态: review（待审核）\n` +
+              '用户会收到系统通知，等待其审核（通过 → done / 打回 → rejected）。',
+          );
+        } catch (error) {
+          return errorResult(`申报任务结果失败: ${error}`);
         }
       },
     ),

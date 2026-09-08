@@ -79,6 +79,12 @@ export async function completeTask(workspacePath: string, taskId: string, result
   return task;
 }
 
+export async function appendResultNote(workspacePath: string, taskId: string, note: string): Promise<taskStore.Task | null> {
+  const task = await taskStore.appendResultNote(workspacePath, taskId, note);
+  if (task) broadcastTasksChanged(workspacePath);
+  return task;
+}
+
 export async function rejectTask(workspacePath: string, taskId: string, reason: string): Promise<taskStore.Task> {
   const task = await taskStore.rejectTask(workspacePath, taskId, reason);
   broadcastTasksChanged(workspacePath);
@@ -134,7 +140,9 @@ export async function purgeTask(workspacePath: string, taskId: string): Promise<
 }
 
 /** 应用启动时恢复：遗留 running 无条件置 interrupted，交用户手动处置 */
-export async function recoverInterruptedTasks(workspacePath: string): Promise<{ recovered: number }> {
+export async function recoverInterruptedTasks(
+  workspacePath: string,
+): Promise<{ recovered: number; recoveredTasks: taskStore.Task[] }> {
   const result = await taskStore.recoverInterruptedTasks(workspacePath);
   if (result.recovered > 0) broadcastTasksChanged(workspacePath);
   return result;

@@ -5,7 +5,10 @@
  * - 串行：单实例 drain 循环，一次只跑一个任务
  * - 结束信号：await sendMessage 即一轮跑完（finally 中 emit complete 后 promise 才 resolve），
  *   辅以一次性 complete 监听拿 PiSessionTurnResult 判定成败；空闲超时兜底（长时间无任何消息，防多 step 长任务被整轮墙钟误杀）走 session.interrupt()
- *   注入 cancelled 终局，避免 adapter.prompt 卡死导致队列永久阻塞
+ *   注入 cancelled 终局，避免 adapter.prompt 卡死导致队列永久阻塞；interrupt 后 60s 仍未收尾则强制放行（Promise.race）解锁队列，
+ *   pi 内部 promise 挂死时不拖死后续任务
+ * - 中断语义：markTaskRunning 之后的意外中断（执行轮异常/卡死）置 interrupted（safeInterrupt）交用户手动处置；
+ *   执行前的确定性拒绝（无 plan/无 origin 等）仍置 rejected（safeReject）
  * - 结果摘要：执行提示词约定 agent 在回复末尾输出 <task-result> 标签段，主进程从本轮 text
  *   增量累积中提取；未命中标签时回退本轮文本尾部
  */
@@ -24,6 +27,8 @@ import type { Task } from './task-service.js';
 const log = mainLogger.child('task-queue');
 
 const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
+
+const FORCE_RELEASE_DELAY_MS = 60_000;
 
 // 会话索引存在跨进程并发写窗口（旧快照短暂覆盖/读失败静默返空），origin 瞬时缺失重试可自愈，避免误拒
 const ORIGIN_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
@@ -53,6 +58,25 @@ function extractResultSummary(text: string): string {
 function firstLine(text: string, max = 80): string {
   const line = text.split(/\r?\n/).map((l) => l.trim()).find((l) => l.length > 0) ?? '';
   return line.length > max ? line.slice(0, max) + '…' : line;
+}
+
+// 老会话不知道申报约定，中断类通知带引导句供用户插话时补线
+const REPORT_RESULT_HINT = '让会话继续时，完成后请它调用 dogear__ReportTaskResult 回写任务';
+
+function notifyTask(task: Task, workspaceId: string, title: string, body: string): void {
+  getSessionNotificationService().notify({
+    kind: 'complete',
+    notificationId: `task-${task.id}-${task.status}-${task.updatedAt}`,
+    conversationId: task.execSessionId ?? '',
+    workspaceId,
+    title,
+    body,
+    taskId: task.id,
+  });
+}
+
+function notifyTaskInterrupted(task: Task, workspaceId: string, reason: string): void {
+  notifyTask(task, workspaceId, `任务已中断：${task.title}`, `${firstLine(reason)}。${REPORT_RESULT_HINT}`);
 }
 
 async function resolveOriginWithRetry(originSessionId: string) {
@@ -86,7 +110,7 @@ function buildExecutionPrompt(task: Task): string {
     '执行要求：',
     '1. 先读计划文档再实施；计划引用的其他文件按需读取',
     '2. 计划文档不存在或明显无法实施时不要硬做，直接说明原因结束本轮',
-    '3. 整个计划实施完成后，在回复末尾用 <task-result></task-result> 标签输出结果摘要（做了什么、关键改动位置、遗留问题）；系统会把这段写回任务结果供用户审核',
+    '3. 整个计划实施完成后，调用 dogear__ReportTaskResult 工具申报结果摘要（做了什么、关键改动位置、遗留问题），任务将进入待审核；同时在回复末尾输出 <task-result></task-result> 标签段作为备用信号，系统从中提取摘要写回任务',
     '</task-execution>',
   ].join('\n');
 }
@@ -119,7 +143,10 @@ class TaskQueueExecutor {
         await this.executeOne(next);
       } catch (err) {
         log.error(`任务 ${next.task.id} 执行异常`, err);
-        await this.safeReject(next, `执行器内部错误: ${errorMessage(err)}`);
+        const reason = `执行器内部错误: ${errorMessage(err)}`;
+        const current = await taskService.getTask(next.workspacePath, next.task.id);
+        if (current?.status === 'running') await this.safeInterrupt(next, reason);
+        else await this.safeReject(next, reason);
       }
     }
   }
@@ -193,13 +220,13 @@ class TaskQueueExecutor {
     try {
       attachment = await conversationRuntimeService.attachConversation(execId, origin.workspaceId, 'desktop', {});
     } catch (err) {
-      await this.safeReject(ctx, `拉起执行会话失败: ${errorMessage(err)}`);
+      await this.safeInterrupt(ctx, `拉起执行会话失败: ${errorMessage(err)}`);
       return;
     }
     const session = getPiSessionManager().getSession(attachment.sessionId);
     if (!session) {
       conversationRuntimeService.detachAttachment(attachment.attachmentId);
-      await this.safeReject(ctx, '执行会话 session 拉起失败');
+      await this.safeInterrupt(ctx, '执行会话 session 拉起失败');
       return;
     }
 
@@ -215,20 +242,29 @@ class TaskQueueExecutor {
 
     if (outcome.subtype !== 'success') {
       const reason = outcome.error?.message ?? `执行轮次异常结束（${outcome.subtype}）`;
-      await this.safeReject(ctx, reason);
+      await this.safeInterrupt(ctx, reason);
       return;
     }
 
     const summary = extractResultSummary(outcome.text);
-    // 取消竞态保护：写回前重查状态，已被取消（回 backlog）则丢弃结果
+    // 双写防护：执行会话已通过 dogear__ReportTaskResult 申报（review）则跳过队列兜底写回；其余非 running 状态是用户并发改动，留痕丢弃
     const current = await taskService.getTask(workspacePath, task.id);
-    if (!current || current.status !== 'running') {
-      log.info(`任务 ${task.id} 已被用户取消（当前 ${current?.status ?? '不存在'}），丢弃执行结果`);
+    if (current?.status === 'review') {
+      log.info(`任务 ${task.id} 结果已由执行会话申报回写，跳过队列兜底写回`);
       return;
     }
-    const reviewed = await taskService.completeTask(workspacePath, task.id, summary);
-    log.info(`任务 ${task.id} 执行完成，进入 review（执行会话 ${execId}）`);
-    this.notify(reviewed, workspaceId, `任务待审核：${reviewed.title}`, firstLine(reviewed.result ?? ''));
+    if (current && current.status === 'running') {
+      const reviewed = await taskService.completeTask(workspacePath, task.id, summary);
+      log.info(`任务 ${task.id} 执行完成，进入 review（执行会话 ${execId}）`);
+      notifyTask(reviewed, workspaceId, `任务待审核：${reviewed.title}`, firstLine(reviewed.result ?? ''));
+      return;
+    }
+    const statusText = current ? current.status : '不存在';
+    log.warn(`任务 ${task.id} 执行结果产出时状态已变为 ${statusText}，摘要留痕进 result 后丢弃写回`);
+    if (current) {
+      await taskService.appendResultNote(workspacePath, task.id, summary);
+      notifyTask(current, workspaceId, `任务结果已产出但任务已被置为 ${statusText}：${current.title}`, `摘要已附加到任务 result，打开任务详情查看：${firstLine(summary)}`);
+    }
   }
 
   private async runExecutionTurn(
@@ -241,10 +277,19 @@ class TaskQueueExecutor {
     const onComplete = (r: PiSessionTurnResult) => {
       turnResult = r;
     };
+    let forceReleaseTimer: ReturnType<typeof setTimeout> | undefined;
+    let release!: (value: 'forced') => void;
+    const forcedRelease = new Promise<'forced'>((resolve) => {
+      release = () => resolve('forced');
+    });
     // 空闲保险丝而非整轮墙钟：正常推进（含挂起等子会话）持续有消息流动续命，仅真卡死时静默到上限 interrupt 解锁队列
     const fireIdleTimeout = () => {
       log.warn(`任务 ${task.id} 执行会话 ${EXEC_IDLE_TIMEOUT_MS}ms 无任何消息，判定卡死，中断执行会话`);
       void session.interrupt().catch(() => {});
+      forceReleaseTimer = setTimeout(() => {
+        log.warn(`任务 ${task.id} interrupt 后 ${FORCE_RELEASE_DELAY_MS}ms 仍未收尾（sendMessage promise 挂死），强制放行解锁队列`);
+        release('forced');
+      }, FORCE_RELEASE_DELAY_MS);
     };
     let idleTimer = setTimeout(fireIdleTimeout, EXEC_IDLE_TIMEOUT_MS);
     const resetIdleTimer = () => {
@@ -258,42 +303,52 @@ class TaskQueueExecutor {
     session.once('complete', onComplete);
     session.on('message', onMessage);
     try {
-      await session.sendMessage(buildExecutionPrompt(task));
+      const sendPromise = session.sendMessage(buildExecutionPrompt(task));
+      // 放行胜出后 sendPromise 可能永远不 settle 或迟 reject，提前挂空 catch 防 unhandledRejection
+      void sendPromise.catch(() => {});
+      const winner = await Promise.race([sendPromise, forcedRelease]);
+      if (winner === 'forced') {
+        turnResult = { subtype: 'cancelled', error: { kind: 'runtime', message: '执行会话长时间无响应，已强制解锁队列' } };
+      }
     } catch (err) {
       turnResult = { subtype: 'failed', error: { kind: 'runtime', message: errorMessage(err) } };
     } finally {
       clearTimeout(idleTimer);
+      if (forceReleaseTimer) clearTimeout(forceReleaseTimer);
       session.off('complete', onComplete);
       session.off('message', onMessage);
     }
     return { subtype: turnResult.subtype, error: turnResult.error, text };
   }
 
+  private async safeInterrupt(ctx: QueuedWork, reason: string): Promise<void> {
+    try {
+      const current = await taskService.getTask(ctx.workspacePath, ctx.task.id);
+      if (!current || current.status !== 'running') {
+        log.info(`任务 ${ctx.task.id} 当前状态为 ${current?.status ?? '不存在'}，跳过置 interrupted（可能已被并发处理）`);
+        return;
+      }
+      const interrupted = await taskService.interruptTask(ctx.workspacePath, ctx.task.id, reason);
+      log.warn(`任务 ${ctx.task.id} 置为 interrupted: ${reason}`);
+      notifyTaskInterrupted(interrupted, ctx.workspaceId, reason);
+    } catch (err) {
+      log.warn(`任务 ${ctx.task.id} 置 interrupted 失败（可能已被并发处理）`, err);
+    }
+  }
+
   private async safeReject(ctx: QueuedWork, reason: string): Promise<void> {
     try {
       const current = await taskService.getTask(ctx.workspacePath, ctx.task.id);
-      if (current && !['queued', 'running'].includes(current.status)) {
-        log.info(`任务 ${ctx.task.id} 当前状态为 ${current.status}，跳过置 rejected（可能已被取消）`);
+      if (!current || current.status !== 'queued') {
+        log.info(`任务 ${ctx.task.id} 当前状态为 ${current?.status ?? '不存在'}，跳过置 rejected（仅执行前确定性拒绝走 rejected）`);
         return;
       }
       const rejected = await taskService.rejectTask(ctx.workspacePath, ctx.task.id, reason);
       log.warn(`任务 ${ctx.task.id} 置为 rejected: ${reason}`);
-      this.notify(rejected, ctx.workspaceId, `任务执行失败：${rejected.title}`, firstLine(reason));
+      notifyTask(rejected, ctx.workspaceId, `任务执行失败：${rejected.title}`, firstLine(reason));
     } catch (err) {
       log.warn(`任务 ${ctx.task.id} 置 rejected 失败（可能已被并发处理）`, err);
     }
-  }
-
-  private notify(task: Task, workspaceId: string, title: string, body: string): void {
-    getSessionNotificationService().notify({
-      kind: 'complete',
-      notificationId: `task-${task.id}-${task.status}-${task.updatedAt}`,
-      conversationId: task.execSessionId ?? '',
-      workspaceId,
-      title,
-      body,
-      taskId: task.id,
-    });
   }
 }
 
@@ -317,13 +372,18 @@ export async function interruptTaskExecSession(conversationId: string): Promise<
   }
 }
 
-/** 应用启动：遗留 running 无条件置 interrupted（交用户手动处置，不自动重跑），再拉起队列 */
+/** 应用启动：遗留 running 无条件置 interrupted（交用户手动处置，不自动重跑），逐任务发中断通知后拉起队列 */
 export async function recoverAndStartTaskQueue(): Promise<void> {
   const workspaces = await workspaceJsonService.getAll();
   for (const ws of workspaces) {
     try {
-      const { recovered } = await taskService.recoverInterruptedTasks(ws.path);
-      if (recovered > 0) log.info(`工作区 ${ws.id} 恢复 ${recovered} 个中断任务（running → interrupted）`);
+      const { recovered, recoveredTasks } = await taskService.recoverInterruptedTasks(ws.path);
+      if (recovered > 0) {
+        log.info(`工作区 ${ws.id} 恢复 ${recovered} 个中断任务（running → interrupted）`);
+        for (const task of recoveredTasks) {
+          notifyTaskInterrupted(task, ws.id, task.result ?? '应用重启时任务执行中断');
+        }
+      }
     } catch (err) {
       log.warn(`工作区 ${ws.id} 任务恢复失败`, err);
     }
