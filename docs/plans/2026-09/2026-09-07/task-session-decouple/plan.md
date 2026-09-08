@@ -21,3 +21,13 @@
 - **lastActiveAt**：停止写入，读时忽略，字段不删（存量兼容）。
 - **通知文案**：中断类通知统一带引导句「让会话继续时，完成后请它调用 dogear__ReportTaskResult 回写任务」（老会话不知道申报约定的过渡补线）。
 - 不写单测（项目偏好），每步以 `bun run build:electron` + `bun run lint` + 前端 tsc 通过为验证线。
+
+## 完成总结
+
+三步全部完成（2026-09-07）：
+
+1. **step1 存储层**（commit 0445c0c）：TaskStatus 新增 interrupted 八状态机；新增 interruptTask / reportTaskResult（按 execSessionId 原子申报回 review）/ appendResultNote；删 touchRunningTask 文件心跳，启动恢复重写为无条件 running→interrupted 不自动重跑；lastActiveAt 停写。
+2. **step2 工具与队列**（commit d7bff95）：新增 dogear__ReportTaskResult 工具，执行提示词约定申报 + <task-result> 备用信号；队列 idle 熔断后 60s Promise.race 强制放行防永久卡死；markTaskRunning 后意外中断走 safeInterrupt（带申报引导句通知），safeReject 收窄为执行前拒绝；结果丢弃路径留痕进 result 并通知。
+3. **step3 前端**（commit 870d3df）：TaskPanel 将 interrupted 并入计划组尾部显示 + 橙色「已中断」徽标；详情页提供重新入队/移回计划/手动完成三操作，中断原因按 result 渲染；TaskStatusBadge 补八状态。
+
+验证线：build:electron / lint / 前端 tsc 全绿；task-store.test.ts 19 pass（含新语义用例）。真机验收清单见共享区 step3-delivery.md（7 项，待用户在场执行）。
