@@ -102,7 +102,7 @@ export function TaskPanel({ workspacePath, query, listHidden, onToggleListHidden
       t.title.toLowerCase().includes(q) || t.planPath?.toLowerCase().includes(q);
     const out = { ...groups };
     for (const g of TASK_GROUPS) out[g.status] = groups[g.status].filter(match);
-    out.plan = [...out.plan, ...groups.rejected.filter(match)];
+    out.plan = [...out.plan, ...groups.rejected.filter(match), ...groups.interrupted.filter(match)];
     return out;
   }, [groups, q]);
 

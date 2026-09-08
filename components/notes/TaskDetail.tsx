@@ -222,6 +222,23 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
               </div>
             )}
 
+            {detail.status === 'interrupted' && (
+              <div className="mt-4 flex items-center gap-2">
+                <Button size="sm" disabled={executing} onClick={() => void handleExecute()}>
+                  <Play className="w-3.5 h-3.5" />
+                  重新入队
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void handleMove('plan')}>
+                  <Undo2 className="w-3.5 h-3.5" />
+                  移回计划
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => void handleComplete()}>
+                  <Check className="w-3.5 h-3.5" />
+                  手动完成
+                </Button>
+              </div>
+            )}
+
             {detail.execSessionId && (
               <button
                 onClick={() =>
@@ -241,7 +258,11 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
             {detail.result && (
               <div className="mt-4 rounded-md border bg-muted/20 p-4">
                 <p className="mb-1.5 text-xs font-medium text-muted-foreground">
-                  {detail.status === 'rejected' ? '打回原因' : '结果摘要'}
+                  {detail.status === 'rejected'
+                    ? '打回原因'
+                    : detail.status === 'interrupted'
+                      ? '中断原因'
+                      : '结果摘要'}
                 </p>
                 <MarkdownRenderer content={detail.result} className="text-sm" />
               </div>
