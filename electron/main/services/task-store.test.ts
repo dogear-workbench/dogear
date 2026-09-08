@@ -10,10 +10,11 @@ import {
   getTaskDetail,
   reviewTask,
   markTaskRunning,
-  touchRunningTask,
   completeTask,
   rejectTask,
   recoverInterruptedTasks,
+  interruptTask,
+  reportTaskResult,
   executeTask,
   completeTaskManually,
   moveTaskToBacklog,
@@ -104,45 +105,41 @@ test('状态机：非法迁移抛错', async () => {
   await expect(markTaskRunning(workspacePath, 'ghost', 'exec')).rejects.toThrow();
 });
 
-test('recoverInterruptedTasks：新鲜心跳跳过，陈旧心跳恢复，其他状态不动', async () => {
+test('recoverInterruptedTasks：running 无条件置 interrupted，其他状态不动', async () => {
   const a = await seedQueued();
   const b = await createTask(workspacePath, { title: '已在审', planPath });
   await markTaskRunning(workspacePath, a, 'exec-4');
   await markTaskRunning(workspacePath, b.id, 'exec-5');
   await completeTask(workspacePath, b.id, '待审');
 
-  const fresh = await recoverInterruptedTasks(workspacePath, 10 * 60_000);
-  expect(fresh.recovered).toBe(0);
-  expect(fresh.skipped.map((t) => t.id)).toEqual([a]);
-  expect((await getTask(workspacePath, a))?.status).toBe('running');
-
-  const stale = await recoverInterruptedTasks(workspacePath, 0);
-  expect(stale.recovered).toBe(1);
-  expect((await getTask(workspacePath, a))?.status).toBe('queued');
-  expect((await getTask(workspacePath, b.id))?.status).toBe('review');
-});
-
-test('recoverInterruptedTasks：无 lastActiveAt 旧数据回退 updatedAt 判断', async () => {
-  const id = await seedQueued();
-  await markTaskRunning(workspacePath, id, 'exec-old');
-  const file = JSON.parse(await fs.readFile(path.join(workspacePath, '.dogear', 'tasks.json'), 'utf-8'));
-  for (const task of file.tasks) {
-    delete task.lastActiveAt;
-    task.updatedAt = new Date(Date.now() - 60 * 60_000).toISOString();
-  }
-  await fs.writeFile(path.join(workspacePath, '.dogear', 'tasks.json'), JSON.stringify(file, null, 2));
-
-  const result = await recoverInterruptedTasks(workspacePath, 10 * 60_000);
+  const result = await recoverInterruptedTasks(workspacePath);
   expect(result.recovered).toBe(1);
-  expect((await getTask(workspacePath, id))?.status).toBe('queued');
+  const recovered = await getTask(workspacePath, a);
+  expect(recovered?.status).toBe('interrupted');
+  expect(recovered?.result).toContain('应用重启时任务执行中断');
+  expect((await getTask(workspacePath, b.id))?.status).toBe('review');
+  expect((await listTasksGrouped(workspacePath)).interrupted).toHaveLength(1);
 });
 
-test('touchRunningTask：仅 running 态续命', async () => {
+test('interruptTask：running 置 interrupted 并写入原因，可重新入队', async () => {
   const id = await seedQueued();
-  expect(await touchRunningTask(workspacePath, id)).toBe(false);
-  await markTaskRunning(workspacePath, id, 'exec-t');
-  expect(await touchRunningTask(workspacePath, id)).toBe(true);
-  expect((await getTask(workspacePath, id))?.lastActiveAt).toBeTruthy();
+  await markTaskRunning(workspacePath, id, 'exec-i');
+  const interrupted = await interruptTask(workspacePath, id, '执行会话卡死强制中断');
+  expect(interrupted.status).toBe('interrupted');
+  expect(interrupted.result).toBe('执行会话卡死强制中断');
+  const queued = await executeTask(workspacePath, id);
+  expect(queued.status).toBe('queued');
+});
+
+test('reportTaskResult：按 execSessionId 原子迁移 review，未命中返回 null', async () => {
+  const id = await seedQueued();
+  expect(await reportTaskResult(workspacePath, 'exec-mismatch', '不该生效')).toBeNull();
+
+  await markTaskRunning(workspacePath, id, 'exec-r');
+  const reported = await reportTaskResult(workspacePath, 'exec-r', '会话申报的结果摘要');
+  expect(reported?.status).toBe('review');
+  expect(reported?.result).toBe('会话申报的结果摘要');
+  expect(await reportTaskResult(workspacePath, 'exec-r', '重复申报')).toBeNull();
 });
 
 test('listTasksGrouped 按状态分组', async () => {

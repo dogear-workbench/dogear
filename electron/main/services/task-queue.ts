@@ -28,10 +28,6 @@ const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
 // 会话索引存在跨进程并发写窗口（旧快照短暂覆盖/读失败静默返空），origin 瞬时缺失重试可自愈，避免误拒
 const ORIGIN_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
 
-const TASK_TOUCH_INTERVAL_MS = 60_000;
-
-const RECOVER_RECHECK_DELAY_MS = 12 * 60_000;
-
 const RESULT_TAG_RE = /<task-result>([\s\S]*?)<\/task-result>/;
 
 const RESULT_TAIL_MAX = 2000;
@@ -255,18 +251,8 @@ class TaskQueueExecutor {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(fireIdleTimeout, EXEC_IDLE_TIMEOUT_MS);
     };
-    let lastTouchMs = 0;
-    const maybeTouchHeartbeat = () => {
-      const now = Date.now();
-      if (now - lastTouchMs < TASK_TOUCH_INTERVAL_MS) return;
-      lastTouchMs = now;
-      taskService
-        .touchRunningTask(workspacePath, task.id)
-        .catch((err) => log.warn(`任务 ${task.id} 心跳写失败`, err));
-    };
     const onMessage = (m: ExtendedSessionMessage) => {
       resetIdleTimer();
-      maybeTouchHeartbeat();
       if (m.type === 'text') text += m.content ?? '';
     };
     session.once('complete', onComplete);
@@ -331,31 +317,13 @@ export async function interruptTaskExecSession(conversationId: string): Promise<
   }
 }
 
-/** 应用启动：心跳陈旧的遗留 running 置回 queued；新鲜心跳（他实例执行中）跳过并延迟复查一次 */
+/** 应用启动：遗留 running 无条件置 interrupted（交用户手动处置，不自动重跑），再拉起队列 */
 export async function recoverAndStartTaskQueue(): Promise<void> {
   const workspaces = await workspaceJsonService.getAll();
   for (const ws of workspaces) {
     try {
-      const { recovered, skipped } = await taskService.recoverInterruptedTasks(ws.path);
-      if (recovered > 0) log.info(`工作区 ${ws.id} 恢复 ${recovered} 个中断任务回 queued`);
-      if (skipped.length > 0) {
-        log.info(
-          `工作区 ${ws.id} 有 ${skipped.length} 个 running 任务心跳新鲜（他实例执行中），${RECOVER_RECHECK_DELAY_MS / 60_000} 分钟后复查`,
-        );
-        setTimeout(() => {
-          void (async () => {
-            try {
-              const { recovered: recheckRecovered } = await taskService.recoverInterruptedTasks(ws.path);
-              if (recheckRecovered > 0) {
-                log.info(`工作区 ${ws.id} 复查恢复 ${recheckRecovered} 个中断任务回 queued`);
-                getTaskQueue().kick();
-              }
-            } catch (err) {
-              log.warn(`工作区 ${ws.id} 复查恢复失败`, err);
-            }
-          })();
-        }, RECOVER_RECHECK_DELAY_MS);
-      }
+      const { recovered } = await taskService.recoverInterruptedTasks(ws.path);
+      if (recovered > 0) log.info(`工作区 ${ws.id} 恢复 ${recovered} 个中断任务（running → interrupted）`);
     } catch (err) {
       log.warn(`工作区 ${ws.id} 任务恢复失败`, err);
     }

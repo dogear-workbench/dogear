@@ -1,7 +1,7 @@
 /**
  * 任务存储原语层：Task CRUD + 状态机 + .dogear/tasks.json 读写（零 Electron 依赖）
  *
- * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划）或 backlog/done（手动处置打回任务），running 可回 queued（重启恢复）
+ * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划）或 backlog/done（手动处置打回任务）；interrupted = 执行中意外中断（重启/卡死），交用户手动处置；rejected = 执行前确定性拒绝，两者均可被申报回写（→ review）
  * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）；读写前 ensureMigrated 做 version 1 → 2 存量迁移（backlog → plan）
  */
 import fs from 'node:fs/promises';
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
 
-export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
+export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected' | 'interrupted';
 
 export interface Task {
   id: string;
@@ -19,7 +19,7 @@ export interface Task {
   planPath?: string;
   originSessionId?: string;
   execSessionId?: string;
-  /** running 期间执行侧心跳，跨实例判断「还在跑」防启动恢复误伤 */
+  /** 已废弃，读时忽略 */
   lastActiveAt?: string;
   result?: string;
   createdAt: string;
@@ -53,6 +53,7 @@ export interface TaskGroups {
   review: Task[];
   done: Task[];
   rejected: Task[];
+  interrupted: Task[];
 }
 
 interface TasksFile {
@@ -66,10 +67,11 @@ const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   plan: ['backlog', 'queued', 'done'],
   backlog: ['queued', 'done'],
   queued: ['running', 'rejected', 'backlog'],
-  running: ['review', 'queued', 'rejected', 'backlog'],
+  running: ['review', 'interrupted', 'rejected', 'backlog'],
   review: ['done', 'rejected'],
   done: ['plan'],
-  rejected: ['plan', 'backlog', 'done'],
+  rejected: ['plan', 'backlog', 'done', 'review'],
+  interrupted: ['review', 'queued', 'plan', 'done'],
 };
 
 // 缺省值每次新建而非共享常量：mutateTasks 会原地 push，共享常量会被首次读污染并跨工作区泄漏
@@ -197,7 +199,7 @@ export async function listDeletedTasks(workspacePath: string): Promise<Task[]> {
 
 export async function listTasksGrouped(workspacePath: string): Promise<TaskGroups> {
   const tasks = await listTasks(workspacePath);
-  const groups: TaskGroups = { plan: [], backlog: [], queued: [], running: [], review: [], done: [], rejected: [] };
+  const groups: TaskGroups = { plan: [], backlog: [], queued: [], running: [], review: [], done: [], rejected: [], interrupted: [] };
   for (const task of tasks) groups[task.status].push(task);
   return groups;
 }
@@ -224,7 +226,6 @@ export async function getTaskDetail(workspacePath: string, taskId: string): Prom
 interface TransitionPatch {
   execSessionId?: string;
   result?: string;
-  lastActiveAt?: string;
 }
 
 async function transition(
@@ -244,7 +245,6 @@ async function transition(
     task.updatedAt = new Date().toISOString();
     if (patch?.execSessionId !== undefined) task.execSessionId = patch.execSessionId;
     if (patch?.result !== undefined) task.result = patch.result;
-    if (patch?.lastActiveAt !== undefined) task.lastActiveAt = patch.lastActiveAt;
     return { ...task };
   });
 }
@@ -254,15 +254,29 @@ export async function reviewTask(workspacePath: string, taskId: string, action: 
 }
 
 export async function markTaskRunning(workspacePath: string, taskId: string, execSessionId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['queued'], 'running', {
-    execSessionId,
-    lastActiveAt: new Date().toISOString(),
-  });
+  return transition(workspacePath, taskId, ['queued'], 'running', { execSessionId });
 }
 
 export async function completeTask(workspacePath: string, taskId: string, result: string): Promise<Task> {
   return transition(workspacePath, taskId, ['running'], 'review', {
     result: result || '（执行会话未输出结果摘要，请打开执行会话查看过程）',
+  });
+}
+
+export async function interruptTask(workspacePath: string, taskId: string, reason: string): Promise<Task> {
+  return transition(workspacePath, taskId, ['running'], 'interrupted', { result: reason });
+}
+
+export async function reportTaskResult(workspacePath: string, execSessionId: string, result: string): Promise<Task | null> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const task = tasks.find(
+      (t) => !t.deletedAt && t.execSessionId === execSessionId && ['running', 'interrupted', 'rejected'].includes(t.status),
+    );
+    if (!task) return null;
+    task.status = 'review';
+    task.updatedAt = new Date().toISOString();
+    task.result = result || '（执行会话未输出结果摘要，请打开执行会话查看过程）';
+    return { ...task };
   });
 }
 
@@ -273,11 +287,11 @@ export async function rejectTask(workspacePath: string, taskId: string, reason: 
 }
 
 export async function executeTask(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan', 'backlog'], 'queued');
+  return transition(workspacePath, taskId, ['plan', 'backlog', 'interrupted'], 'queued');
 }
 
 export async function completeTaskManually(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['plan', 'backlog', 'rejected'], 'done', { result: '手动标记完成' });
+  return transition(workspacePath, taskId, ['plan', 'backlog', 'rejected', 'interrupted'], 'done', { result: '手动标记完成' });
 }
 
 export async function moveTaskToBacklog(workspacePath: string, taskId: string): Promise<Task> {
@@ -285,7 +299,7 @@ export async function moveTaskToBacklog(workspacePath: string, taskId: string): 
 }
 
 export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<Task> {
-  return transition(workspacePath, taskId, ['done', 'rejected'], 'plan');
+  return transition(workspacePath, taskId, ['done', 'rejected', 'interrupted'], 'plan');
 }
 
 export async function cancelTask(workspacePath: string, taskId: string): Promise<Task> {
@@ -321,39 +335,17 @@ export async function purgeTask(workspacePath: string, taskId: string): Promise<
   });
 }
 
-/** 执行侧心跳续命：仅 running 态生效，非 running（已写回/取消）时返回 false */
-export async function touchRunningTask(workspacePath: string, taskId: string): Promise<boolean> {
+/** 应用启动恢复：遗留 running 无条件置 interrupted（交用户手动处置，不自动重跑），中断原因写入 result */
+export async function recoverInterruptedTasks(workspacePath: string): Promise<{ recovered: number }> {
   return mutateTasks(workspacePath, (tasks) => {
-    const task = tasks.find((t) => t.id === taskId);
-    if (!task || task.status !== 'running') return false;
-    task.lastActiveAt = new Date().toISOString();
-    return true;
-  });
-}
-
-/**
- * 应用启动恢复：心跳（lastActiveAt，缺失回退 updatedAt）陈旧于 staleMs 的 running 置回 queued。
- * 新鲜心跳 = 另一实例仍在执行，误置回会触发重复执行（历史事故：执行会话在跑、任务被二次拾起误拒）。
- */
-export async function recoverInterruptedTasks(
-  workspacePath: string,
-  staleMs: number,
-): Promise<{ recovered: number; skipped: Task[] }> {
-  return mutateTasks(workspacePath, (tasks) => {
-    const now = Date.now();
-    const skipped: Task[] = [];
     let recovered = 0;
     for (const task of tasks) {
-      if (task.status !== 'running') continue;
-      const lastMs = Date.parse(task.lastActiveAt ?? task.updatedAt);
-      if (Number.isFinite(lastMs) && now - lastMs < staleMs) {
-        skipped.push({ ...task });
-        continue;
-      }
-      task.status = 'queued';
+      if (task.status !== 'running' || task.deletedAt) continue;
+      task.status = 'interrupted';
+      task.result = `应用重启时任务执行中断（${new Date().toISOString()}）`;
       task.updatedAt = new Date().toISOString();
       recovered++;
     }
-    return { recovered, skipped };
+    return { recovered };
   });
 }

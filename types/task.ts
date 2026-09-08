@@ -5,7 +5,7 @@
  * 修改时两边同步。
  */
 
-export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected';
+export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected' | 'interrupted';
 
 export interface Task {
   id: string;
@@ -36,6 +36,7 @@ export interface TaskGroups {
   review: Task[];
   done: Task[];
   rejected: Task[];
+  interrupted: Task[];
 }
 
 export type ReviewAction = 'approve' | 'reject';
