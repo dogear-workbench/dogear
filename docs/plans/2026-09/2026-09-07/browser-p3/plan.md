@@ -12,7 +12,7 @@
 - [x] [Step 2: A2 observe 透出 href](./step2-observe-href.md) — 链接元素序列化加绝对 URL，agent 可直链导航
 - [x] [Step 3: A3 read_state 通用命令](./step3-read-state.md) — 读 SPA `__INITIAL_STATE__`，双模式 + 风控同待遇
 - [x] [Step 4: B reddit/zhihu 站内搜索引擎](./step4-site-search.md) — search 加 site 参数 + PAC + `site:` 降级
-- [x] [Step 5: 验收收口](./step5-acceptance.md) — 全量冒烟 + 真机验收清单 + doc-sync（真机清单待用户在场执行）
+- [x] [Step 5: 验收收口](./step5-acceptance.md) — 全量冒烟 + 真机验收清单 + doc-sync（真机清单已按 2026-09-08 验收收口：A 段全过，B 段登录墙环境因素遗留用户项，见文档）
 
 ## 完成总结
 
@@ -20,9 +20,9 @@ P3 五步全部完成并逐 step commit（e08bf33 / 7a95b82 / 263704a / f9f4b57 
 
 **实施中的两个计划外生产级发现**：① __INITIAL_STATE__ 在页面主世界，扩展侧需 world:'MAIN' 注入（step3）；② patchright 的 page.evaluate 落隔离世界读不到页面脚本写入的 window 全局，知乎 state 读取改 CDP Runtime.evaluate 直连（step4，已沉淀记忆）。
 
-**待用户执行**：真机验收清单（step5 文档），核心是「扩展重载（协议 v3）→ 小红书详情可达 → reddit/zhihu 站内搜索出互动量结果」；真机探得的小红书 __INITIAL_STATE__ 字段路径回填工具描述示例。
+**待用户执行**（2026-09-08 真机验收后收敛）：A 段已全过（扩展重载/独占 busy+空闲释放/observe href/详情可达，小红书字段路径已探明并进站点档案），遗留三项：①受控浏览器窗口人工登录知乎/Reddit 后复测站内搜索（登录墙环境因素，parser 无 bug）②关 Clash 降级链验收 ③重启 dogear app 生效新主进程代码。原「字段路径回填工具描述」按 2026-09-08 browser-exploration 计划设计变更调整为进站点档案（`.dogear/site-knowledge/xiaohongshu.com.md`）。
 
-**已知限制**：releaseChannel 生产路径无调用方（释放靠空闲超时/断连）；知乎 state walk 是通用启发式待真机微调；extension-tools.ts ~660 行可考虑拆分；patchright 升级需复测 CDP 路径。
+**已知限制**：releaseChannel 生产路径无调用方（释放靠空闲超时/断连）；知乎 state walk 通用启发式（真机验证逻辑正确，空结果系登录墙所致）；extension-tools.ts 已拆出 extension-site-tools.ts（site_knowledge/site_finding），主文件 715 行仍偏长可继续观察；patchright 升级需复测 CDP 路径；Google 引擎 parse_empty——`div.g` 容器失效（结果迁至 `#rso > div.MjjYud`）+ 标题链接改为 `/goto?url=<加密串>`（旧版 `/url?q=` 明文消失，ping 属性同样加密），勘察数据见 browser-exploration 计划共享区 step1-delivery.md，修复需 URL 方案决策。
 
 ## 全局决策
 
