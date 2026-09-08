@@ -1,10 +1,12 @@
 /**
  * 浏览器扩展 MCP Server 工具
  *
- * 提供 dogear__extension__* 工具组：navigate / observe_page / click / fill / read_text / read_state。
+ * 提供 dogear__extension__* 工具组：navigate / observe_page / click / fill / read_text / read_state /
+ * site_knowledge / site_finding（后两者在 extension-site-tools.ts）。
  * 作用于用户真实浏览器的已连接标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 仅限已授权域名；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
  * 站点策略命中（如小红书）：操作间随机延迟、单会话搜索/笔记预算、风控信号即停。
+ * site_knowledge / site_finding 读写站点档案无页面交互，不过站点策略。
  * 错误一律转中文 isError 文案不抛异常（13 个 errorCode 映射全覆盖）。
  */
 
@@ -35,6 +37,7 @@ import {
   sleep,
   type SitePolicy,
 } from '../../services/browser/site-policy.js';
+import { createSiteToolDefs, siteKnowledgePointer } from './extension-site-tools.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
@@ -305,13 +308,15 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
   const conversationId = opts?.conversationId;
   const meta = () => buildTaskMeta(conversationId);
 
-  /** 各 handler 统一前置：断连清零独占 → 有 conversationId 时获取通道（busy 即拒，不排队） */
-  function acquireGate(action: BrowserActionType, detail: string, url?: string): ToolResult | null {
+  /** 各 handler 统一前置：断连清零独占 → 有 conversationId 时获取通道（busy 即拒，不排队）；action 为 null 的非页面操作（站点档案读写）busy 不记动作流 */
+  function acquireGate(action: BrowserActionType | null, detail: string, url?: string): ToolResult | null {
     if (getExtensionStatus().status === 'disconnected') resetChannel();
     if (!conversationId) return null;
     const r = acquireChannel(conversationId, Date.now());
     if (r.ok) return null;
-    emitAction(meta(), action, { ...(url !== undefined ? { url } : {}), detail, result: 'busy' });
+    if (action) {
+      emitAction(meta(), action, { ...(url !== undefined ? { url } : {}), detail, result: 'busy' });
+    }
     return isErrorResult(busyChannelMessage(r.idleMs));
   }
 
@@ -368,8 +373,9 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           durationMs: Date.now() - startedAt,
         });
         const redirectNote = urlAfter && urlAfter !== args.url ? `（发生重定向，最终地址 ${urlAfter}）` : '';
+        const pointer = siteKnowledgePointer(urlAfter ?? args.url);
         return textResult(
-          `已在用户浏览器打开目标页面${redirectNote}。旧页面元素引用已失效，请先 observe_page 获取新页面元素。`,
+          `已在用户浏览器打开目标页面${redirectNote}。旧页面元素引用已失效，请先 observe_page 获取新页面元素。${pointer ?? ''}`,
         );
       },
     ),
@@ -689,6 +695,15 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         return textResult(`${text}${truncatedNote}`);
       },
     ),
+
+    ...createSiteToolDefs({
+      conversationId,
+      acquireGate,
+      currentUrl,
+      isErrorResult,
+      textResult,
+      scopeNote: SHARED_SCOPE_NOTE,
+    }),
   ];
 }
 
