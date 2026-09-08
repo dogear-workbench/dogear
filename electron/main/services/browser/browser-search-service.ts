@@ -108,6 +108,15 @@ export function clampMaxResults(maxResults?: number): number {
   return Math.min(Math.max(Math.floor(maxResults), 1), MAX_RESULTS_LIMIT);
 }
 
+function urlMatchesDomain(url: string, domain: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === domain || host.endsWith(`.${domain}`);
+  } catch {
+    return false;
+  }
+}
+
 function parseProxyEndpoint(proxyServer: string): { host: string; port: number } | null {
   const raw = proxyServer.trim().replace(/^[a-z]+:\/\//i, '');
   const idx = raw.lastIndexOf(':');
@@ -256,6 +265,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
   const chain = await buildEngineChain(engineConfig, options?.proxyServer, emit);
   const degradations: SearchDegradation[] = [];
   let effectiveQuery = trimmed;
+  let siteDomainFilter: string | null = null;
 
   try {
     emit({ action: 'wait', detail: '等待浏览器实例' });
@@ -315,6 +325,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
         }
         const siteConfig = SITE_SEARCH_CONFIG[site];
         effectiveQuery = `${trimmed} site:${siteConfig.domain}`;
+        siteDomainFilter = siteConfig.domain;
         degradations.push({ from: site, to: chain[0], reason: siteAttempt.reason });
         emit({
           action: 'observe',
@@ -342,8 +353,34 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
           emit,
           remainingMs(),
         );
-        if (attempt.ok && attempt.items) {
-          const results = attempt.items.slice(0, maxResults).map((item, idx) => ({
+        let items: ParsedSerpItem[] | null = attempt.ok ? (attempt.items ?? null) : null;
+        let failureReason = attempt.reason ?? '未知原因';
+        if (items && siteDomainFilter) {
+          const domain = siteDomainFilter;
+          const kept = items.filter((item) => urlMatchesDomain(item.url, domain));
+          if (kept.length === 0) {
+            emit({
+              action: 'parse',
+              url: page.url(),
+              detail: `site:${domain} 域名过滤后无匹配结果（site: 语法被 ${ENGINE_LABELS[engine]} 忽略），视为该引擎失败`,
+              result: 'parse_empty',
+            });
+            items = null;
+            failureReason = `${ENGINE_LABELS[engine]} 结果经 site:${domain} 域名过滤后无匹配`;
+          } else {
+            if (kept.length < items.length) {
+              emit({
+                action: 'parse',
+                url: page.url(),
+                detail: `site:${domain} 域名过滤：剔除 ${items.length - kept.length} 条非目标域结果`,
+                result: `count=${kept.length}`,
+              });
+            }
+            items = kept;
+          }
+        }
+        if (items) {
+          const results = items.slice(0, maxResults).map((item, idx) => ({
             rank: idx + 1,
             title: item.title,
             url: item.url,
@@ -359,8 +396,8 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
             attempt.failureKind === 'parse_empty'
               ? `所有搜索引擎均未能解析出结果（${degradations
                   .map((d) => `${ENGINE_LABELS[d.from]}：${d.reason}`)
-                  .join('；')}；${ENGINE_LABELS[engine]}：${attempt.reason}）。建议换用其他引擎，或降级用 dogear__browser__navigate + observe_page 手动探索`
-              : `所有搜索引擎均失败：${attempt.reason}。可降级用 dogear__browser__navigate + observe_page 手动探索`;
+                  .join('；')}；${ENGINE_LABELS[engine]}：${failureReason}）。建议换用其他引擎，或降级用 dogear__browser__navigate + observe_page 手动探索`
+              : `所有搜索引擎均失败：${failureReason}。可降级用 dogear__browser__navigate + observe_page 手动探索`;
           return {
             ok: false,
             engine,
@@ -370,10 +407,10 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
             degradations,
           };
         }
-        degradations.push({ from: engine, to: next, reason: attempt.reason ?? '未知原因' });
+        degradations.push({ from: engine, to: next, reason: failureReason });
         emit({
           action: 'observe',
-          detail: `${ENGINE_LABELS[engine]} 失败，降级到 ${ENGINE_LABELS[next]}：${attempt.reason}`,
+          detail: `${ENGINE_LABELS[engine]} 失败，降级到 ${ENGINE_LABELS[next]}：${failureReason}`,
           result: 'degrade',
         });
       }

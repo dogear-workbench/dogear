@@ -398,6 +398,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
         '- 需要站内互动量排序（高赞/高票）或某个站的垂直内容时传 site；不传 site 走通用引擎，行为不变。\n' +
         '- 关键词用空格分隔核心词，避免整句提问，与普通搜索引擎用法一致。\n' +
         '- 本工具失败时可降级用 dogear__browser__navigate 打开搜索引擎结果页，再用 dogear__browser__observe_page / read_text 等原子工具手动探索。\n' +
+        '- 站内搜索对登录态敏感：知乎未登录可能返回空结果，Reddit 未登录会跳登录页；降级原因提到登录或空结果时，提示用户在受控浏览器窗口人工登录对应站点一次（profile 会记住）后重试。\n' +
         '- 返回降级提示且提到验证页时，告知用户可在受控浏览器窗口人工完成一次验证（profile 会记住）后重试。',
       z.object({
         query: z.string().trim().min(1).describe('搜索关键词，不能为空'),

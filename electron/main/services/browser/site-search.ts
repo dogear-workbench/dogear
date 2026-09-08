@@ -49,6 +49,23 @@ function buildSiteUrl(site: SiteSearchId, query: string, override?: string): str
   return (override ?? SITE_SEARCH_CONFIG[site].urlTemplate).replace('{q}', encodeURIComponent(query));
 }
 
+async function refineEmptyReason(site: SiteSearchId, page: Page, label: string): Promise<string> {
+  const loginHint = '可在受控浏览器窗口人工登录该站点一次后重试（profile 会记住）';
+  if (site === 'reddit' && /\/login\//.test(page.url())) {
+    return `${label} 未登录，站内搜索被重定向到登录页，${loginHint}`;
+  }
+  if (site === 'zhihu') {
+    const emptyNotice = await page
+      .locator('text=未搜索到相关内容')
+      .count()
+      .catch(() => 0);
+    if (emptyNotice > 0) {
+      return `${label} 返回空结果（未登录时知乎可能不返回搜索内容），${loginHint}`;
+    }
+  }
+  return `${label} 搜索结果解析为空（页面改版或无结果）`;
+}
+
 async function readZhihuState(page: Page): Promise<ParsedSerpItem[] | null> {
   // patchright 的 page.evaluate 落在隔离世界，读不到页面脚本写入的 window 全局，必须 CDP 直连主世界
   let cdp: CDPSession | null = null;
@@ -87,10 +104,14 @@ export async function runSiteAttempt(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     emit({ action: 'navigate', url, detail: message, result: 'nav_failed' });
+    const redirectedToLogin = site === 'reddit' && /\/login\//.test(page.url());
+    const cause = redirectedToLogin
+      ? '导航被重定向到 Reddit 登录页（可能未登录）；可在受控浏览器窗口人工登录该站点一次后重试（profile 会记住）'
+      : '网络或代理异常';
     return {
       ok: false,
       failureKind: 'nav_failed',
-      reason: `${config.label} 站内导航失败（网络或代理异常）：${message}`,
+      reason: `${config.label} 站内导航失败（${cause}）：${message}`,
     };
   }
 
@@ -124,13 +145,14 @@ export async function runSiteAttempt(
     return { ok: false, failureKind: 'parse_empty', reason: `${config.label} 结果解析异常：${message}` };
   }
   if (items.length === 0) {
+    const reason = await refineEmptyReason(site, page, config.label);
     emit({
       action: 'parse',
       url: page.url(),
-      detail: `${config.label} 结果解析为空（页面改版或无结果）`,
+      detail: `${config.label} ${reason}`,
       result: 'parse_empty',
     });
-    return { ok: false, failureKind: 'parse_empty', reason: `${config.label} 搜索结果解析为空` };
+    return { ok: false, failureKind: 'parse_empty', reason };
   }
   emit({
     action: 'parse',

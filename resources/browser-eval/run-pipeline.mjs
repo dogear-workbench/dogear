@@ -234,6 +234,7 @@ async function runSearchTasks() {
   const redditMockUrl = resolveUrl('{{BASE}}/serp-reddit.html');
   const zhihuStateMockUrl = resolveUrl('{{BASE}}/serp-zhihu-state.html');
   const zhihuDomMockUrl = resolveUrl('{{BASE}}/serp-zhihu-dom.html');
+  const bingSiteMixedMockUrl = resolveUrl('{{BASE}}/serp-bing-site-mixed.html');
 
   const searchCases = [
     {
@@ -491,20 +492,22 @@ async function runSearchTasks() {
     },
     {
       id: 'search-site-reddit-empty-degrade',
-      scenario: 'Reddit 站内解析空：降级「site:reddit.com」通用链成功，degradations 记录站点→引擎',
+      scenario: 'Reddit 站内解析空：降级「site:reddit.com」通用链，混排结果经域名过滤只留 reddit 域，degradations 记录站点→引擎',
       run: (base) =>
         searchWeb('装修翻车', {
           site: 'reddit',
           engine: 'bing',
           serpUrls: {
             reddit: `${base.url}/empty/?q={q}`,
-            bing: bingMockUrl,
+            bing: bingSiteMixedMockUrl,
           },
         }),
       expect: {
         ok: true,
         engine: 'bing',
-        count: 6,
+        count: 2,
+        titlesContain: ['DOGEAR-SERP-BM-R1', 'DOGEAR-SERP-BM-R2'],
+        urlExcludes: ['example.net', 'kujiale.com', 'example.org', 'zhihu.com'],
         degradations: [{ from: 'reddit', to: 'bing', reasonContains: '解析为空' }],
       },
       extraCheck: (failures, outcome) => {
@@ -515,21 +518,69 @@ async function runSearchTasks() {
       },
     },
     {
+      id: 'search-site-zhihu-degrade-domain-filter',
+      scenario: '知乎站内解析空：降级「site:zhihu.com」通用链，混排结果经域名过滤保留 zhihu 主域+子域条目',
+      run: (base) =>
+        searchWeb('装修避坑', {
+          site: 'zhihu',
+          engine: 'bing',
+          serpUrls: {
+            zhihu: `${base.url}/empty/?q={q}`,
+            bing: bingSiteMixedMockUrl,
+          },
+        }),
+      expect: {
+        ok: true,
+        engine: 'bing',
+        count: 3,
+        titlesContain: ['DOGEAR-SERP-BM-Z1', 'DOGEAR-SERP-BM-Z2', 'DOGEAR-SERP-BM-Z3'],
+        urlExcludes: ['reddit.com', 'example.net', 'kujiale.com'],
+        degradations: [{ from: 'zhihu', to: 'bing', reasonContains: '解析为空' }],
+      },
+      extraCheck: (failures, outcome) => {
+        if (!outcome.query.includes('site:zhihu.com')) {
+          failures.push(`降级后 query 应为 site: 语法，实际「${outcome.query}」`);
+        }
+      },
+    },
+    {
+      id: 'search-site-zhihu-degrade-filter-empty',
+      scenario: '知乎站内解析空且 Bing 全部结果非目标域：域名过滤后无匹配视为引擎失败，整体失败并在 message 说明',
+      run: (base) =>
+        searchWeb('装修避坑', {
+          site: 'zhihu',
+          engine: 'bing',
+          serpUrls: {
+            zhihu: `${base.url}/empty/?q={q}`,
+            bing: bingMockUrl,
+          },
+        }),
+      expect: {
+        ok: false,
+        engine: 'bing',
+        errorClass: 'parse_empty',
+        degradationCount: 1,
+        messageContains: '域名过滤后无匹配',
+      },
+    },
+    {
       id: 'search-site-reddit-navfail-degrade',
-      scenario: 'Reddit 站内导航失败（服务器挂起超时，模拟代理退出）：降级 site: 通用链成功',
+      scenario: 'Reddit 站内导航失败（服务器挂起超时，模拟代理退出）：降级 site: 通用链，域名过滤只留 reddit 域',
       run: (base) =>
         searchWeb('renovation mistakes', {
           site: 'reddit',
           engine: 'bing',
           serpUrls: {
             reddit: `${base.url}/hang/?q={q}`,
-            bing: bingMockUrl,
+            bing: bingSiteMixedMockUrl,
           },
         }),
       expect: {
         ok: true,
         engine: 'bing',
-        count: 6,
+        count: 2,
+        titlesContain: ['DOGEAR-SERP-BM-R1', 'DOGEAR-SERP-BM-R2'],
+        urlExcludes: ['example.net', 'kujiale.com', 'zhihu.com'],
         degradations: [{ from: 'reddit', to: 'bing', reasonContains: '导航失败' }],
       },
       extraCheck: (failures, outcome) => {
