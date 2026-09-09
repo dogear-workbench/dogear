@@ -668,6 +668,13 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
 
+  // 内嵌浏览器宿主自测：DOGEAR_EMBEDDED_BROWSER_SELFTEST=1 bun run dev:electron 时验证后台 tab 加载链路
+  if (isDev && process.env.DOGEAR_EMBEDDED_BROWSER_SELFTEST === '1') {
+    void import('./services/browser/embedded/dev-selftest.js')
+      .then((m) => m.runEmbeddedBrowserSelfTest())
+      .catch((err) => console.error('[embedded-selftest] 失败:', err));
+  }
+
   void import('./services/scheduler/scheduler-service.js')
     .then((m) => m.getSchedulerService().init())
     .catch((err) => console.error('调度器初始化失败:', err));
@@ -762,6 +769,13 @@ app.on('before-quit', async () => {
     await getBrowserManager().dispose();
   } catch (error) {
     console.error('关闭受控浏览器失败:', error);
+  }
+  // 关闭内嵌浏览器宿主（销毁全部 WebContentsView）
+  try {
+    const { getEmbeddedBrowserManager } = await import('./services/browser/embedded/embedded-browser-manager.js');
+    getEmbeddedBrowserManager().dispose();
+  } catch (error) {
+    console.error('关闭内嵌浏览器宿主失败:', error);
   }
   // 关闭所有 pi 会话
   try {

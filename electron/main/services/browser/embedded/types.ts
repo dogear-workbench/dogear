@@ -1,0 +1,57 @@
+import type { BrowserWindow, Rectangle, Session, WebContentsView } from 'electron';
+
+export type EmbeddedTabSource = 'agent-opened' | 'user-connected';
+
+export type EmbeddedPageState =
+  | 'loading'
+  | 'ready'
+  | 'login_required'
+  | 'verification_required'
+  | 'awaiting_human'
+  | 'rate_limited'
+  | 'changed_layout'
+  | 'crashed';
+
+export interface EmbeddedTabSnapshot {
+  tabId: string
+  source: EmbeddedTabSource
+  workspaceId: string
+  url: string
+  title: string
+  generation: number
+  state: EmbeddedPageState
+  attached: boolean
+  holders: string[]
+}
+
+export interface EmbeddedTabRecord {
+  tabId: string
+  source: EmbeddedTabSource
+  workspaceId: string
+  view: WebContentsView
+  url: string
+  title: string
+  generation: number
+  state: EmbeddedPageState
+  holders: Set<string>
+  lastActivityAt: number
+  attachedWindow: BrowserWindow | null
+  bounds: Rectangle | null
+}
+
+export interface EmbeddedWorkspaceRecord {
+  workspaceId: string
+  profileKey: string
+  partition: string
+  session: Session
+  tabs: Map<string, EmbeddedTabRecord>
+  agentTabId: string | null
+  activeTabId: string | null
+}
+
+export interface OpenEmbeddedTabInput {
+  workspaceId: string
+  url: string
+  source: EmbeddedTabSource
+  holderId?: string
+}
