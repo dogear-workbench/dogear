@@ -78,7 +78,7 @@ export const MAX_RESULTS_LIMIT = 15;
 
 export const SERP_URL_TEMPLATES: Record<SearchEngineId, string> = {
   google: 'https://www.google.com/search?q={q}',
-  ddg: 'https://html.duckduckgo.com/html/?q={q}',
+  ddg: 'https://duckduckgo.com/?q={q}',
   bing: 'https://cn.bing.com/search?q={q}',
 };
 

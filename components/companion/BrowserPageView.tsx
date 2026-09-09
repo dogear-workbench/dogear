@@ -39,7 +39,10 @@ export function BrowserPageView() {
     let timer: number | undefined;
     const report = () => {
       const rect = el.getBoundingClientRect();
-      if (rect.width < 1 || rect.height < 1) return;
+      if (rect.width < 1 || rect.height < 1) {
+        void client.reportPageViewBounds({ bounds: null });
+        return;
+      }
       void client.reportPageViewBounds({
         bounds: {
           x: Math.round(rect.left),

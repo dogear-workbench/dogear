@@ -121,7 +121,7 @@ export function createBrowserObserveToolDefs(opts?: {
           }
           emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: snapshot.url, result: 'ok' });
           return textResult(
-            `已导航到: ${snapshot.url}\n标题: ${snapshot.title}\n正文字数: ${stats.totalLength}\n状态: ${pageState}（generation ${snapshot.generation}）` +
+            `已导航到: ${snapshot.url}\ntabId: ${snapshot.tabId}\n标题: ${snapshot.title}\n正文字数: ${stats.totalLength}\n状态: ${pageState}（generation ${snapshot.generation}）` +
               (hint ? `\n⚠️ ${hint}` : '') +
               `\n需要操作页面元素时，先调用 dogear__browser__observe_page 获取 ref 列表。`,
           );

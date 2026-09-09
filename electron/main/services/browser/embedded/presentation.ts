@@ -62,16 +62,22 @@ export async function presentTab(
     if (!record) return { ok: false, message: `内嵌浏览器标签不存在: ${input.tabId}` };
   } else {
     try {
-      const snapshot = manager.openTab({
-        workspaceId: input.workspaceId,
-        url: input.url,
-        source: 'agent-opened',
-        holderId: PRESENT_HOLDER_ID,
-      });
-      record = manager.getTabRecord(snapshot.tabId);
-      if (!record) return { ok: false, message: '内嵌浏览器标签创建失败' };
-      retained = true;
-      await waitTabReady(record, PRESENT_READY_TIMEOUT_MS).catch(() => {});
+      const existing = manager.listTabs().find((tab) => tab.url === input.url && tab.workspaceId === input.workspaceId);
+      if (existing) {
+        record = manager.getTabRecord(existing.tabId);
+        if (!record) return { ok: false, message: '内嵌浏览器标签已关闭' };
+      } else {
+        const snapshot = manager.openTab({
+          workspaceId: input.workspaceId,
+          url: input.url,
+          source: 'agent-opened',
+          holderId: PRESENT_HOLDER_ID,
+        });
+        record = manager.getTabRecord(snapshot.tabId);
+        if (!record) return { ok: false, message: '内嵌浏览器标签创建失败' };
+        retained = true;
+        await waitTabReady(record, PRESENT_READY_TIMEOUT_MS).catch(() => {});
+      }
     } catch (err) {
       return { ok: false, message: err instanceof Error ? err.message : String(err) };
     }

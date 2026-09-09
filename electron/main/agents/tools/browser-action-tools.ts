@@ -65,9 +65,10 @@ async function runWithGuardRaise<T>(
 }
 
 function formatClickResult(result: ClickResult): string {
+  const methodLabel = result.method === 'keyboard' ? '真实输入' : '合成点击（页面可能通过 isTrusted 识别自动化）';
   if (result.navigated) {
     return appendPageStateHint(
-      `已点击 ${result.ref}，已触发导航：${result.urlBefore} → ${result.urlAfter || '（加载中）'}。\n` +
+      `已点击 ${result.ref}（${methodLabel}），已触发导航：${result.urlBefore} → ${result.urlAfter || '（加载中）'}。\n` +
         '旧元素引用已失效，操作新页面请先重新 dogear__browser__observe_page。',
       result.pageState,
     );

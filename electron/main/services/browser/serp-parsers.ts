@@ -9,6 +9,7 @@ export type SerpParseFn = () => ParsedSerpItem[];
 
 export const parseGoogleSerp = new Function(`return () => {
   const AD_RE = /赞助商广告|sponsored/i;
+  const GOOGLE_SELF_RE = /^https?:\\/\\/([a-z0-9-]+\\.)?google\\./i;
   const SNIPPET_SELECTORS = ['[data-sncf]', '.VwiC3b', '[data-content-feature]', 'div[style*="-webkit-line-clamp"]'];
   const pickBlocks = (selectors) => {
     for (const sel of selectors) {
@@ -18,22 +19,23 @@ export const parseGoogleSerp = new Function(`return () => {
     return [];
   };
   const urlOf = (block, h3) => {
-    if (h3) {
-      const inner = h3.querySelector('a[href]');
-      if (inner && inner.href) return inner.href;
-      const wrapper = h3.closest('a[href]');
-      if (wrapper && wrapper.href) return wrapper.href;
-    }
+    const wrapA = h3.closest('a[href]');
+    if (wrapA && wrapA.href) return wrapA.href;
+    const inner = h3.querySelector('a[href]');
+    if (inner && inner.href) return inner.href;
     for (const a of block.querySelectorAll('a[href]')) {
       if (/^https?:/i.test(a.href)) return a.href;
     }
     return '';
   };
   const snippetOf = (block) => {
-    for (const sel of SNIPPET_SELECTORS) {
-      const el = block.querySelector(sel);
-      const text = el ? (el.textContent || '').trim() : '';
-      if (text) return text;
+    for (const scope of [block, block.parentElement]) {
+      if (!scope) continue;
+      for (const sel of SNIPPET_SELECTORS) {
+        const el = scope.querySelector(sel);
+        const text = el ? (el.textContent || '').trim() : '';
+        if (text) return text;
+      }
     }
     let best = '';
     for (const el of block.querySelectorAll('div, p, span')) {
@@ -45,17 +47,27 @@ export const parseGoogleSerp = new Function(`return () => {
   };
   const items = [];
   const seen = new Set();
-  for (const block of pickBlocks(['#search div.g', '#rso div.g', 'main div.g', 'div.g'])) {
+  const pushBlock = (block) => {
+    if (!block || seen.has(block)) return;
+    seen.add(block);
     const blockText = (block.innerText || '').slice(0, 400);
-    if (AD_RE.test(blockText)) continue;
-    const h3 = block.querySelector('h3');
-    const title = h3 ? (h3.textContent || '').trim() : '';
-    if (!title) continue;
+    if (AD_RE.test(blockText)) return;
+    const h3 = block.querySelector && block.querySelector('h3');
+    if (!h3) return;
+    const title = (h3.textContent || '').trim();
+    if (!title) return;
     const url = urlOf(block, h3);
-    if (!url || !/^https?:/i.test(url) || seen.has(url)) continue;
+    if (!url || !/^https?:/i.test(url) || GOOGLE_SELF_RE.test(url) || seen.has(url)) return;
     seen.add(url);
     items.push({ title, url, snippet: snippetOf(block) });
+  };
+  for (const block of pickBlocks(['#search div.g', '#rso div.g', 'main div.g', 'div.g'])) pushBlock(block);
+  const h3Blocks = new Set();
+  for (const h3 of document.querySelectorAll('#search h3, #rso h3, main h3')) {
+    const block = h3.closest('div[data-hveid]') || h3.parentElement;
+    if (block) h3Blocks.add(block);
   }
+  for (const block of h3Blocks) pushBlock(block);
   return items;
 }`)() as SerpParseFn;
 
@@ -79,10 +91,11 @@ export const parseDdgSerp = new Function(`return () => {
   };
   const items = [];
   const seen = new Set();
-  for (const block of pickBlocks(['div.result', 'article.result', 'div.web-result'])) {
+  for (const block of pickBlocks(['article[data-testid="result"]', 'li[data-layout]', 'div.result', 'article.result', 'div.web-result'])) {
     if (block.classList.contains('result--ad')) continue;
     const link =
       block.querySelector('a.result__a[href]') ||
+      block.querySelector('a[data-testid="result-title-a"][href]') ||
       block.querySelector('h2 a[href]') ||
       block.querySelector('a.result__url[href]');
     if (!link) continue;
@@ -96,7 +109,15 @@ export const parseDdgSerp = new Function(`return () => {
     if (!title) continue;
     seen.add(url);
     const snippetEl = block.querySelector('.result__snippet');
-    const snippet = snippetEl ? (snippetEl.textContent || '').trim() : '';
+    let snippet = snippetEl ? (snippetEl.textContent || '').trim() : '';
+    if (!snippet) {
+      for (const el of block.querySelectorAll('div, p, span')) {
+        if (el.tagName === 'A' || el.querySelector('a[href]')) continue;
+        const text = (el.textContent || '').trim();
+        if (text.length > snippet.length) snippet = text;
+      }
+      snippet = snippet.slice(0, 300);
+    }
     items.push({ title, url, snippet });
   }
   return items;
