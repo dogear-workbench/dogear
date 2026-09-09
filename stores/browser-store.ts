@@ -15,6 +15,11 @@ interface PageViewState {
   hasPageView: boolean;
 }
 
+export interface TabTakeoverEntry {
+  tabId: string;
+  active: boolean;
+}
+
 interface BrowserState {
   events: BrowserActionEvent[];
   status: BrowserStreamStatus;
@@ -23,6 +28,8 @@ interface BrowserState {
   /** 页面视图区状态（tab 列表 + 本窗口呈现状态），随动作流事件节流刷新 */
   view: PageViewState;
   humanInterventions: HumanInterventionRequest[];
+  /** 当前被用户接管的 tab 列表（广播全量刷新，初始拉取从 view.tabs 派生） */
+  takeovers: TabTakeoverEntry[];
   ensureLoaded: () => Promise<void>;
   ensureViewStateLoaded: () => Promise<void>;
   refreshStatus: () => Promise<void>;
@@ -49,6 +56,7 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   loaded: false,
   view: { tabs: [], selfWindowId: null, presentedTabId: null, hasPageView: false },
   humanInterventions: [],
+  takeovers: [],
 
   ensureLoaded: async () => {
     if (get().loaded) return;
@@ -67,7 +75,13 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
         client.listHumanInterventions(),
       ]);
       lastTabsRefreshAt = Date.now();
-      set({ view, humanInterventions: pending });
+      set({
+        view,
+        humanInterventions: pending,
+        takeovers: view.tabs
+          .filter((tab) => tab.takeover?.active)
+          .map((tab) => ({ tabId: tab.tabId, active: true })),
+      });
     } catch (error) {
       console.warn('[browser] 拉取页面视图状态失败:', error);
     }
@@ -111,5 +125,8 @@ if (typeof window !== 'undefined' && window.ipcRenderer) {
   });
   rendererEvents.humanInterventionChanged.listen(({ pending }) => {
     useBrowserStore.setState({ humanInterventions: pending });
+  });
+  rendererEvents.tabTakeoverChanged.listen(({ takeovers }) => {
+    useBrowserStore.setState({ takeovers });
   });
 }

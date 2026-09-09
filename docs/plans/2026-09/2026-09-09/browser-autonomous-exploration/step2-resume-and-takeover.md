@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 接回 Agent 与接管互斥锁
-status: pending
+status: done
 ---
 
 ## 目标
@@ -42,10 +42,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：①广播接线放 manager 变化回调（setTakeoverChangeListener）而非路由显式广播，对齐注册制模式；②EmbeddedTabSnapshot 也透出 takeover.active（初始拉取/轮询兑底）；③未新增 listTabTakeovers RPC（snapshot 透出后冗余）；④写工具以实际代码为准（无 press 工具，实际拦 navigate/click/fill/scroll/wait_for）；⑤navigate 检查不走 runner（不走 withAgentTab），在 navigateGate 前显式查 agent 当前 tab
+- 改动文件清单：human-intervention.ts（resolve 返回 ResolvedIntervention | null）、embedded/types.ts（TabRecord+Snapshot 加 takeover）、embedded-browser-manager.ts（takeOverTab/releaseTakeover/isTabTakenOver/listTakeovers/bumpGeneration/setTakeoverChangeListener）、browser-tool-shared.ts（withAgentTab 加 mode + USER_TAKEOVER_BLOCK_MESSAGE）、browser-atom-tools.ts（navigate 前置检查 + wait_for 'write'）、browser-action-tools.ts（click/fill/scroll 'write'）、tipc/renderer-handlers.ts（tabTakeoverChanged）、tipc/browser.ts（resumeConversation 唯一入口 + resolve 路由唤醒 + takeOver/release 路由 + 广播接线）、stores/browser-store.ts（takeovers 状态 + 订阅 + view.tabs 派生）、components/companion/BrowserPageView.tsx（接管/交还按钮 + 徽章）、settings-types.ts（Profile 描述补 user_takeover 说明）、dev-selftest.ts（takeoverSmoke 分期）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：manager.takeOverTab(tabId, taskMeta?): boolean / releaseTakeover(tabId): { taskMeta? } | null / isTabTakenOver(tabId) / listTakeovers() / bumpGeneration(tabId) / setTakeoverChangeListener(fn)；resolveHumanIntervention 返回 ResolvedIntervention | null（含 taskMeta）；withAgentTab(fn, mode: 'read'|'write'='read')；tipc 私有 resumeConversation(conversationId, message) 为唯一唤醒入口；广播 tabTakeoverChanged({ takeovers: {tabId,active}[] })
+- 下个 step 该从哪里继续：step3 及后续按 step 文档推进；Step 4 完整 UI（BrowserPanel 重构/地址栏/bounds 重写）接管按钮可复用现有 takeOverTab/releaseTakeover 路由与 store.takeovers，接管联动呈现、接管对无操作 tab 的按钮隐藏决策待做
+- 待办或已知限制：GUI/联网验收未做（本机实例占用管道）；接管不自动呈现页面；tab 关闭后 store.takeovers 残留死条目（无实际影响，全量刷新自愈）；详情见共享区 exploration-step2-delivery.md

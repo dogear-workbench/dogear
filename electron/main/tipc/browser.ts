@@ -26,6 +26,7 @@ import {
   setExtensionStatusBroadcaster,
 } from '../services/browser/browser-gateway.js';
 import { setBrowserToolsActionListener, type BrowserToolsActionEvent } from '../agents/tools/browser-tool-shared.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
 const t = tipc.create();
 
@@ -50,6 +51,9 @@ export function registerBrowserActionBridge(): void {
   setHumanInterventionBroadcaster((pending) => {
     broadcastToWindows((h) => h.humanInterventionChanged.send({ pending }));
   });
+  getEmbeddedBrowserManager().setTakeoverChangeListener(() => {
+    broadcastToWindows((h) => h.tabTakeoverChanged.send({ takeovers: getEmbeddedBrowserManager().listTakeovers() }));
+  });
   setBrowserToolsActionListener((event: BrowserToolsActionEvent) => {
     recordBrowserAction({
       source: event.source,
@@ -72,6 +76,20 @@ export function registerExtensionStatusBridge(): void {
 function windowFromContext(sender: Electron.WebContents): BrowserWindow | null {
   const win = BrowserWindow.fromWebContents(sender);
   return win && !win.isDestroyed() ? win : null;
+}
+
+/** 唤醒链路唯一入口：services 层不 import agents，等待人工解除与接管交还都走这里 */
+function resumeConversation(conversationId: string, message: string): void {
+  const manager = getPiSessionManager();
+  const sessionId = manager.getSessionIdByConversation(conversationId);
+  const session = sessionId ? manager.getSession(sessionId) : undefined;
+  if (!session) {
+    console.warn('[browser] 唤醒跳过：会话不存在或已关闭:', conversationId);
+    return;
+  }
+  session.sendMessage(message).catch((err) => {
+    console.error('[browser] 唤醒会话失败:', conversationId, err);
+  });
 }
 
 export const browserRouter = {
@@ -140,7 +158,43 @@ export const browserRouter = {
 
   listHumanInterventions: t.procedure.action(async () => listPendingHumanInterventions()),
 
+  takeOverTab: t.procedure
+    .input<{ tabId: string; conversationId?: string }>()
+    .action(async ({ input }) => {
+      const taskMeta = input.conversationId ? { kind: 'agent' as const, conversationId: input.conversationId } : undefined;
+      const ok = getEmbeddedBrowserManager().takeOverTab(input.tabId, taskMeta);
+      return { ok };
+    }),
+
+  releaseTakeover: t.procedure
+    .input<{ tabId: string }>()
+    .action(async ({ input }) => {
+      const released = getEmbeddedBrowserManager().releaseTakeover(input.tabId);
+      if (!released) return { ok: false };
+      const conversationId = released.taskMeta?.conversationId;
+      if (conversationId) {
+        resumeConversation(
+          conversationId,
+          '用户已交还页面控制权。请重新 observe_page 观察当前页面后继续任务，旧 ref 已全部失效',
+        );
+      }
+      return { ok: true };
+    }),
+
   resolveHumanIntervention: t.procedure
     .input<{ id: string }>()
-    .action(async ({ input }) => ({ resolved: resolveHumanIntervention(input.id, 'user') })),
+    .action(async ({ input }) => {
+      const resolved = resolveHumanIntervention(input.id, 'user');
+      if (!resolved) return { resolved: false };
+      const conversationId = resolved.taskMeta.conversationId;
+      if (conversationId) {
+        const tab = getEmbeddedBrowserManager().getTab(resolved.request.tabId);
+        const url = tab?.url ?? resolved.request.url ?? '未知';
+        resumeConversation(
+          conversationId,
+          `用户已在浏览器完成人工处理（${resolved.request.reason}，页面当前 URL: ${url}）。请重新观察该 tab 的当前页面状态后继续任务，不要从头重跑，不要重放旧 ref。`,
+        );
+      }
+      return { resolved: true };
+    }),
 };

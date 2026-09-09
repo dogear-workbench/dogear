@@ -26,8 +26,25 @@ function hostOf(url: string): string {
 export function BrowserPageView() {
   const tabs = useBrowserStore((s) => s.view.tabs);
   const presentedTabId = useBrowserStore((s) => s.view.presentedTabId);
+  const takeovers = useBrowserStore((s) => s.takeovers);
+  const status = useBrowserStore((s) => s.status);
   const ensureViewStateLoaded = useBrowserStore((s) => s.ensureViewStateLoaded);
   const placeholderRef = useRef<HTMLDivElement | null>(null);
+
+  const isTakenOver = (tabId: string) => takeovers.some((entry) => entry.tabId === tabId);
+
+  // 接管时记住当前动作流持有者会话，交还后可唤醒；拿不到（空闲/非会话任务）就传 undefined 只解锁
+  const holderConversationId =
+    status.holder?.kind === 'agent' && status.holder.taskId.startsWith('agent:')
+      ? status.holder.taskId.slice('agent:'.length)
+      : undefined;
+
+  const takeOver = (tabId: string) => {
+    void client.takeOverTab({ tabId, conversationId: holderConversationId }).then(() => ensureViewStateLoaded());
+  };
+  const releaseTakeover = (tabId: string) => {
+    void client.releaseTakeover({ tabId }).then(() => ensureViewStateLoaded());
+  };
 
   useEffect(() => {
     void ensureViewStateLoaded();
@@ -139,6 +156,15 @@ export function BrowserPageView() {
               {stateLabel && (
                 <span className="shrink-0 rounded bg-muted px-1 text-[10px] leading-4 text-muted-foreground">{stateLabel}</span>
               )}
+              {isTakenOver(tab.tabId) ? (
+                <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] leading-4 text-amber-600">接管中</span>
+              ) : null}
+              <button
+                className="shrink-0 text-[10px] text-muted-foreground hover:text-amber-600 cursor-pointer"
+                onClick={() => (isTakenOver(tab.tabId) ? releaseTakeover(tab.tabId) : takeOver(tab.tabId))}
+              >
+                {isTakenOver(tab.tabId) ? '交还' : '接管'}
+              </button>
               {active ? (
                 <button
                   className="shrink-0 text-[10px] text-muted-foreground hover:text-foreground cursor-pointer"

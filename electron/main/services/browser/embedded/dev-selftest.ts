@@ -113,11 +113,28 @@ export async function runEmbeddedBrowserSelfTest(): Promise<void> {
   const wait = await waitForTabCondition(nav.record, { urlContains: 'iana.org', timeoutSec: 5 });
   if (!wait.matched) throw new Error('wait_for 未命中 url 条件');
 
+  takeoverSmoke(manager, tab);
   manager.release(tab.tabId, 'selftest');
   manager.closeTab(tab.tabId);
   await fetchSmoke(manager);
   humanInterventionSmoke();
   console.log('[embedded-selftest] 通过');
+}
+
+/** 接管锁闭环：接管 → 锁生效 → 交还（taskMeta 透出 + generation 递增） → 幂等拒绝 */
+function takeoverSmoke(manager: EmbeddedBrowserManager, tab: EmbeddedTabRecord): void {
+  const generationBefore = tab.generation;
+  if (!manager.takeOverTab(tab.tabId, { kind: 'agent', conversationId: 'selftest' })) throw new Error('接管失败');
+  if (!manager.isTabTakenOver(tab.tabId)) throw new Error('接管后锁未生效');
+  if (manager.getTab(tab.tabId)?.takeover?.active !== true) throw new Error('快照未透出接管状态');
+  if (!manager.listTakeovers().some((entry) => entry.tabId === tab.tabId)) throw new Error('全量接管列表缺失');
+  const released = manager.releaseTakeover(tab.tabId);
+  if (!released || released.taskMeta?.conversationId !== 'selftest') throw new Error('交还未透出 taskMeta');
+  if (tab.generation <= generationBefore) throw new Error(`交还后 generation 应递增，实际 ${generationBefore} → ${tab.generation}`);
+  if (manager.isTabTakenOver(tab.tabId)) throw new Error('交还后锁未解除');
+  if (manager.listTakeovers().length !== 0) throw new Error('交还后全量接管列表应清空');
+  if (manager.releaseTakeover(tab.tabId) !== null) throw new Error('重复交还不应成功');
+  console.log('[embedded-selftest] takeover:', JSON.stringify({ ok: true, generation: tab.generation }));
 }
 
 /** awaiting_human 闭环：上报 → 同 tab 去重 → 用户确认解除 → 状态恢复自动解除 */

@@ -39,6 +39,7 @@ import {
   formatObserveElement,
   isErrorResult,
   textResult,
+  USER_TAKEOVER_BLOCK_MESSAGE,
 } from './browser-tool-shared.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 import type { ObservePayload, FindPayload } from '../../services/browser/embedded/ax-tree.js';
@@ -76,6 +77,11 @@ export function createBrowserObserveToolDefs(opts?: {
         }
         if (!embeddedWorkspaceId) {
           return isErrorResult('当前会话未关联工作区，内嵌浏览器通道不可用');
+        }
+        const currentAgentTabId = getEmbeddedBrowserManager().getAgentTabId(embeddedWorkspaceId);
+        if (currentAgentTabId && getEmbeddedBrowserManager().isTabTakenOver(currentAgentTabId)) {
+          emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url, result: 'user_takeover' });
+          return isErrorResult(USER_TAKEOVER_BLOCK_MESSAGE);
         }
         const gate = await navigateGate(conversationId, args.url);
         if ('blocked' in gate) {
@@ -283,7 +289,7 @@ export function createBrowserObserveToolDefs(opts?: {
           const wait = await waitForTabCondition(tab, { text: args.text, urlContains: args.url_contains, timeoutSec: args.timeout });
           if (wait.matched) resolveInterventionsForTab(tab.tabId);
           return { wait, state: resolvePageState(tab) };
-        });
+        }, 'write');
         if (!r.ok) return isErrorResult(`等待失败：${r.message}`);
         if (!r.value.wait.matched) {
           const conditions = [

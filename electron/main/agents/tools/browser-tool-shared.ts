@@ -146,10 +146,17 @@ export function withTimeout<T>(label: string, timeoutMs: number, run: () => Prom
 export const NO_AGENT_TAB_MESSAGE =
   '内嵌浏览器暂无活动标签页，请先调用 dogear__browser__navigate 打开页面后再观察。';
 
-/** 内嵌 agent 标签访问器：无工作区/无标签时返回统一可恢复错误文案 */
+export const USER_TAKEOVER_BLOCK_MESSAGE =
+  'user_takeover：用户已接管该页面，操作暂停。请停止页面操作，等待用户交还控制权后重新观察继续';
+
+/**
+ * 内嵌 agent 标签访问器：无工作区/无标签时返回统一可恢复错误文案。
+ * mode='write' 时前置检查接管锁（读工具用默认 'read' 放行）——一处覆盖全部写类工具。
+ */
 export function createAgentTabRunner(embeddedWorkspaceId: string | undefined, holderId: string) {
   return async function withAgentTab<T>(
     fn: (tab: EmbeddedTabRecord) => Promise<T>,
+    mode: 'read' | 'write' = 'read',
   ): Promise<{ ok: true; value: T } | { ok: false; message: string; error: unknown }> {
     if (!embeddedWorkspaceId) {
       return { ok: false, message: '当前会话未关联工作区，内嵌浏览器观察通道不可用', error: null };
@@ -159,6 +166,9 @@ export function createAgentTabRunner(embeddedWorkspaceId: string | undefined, ho
       const tabId = manager.getAgentTabId(embeddedWorkspaceId);
       const record = tabId ? manager.getTabRecord(tabId) : null;
       if (!tabId || !record) return { ok: false, message: NO_AGENT_TAB_MESSAGE, error: null };
+      if (mode === 'write' && manager.isTabTakenOver(tabId)) {
+        return { ok: false, message: USER_TAKEOVER_BLOCK_MESSAGE, error: null };
+      }
       manager.retain(tabId, holderId);
       return { ok: true, value: await fn(record) };
     } catch (err) {

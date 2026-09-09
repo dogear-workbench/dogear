@@ -120,7 +120,7 @@ export function createBrowserActionToolDefs(opts?: {
           const blocked = await actionGate(tab.url);
           if (blocked) return { blocked };
           return { result: await runWithGuardRaise(tab, taskMeta, () => clickTab(tab, args.ref)) };
-        });
+        }, 'write');
         if (!r.ok) {
           const guard = r.error instanceof ActionGuardError;
           emitAction({
@@ -154,7 +154,7 @@ export function createBrowserActionToolDefs(opts?: {
           const blocked = await actionGate(tab.url);
           if (blocked) return { blocked };
           return { result: await runWithGuardRaise(tab, taskMeta, () => fillTab(tab, args.ref, args.value)) };
-        });
+        }, 'write');
         if (!r.ok) {
           const guard = r.error instanceof ActionGuardError;
           emitAction({
@@ -193,7 +193,7 @@ export function createBrowserActionToolDefs(opts?: {
           return {
             result: await scrollTab(tab, { ref: args.ref, deltaY: args.deltaY, position: args.position }),
           };
-        });
+        }, 'write');
         if (!r.ok) {
           emitAction({ source: 'scroll', taskMeta, action: 'scroll', detail, result: 'error' });
           return isErrorResult(`滚动失败：${r.message}`);

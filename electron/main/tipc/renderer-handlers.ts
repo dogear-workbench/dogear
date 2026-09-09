@@ -255,6 +255,9 @@ export type RendererHandlers = {
   // 等待人工请求变化（human-intervention 广播；payload 为全量 pending 列表）
   humanInterventionChanged: (data: { pending: HumanInterventionRequest[] }) => void;
 
+  // tab 接管状态变化（embedded-browser-manager 变化回调；payload 为全量接管中的 tab 列表）
+  tabTakeoverChanged: (data: { takeovers: Array<{ tabId: string; active: boolean }> }) => void;
+
   // 浏览器扩展连接状态变化（browser-gateway 广播，设置页状态行渲染；payload 为全量状态快照）
   extensionStatusChanged: (data: ExtensionStatus) => void;
 

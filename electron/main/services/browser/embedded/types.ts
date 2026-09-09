@@ -1,4 +1,5 @@
 import type { BrowserWindow, Rectangle, Session, WebContentsView } from 'electron';
+import type { BrowserTaskMeta } from '../browser-task-meta.js';
 
 export type EmbeddedTabSource = 'agent-opened' | 'user-connected';
 
@@ -22,6 +23,7 @@ export interface EmbeddedTabSnapshot {
   state: EmbeddedPageState
   attached: boolean
   holders: string[]
+  takeover: { active: boolean } | null
 }
 
 export interface EmbeddedTabRecord {
@@ -37,6 +39,7 @@ export interface EmbeddedTabRecord {
   lastActivityAt: number
   attachedWindow: BrowserWindow | null
   bounds: Rectangle | null
+  takeover: { active: boolean; taskMeta?: BrowserTaskMeta } | null
 }
 
 export interface EmbeddedWorkspaceRecord {

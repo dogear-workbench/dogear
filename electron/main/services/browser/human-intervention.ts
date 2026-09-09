@@ -80,14 +80,23 @@ export function raiseHumanIntervention(input: {
   return toPublic(request);
 }
 
-export function resolveHumanIntervention(id: string, resolvedBy: 'user' | 'auto' = 'user'): boolean {
+/** 手动解除的完整返回：request 为公开形态（已剥 taskMeta），taskMeta 单独透出供 tipc 层唤醒 glue */
+export interface ResolvedIntervention {
+  request: HumanInterventionRequest;
+  taskMeta: BrowserTaskMeta;
+}
+
+export function resolveHumanIntervention(
+  id: string,
+  resolvedBy: 'user' | 'auto' = 'user',
+): ResolvedIntervention | null {
   const request = pendingById.get(id);
-  if (!request) return false;
+  if (!request) return null;
   pendingById.delete(id);
   pendingIdByTab.delete(request.tabId);
   record('resolved', request);
   broadcast();
-  return true;
+  return { request: toPublic(request), taskMeta: request.taskMeta };
 }
 
 /** 状态恢复路径：wait_for 命中 / navigate 回到正常页面时，自动解除该 tab 的等待 */

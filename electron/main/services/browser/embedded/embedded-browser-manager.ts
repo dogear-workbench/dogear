@@ -1,4 +1,5 @@
 import { WebContentsView, BrowserWindow, session, type Rectangle, type Session } from 'electron';
+import type { BrowserTaskMeta } from '../browser-task-meta.js';
 import { buildPersistentPartition, resolveProfileKey } from './profile.js';
 import { applySessionProxy } from './proxy.js';
 import { applyEmbeddedUserAgent } from './ua.js';
@@ -16,11 +17,19 @@ const IDLE_TAB_TTL_MS = 3 * 60 * 1000;
 /** 滚动/viewport 需要确定尺寸与挂载态；屏外挂载对用户不可见（CDP 鼠标域在本环境不可用，见 actions.ts） */
 const INPUT_OFFSCREEN_BOUNDS: Rectangle = { x: -32000, y: 0, width: 1280, height: 800 };
 
+export interface TabTakeoverEntry {
+  tabId: string;
+  active: boolean;
+}
+
+type TakeoverChangeListener = () => void;
+
 export class EmbeddedBrowserManager {
   private readonly workspaces = new Map<string, EmbeddedWorkspaceRecord>();
   private readonly uaAppliedSessions = new WeakSet<Session>();
   private idleTimer: NodeJS.Timeout | null = null;
   private disposed = false;
+  private takeoverListener: TakeoverChangeListener | null = null;
 
   constructor() {
     this.idleTimer = setInterval(() => this.sweepIdleTabs(), IDLE_SWEEP_INTERVAL_MS);
@@ -54,6 +63,7 @@ export class EmbeddedBrowserManager {
       lastActivityAt: Date.now(),
       attachedWindow: null,
       bounds: null,
+      takeover: null,
     };
     view.setVisible(false);
     view.webContents.setWindowOpenHandler(({ url: popupUrl }) => {
@@ -96,6 +106,57 @@ export class EmbeddedBrowserManager {
     if (!found) return;
     found.tab.holders.delete(holderId);
     found.tab.lastActivityAt = Date.now();
+  }
+
+  setTakeoverChangeListener(fn: TakeoverChangeListener | null): void {
+    this.takeoverListener = fn;
+  }
+
+  private notifyTakeoverChanged(): void {
+    this.takeoverListener?.();
+  }
+
+  /** 用户接管：接管期间 agent 写类工具被拒（读放行），taskMeta 记住归属会话供交还时唤醒 */
+  takeOverTab(tabId: string, taskMeta?: BrowserTaskMeta): boolean {
+    const found = this.findTab(tabId);
+    if (!found) return false;
+    found.tab.takeover = { active: true, ...(taskMeta ? { taskMeta } : {}) };
+    found.tab.lastActivityAt = Date.now();
+    this.notifyTakeoverChanged();
+    return true;
+  }
+
+  /** 交还：解锁 + generation 递增（旧 ref 全失效）；返回被解除的 taskMeta 供调用方唤醒会话，tab 不存在或未接管返回 null */
+  releaseTakeover(tabId: string): { taskMeta?: BrowserTaskMeta } | null {
+    const found = this.findTab(tabId);
+    if (!found || !found.tab.takeover?.active) return null;
+    const { taskMeta } = found.tab.takeover;
+    found.tab.takeover = null;
+    found.tab.lastActivityAt = Date.now();
+    this.bumpGeneration(tabId);
+    this.notifyTakeoverChanged();
+    return { taskMeta };
+  }
+
+  isTabTakenOver(tabId: string): boolean {
+    const found = this.findTab(tabId);
+    return found?.tab.takeover?.active ?? false;
+  }
+
+  listTakeovers(): TabTakeoverEntry[] {
+    const result: TabTakeoverEntry[] = [];
+    for (const workspace of this.workspaces.values()) {
+      for (const tab of workspace.tabs.values()) {
+        if (tab.takeover?.active) result.push({ tabId: tab.tabId, active: true });
+      }
+    }
+    return result;
+  }
+
+  /** 显式递增 generation（对齐导航递增语义）：旧 ref 全部失效，不发额外事件 */
+  bumpGeneration(tabId: string): void {
+    const found = this.findTab(tabId);
+    if (found) found.tab.generation += 1;
   }
 
   getTab(tabId: string): EmbeddedTabSnapshot | null {
@@ -298,6 +359,7 @@ function snapshotOf(tab: EmbeddedTabRecord): EmbeddedTabSnapshot {
     state: tab.state,
     attached: !!tab.attachedWindow,
     holders: [...tab.holders],
+    takeover: tab.takeover?.active ? { active: true } : null,
   };
 }
 

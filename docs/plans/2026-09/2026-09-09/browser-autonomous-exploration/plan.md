@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 搜索诚实失败与验证页冻结](./step1-search-honest-failure.md) — parse_empty 前探测页面可交互结果，有结果保留页面不降级；验证页呈现+等待人工+冻结不带走
-- [ ] [Step 2: 接回 Agent 与接管互斥锁](./step2-resume-and-takeover.md) — 「完成后继续」唤醒会话；tab 显式接管锁 + 写工具前置拒绝 + 交还唤醒
+- [x] [Step 2: 接回 Agent 与接管互斥锁](./step2-resume-and-takeover.md) — 「完成后继续」唤醒会话；tab 显式接管锁 + 写工具前置拒绝 + 交还唤醒
 - [ ] [Step 3: 观察与操作质量](./step3-observe-quality.md) — click 双触发修复、observe_page DOM 链接兜底、代理 PAC 修正
 - [ ] [Step 4: 浏览器面板主体化](./step4-panel-ui.md) — 地址栏+页面占满+接管按钮+日志折叠；bounds rAF+revision 同步
 
