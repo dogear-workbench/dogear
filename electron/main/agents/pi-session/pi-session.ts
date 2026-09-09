@@ -534,7 +534,7 @@ export class PiSession extends EventEmitter {
           }
           break;
         case 'browser':
-          toolDefs.push(...this.registerPack(pack.name, createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath })));
+          toolDefs.push(...this.registerPack(pack.name, createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath, workspaceId: this.config.workspaceId })));
           break;
         case 'extension':
           toolDefs.push(...this.registerPack(pack.name, createExtensionToolDefs({ conversationId: this.config.conversationId })));
@@ -632,7 +632,7 @@ export class PiSession extends EventEmitter {
 
     // browser 工具包：仅当 browser===true（Profile 级独立生效，不受 enabledToolPacks 约束）
     if (ab.browser === true) {
-      toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath })));
+      toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath, workspaceId: this.config.workspaceId })));
     }
 
     // extension 工具包：仅当 extension===true

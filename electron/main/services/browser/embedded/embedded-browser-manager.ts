@@ -2,6 +2,7 @@ import { WebContentsView, session, type BrowserWindow, type Rectangle, type Sess
 import { buildPersistentPartition, resolveProfileKey } from './profile.js';
 import { applyEmbeddedUserAgent } from './ua.js';
 import { attachTabEvents } from './tab-events.js';
+import { disposeCdpSession } from './cdp-session.js';
 import type {
   EmbeddedTabRecord,
   EmbeddedTabSnapshot,
@@ -72,6 +73,7 @@ export class EmbeddedBrowserManager {
     const { workspace, tab } = found;
     workspace.tabs.delete(tabId);
     this.detachView(tab);
+    disposeCdpSession(tabId);
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
     this.repairWorkspaceSelection(workspace, tabId);
     if (workspace.tabs.size === 0) this.workspaces.delete(workspace.profileKey);
@@ -94,6 +96,16 @@ export class EmbeddedBrowserManager {
   getTab(tabId: string): EmbeddedTabSnapshot | null {
     const found = this.findTab(tabId);
     return found ? snapshotOf(found.tab) : null;
+  }
+
+  getTabRecord(tabId: string): EmbeddedTabRecord | null {
+    return this.findTab(tabId)?.tab ?? null;
+  }
+
+  getView(tabId: string): WebContentsView | null {
+    const found = this.findTab(tabId);
+    if (!found || found.tab.view.webContents.isDestroyed()) return null;
+    return found.tab.view;
   }
 
   listTabs(): EmbeddedTabSnapshot[] {
@@ -142,6 +154,7 @@ export class EmbeddedBrowserManager {
   handleTabDestroyed(workspace: EmbeddedWorkspaceRecord, tab: EmbeddedTabRecord): void {
     if (workspace.tabs.get(tab.tabId) !== tab) return;
     this.detachView(tab);
+    disposeCdpSession(tab.tabId);
     workspace.tabs.delete(tab.tabId);
     this.repairWorkspaceSelection(workspace, tab.tabId);
     if (workspace.tabs.size === 0) this.workspaces.delete(workspace.profileKey);

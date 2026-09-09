@@ -1,22 +1,24 @@
 /**
- * 受控浏览器 MCP Server 工具
+ * 内嵌浏览器 MCP Server 工具
  *
- * 提供 dogear__browser__* 工具组：readArticle（声明式读文章）+ 原子探索工具
- * （navigate / observe_page / click / fill / read_text / wait_for / screenshot / close）。
- * readArticle 复用 browser-article-service（渲染等待 + 展开启发式 + 登录墙检测）；
- * 原子工具直接走 BrowserManager acquire，单步 30s 超时，错误一律 isError 不抛。
+ * 提供 dogear__browser__* 工具组：readArticle/search（声明式入口，服务内部仍用 Patchright，Step 4 迁移）+
+ * 原子探索工具（observe_page / find / read_text / navigate / wait_for / screenshot，全部走内嵌宿主）。
+ * ref = backendNodeId@generation；导航/SPA 路由/CDP 重连使 generation 递增，失效返回明确恢复引导。
+ * click/fill 属操作原语（含风控 gate），Step 3 切内嵌，当前返回明确过渡指引。
+ * 错误一律 isError 不抛。
  */
 
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { z } from 'zod';
-import type { Page } from 'patchright';
+import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
 import {
-  getBrowserManager,
-  type BrowserLease,
-  type BrowserTaskMeta,
-} from '../../services/browser/browser-manager.js';
+  findInTab,
+  observeTab,
+  readTabText,
+  READ_MAX_CHARS,
+} from '../../services/browser/embedded/ax-observe.js';
 import {
   readArticleWithBrowser,
   type BrowserArticleAction,
@@ -30,18 +32,36 @@ import {
 } from '../../services/browser/browser-search-service.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { saveArticleFromScript } from '../../services/article-service.js';
+import { getEmbeddedBrowserManager } from '../../services/browser/embedded/embedded-browser-manager.js';
+import { navigateTab } from '../../services/browser/embedded/navigate.js';
+import { waitForTabCondition } from '../../services/browser/embedded/wait-for.js';
+import { type ObserveElement, type ObservePayload } from '../../services/browser/embedded/ax-tree.js';
+import type { EmbeddedTabRecord } from '../../services/browser/embedded/types.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
-const ATOMIC_TIMEOUT_MS = 30_000;
-const NAVIGATE_TIMEOUT_MS = 20_000;
-const ELEMENT_TIMEOUT_MS = 5_000;
-const OBSERVE_MAX_ITEMS = 120;
-const OBSERVE_TEXT_CHARS = 80;
-const READ_MAX_CHARS = 8_000;
-const POLL_INTERVAL_MS = 400;
-const REF_ATTR = 'data-dogear-ref';
-const MAIN_CONTAINER_SELECTOR = 'article, main, [role="main"], #content, .content';
+const SCREENSHOT_TIMEOUT_MS = 10_000;
+
+function withTimeout<T>(label: string, timeoutMs: number, run: () => Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label}超时，请稍后重试`)), timeoutMs);
+    Promise.resolve()
+      .then(run)
+      .then((value) => {
+        clearTimeout(timer);
+        resolve(value);
+      })
+      .catch((err) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      });
+  });
+}
+
+const CLICK_FILL_MIGRATION_NOTE =
+  '点击/填写操作正在切换到内嵌宿主（本版本暂不可用）。请改用：\n' +
+  '- 需要跳转时：从 observe_page 结果取链接 href 调 dogear__browser__navigate 直达；\n' +
+  '- 需要在用户浏览器操作时：改用扩展通道 dogear__extension__click / fill。';
 
 const SEARCH_ENGINE_LABELS: Record<string, string> = {
   google: 'Google',
@@ -116,203 +136,76 @@ function textResult(text: string): ToolResult {
   return { content: [{ type: 'text' as const, text }] };
 }
 
-// ref → 选择器映射：observe_page 打标重建，navigate/readArticle 导航后清空失效
-const refMap = new Map<string, string>();
-
-const refSelector = (ref: string) => `[${REF_ATTR}="${ref}"]`;
-
-function clearRefs(): void {
-  refMap.clear();
+function formatObserveElement(el: ObserveElement): string {
+  const text = el.text ? `"${el.text}"` : '（无文本）';
+  const hint = el.hint ? ` hint="${el.hint}"` : '';
+  const href = el.href ? ` href="${el.href}"` : '';
+  const level = el.level !== undefined ? `(level=${el.level})` : '';
+  const editable = el.editable ? ' [可输入]' : '';
+  return `[${el.ref}] ${el.role}${level} ${text}${hint}${href}${editable}`;
 }
 
-function unknownRefResult(ref: string | undefined): ToolResult {
-  return isErrorResult(
-    `ref "${ref}" 不存在或已失效（页面导航会清空元素引用）。请重新调用 dogear__browser__observe_page。`,
-  );
-}
-
-interface ObserveElement {
-  ref: string;
-  tag: string;
-  role: string;
-  text: string;
-  hint: string;
-}
-
-interface ObservePayload {
-  total: number;
-  regionCounts: { top: number; middle: number; bottom: number };
-  elements: ObserveElement[];
-}
-
-const observeFn = new Function(`return ({ maxItems, textChars, textFilter, region }) => {
-  document.querySelectorAll('[${REF_ATTR}]').forEach((el) => el.removeAttribute('${REF_ATTR}'));
-  const selector =
-    'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="tab"], ' +
-    '[role="checkbox"], [role="radio"], [role="menuitem"], [role="combobox"], [role="option"], ' +
-    '[role="textbox"], [contenteditable="true"]';
-  const visible = (el) => {
-    const style = window.getComputedStyle(el);
-    const rect = el.getBoundingClientRect();
-    return (
-      style.display !== 'none' &&
-      style.visibility !== 'hidden' &&
-      style.pointerEvents !== 'none' &&
-      rect.width > 0 &&
-      rect.height > 0
-    );
-  };
-  const defaultRole = (el) => {
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'a') return 'link';
-    if (tag === 'button') return 'button';
-    if (tag === 'select') return 'combobox';
-    if (tag === 'textarea') return 'textbox';
-    if (tag === 'input') {
-      const type = (el.getAttribute('type') || 'text').toLowerCase();
-      if (type === 'checkbox') return 'checkbox';
-      if (type === 'radio') return 'radio';
-      if (type === 'button' || type === 'submit') return 'button';
-      return 'textbox';
-    }
-    return 'generic';
-  };
-  const hintOf = (el) =>
-    el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || '';
-  const textOf = (el) => {
-    const raw = (el.tagName.toLowerCase() === 'input' ? el.value : el.innerText) || '';
-    return raw.trim().replace(/\\s+/g, ' ').slice(0, textChars);
-  };
-  const vh = window.innerHeight;
-  const regionOf = (rect) => {
-    const cy = rect.top + rect.height / 2;
-    if (cy < vh / 3) return 'top';
-    if (cy > (2 * vh) / 3) return 'bottom';
-    return 'middle';
-  };
-  const regionCounts = { top: 0, middle: 0, bottom: 0 };
-  const matched = [];
-  for (const el of document.querySelectorAll(selector)) {
-    if (!visible(el)) continue;
-    const rect = el.getBoundingClientRect();
-    const reg = regionOf(rect);
-    regionCounts[reg]++;
-    if (region && reg !== region) continue;
-    const text = textOf(el);
-    const hint = hintOf(el);
-    if (textFilter) {
-      const f = String(textFilter).toLowerCase();
-      const hay = (text + ' ' + hint).toLowerCase();
-      if (!hay.includes(f)) continue;
-    }
-    matched.push(el);
-  }
-  const shown = matched.slice(0, maxItems);
-  const elements = shown.map((el, i) => {
-    const ref = 'e' + (i + 1);
-    el.setAttribute('${REF_ATTR}', ref);
-    return {
-      ref,
-      tag: el.tagName.toLowerCase(),
-      role: el.getAttribute('role') || defaultRole(el),
-      text: textOf(el),
-      hint: hintOf(el),
-    };
-  });
-  return { total: matched.length, regionCounts, elements };
-}`)() as (arg: {
-  maxItems: number;
-  textChars: number;
-  textFilter?: string;
-  region?: string;
-}) => ObservePayload;
-
-interface TextStats {
-  container: number;
-  body: number;
-}
-
-// 与 browser-article-service 的正文容器口径一致（article/main/[role=main]/#content/.content vs body）
-const statsFn = new Function(`return () => {
-  const trimmed = (el) => (el && el.innerText ? el.innerText.replace(/\\s+/g, '') : '').length;
-  let container = 0;
-  document.querySelectorAll('${MAIN_CONTAINER_SELECTOR}').forEach((el) => {
-    container = Math.max(container, trimmed(el));
-  });
-  return { container, body: trimmed(document.body) };
-}`)() as () => TextStats;
-
-const mainTextOf = (stats: TextStats) => Math.max(stats.container, stats.body);
-
-const extractTextFn = new Function(`return ({ maxChars }) => {
-  const trimmed = (el) => (el && el.innerText ? el.innerText : '');
-  let best = '';
-  document.querySelectorAll('${MAIN_CONTAINER_SELECTOR}').forEach((el) => {
-    if (trimmed(el).length > best.length) best = trimmed(el);
-  });
-  const text = best || trimmed(document.body);
-  return { text: text.slice(0, maxChars), totalLength: text.length };
-}`)() as (arg: { maxChars: number }) => { text: string; totalLength: number };
-
-const bodyTextFn = new Function('return () => (document.body ? document.body.innerText : "")')() as () => string;
-
-async function safeStats(page: Page): Promise<TextStats | null> {
-  try {
-    return await page.evaluate(statsFn);
-  } catch {
-    return null;
-  }
-}
-
-async function runWithLease<T>(
-  taskMeta: BrowserTaskMeta,
-  fn: (page: Page) => Promise<T>,
-): Promise<{ ok: true; value: T } | { ok: false; message: string }> {
-  const timers: NodeJS.Timeout[] = [];
-  const timeoutGuard = (): Promise<never> =>
-    new Promise<never>((_, reject) => {
-      timers.push(
-        setTimeout(
-          () => reject(new Error(`浏览器工具单步超时（${ATOMIC_TIMEOUT_MS / 1000}s 上限，含排队等待）`)),
-          ATOMIC_TIMEOUT_MS,
-        ),
-      );
-    });
-  let lease: BrowserLease | null = null;
-  try {
-    lease = await Promise.race([getBrowserManager().acquire(taskMeta), timeoutGuard()]);
-    const value = await Promise.race([fn(lease.page), timeoutGuard()]);
-    return { ok: true, value };
-  } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) };
-  } finally {
-    for (const t of timers) clearTimeout(t);
-    lease?.release();
-  }
-}
-
-function formatObserve(payload: ObservePayload): string {
-  if (payload.elements.length === 0) return '页面无匹配的可交互元素。';
-  const lines = payload.elements.map((el) => {
-    const text = el.text ? `"${el.text}"` : '（无文本）';
-    const hint = el.hint ? ` hint="${el.hint}"` : '';
-    return `[${el.ref}] ${el.tag}(${el.role}) ${text}${hint}`;
-  });
-  let header: string;
-  if (payload.total <= payload.elements.length) {
-    header = `页面可交互元素（共 ${payload.total} 个）：`;
+function formatEmbeddedObserve(payload: ObservePayload): string {
+  const sections: string[] = [
+    `页面观察（AX 语义树）\nURL: ${payload.url}\n标题: ${payload.title}\n状态: ${payload.pageState}（generation ${payload.generation}）`,
+  ];
+  if (payload.elements.length === 0) {
+    sections.push('可交互元素：无匹配（可传 text_filter 缩小范围重查，或用 find 按 role+name 查找）。');
   } else {
-    header =
-      `页面可交互元素（显示前 ${payload.elements.length} 个 / 共 ${payload.total} 个，超出显示上限 ${OBSERVE_MAX_ITEMS}）：\n` +
-      `可传 region="top"|"middle"|"bottom"（各区域元素数：top ${payload.regionCounts.top} / middle ${payload.regionCounts.middle} / bottom ${payload.regionCounts.bottom}）或 text_filter 缩小范围重查。`;
+    let header = `可交互元素（共 ${payload.totalInteractive} 个）：`;
+    if (payload.truncated) {
+      header =
+        `可交互元素（显示前 ${payload.shownInteractive} 个 / 共 ${payload.totalInteractive} 个，超出安全上限）：\n` +
+        `可传 region="top"|"middle"|"bottom"（各区域元素数：top ${payload.regionCounts.top} / middle ${payload.regionCounts.middle} / bottom ${payload.regionCounts.bottom}）或 text_filter 缩小范围重查；也可用 find 按 role+name 精确查找。`;
+    }
+    sections.push(`${header}\n${payload.elements.map(formatObserveElement).join('\n')}`);
   }
-  return `${header}\n${lines.join('\n')}\n\nclick / fill / read_text 请使用上面的 ref 编号定位元素。`;
+  if (payload.headings.length > 0) {
+    sections.push(`标题结构（页面骨架）：\n${payload.headings.map(formatObserveElement).join('\n')}`);
+  }
+  if (payload.roleSummary.length > 0) {
+    const summary = payload.roleSummary
+      .map((item) => `${item.role}×${item.count}（共 ${item.totalChars} 字${item.sample ? `，示例"${item.sample}"` : ''}）`)
+      .join('；');
+    sections.push(`其余语义节点摘要（按文本量排序）：${summary}`);
+  }
+  sections.push(
+    'ref 格式为 节点id@generation，可直接用于 read_text/find；页面导航、SPA 路由变化或提示 ref 失效时，请重新 observe_page。',
+  );
+  return sections.join('\n\n');
 }
 
-export function createBrowserToolDefs(opts?: { conversationId?: string; workspacePath?: string }): ToolDef[] {
+export function createBrowserToolDefs(opts?: {
+  conversationId?: string;
+  workspacePath?: string;
+  workspaceId?: string;
+}): ToolDef[] {
   const conversationId = opts?.conversationId;
   const workspacePath = opts?.workspacePath;
+  const embeddedWorkspaceId = opts?.workspaceId;
+  const embeddedHolderId = conversationId ?? 'browser-tools';
   const meta = () => buildTaskMeta(conversationId);
+
+  const NO_AGENT_TAB_MESSAGE =
+    '内嵌浏览器暂无活动标签页，请先调用 dogear__browser__navigate 打开页面后再观察。';
+
+  async function withAgentTab<T>(
+    fn: (tab: EmbeddedTabRecord) => Promise<T>,
+  ): Promise<{ ok: true; value: T } | { ok: false; message: string }> {
+    if (!embeddedWorkspaceId) {
+      return { ok: false, message: '当前会话未关联工作区，内嵌浏览器观察通道不可用' };
+    }
+    try {
+      const manager = getEmbeddedBrowserManager();
+      const tabId = manager.getAgentTabId(embeddedWorkspaceId);
+      const record = tabId ? manager.getTabRecord(tabId) : null;
+      if (!tabId || !record) return { ok: false, message: NO_AGENT_TAB_MESSAGE };
+      manager.retain(tabId, embeddedHolderId);
+      return { ok: true, value: await fn(record) };
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+  }
 
   return [
     // ========================================
@@ -342,7 +235,6 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
           taskMeta,
           onAction: forwardArticleAction,
         });
-        clearRefs();
         if (!result.ok) {
           emitAction({
             source: 'readArticle',
@@ -446,12 +338,12 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
     ),
 
     // ========================================
-    // 工具 3: 导航
+    // 工具 3: 导航（内嵌宿主）
     // ========================================
     defineTool(
       'dogear__browser__navigate',
       '浏览器导航到 URL',
-      '让受控浏览器导航到指定 URL，返回最终 URL、页面标题与正文字数摘要。仅用于 readArticle 失败后的手动探索流程；单纯读文章请用 dogear__browser__readArticle。小红书等登录态站点禁止本通道，请用 dogear__extension__* 扩展通道。',
+      '让内嵌浏览器导航到指定 URL，等待加载就绪后返回最终 URL、标题、正文字数与页面状态。仅用于 readArticle 失败后的手动探索流程；单纯读文章请用 dogear__browser__readArticle。小红书等登录态站点禁止本通道，请用 dogear__extension__* 扩展通道。',
       z.object({
         url: z.string().url().describe('目标页面完整 URL（含 http/https）'),
       }),
@@ -462,35 +354,41 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
           emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url, detail: blocked, result: 'site_forbidden' });
           return isErrorResult(blocked);
         }
-        emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url });
-        const r = await runWithLease(taskMeta, async (page) => {
-          await page.goto(args.url, { waitUntil: 'domcontentloaded', timeout: NAVIGATE_TIMEOUT_MS });
-          await page.waitForTimeout(800);
-          const stats = await safeStats(page);
-          return { url: page.url(), title: await page.title(), textLen: stats ? mainTextOf(stats) : 0 };
-        });
-        clearRefs();
-        if (!r.ok) {
-          emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url, result: 'error', detail: r.message });
-          return isErrorResult(`导航失败：${r.message}`);
+        if (!embeddedWorkspaceId) {
+          return isErrorResult('当前会话未关联工作区，内嵌浏览器通道不可用');
         }
-        emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: r.value.url, result: 'ok' });
-        return textResult(
-          `已导航到: ${r.value.url}\n标题: ${r.value.title}\n正文字数: ${r.value.textLen}\n` +
-            `需要操作页面元素时，先调用 dogear__browser__observe_page 获取 ref 列表。`,
-        );
+        emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url });
+        try {
+          const { snapshot, record } = await navigateTab(
+            getEmbeddedBrowserManager(),
+            embeddedWorkspaceId,
+            args.url,
+            embeddedHolderId,
+          );
+          const stats = await readTabText(record).catch(() => ({ text: '', totalLength: 0 }));
+          emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: snapshot.url, result: 'ok' });
+          return textResult(
+            `已导航到: ${snapshot.url}\n标题: ${snapshot.title}\n正文字数: ${stats.totalLength}\n状态: ${snapshot.state}（generation ${snapshot.generation}）\n` +
+              `需要操作页面元素时，先调用 dogear__browser__observe_page 获取 ref 列表。`,
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url, result: 'error', detail: message });
+          return isErrorResult(`导航失败：${message}`);
+        }
       },
     ),
 
     // ========================================
-    // 工具 4: 观察页面可交互元素
+    // 工具 4: 观察页面（内嵌 CDP AX 语义树）
     // ========================================
     defineTool(
       'dogear__browser__observe_page',
       '列出页面可交互元素',
-      '列出当前页面可见的可交互元素（链接/按钮/输入框等），每条含 ref 编号、标签、角色、文本（截断 80 字）与提示信息。' +
-        'ref 用于 click / fill / read_text 定位。元素最多显示 120 个，超出时按提示传 region（视口上/中/下分块）或 text_filter 缩小范围重查。' +
-        '页面导航后 ref 失效，需重新调用本工具。',
+      '列出当前页面的可交互元素（CDP 无障碍语义树观察），每条含 ref（格式 节点id@generation）、角色、文本（长文本截断）与提示信息，链接带 href。' +
+        '可交互元素全列不硬截断；超长页面附标题结构与其余节点的 role 分级摘要。' +
+        '可传 region（视口上/中/下分块）或 text_filter 缩小范围重查；超长列表也可用 dogear__browser__find 按 role+name 精确查找。' +
+        '页面导航或 SPA 路由变化后 ref 失效，需重新调用本工具。',
       z.object({
         region: z.enum(['top', 'middle', 'bottom']).optional().describe('按视口垂直位置过滤：top 上 1/3、middle 中 1/3、bottom 下 1/3'),
         text_filter: z.string().optional().describe('子串过滤：只返回文本或提示信息包含该子串的元素'),
@@ -498,155 +396,109 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
       async (args) => {
         const taskMeta = meta();
         emitAction({ source: 'observe_page', taskMeta, action: 'observe', detail: args.text_filter || args.region || '' });
-        const r = await runWithLease(taskMeta, async (page) => {
-          const payload = await page.evaluate(observeFn, {
-            maxItems: OBSERVE_MAX_ITEMS,
-            textChars: OBSERVE_TEXT_CHARS,
-            textFilter: args.text_filter,
-            region: args.region,
-          });
-          refMap.clear();
-          for (const el of payload.elements) refMap.set(el.ref, refSelector(el.ref));
-          return payload;
-        });
+        const r = await withAgentTab((tab) => observeTab(tab, { region: args.region, textFilter: args.text_filter }));
         if (!r.ok) return isErrorResult(`观察页面失败：${r.message}`);
-        return textResult(formatObserve(r.value));
+        return textResult(formatEmbeddedObserve(r.value));
       },
     ),
 
     // ========================================
-    // 工具 5: 点击元素
+    // 工具 5: 语义查找（AX 树 role+name）
+    // ========================================
+    defineTool(
+      'dogear__browser__find',
+      '按 role+name 在页面中语义查找元素',
+      '在当前页面的无障碍语义树中按 role（如 link/button/textbox/heading/combobox）与 name（元素文本）重新查找，' +
+        '默认子串匹配，exact=true 时精确匹配；不依赖上次 observe_page 的结果，可发现未出现在其输出中的元素。' +
+        '至少提供 role 或 name 之一。返回带可直接使用的 ref（格式 节点id@generation）。页面导航或路由变化后需重新查找。',
+      z.object({
+        role: z.string().optional().describe('AX 角色名，如 link、button、textbox、heading、combobox'),
+        name: z.string().optional().describe('元素名称（可见文本）子串'),
+        exact: z.boolean().optional().describe('name 是否精确匹配（默认子串包含）'),
+        max_results: z.number().int().min(1).max(50).optional().describe('返回上限，默认 20，最大 50'),
+      }),
+      async (args) => {
+        const taskMeta = meta();
+        const detail = [args.role, args.name].filter(Boolean).join(' ');
+        emitAction({ source: 'find', taskMeta, action: 'observe', detail });
+        const r = await withAgentTab((tab) =>
+          findInTab(tab, { role: args.role, name: args.name, exact: args.exact, maxResults: args.max_results }),
+        );
+        if (!r.ok) return isErrorResult(`查找失败：${r.message}`);
+        if (r.value.elements.length === 0) {
+          return textResult(
+            `未找到匹配元素（role=${args.role ?? '任意'}，name="${args.name ?? '任意'}"${args.exact ? '，精确匹配' : ''}）。\n` +
+              `当前页面: ${r.value.url}（${r.value.pageState}）。可放宽匹配条件、换近义词，或用 observe_page 查看页面全貌。`,
+          );
+        }
+        return textResult(
+          `找到 ${r.value.elements.length} 个匹配元素（页面 ${r.value.url}，${r.value.pageState}，generation ${r.value.generation}）：\n` +
+            `${r.value.elements.map(formatObserveElement).join('\n')}\n\nref 可直接用于 read_text/find；页面导航或路由变化后需重新查找。`,
+        );
+      },
+    ),
+
+    // ========================================
+    // 工具 6: 点击元素（Step 3 切内嵌操作原语）
     // ========================================
     defineTool(
       'dogear__browser__click',
       '点击页面元素',
-      '点击 observe_page 返回的 ref 对应元素，点击后自动附带轻量验证（URL 变化 / 元素消失 / 正文字数变化）。需要用户确认后执行。',
+      '点击 observe_page 返回的 ref 对应元素。需要用户确认后执行。',
       z.object({
         ref: z.string().describe('observe_page 返回的元素 ref（如 "e3"）'),
       }),
       async (args) => {
         const taskMeta = meta();
-        const selector = refMap.get(args.ref);
-        if (!selector) return unknownRefResult(args.ref);
-        const r = await runWithLease(taskMeta, async (page) => {
-          const urlBefore = page.url();
-          const before = await safeStats(page);
-          await page.click(selector, { timeout: ELEMENT_TIMEOUT_MS });
-          await page.waitForTimeout(POLL_INTERVAL_MS);
-          const after = await safeStats(page);
-          let elementGone = false;
-          try {
-            elementGone = (await page.$(selector)) === null;
-          } catch {
-            elementGone = true;
-          }
-          return {
-            urlBefore,
-            urlAfter: page.url(),
-            elementGone,
-            textBefore: before ? mainTextOf(before) : 0,
-            textAfter: after ? mainTextOf(after) : 0,
-          };
-        });
-        if (!r.ok) {
-          emitAction({ source: 'click', taskMeta, action: 'click', detail: args.ref, result: 'error' });
-          return isErrorResult(`点击失败：${r.message}`);
-        }
-        emitAction({ source: 'click', taskMeta, action: 'click', url: r.value.urlAfter, detail: args.ref, result: 'clicked' });
-        const changes: string[] = [];
-        if (r.value.urlAfter !== r.value.urlBefore) {
-          changes.push(
-            `已触发导航：${r.value.urlBefore} → ${r.value.urlAfter}（旧元素引用已失效，操作新页面请重新 observe_page）`,
-          );
-          clearRefs();
-        }
-        if (r.value.elementGone) changes.push('目标元素已从页面消失');
-        if (r.value.textAfter !== r.value.textBefore) changes.push(`正文字数 ${r.value.textBefore} → ${r.value.textAfter}`);
-        if (changes.length === 0) changes.push('页面无明显变化（可能为无效果点击）');
-        return textResult(`已点击 ${args.ref}。验证：${changes.join('；')}`);
+        emitAction({ source: 'click', taskMeta, action: 'click', detail: args.ref, result: 'migration_blocked' });
+        return isErrorResult(`${CLICK_FILL_MIGRATION_NOTE}`);
       },
     ),
 
     // ========================================
-    // 工具 6: 填写输入框
+    // 工具 7: 填写输入框（Step 3 切内嵌操作原语）
     // ========================================
     defineTool(
       'dogear__browser__fill',
       '填写页面输入框',
-      '向 observe_page 返回的 ref 对应输入框填写文本（会清空原内容），填写后自动验证值是否生效。需要用户确认后执行。',
+      '向 observe_page 返回的 ref 对应输入框填写文本（会清空原内容）。需要用户确认后执行。',
       z.object({
         ref: z.string().describe('observe_page 返回的输入框 ref（如 "e2"）'),
         value: z.string().describe('要填写的文本'),
       }),
       async (args) => {
         const taskMeta = meta();
-        const selector = refMap.get(args.ref);
-        if (!selector) return unknownRefResult(args.ref);
-        const r = await runWithLease(taskMeta, async (page) => {
-          await page.fill(selector, args.value, { timeout: ELEMENT_TIMEOUT_MS });
-          const applied = await page
-            .$eval(selector, (el, expected) => (el as unknown as { value?: string }).value === expected, args.value)
-            .catch(() => false);
-          return { url: page.url(), applied };
-        });
-        if (!r.ok) {
-          emitAction({ source: 'fill', taskMeta, action: 'fill', detail: args.ref, result: 'error' });
-          return isErrorResult(`填写失败：${r.message}`);
-        }
-        emitAction({
-          source: 'fill',
-          taskMeta,
-          action: 'fill',
-          url: r.value.url,
-          detail: args.ref,
-          result: r.value.applied ? 'filled' : 'value_mismatch',
-        });
-        return textResult(
-          `已向 ${args.ref} 填写文本。验证：${r.value.applied ? '值已生效' : '元素当前值与输入不一致（页面可能改写了内容）'}。` +
-            `如需提交，请 observe_page 后 click 对应提交按钮。`,
-        );
+        emitAction({ source: 'fill', taskMeta, action: 'fill', detail: args.ref, result: 'migration_blocked' });
+        return isErrorResult(`${CLICK_FILL_MIGRATION_NOTE}`);
       },
     ),
 
     // ========================================
-    // 工具 7: 读取文本
+    // 工具 8: 读取文本（内嵌 CDP）
     // ========================================
     defineTool(
       'dogear__browser__read_text',
       '读取页面元素或正文文本',
-      '读取指定 ref 元素的纯文本；不传 ref 则读取正文容器（article/main 等中字数最大者）。文本超过 8000 字符时截断并提示，可用 observe_page 定位子元素分次读取。',
+      '读取指定 ref 元素的纯文本（ref 来自 observe_page/find，格式 节点id@generation）；不传 ref 则读取正文容器（article/main 等中字数最大者）。' +
+        '文本超过 8000 字符时截断并提示，可用 observe_page/find 重新定位后分次读取。',
       z.object({
-        ref: z.string().optional().describe('要读取的元素 ref；不传则读正文容器'),
+        ref: z.string().optional().describe('要读取的元素 ref（如 "123@5"）；不传则读正文容器'),
       }),
       async (args) => {
         const taskMeta = meta();
-        const selector = args.ref ? refMap.get(args.ref) : undefined;
-        if (args.ref && !selector) return unknownRefResult(args.ref);
         emitAction({ source: 'read_text', taskMeta, action: 'read_text', detail: args.ref || 'main' });
-        const r = await runWithLease(taskMeta, async (page) => {
-          if (selector) {
-            const el = await page.$(selector);
-            if (!el) {
-              return { ok: false as const, message: `ref "${args.ref}" 对应元素已不在页面上，请重新 observe_page` };
-            }
-            const text = await el.innerText();
-            return { ok: true as const, text: text.slice(0, READ_MAX_CHARS), totalLength: text.length };
-          }
-          const payload = await page.evaluate(extractTextFn, { maxChars: READ_MAX_CHARS });
-          return { ok: true as const, text: payload.text, totalLength: payload.totalLength };
-        });
+        const r = await withAgentTab((tab) => readTabText(tab, args.ref));
         if (!r.ok) return isErrorResult(`读取失败：${r.message}`);
-        if (!r.value.ok) return isErrorResult(r.value.message);
         const truncated =
           r.value.totalLength > READ_MAX_CHARS
-            ? `\n\n（已截断：原文共 ${r.value.totalLength} 字符，显示前 ${READ_MAX_CHARS}；可用 observe_page 定位子元素分次读取）`
+            ? `\n\n（已截断：原文共 ${r.value.totalLength} 字符，显示前 ${READ_MAX_CHARS}；可用 observe_page/find 重新定位子元素后分次读取）`
             : '';
         return textResult(`${r.value.text}${truncated}`);
       },
     ),
 
     // ========================================
-    // 工具 8: 等待条件
+    // 工具 9: 等待条件（内嵌宿主）
     // ========================================
     defineTool(
       'dogear__browser__wait_for',
@@ -663,19 +515,7 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
         }
         const taskMeta = meta();
         emitAction({ source: 'wait_for', taskMeta, action: 'wait', detail: args.text ?? args.url_contains });
-        const r = await runWithLease(taskMeta, async (page) => {
-          const deadline = Date.now() + args.timeout * 1000;
-          while (Date.now() < deadline) {
-            const url = page.url();
-            if (args.url_contains && url.includes(args.url_contains)) return { matched: true, url };
-            if (args.text) {
-              const bodyText = await page.evaluate(bodyTextFn).catch(() => '');
-              if (bodyText.includes(args.text)) return { matched: true, url };
-            }
-            await page.waitForTimeout(POLL_INTERVAL_MS);
-          }
-          return { matched: false, url: page.url() };
-        });
+        const r = await withAgentTab((tab) => waitForTabCondition(tab, { text: args.text, urlContains: args.url_contains, timeoutSec: args.timeout }));
         if (!r.ok) return isErrorResult(`等待失败：${r.message}`);
         if (!r.value.matched) {
           const conditions = [
@@ -691,28 +531,29 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
     ),
 
     // ========================================
-    // 工具 9: 截图
+    // 工具 10: 截图（内嵌宿主）
     // ========================================
     defineTool(
       'dogear__browser__screenshot',
       '截取当前页面截图',
-      '对受控浏览器当前页面截取视口截图，保存为临时 PNG 文件并返回路径。查看图片：把返回的路径传给 Read 工具即可（Read 原生支持图片附件）。',
+      '对内嵌浏览器当前页面截取视口截图，保存为临时 PNG 文件并返回路径。查看图片：把返回的路径传给 Read 工具即可（Read 原生支持图片附件）。',
       z.object({}),
       async () => {
         const taskMeta = meta();
         emitAction({ source: 'screenshot', taskMeta, action: 'screenshot' });
-        const r = await runWithLease(taskMeta, async (page) => {
-          const buffer = await page.screenshot({ type: 'png' });
+        const r = await withAgentTab(async (tab) => {
+          const image = await withTimeout(`截图（${SCREENSHOT_TIMEOUT_MS / 1000}s 上限）`, SCREENSHOT_TIMEOUT_MS, () => tab.view.webContents.capturePage());
           const file = path.join(os.tmpdir(), `dogear-browser-${Date.now()}.png`);
-          await fs.promises.writeFile(file, buffer);
-          return { file, url: page.url() };
+          await fs.promises.writeFile(file, image.toPNG());
+          return { file, url: tab.url };
         });
         if (!r.ok) {
           emitAction({ source: 'screenshot', taskMeta, action: 'screenshot', result: 'error' });
           return isErrorResult(`截图失败：${r.message}`);
         }
         emitAction({ source: 'screenshot', taskMeta, action: 'screenshot', url: r.value.url, result: r.value.file });
-        return textResult(`截图已保存: ${r.value.file}\n用 Read 工具读取该路径即可查看图片。`);
+        return textResult(`截图已保存: ${r.value.file}
+用 Read 工具读取该路径即可查看图片。`);
       },
     ),
 
@@ -774,10 +615,9 @@ export function createBrowserToolDefs(opts?: { conversationId?: string; workspac
       '声明浏览器探索任务结束，清空元素引用。浏览器实例本身由空闲策略自动关闭（默认 3 分钟），一般无需显式调用本工具。',
       z.object({}),
       async () => {
-        clearRefs();
         emitAction({ source: 'close', taskMeta: meta(), action: 'close', result: 'ok' });
         return textResult(
-          '已清空页面元素引用。浏览器实例会在空闲约 3 分钟后自动关闭，无需其他操作；再次需要时直接调用工具即可自动启动。',
+          '已声明浏览器探索任务结束。浏览器实例会在空闲约 3 分钟后自动回收，无需其他操作；再次需要时直接调用工具即可。',
         );
       },
     ),
