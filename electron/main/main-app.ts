@@ -763,6 +763,13 @@ app.on('before-quit', async () => {
   } catch (error) {
     console.error('关闭 PTY 终端失败:', error);
   }
+  // 收尾浏览器扩展网关：goodbye 广播 + 管道关闭 + 停止管道监听
+  try {
+    const { closeBrowserGateway } = await import('./services/browser/browser-gateway.js');
+    await closeBrowserGateway();
+  } catch (error) {
+    console.error('关闭浏览器扩展网关失败:', error);
+  }
   // 强杀受控浏览器实例
   try {
     const { getBrowserManager } = await import('./services/browser/browser-manager.js');

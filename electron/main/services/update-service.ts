@@ -8,6 +8,7 @@ import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { spawn } from 'node:child_process';
 import AdmZip from 'adm-zip';
+import { closeBrowserGateway } from './browser/browser-gateway.js';
 
 export interface ManifestInfo {
   version: string;
@@ -150,7 +151,12 @@ export async function downloadFullUpdate(
   return tmpPath;
 }
 
-export function runInstaller(installerPath: string): void {
+export async function runInstaller(installerPath: string): Promise<void> {
+  try {
+    await closeBrowserGateway();
+  } catch (error) {
+    console.error('[updater] 关闭浏览器扩展网关失败:', error);
+  }
   spawn(installerPath, [], { detached: true, stdio: 'ignore' }).unref();
   app.quit();
 }

@@ -43,6 +43,8 @@ interface PendingCommand {
 }
 
 const DEFAULT_COMMAND_TIMEOUT_MS = 30000;
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const CLOSE_WAIT_MS = 3000;
 const COMMAND_ERROR_CODES: readonly CommandErrorCode[] = [
   'not_connected',
   'stale_protocol',
@@ -71,6 +73,8 @@ let currentStatus: ExtensionStatus = { status: 'disconnected' };
 let activeSocket: net.Socket | null = null;
 let initialized = false;
 let gatewayAppVersion = '';
+let gatewayServer: net.Server | null = null;
+let heartbeatTimer: NodeJS.Timeout | null = null;
 
 /** 注册制广播（对齐 browser-action-stream 模式：服务层零 electron 依赖，tipc 层接线） */
 export function setExtensionStatusBroadcaster(fn: StatusBroadcaster | null): void {
@@ -330,6 +334,20 @@ function handleConnection(socket: net.Socket): void {
   });
 }
 
+function startHeartbeat(): void {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    const socket = activeSocket;
+    if (socket && !socket.destroyed) safeWrite(socket, { type: 'ping' });
+  }, HEARTBEAT_INTERVAL_MS);
+}
+
+function stopHeartbeat(): void {
+  if (!heartbeatTimer) return;
+  clearInterval(heartbeatTimer);
+  heartbeatTimer = null;
+}
+
 /** app ready 时调用一次；appVersion 由调用方传入保持服务层零 electron 依赖 */
 export function initBrowserGateway(appVersion: string): void {
   if (initialized) return;
@@ -341,5 +359,39 @@ export function initBrowserGateway(appVersion: string): void {
   });
   server.listen(NM_GATEWAY_PIPE_PATH, () => {
     logger.info('浏览器扩展网关已就绪:', NM_GATEWAY_PIPE_PATH);
+  });
+  gatewayServer = server;
+  startHeartbeat();
+}
+
+/** 退出前收尾：goodbye 广播 → 管道 end（等 bridge 退出最多 CLOSE_WAIT_MS 后强拆）→ 停止管道监听；幂等可重复调用 */
+export function closeBrowserGateway(): Promise<void> {
+  stopHeartbeat();
+  if (gatewayServer) {
+    gatewayServer.close();
+    gatewayServer = null;
+  }
+  const socket = activeSocket;
+  if (!socket || socket.destroyed) {
+    activeSocket = null;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      logger.warn('扩展网关关闭等待超时，强制断开管道');
+      socket.destroy();
+      finish();
+    }, CLOSE_WAIT_MS);
+    socket.once('close', finish);
+    safeWrite(socket, { type: 'goodbye' });
+    logger.info('关闭浏览器扩展网关：已广播 goodbye');
+    socket.end();
   });
 }

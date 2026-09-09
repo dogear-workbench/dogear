@@ -33,6 +33,21 @@ import {
   type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
 import { createSiteToolDefs, siteKnowledgePointer } from './extension-site-tools.js';
+import {
+  formatObserve,
+  formatObserveElement,
+  parseFindPayload,
+  parseObservePayload,
+  pageStateSuffix,
+  type ClickPayload,
+  type FindPayload,
+  type ObservePayload,
+  type ReadStatePayload,
+  type ReadTextPayload,
+  type ScrollPayload,
+} from './extension-observe-format.js';
+import { pageStateHint } from '../../services/browser/embedded/page-state.js';
+import type { EmbeddedPageState } from '../../services/browser/embedded/types.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
@@ -113,66 +128,6 @@ function emitAction(
   });
 }
 
-interface ObserveElement {
-  ref: string;
-  tag: string;
-  role: string;
-  text: string;
-  hint: string;
-  href?: string;
-}
-
-interface ObservePayload {
-  total: number;
-  regionCounts: { top: number; middle: number; bottom: number };
-  elements: ObserveElement[];
-}
-
-function parseObservePayload(data: unknown): ObservePayload {
-  const raw = (data ?? {}) as Partial<ObservePayload>;
-  const elements = Array.isArray(raw.elements) ? raw.elements : [];
-  const counts = (raw.regionCounts ?? {}) as Partial<ObservePayload['regionCounts']>;
-  return {
-    total: typeof raw.total === 'number' ? raw.total : elements.length,
-    regionCounts: {
-      top: typeof counts.top === 'number' ? counts.top : 0,
-      middle: typeof counts.middle === 'number' ? counts.middle : 0,
-      bottom: typeof counts.bottom === 'number' ? counts.bottom : 0,
-    },
-    elements: elements.filter(
-      (el): el is ObserveElement =>
-        !!el && typeof el === 'object' && typeof (el as ObserveElement).ref === 'string',
-    ),
-  };
-}
-
-interface ClickPayload {
-  urlBefore?: string;
-  urlAfter?: string;
-  elementGone?: boolean;
-  textBefore?: number;
-  textAfter?: number;
-  clicked?: boolean;
-  navigated?: boolean;
-  verification?: string;
-}
-
-interface ReadTextPayload {
-  text?: string;
-  totalLength?: number;
-}
-
-interface ReadStatePayload {
-  missing?: boolean;
-  notFound?: boolean;
-  availableKeys?: unknown[];
-  notSerializable?: boolean;
-  summary?: string;
-  json?: string;
-  truncated?: boolean;
-  totalLength?: number;
-}
-
 /** read_state 笔记预算按页面 URL 计数（同页多 path 探索不重复计）；与 read_text 的「无 ref 计数」语义互不影响 */
 const readStateCountedUrlByConv = new Map<string, string>();
 
@@ -197,25 +152,6 @@ async function runCommand<T>(
 function busyChannelMessage(idleMs: number): string {
   const minutes = Math.max(1, Math.floor(idleMs / 60_000));
   return `扩展通道正被另一个会话使用（已空闲 ${minutes} 分钟），请等它完成后再试；若需并行调研，请改串行派遣或使用受控浏览器工具`;
-}
-
-function formatObserve(payload: ObservePayload): string {
-  if (payload.elements.length === 0) return '页面无匹配的可交互元素。';
-  const lines = payload.elements.map((el) => {
-    const text = el.text ? `"${el.text}"` : '（无文本）';
-    const hint = el.hint ? ` hint="${el.hint}"` : '';
-    const href = el.href ? ` href="${el.href}"` : '';
-    return `[${el.ref}] ${el.tag}(${el.role}) ${text}${hint}${href}`;
-  });
-  let header: string;
-  if (payload.total <= payload.elements.length) {
-    header = `页面可交互元素（共 ${payload.total} 个）：`;
-  } else {
-    header =
-      `页面可交互元素（显示前 ${payload.elements.length} 个 / 共 ${payload.total} 个，超出显示上限 120）：\n` +
-      `可传 region="top"|"middle"|"bottom"（各区域元素数：top ${payload.regionCounts.top} / middle ${payload.regionCounts.middle} / bottom ${payload.regionCounts.bottom}）或 text_filter 缩小范围重查。`;
-  }
-  return `${header}\n${lines.join('\n')}\n\nclick / fill / read_text 请使用上面的 ref 编号定位元素。`;
 }
 
 function formatClick(ref: string, data: ClickPayload): string {
@@ -289,8 +225,12 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         const urlBefore = currentUrl();
         const startedAt = Date.now();
         const r = await runCommand('navigate', { targetUrl: args.url }, (data) => {
-          const url = (data as { url?: unknown } | null)?.url;
-          return typeof url === 'string' ? url : undefined;
+          const d = (data ?? {}) as { url?: unknown; title?: unknown; pageState?: unknown };
+          return {
+            url: typeof d.url === 'string' ? d.url : undefined,
+            title: typeof d.title === 'string' ? d.title : undefined,
+            pageState: typeof d.pageState === 'string' ? d.pageState : undefined,
+          };
         });
         if (!r.ok) {
           emitAction(taskMeta, 'navigate', {
@@ -304,7 +244,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           return isErrorResult(`导航失败：${r.message}`);
         }
         if (gate.isSearch) consumeSearch(conversationId);
-        const urlAfter = r.value ?? currentUrl();
+        const nav = r.value;
+        const urlAfter = nav.url ?? currentUrl();
         emitAction(taskMeta, 'navigate', {
           url: urlAfter,
           detail: args.url,
@@ -315,8 +256,10 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         });
         const redirectNote = urlAfter && urlAfter !== args.url ? `（发生重定向，最终地址 ${urlAfter}）` : '';
         const pointer = siteKnowledgePointer(urlAfter ?? args.url);
+        const titleNote = nav.title ? `\n标题: ${nav.title}` : '';
         return textResult(
-          `已在用户浏览器打开目标页面${redirectNote}。旧页面元素引用已失效，请先 observe_page 获取新页面元素。${pointer ?? ''}`,
+          `已在用户浏览器打开目标页面${redirectNote}。${titleNote}\n状态: ${nav.pageState ?? 'ready'}${pageStateSuffix(nav.pageState)}` +
+            `\n旧页面元素引用已失效，请先 observe_page 获取新页面元素。${pointer ?? ''}`,
         );
       },
     ),
@@ -325,9 +268,9 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       'dogear__extension__observe_page',
       '列出用户浏览器页面的可交互元素',
       `${SHARED_SCOPE_NOTE}\n` +
-        '列出当前已连接标签页中可见的可交互元素（链接/按钮/输入框等），每条含 ref 编号、标签、角色、文本（截断 80 字）与提示信息。' +
-        '链接元素带 href，可将其传给 navigate 直达目标页（推荐优先于点击）。' +
-        'ref 用于 click / fill / read_text 定位。元素最多 120 个，超出时传 region（视口上/中/下分块）或 text_filter 缩小范围重查。' +
+        '列出当前已连接标签页中的可交互元素（DOM+ARIA 语义树），每条含 ref 编号、角色、文本与提示信息，链接带 href。' +
+        '可交互元素全列不硬截断（超长页有安全阀）；另附标题结构与其余节点的 role 分级摘要。' +
+        '可传 region（视口上/中/下分块）或 text_filter 缩小范围重查；超长列表也可用 find 按 role+name 精确查找。' +
         '页面导航后 ref 失效，需重新调用本工具。',
       z.object({
         region: z
@@ -378,6 +321,78 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         }
         emitAction(taskMeta, 'observe', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
         return textResult(text);
+      },
+    ),
+
+    defineTool(
+      'dogear__extension__find',
+      '按 role+name 在用户浏览器页面中语义查找元素',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '在当前页面的 DOM+ARIA 语义树中按 role（如 link/button/textbox/heading/combobox）与 name（元素文本）重新查找，' +
+        '默认子串匹配，exact=true 时精确匹配；不依赖上次 observe_page 的结果，可发现未出现在其输出中的元素。' +
+        '至少提供 role 或 name 之一。返回带可直接使用的 ref。页面导航后需重新查找。',
+      z.object({
+        role: z.string().optional().describe('语义角色，如 link、button、textbox、heading、combobox'),
+        name: z.string().optional().describe('元素名称（可见文本）子串'),
+        exact: z.boolean().optional().describe('name 是否精确匹配（默认子串包含）'),
+        max_results: z.number().int().min(1).max(50).optional().describe('返回上限，默认 20，最大 50'),
+      }),
+      async (args) => {
+        const busy = acquireGate('observe', [args.role, args.name].filter(Boolean).join(' '), currentUrl());
+        if (busy) return busy;
+        const taskMeta = meta();
+        const detail = [args.role, args.name].filter(Boolean).join(' ');
+        if (!args.role && !args.name) {
+          return isErrorResult('语义查找至少需要 role 或 name 参数');
+        }
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'observe', { url: pageUrl, detail, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        const startedAt = Date.now();
+        const r = await runCommand(
+          'find',
+          { role: args.role, name: args.name, exact: args.exact, max_results: args.max_results },
+          parseFindPayload,
+        );
+        if (!r.ok) {
+          emitAction(taskMeta, 'observe', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`查找失败：${r.message}`);
+        }
+        const payload = r.value;
+        if (payload.elements.length === 0) {
+          emitAction(taskMeta, 'observe', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
+          return textResult(
+            `未找到匹配元素（role=${args.role ?? '任意'}，name="${args.name ?? '任意'}"${args.exact ? '，精确匹配' : ''}）。\n` +
+              `当前页面: ${payload.url ?? pageUrl ?? ''}（${payload.pageState ?? 'ready'}）。可放宽匹配条件、换近义词，或用 observe_page 查看页面全貌。`,
+          );
+        }
+        const text = payload.elements.map(formatObserveElement).join('\n');
+        if (gate.ctx) {
+          const hits = scanAndMarkRisk(conversationId, gate.ctx, text);
+          if (hits) {
+            emitAction(taskMeta, 'observe', {
+              url: pageUrl,
+              detail,
+              result: 'risk_signal',
+              durationMs: Date.now() - startedAt,
+            });
+            return isErrorResult(riskSignalMessage(hits));
+          }
+        }
+        emitAction(taskMeta, 'observe', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
+        return textResult(
+          `找到 ${payload.elements.length} 个匹配元素（页面 ${payload.url ?? pageUrl ?? ''}，${payload.pageState ?? 'ready'}${payload.generation !== undefined ? `，generation ${payload.generation}` : ''}）：\n` +
+            `${text}\n\nref 可直接用于 click/fill/scroll/read_text/find；页面导航后需重新查找。`,
+        );
       },
     ),
 
@@ -634,6 +649,62 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
             ? `\n\n（已截断：原文共 ${v.totalLength} 字符，显示前 8000；可换更深的子路径缩小范围）`
             : '';
         return textResult(`${text}${truncatedNote}`);
+      },
+    ),
+
+    defineTool(
+      'dogear__extension__scroll',
+      '滚动用户浏览器页面或容器',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '滚动受控标签页：不传 ref 滚动整个文档；传 ref 滚动该元素容器内部。' +
+        'deltaY 相对滚动（像素，正向下/负向上），position="top"|"bottom" 精确滚到顶/底（deltaY 与 position 至少提供一个）。' +
+        '返回滚动前后位置（before/after）与是否移动（moved）。适合翻页加载的 feed 流与长列表。',
+      z.object({
+        ref: z.string().optional().describe('要滚动的容器元素 ref（如 "e12@3"）；不传则滚动整个文档'),
+        deltaY: z.number().min(-50_000).max(50_000).optional().describe('相对滚动像素（正向下，如 600；负值向上）'),
+        position: z.enum(['top', 'bottom']).optional().describe('精确滚动到顶部/底部'),
+      }),
+      async (args) => {
+        if (args.position === undefined && (args.deltaY === undefined || args.deltaY === 0)) {
+          return isErrorResult('deltaY 与 position 至少提供一个，且 deltaY 不能为 0');
+        }
+        const detail = args.ref ?? (args.position ?? String(args.deltaY ?? ''));
+        const busy = acquireGate('scroll', detail, currentUrl());
+        if (busy) return busy;
+        const taskMeta = meta();
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'scroll', { url: pageUrl, detail, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        const startedAt = Date.now();
+        const r = await runCommand(
+          'scroll',
+          { ref: args.ref, delta_y: args.deltaY, position: args.position },
+          (data) => (data ?? {}) as ScrollPayload,
+        );
+        if (!r.ok) {
+          emitAction(taskMeta, 'scroll', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`滚动失败：${r.message}`);
+        }
+        const s = r.value;
+        emitAction(taskMeta, 'scroll', { url: pageUrl, detail, result: 'scrolled', durationMs: Date.now() - startedAt });
+        if (!s.before || !s.after) {
+          return textResult(`已滚动${s.target === 'container' ? `容器（${args.ref}）` : '文档'}，但未能读取滚动位置。`);
+        }
+        const targetLabel = s.target === 'container' ? `容器（${args.ref}）` : '文档';
+        const movedNote = s.moved ? '' : '；未产生滚动（可能已到边界、内容不足一屏或目标不可滚动）';
+        return textResult(
+          `已滚动${targetLabel}：scrollTop ${s.before.top} → ${s.after.top}${movedNote}。` +
+            `内容总高 ${s.after.height}px，可视 ${s.after.clientHeight}px。${pageStateSuffix(s.pageState)}`,
+        );
       },
     ),
 

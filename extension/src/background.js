@@ -1,5 +1,8 @@
 import { extractTabSnapshot } from './content-extract.js'
-import { observeFn, clickFn, fillFn, readTextFn, readStateFn } from './dom-actions.js'
+import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
+import { observeFn } from './observe-actions.js'
+import { findFn } from './find-actions.js'
+import { resolvePageState } from './page-state.js'
 import {
   bumpGeneration,
   currentGeneration,
@@ -72,10 +75,12 @@ async function sendTabSnapshot() {
 
 const COMMAND_FUNCS = {
   observe: observeFn,
+  find: findFn,
   click: clickFn,
   fill: fillFn,
   read_text: readTextFn,
-  read_state: readStateFn
+  read_state: readStateFn,
+  scroll: scrollFn
 }
 
 function patternToOrigin(pattern) {
@@ -176,7 +181,16 @@ async function handleCommand(msg) {
     }
     bumpGeneration(msg.tabId, navigated.url)
     sendTabSnapshot()
-    postResult(msg, { ok: true, data: { url: navigated.url } })
+    let title = ''
+    try {
+      const tabAfter = await chrome.tabs.get(msg.tabId)
+      title = tabAfter?.title ?? ''
+    } catch {
+    }
+    postResult(msg, {
+      ok: true,
+      data: { url: navigated.url, title, pageState: resolvePageState(navigated.url, title, '') }
+    })
     return
   }
   const func = COMMAND_FUNCS[msg.kind]
@@ -191,7 +205,7 @@ async function handleCommand(msg) {
     fail(msg, 'tab_closed', '标签页已关闭')
     return
   }
-  const readSafe = msg.kind === 'observe' || msg.kind === 'read_text' || msg.kind === 'read_state'
+  const readSafe = msg.kind === 'observe' || msg.kind === 'find' || msg.kind === 'read_text' || msg.kind === 'read_state'
   if (!readSafe && msg.url && tab.url && !tab.url.startsWith(msg.url)) {
     bumpGeneration(msg.tabId, tab.url)
     sendTabSnapshot()
@@ -204,7 +218,7 @@ async function handleCommand(msg) {
     return
   }
   const p = msg.params || {}
-  if (msg.kind === 'click' || msg.kind === 'fill') {
+  if ((msg.kind === 'click' || msg.kind === 'fill' || msg.kind === 'scroll' || msg.kind === 'read_text') && p.ref) {
     const refGen = parseRefGeneration(p.ref)
     if (refGen !== null && refGen !== currentGeneration(msg.tabId)) {
       fail(msg, 'ref_expired', `ref "${p.ref}" 已过期（页面已导航或更新），请重新观察后再操作`)
@@ -214,13 +228,17 @@ async function handleCommand(msg) {
   const args = (
     msg.kind === 'observe'
       ? [p.region, p.text_filter, currentGeneration(msg.tabId)]
-      : msg.kind === 'click'
-        ? [p.ref]
-        : msg.kind === 'fill'
-          ? [p.ref, p.value]
-          : msg.kind === 'read_state'
-            ? [p.path]
-            : [p.ref]
+      : msg.kind === 'find'
+        ? [p.role, p.name, p.exact, p.max_results, currentGeneration(msg.tabId)]
+        : msg.kind === 'click'
+          ? [p.ref]
+          : msg.kind === 'fill'
+            ? [p.ref, p.value]
+            : msg.kind === 'read_state'
+              ? [p.path]
+              : msg.kind === 'scroll'
+                ? [p.ref, p.delta_y, p.position]
+                : [p.ref]
   ).map((v) => (v === undefined ? null : v))
   const injectWorld = msg.kind === 'read_state' ? 'MAIN' : undefined
   let result = null
@@ -258,6 +276,13 @@ async function handleCommand(msg) {
     fail(msg, result.errorCode, result.error || '命令执行失败')
     return
   }
+  if (msg.kind === 'observe' || msg.kind === 'find') {
+    result.pageState = resolvePageState(result.url || tab.url || '', result.title || '', result.textSample || '')
+    delete result.textSample
+  } else if (msg.kind === 'scroll') {
+    result.pageState = resolvePageState(tab.url || '', tab.title || '', '')
+  }
+  result.tabId = msg.tabId
   postResult(msg, { ok: true, data: result })
   if (msg.kind === 'observe' || msg.kind === 'read_text' || msg.kind === 'read_state') sendTabSnapshot()
 }
@@ -344,6 +369,12 @@ chrome.permissions.onRemoved.addListener(() => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'dogear_connect') {
     connect()
+    sendResponse({ ok: true })
+    return
+  }
+  if (message?.type === 'dogear_disconnect') {
+    disconnectPort()
+    setStatus({ status: 'idle', error: '' })
     sendResponse({ ok: true })
     return
   }

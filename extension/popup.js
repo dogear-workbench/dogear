@@ -1,6 +1,12 @@
 const button = document.getElementById('connect')
+const disconnectButton = document.getElementById('disconnect')
 const statusEl = document.getElementById('status')
 const permEl = document.getElementById('perm')
+
+disconnectButton.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'dogear_disconnect' }).catch(() => {})
+  window.close()
+})
 
 function render(state) {
   if (state.status === 'connected') {
@@ -17,6 +23,7 @@ function render(state) {
     statusEl.textContent = '未连接'
   }
   button.disabled = state.status === 'connecting'
+  disconnectButton.hidden = state.status !== 'connected'
 }
 
 button.addEventListener('click', () => {

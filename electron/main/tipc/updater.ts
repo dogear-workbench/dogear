@@ -70,7 +70,7 @@ export const updaterRouter = {
         };
 
         const installerPath = await downloadFullUpdate(input.url, sendProgress);
-        runInstaller(installerPath);
+        await runInstaller(installerPath);
         return { success: true };
       } catch (error) {
         console.error('[updater] 下载完整更新失败:', error);

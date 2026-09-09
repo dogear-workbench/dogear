@@ -1,87 +1,45 @@
 // 各函数经 chrome.scripting.executeScript 序列化后注入页面执行，函数体内不得引用模块作用域
-export function observeFn(region, textFilter, generation) {
-  const gen = typeof generation === 'number' && Number.isInteger(generation) && generation >= 0 ? generation : 0
-  document.querySelectorAll('[data-dogear-ref]').forEach((el) => el.removeAttribute('data-dogear-ref'))
-  const selector =
-    'a[href], button, input, select, textarea, [role="button"], [role="link"], [role="tab"], ' +
-    '[role="checkbox"], [role="radio"], [role="menuitem"], [role="combobox"], [role="option"], ' +
-    '[role="textbox"], [contenteditable="true"]'
-  const visible = (el) => {
-    const style = window.getComputedStyle(el)
-    const rect = el.getBoundingClientRect()
-    return (
-      style.display !== 'none' &&
-      style.visibility !== 'hidden' &&
-      style.pointerEvents !== 'none' &&
-      rect.width > 0 &&
-      rect.height > 0
-    )
+export async function scrollFn(ref, deltaY, position) {
+  const hasPosition = position === 'top' || position === 'bottom'
+  const delta = typeof deltaY === 'number' && Number.isFinite(deltaY) ? deltaY : null
+  if (!hasPosition && (delta === null || delta === 0)) {
+    return { errorCode: 'scroll_invalid', error: 'deltaY 与 position 至少提供一个，且 deltaY 不能为 0' }
   }
-  const defaultRole = (el) => {
-    const tag = el.tagName.toLowerCase()
-    if (tag === 'a') return 'link'
-    if (tag === 'button') return 'button'
-    if (tag === 'select') return 'combobox'
-    if (tag === 'textarea') return 'textbox'
-    if (tag === 'input') {
-      const type = (el.getAttribute('type') || 'text').toLowerCase()
-      if (type === 'checkbox') return 'checkbox'
-      if (type === 'radio') return 'radio'
-      if (type === 'button' || type === 'submit') return 'button'
-      return 'textbox'
-    }
-    return 'generic'
-  }
-  const hintOf = (el) =>
-    el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('title') || ''
-  const hrefOf = (el) => {
-    if (el.tagName.toLowerCase() !== 'a') return null
-    const raw = el.href || ''
-    if (!raw) return null
-    return raw.length > 400 ? raw.slice(0, 400) + '…' : raw
-  }
-  const textOf = (el) => {
-    const raw = (el.tagName.toLowerCase() === 'input' ? el.value : el.innerText) || ''
-    return raw.trim().replace(/\s+/g, ' ').slice(0, 80)
-  }
-  const vh = window.innerHeight
-  const regionOf = (rect) => {
-    const cy = rect.top + rect.height / 2
-    if (cy < vh / 3) return 'top'
-    if (cy > (2 * vh) / 3) return 'bottom'
-    return 'middle'
-  }
-  const regionCounts = { top: 0, middle: 0, bottom: 0 }
-  const matched = []
-  for (const el of document.querySelectorAll(selector)) {
-    if (!visible(el)) continue
-    const rect = el.getBoundingClientRect()
-    const reg = regionOf(rect)
-    regionCounts[reg]++
-    if (region && reg !== region) continue
-    const text = textOf(el)
-    const hint = hintOf(el)
-    if (textFilter) {
-      const f = String(textFilter).toLowerCase()
-      const hay = (text + ' ' + hint).toLowerCase()
-      if (!hay.includes(f)) continue
-    }
-    matched.push(el)
-  }
-  const elements = matched.slice(0, 120).map((el, i) => {
-    const ref = 'e' + (i + 1) + '@' + gen
-    el.setAttribute('data-dogear-ref', ref)
-    const href = hrefOf(el)
-    return {
-      ref,
-      tag: el.tagName.toLowerCase(),
-      role: el.getAttribute('role') || defaultRole(el),
-      text: textOf(el),
-      hint: hintOf(el),
-      ...(href ? { href } : {}),
-    }
+  const read = (el) => ({
+    top: Math.round(el.scrollTop),
+    height: Math.round(el.scrollHeight),
+    clientHeight: Math.round(el.clientHeight)
   })
-  return { total: matched.length, regionCounts, elements, generation: gen }
+  let target = null
+  let container = false
+  if (ref) {
+    if (!/^e\d+(@\d+)?$/.test(String(ref))) {
+      return { errorCode: 'ref_expired', error: `ref "${ref}" 不存在或已失效，请重新观察页面后再操作` }
+    }
+    target = document.querySelector(`[data-dogear-ref="${ref}"]`)
+    if (!target) {
+      return {
+        errorCode: 'ref_expired',
+        error: `ref "${ref}" 对应元素已不在页面上，页面可能已导航或内容重建，请重新观察页面`
+      }
+    }
+    container = true
+  } else {
+    target = document.scrollingElement || document.documentElement
+  }
+  if (!target || typeof target.scrollTo !== 'function') {
+    return { errorCode: 'ref_expired', error: '目标元素不支持滚动，请重新观察页面确认可滚动的容器元素' }
+  }
+  const before = read(target)
+  const top = hasPosition
+    ? position === 'top'
+      ? 0
+      : Math.max(0, target.scrollHeight - target.clientHeight)
+    : target.scrollTop + delta
+  target.scrollTo({ top, left: target.scrollLeft, behavior: 'auto' })
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  const after = read(target)
+  return { target: container ? 'container' : 'document', before, after, moved: before.top !== after.top }
 }
 
 export async function clickFn(ref) {

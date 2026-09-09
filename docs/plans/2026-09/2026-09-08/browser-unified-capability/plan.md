@@ -18,7 +18,7 @@
 - [x] [Step 2: 观察能力](./step2-observation.md) — CDP AX Tree 接入 + observe/find 工具 + generation/ref 失效恢复
 - [x] [Step 3: 操作能力](./step3-actions.md) — navigate/click/fill/scroll/press/wait_for/screenshot + 页面状态机 + site-policy 平移
 - [x] [Step 4: 抓取迁移](./step4-fetch-migration.md) — searchWeb/readArticle 底层换内嵌 + parse_empty 降级探索语义
-- [ ] [Step 5: 扩展通道对齐 + NM 四件套](./step5-extension-alignment.md) — 扩展 observe 语义树改造 + 断开按钮 + gateway 退出收尾 + 安装器时序 + 心跳兜底
+- [x] [Step 5: 扩展通道对齐 + NM 四件套](./step5-extension-alignment.md) — 扩展 observe 语义树改造 + 断开按钮 + gateway 退出收尾 + 安装器时序 + 心跳兜底
 - [ ] [Step 6: 呈现交付与退役](./step6-presentation-retire.md) — companion 挂 view + awaiting_human 状态机 UI + Patchright 删除
 
 ## 全局决策

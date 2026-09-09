@@ -7,7 +7,7 @@ export type NmMessage = Record<string, unknown>;
 
 export const ProtocolVersion = 3;
 
-export type CommandKind = 'observe' | 'click' | 'fill' | 'read_text' | 'navigate' | 'read_state';
+export type CommandKind = 'observe' | 'find' | 'click' | 'fill' | 'read_text' | 'navigate' | 'read_state' | 'scroll';
 
 export type CommandErrorCode =
   | 'not_connected'
