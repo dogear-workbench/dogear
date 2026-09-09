@@ -10,26 +10,30 @@ const REASON_META: Record<HumanInterventionReason, { label: string; Icon: typeof
   guard_submit: { label: '提交需手动确认', Icon: MousePointerClick },
 };
 
-function InterventionCard({ request }: { request: HumanInterventionRequest }) {
+/** 置顶横幅形态（替代旧独立卡片区块）：页面呈现时人工等待动作不离开视野 */
+function InterventionBanner({ request }: { request: HumanInterventionRequest }) {
   const { label, Icon } = REASON_META[request.reason];
   return (
-    <div className="mx-3 my-1.5 rounded-md border border-amber-500/40 bg-amber-500/5 p-2.5">
-      <div className="flex items-center gap-1.5">
-        <Icon className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-        <span className="text-xs font-medium text-amber-700 dark:text-amber-400">{label}</span>
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">
-          {new Date(request.createdAt).toLocaleTimeString('zh-CN', { hour12: false })}
-        </span>
-      </div>
-      <p className="mt-1 text-xs text-foreground/90 leading-4">{request.message}</p>
+    <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/10 border-b border-amber-500/30 last:border-b-0">
+      <Icon className="w-3.5 h-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+      <span className="shrink-0 text-xs font-medium text-amber-700 dark:text-amber-400">{label}</span>
+      <span className="flex-1 min-w-0 truncate text-xs text-foreground/90" title={request.message}>{request.message}</span>
       {request.url && (
-        <p className="mt-0.5 truncate text-[10px] text-muted-foreground/70" title={request.url}>{request.url}</p>
+        <span
+          className="hidden sm:block shrink-0 max-w-44 truncate text-[10px] text-muted-foreground/70"
+          title={request.url}
+        >
+          {request.url}
+        </span>
       )}
+      <span className="shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">
+        {new Date(request.createdAt).toLocaleTimeString('zh-CN', { hour12: false })}
+      </span>
       <button
-        className="mt-2 w-full rounded-md border border-amber-500/50 bg-background px-2 py-1 text-xs font-medium text-amber-700 hover:bg-amber-500/10 dark:text-amber-400 transition-colors cursor-pointer"
+        className="shrink-0 rounded-md border border-amber-500/50 bg-background px-2 py-0.5 text-[11px] font-medium text-amber-700 hover:bg-amber-500/10 dark:text-amber-400 transition-colors cursor-pointer"
         onClick={() => void client.resolveHumanIntervention({ id: request.id })}
       >
-        我已完成，继续任务
+        完成后继续
       </button>
     </div>
   );
@@ -39,9 +43,9 @@ export function BrowserInterventions() {
   const items = useBrowserStore((s) => s.humanInterventions);
   if (items.length === 0) return null;
   return (
-    <div className="border-b py-1 shrink-0">
+    <div className="shrink-0">
       {items.map((item) => (
-        <InterventionCard key={item.id} request={item} />
+        <InterventionBanner key={item.id} request={item} />
       ))}
     </div>
   );

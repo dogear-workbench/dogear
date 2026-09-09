@@ -24,6 +24,8 @@ export interface EmbeddedTabSnapshot {
   attached: boolean
   holders: string[]
   takeover: { active: boolean } | null
+  canGoBack: boolean
+  canGoForward: boolean
 }
 
 export interface EmbeddedTabRecord {

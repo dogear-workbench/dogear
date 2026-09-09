@@ -28,16 +28,22 @@ const PRESENT_READY_TIMEOUT_MS = 8_000;
 
 const boundsByWindow = new Map<number, Rectangle>();
 const tabIdByWindow = new Map<number, string>();
+const latestRevisionByWindow = new Map<number, number>();
 let broadcaster: PresentationBroadcaster | null = null;
 
 export function setPresentationBroadcaster(fn: PresentationBroadcaster | null): void {
   broadcaster = fn;
 }
 
-/** companion 面板布局变化时上报页面视图区 bounds（null = 面板不可见/收起） */
-export function reportPageViewBounds(win: BrowserWindow, bounds: Rectangle | null): void {
+/**
+ * companion 面板布局变化时上报页面视图区 bounds（null = 面板不可见/收起）。
+ * revision 为渲染层全局单调递增：旧实例晚到的低 revision 上报（如卸载 null）不得覆盖新布局。
+ */
+export function reportPageViewBounds(win: BrowserWindow, bounds: Rectangle | null, revision: number): void {
   pruneWindowEntries();
   if (win.isDestroyed()) return;
+  if (revision <= (latestRevisionByWindow.get(win.id) ?? 0)) return;
+  latestRevisionByWindow.set(win.id, revision);
   if (!bounds) {
     if (!boundsByWindow.has(win.id)) return;
     boundsByWindow.delete(win.id);
@@ -88,7 +94,7 @@ export async function presentTab(
   if (!win) {
     return { ok: true, tabId: record.tabId, url: record.url, windowId: null, presented: false };
   }
-  attachWithBounds(record.tabId, win, boundsByWindow.get(win.id) ?? fullscreenBounds(win));
+  attachWithBounds(record.tabId, win, attachBoundsFor(record.tabId, win));
   return { ok: true, tabId: record.tabId, url: record.url, windowId: win.id, presented: true };
 }
 
@@ -133,7 +139,16 @@ export function presentRecordToCompanion(manager: EmbeddedBrowserManager, tab: E
     });
     return;
   }
-  attachWithBounds(tab.tabId, win, boundsByWindow.get(win.id) ?? fullscreenBounds(win));
+  attachWithBounds(tab.tabId, win, attachBoundsFor(tab.tabId, win));
+}
+
+/** 挂载 bounds：窗口已上报的视图区优先；其次该 tab 上次的用户可见位置（屏外挂载 bounds 不可用作呈现位置） */
+function attachBoundsFor(tabId: string, win: BrowserWindow): Rectangle {
+  const reported = boundsByWindow.get(win.id);
+  if (reported) return reported;
+  const last = getEmbeddedBrowserManager().getTabRecord(tabId)?.bounds;
+  if (last && last.x > -16000 && last.y > -16000) return last;
+  return fullscreenBounds(win);
 }
 
 function attachWithBounds(tabId: string, win: BrowserWindow, bounds: Rectangle): void {
@@ -170,6 +185,7 @@ function pruneWindowEntries(): void {
     if (!win.isDestroyed()) continue;
     boundsByWindow.delete(win.id);
     tabIdByWindow.delete(win.id);
+    latestRevisionByWindow.delete(win.id);
   }
 }
 

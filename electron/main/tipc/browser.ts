@@ -123,12 +123,29 @@ export const browserRouter = {
   }),
 
   reportPageViewBounds: t.procedure
-    .input<{ bounds: Rectangle | null }>()
+    .input<{ bounds: Rectangle | null; revision: number }>()
     .action(async ({ input, context }) => {
       const win = windowFromContext(context.sender);
       if (!win) return;
-      reportPageViewBounds(win, input.bounds);
+      reportPageViewBounds(win, input.bounds, input.revision);
     }),
+
+  /** 地址栏导航/历史操作：只作用于呈现 tab，agent 当前 tab 不受影响 */
+  navigatePresentedTab: t.procedure
+    .input<{ tabId: string; url: string }>()
+    .action(async ({ input }) => getEmbeddedBrowserManager().navigateTabAsUser(input.tabId, input.url)),
+
+  goBackPresentedTab: t.procedure
+    .input<{ tabId: string }>()
+    .action(async ({ input }) => getEmbeddedBrowserManager().goBackTab(input.tabId)),
+
+  goForwardPresentedTab: t.procedure
+    .input<{ tabId: string }>()
+    .action(async ({ input }) => getEmbeddedBrowserManager().goForwardTab(input.tabId)),
+
+  reloadPresentedTab: t.procedure
+    .input<{ tabId: string }>()
+    .action(async ({ input }) => getEmbeddedBrowserManager().reloadTab(input.tabId)),
 
   /** 渲染层「呈现」按钮与 agent present 工具共用后端；渲染层无会话语义，holder 固定 */
   presentEmbeddedTab: t.procedure

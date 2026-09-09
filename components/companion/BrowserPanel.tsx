@@ -1,7 +1,9 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
   Camera,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Database,
   ExternalLink,
@@ -181,11 +183,66 @@ function EmptyState() {
   );
 }
 
+function GroupedList({ groups, holderTaskId }: { groups: TaskGroup[]; holderTaskId: string | null }) {
+  return (
+    <>
+      {groups.map((group) => {
+        const running = holderTaskId === group.taskId;
+        return (
+          <div key={group.taskId} className="border-b last:border-b-0">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 sticky top-0 z-10">
+              <span
+                className={cn(
+                  'w-1.5 h-1.5 rounded-full shrink-0',
+                  running ? 'bg-orange-500 animate-pulse' : 'bg-muted-foreground/50',
+                )}
+              />
+              <span className="flex-1 min-w-0 truncate text-xs font-medium" title={group.label}>{group.label}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">{formatDayTime(group.firstTs)}</span>
+            </div>
+            {group.events.map((event, i) => (
+              <ActionCard key={`${event.seq}-${i}`} event={event} />
+            ))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** 底部日志抽屉：收起时一行入口，展开后限高滚动（页面呈现时不再挤占页面空间） */
+function LogDrawer({
+  count,
+  open,
+  onToggle,
+  children,
+}: {
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="border-t shrink-0">
+      <button
+        className="flex w-full items-center gap-2 px-3 h-8 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+        onClick={onToggle}
+      >
+        {open ? <ChevronDown className="w-3.5 h-3.5 shrink-0" /> : <ChevronUp className="w-3.5 h-3.5 shrink-0" />}
+        操作记录 {count} 条
+      </button>
+      {open && <div className="max-h-64 overflow-y-auto border-t">{children}</div>}
+    </div>
+  );
+}
+
 export function BrowserPanel() {
   const events = useBrowserStore((s) => s.events);
   const status = useBrowserStore((s) => s.status);
+  const tabs = useBrowserStore((s) => s.view.tabs);
   const sessionTabs = useSessionStore((s) => s.tabs);
   const conversations = useConversationStore((s) => s.conversations);
+  const [logOpen, setLogOpen] = useState(false);
   useEffect(() => {
     void useBrowserStore.getState().ensureLoaded();
   }, []);
@@ -224,35 +281,23 @@ export function BrowserPanel() {
     ? groups.find((g) => g.taskId === status.holder?.taskId)?.label ?? null
     : null;
 
+  const hasTabs = tabs.length > 0;
+  const holderTaskId = status.holder?.taskId ?? null;
+
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <StatusLine status={status} runningLabel={runningLabel} />
       <BrowserInterventions />
       <BrowserPageView />
-      {groups.length === 0 ? (
+      {hasTabs ? (
+        <LogDrawer count={events.length} open={logOpen} onToggle={() => setLogOpen((v) => !v)}>
+          <GroupedList groups={groups} holderTaskId={holderTaskId} />
+        </LogDrawer>
+      ) : groups.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
-          {groups.map((group) => {
-            const running = status.holder?.taskId === group.taskId;
-            return (
-              <div key={group.taskId} className="border-b last:border-b-0">
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-muted/40 sticky top-0 z-10">
-                  <span
-                    className={cn(
-                      'w-1.5 h-1.5 rounded-full shrink-0',
-                      running ? 'bg-orange-500 animate-pulse' : 'bg-muted-foreground/50',
-                    )}
-                  />
-                  <span className="flex-1 min-w-0 truncate text-xs font-medium" title={group.label}>{group.label}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground/70 tabular-nums">{formatDayTime(group.firstTs)}</span>
-                </div>
-                {group.events.map((event, i) => (
-                  <ActionCard key={`${event.seq}-${i}`} event={event} />
-                ))}
-              </div>
-            );
-          })}
+          <GroupedList groups={groups} holderTaskId={holderTaskId} />
         </div>
       )}
     </div>

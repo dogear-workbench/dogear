@@ -121,6 +121,7 @@ export async function runEmbeddedBrowserSelfTest(): Promise<void> {
   if (!wait.matched) throw new Error('wait_for 未命中 url 条件');
 
   takeoverSmoke(manager, tab);
+  await userNavSmoke(manager, tab);
   manager.release(tab.tabId, 'selftest');
   manager.closeTab(tab.tabId);
   await fetchSmoke(manager);
@@ -167,6 +168,28 @@ function takeoverSmoke(manager: EmbeddedBrowserManager, tab: EmbeddedTabRecord):
   if (manager.listTakeovers().length !== 0) throw new Error('交还后全量接管列表应清空');
   if (manager.releaseTakeover(tab.tabId) !== null) throw new Error('重复交还不应成功');
   console.log('[embedded-selftest] takeover:', JSON.stringify({ ok: true, generation: tab.generation }));
+}
+
+/** 用户导航链路（地址栏/后退/前进/刷新）：历史可用性与快照 canGoBack/canGoForward 一致 */
+async function userNavSmoke(manager: EmbeddedBrowserManager, tab: EmbeddedTabRecord): Promise<void> {
+  const reloaded = await manager.reloadTab(tab.tabId);
+  if (!reloaded.url.includes('iana.org')) throw new Error(`刷新后 URL 异常: ${reloaded.url}`);
+  if (!reloaded.canGoBack) throw new Error('历史存在前页时 canGoBack 应为 true');
+  const back = await manager.goBackTab(tab.tabId);
+  if (!back.url.includes('example.com')) throw new Error(`后退未回到 example.com: ${back.url}`);
+  if (back.canGoBack) throw new Error('历史起点 canGoBack 应为 false');
+  if (!back.canGoForward) throw new Error('后退后 canGoForward 应为 true');
+  const forward = await manager.goForwardTab(tab.tabId);
+  if (!forward.url.includes('iana.org')) throw new Error(`前进未回到 iana.org: ${forward.url}`);
+  const generationBefore = tab.generation;
+  const navigated = await manager.navigateTabAsUser(tab.tabId, 'https://example.com/?from=selftest');
+  if (!navigated.url.includes('example.com')) throw new Error(`用户导航未生效: ${navigated.url}`);
+  if (navigated.generation <= generationBefore) throw new Error('用户导航后 generation 应递增');
+  if (navigated.canGoForward) throw new Error('新导航后 canGoForward 应为 false');
+  console.log('[embedded-selftest] user nav:', JSON.stringify({
+    ok: true,
+    canGoBack: navigated.canGoBack,
+  }));
 }
 
 /** awaiting_human 闭环：上报 → 同 tab 去重 → 用户确认解除 → 状态恢复自动解除 */

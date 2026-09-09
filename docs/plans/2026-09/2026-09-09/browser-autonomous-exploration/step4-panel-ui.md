@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 浏览器面板主体化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -39,9 +39,30 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. StatusLine 保留（step 布局清单未列；删除会丢「内嵌浏览器已启动/运行中」全局状态，横幅置于其下、仍在地址栏与页面之上，验收的「横幅置顶」达成）
+  2. browser-store.ts 零改动：canGoBack/canGoForward 直接进 EmbeddedTabSnapshot，getPageViewState 返回的 tabs 自动携带，无需 store 独立字段
+  3. 原 tab 行删除，多 tab 切换呈现 + 每 tab 接管/交还收入地址栏 tab 名 DropdownMenu（嵌套按钮 stopPropagation 不关菜单不触发呈现）
+  4. presentation.ts 的 lastBounds 兑底排除屏外挂载 bounds（x/y ≤ -16000；agent ensureInputReady 的 INPUT_OFFSCREEN_BOUNDS 会写 tab.bounds，不能用作呈现位置）
+  5. revision 按窗口记（本项目单视图区），语义与 Proma 每 tab 记一致：晚到低 revision 忽略；卸载 null 上报同样受门控保护
+  6. PageSurface 加 300ms 低频兑底对比上报（rect 变化才发 IPC）：横幅/错误行只推挤位置不改尺寸，ResizeObserver 不触发，原防抖版同样有此盲区
+  7. 导航失败错误在地址栏下方红字显示 5 秒（计划未列，用户反馈需要）
+  8. dev-selftest 随步骤补 userNavSmoke（reload/goBack/goForward/navigateTabAsUser + canGoBack/canGoForward/generation 断言）
 - 改动文件清单：
+  - electron/main/services/browser/embedded/types.ts:27-28（snapshot 加 canGoBack/canGoForward）
+  - electron/main/services/browser/embedded/embedded-browser-manager.ts:142-176（navigateTabAsUser/goBackTab/goForwardTab/reloadTab）、:325-339（requireTab/waitUserNavSettled）、:405-425（snapshotOf 扩展）
+  - electron/main/services/browser/embedded/presentation.ts:36-58（revision 门控）、:97/:142/:146-152（attachBoundsFor 兑底）、:190-199（prune 清 revision）
+  - electron/main/tipc/browser.ts:125-153（reportPageViewBounds 加 revision + 四导航路由）
+  - electron/main/services/browser/embedded/dev-selftest.ts:124/:173-197（userNavSmoke）
+  - components/companion/BrowserPageView.tsx（重构：:21-26 nextLayoutRevision + :69-141 PageSurface rAF 链路 + :144-… PageAddressBar 地址栏/tab 菜单 + 页面 flex-1）
+  - components/companion/BrowserPanel.tsx（:186-212 GroupedList 提取 + :214-238 LogDrawer 抽屉 + :276-303 布局整合）
+  - components/companion/BrowserInterventions.tsx（卡片区块 → 置顶横幅）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `manager.navigateTabAsUser(tabId, url) / goBackTab(tabId) / goForwardTab(tabId) / reloadTab(tabId): Promise<EmbeddedTabSnapshot>`（tab 不存在 throw；goBack/goForward 无历史时 no-op 返回当前快照）
+  - `EmbeddedTabSnapshot.canGoBack/canGoForward: boolean`（navigationHistory，wc 销毁防御为 false）
+  - `reportPageViewBounds(win, bounds | null, revision)`：revision ≤ 该窗口已记录值直接忽略；渲染层模块级 `nextLayoutRevision()`（Date.now()*1000 起步防 renderer 重载倒退）
+  - tipc：`navigatePresentedTab({tabId,url})` / `goBackPresentedTab` / `goForwardPresentedTab` / `reloadPresentedTab`，均返回新快照、错误 throw 透传
+  - PageSurface 挂载期（tabs.length>0）持续上报本窗口视图区 bounds（rAF 合帧 + 300ms 兑底 + 卸载 null）；presentTab 主进程侧 attach 无需渲染层先行
+- 下个 step 该从哪里继续：按 plan.md 步骤索引继续（Step 5）
+- 待办或已知限制：GUI 五验收场景（拖拽跟手/切换无白屏/地址栏导航/横幅可见/日志收起）需人工验收；SELFTEST 因用户实例占用管道本环境未跑

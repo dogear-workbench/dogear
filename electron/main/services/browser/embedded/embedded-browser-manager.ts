@@ -5,6 +5,7 @@ import { applySessionProxy } from './proxy.js';
 import { applyEmbeddedUserAgent } from './ua.js';
 import { attachTabEvents } from './tab-events.js';
 import { disposeCdpSession } from './cdp-session.js';
+import { waitTabReady } from './navigate.js';
 import type {
   EmbeddedTabRecord,
   EmbeddedTabSnapshot,
@@ -136,6 +137,44 @@ export class EmbeddedBrowserManager {
     this.bumpGeneration(tabId);
     this.notifyTakeoverChanged();
     return { taskMeta };
+  }
+
+  /** 用户导航（地址栏）：作用于呈现 tab，与 agent 当前 tab 无关；加载就绪后返回新快照 */
+  async navigateTabAsUser(tabId: string, url: string): Promise<EmbeddedTabSnapshot> {
+    const found = this.requireTab(tabId);
+    assertHttpUrl(url);
+    try {
+      await found.tab.view.webContents.loadURL(url);
+    } catch (err) {
+      throw new Error(`导航失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+    await waitTabReady(found.tab);
+    return snapshotOf(found.tab);
+  }
+
+  async goBackTab(tabId: string): Promise<EmbeddedTabSnapshot> {
+    const found = this.requireTab(tabId);
+    if (found.tab.view.webContents.navigationHistory.canGoBack()) {
+      found.tab.view.webContents.navigationHistory.goBack();
+      await this.waitUserNavSettled(found.tab);
+    }
+    return snapshotOf(found.tab);
+  }
+
+  async goForwardTab(tabId: string): Promise<EmbeddedTabSnapshot> {
+    const found = this.requireTab(tabId);
+    if (found.tab.view.webContents.navigationHistory.canGoForward()) {
+      found.tab.view.webContents.navigationHistory.goForward();
+      await this.waitUserNavSettled(found.tab);
+    }
+    return snapshotOf(found.tab);
+  }
+
+  async reloadTab(tabId: string): Promise<EmbeddedTabSnapshot> {
+    const found = this.requireTab(tabId);
+    found.tab.view.webContents.reload();
+    await waitTabReady(found.tab);
+    return snapshotOf(found.tab);
   }
 
   isTabTakenOver(tabId: string): boolean {
@@ -283,6 +322,21 @@ export class EmbeddedBrowserManager {
     }
   }
 
+  private requireTab(tabId: string): { workspace: EmbeddedWorkspaceRecord; tab: EmbeddedTabRecord } {
+    const found = this.findTab(tabId);
+    if (!found) throw new Error(`内嵌浏览器标签不存在: ${tabId}`);
+    return found;
+  }
+
+  /** goBack/goForward 异步开跑，等导航开始（isLoading 或 state 置 loading 任一出现）再走统一就绪等待 */
+  private async waitUserNavSettled(tab: EmbeddedTabRecord): Promise<void> {
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && !tab.view.webContents.isLoading() && tab.state !== 'loading') {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await waitTabReady(tab);
+  }
+
   private findTab(tabId: string): { workspace: EmbeddedWorkspaceRecord; tab: EmbeddedTabRecord } | null {
     for (const workspace of this.workspaces.values()) {
       const tab = workspace.tabs.get(tabId);
@@ -349,6 +403,8 @@ function assertHttpUrl(url: string): void {
 }
 
 function snapshotOf(tab: EmbeddedTabRecord): EmbeddedTabSnapshot {
+  const contents = tab.view.webContents;
+  const history = contents.isDestroyed() ? null : contents.navigationHistory;
   return {
     tabId: tab.tabId,
     source: tab.source,
@@ -360,6 +416,8 @@ function snapshotOf(tab: EmbeddedTabRecord): EmbeddedTabSnapshot {
     attached: !!tab.attachedWindow,
     holders: [...tab.holders],
     takeover: tab.takeover?.active ? { active: true } : null,
+    canGoBack: history?.canGoBack() ?? false,
+    canGoForward: history?.canGoForward() ?? false,
   };
 }
 
