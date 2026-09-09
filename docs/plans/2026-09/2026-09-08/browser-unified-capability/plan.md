@@ -32,3 +32,16 @@
 - **partition**：`persist:dogear-browser-<sha256(workspaceId).slice(32)>`，按 workspace 隔离
 - **不写注释**、单文件 >300 行拆分，遵循项目硬约束
 - 每步完成需 `bun run lint` 0 errors + `tsc` 通过 + `bun run build:electron` 通过
+
+## 完成总结（2026-09-09）
+
+六个 step 全部验收通过并逐 step 提交（caacad6 → 4998a37 → f55c091 → 6e6834a → 3653c67 → a6e1297）。
+
+**落地架构**：能力协议层本体在 `electron/main/services/browser/embedded/`（manager/tab-events/page-state/cdp-session/ax-tree/ax-observe/actions/press/scroll/read-state/navigate/wait-for/fetch-page/presentation/proxy/profile/ua + dev-selftest，18 文件），内嵌 WebContentsView 为唯一浏览器后端；工具层拆为 browser-tools + browser-atom-tools + browser-action-tools + browser-present-tool + browser-tool-shared（15 个 dogear__browser__* 工具）；抓取管线降为快档（失败返回 FetchFailureContext 且 tab 保留 promote 给 agent 探索）；扩展通道 DOM+ARIA 语义树与内嵌协议同构（find/scroll 补齐 + NM 四件套）；companion 页面视图 + awaiting_human 闭环 + present 交付；Patchright/Playwright 彻底删除（-2699 行，依赖移除）。
+
+**主要偏差与原因**：
+1. navigate/wait_for/screenshot 在 Step 2 提前切内嵌（否则 navigate→observe 探索流断链）
+2. 后台 view 真实输入事件不投递（CDP mouse 永久 hang）→ click 键盘激活优先 + synthetic 降级标注、fill 用 insertText、scroll wheel+JS 兑底；真实桌面复查列入待办
+3. page-state 判定常量双侧同步（embedded/page-state.ts ↔ extension/src/page-state.js），扩展无构建链无法单源注入
+
+**遗留（需真实桌面验证）**：输入管线复查（companion attach 后 click method 字段）；页面视图 bounds 对齐、awaiting_human 手工闭环、present 端到端、多窗口互斥；google/ddg 引擎需代理环境实测；扩展侧 NM 四件套 5 项验证步骤在共享区 step5-delivery.md。
