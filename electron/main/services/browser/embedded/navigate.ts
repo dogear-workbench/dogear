@@ -16,7 +16,7 @@ export async function navigateTab(
     const snapshot = manager.openTab({ workspaceId, url, source: 'agent-opened', holderId });
     const record = manager.getTabRecord(snapshot.tabId);
     if (!record) throw new Error('内嵌浏览器标签创建失败');
-    await waitReady(record);
+    await waitTabReady(record);
     return { snapshot: snapshotOf(manager, snapshot.tabId), record, navigated: true };
   }
   const generationBefore = existing.generation;
@@ -25,7 +25,7 @@ export async function navigateTab(
   } catch (err) {
     throw new Error(`导航失败：${err instanceof Error ? err.message : String(err)}`);
   }
-  await waitReady(existing);
+  await waitTabReady(existing);
   return {
     snapshot: snapshotOf(manager, existing.tabId),
     record: existing,
@@ -33,14 +33,14 @@ export async function navigateTab(
   };
 }
 
-async function waitReady(record: EmbeddedTabRecord): Promise<void> {
-  const deadline = Date.now() + NAVIGATE_TIMEOUT_MS;
+export async function waitTabReady(record: EmbeddedTabRecord, timeoutMs = NAVIGATE_TIMEOUT_MS): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (record.view.webContents.isDestroyed()) throw new Error('内嵌浏览器标签已关闭');
     if (record.state !== 'loading') return;
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
-  throw new Error(`页面加载超时（${NAVIGATE_TIMEOUT_MS / 1000}s），当前状态: ${record.state}，可稍后重试或直接观察当前页面`);
+  throw new Error(`页面加载超时（${timeoutMs / 1000}s），当前状态: ${record.state}，可稍后重试或直接观察当前页面`);
 }
 
 function snapshotOf(manager: EmbeddedBrowserManager, tabId: string): EmbeddedTabSnapshot {

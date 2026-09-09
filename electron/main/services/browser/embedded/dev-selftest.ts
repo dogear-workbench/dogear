@@ -1,7 +1,9 @@
 import { findInTab, observeTab, parseRef, readTabText, RefExpiredError } from './ax-observe.js';
 import type { EmbeddedTabRecord } from './types.js';
 import { ActionGuardError, clickTab, fillTab } from './actions.js';
-import { getEmbeddedBrowserManager } from './embedded-browser-manager.js';
+import { readArticleWithBrowser } from '../browser-article-service.js';
+import { searchWeb } from '../browser-search-service.js';
+import { getEmbeddedBrowserManager, type EmbeddedBrowserManager } from './embedded-browser-manager.js';
 import { navigateTab } from './navigate.js';
 import { pressTab } from './press.js';
 import { readTabState } from './read-state.js';
@@ -107,7 +109,71 @@ export async function runEmbeddedBrowserSelfTest(): Promise<void> {
 
   manager.release(tab.tabId, 'selftest');
   manager.closeTab(tab.tabId);
+  await fetchSmoke(manager);
   console.log('[embedded-selftest] 通过');
+}
+
+/**
+ * Step 4 抓取迁移自测：search 成功链路（cn.bing 稳定端点）→ parse_empty 全链失败的结构化返回
+ * （serpUrls 均指向 example.com，必然解析为空）→ 失败页保留/promote 断言 → readArticle 冒烟。
+ */
+async function fetchSmoke(manager: EmbeddedBrowserManager): Promise<void> {
+  const SELFTEST_WS = 'embedded-selftest';
+  const selfTaskMeta = { kind: 'agent' as const, conversationId: 'selftest' };
+
+  const searchOk = await searchWeb('electron browser testing', {
+    engine: 'bing',
+    maxResults: 3,
+    workspaceId: SELFTEST_WS,
+    taskMeta: selfTaskMeta,
+  });
+  console.log('[embedded-selftest] search:', JSON.stringify({
+    ok: searchOk.ok,
+    engine: searchOk.ok ? searchOk.engine : searchOk.errorClass,
+    results: searchOk.ok ? searchOk.results.length : 0,
+    first: searchOk.ok ? searchOk.results[0]?.url : undefined,
+  }));
+  if (!searchOk.ok || searchOk.results.length === 0) {
+    throw new Error(`搜索成功链路自测失败：${searchOk.ok ? '结果为空' : `${searchOk.errorClass} ${searchOk.message}`}`);
+  }
+  if (manager.getAgentTabId(SELFTEST_WS)) throw new Error('搜索成功后抓取 tab 应已关闭');
+
+  const parseEmpty = await searchWeb('dogear parse empty probe', {
+    engine: 'ddg',
+    workspaceId: SELFTEST_WS,
+    taskMeta: selfTaskMeta,
+    serpUrls: {
+      ddg: 'https://example.com/?q={q}',
+      bing: 'https://example.com/?q={q}',
+    },
+  });
+  console.log('[embedded-selftest] search parse_empty:', JSON.stringify({
+    ok: parseEmpty.ok,
+    errorClass: parseEmpty.ok ? undefined : parseEmpty.errorClass,
+    failure: parseEmpty.ok ? undefined : parseEmpty.failure,
+  }));
+  if (parseEmpty.ok) throw new Error('example.com 不应解析出搜索结果');
+  if (parseEmpty.errorClass !== 'parse_empty') throw new Error(`应归类 parse_empty，实际 ${parseEmpty.errorClass}`);
+  const failure = parseEmpty.failure;
+  if (!failure?.pageAvailable || !failure.tabId) throw new Error('结构化失败上下文缺失');
+  if (!failure.suggestedNextTools.includes('dogear__browser__observe_page')) throw new Error('suggestedNextTools 缺 observe_page');
+  if (!failure.url || !failure.url.includes('example.com')) throw new Error(`失败 URL 异常: ${failure.url}`);
+  if (!manager.getTabRecord(failure.tabId)) throw new Error('失败页 tab 应保留未关闭');
+  if (manager.getAgentTabId(SELFTEST_WS) !== failure.tabId) throw new Error('失败页 tab 应已切为 agent 当前 tab');
+
+  const article = await readArticleWithBrowser('https://www.iana.org/help/example-domains', {
+    workspaceId: SELFTEST_WS,
+    taskMeta: { kind: 'article', conversationId: 'selftest' },
+  });
+  console.log('[embedded-selftest] readArticle:', JSON.stringify({
+    ok: article.ok,
+    title: article.ok ? article.meta.title : article.errorClass,
+    wordCount: article.ok ? article.meta.wordCount : undefined,
+  }));
+  if (!article.ok) throw new Error(`读取文章自测失败：${article.errorClass} ${article.message}`);
+  if (!article.meta.title || article.meta.wordCount <= 0) throw new Error('文章解析结果不完整');
+
+  manager.closeTab(failure.tabId);
 }
 
 /** 操作原语冒烟：注入固定 fixture 后验证 scroll / fill / guard 拦截 / press / read_state / click 真实输入事件 */

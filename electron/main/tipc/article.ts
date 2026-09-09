@@ -183,6 +183,7 @@ async function runBrowserArticleStage(params: {
     onAction: (event) => {
       recordBrowserAction({ source: 'parseArticle', ...event });
     },
+    workspaceId: params.workspaceId,
   });
 
   if (browserResult.ok) {

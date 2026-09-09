@@ -1,10 +1,11 @@
-import type { CDPSession, Page } from 'patchright';
 import {
   extractZhihuStateCards,
   parseRedditSerp,
   parseZhihuSerp,
   type ParsedSerpItem,
 } from './serp-parsers.js';
+import { evalInTab, FetchNavError, sleep } from './embedded/fetch-page.js';
+import type { EmbeddedTabRecord } from './embedded/types.js';
 
 export type SiteSearchId = 'reddit' | 'zhihu';
 
@@ -29,6 +30,7 @@ export const SITE_SEARCH_CONFIG: Record<SiteSearchId, SiteSearchConfig> = {
 
 const GOTO_TIMEOUT_MS = 15_000;
 const ZHIHU_RENDER_TIMEOUT_MS = 8_000;
+const ZHIHU_RENDER_POLL_MS = 300;
 
 export type SiteFailureKind = 'nav_failed' | 'parse_empty';
 
@@ -49,45 +51,52 @@ function buildSiteUrl(site: SiteSearchId, query: string, override?: string): str
   return (override ?? SITE_SEARCH_CONFIG[site].urlTemplate).replace('{q}', encodeURIComponent(query));
 }
 
-async function refineEmptyReason(site: SiteSearchId, page: Page, label: string): Promise<string> {
+const hasZhihuEmptyNoticeFn = new Function(
+  `return () => (document.body ? document.body.innerText.includes('未搜索到相关内容') : false)`,
+)() as () => boolean;
+
+const hasZhihuResultCardFn = new Function(
+  `return () => !!document.querySelector('.SearchResult-Card, .ContentItem')`,
+)() as () => boolean;
+
+async function waitForZhihuRender(tab: EmbeddedTabRecord, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  while (Date.now() < deadline) {
+    const found = await evalInTab(tab, hasZhihuResultCardFn).catch(() => false);
+    if (found) return true;
+    await sleep(ZHIHU_RENDER_POLL_MS);
+  }
+  return false;
+}
+
+async function readZhihuState(tab: EmbeddedTabRecord): Promise<ParsedSerpItem[] | null> {
+  try {
+    return await evalInTab(tab, extractZhihuStateCards);
+  } catch {
+    return null;
+  }
+}
+
+async function refineEmptyReason(site: SiteSearchId, tab: EmbeddedTabRecord, label: string): Promise<string> {
   const loginHint = '可在受控浏览器窗口人工登录该站点一次后重试（profile 会记住）';
-  if (site === 'reddit' && /\/login\//.test(page.url())) {
+  if (site === 'reddit' && /\/login\//.test(tab.url)) {
     return `${label} 未登录，站内搜索被重定向到登录页，${loginHint}`;
   }
   if (site === 'zhihu') {
-    const emptyNotice = await page
-      .locator('text=未搜索到相关内容')
-      .count()
-      .catch(() => 0);
-    if (emptyNotice > 0) {
+    const emptyNotice = await evalInTab(tab, hasZhihuEmptyNoticeFn).catch(() => false);
+    if (emptyNotice) {
       return `${label} 返回空结果（未登录时知乎可能不返回搜索内容），${loginHint}`;
     }
   }
   return `${label} 搜索结果解析为空（页面改版或无结果）`;
 }
 
-async function readZhihuState(page: Page): Promise<ParsedSerpItem[] | null> {
-  // patchright 的 page.evaluate 落在隔离世界，读不到页面脚本写入的 window 全局，必须 CDP 直连主世界
-  let cdp: CDPSession | null = null;
-  try {
-    cdp = await page.context().newCDPSession(page);
-    const result = await cdp.send('Runtime.evaluate', {
-      expression: `(${extractZhihuStateCards.toString()})()`,
-      returnByValue: true,
-    });
-    if (result.exceptionDetails) return null;
-    const value = result.result.value;
-    return Array.isArray(value) ? value : null;
-  } catch {
-    return null;
-  } finally {
-    await cdp?.detach().catch(() => {});
-  }
-}
+/** ensureTab 由编排层注入：首次调用打开抓取 tab，后续对同一 tab 重复导航（降级链共用） */
+export type SiteEnsureTab = (url: string, timeoutMs: number) => Promise<EmbeddedTabRecord>;
 
 export async function runSiteAttempt(
   site: SiteSearchId,
-  page: Page,
+  ensureTab: SiteEnsureTab,
   query: string,
   urlOverride: string | undefined,
   emit: SiteEmit,
@@ -96,15 +105,13 @@ export async function runSiteAttempt(
   const config = SITE_SEARCH_CONFIG[site];
   const url = buildSiteUrl(site, query, urlOverride);
   emit({ action: 'navigate', url, detail: `导航到 ${config.label} 站内搜索结果页` });
+  let tab: EmbeddedTabRecord;
   try {
-    await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      timeout: Math.min(GOTO_TIMEOUT_MS, Math.max(1_000, remainingMs)),
-    });
+    tab = await ensureTab(url, Math.min(GOTO_TIMEOUT_MS, Math.max(1_000, remainingMs)));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     emit({ action: 'navigate', url, detail: message, result: 'nav_failed' });
-    const redirectedToLogin = site === 'reddit' && /\/login\//.test(page.url());
+    const redirectedToLogin = site === 'reddit' && err instanceof FetchNavError && /\/login\//.test(err.url);
     const cause = redirectedToLogin
       ? '导航被重定向到 Reddit 登录页（可能未登录）；可在受控浏览器窗口人工登录该站点一次后重试（profile 会记住）'
       : '网络或代理异常';
@@ -116,18 +123,14 @@ export async function runSiteAttempt(
   }
 
   if (site === 'zhihu') {
-    emit({ action: 'wait', url, detail: '等待知乎搜索结果渲染' });
-    await page
-      .waitForSelector('.SearchResult-Card, .ContentItem', {
-        timeout: Math.min(ZHIHU_RENDER_TIMEOUT_MS, Math.max(1_000, remainingMs)),
-      })
-      .catch(() => {});
-    await page.waitForTimeout(300).catch(() => {});
-    const stateItems = await readZhihuState(page);
+    emit({ action: 'wait', url: tab.url, detail: '等待知乎搜索结果渲染' });
+    await waitForZhihuRender(tab, Math.min(ZHIHU_RENDER_TIMEOUT_MS, Math.max(1_000, remainingMs)));
+    await sleep(300);
+    const stateItems = await readZhihuState(tab);
     if (stateItems && stateItems.length > 0) {
       emit({
         action: 'parse',
-        url: page.url(),
+        url: tab.url,
         detail: `知乎状态数据解析成功：${stateItems.length} 条结果`,
         result: `count=${stateItems.length}`,
       });
@@ -135,20 +138,20 @@ export async function runSiteAttempt(
     }
   }
 
-  emit({ action: 'parse', url: page.url(), detail: `开始解析 ${config.label} 搜索结果` });
+  emit({ action: 'parse', url: tab.url, detail: `开始解析 ${config.label} 搜索结果` });
   let items: ParsedSerpItem[];
   try {
-    items = await page.evaluate(site === 'reddit' ? parseRedditSerp : parseZhihuSerp);
+    items = await evalInTab(tab, site === 'reddit' ? parseRedditSerp : parseZhihuSerp);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    emit({ action: 'parse', url: page.url(), detail: message, result: 'parse_empty' });
+    emit({ action: 'parse', url: tab.url, detail: message, result: 'parse_empty' });
     return { ok: false, failureKind: 'parse_empty', reason: `${config.label} 结果解析异常：${message}` };
   }
   if (items.length === 0) {
-    const reason = await refineEmptyReason(site, page, config.label);
+    const reason = await refineEmptyReason(site, tab, config.label);
     emit({
       action: 'parse',
-      url: page.url(),
+      url: tab.url,
       detail: `${config.label} ${reason}`,
       result: 'parse_empty',
     });
@@ -156,7 +159,7 @@ export async function runSiteAttempt(
   }
   emit({
     action: 'parse',
-    url: page.url(),
+    url: tab.url,
     detail: `${config.label} 解析成功：${items.length} 条结果`,
     result: `count=${items.length}`,
   });

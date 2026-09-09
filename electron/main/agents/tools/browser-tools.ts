@@ -1,10 +1,10 @@
 /**
  * 内嵌浏览器 MCP Server 工具（声明式入口）
  *
- * readArticle/search 为首选入口（服务内部仍用 Patchright，Step 4 迁移内嵌）；
+ * readArticle/search 为快档入口：内嵌后台 tab 加载 → 就地解析，失败时页面保留在 tab
+ * 并返回结构化位置（tabId/URL/pageState），agent 用原子工具继续探索。
  * 原子探索与操作工具拆分在 browser-atom-tools.ts（观察类）与 browser-action-tools.ts（操作类），
- * 全部走内嵌宿主，ref = backendNodeId@generation。
- * 错误一律 isError 不抛。
+ * 全部走内嵌宿主，ref = backendNodeId@generation。错误一律 isError 不抛。
  */
 
 import fs from 'fs';
@@ -12,21 +12,18 @@ import os from 'os';
 import path from 'path';
 import { z } from 'zod';
 import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
-import {
-  readArticleWithBrowser,
-  type BrowserArticleActionEvent,
-} from '../../services/browser/browser-article-service.js';
+import { readArticleWithBrowser } from '../../services/browser/browser-article-service.js';
+import type { BrowserArticleActionEvent } from '../../services/browser/browser-article-types.js';
 import { controlledBrowserBlock } from '../../services/browser/site-policy.js';
-import {
-  searchWeb,
-  type SearchActionEvent,
-} from '../../services/browser/browser-search-service.js';
+import { searchWeb } from '../../services/browser/browser-search-service.js';
+import type { SearchActionEvent } from '../../services/browser/browser-search-types.js';
 import { loadSettings } from '../../services/settings-service.js';
 import { saveArticleFromScript } from '../../services/article-service.js';
 import {
   buildTaskMeta,
   createAgentTabRunner,
   emitAction,
+  formatFetchFailure,
   forwardArticleAction,
   forwardSearchAction,
   isErrorResult,
@@ -56,11 +53,11 @@ export function createBrowserToolDefs(opts?: {
     // ========================================
     defineTool(
       'dogear__browser__readArticle',
-      '用浏览器读取网页文章（首选）',
-      '通过受控浏览器读取网页文章，返回渲染后的 Markdown 正文与元数据。内置渲染等待、展开全文按钮点击与登录墙检测。\n' +
+      '用浏览器读取网页文章（快档首选）',
+      '通过受控浏览器读取网页文章，返回渲染后的 Markdown 正文与元数据。内置渲染等待、展开全文按钮点击、翻页拼接与登录墙检测。\n' +
         '使用纪律：\n' +
         '- 需要读取网页文章内容时优先调用本工具，不要直接从原子工具开始。\n' +
-        '- 仅当本工具失败（timeout / parse_empty）或需要登录后才能交互探索时，才降级使用 navigate → observe_page → click / read_text 等原子工具。\n' +
+        '- 快档失败（timeout / parse_empty / nav_failed）时不白跑：返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接用 dogear__browser__observe_page / read_text 继续探索，不要重新导航。\n' +
         '- 小红书等登录态站点禁止本通道（调用会被直接拒绝），请改用 dogear__extension__* 扩展通道在用户真实浏览器上操作。\n' +
         '- 返回 need_login 时：浏览器窗口已打开并停留在目标页，必须告知用户「浏览器窗口已打开，请在窗口中完成登录，登录完成后告诉我重试」；用户完成登录后重新调用本工具即可（登录态已持久化）。\n' +
         '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。',
@@ -77,6 +74,7 @@ export function createBrowserToolDefs(opts?: {
         const result = await readArticleWithBrowser(args.url, {
           taskMeta,
           onAction: forwardArticleAction,
+          workspaceId: opts?.workspaceId,
         });
         if (!result.ok) {
           emitAction({
@@ -90,14 +88,11 @@ export function createBrowserToolDefs(opts?: {
           if (result.errorClass === 'need_login') {
             return isErrorResult(
               `读取失败：页面需要登录（need_login）。\n` +
-                `浏览器窗口已打开并置前，停留在目标页。\n` +
+                `浏览器窗口已打开并置前，停留在目标页（${result.failure?.url ?? args.url}）。\n` +
                 `请立即告知用户：浏览器窗口已打开，请在窗口中完成登录；登录完成后让你重试时，重新调用本工具即可。`,
             );
           }
-          return isErrorResult(
-            `读取失败（${result.errorClass}）：${result.message}\n` +
-              `可降级用 dogear__browser__navigate 打开页面，再用 observe_page / read_text / click 等原子工具手动探索。`,
-          );
+          return isErrorResult(formatFetchFailure('读取文章', result.errorClass, result.message, result.failure));
         }
         const article = result.meta;
         emitAction({
@@ -125,14 +120,14 @@ export function createBrowserToolDefs(opts?: {
     // ========================================
     defineTool(
       'dogear__browser__search',
-      '搜索网页并返回结果列表',
-      '通过受控浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 受控浏览器」配置。\n' +
+      '搜索网页并返回结果列表（快档）',
+      '通过受控浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。快档解析，引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 受控浏览器」配置。\n' +
         '传 site="reddit" 或 site="zhihu" 时走站内搜索：reddit 用 old.reddit（结果带 score/评论数/subreddit），zhihu 用知乎搜索页（结果带作者/赞同数）；站内失败自动降级为「关键词 site:域名」通用搜索（丢互动量但保可用，降级原因见返回）。\n' +
         '使用纪律：\n' +
         '- 需要发现内容（不知道具体 URL）时先用本工具搜索，搜到再用 dogear__browser__readArticle 阅读。\n' +
         '- 需要站内互动量排序（高赞/高票）或某个站的垂直内容时传 site；不传 site 走通用引擎，行为不变。\n' +
         '- 关键词用空格分隔核心词，避免整句提问，与普通搜索引擎用法一致。\n' +
-        '- 本工具失败时可降级用 dogear__browser__navigate 打开搜索引擎结果页，再用 dogear__browser__observe_page / read_text 等原子工具手动探索。\n' +
+        '- 全链失败时页面保留在标签页并返回位置（tabId + URL + 状态），直接用 dogear__browser__observe_page / read_text 从该页面手动提取结果，不要重新搜索。\n' +
         '- 站内搜索对登录态敏感：知乎未登录可能返回空结果，Reddit 未登录会跳登录页；降级原因提到登录或空结果时，提示用户在受控浏览器窗口人工登录对应站点一次（profile 会记住）后重试。\n' +
         '- 返回降级提示且提到验证页时，告知用户可在受控浏览器窗口人工完成一次验证（profile 会记住）后重试。',
       z.object({
@@ -150,6 +145,7 @@ export function createBrowserToolDefs(opts?: {
           proxyServer: settings.browserProxyServer,
           taskMeta,
           onAction: forwardSearchAction,
+          workspaceId: opts?.workspaceId,
         });
         if (!outcome.ok) {
           emitAction({
@@ -159,11 +155,7 @@ export function createBrowserToolDefs(opts?: {
             detail: outcome.message,
             result: outcome.errorClass,
           });
-          const fallbackHint =
-            outcome.errorClass === 'empty_query' || outcome.errorClass === 'parse_empty'
-              ? ''
-              : '\n可降级用 dogear__browser__navigate 打开搜索引擎结果页，再用 dogear__browser__observe_page / read_text 等原子工具手动探索。';
-          return isErrorResult(`搜索失败（${outcome.errorClass}）：${outcome.message}${fallbackHint}`);
+          return isErrorResult(formatFetchFailure('搜索', outcome.errorClass, outcome.message, outcome.failure));
         }
         const lines = outcome.results.map(
           (r) => `${r.rank}. ${r.title}\n   ${r.url}\n   ${r.snippet}${r.meta ? `\n   ${r.meta}` : ''}`,

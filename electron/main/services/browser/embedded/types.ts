@@ -54,4 +54,5 @@ export interface OpenEmbeddedTabInput {
   url: string
   source: EmbeddedTabSource
   holderId?: string
+  skipInitialLoad?: boolean
 }

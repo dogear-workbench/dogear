@@ -1,5 +1,6 @@
 import { WebContentsView, BrowserWindow, session, type Rectangle, type Session } from 'electron';
 import { buildPersistentPartition, resolveProfileKey } from './profile.js';
+import { applySessionProxy } from './proxy.js';
 import { applyEmbeddedUserAgent } from './ua.js';
 import { attachTabEvents } from './tab-events.js';
 import { disposeCdpSession } from './cdp-session.js';
@@ -63,9 +64,11 @@ export class EmbeddedBrowserManager {
     workspace.tabs.set(tabId, tab);
     if (input.source === 'agent-opened' && !workspace.agentTabId) workspace.agentTabId = tabId;
     if (input.holderId) tab.holders.add(input.holderId);
-    void view.webContents.loadURL(input.url).catch((err) => {
-      console.error('[embedded-browser] 初始导航失败:', input.url, err);
-    });
+    if (!input.skipInitialLoad) {
+      void view.webContents.loadURL(input.url).catch((err) => {
+        console.error('[embedded-browser] 初始导航失败:', input.url, err);
+      });
+    }
     return snapshotOf(tab);
   }
 
@@ -116,6 +119,20 @@ export class EmbeddedBrowserManager {
 
   getAgentTabId(workspaceId: string): string | null {
     return this.getWorkspaceByWorkspaceId(workspaceId)?.agentTabId ?? null;
+  }
+
+  /** 把服务自建的抓取 tab（如 search/readArticle 失败保留页）切为 agent 当前 tab，供原子工具接管探索 */
+  promoteToAgentTab(tabId: string): void {
+    const found = this.findTab(tabId);
+    if (!found) return;
+    found.workspace.agentTabId = tabId;
+    found.tab.lastActivityAt = Date.now();
+  }
+
+  /** 抓取类服务入口：确保 workspace session 存在并应用 PAC 代理（幂等；未配置代理时直连） */
+  async ensureWorkspaceProxy(workspaceId: string, proxyServer: string | undefined): Promise<void> {
+    const workspace = this.getOrCreateWorkspace(workspaceId);
+    await applySessionProxy(workspace.session, proxyServer);
   }
 
   getActiveTabId(workspaceId: string): string | null {

@@ -4,6 +4,7 @@ import path from 'path';
 import { promisify } from 'util';
 import { chromium, type BrowserContext, type Page } from 'patchright';
 import { getConfigDir, loadSettings } from '../settings-service.js';
+import { buildProxyPacUrl } from './embedded/proxy.js';
 import {
   chromiumInstallStatus,
   ensureChromiumInstalled,
@@ -30,25 +31,6 @@ interface PendingAcquire {
 
 const IDLE_CLOSE_MS = Number(process.env.DOGEAR_BROWSER_IDLE_CLOSE_MS) || 3 * 60 * 1000;
 const DISPOSE_CLOSE_TIMEOUT_MS = 3000;
-const PAC_PROXY_DOMAINS = [
-  'google.com',
-  'googleusercontent.com',
-  'gstatic.com',
-  'googleapis.com',
-  'ggpht.com',
-  'duckduckgo.com',
-  'reddit.com',
-  'redditstatic.com',
-  'redd.it',
-];
-
-function buildProxyPacUrl(proxyServer: string | undefined): string | null {
-  const proxy = (proxyServer ?? '').trim().replace(/["\\]/g, '');
-  if (!proxy) return null;
-  const rules = PAC_PROXY_DOMAINS.map((d) => `dnsDomainIs(host,".${d}")||host==="${d}"`).join('||');
-  const script = `function FindProxyForURL(url,host){if(${rules})return "PROXY ${proxy}";return "DIRECT";}`;
-  return `data:text/plain,${encodeURIComponent(script)}`;
-}
 
 class BrowserManager {
   private profileDir = path.join(getConfigDir(), 'browser-profile');

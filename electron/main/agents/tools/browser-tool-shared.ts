@@ -11,20 +11,17 @@ import {
   observeTab,
   type ObserveOptions,
 } from '../../services/browser/embedded/ax-observe.js';
-import {
-  readArticleWithBrowser,
-  type BrowserArticleAction,
-  type BrowserArticleActionEvent,
-} from '../../services/browser/browser-article-service.js';
-import {
-  searchWeb,
-  type SearchAction,
-  type SearchActionEvent,
-} from '../../services/browser/browser-search-service.js';
+import type {
+  BrowserArticleAction,
+  BrowserArticleActionEvent,
+} from '../../services/browser/browser-article-types.js';
+import type { SearchAction, SearchActionEvent } from '../../services/browser/browser-search-types.js';
 import { getEmbeddedBrowserManager } from '../../services/browser/embedded/embedded-browser-manager.js';
 import { type ObserveElement, type ObservePayload } from '../../services/browser/embedded/ax-tree.js';
-import type { EmbeddedTabRecord } from '../../services/browser/embedded/types.js';
-import { defineTool, type ToolResult } from '../pi/tool-adapter.js';
+import { pageStateHint } from '../../services/browser/embedded/page-state.js';
+import type { EmbeddedPageState, EmbeddedTabRecord } from '../../services/browser/embedded/types.js';
+import type { FetchFailureContext } from '../../services/browser/embedded/fetch-page.js';
+import { type ToolResult } from '../pi/tool-adapter.js';
 
 export const SEARCH_ENGINE_LABELS: Record<string, string> = {
   google: 'Google',
@@ -87,6 +84,33 @@ export function forwardSearchAction(event: SearchActionEvent): void {
     detail: event.detail,
     result: event.result,
   });
+}
+
+/** search/readArticle 快档失败的统一文案：附页面保留位置与原子工具继续探索的引导 */
+export function formatFetchFailure(
+  label: string,
+  errorClass: string,
+  message: string,
+  failure?: FetchFailureContext,
+): string {
+  const head = `${label}失败（${errorClass}）：${message}`;
+  if (!failure || !failure.pageAvailable) return head;
+  const hint =
+    failure.pageState && failure.pageState !== 'ready'
+      ? pageStateHint(failure.pageState as EmbeddedPageState)
+      : null;
+  return [
+    head,
+    '',
+    '页面已保留在内嵌浏览器标签页中（未关闭），无需重新导航，直接继续探索：',
+    `tabId: ${failure.tabId}`,
+    `URL: ${failure.url}`,
+    failure.pageState ? `状态: ${failure.pageState}` : '',
+    hint ? `⚠️ ${hint}` : '',
+    `下一步：调用 ${failure.suggestedNextTools.join(' 或 ')} 查看并操作该页面。`,
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function buildTaskMeta(conversationId: string | undefined): BrowserTaskMeta {
