@@ -23,3 +23,18 @@
 - **保守原则**：探测异常一律按「有结果可探索」保留页面；宁可误保留不可误杀
 - **UI 数据流**：新广播事件 `tabTakeoverChanged`（全量 takeover 列表，对齐 humanInterventionChanged 全量刷新模式）；前端经 browser-store 消费
 - **构建纪律**：主进程改动需 `bun run build:electron`；改完跑 `bun run lint`；内嵌链路自测 `DOGEAR_EMBEDDED_BROWSER_SELFTEST=1 bunx electron .`（如自测脚本需扩展，随步骤补断言）
+
+## 完成总结
+
+四个 step 全部实施完毕（2026-09-09，commits ddda969 / a680b4c / 30ca7d9 / ee6f61d），构建 / lint / 前端 tsc / bun test（298 pass）全绿。
+
+- **搜索诚实失败**：parse_empty 前探测页面可探索结果（容器/链接计数，异常保守视为有结果），有结果保留页面返回结构化失败信号（pageAvailable + hint）不降级引擎；验证页呈现后 raise 等待人工并释放 tab，下一引擎开新 tab 不带走验证页
+- **接回 Agent 与接管互斥锁**：tipc 层 resumeConversation 唯一唤醒入口（running=steer / idle=prompt），「完成后继续」与接管交还共用；tab 显式接管锁，接管期间写类工具被拒（user_takeover），交还时 generation 递增旧 ref 失效并唤醒会话
+- **观察与操作质量**：checkbox/radio 键盘激活后回读 checked 已翻转则跳过 synthetic 补点；observe_page 在 AX 可交互 <5 且正文 >500 时附 DOM 可见链接兜底（≤30 条）+ 前置屏外挂载；代理 PAC 区分 socks/http/裸地址三形态、清空显式回直连；新增 13 条 bun 单测
+- **面板主体化**：地址栏（后退/前进/刷新/URL/接管/收起）+ 页面 flex-1 占满 + 等待人工置顶横幅 + 日志默认收起抽屉；bounds 同步 rAF 合帧 + 全局 revision 门控拒晚到 + lastBounds 恢复（排除屏外挂载污染）
+
+### 遗留（需人工验收）
+
+- 本机有运行中 Dogear 实例占用命名管道，`DOGEAR_EMBEDDED_BROWSER_SELFTEST=1 bunx electron .` 全程未跑：honest_failure / takeoverSmoke / checkbox 双击 / observeFallbackSmoke / userNavSmoke 五个自测分期已就位，需无实例冲突环境补跑
+- GUI 人工验收场景：Google parse_empty 诚实失败实测、会话 steer 插话实测、拖拽跟手观感、tab 切换无白屏、地址栏五场景、DropdownMenu 内嵌接管按钮 pointer 序列
+- 已知限制：验证页 tab 被 TTL 回收后 intervention 卡片不自动清理（既有限制）；SerpPresenceResult 可扩展 topLinks 附标题列表（优化项）
