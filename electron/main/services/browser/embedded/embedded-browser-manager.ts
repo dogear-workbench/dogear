@@ -1,4 +1,4 @@
-import { WebContentsView, session, type BrowserWindow, type Rectangle, type Session } from 'electron';
+import { WebContentsView, BrowserWindow, session, type Rectangle, type Session } from 'electron';
 import { buildPersistentPartition, resolveProfileKey } from './profile.js';
 import { applyEmbeddedUserAgent } from './ua.js';
 import { attachTabEvents } from './tab-events.js';
@@ -12,6 +12,8 @@ import type {
 
 const IDLE_SWEEP_INTERVAL_MS = 30_000;
 const IDLE_TAB_TTL_MS = 3 * 60 * 1000;
+/** 滚动/viewport 需要确定尺寸与挂载态；屏外挂载对用户不可见（CDP 鼠标域在本环境不可用，见 actions.ts） */
+const INPUT_OFFSCREEN_BOUNDS: Rectangle = { x: -32000, y: 0, width: 1280, height: 800 };
 
 export class EmbeddedBrowserManager {
   private readonly workspaces = new Map<string, EmbeddedWorkspaceRecord>();
@@ -118,6 +120,20 @@ export class EmbeddedBrowserManager {
 
   getActiveTabId(workspaceId: string): string | null {
     return this.getWorkspaceByWorkspaceId(workspaceId)?.activeTabId ?? null;
+  }
+
+  /** 滚动/视口类操作前置：确保 tab 已挂载宿主窗口获得确定视口尺寸，未挂载时屏外挂载 */
+  ensureInputReady(tabId: string): void {
+    const found = this.findTab(tabId);
+    if (!found) throw new Error(`内嵌浏览器标签不存在: ${tabId}`);
+    const { tab } = found;
+    if (tab.view.webContents.isDestroyed()) throw new Error('内嵌浏览器标签已关闭');
+    if (tab.attachedWindow && !tab.attachedWindow.isDestroyed() && tab.view.getVisible()) return;
+    const host = BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
+    if (!host) throw new Error('无可用宿主窗口，内嵌浏览器操作不可用');
+    if (!this.attachToWindow(tabId, host, INPUT_OFFSCREEN_BOUNDS)) {
+      throw new Error('内嵌浏览器挂载宿主窗口失败，操作不可用');
+    }
   }
 
   attachToWindow(tabId: string, window: BrowserWindow, bounds?: Rectangle): boolean {

@@ -12,6 +12,7 @@ export type BrowserActionType =
   | 'fill'
   | 'read_text'
   | 'read_state'
+  | 'scroll'
   | 'wait_for'
   | 'screenshot'
   | 'close';

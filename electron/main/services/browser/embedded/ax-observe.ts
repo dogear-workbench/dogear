@@ -18,6 +18,8 @@ import type { EmbeddedTabRecord } from './types.js';
 
 export const READ_MAX_CHARS = 8_000;
 
+const PAGE_TEXT_SAMPLE_MAX_CHARS = 4_000;
+
 const REF_PATTERN = /^(\d+)@(\d+)$/;
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 };
 
@@ -140,6 +142,11 @@ export async function observeTab(tab: EmbeddedTabRecord, opts: ObserveOptions = 
     visibleInteractive.push(candidate);
   }
 
+  const axTextSample = candidates
+    .map((candidate) => `${candidate.name} ${candidate.hint}`)
+    .join(' ')
+    .slice(0, PAGE_TEXT_SAMPLE_MAX_CHARS);
+
   const filterText = opts.textFilter?.trim().toLowerCase();
   const matches = (candidate: AxNodeSummary): boolean =>
     !filterText || `${candidate.name} ${candidate.hint}`.toLowerCase().includes(filterText);
@@ -158,7 +165,7 @@ export async function observeTab(tab: EmbeddedTabRecord, opts: ObserveOptions = 
     url: tab.url,
     title: tab.title,
     generation,
-    pageState: resolvePageState(tab),
+    pageState: resolvePageState(tab, axTextSample),
     totalInteractive: visibleInteractive.length,
     shownInteractive: shownInteractive.length,
     regionCounts,
@@ -207,10 +214,15 @@ export async function findInTab(tab: EmbeddedTabRecord, query: FindQuery): Promi
   };
 }
 
+export interface ReadTextResult {
+  text: string;
+  totalLength: number;
+}
+
 export async function readTabText(
   tab: EmbeddedTabRecord,
   ref?: string,
-): Promise<{ text: string; totalLength: number }> {
+): Promise<ReadTextResult> {
   if (ref) {
     const backendNodeId = await assertRefUsable(tab, ref);
     const cdp = getCdpSession(tab);

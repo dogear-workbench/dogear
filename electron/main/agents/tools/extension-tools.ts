@@ -26,16 +26,11 @@ import {
   checkSearchBudget,
   consumeNote,
   consumeSearch,
-  getSitePolicy,
-  isRiskBlocked,
-  isSearchResultUrl,
-  markRiskBlocked,
-  matchRiskKeywords,
-  originOf,
-  randomInRange,
-  riskBlockedMessage,
-  sleep,
-  type SitePolicy,
+  navigateGate,
+  policyGate,
+  riskSignalMessage,
+  scanAndMarkRisk,
+  type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
 import { createSiteToolDefs, siteKnowledgePointer } from './extension-site-tools.js';
 import { registerToolGroup } from './tool-registry.js';
@@ -197,60 +192,6 @@ async function runCommand<T>(
       ...(typeof errorCode === 'string' ? { errorCode } : {}),
     };
   }
-}
-
-interface PolicyGateContext {
-  policy: SitePolicy;
-  origin: string | null;
-}
-
-type GateResult = { ctx: PolicyGateContext | null } | { blocked: string };
-
-/** 页面 URL 命中站点策略时的统一入口：风控前置拒绝 → 随机延迟（延迟期间不产动作流事件） */
-async function policyGate(conversationId: string | undefined, pageUrl: string): Promise<GateResult> {
-  const policy = getSitePolicy(pageUrl);
-  if (!policy) return { ctx: null };
-  const origin = originOf(pageUrl);
-  if (isRiskBlocked(conversationId, origin)) {
-    return { blocked: riskBlockedMessage() };
-  }
-  await sleep(randomInRange(policy.delayMs));
-  return { ctx: { policy, origin } };
-}
-
-/** navigate 目标 URL 命中站点策略时的入口：拒绝检查 → 预算检查 → 搜索类用 searchDelayMs */
-async function navigateGate(
-  conversationId: string | undefined,
-  targetUrl: string,
-): Promise<{ ctx: PolicyGateContext | null; isSearch: boolean } | { blocked: string; reason: 'risk' | 'budget' }> {
-  const policy = getSitePolicy(targetUrl);
-  if (!policy) return { ctx: null, isSearch: false };
-  const origin = originOf(targetUrl);
-  if (isRiskBlocked(conversationId, origin)) {
-    return { blocked: riskBlockedMessage(), reason: 'risk' };
-  }
-  const isSearch = isSearchResultUrl(policy, targetUrl);
-  if (isSearch) {
-    const budgetMessage = checkSearchBudget(conversationId, policy);
-    if (budgetMessage) return { blocked: budgetMessage, reason: 'budget' };
-  }
-  await sleep(randomInRange(isSearch ? policy.searchDelayMs : policy.delayMs));
-  return { ctx: { policy, origin }, isSearch };
-}
-
-function scanAndMarkRisk(
-  conversationId: string | undefined,
-  ctx: PolicyGateContext,
-  text: string,
-): string[] | null {
-  const hits = matchRiskKeywords(ctx.policy, text);
-  if (hits.length === 0) return null;
-  markRiskBlocked(conversationId, ctx.origin);
-  return hits;
-}
-
-function riskSignalMessage(hits: string[]): string {
-  return `页面内容命中风控信号（${hits.join('、')}）。已停止本会话对该站点的自动操作，请人工检查浏览器页面`;
 }
 
 function busyChannelMessage(idleMs: number): string {

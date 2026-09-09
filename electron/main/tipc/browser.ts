@@ -11,7 +11,7 @@ import {
   getExtensionStatus,
   setExtensionStatusBroadcaster,
 } from '../services/browser/browser-gateway.js';
-import { setBrowserToolsActionListener } from '../agents/tools/browser-tools.js';
+import { setBrowserToolsActionListener, type BrowserToolsActionEvent } from '../agents/tools/browser-tool-shared.js';
 
 const t = tipc.create();
 
@@ -32,7 +32,7 @@ export function registerBrowserActionBridge(): void {
   setBrowserDownloadBroadcaster((event) => {
     broadcastToWindows((h) => h.browserDownloadProgress.send(event));
   });
-  setBrowserToolsActionListener((event) => {
+  setBrowserToolsActionListener((event: BrowserToolsActionEvent) => {
     recordBrowserAction({
       source: event.source,
       taskMeta: event.taskMeta,
