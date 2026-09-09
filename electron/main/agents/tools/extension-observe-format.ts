@@ -176,7 +176,7 @@ export function formatObserve(payload: ObservePayload): string {
     sections.push(`其余语义节点摘要（按文本量排序）：${summary}`);
   }
   sections.push(
-    'click / fill / scroll / read_text 请使用上面的 ref 编号定位元素；页面导航后 ref 失效，需重新调用本工具。',
+    'click / fill / scroll / read_text 请使用上面的 ref 编号定位元素；也可用 find 按 role+name 精确查找；页面导航后 ref 失效，需重新调用本工具。',
   );
   return sections.join('\n\n');
 }

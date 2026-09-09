@@ -35,7 +35,7 @@ export function BrowserPageView() {
 
   useEffect(() => {
     const el = placeholderRef.current;
-    if (!presentedTabId || !el) return;
+    if (!el) return;
     let timer: number | undefined;
     const report = () => {
       const rect = el.getBoundingClientRect();
@@ -63,7 +63,7 @@ export function BrowserPageView() {
       window.removeEventListener('resize', schedule);
       void client.reportPageViewBounds({ bounds: null });
     };
-  }, [presentedTabId]);
+  }, [tabs.length]);
 
   if (tabs.length === 0) return null;
 
@@ -83,17 +83,26 @@ export function BrowserPageView() {
         页面视图
         <span className="text-muted-foreground/60 normal-case tracking-normal">（呈现给用户看，不影响 agent 操作目标）</span>
       </div>
-      {presented ? (
-        <div className="px-3 pb-2">
-          <div
-            ref={placeholderRef}
-            className="relative w-full h-52 rounded-md border bg-background overflow-hidden"
-          >
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/60 select-none">
-              <ExternalLink className="w-4 h-4" />
-              <span className="text-[10px] truncate max-w-full px-4" title={presented.url}>{presented.url}</span>
-            </div>
+      <div className="px-3 pb-2">
+        <div
+          ref={placeholderRef}
+          className="relative w-full h-52 rounded-md border bg-background overflow-hidden"
+        >
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground/60 select-none">
+            {presented ? (
+              <>
+                <ExternalLink className="w-4 h-4" />
+                <span className="text-[10px] truncate max-w-full px-4" title={presented.url}>{presented.url}</span>
+              </>
+            ) : (
+              <>
+                <MonitorPlay className="w-4 h-4" />
+                <span className="text-[10px] px-4">未呈现页面 · 点列表中的「呈现」在此查看</span>
+              </>
+            )}
           </div>
+        </div>
+        {presented ? (
           <button
             className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
             onClick={dismissTab}
@@ -101,8 +110,8 @@ export function BrowserPageView() {
             <MonitorX className="w-3 h-3" />
             收起页面视图
           </button>
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       <div className="pb-1">
         {tabs.map((tab) => {
           const active = tab.tabId === presentedTabId;

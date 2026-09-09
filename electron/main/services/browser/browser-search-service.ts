@@ -34,6 +34,19 @@ const TASK_TIMEOUT_MS = 60_000;
 const GOTO_TIMEOUT_MS = 15_000;
 const PROBE_TIMEOUT_MS = 2_000;
 
+const PARSE_RETRY_INTERVAL_MS = 500;
+const PARSE_RETRY_MAX = 6;
+
+async function evalInTabWithRetry(tab: EmbeddedTabRecord, fn: SerpParseFn, remainingMs: () => number): Promise<ParsedSerpItem[]> {
+  let last: ParsedSerpItem[] = [];
+  for (let attempt = 0; attempt <= PARSE_RETRY_MAX; attempt++) {
+    last = await evalInTab(tab, fn);
+    if (last.length > 0 || remainingMs() <= PARSE_RETRY_INTERVAL_MS) return last;
+    await new Promise((resolve) => setTimeout(resolve, PARSE_RETRY_INTERVAL_MS));
+  }
+  return last;
+}
+
 const PARSE_FNS: Record<SearchEngineId, SerpParseFn> = {
   google: parseGoogleSerp,
   ddg: parseDdgSerp,
@@ -279,7 +292,7 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
       let items: ParsedSerpItem[] | null = null;
       let failureReason = '';
       try {
-        const parsed = await evalInTab(current, PARSE_FNS[engine]);
+        const parsed = await evalInTabWithRetry(current, PARSE_FNS[engine], remainingMs);
         if (parsed.length === 0) {
           failureReason = `${ENGINE_LABELS[engine]} 搜索结果解析为空（页面改版或无结果）`;
           emit({ action: 'parse', url: current.url, detail: failureReason, result: 'parse_empty' });
