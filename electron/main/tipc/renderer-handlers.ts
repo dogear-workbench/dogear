@@ -6,7 +6,8 @@ import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { ChildStatus, ChildStateSnapshot } from '../types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
 import type { BrowserActionEvent } from '../services/browser/browser-action-stream.js';
-import type { BrowserDownloadEvent } from '../services/browser/browser-download-service.js';
+import type { EmbeddedTabSnapshot } from '../services/browser/embedded/types.js';
+import type { HumanInterventionRequest } from '../services/browser/human-intervention.js';
 import type { ExtensionStatus } from '../services/browser/browser-gateway.js';
 
 /**
@@ -248,8 +249,11 @@ export type RendererHandlers = {
   // 浏览器动作流增量事件（action-stream 广播，browser-store 追加渲染）
   browserActionAdded: (data: BrowserActionEvent) => void;
 
-  // 受控浏览器组件下载进度（download-service 广播，前端全局 toast + 解析入口状态文案）
-  browserDownloadProgress: (data: BrowserDownloadEvent) => void;
+  // 页面呈现状态变化（presentation 广播；渲染层按 windowId 匹配本窗口高亮）
+  pagePresentationChanged: (data: { windowId: number; tabId: string | null }) => void;
+
+  // 等待人工请求变化（human-intervention 广播；payload 为全量 pending 列表）
+  humanInterventionChanged: (data: { pending: HumanInterventionRequest[] }) => void;
 
   // 浏览器扩展连接状态变化（browser-gateway 广播，设置页状态行渲染；payload 为全量状态快照）
   extensionStatusChanged: (data: ExtensionStatus) => void;

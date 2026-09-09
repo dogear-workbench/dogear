@@ -5,7 +5,7 @@
  * 供 browser-tools.ts（声明式入口）与 browser-atom-tools.ts（内嵌原子工具）共用。
  */
 
-import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
+import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
 import {
   findInTab,
   observeTab,
@@ -40,7 +40,8 @@ export type BrowserToolsAction =
   | 'screenshot'
   | 'scroll'
   | 'read_state'
-  | 'close';
+  | 'close'
+  | 'present';
 
 export interface BrowserToolsActionEvent {
   source: string;

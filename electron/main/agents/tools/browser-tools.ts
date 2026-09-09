@@ -11,7 +11,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { z } from 'zod';
-import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
+import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
 import { readArticleWithBrowser } from '../../services/browser/browser-article-service.js';
 import type { BrowserArticleActionEvent } from '../../services/browser/browser-article-types.js';
 import { controlledBrowserBlock } from '../../services/browser/site-policy.js';
@@ -33,6 +33,8 @@ import {
 } from './browser-tool-shared.js';
 import { createBrowserObserveToolDefs } from './browser-atom-tools.js';
 import { createBrowserActionToolDefs } from './browser-action-tools.js';
+import { createPresentToolDef } from './browser-present-tool.js';
+import { raiseHumanIntervention } from '../../services/browser/human-intervention.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -54,12 +56,12 @@ export function createBrowserToolDefs(opts?: {
     defineTool(
       'dogear__browser__readArticle',
       '用浏览器读取网页文章（快档首选）',
-      '通过受控浏览器读取网页文章，返回渲染后的 Markdown 正文与元数据。内置渲染等待、展开全文按钮点击、翻页拼接与登录墙检测。\n' +
+      '通过内嵌浏览器读取网页文章，返回渲染后的 Markdown 正文与元数据。内置渲染等待、展开全文按钮点击、翻页拼接与登录墙检测。\n' +
         '使用纪律：\n' +
         '- 需要读取网页文章内容时优先调用本工具，不要直接从原子工具开始。\n' +
         '- 快档失败（timeout / parse_empty / nav_failed）时不白跑：返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接用 dogear__browser__observe_page / read_text 继续探索，不要重新导航。\n' +
         '- 小红书等登录态站点禁止本通道（调用会被直接拒绝），请改用 dogear__extension__* 扩展通道在用户真实浏览器上操作。\n' +
-        '- 返回 need_login 时：浏览器窗口已打开并停留在目标页，必须告知用户「浏览器窗口已打开，请在窗口中完成登录，登录完成后告诉我重试」；用户完成登录后重新调用本工具即可（登录态已持久化）。\n' +
+        '- 返回 need_login 时：页面已保留在内嵌浏览器并呈现在浏览器面板，等待人工状态已产生；必须告知用户「请在浏览器面板完成登录，登录完成后告诉我重试」；用户完成后重新调用本工具即可（登录态已持久化）。\n' +
         '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。',
       z.object({
         url: z.string().url().describe('文章页面完整 URL（含 http/https）'),
@@ -86,10 +88,19 @@ export function createBrowserToolDefs(opts?: {
             result: result.errorClass,
           });
           if (result.errorClass === 'need_login') {
+            if (result.failure?.tabId) {
+              raiseHumanIntervention({
+                tabId: result.failure.tabId,
+                reason: 'login_required',
+                message: `页面需要登录后才能读取：${result.failure.url ?? args.url}。请在浏览器面板完成登录后点「完成后继续」`,
+                url: result.failure.url ?? args.url,
+                taskMeta,
+              });
+            }
             return isErrorResult(
               `读取失败：页面需要登录（need_login）。\n` +
-                `浏览器窗口已打开并置前，停留在目标页（${result.failure?.url ?? args.url}）。\n` +
-                `请立即告知用户：浏览器窗口已打开，请在窗口中完成登录；登录完成后让你重试时，重新调用本工具即可。`,
+                `页面已保留在内嵌浏览器并呈现在浏览器面板（${result.failure?.url ?? args.url}）。\n` +
+                `已产生「等待人工」状态：请告知用户在浏览器面板完成登录后点「完成后继续」，或登录完成后让你重试即可。`,
             );
           }
           return isErrorResult(formatFetchFailure('读取文章', result.errorClass, result.message, result.failure));
@@ -121,15 +132,15 @@ export function createBrowserToolDefs(opts?: {
     defineTool(
       'dogear__browser__search',
       '搜索网页并返回结果列表（快档）',
-      '通过受控浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。快档解析，引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 受控浏览器」配置。\n' +
+      '通过内嵌浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。快档解析，引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 浏览器」配置。\n' +
         '传 site="reddit" 或 site="zhihu" 时走站内搜索：reddit 用 old.reddit（结果带 score/评论数/subreddit），zhihu 用知乎搜索页（结果带作者/赞同数）；站内失败自动降级为「关键词 site:域名」通用搜索（丢互动量但保可用，降级原因见返回）。\n' +
         '使用纪律：\n' +
         '- 需要发现内容（不知道具体 URL）时先用本工具搜索，搜到再用 dogear__browser__readArticle 阅读。\n' +
         '- 需要站内互动量排序（高赞/高票）或某个站的垂直内容时传 site；不传 site 走通用引擎，行为不变。\n' +
         '- 关键词用空格分隔核心词，避免整句提问，与普通搜索引擎用法一致。\n' +
         '- 全链失败时页面保留在标签页并返回位置（tabId + URL + 状态），直接用 dogear__browser__observe_page / read_text 从该页面手动提取结果，不要重新搜索。\n' +
-        '- 站内搜索对登录态敏感：知乎未登录可能返回空结果，Reddit 未登录会跳登录页；降级原因提到登录或空结果时，提示用户在受控浏览器窗口人工登录对应站点一次（profile 会记住）后重试。\n' +
-        '- 返回降级提示且提到验证页时，告知用户可在受控浏览器窗口人工完成一次验证（profile 会记住）后重试。',
+        '- 站内搜索对登录态敏感：知乎未登录可能返回空结果，Reddit 未登录会跳登录页；降级原因提到登录或空结果时，提示用户在浏览器面板人工登录对应站点一次（profile 会记住）后重试。\n' +
+        '- 返回降级提示且提到验证页时，告知用户可在浏览器面板人工完成一次验证（profile 会记住）后重试。',
       z.object({
         query: z.string().trim().min(1).describe('搜索关键词，不能为空'),
         site: z.enum(['reddit', 'zhihu']).optional().describe('站内搜索引擎：需要站内互动量排序（高赞/高票）时用它；不传走通用引擎'),
@@ -164,7 +175,7 @@ export function createBrowserToolDefs(opts?: {
           outcome.degradations.length > 0
             ? `\n⚠️ 降级记录：${outcome.degradations
                 .map((d) => `${SEARCH_ENGINE_LABELS[d.from]} → ${SEARCH_ENGINE_LABELS[d.to]}（${d.reason}）`)
-                .join('；')}\n如涉及验证页，可在受控浏览器窗口人工完成一次验证，profile 会记住。`
+                .join('；')}\n如涉及验证页，可在浏览器面板人工完成一次验证，profile 会记住。`
             : '';
         return textResult(
           `🔍 搜索完成\n引擎: ${SEARCH_ENGINE_LABELS[outcome.engine]}\n关键词: ${outcome.query}\n结果数: ${outcome.results.length}${degradeNote}\n\n${lines.join('\n\n')}`,
@@ -271,6 +282,11 @@ export function createBrowserToolDefs(opts?: {
       conversationId,
       workspaceId: opts?.workspaceId,
       workspacePath,
+    }),
+
+    createPresentToolDef({
+      conversationId,
+      workspaceId: opts?.workspaceId,
     }),
 
     ...createBrowserActionToolDefs({

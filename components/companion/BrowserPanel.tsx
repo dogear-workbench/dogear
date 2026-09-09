@@ -4,6 +4,7 @@ import {
   Camera,
   Clock,
   Database,
+  ExternalLink,
   Eye,
   FileText,
   Globe,
@@ -13,11 +14,14 @@ import {
   PenLine,
   Square,
   Type,
+  ArrowUpDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBrowserStore } from '@/stores/browser-store';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { BrowserPageView } from './BrowserPageView';
+import { BrowserInterventions } from './BrowserInterventions';
 import type {
   BrowserActionEvent,
   BrowserActionType,
@@ -31,11 +35,14 @@ const ACTION_ICONS: Record<BrowserActionType, typeof Activity> = {
   observe: Eye,
   parse: FileText,
   fill: PenLine,
+  scroll: ArrowUpDown,
   read_text: Type,
   read_state: Database,
   wait_for: Hourglass,
   screenshot: Camera,
   close: Square,
+  present: ExternalLink,
+  await_human: Hourglass,
 };
 
 const ACTION_LABELS: Record<BrowserActionType, string> = {
@@ -45,11 +52,14 @@ const ACTION_LABELS: Record<BrowserActionType, string> = {
   observe: '观察',
   parse: '解析',
   fill: '填写',
+  scroll: '滚动',
   read_text: '读取',
   read_state: '读状态',
   wait_for: '等待条件',
   screenshot: '截图',
   close: '结束',
+  present: '呈现',
+  await_human: '等待人工',
 };
 
 const BAD_RESULT_RE = /^(error|timeout|need_login|browser_crash|parse_empty|value_mismatch)$/;
@@ -152,15 +162,12 @@ function StatusLine({ status, runningLabel }: { status: BrowserStreamStatus; run
   const stateText = status.running
     ? `运行中 · ${runningLabel ?? '浏览器任务'}`
     : status.launched
-      ? '空闲 · 浏览器已启动'
+      ? '空闲 · 内嵌浏览器已启动'
       : '空闲';
   return (
     <div className="flex items-center gap-2 px-3 h-9 border-b shrink-0 text-xs">
       <Globe className={cn('w-3.5 h-3.5 shrink-0', status.running ? 'text-primary' : 'text-muted-foreground')} />
       <span className={cn('truncate', status.running ? 'text-foreground' : 'text-muted-foreground')}>{stateText}</span>
-      {status.queued > 0 && (
-        <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">排队 {status.queued}</span>
-      )}
     </div>
   );
 }
@@ -179,7 +186,6 @@ export function BrowserPanel() {
   const status = useBrowserStore((s) => s.status);
   const sessionTabs = useSessionStore((s) => s.tabs);
   const conversations = useConversationStore((s) => s.conversations);
-
   useEffect(() => {
     void useBrowserStore.getState().ensureLoaded();
   }, []);
@@ -221,6 +227,8 @@ export function BrowserPanel() {
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <StatusLine status={status} runningLabel={runningLabel} />
+      <BrowserInterventions />
+      <BrowserPageView />
       {groups.length === 0 ? (
         <EmptyState />
       ) : (

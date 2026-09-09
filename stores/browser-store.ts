@@ -2,17 +2,32 @@ import { create } from 'zustand';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import type { BrowserActionEvent, BrowserStreamStatus } from '../electron/main/services/browser/browser-action-stream';
+import type { EmbeddedTabSnapshot } from '../electron/main/services/browser/embedded/types';
+import type { HumanInterventionRequest } from '../electron/main/services/browser/human-intervention';
 
 const MAX_EVENTS = 500;
+const TABS_REFRESH_INTERVAL_MS = 2000;
+
+interface PageViewState {
+  tabs: EmbeddedTabSnapshot[];
+  selfWindowId: number | null;
+  presentedTabId: string | null;
+  hasPageView: boolean;
+}
 
 interface BrowserState {
   events: BrowserActionEvent[];
   status: BrowserStreamStatus;
   /** 历史是否已拉取（首次打开面板时一次性 RPC，之后靠增量广播） */
   loaded: boolean;
+  /** 页面视图区状态（tab 列表 + 本窗口呈现状态），随动作流事件节流刷新 */
+  view: PageViewState;
+  humanInterventions: HumanInterventionRequest[];
   ensureLoaded: () => Promise<void>;
+  ensureViewStateLoaded: () => Promise<void>;
   refreshStatus: () => Promise<void>;
   handleActionAdded: (event: BrowserActionEvent) => void;
+  handlePresentationChanged: (data: { windowId: number; tabId: string | null }) => void;
 }
 
 function capEvents(events: BrowserActionEvent[]): BrowserActionEvent[] {
@@ -26,10 +41,14 @@ function mergeEvents(local: BrowserActionEvent[], server: BrowserActionEvent[]):
   return capEvents([...server, ...tail]);
 }
 
+let lastTabsRefreshAt = 0;
+
 export const useBrowserStore = create<BrowserState>((set, get) => ({
   events: [],
-  status: { running: false, launched: false, queued: 0, holder: null },
+  status: { running: false, launched: false, holder: null },
   loaded: false,
+  view: { tabs: [], selfWindowId: null, presentedTabId: null, hasPageView: false },
+  humanInterventions: [],
 
   ensureLoaded: async () => {
     if (get().loaded) return;
@@ -38,6 +57,19 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
       set((state) => ({ events: mergeEvents(state.events, events), status, loaded: true }));
     } catch (error) {
       console.warn('[browser] 拉取动作历史失败:', error);
+    }
+  },
+
+  ensureViewStateLoaded: async () => {
+    try {
+      const [view, pending] = await Promise.all([
+        client.getPageViewState(),
+        client.listHumanInterventions(),
+      ]);
+      lastTabsRefreshAt = Date.now();
+      set({ view, humanInterventions: pending });
+    } catch (error) {
+      console.warn('[browser] 拉取页面视图状态失败:', error);
     }
   },
 
@@ -53,11 +85,31 @@ export const useBrowserStore = create<BrowserState>((set, get) => ({
   handleActionAdded: (event) => {
     set((state) => ({ events: capEvents([...state.events, event]) }));
     void get().refreshStatus();
+    const now = Date.now();
+    if (now - lastTabsRefreshAt >= TABS_REFRESH_INTERVAL_MS) {
+      lastTabsRefreshAt = now;
+      void client
+        .getPageViewState()
+        .then((view) => set({ view }))
+        .catch(() => {});
+    }
+  },
+
+  handlePresentationChanged: (data) => {
+    const view = get().view;
+    if (view.selfWindowId === null || data.windowId !== view.selfWindowId) return;
+    set({ view: { ...view, presentedTabId: data.tabId } });
   },
 }));
 
 if (typeof window !== 'undefined' && window.ipcRenderer) {
   rendererEvents.browserActionAdded.listen((event) => {
     useBrowserStore.getState().handleActionAdded(event);
+  });
+  rendererEvents.pagePresentationChanged.listen((data) => {
+    useBrowserStore.getState().handlePresentationChanged(data);
+  });
+  rendererEvents.humanInterventionChanged.listen(({ pending }) => {
+    useBrowserStore.setState({ humanInterventions: pending });
   });
 }

@@ -159,7 +159,7 @@ check(
   isErr(rivalObserve) &&
     textOf(rivalObserve).includes('扩展通道正被另一个会话使用') &&
     textOf(rivalObserve).includes('已空闲 1 分钟') &&
-    textOf(rivalObserve).includes('受控浏览器'),
+    textOf(rivalObserve).includes('内嵌浏览器'),
   textOf(rivalObserve),
 );
 const busyEvent = getBrowserActionHistory().filter((e) => e.result === 'busy').at(-1);

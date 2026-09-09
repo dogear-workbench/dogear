@@ -75,7 +75,7 @@ export const ABILITY_DOMAINS: AbilityDomainMeta[] = [
   {
     id: 'article',
     label: '文章解析',
-    description: '文章读取、网页渲染解析与管理（含受控浏览器工具包）',
+    description: '文章读取、网页渲染解析与管理（含内嵌浏览器工具包）',
     skills: ['article-parser'],
   },
   {

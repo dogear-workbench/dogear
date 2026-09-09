@@ -17,6 +17,10 @@ import { navigateTab } from '../../services/browser/embedded/navigate.js';
 import { waitForTabCondition } from '../../services/browser/embedded/wait-for.js';
 import { getEmbeddedBrowserManager } from '../../services/browser/embedded/embedded-browser-manager.js';
 import {
+  raiseHumanIntervention,
+  resolveInterventionsForTab,
+} from '../../services/browser/human-intervention.js';
+import {
   checkNoteBudget,
   consumeNote,
   controlledBrowserBlock,
@@ -104,6 +108,17 @@ export function createBrowserObserveToolDefs(opts?: {
           }
           const pageState = resolvePageState(record, stats.text);
           const hint = pageStateHint(pageState);
+          if (pageState === 'login_required' || pageState === 'verification_required') {
+            raiseHumanIntervention({
+              tabId: record.tabId,
+              reason: pageState,
+              message: hint ?? '页面需要人工处理后 agent 才能继续',
+              url: snapshot.url,
+              taskMeta,
+            });
+          } else {
+            resolveInterventionsForTab(record.tabId);
+          }
           emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: snapshot.url, result: 'ok' });
           return textResult(
             `已导航到: ${snapshot.url}\n标题: ${snapshot.title}\n正文字数: ${stats.totalLength}\n状态: ${pageState}（generation ${snapshot.generation}）` +
@@ -266,6 +281,7 @@ export function createBrowserObserveToolDefs(opts?: {
         emitAction({ source: 'wait_for', taskMeta, action: 'wait', detail: args.text ?? args.url_contains });
         const r = await withAgentTab(async (tab) => {
           const wait = await waitForTabCondition(tab, { text: args.text, urlContains: args.url_contains, timeoutSec: args.timeout });
+          if (wait.matched) resolveInterventionsForTab(tab.tabId);
           return { wait, state: resolvePageState(tab) };
         });
         if (!r.ok) return isErrorResult(`等待失败：${r.message}`);

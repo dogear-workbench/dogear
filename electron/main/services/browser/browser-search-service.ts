@@ -1,5 +1,5 @@
 import net from 'node:net';
-import type { BrowserTaskMeta } from './browser-manager.js';
+import type { BrowserTaskMeta } from './browser-task-meta.js';
 import {
   buildSerpUrl,
   clampMaxResults,

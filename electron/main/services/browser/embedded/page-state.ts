@@ -73,9 +73,9 @@ export function resolvePageState(tab: EmbeddedTabRecord, pageText?: string): Emb
 export function pageStateHint(state: EmbeddedPageState): string | null {
   switch (state) {
     case 'login_required':
-      return '页面疑似处于登录墙，自动操作无法继续；请告知用户在受控浏览器窗口完成登录后重试';
+      return '页面疑似处于登录墙，自动操作无法继续；已产生等待人工状态，请告知用户在浏览器面板完成登录后点「完成后继续」';
     case 'verification_required':
-      return '页面疑似处于人机验证/挑战页，自动操作已受限；请告知用户在受控浏览器窗口人工完成验证后重试';
+      return '页面疑似处于人机验证/挑战页，自动操作已受限；已产生等待人工状态，请告知用户在浏览器面板人工完成验证后点「完成后继续」';
     case 'rate_limited':
       return '页面疑似触发访问频率限制，请停止自动操作并等待，或告知用户人工处理';
     case 'crashed':

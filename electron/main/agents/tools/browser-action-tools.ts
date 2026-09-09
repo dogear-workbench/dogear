@@ -14,6 +14,9 @@ import type { PolicyGateContext } from '../../services/browser/site-policy.js';
 import { readTabState } from '../../services/browser/embedded/read-state.js';
 import { scrollTab } from '../../services/browser/embedded/scroll.js';
 import { pageStateHint } from '../../services/browser/embedded/page-state.js';
+import { raiseHumanIntervention } from '../../services/browser/human-intervention.js';
+import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
+import type { EmbeddedTabRecord } from '../../services/browser/embedded/types.js';
 import {
   checkNoteBudget,
   consumeNote,
@@ -37,6 +40,28 @@ const readStateCountedUrlByConv = new Map<string, string>();
 function appendPageStateHint(text: string, pageState: EmbeddedPageState): string {
   const hint = pageStateHint(pageState);
   return hint ? `${text}\n⚠️ 状态: ${pageState}——${hint}` : `${text}\n状态: ${pageState}`;
+}
+
+/** guard 拦截不是失败：产生「等待人工」卡片，用户在面板完成后点「完成后继续」agent 再继续 */
+async function runWithGuardRaise<T>(
+  tab: EmbeddedTabRecord,
+  taskMeta: BrowserTaskMeta,
+  run: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof ActionGuardError) {
+      raiseHumanIntervention({
+        tabId: tab.tabId,
+        reason: err.code,
+        message: err.message,
+        url: tab.url,
+        taskMeta,
+      });
+    }
+    throw err;
+  }
 }
 
 function formatClickResult(result: ClickResult): string {
@@ -93,7 +118,7 @@ export function createBrowserActionToolDefs(opts?: {
         const r = await withAgentTab(async (tab): Promise<{ blocked: string } | { result: ClickResult }> => {
           const blocked = await actionGate(tab.url);
           if (blocked) return { blocked };
-          return { result: await clickTab(tab, args.ref) };
+          return { result: await runWithGuardRaise(tab, taskMeta, () => clickTab(tab, args.ref)) };
         });
         if (!r.ok) {
           const guard = r.error instanceof ActionGuardError;
@@ -127,7 +152,7 @@ export function createBrowserActionToolDefs(opts?: {
         const r = await withAgentTab(async (tab): Promise<{ blocked: string } | { result: FillResult }> => {
           const blocked = await actionGate(tab.url);
           if (blocked) return { blocked };
-          return { result: await fillTab(tab, args.ref, args.value) };
+          return { result: await runWithGuardRaise(tab, taskMeta, () => fillTab(tab, args.ref, args.value)) };
         });
         if (!r.ok) {
           const guard = r.error instanceof ActionGuardError;

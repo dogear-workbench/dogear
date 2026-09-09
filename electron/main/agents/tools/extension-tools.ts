@@ -19,7 +19,7 @@ import {
 import { recordBrowserAction } from '../../services/browser/browser-action-stream.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import { acquireChannel, resetChannel } from '../../services/browser/extension-ownership.js';
-import type { BrowserTaskMeta } from '../../services/browser/browser-manager.js';
+import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
 import type { CommandErrorCode, CommandKind } from '../../services/browser/nm-protocol.js';
 import {
   checkNoteBudget,
@@ -151,7 +151,7 @@ async function runCommand<T>(
 
 function busyChannelMessage(idleMs: number): string {
   const minutes = Math.max(1, Math.floor(idleMs / 60_000));
-  return `扩展通道正被另一个会话使用（已空闲 ${minutes} 分钟），请等它完成后再试；若需并行调研，请改串行派遣或使用受控浏览器工具`;
+  return `扩展通道正被另一个会话使用（已空闲 ${minutes} 分钟），请等它完成后再试；若需并行调研，请改串行派遣或使用内嵌浏览器工具`;
 }
 
 function formatClick(ref: string, data: ClickPayload): string {

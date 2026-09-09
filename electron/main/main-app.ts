@@ -770,13 +770,6 @@ app.on('before-quit', async () => {
   } catch (error) {
     console.error('关闭浏览器扩展网关失败:', error);
   }
-  // 强杀受控浏览器实例
-  try {
-    const { getBrowserManager } = await import('./services/browser/browser-manager.js');
-    await getBrowserManager().dispose();
-  } catch (error) {
-    console.error('关闭受控浏览器失败:', error);
-  }
   // 关闭内嵌浏览器宿主（销毁全部 WebContentsView）
   try {
     const { getEmbeddedBrowserManager } = await import('./services/browser/embedded/embedded-browser-manager.js');

@@ -482,11 +482,11 @@ export default function SettingsPage() {
 
               <BasicToolsSection local={local} setLocal={setLocal} />
 
-              {/* 受控浏览器 */}
+              {/* 浏览器 */}
               <div className="space-y-3">
-                <label className="text-sm font-medium">受控浏览器</label>
+                <label className="text-sm font-medium">浏览器</label>
                 <p className="text-xs text-muted-foreground">
-                  Agent 浏览器工具（读文章 / 网页搜索）共用的代理与搜索引擎配置。
+                  Agent 内嵌浏览器工具（读文章 / 网页搜索）共用的代理与搜索引擎配置。
                 </p>
                 <div className="space-y-4 rounded-lg border p-4">
                   <div className="space-y-1.5">

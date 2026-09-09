@@ -1,4 +1,4 @@
-import type { BrowserTaskMeta } from './browser-manager.js';
+import type { BrowserTaskMeta } from './browser-task-meta.js';
 import type { FetchFailureContext } from './embedded/fetch-page.js';
 import type { SiteSearchId } from './site-search.js';
 

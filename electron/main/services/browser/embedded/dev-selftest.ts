@@ -3,6 +3,12 @@ import type { EmbeddedTabRecord } from './types.js';
 import { ActionGuardError, clickTab, fillTab } from './actions.js';
 import { readArticleWithBrowser } from '../browser-article-service.js';
 import { searchWeb } from '../browser-search-service.js';
+import {
+  listPendingHumanInterventions,
+  raiseHumanIntervention,
+  resolveHumanIntervention,
+  resolveInterventionsForTab,
+} from '../human-intervention.js';
 import { getEmbeddedBrowserManager, type EmbeddedBrowserManager } from './embedded-browser-manager.js';
 import { navigateTab } from './navigate.js';
 import { pressTab } from './press.js';
@@ -110,7 +116,36 @@ export async function runEmbeddedBrowserSelfTest(): Promise<void> {
   manager.release(tab.tabId, 'selftest');
   manager.closeTab(tab.tabId);
   await fetchSmoke(manager);
+  humanInterventionSmoke();
   console.log('[embedded-selftest] 通过');
+}
+
+/** awaiting_human 闭环：上报 → 同 tab 去重 → 用户确认解除 → 状态恢复自动解除 */
+function humanInterventionSmoke(): void {
+  const raised = raiseHumanIntervention({
+    tabId: 'selftest-tab',
+    reason: 'login_required',
+    message: '自测登录墙',
+    url: 'https://example.com/login',
+    taskMeta: { kind: 'agent', conversationId: 'selftest' },
+  });
+  if (listPendingHumanInterventions().length !== 1) throw new Error('等待人工上报未入列');
+  const refreshed = raiseHumanIntervention({
+    tabId: 'selftest-tab',
+    reason: 'verification_required',
+    message: '自测验证页',
+  });
+  if (refreshed.id !== raised.id) throw new Error('同 tab 重复上报应复用同一请求');
+  if (listPendingHumanInterventions().length !== 1) throw new Error('重复上报不应堆卡片');
+  if (!resolveHumanIntervention(raised.id, 'user')) throw new Error('用户确认解除失败');
+  raiseHumanIntervention({
+    tabId: 'selftest-tab-2',
+    reason: 'guard_submit',
+    message: '自测提交拦截',
+  });
+  resolveInterventionsForTab('selftest-tab-2');
+  if (listPendingHumanInterventions().length !== 0) throw new Error('状态恢复后未自动解除');
+  console.log('[embedded-selftest] human_intervention:', JSON.stringify({ ok: true }));
 }
 
 /**

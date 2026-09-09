@@ -82,9 +82,9 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
   {
     name: 'browser',
     label: '浏览器',
-    description: '受控浏览器读取网页：一键读文章（readArticle，含展开与登录墙引导）+ 导航/观察/点击/填表等原子探索工具',
+    description: '内嵌浏览器读取网页：一键读文章（readArticle，含展开与登录墙引导）+ 导航/观察/点击/填表等原子探索工具 + present 页面交付',
     mcpServerName: 'dogear-browser',
-    toolCount: 9,
+    toolCount: 15,
     requiresWorkspace: false,
   },
 ];

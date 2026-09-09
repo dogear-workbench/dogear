@@ -1,3 +1,4 @@
+import { BrowserWindow, type Rectangle } from 'electron';
 import { tipc } from '@egoist/tipc/main';
 import { broadcastToWindows } from '../services/renderer-broadcast.js';
 import {
@@ -5,8 +6,21 @@ import {
   getBrowserStreamStatus,
   recordBrowserAction,
   setBrowserActionBroadcaster,
+  setBrowserStreamLaunchedProvider,
 } from '../services/browser/browser-action-stream.js';
-import { setBrowserDownloadBroadcaster } from '../services/browser/browser-download-service.js';
+import { getEmbeddedBrowserManager } from '../services/browser/embedded/embedded-browser-manager.js';
+import {
+  dismissPresentedTab,
+  getPresentationForWindow,
+  presentTab,
+  reportPageViewBounds,
+  setPresentationBroadcaster,
+} from '../services/browser/embedded/presentation.js';
+import {
+  listPendingHumanInterventions,
+  resolveHumanIntervention,
+  setHumanInterventionBroadcaster,
+} from '../services/browser/human-intervention.js';
 import {
   getExtensionStatus,
   setExtensionStatusBroadcaster,
@@ -26,11 +40,15 @@ let bridgeRegistered = false;
 export function registerBrowserActionBridge(): void {
   if (bridgeRegistered) return;
   bridgeRegistered = true;
+  setBrowserStreamLaunchedProvider(() => getEmbeddedBrowserManager().listTabs().length > 0);
   setBrowserActionBroadcaster((event) => {
     broadcastToWindows((h) => h.browserActionAdded.send(event));
   });
-  setBrowserDownloadBroadcaster((event) => {
-    broadcastToWindows((h) => h.browserDownloadProgress.send(event));
+  setPresentationBroadcaster((data) => {
+    broadcastToWindows((h) => h.pagePresentationChanged.send(data));
+  });
+  setHumanInterventionBroadcaster((pending) => {
+    broadcastToWindows((h) => h.humanInterventionChanged.send({ pending }));
   });
   setBrowserToolsActionListener((event: BrowserToolsActionEvent) => {
     recordBrowserAction({
@@ -51,6 +69,11 @@ export function registerExtensionStatusBridge(): void {
   });
 }
 
+function windowFromContext(sender: Electron.WebContents): BrowserWindow | null {
+  const win = BrowserWindow.fromWebContents(sender);
+  return win && !win.isDestroyed() ? win : null;
+}
+
 export const browserRouter = {
   getExtensionStatus: t.procedure.action(async () => getExtensionStatus()),
 
@@ -64,4 +87,60 @@ export const browserRouter = {
         status: getBrowserStreamStatus(),
       };
     }),
+
+  getSelfWindowId: t.procedure.action(async ({ context }) => windowFromContext(context.sender)?.id ?? null),
+
+  listEmbeddedTabs: t.procedure.action(async () => getEmbeddedBrowserManager().listTabs()),
+
+  /** 页面视图区状态：tab 列表 + 本窗口当前呈现 tab + 本窗口是否上报过视图区 bounds */
+  getPageViewState: t.procedure.action(async ({ context }) => {
+    const win = windowFromContext(context.sender);
+    const presentation = win ? getPresentationForWindow(win) : null;
+    return {
+      tabs: getEmbeddedBrowserManager().listTabs(),
+      selfWindowId: win?.id ?? null,
+      presentedTabId: presentation?.tabId ?? null,
+      hasPageView: presentation?.hasPageView ?? false,
+    };
+  }),
+
+  reportPageViewBounds: t.procedure
+    .input<{ bounds: Rectangle | null }>()
+    .action(async ({ input, context }) => {
+      const win = windowFromContext(context.sender);
+      if (!win) return;
+      reportPageViewBounds(win, input.bounds);
+    }),
+
+  /** 渲染层「呈现」按钮与 agent present 工具共用后端；渲染层无会话语义，holder 固定 */
+  presentEmbeddedTab: t.procedure
+    .input<{ tabId?: string; url?: string; workspaceId?: string }>()
+    .action(async ({ input, context }) => {
+      if (input.tabId) {
+        return presentTab(getEmbeddedBrowserManager(), { tabId: input.tabId });
+      }
+      if (input.url) {
+        const win = windowFromContext(context.sender);
+        return presentTab(getEmbeddedBrowserManager(), {
+          url: input.url,
+          workspaceId: input.workspaceId ?? (win ? `window-${win.id}` : 'companion-present'),
+          holderId: 'companion-present',
+        });
+      }
+      return { ok: false as const, message: 'tabId 与 url 至少提供一个' };
+    }),
+
+  dismissPresentedTab: t.procedure
+    .input<{ tabId?: string }>()
+    .action(async ({ input, context }) => {
+      const win = windowFromContext(context.sender);
+      if (!win) return;
+      dismissPresentedTab(win, input.tabId);
+    }),
+
+  listHumanInterventions: t.procedure.action(async () => listPendingHumanInterventions()),
+
+  resolveHumanIntervention: t.procedure
+    .input<{ id: string }>()
+    .action(async ({ input }) => ({ resolved: resolveHumanIntervention(input.id, 'user') })),
 };

@@ -78,7 +78,7 @@ async function readZhihuState(tab: EmbeddedTabRecord): Promise<ParsedSerpItem[] 
 }
 
 async function refineEmptyReason(site: SiteSearchId, tab: EmbeddedTabRecord, label: string): Promise<string> {
-  const loginHint = '可在受控浏览器窗口人工登录该站点一次后重试（profile 会记住）';
+  const loginHint = '可在浏览器面板人工登录该站点一次后重试（profile 会记住）';
   if (site === 'reddit' && /\/login\//.test(tab.url)) {
     return `${label} 未登录，站内搜索被重定向到登录页，${loginHint}`;
   }
@@ -113,7 +113,7 @@ export async function runSiteAttempt(
     emit({ action: 'navigate', url, detail: message, result: 'nav_failed' });
     const redirectedToLogin = site === 'reddit' && err instanceof FetchNavError && /\/login\//.test(err.url);
     const cause = redirectedToLogin
-      ? '导航被重定向到 Reddit 登录页（可能未登录）；可在受控浏览器窗口人工登录该站点一次后重试（profile 会记住）'
+      ? '导航被重定向到 Reddit 登录页（可能未登录）；可在浏览器面板人工登录该站点一次后重试（profile 会记住）'
       : '网络或代理异常';
     return {
       ok: false,

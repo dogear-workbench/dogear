@@ -1,6 +1,6 @@
-import { BrowserWindow } from 'electron';
 import type { EmbeddedBrowserManager } from './embedded-browser-manager.js';
 import { waitTabReady } from './navigate.js';
+import { presentRecordToCompanion } from './presentation.js';
 import type { EmbeddedTabRecord } from './types.js';
 
 const FETCH_NAV_TIMEOUT_MS = 20_000;
@@ -100,11 +100,9 @@ export function promoteFetchTab(manager: EmbeddedBrowserManager, tabId: string |
   manager.release(tabId, holderId);
 }
 
+/** 验证页/登录页递到用户面前：挂 companion 页面视图区（无面板时全屏兑底） */
 export function presentTabWindow(manager: EmbeddedBrowserManager, tab: EmbeddedTabRecord): void {
-  const host = BrowserWindow.getAllWindows().find((win) => !win.isDestroyed());
-  if (!host) return;
-  const contentBounds = host.getContentBounds();
-  manager.attachToWindow(tab.tabId, host, { x: 0, y: 0, width: contentBounds.width, height: contentBounds.height });
+  presentRecordToCompanion(manager, tab);
 }
 
 export function buildFetchFailure(
