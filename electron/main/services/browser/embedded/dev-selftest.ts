@@ -40,6 +40,13 @@ const INJECT_FIXTURE_FN =
     submit.type = 'submit';
     submit.textContent = 'selftest submit';
     document.body.appendChild(submit);
+    const checkboxWrap = document.createElement('label');
+    checkboxWrap.textContent = 'selftest checkbox';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.id = 'selftest-checkbox';
+    checkboxWrap.insertBefore(checkbox, checkboxWrap.firstChild);
+    document.body.appendChild(checkboxWrap);
     return 'ok';
   })()`;
 
@@ -117,8 +124,33 @@ export async function runEmbeddedBrowserSelfTest(): Promise<void> {
   manager.release(tab.tabId, 'selftest');
   manager.closeTab(tab.tabId);
   await fetchSmoke(manager);
+  await observeFallbackSmoke(manager);
   humanInterventionSmoke();
   console.log('[embedded-selftest] 通过');
+}
+
+/** observe_page DOM 兜底分期：aria-hidden 让 AX 树剔除链接（模拟 AX 覆盖不足）+ 正文充足 → ObservePayload 附 domFallbackLinks */
+async function observeFallbackSmoke(manager: EmbeddedBrowserManager): Promise<void> {
+  const links = Array.from({ length: 35 }, (_, i) => `<a href="https://example.com/target-${i + 1}">兜底链接 ${i + 1}</a>`).join('');
+  const paragraph = `兜底正文。${'内嵌浏览器观察兜底自测文本，用于把正文长度推过判定阈值。'.repeat(24)}`;
+  const html = `<html><body><div aria-hidden="true">${links}</div><p>${paragraph}</p></body></html>`;
+  const nav = await navigateTab(manager, 'embedded-selftest', `data:text/html,${encodeURIComponent(html)}`, 'selftest');
+  manager.ensureInputReady(nav.record.tabId);
+  const observe = await observeTab(nav.record);
+  console.log('[embedded-selftest] observe fallback:', JSON.stringify({
+    interactive: observe.elements.length,
+    fallbackLinks: observe.domFallbackLinks?.length ?? 0,
+    first: observe.domFallbackLinks?.[0],
+  }));
+  if (observe.elements.length >= 5) throw new Error(`fixture 页 AX 交互元素应 < 5，实际 ${observe.elements.length}`);
+  if (!observe.domFallbackLinks || observe.domFallbackLinks.length !== 30) {
+    throw new Error(`DOM 链接兜底应收集前 30 个链接，实际 ${observe.domFallbackLinks?.length ?? 0}`);
+  }
+  const first = observe.domFallbackLinks[0];
+  if (!first.href.includes('example.com/target-1') || !first.text.includes('兜底链接 1')) {
+    throw new Error(`DOM 链接兜底内容异常: ${JSON.stringify(first)}`);
+  }
+  manager.closeTab(nav.record.tabId);
 }
 
 /** 接管锁闭环：接管 → 锁生效 → 交还（taskMeta 透出 + generation 递增） → 幂等拒绝 */
@@ -307,6 +339,32 @@ async function operationSmoke(tab: EmbeddedTabRecord): Promise<void> {
 
   const state = await readTabState(tab);
   if (!state.missing) throw new Error('example.com 不应存在 __INITIAL_STATE__');
+
+  const checkbox = fixtureObserve.elements.find((el) => el.role === 'checkbox' && inputText(el).includes('selftest'));
+  if (!checkbox) throw new Error(`未找到注入的 checkbox（interactive=${fixtureObserve.elements.length}）`);
+  const firstClick = await clickTab(tab, checkbox.ref);
+  const checkedOnce = await tab.view.webContents.executeJavaScript(
+    'document.getElementById("selftest-checkbox").checked === true',
+  );
+  if (!checkedOnce) throw new Error('checkbox 点击一次后未翻转（可能被双触发或点击无效）');
+  if (firstClick.method === 'keyboard' && firstClick.statusChanged !== true) {
+    throw new Error('keyboard 翻转 checkbox 后应标记 statusChanged 并跳过 synthetic 兜底');
+  }
+  console.log('[embedded-selftest] click checkbox:', JSON.stringify({
+    method: firstClick.method,
+    statusChanged: firstClick.statusChanged === true,
+    checked: checkedOnce,
+  }));
+  const secondClick = await clickTab(tab, checkbox.ref);
+  const checkedTwice = await tab.view.webContents.executeJavaScript(
+    'document.getElementById("selftest-checkbox").checked === true',
+  );
+  if (checkedTwice) throw new Error('checkbox 第二次点击未翻回（可能被双触发）');
+  console.log('[embedded-selftest] click checkbox twice:', JSON.stringify({
+    method: secondClick.method,
+    statusChanged: secondClick.statusChanged === true,
+    checked: checkedTwice,
+  }));
 
   const links = await findInTab(tab, { role: 'link' });
   const linkRef = links.elements[0]?.ref;

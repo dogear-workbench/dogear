@@ -74,6 +74,7 @@ function formatClickResult(result: ClickResult): string {
     );
   }
   const changes: string[] = [];
+  if (result.statusChanged) changes.push('元素状态已切换（checkbox/radio 已翻转，无需再点）');
   if (result.method === 'synthetic') changes.push('本次为合成点击（当前环境真实输入通道不可用，页面可能通过 isTrusted 识别自动化）');
   if (result.elementGone) changes.push('目标元素已从页面消失');
   if (changes.length === 0) changes.push('页面无明显变化（可能为无效果点击）');

@@ -7,6 +7,7 @@ import {
   elementOf,
   summarizeByRole,
   type AxNodeSummary,
+  type DomFallbackLink,
   type FindPayload,
   type ObserveElement,
   type ObservePayload,
@@ -22,6 +23,33 @@ const PAGE_TEXT_SAMPLE_MAX_CHARS = 4_000;
 
 const REF_PATTERN = /^(\d+)@(\d+)$/;
 const DEFAULT_VIEWPORT = { width: 1280, height: 800 };
+
+const DOM_FALLBACK_MAX_INTERACTIVE = 5;
+const DOM_FALLBACK_MIN_TEXT_LENGTH = 500;
+const MAX_DOM_FALLBACK_LINKS = 30;
+const DOM_LINK_TEXT_MAX_CHARS = 60;
+const DOM_LINK_HREF_MAX_CHARS = 120;
+
+const COLLECT_DOM_LINKS_FN = new Function(
+  `return () => {
+    const links = [];
+    const seen = new Set();
+    for (const a of document.querySelectorAll('a[href]')) {
+      if (links.length >= ${MAX_DOM_FALLBACK_LINKS}) break;
+      const rect = a.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      const text = ((a.innerText || a.textContent || '')).trim().replace(/\\s+/g, ' ').slice(0, ${DOM_LINK_TEXT_MAX_CHARS});
+      if (!text) continue;
+      const href = a.href || '';
+      if (!href || seen.has(href)) continue;
+      seen.add(href);
+      links.push({ text, href: href.slice(0, ${DOM_LINK_HREF_MAX_CHARS}) });
+    }
+    return links;
+  }`,
+)() as () => DomFallbackLink[];
+
+export const collectDomLinksInPage = COLLECT_DOM_LINKS_FN;
 
 const VIEWPORT_QUERY = '(() => ({ width: window.innerWidth, height: window.innerHeight }))()';
 
@@ -160,6 +188,8 @@ export async function observeTab(tab: EmbeddedTabRecord, opts: ObserveOptions = 
   const shownHeadings = headings.filter(matches).slice(0, MAX_HEADING_ELEMENTS);
   const headingsTruncated = headings.filter(matches).length > shownHeadings.length;
 
+  const domFallbackLinks = await collectDomFallbackLinks(tab, visibleInteractive.length);
+
   return {
     tabId: tab.tabId,
     url: tab.url,
@@ -173,7 +203,26 @@ export async function observeTab(tab: EmbeddedTabRecord, opts: ObserveOptions = 
     headings: shownHeadings.map((candidate) => elementOf(candidate, generation)),
     roleSummary: summarizeByRole(contextual),
     truncated: interactiveTruncated || headingsTruncated,
+    ...(domFallbackLinks ? { domFallbackLinks } : {}),
   };
+}
+
+/** AX 可交互元素过少但正文充足时，附 DOM 可见链接摘要（Google 结果页 AX 只见容器的兜底）；异常静默跳过 */
+async function collectDomFallbackLinks(
+  tab: EmbeddedTabRecord,
+  interactiveCount: number,
+): Promise<DomFallbackLink[] | null> {
+  if (interactiveCount >= DOM_FALLBACK_MAX_INTERACTIVE) return null;
+  try {
+    const text = await readTabText(tab);
+    if (text.totalLength <= DOM_FALLBACK_MIN_TEXT_LENGTH) return null;
+    const links = (await tab.view.webContents.executeJavaScript(
+      `(${COLLECT_DOM_LINKS_FN.toString()})()`,
+    )) as DomFallbackLink[];
+    return Array.isArray(links) && links.length > 0 ? links : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface FindQuery {

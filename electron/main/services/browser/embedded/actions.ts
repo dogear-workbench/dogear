@@ -74,6 +74,13 @@ const TAG_TYPE_FN =
   '  return { tag: el.tagName.toLowerCase(), type: (el.getAttribute("type") || "").toLowerCase() };\n' +
   '}';
 
+const CHECKED_FN =
+  'function () {\n' +
+  '  const el = this;\n' +
+  '  if (!el || typeof el.checked !== "boolean") return null;\n' +
+  '  return el.checked;\n' +
+  '}';
+
 const SYNTHETIC_CLICK_FN =
   'function () {\n' +
   '  if (this && typeof this.click === "function") { this.click(); return true; }\n' +
@@ -100,9 +107,23 @@ export interface ClickResult {
   urlAfter: string;
   navigated: boolean;
   elementGone: boolean;
+  /** 不导航但元素状态已翻转（checkbox/radio），据此跳过了 synthetic 兜底 */
+  statusChanged?: boolean;
   /** keyboard = 真实键盘激活；synthetic = 输入管线不可用时的合成点击兜底（isTrusted=false） */
   method: 'keyboard' | 'synthetic';
   pageState: EmbeddedPageState;
+}
+
+async function readChecked(
+  cdp: ReturnType<typeof getCdpSession>,
+  objectId: string,
+): Promise<boolean | null> {
+  try {
+    const value = await callFnOnNode<boolean>(cdp, objectId, CHECKED_FN);
+    return typeof value === 'boolean' ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 export interface FillResult {
@@ -134,11 +155,13 @@ export async function clickTab(tab: EmbeddedTabRecord, ref: string): Promise<Cli
   // Electron/Windows 部分环境输入管线不投递（CDP 与 sendInputEvent 均被丢），
   // 无效果时降级合成点击（与扩展通道同级）并在结果中标注。
   let navigated = false;
+  let statusChanged = false;
   try {
     await cdp.send('DOM.focus', { backendNodeId });
     assertSameGeneration(tab, generation, ref);
     const target = await callFnOnNode<{ tag: string; type: string }>(cdp, objectId, TAG_TYPE_FN);
     const useSpace = target?.tag === 'input' && (target.type === 'checkbox' || target.type === 'radio');
+    const checkedBefore = useSpace ? await readChecked(cdp, objectId) : null;
     const keyEvent = useSpace
       ? { key: ' ', code: 'Space', windowsVirtualKeyCode: 32 }
       : { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 };
@@ -146,6 +169,10 @@ export async function clickTab(tab: EmbeddedTabRecord, ref: string): Promise<Cli
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...keyEvent });
     await sleep(CLICK_VERIFY_DELAY_MS);
     navigated = tab.generation !== generation;
+    if (!navigated && useSpace && checkedBefore !== null) {
+      const checkedAfter = await readChecked(cdp, objectId);
+      statusChanged = checkedAfter !== null && checkedAfter !== checkedBefore;
+    }
   } catch (err) {
     if (err instanceof RefExpiredError || tab.generation !== generation) {
       navigated = true;
@@ -155,7 +182,7 @@ export async function clickTab(tab: EmbeddedTabRecord, ref: string): Promise<Cli
   }
 
   let method: ClickResult['method'] = 'keyboard';
-  if (!navigated) {
+  if (!navigated && !statusChanged) {
     method = 'synthetic';
     try {
       await callFnOnNode<boolean>(cdp, objectId, SYNTHETIC_CLICK_FN);
@@ -175,7 +202,7 @@ export async function clickTab(tab: EmbeddedTabRecord, ref: string): Promise<Cli
       elementGone = true;
     }
   }
-  return {
+  const result: ClickResult = {
     ref,
     urlBefore,
     urlAfter: tab.url,
@@ -184,6 +211,8 @@ export async function clickTab(tab: EmbeddedTabRecord, ref: string): Promise<Cli
     method,
     pageState: resolvePageState(tab),
   };
+  if (statusChanged) result.statusChanged = true;
+  return result;
 }
 
 export async function fillTab(tab: EmbeddedTabRecord, ref: string, value: string): Promise<FillResult> {

@@ -158,6 +158,11 @@ export function createBrowserObserveToolDefs(opts?: {
           async (tab): Promise<{ blocked: string } | { payload: ObservePayload; gateCtx: PolicyGateContext | null }> => {
             const gate = await policyGate(conversationId, tab.url);
             if ('blocked' in gate) return { blocked: gate.blocked };
+            try {
+              getEmbeddedBrowserManager().ensureInputReady(tab.tabId);
+            } catch {
+              // 无宿主窗口时跳过屏外挂载：不可见 tab 的 AX 树与 DOM 兜底可见性会降级，但不阻塞观察
+            }
             return { payload: await observeTab(tab, { region: args.region, textFilter: args.text_filter }), gateCtx: gate.ctx };
           },
         );

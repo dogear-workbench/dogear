@@ -52,6 +52,11 @@ export interface RoleSummary {
   sample: string;
 }
 
+export interface DomFallbackLink {
+  text: string;
+  href: string;
+}
+
 export interface ObservePayload {
   tabId: string;
   url: string;
@@ -65,6 +70,8 @@ export interface ObservePayload {
   headings: ObserveElement[];
   roleSummary: RoleSummary[];
   truncated: boolean;
+  /** AX 可交互元素过少时的 DOM a[href] 兜底（无 ref，不可 click） */
+  domFallbackLinks?: DomFallbackLink[];
 }
 
 export interface FindPayload {

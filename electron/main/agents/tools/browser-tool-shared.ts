@@ -210,6 +210,12 @@ export function formatEmbeddedObserve(payload: ObservePayload): string {
       .join('；');
     sections.push(`其余语义节点摘要（按文本量排序）：${summary}`);
   }
+  if (payload.domFallbackLinks && payload.domFallbackLinks.length > 0) {
+    sections.push(
+      `页面链接（AX 覆盖不足时的 DOM 兜底，无 ref 不可 click，需进入时用 navigate 打开 href）：\n` +
+        payload.domFallbackLinks.map((l) => `- ${l.text}\n  ${l.href}`).join('\n'),
+    );
+  }
   sections.push(
     'ref 格式为 节点id@generation，可直接用于 click/fill/scroll/read_text/find；页面导航、SPA 路由变化或提示 ref 失效时，请重新 observe_page。',
   );
