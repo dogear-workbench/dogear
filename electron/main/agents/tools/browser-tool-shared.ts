@@ -96,10 +96,11 @@ export function formatFetchFailure(
 ): string {
   const head = `${label}失败（${errorClass}）：${message}`;
   if (!failure || !failure.pageAvailable) return head;
-  const hint =
+  const stateHint =
     failure.pageState && failure.pageState !== 'ready'
       ? pageStateHint(failure.pageState as EmbeddedPageState)
       : null;
+  const hint = failure.hint ?? stateHint;
   return [
     head,
     '',

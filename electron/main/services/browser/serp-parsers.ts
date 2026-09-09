@@ -1,3 +1,5 @@
+import type { SearchEngineId } from './browser-search-types.js';
+
 export interface ParsedSerpItem {
   title: string;
   url: string;
@@ -6,6 +8,43 @@ export interface ParsedSerpItem {
 }
 
 export type SerpParseFn = () => ParsedSerpItem[];
+
+export interface SerpPresenceResult {
+  containerFound: boolean;
+  linkCount: number;
+  textLength: number;
+}
+
+export type SerpPresenceFn = () => SerpPresenceResult;
+
+const SERP_PRESENCE_CONTAINERS: Record<SearchEngineId, string> = {
+  google: '#search, #rso',
+  ddg: 'article[data-testid="result"], li[data-layout], div.result, article.result, div.web-result, #links .result, #links',
+  bing: '#b_results li.b_algo, #b_results',
+};
+
+const SERP_PRESENCE_LINKS: Record<SearchEngineId, string> = {
+  google: '#search a[href], #rso a[href]',
+  ddg:
+    'article[data-testid="result"] a[href], li[data-layout] a[href], div.result a[href], a.result__a[href], a[data-testid="result-title-a"][href], #links .result a[href]',
+  bing: '#b_results li.b_algo a[href]',
+};
+
+/** parse_empty 时判定页面是否有可探索结果；容器缺失时兜底全文档链接计数 */
+export function detectSerpPresence(engine: SearchEngineId): SerpPresenceFn {
+  return new Function(
+    `return () => {
+      const containerSelector = ${JSON.stringify(SERP_PRESENCE_CONTAINERS[engine])};
+      const linkSelector = ${JSON.stringify(SERP_PRESENCE_LINKS[engine])};
+      const container = document.querySelector(containerSelector);
+      const linkCount = container
+        ? document.querySelectorAll(linkSelector).length
+        : document.querySelectorAll('a[href]').length;
+      const textLength = ((document.body && document.body.innerText) || '').replace(/\\s+/g, '').length;
+      return { containerFound: !!container, linkCount, textLength };
+    }`,
+  )() as SerpPresenceFn;
+}
 
 export const parseGoogleSerp = new Function(`return () => {
   const AD_RE = /赞助商广告|sponsored/i;

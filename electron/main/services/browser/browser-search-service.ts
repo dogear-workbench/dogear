@@ -23,10 +23,21 @@ import {
   loadFetchTab,
   presentTabWindow,
   promoteFetchTab,
+  sleep,
 } from './embedded/fetch-page.js';
 import { resolvePageState } from './embedded/page-state.js';
+import { readTabText } from './embedded/ax-observe.js';
 import type { EmbeddedTabRecord } from './embedded/types.js';
-import { parseGoogleSerp, parseDdgSerp, parseBingSerp, type ParsedSerpItem, type SerpParseFn } from './serp-parsers.js';
+import { raiseHumanIntervention } from './human-intervention.js';
+import {
+  detectSerpPresence,
+  parseGoogleSerp,
+  parseDdgSerp,
+  parseBingSerp,
+  type ParsedSerpItem,
+  type SerpParseFn,
+  type SerpPresenceResult,
+} from './serp-parsers.js';
 import { consumeSearch, navigateGate } from './site-policy.js';
 import { runSiteAttempt, SITE_SEARCH_CONFIG, type SiteSearchId } from './site-search.js';
 
@@ -36,6 +47,34 @@ const PROBE_TIMEOUT_MS = 2_000;
 
 const PARSE_RETRY_INTERVAL_MS = 500;
 const PARSE_RETRY_MAX = 6;
+
+const SERP_EXPLORE_HINT =
+  '页面有结果但结构化解析失败，页面已保留，请用 observe_page 观察 + click 点击结果链接 + read_text 读取内容继续探索';
+
+async function probeSerpPresence(tab: EmbeddedTabRecord, engine: SearchEngineId): Promise<SerpPresenceResult | null> {
+  try {
+    return await Promise.race([
+      evalInTab(tab, detectSerpPresence(engine)),
+      sleep(PROBE_TIMEOUT_MS).then(() => null),
+    ]);
+  } catch {
+    return null;
+  }
+}
+
+function presenceExplorable(presence: SerpPresenceResult | null): boolean {
+  if (!presence) return true;
+  return presence.containerFound || presence.linkCount >= 3;
+}
+
+async function readTabTextSafely(tab: EmbeddedTabRecord): Promise<string | undefined> {
+  if (tab.state === 'crashed' || tab.state === 'loading') return undefined;
+  try {
+    return (await readTabText(tab)).text;
+  } catch {
+    return undefined;
+  }
+}
 
 async function evalInTabWithRetry(tab: EmbeddedTabRecord, fn: SerpParseFn, remainingMs: () => number): Promise<ParsedSerpItem[]> {
   let last: ParsedSerpItem[] = [];
@@ -269,7 +308,8 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
       if (gate.isSearch) consumeSearch(conversationId);
 
       const current = tabBox.current!;
-      const pageState = resolvePageState(current);
+      const pageText = await readTabTextSafely(current);
+      const pageState = resolvePageState(current, pageText);
       if (pageState === 'verification_required') {
         emit({
           action: 'observe',
@@ -278,6 +318,15 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
           result: 'verification_page',
         });
         presentVerification(current);
+        raiseHumanIntervention({
+          tabId: current.tabId,
+          reason: 'verification_required',
+          message: `${ENGINE_LABELS[engine]} 返回人机验证页，请在内嵌浏览器窗口完成验证后点「完成后继续」`,
+          url: current.url,
+          taskMeta,
+        });
+        manager.release(current.tabId, holderId);
+        tabBox.current = null;
         const outcome = finishEngineFailure(engine, `${ENGINE_LABELS[engine]} 返回验证页（已触发人机验证）`);
         if (outcome) return outcome;
         continue;
@@ -302,6 +351,23 @@ export async function searchWeb(query: string, options?: SearchWebOptions): Prom
       } catch (err) {
         failureReason = `${ENGINE_LABELS[engine]} 结果解析异常：${err instanceof Error ? err.message : String(err)}`;
         emit({ action: 'parse', url: current.url, detail: failureReason, result: 'parse_empty' });
+      }
+
+      if (!items) {
+        const presence = await probeSerpPresence(current, engine);
+        if (presenceExplorable(presence)) {
+          const message = `${ENGINE_LABELS[engine]} 页面存在可探索结果，但结构化解析失败，页面已保留，请改用浏览器探索工具继续`;
+          emit({ action: 'parse', url: current.url, detail: message, result: 'explorable_page' });
+          return {
+            ok: false,
+            engine,
+            query: effectiveQuery,
+            errorClass: 'parse_empty',
+            message,
+            degradations,
+            failure: buildFetchFailure(current, resolvePageState(current, pageText), true, SERP_EXPLORE_HINT),
+          };
+        }
       }
 
       if (items && siteDomainFilter) {

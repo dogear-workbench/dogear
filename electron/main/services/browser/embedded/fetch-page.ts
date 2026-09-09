@@ -19,6 +19,7 @@ export interface FetchFailureContext {
   url: string | null;
   pageState: string | null;
   suggestedNextTools: string[];
+  hint?: string;
 }
 
 export function sleep(ms: number): Promise<void> {
@@ -109,6 +110,7 @@ export function buildFetchFailure(
   tab: EmbeddedTabRecord | null,
   pageState: string | null,
   pageAvailable: boolean,
+  hint?: string,
 ): FetchFailureContext | undefined {
   if (!tab) return undefined;
   return {
@@ -117,6 +119,7 @@ export function buildFetchFailure(
     url: tab.url,
     pageState,
     suggestedNextTools: [...SUGGESTED_FETCH_FALLBACK_TOOLS],
+    ...(hint ? { hint } : {}),
   };
 }
 

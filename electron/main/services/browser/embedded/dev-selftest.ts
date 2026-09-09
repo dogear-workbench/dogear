@@ -196,6 +196,30 @@ async function fetchSmoke(manager: EmbeddedBrowserManager): Promise<void> {
   if (!manager.getTabRecord(failure.tabId)) throw new Error('失败页 tab 应保留未关闭');
   if (manager.getAgentTabId(SELFTEST_WS) !== failure.tabId) throw new Error('失败页 tab 应已切为 agent 当前 tab');
 
+  const honest = await searchWeb('dogear honest failure probe', {
+    engine: 'ddg',
+    workspaceId: SELFTEST_WS,
+    taskMeta: selfTaskMeta,
+    serpUrls: {
+      ddg: 'https://www.iana.org/?q={q}',
+      bing: 'https://www.iana.org/?q={q}',
+    },
+  });
+  console.log('[embedded-selftest] search honest_failure:', JSON.stringify({
+    ok: honest.ok,
+    errorClass: honest.ok ? undefined : honest.errorClass,
+    degradations: honest.ok ? [] : honest.degradations,
+    failure: honest.ok ? undefined : honest.failure,
+  }));
+  if (honest.ok) throw new Error('iana.org 不应解析出搜索结果');
+  if (honest.errorClass !== 'parse_empty') throw new Error(`应归类 parse_empty，实际 ${honest.errorClass}`);
+  if (honest.degradations.length !== 0) throw new Error('页面有结果时不应继续降级');
+  const honestFailure = honest.failure;
+  if (!honestFailure?.pageAvailable || !honestFailure.tabId) throw new Error('诚实失败应保留页面并给探索上下文');
+  if (!honestFailure.hint) throw new Error('诚实失败应带探索 hint');
+  if (!manager.getTabRecord(honestFailure.tabId)) throw new Error('诚实失败页 tab 应保留未关闭');
+  if (manager.getAgentTabId(SELFTEST_WS) !== honestFailure.tabId) throw new Error('诚实失败页 tab 应已切为 agent 当前 tab');
+
   const article = await readArticleWithBrowser('https://www.iana.org/help/example-domains', {
     workspaceId: SELFTEST_WS,
     taskMeta: { kind: 'article', conversationId: 'selftest' },
