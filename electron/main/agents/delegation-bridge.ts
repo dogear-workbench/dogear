@@ -368,12 +368,22 @@ export async function resumeChild(childId: string, opts: { reason: string; model
 }
 
 /**
- * 终态联动：把终态秒级透给挂起在 dogear__WaitForMessage 的父会话，
- * 替代旧「干等满超时只拿到 null」。幂等：waiter resolve 即删，多条终态路径重复调用是 no-op。
+ * 终态联动：waiter 命中时把终态秒级透给挂起在 dogear__WaitForMessage 的父会话；
+ * 无 waiter 时注入父会话下一轮（Step 2 收口为单一注入出口），终态不再静默丢弃。
+ * 幂等：waiter resolve 即删，多条终态路径重复调用是 no-op。
  * 只在 settleTerminal 的「不重调」分支被调，errorClass/attempts/modelTried 填实际值。
  */
 function notifyTerminalToWaiters(c: ChildStateInternal): void {
   if (!c.sessionId) return;
+  const notice = buildTerminalNotice({
+    title: c.title,
+    terminalReason: c.terminalReason,
+    lastError: c.lastError,
+    startedAt: c.startedAt,
+    finishedAt: c.finishedAt,
+    errorClass: c.errorClass,
+    modelTried: c.modelTried,
+  }, c.consecutiveFails);
   const keys = collectTerminalWaiterKeys(messageWaiters, c.parentConversationId, c.sessionId);
   for (const key of keys) {
     const w = messageWaiters.get(key);
@@ -382,15 +392,7 @@ function notifyTerminalToWaiters(c: ChildStateInternal): void {
     messageWaiters.delete(key);
     w.resolve({
       fromSessionId: c.sessionId,
-      message: buildTerminalNotice({
-        title: c.title,
-        terminalReason: c.terminalReason,
-        lastError: c.lastError,
-        startedAt: c.startedAt,
-        finishedAt: c.finishedAt,
-        errorClass: c.errorClass,
-        modelTried: c.modelTried,
-      }, c.consecutiveFails),
+      message: notice,
       delivery: false,
       terminal: {
         terminalReason: c.terminalReason,
@@ -400,6 +402,17 @@ function notifyTerminalToWaiters(c: ChildStateInternal): void {
         modelTried: c.modelTried ?? [],
       },
     });
+  }
+  if (keys.length > 0) return;
+
+  const pushed = pushToParentSession(c.parentConversationId, {
+    fromSessionId: c.sessionId,
+    fromLabel: c.title,
+    message: notice,
+    delivery: false,
+  });
+  if (!pushed) {
+    logger.warn(`终态通知未能注入（父会话 ${c.parentConversationId} 未在运行），子会话 ${c.childId} ${terminalStatusLabel(c.terminalReason)}`);
   }
 }
 
@@ -807,6 +820,23 @@ export interface DeliverMessageOptions {
  */
 export type DeliverMessageOutcome = 'waiter' | 'queued' | 'target_inactive';
 
+/**
+ * 消息注入出口：把消息作为目标会话的新输入推进下一轮（running 时 PiSession.sendMessage 内部转
+ * steer 排队、idle 时 prompt 立即生效）。deliverMessage 的 queued 分支与终态通知注入共用。
+ * 推送失败只记日志不抛出：异步 fire-and-forget，终态结算路径不能因注入失败中断。
+ */
+function pushToParentSession(toConversationId: string, msg: Omit<DeliverMessageOptions, 'toConversationId'>): boolean {
+  const localSessionId = getPiSessionManager().getSessionIdByConversation(toConversationId);
+  const session = localSessionId ? getPiSessionManager().getSession(localSessionId) : undefined;
+  if (!session) return false;
+
+  const text = `${buildSenderTag(msg.fromSessionId, msg.fromLabel, msg.delivery)}\n${msg.message}`;
+  session.sendMessage(text).catch((err: unknown) => {
+    logger.warn(`消息推送失败 (${toConversationId})`, err);
+  });
+  return true;
+}
+
 export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutcome {
   for (const [id, w] of messageWaiters) {
     if (w.ownerConversationId === opts.toConversationId && w.fromSdkSessionIds.has(opts.fromSessionId)) {
@@ -817,15 +847,7 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
     }
   }
 
-  const localSessionId = getPiSessionManager().getSessionIdByConversation(opts.toConversationId);
-  const session = localSessionId ? getPiSessionManager().getSession(localSessionId) : undefined;
-  if (!session) return 'target_inactive';
-
-  const text = `${buildSenderTag(opts.fromSessionId, opts.fromLabel, opts.delivery)}\n${opts.message}`;
-  session.sendMessage(text).catch((err: unknown) => {
-    logger.warn(`deliverMessage 推送失败 (${opts.toConversationId})`, err);
-  });
-  return 'queued';
+  return pushToParentSession(opts.toConversationId, opts) ? 'queued' : 'target_inactive';
 }
 
 /**
