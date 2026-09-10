@@ -1,7 +1,7 @@
 /**
  * Delegation Bridge — 主进程内 Agent 协作运行时
  * 维护会话创建/停止的状态机（childStates，用于 UI 展示 + no_delivery 检测）+
- * 通用消息投递与等待（messageWaiters，支撑 dogear__SendMessage / dogear__WaitForMessage）+
+ * 通用消息投递（支撑 dogear__SendMessage，交付/终态统一注入目标会话）+
  * 监听 PiSession 的 complete / error 事件推进状态；
  * 失败终态按错误分类自动复活原会话续跑（transient 重试 / quota 沿全局 failover 链跨供应商降级，
  * 见 settleTerminal → resumeChild），耗尽才通知主会话。
@@ -9,7 +9,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { v4 as uuidv4 } from 'uuid';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 
@@ -35,11 +34,9 @@ import { createIdleWatch, type IdleWatch } from './delegation-idle.js';
 import {
   buildTerminalNotice,
   classifyDelegationError,
-  collectTerminalWaiterKeys,
   isNotifiableTerminal,
   terminalStatusLabel,
   type DelegationErrorClass,
-  type TerminalInfo,
 } from './delegation-terminal.js';
 import {
   buildResumePrompt,
@@ -67,24 +64,7 @@ interface ChildStateInternal extends ChildStateSnapshot {
   idleWatch?: IdleWatch;
 }
 
-export interface WaitForMessageResult {
-  fromSessionId: string;
-  message: string;
-  delivery: boolean;
-  /** 子会话失败终态（failed/hang/timeout）的结构化死因；正常消息/交付不带此字段 */
-  terminal?: TerminalInfo;
-}
-
-interface MessageWaiterInternal {
-  id: string;
-  ownerConversationId: string;
-  fromSdkSessionIds: Set<string>;
-  resolve: (result: WaitForMessageResult | null) => void;
-  timer: NodeJS.Timeout;
-}
-
 const childStates = new Map<string, ChildStateInternal>();
-const messageWaiters = new Map<string, MessageWaiterInternal>();
 const sessionIdWaiters = new Map<string, Array<(sessionId: string) => void>>();
 const sessionWirings = new Map<string, () => void>();
 const settling = new Set<string>();
@@ -186,7 +166,7 @@ function unwireSession(childId: string): void {
 function onChildSessionInit(childId: string, sessionId: string): void {
   const c = childStates.get(childId);
   if (!c || c.sessionId === sessionId) return;
-  // 复活后 harness sessionId 变化时也要更新：waiter 的 fromSdkSessionIds 匹配依赖 c.sessionId 与实际一致
+  // 复活后 harness sessionId 变化时也要更新：终态通知的 sender 标签与契约反查依赖 c.sessionId 与实际一致
   const hadPrevious = !!c.sessionId;
   c.sessionId = sessionId;
   if (hadPrevious) return;
@@ -249,8 +229,8 @@ async function decideResume(c: ChildStateInternal): Promise<ResumeDecision> {
 }
 
 /**
- * 终态统一结算：重调优先于通知——可复活则 resumeChild（状态回 running，不 resolve waiter，
- * 不 detach）；不可复活（耗尽/用户取消/no_delivery）才通知 waiter 并释放 attachment。
+ * 终态统一结算：重调优先于通知——可复活则 resumeChild（状态回 running，不 detach）；
+ * 不可复活（耗尽/用户取消/no_delivery）才向父会话注入终态通知并释放 attachment。
  * settling 锁防 interrupt 触发的 complete 事件与 stopChild 主流程双路并发结算。
  */
 async function settleTerminal(c: ChildStateInternal): Promise<void> {
@@ -269,7 +249,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
         }
       }
     }
-    if (isNotifiableTerminal(c.terminalReason)) notifyTerminalToWaiters(c);
+    if (isNotifiableTerminal(c.terminalReason)) notifyTerminalToParent(c);
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
   } finally {
@@ -368,12 +348,11 @@ export async function resumeChild(childId: string, opts: { reason: string; model
 }
 
 /**
- * 终态联动：waiter 命中时把终态秒级透给挂起在 dogear__WaitForMessage 的父会话；
- * 无 waiter 时注入父会话下一轮（Step 2 收口为单一注入出口），终态不再静默丢弃。
- * 幂等：waiter resolve 即删，多条终态路径重复调用是 no-op。
+ * 终态联动：把终态通知注入父会话（running 时 steer 排队、idle 时 prompt 立即生效）。
+ * 幂等：多条终态路径重复调用由 settling 锁挡住。
  * 只在 settleTerminal 的「不重调」分支被调，errorClass/attempts/modelTried 填实际值。
  */
-function notifyTerminalToWaiters(c: ChildStateInternal): void {
+function notifyTerminalToParent(c: ChildStateInternal): void {
   if (!c.sessionId) return;
   const notice = buildTerminalNotice({
     title: c.title,
@@ -384,26 +363,6 @@ function notifyTerminalToWaiters(c: ChildStateInternal): void {
     errorClass: c.errorClass,
     modelTried: c.modelTried,
   }, c.consecutiveFails);
-  const keys = collectTerminalWaiterKeys(messageWaiters, c.parentConversationId, c.sessionId);
-  for (const key of keys) {
-    const w = messageWaiters.get(key);
-    if (!w) continue;
-    clearTimeout(w.timer);
-    messageWaiters.delete(key);
-    w.resolve({
-      fromSessionId: c.sessionId,
-      message: notice,
-      delivery: false,
-      terminal: {
-        terminalReason: c.terminalReason,
-        lastError: c.lastError,
-        errorClass: c.errorClass ?? 'transient',
-        attempts: c.consecutiveFails,
-        modelTried: c.modelTried ?? [],
-      },
-    });
-  }
-  if (keys.length > 0) return;
 
   const pushed = pushToParentSession(c.parentConversationId, {
     fromSessionId: c.sessionId,
@@ -778,32 +737,7 @@ export function waitForChildSessionId(childId: string, timeoutMs = 15000): Promi
   });
 }
 
-// ─── 通用消息投递 / 等待（dogear__SendMessage / dogear__WaitForMessage 的运行时支撑） ───
-
-/**
- * 挂起等待来自指定 sessionId 集合中任意一方的下一条消息。
- * 超时返回 null。同一 ownerConversationId 允许有多个并行等待（不同 waiterId）。
- */
-export function waitForMessage(
-  ownerConversationId: string,
-  fromSdkSessionIds: string[],
-  timeoutMs: number,
-): Promise<WaitForMessageResult | null> {
-  return new Promise((resolve) => {
-    const id = uuidv4();
-    const timer = setTimeout(() => {
-      messageWaiters.delete(id);
-      resolve(null);
-    }, timeoutMs);
-    messageWaiters.set(id, {
-      id,
-      ownerConversationId,
-      fromSdkSessionIds: new Set(fromSdkSessionIds),
-      resolve,
-      timer,
-    });
-  });
-}
+// ─── 通用消息投递（dogear__SendMessage 的运行时支撑） ───
 
 export interface DeliverMessageOptions {
   toConversationId: string;
@@ -814,15 +748,14 @@ export interface DeliverMessageOptions {
 }
 
 /**
- * 'waiter'：目标正在 dogear__WaitForMessage 挂起，消息直接送进它的等待结果
- * 'queued'：目标当前没有挂起等待，消息作为一条新输入推进目标会话的下一轮
+ * 'queued'：消息已推入目标会话（running 时 steer 排队、idle 时 prompt 立即生效）
  * 'target_inactive'：目标会话当前未运行（未打开/已关闭），消息未能送达
  */
-export type DeliverMessageOutcome = 'waiter' | 'queued' | 'target_inactive';
+export type DeliverMessageOutcome = 'queued' | 'target_inactive';
 
 /**
  * 消息注入出口：把消息作为目标会话的新输入推进下一轮（running 时 PiSession.sendMessage 内部转
- * steer 排队、idle 时 prompt 立即生效）。deliverMessage 的 queued 分支与终态通知注入共用。
+ * steer 排队、idle 时 prompt 立即生效）。deliverMessage 与终态通知注入共用。
  * 推送失败只记日志不抛出：异步 fire-and-forget，终态结算路径不能因注入失败中断。
  */
 function pushToParentSession(toConversationId: string, msg: Omit<DeliverMessageOptions, 'toConversationId'>): boolean {
@@ -838,50 +771,13 @@ function pushToParentSession(toConversationId: string, msg: Omit<DeliverMessageO
 }
 
 export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutcome {
-  for (const [id, w] of messageWaiters) {
-    if (w.ownerConversationId === opts.toConversationId && w.fromSdkSessionIds.has(opts.fromSessionId)) {
-      clearTimeout(w.timer);
-      messageWaiters.delete(id);
-      w.resolve({ fromSessionId: opts.fromSessionId, message: opts.message, delivery: opts.delivery });
-      return 'waiter';
-    }
-  }
-
   return pushToParentSession(opts.toConversationId, opts) ? 'queued' : 'target_inactive';
 }
 
-/**
- * 只 resolve 属于 parentConversationId 的 dogear__WaitForMessage 挂起等待（不碰子会话状态）。
- * 给 interrupt()/close() 在 adapter.abort() 前调用：让卡在 dogear__WaitForMessage 工具调用里的
- * prompt() 立即拿到 null 结果返回，Harness 的 waitForIdle() 才不会永久阻塞。
- * 与 abortWaitsForParent 的区别：后者额外 cancel 子会话，供前端"中断等待"按钮使用。
- */
-export function abortMessageWaits(parentConversationId: string): number {
-  let count = 0;
-  for (const [id, w] of messageWaiters) {
-    if (w.ownerConversationId !== parentConversationId) continue;
-    clearTimeout(w.timer);
-    messageWaiters.delete(id);
-    w.resolve(null);
-    count++;
-  }
-  return count;
-}
-
-/** 中断指定发起会话的所有活跃 dogear__WaitForMessage 等待，并终止它名下仍在运行的 Pi 子会话。 */
+/** 中断指定发起会话名下仍在运行的子会话（标记取消）。前端经 tipc abortWaitForDeliveries 调用。 */
 export function abortWaitsForParent(parentConversationId: string): {
-  abortedWaits: number;
   cancelledChildren: number;
 } {
-  let abortedWaits = 0;
-  for (const [id, w] of messageWaiters) {
-    if (w.ownerConversationId !== parentConversationId) continue;
-    clearTimeout(w.timer);
-    messageWaiters.delete(id);
-    w.resolve(null);
-    abortedWaits++;
-  }
-
   const childIds = Array.from(childStates.values())
     .filter((c) => c.parentConversationId === parentConversationId && c.status === 'running')
     .map((c) => c.childId);
@@ -889,7 +785,7 @@ export function abortWaitsForParent(parentConversationId: string): {
     void stopChild(childId, 'cancelled').catch((err) => logger.warn(`中断子会话失败 ${childId}`, err));
   }
 
-  return { abortedWaits, cancelledChildren: childIds.length };
+  return { cancelledChildren: childIds.length };
 }
 
 /** 转义 XML 属性值中的特殊字符 */

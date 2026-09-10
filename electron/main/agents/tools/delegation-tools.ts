@@ -3,7 +3,7 @@
  *
  * 语义从"父子专用"改为"平等会话间协作"：
  * - dogear__CreateSession / dogear__CreateSessionBatch / dogear__StopSession：仅挂主会话（role='main'）
- * - dogear__SendMessage / dogear__WaitForMessage / dogear__ListLinkedSessions：主/子会话都挂，靠工具子集防孙子
+ * - dogear__SendMessage / dogear__ListLinkedSessions：主/子会话都挂，靠工具子集防孙子
  *   （子会话没有 dogear__CreateSession，天然不能再往下派）
  *
  * 所有跨会话通信都必须先过 hasDirectContractChannel 校验（服务层，contract-channel-service.ts）。
@@ -11,18 +11,13 @@
 import { z } from 'zod';
 import * as bridge from '../delegation-bridge.js';
 import * as conversationService from '../../services/conversation-service.js';
-import { loadSettings } from '../../services/settings-service.js';
 import { hasDirectContractChannel } from '../../services/contract-channel-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
-import { formatTerminalSummary } from '../delegation-terminal.js';
 
 
 const SEND_MESSAGE_DESC =
   '向与当前会话有直接派出关系的会话发送消息。仅用于与协作会话通信时。目标是你直接派出且已停机的子会话时，系统会自动调起它，消息不会丢失。';
-
-const WAIT_FOR_MESSAGE_DESC =
-  '挂起当前回合，等待指定会话列表中任一方的消息（第一条到达即返回）；不传 fromSessionIds = 等待你派出的所有运行中子会话（子会话不传 = 等待派出你的会话）。仅用于派出子会话后等待其交付或回复时。显式传入的 sessionId 会做契约通道校验，无派出关系的 ID 会立即报错并返回正确清单；免传展开的结果来自运行时快照，不做校验。';
 
 const LIST_LINKED_DESC =
   '列出当前会话所有直接契约通道对方（sessionId、运行状态、交付标记）。判定规则：status=running → 在跑，等它通知即可；status=stopped 且你收到过它的 delivery 消息、或共享区已有其交付文件 → 已交付；如需深挖可直接向它发消息（系统会自动调起）；status=stopped 且无交付 → 可用 dogear__ResumeSession 调起，它会自检进度从中断处续跑。delivered 是本进程运行时视角，应用重启后一律为 false——此时以你的上下文记忆 / 共享区文件为准。';
@@ -66,30 +61,6 @@ function truncateTask(task: string): string {
 export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
   async function resolveOwnConversation() {
     return conversationService.getById(opts.workspaceId, opts.conversationId);
-  }
-
-  async function expandWaitTargets(): Promise<{ ok: true; ids: string[] } | { ok: false; message: string }> {
-    if (opts.role === 'sub') {
-      const parent = await conversationService.getById(opts.workspaceId, opts.parentConversationId);
-      if (!parent?.sessionId) {
-        return { ok: false, message: '派出你的会话当前不可达（可能尚未初始化或已被删除），无法确定要等待的对象。可稍后重试免传等待，或用 dogear__WaitForMessage 的 fromSessionIds 显式传入目标。' };
-      }
-      return { ok: true, ids: [parent.sessionId] };
-    }
-    const children = await bridge.getChildrenByParent(opts.conversationId);
-    const runningIds = children.filter((c) => c.status === 'running' && c.sessionId).map((c) => c.sessionId!);
-    if (runningIds.length > 0) {
-      return { ok: true, ids: runningIds };
-    }
-    const lines: string[] = ['❌ 没有运行中的直属子会话可等待（不传 fromSessionIds 时等待所有运行中的直属子会话）', ''];
-    if (children.length === 0) {
-      lines.push('先用 dogear__CreateSession 派出子会话，再免传调用 dogear__WaitForMessage。');
-    } else {
-      lines.push(`全部子会话状态（共 ${children.length} 个）：`);
-      lines.push(...children.map((c) => `- sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'} · ${c.title} · status=${c.status} · ${c.delivered ? '✅已交付' : '⚠未交付'} · 你派出的`));
-      lines.push('', '已交付的仍可追问（向它发消息，停机会话会自动调起）；stopped 且未交付的可用 dogear__ResumeSession 调起后继续等待。');
-    }
-    return { ok: false, message: lines.join('\n') };
   }
 
   const sharedTools: ToolDef[] = [
@@ -164,86 +135,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           }
           return textResult('⚠ 消息已校验通过，但目标会话当前未在运行（可能已关闭），对方暂时收不到，请稍后重试');
         }
-        const via = outcome === 'waiter' ? '（对方正在等待，已直接送达）' : '（已加入对方下一轮输入）';
-        return textResult(`✅ 已发送${label}给 ${args.toSessionId} ${via}`);
-      },
-    ),
-
-    defineTool(
-      'dogear__WaitForMessage',
-      '等待指定会话的消息',
-      WAIT_FOR_MESSAGE_DESC,
-      z.object({
-        fromSessionIds: z.array(z.string().min(1)).min(1).optional().describe('要等待其消息的会话 sessionId 列表；不传 = 等待你派出的所有运行中子会话'),
-        timeoutMs: z.number().int().positive().optional().describe('超时毫秒数；缺省走默认子会话 Profile 的 timeoutMinutes'),
-      }),
-      async (args) => {
-        const ownConv = await resolveOwnConversation();
-        const ownSessionId = ownConv?.sessionId;
-        if (!ownSessionId) {
-          return errorResult('当前会话尚未完成初始化（无 sessionId），暂时无法等待消息，请稍后重试');
-        }
-        let fromSessionIds = args.fromSessionIds;
-        if (!fromSessionIds) {
-          const expanded = await expandWaitTargets();
-          if (!expanded.ok) {
-            return errorResult(expanded.message);
-          }
-          fromSessionIds = expanded.ids;
-        } else {
-          const invalidIds: string[] = [];
-          for (const id of fromSessionIds) {
-            if (!invalidIds.includes(id) && !(await hasDirectContractChannel(ownSessionId, id))) {
-              invalidIds.push(id);
-            }
-          }
-          if (invalidIds.length > 0) {
-            const lines: string[] = [
-              `❌ 以下 fromSessionIds 与当前会话无直接派出关系：${invalidIds.join(', ')}`,
-              '',
-            ];
-            if (opts.role === 'sub') {
-              lines.push('你是被派出的子会话，只能等待派出你的会话的消息。');
-              const parent = await conversationService.getById(opts.workspaceId, opts.parentConversationId);
-              if (parent?.sessionId) {
-                lines.push(`共 1 个契约通道：\n- sessionId=${parent.sessionId} · ${parent.title} · 派出你的会话`);
-              } else {
-                lines.push('派出你的会话当前不可达（可能尚未初始化或已被删除）。');
-              }
-            } else {
-              const children = await bridge.getChildrenByParent(opts.conversationId);
-              if (children.length === 0) {
-                lines.push('当前会话还没有建立任何契约通道，先用 dogear__CreateSession 派出子会话。');
-              } else {
-                const listLines = children.map((c) => {
-                  const parts = [
-                    `sessionId=${c.sessionId ?? '(尚未就绪，稍后重试)'}`,
-                    c.title,
-                    `status=${c.status}`,
-                    c.delivered ? '✅已交付' : '⚠未交付',
-                  ];
-                  parts.push('你派出的');
-                  return `- ${parts.join(' · ')}`;
-                });
-                lines.push(`全部契约通道（共 ${children.length} 个）：`, ...listLines);
-              }
-            }
-            lines.push('', '请修正 fromSessionIds 后重试（可用 dogear__ListLinkedSessions 查最新清单）。');
-            return errorResult(lines.join('\n'));
-          }
-        }
-        const settings = await loadSettings();
-        const defaultProfile = settings.subAgent?.profiles?.find((p) => p.id === 'default') ?? settings.subAgent?.profiles?.[0];
-        const effectiveTimeoutMs = args.timeoutMs ?? (defaultProfile?.timeoutMinutes ?? 30) * 60_000;
-        const result = await bridge.waitForMessage(opts.conversationId, fromSessionIds, effectiveTimeoutMs);
-        if (!result) {
-          return errorResult(`⏱ 等待超时（${effectiveTimeoutMs}ms），未收到来自 [${fromSessionIds.join(', ')}] 的消息`);
-        }
-        if (result.terminal) {
-          return textResult(`⚠ 子会话终态通知 来自 ${result.fromSessionId}：\n${result.message}\n\n${formatTerminalSummary(result.terminal)}`);
-        }
-        const label = result.delivery ? '📦 交付' : '📨 消息';
-        return textResult(`${label} 来自 ${result.fromSessionId}：\n${result.message}`);
+        return textResult(`✅ 已发送${label}给 ${args.toSessionId}（已加入对方下一轮输入，对方在跑则插话排队、空闲则立即推进下一轮）`);
       },
     ),
 
@@ -310,13 +202,13 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
           if (!sessionId) {
             return textResult(
               `✅ 已创建新会话「${snapshot.title}」，但它的 sessionId 还没就绪。\n` +
-              `稍后用 dogear__ListLinkedSessions 查到 sessionId 后，再用 dogear__SendMessage / dogear__WaitForMessage 与它通信。`,
+              `稍后用 dogear__ListLinkedSessions 查到 sessionId 后，再用 dogear__SendMessage 与它通信。`,
             );
           }
           const outputHint = args.outputPath ? `→ 建议交付路径 ${args.outputPath}` : '→ 通讯型交付（答案直接放交付消息正文）';
           return textResult(
             `✅ 已创建新会话 ${sessionId}（${snapshot.title}，profile: ${snapshot.profileName}）${outputHint}\n` +
-            `用 dogear__SendMessage("${sessionId}", ...) 与它通信；dogear__WaitForMessage(["${sessionId}"]) 等待它交付，或直接 dogear__WaitForMessage() 不传参等待它。`,
+            `用 dogear__SendMessage("${sessionId}", ...) 与它通信；现在输出简短收尾语结束回合即可，它的交付/回复/终态会作为新消息自动唤醒你。`,
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -383,7 +275,7 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
             const sid = sessionIds[i];
             lines.push(`- ${sid ?? '(sessionId 尚未就绪)'}（${s.title}，profile: ${s.profileName}）→ ${s.outputPath}`);
           }
-          lines.push('', '用 dogear__SendMessage / dogear__WaitForMessage 分别与它们通信（尚未就绪的稍后用 dogear__ListLinkedSessions 补查）。');
+          lines.push('', '用 dogear__SendMessage 分别与它们通信（尚未就绪的稍后用 dogear__ListLinkedSessions 补查）；全部派完后结束回合，交付/终态会逐个作为新消息自动唤醒你。');
           return textResult(lines.join('\n'));
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);

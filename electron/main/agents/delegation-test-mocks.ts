@@ -69,7 +69,9 @@ mock.module('@egoist/tipc/main', () => ({
 }));
 
 export const sessions = new Map<string, any>();
+const sessionRefCounts = new Map<string, number>();
 export const attachSessionByConv = new Map<string, string>();
+const attachmentMeta = new Map<string, { conversationId: string; sessionId: string }>();
 export const sessionOwnerConv = new Map<string, string>();
 export const convStore = new Map<string, any>();
 export const updateModelSelectionCalls: Array<{ id: string; modelSelection: any }> = [];
@@ -127,6 +129,38 @@ export async function startTestChild(bridge: any, profile?: string) {
   });
   const sessionId = (await bridge.waitForChildSessionId(snapshot.childId)) as string;
   return { parentConversationId, snapshot, sessionId, session: sessions.get(sessionId) };
+}
+
+/**
+ * 给父会话建 conversation→session 绑定（真实环境由 attachConversation 完成），
+ * 使 pushToParentSession 的注入路径可达；返回父会话的 sessionId（= `sdk-${conversationId}`）。
+ */
+export function registerParentSession(parentConversationId: string): string {
+  let sessionId = attachSessionByConv.get(parentConversationId);
+  if (!sessionId) {
+    sessionId = `sdk-${parentConversationId}`;
+    sessions.set(sessionId, makeFakeSession(sessionId));
+    attachSessionByConv.set(parentConversationId, sessionId);
+    sessionOwnerConv.set(sessionId, parentConversationId);
+  }
+  return sessionId;
+}
+
+/** 轮询等待指定会话收到含 substr 的推送（注入是异步 fire-and-forget，固定 sleep 易碎） */
+export async function waitForSend(
+  sessionId: string,
+  substr: string,
+  timeoutMs = 2_000,
+): Promise<{ sessionId: string; text: string }> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const hit = sendCalls.find((c) => c.sessionId === sessionId && c.text.includes(substr));
+    if (hit) return hit;
+    if (Date.now() > deadline) {
+      throw new Error(`等待推送超时: ${sessionId} 未出现「${substr}」，已收 sendCalls=${JSON.stringify(sendCalls.map((c) => c.sessionId))}`);
+    }
+    await sleep(20);
+  }
 }
 
 export async function installDelegationMocks(): Promise<void> {
@@ -227,18 +261,38 @@ export async function installDelegationMocks(): Promise<void> {
     conversationRuntimeService: {
       attachConversation: async (conversationId: string) => {
         let sessionId = attachSessionByConv.get(conversationId);
-        if (!sessionId) {
+        if (sessionId && sessions.has(sessionId)) {
+          // 对齐真实 attach：复用存活 session 时 manager.retain（refCount +1），attachment 每次新建
+          sessionRefCounts.set(sessionId, (sessionRefCounts.get(sessionId) ?? 0) + 1);
+        } else {
           sessionId = `sdk-${conversationId}-${Math.random().toString(36).slice(2, 6)}`;
           sessions.set(sessionId, makeFakeSession(sessionId));
+          sessionRefCounts.set(sessionId, 1);
           attachSessionByConv.set(conversationId, sessionId);
           sessionOwnerConv.set(sessionId, conversationId);
           // 对齐真实 attach：sessionId 回写 conversation，getBySessionId 才能反查到子会话
           const conv = convStore.get(conversationId);
           if (conv) conv.sessionId = sessionId;
         }
-        return { sessionId, attachmentId: `att-${++attachSeq}` };
+        const attachmentId = `att-${++attachSeq}`;
+        attachmentMeta.set(attachmentId, { conversationId, sessionId });
+        return { sessionId, attachmentId };
       },
-      detachAttachment: () => {},
+      detachAttachment: (attachmentId: string) => {
+        // 对齐真实 detach→release：refCount 归零即销毁 session 并摘除绑定；
+        // 复用场景（transient 复活）旧 attachment detach 后 refCount 仍 >0，绑定保留
+        const meta = attachmentMeta.get(attachmentId);
+        if (!meta) return;
+        attachmentMeta.delete(attachmentId);
+        const next = (sessionRefCounts.get(meta.sessionId) ?? 1) - 1;
+        sessionRefCounts.set(meta.sessionId, next);
+        if (next > 0) return;
+        sessionRefCounts.delete(meta.sessionId);
+        sessions.delete(meta.sessionId);
+        if (attachSessionByConv.get(meta.conversationId) === meta.sessionId) {
+          attachSessionByConv.delete(meta.conversationId);
+        }
+      },
       detachByConversationHolder: (conversationId: string, holderType: string) => {
         runtimeDetachCalls.push({ conversationId, holderType });
         const existed = attachSessionByConv.delete(conversationId);
@@ -250,7 +304,10 @@ export async function installDelegationMocks(): Promise<void> {
   mock.module(path.join(dir, './pi-session/pi-session-manager.js'), () => ({
     getPiSessionManager: () => ({
       getSession: (sessionId: string) => sessions.get(sessionId),
-      getSessionIdByConversation: () => undefined,
+      getSessionIdByConversation: (conversationId: string) => {
+        const sessionId = attachSessionByConv.get(conversationId);
+        return sessionId && sessions.has(sessionId) ? sessionId : undefined;
+      },
       getConversationIdBySession: (sessionId: string) => sessionOwnerConv.get(sessionId),
     }),
   }));

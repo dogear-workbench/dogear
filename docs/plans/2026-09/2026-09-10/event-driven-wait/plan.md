@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 终态通知增加注入出口](./step1-inject-outlet.md) — notifyTerminalToWaiters 无 waiter 时改为消息注入，双出口过渡
-- [ ] [Step 2: 删除挂起机制并切换提示词](./step2-remove-suspension.md) — 原子切换：删 WaitForMessage 工具/waiter 机制/abortMessageWaits，提示词改为「派单后结束回合」
+- [x] [Step 2: 删除挂起机制并切换提示词](./step2-remove-suspension.md) — 原子切换：删 WaitForMessage 工具/waiter 机制/abortMessageWaits，提示词改为「派单后结束回合」
 - [ ] [Step 3: UI 等待中状态与收尾](./step3-ui-waiting-state.md) — run settled + 有 running 子会话时展示「等待中」，清理测试用例，doc-sync
 
 ## 全局决策

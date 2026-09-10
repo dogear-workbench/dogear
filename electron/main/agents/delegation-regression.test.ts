@@ -4,6 +4,7 @@ import {
   installDelegationMocks,
   makeProfile,
   nextParentConversationId,
+  sendCalls,
   setMockSettings,
   sleep,
   startTestChild,
@@ -58,26 +59,17 @@ test('CreateSessionBatch 老链路：同父会话批量创建两个子会话，p
   expect(children.every((c: any) => c.status === 'running' && c.parentConversationId === parentConversationId)).toBe(true);
 });
 
-test('abortWaitsForParent 老链路：等待 resolve null、运行中子会话取消、其他父会话不受影响', async () => {
+test('abortWaitsForParent：取消本父会话运行中子会话，其他父会话不受影响', async () => {
   const mine = await startTestChild(bridge, 'p-a');
   const other = await startTestChild(bridge, 'p-a');
 
-  const myWait = bridge.waitForMessage(mine.parentConversationId, [mine.sessionId], 30_000);
-  const otherWait = bridge.waitForMessage(other.parentConversationId, [other.sessionId], 30_000);
-
   const result = bridge.abortWaitsForParent(mine.parentConversationId);
-  expect(result.abortedWaits).toBe(1);
   expect(result.cancelledChildren).toBe(1);
 
-  expect(await myWait).toBeNull();
   await sleep(100);
   expect(bridge.getChildSnapshot(mine.snapshot.childId)!.status).toBe('stopped');
   expect(bridge.getChildSnapshot(mine.snapshot.childId)!.lastError).toBe('被停止');
-
-  const raced = await Promise.race([otherWait, sleep(150).then(() => 'pending')]);
-  expect(raced).toBe('pending');
   expect(bridge.getChildSnapshot(other.snapshot.childId)!.status).toBe('running');
-  bridge.abortMessageWaits(other.parentConversationId);
 });
 
 test('通讯型交付（无 outputPath）：创建、交付、停止后复活全流程空路径不误判', async () => {
@@ -104,8 +96,31 @@ test('通讯型交付（无 outputPath）：创建、交付、停止后复活全
   const children = await bridge.getChildrenByParent(parentConversationId);
   expect(children.length).toBe(1);
   expect(children[0].outputPath).toBe('');
+});
 
-  bridge.abortMessageWaits(parentConversationId);
+test('deliverMessage：目标会话在跑时推入下一轮，未运行时返回 target_inactive', async () => {
+  const { parentConversationId, snapshot, sessionId } = await startTestChild(bridge, 'p-a');
+
+  const outcome = bridge.deliverMessage({
+    toConversationId: snapshot.childId,
+    fromSessionId: `sdk-${parentConversationId}`,
+    fromLabel: '父会话',
+    message: '追加指令',
+    delivery: false,
+  });
+  expect(outcome).toBe('queued');
+  await sleep(30);
+  expect(sendCalls.some((c) => c.sessionId === sessionId && c.text.includes('追加指令'))).toBe(true);
+
+  await bridge.stopChild(snapshot.childId, 'cancelled');
+  const outcome2 = bridge.deliverMessage({
+    toConversationId: snapshot.childId,
+    fromSessionId: `sdk-${parentConversationId}`,
+    fromLabel: '父会话',
+    message: '再补一句',
+    delivery: false,
+  });
+  expect(outcome2).toBe('target_inactive');
 });
 
 test('getChildrenByParent 补集截断：内存不跟踪的历史子会话超过 10 条时只返回最近 10 条', async () => {

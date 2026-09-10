@@ -33,7 +33,7 @@ export const delegationRouter = {
     }),
 
   /**
-   * 中断指定发起会话所有活跃的 dogear__WaitForMessage 等待，并把它名下仍在跑的会话标记为取消。
+   * 中断指定发起会话名下仍在运行的子会话（标记取消）。
    * 主会话用：用户在 chat UI 点「🛑 中断等待」时触发。
    */
   abortWaitForDeliveries: t.procedure
@@ -42,7 +42,7 @@ export const delegationRouter = {
       try {
         return bridge.abortWaitsForParent(input.parentConversationId);
       } catch (error) {
-        return { abortedWaits: 0, cancelledChildren: 0, error: error instanceof Error ? error.message : String(error) };
+        return { cancelledChildren: 0, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

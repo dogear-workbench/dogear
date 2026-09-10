@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { installDelegationMocks, sessions, sleep, startTestChild } from './delegation-test-mocks.js';
+import {
+  installDelegationMocks,
+  registerParentSession,
+  sendCalls,
+  sleep,
+  startTestChild,
+  waitForSend,
+} from './delegation-test-mocks.js';
 
 await installDelegationMocks();
 
@@ -10,6 +17,7 @@ const terminal = await import('./delegation-terminal.js');
 beforeEach(() => {
   idle.setDelegationIdleTimeoutMs(60);
   terminal.setDelegationMaxRetry(0);
+  sendCalls.length = 0;
 });
 
 afterEach(() => {
@@ -32,58 +40,50 @@ test('message 流事件持续重置 idleTimer，活跃会话不判 hang', async 
   await sleep(250);
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
   expect(bridge.getChildSnapshot(snapshot.childId)!.lastError).toBe('无进展中断');
-  expect(sessions.get(sessionId)).toBeDefined();
 });
 
-test('无流事件到期触发 hang 终态并唤醒 waiter 带 terminal', async () => {
+test('无流事件到期触发 hang 终态，通知注入父会话', async () => {
   const { snapshot, parentConversationId, sessionId } = await startTestChild(bridge);
-  const waitPromise = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
+  const parentSessionId = registerParentSession(parentConversationId);
 
   await sleep(180);
-  const result = await waitPromise;
+  const notice = await waitForSend(parentSessionId, '无进展中断');
 
-  expect(result).not.toBeNull();
-  expect(result!.terminal?.terminalReason).toBe('hang');
-  expect(result!.terminal?.errorClass).toBe('transient');
-  expect(result!.terminal?.attempts).toBe(0);
-  expect(result!.delivery).toBe(false);
-  expect(result!.message).toContain('无进展中断');
-  expect(result!.fromSessionId).toBe(sessionId);
+  expect(notice.text).toContain('无进展中断');
+  expect(notice.text).toContain(`<sender kind="agent" session_id="${sessionId}"`);
+  expect(notice.text).toContain('delivery="false"');
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
   expect(bridge.getChildSnapshot(snapshot.childId)!.lastError).toBe('无进展中断');
 });
 
-test('complete(failed) 终态秒级唤醒 waiter 带 terminal', async () => {
-  const { snapshot, parentConversationId, sessionId, session } = await startTestChild(bridge);
-  const waitPromise = bridge.waitForMessage(parentConversationId, [sessionId], 30_000);
+test('complete(failed) 终态秒级注入父会话', async () => {
+  const { parentConversationId, session } = await startTestChild(bridge);
+  const parentSessionId = registerParentSession(parentConversationId);
 
   session.emit('complete', {
     subtype: 'failed',
     error: { kind: 'model', message: '模型请求失败' },
   });
-  const result = await waitPromise;
+  const notice = await waitForSend(parentSessionId, '模型请求失败');
 
-  expect(result!.terminal?.terminalReason).toBe('failed');
-  expect(result!.terminal?.lastError).toBe('模型请求失败');
-  expect(result!.message).toContain('模型请求失败');
-  expect(result!.message).toContain('子会话');
-  expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('stopped');
+  expect(notice.text).toContain('子会话');
+  expect(notice.text).toContain('运行失败');
 });
 
-test('等待其他子会话的 waiter 不被终态通知误伤', async () => {
+test('终态通知只注入失败子会话的父会话，其他父会话的子会话不受影响', async () => {
   idle.setDelegationIdleTimeoutMs(5_000);
   const a = await startTestChild(bridge);
   const b = await startTestChild(bridge);
-  const waitB = bridge.waitForMessage(b.parentConversationId, [b.sessionId], 250);
+  const parentA = registerParentSession(a.parentConversationId);
+  const parentB = registerParentSession(b.parentConversationId);
 
   a.session.emit('complete', {
     subtype: 'failed',
     error: { kind: 'model', message: 'a 挂了' },
   });
-  await sleep(60);
-  expect(bridge.getChildSnapshot(b.snapshot.childId)!.status).toBe('running');
+  const noticeA = await waitForSend(parentA, 'a 挂了');
 
-  const resultB = await waitB;
-  expect(resultB).toBeNull();
+  expect(noticeA.text).toContain('a 挂了');
+  expect(sendCalls.some((c) => c.sessionId === parentB)).toBe(false);
   expect(bridge.getChildSnapshot(b.snapshot.childId)!.status).toBe('running');
 });
