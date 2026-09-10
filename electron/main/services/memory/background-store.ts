@@ -1,5 +1,5 @@
 // 话题状态卡存储（background.md，条目化 schema）
-// 纯数据/合并逻辑在 state-card.ts；本文件负责 IO + 旧 GroupBackground 接口兼容出口
+// 纯数据/合并逻辑在 state-card.ts；本文件负责 IO + 用户/管理入口
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as conversationService from '../conversation-service.js';
@@ -8,18 +8,13 @@ import { getPiSessionRepository } from '../../agents/pi-session/pi-session-repos
 import { broadcastGroupDataChanged } from '../renderer-broadcast-lazy.js';
 import { getGroupDir, mergeSourcesSeen, type GroupDigestSourceSeen } from './group-digest-store.js';
 import {
-  appendPlainEntries,
-  appendTopicVersion,
-  confirmPendingTopicChange,
-  convertLegacyBackground,
   emptyTopicStateCard,
   makeEntry,
-  makeVersion,
   mergeIncrement,
   parseTopicStateCard,
+  confirmPendingTopicChange,
   rejectPendingTopicChange,
   serializeTopicStateCard,
-  type LegacyBackground,
   type StateIncrement,
   type TopicCardCategory,
   type TopicStateCard,
@@ -134,53 +129,4 @@ export async function getStaleConversations(wsId: string, groupId: string): Prom
     const seen = seenMap.get(c.sessionId);
     return seen === undefined || c.mtime > seen;
   });
-}
-
-// ─── 旧 GroupBackground 接口兼容出口（reference-tools / tipc/group / group-digest-tools 仍依赖）───
-
-export interface GroupBackground {
-  groupId: string;
-  updatedAt: string;
-  topic: string;
-  progress: string;
-  keyDecisions: string[];
-  openQuestions: string[];
-}
-
-function toLegacyView(card: TopicStateCard): GroupBackground {
-  return {
-    groupId: card.groupId,
-    updatedAt: card.updatedAt,
-    topic: card.topicHistory[card.topicHistory.length - 1]?.text ?? '',
-    progress: card.entries.inProgress.map((e) => e.text).join('\n'),
-    keyDecisions: card.entries.decisions.map((e) => e.text),
-    openQuestions: card.entries.openQuestions.map((e) => e.text),
-  };
-}
-
-export async function readGroupBackground(wsId: string, groupId: string): Promise<GroupBackground | null> {
-  const card = await readTopicStateCard(wsId, groupId);
-  if (!card) return null;
-  return toLegacyView(card);
-}
-
-/**
- * 旧 4 字段整卡写入语义的兼容实现：内部转增量式合并进现有状态卡
- * （条目 source 标 legacy——无 uuid 可追溯；topic 与末位同文本不重复进版本链）
- */
-export async function saveGroupBackground(wsId: string, bg: GroupBackground): Promise<void> {
-  const existing = await readTopicStateCard(wsId, bg.groupId);
-  const card = existing ?? emptyTopicStateCard(bg.groupId);
-  const now = new Date().toISOString();
-  appendTopicVersion(card, makeVersion(bg.topic, 'legacy', now));
-  appendPlainEntries(card, 'inProgress', [bg.progress], 'legacy', now);
-  appendPlainEntries(card, 'decisions', bg.keyDecisions, 'legacy', now);
-  appendPlainEntries(card, 'openQuestions', bg.openQuestions, 'legacy', now);
-  card.updatedAt = now;
-  await saveTopicStateCard(wsId, card);
-}
-
-/** 旧格式结构化对象 → 状态卡（一次性迁移工具，常规迁移走 parseTopicStateCard 自动路径） */
-export function legacyBackgroundToCard(bg: LegacyBackground): TopicStateCard {
-  return convertLegacyBackground(bg);
 }

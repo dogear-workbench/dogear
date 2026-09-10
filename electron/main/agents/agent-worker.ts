@@ -437,11 +437,9 @@ class AgentWorker {
     const { createGroupToolDefs } = await import('./tools/group-tools.js');
 
     let saved = false;
-    let backgroundSaved = false;
     const groupDigestDefs = createGroupDigestToolDefs(
       workspaceId, workspacePath, groupId, dirtyConversations,
       () => { saved = true; },
-      () => { backgroundSaved = true; },
     );
     const transcriptDefs = createDigestToolDefs(workspaceId, workspacePath);
     // group-tools 有 2 个工具，digest 任务只需 dogear__ListGroupFiles
@@ -518,10 +516,8 @@ class AgentWorker {
         signal: abortController.signal,
         maxTurns: 30,
         revive: {
-          shouldContinue: () => !saved || !backgroundSaved,
-          continuePrompt: () => saved
-            ? '组卡已保存，但还没有调 dogear__SaveGroupBackground。现在调用工具保存组背景，完成后结束。'
-            : '你还没有调 dogear__SaveGroupDigest 保存任何产物。不要只用文字描述计划，立即继续调用工具：完成阅读后调 dogear__SaveGroupDigest 保存组卡，再调 dogear__SaveGroupBackground 保存组背景。',
+          shouldContinue: () => !saved,
+          continuePrompt: () => '你还没有调 dogear__SaveGroupDigest 保存任何产物。不要只用文字描述计划，立即继续调用工具：完成阅读后调 dogear__SaveGroupDigest 保存组卡。',
           maxRevives: 3,
         },
         onLog: (m) => {
@@ -533,14 +529,14 @@ class AgentWorker {
       if (!result.ok) {
         if (result.cancelled) {
           taskLogger.info('组级摘要卡被取消:', groupId);
-          return { groupId, saved: false, backgroundSaved, cancelled: true };
+          return { groupId, saved: false, cancelled: true };
         }
         taskLogger.error('组级摘要卡任务失败:', result.error);
         return { groupId, saved: false, error: result.error };
       }
 
-      taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| background:', backgroundSaved, '| tier:', tier);
-      return { groupId, saved, backgroundSaved, tier, profileName: resolvedProfile.name };
+      taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
+      return { groupId, saved, tier, profileName: resolvedProfile.name };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       taskLogger.error('组级摘要卡意外失败:', errorMsg);

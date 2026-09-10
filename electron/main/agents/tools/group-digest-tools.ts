@@ -1,8 +1,8 @@
 /**
  * 组级摘要卡 MCP Server 工具（dogear-group-digest，Phase 3）
  *
- * GROUP_DIGEST_SESSION agent 用：dogear__ReadGroupDigest + dogear__SaveGroupDigest + dogear__SaveGroupBackground
- * digest.md 是给人看 + 首页复盘用；background.md 是给「组内新会话」派子会话读的结构化背景
+ * GROUP_DIGEST_SESSION agent 用：dogear__ReadGroupDigest + dogear__SaveGroupDigest
+ * digest.md 是给人看 + 首页复盘用；组内 agent 的话题背景由 STATE_EXTRACT 维护的状态卡承接（background.md）
  */
 import { z } from 'zod';
 import {
@@ -10,9 +10,6 @@ import {
   type GroupDigestCard,
   getGroupDigestPath,
 } from '../../services/memory/group-digest-store.js';
-import {
-  saveGroupBackground, getBackgroundPath, type GroupBackground,
-} from '../../services/memory/background-store.js';
 import {
   buildSessionUuidIndex, validateItemSources, type SourceProblem,
 } from '../../services/memory/source-fidelity.js';
@@ -47,7 +44,6 @@ export function createGroupDigestToolDefs(
   groupId: string,
   dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>,
   onDigestSaved?: () => void,
-  onBackgroundSaved?: () => void,
 ): ToolDef[] {
   return [
     defineTool(
@@ -149,52 +145,6 @@ export function createGroupDigestToolDefs(
           };
         } catch (e) {
           return { content: [{ type: 'text' as const, text: `保存组卡失败: ${e instanceof Error ? e.message : String(e)}` }], isError: true };
-        }
-      },
-    ),
-
-    defineTool(
-      'dogear__SaveGroupBackground',
-      '保存组背景摘要',
-      '写入本组 background.md（给下一个新会话读的结构化背景）。'
-        + '4 字段：topic 一句话组主题；progress 2-3 句当前进展；'
-        + 'keyDecisions 数组罗列已拍板的决策（避免下个新会话重议）；'
-        + 'openQuestions 数组罗列未决/搁置的问题。'
-        + 'groupId 必须等于上下文中给定的 groupId。',
-      z.object({
-        groupId: z.string(),
-        topic: z.string().min(1),
-        progress: z.string().min(1),
-        keyDecisions: z.array(z.string().min(1)),
-        openQuestions: z.array(z.string().min(1)),
-      }),
-      async (args) => {
-        try {
-          if (args.groupId !== groupId) {
-            return { content: [{ type: 'text' as const, text: `Error: groupId 必须是 ${groupId}` }], isError: true };
-          }
-          await requireActiveGroup(workspaceId, groupId);
-          const bg: GroupBackground = {
-            groupId,
-            updatedAt: new Date().toISOString(),
-            topic: args.topic,
-            progress: args.progress,
-            keyDecisions: args.keyDecisions,
-            openQuestions: args.openQuestions,
-          };
-          await saveGroupBackground(workspaceId, bg);
-          onBackgroundSaved?.();
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `已保存 background → ${getBackgroundPath(workspaceId, groupId)}（${args.keyDecisions.length} decisions / ${args.openQuestions.length} questions）`,
-            }],
-          };
-        } catch (e) {
-          return {
-            content: [{ type: 'text' as const, text: `保存 background 失败: ${e instanceof Error ? e.message : String(e)}` }],
-            isError: true,
-          };
         }
       },
     ),

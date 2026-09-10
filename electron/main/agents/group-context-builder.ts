@@ -36,7 +36,7 @@ const CATEGORY_ORDER: TopicCardCategory[] = [
   'decisions',
   'openQuestions',
 ];
-const CATEGORY_LABELS: Record<TopicCardCategory, string> = {
+export const CATEGORY_LABELS: Record<TopicCardCategory, string> = {
   inProgress: '进行中',
   completed: '已完成',
   nextSteps: '下一步',
@@ -45,15 +45,15 @@ const CATEGORY_LABELS: Record<TopicCardCategory, string> = {
   openQuestions: '待议',
 };
 
-function fmtTs(v: string | number): string {
+export function fmtTs(v: string | number): string {
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return String(v);
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** 条目来源标注：convId#uuid / user / legacy → 人读短标 */
-function sourceLabel(source: string): string {
+/** 条目来源标注：convId#uuid / user / legacy → 人读短标（ReadGroupBackground 工具输出复用） */
+export function sourceLabel(source: string): string {
   if (source === 'user') return '用户';
   if (source === 'legacy') return '';
   return `会话 ${source.split('#')[0].slice(-6)}`;
@@ -65,7 +65,7 @@ function withSource(text: string, source: string): string {
 }
 
 /** topic 生效版本的来源描述（确立来源） */
-function topicOriginLabel(source: string): string {
+export function topicOriginLabel(source: string): string {
   if (source === 'user') return '用户确认';
   if (source === 'legacy') return '早期记录';
   return `来自${sourceLabel(source)}`;

@@ -5,14 +5,16 @@
  *
  * 工具：
  * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
- * - dogear__ReadGroupBackground：读本组 background.md 的结构化字段
+ * - dogear__ReadGroupBackground：读本组 background.md 的条目化状态卡
  * - dogear__ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
  */
 import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { readCleanTranscript } from '../pi-session/transcript-adapter.js';
 import { getPiSessionRepository } from '../pi-session/pi-session-repository.js';
-import { readGroupBackground } from '../../services/memory/background-store.js';
+import { readTopicStateCard } from '../../services/memory/background-store.js';
+import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS } from '../group-context-builder.js';
+import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicVersion } from '../../services/memory/state-card.js';
 import { readGroupDigest } from '../../services/memory/group-digest-store.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { registerToolGroup } from './tool-registry.js';
@@ -69,36 +71,62 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
 
     defineTool(
       'dogear__ReadGroupBackground',
-      '读取组背景摘要',
-      '读取当前会话组的结构化背景摘要（主题、进展、已拍板决策、待议问题）。仅用于需要了解当前组整体上下文时。',
+      '读取话题状态卡',
+      '读取当前会话组的条目化状态卡：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。仅用于需要了解当前组最新整体状态时。',
       z.object({}),
       async () => {
-        const bg = await readGroupBackground(workspaceId, groupId);
-        if (!bg) {
+        const card = await readTopicStateCard(workspaceId, groupId);
+        if (!card) {
           return {
             content: [{
               type: 'text' as const,
-              text: `(本组 background.md 尚未生成 · groupId=${groupId})`,
+              text: `(本组话题状态卡尚未生成 · groupId=${groupId})`,
             }],
           };
         }
-        const decisions = bg.keyDecisions.length
-          ? bg.keyDecisions.map((d) => `- ${d}`).join('\n')
-          : '(无)';
-        const questions = bg.openQuestions.length
-          ? bg.openQuestions.map((q) => `- ${q}`).join('\n')
-          : '(无)';
-        return {
-          content: [{
-            type: 'text' as const,
-            text:
-              `groupId=${bg.groupId} updatedAt=${bg.updatedAt}\n\n` +
-              `## 主题\n${bg.topic}\n\n` +
-              `## 当前进展\n${bg.progress}\n\n` +
-              `## 关键决策（已拍板，不该重议）\n${decisions}\n\n` +
-              `## 待议问题（未决 / 搁置）\n${questions}`,
-          }],
-        };
+        const withMeta = (source: string, ts: string) => `（${[sourceLabel(source), fmtTs(ts)].filter(Boolean).join(' · ')}）`;
+        const topicLines: string[] = [];
+        const topic = card.topicHistory[card.topicHistory.length - 1];
+        if (topic) {
+          const first = card.topicHistory[0];
+          topicLines.push(
+            `## 话题背景（生效）`,
+            topic.text,
+            `确立于 ${fmtTs(first?.ts ?? topic.ts)}，${topicOriginLabel(topic.source)}`,
+          );
+          if (card.topicHistory.length > 1) {
+            topicLines.push(
+              '',
+              `## 话题版本链（共 ${card.topicHistory.length} 版，末位生效）`,
+              ...card.topicHistory.map((v: TopicVersion) => `- ${v.text}${withMeta(v.source, v.ts)}`),
+            );
+          }
+        }
+        const entryLines: string[] = [];
+        for (const cat of TOPIC_CARD_CATEGORIES) {
+          const items = card.entries[cat];
+          if (!items.length) continue;
+          entryLines.push(`### ${CATEGORY_LABELS[cat]}`);
+          entryLines.push(...items.map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
+        }
+        const parts = [
+          `groupId=${card.groupId} updatedAt=${fmtTs(card.updatedAt)}`,
+          '',
+          ...topicLines,
+        ];
+        if (entryLines.length) {
+          parts.push('', '## 当前状态', ...entryLines);
+        } else if (!topicLines.length) {
+          parts.push('(状态卡为空，尚无任何提炼记录)');
+        }
+        if (card.pendingTopicChanges.length) {
+          parts.push(
+            '',
+            `## 待确认话题变更（${card.pendingTopicChanges.length} 条，等用户在话题面板裁决，不要自行当已生效事实）`,
+            ...card.pendingTopicChanges.map((v: TopicVersion) => `- ${v.text}${withMeta(v.source, v.ts)}`),
+          );
+        }
+        return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
       },
     ),
 

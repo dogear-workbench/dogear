@@ -50,7 +50,7 @@ export const BUILTIN_TASK_META: Record<BuiltinTaskId, BuiltinTaskMeta> = {
     loadPrompt: loadGroupDigestPrompt,
     savePrompt: saveGroupDigestPrompt,
     defaultPrompt: async () => DEFAULT_GROUP_DIGEST_PROMPT,
-    tools: ['dogear__ReadGroupDigest', 'dogear__CleanTranscript', 'dogear__SaveGroupDigest', 'dogear__SaveGroupBackground', 'dogear__ListGroupFiles'],
+    tools: ['dogear__ReadGroupDigest', 'dogear__CleanTranscript', 'dogear__SaveGroupDigest', 'dogear__ListGroupFiles'],
   },
   review: {
     id: 'review',

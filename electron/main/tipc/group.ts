@@ -3,7 +3,7 @@ import { tipc } from '@egoist/tipc/main';
 import * as groupService from '../services/group-service.js';
 import { autoArchiveStaleGroups } from '../services/auto-archive-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
-import { readGroupBackground } from '../services/memory/background-store.js';
+import { readTopicStateCard, resolvePendingTopicChange } from '../services/memory/background-store.js';
 import * as conversationService from '../services/conversation-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
@@ -191,15 +191,28 @@ export const groupRouter = {
       }
     }),
 
-  readGroupBackground: t.procedure
+  readTopicStateCard: t.procedure
     .input<{ workspaceId: string; groupId: string }>()
     .action(async ({ input }) => {
       try {
-        const background = await readGroupBackground(input.workspaceId, input.groupId);
-        return { background, error: undefined };
+        const card = await readTopicStateCard(input.workspaceId, input.groupId);
+        return { card, error: undefined };
       } catch (error) {
-        console.error('读取话题背景失败:', error);
-        return { background: null, error: error instanceof Error ? error.message : String(error) };
+        console.error('读取话题状态卡失败:', error);
+        return { card: null, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  confirmTopicChange: t.procedure
+    .input<{ workspaceId: string; groupId: string; index: number; accept: boolean }>()
+    .action(async ({ input }) => {
+      try {
+        const card = await resolvePendingTopicChange(input.workspaceId, input.groupId, input.index, input.accept);
+        if (!card) return { ok: false, error: '状态卡不存在或该变更已不在待确认列表' };
+        return { ok: true, error: undefined };
+      } catch (error) {
+        console.error('确认话题变更失败:', error);
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

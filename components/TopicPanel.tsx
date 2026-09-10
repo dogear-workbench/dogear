@@ -13,6 +13,7 @@ import { requireAnchorConversationId } from '@/lib/reference-guard';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { TopicStateCardSection, type TopicStateCardView } from '@/components/TopicStateCardSection';
 import type { NativeFileEntry } from '@/types/group';
 
 export interface TopicPanelProps {
@@ -30,15 +31,6 @@ function formatMtime(mtime: number): string {
   return new Date(mtime).toLocaleString();
 }
 
-interface GroupBackgroundInfo {
-  groupId: string;
-  updatedAt: string;
-  topic: string;
-  progress: string;
-  keyDecisions: string[];
-  openQuestions: string[];
-}
-
 interface GroupDigestBrief {
   title: string;
   updatedAt: string;
@@ -51,7 +43,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
 
   const [nativeFiles, setNativeFiles] = useState<NativeFileEntry[]>([]);
   const [sharedDir, setSharedDir] = useState<string>('');
-  const [background, setBackground] = useState<GroupBackgroundInfo | null>(null);
+  const [stateCard, setStateCard] = useState<TopicStateCardView | null>(null);
   const [digest, setDigest] = useState<GroupDigestBrief | null>(null);
 
   const [bgOpen, setBgOpen] = useState(true);
@@ -66,9 +58,9 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
         setSharedDir(r.sharedDir ?? '');
       }
     });
-    client.readGroupBackground({ workspaceId, groupId: gid }).then((r) => {
-      if (r.error) toast.error('读取话题背景失败', { description: r.error });
-      else setBackground(r.background ?? null);
+    client.readTopicStateCard({ workspaceId, groupId: gid }).then((r) => {
+      if (r.error) toast.error('读取话题状态失败', { description: r.error });
+      else setStateCard(r.card ?? null);
     });
     client.readGroupDigest({ workspaceId, groupId: gid }).then((r) => {
       if ('card' in r && r.card) {
@@ -84,7 +76,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
     const gid = groupId;
     if (!gid) {
       setNativeFiles([]);
-      setBackground(null);
+      setStateCard(null);
       setDigest(null);
       return;
     }
@@ -171,40 +163,7 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
               open={bgOpen}
               onToggle={() => setBgOpen((v) => !v)}
             >
-              {background ? (
-                <div className="space-y-2 px-2 py-1.5">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">主题</div>
-                    <div className="text-xs font-medium">{background.topic || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">当前进展</div>
-                    <div className="text-xs text-foreground/90 whitespace-pre-wrap">{background.progress || '—'}</div>
-                  </div>
-                  {background.keyDecisions.length > 0 && (
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">已拍板决策</div>
-                      <ul className="space-y-0.5">
-                        {background.keyDecisions.map((d, i) => (
-                          <li key={i} className="text-xs text-foreground/90">· {d}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {background.openQuestions.length > 0 && (
-                    <div>
-                      <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">待议问题</div>
-                      <ul className="space-y-0.5">
-                        {background.openQuestions.map((q, i) => (
-                          <li key={i} className="text-xs text-foreground/90">· {q}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="px-2 py-3 text-xs text-muted-foreground">暂无背景</div>
-              )}
+              <TopicStateCardSection workspaceId={workspaceId} groupId={groupId} card={stateCard} />
             </Section>
 
             {/* 组卡提炼 */}

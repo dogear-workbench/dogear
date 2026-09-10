@@ -20,7 +20,7 @@
 - [x] [Step 1: 状态卡数据模型与存储层](./step1-store.md) — background-store 重构：条目 schema、topic 版本链、sourcesSeen、代码合并
 - [x] [Step 2: 增量抽取任务](./step2-extract.md) — 新 TaskType + 便宜模型档位 + 逐会话 runOnce 抽取 handler
 - [x] [Step 3: 开启会话触发与注入](./step3-inject.md) — start 链 staleness 判定 + 同步/异步抽取 + systemPrompt 模板
-- [ ] [Step 4: 工具适配与前端状态卡渲染](./step4-ui.md) — ReadGroupBackground 适配 + TopicPanel 条目渲染 + topicChange 待确认
+- [x] [Step 4: 工具适配与前端状态卡渲染](./step4-ui.md) — ReadGroupBackground 适配 + TopicPanel 条目渲染 + topicChange 待确认
 - [ ] [Step 5: 用户快捷按钮](./step5-buttons.md) — ChatInputArea「记一笔/这事做完了」→ user 条目
 
 ## 全局决策
