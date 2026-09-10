@@ -513,6 +513,13 @@ class AgentWorker {
         thinkingLevel,
         signal: abortController.signal,
         maxTurns: 30,
+        revive: {
+          shouldContinue: () => !saved || !backgroundSaved,
+          continuePrompt: () => saved
+            ? '组卡已保存，但还没有调 dogear__SaveGroupBackground。现在调用工具保存组背景，完成后结束。'
+            : '你还没有调 dogear__SaveGroupDigest 保存任何产物。不要只用文字描述计划，立即继续调用工具：完成阅读后调 dogear__SaveGroupDigest 保存组卡，再调 dogear__SaveGroupBackground 保存组背景。',
+          maxRevives: 3,
+        },
         onLog: (m) => {
           if (m.startsWith('[tool-error]')) taskLogger.warn(m);
           else taskLogger.info(m);

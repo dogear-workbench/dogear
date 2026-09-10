@@ -39,6 +39,17 @@ function extractRunOutcome(messages: Extract<AgentEvent, { type: 'agent_end' }>[
   return { lastText, usage };
 }
 
+/** 续跑兜底：某些模型在多步工具链中途会输出「宣布下一步」的纯文本就结束回合（无工具调用），
+ * agent 循环视为任务完成。调用方用 revive 在「未完成但轮次未尽」时自动续跑。 */
+export interface ReviveOptions {
+  /** prompt 结束后调用，返回 true 表示任务未完成需要续跑 */
+  shouldContinue: () => boolean;
+  /** 续跑注入的提示词（可用函数按当前进度生成） */
+  continuePrompt: string | (() => string);
+  /** 最多续跑次数，默认 3 */
+  maxRevives?: number;
+}
+
 /**
  * 对 pi Agent 发起一次性提炼任务，带轮次上限与外部取消支持。
  * 不抛出——失败以 { ok: false } 形式返回。
@@ -52,6 +63,7 @@ export async function runOnce(opts: {
   thinkingLevel?: ThinkingLevel;
   signal?: AbortSignal;
   maxTurns?: number;
+  revive?: ReviveOptions;
   onLog?: (msg: string) => void;
 }): Promise<
     { ok: true; lastText?: string; usage?: RunOnceUsage }
@@ -108,6 +120,20 @@ export async function runOnce(opts: {
 
   try {
     await agent.prompt(prompt);
+    let revives = 0;
+    while (
+      !cancelled && !abortedByLimit && opts.revive
+      && revives < (opts.revive.maxRevives ?? 3)
+      && !signal?.aborted
+      && opts.revive.shouldContinue()
+    ) {
+      revives++;
+      onLog?.(`[revive] 收笔未完成，第 ${revives} 次续跑`);
+      const msg = typeof opts.revive.continuePrompt === 'function'
+        ? opts.revive.continuePrompt()
+        : opts.revive.continuePrompt;
+      await agent.prompt(msg);
+    }
   } catch (e) {
     if (cancelled) return { ok: false, error: '已取消', cancelled: true };
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
