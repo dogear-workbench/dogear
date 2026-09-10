@@ -27,7 +27,8 @@ export enum TaskType {
   REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
   CATEGORIZE_SESSION = 'categorize_session', // 智能分类决策
   CATEGORIZE_ORGANIZE = 'categorize_organize', // 存量分类整理（压 anchorTags + 合并重合分类）
-  CUSTOM_AGENT = 'custom_agent' // 定时计划自定义 agent 任务（prompt 驱动的一次性执行）
+  CUSTOM_AGENT = 'custom_agent', // 定时计划自定义 agent 任务（prompt 驱动的一次性执行）
+  STATE_EXTRACT = 'state_extract' // 话题状态卡增量抽取（逐会话 runOnce 产出结构化增量）
 }
 
 /**
@@ -230,6 +231,18 @@ export interface CustomAgentTaskPayload {
   workspaceId: string;          // 工作区 ID（读工作区工具包开关用）
   workspacePath: string;        // 工作区绝对路径（文件工具边界根）
   toolPacksOverride?: string[]; // 任务级工具包覆盖（undefined = 跟随工作区 enabledToolPacks）
+}
+
+/**
+ * 话题状态卡增量抽取任务负载（Step 3 开启会话时触发）
+ * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
+ */
+export interface StateExtractPayload {
+  workspaceId: string;   // 工作区 ID（读状态卡 / 读会话 / 落盘都用）
+  groupId: string;       // 组 ID
+  /** getStaleConversations 输出的滞后会话；mtime 同时是 sourcesSeen 推进目标 */
+  conversations: Array<{ conversationId: string; sessionId: string; mtime: number }>;
+  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.stateModelSelection）
 }
 
 /**

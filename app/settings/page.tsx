@@ -212,7 +212,7 @@ export default function SettingsPage() {
     setLocal(prev => {
       const { [profileId]: _removed, ...rest } = prev.profiles;
       const newAi = { ...prev.ai };
-      const clearIfMatch = (key: 'defaultModelSelection' | 'digestModelSelection' | 'reviewModelSelection' | 'categorizeModelSelection' | 'parseModelSelection') => {
+      const clearIfMatch = (key: 'defaultModelSelection' | 'digestModelSelection' | 'reviewModelSelection' | 'categorizeModelSelection' | 'parseModelSelection' | 'stateModelSelection') => {
         if (newAi[key]?.profileId === profileId) newAi[key] = null;
       };
       clearIfMatch('defaultModelSelection');
@@ -220,6 +220,7 @@ export default function SettingsPage() {
       clearIfMatch('reviewModelSelection');
       clearIfMatch('categorizeModelSelection');
       clearIfMatch('parseModelSelection');
+      clearIfMatch('stateModelSelection');
       return { ...prev, profiles: rest, ai: newAi };
     });
     setSelectedProfileTab('default');
@@ -327,6 +328,21 @@ export default function SettingsPage() {
                   settings={local}
                   value={local.ai.parseModelSelection}
                   onChange={(v) => updateAI({ parseModelSelection: v })}
+                  allowUnset={true}
+                  triggerVariant="block"
+                />
+              </div>
+
+              {/* 话题状态提炼模型 */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium">话题状态提炼模型</label>
+                <p className="text-xs text-muted-foreground">
+                  开启话题组会话时增量提炼话题状态卡的后台任务使用此模型，运行频繁，适合配置便宜档；选「不指定」时回退到默认模型。
+                </p>
+                <ModelSelector
+                  settings={local}
+                  value={local.ai.stateModelSelection}
+                  onChange={(v) => updateAI({ stateModelSelection: v })}
                   allowUnset={true}
                   triggerVariant="block"
                 />
