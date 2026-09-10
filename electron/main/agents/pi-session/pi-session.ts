@@ -28,6 +28,7 @@ import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
+import { triggerStateExtractForSessionStart } from '../../services/memory/state-extract-trigger.js';
 import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND } from '../session-append-templates.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
@@ -392,6 +393,10 @@ export class PiSession extends EventEmitter {
     // ---- group context ----
     // 有 groupId 就加载（子会话的 group 工具固定挂载，组上下文段同步固定注入）
     const needGroupContext = !!this.config.groupId;
+    // 状态卡抽取唯一触发点：仅主会话开启时推进；子会话派遣链路不等抽取，注入侧自带滞后标注
+    if (needGroupContext && !isSubAgent) {
+      await triggerStateExtractForSessionStart(this.config.workspaceId, this.config.groupId!);
+    }
     const groupContextText = needGroupContext
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!)
       : '';
