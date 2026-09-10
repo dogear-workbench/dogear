@@ -63,8 +63,8 @@ export function createBrowserObserveToolDefs(opts?: {
       'dogear__browser__navigate',
       '浏览器导航到 URL',
       '让内嵌浏览器导航到指定 URL，等待加载就绪后返回最终 URL、标题、正文字数与页面状态（含登录墙/人机验证/限流判定）。' +
-        '仅用于 readArticle 失败后的手动探索流程；单纯读文章请用 dogear__browser__readArticle。' +
-        '小红书等登录态站点禁止本通道，请用 dogear__extension__* 扩展通道。受节奏保护的站点导航前会自动等待随机时长。',
+        '用于手动探索、页面恢复与直达 URL；单纯读文章请优先 dogear__browser__readArticle。' +
+        '小红书等登录态站点禁止本通道（调用会被直接拒绝）：已挂载 dogear__extension__* 工具则改用扩展通道；未挂载（主会话默认无）则告知用户改派「浏览器解析」子会话调研。受节奏保护的站点导航前会自动等待随机时长。',
       z.object({
         url: z.string().url().describe('目标页面完整 URL（含 http/https）'),
       }),
@@ -143,7 +143,7 @@ export function createBrowserObserveToolDefs(opts?: {
       'dogear__browser__observe_page',
       '列出页面可交互元素',
       '列出当前页面的可交互元素（CDP 无障碍语义树观察），每条含 ref（格式 节点id@generation）、角色、文本（长文本截断）与提示信息，链接带 href。' +
-        '可交互元素全列不硬截断；超长页面附标题结构与其余节点的 role 分级摘要。' +
+        '可交互元素默认尽量全列，超 250 个安全上限时截断并附 region 计数与分块重查建议；超长页面另附标题结构与其余节点的 role 分级摘要。' +
         '可传 region（视口上/中/下分块）或 text_filter 缩小范围重查；超长列表也可用 dogear__browser__find 按 role+name 精确查找。' +
         '页面导航或 SPA 路由变化后 ref 失效，需重新调用本工具。',
       z.object({
@@ -225,7 +225,7 @@ export function createBrowserObserveToolDefs(opts?: {
         }
         return textResult(
           `找到 ${payload.elements.length} 个匹配元素（页面 ${payload.url}，${payload.pageState}，generation ${payload.generation}）：\n` +
-            `${text}\n\nref 可直接用于 click/fill/scroll/read_text/find；页面导航或路由变化后需重新查找。`,
+            `${text}\n\nref 可直接用于 click/fill/scroll/read_text；页面导航或路由变化后需重新查找。`,
         );
       },
     ),

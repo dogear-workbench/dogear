@@ -134,9 +134,9 @@ export function controlledBrowserBlock(url: string): string | null {
   const policy = getSitePolicy(url);
   if (!policy) return null;
   return (
-    `内嵌浏览器禁止访问该站点（${policy.matchOrigins.join('、')}）。` +
-    '此类登录态站点已绑定用户真实浏览器的扩展通道，请改用 dogear__extension__navigate / observe_page / click / fill / read_text / read_state ' +
-    '在扩展已连接且授权的标签页上操作'
+    `内嵌浏览器禁止访问该站点（${policy.matchOrigins.join('、')}），该站点需登录态，应走扩展通道。` +
+    '(1) 本会话已挂载 dogear__extension__* 工具则改用之；' +
+    '(2) 未挂载（主会话默认无）则告知用户改派「浏览器解析」子会话调研，不要重试本通道'
   );
 }
 

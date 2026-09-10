@@ -110,7 +110,7 @@ export function createBrowserActionToolDefs(opts?: {
       'dogear__browser__click',
       '点击页面元素',
       '点击 observe_page 返回的 ref 对应元素（ref 格式 节点id@generation），点击后附带轻量验证（是否触发导航 / 元素是否消失）。' +
-        'ref 失效会返回明确错误，需重新 observe_page。提交类按钮会被拦截（guard_submit），需引导用户手动提交。需要用户确认后执行。',
+        'ref 失效会返回明确错误，需重新 observe_page。提交类按钮会被拦截（guard_submit），需引导用户手动提交。受权限模式管控：默认模式逐次确认，自动执行模式直接执行。',
       z.object({
         ref: z.string().describe('observe_page 返回的元素 ref（如 "123@5"）'),
       }),
@@ -143,7 +143,7 @@ export function createBrowserActionToolDefs(opts?: {
       'dogear__browser__fill',
       '填写页面输入框',
       '向 observe_page 返回的 ref 对应输入框填写文本（ref 格式 节点id@generation；会先全选清空原内容），填写后自动验证值是否生效。' +
-        '密码类输入会被拦截（guard_password），需引导用户手动填写。需要用户确认后执行。',
+        '密码类输入会被拦截（guard_password），需引导用户手动填写。受权限模式管控：默认模式逐次确认，自动执行模式直接执行。',
       z.object({
         ref: z.string().describe('observe_page 返回的输入框 ref（如 "45@6"）'),
         value: z.string().describe('要填写的文本'),
@@ -219,7 +219,7 @@ export function createBrowserActionToolDefs(opts?: {
     defineTool(
       'dogear__browser__read_state',
       '读取页面 SPA 内存状态',
-      '读取当前页面 window.__INITIAL_STATE__（小红书/知乎类 SPA 的数据源），双模式：' +
+      '读取当前页面 window.__INITIAL_STATE__（知乎类 SPA 的数据源），双模式：' +
         '不传 path 返回顶层概要（每个 key 的类型/子项数或长度）；传 path（点分路径，纯数字段为数组下标）返回该子树 JSON（超 8000 字符截断）。' +
         '读内存 JSON 零网络请求，适合避开 feed 页重渲染与元素上限；页面无 __INITIAL_STATE__ 时明确报错。',
       z.object({

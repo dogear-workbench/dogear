@@ -159,7 +159,7 @@ export function createAgentTabRunner(embeddedWorkspaceId: string | undefined, ho
     mode: 'read' | 'write' = 'read',
   ): Promise<{ ok: true; value: T } | { ok: false; message: string; error: unknown }> {
     if (!embeddedWorkspaceId) {
-      return { ok: false, message: '当前会话未关联工作区，内嵌浏览器观察通道不可用', error: null };
+      return { ok: false, message: '当前会话未关联工作区，内嵌浏览器通道不可用', error: null };
     }
     try {
       const manager = getEmbeddedBrowserManager();
@@ -217,7 +217,7 @@ export function formatEmbeddedObserve(payload: ObservePayload): string {
     );
   }
   sections.push(
-    'ref 格式为 节点id@generation，可直接用于 click/fill/scroll/read_text/find；页面导航、SPA 路由变化或提示 ref 失效时，请重新 observe_page。',
+    'ref 格式为 节点id@generation，可直接用于 click/fill/scroll/read_text；页面导航、SPA 路由变化或提示 ref 失效时，请重新 observe_page。',
   );
   return sections.join('\n\n');
 }

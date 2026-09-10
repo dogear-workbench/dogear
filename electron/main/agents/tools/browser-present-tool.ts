@@ -35,8 +35,11 @@ export function createPresentToolDef(opts?: {
       if (!args.tabId && !args.url) {
         return isErrorResult('tabId 与 url 至少提供一个');
       }
+      if (args.tabId && args.url) {
+        return isErrorResult('tabId 与 url 只能提供一个，不要同时传（同时传不会自动择优）');
+      }
       if (args.url && !args.tabId && !opts?.workspaceId) {
-        return isErrorResult('当前会话未关联工作区，无法打开新页面；可改传已有 tabId');
+        return isErrorResult('当前会话未关联工作区，内嵌浏览器通道不可用；可改传已有 tabId');
       }
       const taskMeta = meta();
       emitAction({ source: 'present', taskMeta, action: 'present', url: args.url, detail: args.tabId });

@@ -125,8 +125,11 @@ await sleepMs(80);
 
 const noPointerNav = await call(OWNER, 'navigate', { url: 'https://pointerless.example.com/x' });
 check(
-  'P1 navigate 无档案域：成功且尾部无指针',
-  !isErr(noPointerNav) && !textOf(noPointerNav).includes(POINTER_TEXT),
+  'P1 navigate 无档案域：成功且尾部含沉淀引导而非档案指针',
+  !isErr(noPointerNav) &&
+    textOf(noPointerNav).includes('本站尚无站点档案') &&
+    textOf(noPointerNav).includes('site_finding') &&
+    !textOf(noPointerNav).includes(POINTER_TEXT),
   textOf(noPointerNav),
 );
 

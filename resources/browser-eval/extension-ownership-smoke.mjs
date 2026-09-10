@@ -155,10 +155,11 @@ check('C1 持有会话首次调用成功', !isErr(firstObserve), textOf(firstObs
 
 const rivalObserve = await call(RIVAL, 'observe_page', {});
 check(
-  'C2 竞争会话 busy：isError + 中文文案（含空闲时长与并行建议）',
+  'C2 竞争会话 busy：isError + 中文文案（含最近活动时长与自动释放/并行建议）',
   isErr(rivalObserve) &&
     textOf(rivalObserve).includes('扩展通道正被另一个会话使用') &&
-    textOf(rivalObserve).includes('已空闲 1 分钟') &&
+    textOf(rivalObserve).includes('最近活动于 1 分钟前') &&
+    textOf(rivalObserve).includes('空闲 10 分钟后自动释放') &&
     textOf(rivalObserve).includes('内嵌浏览器'),
   textOf(rivalObserve),
 );

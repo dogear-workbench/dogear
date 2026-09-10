@@ -151,7 +151,7 @@ async function runCommand<T>(
 
 function busyChannelMessage(idleMs: number): string {
   const minutes = Math.max(1, Math.floor(idleMs / 60_000));
-  return `扩展通道正被另一个会话使用（已空闲 ${minutes} 分钟），请等它完成后再试；若需并行调研，请改串行派遣或使用内嵌浏览器工具`;
+  return `扩展通道正被另一个会话使用（对方最近活动于 ${minutes} 分钟前），通道空闲 10 分钟后自动释放；若需并行调研，请改串行派遣或使用内嵌浏览器工具`;
 }
 
 function formatClick(ref: string, data: ClickPayload): string {
@@ -391,7 +391,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         emitAction(taskMeta, 'observe', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
         return textResult(
           `找到 ${payload.elements.length} 个匹配元素（页面 ${payload.url ?? pageUrl ?? ''}，${payload.pageState ?? 'ready'}${payload.generation !== undefined ? `，generation ${payload.generation}` : ''}）：\n` +
-            `${text}\n\nref 可直接用于 click/fill/scroll/read_text/find；页面导航后需重新查找。`,
+            `${text}\n\nref 可直接用于 click/fill/scroll/read_text；页面导航后需重新查找。`,
         );
       },
     ),
@@ -403,7 +403,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         '点击 observe_page 返回的 ref 对应元素，点击后自动附带轻量验证（URL 变化 / 元素消失 / 正文字数变化）。' +
         '提交类按钮会被拦截（guard_submit），需引导用户手动提交。',
       z.object({
-        ref: z.string().describe('observe_page 返回的元素 ref（如 "e3"）'),
+        ref: z.string().describe('observe_page 返回的元素 ref（如 "e3@2"）'),
       }),
       async (args) => {
         const busy = acquireGate('click', args.ref, currentUrl());
@@ -446,7 +446,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         '向 observe_page 返回的 ref 对应输入框填写文本（会清空原内容），填写后自动验证值是否生效。' +
         '密码类输入会被拦截（guard_password），需引导用户手动填写。',
       z.object({
-        ref: z.string().describe('observe_page 返回的输入框 ref（如 "e2"）'),
+        ref: z.string().describe('observe_page 返回的输入框 ref（如 "e2@3"）'),
         value: z.string().describe('要填写的文本'),
       }),
       async (args) => {
@@ -714,7 +714,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       currentUrl,
       isErrorResult,
       textResult,
-      scopeNote: SHARED_SCOPE_NOTE,
+      scopeNote: '扩展通道会话独占；本组工具只读写本地站点档案，不碰页面、不受授权域约束。',
     }),
   ];
 }

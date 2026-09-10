@@ -59,8 +59,8 @@ export function createBrowserToolDefs(opts?: {
       '通过内嵌浏览器读取网页文章，返回渲染后的 Markdown 正文与元数据。内置渲染等待、展开全文按钮点击、翻页拼接与登录墙检测。\n' +
         '使用纪律：\n' +
         '- 需要读取网页文章内容时优先调用本工具，不要直接从原子工具开始。\n' +
-        '- 快档失败（timeout / parse_empty / nav_failed）时不白跑：返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接用 dogear__browser__observe_page / read_text 继续探索，不要重新导航。\n' +
-        '- 小红书等登录态站点禁止本通道（调用会被直接拒绝），请改用 dogear__extension__* 扩展通道在用户真实浏览器上操作。\n' +
+        '- 快档失败（need_login / timeout / parse_empty / browser_crash）时不白跑：返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接用 dogear__browser__observe_page / read_text 继续探索，不要重新导航。\n' +
+        '- 小红书等登录态站点禁止本通道（调用会被直接拒绝）：已挂载 dogear__extension__* 工具则改用扩展通道；未挂载（主会话默认无）则告知用户改派「浏览器解析」子会话调研。\n' +
         '- 返回 need_login 时：页面已保留在内嵌浏览器并呈现在浏览器面板，等待人工状态已产生；必须告知用户「请在浏览器面板完成登录，登录完成后告诉我重试」；用户完成后重新调用本工具即可（登录态已持久化）。\n' +
         '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。',
       z.object({
@@ -132,7 +132,7 @@ export function createBrowserToolDefs(opts?: {
     defineTool(
       'dogear__browser__search',
       '搜索网页并返回结果列表（快档）',
-      '通过内嵌浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。快档解析，引擎链 Google → DuckDuckGo → Bing 自动降级，引擎与代理在设置页「基础设置 → 浏览器」配置。\n' +
+      '通过内嵌浏览器在搜索引擎搜索关键词，返回结构化结果列表（标题 / URL / 摘要）。快档解析，引擎链 Google → DuckDuckGo → Bing 自动降级。\n' +
         '传 site="reddit" 或 site="zhihu" 时走站内搜索：reddit 用 old.reddit（结果带 score/评论数/subreddit），zhihu 用知乎搜索页（结果带作者/赞同数）；站内失败自动降级为「关键词 site:域名」通用搜索（丢互动量但保可用，降级原因见返回）。\n' +
         '使用纪律：\n' +
         '- 需要发现内容（不知道具体 URL）时先用本工具搜索，搜到再用 dogear__browser__readArticle 阅读。\n' +
@@ -238,7 +238,7 @@ export function createBrowserToolDefs(opts?: {
     defineTool(
       'dogear__browser__close',
       '结束浏览器任务（通常无需调用）',
-      '声明浏览器探索任务结束，清空元素引用。浏览器实例本身由空闲策略自动关闭（默认 3 分钟），一般无需显式调用本工具。',
+      '声明浏览器探索任务结束，仅标记任务结束与动作流留痕，不清空任何状态。浏览器实例本身由空闲策略自动关闭（默认 3 分钟），一般无需显式调用本工具。',
       z.object({}),
       async () => {
         emitAction({ source: 'close', taskMeta: meta(), action: 'close', result: 'ok' });
@@ -254,7 +254,7 @@ export function createBrowserToolDefs(opts?: {
     defineTool(
       'dogear__browser__screenshot',
       '截取当前页面截图',
-      '对内嵌浏览器当前页面截取视口截图，保存为临时 PNG 文件并返回路径。查看图片：把返回的路径传给 Read 工具即可（Read 原生支持图片附件）。',
+      '对内嵌浏览器当前页面截取视口截图，保存为临时 PNG 文件并返回路径。查看图片：把返回的路径传给 read 工具即可（read 原生支持图片附件）。',
       z.object({}),
       async () => {
         const taskMeta = meta();
@@ -274,7 +274,7 @@ export function createBrowserToolDefs(opts?: {
         }
         emitAction({ source: 'screenshot', taskMeta, action: 'screenshot', url: r.value.url, result: r.value.file });
         return textResult(`截图已保存: ${r.value.file}
-用 Read 工具读取该路径即可查看图片。`);
+用 read 工具读取该路径即可查看图片。`);
       },
     ),
 

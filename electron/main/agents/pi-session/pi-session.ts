@@ -130,7 +130,7 @@ interface PendingPermissionRequest {
 
 /**
  * 子会话按 Profile 过滤 skill entries。
- * builtin 段：article-parser 仅当 article===true，其余按 skills[] 匹配；
+ * builtin 段：article-parser 仅当 article===true，browser-exploration 仅当 browser===true，其余按 skills[] 匹配；
  * custom 段：仅保留 skills[] 中列出的；
  * user 段：仅保留 customSkills[] 中列出的。
  */
@@ -148,6 +148,7 @@ function filterSkillsForSubAgent(
     const fp = entry.bodyPath;
     if (isUnder(fp, scanDirs.builtin)) {
       if (entry.name === 'article-parser') return ab.article === true;
+      if (entry.name === 'browser-exploration') return ab.browser === true;
       return ab.skills?.includes(entry.name) ?? false;
     }
     if (isUnder(fp, scanDirs.custom)) return ab.skills?.includes(entry.name) ?? false;

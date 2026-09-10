@@ -42,11 +42,14 @@ function domainOrError(
   return { domain };
 }
 
-/** navigate 返回尾部指针：目标域有站点档案时引导 agent 先读档案，无档案/无 url 返回 null */
+/** navigate 返回尾部指针：有档案引导先读，无档案提示可沉淀（冷启动）；无 url/无域名返回 null */
 export function siteKnowledgePointer(url: string | undefined): string | null {
   if (!url) return null;
   const domain = normalizeDomain(url);
-  if (!domain || !hasSiteKnowledge(domain)) return null;
+  if (!domain) return null;
+  if (!hasSiteKnowledge(domain)) {
+    return '\n\n本站尚无站点档案，探索后可用 dogear__extension__site_finding 沉淀发现';
+  }
   return '\n\n本站有站点档案，建议先调 dogear__extension__site_knowledge 获取已知地图';
 }
 

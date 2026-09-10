@@ -41,7 +41,8 @@ export interface SkillTemplate {
 export const SKILL_PACK_MAP: Record<string, string[]> = {
   'stock-analysis': ['stock-quote', 'stock-analysis', 'stock-announcement'],
   'stock-picking': ['stock-picking'],
-  'article-parser': ['article', 'browser'],
+  'article-parser': ['article'],
+  'browser-exploration': ['browser'],
 };
 
 export const RESIDENT_GROUPS = [
@@ -75,8 +76,14 @@ export const ABILITY_DOMAINS: AbilityDomainMeta[] = [
   {
     id: 'article',
     label: '文章解析',
-    description: '文章读取、网页渲染解析与管理（含内嵌浏览器工具包）',
+    description: '文章读取、网页渲染解析与管理',
     skills: ['article-parser'],
+  },
+  {
+    id: 'browser',
+    label: '浏览器',
+    description: '内嵌浏览器网页读取、搜索与原子探索（双通道调研方法论 + 工具包配套）',
+    skills: ['browser-exploration'],
   },
   {
     id: 'code-workflow',
