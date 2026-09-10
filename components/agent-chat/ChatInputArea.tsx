@@ -1,6 +1,6 @@
 import { memo, useMemo, useEffect, useRef, useState, useCallback, type RefObject } from 'react';
 import { toast } from 'sonner';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder, StickyNote, Pause } from 'lucide-react';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder, StickyNote, Pause, Hourglass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -67,6 +67,8 @@ interface ChatInputAreaProps {
   setPermissionMode: (mode: PermissionMode) => void;
   hasPendingUserAction: boolean;
   isSubSession?: boolean;
+  /** run settled 但仍有 running 直属子会话：状态行展示「等待子会话交付中」，不改变输入框行为 */
+  awaitingDelivery?: boolean;
   pendingImages: PendingImage[];
   imageInputRef: RefObject<HTMLInputElement | null>;
   handleSend: () => void;
@@ -112,6 +114,7 @@ export const ChatInputArea = memo(function ChatInputArea({
   onSlashCommandSelect,
   onSlashMenuClose,
   isSubSession,
+  awaitingDelivery = false,
 }: ChatInputAreaProps) {
   const settings = useSettingsStore((s) => s.settings);
   const isModelMissing = !currentSelection;
@@ -525,6 +528,11 @@ export const ChatInputArea = memo(function ChatInputArea({
                 <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
                   <Pause size={12} />
                   已暂停 · 发送消息继续
+                </span>
+              ) : awaitingDelivery ? (
+                <span className="flex items-center gap-1 text-orange-600 dark:text-orange-400">
+                  <Hourglass size={12} />
+                  等待子会话交付中 · 可继续对话
                 </span>
               ) : (
                 isSessionReady && <span className="text-green-600 dark:text-green-400">● 就绪</span>

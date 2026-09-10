@@ -52,14 +52,14 @@
 ## 业务组件（components/）
 
 - `agent-chat/` — AI 聊天模块（\~20 文件）
-  - `AgentChat.tsx` — 主组件（\~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成
-  - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单、运行中暂停按钮：调 pauseQueryBasedSession，受理到 paused 广播间显示「暂停中…」；状态行 paused 徽标「已暂停 · 发送消息继续」，paused 态输入框正常可用、发送即恢复）
+  - `AgentChat.tsx` — 主组件（\~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成；从 childrenByParent + running/paused 集合派生「等待子会话交付中」展示态（run settled ∧ 有 running 直属子会话），传给 StreamingIndicator / ChatInputArea，纯展示不阻塞
+  - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单、运行中暂停按钮：调 pauseQueryBasedSession，受理到 paused 广播间显示「暂停中…」；状态行 paused 徽标「已暂停 · 发送消息继续」，paused 态输入框正常可用、发送即恢复；awaitingDelivery 态状态行显示「等待子会话交付中 · 可继续对话」，输入框行为同 idle）
   - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮；解析 `<sender/>` XML 标签在跨会话消息头显示派出者名字徽章）
   - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
   - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）
   - `SearchBar.tsx` — 搜索浮条（Ctrl+F 快捷键、文本匹配高亮、激活项自动滚动）
   - `ThinkingBlock.tsx` — 思考块（compact/detailed 两种展示模式）
-  - `StreamingIndicator.tsx` — 运行状态指示器（基于 pendingState：思考中/执行工具/生成中；flushing 态显示插话队列长度）
+  - `StreamingIndicator.tsx` — 运行状态指示器（基于 pendingState：思考中/执行工具/生成中；flushing 态显示插话队列长度；awaitingDelivery 态显示「等待子会话交付中」+ 中断等待按钮，Hourglass 静态图标不转圈）
   - `AskUserQuestionCard.tsx` — AskUser 问题卡片（单选/多选）
   - `PermissionRequestCard.tsx` — 权限请求卡片（允许/拒绝/始终允许）
   - `CitationBadge.tsx` — 引用徽章
@@ -386,7 +386,7 @@
   - `workspace-boundary.ts` — `resolveWithinWorkspace(workspacePath, candidatePath)`：路径边界校验（含符号链接逃逸拦截），供内建/搜索工具与 workspace-execution-env.ts 共用
   - `workspace-execution-env.ts` — `WorkspaceExecutionEnv`（实现 `ExecutionEnv`）：委托官方 `NodeExecutionEnv` 做实际文件 IO/子进程执行，每个带路径参数的方法前加边界校验；`createTempDir`/`createTempFile` 创建的 temp 路径记入白名单（bash 输出溢出暂存的 appendFile/readTextFile 不拦截）
 
-- `delegation-bridge.ts` — **子会话调度站核心状态机**（单例，所有 child 会话的检测/重调/降级都经此；状态只存内存，重启即失）：状态模型（childStates 内存 Map，快照 status ∈ {running, stopped}，另带 delivered 单调交付事实 / 内部 terminalReason 死因 / consecutiveFails 连续失败计数，success 清零上限 3）；检测（wireSession 挂子会话 message 流 + createIdleWatch 滑动无进展计时 + timeout 双计时器，10 分钟无流事件判 hang）；重调（settleTerminal 终态统一结算：transient 在 MAX_RETRY 内自动 resumeChild 复活原会话，quota 错误沿全局 failover 链（settings.failover）findNextFailover 跨供应商降级，开关关闭或链耗尽直接终态通知）；降级（不重调的终态 notifyTerminalToWaiters 带结构化通知 {errorClass, attempts, modelTried} 秒级唤醒父会话的 dogear__WaitForMessage）；另导出 startChild / stopChild / markChildDelivered / getChildrenByParent（内存为主 + conversation-service listByParent 补集合并，补集按 updatedAt 降序只保留最近 10 条，转 stopped/delivered=false 快照）/ waitForMessage / deliverMessage / abortWaitsForParent（前端「中断等待」按钮：取消该父会话全部等待并终止其运行中子会话）/ cleanupLegacyStateFile（启动时一次性删除旧 delegation-state.json 遗留文件）
+- `delegation-bridge.ts` — **子会话调度站核心状态机**（单例，所有 child 会话的检测/重调/降级都经此；状态只存内存，重启即失）：状态模型（childStates 内存 Map，快照 status ∈ {running, stopped}，另带 delivered 单调交付事实 / 内部 terminalReason 死因 / consecutiveFails 连续失败计数，success 清零上限 3）；检测（wireSession 挂子会话 message 流 + createIdleWatch 滑动无进展计时 + timeout 双计时器，10 分钟无流事件判 hang）；重调（settleTerminal 终态统一结算：transient 在 MAX_RETRY 内自动 resumeChild 复活原会话，quota 错误沿全局 failover 链（settings.failover）findNextFailover 跨供应商降级，开关关闭或链耗尽直接终态通知）；通知（不可重调终态 notifyTerminalToParent 带结构化通知 {errorClass, attempts, modelTried}，经 pushToParentSession 注入父会话——running 时 PiSession.sendMessage 进 steer 排队、idle 时 prompt 立即推进下一轮，即事件驱动等待的「交付/终态自动唤醒」）；另导出 startChild / stopChild / markChildDelivered / getChildrenByParent（内存为主 + conversation-service listByParent 补集合并，补集按 updatedAt 降序只保留最近 10 条，转 stopped/delivered=false 快照）/ deliverMessage（通用消息投递出口，统一走 pushToParentSession 注入，返回 'queued' | 'target_inactive'）/ abortWaitsForParent（前端「中断等待」按钮：终止该父会话全部运行中子会话，标记 cancelled）/ cleanupLegacyStateFile（启动时一次性删除旧 delegation-state.json 遗留文件）
 
 - `delegation-idle.ts` / `delegation-terminal.ts` / `delegation-resume.ts` / `delegation-lifecycle.ts` — 调度站纯逻辑层：滑动 idle 计时（createIdleWatch，超时可注入）/ 错误分类（classifyDelegationError：quota 关键词表 + MAX_RETRY + isNotifiableTerminal + buildTerminalNotice 通知文案）/ 重调决策（decideResumeOnError + buildResumePrompt 续跑提示词；quota 降级入口是 model-failover.ts 的 findNextFailover，不再从 subAgent.profiles 找 fallback）/ 完成事件分类（classifyChildCompletion → no_delivery/failed/cancelled）
 
@@ -436,13 +436,13 @@
 
 - `tools/delegation-tools.ts` — Agent 协作 MCP 工具（dogear-delegation server）：
 
-  - 主会话工具集：`dogear__CreateSession` / `dogear__CreateSessionBatch` / `dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions` / `dogear__ResumeSession` / `dogear__StopSession`
+  - 主会话工具集：`dogear__CreateSession` / `dogear__CreateSessionBatch` / `dogear__SendMessage` / `dogear__ListLinkedSessions` / `dogear__ResumeSession` / `dogear__StopSession`
   - `dogear__CreateSession(task, outputPath, title?, profile?, model?)` / `dogear__CreateSessionBatch(items[])` — model 为模型 ID 单字符串，bridge.resolveModelByTier 在所有完整 ModelProfile 的 piModels 里解析出 profileId+tier（找不到则报错并列出可用模型）；模型优先级 spec.model &gt; profile.modelSelection &gt; 主会话模型 &gt; 全局默认
-  - 子会话工具集：`dogear__SendMessage` / `dogear__WaitForMessage` / `dogear__ListLinkedSessions`（无 Create\*/Resume/Stop，不能派孙子）
-  - `dogear__SendMessage(toSessionId, message, options?)` — options.delivery=true 标记交付；工具层先过 `hasDirectContractChannel` 校验（仅直接派出关系）
-  - `dogear__WaitForMessage(fromSessionIds[], timeoutMs?)` — 不按 delivery 过滤，取第一条到达消息返回；等待中子会话终态时会先收到结构化终态通知（死因 + 重试次数 + 降级轨迹）而非干等超时
+  - 子会话工具集：`dogear__SendMessage` / `dogear__ListLinkedSessions`（无 Create\*/Resume/Stop，不能派孙子）
+  - `dogear__SendMessage(toSessionId, message, options?)` — options.delivery=true 标记交付；工具层先过 `hasDirectContractChannel` 校验（仅直接派出关系）；目标停机且是自己派出的子会话时自动调起送达（resumeChildAndDeliver）
   - `dogear__ResumeSession(sessionId)` — 调起中断/失败的子会话续跑（复用原会话消息历史不新建副本，走 bridge.resumeChild；仅限本进程运行时跟踪中的子会话，重启后内存跟踪丢失则报错）；重试/quota 耗尽的终态通知文案会引导用它
   - 子会话交付 = `dogear__SendMessage(父sessionId, summary, { delivery: true })`，内部触发 bridge.markChildDelivered 同步 childStates 状态机与 UI 事件
+  - 事件驱动等待（无挂起式等待工具）：主会话派单后输出收尾语结束回合；子会话交付/回复/终态经 bridge.pushToParentSession 注入为父会话新输入（running 时 steer 排队、idle 时 prompt 立即生效），等待期间用户插话时效与普通对话相同；UI 由 childrenByParent 派生「等待子会话交付中」展示态，不阻塞输入
 
 - `tools/review-tools.ts` — 首页报告 MCP 工具（dogear-memory-review server：dogear__ListDigests / dogear__ReadDigest / dogear__TraceSource / dogear__ReadReport / dogear__WriteReport）；零分析逻辑，分流靠提示词。配合 dogear-memory 的 dogear__RecallMemory/dogear__SaveMemory/dogear__ForgetMemory 实现「记忆 + 报告」双层写入
 

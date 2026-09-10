@@ -135,6 +135,10 @@ export function AgentChat({
     return { awaitCount: awaiting, doneCount: done, issueCount: issues };
   }, [childrenForThis]);
 
+  // 事件驱动等待的派生展示态：run settled（非 running/paused）∧ 有 running 直属子会话。
+  // 纯展示，不阻塞任何操作（输入框按 idle 开放，可插话、可中断等待）
+  const isWaitingForChildren = !isLoading && !isRunningInStore && !isPausedInStore && awaitCount > 0;
+
   const handleAbortWait = useCallback(async () => {
     if (!conversationId) return;
     const result = await client.abortWaitForDeliveries({ parentConversationId: conversationId });
@@ -146,8 +150,8 @@ export function AgentChat({
       return;
     }
     const { toast } = await import('sonner');
-    if (result.abortedWaits > 0 || result.cancelledChildren > 0) {
-      toast.success(`已中断 ${result.abortedWaits} 个等待，正在终止 ${result.cancelledChildren} 个子会话`);
+    if (result.cancelledChildren > 0) {
+      toast.success(`正在终止 ${result.cancelledChildren} 个运行中的子会话`);
     } else {
       toast.info('当前没有可中断的等待或运行中的子会话');
     }
@@ -435,6 +439,7 @@ export function AgentChat({
           awaitCount={awaitCount}
           doneCount={doneCount}
           issueCount={issueCount}
+          awaitingDelivery={isWaitingForChildren}
           onAbortWait={isReadOnly ? undefined : handleAbortWait}
           onFork={sendMessage.handleFork}
           onPermissionResolved={handlePermissionResolvedWithScroll}
@@ -540,6 +545,7 @@ export function AgentChat({
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}
         isSubSession={currentConversation?.role === 'sub'}
+        awaitingDelivery={isWaitingForChildren}
         pendingImages={imageAttachment.pendingImages}
         imageInputRef={imageAttachment.imageInputRef}
         handleSend={handleSend}

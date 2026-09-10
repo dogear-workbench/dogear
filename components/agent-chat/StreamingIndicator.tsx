@@ -1,4 +1,4 @@
-import { Loader2, OctagonX } from 'lucide-react';
+import { Loader2, OctagonX, Hourglass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PendingState } from './hooks/usePendingState';
 
@@ -11,6 +11,8 @@ interface StreamingIndicatorProps {
   /** 已完成的子会话数量（与 awaitCount 合并展示） */
   doneCount?: number;
   issueCount?: number;
+  /** run settled（非 running/paused）但仍有 running 直属子会话：派生展示态「等待子会话交付中」，不阻塞输入 */
+  awaitingDelivery?: boolean;
   /** 点击「🛑 中断等待」时调用（仅 awaitCount>0 才会出现） */
   onAbortWait?: () => void;
 }
@@ -23,26 +25,32 @@ export function StreamingIndicator({
   awaitCount = 0,
   doneCount = 0,
   issueCount = 0,
+  awaitingDelivery = false,
   onAbortWait,
 }: StreamingIndicatorProps) {
   const isAwaiting = pendingState === 'running' && awaitCount > 0;
-  if (pendingState === 'idle' && !isAwaiting) return null;
+  const isWaitingDelivery = pendingState === 'idle' && awaitingDelivery && awaitCount > 0;
+  if (pendingState === 'idle' && !isAwaiting && !isWaitingDelivery) return null;
 
   const label = isAwaiting
     ? `等待 ${awaitCount} 个子会话交付…（已交付 ${doneCount}${issueCount > 0 ? `，异常 ${issueCount}` : ''}）`
-    : pendingState === 'flushing'
-      ? `队列还有 ${pendingCount} 条插话待回复…`
-      : lastBlockType === 'thinking'
-        ? '正在思考...'
-        : lastBlockType === 'tool_use'
-          ? '正在执行工具...'
-          : '正在生成...';
+    : isWaitingDelivery
+      ? `等待子会话交付中…（${awaitCount} 个运行中${doneCount > 0 ? `，已交付 ${doneCount}` : ''}${issueCount > 0 ? `，异常 ${issueCount}` : ''}）`
+      : pendingState === 'flushing'
+        ? `队列还有 ${pendingCount} 条插话待回复…`
+        : lastBlockType === 'thinking'
+          ? '正在思考...'
+          : lastBlockType === 'tool_use'
+            ? '正在执行工具...'
+            : '正在生成...';
 
   return (
     <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground animate-pulse">
-      <Loader2 className="w-4 h-4 animate-spin" />
+      {isWaitingDelivery
+        ? <Hourglass className="w-4 h-4" />
+        : <Loader2 className="w-4 h-4 animate-spin" />}
       <span>{label}</span>
-      {isAwaiting && onAbortWait && (
+      {(isAwaiting || isWaitingDelivery) && onAbortWait && (
         <Button
           variant="outline"
           size="sm"

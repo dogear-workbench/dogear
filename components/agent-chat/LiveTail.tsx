@@ -13,6 +13,7 @@ interface LiveTailProps {
   awaitCount: number;
   doneCount: number;
   issueCount: number;
+  awaitingDelivery?: boolean;
   onAbortWait?: () => void;
   onFork?: (assistantSdkUuid: string) => void;
   onPermissionResolved: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
@@ -35,6 +36,7 @@ export const LiveTail = memo(function LiveTail({
   awaitCount,
   doneCount,
   issueCount,
+  awaitingDelivery,
   onAbortWait,
   onFork,
   onPermissionResolved,
@@ -87,6 +89,7 @@ export const LiveTail = memo(function LiveTail({
         awaitCount={awaitCount}
         doneCount={doneCount}
         issueCount={issueCount}
+        awaitingDelivery={awaitingDelivery}
         onAbortWait={onAbortWait}
       />
     </>
