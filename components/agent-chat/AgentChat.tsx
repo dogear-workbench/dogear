@@ -545,6 +545,7 @@ export function AgentChat({
         setPermissionMode={setPermissionMode}
         hasPendingUserAction={sendMessage.hasPendingUserAction}
         isSubSession={currentConversation?.role === 'sub'}
+        groupId={currentConversation?.groupId || null}
         awaitingDelivery={isWaitingForChildren}
         pendingImages={imageAttachment.pendingImages}
         imageInputRef={imageAttachment.imageInputRef}

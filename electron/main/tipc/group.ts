@@ -3,12 +3,15 @@ import { tipc } from '@egoist/tipc/main';
 import * as groupService from '../services/group-service.js';
 import { autoArchiveStaleGroups } from '../services/auto-archive-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
-import { readTopicStateCard, resolvePendingTopicChange } from '../services/memory/background-store.js';
+import { readTopicStateCard, resolvePendingTopicChange, appendUserEntry } from '../services/memory/background-store.js';
+import type { TopicCardCategory } from '../services/memory/state-card.js';
 import * as conversationService from '../services/conversation-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 
 const t = tipc.create();
+
+const TOPIC_CARD_CATEGORIES: readonly TopicCardCategory[] = ['completed', 'inProgress', 'decisions', 'blockers', 'nextSteps', 'openQuestions'];
 
 export const groupRouter = {
   listGroups: t.procedure
@@ -212,6 +215,21 @@ export const groupRouter = {
         return { ok: true, error: undefined };
       } catch (error) {
         console.error('确认话题变更失败:', error);
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  appendStateUserEntry: t.procedure
+    .input<{ workspaceId: string; groupId: string; category: TopicCardCategory; text: string }>()
+    .action(async ({ input }) => {
+      try {
+        if (!TOPIC_CARD_CATEGORIES.includes(input.category)) {
+          return { ok: false, error: '未知的条目类别' };
+        }
+        await appendUserEntry(input.workspaceId, input.groupId, input.category, input.text);
+        return { ok: true, error: undefined };
+      } catch (error) {
+        console.error('追加用户状态条目失败:', error);
         return { ok: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
