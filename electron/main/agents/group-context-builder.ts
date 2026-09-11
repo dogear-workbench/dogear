@@ -119,13 +119,13 @@ function applyBudget(
   return { lines, completedHidden };
 }
 
-interface StaleTitleRow {
+export interface StaleTitleRow {
   mtime: number;
   title: string;
 }
 
 /** 未提炼会话 → 标题列表（conversations.json 现场派生，不持久化） */
-async function deriveStaleList(wsId: string, stale: StaleConversation[]): Promise<StaleTitleRow[]> {
+export async function deriveStaleList(wsId: string, stale: StaleConversation[]): Promise<StaleTitleRow[]> {
   const byId = new Map(
     (await conversationService.getByWorkspaceId(wsId)).map((c) => [c.id, c.title] as const),
   );
@@ -137,7 +137,7 @@ async function deriveStaleList(wsId: string, stale: StaleConversation[]): Promis
     .sort((a, b) => b.mtime - a.mtime);
 }
 
-function staleListText(rows: StaleTitleRow[]): string {
+export function staleListText(rows: StaleTitleRow[]): string {
   const shown = rows.slice(0, MAX_STALE_LISTED).map((r) => `- ${fmtTs(r.mtime)}「${r.title}」`);
   if (rows.length > MAX_STALE_LISTED) {
     shown.push(`- …另有 ${rows.length - MAX_STALE_LISTED} 个更早会话`);

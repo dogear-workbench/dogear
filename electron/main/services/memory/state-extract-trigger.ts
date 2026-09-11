@@ -6,20 +6,15 @@ import { mainLogger } from '../../agents/logger.js';
 
 const logger = mainLogger.child('state-extract-trigger');
 
-// 轻度滞后上限：≤ 此数同步等待抽取，超过转后台
-const LIGHT_STALE_MAX = 2;
-// 同步等待封顶；超时降级注入旧状态，任务留在后台继续
-const SYNC_WAIT_MS = 10_000;
 // 任务终态兜底上限：防 agent-manager 丢回调导致 in-flight 条目泄漏
 const TASK_DEADLINE_MS = 120_000;
 
-export type StateExtractTriggerOutcome =
-  | 'fresh'
-  | 'synced'
-  | 'sync-failed'
-  | 'sync-timeout'
-  | 'async'
-  | 'async-inflight';
+export type StateExtractTriggerOutcome = 'fresh' | 'sync-failed' | 'async' | 'async-inflight';
+
+export interface EnsureGroupFreshResult {
+  synced: boolean;
+  timedOut: boolean;
+}
 
 export interface StateExtractTriggerResult {
   outcome: StateExtractTriggerOutcome;
@@ -111,8 +106,8 @@ function waitOrTimeout(ms: number): Promise<'timeout'> {
 }
 
 /**
- * 开启会话时的唯一抽取触发点：判 staleness → 轻度同步等待（封顶 10s）/ 重度后台抽。
- * 永不抛错、永不阻塞会话开启；失败/超时由注入侧按 staleness 加滞后标注兜底。
+ * 开启会话时的抽取触发点：stale 即提交后台抽取，不同步等待（读时同步由 ensureGroupFresh 承担）。
+ * 永不抛错、永不阻塞会话开启。
  */
 export async function triggerStateExtractForSessionStart(
   wsId: string,
@@ -123,33 +118,50 @@ export async function triggerStateExtractForSessionStart(
     if (!stale.length) return { outcome: 'fresh', staleCount: 0 };
 
     const key = entryKey(wsId, groupId);
-    const existing = inFlight.get(key);
-
-    if (stale.length <= LIGHT_STALE_MAX) {
-      const p = existing ?? submitExtractTask(wsId, groupId, stale);
-      if (!existing) trackInFlight(key, p);
-      const r = await Promise.race([p, waitOrTimeout(SYNC_WAIT_MS)]);
-      if (r === 'timeout') {
-        logger.warn(`同步抽取等待超时（${SYNC_WAIT_MS}ms），任务留后台继续: ${key}`);
-        return { outcome: 'sync-timeout', staleCount: stale.length };
-      }
-      if (!r.ok) {
-        logger.warn(`同步抽取失败: ${key} ${r.error ?? ''}`);
-        return { outcome: 'sync-failed', staleCount: stale.length };
-      }
-      logger.info(`同步抽取完成: ${key} processed=${r.processed ?? 0} failed=${r.failed ?? 0}`);
-      return { outcome: 'synced', staleCount: stale.length };
-    }
-
-    if (existing) {
-      logger.info(`重度滞后但同组抽取已在后台进行，跳过重复提交: ${key}`);
+    if (inFlight.get(key)) {
+      logger.info(`同组抽取已在后台进行，跳过重复提交: ${key}`);
       return { outcome: 'async-inflight', staleCount: stale.length };
     }
     trackInFlight(key, submitExtractTask(wsId, groupId, stale));
-    logger.info(`重度滞后（${stale.length} 个会话），后台抽取已提交: ${key}`);
+    logger.info(`后台抽取已提交（${stale.length} 个滞后会话）: ${key}`);
     return { outcome: 'async', staleCount: stale.length };
   } catch (err) {
     logger.warn(`触发状态抽取失败（不阻塞会话开启）: ws=${wsId} gid=${groupId}`, err);
     return { outcome: 'sync-failed', staleCount: 0 };
+  }
+}
+
+/**
+ * 读时同步：有未提炼会话则复用/提交抽取任务并等待至多 timeoutMs。
+ * 永不抛错；超时/失败返回 synced=false，任务留在后台可被后续调用复用。
+ */
+export async function ensureGroupFresh(
+  wsId: string,
+  groupId: string,
+  timeoutMs: number,
+): Promise<EnsureGroupFreshResult> {
+  try {
+    const stale = await getStaleConversations(wsId, groupId);
+    if (!stale.length) return { synced: true, timedOut: false };
+
+    const key = entryKey(wsId, groupId);
+    const existing = inFlight.get(key);
+    const p = existing ?? submitExtractTask(wsId, groupId, stale);
+    if (!existing) trackInFlight(key, p);
+
+    const r = await Promise.race([p, waitOrTimeout(timeoutMs)]);
+    if (r === 'timeout') {
+      logger.warn(`读时同步等待超时（${timeoutMs}ms），任务留后台继续: ${key}`);
+      return { synced: false, timedOut: true };
+    }
+    if (!r.ok) {
+      logger.warn(`读时同步抽取失败: ${key} ${r.error ?? ''}`);
+      return { synced: false, timedOut: false };
+    }
+    logger.info(`读时同步抽取完成: ${key} processed=${r.processed ?? 0} failed=${r.failed ?? 0}`);
+    return { synced: true, timedOut: false };
+  } catch (err) {
+    logger.warn(`读时同步失败（不抛错）: ws=${wsId} gid=${groupId}`, err);
+    return { synced: false, timedOut: false };
   }
 }

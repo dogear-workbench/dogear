@@ -12,8 +12,9 @@ import fs from 'node:fs/promises';
 import { z } from 'zod';
 import { readCleanTranscript } from '../pi-session/transcript-adapter.js';
 import { getPiSessionRepository } from '../pi-session/pi-session-repository.js';
-import { readTopicStateCard } from '../../services/memory/background-store.js';
-import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS } from '../group-context-builder.js';
+import { readTopicStateCard, getStaleConversations } from '../../services/memory/background-store.js';
+import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS, deriveStaleList, staleListText } from '../group-context-builder.js';
+import { ensureGroupFresh } from '../../services/memory/state-extract-trigger.js';
 import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicVersion } from '../../services/memory/state-card.js';
 import { readGroupDigest } from '../../services/memory/group-digest-store.js';
 import * as conversationService from '../../services/conversation-service.js';
@@ -22,6 +23,8 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 
 const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
+
+const READ_SYNC_WAIT_MS = 120_000;
 
 export interface ReferenceToolsOpts {
   workspaceId: string;
@@ -72,15 +75,16 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     defineTool(
       'dogear__ReadGroupBackground',
       '读取话题状态卡',
-      '读取当前会话组的条目化状态卡：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。仅用于需要了解当前组最新整体状态时。',
+      '读取当前会话组的话题状态卡（返回唯一最新卡）：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。存在未提炼会话时会现场抽取并等待，可能需 30s~2min。仅用于需要了解当前组最新整体状态时。',
       z.object({}),
       async () => {
+        const fresh = await ensureGroupFresh(workspaceId, groupId, READ_SYNC_WAIT_MS);
         const card = await readTopicStateCard(workspaceId, groupId);
         if (!card) {
           return {
             content: [{
               type: 'text' as const,
-              text: `(本组话题状态卡尚未生成 · groupId=${groupId})`,
+              text: `(本组话题状态卡尚未生成${fresh.synced ? '' : '，且本次同步抽取未能完成'} · groupId=${groupId})`,
             }],
           };
         }
@@ -114,6 +118,25 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
           '',
           ...topicLines,
         ];
+        if (!fresh.synced) {
+          let staleCount = 0;
+          let staleList = '';
+          try {
+            const stale = await getStaleConversations(workspaceId, groupId);
+            staleCount = stale.length;
+            staleList = staleListText(await deriveStaleList(workspaceId, stale));
+          } catch { /* 列表派生失败不阻塞返回 */ }
+          parts.push(
+            '',
+            `【未能同步】以下为提炼至 ${fmtTs(card.updatedAt)} 的状态${staleCount ? `，另有 ${staleCount} 个会话未提炼，可能包含更晚的事实` : '，本次抽取未能完成'}：`,
+          );
+          if (staleList) parts.push(staleList);
+          parts.push(
+            fresh.timedOut
+              ? `（同步等待超过 ${READ_SYNC_WAIT_MS / 1000}s，抽取仍在后台进行，可稍后重试本工具获取最新卡）`
+              : '（抽取失败，可稍后重试本工具；深挖会话原文可用 dogear__ReadReferenceSession）',
+          );
+        }
         if (entryLines.length) {
           parts.push('', '## 当前状态', ...entryLines);
         } else if (!topicLines.length) {

@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 读时同步核心链路
-status: pending
+status: done
 ---
 
 ## 目标
@@ -20,10 +20,11 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：见共享区 topic-state-sync/step2-delivery.md（3 条：导出 deriveStaleList/staleListText 复用、outcome 类型收窄、无卡时也走 ensureGroupFresh）
+- 改动文件清单：state-extract-trigger.ts（删 sync 分支 + ensureGroupFresh）、reference-tools.ts（读时同步 + 未同步明示段）、group-context-builder.ts（仅导出 3 个符号，零行为改动）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名：`ensureGroupFresh(wsId, groupId, timeoutMs): Promise<{ synced, timedOut }>`；`READ_SYNC_WAIT_MS=120_000` 在 reference-tools.ts
+- 下个 step 该从哪里继续：pi-session.ts:398 删调用与 import，可连带删 triggerStateExtractForSessionStart 整函数（step2 未删是为不越界）；group-context-builder 改轻量头时直接复用已导出的 deriveStaleList/staleListText
+- 验收：lint 0 errors、build:electron 通过；抽查 ensureGroupFresh 实现（永不抛错/超时留后台/in-flight 去重）、ReadGroupBackground 明示段（超时/失败区分、派生失败不阻塞）均合格
+- 待办或已知限制：120s 阈值硬编码；同步期间工具调用阻塞 agent 轮次最长 120s（描述已声明）
