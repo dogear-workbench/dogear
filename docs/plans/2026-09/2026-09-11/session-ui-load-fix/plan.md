@@ -10,7 +10,7 @@
 
 - [x] [Step 1: reader 尾行容错](./step1-tail-tolerant.md) — 读历史撞上写到一半的尾行不再抛错
 - [x] [Step 2: error 状态化 + 错误卡片](./step2-error-state.md) — 读取失败不清空、显示错误卡片 + 重试
-- [ ] [Step 3: 屏障降级 + 骨架屏](./step3-barrier-skeleton.md) — history 先到先渲染，加载期骨架屏
+- [x] [Step 3: 屏障降级 + 骨架屏](./step3-barrier-skeleton.md) — history 先到先渲染，加载期骨架屏
 
 ## 全局决策
 
@@ -18,3 +18,13 @@
 - 尾行容错只在共享 reader（session-history-reader.ts）做，遵循「JSONL 只能经共享 reader」既有决策；非末行损坏维持抛错
 - history 是磁盘权威历史，渲染以它为先；snapshot 仅补当前 run
 - 空态文案只在 `empty` 显示，`error` 与 `loading` 各自独立 UI
+
+## 完成总结
+
+三步全部完成（2026-09-11）：
+
+1. **reader 尾行容错**（ab6a811）：session-history-reader.ts 绕过 repository.open 自行逐行解析（复刻上游校验与 branch/compaction 语义），仅最后一个非空行解析失败时丢弃，非末行损坏维持抛错；签名不变，三个调用方零改动受益
+2. **error 状态化 + 错误卡片**（f979566）：useMessageHistory error 分支不再 loadHistory([])，暴露 historyError / retryHistory（loadIdRef 竞态失效）；AgentChat 渲染错误卡片（原因摘要 + 重试），空态文案收紧为仅 empty
+3. **屏障降级 + 骨架屏**（本次提交）：useTranscriptState ready 判定改为 history 到达即 ready（timedOut 语义扩展为「ready 时仍有未到方」，snapshot 迟到复用既有 merge 重建；2s 兜底保留为纯保险），新增 initReady 暴露；AgentChat 骨架屏 4 灰条 animate-pulse，与错误卡片/空态互斥
+
+遗留：真机 UI 实测（长会话首开、运行中会话打开）留用户验收；resume/getLiveSnapshot 走上游不经 reader 的撞半行问题与 getSessionPath 全量扫目录归后续性能项立项（见设计文档范围界定）。

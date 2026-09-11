@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect, useSyncExternalStore } from 'react';
+import { useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Message, ContentBlock } from '../types';
 import { streamReducer, generateLocalMessageId } from '../transformers';
 import type { LivePermissionRequest } from './useAgentSession';
@@ -468,6 +468,7 @@ export function useTranscriptLiveTail(store: TranscriptStoreApi): Message[] {
 }
 
 export interface UseTranscriptStateResult {
+  initReady: boolean;
   stableHistory: Message[];
   pendingActions: PendingAction[];
   structuralVersion: number;
@@ -523,6 +524,7 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true, 
   if (storeRef.current === null) storeRef.current = createTranscriptStore();
   const store = storeRef.current;
   const structural = useSyncExternalStore(store.subscribe, store.getStructuralSnapshot, store.getStructuralSnapshot);
+  const [initReady, setInitReady] = useState(conversationId === null);
   const coreRef = useRef(store.core);
   const showReplayRef = useRef(showReplayMessages);
   showReplayRef.current = showReplayMessages;
@@ -561,9 +563,11 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true, 
 
   const finishInitialization = useCallback((force = false) => {
     const init = initRef.current;
-    if (init.ready || (!force && (init.history === undefined || init.snapshotEvents === undefined))) return;
-    const nextInit = { ...init, ready: true, timedOut: force && (init.history === undefined || init.snapshotEvents === undefined) };
+    if (init.ready || (!force && init.history === undefined)) return;
+    // timedOut 语义：ready 时仍有未到方（history 到而 snapshot 未到，或 force 下 history 也没到），后到方需走 merge 重建
+    const nextInit = { ...init, ready: true, timedOut: init.history === undefined || init.snapshotEvents === undefined };
     initRef.current = nextInit;
+    setInitReady(true);
     const merged = mergeHistorySnapshotCore(
       init.history ?? [],
       init.snapshotEvents ?? [],
@@ -586,6 +590,7 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true, 
 
   useEffect(() => {
     initRef.current = createTranscriptInit(conversationId, Date.now());
+    setInitReady(conversationId === null);
     pendingEventsRef.current.splice(0, pendingEventsRef.current.length);
     pendingInitMutationsRef.current.splice(0, pendingInitMutationsRef.current.length);
     pendingCompleteRef.current = false;
@@ -864,6 +869,7 @@ export function useTranscriptState(showReplayMessages: boolean, visible = true, 
   const getMessages = useCallback(() => [...coreRef.current.stable, ...coreRef.current.live], []);
 
   return {
+    initReady,
     stableHistory: structural.stableHistory,
     pendingActions: structural.pendingActions,
     structuralVersion: structural.structuralVersion,

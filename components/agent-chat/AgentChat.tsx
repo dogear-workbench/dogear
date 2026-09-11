@@ -82,7 +82,7 @@ export function AgentChat({
 
   // transcript 状态：消息写入口全部收敛到该 hook，结构快照与 live tail 分别订阅
   const transcript = useTranscriptState(showReplayMessages, visible, conversationId);
-  const { stableHistory, structuredLiveTail, structuralVersion, transcriptStore, getMessages, applySnapshot } = transcript;
+  const { stableHistory, structuredLiveTail, structuralVersion, transcriptStore, getMessages, applySnapshot, initReady } = transcript;
 
   const { setHistoryLoaded, historyStatus, historyError, retryHistory } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
@@ -401,6 +401,15 @@ export function AgentChat({
           <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
             <Archive size={14} className="flex-shrink-0 mt-0.5" />
             <p>此话题已删除，无法继续操作。</p>
+          </div>
+        )}
+
+        {!hasMessages && historyStatus !== 'error' && (historyStatus === 'loading' || (!initReady && conversationId !== null)) && (
+          <div className="my-8 space-y-4" aria-hidden="true">
+            <div className="h-9 w-1/2 ml-auto rounded-lg bg-muted animate-pulse" />
+            <div className="h-16 w-3/4 rounded-lg bg-muted animate-pulse" />
+            <div className="h-9 w-2/5 ml-auto rounded-lg bg-muted animate-pulse" />
+            <div className="h-12 w-2/3 rounded-lg bg-muted animate-pulse" />
           </div>
         )}
 
