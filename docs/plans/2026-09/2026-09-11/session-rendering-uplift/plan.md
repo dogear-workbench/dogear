@@ -27,3 +27,19 @@
 - **TrackUserActions**：挂 dogear-group server（group-tools.ts，groupId 闭包注入，空则不注册）；勾选态 localStorage key `user-action:{conversationId}:{toolUseId}`（值 = 已勾 index 的 JSON 数组）。
 - **不写单测**，每步按 step 文档「验证」小节人工验证；主进程改动后 `bun run build:electron` 重编译。
 - **CardRendererProps 统一加 `toolUseId?: string`**（Step 6 引入，ContentBlockItem 透传 block.toolUseId）。
+
+## 完成总结
+
+7 步全部实施完成（2026-09-12，每步独立 commit）：
+
+1. **step1** `3a2f523`：主进程 sendMessage 加 injectionTag，message_end(user) 广播带 tag 内容事件；sender 标签带 tag 属性，全链路（交付/回复/终态/resume/task-execution/failover）打 tag
+2. **step2** `e9964a7`：streamReducer 实时 push 注入消息；注入卡按 tag 分色（旧历史 delivery 属性/终态关键词兑底）；task-execution 折叠卡
+3. **step3** `a80b567`：isHeader 排除注入消息，小地图预览剥标签、成员预览带类型前缀
+4. **step4** `054da57`：ReportTaskResult 摘要卡+跳转、NoteCard 标题化+行级跳转（已删卡降级）、SendMessage delivery 交付卡
+5. **step5** `c5b4389`：消息流选中→引用芯片/存笔记；messageSnippets 独立列表，发送沿用 quoted_snippet 标签
+6. **step6** `a7f29a5`：dogear__TrackUserActions 勾选卡（勾选写状态卡 completed，localStorage 记忆）；CardRendererProps 透传 toolUseId；TopicQuickEntry 删除
+7. **step7** `7db1639`：删旧 SDK hook 事件 8 case + 4 特判 + task-aggregator/TodoListBlock 整文件 + ContentBlock 7 类型/11 字段（-430 行）
+
+**待用户人工回归**（各 step 验证小节）：① 派子会话看实时交付绿卡/终态红卡；② 任务队列折叠卡双路径；③ 旧历史兑底色；④ 工具卡四件（申报/笔记跳转/已删卡降级/交付卡）；⑤ 选中引用/存笔记链路；⑥ 勾选卡写状态卡+刷新保留；⑦ 会话渲染/小地图/搜索/分叉冒烟。
+
+**已知限制**：旧历史 hang/timeout/cancelled 终态文案不命中关键词集兑底蓝（新消息带 tag 不受影响）；主进程 task-types.ts 的 hook 类型成员待后续主进程清理一并删；MessageMinimap 当前轮高亮因 data-virtual-turn-id 不存在恒失效（既有问题）。
