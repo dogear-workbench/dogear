@@ -139,7 +139,7 @@ export async function maybeFailoverMainSession(sessionId: string, result: PiSess
       await broadcastFailoverNotice(conversationId, fromLabel, toLabel);
       mainLogger.info(`[model-failover] 会话 ${conversationId} ${fromLabel} 费率受限，已切换 ${toLabel} 续跑`);
 
-      session.sendMessage(buildFailoverContinuePrompt(toLabel)).catch((error: unknown) => {
+      session.sendMessage(buildFailoverContinuePrompt(toLabel), { injectionTag: 'failover' }).catch((error: unknown) => {
         const message = error instanceof Error ? error.message : String(error);
         mainLogger.warn(`[model-failover] 会话 ${conversationId} 续跑提示发送失败: ${message}`);
         void maybeFailoverMainSession(attachment.sessionId, {

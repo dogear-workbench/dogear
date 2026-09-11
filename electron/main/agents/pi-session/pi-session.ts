@@ -56,7 +56,7 @@ import {
   type PiUsageAccumulator,
 } from './usage-extractor.js';
 import type { ModelSelection, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
-import type { ExtendedSessionMessage } from '../task-types.js';
+import type { ExtendedSessionMessage, InjectionTag } from '../task-types.js';
 import type { CompactMarker } from '../../types.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
@@ -217,6 +217,19 @@ function extractLastContextTokens(messages: Extract<AgentEvent, { type: 'agent_e
   return undefined;
 }
 
+/** 提取落盘 user 消息的纯文本（string 或 TextContent[] 两种形状） */
+function userMessageText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((block) => (block as { type?: string } | null)?.type === 'text')
+      .map((block) => (block as { text: string }).text)
+      .join('');
+  }
+  return '';
+}
+
 /** 读文本文件，失败（不存在/无权限）静默返回空串。给 CLAUDE.md 这类"加分项"用，不阻塞会话启动 */
 async function readTextFileSafe(filePath: string): Promise<string> {
   try {
@@ -284,6 +297,9 @@ export class PiSession extends EventEmitter {
   private toolPackMap: Map<string, string> = new Map();
   // start() 内创建的 env 引用，供热更新 allowedPaths
   private env: WorkspaceExecutionEnv | null = null;
+  // 带 injectionTag 的 sendMessage 入队，message_end(user) 按文本与队首匹配出队后广播内容事件；
+  // interrupt/close 清空（harness 会同步清 steer 队列，残留项永无匹配时机）
+  private pendingInjected: Array<{ text: string; tag: InjectionTag }> = [];
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -704,6 +720,7 @@ export class PiSession extends EventEmitter {
         } else {
           this.logger.warn('message_end 未命中 entryId 缓存，跳过 message_id 广播');
         }
+        if (role === 'user') this.tryFlushPendingInjected(event.message);
       }
     }
 
@@ -754,6 +771,23 @@ export class PiSession extends EventEmitter {
       this.currentRunUsageAccum = null;
       this.currentRunContextTokens = undefined;
     }
+  }
+
+  /** 队首文本匹配时出队并广播带 injectedTag 的 user 内容事件（与 message_id 并行；未匹配时静默保留） */
+  private tryFlushPendingInjected(message: AgentMessage): void {
+    const pending = this.pendingInjected[0];
+    if (!pending) return;
+    if (userMessageText(message) !== pending.text) return;
+    this.pendingInjected.shift();
+    const injected: ExtendedSessionMessage = {
+      type: 'user',
+      content: pending.text,
+      injectedTag: pending.tag,
+      timestamp: message.timestamp,
+      role: 'user',
+    };
+    this.liveTurnMessages.push(injected);
+    this.emit('message', injected);
   }
 
   /**
@@ -905,7 +939,7 @@ export class PiSession extends EventEmitter {
     return [];
   }
 
-  async sendMessage(content: string | ContentBlockParam[]): Promise<void> {
+  async sendMessage(content: string | ContentBlockParam[], opts?: { injectionTag?: InjectionTag }): Promise<void> {
     if (this.status === PiSessionStatus.CLOSED) {
       throw new Error('会话已关闭');
     }
@@ -915,6 +949,7 @@ export class PiSession extends EventEmitter {
 
     const { text, images } =
       typeof content === 'string' ? { text: content, images: [] as ImageContent[] } : splitContentBlocks(content);
+    if (opts?.injectionTag) this.pendingInjected.push({ text, tag: opts.injectionTag });
     const adapter = this.adapter;
     // paused（= pauseRequested 且 run 已收尾）优先于 isRunning：此时 harness 已 idle，必须走 prompt
     // （idle 下 steer 抛 invalid_state），且 pendingSteerCount>0（暂停前插话仍在队列）也不能把分支带进 steer。
@@ -1073,6 +1108,7 @@ export class PiSession extends EventEmitter {
 
     this.status = PiSessionStatus.CLOSED;
     this.pendingSteerCount = 0;
+    this.pendingInjected = [];
     this.running = false;
     killConversationTerminals(this.config.conversationId);
     this.emit('sessionClosed', { conversationId: this.config.conversationId });
@@ -1096,6 +1132,7 @@ export class PiSession extends EventEmitter {
     // 主动拒绝所有待处理权限请求兜底，避免中断后仍有请求悬挂等待
     if (this.running || this.pendingSteerCount > 0) this.recordTurnCancelled('用户中断');
     this.pendingSteerCount = 0;
+    this.pendingInjected = [];
     this.emit('pendingCountChanged', { count: 0 });
     this.rejectAllPendingPermissionRequests('用户中断');
     await this.adapter?.abort();

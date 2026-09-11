@@ -13,6 +13,7 @@ import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 
 import type { PiSession, PiSessionTurnResult } from './pi-session/pi-session.js';
+import type { InjectionTag } from './task-types.js';
 import { classifyChildCompletion } from './delegation-lifecycle.js';
 import { getPiSessionManager } from './pi-session/pi-session-manager.js';
 import { getConfigDir, mainLogger } from './logger.js';
@@ -286,7 +287,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
  * 同模型重试则直接复用存活 session 保留内存上下文。所有 await 步骤成功后才提交状态，
  * 失败时状态仍是终态，由调用方回退通知。dogear__ResumeSession 工具与终态自动重调都走这里。
  */
-export async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null; wakeupMessage?: string }): Promise<void> {
+export async function resumeChild(childId: string, opts: { reason: string; modelOverride?: ModelSelection | null; wakeupMessage?: string; wakeupTag?: InjectionTag }): Promise<void> {
   const c = childStates.get(childId);
   if (!c || c.status === 'running') return;
 
@@ -361,7 +362,8 @@ export async function resumeChild(childId: string, opts: { reason: string; model
 
   logger.info(`子会话 ${childId} 第 ${c.consecutiveFails} 次自动复活（${opts.modelOverride ? `降级至 ${opts.modelOverride.profileId}:${opts.modelOverride.tier}` : '原模型'}）：${opts.reason}`);
   const wakeInput = opts.wakeupMessage ?? buildResumePrompt(opts.reason, c.outputPath);
-  session.sendMessage(wakeInput).catch((error: unknown) => {
+  const wakeTag: InjectionTag = opts.wakeupMessage ? (opts.wakeupTag ?? deliveryToTag(false)) : 'resume';
+  session.sendMessage(wakeInput, { injectionTag: wakeTag }).catch((error: unknown) => {
     logger.error(`子会话 ${childId} 复活后 sendMessage 失败`, error);
     onSessionComplete(childId, {
       subtype: 'failed',
@@ -393,6 +395,7 @@ async function notifyTerminalToParent(c: ChildStateInternal): Promise<void> {
     fromLabel: c.title,
     message: notice,
     delivery: false,
+    tag: 'terminal' as const,
   };
   if (pushToParentSession(c.parentConversationId, msg)) return;
   logger.warn(`父会话 ${c.parentConversationId} 未在运行，自动调起后注入终态通知（子会话 ${c.childId} ${terminalStatusLabel(c.terminalReason)}）`);
@@ -774,6 +777,8 @@ export interface DeliverMessageOptions {
   fromLabel: string;
   message: string;
   delivery: boolean;
+  /** 注入类型标记，缺省按 delivery 布尔映射（true→delivery / false→reply） */
+  tag?: InjectionTag;
 }
 
 /**
@@ -792,8 +797,9 @@ function pushToParentSession(toConversationId: string, msg: Omit<DeliverMessageO
   const session = localSessionId ? getPiSessionManager().getSession(localSessionId) : undefined;
   if (!session) return false;
 
-  const text = `${buildSenderTag(msg.fromSessionId, msg.fromLabel, msg.delivery)}\n${msg.message}`;
-  session.sendMessage(text).catch((err: unknown) => {
+  const tag = msg.tag ?? deliveryToTag(msg.delivery);
+  const text = `${buildSenderTag(msg.fromSessionId, msg.fromLabel, msg.delivery, tag)}\n${msg.message}`;
+  session.sendMessage(text, { injectionTag: tag }).catch((err: unknown) => {
     logger.warn(`消息推送失败 (${toConversationId})`, err);
   });
   return true;
@@ -826,8 +832,13 @@ function escapeXmlAttr(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function buildSenderTag(fromSessionId: string, fromLabel: string, delivery: boolean): string {
-  return `<sender kind="agent" session_id="${escapeXmlAttr(fromSessionId)}" name="${escapeXmlAttr(fromLabel)}" delivery="${delivery ? 'true' : 'false'}"/>`;
+function deliveryToTag(delivery: boolean): InjectionTag {
+  return delivery ? 'delivery' : 'reply';
+}
+
+function buildSenderTag(fromSessionId: string, fromLabel: string, delivery: boolean, tag?: InjectionTag): string {
+  const tagAttr = tag ? ` tag="${escapeXmlAttr(tag)}"` : '';
+  return `<sender kind="agent" session_id="${escapeXmlAttr(fromSessionId)}" name="${escapeXmlAttr(fromLabel)}" delivery="${delivery ? 'true' : 'false'}"${tagAttr}/>`;
 }
 
 /**
@@ -841,9 +852,11 @@ export async function resumeChildAndDeliver(
 ): Promise<void> {
   const c = childStates.get(childId);
   if (!c) throw new Error(`会话 ${childId} 不在本进程运行时跟踪中，无法自动调起`);
+  const tag = deliverOpts.tag ?? deliveryToTag(deliverOpts.delivery);
   await resumeChild(childId, {
     reason: '主会话 SendMessage 自动调起',
-    wakeupMessage: `${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery)}\n${deliverOpts.message}`,
+    wakeupMessage: `${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery, tag)}\n${deliverOpts.message}`,
+    wakeupTag: tag,
   });
 }
 
@@ -887,7 +900,8 @@ export async function resumeParentAndDeliver(
   };
   session.on('settled', releaseRef);
   logger.info(`自动调起停机父会话 ${parentConversationId}（来自 ${deliverOpts.fromLabel}，delivery=${deliverOpts.delivery}）`);
-  session.sendMessage(`${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery)}\n${deliverOpts.message}`).catch((err: unknown) => {
+  const tag = deliverOpts.tag ?? deliveryToTag(deliverOpts.delivery);
+  session.sendMessage(`${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery, tag)}\n${deliverOpts.message}`, { injectionTag: tag }).catch((err: unknown) => {
     logger.warn(`父会话 ${parentConversationId} 调起后消息注入失败`, err);
   });
 }

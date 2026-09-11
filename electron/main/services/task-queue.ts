@@ -277,7 +277,7 @@ class TaskQueueExecutor {
     session.once('complete', onComplete);
     session.on('message', onMessage);
     try {
-      const sendPromise = session.sendMessage(buildExecutionPrompt(task));
+      const sendPromise = session.sendMessage(buildExecutionPrompt(task), { injectionTag: 'task-execution' });
       // 放行胜出后 sendPromise 可能永远不 settle 或迟 reject，提前挂空 catch 防 unhandledRejection
       void sendPromise.catch(() => {});
       const winner = await Promise.race([sendPromise, forcedRelease]);
