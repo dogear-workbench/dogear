@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: bridge 保活（retain/release）](./step1-bridge-retain.md) — running 直属子会话存在期间父会话不被销毁
-- [ ] [Step 2: 队列结算改申报制](./step2-queue-settle.md) — 删兜底 completeTask；轮结束未申报且无 running 子会话 → interrupted + 引导
+- [x] [Step 2: 队列结算改申报制](./step2-queue-settle.md) — 删兜底 completeTask；轮结束未申报且无 running 子会话 → interrupted + 引导
 - [ ] [Step 3: child→parent 自动调起](./step3-resume-parent.md) — 交付/终态注入遇 target_inactive 自动拉起父会话
 - [ ] [Step 4: 存活可视化](./step4-alive-visual.md) — 存活集合广播 + 列表竖线存活态 + 等待动效挪侧边
 

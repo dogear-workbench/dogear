@@ -1,6 +1,6 @@
 /**
  * 任务串行队列执行器：取 queued 任务 → 创建执行会话（role='main' 普通会话）→ 按任务提示词实施
- * → 等待本轮结束（sendMessage promise = PiSession complete 信号）→ 结果写回 → review + 系统通知。
+ * → 等待本轮结束（sendMessage promise = PiSession complete 信号）→ 申报制结算。
  *
  * - 串行：单实例 drain 循环，一次只跑一个任务
  * - 结束信号：await sendMessage 即一轮跑完（finally 中 emit complete 后 promise 才 resolve），
@@ -9,8 +9,8 @@
  *   pi 内部 promise 挂死时不拖死后续任务
  * - 中断语义：markTaskRunning 之后的意外中断（执行轮异常/卡死）置 interrupted（safeInterrupt）交用户手动处置；
  *   执行前的确定性拒绝（无 plan/无 origin 等）仍置 rejected（safeReject）
- * - 结果摘要：执行提示词约定 agent 在回复末尾输出 <task-result> 标签段，主进程从本轮 text
- *   增量累积中提取；未命中标签时回退本轮文本尾部
+ * - 申报制结算：review 唯一入口是执行会话调用 dogear__ReportTaskResult 申报，队列不判断成功；
+ *   轮结束时仍有 running 直属子会话 → 不结算等注入续跑；无且未申报 → interrupted + 申报引导
  */
 import * as workspaceJsonService from './workspace-json-service.js';
 import * as conversationService from './conversation-service.js';
@@ -18,9 +18,9 @@ import fs from 'node:fs/promises';
 import { conversationRuntimeService } from './conversation-runtime-service.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import type { PiSession, PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
-import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import { mainLogger } from '../agents/logger.js';
 import { getSessionNotificationService } from './session-notification-service.js';
+import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import * as taskService from './task-service.js';
 import type { Task } from './task-service.js';
 
@@ -33,10 +33,6 @@ const FORCE_RELEASE_DELAY_MS = 60_000;
 // 会话索引存在跨进程并发写窗口（旧快照短暂覆盖/读失败静默返空），origin 瞬时缺失重试可自愈，避免误拒
 const ORIGIN_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
 
-const RESULT_TAG_RE = /<task-result>([\s\S]*?)<\/task-result>/;
-
-const RESULT_TAIL_MAX = 2000;
-
 interface QueuedWork {
   workspacePath: string;
   workspaceId: string;
@@ -45,14 +41,6 @@ interface QueuedWork {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-function extractResultSummary(text: string): string {
-  const tagged = text.match(RESULT_TAG_RE);
-  if (tagged?.[1].trim()) return tagged[1].trim();
-  const trimmed = text.trim();
-  if (!trimmed) return '';
-  return trimmed.length > RESULT_TAIL_MAX ? trimmed.slice(-RESULT_TAIL_MAX) : trimmed;
 }
 
 function firstLine(text: string, max = 80): string {
@@ -110,7 +98,7 @@ function buildExecutionPrompt(task: Task): string {
     '执行要求：',
     '1. 先读计划文档再实施；计划引用的其他文件按需读取',
     '2. 计划文档不存在或明显无法实施时不要硬做，直接说明原因结束本轮',
-    '3. 整个计划实施完成后，调用 dogear__ReportTaskResult 工具申报结果摘要（做了什么、关键改动位置、遗留问题），任务将进入待审核；同时在回复末尾输出 <task-result></task-result> 标签段作为备用信号，系统从中提取摘要写回任务',
+    '3. 整个计划实施完成后，调用 dogear__ReportTaskResult 工具申报结果摘要（做了什么、关键改动位置、遗留问题），任务将进入待审核；不申报则任务会因回合结束被置为中断，用户还需再干预一次',
     '</task-execution>',
   ].join('\n');
 }
@@ -172,7 +160,7 @@ class TaskQueueExecutor {
   }
 
   private async executeOne(ctx: QueuedWork): Promise<void> {
-    const { workspacePath, workspaceId, task } = ctx;
+    const { workspacePath, task } = ctx;
     if (!task.planPath) {
       await this.safeReject(ctx, '任务尚无 plan 文档，请先补文档再执行');
       return;
@@ -234,10 +222,10 @@ class TaskQueueExecutor {
     const previousPermissionMode = session.getPermissionMode();
     session.setPermissionMode('autoExecute');
 
-    const outcome = await this.runExecutionTurn(session, running, workspacePath);
+    const outcome = await this.runExecutionTurn(session, running);
     void session.setPermissionMode(previousPermissionMode).catch(() => {});
 
-    // 一轮已 complete，无需保活；用户插话导致的剩余轮次由 orphan 保活机制自然收尾
+    // 一轮已 complete，无需保活；bridge 侧 hold 仍在，有 running 子会话时执行会话继续存活等注入续跑
     conversationRuntimeService.detachAttachment(attachment.attachmentId);
 
     if (outcome.subtype !== 'success') {
@@ -246,34 +234,23 @@ class TaskQueueExecutor {
       return;
     }
 
-    const summary = extractResultSummary(outcome.text);
-    // 双写防护：执行会话已通过 dogear__ReportTaskResult 申报（review）则跳过队列兜底写回；其余非 running 状态是用户并发改动，留痕丢弃
+    const children = await getChildrenByParent(execId);
+    if (children.some((c) => c.status === 'running')) {
+      log.info(`任务 ${task.id} 执行会话 ${execId} 仍有 running 直属子会话，本轮不结算，等交付/终态注入续跑`);
+      return;
+    }
+
+    // review 唯一入口是申报路径，队列无法区分真完成和忘申报，轮结束未申报一律视为中断交用户处置
     const current = await taskService.getTask(workspacePath, task.id);
-    if (current?.status === 'review') {
-      log.info(`任务 ${task.id} 结果已由执行会话申报回写，跳过队列兜底写回`);
+    if (current?.status === 'running') {
+      await this.safeInterrupt(ctx, '执行会话回合结束，但未申报结果且无运行中的子会话');
       return;
     }
-    if (current && current.status === 'running') {
-      const reviewed = await taskService.completeTask(workspacePath, task.id, summary);
-      log.info(`任务 ${task.id} 执行完成，进入 review（执行会话 ${execId}）`);
-      notifyTask(reviewed, workspaceId, `任务待审核：${reviewed.title}`, firstLine(reviewed.result ?? ''));
-      return;
-    }
-    const statusText = current ? current.status : '不存在';
-    log.warn(`任务 ${task.id} 执行结果产出时状态已变为 ${statusText}，摘要留痕进 result 后丢弃写回`);
-    if (current) {
-      await taskService.appendResultNote(workspacePath, task.id, summary);
-      notifyTask(current, workspaceId, `任务结果已产出但任务已被置为 ${statusText}：${current.title}`, `摘要已附加到任务 result，打开任务详情查看：${firstLine(summary)}`);
-    }
+    log.info(`任务 ${task.id} 轮结束时状态为 ${current?.status ?? '不存在'}（执行会话 ${execId}），队列不做处置`);
   }
 
-  private async runExecutionTurn(
-    session: PiSession,
-    task: Task,
-    workspacePath: string,
-  ): Promise<{ subtype: PiSessionTurnResult['subtype']; error?: { message: string }; text: string }> {
+  private async runExecutionTurn(session: PiSession, task: Task): Promise<PiSessionTurnResult> {
     let turnResult: PiSessionTurnResult = { subtype: 'success' };
-    let text = '';
     const onComplete = (r: PiSessionTurnResult) => {
       turnResult = r;
     };
@@ -296,10 +273,7 @@ class TaskQueueExecutor {
       clearTimeout(idleTimer);
       idleTimer = setTimeout(fireIdleTimeout, EXEC_IDLE_TIMEOUT_MS);
     };
-    const onMessage = (m: ExtendedSessionMessage) => {
-      resetIdleTimer();
-      if (m.type === 'text') text += m.content ?? '';
-    };
+    const onMessage = () => resetIdleTimer();
     session.once('complete', onComplete);
     session.on('message', onMessage);
     try {
@@ -318,7 +292,7 @@ class TaskQueueExecutor {
       session.off('complete', onComplete);
       session.off('message', onMessage);
     }
-    return { subtype: turnResult.subtype, error: turnResult.error, text };
+    return turnResult;
   }
 
   private async safeInterrupt(ctx: QueuedWork, reason: string): Promise<void> {
