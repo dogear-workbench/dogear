@@ -1,3 +1,12 @@
+import { useEffect, useReducer } from 'react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
+import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
+import { useNotesStore } from '@/stores/notes-store';
+import { useWorkspaceId } from '../workspace-id-context';
+import { useWorkspacePath } from '../path-link';
 import { ToolDetailShell, ToolSection, KeyValueList, OutputBox, ChipList } from './ToolDetailShell';
 
 interface Props {
@@ -17,6 +26,88 @@ function extractTitle(content: string): string {
 
 function toLinks(links: any): string[] {
   return Array.isArray(links) ? links.filter((l: any) => typeof l === 'string') : [];
+}
+
+// noteId → title；null = 确认不存在（已删卡），避免重复请求
+const noteTitleCache = new Map<string, string | null>();
+
+function useNoteTitle(noteId: string, workspacePath: string | null): string | null | undefined {
+  const notes = useNotesStore((s) => s.notes);
+  const [, bump] = useReducer((n: number) => n + 1, 0);
+
+  useEffect(() => {
+    const unsub = rendererEvents.notesChanged.listen(() => {
+      noteTitleCache.clear();
+      bump();
+    });
+    return () => unsub();
+  }, [bump]);
+
+  useEffect(() => {
+    if (!noteId || noteTitleCache.has(noteId)) return;
+    const cached = notes.find((n) => n.id === noteId);
+    if (cached) {
+      noteTitleCache.set(noteId, cached.title);
+      bump();
+      return;
+    }
+    if (!workspacePath) return;
+    let cancelled = false;
+    void client
+      .getNote({ workspacePath, noteId })
+      .catch(() => null)
+      .then((result) => {
+        const title = result && 'note' in result && result.note ? result.note.title : null;
+        if (!cancelled) noteTitleCache.set(noteId, title);
+      })
+      .finally(() => {
+        if (!cancelled) bump();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [noteId, notes, workspacePath, bump]);
+
+  if (!noteId) return null;
+  return noteTitleCache.get(noteId);
+}
+
+function openNoteCard(noteId: string, workspacePath: string | null) {
+  if (!workspacePath) return;
+  void (async () => {
+    const result = await client.getNote({ workspacePath, noteId }).catch(() => null);
+    if (!result || !('note' in result) || !result.note) {
+      toast.warning('卡片不存在或已删除');
+      return;
+    }
+    useSessionStore.getState().switchTab(NOTES_TAB_ID);
+    useNotesStore.getState().setActiveNoteId(noteId);
+  })();
+}
+
+function NoteLinkRow({ noteId }: { noteId: string }) {
+  const workspaceId = useWorkspaceId();
+  const workspacePath = useWorkspacePath(workspaceId);
+  const title = useNoteTitle(noteId, workspacePath);
+  const missing = title === null;
+  return (
+    <button
+      type="button"
+      title={missing ? '卡片不存在或已删除' : '打开卡片'}
+      onClick={() => openNoteCard(noteId, workspacePath)}
+      className="flex gap-2 items-baseline w-full text-left group/note"
+    >
+      <span className="text-muted-foreground font-mono shrink-0">卡片</span>
+      <span
+        className={cn(
+          'font-mono break-all min-w-0 flex-1 transition-colors',
+          missing ? 'text-muted-foreground' : 'group-hover/note:text-sky-600 dark:group-hover/note:text-sky-400',
+        )}
+      >
+        {missing ? `${noteId}（卡片不存在）` : title != null ? `${title}（${noteId.slice(0, 8)}）` : noteId}
+      </span>
+    </button>
+  );
 }
 
 function PreviewSection({ label, content }: { label: string; content: string }) {
@@ -47,7 +138,7 @@ export function NoteCardRenderer({ toolInput, toolOutput, isError }: Props) {
     return (
       <ToolDetailShell>
         <ToolSection label="更新卡片">
-          <KeyValueList data={{ 卡片: noteId }} />
+          <NoteLinkRow noteId={noteId} />
         </ToolSection>
         {typeof patch.content === 'string' && <PreviewSection label="新正文" content={patch.content} />}
         {patchTags.length > 0 && (
@@ -69,7 +160,7 @@ export function NoteCardRenderer({ toolInput, toolOutput, isError }: Props) {
     return (
       <ToolDetailShell>
         <ToolSection label="追加卡片">
-          <KeyValueList data={{ 卡片: noteId }} />
+          <NoteLinkRow noteId={noteId} />
         </ToolSection>
         {content && <PreviewSection label="追加片段" content={content} />}
         {outputSection}

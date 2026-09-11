@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 工具渲染三件套（ReportTaskResult / NoteCard / SendMessage 交付卡）
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,10 +36,20 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无结构性差异。设计 #7 提到的「CreateNote 分支补行级跳转」未纳入（按本 step 计划改动段只改 Update/Append 分支；Create 卡跳转已由 ToolBlock 头部 buildResultAction 覆盖）。交付卡与 Send 图标用 green 系（非 emerald），与注入交付消息 INJECTION_TAG_STYLES.delivery 的 green 系同源呼应。
 - 改动文件清单：
+  - `components/agent-chat/tool-renderers/TaskResultRenderer.tsx`（新，52 行）
+  - `components/agent-chat/tool-renderers/DeliveryCardRenderer.tsx`（新，73 行）
+  - `components/agent-chat/tool-renderers/NoteCardRenderer.tsx`（+95 行：useNoteTitle hook + openNoteCard + NoteLinkRow，Update/Append 分支换 NoteLinkRow）
+  - `components/ToolBlock.tsx`（icons/titles/renderers 三表注册 + buildResultAction ReportTaskResult 分支）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `useNoteTitle(noteId, workspacePath): string | null | undefined`（模块级 `noteTitleCache: Map<string, string | null>`，null=已删卡；notesChanged 广播 clear+bump）—— step8 若要做 TrackUserActionsRenderer 的 localStorage 勾选态，可参考 NoteLinkRow 的模块级缓存+hook 模式
+  - `NoteLinkRow` 自实现点击（不依赖 ToolBlock headerActions），点击链路 = getNote 校验 + switchTab(NOTES_TAB_ID) + setActiveNoteId
+  - `DeliveryCardRenderer` 以 `toolInput?.options?.delivery === true` 分流：真→绿色交付卡（green-300/60 边框 + CheckCircle2 徽章），假→通用 ToolDetailShell；无 toolUseId 需求
+  - TaskResultRenderer 输出解析正则：任务 ID `/任务 ID: ([^\s"\\]+)/`、标题 `/标题: (.+)/`、状态 `/状态: (\S+)/`；「无需重复申报」输出三解析均空，仅显示摘要+输出兑底
+- 下个 step 该从哪里继续：step5（TrackUserActions：工具端 schema/handler + 渲染器 + ToolBlock CardRendererProps 补传 toolUseId + TopicQuickEntry 删除）
 - 待办或已知限制：
+  - 交付目标仅显示 toSessionId（渲染层无 sessionId→会话名映射）
+  - 运行时人工验证四项（见 step「验证」小节）未执行，需真实会话流验证
