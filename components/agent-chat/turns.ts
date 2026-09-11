@@ -1,4 +1,4 @@
-import { isSdkInjectedUserMessage } from './utils';
+import { isSdkInjectedUserMessage, isInjectedUserMessage } from './utils';
 import type { Message } from './types';
 
 export interface Turn {
@@ -23,7 +23,8 @@ function isHeader(msg: Message): boolean {
     !msg.isMeta &&
     !msg.isCompactBoundary &&
     !msg.isCompactSummary &&
-    !isSdkInjectedUserMessage(msg.content)
+    !isSdkInjectedUserMessage(msg.content) &&
+    !isInjectedUserMessage(msg.content)
   );
 }
 

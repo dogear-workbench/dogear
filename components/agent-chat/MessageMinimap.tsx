@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Map as MapIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { extractMessagePreview } from './minimap-utils';
-import { isSdkInjectedUserMessage } from './utils';
+import { extractMessagePreview, injectedPreviewPrefix } from './minimap-utils';
+import { isSdkInjectedUserMessage, isInjectedUserMessage } from './utils';
 import type { Turn } from './turns';
 import type { Message } from './types';
 
@@ -44,12 +44,16 @@ export function MessageMinimap({ turns, messagesById, conversationId, hidden, sc
         const m = messagesById.get(id);
         if (!m) return false;
         if (m.isMeta || m.isCompactBoundary || m.isCompactSummary) return false;
-        if (m.role === 'user' && isSdkInjectedUserMessage(m.content)) return false;
+        if (m.role === 'user' && isSdkInjectedUserMessage(m.content) && !isInjectedUserMessage(m.content)) return false;
         return true;
       })
       .map((id) => {
         const m = messagesById.get(id);
-        return m ? extractMessagePreview(m) || '(AI 回复)' : '(AI 回复)';
+        if (!m) return '(AI 回复)';
+        const prefix = m.role === 'user' ? injectedPreviewPrefix(m.content) : null;
+        const body = extractMessagePreview(m);
+        if (prefix) return body ? `${prefix} · ${body}` : prefix;
+        return body || '(AI 回复)';
       });
 
     return {

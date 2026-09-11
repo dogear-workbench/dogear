@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 轮次与小地图修正
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,9 +36,17 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - injectedPreviewPrefix 增加 task-execution 前置判定（parseTaskExecution 命中或包裹残留）——resolveInjectionTag 不认 task-execution 包裹会兑成「回复」，补上与 MessageItem forcedTag 同口径
+  - failover 哨兵特判「⇄ 切换」（step 前缀枚举未列，防关键词漂移）
+  - 分隔符「 · 」由 MessageMinimap 拼装而非前缀自带（正文空只显前缀不残留尾分隔符）
+  - 返工补丁：成员预览 prefix 计算加 `m.role === 'user'` 门槛（assistant 正文含 `<sender` 代码样例不误加前缀）
+- 改动文件清单：`turns.ts`（isHeader 加 !isInjectedUserMessage，:26-27）、`minimap-utils.ts`（extractMessagePreview 剥 failover 哨兵/sender/task-execution 整段；INJECTED_PREVIEW_PREFIXES + injectedPreviewPrefix，:41-61）、`MessageMinimap.tsx`（成员过滤只排命令类 SDK 注入，预览 = 前缀 · 正文）
+- 确认项结论：AgentChat 布局层无副作用——渲染层已不存在 data-virtual-turn-id（虚拟滚动已移除，StableHistory 渲染 section.agent-turn），注入消息并入上一轮仅改变 section 内成员归属
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+- 关键签名 / 数据结构：`injectedPreviewPrefix(content): string | null`（↩ 交付/↩ 回复/⚠ 子会话终止/↻ 续跑/▣ 任务执行/⇄ 切换，非注入 null）；成员预览前缀仅对 role='user' 生效；jumpTargetId = headerId ?? memberIds[0] 未动
+- 下个 step 该从哪里继续：Step 4 工具渲染三件套（ReportTaskResult / NoteCard / SendMessage 交付卡）
 - 待办或已知限制：
+  - MessageMinimap 当前轮高亮因 data-virtual-turn-id 不存在恒失效（既有问题非本 step 引入，待主会话定夺是否清理）
+  - task-execution 成员预览只显「▣ 任务执行」，如需标题属计划变更
+  - dev GUI 人工项（hover 前缀、跳转、真实历史回归）待用户回归
