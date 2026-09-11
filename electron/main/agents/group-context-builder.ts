@@ -1,6 +1,6 @@
 /**
  * 会话启动时把所属组的概况拼到 systemPrompt 的 append 末尾。
- * 话题状态段：读 background.md 状态卡 + conversations.json 派生未提炼会话列表（纯代码零模型）。
+ * 话题状态段只注入轻量头（topic + 未提炼标题 + 强指引）；完整卡唯一出口是 dogear__ReadGroupBackground 工具。
  * 文件清单与单文件内容靠 dogear__ListGroupFiles 工具按需获取（避免 prompt 膨胀）。
  */
 
@@ -11,31 +11,14 @@ import {
   readTopicStateCard,
   type StaleConversation,
 } from '../services/memory/background-store.js';
-import {
-  TOPIC_CARD_CATEGORIES,
-  type TopicCardCategory,
-  type TopicCardEntry,
-  type TopicStateCard,
-} from '../services/memory/state-card.js';
+import type { TopicCardCategory } from '../services/memory/state-card.js';
 import { mainLogger } from './logger.js';
 
 const logger = mainLogger.child('group-context-builder');
 
-// 注入裁剪：每类最多条数 / 状态段字符上限（超限先砍 completed，再跨类砍最旧，每类保底 1 条）
-const MAX_ENTRIES_PER_CATEGORY = 8;
-const STATE_SECTION_MAX_CHARS = 2400;
 // 未提炼会话列表最多列几条，其余合并计数
 const MAX_STALE_LISTED = 5;
 
-// 注入显示顺序（对齐设计文档模板行序）
-const CATEGORY_ORDER: TopicCardCategory[] = [
-  'inProgress',
-  'completed',
-  'nextSteps',
-  'blockers',
-  'decisions',
-  'openQuestions',
-];
 export const CATEGORY_LABELS: Record<TopicCardCategory, string> = {
   inProgress: '进行中',
   completed: '已完成',
@@ -59,64 +42,11 @@ export function sourceLabel(source: string): string {
   return `会话 ${source.split('#')[0].slice(-6)}`;
 }
 
-function withSource(text: string, source: string): string {
-  const label = sourceLabel(source);
-  return label ? `${text}（${label}）` : text;
-}
-
 /** topic 生效版本的来源描述（确立来源） */
 export function topicOriginLabel(source: string): string {
   if (source === 'user') return '用户确认';
   if (source === 'legacy') return '早期记录';
   return `来自${sourceLabel(source)}`;
-}
-
-function isEmptyCard(card: TopicStateCard): boolean {
-  return (
-    !card.topicHistory.length &&
-    TOPIC_CARD_CATEGORIES.every((c) => card.entries[c].length === 0)
-  );
-}
-
-function pickRecentEntries(card: TopicStateCard): Record<TopicCardCategory, TopicCardEntry[]> {
-  const picked = {} as Record<TopicCardCategory, TopicCardEntry[]>;
-  for (const cat of TOPIC_CARD_CATEGORIES) {
-    picked[cat] = [...card.entries[cat]]
-      .sort((a, b) => a.ts.localeCompare(b.ts))
-      .slice(-MAX_ENTRIES_PER_CATEGORY);
-  }
-  return picked;
-}
-
-function entriesSectionText(entries: Record<TopicCardCategory, TopicCardEntry[]>): string {
-  return CATEGORY_ORDER
-    .filter((c) => entries[c].length > 0)
-    .map((c) => `- ${CATEGORY_LABELS[c]}：${entries[c].map((e) => withSource(e.text, e.source)).join('；')}`)
-    .join('\n');
-}
-
-/** 状态段总长超预算时先砍 completed（留计数行），仍超再跨类从最旧条目丢起（每类保底 1 条） */
-function applyBudget(
-  entries: Record<TopicCardCategory, TopicCardEntry[]>,
-  otherChars: number,
-): { lines: string; completedHidden: number } {
-  let completedHidden = 0;
-  const overBudget = () => otherChars + entriesSectionText(entries).length > STATE_SECTION_MAX_CHARS;
-
-  if (overBudget() && entries.completed.length) {
-    completedHidden = entries.completed.length;
-    entries.completed = [];
-  }
-  while (overBudget()) {
-    const oldestCat = TOPIC_CARD_CATEGORIES
-      .filter((c) => entries[c].length > 1)
-      .sort((a, b) => entries[a][0].ts.localeCompare(entries[b][0].ts))[0];
-    if (!oldestCat) break;
-    entries[oldestCat].shift();
-  }
-
-  const lines = entriesSectionText(entries);
-  return { lines, completedHidden };
 }
 
 export interface StaleTitleRow {
@@ -151,47 +81,27 @@ async function buildTopicStateSection(wsId: string, groupId: string): Promise<st
     getStaleConversations(wsId, groupId),
   ]);
 
-  if (!card || isEmptyCard(card)) {
-    const rows = await deriveStaleList(wsId, stale);
-    return [
-      '### 话题状态（尚未初始化）',
-      '本组还没有提炼过的话题背景与状态，不要虚构。',
-      '',
-      '【最近会话】',
-      staleListText(rows),
-      '',
-      '【指引】了解组内有哪些会话可调 dogear__ListSiblingSessions；深挖某个会话可用 dogear__ReadReferenceSession。',
-    ].join('\n');
-  }
-
-  const staleNote = stale.length ? ` · 另有 ${stale.length} 个未提炼会话` : '';
-  const severe = stale.length > 2 ? '⚠ 未提炼会话较多（重度滞后），以下状态可能明显过期。' : '';
-
-  const topic = card.topicHistory[card.topicHistory.length - 1];
-  const first = card.topicHistory[0];
-  const entries = pickRecentEntries(card);
-  const { lines, completedHidden } = applyBudget(entries, topic?.text.length ?? 0);
-
+  const topic = card?.topicHistory[card.topicHistory.length - 1];
   const parts: string[] = ['### 话题状态'];
   if (topic) {
+    const first = card!.topicHistory[0];
     parts.push(
       `【话题背景】（确立于 ${fmtTs(first?.ts ?? topic.ts)}，${topicOriginLabel(topic.source)}）`,
       topic.text,
     );
+  } else {
+    parts.push('本组还没有提炼过的话题状态，不要虚构。');
   }
-  parts.push(`【当前状态】（提炼至 ${fmtTs(card.updatedAt)}${staleNote}）`);
-  parts.push(lines || '（暂无条目）');
-  if (completedHidden) {
-    parts.push(`- 已完成：另有 ${completedHidden} 条较早记录已省略（dogear__ReadGroupBackground 可查）`);
-  }
-  if (severe) parts.push(severe);
   if (stale.length) {
     const rows = await deriveStaleList(wsId, stale);
     parts.push('【最近未提炼会话】', staleListText(rows));
   }
+  const syncNote = stale.length
+    ? '（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）'
+    : '';
+  const topicRef = topic ? '本会话属于上方话题。' : '';
   parts.push(
-    `【指引】${stale.length ? '未提炼会话中可能有更晚的事实，关键决策先与用户确认；' : ''}` +
-      '需要最新状态可调 dogear__ReadGroupBackground；需深挖某会话可用 dogear__ReadReferenceSession。',
+    `【指引】${topicRef}开局第一轮先调 dogear__ReadGroupBackground 获取话题最新状态${syncNote}；深挖某会话可 dogear__ReadReferenceSession。`,
   );
   return parts.join('\n');
 }

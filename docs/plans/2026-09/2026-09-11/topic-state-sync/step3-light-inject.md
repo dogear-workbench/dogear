@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 注入轻量化
-status: pending
+status: done
 ---
 
 ## 目标
@@ -21,10 +21,11 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：①指引「本会话属于话题 X」落地为「本会话属于上方话题。」（topic 全文已在【话题背景】展示不复述；X 若指组 title 依赖 step4 机制）；②未提炼为空时指引弱化为省略 syncNote 括注，主体句保留；③无卡分支原 ListSiblingSessions 提示随合并统一移除（未提炼列表已内联）
+- 改动文件清单：electron/main/agents/pi-session/pi-session.ts（删 start() 触发调用与 import，开局零触发零等待）；electron/main/agents/group-context-builder.ts（buildTopicStateSection 重写为统一轻量头：话题背景/未提炼会话/指引三段；删 MAX_ENTRIES_PER_CATEGORY/STATE_SECTION_MAX_CHARS/CATEGORY_ORDER/isEmptyCard/pickRecentEntries/entriesSectionText/applyBudget/withSource；CATEGORY_LABELS/fmtTs/sourceLabel/topicOriginLabel/deriveStaleList/staleListText 导出保留供 reference-tools 消费）；electron/main/services/memory/state-extract-trigger.ts（整删 triggerStateExtractForSessionStart + StateExtractTriggerOutcome/StateExtractTriggerResult，唯一导出剩 ensureGroupFresh）
+- 验收：lint 0 errors、build:electron 通过；抽查三个文件 diff 均合格
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：buildTopicStateSection(wsId, groupId) 轻量头段结构「### 话题状态 →【话题背景】(可选)→【最近未提炼会话】(可选)→【指引】(恒有)」；轻量头只读 topicHistory，不读 entries/updatedAt；state-extract-trigger.ts 对外仅 ensureGroupFresh + EnsureGroupFreshResult
+- 下个 step 该从哪里继续：step4 命名联动若想把指引升级为「本会话属于话题『{组title}』」，改动点在 buildTopicStateSection 的 topicRef 一行（注意组 title 可能仍为空的 fallback）；initialTitle 消费在 mergeIncrementAndSave 调用侧或 handler（step1 接力棒：trim 判断 + try/catch 不阻塞卡写入）
+- 待办或已知限制：topic.text 全文进 systemPrompt 无截断（与旧注入一致）；无 GUI 轻量头渲染未经人眼确认；本机 .dogear/state-extract-prompt.md 旧版提示词 caveat 仍有效（step1 起）

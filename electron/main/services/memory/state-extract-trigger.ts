@@ -1,5 +1,4 @@
-// 开启会话时的状态卡抽取触发编排（唯一触发点，见 topic-state-card-design.md）
-// 模式对齐 group-digest-trigger.ts：submitTask 编排 + in-flight 按组去重 + 动态 import agent-manager 避环
+// 状态卡读时同步的抽取触发编排：submitTask 编排 + in-flight 按组去重 + 动态 import agent-manager 避环
 import { TaskStatus, TaskType, type AgentTask } from '../../agents/task-types.js';
 import { getStaleConversations, type StaleConversation } from './background-store.js';
 import { mainLogger } from '../../agents/logger.js';
@@ -9,17 +8,9 @@ const logger = mainLogger.child('state-extract-trigger');
 // 任务终态兜底上限：防 agent-manager 丢回调导致 in-flight 条目泄漏
 const TASK_DEADLINE_MS = 120_000;
 
-export type StateExtractTriggerOutcome = 'fresh' | 'sync-failed' | 'async' | 'async-inflight';
-
 export interface EnsureGroupFreshResult {
   synced: boolean;
   timedOut: boolean;
-}
-
-export interface StateExtractTriggerResult {
-  outcome: StateExtractTriggerOutcome;
-  /** 触发判定时的滞后会话数 */
-  staleCount: number;
 }
 
 interface ExtractTaskOutcome {
@@ -103,32 +94,6 @@ function waitOrTimeout(ms: number): Promise<'timeout'> {
     const t = setTimeout(() => resolve('timeout'), ms);
     t.unref?.();
   });
-}
-
-/**
- * 开启会话时的抽取触发点：stale 即提交后台抽取，不同步等待（读时同步由 ensureGroupFresh 承担）。
- * 永不抛错、永不阻塞会话开启。
- */
-export async function triggerStateExtractForSessionStart(
-  wsId: string,
-  groupId: string,
-): Promise<StateExtractTriggerResult> {
-  try {
-    const stale = await getStaleConversations(wsId, groupId);
-    if (!stale.length) return { outcome: 'fresh', staleCount: 0 };
-
-    const key = entryKey(wsId, groupId);
-    if (inFlight.get(key)) {
-      logger.info(`同组抽取已在后台进行，跳过重复提交: ${key}`);
-      return { outcome: 'async-inflight', staleCount: stale.length };
-    }
-    trackInFlight(key, submitExtractTask(wsId, groupId, stale));
-    logger.info(`后台抽取已提交（${stale.length} 个滞后会话）: ${key}`);
-    return { outcome: 'async', staleCount: stale.length };
-  } catch (err) {
-    logger.warn(`触发状态抽取失败（不阻塞会话开启）: ws=${wsId} gid=${groupId}`, err);
-    return { outcome: 'sync-failed', staleCount: 0 };
-  }
 }
 
 /**
