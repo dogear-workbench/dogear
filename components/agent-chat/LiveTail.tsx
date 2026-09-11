@@ -10,11 +10,6 @@ interface LiveTailProps {
   pendingState: PendingState;
   pendingCount: number;
   fallbackLastBlockType?: string;
-  awaitCount: number;
-  doneCount: number;
-  issueCount: number;
-  awaitingDelivery?: boolean;
-  onAbortWait?: () => void;
   onFork?: (assistantSdkUuid: string) => void;
   onPermissionResolved: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
   onAskUserResolved: (requestId: string, answers: Record<string, string>) => void;
@@ -33,11 +28,6 @@ export const LiveTail = memo(function LiveTail({
   pendingState,
   pendingCount,
   fallbackLastBlockType,
-  awaitCount,
-  doneCount,
-  issueCount,
-  awaitingDelivery,
-  onAbortWait,
   onFork,
   onPermissionResolved,
   onAskUserResolved,
@@ -86,11 +76,6 @@ export const LiveTail = memo(function LiveTail({
         pendingState={pendingState}
         pendingCount={pendingCount}
         lastBlockType={lastBlockType}
-        awaitCount={awaitCount}
-        doneCount={doneCount}
-        issueCount={issueCount}
-        awaitingDelivery={awaitingDelivery}
-        onAbortWait={onAbortWait}
       />
     </>
   );

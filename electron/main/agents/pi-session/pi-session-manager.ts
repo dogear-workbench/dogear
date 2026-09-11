@@ -12,6 +12,7 @@ import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import { v4 as uuidv4 } from 'uuid';
 import { mainLogger } from '../logger.js';
+import { broadcastAliveConversations } from '../../services/renderer-broadcast.js';
 import { PiSession, type PiSessionConfig, type PiSessionTurnResult } from './pi-session.js';
 import { appendContext as appendUsageContext, appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker, readNextTurnIndex } from '../../services/usage/usage-service.js';
 import { applyUsageSummary } from '../../services/conversation-service.js';
@@ -50,6 +51,8 @@ export class PiSessionManager extends EventEmitter {
   private conversationSessionMap: Map<string, string> = new Map();
   private broadcaster: PiSessionBroadcaster | null = null;
   private logger = mainLogger.child('pi-session-manager');
+  // 上次广播的存活集合快照（sorted join），避免无变化的重复广播
+  private lastAliveKey = '';
 
   setBroadcaster(fn: PiSessionBroadcaster): void {
     this.broadcaster = fn;
@@ -100,6 +103,7 @@ export class PiSessionManager extends EventEmitter {
     session.on('sessionStateChanged', (data: { conversationId: string; running: boolean; pendingAction: boolean; paused: boolean }) => {
       this.emit('sessionStateChanged', sessionId, data);
       this.broadcaster?.(sessionId, 'sessionStateChanged', data);
+      this.broadcastAliveSet();
     });
 
     // 会话关闭（Step 5）：前端清 running/pendingAction Set 的原子信号
@@ -110,6 +114,7 @@ export class PiSessionManager extends EventEmitter {
 
     // orphan 保活收集（B1）：settled 时会话已自然跑完，如果 refCount 仍为 0 则回收
     session.on('settled', () => {
+      this.broadcastAliveSet();
       this.maybeCollectOrphan(sessionId).catch((error) => {
         this.logger.warn(`maybeCollectOrphan(${sessionId.substring(0, 8)}) 失败（已忽略）:`, error);
       });
@@ -187,6 +192,7 @@ export class PiSessionManager extends EventEmitter {
     const next = (this.holds.get(sessionId) ?? 0) + 1;
     this.holds.set(sessionId, next);
     this.logger.info(`hold pi session ${sessionId.substring(0, 8)}: holdCount=${next}`);
+    this.broadcastAliveSet();
     return true;
   }
 
@@ -201,6 +207,7 @@ export class PiSessionManager extends EventEmitter {
     if (next > 0) this.holds.set(sessionId, next);
     else this.holds.delete(sessionId);
     this.logger.info(`release hold pi session ${sessionId.substring(0, 8)}: holdCount ${count} -> ${next}`);
+    this.broadcastAliveSet();
     if (next === 0 && this.refCounts.get(sessionId) === 0) {
       const session = this.sessions.get(sessionId);
       if (session?.isRunning()) {
@@ -236,6 +243,7 @@ export class PiSessionManager extends EventEmitter {
 
   bindConversation(conversationId: string, sessionId: string): void {
     this.conversationSessionMap.set(conversationId, sessionId);
+    this.broadcastAliveSet();
   }
 
   unbindConversation(conversationId: string): void {
@@ -247,6 +255,28 @@ export class PiSessionManager extends EventEmitter {
     if (sessionId && this.sessions.has(sessionId)) return sessionId;
     if (sessionId) this.conversationSessionMap.delete(conversationId);
     return undefined;
+  }
+
+  /**
+   * 存活会话的 conversationId 集合：session 在内存且正在跑 turn 或被 bridge 保活。
+   * UI 开着的空闲会话（refCount>0、不 running、无 hold）不算存活——用户正看着它，
+   * 竖线只标记「没有 UI 也活着」的后台链路。
+   */
+  getAliveConversationIds(): string[] {
+    const alive: string[] = [];
+    for (const [convId, sid] of this.conversationSessionMap) {
+      const session = this.sessions.get(sid);
+      if (session && (session.isRunning() || this.isHeld(sid))) alive.push(convId);
+    }
+    return alive;
+  }
+
+  /** 存活集合变化才广播（全量列表，前端整体替换；失败不影响主链） */
+  private broadcastAliveSet(): void {
+    const key = this.getAliveConversationIds().sort().join(',');
+    if (key === this.lastAliveKey) return;
+    this.lastAliveKey = key;
+    broadcastAliveConversations(key ? key.split(',') : []);
   }
 
   getConversationIdBySession(sessionId: string): string | undefined {
@@ -275,6 +305,7 @@ export class PiSessionManager extends EventEmitter {
     this.sessions.delete(sessionId);
     this.refCounts.delete(sessionId);
     this.holds.delete(sessionId);
+    this.broadcastAliveSet();
 
     try {
       await session.close();

@@ -55,3 +55,8 @@ export function broadcastConversationListChanged(
 export function broadcastGroupDataChanged(workspaceId: string, groupId: string): void {
   broadcastToWindows((h) => h.groupDataChanged.send({ workspaceId, groupId }));
 }
+
+/** 广播存活会话集合（PiSessionManager 内存态派生，全量列表；前端直接整体替换 Set） */
+export function broadcastAliveConversations(conversationIds: string[]): void {
+  broadcastToWindows((h) => h.aliveConversationsChanged.send({ conversationIds }));
+}

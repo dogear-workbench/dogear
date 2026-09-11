@@ -52,6 +52,7 @@ export function ConversationRow({
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
   const runningIds = useConversationStore((s) => s.runningConversationIds);
   const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
+  const aliveIds = useConversationStore((s) => s.aliveConversationIds);
   const botBoundId = useConversationStore((s) => s.botBoundConversationId);
   const childSnapshot = useConversationStore((s) => s.childSnapshotsById[conv.id]);
   const { isOpen, isSelected } = useNodeHighlight(conv.id, nodeId);
@@ -64,6 +65,7 @@ export function ConversationRow({
   const isAgentConversation = conv.contractMetadata?.createdBy === 'agent';
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
+  const isAlive = aliveIds.has(conv.id);
   const isBotBound = conv.id === botBoundId;
   const isChildRunning = childSnapshot?.status === 'running';
   const isDisplayRunning = isRunning || isChildRunning;
@@ -114,11 +116,14 @@ export function ConversationRow({
       style={{ paddingLeft: `${indent}px` }}
       onClick={handleClick}
     >
-      {isDisplayRunning && (
-        <span className={cn(
-          'absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full',
-          isPending ? 'bg-blue-500' : 'bg-orange-500',
-        )} />
+      {(isDisplayRunning || isAlive) && (
+        <span
+          className={cn(
+            'absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full',
+            isPending ? 'bg-blue-500' : isDisplayRunning ? 'bg-orange-500' : 'bg-emerald-500',
+          )}
+          title={isDisplayRunning ? undefined : '会话存活中'}
+        />
       )}
       {hasChildren ? (
         <span

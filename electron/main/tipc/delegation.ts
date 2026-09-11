@@ -1,5 +1,6 @@
 import { tipc } from '@egoist/tipc/main';
 import * as bridge from '../agents/delegation-bridge.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
 const t = tipc.create();
 
@@ -57,6 +58,16 @@ export const delegationRouter = {
         return { snapshot: bridge.getChildSnapshot(input.childId) };
       } catch (error) {
         return { snapshot: null, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 存活会话 conversationId 全量集合（PiSessionManager 内存态派生；冷启动拉初值，增量靠 aliveConversationsChanged） */
+  getAliveConversations: t.procedure
+    .action(async () => {
+      try {
+        return { conversationIds: getPiSessionManager().getAliveConversationIds() };
+      } catch (error) {
+        return { conversationIds: [], error: error instanceof Error ? error.message : String(error) };
       }
     }),
 };

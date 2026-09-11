@@ -20,6 +20,7 @@ import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
+import { AwaitingDeliveryIndicator } from './AwaitingDeliveryIndicator';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { ConversationIdProvider } from './conversation-id-context';
@@ -114,7 +115,7 @@ export function AgentChat({
   );
   const pendingState = derivePendingState({ isRunning: isLoading || isRunningInStore, pendingCount });
 
-  // 主会话派出的子会话快照（用于 StreamingIndicator 显示「等待 N 个交付」+ 中断按钮）
+  // 主会话派出的子会话快照（驱动侧边轨道等待交付动效 + 输入区状态行）
   const childrenForThis = useConversationStore(
     (s) => (conversationId ? s.childrenByParent[conversationId] : undefined) ?? null,
   );
@@ -135,8 +136,8 @@ export function AgentChat({
     return { awaitCount: awaiting, doneCount: done, issueCount: issues };
   }, [childrenForThis]);
 
-  // 事件驱动等待的派生展示态：run settled（非 running/paused）∧ 有 running 直属子会话。
-  // 纯展示，不阻塞任何操作（输入框按 idle 开放，可插话、可中断等待）
+  // 事件驱动等待的派生展示态：run settled（非 running/paused）∧ 有 running 直属子会话，
+  // 驱动输入区状态行；侧边轨道动效不区分 settled 与否，直接用 awaitCount
   const isWaitingForChildren = !isLoading && !isRunningInStore && !isPausedInStore && awaitCount > 0;
 
   const handleAbortWait = useCallback(async () => {
@@ -463,11 +464,6 @@ export function AgentChat({
           pendingState={pendingState}
           pendingCount={pendingCount}
           fallbackLastBlockType={fallbackLastBlockType}
-          awaitCount={awaitCount}
-          doneCount={doneCount}
-          issueCount={issueCount}
-          awaitingDelivery={isWaitingForChildren}
-          onAbortWait={isReadOnly ? undefined : handleAbortWait}
           onFork={sendMessage.handleFork}
           onPermissionResolved={handlePermissionResolvedWithScroll}
           onAskUserResolved={handleAskUserResolvedWithScroll}
@@ -508,6 +504,14 @@ export function AgentChat({
             scrollAreaRef={scrollAreaRef}
             onJumpToMessage={(id) => scrollToMessage(id, { align: 'top', flash: true })}
           />
+          {!search.isOpen && (
+            <AwaitingDeliveryIndicator
+              awaitCount={awaitCount}
+              doneCount={doneCount}
+              issueCount={issueCount}
+              onAbortWait={isReadOnly ? undefined : handleAbortWait}
+            />
+          )}
         </div>
 
         {/* 底部按钮组：回到底部 */}

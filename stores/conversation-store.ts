@@ -102,6 +102,8 @@ interface ConversationState {
   pendingActionConversationIds: Set<string>;
   /** 当前已暂停（turn 完成后暂停，发消息即恢复）的对话 ID 集合 */
   pausedConversationIds: Set<string>;
+  /** 存活会话 ID 集合（主进程 PiSessionManager 内存态派生；全量广播直接替换） */
+  aliveConversationIds: Set<string>;
   /** 微信 Bot 当前绑定的对话 ID（null 表示未绑定） */
   botBoundConversationId: string | null;
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
@@ -159,6 +161,8 @@ interface ConversationState {
   setPendingActionState: (conversationId: string, isPending: boolean) => void;
   /** 设置对话的暂停状态 */
   setPausedState: (conversationId: string, isPaused: boolean) => void;
+  /** 整体替换存活会话集合 */
+  setAliveConversations: (conversationIds: string[]) => void;
   /** 设置 Bot 绑定的对话 ID */
   setBotBoundConversation: (conversationId: string | null) => void;
   /** 从 bridge 拉取所有子会话快照（loadConversations 后台调一次） */
@@ -319,6 +323,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   runningConversationIds: new Set<string>(),
   pendingActionConversationIds: new Set<string>(),
   pausedConversationIds: new Set<string>(),
+  aliveConversationIds: new Set<string>(),
   botBoundConversationId: null,
   childrenByParent: {},
   childSnapshotsById: {},
@@ -754,6 +759,10 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     });
   },
 
+  setAliveConversations: (conversationIds: string[]) => {
+    set({ aliveConversationIds: new Set(conversationIds) });
+  },
+
   setBotBoundConversation: (conversationId: string | null) => {
     set({ botBoundConversationId: conversationId });
   },
@@ -831,6 +840,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     runningConversationIds: new Set<string>(),
     pendingActionConversationIds: new Set<string>(),
     pausedConversationIds: new Set<string>(),
+    aliveConversationIds: new Set<string>(),
     botBoundConversationId: null,
     childrenByParent: {},
     childSnapshotsById: {},
@@ -854,6 +864,11 @@ if (typeof window !== 'undefined') {
       useConversationStore.getState().setRunningState(data.conversationId, false);
       useConversationStore.getState().setPendingActionState(data.conversationId, false);
       useConversationStore.getState().setPausedState(data.conversationId, false);
+    });
+
+    // 存活会话集合（全量广播直接替换，无 UI 也活着/正在跑的后台链路）
+    rendererEvents.aliveConversationsChanged.listen((data) => {
+      useConversationStore.getState().setAliveConversations(data.conversationIds);
     });
 
     // 微信 Bot 绑定对话变更
@@ -917,5 +932,10 @@ if (typeof window !== 'undefined') {
         useConversationStore.getState().setBotBoundConversation(data.status.conversationId);
       }
     }).catch(() => { /* bot 未连接时忽略 */ });
+
+    // 存活集合初值：窗口冷启动/刷新时主进程不会重播事件，主动拉一次全量
+    client.getAliveConversations(undefined).then((data) => {
+      useConversationStore.getState().setAliveConversations(data.conversationIds ?? []);
+    }).catch(() => { /* 拉取失败等下次广播修正 */ });
   });
 }

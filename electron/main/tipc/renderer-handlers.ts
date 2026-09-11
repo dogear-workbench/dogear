@@ -228,6 +228,9 @@ export type RendererHandlers = {
   // 话题组数据变更（共享区文件/话题背景/组卡写点广播，TopicPanel 匹配当前组后重拉）
   groupDataChanged: (data: { workspaceId: string; groupId: string }) => void;
 
+  // 存活会话集合变化（PiSessionManager 内存态派生，全量列表；驱动列表竖线常亮）
+  aliveConversationsChanged: (data: { conversationIds: string[] }) => void;
+
   // PTY 终端实例创建（pty-service 广播，渲染端建 tab）
   ptyCreated: (data: {
     terminalId: string;
