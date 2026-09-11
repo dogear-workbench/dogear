@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight, X } from 'lucide-react';
+import { Archive, AlertCircle, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight, X } from 'lucide-react';
 import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import type { AgentChatProps, Message } from './types';
@@ -84,7 +84,7 @@ export function AgentChat({
   const transcript = useTranscriptState(showReplayMessages, visible, conversationId);
   const { stableHistory, structuredLiveTail, structuralVersion, transcriptStore, getMessages, applySnapshot } = transcript;
 
-  const { setHistoryLoaded, historyStatus } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
+  const { setHistoryLoaded, historyStatus, historyError, retryHistory } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
   const topicArchived = topicState === 'archived';
   const isTopicReadOnly = topicArchived || topicState === 'missing';
@@ -404,7 +404,25 @@ export function AgentChat({
           </div>
         )}
 
-        {hasMessages === false && historyStatus !== 'loading' && !isReadOnly && !isTopicStatePending && (
+        {historyStatus === 'error' && (
+          <div className="flex items-start gap-2 px-3 py-3 my-2 rounded-lg bg-destructive/10 border border-destructive/30 text-xs text-destructive">
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="font-medium">读取对话历史失败</p>
+              {historyError && <p className="mt-0.5 opacity-80 break-all">{historyError}</p>}
+              {conversationId && (
+                <button
+                  onClick={retryHistory}
+                  className="mt-2 px-3 py-1.5 text-xs bg-destructive text-white rounded-md hover:opacity-90 transition-opacity"
+                >
+                  重试
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {historyStatus === 'empty' && hasMessages === false && !isReadOnly && !isTopicStatePending && (
           <div className="text-center text-gray-500 dark:text-gray-400 mt-20">
             <p>开始与 Agent 对话...</p>
           </div>

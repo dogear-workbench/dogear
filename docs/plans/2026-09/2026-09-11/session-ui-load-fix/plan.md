@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: reader 尾行容错](./step1-tail-tolerant.md) — 读历史撞上写到一半的尾行不再抛错
-- [ ] [Step 2: error 状态化 + 错误卡片](./step2-error-state.md) — 读取失败不清空、显示错误卡片 + 重试
+- [x] [Step 2: error 状态化 + 错误卡片](./step2-error-state.md) — 读取失败不清空、显示错误卡片 + 重试
 - [ ] [Step 3: 屏障降级 + 骨架屏](./step3-barrier-skeleton.md) — history 先到先渲染，加载期骨架屏
 
 ## 全局决策
