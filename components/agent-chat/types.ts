@@ -1,3 +1,6 @@
+/** 跨会话注入消息类型，与主进程 task-types.ts 的 InjectionTag 保持一致（rootDir 限制无法共享模块） */
+export type InjectionTag = 'delivery' | 'reply' | 'terminal' | 'resume' | 'task-execution' | 'failover';
+
 /**
  * 扩展的消息类型
  */
@@ -167,12 +170,22 @@ export interface ParsedUserMessage {
   senderDisplayName?: string;
   /** 是否为正式交付（dogear__SendMessage 的 delivery=true） */
   senderIsDelivery?: boolean;
+  /** 注入类型（sender 标签 tag 属性）；旧历史消息无此属性时由 resolveInjectionTag 兜底推断 */
+  senderTag?: InjectionTag;
   /** /model 命令切换模型（如 anthropic/claude-sonnet-4.6） */
   modelSwitch?: string;
   /** 是否为 <local-command-stdout> 输出包装的用户消息 */
   localCommandStdout?: string;
   /** SDK 斜杠命令（从 <command-name> 格式解析） */
   slashCommand?: { name: string; args?: string };
+}
+
+/** parseTaskExecution 返回类型（<task-execution> 包裹的任务执行提示） */
+export interface ParsedTaskExecution {
+  title: string;
+  taskId: string;
+  planPath: string;
+  body: string;
 }
 
 /** parseSlashCommandMessage 返回类型 */

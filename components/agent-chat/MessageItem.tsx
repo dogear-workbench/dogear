@@ -1,17 +1,148 @@
 import { useState, memo } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage } from './utils';
+import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage, isInjectedUserMessage, parseTaskExecution, resolveInjectionTag } from './utils';
+import { PathChip } from './path-link';
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import type { Message, ContentBlock } from './types';
+import type { Message, ContentBlock, InjectionTag, ParsedUserMessage, ParsedTaskExecution } from './types';
+
+/**
+ * 注入 tag → 卡片配色（左竖线/底色/徽标），模块级常量供 Step 3 小地图复用 tag 判定时参考。
+ * terminal 用红橙系：竖线红、底色橙，徽标红。
+ */
+const INJECTION_TAG_STYLES: Record<InjectionTag, { bar: string; card: string; badge: string; label: string }> = {
+  delivery: {
+    bar: 'bg-green-500',
+    card: 'bg-green-50/70 dark:bg-green-950/20',
+    badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
+    label: '交付',
+  },
+  reply: {
+    bar: 'bg-blue-500',
+    card: 'bg-blue-50/70 dark:bg-blue-950/20',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    label: '回复',
+  },
+  terminal: {
+    bar: 'bg-red-500',
+    card: 'bg-orange-50/70 dark:bg-orange-950/20',
+    badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
+    label: '终态',
+  },
+  resume: {
+    bar: 'bg-blue-500',
+    card: 'bg-blue-50/70 dark:bg-blue-950/20',
+    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+    label: '恢复',
+  },
+  'task-execution': {
+    bar: 'bg-amber-500',
+    card: 'bg-amber-50/70 dark:bg-amber-950/20',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    label: '任务执行',
+  },
+  failover: {
+    bar: 'bg-blue-400',
+    card: 'bg-secondary/60',
+    badge: 'bg-secondary text-secondary-foreground',
+    label: '切换',
+  },
+};
+
+/** 跨会话注入消息卡：左彩色竖线 + 浅底色，脱离用户气泡，只读无操作按钮 */
+function InjectedMessageCard({
+  message,
+  parsed,
+  forcedTag,
+  messageId,
+  searchQuery,
+  activeMatchId,
+}: {
+  message: Message;
+  parsed: ParsedUserMessage;
+  forcedTag?: InjectionTag;
+  messageId?: string;
+  searchQuery?: string;
+  activeMatchId?: string | null;
+}) {
+  const tag = forcedTag ?? resolveInjectionTag(parsed);
+  const styles = INJECTION_TAG_STYLES[tag];
+  const sourceName = parsed.senderDisplayName
+    ?? (forcedTag === 'task-execution' ? '任务系统' : '未知会话');
+  return (
+    <div className="w-full my-2" data-message-id={message.id ?? messageId}>
+      <div className={cn('rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}>
+        <div className="flex items-center gap-1.5 mb-1 text-xs text-muted-foreground">
+          <Bot className="w-3 h-3 flex-shrink-0" />
+          <span className="font-medium truncate max-w-[200px] text-foreground/80">{sourceName}</span>
+          <span className={cn('px-1.5 py-0.5 rounded text-[10px] flex-shrink-0', styles.badge)}>{styles.label}</span>
+          {message.timestamp && (
+            <span className="ml-auto flex-shrink-0 text-muted-foreground/60">
+              {new Date(message.timestamp).toLocaleTimeString()}
+            </span>
+          )}
+        </div>
+        <div className="whitespace-pre-wrap break-words text-sm text-foreground">
+          {searchQuery && messageId
+            ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
+            : parsed.userMessage}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** task-execution 折叠卡：收起一行标题，展开显示任务元信息（计划文档 PathChip 可点）与执行约定全文 */
+function TaskExecutionCard({
+  message,
+  parsed,
+  workspaceId,
+  messageId,
+}: {
+  message: Message;
+  parsed: ParsedTaskExecution;
+  workspaceId?: string;
+  messageId?: string;
+}) {
+  return (
+    <div className="w-full my-2" data-message-id={message.id ?? messageId}>
+      <Collapsible>
+        <CollapsibleTrigger className="flex items-center gap-2 w-full px-3 py-2 rounded-lg bg-secondary border border-border text-xs text-muted-foreground hover:bg-muted transition-colors cursor-pointer">
+          <ListTodo size={14} className="flex-shrink-0" />
+          <span className="font-medium flex-shrink-0">任务执行会话</span>
+          <span className="truncate">《{parsed.title}》</span>
+          <span className="ml-auto flex-shrink-0 text-muted-foreground/60">点击展开</span>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-1 px-3 py-2 rounded-lg bg-secondary/50 border border-border text-xs text-foreground max-h-[400px] overflow-y-auto">
+            <div className="flex flex-col gap-1 mb-2 pb-2 border-b border-border/60">
+              <div className="text-muted-foreground">
+                任务 ID：<span className="font-mono text-foreground break-all">{parsed.taskId}</span>
+              </div>
+              {parsed.planPath && (
+                <div className="text-muted-foreground">
+                  计划文档：
+                  {workspaceId && (
+                    <PathChip text={parsed.planPath} resolved={parsed.planPath} workspaceId={workspaceId} />
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="whitespace-pre-wrap">{parsed.body}</div>
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
+  );
+}
 
 /** failover 续跑提示（主进程注入的哨兵 user 消息）：系统提示条样式，剥掉哨兵不显示 */
 function FailoverContinueNotice({ content, timestamp }: { content: string; timestamp?: number }) {
@@ -124,6 +255,35 @@ export const MessageItem = memo(function MessageItem({
     return <FailoverContinueNotice content={message.content} timestamp={message.timestamp} />;
   }
 
+  // 跨会话注入消息（交付/回复/终态/恢复卡、task-execution 折叠卡），优先于 SDK 注入与用户气泡判定
+  if (isUser && isInjectedUserMessage(message.content)) {
+    const taskExec = parseTaskExecution(message.content);
+    if (taskExec) {
+      return (
+        <TaskExecutionCard
+          message={message}
+          parsed={taskExec}
+          workspaceId={currentWorkspaceId}
+          messageId={messageId}
+        />
+      );
+    }
+    const injectedParsed = parseUserMessageReferences(message.content);
+    const forcedTag = message.content.includes('<task-execution>')
+      ? ('task-execution' as const)
+      : undefined;
+    return (
+      <InjectedMessageCard
+        message={message}
+        parsed={injectedParsed}
+        forcedTag={forcedTag}
+        messageId={messageId}
+        searchQuery={searchQuery}
+        activeMatchId={activeMatchId}
+      />
+    );
+  }
+
   // SDK 注入的用户消息（/model 命令、命令输出等）：渲染为居中内联系统指示，
   // 不进 sticky 气泡，不挂 data-message-id（避免 Minimap 把它当用户轮次）
   if (isUser && isSdkInjectedUserMessage(message.content)) {
@@ -194,19 +354,7 @@ export const MessageItem = memo(function MessageItem({
                   parsed.noteRefs.length > 0;
                 return (
                   <div className="relative">
-                    {/* Sender 徽章：agent 跨会话消息 / 用户在 agent 会话里介入 */}
-                    {parsed.senderKind === 'agent' && (
-                      <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
-                        <Bot className="w-3 h-3 flex-shrink-0" />
-                        <span>来自</span>
-                        <span className="font-medium truncate max-w-[200px]">
-                          {parsed.senderDisplayName ?? '未知会话'}
-                        </span>
-                        {parsed.senderIsDelivery && (
-                          <span className="px-1.5 py-0.5 rounded bg-green-50 text-green-700 text-[10px] dark:bg-green-900/30 dark:text-green-300">交付</span>
-                        )}
-                      </div>
-                    )}
+                    {/* 「你」徽章：用户在 agent 会话里介入（跨会话 agent 消息已走注入卡提前 return） */}
                     {isAgentConversation && !parsed.senderKind && (
                       <div className="flex items-center gap-1.5 mb-2 text-xs text-muted-foreground">
                         <MessageSquare className="w-3 h-3 flex-shrink-0" />

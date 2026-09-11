@@ -1,4 +1,4 @@
-import type { ParsedUserMessage, ParsedSlashCommand } from './types';
+import type { ParsedUserMessage, ParsedSlashCommand, ParsedTaskExecution, InjectionTag } from './types';
 import { isFailoverContinueMessage } from '@/lib/failover-markers';
 
 /**
@@ -121,8 +121,8 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
     }
   }
 
-  // 匹配 <sender kind="..." session_id="..." name="..." delivery="..."/>
-  const senderRegex = /<sender\s+kind="([^"]+)"(?:\s+session_id="([^"]*)")?(?:\s+name="([^"]*)")?(?:\s+delivery="(true|false)")?\s*\/>/;
+  // 匹配 <sender kind="..." session_id="..." name="..." delivery="..." tag="..."/>
+  const senderRegex = /<sender\s+kind="([^"]+)"(?:\s+session_id="([^"]*)")?(?:\s+name="([^"]*)")?(?:\s+delivery="(true|false)")?(?:\s+tag="([a-z-]+)")?\s*\/>/;
   const senderMatch = content.match(senderRegex);
   if (senderMatch) {
     const kind = senderMatch[1];
@@ -138,6 +138,9 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
           .replace(/&amp;/g, '&');
       }
       if (senderMatch[4]) result.senderIsDelivery = senderMatch[4] === 'true';
+      if (senderMatch[5] && INJECTION_TAG_SET.has(senderMatch[5] as InjectionTag)) {
+        result.senderTag = senderMatch[5] as InjectionTag;
+      }
     }
     content = content.replace(senderMatch[0], '');
   }
@@ -207,6 +210,57 @@ export function parseSlashCommandMessage(content: string): ParsedSlashCommand {
   const commandArgs = argsMatch?.[1]?.trim() || undefined;
 
   return { isCommand: true, commandName, commandArgs: commandArgs || undefined };
+}
+
+const INJECTION_TAG_SET: ReadonlySet<InjectionTag> = new Set(['delivery', 'reply', 'terminal', 'resume', 'task-execution', 'failover']);
+
+const TERMINAL_HINT_RE = /终止|失败|耗尽|quota/i;
+
+/**
+ * 判断 user 消息是否为「跨会话注入」类（sender 标签 / task-execution 包裹 / failover 哨兵）。
+ * turns.ts 与 MessageItem 共用的统一口径。
+ */
+export function isInjectedUserMessage(content: string): boolean {
+  if (!content) return false;
+  if (isFailoverContinueMessage(content)) return true;
+  if (/<sender\s+kind="/.test(content)) return true;
+  if (content.includes('<task-execution>')) return true;
+  return false;
+}
+
+/**
+ * 解析 <task-execution> 包裹的任务执行提示（行格式与 task-queue.ts buildExecutionPrompt 对齐），
+ * 字段缺失视为非标准结构返回 null，由调用方走普通注入卡。
+ */
+export function parseTaskExecution(content: string): ParsedTaskExecution | null {
+  const match = content.match(/<task-execution>\s*\n([\s\S]*?)\n\s*<\/task-execution>/);
+  if (!match) return null;
+  const inner = match[1];
+  const readField = (label: string): string => {
+    const m = inner.match(new RegExp(`^${label}(.*)$`, 'm'));
+    return m ? m[1].trim() : '';
+  };
+  const title = readField('任务标题：');
+  const taskId = readField('任务 ID：');
+  const planPath = readField('计划文档：');
+  if (!title || !taskId) return null;
+  const body = inner
+    .split('\n')
+    .filter((line) => !/^\s*(任务标题：|任务 ID：|计划文档：)/.test(line))
+    .join('\n')
+    .trim();
+  return { title, taskId, planPath, body };
+}
+
+/**
+ * 推断注入消息的 tag：新消息直接用 sender 标签 tag 属性；旧历史无 tag 时按
+ * delivery 属性 → 绿、终态文案关键词 → 红橙、兜底蓝的顺序推断。
+ */
+export function resolveInjectionTag(parsed: ParsedUserMessage): InjectionTag {
+  if (parsed.senderTag) return parsed.senderTag;
+  if (parsed.senderIsDelivery) return 'delivery';
+  if (TERMINAL_HINT_RE.test(parsed.userMessage)) return 'terminal';
+  return 'reply';
 }
 
 /**

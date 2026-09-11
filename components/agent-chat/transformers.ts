@@ -254,6 +254,15 @@ export function streamReducer(
       }
       return updated;
     }
+    // 主进程广播的注入消息（跨会话交付/终态/恢复、task-execution）：实时 push 渲染。
+    // message_id 事件先于本内容事件到达，local id 不会被升级，注入消息不参与分叉定位，无害
+    if (extendedMsg.injectedTag && typeof extendedMsg.content === 'string' && extendedMsg.content) {
+      updated.push(createUserMessage({
+        content: extendedMsg.content,
+        timestamp: extendedMsg.timestamp || Date.now(),
+        id: generateLocalMessageId(),
+      }));
+    }
     // SDK 注入的 user 事件（isMeta / skill 文档等）不渲染
     return updated;
   }

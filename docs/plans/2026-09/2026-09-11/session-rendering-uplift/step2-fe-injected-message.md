@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 前端注入消息渲染 + task-execution 卡片
-status: pending
+status: done
 ---
 
 ## 目标
@@ -40,9 +40,23 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - 计划中「isUser && parsed.senderKind === 'agent' → InjectedMessageCard」与「isUser && parseTaskExecution(...) → TaskExecutionCard」合并为一个 `isUser && isInjectedUserMessage(content)` 分支（统一口径），内部先试 parseTaskExecution（命中走折叠卡），否则 parseUserMessageReferences 走注入卡；`<task-execution>` 包裹但字段解析失败时 forcedTag='task-execution' 走普通注入卡（来源名「任务系统」）
+  - 气泡分支内原「Sender 徽章：agent 跨会话消息」代码因注入卡提前 return 变成死代码，已删除（「你」徽章保留）
+  - 计划要求确认的「message_id 升级」实际结论：**注入消息不会被升级为 uuid**——主进程同一 message_end 先广播 message_id 后广播内容事件，message_id 到达时消息尚未 push；local id 永久保留，无副作用（不参与分叉定位，data-message-id/搜索跳转/turns header 锚定均可用）
 - 改动文件清单：
+  - `components/agent-chat/types.ts`：InjectionTag 类型（:2，镜像主进程 task-types.ts）、ParsedUserMessage.senderTag（:174）、ParsedTaskExecution 接口（:184）
+  - `components/agent-chat/utils.ts`：sender 正则加 tag 捕获 + 枚举校验（:124/:141）、isInjectedUserMessage（:215）、parseTaskExecution（:226）、resolveInjectionTag（:247，含 TERMINAL_HINT_RE 关键词兑底）
+  - `components/agent-chat/transformers.ts`：streamReducer user 分支 injectedTag 处理（:257-265，wechat-bot 分支保持在前）
+  - `components/agent-chat/MessageItem.tsx`：INJECTION_TAG_STYLES 颜色映射常量（:13）、InjectedMessageCard（:67）、TaskExecutionCard（:110）、注入分支（:258，failover 分支后）、删除气泡内死代码 agent 徽章（:354）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `isInjectedUserMessage(content): boolean`（utils.ts）：sender 标签 / `<task-execution>` 包裹 / failover 哨兵三者之一，统一口径，Step 3 小地图/turns 可直接复用
+  - `resolveInjectionTag(parsed: ParsedUserMessage): InjectionTag`：senderTag → senderIsDelivery('delivery') → 终态关键词（终止/失败/耗尽/quota，测 parsed.userMessage）→ 兑底 'reply'
+  - `parseTaskExecution(content): ParsedTaskExecution | null`：`{ title, taskId, planPath, body }`，字段缺失返回 null
+  - INJECTION_TAG_STYLES（MessageItem.tsx 模块级）：`Record<InjectionTag, { bar, card, badge, label }>`，Step 3 复用 tag 判定但不复用 class；徽标文案 label：交付/回复/终态/恢复/任务执行/切换
+  - 实时注入消息 streamReducer push 后 id 为 `local-*` 永久（message_id 先于内容事件），历史消息 id 为磁盘 uuid，两者同一 MessageItem 分支渲染
+- 下个 step 该从哪里继续：Step 3 小地图：注入消息当前按既有 isHeader 规则仍算轮次 header（isSdkInjectedUserMessage 不含 isInjectedUserMessage），如需徽标/独立节点判定用 isInjectedUserMessage + resolveInjectionTag
 - 待办或已知限制：
+  - 旧历史 hang/timeout/cancelled 终态消息文案（「无进展中断/超时中断/已取消」）不命中决策关键词集合（终止/失败/耗尽/quota），兑底蓝色；新消息带 tag="terminal" 不受影响
+  - 注入消息到达会清队列中排队消息的 isQueued 标记（user 事件共用既有清除循环，与 wechat-bot 行为一致，未改动）
