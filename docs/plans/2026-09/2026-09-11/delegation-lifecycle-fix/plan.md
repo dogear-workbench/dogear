@@ -20,3 +20,14 @@
 - 调起复用 rehydrate + resume 既有模式，不新建投递箱存储
 - 轮结束置 interrupted 用最简版（无宽限期），观察误伤再调（设计文档未决问题）
 - 所有广播走既有 renderer-broadcast try/catch 包裹模式，失败不影响主链
+
+## 完成总结（2026-09-11）
+
+4 步全部实施完毕并逐 step 提交（3f26eda / af5e5d4 / 1823189 / c03d392），lint 0 errors、build 全通过、delegation + task-queue + 渲染层测试 73 pass 0 fail。
+
+- Step 1 bridge 保活：PiSessionManager 独立 holds 计数（acquireHold/releaseHold），delegation-bridge 在 spawnChild 成功后持有父会话、全部子会话终态释放；销毁判定 = refCount==0 ∧ !isHeld ∧ !running
+- Step 2 申报制结算：删队列「一轮=完成」兜底与 result 提取死代码；轮结束三态（非 success → interrupt；有 running 子会话 → 不结算等注入续跑；未申报无子会话 → interrupted + 申报引导）
+- Step 3 自动调起：resumeParentAndDeliver（attach 直拉 + reacquireParentHolds 重挂保活 + 注入）覆盖子会话交付与失败型终态两条送达链，target_inactive 不再静默丢弃；回执文案消除误导
+- Step 4 存活可视化：存活集合（内存 ∧ running/被保活）sorted-join diff 全量广播 + 冷启动查询；列表竖线 emerald 常亮（pending 蓝 > running 橙 > 存活绿）；等待交付动效迁至 minimap 同列侧边轨道（点击即中断），主聊天流无等待文案
+
+遗留（各 step 交付文档已记）：父会话调起路径无 hang 防护（低概率观察）；申报成功后的系统通知缺口（建议补在 task-tools 申报分支）；无宽限期最简版 interrupted 误伤闲聊场景待观察。
