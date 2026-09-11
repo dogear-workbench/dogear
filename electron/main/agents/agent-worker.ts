@@ -596,6 +596,9 @@ class AgentWorker {
     const { runOnce } = await import('./pi/run-once.js');
 
     const template = await loadStateExtractPrompt(this.configDir);
+    const { getGroup } = await import('../services/group-service.js');
+    const group = await getGroup(workspaceId, groupId);
+    const groupTitle = group?.title?.trim() || '';
     const systemPrompt = '你是一个后台话题状态抽取 agent。读完输入后调用 emit_state_increment 工具输出增量，完成后直接结束，无需寒暄。';
 
     const abortController = new AbortController();
@@ -620,18 +623,12 @@ class AgentWorker {
             ? allMessages
             : allMessages.filter((m) => Date.parse(m.timestamp) > lastSeenMtime);
 
-          // resolved 候选池 = 本组 inProgress 条目 ∪ 本会话旧条目（与 mergeIncrement 实际迁移范围一致）
+          // resolved 候选池 = 本组全部六类条目（与 mergeIncrement 跨类退休范围一致）
           const oldEntries = new Map<string, { id: string; category: string; text: string }>();
           if (card) {
-            for (const e of card.entries.inProgress) {
-              oldEntries.set(e.id, { id: e.id, category: 'inProgress', text: e.text });
-            }
-            const sessionPrefix = `${conv.conversationId}#`;
             for (const cat of TOPIC_CARD_CATEGORIES) {
               for (const e of card.entries[cat]) {
-                if (e.source.startsWith(sessionPrefix) && !oldEntries.has(e.id)) {
-                  oldEntries.set(e.id, { id: e.id, category: cat, text: e.text });
-                }
+                oldEntries.set(e.id, { id: e.id, category: cat, text: e.text });
               }
             }
           }
@@ -691,6 +688,7 @@ class AgentWorker {
             `- groupId: ${groupId}`,
             `- conversationId: ${conv.conversationId}`,
             `- sessionId: ${conv.sessionId}`,
+            `- 当前组标题: ${groupTitle || '（空）'}`,
             '',
             `### 新增逐字稿（上次提炼位置之后的新增消息，共 ${newMessages.length} 条）`,
             '',

@@ -89,7 +89,10 @@ export const StateIncrementSchema = z.object({
   blockers: z.array(StateIncrementItemSchema).default([]),
   nextSteps: z.array(StateIncrementItemSchema).default([]),
   openQuestions: z.array(StateIncrementItemSchema).default([]),
+  // 跨类退休：被解决/取代的现有条目 id（不限类别），合并时从原类移入 completed 并加「（已解决）」后缀
   resolved: z.array(z.string().min(1)).default([]),
+  // 仅 group.title 为空时作为首次命名生效一次（消费在合并调用侧）
+  initialTitle: z.string().min(1).optional(),
 });
 
 export type StateIncrement = z.infer<typeof StateIncrementSchema>;
@@ -285,7 +288,7 @@ function cloneCard(card: TopicStateCard): TopicStateCard {
   return structuredClone(card);
 }
 
-/** 逐类 append 增量（同来源同 text 去重）+ resolved 条目迁移（inProgress → completed）+ topicChange 分流 */
+/** 逐类 append 增量（同来源同 text 去重）+ resolved 跨类退休（移入 completed 加「（已解决）」后缀）+ topicChange 分流 */
 export function mergeIncrement(
   card: TopicStateCard,
   increment: StateIncrement,
@@ -295,11 +298,13 @@ export function mergeIncrement(
   const ts = opts.ts ?? new Date().toISOString();
 
   for (const id of increment.resolved) {
-    const from = next.entries.inProgress;
-    const idx = from.findIndex((e) => e.id === id);
-    if (idx >= 0) {
-      const [entry] = from.splice(idx, 1);
-      next.entries.completed.push(entry);
+    for (const cat of TOPIC_CARD_CATEGORIES) {
+      const idx = next.entries[cat].findIndex((e) => e.id === id);
+      if (idx < 0) continue;
+      const [entry] = next.entries[cat].splice(idx, 1);
+      const text = entry.text.endsWith('（已解决）') ? entry.text : `${entry.text}（已解决）`;
+      next.entries.completed.push({ ...entry, text });
+      break;
     }
   }
 
