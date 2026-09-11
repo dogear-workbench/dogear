@@ -44,6 +44,9 @@ export class PiSessionManager extends EventEmitter {
   // 引用计数：release 归零时，若 session 仍在 running 则进入 orphan 保活（B1），
   // 等 settled 后由 maybeCollectOrphan 回收；否则直接销毁
   private refCounts: Map<string, number> = new Map();
+  // 非 UI 保活计数（delegation-bridge 在有 running 直属子会话期间对父会话的存活持有）：
+  // 与 refCounts 独立记账，销毁判定要求两者同时归零
+  private holds: Map<string, number> = new Map();
   private conversationSessionMap: Map<string, string> = new Map();
   private broadcaster: PiSessionBroadcaster | null = null;
   private logger = mainLogger.child('pi-session-manager');
@@ -154,8 +157,9 @@ export class PiSessionManager extends EventEmitter {
   }
 
   /**
-   * 减少引用计数。归零时：session 仍在 running 则进入 orphan 保活（不从 Map 删除、
-   * 不摘 conversationSessionMap），等 settled 后由 maybeCollectOrphan 收集；否则直接销毁。
+   * 减少引用计数。归零时：session 仍在 running 或被 hold（delegation-bridge 保活）则保活
+   * （不从 Map 删除、不摘 conversationSessionMap），等 settled 后由 maybeCollectOrphan 收集；
+   * 否则直接销毁。
    * @returns 剩余引用计数
    */
   async release(sessionId: string, source: SessionCloseSource = 'natural'): Promise<number> {
@@ -168,11 +172,47 @@ export class PiSessionManager extends EventEmitter {
       const session = this.sessions.get(sessionId);
       if (session?.isRunning()) {
         this.logger.info(`pi session ${sessionId.substring(0, 8)} 仍在运行，进入 orphan 保活`);
+      } else if (this.isHeld(sessionId)) {
+        this.logger.info(`pi session ${sessionId.substring(0, 8)} 被 hold（子会话运行中），进入保活`);
       } else {
         await this._destroySession(sessionId, source);
       }
     }
     return next;
+  }
+
+  /** 非 UI 保活：子会话运行期间对父会话的存活持有；session 不在内存时返回 false */
+  acquireHold(sessionId: string): boolean {
+    if (!this.sessions.has(sessionId)) return false;
+    const next = (this.holds.get(sessionId) ?? 0) + 1;
+    this.holds.set(sessionId, next);
+    this.logger.info(`hold pi session ${sessionId.substring(0, 8)}: holdCount=${next}`);
+    return true;
+  }
+
+  /**
+   * 释放非 UI 保活。归零时重走与 release 归零相同的判定：refCount 也已归零且
+   * session 不在 running 则销毁，仍在 running 则留给 settled → maybeCollectOrphan 收集。
+   */
+  async releaseHold(sessionId: string): Promise<void> {
+    const count = this.holds.get(sessionId);
+    if (count === undefined) return;
+    const next = count - 1;
+    if (next > 0) this.holds.set(sessionId, next);
+    else this.holds.delete(sessionId);
+    this.logger.info(`release hold pi session ${sessionId.substring(0, 8)}: holdCount ${count} -> ${next}`);
+    if (next === 0 && this.refCounts.get(sessionId) === 0) {
+      const session = this.sessions.get(sessionId);
+      if (session?.isRunning()) {
+        this.logger.info(`pi session ${sessionId.substring(0, 8)} 仍在运行，进入 orphan 保活`);
+      } else if (session) {
+        await this._destroySession(sessionId, 'natural');
+      }
+    }
+  }
+
+  private isHeld(sessionId: string): boolean {
+    return (this.holds.get(sessionId) ?? 0) > 0;
   }
 
   /** 直接关闭会话（忽略引用计数） */
@@ -181,14 +221,14 @@ export class PiSessionManager extends EventEmitter {
   }
 
   /**
-   * 收集 orphan 会话：refCount==0 则销毁。由 PiSession 的 settled 事件触发，
-   * 用于在 orphan 保活的会话自然跑完后回收。如果期间被 re-attach（retain 过），
-   * refCount>0 则跳过。
+   * 收集 orphan 会话：refCount==0 且未被 hold 则销毁。由 PiSession 的 settled 事件触发，
+   * 用于在 orphan 保活的会话自然跑完后回收。如果期间被 re-attach（retain 过）
+   * 或仍被 hold，refCount/holdCount 未归零则跳过。
    */
   async maybeCollectOrphan(sessionId: string): Promise<void> {
     const count = this.refCounts.get(sessionId);
     if (count === undefined) return;
-    if (count === 0) {
+    if (count === 0 && !this.isHeld(sessionId)) {
       this.logger.info(`orphan pi session ${sessionId.substring(0, 8)} 已 settled，收集销毁`);
       await this._destroySession(sessionId, 'natural');
     }
@@ -234,6 +274,7 @@ export class PiSessionManager extends EventEmitter {
     }
     this.sessions.delete(sessionId);
     this.refCounts.delete(sessionId);
+    this.holds.delete(sessionId);
 
     try {
       await session.close();
@@ -267,6 +308,7 @@ export class PiSessionManager extends EventEmitter {
     this.conversationSessionMap.clear();
     this.sessions.clear();
     this.refCounts.clear();
+    this.holds.clear();
 
     const CLOSE_ALL_TIMEOUT_MS = 5000;
     for (const session of sessions) {

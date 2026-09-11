@@ -60,6 +60,8 @@ interface ChildStateInternal extends ChildStateSnapshot {
   modelTried?: string[];
   /** 连续失败次数：complete 正常到达（subtype=success）时清零 */
   consecutiveFails: number;
+  /** spawnChild 时 acquire 保活的父会话 sessionId，终态结算时 release；未成功 acquire 则无值 */
+  parentHoldSessionId?: string;
   timeoutTimer?: NodeJS.Timeout;
   idleWatch?: IdleWatch;
 }
@@ -134,6 +136,26 @@ function clearChildTimers(c: ChildStateInternal): void {
   if (c.timeoutTimer) { clearTimeout(c.timeoutTimer); c.timeoutTimer = undefined; }
   c.idleWatch?.dispose();
   c.idleWatch = undefined;
+}
+
+// 父会话非 UI 保活：有 running 直属子会话期间父会话不因引用归零被销毁。
+// 粒度与 childStates 同生命周期（内存态）；父会话已不在内存时 acquire 失败即为无保活，
+// release 时对旧 sessionId 的释放是 no-op，不会泄漏
+function acquireParentHold(c: ChildStateInternal): void {
+  const manager = getPiSessionManager();
+  const parentSessionId = manager.getSessionIdByConversation(c.parentConversationId);
+  if (parentSessionId && manager.acquireHold(parentSessionId)) {
+    c.parentHoldSessionId = parentSessionId;
+  }
+}
+
+function releaseParentHold(c: ChildStateInternal): void {
+  if (!c.parentHoldSessionId) return;
+  const holdId = c.parentHoldSessionId;
+  c.parentHoldSessionId = undefined;
+  getPiSessionManager().releaseHold(holdId).catch((err) => {
+    logger.warn(`释放父会话保活失败 ${holdId}`, err);
+  });
 }
 
 // ─── session 事件 wiring ───
@@ -252,6 +274,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
     if (isNotifiableTerminal(c.terminalReason)) notifyTerminalToParent(c);
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
+    releaseParentHold(c);
   } finally {
     settling.delete(c.childId);
   }
@@ -514,6 +537,7 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
   }
 
   state.attachmentId = attachment.attachmentId;
+  acquireParentHold(state);
 
   const timeoutMs = (selectedProfile.timeoutMinutes ?? 30) * 60_000;
   state.timeoutTimer = setTimeout(() => { void stopChild(childId, 'timeout'); }, timeoutMs);

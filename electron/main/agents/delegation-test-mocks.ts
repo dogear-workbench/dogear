@@ -309,6 +309,8 @@ export async function installDelegationMocks(): Promise<void> {
         return sessionId && sessions.has(sessionId) ? sessionId : undefined;
       },
       getConversationIdBySession: (sessionId: string) => sessionOwnerConv.get(sessionId),
+      acquireHold: (sessionId: string) => sessions.has(sessionId),
+      releaseHold: async () => {},
     }),
   }));
 }
