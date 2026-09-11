@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 选中交互（引用 + 存笔记）
-status: pending
+status: done
 ---
 
 ## 目标
@@ -39,9 +39,17 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - hook useMessageSelection 与 SelectionActionTooltip 同文件（内聚 data-selection-actions 属性名）
+  - 浮钮位置加 clamp 防出界（ArticlePreview 无，会话流选区可贴边）
+  - 存笔记走 useNotesStore.createNote（非裸 client，本地列表即插保证「查看」时列表已含新卡）
+  - 独立会话窗口 toast 不带「查看」（无笔记面板，对齐 ArticlePreview 先例）
+  - 芯片色系落地 indigo（slate 被文章芯片占用）
+- 改动文件清单：`stores/reference-store.ts`（MessageSnippetRef + add/remove/clearMessageSnippetsFor + clearAllFor/reset 纳入）、新 `components/agent-chat/SelectionActionTooltip.tsx`（受控浮钮组 + useMessageSelection hook）、`AgentChat.tsx:171-214`（回调 + 挂载 div.px-6 + tooltip 渲染）、`ChatInputArea.tsx`（indigo 芯片）、`hooks/useSendMessage.ts:307-316`（序列化 + clear）
+- 挂载点确认：AgentChat 滚动视口内 div.px-6 是 StableHistory+LiveTail 真实共同父层，tooltip 随内容滚动，坐标 = rangeRect − containerRect
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+- 关键签名 / 数据结构：`MessageSnippetRef { id, text, timestamp, anchorConversationId }`；`useMessageSelection(containerRef) → { position, selectedText, clear, handleMouseUp }`；发送格式 `<quoted_snippet source="会话消息">\n文本\n</quoted_snippet>`（utils 正则天然兼容，MessageItem/minimap 剥离零改动）
+- 下个 step 该从哪里继续：Step 6 TrackUserActions 勾选卡 + TopicQuickEntry 退役（CardRendererProps 加 toolUseId 透传）
 - 待办或已知限制：
+  - 挂载层内横幅文字被选中也会出浮钮（同属消息流区域，可接受）
+  - 人工验证 4 项（引用链路/存笔记跳转/容器限定/独立窗口）待用户回归

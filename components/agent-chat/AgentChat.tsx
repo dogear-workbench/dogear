@@ -1,7 +1,14 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Archive, AlertCircle, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
+import { useReferenceStore } from '@/stores/reference-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { useNotesStore } from '@/stores/notes-store';
+import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
+import { requireReferenceAnchorId } from '@/lib/reference-guard';
+import { SelectionActionTooltip, useMessageSelection } from './SelectionActionTooltip';
 import type { AgentChatProps, Message } from './types';
 import { LiveTail } from './LiveTail';
 import { StableHistory } from './StableHistory';
@@ -159,6 +166,52 @@ export function AgentChat({
   }, [conversationId]);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // 会话流内选中文字 → 浮动引用/存笔记按钮（挂消息流内容层）
+  const messageFlowRef = useRef<HTMLDivElement>(null);
+  const selectionActions = useMessageSelection(messageFlowRef);
+  const addMessageSnippet = useReferenceStore((s) => s.addMessageSnippet);
+
+  const handleQuoteSelection = useCallback(() => {
+    if (!selectionActions.selectedText) return;
+    const anchorId = requireReferenceAnchorId();
+    if (!anchorId) return;
+    addMessageSnippet({ text: selectionActions.selectedText, timestamp: Date.now() }, anchorId);
+    selectionActions.clear();
+  }, [selectionActions, addMessageSnippet]);
+
+  const handleSaveSelectionAsNote = useCallback(async () => {
+    if (!selectionActions.selectedText) return;
+    const workspace = useWorkspaceStore.getState().workspace;
+    if (!workspace) {
+      toast.error('存笔记失败', { description: '未打开工作区' });
+      return;
+    }
+    const conversationTitle = currentConversation?.title?.trim() || '未命名会话';
+    const time = new Date().toLocaleString('zh-CN', { hour12: false });
+    const note = await useNotesStore.getState().createNote(workspace.path, {
+      content: `${selectionActions.selectedText}\n\n> 来自会话消息 · ${conversationTitle} · ${time}`,
+    });
+    selectionActions.clear();
+    if (!note) {
+      toast.error('存笔记失败');
+      return;
+    }
+    // 独立窗口无笔记面板，「查看」仅在主窗口提供
+    const inSessionWindow = window.location.hash.startsWith('#/session-window/');
+    toast.success('已存为笔记', {
+      description: `来自「${conversationTitle}」`,
+      ...(inSessionWindow ? {} : {
+        action: {
+          label: '查看',
+          onClick: () => {
+            useNotesStore.getState().setActiveNoteId(note.id);
+            useSessionStore.getState().switchTab(NOTES_TAB_ID);
+          },
+        },
+      }),
+    });
+  }, [selectionActions, currentConversation]);
 
   // ─── 虚拟滚动 ───
   // 计算 compact_boundary 折叠状态（提前到组件主体，供 buildTurns 和虚拟滚动共用）
@@ -381,7 +434,7 @@ export function AgentChat({
         className="h-full pr-12 overflow-y-auto"
         onScrollCapture={handleScroll}
       >
-        <div className="px-6">
+        <div ref={messageFlowRef} className="relative px-6" onMouseUp={selectionActions.handleMouseUp}>
         {childSnapshot && (
           <div className={`px-3 py-2 my-2 rounded-lg border text-xs ${childSnapshot.delivered ? 'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950/40 dark:border-emerald-800/60 dark:text-emerald-300' : childStatusStyles[childSnapshot.status]}`} title={childSnapshot.lastError || undefined}>
             <p className="font-medium">{childSnapshot.delivered ? '子会话已交付' : childStatusLabels[childSnapshot.status]}</p>
@@ -477,6 +530,14 @@ export function AgentChat({
           lastTaskMessageId={lastTaskMessageId}
         />
         </ConversationIdProvider>
+
+        {selectionActions.position && (
+          <SelectionActionTooltip
+            position={selectionActions.position}
+            onQuote={handleQuoteSelection}
+            onSaveNote={() => { void handleSaveSelectionAsNote(); }}
+          />
+        )}
         </div>
       </div>
 

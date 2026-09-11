@@ -77,6 +77,8 @@ export function useSendMessage(params: UseSendMessageParams) {
   const allQuotedSnippets = useReferenceStore((s) => s.quotedSnippets);
   const clearReferencedArticlesFor = useReferenceStore((s) => s.clearReferencedArticlesFor);
   const clearQuotedSnippetsFor = useReferenceStore((s) => s.clearQuotedSnippetsFor);
+  const allMessageSnippets = useReferenceStore((s) => s.messageSnippets);
+  const clearMessageSnippetsFor = useReferenceStore((s) => s.clearMessageSnippetsFor);
   const allReferencedFiles = useReferenceStore((s) => s.referencedFiles);
   const clearReferencedFilesFor = useReferenceStore((s) => s.clearReferencedFilesFor);
   const allReferencedConversations = useReferenceStore((s) => s.referencedConversations);
@@ -92,6 +94,10 @@ export function useSendMessage(params: UseSendMessageParams) {
   const quotedSnippets = useMemo(
     () => allQuotedSnippets.filter((s) => s.anchorConversationId === conversationId),
     [allQuotedSnippets, conversationId]
+  );
+  const messageSnippets = useMemo(
+    () => allMessageSnippets.filter((s) => s.anchorConversationId === conversationId),
+    [allMessageSnippets, conversationId]
   );
   const referencedFiles = useMemo(
     () => allReferencedFiles.filter((f) => f.anchorConversationId === conversationId),
@@ -296,6 +302,16 @@ export function useSendMessage(params: UseSendMessageParams) {
         });
       }
       clearQuotedSnippetsFor(conversationId!);
+    }
+
+    // 会话消息片段：发送标签沿用 quoted_snippet（source=会话消息），MessageItem 解析零改动
+    if (messageSnippets.length > 0) {
+      for (const s of messageSnippets) {
+        textBlocks.push({
+          text: `<quoted_snippet source="会话消息">\n${sanitize(s.text)}\n</quoted_snippet>`
+        });
+      }
+      clearMessageSnippetsFor(conversationId!);
     }
 
     // 文件/文件夹引用：独立 block，agent 通过 Read 工具读取内容
@@ -509,7 +525,8 @@ export function useSendMessage(params: UseSendMessageParams) {
     lastAppliedSelection, pushLocalUser, pushLiveAssistant, replaceLastLiveAssistant,
     setIsLoading, updateConversationTitle, getMessages,
     triggerSessionRestart, referencedArticles, clearReferencedArticlesFor,
-    quotedSnippets, clearQuotedSnippetsFor, referencedFiles, clearReferencedFilesFor,
+    quotedSnippets, clearQuotedSnippetsFor, messageSnippets, clearMessageSnippetsFor,
+    referencedFiles, clearReferencedFilesFor,
     referencedConversations, clearReferencedConversationsFor, referencedSharedFiles,
     clearReferencedSharedFilesFor, referencedNotes, clearReferencedNotesFor, forkConversation,
   ]);

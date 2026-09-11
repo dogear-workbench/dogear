@@ -29,6 +29,14 @@ export interface SharedFileReference {
   anchorConversationId: string;
 }
 
+/** 会话消息选中片段（会话流内选中文字 → 引用） */
+export interface MessageSnippetRef {
+  id: string;
+  text: string;
+  timestamp: number;
+  anchorConversationId: string;
+}
+
 /** 笔记引用 */
 export interface NoteReference {
   noteId: string;
@@ -41,6 +49,7 @@ interface ReferenceState {
   // --- 状态 ---
   referencedArticles: AnchoredArticle[];
   quotedSnippets: QuoteSnippet[];
+  messageSnippets: MessageSnippetRef[];
   referencedFiles: FileReference[];
   referencedConversations: ConversationReference[];
   referencedSharedFiles: SharedFileReference[];
@@ -59,6 +68,12 @@ interface ReferenceState {
   removeQuotedSnippet: (snippetId: string) => void;
   /** 清空锚定指定会话的引用片段 */
   clearQuotedSnippetsFor: (conversationId: string) => void;
+  /** 添加会话消息选中片段 */
+  addMessageSnippet: (params: { text: string; timestamp: number }, anchorConversationId: string) => void;
+  /** 移除单条会话消息片段 */
+  removeMessageSnippet: (snippetId: string) => void;
+  /** 清空锚定指定会话的会话消息片段 */
+  clearMessageSnippetsFor: (conversationId: string) => void;
   /** 添加文件引用 */
   addReferencedFile: (file: Omit<FileReference, 'anchorConversationId'>, anchorConversationId: string) => void;
   /** 移除文件引用 */
@@ -92,6 +107,7 @@ interface ReferenceState {
 export const useReferenceStore = create<ReferenceState>((set) => ({
   referencedArticles: [],
   quotedSnippets: [],
+  messageSnippets: [],
   referencedFiles: [],
   referencedConversations: [],
   referencedSharedFiles: [],
@@ -140,6 +156,29 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   clearQuotedSnippetsFor: (conversationId) => {
     set((state) => ({
       quotedSnippets: state.quotedSnippets.filter((s) => s.anchorConversationId !== conversationId),
+    }));
+  },
+
+  addMessageSnippet: (params, anchorConversationId) => {
+    const snippet: MessageSnippetRef = {
+      id: `msg-snippet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ...params,
+      anchorConversationId,
+    };
+    set((state) => ({
+      messageSnippets: [...state.messageSnippets, snippet],
+    }));
+  },
+
+  removeMessageSnippet: (snippetId) => {
+    set((state) => ({
+      messageSnippets: state.messageSnippets.filter((s) => s.id !== snippetId),
+    }));
+  },
+
+  clearMessageSnippetsFor: (conversationId) => {
+    set((state) => ({
+      messageSnippets: state.messageSnippets.filter((s) => s.anchorConversationId !== conversationId),
     }));
   },
 
@@ -224,6 +263,7 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     set((state) => ({
       referencedArticles: state.referencedArticles.filter((a) => a.anchorConversationId !== conversationId),
       quotedSnippets: state.quotedSnippets.filter((s) => s.anchorConversationId !== conversationId),
+      messageSnippets: state.messageSnippets.filter((s) => s.anchorConversationId !== conversationId),
       referencedFiles: state.referencedFiles.filter((f) => f.anchorConversationId !== conversationId),
       referencedConversations: state.referencedConversations.filter((c) => c.anchorConversationId !== conversationId),
       referencedSharedFiles: state.referencedSharedFiles.filter((f) => f.anchorConversationId !== conversationId),
@@ -234,6 +274,7 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   reset: () => set({
     referencedArticles: [],
     quotedSnippets: [],
+    messageSnippets: [],
     referencedFiles: [],
     referencedConversations: [],
     referencedSharedFiles: [],

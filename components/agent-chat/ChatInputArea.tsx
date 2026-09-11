@@ -1,6 +1,6 @@
 import { memo, useMemo, useEffect, useRef, useState, useCallback, type RefObject } from 'react';
 import { toast } from 'sonner';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, Folder, StickyNote, Pause, Hourglass } from 'lucide-react';
+import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, MessageSquareQuote, Folder, StickyNote, Pause, Hourglass } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -128,6 +128,8 @@ export const ChatInputArea = memo(function ChatInputArea({
   const removeReferencedArticle = useReferenceStore((s) => s.removeReferencedArticle);
   const allQuotedSnippets = useReferenceStore((s) => s.quotedSnippets);
   const removeQuotedSnippet = useReferenceStore((s) => s.removeQuotedSnippet);
+  const allMessageSnippets = useReferenceStore((s) => s.messageSnippets);
+  const removeMessageSnippet = useReferenceStore((s) => s.removeMessageSnippet);
   const allReferencedFiles = useReferenceStore((s) => s.referencedFiles);
   const removeReferencedFile = useReferenceStore((s) => s.removeReferencedFile);
   const allReferencedConversations = useReferenceStore((s) => s.referencedConversations);
@@ -143,6 +145,10 @@ export const ChatInputArea = memo(function ChatInputArea({
   const quotedSnippets = useMemo(
     () => allQuotedSnippets.filter((s) => s.anchorConversationId === conversationId),
     [allQuotedSnippets, conversationId]
+  );
+  const messageSnippets = useMemo(
+    () => allMessageSnippets.filter((s) => s.anchorConversationId === conversationId),
+    [allMessageSnippets, conversationId]
   );
   const referencedFiles = useMemo(
     () => allReferencedFiles.filter((f) => f.anchorConversationId === conversationId),
@@ -221,10 +227,10 @@ export const ChatInputArea = memo(function ChatInputArea({
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
             )}>
             {/* 顶部 Addon：引用芯片 + 图片预览 */}
-            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
+            {(referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 引用芯片 */}
-                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0) && (
+                {(referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0) && (
                   <div className="flex flex-wrap gap-1.5">
                     {/* 文章引用芯片 — 淡蓝 */}
                     {referencedArticles.map(article => (
@@ -258,6 +264,26 @@ export const ChatInputArea = memo(function ChatInputArea({
                           size="icon-xs"
                           onClick={() => removeQuotedSnippet(snippet.id)}
                           className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700"
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </span>
+                    ))}
+                    {/* 会话消息片段芯片 — 灰蓝 */}
+                    {messageSnippets.map(snippet => (
+                      <span
+                        key={snippet.id}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 border border-indigo-200 rounded-full text-xs text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800/60 dark:text-indigo-300"
+                        title={`来自会话消息 · ${new Date(snippet.timestamp).toLocaleString('zh-CN', { hour12: false })}: ${snippet.text}`}
+                      >
+                        <MessageSquareQuote className="w-3 h-3 flex-shrink-0" />
+                        <span className="max-w-[120px] truncate">{`"${snippet.text}"`}</span>
+                        <span className="text-indigo-400 flex-shrink-0">{new Date(snippet.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => removeMessageSnippet(snippet.id)}
+                          className="flex-shrink-0 h-4 w-4 p-0 rounded-full hover:bg-indigo-100 dark:hover:bg-indigo-900/40"
                         >
                           <X className="w-3 h-3" />
                         </Button>
