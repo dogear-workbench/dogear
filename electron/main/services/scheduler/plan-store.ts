@@ -2,8 +2,7 @@ import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getConfigDir } from '../settings-service.js';
 import { safeJsonRead, safeJsonWrite } from '../safe-json.js';
-import type { BuiltinScheduledTask, BuiltinTaskId, CustomScheduledTask, ScheduledTask, TaskRunState, Trigger } from './types.js';
-import { BUILTIN_TASK_IDS, BUILTIN_LABELS } from './builtin-task-meta.js';
+import type { CustomScheduledTask, ScheduledTask, TaskRunState, Trigger } from './types.js';
 
 interface PlansFileV2 {
   version: 2;
@@ -45,21 +44,18 @@ function migrateLegacyPlans(raw: unknown[]): ScheduledTask[] {
       if (!isLooseObject(lt)) continue;
       const id = typeof lt.id === 'string' && lt.id ? lt.id : randomUUID();
       const workspaceId = typeof lt.workspaceId === 'string' ? lt.workspaceId : undefined;
+      // 内置任务已全量下线，存量条目原样透传保留（消费侧由 isRetiredBuiltinTask 过滤隐藏）
       if (lt.kind === 'builtin') {
-        const builtinId = lt.builtinId as BuiltinTaskId;
-        if (typeof builtinId !== 'string' || !BUILTIN_TASK_IDS.includes(builtinId) || seenBuiltinIds.has(builtinId)) continue;
-        seenBuiltinIds.add(builtinId);
-        const task: BuiltinScheduledTask = {
-          id,
-          kind: 'builtin',
-          builtinId,
-          name: BUILTIN_LABELS[builtinId],
-          enabled,
-          triggers: copyTriggers(item.triggers),
-          createdAt,
-          updatedAt,
-        };
+        if (seenBuiltinIds.has(String(lt.builtinId))) continue;
+        seenBuiltinIds.add(String(lt.builtinId));
+        const task = structuredClone(lt) as unknown as ScheduledTask;
+        if (typeof task.id !== 'string' || !task.id) task.id = id;
+        if (typeof task.name !== 'string' || !task.name) task.name = '未命名内置任务';
+        task.enabled = enabled;
+        task.triggers = copyTriggers(item.triggers);
         if (workspaceId !== undefined) task.workspaceId = workspaceId;
+        task.createdAt = createdAt;
+        task.updatedAt = updatedAt;
         out.push(task);
         continue;
       }
@@ -83,36 +79,11 @@ function migrateLegacyPlans(raw: unknown[]): ScheduledTask[] {
   return out;
 }
 
-function createBuiltinSeed(builtinId: BuiltinTaskId): BuiltinScheduledTask {
-  const now = Date.now();
-  return {
-    id: `builtin-${builtinId}`,
-    kind: 'builtin',
-    builtinId,
-    name: BUILTIN_LABELS[builtinId],
-    enabled: false,
-    triggers: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function seedBuiltinTasks(tasks: ScheduledTask[]): { tasks: ScheduledTask[]; added: boolean } {
-  const next = [...tasks];
-  let added = false;
-  for (const builtinId of BUILTIN_TASK_IDS) {
-    if (next.some((t) => t.kind === 'builtin' && t.builtinId === builtinId)) continue;
-    next.push(createBuiltinSeed(builtinId));
-    added = true;
-  }
-  return { tasks: next, added };
-}
-
 let readyPromise: Promise<void> | null = null;
 
-/** 已下线内置任务（存量磁盘数据保留，仅消费侧隐藏） */
+/** 已下线内置任务（存量磁盘数据保留，仅消费侧隐藏）；内置任务类型已退役，运行时仍可能出现存量条目 */
 export function isRetiredBuiltinTask(t: ScheduledTask): boolean {
-  return t.kind === 'builtin' && !BUILTIN_TASK_IDS.includes(t.builtinId);
+  return (t as { kind?: string }).kind === 'builtin';
 }
 
 async function ensureStoreReady(): Promise<void> {
@@ -127,21 +98,12 @@ async function ensureStoreReady(): Promise<void> {
       } else if (isLooseObject(raw) && raw.version === 2 && Array.isArray(raw.tasks)) {
         tasks = raw.tasks as ScheduledTask[];
         needWrite = false;
-        // builtin 任务 name 由 label 派生，label 改名后旧数据需同步，否则 validateTaskForSave 会拒绝保存
-        for (const t of tasks) {
-          if (t?.kind !== 'builtin' || typeof t.builtinId !== 'string') continue;
-          const builtinId = t.builtinId as BuiltinTaskId;
-          if (!BUILTIN_TASK_IDS.includes(builtinId) || t.name === BUILTIN_LABELS[builtinId]) continue;
-          t.name = BUILTIN_LABELS[builtinId];
-          needWrite = true;
-        }
       } else {
         tasks = [];
         needWrite = true;
       }
-      const seeded = seedBuiltinTasks(tasks);
-      if (needWrite || seeded.added) {
-        await safeJsonWrite(getPlansPath(), { version: 2, tasks: seeded.tasks });
+      if (needWrite) {
+        await safeJsonWrite(getPlansPath(), { version: 2, tasks });
       }
     })().catch((err) => {
       readyPromise = null;

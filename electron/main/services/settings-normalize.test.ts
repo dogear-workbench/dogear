@@ -393,11 +393,11 @@ test('migratePiProfiles：ai.*ModelSelection 残留旧三档 tier 时按 piModel
     { id: 'anthropic/claude-opus-4.7' },
   ];
   s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
-  s.ai.categorizeModelSelection = { profileId: 'default', tier: 'sonnet' };
+  s.ai.stateModelSelection = { profileId: 'default', tier: 'sonnet' };
   const changed = migratePiProfiles(s);
   expect(changed).toBe(true);
   expect(s.ai.parseModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
-  expect(s.ai.categorizeModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-sonnet-4.6' });
+  expect(s.ai.stateModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-sonnet-4.6' });
 });
 
 test('migratePiProfiles：旧 tier 在 piModels 无子串匹配时置 null 回退默认选择', () => {

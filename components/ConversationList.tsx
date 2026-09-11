@@ -7,7 +7,6 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { Toolbar } from './conversation-list/Toolbar';
 import { ManualSection } from './conversation-list/ManualSection';
 import { RecentVirtualGroup } from './conversation-list/RecentVirtualGroup';
-import { SmartSection } from './conversation-list/SmartSection';
 import { ArchiveSection } from './conversation-list/ArchiveSection';
 
 /**
@@ -47,7 +46,6 @@ export function ConversationList() {
           <>
             <ManualSection workspaceId={workspaceId} />
             <RecentVirtualGroup />
-            <SmartSection workspaceId={workspaceId} />
           </>
         )}
       </ScrollArea>

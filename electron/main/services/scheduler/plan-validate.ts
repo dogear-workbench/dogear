@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CustomScheduledTask, ScheduledTask } from './types.js';
 import { validateTrigger } from './time-rule-engine.js';
-import { BUILTIN_LABELS, BUILTIN_TASK_IDS } from './builtin-task-meta.js';
 
 export const KNOWN_TOOL_PACKS: readonly string[] = [
   'article',
@@ -74,25 +73,18 @@ function detectTaskCycle(task: ScheduledTask, allTasks: ScheduledTask[]): string
 }
 
 export function validateTaskForSave(task: ScheduledTask, ctx: TaskSaveContext): string | null {
-  if (task.kind === 'builtin') {
-    if (typeof task.builtinId !== 'string' || !BUILTIN_TASK_IDS.includes(task.builtinId)) {
-      return `未知内置任务 ${String(task.builtinId)}`;
+  // 入参来自前端 tipc，运行时可能是任意 JSON，kind 防御保留
+  if (task.kind !== 'custom') return `未知任务类型 ${String((task as { kind?: unknown }).kind)}`;
+  if (!task.name?.trim()) return '任务名称不能为空';
+  if (!task.prompt?.trim()) return '任务提示词不能为空';
+  if (!task.workspaceId) return '自定义任务必须指定工作区';
+  if (task.toolPacksOverride !== undefined) {
+    if (
+      !Array.isArray(task.toolPacksOverride) ||
+      task.toolPacksOverride.some((p) => typeof p !== 'string')
+    ) {
+      return '工具包覆盖配置无效';
     }
-    if (task.name !== BUILTIN_LABELS[task.builtinId]) return '内置任务名称不能修改';
-  } else if (task.kind === 'custom') {
-    if (!task.name?.trim()) return '任务名称不能为空';
-    if (!task.prompt?.trim()) return '任务提示词不能为空';
-    if (!task.workspaceId) return '自定义任务必须指定工作区';
-    if (task.toolPacksOverride !== undefined) {
-      if (
-        !Array.isArray(task.toolPacksOverride) ||
-        task.toolPacksOverride.some((p) => typeof p !== 'string')
-      ) {
-        return '工具包覆盖配置无效';
-      }
-    }
-  } else {
-    return `未知任务类型 ${String((task as ScheduledTask).kind)}`;
   }
   if (task.workspaceId !== undefined && !ctx.workspaceIds.has(task.workspaceId)) {
     return `工作区不存在 (${task.workspaceId})`;

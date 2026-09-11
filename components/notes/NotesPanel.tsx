@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Loader2,
-  Newspaper,
   NotebookPen,
   Plus,
   Search,
@@ -20,25 +19,22 @@ import { TaskPanel } from '@/components/notes/TaskPanel';
 import { TagFilterMenu } from '@/components/notes/TagFilterMenu';
 import { TrashView } from '@/components/notes/TrashView';
 import { NotesTimelinePane } from '@/components/notes/NotesTimelinePane';
-import { ReportSection } from '@/components/notes/ReportSection';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { NoteMeta } from '@/types/note';
 
-type PanelMode = 'notes' | 'tasks' | 'trash' | 'report';
+type PanelMode = 'notes' | 'tasks' | 'trash';
 
 const MODES = [
   { id: 'notes', label: '笔记', icon: NotebookPen },
   { id: 'tasks', label: '任务', icon: SquareCheckBig },
   { id: 'trash', label: '回收站', icon: Trash2 },
-  { id: 'report', label: '报告', icon: Newspaper },
 ] as const;
 
 const SEARCH_PLACEHOLDER: Record<PanelMode, string> = {
   notes: '搜索标题与正文',
   tasks: '过滤任务',
   trash: '过滤回收站',
-  report: '',
 };
 
 export interface NoteFilter {
@@ -63,7 +59,7 @@ export function NotesPanel() {
   const activeNoteId = useNotesStore((s) => s.activeNoteId);
   const reviewCount = taskGroups?.review.length ?? 0;
 
-  const [mode, setMode] = useState<PanelMode>('report');
+  const [mode, setMode] = useState<PanelMode>('notes');
   const [listHidden, setListHidden] = useState(false);
   const [searchDraft, setSearchDraft] = useState('');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -181,22 +177,6 @@ export function NotesPanel() {
   };
 
   const renderContent = () => {
-    if (mode === 'report') {
-      if (!workspace) {
-        return (
-          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
-            请先选择工作区
-          </div>
-        );
-      }
-      return (
-        <div className="flex-1 min-h-0 overflow-y-auto bg-muted/10">
-          <div className="px-6 py-6">
-            <ReportSection workspaceId={workspace.id} />
-          </div>
-        </div>
-      );
-    }
     if (mode === 'notes') {
       return (
         <NotesTimelinePane
@@ -257,8 +237,7 @@ export function NotesPanel() {
             </button>
           ))}
         </div>
-        {mode !== 'report' && (
-          <div className="relative flex-1 max-w-96 min-w-0">
+        <div className="relative flex-1 max-w-96 min-w-0">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
             <Input
               value={searchDraft}
@@ -277,8 +256,7 @@ export function NotesPanel() {
                 <X className="w-3 h-3 text-muted-foreground" />
               </button>
             ) : null}
-          </div>
-        )}
+        </div>
         {mode === 'notes' && (
           <>
             <TagFilterMenu selected={selectedTag} onToggle={toggleTag} />

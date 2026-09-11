@@ -129,8 +129,6 @@ export type RendererHandlers = {
   // 对话用量有新条目写入（Task 6 写完后广播，渲染层收到后重新 getUsage）
   usageEntryAdded: (data: { conversationId: string }) => void;
 
-  // 智能分类索引变更（CATEGORIZE_SESSION 完成后广播，前端 store 收到刷新）
-  categoriesUpdated: (data: { workspaceId: string }) => void;
 
   // 手动长任务（全量重置分类 / 单组重新提炼）终态通知（主进程写完 run-history 后广播，status 供渲染层分流 toast）
   manualTaskDone: (data: {
@@ -144,8 +142,6 @@ export type RendererHandlers = {
     summary?: string;
     error?: string;
   }) => void;
-
-  // 首页报告文件变更（fs.watch 监听 <configDir>/workspaces/<wsId>/dashboard.md）
 
   // 笔记数据变更（notes-service 写操作后广播，前端 store 收到后重新拉取列表）
   notesChanged: (data: { workspacePath: string }) => void;

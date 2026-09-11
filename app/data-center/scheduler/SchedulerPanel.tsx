@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Cog, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
+import { Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -113,7 +113,7 @@ export function SchedulerPanel({ workspaces }: Props) {
         <div className="space-y-3">
           <div className="mb-3">
             <p className="text-sm text-muted-foreground">
-              每个任务一行：内置任务（补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
+              每个任务一行（新建自定义任务）；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -159,7 +159,6 @@ export function SchedulerPanel({ workspaces }: Props) {
                 <div key={task.id} className={cn('rounded-md border p-3 flex items-start gap-3', !task.enabled && 'opacity-60')}>
                   <div className="flex-1 min-w-0 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      {task.kind === 'builtin' && <Cog className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
                       <span className="text-sm font-medium truncate">{task.name}</span>
                       {running && (
                         <Badge variant="secondary" className="gap-1 whitespace-nowrap">

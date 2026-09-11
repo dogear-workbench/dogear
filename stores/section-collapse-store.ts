@@ -9,11 +9,9 @@ export interface FolderReveal {
 
 interface SectionCollapseState {
   recentExpanded: boolean;
-  expandedSmartCategoryIds: Set<string>;
   folderReveal: FolderReveal | null;
   subExpandedConvIds: Set<string>;
   toggleRecent: () => void;
-  toggleSmartCategory: (categoryId: string) => void;
   toggleSubExpand: (convId: string) => void;
   expandSubConv: (convId: string) => void;
   revealTopic: (groupId: string) => Promise<void>;
@@ -23,18 +21,10 @@ let revealNonce = 0;
 
 export const useSectionCollapseStore = create<SectionCollapseState>((set, get) => ({
   recentExpanded: true,
-  expandedSmartCategoryIds: new Set<string>(),
   folderReveal: null,
   subExpandedConvIds: new Set<string>(),
 
   toggleRecent: () => set((s) => ({ recentExpanded: !s.recentExpanded })),
-
-  toggleSmartCategory: (categoryId) => set((s) => {
-    const next = new Set(s.expandedSmartCategoryIds);
-    if (next.has(categoryId)) next.delete(categoryId);
-    else next.add(categoryId);
-    return { expandedSmartCategoryIds: next };
-  }),
 
   toggleSubExpand: (convId) => set((s) => {
     const next = new Set(s.subExpandedConvIds);
@@ -54,9 +44,8 @@ export const useSectionCollapseStore = create<SectionCollapseState>((set, get) =
 
   revealTopic: async (groupId) => {
     if (!groupId) return;
-    const [{ useGroupStore }, { useSmartCategoryStore }, { useWorkspaceStore }, { useConversationStore }] = await Promise.all([
+    const [{ useGroupStore }, { useWorkspaceStore }, { useConversationStore }] = await Promise.all([
       import('./group-store'),
-      import('./smart-category-store'),
       import('./workspace-store'),
       import('./conversation-store'),
     ]);
@@ -69,17 +58,6 @@ export const useSectionCollapseStore = create<SectionCollapseState>((set, get) =
 
     if (Date.now() - group.updatedAt <= RECENT_THRESHOLD_MS) {
       if (!get().recentExpanded) set({ recentExpanded: true });
-    }
-
-    const catIds = useSmartCategoryStore.getState().categories
-      .filter((c) => c.groupIds.includes(groupId))
-      .map((c) => c.id);
-    if (catIds.length > 0) {
-      set((s) => {
-        const next = new Set(s.expandedSmartCategoryIds);
-        for (const id of catIds) next.add(id);
-        return { expandedSmartCategoryIds: next };
-      });
     }
 
     const ws = useWorkspaceStore.getState().workspace;

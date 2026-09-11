@@ -212,11 +212,10 @@ export default function SettingsPage() {
     setLocal(prev => {
       const { [profileId]: _removed, ...rest } = prev.profiles;
       const newAi = { ...prev.ai };
-      const clearIfMatch = (key: 'defaultModelSelection' | 'categorizeModelSelection' | 'parseModelSelection' | 'stateModelSelection') => {
+      const clearIfMatch = (key: 'defaultModelSelection' | 'parseModelSelection' | 'stateModelSelection') => {
         if (newAi[key]?.profileId === profileId) newAi[key] = null;
       };
       clearIfMatch('defaultModelSelection');
-      clearIfMatch('categorizeModelSelection');
       clearIfMatch('parseModelSelection');
       clearIfMatch('stateModelSelection');
       return { ...prev, profiles: rest, ai: newAi };

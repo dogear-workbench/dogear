@@ -8,7 +8,6 @@ import { useConfirmStore } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
 import { CoreProfilePanel } from './core-profile-panel';
 import { TopicsPanel } from './topics-panel';
-import { SmartCategoryPanel } from './smart-category-panel';
 
 interface Props {
   workspaces: Workspace[];
@@ -113,7 +112,6 @@ export function MemorySection({ workspaces }: Props) {
         <TabsList>
           <TabsTrigger value="core">核心档案</TabsTrigger>
           <TabsTrigger value="topics">主题记忆</TabsTrigger>
-          <TabsTrigger value="smart-category">智能分类</TabsTrigger>
         </TabsList>
 
         <TabsContent value="core" className="pt-4">
@@ -122,10 +120,6 @@ export function MemorySection({ workspaces }: Props) {
 
         <TabsContent value="topics" className="pt-4">
           <TopicsPanel workspacePath={workspacePath} />
-        </TabsContent>
-
-        <TabsContent value="smart-category" className="pt-4">
-          <SmartCategoryPanel workspaceId={workspace.id} />
         </TabsContent>
       </Tabs>
       </div>

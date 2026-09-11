@@ -584,7 +584,6 @@ app.whenReady().then(async () => {
   }
 
   // sessionId 持久化迁移：sdkSessionId 合并到 sessionId + 空壳指针修复 + 空壳 jsonl 清理
-  // 必须在 migration-p3 之前执行：migration-p3 的 migrateDigestCards 用 c.sessionId 构建 sessionToConv Map
   try {
     const { runSessionIdMigration } = await import('./services/migration-session-id.js');
     await runSessionIdMigration();
@@ -609,24 +608,8 @@ app.whenReady().then(async () => {
     console.error('[migration-model-selection] 失败:', error);
   }
 
-  // Phase 3 迁移：旧会话卡升级为组卡 + smart-categories/conversation-tree 字段升级
+  // 话题生命周期迁移：删除旧归档会话文件（幂等 marker）
   try {
-    const { runMigrationP3 } = await import('./services/memory/migration-p3.js');
-    const configDir = app.isPackaged
-      ? path.join(app.getPath('userData'), '.dogear')
-      : path.join(process.cwd(), '.dogear');
-    await runMigrationP3(configDir);
-  } catch (error) {
-    console.error('[migration-p3] 失败:', error);
-  }
-
-  // Phase 4 迁移：组卡 digests/<groupId>.md → groups/<groupId>/digest.md，删 _cleaned/
-  try {
-    const { runMigrationP4 } = await import('./services/memory/migration-p4.js');
-    const configDir = app.isPackaged
-      ? path.join(app.getPath('userData'), '.dogear')
-      : path.join(process.cwd(), '.dogear');
-    await runMigrationP4(configDir);
     const { runTopicLifecycleMigration } = await import('./services/topic-lifecycle-service.js');
     const result = await runTopicLifecycleMigration();
     if (result.errors.length > 0) {
@@ -638,12 +621,7 @@ app.whenReady().then(async () => {
       );
     }
   } catch (error) {
-    console.error('[migration-p4/topic-lifecycle] 失败:', error);
-  } finally {
-    // 无论迁移成功失败都放开 gate（失败情况下 category trigger 会读到新路径的空目录，
-    // 比永远堵住更好——用户可以看到问题、手动重跑迁移或触发提炼）
-    const { markMigrationComplete } = await import('./services/memory/migration-gate.js');
-    markMigrationComplete();
+    console.error('[topic-lifecycle-migration] 失败:', error);
   }
 
   // 初始化 Agent 管理器

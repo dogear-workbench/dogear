@@ -8,46 +8,19 @@ import { loadSettings } from '../../settings-service.js';
 import {
   getById as getWorkspaceById,
   getDefault as getDefaultWorkspace,
-  getAll as getAllWorkspaces,
-  type Workspace,
 } from '../../workspace-json-service.js';
 import { mainLogger } from '../../../agents/logger.js';
 import type {
-  BuiltinScheduledTask,
   CustomScheduledTask,
   RunTokens,
   ScheduledTask,
 } from '../types.js';
-import { BUILTIN_LABELS } from '../builtin-task-meta.js';
 
 export interface TaskExecResult {
   status: 'completed' | 'failed' | 'cancelled';
   summary?: string;
   error?: string;
   tokens?: RunTokens;
-}
-
-const IDLE_POLL_MS = 500;
-
-function waitForQueueIdle(isIdle: () => boolean): Promise<void> {
-  if (isIdle()) return Promise.resolve();
-  return new Promise((resolve) => {
-    const timer = setInterval(() => {
-      if (isIdle()) {
-        clearInterval(timer);
-        resolve();
-      }
-    }, IDLE_POLL_MS);
-  });
-}
-
-async function resolveTaskWorkspaces(workspaceId: string | undefined): Promise<{ workspaces: Workspace[]; error?: string }> {
-  if (workspaceId !== undefined) {
-    const ws = await getWorkspaceById(workspaceId);
-    if (!ws) return { workspaces: [], error: `工作区不存在: ${workspaceId}` };
-    return { workspaces: [ws] };
-  }
-  return { workspaces: await getAllWorkspaces() };
 }
 
 export interface TriggerContext {
@@ -60,56 +33,7 @@ export interface TaskExecuteHooks {
 }
 
 export async function executeTask(task: ScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
-  if (task.kind === 'builtin') return runBuiltinTask(task, hooks);
   return runCustomTask(task, hooks);
-}
-
-async function runBuiltinTask(task: BuiltinScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
-  switch (task.builtinId) {
-    case 'categorize': {
-      const { triggerCategorizeSweep, getCategorizeActivity } =
-        await import('../../memory/category-trigger.js');
-      const { workspaces, error } = await resolveTaskWorkspaces(task.workspaceId);
-      if (error) return { status: 'failed', error };
-      const results: Array<{ disabled: boolean; pending: number; noTags: number }> = [];
-      for (const ws of workspaces) {
-        results.push(await triggerCategorizeSweep(ws.id));
-      }
-      await waitForQueueIdle(() => {
-        const a = getCategorizeActivity();
-        return a.current === null && a.queueDepth === 0;
-      });
-      if (results.length > 0 && results.every((r) => r.disabled)) {
-        return { status: 'completed', summary: '智能分类已禁用，跳过' };
-      }
-      const pending = results.reduce((sum, r) => sum + r.pending, 0);
-      const noTags = results.reduce((sum, r) => sum + r.noTags, 0);
-      if (pending === 0 && noTags === 0) {
-        return { status: 'completed', summary: '没有未分类的话题' };
-      }
-      const parts: string[] = [];
-      if (pending > 0) parts.push(`已为 ${pending} 个话题补分类`);
-      if (noTags > 0) parts.push(`${noTags} 个话题缺标签需重新提炼`);
-      return { status: 'completed', summary: parts.join('，') };
-    }
-    case 'categorize_organize': {
-      const { triggerCategorizeOrganize, getCategorizeActivity } =
-        await import('../../memory/category-trigger.js');
-      const { workspaces, error } = await resolveTaskWorkspaces(task.workspaceId);
-      if (error) return { status: 'failed', error };
-      for (const ws of workspaces) {
-        await triggerCategorizeOrganize(ws.id);
-      }
-      await waitForQueueIdle(() => {
-        const a = getCategorizeActivity();
-        return a.current === null && a.queueDepth === 0;
-      });
-      return { status: 'completed', summary: `已对 ${workspaces.length} 个工作区触发${BUILTIN_LABELS.categorize_organize}` };
-    }
-    // 磁盘存量已下线内置任务（group_digest/review）触发时落到这里，不会真实执行
-    default:
-      return { status: 'failed', error: `未知内置任务: ${task.builtinId as string}` };
-  }
 }
 
 function extractTokens(result: any): RunTokens | undefined {

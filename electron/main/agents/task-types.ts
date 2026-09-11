@@ -23,8 +23,6 @@ export enum TaskType {
   SUMMARIZE = 'summarize',          // 文本摘要
   READING_ASSIST = 'reading_assist', // 阅读辅助
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
-  CATEGORIZE_SESSION = 'categorize_session', // 智能分类决策
-  CATEGORIZE_ORGANIZE = 'categorize_organize', // 存量分类整理（压 anchorTags + 合并重合分类）
   CUSTOM_AGENT = 'custom_agent', // 定时计划自定义 agent 任务（prompt 驱动的一次性执行）
   STATE_EXTRACT = 'state_extract' // 话题状态卡增量抽取（逐会话 runOnce 产出结构化增量）
 }
@@ -168,31 +166,6 @@ export interface ParseArticlePayload {
 
   // V1 compat (kept temporarily)
   fixedParseSuccess?: boolean;
-}
-
-/**
- * 智能分类任务负载
- * mode='incremental'：处理单条新摘要卡（DigestSession 串联触发）
- * mode='full-rebuild'：清空索引后对所有摘要卡按 createdAt 升序串行决策（设置页"立即重跑全部分类"用）
- * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
- */
-export interface CategorizeSessionPayload {
-  workspaceId: string;       // 工作区 ID
-  workspacePath: string;     // 工作区绝对路径（保留，未来 trace 用）
-  mode: 'incremental' | 'full-rebuild';
-  groupId?: string;              // incremental 必填
-  groupDigestPath?: string;      // incremental 必填，组卡 .md 文件绝对路径
-  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
-}
-
-/**
- * 存量分类整理任务负载（一键整理现有标签，设置页按钮触发）
- * 与 CATEGORIZE_SESSION 共享同一串行队列（category-trigger），天然互斥。
- * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
- */
-export interface CategorizeOrganizeSessionPayload {
-  workspaceId: string;       // 工作区 ID
-  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.categorizeModelSelection）
 }
 
 /**

@@ -9,7 +9,6 @@ import { getPiSessionRepository } from '../agents/pi-session/pi-session-reposito
 import { deleteUsageStrict } from './usage/usage-service.js';
 import { getClaudeConfigDir, getSessionJsonlPath } from './memory/session-paths.js';
 import { getGroupDir, getGroupsRootDir } from './memory/background-store.js';
-import { readIndex, removeGroupEverywhere, writeIndex } from './memory/smart-category-store.js';
 import { safeJsonWrite } from './safe-json.js';
 import type { ConversationIndex } from './conversation-service.js';
 
@@ -116,8 +115,6 @@ export async function cleanupEmptyTopic(
     if (conversations.some((conversation) => conversation.groupId === groupId)) return { ok: true };
 
     await treeService.removeGroupFromTree(workspaceId, groupId);
-    const categoryIndex = await readIndex(workspaceId);
-    await writeIndex(workspaceId, removeGroupEverywhere(categoryIndex, groupId));
     await fs.rm(getGroupDir(workspaceId, groupId), { recursive: true, force: true });
     await groupService.deleteGroup(workspaceId, groupId);
     return { ok: true };
@@ -127,11 +124,10 @@ export async function cleanupEmptyTopic(
 }
 
 async function collectKnownGroupIds(workspaceId: string): Promise<Set<string>> {
-  const [groups, conversations, tree, categoryIndex] = await Promise.all([
+  const [groups, conversations, tree] = await Promise.all([
     groupService.listGroups(workspaceId),
     conversationService.getByWorkspaceId(workspaceId, { includeArchived: true }),
     treeService.getTree(workspaceId),
-    readIndex(workspaceId),
   ]);
   const groupIds = new Set<string>();
   for (const group of groups) groupIds.add(group.id);
@@ -142,9 +138,6 @@ async function collectKnownGroupIds(workspaceId: string): Promise<Set<string>> {
     for (const id of childIds) {
       if (!tree.folders[id]) groupIds.add(id);
     }
-  }
-  for (const category of categoryIndex.categories) {
-    for (const groupId of category.groupIds) groupIds.add(groupId);
   }
   try {
     const entries = await fs.readdir(getGroupsRootDir(workspaceId), { withFileTypes: true });

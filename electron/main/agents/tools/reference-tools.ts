@@ -4,6 +4,7 @@
  * 主会话和子会话都装——有 groupId 时自动注册。主 agent 可直接读历史会话和组背景，不必派子会话中转。
  *
  * 工具：
+ * - dogear__ListTopics：列工作区全部话题（零模型纯本地 IO，跨话题检索入口）
  * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
  * - dogear__ReadGroupBackground：读本组 background.md 的条目化状态卡
  * - dogear__ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
@@ -17,6 +18,7 @@ import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS, deriveStaleList,
 import { ensureGroupFresh } from '../../services/memory/state-extract-trigger.js';
 import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicVersion } from '../../services/memory/state-card.js';
 import * as conversationService from '../../services/conversation-service.js';
+import { listGroups } from '../../services/group-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -37,6 +39,61 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
   const { workspaceId, groupId, parentConversationId } = opts;
 
   return [
+    defineTool(
+      'dogear__ListTopics',
+      '列出工作区全部话题',
+      '列出当前工作区的全部话题（含已归档）：每个话题一行 groupId + 话题一句话 + 更新时间 + 主会话数 + 归档状态。零模型纯本地读取，用于跨话题检索时先定位目标话题，再用 dogear__ReadGroupBackground / dogear__ReadReferenceSession 深挖。',
+      z.object({}),
+      async () => {
+        try {
+          const [groups, convs] = await Promise.all([
+            listGroups(workspaceId),
+            conversationService.getByWorkspaceId(workspaceId, { includeArchived: true }),
+          ]);
+          const mainConvCount = new Map<string, number>();
+          for (const c of convs) {
+            if (c.groupId && c.role !== 'sub') {
+              mainConvCount.set(c.groupId, (mainConvCount.get(c.groupId) ?? 0) + 1);
+            }
+          }
+          const rows: Array<{ groupId: string; label: string; updatedAt: string; mainConvs: number; archived: boolean; sortTs: number }> = [];
+          for (const g of groups) {
+            let label = g.title?.trim() || '(未命名话题)';
+            let updatedAtTs = g.updatedAt;
+            try {
+              const card = await readTopicStateCard(workspaceId, g.id);
+              const topic = card?.topicHistory[card.topicHistory.length - 1];
+              if (topic?.text) label = topic.text;
+              if (card?.updatedAt) updatedAtTs = Date.parse(card.updatedAt) || updatedAtTs;
+            } catch { /* 单组状态卡读失败不阻塞列表，回退组标题 */ }
+            rows.push({
+              groupId: g.id,
+              label,
+              updatedAt: fmtTs(new Date(updatedAtTs).toISOString()),
+              mainConvs: mainConvCount.get(g.id) ?? 0,
+              archived: g.archivedAt !== undefined,
+              sortTs: updatedAtTs,
+            });
+          }
+          rows.sort((a, b) => (a.archived === b.archived ? b.sortTs - a.sortTs : a.archived ? 1 : -1));
+          if (!rows.length) {
+            return { content: [{ type: 'text' as const, text: `(工作区 ${workspaceId} 暂无话题)` }] };
+          }
+          const lines = rows.map((r) =>
+            `- groupId=${r.groupId} · ${r.label} · 更新 ${r.updatedAt} · 主会话 ${r.mainConvs}${r.archived ? ' · 已归档' : ''}`,
+          );
+          return {
+            content: [{ type: 'text' as const, text: `共 ${rows.length} 个话题（workspaceId=${workspaceId}，活跃在前、按更新时间倒序）：\n${lines.join('\n')}` }],
+          };
+        } catch (e) {
+          return {
+            content: [{ type: 'text' as const, text: `列话题失败: ${e instanceof Error ? e.message : String(e)}` }],
+            isError: true,
+          };
+        }
+      },
+    ),
+
     defineTool(
       'dogear__ReadReferenceSession',
       '读取会话去噪原文',

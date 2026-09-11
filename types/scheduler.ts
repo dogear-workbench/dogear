@@ -1,7 +1,5 @@
 import type { ModelSelection } from './settings';
 
-export type BuiltinTaskId = 'categorize' | 'categorize_organize';
-
 export interface WindowSpec {
   start: string;
   end: string;
@@ -30,32 +28,24 @@ export interface TaskRunState {
   cursorStartedAt?: number;
 }
 
-export interface TaskBase {
+export interface CustomScheduledTask {
   id: string;
   name: string;
+  kind: 'custom';
   enabled: boolean;
   triggers: Trigger[];
-  /** builtin: undefined = 全部工作区；custom: 必填 */
   workspaceId?: string;
   runState?: TaskRunState;
   createdAt: number;
   updatedAt: number;
-}
-
-export interface BuiltinScheduledTask extends TaskBase {
-  kind: 'builtin';
-  builtinId: BuiltinTaskId;
-}
-
-export interface CustomScheduledTask extends TaskBase {
-  kind: 'custom';
   prompt: string;
   modelSelection?: ModelSelection;
   /** undefined = 跟随工作区 enabledToolPacks */
   toolPacksOverride?: string[];
 }
 
-export type ScheduledTask = BuiltinScheduledTask | CustomScheduledTask;
+// 内置任务已全量下线；存量磁盘 kind:'builtin' 条目由主进程 isRetiredBuiltinTask 过滤隐藏（数据保留）
+export type ScheduledTask = CustomScheduledTask;
 
 export type ScheduledTaskWithNextRun = ScheduledTask & { nextRunAt?: number };
 

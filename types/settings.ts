@@ -117,7 +117,6 @@ export interface AppSettings {
     permissionMode: PiPermissionMode;
     settingSources?: ('user' | 'project')[]; // SDK 设置源
     defaultModelSelection: ModelSelection | null;
-    categorizeModelSelection: ModelSelection | null;
     /** 文章解析 AI 兑底任务专用模型；null 时回退 defaultModelSelection */
     parseModelSelection: ModelSelection | null;
     /** 话题状态卡增量抽取任务专用模型；null 时回退 defaultModelSelection */
@@ -130,12 +129,6 @@ export interface AppSettings {
     profiles: SubAgentProfile[];
   };
   failover?: FailoverConfig;
-  /** 智能分类设置 */
-  smartCategory?: {
-    enabled?: boolean;          // 默认 true
-    threshold?: number;         // 0–1，默认 0.5
-    maxCategories?: number;     // 默认 10
-  };
   /** 热更新服务配置 */
   update?: {
     serverUrl: string;
@@ -167,12 +160,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     permissionMode: 'default',
     settingSources: ['user', 'project'],
     defaultModelSelection: null,
-    categorizeModelSelection: null,
     parseModelSelection: null,
     stateModelSelection: null,
   },
   basicToolPermissions: createDefaultBasicToolPermissions(),
-  smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
   subAgent: {
     profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()],
   },

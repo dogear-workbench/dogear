@@ -64,28 +64,13 @@ class TaskRunner extends EventEmitter {
     mainLogger.info(
       `[scheduler] 请求停止任务: ${info.taskName} (${taskId}) 来源=${info.stopReason}`,
     );
-    if (info.task.kind === 'custom') {
-      const agentTaskId = info.agentTaskId;
-      if (!agentTaskId) return;
-      void import('../../../agents/agent-manager.js')
-        .then(({ getAgentManager }) => {
-          getAgentManager().cancelTask(agentTaskId);
-        })
-        .catch((err) => mainLogger.warn('[scheduler] 取消自定义任务失败:', err));
-      return;
-    }
-    switch (info.task.builtinId) {
-      case 'categorize':
-        void import('../../memory/category-trigger.js')
-          .then((m) => m.cancelAllCategorize())
-          .catch((err) => mainLogger.warn('[scheduler] 停止智能分类失败:', err));
-        return;
-      case 'categorize_organize':
-        void import('../../memory/category-trigger.js')
-          .then((m) => m.cancelCategorizeOrganize())
-          .catch((err) => mainLogger.warn('[scheduler] 停止分类整理失败:', err));
-        return;
-    }
+    const agentTaskId = info.agentTaskId;
+    if (!agentTaskId) return;
+    void import('../../../agents/agent-manager.js')
+      .then(({ getAgentManager }) => {
+        getAgentManager().cancelTask(agentTaskId);
+      })
+      .catch((err) => mainLogger.warn('[scheduler] 取消自定义任务失败:', err));
   }
 
   getActivity(): SchedulerActivity {

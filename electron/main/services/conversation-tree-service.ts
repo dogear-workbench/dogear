@@ -116,7 +116,7 @@ export async function getTree(workspaceId: string): Promise<ConversationTreeFile
 // 迁移辅助（旧 API 已废弃；保留 initializeTree 供首次安装兜底使用）
 // ============================================================
 
-/** 初始化工作区树（首次安装兜底，普通使用走 migration-p3 已 schemaVersion=2 的树） */
+/** 初始化工作区树（首次安装兜底；存量树已带 schemaVersion=2，直接跳过） */
 export async function initializeTree(workspaceId: string): Promise<void> {
   await saveTree(workspaceId, emptyTree());
 }

@@ -1,6 +1,5 @@
 import { listActiveGroups, archiveGroup } from './group-service.js';
 import { getTree } from './conversation-tree-service.js';
-import { readIndex, writeIndex, removeGroupEverywhere } from './memory/smart-category-store.js';
 import { mainLogger } from '../agents/logger.js';
 
 const STALE_THRESHOLD_MS = 30 * 86400_000;
@@ -39,9 +38,6 @@ export async function autoArchiveStaleGroups(wsId: string): Promise<number> {
   for (const group of stale) {
     try {
       await archiveGroup(wsId, group.id);
-      let idx = await readIndex(wsId);
-      idx = removeGroupEverywhere(idx, group.id);
-      await writeIndex(wsId, idx);
       count++;
     } catch (err) {
       mainLogger.warn(`[auto-archive] 归档失败 groupId=${group.id}:`, err);

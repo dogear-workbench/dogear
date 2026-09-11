@@ -88,7 +88,6 @@ export interface AppSettings {
     permissionMode: PiPermissionMode;
     settingSources?: ('user' | 'project')[];
     defaultModelSelection: ModelSelection | null;
-    categorizeModelSelection: ModelSelection | null;
     /** 文章解析 AI 兑底任务专用模型；null 时回退 defaultModelSelection */
     parseModelSelection: ModelSelection | null;
     /** 话题状态卡增量抽取任务专用模型；null 时回退 defaultModelSelection */
@@ -96,12 +95,6 @@ export interface AppSettings {
   };
   basicToolPermissions: BasicToolPermissions;
   profiles: Record<string, ModelProfile>;
-  /** 智能分类设置 */
-  smartCategory?: {
-    enabled?: boolean;          // 默认 true
-    threshold?: number;         // 0–1，默认 0.5
-    maxCategories?: number;     // 默认 10
-  };
   /** 子会话派遣 Profile 列表 */
   subAgent: {
     profiles: SubAgentProfile[];
@@ -146,7 +139,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     permissionMode: 'default',
     settingSources: ['user', 'project'],
     defaultModelSelection: null,
-    categorizeModelSelection: null,
     parseModelSelection: null,
     stateModelSelection: null,
   },
@@ -176,7 +168,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
       apiTimeoutMs: 3000000,
     },
   },
-  smartCategory: { enabled: true, threshold: 0.5, maxCategories: 10 },
   migrated: {},
 };
 
