@@ -85,24 +85,16 @@ function migrateLegacyPlans(raw: unknown[]): ScheduledTask[] {
 
 function createBuiltinSeed(builtinId: BuiltinTaskId): BuiltinScheduledTask {
   const now = Date.now();
-  const maintenance = builtinId === 'group_digest' || builtinId === 'review';
-  const task: BuiltinScheduledTask = {
+  return {
     id: `builtin-${builtinId}`,
     kind: 'builtin',
     builtinId,
     name: BUILTIN_LABELS[builtinId],
-    enabled: maintenance,
-    triggers: maintenance
-      ? [
-          { id: randomUUID(), type: 'window', start: '03:00', end: '05:00' },
-          { id: randomUUID(), type: 'on_app_start' },
-          { id: randomUUID(), type: 'on_session_close' },
-        ]
-      : [],
+    enabled: false,
+    triggers: [],
     createdAt: now,
     updatedAt: now,
   };
-  return task;
 }
 
 function seedBuiltinTasks(tasks: ScheduledTask[]): { tasks: ScheduledTask[]; added: boolean } {
@@ -117,6 +109,11 @@ function seedBuiltinTasks(tasks: ScheduledTask[]): { tasks: ScheduledTask[]; add
 }
 
 let readyPromise: Promise<void> | null = null;
+
+/** 已下线内置任务（存量磁盘数据保留，仅消费侧隐藏） */
+export function isRetiredBuiltinTask(t: ScheduledTask): boolean {
+  return t.kind === 'builtin' && !BUILTIN_TASK_IDS.includes(t.builtinId);
+}
 
 async function ensureStoreReady(): Promise<void> {
   if (!readyPromise) {

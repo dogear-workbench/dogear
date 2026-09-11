@@ -16,7 +16,6 @@ import { readTopicStateCard, getStaleConversations } from '../../services/memory
 import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS, deriveStaleList, staleListText } from '../group-context-builder.js';
 import { ensureGroupFresh } from '../../services/memory/state-extract-trigger.js';
 import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicVersion } from '../../services/memory/state-card.js';
-import { readGroupDigest } from '../../services/memory/group-digest-store.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
@@ -172,8 +171,8 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
             && !!c.sessionId,
           );
 
-          // 组卡的 sourcesSeen 用来判 hasDigestCoverage
-          const card = await readGroupDigest(workspaceId, groupId);
+          // 状态卡的 sourcesSeen 用来判断该会话是否已被提炼
+          const card = await readTopicStateCard(workspaceId, groupId);
           const coveredSids = new Set((card?.sourcesSeen ?? []).map((s) => s.sessionId));
 
           const now = Date.now();
@@ -188,11 +187,11 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
               mtime = stat.mtimeMs;
             } catch { /* session 不存在，视为无活动 */ }
             const isActive = mtime > 0 && now - mtime < ACTIVE_THRESHOLD_MS;
-            const hasDigestCoverage = coveredSids.has(sid);
+            const hasStateCoverage = coveredSids.has(sid);
             const lastActivity = mtime ? new Date(mtime).toISOString() : '(未知)';
             rows.push(
               `- sessionId=${sid} · title=${c.title} · lastActivity=${lastActivity}`
-                + ` · isActive=${isActive} · hasDigestCoverage=${hasDigestCoverage}`,
+                + ` · isActive=${isActive} · hasStateCoverage=${hasStateCoverage}`,
             );
           }
 

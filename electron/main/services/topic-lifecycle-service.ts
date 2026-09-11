@@ -8,7 +8,7 @@ import { conversationRuntimeService } from './conversation-runtime-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
 import { deleteUsageStrict } from './usage/usage-service.js';
 import { getClaudeConfigDir, getSessionJsonlPath } from './memory/session-paths.js';
-import { getGroupDir, getGroupsRootDir } from './memory/group-digest-store.js';
+import { getGroupDir, getGroupsRootDir } from './memory/background-store.js';
 import { readIndex, removeGroupEverywhere, writeIndex } from './memory/smart-category-store.js';
 import { safeJsonWrite } from './safe-json.js';
 import type { ConversationIndex } from './conversation-service.js';

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import { mainLogger } from '../../agents/logger.js';
 import type { RunHistoryEntry, ScheduledTask, SchedulerActivity, Trigger } from './types.js';
-import { loadTasks, markOnceFired, touchTriggerFired } from './plan-store.js';
+import { isRetiredBuiltinTask, loadTasks, markOnceFired, touchTriggerFired } from './plan-store.js';
 import { appendHistoryEntry, cleanupHistory } from './run-history-store.js';
 import {
   describeTrigger,
@@ -40,6 +40,12 @@ function currentWindowStartTs(start: string, now: number): number {
 }
 
 class SchedulerService {
+  /** 调度可见任务：已下线内置任务的存量磁盘条目不参与触发/补跑/手动运行 */
+  private async listSchedulableTasks(): Promise<ScheduledTask[]> {
+    const tasks = await loadTasks();
+    return tasks.filter((t) => !isRetiredBuiltinTask(t));
+  }
+
   private tickTimer: NodeJS.Timeout | null = null;
   private lastTickAt = 0;
   private ticking = false;
@@ -54,7 +60,7 @@ class SchedulerService {
       quitting = true;
     });
     const bootAt = Date.now();
-    const tasks = await loadTasks();
+    const tasks = await this.listSchedulableTasks();
     await cleanupHistory().catch((err) => mainLogger.warn('[scheduler] 清理运行历史失败:', err));
     const missed = this.collectMissed(tasks, bootAt);
     if (missed.length > 0) {
@@ -85,7 +91,7 @@ class SchedulerService {
     try {
       const now = Date.now();
       this.lastTickAt = now;
-      const tasks = await loadTasks();
+      const tasks = await this.listSchedulableTasks();
       for (const task of tasks) {
         if (!task.enabled) continue;
         for (const trigger of task.triggers) {
@@ -100,7 +106,7 @@ class SchedulerService {
   }
 
   async handleAppStart(): Promise<void> {
-    const tasks = await loadTasks();
+    const tasks = await this.listSchedulableTasks();
     for (const task of tasks) {
       if (!task.enabled) continue;
       if (!task.triggers.some((t) => t.type === 'on_app_start')) continue;
@@ -116,7 +122,7 @@ class SchedulerService {
       mainLogger.info(`[scheduler] on_session_close：会话不存在或已删除，跳过: ${conversationId}`);
       return;
     }
-    const tasks = await loadTasks();
+    const tasks = await this.listSchedulableTasks();
     for (const task of tasks) {
       if (!task.enabled) continue;
       if (task.workspaceId && task.workspaceId !== found.workspaceId) continue;
@@ -130,7 +136,7 @@ class SchedulerService {
   }
 
   async runTaskManual(taskId: string): Promise<{ started: boolean }> {
-    const tasks = await loadTasks();
+    const tasks = await this.listSchedulableTasks();
     const task = tasks.find((t) => t.id === taskId);
     if (!task) {
       mainLogger.warn(`[scheduler] 手动运行失败，任务不存在: ${taskId}`);
@@ -149,7 +155,7 @@ class SchedulerService {
   }
 
   private async fireTaskDoneDownstream(upstreamId: string): Promise<void> {
-    const tasks = await loadTasks();
+    const tasks = await this.listSchedulableTasks();
     const upstream = tasks.find((t) => t.id === upstreamId);
     if (!upstream) {
       mainLogger.info(`[scheduler] on_task_done 上游任务已删除，跳过: ${upstreamId}`);
@@ -276,7 +282,7 @@ class SchedulerService {
   }
 
   private async fireTask(taskId: string, opts: RunTaskOptions): Promise<boolean> {
-    const tasks = await loadTasks();
+    const tasks = await this.listSchedulableTasks();
     const task = tasks.find((t) => t.id === taskId);
     if (!task) {
       mainLogger.warn(`[scheduler] 任务已删除，跳过触发: ${taskId}`);

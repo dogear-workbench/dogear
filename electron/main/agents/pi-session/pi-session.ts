@@ -40,7 +40,6 @@ import { createAnnouncementToolDefs } from '../tools/stock-announcement-tools.js
 import { createStockPickingToolDefs } from '../tools/stock-picking-tools.js';
 import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
-import { createReviewToolDefs } from '../tools/review-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
 import { createReferenceToolDefs } from '../tools/reference-tools.js';
@@ -280,7 +279,7 @@ export class PiSession extends EventEmitter {
   // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
   // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
   private closingPromise: Promise<void> | null = null;
-  // 工具名 → 所属工具包标识（OPTIONAL_TOOL_PACKS[].name 或 'dogear-group'/'dogear-delegation'/'dogear-memory-review'），
+  // 工具名 → 所属工具包标识（OPTIONAL_TOOL_PACKS[].name 或 'dogear-group'/'dogear-delegation'），
   // start() 组装 toolDefs 时同步填充，供 handleToolCall 的批量免确认判定使用
   private toolPackMap: Map<string, string> = new Map();
   // start() 内创建的 env 引用，供热更新 allowedPaths
@@ -517,7 +516,7 @@ export class PiSession extends EventEmitter {
   /**
    * 主会话工具构建（行为与改造前完全一致）：
    * Skill 工具 + Grep/Glob + dogear-memory 常驻 + 按 enabledToolPacks 挂载可选工具包
-   * + 按 groupId 挂载 dogear-group/delegation/reference + dogear-memory-review
+   * + 按 groupId 挂载 dogear-group/delegation/reference
    */
   private buildMainAgentToolDefs(skillEntries: SkillEntry[]): ToolDef[] {
     const toolDefs: ToolDef[] = [
@@ -575,7 +574,6 @@ export class PiSession extends EventEmitter {
     }
 
     if (this.config.workspacePath) {
-      toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
       toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
@@ -593,7 +591,7 @@ export class PiSession extends EventEmitter {
    * 子会话工具构建（Profile 驱动）：
    * - 基础工具（read/write/edit/bash/Glob/Grep）：始终全部创建，activeToolNames 控制可见性
    * - Skill 工具：有 ≥1 skill 勾选时创建
-   * - dogear-memory + dogear-memory-review：仅当 memory===true
+   * - dogear-memory：仅当 memory===true
    * - stock 工具包：仅当 stock===true
    * - article 工具包：仅当 article===true
    * - browser 工具包：仅当 browser===true
@@ -613,7 +611,7 @@ export class PiSession extends EventEmitter {
       toolDefs.push(createSkillTool(skillEntries));
     }
 
-    // dogear-memory + dogear-memory-review：仅当 memory===true
+    // dogear-memory：仅当 memory===true
     if (ab.memory === true) {
       toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
     }
@@ -666,10 +664,6 @@ export class PiSession extends EventEmitter {
       }
     }
 
-    // dogear-memory-review：仅当 memory===true
-    if (ab.memory === true && this.config.workspacePath) {
-      toolDefs.push(...this.registerPack('dogear-memory-review', createReviewToolDefs(this.config.workspaceId, this.config.workspacePath)));
-    }
 
     return toolDefs;
   }

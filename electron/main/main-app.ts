@@ -640,7 +640,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('[migration-p4/topic-lifecycle] 失败:', error);
   } finally {
-    // 无论迁移成功失败都放开 gate（失败情况下 group-digest / category / review trigger 会读到新路径的空目录，
+    // 无论迁移成功失败都放开 gate（失败情况下 category trigger 会读到新路径的空目录，
     // 比永远堵住更好——用户可以看到问题、手动重跑迁移或触发提炼）
     const { markMigrationComplete } = await import('./services/memory/migration-gate.js');
     markMigrationComplete();
@@ -698,11 +698,6 @@ app.whenReady().then(async () => {
   void import('./services/task-queue.js')
     .then((m) => m.recoverAndStartTaskQueue())
     .catch((err) => console.error('任务队列启动失败:', err));
-
-  // 首页报告文件监视：dashboard.md 任意写入都广播给前端实时刷新
-  void import('./services/memory/dashboard-watcher.js')
-    .then((m) => m.startDashboardWatcher())
-    .catch((err) => console.error('启动 dashboard-watcher 失败:', err));
 
   // 工作区文件树监视：每工作区递归 fs.watch，随 workspaces.json 增删起停
   void import('./services/workspace-watcher.js')

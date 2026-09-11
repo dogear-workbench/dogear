@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { client } from '@/lib/client';
 import { useSettingsStore } from '@/stores/settings-store';
-import { DigestsPanel } from './digests-panel';
 import { UsagePanel } from './usage-panel';
 import { SchedulerPanel } from './scheduler/SchedulerPanel';
 import { ParseHistoryPanel } from './parse-history-panel';
@@ -27,21 +26,14 @@ export default function DataCenterPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <Tabs defaultValue="digests" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs defaultValue="usage" className="flex-1 flex flex-col overflow-hidden">
         <TabsList variant="underline" className="justify-start px-6 flex-shrink-0">
-          <TabsTrigger variant="underline" value="digests">组卡</TabsTrigger>
           <TabsTrigger variant="underline" value="usage">用量</TabsTrigger>
           <TabsTrigger variant="underline" value="scheduler">定时计划</TabsTrigger>
           <TabsTrigger variant="underline" value="history">执行历史</TabsTrigger>
           <TabsTrigger variant="underline" value="parse-history">解析历史</TabsTrigger>
           <TabsTrigger variant="underline" value="memory">记忆</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="digests" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
-          <div className="h-full overflow-y-auto">
-            <DigestsPanel workspaces={workspaces} />
-          </div>
-        </TabsContent>
 
         <TabsContent value="usage" className="flex-1 mt-0 overflow-hidden data-[state=inactive]:hidden">
           <div className="h-full overflow-y-auto">

@@ -17,8 +17,6 @@ interface Props {
 }
 
 const MODEL_IO = {
-  group_digest: { get: client.getDigestModelSelection, set: client.setDigestModelSelection },
-  review: { get: client.getReviewModelSelection, set: client.setReviewModelSelection },
   categorize: { get: client.getCategorizeModelSelection, set: client.setCategorizeModelSelection },
   categorize_organize: { get: client.getCategorizeModelSelection, set: client.setCategorizeModelSelection },
 } as const;

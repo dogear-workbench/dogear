@@ -1,5 +1,5 @@
-// 启动闸门：阻塞组提炼 / 分类 trigger，直到 migration-p4 完成。
-// 迁移期间前端点触发按钮 / setTimeout 8s 扫描 / IPC 手动入口都会 await 这个 gate。
+// 启动闸门：阻塞分类 trigger，直到 migration-p4 完成。
+// 迁移期间前端触发入口 / setTimeout 8s 扫描都会 await 这个 gate。
 import { mainLogger } from '../../agents/logger.js';
 
 let done = false;

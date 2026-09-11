@@ -1,6 +1,6 @@
 import type { ModelSelection } from './settings';
 
-export type BuiltinTaskId = 'group_digest' | 'review' | 'categorize' | 'categorize_organize';
+export type BuiltinTaskId = 'categorize' | 'categorize_organize';
 
 export interface WindowSpec {
   start: string;

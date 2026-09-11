@@ -8,7 +8,8 @@ import * as workspaceService from '../workspace-json-service.js';
 import { getWorkspaceDataDir } from '../conversation-service.js';
 import { mainLogger } from '../../agents/logger.js';
 import { parseFrontmatter } from './memory-fs.js';
-import { getGroupDigestPath, getGroupDir } from './group-digest-store.js';
+import { getGroupDir } from './background-store.js';
+import { getGroupDigestPath } from './digest-file.js';
 
 function getLegacyDigestsDir(wsId: string): string {
   return path.join(getWorkspaceDataDir(wsId), 'digests');

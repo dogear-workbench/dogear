@@ -117,8 +117,6 @@ export interface AppSettings {
     permissionMode: PiPermissionMode;
     settingSources?: ('user' | 'project')[]; // SDK 设置源
     defaultModelSelection: ModelSelection | null;
-    digestModelSelection: ModelSelection | null;
-    reviewModelSelection: ModelSelection | null;
     categorizeModelSelection: ModelSelection | null;
     /** 文章解析 AI 兑底任务专用模型；null 时回退 defaultModelSelection */
     parseModelSelection: ModelSelection | null;
@@ -169,8 +167,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
     permissionMode: 'default',
     settingSources: ['user', 'project'],
     defaultModelSelection: null,
-    digestModelSelection: null,
-    reviewModelSelection: null,
     categorizeModelSelection: null,
     parseModelSelection: null,
     stateModelSelection: null,

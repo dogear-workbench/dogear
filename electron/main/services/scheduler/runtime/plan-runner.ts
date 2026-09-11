@@ -75,16 +75,6 @@ class TaskRunner extends EventEmitter {
       return;
     }
     switch (info.task.builtinId) {
-      case 'group_digest':
-        void import('../../memory/group-digest-trigger.js')
-          .then((m) => m.cancelAllGroupDigest())
-          .catch((err) => mainLogger.warn('[scheduler] 停止组卡提炼失败:', err));
-        return;
-      case 'review':
-        void import('../../memory/review-trigger.js')
-          .then((m) => m.cancelAllReview())
-          .catch((err) => mainLogger.warn('[scheduler] 停止复盘失败:', err));
-        return;
       case 'categorize':
         void import('../../memory/category-trigger.js')
           .then((m) => m.cancelAllCategorize())

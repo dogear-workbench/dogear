@@ -66,30 +66,6 @@ export async function executeTask(task: ScheduledTask, hooks?: TaskExecuteHooks)
 
 async function runBuiltinTask(task: BuiltinScheduledTask, hooks?: TaskExecuteHooks): Promise<TaskExecResult> {
   switch (task.builtinId) {
-    case 'group_digest': {
-      const { triggerScanAll, triggerByConversation, whenGroupDigestIdle, getGroupDigestActivity } =
-        await import('../../memory/group-digest-trigger.js');
-      const convId = hooks?.triggerContext?.conversationId;
-      if (convId !== undefined) {
-        await triggerByConversation(convId);
-        await whenGroupDigestIdle();
-        return { status: 'completed', summary: '已对会话所在组触发精准提炼，队列已清空' };
-      }
-      await triggerScanAll(task.workspaceId);
-      const dirtyCount = getGroupDigestActivity().lastScan?.dirtyCount ?? 0;
-      await whenGroupDigestIdle();
-      return { status: 'completed', summary: `扫描发现 ${dirtyCount} 个待提炼组，队列已清空` };
-    }
-    case 'review': {
-      const { triggerReviewScan, getReviewActivity } = await import('../../memory/review-trigger.js');
-      await triggerReviewScan(task.workspaceId);
-      const staleCount = getReviewActivity().lastScan?.dirtyCount ?? 0;
-      await waitForQueueIdle(() => {
-        const a = getReviewActivity();
-        return a.current === null && a.queueDepth === 0;
-      });
-      return { status: 'completed', summary: `发现 ${staleCount} 个过时工作区，队列已清空` };
-    }
     case 'categorize': {
       const { triggerCategorizeSweep, getCategorizeActivity } =
         await import('../../memory/category-trigger.js');
@@ -130,6 +106,9 @@ async function runBuiltinTask(task: BuiltinScheduledTask, hooks?: TaskExecuteHoo
       });
       return { status: 'completed', summary: `已对 ${workspaces.length} 个工作区触发${BUILTIN_LABELS.categorize_organize}` };
     }
+    // 磁盘存量已下线内置任务（group_digest/review）触发时落到这里，不会真实执行
+    default:
+      return { status: 'failed', error: `未知内置任务: ${task.builtinId as string}` };
   }
 }
 

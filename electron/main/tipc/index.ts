@@ -18,8 +18,6 @@ import { conversationRuntimeRouter } from './conversation-runtime.js';
 import { environmentRouter } from './environment.js';
 import { skillRouter } from './skill.js';
 import { usageRouter } from './usage.js';
-import { digestRouter } from './digest.js';
-import { reviewRouter } from './review.js';
 import { categoryRouter } from './category.js';
 import { notesRouter } from './notes.js';
 import { tasksRouter } from './tasks.js';
@@ -52,8 +50,6 @@ export const router = {
   ...environmentRouter,
   ...skillRouter,
   ...usageRouter,
-  ...digestRouter,
-  ...reviewRouter,
   ...categoryRouter,
   ...notesRouter,
   ...tasksRouter,

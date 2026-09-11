@@ -7,7 +7,7 @@
  *
  * autonomous 模式（opts.autonomous=true）：
  * - dogear__SaveMemory 描述改为自动化任务契约（"仅用户明确要求"仅适用于交互式聊天）
- * - 额外注册 dogear__GetCoreProfile / dogear__UpdateCoreProfile 两个工具（供复盘任务维护稳定身份画像）
+ * - 额外注册 dogear__GetCoreProfile / dogear__UpdateCoreProfile 两个工具（维护用户稳定身份画像）
  *
  * 使用边界：
  * - dogear__SaveMemory 默认仅在用户明确要求"记住 XX"时调用，autonomous 模式下改为按调用方提示词判断

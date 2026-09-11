@@ -460,9 +460,6 @@ export const agentRouter = {
         import('../agents/tools/group-tools.js'),
         import('../agents/tools/delegation-tools.js'),
         import('../agents/tools/reference-tools.js'),
-        import('../agents/tools/review-tools.js'),
-        import('../agents/tools/digest-tools.js'),
-        import('../agents/tools/group-digest-tools.js'),
         import('../agents/tools/category-tools.js'),
       ]);
       const { getAllToolGroups } = await import('../agents/tools/tool-registry.js');

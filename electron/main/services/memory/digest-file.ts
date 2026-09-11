@@ -1,13 +1,11 @@
-// 组级摘要卡存储
-// 路径：<configDir>/workspaces/<wsId>/groups/<groupId>/digest.md
+// 存量 digest.md 解析与迁移写入：生产已停止，消费方仅剩历史迁移脚本与智能分类链路（step6 一并删除）
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { getWorkspaceDataDir } from '../conversation-service.js';
+import { getGroupDir } from './background-store.js';
 import { broadcastGroupDataChanged } from '../renderer-broadcast-lazy.js';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
+import type { SourceSeen } from './state-card.js';
 import type { DigestTags } from '../../types.js';
-
-// ─── 类型定义 ───
 
 export type GroupDigestItemKind = '决策' | '想法' | '注意' | '搁置';
 
@@ -28,69 +26,28 @@ export interface GroupDigestKeyOutput {
   sessionId?: string;
 }
 
-export interface GroupDigestSourceSeen {
-  sessionId: string;
-  conversationId: string;
-  mtime: number;
-}
-
 export interface GroupDigestCard {
   groupId: string;
   title: string;
   createdAt: string;
   updatedAt: string;
-  sourcesSeen: GroupDigestSourceSeen[];
+  sourcesSeen: SourceSeen[];
   summary: string;
   items: GroupDigestItem[];
   keyOutputs: GroupDigestKeyOutput[];
   tags?: DigestTags;
 }
 
-export interface GroupDigestSummary {
-  groupId: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  sessionCount: number;
-}
-
-// ─── 序列化常量 ───
-
 const SOURCE_SEP = ',';
 const SESSION_UUID_SEP = '#';
 const ITEM_SEP = ' ⟶ ';
-// item 行：`- [kind] text ⟶ sessionId#uuid,sessionId2#uuid2`
 const ITEM_RE = /^- \[(.+?)\] ([\s\S]*?) ⟶ (\S+)$/;
-// keyOutput 行：`- path :: oneLine` 或 `- path :: oneLine ← sessionId`
 const KEY_OUTPUT_RE = /^- (.+?) :: (.+?)(?:\s+←\s+(\S+))?$/;
-
-// ─── 路径 ───
-
-/** 工作区所有组共用的父目录：<wsData>/groups/ */
-export function getGroupsRootDir(wsId: string): string {
-  return path.join(getWorkspaceDataDir(wsId), 'groups');
-}
-
-/** 单个组的目录：<wsData>/groups/<groupId>/ */
-export function getGroupDir(wsId: string, groupId: string): string {
-  return path.join(getGroupsRootDir(wsId), groupId);
-}
 
 /** 组卡文件：<wsData>/groups/<groupId>/digest.md */
 export function getGroupDigestPath(wsId: string, groupId: string): string {
   return path.join(getGroupDir(wsId, groupId), 'digest.md');
 }
-
-export async function readGroupDigestRaw(wsId: string, groupId: string): Promise<string | null> {
-  try {
-    return await fs.readFile(getGroupDigestPath(wsId, groupId), 'utf-8');
-  } catch (err: any) {
-    if (err?.code === 'ENOENT') return null;
-    throw err;
-  }
-}
-
-// ─── 纯函数：序列化 / 解析 ───
 
 export function serializeGroupDigest(card: GroupDigestCard): string {
   const fm: Frontmatter = {
@@ -147,7 +104,6 @@ export function parseGroupDigest(raw: string): GroupDigestCard | null {
     }
   }
 
-  // 优先从 frontmatter JSON 读 keyOutputs（比正文解析更可靠）
   let keyOutputs: GroupDigestKeyOutput[] = [];
   const keyOutputsJson = strOf(fm.keyOutputsJson);
   if (keyOutputsJson) {
@@ -166,8 +122,7 @@ export function parseGroupDigest(raw: string): GroupDigestCard | null {
     }
   }
 
-  // 从 frontmatter JSON 读 sourcesSeen
-  let sourcesSeen: GroupDigestSourceSeen[] = [];
+  let sourcesSeen: SourceSeen[] = [];
   const sourcesSeenJson = strOf(fm.sourcesSeenJson);
   if (sourcesSeenJson) {
     try {
@@ -211,8 +166,6 @@ function strOf(v: Frontmatter[string] | undefined): string {
   return typeof v === 'string' ? v : Array.isArray(v) ? v.join(', ') : '';
 }
 
-// ─── 读写 ───
-
 export async function saveGroupDigest(wsId: string, card: GroupDigestCard): Promise<void> {
   await fs.mkdir(getGroupDir(wsId, card.groupId), { recursive: true });
   await fs.writeFile(getGroupDigestPath(wsId, card.groupId), serializeGroupDigest(card), 'utf-8');
@@ -227,64 +180,4 @@ export async function readGroupDigest(wsId: string, groupId: string): Promise<Gr
     if (err?.code === 'ENOENT') return null;
     throw err;
   }
-}
-
-/** 列出某工作区所有组卡摘要（按 updatedAt 降序），扫 groups/<groupId>/digest.md */
-export async function listGroupDigests(wsId: string): Promise<GroupDigestSummary[]> {
-  const root = getGroupsRootDir(wsId);
-  let dirents: import('node:fs').Dirent[];
-  try {
-    dirents = await fs.readdir(root, { withFileTypes: true });
-  } catch (err: any) {
-    if (err?.code === 'ENOENT') return [];
-    throw err;
-  }
-  const out: GroupDigestSummary[] = [];
-  for (const dirent of dirents) {
-    if (!dirent.isDirectory()) continue;
-    if (dirent.name.startsWith('_')) continue;
-    const digestFile = path.join(root, dirent.name, 'digest.md');
-    try {
-      const raw = await fs.readFile(digestFile, 'utf-8');
-      const card = parseGroupDigest(raw);
-      if (card) {
-        out.push({
-          groupId: card.groupId,
-          title: card.title,
-          createdAt: card.createdAt,
-          updatedAt: card.updatedAt,
-          sessionCount: card.sourcesSeen.length,
-        });
-      }
-    } catch {
-      continue;
-    }
-  }
-  out.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  return out;
-}
-
-export async function deleteGroupDigest(wsId: string, groupId: string): Promise<void> {
-  try {
-    await fs.unlink(getGroupDigestPath(wsId, groupId));
-  } catch (err: any) {
-    if (err?.code !== 'ENOENT') throw err;
-  }
-}
-
-/**
- * 合并 existing sourcesSeen 与 dirtyConversations 的新 mtime（按 sessionId 覆盖）。
- * 保留未在 dirty 中且仍存在的 source（不删除）。
- * 调用方负责提前剔除已删除的 sessionId。
- */
-export function mergeSourcesSeen(
-  existing: GroupDigestSourceSeen[],
-  dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>,
-): GroupDigestSourceSeen[] {
-  const map = new Map<string, GroupDigestSourceSeen>();
-  for (const s of existing) map.set(s.sessionId, s);
-  for (const d of dirtyConversations) {
-    map.set(d.sessionId, { sessionId: d.sessionId, conversationId: d.conversationId, mtime: d.mtime });
-  }
-  return Array.from(map.values());
 }

@@ -73,7 +73,7 @@ export function CustomToolPacksSection({ workspaceId, override, onChange }: Prop
       <div className="rounded-md border px-3 py-2">
         <p className="text-xs font-medium">基础工具（恒装）</p>
         <p className="text-xs text-muted-foreground mt-0.5">
-          文件 Read/Write/Edit、Glob/Grep 搜索、记忆 Recall/Save/Forget、复盘报告读写
+          文件 Read/Write/Edit、Glob/Grep 搜索、记忆 Recall/Save/Forget
         </p>
       </div>
       <div className="space-y-1.5">

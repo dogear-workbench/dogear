@@ -117,14 +117,6 @@ class AgentWorker {
           result = await this.handleParseArticleTask(task, taskLogger);
           break;
 
-        case TaskType.GROUP_DIGEST_SESSION:
-          result = await this.handleGroupDigestTask(task, taskLogger);
-          break;
-
-        case TaskType.REVIEW_SESSION:
-          result = await this.handleReviewSessionTask(task, taskLogger);
-          break;
-
         case TaskType.CATEGORIZE_SESSION:
           result = await this.handleCategorizeSessionTask(task, taskLogger);
           break;
@@ -396,157 +388,6 @@ class AgentWorker {
   }
 
   /**
-   * 处理组级摘要卡提炼任务（GROUP_DIGEST_SESSION，Phase 3）
-   *
-   * 一次性 headless query：agent 自主调 dogear__ReadGroupDigest → dogear__CleanTranscript(dirty) → dogear__ListGroupFiles → dogear__SaveGroupDigest，
-   * 整合多会话的逐字稿 + 共享区文件 → 组卡。模型依次回退：payload.modelSelection → digestModelSelection → defaultModelSelection。
-   */
-  private async handleGroupDigestTask(task: AgentTask, taskLogger: any): Promise<any> {
-    const payload = task.payload as import('./task-types.js').GroupDigestSessionPayload;
-    const { workspaceId, workspacePath, groupId, dirtyConversations, hasExistingCard } = payload;
-
-    taskLogger.info('开始组级摘要卡任务:', groupId, '| workspace:', workspaceId, '| dirty:', dirtyConversations.length);
-    const startedAt = Date.now();
-
-    const { loadSettingsFromDir } = await import('./agent-query-config.js');
-    const { resolvePiModel } = await import('./pi/provider.js');
-    const appSettings = await loadSettingsFromDir(this.configDir);
-
-    const selection = payload.modelSelection
-      ?? appSettings.ai.digestModelSelection
-      ?? appSettings.ai.defaultModelSelection;
-
-    let model: PiModelResult['model'];
-    let tier: string;
-    let resolvedProfile: ModelProfile;
-    let thinkingLevel: ThinkingLevel;
-    try {
-      const r = resolvePiModel(appSettings, selection, null, null);
-      model = r.model;
-      tier = r.tier;
-      resolvedProfile = r.profile;
-      thinkingLevel = r.thinkingLevel;
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      taskLogger.error('组级摘要卡任务终止:', error);
-      return { groupId, saved: false, error };
-    }
-
-    const { createGroupDigestToolDefs } = await import('./tools/group-digest-tools.js');
-    const { createDigestToolDefs } = await import('./tools/digest-tools.js');
-    const { createGroupToolDefs } = await import('./tools/group-tools.js');
-
-    let saved = false;
-    const groupDigestDefs = createGroupDigestToolDefs(
-      workspaceId, workspacePath, groupId, dirtyConversations,
-      () => { saved = true; },
-    );
-    const transcriptDefs = createDigestToolDefs(workspaceId, workspacePath);
-    // group-tools 有 2 个工具，digest 任务只需 dogear__ListGroupFiles
-    const groupDefs = createGroupToolDefs(workspaceId, groupId)
-      .filter((t) => t.name === 'dogear__ListGroupFiles');
-
-    // 读取已有组卡 sourcesSeen（供 system prompt 注入）
-    const { readGroupDigest, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
-    const existingCard = hasExistingCard ? await readGroupDigest(workspaceId, groupId) : null;
-    const sourcesSeenText = existingCard?.sourcesSeen.length
-      ? existingCard.sourcesSeen.map((s) => `    - sessionId=${s.sessionId} conv=${s.conversationId} mtime=${s.mtime}`).join('\n')
-      : '    (无)';
-
-    // 共享区文件清单
-    const { listNativeFiles } = await import('../services/group-shared-service.js');
-    const { files: nativeFiles } = await listNativeFiles(workspaceId, groupId).catch(() => ({ files: [] }));
-    const notesFiles = nativeFiles.filter((f) => f.relPath.startsWith('_notes/'));
-    const otherFiles = nativeFiles.filter((f) => !f.relPath.startsWith('_notes/'));
-    const sharedFileText = otherFiles.length
-      ? otherFiles.map((f) => `    - ${f.relPath} (size=${f.size}, mtime=${f.mtime})`).join('\n')
-      : '    (空)';
-    const notesFileText = notesFiles.length
-      ? notesFiles.map((f) => `    - ${f.relPath}`).join('\n')
-      : '    (无)';
-
-    const { loadGroupDigestPrompt } = await import('../services/memory/group-digest-prompt.js');
-    const template = await loadGroupDigestPrompt(this.configDir);
-    const groupDigestPath = getGroupDigestPath(workspaceId, groupId);
-
-    // 分类词汇表（打 tag 时优先复用）：冷启动（无分类）不注入此段
-    const { readIndex: readCategoryIndex } = await import('../services/memory/smart-category-store.js');
-    const categoryIdx = await readCategoryIndex(workspaceId);
-    const categoryVocabLines = categoryIdx.categories.length > 0
-      ? [
-        '',
-        '当前工作区分类词汇表（打 tag 时优先从中选择，实在没合适才自造）：',
-        ...categoryIdx.categories.map((c) => `- ${c.name}: [${c.anchorTags.join(', ')}]`),
-      ]
-      : [];
-
-    const contextSection = [
-      '\n## 本次输入',
-      `- workspaceId: ${workspaceId}`,
-      `- groupId: ${groupId}`,
-      `- 组卡路径: ${groupDigestPath}`,
-      `- hasExistingCard: ${hasExistingCard}`,
-      `- dirtyConversations:`,
-      ...dirtyConversations.map((d) => `  - sessionId=${d.sessionId} conversationId=${d.conversationId} mtime=${d.mtime}`),
-      `- 当前组卡 sourcesSeen（共 ${existingCard?.sourcesSeen.length ?? 0} 项）:`,
-      sourcesSeenText,
-      `- 共享区文件清单（含 _notes/ 子目录）:`,
-      sharedFileText,
-      `- shared/_notes/ 文件清单（dogear__ListGroupFiles 传 relPath 可读单个文件内容）:`,
-      notesFileText,
-      ...categoryVocabLines,
-    ].join('\n');
-
-    const prompt = `${template}${contextSection}`;
-
-    const { runOnce } = await import('./pi/run-once.js');
-    const abortController = new AbortController();
-    this.currentAbortController = abortController;
-
-    const systemPrompt = '你是一个后台内容提炼 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
-
-    try {
-      const result = await runOnce({
-        systemPrompt,
-        prompt,
-        tools: [...groupDigestDefs, ...transcriptDefs, ...groupDefs],
-        model,
-        profile: resolvedProfile,
-        thinkingLevel,
-        signal: abortController.signal,
-        maxTurns: 30,
-        revive: {
-          shouldContinue: () => !saved,
-          continuePrompt: () => '你还没有调 dogear__SaveGroupDigest 保存任何产物。不要只用文字描述计划，立即继续调用工具：完成阅读后调 dogear__SaveGroupDigest 保存组卡。',
-          maxRevives: 3,
-        },
-        onLog: (m) => {
-          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
-          else taskLogger.info(m);
-        },
-      });
-
-      if (!result.ok) {
-        if (result.cancelled) {
-          taskLogger.info('组级摘要卡被取消:', groupId);
-          return { groupId, saved: false, cancelled: true };
-        }
-        taskLogger.error('组级摘要卡任务失败:', result.error);
-        return { groupId, saved: false, error: result.error };
-      }
-
-      taskLogger.info('组级摘要卡任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { groupId, saved, tier, profileName: resolvedProfile.name };
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      taskLogger.error('组级摘要卡意外失败:', errorMsg);
-      return { groupId, saved: false, error: errorMsg };
-    } finally {
-      this.currentAbortController = null;
-    }
-  }
-
-  /**
    * 处理话题状态卡增量抽取任务（STATE_EXTRACT）
    *
    * 逐会话处理（通常 1-2 个）：readSessionBranchEntries 读 sourcesSeen mtime 之后的新增 entry →
@@ -754,97 +595,6 @@ class AgentWorker {
     }
   }
 
-  /**
-   * 处理首页报告任务（REVIEW_SESSION，历史代号 review）
-   *
-   * 一次性 headless query：agent 自主调 dogear__ListDigests → dogear__ReadDigest → dogear__TraceSource → dogear__ReadReport/dogear__WriteReport
-   * + dogear__RecallMemory/dogear__SaveMemory/dogear__ForgetMemory，把新摘要卡分流为「更新记忆 + 重写首页报告」。
-   * saved 表示是否写了报告。模型按 reviewModelTier 覆盖（默认 sonnet）。
-   */
-  private async handleReviewSessionTask(task: AgentTask, taskLogger: any): Promise<any> {
-    const payload = task.payload as import('./task-types.js').ReviewSessionPayload;
-    const { workspaceId, workspacePath } = payload;
-
-    taskLogger.info('开始跨会话复盘任务:', '| workspace:', workspaceId);
-    const startedAt = Date.now();
-
-    const { loadSettingsFromDir } = await import('./agent-query-config.js');
-    const { resolvePiModel } = await import('./pi/provider.js');
-    const appSettings = await loadSettingsFromDir(this.configDir);
-
-    const selection = payload.modelSelection
-      ?? appSettings.ai.reviewModelSelection
-      ?? appSettings.ai.defaultModelSelection;
-
-    let model: PiModelResult['model'];
-    let tier: string;
-    let resolvedProfile: ModelProfile;
-    let thinkingLevel: ThinkingLevel;
-    try {
-      const r = resolvePiModel(appSettings, selection, null, null);
-      model = r.model;
-      tier = r.tier;
-      resolvedProfile = r.profile;
-      thinkingLevel = r.thinkingLevel;
-    } catch (e) {
-      const error = e instanceof Error ? e.message : String(e);
-      taskLogger.error('跨会话复盘任务终止:', error);
-      return { workspaceId, saved: false, error };
-    }
-
-    const { createReviewToolDefs } = await import('./tools/review-tools.js');
-    const { createMemoryToolDefs } = await import('./tools/memory-tools.js');
-    const { runOnce } = await import('./pi/run-once.js');
-    let saved = false;
-    // 10 个工具全部授权：review 5 个 + memory autonomous 5 个
-    const reviewDefs = createReviewToolDefs(workspaceId, workspacePath, () => { saved = true; });
-    const memoryDefs = createMemoryToolDefs(workspacePath, { autonomous: true });
-
-    const { loadReviewPrompt } = await import('../services/memory/review-prompt.js');
-    const template = await loadReviewPrompt(this.configDir);
-    const prompt = template;
-
-    const abortController = new AbortController();
-    this.currentAbortController = abortController;
-
-    const systemPrompt = '你是一个后台内容复盘 agent。收到指令后，调用工具完成工作，直接使用工具清单里给出的完整工具名。完成任务后直接结束，无需寒暄。';
-
-    try {
-      const result = await runOnce({
-        systemPrompt,
-        prompt,
-        tools: [...reviewDefs, ...memoryDefs],
-        model,
-        profile: resolvedProfile,
-        thinkingLevel,
-        signal: abortController.signal,
-        maxTurns: 30,
-        onLog: (m) => {
-          if (m.startsWith('[tool-error]')) taskLogger.warn(m);
-          else taskLogger.info(m);
-        },
-      });
-
-      if (!result.ok) {
-        if (result.cancelled) {
-          taskLogger.info('跨会话复盘被取消:', workspaceId);
-          return { workspaceId, saved: false, cancelled: true };
-        }
-        taskLogger.error('跨会话复盘任务失败:', result.error);
-        return { workspaceId, saved: false, error: result.error };
-      }
-
-      taskLogger.info('跨会话复盘任务完成，耗时:', Date.now() - startedAt, 'ms', '| saved:', saved, '| tier:', tier);
-      return { workspaceId, saved, tier, profileName: resolvedProfile.name };
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      taskLogger.error('跨会话复盘任务失败:', errorMsg);
-      return { workspaceId, saved: false, error: errorMsg };
-    } finally {
-      this.currentAbortController = null;
-    }
-  }
-
   // ─── handleCategorizeSessionTask 模块级 helper ───────────────────────────
 
   /** 返回一个全零的分类决策计数对象，用于统一各退出路径的返回 shape。 */
@@ -903,7 +653,8 @@ class AgentWorker {
       readIndex, writeIndex, pushGroup, removeGroupEverywhere, appendDecision,
     } = await import('../services/memory/smart-category-store.js');
     const { matchByThreshold, pickRedistributeCandidates } = await import('../services/memory/smart-category-engine.js');
-    const { parseGroupDigest, getGroupsRootDir, getGroupDigestPath } = await import('../services/memory/group-digest-store.js');
+    const { getGroupsRootDir } = await import('../services/memory/background-store.js');
+    const { parseGroupDigest, getGroupDigestPath } = await import('../services/memory/digest-file.js');
     const { getByWorkspaceId } = await import('../services/conversation-service.js');
     const groupService = await import('../services/group-service.js');
     const { deriveGroupTitle } = await import('../services/group-helpers.js');

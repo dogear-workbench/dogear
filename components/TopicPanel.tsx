@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
-  ChevronDown, ChevronRight, ExternalLink, FileText, FolderOpen, Lightbulb, Link2, ScrollText, Trash2,
+  ChevronDown, ChevronRight, FileText, FolderOpen, Lightbulb, Link2, Trash2,
 } from 'lucide-react';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
@@ -31,12 +31,6 @@ function formatMtime(mtime: number): string {
   return new Date(mtime).toLocaleString();
 }
 
-interface GroupDigestBrief {
-  title: string;
-  updatedAt: string;
-  summary: string;
-}
-
 export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
   const groups = useGroupStore((s) => s.groups);
   const groupTitle = groups.find((g) => g.id === groupId)?.title || '未命名话题';
@@ -44,10 +38,8 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
   const [nativeFiles, setNativeFiles] = useState<NativeFileEntry[]>([]);
   const [sharedDir, setSharedDir] = useState<string>('');
   const [stateCard, setStateCard] = useState<TopicStateCardView | null>(null);
-  const [digest, setDigest] = useState<GroupDigestBrief | null>(null);
 
   const [bgOpen, setBgOpen] = useState(true);
-  const [digestOpen, setDigestOpen] = useState(true);
   const [filesOpen, setFilesOpen] = useState(true);
 
   const loadPanelData = (gid: string) => {
@@ -62,14 +54,6 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
       if (r.error) toast.error('读取话题状态失败', { description: r.error });
       else setStateCard(r.card ?? null);
     });
-    client.readGroupDigest({ workspaceId, groupId: gid }).then((r) => {
-      if ('card' in r && r.card) {
-        const card = r.card as { title: string; updatedAt: string; summary: string };
-        setDigest({ title: card.title, updatedAt: card.updatedAt, summary: card.summary });
-      } else {
-        setDigest(null);
-      }
-    });
   };
 
   useEffect(() => {
@@ -77,13 +61,12 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
     if (!gid) {
       setNativeFiles([]);
       setStateCard(null);
-      setDigest(null);
       return;
     }
     loadPanelData(gid);
   }, [workspaceId, groupId]);
 
-  // 主进程广播的组数据变更（共享区文件/话题背景/组卡写点），当前展示组匹配才重拉
+  // 主进程广播的组数据变更（共享区文件/话题背景写点），当前展示组匹配才重拉
   useEffect(() => {
     const unsub = rendererEvents.groupDataChanged.listen((data) => {
       if (data.workspaceId !== workspaceId || data.groupId !== groupId) return;
@@ -108,17 +91,6 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
       return;
     }
     useMarkdownPreviewStore.getState().openInline(relPath, r.content ?? '');
-  };
-
-  const openDigest = async () => {
-    const gid = groupId;
-    if (!gid) return;
-    const r = await client.readGroupDigestRaw({ workspaceId, groupId: gid });
-    if ('error' in r || r.content === null || r.content === undefined) {
-      toast.error('读取组卡失败', { description: 'error' in r ? r.error : '组卡不存在' });
-      return;
-    }
-    useMarkdownPreviewStore.getState().openInline('组卡提炼 · md', r.content);
   };
 
   const handleDeleteFile = async (relPath: string) => {
@@ -164,33 +136,6 @@ export function TopicPanel({ workspaceId, groupId }: TopicPanelProps) {
               onToggle={() => setBgOpen((v) => !v)}
             >
               <TopicStateCardSection workspaceId={workspaceId} groupId={groupId} card={stateCard} />
-            </Section>
-
-            {/* 组卡提炼 */}
-            <Section
-              icon={<ScrollText className="w-3.5 h-3.5 text-violet-500" />}
-              title="组卡提炼"
-              open={digestOpen}
-              onToggle={() => setDigestOpen((v) => !v)}
-            >
-              {digest ? (
-                <div
-                  className="px-2 py-1.5 cursor-pointer hover:bg-muted/40 rounded-sm"
-                  onClick={() => void openDigest()}
-                  title="点击查看完整组卡"
-                >
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <span className="text-xs font-medium truncate">{digest.title || '(无标题)'}</span>
-                    <ExternalLink className="w-3 h-3 shrink-0 text-muted-foreground" />
-                  </div>
-                  <p className="text-xs text-muted-foreground line-clamp-3 whitespace-pre-wrap">{digest.summary}</p>
-                  <div className="text-[10px] text-muted-foreground/70 mt-1">
-                    {new Date(digest.updatedAt).toLocaleString()} · 点击查看全文
-                  </div>
-                </div>
-              ) : (
-                <div className="px-2 py-3 text-xs text-muted-foreground">暂无组卡</div>
-              )}
             </Section>
 
             {/* 共享文件 */}

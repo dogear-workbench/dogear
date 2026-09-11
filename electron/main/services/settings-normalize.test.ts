@@ -392,23 +392,23 @@ test('migratePiProfiles：ai.*ModelSelection 残留旧三档 tier 时按 piModel
     { id: 'anthropic/claude-sonnet-4.6' },
     { id: 'anthropic/claude-opus-4.7' },
   ];
-  s.ai.digestModelSelection = { profileId: 'default', tier: 'haiku' };
+  s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
   s.ai.categorizeModelSelection = { profileId: 'default', tier: 'sonnet' };
   const changed = migratePiProfiles(s);
   expect(changed).toBe(true);
-  expect(s.ai.digestModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
+  expect(s.ai.parseModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
   expect(s.ai.categorizeModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-sonnet-4.6' });
 });
 
 test('migratePiProfiles：旧 tier 在 piModels 无子串匹配时置 null 回退默认选择', () => {
   const s = baseSettings();
   s.profiles.default.piModels = [{ id: 'glm-4.7' }];
-  s.ai.digestModelSelection = { profileId: 'default', tier: 'haiku' };
-  s.ai.reviewModelSelection = { profileId: 'ghost', tier: 'opus' };
+  s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
+  s.ai.stateModelSelection = { profileId: 'ghost', tier: 'opus' };
   const changed = migratePiProfiles(s);
   expect(changed).toBe(true);
-  expect(s.ai.digestModelSelection).toBeNull();
-  expect(s.ai.reviewModelSelection).toBeNull();
+  expect(s.ai.parseModelSelection).toBeNull();
+  expect(s.ai.stateModelSelection).toBeNull();
 });
 
 test('migratePiProfiles：parseModelSelection 残留旧 tier 时同步迁移/置 null', () => {

@@ -6,7 +6,7 @@ import * as conversationService from '../conversation-service.js';
 import * as groupService from '../group-service.js';
 import { getPiSessionRepository } from '../../agents/pi-session/pi-session-repository.js';
 import { broadcastGroupDataChanged } from '../renderer-broadcast-lazy.js';
-import { getGroupDir, mergeSourcesSeen, type GroupDigestSourceSeen } from './group-digest-store.js';
+import { mergeSourcesSeen } from './state-card.js';
 import {
   emptyTopicStateCard,
   makeEntry,
@@ -21,6 +21,16 @@ import {
 } from './state-card.js';
 
 // ─── 路径 ───
+
+/** 工作区所有组共用的父目录：<wsData>/groups/ */
+export function getGroupsRootDir(wsId: string): string {
+  return path.join(conversationService.getWorkspaceDataDir(wsId), 'groups');
+}
+
+/** 单个组的目录：<wsData>/groups/<groupId>/ */
+export function getGroupDir(wsId: string, groupId: string): string {
+  return path.join(getGroupsRootDir(wsId), groupId);
+}
 
 export function getBackgroundPath(wsId: string, groupId: string): string {
   return path.join(getGroupDir(wsId, groupId), 'background.md');

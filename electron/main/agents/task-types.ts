@@ -23,8 +23,6 @@ export enum TaskType {
   SUMMARIZE = 'summarize',          // 文本摘要
   READING_ASSIST = 'reading_assist', // 阅读辅助
   PARSE_ARTICLE = 'parse_article',  // 文章解析（质量检查 + AI 重新解析）
-  GROUP_DIGEST_SESSION = 'group_digest_session', // 组级摘要卡提炼（Phase 3）
-  REVIEW_SESSION = 'review_session', // 跨会话复盘（摘要卡 → 复盘卡）
   CATEGORIZE_SESSION = 'categorize_session', // 智能分类决策
   CATEGORIZE_ORGANIZE = 'categorize_organize', // 存量分类整理（压 anchorTags + 合并重合分类）
   CUSTOM_AGENT = 'custom_agent', // 定时计划自定义 agent 任务（prompt 驱动的一次性执行）
@@ -170,29 +168,6 @@ export interface ParseArticlePayload {
 
   // V1 compat (kept temporarily)
   fixedParseSuccess?: boolean;
-}
-
-/**
- * 组级摘要卡提炼任务负载（Phase 3）
- * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
- */
-export interface GroupDigestSessionPayload {
-  workspaceId: string;       // 工作区 ID
-  workspacePath: string;     // 工作区绝对路径（定位 JSONL 用）
-  groupId: string;           // 组 ID
-  dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>;
-  hasExistingCard: boolean;
-  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.digestModelSelection）
-}
-
-/**
- * 跨会话复盘任务负载
- * 运行时上下文（configDir/isPackaged/cliPath）由 Worker 实例字段提供，不放 payload
- */
-export interface ReviewSessionPayload {
-  workspaceId: string;   // 工作区 ID（读摘要卡 / 落复盘卡）
-  workspacePath: string; // 工作区绝对路径（dogear__TraceSource 定位 JSONL 用）
-  modelSelection?: ModelSelection; // 任务级模型覆盖（缺省读 settings.reviewModelSelection）
 }
 
 /**

@@ -3,7 +3,6 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { parseFrontmatter, stringifyFrontmatter, type Frontmatter } from './memory-fs.js';
-import type { GroupDigestSourceSeen } from './group-digest-store.js';
 
 // ─── 类型 ───
 
@@ -37,6 +36,12 @@ const TITLE_TO_CATEGORY = new Map(
   Object.entries(CATEGORY_TITLES).map(([cat, title]) => [title, cat as TopicCardCategory]),
 );
 
+export interface SourceSeen {
+  sessionId: string;
+  conversationId: string;
+  mtime: number;
+}
+
 export interface TopicCardEntry {
   id: string;
   text: string;
@@ -53,7 +58,7 @@ export interface TopicVersion {
 export interface TopicStateCard {
   groupId: string;
   updatedAt: string;
-  sourcesSeen: GroupDigestSourceSeen[];
+  sourcesSeen: SourceSeen[];
   topicHistory: TopicVersion[];
   pendingTopicChanges: TopicVersion[];
   entries: Record<TopicCardCategory, TopicCardEntry[]>;
@@ -228,7 +233,7 @@ export function parseTopicStateCard(raw: string): TopicStateCard | null {
 
   const card = emptyTopicStateCard(groupId);
   card.updatedAt = strOf(fm.updatedAt);
-  card.sourcesSeen = parseJsonArray<GroupDigestSourceSeen>(fm.sourcesSeenJson);
+  card.sourcesSeen = parseJsonArray<SourceSeen>(fm.sourcesSeenJson);
   card.pendingTopicChanges = parseJsonArray<TopicVersion>(fm.pendingTopicChangesJson);
 
   let section: 'topic' | 'entries' | null = null;
@@ -261,6 +266,19 @@ export function parseTopicStateCard(raw: string): TopicStateCard | null {
 }
 
 // ─── 合并函数 ───
+
+/** 合并 existing sourcesSeen 与新 mtime（按 sessionId 覆盖）；保留未在 dirty 中且仍存在的 source */
+export function mergeSourcesSeen(
+  existing: SourceSeen[],
+  dirtyConversations: Array<{ conversationId: string; sessionId: string; mtime: number }>,
+): SourceSeen[] {
+  const map = new Map<string, SourceSeen>();
+  for (const s of existing) map.set(s.sessionId, s);
+  for (const d of dirtyConversations) {
+    map.set(d.sessionId, { sessionId: d.sessionId, conversationId: d.conversationId, mtime: d.mtime });
+  }
+  return Array.from(map.values());
+}
 
 function appendEntryUnique(card: TopicStateCard, category: TopicCardCategory, entry: TopicCardEntry): void {
   const bucket = card.entries[category];

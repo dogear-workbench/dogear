@@ -2,7 +2,7 @@
  * Worker 线程安全的设置读取入口
  *
  * 此文件无 electron 依赖，可在 Worker 线程中安全导入。
- * pi 后台任务（GROUP_DIGEST / REVIEW / CATEGORIZE / PARSE_ARTICLE）共用此入口读取 appSettings，
+ * pi 后台任务（CATEGORIZE / PARSE_ARTICLE / STATE_EXTRACT）共用此入口读取 appSettings，
  * 再把结果喂给 pi/provider.ts 的 resolvePiModel。
  */
 

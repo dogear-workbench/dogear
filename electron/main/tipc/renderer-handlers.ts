@@ -146,7 +146,6 @@ export type RendererHandlers = {
   }) => void;
 
   // 首页报告文件变更（fs.watch 监听 <configDir>/workspaces/<wsId>/dashboard.md）
-  reportUpdated: (data: { workspaceId: string }) => void;
 
   // 笔记数据变更（notes-service 写操作后广播，前端 store 收到后重新拉取列表）
   notesChanged: (data: { workspacePath: string }) => void;

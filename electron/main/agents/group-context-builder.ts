@@ -127,7 +127,7 @@ export async function buildGroupContextPrompt(
       `**组**：${title}\n` +
       `\n` +
       `共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先用 dogear__ListGroupFiles 列共享区文件清单，需要细看时传 relPath 读单个文件。\n` +
-      `当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续或组卡提炼。这不是强制——只在你判断有价值时做。`;
+      `当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续。这不是强制——只在你判断有价值时做。`;
 
     let stateSection = '';
     try {

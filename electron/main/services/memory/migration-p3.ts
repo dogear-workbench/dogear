@@ -13,7 +13,7 @@ import { parseFrontmatter, type Frontmatter } from './memory-fs.js';
 import {
   readGroupDigest, saveGroupDigest,
   type GroupDigestCard,
-} from './group-digest-store.js';
+} from './digest-file.js';
 import { getSessionJsonlPath } from './session-paths.js';
 import type { ConversationIndex } from '../conversation-service.js';
 import type { DigestTags } from '../../types.js';

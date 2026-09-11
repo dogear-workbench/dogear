@@ -302,7 +302,8 @@ export async function triggerCategorizeSweep(
   if (settings.smartCategory?.enabled === false) return { disabled: true, pending: 0, noTags: 0 };
 
   const fs = await import('node:fs/promises');
-  const { getGroupsRootDir, getGroupDigestPath, parseGroupDigest } = await import('./group-digest-store.js');
+  const { getGroupsRootDir } = await import('./background-store.js');
+  const { getGroupDigestPath, parseGroupDigest } = await import('./digest-file.js');
   const { getGroup } = await import('../group-service.js');
   const { readIndex } = await import('./smart-category-store.js');
   const { collectSweepTargets } = await import('./smart-category-engine.js');

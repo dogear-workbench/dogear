@@ -113,7 +113,7 @@ export function SchedulerPanel({ workspaces }: Props) {
         <div className="space-y-3">
           <div className="mb-3">
             <p className="text-sm text-muted-foreground">
-              每个任务一行：内置任务（组卡提炼 / 复盘报告 / 补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
+              每个任务一行：内置任务（补分类 / 分类整理）常驻可改不可删，也可新建自定义任务；按时间规则（每天时刻 / 间隔 / 时间窗口 / 单次）或条件事件（启动、关会话、窗口关闭）触发，多个触发器任一命中即触发。
             </p>
           </div>
           <div className="flex items-center gap-2">
