@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from 'react';
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo, Send } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo, Send, CircleCheckBig } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
@@ -29,6 +29,7 @@ import { NoteCardRenderer } from './agent-chat/tool-renderers/NoteCardRenderer';
 import { TaskCardRenderer } from './agent-chat/tool-renderers/TaskCardRenderer';
 import { TaskResultRenderer } from './agent-chat/tool-renderers/TaskResultRenderer';
 import { DeliveryCardRenderer } from './agent-chat/tool-renderers/DeliveryCardRenderer';
+import { TrackUserActionsRenderer } from './agent-chat/tool-renderers/TrackUserActionsRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
@@ -46,6 +47,7 @@ interface ToolBlockProps {
   toolName: string;
   toolInput?: any;
   toolOutput?: any;
+  toolUseId?: string;
   status?: ToolStatus;
   isError?: boolean;
   className?: string;
@@ -86,6 +88,7 @@ const DOGEAR_TOOL_ICONS: Record<string, ToolIconSpec> = {
   dogear__ExecuteTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
   dogear__ReportTaskResult: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
   dogear__SendMessage: { Icon: Send, className: 'text-green-600 dark:text-green-400' },
+  dogear__TrackUserActions: { Icon: CircleCheckBig, className: 'text-emerald-600 dark:text-emerald-400' },
 };
 
 function normalizeToolName(toolName: string): string {
@@ -101,6 +104,7 @@ function getToolIcon(toolName: string): ToolIconSpec {
 interface CardRendererProps {
   toolInput?: Record<string, any>;
   toolOutput?: any;
+  toolUseId?: string;
   isError?: boolean;
 }
 
@@ -145,6 +149,10 @@ const DOGEAR_CARD_TITLES: Record<string, (input?: Record<string, any>) => Dogear
     input?.options?.delivery === true
       ? { label: '交付摘要', detail: typeof input?.message === 'string' ? truncateOneLine(input.message, 30) : '' }
       : { label: '发送消息', detail: typeof input?.message === 'string' ? truncateOneLine(input.message, 30) : '' },
+  dogear__TrackUserActions: (input) => ({
+    label: '待你完成',
+    detail: `${Array.isArray(input?.actions) ? input.actions.length : '?'} 项`,
+  }),
 };
 
 const DOGEAR_CARD_RENDERERS: Record<string, ComponentType<CardRendererProps>> = {
@@ -159,6 +167,7 @@ const DOGEAR_CARD_RENDERERS: Record<string, ComponentType<CardRendererProps>> = 
   dogear__ExecuteTask: TaskCardRenderer,
   dogear__ReportTaskResult: TaskResultRenderer,
   dogear__SendMessage: DeliveryCardRenderer,
+  dogear__TrackUserActions: TrackUserActionsRenderer,
 };
 
 interface ToolPreviewAction {
@@ -496,6 +505,7 @@ export function ToolBlock({
   toolName,
   toolInput,
   toolOutput,
+  toolUseId,
   status = "success",
   isError = false,
   className,
@@ -539,7 +549,7 @@ export function ToolBlock({
     }
     const DogearCard = DOGEAR_CARD_RENDERERS[canonicalName];
     if (DogearCard) {
-      return <DogearCard toolInput={toolInput} toolOutput={toolOutput} isError={isError} />;
+      return <DogearCard toolInput={toolInput} toolOutput={toolOutput} toolUseId={toolUseId} isError={isError} />;
     }
     return null;
   })();

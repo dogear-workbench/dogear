@@ -15,7 +15,7 @@
 - [x] [Step 3: 轮次与小地图修正](./step3-turns-minimap.md) — isHeader 排除注入消息、预览剥标签、成员预览类型前缀
 - [x] [Step 4: 工具渲染三件套](./step4-tool-renderers.md) — ReportTaskResult 渲染器+跳转、NoteCard 标题+跳转、SendMessage 交付卡
 - [x] [Step 5: 选中交互（引用 + 存笔记）](./step5-selection-actions.md) — 消息流选区浮动按钮组、messageSnippets 引用链路、createNote 存笔记
-- [ ] [Step 6: TrackUserActions 勾选卡 + TopicQuickEntry 退役](./step6-track-user-actions.md) — 新工具、勾选渲染器、删输入框快捷按钮
+- [x] [Step 6: TrackUserActions 勾选卡 + TopicQuickEntry 退役](./step6-track-user-actions.md) — 新工具、勾选渲染器、删输入框快捷按钮
 - [ ] [Step 7: 死代码清理](./step7-dead-code-cleanup.md) — 旧 SDK hook 事件分支、task-aggregator、TodoListBlock 删除
 
 ## 全局决策

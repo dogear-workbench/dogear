@@ -26,7 +26,6 @@ import type { PermissionMode } from '@/types/electron-api';
 import type { ModelSelection } from '@/types/settings';
 import type { PendingImage } from './hooks/useImageAttachment';
 import { SlashCommandMenu } from './SlashCommandMenu';
-import { TopicQuickEntry } from './TopicQuickEntry';
 import { UsageBadge } from './usage-badge/UsageBadge';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { PendingState } from './hooks/usePendingState';
@@ -68,8 +67,6 @@ interface ChatInputAreaProps {
   setPermissionMode: (mode: PermissionMode) => void;
   hasPendingUserAction: boolean;
   isSubSession?: boolean;
-  /** 当前会话所属话题组；无组时隐藏话题快捷记录按钮 */
-  groupId?: string | null;
   /** run settled 但仍有 running 直属子会话：状态行展示「等待子会话交付中」，不改变输入框行为 */
   awaitingDelivery?: boolean;
   pendingImages: PendingImage[];
@@ -117,7 +114,6 @@ export const ChatInputArea = memo(function ChatInputArea({
   onSlashCommandSelect,
   onSlashMenuClose,
   isSubSession,
-  groupId,
   awaitingDelivery = false,
 }: ChatInputAreaProps) {
   const settings = useSettingsStore((s) => s.settings);
@@ -495,14 +491,6 @@ export const ChatInputArea = memo(function ChatInputArea({
                   </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
-
-              {/* 话题状态卡快捷记录 */}
-              {groupId && (
-                <>
-                  <span className="mx-0.5 h-4 w-px bg-border" />
-                  <TopicQuickEntry groupId={groupId} />
-                </>
-              )}
 
               {/* 上下文用量徽章 */}
               <UsageBadge conversationId={conversationId} isStreaming={pendingState === 'running'} />

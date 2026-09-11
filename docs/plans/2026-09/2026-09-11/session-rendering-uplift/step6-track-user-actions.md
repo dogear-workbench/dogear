@@ -1,7 +1,7 @@
 ---
 step: 6
 title: TrackUserActions 勾选卡 + TopicQuickEntry 退役
-status: pending
+status: done
 ---
 
 ## 目标
@@ -42,9 +42,25 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - 挂载条件：现状 dogear-group 包在主/子会话均为 `if (groupId)` 挂载（子会话固定挂载是交付基础设施），工具加入包返回数组后自动跟随包逻辑，pi-session.ts 零改动；子会话（有 groupId 时）也可提议勾选卡，前端渲染链路通用无副作用。与设计文档 #8「主会话 && groupId」字面偏差，取 plan.md 全局决策「挂 dogear-group server（groupId 闭包注入，空则不注册）」的字面实现。
+  - 提示词侧确认：session-append-templates.ts 全文无 TopicQuickEntry /「这事做完了」相关指引（NOTES_DISCIPLINE 里的「记一笔」是任务语境），按 step 约定跳过。
+  - 图标色系选 emerald（完成语义；blue 系已属任务组避免混淆）。
 - 改动文件清单：
+  - `electron/main/agents/tools/group-tools.ts:59-81`：新 defineTool `dogear__TrackUserActions`（schema `actions: string[] 1~10`；handler 校验 groupId 后回执「已渲染勾选卡 / 无需重复调用」，groupId 缺失返回 isError）
+  - `components/ToolBlock.tsx`：:32 import 渲染器、:50 ToolBlockProps 加 toolUseId、:91 DOGEAR_TOOL_ICONS（CircleCheckBig emerald）、:107 CardRendererProps 加 toolUseId、:152-155 卡片标题「待你完成 · N 项」、:170 RENDERERS 注册、:508 解构、:552 DogearCard 透传 toolUseId
+  - `components/agent-chat/ContentBlockItem.tsx:215`：ToolBlock 透传 `block.toolUseId`
+  - `components/agent-chat/tool-renderers/TrackUserActionsRenderer.tsx`（新，126 行）：勾选卡渲染器
+  - `components/agent-chat/TopicQuickEntry.tsx`：删除
+  - `components/agent-chat/ChatInputArea.tsx`：删 import / props groupId 字段与解构 / `{groupId && <TopicQuickEntry/>}` 区块；Step 5 芯片区块未受影响
+  - `components/agent-chat/AgentChat.tsx:640`：删 `groupId={currentConversation?.groupId || null}` 传参
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - localStorage key `user-action:{conversationId}:{toolUseId}` = 已勾 index 升序 JSON 数组；读取容错（非法 JSON / 非数字元素丢弃、去重排序）
+  - 渲染器上下文三源：`useConversationId()`（conversation-id-context）、`useWorkspaceId()`（workspace-id-context）、groupId 从 `useConversationStore` 窄选择器按 conversationId 查 `conversations.find(...)?.groupId`（ToolBlock CreateSession 分支同源）
+  - 勾选链路：乐观置勾 → `client.appendStateUserEntry({workspaceId, groupId, category: 'completed', text})` → 成功才写 localStorage；`r.error` / 异常均 toast + 回滚；已勾项 disabled 防重复
+  - CardRendererProps 现有四字段：toolInput / toolOutput / toolUseId / isError（后续渲染器需要 toolUseId 时直接用）
+- 下个 step 该从哪里继续：plan.md 的 Step 7（如有）；本计划剩余人工验证项见下
 - 待办或已知限制：
+  - 运行时人工验证未做（需真实会话流）：① agent 调工具 → 勾选卡出现 → 勾选 → 话题面板 completed 新增 → 刷新保留；② 重复勾选不重写；③ 断网回滚 + toast；④ 输入框旁按钮消失无残留报错
+  - localStorage 与状态卡可能不一致（清 localStorage 后重勾会重复写 completed 条目），设计文档 #8 错误处理段已接受此残留风险

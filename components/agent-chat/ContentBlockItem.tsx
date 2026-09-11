@@ -212,6 +212,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           toolName={block.toolName || '未知工具'}
           toolInput={block.toolInput}
           toolOutput={block.toolOutput}
+          toolUseId={block.toolUseId}
           status={toolStatus}
           isError={block.isError}
         />
