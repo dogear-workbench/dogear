@@ -49,7 +49,7 @@
 ## 业务组件（components/）
 
 - `agent-chat/` — AI 聊天模块（\~20 文件）
-  - `AgentChat.tsx` — 主组件（\~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成；从 childrenByParent + running/paused 集合派生「等待子会话交付中」展示态（run settled ∧ 有 running 直属子会话），传给 StreamingIndicator / ChatInputArea，纯展示不阻塞
+  - `AgentChat.tsx` — 主组件（\~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成；从 childrenByParent + running/paused 集合派生「等待子会话交付中」展示态（run settled ∧ 有 running 直属子会话），传给 StreamingIndicator / ChatInputArea，纯展示不阻塞；历史加载三态独立 UI：loading/屏障未 ready 骨架屏、error 错误卡片（原因摘要 + 重试）、empty 空态文案
   - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单、运行中暂停按钮：调 pauseQueryBasedSession，受理到 paused 广播间显示「暂停中…」；状态行 paused 徽标「已暂停 · 发送消息继续」，paused 态输入框正常可用、发送即恢复；awaitingDelivery 态状态行显示「等待子会话交付中 · 可继续对话」，输入框行为同 idle）
   - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮；解析 `<sender/>` XML 标签在跨会话消息头显示派出者名字徽章）
   - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
@@ -76,7 +76,8 @@
     - `useAgentSession.ts` — 会话生命周期（创建/resume/fork/关闭）+ 订阅 pendingCountChanged 暴露 pendingCount
     - `useSessionMessages.ts` — 消息流监听与流式更新
     - `useSessionEvents.ts` — 权限/AskUser/通知事件监听
-    - `useMessageHistory.ts` — 历史消息加载（含 compact_boundary/isMeta 处理）
+    - `useMessageHistory.ts` — 历史消息加载（含 compact_boundary/isMeta 处理）；error 不静默清空 transcript，暴露 historyError/retryHistory，loadIdRef 自增 id 处理 retry/切会话/卸载竞态失效
+    - `useTranscriptState.ts` — transcript 状态收敛入口（stable/live 双队列 + init 屏障）：初始化屏障 history 到达即 ready（snapshot 迟到走 timedOut merge 重建，2s 定时器兑底为纯保险），loadHistory/applySnapshot/enqueueStreamEvent 收敛消息写入口，暴露 initReady 供骨架屏判定
     - `useImageAttachment.ts` — 图片附件（base64、粘贴、预览）
     - `useSendMessage.ts` — 消息发送、编辑重发、分叉、权限响应、斜杠命令拦截
     - `useSlashCommands.ts` — 斜杠命令检测、过滤、菜单控制
@@ -348,7 +349,7 @@
   - `message-converter.ts` — `convertPiEvent(event)`：把 pi `AgentEvent` 转成前端 `ExtendedSessionMessage`，供 PiSession 实时消息流使用
   - `history-adapter.ts` — `buildSessionHistory(workspaceId, sessionId)`：把 Harness branch entries 转成前端 `HistoryMessage[]`，唯一数据源是 session-history-reader.ts
   - `transcript-adapter.ts` — Harness 版逐字稿清洗：`cleanMessagesFromEntries` 去噪 + 工具骨架化，`readCleanTranscript` 提供 tail/range/uuid 三种切片读取，`buildSessionUuidIndex` 供状态卡引用保真度校验，对齐旧 SDK transcript-cleaner 语义
-  - `session-history-reader.ts` — `readSessionBranchEntries(workspaceId, sessionId)`：读取 Harness session 当前 branch 的唯一入口，其他模块不得直接解析 JSONL 或触碰 Harness 内部对象
+  - `session-history-reader.ts` — `readSessionBranchEntries(workspaceId, sessionId)`：读取 Harness session 当前 branch 的唯一入口，其他模块不得直接解析 JSONL 或触碰 Harness 内部对象；不走 repository.open 而在 reader 内 fs 逐行解析（校验规则与 branch/compaction 语义复刻上游 jsonl-storage），最后一个非空行解析失败（写入中尾行）丢弃不损历史，非末行损坏维持抛错
   - `permission-mode.ts` — `PiPermissionMode` 类型定义（`default | autoExecute`）
   - `permission-rules.ts` — 基础工具权限判定纯函数：`isBasicToolName`、`getBasicToolPermission`、`decideToolPermission`（autoExecute 放行 / 工具包放行 / 基础工具按快照映射 / 其余 ask）
   - `skill-loader.ts` — 薄封装 pi-agent-core 的 `loadSkills`/`formatSkillInvocation`：`loadSkillIndex` 扫描目录产出 `SkillEntry[]`，拼 `<available_skills>` 索引文本，`createSkillTool` 提供懒加载 Skill 工具
