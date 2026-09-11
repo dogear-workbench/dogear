@@ -282,25 +282,31 @@ test('SendMessage 打停机已交付子会话：自动调起复活，唤醒消�
   const snap = bridge.getChildSnapshot(snapshot.childId)!;
   expect(snap.status).toBe('running');
   expect(snap.delivered).toBe(true);
-  expect(sendCalls.length).toBe(2);
-  expect(sendCalls[1].text).toContain('追问：请把结论按表格重排');
-  expect(sendCalls[1].text).toContain('<sender kind="agent"');
-  expect(sendCalls[1].text).not.toContain('你刚才因');
-  expect(sendCalls[1].text).not.toContain('从中断处继续完成任务');
+  expect(sendCalls.length).toBe(3);
+  expect(sendCalls[1].sessionId).toContain(`sdk-${parentConversationId}`);
+  expect(sendCalls[1].text).toContain('子会话「');
+  expect(sendCalls[2].text).toContain('追问：请把结论按表格重排');
+  expect(sendCalls[2].text).toContain('<sender kind="agent"');
+  expect(sendCalls[2].text).not.toContain('你刚才因');
+  expect(sendCalls[2].text).not.toContain('从中断处继续完成任务');
 });
 
-test('SendMessage 打停机的父会话（非我派出）：不触发自动调起，提示稍后重试', async () => {
+test('SendMessage 打停机的父会话：自动调起并注入', async () => {
   const tools = await import('./tools/delegation-tools.js');
-  const { snapshot, parentConversationId, sessionId } = await startTestChild(bridge, 'p-a');
+  const { snapshot, parentConversationId, sessionId: childSessionId } = await startTestChild(bridge, 'p-a');
 
   const send = tools.createDelegationToolDefs({ role: 'sub', workspaceId: 'ws-test', groupId: 'g1', conversationId: snapshot.childId, parentConversationId })
     .find((d) => d.name === 'dogear__SendMessage')!;
   const result = await send.handler({ toSessionId: `sdk-${parentConversationId}`, message: '向父会话追问', options: { delivery: false } });
 
   expect(result.isError).toBeUndefined();
-  expect(result.content[0].text).toContain('对方暂时收不到');
+  expect(result.content[0].text).toContain('已自动调起');
   expect(bridge.getChildSnapshot(snapshot.childId)!.status).toBe('running');
-  expect(sendCalls.length).toBe(1);
+  const hit = sendCalls.find((c) => c.text.includes('向父会话追问'));
+  expect(hit).toBeDefined();
+  expect(hit!.sessionId).toContain(`sdk-${parentConversationId}`);
+  expect(hit!.text).toContain('<sender kind="agent"');
+  expect(hit!.text).toContain(`session_id="${childSessionId}"`);
 });
 
 // 模拟重启：不经 startChild，直接往磁盘 conversation 存储塞一条带契约的历史记录（内存 childStates 天然无条目）

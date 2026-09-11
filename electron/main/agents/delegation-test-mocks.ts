@@ -205,7 +205,7 @@ export async function installDelegationMocks(): Promise<void> {
     },
     getById: async (_workspaceId: string, id: string) => {
       if (id.startsWith('parent-')) {
-        return { id, groupId: 'g1', sessionId: `sdk-${id}`, modelSelection: null };
+        return { id, title: '父会话', groupId: 'g1', sessionId: `sdk-${id}`, modelSelection: null };
       }
       return convStore.get(id) ?? null;
     },
@@ -221,7 +221,7 @@ export async function installDelegationMocks(): Promise<void> {
     getBySessionId: async (sessionId: string) => {
       if (sessionId.startsWith('sdk-parent-')) {
         const id = sessionId.slice('sdk-'.length);
-        return { conv: { id, groupId: 'g1', sessionId, modelSelection: null }, workspaceId: 'ws-test' };
+        return { conv: { id, title: '父会话', groupId: 'g1', sessionId, modelSelection: null }, workspaceId: 'ws-test' };
       }
       for (const conv of convStore.values()) {
         if (conv.sessionId === sessionId) return { conv, workspaceId: 'ws-test' };

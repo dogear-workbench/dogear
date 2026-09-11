@@ -271,7 +271,7 @@ async function settleTerminal(c: ChildStateInternal): Promise<void> {
         }
       }
     }
-    if (isNotifiableTerminal(c.terminalReason)) notifyTerminalToParent(c);
+    if (isNotifiableTerminal(c.terminalReason)) await notifyTerminalToParent(c);
     unwireSession(c.childId);
     if (c.attachmentId) conversationRuntimeService.detachAttachment(c.attachmentId);
     releaseParentHold(c);
@@ -371,11 +371,12 @@ export async function resumeChild(childId: string, opts: { reason: string; model
 }
 
 /**
- * 终态联动：把终态通知注入父会话（running 时 steer 排队、idle 时 prompt 立即生效）。
+ * 终态联动：把终态通知注入父会话（running 时 steer 排队、idle 时 prompt 立即生效）；
+ * 父会话不在内存时自动调起再注入——失败型终态是唯一告警信号，不可静默丢弃。
  * 幂等：多条终态路径重复调用由 settling 锁挡住。
  * 只在 settleTerminal 的「不重调」分支被调，errorClass/attempts/modelTried 填实际值。
  */
-function notifyTerminalToParent(c: ChildStateInternal): void {
+async function notifyTerminalToParent(c: ChildStateInternal): Promise<void> {
   if (!c.sessionId) return;
   const notice = buildTerminalNotice({
     title: c.title,
@@ -387,14 +388,18 @@ function notifyTerminalToParent(c: ChildStateInternal): void {
     modelTried: c.modelTried,
   }, c.consecutiveFails);
 
-  const pushed = pushToParentSession(c.parentConversationId, {
+  const msg = {
     fromSessionId: c.sessionId,
     fromLabel: c.title,
     message: notice,
     delivery: false,
-  });
-  if (!pushed) {
-    logger.warn(`终态通知未能注入（父会话 ${c.parentConversationId} 未在运行），子会话 ${c.childId} ${terminalStatusLabel(c.terminalReason)}`);
+  };
+  if (pushToParentSession(c.parentConversationId, msg)) return;
+  logger.warn(`父会话 ${c.parentConversationId} 未在运行，自动调起后注入终态通知（子会话 ${c.childId} ${terminalStatusLabel(c.terminalReason)}）`);
+  try {
+    await resumeParentAndDeliver(c.parentConversationId, c.workspaceId, msg);
+  } catch (err) {
+    logger.warn(`终态通知自动调起父会话失败（${c.parentConversationId}），通知丢弃`, err);
   }
 }
 
@@ -839,5 +844,50 @@ export async function resumeChildAndDeliver(
   await resumeChild(childId, {
     reason: '主会话 SendMessage 自动调起',
     wakeupMessage: `${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery)}\n${deliverOpts.message}`,
+  });
+}
+
+/**
+ * 父会话被调起后拿到新 sessionId，对仍 running 的直属子会话把非 UI 保活重挂到新 sessionId，
+ * 保证「有 running 子会话期间父会话存活」的语义延续（否则调起后的父会话可能再次被销毁）。
+ * 旧 sessionId 的 hold 已随 session 销毁清除，直接覆盖 parentHoldSessionId，无需先 release。
+ */
+function reacquireParentHolds(parentConversationId: string, newSessionId: string): void {
+  const manager = getPiSessionManager();
+  for (const c of childStates.values()) {
+    if (c.parentConversationId !== parentConversationId || c.status !== 'running') continue;
+    if (c.parentHoldSessionId === newSessionId) continue;
+    if (manager.acquireHold(newSessionId)) {
+      c.parentHoldSessionId = newSessionId;
+    }
+  }
+}
+
+/**
+ * 自动调起停机的父会话并注入消息（子会话交付/终态通知的兑底，即「唤醒即续跑」）：
+ * attach 拉起 → 重挂 running 子会话保活 → 注入 sender 标签包装的消息；
+ * 注入的这轮 settled 后释放 bridge 持有的 attachment 引用——有保活时引用归零仍存活，
+ * 无保活（最后一个子会话的终态通知）时自然回收，不永久持有父会话。
+ */
+export async function resumeParentAndDeliver(
+  parentConversationId: string,
+  workspaceId: string,
+  deliverOpts: Omit<DeliverMessageOptions, 'toConversationId'>,
+): Promise<void> {
+  const attachment = await conversationRuntimeService.attachConversation(parentConversationId, workspaceId, 'desktop', {});
+  const session = getPiSessionManager().getSession(attachment.sessionId);
+  if (!session) {
+    try { conversationRuntimeService.detachAttachment(attachment.attachmentId); } catch { /* ignore */ }
+    throw new Error(`父会话 ${parentConversationId} 拉起失败: ${attachment.sessionId}`);
+  }
+  reacquireParentHolds(parentConversationId, attachment.sessionId);
+  const releaseRef = () => {
+    session.off('settled', releaseRef);
+    conversationRuntimeService.detachAttachment(attachment.attachmentId);
+  };
+  session.on('settled', releaseRef);
+  logger.info(`自动调起停机父会话 ${parentConversationId}（来自 ${deliverOpts.fromLabel}，delivery=${deliverOpts.delivery}）`);
+  session.sendMessage(`${buildSenderTag(deliverOpts.fromSessionId, deliverOpts.fromLabel, deliverOpts.delivery)}\n${deliverOpts.message}`).catch((err: unknown) => {
+    logger.warn(`父会话 ${parentConversationId} 调起后消息注入失败`, err);
   });
 }

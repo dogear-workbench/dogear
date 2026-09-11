@@ -17,7 +17,7 @@ import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 
 const SEND_MESSAGE_DESC =
-  '向与当前会话有直接派出关系的会话发送消息。仅用于与协作会话通信时。目标是你直接派出且已停机的子会话时，系统会自动调起它，消息不会丢失。';
+  '向与当前会话有直接派出关系的会话发送消息。仅用于与协作会话通信时。目标会话已停机时（你派出的子会话，或派出你的父会话），系统会自动调起它，消息不会丢失。';
 
 const LIST_LINKED_DESC =
   '列出当前会话所有直接契约通道对方（sessionId、运行状态、交付标记）。判定规则：status=running → 在跑，等它通知即可；status=stopped 且你收到过它的 delivery 消息、或共享区已有其交付文件 → 已交付；如需深挖可直接向它发消息（系统会自动调起）；status=stopped 且无交付 → 可用 dogear__ResumeSession 调起，它会自检进度从中断处续跑。delivered 是本进程运行时视角，应用重启后一律为 false——此时以你的上下文记忆 / 共享区文件为准。';
@@ -110,7 +110,8 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         });
 
         if (outcome === 'target_inactive') {
-          // 自动调起判断留在工具层（deliverMessage 保持同步纯投递）：只对「我直接派出的停机子会话」生效
+          // 自动调起判断留在工具层（deliverMessage 保持同步纯投递）：契约通道只存在于父子对，
+          // target_inactive 只可能落在「我派出的停机子会话」或「派出我的停机父会话」两个方向
           if (target.conv.contractMetadata?.parentSessionId === ownSessionId) {
             const childId = bridge.getChildIdBySessionId(opts.conversationId, args.toSessionId) ?? target.conv.id;
             let snapshot = bridge.getChildSnapshot(childId);
@@ -133,7 +134,21 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
               }
             }
           }
-          return textResult('⚠ 消息已校验通过，但目标会话当前未在运行（可能已关闭），对方暂时收不到，请稍后重试');
+          if (opts.role === 'sub' && target.conv.id === opts.parentConversationId) {
+            try {
+              await bridge.resumeParentAndDeliver(opts.parentConversationId, target.workspaceId, {
+                fromSessionId: ownSessionId,
+                fromLabel: ownConv?.title || '未知会话',
+                message: args.message,
+                delivery,
+              });
+              return textResult(`✅ 派出你的会话「${target.conv.title}」已停机，已自动调起并送达${label}，消息将作为它复活后的首轮输入`);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              return errorResult(`自动调起父会话失败: ${message}`);
+            }
+          }
+          return textResult('⚠ 消息已校验通过，但目标会话当前未在运行（可能已关闭），本次消息未能送达，请稍后重试');
         }
         return textResult(`✅ 已发送${label}给 ${args.toSessionId}（已加入对方下一轮输入，对方在跑则插话排队、空闲则立即推进下一轮）`);
       },
