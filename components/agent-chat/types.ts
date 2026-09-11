@@ -42,12 +42,8 @@ export interface Message {
  */
 export interface ContentBlock {
   type: 'text' | 'tool_use' | 'tool_result' | 'thinking' | 'status' | 'error' | 'result' | 'user' | 'permission_request'
-    // Hook 事件类型
-    | 'session_start' | 'session_end' | 'stop' | 'tool_failure' | 'notification' | 'task_notification'
-    // AskUserQuestion 类型
     | 'ask_user_question'
-    // SDK 系统消息类型（斜杠命令相关）
-    | 'compact_boundary' | 'compacting' | 'local_command_output'
+    | 'compact_boundary' | 'compacting'
     | 'tool_group';  // 虚拟分组类型，仅在前端渲染前预处理时生成
   id?: string;
   content?: string;
@@ -68,18 +64,6 @@ export interface ContentBlock {
   permissionDecisionReason?: string;
   permissionResolved?: 'allow' | 'deny' | 'always_allow' | 'allow_session';  // 用户已响应的状态
   permissionDenyMessage?: string;  // 用户自定义的拒绝理由
-  // Hook 事件相关字段
-  sessionStartSource?: string;           // SessionStart: 启动来源
-  sessionEndReason?: string;             // SessionEnd: 结束原因
-  stopHookActive?: boolean;              // Stop: 停止钩子激活
-  failedToolName?: string;               // PostToolUseFailure: 失败工具名
-  failedToolError?: string;              // PostToolUseFailure: 失败错误信息
-  notificationTitle?: string;            // Notification: 通知标题
-  notificationMessage?: string;          // Notification: 通知内容
-  notificationType?: string;             // Notification: 通知类型
-  taskId?: string;                       // 子代理任务 ID
-  taskStatus?: string;                   // 子代理任务状态
-  taskSummary?: string;                  // 子代理任务摘要
   // AskUserQuestion 相关字段
   askUserRequestId?: string;
   askUserQuestions?: Array<{

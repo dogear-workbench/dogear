@@ -1,12 +1,11 @@
 import { ToolBlock } from '@/components/ToolBlock';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle, ArrowLeftRight, ClipboardList, ClipboardCheck, ClipboardEdit } from 'lucide-react';
+import { AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import { ToolGroupBlock } from './ToolGroupBlock';
-import { TodoListBlock } from './TodoListBlock';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { isQuotaErrorText, hasFailoverTakeover } from '@/lib/failover-markers';
@@ -156,52 +155,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       );
 
     case 'tool_use': {
-      if (block.toolName === 'TodoWrite' && (block.toolInput as any)?.todos) {
-        return <TodoListBlock todos={(block.toolInput as any).todos} />;
-      }
-      if (block.toolName === 'TaskList' && Array.isArray((block.toolOutput as any)?.tasks)) {
-        const todos = ((block.toolOutput as any).tasks as Array<{ subject: string; status: 'pending' | 'in_progress' | 'completed' }>)
-          .map((t) => ({ content: t.subject, activeForm: t.subject, status: t.status }));
-        return <TodoListBlock todos={todos} />;
-      }
-      // TaskCreate / TaskUpdate：紧凑单行渲染（最终聚合走 AgentChat 渲染期派生的任务卡片）
-      if (block.toolName === 'TaskCreate') {
-        const input = (block.toolInput as any) || {};
-        const subject = input.subject || '新任务';
-        return (
-          <div className="flex items-center gap-2 py-0.5 text-xs">
-            <ClipboardList className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400 flex-shrink-0" />
-            <span className="text-muted-foreground">新建任务</span>
-            <span className="text-foreground truncate">{subject}</span>
-          </div>
-        );
-      }
-      if (block.toolName === 'TaskUpdate') {
-        const input = (block.toolInput as any) || {};
-        const statusLabels: Record<string, string> = {
-          pending: '待办', in_progress: '进行中', completed: '已完成', deleted: '删除',
-        };
-        const statusColors: Record<string, string> = {
-          pending: 'text-muted-foreground',
-          in_progress: 'text-amber-600 dark:text-amber-400',
-          completed: 'text-emerald-600 dark:text-emerald-400',
-          deleted: 'text-destructive',
-        };
-        const status = input.status;
-        const Icon = status === 'completed' ? ClipboardCheck : ClipboardEdit;
-        return (
-          <div className="flex items-center gap-2 py-0.5 text-xs">
-            <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${statusColors[status] || 'text-muted-foreground'}`} />
-            <span className="text-muted-foreground">更新任务</span>
-            <span className="text-foreground truncate">{input.subject || input.taskId || ''}</span>
-            {status && (
-              <span className={`ml-auto ${statusColors[status] || 'text-muted-foreground'}`}>
-                → {statusLabels[status] || status}
-              </span>
-            )}
-          </div>
-        );
-      }
       // toolOutput 已通过 tool_result 合并到 tool_use block 中
       // 通过 toolOutput 是否存在决定状态：undefined=running, 否则success/error
       const toolStatus = block.toolOutput !== undefined
@@ -247,97 +200,6 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         />
       );
 
-    // ==================== Hook 事件渲染 ====================
-
-    case 'session_start': {
-      const sourceLabel: Record<string, string> = {
-        startup: '会话已启动',
-        resume: '会话已恢复',
-        clear: '会话已重新开始',
-        compact: '会话已压缩重启',
-      };
-      return (
-        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-          <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full"></div>
-          {sourceLabel[block.sessionStartSource || ''] || '会话已启动'}
-        </div>
-      );
-    }
-
-    case 'session_end':
-      return (
-        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-          <div className="w-1.5 h-1.5 bg-muted-foreground/50 rounded-full"></div>
-          会话已结束{block.sessionEndReason ? `（${block.sessionEndReason}）` : ''}
-        </div>
-      );
-
-    case 'stop':
-      return (
-        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
-          <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full"></div>
-          执行已停止
-        </div>
-      );
-
-    case 'tool_failure':
-      return (
-        <div className="py-1.5">
-          <div className="flex items-center gap-2 text-sm font-medium text-destructive">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            工具执行失败
-            {block.failedToolName && (
-              <span className="text-xs px-1.5 py-0.5 bg-muted rounded font-mono text-foreground">{block.failedToolName}</span>
-            )}
-          </div>
-          {block.failedToolError && (
-            <div className="mt-1 text-xs text-destructive font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto pl-6">
-              {block.failedToolError}
-            </div>
-          )}
-        </div>
-      );
-
-    case 'notification':
-      return (
-        <div className="py-1.5">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-            {block.notificationTitle || '通知'}
-          </div>
-          {block.notificationMessage && (
-            <div className="text-xs text-muted-foreground pl-6">{block.notificationMessage}</div>
-          )}
-        </div>
-      );
-
-    case 'task_notification': {
-      const dotColors: Record<string, string> = {
-        completed: 'bg-muted-foreground',
-        failed: 'bg-destructive',
-        cancelled: 'bg-muted-foreground/50',
-      };
-      const textColors: Record<string, string> = {
-        completed: 'text-foreground',
-        failed: 'text-destructive',
-        cancelled: 'text-muted-foreground',
-      };
-      const statusLabels: Record<string, string> = { completed: '已完成', failed: '失败', cancelled: '已取消', in_progress: '进行中' };
-      const dot = dotColors[block.taskStatus || ''] || 'bg-muted-foreground';
-      const text = textColors[block.taskStatus || ''] || 'text-foreground';
-      return (
-        <div className={`flex items-center gap-2 py-1 text-xs ${text}`}>
-          <div className={`w-1.5 h-1.5 ${dot} rounded-full`}></div>
-          <span>子任务 {block.taskId ? `[${block.taskId.substring(0, 8)}]` : ''} {statusLabels[block.taskStatus || ''] || block.taskStatus}</span>
-          {block.taskSummary && <span className="text-muted-foreground ml-1">- {block.taskSummary}</span>}
-        </div>
-      );
-    }
-
     // ==================== 斜杠命令相关消息 ====================
 
     case 'compact_boundary':
@@ -351,41 +213,12 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         </div>
       );
 
-    case 'local_command_output':
-      return block.content ? (
-        <div className="py-1.5">
-          <div className="text-xs text-muted-foreground">命令输出</div>
-          <div className="text-sm text-foreground whitespace-pre-wrap break-all font-mono pl-0 mt-0.5">
-            {block.content}
-          </div>
-        </div>
-      ) : null;
-
     case 'error':
       return <ErrorAlertBlock block={block} />;
 
     case 'result':
       // result 类型不显示任何内容，只是标志消息结束
       return null;
-
-    case 'user':
-      // 用户消息（来自 SDK 重放）
-      return (
-        <div className="py-1.5">
-          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            {block.isReplay && <span className="text-xs text-muted-foreground">(历史)</span>}
-            用户消息
-          </div>
-          {block.content && (
-            <div className="text-sm text-foreground whitespace-pre-wrap break-words pl-6 mt-0.5">
-              {block.content}
-            </div>
-          )}
-        </div>
-      );
 
     case 'text':
     default:

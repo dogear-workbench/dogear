@@ -1,9 +1,8 @@
-import { memo, Fragment } from 'react';
+import { memo } from 'react';
 import type { PendingState } from './hooks/usePendingState';
 import { useTranscriptLiveTail, type TranscriptStoreApi } from './hooks/useTranscriptState';
 import { MessageItem } from './MessageItem';
 import { StreamingIndicator } from './StreamingIndicator';
-import { TodoListBlock } from './TodoListBlock';
 
 interface LiveTailProps {
   transcriptStore: TranscriptStoreApi;
@@ -19,8 +18,6 @@ interface LiveTailProps {
   readOnly: boolean;
   sessionId: string | null;
   isAgentConversation: boolean;
-  taskTodos: Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>;
-  lastTaskMessageId: string | null;
 }
 
 export const LiveTail = memo(function LiveTail({
@@ -37,8 +34,6 @@ export const LiveTail = memo(function LiveTail({
   readOnly,
   sessionId,
   isAgentConversation,
-  taskTodos,
-  lastTaskMessageId,
 }: LiveTailProps) {
   const liveTail = useTranscriptLiveTail(transcriptStore);
   const lastBlockType = liveTail.length
@@ -52,22 +47,20 @@ export const LiveTail = memo(function LiveTail({
           {liveTail.map((message) => {
             if (!message.id) return null;
             return (
-              <Fragment key={message.id}>
-                <MessageItem
-                  message={message}
-                  messageId={message.id}
-                  onFork={readOnly ? undefined : onFork}
-                  sessionId={sessionId}
-                  onPermissionResolved={onPermissionResolved}
-                  onAskUserResolved={onAskUserResolved}
-                  onInterrupt={onInterrupt}
-                  searchQuery={searchQuery}
-                  activeMatchId={activeMatchId}
-                  isAgentConversation={isAgentConversation}
-                  readOnly={readOnly}
-                />
-                {lastTaskMessageId === message.id && <TodoListBlock todos={taskTodos} />}
-              </Fragment>
+              <MessageItem
+                key={message.id}
+                message={message}
+                messageId={message.id}
+                onFork={readOnly ? undefined : onFork}
+                sessionId={sessionId}
+                onPermissionResolved={onPermissionResolved}
+                onAskUserResolved={onAskUserResolved}
+                onInterrupt={onInterrupt}
+                searchQuery={searchQuery}
+                activeMatchId={activeMatchId}
+                isAgentConversation={isAgentConversation}
+                readOnly={readOnly}
+              />
             );
           })}
         </section>

@@ -54,15 +54,11 @@ export function initialTranscriptCore(): TranscriptCore {
   return { stable: [], live: [], pendingActions: [], structuralVersion: 0, structuralSig: structureSignature([], []) };
 }
 
-// aggregateTasks 消费 tool_use 块的 toolOutput/toolInput（tool_result 填充不改块数），
-// 指纹必须覆盖这些字段；text/thinking 增量只改 content，指纹刻意不含以跳过 delta 帧
+// 指纹覆盖 tool_use 的 name/id/结果有无（tool_result 填充不改块数，running→完成翻转依赖 hasOutput 位）；
+// text/thinking 增量只改 content，指纹刻意不含以跳过 delta 帧
 function blockFingerprint(b: ContentBlock): string {
   if (b.type !== 'tool_use') return b.type;
-  const base = `${b.toolName ?? ''}|${b.toolUseId ?? ''}|${b.toolOutput !== undefined ? 1 : 0}`;
-  if (b.toolName === 'TaskCreate' || b.toolName === 'TaskUpdate') {
-    return `${base}|${JSON.stringify(b.toolInput ?? null)}|${JSON.stringify(b.toolOutput ?? null)}`;
-  }
-  return base;
+  return `${b.toolName ?? ''}|${b.toolUseId ?? ''}|${b.toolOutput !== undefined ? 1 : 0}`;
 }
 
 function messageFingerprint(m: Message): string {

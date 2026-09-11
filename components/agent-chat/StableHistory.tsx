@@ -1,10 +1,9 @@
-import { memo, Fragment } from 'react';
+import { memo } from 'react';
 import type { Message } from './types';
 import type { Turn } from './turns';
 import { MessageItem } from './MessageItem';
 import { CollapsedHistoryBanner } from './CollapsedHistoryBanner';
 import { CollapseControlBar } from './CollapseControlBar';
-import { TodoListBlock } from './TodoListBlock';
 
 interface StableHistoryProps {
   turns: Turn[];
@@ -23,8 +22,6 @@ interface StableHistoryProps {
   readOnly: boolean;
   sessionId: string | null;
   isAgentConversation: boolean;
-  taskTodos: Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>;
-  lastTaskMessageId: string | null;
 }
 
 export const StableHistory = memo(function StableHistory({
@@ -44,8 +41,6 @@ export const StableHistory = memo(function StableHistory({
   readOnly,
   sessionId,
   isAgentConversation,
-  taskTodos,
-  lastTaskMessageId,
 }: StableHistoryProps) {
   return (
     <>
@@ -61,22 +56,20 @@ export const StableHistory = memo(function StableHistory({
               const message = messagesById.get(messageId);
               if (!message) return null;
               return (
-                <Fragment key={messageId}>
-                  <MessageItem
-                    message={message}
-                    messageId={messageId}
-                    onFork={readOnly ? undefined : onFork}
-                    sessionId={sessionId}
-                    onPermissionResolved={onPermissionResolved}
-                    onAskUserResolved={onAskUserResolved}
-                    onInterrupt={onInterrupt}
-                    searchQuery={searchQuery}
-                    activeMatchId={activeMatchId}
-                    isAgentConversation={isAgentConversation}
-                    readOnly={readOnly}
-                  />
-                  {lastTaskMessageId === messageId && <TodoListBlock todos={taskTodos} />}
-                </Fragment>
+                <MessageItem
+                  key={messageId}
+                  message={message}
+                  messageId={messageId}
+                  onFork={readOnly ? undefined : onFork}
+                  sessionId={sessionId}
+                  onPermissionResolved={onPermissionResolved}
+                  onAskUserResolved={onAskUserResolved}
+                  onInterrupt={onInterrupt}
+                  searchQuery={searchQuery}
+                  activeMatchId={activeMatchId}
+                  isAgentConversation={isAgentConversation}
+                  readOnly={readOnly}
+                />
               );
             })}
           </section>

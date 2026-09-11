@@ -86,17 +86,6 @@ export function createContentBlock(extendedMsg: {
   isError?: boolean;
   timestamp?: number;
   isReplay?: boolean;
-  sessionStartSource?: string;
-  sessionEndReason?: string;
-  stopHookActive?: boolean;
-  failedToolName?: string;
-  failedToolError?: string;
-  notificationTitle?: string;
-  notificationMessage?: string;
-  notificationType?: string;
-  taskId?: string;
-  taskStatus?: string;
-  taskSummary?: string;
   compactTrigger?: string;
   compactPreTokens?: number;
   [key: string]: any;
@@ -113,18 +102,6 @@ export function createContentBlock(extendedMsg: {
     isError: extendedMsg.isError,
     timestamp: extendedMsg.timestamp || Date.now(),
     isReplay: extendedMsg.isReplay,
-    // Hook 事件
-    sessionStartSource: extendedMsg.sessionStartSource,
-    sessionEndReason: extendedMsg.sessionEndReason,
-    stopHookActive: extendedMsg.stopHookActive,
-    failedToolName: extendedMsg.failedToolName,
-    failedToolError: extendedMsg.failedToolError,
-    notificationTitle: extendedMsg.notificationTitle,
-    notificationMessage: extendedMsg.notificationMessage,
-    notificationType: extendedMsg.notificationType,
-    taskId: extendedMsg.taskId,
-    taskStatus: extendedMsg.taskStatus,
-    taskSummary: extendedMsg.taskSummary,
     // compact
     compactTrigger: extendedMsg.compactTrigger as 'manual' | 'auto' | undefined,
     compactPreTokens: extendedMsg.compactPreTokens,

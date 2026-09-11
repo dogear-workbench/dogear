@@ -33,7 +33,6 @@ import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { ConversationIdProvider } from './conversation-id-context';
 import { WorkspaceIdProvider } from './workspace-id-context';
 import { buildTurns } from './turns';
-import { aggregateTasks } from './task-aggregator';
 import type { TranscriptEvent } from './hooks/useTranscriptState';
 import type { ChildStatus } from '@/types/delegation';
 import type { LivePermissionRequest } from './hooks/useAgentSession';
@@ -90,7 +89,7 @@ export function AgentChat({
 
   // transcript 状态：消息写入口全部收敛到该 hook，结构快照与 live tail 分别订阅
   const transcript = useTranscriptState(showReplayMessages, visible, conversationId);
-  const { stableHistory, structuredLiveTail, structuralVersion, transcriptStore, getMessages, applySnapshot, initReady } = transcript;
+  const { stableHistory, structuredLiveTail, transcriptStore, getMessages, applySnapshot, initReady } = transcript;
 
   const { setHistoryLoaded, historyStatus, historyError, retryHistory } = useMessageHistory({ conversationId, workspaceId, loadHistory: transcript.loadHistory });
   const isTopicStatePending = !!conversationId && topicState === 'loading';
@@ -225,31 +224,6 @@ export function AgentChat({
     () => buildTurns(stableHistory, { collapsed }),
     [stableHistory, collapsed],
   );
-
-  // task 清单纯派生：依赖结构快照（stable 引用 + 结构变化才换引用的 live 尾），
-  // 纯 text/thinking delta 帧不再全表扫描
-  const structuredMessages = useMemo(
-    () => [...stableHistory, ...structuredLiveTail],
-    [stableHistory, structuredLiveTail],
-  );
-  const tasks = useMemo(() => aggregateTasks(structuredMessages), [stableHistory, structuralVersion]);
-  const taskTodos = useMemo(
-    () => tasks.map(({ subject, activeForm, status }) => ({ content: subject, activeForm: activeForm || subject, status })),
-    [tasks],
-  );
-  const lastTaskMessageId = useMemo(() => {
-    for (let i = structuredMessages.length - 1; i >= 0; i--) {
-      const msg = structuredMessages[i];
-      if (msg.role !== 'assistant' || !msg.contentBlocks) continue;
-      if (msg.contentBlocks.some((b) =>
-        b.type === 'tool_use' &&
-        (b.toolName === 'TaskCreate' || b.toolName === 'TaskUpdate')
-      )) {
-        return msg.id ?? null;
-      }
-    }
-    return null;
-  }, [stableHistory, structuralVersion]);
 
   const messagesById = useMemo(() => {
     const map = new Map<string, Message>();
@@ -509,8 +483,6 @@ export function AgentChat({
           readOnly={isReadOnly}
           sessionId={sessionId}
           isAgentConversation={isAgentConversation}
-          taskTodos={taskTodos}
-          lastTaskMessageId={lastTaskMessageId}
         />
         <LiveTail
           transcriptStore={transcriptStore}
@@ -526,8 +498,6 @@ export function AgentChat({
           readOnly={isReadOnly}
           sessionId={sessionId}
           isAgentConversation={isAgentConversation}
-          taskTodos={taskTodos}
-          lastTaskMessageId={lastTaskMessageId}
         />
         </ConversationIdProvider>
 

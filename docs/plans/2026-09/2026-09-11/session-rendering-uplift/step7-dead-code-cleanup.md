@@ -1,7 +1,7 @@
 ---
 step: 7
 title: 死代码清理（旧 SDK hook 事件）
-status: pending
+status: done
 ---
 
 ## 目标
@@ -36,10 +36,17 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
+- 验证前置结论：grep electron/main 全目录零产生点（pi 链路实际只产生 text/thinking/tool_use/tool_result/message_id/user/error/compacting/compact_boundary；transcript-adapter 的 TaskCreate/TaskUpdate 是 TOOL_KEY 映射、agent-worker 的 taskUpdate 是 WorkerToMainMessage，均非渲染事件）
 - 与计划差异：
-- 改动文件清单：
+  - LiveTail/StableHistory 删 TodoListBlock 后 Fragment 退化为单子元素，顺手简化为直接 key 的 MessageItem（等价重构）
+  - useTranscriptState blockFingerprint 删 Task 特判（属「消费方 grep 清理」范畴，服务对象 aggregateTasks 已删）
+  - ContentBlock 联合中 user/status 按保留清单保留（user 仅删渲染 case，残留 block 落 default 渲染原文）
+  - 主进程 task-types.ts 的 hook 类型未动（step 范围为前端渲染层，见遗留）
+- 改动文件清单：`ContentBlockItem.tsx`（删 8 case + 4 特判）、删 `task-aggregator.ts`（-91）与 `TodoListBlock.tsx`（-44）、`AgentChat.tsx`（删 aggregateTasks 消费链 4 useMemo + props）、`types.ts`（联合删 7 type + 11 hook 字段）、`transformers.ts`（createContentBlock 透传同步删）、`LiveTail.tsx` / `StableHistory.tsx`（删吸附渲染与 props）、`useTranscriptState.ts`（blockFingerprint 特判删）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+- 关键签名 / 数据结构：ContentBlock 联合现存 type = text / tool_use / tool_result / thinking / status / error / result / user / permission_request / ask_user_question / compact_boundary / compacting / tool_group（前端虚拟）
+- 下个 step 该从哪里继续：本 step 是最后一步，无后续
 - 待办或已知限制：
+  - 主进程 task-types.ts 的 ExtendedSessionMessage 仍保留 7 hook 类型成员与 11 hook 字段（无产生点、前端已不消费），建议后续主进程清理时一并删
+  - GUI 冒烟（会话渲染/小地图/搜索/分叉）待用户回归
