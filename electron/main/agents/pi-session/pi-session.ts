@@ -660,6 +660,7 @@ export class PiSession extends EventEmitter {
           workspacePath: this.config.workspacePath,
           groupId: this.config.groupId,
           parentConversationId: this.config.parentConversationId,
+          selfConversationId: this.config.conversationId,
         })));
       }
     }

@@ -132,13 +132,19 @@ export interface StaleConversation {
   mtime: number;
 }
 
-/** 状态卡 sourcesSeen 落后的组内 main 会话（新会话 / mtime 前进）；无卡时全量返回 */
-export async function getStaleConversations(wsId: string, groupId: string): Promise<StaleConversation[]> {
+/** 状态卡 sourcesSeen 落后的组内 main 会话（新会话 / mtime 前进）；无卡时全量返回。excludeConversationId 供调用方排除自己（自身内容由后续会话开局补抽） */
+export async function getStaleConversations(
+  wsId: string,
+  groupId: string,
+  excludeConversationId?: string,
+): Promise<StaleConversation[]> {
   const group = await groupService.getGroup(wsId, groupId);
   if (!group || group.archivedAt !== undefined) return [];
 
   const allConvs = await conversationService.getByWorkspaceId(wsId);
-  const mainConvs = allConvs.filter((c) => c.groupId === groupId && c.role !== 'sub' && c.sessionId);
+  const mainConvs = allConvs.filter(
+    (c) => c.groupId === groupId && c.role !== 'sub' && c.sessionId && c.id !== excludeConversationId,
+  );
 
   const current: StaleConversation[] = [];
   for (const conv of mainConvs) {

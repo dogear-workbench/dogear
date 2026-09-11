@@ -104,9 +104,10 @@ export async function ensureGroupFresh(
   wsId: string,
   groupId: string,
   timeoutMs: number,
+  excludeConversationId?: string,
 ): Promise<EnsureGroupFreshResult> {
   try {
-    const stale = await getStaleConversations(wsId, groupId);
+    const stale = await getStaleConversations(wsId, groupId, excludeConversationId);
     if (!stale.length) return { synced: true, timedOut: false };
 
     const key = entryKey(wsId, groupId);

@@ -75,10 +75,10 @@ export function staleListText(rows: StaleTitleRow[]): string {
   return shown.join('\n');
 }
 
-async function buildTopicStateSection(wsId: string, groupId: string): Promise<string> {
+async function buildTopicStateSection(wsId: string, groupId: string, selfConversationId?: string): Promise<string> {
   const [card, stale] = await Promise.all([
     readTopicStateCard(wsId, groupId),
-    getStaleConversations(wsId, groupId),
+    getStaleConversations(wsId, groupId, selfConversationId),
   ]);
 
   const topic = card?.topicHistory[card.topicHistory.length - 1];
@@ -96,22 +96,25 @@ async function buildTopicStateSection(wsId: string, groupId: string): Promise<st
     const rows = await deriveStaleList(wsId, stale);
     parts.push('【最近未提炼会话】', staleListText(rows));
   }
-  const syncNote = stale.length
-    ? '（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）'
-    : '';
-  const topicRef = topic ? '本会话属于上方话题。' : '';
-  parts.push(
-    `【指引】${topicRef}开局第一轮先调 dogear__ReadGroupBackground 获取话题最新状态${syncNote}；深挖某会话可 dogear__ReadReferenceSession。`,
-  );
+  if (topic || stale.length) {
+    const syncNote = stale.length
+      ? '（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）'
+      : '';
+    const topicRef = topic ? '本会话属于上方话题。' : '';
+    parts.push(
+      `【指引】${topicRef}开局第一轮先调 dogear__ReadGroupBackground 获取话题最新状态${syncNote}；深挖某会话可 dogear__ReadReferenceSession。`,
+    );
+  }
   return parts.join('\n');
 }
 
 /**
- * 构建组上下文片段。失败时返回空串而非抛错。
+ * 构建组上下文片段。selfConversationId 用于话题状态段排除自己。失败时返回空串而非抛错。
  */
 export async function buildGroupContextPrompt(
   workspaceId: string,
   groupId: string,
+  selfConversationId?: string,
 ): Promise<string> {
   try {
     const group = await groupService.getGroup(workspaceId, groupId);
@@ -131,7 +134,7 @@ export async function buildGroupContextPrompt(
 
     let stateSection = '';
     try {
-      stateSection = await buildTopicStateSection(workspaceId, groupId);
+      stateSection = await buildTopicStateSection(workspaceId, groupId, selfConversationId);
     } catch (e) {
       logger.warn('构建话题状态段失败，仅注入组头部:', e);
     }

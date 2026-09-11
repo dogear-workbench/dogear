@@ -33,10 +33,12 @@ export interface ReferenceToolsOpts {
   groupId: string;
   /** 派出这个子会话的父会话 conversationId，用于从兄弟列表里排除。主会话没有父会话 */
   parentConversationId?: string;
+  /** 当前会话自身的 conversationId：话题状态抽取与未提炼列表排除自己，避免抽自己正在进行的对话 */
+  selfConversationId?: string;
 }
 
 export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
-  const { workspaceId, groupId, parentConversationId } = opts;
+  const { workspaceId, groupId, parentConversationId, selfConversationId } = opts;
 
   return [
     defineTool(
@@ -134,7 +136,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
       '读取当前会话组的话题状态卡（返回唯一最新卡）：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。存在未提炼会话时会现场抽取并等待，可能需 30s~2min。仅用于需要了解当前组最新整体状态时。',
       z.object({}),
       async () => {
-        const fresh = await ensureGroupFresh(workspaceId, groupId, READ_SYNC_WAIT_MS);
+        const fresh = await ensureGroupFresh(workspaceId, groupId, READ_SYNC_WAIT_MS, selfConversationId);
         const card = await readTopicStateCard(workspaceId, groupId);
         if (!card) {
           return {
@@ -178,7 +180,7 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
           let staleCount = 0;
           let staleList = '';
           try {
-            const stale = await getStaleConversations(workspaceId, groupId);
+            const stale = await getStaleConversations(workspaceId, groupId, selfConversationId);
             staleCount = stale.length;
             staleList = staleListText(await deriveStaleList(workspaceId, stale));
           } catch { /* 列表派生失败不阻塞返回 */ }

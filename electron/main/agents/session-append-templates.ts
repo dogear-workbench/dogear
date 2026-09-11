@@ -85,7 +85,15 @@ const GROUP_CONTEXT_EXAMPLE =
   '**组**：<组标题 或 未命名组（创建于 …）>\n' +
   '\n' +
   '共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先用 dogear__ListGroupFiles 列共享区文件清单，需要细看时传 relPath 读单个文件。\n' +
-  '当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续。这不是强制——只在你判断有价值时做。';
+  '当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续。这不是强制——只在你判断有价值时做。\n' +
+  '\n' +
+  '### 话题状态\n' +
+  '【话题背景】（确立于 <时间>，<来源>）\n' +
+  '<当前生效话题一句话>\n' +
+  '【最近未提炼会话】\n' +
+  '- <时间>「<会话标题>」\n' +
+  '【指引】本会话属于上方话题。开局第一轮先调 dogear__ReadGroupBackground 获取话题最新状态（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）；深挖某会话可 dogear__ReadReferenceSession。\n' +
+  '（话题背景 / 最近未提炼会话两段按实际内容可选；组内无前人状态——无话题且除自己外无未提炼会话——时不注入【指引】，仅保留「本组还没有提炼过的话题状态，不要虚构。」一句）'
 
 /**
  * 收集当前所有「系统级 append 段」的模板与触发说明，供设置页展示。
@@ -97,7 +105,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '会话组上下文（模板说明）',
       category: 'group',
       template: GROUP_CONTEXT_EXAMPLE,
-      triggerDescription: '会话属于某个组时注入。列出组标题，引导 Agent 用 dogear__ListGroupFiles 列共享区文件清单、传 relPath 按需读单个文件。',
+      triggerDescription: '会话属于某个组时注入。内容 = 组头（组标题 + 共享区使用引导）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含开局先调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。',
       isDynamic: true,
     },
     {
