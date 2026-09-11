@@ -58,6 +58,17 @@ export async function mergeIncrementAndSave(
   }
   const merged = mergeIncrement(card, increment, { conversationId: opts.conversationId });
   await saveTopicStateCard(wsId, merged);
+  const initialTitle = increment.initialTitle?.trim();
+  if (initialTitle) {
+    try {
+      const group = await groupService.getGroup(wsId, groupId);
+      if (group && !group.title?.trim()) {
+        await groupService.updateGroup(wsId, groupId, { title: initialTitle });
+      }
+    } catch (e) {
+      console.warn(`[state-card] 首次命名同步 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   return merged;
 }
 
@@ -92,6 +103,14 @@ export async function resolvePendingTopicChange(
   if (!next) return null;
   next.updatedAt = new Date().toISOString();
   await saveTopicStateCard(wsId, next);
+  if (accept) {
+    const confirmed = next.topicHistory[next.topicHistory.length - 1];
+    try {
+      await groupService.updateGroup(wsId, groupId, { title: confirmed.text });
+    } catch (e) {
+      console.warn(`[state-card] 确认话题联动 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
   return next;
 }
 

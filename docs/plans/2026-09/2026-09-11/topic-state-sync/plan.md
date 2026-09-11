@@ -11,7 +11,7 @@
 - [x] [Step 1: schema 与提示词地基](./step1-schema-prompt.md) — resolved 跨类退休 + initialTitle 字段 + 抽取提示词三处约束
 - [x] [Step 2: 读时同步核心链路](./step2-read-sync.md) — 删触发器 sync 分支 + ReadGroupBackground 读时同步
 - [x] [Step 3: 注入轻量化](./step3-light-inject.md) — 开局只注轻量头，start() 移除触发调用
-- [ ] [Step 4: 话题命名联动](./step4-naming.md) — 首次命名生效 + topicChange 确认联动 updateGroup
+- [x] [Step 4: 话题命名联动](./step4-naming.md) — 首次命名生效 + topicChange 确认联动 updateGroup
 - [ ] [Step 5: 旧轨下线（digest/review）](./step5-remove-legacy.md) — 砍 group_digest/review 定时任务、删模块、前端清理
 - [ ] [Step 6: 智能分组下线与跨话题检索](./step6-categorize-topics-tool.md) — 砍 categorize 全链 + 新增零模型 ListTopics 工具
 
