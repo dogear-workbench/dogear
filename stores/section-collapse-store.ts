@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { RECENT_THRESHOLD_MS } from './group-store';
+import { RECENT_THRESHOLD_MS, OLDER_THRESHOLD_MS } from './group-store';
 import { CONV_TREE_ROOT } from './conversation-store';
 
 export interface FolderReveal {
@@ -9,9 +9,11 @@ export interface FolderReveal {
 
 interface SectionCollapseState {
   recentExpanded: boolean;
+  olderExpanded: boolean;
   folderReveal: FolderReveal | null;
   subExpandedConvIds: Set<string>;
   toggleRecent: () => void;
+  toggleOlder: () => void;
   toggleSubExpand: (convId: string) => void;
   expandSubConv: (convId: string) => void;
   revealTopic: (groupId: string) => Promise<void>;
@@ -21,10 +23,13 @@ let revealNonce = 0;
 
 export const useSectionCollapseStore = create<SectionCollapseState>((set, get) => ({
   recentExpanded: true,
+  olderExpanded: false,
   folderReveal: null,
   subExpandedConvIds: new Set<string>(),
 
   toggleRecent: () => set((s) => ({ recentExpanded: !s.recentExpanded })),
+
+  toggleOlder: () => set((s) => ({ olderExpanded: !s.olderExpanded })),
 
   toggleSubExpand: (convId) => set((s) => {
     const next = new Set(s.subExpandedConvIds);
@@ -56,8 +61,11 @@ export const useSectionCollapseStore = create<SectionCollapseState>((set, get) =
 
     gs.expandGroup(groupId);
 
-    if (Date.now() - group.updatedAt <= RECENT_THRESHOLD_MS) {
+    const age = Date.now() - group.updatedAt;
+    if (age <= RECENT_THRESHOLD_MS) {
       if (!get().recentExpanded) set({ recentExpanded: true });
+    } else if (age <= OLDER_THRESHOLD_MS) {
+      if (!get().olderExpanded) set({ olderExpanded: true });
     }
 
     const ws = useWorkspaceStore.getState().workspace;

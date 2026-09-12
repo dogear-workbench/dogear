@@ -32,10 +32,12 @@ export function getConversationTitle(conversation: Conversation): string {
   return `对话 ${date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}`;
 }
 
-// 「近期」阈值常量移至 group-store（默认展开逻辑共用），此处转发保持导入路径稳定
-export { RECENT_THRESHOLD_MS } from '@/stores/group-store';
+// 时间分区阈值常量在 group-store（默认展开逻辑共用），此处转发保持导入路径稳定
+import { RECENT_THRESHOLD_MS, OLDER_THRESHOLD_MS } from '@/stores/group-store';
+export { RECENT_THRESHOLD_MS, OLDER_THRESHOLD_MS };
 
-export const RECENT_DAYS = 7;
+export const RECENT_DAYS = RECENT_THRESHOLD_MS / 86400_000;
+export const OLDER_DAYS = OLDER_THRESHOLD_MS / 86400_000;
 
 // 对话树根节点哨兵 id（与后端 ROOT_ID 同步）
 export const CONV_TREE_ROOT = '__root__';

@@ -3,8 +3,9 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type { Group } from '@/types/group';
 
-// 「近期」阈值，与侧边栏近期虚拟组共用
+// 「近期」「更早」时间分区阈值，与侧边栏虚拟组共用；OLDER 与 auto-archive-service 的 30 天过期归档对齐
 export const RECENT_THRESHOLD_MS = 7 * 86400_000;
+export const OLDER_THRESHOLD_MS = 30 * 86400_000;
 
 const getWorkspace = async () => {
   const { useWorkspaceStore } = await import('./workspace-store');
