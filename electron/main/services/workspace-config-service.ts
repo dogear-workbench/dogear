@@ -5,6 +5,8 @@ import { safeJsonRead, safeJsonWrite } from './safe-json.js';
 export interface WorkspaceConfig {
   enabledToolPacks: string[];
   enabledSkills: string[];
+  /** 只存显式拨过的能力包开关，缺省走注册表 defaultEnabled；残留下线 key 静默忽略 */
+  abilityOverrides?: Record<string, boolean>;
 }
 
 function getConfigDir(): string {
@@ -34,6 +36,7 @@ export async function updateWorkspaceConfig(
   const merged: WorkspaceConfig = {
     enabledToolPacks: partial.enabledToolPacks ?? current.enabledToolPacks,
     enabledSkills: partial.enabledSkills ?? current.enabledSkills,
+    abilityOverrides: partial.abilityOverrides ?? current.abilityOverrides,
   };
   await safeJsonWrite(getWorkspaceConfigPath(workspaceId), merged);
   return merged;

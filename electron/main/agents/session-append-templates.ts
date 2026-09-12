@@ -8,6 +8,13 @@ import type { SystemPromptSegment } from '../types.js';
 import type { SubAgentProfile } from '../services/settings-types.js';
 import { createDefaultSubAgentProfile } from '../services/settings-types.js';
 
+export type SystemPromptSegmentKey =
+  | 'group-context'
+  | 'memory-guidance'
+  | 'notes-discipline'
+  | 'sub-agent-contract'
+  | 'main-agent-delegation';
+
 /** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
 export const MEMORY_GUIDANCE_APPEND =
   '\n## 记忆系统\n' +
@@ -98,7 +105,7 @@ const GROUP_CONTEXT_EXAMPLE =
 /**
  * 收集当前所有「系统级 append 段」的模板与触发说明，供设置页展示。
  */
-export function getSystemPromptSegments(): SystemPromptSegment[] {
+export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemPromptSegmentKey })[] {
   return [
     {
       key: 'group-context',
