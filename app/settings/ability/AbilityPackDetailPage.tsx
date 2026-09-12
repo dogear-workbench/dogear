@@ -63,15 +63,19 @@ function SegmentBlock({ segment }: { segment: AbilitySegmentMeta }) {
       <div className="px-3 py-2 bg-muted/30 border-b space-y-0.5 shrink-0">
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold">{segment.label}</span>
-          <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">跟随代码版本，只读</span>
+          <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">跟随代码版本，只读</span>
         </div>
         {segment.triggerDescription && (
-          <p className="text-[10px] text-muted-foreground leading-relaxed">{segment.triggerDescription}</p>
+          <p className="text-xs text-muted-foreground leading-relaxed">{segment.triggerDescription}</p>
         )}
       </div>
-      <pre className="flex-1 min-h-0 overflow-auto px-3 py-2 text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words text-foreground/90">
-        {segment.template || '（模板为空）'}
-      </pre>
+      <div className="flex-1 min-h-0 overflow-auto px-3 py-2 text-sm">
+        {segment.template.trim() ? (
+          <MarkdownRenderer content={segment.template} />
+        ) : (
+          <p className="text-xs text-muted-foreground py-2">（模板为空）</p>
+        )}
+      </div>
     </div>
   );
 }

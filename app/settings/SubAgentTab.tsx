@@ -437,17 +437,17 @@ export function SubAgentTab({ local, setLocal }: SubAgentTabProps) {
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{profile.name}</span>
                   {profile.id === 'default' && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                       默认
                     </span>
                   )}
                   {profile.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                       内置
                     </span>
                   )}
                   {profile.enabled === false && (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                    <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
                       已停用
                     </span>
                   )}

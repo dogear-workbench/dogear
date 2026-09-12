@@ -42,7 +42,12 @@ function loadRealServiceModules(): Promise<void> {
 const browserWindowStub = { getAllWindows: () => [{ isDestroyed: () => false, webContents: {} }] };
 const electronStub = {
   BrowserWindow: browserWindowStub,
-  app: {},
+  WebContentsView: class {},
+  session: {},
+  nativeImage: {},
+  Notification: {},
+  Tray: {},
+  app: { on: () => {} },
   nativeTheme: {},
   ipcMain: { on: () => {}, handle: () => {}, removeHandler: () => {} },
   ipcRenderer: {},

@@ -34,7 +34,7 @@ function MountGroup({
           className={cn('w-3.5 h-3.5 shrink-0 text-muted-foreground transition-transform', !open && '-rotate-90')}
         />
         <span className="text-xs font-medium">{label}</span>
-        <span className="text-[10px] text-muted-foreground ml-auto shrink-0">{summary}</span>
+        <span className="text-xs text-muted-foreground ml-auto shrink-0">{summary}</span>
       </button>
       {open && children && (
         <div className="px-2.5 py-1.5 border-t border-border/40 space-y-1">{children}</div>
@@ -44,7 +44,7 @@ function MountGroup({
 }
 
 function Line({ children }: { children: React.ReactNode }) {
-  return <div className="text-[11px] text-muted-foreground leading-relaxed flex items-start gap-1.5 flex-wrap">{children}</div>;
+  return <div className="text-xs text-muted-foreground leading-relaxed flex items-start gap-1.5 flex-wrap">{children}</div>;
 }
 
 export function AbilityMountsSection({ packKey, refreshKey }: AbilityMountsSectionProps) {
@@ -88,7 +88,7 @@ export function AbilityMountsSection({ packKey, refreshKey }: AbilityMountsSecti
               {w.enabled ? '已开启' : '已关闭'}
             </span>
             {skillPack && w.enabled && (
-              <span className="text-[10px] text-muted-foreground/70">
+              <span className="text-xs text-muted-foreground/70">
                 细闸：skill {w.enabledSkills.length} 个
                 {w.enabledToolPacks.length > 0 ? ` · 工具包 ${w.enabledToolPacks.length} 个` : ''}
               </span>
@@ -110,18 +110,18 @@ export function AbilityMountsSection({ packKey, refreshKey }: AbilityMountsSecti
             <Line key={p.profileId}>
               <span className="text-foreground/80">{p.profileName}</span>
               {!p.profileEnabled && (
-                <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">已停用</span>
+                <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">已停用</span>
               )}
               <span className={p.enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}>
                 {p.enabled ? '细闸放行' : '细闸不放行'}
               </span>
               {p.matchedSkills.length > 0 && (
-                <span className="text-[10px] text-muted-foreground/70">白名单命中 {p.matchedSkills.length} 个 skill</span>
+                <span className="text-xs text-muted-foreground/70">白名单命中 {p.matchedSkills.length} 个 skill</span>
               )}
             </Line>
           ))}
           <Line>
-            <span className="text-[10px] text-muted-foreground/60">实际生效还需工作区总闸开启；Profile 只能做减法。</span>
+            <span className="text-xs text-muted-foreground/60">实际生效还需工作区总闸开启；Profile 只能做减法。</span>
           </Line>
         </MountGroup>
       )}
@@ -136,9 +136,9 @@ export function AbilityMountsSection({ packKey, refreshKey }: AbilityMountsSecti
             <Line key={t.taskId}>
               <span className="text-foreground/80">{t.taskName}</span>
               {!t.taskEnabled && (
-                <span className="text-[10px] px-1 py-0.5 rounded bg-muted text-muted-foreground">已停用</span>
+                <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">已停用</span>
               )}
-              <span className="text-[10px] text-muted-foreground/70">覆盖工具包：{t.matchedToolPacks.join('、')}</span>
+              <span className="text-xs text-muted-foreground/70">覆盖工具包：{t.matchedToolPacks.join('、')}</span>
             </Line>
           ))}
         </MountGroup>

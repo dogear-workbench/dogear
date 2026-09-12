@@ -34,7 +34,7 @@ export function AbilityPackCard({ pack, enabled, disabled, busy, onToggle, onOpe
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold truncate">{pack.label}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+            <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
               {PACK_TYPE_LABELS[pack.type]}
             </span>
           </div>
@@ -57,12 +57,12 @@ export function AbilityPackCard({ pack, enabled, disabled, busy, onToggle, onOpe
       </div>
       <div className="flex items-center gap-2 flex-wrap">
         {stats.map((s) => (
-          <span key={s} className="text-[10px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5">
+          <span key={s} className="text-xs text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5">
             {s}
           </span>
         ))}
         {!enabled && (
-          <span className={cn('text-[10px] px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400')}>
+          <span className={cn('text-xs px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400')}>
             已关闭
           </span>
         )}

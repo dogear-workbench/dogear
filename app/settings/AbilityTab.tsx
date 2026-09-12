@@ -276,7 +276,7 @@ export function AbilityTab() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold truncate">系统行为</span>
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">系统</span>
+                <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">系统</span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
                 框架固定行为总览：会话组上下文、主子会话协作、常驻工具，均不可关闭。
@@ -284,7 +284,7 @@ export function AbilityTab() {
             </div>
           </div>
           <div>
-            <span className="text-[10px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5">
+            <span className="text-xs text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5">
               提示词段 {systemBehaviors.length} · 常驻工具
             </span>
           </div>

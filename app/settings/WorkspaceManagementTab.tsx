@@ -247,12 +247,12 @@ export function WorkspaceManagementTab() {
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-medium truncate">{ws.name}</span>
                       {isActive && (
-                        <span className="text-[10px] bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded shrink-0">
+                        <span className="text-xs bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded shrink-0">
                           当前
                         </span>
                       )}
                       {ws.is_default === 1 && (
-                        <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded shrink-0">
+                        <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded shrink-0">
                           默认
                         </span>
                       )}
@@ -333,7 +333,7 @@ export function WorkspaceManagementTab() {
                           {orphan.sourceName || `未知来源 (${orphan.id.slice(0, 8)}...)`}
                         </span>
                         <div className="flex items-center gap-2 shrink-0">
-                          <span className="text-[10px] text-muted-foreground">
+                          <span className="text-xs text-muted-foreground">
                             {orphan.conversationCount} 个对话
                           </span>
                           {importingId === orphan.id && (
@@ -342,18 +342,18 @@ export function WorkspaceManagementTab() {
                         </div>
                       </div>
                       {orphan.sourcePath && (
-                        <div className="text-[10px] text-muted-foreground truncate">
+                        <div className="text-xs text-muted-foreground truncate">
                           原路径: {orphan.sourcePath}
                         </div>
                       )}
                       {orphan.sampleTitles.length > 0 && (
-                        <div className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                        <div className="text-xs text-muted-foreground mt-0.5 truncate">
                           {orphan.sampleTitles.join('、')}
                           {orphan.conversationCount > 5 ? '...' : ''}
                         </div>
                       )}
                       {orphan.lastUpdated && (
-                        <div className="text-[10px] text-muted-foreground mt-0.5">
+                        <div className="text-xs text-muted-foreground mt-0.5">
                           最后更新: {new Date(orphan.lastUpdated).toLocaleDateString()}
                         </div>
                       )}
@@ -418,7 +418,7 @@ export function WorkspaceManagementTab() {
                         </span>
                         <span
                           className={cn(
-                            'text-[10px] px-1.5 py-0.5 rounded-full shrink-0',
+                            'text-xs px-1.5 py-0.5 rounded-full shrink-0',
                             dep.required
                               ? 'bg-primary/10 text-primary'
                               : 'bg-muted text-muted-foreground',

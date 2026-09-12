@@ -532,7 +532,7 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">通用级 Agent 指令</label>
                 <p className="text-xs text-muted-foreground">
-                  位于 <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
+                  位于 <code className="text-[0.9em] bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
                   对所有工作区生效。在「能力」页选择「全局规则」包进行编辑。
                 </p>
               </div>
