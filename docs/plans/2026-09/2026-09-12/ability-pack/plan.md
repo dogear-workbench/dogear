@@ -36,7 +36,7 @@
 | 2 | pi-session 拼装/工具注册统一查包，skill 型包 TOOL_PACK_TO_ABILITY 总闸消灭半开，组上下文按协作包裁剪 | ee4d168b |
 | 3 | tipc/ability.ts（getAbilityPacks 四源聚合 / getAbilityMounts 三组反向索引）+ Profile 判定纯函数与 9 项单测 | f66af8b3 |
 | 4 | 能力页两级重构：卡片网格 + 详情分栏（规则文件内嵌编辑/挂载情况/skill 细闸）+ 标脏接线 | 4028d7ff |
-| 5 | 入口收编、死代码清理、三模式冒烟 28 断言、codebase-map 同步 | 本次 |
+| 5 | 入口收编、死代码清理、三模式冒烟 28 断言、codebase-map 同步 | cf7b6520 |
 
 **行为变化（升级须知）**：skill 型包（股票/文章/浏览器/代码工作流）default false 为总闸，存量 enabledSkills/enabledToolPacks 已勾选的用户需在能力页拨包开关恢复（设计预期）。未拨开关时规则文件型/段+工具型行为与重构前一致（冒烟验证）。
 
