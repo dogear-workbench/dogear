@@ -108,6 +108,7 @@ class ConversationRuntimeService {
         enabledToolPacks: wsConfig.enabledToolPacks,
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
+        executor: conversation.executor,
         parentConversationId: conversation.parentConversationId ?? undefined,
         subAgent: conversation.role === 'sub'
           ? {

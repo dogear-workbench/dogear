@@ -105,7 +105,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '会话组上下文（模板说明）',
       category: 'group',
       template: GROUP_CONTEXT_EXAMPLE,
-      triggerDescription: '会话属于某个组时注入。内容 = 组头（组标题 + 共享区使用引导）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含开局先调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。',
+      triggerDescription: '会话属于某个组时注入。内容 = 组头（组标题 + 共享区使用引导）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含开局先调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。任务执行会话（无人值守）只注入组头，不含话题状态段。',
       isDynamic: true,
     },
     {
@@ -121,7 +121,7 @@ export function getSystemPromptSegments(): SystemPromptSegment[] {
       label: '笔记存卡纪律',
       category: 'notes',
       template: NOTES_DISCIPLINE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（脑暴思路/琐事备忘）；可实施工作一律走任务——聊完方案落设计文档、过「是否分步骤」判断后 CreateTask 挂计划栏（可省略 planPath 占位），执行用 ExecuteTask，结果系统自动写回。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入。笔记是用户工作台（脑暴思路/琐事备忘）；可实施工作一律走任务——聊完方案落设计文档、过「是否分步骤」判断后 CreateTask 挂计划栏（可省略 planPath 占位），执行用 ExecuteTask，结果系统自动写回。任务执行会话跳过本段。',
       isDynamic: false,
     },
     {

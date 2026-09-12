@@ -77,6 +77,8 @@ export interface PiSessionConfig {
   groupId?: string;
   /** 与 Conversation.role 同语义，直接透传，决定 dogear-delegation 工具包给主会话集还是子会话集 */
   role: 'main' | 'sub';
+  /** 任务系统无人值守执行会话；start() 据此裁剪 systemPrompt（组上下文只留组头 + 跳过笔记纪律） */
+  executor?: boolean;
   /** role='sub' 时必需：派出当前会话的会话 conversationId（对齐 SubDelegationOpts.parentConversationId）。
    * 由 conversation-runtime-service.ts 从 conversation.parentConversationId 透传；role='main' 时不使用 */
   parentConversationId?: string;
@@ -408,7 +410,10 @@ export class PiSession extends EventEmitter {
     // 有 groupId 就加载（子会话的 group 工具固定挂载，组上下文段固定注入）
     const needGroupContext = !!this.config.groupId;
     const groupContextText = needGroupContext
-      ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!)
+      ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!, {
+          selfConversationId: this.config.conversationId,
+          executor: !isSubAgent && !!this.config.executor,
+        })
       : '';
 
     // ---- agent.md ----
@@ -461,7 +466,8 @@ export class PiSession extends EventEmitter {
     } else {
       if (this.config.workspacePath) {
         promptParts.push(MEMORY_GUIDANCE_APPEND);
-        promptParts.push(NOTES_DISCIPLINE_APPEND);
+        // 笔记存卡纪律是聊方案动线，对无人值守执行会话无意义，跳过
+        if (!this.config.executor) promptParts.push(NOTES_DISCIPLINE_APPEND);
       }
       if (this.config.groupId) {
         promptParts.push(MAIN_AGENT_DELEGATION_APPEND);

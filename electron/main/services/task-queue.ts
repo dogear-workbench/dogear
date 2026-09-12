@@ -195,7 +195,7 @@ class TaskQueueExecutor {
         origin.conv.groupId,
         `任务: ${task.title}`,
         origin.conv.modelSelection,
-        { role: 'main' },
+        { role: 'main', executor: true },
       );
     } catch (err) {
       await this.safeReject(ctx, `创建执行会话失败: ${errorMessage(err)}`);

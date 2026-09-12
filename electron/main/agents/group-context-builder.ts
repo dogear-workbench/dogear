@@ -109,12 +109,13 @@ async function buildTopicStateSection(wsId: string, groupId: string, selfConvers
 }
 
 /**
- * 构建组上下文片段。selfConversationId 用于话题状态段排除自己。失败时返回空串而非抛错。
+ * 构建组上下文片段。selfConversationId 用于话题状态段排除自己；
+ * executor（任务执行会话）只注入组头，跳过话题状态 + ReadGroupBackground 指引（无人值守无消费价值）。失败时返回空串而非抛错。
  */
 export async function buildGroupContextPrompt(
   workspaceId: string,
   groupId: string,
-  selfConversationId?: string,
+  opts?: { selfConversationId?: string; executor?: boolean },
 ): Promise<string> {
   try {
     const group = await groupService.getGroup(workspaceId, groupId);
@@ -132,9 +133,11 @@ export async function buildGroupContextPrompt(
       `共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先用 dogear__ListGroupFiles 列共享区文件清单，需要细看时传 relPath 读单个文件。\n` +
       `当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续。这不是强制——只在你判断有价值时做。`;
 
+    if (opts?.executor) return header;
+
     let stateSection = '';
     try {
-      stateSection = await buildTopicStateSection(workspaceId, groupId, selfConversationId);
+      stateSection = await buildTopicStateSection(workspaceId, groupId, opts?.selfConversationId);
     } catch (e) {
       logger.warn('构建话题状态段失败，仅注入组头部:', e);
     }

@@ -55,6 +55,8 @@ export interface ConversationIndex {
   archivedAt?: string;
   groupId?: string;          // 所属会话组 ID；老数据迁移前可能缺失
   role?: 'main' | 'sub';    // P1 只产生 'main'
+  /** 任务系统创建的无人值守执行会话；启动时据此裁剪 systemPrompt（跳过话题状态段与笔记纪律） */
+  executor?: boolean;
   contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
   createdAt: string;   // ISO 8601 字符串
   updatedAt: string;   // ISO 8601 字符串
@@ -339,6 +341,7 @@ export async function create(
     role?: 'main' | 'sub';
     parentConversationId?: string;
     contractMetadata?: ContractMetadata;
+    executor?: boolean;
   },
 ): Promise<string> {
   return withConversationsTxn(workspaceId, async (file) => {
@@ -356,6 +359,7 @@ export async function create(
       modelSelection: modelSelection ? { ...modelSelection } : null,
       groupId,
       role: options?.role ?? 'main',
+      executor: options?.executor,
       contractMetadata: options?.contractMetadata,
       createdAt: now,
       updatedAt: now,
