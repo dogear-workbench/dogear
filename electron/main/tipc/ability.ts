@@ -93,7 +93,7 @@ export interface TaskMount {
 
 /**
  * 工具组工具明细依赖各工具模块在 tool-registry 完成注册；
- * 只 import 包体系引用的模块（extension/task 等不在包体系）。
+ * 只 import 包体系引用的模块（task 等不在包体系）。
  */
 const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/memory-tools.js'),
@@ -107,6 +107,7 @@ const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/stock-picking-tools.js'),
   () => import('../agents/tools/article-tools.js'),
   () => import('../agents/tools/browser-tools.js'),
+  () => import('../agents/tools/extension-tools.js'),
 ] as const;
 
 async function loadPackToolGroups(): Promise<ToolGroupInfo[]> {

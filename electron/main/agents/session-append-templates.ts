@@ -120,7 +120,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '记忆系统使用规范',
       category: 'memory',
       template: MEMORY_GUIDANCE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入。记忆标准严苛（踩坑/稳定模式/硬决策），脑暴思路走笔记；讨论相关话题时先 dogear__RecallMemory 查询。',
+      triggerDescription: '仅主会话 + 绑定了工作区时注入（无工作区主会话现状兜底注册 memory 工具，工具注册不受此段开关约束）。记忆标准严苛（踩坑/稳定模式/硬决策），脑暴思路走笔记；讨论相关话题时先 dogear__RecallMemory 查询。',
       isDynamic: false,
     },
     {

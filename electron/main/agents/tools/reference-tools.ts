@@ -1,11 +1,11 @@
 /**
- * 引用会话/组背景 MCP Server 工具（dogear-reference）
+ * 跨会话检索 + 组协作工具
  *
- * 主会话和子会话都装——有 groupId 时自动注册。主 agent 可直接读历史会话和组背景，不必派子会话中转。
- *
- * 工具：
+ * dogear-history（跨会话检索，常驻组）：绑定工作区即注册，不可关，与基础工具同性质——通用检索是基础设施。
  * - dogear__ListTopics：列工作区全部话题（零模型纯本地 IO，跨话题检索入口）
  * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
+ *
+ * dogear-reference（组协作组）：有 groupId 时注册，主会话跟 agent-collab 包、子会话跟 Profile reference 细闸。
  * - dogear__ReadGroupBackground：读本组 background.md 的条目化状态卡
  * - dogear__ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
  */
@@ -29,19 +29,8 @@ const READ_SYNC_WAIT_MS = 120_000;
 
 const COMPLETED_KEEP = 8;
 
-export interface ReferenceToolsOpts {
-  workspaceId: string;
-  workspacePath: string;
-  groupId: string;
-  /** 派出这个子会话的父会话 conversationId，用于从兄弟列表里排除。主会话没有父会话 */
-  parentConversationId?: string;
-  /** 当前会话自身的 conversationId：话题状态抽取与未提炼列表排除自己，避免抽自己正在进行的对话 */
-  selfConversationId?: string;
-}
-
-export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
-  const { workspaceId, groupId, parentConversationId, selfConversationId } = opts;
-
+/** 跨会话检索常驻组：只依赖 workspaceId，不需要 groupId / 会话身份 */
+export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
   return [
     defineTool(
       'dogear__ListTopics',
@@ -131,7 +120,22 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
         };
       },
     ),
+  ];
+}
 
+export interface ReferenceToolsOpts {
+  workspaceId: string;
+  groupId: string;
+  /** 派出这个子会话的父会话 conversationId，用于从兄弟列表里排除。主会话没有父会话 */
+  parentConversationId?: string;
+  /** 当前会话自身的 conversationId：话题状态抽取与未提炼列表排除自己，避免抽自己正在进行的对话 */
+  selfConversationId?: string;
+}
+
+export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
+  const { workspaceId, groupId, parentConversationId, selfConversationId } = opts;
+
+  return [
     defineTool(
       'dogear__ReadGroupBackground',
       '读取话题状态卡',
@@ -287,6 +291,13 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     ),
   ];
 }
+
+registerToolGroup({
+  server: 'dogear-history',
+  label: '跨会话检索',
+  create: createHistorySearchToolDefs,
+  placeholder: [''],
+});
 
 registerToolGroup({
   server: 'dogear-reference',

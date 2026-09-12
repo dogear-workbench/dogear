@@ -43,7 +43,7 @@ import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
-import { createReferenceToolDefs } from '../tools/reference-tools.js';
+import { createReferenceToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
@@ -295,7 +295,7 @@ export class PiSession extends EventEmitter {
   // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
   // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
   private closingPromise: Promise<void> | null = null;
-  // 工具名 → 所属工具包标识（OPTIONAL_TOOL_PACKS[].name 或 'dogear-group'/'dogear-delegation'），
+  // 工具名 → 所属工具包标识（OPTIONAL_TOOL_PACKS[].name，或 dogear-group/dogear-delegation/dogear-history 等组标识），
   // start() 组装 toolDefs 时同步填充，供 handleToolCall 的批量免确认判定使用
   private toolPackMap: Map<string, string> = new Map();
   // start() 内创建的 env 引用，供热更新 allowedPaths
@@ -632,9 +632,11 @@ export class PiSession extends EventEmitter {
 
   /**
    * 主会话工具构建：
-   * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总闸生效，extension 不在包体系直通）
-   * + 协作三组（dogear-group/delegation/reference，属组且 agent-collab 包生效）
-   * + dogear-notes（工作区且 notes 包生效）与 dogear-tasks（不在包体系，工作区即注册）
+   * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总闸生效）
+   * + extension（并入 browser 包：只受 browser 包总闸 gate，enabledToolPacks 残留 extension 静默忽略）
+   * + 协作两组（dogear-group/delegation，属组且 agent-collab 包生效）与组协作组（dogear-reference，同条件）
+   * + dogear-notes（工作区且 notes 包生效）
+   * + dogear-tasks 与 dogear-history 跨会话检索组（不在包体系，工作区即注册的常驻基础设施）
    */
   private buildMainAgentToolDefs(skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const toolDefs: ToolDef[] = [
@@ -661,9 +663,6 @@ export class PiSession extends EventEmitter {
         case 'browser':
           toolDefs.push(...this.registerPack(pack.name, createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath, workspaceId: this.config.workspaceId })));
           break;
-        case 'extension':
-          toolDefs.push(...this.registerPack(pack.name, createExtensionToolDefs({ conversationId: this.config.conversationId })));
-          break;
         case 'stock-quote':
           toolDefs.push(...this.registerPack(pack.name, createStockToolDefs()));
           break;
@@ -681,6 +680,11 @@ export class PiSession extends EventEmitter {
       }
     }
 
+    // extension 并入 browser 包：注册只看 browser 包总闸，enabledToolPacks 残留 extension 静默忽略
+    if (activeAbilities.has('browser')) {
+      toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
+    }
+
     if (this.config.groupId && activeAbilities.has('agent-collab')) {
       toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
       const delegationOpts: DelegationToolsOpts = {
@@ -692,7 +696,6 @@ export class PiSession extends EventEmitter {
       toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
       toolDefs.push(...this.registerPack('dogear-reference', createReferenceToolDefs({
         workspaceId: this.config.workspaceId,
-        workspacePath: this.config.workspacePath,
         groupId: this.config.groupId,
         parentConversationId: this.config.parentConversationId,
       })));
@@ -705,12 +708,13 @@ export class PiSession extends EventEmitter {
       })));
     }
 
-    // dogear-tasks 不在能力包体系，保持工作区即注册的现状
+    // dogear-tasks 与 dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施
     if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-tasks', createTaskToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
       })));
+      toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
     }
 
     return toolDefs;
@@ -722,9 +726,10 @@ export class PiSession extends EventEmitter {
    * - Skill 工具：有 ≥1 skill 勾选时创建
    * - dogear-memory：memory 包生效（含 Profile 的 memory===true 细闸，由 resolveAbilities 并集）
    * - stock/article/browser 工具包：对应能力包生效（Profile 细闸并入包解析）
-   * - extension 工具包：仅当 extension===true（不在包体系，保持 Profile 直控）
+   * - extension 工具组：browser 包生效且 Profile extension===true 双闸
+   * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 细闸——通用检索是基础设施）
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
-   * - dogear-reference：仅当 reference===true（不在包体系，保持 Profile 细控）
+   * - dogear-reference（组协作两工具）：仅当 reference===true（保持 Profile 细控）
    */
   private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const ab = profile.enabledAbilities;
@@ -761,9 +766,14 @@ export class PiSession extends EventEmitter {
       toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath, workspaceId: this.config.workspaceId })));
     }
 
-    // extension 工具包：仅当 extension===true
-    if (ab.extension === true) {
+    // extension：并入 browser 包后是双闸——browser 包生效（Profile 细闸已并入 resolveAbilities）+ extension===true
+    if (activeAbilities.has('browser') && ab.extension === true) {
       toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
+    }
+
+    // dogear-history：工作区即注册，通用检索基础设施，不查 Profile 细闸
+    if (this.config.workspacePath) {
+      toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
     }
 
     // dogear-group / dogear-delegation / dogear-reference
@@ -780,11 +790,10 @@ export class PiSession extends EventEmitter {
       };
       toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
 
-      // dogear-reference：仅当 reference===true
+      // dogear-reference（组协作两工具）：仅当 reference===true
       if (ab.reference === true) {
         toolDefs.push(...this.registerPack('dogear-reference', createReferenceToolDefs({
           workspaceId: this.config.workspaceId,
-          workspacePath: this.config.workspacePath,
           groupId: this.config.groupId,
           parentConversationId: this.config.parentConversationId,
           selfConversationId: this.config.conversationId,

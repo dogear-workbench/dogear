@@ -20,7 +20,8 @@ export interface AbilityPack {
   /**
    * 工具组标识，混合存两类 ID（集合不相交）：
    * - 常驻组存 MCP server 名（dogear-memory 等，不在 OPTIONAL_TOOL_PACKS）
-   * - 可选包存工具包 name（stock-quote 等，可经 OPTIONAL_TOOL_PACKS 查 mcpServerName）
+   * - 可选包存工具包 name（stock-quote 等，可经 OPTIONAL_TOOL_PACKS 查 mcpServerName）；
+   *   例外：browser 包的 'dogear-extension' 是 server 名（扩展通道并入包内展示，无独立开关）
    */
   toolGroups?: string[];
   skills?: string[];
@@ -109,10 +110,10 @@ export const ABILITY_PACKS: AbilityPack[] = [
   {
     key: 'browser',
     label: '浏览器',
-    description: '浏览器调研方法论 skill + 内嵌浏览器工具包（读文章/搜索/原子探索）',
+    description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，登录态站点优先）',
     type: 'skill-packs',
     skills: ['browser-exploration'],
-    toolGroups: ['browser'],
+    toolGroups: ['browser', 'dogear-extension'],
     defaultEnabled: false,
   },
   {
@@ -217,14 +218,14 @@ export function buildProfileAbilityMount(pack: AbilityPack, profile: SubAgentPro
   }
 }
 
-/** 可选工具包 name（OPTIONAL_TOOL_PACKS[].name）→ 所属 skill 型能力包 key，供拼装侧与挂载反查共用；extension 等不在包体系的包不在此表。 */
+/** 工具组标识 → 所属 skill 型能力包 key，供拼装侧与挂载反查共用；键含可选包 name 与并入包内的 server 名（dogear-extension）。 */
 export const TOOL_PACK_TO_ABILITY = new Map<string, string>(
   ABILITY_PACKS
     .filter((p) => p.type === 'skill-packs')
     .flatMap((p) => (p.toolGroups ?? []).map((g) => [g, p.key] as const)),
 );
 
-/** 结构性注入段（组上下文/子会话契约/Profile 索引）：不可关、只读展示，归「系统行为」卡。 */
+/** 结构性注入段（组上下文/子会话契约）：不可关、只读展示，归「系统行为」卡。 */
 export interface SystemBehavior {
   key: string;
   label: string;
@@ -246,13 +247,6 @@ export const SYSTEM_BEHAVIORS: SystemBehavior[] = [
     label: '子会话交付契约',
     triggerDescription: '子会话注入：明确任务、交付路径与交付流程，契约不受能力包开关影响。',
     segmentKey: 'sub-agent-contract',
-    readonly: true,
-  },
-  {
-    key: 'profile-index',
-    label: '子会话 Profile 索引',
-    triggerDescription: '主会话且属于组时注入：列出可用 Profile 供派遣选择，与协作规范同段注入。',
-    segmentKey: 'main-agent-delegation',
     readonly: true,
   },
 ];

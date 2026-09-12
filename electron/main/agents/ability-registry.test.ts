@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import {
   ABILITY_PACKS,
+  SYSTEM_BEHAVIORS,
   TOOL_PACK_TO_ABILITY,
   buildProfileAbilityMount,
   resolveAbilities,
@@ -114,5 +115,16 @@ describe('TOOL_PACK_TO_ABILITY 挂载反查', () => {
         expect(TOOL_PACK_TO_ABILITY.has(server)).toBe(false);
       }
     }
+  });
+});
+
+describe('工具归属修正（extension 并包 / reference 拆组 / 系统行为收缩）', () => {
+  test('browser 包 toolGroups 含内嵌浏览器与扩展通道两个组，扩展通道反查回 browser', () => {
+    expect(packOf('browser').toolGroups).toEqual(['browser', 'dogear-extension']);
+    expect(TOOL_PACK_TO_ABILITY.get('dogear-extension')).toBe('browser');
+  });
+
+  test('SYSTEM_BEHAVIORS 仅组上下文与子会话契约（profile-index 已移除，不标「不可关」错误语义）', () => {
+    expect(SYSTEM_BEHAVIORS.map((b) => b.key)).toEqual(['group-context', 'sub-agent-contract']);
   });
 });
