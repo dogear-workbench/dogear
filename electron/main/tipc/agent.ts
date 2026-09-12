@@ -463,6 +463,7 @@ export const agentRouter = {
         import('../agents/tools/stock-analysis-tools.js'),
         import('../agents/tools/stock-announcement-tools.js'),
         import('../agents/tools/stock-picking-tools.js'),
+        import('../agents/tools/web-mcp-tools.js'),
         import('../agents/tools/group-tools.js'),
         import('../agents/tools/delegation-tools.js'),
         import('../agents/tools/reference-tools.js'),

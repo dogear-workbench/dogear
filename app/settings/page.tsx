@@ -528,6 +528,29 @@ export default function SettingsPage() {
                 </div>
               </div>
 
+              {/* 联网搜索（GLM MCP） */}
+              <div className="space-y-3">
+                <label className="text-sm font-medium">联网搜索（GLM MCP）</label>
+                <p className="text-xs text-muted-foreground">
+                  能力页「联网搜索」工具包（bigmodel__webSearch / bigmodel__webReader）的 API Key，
+                  在智谱个人编程套餐 → 套餐概览页创建；消耗套餐专属 MCP 额度。
+                </p>
+                <div className="space-y-1.5 rounded-lg border p-4">
+                  <label className="text-sm font-medium">GLM Coding Plan API Key</label>
+                  <p className="text-xs text-muted-foreground">
+                    留空时开启工具包也会因缺 Key 在调用时返回提示（不会崩溃）。
+                  </p>
+                  <input
+                    type="password"
+                    className={inputCls}
+                    value={local.webMcpApiKey ?? ''}
+                    onChange={(e) => setLocal(prev => ({ ...prev, webMcpApiKey: e.target.value }))}
+                    placeholder="GLM Coding Plan API Key"
+                    autoComplete="off"
+                  />
+                </div>
+              </div>
+
               {/* 通用级 agent.md：唯一编辑入口在能力页「全局规则」包详情 */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">通用级 Agent 指令</label>

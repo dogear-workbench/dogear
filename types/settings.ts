@@ -149,6 +149,8 @@ export interface AppSettings {
   };
   /** 受控浏览器代理地址（host:port）；空 = 禁用代理引擎，搜索仅 Bing */
   browserProxyServer?: string;
+  /** GLM Coding Plan API Key（联网搜索 MCP 工具用）；空 = 未配置，工具调用返回提示 */
+  webMcpApiKey?: string;
   /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
   browserSearchEngine: BrowserSearchEngine;
 }

@@ -39,6 +39,7 @@ import { createStockToolDefs } from '../tools/stock-tools.js';
 import { createStockAnalysisToolDefs } from '../tools/stock-analysis-tools.js';
 import { createAnnouncementToolDefs } from '../tools/stock-announcement-tools.js';
 import { createStockPickingToolDefs } from '../tools/stock-picking-tools.js';
+import { createWebMcpToolDefs } from '../tools/web-mcp-tools.js';
 import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
@@ -675,6 +676,9 @@ export class PiSession extends EventEmitter {
           break;
         case 'stock-picking':
           toolDefs.push(...this.registerPack(pack.name, createStockPickingToolDefs()));
+          break;
+        case 'web-mcp':
+          toolDefs.push(...this.registerPack(pack.name, createWebMcpToolDefs()));
           break;
         default:
           break;

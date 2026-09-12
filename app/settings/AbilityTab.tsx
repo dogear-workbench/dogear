@@ -80,10 +80,37 @@ export function AbilityTab() {
   );
 
   const handleTogglePack = useCallback(
-    (key: string, enable: boolean) => {
-      void writeOverrides({ ...workspaceConfig.abilityOverrides, [key]: enable });
+    async (key: string, enable: boolean) => {
+      if (!workspaceId) return;
+      const overrides = { ...workspaceConfig.abilityOverrides, [key]: enable };
+      // 无 Skill 的纯工具包（如联网搜索）：包开关直接联动 enabledToolPacks 细闸；
+      // 有 Skill 的包细闸仍由 Skill 开关联动（handleToggleSkills）
+      const pack = (packsResult?.packs ?? []).find((p) => p.key === key);
+      const linkedPacks = (pack?.toolGroupMetas ?? []).filter((g) => g.pack).map((g) => g.id);
+      if (pack && pack.skillMetas.length === 0 && linkedPacks.length > 0) {
+        setPackBusy(true);
+        try {
+          const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
+          for (const name of linkedPacks) {
+            if (enable) enabledToolPacks.add(name);
+            else enabledToolPacks.delete(name);
+          }
+          const res = await client.updateWorkspaceConfig({
+            workspaceId,
+            config: { abilityOverrides: overrides, enabledToolPacks: Array.from(enabledToolPacks) },
+          });
+          if (res && 'config' in res && res.config) {
+            setWorkspaceConfig(res.config);
+            setConfigVersion((v) => v + 1);
+          }
+        } finally {
+          setPackBusy(false);
+        }
+        return;
+      }
+      void writeOverrides(overrides);
     },
-    [writeOverrides, workspaceConfig.abilityOverrides],
+    [packsResult, writeOverrides, workspaceConfig.abilityOverrides, workspaceConfig.enabledToolPacks, workspaceId],
   );
 
   const skillToPacks = useMemo(() => {

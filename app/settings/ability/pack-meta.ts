@@ -6,6 +6,7 @@ import {
   Globe,
   Newspaper,
   ScrollText,
+  Search,
   StickyNote,
   TrendingUp,
   UserRound,
@@ -25,6 +26,7 @@ export const PACK_ICONS: Record<string, LucideIcon> = {
   stock: TrendingUp,
   article: Newspaper,
   browser: AppWindow,
+  'web-mcp': Search,
   'code-workflow': Code,
 };
 

@@ -133,6 +133,7 @@ const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/article-tools.js'),
   () => import('../agents/tools/browser-tools.js'),
   () => import('../agents/tools/extension-tools.js'),
+  () => import('../agents/tools/web-mcp-tools.js'),
 ] as const;
 
 async function loadPackToolGroups(): Promise<ToolGroupInfo[]> {
@@ -215,6 +216,8 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
         return '会话属于组时注入组上下文';
       case 'agent-collab':
         return '会话属于组时注册协作工具并注入协作规范';
+      case 'web-mcp':
+        return '包开启即挂载联网搜索工具（需在设置页配置 GLM API Key，未配置时调用返回提示）';
       default:
         return '包开启；包内 Skill 与工具包受工作区细开关控制';
     }
@@ -231,6 +234,8 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       return '会话属于组时生效，无 Profile 过滤维度';
     case 'agent-collab':
       return '交付契约段恒注入；协作工具随包开关且属组时注册（子会话强制生效）';
+    case 'web-mcp':
+      return '仅主会话挂载联网搜索工具；子会话本期不挂载';
     default:
       return '包开启；包内 Skill 与工具包受工作区细开关控制';
   }

@@ -247,6 +247,10 @@ export function normalizeSettings(settings: AppSettings): boolean {
     delete obj.browserProxyServer;
     changed = true;
   }
+  if (obj.webMcpApiKey !== undefined && typeof obj.webMcpApiKey !== 'string') {
+    delete obj.webMcpApiKey;
+    changed = true;
+  }
 
   const staleAiFields = ['maxTurns', 'defaultSystemPrompt', 'subagentModelTier', 'excludeDynamicSections', 'promptSuggestionsEnabled', 'thinkingType', 'thinkingBudgetTokens', 'thinkingDisplay'];
   const aiObj = settings.ai as unknown as Record<string, unknown>;

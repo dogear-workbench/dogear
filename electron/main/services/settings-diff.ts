@@ -9,6 +9,7 @@ import type { AppSettings, ModelSelection, SubAgentProfile } from './settings-ty
  * | appearance.theme                                                  | ui |
  * | profiles[id].name                                                 | ui（仅显示名） |
  * | browserProxyServer / browserSearchEngine                          | perCall（browser-tools 每次调用读取） |
+ * | webMcpApiKey                                                       | perCall（web-mcp-tools 每次调用读取） |
  * | failover.enabled / failover.chain                                 | perCall（maybeFailoverMainSession 每轮读取） |
  * | update.serverUrl / migrated.*                                     | perCall |
  * | ai.parseModelSelection / ai.stateModelSelection                   | perCall（agent-worker 每任务 loadSettings） |

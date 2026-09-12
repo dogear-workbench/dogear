@@ -140,6 +140,51 @@ describe('冒烟：browser 包总闸 gate 主会话 extension', () => {
   });
 });
 
+describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
+  const configWebMcp = (): WorkspaceConfig => ({
+    ...ALL_OFF,
+    abilityOverrides: { ...ALL_OFF.abilityOverrides, 'web-mcp': true },
+  });
+
+  test('包开 + enabledToolPacks 含 web-mcp → 主会话挂载两个工具', () => {
+    const active = resolveAbilities(configWebMcp(), { role: 'main', hasWorkspace: true, groupId: null });
+    expect(active.has('web-mcp')).toBe(true);
+
+    const s = makeSession('main', { enabledToolPacks: ['web-mcp'] });
+    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    expect(names).toContain('bigmodel__webSearch');
+    expect(names).toContain('bigmodel__webReader');
+  });
+
+  test('包开 + enabledToolPacks 不含 web-mcp → 细闸拦住不挂载', () => {
+    const active = resolveAbilities(configWebMcp(), { role: 'main', hasWorkspace: true, groupId: null });
+    const s = makeSession('main');
+    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    expect(names).not.toContain('bigmodel__webSearch');
+    expect(names).not.toContain('bigmodel__webReader');
+  });
+
+  test('包关 + enabledToolPacks 残留 web-mcp → 总闸拦住不挂载', () => {
+    const active = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
+    expect(active.has('web-mcp')).toBe(false);
+
+    const s = makeSession('main', { enabledToolPacks: ['web-mcp'] });
+    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    expect(names).not.toContain('bigmodel__webSearch');
+  });
+
+  test('mainOnly：子会话场景包不生效', () => {
+    const profile = createDefaultSubAgentProfile();
+    const active = resolveAbilities(configWebMcp(), {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: GROUP_ID,
+      profile,
+    });
+    expect(active.has('web-mcp')).toBe(false);
+  });
+});
+
 describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
   test('browser 包开 + Profile extension=true → extension 注册', () => {
     const profile: SubAgentProfile = {
