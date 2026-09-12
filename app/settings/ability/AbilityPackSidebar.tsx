@@ -7,6 +7,7 @@ import { AbilityMountsSection } from './AbilityMountsSection';
 
 interface AbilityPackSidebarProps {
   pack: AbilityPackView;
+  workspaceId: string | null;
   packEnabled: boolean;
   disabled?: boolean;
   packBusy: boolean;
@@ -62,6 +63,7 @@ function ToolGroupPanel({
 
 export function AbilityPackSidebar({
   pack,
+  workspaceId,
   packEnabled,
   disabled,
   packBusy,
@@ -106,8 +108,8 @@ export function AbilityPackSidebar({
       )}
 
       <section className="space-y-2">
-        <span className="text-xs text-muted-foreground">挂载情况</span>
-        <AbilityMountsSection packKey={pack.key} refreshKey={configVersion} />
+        <span className="text-xs text-muted-foreground">加载情况</span>
+        <AbilityMountsSection packKey={pack.key} workspaceId={workspaceId} refreshKey={configVersion} />
       </section>
 
       <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">

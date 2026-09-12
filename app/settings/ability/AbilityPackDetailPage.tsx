@@ -330,6 +330,7 @@ export function AbilityPackDetailPage({
 
         <AbilityPackSidebar
           pack={pack}
+          workspaceId={workspaceId}
           packEnabled={packEnabled}
           disabled={!workspaceId}
           packBusy={packBusy}

@@ -2,7 +2,6 @@ import { describe, test, expect } from 'bun:test';
 import {
   ABILITY_PACKS,
   TOOL_PACK_TO_ABILITY,
-  buildProfileAbilityMount,
   resolveAbilities,
   type AbilityPack,
 } from './ability-registry.js';
@@ -19,55 +18,10 @@ function profileWith(ab: SubAgentProfile['enabledAbilities'], extra?: Partial<Su
   return { ...createDefaultSubAgentProfile(), enabledAbilities: ab, ...extra };
 }
 
-describe('buildProfileAbilityMount', () => {
-  test('memory 仅 profile.enabledAbilities.memory === true 时可用', () => {
-    const pack = packOf('memory');
-    expect(buildProfileAbilityMount(pack, profileWith({}))).toMatchObject({ enabled: false });
-    expect(buildProfileAbilityMount(pack, profileWith({ memory: true }))).toMatchObject({ enabled: true });
-    expect(buildProfileAbilityMount(pack, profileWith({ memory: false }))).toMatchObject({ enabled: false });
-  });
-
-  test('stock/article/browser 各自对应能力域开关', () => {
-    expect(buildProfileAbilityMount(packOf('stock'), profileWith({ stock: true }))?.enabled).toBe(true);
-    expect(buildProfileAbilityMount(packOf('stock'), profileWith({}))?.enabled).toBe(false);
-    expect(buildProfileAbilityMount(packOf('article'), profileWith({ article: true }))?.enabled).toBe(true);
-    expect(buildProfileAbilityMount(packOf('browser'), profileWith({ browser: true }))?.enabled).toBe(true);
-  });
-
-  test('code-workflow 按 skills 白名单交集判定，matchedSkills 只含包内 skill', () => {
-    const pack = packOf('code-workflow');
-    const none = buildProfileAbilityMount(pack, profileWith({}));
-    expect(none?.enabled).toBe(false);
-    expect(none?.matchedSkills).toEqual([]);
-
-    const partial = buildProfileAbilityMount(pack, profileWith({ skills: ['brainstorming', 'doc-sync', 'stock-analysis'] }));
-    expect(partial?.enabled).toBe(true);
-    expect(partial?.matchedSkills.sort()).toEqual(['brainstorming', 'doc-sync']);
-  });
-
-  test('无 Profile 细闸的包返回 null（prompt-only / notes / 会话组 / 协作）', () => {
-    for (const key of ['workspace-rules', 'global-rules', 'core-profile', 'notes', 'group-context', 'agent-collab']) {
-      expect(buildProfileAbilityMount(packOf(key), profileWith({ memory: true, stock: true }))).toBeNull();
-    }
-  });
-
-  test('profileEnabled 反映 Profile 可见性，enabled 判定不受其影响', () => {
-    const mount = buildProfileAbilityMount(packOf('memory'), profileWith({ memory: true }, { enabled: false }));
-    expect(mount).toMatchObject({ profileEnabled: false, enabled: true });
-  });
-
-  test('内置浏览器解析 Profile 默认 browser 可用、默认 Profile 全不可用', () => {
-    expect(buildProfileAbilityMount(packOf('browser'), createBrowserParseSubAgentProfile())?.enabled).toBe(true);
-    expect(buildProfileAbilityMount(packOf('browser'), createDefaultSubAgentProfile())?.enabled).toBe(false);
-  });
-});
-
-describe('resolveAbilities 与 buildProfileAbilityMount 对齐性', () => {
-  test('memory/stock/article/browser 四包子会话侧两函数判定一致（工作区总闸全开时）', () => {
-    // buildProfileAbilityMount 只表达 Profile 细闸维度（工作区总闸在挂载情况 workspaces 组表达），
-    // 所以对齐前提是 abilityOverrides 把四包总闸全开；
-    // code-workflow 的 Profile 过滤在运行时位于 skill 级（filterSkillsForSubAgent 的 ab.skills），
-    // 不在 resolveAbilities 包级，故不在此对齐范围
+describe('resolveAbilities 子会话 Profile 过滤', () => {
+  test('memory/stock/article/browser 细闸为 true 才生效；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
+    // 四包总闸在 abilityOverrides 全开，判定纯由细闸决定；
+    // code-workflow 的 Profile 过滤在运行时位于 skill 级（filterSkillsForSubAgent 的 ab.skills），不在包级
     const keys = ['memory', 'stock', 'article', 'browser'] as const;
     const cases: SubAgentProfile['enabledAbilities'][] = [
       {},
@@ -79,21 +33,34 @@ describe('resolveAbilities 与 buildProfileAbilityMount 对齐性', () => {
     const config: WorkspaceConfig = {
       enabledToolPacks: [],
       enabledSkills: [],
-      abilityOverrides: { memory: true, stock: true, article: true, browser: true },
+      abilityOverrides: { memory: true, stock: true, article: true, browser: true, 'code-workflow': true },
     };
     for (const ab of cases) {
-      const profile = profileWith(ab);
       const active = resolveAbilities(config, {
         role: 'sub',
         hasWorkspace: true,
         groupId: null,
-        profile,
+        profile: profileWith(ab),
       });
       for (const key of keys) {
-        const mount = buildProfileAbilityMount(packOf(key), profile);
-        expect(active.has(key)).toBe(mount?.enabled ?? false);
+        expect(active.has(key)).toBe(ab[key] === true);
       }
+      expect(active.has('code-workflow')).toBe(true);
     }
+  });
+
+  test('profile 停用不影响包级判定（可见性在派遣侧控制）', () => {
+    const active = resolveAbilities(
+      { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} },
+      { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ memory: true }, { enabled: false }) },
+    );
+    expect(active.has('memory')).toBe(true);
+  });
+
+  test('内置浏览器解析 Profile 默认 browser 生效、默认 Profile 不生效', () => {
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true } };
+    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createBrowserParseSubAgentProfile() }).has('browser')).toBe(true);
+    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createDefaultSubAgentProfile() }).has('browser')).toBe(false);
   });
 });
 
@@ -145,9 +112,9 @@ describe('工具归属修正（extension 并包 / reference 拆组 / 系统行�
     expect(noGroup.has('agent-collab')).toBe(false);
   });
 
-  test('子会话 reference 旧细闸不再生效：Profile reference=true 不影响包解析', () => {
+  test('子会话 reference 旧细闸不再生效：旧配置残留 reference=true 不影响包解析', () => {
     const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} };
-    const profile = profileWith({ reference: true });
+    const profile = profileWith({ reference: true } as SubAgentProfile['enabledAbilities']);
     const active = resolveAbilities(config, {
       role: 'sub',
       hasWorkspace: true,

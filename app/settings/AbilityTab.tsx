@@ -213,7 +213,7 @@ export function AbilityTab() {
         <div>
           <h2 className="text-lg font-semibold">能力</h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            能力包 = 提示词段 + 工具组 + Skill 的组合；点击卡片查看详情与挂载情况
+            能力包 = 提示词段 + 工具组 + Skill 的组合；点击卡片查看详情与加载情况
             {activeWorkspace ? `，当前编辑：${activeWorkspace.name}` : ''}
             ，修改后需重启会话生效。
           </p>

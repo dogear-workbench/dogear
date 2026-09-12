@@ -3,11 +3,9 @@ import { tipc } from '@egoist/tipc/main';
 import {
   ABILITY_PACKS,
   SKILL_PACK_MAP,
-  TOOL_PACK_TO_ABILITY,
-  buildProfileAbilityMount,
+  resolveAbilities,
   type AbilityPack,
   type AbilityPackType,
-  type ProfileAbilityMount,
 } from '../agents/ability-registry.js';
 import {
   getSystemPromptSegments,
@@ -15,11 +13,15 @@ import {
 } from '../agents/session-append-templates.js';
 import { getAllToolGroups, type ToolGroupInfo, type ToolInfo } from '../agents/tools/tool-registry.js';
 import { loadSettings } from '../services/settings-service.js';
+import {
+  createDefaultSubAgentProfile,
+  type AppSettings,
+  type SubAgentProfile,
+} from '../services/settings-types.js';
 import { OPTIONAL_TOOL_PACKS } from '../services/tool-packs.js';
 import { listSkillTemplates } from '../services/skill-template-service.js';
-import { getWorkspaceConfig } from '../services/workspace-config-service.js';
+import { getWorkspaceConfig, type WorkspaceConfig } from '../services/workspace-config-service.js';
 import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
-import { isRetiredBuiltinTask, loadTasks } from '../services/scheduler/plan-store.js';
 
 const t = tipc.create();
 
@@ -83,30 +85,39 @@ export interface ResidentToolGroupMeta {
 /** 常驻工具组：绑定工作区即注册，不可关，前端标注触发条件（任务系统已归笔记包，不再常驻） */
 const RESIDENT_GROUP_IDS = ['dogear-history'] as const;
 
-export interface WorkspaceMount {
-  workspaceId: string;
-  workspaceName: string;
-  /** 工作区包开关：abilityOverrides[key] ?? defaultEnabled（不含触发条件，触发条件是运行时的） */
-  enabled: boolean;
-  /** 仅 skill 型包非空：包内已开细闸的 skill（enabledSkills ∩ pack.skills） */
-  enabledSkills: string[];
-  /** 仅 skill 型包非空：包内已开的工具包 name（enabledToolPacks ∩ pack.toolGroups） */
-  enabledToolPacks: string[];
+export type AbilityMountSceneKind = 'main' | 'sub-default' | 'profile' | 'executor';
+
+export interface AbilityMountSceneRow {
+  kind: AbilityMountSceneKind;
+  /** 场景稳定标识：main / sub-default / executor / Profile id */
+  id: string;
+  label: string;
+  /** 系统预设固定行：加载行为由代码定死，用户无 Profile 细闸可改 */
+  system: boolean;
+  /** 该场景此能力是否加载（触发条件按已满足计，具体条件见 reason） */
+  loaded: boolean;
+  reason: string;
+  /** 仅 profile 行：Profile 已停用不可派遣，loaded 仅供说明 */
+  profileDisabled?: boolean;
 }
 
-export type ProfileMount = ProfileAbilityMount;
+/** 系统行为详情页的矩阵 key：基础工具 + 常驻工具组的场景加载情况 */
+export const SYSTEM_MOUNTS_PACK_KEY = '__system__';
 
-export interface TaskMount {
-  taskId: string;
-  taskName: string;
-  taskEnabled: boolean;
-  /** toolPacksOverride 中属于本包的工具包 name（经 TOOL_PACK_TO_ABILITY 反查） */
-  matchedToolPacks: string[];
-}
+/** 矩阵按「触发条件已满足」计算，属组类条件用占位组 ID 放行，条件本身文字化进 reason */
+const MOUNT_GROUP_PLACEHOLDER = 'mount-matrix-group';
+
+const PROFILE_FILTER_LABELS: Record<string, string> = {
+  memory: '记忆',
+  stock: '股票分析',
+  article: '文章',
+  browser: '浏览器',
+  'code-workflow': '代码工作流 Skill',
+};
 
 /**
  * 工具组工具明细依赖各工具模块在 tool-registry 完成注册；
- * import 覆盖能力包与常驻工具区（task / reference 双组）需要展示的模块。
+ * import 覆盖能力包与常驻工具区需要展示的模块。
  */
 const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/memory-tools.js'),
@@ -176,6 +187,163 @@ function buildToolGroupMeta(
   };
 }
 
+function packEnabledOf(pack: AbilityPack, config: WorkspaceConfig): boolean {
+  return config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
+}
+
+/** 包开关开启时该格的场景说明；触发条件文字化，是否满足由 resolveAbilities 判定 */
+function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspace: boolean): string {
+  if (kind === 'main' || kind === 'executor') {
+    if (kind === 'executor' && pack.key === 'notes') {
+      return '工具组随包开关注册（任务申报组派单保底），存卡纪律段不注入';
+    }
+    if (kind === 'executor' && pack.key === 'group-context') {
+      return '会话属于组时只注入组头，无人值守不注入话题状态';
+    }
+    if (pack.key === 'memory' || pack.key === 'notes') {
+      return hasWorkspace
+        ? `主会话绑定工作区即加载${pack.key === 'notes' ? '（含任务申报工具）' : ''}`
+        : '需绑定工作区路径后加载';
+    }
+    switch (pack.key) {
+      case 'workspace-rules':
+      case 'global-rules':
+        return '注入每个主会话';
+      case 'core-profile':
+        return '注入每个主会话（内容在数据中心维护）';
+      case 'group-context':
+        return '会话属于组时注入组上下文';
+      case 'agent-collab':
+        return '会话属于组时注册协作工具并注入协作规范';
+      default:
+        return '包开启；包内 Skill 与工具包受工作区细开关控制';
+    }
+  }
+  switch (pack.key) {
+    case 'core-profile':
+      return '仅主会话注入，子会话不加载核心画像';
+    case 'workspace-rules':
+    case 'global-rules':
+      return '随包开关注入子会话';
+    case 'notes':
+      return '仅主会话加载，子会话不注入';
+    case 'group-context':
+      return '会话属于组时生效，无 Profile 过滤维度';
+    case 'agent-collab':
+      return '交付契约段恒注入；协作工具随包开关且属组时注册（子会话强制生效）';
+    default:
+      return '包开启；包内 Skill 与工具包受工作区细开关控制';
+  }
+}
+
+/** 有 Profile 过滤维度的包：按该 Profile 勾选状态生成原因；无过滤维度返回 null */
+function profileFilterReason(pack: AbilityPack, profile: SubAgentProfile): string | null {
+  const label = PROFILE_FILTER_LABELS[pack.key];
+  if (!label) return null;
+  const ab = profile.enabledAbilities;
+  if (pack.key === 'code-workflow') {
+    const matched = (pack.skills ?? []).filter((s) => ab.skills?.includes(s));
+    return matched.length > 0 ? `Profile 白名单命中 ${matched.length} 个 Skill` : 'Profile 未勾选包内 Skill';
+  }
+  const on = ab[pack.key as 'memory' | 'stock' | 'article' | 'browser'] === true;
+  return on ? `Profile 已勾选${label}能力` : `Profile 未勾选${label}能力`;
+}
+
+function buildMountRows(
+  pack: AbilityPack,
+  config: WorkspaceConfig,
+  settings: AppSettings,
+  hasWorkspace: boolean,
+): AbilityMountSceneRow[] {
+  const enabled = packEnabledOf(pack, config);
+  const profiles = settings.subAgent?.profiles ?? [];
+  const defaultProfile = profiles.find((p) => p.id === 'default') ?? createDefaultSubAgentProfile();
+  const rows: AbilityMountSceneRow[] = [];
+
+  const mainActive = resolveAbilities(config, { role: 'main', hasWorkspace, groupId: MOUNT_GROUP_PLACEHOLDER });
+  rows.push({
+    kind: 'main',
+    id: 'main',
+    label: '主会话',
+    system: true,
+    loaded: mainActive.has(pack.key),
+    reason: enabled ? sceneReason(pack, 'main', hasWorkspace) : '包开关已关闭',
+  });
+
+  const subScenes: Array<{ kind: AbilityMountSceneKind; profile: SubAgentProfile; system: boolean }> = [
+    { kind: 'sub-default', profile: defaultProfile, system: true },
+    ...profiles
+      .filter((p) => p.id !== 'default')
+      .map((p) => ({ kind: 'profile' as const, profile: p, system: false })),
+  ];
+  for (const scene of subScenes) {
+    const active = resolveAbilities(config, {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: MOUNT_GROUP_PLACEHOLDER,
+      profile: scene.profile,
+    });
+    // core-profile 的子会话排除在拼装侧（pi-session 段注入条件），包级解析不含此规则，矩阵在此对齐
+    const loaded = pack.key === 'core-profile' ? false : active.has(pack.key);
+    const filterReason = profileFilterReason(pack, scene.profile);
+    rows.push({
+      kind: scene.kind,
+      id: scene.kind === 'sub-default' ? 'sub-default' : scene.profile.id,
+      label: scene.kind === 'sub-default' ? '子会话·默认' : scene.profile.name,
+      system: scene.system,
+      loaded,
+      reason: enabled ? (filterReason ?? sceneReason(pack, scene.kind, hasWorkspace)) : '包开关已关闭',
+      profileDisabled: scene.profile.enabled === false || undefined,
+    });
+  }
+
+  rows.push({
+    kind: 'executor',
+    id: 'executor',
+    label: '任务执行会话',
+    system: true,
+    loaded: mainActive.has(pack.key),
+    reason: enabled ? sceneReason(pack, 'executor', hasWorkspace) : '包开关已关闭',
+  });
+
+  return rows;
+}
+
+function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolean): AbilityMountSceneRow[] {
+  const profiles = settings.subAgent?.profiles ?? [];
+  const baseReason = hasWorkspace ? '常驻基础设施，绑定工作区即注册，不可关闭' : '当前工作区无路径，跨会话检索组不注册';
+  return [
+    { kind: 'main', id: 'main', label: '主会话', system: true, loaded: hasWorkspace, reason: baseReason },
+    {
+      kind: 'sub-default',
+      id: 'sub-default',
+      label: '子会话·默认',
+      system: true,
+      loaded: hasWorkspace,
+      reason: hasWorkspace ? '常驻基础设施不受 Profile 过滤，默认 Profile 子会话同样注册' : baseReason,
+    },
+    ...profiles
+      .filter((p) => p.id !== 'default')
+      .map((p) => ({
+        kind: 'profile' as const,
+        id: p.id,
+        label: p.name,
+        system: false,
+        loaded: hasWorkspace,
+        reason: '常驻基础设施不受 Profile 细闸约束',
+        profileDisabled: p.enabled === false || undefined,
+      })),
+    {
+      kind: 'executor',
+      id: 'executor',
+      label: '任务执行会话',
+      system: true,
+      loaded: hasWorkspace,
+      reason: '常驻基础设施，任务执行会话同样注册',
+    },
+  ];
+}
+
 export const abilityRouter = {
   /** 能力包元数据 + 系统行为段（聚合注册表 / 段模板 / 工具注册中心 / skill 模板），能力页唯一数据源 */
   getAbilityPacks: t.procedure.action(async () => {
@@ -217,72 +385,33 @@ export const abilityRouter = {
     }
   }),
 
-  /** 挂载情况反向索引（读时快照不订阅）：工作区包开关 ∩ Profile 细闸 ∩ 任务工具包覆盖 */
+  /** 加载情况场景矩阵（读时快照不订阅）：行 = 会话场景，每格 = 该包在该场景是否加载 + 一句话原因 */
   getAbilityMounts: t.procedure
-    .input<{ key: string }>()
+    .input<{ key: string; workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const pack = ABILITY_PACKS.find((p) => p.key === input.key);
-        if (!pack) {
-          return { error: `未知能力包: ${input.key}` };
+        const [workspaces, settings] = await Promise.all([getAllWorkspaces(), loadSettings()]);
+        const workspace = workspaces.find((w) => w.id === input.workspaceId);
+        if (!workspace) {
+          return { error: `工作区不存在: ${input.workspaceId}` };
+        }
+        const config = await getWorkspaceConfig(input.workspaceId);
+        const hasWorkspace = !!workspace.path;
+
+        let packSummary: { key: string; label: string; type: AbilityPackType } | null = null;
+        let rows: AbilityMountSceneRow[];
+        if (input.key === SYSTEM_MOUNTS_PACK_KEY) {
+          rows = buildSystemMountRows(settings, hasWorkspace);
+        } else {
+          const found = ABILITY_PACKS.find((p) => p.key === input.key);
+          if (!found) {
+            return { error: `未知能力包: ${input.key}` };
+          }
+          packSummary = { key: found.key, label: found.label, type: found.type };
+          rows = buildMountRows(found, config, settings, hasWorkspace);
         }
 
-        const [workspaces, settings, tasks] = await Promise.all([
-          getAllWorkspaces(),
-          loadSettings(),
-          loadTasks(),
-        ]);
-
-        const workspaceMounts: WorkspaceMount[] = [];
-        for (const ws of workspaces) {
-          const config = await getWorkspaceConfig(ws.id);
-          workspaceMounts.push({
-            workspaceId: ws.id,
-            workspaceName: ws.name,
-            enabled: config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled,
-            enabledSkills:
-              pack.type === 'skill-packs'
-                ? config.enabledSkills.filter((s) => pack.skills?.includes(s))
-                : [],
-            enabledToolPacks:
-              pack.type === 'skill-packs'
-                ? config.enabledToolPacks.filter((n) => pack.toolGroups?.includes(n))
-                : [],
-          });
-        }
-
-        const profileMounts = (settings.subAgent?.profiles ?? []).flatMap((profile) => {
-          const mount = buildProfileAbilityMount(pack, profile);
-          return mount ? [mount] : [];
-        });
-
-        const taskMounts: TaskMount[] = [];
-        for (const task of tasks) {
-          if (isRetiredBuiltinTask(task)) continue;
-          const override = task.toolPacksOverride;
-          // undefined = 跟随工作区配置，挂载情况已由 workspaces 组体现，不重复列
-          if (!override) continue;
-          const matched = override.filter((n) => TOOL_PACK_TO_ABILITY.get(n) === pack.key);
-          if (matched.length === 0) continue;
-          taskMounts.push({
-            taskId: task.id,
-            taskName: task.name,
-            taskEnabled: task.enabled,
-            matchedToolPacks: matched,
-          });
-        }
-
-        const packSummary: { key: string; label: string; type: AbilityPackType } = {
-          key: pack.key,
-          label: pack.label,
-          type: pack.type,
-        };
-        return {
-          pack: packSummary,
-          workspaces: workspaceMounts,
-          profiles: profileMounts,
-          tasks: taskMounts,
-        };
+        return { pack: packSummary, rows };
       } catch (error) {
         console.error('[ability] getAbilityMounts 失败:', error);
         return { error: String(error) };

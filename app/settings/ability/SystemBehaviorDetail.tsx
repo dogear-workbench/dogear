@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { ArrowLeft, ChevronRight, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
-import type { AbilitySystemBehaviorView, ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
+import { SYSTEM_MOUNTS_PACK_KEY, type AbilitySystemBehaviorView, type ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
 import { SYSTEM_BEHAVIOR_ICON } from './pack-meta';
 import { BasicToolsSection } from './BasicToolsSection';
+import { AbilityMountsSection } from './AbilityMountsSection';
 import { ToolDetailDialog } from '../ToolDetailDialog';
 
 interface SystemBehaviorDetailProps {
@@ -108,6 +109,16 @@ export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceI
         <section className="space-y-2">
           <SectionTitle index={3} title="常驻工具" hint="无提示词，绑定工作区即注册" />
           <BasicToolsSection />
+          <div className="pt-1">
+            <span className="text-xs text-muted-foreground">加载情况</span>
+            <div className="pt-1.5">
+              <AbilityMountsSection
+                packKey={SYSTEM_MOUNTS_PACK_KEY}
+                workspaceId={workspaceId}
+                refreshKey={0}
+              />
+            </div>
+          </div>
           {workspaceId ? (
             <div className="space-y-2">
               {residentToolGroups.map((group) => (

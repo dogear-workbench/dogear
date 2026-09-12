@@ -92,7 +92,6 @@ export interface SubAgentEnabledAbilities {
   article?: boolean;
   skills?: string[];
   customSkills?: string[];
-  reference?: boolean;
   browser?: boolean;
   extension?: boolean;
 }

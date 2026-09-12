@@ -217,7 +217,7 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
   test('子会话：两包全关 → 两工具不注册，检索组与固定协作组在（reference 旧细闸被忽略）', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
-      enabledAbilities: { reference: true },
+      enabledAbilities: { reference: true } as SubAgentProfile['enabledAbilities'],
     };
     const active = resolveAbilities(ALL_OFF, {
       role: 'sub',

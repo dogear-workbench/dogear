@@ -16,7 +16,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 后端归属重划](./step1-backend-ownership.md) — 注册表新会话组包、reference 拆解、tasks 归笔记、共享区文字迁移、组上下文解耦
-- [ ] [Step 2: 挂载矩阵](./step2-mount-matrix.md) — getAbilityMounts 改场景矩阵，前端替换工作区列表
+- [x] [Step 2: 挂载矩阵](./step2-mount-matrix.md) — getAbilityMounts 改场景矩阵，前端替换工作区列表
 - [ ] [Step 3: 详情页布局](./step3-detail-layout.md) — 顶部两行 + chips 中文化 + 右栏加宽 + 规则页徽章切换
 - [ ] [Step 4: 开关乐观更新与设置全实时](./step4-toggle-and-autosave.md) — 乐观更新去闪烁；设置页去保存按钮改防抖即写
 

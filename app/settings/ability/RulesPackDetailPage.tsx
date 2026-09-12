@@ -125,11 +125,11 @@ export function RulesPackDetailPage({
           />
 
           <section className="space-y-2">
-            <span className="text-xs text-muted-foreground">挂载情况</span>
+            <span className="text-xs text-muted-foreground">加载情况</span>
             <p className="text-xs font-medium pt-1">工作区规则</p>
-            <AbilityMountsSection packKey="workspace-rules" refreshKey={configVersion} />
+            <AbilityMountsSection packKey="workspace-rules" workspaceId={workspaceId} refreshKey={configVersion} />
             <p className="text-xs font-medium pt-2">全局规则</p>
-            <AbilityMountsSection packKey="global-rules" refreshKey={configVersion} />
+            <AbilityMountsSection packKey="global-rules" workspaceId={workspaceId} refreshKey={configVersion} />
           </section>
 
           <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">
