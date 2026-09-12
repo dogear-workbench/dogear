@@ -327,6 +327,7 @@
   - `formula-service.ts` — 公式 CRUD 存储（`.dogear/stocks/formulas.json`）
   - `announcement-service.ts` — 公司公告服务（巨潮资讯网）：`listAnnouncements(code, market?, opts?)` 走 orgId 映射 + `hisAnnouncement/query`；`readAnnouncement(url, code, market, meta?)` 命中 `<hash>.md` 直读 / 未命中下载 PDF → python-bridge `parseAnnouncementPdf` 解析 → 写盘 + index.json；PDF 30MB 双层拦截（content-length + 流式计数），只放行 `static.cninfo.com.cn` 防 SSRF；`clearAnnouncementCache(market, code)` 手动清缓存；共享 rateLimiter 令牌桶
   - `index.ts` — barrel export
+- `bigmodel-mcp-service.ts` — GLM Coding Plan 专属 MCP 轻量 client（2026-09-12 接入）：手写 JSON-RPC over streamable HTTP（不引 MCP SDK），两个端点（web_search_prime / web_reader）各自模块级连接状态——lazy initialize + 单飞防并发 + `Mcp-Session-Id` 响应头缓存回传；响应兼容纯 JSON 与 SSE（data: 行拼接取 JSON-RPC 结果）；`callBigmodelTool(endpoint, apiKey, tool, args)` 60s 超时，会话失效（HTTP 400/404/410 或 error 含 session）重置连接 re-init 重试一次；result.isError 透传；附 mock server 协议测试（JSON/SSE/重试/401/isError 五链路）
 
 ## Agent 框架（electron/main/agents/）
 
@@ -403,6 +404,7 @@
 
 - `tools/stock-announcement-tools.ts` — 公司公告工具（dogear-stock-announcement server，需在设置页开启同名工具包）：dogear__ListAnnouncements 拉列表（返回 markdown，含 url/date/type/title）/ dogear__ReadAnnouncement 读全文（透传 url+code+market，命中缓存直返 markdown）；description 强调 URL 必须原样从 dogear__ListAnnouncements 结果里粘，超长公告 agent 自行判断分段
 
+- `tools/web-mcp-tools.ts` — GLM 联网 MCP 工具（dogear-web-mcp server，能力页「联网搜索」包）：bigmodel__webSearch（webSearchPrime，search_query+count）/ bigmodel__webReader（webReader，url）；走 GLM Coding Plan 专属 MCP 额度（bigmodel-mcp-service），API 直出快档与浏览器工具互补；每次调用 loadSettings 读 webMcpApiKey，未配置返回 isError 提示不抛异常；包注册在 ABILITY_PACKS 'web-mcp'（无 skill、mainOnly 仅主会话），AbilityTab 对无 Skill 包的开关直接联动 enabledToolPacks 细闸（2026-09-12 新增联动机制，有 Skill 的包仍由 skill 开关联动）
 
 
 - `tools/group-tools.ts` — 会话组共享区 MCP 工具（dogear-group server：dogear__ListGroupFiles 默认列清单（relPath+大小+修改时间）、传 relPath 读单文件全文 / dogear__SaveSharedNote；供 working agent 主动写 `_notes/` 阶段总结）
