@@ -173,6 +173,50 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
   return result;
 }
 
+/** Profile 维度的单包可用性（getAbilityMounts 用），与 resolveAbilities 子会话条件保持对齐 */
+export interface ProfileAbilityMount {
+  profileId: string;
+  profileName: string;
+  /** enabled !== false；false 时该 Profile 不可派遣，条目仅供说明 */
+  profileEnabled: boolean;
+  /** 该 Profile 细闸下此包是否可用 */
+  enabled: boolean;
+  /** code-workflow 等按 skill 白名单过滤的包：命中的包内 skill */
+  matchedSkills: string[];
+}
+
+/**
+ * Profile 细闸下单个包的可用性。仅 memory/stock/article/browser/code-workflow 有 Profile
+ * 过滤维度，其余包返回 null（Profile 无对应细闸，挂载情况不列 Profile 组）。
+ * skill 白名单交集对齐 pi-session 的 filterSkillsForSubAgent（builtin 段非 article/browser
+ * 专用 skill 按 skills[] 匹配）。
+ */
+export function buildProfileAbilityMount(pack: AbilityPack, profile: SubAgentProfile): ProfileAbilityMount | null {
+  const ab = profile.enabledAbilities;
+  const base = {
+    profileId: profile.id,
+    profileName: profile.name,
+    profileEnabled: profile.enabled !== false,
+    matchedSkills: [] as string[],
+  };
+  switch (pack.key) {
+    case 'memory':
+      return { ...base, enabled: ab.memory === true };
+    case 'stock':
+      return { ...base, enabled: ab.stock === true };
+    case 'article':
+      return { ...base, enabled: ab.article === true };
+    case 'browser':
+      return { ...base, enabled: ab.browser === true };
+    case 'code-workflow': {
+      const matched = (pack.skills ?? []).filter((s) => ab.skills?.includes(s));
+      return { ...base, enabled: matched.length > 0, matchedSkills: matched };
+    }
+    default:
+      return null;
+  }
+}
+
 /** 可选工具包 name（OPTIONAL_TOOL_PACKS[].name）→ 所属 skill 型能力包 key，供拼装侧与挂载反查共用；extension 等不在包体系的包不在此表。 */
 export const TOOL_PACK_TO_ABILITY = new Map<string, string>(
   ABILITY_PACKS
