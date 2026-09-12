@@ -8,7 +8,6 @@ import { useSessionStore } from '@/stores/session-store';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView, AbilitySegmentMeta } from '../../../electron/main/tipc/ability';
 import { AbilityPackSidebar } from './AbilityPackSidebar';
-import { RuleFileEditor } from './RuleFileEditor';
 import { SkillDetailDialog } from '../SkillDetailDialog';
 import { ToolDetailDialog } from '../ToolDetailDialog';
 import { packIconOf } from './pack-meta';
@@ -151,26 +150,6 @@ export function AbilityPackDetailPage({
             </div>
           </div>
 
-          {pack.key === 'workspace-rules' && workspaceId && (
-            <RuleFileEditor
-              title={`工作区 agent.md（${workspace?.name ?? ''}）`}
-              emptyHint={'# 工作区指令\n\n在此编写给 AI 助手的工作区级指令…'}
-              read={() => client.readWorkspaceAgentMd({ workspaceId })}
-              write={(content) => client.writeWorkspaceAgentMd({ workspaceId, content })}
-              loadTemplate={() => client.getWorkspaceAgentTemplate()}
-            />
-          )}
-
-          {pack.key === 'global-rules' && (
-            <RuleFileEditor
-              title="全局规则 agent.md（.dogear/agent.md，跨工作区生效）"
-              emptyHint={'# 全局指令\n\n在此编写跨工作区生效的全局指令…'}
-              read={() => client.readUserAgentMd()}
-              write={(content) => client.writeUserAgentMd({ content })}
-              loadTemplate={() => client.getUserAgentTemplate()}
-            />
-          )}
-
           {pack.key === 'core-profile' &&
             (workspacePath ? (
               <CoreProfileView workspacePath={workspacePath} />
@@ -189,7 +168,7 @@ export function AbilityPackDetailPage({
             </div>
           )}
 
-          {pack.key !== 'workspace-rules' && pack.key !== 'global-rules' && pack.key !== 'core-profile' && pack.segments.length === 0 && (
+          {pack.key !== 'core-profile' && pack.segments.length === 0 && (
             <div className="rounded-md border bg-muted/10 px-3 py-2">
               <p className="text-xs text-muted-foreground leading-relaxed">
                 此包不注入提示词段，能力由 Skill 与工具包组成；会话启动时按包开关与细开关拼装。

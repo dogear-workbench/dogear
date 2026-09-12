@@ -5,7 +5,7 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { playDogearSound } from '@/lib/dogear-sound';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database, PictureInPicture2 } from 'lucide-react';
+import { RefreshCw, Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
@@ -14,7 +14,6 @@ import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { TitleBar } from '@/components/TitleBar';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import DataCenterPage from '@/app/data-center/page';
-import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { NotesPanel } from '@/components/notes/NotesPanel';
 import { CompanionPanel } from '@/components/companion/CompanionPanel';
@@ -79,7 +78,6 @@ export default function Home() {
   const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
-  const [workspaceRuleDialogOpen, setWorkspaceRuleDialogOpen] = useState(false);
 
   // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -222,16 +220,6 @@ export default function Home() {
             )}
           </Button>
           <WorkspaceSwitcherPopover />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 gap-1.5"
-            onClick={() => setWorkspaceRuleDialogOpen(true)}
-            title="编辑当前工作区的 agent.md"
-          >
-            <ScrollText className="w-4 h-4" />
-            <span className="text-xs">工作区规则</span>
-          </Button>
         </div>
         <div className="flex items-center gap-2">
           <NotificationCenter />
@@ -344,9 +332,6 @@ export default function Home() {
 
       {/* 微信 Bot 控制 Dialog */}
       <WechatDialog open={wechatDialogOpen} onOpenChange={setWechatDialogOpen} />
-
-      {/* 工作区规则 Dialog（里程碑 1.5 Step A2.6） */}
-      <WorkspaceRuleDialog open={workspaceRuleDialogOpen} onOpenChange={setWorkspaceRuleDialogOpen} />
 
       {/* Markdown 文件预览 Dialog */}
       <MarkdownFileDialog />

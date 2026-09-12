@@ -5,6 +5,8 @@ import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView } from '../../electron/main/tipc/ability';
 import { AbilityPackCard } from './ability/AbilityPackCard';
 import { AbilityPackDetailPage } from './ability/AbilityPackDetailPage';
+import { RulesPackCard } from './ability/RulesPackCard';
+import { RulesPackDetailPage } from './ability/RulesPackDetailPage';
 import { SystemBehaviorDetail } from './ability/SystemBehaviorDetail';
 import { SYSTEM_BEHAVIOR_ICON } from './ability/pack-meta';
 
@@ -143,7 +145,11 @@ export function AbilityTab() {
     [workspaceConfig.abilityOverrides],
   );
 
-  const selectedPack = selectedKey === '__system__' ? null : (packs.find((p) => p.key === selectedKey) ?? null);
+  const rulesPack = packs.find((p) => p.key === 'workspace-rules') ?? null;
+  const globalRulesPack = packs.find((p) => p.key === 'global-rules') ?? null;
+  const otherPacks = packs.filter((p) => p.key !== 'workspace-rules' && p.key !== 'global-rules');
+  const selectedIsRules = selectedKey === 'workspace-rules' || selectedKey === 'global-rules';
+  const selectedPack = selectedKey === '__system__' || selectedIsRules ? null : (packs.find((p) => p.key === selectedKey) ?? null);
   const selectedIsSystem = selectedKey === '__system__';
 
   const noWorkspace = workspaceId === null;
@@ -158,6 +164,21 @@ export function AbilityTab() {
 
   if (selectedIsSystem) {
     return <SystemBehaviorDetail behaviors={systemBehaviors} onBack={() => setSelectedKey(null)} />;
+  }
+
+  if (selectedIsRules) {
+    return (
+      <RulesPackDetailPage
+        workspace={activeWorkspace}
+        workspaceId={workspaceId}
+        workspaceRulesEnabled={rulesPack ? packEnabled(rulesPack) : false}
+        globalRulesEnabled={globalRulesPack ? packEnabled(globalRulesPack) : false}
+        packBusy={packBusy}
+        configVersion={configVersion}
+        onBack={() => setSelectedKey(null)}
+        onTogglePack={handleTogglePack}
+      />
+    );
   }
 
   if (selectedPack) {
@@ -216,7 +237,14 @@ export function AbilityTab() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {packs.map((pack) => (
+        {rulesPack && (
+          <RulesPackCard
+            workspaceRulesEnabled={packEnabled(rulesPack)}
+            globalRulesEnabled={globalRulesPack ? packEnabled(globalRulesPack) : false}
+            onOpen={() => setSelectedKey('workspace-rules')}
+          />
+        )}
+        {otherPacks.map((pack) => (
           <AbilityPackCard
             key={pack.key}
             pack={pack}
