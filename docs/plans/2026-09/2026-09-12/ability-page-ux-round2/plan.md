@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 后端工具归属修正](./step1-backend-ownership.md) — 注册表（profile-index 移除 / browser 并 extension）+ reference 拆组 + pi-session 注册条件 + 测试更新
 - [x] [Step 2: 首页与规则编辑重构](./step2-rules-merge.md) — 规则合并卡 + 合并详情页 + RuleFileEditor 单栏态切换 + 移除顶部 WorkspaceRuleDialog 入口
-- [ ] [Step 3: 详情页布局重划与系统行为三区](./step3-detail-layout.md) — skill chips 进左侧 + 右侧窄栏瘦身 + SystemBehaviorDetail 三区（常驻工具区含权限就地控制）+ 浮窗闪烁修复
+- [x] [Step 3: 详情页布局重划与系统行为三区](./step3-detail-layout.md) — skill chips 进左侧 + 右侧窄栏瘦身 + SystemBehaviorDetail 三区（常驻工具区含权限就地控制）+ 浮窗闪烁修复
 - [ ] [Step 4: 渲染字号统一与收尾验证](./step4-style-unify.md) — 段全文 MarkdownRenderer + 全页清固定像素字号 + 全量验证与冒烟 + codebase-map 更新
 
 ## 全局决策

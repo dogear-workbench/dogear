@@ -163,7 +163,14 @@ export function AbilityTab() {
   }
 
   if (selectedIsSystem) {
-    return <SystemBehaviorDetail behaviors={systemBehaviors} onBack={() => setSelectedKey(null)} />;
+    return (
+      <SystemBehaviorDetail
+        behaviors={systemBehaviors}
+        residentToolGroups={packsResult?.residentToolGroups ?? []}
+        workspaceId={workspaceId}
+        onBack={() => setSelectedKey(null)}
+      />
+    );
   }
 
   if (selectedIsRules) {
@@ -184,6 +191,7 @@ export function AbilityTab() {
   if (selectedPack) {
     return (
       <AbilityPackDetailPage
+        key={selectedPack.key}
         pack={selectedPack}
         workspace={activeWorkspace}
         workspaceId={workspaceId}
@@ -271,13 +279,13 @@ export function AbilityTab() {
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">系统</span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
-                结构性注入段：组上下文、子会话契约、Profile 索引，不可关闭。
+                框架固定行为总览：会话组上下文、主子会话协作、常驻工具，均不可关闭。
               </p>
             </div>
           </div>
           <div>
             <span className="text-[10px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5">
-              提示词段 {systemBehaviors.length}
+              提示词段 {systemBehaviors.length} · 常驻工具
             </span>
           </div>
         </button>

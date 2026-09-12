@@ -11,7 +11,6 @@ import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
-import { BasicToolsSection } from './BasicToolsSection';
 import { ExtensionStatusLine } from './ExtensionStatusLine';
 import { SubAgentTab } from './SubAgentTab';
 import { AboutTab } from './AboutTab';
@@ -479,8 +478,6 @@ export default function SettingsPage() {
                   ))}
                 </div>
               </div>
-
-              <BasicToolsSection local={local} setLocal={setLocal} />
 
               {/* 浏览器 */}
               <div className="space-y-3">

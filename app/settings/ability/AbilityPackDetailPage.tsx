@@ -1,19 +1,56 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, ChevronRight, Database } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
 import { useUIStore } from '@/stores/ui-store';
 import { useSessionStore } from '@/stores/session-store';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
-import type { AbilityPackView, AbilitySegmentMeta } from '../../../electron/main/tipc/ability';
+import type { AbilityPackView, AbilitySegmentMeta, AbilitySkillMeta } from '../../../electron/main/tipc/ability';
 import { AbilityPackSidebar } from './AbilityPackSidebar';
-import { SkillDetailDialog } from '../SkillDetailDialog';
 import { ToolDetailDialog } from '../ToolDetailDialog';
 import { packIconOf } from './pack-meta';
 
 const AGENT_COLLAB_OFF_NOTE =
   '关闭后主会话不再注册派遣工具（无法创建子会话，已派出的子会话不受影响），会话组上下文裁剪为纯组头，共享区与跨会话引用工具一并移除。';
+
+const FRONTMATTER_RE = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/;
+
+function useSkillContent(name: string) {
+  const [content, setContent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    client
+      .getSkillContent({ name })
+      .then((res) => {
+        if (cancelled) return;
+        if ('error' in res) {
+          setError(String(res.error));
+          setContent(null);
+        } else {
+          setContent((res.content ?? '').replace(FRONTMATTER_RE, ''));
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [name]);
+
+  return { content, error, loading };
+}
 
 function jumpToDataCenter() {
   useSessionStore.getState().openDataCenterTab();
@@ -85,6 +122,66 @@ function CoreProfileView({ workspacePath }: { workspacePath: string }) {
   );
 }
 
+function SkillContentSection({
+  skill,
+  enabled,
+  packEnabled,
+  disabled,
+  skillBusy,
+  onToggle,
+}: {
+  skill: AbilitySkillMeta;
+  enabled: boolean;
+  packEnabled: boolean;
+  disabled: boolean;
+  skillBusy: boolean;
+  onToggle: (enable: boolean) => void;
+}) {
+  const { content, error, loading } = useSkillContent(skill.name);
+
+  return (
+    <div className="flex-1 min-h-0 rounded-md border overflow-hidden flex flex-col">
+      <div className="px-3 py-2 bg-muted/30 border-b space-y-1 shrink-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-mono font-semibold truncate">{skill.name}</span>
+          {!skill.description && (
+            <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground shrink-0">文件缺失</span>
+          )}
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <span className="text-xs text-muted-foreground">{enabled ? '已启用' : '已停用'}</span>
+            <Switch
+              checked={enabled}
+              disabled={disabled || skillBusy || !packEnabled}
+              onCheckedChange={onToggle}
+              aria-label={`${enabled ? '停用' : '启用'} ${skill.name}`}
+            />
+          </div>
+        </div>
+        {skill.description && (
+          <p className="text-xs text-muted-foreground leading-relaxed">{skill.description}</p>
+        )}
+        {!packEnabled && (
+          <p className="text-xs text-muted-foreground/70">包开关关闭时包内 Skill 不生效，可先行预配置。</p>
+        )}
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 text-sm">
+        {loading && <p className="text-sm text-muted-foreground py-8 text-center">加载中…</p>}
+        {!loading && error && (
+          <div className="p-3 rounded border border-destructive/40 bg-destructive/5 text-xs text-destructive font-mono whitespace-pre-wrap break-all">
+            {error}
+          </div>
+        )}
+        {!loading && !error && (
+          <MarkdownRenderer
+            content={content || '(空文件)'}
+            className="[&_h1]:text-xl [&_h1]:mt-3 [&_h1]:mb-2"
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface AbilityPackDetailPageProps {
   pack: AbilityPackView;
   workspace: Workspace | null;
@@ -112,10 +209,16 @@ export function AbilityPackDetailPage({
   onTogglePack,
   onToggleSkill,
 }: AbilityPackDetailPageProps) {
-  const [detailSkill, setDetailSkill] = useState<{ name: string; description?: string } | null>(null);
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
+  const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
   const Icon = packIconOf(pack.key);
   const workspacePath = workspace?.path ?? null;
+
+  const isSkillPack = pack.skillMetas.length > 0;
+  const activeSkill = isSkillPack
+    ? pack.skillMetas.find((s) => s.name === selectedSkillName) ?? pack.skillMetas[0]
+    : null;
+  const isSkillEnabled = (name: string) => config.enabledSkills.includes(name);
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -150,14 +253,58 @@ export function AbilityPackDetailPage({
             </div>
           </div>
 
-          {pack.key === 'core-profile' &&
+          {isSkillPack && activeSkill && (
+            <>
+              <div className="flex flex-wrap gap-1.5 shrink-0">
+                {pack.skillMetas.map((skill) => {
+                  const active = skill.name === activeSkill.name;
+                  return (
+                    <button
+                      key={skill.name}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setSelectedSkillName(skill.name)}
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-mono transition-colors',
+                        active
+                          ? 'border-primary bg-primary text-primary-foreground'
+                          : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
+                      )}
+                    >
+                      {skill.name}
+                      {!skill.description && (
+                        <span
+                          className={cn(
+                            'rounded px-1 font-sans',
+                            active ? 'bg-primary-foreground/20' : 'bg-muted',
+                          )}
+                        >
+                          文件缺失
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <SkillContentSection
+                skill={activeSkill}
+                enabled={isSkillEnabled(activeSkill.name)}
+                packEnabled={packEnabled}
+                disabled={!workspaceId}
+                skillBusy={skillBusy}
+                onToggle={(enable) => onToggleSkill(activeSkill.name, enable)}
+              />
+            </>
+          )}
+
+          {!isSkillPack && pack.key === 'core-profile' &&
             (workspacePath ? (
               <CoreProfileView workspacePath={workspacePath} />
             ) : (
               <p className="text-xs text-muted-foreground">当前工作区无路径，无法读取核心画像。</p>
             ))}
 
-          {pack.segments.length > 0 && (
+          {!isSkillPack && pack.segments.length > 0 && (
             <div className="flex-1 min-h-0 flex flex-col gap-2">
               <span className="text-xs text-muted-foreground">
                 提示词段（{pack.segments.length} 段，注入内容与工具配套，只读跟随代码版本）
@@ -168,7 +315,7 @@ export function AbilityPackDetailPage({
             </div>
           )}
 
-          {pack.key !== 'core-profile' && pack.segments.length === 0 && (
+          {!isSkillPack && pack.key !== 'core-profile' && pack.segments.length === 0 && (
             <div className="rounded-md border bg-muted/10 px-3 py-2">
               <p className="text-xs text-muted-foreground leading-relaxed">
                 此包不注入提示词段，能力由 Skill 与工具包组成；会话启动时按包开关与细开关拼装。
@@ -182,17 +329,12 @@ export function AbilityPackDetailPage({
           packEnabled={packEnabled}
           disabled={!workspaceId}
           packBusy={packBusy}
-          isSkillEnabled={(name) => config.enabledSkills.includes(name)}
-          skillBusy={skillBusy}
           onTogglePack={onTogglePack}
-          onToggleSkill={onToggleSkill}
           onToolDetail={setDetailTool}
-          onSkillDetail={setDetailSkill}
           configVersion={configVersion}
         />
       </div>
 
-      <SkillDetailDialog skill={detailSkill} onClose={() => setDetailSkill(null)} />
       <ToolDetailDialog tool={detailTool} onClose={() => setDetailTool(null)} />
     </div>
   );

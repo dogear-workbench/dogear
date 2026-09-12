@@ -70,6 +70,16 @@ export interface AbilitySystemBehaviorView extends SystemBehavior {
   segment: AbilitySegmentMeta;
 }
 
+/** 常驻工具组展示元数据（不在能力包体系的固定基础设施：跨会话检索 / 任务系统） */
+export interface ResidentToolGroupMeta {
+  id: string;
+  label: string;
+  tools: ToolInfo[];
+}
+
+/** 常驻工具组：绑定工作区即注册，不可关，前端标注触发条件 */
+const RESIDENT_GROUP_IDS = ['dogear-history', 'dogear-tasks'] as const;
+
 export interface WorkspaceMount {
   workspaceId: string;
   workspaceName: string;
@@ -93,7 +103,7 @@ export interface TaskMount {
 
 /**
  * 工具组工具明细依赖各工具模块在 tool-registry 完成注册；
- * 只 import 包体系引用的模块（task 等不在包体系）。
+ * import 覆盖能力包与常驻工具区（task / reference 双组）需要展示的模块。
  */
 const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/memory-tools.js'),
@@ -101,6 +111,7 @@ const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/delegation-tools.js'),
   () => import('../agents/tools/group-tools.js'),
   () => import('../agents/tools/reference-tools.js'),
+  () => import('../agents/tools/task-tools.js'),
   () => import('../agents/tools/stock-tools.js'),
   () => import('../agents/tools/stock-analysis-tools.js'),
   () => import('../agents/tools/stock-announcement-tools.js'),
@@ -193,7 +204,12 @@ export const abilityRouter = {
         segment: segmentMetaOf(segmentMap, b.segmentKey),
       }));
 
-      return { packs, systemBehaviors };
+      const residentToolGroups: ResidentToolGroupMeta[] = RESIDENT_GROUP_IDS.map((id) => {
+        const group = groupByServer.get(id);
+        return { id, label: group?.label ?? id, tools: group?.tools ?? [] };
+      });
+
+      return { packs, systemBehaviors, residentToolGroups };
     } catch (error) {
       console.error('[ability] getAbilityPacks 失败:', error);
       return { error: String(error) };
