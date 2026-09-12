@@ -78,7 +78,7 @@ export function TaskReportMessage({ toolInput, toolOutput, isError }: Props) {
   };
 
   return (
-    <div className="w-full my-2 rounded-r-lg border-l-[3px] border-l-blue-500 bg-blue-50/70 dark:bg-blue-950/20 px-3 py-2">
+    <div className="w-full my-2 rounded-r-lg border-l-[3px] border-l-blue-500 bg-secondary/60 px-3 py-2">
       <div className="flex items-center gap-1.5 text-xs flex-wrap">
         <ListTodo className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
         <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 flex-shrink-0">

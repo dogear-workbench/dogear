@@ -8,15 +8,16 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceId } from './workspace-id-context';
 import { INJECTION_TAG_STYLES } from './injection-tags';
 
-export function CommCollapseButton({ onClick }: { onClick: () => void }) {
+export function CommCollapseBar({ onCollapse }: { onCollapse: () => void }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={onCollapse}
       title="收起"
-      className="p-0.5 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted/60 transition-colors cursor-pointer"
+      className="mt-1 w-full flex items-center justify-center gap-1 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded transition-colors cursor-pointer"
     >
-      <ChevronUp className="w-3.5 h-3.5" />
+      收起
+      <ChevronUp className="w-3 h-3" />
     </button>
   );
 }
@@ -101,11 +102,15 @@ export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="mt-1 pt-1 border-t border-border/40">
-            <div className="flex justify-end">
-              <CommCollapseButton onClick={() => setExpanded(false)} />
+            <div className="mb-1 flex items-start gap-1.5 text-xs text-muted-foreground">
+              <ArrowRight className="w-3 h-3 flex-shrink-0 mt-0.5" />
+              <span className="break-all">
+                发给 @{peerName ?? toSessionId}
+                {peerName && ` · ${toSessionId}`}
+              </span>
             </div>
             {message ? (
-              <MarkdownRenderer content={message} className="text-sm" />
+              <MarkdownRenderer content={message} className="text-xs" />
             ) : !isError ? (
               <div className="text-xs text-muted-foreground/70">（无消息内容）</div>
             ) : null}
@@ -114,9 +119,7 @@ export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
                 {toOutputText(toolOutput)}
               </pre>
             )}
-            <div className="flex justify-end">
-              <CommCollapseButton onClick={() => setExpanded(false)} />
-            </div>
+            <CommCollapseBar onCollapse={() => setExpanded(false)} />
           </div>
         </CollapsibleContent>
       </Collapsible>
