@@ -11,8 +11,16 @@ setupSettingsSync();
 
 // ==================== 全局异常捕获 ====================
 
+// Chromium 在 ResizeObserver 回调链引发布局抖动时派发的良性警告，不是代码异常
+const IGNORABLE_ERRORS = [
+  'ResizeObserver loop completed with undelivered notifications',
+  'ResizeObserver loop limit exceeded',
+];
+
 // 捕获同步异常
 window.onerror = (message, source, lineno, colno, error) => {
+  if (IGNORABLE_ERRORS.some((e) => String(message).includes(e))) return;
+
   console.error('[全局异常]', message, source, lineno, colno, error);
 
   // 弹 toast 通知用户
