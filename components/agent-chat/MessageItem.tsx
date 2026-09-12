@@ -8,55 +8,14 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage, isInjectedUserMessage, parseTaskExecution, resolveInjectionTag } from './utils';
 import { SESSION_MESSAGE_TOOL_NAMES } from './session-tools';
+import { INJECTION_TAG_STYLES } from './injection-tags';
+import { CommCollapseButton } from './AgentCommCard';
 import { PathChip } from './path-link';
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { Message, ContentBlock, InjectionTag, ParsedUserMessage, ParsedTaskExecution } from './types';
-
-/**
- * 注入 tag → 卡片配色（左竖线/底色/徽标），模块级常量供 Step 3 小地图复用 tag 判定时参考。
- * terminal 用红橙系：竖线红、底色橙，徽标红。
- */
-const INJECTION_TAG_STYLES: Record<InjectionTag, { bar: string; card: string; badge: string; label: string }> = {
-  delivery: {
-    bar: 'bg-green-500',
-    card: 'bg-green-50/70 dark:bg-green-950/20',
-    badge: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-    label: '交付',
-  },
-  reply: {
-    bar: 'bg-blue-500',
-    card: 'bg-blue-50/70 dark:bg-blue-950/20',
-    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-    label: '回复',
-  },
-  terminal: {
-    bar: 'bg-red-500',
-    card: 'bg-orange-50/70 dark:bg-orange-950/20',
-    badge: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300',
-    label: '终态',
-  },
-  resume: {
-    bar: 'bg-blue-500',
-    card: 'bg-blue-50/70 dark:bg-blue-950/20',
-    badge: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-    label: '恢复',
-  },
-  'task-execution': {
-    bar: 'bg-amber-500',
-    card: 'bg-amber-50/70 dark:bg-amber-950/20',
-    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
-    label: '任务执行',
-  },
-  failover: {
-    bar: 'bg-blue-400',
-    card: 'bg-secondary/60',
-    badge: 'bg-secondary text-secondary-foreground',
-    label: '切换',
-  },
-};
 
 /** 跨会话注入消息卡：默认收起一行标识（来源+徽章+首行预览），点击展开全文；左彩色竖线 + 浅底色，脱离用户气泡 */
 function InjectedMessageCard({
@@ -74,6 +33,7 @@ function InjectedMessageCard({
   searchQuery?: string;
   activeMatchId?: string | null;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const tag = forcedTag ?? resolveInjectionTag(parsed);
   const styles = INJECTION_TAG_STYLES[tag];
   const sourceName = parsed.senderDisplayName
@@ -84,7 +44,7 @@ function InjectedMessageCard({
       className={cn('w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}
       data-message-id={message.id ?? messageId}
     >
-      <Collapsible>
+      <Collapsible open={expanded} onOpenChange={setExpanded}>
         <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs text-muted-foreground cursor-pointer">
           <Bot className="w-3 h-3 flex-shrink-0" />
           <span className="font-medium truncate max-w-[160px] text-foreground/80 flex-shrink-0">{sourceName}</span>
@@ -97,11 +57,19 @@ function InjectedMessageCard({
           )}
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="mt-1 pt-1 border-t border-border/40 whitespace-pre-wrap break-words text-sm text-foreground">
-            {searchQuery && messageId
-              ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
-              : parsed.userMessage
-            }
+          <div className="mt-1 pt-1 border-t border-border/40">
+            <div className="flex justify-end">
+              <CommCollapseButton onClick={() => setExpanded(false)} />
+            </div>
+            <div className="whitespace-pre-wrap break-words text-sm text-foreground">
+              {searchQuery && messageId
+                ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
+                : parsed.userMessage
+              }
+            </div>
+            <div className="flex justify-end">
+              <CommCollapseButton onClick={() => setExpanded(false)} />
+            </div>
           </div>
         </CollapsibleContent>
       </Collapsible>

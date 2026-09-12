@@ -8,6 +8,7 @@ import { PermissionRequestCard } from './PermissionRequestCard';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { TaskReportMessage } from './TaskReportMessage';
 import { UserActionsCard } from './UserActionsCard';
+import { AgentCommCard } from './AgentCommCard';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { isQuotaErrorText, hasFailoverTakeover } from '@/lib/failover-markers';
@@ -167,6 +168,16 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       }
       if (block.toolName === 'dogear__TrackUserActions') {
         return <UserActionsCard toolInput={block.toolInput} toolUseId={block.toolUseId} />;
+      }
+      if (block.toolName === 'dogear__SendMessage') {
+        return (
+          <AgentCommCard
+            toolInput={block.toolInput}
+            toolOutput={block.toolOutput}
+            isError={block.isError}
+            timestamp={block.timestamp}
+          />
+        );
       }
       return (
         <ToolBlock

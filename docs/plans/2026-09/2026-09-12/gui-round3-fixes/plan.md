@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 申报消息与勾选卡渲染](./step1-report-message.md) — ReportTaskResult + TrackUserActions 摘出工具壳，渲染为消息式申报 + 勾选卡
-- [ ] [Step 2: agent↔agent 通讯卡统一](./step2-agent-comm-card.md) — SendMessage 摘壳改一行收起「→ 发出」卡，注入消息加上下收起触发点
+- [x] [Step 2: agent↔agent 通讯卡统一](./step2-agent-comm-card.md) — SendMessage 摘壳改一行收起「→ 发出」卡，注入消息加上下收起触发点
 - [ ] [Step 3: 等待图标与插话交互](./step3-await-steer-ui.md) — 等待图标改旋转、删点击中断链，插话成功提示去掉
 - [ ] [Step 4: 绿色存活标识语义修正](./step4-alive-semantics.md) — alive 判定改为「在内存即活」并验证消费方
 - [ ] [Step 5: 执行会话提示词精简](./step5-executor-prompt.md) — 砍话题指引与笔记存卡纪律注入，修 selfConversationId 缺传

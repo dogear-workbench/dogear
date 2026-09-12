@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from 'react';
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo, Send } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
@@ -27,7 +27,6 @@ import { SubAgentCardRenderer } from './agent-chat/tool-renderers/SubAgentCardRe
 import { MemoryCardRenderer } from './agent-chat/tool-renderers/MemoryCardRenderer';
 import { NoteCardRenderer } from './agent-chat/tool-renderers/NoteCardRenderer';
 import { TaskCardRenderer } from './agent-chat/tool-renderers/TaskCardRenderer';
-import { DeliveryCardRenderer } from './agent-chat/tool-renderers/DeliveryCardRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
@@ -84,7 +83,6 @@ const DOGEAR_TOOL_ICONS: Record<string, ToolIconSpec> = {
   dogear__AppendNote: { Icon: StickyNote, className: 'text-amber-600 dark:text-amber-400' },
   dogear__CreateTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
   dogear__ExecuteTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
-  dogear__SendMessage: { Icon: Send, className: 'text-green-600 dark:text-green-400' },
 };
 
 function normalizeToolName(toolName: string): string {
@@ -137,10 +135,6 @@ const DOGEAR_CARD_TITLES: Record<string, (input?: Record<string, any>) => Dogear
   dogear__AppendNote: (input) => ({ label: '追加笔记', detail: input?.noteId ?? '' }),
   dogear__CreateTask: (input) => ({ label: '挂载任务', detail: input?.title ?? '' }),
   dogear__ExecuteTask: (input) => ({ label: '执行任务', detail: input?.taskId ?? '' }),
-  dogear__SendMessage: (input) =>
-    input?.options?.delivery === true
-      ? { label: '交付摘要', detail: typeof input?.message === 'string' ? truncateOneLine(input.message, 30) : '' }
-      : { label: '发送消息', detail: typeof input?.message === 'string' ? truncateOneLine(input.message, 30) : '' },
   dogear__TrackUserActions: (input) => ({
     label: '待你完成',
     detail: `${Array.isArray(input?.actions) ? input.actions.length : '?'} 项`,
@@ -157,7 +151,6 @@ const DOGEAR_CARD_RENDERERS: Record<string, ComponentType<CardRendererProps>> = 
   dogear__AppendNote: NoteCardRenderer,
   dogear__CreateTask: TaskCardRenderer,
   dogear__ExecuteTask: TaskCardRenderer,
-  dogear__SendMessage: DeliveryCardRenderer,
 };
 
 interface ToolPreviewAction {
