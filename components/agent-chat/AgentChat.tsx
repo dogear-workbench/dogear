@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Archive, AlertCircle, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { client } from '@/lib/client';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
@@ -145,24 +144,6 @@ export function AgentChat({
   // 事件驱动等待的派生展示态：run settled（非 running/paused）∧ 有 running 直属子会话，
   // 驱动输入区状态行；侧边轨道动效不区分 settled 与否，直接用 awaitCount
   const isWaitingForChildren = !isLoading && !isRunningInStore && !isPausedInStore && awaitCount > 0;
-
-  const handleAbortWait = useCallback(async () => {
-    if (!conversationId) return;
-    const result = await client.abortWaitForDeliveries({ parentConversationId: conversationId });
-    // tipc 返回联合类型时 error 字段可能存在；尝试读出失败原因
-    const err = (result as { error?: string }).error;
-    if (err) {
-      const { toast } = await import('sonner');
-      toast.error('中断等待失败', { description: err });
-      return;
-    }
-    const { toast } = await import('sonner');
-    if (result.cancelledChildren > 0) {
-      toast.success(`正在终止 ${result.cancelledChildren} 个运行中的子会话`);
-    } else {
-      toast.info('当前没有可中断的等待或运行中的子会话');
-    }
-  }, [conversationId]);
 
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -540,7 +521,6 @@ export function AgentChat({
               awaitCount={awaitCount}
               doneCount={doneCount}
               issueCount={issueCount}
-              onAbortWait={isReadOnly ? undefined : handleAbortWait}
             />
           )}
         </div>

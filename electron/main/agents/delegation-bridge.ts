@@ -809,20 +809,6 @@ export function deliverMessage(opts: DeliverMessageOptions): DeliverMessageOutco
   return pushToParentSession(opts.toConversationId, opts) ? 'queued' : 'target_inactive';
 }
 
-/** 中断指定发起会话名下仍在运行的子会话（标记取消）。前端经 tipc abortWaitForDeliveries 调用。 */
-export function abortWaitsForParent(parentConversationId: string): {
-  cancelledChildren: number;
-} {
-  const childIds = Array.from(childStates.values())
-    .filter((c) => c.parentConversationId === parentConversationId && c.status === 'running')
-    .map((c) => c.childId);
-  for (const childId of childIds) {
-    void stopChild(childId, 'cancelled').catch((err) => logger.warn(`中断子会话失败 ${childId}`, err));
-  }
-
-  return { cancelledChildren: childIds.length };
-}
-
 /** 转义 XML 属性值中的特殊字符 */
 function escapeXmlAttr(value: string): string {
   return value

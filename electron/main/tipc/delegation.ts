@@ -34,20 +34,6 @@ export const delegationRouter = {
     }),
 
   /**
-   * 中断指定发起会话名下仍在运行的子会话（标记取消）。
-   * 主会话用：用户在 chat UI 点「🛑 中断等待」时触发。
-   */
-  abortWaitForDeliveries: t.procedure
-    .input<{ parentConversationId: string }>()
-    .action(async ({ input }) => {
-      try {
-        return bridge.abortWaitsForParent(input.parentConversationId);
-      } catch (error) {
-        return { cancelledChildren: 0, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  /**
    * 查指定子会话当前 bridge 快照（找不到返回 null）
    * 子会话顶部 banner 显示交付路径 / 状态用
    */

@@ -59,19 +59,6 @@ test('CreateSessionBatch 老链路：同父会话批量创建两个子会话，p
   expect(children.every((c: any) => c.status === 'running' && c.parentConversationId === parentConversationId)).toBe(true);
 });
 
-test('abortWaitsForParent：取消本父会话运行中子会话，其他父会话不受影响', async () => {
-  const mine = await startTestChild(bridge, 'p-a');
-  const other = await startTestChild(bridge, 'p-a');
-
-  const result = bridge.abortWaitsForParent(mine.parentConversationId);
-  expect(result.cancelledChildren).toBe(1);
-
-  await sleep(100);
-  expect(bridge.getChildSnapshot(mine.snapshot.childId)!.status).toBe('stopped');
-  expect(bridge.getChildSnapshot(mine.snapshot.childId)!.lastError).toBe('被停止');
-  expect(bridge.getChildSnapshot(other.snapshot.childId)!.status).toBe('running');
-});
-
 test('通讯型交付（无 outputPath）：创建、交付、停止后复活全流程空路径不误判', async () => {
   const parentConversationId = nextParentConversationId();
 
