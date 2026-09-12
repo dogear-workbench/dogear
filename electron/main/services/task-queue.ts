@@ -20,6 +20,7 @@ import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js'
 import type { PiSession, PiSessionTurnResult } from '../agents/pi-session/pi-session.js';
 import { mainLogger } from '../agents/logger.js';
 import { getSessionNotificationService } from './session-notification-service.js';
+import { getNotificationCenterService } from './notification-center-service.js';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import * as taskService from './task-service.js';
 import type { Task } from './task-service.js';
@@ -61,10 +62,40 @@ function notifyTask(task: Task, workspaceId: string, title: string, body: string
     body,
     taskId: task.id,
   });
+  void getNotificationCenterService().add({
+    type: 'task',
+    dedupeKey: `task:${task.id}:failed`,
+    title,
+    summary: body,
+    owner: { kind: 'system' },
+    taskId: task.id,
+    workspaceId,
+    ownerLabel: '系统',
+  });
 }
 
 function notifyTaskInterrupted(task: Task, workspaceId: string, reason: string): void {
-  notifyTask(task, workspaceId, `任务已中断：${task.title}`, `${firstLine(reason)}。${REPORT_RESULT_HINT}`);
+  const title = `任务已中断：${task.title}`;
+  const body = `${firstLine(reason)}。${REPORT_RESULT_HINT}`;
+  getSessionNotificationService().notify({
+    kind: 'complete',
+    notificationId: `task-${task.id}-${task.status}-${task.updatedAt}`,
+    conversationId: task.execSessionId ?? '',
+    workspaceId,
+    title,
+    body,
+    taskId: task.id,
+  });
+  void getNotificationCenterService().add({
+    type: 'task',
+    dedupeKey: `task:${task.id}:interrupted`,
+    title,
+    summary: body,
+    owner: { kind: 'system' },
+    taskId: task.id,
+    workspaceId,
+    ownerLabel: '系统',
+  });
 }
 
 async function resolveOriginWithRetry(originSessionId: string) {

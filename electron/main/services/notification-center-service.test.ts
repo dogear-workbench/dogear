@@ -1,0 +1,112 @@
+import { test, expect, beforeEach } from 'bun:test';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import { getNotificationCenterService, type AddNotificationInput } from './notification-center-service.js';
+
+let storageDir: string;
+
+beforeEach(async () => {
+  storageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dogear-notification-test-'));
+  getNotificationCenterService().setStoragePathForTest(path.join(storageDir, 'notifications.json'));
+});
+
+function taskInput(taskId: string, overrides?: Partial<AddNotificationInput>): AddNotificationInput {
+  return {
+    type: 'task',
+    dedupeKey: `task:${taskId}:review`,
+    title: `任务待审核：${taskId}`,
+    summary: '做了关键改动',
+    owner: { kind: 'system' },
+    taskId,
+    workspaceId: 'ws-1',
+    ownerLabel: '系统',
+    ...overrides,
+  };
+}
+
+function convInput(childId: string, overrides?: Partial<AddNotificationInput>): AddNotificationInput {
+  return {
+    type: 'conversation',
+    dedupeKey: `conversation:${childId}:delivery`,
+    title: `子会话「${childId}」已交付`,
+    owner: { kind: 'conversation', conversationId: 'parent-1' },
+    workspaceId: 'ws-1',
+    ownerLabel: '父会话',
+    ...overrides,
+  };
+}
+
+test('add 新条目落盘且未读计数正确', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1'));
+  await svc.add(convInput('c1'));
+  const list = await svc.list();
+  expect(list).toHaveLength(2);
+  expect(list[0].title).toContain('c1');
+  expect(list[0].read).toBe(false);
+  expect(list[0].count).toBe(1);
+  expect(list.find((e) => e.taskId === 't1')?.owner).toEqual({ kind: 'system' });
+});
+
+test('同源未读事件聚合计数与字段刷新', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1', { summary: '第一次' }));
+  await svc.add(taskInput('t1', { summary: '第二次' }));
+  const list = await svc.list();
+  expect(list).toHaveLength(1);
+  expect(list[0].count).toBe(2);
+  expect(list[0].summary).toBe('第二次');
+  expect(list[0].read).toBe(false);
+});
+
+test('已读后同源再事件生成新条目', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1'));
+  const first = (await svc.list())[0];
+  await svc.markRead(first.id);
+  await svc.add(taskInput('t1'));
+  const list = await svc.list();
+  expect(list).toHaveLength(2);
+  expect(list.filter((e) => !e.read)).toHaveLength(1);
+});
+
+test('markRead / markAllRead 置已读', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1'));
+  await svc.add(taskInput('t2', { dedupeKey: 'task:t2:review', title: '任务待审核：t2' }));
+  const list = await svc.list();
+  await svc.markRead(list[0].id);
+  expect((await svc.list()).filter((e) => e.read)).toHaveLength(1);
+  await svc.markAllRead();
+  expect((await svc.list()).every((e) => e.read)).toBe(true);
+});
+
+test('重启恢复：条目与未读状态持久化', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1'));
+  const first = (await svc.list())[0];
+  await svc.markRead(first.id);
+  const raw = JSON.parse(await fs.readFile(path.join(storageDir, 'notifications.json'), 'utf-8'));
+  expect(raw.version).toBe(1);
+  expect(raw.entries).toHaveLength(1);
+  expect(raw.entries[0].read).toBe(true);
+});
+
+test('上限裁剪：超限时先丢已读旧条目再丢最旧未读', async () => {
+  const svc = getNotificationCenterService();
+  for (let i = 0; i < 105; i++) {
+    await svc.add(convInput(`c${i}`, { dedupeKey: `conversation:c${i}:delivery`, title: `子会话「c${i}」已交付` }));
+  }
+  let list = await svc.list();
+  expect(list).toHaveLength(100);
+  expect(list[0].title).toContain('c104');
+  expect(list.at(-1)?.title).toContain('c5');
+  await svc.markAllRead();
+  await svc.add(convInput('c-new', { dedupeKey: 'conversation:c-new:delivery', title: '子会话「c-new」已交付' }));
+  list = await svc.list();
+  expect(list).toHaveLength(100);
+  expect(list[0].title).toContain('c-new');
+  expect(list[0].read).toBe(false);
+  expect(list.at(-1)?.read).toBe(true);
+});

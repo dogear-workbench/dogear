@@ -12,6 +12,7 @@ import { z } from 'zod';
 import * as bridge from '../delegation-bridge.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { hasDirectContractChannel } from '../../services/contract-channel-service.js';
+import { getNotificationCenterService } from '../../services/notification-center-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
@@ -99,6 +100,19 @@ export function createDelegationToolDefs(opts: DelegationToolsOpts): ToolDef[] {
         // 若我是被派出的会话，且这是发给派出我的会话的正式交付，同步 bridge 的交付事实（UI/统计依赖它）
         if (opts.role === 'sub' && delivery && target.conv.id === opts.parentConversationId) {
           bridge.markChildDelivered(opts.conversationId);
+          // 消息中心通知归属父会话（跳父会话），摘要取交付消息首段
+          const parentConv = await conversationService
+            .getById(opts.workspaceId, opts.parentConversationId)
+            .catch(() => null);
+          void getNotificationCenterService().add({
+            type: 'conversation',
+            dedupeKey: `conversation:${opts.conversationId}:delivery`,
+            title: `子会话「${target.conv.title}」已交付`,
+            summary: truncateTask(args.message),
+            owner: { kind: 'conversation', conversationId: opts.parentConversationId },
+            workspaceId: opts.workspaceId,
+            ownerLabel: parentConv?.title ?? '父会话',
+          });
         }
 
         const outcome = bridge.deliverMessage({

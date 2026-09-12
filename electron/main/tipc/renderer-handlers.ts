@@ -212,6 +212,9 @@ export type RendererHandlers = {
   // 任务通知点击深链（主窗口收到后切换到笔记页任务视图并选中该任务）
   focusTask: (data: { taskId: string; workspaceId: string }) => void;
 
+  // 消息中心变更（notification-center-service 写操作后广播，载荷为未读数；渲染层收到后重拉列表）
+  notificationsChanged: (data: { unreadCount: number }) => void;
+
   // 热更新下载进度（主进程→渲染层推送）
   updateProgress: (data: {
     percent: number;

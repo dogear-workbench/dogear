@@ -20,6 +20,7 @@ import { skillRouter } from './skill.js';
 import { usageRouter } from './usage.js';
 import { notesRouter } from './notes.js';
 import { tasksRouter } from './tasks.js';
+import { notificationsRouter } from './notifications.js';
 import { groupRouter } from './group.js';
 import { delegationRouter } from './delegation.js';
 import { systemPromptRouter } from './system-prompt.js';
@@ -51,6 +52,7 @@ export const router = {
   ...usageRouter,
   ...notesRouter,
   ...tasksRouter,
+  ...notificationsRouter,
   ...groupRouter,
   ...delegationRouter,
   ...systemPromptRouter,

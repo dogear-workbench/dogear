@@ -11,6 +11,7 @@ import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { TitleBar } from '@/components/TitleBar';
+import { NotificationCenter } from '@/components/NotificationCenter';
 import DataCenterPage from '@/app/data-center/page';
 import { WorkspaceRuleDialog } from '@/components/WorkspaceRuleDialog';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
@@ -222,6 +223,7 @@ export default function Home() {
           </Button>
         </div>
         <div className="flex items-center gap-2">
+          <NotificationCenter />
           <Button variant="outline" size="sm" onClick={openSettings}>
             <Settings className="w-4 h-4 mr-2" />
             设置

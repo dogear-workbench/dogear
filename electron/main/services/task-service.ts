@@ -5,6 +5,8 @@
  * - 状态机与存储见 task-store.ts
  */
 import * as taskStore from './task-store.js';
+import * as workspaceJsonService from './workspace-json-service.js';
+import { getNotificationCenterService } from './notification-center-service.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 
 export type TaskStatus = taskStore.TaskStatus;
@@ -69,8 +71,31 @@ export async function reportTaskResult(
   result: string,
 ): Promise<taskStore.Task | null> {
   const task = await taskStore.reportTaskResult(workspacePath, execSessionId, result);
-  if (task) broadcastTasksChanged(workspacePath);
+  if (task) {
+    broadcastTasksChanged(workspacePath);
+    void notifyTaskReview(task, workspacePath);
+  }
   return task;
+}
+
+async function notifyTaskReview(task: taskStore.Task, workspacePath: string): Promise<void> {
+  try {
+    const ws = (await workspaceJsonService.getAll()).find((w) => w.path === workspacePath);
+    if (!ws) return;
+    const title = `任务待审核：${task.title}`;
+    await getNotificationCenterService().add({
+      type: 'task',
+      dedupeKey: `task:${task.id}:review`,
+      title,
+      summary: task.result ? task.result.slice(0, 200) : undefined,
+      owner: { kind: 'system' },
+      taskId: task.id,
+      workspaceId: ws.id,
+      ownerLabel: '系统',
+    });
+  } catch {
+    // 通知失败不影响申报主流程
+  }
 }
 
 export async function completeTask(workspacePath: string, taskId: string, result: string): Promise<taskStore.Task> {
