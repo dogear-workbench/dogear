@@ -30,3 +30,21 @@
 - 段模板文字只迁移不重写：共享区引导缺失句并入协作规范/契约段既有共享区段，只补缺不重复
 - 前端不硬编码包/场景规则，一律经 getAbilityPacks / 新矩阵 IPC 动态获取
 - commit 排除 package.json 版本号与 tmp/（环境既有改动）
+
+## 完成总结（2026-09-14）
+
+四个 step 全部完成并逐个提交：
+
+| Step | commit | 核心产出 |
+|---|---|---|
+| 1 后端归属重划 | ac250ef3 | 会话组包 group-context 独立、reference 拆解（dogear-group-context / dogear-sibling）、tasks 归笔记包（executor 保底）、SYSTEM_BEHAVIORS 退役、共享区引导文字迁移 |
+| 2 挂载矩阵 | 980f8842 | getAbilityMounts 改场景矩阵（主会话/子会话·默认/各 Profile/任务执行会话，复用 resolveAbilities），前端矩阵渲染替工作区反查，reference 细闸前端清理 |
+| 3 详情页布局 | 1703d505 | 顶部两行化 + skill chips 中文化（SKILL.md 首行标题经 IPC 透传）+ 右栏 5:4 + 字号降档 + 规则页徽章切换 |
+| 4 乐观更新与全实时 | 42dbf566 | 开关乐观更新（失败重拉回滚+toast）、mountsRefreshKey 矩阵信号、Markdown memo 化；设置页防抖即写+卸载 flush，删保存按钮 |
+
+**关键语义定夺**（实施中拍板）：
+- 「子会话·默认」行显示 default Profile 真实勾选结果而非字面全开（字面全开=假数据；无细闸维度包仍定死看包开关）
+- 会话组包关 = 子会话组头也不注入（唯一强制例外仍是协作包）
+- saveSettings 失败改 throw、删模型方案加确认弹窗（全实时模式的必要支撑）
+
+**遗留**：GUI 冒烟六点清单见 step4 回填；SubAgentTab 删 Profile 无确认（不对称待统一）；build:renderer 既有失败（@xterm/headless，非本计划引入）；首页系统行为卡 chip「提示词段 0」待 systemBehaviors 字段收尾时清理。
