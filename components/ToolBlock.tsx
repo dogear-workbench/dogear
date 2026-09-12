@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from 'react';
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo, Send, CircleCheckBig } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo, Send } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
@@ -27,9 +27,7 @@ import { SubAgentCardRenderer } from './agent-chat/tool-renderers/SubAgentCardRe
 import { MemoryCardRenderer } from './agent-chat/tool-renderers/MemoryCardRenderer';
 import { NoteCardRenderer } from './agent-chat/tool-renderers/NoteCardRenderer';
 import { TaskCardRenderer } from './agent-chat/tool-renderers/TaskCardRenderer';
-import { TaskResultRenderer } from './agent-chat/tool-renderers/TaskResultRenderer';
 import { DeliveryCardRenderer } from './agent-chat/tool-renderers/DeliveryCardRenderer';
-import { TrackUserActionsRenderer } from './agent-chat/tool-renderers/TrackUserActionsRenderer';
 import { GlobRenderer } from './agent-chat/tool-renderers/GlobRenderer';
 import { GrepRenderer } from './agent-chat/tool-renderers/GrepRenderer';
 import { SkillRenderer } from './agent-chat/tool-renderers/SkillRenderer';
@@ -86,9 +84,7 @@ const DOGEAR_TOOL_ICONS: Record<string, ToolIconSpec> = {
   dogear__AppendNote: { Icon: StickyNote, className: 'text-amber-600 dark:text-amber-400' },
   dogear__CreateTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
   dogear__ExecuteTask: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
-  dogear__ReportTaskResult: { Icon: ListTodo, className: 'text-blue-600 dark:text-blue-400' },
   dogear__SendMessage: { Icon: Send, className: 'text-green-600 dark:text-green-400' },
-  dogear__TrackUserActions: { Icon: CircleCheckBig, className: 'text-emerald-600 dark:text-emerald-400' },
 };
 
 function normalizeToolName(toolName: string): string {
@@ -141,10 +137,6 @@ const DOGEAR_CARD_TITLES: Record<string, (input?: Record<string, any>) => Dogear
   dogear__AppendNote: (input) => ({ label: '追加笔记', detail: input?.noteId ?? '' }),
   dogear__CreateTask: (input) => ({ label: '挂载任务', detail: input?.title ?? '' }),
   dogear__ExecuteTask: (input) => ({ label: '执行任务', detail: input?.taskId ?? '' }),
-  dogear__ReportTaskResult: (input) => ({
-    label: '申报任务结果',
-    detail: typeof input?.result === 'string' ? truncateOneLine(input.result, 30) : '',
-  }),
   dogear__SendMessage: (input) =>
     input?.options?.delivery === true
       ? { label: '交付摘要', detail: typeof input?.message === 'string' ? truncateOneLine(input.message, 30) : '' }
@@ -165,9 +157,7 @@ const DOGEAR_CARD_RENDERERS: Record<string, ComponentType<CardRendererProps>> = 
   dogear__AppendNote: NoteCardRenderer,
   dogear__CreateTask: TaskCardRenderer,
   dogear__ExecuteTask: TaskCardRenderer,
-  dogear__ReportTaskResult: TaskResultRenderer,
   dogear__SendMessage: DeliveryCardRenderer,
-  dogear__TrackUserActions: TrackUserActionsRenderer,
 };
 
 interface ToolPreviewAction {
@@ -305,28 +295,6 @@ function buildResultAction(opts: {
   }
 
   if (canonicalName === 'dogear__CreateTask' || canonicalName === 'dogear__ExecuteTask') {
-    const workspacePath = opts.workspacePath;
-    const taskId = (typeof input?.taskId === 'string' && input.taskId)
-      || extractOutputId(outputText, /任务 ID: ([^\s"\\]+)/);
-    if (!taskId || !workspacePath) return null;
-    return {
-      icon: ExternalLink,
-      tooltip: '打开任务',
-      open: () => {
-        void (async () => {
-          const result = await client.getCollabTask({ workspacePath, taskId }).catch(() => null);
-          if (!result || !('detail' in result) || !result.detail) {
-            toast.warning('任务不存在或已删除');
-            return;
-          }
-          useSessionStore.getState().switchTab(NOTES_TAB_ID);
-          useTaskFocusStore.getState().requestTaskFocus(taskId);
-        })();
-      },
-    };
-  }
-
-  if (canonicalName === 'dogear__ReportTaskResult') {
     const workspacePath = opts.workspacePath;
     const taskId = (typeof input?.taskId === 'string' && input.taskId)
       || extractOutputId(outputText, /任务 ID: ([^\s"\\]+)/);
@@ -577,7 +545,6 @@ export function ToolBlock({
         </span>
       )}
       previewLines={0}
-      defaultOpen={canonicalName === 'dogear__ReportTaskResult'}
       className={className}
     >
       {specializedRenderer ?? (

@@ -1,19 +1,9 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
-import { Checkbox } from '@/components/ui/checkbox';
 import { useConversationId } from '../conversation-id-context';
 import { useWorkspaceId } from '../workspace-id-context';
 import { useConversationStore } from '@/stores/conversation-store';
-import { ToolDetailShell, ToolSection, KeyValueList } from './ToolDetailShell';
-
-interface Props {
-  toolInput?: Record<string, any>;
-  toolOutput?: any;
-  toolUseId?: string;
-  isError?: boolean;
-}
 
 function storageKey(conversationId: string | null, toolUseId?: string): string | null {
   if (!conversationId || !toolUseId) return null;
@@ -33,10 +23,7 @@ function readCheckedIndices(key: string | null): number[] {
   }
 }
 
-export function TrackUserActionsRenderer({ toolInput, toolUseId }: Props) {
-  const actions: string[] = Array.isArray(toolInput?.actions)
-    ? toolInput.actions.filter((a: unknown): a is string => typeof a === 'string' && a.trim().length > 0)
-    : [];
+export function useUserActionChecklist(actions: string[], toolUseId?: string) {
   const conversationId = useConversationId();
   const workspaceId = useWorkspaceId();
   const groupId = useConversationStore((s) =>
@@ -49,18 +36,6 @@ export function TrackUserActionsRenderer({ toolInput, toolUseId }: Props) {
   useEffect(() => {
     setChecked(new Set(readCheckedIndices(key)));
   }, [key]);
-
-  if (actions.length === 0) {
-    return (
-      <ToolDetailShell>
-        {toolInput && Object.keys(toolInput).length > 0 && (
-          <ToolSection label="输入">
-            <KeyValueList data={toolInput} />
-          </ToolSection>
-        )}
-      </ToolDetailShell>
-    );
-  }
 
   const toggle = async (index: number, text: string) => {
     if (busyIndex !== null || checked.has(index)) return;
@@ -96,31 +71,5 @@ export function TrackUserActionsRenderer({ toolInput, toolUseId }: Props) {
     }
   };
 
-  return (
-    <div className="space-y-1 py-0.5">
-      <div className="text-[11px] text-muted-foreground">勾选完成后自动记入话题状态卡「已完成」</div>
-      {actions.map((action, index) => {
-        const isChecked = checked.has(index);
-        return (
-          <label
-            key={index}
-            className={cn(
-              'flex items-start gap-2 rounded px-1 py-1 -mx-1 cursor-pointer hover:bg-muted/50 transition-colors',
-              busyIndex === index && 'opacity-60 cursor-wait',
-            )}
-          >
-            <Checkbox
-              className="mt-0.5"
-              checked={isChecked}
-              disabled={isChecked || busyIndex !== null}
-              onCheckedChange={() => { void toggle(index, action); }}
-            />
-            <span className={cn('text-sm leading-5 break-all', isChecked && 'line-through text-muted-foreground')}>
-              {action}
-            </span>
-          </label>
-        );
-      })}
-    </div>
-  );
+  return { checked, busyIndex, toggle };
 }

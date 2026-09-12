@@ -7,6 +7,7 @@ import { ContentBlockItem } from './ContentBlockItem';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage, isInjectedUserMessage, parseTaskExecution, resolveInjectionTag } from './utils';
+import { SESSION_MESSAGE_TOOL_NAMES } from './session-tools';
 import { PathChip } from './path-link';
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
@@ -168,6 +169,7 @@ function FailoverContinueNotice({ content, timestamp, messageId }: { content: st
 /**
  * 将连续的 tool_use（中间可夹 thinking）合并为 tool_group 虚拟 block。
  * - ≥2 个工具才分组；单个工具 / 单个 thinking / Task/Agent 子代理 不分组
+ * - 会话性质工具（申报/勾选卡）渲染为消息卡，排除出分组
  * - 遇到 text / permission_request / ask_user_question 等其他类型 → 结束当前分组
  */
 function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
@@ -191,7 +193,10 @@ function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
   };
 
   for (const block of blocks) {
-    if (block.type === 'tool_use') {
+    if (block.type === 'tool_use' && SESSION_MESSAGE_TOOL_NAMES.has(block.toolName ?? '')) {
+      flush();
+      result.push(block);
+    } else if (block.type === 'tool_use') {
       buffer.push(block);
       toolCount++;
     } else if (block.type === 'thinking' && buffer.length > 0) {

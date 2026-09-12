@@ -6,6 +6,8 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import { ToolGroupBlock } from './ToolGroupBlock';
+import { TaskReportMessage } from './TaskReportMessage';
+import { UserActionsCard } from './UserActionsCard';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { isQuotaErrorText, hasFailoverTakeover } from '@/lib/failover-markers';
@@ -160,6 +162,12 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       const toolStatus = block.toolOutput !== undefined
         ? (block.isError ? 'error' : 'success')
         : 'running';
+      if (block.toolName === 'dogear__ReportTaskResult') {
+        return <TaskReportMessage toolInput={block.toolInput} toolOutput={block.toolOutput} isError={block.isError} />;
+      }
+      if (block.toolName === 'dogear__TrackUserActions') {
+        return <UserActionsCard toolInput={block.toolInput} toolUseId={block.toolUseId} />;
+      }
       return (
         <ToolBlock
           toolName={block.toolName || '未知工具'}
