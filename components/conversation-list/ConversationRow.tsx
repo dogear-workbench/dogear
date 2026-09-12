@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  Bot, ChevronDown, ChevronRight, GitBranch, MessagesSquare, MoreHorizontal, Network,
+  Bot, ChevronDown, ChevronRight, GitBranch, ListTodo, MessagesSquare, MoreHorizontal, Network,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
@@ -99,7 +99,10 @@ export function ConversationRow({
     else openOrFocusConversation(conv, nodeId);
   }, [conv, nodeId, onClick]);
 
-  const typeIcon = isAgentConversation
+  const isTaskExecution = getConversationTitle(conv).startsWith('任务: ');
+  const typeIcon = isTaskExecution
+    ? <ListTodo className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+    : isAgentConversation
     ? <Network className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground')} />
     : isFork
       ? <GitBranch className={cn('w-4 h-4 flex-shrink-0', isSelected ? 'text-purple-600 dark:text-purple-300' : 'text-purple-400')} />

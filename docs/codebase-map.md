@@ -51,9 +51,9 @@
 - `agent-chat/` — AI 聊天模块（\~20 文件）
   - `AgentChat.tsx` — 主组件（\~250行），组合 hooks + 布局 + 右侧工具轨道 + Minimap 集成；从 childrenByParent 派生等待交付展示态：awaitCount 驱动右侧工具轨道的 AwaitingDeliveryIndicator（minimap 同列侧边，点击即中断等待），isWaitingForChildren（run settled ∧ 有 running 直属子会话）仅驱动 ChatInputArea 状态行，主聊天流无等待文案，纯展示不阻塞；历史加载三态独立 UI：loading/屏障未 ready 骨架屏、error 错误卡片（原因摘要 + 重试）、empty 空态文案
   - `ChatInputArea.tsx` — 输入区域（引用芯片、图片预览、textarea、工具栏、斜杠命令菜单、运行中暂停按钮：调 pauseQueryBasedSession，受理到 paused 广播间显示「暂停中…」；状态行 paused 徽标「已暂停 · 发送消息继续」，paused 态输入框正常可用、发送即恢复；awaitingDelivery 态状态行显示「等待子会话交付中 · 可继续对话」，输入框行为同 idle）
-  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮；解析 `<sender/>` XML 标签在跨会话消息头显示派出者名字徽章）
+  - `MessageItem.tsx` — 单条消息渲染（用户/助手/isMeta消息、长文本折叠、sticky 冻结、分叉/编辑按钮；跨会话注入消息卡默认收起一行标识（来源+类型徽章+首行预览），点击展开全文，按 tag 分色）
   - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
-  - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）
+  - `MessageMinimap.tsx` — 消息小地图（按轮次聚合、视口指示、跳转、hover 展开/固定）；轮次头优先级见 turns.ts，注入头轮预览带类型前缀（▣ 任务执行 / ↩ 交付…）
   - `SearchBar.tsx` — 搜索浮条（Ctrl+F 快捷键、文本匹配高亮、激活项自动滚动）
   - `ThinkingBlock.tsx` — 思考块（compact/detailed 两种展示模式）
   - `StreamingIndicator.tsx` — 运行状态指示器（基于 pendingState：思考中/执行工具/生成中；flushing 态显示插话队列长度；等待交付动效已迁出至 AwaitingDeliveryIndicator，不再承担）
@@ -68,9 +68,9 @@
   - `highlight.ts` — 搜索高亮工具（mark 黄底 + active 橙底 ring）
   - `path-link.tsx` — 工作区路径胶囊基础设施：splitPathSegments/resolvePathInWorkspace 纯函数（白名单扩展名 + resolve 后区内才可点，前缀 lowercase 比较）、PathChip 可点胶囊（点击 markdown-preview-store.open 弹浮窗）、PathText 路径切分增强（仅工具块内使用，正文已不识别）、useWorkspacePath（焦点工作区响应式取 + 否则 client.getAll 缓存）
   - `workspace-id-context.tsx` — 会话所属工作区 Context（AgentChat 顶层包 Provider，tool-renderers/ToolBlock 子树消费；无 Provider 时自动降级纯文本）
-  - `minimap-utils.ts` — 消息预览提取工具函数
+  - `minimap-utils.ts` — 消息预览提取工具函数（含注入消息类型前缀 injectedPreviewPrefix）
+  - `turns.ts` — 轮次构建（轮次头优先级：真人消息 > task-execution 注入 > 无人值守语境下的其他注入——交付/终态/续跑注入仅当上一轮头也是注入类或尚无轮时开新轮，否则并入当前真人轮；Turn.headerInjected 标记头类型，吸顶与小地图真人语义不变；turns.test.ts 覆盖有人/无人值守切换场景）
   - `transformers.ts` — 消息转换工具（streamReducer 消费主进程事件流，含 message_id 终化）
-  - `task-aggregator.ts` — Task\* CRUD 聚合纯函数（aggregateTasks），把分散的 TaskCreate/TaskUpdate 合成当前任务清单，由 AgentChat 渲染期派生吸附渲染
   - `types.ts` — 类型定义（Message、ContentBlock，含 isMeta/isCompactBoundary 等字段）
   - `utils.ts` — 工具函数（getUserMessageSearchableText 等）
   - `hooks/` — 自定义 hooks（11 个）
@@ -103,7 +103,7 @@
 - `ToolBlock.tsx` — 工具块路由组件（顶层 components/，normalizeToolName 归一后分发到专属 renderer：Read/Glob/Grep/Skill/Write/Edit（FileChangeRenderer），其余走 ToolDetailShell；图标走 lucide 简约样式，无边框包裹；getToolSummary 摘要兼容 file_path/path 双入参；标题行 headerActions Eye 预览按钮（buildPreviewAction：Read(.md/.txt/.json)/Write(.md)/Skill/dogear__ListGroupFiles(relPath) 走 openInline 快照，Edit 读盘，仅 success 且非 error 显示，span+stopPropagation 规避嵌套 button）
 - `WorkspaceExplorer.tsx` — 工作区文件树（@headless-tree/react），拖放/重命名/删除/新建；文章分区头带「导入文章」入口（Globe 按钮 + 内联 URL 输入框 + 空态引导）
 - `AdditionalFilesPanel.tsx` — 右侧「附加」tab：附加路径手风琴列表（文件夹分节行样式与文件树一致，行尾 Switch 启停 + hover 删除，展开后文件树占满面板，可多节同时展开）
-- `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readTopicStateCard 拉条目化状态卡，TopicStateCardSection 渲染：生效话题含确立时间/待确认话题变更卡片带接受-拒绝按钮/六类条目带来源徽标与时间）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）；订阅 groupDataChanged（共享区写点/状态卡落盘广播）匹配当前组重拉两份数据
+- `TopicPanel.tsx` — 右侧「话题」tab（原 SharedAreaPanel 升级）：话题组三段折叠面板——话题背景（readTopicStateCard 拉条目化状态卡，TopicStateCardSection 渲染：生效话题含确立时间/待确认话题变更卡片带接受-拒绝按钮/六类条目不带会话 id、时间在正文下方单独小字行，分区标题 11px 半粗）+ 共享文件列表（md 点击 openInline 浮窗，非 md 提示去资源管理器看；引用/删除按钮 hover 显示）；订阅 groupDataChanged（共享区写点/状态卡落盘广播）匹配当前组重拉两份数据
 - `companion/` — 右侧伴随面板模块（组件只依赖 store + tipc client，无主窗口特有上下文，可被 workbench-window 独立窗口复用）
   - `CompanionPanel.tsx` — 五 tab 容器（文件/附加/话题/终端/浏览器）：props `{ workspaceId, groupId, terminalAnchor?, full? }`（terminalAnchor 终端跟随锚点，工作台窗口传全局焦点会话 id，缺省用主窗口 activeTabId），full=true 独立窗口模式（占满容器、无拖拽把手、忽略折叠与宽度记忆）；面板模式宽度 localStorage 记忆 key `companion-width:{tab}`（240~720 clamp，拖拽结束才写）、左缘拖拽把手、折叠由 ui-store.rightPanelOpen 控制；tab 分发 WorkspaceExplorer / AdditionalFilesPanel / TopicPanel / TerminalPanel / BrowserPanel，tab 状态 ui-store.rightPanelTab（每渲染进程独立实例，主窗口与工作台窗口互不影响）
   - `BrowserPanel.tsx` — 右侧「浏览器」tab 容器：状态行（running/launched 从 browser-store）+ BrowserInterventions 等待人工卡片区 + BrowserPageView 页面视图区 + 动作流分组卡片流（按任务分组：article 手动解析 / agent 会话，运行中任务置顶脉冲；ACTION_ICONS/LABELS 覆盖含 present/await_human 全部动作类型）；拉历史 ensureLoaded（一次性 RPC + seq 竞态合并）
@@ -114,7 +114,7 @@
 - `ArticlePreview.tsx` — 网络文章内容预览，选中文字浮动引用按钮（主窗口文章 tab + 独立会话窗口右栏双挂载；引用锚定走 requireReferenceAnchorId，主窗口引用后切回目标会话）
 - `ConversationList.tsx` — 对话列表主骨架（单一滚动视图：手动文件夹 → 近期 + 归档 Popover 浮窗）
 - `conversation-list/` — 对话列表子组件（拆分；按组渲染）
-  - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / expandToggle 可选展开箭头（agent 子会话折叠区）/ 操作按钮 absolute 右侧浮层（渐变背景叠在文字上，opacity-0+pointer-events-none 防隐形误触，编辑态隐藏）；agent 派出会话显示 Network 图标；文件夹相关 ContextMenu 已上移到 GroupCard）
+  - `ConversationRow.tsx` — 通用会话行（所有 section 共用，含 nodeId 必填 / 双层高亮 useNodeHighlight / expandToggle 可选展开箭头（agent 子会话折叠区）/ 操作按钮 absolute 右侧浮层（渐变背景叠在文字上，opacity-0+pointer-events-none 防隐形误触，编辑态隐藏）；agent 派出会话显示 Network 图标、任务执行会话（标题前缀「任务: 」判定）显示 amber 色 ListTodo 图标；文件夹相关 ContextMenu 已上移到 GroupCard）
   - `ManualSection.tsx` — 手动文件夹区（无「手动分组」总标题，文件夹平铺；headless-tree 仅在此用；children\[**root**\] 里的 folderId 节点及其子树，叶子渲染 GroupCard 装 groupId；订阅 section-collapse-store.folderReveal 展开祖先文件夹链）
   - `RecentVirtualGroup.tsx` — 时间分区：⚡ 近期 &lt; 7 天（默认展开）+ 🕐 更早 7~30 天（默认折叠），均按 group.updatedAt 倒序，两段头部共用 SectionHeader；阈值 RECENT_THRESHOLD_MS/OLDER_THRESHOLD_MS 在 group-store（OLDER 与 auto-archive-service 的 30 天过期归档对齐，散落未归档话题全部落在两区内），文案由 RECENT_DAYS/OLDER_DAYS 派生
   - `ArchiveSection.tsx` — 归档段 Popover 浮窗（向上弹出，ScrollArea max-h-80 限高），懒加载 listArchivedConversations
@@ -404,7 +404,7 @@
 
 - `tools/group-tools.ts` — 会话组共享区 MCP 工具（dogear-group server：dogear__ListGroupFiles 默认列清单（relPath+大小+修改时间）、传 relPath 读单文件全文 / dogear__SaveSharedNote；供 working agent 主动写 `_notes/` 阶段总结）
 
-- `tools/reference-tools.ts` — 引用会话 / 组背景 MCP 工具（dogear-reference server，**只装到子会话**）：dogear__ReadReferenceSession 读任意 sessionId 的去噪原文（可尾切 / 区间切，可选 workspaceId 跨工作区定位——不传走 closure 会话所属工作区）/ dogear__ReadGroupBackground 读本组 background.md 结构化字段 / dogear__ListSiblingSessions 列组内兄弟会话 / dogear__ListTopics 零模型列工作区全部话题（groupId + 状态卡 topic 一句话或组标题 + 更新时间 + 主会话数 + 归档状态，纯本地 IO，跨话题检索入口——动线 ListTopics → ReadGroupBackground → ReadReferenceSession）；主 agent 靠 dogear__CreateSession 派子会话消化后回摘要，避免污染主上下文
+- `tools/reference-tools.ts` — 引用会话 / 组背景 MCP 工具（dogear-reference server，主会话和子会话都装）：dogear__ReadReferenceSession 读任意 sessionId 的去噪原文（可尾切 / 区间切，可选 workspaceId 跨工作区定位——不传走 closure 会话所属工作区）/ dogear__ReadGroupBackground 读本组 background.md 结构化字段（默认精简返回：版本链只记计数、已完成只留最近 8 条，full: true 取全量）/ dogear__ListSiblingSessions 列组内兄弟会话 / dogear__ListTopics 零模型列工作区全部话题（groupId + 状态卡 topic 一句话或组标题 + 更新时间 + 主会话数 + 归档状态，纯本地 IO，跨话题检索入口——动线 ListTopics → ReadGroupBackground → ReadReferenceSession）
 
 - `tools/delegation-tools.ts` — Agent 协作 MCP 工具（dogear-delegation server）：
 

@@ -35,7 +35,13 @@ export function MessageMinimap({ turns, messagesById, conversationId, hidden, sc
     const headerMsg = t.headerId !== null ? messagesById.get(t.headerId) : undefined;
     const userPreview =
       headerMsg
-        ? extractMessagePreview(headerMsg) || '(空消息)'
+        ? (t.headerInjected && headerMsg.role === 'user'
+            ? (() => {
+                const prefix = injectedPreviewPrefix(headerMsg.content) ?? '';
+                const body = extractMessagePreview(headerMsg);
+                return body ? `${prefix} · ${body}` : prefix;
+              })()
+            : extractMessagePreview(headerMsg) || '(空消息)')
         : null;
 
     const assistantPreviews = t.memberIds

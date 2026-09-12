@@ -57,7 +57,7 @@ const INJECTION_TAG_STYLES: Record<InjectionTag, { bar: string; card: string; ba
   },
 };
 
-/** 跨会话注入消息卡：左彩色竖线 + 浅底色，脱离用户气泡，只读无操作按钮 */
+/** 跨会话注入消息卡：默认收起一行标识（来源+徽章+首行预览），点击展开全文；左彩色竖线 + 浅底色，脱离用户气泡 */
 function InjectedMessageCard({
   message,
   parsed,
@@ -77,25 +77,33 @@ function InjectedMessageCard({
   const styles = INJECTION_TAG_STYLES[tag];
   const sourceName = parsed.senderDisplayName
     ?? (forcedTag === 'task-execution' ? '任务系统' : '未知会话');
+  const preview = parsed.userMessage.replace(/\s+/g, ' ').trim();
   return (
-    <div className="w-full my-2" data-message-id={message.id ?? messageId}>
-      <div className={cn('rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}>
-        <div className="flex items-center gap-1.5 mb-1 text-xs text-muted-foreground">
+    <div
+      className={cn('w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}
+      data-message-id={message.id ?? messageId}
+    >
+      <Collapsible>
+        <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs text-muted-foreground cursor-pointer">
           <Bot className="w-3 h-3 flex-shrink-0" />
-          <span className="font-medium truncate max-w-[200px] text-foreground/80">{sourceName}</span>
+          <span className="font-medium truncate max-w-[160px] text-foreground/80 flex-shrink-0">{sourceName}</span>
           <span className={cn('px-1.5 py-0.5 rounded text-[10px] flex-shrink-0', styles.badge)}>{styles.label}</span>
+          <span className="truncate flex-1 min-w-0 text-foreground/70">{preview}</span>
           {message.timestamp && (
-            <span className="ml-auto flex-shrink-0 text-muted-foreground/60">
+            <span className="flex-shrink-0 text-muted-foreground/60">
               {new Date(message.timestamp).toLocaleTimeString()}
             </span>
           )}
-        </div>
-        <div className="whitespace-pre-wrap break-words text-sm text-foreground">
-          {searchQuery && messageId
-            ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
-            : parsed.userMessage}
-        </div>
-      </div>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="mt-1 pt-1 border-t border-border/40 whitespace-pre-wrap break-words text-sm text-foreground">
+            {searchQuery && messageId
+              ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
+              : parsed.userMessage
+            }
+          </div>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }
@@ -145,9 +153,9 @@ function TaskExecutionCard({
 }
 
 /** failover 续跑提示（主进程注入的哨兵 user 消息）：系统提示条样式，剥掉哨兵不显示 */
-function FailoverContinueNotice({ content, timestamp }: { content: string; timestamp?: number }) {
+function FailoverContinueNotice({ content, timestamp, messageId }: { content: string; timestamp?: number; messageId?: string }) {
   return (
-    <div className="w-full my-2 flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary/60 border border-dashed border-border text-xs text-muted-foreground">
+    <div className="w-full my-2 flex items-center gap-2 px-3 py-1.5 rounded-md bg-secondary/60 border border-dashed border-border text-xs text-muted-foreground" data-message-id={messageId}>
       <ArrowLeftRight size={12} className="flex-shrink-0" />
       <span className="flex-1 min-w-0">{stripFailoverContinueSentinel(content)}</span>
       {typeof timestamp === 'number' && (
@@ -252,7 +260,7 @@ export const MessageItem = memo(function MessageItem({
 
   // failover 续跑提示：哨兵前缀标识，渲染为系统提示条而非用户气泡
   if (isUser && isFailoverContinueMessage(message.content)) {
-    return <FailoverContinueNotice content={message.content} timestamp={message.timestamp} />;
+    return <FailoverContinueNotice content={message.content} timestamp={message.timestamp} messageId={messageId} />;
   }
 
   // 跨会话注入消息（交付/回复/终态/恢复卡、task-execution 折叠卡），优先于 SDK 注入与用户气泡判定

@@ -9,10 +9,11 @@ const u = (content: string, extra: Partial<Message> = {}): Message =>
   ({ role: 'user', content, id: `u${++seq}`, ...extra } as Message);
 const a = (content = 'reply', extra: Partial<Message> = {}): Message =>
   ({ role: 'assistant', content, id: `a${++seq}`, ...extra } as Message);
+const injected = (content: string): Message => u(`<sender kind="agent" name="子会话" delivery="true"/>\n${content}`);
 
 test('单轮：user + assistant', () => {
   const { turns, byMessageId } = buildTurns([u('hi'), a()], { collapsed: false });
-  expect(turns).toEqual([{ turnId: 'turn-u1', headerId: 'u1', memberIds: ['u1', 'a2'] }]);
+  expect(turns).toEqual([{ turnId: 'turn-u1', headerId: 'u1', headerInjected: false, memberIds: ['u1', 'a2'] }]);
   expect(byMessageId.get('u1')).toBe('turn-u1');
   expect(byMessageId.get('a2')).toBe('turn-u1');
 });
@@ -21,8 +22,8 @@ test('多轮：每条 user 开新轮', () => {
   const msgs = [u('q1'), a(), u('q2'), a(), a()];
   const { turns } = buildTurns(msgs, { collapsed: false });
   expect(turns).toEqual([
-    { turnId: 'turn-u1', headerId: 'u1', memberIds: ['u1', 'a2'] },
-    { turnId: 'turn-u3', headerId: 'u3', memberIds: ['u3', 'a4', 'a5'] },
+    { turnId: 'turn-u1', headerId: 'u1', headerInjected: false, memberIds: ['u1', 'a2'] },
+    { turnId: 'turn-u3', headerId: 'u3', headerInjected: false, memberIds: ['u3', 'a4', 'a5'] },
   ]);
 });
 
@@ -35,8 +36,8 @@ test('插话：isQueued 的 user 照常另起一轮', () => {
 
 test('开头是 assistant：形成无头轮', () => {
   const { turns } = buildTurns([a('恢复的回复'), u('q1'), a()], { collapsed: false });
-  expect(turns[0]).toEqual({ turnId: 'turn-a1', headerId: null, memberIds: ['a1'] });
-  expect(turns[1]).toEqual({ turnId: 'turn-u2', headerId: 'u2', memberIds: ['u2', 'a3'] });
+  expect(turns[0]).toEqual({ turnId: 'turn-a1', headerId: null, headerInjected: false, memberIds: ['a1'] });
+  expect(turns[1]).toEqual({ turnId: 'turn-u2', headerId: 'u2', headerInjected: false, memberIds: ['u2', 'a3'] });
 });
 
 test('注入消息（/model）不作 header，附着当前轮', () => {
@@ -53,6 +54,70 @@ test('meta 消息不作 header，附着当前轮', () => {
   expect(turns[0].memberIds).toEqual(['u1', 'm2', 'a2']);
 });
 
+test('有人值守：真人头后的交付注入并入当前轮', () => {
+  const msgs = [u('q1'), a('派了子会话'), injected('step1 交付'), a('验收')];
+  const { turns } = buildTurns(msgs, { collapsed: false });
+  expect(turns).toHaveLength(1);
+  expect(turns[0]).toEqual({ turnId: 'turn-u1', headerId: 'u1', headerInjected: false, memberIds: ['u1', 'a2', 'u3', 'a4'] });
+});
+
+test('无人值守：task-execution 开轮，后续交付注入各开新轮', () => {
+  const msgs = [
+    u('<task-execution>\n任务标题：会话渲染优化\n任务 ID：t1\n</task-execution>'),
+    a('开工'),
+    injected('step1 交付'),
+    a('验收 step1'),
+    injected('step2 交付'),
+    a('验收 step2'),
+  ];
+  const { turns } = buildTurns(msgs, { collapsed: false });
+  expect(turns.map(t => [t.headerId, t.headerInjected])).toEqual([
+    ['u1', true],
+    ['u3', true],
+    ['u5', true],
+  ]);
+  expect(turns[0].memberIds).toEqual(['u1', 'a2']);
+  expect(turns[1].memberIds).toEqual(['u3', 'a4']);
+});
+
+test('无人值守转有人：用户介入后开真人轮，后续注入并入', () => {
+  const msgs = [
+    u('<task-execution>\n任务标题：x\n任务 ID：t1\n</task-execution>'),
+    a('开工'),
+    injected('step1 交付'),
+    u('我来看看'),
+    a('继续'),
+    injected('step2 交付'),
+  ];
+  const { turns } = buildTurns(msgs, { collapsed: false });
+  expect(turns.map(t => [t.headerId, t.headerInjected])).toEqual([
+    ['u1', true],
+    ['u3', true],
+    ['u4', false],
+  ]);
+  expect(turns[2].memberIds).toEqual(['u4', 'a5', 'u6']);
+});
+
+test('首条即注入（resume 开场）：注入开轮，后续注入续开新轮', () => {
+  const msgs = [
+    u('<sender kind="agent" name="系统" tag="resume"/>\n续跑提示'),
+    a('继续干活'),
+    injected('step 交付'),
+  ];
+  const { turns } = buildTurns(msgs, { collapsed: false });
+  expect(turns.map(t => [t.headerId, t.headerInjected])).toEqual([
+    ['u1', true],
+    ['u3', true],
+  ]);
+});
+
+test('无头 assistant 轮后的注入并入当前轮（开场杂项语义）', () => {
+  const msgs = [a('恢复的回复'), injected('交付'), a('验收')];
+  const { turns } = buildTurns(msgs, { collapsed: false });
+  expect(turns).toHaveLength(1);
+  expect(turns[0]).toEqual({ turnId: 'turn-a1', headerId: null, headerInjected: false, memberIds: ['a1', 'u2', 'a3'] });
+});
+
 test('折叠：最后一个 boundary 之前的消息被隐藏，boundary 入无头轮', () => {
   const msgs = [
     u('old-q'), a('old-a'),
@@ -62,8 +127,8 @@ test('折叠：最后一个 boundary 之前的消息被隐藏，boundary 入无�
   const { turns, byMessageId } = buildTurns(msgs, { collapsed: true });
   expect(byMessageId.has('u1')).toBe(false);
   expect(byMessageId.has('a2')).toBe(false);
-  expect(turns[0]).toEqual({ turnId: 'turn-b3', headerId: null, memberIds: ['b3'] });
-  expect(turns[1]).toEqual({ turnId: 'turn-u3', headerId: 'u3', memberIds: ['u3', 'a4'] });
+  expect(turns[0]).toEqual({ turnId: 'turn-b3', headerId: null, headerInjected: false, memberIds: ['b3'] });
+  expect(turns[1]).toEqual({ turnId: 'turn-u3', headerId: 'u3', headerInjected: false, memberIds: ['u3', 'a4'] });
 });
 
 test('未折叠：boundary 之前的轮正常保留', () => {
@@ -73,8 +138,8 @@ test('未折叠：boundary 之前的轮正常保留', () => {
     u('new-q'), a('new-a'),
   ];
   const { turns } = buildTurns(msgs, { collapsed: false });
-  expect(turns[0]).toEqual({ turnId: 'turn-u1', headerId: 'u1', memberIds: ['u1', 'a2', 'b3'] });
-  expect(turns[1]).toEqual({ turnId: 'turn-u3', headerId: 'u3', memberIds: ['u3', 'a4'] });
+  expect(turns[0]).toEqual({ turnId: 'turn-u1', headerId: 'u1', headerInjected: false, memberIds: ['u1', 'a2', 'b3'] });
+  expect(turns[1]).toEqual({ turnId: 'turn-u3', headerId: 'u3', headerInjected: false, memberIds: ['u3', 'a4'] });
 });
 
 test('折叠/展开切换后同一消息的 turnId 不变', () => {

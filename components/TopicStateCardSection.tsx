@@ -49,24 +49,16 @@ function formatTs(v: string): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function SourceBadge({ source }: { source: string }) {
-  const label = source === 'user' ? '用户' : source === 'legacy' ? '迁移' : `会话 ${source.split('#')[0].slice(-6)}`;
-  return (
-    <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] text-muted-foreground">{label}</span>
-  );
-}
-
 function topicOriginLabel(source: string): string {
   if (source === 'user') return '用户确认';
   if (source === 'legacy') return '早期记录';
-  return `来自会话 ${source.split('#')[0].slice(-6)}`;
+  return '会话提炼';
 }
 
 function PendingChangeCard({
   workspaceId,
   groupId,
   text,
-  source,
   ts,
   index,
   busy,
@@ -75,7 +67,6 @@ function PendingChangeCard({
   workspaceId: string;
   groupId: string;
   text: string;
-  source: string;
   ts: string;
   index: number;
   busy: boolean;
@@ -97,10 +88,7 @@ function PendingChangeCard({
 
   return (
     <div className="rounded-sm border border-amber-500/40 bg-amber-500/5 p-2">
-      <div className="flex items-start gap-1.5">
-        <p className="flex-1 min-w-0 text-xs text-foreground/90 whitespace-pre-wrap">{text}</p>
-        <SourceBadge source={source} />
-      </div>
+      <p className="text-xs text-foreground/90 whitespace-pre-wrap">{text}</p>
       <div className="mt-1.5 flex items-center justify-between gap-2">
         <span className="text-[10px] text-muted-foreground/70">{formatTs(ts)}</span>
         <div className="flex items-center gap-1">
@@ -158,8 +146,8 @@ export function TopicStateCardSection({
     <div className="space-y-2 px-2 py-1.5">
       {topic && (
         <div>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">话题</div>
-          <div className="text-xs font-medium">{topic.text}</div>
+          <div className="text-[11px] font-medium text-foreground/70 mb-0.5">话题</div>
+          <div className="text-[13px] font-medium leading-snug">{topic.text}</div>
           <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
             <span>确立于 {establishedTs ? formatTs(establishedTs) : formatTs(topic.ts)}</span>
             <span>·</span>
@@ -170,7 +158,7 @@ export function TopicStateCardSection({
 
       {card.pendingTopicChanges.length > 0 && (
         <div className="space-y-1.5">
-          <div className="text-[10px] tracking-wide text-amber-600 dark:text-amber-400">
+          <div className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
             {card.pendingTopicChanges.length} 条话题变更待确认
           </div>
           {card.pendingTopicChanges.map((v, i) => (
@@ -179,7 +167,6 @@ export function TopicStateCardSection({
               workspaceId={workspaceId}
               groupId={groupId}
               text={v.text}
-              source={v.source}
               ts={v.ts}
               index={i}
               busy={busyIndex === i}
@@ -194,13 +181,12 @@ export function TopicStateCardSection({
         if (!items.length) return null;
         return (
           <div key={cat}>
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground mb-0.5">{CATEGORY_LABELS[cat]}</div>
+            <div className="text-[11px] font-medium text-foreground/70 mb-0.5">{CATEGORY_LABELS[cat]}</div>
             <ul className="space-y-1">
               {items.map((e) => (
-                <li key={e.id} className="flex items-start gap-1.5">
-                  <span className="text-xs text-foreground/90 whitespace-pre-wrap flex-1 min-w-0">{e.text}</span>
-                  <SourceBadge source={e.source} />
-                  <span className="shrink-0 text-[10px] text-muted-foreground/60 leading-4">{formatTs(e.ts)}</span>
+                <li key={e.id}>
+                  <span className="text-xs text-foreground/90 whitespace-pre-wrap">{e.text}</span>
+                  <span className="mt-0.5 block text-[10px] text-muted-foreground/60">{formatTs(e.ts)}</span>
                 </li>
               ))}
             </ul>

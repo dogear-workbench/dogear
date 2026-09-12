@@ -158,7 +158,7 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
       'dogear__ReportTaskResult',
       '申报任务执行结果',
       '申报任务执行结果（仅任务执行会话可用）：整个计划实施完成后调用，按当前会话归属校验，命中后任务进入待审核（review）并系统通知用户。\n' +
-        'result 摘要要说清做了什么、关键改动位置、遗留问题，用户只凭这段做审核。任务已被中断时继续工作并申报同样有效（中断后让会话继续，完成后申报回写）。',
+        'result 摘要要说清做了什么、关键改动位置、遗留问题，用户只凭这段做审核。摘要中若有必须用户本人完成的事项（登录/授权/线下操作/人工拍板），同时调用 dogear__TrackUserActions 提议勾选卡，不要只写在摘要里。任务已被中断时继续工作并申报同样有效（中断后让会话继续，完成后申报回写）。',
       z.object({
         result: z.string().min(1).describe('结果摘要：做了什么、关键改动位置、遗留问题'),
       }),

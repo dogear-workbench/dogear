@@ -577,7 +577,7 @@ export function ToolBlock({
         </span>
       )}
       previewLines={0}
-      defaultOpen={false}
+      defaultOpen={canonicalName === 'dogear__ReportTaskResult'}
       className={className}
     >
       {specializedRenderer ?? (

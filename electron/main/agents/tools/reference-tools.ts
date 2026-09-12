@@ -27,6 +27,8 @@ const ACTIVE_THRESHOLD_MS = 5 * 60 * 1000;
 
 const READ_SYNC_WAIT_MS = 120_000;
 
+const COMPLETED_KEEP = 8;
+
 export interface ReferenceToolsOpts {
   workspaceId: string;
   workspacePath: string;
@@ -133,9 +135,11 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
     defineTool(
       'dogear__ReadGroupBackground',
       '读取话题状态卡',
-      '读取当前会话组的话题状态卡（返回唯一最新卡）：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。存在未提炼会话时会现场抽取并等待，可能需 30s~2min。仅用于需要了解当前组最新整体状态时。',
-      z.object({}),
-      async () => {
+      '读取当前会话组的话题状态卡（返回唯一最新卡）：生效话题（含确立时间）+ 话题版本链 + 六类状态条目（均带来源与时间）。默认精简返回：版本链只记计数、已完成只留最近 8 条（防活跃话题膨胀），需要完整历史时传 full: true。存在未提炼会话时会现场抽取并等待，可能需 30s~2min。仅用于需要了解当前组最新整体状态时。',
+      z.object({
+        full: z.boolean().optional().describe('true 返回全量（完整版本链 + 全部已完成条目）；缺省精简返回'),
+      }),
+      async (args) => {
         const fresh = await ensureGroupFresh(workspaceId, groupId, READ_SYNC_WAIT_MS, selfConversationId);
         const card = await readTopicStateCard(workspaceId, groupId);
         if (!card) {
@@ -157,11 +161,18 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
             `确立于 ${fmtTs(first?.ts ?? topic.ts)}，${topicOriginLabel(topic.source)}`,
           );
           if (card.topicHistory.length > 1) {
-            topicLines.push(
-              '',
-              `## 话题版本链（共 ${card.topicHistory.length} 版，末位生效）`,
-              ...card.topicHistory.map((v: TopicVersion) => `- ${v.text}${withMeta(v.source, v.ts)}`),
-            );
+            if (args.full) {
+              topicLines.push(
+                '',
+                `## 话题版本链（共 ${card.topicHistory.length} 版，末位生效）`,
+                ...card.topicHistory.map((v: TopicVersion) => `- ${v.text}${withMeta(v.source, v.ts)}`),
+              );
+            } else {
+              topicLines.push(
+                '',
+                `## 话题版本链（共 ${card.topicHistory.length} 版，末版即上方生效话题；完整链传 full: true）`,
+              );
+            }
           }
         }
         const entryLines: string[] = [];
@@ -169,7 +180,12 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
           const items = card.entries[cat];
           if (!items.length) continue;
           entryLines.push(`### ${CATEGORY_LABELS[cat]}`);
-          entryLines.push(...items.map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
+          if (cat === 'completed' && !args.full && items.length > COMPLETED_KEEP) {
+            entryLines.push(...items.slice(-COMPLETED_KEEP).map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
+            entryLines.push(`- …另有 ${items.length - COMPLETED_KEEP} 条更早的已完成条目（完整列表传 full: true；深挖历史可用 dogear__ReadReferenceSession）`);
+          } else {
+            entryLines.push(...items.map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
+          }
         }
         const parts = [
           `groupId=${card.groupId} updatedAt=${fmtTs(card.updatedAt)}`,
