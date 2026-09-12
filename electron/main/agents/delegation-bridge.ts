@@ -576,8 +576,8 @@ export async function startChild(opts: StartChildOptions): Promise<ChildStateSna
 
   broadcastChildStatusChanged(parentConversationId, childId, 'running', toSnapshot(state));
 
-  // fire-and-forget 发任务
-  session.sendMessage(spec.task).catch((error: unknown) => {
+  // fire-and-forget 发任务：sender 标签 + dispatch 注入标记，子会话侧首条 task 以「派出」注入卡呈现而非用户气泡
+  session.sendMessage(`${buildSenderTag(parent.sessionId ?? '', parent.title, false, 'dispatch')}\n${spec.task}`, { injectionTag: 'dispatch' }).catch((error: unknown) => {
     logger.error(`子会话 ${childId} sendMessage 失败`, error);
     onSessionComplete(childId, {
       subtype: 'failed',

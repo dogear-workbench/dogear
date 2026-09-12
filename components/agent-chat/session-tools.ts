@@ -6,4 +6,6 @@ export const SESSION_MESSAGE_TOOL_NAMES: ReadonlySet<string> = new Set([
   'dogear__ReportTaskResult',
   'dogear__TrackUserActions',
   'dogear__SendMessage',
+  'dogear__CreateSession',
+  'dogear__CreateSessionBatch',
 ]);

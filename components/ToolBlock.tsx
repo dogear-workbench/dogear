@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComponentType } from 'react';
-import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Network, Brain, StickyNote, ListTodo } from "lucide-react";
+import { Check, X, Loader2, FileText, FolderSearch, Search, Zap, Wrench, Terminal, PenLine, FileEdit, Eye, ExternalLink, Brain, StickyNote, ListTodo } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
@@ -10,9 +10,6 @@ import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useNotesStore } from '@/stores/notes-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
-import { useConversationStore } from '@/stores/conversation-store';
-import type { Conversation } from '@/components/ConversationList';
-import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
 import { resolvePathInWorkspace, useWorkspacePath } from './agent-chat/path-link';
 import { useWorkspaceId } from './agent-chat/workspace-id-context';
@@ -23,7 +20,6 @@ import {
   OutputBox,
 } from './agent-chat/tool-renderers/ToolDetailShell';
 import { ReadRenderer } from './agent-chat/tool-renderers/ReadRenderer';
-import { SubAgentCardRenderer } from './agent-chat/tool-renderers/SubAgentCardRenderer';
 import { MemoryCardRenderer } from './agent-chat/tool-renderers/MemoryCardRenderer';
 import { NoteCardRenderer } from './agent-chat/tool-renderers/NoteCardRenderer';
 import { TaskCardRenderer } from './agent-chat/tool-renderers/TaskCardRenderer';
@@ -74,8 +70,6 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
 };
 
 const DOGEAR_TOOL_ICONS: Record<string, ToolIconSpec> = {
-  dogear__CreateSession: { Icon: Network, className: 'text-sky-600 dark:text-sky-400' },
-  dogear__CreateSessionBatch: { Icon: Network, className: 'text-sky-600 dark:text-sky-400' },
   dogear__SaveMemory: { Icon: Brain, className: 'text-teal-600 dark:text-teal-400' },
   dogear__ForgetMemory: { Icon: Brain, className: 'text-teal-600 dark:text-teal-400' },
   dogear__CreateNote: { Icon: StickyNote, className: 'text-amber-600 dark:text-amber-400' },
@@ -107,24 +101,11 @@ interface DogearCardTitle {
   detail: string;
 }
 
-function truncateOneLine(text: string, max: number): string {
-  const one = text.replace(/\s+/g, ' ').trim();
-  return one.length > max ? one.slice(0, max) + '…' : one;
-}
-
 function firstLineTitle(content: string): string {
   return content.split('\n')[0]?.replace(/^#{1,6}\s*/, '').trim() ?? '';
 }
 
 const DOGEAR_CARD_TITLES: Record<string, (input?: Record<string, any>) => DogearCardTitle> = {
-  dogear__CreateSession: (input) => ({
-    label: '派遣子会话',
-    detail: typeof input?.task === 'string' ? truncateOneLine(input.task, 30) : '',
-  }),
-  dogear__CreateSessionBatch: (input) => ({
-    label: '派遣子会话',
-    detail: `${Array.isArray(input?.items) ? input.items.length : '?'} 个子任务`,
-  }),
   dogear__SaveMemory: (input) => ({ label: '保存记忆', detail: input?.title ?? '' }),
   dogear__ForgetMemory: (input) => ({ label: '删除记忆', detail: input?.slug ?? '' }),
   dogear__CreateNote: (input) => ({
@@ -142,8 +123,6 @@ const DOGEAR_CARD_TITLES: Record<string, (input?: Record<string, any>) => Dogear
 };
 
 const DOGEAR_CARD_RENDERERS: Record<string, ComponentType<CardRendererProps>> = {
-  dogear__CreateSession: SubAgentCardRenderer,
-  dogear__CreateSessionBatch: SubAgentCardRenderer,
   dogear__SaveMemory: MemoryCardRenderer,
   dogear__ForgetMemory: MemoryCardRenderer,
   dogear__CreateNote: NoteCardRenderer,
@@ -243,17 +222,6 @@ function extractOutputId(outputText: string, re: RegExp): string {
   return outputText.match(re)?.[1] ?? '';
 }
 
-async function findConversationBySessionId(workspaceId: string, sessionId: string): Promise<Conversation | null> {
-  const local = useConversationStore.getState().conversations.find((c) => c.session_id === sessionId);
-  if (local) return local;
-  try {
-    const result = await client.getByWorkspaceId({ workspaceId });
-    return (result.conversations ?? []).find((c) => c.session_id === sessionId) ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function buildResultAction(opts: {
   toolName: string;
   toolInput?: any;
@@ -304,26 +272,6 @@ function buildResultAction(opts: {
           }
           useSessionStore.getState().switchTab(NOTES_TAB_ID);
           useTaskFocusStore.getState().requestTaskFocus(taskId);
-        })();
-      },
-    };
-  }
-
-  if (canonicalName === 'dogear__CreateSession') {
-    const workspaceId = opts.workspaceId;
-    const sessionId = extractOutputId(outputText, /已创建新会话 ([^\s（「」"\\]+)/);
-    if (!sessionId || !workspaceId) return null;
-    return {
-      icon: ExternalLink,
-      tooltip: '打开子会话',
-      open: () => {
-        void (async () => {
-          const conv = await findConversationBySessionId(workspaceId, sessionId);
-          if (!conv) {
-            toast.warning('子会话不存在或已删除');
-            return;
-          }
-          openOrFocusConversation(conv, conv.groupId ? `topic:${conv.groupId}:${conv.id}` : undefined);
         })();
       },
     };

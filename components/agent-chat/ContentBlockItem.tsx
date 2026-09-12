@@ -9,6 +9,7 @@ import { ToolGroupBlock } from './ToolGroupBlock';
 import { TaskReportMessage } from './TaskReportMessage';
 import { UserActionsCard } from './UserActionsCard';
 import { AgentCommCard } from './AgentCommCard';
+import { SessionDispatchCard } from './SessionDispatchCard';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { isQuotaErrorText, hasFailoverTakeover } from '@/lib/failover-markers';
@@ -172,6 +173,16 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       if (block.toolName === 'dogear__SendMessage') {
         return (
           <AgentCommCard
+            toolInput={block.toolInput}
+            toolOutput={block.toolOutput}
+            isError={block.isError}
+            timestamp={block.timestamp}
+          />
+        );
+      }
+      if (block.toolName === 'dogear__CreateSession' || block.toolName === 'dogear__CreateSessionBatch') {
+        return (
+          <SessionDispatchCard
             toolInput={block.toolInput}
             toolOutput={block.toolOutput}
             isError={block.isError}

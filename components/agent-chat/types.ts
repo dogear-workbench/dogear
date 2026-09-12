@@ -1,5 +1,5 @@
 /** 跨会话注入消息类型，与主进程 task-types.ts 的 InjectionTag 保持一致（rootDir 限制无法共享模块） */
-export type InjectionTag = 'delivery' | 'reply' | 'terminal' | 'resume' | 'task-execution' | 'failover';
+export type InjectionTag = 'delivery' | 'reply' | 'terminal' | 'resume' | 'task-execution' | 'failover' | 'dispatch';
 
 /**
  * 扩展的消息类型

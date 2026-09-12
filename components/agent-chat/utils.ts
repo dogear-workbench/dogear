@@ -212,7 +212,7 @@ export function parseSlashCommandMessage(content: string): ParsedSlashCommand {
   return { isCommand: true, commandName, commandArgs: commandArgs || undefined };
 }
 
-const INJECTION_TAG_SET: ReadonlySet<InjectionTag> = new Set(['delivery', 'reply', 'terminal', 'resume', 'task-execution', 'failover']);
+const INJECTION_TAG_SET: ReadonlySet<InjectionTag> = new Set(['delivery', 'reply', 'terminal', 'resume', 'task-execution', 'failover', 'dispatch']);
 
 const TERMINAL_HINT_RE = /终止|失败|耗尽|quota/i;
 

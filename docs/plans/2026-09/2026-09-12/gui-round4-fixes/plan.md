@@ -12,7 +12,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 通讯卡视觉与交互修正](./step1-comm-card-visual.md) — 字号调小、展开态完整目标行、收起触发点重排、底色中性化
-- [ ] [Step 2: 派遣渲染统一链](./step2-dispatch-rendering.md) — dispatch 注入标签 + CreateSession 通讯卡 + 会话名可点跳转 + 小地图
+- [x] [Step 2: 派遣渲染统一链](./step2-dispatch-rendering.md) — dispatch 注入标签 + CreateSession 通讯卡 + 会话名可点跳转 + 小地图
 - [ ] [Step 3: 通知中心收敛与治理](./step3-notification-hygiene.md) — 移除子会话粒度通知、单条删除/清空、已读自动过期
 - [ ] [Step 4: 申报卡与任务面板双向连接](./step4-task-bidirectional.md) — 状态徽章可点定位任务、任务条目跳执行会话
 

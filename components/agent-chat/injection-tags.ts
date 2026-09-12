@@ -41,4 +41,10 @@ export const INJECTION_TAG_STYLES: Record<InjectionTag, { bar: string; card: str
     badge: 'bg-secondary text-secondary-foreground',
     label: '切换',
   },
+  dispatch: {
+    bar: 'bg-amber-500',
+    card: 'bg-secondary/60',
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    label: '派出',
+  },
 };

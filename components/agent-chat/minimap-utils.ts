@@ -46,6 +46,7 @@ const INJECTED_PREVIEW_PREFIXES: Record<InjectionTag, string> = {
   resume: '↻ 续跑',
   'task-execution': '▣ 任务执行',
   failover: '⇄ 切换',
+  dispatch: '↗ 派出',
 };
 
 /**

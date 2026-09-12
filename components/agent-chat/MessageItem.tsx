@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage, isInjectedUserMessage, parseTaskExecution, resolveInjectionTag } from './utils';
 import { SESSION_MESSAGE_TOOL_NAMES } from './session-tools';
 import { INJECTION_TAG_STYLES } from './injection-tags';
-import { CommCollapseBar } from './AgentCommCard';
+import { CommCollapseBar, SessionPeerLink } from './AgentCommCard';
 import { PathChip } from './path-link';
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
@@ -59,7 +59,10 @@ function InjectedMessageCard({
         <CollapsibleContent>
           <div className="mt-1 pt-1 border-t border-border/40">
             <div className="mb-1 text-xs text-muted-foreground break-all">
-              来源：{sourceName}
+              来源：
+              {parsed.senderSessionId
+                ? <SessionPeerLink sessionId={parsed.senderSessionId} displayName={sourceName} />
+                : <span className="break-all">{sourceName}</span>}
               {parsed.senderSessionId && ` · ${parsed.senderSessionId}`}
             </div>
             <div className="whitespace-pre-wrap break-words text-xs text-foreground">

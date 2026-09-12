@@ -5,6 +5,8 @@ import { client } from '@/lib/client';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { useConversationStore } from '@/stores/conversation-store';
+import type { Conversation } from '@/components/ConversationList';
+import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { useWorkspaceId } from './workspace-id-context';
 import { INJECTION_TAG_STYLES } from './injection-tags';
 
@@ -22,30 +24,51 @@ export function CommCollapseBar({ onCollapse }: { onCollapse: () => void }) {
   );
 }
 
-// toSessionId → 会话标题：先查本地会话 store，未命中再拉工作区会话列表（同 ToolBlock 打开子会话的反查口径）
-function usePeerConversationName(peerSessionId: string): string | undefined {
+// peerSessionId → conversation：先查本地会话 store，未命中再拉工作区会话列表（同 ToolBlock 打开子会话的反查口径）
+function usePeerConversation(peerSessionId: string): Conversation | undefined {
   const workspaceId = useWorkspaceId();
-  const [name, setName] = useState<string | undefined>(() => {
-    return useConversationStore.getState().conversations.find((c) => c.session_id === peerSessionId)?.title;
+  const [conv, setConv] = useState<Conversation | undefined>(() => {
+    return useConversationStore.getState().conversations.find((c) => c.session_id === peerSessionId);
   });
   useEffect(() => {
     let cancelled = false;
     const local = useConversationStore.getState().conversations.find((c) => c.session_id === peerSessionId);
-    if (local?.title) {
-      setName(local.title);
+    if (local) {
+      setConv(local);
       return;
     }
     if (!workspaceId) return;
     void client.getByWorkspaceId({ workspaceId })
       .then((result) => {
         if (cancelled) return;
-        const title = (result.conversations ?? []).find((c) => c.session_id === peerSessionId)?.title;
-        if (title) setName(title);
+        const found = (result.conversations ?? []).find((c) => c.session_id === peerSessionId);
+        if (found) setConv(found);
       })
       .catch(() => {});
     return () => { cancelled = true; };
   }, [peerSessionId, workspaceId]);
-  return name;
+  return conv;
+}
+
+// 会话跳转节点口径与 NotificationCenter 一致：topic:{groupId}:{id}
+export function jumpToPeerConversation(conv: Conversation): void {
+  openOrFocusConversation(conv, conv.groupId ? `topic:${conv.groupId}:${conv.id}` : undefined);
+}
+
+// 会话名可点跳转：反查不到 conversation 时降级为纯文本
+export function SessionPeerLink({ sessionId, displayName }: { sessionId?: string; displayName: string }) {
+  const conv = usePeerConversation(sessionId ?? '');
+  if (!sessionId || !conv) return <span className="break-all">{displayName}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => jumpToPeerConversation(conv)}
+      title="打开会话"
+      className="text-left break-all hover:underline cursor-pointer"
+    >
+      {displayName}
+    </button>
+  );
 }
 
 function toOutputText(toolOutput: unknown): string {
@@ -65,7 +88,8 @@ export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
   const toSessionId = typeof toolInput?.toSessionId === 'string' ? toolInput.toSessionId : '';
   const delivery = toolInput?.options?.delivery === true;
   const running = toolOutput === undefined;
-  const peerName = usePeerConversationName(toSessionId);
+  const conv = usePeerConversation(toSessionId);
+  const peerName = conv?.title;
   const styles = INJECTION_TAG_STYLES[delivery ? 'delivery' : 'reply'];
   const preview = (isError ? toOutputText(toolOutput).split('\n')[0] : message).replace(/\s+/g, ' ').trim();
 
@@ -105,7 +129,9 @@ export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
             <div className="mb-1 flex items-start gap-1.5 text-xs text-muted-foreground">
               <ArrowRight className="w-3 h-3 flex-shrink-0 mt-0.5" />
               <span className="break-all">
-                发给 @{peerName ?? toSessionId}
+                发给 @{peerName
+                  ? <SessionPeerLink sessionId={toSessionId} displayName={peerName} />
+                  : toSessionId}
                 {peerName && ` · ${toSessionId}`}
               </span>
             </div>

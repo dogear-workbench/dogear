@@ -6,7 +6,7 @@
 import type { ModelSelection } from '../services/settings-types.js';
 
 /** 注入 user 消息的类型标记：调用方显式传入，随 user 内容事件广播给前端 */
-export type InjectionTag = 'delivery' | 'reply' | 'terminal' | 'resume' | 'task-execution' | 'failover';
+export type InjectionTag = 'delivery' | 'reply' | 'terminal' | 'resume' | 'task-execution' | 'failover' | 'dispatch';
 
 /**
  * 任务状态枚举
@@ -105,7 +105,7 @@ export interface ExtendedSessionMessage {
   timestamp: number;
   isReplay?: boolean;              // 是否为重放的历史消息（SDK resume 时使用）
   uuid?: string;                   // 消息级稳定 ID：message_id 事件 = harness SessionTreeEntry.id（与历史 sdkUuid 同源）；compact_boundary = compaction entry id
-  injectedTag?: InjectionTag;      // type='user' 的注入消息标记（子会话交付/回复/终态/resume/task-execution/failover）
+  injectedTag?: InjectionTag;      // type='user' 的注入消息标记（子会话交付/回复/终态/resume/task-execution/failover/dispatch）
   role?: 'user' | 'assistant';     // message_id 事件指向的落盘消息角色（user 无 model）
   model?: string;                  // AI 使用的实际模型名称
   // 权限请求相关字段（type='permission_request' 时使用）
