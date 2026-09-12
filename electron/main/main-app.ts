@@ -328,16 +328,15 @@ export async function createWorkbenchWindow() {
 }
 
 /**
- * 设置已落盘，通知所有窗口刷新（restartSessions=true 时同时重启活跃会话）
- * 发起保存的窗口 store 已同步，重复 loadSettings 幂等无妨；
- * 广播到全部窗口是主题/字号等 UI 设置跨窗口即时生效的前提
+ * 设置已落盘，通知所有窗口刷新 store（主题/字号等 UI 域由渲染层订阅即时热更；
+ * agent 快照域由主进程按 diff 对受影响会话标脏，与本广播无关）
  */
-export function broadcastSettingsChanged(restartSessions: boolean) {
+export function broadcastSettingsChanged() {
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try {
       const h = getRendererHandlers<RendererHandlers>(win.webContents);
-      h.settingsChanged.send({ restartSessions });
+      h.settingsChanged.send(null);
     } catch (err) {
       console.error('[settings] 广播 settingsChanged 失败:', err);
     }

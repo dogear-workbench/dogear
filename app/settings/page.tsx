@@ -138,12 +138,8 @@ export default function SettingsPage() {
   };
 
   // ── 保存 ──
-  const handleSave = async () => {
+  const handleSaveAndClose = async () => {
     await saveToStore(local);
-  };
-
-  const handleSaveAndRestart = async () => {
-    await saveToStore(local, { restartSessions: true });
     closeSettings();
   };
 
@@ -163,8 +159,7 @@ export default function SettingsPage() {
       description: '设置已修改但尚未保存，你希望如何处理？',
       buttons: [
         { label: '放弃更改', value: 'discard', variant: 'outline' },
-        { label: '保存', value: 'save', variant: 'default' },
-        { label: '保存并重启会话', value: 'saveRestart', variant: 'default' },
+        { label: '保存并退出', value: 'save', variant: 'default' },
       ],
     });
     if (result === 'discard') {
@@ -172,9 +167,6 @@ export default function SettingsPage() {
       closeSettings();
     } else if (result === 'save') {
       await saveToStore(local);
-      closeSettings();
-    } else if (result === 'saveRestart') {
-      await saveToStore(local, { restartSessions: true });
       closeSettings();
     }
     // null（点击遮罩/ESC）= 留在设置页
@@ -250,11 +242,8 @@ export default function SettingsPage() {
           <Button variant="ghost" size="sm" disabled={!isDirty} onClick={handleCancel}>
             取消
           </Button>
-          <Button variant="outline" size="sm" disabled={!isDirty} onClick={handleSave}>
-            保存
-          </Button>
-          <Button size="sm" disabled={!isDirty} onClick={handleSaveAndRestart}>
-            保存并重启会话
+          <Button size="sm" disabled={!isDirty} onClick={handleSaveAndClose}>
+            保存并退出
           </Button>
         </div>
       </header>

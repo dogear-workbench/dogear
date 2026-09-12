@@ -13,7 +13,7 @@
 - [x] [Step 3: 等待图标与插话交互](./step3-await-steer-ui.md) — 等待图标改旋转、删点击中断链，插话成功提示去掉
 - [x] [Step 4: 绿色存活标识语义修正](./step4-alive-semantics.md) — alive 判定改为「在内存即活」并验证消费方
 - [x] [Step 5: 执行会话提示词精简](./step5-executor-prompt.md) — 砍话题指引与笔记存卡纪律注入，修 selfConversationId 缺传
-- [ ] [Step 6: 设置保存并退出与分层生效](./step6-settings-layers.md) — 按钮改造 + diff 域划分 + PiSession 脏标记下轮重建
+- [x] [Step 6: 设置保存并退出与分层生效](./step6-settings-layers.md) — 按钮改造 + diff 域划分 + PiSession 脏标记下轮重建
 - [ ] [Step 7: 顶部消息中心](./step7-notification-center.md) — 通知存储 service + tipc + 顶栏铃铛下拉 + review 通知补发
 
 ## 全局决策

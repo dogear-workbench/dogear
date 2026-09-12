@@ -14,6 +14,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { mainLogger } from '../logger.js';
 import { broadcastAliveConversations } from '../../services/renderer-broadcast.js';
 import { PiSession, type PiSessionConfig, type PiSessionTurnResult } from './pi-session.js';
+import { isSessionSnapshotAffected, type SettingsSnapshotDiff } from '../../services/settings-diff.js';
+import type { AppSettings } from '../../services/settings-types.js';
 import { appendContext as appendUsageContext, appendEntry as appendUsageEntry, appendCompactMarker as appendUsageCompactMarker, readNextTurnIndex } from '../../services/usage/usage-service.js';
 import { applyUsageSummary } from '../../services/conversation-service.js';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
@@ -363,6 +365,28 @@ export class PiSessionManager extends EventEmitter {
     for (const session of this.sessions.values()) {
       if (session.getWorkspaceId() === workspaceId) {
         session.updateWorkspacePaths(enabledPaths);
+      }
+    }
+  }
+
+  /**
+   * 设置快照域变更分发：permissionMode 走热 setter，其余命中域对受影响会话标脏，
+   * 各会话在下轮 sendMessage（idle）前自行重建，不无差别杀会话。
+   */
+  applySettingsSnapshotDiff(diff: SettingsSnapshotDiff, next: AppSettings): void {
+    for (const session of this.sessions.values()) {
+      if (diff.permissionModeChanged && session.getRole() === 'main') {
+        void session.setPermissionMode(next.ai.permissionMode);
+      }
+      const affected = isSessionSnapshotAffected(diff, {
+        role: session.getRole(),
+        configModelSelection: session.getConfigModelSelection(),
+        currentModelSelection: session.getCurrentModelSelection(),
+        subAgentProfileId: session.getSubAgentProfileId(),
+      }, next);
+      if (affected) {
+        this.logger.info(`设置快照域变更，会话 ${session.getSessionId().substring(0, 8)} 受影响`);
+        session.markSnapshotDirty();
       }
     }
   }

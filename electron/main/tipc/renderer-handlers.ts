@@ -219,8 +219,8 @@ export type RendererHandlers = {
     total: number;
   }) => void;
 
-  // 设置已落盘（设置保存发起，主窗口收到后刷新 settings store；restartSessions=true 时重启活跃会话）
-  settingsChanged: (data: { restartSessions: boolean }) => void;
+  // 设置已落盘（渲染层收到后刷新 settings store；agent 快照域由主进程标脏处理，渲染层无需重启会话）
+  settingsChanged: (data: null) => void;
 
   // 工作区文件树结构变更（workspace-watcher 监听 rename 事件去抖后广播，前端匹配当前工作区重拉文件树）
   workspaceFilesChanged: (data: { workspaceId: string }) => void;

@@ -171,7 +171,7 @@
 - `section-collapse-store.ts` — 左侧列表分区折叠状态：recentExpanded（「近期」默认展开）/ olderExpanded（「更早」默认折叠）/ folderReveal（nonce 供 ManualSection 订阅后逐层 expand 祖先文件夹链）/ subExpandedConvIds（会话行子会话折叠区，默认全折叠，expandSubConv 供焦点联动单向展开）；revealTopic(groupId) 在活跃会话切换时按 updatedAt 落桶展开对应时间分区与话题卡片，数据源动态 import group/workspace/conversation 三个 store
 - `reference-store.ts` — 引用状态：引用文章列表、引用片段（用户选中文字）、会话引用（ConversationReference，含 workspaceId 支持跨工作区，去重按 conversationId）
 - `slash-command-store.ts` — 斜杠命令状态：SDK + 自定义命令合并、capabilities 更新
-- `settings-store.ts` — 应用设置：加载/保存/重启会话（整体 save 模式；saveSettings 可选 `{restartSessions}` 透传主进程，触发 settingsChanged 广播）
+- `settings-store.ts` — 应用设置：加载/保存（整体 save 模式；保存后主进程按 diff 分层生效，快照域标脏受影响 PiSession，无重启链路）
 - `ui-store.ts` — UI 状态：设置全屏 overlay（settingsOpen/openSettings/closeSettings，reset 归 false）+ 右侧面板折叠（rightPanelOpen）
 - `browser-store.ts` — 浏览器面板状态：动作流事件缓冲（cap 500，seq 竞态合并）+ BrowserStreamStatus + 页面视图区状态 view（tabs/presentedTabId/selfWindowId/hasPageView，getPageViewState 拉 + 动作流事件节流 2s 刷新）+ 等待人工 pending 列表（listHumanInterventions 拉 + humanInterventionChanged 全量刷新）；订阅 browserActionAdded/pagePresentationChanged/humanInterventionChanged 三个广播（2026-09-08 Step 6 扩展）
 - `confirm-store.ts` — 全局确认弹窗：confirm() 返回 Promise，showConfirm() 简化版
@@ -188,7 +188,7 @@
 - `client.ts` — tipc 客户端，window.ipcRenderer 通信入口
 - `utils.ts` — cn() 类名合并工具
 - `events.ts` — tipc 事件处理入口，监听主进程事件
-- `setup-settings-sync.ts` — setupSettingsSync()（src/main.tsx 顶层挂载）：监听 settingsChanged 事件 loadSettings；restartSessions 时 restartActiveSessions + triggerSessionRestart（设置 overlay 与主窗口同上下文，广播自收自发）
+- `setup-settings-sync.ts` — setupSettingsSync()（src/main.tsx 顶层挂载）：监听 settingsChanged 事件 loadSettings（主题/字号由 store 订阅即时热更；agent 快照域由主进程标脏处理）
 - `manual-task-toasts.ts` — setupManualTaskToasts()（src/main.tsx 顶层挂载）：监听 manualTaskDone 出完成/失败/取消 toast；导出 formatDurationMs
 - `model-selection.ts` — 模型选择纯函数：dedupeProfileTiers（按 Profile 提取去重后的 (tier, modelId) 列表）/ sameSelection（结构相等比较）/ resolveModelLabel（selection → 展示名，ModelSelector 与设置页提示文案共用）
 - `conversation-sort.ts` — buildConversationTree：组内会话树纯函数（递归 ConversationTreeNode），手动会话按 updated_at 倒序作为根 + agent 派出会话挂派出者下（created_at 升序、支持多层派遣链，parentSessionId 不在组时回落自然序作根）

@@ -302,6 +302,9 @@ export class PiSession extends EventEmitter {
   // 带 injectionTag 的 sendMessage 入队，message_end(user) 按文本与队首匹配出队后广播内容事件；
   // interrupt/close 清空（harness 会同步清 steer 队列，残留项永无匹配时机）
   private pendingInjected: Array<{ text: string; tag: InjectionTag }> = [];
+  // 设置快照域变更标记（updateSettings diff 命中本会话时由 manager 置位）；
+  // 下一轮 sendMessage 且 isIdle 时按新设置重建，正在跑的轮不打断
+  private snapshotDirty = false;
 
   constructor(sessionId: string, config: PiSessionConfig) {
     super();
@@ -321,6 +324,78 @@ export class PiSession extends EventEmitter {
   updateWorkspacePaths(additionalPaths: string[]): void {
     this.config.additionalPaths = additionalPaths;
     this.env?.updateAllowedPaths([this.config.workspacePath, ...additionalPaths]);
+  }
+
+  getRole(): 'main' | 'sub' {
+    return this.config.role;
+  }
+
+  /** 会话自身携带的模型选择；null = start() 时回退设置页默认模型 */
+  getConfigModelSelection(): ModelSelection | null {
+    return this.config.modelSelection;
+  }
+
+  /** start() 解析后的实际生效模型选择 */
+  getCurrentModelSelection(): ModelSelection | null {
+    return this.currentModelSelection;
+  }
+
+  getSubAgentProfileId(): string | undefined {
+    return this.config.subAgentProfile?.id;
+  }
+
+  markSnapshotDirty(): void {
+    this.snapshotDirty = true;
+    this.logger.info('设置快照域变更，已标脏（下一轮 sendMessage 前重建）');
+  }
+
+  /**
+   * 按新设置原位重建：先刷新 config 中的设置快照（basicToolPermissions / 子会话 Profile），
+   * 再关旧 adapter 重走 start()。start() 内 repository.open(config.harnessSessionId)
+   * 重开同一 JSONL（failover 同款路径），历史不丢；失败回滚全部字段沿用旧配置。
+   * 仅在 isIdle 时调用：running/插话队列/挂起权限请求/paused 任一存在都可能丢状态。
+   */
+  private async rebuildForSettingsChange(): Promise<void> {
+    const appSettings = await loadSettings();
+    this.config.basicToolPermissions = appSettings.basicToolPermissions;
+    this.basicToolPermissions = appSettings.basicToolPermissions;
+    if (this.config.role === 'sub') {
+      const profiles = appSettings.subAgent?.profiles ?? [];
+      this.config.subAgentProfile = profiles.find((p) => p.id === this.config.subAgentProfile?.id)
+        ?? profiles.find((p) => p.id === 'default');
+    }
+
+    const oldAdapter = this.adapter;
+    const oldEnv = this.env;
+    const oldToolPackMap = this.toolPackMap;
+    this.toolPackMap = new Map();
+    const oldModelSnapshot = {
+      currentModelSelection: this.currentModelSelection,
+      currentModelId: this.currentModelId,
+      currentContextWindow: this.currentContextWindow,
+      currentAutoCompactPercent: this.currentAutoCompactPercent,
+      manualWindows: this.manualWindows,
+    };
+    this.adapter = null;
+    this.env = null;
+    try {
+      await this.start();
+      this.snapshotDirty = false;
+      this.logger.info('已按新设置重建会话（同 harnessSessionId 重开，历史不丢）');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn('按新设置重建失败，沿用旧配置继续:', message);
+      this.adapter = oldAdapter;
+      this.env = oldEnv;
+      this.toolPackMap = oldToolPackMap;
+      this.currentModelSelection = oldModelSnapshot.currentModelSelection;
+      this.currentModelId = oldModelSnapshot.currentModelId;
+      this.currentContextWindow = oldModelSnapshot.currentContextWindow;
+      this.currentAutoCompactPercent = oldModelSnapshot.currentAutoCompactPercent;
+      this.manualWindows = oldModelSnapshot.manualWindows;
+      return;
+    }
+    await oldAdapter?.abort();
   }
 
   /** Harness 的真实持久化 sessionId；start() 内两条分支（open 已有 / create 新建）都会同步赋值 config.harnessSessionId，resolve 时必定可用 */
@@ -951,6 +1026,12 @@ export class PiSession extends EventEmitter {
     }
     if (!this.adapter) {
       throw new Error('会话尚未启动');
+    }
+    if (this.snapshotDirty && this.isIdle()) {
+      await this.rebuildForSettingsChange();
+      if (!this.adapter) {
+        throw new Error('会话尚未启动');
+      }
     }
 
     const { text, images } =

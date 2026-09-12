@@ -2,6 +2,7 @@
 import { tipc } from '@egoist/tipc/main';
 import { loadSettings, saveSettings } from '../services/settings-service.js';
 import type { AppSettings } from '../services/settings-service.js';
+import { diffSettings, hasSnapshotChange } from '../services/settings-diff.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
 const t = tipc.create();
@@ -22,36 +23,26 @@ export const settingsRouter = {
     }),
 
   /**
-   * 更新应用设置（落盘后广播 settingsChanged 给主窗口；restartSessions=true 时主窗口同时重启活跃会话）
+   * 更新应用设置：落盘后 diff 新旧设置分层生效——
+   * 纯 UI/按次读取域仅广播 settingsChanged（渲染层刷 store 热更）；
+   * agent 启动快照域由 PiSessionManager 对受影响会话标脏（permissionMode 热更），
+   * 各会话在下轮 sendMessage 前自行重建，不再无差别杀会话
    */
   updateSettings: t.procedure
-    .input<{ settings: AppSettings; restartSessions?: boolean }>()
+    .input<{ settings: AppSettings }>()
     .action(async ({ input }) => {
       try {
+        const prev = await loadSettings();
         await saveSettings(input.settings);
+        const diff = diffSettings(prev, input.settings);
+        if (hasSnapshotChange(diff)) {
+          getPiSessionManager().applySettingsSnapshotDiff(diff, input.settings);
+        }
         const { broadcastSettingsChanged } = await import('../main-app.js');
-        broadcastSettingsChanged(input.restartSessions ?? false);
+        broadcastSettingsChanged();
         return { success: true };
       } catch (error) {
         console.error('更新设置失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 重启所有活跃会话
-   * 关闭 PiSessionManager 上所有活跃会话，前端会自动用新 settings 重建
-   */
-  restartActiveSessions: t.procedure
-    .action(async () => {
-      try {
-        const piSessionManager = getPiSessionManager();
-        const activeCount = piSessionManager.getActiveCount();
-        piSessionManager.closeAll();
-        console.log(`已关闭 ${activeCount} 个活跃会话，前端将自动重建`);
-        return { success: true, closedCount: activeCount };
-      } catch (error) {
-        console.error('重启活跃会话失败:', error);
         return { error: String(error) };
       }
     }),
