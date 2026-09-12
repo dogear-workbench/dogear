@@ -4,6 +4,10 @@ import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import type { AbilityPackView, AbilityToolGroupMeta } from '../../../electron/main/tipc/ability';
 import { AbilityMountsSection } from './AbilityMountsSection';
+import { PACK_TYPE_LABELS } from './pack-meta';
+
+const AGENT_COLLAB_OFF_NOTE =
+  '关闭后主会话不再注册派遣与共享区协作工具（无法创建子会话，已派出的子会话不受影响）；子会话侧协作能力强制生效，会话组上下文由「会话组」包单独控制。';
 
 interface AbilityPackSidebarProps {
   pack: AbilityPackView;
@@ -74,7 +78,17 @@ export function AbilityPackSidebar({
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   return (
-    <div className="w-72 shrink-0 space-y-5 overflow-y-auto border-l p-4">
+    <div className="flex-[4] min-w-0 space-y-5 overflow-y-auto border-l p-4">
+      <section className="space-y-2">
+        <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+          {PACK_TYPE_LABELS[pack.type]}
+        </span>
+        <p className="text-xs text-muted-foreground leading-relaxed">{pack.description}</p>
+        {pack.key === 'agent-collab' && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">{AGENT_COLLAB_OFF_NOTE}</p>
+        )}
+      </section>
+
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">能力开关</span>

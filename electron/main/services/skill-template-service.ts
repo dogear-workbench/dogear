@@ -14,6 +14,8 @@ const { app } = electron;
 
 export interface SkillTemplateMeta {
   name: string;
+  /** SKILL.md 首行 # 标题；无标题时为 undefined */
+  title?: string;
   description: string;
 }
 
@@ -22,6 +24,12 @@ export function getTemplatesDir(): string {
     return path.join(process.resourcesPath, 'skill-templates');
   }
   return path.join(process.cwd(), 'resources', 'skill-templates');
+}
+
+function parseTitle(content: string): string | undefined {
+  const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  const heading = body.match(/^#\s+(.+?)\s*$/m);
+  return heading?.[1] || undefined;
 }
 
 function parseDescription(content: string): string {
@@ -47,7 +55,7 @@ export async function listSkillTemplates(): Promise<SkillTemplateMeta[]> {
     const skillPath = path.join(dir, name, 'SKILL.md');
     try {
       const content = await fs.readFile(skillPath, 'utf-8');
-      result.push({ name, description: parseDescription(content) });
+      result.push({ name, title: parseTitle(content), description: parseDescription(content) });
     } catch {
       // 不是有效模板目录，跳过
     }

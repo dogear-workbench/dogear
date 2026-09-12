@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronRight, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { SYSTEM_MOUNTS_PACK_KEY, type AbilitySystemBehaviorView, type ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
 import { SYSTEM_BEHAVIOR_ICON } from './pack-meta';
 import { BasicToolsSection } from './BasicToolsSection';
@@ -13,23 +12,6 @@ interface SystemBehaviorDetailProps {
   residentToolGroups: ResidentToolGroupMeta[];
   workspaceId: string | null;
   onBack: () => void;
-}
-
-function SegmentCard({ behavior }: { behavior: AbilitySystemBehaviorView }) {
-  return (
-    <div className="rounded-md border overflow-hidden flex flex-col min-h-0">
-      <div className="px-3 py-2 bg-muted/30 border-b space-y-0.5 shrink-0">
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold">{behavior.label}</span>
-          <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">系统 · 只读</span>
-        </div>
-        <p className="text-xs text-muted-foreground leading-relaxed">{behavior.triggerDescription}</p>
-      </div>
-      <div className="overflow-auto max-h-96 px-3 py-2 text-sm">
-        <MarkdownRenderer content={behavior.segment.template || '（模板为空）'} />
-      </div>
-    </div>
-  );
 }
 
 function NoteBlock({ lines }: { lines: string[] }) {
@@ -55,11 +37,9 @@ function SectionTitle({ index, title, hint }: { index: number; title: string; hi
   );
 }
 
-export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceId, onBack }: SystemBehaviorDetailProps) {
+export function SystemBehaviorDetail({ residentToolGroups, workspaceId, onBack }: SystemBehaviorDetailProps) {
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
   const Icon = SYSTEM_BEHAVIOR_ICON;
-  const groupContext = behaviors.find((b) => b.key === 'group-context') ?? null;
-  const subAgentContract = behaviors.find((b) => b.key === 'sub-agent-contract') ?? null;
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -86,28 +66,8 @@ export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceI
           </div>
         </div>
 
-        {groupContext && (
-          <section className="space-y-2">
-            <SectionTitle index={1} title="会话组上下文" hint="有会话组即注入" />
-            <SegmentCard behavior={groupContext} />
-          </section>
-        )}
-
-        {subAgentContract && (
-          <section className="space-y-2">
-            <SectionTitle index={2} title="主子会话协作" hint="子会话固定注入" />
-            <SegmentCard behavior={subAgentContract} />
-            <NoteBlock
-              lines={[
-                '子会话属于会话组时固定注册组协作（dogear-group）与任务交付（dogear-delegation）两组工具，作为交付基础设施不随能力包开关。',
-                '主会话派遣规范与 Profile 索引归「Agent 协作」能力包，受其开关控制。',
-              ]}
-            />
-          </section>
-        )}
-
         <section className="space-y-2">
-          <SectionTitle index={3} title="常驻工具" hint="无提示词，绑定工作区即注册" />
+          <SectionTitle index={1} title="常驻工具" hint="无提示词，绑定工作区即注册" />
           <BasicToolsSection />
           <div className="pt-1">
             <span className="text-xs text-muted-foreground">加载情况</span>

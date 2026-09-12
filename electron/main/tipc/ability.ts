@@ -54,6 +54,8 @@ export interface AbilityToolGroupMeta {
 
 export interface AbilitySkillMeta {
   name: string;
+  /** SKILL.md 首行标题；模板缺失为 undefined（前端 chip 回退显示 key） */
+  title?: string;
   /** skill 模板 description；模板缺失为 undefined（前端可标注文件缺失） */
   description?: string;
   /** skill 关联的可选工具包 name（SKILL_PACK_MAP） */
@@ -370,6 +372,7 @@ export const abilityRouter = {
         ),
         skillMetas: (pack.skills ?? []).map((name) => ({
           name,
+          title: templateByName.get(name)?.title,
           description: templateByName.get(name)?.description,
           toolPacks: SKILL_PACK_MAP[name] ?? [],
         })),

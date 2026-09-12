@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { ArrowLeft, ChevronRight, ScrollText } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { client } from '@/lib/client';
@@ -41,6 +43,34 @@ function RuleSwitchSection({
   );
 }
 
+type RuleContext = 'workspace' | 'global';
+
+function RuleContextBadge({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        'inline-flex items-center rounded-full border px-3 py-1 text-xs transition-colors',
+        active
+          ? 'border-primary bg-primary text-primary-foreground'
+          : 'bg-background text-muted-foreground hover:border-primary/50 hover:text-foreground',
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function RulesPackDetailPage({
   workspace,
   workspaceId,
@@ -52,6 +82,7 @@ export function RulesPackDetailPage({
   onTogglePack,
 }: RulesPackDetailPageProps) {
   const switchDisabled = !workspaceId || packBusy;
+  const [activeRule, setActiveRule] = useState<RuleContext>('workspace');
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -72,7 +103,7 @@ export function RulesPackDetailPage({
       </div>
 
       <div className="flex-1 flex min-h-0">
-        <div className="flex-1 min-w-0 flex flex-col gap-4 p-4 overflow-y-auto">
+        <div className="flex-1 min-w-0 flex flex-col gap-3 p-4 overflow-y-auto">
           <div className="flex items-start gap-3">
             <div className="rounded-md bg-muted/60 p-2 shrink-0">
               <ScrollText className="w-5 h-5 text-foreground/80" />
@@ -85,27 +116,36 @@ export function RulesPackDetailPage({
             </div>
           </div>
 
-          {workspaceId ? (
-            <RuleFileEditor
-              title={`工作区 agent.md（${workspace?.name ?? ''}）`}
-              emptyHint={'# 工作区指令\n\n在此编写给 AI 助手的工作区级指令…'}
-              read={() => client.readWorkspaceAgentMd({ workspaceId })}
-              write={(content) => client.writeWorkspaceAgentMd({ workspaceId, content })}
-              loadTemplate={() => client.getWorkspaceAgentTemplate()}
-            />
-          ) : (
-            <div className="rounded-md border bg-muted/10 px-3 py-2">
-              <p className="text-sm text-muted-foreground">请先选择工作区，再编辑工作区 agent.md。</p>
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            <RuleContextBadge label="工作区规则" active={activeRule === 'workspace'} onClick={() => setActiveRule('workspace')} />
+            <RuleContextBadge label="全局规则" active={activeRule === 'global'} onClick={() => setActiveRule('global')} />
+          </div>
 
-          <RuleFileEditor
-            title="全局规则 agent.md（.dogear/agent.md，跨工作区生效）"
-            emptyHint={'# 全局指令\n\n在此编写跨工作区生效的全局指令…'}
-            read={() => client.readUserAgentMd()}
-            write={(content) => client.writeUserAgentMd({ content })}
-            loadTemplate={() => client.getUserAgentTemplate()}
-          />
+          <div className={cn('flex-1 min-h-0 flex flex-col', activeRule !== 'workspace' && 'hidden')}>
+            {workspaceId ? (
+              <RuleFileEditor
+                title={`工作区 agent.md（${workspace?.name ?? ''}）`}
+                emptyHint={'# 工作区指令\n\n在此编写给 AI 助手的工作区级指令…'}
+                read={() => client.readWorkspaceAgentMd({ workspaceId })}
+                write={(content) => client.writeWorkspaceAgentMd({ workspaceId, content })}
+                loadTemplate={() => client.getWorkspaceAgentTemplate()}
+              />
+            ) : (
+              <div className="rounded-md border bg-muted/10 px-3 py-2">
+                <p className="text-sm text-muted-foreground">请先选择工作区，再编辑工作区 agent.md。</p>
+              </div>
+            )}
+          </div>
+
+          <div className={cn('flex-1 min-h-0 flex flex-col', activeRule !== 'global' && 'hidden')}>
+            <RuleFileEditor
+              title="全局规则 agent.md（.dogear/agent.md，跨工作区生效）"
+              emptyHint={'# 全局指令\n\n在此编写跨工作区生效的全局指令…'}
+              read={() => client.readUserAgentMd()}
+              write={(content) => client.writeUserAgentMd({ content })}
+              loadTemplate={() => client.getUserAgentTemplate()}
+            />
+          </div>
         </div>
 
         <div className="w-80 shrink-0 space-y-5 overflow-y-auto border-l p-4">
