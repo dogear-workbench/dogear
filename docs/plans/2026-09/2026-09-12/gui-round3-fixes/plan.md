@@ -25,3 +25,17 @@
 - **勾选卡数据来源**：只靠 agent 调 TrackUserActions（结构化），不做文本解析
 - **通知归属规则**：子会话事件归属父会话（跳父会话）；系统级（任务 review/中断/失败）归 system；系统 toast 保留，中心是聚合层
 - **agent↔agent 通讯永不自动展开**：一行收起，仅手动展开；主会话给用户的正文才是展开消息
+
+## 完成总结
+
+第三轮 GUI 回归反馈 7 步全部实施完毕（2026-09-12），每步独立 commit：
+
+1. **918b6cc** 申报/勾选工具渲染为消息流卡片：ReportTaskResult/TrackUserActions 在 tool_use 分发层摘壳，新增 TaskReportMessage（徽章+状态+markdown+打开任务）与 UserActionsCard（emerald 勾选卡），groupBlocks 排除会话性质工具
+2. **bc09a62** agent 通讯卡统一：SendMessage 摘壳为 AgentCommCard 一行收起「→ 发给 @会话名」（交付/消息双徽章），注入卡展开态上下加收起按钮，色板抽 injection-tags.ts
+3. **05f3958** 等待图标改 Loader2 旋转，删点击挂起链（abortWaitsForParent 整链+tipc 路由+测试），插话成功提示去掉、失败补可见 toast
+4. **ba5802a** 存活绿条语义改为「内存即活」：getAliveConversationIds 放宽 + unbindConversation 补广播，消费方六点逐一验证安全
+5. **0c24f1b** 执行会话 systemPrompt 精简：ConversationIndex.executor 标记，组上下文只留组头、跳过笔记纪律；buildGroupContextPrompt 补 selfConversationId
+6. **d1c9f3b** 设置保存并退出与分层生效：diffSettings 域映射（ui/perCall/snapshot），PiSession 脏标记 + 下轮 sendMessage 原位重建（同 harnessSessionId 历史不丢，失败回滚），废除无差别 closeAll
+7. **4c53708** 顶栏消息中心：notification-center-service（JSON 持久化+同源聚合+上限 100）+ tipc 三路由 + 主窗口铃铛下拉，任务 review/中断/失败与子会话交付/终态（归属父会话）接入，跳转即已读
+
+遗留：GUI 人工回归三场景（主题热更、改模型下轮生效、保存时后台会话不杀 + 消息中心跳转视觉）待用户实际操作确认；readOnly 会话勾选卡可点（与旧行为一致）；paused 脏会话恢复那轮仍用旧设置。
