@@ -248,6 +248,7 @@ export class PiSessionManager extends EventEmitter {
 
   unbindConversation(conversationId: string): void {
     this.conversationSessionMap.delete(conversationId);
+    this.broadcastAliveSet();
   }
 
   getSessionIdByConversation(conversationId: string): string | undefined {
@@ -258,15 +259,13 @@ export class PiSessionManager extends EventEmitter {
   }
 
   /**
-   * 存活会话的 conversationId 集合：session 在内存且正在跑 turn 或被 bridge 保活。
-   * UI 开着的空闲会话（refCount>0、不 running、无 hold）不算存活——用户正看着它，
-   * 竖线只标记「没有 UI 也活着」的后台链路。
+   * 存活会话的 conversationId 集合：session 在内存即存活（绿条=会话被实例化、活着），
+   * 被 _destroySession 回收才灭。运行状态由 runningConversationIds（橙条）独立表达。
    */
   getAliveConversationIds(): string[] {
     const alive: string[] = [];
     for (const [convId, sid] of this.conversationSessionMap) {
-      const session = this.sessions.get(sid);
-      if (session && (session.isRunning() || this.isHeld(sid))) alive.push(convId);
+      if (this.sessions.has(sid)) alive.push(convId);
     }
     return alive;
   }
