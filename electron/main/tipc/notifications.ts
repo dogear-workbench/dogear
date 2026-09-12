@@ -23,4 +23,18 @@ export const notificationsRouter = {
       await getNotificationCenterService().markAllRead();
       return { ok: true };
     }),
+
+  notificationRemove: t.procedure
+    .input<{ id: string }>()
+    .action(async ({ input }) => {
+      await getNotificationCenterService().remove(input.id);
+      return { ok: true };
+    }),
+
+  notificationClearAll: t.procedure
+    .input<Record<string, never>>()
+    .action(async () => {
+      await getNotificationCenterService().clearAll();
+      return { ok: true };
+    }),
 };

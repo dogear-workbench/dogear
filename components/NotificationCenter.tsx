@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, ClipboardList, MessageSquare, CheckCheck } from 'lucide-react';
+import { Bell, ClipboardList, MessageSquare, CheckCheck, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,7 @@ import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import type { Conversation } from '@/components/ConversationList';
 import type { NotificationCenterEntry } from '@/types/notification';
 import { useNotificationStore } from '@/stores/notification-store';
+import { showConfirm } from '@/stores/confirm-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
@@ -51,6 +52,8 @@ export function NotificationCenter() {
   const loaded = useNotificationStore((s) => s.loaded);
   const loadNotifications = useNotificationStore((s) => s.loadNotifications);
   const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const removeNotification = useNotificationStore((s) => s.remove);
+  const clearAllNotifications = useNotificationStore((s) => s.clearAll);
 
   openRef.current = open;
 
@@ -60,6 +63,12 @@ export function NotificationCenter() {
     const unsub = useNotificationStore.getState().subscribeNotificationsChanged(() => openRef.current);
     return () => unsub();
   }, [loaded, loadNotifications]);
+
+  async function handleClearAll() {
+    const ok = await showConfirm('清空通知', '确定要清空全部通知吗？');
+    if (!ok) return;
+    void clearAllNotifications();
+  }
 
   async function openEntry(entry: NotificationCenterEntry) {
     void useNotificationStore.getState().markRead(entry.id);
@@ -106,25 +115,41 @@ export function NotificationCenter() {
       <PopoverContent align="end" className="w-96 p-0">
         <div className="flex items-center justify-between px-3 py-2 border-b">
           <span className="text-sm font-medium">通知</span>
-          {unreadCount > 0 && (
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => void markAllRead()}>
-              <CheckCheck className="w-3.5 h-3.5" />
-              全部已读
-            </Button>
-          )}
+          <div className="flex items-center gap-1">
+            {unreadCount > 0 && (
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => void markAllRead()}>
+                <CheckCheck className="w-3.5 h-3.5" />
+                全部已读
+              </Button>
+            )}
+            {notifications.length > 0 && (
+              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" onClick={() => void handleClearAll()}>
+                <Trash2 className="w-3.5 h-3.5" />
+                清空
+              </Button>
+            )}
+          </div>
         </div>
         <div className="max-h-96 overflow-y-auto">
           {notifications.length === 0 ? (
             <div className="py-10 text-center text-sm text-muted-foreground">暂无通知</div>
           ) : (
             notifications.map((entry) => (
-              <button
+              <div
                 key={entry.id}
+                role="button"
+                tabIndex={0}
                 className={cn(
-                  'w-full text-left px-3 py-2.5 flex gap-2.5 border-b last:border-b-0 transition-colors hover:bg-accent/50',
+                  'group w-full text-left px-3 py-2.5 flex gap-2.5 border-b last:border-b-0 transition-colors hover:bg-accent/50 cursor-pointer',
                   !entry.read && 'bg-accent/30',
                 )}
                 onClick={() => void openEntry(entry)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    void openEntry(entry);
+                  }
+                }}
               >
                 <span className="mt-0.5 shrink-0">
                   {entry.type === 'task' ? (
@@ -151,7 +176,18 @@ export function NotificationCenter() {
                     <span className="shrink-0">{formatTime(entry.createdAt)}</span>
                   </span>
                 </span>
-              </button>
+                <button
+                  type="button"
+                  title="删除"
+                  className="hidden group-hover:flex shrink-0 self-start items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void removeNotification(entry.id);
+                  }}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             ))
           )}
         </div>

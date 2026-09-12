@@ -32,7 +32,6 @@ import type {
   DelegateSpec,
 } from '../types.js';
 import { createIdleWatch, type IdleWatch } from './delegation-idle.js';
-import { getNotificationCenterService } from '../services/notification-center-service.js';
 import {
   buildTerminalNotice,
   classifyDelegationError,
@@ -381,21 +380,6 @@ export async function resumeChild(childId: string, opts: { reason: string; model
  */
 async function notifyTerminalToParent(c: ChildStateInternal): Promise<void> {
   if (!c.sessionId) return;
-  const statusLabel = terminalStatusLabel(c.terminalReason);
-  // 消息中心通知归属父会话（跳父会话），与注入通知同粒度：仅不可重调终态才记
-  const parentConv = await conversationService
-    .getById(c.workspaceId, c.parentConversationId)
-    .catch(() => null);
-  void getNotificationCenterService().add({
-    type: 'conversation',
-    dedupeKey: `conversation:${c.childId}:terminal`,
-    title: `子会话「${c.title}」${statusLabel}`,
-    summary: (c.lastError ?? statusLabel).slice(0, 120),
-    owner: { kind: 'conversation', conversationId: c.parentConversationId },
-    workspaceId: c.workspaceId,
-    ownerLabel: parentConv?.title ?? '父会话',
-  });
-
   const notice = buildTerminalNotice({
     title: c.title,
     terminalReason: c.terminalReason,

@@ -155,6 +155,28 @@ class NotificationCenterService {
     for (const e of file.entries) e.read = true;
     await this.persist(file.entries, 0);
   }
+
+  async remove(id: string): Promise<void> {
+    const file = await this.readFile();
+    const next = file.entries.filter((e) => e.id !== id);
+    if (next.length === file.entries.length) return;
+    await this.persist(next, this.countUnread(next));
+  }
+
+  async clearAll(): Promise<void> {
+    const file = await this.readFile();
+    if (file.entries.length === 0) return;
+    await this.persist([], 0);
+  }
+
+  async pruneExpired(maxAgeMs = 24 * 60 * 60 * 1000): Promise<number> {
+    const file = await this.readFile();
+    const cutoff = Date.now() - maxAgeMs;
+    const next = file.entries.filter((e) => !e.read || Date.parse(e.createdAt) >= cutoff);
+    if (next.length === file.entries.length) return 0;
+    await this.persist(next, this.countUnread(next));
+    return file.entries.length - next.length;
+  }
 }
 
 let instance: NotificationCenterService | null = null;

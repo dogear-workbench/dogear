@@ -110,3 +110,55 @@ test('上限裁剪：超限时先丢已读旧条目再丢最旧未读', async ()
   expect(list[0].read).toBe(false);
   expect(list.at(-1)?.read).toBe(true);
 });
+
+test('remove 删除单条，不存在的 id 无副作用', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1'));
+  await svc.add(taskInput('t2', { dedupeKey: 'task:t2:review', title: '任务待审核：t2' }));
+  const list = await svc.list();
+  const unreadBefore = list.filter((e) => !e.read).length;
+  await svc.remove(list[0].id);
+  let next = await svc.list();
+  expect(next).toHaveLength(1);
+  expect(next[0].taskId).toBe('t1');
+  expect(next.filter((e) => !e.read)).toHaveLength(unreadBefore - 1);
+  await svc.remove('nonexistent-id');
+  expect(await svc.list()).toHaveLength(1);
+});
+
+test('clearAll 清空全部条目', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('t1'));
+  await svc.add(taskInput('t2', { dedupeKey: 'task:t2:review', title: '任务待审核：t2' }));
+  await svc.clearAll();
+  expect(await svc.list()).toHaveLength(0);
+  const raw = JSON.parse(await fs.readFile(path.join(storageDir, 'notifications.json'), 'utf-8'));
+  expect(raw.entries).toHaveLength(0);
+});
+
+test('pruneExpired 只清已读且超龄的条目', async () => {
+  const svc = getNotificationCenterService();
+  await svc.add(taskInput('old-read'));
+  const first = (await svc.list())[0];
+  await svc.markRead(first.id);
+  await svc.add(taskInput('old-unread', {
+    dedupeKey: 'task:old-unread:review',
+    title: '任务待审核：old-unread',
+  }));
+  await svc.add(taskInput('fresh-read', { dedupeKey: 'task:fresh-read:review', title: '任务待审核：fresh-read' }));
+  const fresh = (await svc.list()).find((e) => e.taskId === 'fresh-read')!;
+  await svc.markRead(fresh.id);
+
+  const filePath = path.join(storageDir, 'notifications.json');
+  const raw = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+  const stale = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+  for (const e of raw.entries) {
+    if (e.taskId === 'old-read' || e.taskId === 'old-unread') e.createdAt = stale;
+  }
+  await fs.writeFile(filePath, JSON.stringify(raw));
+
+  const removed = await svc.pruneExpired();
+  expect(removed).toBe(1);
+  const list = await svc.list();
+  expect(list.map((e) => e.taskId).sort()).toEqual(['fresh-read', 'old-unread']);
+});

@@ -661,6 +661,11 @@ app.whenReady().then(async () => {
     .then((m) => m.cleanupLegacyStateFile())
     .catch((err) => console.error('清理旧版 delegation-state.json 失败:', err));
 
+  // 通知中心过期清理：启动时删除已读且超 24h 的条目
+  void import('./services/notification-center-service.js')
+    .then((m) => m.getNotificationCenterService().pruneExpired())
+    .catch((err) => console.error('通知过期清理失败:', err));
+
   // sessionId 丢失自愈：按 harness 文件创建时间对齐回填
   void import('./services/session-id-repair.js')
     .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
