@@ -1,8 +1,8 @@
 // electron/main/tipc/skill.ts
-// Skill 管理 IPC：列出 + 启用/禁用
+// Skill 管理 IPC：列出（启用状态随 workspace config 的 enabledSkills 标注）
 
 import { tipc } from '@egoist/tipc/main';
-import { listSkills, setSkillEnabled } from '../services/skill-service.js';
+import { listSkills } from '../services/skill-service.js';
 
 const t = tipc.create();
 
@@ -18,21 +18,6 @@ export const skillRouter = {
         return { skills };
       } catch (error) {
         console.error('列出 Skill 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 启用/禁用 Skill（读写 workspace-config-service 的 enabledSkills）
-   */
-  setSkillEnabled: t.procedure
-    .input<{ name: string; enabled: boolean; workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await setSkillEnabled(input.name, input.enabled, input.workspaceId);
-        return { success: true };
-      } catch (error) {
-        console.error('切换 Skill 启用状态失败:', error);
         return { error: String(error) };
       }
     }),

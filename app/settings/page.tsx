@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, FileText, Volume2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Volume2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConfirmStore } from '@/stores/confirm-store';
@@ -11,7 +11,6 @@ import type { AppSettings, ModelProfile } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
-import { GeneralAgentMdDialog } from '@/components/GeneralAgentMdDialog';
 import { BasicToolsSection } from './BasicToolsSection';
 import { ExtensionStatusLine } from './ExtensionStatusLine';
 import { SubAgentTab } from './SubAgentTab';
@@ -86,7 +85,6 @@ export default function SettingsPage() {
   const [selectedProfileTab, setSelectedProfileTab] = useState<string>('default');
   // pi Profile 的模型 ID 输入框草稿（按 profileId 索引）
   const [piModelDrafts, setPiModelDrafts] = useState<Record<string, string>>({});
-  const [agentMdDialogOpen, setAgentMdDialogOpen] = useState(false);
 
   // 加载设置
   useEffect(() => { loadSettings(); }, [loadSettings]);
@@ -533,17 +531,13 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* 通用级 agent.md */}
+              {/* 通用级 agent.md：唯一编辑入口在能力页「全局规则」包详情 */}
               <div className="space-y-2">
                 <label className="text-sm font-medium">通用级 Agent 指令</label>
                 <p className="text-xs text-muted-foreground">
                   位于 <code className="text-[10px] bg-muted px-1 py-0.5 rounded">.dogear/agent.md</code>，
-                  对所有工作区生效。
+                  对所有工作区生效。在「能力」页选择「全局规则」包进行编辑。
                 </p>
-                <Button variant="outline" size="sm" onClick={() => setAgentMdDialogOpen(true)}>
-                  <FileText className="w-3.5 h-3.5 mr-1.5" />
-                  编辑通用级 agent.md
-                </Button>
               </div>
             </div>
           </div>
@@ -787,7 +781,6 @@ export default function SettingsPage() {
         </TabsContent>
       </Tabs>
 
-      <GeneralAgentMdDialog open={agentMdDialogOpen} onOpenChange={setAgentMdDialogOpen} />
     </div>
   );
 }

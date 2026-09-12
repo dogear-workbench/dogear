@@ -207,7 +207,7 @@ export interface ChildStateSnapshot {
   lastActivityAt?: number;
 }
 
-// ─── 系统提示词展示段（镜像自 types/system-prompt.ts）───
+// ─── 系统提示词展示段（session-append-templates 产出，tipc/ability 聚合消费）───
 
 export interface SystemPromptSegment {
   key: string;

@@ -6,8 +6,7 @@
  *   - builtin：resources/skill-templates/<name>/SKILL.md（只读模板源）
  *   - custom：.dogear/skills/<name>/SKILL.md（全局目录，与工作区无关）
  *   - user：~/.claude/skills/<name>/SKILL.md
- * - 列出所有 skill 并标注 source + enabled
- * - 启用/禁用：通过 workspace-config-service 的 enabledSkills 数组控制
+ * - 列出所有 skill 并标注 source + enabled（经工作区 config 的 enabledSkills 数组控制，写入方在能力页 skill 细开关）
  */
 
 import path from 'path';
@@ -15,7 +14,7 @@ import os from 'os';
 import fs from 'fs/promises';
 import { getTemplatesDir } from './skill-template-service.js';
 import { getConfigDir } from './settings-service.js';
-import { getWorkspaceConfig, updateWorkspaceConfig } from './workspace-config-service.js';
+import { getWorkspaceConfig } from './workspace-config-service.js';
 
 export type SkillSource = 'builtin' | 'custom' | 'user';
 
@@ -99,8 +98,7 @@ async function scanSkillsDir(rootDir: string, source: SkillSource): Promise<Skil
 
 /**
  * 列出所有 Skill（builtin + custom + user），用工作区 config 的 enabledSkills 标注 enabled。
- */
-export async function listSkills(workspaceId: string | null | undefined): Promise<SkillEntry[]> {
+ */export async function listSkills(workspaceId: string | null | undefined): Promise<SkillEntry[]> {
   const result: SkillEntry[] = [];
 
   const enabledSkillsSet = new Set<string>(
@@ -129,24 +127,4 @@ export async function listSkills(workspaceId: string | null | undefined): Promis
   result.push(...userEntries);
 
   return result;
-}
-
-/**
- * 启用/禁用单个 Skill（读写 workspace-config-service 的 enabledSkills 数组）。
- */
-export async function setSkillEnabled(
-  skillName: string,
-  enabled: boolean,
-  workspaceId: string,
-): Promise<void> {
-  const config = await getWorkspaceConfig(workspaceId);
-  let enabledSkills = [...config.enabledSkills];
-  if (enabled) {
-    if (!enabledSkills.includes(skillName)) {
-      enabledSkills.push(skillName);
-    }
-  } else {
-    enabledSkills = enabledSkills.filter((s) => s !== skillName);
-  }
-  await updateWorkspaceConfig(workspaceId, { enabledSkills });
 }

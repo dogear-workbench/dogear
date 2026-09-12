@@ -24,7 +24,6 @@ import { tasksRouter } from './tasks.js';
 import { notificationsRouter } from './notifications.js';
 import { groupRouter } from './group.js';
 import { delegationRouter } from './delegation.js';
-import { systemPromptRouter } from './system-prompt.js';
 import { updaterRouter } from './updater.js';
 import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
@@ -57,7 +56,6 @@ export const router = {
   ...notificationsRouter,
   ...groupRouter,
   ...delegationRouter,
-  ...systemPromptRouter,
   ...updaterRouter,
   ...schedulerRouter,
   ...windowsRouter,

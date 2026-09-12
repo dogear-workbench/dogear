@@ -196,6 +196,9 @@ function ProfileEditor({
 
       <div className="space-y-1.5">
         <label className="text-xs font-medium">能力域</label>
+        <p className="text-xs text-muted-foreground">
+          此处为子会话侧细闸，实际生效 = 此处勾选 ∩ 工作区能力包开关（设置 → 能力）：工作区关闭某能力包时，Profile 无法单独启用。
+        </p>
         <div className="space-y-2">
           {BOOLEAN_ABILITIES.map((ab) => (
             <label
