@@ -173,6 +173,13 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
   return result;
 }
 
+/** 可选工具包 name（OPTIONAL_TOOL_PACKS[].name）→ 所属 skill 型能力包 key，供拼装侧与挂载反查共用；extension 等不在包体系的包不在此表。 */
+export const TOOL_PACK_TO_ABILITY = new Map<string, string>(
+  ABILITY_PACKS
+    .filter((p) => p.type === 'skill-packs')
+    .flatMap((p) => (p.toolGroups ?? []).map((g) => [g, p.key] as const)),
+);
+
 /** 结构性注入段（组上下文/子会话契约/Profile 索引）：不可关、只读展示，归「系统行为」卡。 */
 export interface SystemBehavior {
   key: string;

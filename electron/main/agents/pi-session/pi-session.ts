@@ -29,6 +29,7 @@ import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
 import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND } from '../session-append-templates.js';
+import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -475,9 +476,19 @@ export class PiSession extends EventEmitter {
     const isSubAgent = this.config.role === 'sub';
     const subAgentProfile = this.config.subAgentProfile;
 
+    // ---- 能力包解析 ----
+    const wsConfig = await getWorkspaceConfig(this.config.workspaceId);
+    const activeAbilities = resolveAbilities(wsConfig, {
+      role: this.config.role,
+      isExecutor: this.config.executor,
+      groupId: this.config.groupId ?? null,
+      hasWorkspace: !!this.config.workspacePath,
+      profile: subAgentProfile ?? null,
+    });
+
     // ---- core-profile ----
     // 主会话始终加载 core-profile；子会话不再加载（loadCoreProfile 字段已移除）
-    const coreProfileText = !isSubAgent
+    const coreProfileText = !isSubAgent && activeAbilities.has('core-profile')
       ? await loadCoreProfileForSession(this.config.workspacePath)
       : null;
 
@@ -488,12 +499,17 @@ export class PiSession extends EventEmitter {
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!, {
           selfConversationId: this.config.conversationId,
           executor: !isSubAgent && !!this.config.executor,
+          collabEnabled: activeAbilities.has('agent-collab'),
         })
       : '';
 
     // ---- agent.md ----
-    const projectClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'workspaces', this.config.workspaceId, 'agent.md'));
-    const userClaudeMd = await readTextFileSafe(path.join(getConfigDir(), 'agent.md'));
+    const projectClaudeMd = activeAbilities.has('workspace-rules')
+      ? await readTextFileSafe(path.join(getConfigDir(), 'workspaces', this.config.workspaceId, 'agent.md'))
+      : '';
+    const userClaudeMd = activeAbilities.has('global-rules')
+      ? await readTextFileSafe(path.join(getConfigDir(), 'agent.md'))
+      : '';
 
     // ---- skill 索引 ----
     const env = new WorkspaceExecutionEnv([this.config.workspacePath, ...this.config.additionalPaths]);
@@ -507,9 +523,16 @@ export class PiSession extends EventEmitter {
       userSkillsDir,
     ]);
 
-    const wsConfig = await getWorkspaceConfig(this.config.workspaceId);
     const enabledSkillsSet = new Set(wsConfig.enabledSkills);
-    const filteredByConfig = allSkillEntries.filter((e) => enabledSkillsSet.has(e.name));
+    // skill 型包未生效 → 包内 skill 整体剔除（enabledSkills 细闸之前先过包总闸）
+    const disabledPackSkills = new Set<string>();
+    for (const pack of ABILITY_PACKS) {
+      if (pack.type !== 'skill-packs' || activeAbilities.has(pack.key)) continue;
+      for (const name of pack.skills ?? []) disabledPackSkills.add(name);
+    }
+    const filteredByConfig = allSkillEntries.filter(
+      (e) => enabledSkillsSet.has(e.name) && !disabledPackSkills.has(e.name),
+    );
 
     let skillEntries: SkillEntry[];
     let skillIndexText: string;
@@ -535,16 +558,13 @@ export class PiSession extends EventEmitter {
     if (groupContextText) promptParts.push(groupContextText);
 
     if (isSubAgent) {
-      const ab = subAgentProfile?.enabledAbilities ?? {};
-      if (ab.memory === true) promptParts.push(MEMORY_GUIDANCE_APPEND);
+      if (activeAbilities.has('memory')) promptParts.push(MEMORY_GUIDANCE_APPEND);
       if (this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
     } else {
-      if (this.config.workspacePath) {
-        promptParts.push(MEMORY_GUIDANCE_APPEND);
-        // 笔记存卡纪律是聊方案动线，对无人值守执行会话无意义，跳过
-        if (!this.config.executor) promptParts.push(NOTES_DISCIPLINE_APPEND);
-      }
-      if (this.config.groupId) {
+      if (activeAbilities.has('memory')) promptParts.push(MEMORY_GUIDANCE_APPEND);
+      // executor 跳过存卡纪律是段级裁剪，不受包开关约束（工具组仍注册），保留现状
+      if (activeAbilities.has('notes') && !this.config.executor) promptParts.push(NOTES_DISCIPLINE_APPEND);
+      if (activeAbilities.has('agent-collab')) {
         promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
         promptParts.push(buildSubAgentProfileIndex(appSettings.subAgent?.profiles ?? []));
       }
@@ -554,9 +574,9 @@ export class PiSession extends EventEmitter {
     let toolDefs: ToolDef[];
 
     if (isSubAgent && subAgentProfile) {
-      toolDefs = this.buildSubAgentToolDefs(subAgentProfile, skillEntries);
+      toolDefs = this.buildSubAgentToolDefs(subAgentProfile, skillEntries, activeAbilities);
     } else {
-      toolDefs = this.buildMainAgentToolDefs(skillEntries);
+      toolDefs = this.buildMainAgentToolDefs(skillEntries, activeAbilities);
     }
 
     const activeToolNames = isSubAgent && subAgentProfile
@@ -611,19 +631,27 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 主会话工具构建（行为与改造前完全一致）：
-   * Skill 工具 + Grep/Glob + dogear-memory 常驻 + 按 enabledToolPacks 挂载可选工具包
-   * + 按 groupId 挂载 dogear-group/delegation/reference
+   * 主会话工具构建：
+   * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总闸生效，extension 不在包体系直通）
+   * + 协作三组（dogear-group/delegation/reference，属组且 agent-collab 包生效）
+   * + dogear-notes（工作区且 notes 包生效）与 dogear-tasks（不在包体系，工作区即注册）
    */
-  private buildMainAgentToolDefs(skillEntries: SkillEntry[]): ToolDef[] {
+  private buildMainAgentToolDefs(skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const toolDefs: ToolDef[] = [
       createSkillTool(skillEntries),
       ...createSearchToolDefs([this.config.workspacePath, ...this.config.additionalPaths]),
-      ...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)),
     ];
+
+    // 无工作区会话现状即注册 memory 工具，而 memory 包触发条件含 hasWorkspace，直接查包会吞掉该场景，需维持现状
+    if (!this.config.workspacePath || activeAbilities.has('memory')) {
+      toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
+    }
 
     for (const pack of OPTIONAL_TOOL_PACKS) {
       if (!this.config.enabledToolPacks.includes(pack.name)) continue;
+      // skill 型双闸：enabledToolPacks 是细闸，包总闸在注册表，未生效则工具包不挂载（与 skill 索引剔除同性质）
+      const abilityKey = TOOL_PACK_TO_ABILITY.get(pack.name);
+      if (abilityKey && !activeAbilities.has(abilityKey)) continue;
       switch (pack.name) {
         case 'article':
           if (this.config.workspacePath) {
@@ -653,7 +681,7 @@ export class PiSession extends EventEmitter {
       }
     }
 
-    if (this.config.groupId) {
+    if (this.config.groupId && activeAbilities.has('agent-collab')) {
       toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
       const delegationOpts: DelegationToolsOpts = {
         role: 'main',
@@ -670,11 +698,15 @@ export class PiSession extends EventEmitter {
       })));
     }
 
-    if (this.config.workspacePath) {
+    if (this.config.workspacePath && activeAbilities.has('notes')) {
       toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
       })));
+    }
+
+    // dogear-tasks 不在能力包体系，保持工作区即注册的现状
+    if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-tasks', createTaskToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
@@ -685,18 +717,16 @@ export class PiSession extends EventEmitter {
   }
 
   /**
-   * 子会话工具构建（Profile 驱动）：
+   * 子会话工具构建（Profile 驱动，能力包开关经 activeAbilities 交集）：
    * - 基础工具（read/write/edit/bash/Glob/Grep）：始终全部创建，activeToolNames 控制可见性
    * - Skill 工具：有 ≥1 skill 勾选时创建
-   * - dogear-memory：仅当 memory===true
-   * - stock 工具包：仅当 stock===true
-   * - article 工具包：仅当 article===true
-   * - browser 工具包：仅当 browser===true
-   * - extension 工具包：仅当 extension===true
-   * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施）
-   * - dogear-reference：仅当 reference===true
+   * - dogear-memory：memory 包生效（含 Profile 的 memory===true 细闸，由 resolveAbilities 并集）
+   * - stock/article/browser 工具包：对应能力包生效（Profile 细闸并入包解析）
+   * - extension 工具包：仅当 extension===true（不在包体系，保持 Profile 直控）
+   * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
+   * - dogear-reference：仅当 reference===true（不在包体系，保持 Profile 细控）
    */
-  private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[]): ToolDef[] {
+  private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const ab = profile.enabledAbilities;
     const toolDefs: ToolDef[] = [];
 
@@ -708,26 +738,26 @@ export class PiSession extends EventEmitter {
       toolDefs.push(createSkillTool(skillEntries));
     }
 
-    // dogear-memory：仅当 memory===true
-    if (ab.memory === true) {
+    // dogear-memory：memory 包生效（Profile 细闸已并入 resolveAbilities）
+    if (activeAbilities.has('memory')) {
       toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
     }
 
-    // stock 工具包：仅当 stock===true
-    if (ab.stock === true) {
+    // stock 工具包：stock 包生效
+    if (activeAbilities.has('stock')) {
       toolDefs.push(...this.registerPack('stock-quote', createStockToolDefs()));
       toolDefs.push(...this.registerPack('stock-analysis', createStockAnalysisToolDefs()));
       toolDefs.push(...this.registerPack('stock-announcement', createAnnouncementToolDefs()));
       toolDefs.push(...this.registerPack('stock-picking', createStockPickingToolDefs()));
     }
 
-    // article 工具包：仅当 article===true
-    if (ab.article === true && this.config.workspacePath) {
+    // article 工具包：article 包生效
+    if (activeAbilities.has('article') && this.config.workspacePath) {
       toolDefs.push(...this.registerPack('article', createArticleToolDefs(this.config.workspacePath)));
     }
 
-    // browser 工具包：仅当 browser===true（Profile 级独立生效，不受 enabledToolPacks 约束）
-    if (ab.browser === true) {
+    // browser 工具包：browser 包生效（Profile 级独立生效，不受 enabledToolPacks 约束）
+    if (activeAbilities.has('browser')) {
       toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath, workspaceId: this.config.workspaceId })));
     }
 

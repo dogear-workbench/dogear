@@ -110,12 +110,14 @@ async function buildTopicStateSection(wsId: string, groupId: string, selfConvers
 
 /**
  * 构建组上下文片段。selfConversationId 用于话题状态段排除自己；
- * executor（任务执行会话）只注入组头，跳过话题状态 + ReadGroupBackground 指引（无人值守无消费价值）。失败时返回空串而非抛错。
+ * executor（任务执行会话）只注入组头，跳过话题状态 + ReadGroupBackground 指引（无人值守无消费价值）。
+ * collabEnabled 为 false（agent-collab 包关闭）时只保留组名一句：共享区引导/话题状态指引会引用未注册的协作工具，避免幻引。
+ * 失败时返回空串而非抛错。
  */
 export async function buildGroupContextPrompt(
   workspaceId: string,
   groupId: string,
-  opts?: { selfConversationId?: string; executor?: boolean },
+  opts?: { selfConversationId?: string; executor?: boolean; collabEnabled?: boolean },
 ): Promise<string> {
   try {
     const group = await groupService.getGroup(workspaceId, groupId);
@@ -125,6 +127,9 @@ export async function buildGroupContextPrompt(
     }
 
     const title = group.title?.trim() || `未命名组（创建于 ${new Date(group.createdAt).toLocaleString('zh-CN')}）`;
+    if (opts?.collabEnabled === false) {
+      return `## 当前会话组上下文\n\n**组**：${title}`;
+    }
     const header =
       `## 当前会话组上下文\n` +
       `\n` +
