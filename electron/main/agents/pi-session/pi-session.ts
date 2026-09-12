@@ -43,7 +43,7 @@ import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
-import { createReferenceToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
+import { createGroupContextToolDefs, createSiblingToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
@@ -493,13 +493,12 @@ export class PiSession extends EventEmitter {
       : null;
 
     // ---- group context ----
-    // 有 groupId 就加载（子会话的 group 工具固定挂载，组上下文段固定注入）
-    const needGroupContext = !!this.config.groupId;
+    // 组上下文归「会话组」包：属组 ∧ 包开才注入（含子会话，不再跟随协作包裁剪）
+    const needGroupContext = !!this.config.groupId && activeAbilities.has('group-context');
     const groupContextText = needGroupContext
       ? await buildGroupContextPrompt(this.config.workspaceId, this.config.groupId!, {
           selfConversationId: this.config.conversationId,
           executor: !isSubAgent && !!this.config.executor,
-          collabEnabled: activeAbilities.has('agent-collab'),
         })
       : '';
 
@@ -634,9 +633,11 @@ export class PiSession extends EventEmitter {
    * 主会话工具构建：
    * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总闸生效）
    * + extension（并入 browser 包：只受 browser 包总闸 gate，enabledToolPacks 残留 extension 静默忽略）
-   * + 协作两组（dogear-group/delegation，属组且 agent-collab 包生效）与组协作组（dogear-reference，同条件）
+   * + 组状态卡组（dogear-group-context，属组且会话组包生效）
+   * + 协作三组（dogear-group/delegation/sibling，属组且 agent-collab 包生效）
    * + dogear-notes（工作区且 notes 包生效）
-   * + dogear-tasks 与 dogear-history 跨会话检索组（不在包体系，工作区即注册的常驻基础设施）
+   * + dogear-tasks（工作区且 notes 包生效；任务执行会话派单保底不受开关约束）
+   * + dogear-history 跨会话检索组（不在包体系，工作区即注册的常驻基础设施）
    */
   private buildMainAgentToolDefs(skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const toolDefs: ToolDef[] = [
@@ -685,6 +686,13 @@ export class PiSession extends EventEmitter {
       toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
     }
 
+    if (this.config.groupId && activeAbilities.has('group-context')) {
+      toolDefs.push(...this.registerPack('dogear-group-context', createGroupContextToolDefs({
+        workspaceId: this.config.workspaceId,
+        groupId: this.config.groupId,
+      })));
+    }
+
     if (this.config.groupId && activeAbilities.has('agent-collab')) {
       toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
       const delegationOpts: DelegationToolsOpts = {
@@ -694,7 +702,7 @@ export class PiSession extends EventEmitter {
         conversationId: this.config.conversationId,
       };
       toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
-      toolDefs.push(...this.registerPack('dogear-reference', createReferenceToolDefs({
+      toolDefs.push(...this.registerPack('dogear-sibling', createSiblingToolDefs({
         workspaceId: this.config.workspaceId,
         groupId: this.config.groupId,
         parentConversationId: this.config.parentConversationId,
@@ -708,12 +716,15 @@ export class PiSession extends EventEmitter {
       })));
     }
 
-    // dogear-tasks 与 dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施
-    if (this.config.workspacePath) {
+    // dogear-tasks 归 notes 包，任务执行会话的申报工具（ReportTaskResult 所在组）派单保底注册；
+    // dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施
+    if (this.config.workspacePath && (activeAbilities.has('notes') || this.config.executor)) {
       toolDefs.push(...this.registerPack('dogear-tasks', createTaskToolDefs(this.config.workspacePath, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
       })));
+    }
+    if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
     }
 
@@ -729,7 +740,8 @@ export class PiSession extends EventEmitter {
    * - extension 工具组：browser 包生效且 Profile extension===true 双闸
    * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 细闸——通用检索是基础设施）
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
-   * - dogear-reference（组协作两工具）：仅当 reference===true（保持 Profile 细控）
+   * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 细闸）
+   * - dogear-sibling（兄弟会话）：协作包生效（子会话对协作包强制生效，无 Profile 细闸）
    */
   private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const ab = profile.enabledAbilities;
@@ -776,7 +788,7 @@ export class PiSession extends EventEmitter {
       toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
     }
 
-    // dogear-group / dogear-delegation / dogear-reference
+    // dogear-group / dogear-delegation / dogear-group-context / dogear-sibling
     if (this.config.groupId) {
       toolDefs.push(...this.registerPack('dogear-group', createGroupToolDefs(this.config.workspaceId, this.config.groupId)));
 
@@ -790,9 +802,18 @@ export class PiSession extends EventEmitter {
       };
       toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
 
-      // dogear-reference（组协作两工具）：仅当 reference===true
-      if (ab.reference === true) {
-        toolDefs.push(...this.registerPack('dogear-reference', createReferenceToolDefs({
+      // dogear-group-context：随会话组包（reference 细闸已退役）
+      if (activeAbilities.has('group-context')) {
+        toolDefs.push(...this.registerPack('dogear-group-context', createGroupContextToolDefs({
+          workspaceId: this.config.workspaceId,
+          groupId: this.config.groupId,
+          selfConversationId: this.config.conversationId,
+        })));
+      }
+
+      // dogear-sibling：随协作包（子会话强制生效）
+      if (activeAbilities.has('agent-collab')) {
+        toolDefs.push(...this.registerPack('dogear-sibling', createSiblingToolDefs({
           workspaceId: this.config.workspaceId,
           groupId: this.config.groupId,
           parentConversationId: this.config.parentConversationId,

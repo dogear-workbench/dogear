@@ -37,6 +37,7 @@ export const MAIN_AGENT_DELEGATION_APPEND =
   'outputPath 是会话组共享区里的路径，不是工作区路径，可省略（省略 = 通讯型交付，答案直接放交付消息正文）；指定了 outputPath 时，task 里不要再指示子会话把交付文档写到工作区其他位置，文件类交付物一律经共享区传递。\n' +
   '交付以收到子会话的 delivery 消息为准（送达事实）；是否合格由你验收判断（见下方「验收闭环」）。应用重启后运行时状态不保留，重启前已交付的子会话会重新显示为未交付——此时以你的上下文记忆和共享区文件为准，不要盲目重派。\n' +
   '看共享区用 dogear__ListGroupFiles：不带参数列文件清单，传 relPath 读单个文件的完整内容。\n' +
+  '某个阶段告一段落或上下文用量较高时，可主动写一份阶段总结到共享区（dogear__SaveSharedNote）方便下次接续——不强制，只在你判断有价值时做。\n' +
   '重启或中断后，用 dogear__ResumeSession 调起之前 stopped 且未交付的子会话继续（保留消息历史，它会自检进度从中断处续跑），而不是重新 CreateSession。\n' +
   '\n### 子会话复用判断\n' +
   '需要子会话继续做事时，先判断复用原子会话还是新派：\n' +
@@ -80,7 +81,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
     `**任务**：${task}\n\n` +
     deliveryShape +
     `**共享区已有产出**：需要了解背景时用 dogear__ListGroupFiles 列共享区文件清单，传 relPath 读单个文件内容。\n\n` +
-    `**产出位置默认规则**：任务未明确指定文件位置时，产出的新文件（交付文档、报告、中间产物）一律用 dogear__SaveSharedNote 写到共享区；只有任务明确要求修改项目文件时才写工作区路径\n\n` +
+    `**产出位置默认规则**：任务未明确指定文件位置时，产出的新文件（交付文档、报告、中间产物）一律用 dogear__SaveSharedNote 写到共享区；只有任务明确要求修改项目文件时才写工作区路径。某个阶段告一段落或上下文用量较高时，也可主动写一份阶段总结到共享区方便下次接续——不强制，只在你判断有价值时做\n\n` +
     `**交付流程**：完成后用 dogear__SendMessage 向派出你的会话交付结果（delivery: true）。交付消息须结构化自述：目标达成情况 / 未完成或跳过部分 / caveats / 交付物形态与位置（共享区 xxx.md 或本消息正文）。有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
 }
@@ -90,9 +91,6 @@ const GROUP_CONTEXT_EXAMPLE =
   '## 当前会话组上下文\n' +
   '\n' +
   '**组**：<组标题 或 未命名组（创建于 …）>\n' +
-  '\n' +
-  '共享区是会话组内跨会话传递文件的区域。遇到不清楚的背景，先用 dogear__ListGroupFiles 列共享区文件清单，需要细看时传 relPath 读单个文件。\n' +
-  '当某个阶段告一段落或上下文用量较高时，可以主动写一份阶段总结到共享区（dogear__SaveSharedNote），方便下次接续。这不是强制——只在你判断有价值时做。\n' +
   '\n' +
   '### 话题状态\n' +
   '【话题背景】（确立于 <时间>，<来源>）\n' +
@@ -112,7 +110,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '会话组上下文（模板说明）',
       category: 'group',
       template: GROUP_CONTEXT_EXAMPLE,
-      triggerDescription: '会话属于某个组时注入。内容 = 组头（组标题 + 共享区使用引导）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含开局先调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。任务执行会话（无人值守）只注入组头，不含话题状态段。',
+      triggerDescription: '会话属于某个组且「会话组」包开时注入。内容 = 组头（组标题）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含开局先调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。任务执行会话（无人值守）只注入组头，不含话题状态段。',
       isDynamic: true,
     },
     {

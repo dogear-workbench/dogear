@@ -5,8 +5,10 @@
  * - dogear__ListTopics：列工作区全部话题（零模型纯本地 IO，跨话题检索入口）
  * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
  *
- * dogear-reference（组协作组）：有 groupId 时注册，主会话跟 agent-collab 包、子会话跟 Profile reference 细闸。
+ * dogear-group-context（组状态卡组）：归会话组包，会话属于组且包开时注册。
  * - dogear__ReadGroupBackground：读本组 background.md 的条目化状态卡
+ *
+ * dogear-sibling（兄弟会话组）：归 Agent 协作包。
  * - dogear__ListSiblingSessions：列组内兄弟会话（子会话排除派自己的父会话；主会话无父会话，列全部同组非子会话）
  */
 import fs from 'node:fs/promises';
@@ -132,8 +134,8 @@ export interface ReferenceToolsOpts {
   selfConversationId?: string;
 }
 
-export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
-  const { workspaceId, groupId, parentConversationId, selfConversationId } = opts;
+export function createGroupContextToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
+  const { workspaceId, groupId, selfConversationId } = opts;
 
   return [
     defineTool(
@@ -230,7 +232,13 @@ export function createReferenceToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
         return { content: [{ type: 'text' as const, text: parts.join('\n') }] };
       },
     ),
+  ];
+}
 
+export function createSiblingToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
+  const { workspaceId, groupId, parentConversationId } = opts;
+
+  return [
     defineTool(
       'dogear__ListSiblingSessions',
       '列出组内兄弟会话',
@@ -300,8 +308,15 @@ registerToolGroup({
 });
 
 registerToolGroup({
-  server: 'dogear-reference',
-  label: '跨会话引用',
-  create: createReferenceToolDefs,
+  server: 'dogear-group-context',
+  label: '会话组状态',
+  create: createGroupContextToolDefs,
+  placeholder: [{ workspaceId: '', groupId: '' }],
+});
+
+registerToolGroup({
+  server: 'dogear-sibling',
+  label: '兄弟会话',
+  create: createSiblingToolDefs,
   placeholder: [{ workspaceId: '', groupId: '' }],
 });

@@ -3,13 +3,11 @@ import { tipc } from '@egoist/tipc/main';
 import {
   ABILITY_PACKS,
   SKILL_PACK_MAP,
-  SYSTEM_BEHAVIORS,
   TOOL_PACK_TO_ABILITY,
   buildProfileAbilityMount,
   type AbilityPack,
   type AbilityPackType,
   type ProfileAbilityMount,
-  type SystemBehavior,
 } from '../agents/ability-registry.js';
 import {
   getSystemPromptSegments,
@@ -66,19 +64,24 @@ export type AbilityPackView = AbilityPack & {
   skillMetas: AbilitySkillMeta[];
 };
 
-export interface AbilitySystemBehaviorView extends SystemBehavior {
+export interface AbilitySystemBehaviorView {
+  key: string;
+  label: string;
+  triggerDescription: string;
+  segmentKey: SystemPromptSegmentKey;
+  readonly: true;
   segment: AbilitySegmentMeta;
 }
 
-/** 常驻工具组展示元数据（不在能力包体系的固定基础设施：跨会话检索 / 任务系统） */
+/** 常驻工具组展示元数据（不在能力包体系的固定基础设施：跨会话检索） */
 export interface ResidentToolGroupMeta {
   id: string;
   label: string;
   tools: ToolInfo[];
 }
 
-/** 常驻工具组：绑定工作区即注册，不可关，前端标注触发条件 */
-const RESIDENT_GROUP_IDS = ['dogear-history', 'dogear-tasks'] as const;
+/** 常驻工具组：绑定工作区即注册，不可关，前端标注触发条件（任务系统已归笔记包，不再常驻） */
+const RESIDENT_GROUP_IDS = ['dogear-history'] as const;
 
 export interface WorkspaceMount {
   workspaceId: string;
@@ -199,10 +202,8 @@ export const abilityRouter = {
         })),
       }));
 
-      const systemBehaviors: AbilitySystemBehaviorView[] = SYSTEM_BEHAVIORS.map((b) => ({
-        ...b,
-        segment: segmentMetaOf(segmentMap, b.segmentKey),
-      }));
+      // SYSTEM_BEHAVIORS 已退役：会话组上下文归会话组包、契约段归协作包展示；系统行为卡数据改为纯常驻（基础工具 + residentToolGroups）
+      const systemBehaviors: AbilitySystemBehaviorView[] = [];
 
       const residentToolGroups: ResidentToolGroupMeta[] = RESIDENT_GROUP_IDS.map((id) => {
         const group = groupByServer.get(id);

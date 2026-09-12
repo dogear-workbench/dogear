@@ -74,19 +74,28 @@ export const ABILITY_PACKS: AbilityPack[] = [
   {
     key: 'notes',
     label: '笔记卡片',
-    description: '笔记卡片工具 + 存卡纪律段，主会话且绑定工作区时生效',
+    description: '笔记卡片 + 任务系统两组工具 + 存卡纪律段，主会话且绑定工作区时生效（任务执行会话派单保底不受开关约束）',
     type: 'segment-tools',
     segmentKeys: ['notes-discipline'],
-    toolGroups: ['dogear-notes'],
+    toolGroups: ['dogear-notes', 'dogear-tasks'],
+    defaultEnabled: true,
+  },
+  {
+    key: 'group-context',
+    label: '会话组',
+    description: '组上下文段（组头 + 话题状态）+ 组状态卡工具，会话属于某个组时生效',
+    type: 'segment-tools',
+    segmentKeys: ['group-context'],
+    toolGroups: ['dogear-group-context'],
     defaultEnabled: true,
   },
   {
     key: 'agent-collab',
     label: 'Agent 协作',
-    description: '派遣子会话、会话组共享区、跨会话引用三组工具 + 主会话协作规范段',
+    description: '派遣子会话、会话组共享区、兄弟会话三组工具 + 主会话协作规范段 + 子会话交付契约段（子会话强制生效）',
     type: 'segment-tools',
-    segmentKeys: ['main-agent-delegation'],
-    toolGroups: ['dogear-delegation', 'dogear-group', 'dogear-reference'],
+    segmentKeys: ['main-agent-delegation', 'sub-agent-contract'],
+    toolGroups: ['dogear-delegation', 'dogear-group', 'dogear-sibling'],
     defaultEnabled: true,
   },
   {
@@ -148,6 +157,7 @@ export interface ResolveAbilitiesOpts {
 /**
  * 解析生效能力包：工作区包开关（abilityOverrides 覆盖 defaultEnabled，残留下线 key 静默忽略）
  * ∩ 触发条件 ∩ 子会话 Profile 过滤。子会话契约段与 Profile 细闸（enabledSkills）不在此处理。
+ * reference 细闸已退役：ReadGroupBackground 随会话组包、ListSiblingSessions 随协作包，旧配置残留值静默忽略。
  */
 export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilitiesOpts): Set<string> {
   const result = new Set<string>();
@@ -160,7 +170,7 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
       if (opts.role === 'sub' && opts.profile?.enabledAbilities.memory !== true) continue;
     }
     if (pack.key === 'notes' && (opts.role !== 'main' || !opts.hasWorkspace)) continue;
-    if (pack.key === 'agent-collab' && !opts.groupId) continue;
+    if ((pack.key === 'group-context' || pack.key === 'agent-collab') && !opts.groupId) continue;
 
     if (opts.role === 'sub' && opts.profile) {
       const ab = opts.profile.enabledAbilities;
@@ -224,29 +234,3 @@ export const TOOL_PACK_TO_ABILITY = new Map<string, string>(
     .filter((p) => p.type === 'skill-packs')
     .flatMap((p) => (p.toolGroups ?? []).map((g) => [g, p.key] as const)),
 );
-
-/** 结构性注入段（组上下文/子会话契约）：不可关、只读展示，归「系统行为」卡。 */
-export interface SystemBehavior {
-  key: string;
-  label: string;
-  triggerDescription: string;
-  segmentKey: SystemPromptSegmentKey;
-  readonly: true;
-}
-
-export const SYSTEM_BEHAVIORS: SystemBehavior[] = [
-  {
-    key: 'group-context',
-    label: '会话组上下文',
-    triggerDescription: '会话属于某个组时注入：组头 + 话题状态轻量头；任务执行会话只注入组头。',
-    segmentKey: 'group-context',
-    readonly: true,
-  },
-  {
-    key: 'sub-agent-contract',
-    label: '子会话交付契约',
-    triggerDescription: '子会话注入：明确任务、交付路径与交付流程，契约不受能力包开关影响。',
-    segmentKey: 'sub-agent-contract',
-    readonly: true,
-  },
-];

@@ -72,25 +72,48 @@ function subGroups(profile: SubAgentProfile, activeAbilities: Set<string>): { gr
 }
 
 describe('冒烟：纯净模式（主会话全包关，绑定工作区）', () => {
-  test('常驻组只剩 dogear-tasks + dogear-history，无协作组、无 extension、无 memory', () => {
+  test('常驻组只剩 dogear-history，任务系统随笔记包，无协作组、无 extension、无 memory', () => {
     const active = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
     expect(active.size).toBe(0);
 
     const s = makeSession('main');
     const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
 
-    expect(new Set(builders(s).toolPackMap.values())).toEqual(new Set(['dogear-tasks', 'dogear-history']));
+    expect(new Set(builders(s).toolPackMap.values())).toEqual(new Set(['dogear-history']));
 
     expect(names).toContain('dogear__ListTopics');
     expect(names).toContain('dogear__ReadReferenceSession');
-    expect(names).toContain('dogear__CreateTask');
-    expect(names).toContain('dogear__ListTasks');
+    expect(names).not.toContain('dogear__CreateTask');
+    expect(names).not.toContain('dogear__ListTasks');
 
     expect(names.some((n) => n.startsWith('dogear__extension__'))).toBe(false);
     expect(names).not.toContain('dogear__ListGroupFiles');
     expect(names).not.toContain('dogear__ReadGroupBackground');
     expect(names).not.toContain('dogear__ListSiblingSessions');
     expect(names).not.toContain('dogear__SaveSharedNote');
+  });
+});
+
+describe('冒烟：notes 包 gate dogear-tasks 与 executor 派单保底', () => {
+  test('notes 开 → notes+tasks 两组；关 → 两组全无；executor 关包保底注册申报工具', () => {
+    const configOn: WorkspaceConfig = {
+      ...ALL_OFF,
+      abilityOverrides: { ...ALL_OFF.abilityOverrides, notes: true },
+    };
+    const on = resolveAbilities(configOn, { role: 'main', hasWorkspace: true, groupId: null });
+    const sOn = makeSession('main');
+    builders(sOn).buildMainAgentToolDefs([], on);
+    expect(new Set(builders(sOn).toolPackMap.values())).toEqual(new Set(['dogear-notes', 'dogear-tasks', 'dogear-history']));
+
+    const off = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
+    const sOff = makeSession('main');
+    builders(sOff).buildMainAgentToolDefs([], off);
+    expect(new Set(builders(sOff).toolPackMap.values())).toEqual(new Set(['dogear-history']));
+
+    const sExec = makeSession('main', { executor: true });
+    const execNames = builders(sExec).buildMainAgentToolDefs([], off).map((d) => d.name);
+    expect(new Set(builders(sExec).toolPackMap.values())).toEqual(new Set(['dogear-tasks', 'dogear-history']));
+    expect(execNames).toContain('dogear__ReportTaskResult');
   });
 });
 
@@ -117,7 +140,7 @@ describe('冒烟：browser 包总闸 gate 主会话 extension', () => {
   });
 });
 
-describe('冒烟：子会话 extension 双闸与 reference 拆组', () => {
+describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
   test('browser 包开 + Profile extension=true → extension 注册', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
@@ -169,14 +192,41 @@ describe('冒烟：子会话 extension 双闸与 reference 拆组', () => {
     expect(groups.has('extension')).toBe(false);
   });
 
-  test('reference=false：无组协作引用（dogear-reference），但检索组常驻、固定协作组在', () => {
+  test('子会话：会话组包与协作包开 → 组状态卡与兄弟会话各随其包注册', () => {
+    const config: WorkspaceConfig = {
+      ...ALL_OFF,
+      abilityOverrides: { ...ALL_OFF.abilityOverrides, 'group-context': true, 'agent-collab': true },
+    };
     const profile = createDefaultSubAgentProfile();
+    const active = resolveAbilities(config, {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: GROUP_ID,
+      profile,
+    });
+    expect(active.has('group-context')).toBe(true);
+    expect(active.has('agent-collab')).toBe(true);
+
+    const { groups, names } = subGroups(profile, active);
+    expect(groups.has('dogear-group-context')).toBe(true);
+    expect(groups.has('dogear-sibling')).toBe(true);
+    expect(names).toContain('dogear__ReadGroupBackground');
+    expect(names).toContain('dogear__ListSiblingSessions');
+  });
+
+  test('子会话：两包全关 → 两工具不注册，检索组与固定协作组在（reference 旧细闸被忽略）', () => {
+    const profile: SubAgentProfile = {
+      ...createDefaultSubAgentProfile(),
+      enabledAbilities: { reference: true },
+    };
     const active = resolveAbilities(ALL_OFF, {
       role: 'sub',
       hasWorkspace: true,
       groupId: GROUP_ID,
       profile,
     });
+    expect(active.has('group-context')).toBe(false);
+    expect(active.has('agent-collab')).toBe(false);
 
     const { names } = subGroups(profile, active);
     expect(names).not.toContain('dogear__ReadGroupBackground');
@@ -189,20 +239,29 @@ describe('冒烟：子会话 extension 双闸与 reference 拆组', () => {
     expect(names).toContain('dogear__TrackUserActions');
   });
 
-  test('reference=true：组协作引用两工具注册', () => {
-    const profile: SubAgentProfile = {
-      ...createDefaultSubAgentProfile(),
-      enabledAbilities: { reference: true },
+  test('主会话：会话组包开协作关 → ReadGroupBackground 在、ListSiblingSessions 与共享区不在', () => {
+    const config: WorkspaceConfig = {
+      ...ALL_OFF,
+      abilityOverrides: { ...ALL_OFF.abilityOverrides, 'group-context': true },
     };
-    const active = resolveAbilities(ALL_OFF, {
-      role: 'sub',
-      hasWorkspace: true,
-      groupId: GROUP_ID,
-      profile,
-    });
-
-    const { names } = subGroups(profile, active);
+    const active = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: GROUP_ID });
+    const s = makeSession('main', { groupId: GROUP_ID });
+    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
     expect(names).toContain('dogear__ReadGroupBackground');
+    expect(names).not.toContain('dogear__ListSiblingSessions');
+    expect(names).not.toContain('dogear__ListGroupFiles');
+    expect(names).not.toContain('dogear__SaveSharedNote');
+  });
+
+  test('主会话：协作包开会话组包关 → ListSiblingSessions 在、ReadGroupBackground 不在', () => {
+    const config: WorkspaceConfig = {
+      ...ALL_OFF,
+      abilityOverrides: { ...ALL_OFF.abilityOverrides, 'agent-collab': true },
+    };
+    const active = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: GROUP_ID });
+    const s = makeSession('main', { groupId: GROUP_ID });
+    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
     expect(names).toContain('dogear__ListSiblingSessions');
+    expect(names).not.toContain('dogear__ReadGroupBackground');
   });
 });

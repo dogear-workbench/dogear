@@ -1,7 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 import {
   ABILITY_PACKS,
-  SYSTEM_BEHAVIORS,
   TOOL_PACK_TO_ABILITY,
   buildProfileAbilityMount,
   resolveAbilities,
@@ -46,8 +45,8 @@ describe('buildProfileAbilityMount', () => {
     expect(partial?.matchedSkills.sort()).toEqual(['brainstorming', 'doc-sync']);
   });
 
-  test('无 Profile 细闸的包返回 null（prompt-only / notes / agent-collab）', () => {
-    for (const key of ['workspace-rules', 'global-rules', 'core-profile', 'notes', 'agent-collab']) {
+  test('无 Profile 细闸的包返回 null（prompt-only / notes / 会话组 / 协作）', () => {
+    for (const key of ['workspace-rules', 'global-rules', 'core-profile', 'notes', 'group-context', 'agent-collab']) {
       expect(buildProfileAbilityMount(packOf(key), profileWith({ memory: true, stock: true }))).toBeNull();
     }
   });
@@ -124,7 +123,38 @@ describe('工具归属修正（extension 并包 / reference 拆组 / 系统行�
     expect(TOOL_PACK_TO_ABILITY.get('dogear-extension')).toBe('browser');
   });
 
-  test('SYSTEM_BEHAVIORS 仅组上下文与子会话契约（profile-index 已移除，不标「不可关」错误语义）', () => {
-    expect(SYSTEM_BEHAVIORS.map((b) => b.key)).toEqual(['group-context', 'sub-agent-contract']);
+  test('SYSTEM_BEHAVIORS 已退役（组上下文归会话组包、契约段归协作包展示）', () => {
+    expect(packOf('group-context').segmentKeys).toEqual(['group-context']);
+    expect(packOf('agent-collab').segmentKeys).toEqual(['main-agent-delegation', 'sub-agent-contract']);
+  });
+
+  test('归属重划：会话组包挂组状态卡组、协作包挂三组且去 reference、笔记包含任务组', () => {
+    expect(packOf('group-context').toolGroups).toEqual(['dogear-group-context']);
+    expect(packOf('agent-collab').toolGroups).toEqual(['dogear-delegation', 'dogear-group', 'dogear-sibling']);
+    expect(packOf('notes').toolGroups).toEqual(['dogear-notes', 'dogear-tasks']);
+  });
+
+  test('触发条件：会话组包与协作包属组即生效，无组不生效', () => {
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} };
+    const withGroup = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: 'g1' });
+    expect(withGroup.has('group-context')).toBe(true);
+    expect(withGroup.has('agent-collab')).toBe(true);
+
+    const noGroup = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null });
+    expect(noGroup.has('group-context')).toBe(false);
+    expect(noGroup.has('agent-collab')).toBe(false);
+  });
+
+  test('子会话 reference 旧细闸不再生效：Profile reference=true 不影响包解析', () => {
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} };
+    const profile = profileWith({ reference: true });
+    const active = resolveAbilities(config, {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: 'g1',
+      profile,
+    });
+    expect(active.has('group-context')).toBe(true);
+    expect(active.has('agent-collab')).toBe(true);
   });
 });
