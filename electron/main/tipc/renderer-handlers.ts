@@ -130,19 +130,6 @@ export type RendererHandlers = {
   usageEntryAdded: (data: { conversationId: string }) => void;
 
 
-  // 手动长任务（全量重置分类 / 单组重新提炼）终态通知（主进程写完 run-history 后广播，status 供渲染层分流 toast）
-  manualTaskDone: (data: {
-    kind: 'full-rebuild' | 'redigest';
-    planId: 'manual-full-rebuild' | 'manual-redigest';
-    planName: string;
-    status: 'completed' | 'failed' | 'cancelled';
-    workspaceId: string;
-    groupId?: string;
-    durationMs: number;
-    summary?: string;
-    error?: string;
-  }) => void;
-
   // 笔记数据变更（notes-service 写操作后广播，前端 store 收到后重新拉取列表）
   notesChanged: (data: { workspacePath: string }) => void;
 
@@ -261,5 +248,8 @@ export type RendererHandlers = {
 
   // 浏览器扩展连接状态变化（browser-gateway 广播，设置页状态行渲染；payload 为全量状态快照）
   extensionStatusChanged: (data: ExtensionStatus) => void;
+
+  // 提示音播放指令（主进程提示决策单点收敛后下发，只发主窗口；渲染层结合设置项决定是否发声）
+  soundCue: (data: { kind: 'complete' | 'permission' | 'error'; appFocused: boolean }) => void;
 
 };

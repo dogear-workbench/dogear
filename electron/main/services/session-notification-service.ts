@@ -1,7 +1,11 @@
 import { BrowserWindow, nativeImage, Notification, Tray } from 'electron';
+import { getRendererHandlers } from '@egoist/tipc/main';
 import { mainLogger } from '../agents/logger.js';
+import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 
 export type SessionNotificationKind = 'complete' | 'permission';
+
+export type SoundCueKind = 'complete' | 'permission' | 'error';
 
 export interface SessionNotificationInput {
   kind: SessionNotificationKind;
@@ -108,6 +112,19 @@ class SessionNotificationService {
     }
 
     this.flashIfVisible();
+  }
+
+  /** 提示音指令：主进程提示决策收敛后的唯一发声入口，只发主窗口 */
+  playCue(kind: SoundCueKind): void {
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) return;
+    try {
+      getRendererHandlers<RendererHandlers>(this.mainWindow.webContents).soundCue.send({
+        kind,
+        appFocused: this.isForeground(),
+      });
+    } catch {
+      // 窗口已销毁，忽略
+    }
   }
 
   dispose(): void {

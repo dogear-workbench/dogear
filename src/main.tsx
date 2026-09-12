@@ -2,11 +2,9 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { toast } from 'sonner';
-import { setupManualTaskToasts } from '@/lib/manual-task-toasts';
 import { setupSettingsSync } from '@/lib/setup-settings-sync';
 import './globals.css';
 
-setupManualTaskToasts();
 setupSettingsSync();
 
 // ==================== 全局异常捕获 ====================

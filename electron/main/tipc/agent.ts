@@ -13,6 +13,7 @@ import * as conversationService from '../services/conversation-service.js';
 import { getSessionNotificationService } from '../services/session-notification-service.js';
 import { mainLogger } from '../agents/logger.js';
 import { maybeFailoverMainSession, clearFailoverTriedBySession } from '../agents/model-failover.js';
+import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import { getClaudeConfigDir, getSdkSessionsDir } from '../services/memory/session-paths.js';
 export { getClaudeConfigDir } from '../services/memory/session-paths.js';
@@ -90,7 +91,6 @@ getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
 const COMPLETE_BODY: Record<string, string> = {
   success: 'AI 已完成回复',
   failed: '会话执行失败，请查看详情',
-  cancelled: '会话已停止',
 };
 
 async function handleSessionNotification(
@@ -108,16 +108,21 @@ async function handleSessionNotification(
     const service = getSessionNotificationService();
 
     if (event === 'complete') {
+      // 过滤链：executor 任务轮静默；有 running 子会话（派子会话后的中间轮）静默；cancelled（手动停止）静默
+      if (lookup.conv.executor) return;
+      const children = await getChildrenByParent(convId);
+      if (children.some((c) => c.status === 'running')) return;
       const result = payload as PiSessionTurnResult;
-      const body = COMPLETE_BODY[result.subtype] ?? COMPLETE_BODY.success;
+      if (result.subtype === 'cancelled') return;
       service.notify({
         kind: 'complete',
         notificationId: `${sessionId}-${Date.now()}`,
         conversationId: convId,
         workspaceId: lookup.workspaceId,
         title: lookup.conv.title || '会话',
-        body,
+        body: COMPLETE_BODY[result.subtype] ?? COMPLETE_BODY.success,
       });
+      service.playCue(result.subtype === 'failed' ? 'error' : 'complete');
     } else if (event === 'permissionRequest') {
       const data = payload as { requestId: string; toolName: string; toolInput: unknown };
       service.notify({
@@ -128,6 +133,7 @@ async function handleSessionNotification(
         title: lookup.conv.title || '会话',
         toolName: data.toolName,
       });
+      service.playCue('permission');
     }
   } catch (err) {
     mainLogger.warn('[session-notification] 广播通知分支失败:', err);

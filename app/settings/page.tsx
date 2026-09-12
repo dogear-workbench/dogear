@@ -416,7 +416,7 @@ export default function SettingsPage() {
                       Dogear 提示音
                     </label>
                     <p className="text-xs text-muted-foreground mt-1">
-                      使用应用内合成音效，不调用 Windows 通知或系统提示音。会话完成、等待授权和手动任务完成时触发。
+                      使用应用内合成音效，不调用 Windows 通知或系统提示音。主会话完成、任务完成/失败、等待授权时触发；仅应用后台时响（可关）。
                     </p>
                   </div>
                   <input

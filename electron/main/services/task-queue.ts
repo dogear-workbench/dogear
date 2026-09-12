@@ -53,7 +53,8 @@ function firstLine(text: string, max = 80): string {
 const REPORT_RESULT_HINT = '让会话继续时，完成后请它调用 dogear__ReportTaskResult 回写任务';
 
 function notifyTask(task: Task, workspaceId: string, title: string, body: string): void {
-  getSessionNotificationService().notify({
+  const service = getSessionNotificationService();
+  service.notify({
     kind: 'complete',
     notificationId: `task-${task.id}-${task.status}-${task.updatedAt}`,
     conversationId: task.execSessionId ?? '',
@@ -62,6 +63,7 @@ function notifyTask(task: Task, workspaceId: string, title: string, body: string
     body,
     taskId: task.id,
   });
+  service.playCue('error');
   void getNotificationCenterService().add({
     type: 'task',
     dedupeKey: `task:${task.id}:failed`,
@@ -77,7 +79,8 @@ function notifyTask(task: Task, workspaceId: string, title: string, body: string
 function notifyTaskInterrupted(task: Task, workspaceId: string, reason: string): void {
   const title = `任务已中断：${task.title}`;
   const body = `${firstLine(reason)}。${REPORT_RESULT_HINT}`;
-  getSessionNotificationService().notify({
+  const service = getSessionNotificationService();
+  service.notify({
     kind: 'complete',
     notificationId: `task-${task.id}-${task.status}-${task.updatedAt}`,
     conversationId: task.execSessionId ?? '',
@@ -86,6 +89,7 @@ function notifyTaskInterrupted(task: Task, workspaceId: string, reason: string):
     body,
     taskId: task.id,
   });
+  service.playCue('error');
   void getNotificationCenterService().add({
     type: 'task',
     dedupeKey: `task:${task.id}:interrupted`,

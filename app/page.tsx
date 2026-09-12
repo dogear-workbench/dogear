@@ -3,6 +3,7 @@ import { ConversationList } from '@/components/ConversationList';
 import { AgentChat } from '@/components/AgentChat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
+import { playDogearSound } from '@/lib/dogear-sound';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, ScrollText, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -135,6 +136,16 @@ export default function Home() {
     });
     return () => unsub();
   }, [setWorkspace]);
+
+  // 主进程下发的提示音指令：backgroundOnly 开启且应用前台时静默，音量/开关/节流仍由 playDogearSound 内部处理
+  useEffect(() => {
+    const unsub = rendererEvents.soundCue.listen(({ kind, appFocused }) => {
+      const backgroundOnly = useSettingsStore.getState().settings.ui?.sound?.backgroundOnly ?? true;
+      if (backgroundOnly && appFocused) return;
+      playDogearSound(kind, { force: !backgroundOnly });
+    });
+    return () => unsub();
+  }, []);
 
   // 任务通知点击：确保工作区就绪后切到笔记页任务视图并选中该任务
   useEffect(() => {

@@ -7,6 +7,7 @@
 import * as taskStore from './task-store.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import { getNotificationCenterService } from './notification-center-service.js';
+import { getSessionNotificationService } from './session-notification-service.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
 
 export type TaskStatus = taskStore.TaskStatus;
@@ -83,6 +84,17 @@ async function notifyTaskReview(task: taskStore.Task, workspacePath: string): Pr
     const ws = (await workspaceJsonService.getAll()).find((w) => w.path === workspacePath);
     if (!ws) return;
     const title = `任务待审核：${task.title}`;
+    const service = getSessionNotificationService();
+    service.notify({
+      kind: 'complete',
+      notificationId: `task-${task.id}-${task.status}-${task.updatedAt}`,
+      conversationId: task.execSessionId ?? '',
+      workspaceId: ws.id,
+      title,
+      body: task.result ? task.result.slice(0, 200) : undefined,
+      taskId: task.id,
+    });
+    service.playCue('complete');
     await getNotificationCenterService().add({
       type: 'task',
       dedupeKey: `task:${task.id}:review`,
