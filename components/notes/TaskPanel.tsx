@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Ban, Check, MoreHorizontal, Play, Trash2, Undo2 } from 'lucide-react';
+import { ArrowRight, Ban, Check, MessageSquare, MoreHorizontal, Play, Trash2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,6 +12,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useTaskStore } from '@/stores/task-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
+import { useConversationStore } from '@/stores/conversation-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { jumpToPeerConversation } from '@/components/agent-chat/AgentCommCard';
 import { showConfirm } from '@/stores/confirm-store';
 import { TaskDetail } from '@/components/notes/TaskDetail';
 import { TaskStatusBadge } from '@/components/notes/TaskStatusBadge';
@@ -188,6 +192,48 @@ interface TaskCardItemProps {
   onMove: (to: 'backlog' | 'plan') => Promise<void>;
 }
 
+// execSessionId 实为 conversationId（会话稳定主键），按 c.id 反查而非 session_id
+function ExecSessionLink({ execSessionId }: { execSessionId: string }) {
+  const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
+  const [resolving, setResolving] = useState(false);
+
+  const handleClick = async () => {
+    if (resolving) return;
+    setResolving(true);
+    try {
+      let conv = useConversationStore.getState().conversations.find((c) => c.id === execSessionId);
+      if (!conv && workspaceId) {
+        const result = await client.getByWorkspaceId({ workspaceId }).catch(() => null);
+        conv = (result?.conversations ?? []).find((c) => c.id === execSessionId);
+      }
+      if (!conv) {
+        toast.warning('执行会话不存在或已删除');
+        return;
+      }
+      jumpToPeerConversation(conv);
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      disabled={resolving}
+      onClick={(e) => {
+        e.stopPropagation();
+        void handleClick();
+      }}
+      onKeyDown={(e) => e.stopPropagation()}
+      title="打开执行会话"
+      className="inline-flex items-center gap-0.5 shrink-0 cursor-pointer hover:text-foreground transition-colors"
+    >
+      <MessageSquare className="w-3 h-3" />
+      执行会话
+    </button>
+  );
+}
+
 function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, onDelete, onMove }: TaskCardItemProps) {
   const [executing, setExecuting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -237,6 +283,7 @@ function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, o
         <span className="shrink-0" title={`更新于 ${formatNoteTime(task.updatedAt)}`}>
           {formatNoteTime(task.updatedAt)}
         </span>
+        {task.execSessionId && <ExecSessionLink execSessionId={task.execSessionId} />}
         <span className={cn('ml-auto flex items-center gap-0.5 shrink-0', hoverBtn)}>
           {(task.status === 'plan' || task.status === 'rejected') && (
             <Button

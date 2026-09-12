@@ -93,8 +93,20 @@ export function TaskReportMessage({ toolInput, toolOutput, isError }: Props) {
           <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">
             申报失败
           </span>
+        ) : status && canOpen ? (
+          <button
+            type="button"
+            onClick={() => void openTask()}
+            title="在任务面板中定位"
+            className={cn(
+              'px-1.5 py-0.5 rounded text-[10px] cursor-pointer transition hover:brightness-95 flex-shrink-0',
+              statusBadgeClass(status),
+            )}
+          >
+            {REPORT_STATUS_LABELS[status] ?? status}
+          </button>
         ) : status ? (
-          <span className={cn('px-1.5 py-0.5 rounded text-[10px]', statusBadgeClass(status))}>
+          <span className={cn('px-1.5 py-0.5 rounded text-[10px] flex-shrink-0', statusBadgeClass(status))}>
             {REPORT_STATUS_LABELS[status] ?? status}
           </span>
         ) : null}
