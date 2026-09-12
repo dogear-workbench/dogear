@@ -7,12 +7,11 @@ interface AbilityPackCardProps {
   pack: AbilityPackView;
   enabled: boolean;
   disabled?: boolean;
-  busy: boolean;
   onToggle: (enable: boolean) => void;
   onOpen: () => void;
 }
 
-export function AbilityPackCard({ pack, enabled, disabled, busy, onToggle, onOpen }: AbilityPackCardProps) {
+export function AbilityPackCard({ pack, enabled, disabled, onToggle, onOpen }: AbilityPackCardProps) {
   const Icon = packIconOf(pack.key);
   const stats = [
     pack.segments.length > 0 && `段 ${pack.segments.length}`,
@@ -49,7 +48,7 @@ export function AbilityPackCard({ pack, enabled, disabled, busy, onToggle, onOpe
         >
           <Switch
             checked={enabled}
-            disabled={disabled || busy}
+            disabled={disabled}
             onCheckedChange={onToggle}
             aria-label={`${enabled ? '关闭' : '开启'} ${pack.label}`}
           />

@@ -25,7 +25,10 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
 
   saveSettings: async (settings: AppSettings) => {
-    await client.updateSettings({ settings });
+    const result = await client.updateSettings({ settings });
+    if (result && 'error' in result && result.error) {
+      throw new Error(String(result.error));
+    }
     set({ settings });
   },
 }));

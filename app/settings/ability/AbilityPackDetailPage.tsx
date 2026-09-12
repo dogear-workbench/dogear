@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { ArrowLeft, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,7 @@ function jumpToDataCenter() {
   useUIStore.getState().closeSettings();
 }
 
-function SegmentBlock({ segment }: { segment: AbilitySegmentMeta }) {
+const SegmentBlock = memo(function SegmentBlock({ segment }: { segment: AbilitySegmentMeta }) {
   return (
     <div className="rounded-md border overflow-hidden flex flex-col">
       <div className="px-3 py-2 bg-muted/30 border-b space-y-0.5 shrink-0">
@@ -76,9 +76,9 @@ function SegmentBlock({ segment }: { segment: AbilitySegmentMeta }) {
       </div>
     </div>
   );
-}
+});
 
-function CoreProfileView({ workspacePath }: { workspacePath: string }) {
+const CoreProfileView = memo(function CoreProfileView({ workspacePath }: { workspacePath: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -122,25 +122,43 @@ function CoreProfileView({ workspacePath }: { workspacePath: string }) {
       </div>
     </div>
   );
-}
+});
+
+// 正文自包含成 memo 组件：头部开关状态变化重渲染时不重拉、不重解析 SKILL.md
+const SkillMarkdown = memo(function SkillMarkdown({ name }: { name: string }) {
+  const { content, error, loading } = useSkillContent(name);
+
+  return (
+    <div className="px-3 py-2">
+      {loading && <p className="text-sm text-muted-foreground py-8 text-center">加载中…</p>}
+      {!loading && error && (
+        <div className="p-3 rounded border border-destructive/40 bg-destructive/5 text-xs text-destructive font-mono whitespace-pre-wrap break-all">
+          {error}
+        </div>
+      )}
+      {!loading && !error && (
+        <MarkdownRenderer
+          content={content || '(空文件)'}
+          className={cn(PROSE_DOWN_CLASS, '[&_h1]:text-lg [&_h1]:mt-3 [&_h1]:mb-2')}
+        />
+      )}
+    </div>
+  );
+});
 
 function SkillContentSection({
   skill,
   enabled,
   packEnabled,
   disabled,
-  skillBusy,
   onToggle,
 }: {
   skill: AbilitySkillMeta;
   enabled: boolean;
   packEnabled: boolean;
   disabled: boolean;
-  skillBusy: boolean;
   onToggle: (enable: boolean) => void;
 }) {
-  const { content, error, loading } = useSkillContent(skill.name);
-
   return (
     <div className="rounded-md border overflow-hidden flex flex-col">
       <div className="px-3 py-2 bg-muted/30 border-b space-y-1 shrink-0">
@@ -153,7 +171,7 @@ function SkillContentSection({
             <span className="text-xs text-muted-foreground">{enabled ? '已启用' : '已停用'}</span>
             <Switch
               checked={enabled}
-              disabled={disabled || skillBusy || !packEnabled}
+              disabled={disabled || !packEnabled}
               onCheckedChange={onToggle}
               aria-label={`${enabled ? '停用' : '启用'} ${skill.name}`}
             />
@@ -166,20 +184,7 @@ function SkillContentSection({
           <p className="text-xs text-muted-foreground/70">包开关关闭时包内 Skill 不生效，可先行预配置。</p>
         )}
       </div>
-      <div className="px-3 py-2">
-        {loading && <p className="text-sm text-muted-foreground py-8 text-center">加载中…</p>}
-        {!loading && error && (
-          <div className="p-3 rounded border border-destructive/40 bg-destructive/5 text-xs text-destructive font-mono whitespace-pre-wrap break-all">
-            {error}
-          </div>
-        )}
-        {!loading && !error && (
-          <MarkdownRenderer
-            content={content || '(空文件)'}
-            className={cn(PROSE_DOWN_CLASS, '[&_h1]:text-lg [&_h1]:mt-3 [&_h1]:mb-2')}
-          />
-        )}
-      </div>
+      <SkillMarkdown name={skill.name} />
     </div>
   );
 }
@@ -190,9 +195,7 @@ interface AbilityPackDetailPageProps {
   workspaceId: string | null;
   config: WorkspaceConfig;
   packEnabled: boolean;
-  packBusy: boolean;
-  skillBusy: boolean;
-  configVersion: number;
+  refreshKey: number;
   onBack: () => void;
   onTogglePack: (enable: boolean) => void;
   onToggleSkill: (name: string, enable: boolean) => void;
@@ -204,9 +207,7 @@ export function AbilityPackDetailPage({
   workspaceId,
   config,
   packEnabled,
-  packBusy,
-  skillBusy,
-  configVersion,
+  refreshKey,
   onBack,
   onTogglePack,
   onToggleSkill,
@@ -265,7 +266,6 @@ export function AbilityPackDetailPage({
                 enabled={isSkillEnabled(activeSkill.name)}
                 packEnabled={packEnabled}
                 disabled={!workspaceId}
-                skillBusy={skillBusy}
                 onToggle={(enable) => onToggleSkill(activeSkill.name, enable)}
               />
             )}
@@ -303,10 +303,9 @@ export function AbilityPackDetailPage({
           workspaceId={workspaceId}
           packEnabled={packEnabled}
           disabled={!workspaceId}
-          packBusy={packBusy}
           onTogglePack={onTogglePack}
           onToolDetail={setDetailTool}
-          configVersion={configVersion}
+          refreshKey={refreshKey}
         />
       </div>
 

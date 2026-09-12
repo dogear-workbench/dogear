@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
@@ -21,9 +22,9 @@ export function AbilityTab() {
   const [packsResult, setPacksResult] = useState<Exclude<PacksResult, { error: string }> | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [packBusy, setPackBusy] = useState(false);
-  const [skillBusy, setSkillBusy] = useState(false);
-  const [configVersion, setConfigVersion] = useState(0);
+  const [mountsRefreshKey, setMountsRefreshKey] = useState(0);
+
+  const bumpMounts = useCallback(() => setMountsRefreshKey((v) => v + 1), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,28 +60,33 @@ export function AbilityTab() {
     setWorkspaceId(id);
     const configRes = await client.getWorkspaceConfig({ workspaceId: id });
     if (configRes && 'config' in configRes) setWorkspaceConfig(configRes.config ?? EMPTY_CONFIG);
-    setConfigVersion((v) => v + 1);
+    bumpMounts();
   };
 
-  const writeOverrides = useCallback(
-    async (overrides: Record<string, boolean>) => {
+  // 乐观写入：本地 config 先行翻转即时反馈，IPC 后台落盘；成功后刷新矩阵信号，
+  // 失败重拉服务端配置回滚并 toast（此时服务端可能已含后续操作，重拉值即为真值）
+  const persistConfig = useCallback(
+    async (patch: Partial<WorkspaceConfig>) => {
       if (!workspaceId) return;
-      setPackBusy(true);
+      setWorkspaceConfig((prev) => ({ ...prev, ...patch }));
       try {
-        const res = await client.updateWorkspaceConfig({ workspaceId, config: { abilityOverrides: overrides } });
+        const res = await client.updateWorkspaceConfig({ workspaceId, config: patch });
         if (res && 'config' in res && res.config) {
-          setWorkspaceConfig(res.config);
-          setConfigVersion((v) => v + 1);
+          bumpMounts();
+          return;
         }
-      } finally {
-        setPackBusy(false);
+        throw new Error(res && 'error' in res ? String(res.error) : '未知错误');
+      } catch (e) {
+        const fresh = await client.getWorkspaceConfig({ workspaceId });
+        if (fresh && 'config' in fresh) setWorkspaceConfig(fresh.config ?? EMPTY_CONFIG);
+        toast.error('能力配置保存失败，已还原', { description: String(e) });
       }
     },
-    [workspaceId],
+    [bumpMounts, workspaceId],
   );
 
   const handleTogglePack = useCallback(
-    async (key: string, enable: boolean) => {
+    (key: string, enable: boolean) => {
       if (!workspaceId) return;
       const overrides = { ...workspaceConfig.abilityOverrides, [key]: enable };
       // 无 Skill 的纯工具包（如联网搜索）：包开关直接联动 enabledToolPacks 细闸；
@@ -88,29 +94,17 @@ export function AbilityTab() {
       const pack = (packsResult?.packs ?? []).find((p) => p.key === key);
       const linkedPacks = (pack?.toolGroupMetas ?? []).filter((g) => g.pack).map((g) => g.id);
       if (pack && pack.skillMetas.length === 0 && linkedPacks.length > 0) {
-        setPackBusy(true);
-        try {
-          const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
-          for (const name of linkedPacks) {
-            if (enable) enabledToolPacks.add(name);
-            else enabledToolPacks.delete(name);
-          }
-          const res = await client.updateWorkspaceConfig({
-            workspaceId,
-            config: { abilityOverrides: overrides, enabledToolPacks: Array.from(enabledToolPacks) },
-          });
-          if (res && 'config' in res && res.config) {
-            setWorkspaceConfig(res.config);
-            setConfigVersion((v) => v + 1);
-          }
-        } finally {
-          setPackBusy(false);
+        const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
+        for (const name of linkedPacks) {
+          if (enable) enabledToolPacks.add(name);
+          else enabledToolPacks.delete(name);
         }
+        void persistConfig({ abilityOverrides: overrides, enabledToolPacks: Array.from(enabledToolPacks) });
         return;
       }
-      void writeOverrides(overrides);
+      void persistConfig({ abilityOverrides: overrides });
     },
-    [packsResult, writeOverrides, workspaceConfig.abilityOverrides, workspaceConfig.enabledToolPacks, workspaceId],
+    [packsResult, persistConfig, workspaceConfig.abilityOverrides, workspaceConfig.enabledToolPacks, workspaceId],
   );
 
   const skillToPacks = useMemo(() => {
@@ -122,45 +116,33 @@ export function AbilityTab() {
   }, [packsResult]);
 
   const handleToggleSkills = useCallback(
-    async (names: string[], enable: boolean) => {
+    (names: string[], enable: boolean) => {
       if (!workspaceId || names.length === 0) return;
-      setSkillBusy(true);
-      try {
-        const enabledSkills = new Set(workspaceConfig.enabledSkills);
-        const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
-        if (enable) {
-          for (const name of names) {
-            enabledSkills.add(name);
-            for (const p of skillToPacks[name] ?? []) enabledToolPacks.add(p);
-          }
-        } else {
-          for (const name of names) enabledSkills.delete(name);
-          const keptByOthers = new Set<string>();
-          for (const other of enabledSkills) {
-            for (const p of skillToPacks[other] ?? []) keptByOthers.add(p);
-          }
-          for (const name of names) {
-            for (const p of skillToPacks[name] ?? []) {
-              if (!keptByOthers.has(p)) enabledToolPacks.delete(p);
-            }
+      const enabledSkills = new Set(workspaceConfig.enabledSkills);
+      const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
+      if (enable) {
+        for (const name of names) {
+          enabledSkills.add(name);
+          for (const p of skillToPacks[name] ?? []) enabledToolPacks.add(p);
+        }
+      } else {
+        for (const name of names) enabledSkills.delete(name);
+        const keptByOthers = new Set<string>();
+        for (const other of enabledSkills) {
+          for (const p of skillToPacks[other] ?? []) keptByOthers.add(p);
+        }
+        for (const name of names) {
+          for (const p of skillToPacks[name] ?? []) {
+            if (!keptByOthers.has(p)) enabledToolPacks.delete(p);
           }
         }
-        const res = await client.updateWorkspaceConfig({
-          workspaceId,
-          config: {
-            enabledSkills: Array.from(enabledSkills),
-            enabledToolPacks: Array.from(enabledToolPacks),
-          },
-        });
-        if (res && 'config' in res && res.config) {
-          setWorkspaceConfig(res.config);
-          setConfigVersion((v) => v + 1);
-        }
-      } finally {
-        setSkillBusy(false);
       }
+      void persistConfig({
+        enabledSkills: Array.from(enabledSkills),
+        enabledToolPacks: Array.from(enabledToolPacks),
+      });
     },
-    [skillToPacks, workspaceConfig, workspaceId],
+    [persistConfig, skillToPacks, workspaceConfig, workspaceId],
   );
 
   const packs = packsResult?.packs ?? [];
@@ -207,8 +189,7 @@ export function AbilityTab() {
         workspaceId={workspaceId}
         workspaceRulesEnabled={rulesPack ? packEnabled(rulesPack) : false}
         globalRulesEnabled={globalRulesPack ? packEnabled(globalRulesPack) : false}
-        packBusy={packBusy}
-        configVersion={configVersion}
+        refreshKey={mountsRefreshKey}
         onBack={() => setSelectedKey(null)}
         onTogglePack={handleTogglePack}
       />
@@ -224,9 +205,7 @@ export function AbilityTab() {
         workspaceId={workspaceId}
         config={workspaceConfig}
         packEnabled={packEnabled(selectedPack)}
-        packBusy={packBusy}
-        skillBusy={skillBusy}
-        configVersion={configVersion}
+        refreshKey={mountsRefreshKey}
         onBack={() => setSelectedKey(null)}
         onTogglePack={(enable) => handleTogglePack(selectedPack.key, enable)}
         onToggleSkill={(name, enable) => void handleToggleSkills([name], enable)}
@@ -285,7 +264,6 @@ export function AbilityTab() {
             pack={pack}
             enabled={packEnabled(pack)}
             disabled={noWorkspace}
-            busy={packBusy}
             onToggle={(enable) => handleTogglePack(pack.key, enable)}
             onOpen={() => setSelectedKey(pack.key)}
           />

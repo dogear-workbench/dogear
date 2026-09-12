@@ -14,10 +14,9 @@ interface AbilityPackSidebarProps {
   workspaceId: string | null;
   packEnabled: boolean;
   disabled?: boolean;
-  packBusy: boolean;
   onTogglePack: (enable: boolean) => void;
   onToolDetail: (tool: { name: string; description: string }) => void;
-  configVersion: number;
+  refreshKey: number;
 }
 
 function ToolGroupPanel({
@@ -70,10 +69,9 @@ export function AbilityPackSidebar({
   workspaceId,
   packEnabled,
   disabled,
-  packBusy,
   onTogglePack,
   onToolDetail,
-  configVersion,
+  refreshKey,
 }: AbilityPackSidebarProps) {
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
@@ -94,7 +92,7 @@ export function AbilityPackSidebar({
           <span className="text-xs text-muted-foreground">能力开关</span>
           <Switch
             checked={packEnabled}
-            disabled={disabled || packBusy}
+            disabled={disabled}
             onCheckedChange={onTogglePack}
             aria-label={`${packEnabled ? '关闭' : '开启'} ${pack.label}`}
           />
@@ -123,7 +121,7 @@ export function AbilityPackSidebar({
 
       <section className="space-y-2">
         <span className="text-xs text-muted-foreground">加载情况</span>
-        <AbilityMountsSection packKey={pack.key} workspaceId={workspaceId} refreshKey={configVersion} />
+        <AbilityMountsSection packKey={pack.key} workspaceId={workspaceId} refreshKey={refreshKey} />
       </section>
 
       <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">

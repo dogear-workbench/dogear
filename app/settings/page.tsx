@@ -1,8 +1,9 @@
-import { useEffect, useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Volume2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConfirmStore } from '@/stores/confirm-store';
@@ -67,6 +68,8 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return keysA.every(key => deepEqual(objA[key], objB[key]));
 }
 
+const AUTOSAVE_DELAY_MS = 500;
+
 // ═══ 主组件 ══════════════════════════════════════════
 
 export default function SettingsPage() {
@@ -75,8 +78,9 @@ export default function SettingsPage() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const saveToStore = useSettingsStore((s) => s.saveSettings);
   const closeSettings = useUIStore((s) => s.closeSettings);
+  const confirmDialog = useConfirmStore((s) => s.confirm);
 
-  // 本地编辑副本
+  // 本地副本（受控输入即时回显），防抖落盘全量设置
   const [local, setLocal] = useState<AppSettings>(DEFAULT_SETTINGS);
   // API Key 显示/隐藏
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({});
@@ -85,20 +89,54 @@ export default function SettingsPage() {
   // pi Profile 的模型 ID 输入框草稿（按 profileId 索引）
   const [piModelDrafts, setPiModelDrafts] = useState<Record<string, string>>({});
 
+  const savedSnapshotRef = useRef<AppSettings | null>(null);
+  const initializedRef = useRef(false);
+  const localRef = useRef(local);
+  localRef.current = local;
+
   // 加载设置
   useEffect(() => { loadSettings(); }, [loadSettings]);
 
-  // 当 store 中的 settings 更新时，同步到本地
+  // 外部设置更新时同步到本地；仅当本地无未落盘改动时接受，
+  // 防止防抖写入完成触发的同步吃掉用户在防抖窗口内的新输入
   useEffect(() => {
-    if (loaded) {
-      setLocal(structuredClone(savedSettings));
+    if (!loaded) return;
+    setLocal((prev) => {
+      const base = savedSnapshotRef.current ?? DEFAULT_SETTINGS;
+      return deepEqual(prev, base) ? structuredClone(savedSettings) : prev;
+    });
+    if (!initializedRef.current) {
+      initializedRef.current = true;
       const firstProfileId = Object.keys(savedSettings.profiles)[0] ?? 'default';
       setSelectedProfileTab(firstProfileId);
     }
+    savedSnapshotRef.current = savedSettings;
   }, [loaded, savedSettings]);
 
-  // dirty 检测
-  const isDirty = useMemo(() => !deepEqual(local, savedSettings), [local, savedSettings]);
+  // 全实时保存：local 变化后防抖落盘
+  useEffect(() => {
+    if (!loaded) return;
+    if (deepEqual(local, savedSettings)) return;
+    const t = setTimeout(() => {
+      saveToStore(local).catch((e: unknown) => {
+        toast.error('设置保存失败，修改仍在页面上，可重试或反馈', { description: String(e) });
+      });
+    }, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [loaded, local, savedSettings, saveToStore]);
+
+  // 关闭设置页时组件卸载：有未落盘改动则立即写入，避免丢最后一次编辑
+  useEffect(() => {
+    return () => {
+      const pending = localRef.current;
+      const store = useSettingsStore.getState();
+      if (store.loaded && !deepEqual(pending, store.settings)) {
+        store.saveSettings(pending).catch((e: unknown) => {
+          toast.error('设置保存失败', { description: String(e) });
+        });
+      }
+    };
+  }, []);
 
   // ── 通用更新 helper ──
   const updateAI = (patch: Partial<AppSettings['ai']>) => {
@@ -134,44 +172,6 @@ export default function SettingsPage() {
     }));
   };
 
-  // ── 保存 ──
-  const handleSaveAndClose = async () => {
-    await saveToStore(local);
-    closeSettings();
-  };
-
-  const handleCancel = () => {
-    setLocal(structuredClone(savedSettings));
-  };
-
-  // ── 关闭 overlay（dirty 时拦截） ──
-  const confirmDialog = useConfirmStore((s) => s.confirm);
-  const handleClose = async () => {
-    if (!isDirty) {
-      closeSettings();
-      return;
-    }
-    const result = await confirmDialog({
-      title: '未保存的更改',
-      description: '设置已修改但尚未保存，你希望如何处理？',
-      buttons: [
-        { label: '放弃更改', value: 'discard', variant: 'outline' },
-        { label: '保存并退出', value: 'save', variant: 'default' },
-      ],
-    });
-    if (result === 'discard') {
-      setLocal(structuredClone(savedSettings));
-      closeSettings();
-    } else if (result === 'save') {
-      await saveToStore(local);
-      closeSettings();
-    }
-    // null（点击遮罩/ESC）= 留在设置页
-  };
-
-  const handleCloseRef = useRef(handleClose);
-  handleCloseRef.current = handleClose;
-
   // ── Profile helpers ──
   const addNewProfile = () => {
     const id = crypto.randomUUID();
@@ -196,8 +196,18 @@ export default function SettingsPage() {
     }));
   };
 
-  const deleteProfileById = (profileId: string) => {
+  const deleteProfileById = async (profileId: string) => {
     if (profileId === 'default') return;
+    const name = local.profiles[profileId]?.name ?? profileId;
+    const result = await confirmDialog({
+      title: '删除模型方案',
+      description: `「${name}」将立即删除且无法恢复，确定继续？`,
+      buttons: [
+        { label: '取消', value: 'cancel', variant: 'outline' },
+        { label: '删除', value: 'delete', variant: 'destructive' },
+      ],
+    });
+    if (result !== 'delete') return;
     setLocal(prev => {
       const { [profileId]: _removed, ...rest } = prev.profiles;
       const newAi = { ...prev.ai };
@@ -229,20 +239,12 @@ export default function SettingsPage() {
 
   return (
     <div className="h-full flex flex-col">
-      {/* ── 顶部固定栏 ── */}
+      {/* ── 顶部固定栏：设置已全实时保存，返回即退出 ── */}
       <header className="h-12 border-b flex items-center px-4 gap-3 bg-background flex-shrink-0">
-        <Button variant="ghost" size="sm" onClick={() => void handleCloseRef.current()}>
+        <Button variant="ghost" size="sm" onClick={closeSettings}>
           <ArrowLeft className="w-4 h-4" />
         </Button>
         <h1 className="font-semibold flex-1">设置</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" disabled={!isDirty} onClick={handleCancel}>
-            取消
-          </Button>
-          <Button size="sm" disabled={!isDirty} onClick={handleSaveAndClose}>
-            保存并退出
-          </Button>
-        </div>
       </header>
 
       {/* ── 主体：顶部下划线 Tabs ── */}
@@ -769,7 +771,7 @@ export default function SettingsPage() {
                       {!isDefault && (
                         <Button variant="ghost" size="sm"
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => deleteProfileById(id)}
+                          onClick={() => void deleteProfileById(id)}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           删除此方案
