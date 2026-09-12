@@ -1,107 +1,49 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { client } from '@/lib/client';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { SystemPromptSegment } from '@/types/system-prompt';
-import type { AppSettings } from '@/types/settings';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
-import type { SkillEntry, SkillTemplate, ToolGroup, ToolPack } from './ability-types';
-import { SKILL_PACK_MAP, buildDomainViews } from './ability-types';
-import { AbilityDomainCard } from './AbilityDomainCard';
-import { AbilityResidentSection } from './AbilityResidentSection';
-import { SkillDetailDialog } from './SkillDetailDialog';
-import { ToolDetailDialog } from './ToolDetailDialog';
-import { SegmentDetailDialog } from './SegmentDetailDialog';
+import type { AbilityPackView } from '../../electron/main/tipc/ability';
+import { AbilityPackCard } from './ability/AbilityPackCard';
+import { AbilityPackDetailPage } from './ability/AbilityPackDetailPage';
+import { SystemBehaviorDetail } from './ability/SystemBehaviorDetail';
+import { SYSTEM_BEHAVIOR_ICON } from './ability/pack-meta';
+
+type PacksResult = Awaited<ReturnType<typeof client.getAbilityPacks>>;
 
 const EMPTY_CONFIG: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [] };
 
-interface AbilityTabProps {
-  local: AppSettings;
-  setLocal: React.Dispatch<React.SetStateAction<AppSettings>>;
-}
-
-export function AbilityTab({ local: _local, setLocal: _setLocal }: AbilityTabProps) {
+export function AbilityTab() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
-  const [toolGroups, setToolGroups] = useState<ToolGroup[]>([]);
-  const [packs, setPacks] = useState<ToolPack[]>([]);
-  const [segments, setSegments] = useState<SystemPromptSegment[]>([]);
-  const [skills, setSkills] = useState<SkillEntry[]>([]);
-  const [templates, setTemplates] = useState<SkillTemplate[]>([]);
   const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>(EMPTY_CONFIG);
+  const [packsResult, setPacksResult] = useState<Exclude<PacksResult, { error: string }> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [detailSkill, setDetailSkill] = useState<{ name: string; description?: string } | null>(null);
-  const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
-  const [detailSegment, setDetailSegment] = useState<SystemPromptSegment | null>(null);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [expandedDomains, setExpandedDomains] = useState<Record<string, boolean>>({});
-  const [expandedPacks, setExpandedPacks] = useState<Record<string, boolean>>({});
-  const [highlightServer, setHighlightServer] = useState<string | null>(null);
-
-  const enabledSkillSet = useMemo(
-    () => new Set(workspaceConfig.enabledSkills),
-    [workspaceConfig.enabledSkills],
-  );
-
-  const groupByServer = useMemo(() => {
-    const map: Record<string, ToolGroup> = {};
-    for (const g of toolGroups) map[g.server] = g;
-    return map;
-  }, [toolGroups]);
-
-  const domainViews = useMemo(
-    () => buildDomainViews({ templates, skills, packs, groupByServer, enabledSkills: enabledSkillSet }),
-    [templates, skills, packs, groupByServer, enabledSkillSet],
-  );
-
-  const loadWorkspaceData = useCallback(async (wsId: string | null) => {
-    const [packsRes, skillsRes, configRes] = await Promise.all([
-      wsId
-        ? client.listToolPacks({ workspaceId: wsId }).then((r: any) => (Array.isArray(r) ? (r as ToolPack[]) : []))
-        : Promise.resolve([] as ToolPack[]),
-      wsId
-        ? client.listSkills({ workspaceId: wsId }).then((r: any) => (r?.skills ?? []) as SkillEntry[])
-        : Promise.resolve([] as SkillEntry[]),
-      wsId
-        ? client.getWorkspaceConfig({ workspaceId: wsId }).then((r: any) => (r && typeof r === 'object' && 'config' in r ? (r as any).config as WorkspaceConfig : EMPTY_CONFIG))
-        : Promise.resolve(EMPTY_CONFIG),
-    ]);
-    setPacks(packsRes);
-    setSkills(skillsRes);
-    setWorkspaceConfig(configRes);
-  }, []);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [skillBusy, setSkillBusy] = useState(false);
+  const [configVersion, setConfigVersion] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
       try {
-        const [allRes, defaultWs] = await Promise.all([
+        const [allRes, defaultWs, packsRes] = await Promise.all([
           client.getAll(),
           client.getDefault(),
+          client.getAbilityPacks(),
         ]);
         if (cancelled) return;
         const list = allRes?.workspaces ?? [];
         const defaultId = defaultWs?.id ?? null;
-        const initial =
-          defaultId && list.some((w) => w.id === defaultId)
-            ? defaultId
-            : list[0]?.id ?? null;
+        const initial = defaultId && list.some((w) => w.id === defaultId) ? defaultId : (list[0]?.id ?? null);
         setWorkspaces(list);
         setWorkspaceId(initial);
-
-        const [groupsRes, segmentsRes, templatesRes] = await Promise.all([
-          client.getRegisteredTools().then((r: any) => (Array.isArray(r) ? (r as ToolGroup[]) : [])),
-          client.getSystemPromptSegments().then((r: any) => {
-            if (r && typeof r === 'object' && 'error' in r) return [] as SystemPromptSegment[];
-            return (r?.segments ?? []) as SystemPromptSegment[];
-          }),
-          client.listSkillTemplates().then((r: any) => (r?.templates ?? []) as SkillTemplate[]),
-        ]);
-        if (cancelled) return;
-        setToolGroups(groupsRes);
-        setSegments(segmentsRes);
-        setTemplates(templatesRes);
-        await loadWorkspaceData(initial);
+        setPacksResult('error' in packsRes ? null : packsRes);
+        if (initial) {
+          const configRes = await client.getWorkspaceConfig({ workspaceId: initial });
+          if (!cancelled && configRes && 'config' in configRes) setWorkspaceConfig(configRes.config ?? EMPTY_CONFIG);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -109,189 +51,209 @@ export function AbilityTab({ local: _local, setLocal: _setLocal }: AbilityTabPro
     return () => {
       cancelled = true;
     };
-  }, [loadWorkspaceData]);
-
-  useEffect(() => {
-    if (!highlightServer) return;
-    const raf = requestAnimationFrame(() => {
-      document
-        .querySelector(`[data-server="${highlightServer}"]`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-    const timer = setTimeout(() => setHighlightServer(null), 2000);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
-    };
-  }, [highlightServer]);
+  }, []);
 
   const handleWorkspaceChange = async (id: string) => {
     setWorkspaceId(id);
-    setLoading(true);
-    try {
-      await loadWorkspaceData(id);
-    } finally {
-      setLoading(false);
-    }
+    const configRes = await client.getWorkspaceConfig({ workspaceId: id });
+    if (configRes && 'config' in configRes) setWorkspaceConfig(configRes.config ?? EMPTY_CONFIG);
+    setConfigVersion((v) => v + 1);
   };
 
-  const applyConfigResult = (res: unknown) => {
-    if (res && typeof res === 'object' && 'config' in (res as Record<string, unknown>)) {
-      const merged = (res as { config: WorkspaceConfig }).config;
-      setWorkspaceConfig(merged);
-      const enabledPacks = new Set(merged.enabledToolPacks ?? []);
-      setPacks((prev) => prev.map((p) => ({ ...p, enabled: enabledPacks.has(p.name) })));
-    }
-  };
+  const writeOverrides = useCallback(
+    async (overrides: Record<string, boolean>) => {
+      if (!workspaceId) return;
+      setPackBusy(true);
+      try {
+        const res = await client.updateWorkspaceConfig({ workspaceId, config: { abilityOverrides: overrides } });
+        if (res && 'config' in res && res.config) {
+          setWorkspaceConfig(res.config);
+          setConfigVersion((v) => v + 1);
+        }
+      } finally {
+        setPackBusy(false);
+      }
+    },
+    [workspaceId],
+  );
 
-  const applySkillToggles = async (names: string[], enable: boolean, key: string) => {
-    if (!workspaceId) return;
-    setBusyKey(key);
-    try {
-      const enabledSkills = new Set(workspaceConfig.enabledSkills);
-      const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
-      if (enable) {
-        for (const name of names) {
-          enabledSkills.add(name);
-          for (const p of SKILL_PACK_MAP[name] ?? []) enabledToolPacks.add(p);
-        }
-      } else {
-        for (const name of names) enabledSkills.delete(name);
-        const keptByOthers = new Set<string>();
-        for (const other of enabledSkills) {
-          for (const p of SKILL_PACK_MAP[other] ?? []) keptByOthers.add(p);
-        }
-        for (const name of names) {
-          for (const p of SKILL_PACK_MAP[name] ?? []) {
-            if (!keptByOthers.has(p)) enabledToolPacks.delete(p);
+  const handleTogglePack = useCallback(
+    (key: string, enable: boolean) => {
+      void writeOverrides({ ...workspaceConfig.abilityOverrides, [key]: enable });
+    },
+    [writeOverrides, workspaceConfig.abilityOverrides],
+  );
+
+  const skillToPacks = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const pack of packsResult?.packs ?? []) {
+      for (const skill of pack.skillMetas) map[skill.name] = skill.toolPacks;
+    }
+    return map;
+  }, [packsResult]);
+
+  const handleToggleSkills = useCallback(
+    async (names: string[], enable: boolean) => {
+      if (!workspaceId || names.length === 0) return;
+      setSkillBusy(true);
+      try {
+        const enabledSkills = new Set(workspaceConfig.enabledSkills);
+        const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
+        if (enable) {
+          for (const name of names) {
+            enabledSkills.add(name);
+            for (const p of skillToPacks[name] ?? []) enabledToolPacks.add(p);
+          }
+        } else {
+          for (const name of names) enabledSkills.delete(name);
+          const keptByOthers = new Set<string>();
+          for (const other of enabledSkills) {
+            for (const p of skillToPacks[other] ?? []) keptByOthers.add(p);
+          }
+          for (const name of names) {
+            for (const p of skillToPacks[name] ?? []) {
+              if (!keptByOthers.has(p)) enabledToolPacks.delete(p);
+            }
           }
         }
+        const res = await client.updateWorkspaceConfig({
+          workspaceId,
+          config: {
+            enabledSkills: Array.from(enabledSkills),
+            enabledToolPacks: Array.from(enabledToolPacks),
+          },
+        });
+        if (res && 'config' in res && res.config) {
+          setWorkspaceConfig(res.config);
+          setConfigVersion((v) => v + 1);
+        }
+      } finally {
+        setSkillBusy(false);
       }
-      const res = await client.updateWorkspaceConfig({
-        workspaceId,
-        config: {
-          enabledSkills: Array.from(enabledSkills),
-          enabledToolPacks: Array.from(enabledToolPacks),
-        },
-      });
-      applyConfigResult(res);
-    } finally {
-      setBusyKey(null);
-    }
-  };
+    },
+    [skillToPacks, workspaceConfig, workspaceId],
+  );
 
-  const handleToggleSkill = (name: string, enable: boolean) =>
-    applySkillToggles([name], enable, name);
-
-  const handleToggleDomain = (domainId: string, skillNames: string[], enable: boolean) =>
-    applySkillToggles(skillNames, enable, `domain:${domainId}`);
-
-  const handleJumpToPack = (server: string) => {
-    const domain = domainViews.find((d) => d.packs.some((p) => p.server === server));
-    if (!domain) return;
-    setExpandedDomains((prev) => ({ ...prev, [domain.id]: true }));
-    setExpandedPacks((prev) => ({ ...prev, [server]: true }));
-    setHighlightServer(server);
-  };
-
+  const packs = packsResult?.packs ?? [];
+  const systemBehaviors = packsResult?.systemBehaviors ?? [];
   const activeWorkspace = workspaces.find((w) => w.id === workspaceId) ?? null;
+
+  const packEnabled = useCallback(
+    (pack: AbilityPackView) => workspaceConfig.abilityOverrides?.[pack.key] ?? pack.defaultEnabled,
+    [workspaceConfig.abilityOverrides],
+  );
+
+  const selectedPack = selectedKey === '__system__' ? null : (packs.find((p) => p.key === selectedKey) ?? null);
+  const selectedIsSystem = selectedKey === '__system__';
+
   const noWorkspace = workspaceId === null;
 
   if (loading) {
     return (
-      <div className="mx-auto w-full max-w-[1600px] px-6 py-6">
-        <div className="flex items-center justify-center h-40">
-          <div className="text-sm text-muted-foreground">加载中...</div>
-        </div>
+      <div className="flex items-center justify-center h-40">
+        <div className="text-sm text-muted-foreground">加载中...</div>
       </div>
     );
   }
 
+  if (selectedIsSystem) {
+    return <SystemBehaviorDetail behaviors={systemBehaviors} onBack={() => setSelectedKey(null)} />;
+  }
+
+  if (selectedPack) {
+    return (
+      <AbilityPackDetailPage
+        pack={selectedPack}
+        workspace={activeWorkspace}
+        workspaceId={workspaceId}
+        config={workspaceConfig}
+        packEnabled={packEnabled(selectedPack)}
+        packBusy={packBusy}
+        skillBusy={skillBusy}
+        configVersion={configVersion}
+        onBack={() => setSelectedKey(null)}
+        onTogglePack={(enable) => handleTogglePack(selectedPack.key, enable)}
+        onToggleSkill={(name, enable) => void handleToggleSkills([name], enable)}
+      />
+    );
+  }
+
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-6 py-6 space-y-4">
-      <div>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="px-6 py-6 space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
           <h2 className="text-lg font-semibold">能力</h2>
-          <Select
-            value={workspaceId ?? undefined}
-            onValueChange={(v) => void handleWorkspaceChange(v)}
-            disabled={workspaces.length === 0}
-          >
-            <SelectTrigger size="sm" className="w-[200px]" aria-label="选择工作区">
-              <SelectValue
-                placeholder={workspaces.length === 0 ? '暂无工作区' : '选择工作区'}
-              />
-            </SelectTrigger>
-            <SelectContent>
-              {workspaces.map((w) => (
-                <SelectItem key={w.id} value={w.id}>
-                  {w.name}
-                  {w.is_default ? '（默认）' : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            能力包 = 提示词段 + 工具组 + Skill 的组合；点击卡片查看详情与挂载情况
+            {activeWorkspace ? `，当前编辑：${activeWorkspace.name}` : ''}
+            ，修改后需重启会话生效。
+          </p>
         </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          按能力域总览 Skill 与工具包，整体开关控制域内全部 Skill
-          {activeWorkspace ? `（当前编辑：${activeWorkspace.name}）` : ''}
-          ，修改后需重启会话生效。
-        </p>
+        <Select
+          value={workspaceId ?? undefined}
+          onValueChange={(v) => void handleWorkspaceChange(v)}
+          disabled={workspaces.length === 0}
+        >
+          <SelectTrigger size="sm" className="w-[200px]" aria-label="选择工作区">
+            <SelectValue placeholder={workspaces.length === 0 ? '暂无工作区' : '选择工作区'} />
+          </SelectTrigger>
+          <SelectContent>
+            {workspaces.map((w) => (
+              <SelectItem key={w.id} value={w.id}>
+                {w.name}
+                {w.is_default ? '（默认）' : ''}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {noWorkspace && (
-        <p className="text-sm text-amber-600 dark:text-amber-400">请先在工作区管理创建工作区后再挂载能力。</p>
+        <p className="text-sm text-amber-600 dark:text-amber-400">请先在工作区管理创建工作区后再配置能力。</p>
+      )}
+      {!packsResult && (
+        <p className="text-sm text-destructive">能力注册表读取失败，请重启应用重试。</p>
       )}
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {domainViews.map((view) => (
-          <div key={view.id} className={view.packs.length >= 2 ? 'xl:col-span-2' : undefined}>
-            <AbilityDomainCard
-              view={view}
-              busyKey={busyKey}
-              disabled={noWorkspace}
-              expanded={expandedDomains[view.id] ?? true}
-              onToggleExpand={() =>
-                setExpandedDomains((prev) => ({
-                  ...prev,
-                  [view.id]: !(prev[view.id] ?? true),
-                }))
-              }
-              expandedPacks={expandedPacks}
-              onTogglePackExpand={(server) =>
-                setExpandedPacks((prev) => ({ ...prev, [server]: !prev[server] }))
-              }
-              highlightServer={highlightServer}
-              onSkillDetail={setDetailSkill}
-              onToggleSkill={handleToggleSkill}
-              onToggleDomain={(enable) =>
-                handleToggleDomain(
-                  view.id,
-                  view.skills.map((s) => s.name),
-                  enable,
-                )
-              }
-              onToolClick={setDetailTool}
-              onJumpToPack={handleJumpToPack}
-            />
-          </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {packs.map((pack) => (
+          <AbilityPackCard
+            key={pack.key}
+            pack={pack}
+            enabled={packEnabled(pack)}
+            disabled={noWorkspace}
+            busy={packBusy}
+            onToggle={(enable) => handleTogglePack(pack.key, enable)}
+            onOpen={() => setSelectedKey(pack.key)}
+          />
         ))}
+        <button
+          type="button"
+          onClick={() => setSelectedKey('__system__')}
+          className="rounded-lg border border-dashed bg-muted/10 p-4 text-left transition-colors hover:border-primary/50 hover:bg-muted/20 flex flex-col gap-2"
+          aria-label="打开系统行为详情"
+        >
+          <div className="flex items-start gap-3">
+            <div className="rounded-md bg-muted/60 p-2 shrink-0">
+              <SYSTEM_BEHAVIOR_ICON className="w-5 h-5 text-foreground/80" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-semibold truncate">系统行为</span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">系统</span>
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
+                结构性注入段：组上下文、子会话契约、Profile 索引，不可关闭。
+              </p>
+            </div>
+          </div>
+          <div>
+            <span className="text-[10px] text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5">
+              提示词段 {systemBehaviors.length}
+            </span>
+          </div>
+        </button>
       </div>
-
-      {domainViews.length === 0 && (
-        <p className="text-sm text-muted-foreground">未发现任何 Skill 模板。</p>
-      )}
-
-      <AbilityResidentSection
-        segments={segments}
-        groupByServer={groupByServer}
-        onSegmentClick={setDetailSegment}
-        onToolClick={setDetailTool}
-      />
-
-      <SkillDetailDialog skill={detailSkill} onClose={() => setDetailSkill(null)} />
-      <ToolDetailDialog tool={detailTool} onClose={() => setDetailTool(null)} />
-      <SegmentDetailDialog segment={detailSegment} onClose={() => setDetailSegment(null)} />
     </div>
   );
 }

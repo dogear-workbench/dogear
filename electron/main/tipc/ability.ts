@@ -25,6 +25,8 @@ import { isRetiredBuiltinTask, loadTasks } from '../services/scheduler/plan-stor
 
 const t = tipc.create();
 
+export type { AbilityPackType };
+
 /** 段模板展示元数据（段全文只读，跟随代码版本） */
 export interface AbilitySegmentMeta {
   key: SystemPromptSegmentKey;

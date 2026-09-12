@@ -551,7 +551,7 @@ export default function SettingsPage() {
 
         {/* ── Tab: 能力 ── */}
         <TabsContent value="abilities" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <AbilityTab local={local} setLocal={setLocal} />
+          <AbilityTab />
         </TabsContent>
 
         {/* ── Tab: 模型方案 ── */}

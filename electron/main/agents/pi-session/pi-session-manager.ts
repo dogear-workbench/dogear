@@ -369,6 +369,15 @@ export class PiSessionManager extends EventEmitter {
     }
   }
 
+  /** 工作区配置（能力包开关等）变更后对标定工作区的活跃会话标脏，下轮 sendMessage 前重走 start() 消费新配置 */
+  markWorkspaceSessionsDirty(workspaceId: string): void {
+    for (const session of this.sessions.values()) {
+      if (session.getWorkspaceId() === workspaceId) {
+        session.markSnapshotDirty();
+      }
+    }
+  }
+
   /**
    * 设置快照域变更分发：permissionMode 走热 setter，其余命中域对受影响会话标脏，
    * 各会话在下轮 sendMessage（idle）前自行重建，不无差别杀会话。

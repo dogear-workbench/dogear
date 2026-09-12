@@ -11,7 +11,7 @@
 - [x] [Step 1: 能力注册表与配置扩展](./step1-registry.md) — 新建注册表（10 包 + 结构性段元数据 + resolveAbilities），WorkspaceConfig 加 abilityOverrides
 - [x] [Step 2: pi-session 接入注册表](./step2-session.md) — 拼装与工具组注册改查包生效结果，规则文件受开关，组上下文按协作包裁剪
 - [x] [Step 3: IPC 路由](./step3-ipc.md) — getAbilityPacks / getAbilityMounts，确认 agent.md 读写复用
-- [ ] [Step 4: 能力页两级重构](./step4-ui.md) — 首页卡片网格 + 详情页左右分栏 + 挂载情况 + 规则文件内嵌编辑，删旧组件
+- [x] [Step 4: 能力页两级重构](./step4-ui.md) — 首页卡片网格 + 详情页左右分栏 + 挂载情况 + 规则文件内嵌编辑，删旧组件
 - [ ] [Step 5: 入口收编与验证](./step5-cleanup.md) — 全局规则入口迁移、旧硬编码清理、build/lint/纯净模式冒烟
 
 ## 全局决策

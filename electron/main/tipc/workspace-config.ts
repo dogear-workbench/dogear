@@ -4,6 +4,7 @@ import {
   updateWorkspaceConfig,
   type WorkspaceConfig,
 } from '../services/workspace-config-service.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
 const t = tipc.create();
 
@@ -25,6 +26,9 @@ export const workspaceConfigRouter = {
     .action(async ({ input }) => {
       try {
         const config = await updateWorkspaceConfig(input.workspaceId, input.config);
+        if (input.config.abilityOverrides) {
+          getPiSessionManager().markWorkspaceSessionsDirty(input.workspaceId);
+        }
         return { config };
       } catch (error) {
         console.error('更新工作区配置失败:', error);
