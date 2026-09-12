@@ -27,3 +27,14 @@
 - **会话名跳转口径**：与 NotificationCenter 的 `openOrFocusConversation(conv, topic:{groupId}:{id})` 一致，本地 store 命中后兜底 `client.getByWorkspaceId`
 - 主进程改动需 `build:electron` + 重启 dev 验证；前端走 Vite 热重载。每步 lint + tsc 零错误后 commit，只 add 当前 step 涉及文件
 - 旧会话里已落盘的裸 task 消息（无 sender 标签）保持原用户气泡渲染，不做数据迁移
+
+## 完成总结
+
+四个 step 全部完成，commit 链：a6a51fbc → 9c9e8c41 → 24e0d008 → 289e6ebd。lint 0 errors（94 warnings，低于 round3 基线 98——死代码清理顺带消掉 4 个）、渲染层 tsc 与 build:electron 零错误、delegation 测试 29 pass、notification service 单测 9 pass。
+
+- **Step 1**：消息流卡视觉统一——展开正文 text-xs、底色全中性 bg-secondary/60（类型色只在竖线/徽章）、完整目标/来源行、整行宽收起条（CommCollapseBar 共用件）
+- **Step 2**：派遣渲染统一——startChild 初始 task 包 dispatch sender 标签（子会话首条任务不再显示为用户气泡，根因修复）；CreateSession/CreateSessionBatch 渲染为派遣卡并入消息流；会话名可点跳转（SessionPeerLink + jumpToPeerConversation）；顺带清掉 ToolBlock 不可达的 SubAgentCardRenderer 死链
+- **Step 3**：通知中心收敛——移除子会话交付/终态两类通知（注入父会话的卡保留）；补单条删除/一键清空/已读 24h 启动自动过期 + 9 个单测
+- **Step 4**：双向连接——申报卡状态徽章可点定位任务；任务条目「执行会话」入口（execSessionId 实为 conversationId，按 c.id 反查）
+
+**遗留**（非阻塞）：运行时 GUI 全链路验证（申报卡徽章定位 → 任务条目跳会话）留待用户重启应用后按 step4 交付文档尾部清单确认；pruneExpired 仅启动时执行一次（计划口径内）；派遣卡 sessionId 解析正则与 delegation-tools 返回文案耦合（改文案需同步 SessionDispatchCard）。
