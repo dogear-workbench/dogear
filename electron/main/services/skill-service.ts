@@ -6,7 +6,7 @@
  *   - builtin：resources/skill-templates/<name>/SKILL.md（只读模板源）
  *   - custom：.dogear/skills/<name>/SKILL.md（全局目录，与工作区无关）
  *   - user：~/.claude/skills/<name>/SKILL.md
- * - 列出所有 skill 并标注 source + enabled（经工作区 config 的 enabledSkills 数组控制，写入方在能力页 skill 细开关）
+ * - 列出所有 skill 并标注 source + enabled（经工作区 config 的 enabledSkills 数组控制，写入方在能力页 skill 子开关）
  */
 
 import path from 'path';

@@ -7,9 +7,9 @@
 - `page.tsx` — 设置页（ui-store settingsOpen 驱动的全屏 overlay，非路由；dirty 三按钮 confirm；顶栏保存/取消/保存并重启会话；下划线式 Tabs：基础/能力/模型方案/工作区管理/子会话派遣/关于）
 - `ExtensionStatusLine.tsx` — 受控浏览器小节的扩展状态行（连接状态/正文预览/授权域名只读 chip；ExtensionStatus 类型源在 browser.md）
 - `AbilityTab.tsx` — 能力标签页编排：列表态（工作区 Select+合并规则卡+能力包卡+系统行为卡）/详情态按 selectedKey 路由；包开关联动 enabledSkills+enabledToolPacks
-- `ability/` — 能力页两级结构组件：RulesPackCard/RulesPackDetailPage（工作区+全局规则合并卡与双编辑器）、AbilityPackCard/AbilityPackDetailPage（skill 型包 chips 切换+SKILL.md 渲染+细开关；段型包 SegmentBlock/CoreProfileView）、AbilityPackSidebar（总开关+工具组+挂载情况）、SystemBehaviorDetail、BasicToolsSection
+- `ability/` — 能力页两级结构组件：RulesPackCard/RulesPackDetailPage（工作区+全局规则合并卡与双编辑器）、AbilityPackCard/AbilityPackDetailPage（skill 型包 chips 切换+SKILL.md 渲染+子开关；段型包 SegmentBlock/CoreProfileView）、AbilityPackSidebar（总开关+工具组+挂载情况）、AbilityMountsSection（挂载矩阵行列表：主会话/子会话各 Profile/任务执行会话 + 三条后台任务行——定时自定义任务按 enabledToolPacks 动态计算、话题状态抽取/文章解析恒 false；scheduler 行徽标「后台任务」）、SystemBehaviorDetail、BasicToolsSection
 - `WorkspaceManagementTab.tsx` — 工作区管理（列表/删除/孤儿恢复/环境依赖检查）
-- `SubAgentTab.tsx` — 子会话派遣标签页：Profile 列表（非 default 启用 Switch）+ ProfileEditor（名称/模型/超时/基础工具/能力域/Skill）
+- `SubAgentTab.tsx` + `subagent/AbilityBlockRow.tsx` — 子会话派遣标签页：Profile 列表（非 default 启用 Switch）+ ProfileEditor（名称/模型/超时/基础工具/Skill）；能力域按能力包块化渲染（数据源 `client.getAbilityPacks()`，失败显示错误行+重试）：memory/article/web-mcp 单开关、stock/code-workflow/自定义 skill 块开关+细选 Checkbox Popover、browser 块开关（任一通道即 on）+双通道细选；写回走 enabledAbilities 原字段（数组只增删包内名，存量混入名保留），交付通信为固定启用行
 - `pi-model-row.tsx` — 模型清单行：ID 行内编辑、窗口徽标手填（parseContextInput 解析 1M/200K 写法）
 - `FetchModelsDialog.tsx` — 上游模型拉取弹窗（探测兼容端点模型列表，勾选后合并入清单）
 
@@ -29,7 +29,7 @@
 
 ## 服务与类型
 
-- `services/settings-service.ts` — 设置 JSON 存储（`.dogear/settings.json`）+ normalizeSettings 幂等迁移（含 failover 链维护、SubAgent 能力域缺键补齐、旧浏览器解析 Profile 描述识别迁移）
+- `services/settings-service.ts` — 设置 JSON 存储（`.dogear/settings.json`）+ normalizeSettings 幂等迁移（含 failover 链维护、SubAgent 能力域缺键补齐、browser-parse 内置模板按全集补缺失键——存量 Profile 自动并入新增的 web/article、旧描述按 LEGACY 已知值识别迁移）
 - `services/workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`），增删触发 workspace-watcher 起停
 - `services/workspace-service.ts` — 获取默认工作区（thin wrapper）
 - `types/settings.ts` — AppSettings/ModelProfile/ModelTier/SubAgentProfile/permissionMode 等与 DEFAULT_SETTINGS

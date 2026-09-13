@@ -221,7 +221,7 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       case 'web-mcp':
         return '包开启即挂载联网搜索工具（需在设置页配置 GLM API Key，未配置时调用返回提示）';
       default:
-        return '包开启；包内 Skill 与工具包受工作区细开关控制';
+        return '包开启；包内 Skill 与工具包受工作区子开关控制';
     }
   }
   switch (pack.key) {
@@ -239,7 +239,7 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
     case 'web-mcp':
       return '仅主会话挂载联网搜索工具；子会话本期不挂载';
     default:
-      return '包开启；包内 Skill 与工具包受工作区细开关控制';
+      return '包开启；包内 Skill 与工具包受工作区子开关控制';
   }
 }
 
