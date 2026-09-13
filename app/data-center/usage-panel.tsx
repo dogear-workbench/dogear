@@ -17,6 +17,8 @@ import { resolveModelLabel } from '@/lib/model-selection';
 import { useSettingsStore } from '@/stores/settings-store';
 import { TurnDetailList } from '@/components/usage/TurnDetailList';
 import { formatTokens } from '@/components/agent-chat/usage-badge/usage-utils';
+import { lookupEntryPricing, calcCost, formatCost } from '@/components/agent-chat/usage-badge/pricing-utils';
+import type { AppSettings } from '@/types/settings';
 import type { Conversation, Workspace } from '@/types/electron-api';
 
 type PeriodKey = 'today' | 'd7' | 'd30' | 'all';
@@ -47,6 +49,22 @@ interface PeriodStats {
   outputTokens: number;
   cacheReadInputTokens: number;
   lastTimestamp: number;
+}
+
+/** 会话费用（近似口径）：conv.modelSelection 单价 × 显示口径 token；无可用价返回 null 不计 */
+function rowCost(
+  conv: Conversation,
+  tokens: { inputTokens: number; outputTokens: number; cacheReadTokens: number },
+  settings: AppSettings,
+): number | null {
+  const selection = conv.modelSelection ?? settings.ai.defaultModelSelection;
+  if (!selection) return null;
+  const pricing = lookupEntryPricing(settings, selection);
+  if (!pricing) return null;
+  return calcCost(
+    { input: tokens.inputTokens, output: tokens.outputTokens, cacheRead: tokens.cacheReadTokens },
+    pricing,
+  );
 }
 
 function fmtLastActive(ts: number): string {
@@ -157,12 +175,16 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
           const totalTokens = summary
             ? summary.totalInputTokens + summary.totalOutputTokens + summary.totalCacheReadTokens
             : null;
-          return {
-            conv,
-            tokens: totalTokens,
+          const tokens = {
             inputTokens: summary?.totalInputTokens ?? 0,
             outputTokens: summary?.totalOutputTokens ?? 0,
             cacheReadTokens: summary?.totalCacheReadTokens ?? 0,
+          };
+          return {
+            conv,
+            tokens: totalTokens,
+            ...tokens,
+            cost: totalTokens != null ? rowCost(conv, tokens, settings) : null,
             lastActive: conv.updated_at,
           };
         });
@@ -172,17 +194,21 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
       .map((s) => {
         const conv = convById.get(s.conversationId);
         if (!conv) return null;
-        return {
-          conv,
-          tokens: s.inputTokens + s.outputTokens + s.cacheReadInputTokens,
+        const tokens = {
           inputTokens: s.inputTokens,
           outputTokens: s.outputTokens,
           cacheReadTokens: s.cacheReadInputTokens,
+        };
+        return {
+          conv,
+          tokens: s.inputTokens + s.outputTokens + s.cacheReadInputTokens,
+          ...tokens,
+          cost: rowCost(conv, tokens, settings),
           lastActive: s.lastTimestamp,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);
-  }, [conversations, stats, convById, isAllPeriod]);
+  }, [conversations, stats, convById, isAllPeriod, settings]);
 
   const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
@@ -193,14 +219,16 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
     let outputTokens = 0;
     let cacheReadTokens = 0;
     let sessionCount = 0;
+    let cost: number | null = null;
     for (const r of rows) {
       if (r.tokens == null) continue;
       inputTokens += r.inputTokens;
       outputTokens += r.outputTokens;
       cacheReadTokens += r.cacheReadTokens;
       sessionCount += 1;
+      if (r.cost != null) cost = (cost ?? 0) + r.cost;
     }
-    return { tokens: inputTokens + outputTokens + cacheReadTokens, inputTokens, outputTokens, cacheReadTokens, sessionCount };
+    return { tokens: inputTokens + outputTokens + cacheReadTokens, inputTokens, outputTokens, cacheReadTokens, sessionCount, cost };
   }, [rows]);
 
   const showLoading = isAllPeriod ? loading : loading || statsLoading;
@@ -223,6 +251,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
       <p className="mb-4 mt-1 text-sm text-muted-foreground">
         按时段汇总 token 消耗（计费口径：input + output + 缓存读，跨轮累加）。
         时间页显示该时段内的用量，「全部」为会话全量累计；点击会话展开逐轮明细。
+        费用按模型价格换算（API 口径，设置中可编辑）。
       </p>
 
       <Tabs value={period} onValueChange={(v) => { setPeriod(v as PeriodKey); setPage(1); }}>
@@ -254,6 +283,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
               <span>· 输入 {formatTokens(summary.inputTokens)}</span>
               <span>· 输出 {formatTokens(summary.outputTokens)}</span>
               <span>· 缓存读 {formatTokens(summary.cacheReadTokens)}</span>
+              {summary.cost != null && <span>· ≈{formatCost(summary.cost)}</span>}
               <span>· {summary.sessionCount} 个会话</span>
             </div>
           )}
@@ -302,8 +332,15 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
                         : ' · 尚无用量'}
                     </div>
                   </div>
-                  <span className="shrink-0 tabular-nums text-sm">
-                    {row.tokens != null ? formatTokens(row.tokens) : '—'}
+                  <span className="shrink-0 text-right">
+                    <span className="block tabular-nums text-sm">
+                      {row.tokens != null ? formatTokens(row.tokens) : '—'}
+                    </span>
+                    {row.cost != null && (
+                      <span className="block tabular-nums text-[10px] text-muted-foreground">
+                        {formatCost(row.cost)}
+                      </span>
+                    )}
                   </span>
                 </button>
                 {expanded && (

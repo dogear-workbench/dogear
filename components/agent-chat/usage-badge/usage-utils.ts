@@ -26,6 +26,8 @@ export interface ContextInfo {
   percentage: number;
   label: string;
   nearCompact: boolean;
+  /** 上下文构成估算（Σ 恒等于 used）；旧快照为空数组，UI 判空不渲染构成块 */
+  categories: Array<{ name: string; tokens: number }>;
 }
 
 export function resolveContext(
@@ -33,7 +35,7 @@ export function resolveContext(
   autoCompactPercent = 80,
 ): ContextInfo {
   if (!latestContext || latestContext.totalTokens <= 0) {
-    return { used: null, limit: 0, percentage: 0, label: '', nearCompact: false };
+    return { used: null, limit: 0, percentage: 0, label: '', nearCompact: false, categories: [] };
   }
   const used = latestContext.totalTokens;
   const limit = latestContext.maxTokens;
@@ -44,6 +46,7 @@ export function resolveContext(
     percentage,
     label: limit > 0 ? formatLabel(limit) : '',
     nearCompact: limit > 0 && percentage >= autoCompactPercent,
+    categories: latestContext.categories ?? [],
   };
 }
 

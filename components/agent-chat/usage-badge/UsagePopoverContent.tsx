@@ -1,8 +1,9 @@
 import type { ConversationUsage, ConversationUsageEntry } from '@/types/usage';
 import type { ContextInfo } from './usage-utils';
 import { formatTokens, cacheHitRate } from './usage-utils';
+import { sumSessionCost, formatCost } from './pricing-utils';
+import { useSettingsStore } from '@/stores/settings-store';
 import { UsageSummaryHeader } from './UsageSummaryHeader';
-import { UsageByTool } from './UsageByTool';
 import { TurnDetailList } from '@/components/usage/TurnDetailList';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ChevronRight } from 'lucide-react';
@@ -53,12 +54,14 @@ function ModelBucketRows({ entry }: { entry: ConversationUsageEntry }) {
   );
 }
 
-/** Popover 主容器：头部上下文 / 会话累计（计费口径，对齐用量页）/ 当前轮概览 / 每轮明细折叠 / 工具 chips */
+/** Popover 主容器：头部上下文构成 / 会话累计（计费口径，对齐用量页）/ 当前轮概览 / 每轮明细折叠 */
 export function UsagePopoverContent({ usage, context, lastEntry, isStreaming, conversationId }: Props) {
+  const settings = useSettingsStore((s) => s.settings);
   const totals = usage.totals;
   const hitRate = Math.round(cacheHitRate(totals) * 100);
   const sessionTotal = totals.inputTokens + totals.outputTokens + totals.cacheReadInputTokens;
   const llmCallCount = usage.entries.reduce((n, e) => n + (e.numTurns || 0), 0);
+  const sessionCost = sumSessionCost(usage.entries, settings);
 
   return (
     <div className="divide-y">
@@ -70,6 +73,7 @@ export function UsagePopoverContent({ usage, context, lastEntry, isStreaming, co
         </div>
         <div className="tabular-nums text-muted-foreground">
           {totals.turnCount} 轮 · {llmCallCount} 次模型调用 · 缓存命中 {hitRate}%
+          {sessionCost != null && ` · ${formatCost(sessionCost)}`}
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 tabular-nums text-muted-foreground">
           <Row label="Input" value={formatTokens(totals.inputTokens)} />
@@ -108,7 +112,6 @@ export function UsagePopoverContent({ usage, context, lastEntry, isStreaming, co
           </CollapsibleContent>
         </Collapsible>
       )}
-      <UsageByTool usage={usage} />
     </div>
   );
 }
