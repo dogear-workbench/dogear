@@ -16,6 +16,7 @@ import { createSearchToolDefs } from '../../agents/pi-session/search-tools.js';
 import { createMemoryToolDefs } from '../../agents/tools/memory-tools.js';
 import { createArticleToolDefs } from '../../agents/tools/article-tools.js';
 import { createBrowserToolDefs } from '../../agents/tools/browser-tools.js';
+import { createWebMcpToolDefs } from '../../agents/tools/web-mcp-tools.js';
 import { createStockToolDefs } from '../../agents/tools/stock-tools.js';
 import { createStockAnalysisToolDefs } from '../../agents/tools/stock-analysis-tools.js';
 import { createAnnouncementToolDefs } from '../../agents/tools/stock-announcement-tools.js';
@@ -47,6 +48,9 @@ export async function buildCustomToolSet(
   }
   if (enabledPacks.has('browser')) {
     toolDefs.push(...createBrowserToolDefs({ workspacePath, workspaceId }));
+  }
+  if (enabledPacks.has('web-mcp')) {
+    toolDefs.push(...createWebMcpToolDefs({ fallbackHint: enabledPacks.has('browser') ? 'browser-tools' : 'none' }));
   }
   if (enabledPacks.has('stock-quote')) {
     toolDefs.push(...createStockToolDefs());
