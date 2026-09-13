@@ -1,6 +1,6 @@
 ---
 name: doc-sync
-description: 检查并同步 `docs/codebase-map.md`，保持索引与代码一致。在以下场景自动唤起：完成一个独立功能/重构后、新增了 store/service/IPC 路由/Agent 工具/页面后、移动或拆分了较大模块后。也可由用户主动调用 /doc-sync。
+description: 检查并同步 `docs/codebase-map/` 分域代码地图（index.md 路由 + 功能文件），保持索引与代码一致。在以下场景自动唤起：完成一个独立功能/重构后、新增了 store/service/IPC 路由/Agent 工具/页面后、移动或拆分了较大模块后。也可由用户主动调用 /doc-sync。
 ---
 
 # Doc Sync
@@ -13,7 +13,7 @@ description: 检查并同步 `docs/codebase-map.md`，保持索引与代码一�
 
 **值得更新**（继续 Step 2）：
 - 新增了文件：page / component / store / service / tipc 路由 / Agent 工具
-- 删除或重命名了已在 `docs/codebase-map.md` 中提及的文件
+- 删除或重命名了已在 `docs/codebase-map/` 地图中提及的文件
 - 拆分或合并了大模块（影响代码地图的归类）
 
 **不值得更新**（直接结束）：
@@ -24,10 +24,12 @@ description: 检查并同步 `docs/codebase-map.md`，保持索引与代码一�
 
 ### Step 2 · 执行
 
-Read `docs/codebase-map.md`，精准编辑需要改动的行：
-- 新文件是否需要加入索引？（只列**有结构意义**的文件：service / store / 主要组件 / 路由 handler，辅助 utility 不必）
+Read `docs/codebase-map/index.md`，按功能词路由定位目标功能文件，精准编辑该文件中需要改动的行：
+- 新文件是否需要加入对应功能文件？（只列**有结构意义**的文件：service / store / 主要组件 / 路由 handler，辅助 utility 不必）
 - 删除/重命名的文件是否清理了对应行？
-- 模块归类是否还准确？
+- 模块归类是否还准确？（条目只在主功能文件出现，次要相关文件留一行指针）
+
+条目格式：`路径` — 一句话职责，一行内说清，不写实现细节。硬约束（唯一数据源 / 不许绕过的通道 / 易错语义）写进该功能文件尾部 `## 注意` 区，不写进条目行。
 
 每改一处都要**精准编辑**——不要顺手重写整段，只动需要动的行。
 

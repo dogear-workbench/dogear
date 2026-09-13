@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 迁移改写地图为 9 个分域文件](./step1-migrate-map.md) — 读 130KB 原文按功能域归属改写，条目压缩成一句话职责，删原文件
-- [ ] [Step 2: 改造两个 skill 指引](./step2-skill-guides.md) — codebase-map 改为 index 路由动线，doc-sync 改为按路由精准编辑
+- [x] [Step 2: 改造两个 skill 指引](./step2-skill-guides.md) — codebase-map 改为 index 路由动线，doc-sync 改为按路由精准编辑
 - [ ] [Step 3: 验证检索动线与规范](./step3-verify.md) — 真实功能词走 agent 动线抽查命中、查重复条目、验证 doc-sync 写入路由
 
 ## 全局决策
