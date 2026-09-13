@@ -12,7 +12,7 @@
 - [x] [Step 2: 工具与提示词层](./step2-tools-prompts.md) — web-mcp-tools 三态描述 + 分工引导段 + pi-session 挂载与拼装
 - [x] [Step 3: 定时任务补齐](./step3-scheduler.md) — KNOWN_TOOL_PACKS 白名单 + custom-agent-tools web-mcp 分支
 - [x] [Step 4: 前端能力页](./step4-frontend.md) — SubAgentTab 能力域勾选框 + 类型镜像 + AbilityTab 总开关联动
-- [ ] [Step 5: 整体验证与文档同步](./step5-verify.md) — lint/build + 手动动线 + codebase-map 同步
+- [x] [Step 5: 整体验证与文档同步](./step5-verify.md) — lint/build + 手动动线 + codebase-map 同步
 
 ## 全局决策
 
@@ -22,3 +22,15 @@
 - **normalize 迁移模式**：复用 settings-service.ts:302 既有「内置 Profile 缺键补齐」——default 与 browser-parse 两个内置 id 缺 `web` 键补 `true`，显式 `false` 尊重；非布尔剔除对齐 extension 写法
 - **分工段**：主版含派遣动线（webSearch/webReader 直查 → 派浏览器解析 → 本地调研派普通子会话）；子版两行精简（快档优先 + browser 工具备选），子会话不出现「派子会话」指引
 - 不写注释（项目规范）；不新增单测文件，仅更新 ability-registry.test.ts 既有用例
+
+## 完成总结（2026-09-13）
+
+五个 step 全部落地并逐 step commit（50bf44e4 / 72a68f2d / 9bdc3485 / d5d704e1 / 本 step）：
+
+1. **web-mcp 子会话细闸**：`enabledAbilities.web` 全链路（类型 + default/浏览器解析模板预勾 + normalize 迁移 + resolveAbilities 细闸），web-mcp 去 mainOnly；连带修复两个测试文件的既有断言
+2. **工具与提示词层**：createWebMcpToolDefs 按 fallbackHint 三态生成描述尾段（防死链）；web-research-guidance 分工段主/子两版；pi-session 子会话挂载 + 主会话 hasBrowser 双条件传参；补 registerToolGroup placeholder 防设置页空显示
+3. **定时任务补齐**：KNOWN_TOOL_PACKS 白名单 + buildCustomToolSet web-mcp 分支，fallbackHint 二态传参，UI 零改动自动列出
+4. **前端能力页**：镜像类型 + SubAgentTab「联网搜索」勾选框与计数 + AbilityTab 有 skill 包总开关 enable 一键补齐细闸（只补不删，关不动细闸）
+5. **验证与文档**：lint/build:electron 全绿；全量测试 309 pass（唯一 fail 为 pty-service 既有环境噪音）；手动动线以代码级验证替代，UI 实操待用户抽验；codebase-map 八处条目同步
+
+**执行期发现（与本计划无关）**：HEAD 既有 bug——SystemBehaviorDetail.tsx 值 import 主进程 tipc/ability 把 pty-service → @xterm/headless（上游 module 字段指向不存在文件）拉进浏览器构建，vite build:renderer 硬失败；修复（本地常量化）已在工作区未提交的模型管理改动中，本计划为隔离无关改动将其 stash，完成后恢复
