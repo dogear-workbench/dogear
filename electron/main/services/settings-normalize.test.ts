@@ -305,6 +305,26 @@ test('normalizePiModels：已是规范形状时输出不变（幂等）', () => 
   expect(normalizePiModels(input)).toEqual(input);
 });
 
+test('normalizePiModels：三字段均为有限非负数的 pricing 保留，含 0 值', () => {
+  expect(normalizePiModels([
+    { id: 'glm-5.3', pricing: { input: 8, output: 28, cacheRead: 2 } },
+    { id: 'free-model', pricing: { input: 0, output: 0, cacheRead: 0 } },
+  ])).toEqual([
+    { id: 'glm-5.3', pricing: { input: 8, output: 28, cacheRead: 2 } },
+    { id: 'free-model', pricing: { input: 0, output: 0, cacheRead: 0 } },
+  ]);
+});
+
+test('normalizePiModels：pricing 缺字段/非法值/负数/非对象时整体丢弃', () => {
+  expect(normalizePiModels([
+    { id: 'a', pricing: { input: 1, output: 2 } },
+    { id: 'b', pricing: { input: '1', output: 2, cacheRead: 0 } },
+    { id: 'c', pricing: { input: -1, output: 2, cacheRead: 0 } },
+    { id: 'd', pricing: { input: NaN, output: 2, cacheRead: 0 } },
+    { id: 'e', pricing: 'cheap' },
+  ])).toEqual([{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }, { id: 'e' }]);
+});
+
 test('normalizePiModels：正整数 contextWindow 保留', () => {
   expect(normalizePiModels([{ id: 'glm-5.3', contextWindow: 358400 }])).toEqual([
     { id: 'glm-5.3', contextWindow: 358400 },

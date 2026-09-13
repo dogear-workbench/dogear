@@ -20,6 +20,7 @@ import {
   type PiPermissionMode,
   type BasicToolPermissions,
   type BasicToolPermission,
+  type ModelPricing,
 } from './settings-types.js';
 
 const { app, nativeTheme } = electron;
@@ -82,18 +83,20 @@ export async function loadSettings(): Promise<AppSettings> {
 }
 
 /**
- * 把任意 piModels 原始值归一化为 { id, label?, contextWindow? } 对象数组：
- * string 元素转 { id }；对象元素仅保留非空 string 的 id、非空 string 的 label 与正整数的 contextWindow；
+ * 把任意 piModels 原始值归一化为 { id, label?, contextWindow?, pricing? } 对象数组：
+ * string 元素转 { id }；对象元素仅保留非空 string 的 id、非空 string 的 label、正整数的 contextWindow
+ * 与三字段均为有限非负数的 pricing（整体保留或整体丢弃）；
  * 按 id 去重保首现顺序；非法元素丢弃；非数组输入返回空数组。
  */
-export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number }> {
+export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number; pricing?: ModelPricing }> {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const result: Array<{ id: string; label?: string; contextWindow?: number }> = [];
+  const result: Array<{ id: string; label?: string; contextWindow?: number; pricing?: ModelPricing }> = [];
   for (const item of raw) {
     let id: string;
     let label: string | undefined;
     let contextWindow: number | undefined;
+    let pricing: ModelPricing | undefined;
     if (typeof item === 'string') {
       id = item;
     } else if (item && typeof item === 'object') {
@@ -104,15 +107,23 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
       if (typeof obj.contextWindow === 'number' && Number.isInteger(obj.contextWindow) && obj.contextWindow > 0) {
         contextWindow = obj.contextWindow;
       }
+      if (obj.pricing && typeof obj.pricing === 'object') {
+        const p = obj.pricing as Record<string, unknown>;
+        const fields = ['input', 'output', 'cacheRead'] as const;
+        if (fields.every(f => typeof p[f] === 'number' && Number.isFinite(p[f]) && p[f] >= 0)) {
+          pricing = { input: p.input as number, output: p.output as number, cacheRead: p.cacheRead as number };
+        }
+      }
     } else {
       continue;
     }
     if (id === '') continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    const entry: { id: string; label?: string; contextWindow?: number } = { id };
+    const entry: { id: string; label?: string; contextWindow?: number; pricing?: ModelPricing } = { id };
     if (label !== undefined) entry.label = label;
     if (contextWindow !== undefined) entry.contextWindow = contextWindow;
+    if (pricing !== undefined) entry.pricing = pricing;
     result.push(entry);
   }
   return result;

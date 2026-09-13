@@ -9,6 +9,7 @@ import { XAI_MODELS } from '@earendil-works/pi-ai/providers/xai.models';
 import { GOOGLE_MODELS } from '@earendil-works/pi-ai/providers/google.models';
 import { KIMI_CODING_MODELS } from '@earendil-works/pi-ai/providers/kimi-coding.models';
 import type { Api, Model } from '@earendil-works/pi-ai';
+import type { ModelPricing } from '@/types/settings';
 
 export const FALLBACK_CONTEXT_WINDOW = 200_000;
 
@@ -48,6 +49,30 @@ export function parseContextInput(input: string): number | undefined {
 
 export function lookupContextWindow(modelId: string): number | undefined {
   return CONTEXT_WINDOWS[modelId];
+}
+
+/** 已知模型默认价（元/百万 tokens）；目录里没有 glm-5.3 系（用户手填 id），DeepSeek 取空闲档价 */
+const MODEL_PRICING: Record<string, ModelPricing> = {
+  'glm-5.3': { input: 8, output: 28, cacheRead: 2 },
+  'glm-5.3-flash': { input: 0.8, output: 2.8, cacheRead: 0.23 },
+  'deepseek-flash': { input: 1, output: 4, cacheRead: 0.02 },
+  'deepseek-v4-pro': { input: 4.5, output: 13.5, cacheRead: 0.15 },
+};
+
+const PRICING_ALIASES: Record<string, string> = {
+  'deepseek-v4.1-flash': 'deepseek-flash',
+  'deepseek-v4-flash': 'deepseek-flash',
+  'deepseek-v4-pro-0813': 'deepseek-v4-pro',
+};
+
+/** 小写并剥尾部上下文变体段，让 'DeepSeek-V4-Pro[1m]' 等价 'deepseek-v4-pro' */
+function canonicalPricingId(modelId: string): string {
+  return modelId.trim().toLowerCase().replace(/\[[^\]]*\]$/, '');
+}
+
+export function lookupPricing(modelId: string): ModelPricing | undefined {
+  const id = canonicalPricingId(modelId);
+  return MODEL_PRICING[id] ?? MODEL_PRICING[PRICING_ALIASES[id]];
 }
 
 /** 204800→'204.8K'，262144→'262.1K'，200000→'200K'，1000000→'1M' */

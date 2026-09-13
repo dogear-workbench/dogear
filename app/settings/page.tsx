@@ -715,7 +715,7 @@ export default function SettingsPage() {
                         </Button>
                       </div>
                       <p className="text-xs text-muted-foreground">
-                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID）；点击右侧窗口徽标可手填上下文窗口（缺省查表，未识别按 200K）。保存后在 ModelSelector 下拉里出现。
+                        该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID）；点击右侧窗口徽标可手填上下文窗口（缺省查表，未识别按 200K）；点击价格徽标可填价格（元/百万 tokens，用于费用估算，留空用目录默认价）。保存后在 ModelSelector 下拉里出现。
                       </p>
                       <div className="space-y-2">
                         {(profile.piModels ?? []).length === 0 && (
