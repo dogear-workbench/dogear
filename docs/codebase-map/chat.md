@@ -7,7 +7,6 @@
 - `app/page.tsx` — 主工作区三栏布局（会话列表+聊天+伴随面板）；常驻挂载 NotesPanel/DataCenterPage/会话 tabs 按 activeTabId 切 display；哨兵 tab 下不渲染 CompanionPanel
 - `app/session-window/page.tsx` — 独立会话窗口（文件树+聊天+预览），selectConversation 成功后上报全局焦点
 - `app/workbench-window/page.tsx` — 伴随工作台独立窗口（主进程单例），订阅 focusedConversationChanged 跟随全局焦点，跨工作区整窗切换
-- `app/debug/page.tsx` — 开发调试窗口（集成 AgentChat 测试）
 
 ## agent-chat 组件（components/agent-chat/）
 

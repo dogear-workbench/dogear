@@ -36,7 +36,6 @@
 - `background-store.ts` — 话题状态卡读写（`<wsData>/groups/<groupId>/background.md`：topic 版本链+六类条目+sourcesSeen；旧结构读时迁移）；组目录结构唯一权威源
 - `transcript-cleaner.ts` — 会话 JSONL 确定性去噪（剥工具结果/系统行/思考块，保留用户+助手文字）
 - `source-fidelity.ts` — 状态卡引用保真度校验（uuid_not_found/wrong_session/session_missing 三类）
-- `notes-store.ts` — 组共享区 `_notes/` 读取（供 agent 复用 working agent 阶段总结）
 - `review-skill-service.ts` — 历史 no-op 遗留（空实现仅为启动序列兼容）
 - `memory-service.ts` / `memory-recall` / `memory-fs` / `memory-indexer` / `memory-loader` / `memory-types` — 工作区主题记忆（检索/索引/文件层）
 
