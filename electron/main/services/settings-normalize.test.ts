@@ -204,7 +204,7 @@ test('旧 subAgent 结构（含 modelSelection/timeoutMinutes/cachePolicy/loadCo
   expect(s.subAgent.profiles[0]!.id).toBe('default');
   expect(s.subAgent.profiles[0]!.timeoutMinutes).toBe(30);
   expect(s.subAgent.profiles[0]!.enabledBasicTools).toEqual(['read', 'write', 'edit', 'bash', 'Glob', 'Grep']);
-  expect(s.subAgent.profiles[0]!.enabledAbilities).toEqual({});
+  expect(s.subAgent.profiles[0]!.enabledAbilities).toEqual({ web: true });
   expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
   const sub = s.subAgent as unknown as Record<string, unknown>;
   expect('cachePolicy' in sub).toBe(false);
@@ -249,7 +249,7 @@ test('缺失内置浏览器解析 Profile 时自动补齐，已有 Profile 保�
   expect(s.subAgent.profiles).toHaveLength(2);
   expect(s.subAgent.profiles[0]).toEqual({ id: 'p1', name: '自定义', description: '', timeoutMinutes: 15, enabledBasicTools: ['read'], enabledAbilities: {} });
   expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
-  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ browser: true, extension: true });
+  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true });
   expect(normalizeSettings(s)).toBe(false);
 });
 
@@ -263,8 +263,8 @@ test('enabledAbilities.browser 非布尔值被清洗，布尔值保留', () => {
   const s2 = baseSettings();
   s2.subAgent.profiles[0]!.enabledAbilities = { browser: true };
   const changed2 = normalizeSettings(s2);
-  expect(changed2).toBe(false);
-  expect(s2.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true });
+  expect(changed2).toBe(true);
+  expect(s2.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true, web: true });
 });
 
 test('normalizePiModels：存量 string[] 迁移为 { id } 对象数组', () => {

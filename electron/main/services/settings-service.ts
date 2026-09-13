@@ -299,6 +299,10 @@ export function normalizeSettings(settings: AppSettings): boolean {
             delete ab.extension;
             changed = true;
           }
+          if ('web' in ab && typeof ab.web !== 'boolean') {
+            delete ab.web;
+            changed = true;
+          }
           // 内置 Profile 升级新增能力键时，旧数据只补缺失键；显式 false 是用户关闭，不覆盖
           if (p.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID) {
             // 内置描述变更只迁移已知旧值，用户自定义描述不动
@@ -307,6 +311,15 @@ export function normalizeSettings(settings: AppSettings): boolean {
               changed = true;
             }
             const builtinAb = createBrowserParseSubAgentProfile().enabledAbilities as Record<string, unknown>;
+            for (const key of Object.keys(builtinAb)) {
+              if (!(key in ab)) {
+                ab[key] = builtinAb[key];
+                changed = true;
+              }
+            }
+          }
+          if (p.id === 'default') {
+            const builtinAb = createDefaultSubAgentProfile().enabledAbilities as Record<string, unknown>;
             for (const key of Object.keys(builtinAb)) {
               if (!(key in ab)) {
                 ab[key] = builtinAb[key];

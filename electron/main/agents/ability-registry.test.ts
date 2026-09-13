@@ -49,6 +49,14 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     }
   });
 
+  test('web-mcp 子会话细闸：profile.web 显式 true 才生效，main 不受 Profile 约束', () => {
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { 'web-mcp': true } };
+    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ web: true }) }).has('web-mcp')).toBe(true);
+    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({}) }).has('web-mcp')).toBe(false);
+    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ web: false }) }).has('web-mcp')).toBe(false);
+    expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null }).has('web-mcp')).toBe(true);
+  });
+
   test('profile 停用不影响包级判定（可见性在派遣侧控制）', () => {
     const active = resolveAbilities(
       { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} },

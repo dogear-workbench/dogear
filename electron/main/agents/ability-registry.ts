@@ -25,7 +25,7 @@ export interface AbilityPack {
    */
   toolGroups?: string[];
   skills?: string[];
-  /** 仅主会话生效（子会话不挂载工具），如联网搜索 MCP 包 */
+  /** 仅主会话生效（子会话不挂载工具） */
   mainOnly?: boolean;
   defaultEnabled: boolean;
   icon?: string;
@@ -133,7 +133,6 @@ export const ABILITY_PACKS: AbilityPack[] = [
     description: 'GLM 联网搜索与网页读取工具包（webSearchPrime / webReader），API 直出快档，与浏览器工具互补；需在设置页配置 GLM Coding Plan API Key',
     type: 'skill-packs',
     toolGroups: ['web-mcp'],
-    mainOnly: true,
     defaultEnabled: false,
   },
   {
@@ -189,6 +188,7 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
       if (pack.key === 'stock' && ab.stock !== true) continue;
       if (pack.key === 'article' && ab.article !== true) continue;
       if (pack.key === 'browser' && ab.browser !== true) continue;
+      if (pack.key === 'web-mcp' && ab.web !== true) continue;
     }
 
     result.add(pack.key);

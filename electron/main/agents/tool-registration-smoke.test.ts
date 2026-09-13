@@ -173,15 +173,22 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
     expect(names).not.toContain('bigmodel__webSearch');
   });
 
-  test('mainOnly：子会话场景包不生效', () => {
-    const profile = createDefaultSubAgentProfile();
+  test('web-mcp 子会话细闸：default Profile 预勾生效，web 未勾不生效', () => {
     const active = resolveAbilities(configWebMcp(), {
       role: 'sub',
       hasWorkspace: true,
       groupId: GROUP_ID,
-      profile,
+      profile: createDefaultSubAgentProfile(),
     });
-    expect(active.has('web-mcp')).toBe(false);
+    expect(active.has('web-mcp')).toBe(true);
+
+    const off = resolveAbilities(configWebMcp(), {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: GROUP_ID,
+      profile: { ...createDefaultSubAgentProfile(), enabledAbilities: { web: false } },
+    });
+    expect(off.has('web-mcp')).toBe(false);
   });
 });
 
