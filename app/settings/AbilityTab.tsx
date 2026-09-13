@@ -89,11 +89,14 @@ export function AbilityTab() {
     (key: string, enable: boolean) => {
       if (!workspaceId) return;
       const overrides = { ...workspaceConfig.abilityOverrides, [key]: enable };
-      // 无 Skill 的纯工具包（如联网搜索）：包开关直接联动 enabledToolPacks 细闸；
-      // 有 Skill 的包细闸仍由 Skill 开关联动（handleToggleSkills）
       const pack = (packsResult?.packs ?? []).find((p) => p.key === key);
-      const linkedPacks = (pack?.toolGroupMetas ?? []).filter((g) => g.pack).map((g) => g.id);
-      if (pack && pack.skillMetas.length === 0 && linkedPacks.length > 0) {
+      if (!pack) {
+        void persistConfig({ abilityOverrides: overrides });
+        return;
+      }
+      const linkedPacks = (pack.toolGroupMetas ?? []).filter((g) => g.pack).map((g) => g.id);
+      // 无 Skill 的纯工具包（如联网搜索）：包开关直接联动 enabledToolPacks 细闸（开加关删）
+      if (pack.skillMetas.length === 0 && linkedPacks.length > 0) {
         const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
         for (const name of linkedPacks) {
           if (enable) enabledToolPacks.add(name);
@@ -102,9 +105,23 @@ export function AbilityTab() {
         void persistConfig({ abilityOverrides: overrides, enabledToolPacks: Array.from(enabledToolPacks) });
         return;
       }
+      // 有 Skill 的包：开总闸一键补齐 enabledSkills + enabledToolPacks（只补不删）；
+      // 关总闸只写 overrides 不动细闸（细闸仍由 handleToggleSkills 管理）
+      if (pack.skillMetas.length > 0 && enable) {
+        const enabledSkills = new Set(workspaceConfig.enabledSkills);
+        const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
+        for (const meta of pack.skillMetas) enabledSkills.add(meta.name);
+        for (const id of linkedPacks) enabledToolPacks.add(id);
+        void persistConfig({
+          abilityOverrides: overrides,
+          enabledSkills: Array.from(enabledSkills),
+          enabledToolPacks: Array.from(enabledToolPacks),
+        });
+        return;
+      }
       void persistConfig({ abilityOverrides: overrides });
     },
-    [packsResult, persistConfig, workspaceConfig.abilityOverrides, workspaceConfig.enabledToolPacks, workspaceId],
+    [packsResult, persistConfig, workspaceConfig.abilityOverrides, workspaceConfig.enabledSkills, workspaceConfig.enabledToolPacks, workspaceId],
   );
 
   const skillToPacks = useMemo(() => {

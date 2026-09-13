@@ -61,6 +61,7 @@ function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
   if (ab.article) n++;
   if (ab.skills?.length) n++;
   if (ab.customSkills?.length) n++;
+  if (ab.web) n++;
   if (ab.browser) n++;
   if (ab.extension) n++;
   return n;
@@ -76,13 +77,14 @@ function toggleInArray(arr: string[] | undefined, name: string): string[] {
 // ── Profile Editor ───────────────────────────────────
 
 const BOOLEAN_ABILITIES: {
-  key: 'memory' | 'stock' | 'article' | 'browser' | 'extension';
+  key: 'memory' | 'stock' | 'article' | 'web' | 'browser' | 'extension';
   label: string;
   desc: string;
 }[] = [
   { key: 'memory', label: '记忆系统', desc: 'dogear__RecallMemory / dogear__SaveMemory / dogear__ForgetMemory' },
   { key: 'stock', label: '股票分析', desc: '股票分析工具包' },
   { key: 'article', label: '文章', desc: '文章解析工具包' },
+  { key: 'web', label: '联网搜索', desc: 'bigmodel__webSearch / bigmodel__webReader（GLM MCP 快档，API 直出）' },
   { key: 'browser', label: '浏览器', desc: 'dogear-browser 浏览器工具包' },
   { key: 'extension', label: '浏览器扩展', desc: 'dogear-extension 扩展工具包（真实浏览器已连接标签页，仅限已授权域名）' },
 ];

@@ -94,6 +94,7 @@ export interface SubAgentEnabledAbilities {
   customSkills?: string[];
   browser?: boolean;
   extension?: boolean;
+  web?: boolean;
 }
 
 export interface SubAgentProfile {

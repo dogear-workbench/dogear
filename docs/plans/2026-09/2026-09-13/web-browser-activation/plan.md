@@ -11,7 +11,7 @@
 - [x] [Step 1: 主进程类型与注册表](./step1-types-registry.md) — `enabledAbilities.web` 类型 + 模板 + normalize 迁移 + ability-registry 细闸 + 单测
 - [x] [Step 2: 工具与提示词层](./step2-tools-prompts.md) — web-mcp-tools 三态描述 + 分工引导段 + pi-session 挂载与拼装
 - [x] [Step 3: 定时任务补齐](./step3-scheduler.md) — KNOWN_TOOL_PACKS 白名单 + custom-agent-tools web-mcp 分支
-- [ ] [Step 4: 前端能力页](./step4-frontend.md) — SubAgentTab 能力域勾选框 + 类型镜像 + AbilityTab 总开关联动
+- [x] [Step 4: 前端能力页](./step4-frontend.md) — SubAgentTab 能力域勾选框 + 类型镜像 + AbilityTab 总开关联动
 - [ ] [Step 5: 整体验证与文档同步](./step5-verify.md) — lint/build + 手动动线 + codebase-map 同步
 
 ## 全局决策
