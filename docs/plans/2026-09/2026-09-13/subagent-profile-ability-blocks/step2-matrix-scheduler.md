@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 挂载矩阵补任务维度
-status: pending
+status: done
 ---
 
 ## 目标
@@ -33,10 +33,12 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：① 前端按计划二选一取「kind 徽标映射」：system 徽标按 kind 分支（scheduler → 「后台任务」，其余「系统预设」），行顺序由后端 rows 决定追加在 executor 后，不新起分组；② web-mcp 无 skills 字段，命中 reason 不追加「skill 方法论文本不注入」（按 pack.skills?.length 条件追加）；③ schedulerCustomAgentCell default 分支对非 skill-packs 兜底「后台任务不加载该能力包」（当前 12 包全覆盖不可达，防未来新增包）；④ 目视验证无法启动 Electron UI，改为纯逻辑推演 15 项断言（含 extension 残留特判、web-mcp 无注记、空数组全 false）全 PASS，UI 目视留给 step4 验收。
 - 改动文件清单：
+  - `electron/main/tipc/ability.ts`：AbilityMountSceneKind 加 'scheduler'；新增 schedulerPackHitCell / schedulerCustomAgentCell；buildMountRows 加 enabledPacks（config.enabledToolPacks）并在 executor 后追加三条 system 行
+  - `app/settings/ability/AbilityMountsSection.tsx`：system 徽标按 kind 映射（scheduler → 「后台任务」）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：schedulerCustomAgentCell(pack, enabledPacks) → { loaded, reason }；定时任务行语义 = 只查 enabledToolPacks 不查 abilityOverrides（buildCustomToolSet 真源），与其它行的「包开关已关闭」分支语义不同；行 id：custom-agent / state-extract / parse-article，kind 均为 'scheduler'，system 均为 true
+- 下个 step 该从哪里继续：step3（ProfileEditor 块化）按 plan.md 顺序继续；step4 验收时在能力页包详情目视三条后台行（本工作区 enabledToolPacks 空 → skill-packs 行均 false「工作区未启用该域任何工具包」，memory 行 true）
+- 待办或已知限制：定时任务行不查包总开关是「以实际装载为准」的设计意图（buildCustomToolSet 不读 abilityOverrides），UI 上同一包可能出现主会话行 false（总开关关）而后台行 true（子开关开）的表面不一致，reason 已按事实陈述，若用户困惑可在 step4 验收后考虑补引导文案

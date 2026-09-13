@@ -87,11 +87,11 @@ export interface ResidentToolGroupMeta {
 /** 常驻工具组：绑定工作区即注册，不可关，前端标注触发条件（任务系统已归笔记包，不再常驻） */
 const RESIDENT_GROUP_IDS = ['dogear-history'] as const;
 
-export type AbilityMountSceneKind = 'main' | 'sub-default' | 'profile' | 'executor';
+export type AbilityMountSceneKind = 'main' | 'sub-default' | 'profile' | 'executor' | 'scheduler';
 
 export interface AbilityMountSceneRow {
   kind: AbilityMountSceneKind;
-  /** 场景稳定标识：main / sub-default / executor / Profile id */
+  /** 场景稳定标识：main / sub-default / executor / custom-agent / state-extract / parse-article / Profile id */
   id: string;
   label: string;
   /** 系统预设固定行：加载行为由代码定死，用户无 Profile 子开关可改 */
@@ -256,6 +256,49 @@ function profileFilterReason(pack: AbilityPack, profile: SubAgentProfile): strin
   return on ? `Profile 已勾选${label}能力` : `Profile 未勾选${label}能力`;
 }
 
+/** 定时自定义任务装载的 skill-packs 包按 toolGroups ∩ enabledToolPacks 计算，对齐 buildCustomToolSet（残留旧 key 静默忽略） */
+function schedulerPackHitCell(
+  pack: AbilityPack,
+  enabledPacks: Set<string>,
+): { loaded: boolean; reason: string } {
+  if (pack.key === 'browser') {
+    return enabledPacks.has('browser')
+      ? { loaded: true, reason: '已启用工具包：browser；扩展通道不随定时任务装载，skill 方法论文本不注入' }
+      : { loaded: false, reason: '工作区未启用该域任何工具包（扩展通道不随定时任务装载）' };
+  }
+  const hit = (pack.toolGroups ?? []).filter((g) => enabledPacks.has(g));
+  if (hit.length === 0) return { loaded: false, reason: '工作区未启用该域任何工具包' };
+  const skillNote = pack.skills?.length ? '；skill 方法论文本不注入' : '';
+  return { loaded: true, reason: `已启用工具包：${hit.join('、')}${skillNote}` };
+}
+
+/** 定时自定义任务行的 loaded/reason 以 buildCustomToolSet 实际装载为准（不查包总开关，只查 enabledToolPacks） */
+function schedulerCustomAgentCell(
+  pack: AbilityPack,
+  enabledPacks: Set<string>,
+): { loaded: boolean; reason: string } {
+  switch (pack.key) {
+    case 'memory':
+      return { loaded: true, reason: '定时任务固定装载记忆工具（autonomous 契约），不受包开关约束' };
+    case 'workspace-rules':
+    case 'global-rules':
+    case 'core-profile':
+      return { loaded: false, reason: '后台任务不注入规则与画像段' };
+    case 'notes':
+      return { loaded: false, reason: '笔记与任务工具为主会话专属' };
+    case 'group-context':
+      return { loaded: false, reason: '后台任务无会话组上下文' };
+    case 'agent-collab':
+      return { loaded: false, reason: '后台任务无派遣与交付通道' };
+    case 'code-workflow':
+      return { loaded: false, reason: '定时任务无 skill 挂载机制' };
+    default:
+      return pack.type === 'skill-packs'
+        ? schedulerPackHitCell(pack, enabledPacks)
+        : { loaded: false, reason: '后台任务不加载该能力包' };
+  }
+}
+
 function buildMountRows(
   pack: AbilityPack,
   config: WorkspaceConfig,
@@ -311,6 +354,33 @@ function buildMountRows(
     system: true,
     loaded: mainActive.has(pack.key),
     reason: enabled ? sceneReason(pack, 'executor', hasWorkspace) : '包开关已关闭',
+  });
+
+  const enabledPacks = new Set(config.enabledToolPacks);
+  const customAgentCell = schedulerCustomAgentCell(pack, enabledPacks);
+  rows.push({
+    kind: 'scheduler',
+    id: 'custom-agent',
+    label: '定时自定义任务',
+    system: true,
+    loaded: customAgentCell.loaded,
+    reason: customAgentCell.reason,
+  });
+  rows.push({
+    kind: 'scheduler',
+    id: 'state-extract',
+    label: '话题状态抽取',
+    system: true,
+    loaded: false,
+    reason: '固定提示词 + emit_state_increment 单工具，不挂载能力包',
+  });
+  rows.push({
+    kind: 'scheduler',
+    id: 'parse-article',
+    label: '文章解析',
+    system: true,
+    loaded: false,
+    reason: 'Claude Agent SDK 独立装配（SKILL.md 提示词），不经过能力包体系',
   });
 
   return rows;

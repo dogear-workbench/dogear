@@ -27,7 +27,9 @@ function SceneRow({ row }: { row: AbilityMountSceneRow }) {
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-xs font-medium text-foreground/90">{row.label}</span>
           {row.system && (
-            <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">系统预设</span>
+            <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">
+              {row.kind === 'scheduler' ? '后台任务' : '系统预设'}
+            </span>
           )}
           {row.profileDisabled && (
             <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">已停用</span>
