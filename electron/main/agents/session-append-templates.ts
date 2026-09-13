@@ -13,7 +13,8 @@ export type SystemPromptSegmentKey =
   | 'memory-guidance'
   | 'notes-discipline'
   | 'sub-agent-contract'
-  | 'main-agent-delegation';
+  | 'main-agent-delegation'
+  | 'web-research-guidance';
 
 /** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
 export const MEMORY_GUIDANCE_APPEND =
@@ -86,6 +87,19 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
   );
 }
 
+/** 主会话联网调研分工（web-mcp 或 browser 包任一生效，仅 role='main' 注入）。 */
+export const WEB_RESEARCH_GUIDANCE_MAIN_APPEND =
+  '\n## 联网调研分工\n' +
+  '- 快档直查：检索与静态文章直接用 bigmodel__webSearch / bigmodel__webReader（API 直出），不派会话\n' +
+  '- 深度浏览（翻页拼接、JS 渲染、页面交互、登录态）派「浏览器解析」子会话（profile: browser-parse），浏览器通道独占、并行调研请串行派遣\n' +
+  '- 纯本地代码/文档调研派普通子会话，不占浏览器独占通道';
+
+/** 子会话联网调研分工（同触发条件，仅 role='sub' 注入）；子会话不能派单，不出现派遣指引。 */
+export const WEB_RESEARCH_GUIDANCE_SUB_APPEND =
+  '\n## 联网调研分工\n' +
+  '- 快档优先：检索与静态文章用 bigmodel__webSearch / bigmodel__webReader（API 直出）\n' +
+  '- 需 JS 渲染、页面交互或登录态时用本会话 dogear__browser__* 工具';
+
 /** 组上下文段（buildGroupContextPrompt 的输出示例） */
 const GROUP_CONTEXT_EXAMPLE =
   '## 当前会话组上下文\n' +
@@ -143,6 +157,14 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       category: 'sub-agent',
       template: MAIN_AGENT_DELEGATION_APPEND + '\n\n' + buildSubAgentProfileIndex([createDefaultSubAgentProfile()]),
       triggerDescription: '仅主会话（role=\'main\'）且属于某个会话组时注入。告诉主 agent 派遣子会话后结束回合即可，交付/终态作为新消息自动唤醒，并列出可用的子会话 Profile 供选择。',
+      isDynamic: false,
+    },
+    {
+      key: 'web-research-guidance',
+      label: '联网调研分工',
+      category: 'tool-guide',
+      template: WEB_RESEARCH_GUIDANCE_MAIN_APPEND,
+      triggerDescription: 'web-mcp 或 browser 包任一生效时按会话角色注入：主会话版含派遣动线（快档直查 → 派「浏览器解析」子会话 → 本地调研派普通子会话）；子会话版精简两行（快档优先 + dogear__browser__* 备选），不出现派单指引。',
       isDynamic: false,
     },
   ];

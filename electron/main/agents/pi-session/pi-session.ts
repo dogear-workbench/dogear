@@ -28,7 +28,7 @@ import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND } from '../session-append-templates.js';
+import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND } from '../session-append-templates.js';
 import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
@@ -559,11 +559,13 @@ export class PiSession extends EventEmitter {
 
     if (isSubAgent) {
       if (activeAbilities.has('memory')) promptParts.push(MEMORY_GUIDANCE_APPEND);
+      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) promptParts.push(WEB_RESEARCH_GUIDANCE_SUB_APPEND);
       if (this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
     } else {
       if (activeAbilities.has('memory')) promptParts.push(MEMORY_GUIDANCE_APPEND);
       // executor 跳过存卡纪律是段级裁剪，不受包开关约束（工具组仍注册），保留现状
       if (activeAbilities.has('notes') && !this.config.executor) promptParts.push(NOTES_DISCIPLINE_APPEND);
+      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) promptParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
       if (activeAbilities.has('agent-collab')) {
         promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
         promptParts.push(buildSubAgentProfileIndex(appSettings.subAgent?.profiles ?? []));
@@ -677,9 +679,12 @@ export class PiSession extends EventEmitter {
         case 'stock-picking':
           toolDefs.push(...this.registerPack(pack.name, createStockPickingToolDefs()));
           break;
-        case 'web-mcp':
-          toolDefs.push(...this.registerPack(pack.name, createWebMcpToolDefs()));
+        case 'web-mcp': {
+          // hasBrowser 必须与实际挂载一致：browser 细闸残留时主会话不会真挂 browser 工具，只判总闸会复现死链
+          const hasBrowser = activeAbilities.has('browser') && this.config.enabledToolPacks.includes('browser');
+          toolDefs.push(...this.registerPack(pack.name, createWebMcpToolDefs({ fallbackHint: hasBrowser ? 'browser-tools' : 'browser-subagent' })));
           break;
+        }
         default:
           break;
       }
@@ -742,6 +747,7 @@ export class PiSession extends EventEmitter {
    * - dogear-memory：memory 包生效（含 Profile 的 memory===true 细闸，由 resolveAbilities 并集）
    * - stock/article/browser 工具包：对应能力包生效（Profile 细闸并入包解析）
    * - extension 工具组：browser 包生效且 Profile extension===true 双闸
+   * - web-mcp 工具包：web 包生效（Profile 细闸已并入 resolveAbilities）
    * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 细闸——通用检索是基础设施）
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
    * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 细闸）
@@ -785,6 +791,11 @@ export class PiSession extends EventEmitter {
     // extension：并入 browser 包后是双闸——browser 包生效（Profile 细闸已并入 resolveAbilities）+ extension===true
     if (activeAbilities.has('browser') && ab.extension === true) {
       toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
+    }
+
+    // web-mcp 工具包：web 包生效（Profile 细闸已并入 resolveAbilities）
+    if (activeAbilities.has('web-mcp')) {
+      toolDefs.push(...this.registerPack('web-mcp', createWebMcpToolDefs({ fallbackHint: activeAbilities.has('browser') ? 'browser-tools' : 'none' })));
     }
 
     // dogear-history：工作区即注册，通用检索基础设施，不查 Profile 细闸
