@@ -4,6 +4,8 @@ export interface ModelSelection {
   tier: string;
 }
 
+export type PiWireApi = 'anthropic-messages' | 'openai-responses' | 'openai-completions';
+
 export interface ModelProfile {
   id: string;
   name: string;
@@ -13,7 +15,7 @@ export interface ModelProfile {
   /** 自动压缩触发比例（50–95），缺省 80；阈值 = 上下文窗口 × 百分比 */
   autoCompactPercent?: number;
   /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
-  piWireApi?: 'anthropic-messages' | 'openai-responses';
+  piWireApi?: PiWireApi;
   /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id；contextWindow 为手填生效窗口，优先于目录查表 */
   piModels?: Array<{ id: string; label?: string; contextWindow?: number }>;
 }

@@ -63,3 +63,6 @@ update-server/
 __pycache__/
 *.pyc
 /reports
+
+# 临时调研文件
+/tmp/

@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronRight, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { SYSTEM_MOUNTS_PACK_KEY, type AbilitySystemBehaviorView, type ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
+import type { AbilitySystemBehaviorView, ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
+
+// 主进程真源：electron/main/tipc/ability.ts 的 SYSTEM_MOUNTS_PACK_KEY；值导入会把整个主进程依赖图拉进浏览器构建
+const SYSTEM_MOUNTS_PACK_KEY = '__system__';
 import { SYSTEM_BEHAVIOR_ICON } from './pack-meta';
 import { BasicToolsSection } from './BasicToolsSection';
 import { AbilityMountsSection } from './AbilityMountsSection';

@@ -1,8 +1,10 @@
 import { createModels, createProvider } from '@earendil-works/pi-ai';
 import { anthropicMessagesApi } from '@earendil-works/pi-ai/api/anthropic-messages.lazy';
 import { openAIResponsesApi } from '@earendil-works/pi-ai/api/openai-responses.lazy';
+import { openAICompletionsApi } from '@earendil-works/pi-ai/api/openai-completions.lazy';
 import { ANTHROPIC_MODELS } from '@earendil-works/pi-ai/providers/anthropic.models';
 import { OPENAI_MODELS } from '@earendil-works/pi-ai/providers/openai.models';
+import { ZAI_CODING_CN_MODELS } from '@earendil-works/pi-ai/providers/zai-coding-cn.models';
 import type { Api, Model, ModelThinkingLevel } from '@earendil-works/pi-ai';
 import { FALLBACK_CONTEXT_WINDOW, lookupCatalogEntry } from './model-catalog.js';
 import {
@@ -10,6 +12,7 @@ import {
   type AppSettings,
   type ModelProfile,
   type ModelSelection,
+  type PiWireApi,
 } from '../../services/settings-types.js';
 
 export interface PiModelResult {
@@ -19,13 +22,17 @@ export interface PiModelResult {
   thinkingLevel: ModelThinkingLevel;
 }
 
-function resolveWireApi(profile: ModelProfile): 'anthropic-messages' | 'openai-responses' {
+function resolveWireApi(profile: ModelProfile): PiWireApi {
   return profile.piWireApi ?? 'anthropic-messages';
 }
 
-function lookupCatalogModel(wireApi: 'anthropic-messages' | 'openai-responses', modelId: string) {
+function lookupCatalogModel(wireApi: PiWireApi, modelId: string) {
   // ModelCatalog 的键是字面量联合，按用户传入的 string 查表需要断言成 Record<string, Model<Api>>
-  const catalog = (wireApi === 'openai-responses' ? OPENAI_MODELS : ANTHROPIC_MODELS) as Record<string, Model<Api>>;
+  const catalog = (wireApi === 'openai-responses'
+    ? OPENAI_MODELS
+    : wireApi === 'openai-completions'
+      ? ZAI_CODING_CN_MODELS
+      : ANTHROPIC_MODELS) as Record<string, Model<Api>>;
   const entry = catalog[modelId];
   if (!entry) return undefined;
   return {
@@ -86,7 +93,11 @@ export function resolvePiModel(
  */
 export function buildPiModels(profile: ModelProfile) {
   const wireApi = resolveWireApi(profile);
-  const api = wireApi === 'openai-responses' ? openAIResponsesApi() : anthropicMessagesApi();
+  const api = wireApi === 'openai-responses'
+    ? openAIResponsesApi()
+    : wireApi === 'openai-completions'
+      ? openAICompletionsApi()
+      : anthropicMessagesApi();
   const models = (profile.piModels ?? []).map((m) => buildPiModel(profile, m));
   const provider = createProvider({
     id: profile.id,

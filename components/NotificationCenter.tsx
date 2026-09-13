@@ -101,7 +101,13 @@ export function NotificationCenter() {
   }
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (nextOpen) void loadNotifications();
+      }}
+    >
       <PopoverTrigger asChild>
         <Button variant="ghost" size="sm" className="relative h-8 w-8 p-0" title="消息中心">
           <Bell className="w-4 h-4" />

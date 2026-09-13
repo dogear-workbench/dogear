@@ -2,13 +2,14 @@ import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Volume2 } from 'lucide-react';
+import { ArrowLeft, Plus, Trash2, Eye, EyeOff, AlertTriangle, Volume2, RefreshCw, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConfirmStore } from '@/stores/confirm-store';
 import { useUIStore } from '@/stores/ui-store';
-import type { AppSettings, ModelProfile } from '@/types/settings';
+import type { AppSettings, ModelProfile, PiWireApi } from '@/types/settings';
 import { DEFAULT_SETTINGS, isProfileComplete } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
@@ -18,6 +19,7 @@ import { AboutTab } from './AboutTab';
 import { ModelSelector } from '@/components/ModelSelector';
 import { formatContextLabel, lookupContextWindow, resolveModelWindow } from '@/lib/pi-model-catalog';
 import { PiModelRow } from './pi-model-row';
+import { FetchModelsDialog, type UpstreamModel } from './FetchModelsDialog';
 import { FailoverSection } from './FailoverSection';
 import { formatTokens } from '@/components/agent-chat/usage-badge/usage-utils';
 import { playDogearSound } from '@/lib/dogear-sound';
@@ -186,6 +188,9 @@ export default function SettingsPage() {
     setSelectedProfileTab(id);
   };
 
+  const [fetchingModels, setFetchingModels] = useState<Record<string, boolean>>({});
+  const [fetchDialog, setFetchDialog] = useState<{ profileId: string; models: UpstreamModel[] } | null>(null);
+
   const updateProfileField = (profileId: string, updates: Partial<ModelProfile>) => {
     setLocal(prev => ({
       ...prev,
@@ -194,6 +199,41 @@ export default function SettingsPage() {
         [profileId]: { ...prev.profiles[profileId], ...updates },
       },
     }));
+  };
+
+  const handleFetchUpstreamModels = async (profileId: string) => {
+    const profile = local.profiles[profileId];
+    if (!profile) return;
+    if (!profile.baseUrl?.trim() || !profile.apiKey?.trim()) {
+      toast.error('请先填写 Base URL 和 API Key 再拉取');
+      return;
+    }
+    setFetchingModels(prev => ({ ...prev, [profileId]: true }));
+    try {
+      const result = await client.fetchUpstreamModels({
+        baseUrl: profile.baseUrl,
+        apiKey: profile.apiKey,
+        piWireApi: profile.piWireApi ?? 'anthropic-messages',
+      });
+      if (!result.ok) {
+        toast.error(`拉取失败：${result.error}`);
+        return;
+      }
+      setFetchDialog({ profileId, models: result.models });
+    } finally {
+      setFetchingModels(prev => ({ ...prev, [profileId]: false }));
+    }
+  };
+
+  const confirmFetchModels = (selected: UpstreamModel[]) => {
+    if (!fetchDialog) return;
+    const { profileId } = fetchDialog;
+    const existing = local.profiles[profileId]?.piModels ?? [];
+    const existingIds = new Set(existing.map(m => m.id));
+    const added = selected.filter(m => !existingIds.has(m.id));
+    updateProfileField(profileId, { piModels: [...existing, ...added] });
+    setFetchDialog(null);
+    toast.success(`已添加 ${added.length} 个模型到清单`);
   };
 
   const deleteProfileById = async (profileId: string) => {
@@ -645,20 +685,35 @@ export default function SettingsPage() {
                       <label className="text-sm font-medium">上游协议</label>
                       <p className="text-xs text-muted-foreground">
                         pi 客户端连接上游的线协议。anthropic-messages 走 Claude 兼容字段；
-                        openai-responses 走 OpenAI Responses API（适用于 GLM、DeepSeek、Qwen 等国产 OpenAI 兼容网关）。
+                        openai-responses 走 OpenAI Responses API（适用于 GLM、DeepSeek、Qwen 等国产 OpenAI 兼容网关）；
+                        openai-completions 走 OpenAI Chat Completions（GLM Coding Plan 端点 /api/coding/paas/v4，套餐额度）。
                       </p>
                       <select
                         className="h-9 w-full px-3 text-sm border rounded bg-background"
                         value={profile.piWireApi ?? 'anthropic-messages'}
-                        onChange={(e) => updateProfileField(id, { piWireApi: e.target.value as 'anthropic-messages' | 'openai-responses' })}
+                        onChange={(e) => updateProfileField(id, { piWireApi: e.target.value as PiWireApi })}
                       >
                         <option value="anthropic-messages">anthropic-messages（默认）</option>
                         <option value="openai-responses">openai-responses</option>
+                        <option value="openai-completions">openai-completions（GLM Coding Plan）</option>
                       </select>
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">模型清单 <span className="text-destructive">*</span></label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={fetchingModels[id] === true}
+                          onClick={() => handleFetchUpstreamModels(id)}
+                        >
+                          {fetchingModels[id]
+                            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            : <RefreshCw className="h-3.5 w-3.5" />}
+                          从上游拉取
+                        </Button>
+                      </div>
                       <p className="text-xs text-muted-foreground">
                         该 Profile 可用的模型 ID 列表，每条可另设显示名（缺省显示 ID）；点击右侧窗口徽标可手填上下文窗口（缺省查表，未识别按 200K）。保存后在 ModelSelector 下拉里出现。
                       </p>
@@ -802,6 +857,17 @@ export default function SettingsPage() {
           <AboutTab />
         </TabsContent>
       </Tabs>
+
+      {fetchDialog && (
+        <FetchModelsDialog
+          open
+          profileName={local.profiles[fetchDialog.profileId]?.name ?? fetchDialog.profileId}
+          models={fetchDialog.models}
+          existingIds={new Set((local.profiles[fetchDialog.profileId]?.piModels ?? []).map(m => m.id))}
+          onClose={() => setFetchDialog(null)}
+          onConfirm={confirmFetchModels}
+        />
+      )}
 
     </div>
   );
