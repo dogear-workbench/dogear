@@ -53,8 +53,12 @@ import { getWorkspaceConfig } from '../../services/workspace-config-service.js';
 import {
   createPiUsageAccumulator,
   accumulatePiUsage,
+  contextTotalTokens,
+  estimateMessageBuckets,
+  estimateTokens,
   extractPiContextSnapshot,
   extractPiUsageEntry,
+  type ContextCategoryDraft,
   type PiUsageAccumulator,
 } from './usage-extractor.js';
 import type { ModelSelection, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
@@ -292,6 +296,8 @@ export class PiSession extends EventEmitter {
   private currentRunUsageAccum: PiUsageAccumulator | null = null;
   // 本轮最后一条 CTX 快照的 totalTokens（message_end 时更新），agent_end 时附到 entry.lastContextTokens 后置空
   private currentRunContextTokens: number | undefined;
+  // start() 时算一次的静态上下文构成（提示词三段 + 工具定义，未校准估算值），CTX 快照时与消息桶合并后校准
+  private staticContextComposition: ContextCategoryDraft[] = [];
   private currentTurnResult: PiSessionTurnResult | null = null;
   // close() 重入锁：并发调用（如用户连点两下关闭）复用同一个收尾 Promise，
   // 避免 removeAllListeners() 之类的收尾动作被并发触发两次
@@ -548,30 +554,27 @@ export class PiSession extends EventEmitter {
       skillIndexText = formatSkillIndexForPrompt(skillEntries);
     }
 
-    // ---- 提示词拼装 ----
-    const promptParts: string[] = [
-      projectClaudeMd,
-      userClaudeMd,
-      skillIndexText,
-    ];
-    if (coreProfileText) promptParts.push(coreProfileText);
-    if (groupContextText) promptParts.push(groupContextText);
+    // ---- 提示词拼装（三分桶供上下文构成估算：agent.md / skill 索引 / 人格纪律） ----
+    const agentMdText = [projectClaudeMd, userClaudeMd].filter(Boolean).join('\n\n');
+    const personaParts: string[] = [];
+    if (coreProfileText) personaParts.push(coreProfileText);
+    if (groupContextText) personaParts.push(groupContextText);
 
     if (isSubAgent) {
-      if (activeAbilities.has('memory')) promptParts.push(MEMORY_GUIDANCE_APPEND);
-      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) promptParts.push(WEB_RESEARCH_GUIDANCE_SUB_APPEND);
-      if (this.config.subAgent) promptParts.push(subAgentContractFor(this.config.subAgent));
+      if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
+      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_SUB_APPEND);
+      if (this.config.subAgent) personaParts.push(subAgentContractFor(this.config.subAgent));
     } else {
-      if (activeAbilities.has('memory')) promptParts.push(MEMORY_GUIDANCE_APPEND);
+      if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
       // executor 跳过存卡纪律是段级裁剪，不受包开关约束（工具组仍注册），保留现状
-      if (activeAbilities.has('notes') && !this.config.executor) promptParts.push(NOTES_DISCIPLINE_APPEND);
-      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) promptParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
+      if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(NOTES_DISCIPLINE_APPEND);
+      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
       if (activeAbilities.has('agent-collab')) {
-        promptParts.push(MAIN_AGENT_DELEGATION_APPEND);
-        promptParts.push(buildSubAgentProfileIndex(appSettings.subAgent?.profiles ?? []));
+        personaParts.push(MAIN_AGENT_DELEGATION_APPEND);
+        personaParts.push(buildSubAgentProfileIndex(appSettings.subAgent?.profiles ?? []));
       }
     }
-    const systemPrompt = promptParts.filter(Boolean).join('\n\n');
+    const systemPrompt = [agentMdText, skillIndexText, ...personaParts].filter(Boolean).join('\n\n');
 
     let toolDefs: ToolDef[];
 
@@ -609,6 +612,17 @@ export class PiSession extends EventEmitter {
       onSettled: () => this.handleSettled(),
       onToolCall: (event) => this.handleToolCall(event),
     });
+
+    // 工具定义与发送口径近似：取 name/description/parameters 序列化（execute 函数不参与序列化，不进入请求体）
+    const toolsText = tools
+      .map((t) => `${t.name}\n${t.description}\n${JSON.stringify(t.parameters)}`)
+      .join('\n');
+    this.staticContextComposition = [
+      { name: '提示词·agent.md', tokens: estimateTokens(agentMdText) },
+      { name: '提示词·skill 索引', tokens: estimateTokens(skillIndexText) },
+      { name: '提示词·人格纪律', tokens: estimateTokens(personaParts.join('\n\n')) },
+      { name: '工具定义', tokens: estimateTokens(toolsText) },
+    ];
 
     this.logger.info('✅ pi 会话已创建', {
       profile: profile.name,
@@ -849,13 +863,7 @@ export class PiSession extends EventEmitter {
         const assistantMessage = event.message as AssistantMessage;
         if (!this.currentRunUsageAccum) this.currentRunUsageAccum = createPiUsageAccumulator();
         accumulatePiUsage(this.currentRunUsageAccum, assistantMessage);
-
-        const conversationId = this.config.conversationId;
-        const snapshot = extractPiContextSnapshot(assistantMessage, this.usageTurnIndex, (id) => this.resolveModelWindow(id));
-        if (conversationId && snapshot) {
-          this.currentRunContextTokens = snapshot.totalTokens;
-          this.emit('usageContext', { conversationId, snapshot });
-        }
+        this.emitContextSnapshot(assistantMessage);
       }
 
       // user/assistant 落盘完成后广播 message_id（uuid = SessionTreeEntry.id，与历史 sdkUuid 同源），
@@ -927,6 +935,45 @@ export class PiSession extends EventEmitter {
       this.currentRunUsageAccum = null;
       this.currentRunContextTokens = undefined;
     }
+  }
+
+  /**
+   * CTX 快照：同步部分记账 currentRunContextTokens（agent_end 的 emitUsageEntry 同步读它，不能等异步估算），
+   * 构成估算（buildContext 是异步读）fire-and-forget；相邻快照间隔整轮 LLM call，微任务级延迟无乱序风险。
+   * buildContext 失败时该次快照 categories 留空，快照本身照常落盘，不影响 totalTokens。
+   */
+  private emitContextSnapshot(message: AssistantMessage): void {
+    const conversationId = this.config.conversationId;
+    if (!conversationId) return;
+    if (message.errorMessage) return;
+    const usage = message.usage;
+    if (!usage) return;
+    const totalTokens = contextTotalTokens(usage);
+    this.currentRunContextTokens = totalTokens;
+    void this.emitContextSnapshotAsync(message, conversationId, totalTokens);
+  }
+
+  private async emitContextSnapshotAsync(
+    message: AssistantMessage,
+    conversationId: string,
+    totalTokens: number,
+  ): Promise<void> {
+    let composition: ContextCategoryDraft[] | undefined;
+    try {
+      const messages = await this.adapter?.getContextMessages();
+      composition = messages && messages.length > 0
+        ? [...this.staticContextComposition, ...estimateMessageBuckets(messages)]
+        : [...this.staticContextComposition];
+    } catch (err) {
+      this.logger.warn('上下文构成估算失败（本次快照 categories 留空）:', err);
+    }
+    const snapshot = extractPiContextSnapshot(
+      message,
+      this.usageTurnIndex,
+      (id) => this.resolveModelWindow(id),
+      composition,
+    );
+    if (snapshot) this.emit('usageContext', { conversationId, snapshot });
   }
 
   /** 队首文本匹配时出队并广播带 injectedTag 的 user 内容事件（与 message_id 并行；未匹配时静默保留） */

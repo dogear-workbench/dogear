@@ -19,12 +19,54 @@
  * 口径一致，所以总和可对比。
  */
 
+import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import type { AssistantMessage, Usage } from '@earendil-works/pi-ai';
 import type { ContextSnapshot, ConversationUsageEntry, ToolCallRecord, ToolActivity } from '../../types.js';
 import type { ExtendedSessionMessage } from '../task-types.js';
 import { lookupContextWindow } from '../pi/model-catalog.js';
 
 const SUBAGENT_TOOL_NAMES = new Set(['Agent', 'Task']);
+
+const CJK_CHAR = /[\u3000-\u9fff\uf900-\ufaff\uff00-\uffef\uac00-\ud7af]/;
+
+export interface ContextCategoryDraft {
+  name: string;
+  tokens: number;
+}
+
+/** 上下文构成估算：CJK 字符 ×1 + 其他字符 ×0.25，向上取整 */
+export function estimateTokens(text: string): number {
+  if (!text) return 0;
+  let cjk = 0;
+  let other = 0;
+  for (const ch of text) {
+    if (CJK_CHAR.test(ch)) cjk += 1;
+    else other += 1;
+  }
+  return Math.ceil(cjk + other * 0.25);
+}
+
+/** CTX 快照的上下文占用口径：请求输入侧 total = input + cacheRead + cacheWrite（不含输出） */
+export function contextTotalTokens(usage: Usage): number {
+  return (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+}
+
+/** 未校准构成按真实 totalTokens 等比缩放，round 残差并入最大桶，保证合计恒等于 totalTokens；Σ=0 时不除零返回空 */
+function calibrateCategories(composition: ContextCategoryDraft[] | undefined, totalTokens: number): Array<{ name: string; tokens: number }> {
+  if (!composition || composition.length === 0) return [];
+  const sum = composition.reduce((acc, c) => acc + c.tokens, 0);
+  if (sum <= 0 || totalTokens <= 0) return [];
+  const categories = composition.map((c) => ({ name: c.name, tokens: Math.round((c.tokens / sum) * totalTokens) }));
+  const drift = totalTokens - categories.reduce((acc, c) => acc + c.tokens, 0);
+  if (drift !== 0) {
+    let maxIdx = 0;
+    for (let i = 1; i < categories.length; i++) {
+      if (categories[i].tokens > categories[maxIdx].tokens) maxIdx = i;
+    }
+    categories[maxIdx].tokens += drift;
+  }
+  return categories;
+}
 
 export interface PiUsageAccumulator {
   inputTokens: number;
@@ -60,11 +102,12 @@ export function createPiUsageAccumulator(): PiUsageAccumulator {
   };
 }
 
-/** 从单条 assistant message 创建当前上下文用量快照。 */
+/** 从单条 assistant message 创建当前上下文用量快照。composition 传未校准构成原值，内部按 totalTokens 校准后写 categories。 */
 export function extractPiContextSnapshot(
   message: AssistantMessage,
   turnIndex: number,
   resolveWindow?: (modelId: string) => number,
+  composition?: ContextCategoryDraft[],
 ): ContextSnapshot | null {
   // 失败消息（如 quota 错误的空 assistant）不产快照，避免落盘 total=0 pct=0 的假 CTX
   if (message.errorMessage) return null;
@@ -72,7 +115,7 @@ export function extractPiContextSnapshot(
   if (!usage) return null;
 
   const model = message.responseModel || message.model;
-  const totalTokens = (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0);
+  const totalTokens = contextTotalTokens(usage);
   const resolve = resolveWindow ?? ((id: string) => lookupContextWindow(id) ?? 0);
   const maxTokens = resolve(model);
 
@@ -83,8 +126,76 @@ export function extractPiContextSnapshot(
     maxTokens,
     percentage: maxTokens > 0 ? totalTokens / maxTokens * 100 : 0,
     model,
-    categories: [],
+    categories: calibrateCategories(composition, totalTokens),
   };
+}
+
+/** 把 buildContext 的 AgentMessage[] 按 消息·用户 / 消息·助手 / 消息·工具结果 分桶估算；
+ *  其余 role（bashExecution/custom/branchSummary/compactionSummary）经 convertToLlm 都转成 user，并入用户桶 */
+export function estimateMessageBuckets(messages: AgentMessage[]): ContextCategoryDraft[] {
+  let userText = '';
+  let assistantText = '';
+  let toolResultText = '';
+  for (const msg of messages) {
+    switch (msg.role) {
+      case 'user':
+        userText += blocksText((msg as { content?: unknown }).content);
+        break;
+      case 'assistant':
+        assistantText += assistantMessageText(msg);
+        break;
+      case 'toolResult':
+        toolResultText += blocksText((msg as { content?: unknown }).content);
+        break;
+      default:
+        userText += customMessageText(msg);
+        break;
+    }
+  }
+  return [
+    { name: '消息·用户', tokens: estimateTokens(userText) },
+    { name: '消息·助手', tokens: estimateTokens(assistantText) },
+    { name: '消息·工具结果', tokens: estimateTokens(toolResultText) },
+  ];
+}
+
+function blocksText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .filter((block) => (block as { type?: string } | null)?.type === 'text')
+    .map((block) => (block as { text: string }).text)
+    .join('');
+}
+
+function assistantMessageText(message: AgentMessage): string {
+  const content = (message as { content?: unknown }).content;
+  if (!Array.isArray(content)) return '';
+  const parts: string[] = [];
+  for (const block of content) {
+    const type = (block as { type?: string } | null)?.type;
+    if (type === 'text') parts.push((block as { text: string }).text);
+    else if (type === 'thinking') parts.push((block as { thinking: string }).thinking);
+    else if (type === 'toolCall') {
+      const call = block as { name: string; arguments?: Record<string, unknown> };
+      parts.push(`${call.name}${JSON.stringify(call.arguments ?? {})}`);
+    }
+  }
+  return parts.join('');
+}
+
+function customMessageText(message: AgentMessage): string {
+  const m = message as {
+    excludeFromContext?: boolean;
+    command?: string;
+    output?: string;
+    content?: unknown;
+    summary?: string;
+  };
+  if (m.excludeFromContext) return '';
+  if (typeof m.command === 'string') return m.command + (m.output ?? '');
+  if (typeof m.summary === 'string') return m.summary;
+  return blocksText(m.content);
 }
 
 /** 把单条 AssistantMessage.usage 累加到累加器 */

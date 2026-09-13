@@ -11,6 +11,7 @@ import {
   AgentHarness,
   type AgentEvent,
   type AgentHarnessTool,
+  type AgentMessage,
   type ExecutionEnv,
   type Session,
   type JsonlSessionMetadata,
@@ -78,9 +79,11 @@ export interface PiHarnessAdapterOptions {
 
 export class PiHarnessAdapter {
   private harness: AgentHarness<{ env: ExecutionEnv }>;
+  private session: Session<JsonlSessionMetadata>;
   private pauseRequested = false;
 
   constructor(options: PiHarnessAdapterOptions) {
+    this.session = options.session;
     this.harness = new AgentHarness<{ env: ExecutionEnv }>({
       session: options.session,
       models: options.models,
@@ -134,6 +137,11 @@ export class PiHarnessAdapter {
 
   isPauseRequested(): boolean {
     return this.pauseRequested;
+  }
+
+  /** 当前分支上下文消息（session.buildContext().messages），供 CTX 快照的构成估算；失败上抛由调用方处置 */
+  async getContextMessages(): Promise<AgentMessage[]> {
+    return (await this.session.buildContext()).messages;
   }
 
   async prompt(text: string, images?: ImageContent[]): Promise<void> {

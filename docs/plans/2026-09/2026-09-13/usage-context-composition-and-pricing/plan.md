@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 价目表类型 + 设置 UI](./step1-pricing-settings.md) — piModels 条目加 pricing、目录默认价、PiModelRow 编辑框
-- [ ] [Step 2: 主进程构成估算](./step2-context-categories.md) — 提示词段/tools/消息分桶估算写入 categories
+- [x] [Step 2: 主进程构成估算](./step2-context-categories.md) — 提示词段/tools/消息分桶估算写入 categories
 - [ ] [Step 3: 前端构成与费用显示](./step3-frontend-display.md) — 弹窗构成明细+费用、删 UsageByTool、用量页费用
 
 ## 全局决策
