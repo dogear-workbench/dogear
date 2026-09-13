@@ -36,14 +36,14 @@ test('resolveContext 自定义阈值生效（90 时 85% 尚未接近压缩）', 
   const r = resolveContext(snap({ totalTokens: 170_000 }), 90);
   expect(r.nearCompact).toBe(false);
 });
-test('formatTokens 阶梯单位缩写', () => {
+test('formatTokens 阶梯单位缩写（k/m/b 千进制）', () => {
   expect(formatTokens(15632)).toBe('15.6k');
   expect(formatTokens(900000)).toBe('900k');
-  expect(formatTokens(1_234_567)).toBe('1.23M');
-  expect(formatTokens(1_200_000)).toBe('1.2M');
-  expect(formatTokens(100_000_000)).toBe('100M');
-  expect(formatTokens(1_234_567_890)).toBe('1.23G');
-  expect(formatTokens(2_000_000_000)).toBe('2G');
+  expect(formatTokens(1_234_567)).toBe('1.23m');
+  expect(formatTokens(1_200_000)).toBe('1.2m');
+  expect(formatTokens(100_000_000)).toBe('100m');
+  expect(formatTokens(1_234_567_890)).toBe('1.23b');
+  expect(formatTokens(2_000_000_000)).toBe('2b');
 });
 test('cacheHitRate = cacheRead / (input+cacheRead)', () => {
   expect(cacheHitRate({ inputTokens: 100, cacheReadInputTokens: 900 } as any)).toBeCloseTo(0.9);

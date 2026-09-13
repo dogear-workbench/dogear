@@ -1,17 +1,17 @@
 import type { ContextSnapshot } from '@/types/usage';
 
-/** contextWindow → 简洁标签：200000→'200k'，1000000→'1M' */
+/** contextWindow → 简洁标签：200000→'200k'，1000000→'1m' */
 export function formatLabel(window: number): string {
-  if (window >= 1_000_000) return `${(window / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (window >= 1_000_000) return `${(window / 1_000_000).toFixed(1).replace(/\.0$/, '')}m`;
   return `${Math.round(window / 1000)}k`;
 }
 
-/** token 数缩写：15632→'15.6k'，900000→'900k'，1234567→'1.23M'，≥ 1B→'1.2G'，<1000 原样 */
+/** token 数缩写（k=千 m=百万 b=十亿，千进制）：15632→'15.6k'，1234567→'1.23m'，≥ 1B→'1.2b'，<1000 原样 */
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}M`;
-  return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')}G`;
+  if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}m`;
+  return `${(n / 1_000_000_000).toFixed(2).replace(/\.?0+$/, '')}b`;
 }
 
 /**

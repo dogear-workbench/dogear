@@ -160,7 +160,9 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
           return {
             conv,
             tokens: totalTokens,
-            turnCount: summary?.turnCount ?? 0,
+            inputTokens: summary?.totalInputTokens ?? 0,
+            outputTokens: summary?.totalOutputTokens ?? 0,
+            cacheReadTokens: summary?.totalCacheReadTokens ?? 0,
             lastActive: conv.updated_at,
           };
         });
@@ -173,7 +175,9 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
         return {
           conv,
           tokens: s.inputTokens + s.outputTokens + s.cacheReadInputTokens,
-          turnCount: s.turnCount,
+          inputTokens: s.inputTokens,
+          outputTokens: s.outputTokens,
+          cacheReadTokens: s.cacheReadInputTokens,
           lastActive: s.lastTimestamp,
         };
       })
@@ -185,16 +189,18 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
   const pageRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
 
   const summary = useMemo(() => {
-    let tokens = 0;
-    let turns = 0;
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let cacheReadTokens = 0;
     let sessionCount = 0;
     for (const r of rows) {
       if (r.tokens == null) continue;
-      tokens += r.tokens;
-      turns += r.turnCount;
+      inputTokens += r.inputTokens;
+      outputTokens += r.outputTokens;
+      cacheReadTokens += r.cacheReadTokens;
       sessionCount += 1;
     }
-    return { tokens, turns, sessionCount };
+    return { tokens: inputTokens + outputTokens + cacheReadTokens, inputTokens, outputTokens, cacheReadTokens, sessionCount };
   }, [rows]);
 
   const showLoading = isAllPeriod ? loading : loading || statsLoading;
@@ -245,7 +251,9 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
               <span>
                 合计 <span className="font-medium text-foreground tabular-nums">{formatTokens(summary.tokens)}</span> tokens
               </span>
-              <span>· {summary.turns} 轮</span>
+              <span>· 输入 {formatTokens(summary.inputTokens)}</span>
+              <span>· 输出 {formatTokens(summary.outputTokens)}</span>
+              <span>· 缓存读 {formatTokens(summary.cacheReadTokens)}</span>
               <span>· {summary.sessionCount} 个会话</span>
             </div>
           )}
@@ -289,7 +297,9 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
                     </div>
                     <div className="mt-0.5 text-xs text-muted-foreground">
                       最后活动 {fmtLastActive(row.lastActive)}
-                      {row.tokens != null ? ` · ${row.turnCount} 轮` : ' · 尚无用量'}
+                      {row.tokens != null
+                        ? ` · 输入 ${formatTokens(row.inputTokens)} · 输出 ${formatTokens(row.outputTokens)} · 缓存读 ${formatTokens(row.cacheReadTokens)}`
+                        : ' · 尚无用量'}
                     </div>
                   </div>
                   <span className="shrink-0 tabular-nums text-sm">
