@@ -255,11 +255,11 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
     id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
     name: '浏览器解析',
     description:
-      '浏览器与扩展双通道调研：公开网页用内嵌浏览器（dogear__browser__*），登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器）；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣。探索方法论见 browser-exploration skill，子会话启用 browser 能力时自动挂载。',
+      '浏览器与扩展双通道调研 + 工作区文章读取与解析：公开网页用内嵌浏览器（dogear__browser__*），登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器）；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣。文章解析随 article 能力启用，article-parser skill 直通无需单独配置。探索方法论见 browser-exploration skill，子会话启用 browser 能力时自动挂载。',
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
-    enabledAbilities: { web: true, browser: true, extension: true },
+    enabledAbilities: { web: true, browser: true, extension: true, article: true },
   };
 }
 

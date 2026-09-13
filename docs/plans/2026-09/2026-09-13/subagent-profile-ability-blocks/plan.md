@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 数据层预设合并与术语替换](./step1-preset-merge.md) — browser-parse 加 article 能力 + description 重写；全库「细闸/总闸」换「子开关/总开关」
+- [x] [Step 1: 数据层预设合并与术语替换](./step1-preset-merge.md) — browser-parse 加 article 能力 + description 重写；全库「细闸/总闸」换「子开关/总开关」
 - [ ] [Step 2: 挂载矩阵补任务维度](./step2-matrix-scheduler.md) — scene kind 加 scheduler，三条固定行按 enabledToolPacks 计算，前端展示适配
 - [ ] [Step 3: ProfileEditor 能力域块化](./step3-profile-blocks.md) — 块行 + 细选 Popover 重构，补 stock skill 勾选入口
 - [ ] [Step 4: 联调验证与文档同步](./step4-verify-docs.md) — 全链路验证 + codebase-map 同步 + 完成总结

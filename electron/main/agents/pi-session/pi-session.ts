@@ -524,7 +524,7 @@ export class PiSession extends EventEmitter {
     ]);
 
     const enabledSkillsSet = new Set(wsConfig.enabledSkills);
-    // skill 型包未生效 → 包内 skill 整体剔除（enabledSkills 细闸之前先过包总闸）
+    // skill 型包未生效 → 包内 skill 整体剔除（enabledSkills 子开关之前先过包总开关）
     const disabledPackSkills = new Set<string>();
     for (const pack of ABILITY_PACKS) {
       if (pack.type !== 'skill-packs' || activeAbilities.has(pack.key)) continue;
@@ -634,8 +634,8 @@ export class PiSession extends EventEmitter {
 
   /**
    * 主会话工具构建：
-   * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总闸生效）
-   * + extension（并入 browser 包：只受 browser 包总闸 gate，enabledToolPacks 残留 extension 静默忽略）
+   * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总开关生效）
+   * + extension（并入 browser 包：只受 browser 包总开关 gate，enabledToolPacks 残留 extension 静默忽略）
    * + 组状态卡组（dogear-group-context，属组且会话组包生效）
    * + 协作三组（dogear-group/delegation/sibling，属组且 agent-collab 包生效）
    * + dogear-notes（工作区且 notes 包生效）
@@ -655,7 +655,7 @@ export class PiSession extends EventEmitter {
 
     for (const pack of OPTIONAL_TOOL_PACKS) {
       if (!this.config.enabledToolPacks.includes(pack.name)) continue;
-      // skill 型双闸：enabledToolPacks 是细闸，包总闸在注册表，未生效则工具包不挂载（与 skill 索引剔除同性质）
+      // skill 型双闸：enabledToolPacks 是子开关，包总开关在注册表，未生效则工具包不挂载（与 skill 索引剔除同性质）
       const abilityKey = TOOL_PACK_TO_ABILITY.get(pack.name);
       if (abilityKey && !activeAbilities.has(abilityKey)) continue;
       switch (pack.name) {
@@ -680,7 +680,7 @@ export class PiSession extends EventEmitter {
           toolDefs.push(...this.registerPack(pack.name, createStockPickingToolDefs()));
           break;
         case 'web-mcp': {
-          // hasBrowser 必须与实际挂载一致：browser 细闸残留时主会话不会真挂 browser 工具，只判总闸会复现死链
+          // hasBrowser 必须与实际挂载一致：browser 子开关残留时主会话不会真挂 browser 工具，只判总开关会复现死链
           const hasBrowser = activeAbilities.has('browser') && this.config.enabledToolPacks.includes('browser');
           toolDefs.push(...this.registerPack(pack.name, createWebMcpToolDefs({ fallbackHint: hasBrowser ? 'browser-tools' : 'browser-subagent' })));
           break;
@@ -690,7 +690,7 @@ export class PiSession extends EventEmitter {
       }
     }
 
-    // extension 并入 browser 包：注册只看 browser 包总闸，enabledToolPacks 残留 extension 静默忽略
+    // extension 并入 browser 包：注册只看 browser 包总开关，enabledToolPacks 残留 extension 静默忽略
     if (activeAbilities.has('browser')) {
       toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
     }
@@ -744,14 +744,14 @@ export class PiSession extends EventEmitter {
    * 子会话工具构建（Profile 驱动，能力包开关经 activeAbilities 交集）：
    * - 基础工具（read/write/edit/bash/Glob/Grep）：始终全部创建，activeToolNames 控制可见性
    * - Skill 工具：有 ≥1 skill 勾选时创建
-   * - dogear-memory：memory 包生效（含 Profile 的 memory===true 细闸，由 resolveAbilities 并集）
-   * - stock/article/browser 工具包：对应能力包生效（Profile 细闸并入包解析）
+   * - dogear-memory：memory 包生效（含 Profile 的 memory===true 子开关，由 resolveAbilities 并集）
+   * - stock/article/browser 工具包：对应能力包生效（Profile 子开关并入包解析）
    * - extension 工具组：browser 包生效且 Profile extension===true 双闸
-   * - web-mcp 工具包：web 包生效（Profile 细闸已并入 resolveAbilities）
-   * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 细闸——通用检索是基础设施）
+   * - web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）
+   * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 子开关——通用检索是基础设施）
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
-   * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 细闸）
-   * - dogear-sibling（兄弟会话）：协作包生效（子会话对协作包强制生效，无 Profile 细闸）
+   * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 子开关）
+   * - dogear-sibling（兄弟会话）：协作包生效（子会话对协作包强制生效，无 Profile 子开关）
    */
   private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
     const ab = profile.enabledAbilities;
@@ -765,7 +765,7 @@ export class PiSession extends EventEmitter {
       toolDefs.push(createSkillTool(skillEntries));
     }
 
-    // dogear-memory：memory 包生效（Profile 细闸已并入 resolveAbilities）
+    // dogear-memory：memory 包生效（Profile 子开关已并入 resolveAbilities）
     if (activeAbilities.has('memory')) {
       toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
     }
@@ -788,17 +788,17 @@ export class PiSession extends EventEmitter {
       toolDefs.push(...this.registerPack('browser', createBrowserToolDefs({ conversationId: this.config.conversationId, workspacePath: this.config.workspacePath, workspaceId: this.config.workspaceId })));
     }
 
-    // extension：并入 browser 包后是双闸——browser 包生效（Profile 细闸已并入 resolveAbilities）+ extension===true
+    // extension：并入 browser 包后是双闸——browser 包生效（Profile 子开关已并入 resolveAbilities）+ extension===true
     if (activeAbilities.has('browser') && ab.extension === true) {
       toolDefs.push(...this.registerPack('extension', createExtensionToolDefs({ conversationId: this.config.conversationId })));
     }
 
-    // web-mcp 工具包：web 包生效（Profile 细闸已并入 resolveAbilities）
+    // web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）
     if (activeAbilities.has('web-mcp')) {
       toolDefs.push(...this.registerPack('web-mcp', createWebMcpToolDefs({ fallbackHint: activeAbilities.has('browser') ? 'browser-tools' : 'none' })));
     }
 
-    // dogear-history：工作区即注册，通用检索基础设施，不查 Profile 细闸
+    // dogear-history：工作区即注册，通用检索基础设施，不查 Profile 子开关
     if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
     }
@@ -817,7 +817,7 @@ export class PiSession extends EventEmitter {
       };
       toolDefs.push(...this.registerPack('dogear-delegation', createDelegationToolDefs(delegationOpts)));
 
-      // dogear-group-context：随会话组包（reference 细闸已退役）
+      // dogear-group-context：随会话组包（reference 子开关已退役）
       if (activeAbilities.has('group-context')) {
         toolDefs.push(...this.registerPack('dogear-group-context', createGroupContextToolDefs({
           workspaceId: this.config.workspaceId,

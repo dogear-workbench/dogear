@@ -95,7 +95,7 @@ export function AbilityTab() {
         return;
       }
       const linkedPacks = (pack.toolGroupMetas ?? []).filter((g) => g.pack).map((g) => g.id);
-      // 无 Skill 的纯工具包（如联网搜索）：包开关直接联动 enabledToolPacks 细闸（开加关删）
+      // 无 Skill 的纯工具包（如联网搜索）：包开关直接联动 enabledToolPacks 子开关（开加关删）
       if (pack.skillMetas.length === 0 && linkedPacks.length > 0) {
         const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);
         for (const name of linkedPacks) {
@@ -105,8 +105,8 @@ export function AbilityTab() {
         void persistConfig({ abilityOverrides: overrides, enabledToolPacks: Array.from(enabledToolPacks) });
         return;
       }
-      // 有 Skill 的包：开总闸一键补齐 enabledSkills + enabledToolPacks（只补不删）；
-      // 关总闸只写 overrides 不动细闸（细闸仍由 handleToggleSkills 管理）
+      // 有 Skill 的包：开总开关一键补齐 enabledSkills + enabledToolPacks（只补不删）；
+      // 关总开关只写 overrides 不动子开关（子开关仍由 handleToggleSkills 管理）
       if (pack.skillMetas.length > 0 && enable) {
         const enabledSkills = new Set(workspaceConfig.enabledSkills);
         const enabledToolPacks = new Set(workspaceConfig.enabledToolPacks);

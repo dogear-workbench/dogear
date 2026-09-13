@@ -117,7 +117,7 @@ describe('冒烟：notes 包 gate dogear-tasks 与 executor 派单保底', () =>
   });
 });
 
-describe('冒烟：browser 包总闸 gate 主会话 extension', () => {
+describe('冒烟：browser 包总开关 gate 主会话 extension', () => {
   test('browser 关 + enabledToolPacks 残留 extension → 静默忽略不注册', () => {
     const active = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
     expect(mainGroups(['extension'], active).has('extension')).toBe(false);
@@ -156,7 +156,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
     expect(names).toContain('bigmodel__webReader');
   });
 
-  test('包开 + enabledToolPacks 不含 web-mcp → 细闸拦住不挂载', () => {
+  test('包开 + enabledToolPacks 不含 web-mcp → 子开关拦住不挂载', () => {
     const active = resolveAbilities(configWebMcp(), { role: 'main', hasWorkspace: true, groupId: null });
     const s = makeSession('main');
     const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
@@ -164,7 +164,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
     expect(names).not.toContain('bigmodel__webReader');
   });
 
-  test('包关 + enabledToolPacks 残留 web-mcp → 总闸拦住不挂载', () => {
+  test('包关 + enabledToolPacks 残留 web-mcp → 总开关拦住不挂载', () => {
     const active = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
     expect(active.has('web-mcp')).toBe(false);
 
@@ -173,7 +173,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
     expect(names).not.toContain('bigmodel__webSearch');
   });
 
-  test('web-mcp 子会话细闸：default Profile 预勾生效，web 未勾不生效', () => {
+  test('web-mcp 子会话子开关：default Profile 预勾生效，web 未勾不生效', () => {
     const active = resolveAbilities(configWebMcp(), {
       role: 'sub',
       hasWorkspace: true,
@@ -227,7 +227,7 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
     expect(groups.has('extension')).toBe(false);
   });
 
-  test('browser 总闸关 + Profile extension=true → 不注册（包闸优先）', () => {
+  test('browser 总开关关 + Profile extension=true → 不注册（包闸优先）', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
       enabledAbilities: { browser: true, extension: true },
@@ -266,7 +266,7 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
     expect(names).toContain('dogear__ListSiblingSessions');
   });
 
-  test('子会话：两包全关 → 两工具不注册，检索组与固定协作组在（reference 旧细闸被忽略）', () => {
+  test('子会话：两包全关 → 两工具不注册，检索组与固定协作组在（reference 旧子开关被忽略）', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
       enabledAbilities: { reference: true } as SubAgentProfile['enabledAbilities'],

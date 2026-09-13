@@ -13,7 +13,7 @@
  *
  * 常驻工具（如 memory、article-parse）不在此表，由 conversation-runtime-service 直接注册。
  *
- * extension 工具组不在本表：已并入 browser 能力包（见 ability-registry），注册只受 browser 包总闸 gate，
+ * extension 工具组不在本表：已并入 browser 能力包（见 ability-registry），注册只受 browser 包总开关 gate，
  * enabledToolPacks 残留 'extension' 一律静默忽略。
  *
  * 详见 docs/plans/2026-05/2026-05-09/skill-tool-search-migration.md

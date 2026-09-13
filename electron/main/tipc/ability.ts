@@ -94,7 +94,7 @@ export interface AbilityMountSceneRow {
   /** 场景稳定标识：main / sub-default / executor / Profile id */
   id: string;
   label: string;
-  /** 系统预设固定行：加载行为由代码定死，用户无 Profile 细闸可改 */
+  /** 系统预设固定行：加载行为由代码定死，用户无 Profile 子开关可改 */
   system: boolean;
   /** 该场景此能力是否加载（触发条件按已满足计，具体条件见 reason） */
   loaded: boolean;
@@ -337,7 +337,7 @@ function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolean): Abi
         label: p.name,
         system: false,
         loaded: hasWorkspace,
-        reason: '常驻基础设施不受 Profile 细闸约束',
+        reason: '常驻基础设施不受 Profile 子开关约束',
         profileDisabled: p.enabled === false || undefined,
       })),
     {

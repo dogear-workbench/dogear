@@ -33,7 +33,7 @@ export interface AbilityPack {
 
 /**
  * skill → 可选工具包 name 映射（自 app/settings/ability-types.ts 迁入）。
- * skill 型包生效是总闸，包内单个 skill 的细闸在 workspace config 的 enabledSkills，生效 = 双开交集。
+ * skill 型包生效是总开关，包内单个 skill 的子开关在 workspace config 的 enabledSkills，生效 = 双开交集。
  */
 export const SKILL_PACK_MAP: Record<string, string[]> = {
   'stock-analysis': ['stock-quote', 'stock-analysis', 'stock-announcement'],
@@ -166,8 +166,8 @@ export interface ResolveAbilitiesOpts {
 
 /**
  * 解析生效能力包：工作区包开关（abilityOverrides 覆盖 defaultEnabled，残留下线 key 静默忽略）
- * ∩ 触发条件 ∩ 子会话 Profile 过滤。子会话契约段与 Profile 细闸（enabledSkills）不在此处理。
- * reference 细闸已退役：ReadGroupBackground 随会话组包、ListSiblingSessions 随协作包，旧配置残留值静默忽略。
+ * ∩ 触发条件 ∩ 子会话 Profile 过滤。子会话契约段与 Profile 子开关（enabledSkills）不在此处理。
+ * reference 子开关已退役：ReadGroupBackground 随会话组包、ListSiblingSessions 随协作包，旧配置残留值静默忽略。
  */
 export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilitiesOpts): Set<string> {
   const result = new Set<string>();

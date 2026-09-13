@@ -19,8 +19,8 @@ function profileWith(ab: SubAgentProfile['enabledAbilities'], extra?: Partial<Su
 }
 
 describe('resolveAbilities 子会话 Profile 过滤', () => {
-  test('memory/stock/article/browser 细闸为 true 才生效；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
-    // 四包总闸在 abilityOverrides 全开，判定纯由细闸决定；
+  test('memory/stock/article/browser 子开关为 true 才生效；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
+    // 四包总开关在 abilityOverrides 全开，判定纯由子开关决定；
     // code-workflow 的 Profile 过滤在运行时位于 skill 级（filterSkillsForSubAgent 的 ab.skills），不在包级
     const keys = ['memory', 'stock', 'article', 'browser'] as const;
     const cases: SubAgentProfile['enabledAbilities'][] = [
@@ -49,7 +49,7 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     }
   });
 
-  test('web-mcp 子会话细闸：profile.web 显式 true 才生效，main 不受 Profile 约束', () => {
+  test('web-mcp 子会话子开关：profile.web 显式 true 才生效，main 不受 Profile 约束', () => {
     const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { 'web-mcp': true } };
     expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ web: true }) }).has('web-mcp')).toBe(true);
     expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({}) }).has('web-mcp')).toBe(false);
@@ -120,7 +120,7 @@ describe('工具归属修正（extension 并包 / reference 拆组 / 系统行�
     expect(noGroup.has('agent-collab')).toBe(false);
   });
 
-  test('子会话 reference 旧细闸不再生效：旧配置残留 reference=true 不影响包解析', () => {
+  test('子会话 reference 旧子开关不再生效：旧配置残留 reference=true 不影响包解析', () => {
     const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} };
     const profile = profileWith({ reference: true } as SubAgentProfile['enabledAbilities']);
     const active = resolveAbilities(config, {

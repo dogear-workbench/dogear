@@ -19,6 +19,7 @@ const LEGACY_DESCRIPTIONS = [
   '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣或使用受控浏览器',
   '挂载扩展工具包在用户真实浏览器（登录态站点如小红书）执行只读调研，或用受控浏览器读取公开网页；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣或使用受控浏览器。派单只写目标与产出要求，勿写逐步操作剧本，由其自主探索。探索循环：行动前确认世界状态（observe_page/read_state 概要），每次下钻带明确假设；页面与预期不符先 navigate 恢复再继续，不把偏离当失败上报；navigate 提示有站点档案时先调 dogear__extension__site_knowledge 取地图（可能漂移，用时概要验证），发现新结构用 dogear__extension__site_finding 沉淀；同一页面连续 3 次探索失败即停并报告已发现内容；滑块/验证码即停，不规避随机延迟。',
   '浏览器与扩展双通道调研：公开网页用内嵌浏览器（dogear__browser__*）——readArticle 读文章 / search 搜索为快档首选，失败返回页面位置（tabId+URL+状态）后直接用 observe_page / find / read_text / click / fill 原子工具继续探索，不要重新导航；登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器，同一时间仅一个会话可用，并行请串行派遣）。探索循环：行动前确认世界状态（observe_page/read_state 概要），每次下钻带明确假设；页面与预期不符先 navigate 恢复再继续，不把偏离当失败上报；navigate 提示有站点档案时先调 dogear__extension__site_knowledge 取地图（可能漂移，用时概要验证），发现新结构用 dogear__extension__site_finding 沉淀。登录墙/人机验证（awaiting_human）或密码/提交类 guard 拦截即停：页面已呈现在浏览器面板，等用户完成后点「完成后继续」再继续任务。页面被用户接管时写操作会被拒绝，收到 user_takeover 后应停下等待，交还后会收到继续提示。任务交付用 dogear__browser__present 把关键页面呈现给用户（页面即产物）。同一页面连续 3 次探索失败即停并报告已发现内容；滑块/验证码即停，不规避随机延迟。',
+  '浏览器与扩展双通道调研：公开网页用内嵌浏览器（dogear__browser__*），登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器）；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣。探索方法论见 browser-exploration skill，子会话启用 browser 能力时自动挂载。',
 ];
 
 const mkProfile = (ab, description = '旧描述') => ({
@@ -68,7 +69,7 @@ const custom = mkSettings({ browser: true, extension: true }, '我的自定义�
 normalizeSettings(custom);
 check('用户自定义描述不被迁移', custom.subAgent.profiles[1].description === '我的自定义浏览器描述');
 
-const builtin = mkSettings({ browser: true, extension: true }, NEW_DESCRIPTION);
+const builtin = mkSettings({ ...createBrowserParseSubAgentProfile().enabledAbilities }, NEW_DESCRIPTION);
 check('已是新描述 normalize 零改动', normalizeSettings(builtin) === false);
 
 process.exit(failed > 0 ? 1 : 0);
