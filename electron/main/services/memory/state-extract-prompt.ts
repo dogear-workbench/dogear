@@ -21,8 +21,8 @@ export const DEFAULT_STATE_EXTRACT_PROMPT = `你在做会话组的「话题状�
 
 ## 话题首次命名（initialTitle）
 
-- 仅当本次输入中「当前组标题」为空，且本次逐字稿足以概括本话题时，输出 initialTitle：为话题起一个简短名字，不加「关于」「讨论」等前缀。
-- 组已有标题、或逐字稿尚不足以概括话题时，省略该字段。
+- 仅当本次输入中「当前组标题」为空或标注为自动占坑名，且本次逐字稿足以概括本话题时，输出 initialTitle：为话题起一个简短名字，不加「关于」「讨论」等前缀。
+- 组已有正式标题（无占坑标注）、或逐字稿尚不足以概括话题时，省略该字段。
 
 ## 保真约束
 
@@ -33,7 +33,7 @@ export const DEFAULT_STATE_EXTRACT_PROMPT = `你在做会话组的「话题状�
 
 调用一次 emit_state_increment，字段：
 - topicChange（可选）：{ text, quote?, uuid? }
-- initialTitle（可选）：string（仅组无标题时的首次命名）
+- initialTitle（可选）：string（组无标题或标题为自动占坑名时的首次命名）
 - completed / inProgress / decisions / blockers / nextSteps / openQuestions：各为 [{ text, uuid }] 数组
 - resolved：string[]（被解决/取代的现有条目 id，任意类别）
 无内容的类别给空数组或省略该字段。

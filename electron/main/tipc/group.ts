@@ -51,11 +51,13 @@ export const groupRouter = {
     }),
 
   updateGroup: t.procedure
-    .input<{ workspaceId: string; groupId: string; patch: { title?: string } }>()
+    .input<{ workspaceId: string; groupId: string; patch: { title?: string; autoTitle?: boolean } }>()
     .action(async ({ input }) => {
       try {
         await groupService.requireActiveGroup(input.workspaceId, input.groupId);
-        const group = await groupService.updateGroup(input.workspaceId, input.groupId, input.patch);
+        const patch = { ...input.patch };
+        if (patch.title !== undefined && patch.autoTitle === undefined) patch.autoTitle = false;
+        const group = await groupService.updateGroup(input.workspaceId, input.groupId, patch);
         return { group, error: undefined };
       } catch (error) {
         console.error('更新会话组失败:', error);

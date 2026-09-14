@@ -1,6 +1,7 @@
 export interface Group {
   id: string;
   title?: string;
+  autoTitle?: boolean;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;

@@ -153,6 +153,8 @@ export interface CleanedTranscript {
 export interface Group {
   id: string;
   title?: string;
+  /** title 为自动占坑名（首条消息截断）：AI 提炼 initialTitle / 用户改名可覆盖转正 */
+  autoTitle?: boolean;
   createdAt: number;
   updatedAt: number;
   archivedAt?: number;

@@ -72,8 +72,8 @@ export async function mergeIncrementAndSave(
   if (initialTitle) {
     try {
       const group = await groupService.getGroup(wsId, groupId);
-      if (group && !group.title?.trim()) {
-        await groupService.updateGroup(wsId, groupId, { title: initialTitle });
+      if (group && (!group.title?.trim() || group.autoTitle)) {
+        await groupService.updateGroup(wsId, groupId, { title: initialTitle, autoTitle: false });
       }
     } catch (e) {
       console.warn(`[state-card] 首次命名同步 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
@@ -116,7 +116,7 @@ export async function resolvePendingTopicChange(
   if (accept) {
     const confirmed = next.topicHistory[next.topicHistory.length - 1];
     try {
-      await groupService.updateGroup(wsId, groupId, { title: confirmed.text });
+      await groupService.updateGroup(wsId, groupId, { title: confirmed.text, autoTitle: false });
     } catch (e) {
       console.warn(`[state-card] 确认话题联动 group.title 失败: ${e instanceof Error ? e.message : String(e)}`);
     }

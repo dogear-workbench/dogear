@@ -524,7 +524,7 @@ class AgentWorker {
             `- groupId: ${groupId}`,
             `- conversationId: ${conv.conversationId}`,
             `- sessionId: ${conv.sessionId}`,
-            `- 当前组标题: ${groupTitle || '（空）'}`,
+            `- 当前组标题: ${groupTitle || '（空）'}${group?.autoTitle ? '（自动占坑名）' : ''}`,
             '',
             `### 新增逐字稿（上次提炼位置之后的新增消息，共 ${newMessages.length} 条）`,
             '',

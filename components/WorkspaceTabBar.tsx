@@ -47,9 +47,17 @@ export function WorkspaceTabBar() {
 
   const pendingActionIds = useConversationStore((s) => s.pendingActionConversationIds);
   const runningConversationIds = useConversationStore((s) => s.runningConversationIds);
+  const conversations = useConversationStore((s) => s.conversations);
 
   // 过滤掉已弹到独立窗口的 Tab（保持 AgentChat 挂载但不显示标签头）
   const tabs = allTabs.filter((t) => !sessionWindowIds.has(t.conversationId));
+
+  /** 标题实时取 conversation-store（覆盖自动起名/手动重命名）；跨工作区或已删除时回退快照 */
+  const resolveTabTitle = (tab: SessionTab): string => {
+    const live = conversations.find((c) => c.id === tab.conversationId);
+    if (live) return live.title || '新对话';
+    return tab.conversationTitle;
+  };
 
   /** Tab 点击：纯切换焦点，跨工作区的左右面板同步由 conversation-store 焦点联动接管 */
   const handleTabClick = (tab: SessionTab) => {
@@ -92,7 +100,7 @@ export function WorkspaceTabBar() {
     }
     client.openSessionWindow({
       conversationId: tab.conversationId,
-      title: tab.conversationTitle,
+      title: resolveTabTitle(tab),
     });
     // 标记为独立窗口，AgentChat 保持挂载以便 attachment 平滑过渡，
     // 直到 sessionWindowClosed 事件通知窗口关闭后才安全关闭标签页
@@ -132,7 +140,7 @@ export function WorkspaceTabBar() {
                   onClick={() => handleTabClick(tab)}
                 >
                   {showPulse && <StatusPulse isPending={isPending} size="sm" />}
-                  <span className="truncate">{tab.conversationTitle}</span>
+                  <span className="truncate">{resolveTabTitle(tab)}</span>
                   {showPulse && isPending && (
                     <span className="text-[10px] text-blue-600 bg-blue-50 px-1 rounded shrink-0">等待确认</span>
                   )}

@@ -35,6 +35,7 @@ function normalizeGroup(value: unknown): Group | null {
     updatedAt: raw.updatedAt,
   };
   if (typeof raw.title === 'string') group.title = raw.title;
+  if (typeof raw.autoTitle === 'boolean') group.autoTitle = raw.autoTitle;
   if (typeof raw.archivedAt === 'number' && Number.isFinite(raw.archivedAt)) {
     group.archivedAt = raw.archivedAt;
   }
@@ -109,13 +110,17 @@ export async function createGroup(workspaceId: string, init?: { title?: string }
 export async function updateGroup(
   workspaceId: string,
   groupId: string,
-  patch: Partial<Pick<Group, 'title'>>,
+  patch: Partial<Pick<Group, 'title' | 'autoTitle'>>,
 ): Promise<Group> {
   const file = await loadGroups(workspaceId);
   const group = file.groups.find((item) => item.id === groupId);
   if (!group) throw new Error(`Group not found: ${groupId}`);
 
   if (patch.title !== undefined) group.title = patch.title;
+  if (patch.autoTitle !== undefined) {
+    if (patch.autoTitle) group.autoTitle = true;
+    else delete group.autoTitle;
+  }
   group.updatedAt = Date.now();
 
   await saveGroups(workspaceId, file);

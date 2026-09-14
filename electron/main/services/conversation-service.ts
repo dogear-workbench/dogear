@@ -12,7 +12,7 @@ import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
 import { loadSettings, LEGACY_MODEL_TIERS } from './settings-service.js';
 import { mainLogger } from '../agents/logger.js';
 import { readUsage } from './usage/usage-service.js';
-import { listActiveGroups, requireActiveGroup } from './group-service.js';
+import { getGroup, listActiveGroups, requireActiveGroup, updateGroup } from './group-service.js';
 import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
 import type { ConversationUsageEntry } from '../types.js';
 import type { ModelSelection } from './settings-types.js';
@@ -434,6 +434,17 @@ const DEFAULT_TITLE = '新对话';
 /** 自动生成 title 时截取的最大长度 */
 const AUTO_TITLE_MAX_LENGTH = 30;
 
+/** 组无正式名时用会话自动标题占坑（autoTitle 标记，AI 提炼/用户改名可覆盖转正）；失败不影响会话标题写入 */
+async function seedGroupAutoTitle(workspaceId: string, groupId: string, title: string): Promise<void> {
+  try {
+    const group = await getGroup(workspaceId, groupId);
+    if (!group || group.title?.trim()) return;
+    await updateGroup(workspaceId, groupId, { title, autoTitle: true });
+  } catch (err) {
+    mainLogger.warn('[conversation] 话题初始名占坑失败:', err);
+  }
+}
+
 /**
  * 从用户第一条消息自动生成 title。
  *
@@ -447,17 +458,17 @@ export async function autoUpdateTitleFromFirstMessage(
   id: string,
   messageText: string,
 ): Promise<boolean> {
-  const updated = await withConversationsTxn(workspaceId, async (file) => {
+  const seeded = await withConversationsTxn(workspaceId, async (file) => {
     const conv = file.conversations[id];
-    if (!conv) return false;
-    if (!conv.groupId) return false;
+    if (!conv) return null;
+    if (!conv.groupId) return null;
     await requireActiveGroup(workspaceId, conv.groupId);
 
     // 仅默认 title 时才自动生成（保护用户已修改的标题）
-    if (conv.title !== DEFAULT_TITLE) return false;
+    if (conv.title !== DEFAULT_TITLE) return null;
 
     const cleaned = messageText.replace(/\s+/g, ' ').trim();
-    if (!cleaned) return false;
+    if (!cleaned) return null;
 
     const truncated = cleaned.length > AUTO_TITLE_MAX_LENGTH
       ? cleaned.slice(0, AUTO_TITLE_MAX_LENGTH) + '…'
@@ -465,10 +476,12 @@ export async function autoUpdateTitleFromFirstMessage(
 
     conv.title = truncated;
     conv.updatedAt = new Date().toISOString();
-    return true;
+    return { groupId: conv.groupId, title: truncated };
   });
-  if (updated) broadcastConversationListChanged(workspaceId, 'debounced');
-  return updated;
+  if (!seeded) return false;
+  await seedGroupAutoTitle(workspaceId, seeded.groupId, seeded.title);
+  broadcastConversationListChanged(workspaceId, 'debounced');
+  return true;
 }
 
 export async function updateSessionId(workspaceId: string, id: string, sessionId: string): Promise<void> {

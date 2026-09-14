@@ -93,7 +93,7 @@ class SessionNotificationService {
       notification = new Notification({
         title: input.title,
         body,
-        silent: false,
+        silent: true,
       });
     } catch (err) {
       mainLogger.error('[session-notification] 创建 Notification 失败:', err);
