@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 数据层与统一活动注册表](./step1-data-model.md) — RunHistoryEntry 加 source、queryHistory 类型筛选、新建 background-activity-service、scheduler 侧接入
 - [x] [Step 2: STATE_EXTRACT 接入](./step2-state-extract.md) — agent-worker 补用量累加、state-extract-trigger 注册运行 + 终态写历史
-- [ ] [Step 3: PARSE_ARTICLE 接入与删解析历史](./step3-parse-article.md) — tipc/article 终态写历史、删 getParseHistory、数据中心五 tab → 四 tab
+- [x] [Step 3: PARSE_ARTICLE 接入与删解析历史](./step3-parse-article.md) — tipc/article 终态写历史、删 getParseHistory、数据中心五 tab → 四 tab
 - [ ] [Step 4: 协作任务接入](./step4-collab-task.md) — task-service 三处状态迁移写历史
 - [ ] [Step 5: 执行历史 UI](./step5-history-ui.md) — 类型筛选、类型徽章、运行区统一来源
 

@@ -13,6 +13,9 @@ import { getAgentManager } from '../agents/agent-manager.js';
 import { TaskType, TaskStatus, type AgentTask, type ParseArticlePayload } from '../agents/task-types.js';
 import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
 import { withFileLock } from '../services/safe-json.js';
+import { reportDone, reportRunning } from '../services/background-activity-service.js';
+import { appendHistoryEntry } from '../services/scheduler/run-history-store.js';
+import type { RunHistoryEntry, RunHistoryStatus } from '../services/scheduler/types.js';
 import type { RendererHandlers } from './renderer-handlers.js';
 
 const t = tipc.create();
@@ -65,6 +68,66 @@ function broadcastBrowserLoginRequired(data: {
   }
 }
 
+function parseTaskName(platform: string | null): string {
+  return `文章解析 · ${platform || '通用'}`;
+}
+
+function resolveParseHistoryStatus(status: TaskStatus, result: any, error?: string): RunHistoryStatus {
+  if (status === TaskStatus.CANCELLED) return 'cancelled';
+  if (status === TaskStatus.FAILED) return 'failed';
+  if (error || result?.error) return 'failed';
+  if (result?.parseStatus === 'failed') return 'failed';
+  return 'completed';
+}
+
+function buildParseSummary(url: string, trigger: string, result: any, durationMs: number): string {
+  const historyError = result?.error ? String(result.error) : undefined;
+  return [
+    url,
+    `解析状态 ${result?.parseStatus ?? '-'} · 文章已保存 ${result?.articleSaved ? '是' : '否'} · 耗时 ${durationMs}ms`,
+    `触发 ${trigger}`,
+    ...(historyError ? [historyError] : []),
+  ].join('\n');
+}
+
+// 先写历史再 reportDone（UI 轮询视角 done 即历史可见）；写历史失败不影响解析本身
+async function recordParseRun(task: AgentTask, taskName: string, status: TaskStatus, result: any, error?: string): Promise<void> {
+  const historyStatus = resolveParseHistoryStatus(status, result, error);
+  let historyError: string | undefined;
+  if (status === TaskStatus.FAILED) {
+    historyError = error ?? result?.error ?? `任务终态 ${status}`;
+  } else if (result?.error) {
+    historyError = String(result.error);
+  } else if (result?.parseStatus === 'failed') {
+    historyError = '解析失败';
+  }
+  const now = Date.now();
+  const entry: RunHistoryEntry = {
+    id: uuidv4(),
+    ts: now,
+    planId: task.id,
+    planName: taskName,
+    source: 'parse-article',
+    kind: 'task',
+    status: historyStatus,
+    triggerReason: 'condition',
+    startedAt: task.createdAt,
+    endedAt: now,
+    summary: buildParseSummary(task.payload?.url ?? '', task.payload?.trigger ?? '-', result, now - (task.createdAt ?? now)),
+    error: historyError,
+  };
+  try {
+    await appendHistoryEntry(entry);
+  } catch (err) {
+    console.warn('[article] 写文章解析执行历史失败:', err);
+  }
+  try {
+    reportDone(task.id);
+  } catch (err) {
+    console.warn('[article] 清理文章解析运行注册表失败:', err);
+  }
+}
+
 /**
  * 将 AI 解析任务提交到 AgentManager Worker 池。
  * fire-and-forget：失败只打印警告，不 throw。
@@ -100,9 +163,27 @@ function submitAiParseTask(params: {
       payload,
       createdAt: Date.now(),
     };
-    void getAgentManager().submitTask(task).catch((err) => {
-      console.warn('[article] 提交 PARSE_ARTICLE 任务失败:', err);
-    });
+    const taskName = parseTaskName(params.platform);
+    reportRunning(task.id, { source: 'parse-article', name: taskName });
+    void getAgentManager()
+      .submitTask(task, (_taskId, status, result, error) => {
+        if (
+          status !== TaskStatus.COMPLETED &&
+          status !== TaskStatus.FAILED &&
+          status !== TaskStatus.CANCELLED
+        ) {
+          return;
+        }
+        void recordParseRun(task, taskName, status, result, error);
+      })
+      .catch((err) => {
+        console.warn('[article] 提交 PARSE_ARTICLE 任务失败:', err);
+        try {
+          reportDone(task.id);
+        } catch (e) {
+          console.warn('[article] 清理文章解析运行注册表失败:', e);
+        }
+      });
   } catch (err) {
     console.warn('[article] 准备 PARSE_ARTICLE 任务失败:', err);
   }
@@ -541,27 +622,6 @@ export const articleRouter = {
       } catch (error) {
         console.error('删除文章失败:', error);
         return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 获取文章解析历史记录（最近 N 条，从 history.jsonl 读取）
-   */
-  getParseHistory: t.procedure
-    .input<{ limit?: number }>()
-    .action(async ({ input }) => {
-      try {
-        const limit = Math.min(input.limit ?? 50, 200);
-        const skillsDir = getArticleParserSkillsDir();
-        const historyPath = path.join(skillsDir, 'history.jsonl');
-        const raw = await fs.readFile(historyPath, 'utf-8').catch(() => '');
-        const lines = raw.split('\n').filter((l) => l.trim()).slice(-limit);
-        const entries = lines.map((l) => {
-          try { return JSON.parse(l); } catch { return { raw: l }; }
-        });
-        return { entries: entries.reverse() };  // most recent first
-      } catch (error) {
-        return { entries: [], error: String(error) };
       }
     }),
 };
