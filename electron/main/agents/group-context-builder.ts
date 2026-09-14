@@ -1,6 +1,6 @@
 /**
  * 会话启动时把所属组的概况拼到 systemPrompt 的 append 末尾。
- * 话题状态段只注入轻量头（topic + 未提炼标题 + 强指引）；完整卡唯一出口是 dogear__ReadGroupBackground 工具。
+ * 话题状态段只注入轻量头（topic + 未提炼标题 + 按需指引）；完整卡唯一出口是 dogear__ReadGroupBackground 工具。
  * 文件清单与单文件内容靠 dogear__ListGroupFiles 工具按需获取（避免 prompt 膨胀）。
  */
 
@@ -102,7 +102,7 @@ async function buildTopicStateSection(wsId: string, groupId: string, selfConvers
       : '';
     const topicRef = topic ? '本会话属于上方话题。' : '';
     parts.push(
-      `【指引】${topicRef}开局第一轮先调 dogear__ReadGroupBackground 获取话题最新状态${syncNote}；深挖某会话可 dogear__ReadReferenceSession。`,
+      `【指引】${topicRef}若用户消息缺少上下文、所指对象不明、或需接续历史脉络/查看进行中事项时，调 dogear__ReadGroupBackground 获取最新状态${syncNote}；深挖某会话可 dogear__ReadReferenceSession。`,
     );
   }
   return parts.join('\n');

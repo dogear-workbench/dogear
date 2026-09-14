@@ -362,7 +362,7 @@ export default function SettingsPage() {
               <div className="space-y-2">
                 <label className="text-sm font-medium">话题状态提炼模型</label>
                 <p className="text-xs text-muted-foreground">
-                  开启话题组会话时增量提炼话题状态卡的后台任务使用此模型，运行频繁，适合配置便宜档；选「不指定」时回退到默认模型。
+                  会话中同步提炼话题状态卡的后台任务使用此模型，运行频繁，适合配置便宜档；选「不指定」时回退到默认模型。
                 </p>
                 <ModelSelector
                   settings={local}

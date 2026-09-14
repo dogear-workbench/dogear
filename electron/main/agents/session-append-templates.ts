@@ -111,7 +111,7 @@ const GROUP_CONTEXT_EXAMPLE =
   '<当前生效话题一句话>\n' +
   '【最近未提炼会话】\n' +
   '- <时间>「<会话标题>」\n' +
-  '【指引】本会话属于上方话题。开局第一轮先调 dogear__ReadGroupBackground 获取话题最新状态（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）；深挖某会话可 dogear__ReadReferenceSession。\n' +
+  '【指引】本会话属于上方话题。若用户消息缺少上下文、所指对象不明、或需接续历史脉络/查看进行中事项时，调 dogear__ReadGroupBackground 获取最新状态（存在未提炼会话时会自动同步，可能需等待；未提炼会话中可能有更晚的事实）；深挖某会话可 dogear__ReadReferenceSession。\n' +
   '（话题背景 / 最近未提炼会话两段按实际内容可选；组内无前人状态——无话题且除自己外无未提炼会话——时不注入【指引】，仅保留「本组还没有提炼过的话题状态，不要虚构。」一句）'
 
 /**
@@ -124,7 +124,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '会话组上下文（模板说明）',
       category: 'group',
       template: GROUP_CONTEXT_EXAMPLE,
-      triggerDescription: '会话属于某个组且「会话组」包开时注入。内容 = 组头（组标题）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含开局先调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。任务执行会话（无人值守）只注入组头，不含话题状态段。',
+      triggerDescription: '会话属于某个组且「会话组」包开时注入。内容 = 组头（组标题）+ 话题状态轻量头（生效话题、最近未提炼会话；组内有前人状态才含按需调 dogear__ReadGroupBackground 的指引，排除自己后无前人状态时不注入指引）。任务执行会话（无人值守）只注入组头，不含话题状态段。',
       isDynamic: true,
     },
     {

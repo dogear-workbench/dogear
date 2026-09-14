@@ -36,9 +36,11 @@ export const LiveTail = memo(function LiveTail({
   isAgentConversation,
 }: LiveTailProps) {
   const liveTail = useTranscriptLiveTail(transcriptStore);
-  const lastBlockType = liveTail.length
-    ? liveTail[liveTail.length - 1].contentBlocks?.slice(-1)[0]?.type
-    : fallbackLastBlockType;
+  const lastBlock = liveTail.length
+    ? liveTail[liveTail.length - 1].contentBlocks?.slice(-1)[0]
+    : undefined;
+  const lastBlockType = lastBlock?.type ?? fallbackLastBlockType;
+  const lastToolName = lastBlock?.type === 'tool_use' ? lastBlock.toolName : undefined;
 
   return (
     <>
@@ -69,6 +71,7 @@ export const LiveTail = memo(function LiveTail({
         pendingState={pendingState}
         pendingCount={pendingCount}
         lastBlockType={lastBlockType}
+        lastToolName={lastToolName}
       />
     </>
   );

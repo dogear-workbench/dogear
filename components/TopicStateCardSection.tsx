@@ -128,13 +128,13 @@ export function TopicStateCardSection({
   const [busyIndex, setBusyIndex] = useState<number | null>(null);
 
   if (!card) {
-    return <div className="px-2 py-3 text-xs text-muted-foreground">话题状态尚未生成，开启会话后自动提炼</div>;
+    return <div className="px-2 py-3 text-xs text-muted-foreground">话题状态尚未生成，会话中 agent 获取话题背景时提炼</div>;
   }
 
   const isEmpty = !card.topicHistory.length
     && Object.values(card.entries).every((items) => items.length === 0);
   if (isEmpty) {
-    return <div className="px-2 py-3 text-xs text-muted-foreground">暂无状态记录，开启会话后自动提炼</div>;
+    return <div className="px-2 py-3 text-xs text-muted-foreground">暂无状态记录，会话中 agent 获取话题背景时提炼</div>;
   }
 
   const topic = card.topicHistory.length

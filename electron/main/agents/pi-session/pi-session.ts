@@ -713,6 +713,7 @@ export class PiSession extends EventEmitter {
       toolDefs.push(...this.registerPack('dogear-group-context', createGroupContextToolDefs({
         workspaceId: this.config.workspaceId,
         groupId: this.config.groupId,
+        selfConversationId: this.config.conversationId,
       })));
     }
 
