@@ -1,4 +1,4 @@
-import type { RunHistoryStatus, RunTriggerReason, RunTokens } from '@/types/scheduler';
+import type { RunHistorySource, RunHistoryStatus, RunTriggerReason, RunTokens } from '@/types/scheduler';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -51,6 +51,29 @@ export function describeTokens(tokens: RunTokens): string {
   if (tokens.cacheCreationInputTokens !== undefined) parts.push(`缓存写 ${tokens.cacheCreationInputTokens.toLocaleString()}`);
   return parts.join(' · ');
 }
+
+export function resolveSource(source?: RunHistorySource): RunHistorySource {
+  return source ?? 'scheduler';
+}
+
+export const SOURCE_META: Record<RunHistorySource, { label: string; badgeCls: string }> = {
+  scheduler: {
+    label: '定时任务',
+    badgeCls: 'border-border bg-muted text-muted-foreground',
+  },
+  'state-extract': {
+    label: '状态抽取',
+    badgeCls: 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-400',
+  },
+  'parse-article': {
+    label: '文章解析',
+    badgeCls: 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-400',
+  },
+  'collab-task': {
+    label: '协作任务',
+    badgeCls: 'border-pink-500/40 bg-pink-500/10 text-pink-700 dark:text-pink-400',
+  },
+};
 
 export const STATUS_META: Record<RunHistoryStatus, { label: string; badgeCls: string }> = {
   completed: {

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { RunHistoryEntry } from '@/types/scheduler';
 import {
+  SOURCE_META,
   STATUS_META,
   TRIGGER_REASON_LABELS,
   describeTokens,
@@ -13,6 +14,7 @@ import {
   formatRelativePast,
   formatTimeShort,
   formatTokenCount,
+  resolveSource,
 } from './history-utils';
 
 function TimeLine({ entry }: { entry: RunHistoryEntry }) {
@@ -59,6 +61,7 @@ function TokenUsage({ entry }: { entry: RunHistoryEntry }) {
 export function HistoryEntryCard({ entry }: { entry: RunHistoryEntry }) {
   const [expanded, setExpanded] = useState(false);
   const meta = STATUS_META[entry.status];
+  const sourceMeta = SOURCE_META[resolveSource(entry.source)];
   const expandable = Boolean(entry.summary || entry.error);
 
   return (
@@ -80,13 +83,18 @@ export function HistoryEntryCard({ entry }: { entry: RunHistoryEntry }) {
             {entry.kind === 'task' && entry.taskName && (
               <span className="text-xs text-muted-foreground truncate">{entry.taskName}</span>
             )}
-            <Badge
-              variant="outline"
-              className="font-normal text-muted-foreground"
-              title={entry.triggerDesc ?? TRIGGER_REASON_LABELS[entry.triggerReason]}
-            >
-              {TRIGGER_REASON_LABELS[entry.triggerReason]}
+            <Badge variant="outline" className={cn('font-normal shrink-0', sourceMeta.badgeCls)}>
+              {sourceMeta.label}
             </Badge>
+            {resolveSource(entry.source) === 'scheduler' && (
+              <Badge
+                variant="outline"
+                className="font-normal text-muted-foreground"
+                title={entry.triggerDesc ?? TRIGGER_REASON_LABELS[entry.triggerReason]}
+              >
+                {TRIGGER_REASON_LABELS[entry.triggerReason]}
+              </Badge>
+            )}
             <TokenUsage entry={entry} />
           </div>
           <TimeLine entry={entry} />

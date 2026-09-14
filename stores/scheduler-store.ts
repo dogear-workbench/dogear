@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import type {
   RunHistoryEntry,
+  RunHistorySource,
   ScheduledTask,
   ScheduledTaskWithNextRun,
   SchedulerActivity,
@@ -16,7 +17,7 @@ interface SchedulerStore {
   loadingError: string | null;
   activity: SchedulerActivity | null;
   history: RunHistoryEntry[];
-  historyTaskId: string | undefined;
+  historySource: RunHistorySource | undefined;
   historyCursor: number | undefined;
   historyLoading: boolean;
   historyError: string | null;
@@ -28,7 +29,7 @@ interface SchedulerStore {
   runTaskNow: (taskId: string) => Promise<void>;
   stopTask: (taskId: string) => Promise<void>;
   refreshActivity: () => Promise<void>;
-  loadHistory: (taskId?: string) => Promise<void>;
+  loadHistory: (filter?: { source?: RunHistorySource }) => Promise<void>;
   loadMoreHistory: () => Promise<void>;
   reset: () => void;
 }
@@ -41,7 +42,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   loadingError: null,
   activity: null,
   history: [],
-  historyTaskId: undefined,
+  historySource: undefined,
   historyCursor: undefined,
   historyLoading: false,
   historyError: null,
@@ -146,17 +147,17 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
     }
   },
 
-  loadHistory: async (taskId) => {
+  loadHistory: async (filter) => {
     const seq = ++historySeq;
     set({
       historyLoading: true,
       historyError: null,
-      historyTaskId: taskId,
+      historySource: filter?.source,
       historyCursor: undefined,
       loadingMore: false,
     });
     try {
-      const r = await client.listRunHistory({ planId: taskId, limit: HISTORY_PAGE_SIZE });
+      const r = await client.listRunHistory({ source: filter?.source, limit: HISTORY_PAGE_SIZE });
       if (seq !== historySeq) return;
       if ('error' in r) {
         set({ historyLoading: false, historyError: r.error, history: [] });
@@ -170,12 +171,12 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
   },
 
   loadMoreHistory: async () => {
-    const { historyCursor, historyTaskId, historyLoading, loadingMore } = get();
+    const { historyCursor, historySource, historyLoading, loadingMore } = get();
     if (historyLoading || loadingMore || historyCursor === undefined) return;
     set({ loadingMore: true });
     try {
       const r = await client.listRunHistory({
-        planId: historyTaskId,
+        source: historySource,
         cursor: historyCursor,
         limit: HISTORY_PAGE_SIZE,
       });
@@ -203,7 +204,7 @@ export const useSchedulerStore = create<SchedulerStore>((set, get) => ({
       loadingError: null,
       activity: null,
       history: [],
-      historyTaskId: undefined,
+      historySource: undefined,
       historyCursor: undefined,
       historyLoading: false,
       historyError: null,

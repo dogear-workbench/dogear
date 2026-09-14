@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 执行历史 UI
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,10 +28,17 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无实质差异。补充两点：① `SOURCE_META.scheduler` 采中性色（border-border/bg-muted）而非彩色，避免与 STATUS_META 的四色体系争用；② store 内 `historyTaskId` 改名 `historySource`（筛选维度从任务换成类型的自然结果）。
 - 改动文件清单：
+  - `app/data-center/history-utils.ts` — 加 `resolveSource()`（无 source 缺省 'scheduler'）与 `SOURCE_META`（四色：scheduler 中性 / state-extract violet / parse-article sky / collab-task pink）
+  - `stores/scheduler-store.ts` — `loadHistory(filter?: { source?: RunHistorySource })`，不再传 planId；`historyTaskId` → `historySource`；分页与 seq 竞态守卫不变
+  - `app/data-center/history-panel.tsx` — 「按任务筛选」→「按类型筛选」（SOURCE_OPTIONS 由 SOURCE_META 生成，onValueChange 走后端参数）；RunningSection 条目加类型徽章；删 tasks/loadTasks 依赖；空态文案覆盖类型维度
+  - `app/data-center/HistoryEntryCard.tsx` — 标题行加类型徽章；触发方式徽章仅 `resolveSource(entry.source) === 'scheduler'` 显示
+- 验证：`bunx tsc --noEmit -p tsconfig.json` 通过；`bun run lint` 0 errors（83 个既有 any warning，与本次无关）；四个改动文件单独 eslint 零输出。运行时四类任务各自入史的可视验证留待用户日常使用确认。
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `SOURCE_META: Record<RunHistorySource, { label, badgeCls }>`；`resolveSource(source?: RunHistorySource): RunHistorySource`
+  - `loadHistory(filter?: { source?: RunHistorySource })`；store 内 `historySource` 持久于分页（loadMoreHistory 透传）
+- 下个 step 该从哪里继续：本计划最后一步，无后续 step。
+- 待办或已知限制：① 状态筛选仍是前端过滤（沿用既有行为），状态筛选下「加载更多」按钮可能被隐藏（visible 为空时），与改动前一致；② 类型徽章与状态徽章在 scheduler 中性色上可能与 cancelled/missed 状态徽章同色，属可接受的中性语义复用。
