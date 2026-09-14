@@ -441,6 +441,9 @@ class AgentWorker {
     const skipped: string[] = [];
     const failures: Array<{ conversationId: string; error: string }> = [];
 
+    const tokens = { inputTokens: 0, outputTokens: 0, cacheReadInputTokens: 0, cacheCreationInputTokens: 0 };
+    let hasTokens = false;
+
     try {
       for (const conv of conversations) {
         if (abortController.signal.aborted) break;
@@ -551,7 +554,17 @@ class AgentWorker {
             },
           });
 
-          if (!result.ok) throw new Error(result.cancelled ? '已取消' : result.error);
+          if (result.ok) {
+            if (result.usage) {
+              hasTokens = true;
+              tokens.inputTokens += result.usage.inputTokens;
+              tokens.outputTokens += result.usage.outputTokens;
+              tokens.cacheReadInputTokens += result.usage.cacheReadInputTokens;
+              tokens.cacheCreationInputTokens += result.usage.cacheCreationInputTokens;
+            }
+          } else {
+            throw new Error(result.cancelled ? '已取消' : result.error);
+          }
           if (!increment) throw new Error('模型未成功调 emit_state_increment');
 
           await mergeIncrementAndSave(workspaceId, groupId, increment, {
@@ -569,7 +582,7 @@ class AgentWorker {
 
       if (abortController.signal.aborted) {
         taskLogger.info('话题状态抽取被取消:', groupId);
-        return { groupId, processed: processed.length, skipped: skipped.length, failed: failures.length, cancelled: true };
+        return { groupId, processed: processed.length, skipped: skipped.length, failed: failures.length, cancelled: true, tokens: hasTokens ? { ...tokens } : undefined };
       }
 
       taskLogger.info('话题状态抽取任务完成，耗时:', Date.now() - startedAt, 'ms', '| processed:', processed.length, '| skipped:', skipped.length, '| failed:', failures.length, '| tier:', tier);
@@ -581,6 +594,7 @@ class AgentWorker {
         failures,
         tier,
         profileName: resolvedProfile.name,
+        tokens: hasTokens ? { ...tokens } : undefined,
       };
     } finally {
       this.currentAbortController = null;

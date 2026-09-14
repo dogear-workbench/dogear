@@ -1,7 +1,7 @@
 ---
 step: 2
 title: STATE_EXTRACT 接入
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,9 +27,18 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. tokens 累加只在 `result.ok` 分支（runOnce 失败分支类型上无 usage）；失败会话进 failures 继续循环，不影响后续累计
+  2. 模型解析失败早返回不带 tokens（累计为零，写全零是噪音，省略字段）
+  3. summary 的「处理 X 会话」X = processed+skipped+failed（实际尝试数，取消中断时更真实）
+  4. 补充 submitTask 抛错路径：catch 中 reportDone 清理注册表、不写历史
 - 改动文件清单：
+  - `electron/main/agents/agent-worker.ts` — handleStateExtractTask 循环外 tokens 累加器（四字段 + hasTokens 标志），取消/正常返回均带 `tokens`
+  - `electron/main/services/memory/state-extract-trigger.ts` — submitExtractTask 内查组标题 + reportRunning；新增模块级辅助 extractTaskName / extractRunTokens / buildExtractSummary / recordExtractRun（先写历史再 reportDone，各自 try/catch + log）
+- 验证：`bun run build:electron` 通过；运行时验证（开新会话触发抽取）无人值守跳过，以编译+走查为准
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - worker 返回值新增 `tokens?: { inputTokens, outputTokens, cacheReadInputTokens, cacheCreationInputTokens }`，经 MessagePort 结构化克隆到主进程回调，trigger 侧已做 number 校验兑底
+  - 历史条目：planId = task.id（`state-extract-{groupId}-{ts}`）、planName = `状态抽取 · {组标题}`、source: 'state-extract'、triggerReason: 'condition'、startedAt = task.createdAt
+- 下个 step 该从哪里继续：Step 3 PARSE_ARTICLE 接入（tipc/article.ts 终态写历史，不带 tokens；删 getParseHistory；数据中心五 tab → 四 tab）
+- 待办或已知限制：cancelTask 立即发 CANCELLED 无 result，取消条目 summary 显示全 0（现有流程行为，超出本 step 范围）；超时兑底路径不写历史不 reportDone，终态回调稍后仍触发（符合设计）
