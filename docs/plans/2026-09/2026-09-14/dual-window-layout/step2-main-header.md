@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 主窗口 header 改版与互斥响应
-status: pending
+status: done
 ---
 
 ## 目标
@@ -33,9 +33,21 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. 计划只提 `app/page.tsx` 调用点清理，实际 `app/session-window/page.tsx:118` 也传了 rightPanelToggle，移除 prop 后编译不过，已同步清理；该页右侧 ArticlePreview 在 Step 4 布局重做前恒展开（本地 state 保留为 `useState(true)` 无 setter，附一行注释说明过渡态）
+  2. 工作台按钮高亮态用 `variant={workbenchWindowOpen ? 'default' : 'outline'}` 切换（primary 填充），未另造样式
 - 改动文件清单：
+  - `stores/ui-store.ts` — workbenchWindowOpen + setWorkbenchWindowOpen + reset 纳入
+  - `electron/main/main-app.ts` — 新增导出 closeWorkbenchWindow()（判空静默，closed 广播由既有事件监听驱动）
+  - `electron/main/tipc/windows.ts` — 新增 closeWorkbenchWindow RPC
+  - `app/page.tsx` — 互斥订阅 useEffect + header 改版（左：折叠钮 + WorkspaceSwitcherPopover + 分隔线 + 设置 + NotificationCenter；右：自选股/数据中心/工作台切换钮/微信/右栏折叠钮，workbenchWindowOpen 时隐藏）+ 删刷新按钮与 loadWorkspaceFiles/loadingFiles/RefreshCw 残留 + h-10 紧凑化 + AgentChat 调用点清理
+  - `components/agent-chat/types.ts` — 删 rightPanelToggle prop
+  - `components/agent-chat/AgentChat.tsx` — 删 prop 解构、轨道内按钮、PanelRightClose/PanelRightOpen import
+  - `app/session-window/page.tsx` — 删 rightPanelToggle 传参
+- 验证：`bun run build:electron` ✅、`bunx tsc -p tsconfig.json --noEmit` ✅、`bun run lint` 0 errors ✅、主进程 smoke（独立 userData）：空窗静默关/创建后关/双重关均 ✅。UI 视觉响应（右栏收起/按钮高亮）需 dev 模式人工确认
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `client.closeWorkbenchWindow()` → `{ success: boolean }`；`useUIStore.getState().workbenchWindowOpen` 为互斥权威态（广播驱动）
+  - 订阅写法：`rendererEvents.workbenchWindowOpened.listen(() => { useUIStore.getState()... })` 照 app/page.tsx:39
+- 下个 step 该从哪里继续：Step 3（tab 分组 + 笔记窗口页），在 `src/App.tsx` 注册 `/notes-window` 路由；session-store 加哨兵 tab 弹出态订阅 notesWindowOpened/Closed
+- 待办或已知限制：session-window 右栏无开关（恒展开），Step 4 布局重做时一并处理

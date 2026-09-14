@@ -348,6 +348,13 @@ export async function createWorkbenchWindow() {
   });
 }
 
+/** 关闭伴随工作台窗口（互斥切换钮用，未开启时静默；closed 广播由事件监听驱动） */
+export function closeWorkbenchWindow() {
+  if (workbenchWindow && !workbenchWindow.isDestroyed()) {
+    workbenchWindow.close();
+  }
+}
+
 /**
  * 创建笔记窗口（单例，已存在则聚焦）
  * 弹出 = 主窗口隐藏笔记哨兵 tab（tab 开关状态保留），关窗广播恢复

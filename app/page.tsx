@@ -5,7 +5,7 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { playDogearSound } from '@/lib/dogear-sound';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, Database, PictureInPicture2 } from 'lucide-react';
+import { Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
@@ -32,8 +32,25 @@ export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
   const rightPanelOpen = useUIStore((s) => s.rightPanelOpen);
   const toggleRightPanel = useUIStore((s) => s.toggleRightPanel);
+  const workbenchWindowOpen = useUIStore((s) => s.workbenchWindowOpen);
   const leftPanelOpen = useUIStore((s) => s.leftPanelOpen);
   const toggleLeftPanel = useUIStore((s) => s.toggleLeftPanel);
+
+  // 工作台窗口互斥：开窗收右栏并隐藏开关，关窗恢复；广播驱动，重启即单窗口态
+  useEffect(() => {
+    const unsubOpened = rendererEvents.workbenchWindowOpened.listen(() => {
+      useUIStore.getState().setWorkbenchWindowOpen(true);
+      useUIStore.getState().closeRightPanel();
+    });
+    const unsubClosed = rendererEvents.workbenchWindowClosed.listen(() => {
+      useUIStore.getState().setWorkbenchWindowOpen(false);
+      useUIStore.getState().openRightPanel();
+    });
+    return () => {
+      unsubOpened();
+      unsubClosed();
+    };
+  }, []);
 
   // 应用启动时加载设置
   const settingsLoaded = useSettingsStore((s) => s.loaded);
@@ -74,8 +91,6 @@ export default function Home() {
       setLoadingDefaultWs(false);
     }
   }, []);
-  const loadingFiles = useWorkspaceStore((s) => s.loadingFiles);
-  const loadWorkspaceFiles = useWorkspaceStore((s) => s.loadWorkspaceFiles);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
 
@@ -203,13 +218,13 @@ export default function Home() {
   return (
     <main className="h-full flex flex-col">
       <TitleBar title="Dogear" />
-      {/* 顶部导航栏 */}
-      <header className="h-12 border-b flex items-center justify-between px-4 bg-background">
-        <div className="flex items-center gap-2">
+      {/* 顶部导航栏：左 = 面板折叠 + 工作区切换 + 设置 + 消息；右 = 自选股/数据中心/工作台/微信/右栏折叠 */}
+      <header className="h-10 border-b flex items-center justify-between px-3 bg-background">
+        <div className="flex items-center gap-1.5">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0"
             onClick={toggleLeftPanel}
             title={leftPanelOpen ? '折叠左侧面板' : '展开左侧面板'}
           >
@@ -220,43 +235,57 @@ export default function Home() {
             )}
           </Button>
           <WorkspaceSwitcherPopover />
-        </div>
-        <div className="flex items-center gap-2">
-          <NotificationCenter />
-          <Button variant="outline" size="sm" onClick={openSettings}>
-            <Settings className="w-4 h-4 mr-2" />
+          <div className="w-px h-5 bg-border mx-1" />
+          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openSettings}>
+            <Settings className="w-3.5 h-3.5 mr-1.5" />
             设置
           </Button>
-          <Button variant="outline" size="sm" onClick={openStockWindow}>
-            <TrendingUp className="w-4 h-4 mr-2" />
+          <NotificationCenter />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openStockWindow}>
+            <TrendingUp className="w-3.5 h-3.5 mr-1.5" />
             自选股
           </Button>
-          <Button variant="outline" size="sm" onClick={openDataCenterTab}>
-            <Database className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openDataCenterTab}>
+            <Database className="w-3.5 h-3.5 mr-1.5" />
             数据中心
           </Button>
           <Button
-            variant="outline"
+            variant={workbenchWindowOpen ? 'default' : 'outline'}
             size="sm"
+            className="h-7 px-2.5"
             onClick={() => {
-              client.openWorkbenchWindow().catch((err) => console.error('打开伴随工作台失败:', err));
+              if (workbenchWindowOpen) {
+                client.closeWorkbenchWindow().catch((err) => console.error('关闭伴随工作台失败:', err));
+              } else {
+                client.openWorkbenchWindow().catch((err) => console.error('打开伴随工作台失败:', err));
+              }
             }}
-            title="打开伴随工作台窗口"
+            title={workbenchWindowOpen ? '关闭伴随工作台窗口' : '打开伴随工作台窗口'}
           >
-            <PictureInPicture2 className="w-4 h-4 mr-2" />
+            <PictureInPicture2 className="w-3.5 h-3.5 mr-1.5" />
             工作台
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setWechatDialogOpen(true)}>
-            <MessageCircle className="w-4 h-4 mr-2" />
+          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => setWechatDialogOpen(true)}>
+            <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
             微信
           </Button>
-          <Button variant="outline" size="sm" onClick={() => loadWorkspaceFiles()} disabled={loadingFiles}>
-            {loadingFiles ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-          </Button>
+          {!workbenchWindowOpen && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={toggleRightPanel}
+              title={rightPanelOpen ? '折叠右侧面板' : '展开右侧面板'}
+            >
+              {rightPanelOpen ? (
+                <PanelRightClose className="w-4 h-4" />
+              ) : (
+                <PanelRightOpen className="w-4 h-4" />
+              )}
+            </Button>
+          )}
         </div>
       </header>
 
@@ -317,7 +346,6 @@ export default function Home() {
                   conversationIdOverride={tab.conversationId}
                   visible={activeTabId === tab.conversationId && !sessionWindowIds.has(tab.conversationId)}
                   workspaceId={tab.workspaceId}
-                  rightPanelToggle={{ open: rightPanelOpen, onToggle: toggleRightPanel }}
                 />
               </div>
             ))}

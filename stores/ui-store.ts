@@ -27,6 +27,13 @@ interface UIState {
   rightPanelTab: 'files' | 'additional' | 'topic' | 'terminal' | 'browser';
   /** 切换右侧面板 tab */
   setRightPanelTab: (tab: 'files' | 'additional' | 'topic' | 'terminal' | 'browser') => void;
+
+  // 工作台窗口互斥态（广播驱动，内存态不落盘，重启即单窗口）
+  /** 工作台窗口是否开启 */
+  workbenchWindowOpen: boolean;
+  /** 设置工作台窗口互斥态 */
+  setWorkbenchWindowOpen: (open: boolean) => void;
+
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -50,11 +57,15 @@ export const useUIStore = create<UIState>((set) => ({
   rightPanelTab: 'files',
   setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
 
+  // 工作台窗口互斥态（默认关闭）
+  workbenchWindowOpen: false,
+  setWorkbenchWindowOpen: (open) => set({ workbenchWindowOpen: open }),
+
   reset: () => set({
     settingsOpen: false,
     leftPanelOpen: true,
     rightPanelOpen: false,
     rightPanelTab: 'files',
-
+    workbenchWindowOpen: false,
   }),
 }));

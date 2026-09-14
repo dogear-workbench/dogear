@@ -97,11 +97,6 @@ export interface AgentChatProps {
   workspaceId?: string | null;
   /** 是否处于可见 tab；隐藏 tab 使用低频流刷新 */
   visible?: boolean;
-  /** 右侧面板折叠控制（主页/独立会话窗口传入，渲染到右侧工具轨道顶部） */
-  rightPanelToggle?: {
-    open: boolean;
-    onToggle: () => void;
-  };
 }
 
 /**

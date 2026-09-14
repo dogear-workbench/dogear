@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, AlertCircle, ChevronDown, PanelRightOpen, PanelRightClose, ArrowLeftRight, X } from 'lucide-react';
+import { Archive, AlertCircle, ChevronDown, ArrowLeftRight, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -65,7 +65,6 @@ export function AgentChat({
   showReplayMessages = true,
   conversationIdOverride,
   workspaceId,
-  rightPanelToggle,
   visible = true,
 }: AgentChatProps) {
   const conversationId = conversationIdOverride ?? null;
@@ -494,20 +493,8 @@ export function AgentChat({
 
       {/* 右侧工具轨道：w-12 透明浮层，顶部+底部两组按钮 */}
       <div className="absolute top-0 right-0 bottom-0 w-12 flex flex-col pointer-events-none z-10">
-        {/* 顶部按钮组：右栏折叠 + Minimap */}
+        {/* 顶部按钮组：Minimap */}
         <div className="flex flex-col gap-1 p-1 pointer-events-auto">
-          {rightPanelToggle && (
-            <button
-              onClick={rightPanelToggle.onToggle}
-              className="w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
-              title={rightPanelToggle.open ? '折叠预览面板' : '展开预览面板'}
-            >
-              {rightPanelToggle.open
-                ? <PanelRightClose size={14} />
-                : <PanelRightOpen size={14} />
-              }
-            </button>
-          )}
           <MessageMinimap
             turns={chatTurns}
             messagesById={messagesById}

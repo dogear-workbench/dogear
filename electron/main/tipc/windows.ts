@@ -20,6 +20,14 @@ export const windowsRouter = {
       return { success: true };
     }),
 
+  /** 关闭伴随工作台窗口（互斥切换钮：已开启时点击收回） */
+  closeWorkbenchWindow: t.procedure
+    .action(async () => {
+      const { closeWorkbenchWindow } = await import('../main-app.js');
+      closeWorkbenchWindow();
+      return { success: true };
+    }),
+
   /** 打开笔记窗口（单例，已存在则聚焦） */
   openNotesWindow: t.procedure
     .action(async () => {

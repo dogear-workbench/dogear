@@ -15,7 +15,8 @@ import { TitleBar } from '@/components/TitleBar';
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
   const [leftPanelOpen, setLeftPanelOpen] = useState(false);
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  // AgentChat 不再内置右栏开关（Step 2 移除），布局重做前右栏恒展开
+  const [rightPanelOpen] = useState(true);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [windowWorkspaceId, setWindowWorkspaceId] = useState<string | null>(null);
@@ -115,10 +116,6 @@ export function SessionWindowPage() {
               visible
               workspaceId={windowWorkspaceId}
               showStatusHint={false}
-              rightPanelToggle={{
-                open: rightPanelOpen,
-                onToggle: () => setRightPanelOpen(v => !v),
-              }}
             />
           ) : null}
         </main>
