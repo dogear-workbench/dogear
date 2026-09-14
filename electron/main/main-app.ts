@@ -131,18 +131,43 @@ function createWindow() {
   getSessionNotificationService().registerMainWindow(mainWindow);
 
   getSessionNotificationService().setLocateCallback((conversationId, workspaceId, taskId) => {
+    if (taskId) {
+      routeFocusTask(taskId, workspaceId);
+      return;
+    }
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
       const handlers = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
-      if (taskId) {
-        handlers.focusTask.send({ taskId, workspaceId });
-      } else {
-        handlers.focusConversation.send({ conversationId, workspaceId });
-      }
+      handlers.focusConversation.send({ conversationId, workspaceId });
     } catch (err) {
       console.error('[session-notification] focus 事件发送失败:', err);
     }
   });
+}
+
+/**
+ * 任务通知点击分流：笔记窗口存活则前置并直发定位事件，否则主窗口切笔记 tab（现状）
+ */
+function routeFocusTask(taskId: string, workspaceId: string) {
+  const notes = getNotesWindow();
+  if (notes) {
+    if (notes.isMinimized()) notes.restore();
+    notes.focus();
+    try {
+      const h = getRendererHandlers<RendererHandlers>(notes.webContents);
+      h.notesTaskFocus.send({ taskId, workspaceId });
+    } catch {
+      // 写后即广播，发送失败静默
+    }
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    const h = getRendererHandlers<RendererHandlers>(mainWindow.webContents);
+    h.focusTask.send({ taskId, workspaceId });
+  } catch (err) {
+    console.error('[session-notification] focus 事件发送失败:', err);
+  }
 }
 
 /**
@@ -353,6 +378,11 @@ export function closeWorkbenchWindow() {
   if (workbenchWindow && !workbenchWindow.isDestroyed()) {
     workbenchWindow.close();
   }
+}
+
+/** 工作台窗口是否存活（会话窗口冷启动互斥态同步用） */
+export function getWorkbenchWindowOpen(): boolean {
+  return workbenchWindow !== null && !workbenchWindow.isDestroyed();
 }
 
 /**

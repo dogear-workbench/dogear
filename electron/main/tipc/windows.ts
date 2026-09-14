@@ -42,4 +42,11 @@ export const windowsRouter = {
       const { getNotesWindow } = await import('../main-app.js');
       return { open: getNotesWindow() !== null };
     }),
+
+  /** 工作台窗口是否存活（会话窗口冷启动互斥态同步用） */
+  getWorkbenchWindowOpen: t.procedure
+    .action(async () => {
+      const { getWorkbenchWindowOpen } = await import('../main-app.js');
+      return { open: getWorkbenchWindowOpen() };
+    }),
 };

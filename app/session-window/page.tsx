@@ -75,6 +75,11 @@ export function SessionWindowPage() {
     }
     init();
 
+    // 互斥态冷启动同步：广播只通知变更，窗口创建时工作台已开启则需主动拉取
+    void client.getWorkbenchWindowOpen().then(({ open }) => {
+      useUIStore.getState().setWorkbenchWindowOpen(open);
+    }).catch(() => {});
+
     // CompanionPanel 非 full 模式宽度受 ui-store.rightPanelOpen 控制，本窗口 store 实例默认折叠需显式展开
     useUIStore.getState().openRightPanel();
   }, [conversationId]);

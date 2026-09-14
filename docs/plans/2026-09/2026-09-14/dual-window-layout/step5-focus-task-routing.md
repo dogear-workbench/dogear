@@ -1,7 +1,7 @@
 ---
 step: 5
 title: focusTask 通知分流
-status: pending
+status: done
 ---
 
 ## 目标
@@ -26,9 +26,15 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. 渲染层 `app/page.tsx` focusTask 分支**零改动**：switchTab 收口（Step 3）已覆盖计划要求的「notesTabOpen && !notesWindowOpen 前置判断」——分流后主窗口只在笔记窗口不存活时收到 focusTask（不存在弹出中场景），笔记 tab 被关时 switchTab(NOTES_TAB_ID) 自动重开。重复加判断属双重逻辑。
+  2. Step 4 遗留修复弃用「主进程补发广播」建议：新窗口 loadURL 返回时渲染层监听未注册、did-finish-load 时 React useEffect 也未必注册完，补发有竞态。改用「冷启动查询」：新增 RPC `getWorkbenchWindowOpen`，session-window 初始化时拉取（项目先例：workbench-window 冷启动 getFocusedConversation 拉取，「初始状态查询、变更事件」模式），无竞态。
 - 改动文件清单：
+  - `electron/main/main-app.ts`：setLocateCallback 的 taskId 分支抽出 `routeFocusTask()` 分流（getNotesWindow 进程内直查 → restore+focus + 直发 notesTaskFocus，发送失败静默；不存活 → 主窗口发 focusTask 现状）；新增导出 `getWorkbenchWindowOpen(): boolean`
+  - `electron/main/tipc/windows.ts`：新增 RPC `getWorkbenchWindowOpen → { open: boolean }`
+  - `app/session-window/page.tsx`：init effect 内冷启动拉取互斥态（fire-and-forget，失败静默）
+- 验证：build:electron / lint（0 errors）/ tsc --noEmit 全过；UI 链路待 dev 人工确认（双开点通知→笔记窗口前置定位；不开→主窗口切笔记 tab；tab 被关→自动重开定位）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名：`routeFocusTask(taskId, workspaceId)`（main-app.ts 模块私有）；`client.getWorkbenchWindowOpen() → { open }`；发送点唯一（setLocateCallback），通知中心渲染层点击不在此链路
+- 下个 step：无（计划收官）
+- 待办或已知限制：通知中心点击在笔记窗口弹出中走 switchTab 收口「落回最近可用 tab」，不路由笔记窗口（渲染层路径，一期范围外）；本计划遗留见各 step 交付文档
