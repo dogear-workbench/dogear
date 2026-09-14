@@ -281,13 +281,9 @@ export default function Home() {
             size="sm"
             className="h-7 px-2.5"
             onClick={() => {
-              if (workbenchWindowOpen) {
-                client.closeWorkbenchWindow().catch((err) => console.error('关闭伴随工作台失败:', err));
-              } else {
-                client.openWorkbenchWindow().catch((err) => console.error('打开伴随工作台失败:', err));
-              }
+              client.openWorkbenchWindow().catch((err) => console.error('打开工作台失败:', err));
             }}
-            title={workbenchWindowOpen ? '关闭伴随工作台窗口' : '打开伴随工作台窗口'}
+            title={workbenchWindowOpen ? '聚焦工作台窗口' : '打开工作台窗口'}
           >
             <PictureInPicture2 className="w-3.5 h-3.5 mr-1.5" />
             工作台

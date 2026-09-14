@@ -102,7 +102,7 @@ export function WorkbenchWindowPage() {
 
   return (
     <div className="h-full flex bg-background">
-      <TitleBar title="伴随工作台" />
+      <TitleBar title="工作台" />
       {initError ? (
         <div className="flex-1 flex items-center justify-center px-6 text-sm text-muted-foreground text-center">
           {initError}

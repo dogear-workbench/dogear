@@ -88,7 +88,7 @@ let stockWindow: BrowserWindowType | null = null;
 // 数据中心窗口实例
 let dataCenterWindow: BrowserWindowType | null = null;
 
-// 伴随工作台窗口实例
+// 工作台窗口实例
 let workbenchWindow: BrowserWindowType | null = null;
 
 // 笔记窗口实例
@@ -357,7 +357,7 @@ export async function createDataCenterWindow() {
 }
 
 /**
- * 创建伴随工作台窗口（单例，已存在则聚焦）
+ * 创建工作台窗口（单例，已存在则聚焦）
  */
 export async function createWorkbenchWindow() {
   if (workbenchWindow) {
@@ -370,7 +370,7 @@ export async function createWorkbenchWindow() {
     stateKey: 'workbench-window',
     width: 560,
     height: 840,
-    title: '伴随工作台',
+    title: '工作台',
     hashPath: '/workbench-window',
   });
   broadcastToWindows((h) => h.workbenchWindowOpened.send(null));
@@ -379,13 +379,6 @@ export async function createWorkbenchWindow() {
     workbenchWindow = null;
     broadcastToWindows((h) => h.workbenchWindowClosed.send(null));
   });
-}
-
-/** 关闭伴随工作台窗口（互斥切换钮用，未开启时静默；closed 广播由事件监听驱动） */
-export function closeWorkbenchWindow() {
-  if (workbenchWindow && !workbenchWindow.isDestroyed()) {
-    workbenchWindow.close();
-  }
 }
 
 /** 工作台窗口是否存活（会话窗口冷启动互斥态同步用） */

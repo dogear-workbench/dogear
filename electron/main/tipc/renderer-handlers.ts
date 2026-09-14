@@ -254,10 +254,10 @@ export type RendererHandlers = {
 
   // === 双屏工作模式：窗口生命周期广播（互斥/哨兵弹出状态由前端 store 消费，不落盘） ===
 
-  // 伴随工作台窗口打开（主窗口右栏收起、开关按钮隐藏，独立会话窗口工具箱同步隐藏）
+  // 工作台窗口打开（主窗口右栏收起、开关按钮隐藏，独立会话窗口工具箱同步隐藏）
   workbenchWindowOpened: (data: null) => void;
 
-  // 伴随工作台窗口关闭（右栏恢复展开）
+  // 工作台窗口关闭（右栏恢复展开）
   workbenchWindowClosed: (data: null) => void;
 
   // 笔记窗口打开（主窗口隐藏笔记哨兵 tab）

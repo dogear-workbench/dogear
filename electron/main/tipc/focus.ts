@@ -16,7 +16,7 @@ export const focusRouter = {
       return { success: true };
     }),
 
-  /** 查询当前全局焦点会话（伴随工作台冷启动恢复跟随用） */
+  /** 查询当前全局焦点会话（工作台窗口冷启动恢复跟随用） */
   getFocusedConversation: t.procedure
     .action(async () => {
       return { focused: getFocusedConversation() };
