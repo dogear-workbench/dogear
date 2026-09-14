@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 协作任务接入
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,9 +28,20 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - reportDone 收口点选在 task-service 层（计划允许二选一）：申报路径由 agents/tools/task-tools.ts 调用、手动取消由 tipc/tasks.ts 调用，队列侧均覆盖不到，task-service 是唯一能覆盖所有出口的层；reportRunning 按计划留在 task-queue（markTaskRunning 后，唯一调用方）。任务名统一由 task-service.collabTaskName 导出，两侧共用
+  - 「running 态离开注册表」不变量核对后，除计划三处外还给两个出口补了 reportDone：cancelTask（queued/running→backlog 手动取消）与 completeTask（running→review，当前无调用方的遗留导出，防未来启用时泄漏）；recoverInterruptedTasks（启动恢复）不处理——注册表内存态重启已空，天然闭合
+  - reportTaskResult 按「任何成功迁移到 review 的申报都写历史」实现（计划改动段写的是「→review」）：覆盖 running→review 常规路径与 interrupted/rejected→review 插话续跑路径，后者 startedAt 从注册表查不到自然省略，与「每轮申报各成一条历史」语义一致
 - 改动文件清单：
+  - `electron/main/services/task-service.ts` — 新增 collabTaskName 导出 + recordCollabRun（写历史 try/catch + reportDone，先历史后 reportDone）；interruptTask/rejectTask/reportTaskResult 三处迁移后 `void recordCollabRun(...)`；cancelTask/completeTask 补 reportDone
+  - `electron/main/services/task-queue.ts` — markTaskRunning 成功后 reportRunning(task.id, { source: 'collab-task', name })
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `collabTaskName(task: Pick<Task, 'title'>): string` → `协作任务 · {title}`
+  - `recordCollabRun(task, status: RunHistoryStatus, summary?, error?)` 私有：条目 source 'collab-task' / kind 'task' / triggerReason 'condition' / startedAt=注册表查询（无则省略）/ endedAt=now / 无 tokens
+  - 状态映射：申报→completed（summary=task.result）；interruptTask→interrupted（error=task.result 即中断原因，summary 省略）；rejectTask→failed（summary=`被拒绝：${reason}`）
+- 下个 step 该从哪里继续：Step 5 执行历史 UI（history-utils SOURCE_META 四类标签/徽章、history-panel 类型筛选 + 运行区统一注册表数据源）
 - 待办或已知限制：
+  - 手动取消（cancelTask）不写历史（计划三处不含），仅收口注册表；如需 cancelled 流水可后续补
+  - 运行时验证跳过（协作任务全流程无法无人值守执行），以编译 + running 态出口全量走查代替
+  - 日志用 mainLogger.child('task-service')，写历史/清注册表失败 warn 不影响迁移
