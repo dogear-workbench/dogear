@@ -4,6 +4,7 @@ import { mainLogger } from '../../agents/logger.js';
 import type { RunHistoryEntry, ScheduledTask, SchedulerActivity, Trigger } from './types.js';
 import { isRetiredBuiltinTask, loadTasks, markOnceFired, touchTriggerFired } from './plan-store.js';
 import { appendHistoryEntry, cleanupHistory } from './run-history-store.js';
+import { getRunning } from '../background-activity-service.js';
 import {
   describeTrigger,
   detectMissed,
@@ -173,8 +174,7 @@ class SchedulerService {
   }
 
   getActivity(): SchedulerActivity {
-    const activity = this.runner.getActivity();
-    return { ...activity, lastTickAt: this.lastTickAt };
+    return { running: getRunning(), lastTickAt: this.lastTickAt };
   }
 
   stop(): void {
@@ -204,6 +204,7 @@ class SchedulerService {
         ts: Date.now(),
         planId: m.taskId,
         planName: m.taskName,
+        source: 'scheduler',
         kind: 'missed',
         status: 'missed',
         triggerReason: 'time',

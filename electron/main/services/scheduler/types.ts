@@ -49,6 +49,7 @@ export type ScheduledTask = CustomScheduledTask;
 
 export type ScheduledTaskWithNextRun = ScheduledTask & { nextRunAt?: number };
 
+export type RunHistorySource = 'scheduler' | 'state-extract' | 'parse-article' | 'collab-task';
 export type RunHistoryStatus = 'completed' | 'failed' | 'cancelled' | 'missed' | 'interrupted';
 export type RunTriggerReason = 'time' | 'condition' | 'manual';
 
@@ -64,6 +65,7 @@ export interface RunHistoryEntry {
   ts: number;
   planId: string;
   planName: string;
+  source?: RunHistorySource;
   taskId?: string;
   taskName?: string;
   kind: 'task' | 'missed';
@@ -80,6 +82,7 @@ export interface RunHistoryEntry {
 export interface SchedulerRunningPlan {
   taskId: string;
   taskName: string;
+  source: RunHistorySource;
   startedAt: number;
 }
 

@@ -10,7 +10,7 @@ import {
   validateTaskForSave,
 } from '../services/scheduler/plan-validate.js';
 import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
-import type { ScheduledTask } from '../services/scheduler/types.js';
+import type { RunHistorySource, ScheduledTask } from '../services/scheduler/types.js';
 
 const t = tipc.create();
 
@@ -111,10 +111,15 @@ export const schedulerRouter = {
     }),
 
   listRunHistory: t.procedure
-    .input<{ planId?: string; cursor?: number; limit?: number }>()
+    .input<{ planId?: string; cursor?: number; limit?: number; source?: RunHistorySource }>()
     .action(async ({ input }) => {
       try {
-        return await queryHistory({ planId: input.planId, before: input.cursor, limit: input.limit });
+        return await queryHistory({
+          planId: input.planId,
+          before: input.cursor,
+          limit: input.limit,
+          source: input.source,
+        });
       } catch (error) {
         console.error('[scheduler] listRunHistory 失败:', error);
         return { entries: [], error: String(error) };

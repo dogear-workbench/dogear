@@ -1,9 +1,10 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { mainLogger } from '../../../agents/logger.js';
-import type { RunHistoryEntry, ScheduledTask, SchedulerActivity } from '../types.js';
+import type { RunHistoryEntry, ScheduledTask } from '../types.js';
 import { updateTaskRunState } from '../plan-store.js';
 import { appendHistoryEntry } from '../run-history-store.js';
+import { reportDone, reportRunning } from '../../background-activity-service.js';
 import { executeTask, type TaskExecResult, type TriggerContext } from './task-executor.js';
 
 export interface RunTaskOptions {
@@ -23,10 +24,7 @@ export interface TaskDoneEvent {
 }
 
 interface RunningInfo {
-  taskId: string;
   taskName: string;
-  startedAt: number;
-  task: ScheduledTask;
   agentTaskId?: string;
   sourceTriggerId?: string;
   stopRequested: boolean;
@@ -42,10 +40,7 @@ class TaskRunner extends EventEmitter {
       return { started: false };
     }
     const info: RunningInfo = {
-      taskId: task.id,
       taskName: task.name,
-      startedAt: Date.now(),
-      task,
       sourceTriggerId: opts.triggerId,
       stopRequested: false,
       stopReason: 'manual',
@@ -73,23 +68,13 @@ class TaskRunner extends EventEmitter {
       .catch((err) => mainLogger.warn('[scheduler] 取消自定义任务失败:', err));
   }
 
-  getActivity(): SchedulerActivity {
-    return {
-      running: [...this.running.values()].map((r) => ({
-        taskId: r.taskId,
-        taskName: r.taskName,
-        startedAt: r.startedAt,
-      })),
-      lastTickAt: 0,
-    };
-  }
-
   private async appendInterruptedEntry(task: ScheduledTask, opts: RunTaskOptions): Promise<void> {
     const entry: RunHistoryEntry = {
       id: randomUUID(),
       ts: Date.now(),
       planId: task.id,
       planName: task.name,
+      source: 'scheduler',
       kind: 'task',
       status: 'interrupted',
       triggerReason: opts.triggerReason,
@@ -112,6 +97,7 @@ class TaskRunner extends EventEmitter {
       ts: Date.now(),
       planId: task.id,
       planName: task.name,
+      source: 'scheduler',
       kind: 'task',
       status: res.status,
       triggerReason: opts.triggerReason,
@@ -131,6 +117,7 @@ class TaskRunner extends EventEmitter {
       if (typeof task.runState?.cursorStartedAt === 'number') {
         await this.appendInterruptedEntry(task, opts);
       }
+      reportRunning(task.id, { source: 'scheduler', name: task.name });
       const startedAt = Date.now();
       await updateTaskRunState(task.id, { cursorStartedAt: startedAt });
       let res: TaskExecResult;
@@ -148,7 +135,11 @@ class TaskRunner extends EventEmitter {
         const suffix = info.stopReason === 'window' ? '（已超出时间窗口，自动停止）' : '（已被手动停止）';
         res.summary = res.summary ? `${res.summary}${suffix}` : suffix;
       }
-      await this.appendTaskEntry(task, startedAt, res, opts);
+      try {
+        await this.appendTaskEntry(task, startedAt, res, opts);
+      } catch (err) {
+        mainLogger.warn('[scheduler] 写任务历史失败:', task.name, err);
+      }
       await updateTaskRunState(task.id, undefined);
       // 被手动/窗口停止的运行不算「干净完成」，不链式触发 on_task_done 下游
       outcome = res.status === 'completed' && !info.stopRequested ? 'completed' : 'failed';
@@ -157,6 +148,7 @@ class TaskRunner extends EventEmitter {
       mainLogger.warn('[scheduler] 任务执行异常:', task.name, err);
     } finally {
       this.running.delete(task.id);
+      reportDone(task.id);
       this.emit('task_done', { taskId: task.id, outcome } satisfies TaskDoneEvent);
     }
   }

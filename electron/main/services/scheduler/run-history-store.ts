@@ -1,7 +1,7 @@
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { getConfigDir } from '../settings-service.js';
-import type { RunHistoryEntry } from './types.js';
+import type { RunHistoryEntry, RunHistorySource } from './types.js';
 
 const RETAIN_MONTHS = 3;
 const MONTH_FILE_RE = /^(\d{4})-(\d{2})\.jsonl$/;
@@ -40,6 +40,7 @@ export interface HistoryQuery {
   planId?: string;
   before?: number;
   limit?: number;
+  source?: RunHistorySource;
 }
 
 export interface HistoryQueryResult {
@@ -84,6 +85,7 @@ export async function queryHistory(query: HistoryQuery = {}): Promise<HistoryQue
     for (const entry of await readMonthEntries(fileName)) {
       if (query.planId !== undefined && entry.planId !== query.planId) continue;
       if (query.before !== undefined && entry.ts >= query.before) continue;
+      if (query.source !== undefined && (entry.source ?? 'scheduler') !== query.source) continue;
       matched.push(entry);
     }
   }
