@@ -38,9 +38,7 @@ export function WorkspaceTabBar() {
   const switchTab = useSessionStore((s) => s.switchTab);
   const closeTab = useSessionStore((s) => s.closeTab);
   const addSessionWindow = useSessionStore((s) => s.addSessionWindow);
-  const notesTabOpen = useSessionStore((s) => s.notesTabOpen);
   const notesWindowOpen = useSessionStore((s) => s.notesWindowOpen);
-  const closeNotesTab = useSessionStore((s) => s.closeNotesTab);
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
   const dataCenterWindowOpen = useSessionStore((s) => s.dataCenterWindowOpen);
   const closeDataCenterTab = useSessionStore((s) => s.closeDataCenterTab);
@@ -107,7 +105,7 @@ export function WorkspaceTabBar() {
   };
 
   const showSentinelGroup =
-    (notesTabOpen && !notesWindowOpen) ||
+    !notesWindowOpen ||
     (dataCenterTabOpen && !dataCenterWindowOpen) ||
     selectedArticle !== null;
 
@@ -185,7 +183,7 @@ export function WorkspaceTabBar() {
       {/* 右组：哨兵 tabs 固定最右（笔记/数据中心/文章），弹出中的哨兵隐藏 */}
       {showSentinelGroup && (
         <div className="flex items-center shrink-0">
-          {notesTabOpen && !notesWindowOpen && (
+          {!notesWindowOpen && (
             <div
               onClick={() => switchTab(NOTES_TAB_ID)}
               className={cn(
@@ -205,16 +203,6 @@ export function WorkspaceTabBar() {
                 }}
               >
                 <ExternalLink className="w-3 h-3" />
-              </button>
-              <button
-                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                title="关闭笔记"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  closeNotesTab();
-                }}
-              >
-                <X className="w-3 h-3" />
               </button>
             </div>
           )}

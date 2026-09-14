@@ -99,27 +99,18 @@ const sessionWindows = new Map<string, BrowserWindowType>();
 
 
 /**
- * 创建 Electron 主窗口
- * 配置窗口属性、加载页面并根据环境决定是否打开开发者工具
+ * 创建 Electron 主窗口（带位置/尺寸/最大化记忆）
+ * 托盘隐藏与通知注册内聚在此：异步化后 whenReady 里用 mainWindow! 挂监听时序不保证
  */
-function createWindow() {
-  mainWindow = new BrowserWindow({
+async function createWindow() {
+  mainWindow = await createWindowWithBounds({
+    stateKey: 'main-window',
     width: 1200,
     height: 800,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: currentTitleBarOverlay(),
-    webPreferences: {
-      // 预加载脚本路径
-      preload: path.join(__dirname, '../preload/index.js'),
-      // 启用上下文隔离,提高安全性
-      contextIsolation: true,
-      // 禁用 Node.js 集成,提高安全性
-      nodeIntegration: false,
-    },
+    title: 'Dogear',
+    hashPath: '',
   });
 
-  // 根据环境加载页面（dev 走 Vite dev server，生产走 app:// 自定义协议）
-  mainWindow.loadURL(getRendererPath());
   if (isDev) {
     // 打开开发者工具
     //mainWindow.webContents.openDevTools();
@@ -141,6 +132,17 @@ function createWindow() {
       handlers.focusConversation.send({ conversationId, workspaceId });
     } catch (err) {
       console.error('[session-notification] focus 事件发送失败:', err);
+    }
+  });
+
+  // 有托盘且非真正退出：隐藏到托盘；close 先于 preventDefault 触发，位置补写在 createWindowWithBounds 的 close 监听内已执行
+  mainWindow.on('close', (event) => {
+    if (!isQuitting && tray && !tray.isDestroyed()) {
+      event.preventDefault();
+      mainWindow!.hide();
+      closeAllChildWindows();
+    } else {
+      closeAllChildWindows();
     }
   });
 }
@@ -255,7 +257,7 @@ export function createStockWindow() {
 
 /**
  * 创建带位置记忆的窗口：创建时读取上次 bounds 并校验可视范围，moved/resized 防抖持久化，close 补写
- * 照工作台窗口原有逻辑收敛，供工作台/笔记/数据中心三处复用
+ * 照工作台窗口原有逻辑收敛，供主/工作台/笔记/数据中心窗口复用
  */
 async function createWindowWithBounds(options: {
   stateKey: string;
@@ -283,7 +285,7 @@ async function createWindowWithBounds(options: {
     },
   });
 
-  win.loadURL(`${getRendererPath()}#${options.hashPath}`);
+  win.loadURL(options.hashPath ? `${getRendererPath()}#${options.hashPath}` : getRendererPath());
 
   if (hasPosition) {
     const bounds = win.getBounds();
@@ -296,12 +298,18 @@ async function createWindowWithBounds(options: {
     }
   }
 
+  if (saved?.maximized) {
+    win.maximize();
+  }
+
   let saveTimer: NodeJS.Timeout | null = null;
   const persistBounds = () => {
     if (win.isDestroyed()) return;
-    if (win.isMinimized() || win.isMaximized() || win.isFullScreen()) return;
-    const { x, y, width, height } = win.getBounds();
-    void saveWindowBounds(options.stateKey, { x, y, width, height });
+    if (win.isMinimized() || win.isFullScreen()) return;
+    // 最大化时 getBounds 拿到的是整屏尺寸，改存 normal bounds + 最大化标记供重开还原
+    const maximized = win.isMaximized();
+    const { x, y, width, height } = maximized ? win.getNormalBounds() : win.getBounds();
+    void saveWindowBounds(options.stateKey, { x, y, width, height, maximized });
   };
   const schedulePersistBounds = () => {
     if (saveTimer) clearTimeout(saveTimer);
@@ -734,7 +742,7 @@ app.whenReady().then(async () => {
   }
   nativeTheme.on('updated', syncTitleBarOverlay);
 
-  createWindow();
+  void createWindow();
   createTray();
 
   // 内嵌浏览器宿主自测：DOGEAR_EMBEDDED_BROWSER_SELFTEST=1 bun run dev:electron 时验证后台 tab 加载链路
@@ -783,22 +791,11 @@ app.whenReady().then(async () => {
     .then((m) => m.startAutoArchiveTimer())
     .catch((err) => console.error('启动自动归档定时失败:', err));
 
-  // 主窗口关闭时：有托盘且非真正退出则隐藏到托盘，否则关闭所有子窗口并退出
-  mainWindow!.on('close', (event) => {
-    if (!isQuitting && tray && !tray.isDestroyed()) {
-      event.preventDefault();
-      mainWindow!.hide();
-      closeAllChildWindows();
-    } else {
-      closeAllChildWindows();
-    }
-  });
-
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
   // 如果没有其他窗口打开,则创建新窗口
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      void createWindow();
     }
   });
 });

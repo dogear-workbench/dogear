@@ -129,7 +129,6 @@ export default function Home() {
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
   const dataCenterWindowOpen = useSessionStore((s) => s.dataCenterWindowOpen);
   const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
-  const notesTabOpen = useSessionStore((s) => s.notesTabOpen);
   const notesWindowOpen = useSessionStore((s) => s.notesWindowOpen);
 
   // 当前激活对话对应的组 ID（哨兵 tab 或 groupId 空时为 null）
@@ -340,8 +339,8 @@ export default function Home() {
                 <EmptyFocusState />
               </div>
             )}
-            {/* 笔记：可开关 Tab，弹出独立窗口期间卸载（开关状态保留） */}
-            {notesTabOpen && !notesWindowOpen && (
+            {/* 笔记：常驻 tab，弹出独立窗口期间卸载 */}
+            {!notesWindowOpen && (
               <div
                 className="absolute inset-0 flex flex-col"
                 style={{ display: activeTabId === NOTES_TAB_ID ? 'flex' : 'none' }}

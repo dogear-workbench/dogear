@@ -7,6 +7,7 @@ export interface WindowBounds {
   y: number | null;
   width: number;
   height: number;
+  maximized?: boolean;
 }
 
 interface WindowStateFile {
@@ -25,7 +26,8 @@ function isValidBounds(value: unknown): value is WindowBounds {
     typeof b.width === 'number' && Number.isFinite(b.width) && b.width > 0 &&
     typeof b.height === 'number' && Number.isFinite(b.height) && b.height > 0 &&
     (b.x === null || typeof b.x === 'number') &&
-    (b.y === null || typeof b.y === 'number')
+    (b.y === null || typeof b.y === 'number') &&
+    (b.maximized === undefined || typeof b.maximized === 'boolean')
   );
 }
 
