@@ -27,6 +27,7 @@ import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ART
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
+import { EmptyFocusState } from '@/components/EmptyFocusState';
 
 export default function Home() {
   const openSettings = useUIStore((s) => s.openSettings);
@@ -49,6 +50,28 @@ export default function Home() {
     return () => {
       unsubOpened();
       unsubClosed();
+    };
+  }, []);
+
+  // 哨兵窗口生命周期：弹出时 store 内部会把悬空的 activeTabId 落回可用 tab，关窗恢复哨兵 tab 显示
+  useEffect(() => {
+    const unsubNotesOpened = rendererEvents.notesWindowOpened.listen(() => {
+      useSessionStore.getState().setNotesWindowOpen(true);
+    });
+    const unsubNotesClosed = rendererEvents.notesWindowClosed.listen(() => {
+      useSessionStore.getState().setNotesWindowOpen(false);
+    });
+    const unsubDcOpened = rendererEvents.dataCenterWindowOpened.listen(() => {
+      useSessionStore.getState().setDataCenterWindowOpen(true);
+    });
+    const unsubDcClosed = rendererEvents.dataCenterWindowClosed.listen(() => {
+      useSessionStore.getState().setDataCenterWindowOpen(false);
+    });
+    return () => {
+      unsubNotesOpened();
+      unsubNotesClosed();
+      unsubDcOpened();
+      unsubDcClosed();
     };
   }, []);
 
@@ -104,7 +127,10 @@ export default function Home() {
   const removeSessionWindow = useSessionStore((s) => s.removeSessionWindow);
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
+  const dataCenterWindowOpen = useSessionStore((s) => s.dataCenterWindowOpen);
   const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
+  const notesTabOpen = useSessionStore((s) => s.notesTabOpen);
+  const notesWindowOpen = useSessionStore((s) => s.notesWindowOpen);
 
   // 当前激活对话对应的组 ID（哨兵 tab 或 groupId 空时为 null）
   const activeConv = useConversationStore((s) =>
@@ -308,15 +334,23 @@ export default function Home() {
 
           {/* 标签页内容：笔记 + 各会话同时挂载，按 activeTabId 切 display（弹出独立窗口期间也保持挂载，sessionWindowClosed 恢复前不卸载） */}
           <div className="flex-1 overflow-hidden relative">
-            {/* 笔记：固定 Tab，常驻挂载 */}
-            <div
-              className="absolute inset-0 flex flex-col"
-              style={{ display: activeTabId === NOTES_TAB_ID ? 'flex' : 'none' }}
-            >
-              <NotesPanel />
-            </div>
-            {/* 数据中心：可开关 Tab，打开期间常驻挂载，关闭即卸载 */}
-            {dataCenterTabOpen && (
+            {/* 空态：所有 tab 关闭/不可见后不再兑底回笔记 */}
+            {activeTabId === null && (
+              <div className="absolute inset-0 flex flex-col">
+                <EmptyFocusState />
+              </div>
+            )}
+            {/* 笔记：可开关 Tab，弹出独立窗口期间卸载（开关状态保留） */}
+            {notesTabOpen && !notesWindowOpen && (
+              <div
+                className="absolute inset-0 flex flex-col"
+                style={{ display: activeTabId === NOTES_TAB_ID ? 'flex' : 'none' }}
+              >
+                <NotesPanel />
+              </div>
+            )}
+            {/* 数据中心：可开关 Tab，打开期间常驻挂载，关闭即卸载；弹出独立窗口期间同样卸载 */}
+            {dataCenterTabOpen && !dataCenterWindowOpen && (
               <div
                 className="absolute inset-0 flex flex-col"
                 style={{ display: activeTabId === DATA_CENTER_TAB_ID ? 'flex' : 'none' }}

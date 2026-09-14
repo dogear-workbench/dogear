@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 主进程窗口基建与广播](./step1-main-infra.md) — 互斥广播、笔记单例窗口、数据中心窗口位置记忆、closed 恢复广播、新 RPC 与事件定义
 - [x] [Step 2: 主窗口 header 改版与互斥响应](./step2-main-header.md) — header 左右分组/缩小/删刷新、右栏开关移位、互斥时右栏收起与按钮显隐、工作台按钮切换态
-- [ ] [Step 3: tab 栏改版与笔记窗口页面](./step3-tabbar-notes-window.md) — 哨兵 tab 右置+弹出按钮、笔记 tab 可开关+空态兜底、notes-window 页面（含任务定位监听）
+- [x] [Step 3: tab 栏改版与笔记窗口页面](./step3-tabbar-notes-window.md) — 哨兵 tab 右置+弹出按钮、笔记 tab 可开关+空态兜底、notes-window 页面（含任务定位监听）
 - [ ] [Step 4: 独立会话窗口改版](./step4-session-window.md) — 聊天+右栏布局、去文件树、互斥订阅
 - [ ] [Step 5: focusTask 通知分流](./step5-focus-task-routing.md) — 主进程通知点击分流到笔记窗口/主窗口
 

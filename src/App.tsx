@@ -6,6 +6,7 @@ import StockPage from '@/app/stocks/page';
 import WechatPage from '@/app/wechat/page';
 import DataCenterPage from '@/app/data-center/page';
 import { WorkbenchWindowPage } from '@/app/workbench-window/page';
+import { NotesWindowPage } from '@/app/notes-window/page';
 import { SessionWindowPage } from '@/app/session-window/page';
 import { TitleBar } from '@/components/TitleBar';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
@@ -34,6 +35,7 @@ export function App() {
             </div>
           )} />
           <Route path="/workbench-window" element={<div className="h-full"><ErrorBoundary fallback="page"><WorkbenchWindowPage /></ErrorBoundary></div>} />
+          <Route path="/notes-window" element={<div className="h-full"><ErrorBoundary fallback="page"><NotesWindowPage /></ErrorBoundary></div>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </HashRouter>

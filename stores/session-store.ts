@@ -33,6 +33,30 @@ function readDataCenterTabOpen(): boolean {
   }
 }
 
+const NOTES_TAB_OPEN_KEY = 'notes-tab-open';
+
+function readNotesTabOpen(): boolean {
+  try {
+    return localStorage.getItem(NOTES_TAB_OPEN_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/** 关闭/弹出当前 tab 后的回退目标：最近可用会话 tab，无则空态（不兜底哨兵） */
+function pickFallbackConversationTab(s: Pick<SessionState, 'tabs' | 'lastActiveConversationTabId' | 'sessionWindowIds'>): string | null {
+  const last = s.lastActiveConversationTabId;
+  if (last && s.tabs.some((t) => t.conversationId === last) && !s.sessionWindowIds.has(last)) {
+    return last;
+  }
+  for (let i = s.tabs.length - 1; i >= 0; i--) {
+    if (!s.sessionWindowIds.has(s.tabs[i].conversationId)) return s.tabs[i].conversationId;
+  }
+  return null;
+}
+
+const initialNotesTabOpen = readNotesTabOpen();
+
 /** 单个会话标签页信息 */
 export interface SessionTab {
   conversationId: string;
@@ -45,7 +69,7 @@ export interface SessionTab {
 
 interface SessionState {
   tabs: SessionTab[];
-  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 NOTES/DATA_CENTER 哨兵）
+  activeTabId: string | null;  // 当前显示的 tab id（conversationId 或 NOTES/DATA_CENTER 哨兵；null = 空态）
   /** 最近一次激活的真实会话 tab id；切到哨兵 tab 不清膛，笔记页引用按钮以它为锚定目标 */
   lastActiveConversationTabId: string | null;
   /** 当前在独立窗口中打开的会话 ID 集合 */
@@ -54,6 +78,12 @@ interface SessionState {
   lastFocusedNodeId: string | null;
   /** 数据中心 tab 是否打开（可开关，状态记忆在 localStorage） */
   dataCenterTabOpen: boolean;
+  /** 笔记 tab 是否打开（可开关，状态记忆在 localStorage，默认开） */
+  notesTabOpen: boolean;
+  /** 笔记窗口弹出中（广播驱动，不落盘）：弹出期间哨兵 tab 从栏里隐藏，开关状态保留 */
+  notesWindowOpen: boolean;
+  /** 数据中心窗口弹出中（广播驱动，不落盘） */
+  dataCenterWindowOpen: boolean;
 
   /** 打开标签页（已存在则切换到该标签） */
   openTab: (conversationId: string, title: string, workspaceId: string) => boolean;
@@ -77,8 +107,18 @@ interface SessionState {
   setLastFocusedNodeId: (nodeId: string | null) => void;
   /** 打开数据中心 tab（不存在则挂载）并切换过去 */
   openDataCenterTab: () => void;
-  /** 关闭数据中心 tab（卸载）；若当前正在看则回退到最近会话 tab 或笔记 */
+  /** 关闭数据中心 tab（卸载）；若当前正在看则回退到最近会话 tab 或空态 */
   closeDataCenterTab: () => void;
+  /** 打开笔记 tab 并切换过去 */
+  openNotesTab: () => void;
+  /** 关闭笔记 tab（卸载）；若当前正在看则回退到最近会话 tab 或空态 */
+  closeNotesTab: () => void;
+  /** 设置笔记窗口弹出态；弹出时若正停在笔记 tab 则回退到可用 tab */
+  setNotesWindowOpen: (open: boolean) => void;
+  /** 设置数据中心窗口弹出态；弹出时若正停在数据中心 tab 则回退到可用 tab */
+  setDataCenterWindowOpen: (open: boolean) => void;
+  /** 从当前停留的不可用 tab（如文章关闭）回退到最近会话 tab 或空态 */
+  fallbackActiveTab: () => void;
   /** 重置所有状态到初始值 */
   reset: () => void;
 }
@@ -88,11 +128,14 @@ const MAX_TABS = 10;
 
 export const useSessionStore = create<SessionState>((set, get) => ({
   tabs: [],
-  activeTabId: NOTES_TAB_ID,
+  activeTabId: initialNotesTabOpen ? NOTES_TAB_ID : null,
   lastActiveConversationTabId: null,
   sessionWindowIds: new Set<string>(),
   lastFocusedNodeId: null,
   dataCenterTabOpen: readDataCenterTabOpen(),
+  notesTabOpen: initialNotesTabOpen,
+  notesWindowOpen: false,
+  dataCenterWindowOpen: false,
 
   openTab: (conversationId, title, workspaceId) => {
     const existing = get().tabs.find((t) => t.conversationId === conversationId);
@@ -128,7 +171,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       const newTabs = state.tabs.filter((t) => t.conversationId !== conversationId);
       let newActive = state.activeTabId;
       if (state.activeTabId === conversationId) {
-        newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : NOTES_TAB_ID;
+        newActive = newTabs.length > 0 ? newTabs[newTabs.length - 1].conversationId : null;
       }
       // 最近活跃会话被关时回退到剩余 tab 中最新的一个（数组尾部最近打开）
       const newLastActive = state.lastActiveConversationTabId === conversationId
@@ -139,6 +182,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
 
   switchTab: (conversationId) => {
+    const state = get();
+    // 跳转到笔记的入口（通知/卡片链接）在笔记 tab 被用户关闭时视为重新打开
+    if (conversationId === NOTES_TAB_ID && !state.notesTabOpen) {
+      get().openNotesTab();
+      return;
+    }
+    // 笔记窗口弹出中主窗口不再承载笔记视图，落回最近可用 tab，避免指向不可见 tab 的悬空态
+    if (conversationId === NOTES_TAB_ID && state.notesWindowOpen) {
+      set({ activeTabId: pickFallbackConversationTab(state) });
+      return;
+    }
     // 哨兵 tab（笔记/数据中心）激活不影响「最近活跃会话」记录
     const isConversation = !isSentinelTabId(conversationId);
     set({
@@ -204,9 +258,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     set((state) => {
       let newActive = state.activeTabId;
       if (state.activeTabId === DATA_CENTER_TAB_ID) {
-        const fallback = state.lastActiveConversationTabId;
-        const tab = fallback ? state.tabs.find((t) => t.conversationId === fallback) : undefined;
-        newActive = tab && !state.sessionWindowIds.has(fallback!) ? fallback! : NOTES_TAB_ID;
+        newActive = pickFallbackConversationTab(state);
       }
       return { dataCenterTabOpen: false, activeTabId: newActive };
     });
@@ -215,12 +267,57 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } catch {}
   },
 
+  openNotesTab: () => {
+    set({ notesTabOpen: true, activeTabId: NOTES_TAB_ID });
+    try {
+      localStorage.setItem(NOTES_TAB_OPEN_KEY, '1');
+    } catch {}
+  },
+
+  closeNotesTab: () => {
+    set((state) => {
+      let newActive = state.activeTabId;
+      if (state.activeTabId === NOTES_TAB_ID) {
+        newActive = pickFallbackConversationTab(state);
+      }
+      return { notesTabOpen: false, activeTabId: newActive };
+    });
+    try {
+      localStorage.setItem(NOTES_TAB_OPEN_KEY, '0');
+    } catch {}
+  },
+
+  setNotesWindowOpen: (open) => {
+    set((state) => {
+      if (open && state.activeTabId === NOTES_TAB_ID) {
+        return { notesWindowOpen: true, activeTabId: pickFallbackConversationTab(state) };
+      }
+      return { notesWindowOpen: open };
+    });
+  },
+
+  setDataCenterWindowOpen: (open) => {
+    set((state) => {
+      if (open && state.activeTabId === DATA_CENTER_TAB_ID) {
+        return { dataCenterWindowOpen: true, activeTabId: pickFallbackConversationTab(state) };
+      }
+      return { dataCenterWindowOpen: open };
+    });
+  },
+
+  fallbackActiveTab: () => {
+    set((state) => ({ activeTabId: pickFallbackConversationTab(state) }));
+  },
+
   reset: () => set({
     tabs: [],
-    activeTabId: NOTES_TAB_ID,
+    activeTabId: initialNotesTabOpen ? NOTES_TAB_ID : null,
     lastActiveConversationTabId: null,
     sessionWindowIds: new Set<string>(),
     lastFocusedNodeId: null,
     dataCenterTabOpen: readDataCenterTabOpen(),
+    notesTabOpen: readNotesTabOpen(),
+    notesWindowOpen: false,
+    dataCenterWindowOpen: false,
   }),
 }));

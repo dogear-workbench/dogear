@@ -178,13 +178,11 @@ export const useArticleStore = create<ArticleState>((set, get) => ({
 
   clearSelectedArticle: () => {
     set({ selectedArticle: null });
-    // 文章 tab 随选中态卸载；若当前正停留在文章 tab，回退到最近会话 tab 或笔记
-    void import('./session-store').then(({ useSessionStore, ARTICLE_TAB_ID, NOTES_TAB_ID }) => {
+    // 文章 tab 随选中态卸载；若当前正停留在文章 tab，回退到最近会话 tab 或空态
+    void import('./session-store').then(({ useSessionStore, ARTICLE_TAB_ID }) => {
       const s = useSessionStore.getState();
       if (s.activeTabId !== ARTICLE_TAB_ID) return;
-      const fallback = s.lastActiveConversationTabId;
-      const tab = fallback ? s.tabs.find((t) => t.conversationId === fallback) : undefined;
-      s.switchTab(tab && !s.sessionWindowIds.has(fallback!) ? fallback! : NOTES_TAB_ID);
+      s.fallbackActiveTab();
     });
   },
 

@@ -38,7 +38,11 @@ export function WorkspaceTabBar() {
   const switchTab = useSessionStore((s) => s.switchTab);
   const closeTab = useSessionStore((s) => s.closeTab);
   const addSessionWindow = useSessionStore((s) => s.addSessionWindow);
+  const notesTabOpen = useSessionStore((s) => s.notesTabOpen);
+  const notesWindowOpen = useSessionStore((s) => s.notesWindowOpen);
+  const closeNotesTab = useSessionStore((s) => s.closeNotesTab);
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
+  const dataCenterWindowOpen = useSessionStore((s) => s.dataCenterWindowOpen);
   const closeDataCenterTab = useSessionStore((s) => s.closeDataCenterTab);
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
   const clearSelectedArticle = useArticleStore((s) => s.clearSelectedArticle);
@@ -102,78 +106,17 @@ export function WorkspaceTabBar() {
     popOutInternal(tab);
   };
 
+  const showSentinelGroup =
+    (notesTabOpen && !notesWindowOpen) ||
+    (dataCenterTabOpen && !dataCenterWindowOpen) ||
+    selectedArticle !== null;
+
   return (
-    <ScrollArea className="border-b bg-sidebar">
-      <div className="flex items-center">
-        <button
-          onClick={() => switchTab(NOTES_TAB_ID)}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
-            activeTabId === NOTES_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
-          )}
-          title="笔记"
-        >
-          <StickyNote className="w-3.5 h-3.5" />
-          <span>笔记</span>
-        </button>
-        {dataCenterTabOpen && (
-          <div
-            onClick={() => switchTab(DATA_CENTER_TAB_ID)}
-            className={cn(
-              'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
-              activeTabId === DATA_CENTER_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
-            )}
-            title="数据中心"
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>数据中心</span>
-            <button
-              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="弹出为独立窗口"
-              onClick={(e) => {
-                e.stopPropagation();
-                client.openDataCenterWindow();
-              }}
-            >
-              <ExternalLink className="w-3 h-3" />
-            </button>
-            <button
-              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="关闭数据中心"
-              onClick={(e) => {
-                e.stopPropagation();
-                closeDataCenterTab();
-              }}
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-        {/* 文章：有选中文章才显示，关闭即清空选中 */}
-        {selectedArticle !== null && (
-          <div
-            onClick={() => switchTab(ARTICLE_TAB_ID)}
-            className={cn(
-              'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
-              activeTabId === ARTICLE_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
-            )}
-            title={selectedArticle.title}
-          >
-            <Newspaper className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{selectedArticle.title}</span>
-            <button
-              className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
-              title="关闭文章"
-              onClick={(e) => {
-                e.stopPropagation();
-                clearSelectedArticle();
-              }}
-            >
-              <X className="w-3 h-3" />
-            </button>
-          </div>
-        )}
-        {tabs.map((tab) => {
+    <div className="flex items-stretch border-b bg-sidebar">
+      {/* 左组：会话 tabs，可滚动 */}
+      <ScrollArea className="flex-1 min-w-0">
+        <div className="flex items-center">
+          {tabs.map((tab) => {
           const isActive = activeTabId === tab.conversationId;
           const isRunning = runningConversationIds.has(tab.conversationId);
           const isPending = pendingActionIds.has(tab.conversationId);
@@ -236,8 +179,104 @@ export function WorkspaceTabBar() {
             </ContextMenu>
           );
         })}
-      </div>
-      <ScrollBar orientation="horizontal" />
-    </ScrollArea>
+        </div>
+        <ScrollBar orientation="horizontal" />
+      </ScrollArea>
+      {/* 右组：哨兵 tabs 固定最右（笔记/数据中心/文章），弹出中的哨兵隐藏 */}
+      {showSentinelGroup && (
+        <div className="flex items-center shrink-0">
+          {notesTabOpen && !notesWindowOpen && (
+            <div
+              onClick={() => switchTab(NOTES_TAB_ID)}
+              className={cn(
+                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
+                activeTabId === NOTES_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+              )}
+              title="笔记"
+            >
+              <StickyNote className="w-3.5 h-3.5" />
+              <span>笔记</span>
+              <button
+                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="弹出为独立窗口"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  client.openNotesWindow();
+                }}
+              >
+                <ExternalLink className="w-3 h-3" />
+              </button>
+              <button
+                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="关闭笔记"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeNotesTab();
+                }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          {dataCenterTabOpen && !dataCenterWindowOpen && (
+            <div
+              onClick={() => switchTab(DATA_CENTER_TAB_ID)}
+              className={cn(
+                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
+                activeTabId === DATA_CENTER_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+              )}
+              title="数据中心"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>数据中心</span>
+              <button
+                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="弹出为独立窗口"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  client.openDataCenterWindow();
+                }}
+              >
+                <ExternalLink className="w-3 h-3" />
+              </button>
+              <button
+                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="关闭数据中心"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeDataCenterTab();
+                }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          {/* 文章：有选中文章才显示，关闭即清空选中 */}
+          {selectedArticle !== null && (
+            <div
+              onClick={() => switchTab(ARTICLE_TAB_ID)}
+              className={cn(
+                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0 max-w-[200px]',
+                activeTabId === ARTICLE_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+              )}
+              title={selectedArticle.title}
+            >
+              <Newspaper className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{selectedArticle.title}</span>
+              <button
+                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="关闭文章"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  clearSelectedArticle();
+                }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
