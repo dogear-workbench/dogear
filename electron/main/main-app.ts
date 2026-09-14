@@ -13,6 +13,7 @@ import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js
 import { registerTipcHandlers } from './tipc/index.js';
 import type { RendererHandlers } from './tipc/renderer-handlers.js';
 import { getSessionNotificationService } from './services/session-notification-service.js';
+import { broadcastToWindows } from './services/renderer-broadcast.js';
 
 // 获取当前文件的路径和目录名(ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
@@ -89,6 +90,9 @@ let dataCenterWindow: BrowserWindowType | null = null;
 
 // 伴随工作台窗口实例
 let workbenchWindow: BrowserWindowType | null = null;
+
+// 笔记窗口实例
+let notesWindow: BrowserWindowType | null = null;
 
 // 会话窗口映射（conversationId → BrowserWindow）
 const sessionWindows = new Map<string, BrowserWindowType>();
@@ -225,56 +229,26 @@ export function createStockWindow() {
 }
 
 /**
- * 创建数据中心窗口（单例，已存在则聚焦）
+ * 创建带位置记忆的窗口：创建时读取上次 bounds 并校验可视范围，moved/resized 防抖持久化，close 补写
+ * 照工作台窗口原有逻辑收敛，供工作台/笔记/数据中心三处复用
  */
-export function createDataCenterWindow() {
-  if (dataCenterWindow) {
-    dataCenterWindow.focus();
-    return;
-  }
-
-  dataCenterWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    title: '数据中心',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: currentTitleBarOverlay(),
-    webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  const dataCenterUrl = `${getRendererPath()}#/data-center`;
-  dataCenterWindow.loadURL(dataCenterUrl);
-
-  dataCenterWindow.on('closed', () => {
-    dataCenterWindow = null;
-  });
-}
-
-/**
- * 创建伴随工作台窗口（单例，已存在则聚焦）
- * 位置记忆：moved/resized 防抖存 window-state.json，创建时读取并用 screen 校验可视范围
- */
-export async function createWorkbenchWindow() {
-  if (workbenchWindow) {
-    if (workbenchWindow.isMinimized()) workbenchWindow.restore();
-    workbenchWindow.focus();
-    return;
-  }
-
+async function createWindowWithBounds(options: {
+  stateKey: string;
+  width: number;
+  height: number;
+  title: string;
+  hashPath: string;
+}): Promise<BrowserWindowType> {
   const { loadWindowBounds, saveWindowBounds } = await import('./services/window-state-service.js');
-  const saved = await loadWindowBounds('workbench-window');
+  const saved = await loadWindowBounds(options.stateKey);
   const hasPosition = !!saved && saved.x !== null && saved.y !== null;
 
-  workbenchWindow = new BrowserWindow({
-    width: saved?.width ?? 560,
-    height: saved?.height ?? 840,
+  const win = new BrowserWindow({
+    width: saved?.width ?? options.width,
+    height: saved?.height ?? options.height,
     x: hasPosition ? saved!.x ?? undefined : undefined,
     y: hasPosition ? saved!.y ?? undefined : undefined,
-    title: '伴随工作台',
+    title: options.title,
     titleBarStyle: 'hidden',
     titleBarOverlay: currentTitleBarOverlay(),
     webPreferences: {
@@ -284,26 +258,25 @@ export async function createWorkbenchWindow() {
     },
   });
 
-  const workbenchUrl = `${getRendererPath()}#/workbench-window`;
-  workbenchWindow.loadURL(workbenchUrl);
+  win.loadURL(`${getRendererPath()}#${options.hashPath}`);
 
   if (hasPosition) {
-    const bounds = workbenchWindow.getBounds();
+    const bounds = win.getBounds();
     const { screen } = electron;
     const workArea = screen.getDisplayMatching(bounds).workArea;
     const overlapX = Math.min(bounds.x + bounds.width, workArea.x + workArea.width) - Math.max(bounds.x, workArea.x);
     const overlapY = Math.min(bounds.y + bounds.height, workArea.y + workArea.height) - Math.max(bounds.y, workArea.y);
     if (overlapX < 60 || overlapY < 60) {
-      workbenchWindow.center();
+      win.center();
     }
   }
 
   let saveTimer: NodeJS.Timeout | null = null;
   const persistBounds = () => {
-    if (!workbenchWindow || workbenchWindow.isDestroyed()) return;
-    if (workbenchWindow.isMinimized() || workbenchWindow.isMaximized() || workbenchWindow.isFullScreen()) return;
-    const { x, y, width, height } = workbenchWindow.getBounds();
-    void saveWindowBounds('workbench-window', { x, y, width, height });
+    if (win.isDestroyed()) return;
+    if (win.isMinimized() || win.isMaximized() || win.isFullScreen()) return;
+    const { x, y, width, height } = win.getBounds();
+    void saveWindowBounds(options.stateKey, { x, y, width, height });
   };
   const schedulePersistBounds = () => {
     if (saveTimer) clearTimeout(saveTimer);
@@ -312,9 +285,9 @@ export async function createWorkbenchWindow() {
       persistBounds();
     }, 500);
   };
-  workbenchWindow.on('moved', schedulePersistBounds);
-  workbenchWindow.on('resized', schedulePersistBounds);
-  workbenchWindow.on('close', () => {
+  win.on('moved', schedulePersistBounds);
+  win.on('resized', schedulePersistBounds);
+  win.on('close', () => {
     if (saveTimer) {
       clearTimeout(saveTimer);
       saveTimer = null;
@@ -322,9 +295,88 @@ export async function createWorkbenchWindow() {
     persistBounds();
   });
 
+  return win;
+}
+
+/**
+ * 创建数据中心窗口（单例，已存在则聚焦）
+ */
+export async function createDataCenterWindow() {
+  if (dataCenterWindow) {
+    if (dataCenterWindow.isMinimized()) dataCenterWindow.restore();
+    dataCenterWindow.focus();
+    return;
+  }
+
+  dataCenterWindow = await createWindowWithBounds({
+    stateKey: 'data-center-window',
+    width: 1200,
+    height: 800,
+    title: '数据中心',
+    hashPath: '/data-center',
+  });
+  broadcastToWindows((h) => h.dataCenterWindowOpened.send(null));
+
+  dataCenterWindow.on('closed', () => {
+    dataCenterWindow = null;
+    broadcastToWindows((h) => h.dataCenterWindowClosed.send(null));
+  });
+}
+
+/**
+ * 创建伴随工作台窗口（单例，已存在则聚焦）
+ */
+export async function createWorkbenchWindow() {
+  if (workbenchWindow) {
+    if (workbenchWindow.isMinimized()) workbenchWindow.restore();
+    workbenchWindow.focus();
+    return;
+  }
+
+  workbenchWindow = await createWindowWithBounds({
+    stateKey: 'workbench-window',
+    width: 560,
+    height: 840,
+    title: '伴随工作台',
+    hashPath: '/workbench-window',
+  });
+  broadcastToWindows((h) => h.workbenchWindowOpened.send(null));
+
   workbenchWindow.on('closed', () => {
     workbenchWindow = null;
+    broadcastToWindows((h) => h.workbenchWindowClosed.send(null));
   });
+}
+
+/**
+ * 创建笔记窗口（单例，已存在则聚焦）
+ * 弹出 = 主窗口隐藏笔记哨兵 tab（tab 开关状态保留），关窗广播恢复
+ */
+export async function createNotesWindow() {
+  if (notesWindow) {
+    if (notesWindow.isMinimized()) notesWindow.restore();
+    notesWindow.focus();
+    return;
+  }
+
+  notesWindow = await createWindowWithBounds({
+    stateKey: 'notes-window',
+    width: 1200,
+    height: 800,
+    title: '笔记',
+    hashPath: '/notes-window',
+  });
+  broadcastToWindows((h) => h.notesWindowOpened.send(null));
+
+  notesWindow.on('closed', () => {
+    notesWindow = null;
+    broadcastToWindows((h) => h.notesWindowClosed.send(null));
+  });
+}
+
+/** 存活笔记窗口实例（Step 5 focusTask 分流用，销毁竞态返回 null） */
+export function getNotesWindow(): BrowserWindowType | null {
+  return notesWindow && !notesWindow.isDestroyed() ? notesWindow : null;
 }
 
 /**
@@ -419,6 +471,9 @@ function closeAllChildWindows() {
   }
   if (workbenchWindow && !workbenchWindow.isDestroyed()) {
     workbenchWindow.close();
+  }
+  if (notesWindow && !notesWindow.isDestroyed()) {
+    notesWindow.close();
   }
   if (debugWindow && !debugWindow.isDestroyed()) {
     debugWindow.close();

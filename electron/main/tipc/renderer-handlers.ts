@@ -252,4 +252,27 @@ export type RendererHandlers = {
   // 提示音播放指令（主进程提示决策单点收敛后下发，只发主窗口；渲染层结合设置项决定是否发声）
   soundCue: (data: { kind: 'complete' | 'permission' | 'error'; appFocused: boolean }) => void;
 
+  // === 双屏工作模式：窗口生命周期广播（互斥/哨兵弹出状态由前端 store 消费，不落盘） ===
+
+  // 伴随工作台窗口打开（主窗口右栏收起、开关按钮隐藏，独立会话窗口工具箱同步隐藏）
+  workbenchWindowOpened: (data: null) => void;
+
+  // 伴随工作台窗口关闭（右栏恢复展开）
+  workbenchWindowClosed: (data: null) => void;
+
+  // 笔记窗口打开（主窗口隐藏笔记哨兵 tab）
+  notesWindowOpened: (data: null) => void;
+
+  // 笔记窗口关闭（主窗口恢复笔记 tab）
+  notesWindowClosed: (data: null) => void;
+
+  // 数据中心窗口打开（主窗口隐藏数据中心哨兵 tab）
+  dataCenterWindowOpened: (data: null) => void;
+
+  // 数据中心窗口关闭（主窗口恢复数据中心 tab）
+  dataCenterWindowClosed: (data: null) => void;
+
+  // 通知点击定位笔记窗口内任务（笔记窗口打开时主进程直发该窗口，主窗口仍走 focusTask）
+  notesTaskFocus: (data: { taskId: string; workspaceId: string }) => void;
+
 };

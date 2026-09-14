@@ -8,7 +8,7 @@ export const windowsRouter = {
   openDataCenterWindow: t.procedure
     .action(async () => {
       const { createDataCenterWindow } = await import('../main-app.js');
-      createDataCenterWindow();
+      await createDataCenterWindow();
       return { success: true };
     }),
 
@@ -18,5 +18,20 @@ export const windowsRouter = {
       const { createWorkbenchWindow } = await import('../main-app.js');
       await createWorkbenchWindow();
       return { success: true };
+    }),
+
+  /** 打开笔记窗口（单例，已存在则聚焦） */
+  openNotesWindow: t.procedure
+    .action(async () => {
+      const { createNotesWindow } = await import('../main-app.js');
+      await createNotesWindow();
+      return { success: true };
+    }),
+
+  /** 笔记窗口是否存活（通知点击 focusTask 分流用） */
+  getNotesWindowOpen: t.procedure
+    .action(async () => {
+      const { getNotesWindow } = await import('../main-app.js');
+      return { open: getNotesWindow() !== null };
     }),
 };
