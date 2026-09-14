@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 独立会话窗口改版
-status: pending
+status: in_progress
 ---
 
 ## 目标

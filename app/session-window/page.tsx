@@ -1,25 +1,29 @@
 import { useParams } from 'react-router';
 import { useState, useEffect } from 'react';
-import { PanelLeft, PanelLeftClose, Loader2 } from 'lucide-react';
+import { ArrowLeft, Loader2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AgentChat } from '@/components/agent-chat/AgentChat';
-import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { ArticlePreview } from '@/components/ArticlePreview';
+import { CompanionPanel } from '@/components/companion/CompanionPanel';
 import { client } from '@/lib/client';
-import { cn } from '@/lib/utils';
+import { rendererEvents } from '@/lib/events';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useUIStore } from '@/stores/ui-store';
+import { useArticleStore } from '@/stores/article-store';
 import { TitleBar } from '@/components/TitleBar';
 
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
-  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
-  // AgentChat 不再内置右栏开关（Step 2 移除），布局重做前右栏恒展开
-  const [rightPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [ready, setReady] = useState(false);
   const [initError, setInitError] = useState<string | null>(null);
   const [windowWorkspaceId, setWindowWorkspaceId] = useState<string | null>(null);
+
+  const workbenchWindowOpen = useUIStore((s) => s.workbenchWindowOpen);
+  const selectedArticle = useArticleStore((s) => s.selectedArticle);
+  const clearSelectedArticle = useArticleStore((s) => s.clearSelectedArticle);
 
   const conversations = useConversationStore((s) => s.conversations);
   const loadConversations = useConversationStore((s) => s.loadConversations);
@@ -70,37 +74,55 @@ export function SessionWindowPage() {
       setReady(true);
     }
     init();
+
+    // CompanionPanel 非 full 模式宽度受 ui-store.rightPanelOpen 控制，本窗口 store 实例默认折叠需显式展开
+    useUIStore.getState().openRightPanel();
   }, [conversationId]);
 
-  const title = conversations.find(c => c.id === conversationId)?.title || '会话窗口';
+  // 工作台窗口互斥：广播驱动本窗口右栏显隐；本地开关状态不动，关窗后按原状态恢复
+  useEffect(() => {
+    const unsubOpened = rendererEvents.workbenchWindowOpened.listen(() => {
+      useUIStore.getState().setWorkbenchWindowOpen(true);
+    });
+    const unsubClosed = rendererEvents.workbenchWindowClosed.listen(() => {
+      useUIStore.getState().setWorkbenchWindowOpen(false);
+    });
+    return () => {
+      unsubOpened();
+      unsubClosed();
+    };
+  }, []);
+
+  const currentConv = conversations.find(c => c.id === conversationId);
+  const title = currentConv?.title || '会话窗口';
+  const groupId = currentConv?.groupId || null;
+  const showRightPanel = rightPanelOpen && !workbenchWindowOpen;
 
   return (
     <div className="h-full flex flex-col bg-background">
       <TitleBar title={title} />
-      {/* 头部栏 */}
-      <header className="h-10 border-b flex items-center px-3 gap-2 flex-shrink-0">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => setLeftPanelOpen(!leftPanelOpen)}
-          title={leftPanelOpen ? '折叠文件树' : '展开文件树'}
-        >
-          {leftPanelOpen ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}
-        </Button>
+      {/* 头部栏：仅右栏折叠按钮，靠右（照主窗口 header 右侧习惯） */}
+      <header className="h-10 border-b flex items-center justify-end px-3 gap-1.5 flex-shrink-0">
+        {!workbenchWindowOpen && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0"
+            onClick={() => setRightPanelOpen(!rightPanelOpen)}
+            title={rightPanelOpen ? '折叠右侧面板' : '展开右侧面板'}
+          >
+            {rightPanelOpen ? (
+              <PanelRightClose className="w-4 h-4" />
+            ) : (
+              <PanelRightOpen className="w-4 h-4" />
+            )}
+          </Button>
+        )}
       </header>
 
-      {/* 主体 */}
+      {/* 主体：左聊天 + 右 CompanionPanel */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧：可折叠的工作区文件树 */}
-        {leftPanelOpen && (
-          <aside className="w-56 border-r bg-muted/30 overflow-hidden flex-shrink-0 flex flex-col">
-            <WorkspaceExplorer />
-          </aside>
-        )}
-
-        {/* 中间：AgentChat（必须等初始化完成后才渲染） */}
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 min-w-0 overflow-hidden">
           {initError ? (
             <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
               {initError}
@@ -110,25 +132,44 @@ export function SessionWindowPage() {
               <Loader2 className="w-4 h-4 animate-spin" />
               加载中...
             </div>
-          ) : conversationId ? (
-            <AgentChat
-              conversationIdOverride={conversationId}
-              visible
-              workspaceId={windowWorkspaceId}
-              showStatusHint={false}
-            />
-          ) : null}
+          ) : (
+            <div className="h-full relative">
+              {/* 聊天位：display 切换保挂载，文章视图打开期间后台消息流不中断 */}
+              <div className="absolute inset-0" style={{ display: selectedArticle ? 'none' : 'block' }}>
+                {conversationId && (
+                  <AgentChat
+                    conversationIdOverride={conversationId}
+                    visible
+                    workspaceId={windowWorkspaceId}
+                    showStatusHint={false}
+                  />
+                )}
+              </div>
+              {selectedArticle && (
+                <div className="absolute inset-0 flex flex-col bg-background">
+                  <div className="h-9 border-b flex items-center gap-2 px-2 shrink-0">
+                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={clearSelectedArticle}>
+                      <ArrowLeft className="w-3.5 h-3.5 mr-1" />
+                      返回会话
+                    </Button>
+                    <span className="text-sm text-muted-foreground truncate">{selectedArticle.title}</span>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <ArticlePreview />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </main>
 
-        {/* 右侧：文章预览（可折叠） */}
-        <aside
-          className={cn(
-            'border-l overflow-hidden flex-shrink-0 transition-[width]',
-            rightPanelOpen ? 'w-80' : 'w-0 border-l-0'
-          )}
-        >
-          <ArticlePreview />
-        </aside>
+        {showRightPanel && windowWorkspaceId && (
+          <CompanionPanel
+            workspaceId={windowWorkspaceId}
+            groupId={groupId}
+            terminalAnchor={conversationId ?? null}
+          />
+        )}
       </div>
     </div>
   );
