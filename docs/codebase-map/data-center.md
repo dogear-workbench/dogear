@@ -1,14 +1,13 @@
 # 数据中心域（data-center）
 
-数据中心五面板（用量/定时计划/执行历史/解析历史/记忆）、话题状态卡、主题记忆、会话用量采集。数据中心是主窗口固定 tab，可弹独立窗口。
+数据中心四面板（用量/定时计划/执行历史/记忆）、话题状态卡、主题记忆、会话用量采集。数据中心是主窗口固定 tab，可弹独立窗口。
 
 ## 面板（app/data-center/）
 
-- `page.tsx` — 骨架：五 tab 下划线导航（用量/定时计划/执行历史/解析历史/记忆）；scheduler tab forceMount（编辑草稿切 tab 不丢）；workspaces 由页面加载一次下传
+- `page.tsx` — 骨架：四 tab 下划线导航（用量/定时计划/执行历史/记忆）；scheduler tab forceMount（编辑草稿切 tab 不丢）；workspaces 由页面加载一次下传
 - `usage-panel.tsx` — 用量面板：时间分页（今日/7天/30天/全部）；'all' 后端聚合+会话列表逐工作区拉取合并
-- `history-panel.tsx` — 执行历史一级面板：任务/状态筛选、10s 可见轮询、分钟 tick 刷新
-- `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片
-- `parse-history-panel.tsx` — 文章解析历史面板（全局 history.jsonl，手动刷新）
+- `history-panel.tsx` — 执行历史一级面板：类型/状态筛选（类型走后端 source 参数）、10s 可见轮询、分钟 tick 刷新；「正在运行」区显示四类后台任务
+- `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 四类徽章，无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+两节 Tabs
 - `core-profile-panel.tsx` — 核心画像编辑面板
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
@@ -26,10 +25,14 @@
 - `plan-store.ts` — `.dogear/plans.json` 读写（version:2 容器；旧数组自动拆条迁移；builtin 存量条目过滤隐藏）
 - `plan-validate.ts` — 保存校验（on_task_done 目标存在性+环检测、toolPacksOverride 白名单清洗）
 - `scheduler-service.ts` — 调度核心（分钟级 tick、窗口状态机、handleAppStart/handleSessionClose 入口、错过记 missed 不补跑）
-- `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加+倒序分页+保留 3 个月
+- `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加+倒序分页+保留 3 个月；source 四类筛选（无 source 旧条目读侧归 scheduler）
 - `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 提示词模板与工具集组装（toolPacksOverride 完全替代语义）
 - `runtime/plan-runner.ts` — 单任务执行器（防重入、断点补记、requestStop 带来源）
 - `runtime/task-executor.ts` — 提交 CUSTOM_AGENT 到 agent-manager Worker 池，用量提取入历史
+
+## 统一运行注册表（services/）
+
+- `background-activity-service.ts` — 内存单例：四类后台任务（定时/状态抽取/文章解析/协作）reportRunning/reportDone/getRunning；getSchedulerActivity 与执行历史「正在运行」区数据源；四类终态各自写 run-history（source 区分）
 
 ## 话题状态卡与记忆（services/memory/）
 
@@ -52,6 +55,7 @@
 - source-fidelity 校验口径必须与 agent 所见一致：复用同一去噪函数建 uuid 索引，不用 JSONL 全量
 - 状态卡抽取触发与未提炼列表一律排除调用者自身（excludeConversationId 链），自身内容由下一会话开局补抽
 - 内置定时任务已全量下线：存量 builtin 条目由消费侧过滤隐藏、拒删；plan-store 读全量依赖（写路径需要）
+- 四类后台任务接入统一历史时遵守顺序纪律：先写历史再 reportDone（UI 轮询视角 done 即历史可见）；写史 try/catch 失败不影响任务本身；解析历史的 history.jsonl 写入保留作 agent 诊断数据源
 
 ## 数据流
 
