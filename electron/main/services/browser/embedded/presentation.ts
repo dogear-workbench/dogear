@@ -29,6 +29,7 @@ const PRESENT_READY_TIMEOUT_MS = 8_000;
 const boundsByWindow = new Map<number, Rectangle>();
 const tabIdByWindow = new Map<number, string>();
 const latestRevisionByWindow = new Map<number, number>();
+const overlayHiddenByWindow = new Map<number, boolean>();
 let broadcaster: PresentationBroadcaster | null = null;
 
 export function setPresentationBroadcaster(fn: PresentationBroadcaster | null): void {
@@ -53,6 +54,28 @@ export function reportPageViewBounds(win: BrowserWindow, bounds: Rectangle | nul
   boundsByWindow.set(win.id, bounds);
   const tabId = tabIdByWindow.get(win.id);
   if (tabId) attachWithBounds(tabId, win, bounds);
+}
+
+/** 渲染层弹层遮挡视图区时临时隐藏画面：只切可见性，不碰 retain/release 与呈现状态 */
+export function setOverlayHidden(win: BrowserWindow, hidden: boolean): void {
+  pruneWindowEntries();
+  if (win.isDestroyed()) return;
+  if (hidden) {
+    overlayHiddenByWindow.set(win.id, true);
+    const tabId = tabIdByWindow.get(win.id);
+    if (tabId) getEmbeddedBrowserManager().getView(tabId)?.setVisible(false);
+    return;
+  }
+  overlayHiddenByWindow.delete(win.id);
+  const tabId = tabIdByWindow.get(win.id);
+  const record = tabId ? getEmbeddedBrowserManager().getTabRecord(tabId) : null;
+  if (!record || record.view.webContents.isDestroyed()) return;
+  if (record.attachedWindow === win) {
+    record.view.setVisible(true);
+    return;
+  }
+  const bounds = boundsByWindow.get(win.id);
+  if (tabId && bounds) attachWithBounds(tabId, win, bounds);
 }
 
 /** 呈现 tab 到 companion 前台：tabId 直接呈现；url 开新 tab 加载后呈现（不占用 agent 当前 tab） */
@@ -183,6 +206,7 @@ function attachWithBounds(tabId: string, win: BrowserWindow, bounds: Rectangle):
   if (!manager.attachToWindow(tabId, win, bounds)) return;
   tabIdByWindow.set(win.id, tabId);
   broadcastState(win.id, tabId);
+  if (overlayHiddenByWindow.get(win.id)) manager.getView(tabId)?.setVisible(false);
 }
 
 function pickCompanionWindow(): BrowserWindow | null {
@@ -202,6 +226,7 @@ function pruneWindowEntries(): void {
     boundsByWindow.delete(win.id);
     tabIdByWindow.delete(win.id);
     latestRevisionByWindow.delete(win.id);
+    overlayHiddenByWindow.delete(win.id);
   }
 }
 

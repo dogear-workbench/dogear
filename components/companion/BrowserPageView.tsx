@@ -65,6 +65,8 @@ export function BrowserPageView({ workspaceId }: { workspaceId: string }) {
  * 页面占满面板剩余空间：rAF 链路上报 bounds（ResizeObserver/resize 触发 + mount 立即一次 + 卸载上报 null）。
  * 横幅/错误行等上方布局变化只改位置不改尺寸，ResizeObserver 不触发，用低频兜底对比补齐；
  * rect 未变化时跳过 IPC，不产生冗余上报。
+ * WebContentsView 浮于一切 DOM 之上：Radix 弹层（含 alertdialog，排除 tooltip）与视图区相交时上报主进程隐藏画面；
+ * mount 强制上报一次以对齐 renderer 重载后主进程的残留状态。
  */
 function PageSurface() {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -106,14 +108,48 @@ function PageSurface() {
         measure();
       });
     };
+    const detectOverlay = (): boolean => {
+      const viewRect = el.getBoundingClientRect();
+      if (viewRect.width < 1 || viewRect.height < 1) return false;
+      const overlays = document.querySelectorAll(
+        '[data-radix-popper-content-wrapper], [role="dialog"], [role="alertdialog"]',
+      );
+      for (const node of overlays) {
+        if (!(node instanceof HTMLElement)) continue;
+        if (node.getAttribute('role') === 'tooltip' || node.querySelector('[role="tooltip"]')) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.width < 1 || rect.height < 1) continue;
+        const intersects =
+          rect.left < viewRect.right && rect.right > viewRect.left && rect.top < viewRect.bottom && rect.bottom > viewRect.top;
+        if (intersects) return true;
+      }
+      return false;
+    };
+    let overlayHidden = false;
+    let overlayFrame = 0;
+    const syncOverlay = (force = false) => {
+      if (overlayFrame) return;
+      overlayFrame = requestAnimationFrame(() => {
+        overlayFrame = 0;
+        const hidden = detectOverlay();
+        if (!force && hidden === overlayHidden) return;
+        overlayHidden = hidden;
+        void client.reportPageViewOverlay({ hidden });
+      });
+    };
     const observer = new ResizeObserver(publish);
     observer.observe(el);
     window.addEventListener('resize', publish);
+    const overlayObserver = new MutationObserver(() => syncOverlay());
+    overlayObserver.observe(document.body, { childList: true, subtree: true });
     const fallback = window.setInterval(measure, 300);
     measure();
+    syncOverlay(true);
     return () => {
       if (frame) cancelAnimationFrame(frame);
+      if (overlayFrame) cancelAnimationFrame(overlayFrame);
       observer.disconnect();
+      overlayObserver.disconnect();
       window.clearInterval(fallback);
       window.removeEventListener('resize', publish);
       lastReported = null;

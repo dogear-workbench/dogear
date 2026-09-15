@@ -14,6 +14,7 @@ import {
   getPresentationForWindow,
   presentTab,
   reportPageViewBounds,
+  setOverlayHidden,
   setPresentationBroadcaster,
 } from '../services/browser/embedded/presentation.js';
 import {
@@ -128,6 +129,14 @@ export const browserRouter = {
       const win = windowFromContext(context.sender);
       if (!win) return;
       reportPageViewBounds(win, input.bounds, input.revision);
+    }),
+
+  reportPageViewOverlay: t.procedure
+    .input<{ hidden: boolean }>()
+    .action(async ({ input, context }) => {
+      const win = windowFromContext(context.sender);
+      if (!win) return;
+      setOverlayHidden(win, input.hidden);
     }),
 
   /** 地址栏导航/历史操作：只作用于呈现 tab，agent 当前 tab 不受影响 */
