@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 地址栏常驻与 URL 直开](./step1-address-bar.md) — 无 tab/无呈现时地址栏可输入，回车开新 tab 呈现
 - [ ] [Step 2: 弹层遮挡临时隐藏](./step2-overlay-hide.md) — Radix 弹层与视图区相交时主进程临时隐藏浏览器画面
-- [ ] [Step 3: agent 智能跟随](./step3-agent-follow.md) — agent 开新 tab 时呈现为空或旧 agent tab 的窗口自动跟过去
+- [x] [Step 3: agent 智能跟随](./step3-agent-follow.md) — agent 开新 tab 时呈现为空或旧 agent tab 的窗口自动跟过去
 
 ## 全局决策
 

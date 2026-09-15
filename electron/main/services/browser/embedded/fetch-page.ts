@@ -1,6 +1,6 @@
 import type { EmbeddedBrowserManager } from './embedded-browser-manager.js';
 import { waitTabReady } from './navigate.js';
-import { presentRecordToCompanion } from './presentation.js';
+import { followAgentNavigation, presentRecordToCompanion } from './presentation.js';
 import type { EmbeddedTabRecord } from './types.js';
 
 const FETCH_NAV_TIMEOUT_MS = 20_000;
@@ -94,11 +94,14 @@ export function closeFetchTab(manager: EmbeddedBrowserManager, tabId: string | n
   manager.closeTab(tabId);
 }
 
-/** 失败保留页交给 agent：promote 为当前 agent tab 并释放服务持有（TTL 兜底回收） */
+/** 失败保留页交给 agent：promote 为当前 agent tab 并释放服务持有（TTL 兜底回收），呈现旧 agent tab 或空呈现的面板跟随 */
 export function promoteFetchTab(manager: EmbeddedBrowserManager, tabId: string | null, holderId: string): void {
   if (!tabId) return;
+  const workspaceId = manager.getTabRecord(tabId)?.workspaceId ?? null;
+  const previousAgentTabId = workspaceId ? manager.getAgentTabId(workspaceId) : null;
   manager.promoteToAgentTab(tabId);
   manager.release(tabId, holderId);
+  followAgentNavigation(manager, previousAgentTabId, tabId);
 }
 
 /** 验证页/登录页递到用户面前：挂 companion 页面视图区（无面板时全屏兑底） */

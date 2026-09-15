@@ -1,4 +1,5 @@
 import type { EmbeddedBrowserManager } from './embedded-browser-manager.js';
+import { followAgentNavigation } from './presentation.js';
 import type { EmbeddedTabRecord, EmbeddedTabSnapshot } from './types.js';
 
 const NAVIGATE_TIMEOUT_MS = 20_000;
@@ -17,6 +18,7 @@ export async function navigateTab(
     const record = manager.getTabRecord(snapshot.tabId);
     if (!record) throw new Error('内嵌浏览器标签创建失败');
     await waitTabReady(record);
+    followAgentNavigation(manager, null, snapshot.tabId);
     return { snapshot: snapshotOf(manager, snapshot.tabId), record, navigated: true };
   }
   const generationBefore = existing.generation;

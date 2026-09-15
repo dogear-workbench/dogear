@@ -142,6 +142,22 @@ export function presentRecordToCompanion(manager: EmbeddedBrowserManager, tab: E
   attachWithBounds(tab.tabId, win, attachBoundsFor(tab.tabId, win));
 }
 
+/** agent 导航智能跟随：仅呈现为空或正呈现 agent 旧 tab 的面板窗口跟随（用户手动呈现的窗口不打扰）；无面板窗口时静默跳过 */
+export function followAgentNavigation(
+  manager: EmbeddedBrowserManager,
+  fromTabId: string | null,
+  toTabId: string,
+): void {
+  pruneWindowEntries();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed() || !boundsByWindow.has(win.id)) continue;
+    const presented = tabIdByWindow.get(win.id);
+    if (presented !== undefined && presented !== fromTabId) continue;
+    manager.retain(toTabId, PRESENT_HOLDER_ID);
+    attachWithBounds(toTabId, win, attachBoundsFor(toTabId, win));
+  }
+}
+
 /** 挂载 bounds：窗口已上报的视图区优先；其次该 tab 上次的用户可见位置（屏外挂载 bounds 不可用作呈现位置） */
 function attachBoundsFor(tabId: string, win: BrowserWindow): Rectangle {
   const reported = boundsByWindow.get(win.id);
