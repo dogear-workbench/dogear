@@ -23,6 +23,7 @@ import { toPiTools, type ToolDef } from '../pi/tool-adapter.js';
 import { convertPiEvent } from './message-converter.js';
 import { loadSkillIndex, formatSkillIndexForPrompt, createSkillTool, type SkillEntry } from './skill-loader.js';
 import { WorkspaceExecutionEnv } from './workspace-execution-env.js';
+import { buildWriteExcludedPaths, computeBasePaths } from './workspace-paths.js';
 import { createBuiltinFileTools } from './builtin-tools.js';
 import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
@@ -329,10 +330,10 @@ export class PiSession extends EventEmitter {
     return this.sessionId;
   }
 
-  /** 热更新附加路径：重算 [primary, ...enabled] 全量覆盖 env.allowedPaths */
+  /** 热更新附加路径：重算含 configDir 的 basePaths 全量覆盖 env.allowedPaths（禁写清单只依赖 configDir，无需重算） */
   updateWorkspacePaths(additionalPaths: string[]): void {
     this.config.additionalPaths = additionalPaths;
-    this.env?.updateAllowedPaths([this.config.workspacePath, ...additionalPaths]);
+    this.env?.updateAllowedPaths(computeBasePaths(this.config.workspacePath, additionalPaths));
   }
 
   getRole(): 'main' | 'sub' {
@@ -518,8 +519,10 @@ export class PiSession extends EventEmitter {
       ? await readTextFileSafe(path.join(getConfigDir(), 'agent.md'))
       : '';
 
-    // ---- skill 索引 ----
-    const env = new WorkspaceExecutionEnv([this.config.workspacePath, ...this.config.additionalPaths]);
+    // ---- 挂载边界 + 禁写清单（读开写禁，保住 notes/memory 工具唯一写通道） ----
+    const basePaths = computeBasePaths(this.config.workspacePath, this.config.additionalPaths);
+    const env = new WorkspaceExecutionEnv(basePaths);
+    env.updateWriteExcludedPaths(buildWriteExcludedPaths());
     this.env = env;
     const builtinSkillsDir = getTemplatesDir();
     const customSkillsDir = path.join(getConfigDir(), 'skills');
@@ -584,9 +587,9 @@ export class PiSession extends EventEmitter {
     let toolDefs: ToolDef[];
 
     if (isSubAgent && subAgentProfile) {
-      toolDefs = this.buildSubAgentToolDefs(subAgentProfile, skillEntries, activeAbilities);
+      toolDefs = this.buildSubAgentToolDefs(subAgentProfile, skillEntries, activeAbilities, basePaths);
     } else {
-      toolDefs = this.buildMainAgentToolDefs(skillEntries, activeAbilities);
+      toolDefs = this.buildMainAgentToolDefs(skillEntries, activeAbilities, basePaths);
     }
 
     const activeToolNames = isSubAgent && subAgentProfile
@@ -596,7 +599,7 @@ export class PiSession extends EventEmitter {
     const tools: AgentHarnessTool<{ env: ExecutionEnv }>[] = [
       ...createBuiltinFileTools({
         conversationId: this.config.conversationId,
-        workspaceRoots: [this.config.workspacePath, ...this.config.additionalPaths].filter(Boolean),
+        workspaceRoots: basePaths,
       }),
       ...toPiTools(toolDefs),
     ];
@@ -661,10 +664,10 @@ export class PiSession extends EventEmitter {
    * + dogear-tasks（工作区且 notes 包生效；任务执行会话派单保底不受开关约束）
    * + dogear-history 跨会话检索组（不在包体系，工作区即注册的常驻基础设施）
    */
-  private buildMainAgentToolDefs(skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
+  private buildMainAgentToolDefs(skillEntries: SkillEntry[], activeAbilities: Set<string>, basePaths: string[]): ToolDef[] {
     const toolDefs: ToolDef[] = [
       createSkillTool(skillEntries),
-      ...createSearchToolDefs([this.config.workspacePath, ...this.config.additionalPaths]),
+      ...createSearchToolDefs(basePaths),
     ];
 
     // 无工作区会话现状即注册 memory 工具，而 memory 包触发条件含 hasWorkspace，直接查包会吞掉该场景，需维持现状
@@ -773,12 +776,12 @@ export class PiSession extends EventEmitter {
    * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 子开关）
    * - dogear-sibling（兄弟会话）：协作包生效（子会话对协作包强制生效，无 Profile 子开关）
    */
-  private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[], activeAbilities: Set<string>): ToolDef[] {
+  private buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntry[], activeAbilities: Set<string>, basePaths: string[]): ToolDef[] {
     const ab = profile.enabledAbilities;
     const toolDefs: ToolDef[] = [];
 
     // Grep/Glob：始终创建（基础工具，activeToolNames 控制可见性）
-    toolDefs.push(...createSearchToolDefs([this.config.workspacePath, ...this.config.additionalPaths]));
+    toolDefs.push(...createSearchToolDefs(basePaths));
 
     // Skill 工具：有 ≥1 skill 勾选时创建
     if (skillEntries.length > 0) {

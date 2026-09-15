@@ -15,8 +15,8 @@ const { PiSession } = await import('./pi-session/pi-session.js');
 type BuiltToolDef = { name: string };
 
 interface ToolBuilders {
-  buildMainAgentToolDefs(skillEntries: SkillEntryStub[], activeAbilities: Set<string>): BuiltToolDef[];
-  buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntryStub[], activeAbilities: Set<string>): BuiltToolDef[];
+  buildMainAgentToolDefs(skillEntries: SkillEntryStub[], activeAbilities: Set<string>, basePaths: string[]): BuiltToolDef[];
+  buildSubAgentToolDefs(profile: SubAgentProfile, skillEntries: SkillEntryStub[], activeAbilities: Set<string>, basePaths: string[]): BuiltToolDef[];
   toolPackMap: Map<string, string>;
 }
 
@@ -61,13 +61,13 @@ function builders(session: PiSession): ToolBuilders {
 
 function mainGroups(enabledToolPacks: string[], activeAbilities: Set<string>): Set<string> {
   const s = makeSession('main', { enabledToolPacks });
-  builders(s).buildMainAgentToolDefs([], activeAbilities);
+  builders(s).buildMainAgentToolDefs([], activeAbilities, [WORKSPACE_PATH]);
   return new Set(builders(s).toolPackMap.values());
 }
 
 function subGroups(profile: SubAgentProfile, activeAbilities: Set<string>): { groups: Set<string>; names: string[] } {
   const s = makeSession('sub', { groupId: GROUP_ID, subAgentProfile: profile });
-  const names = builders(s).buildSubAgentToolDefs(profile, [], activeAbilities).map((d) => d.name);
+  const names = builders(s).buildSubAgentToolDefs(profile, [], activeAbilities, [WORKSPACE_PATH]).map((d) => d.name);
   return { groups: new Set(builders(s).toolPackMap.values()), names };
 }
 
@@ -77,7 +77,7 @@ describe('冒烟：纯净模式（主会话全包关，绑定工作区）', () =
     expect(active.size).toBe(0);
 
     const s = makeSession('main');
-    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    const names = builders(s).buildMainAgentToolDefs([], active, [WORKSPACE_PATH]).map((d) => d.name);
 
     expect(new Set(builders(s).toolPackMap.values())).toEqual(new Set(['dogear-history']));
 
@@ -102,16 +102,16 @@ describe('冒烟：notes 包 gate dogear-tasks 与 executor 派单保底', () =>
     };
     const on = resolveAbilities(configOn, { role: 'main', hasWorkspace: true, groupId: null });
     const sOn = makeSession('main');
-    builders(sOn).buildMainAgentToolDefs([], on);
+    builders(sOn).buildMainAgentToolDefs([], on, [WORKSPACE_PATH]);
     expect(new Set(builders(sOn).toolPackMap.values())).toEqual(new Set(['dogear-notes', 'dogear-tasks', 'dogear-history']));
 
     const off = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
     const sOff = makeSession('main');
-    builders(sOff).buildMainAgentToolDefs([], off);
+    builders(sOff).buildMainAgentToolDefs([], off, [WORKSPACE_PATH]);
     expect(new Set(builders(sOff).toolPackMap.values())).toEqual(new Set(['dogear-history']));
 
     const sExec = makeSession('main', { executor: true });
-    const execNames = builders(sExec).buildMainAgentToolDefs([], off).map((d) => d.name);
+    const execNames = builders(sExec).buildMainAgentToolDefs([], off, [WORKSPACE_PATH]).map((d) => d.name);
     expect(new Set(builders(sExec).toolPackMap.values())).toEqual(new Set(['dogear-tasks', 'dogear-history']));
     expect(execNames).toContain('dogear__ReportTaskResult');
   });
@@ -151,7 +151,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
     expect(active.has('web-mcp')).toBe(true);
 
     const s = makeSession('main', { enabledToolPacks: ['web-mcp'] });
-    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    const names = builders(s).buildMainAgentToolDefs([], active, [WORKSPACE_PATH]).map((d) => d.name);
     expect(names).toContain('bigmodel__webSearch');
     expect(names).toContain('bigmodel__webReader');
   });
@@ -159,7 +159,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
   test('包开 + enabledToolPacks 不含 web-mcp → 子开关拦住不挂载', () => {
     const active = resolveAbilities(configWebMcp(), { role: 'main', hasWorkspace: true, groupId: null });
     const s = makeSession('main');
-    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    const names = builders(s).buildMainAgentToolDefs([], active, [WORKSPACE_PATH]).map((d) => d.name);
     expect(names).not.toContain('bigmodel__webSearch');
     expect(names).not.toContain('bigmodel__webReader');
   });
@@ -169,7 +169,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
     expect(active.has('web-mcp')).toBe(false);
 
     const s = makeSession('main', { enabledToolPacks: ['web-mcp'] });
-    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    const names = builders(s).buildMainAgentToolDefs([], active, [WORKSPACE_PATH]).map((d) => d.name);
     expect(names).not.toContain('bigmodel__webSearch');
   });
 
@@ -298,7 +298,7 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
     };
     const active = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: GROUP_ID });
     const s = makeSession('main', { groupId: GROUP_ID });
-    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    const names = builders(s).buildMainAgentToolDefs([], active, [WORKSPACE_PATH]).map((d) => d.name);
     expect(names).toContain('dogear__ReadGroupBackground');
     expect(names).not.toContain('dogear__ListSiblingSessions');
     expect(names).not.toContain('dogear__ListGroupFiles');
@@ -312,7 +312,7 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
     };
     const active = resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: GROUP_ID });
     const s = makeSession('main', { groupId: GROUP_ID });
-    const names = builders(s).buildMainAgentToolDefs([], active).map((d) => d.name);
+    const names = builders(s).buildMainAgentToolDefs([], active, [WORKSPACE_PATH]).map((d) => d.name);
     expect(names).toContain('dogear__ListSiblingSessions');
     expect(names).not.toContain('dogear__ReadGroupBackground');
   });

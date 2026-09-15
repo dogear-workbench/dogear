@@ -31,6 +31,7 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
   readonly cwd: string;
   private readonly inner: NodeExecutionEnv;
   private allowedPaths: string[];
+  private writeExcludedPaths: string[] = [];
   private tempRoots: string[] = [];
 
   constructor(allowedPaths: string[]) {
@@ -41,6 +42,10 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
 
   updateAllowedPaths(paths: string[]): void {
     this.allowedPaths = paths;
+  }
+
+  updateWriteExcludedPaths(paths: string[]): void {
+    this.writeExcludedPaths = paths;
   }
 
   private isOwnTemp(candidate: string): boolean {
@@ -58,6 +63,27 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
     } catch (error) {
       return err(boundaryError(error, candidate));
     }
+  }
+
+  /** 写边界 = 读边界 + 禁写区检查；临时目录白名单优先于禁写检查（bash 输出暂存不在边界内） */
+  private async guardWrite(candidate: string): Promise<Result<string, FileError>> {
+    if (this.isOwnTemp(candidate)) return ok(path.resolve(candidate));
+    const g = await this.guard(candidate);
+    if (!g.ok) return g;
+    const normalized = g.value.toLowerCase();
+    const hit = this.writeExcludedPaths.some((excluded) => {
+      const e = excluded.toLowerCase();
+      return normalized === e || normalized.startsWith(e + path.sep);
+    });
+    if (hit) {
+      return err(new FileError(
+        'permission_denied',
+        `路径越权：${candidate} 位于应用数据禁写区（运行时数据与笔记/记忆由应用及专用工具独占管理，文件工具对其只读）。` +
+        '笔记与记忆请改用 dogear__ 笔记、dogear__ 记忆工具写入。',
+        candidate,
+      ));
+    }
+    return g;
   }
 
   async absolutePath(path: string): Promise<Result<string, FileError>> {
@@ -90,13 +116,13 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
   }
 
   async writeFile(path: string, content: string | Uint8Array, abortSignal?: AbortSignal): Promise<Result<void, FileError>> {
-    const g = await this.guard(path);
+    const g = await this.guardWrite(path);
     if (!g.ok) return g;
     return this.inner.writeFile(g.value, content, abortSignal);
   }
 
   async appendFile(path: string, content: string | Uint8Array): Promise<Result<void, FileError>> {
-    const g = await this.guard(path);
+    const g = await this.guardWrite(path);
     if (!g.ok) return g;
     return this.inner.appendFile(g.value, content);
   }
@@ -126,13 +152,13 @@ export class WorkspaceExecutionEnv implements ExecutionEnv {
   }
 
   async createDir(path: string, options?: { recursive?: boolean }): Promise<Result<void, FileError>> {
-    const g = await this.guard(path);
+    const g = await this.guardWrite(path);
     if (!g.ok) return g;
     return this.inner.createDir(g.value, options);
   }
 
   async remove(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<Result<void, FileError>> {
-    const g = await this.guard(path);
+    const g = await this.guardWrite(path);
     if (!g.ok) return g;
     return this.inner.remove(g.value, options);
   }

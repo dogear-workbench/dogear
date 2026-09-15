@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 盘点与服务层路径切换](./step1-service-paths.md) — notes/memory 全部路径拼接点与调用方盘点，服务层从 workspacePath 切到 config 下新路径
 - [x] [Step 2: 存量懒迁移](./step2-migration.md) — 旧目录检测、幂等搬移、标记文件、旧目录清理
-- [ ] [Step 3: 挂载与写排除机制](./step3-mounting.md) — pi-session basePaths 统一（含热更新）、WorkspaceExecutionEnv 写排除
+- [x] [Step 3: 挂载与写排除机制](./step3-mounting.md) — pi-session basePaths 统一（含热更新）、WorkspaceExecutionEnv 写排除
 - [ ] [Step 4: 认知注入](./step4-prompts.md) — 动态段 + segments 注册 + Glob/Grep 描述补充
 - [ ] [Step 5: 连带收尾与全量验证](./step5-verify.md) — 前端/文档/规则文件跟进，lint + build + 冒烟
 
