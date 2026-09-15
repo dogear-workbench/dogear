@@ -49,14 +49,13 @@ function normalizeUrl(input: string): string {
   return /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-export function BrowserPageView() {
+export function BrowserPageView({ workspaceId }: { workspaceId: string }) {
   const tabs = useBrowserStore((s) => s.view.tabs);
   const presentedTabId = useBrowserStore((s) => s.view.presentedTabId);
-  if (tabs.length === 0) return null;
   const presented = tabs.find((tab) => tab.tabId === presentedTabId) ?? null;
   return (
     <>
-      <PageAddressBar presented={presented} tabs={tabs} />
+      <PageAddressBar presented={presented} tabs={tabs} workspaceId={workspaceId} />
       <PageSurface />
     </>
   );
@@ -133,7 +132,7 @@ function PageSurface() {
         ) : (
           <>
             <MonitorPlay className="w-4 h-4" />
-            <span className="text-[10px] px-4">未呈现页面 · 点右侧标签菜单选择呈现</span>
+            <span className="text-[10px] px-4">未呈现页面 · 输入网址或从右侧菜单选择</span>
           </>
         )}
       </div>
@@ -144,20 +143,24 @@ function PageSurface() {
 function PageAddressBar({
   presented,
   tabs,
+  workspaceId,
 }: {
   presented: EmbeddedTabSnapshot | null;
   tabs: EmbeddedTabSnapshot[];
+  workspaceId: string;
 }) {
   const takeovers = useBrowserStore((s) => s.takeovers);
   const status = useBrowserStore((s) => s.status);
   const ensureViewStateLoaded = useBrowserStore((s) => s.ensureViewStateLoaded);
   const [draft, setDraft] = useState(presented?.url ?? '');
   const [navError, setNavError] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
+    if (editing) return;
     setDraft(presented?.url ?? '');
     setNavError(null);
-  }, [presented?.tabId, presented?.url]);
+  }, [editing, presented?.tabId, presented?.url]);
 
   useEffect(() => {
     if (!navError) return;
@@ -198,9 +201,13 @@ function PageAddressBar({
   };
 
   const submitUrl = () => {
-    if (!presented) return;
     const url = normalizeUrl(draft);
-    if (!url || url === presented.url) return;
+    if (!url) return;
+    if (!presented) {
+      runNav(client.presentEmbeddedTab({ url, workspaceId }));
+      return;
+    }
+    if (url === presented.url) return;
     runNav(client.navigatePresentedTab({ tabId: presented.tabId, url }));
   };
 
@@ -242,10 +249,11 @@ function PageAddressBar({
           <RotateCw className="w-3.5 h-3.5" />
         </button>
         <input
-          className="flex-1 min-w-0 h-7 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary/40 disabled:opacity-60"
+          className="flex-1 min-w-0 h-7 rounded-md border bg-background px-2 text-xs outline-none focus:ring-1 focus:ring-primary/40"
           value={draft}
-          disabled={!presented}
-          placeholder={presented ? '输入网址回车导航' : '未呈现页面 · 从右侧标签菜单选择'}
+          placeholder={presented ? '输入网址回车导航' : '输入网址回车打开'}
+          onFocus={() => setEditing(true)}
+          onBlur={() => setEditing(false)}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter') submitUrl();

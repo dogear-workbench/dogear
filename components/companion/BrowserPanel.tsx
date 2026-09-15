@@ -236,7 +236,11 @@ function LogDrawer({
   );
 }
 
-export function BrowserPanel() {
+interface BrowserPanelProps {
+  workspaceId: string;
+}
+
+export function BrowserPanel({ workspaceId }: BrowserPanelProps) {
   const events = useBrowserStore((s) => s.events);
   const status = useBrowserStore((s) => s.status);
   const tabs = useBrowserStore((s) => s.view.tabs);
@@ -288,7 +292,7 @@ export function BrowserPanel() {
     <div className="flex-1 min-h-0 flex flex-col">
       <StatusLine status={status} runningLabel={runningLabel} />
       <BrowserInterventions />
-      <BrowserPageView />
+      <BrowserPageView workspaceId={workspaceId} />
       {hasTabs ? (
         <LogDrawer count={events.length} open={logOpen} onToggle={() => setLogOpen((v) => !v)}>
           <GroupedList groups={groups} holderTaskId={holderTaskId} />

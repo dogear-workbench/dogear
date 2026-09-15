@@ -135,7 +135,7 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
       ) : tab === 'terminal' ? (
         <TerminalPanel terminalAnchor={terminalAnchor} />
       ) : (
-        <BrowserPanel />
+        <BrowserPanel workspaceId={workspaceId} />
       )}
     </aside>
   );
