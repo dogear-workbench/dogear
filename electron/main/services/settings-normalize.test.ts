@@ -271,6 +271,18 @@ test('内置 Profile 旧模板 description 自动迁移为新文案', () => {
   expect(normalizeSettings(s)).toBe(false);
 });
 
+test('存量环境实际持有的旧文案（无 user_takeover 句长文 / 手写 default 文案）也自动迁移', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[0]!.description = '实施类任务：改代码、写文件、跑命令，需要动工作区时用这个。实施完成后交付通知与摘要走共享区或正文。';
+  s.subAgent.profiles[1]!.description =
+    '浏览器与扩展双通道调研：公开网页用内嵌浏览器（dogear__browser__*）——readArticle 读文章 / search 搜索为快档首选，失败返回页面位置（tabId+URL+状态）后直接用 observe_page / find / read_text / click / fill 原子工具继续探索，不要重新导航；登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器，同一时间仅一个会话可用，并行请串行派遣）。探索循环：行动前确认世界状态（observe_page/read_state 概要），每次下钻带明确假设；页面与预期不符先 navigate 恢复再继续，不把偏离当失败上报；navigate 提示有站点档案时先调 dogear__extension__site_knowledge 取地图（可能漂移，用时概要验证），发现新结构用 dogear__extension__site_finding 沉淀。登录墙/人机验证（awaiting_human）或密码/提交类 guard 拦截即停：页面已呈现在浏览器面板，等用户完成后点「完成后继续」再继续任务。任务交付用 dogear__browser__present 把关键页面呈现给用户（页面即产物）。同一页面连续 3 次探索失败即停并报告已发现内容；滑块/验证码即停，不规避随机延迟。';
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[0]!.description).toBe(createDefaultSubAgentProfile().description);
+  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
+  expect(normalizeSettings(s)).toBe(false);
+});
+
 test('用户自定义 description 不被迁移', () => {
   const s = baseSettings();
   s.subAgent.profiles[0]!.description = '我自己的默认描述';
