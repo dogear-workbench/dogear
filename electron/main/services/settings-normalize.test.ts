@@ -249,7 +249,7 @@ test('缺失内置浏览器解析 Profile 时自动补齐，已有 Profile 保�
   expect(s.subAgent.profiles).toHaveLength(2);
   expect(s.subAgent.profiles[0]).toEqual({ id: 'p1', name: '自定义', description: '', timeoutMinutes: 15, enabledBasicTools: ['read'], enabledAbilities: {} });
   expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
-  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true });
+  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true, article: true });
   expect(normalizeSettings(s)).toBe(false);
 });
 
