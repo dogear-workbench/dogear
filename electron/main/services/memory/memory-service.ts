@@ -3,7 +3,7 @@
  *
  * - 所有写入走 safe-json 的原子写入 + 文件锁
  * - 每次 upsert / delete / updateCoreProfile 同步触发索引维护
- * - 所有方法第一参数是 workspacePath，不从全局读
+ * - 所有方法第一参数是 workspaceId（数据存 config/workspaces/{id}/memory）
  * - 目录不存在时：查询类方法返回 null / []，写入类方法自动创建
  */
 import fs from 'node:fs/promises';
@@ -21,9 +21,9 @@ import { readIndex, removeIndexEntry, updateIndexEntry } from './memory-indexer.
 
 // ─── 核心档案 ───
 
-export async function getCoreProfile(workspacePath: string): Promise<CoreProfile | null> {
+export async function getCoreProfile(workspaceId: string): Promise<CoreProfile | null> {
   try {
-    const raw = await fs.readFile(getCoreProfilePath(workspacePath), 'utf-8');
+    const raw = await fs.readFile(getCoreProfilePath(workspaceId), 'utf-8');
     const { fm, body } = parseFrontmatter(raw);
     const updated = typeof fm.updated === 'string' ? fm.updated : new Date(0).toISOString();
     return { content: body, updated };
@@ -32,24 +32,24 @@ export async function getCoreProfile(workspacePath: string): Promise<CoreProfile
   }
 }
 
-export async function updateCoreProfile(workspacePath: string, content: string): Promise<void> {
+export async function updateCoreProfile(workspaceId: string, content: string): Promise<void> {
   const now = new Date().toISOString();
   const fm: Frontmatter = { updated: now };
   const body = content.startsWith('\n') ? content : `\n${content}`;
   const raw = stringifyFrontmatter(fm, body);
-  await safeFileWrite(getCoreProfilePath(workspacePath), raw);
+  await safeFileWrite(getCoreProfilePath(workspaceId), raw);
 }
 
 // ─── 主题记忆 ───
 
-export async function listTopics(workspacePath: string): Promise<TopicIndexEntry[]> {
-  const index = await readIndex(workspacePath);
+export async function listTopics(workspaceId: string): Promise<TopicIndexEntry[]> {
+  const index = await readIndex(workspaceId);
   return [...index.topics].sort((a, b) => (a.updated < b.updated ? 1 : -1));
 }
 
-export async function getTopic(workspacePath: string, slug: string): Promise<Topic | null> {
+export async function getTopic(workspaceId: string, slug: string): Promise<Topic | null> {
   try {
-    const raw = await fs.readFile(getTopicPath(workspacePath, slug), 'utf-8');
+    const raw = await fs.readFile(getTopicPath(workspaceId, slug), 'utf-8');
     return parseTopicFile(slug, raw);
   } catch {
     return null;
@@ -57,13 +57,13 @@ export async function getTopic(workspacePath: string, slug: string): Promise<Top
 }
 
 export async function upsertTopic(
-  workspacePath: string,
+  workspaceId: string,
   data: Omit<Topic, 'created' | 'updated'> & { created?: string; updated?: string }
 ): Promise<Topic> {
   const now = new Date().toISOString();
 
   // 读取现有的 created（保留原始创建时间）
-  const existing = await getTopic(workspacePath, data.slug);
+  const existing = await getTopic(workspaceId, data.slug);
   const created = data.created ?? existing?.created ?? now;
   const updated = data.updated ?? now;
 
@@ -94,9 +94,9 @@ export async function upsertTopic(
 
   const body = topic.content.startsWith('\n') ? topic.content : `\n${topic.content}`;
   const raw = stringifyFrontmatter(fm, body);
-  await safeFileWrite(getTopicPath(workspacePath, topic.slug), raw);
+  await safeFileWrite(getTopicPath(workspaceId, topic.slug), raw);
 
-  await updateIndexEntry(workspacePath, {
+  await updateIndexEntry(workspaceId, {
     slug: topic.slug,
     title: topic.title,
     keywords: topic.keywords,
@@ -106,8 +106,8 @@ export async function upsertTopic(
   return topic;
 }
 
-export async function deleteTopic(workspacePath: string, slug: string): Promise<void> {
-  const filePath = getTopicPath(workspacePath, slug);
+export async function deleteTopic(workspaceId: string, slug: string): Promise<void> {
+  const filePath = getTopicPath(workspaceId, slug);
   try {
     await fs.unlink(filePath);
   } catch {
@@ -118,10 +118,10 @@ export async function deleteTopic(workspacePath: string, slug: string): Promise<
     try { await fs.unlink(filePath + suffix); } catch { /* 忽略 */ }
   }
 
-  await removeIndexEntry(workspacePath, slug);
+  await removeIndexEntry(workspaceId, slug);
 
   // 目录空时不主动清理（留给用户），避免和正在进行的 upsert 竞态
-  void getTopicsDir(workspacePath);
+  void getTopicsDir(workspaceId);
 }
 
 // ─── 内部工具 ───

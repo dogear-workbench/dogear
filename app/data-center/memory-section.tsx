@@ -21,13 +21,13 @@ export function MemorySection({ workspaces }: Props) {
   const workspace = workspaceId === 'all'
     ? undefined
     : workspaces.find((w) => w.id === workspaceId);
-  const workspacePath = workspace?.path;
+  const activeWorkspaceId = workspace?.id;
 
   const handleRebuildIndex = async () => {
-    if (!workspacePath) return;
+    if (!activeWorkspaceId) return;
     setRebuilding(true);
     try {
-      const result = await client.rebuildMemoryIndex({ workspacePath });
+      const result = await client.rebuildMemoryIndex({ workspaceId: activeWorkspaceId });
       const err = 'error' in result ? result.error : undefined;
       if (err) {
         await confirm({
@@ -79,7 +79,7 @@ export function MemorySection({ workspaces }: Props) {
     </div>
   );
 
-  if (!workspace || !workspacePath) {
+  if (!workspace || !activeWorkspaceId) {
     return (
       <div className="mx-auto max-w-4xl px-6 py-6">
         {header}
@@ -115,11 +115,11 @@ export function MemorySection({ workspaces }: Props) {
         </TabsList>
 
         <TabsContent value="core" className="pt-4">
-          <CoreProfilePanel workspacePath={workspacePath} />
+          <CoreProfilePanel workspaceId={activeWorkspaceId} />
         </TabsContent>
 
         <TabsContent value="topics" className="pt-4">
-          <TopicsPanel workspacePath={workspacePath} />
+          <TopicsPanel workspaceId={activeWorkspaceId} />
         </TabsContent>
       </Tabs>
       </div>

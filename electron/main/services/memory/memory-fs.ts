@@ -1,7 +1,7 @@
 /**
  * 记忆模块 IO 工具层
  *
- * - 路径函数（workspacePath 为第一参数，所有 service / indexer / loader 共用）
+ * - 路径函数（workspaceId 为第一参数，所有 service / indexer / loader 共用；存全局 config 的 workspaces/{id}/memory 下）
  * - frontmatter 手写解析 / 序列化（不引入 gray-matter 依赖）
  *
  * 只处理主题文件实际使用的字段类型：string / string[] / ISO 时间戳。
@@ -9,27 +9,28 @@
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getConfigDir } from '../settings-service.js';
 
 // ─── 路径函数 ───
 
-export function getMemoryDir(workspacePath: string): string {
-  return path.join(workspacePath, '.dogear', 'memory');
+export function getMemoryDir(workspaceId: string): string {
+  return path.join(getConfigDir(), 'workspaces', workspaceId, 'memory');
 }
 
-export function getCoreProfilePath(workspacePath: string): string {
-  return path.join(getMemoryDir(workspacePath), 'core-profile.md');
+export function getCoreProfilePath(workspaceId: string): string {
+  return path.join(getMemoryDir(workspaceId), 'core-profile.md');
 }
 
-export function getTopicsDir(workspacePath: string): string {
-  return path.join(getMemoryDir(workspacePath), 'topics');
+export function getTopicsDir(workspaceId: string): string {
+  return path.join(getMemoryDir(workspaceId), 'topics');
 }
 
-export function getTopicPath(workspacePath: string, slug: string): string {
-  return path.join(getTopicsDir(workspacePath), `${slug}.md`);
+export function getTopicPath(workspaceId: string, slug: string): string {
+  return path.join(getTopicsDir(workspaceId), `${slug}.md`);
 }
 
-export function getIndexPath(workspacePath: string): string {
-  return path.join(getMemoryDir(workspacePath), 'index.json');
+export function getIndexPath(workspaceId: string): string {
+  return path.join(getMemoryDir(workspaceId), 'index.json');
 }
 
 // ─── Frontmatter 解析 ───

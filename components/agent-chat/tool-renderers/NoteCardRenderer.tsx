@@ -6,7 +6,6 @@ import { rendererEvents } from '@/lib/events';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useNotesStore } from '@/stores/notes-store';
 import { useWorkspaceId } from '../workspace-id-context';
-import { useWorkspacePath } from '../path-link';
 import { ToolDetailShell, ToolSection, KeyValueList, OutputBox, ChipList } from './ToolDetailShell';
 
 interface Props {
@@ -31,7 +30,7 @@ function toLinks(links: any): string[] {
 // noteId → title；null = 确认不存在（已删卡），避免重复请求
 const noteTitleCache = new Map<string, string | null>();
 
-function useNoteTitle(noteId: string, workspacePath: string | null): string | null | undefined {
+function useNoteTitle(noteId: string, workspaceId: string | null): string | null | undefined {
   const notes = useNotesStore((s) => s.notes);
   const [, bump] = useReducer((n: number) => n + 1, 0);
 
@@ -51,10 +50,10 @@ function useNoteTitle(noteId: string, workspacePath: string | null): string | nu
       bump();
       return;
     }
-    if (!workspacePath) return;
+    if (!workspaceId) return;
     let cancelled = false;
     void client
-      .getNote({ workspacePath, noteId })
+      .getNote({ workspaceId, noteId })
       .catch(() => null)
       .then((result) => {
         const title = result && 'note' in result && result.note ? result.note.title : null;
@@ -66,16 +65,16 @@ function useNoteTitle(noteId: string, workspacePath: string | null): string | nu
     return () => {
       cancelled = true;
     };
-  }, [noteId, notes, workspacePath, bump]);
+  }, [noteId, notes, workspaceId, bump]);
 
   if (!noteId) return null;
   return noteTitleCache.get(noteId);
 }
 
-function openNoteCard(noteId: string, workspacePath: string | null) {
-  if (!workspacePath) return;
+function openNoteCard(noteId: string, workspaceId: string | null) {
+  if (!workspaceId) return;
   void (async () => {
-    const result = await client.getNote({ workspacePath, noteId }).catch(() => null);
+    const result = await client.getNote({ workspaceId, noteId }).catch(() => null);
     if (!result || !('note' in result) || !result.note) {
       toast.warning('卡片不存在或已删除');
       return;
@@ -87,14 +86,13 @@ function openNoteCard(noteId: string, workspacePath: string | null) {
 
 function NoteLinkRow({ noteId }: { noteId: string }) {
   const workspaceId = useWorkspaceId();
-  const workspacePath = useWorkspacePath(workspaceId);
-  const title = useNoteTitle(noteId, workspacePath);
+  const title = useNoteTitle(noteId, workspaceId);
   const missing = title === null;
   return (
     <button
       type="button"
       title={missing ? '卡片不存在或已删除' : '打开卡片'}
-      onClick={() => openNoteCard(noteId, workspacePath)}
+      onClick={() => openNoteCard(noteId, workspaceId)}
       className="flex gap-2 items-baseline w-full text-left group/note"
     >
       <span className="text-muted-foreground font-mono shrink-0">卡片</span>

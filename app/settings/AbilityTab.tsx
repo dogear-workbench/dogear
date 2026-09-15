@@ -218,7 +218,6 @@ export function AbilityTab() {
       <AbilityPackDetailPage
         key={selectedPack.key}
         pack={selectedPack}
-        workspace={activeWorkspace}
         workspaceId={workspaceId}
         config={workspaceConfig}
         packEnabled={packEnabled(selectedPack)}

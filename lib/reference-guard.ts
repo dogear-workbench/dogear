@@ -69,10 +69,10 @@ export function guardReferenceIntoFocus(): boolean {
 }
 
 /** 无标题卡显示截断正文：取正文首个非空行去 markdown 前缀截 40 字 */
-async function resolveNoteTitle(workspacePath: string, noteId: string, title: string): Promise<string> {
+async function resolveNoteTitle(workspaceId: string, noteId: string, title: string): Promise<string> {
   if (title) return title;
   try {
-    const result = await client.getNote({ workspacePath, noteId });
+    const result = await client.getNote({ workspaceId, noteId });
     if ('note' in result && result.note) {
       const line = result.note.content
         .split(/\r?\n/)
@@ -89,7 +89,7 @@ async function resolveNoteTitle(workspacePath: string, noteId: string, title: st
  * 笔记卡一键引用进会话：工作区守卫 → 锚定最近活跃会话 → 激活该 tab + 聚焦输入框。
  * 锚定目标以 session-store.lastActiveConversationTabId 为权威（哨兵 tab 下 selectedConversation 有残留）
  */
-export async function referenceNoteIntoFocus(note: { noteId: string; title: string; workspacePath: string }): Promise<void> {
+export async function referenceNoteIntoFocus(note: { noteId: string; title: string; workspaceId: string }): Promise<void> {
   const { lastActiveConversationTabId, getTab, isInSessionWindow } = useSessionStore.getState();
   const tab = lastActiveConversationTabId ? getTab(lastActiveConversationTabId) : undefined;
   if (!tab) {
@@ -104,14 +104,14 @@ export async function referenceNoteIntoFocus(note: { noteId: string; title: stri
   const workspace = useWorkspaceStore.getState().workspace;
   if (!workspace || tab.workspaceId !== workspace.id) {
     let targetWorkspaceName: string | null = null;
-    let samePath = false;
+    let sameId = false;
     try {
       const { workspaces } = await client.getAll();
       const target = workspaces.find((w) => w.id === tab.workspaceId);
       targetWorkspaceName = target?.name ?? null;
-      samePath = target?.path === note.workspacePath;
+      sameId = target?.id === note.workspaceId;
     } catch {}
-    if (!samePath) {
+    if (!sameId) {
       toast.warning('无法引用', {
         description: targetWorkspaceName
           ? `该笔记属于其他工作区，无法引用到目标会话（目标会话属于「${targetWorkspaceName}」）`
@@ -124,8 +124,8 @@ export async function referenceNoteIntoFocus(note: { noteId: string; title: stri
   useReferenceStore.getState().addReferencedNote(
     {
       noteId: note.noteId,
-      title: await resolveNoteTitle(note.workspacePath, note.noteId, note.title),
-      workspacePath: note.workspacePath,
+      title: await resolveNoteTitle(note.workspaceId, note.noteId, note.title),
+      workspaceId: note.workspaceId,
     },
     tab.conversationId,
   );

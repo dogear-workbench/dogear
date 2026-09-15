@@ -3,7 +3,7 @@
  *
  * - md 文件是唯一真源；get 永远读文件并同步刷新索引；list/search 走 index.json
  * - 所有写操作完成后广播 notesChanged 事件（覆盖 UI / Agent / 外部编辑所有写入方）
- * - 所有方法第一参数是 workspacePath；目录不存在时查询返回 null/[]，写入自动创建
+ * - 所有方法第一参数是 workspaceId；目录不存在时查询返回 null/[]，写入自动创建
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -46,7 +46,7 @@ const LINK_RE = /^(article|stock|plan):.+/;
 
 // ─── 读 ───
 
-export async function createNote(workspacePath: string, input: CreateNoteInput): Promise<Note> {
+export async function createNote(workspaceId: string, input: CreateNoteInput): Promise<Note> {
   const now = new Date();
   const id = generateShortId();
   const note: Note = {
@@ -60,25 +60,25 @@ export async function createNote(workspacePath: string, input: CreateNoteInput):
     ...(input.source ? { source: input.source } : {}),
     content: input.content,
   };
-  await writeNoteFile(path.join(getNotesDir(workspacePath), note.file), note);
-  await updateIndexEntry(workspacePath, noteToIndexItem(note));
-  void broadcastNotesChanged(workspacePath);
+  await writeNoteFile(path.join(getNotesDir(workspaceId), note.file), note);
+  await updateIndexEntry(workspaceId, noteToIndexItem(note));
+  void broadcastNotesChanged(workspaceId);
   return note;
 }
 
-export async function getNote(workspacePath: string, noteId: string): Promise<Note | null> {
-  const filePath = await locateNoteFile(workspacePath, noteId);
+export async function getNote(workspaceId: string, noteId: string): Promise<Note | null> {
+  const filePath = await locateNoteFile(workspaceId, noteId);
   if (!filePath) return null;
   const note = await readNoteFile(filePath);
   if (!note) return null;
-  await syncIndexEntry(workspacePath, note);
+  await syncIndexEntry(workspaceId, note);
   return note;
 }
 
-export async function listNotes(workspacePath: string): Promise<NoteMeta[]> {
-  const index = await readIndex(workspacePath);
+export async function listNotes(workspaceId: string): Promise<NoteMeta[]> {
+  const index = await readIndex(workspaceId);
   if (index.items.length === 0) {
-    const rebuilt = await rebuildIndex(workspacePath);
+    const rebuilt = await rebuildIndex(workspaceId);
     return sortByUpdated(rebuilt.items);
   }
   return sortByUpdated(index.items);
@@ -86,8 +86,8 @@ export async function listNotes(workspacePath: string): Promise<NoteMeta[]> {
 
 // ─── 写 ───
 
-export async function updateNote(workspacePath: string, noteId: string, patch: NotePatch): Promise<Note | null> {
-  const existing = await getNote(workspacePath, noteId);
+export async function updateNote(workspaceId: string, noteId: string, patch: NotePatch): Promise<Note | null> {
+  const existing = await getNote(workspaceId, noteId);
   if (!existing) return null;
   const updated: Note = {
     ...existing,
@@ -100,57 +100,57 @@ export async function updateNote(workspacePath: string, noteId: string, patch: N
   if (patch.tags !== undefined) updated.tags = normalizeTags(patch.tags);
   if (patch.links !== undefined) updated.links = normalizeLinks(patch.links);
 
-  await writeNoteFile(path.join(getNotesDir(workspacePath), updated.file), updated);
-  await updateIndexEntry(workspacePath, noteToIndexItem(updated));
-  void broadcastNotesChanged(workspacePath);
+  await writeNoteFile(path.join(getNotesDir(workspaceId), updated.file), updated);
+  await updateIndexEntry(workspaceId, noteToIndexItem(updated));
+  void broadcastNotesChanged(workspaceId);
   return updated;
 }
 
-export async function appendNote(workspacePath: string, noteId: string, text: string): Promise<Note | null> {
-  const existing = await getNote(workspacePath, noteId);
+export async function appendNote(workspaceId: string, noteId: string, text: string): Promise<Note | null> {
+  const existing = await getNote(workspaceId, noteId);
   if (!existing) return null;
   const glue = existing.content.length > 0 && !existing.content.endsWith('\n') ? '\n' : '';
   const content = existing.content + glue + text;
-  return updateNote(workspacePath, noteId, { content });
+  return updateNote(workspaceId, noteId, { content });
 }
 
 // ─── 软删除 / 回收站 ───
 
-export async function removeNote(workspacePath: string, noteId: string): Promise<boolean> {
-  const filePath = await locateNoteFile(workspacePath, noteId);
+export async function removeNote(workspaceId: string, noteId: string): Promise<boolean> {
+  const filePath = await locateNoteFile(workspaceId, noteId);
   if (!filePath) return false;
-  const trashDir = getTrashDir(workspacePath);
+  const trashDir = getTrashDir(workspaceId);
   await fs.mkdir(trashDir, { recursive: true });
   await moveNoteFile(filePath, path.join(trashDir, path.basename(filePath)));
-  await removeIndexEntry(workspacePath, noteId);
-  void broadcastNotesChanged(workspacePath);
+  await removeIndexEntry(workspaceId, noteId);
+  void broadcastNotesChanged(workspaceId);
   return true;
 }
 
-export async function restoreNote(workspacePath: string, noteId: string): Promise<boolean> {
-  const trashPath = await locateTrashedFile(workspacePath, noteId);
+export async function restoreNote(workspaceId: string, noteId: string): Promise<boolean> {
+  const trashPath = await locateTrashedFile(workspaceId, noteId);
   if (!trashPath) return false;
   const note = await readNoteFile(trashPath);
   if (!note) return false;
-  const targetPath = path.join(getNotesDir(workspacePath), note.file);
+  const targetPath = path.join(getNotesDir(workspaceId), note.file);
   const targetExists = await fs.access(targetPath).then(() => true).catch(() => false);
   if (targetExists) throw new Error(`恢复失败：主目录已存在同名文件 ${note.file}`);
   await moveNoteFile(trashPath, targetPath);
-  await updateIndexEntry(workspacePath, noteToIndexItem(note));
-  void broadcastNotesChanged(workspacePath);
+  await updateIndexEntry(workspaceId, noteToIndexItem(note));
+  void broadcastNotesChanged(workspaceId);
   return true;
 }
 
-export async function purgeNote(workspacePath: string, noteId: string): Promise<boolean> {
-  const trashPath = await locateTrashedFile(workspacePath, noteId);
+export async function purgeNote(workspaceId: string, noteId: string): Promise<boolean> {
+  const trashPath = await locateTrashedFile(workspaceId, noteId);
   if (!trashPath) return false;
   await removeNoteFileCompletely(trashPath);
-  void broadcastNotesChanged(workspacePath);
+  void broadcastNotesChanged(workspaceId);
   return true;
 }
 
-export async function listTrashNotes(workspacePath: string): Promise<NoteMeta[]> {
-  const trashDir = getTrashDir(workspacePath);
+export async function listTrashNotes(workspaceId: string): Promise<NoteMeta[]> {
+  const trashDir = getTrashDir(workspaceId);
   const files = await listNoteFiles(trashDir);
   const items: NoteMeta[] = [];
   for (const file of files) {
@@ -162,8 +162,8 @@ export async function listTrashNotes(workspacePath: string): Promise<NoteMeta[]>
 
 // ─── 搜索 / 待办聚合 ───
 
-export async function searchNotes(workspacePath: string, input: SearchNotesInput): Promise<NoteMeta[]> {
-  const items = await listNotes(workspacePath);
+export async function searchNotes(workspaceId: string, input: SearchNotesInput): Promise<NoteMeta[]> {
+  const items = await listNotes(workspaceId);
   const tag = input.tag?.trim();
   const query = input.query?.trim().toLowerCase();
   const tagMatched = tag ? items.filter((it) => it.tags.includes(tag)) : items;
@@ -174,7 +174,7 @@ export async function searchNotes(workspacePath: string, input: SearchNotesInput
       matched.push(item);
       continue;
     }
-    const note = await getNote(workspacePath, item.id);
+    const note = await getNote(workspaceId, item.id);
     if (note && note.content.toLowerCase().includes(query)) matched.push(item);
   }
   return matched;
@@ -216,9 +216,9 @@ function normalizeLinks(links: string[] | undefined): string[] {
 }
 
 /** 索引优先定位主目录卡片文件；索引缺失/文件丢失时扫描目录按 id 兜底 */
-async function locateNoteFile(workspacePath: string, noteId: string): Promise<string | null> {
-  const notesDir = getNotesDir(workspacePath);
-  const index = await readIndex(workspacePath);
+async function locateNoteFile(workspaceId: string, noteId: string): Promise<string | null> {
+  const notesDir = getNotesDir(workspaceId);
+  const index = await readIndex(workspaceId);
   const entry = index.items.find((it) => it.id === noteId);
   if (entry) {
     const filePath = path.join(notesDir, entry.file);
@@ -239,9 +239,9 @@ async function locateNoteFile(workspacePath: string, noteId: string): Promise<st
   return null;
 }
 
-async function locateTrashedFile(workspacePath: string, noteId: string): Promise<string | null> {
+async function locateTrashedFile(workspaceId: string, noteId: string): Promise<string | null> {
   const suffix = `-${noteId}.md`;
-  const trashDir = getTrashDir(workspacePath);
+  const trashDir = getTrashDir(workspaceId);
   for (const file of await listNoteFiles(trashDir)) {
     if (!file.endsWith(suffix)) continue;
     const filePath = path.join(trashDir, file);
@@ -252,14 +252,14 @@ async function locateTrashedFile(workspacePath: string, noteId: string): Promise
 }
 
 /** get 读到的文件真源与索引不一致时刷新（避免每次 get 都写索引） */
-async function syncIndexEntry(workspacePath: string, note: Note): Promise<void> {
-  const index = await readIndex(workspacePath);
+async function syncIndexEntry(workspaceId: string, note: Note): Promise<void> {
+  const index = await readIndex(workspaceId);
   const entry = index.items.find((it) => it.id === note.id);
   if (entry && entry.file === note.file && entry.updated === note.updated) return;
-  await updateIndexEntry(workspacePath, noteToIndexItem(note));
+  await updateIndexEntry(workspaceId, noteToIndexItem(note));
 }
 
-export async function broadcastNotesChanged(workspacePath: string): Promise<void> {
+export async function broadcastNotesChanged(workspaceId: string): Promise<void> {
   try {
     const [{ BrowserWindow }, { getRendererHandlers }] = await Promise.all([
       import('electron'),
@@ -268,7 +268,7 @@ export async function broadcastNotesChanged(workspacePath: string): Promise<void
     for (const win of BrowserWindow.getAllWindows()) {
       if (win.isDestroyed()) continue;
       try {
-        getRendererHandlers<RendererHandlers>(win.webContents).notesChanged.send({ workspacePath });
+        getRendererHandlers<RendererHandlers>(win.webContents).notesChanged.send({ workspaceId });
       } catch {
         // 窗口已销毁，忽略
       }

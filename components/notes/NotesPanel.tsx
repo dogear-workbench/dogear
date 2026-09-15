@@ -45,7 +45,7 @@ export interface NoteFilter {
 export function NotesPanel() {
   const activeTabId = useSessionStore((s) => s.activeTabId);
   const workspace = useWorkspaceStore((s) => s.workspace);
-  const loadedWorkspacePath = useNotesStore((s) => s.loadedWorkspacePath);
+  const loadedWorkspaceId = useNotesStore((s) => s.loadedWorkspaceId);
   const loadNotes = useNotesStore((s) => s.loadNotes);
   const subscribeNotesChanged = useNotesStore((s) => s.subscribeNotesChanged);
   const setActiveNoteId = useNotesStore((s) => s.setActiveNoteId);
@@ -69,16 +69,17 @@ export function NotesPanel() {
   const searchSeqRef = useRef(0);
 
   const isActive = activeTabId === NOTES_TAB_ID;
+  const workspaceId = workspace?.id ?? null;
   const workspacePath = workspace?.path ?? null;
 
   // 详情归属特定工作区的卡片，切工作区时关闭，避免跨区 id 悬空
   useEffect(() => {
     setActiveNoteId(null);
-  }, [workspacePath, setActiveNoteId]);
+  }, [workspaceId, setActiveNoteId]);
 
   const handleCreate = () => {
     if (!workspace) return;
-    void createNote(workspace.path).then((note) => {
+    void createNote(workspace.id).then((note) => {
       if (note) setActiveNoteId(note.id);
     });
   };
@@ -107,9 +108,9 @@ export function NotesPanel() {
   }, [activeNoteId]);
 
   useEffect(() => {
-    if (!isActive || !workspace || loadedWorkspacePath === workspace.path) return;
-    void loadNotes(workspace.path);
-  }, [isActive, workspace, loadedWorkspacePath, loadNotes]);
+    if (!isActive || !workspace || loadedWorkspaceId === workspace.id) return;
+    void loadNotes(workspace.id);
+  }, [isActive, workspace, loadedWorkspaceId, loadNotes]);
 
   const runSearch = useCallback(
     async (next: NoteFilter) => {
@@ -119,7 +120,7 @@ export function NotesPanel() {
       setFilterLoading(true);
       try {
         const result = await client.searchNotes({
-          workspacePath: workspace.path,
+          workspaceId: workspace.id,
           query: next.query || undefined,
           tag: next.tag || undefined,
         });
@@ -188,7 +189,7 @@ export function NotesPanel() {
         />
       );
     }
-    if (!workspacePath) {
+    if (!workspace || !workspacePath) {
       return (
         <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">
           请先选择工作区
@@ -207,7 +208,7 @@ export function NotesPanel() {
     }
     return (
       <div className="flex-1 flex flex-col min-h-0">
-        <TrashView workspacePath={workspacePath} query={searchDraft} />
+        <TrashView workspaceId={workspace.id} workspacePath={workspacePath} query={searchDraft} />
       </div>
     );
   };

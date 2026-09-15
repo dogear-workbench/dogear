@@ -6,10 +6,10 @@ import { TopicsList } from './topics-list';
 import { TopicEditor, type EditState } from './topic-editor';
 
 interface Props {
-  workspacePath: string;
+  workspaceId: string;
 }
 
-export function TopicsPanel({ workspacePath }: Props) {
+export function TopicsPanel({ workspaceId }: Props) {
   const confirm = useConfirmStore((s) => s.confirm);
   const [topics, setTopics] = useState<TopicIndexEntry[]>([]);
   const [edit, setEdit] = useState<EditState | null>(null);
@@ -18,10 +18,10 @@ export function TopicsPanel({ workspacePath }: Props) {
   const loadingRef = useRef(false);
 
   const loadList = useCallback(async () => {
-    const result = await client.listMemoryTopics({ workspacePath });
+    const result = await client.listMemoryTopics({ workspaceId });
     const list = 'topics' in result ? result.topics : undefined;
     if (list) setTopics(list);
-  }, [workspacePath]);
+  }, [workspaceId]);
 
   useEffect(() => { loadList(); }, [loadList]);
 
@@ -66,7 +66,7 @@ export function TopicsPanel({ workspacePath }: Props) {
 
     loadingRef.current = true;
     try {
-      const result = await client.getMemoryTopic({ workspacePath, slug });
+      const result = await client.getMemoryTopic({ workspaceId, slug });
       const topic = 'topic' in result ? result.topic : undefined;
       if (topic) {
         const next: EditState = {
@@ -134,7 +134,7 @@ export function TopicsPanel({ workspacePath }: Props) {
     // slug 冲突预检（新建或改名场景）
     const slugChanged = edit.isNew || edit.slug !== edit.originalSlug;
     if (slugChanged) {
-      const existing = await client.getMemoryTopic({ workspacePath, slug: edit.slug });
+      const existing = await client.getMemoryTopic({ workspaceId, slug: edit.slug });
       const existingTopic = 'topic' in existing ? existing.topic : undefined;
       if (existingTopic) {
         const r = await confirm({
@@ -152,7 +152,7 @@ export function TopicsPanel({ workspacePath }: Props) {
     setSaving(true);
     try {
       const result = await client.upsertMemoryTopic({
-        workspacePath,
+        workspaceId,
         topic: {
           slug: edit.slug,
           title: edit.title,
@@ -164,7 +164,7 @@ export function TopicsPanel({ workspacePath }: Props) {
       const err = 'error' in result ? result.error : undefined;
       if (saved) {
         if (!edit.isNew && edit.slug !== edit.originalSlug) {
-          await client.deleteMemoryTopic({ workspacePath, slug: edit.originalSlug });
+          await client.deleteMemoryTopic({ workspaceId, slug: edit.originalSlug });
         }
         const next: EditState = {
           isNew: false,
@@ -200,7 +200,7 @@ export function TopicsPanel({ workspacePath }: Props) {
       ],
     });
     if (r !== 'ok') return;
-    await client.deleteMemoryTopic({ workspacePath, slug: edit.originalSlug });
+    await client.deleteMemoryTopic({ workspaceId, slug: edit.originalSlug });
     setEdit(null);
     setSavedSnapshot(null);
     await loadList();

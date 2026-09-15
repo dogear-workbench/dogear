@@ -38,7 +38,7 @@ export async function buildCustomToolSet(
   const toolDefs: ToolDef[] = [
     ...createWorkspaceFileToolDefs(workspacePath),
     ...createSearchToolDefs([workspacePath]),
-    ...createMemoryToolDefs(workspacePath, { autonomous: true }),
+    ...createMemoryToolDefs(workspaceId, { autonomous: true }),
   ];
 
   const packNames = override !== undefined ? override : await readEnabledToolPacks(configDir, workspaceId);

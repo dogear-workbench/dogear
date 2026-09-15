@@ -17,24 +17,24 @@ const EMPTY_INDEX: MemoryIndex = {
 };
 
 /** 读取索引（不存在返回空索引） */
-export async function readIndex(workspacePath: string): Promise<MemoryIndex> {
-  const data = await safeJsonRead<MemoryIndex | null>(getIndexPath(workspacePath), null);
+export async function readIndex(workspaceId: string): Promise<MemoryIndex> {
+  const data = await safeJsonRead<MemoryIndex | null>(getIndexPath(workspaceId), null);
   if (!data || data.version !== 1 || !Array.isArray(data.topics)) {
     return { ...EMPTY_INDEX };
   }
   return data;
 }
 
-async function writeIndex(workspacePath: string, index: MemoryIndex): Promise<void> {
-  await safeJsonWrite(getIndexPath(workspacePath), index);
+async function writeIndex(workspaceId: string, index: MemoryIndex): Promise<void> {
+  await safeJsonWrite(getIndexPath(workspaceId), index);
 }
 
 /** 单条 upsert（upsertTopic 时调用） */
 export async function updateIndexEntry(
-  workspacePath: string,
+  workspaceId: string,
   entry: TopicIndexEntry
 ): Promise<void> {
-  const index = await readIndex(workspacePath);
+  const index = await readIndex(workspaceId);
   const existing = index.topics.findIndex((t) => t.slug === entry.slug);
   if (existing >= 0) {
     index.topics[existing] = entry;
@@ -42,12 +42,12 @@ export async function updateIndexEntry(
     index.topics.push(entry);
   }
   index.updated = new Date().toISOString();
-  await writeIndex(workspacePath, index);
+  await writeIndex(workspaceId, index);
 }
 
 /** 单条删除（deleteTopic 时调用） */
-export async function removeIndexEntry(workspacePath: string, slug: string): Promise<void> {
-  const index = await readIndex(workspacePath);
+export async function removeIndexEntry(workspaceId: string, slug: string): Promise<void> {
+  const index = await readIndex(workspaceId);
   const next = index.topics.filter((t) => t.slug !== slug);
   if (next.length === index.topics.length) {
     // 没变动，仍然写回以刷新 updated（但忽略）
@@ -55,12 +55,12 @@ export async function removeIndexEntry(workspacePath: string, slug: string): Pro
   }
   index.topics = next;
   index.updated = new Date().toISOString();
-  await writeIndex(workspacePath, index);
+  await writeIndex(workspaceId, index);
 }
 
 /** 重建索引（扫描 topics/*.md，重写 index.json） */
-export async function rebuildIndex(workspacePath: string): Promise<MemoryIndex> {
-  const topicsDir = getTopicsDir(workspacePath);
+export async function rebuildIndex(workspaceId: string): Promise<MemoryIndex> {
+  const topicsDir = getTopicsDir(workspaceId);
   const entries: TopicIndexEntry[] = [];
 
   let files: string[] = [];
@@ -93,7 +93,7 @@ export async function rebuildIndex(workspacePath: string): Promise<MemoryIndex> 
     updated: new Date().toISOString(),
     topics: entries,
   };
-  await writeIndex(workspacePath, index);
+  await writeIndex(workspaceId, index);
   return index;
 }
 
@@ -101,12 +101,12 @@ export async function rebuildIndex(workspacePath: string): Promise<MemoryIndex> 
  * 一致性检查：索引声明的文件是否都存在；返回孤儿 slug 和 index 里缺失的 slug。
  * 只报告，不自动修复。
  */
-export async function checkConsistency(workspacePath: string): Promise<{
+export async function checkConsistency(workspaceId: string): Promise<{
   orphansInIndex: string[];
   orphansOnDisk: string[];
 }> {
-  const index = await readIndex(workspacePath);
-  const topicsDir = getTopicsDir(workspacePath);
+  const index = await readIndex(workspaceId);
+  const topicsDir = getTopicsDir(workspaceId);
 
   let diskSlugs: string[] = [];
   try {

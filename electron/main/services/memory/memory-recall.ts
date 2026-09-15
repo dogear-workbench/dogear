@@ -22,7 +22,7 @@ export interface RecallResult {
 }
 
 export async function recall(
-  workspacePath: string,
+  workspaceId: string,
   keywords: string[],
   limit: number = 3
 ): Promise<RecallResult> {
@@ -35,7 +35,7 @@ export async function recall(
     return { topics: [] };
   }
 
-  const index = await readIndex(workspacePath);
+  const index = await readIndex(workspaceId);
   if (index.topics.length === 0) {
     return { topics: [] };
   }
@@ -61,7 +61,7 @@ export async function recall(
   const topics: RecallResult['topics'] = [];
 
   for (const { entry } of topSlice) {
-    const topic = await getTopic(workspacePath, entry.slug);
+    const topic = await getTopic(workspaceId, entry.slug);
     if (!topic) {
       // index 有但文件不在：跳过并记日志（不自动修复，参考风险表）
       console.warn(`[memory-recall] 索引中的 topic ${entry.slug} 文件缺失，跳过`);

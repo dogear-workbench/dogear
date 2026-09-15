@@ -13,11 +13,11 @@ const WARN_THRESHOLD = 2000;
  * 加载核心档案并返回 systemPrompt 可直接拼接的字符串。
  * 返回 null 时调用方跳过拼接。
  */
-export async function loadCoreProfileForSession(workspacePath: string): Promise<string | null> {
-  if (!workspacePath) return null;
+export async function loadCoreProfileForSession(workspaceId: string): Promise<string | null> {
+  if (!workspaceId) return null;
 
   try {
-    const profile = await getCoreProfile(workspacePath);
+    const profile = await getCoreProfile(workspaceId);
     if (!profile) return null;
     const body = profile.content.trim();
     if (!body) return null;

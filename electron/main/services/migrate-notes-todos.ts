@@ -44,7 +44,7 @@ function emptyResult(): MigrateTodosToNotesResult {
   return { migratedTodos: 0, appendedNotes: 0, createdNotes: 0, skipped: 0 };
 }
 
-export async function migrateTodosToNotes(workspacePath: string): Promise<MigrateTodosToNotesResult> {
+export async function migrateTodosToNotes(workspacePath: string, workspaceId: string): Promise<MigrateTodosToNotesResult> {
   const source = todosJsonPath(workspacePath);
   const raw = await fs.readFile(source, 'utf-8').catch(() => null);
   if (raw === null) return emptyResult();
@@ -67,10 +67,10 @@ export async function migrateTodosToNotes(workspacePath: string): Promise<Migrat
     }
     try {
       const line = todoLine(text, todo.status ?? 'pending', todo.due);
-      if (todo.noteId && (await notesService.appendNote(workspacePath, todo.noteId, line))) {
+      if (todo.noteId && (await notesService.appendNote(workspaceId, todo.noteId, line))) {
         result.appendedNotes++;
       } else {
-        await notesService.createNote(workspacePath, { content: line, tags: ['待办'] });
+        await notesService.createNote(workspaceId, { content: line, tags: ['待办'] });
         result.createdNotes++;
       }
       result.migratedTodos++;
@@ -90,7 +90,7 @@ export async function migrateTodosToNotesAllWorkspaces(): Promise<void> {
   const workspaces = await workspaceJsonService.getAll();
   for (const ws of workspaces) {
     try {
-      const result = await migrateTodosToNotes(ws.path);
+      const result = await migrateTodosToNotes(ws.path, ws.id);
       if (result.migratedTodos > 0 || result.skipped > 0) {
         log.info(
           `工作区 ${ws.id} 待办迁移完成：${result.appendedNotes} 条并入卡片，${result.createdNotes} 条建新卡，${result.skipped} 条跳过`,

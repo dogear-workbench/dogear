@@ -44,7 +44,7 @@ export function NotesTimelinePane({
 
   const handleReference = (note: NoteMeta) => {
     if (!workspace) return;
-    void referenceNoteIntoFocus({ noteId: note.id, title: note.title, workspacePath: workspace.path });
+    void referenceNoteIntoFocus({ noteId: note.id, title: note.title, workspaceId: workspace.id });
   };
 
   const renderItem = (note: NoteMeta) => (
@@ -100,7 +100,7 @@ export function NotesTimelinePane({
         {activeNoteId ? (
           <NoteEditor
             key={activeNoteId}
-            workspacePath={workspace.path}
+            workspaceId={workspace.id}
             noteId={activeNoteId}
             onClose={() => setActiveNoteId(null)}
             onDelete={() => {

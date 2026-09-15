@@ -232,18 +232,18 @@ function buildResultAction(opts: {
   const canonicalName = normalizeToolName(opts.toolName);
   const input = opts.toolInput;
   const outputText = formatToolOutput(opts.toolName, opts.toolOutput);
+  const workspaceId = opts.workspaceId;
 
   if (canonicalName === 'dogear__CreateNote' || canonicalName === 'dogear__UpdateNote' || canonicalName === 'dogear__AppendNote') {
-    const workspacePath = opts.workspacePath;
     const noteId = (typeof input?.noteId === 'string' && input.noteId)
       || extractOutputId(outputText, /已创建卡片 ([^\s（「」"\\]+)/);
-    if (!noteId || !workspacePath) return null;
+    if (!noteId || !workspaceId) return null;
     return {
       icon: ExternalLink,
       tooltip: '打开卡片',
       open: () => {
         void (async () => {
-          const result = await client.getNote({ workspacePath, noteId }).catch(() => null);
+          const result = await client.getNote({ workspaceId, noteId }).catch(() => null);
           if (!result || !('note' in result) || !result.note) {
             toast.warning('卡片不存在或已删除');
             return;

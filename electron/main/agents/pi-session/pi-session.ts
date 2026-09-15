@@ -497,7 +497,7 @@ export class PiSession extends EventEmitter {
     // ---- core-profile ----
     // 主会话始终加载 core-profile；子会话不再加载（loadCoreProfile 字段已移除）
     const coreProfileText = !isSubAgent && activeAbilities.has('core-profile')
-      ? await loadCoreProfileForSession(this.config.workspacePath)
+      ? await loadCoreProfileForSession(this.config.workspaceId)
       : null;
 
     // ---- group context ----
@@ -669,7 +669,7 @@ export class PiSession extends EventEmitter {
 
     // 无工作区会话现状即注册 memory 工具，而 memory 包触发条件含 hasWorkspace，直接查包会吞掉该场景，需维持现状
     if (!this.config.workspacePath || activeAbilities.has('memory')) {
-      toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
+      toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspaceId)));
     }
 
     for (const pack of OPTIONAL_TOOL_PACKS) {
@@ -739,7 +739,7 @@ export class PiSession extends EventEmitter {
     }
 
     if (this.config.workspacePath && activeAbilities.has('notes')) {
-      toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspacePath, {
+      toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspaceId, {
         workspaceId: this.config.workspaceId,
         conversationId: this.config.conversationId,
       })));
@@ -787,7 +787,7 @@ export class PiSession extends EventEmitter {
 
     // dogear-memory：memory 包生效（Profile 子开关已并入 resolveAbilities）
     if (activeAbilities.has('memory')) {
-      toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspacePath)));
+      toolDefs.push(...this.registerPack('dogear-memory', createMemoryToolDefs(this.config.workspaceId)));
     }
 
     // stock 工具包：stock 包生效

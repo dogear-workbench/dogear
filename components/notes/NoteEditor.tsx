@@ -42,14 +42,14 @@ function joinHeading(heading: string, body: string): string {
 }
 
 interface NoteEditorProps {
-  workspacePath: string;
+  workspaceId: string;
   noteId: string;
   onClose: () => void;
   onDelete?: () => void;
 }
 
 // 父组件以 key={noteId} 挂载：换卡即重挂载，编辑器内容随初值重建，避免串卡
-export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEditorProps) {
+export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEditorProps) {
   const [note, setNote] = useState<Note | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
@@ -81,7 +81,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
     if (Object.keys(patch).length === 0) return;
     pendingRef.current = {};
     setSaveState('saving');
-    const ok = await updateNote(workspacePath, noteId, patch);
+    const ok = await updateNote(workspaceId, noteId, patch);
     if (ok) {
       setSaveState('saved');
       if (savedTimerRef.current !== null) clearTimeout(savedTimerRef.current);
@@ -90,7 +90,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
       pendingRef.current = { ...patch, ...pendingRef.current };
       setSaveState('error');
     }
-  }, [workspacePath, noteId, updateNote]);
+  }, [workspaceId, noteId, updateNote]);
 
   const commit = useCallback(
     (patch: NotePatch, immediate = false) => {
@@ -121,7 +121,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const result = await client.getNote({ workspacePath, noteId });
+      const result = await client.getNote({ workspaceId, noteId });
       if (cancelled) return;
       if ('note' in result && result.note) {
         const loaded = result.note;
@@ -143,7 +143,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
       cancelled = true;
       void flush();
     };
-  }, [workspacePath, noteId, flush]);
+  }, [workspaceId, noteId, flush]);
 
   useEffect(() => {
     if (note && shouldFocusTitleRef.current) {
@@ -237,7 +237,7 @@ export function NoteEditor({ workspacePath, noteId, onClose, onDelete }: NoteEdi
                 onClick={() => void referenceNoteIntoFocus({
                   noteId: note.id,
                   title: titleDraft.trim() || note.title,
-                  workspacePath,
+                  workspaceId,
                 })}
                 title="引用到最近的会话"
                 className="cursor-pointer hover:text-foreground"

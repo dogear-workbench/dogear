@@ -53,10 +53,10 @@ async function resolveSource(ctx: NotesToolSourceContext): Promise<NoteSource | 
 
 /**
  * 创建笔记卡片工具中立定义（ToolDef[]）
- * @param workspacePath - 工作区路径
+ * @param workspaceId - 工作区 ID（notes 存 config/workspaces/{id}/notes）
  * @param sourceContext - 来源会话上下文，主会话挂载点传入
  */
-export function createNotesToolDefs(workspacePath: string, sourceContext?: NotesToolSourceContext): ToolDef[] {
+export function createNotesToolDefs(workspaceId: string, sourceContext?: NotesToolSourceContext): ToolDef[] {
   return [
     defineTool(
       'dogear__CreateNote',
@@ -71,7 +71,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
       async (args) => {
         try {
           const source = sourceContext ? await resolveSource(sourceContext) : undefined;
-          const note = await notesService.createNote(workspacePath, {
+          const note = await notesService.createNote(workspaceId, {
             content: args.content,
             tags: args.tags,
             links: args.links,
@@ -98,7 +98,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
       }),
       async (args) => {
         try {
-          const note = await notesService.getNote(workspacePath, args.noteId);
+          const note = await notesService.getNote(workspaceId, args.noteId);
           if (!note) return notFound(args.noteId);
           return {
             content: [{
@@ -122,7 +122,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
       }),
       async (args) => {
         try {
-          const notes = await notesService.searchNotes(workspacePath, args);
+          const notes = await notesService.searchNotes(workspaceId, args);
           if (notes.length === 0) {
             return { content: [{ type: 'text' as const, text: '未找到匹配的卡片。' }] };
           }
@@ -153,7 +153,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
       }),
       async (args) => {
         try {
-          const note = await notesService.appendNote(workspacePath, args.noteId, args.content);
+          const note = await notesService.appendNote(workspaceId, args.noteId, args.content);
           if (!note) return notFound(args.noteId);
           return {
             content: [{
@@ -187,7 +187,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
           return errorResult('patch 为空：至少要提供 content / tags / links 之一。');
         }
         try {
-          const note = await notesService.updateNote(workspacePath, args.noteId, patch);
+          const note = await notesService.updateNote(workspaceId, args.noteId, patch);
           if (!note) return notFound(args.noteId);
           return {
             content: [{
@@ -210,7 +210,7 @@ export function createNotesToolDefs(workspacePath: string, sourceContext?: Notes
       }),
       async (args) => {
         try {
-          const ok = await notesService.removeNote(workspacePath, args.noteId);
+          const ok = await notesService.removeNote(workspaceId, args.noteId);
           if (!ok) return notFound(args.noteId);
           return {
             content: [{ type: 'text' as const, text: `🗑 已将卡片 ${args.noteId} 移入回收站。` }],

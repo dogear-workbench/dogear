@@ -356,10 +356,10 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearReferencedSharedFilesFor(conversationId!);
     }
 
-    // 笔记引用：独立 block，agent 通过 dogear__GetNote(noteId) 读全文（GetNote 按 workspacePath 挂载，守卫已保证同工作区）
+    // 笔记引用：独立 block，agent 通过 dogear__GetNote(noteId) 读全文（守卫已保证同工作区）
     if (referencedNotes.length > 0) {
       const refLines = referencedNotes.map(n =>
-        `  <note noteId="${sanitize(n.noteId)}" title="${sanitize(n.title)}" workspacePath="${sanitize(n.workspacePath)}" />`
+        `  <note noteId="${sanitize(n.noteId)}" title="${sanitize(n.title)}" workspaceId="${sanitize(n.workspaceId)}" />`
       ).join('\n');
       textBlocks.push({
         text: `<referenced_notes>\n${refLines}\n</referenced_notes>`

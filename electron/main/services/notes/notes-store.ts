@@ -8,28 +8,28 @@
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { getConfigDir } from '../settings-service.js';
 import { safeFileWrite, safeJsonWrite } from '../safe-json.js';
 import type { Note, NoteMeta, NoteSource } from './note-types.js';
 
-export const NOTES_DIR = '.dogear/notes';
 export const TRASH_DIR_NAME = '.trash';
 
 const INDEX_FILE = 'index.json';
 const SHORTID_LEN = 8;
 const BASE36 = '0123456789abcdefghijklmnopqrstuvwxyz';
 
-// ─── 路径 ───
+// ─── 路径（应用功能数据存全局 config 的 workspaces/{id}/ 下，不跟工作区目录走） ───
 
-export function getNotesDir(workspacePath: string): string {
-  return path.join(workspacePath, NOTES_DIR);
+export function getNotesDir(workspaceId: string): string {
+  return path.join(getConfigDir(), 'workspaces', workspaceId, 'notes');
 }
 
-export function getTrashDir(workspacePath: string): string {
-  return path.join(getNotesDir(workspacePath), TRASH_DIR_NAME);
+export function getTrashDir(workspaceId: string): string {
+  return path.join(getNotesDir(workspaceId), TRASH_DIR_NAME);
 }
 
-export function getIndexPath(workspacePath: string): string {
-  return path.join(getNotesDir(workspacePath), INDEX_FILE);
+export function getIndexPath(workspaceId: string): string {
+  return path.join(getNotesDir(workspaceId), INDEX_FILE);
 }
 
 // ─── id / 文件名 ───
@@ -297,9 +297,9 @@ export interface NoteIndex {
   items: NoteMeta[];
 }
 
-export async function readIndex(workspacePath: string): Promise<NoteIndex> {
+export async function readIndex(workspaceId: string): Promise<NoteIndex> {
   try {
-    const raw = await fs.readFile(getIndexPath(workspacePath), 'utf-8');
+    const raw = await fs.readFile(getIndexPath(workspaceId), 'utf-8');
     const data = JSON.parse(raw) as NoteIndex;
     if (data.version === 1 && Array.isArray(data.items)) return data;
   } catch {
@@ -308,8 +308,8 @@ export async function readIndex(workspacePath: string): Promise<NoteIndex> {
   return { version: 1, items: [] };
 }
 
-export async function writeIndex(workspacePath: string, index: NoteIndex): Promise<void> {
-  await safeJsonWrite(getIndexPath(workspacePath), index);
+export async function writeIndex(workspaceId: string, index: NoteIndex): Promise<void> {
+  await safeJsonWrite(getIndexPath(workspaceId), index);
 }
 
 export function noteToIndexItem(note: Note): NoteMeta {
@@ -326,25 +326,25 @@ export function noteToIndexItem(note: Note): NoteMeta {
 }
 
 /** 单条 upsert（按 id 覆盖或追加） */
-export async function updateIndexEntry(workspacePath: string, item: NoteMeta): Promise<void> {
-  const index = await readIndex(workspacePath);
+export async function updateIndexEntry(workspaceId: string, item: NoteMeta): Promise<void> {
+  const index = await readIndex(workspaceId);
   const idx = index.items.findIndex((it) => it.id === item.id);
   if (idx >= 0) index.items[idx] = item;
   else index.items.push(item);
-  await writeIndex(workspacePath, index);
+  await writeIndex(workspaceId, index);
 }
 
-export async function removeIndexEntry(workspacePath: string, noteId: string): Promise<void> {
-  const index = await readIndex(workspacePath);
+export async function removeIndexEntry(workspaceId: string, noteId: string): Promise<void> {
+  const index = await readIndex(workspaceId);
   const next = index.items.filter((it) => it.id !== noteId);
   if (next.length === index.items.length) return;
   index.items = next;
-  await writeIndex(workspacePath, index);
+  await writeIndex(workspaceId, index);
 }
 
 /** 全量重建：扫描主目录 .md 文件，重写 index.json */
-export async function rebuildIndex(workspacePath: string): Promise<NoteIndex> {
-  const notesDir = getNotesDir(workspacePath);
+export async function rebuildIndex(workspaceId: string): Promise<NoteIndex> {
+  const notesDir = getNotesDir(workspaceId);
   const files = await listNoteFiles(notesDir);
   const items: NoteMeta[] = [];
   for (const file of files) {
@@ -352,6 +352,6 @@ export async function rebuildIndex(workspacePath: string): Promise<NoteIndex> {
     if (note) items.push(noteToIndexItem(note));
   }
   const index: NoteIndex = { version: 1, items };
-  await writeIndex(workspacePath, index);
+  await writeIndex(workspaceId, index);
   return index;
 }

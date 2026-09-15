@@ -2,7 +2,7 @@
  * 记忆大脑 MCP Server 工具
  *
  * 默认三个工具：dogear__RecallMemory / dogear__SaveMemory / dogear__ForgetMemory，操作工作区级记忆
- * （<workspace>/.dogear/memory/）。SDK 自身的 auto-memory 是全局画像级别，
+ * （config/workspaces/{workspaceId}/memory/）。SDK 自身的 auto-memory 是全局画像级别，
  * 本工具面向的是"工作区主题记忆"，两者正交。
  *
  * autonomous 模式（opts.autonomous=true）：
@@ -21,7 +21,7 @@ import * as memoryRecall from '../../services/memory/memory-recall.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?: boolean }): ToolDef[] {
+export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: boolean }): ToolDef[] {
   const autonomous = opts?.autonomous === true;
 
 
@@ -51,7 +51,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       async (args) => {
         try {
           const result = await memoryRecall.recall(
-            workspacePath,
+            workspaceId,
             args.keywords,
             args.limit ?? 3,
           );
@@ -104,7 +104,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       }),
       async (args) => {
         try {
-          const topic = await memoryService.upsertTopic(workspacePath, args);
+          const topic = await memoryService.upsertTopic(workspaceId, args);
           return {
             content: [
               {
@@ -140,7 +140,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
       }),
       async (args) => {
         try {
-          await memoryService.deleteTopic(workspacePath, args.slug);
+          await memoryService.deleteTopic(workspaceId, args.slug);
           return {
             content: [
               {
@@ -178,7 +178,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
         z.object({}),
         async () => {
           try {
-            const profile = await memoryService.getCoreProfile(workspacePath);
+            const profile = await memoryService.getCoreProfile(workspaceId);
             if (!profile || !profile.content.trim()) {
               return {
                 content: [
@@ -228,7 +228,7 @@ export function createMemoryToolDefs(workspacePath: string, opts?: { autonomous?
         }),
         async (args) => {
           try {
-            await memoryService.updateCoreProfile(workspacePath, args.content);
+            await memoryService.updateCoreProfile(workspaceId, args.content);
             return {
               content: [
                 {

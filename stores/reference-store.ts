@@ -41,7 +41,7 @@ export interface MessageSnippetRef {
 export interface NoteReference {
   noteId: string;
   title: string;
-  workspacePath: string;
+  workspaceId: string;
   anchorConversationId: string;
 }
 

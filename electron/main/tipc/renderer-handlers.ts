@@ -131,7 +131,7 @@ export type RendererHandlers = {
 
 
   // 笔记数据变更（notes-service 写操作后广播，前端 store 收到后重新拉取列表）
-  notesChanged: (data: { workspacePath: string }) => void;
+  notesChanged: (data: { workspaceId: string }) => void;
 
   // 实施任务数据变更（task-service 写操作后广播，前端 store 收到后重新拉取列表）
   tasksChanged: (data: { workspacePath: string }) => void;

@@ -25,10 +25,10 @@ export const memoryRouter = {
    * 读取当前工作区的核心档案（core-profile.md）
    */
   getCoreProfile: t.procedure
-    .input<{ workspacePath: string }>()
+    .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const profile = await getCoreProfile(input.workspacePath);
+        const profile = await getCoreProfile(input.workspaceId);
         return { profile };
       } catch (error) {
         console.error('[memory] getCoreProfile 失败:', error);
@@ -40,10 +40,10 @@ export const memoryRouter = {
    * 更新核心档案
    */
   updateCoreProfile: t.procedure
-    .input<{ workspacePath: string; content: string }>()
+    .input<{ workspaceId: string; content: string }>()
     .action(async ({ input }) => {
       try {
-        await updateCoreProfile(input.workspacePath, input.content);
+        await updateCoreProfile(input.workspaceId, input.content);
         return { success: true };
       } catch (error) {
         console.error('[memory] updateCoreProfile 失败:', error);
@@ -55,10 +55,10 @@ export const memoryRouter = {
    * 列出主题（index.json，按 updated 降序）
    */
   listMemoryTopics: t.procedure
-    .input<{ workspacePath: string }>()
+    .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const topics = await listTopics(input.workspacePath);
+        const topics = await listTopics(input.workspaceId);
         return { topics };
       } catch (error) {
         console.error('[memory] listMemoryTopics 失败:', error);
@@ -70,10 +70,10 @@ export const memoryRouter = {
    * 读取单个主题详情（含正文）
    */
   getMemoryTopic: t.procedure
-    .input<{ workspacePath: string; slug: string }>()
+    .input<{ workspaceId: string; slug: string }>()
     .action(async ({ input }) => {
       try {
-        const topic = await getTopic(input.workspacePath, input.slug);
+        const topic = await getTopic(input.workspaceId, input.slug);
         return { topic };
       } catch (error) {
         console.error('[memory] getMemoryTopic 失败:', error);
@@ -85,10 +85,10 @@ export const memoryRouter = {
    * 创建或更新主题（upsert 语义）
    */
   upsertMemoryTopic: t.procedure
-    .input<{ workspacePath: string; topic: TopicInput }>()
+    .input<{ workspaceId: string; topic: TopicInput }>()
     .action(async ({ input }) => {
       try {
-        const topic = await upsertTopic(input.workspacePath, input.topic);
+        const topic = await upsertTopic(input.workspaceId, input.topic);
         return { topic };
       } catch (error) {
         console.error('[memory] upsertMemoryTopic 失败:', error);
@@ -100,10 +100,10 @@ export const memoryRouter = {
    * 删除主题（文件 + 索引条目）
    */
   deleteMemoryTopic: t.procedure
-    .input<{ workspacePath: string; slug: string }>()
+    .input<{ workspaceId: string; slug: string }>()
     .action(async ({ input }) => {
       try {
-        await deleteTopic(input.workspacePath, input.slug);
+        await deleteTopic(input.workspaceId, input.slug);
         return { success: true };
       } catch (error) {
         console.error('[memory] deleteMemoryTopic 失败:', error);
@@ -115,11 +115,11 @@ export const memoryRouter = {
    * 重建索引（扫描 topics/*.md 全量重写 index.json），并返回一致性报告
    */
   rebuildMemoryIndex: t.procedure
-    .input<{ workspacePath: string }>()
+    .input<{ workspaceId: string }>()
     .action(async ({ input }) => {
       try {
-        const index = await rebuildIndex(input.workspacePath);
-        const consistency = await checkConsistency(input.workspacePath);
+        const index = await rebuildIndex(input.workspaceId);
+        const consistency = await checkConsistency(input.workspaceId);
         return { index, consistency };
       } catch (error) {
         console.error('[memory] rebuildMemoryIndex 失败:', error);

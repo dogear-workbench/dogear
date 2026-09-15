@@ -10,6 +10,8 @@ import type { NoteMeta } from '@/types/note';
 import type { Task } from '@/types/task';
 
 interface TrashViewProps {
+  workspaceId: string;
+  /** 任务段仍走工作区路径契约（tasks 未迁全局） */
   workspacePath: string;
   query?: string;
 }
@@ -67,7 +69,7 @@ function SectionHeader({ label, count }: { label: string; count: number }) {
   );
 }
 
-export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
+export function TrashView({ workspaceId, workspacePath, query = '' }: TrashViewProps) {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +80,7 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
     setLoading(true);
     void (async () => {
       const [noteRes, taskRes] = await Promise.all([
-        client.listTrashNotes({ workspacePath }).catch((error) => {
+        client.listTrashNotes({ workspaceId }).catch((error) => {
           console.error('[notes] listTrashNotes 失败:', error);
           return null;
         }),
@@ -123,7 +125,7 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
   const handleRestoreNote = (note: NoteMeta) =>
     withBusy(`note:${note.id}`, async () => {
       try {
-        const result = await client.restoreNote({ workspacePath, noteId: note.id });
+        const result = await client.restoreNote({ workspaceId, noteId: note.id });
         if ('success' in result && result.success) return true;
         if ('error' in result) console.error('[notes] restoreNote 失败:', result.error);
         return false;
@@ -138,7 +140,7 @@ export function TrashView({ workspacePath, query = '' }: TrashViewProps) {
       const ok = await showConfirm('彻底删除', `「${note.title || '（无内容）'}」将被永久删除，不可恢复。`);
       if (!ok) return false;
       try {
-        const result = await client.purgeNote({ workspacePath, noteId: note.id });
+        const result = await client.purgeNote({ workspaceId, noteId: note.id });
         if ('success' in result && result.success) return true;
         if ('error' in result) console.error('[notes] purgeNote 失败:', result.error);
         return false;

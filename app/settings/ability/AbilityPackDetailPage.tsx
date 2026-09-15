@@ -7,7 +7,7 @@ import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
 import { useUIStore } from '@/stores/ui-store';
 import { useSessionStore } from '@/stores/session-store';
-import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
+import type { WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView, AbilitySegmentMeta, AbilitySkillMeta } from '../../../electron/main/tipc/ability';
 import { AbilityPackSidebar } from './AbilityPackSidebar';
 import { ToolDetailDialog } from '../ToolDetailDialog';
@@ -78,19 +78,19 @@ const SegmentBlock = memo(function SegmentBlock({ segment }: { segment: AbilityS
   );
 });
 
-const CoreProfileView = memo(function CoreProfileView({ workspacePath }: { workspacePath: string }) {
+const CoreProfileView = memo(function CoreProfileView({ workspaceId }: { workspaceId: string }) {
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await client.getCoreProfile({ workspacePath });
+      const res = await client.getCoreProfile({ workspaceId });
       setContent('error' in res ? null : res.profile?.content ?? '');
     } finally {
       setLoading(false);
     }
-  }, [workspacePath]);
+  }, [workspaceId]);
 
   useEffect(() => {
     void load();
@@ -191,7 +191,6 @@ function SkillContentSection({
 
 interface AbilityPackDetailPageProps {
   pack: AbilityPackView;
-  workspace: Workspace | null;
   workspaceId: string | null;
   config: WorkspaceConfig;
   packEnabled: boolean;
@@ -203,7 +202,6 @@ interface AbilityPackDetailPageProps {
 
 export function AbilityPackDetailPage({
   pack,
-  workspace,
   workspaceId,
   config,
   packEnabled,
@@ -214,7 +212,6 @@ export function AbilityPackDetailPage({
 }: AbilityPackDetailPageProps) {
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
-  const workspacePath = workspace?.path ?? null;
 
   const isSkillPack = pack.skillMetas.length > 0;
   const activeSkill = isSkillPack
@@ -271,10 +268,10 @@ export function AbilityPackDetailPage({
             )}
 
             {!isSkillPack && pack.key === 'core-profile' &&
-              (workspacePath ? (
-                <CoreProfileView workspacePath={workspacePath} />
+              (workspaceId ? (
+                <CoreProfileView workspaceId={workspaceId} />
               ) : (
-                <p className="text-xs text-muted-foreground">当前工作区无路径，无法读取核心画像。</p>
+                <p className="text-xs text-muted-foreground">请先选择工作区。</p>
               ))}
 
             {!isSkillPack && pack.segments.length > 0 && (

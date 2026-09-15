@@ -6,10 +6,10 @@ import { client } from '@/lib/client';
 import { CORE_PROFILE_SOFT_LIMIT } from './memory-types';
 
 interface Props {
-  workspacePath: string;
+  workspaceId: string;
 }
 
-export function CoreProfilePanel({ workspacePath }: Props) {
+export function CoreProfilePanel({ workspaceId }: Props) {
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
   const [updated, setUpdated] = useState<string | null>(null);
@@ -19,7 +19,7 @@ export function CoreProfilePanel({ workspacePath }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const result = await client.getCoreProfile({ workspacePath });
+      const result = await client.getCoreProfile({ workspaceId });
       if ('profile' in result) {
         const text = result.profile?.content ?? '';
         setContent(text);
@@ -29,7 +29,7 @@ export function CoreProfilePanel({ workspacePath }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [workspacePath]);
+  }, [workspaceId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -38,11 +38,11 @@ export function CoreProfilePanel({ workspacePath }: Props) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const result = await client.updateCoreProfile({ workspacePath, content });
+      const result = await client.updateCoreProfile({ workspaceId, content });
       if ('success' in result && result.success) {
         setSavedContent(content);
         // 重新读取拿最新 updated 时间
-        const fresh = await client.getCoreProfile({ workspacePath });
+        const fresh = await client.getCoreProfile({ workspaceId });
         if ('profile' in fresh && fresh.profile) {
           setUpdated(fresh.profile.updated);
         }
