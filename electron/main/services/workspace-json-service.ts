@@ -83,6 +83,17 @@ function getLegacyWorkspacesPath(): string {
 // 转换函数
 // ============================================================
 
+/**
+ * 主根 + enabled 附加根，与 agent 侧 allowedPaths（conversation-runtime-service）同语义，
+ * 供读盘校验 / 存在性检查等多根解析场景共用
+ */
+export function getEnabledRoots(workspace: Workspace): string[] {
+  return [
+    workspace.path,
+    ...(workspace.additional_paths ?? []).filter((p) => p.enabled && p.path).map((p) => p.path),
+  ];
+}
+
 /** 内部格式 → 兼容格式（供 tipc / 前端使用） */
 export function toWorkspace(data: WorkspaceData): Workspace {
   return {

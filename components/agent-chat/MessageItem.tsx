@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -10,7 +10,8 @@ import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, 
 import { SESSION_MESSAGE_TOOL_NAMES } from './session-tools';
 import { INJECTION_TAG_STYLES } from './injection-tags';
 import { CommCollapseBar, SessionPeerLink } from './AgentCommCard';
-import { PathChip } from './path-link';
+import { GatedPathChip, useWorkspacePath, useWorkspaceRoots, resolvePathCandidates } from './path-link';
+import { useWorkspaceId } from './workspace-id-context';
 import { isFailoverContinueMessage, stripFailoverContinueSentinel } from '@/lib/failover-markers';
 import { highlightText } from './highlight';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -88,18 +89,22 @@ function InjectedMessageCard({
   );
 }
 
-/** task-execution 折叠卡：收起一行标题，展开显示任务元信息（计划文档 PathChip 可点）与执行约定全文 */
+/** task-execution 折叠卡：收起一行标题，展开显示任务元信息（计划文档走存在性管道后可点）与执行约定全文 */
 function TaskExecutionCard({
   message,
   parsed,
-  workspaceId,
   messageId,
 }: {
   message: Message;
   parsed: ParsedTaskExecution;
-  workspaceId?: string;
   messageId?: string;
 }) {
+  const workspaceId = useWorkspaceId();
+  const roots = useWorkspaceRoots(workspaceId);
+  const planCandidates = useMemo(
+    () => (parsed.planPath && roots ? resolvePathCandidates(parsed.planPath, roots) : []),
+    [parsed.planPath, roots],
+  );
   return (
     <div className="w-full my-2" data-message-id={message.id ?? messageId}>
       <Collapsible>
@@ -115,12 +120,10 @@ function TaskExecutionCard({
               <div className="text-muted-foreground">
                 任务 ID：<span className="font-mono text-foreground break-all">{parsed.taskId}</span>
               </div>
-              {parsed.planPath && (
+              {parsed.planPath && workspaceId && planCandidates.length > 0 && (
                 <div className="text-muted-foreground">
                   计划文档：
-                  {workspaceId && (
-                    <PathChip text={parsed.planPath} resolved={parsed.planPath} workspaceId={workspaceId} />
-                  )}
+                  <GatedPathChip text={parsed.planPath} candidates={planCandidates} workspaceId={workspaceId} />
                 </div>
               )}
             </div>
@@ -231,6 +234,8 @@ export const MessageItem = memo(function MessageItem({
   const isUser = message.role === 'user';
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
   const currentWorkspaceId = useWorkspaceStore(s => s.workspace?.id);
+  const conversationWorkspaceId = useWorkspaceId();
+  const conversationWorkspacePath = useWorkspacePath(conversationWorkspaceId);
 
   // sticky 展开/收起状态（用户消息默认折叠为 2 行）
   const [isStickyExpanded, setIsStickyExpanded] = useState(false);
@@ -276,7 +281,6 @@ export const MessageItem = memo(function MessageItem({
         <TaskExecutionCard
           message={message}
           parsed={taskExec}
-          workspaceId={currentWorkspaceId}
           messageId={messageId}
         />
       );
@@ -525,6 +529,7 @@ export const MessageItem = memo(function MessageItem({
                         activeMatchId={activeMatchId}
                         messageId={messageId}
                         readOnly={readOnly}
+                        workspacePath={conversationWorkspacePath ?? undefined}
                       />
                     </div>
                   ))}
@@ -536,6 +541,7 @@ export const MessageItem = memo(function MessageItem({
                   searchQuery={searchQuery}
                   matchIdPrefix={messageId !== undefined ? `${messageId}--2` : undefined}
                   activeMatchId={activeMatchId}
+                  workspacePath={conversationWorkspacePath ?? undefined}
                 />
               ) : null;
             })()}

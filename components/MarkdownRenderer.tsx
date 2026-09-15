@@ -7,13 +7,14 @@ import { Check, Copy } from 'lucide-react';
 import '@/src/hljs-theme.css';
 import { highlightText, createMatchNumbering, type MatchNumbering } from './agent-chat/highlight';
 import {
-  ALLOWED_EXT_RE,
+  GatedPathChip,
   PathChip,
-  resolvePathInWorkspace,
+  resolvePathCandidates,
   splitPathSegments,
+  useExistenceResolved,
   useWorkspaceIdByPath,
+  useWorkspaceRoots,
 } from './agent-chat/path-link';
-import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 
 interface MarkdownRendererProps {
   /** Markdown 文本内容 */
@@ -93,6 +94,7 @@ function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>
  */
 export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir }: MarkdownRendererProps) {
   const workspaceId = useWorkspaceIdByPath(workspacePath ?? null);
+  const roots = useWorkspaceRoots(workspaceId);
 
   // 每次渲染重置块级编号器；经 ref 中转让 memoized 的 mdComponents 闭包始终读到本轮的计数器
   const numberingRef = useRef<MatchNumbering | null>(null);
@@ -103,38 +105,39 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
     [content, stripHtmlComments],
   );
 
-  const renderPathSegments = useMemo(() => {
-    if (!workspacePath) return undefined;
-    return (text: string): React.ReactNode => {
-      const segments = splitPathSegments(text, workspacePath);
-      if (segments.length === 1 && segments[0].type === 'text') return text;
+  const openPathCandidates = useMemo(() => {
+    if (!workspacePath || !roots) return null;
+    return (href: string): string[] | null => {
+      if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
+      return resolvePathCandidates(href, roots, baseDir);
+    };
+  }, [workspacePath, roots, baseDir]);
+
+  // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
+  // 只有搜索/路径链接相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）
+  const mdComponents = useMemo(() => {
+    const numbering = numberingRef.current;
+    const canHighlight = !!searchQuery?.trim() && !!matchIdPrefix && !!numbering;
+    const renderText = (text: string): React.ReactNode =>
+      canHighlight ? <>{highlightText(text, searchQuery!, matchIdPrefix!, activeMatchId ?? null, numbering!)}</> : text;
+    // 路径识别与搜索高亮共存：text 段高亮，path 段进 GatedPathChip 且内部文本也走高亮编号（保证 match id 与搜索端对齐）
+    const renderPathSegments = !workspacePath || !roots ? undefined : (text: string): React.ReactNode => {
+      const segments = splitPathSegments(text, roots);
+      if (segments.length === 1 && segments[0].type === 'text') return renderText(text);
       return (
         <>
           {segments.map((seg, i) =>
-            seg.type === 'path' && workspaceId && seg.resolved ? (
-              <PathChip key={i} text={seg.text} resolved={seg.resolved} fileName={seg.fileName} workspaceId={workspaceId} />
+            seg.type === 'path' && workspaceId && seg.candidates?.length ? (
+              <GatedPathChip key={i} text={seg.text} candidates={seg.candidates} workspaceId={workspaceId}>
+                {renderText(seg.text)}
+              </GatedPathChip>
             ) : (
-              <span key={i}>{seg.text}</span>
+              <span key={i}>{renderText(seg.text)}</span>
             ),
           )}
         </>
       );
     };
-  }, [workspacePath, workspaceId]);
-
-  const openPathPreview = useMemo(() => {
-    if (!workspacePath) return null;
-    const base = baseDir ?? workspacePath;
-    return (href: string): string | null => {
-      const resolved = resolvePathInWorkspace(href, base, true);
-      if (!resolved || !ALLOWED_EXT_RE.test(resolved)) return null;
-      return resolved;
-    };
-  }, [workspacePath, baseDir]);
-
-  // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
-  // 只有搜索/路径链接相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）
-  const mdComponents = useMemo(() => {
     const wrap = (children: React.ReactNode) =>
       wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId, numberingRef.current, renderPathSegments);
     const heading = (Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') =>
@@ -190,23 +193,16 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
       }
       return <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] font-mono" {...props}>{wrap(children)}</code>;
     },
-    // 链接：路径链接模式下相对路径解析成功且白名单内 → 胶囊开浮窗；失败回退纯文本；外部 URL 维持浏览器打开
+    // 链接：路径链接模式下产出多根候选，存在性通过 → 胶囊开浮窗（点击兜底再校验）；未通过/解析失败回退纯文本；外部 URL 维持浏览器打开
     a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => {
-      if (openPathPreview && href && !/^[a-z][a-z0-9+.-]*:/i.test(href)) {
-        const resolved = openPathPreview(href);
-        if (resolved && workspaceId) {
-          return (
-            <button
-              type="button"
-              onClick={() =>
-                useMarkdownPreviewStore.getState().open(workspaceId, resolved, resolved.split('/').pop() ?? resolved)
-              }
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 align-baseline max-w-[280px] rounded-full border border-teal-200 bg-teal-50 text-xs text-teal-700 hover:bg-teal-100 hover:border-teal-300 transition-colors"
-              title={resolved}
-            >
-              {children}
-            </button>
-          );
+      const candidates = useMemo(
+        () => (openPathCandidates && href ? openPathCandidates(href) : null),
+        [openPathCandidates, href],
+      );
+      const resolved = useExistenceResolved(workspaceId, candidates);
+      if (candidates) {
+        if (typeof resolved === 'string' && workspaceId) {
+          return <PathChip text={resolved} resolved={resolved} workspaceId={workspaceId}>{children}</PathChip>;
         }
         return <span className="text-muted-foreground" {...props}>{children}</span>;
       }
@@ -236,7 +232,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
       />
     ),
   };
-  }, [searchQuery, matchIdPrefix, activeMatchId, renderPathSegments, openPathPreview, workspaceId]);
+  }, [searchQuery, matchIdPrefix, activeMatchId, workspacePath, roots, workspaceId, openPathCandidates]);
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>

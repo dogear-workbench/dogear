@@ -1,7 +1,8 @@
 /**
  * 工作区文件系统服务
- * 提供工作区级别的文件操作（扫描、创建、重命名、移动、复制、删除）
- * 所有操作限定在工作区目录内，防止越权访问
+ * 文件树操作（扫描/创建/重命名/移动/复制/删除）限定在主根内；
+ * 读盘与存在性检查（readWorkspaceTextFile/checkPathsExist）接受多根（主根 + enabled 附加根），
+ * 与 agent 侧 allowedPaths 语义对齐，防止越权访问
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -9,6 +10,13 @@ import type { WorkspaceFileNode } from '../types.js';
 
 /** 隐藏的目录/文件名（不在文件树中显示） */
 const HIDDEN_NAMES = ['.dogear', '.DS_Store', 'Thumbs.db', '.git'];
+
+/** resolved 是否落在 root 内；前缀统一补路径分隔符，防兄弟目录前缀碰撞（C:\ws2 以 C:\ws 开头） */
+function isWithinRoot(root: string, resolved: string): boolean {
+  const normalizedRoot = path.normalize(root);
+  const prefix = normalizedRoot.endsWith(path.sep) ? normalizedRoot : normalizedRoot + path.sep;
+  return resolved === normalizedRoot || resolved.startsWith(prefix);
+}
 
 /**
  * 路径安全校验：确保目标路径在工作区范围内
@@ -20,10 +28,45 @@ const HIDDEN_NAMES = ['.dogear', '.DS_Store', 'Thumbs.db', '.git'];
 export function resolveAndValidate(workspacePath: string, relativePath: string): string {
   const resolved = path.resolve(workspacePath, relativePath);
   const normalized = path.normalize(resolved);
-  if (!normalized.startsWith(path.normalize(workspacePath))) {
+  if (!isWithinRoot(workspacePath, normalized)) {
     throw new Error('路径越权：不允许访问工作区外的文件');
   }
   return normalized;
+}
+
+/**
+ * 候选路径（相对/绝对）逐根解析，命中任一根内即返回该绝对路径，全部不命中返回 null。
+ * 相对路径按 roots 顺序优先落在首根（主根），与 agent 侧 resolveWithinPaths 语义一致
+ */
+export function resolveWithinRoots(roots: string[], candidate: string): string | null {
+  for (const root of roots) {
+    if (!root) continue;
+    const resolved = path.normalize(path.resolve(root, candidate));
+    if (isWithinRoot(root, resolved)) return resolved;
+  }
+  return null;
+}
+
+/**
+ * 批量存在性校验：仅对落在 roots 内的路径做 stat，根外路径一律 false（不泄露工作区外文件信息）
+ * @returns 入参 path → 是否存在
+ */
+export async function checkPathsExist(roots: string[], paths: string[]): Promise<Record<string, boolean>> {
+  const result: Record<string, boolean> = {};
+  for (const candidate of paths) {
+    const abs = resolveWithinRoots(roots, candidate);
+    if (!abs) {
+      result[candidate] = false;
+      continue;
+    }
+    try {
+      await fs.stat(abs);
+      result[candidate] = true;
+    } catch {
+      result[candidate] = false;
+    }
+  }
+  return result;
 }
 
 /**
@@ -157,8 +200,11 @@ export async function deleteItem(workspacePath: string, itemRelPath: string): Pr
 
 const ALLOWED_TEXT_EXT = ['.md', '.markdown', '.txt', '.json'];
 
-export async function readWorkspaceTextFile(workspacePath: string, relPath: string): Promise<string> {
-  const safePath = resolveAndValidate(workspacePath, relPath);
+export async function readWorkspaceTextFile(roots: string[], relPath: string): Promise<string> {
+  const safePath = resolveWithinRoots(roots, relPath);
+  if (!safePath) {
+    throw new Error('路径越权：不允许访问工作区外的文件');
+  }
   const ext = path.extname(safePath).toLowerCase();
   if (!ALLOWED_TEXT_EXT.includes(ext)) {
     throw new Error(`不支持的文件类型: ${ext}`);

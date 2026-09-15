@@ -3,6 +3,7 @@ import { tipc } from '@egoist/tipc/main';
 import electron from 'electron';
 const { shell } = electron;
 import * as workspaceJsonService from '../services/workspace-json-service.js';
+import { getEnabledRoots } from '../services/workspace-json-service.js';
 import * as workspaceFsService from '../services/workspace-fs-service.js';
 import * as articleService from '../services/article-service.js';
 
@@ -125,7 +126,16 @@ export const explorerRouter = {
     .action(async ({ input }) => {
       const workspace = await workspaceJsonService.getById(input.workspaceId);
       if (!workspace) throw new Error('工作区不存在');
-      const content = await workspaceFsService.readWorkspaceTextFile(workspace.path, input.path);
+      const content = await workspaceFsService.readWorkspaceTextFile(getEnabledRoots(workspace), input.path);
       return { content };
+    }),
+
+  checkPathsExist: t.procedure
+    .input<{ workspaceId: string; paths: string[] }>()
+    .action(async ({ input }) => {
+      const workspace = await workspaceJsonService.getById(input.workspaceId);
+      if (!workspace) throw new Error('工作区不存在');
+      const exists = await workspaceFsService.checkPathsExist(getEnabledRoots(workspace), input.paths);
+      return { exists };
     }),
 };

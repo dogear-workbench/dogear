@@ -130,7 +130,7 @@ function ErrorAlertBlock({ block }: { block: ContentBlock }) {
   );
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, childOriginalIndices, readOnly = false }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, childOriginalIndices, readOnly = false, workspacePath }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
@@ -143,6 +143,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   /** tool_group 虚拟块内子块对应的原始 contentBlocks 索引（按子块顺序） */
   childOriginalIndices?: number[];
   readOnly?: boolean;
+  /** 会话所属工作区主根，开启 text 块正文路径识别 */
+  workspacePath?: string;
 }) {
   switch (block.type) {
     case 'tool_group':
@@ -272,6 +274,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           searchQuery={searchQuery}
           matchIdPrefix={messageId !== undefined && blockIndex !== undefined ? `${messageId}-${blockIndex}` : undefined}
           activeMatchId={activeMatchId}
+          workspacePath={workspacePath}
         />
       ) : null;
   }
