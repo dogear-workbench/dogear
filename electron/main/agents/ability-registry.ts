@@ -130,7 +130,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
   {
     key: 'web-mcp',
     label: '联网搜索',
-    description: 'GLM 联网搜索与网页读取工具包（webSearchPrime / webReader），API 直出快档，与浏览器工具互补；需在设置页配置 GLM Coding Plan API Key',
+    description: 'GLM 联网搜索与网页读取工具包（web_search_prime / webReader），API 直出快档，与浏览器工具互补；需在设置页配置 GLM Coding Plan API Key',
     type: 'skill-packs',
     toolGroups: ['web-mcp'],
     defaultEnabled: false,

@@ -93,7 +93,7 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
   {
     name: 'web-mcp',
     label: '联网搜索',
-    description: 'GLM 联网搜索与网页读取（webSearchPrime / webReader，API 直出，适合快速检索与简单页面；复杂渲染页面用浏览器工具）',
+    description: 'GLM 联网搜索与网页读取（web_search_prime / webReader，API 直出，适合快速检索与简单页面；复杂渲染页面用浏览器工具）',
     mcpServerName: 'dogear-web-mcp',
     toolCount: 2,
     requiresWorkspace: false,

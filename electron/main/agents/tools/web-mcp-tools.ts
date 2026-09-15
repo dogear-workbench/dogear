@@ -2,7 +2,7 @@
  * GLM Coding Plan 联网 MCP 工具组
  *
  * 提供 2 个工具，走 GLM Coding Plan 套餐专属 MCP 额度（API 直出，不占浏览器会话）：
- *   - bigmodel__webSearch  — 全网搜索（webSearchPrime）
+ *   - bigmodel__webSearch  — 全网搜索（web_search_prime，智谱服务端已从驼峰 webSearchPrime 改为下划线命名）
  *   - bigmodel__webReader  — 网页读取（webReader）
  *
  * 与浏览器的分工按会话实际能力三态化（fallbackHint）：有 dogear__browser__* 工具时引导改用；
@@ -62,7 +62,7 @@ export function createWebMcpToolDefs(opts: { fallbackHint: WebMcpFallbackHint })
     defineTool(
       'bigmodel__webSearch',
       '联网搜索',
-      '全网搜索，返回标题/URL/摘要等结果列表。走 GLM Coding Plan 专属 MCP 额度（webSearchPrime），API 直出、速度快、不占浏览器会话；适合快速检索资讯与资料。\n' +
+      '全网搜索，返回标题/URL/摘要等结果列表。走 GLM Coding Plan 专属 MCP 额度（web_search_prime），API 直出、速度快、不占浏览器会话；适合快速检索资讯与资料。\n' +
       '参数说明：\n' +
       '- query：搜索关键词，必填。\n' +
       '- count：返回条数，默认 10，最多 50。' +
@@ -72,7 +72,7 @@ export function createWebMcpToolDefs(opts: { fallbackHint: WebMcpFallbackHint })
         count: z.number().int().min(1).max(50).optional().describe('返回条数，默认 10，最多 50'),
       }),
       async (args) => {
-        return runBigmodelTool(BIGMODEL_MCP_ENDPOINTS.search, 'webSearchPrime', {
+        return runBigmodelTool(BIGMODEL_MCP_ENDPOINTS.search, 'web_search_prime', {
           search_query: args.query,
           ...(args.count !== undefined ? { count: args.count } : {}),
         });
