@@ -214,6 +214,8 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
         return '注入每个主会话';
       case 'core-profile':
         return '注入每个主会话（内容在数据中心维护）';
+      case 'app-data':
+        return '注入每个会话（主/子/任务执行会话均含，无 Profile 过滤维度）';
       case 'group-context':
         return '会话属于组时注入组上下文';
       case 'agent-collab':
@@ -229,6 +231,7 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       return '仅主会话注入，子会话不加载核心画像';
     case 'workspace-rules':
     case 'global-rules':
+    case 'app-data':
       return '随包开关注入子会话';
     case 'notes':
       return '仅主会话加载，子会话不注入';

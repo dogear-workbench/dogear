@@ -14,7 +14,8 @@ export type SystemPromptSegmentKey =
   | 'notes-discipline'
   | 'sub-agent-contract'
   | 'main-agent-delegation'
-  | 'web-research-guidance';
+  | 'web-research-guidance'
+  | 'app-data-guidance';
 
 /** 记忆系统使用规范（仅主会话 + 有工作区时注入）。 */
 export const MEMORY_GUIDANCE_APPEND =
@@ -100,6 +101,16 @@ export const WEB_RESEARCH_GUIDANCE_SUB_APPEND =
   '- 快档优先：检索与静态文章用 bigmodel__webSearch / bigmodel__webReader（API 直出）\n' +
   '- 需 JS 渲染、页面交互或登录态时用本会话 dogear__browser__* 工具';
 
+/** 应用数据目录认知（app-data 包开启时注入每个会话）：定位 + 禁写区 + 文章库搜索指引 */
+export function buildAppDataGuidance(configDir: string, workspaceId: string): string {
+  return (
+    '\n## 应用数据目录\n' +
+    `应用数据目录 ${configDir}（绝对路径）已挂载进会话文件边界：settings.json 是应用设置与子会话 Profile/能力开关，定时任务存 plans.json，本工作区配置在 workspaces/${workspaceId}/config.json。\n` +
+    'notes/、memory/、tasks.json 等应用数据由 dogear__* 工具统一管理，直接写文件会被禁写区拦截，一律走工具。\n' +
+    '工作区 .dogear/ 内部目录（articles/ 为文章库）默认被 Glob/Grep 跳过，需搜索其中内容时把 path 显式指到对应子目录。'
+  );
+}
+
 /** 组上下文段（buildGroupContextPrompt 的输出示例） */
 const GROUP_CONTEXT_EXAMPLE =
   '## 当前会话组上下文\n' +
@@ -166,6 +177,14 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       template: WEB_RESEARCH_GUIDANCE_MAIN_APPEND,
       triggerDescription: 'web-mcp 或 browser 包任一生效时按会话角色注入：主会话版含派遣动线（快档直查 → 派「浏览器解析」子会话 → 本地调研派普通子会话）；子会话版精简两行（快档优先 + dogear__browser__* 备选），不出现派单指引。',
       isDynamic: false,
+    },
+    {
+      key: 'app-data-guidance',
+      label: '应用数据目录',
+      category: 'reference',
+      template: buildAppDataGuidance('<应用数据目录绝对路径>', '<workspaceId>'),
+      triggerDescription: 'app-data 包开启时注入每个会话（主/子/任务执行会话均含；后台定时任务 headless 装配不注入）。声明应用数据目录绝对路径与文件边界、settings/plans/工作区配置位置、应用数据由工具管理（禁写区拦截直接写）、.dogear 文章库需显式 path 搜索。',
+      isDynamic: true,
     },
   ];
 }

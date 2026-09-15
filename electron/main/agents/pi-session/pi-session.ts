@@ -29,7 +29,7 @@ import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND } from '../session-append-templates.js';
+import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND, buildAppDataGuidance } from '../session-append-templates.js';
 import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
@@ -567,6 +567,10 @@ export class PiSession extends EventEmitter {
     // browser 能力生效即注入（会话创建读一次；子会话 Profile 的 browser 子开关已并入 resolveAbilities，与 browser-exploration skill 同条件）
     const browserPlaybook = activeAbilities.has('browser') ? readBrowserPlaybook() : null;
     if (browserPlaybook?.exists) personaParts.push(`## 浏览器调研通用技巧\n\n${browserPlaybook.content}`);
+
+    if (activeAbilities.has('app-data')) {
+      personaParts.push(buildAppDataGuidance(getConfigDir(), this.config.workspaceId));
+    }
 
     if (isSubAgent) {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);

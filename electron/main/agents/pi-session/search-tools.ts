@@ -95,7 +95,8 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
       'Glob',
       '按通配符匹配文件路径',
       '按 glob 模式匹配工作区内的文件路径，支持 * / ? / ** 通配符（如 "**/*.ts"、"src/*.tsx"）。' +
-      '返回匹配的相对路径列表（按路径排序，默认最多 100 条）。',
+      '返回匹配的相对路径列表（按路径排序，默认最多 100 条）。' +
+      '`.dogear` 数据目录默认跳过以防数据文件淹没结果；需搜索其中内容（如文章库）时把 path 显式指到对应子目录。',
       z.object({
         pattern: z.string().describe('glob 模式，相对工作区根目录或 path 参数指定的子目录'),
         path: z.string().optional().describe('限定搜索的相对子目录，默认整个工作区根目录'),
@@ -134,7 +135,8 @@ export function createSearchToolDefs(allowedPaths: string[]): ToolDef[] {
       'Grep',
       '正则搜索文件内容',
       '在工作区文件内容中按正则表达式搜索匹配行，返回 "相对路径:行号: 内容"（超长行自动截断）。' +
-      '可选 glob 参数按文件名过滤，可选 path 参数限定搜索的子目录。',
+      '可选 glob 参数按文件名过滤，可选 path 参数限定搜索的子目录。' +
+      '`.dogear` 数据目录默认跳过以防数据文件淹没结果；需搜索其中内容（如文章库）时把 path 显式指到对应子目录。',
       z.object({
         pattern: z.string().describe('正则表达式（JavaScript 语法）'),
         path: z.string().optional().describe('限定搜索的相对子目录，默认整个工作区根目录'),
