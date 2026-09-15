@@ -24,7 +24,7 @@ import { useSlashCommands } from './hooks/useSlashCommands';
 import { useChatScroll } from './hooks/useChatScroll';
 import { derivePendingState } from './hooks/usePendingState';
 import { SearchBar } from './SearchBar';
-import { useMessageSearch } from './hooks/useMessageSearch';
+import { useMessageSearch, type SearchMatch } from './hooks/useMessageSearch';
 import { MessageMinimap } from './MessageMinimap';
 import { AwaitingDeliveryIndicator } from './AwaitingDeliveryIndicator';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
@@ -331,17 +331,32 @@ export function AgentChat({
     return () => window.removeEventListener('keydown', handler);
   }, [openSearch]);
 
+  // 搜索跳转三级 fallback：mark DOM → 块级 DOM（data-block-index）→ 消息级滚动+闪烁，永不零反馈
+  const jumpToActiveMatch = useCallback((match: SearchMatch) => {
+    const mark = document.querySelector(`[data-match-id="${match.id}"]`) as HTMLElement | null;
+    if (mark) {
+      scrollToElement(mark, { align: 'top-third' });
+      return;
+    }
+    const blockEl = document.querySelector(
+      `[data-message-id="${match.messageId}"] [data-block-index="${match.blockIndex}"]`,
+    ) as HTMLElement | null;
+    if (blockEl) {
+      scrollToElement(blockEl, { align: 'top-third' });
+      return;
+    }
+    scrollToMessage(match.messageId, { align: 'top', flash: true });
+  }, [scrollToElement, scrollToMessage]);
+
   // 搜索激活项切换时: 滚动到上 1/3 位置
   useEffect(() => {
     if (!search.activeMatch) return;
-    const matchId = search.activeMatch.id;
-    const el = document.querySelector(`[data-match-id="${matchId}"]`) as HTMLElement | null;
-    if (el) scrollToElement(el, { align: 'top-third' });
-  }, [search.activeMatch?.id, scrollToElement]);
+    jumpToActiveMatch(search.activeMatch);
+  }, [search.activeMatch?.id, jumpToActiveMatch]);
 
   // 搜索命中折叠段时自动展开 + 跳转
-  const scrollToMessageRef = useRef(scrollToMessage);
-  scrollToMessageRef.current = scrollToMessage;
+  const jumpToActiveMatchRef = useRef(jumpToActiveMatch);
+  jumpToActiveMatchRef.current = jumpToActiveMatch;
   useEffect(() => {
     if (!search.activeMatch || !conversationId) return;
     const lastBoundaryIdx = stableHistory.reduce(
@@ -351,7 +366,7 @@ export function AgentChat({
     if (lastBoundaryIdx > 0 && matchIdx >= 0 && matchIdx < lastBoundaryIdx && isHistoryCollapsed) {
       useCompactCollapseStore.getState().setCollapsed(conversationId, false);
       requestAnimationFrame(() => {
-        scrollToMessageRef.current(search.activeMatch!.messageId, { align: 'top', flash: true });
+        jumpToActiveMatchRef.current(search.activeMatch!);
       });
     }
   }, [search.activeMatch, conversationId, isHistoryCollapsed, stableHistory]);

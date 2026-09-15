@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useState, useEffect, memo } from 'react';
 import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -67,7 +67,7 @@ function InjectedMessageCard({
             </div>
             <div className="whitespace-pre-wrap break-words text-xs text-foreground">
               {searchQuery && messageId
-                ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
+                ? highlightText(parsed.userMessage, searchQuery, `${messageId}--1`, activeMatchId ?? null)
                 : parsed.userMessage
               }
             </div>
@@ -136,24 +136,37 @@ function FailoverContinueNotice({ content, timestamp, messageId }: { content: st
   );
 }
 
+/** 渲染条目：block 附带其在原始 contentBlocks 中的索引（供搜索命中 id 与块级定位使用） */
+interface RenderBlockEntry {
+  block: ContentBlock;
+  originalIndex: number;
+  /** tool_group 时为各子块的原始索引 */
+  childOriginalIndices?: number[];
+}
+
 /**
  * 将连续的 tool_use（中间可夹 thinking）合并为 tool_group 虚拟 block。
  * - ≥2 个工具才分组；单个工具 / 单个 thinking / Task/Agent 子代理 不分组
  * - 会话性质工具（申报/勾选卡）渲染为消息卡，排除出分组
  * - 遇到 text / permission_request / ask_user_question 等其他类型 → 结束当前分组
+ * - 分组与不分组均保留原始 contentBlocks 索引，保证搜索命中模型与渲染端一致
  */
-function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
-  const result: ContentBlock[] = [];
-  let buffer: ContentBlock[] = [];
+function groupBlocks(blocks: ContentBlock[]): RenderBlockEntry[] {
+  const result: RenderBlockEntry[] = [];
+  let buffer: RenderBlockEntry[] = [];
   let toolCount = 0;
 
   const flush = () => {
     if (buffer.length === 0) return;
     if (toolCount >= 2) {
       result.push({
-        type: 'tool_group',
-        children: buffer,
-        timestamp: buffer[0].timestamp,
+        block: {
+          type: 'tool_group',
+          children: buffer.map(b => b.block),
+          timestamp: buffer[0].block.timestamp,
+        },
+        originalIndex: buffer[0].originalIndex,
+        childOriginalIndices: buffer.map(b => b.originalIndex),
       });
     } else {
       result.push(...buffer);
@@ -162,20 +175,20 @@ function groupBlocks(blocks: ContentBlock[]): ContentBlock[] {
     toolCount = 0;
   };
 
-  for (const block of blocks) {
+  blocks.forEach((block, originalIndex) => {
     if (block.type === 'tool_use' && SESSION_MESSAGE_TOOL_NAMES.has(block.toolName ?? '')) {
       flush();
-      result.push(block);
+      result.push({ block, originalIndex });
     } else if (block.type === 'tool_use') {
-      buffer.push(block);
+      buffer.push({ block, originalIndex });
       toolCount++;
     } else if (block.type === 'thinking' && buffer.length > 0) {
-      buffer.push(block);
+      buffer.push({ block, originalIndex });
     } else {
       flush();
-      result.push(block);
+      result.push({ block, originalIndex });
     }
-  }
+  });
   flush();
   return result;
 }
@@ -212,6 +225,14 @@ export const MessageItem = memo(function MessageItem({
 
   // sticky 展开/收起状态（用户消息默认折叠为 2 行）
   const [isStickyExpanded, setIsStickyExpanded] = useState(false);
+
+  // 搜索激活命中落在当前用户消息内时自动解除两行截断，保证命中可见
+  useEffect(() => {
+    if (!activeMatchId || isStickyExpanded) return;
+    const mid = message.id ?? messageId;
+    if (!mid || !activeMatchId.startsWith(`${mid}-`)) return;
+    setIsStickyExpanded(true);
+  }, [activeMatchId, isStickyExpanded, message.id, messageId]);
 
   // 压缩摘要消息：特殊卡片样式
   if (message.isCompactSummary) {
@@ -423,7 +444,7 @@ export const MessageItem = memo(function MessageItem({
                       )}
                     >
                       {searchQuery && messageId
-                        ? highlightText(parsed.userMessage, searchQuery, `${messageId}-u`, activeMatchId ?? null)
+                        ? highlightText(parsed.userMessage, searchQuery, `${messageId}--1`, activeMatchId ?? null)
                         : parsed.userMessage
                       }
                     </div>
@@ -476,25 +497,27 @@ export const MessageItem = memo(function MessageItem({
             )}
             {/* 按照接收顺序渲染所有内容块 */}
             {(() => {
-              const blocksToRender = (message.contentBlocks && displayMode === 'compact')
+              const entries: RenderBlockEntry[] = (message.contentBlocks && displayMode === 'compact')
                 ? groupBlocks(message.contentBlocks)
-                : (message.contentBlocks || []);
-              return blocksToRender.length > 0 ? (
+                : (message.contentBlocks || []).map((block, originalIndex) => ({ block, originalIndex }));
+              return entries.length > 0 ? (
                 <div className="space-y-2">
-                  {blocksToRender.map((block, idx) => (
-                    <ContentBlockItem
-                      key={idx}
-                      block={block}
-                      blockIndex={idx}
-                      sessionId={sessionId}
-                      onPermissionResolved={onPermissionResolved}
-                      onAskUserResolved={onAskUserResolved}
-                      onInterrupt={onInterrupt}
-                      searchQuery={searchQuery}
-                      activeMatchId={activeMatchId}
-                      messageId={messageId}
-                      readOnly={readOnly}
-                    />
+                  {entries.map((entry, idx) => (
+                    <div key={idx} data-block-index={entry.originalIndex}>
+                      <ContentBlockItem
+                        block={entry.block}
+                        blockIndex={entry.originalIndex}
+                        childOriginalIndices={entry.childOriginalIndices}
+                        sessionId={sessionId}
+                        onPermissionResolved={onPermissionResolved}
+                        onAskUserResolved={onAskUserResolved}
+                        onInterrupt={onInterrupt}
+                        searchQuery={searchQuery}
+                        activeMatchId={activeMatchId}
+                        messageId={messageId}
+                        readOnly={readOnly}
+                      />
+                    </div>
                   ))}
                 </div>
               ) : message.content ? (
@@ -502,7 +525,7 @@ export const MessageItem = memo(function MessageItem({
                   content={message.content}
                   className="text-sm"
                   searchQuery={searchQuery}
-                  matchIdPrefix={messageId !== undefined ? `${messageId}-c` : undefined}
+                  matchIdPrefix={messageId !== undefined ? `${messageId}--2` : undefined}
                   activeMatchId={activeMatchId}
                 />
               ) : null;

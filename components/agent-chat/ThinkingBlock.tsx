@@ -1,5 +1,6 @@
 import { Brain } from 'lucide-react';
 import { CollapsibleBlock } from './CollapsibleBlock';
+import { highlightText } from './highlight';
 import type { ContentBlock } from './types';
 import { useSettingsStore } from '@/stores/settings-store';
 
@@ -8,7 +9,12 @@ import { useSettingsStore } from '@/stores/settings-store';
  * - compact（简化）：CollapsibleBlock，previewLines=0，完全收起
  * - detailed（详细）：CollapsibleBlock，previewLines=3，显示预览
  */
-export function ThinkingBlock({ block }: { block: ContentBlock }) {
+export function ThinkingBlock({ block, searchQuery, activeMatchId, matchIdPrefix }: {
+  block: ContentBlock;
+  searchQuery?: string;
+  activeMatchId?: string | null;
+  matchIdPrefix?: string;
+}) {
   const hasContent = !!block.content;
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
   const charCount = block.content?.length ?? 0;
@@ -26,7 +32,9 @@ export function ThinkingBlock({ block }: { block: ContentBlock }) {
     >
       {hasContent && (
         <div className="border-l-2 border-muted-foreground/20 pl-2.5 text-xs text-muted-foreground/80 whitespace-pre-wrap break-words leading-relaxed">
-          {block.content}
+          {searchQuery && matchIdPrefix
+            ? highlightText(block.content!, searchQuery, matchIdPrefix, activeMatchId ?? null)
+            : block.content}
         </div>
       )}
     </CollapsibleBlock>

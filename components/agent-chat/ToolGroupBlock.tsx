@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 
 interface ToolGroupBlockProps {
   blocks: ContentBlock[];
+  /** 子块对应的原始 contentBlocks 索引（与 blocks 同序）；缺省退化为组内序号 */
+  childOriginalIndices?: number[];
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
   onAskUserResolved?: (requestId: string, answers: Record<string, string>) => void;
@@ -15,7 +17,6 @@ interface ToolGroupBlockProps {
   searchQuery?: string;
   activeMatchId?: string | null;
   messageId?: string;
-  blockIndex?: number;
   readOnly?: boolean;
 }
 
@@ -27,6 +28,7 @@ interface ToolGroupBlockProps {
  */
 export function ToolGroupBlock({
   blocks,
+  childOriginalIndices,
   sessionId,
   onPermissionResolved,
   onAskUserResolved,
@@ -34,7 +36,6 @@ export function ToolGroupBlock({
   searchQuery,
   activeMatchId,
   messageId,
-  blockIndex,
   readOnly,
 }: ToolGroupBlockProps) {
   const getCategoryLabel = useToolRegistryStore(s => s.getCategoryLabel);
@@ -90,7 +91,7 @@ export function ToolGroupBlock({
             searchQuery={searchQuery}
             activeMatchId={activeMatchId}
             messageId={messageId}
-            blockIndex={blockIndex !== undefined ? blockIndex * 100 + idx : idx}
+            blockIndex={childOriginalIndices?.[idx] ?? idx}
             readOnly={readOnly}
           />
         ))}

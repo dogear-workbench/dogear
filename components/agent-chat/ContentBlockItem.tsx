@@ -129,7 +129,7 @@ function ErrorAlertBlock({ block }: { block: ContentBlock }) {
   );
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, readOnly = false }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, childOriginalIndices, readOnly = false }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
@@ -139,6 +139,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   activeMatchId?: string | null;
   messageId?: string;
   blockIndex?: number;
+  /** tool_group 虚拟块内子块对应的原始 contentBlocks 索引（按子块顺序） */
+  childOriginalIndices?: number[];
   readOnly?: boolean;
 }) {
   switch (block.type) {
@@ -153,7 +155,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           searchQuery={searchQuery}
           activeMatchId={activeMatchId}
           messageId={messageId}
-          blockIndex={blockIndex}
+          childOriginalIndices={childOriginalIndices}
           readOnly={readOnly}
         />
       );
@@ -207,7 +209,14 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       return null;
 
     case 'thinking':
-      return <ThinkingBlock block={block} />;
+      return (
+        <ThinkingBlock
+          block={block}
+          searchQuery={searchQuery}
+          activeMatchId={activeMatchId}
+          matchIdPrefix={messageId !== undefined && blockIndex !== undefined ? `${messageId}-${blockIndex}` : undefined}
+        />
+      );
 
     case 'permission_request':
       return (

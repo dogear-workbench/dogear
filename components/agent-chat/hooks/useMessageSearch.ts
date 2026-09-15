@@ -5,9 +5,13 @@ import { getUserMessageSearchableText } from '../utils';
 export interface SearchMatch {
   id: string;
   messageId: string;
-  blockIndex: number; // -1=用户消息文本, -2=AI消息content字段, >=0=contentBlock索引
-  textStart: number;
-  textEnd: number;
+  // -1=用户消息文本, -2=AI消息content字段, >=0=原始 contentBlocks 索引
+  blockIndex: number;
+  hitIndexInBlock: number;
+}
+
+function toMatch(messageId: string, blockIndex: number, hitIndexInBlock: number): SearchMatch {
+  return { id: `${messageId}-${blockIndex}-${hitIndexInBlock}`, messageId, blockIndex, hitIndexInBlock };
 }
 
 export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Message[]) {
@@ -51,30 +55,31 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
         if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary || !msg.id) return;
         const messageId = msg.id;
 
-        // 用户消息: 用统一的 searchable text(与 MessageItem 渲染 offset 对齐)
+        // 用户消息: 用统一的 searchable text(与 MessageItem 渲染用的纯文本一致)
         if (msg.role === 'user' && msg.content) {
           const pureText = getUserMessageSearchableText(msg.content);
           if (pureText) {
-            let idx = 0;
             const lower = pureText.toLowerCase();
+            let idx = 0;
+            let hit = 0;
             while ((idx = lower.indexOf(q, idx)) !== -1) {
-              result.push({ id: `${messageId}-u-${idx}`, messageId, blockIndex: -1, textStart: idx, textEnd: idx + q.length });
+              result.push(toMatch(messageId, -1, hit++));
               idx += q.length;
             }
           }
         }
 
-        // AI 消息 contentBlocks：只搜索 text 和 thinking 类型
+        // AI 消息 contentBlocks：只搜索 text 和 thinking 类型的 content 域（tool 域在 Step 2 接入）
         if (msg.role === 'assistant' && msg.contentBlocks) {
           msg.contentBlocks.forEach((block, blockIndex) => {
             if (block.type !== 'text' && block.type !== 'thinking') return;
-            // text 块用 content，thinking 块也用 content
-            const text = (block as { content?: string }).content || '';
+            const text = block.content || '';
             if (!text) return;
             const lower = text.toLowerCase();
             let idx = 0;
+            let hit = 0;
             while ((idx = lower.indexOf(q, idx)) !== -1) {
-              result.push({ id: `${messageId}-${blockIndex}-${idx}`, messageId, blockIndex, textStart: idx, textEnd: idx + q.length });
+              result.push(toMatch(messageId, blockIndex, hit++));
               idx += q.length;
             }
           });
@@ -84,8 +89,9 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
         if (msg.role === 'assistant' && !msg.contentBlocks && msg.content) {
           const lower = msg.content.toLowerCase();
           let idx = 0;
+          let hit = 0;
           while ((idx = lower.indexOf(q, idx)) !== -1) {
-            result.push({ id: `${messageId}-c-${idx}`, messageId, blockIndex: -2, textStart: idx, textEnd: idx + q.length });
+            result.push(toMatch(messageId, -2, hit++));
             idx += q.length;
           }
         }

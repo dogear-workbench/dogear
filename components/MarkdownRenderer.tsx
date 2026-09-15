@@ -5,7 +5,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { Check, Copy } from 'lucide-react';
 import '@/src/hljs-theme.css';
-import { highlightText } from './agent-chat/highlight';
+import { highlightText, createMatchNumbering, type MatchNumbering } from './agent-chat/highlight';
 import {
   ALLOWED_EXT_RE,
   PathChip,
@@ -36,20 +36,22 @@ interface MarkdownRendererProps {
 
 /**
  * 对 children 中的 string 类型子节点应用搜索高亮；开启路径链接时改走路径识别（两模式互斥，路径场景无搜索词）
+ * numbering 为块级编号器：同一逻辑块的多个 markdown 元素按文档序共用，保证 match id 与搜索端块内编号对齐
  */
 function wrapChildren(
   children: React.ReactNode,
   query?: string,
   prefix?: string,
   activeId?: string | null,
+  numbering?: MatchNumbering | null,
   renderPathSegments?: (text: string) => React.ReactNode
 ): React.ReactNode {
-  const canHighlight = !!query?.trim() && !!prefix;
+  const canHighlight = !!query?.trim() && !!prefix && !!numbering;
   return React.Children.map(children, child =>
     typeof child === 'string' && child
       ? (renderPathSegments
           ? renderPathSegments(child)
-          : canHighlight ? <>{highlightText(child, query!, prefix!, activeId ?? null)}</> : child)
+          : canHighlight ? <>{highlightText(child, query!, prefix!, activeId ?? null, numbering!)}</> : child)
       : child
   );
 }
@@ -92,6 +94,10 @@ function CodeBlock({ children, ...props }: React.ComponentPropsWithoutRef<'pre'>
 export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefix, activeMatchId, stripHtmlComments, workspacePath, baseDir }: MarkdownRendererProps) {
   const workspaceId = useWorkspaceIdByPath(workspacePath ?? null);
 
+  // 每次渲染重置块级编号器；经 ref 中转让 memoized 的 mdComponents 闭包始终读到本轮的计数器
+  const numberingRef = useRef<MatchNumbering | null>(null);
+  numberingRef.current = searchQuery?.trim() && matchIdPrefix ? createMatchNumbering() : null;
+
   const processedContent = useMemo(
     () => (stripHtmlComments ? content.replace(/<!--[\s\S]*?-->/g, '') : content),
     [content, stripHtmlComments],
@@ -128,14 +134,34 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
 
   // 缓存 components 对象，避免每次渲染都生成新字面量导致 react-markdown 全量重渲染
   // 只有搜索/路径链接相关 props 变化时才重新生成（table/th/td/pre/a/img 是静态覆盖，也放进来以保持引用稳定）
-  const mdComponents = useMemo(() => ({
+  const mdComponents = useMemo(() => {
+    const wrap = (children: React.ReactNode) =>
+      wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId, numberingRef.current, renderPathSegments);
+    const heading = (Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') =>
+      ({ children, ...props }: React.ComponentPropsWithoutRef<typeof Tag>) => (
+        <Tag {...props}>{wrap(children)}</Tag>
+      );
+    return {
     // 段落：对 string 子节点应用搜索高亮或路径识别
     p: ({ children, ...props }: React.ComponentPropsWithoutRef<'p'>) => (
-      <p {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId, renderPathSegments)}</p>
+      <p {...props}>{wrap(children)}</p>
     ),
     // 列表项：对 string 子节点应用搜索高亮或路径识别
     li: ({ children, ...props }: React.ComponentPropsWithoutRef<'li'>) => (
-      <li {...props}>{wrapChildren(children, searchQuery, matchIdPrefix, activeMatchId, renderPathSegments)}</li>
+      <li {...props}>{wrap(children)}</li>
+    ),
+    // 标题：对 string 子节点应用搜索高亮或路径识别
+    h1: heading('h1'),
+    h2: heading('h2'),
+    h3: heading('h3'),
+    h4: heading('h4'),
+    h5: heading('h5'),
+    h6: heading('h6'),
+    strong: ({ children, ...props }: React.ComponentPropsWithoutRef<'strong'>) => (
+      <strong {...props}>{wrap(children)}</strong>
+    ),
+    em: ({ children, ...props }: React.ComponentPropsWithoutRef<'em'>) => (
+      <em {...props}>{wrap(children)}</em>
     ),
     // 表格：添加边框和样式
     table: ({ children, ...props }: React.ComponentPropsWithoutRef<'table'>) => (
@@ -147,12 +173,12 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
     ),
     th: ({ children, ...props }: React.ComponentPropsWithoutRef<'th'>) => (
       <th className="border border-gray-300 dark:border-gray-600 bg-gray-100 dark:bg-gray-800 px-3 py-2 text-left text-sm font-semibold" {...props}>
-        {children}
+        {wrap(children)}
       </th>
     ),
     td: ({ children, ...props }: React.ComponentPropsWithoutRef<'td'>) => (
       <td className="border border-gray-300 dark:border-gray-600 px-3 py-2 text-sm" {...props}>
-        {children}
+        {wrap(children)}
       </td>
     ),
     pre: CodeBlock,
@@ -160,9 +186,9 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
     code: ({ className, children, ...props }: React.ComponentPropsWithoutRef<'code'>) => {
       const isBlock = (className && /language-|hljs/.test(className)) || (typeof children === 'string' && children.includes('\n'));
       if (isBlock) {
-        return <code className={className} {...props}>{children}</code>;
+        return <code className={className} {...props}>{wrap(children)}</code>;
       }
-      return <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] font-mono" {...props}>{children}</code>;
+      return <code className="rounded bg-muted px-1 py-0.5 text-[0.9em] font-mono" {...props}>{wrap(children)}</code>;
     },
     // 链接：路径链接模式下相对路径解析成功且白名单内 → 胶囊开浮窗；失败回退纯文本；外部 URL 维持浏览器打开
     a: ({ href, children, ...props }: React.ComponentPropsWithoutRef<'a'>) => {
@@ -209,7 +235,8 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         {...props}
       />
     ),
-  }), [searchQuery, matchIdPrefix, activeMatchId, renderPathSegments, openPathPreview, workspaceId]);
+  };
+  }, [searchQuery, matchIdPrefix, activeMatchId, renderPathSegments, openPathPreview, workspaceId]);
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${className || ''}`}>
