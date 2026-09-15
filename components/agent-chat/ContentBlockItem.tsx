@@ -6,6 +6,7 @@ import { ThinkingBlock } from './ThinkingBlock';
 import { AskUserQuestionCard } from './AskUserQuestionCard';
 import { PermissionRequestCard } from './PermissionRequestCard';
 import { ToolGroupBlock } from './ToolGroupBlock';
+import { isBlockActive } from './highlight';
 import { TaskReportMessage } from './TaskReportMessage';
 import { UserActionsCard } from './UserActionsCard';
 import { AgentCommCard } from './AgentCommCard';
@@ -166,6 +167,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       const toolStatus = block.toolOutput !== undefined
         ? (block.isError ? 'error' : 'success')
         : 'running';
+      // tool 块不做域内 mark，命中时块级展开 + 卡片高亮
+      const searchHit = isBlockActive(activeMatchId, messageId, blockIndex);
       if (block.toolName === 'dogear__ReportTaskResult') {
         return <TaskReportMessage toolInput={block.toolInput} toolOutput={block.toolOutput} isError={block.isError} />;
       }
@@ -200,6 +203,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           toolUseId={block.toolUseId}
           status={toolStatus}
           isError={block.isError}
+          searchHit={searchHit}
         />
       );
     }

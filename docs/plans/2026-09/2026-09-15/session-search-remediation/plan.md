@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 命中模型重构与高亮定位修复](./step1-hit-model.md) — SearchMatch 改块内命中编号，修 text/thinking/user 三域高亮与三级 fallback 跳转
-- [ ] [Step 2: tool 块搜索覆盖与折叠联动](./step2-tool-coverage.md) — tool_use 三子域纳入扫描，命中自动展开卡片并滚动定位
+- [x] [Step 2: tool 块搜索覆盖与折叠联动](./step2-tool-coverage.md) — tool_use 三子域纳入扫描，命中自动展开卡片并滚动定位
 - [ ] [Step 3: 路径补全与存在性校验管道](./step3-path-pipeline.md) — 多根补全 + IPC 存在性门槛 + 正文路径识别开启 + planPath 接入
 - [ ] [Step 4: 入口按钮与小地图收尾](./step4-entry-minimap.md) — 小地图上方搜索入口；小地图预览剔除 referenced_files
 

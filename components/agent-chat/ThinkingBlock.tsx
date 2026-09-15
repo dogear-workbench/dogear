@@ -18,6 +18,8 @@ export function ThinkingBlock({ block, searchQuery, activeMatchId, matchIdPrefix
   const hasContent = !!block.content;
   const displayMode = useSettingsStore(s => s.settings?.ui?.messageDisplayMode ?? 'compact');
   const charCount = block.content?.length ?? 0;
+  // compact 模式完全收起时 mark 不在 DOM，命中本块时强制展开
+  const searchHit = !!activeMatchId && !!matchIdPrefix && activeMatchId.startsWith(`${matchIdPrefix}-`);
 
   return (
     <CollapsibleBlock
@@ -29,6 +31,7 @@ export function ThinkingBlock({ block, searchQuery, activeMatchId, matchIdPrefix
       title={hasContent ? (displayMode === 'compact' ? `思考 · ${charCount}字` : '思考') : '思考中...'}
       previewLines={displayMode === 'compact' ? 0 : 3}
       defaultOpen={false}
+      forceOpen={searchHit}
     >
       {hasContent && (
         <div className="border-l-2 border-muted-foreground/20 pl-2.5 text-xs text-muted-foreground/80 whitespace-pre-wrap break-words leading-relaxed">

@@ -2,6 +2,7 @@
 import { Boxes, Check, X, Loader2 } from 'lucide-react';
 import { CollapsibleBlock } from './CollapsibleBlock';
 import { ContentBlockItem } from './ContentBlockItem';
+import { isBlockActive } from './highlight';
 import { useToolRegistryStore } from '@/stores/tool-registry-store';
 import type { ContentBlock } from './types';
 import { cn } from '@/lib/utils';
@@ -62,6 +63,10 @@ export function ToolGroupBlock({
   const status: 'running' | 'error' | 'success' =
     hasRunning ? 'running' : hasError ? 'error' : 'success';
 
+  // 搜索命中组内任一子块时强制展开组卡（子卡自身的高亮/展开由 ContentBlockItem 链路处理）
+  const groupHit = !!activeMatchId && !!messageId && (childOriginalIndices ?? blocks.map((_, i) => i))
+    .some(idx => isBlockActive(activeMatchId, messageId, idx));
+
   const statusIcon =
     status === 'running' ? <Loader2 className="w-4 h-4 text-sky-500 animate-spin" /> :
     status === 'error'   ? <X className="w-4 h-4 text-red-500" /> :
@@ -78,6 +83,7 @@ export function ToolGroupBlock({
       statusIcon={statusIcon}
       previewLines={0}
       defaultOpen={false}
+      forceOpen={groupHit}
     >
       <div className="space-y-2">
         {blocks.map((child, idx) => (

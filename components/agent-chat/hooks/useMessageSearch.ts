@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import type { Message } from '../types';
 import { getUserMessageSearchableText } from '../utils';
+import { serializeToolField } from '../highlight';
 
 export interface SearchMatch {
   id: string;
@@ -50,6 +51,17 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
       const q = query.toLowerCase();
       const result: SearchMatch[] = [];
 
+      const scanText = (text: string, messageId: string, blockIndex: number) => {
+        if (!text) return;
+        const lower = text.toLowerCase();
+        let idx = 0;
+        let hit = 0;
+        while ((idx = lower.indexOf(q, idx)) !== -1) {
+          result.push(toMatch(messageId, blockIndex, hit++));
+          idx += q.length;
+        }
+      };
+
       const messages = [...stableHistory, ...getLiveTail()];
       messages.forEach((msg) => {
         if (msg.isMeta || msg.isCompactBoundary || msg.isCompactSummary || !msg.id) return;
@@ -57,43 +69,28 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
 
         // 用户消息: 用统一的 searchable text(与 MessageItem 渲染用的纯文本一致)
         if (msg.role === 'user' && msg.content) {
-          const pureText = getUserMessageSearchableText(msg.content);
-          if (pureText) {
-            const lower = pureText.toLowerCase();
-            let idx = 0;
-            let hit = 0;
-            while ((idx = lower.indexOf(q, idx)) !== -1) {
-              result.push(toMatch(messageId, -1, hit++));
-              idx += q.length;
-            }
-          }
+          scanText(getUserMessageSearchableText(msg.content), messageId, -1);
         }
 
-        // AI 消息 contentBlocks：只搜索 text 和 thinking 类型的 content 域（tool 域在 Step 2 接入）
+        // AI 消息 contentBlocks：text/thinking 搜 content 域；tool_use 搜三子域拼接单域（toolName/输入/输出，与卡片展示口径一致）
         if (msg.role === 'assistant' && msg.contentBlocks) {
           msg.contentBlocks.forEach((block, blockIndex) => {
-            if (block.type !== 'text' && block.type !== 'thinking') return;
-            const text = block.content || '';
-            if (!text) return;
-            const lower = text.toLowerCase();
-            let idx = 0;
-            let hit = 0;
-            while ((idx = lower.indexOf(q, idx)) !== -1) {
-              result.push(toMatch(messageId, blockIndex, hit++));
-              idx += q.length;
+            if (block.type === 'text' || block.type === 'thinking') {
+              scanText(block.content || '', messageId, blockIndex);
+            } else if (block.type === 'tool_use') {
+              const text = [
+                block.toolName || '',
+                serializeToolField(block.toolInput),
+                serializeToolField(block.toolOutput),
+              ].filter(Boolean).join('\n');
+              scanText(text, messageId, blockIndex);
             }
           });
         }
 
         // AI 消息无 contentBlocks 时，搜索 content 字段
         if (msg.role === 'assistant' && !msg.contentBlocks && msg.content) {
-          const lower = msg.content.toLowerCase();
-          let idx = 0;
-          let hit = 0;
-          while ((idx = lower.indexOf(q, idx)) !== -1) {
-            result.push(toMatch(messageId, -2, hit++));
-            idx += q.length;
-          }
+          scanText(msg.content, messageId, -2);
         }
       });
 

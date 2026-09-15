@@ -22,6 +22,10 @@ interface CollapsibleBlockProps {
   titleClassName?: string;
   /** 是否默认展开 */
   defaultOpen?: boolean;
+  /** 外部强制展开（搜索命中在收起容器内时，优先级高于内部 isOpen） */
+  forceOpen?: boolean;
+  /** 搜索命中高亮（outline + 浅底色，不影响布局） */
+  highlighted?: boolean;
 }
 
 /**
@@ -41,8 +45,11 @@ export function CollapsibleBlock({
   className,
   titleClassName,
   defaultOpen = false,
+  forceOpen = false,
+  highlighted = false,
 }: CollapsibleBlockProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const open = isOpen || forceOpen;
   const contentRef = useRef<HTMLDivElement>(null);
   const [clampPx, setClampPx] = useState<number | null>(null);
   const [needsCollapse, setNeedsCollapse] = useState(false);
@@ -59,7 +66,13 @@ export function CollapsibleBlock({
   const previewMaxHeight = clampPx != null ? `${clampPx}px` : `${previewLines * 1.4}em`;
 
   return (
-    <div className={cn('group/collapsible', className)}>
+    <div
+      className={cn(
+        'group/collapsible rounded-md',
+        highlighted && 'outline-1 outline-offset-2 outline-sky-400/70 bg-sky-50/60 dark:bg-sky-950/30',
+        className,
+      )}
+    >
       {/* 标题行：展开图标 + icon + title + status */}
       <button
         onClick={() => (previewLines === 0 || needsCollapse) && setIsOpen(!isOpen)}
@@ -68,7 +81,7 @@ export function CollapsibleBlock({
         <ChevronRight
           className={cn(
             'w-3.5 h-3.5 text-muted-foreground/60 transition-transform duration-200 flex-shrink-0',
-            isOpen && 'rotate-90',
+            open && 'rotate-90',
             previewLines === 0 ? 'opacity-100' : !needsCollapse && 'opacity-0'
           )}
         />
@@ -83,9 +96,9 @@ export function CollapsibleBlock({
       </button>
 
       {/* 内容区域：previewLines=0 且收起时不渲染任何内容 */}
-      {(isOpen || previewLines > 0) && (
+      {(open || previewLines > 0) && (
         <div className="pl-5 mt-0.5">
-          {isOpen ? (
+          {open ? (
             <>
               {/* 展开：完整内容，限制最大高度 + 内部滚动 */}
               <div className="max-h-[500px] overflow-y-auto">

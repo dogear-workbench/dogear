@@ -44,6 +44,8 @@ interface ToolBlockProps {
   status?: ToolStatus;
   isError?: boolean;
   className?: string;
+  /** 搜索命中本工具块：强制展开 + 卡片高亮 */
+  searchHit?: boolean;
 }
 
 interface ToolIconSpec {
@@ -418,6 +420,7 @@ export function ToolBlock({
   status = "success",
   isError = false,
   className,
+  searchHit = false,
 }: ToolBlockProps) {
   const actualStatus: ToolStatus = isError ? "error" : status;
   const workspaceId = useWorkspaceId();
@@ -487,6 +490,8 @@ export function ToolBlock({
       )}
       previewLines={0}
       className={className}
+      forceOpen={searchHit}
+      highlighted={searchHit}
     >
       {specializedRenderer ?? (
         <ToolDetailShell>

@@ -1,6 +1,30 @@
 import React from 'react';
 
 /**
+ * tool 域子串搜索/展示共用的序列化：字符串原样（与 OutputBox/KeyValueList 展示一致），
+ * 其余 JSON 格式化（与 formatToolOutput 口径一致）
+ */
+export function serializeToolField(value: unknown): string {
+  if (value === undefined || value === null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+/** activeMatch 是否落在指定块：id 格式 `${messageId}-${blockIndex}-${hit}` */
+export function isBlockActive(
+  activeMatchId: string | null | undefined,
+  messageId: string | undefined,
+  blockIndex: number | undefined,
+): boolean {
+  if (!activeMatchId || messageId === undefined || blockIndex === undefined) return false;
+  return activeMatchId.startsWith(`${messageId}-${blockIndex}-`);
+}
+
+/**
  * 块内命中编号器：同一逻辑块跨多个 markdown 元素渲染时编号连续累进，
  * 保证渲染端 mark id 与 useMessageSearch 的 hitIndexInBlock 对齐
  */

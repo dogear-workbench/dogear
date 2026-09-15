@@ -39,6 +39,15 @@ function InjectedMessageCard({
   const sourceName = parsed.senderDisplayName
     ?? (forcedTag === 'task-execution' ? '任务系统' : '未知会话');
   const preview = parsed.userMessage.replace(/\s+/g, ' ').trim();
+
+  // 搜索命中本消息正文（user 域 blockIndex=-1）时自动展开折叠卡
+  const ownMatchPrefix = `${message.id ?? messageId}--1-`;
+  useEffect(() => {
+    if (!activeMatchId || expanded) return;
+    if (!activeMatchId.startsWith(ownMatchPrefix)) return;
+    setExpanded(true);
+  }, [activeMatchId, expanded, ownMatchPrefix]);
+
   return (
     <div
       className={cn('w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}
