@@ -764,10 +764,13 @@ app.whenReady().then(async () => {
     .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
     .catch((err) => console.error('sessionId 自愈扫描失败:', err));
 
-  // 待办实体退役迁移：todos.json 人待办并入笔记正文勾选项（幂等，迁完改名 .migrated）
-  void import('./services/migrate-notes-todos.js')
+  // 存量迁移：旧 <workspace>/.dogear/{notes,memory} 搬到 config workspaces/{id}/ 下（幂等，迁完删旧目录）；
+  // 必须先于待办迁移——待办条目的 noteId 指向搬迁后的笔记，目录未搬完时 appendNote 会误建新卡
+  void import('./services/migrate-notes-memory.js')
+    .then((m) => m.migrateNotesMemoryAllWorkspaces())
+    .then(() => import('./services/migrate-notes-todos.js'))
     .then((m) => m.migrateTodosToNotesAllWorkspaces())
-    .catch((err) => console.error('待办迁移失败:', err));
+    .catch((err) => console.error('存量迁移失败:', err));
 
   // 任务队列启动：各工作区遗留 running 任务回 queued 后开跑
   void import('./services/task-queue.js')
