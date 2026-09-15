@@ -11,7 +11,7 @@
 - [x] [Step 1: 命中模型重构与高亮定位修复](./step1-hit-model.md) — SearchMatch 改块内命中编号，修 text/thinking/user 三域高亮与三级 fallback 跳转
 - [x] [Step 2: tool 块搜索覆盖与折叠联动](./step2-tool-coverage.md) — tool_use 三子域纳入扫描，命中自动展开卡片并滚动定位
 - [x] [Step 3: 路径补全与存在性校验管道](./step3-path-pipeline.md) — 多根补全 + IPC 存在性门槛 + 正文路径识别开启 + planPath 接入
-- [ ] [Step 4: 入口按钮与小地图收尾](./step4-entry-minimap.md) — 小地图上方搜索入口；小地图预览剔除 referenced_files
+- [x] [Step 4: 入口按钮与小地图收尾](./step4-entry-minimap.md) — 小地图上方搜索入口；小地图预览剔除 referenced_files
 
 ## 全局决策
 
@@ -22,3 +22,12 @@
 - **路径补全语义**：候选（绝对路径直接用；相对路径须含分隔符且匹配 ALLOWED_EXT_RE）→ 主根拼接 → 逐附加根尝试 → 存在性校验通过才渲染 PathChip；所有前缀校验 `startsWith` 加路径分隔符防兄弟目录碰撞
 - **存在性校验**：tipc 批量 procedure，前端按 workspaceId+path 缓存 bool；点击 PathChip 时兜底再校验，不存在 toast
 - 项目约束照旧：无注释（WHY 除外）、不绕过 tipc、单文件 300 行内
+
+## 完成总结（2026-09-15）
+
+全部 4 step 实施完毕，逐 step 提交：`0f9c9260`（step1 命中模型）→ `31b5260b`（step2 tool 覆盖）→ `2ce9d98c`（step3 路径管道）→ 本提交（step4 入口与小地图）。
+
+- 搜索：四域（user/text/thinking/tool_use）全覆盖，块内命中编号模型消灭两套 offset 错位，三级 fallback 跳转永不零反馈，命中自动展开折叠卡/工具组/思考块/注入卡
+- 路径：多根补全（主根+enabled 附加根）+ tipc 存在性门槛 + 点击兑底 toast；正文/planPath 卡接入同一管道；顺带修 PATH_TOKEN_RE 相对 token 误捕与兄弟目录前缀碰撞两个既有 bug
+- 入口：右侧工具轨道搜索按钮（Ctrl+F 双入口）；小地图预览与搜索侧同口径
+- 遗留：tool-renderers 卡片路径仍单根（附加根文件工具卡不可点）；手动回归清单 15 项在共享区 step4-delivery.md 待用户 dev 环境执行

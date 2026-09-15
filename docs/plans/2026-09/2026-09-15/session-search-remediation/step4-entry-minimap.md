@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 入口按钮与小地图收尾
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,9 +25,17 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - 按钮放 AgentChat.tsx 右侧工具轨道顶部按钮组（MessageMinimap 之前）而非 Minimap 内部：Minimap 在 turns<3 时 return null，放内部入口会跟着消失
+  - 按钮加 hasMessages 条件（空会话不显示）与 !search.isOpen 隐藏（SearchBar z-30 覆盖右上角，与 Minimap hidden 模式一致）
+  - minimap-utils 同口径修复采用复用 parseUserMessageReferences(text).userMessage + 叠加剔 command/task-execution 标签；顺带修复旧手写串漏掉的 referenced_files/conversations/shared_files/notes、local-command-stdout、跨工作区提示行
+- 改动文件清单：components/agent-chat/AgentChat.tsx（搜索按钮 SearchIcon w-8 h-8，onClick=openSearch）、components/agent-chat/minimap-utils.ts（extractMessagePreview user 分支同口径）
+- 验证：bun run lint 0 errors（改动文件 0 告警）、tsc 无类型错误；4 组构造消息脚本验证 preview 与 searchable 文本一致（task-execution 场景剥包裹属预期差异）后临时脚本已清理
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `useMessageSearch(...).open()` — 搜索浮条唯一入口，Ctrl+F 与按钮共用
+  - `extractMessagePreview(msg): string` — user 分支现与 getUserMessageSearchableText 同口径（叠加 command/task-execution 剔除）
+- 下个 step 该从哪里继续：全部 4 step 已完成；手动回归清单在共享区 step4-delivery.md（15 项：双入口/四域搜索/路径可点/小地图预览），留用户 dev 环境执行
 - 待办或已知限制：
+  - task-execution 消息搜索口径：getUserMessageSearchableText 不剥 `<task-execution>` 包裹，搜索可命中任务元数据，高亮降级块级/消息级定位（Step 1 既有口径未动）
+  - parseUserMessageReferences 对属性不全条目不剥外层标签时，预览与搜索侧一致残留（同口径非缺陷）

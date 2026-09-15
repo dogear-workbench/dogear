@@ -13,13 +13,11 @@ export function extractMessagePreview(msg: Message): string {
     text = isFailoverContinueMessage(msg.content)
       ? stripFailoverContinueSentinel(msg.content)
       : msg.content;
-    text = text
-      .replace(/<referenced_articles>[\s\S]*?<\/referenced_articles>/g, '')
-      .replace(/<quoted_snippet[^>]*>[\s\S]*?<\/quoted_snippet>/g, '')
+    // 与搜索侧 getUserMessageSearchableText 同口径：统一走 parseUserMessageReferences 剥全部注入标签（含手写串曾漏掉的 referenced_files 等）
+    text = parseUserMessageReferences(text).userMessage
       .replace(/<command-[a-z-]+>[\s\S]*?<\/command-[a-z-]+>/g, '')
-      .replace(/<sender\s[^>]*\/>/g, '')
       .replace(/<task-execution>[\s\S]*?<\/task-execution>/g, '')
-      .replace(/^\n+/, '').trim();
+      .trim();
   } else if (msg.role === 'assistant') {
     if (msg.contentBlocks) {
       const textBlock = msg.contentBlocks.find(b => b.type === 'text');

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, AlertCircle, ChevronDown, ArrowLeftRight, X } from 'lucide-react';
+import { Archive, AlertCircle, ChevronDown, ArrowLeftRight, X, Search as SearchIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -508,8 +508,17 @@ export function AgentChat({
 
       {/* 右侧工具轨道：w-12 透明浮层，顶部+底部两组按钮 */}
       <div className="absolute top-0 right-0 bottom-0 w-12 flex flex-col pointer-events-none z-10">
-        {/* 顶部按钮组：Minimap */}
+        {/* 顶部按钮组：搜索 + Minimap */}
         <div className="flex flex-col gap-1 p-1 pointer-events-auto">
+          {!search.isOpen && hasMessages && (
+            <button
+              onClick={openSearch}
+              className="w-8 h-8 flex items-center justify-center rounded-md transition-colors hover:bg-muted"
+              title="搜索消息 (Ctrl+F)"
+            >
+              <SearchIcon size={14} className="text-muted-foreground" />
+            </button>
+          )}
           <MessageMinimap
             turns={chatTurns}
             messagesById={messagesById}
