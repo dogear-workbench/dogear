@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { ArrowLeft, ChevronRight, Eye } from 'lucide-react';
+import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import type { AbilitySystemBehaviorView, ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
 
 // 主进程真源：electron/main/tipc/ability.ts 的 SYSTEM_MOUNTS_PACK_KEY；值导入会把整个主进程依赖图拉进浏览器构建
 const SYSTEM_MOUNTS_PACK_KEY = '__system__';
-import { SYSTEM_BEHAVIOR_ICON } from './pack-meta';
 import { BasicToolsSection } from './BasicToolsSection';
 import { AbilityMountsSection } from './AbilityMountsSection';
 import { ToolDetailDialog } from '../ToolDetailDialog';
@@ -45,7 +44,6 @@ function SectionTitle({ index, title, hint }: { index: number; title: string; hi
 
 export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceId, onBack }: SystemBehaviorDetailProps) {
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
-  const Icon = SYSTEM_BEHAVIOR_ICON;
 
   return (
     <div className="h-full flex flex-col min-h-0">
@@ -60,16 +58,11 @@ export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceI
       </div>
 
       <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-5">
-        <div className="flex items-start gap-3">
-          <div className="rounded-md bg-muted/60 p-2 shrink-0">
-            <Icon className="w-5 h-5 text-foreground/80" />
-          </div>
-          <div className="space-y-1">
-            <h3 className="text-base font-semibold">系统行为</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
-              框架固定行为总览：以下行为均不可关闭、不归能力包管，每项标注触发条件与控制位置。
-            </p>
-          </div>
+        <div className="space-y-1">
+          <h3 className="text-base font-semibold">系统行为</h3>
+          <p className="text-sm text-muted-foreground leading-relaxed max-w-2xl">
+            框架固定行为总览：以下行为均不可关闭、不归能力包管，每项标注触发条件与控制位置。
+          </p>
         </div>
 
         <section className="space-y-2">
@@ -132,7 +125,6 @@ export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceI
                       >
                         <span className="text-xs font-mono text-foreground/90 truncate">{tool.name}</span>
                         <span className="text-xs text-muted-foreground truncate flex-1">{tool.shortDescription}</span>
-                        <Eye className="w-3 h-3 text-muted-foreground shrink-0" />
                       </button>
                     ))}
                   </div>

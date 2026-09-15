@@ -1,4 +1,3 @@
-import { Globe, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface RulesPackCardProps {
@@ -8,8 +7,8 @@ interface RulesPackCardProps {
 }
 
 const RULE_ITEMS = [
-  { key: 'workspace-rules', label: '工作区', Icon: ScrollText },
-  { key: 'global-rules', label: '全局', Icon: Globe },
+  { key: 'workspace-rules', label: '工作区' },
+  { key: 'global-rules', label: '全局' },
 ] as const;
 
 export function RulesPackCard({ workspaceRulesEnabled, globalRulesEnabled, onOpen }: RulesPackCardProps) {
@@ -26,12 +25,9 @@ export function RulesPackCard({ workspaceRulesEnabled, globalRulesEnabled, onOpe
       aria-label="打开规则详情"
     >
       <div className="flex items-start gap-3">
-        <div className="rounded-md bg-muted/60 p-2 shrink-0">
-          <ScrollText className="w-5 h-5 text-foreground/80" />
-        </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold truncate">规则</span>
+            <span className="text-base font-semibold truncate">规则</span>
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
             工作区与全局 agent.md 的编辑与开关，注入每个会话
@@ -39,7 +35,7 @@ export function RulesPackCard({ workspaceRulesEnabled, globalRulesEnabled, onOpe
         </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">
-        {RULE_ITEMS.map(({ key, label, Icon }) => {
+        {RULE_ITEMS.map(({ key, label }) => {
           const enabled = enabledByKey[key];
           return (
             <span
@@ -51,7 +47,6 @@ export function RulesPackCard({ workspaceRulesEnabled, globalRulesEnabled, onOpe
                   : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400',
               )}
             >
-              <Icon className="w-3 h-3 shrink-0" />
               {label}规则{enabled ? '已启用' : '已关闭'}
             </span>
           );

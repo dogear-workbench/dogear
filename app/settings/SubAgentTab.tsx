@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Pencil, Trash2, Check, X, Puzzle, RotateCw, Send } from 'lucide-react';
+import { Plus, Pencil, Trash2, Check, X, RotateCw, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import { Switch } from '@/components/ui/switch';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { AbilityPackView } from '../../electron/main/tipc/ability';
-import { packIconOf } from './ability/pack-meta';
 import { AbilityBlockRow, ChannelSwitchItem, SkillCheckItem } from './subagent/AbilityBlockRow';
 import {
   createDefaultSubAgentProfile,
@@ -157,7 +156,6 @@ function ProfileEditor({
       return (
         <AbilityBlockRow
           key={pack.key}
-          icon={packIconOf(pack.key)}
           title={pack.label}
           description={pack.description}
           checked={ab.stock === true}
@@ -171,7 +169,6 @@ function ProfileEditor({
       return (
         <AbilityBlockRow
           key={pack.key}
-          icon={packIconOf(pack.key)}
           title={pack.label}
           description={pack.description}
           checked={ab.browser === true || ab.extension === true}
@@ -200,7 +197,6 @@ function ProfileEditor({
       return (
         <AbilityBlockRow
           key={pack.key}
-          icon={packIconOf(pack.key)}
           title={pack.label}
           description={pack.description}
           checked={pack.skillMetas.some((m) => enabledSkills.includes(m.name))}
@@ -215,7 +211,6 @@ function ProfileEditor({
     return (
       <AbilityBlockRow
         key={pack.key}
-        icon={packIconOf(pack.key)}
         title={pack.label}
         description={
           pack.key === 'article'
@@ -331,7 +326,6 @@ function ProfileEditor({
           {packs && profilePacks.map((pack) => renderPackBlock(pack))}
           {packs && customSkillList.length > 0 && (
             <AbilityBlockRow
-              icon={Puzzle}
               title="自定义 Skill"
               description="工作区内自定义的 skill（非内置模板）"
               checked={customNames.some((n) => enabledCustomSkills.includes(n))}

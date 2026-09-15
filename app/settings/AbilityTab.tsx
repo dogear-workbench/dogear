@@ -9,7 +9,6 @@ import { AbilityPackDetailPage } from './ability/AbilityPackDetailPage';
 import { RulesPackCard } from './ability/RulesPackCard';
 import { RulesPackDetailPage } from './ability/RulesPackDetailPage';
 import { SystemBehaviorDetail } from './ability/SystemBehaviorDetail';
-import { SYSTEM_BEHAVIOR_ICON } from './ability/pack-meta';
 
 type PacksResult = Awaited<ReturnType<typeof client.getAbilityPacks>>;
 
@@ -291,12 +290,9 @@ export function AbilityTab() {
           aria-label="打开系统行为详情"
         >
           <div className="flex items-start gap-3">
-            <div className="rounded-md bg-muted/60 p-2 shrink-0">
-              <SYSTEM_BEHAVIOR_ICON className="w-5 h-5 text-foreground/80" />
-            </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold truncate">系统行为</span>
+                <span className="text-base font-semibold truncate">系统行为</span>
                 <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">系统</span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">

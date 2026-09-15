@@ -1,11 +1,9 @@
 import type { ReactNode } from 'react';
-import type { LucideIcon } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 
 interface AbilityBlockRowProps {
-  icon: LucideIcon;
   title: string;
   description: string;
   checked: boolean;
@@ -16,7 +14,6 @@ interface AbilityBlockRowProps {
 }
 
 export function AbilityBlockRow({
-  icon: Icon,
   title,
   description,
   checked,
@@ -27,7 +24,6 @@ export function AbilityBlockRow({
   return (
     <div className="p-2 rounded-md border bg-background">
       <div className="flex items-center gap-2.5">
-        <Icon className="w-4 h-4 shrink-0 text-muted-foreground" />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium">{title}</div>
           <div className="text-xs text-muted-foreground">{description}</div>

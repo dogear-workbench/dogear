@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, Eye } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
 import type { AbilityPackView, AbilityToolGroupMeta } from '../../../electron/main/tipc/ability';
@@ -55,7 +55,6 @@ function ToolGroupPanel({
             >
               <span className="text-xs font-mono text-foreground/90 truncate">{tool.name}</span>
               <span className="text-xs text-muted-foreground truncate flex-1">{tool.shortDescription}</span>
-              <Eye className="w-3 h-3 text-muted-foreground shrink-0" />
             </button>
           ))}
         </div>
