@@ -1,7 +1,7 @@
 ---
 step: 2
 title: screenshot 路径修复
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,10 +25,11 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无（四处改动全按计划：无 workspacePath 时 isErrorResult；路径改 workspacePath/.dogear/tmp/ 且写前 mkdir recursive；emitAction result 与返回文案同步新 file；工具描述补保存位置说明；os import 已移除，唯一使用点就是 screenshot）
+- 改动文件清单：electron/main/agents/tools/browser-tools.ts（screenshot 工具 + import）
+- 验证：bun run lint 0 errors；bun run build:electron 通过；主会话直接实施（单文件 <20 行微改动例外）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：无新签名；路径模式 `workspacePath/.dogear/tmp/dogear-browser-${Date.now()}.png`
+- 下个 step 该从哪里继续：无后续依赖，计划内收尾
+- 待办或已知限制：workspacePath/.dogear/tmp/ 无清理机制（设计拍板：量小暂不做 TTL）；实机截图验证属人工项（需 dev 起浏览器会话）

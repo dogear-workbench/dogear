@@ -1,7 +1,7 @@
 ---
 step: 4
 title: Profile 描述优化与迁移
-status: pending
+status: in_progress
 ---
 
 ## 目标

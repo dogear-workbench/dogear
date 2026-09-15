@@ -11,7 +11,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 内嵌通道站点档案工具](./step1-embedded-site-tools.md) — 新建 dogear__browser__site_knowledge/site_finding + navigate 档案指针
-- [ ] [Step 2: screenshot 路径修复](./step2-screenshot-path.md) — 写入工作区可读路径，兑现「read 可读」承诺
+- [x] [Step 2: screenshot 路径修复](./step2-screenshot-path.md) — 写入工作区可读路径，兑现「read 可读」承诺
 - [x] [Step 3: 通用 playbook 机制](./step3-browser-playbook.md) — 全局文件 + browser 能力注入 + 首批初稿
 - [ ] [Step 4: Profile 描述优化与迁移](./step4-profile-descriptions.md) — 新文案 + LEGACY 迁移 + 索引两步动线 + skill 沉淀出口（依赖 Step 1 工具名）
 

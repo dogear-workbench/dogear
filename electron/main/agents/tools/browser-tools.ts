@@ -8,7 +8,6 @@
  */
 
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { z } from 'zod';
 import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
@@ -255,17 +254,23 @@ export function createBrowserToolDefs(opts?: {
     defineTool(
       'dogear__browser__screenshot',
       '截取当前页面截图',
-      '对内嵌浏览器当前页面截取视口截图，保存为临时 PNG 文件并返回路径。查看图片：把返回的路径传给 read 工具即可（read 原生支持图片附件）。',
+      '对内嵌浏览器当前页面截取视口截图，保存为 PNG 文件并返回路径。查看图片：把返回的路径传给 read 工具即可（read 原生支持图片附件）。文件保存在工作区 .dogear/tmp/ 下，确认不再需要时可自行删除。',
       z.object({}),
       async () => {
         const taskMeta = meta();
         emitAction({ source: 'screenshot', taskMeta, action: 'screenshot' });
+        if (!workspacePath) {
+          emitAction({ source: 'screenshot', taskMeta, action: 'screenshot', result: 'error' });
+          return isErrorResult('当前会话未关联工作区，无法提供 read 可读的截图路径');
+        }
         const withAgentTab = createAgentTabRunner(opts?.workspaceId, conversationId ?? 'browser-tools');
         const r = await withAgentTab(async (tab) => {
           const image = await withTimeout(`截图（${SCREENSHOT_TIMEOUT_MS / 1000}s 上限）`, SCREENSHOT_TIMEOUT_MS, () =>
             tab.view.webContents.capturePage(),
           );
-          const file = path.join(os.tmpdir(), `dogear-browser-${Date.now()}.png`);
+          const dir = path.join(workspacePath, '.dogear', 'tmp');
+          await fs.promises.mkdir(dir, { recursive: true });
+          const file = path.join(dir, `dogear-browser-${Date.now()}.png`);
           await fs.promises.writeFile(file, image.toPNG());
           return { file, url: tab.url };
         });
