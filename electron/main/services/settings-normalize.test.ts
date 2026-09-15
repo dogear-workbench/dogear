@@ -1,7 +1,13 @@
 import { test, expect } from 'bun:test';
 import { normalizeSettings, normalizePiModels, migratePiProfiles } from './settings-service.js';
 import { normalizeFailoverChain } from './settings-types.js';
-import { DEFAULT_SETTINGS, type AppSettings, type ModelProfile } from './settings-types.js';
+import {
+  DEFAULT_SETTINGS,
+  createDefaultSubAgentProfile,
+  createBrowserParseSubAgentProfile,
+  type AppSettings,
+  type ModelProfile,
+} from './settings-types.js';
 
 function baseSettings(): AppSettings {
   return structuredClone(DEFAULT_SETTINGS);
@@ -251,6 +257,27 @@ test('缺失内置浏览器解析 Profile 时自动补齐，已有 Profile 保�
   expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
   expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true, article: true });
   expect(normalizeSettings(s)).toBe(false);
+});
+
+test('内置 Profile 旧模板 description 自动迁移为新文案', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[0]!.description = '标准派遣会话，具备全部基础工具和交付通信能力';
+  s.subAgent.profiles[1]!.description =
+    '浏览器与扩展双通道调研 + 工作区文章读取与解析：公开网页用内嵌浏览器（dogear__browser__*），登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器）；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣。文章解析随 article 能力启用，article-parser skill 直通无需单独配置。探索方法论见 browser-exploration skill，子会话启用 browser 能力时自动挂载。';
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[0]!.description).toBe(createDefaultSubAgentProfile().description);
+  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
+  expect(normalizeSettings(s)).toBe(false);
+});
+
+test('用户自定义 description 不被迁移', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[0]!.description = '我自己的默认描述';
+  s.subAgent.profiles[1]!.description = '我自己的浏览器解析描述';
+  expect(normalizeSettings(s)).toBe(false);
+  expect(s.subAgent.profiles[0]!.description).toBe('我自己的默认描述');
+  expect(s.subAgent.profiles[1]!.description).toBe('我自己的浏览器解析描述');
 });
 
 test('enabledAbilities.browser 非布尔值被清洗，布尔值保留', () => {

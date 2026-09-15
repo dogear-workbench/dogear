@@ -1,7 +1,7 @@
 ---
 step: 4
 title: Profile 描述优化与迁移
-status: in_progress
+status: done
 ---
 
 ## 目标
@@ -34,10 +34,11 @@ Profile 描述改为 agent 派遣决策视角（简明准确），存量旧文�
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：无实质差异。计划所指迁移断言行号（settings-normalize.test.ts:208-251）区域已无既有描述迁移测试，按意图新增 2 个迁移测试（旧模板值自动迁移含幂等 / 用户自定义不被迁移）而非改旧断言
+- 改动文件清单：settings-types.ts（两个模板新文案）/ settings-service.ts（LEGACY_BROWSER_PARSE_DESCRIPTIONS 追加旧值 + 新增 LEGACY_DEFAULT_DESCRIPTIONS + normalizeSettings default 分支补迁移）/ settings-normalize.test.ts（+2 测试，未触碰 article:true 断言）/ session-append-templates.ts:66（两步动线引导语）/ resources/skill-templates/browser-exploration/SKILL.md（站点档案节双通道化 + 交付前沉淀节点）
+- 验证：lint 0 errors；settings-normalize.test.ts 55 pass；build:electron 通过
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：LEGACY_DEFAULT_DESCRIPTIONS（settings-service.ts:38）与 LEGACY_BROWSER_PARSE_DESCRIPTIONS（:28）同模式；迁移逻辑在 normalizeSettings 的 default/browser-parse 分支
+- 下个 step 该从哪里继续：计划内最后一步，无后续
+- 待办或已知限制：① settings.json 造旧值重启验证属人工项（单测已覆盖同一 normalize 路径）；② dev 会话看系统提示索引含两步动线属人工项；③ release/win-unpacked 下 SKILL.md 打包副本随下次打包同步（计划明确不改）

@@ -23,13 +23,14 @@ description: 双通道浏览器调研方法论：公开网页用内嵌浏览器�
 - 扩展通道：没有「等待人工」卡片。guard_password / guard_submit 只返回错误文案，密码与提交由用户在自己的浏览器直接动手——告知用户需要人工操作什么，之后重新 observe_page 感知页面变化即可继续，不要等「完成后继续」信号。
 - 内嵌页面被用户接管（user_takeover）时写操作会被拒绝：停下等待，交还后会收到继续提示。
 
-## 站点档案（扩展通道）
+## 站点档案（双通道，按本会话通道取用，勿混用工具名）
 
-- navigate 返回提示本站有站点档案时，先调 dogear__extension__site_knowledge 取地图（档案可能漂移，用时概要验证）。
-- 探索中发现新结构（状态路径 / 直链拼法 / 页面怪癖）用 dogear__extension__site_finding 沉淀到档案，供后续会话复用。
+- navigate 返回提示本站有站点档案时，先取地图：内嵌通道调 dogear__browser__site_knowledge，扩展通道调 dogear__extension__site_knowledge（档案可能漂移，用时概要验证）。
+- 探索中发现新结构（状态路径 / 直链拼法 / 页面怪癖）用本通道的 site_finding 沉淀到档案：内嵌 dogear__browser__site_finding，扩展 dogear__extension__site_finding，供后续会话复用。
 
 ## 交付与停止
 
+- 调研报告写完后、发交付前，把方法复盘中可复用的经验（站点结构 / 直链拼法 / 页面怪癖）用本通道 site_finding 写入站点档案，再交付。
 - 调研完成后用 dogear__browser__present 把关键页面呈现给用户（页面即产物），再在回复里给结论。
 - 同一页面连续 3 次探索失败即停，报告已发现的内容。
 - 滑块/验证码即停，不规避、不绕过随机延迟。

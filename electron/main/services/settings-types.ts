@@ -246,7 +246,7 @@ export function createDefaultSubAgentProfile(): SubAgentProfile {
   return {
     id: 'default',
     name: '默认',
-    description: '标准派遣会话，具备全部基础工具和交付通信能力',
+    description: '实施类任务：改代码、写文件、跑命令，需要动工作区时用。',
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'bash', 'Glob', 'Grep'],
@@ -262,7 +262,7 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
     id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
     name: '浏览器解析',
     description:
-      '浏览器与扩展双通道调研 + 工作区文章读取与解析：公开网页用内嵌浏览器（dogear__browser__*），登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器）；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣。文章解析随 article 能力启用，article-parser skill 直通无需单独配置。探索方法论见 browser-exploration skill，子会话启用 browser 能力时自动挂载。',
+      '网页与文章调研：公开网页用内嵌浏览器；登录态站点（如小红书）走用户浏览器扩展通道（全局独占，并行串行派遣）；也用于解析工作区文章库的文章。',
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],

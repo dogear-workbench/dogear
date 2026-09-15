@@ -63,7 +63,7 @@ export function buildSubAgentProfileIndex(profiles: SubAgentProfile[]): string {
   const rows = visible.map((p) => `| ${p.name} | ${p.description} |`).join('\n');
   return (
     '\n## 可用的子会话 Profile\n' +
-    '派遣子会话时可通过 profile 参数选择合适的 Profile（不指定时用「默认」）：\n\n' +
+    '派遣子会话时通过 profile 参数选择合适的 Profile（不指定时用「默认」）。选择动线：先判断任务是否要改工作区文件（动=默认）；调研类再按对象分——网页/文章库=浏览器解析，本地代码与文档=探索。\n\n' +
     '| Profile | 说明 |\n' +
     '|---------|------|\n' +
     rows
