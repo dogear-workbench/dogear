@@ -65,14 +65,6 @@ export const ABILITY_PACKS: AbilityPack[] = [
     defaultEnabled: true,
   },
   {
-    key: 'app-data',
-    label: '应用数据目录',
-    description: '应用数据目录认知段注入每个会话：目录绝对路径与文件边界、settings/plans/工作区配置位置、应用数据由工具管理（禁写区）、.dogear 文章库搜索指引',
-    type: 'prompt-only',
-    defaultEnabled: true,
-    segmentKeys: ['app-data-guidance'],
-  },
-  {
     key: 'memory',
     label: '记忆系统',
     description: '记忆工具（召回/保存）+ 记忆写入纪律段，绑定工作区时生效',

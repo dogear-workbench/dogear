@@ -41,8 +41,8 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## 能力包与 skill
 
-- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 13 包（含 prompt-only 认知段包 app-data） + resolveAbilities（overrides∩触发条件∩Profile 子开关）+ SYSTEM_BEHAVIORS + TOOL_PACK_TO_ABILITY 反查
-- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/派遣契约/联网调研分工/应用数据目录认知等），pi-session 按 activeAbilities 条件注入
+- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 12 包 + resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略）+ TOOL_PACK_TO_ABILITY 反查
+- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/派遣契约/联网调研分工/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
 - `skill-service.ts`（services/）— listSkills 扫三源目录标注 source+enabled
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置+自定义，IPC 供设置页动态加载）
 - `tools/group-tools.ts` — 组共享区工具（ListGroupFiles/SaveSharedNote）

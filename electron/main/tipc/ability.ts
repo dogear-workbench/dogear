@@ -214,8 +214,6 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
         return '注入每个主会话';
       case 'core-profile':
         return '注入每个主会话（内容在数据中心维护）';
-      case 'app-data':
-        return '注入每个会话（主/子/任务执行会话均含，无 Profile 过滤维度）';
       case 'group-context':
         return '会话属于组时注入组上下文';
       case 'agent-collab':
@@ -231,7 +229,6 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       return '仅主会话注入，子会话不加载核心画像';
     case 'workspace-rules':
     case 'global-rules':
-    case 'app-data':
       return '随包开关注入子会话';
     case 'notes':
       return '仅主会话加载，子会话不注入';
@@ -451,8 +448,18 @@ export const abilityRouter = {
         })),
       }));
 
-      // SYSTEM_BEHAVIORS 已退役：会话组上下文归会话组包、契约段归协作包展示；系统行为卡数据改为纯常驻（基础工具 + residentToolGroups）
-      const systemBehaviors: AbilitySystemBehaviorView[] = [];
+      // 固定注入的提示词段归系统行为展示（不可关闭、不归能力包管）；段数据从 segmentMap 取单一来源
+      const appDataSegment = segmentMetaOf(segmentMap, 'app-data-guidance');
+      const systemBehaviors: AbilitySystemBehaviorView[] = [
+        {
+          key: 'app-data-guidance',
+          label: appDataSegment.label,
+          triggerDescription: appDataSegment.triggerDescription,
+          segmentKey: 'app-data-guidance',
+          readonly: true as const,
+          segment: appDataSegment,
+        },
+      ];
 
       const residentToolGroups: ResidentToolGroupMeta[] = RESIDENT_GROUP_IDS.map((id) => {
         const group = groupByServer.get(id);

@@ -101,13 +101,12 @@ export const WEB_RESEARCH_GUIDANCE_SUB_APPEND =
   '- 快档优先：检索与静态文章用 bigmodel__webSearch / bigmodel__webReader（API 直出）\n' +
   '- 需 JS 渲染、页面交互或登录态时用本会话 dogear__browser__* 工具';
 
-/** 应用数据目录认知（app-data 包开启时注入每个会话）：定位 + 禁写区 + 文章库搜索指引 */
+/** 应用数据目录认知（系统行为，固定注入每个会话）：定位 + 禁写区 */
 export function buildAppDataGuidance(configDir: string, workspaceId: string): string {
   return (
     '\n## 应用数据目录\n' +
     `应用数据目录 ${configDir}（绝对路径）已挂载进会话文件边界：settings.json 是应用设置与子会话 Profile/能力开关，定时任务存 plans.json，本工作区配置在 workspaces/${workspaceId}/config.json。\n` +
-    'notes/、memory/、tasks.json 等应用数据由 dogear__* 工具统一管理，直接写文件会被禁写区拦截，一律走工具。\n' +
-    '工作区 .dogear/ 内部目录（articles/ 为文章库）默认被 Glob/Grep 跳过，需搜索其中内容时把 path 显式指到对应子目录。'
+    'notes/、memory/、tasks.json 等应用数据由 dogear__* 工具统一管理，直接写文件会被禁写区拦截，一律走工具。'
   );
 }
 
@@ -183,7 +182,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '应用数据目录',
       category: 'reference',
       template: buildAppDataGuidance('<应用数据目录绝对路径>', '<workspaceId>'),
-      triggerDescription: 'app-data 包开启时注入每个会话（主/子/任务执行会话均含；后台定时任务 headless 装配不注入）。声明应用数据目录绝对路径与文件边界、settings/plans/工作区配置位置、应用数据由工具管理（禁写区拦截直接写）、.dogear 文章库需显式 path 搜索。',
+      triggerDescription: '系统行为，固定注入每个会话（主/子/任务执行会话均含，不可关闭；后台定时任务 headless 装配不注入）。声明应用数据目录绝对路径与文件边界、settings/plans/工作区配置位置、应用数据由工具管理（禁写区拦截直接写）。描述的挂载边界与禁写区机制由代码固定生效，本段仅作认知告知。',
       isDynamic: true,
     },
   ];

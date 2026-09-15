@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ArrowLeft, ChevronRight, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import type { AbilitySystemBehaviorView, ResidentToolGroupMeta } from '../../../electron/main/tipc/ability';
 
 // 主进程真源：electron/main/tipc/ability.ts 的 SYSTEM_MOUNTS_PACK_KEY；值导入会把整个主进程依赖图拉进浏览器构建
@@ -16,6 +17,8 @@ interface SystemBehaviorDetailProps {
   workspaceId: string | null;
   onBack: () => void;
 }
+
+const PROSE_DOWN_CLASS = '[&.prose-sm]:text-xs [&_pre]:text-xs [&_th]:text-xs [&_td]:text-xs';
 
 function NoteBlock({ lines }: { lines: string[] }) {
   return (
@@ -40,7 +43,7 @@ function SectionTitle({ index, title, hint }: { index: number; title: string; hi
   );
 }
 
-export function SystemBehaviorDetail({ residentToolGroups, workspaceId, onBack }: SystemBehaviorDetailProps) {
+export function SystemBehaviorDetail({ behaviors, residentToolGroups, workspaceId, onBack }: SystemBehaviorDetailProps) {
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
   const Icon = SYSTEM_BEHAVIOR_ICON;
 
@@ -70,7 +73,34 @@ export function SystemBehaviorDetail({ residentToolGroups, workspaceId, onBack }
         </div>
 
         <section className="space-y-2">
-          <SectionTitle index={1} title="常驻工具" hint="无提示词，绑定工作区即注册" />
+          <SectionTitle index={1} title="固定提示词段" hint="系统行为，固定注入每个会话，不可关闭" />
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            以下提示词段描述的机制由代码固定生效（挂载边界/禁写区等），段文本仅作认知告知，随代码版本只读。
+          </p>
+          {behaviors.map((behavior) => (
+            <div key={behavior.key} className="rounded-md border overflow-hidden">
+              <div className="px-3 py-2 bg-muted/30 border-b space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold">{behavior.label}</span>
+                  <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground">固定注入 · 只读</span>
+                </div>
+                {behavior.triggerDescription && (
+                  <p className="text-xs text-muted-foreground leading-relaxed">{behavior.triggerDescription}</p>
+                )}
+              </div>
+              <div className="px-3 py-2">
+                {behavior.segment.template.trim() ? (
+                  <MarkdownRenderer content={behavior.segment.template} className={PROSE_DOWN_CLASS} />
+                ) : (
+                  <p className="text-xs text-muted-foreground py-2">（模板为空）</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="space-y-2">
+          <SectionTitle index={2} title="常驻工具" hint="无提示词，绑定工作区即注册" />
           <BasicToolsSection />
           <div className="pt-1">
             <span className="text-xs text-muted-foreground">加载情况</span>

@@ -568,9 +568,7 @@ export class PiSession extends EventEmitter {
     const browserPlaybook = activeAbilities.has('browser') ? readBrowserPlaybook() : null;
     if (browserPlaybook?.exists) personaParts.push(`## 浏览器调研通用技巧\n\n${browserPlaybook.content}`);
 
-    if (activeAbilities.has('app-data')) {
-      personaParts.push(buildAppDataGuidance(getConfigDir(), this.config.workspaceId));
-    }
+    personaParts.push(buildAppDataGuidance(getConfigDir(), this.config.workspaceId));
 
     if (isSubAgent) {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);

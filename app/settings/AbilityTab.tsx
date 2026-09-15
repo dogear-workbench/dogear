@@ -300,7 +300,7 @@ export function AbilityTab() {
                 <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">系统</span>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
-                框架固定行为总览：会话组上下文、主子会话协作、常驻工具，均不可关闭。
+                框架固定行为总览：固定提示词段、常驻工具，均不可关闭。
               </p>
             </div>
           </div>
