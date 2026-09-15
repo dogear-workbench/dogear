@@ -33,6 +33,7 @@ import {
 } from './browser-tool-shared.js';
 import { createBrowserObserveToolDefs } from './browser-atom-tools.js';
 import { createBrowserActionToolDefs } from './browser-action-tools.js';
+import { createBrowserSiteToolDefs } from './browser-site-tools.js';
 import { createPresentToolDef } from './browser-present-tool.js';
 import { raiseHumanIntervention } from '../../services/browser/human-intervention.js';
 import { registerToolGroup } from './tool-registry.js';
@@ -282,6 +283,11 @@ export function createBrowserToolDefs(opts?: {
       conversationId,
       workspaceId: opts?.workspaceId,
       workspacePath,
+    }),
+
+    ...createBrowserSiteToolDefs({
+      conversationId,
+      workspaceId: opts?.workspaceId,
     }),
 
     createPresentToolDef({

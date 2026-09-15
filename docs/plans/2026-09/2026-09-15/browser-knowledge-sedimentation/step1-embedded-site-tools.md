@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 内嵌通道站点档案工具
-status: in_progress
+status: done
 ---
 
 ## 目标
@@ -30,10 +30,12 @@ status: in_progress
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① browser 版不走独立重写而是复用 createSiteToolDefs（新增 toolPrefix 通道参数，browser 文件薄封装注入通道差异：no-op gate / 内嵌 agent tab currentUrl / 内嵌 scopeNote），存储唯一源、文案单点维护；② 冷启动探索建议按通道分支——内嵌通道无 read_state 工具，browser 分支改提 find；③ createBrowserSiteToolDefs 多一个可选 currentUrl 注入参数（单测隔离需要，与 extension 版同款模式）；④ 无 tab 错误文案补「内嵌浏览器暂无活动标签页，」前缀
+- 改动文件清单：extension-site-tools.ts（参数化）/ browser-site-tools.ts（新建，薄封装）/ browser-tools.ts（observe 组后挂载）/ browser-atom-tools.ts（navigate 尾部指针）/ browser-site-tools.test.ts（新建，6 用例）
+- 验证：lint 0 errors；新增测试 6 pass；build:electron 通过；extension-tools.ts 调用点零改动行为兼容
+- 主会话附带修复：settings-normalize.test.ts:252 既有断言过期（62ddeca5 引入 article: true 时漏改），单独 commit
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`createBrowserSiteToolDefs(opts?: { conversationId?: string; workspaceId?: string; currentUrl?: () => string | undefined }): ToolDef[]`；`siteKnowledgePointer(url, toolPrefix = 'dogear__extension')`；`SiteToolPrefix = 'dogear__extension' | 'dogear__browser'`
+- 下个 step 该从哪里继续：Step 4 SKILL.md 更新可直接引用工具名 `dogear__browser__site_knowledge` / `dogear__browser__site_finding`；Step 2 改 screenshot 在 browser-tools.ts:288 挂载点之后区域，互不冲突
+- 待办或已知限制：无 TODO；内嵌冷启动文案无 read_state 建议（该工具内嵌通道不存在，有意为之）

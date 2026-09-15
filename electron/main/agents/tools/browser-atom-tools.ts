@@ -41,6 +41,7 @@ import {
   textResult,
   USER_TAKEOVER_BLOCK_MESSAGE,
 } from './browser-tool-shared.js';
+import { siteKnowledgePointer } from './extension-site-tools.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 import type { ObservePayload, FindPayload } from '../../services/browser/embedded/ax-tree.js';
 import type { ReadTextResult } from '../../services/browser/embedded/ax-observe.js';
@@ -126,10 +127,12 @@ export function createBrowserObserveToolDefs(opts?: {
             resolveInterventionsForTab(record.tabId);
           }
           emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: snapshot.url, result: 'ok' });
+          const pointer = siteKnowledgePointer(snapshot.url, 'dogear__browser');
           return textResult(
             `已导航到: ${snapshot.url}\ntabId: ${snapshot.tabId}\n标题: ${snapshot.title}\n正文字数: ${stats.totalLength}\n状态: ${pageState}（generation ${snapshot.generation}）` +
               (hint ? `\n⚠️ ${hint}` : '') +
-              `\n需要操作页面元素时，先调用 dogear__browser__observe_page 获取 ref 列表。`,
+              `\n需要操作页面元素时，先调用 dogear__browser__observe_page 获取 ref 列表。` +
+              (pointer ?? ''),
           );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
