@@ -42,3 +42,4 @@ Profile 描述改为 agent 派遣决策视角（简明准确），存量旧文�
 - 关键签名 / 数据结构：LEGACY_DEFAULT_DESCRIPTIONS（settings-service.ts:38）与 LEGACY_BROWSER_PARSE_DESCRIPTIONS（:28）同模式；迁移逻辑在 normalizeSettings 的 default/browser-parse 分支
 - 下个 step 该从哪里继续：计划内最后一步，无后续
 - 待办或已知限制：① settings.json 造旧值重启验证属人工项（单测已覆盖同一 normalize 路径）；② dev 会话看系统提示索引含两步动线属人工项；③ release/win-unpacked 下 SKILL.md 打包副本随下次打包同步（计划明确不改）
+- 补漏（b026be1c，09-16）：集合当时只收了模板 git 历史值，漏了两个真实存量文案——a6e12979 时代无 user_takeover 句的 600 字长文（仅存在 6 小时的中间模板版）与 08-29 subagent-reuse-acceptance/step5 手写进用户 settings.json 的 default 文案（49 字），导致用户环境永不命中迁移；两值补收进 Set 并加存量迁移测试（56 pass）
