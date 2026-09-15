@@ -20,3 +20,12 @@
 - import 方向：navigate.ts / fetch-page.ts → presentation.ts → embedded-browser-manager.ts，不得反向（manager 不 import presentation，防环）
 - UI 文案全部中文；不写注释（WHY 非显而易见时一行）
 - 完成一步回填该 step 文档「实施回填」节 + plan.md 勾选；主进程改动需 `bun run build:electron` 重编译后真机验证
+
+## 完成总结
+
+三个 step 全部实施完毕（step1 fcbba30d / step3 ce1cef4a / step2 0e5da1b4）：
+1. **地址栏常驻与 URL 直开**：无 tab / 无呈现时地址栏可输入，回车走 `presentEmbeddedTab({url, workspaceId})` 开新 tab 呈现；打字中（focus）agent 切呈现不清空 draft；顺带修好无 tab 时 hasPageView=false 的隐性缺陷
+2. **弹层遮挡临时隐藏**：MutationObserver 检测 Radix 弹层（popper/dialog/alertdialog，排除 tooltip）与视图区相交，新 IPC `reportPageViewOverlay` 通知主进程 setVisible 切换；attachWithBounds 尾部守卫防 hidden 期间挂载闪现；mount 强制上报对齐 renderer 重载残留
+3. **agent 智能跟随**：`followAgentNavigation` 让呈现为空或正呈现 agent 旧 tab 的面板自动跟随新 tab（retain PRESENT_HOLDER_ID 与手动呈现同生命周期）；挂点 navigate 开新 tab 分支 + fetch 失败页 promoteFetchTab
+
+真机 GUI 验证清单（各 step 文档「验证」节）待用户在 GUI 环境确认；实施中未发现与计划冲突的技术假设。

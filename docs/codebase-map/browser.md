@@ -13,7 +13,7 @@
 - `navigate.ts` / `wait-for.ts` / `press.ts` / `scroll.ts` / `read-state.ts` — 导航/条件轮询等待/按键/滚动/`__INITIAL_STATE__` 读取
 - `profile.ts` / `ua.ts` / `proxy.ts` — 持久分区命名 / 诚实 UA / 按域 PAC 代理（settings.browserProxyServer）
 - `fetch-page.ts` — 抓取原语（loadFetchTab/evalInTab/promoteFetchTab 失败页切给 agent）+ 验证页呈现兑底
-- `presentation.ts` — 呈现服务：companion 页面视图区 bounds 表、presentTab（工具与渲染层共用后端）
+- `presentation.ts` — 呈现服务：companion 页面视图区 bounds 表、presentTab（工具与渲染层共用后端）、setOverlayHidden 弹层遮挡临时隐藏（只切可见性不动 retain）、followAgentNavigation 智能跟随（agent 开新 tab 时空呈现/旧 agent tab 窗口自动跟过去）
 - `dev-selftest.ts` — `DOGEAR_EMBEDDED_BROWSER_SELFTEST=1` 门控运行时自测
 
 ## 扩展通道（services/browser/）
@@ -47,7 +47,7 @@
 
 - `stores/browser-store.ts` — 动作流事件缓冲（cap 500 seq 竞态合并）+ 页面视图区状态 + 等待人工 pending 列表
 - `components/companion/BrowserPanel.tsx` — 浏览器 tab 容器：状态行+等待人工卡片区+页面视图区+动作流分组卡片流
-- `components/companion/BrowserPageView.tsx` — 页面视图区：内嵌 tab 列表+占位容器 bounds 上报（卸载上报 null 触发 detach）
+- `components/companion/BrowserPageView.tsx` — 页面视图区：地址栏常驻（无呈现时回车走 presentEmbeddedTab url 分支直开）+ 占位容器 bounds 上报（卸载上报 null 触发 detach）+ MutationObserver 检测 Radix 弹层遮挡上报隐藏
 - `components/companion/BrowserInterventions.tsx` — 等待人工卡片（resolveHumanIntervention）
 - `app/settings/ExtensionStatusLine.tsx` — 设置页扩展状态行（条目见 settings.md，ExtensionStatus 类型源在本域 gateway）
 
