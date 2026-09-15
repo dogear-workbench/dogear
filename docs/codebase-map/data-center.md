@@ -40,7 +40,7 @@
 - `transcript-cleaner.ts` — 会话 JSONL 确定性去噪（剥工具结果/系统行/思考块，保留用户+助手文字）
 - `source-fidelity.ts` — 状态卡引用保真度校验（uuid_not_found/wrong_session/session_missing 三类）
 - `review-skill-service.ts` — 历史 no-op 遗留（空实现仅为启动序列兼容）
-- `memory-service.ts` / `memory-recall` / `memory-fs` / `memory-indexer` / `memory-loader` / `memory-types` — 工作区主题记忆（检索/索引/文件层）
+- `memory-service.ts` / `memory-recall` / `memory-fs` / `memory-indexer` / `memory-loader` / `memory-types` — 工作区主题记忆（检索/索引/文件层；存 config `workspaces/{id}/memory`，已从项目工作区迁入）
 
 ## Store 与类型
 

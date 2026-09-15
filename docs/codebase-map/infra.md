@@ -55,7 +55,9 @@
 - `services/window-state-service.ts` — 窗口位置记忆（`.dogear/window-state.json`，当前仅伴随工作台用）
 - `agents/logger.ts` — 日志工具（mainLogger/workerLogger/createTaskLogger）
 
-## 数据存储（`.dogear/` 目录）
+## 数据存储（configDir：开发模式 = 项目 `.dogear/`，安装版 = 系统应用数据目录）
+
+> configDir 整体挂载进会话文件边界（`pi-session/workspace-paths.ts` 唯一计算来源），顶层禁写清单同文件；notes/memory 等应用数据由 dogear__* 工具写，模型直写被拦截。
 
 - `settings.json` / `notifications.json` / `workspaces.json` — 应用设置 / 消息中心 / 工作区索引
 - `conversations.json` — 对话索引（id/标题/sessionId/workspaceId/groupId/role/分叉/modelSelection/usageSummary）
@@ -65,7 +67,8 @@
 - `usage/{conversationId}.jsonl` — 会话 token 用量明细
 - `conversations/` — 旧 SDK 主会话历史（只读归档备份，不再回放）
 - `workspaces/{id}/sessions/` — Harness 会话 JSONL（pi-session-repository 管理，conversations.json 的 sessionId 指向这里）
-- `workspaces/{id}/notes/` — 笔记卡片（一卡一 md，文件为真源）
+- `workspaces/{id}/notes/` — 笔记卡片（一卡一 md，文件为真源；已从项目工作区 `<ws>/.dogear/notes` 迁入，存量懒迁移 `migrate-notes-memory.ts`）
+- `workspaces/{id}/memory/` — 主题记忆（结构见 data-center.md，迁移同上）
 - `workspaces/{id}/groups/{gid}/background.md` — 话题状态卡（结构见 data-center.md）
 - `workspaces/{id}/groups/{gid}/shared/` — 组共享区（`_notes/` 放阶段总结）；同目录 `digest.md` 为旧提炼链路遗留数据（已停止读写）
 - `workspaces/{id}/dashboard.md`、`smart-categories.json`、`digests/_archive/` — 已下线链路遗留数据（文件保留，不再读写）

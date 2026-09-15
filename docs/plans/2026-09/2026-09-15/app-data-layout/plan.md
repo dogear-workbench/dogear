@@ -12,7 +12,19 @@
 - [x] [Step 2: 存量懒迁移](./step2-migration.md) — 旧目录检测、幂等搬移、标记文件、旧目录清理
 - [x] [Step 3: 挂载与写排除机制](./step3-mounting.md) — pi-session basePaths 统一（含热更新）、WorkspaceExecutionEnv 写排除
 - [ ] [Step 4: 认知注入](./step4-prompts.md) — 动态段 + segments 注册 + Glob/Grep 描述补充
-- [ ] [Step 5: 连带收尾与全量验证](./step5-verify.md) — 前端/文档/规则文件跟进，lint + build + 冒烟
+- [x] [Step 5: 连带收尾与全量验证](./step5-verify.md) — 前端/文档/规则文件跟进，lint + build + 冒烟
+
+## 完成总结
+
+五个 step 全部完成（2026-09-15），“notes/memory 入全局 config + configDir 挂载 + 认知补齐”落地：
+
+1. **路径切换**（0bedcec1）：notes/memory 服务层从 workspacePath 切到 `getConfigDir()/workspaces/{id}/`，全链路（service → tools → tipc → 前端 store）签名改 workspaceId，notesChanged 事件载荷同步。
+2. **存量懒迁移**（39406325）：新建 migrate-notes-memory.ts，启动时幂等搬移旧 `.dogear/{notes,memory}`，合并 move 保目标侧 + 冲突改名并入不丢数据，迁完删旧目录 + 重建两侧索引，标记文件 notes-memory-migrated.json 杜绝双读；与待办迁移串行化（noteId 依赖）。
+3. **挂载与写排除**（86bf1e60）：basePaths 收敛 workspace-paths.ts 单一来源（含 configDir、前缀包含去重、热更新）；WorkspaceExecutionEnv 拆读写两态 guard，12 项顶层禁写清单，越界写返回带 dogear__ 工具指引的错误。
+4. **认知注入**（7a42eee4）：app-data prompt-only 包（默认开，主/子/执行会话注入）——3 行动态段声明数据目录/配置定位/禁写区/articles 搜索指引；Glob/Grep description 补 .dogear 跳过行为。
+5. **收尾**：工作区 agent.md 硬决策补行 + 清理全局重复项，workspace.md 模板同步去重，全局 agent.md 工具名补 dogear__ 前缀，codebase-map 四份更新；全量验证通过（lint/build/test/前端 tsc/前端冒烟）。
+
+**已知取舍**：①关 app-data 包只去认知段，挂载/禁写机制仍生效；②冲突副本进索引成重复条目（概率≈0，数据保留）；③低频 app 状态散文件未入禁写清单；④工作区尚有 5 个与本计划无关的未提交文件（web-mcp 文案修正 + version bump，他人遗留，未触碰）。
 
 ## 全局决策
 

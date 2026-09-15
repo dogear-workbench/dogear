@@ -24,7 +24,8 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `permission-mode.ts` / `permission-rules.ts` — 权限类型 / 判定纯函数（autoExecute 放行 → 工具包放行 → 快照映射 → 其余 ask）
 - `skill-loader.ts` — loadSkills 封装：扫目录产 SkillEntry[]、拼 `<available_skills>`、懒加载 Skill 工具
 - `builtin-tools.ts` — Read/Write/Edit + bash 双轨（run_in_background 委托 pty-service）+ read_terminal/kill_terminal
-- `search-tools.ts` — 手写 Glob/Grep（路径边界委托 workspace-boundary）
+- `search-tools.ts` — 手写 Glob/Grep（路径边界委托 workspace-boundary；`.dogear` 数据目录默认跳过，需搜其中内容时显式指 path）
+- `workspace-paths.ts` — 会话文件边界唯一计算来源：computeBasePaths = [workspacePath, ...additionalPaths, configDir] 大小写不敏感去重；configDir 顶层禁写清单 buildWriteExcludedPaths（notes/memory/workspaces/usage 等，应用数据走 dogear__* 工具）
 - `usage-extractor.ts` — pi usage 采集（字段映射对齐前端 usage 徽章口径）
 - `workspace-boundary.ts` — 路径边界校验（含符号链接逃逸拦截）
 - `workspace-execution-env.ts` — ExecutionEnv 包装：每个带路径方法前加边界校验，temp 路径记白名单
@@ -40,8 +41,8 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## 能力包与 skill
 
-- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 10 包 + resolveAbilities（overrides∩触发条件∩Profile 子开关）+ SYSTEM_BEHAVIORS + TOOL_PACK_TO_ABILITY 反查
-- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/派遣契约/联网调研分工等），pi-session 按 activeAbilities 条件注入
+- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 13 包（含 prompt-only 认知段包 app-data） + resolveAbilities（overrides∩触发条件∩Profile 子开关）+ SYSTEM_BEHAVIORS + TOOL_PACK_TO_ABILITY 反查
+- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/派遣契约/联网调研分工/应用数据目录认知等），pi-session 按 activeAbilities 条件注入
 - `skill-service.ts`（services/）— listSkills 扫三源目录标注 source+enabled
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置+自定义，IPC 供设置页动态加载）
 - `tools/group-tools.ts` — 组共享区工具（ListGroupFiles/SaveSharedNote）
