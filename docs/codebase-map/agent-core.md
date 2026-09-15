@@ -13,7 +13,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## pi-session（主会话及子会话运行时门面）
 
-- `pi-session.ts` — PiSession 唯一门面：能力拼装查 resolveAbilities、skill 三源索引（builtin 模板/custom `.dogear/skills/`/user `~/.claude/skills/`）、生命周期/插话/权限/turn 粒度暂停/自动压缩（contextWindow×autoCompactPercent 阈值）
+- `pi-session.ts` — PiSession 唯一门面：能力拼装查 resolveAbilities、skill 三源索引（builtin 模板 `resources/skill-templates/`/custom `.dogear/skills/`/user `~/.claude/skills/`）、生命周期/插话/权限/turn 粒度暂停/自动压缩（contextWindow×autoCompactPercent 阈值）
 - `pi-session-manager.ts` — 单例：引用计数生命周期（retain/release 归零销毁）+ 非 UI 保活计数（acquireHold）、存活集合广播（六触发点 diff）、销毁时通知调度器 handleSessionClose
 - `pi-session-repository.ts` — 按 workspaceId 缓存 JsonlSessionRepo；session 根目录 `<configDir>/workspaces/<id>/sessions/`
 - `pi-harness-adapter.ts` — AgentHarness 构造与事件分发，与 Harness 裸类型之间唯一隔离层
