@@ -47,6 +47,7 @@ import { createTaskToolDefs } from '../tools/task-tools.js';
 import { createGroupContextToolDefs, createSiblingToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
+import { readBrowserPlaybook } from '../../services/browser/browser-playbook-service.js';
 import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
 import { getTemplatesDir } from '../../services/skill-template-service.js';
 import { getWorkspaceConfig } from '../../services/workspace-config-service.js';
@@ -559,6 +560,10 @@ export class PiSession extends EventEmitter {
     const personaParts: string[] = [];
     if (coreProfileText) personaParts.push(coreProfileText);
     if (groupContextText) personaParts.push(groupContextText);
+
+    // browser 能力生效即注入（会话创建读一次；子会话 Profile 的 browser 子开关已并入 resolveAbilities，与 browser-exploration skill 同条件）
+    const browserPlaybook = activeAbilities.has('browser') ? readBrowserPlaybook() : null;
+    if (browserPlaybook?.exists) personaParts.push(`## 浏览器调研通用技巧\n\n${browserPlaybook.content}`);
 
     if (isSubAgent) {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
