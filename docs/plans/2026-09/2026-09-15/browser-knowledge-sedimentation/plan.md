@@ -23,3 +23,18 @@
 - 不写注释；单文件超 300 行考虑拆分
 - 各 step 独立 commit，commit 信息带 step 编号；`bun run lint` + 相关测试通过后再回填
 - 执行顺序：Step 1/2/3 相互独立可并行；Step 4 必须在 Step 1 之后（skill 引用内嵌工具名）
+
+## 完成总结（2026-09-15）
+
+四个 step 全部完成，commit：a4bdb4f1（step3）/ f19d42da（附带测试修复）/ c4ca38c9（step1）/ 1387b9cf（step2）/ 7527cf5a（step4）。最终验证：bun test 327 用例全绿（1 skip 既有）、lint 0 errors、build:electron 通过。
+
+- 站点档案泛化到内嵌通道：createSiteToolDefs 参数化通道前缀，browser-site-tools 薄封装复用同一存储；navigate 到有档案站点返回尾部指针；6 个新单测
+- screenshot 路径修复：写 workspacePath/.dogear/tmp/，无工作区时明确报错，read 可读承诺兑现
+- 通用 playbook：browser-playbook-service（全局文件、8KB 截断、缺省预置 5 条），pi-session 按 browser 能力注入系统提示，能力驱动非 Profile 硬编码
+- Profile 描述：两内置模板换 agent 决策视角文案，LEGACY 集合自动迁移存量旧值（含 default 新机制），索引两步动线，SKILL.md 双通道沉淀出口 + 交付前沉淀节点
+
+已知限制 / 遗留：
+- workspacePath/.dogear/tmp/ 无 TTL 清理（设计拍板量小暂不做）
+- release/win-unpacked 下 SKILL.md 打包副本随下次打包同步
+- 人工验证项（dev 环境）：挂/不挂 browser 能力的会话系统提示含/不含 playbook 段、首启 browser-playbook.md 自动生成、settings.json 旧值重启迁移、索引含两步动线
+- docs/codebase-map 同步未做：agent-core.md 有其他任务未提交改动，避免混提交；后续会话做 doc-sync 时一并补 browser-site-tools / browser-playbook-service 条目
