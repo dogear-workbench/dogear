@@ -1,11 +1,13 @@
-import { useMemo } from 'react';
-import { CircleAlert, Loader2, RotateCcw } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ArchiveRestore, CircleAlert, Loader2, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { getConversationTitle, getRelativeTime } from '@/components/conversation-list/utils';
-import { countDescendants, findTreeNode } from './utils';
+import { useGroupStore } from '@/stores/group-store';
+import { countDescendants, countTreeConversations, findTreeNode } from './utils';
 import { useTopicDigest } from './use-topic-digest';
 import type { ArchivedTopicData, DigestTurn } from './types';
 
@@ -33,7 +35,16 @@ interface DigestViewProps {
 
 export function DigestView({ workspaceId, topic, conversationId }: DigestViewProps) {
   const { digest, loading, error, retry } = useTopicDigest(workspaceId, topic.group.id);
+  const [restoring, setRestoring] = useState(false);
   const node = useMemo(() => findTreeNode(topic.tree, conversationId), [topic.tree, conversationId]);
+
+  const handleRestore = async () => {
+    if (restoring) return;
+    setRestoring(true);
+    const ok = await useGroupStore.getState().restoreTopic(topic.group.id);
+    setRestoring(false);
+    if (ok) toast.success('话题已恢复');
+  };
 
   if (!node) {
     return (
@@ -55,6 +66,17 @@ export function DigestView({ workspaceId, topic, conversationId }: DigestViewPro
         {childTotal > 0 && (
           <Badge variant="subtle" className="shrink-0 font-normal">{childTotal} 个子会话</Badge>
         )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 h-7 px-2.5 text-xs"
+          disabled={restoring}
+          onClick={() => void handleRestore()}
+          title={`恢复该话题及其中 ${countTreeConversations(topic.tree)} 个对话，恢复后可继续工作`}
+        >
+          <ArchiveRestore className="size-3.5" />
+          恢复话题
+        </Button>
       </header>
       <ScrollArea className="flex-1 overflow-hidden">
         <div className="mx-auto max-w-3xl px-6 py-2">
