@@ -7,6 +7,7 @@ import { readTopicStateCard, resolvePendingTopicChange, appendUserEntry } from '
 import type { TopicCardCategory } from '../services/memory/state-card.js';
 import * as conversationService from '../services/conversation-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
+import * as topicDigestService from '../services/topic-digest-service.js';
 import { conversationRuntimeService } from '../services/conversation-runtime-service.js';
 
 const t = tipc.create();
@@ -114,6 +115,18 @@ export const groupRouter = {
       } catch (error) {
         console.error('获取归档话题失败:', error);
         return { topics: [], error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  getArchivedTopicDigest: t.procedure
+    .input<{ workspaceId: string; groupId: string }>()
+    .action(async ({ input }) => {
+      try {
+        const digest = await topicDigestService.readOrBuildTopicDigest(input.workspaceId, input.groupId);
+        return { digest, error: undefined };
+      } catch (error) {
+        console.error('获取归档话题摘要失败:', error);
+        return { digest: null, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

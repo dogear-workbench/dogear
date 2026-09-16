@@ -137,6 +137,9 @@ export async function archiveGroup(workspaceId: string, groupId: string): Promis
     group.archivedAt = now;
     group.updatedAt = now;
     await saveGroups(workspaceId, file);
+    // 动态导入规避与 topic-digest-service 的循环依赖；手动/自动归档都经此路径
+    const { precacheTopicDigest } = await import('./topic-digest-service.js');
+    await precacheTopicDigest(workspaceId, groupId);
   }
   broadcastConversationListChanged(workspaceId);
   return group;
