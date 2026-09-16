@@ -16,7 +16,10 @@ export const DATA_CENTER_TAB_ID = '__data_center__';
 /** 「文章阅读」tab 的哨兵 id（非真实会话，挂载由 article-store.selectedArticle 驱动） */
 export const ARTICLE_TAB_ID = '__article__';
 
-const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID]);
+/** 「归档」tab 的哨兵 id（非真实会话，选中驱动挂载，不落 localStorage） */
+export const ARCHIVE_TAB_ID = '__archive__';
+
+const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID]);
 
 /** 是否哨兵 tab（笔记/数据中心等非真实会话 tab） */
 export function isSentinelTabId(id: string): boolean {
@@ -71,6 +74,8 @@ interface SessionState {
   lastFocusedNodeId: string | null;
   /** 数据中心 tab 是否打开（可开关，状态记忆在 localStorage） */
   dataCenterTabOpen: boolean;
+  /** 归档 tab 是否打开（不落盘：点开挂载、关闭卸载） */
+  archiveTabOpen: boolean;
   /** 笔记窗口弹出中（广播驱动，不落盘）：弹出期间哨兵 tab 从栏里隐藏，关窗恢复 */
   notesWindowOpen: boolean;
   /** 数据中心窗口弹出中（广播驱动，不落盘） */
@@ -100,6 +105,10 @@ interface SessionState {
   openDataCenterTab: () => void;
   /** 关闭数据中心 tab（卸载）；若当前正在看则回退到笔记或最近会话 tab */
   closeDataCenterTab: () => void;
+  /** 打开归档 tab 并切换过去 */
+  openArchiveTab: () => void;
+  /** 关闭归档 tab（卸载）；若当前正在看则回退到笔记或最近会话 tab */
+  closeArchiveTab: () => void;
   /** 设置笔记窗口弹出态；弹出时若正停在笔记 tab 则回退到可用 tab */
   setNotesWindowOpen: (open: boolean) => void;
   /** 设置数据中心窗口弹出态；弹出时若正停在数据中心 tab 则回退到可用 tab */
@@ -120,6 +129,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   sessionWindowIds: new Set<string>(),
   lastFocusedNodeId: null,
   dataCenterTabOpen: readDataCenterTabOpen(),
+  archiveTabOpen: false,
   notesWindowOpen: false,
   dataCenterWindowOpen: false,
 
@@ -250,6 +260,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } catch {}
   },
 
+  openArchiveTab: () => {
+    set({ archiveTabOpen: true, activeTabId: ARCHIVE_TAB_ID });
+  },
+
+  closeArchiveTab: () => {
+    set((state) => {
+      let newActive = state.activeTabId;
+      if (state.activeTabId === ARCHIVE_TAB_ID) {
+        newActive = pickFallbackTab(state);
+      }
+      return { archiveTabOpen: false, activeTabId: newActive };
+    });
+  },
+
   setNotesWindowOpen: (open) => {
     set((state) => {
       if (open && state.activeTabId === NOTES_TAB_ID) {
@@ -280,6 +304,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     sessionWindowIds: new Set<string>(),
     lastFocusedNodeId: null,
     dataCenterTabOpen: readDataCenterTabOpen(),
+    archiveTabOpen: false,
     notesWindowOpen: false,
     dataCenterWindowOpen: false,
   }),

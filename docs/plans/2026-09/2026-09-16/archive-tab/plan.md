@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 后端 digest 服务与 IPC](./step1-digest-service.md) — digest 构建/落盘/懒构建 + archiveTopic 接入 + getArchivedTopicDigest
-- [ ] [Step 2: 归档 tab 与左侧列表](./step2-tab-and-list.md) — 哨兵 tab 机制、入口按钮改造、左侧话题列表（主会话行 + 子会话徽标 + 搜索 + 恢复/删除）
+- [x] [Step 2: 归档 tab 与左侧列表](./step2-tab-and-list.md) — 哨兵 tab 机制、入口按钮改造、左侧话题列表（主会话行 + 子会话徽标 + 搜索 + 恢复/删除）
 - [ ] [Step 3: 右侧精简展示](./step3-digest-view.md) — 点会话行拉 digest、话题级缓存、轮次流渲染、空态与错误态
 
 ## 全局决策

@@ -14,6 +14,7 @@ import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
 import { TitleBar } from '@/components/TitleBar';
 import { NotificationCenter } from '@/components/NotificationCenter';
 import DataCenterPage from '@/app/data-center/page';
+import { ArchivePage } from '@/components/archive/ArchivePage';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
 import { NotesPanel } from '@/components/notes/NotesPanel';
 import { CompanionPanel } from '@/components/companion/CompanionPanel';
@@ -23,7 +24,7 @@ import { ArticlePreview } from '@/components/ArticlePreview';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
@@ -128,6 +129,7 @@ export default function Home() {
   const sessionWindowIds = useSessionStore((s) => s.sessionWindowIds);
   const dataCenterTabOpen = useSessionStore((s) => s.dataCenterTabOpen);
   const dataCenterWindowOpen = useSessionStore((s) => s.dataCenterWindowOpen);
+  const archiveTabOpen = useSessionStore((s) => s.archiveTabOpen);
   const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
   const notesWindowOpen = useSessionStore((s) => s.notesWindowOpen);
 
@@ -351,6 +353,15 @@ export default function Home() {
                 style={{ display: activeTabId === DATA_CENTER_TAB_ID ? 'flex' : 'none' }}
               >
                 <DataCenterPage />
+              </div>
+            )}
+            {/* 归档：可开关 Tab，打开期间常驻挂载，关闭即卸载 */}
+            {archiveTabOpen && (
+              <div
+                className="absolute inset-0 flex flex-col"
+                style={{ display: activeTabId === ARCHIVE_TAB_ID ? 'flex' : 'none' }}
+              >
+                <ArchivePage workspaceId={workspace.id} />
               </div>
             )}
             {/* 文章：选中即挂载（切会话 tab 保持挂载不重加载），清空选中即卸载 */}
