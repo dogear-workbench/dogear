@@ -56,7 +56,7 @@ export function DigestView({ workspaceId, topic, conversationId }: DigestViewPro
           <Badge variant="subtle" className="shrink-0 font-normal">{childTotal} 个子会话</Badge>
         )}
       </header>
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overflow-hidden">
         <div className="mx-auto max-w-3xl px-6 py-2">
           {loading && (
             <div className="py-16 flex items-center justify-center">

@@ -120,7 +120,7 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
             className="h-8 text-sm bg-background"
           />
         </div>
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 overflow-hidden">
           <div className="py-1">
             {filtered.length === 0 ? (
               <div className="px-3 py-8 text-center text-xs text-muted-foreground">无匹配话题</div>
