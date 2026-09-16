@@ -393,17 +393,6 @@ export function AgentChat({
   return (
     <WorkspaceIdProvider workspaceId={workspaceId ?? null}>
     <div className="relative flex flex-col h-full bg-card rounded-lg border shadow-sm">
-      {/* SearchBar 挂在最外层 relative 容器，避免被内部 overflow-hidden 裁剪 */}
-      <SearchBar
-        isOpen={search.isOpen}
-        query={search.query}
-        setQuery={search.setQuery}
-        totalMatches={search.matches.length}
-        activeIndex={search.activeIndex}
-        onPrev={search.prev}
-        onNext={search.next}
-        onClose={search.close}
-      />
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
       <div
@@ -534,17 +523,14 @@ export function AgentChat({
             turns={chatTurns}
             messagesById={messagesById}
             conversationId={conversationId}
-            hidden={search.isOpen}
             scrollAreaRef={scrollAreaRef}
             onJumpToMessage={(id) => scrollToMessage(id, { align: 'top', flash: true })}
           />
-          {!search.isOpen && (
-            <AwaitingDeliveryIndicator
-              awaitCount={awaitCount}
-              doneCount={doneCount}
-              issueCount={issueCount}
-            />
-          )}
+          <AwaitingDeliveryIndicator
+            awaitCount={awaitCount}
+            doneCount={doneCount}
+            issueCount={issueCount}
+          />
         </div>
 
         {/* 底部按钮组：回到底部 */}
@@ -560,6 +546,16 @@ export function AgentChat({
           )}
         </div>
       </div>
+      <SearchBar
+        isOpen={search.isOpen}
+        query={search.query}
+        setQuery={search.setQuery}
+        totalMatches={search.matches.length}
+        activeIndex={search.activeIndex}
+        onPrev={search.prev}
+        onNext={search.next}
+        onClose={search.close}
+      />
       </div>
 
       {/* 模型故障转移提示条（内存级，不进消息流也不落盘；单条可关闭，60s 自动过期） */}

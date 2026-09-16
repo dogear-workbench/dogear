@@ -36,7 +36,7 @@ export function SearchBar({
     : `${activeIndex + 1}/${totalMatches}`;
 
   return (
-    <div className="absolute top-2 right-2 z-30 flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-background/95 backdrop-blur-sm shadow-sm">
+    <div className="absolute bottom-2 right-14 z-30 flex items-center gap-1 px-2 py-1 rounded-md border border-border bg-background/95 backdrop-blur-sm shadow-sm">
       <input
         ref={inputRef}
         type="text"

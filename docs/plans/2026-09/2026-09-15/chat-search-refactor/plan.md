@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 搜索索引稳定性与口径对齐](./step1-index-stability.md) — 重扫保持激活位置 + 剥离代码块/html 注释
 - [x] [Step 2: 工具块统一块级命中反馈](./step2-tool-block-feedback.md) — 特殊卡补描边 + 全部工具卡「命中 n 处」徽标
-- [ ] [Step 3: 搜索框挪位与 Minimap 常驻](./step3-searchbar-position.md) — 悬浮输入框正上方
+- [x] [Step 3: 搜索框挪位与 Minimap 常驻](./step3-searchbar-position.md) — 悬浮输入框正上方
 
 ## 全局决策
 
@@ -19,3 +19,7 @@
 - 块级反馈视觉统一用 `outline-1 outline-offset-2 outline-sky-400/70 bg-sky-50/60 dark:bg-sky-950/30`（与 `CollapsibleBlock.tsx:72` 现有 highlighted 同款）
 - 徽标数字 `activeBlockMatchCount` 只在块为当前激活块时显示，由 AgentChat 从 matches 按 `messageId+blockIndex` 分组算出
 - 三步串行执行（step2/step3 都动 AgentChat.tsx，避免并行冲突）；每步完成即 `bun run lint` + 手动验收后回填
+
+## 完成总结
+
+三步全部完成（2026-09-16）：① 索引端剥离 fenced 代码块与 html 注释与渲染口径对齐，流式重扫三级恢复激活位置不再跳顶；② 五类工具块（普通卡 + 四张特殊卡）统一 sky 描边、强制展开、「命中 n 处」徽标（新组件 SearchHitBadge），AgentChat 按 messageId+blockIndex 分组算激活块命中数下传；③ SearchBar 挪入消息区容器内悬浮输入框正上方（bottom-2 right-14），Minimap 与等待交付指示恢复常驻。三个 commit：8a617dfd / c3b63a8b / （本 step）。遗留：三个 step 的 UI 手动验收项均需用户在应用内确认（流式不跳顶、逐卡跳转反馈、浮条位置与遮挡）。
