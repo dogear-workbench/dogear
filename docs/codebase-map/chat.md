@@ -41,7 +41,8 @@
 - `companion/TerminalPanel.tsx` — 终端面板：跟随/固定切换、我的/会话终端子 tab、reconcileActive 修剪失效锚点
 - `companion/XtermTerminal.tsx` — xterm 宿主：tab 切换 attach/detach、历史灌入与实时流防乱序
 - 浏览器面板三件套（BrowserPanel/BrowserPageView/BrowserInterventions）→ 见 browser.md
-- `ConversationList.tsx` + `conversation-list/` — 会话列表（手动文件夹/近期<7天/更早/归档 Popover；ConversationRow 双层高亮；子会话树形折叠）
+- `ConversationList.tsx` + `conversation-list/` — 会话列表（手动文件夹/近期<7天/更早/归档 tab 入口；ConversationRow 双层高亮；子会话树形折叠）
+- `archive/` — 归档 tab 页（左：话题卡/主会话行+子会话徽标/标题搜索/右键恢复·永久删除；右：DigestView 精简轮次流 input+结论，useTopicDigest 话题级缓存）
 - `group-list/GroupCard.tsx` — 组卡片（树形会话行、文件夹挂载菜单、删除二次确认）
 - `EmptyFocusState.tsx` / `StatusPulse.tsx` — 无焦点占位 / 状态脉冲
 - `wechat/` — 微信 Bot UI（认证 Dialog、控制面板、QR 码）
@@ -55,7 +56,7 @@
 - `section-collapse-store.ts` — 列表分区折叠状态（近期/更早/文件夹 reveal/子会话折叠区）
 - `reference-store.ts` — 引用状态（文章列表/选中片段/会话引用）
 - `slash-command-store.ts` — 斜杠命令合并与 capabilities
-- `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE）+ dataCenterTabOpen
+- `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE）+ dataCenterTabOpen（归档 tab 不落 localStorage）
 - `terminal-store.ts` — 终端前端（terminals Map、followMode/pinned、registerDataSink 收流注册）
 
 ## lib / services
@@ -67,6 +68,7 @@
 - `services/group-service.ts` — 会话组 CRUD（`.dogear/groups/{wsId}.json`），写后广播 conversationListChanged
 - `services/group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{gid}/shared/`），写后广播 groupDataChanged
 - `services/auto-archive-service.ts` — 30 天未活跃组自动归档（启动+每 24h）
+- `services/topic-digest-service.ts` — 归档话题 digest 构建/落盘（`groups/<gid>/digest.json`：主会话轮次 input+最后文字结论；归档时预计算、浏览时缺失懒构建；注入判定与前端 utils.ts 语义对齐需同步维护）
 - `services/conversation-tree-service.ts` — 手动文件夹树（`.dogear/.../conversation-tree.json`）
 - `services/focused-conversation-service.ts` — 全局焦点会话内存态（值变化才广播，跨窗口共享）
 - `services/workspace-watcher.ts` — 文件树监视（递归 fs.watch 仅 rename，500ms 去抖广播）
