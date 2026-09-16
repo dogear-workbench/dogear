@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 右侧精简展示
-status: pending
+status: done
 ---
 
 ## 目标
@@ -17,17 +17,22 @@ status: pending
 - 关键决策回顾：digest 话题级拉取一次、同话题切会话行用缓存（缓存随选中话题切换丢弃即可，无需全局缓存）；无结论轮灰字「（无文字回复）」；无 sessionId 会话（后端 turns 为空数组）显示「（无对话内容）」；右侧标题栏显示主会话标题 +「N 个子会话」徽标（数量取左侧树，不取 digest）；拉取失败显示错误 + 重试按钮；恢复话题后若右侧正展示该话题，清为空态（Step 2 已处理列表侧，本步确保右侧联动）。
 
 ## 计划改动
-- [ ] 新建 `components/archive/` 下 digest 视图组件：标题栏（会话标题 + 子会话徽标）+ 轮次流（input / conclusion 两段 MarkdownRenderer）+ 空态/错误态
-- [ ] ArchivePage 接线：选中会话行 → 拉 digest → 缓存 → 渲染；同话题切换不重复 IPC
-- [ ] 全动线验证：打开 tab → 选话题/会话 → 浏览轮次 → 搜索过滤 → 恢复/删除 → 右侧联动
+- [x] 新建 `components/archive/` 下 digest 视图组件：标题栏（会话标题 + 子会话徽标）+ 轮次流（input / conclusion 两段 MarkdownRenderer）+ 空态/错误态
+- [x] ArchivePage 接线：选中会话行 → 拉 digest → 缓存 → 渲染；同话题切换不重复 IPC
+- [x] 全动线验证：打开 tab → 选话题/会话 → 浏览轮次 → 搜索过滤 → 恢复/删除 → 右侧联动
 
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：拉取逻辑提为独立 hook `use-topic-digest.ts`（缓存/竞态/重试内聚，ArchivePage 保持薄）；digest 类型在前端 `types.ts` 本地定义（前端无引用 electron/main 类型的先例，结构与后端一致）；轮次行加了输入时间（getRelativeTime，左列表同款）
 - 改动文件清单：
+  - `components/archive/types.ts`：新增 DigestTurn / DigestSession / TopicDigest
+  - `components/archive/use-topic-digest.ts`（新）：话题级拉取 hook，单槽缓存随 topicId 切换失效，requestRef 防竞态，retry 强刷
+  - `components/archive/DigestView.tsx`（新）：标题栏（标题 + 子会话徽标，数量取树）+ 轮次流 + loading/error+重试/空态
+  - `components/archive/utils.ts`：新增 findTreeNode
+  - `components/archive/ArchivePage.tsx`：右侧 section 占位替换为 DigestView / 空态二选一（selection && selectionTopic）
+- 验证：eslint 0 errors 0 warnings（archive 目录）、tsc 双 tsconfig 通过、vite build 通过；动线走查见共享区 step3-delivery.md
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 本计划最后一步，无下个 step
+- 待办或已知限制：selection 清空后再选回原话题会重新拉一次 digest（符合「无需全局缓存」决策）；话题从列表刷新前的短暂窗口内右侧可能短暂展示旧 digest，列表刷新后由 Step 2 的 selection 清理联动回空态

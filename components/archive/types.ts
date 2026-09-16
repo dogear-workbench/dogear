@@ -11,3 +11,22 @@ export interface ArchivedTopicData {
   group: Group;
   tree: ConversationTreeNode[];
 }
+
+export interface DigestTurn {
+  input: string;
+  inputAt: number;
+  conclusion: string | null;
+  concludedAt: number | null;
+}
+
+export interface DigestSession {
+  conversationId: string;
+  title: string;
+  turns: DigestTurn[];
+}
+
+export interface TopicDigest {
+  version: 1;
+  archivedAt: number;
+  sessions: DigestSession[];
+}

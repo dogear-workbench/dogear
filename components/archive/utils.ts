@@ -8,3 +8,12 @@ export function countTreeConversations(nodes: ConversationTreeNode[]): number {
 export function countDescendants(node: ConversationTreeNode): number {
   return node.children.reduce((total, child) => total + 1 + countDescendants(child), 0);
 }
+
+export function findTreeNode(nodes: ConversationTreeNode[], id: string): ConversationTreeNode | null {
+  for (const node of nodes) {
+    if (node.conv.id === id) return node;
+    const found = findTreeNode(node.children, id);
+    if (found) return found;
+  }
+  return null;
+}

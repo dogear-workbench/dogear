@@ -8,6 +8,7 @@ import { buildConversationTree } from '@/lib/conversation-sort';
 import { deriveGroupTitle } from '@/components/group-list/utils';
 import type { Conversation } from '@/components/ConversationList';
 import { ArchiveTopicList } from './ArchiveTopicList';
+import { DigestView } from './DigestView';
 import type { ArchiveSelection, ArchivedTopicData } from './types';
 
 export interface ArchivePageProps {
@@ -85,6 +86,10 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
     return topics.filter((t) => deriveGroupTitle(t.group).toLowerCase().includes(q));
   }, [topics, search]);
 
+  const selectionTopic = selection
+    ? topics.find((t) => t.group.id === selection.topicId) ?? null
+    : null;
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -132,12 +137,20 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
         </ScrollArea>
       </aside>
       <section className="flex-1 flex flex-col min-w-0">
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-sm text-muted-foreground">
-            <Archive className="w-8 h-8 mx-auto mb-2 opacity-40" />
-            选择左侧会话查看
+        {selection && selectionTopic ? (
+          <DigestView
+            workspaceId={workspaceId}
+            topic={selectionTopic}
+            conversationId={selection.conversationId}
+          />
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center text-sm text-muted-foreground">
+              <Archive className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              选择左侧会话查看
+            </div>
           </div>
-        </div>
+        )}
       </section>
     </div>
   );
