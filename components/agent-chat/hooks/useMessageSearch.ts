@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Message } from '../types';
 import { getUserMessageSearchableText } from '../utils';
 import { serializeToolField } from '../highlight';
@@ -15,11 +15,28 @@ function toMatch(messageId: string, blockIndex: number, hitIndexInBlock: number)
   return { id: `${messageId}-${blockIndex}-${hitIndexInBlock}`, messageId, blockIndex, hitIndexInBlock };
 }
 
+// 剥离 markdown 渲染端不显示的内容（fenced 代码块、html 注释），与渲染端计数口径对齐；
+// 替换为换行而非空串，避免前后文本拼接产生跨界假匹配
+function stripUnsearchable(text: string): string {
+  return text
+    .replace(/^([`~]{3,})[^\n]*\n[\s\S]*?^\1+[^\n]*(?:\n|$)/gm, '\n')
+    .replace(/^([`~]{3,})[^\n]*\n[\s\S]*$/gm, '\n')
+    .replace(/<!--[\s\S]*?-->/g, '\n')
+    .replace(/<!--[\s\S]*$/g, '\n');
+}
+
 export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Message[]) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [matches, setMatches] = useState<SearchMatch[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  // 重扫保持激活位置：区分 query 变化（重置）与消息流更新触发重扫（恢复）
+  const lastQueryRef = useRef('');
+  const activeSnapshotRef = useRef<{ index: number; match: SearchMatch | null }>({ index: 0, match: null });
+
+  useEffect(() => {
+    activeSnapshotRef.current = { index: activeIndex, match: matches[activeIndex] ?? null };
+  }, [matches, activeIndex]);
 
   const open = useCallback(() => setIsOpen(true), []);
   const close = useCallback(() => {
@@ -43,6 +60,7 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
   // 防抖：延迟 150ms，避免流式输出期间每帧扫描
   useEffect(() => {
     if (!query.trim()) {
+      lastQueryRef.current = '';
       setMatches([]);
       setActiveIndex(0);
       return;
@@ -76,7 +94,8 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
         if (msg.role === 'assistant' && msg.contentBlocks) {
           msg.contentBlocks.forEach((block, blockIndex) => {
             if (block.type === 'text' || block.type === 'thinking') {
-              scanText(block.content || '', messageId, blockIndex);
+              const raw = block.content || '';
+              scanText(block.type === 'text' ? stripUnsearchable(raw) : raw, messageId, blockIndex);
             } else if (block.type === 'tool_use') {
               const text = [
                 block.toolName || '',
@@ -95,7 +114,19 @@ export function useMessageSearch(stableHistory: Message[], getLiveTail: () => Me
       });
 
       setMatches(result);
-      setActiveIndex(0);
+      // query 未变（仅消息流更新触发重扫）时保持激活位置：同 id → 同块首个 → clamp
+      if (lastQueryRef.current !== query) {
+        setActiveIndex(0);
+      } else {
+        const { index: prevIndex, match: prevMatch } = activeSnapshotRef.current;
+        let restored = prevMatch ? result.findIndex((m) => m.id === prevMatch.id) : -1;
+        if (restored === -1 && prevMatch) {
+          restored = result.findIndex((m) => m.messageId === prevMatch.messageId && m.blockIndex === prevMatch.blockIndex);
+        }
+        if (restored === -1) restored = Math.min(prevIndex, result.length - 1);
+        setActiveIndex(Math.max(0, restored));
+      }
+      lastQueryRef.current = query;
     }, 150);
     return () => clearTimeout(timer);
   }, [query, stableHistory, getLiveTail]);
