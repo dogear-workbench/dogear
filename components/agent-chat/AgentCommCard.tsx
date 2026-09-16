@@ -9,6 +9,7 @@ import type { Conversation } from '@/components/ConversationList';
 import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import { useWorkspaceId } from './workspace-id-context';
 import { INJECTION_TAG_STYLES } from './injection-tags';
+import { SearchHitBadge } from './SearchHitBadge';
 
 export function CommCollapseBar({ onCollapse }: { onCollapse: () => void }) {
   return (
@@ -77,11 +78,13 @@ function toOutputText(toolOutput: unknown): string {
 }
 
 /** agent↔agent 发出通讯卡（dogear__SendMessage 摘壳）：一行收起「→ 发给 @会话名」，仅手动展开 */
-export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
+export function AgentCommCard({ toolInput, toolOutput, isError, timestamp, searchHit = false, activeMatchCount = 0 }: {
   toolInput?: Record<string, any>;
   toolOutput?: any;
   isError?: boolean;
   timestamp?: number;
+  searchHit?: boolean;
+  activeMatchCount?: number;
 }) {
   const [expanded, setExpanded] = useState(false);
   const message = typeof toolInput?.message === 'string' ? toolInput.message : '';
@@ -94,8 +97,16 @@ export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
   const preview = (isError ? toOutputText(toolOutput).split('\n')[0] : message).replace(/\s+/g, ' ').trim();
 
   return (
-    <div className={cn('w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}>
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
+    <div
+      className={cn(
+        'w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2',
+        styles.bar,
+        searchHit
+          ? 'outline-1 outline-offset-2 outline-sky-400/70 bg-sky-50/60 dark:bg-sky-950/30'
+          : styles.card,
+      )}
+    >
+      <Collapsible open={expanded || searchHit} onOpenChange={setExpanded}>
         <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs text-muted-foreground cursor-pointer">
           <ArrowRight className="w-3 h-3 flex-shrink-0" />
           <span className="flex-shrink-0">发给</span>
@@ -120,6 +131,7 @@ export function AgentCommCard({ toolInput, toolOutput, isError, timestamp }: {
             </span>
           )}
           {preview && <span className="truncate flex-1 min-w-0 text-foreground/70">{preview}</span>}
+          {searchHit && activeMatchCount > 0 && <SearchHitBadge count={activeMatchCount} />}
           {typeof timestamp === 'number' && (
             <span className="flex-shrink-0 text-muted-foreground/60">{new Date(timestamp).toLocaleTimeString()}</span>
           )}

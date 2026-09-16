@@ -5,6 +5,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { CommCollapseBar, SessionPeerLink } from './AgentCommCard';
 import { INJECTION_TAG_STYLES } from './injection-tags';
+import { SearchHitBadge } from './SearchHitBadge';
 
 interface DispatchItemInput {
   task?: string;
@@ -17,6 +18,10 @@ interface DispatchCardProps {
   toolOutput?: unknown;
   isError?: boolean;
   timestamp?: number;
+  /** 搜索激活命中落在本块：描边 + 徽标 + 命中期间强制展开 */
+  searchHit?: boolean;
+  /** 本块命中总数（仅 searchHit 时显示徽标） */
+  activeMatchCount?: number;
 }
 
 function toTaskSummary(task: string): string {
@@ -49,10 +54,18 @@ function ErrorOutput({ toolOutput }: { toolOutput?: unknown }) {
   );
 }
 
-function CardShell({ children }: { children: React.ReactNode }) {
+function CardShell({ children, searchHit }: { children: React.ReactNode; searchHit: boolean }) {
   const styles = INJECTION_TAG_STYLES.dispatch;
   return (
-    <div className={cn('w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2', styles.bar, styles.card)}>
+    <div
+      className={cn(
+        'w-full my-2 rounded-r-lg border-l-[3px] px-3 py-2',
+        styles.bar,
+        searchHit
+          ? 'outline-1 outline-offset-2 outline-sky-400/70 bg-sky-50/60 dark:bg-sky-950/30'
+          : styles.card,
+      )}
+    >
       {children}
     </div>
   );
@@ -85,7 +98,7 @@ function Timestamp({ timestamp }: { timestamp?: number }) {
   return <span className="flex-shrink-0 text-muted-foreground/60">{new Date(timestamp).toLocaleTimeString()}</span>;
 }
 
-function SingleDispatchCard({ toolInput, toolOutput, isError, timestamp }: DispatchCardProps) {
+function SingleDispatchCard({ toolInput, toolOutput, isError, timestamp, searchHit = false, activeMatchCount = 0 }: DispatchCardProps) {
   const [expanded, setExpanded] = useState(false);
   const running = toolOutput === undefined;
   const task = typeof toolInput?.task === 'string' ? toolInput.task : '';
@@ -96,8 +109,8 @@ function SingleDispatchCard({ toolInput, toolOutput, isError, timestamp }: Dispa
   const sessionId = parseCreatedSessionId(toolOutput);
 
   return (
-    <CardShell>
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
+    <CardShell searchHit={searchHit}>
+      <Collapsible open={expanded || searchHit} onOpenChange={setExpanded}>
         <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs text-muted-foreground cursor-pointer">
           <ArrowUpRight className="w-3 h-3 flex-shrink-0" />
           <span className="flex-shrink-0">派出</span>
@@ -108,6 +121,7 @@ function SingleDispatchCard({ toolInput, toolOutput, isError, timestamp }: Dispa
           {running && !isError && <RunningHint text="创建中" />}
           {isError && <FailedBadge />}
           {preview && <span className="truncate flex-1 min-w-0 text-foreground/70">{preview}</span>}
+          {searchHit && activeMatchCount > 0 && <SearchHitBadge count={activeMatchCount} />}
           <Timestamp timestamp={timestamp} />
         </CollapsibleTrigger>
         <CollapsibleContent>
@@ -136,15 +150,15 @@ function SingleDispatchCard({ toolInput, toolOutput, isError, timestamp }: Dispa
   );
 }
 
-function BatchDispatchCard({ toolInput, toolOutput, isError, timestamp }: DispatchCardProps) {
+function BatchDispatchCard({ toolInput, toolOutput, isError, timestamp, searchHit = false, activeMatchCount = 0 }: DispatchCardProps) {
   const [expanded, setExpanded] = useState(false);
   const running = toolOutput === undefined;
   const items: DispatchItemInput[] = Array.isArray(toolInput?.items) ? toolInput.items : [];
   const sessionIds = parseBatchSessionIds(toolOutput);
 
   return (
-    <CardShell>
-      <Collapsible open={expanded} onOpenChange={setExpanded}>
+    <CardShell searchHit={searchHit}>
+      <Collapsible open={expanded || searchHit} onOpenChange={setExpanded}>
         <CollapsibleTrigger className="flex items-center gap-1.5 w-full text-xs text-muted-foreground cursor-pointer">
           <Layers className="w-3 h-3 flex-shrink-0" />
           <span className="flex-shrink-0">批量派出 {items.length} 个子会话</span>
@@ -152,6 +166,7 @@ function BatchDispatchCard({ toolInput, toolOutput, isError, timestamp }: Dispat
           {running && !isError && <RunningHint text="创建中" />}
           {isError && <FailedBadge />}
           <span className="truncate flex-1 min-w-0" />
+          {searchHit && activeMatchCount > 0 && <SearchHitBadge count={activeMatchCount} />}
           <Timestamp timestamp={timestamp} />
         </CollapsibleTrigger>
         <CollapsibleContent>

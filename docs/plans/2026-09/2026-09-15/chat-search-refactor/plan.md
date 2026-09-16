@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 搜索索引稳定性与口径对齐](./step1-index-stability.md) — 重扫保持激活位置 + 剥离代码块/html 注释
-- [ ] [Step 2: 工具块统一块级命中反馈](./step2-tool-block-feedback.md) — 特殊卡补描边 + 全部工具卡「命中 n 处」徽标
+- [x] [Step 2: 工具块统一块级命中反馈](./step2-tool-block-feedback.md) — 特殊卡补描边 + 全部工具卡「命中 n 处」徽标
 - [ ] [Step 3: 搜索框挪位与 Minimap 常驻](./step3-searchbar-position.md) — 悬浮输入框正上方
 
 ## 全局决策

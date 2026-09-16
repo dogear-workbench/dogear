@@ -313,6 +313,15 @@ export function AgentChat({
   // 解构出稳定引用，避免 useEffect deps 依赖整个 search 对象
   const openSearch = search.open;
 
+  // 激活命中所在块（messageId+blockIndex）的命中总数，供块级域卡片显示「命中 n 处」徽标
+  const activeBlockMatchCount = useMemo(() => {
+    const active = search.activeMatch;
+    if (!active) return 0;
+    return search.matches.filter(
+      (m) => m.messageId === active.messageId && m.blockIndex === active.blockIndex,
+    ).length;
+  }, [search.matches, search.activeMatch]);
+
   // 历史加载完成后触底；followMode=auto 让虚拟占位测量回流时由 ResizeObserver 续滚校正
   useEffect(() => {
     if (historyStatus === 'loading' || !conversationId) return;
@@ -475,6 +484,7 @@ export function AgentChat({
           onInterrupt={sendMessage.handleInterrupt}
           searchQuery={search.query || undefined}
           activeMatchId={search.activeMatch?.id ?? null}
+          activeBlockMatchCount={activeBlockMatchCount}
           readOnly={isReadOnly}
           sessionId={sessionId}
           isAgentConversation={isAgentConversation}
@@ -490,6 +500,7 @@ export function AgentChat({
           onInterrupt={sendMessage.handleInterrupt}
           searchQuery={search.query || undefined}
           activeMatchId={search.activeMatch?.id ?? null}
+          activeBlockMatchCount={activeBlockMatchCount}
           readOnly={isReadOnly}
           sessionId={sessionId}
           isAgentConversation={isAgentConversation}

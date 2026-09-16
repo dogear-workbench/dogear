@@ -130,7 +130,7 @@ function ErrorAlertBlock({ block }: { block: ContentBlock }) {
   );
 }
 
-export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, messageId, blockIndex, childOriginalIndices, readOnly = false, workspacePath }: {
+export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAskUserResolved, onInterrupt, searchQuery, activeMatchId, activeBlockMatchCount, messageId, blockIndex, childOriginalIndices, readOnly = false, workspacePath }: {
   block: ContentBlock;
   sessionId?: string | null;
   onPermissionResolved?: (requestId: string, behavior: 'allow' | 'deny' | 'allow_session') => void;
@@ -138,6 +138,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
   onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
+  /** 激活命中所在块的命中总数（供块级域卡片显示「命中 n 处」徽标） */
+  activeBlockMatchCount?: number;
   messageId?: string;
   blockIndex?: number;
   /** tool_group 虚拟块内子块对应的原始 contentBlocks 索引（按子块顺序） */
@@ -157,6 +159,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           onInterrupt={onInterrupt}
           searchQuery={searchQuery}
           activeMatchId={activeMatchId}
+          activeBlockMatchCount={activeBlockMatchCount}
           messageId={messageId}
           childOriginalIndices={childOriginalIndices}
           readOnly={readOnly}
@@ -172,10 +175,10 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
       // tool 块不做域内 mark，命中时块级展开 + 卡片高亮
       const searchHit = isBlockActive(activeMatchId, messageId, blockIndex);
       if (block.toolName === 'dogear__ReportTaskResult') {
-        return <TaskReportMessage toolInput={block.toolInput} toolOutput={block.toolOutput} isError={block.isError} />;
+        return <TaskReportMessage toolInput={block.toolInput} toolOutput={block.toolOutput} isError={block.isError} searchHit={searchHit} activeMatchCount={activeBlockMatchCount} />;
       }
       if (block.toolName === 'dogear__TrackUserActions') {
-        return <UserActionsCard toolInput={block.toolInput} toolUseId={block.toolUseId} />;
+        return <UserActionsCard toolInput={block.toolInput} toolUseId={block.toolUseId} searchHit={searchHit} activeMatchCount={activeBlockMatchCount} />;
       }
       if (block.toolName === 'dogear__SendMessage') {
         return (
@@ -184,6 +187,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             toolOutput={block.toolOutput}
             isError={block.isError}
             timestamp={block.timestamp}
+            searchHit={searchHit}
+            activeMatchCount={activeBlockMatchCount}
           />
         );
       }
@@ -194,6 +199,8 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
             toolOutput={block.toolOutput}
             isError={block.isError}
             timestamp={block.timestamp}
+            searchHit={searchHit}
+            activeMatchCount={activeBlockMatchCount}
           />
         );
       }
@@ -206,6 +213,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
           status={toolStatus}
           isError={block.isError}
           searchHit={searchHit}
+          activeMatchCount={activeBlockMatchCount}
         />
       );
     }

@@ -11,6 +11,7 @@ import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useNotesStore } from '@/stores/notes-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { CollapsibleBlock } from './agent-chat/CollapsibleBlock';
+import { SearchHitBadge } from './agent-chat/SearchHitBadge';
 import { resolvePathInWorkspace, useWorkspacePath } from './agent-chat/path-link';
 import { useWorkspaceId } from './agent-chat/workspace-id-context';
 import {
@@ -46,6 +47,8 @@ interface ToolBlockProps {
   className?: string;
   /** 搜索命中本工具块：强制展开 + 卡片高亮 */
   searchHit?: boolean;
+  /** 搜索命中本块时的块内命中总数（仅 searchHit 时显示徽标） */
+  activeMatchCount?: number;
 }
 
 interface ToolIconSpec {
@@ -421,8 +424,10 @@ export function ToolBlock({
   isError = false,
   className,
   searchHit = false,
+  activeMatchCount = 0,
 }: ToolBlockProps) {
   const actualStatus: ToolStatus = isError ? "error" : status;
+  const showHitBadge = searchHit && activeMatchCount > 0;
   const workspaceId = useWorkspaceId();
   const workspacePath = useWorkspacePath(workspaceId);
   const previewAction = actualStatus === 'success' && !isError
@@ -478,8 +483,9 @@ export function ToolBlock({
         actualStatus === 'running' && 'text-sky-600 dark:text-sky-400',
       )}
       statusIcon={<StatusIcon status={actualStatus} />}
-      headerActions={(previewAction || jumpAction) && (
+      headerActions={(showHitBadge || previewAction || jumpAction) && (
         <span className="inline-flex items-center gap-0.5">
+          {showHitBadge && <SearchHitBadge count={activeMatchCount} />}
           {previewAction && (
             <ToolHeaderActionButton icon={Eye} tooltip={previewAction.tooltip} onOpen={previewAction.open} />
           )}

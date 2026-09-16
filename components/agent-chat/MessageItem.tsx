@@ -215,6 +215,7 @@ export const MessageItem = memo(function MessageItem({
   onInterrupt,
   searchQuery,
   activeMatchId,
+  activeBlockMatchCount,
   isAgentConversation,
   readOnly = false,
 }: {
@@ -227,6 +228,7 @@ export const MessageItem = memo(function MessageItem({
   onInterrupt?: () => void | Promise<void>;
   searchQuery?: string;
   activeMatchId?: string | null;
+  activeBlockMatchCount?: number;
   /** 当前会话是否 agent 会话（用于判断"用户介入"徽章） */
   isAgentConversation?: boolean;
   readOnly?: boolean;
@@ -527,6 +529,7 @@ export const MessageItem = memo(function MessageItem({
                         onInterrupt={onInterrupt}
                         searchQuery={searchQuery}
                         activeMatchId={activeMatchId}
+                        activeBlockMatchCount={activeBlockMatchCount}
                         messageId={messageId}
                         readOnly={readOnly}
                         workspacePath={conversationWorkspacePath ?? undefined}

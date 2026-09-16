@@ -15,6 +15,7 @@ interface LiveTailProps {
   onInterrupt: () => void;
   searchQuery?: string;
   activeMatchId: string | null;
+  activeBlockMatchCount?: number;
   readOnly: boolean;
   sessionId: string | null;
   isAgentConversation: boolean;
@@ -31,6 +32,7 @@ export const LiveTail = memo(function LiveTail({
   onInterrupt,
   searchQuery,
   activeMatchId,
+  activeBlockMatchCount,
   readOnly,
   sessionId,
   isAgentConversation,
@@ -60,6 +62,7 @@ export const LiveTail = memo(function LiveTail({
                 onInterrupt={onInterrupt}
                 searchQuery={searchQuery}
                 activeMatchId={activeMatchId}
+                activeBlockMatchCount={activeBlockMatchCount}
                 isAgentConversation={isAgentConversation}
                 readOnly={readOnly}
               />

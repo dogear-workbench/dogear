@@ -7,11 +7,16 @@ import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { useWorkspaceId } from './workspace-id-context';
 import { useWorkspacePath } from './path-link';
+import { SearchHitBadge } from './SearchHitBadge';
 
 interface Props {
   toolInput?: Record<string, any>;
   toolOutput?: any;
   isError?: boolean;
+  /** 搜索激活命中落在本块：描边 + 徽标 */
+  searchHit?: boolean;
+  /** 本块命中总数（仅 searchHit 时显示徽标） */
+  activeMatchCount?: number;
 }
 
 const REPORT_STATUS_LABELS: Record<string, string> = {
@@ -57,7 +62,7 @@ function extractReportMeta(outputText: string): { taskId: string; taskTitle: str
   return { taskId, taskTitle, status: statusRaw.split(/[（(]/)[0].trim() };
 }
 
-export function TaskReportMessage({ toolInput, toolOutput, isError }: Props) {
+export function TaskReportMessage({ toolInput, toolOutput, isError, searchHit = false, activeMatchCount = 0 }: Props) {
   const workspaceId = useWorkspaceId();
   const workspacePath = useWorkspacePath(workspaceId);
   const summary = typeof toolInput?.result === 'string' ? toolInput.result.trim() : '';
@@ -78,7 +83,14 @@ export function TaskReportMessage({ toolInput, toolOutput, isError }: Props) {
   };
 
   return (
-    <div className="w-full my-2 rounded-r-lg border-l-[3px] border-l-blue-500 bg-secondary/60 px-3 py-2">
+    <div
+      className={cn(
+        'w-full my-2 rounded-r-lg border-l-[3px] border-l-blue-500 px-3 py-2',
+        searchHit
+          ? 'outline-1 outline-offset-2 outline-sky-400/70 bg-sky-50/60 dark:bg-sky-950/30'
+          : 'bg-secondary/60',
+      )}
+    >
       <div className="flex items-center gap-1.5 text-xs flex-wrap">
         <ListTodo className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
         <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 flex-shrink-0">
@@ -121,6 +133,7 @@ export function TaskReportMessage({ toolInput, toolOutput, isError }: Props) {
             <ExternalLink className="w-3 h-3" />
           </button>
         )}
+        {searchHit && activeMatchCount > 0 && <SearchHitBadge count={activeMatchCount} />}
       </div>
       {summary ? (
         <MarkdownRenderer content={summary} className="text-sm mt-1.5" />

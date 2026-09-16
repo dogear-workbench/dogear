@@ -19,6 +19,7 @@ interface StableHistoryProps {
   onInterrupt: () => void;
   searchQuery?: string;
   activeMatchId: string | null;
+  activeBlockMatchCount?: number;
   readOnly: boolean;
   sessionId: string | null;
   isAgentConversation: boolean;
@@ -38,6 +39,7 @@ export const StableHistory = memo(function StableHistory({
   onInterrupt,
   searchQuery,
   activeMatchId,
+  activeBlockMatchCount,
   readOnly,
   sessionId,
   isAgentConversation,
@@ -67,6 +69,7 @@ export const StableHistory = memo(function StableHistory({
                   onInterrupt={onInterrupt}
                   searchQuery={searchQuery}
                   activeMatchId={activeMatchId}
+                  activeBlockMatchCount={activeBlockMatchCount}
                   isAgentConversation={isAgentConversation}
                   readOnly={readOnly}
                 />
