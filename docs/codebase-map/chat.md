@@ -11,7 +11,7 @@
 ## agent-chat 组件（components/agent-chat/）
 
 - `AgentChat.tsx` — 聊天主组件：组合 hooks+布局+工具轨道+Minimap；从 childrenByParent 派生等待交付展示态；历史加载三态 UI（骨架/错误/空）
-- `ChatInputArea.tsx` — 输入区：引用芯片、图片预览、工具栏（ModelSelector）、斜杠命令菜单、暂停/恢复按钮、暂停与等待交付状态行
+- `ChatInputArea.tsx` — 输入区：引用芯片、分流操作气泡（shunt 气泡，同会话最多一个）、图片预览、工具栏（ModelSelector）、斜杠命令菜单、暂停/恢复按钮、暂停与等待交付状态行
 - `MessageItem.tsx` — 单条消息渲染：长文本折叠、sticky 冻结、分叉/编辑按钮、跨会话注入消息卡（默认收起）
 - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
 - `MessageMinimap.tsx` — 消息小地图：轮次聚合、视口指示、跳转、hover 展开/固定
@@ -20,6 +20,8 @@
 - `StreamingIndicator.tsx` — 运行状态指示（基于 pendingState；flushing 态显示插话队列长度）
 - `AwaitingDeliveryIndicator.tsx` — 等待子会话交付动效，点击=中断等待
 - `AskUserQuestionCard.tsx` / `PermissionRequestCard.tsx` — AskUser 问题卡 / 权限请求卡
+- `shunt-suggestions.tsx` — 分流建议卡：ShuntAwareMarkdown 在 MarkdownRenderer 之前剥除/解析 shunt-suggestions fenced JSON 块，卡片按钮插入 shunt 气泡；协议见 plan 全局决策 6
+- `MoveToWorkspaceDialog.tsx` — 临时会话移入工作区弹层（选工作区→选组/新建→showConfirm 执行）
 - `CitationBadge.tsx` / `CollapsibleBlock.tsx` — 引用徽章 / 可折叠块基础组件
 - `SubAgentPanel.tsx` / `SubAgentBlock.tsx` — 子 Agent 面板 / 块
 - `highlight.ts` / `minimap-utils.ts` — 搜索高亮工具 / 消息预览提取
@@ -41,7 +43,7 @@
 - `companion/TerminalPanel.tsx` — 终端面板：跟随/固定切换、我的/会话终端子 tab、reconcileActive 修剪失效锚点
 - `companion/XtermTerminal.tsx` — xterm 宿主：tab 切换 attach/detach、历史灌入与实时流防乱序
 - 浏览器面板三件套（BrowserPanel/BrowserPageView/BrowserInterventions）→ 见 browser.md
-- `ConversationList.tsx` + `conversation-list/` — 会话列表（手动文件夹/近期<7天/更早/归档 tab 入口；ConversationRow 双层高亮；子会话树形折叠）
+- `ConversationList.tsx` + `conversation-list/` — 会话列表（顶部常显 PersonalSection 临时会话分区：当天平铺/更早折叠/「+」与 Ctrl+Alt+N；手动文件夹/近期<7天/更早/归档 tab 入口；ConversationRow 双层高亮；子会话树形折叠）
 - `archive/` — 归档 tab 页（左：话题卡/主会话行+子会话徽标/标题搜索/右键恢复·永久删除；右：DigestView 精简轮次流 input+结论，useTopicDigest 话题级缓存）
 - `group-list/GroupCard.tsx` — 组卡片（树形会话行、文件夹挂载菜单、删除二次确认）
 - `EmptyFocusState.tsx` / `StatusPulse.tsx` — 无焦点占位 / 状态脉冲
@@ -51,10 +53,10 @@
 ## Stores（stores/）
 
 - `workspace-store.ts` — 工作区文件树状态（选中/CRUD/移动）+ openStockWindow；订阅 workspaceFilesChanged 重拉
-- `conversation-store.ts` — 对话列表/选中/分叉/对话级模型；tab 焦点联动（revealTopic 定位话题、上报全局焦点）；四个运行态 Set 订阅后端事件
+- `conversation-store.ts` — 对话列表/选中/分叉/对话级模型；personalConversations 独立分片（所有工作区视图常显）与 newPersonalConversation/movePersonalConversationToWorkspace/focusConversationFromLink；tab 焦点联动（revealTopic 定位话题、上报全局焦点）；四个运行态 Set 订阅后端事件
 - `group-store.ts` — 会话组状态（groups/currentGroupId/expandedGroupIds；RECENT_THRESHOLD_MS 常量在此）
 - `section-collapse-store.ts` — 列表分区折叠状态（近期/更早/文件夹 reveal/子会话折叠区）
-- `reference-store.ts` — 引用状态（文章列表/选中片段/会话引用）
+- `reference-store.ts` — 引用状态（文章列表/选中片段/会话引用）+ shunt 气泡（分流附件，closeTab 自动清理）
 - `slash-command-store.ts` — 斜杠命令合并与 capabilities
 - `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE）+ dataCenterTabOpen（归档 tab 不落 localStorage）
 - `terminal-store.ts` — 终端前端（terminals Map、followMode/pinned、registerDataSink 收流注册）
@@ -64,10 +66,11 @@
 - `lib/conversation-sort.ts` — buildConversationTree 组内会话树纯函数（多层派遣链）
 - `lib/reference-guard.ts` — 引用前置校验（跨工作区拒绝）、requireReferenceAnchorId 文章锚定、jumpToSourceConversation 跳来源会话
 - `services/conversation-service.ts` — 对话索引 CRUD（`.dogear/conversations.json`，含 modelSelection/usageSummary 懒重算）
+- `services/conversation-move-service.ts` — 临时会话移入工作区执行链（校验→释放句柄→importConversation→session JSONL 搬运→personal 清理，失败回滚）
 - `services/session-id-repair.ts` — 启动自愈：扫 null sessionId 会话按文件名时间戳回填
 - `services/group-service.ts` — 会话组 CRUD（`.dogear/groups/{wsId}.json`），写后广播 conversationListChanged
 - `services/group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{gid}/shared/`），写后广播 groupDataChanged
-- `services/auto-archive-service.ts` — 30 天未活跃组自动归档（启动+每 24h）
+- `services/auto-archive-service.ts` — 组自动归档（真实工作区 30 天/personal 临时会话 7 天；启动+每 24h）
 - `services/topic-digest-service.ts` — 归档话题 digest 构建/落盘（`groups/<gid>/digest.json`：主会话轮次 input+最后文字结论；归档时预计算、浏览时缺失懒构建；注入判定与前端 utils.ts 语义对齐需同步维护）
 - `services/conversation-tree-service.ts` — 手动文件夹树（`.dogear/.../conversation-tree.json`）
 - `services/focused-conversation-service.ts` — 全局焦点会话内存态（值变化才广播，跨窗口共享）
@@ -76,6 +79,8 @@
 - `services/pty-service.ts` — PTY 实例管理（node-pty，buffer 尾部 100K 封顶，事件上抛 tipc/pty.ts 桥接）
 
 ## 注意
+
+- `personal` 是保留字 workspaceId（常量 `types/workspace.ts` ↔ `electron/main/types.ts` 镜像双份，改需两处同步）：内置隐藏工作区，不进 workspaces.json/getAll 默认过滤，每会话一隐式单会话组，前端平铺不显示组概念
 
 - 「先切后高亮」时序铁律：tab 属其他工作区时必须先 `await setWorkspace(目标)` 再 focusConversationById（conversation-store 唯一入口）
 - running/pendingAction/paused/alive 四个 Set 的唯一订阅源是后端事件（sessionStateChanged/sessionClosed/aliveConversationsChanged），禁止前端乐观直写

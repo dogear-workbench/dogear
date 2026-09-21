@@ -25,3 +25,14 @@
 6. 分流统一两条文本协议：① **建议块**（agent 回复末尾，本条已定稿）——fenced JSON 块，语言标签 `shunt-suggestions`，块内正文 `{"summary":"<岔题摘要，自含≤60字>","options":["new-session","new-topic","note"]}`（options 为三动作非空子集，去重）；前端在 MarkdownRenderer 之前截获解析（完整块剥除正文、取最后一个有效块渲染卡片，流式中途的未闭合块一并剥除防代码块闪烁），解析实现 `components/agent-chat/shunt-suggestions.tsx`；② **气泡注入标签 `<shunt>`**（Step 6 定稿）——`<shunt action="new-session|new-topic|note" summary="<岔题摘要，XML 属性转义>">用户补充文字</shunt>`；作为独立 text block 前置于用户消息（发送时由 useSendMessage 从输入框气泡构建，正文=输入框文本，不再重复入块；前端 parseUserMessageReferences 解析剥壳、正文留在 userMessage，白名单外 action 不解析原样保留）
 7. agent 只建议不执行：任何会话结构变更（ForkSession/归组/移入/笔记）必须经用户发出气泡或点击 UI 确认
 8. 遇到设计未覆盖的边界：记入 step 文档「实施回填」，不擅自扩大改动面
+
+## 完成总结
+
+2026-09-21 六个 step 全部完成，逐 step 独立 commit（06f347eb / 4993c87f / 1b766db1 / c547642b / 38eecfcc / 1214164d）。
+
+- **快捷键 registry**：HOTKEY_DEFS 数据驱动 + 设置页「快捷键」tab 自动渲染；Ctrl+F / Ctrl+\ 迁移，Ctrl+Alt+N 预留给临时会话
+- **personal 隐藏工作区**：常量前后端镜像、getAll 默认过滤、7 天归档分支、文件夹树/watcher 跳过；前端常显「临时会话」分区（当天/更早折叠）、最小能力包（仅联网搜索，数据驱动 config 合并）、临时徽章、归档「临时」标记
+- **移入工作区**：conversation-move-service 执行链（校验→释放句柄→索引迁移→JSONL 搬运 header 改写→personal 清理，失败回滚）+ 弹层选工作区/组 + agent 只读话题工具（ReadTopicCard）辅助归置
+- **分流链路**：shunt-suggestions fenced JSON 建议块（非阻塞事后建议）→ 建议卡三按钮 → 输入框操作气泡 → `<shunt>` 标签注入 → dogear__ForkSession（平级会话/新话题组，orphan 保活）/ CreateNote（tags「分流暂存」）→ dogear:// 回执跳转链接
+
+**遗留（均已在 step 文档回填）**：① GUI 全链路手动验收待 bun run dev（各 step 数据层/解析层均已脚本验证）；② dogear-memory 工具因 pi-session 无工作区兜底分支仍在 personal 注册（需改 pi-session 一行，待他人未提交改动落地后补）；③ 笔记引用注入 workspaceId= 属性与解析端 workspacePath= 正则不匹配的既有 bug（超出本次范围）；④ web-research 提示词段对 personal 轻微超配（含派子会话指引但无派遣工具）。

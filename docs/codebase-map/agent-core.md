@@ -15,7 +15,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 - `pi-session.ts` — PiSession 唯一门面：能力拼装查 resolveAbilities、skill 三源索引（builtin 模板 `resources/skill-templates/`/custom `.dogear/skills/`/user `~/.claude/skills/`）、生命周期/插话/权限/turn 粒度暂停/自动压缩（contextWindow×autoCompactPercent 阈值）
 - `pi-session-manager.ts` — 单例：引用计数生命周期（retain/release 归零销毁）+ 非 UI 保活计数（acquireHold）、存活集合广播（六触发点 diff）、销毁时通知调度器 handleSessionClose
-- `pi-session-repository.ts` — 按 workspaceId 缓存 JsonlSessionRepo；session 根目录 `<configDir>/workspaces/<id>/sessions/`
+- `pi-session-repository.ts` — 按 workspaceId 缓存 JsonlSessionRepo；session 根目录 `<configDir>/workspaces/<id>/sessions/`；relocateSession 跨工作区搬运（header 改写+双倒缓存失效）
 - `pi-harness-adapter.ts` — AgentHarness 构造与事件分发，与 Harness 裸类型之间唯一隔离层
 - `message-converter.ts` — pi AgentEvent → 前端 ExtendedSessionMessage
 - `history-adapter.ts` — branch entries → HistoryMessage[]（数据源唯一为 session-history-reader）
@@ -42,12 +42,13 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 ## 能力包与 skill
 
 - `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 12 包 + resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略）+ TOOL_PACK_TO_ABILITY 反查
-- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/派遣契约/联网调研分工/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
+- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/岔题分流引导/派遣契约/联网调研分工/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
 - `skill-service.ts`（services/）— listSkills 扫三源目录标注 source+enabled
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置+自定义，IPC 供设置页动态加载）
 - `tools/group-tools.ts` — 组共享区工具（ListGroupFiles/SaveSharedNote）
-- `tools/reference-tools.ts` — 跨会话检索常驻组（ListTopics/ReadReferenceSession）+ 组协作组（ReadGroupBackground/ListSiblingSessions）
+- `tools/reference-tools.ts` — 跨会话检索常驻组（ListTopics 可跨工作区/ReadReferenceSession/ReadTopicCard 直读话题状态卡）+ 组协作组（ReadGroupBackground/ListSiblingSessions）
 - `tools/task-tools.ts` — 协作任务四工具（CreateTask/ListTasks/ExecuteTask/ReportTaskResult）
+- `tools/fork-session-tool.ts` — 岔题分流工具组（dogear-shunt）：dogear__ForkSession 平级新会话/新话题组，仅收到 <shunt> 标签时调用，无父子契约不等交付，orphan 保活
 - 功能工具定义分域：浏览器/扩展/联网 → browser.md；股票 → stocks.md；笔记/文章 → articles.md
 
 ## 协作任务后端（services/）

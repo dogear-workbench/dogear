@@ -4,7 +4,8 @@
 
 ## 设置页（app/settings/）
 
-- `page.tsx` — 设置页（ui-store settingsOpen 驱动的全屏 overlay，非路由；dirty 三按钮 confirm；顶栏保存/取消/保存并重启会话；下划线式 Tabs：基础/能力/模型方案/工作区管理/子会话派遣/关于）
+- `page.tsx` — 设置页（ui-store settingsOpen 驱动的全屏 overlay，非路由；dirty 三按钮 confirm；顶栏保存/取消/保存并重启会话；下划线式 Tabs：基础/能力/模型方案/工作区管理/子会话派遣/快捷键/关于）
+- `ShortcutsTab.tsx` — 快捷键清单 tab（从 hotkey-registry listHotkeys 自动渲染，只读；数据源见 infra.md hotkey-registry）
 - `ExtensionStatusLine.tsx` — 受控浏览器小节的扩展状态行（连接状态/正文预览/授权域名只读 chip；ExtensionStatus 类型源在 browser.md）
 - `AbilityTab.tsx` — 能力标签页编排：列表态（工作区 Select+合并规则卡+能力包卡+系统行为卡）/详情态按 selectedKey 路由；包开关联动 enabledSkills+enabledToolPacks
 - `ability/` — 能力页两级结构组件：RulesPackCard/RulesPackDetailPage（工作区+全局规则合并卡与双编辑器）、AbilityPackCard/AbilityPackDetailPage（skill 型包 chips 切换+SKILL.md 渲染+子开关；段型包 SegmentBlock/CoreProfileView）、AbilityPackSidebar（总开关+工具组+挂载情况）、AbilityMountsSection（挂载矩阵行列表：主会话/子会话各 Profile/任务执行会话 + 三条后台任务行——定时自定义任务按 enabledToolPacks 动态计算、话题状态抽取/文章解析恒 false；scheduler 行徽标「后台任务」）、SystemBehaviorDetail、BasicToolsSection
@@ -30,7 +31,8 @@
 ## 服务与类型
 
 - `services/settings-service.ts` — 设置 JSON 存储（`.dogear/settings.json`）+ normalizeSettings 幂等迁移（含 failover 链维护、SubAgent 能力域缺键补齐、browser-parse 内置模板按全集补缺失键——存量 Profile 自动并入新增的 web/article、旧描述按 LEGACY 已知值识别迁移）
-- `services/workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`），增删触发 workspace-watcher 起停
+- `services/workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`），增删触发 workspace-watcher 起停；getAll 默认过滤保留字 personal（includePersonal 拼合成条目，归档 timer 用）
+- `services/workspace-config-service.ts` — 工作区能力配置（`workspaces/{id}/config.json`）；personal 读取时合并 PERSONAL_DEFAULT_CONFIG 最小能力集（仅联网搜索，stored 可逐包覆盖）
 - `services/workspace-service.ts` — 获取默认工作区（thin wrapper）
 - `types/settings.ts` — AppSettings/ModelProfile/ModelTier/SubAgentProfile/permissionMode 等与 DEFAULT_SETTINGS
 

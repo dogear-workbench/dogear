@@ -21,7 +21,7 @@
 - `ai.ts` + `services/ai-service.ts` — 通用 AI 接口占位（chat/summarize）
 - `article.ts` / `notes.ts` / `tasks.ts` — 文章 / 笔记 CRUD / 协作任务路由（详见各功能域）
 - `notifications.ts` — 消息中心路由（notification-center-service 单例透传，变更经广播推送）
-- `conversations.ts` — 对话 CRUD+分叉
+- `conversations.ts` — 对话 CRUD+分叉+移入工作区（moveConversationToWorkspace：索引迁移+session 搬运）
 - `workspace.ts` / `file.ts` / `explorer.ts` — 工作区管理 / 打开文件位置 / 文件树操作
 - `stock.ts` / `usage.ts` / `group.ts` / `ability.ts` / `scheduler.ts` — 股票 12+RPC / 用量查询 / 会话组+话题+共享区 / 能力包（getAbilityPacks 四源聚合+getAbilityMounts）/ 定时任务
 - `renderer-handlers.ts` — main→renderer 事件定义收口（sessionMessage、权限请求、usageEntryAdded、sessionStateChanged/sessionClosed、aliveConversationsChanged、failoverNotice、tasksChanged、notificationsChanged、soundCue、pty 三事件、browserActionAdded、pagePresentationChanged、humanInterventionChanged 等）
@@ -31,6 +31,7 @@
 - `client.ts` — tipc 客户端（window.ipcRenderer 通信唯一入口）
 - `events.ts` — tipc 事件处理入口（监听主进程广播）
 - `utils.ts` — cn() 类名合并
+- `hotkey-registry.ts` — 全局快捷键 registry：HOTKEY_DEFS 静态定义 + registerHotkey(id, handler)（共享单 listener + 引用计数）+ listHotkeys（设置页清单数据源）；组件挂载时注册、卸载即解绑
 - `dogear-sound.ts` — Web Audio 合成提示音（complete/permission/error 三音型、enabled 开关、1200ms 节流、backgroundOnly）
 - `sdk/index.ts` + `sdk/query.ts` — Claude Agent SDK query 函数封装
 - `pi-model-catalog.ts` — model-catalog 渲染层同源副本（tsconfig 隔离与主进程无法共享文件）
@@ -38,13 +39,14 @@
 ## 类型（src/types/）
 
 - `electron-api.ts` — Workspace/WorkspaceFileNode/ExtendedSessionMessage/Citation/Conversation（含 contractMetadata 派遣溯源）
+- `workspace.ts` — 前后端共享工作区常量（PERSONAL_WORKSPACE_ID 保留字；与 electron/main/types.ts 镜像双份，改需两处同步）
 - `electron.d.ts` — window.ipcRenderer 全局声明
 - `ai.ts` — AIInteraction/AIMessage（占位接口配套）
 - 其余分域：article/note/task → articles.md；agents/delegation → agent-core.md；settings → settings.md；stock → stocks.md；usage/scheduler → data-center.md
 
 ## 横切 UI 与服务（兜底）
 
-- `components/MarkdownRenderer.tsx` — Markdown 渲染器（GFM+代码高亮；p/li 文本仅搜索高亮，正文不识别路径；可选 baseDir 解析相对链接）
+- `components/MarkdownRenderer.tsx` — Markdown 渲染器（GFM+代码高亮；p/li 文本仅搜索高亮，正文不识别路径；可选 baseDir 解析相对链接；dogear:// 会话跳转链接劫持 + urlTransform 放行）
 - `components/ConfirmDialog.tsx` + `stores/confirm-store.ts` — 全局确认弹窗（confirm() 返回 Promise，showConfirm() 简化版；禁用 window.confirm）
 - `components/TitleBar.tsx` — 全窗口自绘标题栏（pointer-events-none 点击穿透到全局 drag 层，z-9998 低于 drag 层）
 - `components/NotificationCenter.tsx` + `stores/notification-store.ts` — 顶栏消息中心（未读徽章、邮箱式面板、点击跳转即已读；仅主窗口）
