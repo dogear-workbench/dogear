@@ -1,5 +1,5 @@
 import { ToolBlock } from '@/components/ToolBlock';
-import { MarkdownRenderer } from '@/components/MarkdownRenderer';
+import { ShuntAwareMarkdown } from './shunt-suggestions';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle, ArrowLeftRight } from 'lucide-react';
 import { ThinkingBlock } from './ThinkingBlock';
@@ -276,7 +276,7 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
     case 'text':
     default:
       return block.content ? (
-        <MarkdownRenderer
+        <ShuntAwareMarkdown
           content={block.content}
           className="text-sm"
           searchQuery={searchQuery}

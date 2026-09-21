@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, memo } from 'react';
 import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { ContentBlockItem } from './ContentBlockItem';
+import { ShuntAwareMarkdown } from './shunt-suggestions';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage, isInjectedUserMessage, parseTaskExecution, resolveInjectionTag } from './utils';
@@ -538,7 +538,7 @@ export const MessageItem = memo(function MessageItem({
                   ))}
                 </div>
               ) : message.content ? (
-                <MarkdownRenderer
+                <ShuntAwareMarkdown
                   content={message.content}
                   className="text-sm"
                   searchQuery={searchQuery}

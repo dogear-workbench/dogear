@@ -12,6 +12,7 @@ export type SystemPromptSegmentKey =
   | 'group-context'
   | 'memory-guidance'
   | 'notes-discipline'
+  | 'shunt-guidance'
   | 'sub-agent-contract'
   | 'main-agent-delegation'
   | 'web-research-guidance'
@@ -87,6 +88,16 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
     `**交付流程**：完成后用 dogear__SendMessage 向派出你的会话交付结果（delivery: true）。交付消息须结构化自述：目标达成情况 / 未完成或跳过部分 / caveats / 交付物形态与位置（共享区 xxx.md 或本消息正文）。有歧义时先反问，不要瞎猜。你不能派遣孙子会话。`
   );
 }
+
+/** 主会话岔题分流引导（仅 role='main' 且有工作区时注入；与存卡纪律同条件，执行会话不注入）。 */
+export const SHUNT_GUIDANCE_APPEND =
+  '\n## 岔题分流建议\n' +
+  '- 用户在当前工作话题之外岔开值得单独处理的新话题（如「另外我想到…」「顺便问下」「以后能不能支持…」）时，在回复正文最末尾追加一个建议块（fenced JSON，语言标签 shunt-suggestions），格式严格如下：\n' +
+  '```shunt-suggestions\n{"summary":"<岔题一句话摘要，自含且≤60字>","options":["new-session","new-topic","note"]}\n```\n' +
+  '- options 从三个动作里选合适的子集（1~3 个）：new-session=在本话题组另起会话、new-topic=另起新话题、note=记为笔记\n' +
+  '- 克制：正常工作消息不输出建议块；一条回复最多一个；summary 要短且自含（用户点按钮后不依赖对话上下文即可分流）\n' +
+  '- 用户明确说「另开一个」「先记下来」类意图时不必输出建议块，正常回应；分流动作只由用户点建议卡按钮触发，你永不自行变更会话结构\n' +
+  '- 建议块必须位于回复最末尾，JSON 独占块内正文，块外不加修饰';
 
 /** 主会话联网调研分工（web-mcp 或 browser 包任一生效，仅 role='main' 注入）。 */
 export const WEB_RESEARCH_GUIDANCE_MAIN_APPEND =
@@ -167,6 +178,14 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       category: 'sub-agent',
       template: MAIN_AGENT_DELEGATION_APPEND + '\n\n' + buildSubAgentProfileIndex([createDefaultSubAgentProfile()]),
       triggerDescription: '仅主会话（role=\'main\'）且属于某个会话组时注入。告诉主 agent 派遣子会话后结束回合即可，交付/终态作为新消息自动唤醒，并列出可用的子会话 Profile 供选择。',
+      isDynamic: false,
+    },
+    {
+      key: 'shunt-guidance',
+      label: '岔题分流建议',
+      category: 'notes',
+      template: SHUNT_GUIDANCE_APPEND,
+      triggerDescription: '仅主会话 + 绑定了工作区时注入（与笔记存卡纪律同条件，任务执行会话不注入）。岔题时在回复末尾输出 shunt-suggestions fenced JSON 建议块（summary + options 三动作子集），前端渲染为建议卡；agent 只建议不执行，会话结构变更必须经用户点按钮确认。',
       isDynamic: false,
     },
     {

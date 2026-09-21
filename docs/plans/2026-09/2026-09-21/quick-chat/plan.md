@@ -12,7 +12,7 @@
 - [x] [Step 2: personal 空间后端](./step2-personal-backend.md) — 隐藏工作区常量、目录确保、getAll 过滤、归档 7 天分支、单会话组约定
 - [x] [Step 3: 临时会话前端](./step3-personal-frontend.md) — 左侧列表顶部分区（当天/更早折叠）、分区「+」与 Ctrl+Alt+N 入口、最小能力包、tab 承载
 - [x] [Step 4: 移入工作区](./step4-move-to-workspace.md) — 索引迁移 + session 文件搬运 + 组归属选择 UI + agent 只读话题工具放行
-- [ ] [Step 5: 分流建议卡](./step5-suggestion-card.md) — 提示词引导 + 文本协议 + MessageItem 解析渲染按钮组
+- [x] [Step 5: 分流建议卡](./step5-suggestion-card.md) — 提示词引导 + 文本协议 + MessageItem 解析渲染按钮组
 - [ ] [Step 6: 操作气泡与 ForkSession](./step6-shunt-bubble-tools.md) — 输入框气泡 UI、发送标签注入、ForkSession 工具、CreateNote 接线、回执跳转
 
 ## 全局决策
@@ -22,6 +22,6 @@
 3. **后端改动后必须 `bun run build:electron`**（Vite 热重载只对前端生效）
 4. 不写单测，按各 step 验收清单手动验收
 5. 工具命名带 `dogear__` 前缀，handler 错误返回 `isError: true` 不抛异常，文件末尾 `registerTools()` 注册
-6. 气泡注入标签统一 `<shunt>` 形态（属性含 action/summary，正文为用户补充），具体格式 Step 6 定稿后回填此处
+6. 分流统一两条文本协议：① **建议块**（agent 回复末尾，本条已定稿）——fenced JSON 块，语言标签 `shunt-suggestions`，块内正文 `{"summary":"<岔题摘要，自含≤60字>","options":["new-session","new-topic","note"]}`（options 为三动作非空子集，去重）；前端在 MarkdownRenderer 之前截获解析（完整块剥除正文、取最后一个有效块渲染卡片，流式中途的未闭合块一并剥除防代码块闪烁），解析实现 `components/agent-chat/shunt-suggestions.tsx`；② **气泡注入标签** `<shunt>` 形态（属性含 action/summary，正文为用户补充），具体格式 Step 6 定稿后回填此处
 7. agent 只建议不执行：任何会话结构变更（ForkSession/归组/移入/笔记）必须经用户发出气泡或点击 UI 确认
 8. 遇到设计未覆盖的边界：记入 step 文档「实施回填」，不擅自扩大改动面

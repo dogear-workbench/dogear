@@ -29,7 +29,7 @@ import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND, buildAppDataGuidance } from '../session-append-templates.js';
+import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, SHUNT_GUIDANCE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND, buildAppDataGuidance } from '../session-append-templates.js';
 import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
@@ -579,6 +579,7 @@ export class PiSession extends EventEmitter {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
       // executor 跳过存卡纪律是段级裁剪，不受包开关约束（工具组仍注册），保留现状
       if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(NOTES_DISCIPLINE_APPEND);
+      if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(SHUNT_GUIDANCE_APPEND);
       if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
       if (activeAbilities.has('agent-collab')) {
         personaParts.push(MAIN_AGENT_DELEGATION_APPEND);
