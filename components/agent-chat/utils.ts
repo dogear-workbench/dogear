@@ -105,13 +105,13 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
   const xmlNoteRegex = /<referenced_notes>\s*([\s\S]*?)\s*<\/referenced_notes>/;
   const xmlNoteMatch = content.match(xmlNoteRegex);
   if (xmlNoteMatch) {
-    const noteTagRegex = /<note\s+noteId="([^"]+)"\s+title="([^"]*)"\s+workspacePath="([^"]*)"\s*\/>/g;
+    const noteTagRegex = /<note\s+noteId="([^"]+)"\s+title="([^"]*)"\s+(?:workspaceId|workspacePath)="([^"]*)"\s*\/>/g;
     let tagMatch;
     while ((tagMatch = noteTagRegex.exec(xmlNoteMatch[1])) !== null) {
       result.noteRefs.push({
         noteId: tagMatch[1],
         title: tagMatch[2] || '（无标题）',
-        workspacePath: tagMatch[3],
+        workspaceId: tagMatch[3],
       });
     }
     // 属性不全的条目被严格正则跳过；只要存在跳过的条目就不剥外层，避免信息静默丢失

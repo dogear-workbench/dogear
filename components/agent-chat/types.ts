@@ -131,7 +131,7 @@ export interface ParsedSharedFileRef {
 export interface ParsedNoteRef {
   noteId: string;
   title: string;
-  workspacePath: string;
+  workspaceId: string;
 }
 export interface ParsedShuntRef {
   action: 'new-session' | 'new-topic' | 'note';
