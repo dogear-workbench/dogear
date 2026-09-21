@@ -176,7 +176,8 @@ export function useAgentSession({
       setSessionId(null);
       setIsSessionReady(false);
     };
-  }, [conversationId, archived, sessionRestartTrigger, onLiveSnapshot]);
+    // workspaceId 入依赖：会话跨工作区移入（移入工作区）后 JSONL 换目录，tab.workspaceId 变化驱动重 attach 到新路径
+  }, [conversationId, archived, sessionRestartTrigger, onLiveSnapshot, workspaceId]);
 
   // 订阅 pendingCountChanged：跟踪本会话的待处理插话队列长度
   useEffect(() => {

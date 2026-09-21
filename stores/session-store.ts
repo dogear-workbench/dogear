@@ -91,6 +91,8 @@ interface SessionState {
   updateSession: (conversationId: string, sessionId: string, permissionMode: PiPermissionMode, attachmentId?: string) => void;
   /** 更新标签页标题 */
   updateTitle: (conversationId: string, title: string) => void;
+  /** 更新已有 tab 的工作区与标题（会话跨工作区移入后原位改写，避免 closeTab/openTab 触发焦点联动竞态） */
+  updateTabWorkspace: (conversationId: string, workspaceId: string, title?: string) => void;
   /** 获取指定标签页 */
   getTab: (conversationId: string) => SessionTab | undefined;
   /** 标记会话在独立窗口中打开 */
@@ -209,6 +211,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       tabs: state.tabs.map((t) =>
         t.conversationId === conversationId
           ? { ...t, conversationTitle: title }
+          : t
+      ),
+    }));
+  },
+
+  updateTabWorkspace: (conversationId, workspaceId, title) => {
+    set((state) => ({
+      tabs: state.tabs.map((t) =>
+        t.conversationId === conversationId
+          ? { ...t, workspaceId, ...(title !== undefined ? { conversationTitle: title } : {}) }
           : t
       ),
     }));

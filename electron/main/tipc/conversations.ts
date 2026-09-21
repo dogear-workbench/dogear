@@ -4,6 +4,7 @@ import * as conversationService from '../services/conversation-service.js';
 import * as treeService from '../services/conversation-tree-service.js';
 import * as groupService from '../services/group-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
+import { moveConversationToWorkspace } from '../services/conversation-move-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
 import { loadSettings } from '../services/settings-service.js';
 
@@ -179,6 +180,21 @@ export const conversationsRouter = {
       } catch (error) {
         console.error('更新对话模型选择失败:', error);
         return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
+  /** 把临时会话（personal）移入真实工作区：索引迁移 + session JSONL 搬运 + personal 侧清理 */
+  moveConversationToWorkspace: t.procedure
+    .input<{ conversationId: string; targetWorkspaceId: string; targetGroupId?: string; newGroupTitle?: string }>()
+    .action(async ({ input }) => {
+      try {
+        const result = await moveConversationToWorkspace(input);
+        return result.ok
+          ? { ok: true, conversationId: result.conversationId, groupId: result.groupId, error: undefined }
+          : { ok: false, conversationId: null, groupId: null, error: result.error };
+      } catch (error) {
+        console.error('移入工作区失败:', error);
+        return { ok: false, conversationId: null, groupId: null, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

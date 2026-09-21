@@ -2,8 +2,9 @@
  * 跨会话检索 + 组协作工具
  *
  * dogear-history（跨会话检索，常驻组）：绑定工作区即注册，不可关，与基础工具同性质——通用检索是基础设施。
- * - dogear__ListTopics：列工作区全部话题（零模型纯本地 IO，跨话题检索入口）
+ * - dogear__ListTopics：列工作区全部话题（零模型纯本地 IO，跨话题检索入口；可传 workspaceId 列其他工作区）
  * - dogear__ReadReferenceSession：读任意 sessionId 的去噪原文（可尾切 / 区间切）
+ * - dogear__ReadTopicCard：直读任意工作区指定话题的状态卡（纯读不触发提炼；临时会话归置建议用）
  *
  * dogear-group-context（组状态卡组）：归会话组包，会话属于组且包开时注册。
  * - dogear__ReadGroupBackground：读本组 background.md 的条目化状态卡
@@ -18,7 +19,7 @@ import { getPiSessionRepository } from '../pi-session/pi-session-repository.js';
 import { readTopicStateCard, getStaleConversations } from '../../services/memory/background-store.js';
 import { fmtTs, sourceLabel, topicOriginLabel, CATEGORY_LABELS, deriveStaleList, staleListText } from '../group-context-builder.js';
 import { ensureGroupFresh } from '../../services/memory/state-extract-trigger.js';
-import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicVersion } from '../../services/memory/state-card.js';
+import { TOPIC_CARD_CATEGORIES, type TopicCardEntry, type TopicStateCard, type TopicVersion } from '../../services/memory/state-card.js';
 import * as conversationService from '../../services/conversation-service.js';
 import { listGroups } from '../../services/group-service.js';
 import { registerToolGroup } from './tool-registry.js';
@@ -37,13 +38,16 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
     defineTool(
       'dogear__ListTopics',
       '列出工作区全部话题',
-      '列出当前工作区的全部话题（含已归档）：每个话题一行 groupId + 话题一句话 + 更新时间 + 主会话数 + 归档状态。零模型纯本地读取，用于跨话题检索时先定位目标话题，再用 dogear__ReadGroupBackground / dogear__ReadReferenceSession 深挖。',
-      z.object({}),
-      async () => {
+      '列出指定工作区的全部话题（含已归档）：每个话题一行 groupId + 话题一句话 + 更新时间 + 主会话数 + 归档状态。零模型纯本地读取，用于跨话题检索时先定位目标话题，再用 dogear__ReadGroupBackground / dogear__ReadReferenceSession 深挖。不传 workspaceId 时列当前绑定工作区；在临时会话（personal）中协助用户移入工作区时，传入候选工作区 id 列出近期话题，结合 dogear__ReadTopicCard 了解候选话题内容后给出归置建议（你只能建议，移入操作由用户点 UI 确认）。',
+      z.object({
+        workspaceId: z.string().optional().describe('目标工作区 id；缺省为当前会话绑定的工作区'),
+      }),
+      async (args) => {
         try {
+          const wsId = args.workspaceId?.trim() || workspaceId;
           const [groups, convs] = await Promise.all([
-            listGroups(workspaceId),
-            conversationService.getByWorkspaceId(workspaceId, { includeArchived: true }),
+            listGroups(wsId),
+            conversationService.getByWorkspaceId(wsId, { includeArchived: true }),
           ]);
           const mainConvCount = new Map<string, number>();
           for (const c of convs) {
@@ -56,7 +60,7 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
             let label = g.title?.trim() || '(未命名话题)';
             let updatedAtTs = g.updatedAt;
             try {
-              const card = await readTopicStateCard(workspaceId, g.id);
+              const card = await readTopicStateCard(wsId, g.id);
               const topic = card?.topicHistory[card.topicHistory.length - 1];
               if (topic?.text) label = topic.text;
               if (card?.updatedAt) updatedAtTs = Date.parse(card.updatedAt) || updatedAtTs;
@@ -72,13 +76,13 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
           }
           rows.sort((a, b) => (a.archived === b.archived ? b.sortTs - a.sortTs : a.archived ? 1 : -1));
           if (!rows.length) {
-            return { content: [{ type: 'text' as const, text: `(工作区 ${workspaceId} 暂无话题)` }] };
+            return { content: [{ type: 'text' as const, text: `(工作区 ${wsId} 暂无话题)` }] };
           }
           const lines = rows.map((r) =>
             `- groupId=${r.groupId} · ${r.label} · 更新 ${r.updatedAt} · 主会话 ${r.mainConvs}${r.archived ? ' · 已归档' : ''}`,
           );
           return {
-            content: [{ type: 'text' as const, text: `共 ${rows.length} 个话题（workspaceId=${workspaceId}，活跃在前、按更新时间倒序）：\n${lines.join('\n')}` }],
+            content: [{ type: 'text' as const, text: `共 ${rows.length} 个话题（workspaceId=${wsId}，活跃在前、按更新时间倒序）：\n${lines.join('\n')}` }],
           };
         } catch (e) {
           return {
@@ -122,6 +126,7 @@ export function createHistorySearchToolDefs(workspaceId: string): ToolDef[] {
         };
       },
     ),
+    ...createCrossWorkspaceCardToolDefs(),
   ];
 }
 
@@ -292,6 +297,62 @@ export function createSiblingToolDefs(opts: ReferenceToolsOpts): ToolDef[] {
               type: 'text' as const,
               text: `列兄弟会话失败: ${e instanceof Error ? e.message : String(e)}`,
             }],
+            isError: true,
+          };
+        }
+      },
+    ),
+  ];
+}
+
+/** 直读任意工作区指定话题的状态卡（纯读不触发提炼）；临时会话归置建议用 */
+function formatTopicCardBrief(card: TopicStateCard): string {
+  const lines: string[] = [`groupId=${card.groupId} updatedAt=${fmtTs(card.updatedAt)}`];
+  const topic = card.topicHistory[card.topicHistory.length - 1];
+  if (topic) {
+    const first = card.topicHistory[0];
+    lines.push('', '## 话题背景（生效）', topic.text, `确立于 ${fmtTs(first?.ts ?? topic.ts)}，${topicOriginLabel(topic.source)}`);
+  }
+  const entryLines: string[] = [];
+  for (const cat of TOPIC_CARD_CATEGORIES) {
+    const items = card.entries[cat];
+    if (!items.length) continue;
+    entryLines.push(`### ${CATEGORY_LABELS[cat]}`, ...items.map((e: TopicCardEntry) => `- ${e.text}${withMeta(e.source, e.ts)}`));
+  }
+  if (entryLines.length) lines.push('', '## 当前状态', ...entryLines);
+  else if (!topic) lines.push('', '(状态卡为空，尚无任何提炼记录)');
+  return lines.join('\n');
+}
+
+function withMeta(source: string, ts: string): string {
+  return `（${[sourceLabel(source), fmtTs(ts)].filter(Boolean).join(' · ')}）`;
+}
+
+/**
+ * 跨工作区话题状态卡直读工具（归 dogear-history 常驻组）。
+ * 与 dogear__ReadGroupBackground 的区别：指定 workspaceId+groupId、纯读不触发状态提炼，
+ * 供临时会话（personal）在归置建议场景了解候选工作区话题内容。
+ */
+export function createCrossWorkspaceCardToolDefs(): ToolDef[] {
+  return [
+    defineTool(
+      'dogear__ReadTopicCard',
+      '读取指定工作区的话题状态卡',
+      '直接读取任意工作区指定话题的状态卡（生效话题 + 六类状态条目；纯读，不触发状态提炼）。典型场景：用户想把当前临时会话移入工作区时，先 dogear__ListTopics 列候选工作区话题，再用本工具了解目标话题在聊什么，然后给出归置建议（你只能建议，移入操作由用户点 UI 确认）。',
+      z.object({
+        workspaceId: z.string().describe('目标工作区 id'),
+        groupId: z.string().describe('目标话题的 groupId（从 dogear__ListTopics 输出获取）'),
+      }),
+      async (args) => {
+        try {
+          const card = await readTopicStateCard(args.workspaceId, args.groupId);
+          if (!card) {
+            return { content: [{ type: 'text' as const, text: `(话题 ${args.groupId} 尚无状态卡，workspaceId=${args.workspaceId})` }] };
+          }
+          return { content: [{ type: 'text' as const, text: formatTopicCardBrief(card) }] };
+        } catch (e) {
+          return {
+            content: [{ type: 'text' as const, text: `读话题状态卡失败: ${e instanceof Error ? e.message : String(e)}` }],
             isError: true,
           };
         }

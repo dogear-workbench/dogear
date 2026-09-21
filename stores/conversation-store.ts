@@ -127,6 +127,13 @@ interface ConversationState {
   loadPersonalConversations: () => Promise<void>;
   /** 新建临时会话：personal 单会话组两连调 + 预 attach + 开 tab 聚焦 */
   newPersonalConversation: () => Promise<void>;
+  /** 把临时会话移入真实工作区；成功后切目标工作区、tab 原位改归属并聚焦 */
+  movePersonalConversationToWorkspace: (
+    conversationId: string,
+    targetWorkspaceId: string,
+    targetGroupId?: string,
+    newGroupTitle?: string,
+  ) => Promise<boolean>;
   /** 选择对话 */
   selectConversation: (conversation: Conversation) => Promise<void>;
   /** 按 id 聚焦对话（Tab 切换/关闭后同步左侧列表高亮），不重复打开 Tab；id 为 null 时清空选中 */
@@ -450,6 +457,36 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch (error) {
       console.error('创建临时会话失败:', error);
       toast.error('创建临时会话失败', { description: error instanceof Error ? error.message : String(error) });
+    }
+  },
+
+  movePersonalConversationToWorkspace: async (conversationId, targetWorkspaceId, targetGroupId, newGroupTitle) => {
+    try {
+      const result = await client.moveConversationToWorkspace({
+        conversationId,
+        targetWorkspaceId,
+        targetGroupId,
+        newGroupTitle,
+      });
+      if (!result.ok) {
+        toast.error('移入工作区失败', { description: result.error });
+        return false;
+      }
+
+      // 先切后高亮：先切目标工作区（激活分片并拉列表），tab 原位改写归属后聚焦；
+      // session 已被主进程关闭且 JSONL 换了目录，tab.workspaceId 变化驱动 useAgentSession 重 attach 到新路径
+      const [{ workspaces }, { useWorkspaceStore }] = await Promise.all([
+        client.getAll(),
+        import('./workspace-store'),
+      ]);
+      const target = (workspaces ?? []).find((w) => w.id === targetWorkspaceId);
+      if (target) await useWorkspaceStore.getState().setWorkspace(target);
+      useSessionStore.getState().updateTabWorkspace(conversationId, targetWorkspaceId);
+      await get().focusConversationById(conversationId);
+      return true;
+    } catch (error) {
+      toast.error('移入工作区失败', { description: error instanceof Error ? error.message : String(error) });
+      return false;
     }
   },
 

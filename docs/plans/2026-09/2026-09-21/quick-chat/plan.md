@@ -11,7 +11,7 @@
 - [x] [Step 1: hotkey registry 与设置快捷键 tab](./step1-hotkey-registry.md) — 快捷键定义为数据，设置页自动渲染清单，迁移现有两键 + 预留 Ctrl+Alt+N
 - [x] [Step 2: personal 空间后端](./step2-personal-backend.md) — 隐藏工作区常量、目录确保、getAll 过滤、归档 7 天分支、单会话组约定
 - [x] [Step 3: 临时会话前端](./step3-personal-frontend.md) — 左侧列表顶部分区（当天/更早折叠）、分区「+」与 Ctrl+Alt+N 入口、最小能力包、tab 承载
-- [ ] [Step 4: 移入工作区](./step4-move-to-workspace.md) — 索引迁移 + session 文件搬运 + 组归属选择 UI + agent 只读话题工具放行
+- [x] [Step 4: 移入工作区](./step4-move-to-workspace.md) — 索引迁移 + session 文件搬运 + 组归属选择 UI + agent 只读话题工具放行
 - [ ] [Step 5: 分流建议卡](./step5-suggestion-card.md) — 提示词引导 + 文本协议 + MessageItem 解析渲染按钮组
 - [ ] [Step 6: 操作气泡与 ForkSession](./step6-shunt-bubble-tools.md) — 输入框气泡 UI、发送标签注入、ForkSession 工具、CreateNote 接线、回执跳转
 

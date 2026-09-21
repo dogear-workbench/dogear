@@ -1,3 +1,4 @@
+import fs from 'fs/promises';
 import path from 'path';
 import {
   JsonlSessionRepo,
@@ -104,6 +105,37 @@ export class PiSessionRepository {
     }
     this.metadataCache.delete(workspaceId);
     return true;
+  }
+
+  /**
+   * 将 session JSONL 从一个工作区搬到另一个工作区：在目标 repo 侧 create 同 id session
+   * （得到符合存储布局的路径与 header），把源文件 header 之后的行原样拼接过去，
+   * header 的 cwd/timestamp 改写为源会话值，最后删源文件并失效两侧 metadata 缓存。
+   * 调用方须保证该 session 无打开的实例（先 closeSession）。
+   * @returns 搬运后的目标文件绝对路径
+   */
+  async relocateSession(fromWorkspaceId: string, toWorkspaceId: string, sessionId: string): Promise<string> {
+    const metadata = await this.findMetadata(fromWorkspaceId, sessionId);
+    const toCwd = path.join(getConfigDir(), 'workspaces', toWorkspaceId);
+    const { repo: toRepo } = this.getWorkspaceRepository(toWorkspaceId);
+    const session = await toRepo.create({ cwd: toCwd, id: sessionId });
+    const created = await session.getMetadata();
+    try {
+      const srcText = await fs.readFile(metadata.path, 'utf-8');
+      const lines = srcText.split('\n');
+      const header = JSON.parse(lines[0]) as Record<string, unknown>;
+      header.cwd = toCwd;
+      if (typeof header.timestamp === 'string') header.timestamp = metadata.createdAt;
+      const body = lines.slice(1).join('\n');
+      await fs.writeFile(created.path, `${JSON.stringify(header)}\n${body}`);
+    } catch (error) {
+      await fs.rm(created.path, { force: true }).catch(() => {});
+      throw error;
+    }
+    await fs.unlink(metadata.path);
+    this.metadataCache.delete(fromWorkspaceId);
+    this.metadataCache.delete(toWorkspaceId);
+    return created.path;
   }
 
   async fork(

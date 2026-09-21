@@ -66,6 +66,7 @@ import {
 import type { ModelSelection, BasicToolPermissions, SubAgentProfile } from '../../services/settings-types.js';
 import type { ExtendedSessionMessage, InjectionTag } from '../task-types.js';
 import type { CompactMarker } from '../../types.js';
+import { PERSONAL_WORKSPACE_ID } from '../../types.js';
 import { getPiSessionRepository } from './pi-session-repository.js';
 
 export interface PiSessionConfig {
@@ -758,7 +759,8 @@ export class PiSession extends EventEmitter {
         conversationId: this.config.conversationId,
       })));
     }
-    if (this.config.workspacePath) {
+    // dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施；personal 临时工作区放行（只读话题工具辅助归置建议）
+    if (this.config.workspacePath || this.config.workspaceId === PERSONAL_WORKSPACE_ID) {
       toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
     }
 
