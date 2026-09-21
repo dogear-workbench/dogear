@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Archive, AlertCircle, ChevronDown, ArrowLeftRight, X, Search as SearchIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
+import { registerHotkey } from '@/lib/hotkey-registry';
 import { useReferenceStore } from '@/stores/reference-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useNotesStore } from '@/stores/notes-store';
@@ -329,16 +330,7 @@ export function AgentChat({
   }, [conversationId, historyStatus, scrollToBottom]);
 
   // Ctrl+F 唤起搜索浮条
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-        e.preventDefault();
-        openSearch();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [openSearch]);
+  useEffect(() => registerHotkey('chat-search', () => openSearch()), [openSearch]);
 
   // 搜索跳转三级 fallback：mark DOM → 块级 DOM（data-block-index）→ 消息级滚动+闪烁，永不零反馈
   const jumpToActiveMatch = useCallback((match: SearchMatch) => {

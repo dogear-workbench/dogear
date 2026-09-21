@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { registerHotkey } from '@/lib/hotkey-registry';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -170,12 +171,13 @@ export function NotesPanel() {
 
   const toggleListHidden = useCallback(() => setListHidden((v) => !v), []);
 
-  const handlePanelKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === '\\') {
-      e.preventDefault();
+  // 面板常驻挂载，仅笔记 tab 可见时生效，避免后台 tab 误触
+  useEffect(() => {
+    return registerHotkey('notes-toggle-list', () => {
+      if (!isActive) return;
       toggleListHidden();
-    }
-  };
+    });
+  }, [isActive, toggleListHidden]);
 
   const renderContent = () => {
     if (mode === 'notes') {
@@ -214,7 +216,7 @@ export function NotesPanel() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0" onKeyDown={handlePanelKeyDown}>
+    <div className="flex-1 flex flex-col min-h-0">
       <header className="flex items-center gap-2 px-3 py-2 border-b shrink-0">
         <div className="flex items-center gap-0.5 p-0.5 rounded-md bg-muted/50 shrink-0">
           {MODES.map(({ id, label, icon: Icon }) => (

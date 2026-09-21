@@ -15,6 +15,7 @@ import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
 import { ExtensionStatusLine } from './ExtensionStatusLine';
 import { SubAgentTab } from './SubAgentTab';
+import { ShortcutsTab } from './ShortcutsTab';
 import { AboutTab } from './AboutTab';
 import { ModelSelector } from '@/components/ModelSelector';
 import { formatContextLabel, lookupContextWindow, resolveModelWindow } from '@/lib/pi-model-catalog';
@@ -295,6 +296,7 @@ export default function SettingsPage() {
           <TabsTrigger variant="underline" value="profiles">模型方案</TabsTrigger>
           <TabsTrigger variant="underline" value="workspace-management">工作区管理</TabsTrigger>
           <TabsTrigger variant="underline" value="sub-agent">子会话派遣</TabsTrigger>
+          <TabsTrigger variant="underline" value="shortcuts">快捷键</TabsTrigger>
           <TabsTrigger variant="underline" value="about">关于</TabsTrigger>
         </TabsList>
 
@@ -850,6 +852,11 @@ export default function SettingsPage() {
         {/* ── Tab: 子会话派遣 ── */}
         <TabsContent value="sub-agent" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <SubAgentTab local={local} setLocal={setLocal} />
+        </TabsContent>
+
+        {/* ── Tab: 快捷键 ── */}
+        <TabsContent value="shortcuts" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <ShortcutsTab />
         </TabsContent>
 
         {/* ── Tab: 关于 ── */}
