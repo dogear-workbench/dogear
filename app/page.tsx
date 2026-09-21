@@ -139,6 +139,12 @@ export default function Home() {
   );
   const currentGroupId = activeConv?.groupId || null;
 
+  // 伴随面板跟随活动会话 tab 的工作区（临时会话 tab 聚焦时 workspaceId=personal，文件树/话题/附加自然空态）
+  const activeTab = activeTabId && !isSentinelTabId(activeTabId)
+    ? allTabs.find((t) => t.conversationId === activeTabId) ?? null
+    : null;
+  const companionWorkspaceId = activeTab?.workspaceId ?? workspace?.id ?? '';
+
   // 监听独立窗口关闭事件，恢复 Tab 到主窗口
   // 独立窗口关闭时：主进程 detachByWebContentsId 释放独立窗口的 attachment，
   // 然后 removeSessionWindow 使标签页重新可见（AgentChat 一直挂载，attachment 一直在）
@@ -394,7 +400,7 @@ export default function Home() {
 
         {/* 右侧：伴随面板（仅会话 tab 显示；开关状态保留，切回会话 tab 按原状态恢复） */}
         {activeTabId !== null && !isSentinelTabId(activeTabId) && (
-          <CompanionPanel workspaceId={workspace.id} groupId={currentGroupId} />
+          <CompanionPanel workspaceId={companionWorkspaceId} groupId={currentGroupId} />
         )}
       </div>
 

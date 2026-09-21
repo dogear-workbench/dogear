@@ -75,3 +75,15 @@ export function openOrFocusConversation(conv: Conversation, nodeId?: string): vo
   useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
 }
 
+/**
+ * personal 临时会话行打开：只开 tab，不写当前工作区分片与组状态（personal 平铺无组概念）
+ */
+export function openPersonalConversation(conv: Conversation): void {
+  const sessionWindowIds = useSessionStore.getState().sessionWindowIds;
+  if (sessionWindowIds.has(conv.id)) {
+    client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
+    return;
+  }
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
+}
+

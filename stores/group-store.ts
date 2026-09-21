@@ -24,8 +24,8 @@ interface GroupState {
   createGroup: (title?: string) => Promise<Group | null>;
   updateGroup: (groupId: string, patch: { title?: string }) => Promise<void>;
   archiveTopic: (groupId: string) => Promise<boolean>;
-  restoreTopic: (groupId: string) => Promise<boolean>;
-  deleteTopic: (groupId: string) => Promise<boolean>;
+  restoreTopic: (groupId: string, workspaceId?: string) => Promise<boolean>;
+  deleteTopic: (groupId: string, workspaceId?: string) => Promise<boolean>;
   deleteGroup: (groupId: string) => Promise<void>;
 }
 
@@ -115,16 +115,19 @@ export const useGroupStore = create<GroupState>((set) => ({
     }
   },
 
-  restoreTopic: async (groupId) => {
+  /** workspaceId 供归档页 personal 临时话题路由（缺省当前工作区）；personal 侧组数据不进 groups store，仅依赖广播刷新 */
+  restoreTopic: async (groupId, workspaceIdOverride) => {
     const workspace = await getWorkspace();
     if (!workspace) return false;
+    const wsId = workspaceIdOverride ?? workspace.id;
     try {
-      const result = await client.restoreTopic({ workspaceId: workspace.id, groupId });
+      const result = await client.restoreTopic({ workspaceId: wsId, groupId });
       if (result.error || !result.group) {
         toast.error('恢复话题失败', { description: result.error || '未知错误' });
         return false;
       }
       const restoredGroup = result.group;
+      if (wsId !== workspace.id) return true;
       set((state) => ({
         groups: state.groups.some((group) => group.id === groupId)
           ? state.groups.map((group) => group.id === groupId ? restoredGroup : group)
@@ -140,19 +143,21 @@ export const useGroupStore = create<GroupState>((set) => ({
     }
   },
 
-  deleteTopic: async (groupId) => {
+  deleteTopic: async (groupId, workspaceIdOverride) => {
     const workspace = await getWorkspace();
     if (!workspace) return false;
+    const wsId = workspaceIdOverride ?? workspace.id;
     try {
-      const archivedTopics = await client.listArchivedTopics({ workspaceId: workspace.id }).catch(() => ({ topics: [] }));
+      const archivedTopics = await client.listArchivedTopics({ workspaceId: wsId }).catch(() => ({ topics: [] }));
       const archivedConversationIds = archivedTopics.topics
         ?.find((topic) => topic.group.id === groupId)
         ?.conversations.map((conversation) => conversation.id) ?? [];
-      const result = await client.deleteTopic({ workspaceId: workspace.id, groupId });
+      const result = await client.deleteTopic({ workspaceId: wsId, groupId });
       if (!result.ok) {
         toast.error('永久删除话题失败', { description: result.error || '未知错误' });
         return false;
       }
+      if (wsId !== workspace.id) return true;
       set((state) => ({
         groups: state.groups.filter((group) => group.id !== groupId),
         currentGroupId: state.currentGroupId === groupId ? null : state.currentGroupId,

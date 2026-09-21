@@ -3,10 +3,12 @@ import { Archive, Loader2 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { client } from '@/lib/client';
+import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useGroupStore } from '@/stores/group-store';
 import { buildConversationTree } from '@/lib/conversation-sort';
 import { deriveGroupTitle } from '@/components/group-list/utils';
 import type { Conversation } from '@/components/ConversationList';
+import type { Group } from '@/types/group';
 import { ArchiveTopicList } from './ArchiveTopicList';
 import { DigestView } from './DigestView';
 import type { ArchiveSelection, ArchivedTopicData } from './types';
@@ -33,14 +35,21 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
       return;
     }
     let cancelled = false;
-    client.listArchivedTopics({ workspaceId }).then((result) => {
+    // 工作区归档 + personal 临时归档（7 天自动归档落点）合并展示，排序后临时话题带标记
+    Promise.all([
+      client.listArchivedTopics({ workspaceId }),
+      client.listArchivedTopics({ workspaceId: PERSONAL_WORKSPACE_ID }).catch(() => ({ topics: [] })),
+    ]).then(([wsResult, personalResult]) => {
       if (cancelled) return;
-      const next = (result.topics ?? [])
-        .map((topic) => ({
-          group: topic.group,
-          tree: buildConversationTree(topic.conversations as Conversation[]),
-        }))
-        .sort((a, b) => (b.group.archivedAt ?? 0) - (a.group.archivedAt ?? 0));
+      const toTopic = (topic: { group: Group; conversations: Conversation[] }, isPersonal: boolean): ArchivedTopicData => ({
+        group: topic.group,
+        tree: buildConversationTree(topic.conversations as Conversation[]),
+        isPersonal,
+      });
+      const next = [
+        ...(wsResult.topics ?? []).map((topic) => toTopic(topic, false)),
+        ...(personalResult.topics ?? []).map((topic) => toTopic(topic as { group: Group; conversations: Conversation[] }, true)),
+      ].sort((a, b) => (b.group.archivedAt ?? 0) - (a.group.archivedAt ?? 0));
       setTopics(next);
       setLoading(false);
       if (!initializedRef.current && next.length > 0) {
@@ -139,7 +148,7 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
       <section className="flex-1 flex flex-col min-w-0">
         {selection && selectionTopic ? (
           <DigestView
-            workspaceId={workspaceId}
+            workspaceId={selectionTopic.isPersonal ? PERSONAL_WORKSPACE_ID : workspaceId}
             topic={selectionTopic}
             conversationId={selection.conversationId}
           />

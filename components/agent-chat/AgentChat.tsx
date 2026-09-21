@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Archive, AlertCircle, ChevronDown, ArrowLeftRight, X, Search as SearchIcon } from 'lucide-react';
+import { Archive, AlertCircle, ArrowLeftRight, ChevronDown, X, Zap, Search as SearchIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useConversationStore, type FailoverNotice } from '@/stores/conversation-store';
 import { registerHotkey } from '@/lib/hotkey-registry';
 import { useReferenceStore } from '@/stores/reference-store';
@@ -382,9 +383,17 @@ export function AgentChat({
     if (conversationId) toggleCollapse(conversationId);
   }, [conversationId, toggleCollapse]);
 
+  const isPersonal = workspaceId === PERSONAL_WORKSPACE_ID;
+
   return (
     <WorkspaceIdProvider workspaceId={workspaceId ?? null}>
-    <div className="relative flex flex-col h-full bg-card rounded-lg border shadow-sm">
+    <div className={`relative flex flex-col h-full rounded-lg border shadow-sm ${isPersonal ? 'bg-muted/30' : 'bg-card'}`}>
+      {isPersonal && (
+        <div className="flex items-center gap-1.5 px-4 py-1.5 border-b text-[11px] text-muted-foreground shrink-0">
+          <Zap size={12} className="text-sky-500" />
+          <span>临时会话 · 与工作区无关的随手问，7 天未活跃自动归档</span>
+        </div>
+      )}
       {/* 消息区域：overflow-hidden 确保 flex-1 高度被约束，ScrollArea 内部产生滚动 */}
       <div className="relative flex-1 overflow-hidden">
       <div

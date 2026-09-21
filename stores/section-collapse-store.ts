@@ -10,10 +10,12 @@ export interface FolderReveal {
 interface SectionCollapseState {
   recentExpanded: boolean;
   olderExpanded: boolean;
+  personalOlderExpanded: boolean;
   folderReveal: FolderReveal | null;
   subExpandedConvIds: Set<string>;
   toggleRecent: () => void;
   toggleOlder: () => void;
+  togglePersonalOlder: () => void;
   toggleSubExpand: (convId: string) => void;
   expandSubConv: (convId: string) => void;
   revealTopic: (groupId: string) => Promise<void>;
@@ -24,12 +26,15 @@ let revealNonce = 0;
 export const useSectionCollapseStore = create<SectionCollapseState>((set, get) => ({
   recentExpanded: true,
   olderExpanded: false,
+  personalOlderExpanded: false,
   folderReveal: null,
   subExpandedConvIds: new Set<string>(),
 
   toggleRecent: () => set((s) => ({ recentExpanded: !s.recentExpanded })),
 
   toggleOlder: () => set((s) => ({ olderExpanded: !s.olderExpanded })),
+
+  togglePersonalOlder: () => set((s) => ({ personalOlderExpanded: !s.personalOlderExpanded })),
 
   toggleSubExpand: (convId) => set((s) => {
     const next = new Set(s.subExpandedConvIds);

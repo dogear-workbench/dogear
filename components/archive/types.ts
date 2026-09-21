@@ -10,6 +10,8 @@ export interface ArchiveSelection {
 export interface ArchivedTopicData {
   group: Group;
   tree: ConversationTreeNode[];
+  /** personal 临时话题：恢复/删除/digest 按 personal 路由并渲染「临时」标记 */
+  isPersonal?: boolean;
 }
 
 export interface DigestTurn {

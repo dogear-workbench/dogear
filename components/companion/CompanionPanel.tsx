@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react';
+import { Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useUIStore } from '@/stores/ui-store';
 import { WorkspaceExplorer } from '@/components/WorkspaceExplorer';
 import { AdditionalFilesPanel } from '@/components/AdditionalFilesPanel';
@@ -59,6 +61,8 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
   const open = useUIStore((s) => s.rightPanelOpen);
   const tab = useUIStore((s) => s.rightPanelTab);
   const setTab = useUIStore((s) => s.setRightPanelTab);
+  // WorkspaceExplorer 数据源是当前工作区 store，临时会话聚焦时显式展示空态而非别的工作区文件
+  const isPersonal = workspaceId === PERSONAL_WORKSPACE_ID;
 
   const [width, setWidth] = useState(() => readStoredWidth(tab));
   const [dragging, setDragging] = useState(false);
@@ -127,7 +131,14 @@ export function CompanionPanel({ workspaceId, groupId, terminalAnchor, full = fa
         ))}
       </div>
       {tab === 'files' ? (
-        <WorkspaceExplorer />
+        isPersonal ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground py-16">
+            <Zap className="w-8 h-8 mb-2 opacity-40" />
+            <p className="text-sm">临时会话无文件目录</p>
+          </div>
+        ) : (
+          <WorkspaceExplorer />
+        )
       ) : tab === 'additional' ? (
         <AdditionalFilesPanel workspaceId={workspaceId} />
       ) : tab === 'topic' ? (

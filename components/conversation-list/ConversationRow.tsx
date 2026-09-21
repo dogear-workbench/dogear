@@ -27,6 +27,8 @@ export interface ConversationRowProps {
   childCount?: number;
   childRunning?: boolean;
   expandToggle?: ConversationRowExpandToggle;
+  /** 会话行操作（重命名/删除）路由的工作区；缺省当前工作区，personal 分区传 PERSONAL_WORKSPACE_ID */
+  workspaceId?: string;
 }
 
 const STATUS_META = {
@@ -47,6 +49,7 @@ export function ConversationRow({
   childCount,
   childRunning,
   expandToggle,
+  workspaceId,
 }: ConversationRowProps) {
   const deleteConversation = useConversationStore((s) => s.deleteConversation);
   const updateConversationTitle = useConversationStore((s) => s.updateConversationTitle);
@@ -90,9 +93,9 @@ export function ConversationRow({
 
   const saveTitle = useCallback(() => {
     const trimmed = editTitle.trim();
-    void updateConversationTitle(conv.id, trimmed || getConversationTitle(conv));
+    void updateConversationTitle(conv.id, trimmed || getConversationTitle(conv), workspaceId);
     setIsEditing(false);
-  }, [conv, editTitle, updateConversationTitle]);
+  }, [conv, editTitle, updateConversationTitle, workspaceId]);
 
   const handleClick = useCallback(() => {
     if (onClick) onClick();
@@ -242,7 +245,7 @@ export function ConversationRow({
           引用到当前对话
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem className="text-destructive" onClick={() => void deleteConversation(conv.id)}>
+        <ContextMenuItem className="text-destructive" onClick={() => void deleteConversation(conv.id, workspaceId)}>
           删除对话
         </ContextMenuItem>
       </ContextMenuContent>
