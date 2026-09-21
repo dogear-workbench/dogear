@@ -209,6 +209,15 @@ export interface ChildStateSnapshot {
   lastActivityAt?: number;
 }
 
+// ─── 工作区常量（镜像自 types/workspace.ts）───
+
+/**
+ * personal 是保留字 workspaceId：内置隐藏工作区，承载随手问临时会话。
+ * 不得注册进 workspaces.json，不得出现在工作区切换器、workspace-watcher、手动文件夹树。
+ * 任何 workspaceId 消费方遇到它必须走特殊分支或显式放行。
+ */
+export const PERSONAL_WORKSPACE_ID = 'personal';
+
 // ─── 系统提示词展示段（session-append-templates 产出，tipc/ability 聚合消费）───
 
 export interface SystemPromptSegment {

@@ -8,6 +8,7 @@ import path from 'path';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
+import { PERSONAL_WORKSPACE_ID } from '../types.js';
 
 const { app } = electron;
 
@@ -63,7 +64,9 @@ export interface Workspace {
  * 打包后：AppData/Roaming/Dogear/.dogear
  */
 function getConfigDir(): string {
-  if (app.isPackaged) {
+  // Worker 线程无 electron app，优先读注入的 DOGEAR_CONFIG_DIR（与其余 service 同语义）
+  if (process.env.DOGEAR_CONFIG_DIR) return process.env.DOGEAR_CONFIG_DIR;
+  if (app?.isPackaged) {
     return path.join(app.getPath('userData'), '.dogear');
   }
   return path.join(process.cwd(), '.dogear');
@@ -148,12 +151,30 @@ async function saveWorkspacesFile(data: WorkspacesFile): Promise<void> {
 // ============================================================
 
 /**
+ * personal 的内存合成条目：不注册进 workspaces.json，仅在 includePersonal 时拼入列表。
+ * path 留空：设计约定 personal 无 workspacePath，文件边界为空（无文件能力）。
+ */
+function personalWorkspaceData(): WorkspaceData {
+  return {
+    id: PERSONAL_WORKSPACE_ID,
+    name: '临时会话',
+    path: '',
+    additionalPaths: [],
+    isDefault: false,
+    createdAt: new Date(0).toISOString(),
+  };
+}
+
+/**
  * 获取所有工作区
+ * 默认过滤保留字 personal（即使被误注册也返回给 UI）；归档 timer 等后端场景传 includePersonal: true 拼入合成条目
  * 排序：默认工作区优先，然后按 createdAt 倒序
  */
-export async function getAll(): Promise<Workspace[]> {
+export async function getAll(options?: { includePersonal?: boolean }): Promise<Workspace[]> {
   const file = await loadWorkspacesFile();
-  const sorted = file.workspaces.sort((a, b) => {
+  let list = file.workspaces.filter((w) => w.id !== PERSONAL_WORKSPACE_ID);
+  if (options?.includePersonal) list = [...list, personalWorkspaceData()];
+  const sorted = list.sort((a, b) => {
     // 默认工作区优先
     if (a.isDefault !== b.isDefault) {
       return a.isDefault ? -1 : 1;

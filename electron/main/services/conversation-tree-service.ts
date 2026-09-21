@@ -10,6 +10,7 @@ import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
 import { broadcastConversationListChanged } from './renderer-broadcast-lazy.js';
+import { PERSONAL_WORKSPACE_ID } from '../types.js';
 
 const { app } = electron;
 
@@ -93,6 +94,8 @@ export function migrateRootScatter(tree: ConversationTreeFile): { next: Conversa
 }
 
 async function loadTree(workspaceId: string): Promise<ConversationTreeFile> {
+  // personal 隐藏工作区无手动文件夹树，读恒为空树
+  if (workspaceId === PERSONAL_WORKSPACE_ID) return emptyTree();
   const raw = await safeJsonRead<ConversationTreeFile>(getTreePath(workspaceId), emptyTree());
   const { next, mutated } = migrateRootScatter(raw);
   if (mutated) await saveTree(workspaceId, next);
@@ -100,6 +103,8 @@ async function loadTree(workspaceId: string): Promise<ConversationTreeFile> {
 }
 
 async function saveTree(workspaceId: string, data: ConversationTreeFile): Promise<void> {
+  // personal 隐藏工作区无手动文件夹树，写一律丢弃
+  if (workspaceId === PERSONAL_WORKSPACE_ID) return;
   await safeJsonWrite(getTreePath(workspaceId), data);
 }
 

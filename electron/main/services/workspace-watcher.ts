@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import { mainLogger } from '../agents/logger.js';
 import { broadcastToWindows } from './renderer-broadcast.js';
 import * as workspaceJsonService from './workspace-json-service.js';
+import { PERSONAL_WORKSPACE_ID } from '../types.js';
 
 const DEBOUNCE_MS = 500;
 
@@ -73,6 +74,8 @@ export async function syncWorkspaceWatchers(): Promise<void> {
     if (!live.has(id)) stopWatch(id);
   }
   for (const ws of workspaces) {
+    // personal 不注册进 workspaces.json，这里防御性再拦一道
+    if (ws.id === PERSONAL_WORKSPACE_ID) continue;
     await startWatch(ws.id, ws.path);
   }
 }
