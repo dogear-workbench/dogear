@@ -171,7 +171,7 @@ export function AgentChat({
     }
     const conversationTitle = currentConversation?.title?.trim() || '未命名会话';
     const time = new Date().toLocaleString('zh-CN', { hour12: false });
-    const note = await useNotesStore.getState().createNote(workspace.path, {
+    const note = await useNotesStore.getState().createNote(workspace.id, {
       content: `${selectionActions.selectedText}\n\n> 来自会话消息 · ${conversationTitle} · ${time}`,
     });
     selectionActions.clear();
