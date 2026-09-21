@@ -45,6 +45,12 @@ export interface NoteReference {
   anchorConversationId: string;
 }
 
+/** 分流操作气泡（建议卡点击后插入输入框，同会话最多一个，发送时消费） */
+export interface ShuntBubble {
+  action: 'new-session' | 'new-topic' | 'note';
+  summary: string;
+}
+
 interface ReferenceState {
   // --- 状态 ---
   referencedArticles: AnchoredArticle[];
@@ -54,6 +60,7 @@ interface ReferenceState {
   referencedConversations: ConversationReference[];
   referencedSharedFiles: SharedFileReference[];
   referencedNotes: NoteReference[];
+  shuntBubbles: Record<string, ShuntBubble>;
 
   // --- Actions ---
   /** 引用/取消引用文章 */
@@ -98,6 +105,10 @@ interface ReferenceState {
   removeReferencedNote: (noteId: string) => void;
   /** 清空锚定指定会话的笔记引用 */
   clearReferencedNotesFor: (conversationId: string) => void;
+  /** 插入/覆盖分流气泡（同会话仅一个，覆盖由调用方确认） */
+  setShuntBubble: (conversationId: string, bubble: ShuntBubble) => void;
+  /** 移除分流气泡（发送消费或用户删除） */
+  removeShuntBubble: (conversationId: string) => void;
   /** 清掉锚定指定会话的全部引用项（会话 tab 关闭时调用） */
   clearAllFor: (conversationId: string) => void;
   /** 重置所有状态到初始值 */
@@ -112,6 +123,20 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
   referencedConversations: [],
   referencedSharedFiles: [],
   referencedNotes: [],
+  shuntBubbles: {},
+
+  setShuntBubble: (conversationId, bubble) => {
+    set((state) => ({ shuntBubbles: { ...state.shuntBubbles, [conversationId]: bubble } }));
+  },
+
+  removeShuntBubble: (conversationId) => {
+    set((state) => {
+      if (!(conversationId in state.shuntBubbles)) return state;
+      const next = { ...state.shuntBubbles };
+      delete next[conversationId];
+      return { shuntBubbles: next };
+    });
+  },
 
   toggleReferenceArticle: (article, anchorConversationId) => {
     set((state) => {
@@ -268,6 +293,9 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
       referencedConversations: state.referencedConversations.filter((c) => c.anchorConversationId !== conversationId),
       referencedSharedFiles: state.referencedSharedFiles.filter((f) => f.anchorConversationId !== conversationId),
       referencedNotes: state.referencedNotes.filter((n) => n.anchorConversationId !== conversationId),
+      shuntBubbles: Object.fromEntries(
+        Object.entries(state.shuntBubbles).filter(([id]) => id !== conversationId),
+      ),
     }));
   },
 
@@ -279,5 +307,6 @@ export const useReferenceStore = create<ReferenceState>((set) => ({
     referencedConversations: [],
     referencedSharedFiles: [],
     referencedNotes: [],
+    shuntBubbles: {},
   }),
 }));

@@ -96,8 +96,11 @@ export const SHUNT_GUIDANCE_APPEND =
   '```shunt-suggestions\n{"summary":"<岔题一句话摘要，自含且≤60字>","options":["new-session","new-topic","note"]}\n```\n' +
   '- options 从三个动作里选合适的子集（1~3 个）：new-session=在本话题组另起会话、new-topic=另起新话题、note=记为笔记\n' +
   '- 克制：正常工作消息不输出建议块；一条回复最多一个；summary 要短且自含（用户点按钮后不依赖对话上下文即可分流）\n' +
-  '- 用户明确说「另开一个」「先记下来」类意图时不必输出建议块，正常回应；分流动作只由用户点建议卡按钮触发，你永不自行变更会话结构\n' +
-  '- 建议块必须位于回复最末尾，JSON 独占块内正文，块外不加修饰';
+  '- 用户明确说「另开一个」「先记下来」类意图时不必输出建议块，正常回应；分流动作只由用户点建议卡按钮触发，没有 <shunt> 标签你永不自行变更会话结构\n' +
+  '- 建议块必须位于回复最末尾，JSON 独占块内正文，块外不加修饰\n' +
+  '- 用户消息含 <shunt action="..." summary="...">用户补充</shunt> 标签时（用户已通过操作气泡确认执行），按 action 执行后简短回执（一两句），然后继续当前话题——不等待、不追问分流结果：\n' +
+  '  - action=new-session 或 new-topic → 调 dogear__ForkSession，action/summary/用户补充原样传入；回执中必须原样包含工具返回的跳转链接（Markdown 格式，勿改写），用户点击可直达新会话\n' +
+  '  - action=note → 调 dogear__CreateNote 创建卡片，正文 = summary + 用户补充（结构自拟），tags 必须包含「分流暂存」，回执给出卡片 id';
 
 /** 主会话联网调研分工（web-mcp 或 browser 包任一生效，仅 role='main' 注入）。 */
 export const WEB_RESEARCH_GUIDANCE_MAIN_APPEND =
@@ -185,7 +188,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '岔题分流建议',
       category: 'notes',
       template: SHUNT_GUIDANCE_APPEND,
-      triggerDescription: '仅主会话 + 绑定了工作区时注入（与笔记存卡纪律同条件，任务执行会话不注入）。岔题时在回复末尾输出 shunt-suggestions fenced JSON 建议块（summary + options 三动作子集），前端渲染为建议卡；agent 只建议不执行，会话结构变更必须经用户点按钮确认。',
+      triggerDescription: '仅主会话 + 绑定了工作区 + 有组时注入（与笔记存卡纪律同条件，任务执行会话不注入；personal 临时会话 notes 关，天然排除）。岔题时在回复末尾输出 shunt-suggestions fenced JSON 建议块（summary + options 三动作子集），前端渲染为建议卡；用户点卡插入操作气泡、发出后消息携带 <shunt> 标签，agent 才执行 dogear__ForkSession（new-session/new-topic）或 dogear__CreateNote（note，tag 分流暂存）并简短回执（Fork 回执带 dogear:// 会话跳转链接）。',
       isDynamic: false,
     },
     {

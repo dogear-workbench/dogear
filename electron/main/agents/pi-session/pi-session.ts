@@ -44,6 +44,7 @@ import { createWebMcpToolDefs } from '../tools/web-mcp-tools.js';
 import { createGroupToolDefs } from '../tools/group-tools.js';
 import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/delegation-tools.js';
 import { createNotesToolDefs } from '../tools/notes-tools.js';
+import { createForkSessionToolDefs } from '../tools/fork-session-tool.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
 import { createGroupContextToolDefs, createSiblingToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
@@ -748,6 +749,15 @@ export class PiSession extends EventEmitter {
     if (this.config.workspacePath && activeAbilities.has('notes')) {
       toolDefs.push(...this.registerPack('dogear-notes', createNotesToolDefs(this.config.workspaceId, {
         workspaceId: this.config.workspaceId,
+        conversationId: this.config.conversationId,
+      })));
+    }
+
+    // 分流执行工具与 shunt-guidance 段同条件（notes 包 + 主会话 + 有工作区 + 有组），personal（notes 关）天然排除
+    if (this.config.workspacePath && this.config.groupId && activeAbilities.has('notes') && !this.config.executor) {
+      toolDefs.push(...this.registerPack('dogear-shunt', createForkSessionToolDefs({
+        workspaceId: this.config.workspaceId,
+        groupId: this.config.groupId,
         conversationId: this.config.conversationId,
       })));
     }

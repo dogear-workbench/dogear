@@ -138,6 +138,8 @@ interface ConversationState {
   selectConversation: (conversation: Conversation) => Promise<void>;
   /** 按 id 聚焦对话（Tab 切换/关闭后同步左侧列表高亮），不重复打开 Tab；id 为 null 时清空选中 */
   focusConversationById: (conversationId: string | null) => Promise<void>;
+  /** 跳转 dogear://conversation/<id>?ws=<workspaceId> 回执链接（先切后高亮）；非合法链接静默忽略 */
+  focusConversationFromLink: (href: string) => Promise<void>;
   /** 新建对话 */
   newConversation: () => Promise<void>;
   /** 删除对话 */
@@ -487,6 +489,37 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     } catch (error) {
       toast.error('移入工作区失败', { description: error instanceof Error ? error.message : String(error) });
       return false;
+    }
+  },
+
+  focusConversationFromLink: async (href) => {
+    let conversationId: string | null = null;
+    let workspaceId: string | null = null;
+    try {
+      const url = new URL(href);
+      if (url.protocol !== 'dogear:' || url.host !== 'conversation') return;
+      conversationId = decodeURIComponent(url.pathname.replace(/^\//, '')) || null;
+      workspaceId = url.searchParams.get('ws');
+    } catch {
+      return;
+    }
+    if (!conversationId || !workspaceId) return;
+    try {
+      const [{ workspaces }, { useWorkspaceStore }] = await Promise.all([
+        client.getAll(),
+        import('./workspace-store'),
+      ]);
+      const target = (workspaces ?? []).find((w) => w.id === workspaceId);
+      if (!target) {
+        toast.error('无法跳转', { description: '目标会话所属工作区不存在或已删除' });
+        return;
+      }
+      if (useWorkspaceStore.getState().workspace?.id !== workspaceId) {
+        await useWorkspaceStore.getState().setWorkspace(target);
+      }
+      await get().focusConversationById(conversationId);
+    } catch (error) {
+      toast.error('跳转会话失败', { description: error instanceof Error ? error.message : String(error) });
     }
   },
 

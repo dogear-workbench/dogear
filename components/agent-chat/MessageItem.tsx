@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, memo } from 'react';
-import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo } from 'lucide-react';
+import { GitBranch, FileText, Bot, ChevronDown, ChevronUp, MessageSquare, Settings2, ArrowLeftRight, Folder, Share2, StickyNote, ListTodo, Split } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ContentBlockItem } from './ContentBlockItem';
-import { ShuntAwareMarkdown } from './shunt-suggestions';
+import { ShuntAwareMarkdown, SHUNT_ACTION_META } from './shunt-suggestions';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { parseUserMessageReferences, formatModelName, parseSlashCommandMessage, isSdkInjectedUserMessage, isInjectedUserMessage, parseTaskExecution, resolveInjectionTag } from './utils';
@@ -370,7 +370,8 @@ export const MessageItem = memo(function MessageItem({
                   parsed.fileRefs.length > 0 ||
                   parsed.conversationRefs.length > 0 ||
                   parsed.sharedFileRefs.length > 0 ||
-                  parsed.noteRefs.length > 0;
+                  parsed.noteRefs.length > 0 ||
+                  !!parsed.shuntRef;
                 return (
                   <div className="relative">
                     {/* 「你」徽章：用户在 agent 会话里介入（跨会话 agent 消息已走注入卡提前 return） */}
@@ -383,6 +384,16 @@ export const MessageItem = memo(function MessageItem({
                     {/* 引用芯片（只读，无关闭按钮） */}
                     {hasRefs && (
                       <div className="flex flex-wrap gap-1.5 mb-2">
+                        {parsed.shuntRef && SHUNT_ACTION_META[parsed.shuntRef.action] && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-violet-50 border border-violet-200 rounded-full text-xs text-violet-700 dark:bg-violet-950/40 dark:border-violet-800/60 dark:text-violet-300"
+                            title={`分流指令 · ${parsed.shuntRef.summary}`}
+                          >
+                            <Split className="w-3 h-3 flex-shrink-0" />
+                            <span className="flex-shrink-0 font-medium">{SHUNT_ACTION_META[parsed.shuntRef.action].label}</span>
+                            <span className="max-w-[220px] truncate">{parsed.shuntRef.summary}</span>
+                          </span>
+                        )}
                         {parsed.articleRefs.map((ref, i) => (
                           <span
                             key={`article-${i}`}

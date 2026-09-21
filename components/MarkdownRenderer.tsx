@@ -1,6 +1,6 @@
 
 import React, { useMemo, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
 import { Check, Copy } from 'lucide-react';
@@ -15,8 +15,9 @@ import {
   useWorkspaceIdByPath,
   useWorkspaceRoots,
 } from './agent-chat/path-link';
+import { useConversationStore } from '@/stores/conversation-store';
 
-interface MarkdownRendererProps {
+export interface MarkdownRendererProps {
   /** Markdown 文本内容 */
   content: string;
   /** 额外的 CSS 类名 */
@@ -211,7 +212,13 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
           href={href}
           onClick={(e) => {
             e.preventDefault();
-            if (href) window.open(href, '_blank');
+            if (!href) return;
+            // 应用内会话跳转链接（dogear://conversation/<id>?ws=<workspaceId>），由 agent 分流回执等场景产出
+            if (href.startsWith('dogear://')) {
+              void useConversationStore.getState().focusConversationFromLink(href);
+              return;
+            }
+            window.open(href, '_blank');
           }}
           className="text-blue-500 hover:underline"
           {...props}
@@ -240,6 +247,7 @@ export function MarkdownRenderer({ content, className, searchQuery, matchIdPrefi
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeHighlight]}
         components={mdComponents}
+        urlTransform={(url) => (url.startsWith('dogear://') ? url : defaultUrlTransform(url))}
       >
         {processedContent}
       </ReactMarkdown>

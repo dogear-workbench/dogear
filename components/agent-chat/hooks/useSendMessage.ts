@@ -87,6 +87,8 @@ export function useSendMessage(params: UseSendMessageParams) {
   const clearReferencedSharedFilesFor = useReferenceStore((s) => s.clearReferencedSharedFilesFor);
   const allReferencedNotes = useReferenceStore((s) => s.referencedNotes);
   const clearReferencedNotesFor = useReferenceStore((s) => s.clearReferencedNotesFor);
+  const shuntBubble = useReferenceStore((s) => (conversationId ? s.shuntBubbles[conversationId] : undefined));
+  const removeShuntBubble = useReferenceStore((s) => s.removeShuntBubble);
   const referencedArticles = useMemo(
     () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
     [allReferencedArticles, conversationId]
@@ -258,7 +260,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     if (readOnly) return;
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
-    if (!hasText && !hasImages) return;
+    if (!hasText && !hasImages && !shuntBubble) return;
 
     if (!sessionId || !isSessionReady) return;
 
@@ -367,8 +369,21 @@ export function useSendMessage(params: UseSendMessageParams) {
       clearReferencedNotesFor(conversationId!);
     }
 
+    // 分流气泡：独立 block 前置注入，agent 收到才执行 ForkSession/CreateNote；用户补充作为标签正文，不再重复入块
+    if (shuntBubble) {
+      const summaryAttr = shuntBubble.summary
+        .replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      textBlocks.push({
+        text: `<shunt action="${shuntBubble.action}" summary="${summaryAttr}">${userMessage.trim()}</shunt>`,
+      });
+      removeShuntBubble(conversationId!);
+    }
+
     // 用户消息作为最后一个 block
-    if (userMessage) {
+    if (userMessage && !shuntBubble) {
       textBlocks.push({ text: userMessage });
     }
 
@@ -529,6 +544,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     referencedFiles, clearReferencedFilesFor,
     referencedConversations, clearReferencedConversationsFor, referencedSharedFiles,
     clearReferencedSharedFilesFor, referencedNotes, clearReferencedNotesFor, forkConversation,
+    shuntBubble, removeShuntBubble,
   ]);
 
   // 键盘事件处理：Ctrl+Enter 发送，Enter 换行

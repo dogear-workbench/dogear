@@ -133,6 +133,10 @@ export interface ParsedNoteRef {
   title: string;
   workspacePath: string;
 }
+export interface ParsedShuntRef {
+  action: 'new-session' | 'new-topic' | 'note';
+  summary: string;
+}
 export interface ParsedUserMessage {
   articleRefs: ParsedArticleRef[];
   snippetRefs: ParsedSnippetRef[];
@@ -140,6 +144,8 @@ export interface ParsedUserMessage {
   conversationRefs: ParsedConversationRef[];
   sharedFileRefs: ParsedSharedFileRef[];
   noteRefs: ParsedNoteRef[];
+  /** 分流指令（用户发出操作气泡后注入的 <shunt> 标签，正文留在 userMessage） */
+  shuntRef?: ParsedShuntRef;
   userMessage: string;
   /** 跨会话消息来源标记；未标记默认按 role 推断（agent = 跨会话代表发来，human = 用户手打） */
   senderKind?: 'agent' | 'human';

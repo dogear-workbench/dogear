@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { Split, MessageSquarePlus, FolderPlus, StickyNote, type LucideIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { useReferenceStore } from '@/stores/reference-store';
+import { showConfirm } from '@/stores/confirm-store';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer, type MarkdownRendererProps } from '@/components/MarkdownRenderer';
+import { useConversationId } from './conversation-id-context';
 
 /**
  * 分流建议卡文本协议：agent 在回复末尾输出 fenced JSON 块（语言标签 shunt-suggestions）：
@@ -21,7 +23,7 @@ export interface ShuntSuggestions {
 const SHUNT_BLOCK_RE = /```shunt-suggestions[ \t]*\r?\n([\s\S]*?)```/g;
 const SHUNT_UNCLOSED_RE = /(^|\n)[ \t]*```shunt-suggestions[\s\S]*$/;
 
-const SHUNT_ACTION_META: Record<ShuntAction, { label: string; icon: LucideIcon }> = {
+export const SHUNT_ACTION_META: Record<ShuntAction, { label: string; icon: LucideIcon }> = {
   'new-session': { label: '另起会话', icon: MessageSquarePlus },
   'new-topic': { label: '另起话题', icon: FolderPlus },
   note: { label: '记为笔记', icon: StickyNote },
@@ -60,7 +62,23 @@ export function parseShuntSuggestions(content: string): { body: string; suggesti
   return { body, suggestions: lastPayload !== null ? parseShuntPayload(lastPayload) : null };
 }
 
+async function insertShuntBubble(conversationId: string, action: ShuntAction, summary: string) {
+  const { shuntBubbles, setShuntBubble } = useReferenceStore.getState();
+  const existing = shuntBubbles[conversationId];
+  const meta = SHUNT_ACTION_META[action];
+  if (existing && (existing.action !== action || existing.summary !== summary)) {
+    const existingLabel = SHUNT_ACTION_META[existing.action].label;
+    const ok = await showConfirm(
+      '替换分流气泡？',
+      `输入框已有「${existingLabel}」气泡，替换为「${meta.label}」？`,
+    );
+    if (!ok) return;
+  }
+  setShuntBubble(conversationId, { action, summary });
+}
+
 function ShuntSuggestionCard({ suggestions }: { suggestions: ShuntSuggestions }) {
+  const conversationId = useConversationId();
   return (
     <div className="my-2 rounded-lg border border-dashed border-border bg-secondary/40 px-3 py-2.5">
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-2">
@@ -78,7 +96,9 @@ function ShuntSuggestionCard({ suggestions }: { suggestions: ShuntSuggestions })
               variant="outline"
               size="sm"
               className="h-7 px-2.5 text-xs"
-              onClick={() => toast.info(`「${meta.label}」即将支持，敬请期待`)}
+              onClick={() => {
+                if (conversationId) void insertShuntBubble(conversationId, action, suggestions.summary);
+              }}
             >
               <Icon size={12} className="mr-1" />
               {meta.label}

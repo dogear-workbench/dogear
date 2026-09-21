@@ -1,4 +1,4 @@
-import type { ParsedUserMessage, ParsedSlashCommand, ParsedTaskExecution, InjectionTag } from './types';
+import type { ParsedUserMessage, ParsedSlashCommand, ParsedTaskExecution, ParsedShuntRef, InjectionTag } from './types';
 import { isFailoverContinueMessage } from '@/lib/failover-markers';
 
 /**
@@ -119,6 +119,21 @@ export function parseUserMessageReferences(content: string): ParsedUserMessage {
     if (result.noteRefs.length === tagCount) {
       content = content.replace(xmlNoteMatch[0], '');
     }
+  }
+
+  // 匹配分流操作气泡注入的 <shunt action="..." summary="...">用户补充</shunt>；属性反转义后进 shuntRef，正文留在 userMessage
+  const xmlShuntRegex = /<shunt\s+action="(new-session|new-topic|note)"\s+summary="([^"]*)">([\s\S]*?)<\/shunt>/;
+  const xmlShuntMatch = content.match(xmlShuntRegex);
+  if (xmlShuntMatch) {
+    result.shuntRef = {
+      action: xmlShuntMatch[1] as ParsedShuntRef['action'],
+      summary: xmlShuntMatch[2]
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&'),
+    };
+    content = content.replace(xmlShuntMatch[0], xmlShuntMatch[3].trim());
   }
 
   // 匹配 <sender kind="..." session_id="..." name="..." delivery="..." tag="..."/>
