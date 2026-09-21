@@ -361,6 +361,12 @@ export class PiSession extends EventEmitter {
     this.logger.info('设置快照域变更，已标脏（下一轮 sendMessage 前重建）');
   }
 
+  /** 会话级模型选择变更：更新 config 快照并标脏，idle 后下轮 sendMessage 前重建生效（不打断 running turn） */
+  updateModelSelection(selection: ModelSelection | null): void {
+    this.config.modelSelection = selection ? { ...selection } : null;
+    this.markSnapshotDirty();
+  }
+
   /**
    * 按新设置原位重建：先刷新 config 中的设置快照（basicToolPermissions / 子会话 Profile），
    * 再关旧 adapter 重走 start()。start() 内 repository.open(config.harnessSessionId)

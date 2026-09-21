@@ -6,6 +6,7 @@ import * as groupService from '../services/group-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
 import { moveConversationToWorkspace } from '../services/conversation-move-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
+import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 import { loadSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
@@ -176,6 +177,9 @@ export const conversationsRouter = {
           input.conversationId,
           input.selection,
         );
+        const sessionId = getPiSessionManager().getSessionIdByConversation(input.conversationId);
+        const session = sessionId ? getPiSessionManager().getSession(sessionId) : undefined;
+        if (session) session.updateModelSelection(input.selection);
         return { success: true, error: undefined };
       } catch (error) {
         console.error('更新对话模型选择失败:', error);
