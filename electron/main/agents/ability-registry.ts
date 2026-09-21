@@ -101,6 +101,16 @@ export const ABILITY_PACKS: AbilityPack[] = [
     defaultEnabled: true,
   },
   {
+    key: 'shunt',
+    label: '会话分流',
+    description: '岔题分流：岔题时输出建议卡，用户确认后平级分出新会话/新话题或记为笔记（note 动作依赖笔记卡片包的建卡工具）',
+    type: 'segment-tools',
+    segmentKeys: ['shunt-guidance'],
+    toolGroups: ['dogear-shunt'],
+    mainOnly: true,
+    defaultEnabled: true,
+  },
+  {
     key: 'stock',
     label: '股票分析',
     description: '股票分析与选股 skill + 行情/分析/公告/候选池四个工具包',
@@ -181,6 +191,8 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
     }
     if (pack.key === 'notes' && (opts.role !== 'main' || !opts.hasWorkspace)) continue;
     if ((pack.key === 'group-context' || pack.key === 'agent-collab') && !opts.groupId) continue;
+    // executor 由拼装侧显式排除（同 notes-discipline 模式）：无人值守无分流场景
+    if (pack.key === 'shunt' && (!opts.hasWorkspace || !opts.groupId)) continue;
     if (pack.mainOnly && opts.role !== 'main') continue;
 
     if (opts.role === 'sub' && opts.profile) {

@@ -223,7 +223,7 @@ export const PERSONAL_WORKSPACE_ID = 'personal';
 export interface SystemPromptSegment {
   key: string;
   label: string;
-  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide' | 'memory';
+  category: 'reference' | 'group' | 'notes' | 'sub-agent' | 'tool-guide' | 'memory' | 'shunt';
   template: string;
   triggerDescription: string;
   isDynamic: boolean;

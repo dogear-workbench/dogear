@@ -22,6 +22,7 @@ import { OPTIONAL_TOOL_PACKS } from '../services/tool-packs.js';
 import { listSkillTemplates } from '../services/skill-template-service.js';
 import { getWorkspaceConfig, type WorkspaceConfig } from '../services/workspace-config-service.js';
 import { getAll as getAllWorkspaces } from '../services/workspace-json-service.js';
+import { PERSONAL_WORKSPACE_ID } from '../types.js';
 
 const t = tipc.create();
 
@@ -87,7 +88,7 @@ export interface ResidentToolGroupMeta {
 /** 常驻工具组：绑定工作区即注册，不可关，前端标注触发条件（任务系统已归笔记包，不再常驻） */
 const RESIDENT_GROUP_IDS = ['dogear-history'] as const;
 
-export type AbilityMountSceneKind = 'main' | 'sub-default' | 'profile' | 'executor' | 'scheduler';
+export type AbilityMountSceneKind = 'main' | 'personal' | 'sub-default' | 'profile' | 'executor' | 'scheduler';
 
 export interface AbilityMountSceneRow {
   kind: AbilityMountSceneKind;
@@ -128,6 +129,7 @@ const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/group-tools.js'),
   () => import('../agents/tools/reference-tools.js'),
   () => import('../agents/tools/task-tools.js'),
+  () => import('../agents/tools/fork-session-tool.js'),
   () => import('../agents/tools/stock-tools.js'),
   () => import('../agents/tools/stock-analysis-tools.js'),
   () => import('../agents/tools/stock-announcement-tools.js'),
@@ -218,6 +220,8 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
         return '会话属于组时注入组上下文';
       case 'agent-collab':
         return '会话属于组时注册协作工具并注入协作规范';
+      case 'shunt':
+        return '主会话绑定工作区且属于组时注入分流段并注册 ForkSession 工具（执行会话不注入不注册）';
       case 'web-mcp':
         return '包开启即挂载联网搜索工具（需在设置页配置 GLM API Key，未配置时调用返回提示）';
       default:
@@ -232,6 +236,8 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       return '随包开关注入子会话';
     case 'notes':
       return '仅主会话加载，子会话不注入';
+    case 'shunt':
+      return '仅主会话生效，子会话不加载';
     case 'group-context':
       return '会话属于组时生效，无 Profile 过滤维度';
     case 'agent-collab':
@@ -240,6 +246,27 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       return '仅主会话挂载联网搜索工具；子会话本期不挂载';
     default:
       return '包开启；包内 Skill 与工具包受工作区子开关控制';
+  }
+}
+
+/** personal 场景固定行的加载说明：loaded 由 personal 自己的 config 解析（无工作区路径、无组），如实反映临时会话装配 */
+function personalSceneReason(pack: AbilityPack): string {
+  switch (pack.key) {
+    case 'workspace-rules':
+      return '机制生效：读 workspaces/personal/agent.md（大概率空，无注入内容）';
+    case 'global-rules':
+    case 'core-profile':
+      return '包开即注入临时会话';
+    case 'memory':
+      return '包级不生效（无工作区路径被排除）；记忆工具兜底注册可用，纪律段不注入';
+    case 'notes':
+      return '需绑定工作区路径，临时会话不加载';
+    case 'group-context':
+    case 'agent-collab':
+    case 'shunt':
+      return '临时会话无工作区路径且无组，不加载';
+    default:
+      return '包开即生效；包内 Skill 与工具包受 personal 工作区子开关控制';
   }
 }
 
@@ -304,6 +331,7 @@ function buildMountRows(
   config: WorkspaceConfig,
   settings: AppSettings,
   hasWorkspace: boolean,
+  personalConfig: WorkspaceConfig,
 ): AbilityMountSceneRow[] {
   const enabled = packEnabledOf(pack, config);
   const profiles = settings.subAgent?.profiles ?? [];
@@ -318,6 +346,17 @@ function buildMountRows(
     system: true,
     loaded: mainActive.has(pack.key),
     reason: enabled ? sceneReason(pack, 'main', hasWorkspace) : '包开关已关闭',
+  });
+
+  const personalActive = resolveAbilities(personalConfig, { role: 'main', hasWorkspace: false, groupId: null });
+  const personalEnabled = packEnabledOf(pack, personalConfig);
+  rows.push({
+    kind: 'personal',
+    id: 'personal',
+    label: '临时会话',
+    system: true,
+    loaded: personalActive.has(pack.key),
+    reason: personalEnabled ? personalSceneReason(pack) : 'personal 默认关闭（最小能力集）',
   });
 
   const subScenes: Array<{ kind: AbilityMountSceneKind; profile: SubAgentProfile; system: boolean }> = [
@@ -391,6 +430,14 @@ function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolean): Abi
   const baseReason = hasWorkspace ? '常驻基础设施，绑定工作区即注册，不可关闭' : '当前工作区无路径，跨会话检索组不注册';
   return [
     { kind: 'main', id: 'main', label: '主会话', system: true, loaded: hasWorkspace, reason: baseReason },
+    {
+      kind: 'personal',
+      id: 'personal',
+      label: '临时会话',
+      system: true,
+      loaded: true,
+      reason: '基础工具注册（文件边界仅应用数据目录挂载）；dogear-history 只读话题工具放行，辅助归置建议',
+    },
     {
       kind: 'sub-default',
       id: 'sub-default',
@@ -484,6 +531,7 @@ export const abilityRouter = {
           return { error: `工作区不存在: ${input.workspaceId}` };
         }
         const config = await getWorkspaceConfig(input.workspaceId);
+        const personalConfig = await getWorkspaceConfig(PERSONAL_WORKSPACE_ID);
         const hasWorkspace = !!workspace.path;
 
         let packSummary: { key: string; label: string; type: AbilityPackType } | null = null;
@@ -496,7 +544,7 @@ export const abilityRouter = {
             return { error: `未知能力包: ${input.key}` };
           }
           packSummary = { key: found.key, label: found.label, type: found.type };
-          rows = buildMountRows(found, config, settings, hasWorkspace);
+          rows = buildMountRows(found, config, settings, hasWorkspace, personalConfig);
         }
 
         return { pack: packSummary, rows };

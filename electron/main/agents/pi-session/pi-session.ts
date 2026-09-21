@@ -586,7 +586,7 @@ export class PiSession extends EventEmitter {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
       // executor 跳过存卡纪律是段级裁剪，不受包开关约束（工具组仍注册），保留现状
       if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(NOTES_DISCIPLINE_APPEND);
-      if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(SHUNT_GUIDANCE_APPEND);
+      if (activeAbilities.has('shunt') && !this.config.executor) personaParts.push(SHUNT_GUIDANCE_APPEND);
       if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
       if (activeAbilities.has('agent-collab')) {
         personaParts.push(MAIN_AGENT_DELEGATION_APPEND);
@@ -759,8 +759,8 @@ export class PiSession extends EventEmitter {
       })));
     }
 
-    // 分流执行工具与 shunt-guidance 段同条件（notes 包 + 主会话 + 有工作区 + 有组），personal（notes 关）天然排除
-    if (this.config.workspacePath && this.config.groupId && activeAbilities.has('notes') && !this.config.executor) {
+    // shunt 包生效（resolveAbilities 已含主会话 + 有工作区 + 有组），executor 段级裁剪在此显式排除
+    if (this.config.workspacePath && this.config.groupId && activeAbilities.has('shunt') && !this.config.executor) {
       toolDefs.push(...this.registerPack('dogear-shunt', createForkSessionToolDefs({
         workspaceId: this.config.workspaceId,
         groupId: this.config.groupId,
