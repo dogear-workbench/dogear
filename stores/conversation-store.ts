@@ -517,6 +517,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       if (useWorkspaceStore.getState().workspace?.id !== workspaceId) {
         await useWorkspaceStore.getState().setWorkspace(target);
       }
+      // 深链场景目标会话往往没有已打开的 tab（新分流会话），仅高亮不动主区——必须先 openTab 激活，高亮联动由 activeTabId 订阅接管
+      let conv: Conversation | null = null;
+      try {
+        conv = (await client.getById({ conversationId, workspaceId })).conversation ?? null;
+      } catch { /* 查询失败走下方统一提示 */ }
+      if (!conv) {
+        toast.error('无法跳转', { description: '目标会话不存在或已删除' });
+        return;
+      }
+      useSessionStore.getState().openTab(conv.id, conv.title || '新对话', workspaceId);
       await get().focusConversationById(conversationId);
     } catch (error) {
       toast.error('跳转会话失败', { description: error instanceof Error ? error.message : String(error) });
