@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { toast } from 'sonner';
 import { client } from '@/lib/client';
+import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import type { Group } from '@/types/group';
 
 // 「近期」「更早」时间分区阈值，与侧边栏虚拟组共用；OLDER 与 auto-archive-service 的 30 天过期归档对齐
@@ -27,6 +28,7 @@ interface GroupState {
   restoreTopic: (groupId: string, workspaceId?: string) => Promise<boolean>;
   deleteTopic: (groupId: string, workspaceId?: string) => Promise<boolean>;
   deleteGroup: (groupId: string) => Promise<void>;
+  batchCleanupArchived: () => Promise<{ deleted: string[]; failed: Array<{ groupId: string; error: string }> } | null>;
 }
 
 export const useGroupStore = create<GroupState>((set) => ({
@@ -174,5 +176,25 @@ export const useGroupStore = create<GroupState>((set) => ({
 
   deleteGroup: async (groupId) => {
     await useGroupStore.getState().deleteTopic(groupId);
+  },
+
+  batchCleanupArchived: async () => {
+    const workspace = await getWorkspace();
+    if (!workspace) return null;
+    try {
+      const [wsResult, personalResult] = await Promise.all([
+        client.batchDeleteArchivedTopics({ workspaceId: workspace.id }),
+        client.batchDeleteArchivedTopics({ workspaceId: PERSONAL_WORKSPACE_ID }).catch(() => ({ deleted: [], failed: [] })),
+      ]);
+      set((state) => ({ groups: [...state.groups] }));
+      return {
+        deleted: [...wsResult.deleted, ...(personalResult.deleted ?? [])],
+        failed: [...wsResult.failed, ...(personalResult.failed ?? [])],
+      };
+    } catch (error) {
+      console.error('批量清理归档话题失败:', error);
+      toast.error('批量清理归档话题失败', { description: error instanceof Error ? error.message : String(error) });
+      return null;
+    }
   },
 }));

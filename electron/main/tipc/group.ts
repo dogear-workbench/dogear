@@ -147,6 +147,18 @@ export const groupRouter = {
       }
     }),
 
+  batchDeleteArchivedTopics: t.procedure
+    .input<{ workspaceId: string; olderThanDays?: number }>()
+    .action(async ({ input }) => {
+      try {
+        const result = await topicLifecycleService.batchDeleteArchivedTopics(input.workspaceId, input.olderThanDays ?? 30);
+        return { deleted: result.deleted, failed: result.failed, error: undefined };
+      } catch (error) {
+        console.error('批量清理归档话题失败:', error);
+        return { deleted: [], failed: [], error: error instanceof Error ? error.message : String(error) };
+      }
+    }),
+
   listSharedFiles: t.procedure
     .input<{ workspaceId: string; groupId: string }>()
     .action(async ({ input }) => {

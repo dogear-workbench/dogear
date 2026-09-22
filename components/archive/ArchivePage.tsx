@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Loader2 } from 'lucide-react';
+import { Archive, Loader2, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { client } from '@/lib/client';
 import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
-import { useGroupStore } from '@/stores/group-store';
+import { useGroupStore, OLDER_THRESHOLD_MS } from '@/stores/group-store';
+import { showConfirm } from '@/stores/confirm-store';
 import { buildConversationTree } from '@/lib/conversation-sort';
 import { deriveGroupTitle } from '@/components/group-list/utils';
 import type { Conversation } from '@/components/ConversationList';
@@ -89,6 +92,40 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
     });
   };
 
+  const staleTopics = useMemo(
+    () => topics.filter((t) => (t.group.archivedAt ?? 0) < Date.now() - OLDER_THRESHOLD_MS),
+    [topics],
+  );
+
+  const [cleaning, setCleaning] = useState(false);
+
+  const handleBatchCleanup = async () => {
+    if (staleTopics.length === 0) {
+      toast.info('没有归档超过 30 天的话题');
+      return;
+    }
+    const oldest = Math.min(...staleTopics.map((t) => t.group.archivedAt ?? 0));
+    const oldestText = new Date(oldest).toLocaleDateString('zh-CN');
+    const confirmed = await showConfirm(
+      '清理归档话题',
+      `将永久删除 ${staleTopics.length} 个归档超过 30 天的话题及全部会话与共享区，最早归档于 ${oldestText}。此操作不可恢复。`,
+    );
+    if (!confirmed) return;
+    setCleaning(true);
+    const result = await useGroupStore.getState().batchCleanupArchived();
+    setCleaning(false);
+    if (!result) return;
+    if (result.failed.length > 0) {
+      const nameById = new Map(topics.map((t) => [t.group.id, deriveGroupTitle(t.group)]));
+      const failedNames = result.failed.map((f) => nameById.get(f.groupId) ?? f.groupId).join('、');
+      toast.warning(`已清理 ${result.deleted.length} 个话题，${result.failed.length} 个清理失败`, {
+        description: failedNames,
+      });
+    } else {
+      toast.success(`已清理 ${result.deleted.length} 个话题`);
+    }
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return topics;
@@ -121,13 +158,23 @@ export function ArchivePage({ workspaceId, onSelectionChange }: ArchivePageProps
   return (
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-64 border-r bg-sidebar flex flex-col shrink-0">
-        <div className="p-2 border-b">
+        <div className="p-2 border-b flex items-center gap-1.5">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="搜索话题"
             className="h-8 text-sm bg-background"
           />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+            disabled={cleaning}
+            title="清理归档超过 30 天的话题"
+            onClick={() => void handleBatchCleanup()}
+          >
+            {cleaning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          </Button>
         </div>
         <ScrollArea className="flex-1 overflow-hidden">
           <div className="py-1">

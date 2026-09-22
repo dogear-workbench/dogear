@@ -177,6 +177,27 @@ export async function deleteTopic(
   return cleanupEmptyTopic(workspaceId, groupId);
 }
 
+export interface BatchDeleteArchivedResult {
+  deleted: string[];
+  failed: Array<{ groupId: string; error: string }>;
+}
+
+export async function batchDeleteArchivedTopics(
+  workspaceId: string,
+  olderThanDays = 30,
+): Promise<BatchDeleteArchivedResult> {
+  const cutoff = Date.now() - olderThanDays * 86400_000;
+  const groups = await groupService.listArchivedGroups(workspaceId);
+  const result: BatchDeleteArchivedResult = { deleted: [], failed: [] };
+  for (const group of groups) {
+    if ((group.archivedAt ?? 0) >= cutoff) continue;
+    const outcome = await deleteTopic(workspaceId, group.id);
+    if (outcome.ok) result.deleted.push(group.id);
+    else result.failed.push({ groupId: group.id, error: outcome.error });
+  }
+  return result;
+}
+
 function getMigrationPath(workspaceId: string): string {
   return path.join(conversationService.getWorkspaceDataDir(workspaceId), TOPIC_LIFECYCLE_MIGRATION_FILE);
 }
