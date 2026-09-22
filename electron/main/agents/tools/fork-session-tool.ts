@@ -77,7 +77,6 @@ export function createForkSessionToolDefs(opts: ForkSessionToolOpts): ToolDef[] 
           }
 
           const firstMessage = [
-            `这条会话由用户从会话「${parent.title || '未命名'}」分流创建，与原会话无共享上下文，以下是你需要的全部背景。`,
             `岔题摘要：${args.summary}`,
             args.userMessage ? `\n用户补充：${args.userMessage}` : '',
           ].filter(Boolean).join('\n');
