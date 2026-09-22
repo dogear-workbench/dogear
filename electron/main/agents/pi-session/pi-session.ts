@@ -29,7 +29,7 @@ import { killConversationTerminals } from '../../services/pty-service.js';
 import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult } from './pi-harness-adapter.js';
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
-import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, SHUNT_GUIDANCE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND, buildAppDataGuidance } from '../session-append-templates.js';
+import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, GIT_HISTORY_GUIDANCE_APPEND, SHUNT_GUIDANCE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND, buildAppDataGuidance } from '../session-append-templates.js';
 import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
@@ -46,6 +46,7 @@ import { createDelegationToolDefs, type DelegationToolsOpts } from '../tools/del
 import { createNotesToolDefs } from '../tools/notes-tools.js';
 import { createForkSessionToolDefs } from '../tools/fork-session-tool.js';
 import { createTaskToolDefs } from '../tools/task-tools.js';
+import { createGitToolDefs } from '../tools/git-tools.js';
 import { createGroupContextToolDefs, createSiblingToolDefs, createHistorySearchToolDefs } from '../tools/reference-tools.js';
 import { OPTIONAL_TOOL_PACKS } from '../../services/tool-packs.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
@@ -580,12 +581,14 @@ export class PiSession extends EventEmitter {
 
     if (isSubAgent) {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
+      if (activeAbilities.has('workspace-git')) personaParts.push(GIT_HISTORY_GUIDANCE_APPEND);
       if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_SUB_APPEND);
       if (this.config.subAgent) personaParts.push(subAgentContractFor(this.config.subAgent));
     } else {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
       // executor 跳过存卡纪律是段级裁剪，不受包开关约束（工具组仍注册），保留现状
       if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(NOTES_DISCIPLINE_APPEND);
+      if (activeAbilities.has('workspace-git')) personaParts.push(GIT_HISTORY_GUIDANCE_APPEND);
       if (activeAbilities.has('shunt') && !this.config.executor) personaParts.push(SHUNT_GUIDANCE_APPEND);
       if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
       if (activeAbilities.has('agent-collab')) {
@@ -674,6 +677,7 @@ export class PiSession extends EventEmitter {
    * + 协作三组（dogear-group/delegation/sibling，属组且 agent-collab 包生效）
    * + dogear-notes（工作区且 notes 包生效）
    * + dogear-tasks（工作区且 notes 包生效；任务执行会话派单保底不受开关约束）
+   * + dogear-git（工作区且 workspace-git 包生效）
    * + dogear-history 跨会话检索组（不在包体系，工作区即注册的常驻基础设施）
    */
   private buildMainAgentToolDefs(skillEntries: SkillEntry[], activeAbilities: Set<string>, basePaths: string[]): ToolDef[] {
@@ -769,6 +773,14 @@ export class PiSession extends EventEmitter {
       })));
     }
 
+    // workspace-git 包生效即注册（主/子会话同条件，无 Profile 子开关）
+    if (this.config.workspacePath && activeAbilities.has('workspace-git')) {
+      toolDefs.push(...this.registerPack('dogear-git', createGitToolDefs({
+        workspaceId: this.config.workspaceId,
+        workspacePath: this.config.workspacePath,
+      })));
+    }
+
     // dogear-tasks 归 notes 包，任务执行会话的申报工具（ReportTaskResult 所在组）派单保底注册；
     // dogear-history（跨会话检索）不在能力包体系，工作区即注册的常驻基础设施
     if (this.config.workspacePath && (activeAbilities.has('notes') || this.config.executor)) {
@@ -794,6 +806,7 @@ export class PiSession extends EventEmitter {
    * - extension 工具组：browser 包生效且 Profile extension===true 双闸
    * - web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）
    * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 子开关——通用检索是基础设施）
+   * - dogear-git：workspace-git 包生效即注册（无 Profile 子开关，子会话查历史/落提交与主会话同能力）
    * - dogear-group + dogear-delegation：始终注册（固定，交付基础设施，不受包开关影响）
    * - dogear-group-context（组状态卡）：会话组包生效（属组即有包内语义，无 Profile 子开关）
    * - dogear-sibling（兄弟会话）：协作包生效（子会话对协作包强制生效，无 Profile 子开关）
@@ -846,6 +859,14 @@ export class PiSession extends EventEmitter {
     // dogear-history：工作区即注册，通用检索基础设施，不查 Profile 子开关
     if (this.config.workspacePath) {
       toolDefs.push(...this.registerPack('dogear-history', createHistorySearchToolDefs(this.config.workspaceId)));
+    }
+
+    // dogear-git：workspace-git 包生效即注册（无 Profile 子开关，与 agent-collab 同模式：子会话查历史/落提交是基础设施能力）
+    if (this.config.workspacePath && activeAbilities.has('workspace-git')) {
+      toolDefs.push(...this.registerPack('dogear-git', createGitToolDefs({
+        workspaceId: this.config.workspaceId,
+        workspacePath: this.config.workspacePath,
+      })));
     }
 
     // dogear-group / dogear-delegation / dogear-group-context / dogear-sibling

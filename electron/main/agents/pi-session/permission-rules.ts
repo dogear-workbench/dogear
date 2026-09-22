@@ -25,6 +25,9 @@ const BROWSER_INTERACTIVE_TOOLS: ReadonlySet<string> = new Set([
   'dogear__browser__fill',
 ]);
 
+// 破坏性 git 操作：整仓 revert 会产生反向提交改写工作区，与浏览器交互工具同语义（工具包启用不覆盖）
+const PERMISSION_ASK_TOOLS: ReadonlySet<string> = new Set([...BROWSER_INTERACTIVE_TOOLS, 'dogear__GitRevert']);
+
 export function decideToolPermission(
   toolName: string,
   mode: 'default' | 'autoExecute',
@@ -33,7 +36,7 @@ export function decideToolPermission(
   basicToolPermissions: BasicToolPermissions,
 ): ToolPermissionDecision {
   if (mode === 'autoExecute') return 'allow';
-  if (BROWSER_INTERACTIVE_TOOLS.has(toolName)) return 'ask';
+  if (PERMISSION_ASK_TOOLS.has(toolName)) return 'ask';
   if (toolPackMap.has(toolName)) return 'allow';
   if (isBasicToolName(toolName)) {
     if (sessionAllowedTools.has(toolName) || basicToolPermissions[toolName] === 'allow') {

@@ -151,3 +151,41 @@ test('autoExecute 模式：浏览器全部工具放行（含交互三工具）',
     expect(decideToolPermission(tool, 'autoExecute', browserPackMap, emptyAllowed, allAsk())).toBe('allow');
   }
 });
+
+const gitPackMap = new Map(
+  [
+    'dogear__GitStatus',
+    'dogear__GitDiff',
+    'dogear__GitLog',
+    'dogear__GitShow',
+    'dogear__GitBlame',
+    'dogear__GitCommit',
+    'dogear__GitRevert',
+    'dogear__GitSnapshotList',
+    'dogear__GitSnapshotRestore',
+  ].map((name) => [name, 'dogear-git']),
+);
+
+test('默认模式：git 只读与提交/快照工具随工具包放行', () => {
+  for (const tool of [
+    'dogear__GitStatus',
+    'dogear__GitDiff',
+    'dogear__GitLog',
+    'dogear__GitShow',
+    'dogear__GitBlame',
+    'dogear__GitCommit',
+    'dogear__GitSnapshotList',
+    'dogear__GitSnapshotRestore',
+  ]) {
+    expect(decideToolPermission(tool, 'default', gitPackMap, emptyAllowed, allAsk())).toBe('allow');
+  }
+});
+
+test('默认模式：dogear__GitRevert 逐次确认，工具包启用不覆盖', () => {
+  expect(decideToolPermission('dogear__GitRevert', 'default', gitPackMap, emptyAllowed, allAsk())).toBe('ask');
+  expect(decideToolPermission('dogear__GitRevert', 'default', emptyPackMap, emptyAllowed, allAsk())).toBe('ask');
+});
+
+test('autoExecute 模式：dogear__GitRevert 放行（与浏览器交互工具同语义）', () => {
+  expect(decideToolPermission('dogear__GitRevert', 'autoExecute', gitPackMap, emptyAllowed, allAsk())).toBe('allow');
+});

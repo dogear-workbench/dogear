@@ -129,6 +129,7 @@ const PACK_TOOL_MODULE_IMPORTS = [
   () => import('../agents/tools/group-tools.js'),
   () => import('../agents/tools/reference-tools.js'),
   () => import('../agents/tools/task-tools.js'),
+  () => import('../agents/tools/git-tools.js'),
   () => import('../agents/tools/fork-session-tool.js'),
   () => import('../agents/tools/stock-tools.js'),
   () => import('../agents/tools/stock-analysis-tools.js'),
@@ -210,6 +211,11 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
         ? `主会话绑定工作区即加载${pack.key === 'notes' ? '（含任务申报工具）' : ''}`
         : '需绑定工作区路径后加载';
     }
+    if (pack.key === 'workspace-git') {
+      return hasWorkspace
+        ? '绑定工作区即注册 git 工具组并注入 git 历史意识段（主/子会话同条件）'
+        : '需绑定工作区路径后加载';
+    }
     switch (pack.key) {
       case 'workspace-rules':
       case 'global-rules':
@@ -236,6 +242,8 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       return '随包开关注入子会话';
     case 'notes':
       return '仅主会话加载，子会话不注入';
+    case 'workspace-git':
+      return '绑定工作区即生效（主/子会话同条件），无 Profile 过滤维度';
     case 'shunt':
       return '仅主会话生效，子会话不加载';
     case 'group-context':
@@ -260,6 +268,8 @@ function personalSceneReason(pack: AbilityPack): string {
     case 'memory':
       return '包级不生效（无工作区路径被排除）；记忆工具兜底注册可用，纪律段不注入';
     case 'notes':
+      return '需绑定工作区路径，临时会话不加载';
+    case 'workspace-git':
       return '需绑定工作区路径，临时会话不加载';
     case 'group-context':
     case 'agent-collab':

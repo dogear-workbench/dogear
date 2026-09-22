@@ -16,7 +16,7 @@
 
 - [x] [Step 1: git-service 服务层](./step1-git-service.md) — execFile 封装、git 检测、影子仓库生命周期、快照队列、用户仓库操作、双源历史查询
 - [x] [Step 2: 快照触发挂钩](./step2-snapshot-hooks.md) — agent Write/Edit 成功后快照 + UI 文件操作后快照，队列串行
-- [ ] [Step 3: agent 工具组与历史意识注入](./step3-git-tools.md) — 九个 dogear__Git* 工具、权限分级、registerTools、能力包挂靠、系统提示 git 历史意识段
+- [x] [Step 3: agent 工具组与历史意识注入](./step3-git-tools.md) — 九个 dogear__Git* 工具、权限分级、registerTools、能力包挂靠、系统提示 git 历史意识段
 - [ ] [Step 4: 文件树历史 UI](./step4-history-ui.md) — 右键「历史」入口、快照列表、简单 diff、恢复按钮
 
 ## 全局决策

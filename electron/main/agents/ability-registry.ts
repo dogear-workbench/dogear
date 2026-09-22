@@ -83,6 +83,15 @@ export const ABILITY_PACKS: AbilityPack[] = [
     defaultEnabled: true,
   },
   {
+    key: 'workspace-git',
+    label: 'git 版本管理',
+    description: '工作区双层 git 工具组（查历史/diff/blame、正式提交、回退、影子快照）+ git 历史意识段，绑定工作区时生效（主/子会话）',
+    type: 'segment-tools',
+    segmentKeys: ['git-history-guidance'],
+    toolGroups: ['dogear-git'],
+    defaultEnabled: true,
+  },
+  {
     key: 'group-context',
     label: '会话组',
     description: '组上下文段（组头 + 话题状态）+ 组状态卡工具，会话属于某个组时生效',
@@ -190,6 +199,7 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
       if (opts.role === 'sub' && opts.profile?.enabledAbilities.memory !== true) continue;
     }
     if (pack.key === 'notes' && (opts.role !== 'main' || !opts.hasWorkspace)) continue;
+    if (pack.key === 'workspace-git' && !opts.hasWorkspace) continue;
     if ((pack.key === 'group-context' || pack.key === 'agent-collab') && !opts.groupId) continue;
     // executor 由拼装侧显式排除（同 notes-discipline 模式）：无人值守无分流场景
     if (pack.key === 'shunt' && (!opts.hasWorkspace || !opts.groupId)) continue;
