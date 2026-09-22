@@ -176,7 +176,7 @@ export const groupRouter = {
     .action(async ({ input }) => {
       try {
         await groupService.requireActiveGroup(input.workspaceId, input.groupId);
-        await groupSharedService.writeNativeFile(input.workspaceId, input.groupId, input.relPath, input.content);
+        await groupSharedService.writeNativeFile(input.workspaceId, input.groupId, groupSharedService.ensureDatedRelPath(input.relPath), input.content);
         return { ok: true, error: undefined };
       } catch (error) {
         console.error('写入共享文件失败:', error);

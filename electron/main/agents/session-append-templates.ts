@@ -77,7 +77,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
   const { task, outputPath } = opts;
   const hasPath = outputPath.trim().length > 0;
   const deliveryShape = hasPath
-    ? `**交付路径**：${outputPath}——复杂产出（报告/代码改动说明）用 dogear__SaveSharedNote 把完整交付内容写到共享区这个路径，dogear__SendMessage 里只放摘要通知；简单问答/验证类可直接在交付消息正文交付\n\n`
+    ? `**交付路径**：${outputPath}——复杂产出（报告/代码改动说明）用 dogear__SaveSharedNote 把完整交付内容写到共享区这个路径（文件名会自动补当天 YYYYMMDD- 日期前缀，以工具返回的实际路径为准），dogear__SendMessage 里只放摘要通知；简单问答/验证类可直接在交付消息正文交付\n\n`
     : `**交付形态**：未指定交付文件，交付内容直接写在交付消息正文（dogear__SendMessage）\n\n`;
   return (
     `\n## 你是一个被派遣的子会话\n` +

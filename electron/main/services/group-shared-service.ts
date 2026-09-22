@@ -29,6 +29,16 @@ function safeResolve(sharedDir: string, relPath: string): string {
   return resolved;
 }
 
+export function ensureDatedRelPath(relPath: string, date = new Date()): string {
+  const normalized = relPath.replace(/\\/g, '/');
+  const lastSlash = normalized.lastIndexOf('/');
+  const name = lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+  if (/^\d{8}-/.test(name)) return normalized;
+  const yyyymmdd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const dir = lastSlash >= 0 ? normalized.slice(0, lastSlash + 1) : '';
+  return `${dir}${yyyymmdd}-${name}`;
+}
+
 export async function listNativeFiles(workspaceId: string, groupId: string): Promise<{ files: NativeFileEntry[]; sharedDir: string }> {
   const sharedDir = await getSharedDir(workspaceId, groupId);
   const files: NativeFileEntry[] = [];

@@ -79,18 +79,19 @@ export function createGroupToolDefs(workspaceId: string, groupId: string): ToolD
     defineTool(
       'dogear__SaveSharedNote',
       '保存到共享区',
-      '向会话组共享区写入文件（覆盖已有内容）。仅用于需要向同组其他会话传递文件时。',
+      '向会话组共享区写入文件（覆盖已有内容），文件名自动带日期前缀（已带则不重复补）。仅用于需要向同组其他会话传递文件时。',
       z.object({
-        relPath: z.string().describe('共享区相对路径，例如 notes.md 或 ideas/2026-06-25.md'),
+        relPath: z.string().describe('共享区相对路径，文件名自动补 YYYYMMDD- 日期前缀，无需自己拼；例如传 notes.md 实际落盘为 20260625-notes.md'),
         content: z.string().describe('完整文件内容（UTF-8 文本）'),
       }),
       async (args) => {
         try {
           await requireActiveGroup(workspaceId, groupId);
-          await groupSharedService.writeNativeFile(workspaceId, groupId, args.relPath, args.content);
+          const finalPath = groupSharedService.ensureDatedRelPath(args.relPath);
+          await groupSharedService.writeNativeFile(workspaceId, groupId, finalPath, args.content);
           const bytes = Buffer.byteLength(args.content, 'utf-8');
           return {
-            content: [{ type: 'text' as const, text: `✅ 已写入 ${args.relPath}（${bytes} 字节）` }],
+            content: [{ type: 'text' as const, text: `✅ 已写入 ${finalPath}（${bytes} 字节）` }],
           };
         } catch (error) {
           return {
