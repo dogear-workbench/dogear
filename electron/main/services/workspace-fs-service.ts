@@ -7,6 +7,19 @@
 import fs from 'fs/promises';
 import path from 'path';
 import type { WorkspaceFileNode } from '../types.js';
+import { takeSnapshot, type SnapshotSource } from './git-service/index.js';
+
+/** fire-and-forget：快照失败不阻塞原操作（无 git 时 takeSnapshot 静默跳过） */
+function snapshotAfterUi(workspaceId: string | undefined, workspacePath: string, source: SnapshotSource, relPath: string): void {
+  if (!workspaceId) return;
+  takeSnapshot(workspaceId, workspacePath, source, toPosix(relPath)).catch((error) => {
+    console.warn(`[git-snapshot] ${source} 快照失败:`, error);
+  });
+}
+
+function toPosix(p: string): string {
+  return p.replace(/\\/g, '/');
+}
 
 /** 隐藏的目录/文件名（不在文件树中显示） */
 const HIDDEN_NAMES = ['.dogear', '.DS_Store', 'Thumbs.db', '.git'];
@@ -126,18 +139,19 @@ async function scanDirectory(dirPath: string, workspacePath: string): Promise<Wo
 /**
  * 创建文件夹
  */
-export async function createFolder(workspacePath: string, parentRelPath: string, name: string): Promise<void> {
+export async function createFolder(workspacePath: string, parentRelPath: string, name: string, workspaceId?: string): Promise<void> {
   const parentAbsPath = resolveAndValidate(workspacePath, parentRelPath);
   const newFolderPath = path.join(parentAbsPath, name);
   // 二次校验新文件夹路径也在工作区内
   resolveAndValidate(workspacePath, path.relative(workspacePath, newFolderPath));
   await fs.mkdir(newFolderPath, { recursive: true });
+  snapshotAfterUi(workspaceId, workspacePath, 'ui-create', path.relative(workspacePath, newFolderPath));
 }
 
 /**
  * 重命名文件或文件夹
  */
-export async function renameItem(workspacePath: string, itemRelPath: string, newName: string): Promise<void> {
+export async function renameItem(workspacePath: string, itemRelPath: string, newName: string, workspaceId?: string): Promise<void> {
   const oldAbsPath = resolveAndValidate(workspacePath, itemRelPath);
   const newAbsPath = path.join(path.dirname(oldAbsPath), newName);
   // 校验重命名后的路径仍在工作区内
@@ -152,12 +166,13 @@ export async function renameItem(workspacePath: string, itemRelPath: string, new
       throw err;
     }
   }
+  snapshotAfterUi(workspaceId, workspacePath, 'ui-rename', path.relative(workspacePath, newAbsPath));
 }
 
 /**
  * 移动文件或文件夹
  */
-export async function moveItem(workspacePath: string, sourceRelPath: string, targetFolderRelPath: string): Promise<void> {
+export async function moveItem(workspacePath: string, sourceRelPath: string, targetFolderRelPath: string, workspaceId?: string): Promise<void> {
   const sourceAbsPath = resolveAndValidate(workspacePath, sourceRelPath);
   const targetFolderAbsPath = resolveAndValidate(workspacePath, targetFolderRelPath);
   const itemName = path.basename(sourceAbsPath);
@@ -175,12 +190,13 @@ export async function moveItem(workspacePath: string, sourceRelPath: string, tar
       throw err;
     }
   }
+  snapshotAfterUi(workspaceId, workspacePath, 'ui-rename', path.relative(workspacePath, targetAbsPath));
 }
 
 /**
  * 复制文件或文件夹
  */
-export async function copyItem(workspacePath: string, sourceRelPath: string, targetFolderRelPath: string): Promise<void> {
+export async function copyItem(workspacePath: string, sourceRelPath: string, targetFolderRelPath: string, workspaceId?: string): Promise<void> {
   const sourceAbsPath = resolveAndValidate(workspacePath, sourceRelPath);
   const targetFolderAbsPath = resolveAndValidate(workspacePath, targetFolderRelPath);
   const itemName = path.basename(sourceAbsPath);
@@ -188,14 +204,16 @@ export async function copyItem(workspacePath: string, sourceRelPath: string, tar
   // 校验目标路径在工作区内
   resolveAndValidate(workspacePath, path.relative(workspacePath, targetAbsPath));
   await fs.cp(sourceAbsPath, targetAbsPath, { recursive: true });
+  snapshotAfterUi(workspaceId, workspacePath, 'ui-create', path.relative(workspacePath, targetAbsPath));
 }
 
 /**
  * 删除文件或文件夹
  */
-export async function deleteItem(workspacePath: string, itemRelPath: string): Promise<void> {
+export async function deleteItem(workspacePath: string, itemRelPath: string, workspaceId?: string): Promise<void> {
   const absPath = resolveAndValidate(workspacePath, itemRelPath);
   await fs.rm(absPath, { recursive: true, force: true });
+  snapshotAfterUi(workspaceId, workspacePath, 'ui-delete', path.relative(workspacePath, absPath));
 }
 
 const ALLOWED_TEXT_EXT = ['.md', '.markdown', '.txt', '.json'];

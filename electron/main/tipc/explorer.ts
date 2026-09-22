@@ -21,7 +21,7 @@ export const explorerRouter = {
         if (isArticleFolder) {
           await articleService.createArticleFolder(workspace.path, input.parentPath, input.name);
         } else {
-          await workspaceFsService.createFolder(workspace.path, input.parentPath, input.name);
+          await workspaceFsService.createFolder(workspace.path, input.parentPath, input.name, input.workspaceId);
         }
         return { success: true };
       } catch (error) {
@@ -41,7 +41,7 @@ export const explorerRouter = {
         if (isArticlePath) {
           await articleService.renameArticleFolder(workspace.path, input.itemPath, input.newName);
         } else {
-          await workspaceFsService.renameItem(workspace.path, input.itemPath, input.newName);
+          await workspaceFsService.renameItem(workspace.path, input.itemPath, input.newName, input.workspaceId);
         }
         return { success: true };
       } catch (error) {
@@ -61,7 +61,7 @@ export const explorerRouter = {
         if (isArticlePath) {
           await articleService.moveArticleItem(workspace.path, input.sourcePath, input.targetPath, input.targetIndex);
         } else {
-          await workspaceFsService.moveItem(workspace.path, input.sourcePath, input.targetPath);
+          await workspaceFsService.moveItem(workspace.path, input.sourcePath, input.targetPath, input.workspaceId);
         }
         return { success: true };
       } catch (error) {
@@ -77,7 +77,7 @@ export const explorerRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
 
-        await workspaceFsService.copyItem(workspace.path, input.sourcePath, input.targetPath);
+        await workspaceFsService.copyItem(workspace.path, input.sourcePath, input.targetPath, input.workspaceId);
         return { success: true };
       } catch (error) {
         console.error('复制失败:', error);
@@ -96,7 +96,7 @@ export const explorerRouter = {
         if (isArticlePath) {
           await articleService.deleteArticleFolder(workspace.path, input.itemPath);
         } else {
-          await workspaceFsService.deleteItem(workspace.path, input.itemPath);
+          await workspaceFsService.deleteItem(workspace.path, input.itemPath, input.workspaceId);
         }
         return { success: true };
       } catch (error) {

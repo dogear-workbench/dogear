@@ -8,6 +8,7 @@
  * PTY（立即返回，进程持续运行，用 read_terminal/kill_terminal 管理）。
  * 工具 execute 的 context 由 harness 按 turn 快照注入（PiSession 通过 toolContext: { env } 提供）。
  */
+import path from 'path';
 import { Type, type TSchema } from 'typebox';
 import {
   createBashTool,
@@ -23,12 +24,15 @@ import {
   killTerminal,
   listTerminals,
 } from '../../services/pty-service.js';
+import { takeSnapshot, toGitPath, type SnapshotSource } from '../../services/git-service/index.js';
 
 export interface BuiltinFileToolsOptions {
   /** 本会话 conversationId：后台命令创建的 PTY 归属会话，close 清理与 read/kill 归属判断都依赖它 */
   conversationId?: string;
   /** 后台 PTY 的 cwd 边界，与注入 env 的 allowedPaths 同源；缺省不做越权校验 */
   workspaceRoots?: string[];
+  /** 影子快照归属的工作区；缺省不打快照 */
+  workspaceId?: string;
 }
 
 type Ctx = { env: ExecutionEnv };
@@ -38,12 +42,37 @@ type HarnessTool<S extends TSchema = TSchema> = AgentHarnessTool<Ctx, S, unknown
 export function createBuiltinFileTools(options?: BuiltinFileToolsOptions): HarnessTool[] {
   return [
     createReadTool(),
-    createWriteTool(),
-    createEditTool(),
+    withSnapshot(createWriteTool(), 'agent-write', options),
+    withSnapshot(createEditTool(), 'agent-edit', options),
     createPtyBashTool(options),
     createReadTerminalTool(options),
     createKillTerminalTool(options),
   ];
+}
+
+/** 原工具成功后才触发快照；失败/中断不快照。快照异步不阻塞工具返回 */
+function withSnapshot<T extends AgentHarnessTool<Ctx, any, any>>(tool: T, source: SnapshotSource, options?: BuiltinFileToolsOptions): T {
+  return {
+    ...tool,
+    async execute(toolCallId, args, signal, onUpdate, context) {
+      const result = await tool.execute(toolCallId, args, signal, onUpdate, context);
+      snapshotAfterAgentMutation(source, args, options);
+      return result;
+    },
+  } as T;
+}
+
+/** 写入落在主根（workspaceRoots[0]，即影子 work-tree 边界）内才快照；附加根文件进不了影子仓库 */
+function snapshotAfterAgentMutation(source: SnapshotSource, args: unknown, options?: BuiltinFileToolsOptions): void {
+  const root = options?.workspaceRoots?.[0];
+  const rawPath = (args as { path?: unknown } | undefined)?.path;
+  if (!options?.workspaceId || !root || typeof rawPath !== 'string') return;
+  const abs = path.resolve(root, rawPath);
+  const rel = path.relative(root, abs);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return;
+  takeSnapshot(options.workspaceId, root, source, toGitPath(rel), options.conversationId).catch((error) => {
+    console.warn(`[git-snapshot] ${source} 快照失败:`, error);
+  });
 }
 
 const ptyBashSchema = Type.Object({

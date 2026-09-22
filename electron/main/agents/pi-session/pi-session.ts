@@ -611,6 +611,7 @@ export class PiSession extends EventEmitter {
       ...createBuiltinFileTools({
         conversationId: this.config.conversationId,
         workspaceRoots: basePaths,
+        workspaceId: this.config.workspaceId,
       }),
       ...toPiTools(toolDefs),
     ];
