@@ -22,7 +22,7 @@
 - `article.ts` / `notes.ts` / `tasks.ts` — 文章 / 笔记 CRUD / 协作任务路由（详见各功能域）
 - `notifications.ts` — 消息中心路由（notification-center-service 单例透传，变更经广播推送）
 - `conversations.ts` — 对话 CRUD+分叉+移入工作区（moveConversationToWorkspace：索引迁移+session 搬运）
-- `workspace.ts` / `file.ts` / `explorer.ts` — 工作区管理 / 打开文件位置 / 文件树操作
+- `workspace.ts` / `file.ts` / `explorer.ts` / `git.ts` — 工作区管理 / 打开文件位置 / 文件树操作 / git 历史（能力检测+双源时间线+快照恢复+历史版本内容）
 - `stock.ts` / `usage.ts` / `group.ts` / `ability.ts` / `scheduler.ts` — 股票 12+RPC / 用量查询 / 会话组+话题+共享区 / 能力包（getAbilityPacks 四源聚合+getAbilityMounts）/ 定时任务
 - `renderer-handlers.ts` — main→renderer 事件定义收口（sessionMessage、权限请求、usageEntryAdded、sessionStateChanged/sessionClosed、aliveConversationsChanged、failoverNotice、tasksChanged、notificationsChanged、soundCue、pty 三事件、browserActionAdded、pagePresentationChanged、humanInterventionChanged 等）
 
@@ -31,6 +31,7 @@
 - `client.ts` — tipc 客户端（window.ipcRenderer 通信唯一入口）
 - `events.ts` — tipc 事件处理入口（监听主进程广播）
 - `utils.ts` — cn() 类名合并
+- `line-diff.ts` — LCS 行级 diff 纯函数（公共前后缀裁剪；>20000 行返回 null 降级），文件历史面板用
 - `hotkey-registry.ts` — 全局快捷键 registry：HOTKEY_DEFS 静态定义 + registerHotkey(id, handler)（共享单 listener + 引用计数）+ listHotkeys（设置页清单数据源）；组件挂载时注册、卸载即解绑
 - `dogear-sound.ts` — Web Audio 合成提示音（complete/permission/error 三音型、enabled 开关、1200ms 节流、backgroundOnly）
 - `sdk/index.ts` + `sdk/query.ts` — Claude Agent SDK query 函数封装

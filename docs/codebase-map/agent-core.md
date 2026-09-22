@@ -21,7 +21,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `history-adapter.ts` — branch entries → HistoryMessage[]（数据源唯一为 session-history-reader）
 - `transcript-adapter.ts` — 逐字稿去噪+工具骨架化、tail/range/uuid 切片读取、buildSessionUuidIndex
 - `session-history-reader.ts` — 读 session branch 唯一入口（不走 repository.open，fs 逐行解析容错尾行）
-- `permission-mode.ts` / `permission-rules.ts` — 权限类型 / 判定纯函数（autoExecute 放行 → 工具包放行 → 快照映射 → 其余 ask）
+- `permission-mode.ts` / `permission-rules.ts` — 权限类型 / 判定纯函数（autoExecute 放行 → PERMISSION_ASK_TOOLS 逐次确认（浏览器交互三工具+dogear__GitRevert）→ 工具包放行 → 快照映射 → 其余 ask）
 - `skill-loader.ts` — loadSkills 封装：扫目录产 SkillEntry[]、拼 `<available_skills>`、懒加载 Skill 工具
 - `builtin-tools.ts` — Read/Write/Edit + bash 双轨（run_in_background 委托 pty-service）+ read_terminal/kill_terminal
 - `search-tools.ts` — 手写 Glob/Grep（路径边界委托 workspace-boundary；`.dogear` 数据目录默认跳过，需搜其中内容时显式指 path）
@@ -41,13 +41,14 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## 能力包与 skill
 
-- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 13 包 + resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略）+ TOOL_PACK_TO_ABILITY 反查；会话分流为独立包 shunt（段+dogear-shunt 工具组，主会话+有工作区+属组触发，executor 拼装侧排除）
-- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/岔题分流引导/派遣契约/联网调研分工/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
+- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 14 包 + resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略）+ TOOL_PACK_TO_ABILITY 反查；会话分流为独立包 shunt（段+dogear-shunt 工具组，主会话+有工作区+属组触发，executor 拼装侧排除）；workspace-git 包（git 工具组+git 历史意识段，有工作区才生效，主/子会话同条件）
+- `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/岔题分流引导/派遣契约/联网调研分工/git 历史意识/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
 - `skill-service.ts`（services/）— listSkills 扫三源目录标注 source+enabled
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置+自定义，IPC 供设置页动态加载）
 - `tools/group-tools.ts` — 组共享区工具（ListGroupFiles/SaveSharedNote）
 - `tools/reference-tools.ts` — 跨会话检索常驻组（ListTopics 可跨工作区/ReadReferenceSession/ReadTopicCard 直读话题状态卡）+ 组协作组（ReadGroupBackground/ListSiblingSessions）
 - `tools/task-tools.ts` — 协作任务四工具（CreateTask/ListTasks/ExecuteTask/ReportTaskResult）
+- `tools/git-tools.ts` — git 九工具组（dogear-git，workspace-git 能力包）：只读五件套 Status/Diff/Log/Show/Blame + GitCommit/GitRevert（挂权限 ask）/GitSnapshotList/GitSnapshotRestore；双层语义=用户仓库正式历史+影子仓库自动快照安全网，无远端操作；服务层在 services/git-service/
 - `tools/fork-session-tool.ts` — 岔题分流工具组（dogear-shunt）：dogear__ForkSession 平级新会话/新话题组，仅收到 <shunt> 标签时调用，无父子契约不等交付，orphan 保活
 - 功能工具定义分域：浏览器/扩展/联网 → browser.md；股票 → stocks.md；笔记/文章 → articles.md
 

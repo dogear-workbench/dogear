@@ -36,7 +36,8 @@
 ## 通用组件（components/）
 
 - `ToolBlock.tsx` — 工具块路由：normalizeToolName 归一后分发 renderer；标题行 Eye 快照预览按钮
-- `WorkspaceExplorer.tsx` — 工作区文件树（拖放/重命名/删除；文章分区带「导入文章」入口）
+- `WorkspaceExplorer.tsx` — 工作区文件树（拖放/重命名/删除；文章分区带「导入文章」入口；文件/文件夹右键「历史」（git 能力检测通过才渲染）→ git-history-store 开历史面板）
+- `FileHistoryPanel.tsx` + `file-history/HistoryDiffView.tsx` — 文件历史 Dialog（双栏：双源时间线（来源徽标 Agent/你/恢复前/外部）+ 行级 diff；影子快照可恢复：showConfirm → restoreSnapshot → toast+刷新文件树；UI 不写用户仓库；主窗口与会话窗口两宿主都挂载）
 - `AdditionalFilesPanel.tsx` — 附加路径面板（多节手风琴，行尾 Switch 启停）
 - `TopicPanel.tsx` — 话题 tab：话题状态卡渲染（含待确认变更接受/拒绝）+ 共享文件列表；数据层另见 data-center.md
 - `companion/CompanionPanel.tsx` — 五 tab 伴随面板容器（文件/附加/话题/终端/浏览器），可被工作台窗口复用；宽度 localStorage 记忆
@@ -60,6 +61,7 @@
 - `slash-command-store.ts` — 斜杠命令合并与 capabilities
 - `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE）+ dataCenterTabOpen（归档 tab 不落 localStorage）
 - `terminal-store.ts` — 终端前端（terminals Map、followMode/pinned、registerDataSink 收流注册）
+- `git-history-store.ts` — 文件历史面板状态（open/target/gitAvailable + checkGitAvailable 幂等能力检测）
 
 ## lib / services
 
@@ -75,7 +77,8 @@
 - `services/conversation-tree-service.ts` — 手动文件夹树（`.dogear/.../conversation-tree.json`）
 - `services/focused-conversation-service.ts` — 全局焦点会话内存态（值变化才广播，跨窗口共享）
 - `services/workspace-watcher.ts` — 文件树监视（递归 fs.watch 仅 rename，500ms 去抖广播）
-- `services/workspace-fs-service.ts` — 文件树扫描与文件操作（安全路径验证）
+- `services/workspace-fs-service.ts` — 文件树扫描与文件操作（安全路径验证）；create/rename/move/copy/delete 成功后自动触发影子 git 快照（可选尾参 workspaceId，fire-and-forget）
+- `services/git-service/` — 双层 git 服务层：exec（execFile 封装+GitServiceError）/shadow（影子仓库：--git-dir/--work-tree 分离，workspaceId 级串行快照队列，add -A -f + exclude pathspec 绕过用户 .gitignore 覆盖私人文件）/user-repo（用户仓库读写+repo-busy 探测）/history（双源合并）；agent Write/Edit 快照挂钩在 pi-session/builtin-tools.ts（withSnapshot 包装）
 - `services/pty-service.ts` — PTY 实例管理（node-pty，buffer 尾部 100K 封顶，事件上抛 tipc/pty.ts 桥接）
 
 ## 注意
