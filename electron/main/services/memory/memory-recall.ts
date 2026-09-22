@@ -7,6 +7,7 @@
  */
 import { readIndex } from './memory-indexer.js';
 import { getTopic } from './memory-service.js';
+import type { MemoryScope, ScopedTopicIndexEntry } from './memory-types.js';
 
 const HARD_LIMIT = 5;
 
@@ -16,6 +17,7 @@ export interface RecallResult {
     title: string;
     content: string;
     updated: string;
+    scope: MemoryScope;
   }>;
   /** 有更多未返回主题时的提示 */
   hint?: string;
@@ -35,13 +37,20 @@ export async function recall(
     return { topics: [] };
   }
 
-  const index = await readIndex(workspaceId);
-  if (index.topics.length === 0) {
+  const [wsIndex, globalIndex] = await Promise.all([
+    readIndex(workspaceId),
+    readIndex(workspaceId, 'global'),
+  ]);
+  const entries: ScopedTopicIndexEntry[] = [
+    ...wsIndex.topics.map((e) => ({ ...e, scope: 'workspace' as const })),
+    ...globalIndex.topics.map((e) => ({ ...e, scope: 'global' as const })),
+  ];
+  if (entries.length === 0) {
     return { topics: [] };
   }
 
   // 逐条打分
-  const scored = index.topics.map((entry) => {
+  const scored = entries.map((entry) => {
     const haystack = `${entry.title} ${entry.keywords.join(' ')}`.toLowerCase();
     let hits = 0;
     for (const kw of normalizedKeywords) {
@@ -61,7 +70,7 @@ export async function recall(
   const topics: RecallResult['topics'] = [];
 
   for (const { entry } of topSlice) {
-    const topic = await getTopic(workspaceId, entry.slug);
+    const topic = await getTopic(workspaceId, entry.slug, entry.scope);
     if (!topic) {
       // index 有但文件不在：跳过并记日志（不自动修复，参考风险表）
       console.warn(`[memory-recall] 索引中的 topic ${entry.slug} 文件缺失，跳过`);
@@ -72,6 +81,7 @@ export async function recall(
       title: topic.title,
       content: topic.content,
       updated: topic.updated,
+      scope: entry.scope,
     });
   }
 

@@ -10,6 +10,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { getConfigDir } from '../settings-service.js';
+import type { MemoryScope } from './memory-types.js';
 
 // ─── 路径函数 ───
 
@@ -31,6 +32,36 @@ export function getTopicPath(workspaceId: string, slug: string): string {
 
 export function getIndexPath(workspaceId: string): string {
   return path.join(getMemoryDir(workspaceId), 'index.json');
+}
+
+export function getGlobalMemoryDir(): string {
+  return path.join(getConfigDir(), 'memory');
+}
+
+export function getGlobalTopicsDir(): string {
+  return path.join(getGlobalMemoryDir(), 'topics');
+}
+
+export function getGlobalTopicPath(slug: string): string {
+  return path.join(getGlobalTopicsDir(), `${slug}.md`);
+}
+
+export function getGlobalIndexPath(): string {
+  return path.join(getGlobalMemoryDir(), 'index.json');
+}
+
+// ─── Scope 路由 ───
+
+export function resolveTopicsDir(scope: MemoryScope, workspaceId: string): string {
+  return scope === 'global' ? getGlobalTopicsDir() : getTopicsDir(workspaceId);
+}
+
+export function resolveTopicPath(scope: MemoryScope, workspaceId: string, slug: string): string {
+  return scope === 'global' ? getGlobalTopicPath(slug) : getTopicPath(workspaceId, slug);
+}
+
+export function resolveIndexPath(scope: MemoryScope, workspaceId: string): string {
+  return scope === 'global' ? getGlobalIndexPath() : getIndexPath(workspaceId);
 }
 
 // ─── Frontmatter 解析 ───

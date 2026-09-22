@@ -15,7 +15,7 @@
 
 - [x] [Step 1: shared 命名规范化](./step1-shared-naming.md) — SaveSharedNote 写入自动补日期前缀
 - [x] [Step 2: 归档话题批量清理入口](./step2-batch-cleanup-archived.md) — 归档视图一键清理超 N 天话题（全删语义）
-- [ ] [Step 3: playbook 归入 memory 全局主题](./step3-playbook-into-memory.md) — scope 路由 + 检索合并 + 注入源切换 + 存量迁移
+- [x] [Step 3: playbook 归入 memory 全局主题](./step3-playbook-into-memory.md) — scope 路由 + 检索合并 + 注入源切换 + 存量迁移
 - [ ] [Step 4: 笔记完成态流转](./step4-notes-archive-flow.md) — 核实状态机后定做/降级
 
 ## 全局决策

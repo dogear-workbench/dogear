@@ -1,8 +1,12 @@
 import fs from 'fs';
 import path from 'path';
 import { getConfigDir } from '../settings-service.js';
+import { getGlobalTopicPath, parseFrontmatter } from '../memory/memory-fs.js';
+import { upsertTopic } from '../memory/memory-service.js';
 
 const MAX_READ_BYTES = 8 * 1024;
+const PLAYBOOK_SLUG = 'browser-playbook';
+const MIGRATION_KEYWORDS = ['浏览器', '踩坑', '调研', '反爬', 'SERP', '登录墙', '风控'];
 
 export interface BrowserPlaybookReadResult {
   exists: boolean;
@@ -34,11 +38,30 @@ export function ensureDefaultPlaybook(): void {
 }
 
 export function readBrowserPlaybook(): BrowserPlaybookReadResult {
+  const fromTopic = readGlobalPlaybookTopic();
+  if (fromTopic) return fromTopic;
+
   ensureDefaultPlaybook();
   const file = playbookFile();
   if (!fs.existsSync(file)) return { exists: false, content: '' };
+  return readTruncated(() => fs.readFileSync(file, 'utf8'));
+}
+
+function readGlobalPlaybookTopic(): BrowserPlaybookReadResult | null {
+  const file = getGlobalTopicPath(PLAYBOOK_SLUG);
+  if (!fs.existsSync(file)) return null;
   try {
     const raw = fs.readFileSync(file, 'utf8');
+    const { body } = parseFrontmatter(raw);
+    return readTruncated(() => body.replace(/^\n/, ''));
+  } catch {
+    return null;
+  }
+}
+
+function readTruncated(read: () => string): BrowserPlaybookReadResult {
+  try {
+    const raw = read();
     const buf = Buffer.from(raw, 'utf8');
     if (buf.length <= MAX_READ_BYTES) return { exists: true, content: raw };
     const head = buf.subarray(0, MAX_READ_BYTES).toString('utf8').replace(/\uFFFD+$/, '');
@@ -48,5 +71,44 @@ export function readBrowserPlaybook(): BrowserPlaybookReadResult {
     };
   } catch {
     return { exists: false, content: '' };
+  }
+}
+
+/**
+ * 一次性幂等迁移：全局 browser-playbook.md → 全局记忆主题（slug=browser-playbook）。
+ * 主题已存在或旧文件不存在则跳过；主题写入成功后旧文件改名为 .migrated 保留人工确认。
+ * 任一步失败只记日志，readBrowserPlaybook 的回退路径仍可用。
+ */
+export async function migrateBrowserPlaybookIntoMemory(): Promise<void> {
+  const legacyFile = playbookFile();
+  const topicFile = getGlobalTopicPath(PLAYBOOK_SLUG);
+  // 仅在迁移确实要发生时才预置默认旧文件，避免迁移完成后每次启动重新生成残留
+  if (!fs.existsSync(topicFile)) {
+    ensureDefaultPlaybook();
+  }
+  if (!fs.existsSync(legacyFile) || fs.existsSync(topicFile)) return;
+
+  try {
+    const content = fs.readFileSync(legacyFile, 'utf8');
+    await upsertTopic(
+      '',
+      {
+        slug: PLAYBOOK_SLUG,
+        title: '浏览器调研通用技巧',
+        keywords: MIGRATION_KEYWORDS,
+        content,
+      },
+      'global'
+    );
+  } catch (err) {
+    console.warn('[browser-playbook] 迁移到全局记忆主题失败，继续使用旧文件:', err);
+    return;
+  }
+
+  try {
+    await fs.promises.rename(legacyFile, `${legacyFile}.migrated`);
+    console.log('[browser-playbook] 已迁移至全局记忆主题 browser-playbook，旧文件保留为 .migrated');
+  } catch (err) {
+    console.warn('[browser-playbook] 主题已写入但旧文件改名失败:', err);
   }
 }

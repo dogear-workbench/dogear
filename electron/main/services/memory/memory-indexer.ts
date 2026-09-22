@@ -7,8 +7,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { safeJsonWrite, safeJsonRead } from '../safe-json.js';
-import type { MemoryIndex, TopicIndexEntry } from './memory-types.js';
-import { getIndexPath, getTopicsDir, readTopicFrontmatter } from './memory-fs.js';
+import type { MemoryIndex, MemoryScope, TopicIndexEntry } from './memory-types.js';
+import { getTopicsDir, readTopicFrontmatter, resolveIndexPath, resolveTopicsDir } from './memory-fs.js';
 
 const EMPTY_INDEX: MemoryIndex = {
   version: 1,
@@ -17,24 +17,33 @@ const EMPTY_INDEX: MemoryIndex = {
 };
 
 /** 读取索引（不存在返回空索引） */
-export async function readIndex(workspaceId: string): Promise<MemoryIndex> {
-  const data = await safeJsonRead<MemoryIndex | null>(getIndexPath(workspaceId), null);
+export async function readIndex(
+  workspaceId: string,
+  scope: MemoryScope = 'workspace'
+): Promise<MemoryIndex> {
+  const data = await safeJsonRead<MemoryIndex | null>(resolveIndexPath(scope, workspaceId), null);
   if (!data || data.version !== 1 || !Array.isArray(data.topics)) {
-    return { ...EMPTY_INDEX };
+    // topics 必须新数组：EMPTY_INDEX 是模块级共享对象，浅拷贝会让 updateIndexEntry 的 push 污染后续所有空索引读取
+    return { ...EMPTY_INDEX, topics: [] };
   }
   return data;
 }
 
-async function writeIndex(workspaceId: string, index: MemoryIndex): Promise<void> {
-  await safeJsonWrite(getIndexPath(workspaceId), index);
+async function writeIndex(
+  workspaceId: string,
+  index: MemoryIndex,
+  scope: MemoryScope = 'workspace'
+): Promise<void> {
+  await safeJsonWrite(resolveIndexPath(scope, workspaceId), index);
 }
 
 /** 单条 upsert（upsertTopic 时调用） */
 export async function updateIndexEntry(
   workspaceId: string,
-  entry: TopicIndexEntry
+  entry: TopicIndexEntry,
+  scope: MemoryScope = 'workspace'
 ): Promise<void> {
-  const index = await readIndex(workspaceId);
+  const index = await readIndex(workspaceId, scope);
   const existing = index.topics.findIndex((t) => t.slug === entry.slug);
   if (existing >= 0) {
     index.topics[existing] = entry;
@@ -42,12 +51,16 @@ export async function updateIndexEntry(
     index.topics.push(entry);
   }
   index.updated = new Date().toISOString();
-  await writeIndex(workspaceId, index);
+  await writeIndex(workspaceId, index, scope);
 }
 
 /** 单条删除（deleteTopic 时调用） */
-export async function removeIndexEntry(workspaceId: string, slug: string): Promise<void> {
-  const index = await readIndex(workspaceId);
+export async function removeIndexEntry(
+  workspaceId: string,
+  slug: string,
+  scope: MemoryScope = 'workspace'
+): Promise<void> {
+  const index = await readIndex(workspaceId, scope);
   const next = index.topics.filter((t) => t.slug !== slug);
   if (next.length === index.topics.length) {
     // 没变动，仍然写回以刷新 updated（但忽略）
@@ -55,12 +68,15 @@ export async function removeIndexEntry(workspaceId: string, slug: string): Promi
   }
   index.topics = next;
   index.updated = new Date().toISOString();
-  await writeIndex(workspaceId, index);
+  await writeIndex(workspaceId, index, scope);
 }
 
 /** 重建索引（扫描 topics/*.md，重写 index.json） */
-export async function rebuildIndex(workspaceId: string): Promise<MemoryIndex> {
-  const topicsDir = getTopicsDir(workspaceId);
+export async function rebuildIndex(
+  workspaceId: string,
+  scope: MemoryScope = 'workspace'
+): Promise<MemoryIndex> {
+  const topicsDir = resolveTopicsDir(scope, workspaceId);
   const entries: TopicIndexEntry[] = [];
 
   let files: string[] = [];
@@ -93,7 +109,7 @@ export async function rebuildIndex(workspaceId: string): Promise<MemoryIndex> {
     updated: new Date().toISOString(),
     topics: entries,
   };
-  await writeIndex(workspaceId, index);
+  await writeIndex(workspaceId, index, scope);
   return index;
 }
 

@@ -691,6 +691,16 @@ app.whenReady().then(async () => {
     console.error('[migration-workspace-config] 失败:', error);
   }
 
+  // 浏览器 playbook 迁移：全局单文件 → 全局记忆主题（幂等，主题存在则跳过）
+  try {
+    const { migrateBrowserPlaybookIntoMemory } = await import(
+      './services/browser/browser-playbook-service.js'
+    );
+    await migrateBrowserPlaybookIntoMemory();
+  } catch (error) {
+    console.error('[browser-playbook-migration] 失败:', error);
+  }
+
   // 存量对话 modelSelection 旧三档 tier（haiku/sonnet/opus）映射为 piModels 真实模型 id
   try {
     const { migrateLegacyModelSelections } = await import('./services/conversation-service.js');

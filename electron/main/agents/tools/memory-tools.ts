@@ -1,9 +1,10 @@
 /**
  * 记忆大脑 MCP Server 工具
  *
- * 默认三个工具：dogear__RecallMemory / dogear__SaveMemory / dogear__ForgetMemory，操作工作区级记忆
- * （config/workspaces/{workspaceId}/memory/）。SDK 自身的 auto-memory 是全局画像级别，
- * 本工具面向的是"工作区主题记忆"，两者正交。
+ * 默认三个工具：dogear__RecallMemory / dogear__SaveMemory / dogear__ForgetMemory，操作主题记忆。
+ * SaveMemory/ForgetMemory 支持 scope: 'workspace'（config/workspaces/{id}/memory/，默认）与 'global'
+ * （config/memory/，跨工作区共享，准入仅限通用踩坑知识）。全局主题读侧自动合并进 recall/list。
+ * SDK 自身的 auto-memory 是全局画像级别，本工具面向的是"主题记忆"，两者正交。
  *
  * autonomous 模式（opts.autonomous=true）：
  * - dogear__SaveMemory 描述改为自动化任务契约（"仅用户明确要求"仅适用于交互式聊天）
@@ -32,7 +33,7 @@ export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: 
     defineTool(
       'dogear__RecallMemory',
       '按关键词查询历史记忆',
-      '按关键词查询与主题相关的工作区级历史记忆。每个主题记忆包含关键词索引和 markdown 正文。\n' +
+      '按关键词查询与主题相关的历史记忆，结果合并工作区记忆与全局记忆（scope=global，跨工作区共享）。每个主题记忆包含关键词索引和 markdown 正文。\n' +
       '匹配规则：关键词做小写归一化 + 子串匹配，不做中文分词。\n' +
       '每次最多返回 5 个主题，超出会有 hint 提示。',
       z.object({
@@ -86,6 +87,7 @@ export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: 
       '保存新的主题记忆或覆盖现有主题。\n' +
       'slug 必须是 kebab-case（仅小写字母数字和连字符），用于文件名。\n' +
       '⚠️ 记忆标准严苛：只有踩过的坑（非显而易见的根因与解法）、稳定使用模式、硬决策够格；实施流水账、方案细节（docs/plans 承载）、脑暴思路（笔记承载）不要存进来。\n' +
+      "scope='global' 准入更严：仅限跨工作区复用的通用踩坑知识（如浏览器调研技巧），所有工作区的 RecallMemory 都能命中；工作区相关的记忆一律用默认 scope。\n" +
       '写错可以通过 dogear__ForgetMemory 删除，但会污染 dogear__RecallMemory 的检索结果。',
       z.object({
         slug: z
@@ -101,15 +103,31 @@ export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: 
           .string()
           .min(1)
           .describe('主题正文，markdown 格式，描述记忆的具体内容'),
+        scope: z
+          .enum(['workspace', 'global'])
+          .optional()
+          .describe(
+            "存储作用域，默认 'workspace'。'global' 仅限跨工作区复用的通用踩坑知识（全局主题在所有工作区的 RecallMemory 中可见）"
+          ),
       }),
       async (args) => {
         try {
-          const topic = await memoryService.upsertTopic(workspaceId, args);
+          const scope = args.scope ?? 'workspace';
+          const topic = await memoryService.upsertTopic(
+            workspaceId,
+            {
+              slug: args.slug,
+              title: args.title,
+              keywords: args.keywords,
+              content: args.content,
+            },
+            scope
+          );
           return {
             content: [
               {
                 type: 'text' as const,
-                text: `已保存主题「${topic.title}」(slug=${topic.slug})，updated=${topic.updated}`,
+                text: `已保存主题「${topic.title}」(slug=${topic.slug}, scope=${scope})，updated=${topic.updated}`,
               },
             ],
           };
@@ -134,18 +152,23 @@ export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: 
       'dogear__ForgetMemory',
       '删除主题记忆',
       '删除指定 slug 的主题记忆。\n' +
-      '此操作同时删除 markdown 文件和 index.json 中的条目。',
+      "此操作同时删除 markdown 文件和 index.json 中的条目。默认删工作区记忆；删除全局主题时传 scope='global'。",
       z.object({
         slug: z.string().describe('要删除的主题 slug'),
+        scope: z
+          .enum(['workspace', 'global'])
+          .optional()
+          .describe("要删除的记忆作用域，默认 'workspace'；删除全局主题（如 browser-playbook）时传 'global'"),
       }),
       async (args) => {
         try {
-          await memoryService.deleteTopic(workspaceId, args.slug);
+          const scope = args.scope ?? 'workspace';
+          await memoryService.deleteTopic(workspaceId, args.slug, scope);
           return {
             content: [
               {
                 type: 'text' as const,
-                text: `已删除主题 slug=${args.slug}`,
+                text: `已删除主题 slug=${args.slug}, scope=${scope}`,
               },
             ],
           };

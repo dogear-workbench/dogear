@@ -8,12 +8,12 @@
  */
 import fs from 'node:fs/promises';
 import { safeFileWrite } from '../safe-json.js';
-import type { CoreProfile, Topic, TopicIndexEntry } from './memory-types.js';
+import type { CoreProfile, MemoryScope, ScopedTopicIndexEntry, Topic } from './memory-types.js';
 import {
   getCoreProfilePath,
-  getTopicPath,
-  getTopicsDir,
   parseFrontmatter,
+  resolveTopicPath,
+  resolveTopicsDir,
   stringifyFrontmatter,
   type Frontmatter,
 } from './memory-fs.js';
@@ -42,14 +42,25 @@ export async function updateCoreProfile(workspaceId: string, content: string): P
 
 // ─── 主题记忆 ───
 
-export async function listTopics(workspaceId: string): Promise<TopicIndexEntry[]> {
-  const index = await readIndex(workspaceId);
-  return [...index.topics].sort((a, b) => (a.updated < b.updated ? 1 : -1));
+/** 合并列出工作区 + 全局主题（按 updated 降序，条目带 scope 标记） */
+export async function listTopics(workspaceId: string): Promise<ScopedTopicIndexEntry[]> {
+  const [wsIndex, globalIndex] = await Promise.all([
+    readIndex(workspaceId),
+    readIndex(workspaceId, 'global'),
+  ]);
+  return [
+    ...wsIndex.topics.map((e) => ({ ...e, scope: 'workspace' as const })),
+    ...globalIndex.topics.map((e) => ({ ...e, scope: 'global' as const })),
+  ].sort((a, b) => (a.updated < b.updated ? 1 : -1));
 }
 
-export async function getTopic(workspaceId: string, slug: string): Promise<Topic | null> {
+export async function getTopic(
+  workspaceId: string,
+  slug: string,
+  scope: MemoryScope = 'workspace'
+): Promise<Topic | null> {
   try {
-    const raw = await fs.readFile(getTopicPath(workspaceId, slug), 'utf-8');
+    const raw = await fs.readFile(resolveTopicPath(scope, workspaceId, slug), 'utf-8');
     return parseTopicFile(slug, raw);
   } catch {
     return null;
@@ -58,12 +69,13 @@ export async function getTopic(workspaceId: string, slug: string): Promise<Topic
 
 export async function upsertTopic(
   workspaceId: string,
-  data: Omit<Topic, 'created' | 'updated'> & { created?: string; updated?: string }
+  data: Omit<Topic, 'created' | 'updated'> & { created?: string; updated?: string },
+  scope: MemoryScope = 'workspace'
 ): Promise<Topic> {
   const now = new Date().toISOString();
 
   // 读取现有的 created（保留原始创建时间）
-  const existing = await getTopic(workspaceId, data.slug);
+  const existing = await getTopic(workspaceId, data.slug, scope);
   const created = data.created ?? existing?.created ?? now;
   const updated = data.updated ?? now;
 
@@ -94,20 +106,28 @@ export async function upsertTopic(
 
   const body = topic.content.startsWith('\n') ? topic.content : `\n${topic.content}`;
   const raw = stringifyFrontmatter(fm, body);
-  await safeFileWrite(getTopicPath(workspaceId, topic.slug), raw);
+  await safeFileWrite(resolveTopicPath(scope, workspaceId, topic.slug), raw);
 
-  await updateIndexEntry(workspaceId, {
-    slug: topic.slug,
-    title: topic.title,
-    keywords: topic.keywords,
-    updated: topic.updated,
-  });
+  await updateIndexEntry(
+    workspaceId,
+    {
+      slug: topic.slug,
+      title: topic.title,
+      keywords: topic.keywords,
+      updated: topic.updated,
+    },
+    scope
+  );
 
   return topic;
 }
 
-export async function deleteTopic(workspaceId: string, slug: string): Promise<void> {
-  const filePath = getTopicPath(workspaceId, slug);
+export async function deleteTopic(
+  workspaceId: string,
+  slug: string,
+  scope: MemoryScope = 'workspace'
+): Promise<void> {
+  const filePath = resolveTopicPath(scope, workspaceId, slug);
   try {
     await fs.unlink(filePath);
   } catch {
@@ -118,10 +138,10 @@ export async function deleteTopic(workspaceId: string, slug: string): Promise<vo
     try { await fs.unlink(filePath + suffix); } catch { /* 忽略 */ }
   }
 
-  await removeIndexEntry(workspaceId, slug);
+  await removeIndexEntry(workspaceId, slug, scope);
 
   // 目录空时不主动清理（留给用户），避免和正在进行的 upsert 竞态
-  void getTopicsDir(workspaceId);
+  void resolveTopicsDir(scope, workspaceId);
 }
 
 // ─── 内部工具 ───

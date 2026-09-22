@@ -5,6 +5,9 @@
  * （与项目整体"内部 camelCase"约定对齐）。
  */
 
+/** 记忆作用域：workspace = 工作区级（config/workspaces/{id}/memory）；global = 跨工作区（config/memory） */
+export type MemoryScope = 'workspace' | 'global';
+
 /** 主题记忆（对应 topics/<slug>.md 一个文件） */
 export interface Topic {
   slug: string;
@@ -28,6 +31,11 @@ export interface TopicIndexEntry {
   title: string;
   keywords: string[];
   updated: string;
+}
+
+/** 合并读侧（list / recall）使用：带 scope 标记的索引条目 */
+export interface ScopedTopicIndexEntry extends TopicIndexEntry {
+  scope: MemoryScope;
 }
 
 /** index.json 完整结构 */
