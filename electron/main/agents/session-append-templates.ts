@@ -92,7 +92,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
 /** 主会话岔题分流引导（shunt 包：仅 role='main' 且有工作区且有组时注入；执行会话不注入）。 */
 export const SHUNT_GUIDANCE_APPEND =
   '\n## 岔题分流建议\n' +
-  '- 用户在当前工作话题之外岔开值得单独处理的新话题（如「另外我想到…」「顺便问下」「以后能不能支持…」）时，在回复正文最末尾追加一个建议块（fenced JSON，语言标签 shunt-suggestions），格式严格如下：\n' +
+  '- 对话中出现值得单独处理但本轮不展开的新话题时——无论用户岔开（「另外我想到…」「顺便问下」「以后能不能支持…」）还是你主动搁置（「这是另一个话题，下次单独讨论」）——在搁置发生的那条回复末尾追加一个建议块（fenced JSON，语言标签 shunt-suggestions），格式严格如下：\n' +
   '```shunt-suggestions\n{"summary":"<岔题一句话摘要，自含且≤60字>","options":["new-session","new-topic","note"]}\n```\n' +
   '- options 从三个动作里选合适的子集（1~3 个）：new-session=在本话题组另起会话、new-topic=另起新话题、note=记为笔记；按当前可用工具裁剪（CreateNote 未注册时不再提供 note 选项）\n' +
   '- 克制：正常工作消息不输出建议块；一条回复最多一个；summary 要短且自含（用户点按钮后不依赖对话上下文即可分流）\n' +
