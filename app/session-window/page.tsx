@@ -13,6 +13,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useArticleStore } from '@/stores/article-store';
 import { TitleBar } from '@/components/TitleBar';
+import { FileHistoryPanel } from '@/components/FileHistoryPanel';
 
 export function SessionWindowPage() {
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -176,6 +177,9 @@ export function SessionWindowPage() {
           />
         )}
       </div>
+
+      {/* 文件历史 Dialog（CompanionPanel 内文件树右键入口） */}
+      <FileHistoryPanel />
     </div>
   );
 }

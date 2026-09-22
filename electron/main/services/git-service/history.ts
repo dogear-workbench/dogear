@@ -38,5 +38,5 @@ export async function getFileHistory(
       author: e.author,
     })),
   ];
-  return merged.sort((a, b) => (a.time < b.time ? 1 : -1));
+  return merged.sort((a, b) => (a.time < b.time ? 1 : a.time > b.time ? -1 : 0));
 }

@@ -138,6 +138,14 @@ export async function getUserRepoShow(workspacePath: string, ref: string, relPat
   return execGit(workspacePath, args);
 }
 
+export async function getUserRepoFileContent(workspacePath: string, ref: string, relPath: string): Promise<string | null> {
+  await assertUserRepo(workspacePath);
+  assertSafeRef(ref);
+  const spec = `${ref}:${workspaceGitPath(workspacePath, relPath)}`;
+  if ((await execGitCode(workspacePath, ['cat-file', '-e', spec])) !== 0) return null;
+  return execGit(workspacePath, ['show', spec]);
+}
+
 export async function getUserRepoBlame(workspacePath: string, relPath: string): Promise<string> {
   await assertUserRepo(workspacePath);
   return execGit(workspacePath, ['blame', '--date=short', '--', workspaceGitPath(workspacePath, relPath)]);

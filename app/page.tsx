@@ -16,6 +16,7 @@ import { NotificationCenter } from '@/components/NotificationCenter';
 import DataCenterPage from '@/app/data-center/page';
 import { ArchivePage } from '@/components/archive/ArchivePage';
 import { MarkdownFileDialog } from '@/components/MarkdownFileDialog';
+import { FileHistoryPanel } from '@/components/FileHistoryPanel';
 import { NotesPanel } from '@/components/notes/NotesPanel';
 import { CompanionPanel } from '@/components/companion/CompanionPanel';
 import { ArticlePreview } from '@/components/ArticlePreview';
@@ -409,6 +410,9 @@ export default function Home() {
 
       {/* Markdown 文件预览 Dialog */}
       <MarkdownFileDialog />
+
+      {/* 文件历史 Dialog */}
+      <FileHistoryPanel />
     </main>
   );
 }

@@ -140,6 +140,22 @@ export async function listShadowHistory(
   });
 }
 
+export async function getShadowFileContent(
+  workspaceId: string,
+  workspacePath: string,
+  ref: string,
+  relPath: string,
+): Promise<string | null> {
+  if (!(await hasGit())) throw gitMissingError();
+  assertSafeRef(ref);
+  const gitDir = shadowGitDir(workspaceId);
+  if (!(await fileExists(path.join(gitDir, 'HEAD')))) return null;
+  const spec = `${ref}:${workspaceGitPath(workspacePath, relPath)}`;
+  const exists = (await execGitCode(workspacePath, shadowArgs(gitDir, workspacePath, ['cat-file', '-e', spec]))) === 0;
+  if (!exists) return null;
+  return execShadow(gitDir, workspacePath, ['show', spec]);
+}
+
 export async function restoreFromSnapshot(
   workspaceId: string,
   workspacePath: string,

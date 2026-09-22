@@ -3,7 +3,7 @@ import React, { useState, useCallback, useMemo, useEffect, useLayoutEffect, useR
 import {
   Globe, Folder, FolderOpen, File,
   ChevronRight, ChevronDown, FolderPlus, RefreshCw,
-  Quote, Trash2, Pencil, ExternalLink, Lock, Loader2,
+  Quote, Trash2, Pencil, ExternalLink, Lock, Loader2, History,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger, ContextMenuContent,
@@ -16,6 +16,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import { useGitHistoryStore } from '@/stores/git-history-store';
 import { guardReferenceIntoFocus, requireReferenceAnchorId } from '@/lib/reference-guard';
 import type { WorkspaceFileNode } from '@/types/electron-api';
 import type { ArticleMeta } from '@/types/article';
@@ -337,6 +338,8 @@ function TreeItemRow({
   const addReferencedFile = useReferenceStore(s => s.addReferencedFile);
   const deleteItem = useWorkspaceStore(s => s.deleteItem);
   const openInExplorer = useWorkspaceStore(s => s.openInExplorer);
+  const gitAvailable = useGitHistoryStore(s => s.gitAvailable);
+  const openHistory = useGitHistoryStore(s => s.openHistory);
 
   const originalNode = data.originalNode;
 
@@ -442,6 +445,9 @@ function TreeItemRow({
   const handleNewSubFolder = () => {
     onSetCreatingFolder(originalNode.path);
   };
+  const handleShowHistory = () => {
+    openHistory({ name: originalNode.name, path: originalNode.path, isFolder: data.nodeType === 'directory' });
+  };
 
   // 构建右键菜单
   const renderContextMenuContent = () => {
@@ -516,6 +522,12 @@ function TreeItemRow({
           <Pencil className="w-4 h-4" />
           重命名
         </ContextMenuItem>
+        {gitAvailable && (
+          <ContextMenuItem onClick={handleShowHistory}>
+            <History className="w-4 h-4" />
+            历史
+          </ContextMenuItem>
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={handleOpenInExplorer}>
           <ExternalLink className="w-4 h-4" />
@@ -830,6 +842,12 @@ export function WorkspaceExplorer() {
 
   // 拖拽靠近边缘时自动滚动
   useDragAutoScroll(getViewport);
+
+  // git 能力检测（有缓存，挂载时拉一次）：决定右键菜单「历史」入口是否渲染
+  const checkGitAvailable = useGitHistoryStore(s => s.checkGitAvailable);
+  useEffect(() => {
+    void checkGitAvailable();
+  }, [checkGitAvailable]);
 
   // 当 files 变化时重建树
   useLayoutEffect(() => {

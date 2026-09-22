@@ -7,6 +7,7 @@ import { agentRouter } from './agent.js';
 import { conversationsRouter } from './conversations.js';
 import { articleRouter, registerArticleParseStatusListener } from './article.js';
 import { explorerRouter } from './explorer.js';
+import { gitRouter } from './git.js';
 import { settingsRouter } from './settings.js';
 import { memoryRouter } from './memory.js';
 import { logRouter } from './log.js';
@@ -39,6 +40,7 @@ export const router = {
   ...conversationsRouter,
   ...articleRouter,
   ...explorerRouter,
+  ...gitRouter,
   ...settingsRouter,
   ...memoryRouter,
   ...logRouter,

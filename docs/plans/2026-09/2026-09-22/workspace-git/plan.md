@@ -17,7 +17,20 @@
 - [x] [Step 1: git-service 服务层](./step1-git-service.md) — execFile 封装、git 检测、影子仓库生命周期、快照队列、用户仓库操作、双源历史查询
 - [x] [Step 2: 快照触发挂钩](./step2-snapshot-hooks.md) — agent Write/Edit 成功后快照 + UI 文件操作后快照，队列串行
 - [x] [Step 3: agent 工具组与历史意识注入](./step3-git-tools.md) — 九个 dogear__Git* 工具、权限分级、registerTools、能力包挂靠、系统提示 git 历史意识段
-- [ ] [Step 4: 文件树历史 UI](./step4-history-ui.md) — 右键「历史」入口、快照列表、简单 diff、恢复按钮
+- [x] [Step 4: 文件树历史 UI](./step4-history-ui.md) — 右键「历史」入口、快照列表、简单 diff、恢复按钮
+
+## 完成总结
+
+四步全部完成，工作区双层 git 版本管理上线：
+
+1. **服务层**（`electron/main/services/git-service/`，5 文件）：execFile 封装与 GitServiceError 统一错误码；影子仓库 `--git-dir`/`--work-tree` 分离懒 init，workspaceId 级 Promise 链串行快照；用户仓库读写（commit 前 repo-busy 探测）；双源历史合并。关键决策：安全网用 `add -A -f` + `:(exclude)` pathspec——`-f` 绕过用户 .gitignore 覆盖私人文件，exclude 提供自有目录规则，不污染用户工作区
+2. **快照挂钩**：agent Write/Edit 成功后与 UI 文件操作（建/改名/移动/复制/删）后自动触发影子快照，fire-and-forget 不阻塞原操作；无 git 静默跳过
+3. **agent 工具组**：九个 `dogear__Git*` 工具（只读五件套/GitCommit/GitRevert/快照双件）挂 workspace-git 能力包（有工作区才生效，主/子会话同条件）；GitRevert 挂权限 ask；系统提示注入 git 历史意识段（查历史动线 + 双层语义 + 无远端边界）
+4. **历史 UI**：文件树右键「历史」（无 git 不渲染）→ Dialog 双栏：双源时间线（来源徽标 Agent/你/恢复前/外部）+ 行级 diff（LCS，语法高亮后置）+ 影子快照恢复（showConfirm + 自动 pre-restore 快照，UI 不写用户仓库）
+
+**已知限制**：附加根内 agent 写入不进影子快照（work-tree 即主根边界）；密集操作合并为一次快照提交（非一操作一提交）；文章节点未加历史入口（article-service 元数据一致性，保守排除）；影子历史无 gc（后置）；UI 未经真人点击（数据链路已脚本覆盖）
+
+**提交记录**：d4db7790（step1）→ e47e6fb3（step2）→ c03e52fd（step3）→ 本 step4
 
 ## 全局决策
 

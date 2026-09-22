@@ -60,6 +60,18 @@ export interface WorkspaceFileNode {
 }
 
 /**
+ * 文件历史条目（双源合并：shadow=影子快照，repo=用户仓库提交）
+ * 与主进程 git-service/history.ts 的同名接口镜像（主进程 rootDir 限制无法跨目录 import）
+ */
+export interface FileHistoryEntry {
+  hash: string;
+  time: string;
+  message: string;
+  source: 'shadow' | 'repo';
+  author?: string;
+}
+
+/**
  * 扩展的会话消息类型
  * 用于显示完整的 AI 操作（工具调用、思考过程等）
  */
