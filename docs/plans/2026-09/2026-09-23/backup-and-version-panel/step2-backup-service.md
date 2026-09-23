@@ -1,7 +1,7 @@
 ---
 step: 2
 title: backup-service 服务层
-status: pending
+status: done
 ---
 
 ## 目标
@@ -33,9 +33,23 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - `resolveSources` 改为 async（返回 `Promise<string[]>`）：tasks 分类需遍历工作区目录取每工作区 `.dogear/tasks.json`，避免同步 readdir
+  - tasks 分类源路径按实际存储落地：tasks.json 是每工作区一份（`<workspace>/.dogear/tasks.json`），global scope 一份 zip 聚合全部工作区（条目带 `workspaces/<id>/` 前缀），而非设计文档字面的全局 `.dogear/tasks.json`（该文件实际不存在）
+  - 新增 `uniqueBackupFileName`：同 scope+key 同秒两次备份会撞文件名且后写覆盖前写（预备份覆盖原备份导致恢复读到坏内容），实测踩中后加秒数递增避让
+  - restoreBackup 的源 zip 存在性检查移入队列任务内、预备份之后：恢复全流程在队列内串行，且「备份目录损坏」场景能正确走到「预备份失败中止」分支
+  - schedule.ts 的 startScheduler 接受 `runDue` 回调注入（index.ts 包装成 `startBackupScheduler(getConfig)`），避免 schedule → index 循环依赖
 - 改动文件清单：
+  - 新增 `electron/main/services/backup-service/categories.ts`
+  - 新增 `electron/main/services/backup-service/zip-pack.ts`
+  - 新增 `electron/main/services/backup-service/schedule.ts`
+  - 新增 `electron/main/services/backup-service/index.ts`
+  - 新增 `tmp/verify-backup.ts`（验证脚本，不 commit）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+- 关键签名 / 数据结构：见共享区 step2-delivery.md（含全部 API 签名与类型）
+- 下个 step 该从哪里继续：step3 settings 集成——settings.json 加 `backup` 节（类型 `BackupConfig`），主进程启动入口调 `startBackupScheduler(() => loadSettings().backup)`；tipc backup 路由直接包装 index.ts 导出的 runBackup/listBackups/restoreBackup/getBackupStatus/runBackupAll
 - 待办或已知限制：
+  - adm-zip 全同步 API，sessions（~239M）打包会阻塞主进程数秒，step3 UI 应提示「备份进行中」
+  - restoreBackup 预备份固定用分类默认 keep（10），不读用户配置（step2 配置参数未接 settings）
+  - 磁盘剩余空间预检未做（设计文档错误处理项，后置）
+  - plans.json（scheduler 定时任务）不在四个分类 key 内，未备份

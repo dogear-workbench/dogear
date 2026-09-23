@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 文件历史面板修复](./step1-history-panel-fix.md) — 右侧版本详情头放全 + diff hunk 折叠模式
-- [ ] [Step 2: backup-service 服务层](./step2-backup-service.md) — 分类定义、zip 打包、轮换、恢复、内建调度，脚本全链路验证
+- [x] [Step 2: backup-service 服务层](./step2-backup-service.md) — 分类定义、zip 打包、轮换、恢复、内建调度，脚本全链路验证
 - [ ] [Step 3: settings 备份配置节 + tipc 路由](./step3-settings-ipc.md) — 配置读写 + backup 五个路由 + git 状态汇总路由
 - [ ] [Step 4: 数据中心「版本与备份」区块](./step4-datacenter-panel.md) — 用户仓库/影子/备份三分区展示与操作
 
