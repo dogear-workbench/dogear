@@ -85,7 +85,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
   {
     key: 'workspace-git',
     label: 'git 版本管理',
-    description: '工作区双层 git 工具组（查历史/diff/blame、正式提交、回退、影子快照）+ git 历史意识段，绑定工作区时生效（主/子会话）',
+    description: '工作区双层 git 工具组（查历史/diff/blame、正式提交、回退、自动快照）+ git 历史意识段，绑定工作区时生效（主/子会话）',
     type: 'segment-tools',
     segmentKeys: ['git-history-guidance'],
     toolGroups: ['dogear-git'],

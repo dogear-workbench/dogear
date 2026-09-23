@@ -78,22 +78,27 @@ export function GitSummarySection({ workspaces }: Props) {
 
   const renderShadowRow = (w: Workspace) => {
     const s = summaries[w.id];
+    const body =
+      gitAvailable === false ? (
+        <span className="text-xs text-muted-foreground">未安装 git</span>
+      ) : !s ? (
+        <span className="text-xs text-muted-foreground">加载中…</span>
+      ) : s.shadow.snapshotCount > 0 ? (
+        <div className="min-w-0 flex-1">
+          <div className="text-xs text-muted-foreground">
+            {s.shadow.snapshotCount} 个快照 · {formatBytes(s.shadow.sizeBytes)}
+          </div>
+          <div className="text-xs text-muted-foreground/70 mt-0.5">最近 {formatTime(s.shadow.lastTime)}</div>
+        </div>
+      ) : (
+        <span className="text-xs text-muted-foreground">暂无快照</span>
+      );
     return (
-      <div key={w.id} className="flex items-center gap-2 text-sm min-w-0">
-        <span className="w-28 shrink-0 truncate text-muted-foreground" title={w.name}>
+      <div key={w.id} className="flex items-start gap-2 text-sm min-w-0">
+        <span className="w-28 shrink-0 truncate text-muted-foreground pt-0.5" title={w.name}>
           {w.name}
         </span>
-        {gitAvailable === false ? (
-          <span className="text-xs text-muted-foreground">未安装 git</span>
-        ) : !s ? (
-          <span className="text-xs text-muted-foreground">加载中…</span>
-        ) : s.shadow.snapshotCount > 0 ? (
-          <span className="text-xs text-muted-foreground truncate">
-            {s.shadow.snapshotCount} 个快照 · 最近 {formatTime(s.shadow.lastTime)} · {formatBytes(s.shadow.sizeBytes)}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">暂无快照</span>
-        )}
+        {body}
       </div>
     );
   };
@@ -101,7 +106,7 @@ export function GitSummarySection({ workspaces }: Props) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">版本状态（只读，提交走 Agent）</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">版本状态</h2>
         <Button variant="ghost" size="sm" onClick={() => load()} disabled={loading}>
           <RefreshCw className={cn('w-3.5 h-3.5', loading && 'animate-spin')} />
         </Button>
@@ -111,11 +116,17 @@ export function GitSummarySection({ workspaces }: Props) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="py-4 gap-3">
-            <CardTitle className="text-sm px-4">用户仓库</CardTitle>
+            <div className="px-4">
+              <CardTitle className="text-sm">用户 Git 仓库</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">工作区自身的 git 仓库；正式提交由 Agent 完成，此处只读查看分支与未提交改动</p>
+            </div>
             <div className="px-4 space-y-2">{workspaces.map(renderUserRepoRow)}</div>
           </Card>
           <Card className="py-4 gap-3">
-            <CardTitle className="text-sm px-4">影子安全网</CardTitle>
+            <div className="px-4">
+              <CardTitle className="text-sm">自动快照</CardTitle>
+              <p className="text-xs text-muted-foreground mt-1">Agent 写入或文件树操作后自动保存的完整存档，在文件树右键「历史」中查看与恢复</p>
+            </div>
             <div className="px-4 space-y-2">{workspaces.map(renderShadowRow)}</div>
           </Card>
         </div>

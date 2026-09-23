@@ -62,7 +62,7 @@ export const gitRouter = {
       }
     }),
 
-  // 数据中心汇总用：用户仓库 + 影子安全网状态；git 缺失/非仓库/查询失败均降级不报错
+  // 数据中心汇总用：用户 Git 仓库 + 自动快照状态；git 缺失/非仓库/查询失败均降级不报错
   getWorkspaceGitSummary: t.procedure
     .input<{ workspaceId: string }>()
     .action(async ({ input }): Promise<WorkspaceGitSummary | { error: string }> => {

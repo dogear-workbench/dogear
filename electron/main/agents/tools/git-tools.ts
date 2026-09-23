@@ -1,8 +1,8 @@
 /**
  * 工作区 git 版本管理工具组（dogear-git，workspace-git 能力包）
  *
- * 双层语义：只读五件套 + GitCommit/GitRevert 操作用户仓库（正式历史），
- * GitSnapshotList/Restore 走影子仓库（自动快照安全网）；远端操作（push/pull）不提供。
+ * 双层语义：只读五件套 + GitCommit/GitRevert 操作用户 Git 仓库（正式历史），
+ * GitSnapshotList/Restore 走自动快照仓库（安全网）；远端操作（push/pull）不提供。
  * GitRevert 的逐次确认在 permission-rules 挂 ask，工具包注册不覆盖。
  */
 import { z } from 'zod';
@@ -160,7 +160,7 @@ export function createGitToolDefs(opts: GitToolsOpts): ToolDef[] {
     defineTool(
       'dogear__GitCommit',
       '提交改动到 git 仓库',
-      '将工作区未提交改动 commit 进工作区 git 仓库。message 必填且要写清做了什么；paths 省略时提交全部改动，传入时只提交指定文件。用于显式产出定稿落库（自动快照由影子层负责，无需手动触发）。',
+      '将工作区未提交改动 commit 进工作区 git 仓库。message 必填且要写清做了什么；paths 省略时提交全部改动，传入时只提交指定文件。用于显式产出定稿落库（自动快照由系统负责，无需手动触发）。',
       z.object({
         message: z.string().min(1).describe('commit message，一行说清做了什么与为什么'),
         paths: z.array(z.string().min(1)).min(1).optional().describe('限定提交的文件相对路径列表；省略时提交全部改动'),
@@ -192,14 +192,14 @@ export function createGitToolDefs(opts: GitToolsOpts): ToolDef[] {
 
     defineTool(
       'dogear__GitSnapshotList',
-      '查看影子快照历史',
-      '查看影子仓库的自动快照列表（agent 写入与 UI 文件操作自动触发，含被 .gitignore 的私人文件）。relPath 省略时列出全部快照。message 格式：[snapshot] <来源> <路径> (conv:<会话ID>)。这是不依赖用户提交的安全网账本。',
+      '查看自动快照历史',
+      '查看系统的自动快照列表（agent 写入与 UI 文件操作自动触发，含被 .gitignore 的私人文件）。relPath 省略时列出全部快照。message 格式：[snapshot] <来源> <路径> (conv:<会话ID>)。这是不依赖用户提交的安全网账本。',
       z.object({ relPath: relPathSchema }),
       (args) =>
         gitAction(async () => {
           const entries = await listShadowHistory(workspaceId, workspacePath, args.relPath);
           if (entries.length === 0) {
-            return args.relPath ? `${args.relPath} 还没有影子快照。` : '影子仓库还没有任何快照。';
+            return args.relPath ? `${args.relPath} 还没有自动快照。` : '还没有任何自动快照。';
           }
           return `共 ${entries.length} 条快照（新→旧）：\n${entries.map(snapshotLine).join('\n')}`;
         }),
@@ -207,10 +207,10 @@ export function createGitToolDefs(opts: GitToolsOpts): ToolDef[] {
 
     defineTool(
       'dogear__GitSnapshotRestore',
-      '从影子快照恢复文件',
-      `把文件恢复到某条影子快照的版本（ref 用 GitSnapshotList 返回的 hash）。恢复前会自动打一条 pre-restore 快照，本操作永远可逆；恢复只改工作区文件，确认无误后用 dogear__GitCommit 落库。改坏文件需要回滚时用，比 GitRevert 覆盖面广（含未提交过仓库的文件）。`,
+      '从自动快照恢复文件',
+      `把文件恢复到某条自动快照的版本（ref 用 GitSnapshotList 返回的 hash）。恢复前会自动打一条 pre-restore 快照，本操作永远可逆；恢复只改工作区文件，确认无误后用 dogear__GitCommit 落库。改坏文件需要回滚时用，比 GitRevert 覆盖面广（含未提交过仓库的文件）。`,
       z.object({
-        ref: z.string().min(1).describe('影子快照 hash（dogear__GitSnapshotList 返回）'),
+        ref: z.string().min(1).describe('自动快照 hash（dogear__GitSnapshotList 返回）'),
         relPath: relPathSchema,
       }),
       (args) =>

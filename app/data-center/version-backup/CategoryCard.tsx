@@ -44,7 +44,18 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
   const [restoring, setRestoring] = useState<string | null>(null);
   const [keepDraft, setKeepDraft] = useState<string | null>(null);
 
-  const scopeLabel = (scope: string) => (scope === 'global' ? '全局' : nameById.get(scope) ?? scope);
+  const scopeLabel = (scope: string) => {
+    if (scope === 'global') return '全局';
+    if (scope === 'personal') return '临时会话区';
+    return nameById.get(scope) ?? scope;
+  };
+
+  const scopeTitle = (scope: string) => {
+    if (scope === 'global') return '不属于任何工作区的全局数据';
+    if (scope === 'personal') return '未绑定工作区时开启的会话存放处';
+    if (!nameById.has(scope)) return '应用数据目录下未注册的工作区目录';
+    return nameById.get(scope)!;
+  };
 
   const commitKeep = () => {
     if (keepDraft == null) return;
@@ -161,9 +172,14 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
                 <div className="flex items-center gap-2 py-2 min-w-0">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 text-sm">
-                      <span className="truncate" title={scopeLabel(row.scope)}>
+                      <span className="truncate" title={scopeTitle(row.scope)}>
                         {scopeLabel(row.scope)}
                       </span>
+                      {row.scope !== 'global' && row.scope !== 'personal' && !nameById.has(row.scope) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                          未注册
+                        </span>
+                      )}
                       {row.due && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 shrink-0">
                           已到期

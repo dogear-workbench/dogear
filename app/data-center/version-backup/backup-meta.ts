@@ -21,22 +21,22 @@ interface CategoryMeta {
 export const CATEGORY_META: Record<BackupCategoryKey, CategoryMeta> = {
   'notes-groups': {
     name: '笔记与话题组',
-    scopeSummary: 'notes/ + groups/ + dashboard.md，每个工作区一份',
+    scopeSummary: '笔记卡片、话题组与仪表盘数据，每个工作区一份',
     defaultConfig: { enabled: true, frequency: 'daily', keep: 10 },
   },
   memory: {
     name: '记忆',
-    scopeSummary: '工作区记忆与全局记忆，各一份',
+    scopeSummary: 'Agent 的长期记忆，工作区与全局各一份',
     defaultConfig: { enabled: true, frequency: 'daily', keep: 10 },
   },
   tasks: {
     name: '任务',
-    scopeSummary: '全部工作区的 tasks.json，全局一份',
+    scopeSummary: '全部工作区的计划任务列表，合并为一份',
     defaultConfig: { enabled: true, frequency: 'daily', keep: 10 },
   },
   sessions: {
     name: '会话',
-    scopeSummary: '每个工作区的会话记录，体积较大，备份耗时较长',
+    scopeSummary: '每个工作区的会话记录，体积大、备份耗时较长',
     defaultConfig: { enabled: true, frequency: 'monthly', keep: 10 },
   },
 };

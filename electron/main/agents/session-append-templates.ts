@@ -94,7 +94,7 @@ export function subAgentContractFor(opts: { task: string; outputPath: string }):
 export const GIT_HISTORY_GUIDANCE_APPEND =
   '\n## git 历史意识\n' +
   '- 出方案或改代码前，先查工作区 git 历史再动手：dogear__GitLog（按 relPath/keyword 搜提交）看功能演变与既有实现，dogear__GitShow 看某次提交细节，dogear__GitBlame 看代码归属，dogear__GitStatus/GitDiff 看当前未提交改动——避免重复造轮子或推翻既有设计\n' +
-  '- 双层语义：用户仓库（GitStatus/GitDiff/GitLog/GitShow/GitBlame/GitCommit/GitRevert）是正式历史，产出定稿后用 dogear__GitCommit 落一笔（message 写清做了什么）；影子仓库（GitSnapshotList/GitSnapshotRestore）是自动快照安全网，Write/Edit 与文件操作后自动打快照（含被 .gitignore 的文件），改坏了用 SnapshotRestore 恢复，恢复前自动再打快照、永远可逆\n' +
+  '- 双层语义：用户 Git 仓库（GitStatus/GitDiff/GitLog/GitShow/GitBlame/GitCommit/GitRevert）是正式历史，产出定稿后用 dogear__GitCommit 落一笔（message 写清做了什么）；自动快照（GitSnapshotList/GitSnapshotRestore）是系统安全网，Write/Edit 与文件操作后自动保存（含被 .gitignore 的文件），改坏了用 SnapshotRestore 恢复，恢复前自动再打快照、永远可逆\n' +
   '- 边界：无 push/pull 等远端操作；GitRevert 是破坏性操作会先征得用户确认；工作区非 git 仓库或系统未装 git 时工具返回错误，属正常降级';
 
 /** 主会话岔题分流引导（shunt 包：仅 role='main' 且有工作区且有组时注入；执行会话不注入）。 */
@@ -178,7 +178,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: 'git 历史意识',
       category: 'tool-guide',
       template: GIT_HISTORY_GUIDANCE_APPEND,
-      triggerDescription: '「git 版本管理」包开 + 会话绑定工作区时注入（主/子会话均含，任务执行会话同样生效）。出方案/改代码前先用 GitLog/GitShow/GitBlame 查既有实现与演变；声明用户仓库（正式历史）与影子仓库（自动快照安全网）双层语义与「无远端操作」边界。',
+      triggerDescription: '「git 版本管理」包开 + 会话绑定工作区时注入（主/子会话均含，任务执行会话同样生效）。出方案/改代码前先用 GitLog/GitShow/GitBlame 查既有实现与演变；声明用户 Git 仓库（正式历史）与自动快照（安全网）双层语义与「无远端操作」边界。',
       isDynamic: false,
     },
     {

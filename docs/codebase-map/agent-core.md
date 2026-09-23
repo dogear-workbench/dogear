@@ -48,7 +48,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `tools/group-tools.ts` — 组共享区工具（ListGroupFiles/SaveSharedNote）
 - `tools/reference-tools.ts` — 跨会话检索常驻组（ListTopics 可跨工作区/ReadReferenceSession/ReadTopicCard 直读话题状态卡）+ 组协作组（ReadGroupBackground/ListSiblingSessions）
 - `tools/task-tools.ts` — 协作任务四工具（CreateTask/ListTasks/ExecuteTask/ReportTaskResult）
-- `tools/git-tools.ts` — git 九工具组（dogear-git，workspace-git 能力包）：只读五件套 Status/Diff/Log/Show/Blame + GitCommit/GitRevert（挂权限 ask）/GitSnapshotList/GitSnapshotRestore；双层语义=用户仓库正式历史+影子仓库自动快照安全网，无远端操作；服务层在 services/git-service/
+- `tools/git-tools.ts` — git 九工具组（dogear-git，workspace-git 能力包）：只读五件套 Status/Diff/Log/Show/Blame + GitCommit/GitRevert（挂权限 ask）/GitSnapshotList/GitSnapshotRestore；双层语义=用户 Git 仓库正式历史+自动快照安全网，无远端操作；服务层在 services/git-service/
 - `tools/fork-session-tool.ts` — 岔题分流工具组（dogear-shunt）：dogear__ForkSession 平级新会话/新话题组，仅收到 <shunt> 标签时调用，无父子契约不等交付，orphan 保活
 - 功能工具定义分域：浏览器/扩展/联网 → browser.md；股票 → stocks.md；笔记/文章 → articles.md
 
