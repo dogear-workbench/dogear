@@ -90,6 +90,22 @@ export interface SubAgentProfile {
   enabledAbilities: SubAgentEnabledAbilities;
 }
 
+export const BACKUP_SETTING_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions'] as const;
+export type BackupSettingCategoryKey = (typeof BACKUP_SETTING_KEYS)[number];
+export type BackupSettingFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
+export const BACKUP_SETTING_FREQUENCIES: readonly BackupSettingFrequency[] = ['daily', 'weekly', 'monthly', 'manual'];
+
+/** 与 backup-service 的 BackupCategoryConfig 同形（enabled/frequency/keep），settings 节可直传服务层 */
+export interface BackupCategorySetting {
+  enabled: boolean;
+  frequency: BackupSettingFrequency;
+  keep: number;
+}
+
+export interface BackupSettings {
+  categories: Record<BackupSettingCategoryKey, BackupCategorySetting>;
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定 */
@@ -138,6 +154,8 @@ export interface AppSettings {
   migrated?: {
     workspaceConfig?: boolean;
   };
+  /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
+  backup?: BackupSettings;
 }
 
 // ============================================================
@@ -180,6 +198,14 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
   },
   migrated: {},
+  backup: {
+    categories: {
+      'notes-groups': { enabled: true, frequency: 'daily', keep: 10 },
+      memory: { enabled: true, frequency: 'daily', keep: 10 },
+      tasks: { enabled: true, frequency: 'daily', keep: 10 },
+      sessions: { enabled: true, frequency: 'monthly', keep: 10 },
+    },
+  },
 };
 
 // ============================================================
@@ -268,6 +294,30 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
     enabledAbilities: { web: true, browser: true, extension: true, article: true },
   };
+}
+
+/**
+ * backup 节归一化：非法输入归一为全默认，单字段非法回落该分类默认，不丢弃其他合法字段
+ */
+export function normalizeBackupSettings(raw: unknown): BackupSettings {
+  const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const catsRaw =
+    obj.categories && typeof obj.categories === 'object' && !Array.isArray(obj.categories)
+      ? (obj.categories as Record<string, unknown>)
+      : {};
+  const categories = {} as BackupSettings['categories'];
+  for (const key of BACKUP_SETTING_KEYS) {
+    const c = catsRaw[key] && typeof catsRaw[key] === 'object' ? (catsRaw[key] as Record<string, unknown>) : {};
+    const def = DEFAULT_SETTINGS.backup!.categories[key];
+    categories[key] = {
+      enabled: typeof c.enabled === 'boolean' ? c.enabled : def.enabled,
+      frequency: BACKUP_SETTING_FREQUENCIES.includes(c.frequency as BackupSettingFrequency)
+        ? (c.frequency as BackupSettingFrequency)
+        : def.frequency,
+      keep: typeof c.keep === 'number' && Number.isInteger(c.keep) && c.keep >= 1 ? c.keep : def.keep,
+    };
+  }
+  return { categories };
 }
 
 /**

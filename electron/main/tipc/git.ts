@@ -12,6 +12,11 @@ function errorResult(error: unknown): { error: string } {
   return { error: error instanceof Error ? error.message : String(error) };
 }
 
+export interface WorkspaceGitSummary {
+  userRepo: { isRepo: boolean; branch: string | null; changedCount: number };
+  shadow: { snapshotCount: number; lastTime: string | null; sizeBytes: number };
+}
+
 export const gitRouter = {
   getGitCapability: t.procedure.action(async () => ({ available: await gitService.hasGit() })),
 
@@ -52,6 +57,39 @@ export const gitRouter = {
             ? await gitService.getShadowFileContent(workspace.id, workspace.path, input.ref, input.relPath)
             : await gitService.getUserRepoFileContent(workspace.path, input.ref, input.relPath);
         return { content };
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
+  // 数据中心汇总用：用户仓库 + 影子安全网状态；git 缺失/非仓库/查询失败均降级不报错
+  getWorkspaceGitSummary: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }): Promise<WorkspaceGitSummary | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        const summary: WorkspaceGitSummary = {
+          userRepo: { isRepo: false, branch: null, changedCount: 0 },
+          shadow: { snapshotCount: 0, lastTime: null, sizeBytes: 0 },
+        };
+        if (!(await gitService.hasGit())) return summary;
+        try {
+          const status = await gitService.getUserRepoStatus(workspace.path);
+          summary.userRepo = { isRepo: true, branch: status.branch || null, changedCount: status.entries.length };
+        } catch {
+          // 非 git 仓库等状态查询失败保持 isRepo: false 降级
+        }
+        try {
+          const [entries, sizeBytes] = await Promise.all([
+            gitService.listShadowHistory(workspace.id, workspace.path),
+            gitService.getShadowRepoSizeBytes(workspace.id),
+          ]);
+          summary.shadow = { snapshotCount: entries.length, lastTime: entries[0]?.time ?? null, sizeBytes };
+        } catch {
+          // 影子仓库查询失败保持空统计降级
+        }
+        return summary;
       } catch (error) {
         return errorResult(error);
       }

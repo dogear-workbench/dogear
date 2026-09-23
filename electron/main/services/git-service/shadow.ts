@@ -4,6 +4,7 @@
  * 目录排除规则走 pathspec（不污染用户工作区，info/exclude 挡不住用户 in-tree .gitignore）
  */
 import fs from 'fs/promises';
+import type { Dirent } from 'fs';
 import path from 'path';
 import { getConfigDir } from '../settings-service.js';
 import { execGit, execGitCode, hasGit, assertSafeRef, workspaceGitPath, toGitPath, GitServiceError } from './exec.js';
@@ -43,6 +44,29 @@ async function enqueue<T>(workspaceId: string, task: () => Promise<T>): Promise<
 
 function shadowGitDir(workspaceId: string): string {
   return path.join(getConfigDir(), 'workspaces', workspaceId, 'shadow-git');
+}
+
+/** 影子仓库目录磁盘占用（字节，递归求和）；目录不存在返回 0 */
+export async function getShadowRepoSizeBytes(workspaceId: string): Promise<number> {
+  let total = 0;
+  const walk = async (dir: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(p);
+      } else if (entry.isFile()) {
+        total += await fs.stat(p).then((st) => st.size, () => 0);
+      }
+    }
+  };
+  await walk(shadowGitDir(workspaceId));
+  return total;
 }
 
 function shadowArgs(gitDir: string, workspacePath: string, args: string[]): string[] {

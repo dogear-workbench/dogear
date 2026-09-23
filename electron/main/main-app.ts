@@ -759,6 +759,17 @@ app.whenReady().then(async () => {
     .then((m) => m.getSchedulerService().init())
     .catch((err) => console.error('调度器初始化失败:', err));
 
+  // 数据备份调度：启动即查 + 每 30 分钟 tick，配置实时读 settings（改动即生效）
+  void import('./services/backup-service/index.js')
+    .then((m) =>
+      m.startBackupScheduler(() =>
+        import('./services/settings-service.js')
+          .then((s) => s.loadSettings())
+          .then((st) => st.backup?.categories ?? null),
+      ),
+    )
+    .catch((err) => console.error('启动备份调度器失败:', err));
+
   // 一次性清理旧持久层遗留的 delegation-state.json（重启后的历史子会话由 conversation 补集提供）
   void import('./agents/delegation-bridge.js')
     .then((m) => m.cleanupLegacyStateFile())
@@ -822,6 +833,13 @@ app.on('before-quit', async () => {
     getSchedulerService().stop();
   } catch (error) {
     console.error('停止调度器失败:', error);
+  }
+  // 停止数据备份调度器
+  try {
+    const { stopBackupScheduler } = await import('./services/backup-service/index.js');
+    stopBackupScheduler();
+  } catch (error) {
+    console.error('停止备份调度器失败:', error);
   }
   // 销毁托盘图标
   if (tray && !tray.isDestroyed()) {

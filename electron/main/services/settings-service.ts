@@ -15,6 +15,7 @@ import {
   createBrowserParseSubAgentProfile,
   BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
   normalizeFailoverChain,
+  normalizeBackupSettings,
   BASIC_TOOL_NAMES,
   type AppSettings,
   type PiPermissionMode,
@@ -367,6 +368,12 @@ export function normalizeSettings(settings: AppSettings): boolean {
     }
   } else {
     obj.subAgent = { profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()] };
+    changed = true;
+  }
+
+  const newBackup = normalizeBackupSettings(obj.backup);
+  if (JSON.stringify(newBackup) !== JSON.stringify(settings.backup)) {
+    obj.backup = newBackup;
     changed = true;
   }
 
