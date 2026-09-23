@@ -11,6 +11,40 @@ export interface DiffStats {
   removed: number;
 }
 
+export interface DiffFold {
+  kind: 'fold';
+  count: number;
+  rows: DiffRow[];
+}
+
+export type HunkSection = DiffRow | DiffFold;
+
+export function buildHunks(rows: DiffRow[], contextLines = 3): HunkSection[] {
+  const n = rows.length;
+  const keep = new Array<boolean>(n).fill(false);
+  for (let i = 0; i < n; i++) {
+    if (rows[i].type !== 'same') {
+      for (let k = Math.max(0, i - contextLines); k <= Math.min(n - 1, i + contextLines); k++) {
+        keep[k] = true;
+      }
+    }
+  }
+  const sections: HunkSection[] = [];
+  let foldStart = -1;
+  for (let i = 0; i <= n; i++) {
+    if (i < n && rows[i].type === 'same' && !keep[i]) {
+      if (foldStart < 0) foldStart = i;
+    } else {
+      if (foldStart >= 0) {
+        sections.push({ kind: 'fold', count: i - foldStart, rows: rows.slice(foldStart, i) });
+        foldStart = -1;
+      }
+      if (i < n) sections.push(rows[i]);
+    }
+  }
+  return sections;
+}
+
 const MAX_DIFF_LINES = 20000;
 
 export function diffLines(oldText: string, newText: string): { rows: DiffRow[]; stats: DiffStats } | null {

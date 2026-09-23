@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -10,7 +10,7 @@ import { showConfirm } from '@/stores/confirm-store';
 import { useGitHistoryStore } from '@/stores/git-history-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { FileHistoryEntry } from '@/types/electron-api';
-import { diffLines, type DiffRow, type DiffStats } from '@/lib/line-diff';
+import { buildHunks, diffLines, type DiffRow, type DiffStats } from '@/lib/line-diff';
 import { HistoryDiffView } from './file-history/HistoryDiffView';
 
 type DiffState =
@@ -48,6 +48,15 @@ function formatTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatTimeFull(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
 }
 
 export function FileHistoryPanel() {
@@ -163,8 +172,10 @@ export function FileHistoryPanel() {
   };
 
   const selectedEntry = selectedIndex !== null ? entries[selectedIndex] ?? null : null;
+  const selectedDetail = selectedEntry ? describeEntry(selectedEntry) : null;
   const canRestore = selectedEntry?.source === 'shadow' && !restoring;
   const hasOlder = selectedIndex !== null && selectedIndex < entries.length - 1;
+  const sections = useMemo(() => (diff.kind === 'ok' ? buildHunks(diff.rows) : []), [diff]);
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) closeHistory(); }}>
@@ -225,30 +236,60 @@ export function FileHistoryPanel() {
             </ScrollArea>
           </div>
 
-          {/* 右侧：diff */}
+          {/* 右侧：版本详情头 + diff */}
           <div className="flex-1 min-w-0 flex flex-col">
-            <div className="flex items-center justify-between gap-2 px-4 py-2 border-b shrink-0">
-              <span className="text-xs text-muted-foreground truncate">
-                {diff.kind === 'ok' && (hasOlder
-                  ? `此版本相对上一版本的差异（+${diff.stats.added} / -${diff.stats.removed}）`
-                  : `最早的版本，全部内容为新增（${diff.stats.added} 行）`)}
-                {diff.kind === 'folder' && '文件夹不支持内容对比，可在左侧选择版本后整体恢复'}
-                {diff.kind === 'too-large' && '文件过大，暂不支持对比'}
-                {diff.kind === 'error' && `对比失败：${diff.message}`}
-              </span>
-              {selectedEntry && selectedEntry.source === 'shadow' && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 shrink-0 gap-1.5 text-xs"
-                  disabled={!canRestore}
-                  onClick={() => void handleRestore()}
-                >
-                  {restoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                  恢复此版本
-                </Button>
-              )}
-            </div>
+            {selectedEntry && selectedDetail ? (
+              <div className="flex items-start justify-between gap-3 px-4 py-2.5 border-b shrink-0">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0', selectedDetail.badgeClass)}>
+                      {selectedDetail.badge}
+                    </span>
+                    <span className="text-xs text-muted-foreground shrink-0">{formatTimeFull(selectedEntry.time)}</span>
+                    <span className="text-[10px] text-muted-foreground/70 font-mono shrink-0">
+                      {selectedEntry.source === 'shadow' ? '快照' : '仓库'} · {selectedEntry.hash.slice(0, 7)}
+                    </span>
+                    {diff.kind === 'ok' && (
+                      <span className="ml-auto shrink-0 font-mono text-xs">
+                        {!hasOlder && <span className="mr-1.5 font-sans text-muted-foreground">全新增</span>}
+                        <span className="text-green-600 dark:text-green-400">+{diff.stats.added}</span>
+                        <span className="mx-0.5 text-muted-foreground">/</span>
+                        <span className="text-red-600 dark:text-red-400">-{diff.stats.removed}</span>
+                      </span>
+                    )}
+                  </div>
+                  {(selectedDetail.detail || selectedEntry.message) && (
+                    <div className="text-xs mt-1 whitespace-pre-wrap break-words">
+                      {selectedDetail.detail || selectedEntry.message}
+                    </div>
+                  )}
+                  {selectedDetail.convId && (
+                    <div
+                      className="text-[10px] text-muted-foreground/60 font-mono mt-0.5 truncate"
+                      title={selectedDetail.convId}
+                    >
+                      会话 {selectedDetail.convId.slice(0, 8)}
+                    </div>
+                  )}
+                </div>
+                {selectedEntry.source === 'shadow' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 shrink-0 gap-1.5 text-xs"
+                    disabled={!canRestore}
+                    onClick={() => void handleRestore()}
+                  >
+                    {restoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                    恢复此版本
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="px-4 py-2.5 border-b shrink-0 text-xs text-muted-foreground">
+                在左侧选择一个版本查看差异
+              </div>
+            )}
             <ScrollArea className="flex-1 min-h-0">
               <div className="px-4 py-3">
                 {diff.kind === 'loading' && (
@@ -257,12 +298,18 @@ export function FileHistoryPanel() {
                     加载差异...
                   </div>
                 )}
-                {diff.kind === 'idle' && !loading && entries.length > 0 && (
+                {diff.kind === 'folder' && (
                   <div className="py-10 text-center text-sm text-muted-foreground">
-                    在左侧选择一个版本查看差异
+                    文件夹不支持内容对比，可在左侧选择版本后整体恢复
                   </div>
                 )}
-                {diff.kind === 'ok' && <HistoryDiffView rows={diff.rows} />}
+                {diff.kind === 'too-large' && (
+                  <div className="py-10 text-center text-sm text-muted-foreground">文件过大，暂不支持对比</div>
+                )}
+                {diff.kind === 'error' && (
+                  <div className="py-10 text-center text-sm text-red-600">对比失败：{diff.message}</div>
+                )}
+                {diff.kind === 'ok' && <HistoryDiffView key={selectedIndex ?? 'none'} sections={sections} />}
               </div>
             </ScrollArea>
           </div>
