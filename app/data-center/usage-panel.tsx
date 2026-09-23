@@ -41,6 +41,15 @@ function periodSinceMs(period: PeriodKey): number | null {
 
 const PAGE_SIZE = 20;
 
+const PERSONAL_WORKSPACE: Workspace = {
+  id: 'personal',
+  name: '临时会话',
+  path: '',
+  additional_paths: [],
+  is_default: 0,
+  created_at: 0,
+};
+
 interface PeriodStats {
   conversationId: string;
   workspaceId: string;
@@ -96,7 +105,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
   useEffect(() => {
     let cancelled = false;
     const fetchAll = isAll
-      ? () => Promise.all(workspaces.map((ws) => client.getByWorkspaceId({ workspaceId: ws.id })))
+      ? () => Promise.all([...workspaces, PERSONAL_WORKSPACE].map((ws) => client.getByWorkspaceId({ workspaceId: ws.id })))
           .then((rs) => rs.flatMap((r) => r.conversations ?? []))
       : () => client.getByWorkspaceId({ workspaceId }).then((r) => r.conversations ?? []);
     const load = (initial: boolean) => {
@@ -162,7 +171,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
   }, [conversations]);
 
   const wsNameById = useMemo(
-    () => new Map(workspaces.map((w) => [w.id, w.name])),
+    () => new Map([...workspaces, PERSONAL_WORKSPACE].map((w) => [w.id, w.name])),
     [workspaces],
   );
 
@@ -242,6 +251,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">全部工作区</SelectItem>
+            <SelectItem value="personal">临时会话</SelectItem>
             {workspaces.map((w) => (
               <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
             ))}
