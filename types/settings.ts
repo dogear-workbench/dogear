@@ -120,6 +120,20 @@ export interface SubAgentProfile {
   enabledAbilities: SubAgentEnabledAbilities;
 }
 
+export const BACKUP_CATEGORY_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions'] as const;
+export type BackupCategoryKey = (typeof BACKUP_CATEGORY_KEYS)[number];
+export type BackupFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
+
+export interface BackupCategorySetting {
+  enabled: boolean;
+  frequency: BackupFrequency;
+  keep: number;
+}
+
+export interface BackupSettings {
+  categories: Record<BackupCategoryKey, BackupCategorySetting>;
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定（推荐新装默认） */
@@ -164,6 +178,8 @@ export interface AppSettings {
   webMcpApiKey?: string;
   /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
   browserSearchEngine: BrowserSearchEngine;
+  /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
+  backup?: BackupSettings;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {

@@ -9,6 +9,7 @@
 - `history-panel.tsx` — 执行历史一级面板：类型/状态筛选（类型走后端 source 参数）、10s 可见轮询、分钟 tick 刷新；「正在运行」区显示四类后台任务
 - `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 四类徽章，无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+两节 Tabs
+- `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录 + 逐项运行 loading）、GitSummarySection（用户仓库/影子安全网按工作区聚合只读展示，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/立即备份 + 备份列表展开与恢复 showConfirm）、backup-meta（分类元数据与默认值、tipc client 类型推导、格式化）
 - `core-profile-panel.tsx` — 核心画像编辑面板
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
 - `scheduler/` — 定时计划组件：SchedulerPanel（列表/编辑态切换）、TaskEditorPage（二级页：名称/提示词/模型/工作区/工具/触发器）、CustomToolPacksSection（生效集=toolPacksOverride ?? 工作区启用集）、TriggerListEditor/TriggerRow/TriggerControls、utils（describeTrigger 等）
@@ -51,6 +52,7 @@
 ## 注意
 
 - 各 panel 只自持 `workspaceId: 'all' | id` 筛选状态，不读 workspace-store；轮询统一走 useVisiblePolling
+- 版本与备份面板：配置写回走 settings-store saveSettings 整体写回（先读最新 settings 再改 backup 节）；备份状态行 scope 可能是非注册工作区目录（如 personal），显示时用 nameById 回退到 scope 原文；恢复操作必须 showConfirm 且恢复前主进程自动预备份
 - getUsage 懒重算 usageSummary 后读 JSONL；'all' 模式逐工作区聚合每行带 workspaceId 归属
 - source-fidelity 校验口径必须与 agent 所见一致：复用同一去噪函数建 uuid 索引，不用 JSONL 全量
 - 状态卡抽取触发与未提炼列表一律排除调用者自身（excludeConversationId 链），自身内容由下一会话开局补抽
