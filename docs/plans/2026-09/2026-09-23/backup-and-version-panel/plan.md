@@ -11,7 +11,7 @@
 - [x] [Step 1: 文件历史面板修复](./step1-history-panel-fix.md) — 右侧版本详情头放全 + diff hunk 折叠模式
 - [x] [Step 2: backup-service 服务层](./step2-backup-service.md) — 分类定义、zip 打包、轮换、恢复、内建调度，脚本全链路验证
 - [x] [Step 3: settings 备份配置节 + tipc 路由](./step3-settings-ipc.md) — 配置读写 + backup 五个路由 + git 状态汇总路由
-- [ ] [Step 4: 数据中心「版本与备份」区块](./step4-datacenter-panel.md) — 用户仓库/影子/备份三分区展示与操作
+- [x] [Step 4: 数据中心「版本与备份」区块](./step4-datacenter-panel.md) — 用户仓库/影子/备份三分区展示与操作
 
 ## 全局决策
 
@@ -25,3 +25,16 @@
 - **zip 实现**：复用已有依赖 `adm-zip`（package.json 已有，零新依赖）
 - **红线**：不绕过 tipc、渲染层不碰文件系统、UI 确认统一 `showConfirm`
 - 每个 step 完成后 `bun run lint` + `bun run build:electron`（涉及主进程时）通过，且只 add 本计划相关文件
+
+## 完成总结（2026-09-23）
+
+四个 step 全部落地并逐 step 提交（5e06617d / d67e1eb8 / 57baae41 / d9a0b3d1，另 5db2acb1 修上计划遗留的 FileHistoryPanel tsc 错误）：
+
+1. **文件历史面板**：右侧版本详情头（徽标/含秒时间/完整消息/hash/差异统计），diff 折叠为 hunk 段按需展开（buildHunks 输出层折叠，LCS 不动）
+2. **backup-service**：四分类（notes-groups/memory/tasks/sessions）zip 全量轮换备份，串行队列、零状态到期调度（30 分钟 tick）、恢复前自动预备份失败即中止，46 项断言验证通过
+3. **settings + tipc**：backup 配置节（四分类开关/频率/保留份数，缺省补默认非法值归一）+ backup 五路由 + getWorkspaceGitSummary（git 缺失降级），28 项断言验证通过
+4. **数据中心「版本与备份」tab**：用户仓库/影子安全网只读展示 + 四分类备份配置与操作（立即备份/列表展开/恢复 showConfirm/全部备份/打开目录），codebase-map 已同步
+
+**待人工验证**（子会话无法跑 GUI）：详情头排版与折叠交互、备份全链路点击（改配置→立即备份→列表→恢复→刷新）、openBackupDir shell 行为、git 两区显示与 `git status` 对照。
+
+**已知限制**：restoreBackup 预备份 keep 固定 10；sessions（~239M）同步打包阻塞主进程数秒（UI 已 loading 缓解）；全部备份多项失败 toast 单行可读性一般。后续可选方向见设计文档「未决问题」。
