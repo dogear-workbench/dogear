@@ -80,7 +80,7 @@ export function FileHistoryPanel() {
     try {
       const res = await client.getFileHistory({ workspaceId: ws.id, relPath: t.path });
       if ('error' in res) {
-        setError(res.error);
+        setError(res.error ?? '加载历史失败');
         setEntries([]);
         return;
       }
