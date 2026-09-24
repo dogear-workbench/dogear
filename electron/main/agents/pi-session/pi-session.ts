@@ -30,7 +30,7 @@ import { PiHarnessAdapter, type HarnessToolCallEvent, type HarnessToolCallResult
 import { createSearchToolDefs } from './search-tools.js';
 import { buildGroupContextPrompt } from '../group-context-builder.js';
 import { MEMORY_GUIDANCE_APPEND, subAgentContractFor, MAIN_AGENT_DELEGATION_APPEND, buildSubAgentProfileIndex, NOTES_DISCIPLINE_APPEND, GIT_HISTORY_GUIDANCE_APPEND, SHUNT_GUIDANCE_APPEND, WEB_RESEARCH_GUIDANCE_MAIN_APPEND, WEB_RESEARCH_GUIDANCE_SUB_APPEND, buildAppDataGuidance } from '../session-append-templates.js';
-import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY } from '../ability-registry.js';
+import { resolveAbilities, ABILITY_PACKS, TOOL_PACK_TO_ABILITY, SUB_AUTONOMOUS_SKILLS } from '../ability-registry.js';
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { createMemoryToolDefs } from '../tools/memory-tools.js';
 import { createArticleToolDefs } from '../tools/article-tools.js';
@@ -142,7 +142,8 @@ interface PendingPermissionRequest {
 
 /**
  * 子会话按 Profile 过滤 skill entries。
- * builtin 段：article-parser 仅当 article===true，browser-exploration 仅当 browser===true，其余按 skills[] 匹配；
+ * builtin 段：article-parser 仅当 article===true，browser-exploration 仅当 browser===true，
+ * stock-analysis/stock-picking 仅当 stock===true，其余按 skills[] 匹配；
  * custom 段：仅保留 skills[] 中列出的；
  * user 段：仅保留 customSkills[] 中列出的。
  */
@@ -161,6 +162,7 @@ function filterSkillsForSubAgent(
     if (isUnder(fp, scanDirs.builtin)) {
       if (entry.name === 'article-parser') return ab.article === true;
       if (entry.name === 'browser-exploration') return ab.browser === true;
+      if (entry.name === 'stock-analysis' || entry.name === 'stock-picking') return ab.stock === true;
       return ab.skills?.includes(entry.name) ?? false;
     }
     if (isUnder(fp, scanDirs.custom)) return ab.skills?.includes(entry.name) ?? false;
@@ -549,21 +551,25 @@ export class PiSession extends EventEmitter {
       if (pack.type !== 'skill-packs' || activeAbilities.has(pack.key)) continue;
       for (const name of pack.skills ?? []) disabledPackSkills.add(name);
     }
-    const filteredByConfig = allSkillEntries.filter(
-      (e) => enabledSkillsSet.has(e.name) && !disabledPackSkills.has(e.name),
-    );
+    const passWorkspaceFilter = (e: SkillEntry): boolean =>
+      enabledSkillsSet.has(e.name) && !disabledPackSkills.has(e.name);
 
     let skillEntries: SkillEntry[];
     let skillIndexText: string;
     if (isSubAgent && subAgentProfile) {
-      skillEntries = filterSkillsForSubAgent(filteredByConfig, subAgentProfile, {
-        builtin: builtinSkillsDir,
-        custom: customSkillsDir,
-        user: userSkillsDir,
-      });
+      // 自治包 skill 绕过工作区 enabledSkills/disabledPackSkills 两层闸，由 Profile 子开关独裁（对齐 resolveAbilities 自治分支）
+      skillEntries = filterSkillsForSubAgent(
+        allSkillEntries.filter((e) => SUB_AUTONOMOUS_SKILLS.has(e.name) || passWorkspaceFilter(e)),
+        subAgentProfile,
+        {
+          builtin: builtinSkillsDir,
+          custom: customSkillsDir,
+          user: userSkillsDir,
+        },
+      );
       skillIndexText = formatSkillIndexForPrompt(skillEntries);
     } else {
-      skillEntries = filteredByConfig;
+      skillEntries = allSkillEntries.filter(passWorkspaceFilter);
       skillIndexText = formatSkillIndexForPrompt(skillEntries);
     }
 
@@ -920,7 +926,10 @@ export class PiSession extends EventEmitter {
 
       // user/assistant 落盘完成后广播 message_id（uuid = SessionTreeEntry.id，与历史 sdkUuid 同源），
       // 同时进 liveTurnMessages 保证 snapshot 重放路径一致；toolResult 的 entry 并入 tool_use 块（toolUseId 键），无需独立 ID
+      // injected 实体必须先于 message_id 落 live：快照重放时 message_id(user) 才能把注入实体从 local id 升级为磁盘 id，
+      // reinsertCutUsers 按磁盘 id 去重命中；若顺序颠倒，local id 未升级、去重失配，会插入第二条（双显）
       if (role === 'user' || role === 'assistant') {
+        if (role === 'user') this.tryFlushPendingInjected(event.message);
         const entryId = this.messageEntryIds.get(event.message);
         if (entryId) {
           const idMessage: ExtendedSessionMessage = {
@@ -936,7 +945,6 @@ export class PiSession extends EventEmitter {
         } else {
           this.logger.warn('message_end 未命中 entryId 缓存，跳过 message_id 广播');
         }
-        if (role === 'user') this.tryFlushPendingInjected(event.message);
       }
     }
 

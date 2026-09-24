@@ -27,6 +27,8 @@ export interface AbilityPack {
   skills?: string[];
   /** 仅主会话生效（子会话不挂载工具） */
   mainOnly?: boolean;
+  /** 子会话 Profile 子开关独裁（唯一裁决者），工作区包开关退化为纯主会话开关；子开关字段名见 SUB_AUTONOMOUS_SWITCH */
+  subAutonomous?: boolean;
   defaultEnabled: boolean;
   icon?: string;
 }
@@ -40,6 +42,14 @@ export const SKILL_PACK_MAP: Record<string, string[]> = {
   'stock-picking': ['stock-picking'],
   'article-parser': ['article'],
   'browser-exploration': ['browser'],
+};
+
+/** 自治包 key → Profile enabledAbilities 子开关字段（subAutonomous 包的裁决入口） */
+const SUB_AUTONOMOUS_SWITCH: Record<string, 'stock' | 'article' | 'browser' | 'web'> = {
+  stock: 'stock',
+  article: 'article',
+  browser: 'browser',
+  'web-mcp': 'web',
 };
 
 export const ABILITY_PACKS: AbilityPack[] = [
@@ -122,36 +132,40 @@ export const ABILITY_PACKS: AbilityPack[] = [
   {
     key: 'stock',
     label: '股票分析',
-    description: '股票分析与选股 skill + 行情/分析/公告/候选池四个工具包',
+    description: '股票分析与选股 skill + 行情/分析/公告/候选池四个工具包；子会话 Profile 独立生效，不受此开关约束',
     type: 'skill-packs',
     skills: ['stock-analysis', 'stock-picking'],
     toolGroups: ['stock-quote', 'stock-analysis', 'stock-announcement', 'stock-picking'],
+    subAutonomous: true,
     defaultEnabled: false,
   },
   {
     key: 'article',
     label: '文章解析',
-    description: '文章解析 skill + 文章管理工具包（读取/列举工作区文章）',
+    description: '文章解析 skill + 文章管理工具包（读取/列举工作区文章）；子会话 Profile 独立生效，不受此开关约束',
     type: 'skill-packs',
     skills: ['article-parser'],
     toolGroups: ['article'],
+    subAutonomous: true,
     defaultEnabled: false,
   },
   {
     key: 'browser',
     label: '浏览器',
-    description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，登录态站点优先）',
+    description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，登录态站点优先）；子会话 Profile 独立生效，不受此开关约束',
     type: 'skill-packs',
     skills: ['browser-exploration'],
     toolGroups: ['browser', 'dogear-extension'],
+    subAutonomous: true,
     defaultEnabled: false,
   },
   {
     key: 'web-mcp',
     label: '联网搜索',
-    description: 'GLM 联网搜索与网页读取工具包（web_search_prime / webReader），API 直出快档，与浏览器工具互补；需在设置页配置 GLM Coding Plan API Key',
+    description: 'GLM 联网搜索与网页读取工具包（web_search_prime / webReader），API 直出快档，与浏览器工具互补；需在设置页配置 GLM Coding Plan API Key；子会话 Profile 独立生效，不受此开关约束',
     type: 'skill-packs',
     toolGroups: ['web-mcp'],
+    subAutonomous: true,
     defaultEnabled: false,
   },
   {
@@ -171,6 +185,11 @@ export const ABILITY_PACKS: AbilityPack[] = [
   },
 ];
 
+/** 自治包内 skill 全集：子会话装配时绕过工作区 enabledSkills/disabledPackSkills 两层闸，由 Profile 裁决 */
+export const SUB_AUTONOMOUS_SKILLS: ReadonlySet<string> = new Set(
+  ABILITY_PACKS.filter((p) => p.subAutonomous).flatMap((p) => p.skills ?? []),
+);
+
 export interface ResolveAbilitiesOpts {
   role: 'main' | 'sub';
   /**
@@ -186,11 +205,20 @@ export interface ResolveAbilitiesOpts {
 /**
  * 解析生效能力包：工作区包开关（abilityOverrides 覆盖 defaultEnabled，残留下线 key 静默忽略）
  * ∩ 触发条件 ∩ 子会话 Profile 过滤。子会话契约段与 Profile 子开关（enabledSkills）不在此处理。
+ * subAutonomous 包（browser/web-mcp/stock/article）例外：Profile 子开关是唯一裁决者，跳过工作区闸门；
+ * profile 缺失则不生效（无授权即无能力）。
  * reference 子开关已退役：ReadGroupBackground 随会话组包、ListSiblingSessions 随协作包，旧配置残留值静默忽略。
  */
 export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilitiesOpts): Set<string> {
   const result = new Set<string>();
   for (const pack of ABILITY_PACKS) {
+    if (opts.role === 'sub' && pack.subAutonomous) {
+      const subSwitch = SUB_AUTONOMOUS_SWITCH[pack.key];
+      if (!subSwitch || opts.profile?.enabledAbilities[subSwitch] !== true) continue;
+      result.add(pack.key);
+      continue;
+    }
+
     const enabled = config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
     if (!enabled) continue;
 
@@ -204,14 +232,6 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
     // executor 由拼装侧显式排除（同 notes-discipline 模式）：无人值守无分流场景
     if (pack.key === 'shunt' && (!opts.hasWorkspace || !opts.groupId)) continue;
     if (pack.mainOnly && opts.role !== 'main') continue;
-
-    if (opts.role === 'sub' && opts.profile) {
-      const ab = opts.profile.enabledAbilities;
-      if (pack.key === 'stock' && ab.stock !== true) continue;
-      if (pack.key === 'article' && ab.article !== true) continue;
-      if (pack.key === 'browser' && ab.browser !== true) continue;
-      if (pack.key === 'web-mcp' && ab.web !== true) continue;
-    }
 
     result.add(pack.key);
   }

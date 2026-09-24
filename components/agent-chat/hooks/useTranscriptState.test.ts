@@ -172,6 +172,24 @@ describe('useTranscriptState core', () => {
     expect(merged.live[1].content).toBe('reply');
   });
 
+  test('注入消息快照顺序 injected→message_id 时 live 恰一条且 id 升级为磁盘 id', () => {
+    const history: Message[] = [
+      { role: 'user', content: 'dispatch text', id: 'e-inj', entryIds: ['e-inj'] },
+    ];
+    const snapshot = [
+      event('user', { content: 'dispatch text', injectedTag: 'dispatch' }),
+      event('message_id', { role: 'user', uuid: 'e-inj' }),
+      event('text', { content: 'answer' }),
+    ];
+    const merged = mergeHistorySnapshotCore(history, snapshot, ['e-inj'], [], true);
+
+    expect(merged.live.filter((message) => message.role === 'user')).toHaveLength(1);
+    expect(merged.live[0].id).toBe('e-inj');
+    expect(merged.live[0].entryIds).toEqual(['e-inj']);
+    expect(merged.live[0].content).toBe('dispatch text');
+    expect(merged.live[1].content).toBe('answer');
+  });
+
   test('初始化超时或 attach 失败可强制结束门槛', () => {
     const init = {
       key: 'conversation-1',

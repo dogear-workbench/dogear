@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'bun:test';
 import {
   ABILITY_PACKS,
+  SUB_AUTONOMOUS_SKILLS,
   TOOL_PACK_TO_ABILITY,
   resolveAbilities,
   type AbilityPack,
@@ -69,6 +70,47 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true } };
     expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createBrowserParseSubAgentProfile() }).has('browser')).toBe(true);
     expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createDefaultSubAgentProfile() }).has('browser')).toBe(false);
+  });
+});
+
+describe('自治包四象限（main/sub × 工作区开关/Profile 子开关）', () => {
+  const AUTONOMOUS_KEYS = ['stock', 'article', 'browser', 'web-mcp'] as const;
+  const wsOverrides = (on: boolean) => ({
+    enabledToolPacks: [],
+    enabledSkills: [],
+    abilityOverrides: Object.fromEntries(AUTONOMOUS_KEYS.map((key) => [key, on])),
+  });
+  const profileAllOn = profileWith({ stock: true, article: true, browser: true, web: true });
+
+  test('工作区关 + Profile 开：sub 生效（Profile 独裁），main 不生效（纯主会话开关）', () => {
+    const config: WorkspaceConfig = wsOverrides(false);
+    for (const key of AUTONOMOUS_KEYS) {
+      expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileAllOn }).has(key)).toBe(true);
+      expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null }).has(key)).toBe(false);
+    }
+  });
+
+  test('工作区开 + Profile 关：sub 不生效（子开关独裁），main 生效', () => {
+    const config: WorkspaceConfig = wsOverrides(true);
+    const profileOff = profileWith({});
+    for (const key of AUTONOMOUS_KEYS) {
+      expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileOff }).has(key)).toBe(false);
+      expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null }).has(key)).toBe(true);
+    }
+  });
+
+  test('sub 无 profile：自治包全部不生效（无授权即无能力）', () => {
+    const config: WorkspaceConfig = wsOverrides(false);
+    for (const key of AUTONOMOUS_KEYS) {
+      expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: null }).has(key)).toBe(false);
+    }
+  });
+
+  test('自治标记与 skill 全集：四包置位且 SUB_AUTONOMOUS_SKILLS 恰含五 skill', () => {
+    expect(ABILITY_PACKS.filter((p) => p.subAutonomous).map((p) => p.key)).toEqual([...AUTONOMOUS_KEYS]);
+    expect([...SUB_AUTONOMOUS_SKILLS].sort()).toEqual(
+      ['article-parser', 'browser-exploration', 'stock-analysis', 'stock-picking'].sort(),
+    );
   });
 });
 

@@ -227,10 +227,28 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
     expect(groups.has('extension')).toBe(false);
   });
 
-  test('browser 总开关关 + Profile extension=true → 不注册（包闸优先）', () => {
+  test('browser 总开关关 + Profile browser/extension=true → 注册（Profile 独裁，不受工作区包闸约束）', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
       enabledAbilities: { browser: true, extension: true },
+    };
+    const active = resolveAbilities(ALL_OFF, {
+      role: 'sub',
+      hasWorkspace: true,
+      groupId: GROUP_ID,
+      profile,
+    });
+    expect(active.has('browser')).toBe(true);
+
+    const { groups } = subGroups(profile, active);
+    expect(groups.has('extension')).toBe(true);
+    expect(groups.has('browser')).toBe(true);
+  });
+
+  test('browser 总开关关 + Profile extension=true 但 browser 未勾 → 均不注册（子开关独裁）', () => {
+    const profile: SubAgentProfile = {
+      ...createDefaultSubAgentProfile(),
+      enabledAbilities: { extension: true },
     };
     const active = resolveAbilities(ALL_OFF, {
       role: 'sub',
