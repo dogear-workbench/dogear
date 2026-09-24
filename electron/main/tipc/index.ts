@@ -17,6 +17,7 @@ import { abilityRouter } from './ability.js';
 import { workspaceConfigRouter } from './workspace-config.js';
 import { stockRouter } from './stock.js';
 import { wechatRouter } from './wechat.js';
+import { feishuRouter } from './feishu.js';
 import { conversationRuntimeRouter } from './conversation-runtime.js';
 import { environmentRouter } from './environment.js';
 import { skillRouter } from './skill.js';
@@ -51,6 +52,7 @@ export const router = {
   ...workspaceConfigRouter,
   ...stockRouter,
   ...wechatRouter,
+  ...feishuRouter,
   ...conversationRuntimeRouter,
   ...environmentRouter,
   ...skillRouter,

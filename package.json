@@ -1,6 +1,6 @@
 {
   "name": "dogear",
-  "version": "0.1.140",
+  "version": "0.1.145",
   "description": "AI 驱动的个人工作台",
   "author": "Dogear Team",
   "main": "dist/main/index.js",
@@ -31,6 +31,7 @@
     "@egoist/tipc": "^0.3.2",
     "@headless-tree/core": "^1.6.3",
     "@headless-tree/react": "^1.6.3",
+    "@larksuiteoapi/node-sdk": "^1.74.0",
     "@mozilla/readability": "^0.6.0",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.3.7",
