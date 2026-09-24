@@ -49,6 +49,7 @@
 - `group-list/GroupCard.tsx` — 组卡片（树形会话行、文件夹挂载菜单、删除二次确认）
 - `EmptyFocusState.tsx` / `StatusPulse.tsx` — 无焦点占位 / 状态脉冲
 - `wechat/` — 微信 Bot UI（认证 Dialog、控制面板、QR 码）
+- `feishu/` — 飞书 Bot UI（FeishuDialog 配置弹层、FeishuSetupGuide 开放平台引导、FeishuControlPanel 连接控制台），入口 app/page.tsx 工具栏飞书按钮；与 wechat/ 平行同构（不抽象通用渠道层），类型 `types/feishu.ts`（前后端共享：凭证/连接态/入站消息）
 - 设置类组件（WorkspaceSwitcherPopover/WelcomeFirstRun/WorkspaceRuleDialog/ModelSelector/MarkdownRenderer）→ 见 settings.md / infra.md
 
 ## Stores（stores/）
@@ -62,6 +63,7 @@
 - `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE）+ dataCenterTabOpen（归档 tab 不落 localStorage）
 - `terminal-store.ts` — 终端前端（terminals Map、followMode/pinned、registerDataSink 收流注册）
 - `git-history-store.ts` — 文件历史面板状态（open/target/gitAvailable + checkGitAvailable 幂等能力检测）
+- `feishu-store.ts` — 飞书 Bot 前端状态（配置信息/连接态/botStatus 绑定会话与候选列表），订阅 feishuConnectionStatus/feishuBotAutoInit/feishuBotBindingChanged 三事件
 
 ## lib / services
 
@@ -80,6 +82,7 @@
 - `services/workspace-fs-service.ts` — 文件树扫描与文件操作（安全路径验证）；create/rename/move/copy/delete 成功后自动触发影子 git 快照（可选尾参 workspaceId，fire-and-forget）
 - `services/git-service/` — 双层 git 服务层：exec（execFile 封装+GitServiceError）/shadow（影子仓库：--git-dir/--work-tree 分离，workspaceId 级串行快照队列，add -A -f + exclude pathspec 绕过用户 .gitignore 覆盖私人文件）/user-repo（用户仓库读写+repo-busy 探测）/history（双源合并）；agent Write/Edit 快照挂钩在 pi-session/builtin-tools.ts（withSnapshot 包装）
 - `services/pty-service.ts` — PTY 实例管理（node-pty，buffer 尾部 100K 封顶，事件上抛 tipc/pty.ts 桥接）
+- `services/feishu/` — 飞书 Bot 主进程服务：feishu-config-service（凭证 CRUD+连通性测试，`.dogear/feishu/config.json`）/feishu-client-service（@larksuiteoapi/node-sdk WSClient 长连接，自动重连/去重）/feishu-bot-controller（p2p+text 消息处理与会话绑定，message_id 幂等）/feishu-card（Agent 回复 markdown 卡片：表格降级等宽块、4000 字符拆条；命令回执纯文本）；与 services/wechat/ 平行同构，Agent 回复监听在 tipc/feishu.ts 挂 sessionMessage/sessionComplete，bot 状态经 registerBotStateGetter 多注册进 tipc/agent.ts（与 wechat.ts 并列）
 
 ## 注意
 

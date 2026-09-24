@@ -18,13 +18,14 @@
 - `pty.ts` — PTY 路由 + registerPtyBroadcaster（pty-service 事件桥接为 ptyCreated/ptyData/ptyExit 广播）
 - `browser.ts` — 浏览器路由 + 动作流/呈现/等待人工接线（registerBrowserActionBridge）
 - `agent.ts` — Agent 会话管理路由：setSessionModel（同 profile 换 tier 快速路径/跨 profile needsRestart）、closeQueryBasedSession=release 语义 vs forceClose=强杀、pauseQueryBasedSession=turn 粒度暂停受理；complete 分支挂 failover 钩子；handleSessionNotification 系统提示决策单点（complete/failed/permission 过滤链+提示音）
+- `feishu.ts` — 飞书 Bot 路由：getConfig/saveConfig/clearConfig/testConnection/connect/disconnect/getConnectionStatus/getBotStatus/botUseConversation/openPlatform 十条 + autoConnectFeishu 启动自动重连；与 wechat.ts 同构，registerBotStateGetter 多注册（agent.ts getter 数组）
 - `ai.ts` + `services/ai-service.ts` — 通用 AI 接口占位（chat/summarize）
 - `article.ts` / `notes.ts` / `tasks.ts` — 文章 / 笔记 CRUD / 协作任务路由（详见各功能域）
 - `notifications.ts` — 消息中心路由（notification-center-service 单例透传，变更经广播推送）
 - `conversations.ts` — 对话 CRUD+分叉+移入工作区（moveConversationToWorkspace：索引迁移+session 搬运）
 - `workspace.ts` / `file.ts` / `explorer.ts` / `git.ts` — 工作区管理 / 打开文件位置 / 文件树操作 / git 历史（能力检测+双源时间线+快照恢复+历史版本内容）
 - `stock.ts` / `usage.ts` / `group.ts` / `ability.ts` / `scheduler.ts` — 股票 12+RPC / 用量查询 / 会话组+话题+共享区 / 能力包（getAbilityPacks 四源聚合+getAbilityMounts）/ 定时任务
-- `renderer-handlers.ts` — main→renderer 事件定义收口（sessionMessage、权限请求、usageEntryAdded、sessionStateChanged/sessionClosed、aliveConversationsChanged、failoverNotice、tasksChanged、notificationsChanged、soundCue、pty 三事件、browserActionAdded、pagePresentationChanged、humanInterventionChanged 等）
+- `renderer-handlers.ts` — main→renderer 事件定义收口（sessionMessage、权限请求、usageEntryAdded、sessionStateChanged/sessionClosed、aliveConversationsChanged、failoverNotice、tasksChanged、notificationsChanged、soundCue、pty 三事件、browserActionAdded、pagePresentationChanged、humanInterventionChanged、feishuConnectionStatus/feishuBotAutoInit/feishuBotBindingChanged 等）
 
 ## lib（src/lib/）
 
@@ -78,6 +79,7 @@
 - `skills/` — 全局 custom skills；`article-parser/` — 文章解析 skills 运行时目录
 - `site-knowledge/{domain}.md` — 站点档案（两区：正式地图+探索发现）
 - `stocks/watchlist.json` / `formulas.json` / `kline/` / `daily/` / `announcements/` / `cninfo-org-map.json` — 自选股/公式/K线/每日快照/公告缓存/巨潮 orgId 映射（结构见 stocks.md）
+- `feishu/config.json` — 飞书 Bot 凭证（appId/appSecret/botName/connectedAt，明文）
 - `window-state.json` — 窗口位置记忆
 
 ## 测试基建（resources/ 及散布单测）

@@ -36,7 +36,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `delegation-idle.ts` / `delegation-terminal.ts` / `delegation-resume.ts` / `delegation-lifecycle.ts` — 调度站纯逻辑层：idle 计时 / 错误分类与通知文案 / 重调决策与续跑提示词 / 完成事件分类
 - `model-failover.ts` — 全局 failover 链：findNextFailover 纯链查找；maybeFailoverMainSession 主会话编排（quota→换血重建→failoverNotice 广播→续跑），子会话只沿链降级不进编排
 - `contract-channel-service.ts`（services/）— 契约通道校验：只认直接派出关系，SendMessage/StopSession 工具层前置
-- `conversation-runtime-service.ts`（services/）— 会话运行时管理：多附件绑定（desktop/wechat-bot）、release 带 forced 语义（failover/强杀不触发调度器 on_session_close）
+- `conversation-runtime-service.ts`（services/）— 会话运行时管理：多附件绑定（desktop/wechat-bot/feishu-bot）、release 带 forced 语义（failover/强杀不触发调度器 on_session_close）
 - `tools/delegation-tools.ts` — 派遣工具：CreateSession(Batch)/SendMessage（delivery 标记、停机自动调起）/ListLinkedSessions/ResumeSession/StopSession；子会话无 Create*/Resume/Stop（不能派孙子）
 
 ## 能力包与 skill

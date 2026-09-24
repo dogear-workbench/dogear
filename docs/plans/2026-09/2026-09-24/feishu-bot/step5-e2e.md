@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 端到端联调（用户参与）
-status: pending
+status: in_progress
 ---
 
 ## 目标
@@ -29,8 +29,14 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：本 step 拆为两部分——doc-sync 代码地图更新已无人值守完成；真实凭证联调需用户本人参与，待进行
 - 改动文件清单：
+  - `docs/codebase-map/index.md`：chat.md 聊天词补「飞书」关键词
+  - `docs/codebase-map/chat.md`：feishu/ 组件、feishu-store、services/feishu/ 四文件条目
+  - `docs/codebase-map/infra.md`：feishu tipc 十条路由 + renderer 三事件 + feishu/config.json 存储
+  - `docs/codebase-map/agent-core.md`：conversation-runtime-service 多附件绑定补 feishu-bot
 
 ### 给下一步的接力棒
 - 遗留问题（如群聊 @bot、图片消息等已识别未做项）：
+  - **待用户**：按 SetupGuide 在开放平台创建应用（七步引导），真实凭证走通全链路（测试连接三层结果 / 斜杠命令 / 卡片回复 / 拆条 / 自动重连）
+  - 已知限制：@bot mentions 占位符未剥离（p2p 一般不含）；群聊 @bot、图片消息未支持（设计文档已列为不做项）
