@@ -1,3 +1,4 @@
+import electron from 'electron';
 import { tipc, getRendererHandlers } from '@egoist/tipc/main';
 import { feishuConfigService } from '../services/feishu/feishu-config-service.js';
 import { feishuClientService } from '../services/feishu/feishu-client-service.js';
@@ -8,6 +9,7 @@ import type { RendererHandlers } from './renderer-handlers.js';
 import { registerBotStateGetter } from './agent.js';
 
 const t = tipc.create();
+const { shell } = electron;
 
 registerBotStateGetter(() => feishuBotController.getState());
 
@@ -193,6 +195,20 @@ export const feishuRouter = {
     .input<{ index: number }>()
     .action(async ({ input }) => {
       return await feishuBotController.useConversationByIndex(input.index);
+    }),
+
+  'feishu:openPlatform': t.procedure
+    .input<{ url: string }>()
+    .action(async ({ input }) => {
+      try {
+        if (!input.url.startsWith('https://open.feishu.cn')) {
+          return { error: '仅允许打开飞书开放平台链接' };
+        }
+        await shell.openExternal(input.url);
+        return { data: { success: true } };
+      } catch (error) {
+        return { error: String(error) };
+      }
     }),
 };
 

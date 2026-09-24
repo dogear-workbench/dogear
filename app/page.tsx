@@ -5,9 +5,10 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { playDogearSound } from '@/lib/dogear-sound';
 import { Button } from '@/components/ui/button';
-import { Loader2, Settings, TrendingUp, MessageCircle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
+import { Loader2, Settings, TrendingUp, MessageCircle, MessageSquareMore, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { WechatDialog } from '@/components/wechat/WechatDialog';
+import { FeishuDialog } from '@/components/feishu/FeishuDialog';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
@@ -118,6 +119,7 @@ export default function Home() {
   }, []);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
+  const [feishuDialogOpen, setFeishuDialogOpen] = useState(false);
 
   // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -301,6 +303,10 @@ export default function Home() {
             <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
             微信
           </Button>
+          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => setFeishuDialogOpen(true)}>
+            <MessageSquareMore className="w-3.5 h-3.5 mr-1.5" />
+            飞书
+          </Button>
           {!workbenchWindowOpen && (
             <Button
               variant="ghost"
@@ -407,6 +413,9 @@ export default function Home() {
 
       {/* 微信 Bot 控制 Dialog */}
       <WechatDialog open={wechatDialogOpen} onOpenChange={setWechatDialogOpen} />
+
+      {/* 飞书 Bot 控制 Dialog */}
+      <FeishuDialog open={feishuDialogOpen} onOpenChange={setFeishuDialogOpen} />
 
       {/* Markdown 文件预览 Dialog */}
       <MarkdownFileDialog />
