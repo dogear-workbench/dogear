@@ -49,7 +49,7 @@
 - `group-list/GroupCard.tsx` — 组卡片（树形会话行、文件夹挂载菜单、删除二次确认）
 - `EmptyFocusState.tsx` / `StatusPulse.tsx` — 无焦点占位 / 状态脉冲
 - `wechat/` — 微信 Bot UI（认证 Dialog、控制面板、QR 码）；工具栏入口已下线（2026-09，代码保留，后续重做再挂回）
-- `feishu/` — 飞书 Bot UI（FeishuDialog 配置弹层、FeishuSetupGuide 开放平台引导、FeishuControlPanel 连接控制台：状态卡常驻 + 对话/命令双 tab），入口 app/page.tsx 工具栏飞书按钮（官方 logo）；与 wechat/ 平行同构（不抽象通用渠道层），类型 `types/feishu.ts`（前后端共享：凭证/连接态/入站消息）
+- `feishu/` — 飞书 Bot UI（FeishuPanel 主窗口哨兵 tab 页：状态卡通栏 + 左对话右命令两栏，未配置时显 SetupGuide 开放平台引导），入口 app/page.tsx 工具栏飞书按钮（官方 logo）；与 wechat/ 平行同构（不抽象通用渠道层），类型 `types/feishu.ts`（前后端共享：凭证/连接态/入站消息）；哨兵 id `FEISHU_TAB_ID`（session-store，不落盘）
 - 设置类组件（WorkspaceSwitcherPopover/WelcomeFirstRun/WorkspaceRuleDialog/ModelSelector/MarkdownRenderer）→ 见 settings.md / infra.md
 
 ## Stores（stores/）
