@@ -808,6 +808,11 @@ app.whenReady().then(async () => {
     .then((m) => m.startAutoArchiveTimer())
     .catch((err) => console.error('启动自动归档定时失败:', err));
 
+  // 飞书 Bot 自动连接：已保存凭证即建常驻 WS（消息处理由 Step 3 接 bot controller）
+  void import('./services/feishu/feishu-client-service.js')
+    .then((m) => m.autoConnectFeishu())
+    .catch((err) => console.error('飞书自动连接失败:', err));
+
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
   // 如果没有其他窗口打开,则创建新窗口
   app.on('activate', () => {

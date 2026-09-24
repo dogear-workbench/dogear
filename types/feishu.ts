@@ -18,3 +18,20 @@ export interface FeishuTestResult {
 
 /** WS 长连接状态 */
 export type FeishuConnectionState = 'disconnected' | 'connecting' | 'connected' | 'error';
+
+/** 连接状态快照（getConnectionStatus 返回） */
+export interface FeishuConnectionStatus {
+  state: FeishuConnectionState;
+  errorMessage?: string;
+  running: boolean;
+  botName?: string;
+  connectedAt?: string;
+}
+
+/** WS 收到的 p2p 文本消息（过滤后交给 bot controller） */
+export interface FeishuIncomingMessage {
+  messageId: string;
+  chatId: string;
+  senderOpenId: string;
+  text: string;
+}

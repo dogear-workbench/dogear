@@ -114,6 +114,14 @@ export type RendererHandlers = {
     conversationId: string | null;
   }) => void;
 
+  // === 飞书 Bot ===
+
+  // 飞书 WS 连接状态变化
+  feishuConnectionStatus: (data: {
+    state: 'disconnected' | 'connecting' | 'connected' | 'error';
+    errorMessage?: string;
+  }) => void;
+
   // 独立会话窗口关闭（通知主窗口恢复 Tab）
   sessionWindowClosed: (data: {
     conversationId: string;
