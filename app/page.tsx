@@ -7,7 +7,7 @@ import { playDogearSound } from '@/lib/dogear-sound';
 import { Button } from '@/components/ui/button';
 import { Loader2, Settings, TrendingUp, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FeishuDialog } from '@/components/feishu/FeishuDialog';
+import { FeishuPanel } from '@/components/feishu/FeishuPanel';
 import feishuLogo from '@/assets/feishu-logo.png';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
@@ -26,7 +26,7 @@ import { ArticlePreview } from '@/components/ArticlePreview';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
@@ -118,7 +118,8 @@ export default function Home() {
     }
   }, []);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
-  const [feishuDialogOpen, setFeishuDialogOpen] = useState(false);
+  const openFeishuTab = useSessionStore((s) => s.openFeishuTab);
+  const feishuTabOpen = useSessionStore((s) => s.feishuTabOpen);
 
   // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -298,7 +299,7 @@ export default function Home() {
             <PictureInPicture2 className="w-3.5 h-3.5 mr-1.5" />
             工作台
           </Button>
-          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => setFeishuDialogOpen(true)}>
+          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={openFeishuTab}>
             <img src={feishuLogo} alt="飞书" className="w-3.5 h-3.5 mr-1.5 rounded-[3px]" />
             飞书
           </Button>
@@ -372,6 +373,15 @@ export default function Home() {
                 <ArchivePage workspaceId={workspace.id} />
               </div>
             )}
+            {/* 飞书：可开关 Tab，打开期间常驻挂载，关闭即卸载 */}
+            {feishuTabOpen && (
+              <div
+                className="absolute inset-0 flex flex-col"
+                style={{ display: activeTabId === FEISHU_TAB_ID ? 'flex' : 'none' }}
+              >
+                <FeishuPanel />
+              </div>
+            )}
             {/* 文章：选中即挂载（切会话 tab 保持挂载不重加载），清空选中即卸载 */}
             {selectedArticle !== null && (
               <div
@@ -405,9 +415,6 @@ export default function Home() {
           <CompanionPanel workspaceId={companionWorkspaceId} groupId={currentGroupId} />
         )}
       </div>
-
-      {/* 飞书 Bot 控制 Dialog */}
-      <FeishuDialog open={feishuDialogOpen} onOpenChange={setFeishuDialogOpen} />
 
       {/* Markdown 文件预览 Dialog */}
       <MarkdownFileDialog />

@@ -27,9 +27,10 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { StatusPulse } from '@/components/StatusPulse';
-import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, type SessionTab, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useArticleStore } from '@/stores/article-store';
+import feishuLogo from '@/assets/feishu-logo.png';
 
 export function WorkspaceTabBar() {
   const allTabs = useSessionStore((s) => s.tabs);
@@ -44,6 +45,8 @@ export function WorkspaceTabBar() {
   const closeDataCenterTab = useSessionStore((s) => s.closeDataCenterTab);
   const archiveTabOpen = useSessionStore((s) => s.archiveTabOpen);
   const closeArchiveTab = useSessionStore((s) => s.closeArchiveTab);
+  const feishuTabOpen = useSessionStore((s) => s.feishuTabOpen);
+  const closeFeishuTab = useSessionStore((s) => s.closeFeishuTab);
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
   const clearSelectedArticle = useArticleStore((s) => s.clearSelectedArticle);
 
@@ -118,7 +121,8 @@ export function WorkspaceTabBar() {
     !notesWindowOpen ||
     (dataCenterTabOpen && !dataCenterWindowOpen) ||
     selectedArticle !== null ||
-    archiveTabOpen;
+    archiveTabOpen ||
+    feishuTabOpen;
 
   return (
     <div className="flex items-stretch border-b bg-sidebar">
@@ -292,6 +296,30 @@ export function WorkspaceTabBar() {
                 onClick={(e) => {
                   e.stopPropagation();
                   clearSelectedArticle();
+                }}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+          {/* 飞书：可开关 Tab，不落盘，无弹出窗口 */}
+          {feishuTabOpen && (
+            <div
+              onClick={() => switchTab(FEISHU_TAB_ID)}
+              className={cn(
+                'group flex items-center gap-1.5 px-3 py-2 text-sm cursor-pointer border-r shrink-0',
+                activeTabId === FEISHU_TAB_ID ? 'bg-background font-medium' : 'hover:bg-muted/50 text-muted-foreground',
+              )}
+              title="飞书"
+            >
+              <img src={feishuLogo} alt="飞书" className="w-3.5 h-3.5 rounded-[3px]" />
+              <span>飞书</span>
+              <button
+                className="ml-0.5 p-0.5 rounded hover:bg-muted shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                title="关闭飞书"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  closeFeishuTab();
                 }}
               >
                 <X className="w-3 h-3" />
