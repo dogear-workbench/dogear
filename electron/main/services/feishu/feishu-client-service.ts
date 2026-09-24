@@ -45,11 +45,6 @@ function broadcastFeishuState(state: FeishuConnectionState, errorMessage?: strin
   broadcastToWindows((h) => h.feishuConnectionStatus.send({ state, errorMessage }));
 }
 
-// Step 3 接入 bot controller 前的占位处理
-export function logIncomingMessage(msg: FeishuIncomingMessage): void {
-  console.log('[feishu] 收到 p2p 文本消息:', JSON.stringify(msg));
-}
-
 class FeishuClientService {
   private client: Client | null = null;
   private wsClient: WSClient | null = null;
@@ -149,7 +144,7 @@ class FeishuClientService {
     return this.reply(messageId, 'text', JSON.stringify({ text }));
   }
 
-  async replyCard(messageId: string, card: Record<string, unknown>): Promise<FeishuActionResult> {
+  async replyCard(messageId: string, card: object): Promise<FeishuActionResult> {
     return this.reply(messageId, 'interactive', JSON.stringify(card));
   }
 
@@ -243,16 +238,3 @@ class FeishuClientService {
 }
 
 export const feishuClientService = new FeishuClientService();
-
-// 主进程启动自动连接：检测到已保存凭证即建常驻 WS
-export async function autoConnectFeishu(): Promise<void> {
-  const cfg = await feishuConfigService.loadConfig();
-  if (!cfg) return;
-  console.log('[feishu] 检测到已保存凭证，自动连接中...');
-  const res = await feishuClientService.connect(cfg.appId, cfg.appSecret, logIncomingMessage);
-  if (res.ok) {
-    console.log('[feishu] 自动连接成功');
-  } else {
-    console.error('[feishu] 自动连接失败:', res.error);
-  }
-}

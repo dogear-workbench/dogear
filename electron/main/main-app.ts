@@ -808,8 +808,8 @@ app.whenReady().then(async () => {
     .then((m) => m.startAutoArchiveTimer())
     .catch((err) => console.error('启动自动归档定时失败:', err));
 
-  // 飞书 Bot 自动连接：已保存凭证即建常驻 WS（消息处理由 Step 3 接 bot controller）
-  void import('./services/feishu/feishu-client-service.js')
+  // 飞书 Bot 自动连接：已保存凭证即建常驻 WS，并接好消息处理与 Agent 回复链路
+  void import('./tipc/feishu.js')
     .then((m) => m.autoConnectFeishu())
     .catch((err) => console.error('飞书自动连接失败:', err));
 

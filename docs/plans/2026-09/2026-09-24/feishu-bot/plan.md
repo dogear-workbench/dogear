@@ -9,8 +9,8 @@
 ## 步骤索引
 
 - [x] [Step 1: 基础层——SDK 安装 + 配置服务 + 配置路由](./step1-config-foundation.md) — 凭证可存可校验，错误精确到修复指引
-- [ ] [Step 2: 连接层——client service + 启动自动连](./step2-ws-client.md) — WSClient 生命周期 + 事件解析 + 发消息封装
-- [ ] [Step 3: Bot 控制器 + 卡片转换 + agent.ts 多 bot 改造](./step3-bot-controller.md) — 消息路由全链路（命令/转发/回复/幂等）
+- [x] [Step 2: 连接层——client service + 启动自动连](./step2-ws-client.md) — WSClient 生命周期 + 事件解析 + 发消息封装
+- [x] [Step 3: Bot 控制器 + 卡片转换 + agent.ts 多 bot 改造](./step3-bot-controller.md) — 消息路由全链路（命令/转发/回复/幂等）
 - [ ] [Step 4: 渲染层——store + 引导 UI + 控制台 + 入口](./step4-renderer-ui.md) — 配置引导（外部浏览器 + 步骤文案）+ 连接状态 + Bot 控制台
 - [ ] [Step 5: 端到端联调（用户参与）](./step5-e2e.md) — 真实凭证走通全链路 + 文档收尾
 

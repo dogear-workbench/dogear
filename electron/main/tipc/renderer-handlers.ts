@@ -122,6 +122,28 @@ export type RendererHandlers = {
     errorMessage?: string;
   }) => void;
 
+  // 飞书 Bot 自动初始化数据（connect 成功后推送）
+  feishuBotAutoInit: (data: {
+    status: {
+      workspaceId: string | null;
+      workspaceName: string | null;
+      conversationId: string | null;
+      conversationTitle: string | null;
+      debugMode: boolean;
+    };
+    conversations: Array<{
+      index: number;
+      id: string;
+      title: string;
+      updatedAt: string;
+    }>;
+  }) => void;
+
+  // 飞书 Bot 绑定对话变更
+  feishuBotBindingChanged: (data: {
+    conversationId: string | null;
+  }) => void;
+
   // 独立会话窗口关闭（通知主窗口恢复 Tab）
   sessionWindowClosed: (data: {
     conversationId: string;
