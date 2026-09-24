@@ -5,10 +5,10 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { playDogearSound } from '@/lib/dogear-sound';
 import { Button } from '@/components/ui/button';
-import { Loader2, Settings, TrendingUp, MessageCircle, MessageSquareMore, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
+import { Loader2, Settings, TrendingUp, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { WechatDialog } from '@/components/wechat/WechatDialog';
 import { FeishuDialog } from '@/components/feishu/FeishuDialog';
+import feishuLogo from '@/assets/feishu-logo.png';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
 import { WelcomeFirstRun } from '@/components/WelcomeFirstRun';
@@ -118,7 +118,6 @@ export default function Home() {
     }
   }, []);
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
-  const [wechatDialogOpen, setWechatDialogOpen] = useState(false);
   const [feishuDialogOpen, setFeishuDialogOpen] = useState(false);
 
   // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
@@ -299,12 +298,8 @@ export default function Home() {
             <PictureInPicture2 className="w-3.5 h-3.5 mr-1.5" />
             工作台
           </Button>
-          <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => setWechatDialogOpen(true)}>
-            <MessageCircle className="w-3.5 h-3.5 mr-1.5" />
-            微信
-          </Button>
           <Button variant="outline" size="sm" className="h-7 px-2.5" onClick={() => setFeishuDialogOpen(true)}>
-            <MessageSquareMore className="w-3.5 h-3.5 mr-1.5" />
+            <img src={feishuLogo} alt="飞书" className="w-3.5 h-3.5 mr-1.5 rounded-[3px]" />
             飞书
           </Button>
           {!workbenchWindowOpen && (
@@ -410,9 +405,6 @@ export default function Home() {
           <CompanionPanel workspaceId={companionWorkspaceId} groupId={currentGroupId} />
         )}
       </div>
-
-      {/* 微信 Bot 控制 Dialog */}
-      <WechatDialog open={wechatDialogOpen} onOpenChange={setWechatDialogOpen} />
 
       {/* 飞书 Bot 控制 Dialog */}
       <FeishuDialog open={feishuDialogOpen} onOpenChange={setFeishuDialogOpen} />

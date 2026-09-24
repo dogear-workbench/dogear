@@ -3,6 +3,7 @@ import { Bot, Loader2, RefreshCw, Terminal, Unplug } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useFeishuStore } from '@/stores/feishu-store';
 import type { FeishuConnectionState } from '@/types/feishu';
 
@@ -49,7 +50,7 @@ export function FeishuControlPanel() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 连接状态 */}
+      {/* 连接状态（tab 外常驻，报错始终可见） */}
       <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
         <Bot className="w-8 h-8 text-muted-foreground" />
         <div className="flex-1 min-w-0">
@@ -110,68 +111,79 @@ export function FeishuControlPanel() {
         </div>
       </div>
 
-      {/* 当前工作区/对话状态 */}
-      {botStatus?.status && (
-        <div className="text-xs text-muted-foreground px-1">
-          <span>工作区: {botStatus.status.workspaceName || '未选择'}</span>
-          {botStatus.status.conversationTitle && (
-            <span className="ml-3">对话: {botStatus.status.conversationTitle}</span>
-          )}
-        </div>
-      )}
+      <Tabs defaultValue="conversations">
+        <TabsList className="w-full">
+          <TabsTrigger value="conversations" className="flex-1">对话</TabsTrigger>
+          <TabsTrigger value="commands" className="flex-1">命令</TabsTrigger>
+        </TabsList>
 
-      {/* 对话列表 */}
-      {botStatus?.conversations && botStatus.conversations.length > 0 && (
-        <div className="space-y-1">
-          <div className="text-xs font-medium text-muted-foreground px-1">对话列表</div>
-          <div className="max-h-40 overflow-y-auto space-y-0.5">
-            {botStatus.conversations.map((conv) => (
-              <div
-                key={conv.id}
-                className={`flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 text-sm ${
-                  conv.id === botStatus.status.conversationId ? 'bg-muted/70' : ''
-                }`}
-              >
-                <span className="text-muted-foreground w-5 text-right text-xs">{conv.index}.</span>
-                <span className="flex-1 truncate">{conv.title}</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs"
-                  onClick={() => {
-                    void botUseConversation(conv.index).then((res) => {
-                      if (!res.success) {
-                        toast.error('切换对话失败', { description: res.error });
-                      }
-                    });
-                  }}
+        {/* 对话：当前绑定 + 近期主会话列表 */}
+        <TabsContent value="conversations" className="mt-3">
+          {botStatus?.status && (
+            <div className="text-xs text-muted-foreground px-1 mb-2">
+              <span>工作区: {botStatus.status.workspaceName || '未选择'}</span>
+              {botStatus.status.conversationTitle && (
+                <span className="ml-3">对话: {botStatus.status.conversationTitle}</span>
+              )}
+            </div>
+          )}
+          {botStatus?.conversations && botStatus.conversations.length > 0 ? (
+            <div className="max-h-64 overflow-y-auto space-y-0.5">
+              {botStatus.conversations.map((conv) => (
+                <div
+                  key={conv.id}
+                  className={`flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 text-sm ${
+                    conv.id === botStatus.status.conversationId ? 'bg-muted/70' : ''
+                  }`}
                 >
-                  使用
-                </Button>
+                  <span className="text-muted-foreground w-5 text-right text-xs">{conv.index}.</span>
+                  <span className="flex-1 truncate">{conv.title}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs"
+                    onClick={() => {
+                      void botUseConversation(conv.index).then((res) => {
+                        if (!res.success) {
+                          toast.error('切换对话失败', { description: res.error });
+                        }
+                      });
+                    }}
+                  >
+                    使用
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground px-2 py-4 text-center">
+              没有可选对话，在飞书里发送 /new 新建
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground px-1 mt-2">
+            只显示最近更新的主会话（前 10 个），子会话与执行会话不在此列。
+          </p>
+        </TabsContent>
+
+        {/* 命令：Bot 命令参考 */}
+        <TabsContent value="commands" className="mt-3">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground px-1 mb-1">
+            <Terminal className="w-3 h-3" />
+            Bot 命令参考
+          </div>
+          <div className="space-y-0 text-xs">
+            {BOT_COMMANDS.map((cmd) => (
+              <div key={cmd.command} className="flex gap-2 px-2 py-1 rounded hover:bg-muted/30">
+                <code className="text-primary font-mono w-20 flex-shrink-0">{cmd.command}</code>
+                <span className="text-muted-foreground">{cmd.description}</span>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Bot 命令参考 */}
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground px-1">
-          <Terminal className="w-3 h-3" />
-          Bot 命令参考
-        </div>
-        <div className="space-y-0 text-xs">
-          {BOT_COMMANDS.map((cmd) => (
-            <div key={cmd.command} className="flex gap-2 px-2 py-1 rounded hover:bg-muted/30">
-              <code className="text-primary font-mono w-20 flex-shrink-0">{cmd.command}</code>
-              <span className="text-muted-foreground">{cmd.description}</span>
-            </div>
-          ))}
-        </div>
-        <p className="text-xs text-muted-foreground px-2 pt-1">
-          在飞书中私聊机器人发送文本，将转发给当前对话的 Agent，回复以卡片消息返回。
-        </p>
-      </div>
+          <p className="text-xs text-muted-foreground px-2 pt-2">
+            在飞书中私聊机器人发送文本，将转发给当前对话的 Agent，回复以卡片消息返回。
+          </p>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

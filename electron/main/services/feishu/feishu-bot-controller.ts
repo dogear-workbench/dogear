@@ -23,6 +23,16 @@ export interface FeishuBotState {
 
 const MAX_TEXT_LEN = 4000;
 const MAX_SEEN_MESSAGE_IDS = 500;
+const MAX_CONVERSATION_CHOICES = 10;
+
+// 供 /ls、/use 与 UI 列表共用的统一口径：仅主会话（排除 agent 派生子会话与任务执行会话），
+// 按更新时间倒序取前 N，保证三处编号一致
+async function getSelectableConversations(workspaceId: string) {
+  const conversations = await conversationService.getByWorkspaceId(workspaceId);
+  return conversations
+    .filter((conv) => conv.role !== 'sub' && !conv.executor)
+    .slice(0, MAX_CONVERSATION_CHOICES);
+}
 
 class FeishuBotController {
   private state: FeishuBotState = {
@@ -211,7 +221,7 @@ class FeishuBotController {
       return;
     }
 
-    const conversations = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
+    const conversations = await getSelectableConversations(this.state.activeWorkspaceId);
     if (conversations.length === 0) {
       await this.reply('当前工作区没有对话。用 /new 新建。', ctx);
       return;
@@ -223,7 +233,10 @@ class FeishuBotController {
       return `${i + 1}. ${title}${marker}`;
     });
 
-    await this.reply(['== 对话列表 ==', ...lines, '', '用 /use <编号> 选择'].join('\n'), ctx);
+    await this.reply(
+      ['== 对话列表（最近主会话）==', ...lines, '', '用 /use <编号> 选择'].join('\n'),
+      ctx,
+    );
   }
 
   private async cmdUseConversation(args: string, ctx: ReplyCtx): Promise<void> {
@@ -236,7 +249,7 @@ class FeishuBotController {
       return;
     }
 
-    const conversations = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
+    const conversations = await getSelectableConversations(this.state.activeWorkspaceId);
     const idx = parseInt(args, 10) - 1;
     if (isNaN(idx) || idx < 0 || idx >= conversations.length) {
       await this.reply(`无效编号。可选: 1-${conversations.length}`, ctx);
@@ -411,7 +424,7 @@ class FeishuBotController {
 
     let conversations: Array<{ index: number; id: string; title: string; updatedAt: string }> = [];
     if (this.state.activeWorkspaceId) {
-      const convList = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
+      const convList = await getSelectableConversations(this.state.activeWorkspaceId);
       conversations = convList.map((conv, i) => ({
         index: i + 1,
         id: conv.id,
@@ -427,7 +440,7 @@ class FeishuBotController {
     if (!this.state.activeWorkspaceId) {
       return { success: false, error: '请先选择工作区' };
     }
-    const conversations = await conversationService.getByWorkspaceId(this.state.activeWorkspaceId);
+    const conversations = await getSelectableConversations(this.state.activeWorkspaceId);
     const idx = index - 1;
     if (idx < 0 || idx >= conversations.length) {
       return { success: false, error: `无效编号。可选: 1-${conversations.length}` };
