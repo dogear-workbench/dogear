@@ -28,7 +28,7 @@
 - `browser-task-meta.ts` — 动作流任务元数据（kind: article|agent）
 - `browser-action-stream.ts` — 浏览器动作事件汇总出口（供伴随面板动作流消费；launched 经 provider 注入保持 node 环境可 smoke）
 - `extension-ownership.ts` — 扩展通道会话独占（纯逻辑零 IO：同 owner 续期、空闲 10min 自动释放、busy 不排队直接拒）
-- `site-policy.ts` — 站点策略（内置小红书：随机延迟/单会话预算/风控关键词）+ navigateGate/policyGate 门控入口与风控扫描（内嵌/扩展通道共用）
+- `site-policy.ts` — 站点策略（内置小红书：随机延迟/单会话预算/风控关键词，含 agent 可读操作指引 instructions）+ navigateGate/policyGate 门控入口与风控扫描（内嵌/扩展通道共用）
 - `site-knowledge-service.ts` — 站点档案存储（`.dogear/site-knowledge/{domain}.md` 两区：正式地图+探索发现），normalizeDomain/appendSiteFinding
 
 ## 浏览器数据管理（services/browser/）
@@ -49,7 +49,7 @@
 
 - `browser-tools.ts` — dogear__browser__* 组：readArticle/search（可选 site 站内）/present（页面即产物）/save_article/close/screenshot + 原子探索 9 工具（navigate/observe_page/find/click/fill/scroll/read_text/read_state/wait_for）
 - `extension-tools.ts` — dogear__extension__* 组：navigate/observe_page/click/fill/read_text/read_state + 独占 gate + 站点策略门控链（独占→风控前置→预算→随机延迟→命令→风控扫描→计数）
-- `extension-site-tools.ts` — site_knowledge/site_finding（只读写本地站点档案，不过 policyGate）+ siteKnowledgePointer 档案指针
+- `extension-site-tools.ts` — site_knowledge/site_finding/site_policy（前两个只读写本地站点档案、site_policy 只读访问策略，均不过 policyGate）+ siteKnowledgePointer/sitePolicyPointer 返回尾部指针
 - `web-mcp-tools.ts` — bigmodel__webSearch/webReader 快档（能力页「联网搜索」包；fallbackHint 按会话有无 browser 工具三态生成指引）
 
 ## UI 与状态
@@ -74,7 +74,7 @@
 - ExtensionStatus 类型唯一源是 `browser-gateway.ts`，渲染层 import type 自动流转
 - `nm-protocol` 与 `extension/src/nm-protocol.js` 是语义一致的独立副本，不共享文件；`page-state` 判定规则与 `extension/src/page-state.js` 双侧同步，改一边必改另一边
 - 策略站点在内嵌与扩展通道均走统一站点策略门控（风控前置→预算→随机延迟），不再封禁内嵌通道
-- 扩展通道独占 busy 直接拒绝不排队；site_knowledge/site_finding 无页面交互不过策略门控
+- 扩展通道独占 busy 直接拒绝不排队；site_knowledge/site_finding/site_policy 无页面交互不过策略门控
 - 授权列表 gateway 重连即重置，依赖扩展重推（storage.local 兜底）
 - read_state 用 CDP `Runtime.evaluate` 直连主世界（隔离世界读不到页面 window 全局）
 - 网页 AI tab 与 agent 内嵌 tab 共用全局分区（persist:dogear-browser）；数据中心清除浏览器数据会连带 agent 登录态（面板确认框含 agent 风险提示）

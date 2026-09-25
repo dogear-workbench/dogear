@@ -5,6 +5,7 @@ export interface SitePolicy {
   searchDelayMs: { min: number; max: number };
   budget: { maxNotes: number; maxSearches: number };
   riskKeywords: string[];
+  instructions: string;
 }
 
 const XIAOHONGSHU_POLICY: SitePolicy = {
@@ -27,6 +28,13 @@ const XIAOHONGSHU_POLICY: SitePolicy = {
     '风险插件',
     'captcha',
   ],
+  instructions: [
+    '推荐步骤：先用 site_knowledge 读本站档案（有已知地图就不盲探）→ navigate 打开搜索页执行搜索（每次搜索计入搜索预算）→ 逐条打开笔记页阅读（每篇计入笔记预算）。',
+    '节奏：本站导航前系统自动随机等待 15-45 秒，搜索类导航 30-90 秒，等待期间无响应属正常节奏控制，不要立即重试。',
+    '预算：单会话最多阅读 20 篇笔记、发起 5 次搜索，由系统强制执行，无法调高；超限调用会被直接拒绝。',
+    '危险信号（页面出现即熔断本会话对该域的自动操作）：滑块/滑动验证、验证码、安全验证、访问频次异常、操作过于频繁、检测到AI操作、账号异常等提示。',
+    '预算耗尽或风控熔断时：停止操作并如实告知用户，由用户决定是否新开会话或人工处理；不要换通道规避、不要轮询重试。',
+  ].join('\n'),
 };
 
 const policies: SitePolicy[] = [XIAOHONGSHU_POLICY];
@@ -48,6 +56,25 @@ export function getSitePolicy(url: string): SitePolicy | null {
   const origin = originOf(url);
   if (!origin) return null;
   return policies.find((p) => p.matchOrigins.includes(origin)) ?? null;
+}
+
+export function formatSitePolicySummary(policy: SitePolicy): string {
+  const seconds = (v: number) => `${Math.round(v / 1000)}s`;
+  const domains = policy.matchOrigins
+    .map((origin) => {
+      try {
+        return new URL(origin).hostname;
+      } catch {
+        return origin;
+      }
+    })
+    .join('、');
+  return [
+    `站点：${domains}`,
+    `节奏：导航前随机等待 ${seconds(policy.delayMs.min)}-${seconds(policy.delayMs.max)}，搜索类导航 ${seconds(policy.searchDelayMs.min)}-${seconds(policy.searchDelayMs.max)}`,
+    `单会话预算：${policy.budget.maxNotes} 篇笔记 / ${policy.budget.maxSearches} 次搜索`,
+    `风控关键词：${policy.riskKeywords.length} 个`,
+  ].join('\n');
 }
 
 export function isSearchResultUrl(policy: SitePolicy, url: string): boolean {

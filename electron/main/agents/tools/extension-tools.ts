@@ -32,7 +32,7 @@ import {
   scanAndMarkRisk,
   type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
-import { createSiteToolDefs, siteKnowledgePointer } from './extension-site-tools.js';
+import { createSiteToolDefs, siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
 import {
   formatObserve,
   formatObserveElement,
@@ -256,10 +256,11 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         });
         const redirectNote = urlAfter && urlAfter !== args.url ? `（发生重定向，最终地址 ${urlAfter}）` : '';
         const pointer = siteKnowledgePointer(urlAfter ?? args.url);
+        const policyTip = sitePolicyPointer(urlAfter ?? args.url);
         const titleNote = nav.title ? `\n标题: ${nav.title}` : '';
         return textResult(
           `已在用户浏览器打开目标页面${redirectNote}。${titleNote}\n状态: ${nav.pageState ?? 'ready'}${pageStateSuffix(nav.pageState)}` +
-            `\n旧页面元素引用已失效，请先 observe_page 获取新页面元素。${pointer ?? ''}`,
+            `\n旧页面元素引用已失效，请先 observe_page 获取新页面元素。${pointer ?? ''}${policyTip ?? ''}`,
         );
       },
     ),

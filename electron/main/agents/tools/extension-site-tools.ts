@@ -1,7 +1,7 @@
 /**
- * 站点档案工具：dogear__extension__site_knowledge / site_finding
+ * 站点档案与策略工具：site_knowledge / site_finding / site_policy（按 toolPrefix 拼全名）
  *
- * 从 extension-tools 拆出。读写本地站点档案（.dogear/site-knowledge/{domain}.md），域名取自
+ * 从 extension-tools 拆出。读写本地站点档案（.dogear/site-knowledge/{domain}.md）与只读站点访问策略，域名取自
  * 当前扩展通道标签页，无页面交互故不记动作流、不过站点策略（policyGate）；ownership gate 与
  * 其他工具同待遇。isErrorResult / textResult / acquireGate 等经 deps 注入，不在此复制。
  */
@@ -14,6 +14,7 @@ import {
   normalizeDomain,
   readSiteKnowledge,
 } from '../../services/browser/site-knowledge-service.js';
+import { formatSitePolicySummary, getSitePolicy } from '../../services/browser/site-policy.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
 export type SiteToolPrefix = 'dogear__extension' | 'dogear__browser';
@@ -49,6 +50,16 @@ function domainOrError(
   return { domain };
 }
 
+/** navigate 返回尾部策略指针：命中站点策略时引导先读 site_policy；无 url/无策略返回 null */
+export function sitePolicyPointer(
+  url: string | undefined,
+  toolPrefix: SiteToolPrefix = 'dogear__extension',
+): string | null {
+  if (!url) return null;
+  if (!getSitePolicy(url)) return null;
+  return `\n\n本站有访问策略（节奏约束已自动生效），建议先调 ${toolPrefix}__site_policy 了解操作步骤与危险信号`;
+}
+
 /** navigate 返回尾部指针：有档案引导先读，无档案提示可沉淀（冷启动）；无 url/无域名返回 null */
 export function siteKnowledgePointer(
   url: string | undefined,
@@ -67,6 +78,11 @@ export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
   const { conversationId, acquireGate, currentUrl, isErrorResult, textResult, scopeNote } = deps;
   const toolPrefix = deps.toolPrefix ?? 'dogear__extension';
   const findingTool = `${toolPrefix}__site_finding`;
+  const policyTool = `${toolPrefix}__site_policy`;
+  const policyScopeNote =
+    toolPrefix === 'dogear__browser'
+      ? '内嵌浏览器通道；本工具只读站点访问策略，不碰页面。'
+      : '扩展通道；本工具只读站点访问策略，不碰页面、不受授权域约束。';
   const exploreNote =
     toolPrefix === 'dogear__browser'
       ? '可自行探索：observe_page 看可交互元素，find 按 role+name 精确查找；'
@@ -115,6 +131,28 @@ export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
         if (!r.ok) return isErrorResult(r.error ?? '写入站点档案失败');
         if (r.deduplicated) return textResult('60 秒内已记录过，未重复写入');
         return textResult('已追加到发现区，待审核合并');
+      },
+    ),
+
+    defineTool(
+      policyTool,
+      '获取当前站点的访问策略（节奏约束与操作指引）',
+      `${policyScopeNote}\n` +
+        '读取当前标签页所属域名的站点访问策略：操作指引（推荐步骤、节奏与预算数字、危险信号及命中后果）与延迟区间、单会话预算摘要。' +
+        '无策略域名正常返回（非错误）。navigate 返回尾部出现策略指针时应先调用本工具了解操作步骤，再开始站点操作。',
+      z.object({}),
+      async () => {
+        const busy = acquireGate(null, 'site_policy', currentUrl());
+        if (busy) return busy;
+        const url = currentUrl();
+        if (!url) return isErrorResult(NO_URL_MESSAGES[toolPrefix]);
+        const domain = normalizeDomain(url);
+        if (!domain) return isErrorResult(`无法从当前页面地址解析域名：${url}`);
+        const policy = getSitePolicy(url);
+        if (!policy) return textResult(`本站（${domain}）无特殊访问策略，按常规方式操作即可`);
+        return textResult(
+          `当前站点 ${domain} 的访问策略：\n\n${policy.instructions}\n\n${formatSitePolicySummary(policy)}`,
+        );
       },
     ),
   ];
