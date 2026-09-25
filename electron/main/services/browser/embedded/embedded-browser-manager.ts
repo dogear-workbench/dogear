@@ -1,6 +1,6 @@
 import { WebContentsView, BrowserWindow, session, type Rectangle, type Session } from 'electron';
 import type { BrowserTaskMeta } from '../browser-task-meta.js';
-import { buildPersistentPartition, resolveProfileKey } from './profile.js';
+import { GLOBAL_BROWSER_PARTITION } from './profile.js';
 import { applySessionProxy } from './proxy.js';
 import { applyEmbeddedUserAgent } from './ua.js';
 import { attachTabEvents } from './tab-events.js';
@@ -92,7 +92,7 @@ export class EmbeddedBrowserManager {
     disposeCdpSession(tabId);
     if (!tab.view.webContents.isDestroyed()) tab.view.webContents.close();
     this.repairWorkspaceSelection(workspace, tabId);
-    if (workspace.tabs.size === 0) this.workspaces.delete(workspace.profileKey);
+    if (workspace.tabs.size === 0) this.workspaces.delete(workspace.workspaceId);
   }
 
   retain(tabId: string, holderId: string): void {
@@ -290,7 +290,7 @@ export class EmbeddedBrowserManager {
     disposeCdpSession(tab.tabId);
     workspace.tabs.delete(tab.tabId);
     this.repairWorkspaceSelection(workspace, tab.tabId);
-    if (workspace.tabs.size === 0) this.workspaces.delete(workspace.profileKey);
+    if (workspace.tabs.size === 0) this.workspaces.delete(workspace.workspaceId);
   }
 
   dispose(): void {
@@ -346,29 +346,26 @@ export class EmbeddedBrowserManager {
   }
 
   private getWorkspaceByWorkspaceId(workspaceId: string): EmbeddedWorkspaceRecord | null {
-    return this.workspaces.get(resolveProfileKey(workspaceId)) ?? null;
+    return this.workspaces.get(workspaceId) ?? null;
   }
 
   private getOrCreateWorkspace(workspaceId: string): EmbeddedWorkspaceRecord {
-    const profileKey = resolveProfileKey(workspaceId);
-    const existing = this.workspaces.get(profileKey);
+    const existing = this.workspaces.get(workspaceId);
     if (existing) return existing;
-    const partition = buildPersistentPartition(profileKey);
-    const electronSession = session.fromPartition(partition);
+    const electronSession = session.fromPartition(GLOBAL_BROWSER_PARTITION);
     if (!this.uaAppliedSessions.has(electronSession)) {
       applyEmbeddedUserAgent(electronSession);
       this.uaAppliedSessions.add(electronSession);
     }
     const record: EmbeddedWorkspaceRecord = {
       workspaceId,
-      profileKey,
-      partition,
+      partition: GLOBAL_BROWSER_PARTITION,
       session: electronSession,
       tabs: new Map(),
       agentTabId: null,
       activeTabId: null,
     };
-    this.workspaces.set(profileKey, record);
+    this.workspaces.set(workspaceId, record);
     return record;
   }
 

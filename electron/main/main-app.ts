@@ -701,6 +701,16 @@ app.whenReady().then(async () => {
     console.error('[browser-playbook-migration] 失败:', error);
   }
 
+  // 内嵌浏览器旧分区迁移：必须在任何内嵌 tab 创建前跑，否则旧分区 session 被占用后目录删不掉
+  try {
+    const { migrateLegacyBrowserPartitions } = await import(
+      './services/browser/embedded/migrate-legacy-partitions.js'
+    );
+    await migrateLegacyBrowserPartitions();
+  } catch (error) {
+    console.error('[embedded-partition-migration] 失败:', error);
+  }
+
   // 存量对话 modelSelection 旧三档 tier（haiku/sonnet/opus）映射为 piModels 真实模型 id
   try {
     const { migrateLegacyModelSelections } = await import('./services/conversation-service.js');

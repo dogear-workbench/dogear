@@ -46,7 +46,6 @@ export interface EmbeddedTabRecord {
 
 export interface EmbeddedWorkspaceRecord {
   workspaceId: string
-  profileKey: string
   partition: string
   session: Session
   tabs: Map<string, EmbeddedTabRecord>
