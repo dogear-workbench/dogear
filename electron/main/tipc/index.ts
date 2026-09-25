@@ -33,6 +33,7 @@ import { windowsRouter } from './windows.js';
 import { focusRouter } from './focus.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
 import { browserRouter, registerBrowserActionBridge, registerExtensionStatusBridge } from './browser.js';
+import { browserDataRouter } from './browser-data.js';
 
 export const router = {
   ...aiRouter,
@@ -68,6 +69,7 @@ export const router = {
   ...focusRouter,
   ...ptyRouter,
   ...browserRouter,
+  ...browserDataRouter,
 };
 
 export type Router = typeof router;

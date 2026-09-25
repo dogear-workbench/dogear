@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 数据中心浏览器数据面板
-status: pending
+status: done
 ---
 
 ## 目标
@@ -19,13 +19,13 @@ status: pending
 
 ## 计划改动
 
-- [ ] 新增 `electron/main/services/browser/browser-data-service.ts` —
+- [x] 新增 `electron/main/services/browser/browser-data-service.ts` —
   - `listBrowserData()`：全局分区 cookies.getAll 按 domain 聚合（strip 前导点 + 内置多段后缀表归注册域，后缀表参考 plan.md 全局决策），返回 `[{domain, cookieCount, hasLoginHint}]` + 缓存大小 + 分区目录磁盘占用（异步 du）
   - `logoutDomain(domain)` / `clearDomainData(domain)`：从该域 cookie 构造 origins 集合（https://{host}）clearStorageData + 逐 cookie remove 兜底
   - `clearCache()` / `clearAll()`
-- [ ] 新增 `electron/main/tipc/browser-data.ts` — 上述能力 IPC 路由（tipc 红线）
-- [ ] 数据中心 — 「浏览器数据」面板：分区占用/缓存大小概览 + 域名列表（登录态标识、cookie 数）+ 每域「登出」「清除数据」+ 面板级「清理缓存」「全部清除」；全部 showConfirm，文案提示 agent 浏览器任务可能受影响；操作后刷新列表
-- [ ] `bun run build:electron` + 手工验证
+- [x] 新增 `electron/main/tipc/browser-data.ts` — 上述能力 IPC 路由（tipc 红线）
+- [x] 数据中心 — 「浏览器数据」面板：分区占用/缓存大小概览 + 域名列表（登录态标识、cookie 数）+ 每域「登出」「清除数据」+ 面板级「清理缓存」「全部清除」；全部 showConfirm，文案提示 agent 浏览器任务可能受影响；操作后刷新列表
+- [x] `bun run build:electron` + 手工验证（编译/类型/lint 均通过；GUI 手工验证待用户 `bun run dev` 人工过一遍，见验证清单）
 
 ## 验证
 
@@ -39,9 +39,25 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  1. 本 Electron 版本 `clearStorageData` 只收单 `origin`（无 `origins` 数组，见 electron.d.ts），改为逐 origin 循环 `clearStorageData({ origin })`，语义等效
+  2. `clearCache()` 额外返回清理前的 `getCacheSize()` 作为 freedBytes 参考值（清理后立即 getCacheSize 数值滞后，不可靠）
+  3. `logoutDomain` 在逐 cookie remove 之外，先用 `clearStorageData({ origin, storages: ['cookies'] })` 按 origin 批量清（逐条 remove 对 domain cookie 需 path/secure 精确匹配，批量路径更稳）
 - 改动文件清单：
+  - `electron/main/services/browser/browser-data-service.ts`（新增）
+  - `electron/main/tipc/browser-data.ts`（新增）
+  - `electron/main/tipc/index.ts`（注册 browserDataRouter）
+  - `app/data-center/browser-data-panel.tsx`（新增，第六面板）
+  - `app/data-center/page.tsx`（挂 tab 与 TabsContent）
+  - `docs/codebase-map/data-center.md`（补面板条目）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `listBrowserData(): Promise<{ cacheSize: number; diskUsage: number; totalCookies: number; domains: { domain: string; cookieCount: number; hasLoginHint: boolean }[] }>`（domains 按 cookieCount 降序）
+  - `logoutDomain(domain): Promise<{ removedCookies: number }>`；`clearDomainData(domain): Promise<{ removedCookies: number; origins: string[] }>`；`clearBrowserCache(): Promise<{ freedBytes: number }>`；`clearAllBrowserData(): Promise<{ removedCookies: number }>`
+  - tipc 路由：`listBrowserData` / `logoutBrowserDomain({domain})` / `clearBrowserDomainData({domain})` / `clearBrowserCache` / `clearAllBrowserData`（无 input 过程零参调用）
+  - 域名归一：`registeredDomain()` strip 前导点 + 48 项多段后缀表（cn/uk/jp/kr/hk/tw/au/br/sg/tr/mx/in/nz/za）；登录态启发：cookie 名精确匹配 24 项名单 + 含 session/token/auth/login/signin 子串
+- 下个 step 该从哪里继续：计划集已全部完成，无后续 step；如需迭代从本面板 GUI 手工验证问题单开始
 - 待办或已知限制：
+  - GUI 手工验证未做（无头环境无法起 Electron 窗口）：面板真实登录域名展示、登出后白嫖框/agent 变未登录、清缓存数字下降、全部清除后列表清空，需 `bun run dev` 人工过
+  - IP 形式 cookie domain（极罕见）注册域启发式会归成错误段名，仅影响聚合显示，清除路径按 cookie 实际 domain 匹配不受影响
+  - hasLoginHint 是启发式判断（cookie 名单匹配），存在极小概率误报/漏报，仅供用户参考
