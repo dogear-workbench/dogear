@@ -1,13 +1,15 @@
-import { useCallback, useState } from 'react';
-import { HardDrive, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
+import { ChevronDown, HardDrive, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { client } from '@/lib/client';
 import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import { showConfirm } from '@/stores/confirm-store';
 import { formatBytes } from './version-backup/backup-meta';
+import { domainCnName } from './browser-domain-names';
 
 type BrowserDataOverview = Awaited<ReturnType<typeof client.listBrowserData>>;
 
@@ -17,6 +19,7 @@ const AGENT_RISK_HINT = '若 agent 正在跑浏览器任务，可能受影响。
 export function BrowserDataPanel() {
   const [overview, setOverview] = useState<BrowserDataOverview | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [othersOpen, setOthersOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -91,6 +94,18 @@ export function BrowserDataPanel() {
     });
   }, [runAction]);
 
+  const sorted = useMemo(() => {
+    if (!overview) return [];
+    return [...overview.domains].sort(
+      (a, b) =>
+        Number(b.hasLoginHint) - Number(a.hasLoginHint) ||
+        b.cookieCount - a.cookieCount ||
+        a.domain.localeCompare(b.domain),
+    );
+  }, [overview]);
+  const loggedIn = useMemo(() => sorted.filter((d) => d.hasLoginHint), [sorted]);
+  const others = useMemo(() => sorted.filter((d) => !d.hasLoginHint), [sorted]);
+
   return (
     <div className="mx-auto max-w-4xl px-6 py-6 space-y-6">
       <div className="space-y-3">
@@ -134,46 +149,37 @@ export function BrowserDataPanel() {
             ) : overview.domains.length === 0 ? (
               <div className="py-8 text-center text-sm text-muted-foreground">暂无站点数据，登录任意网站后出现在这里</div>
             ) : (
-              <div className="divide-y">
-                {overview.domains.map((item) => (
-                  <div key={item.domain} className="flex items-center justify-between gap-3 px-4 py-2.5">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-medium truncate">{item.domain}</span>
-                      {item.hasLoginHint && (
-                        <Badge variant="outline" className="gap-1 text-green-600 border-green-600/40 shrink-0">
-                          <ShieldCheck className="w-3 h-3" />
-                          登录态
-                        </Badge>
-                      )}
-                      <Badge variant="secondary" className="shrink-0">
-                        {item.cookieCount} Cookie
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={busy !== null}
-                        onClick={() => onLogout(item.domain)}
-                      >
-                        {busy === `logout:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-                        登出
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs text-destructive hover:text-destructive"
-                        disabled={busy !== null}
-                        onClick={() => onClearDomain(item.domain)}
-                      >
-                        {busy === `clear:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
-                        清除数据
-                      </Button>
-                    </div>
+              <>
+                <div className="px-4 py-2 text-xs font-medium text-muted-foreground">已登录站点</div>
+                {loggedIn.length === 0 ? (
+                  <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">暂无登录态站点</div>
+                ) : (
+                  <div className="divide-y">
+                    {loggedIn.map((item) => (
+                      <DomainRow key={item.domain} item={item} busy={busy} onLogout={onLogout} onClear={onClearDomain} />
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+                {others.length > 0 && (
+                  <Collapsible open={othersOpen} onOpenChange={setOthersOpen}>
+                    <CollapsibleTrigger className="w-full flex items-center gap-2 border-t px-4 py-2.5 text-left hover:bg-muted/50">
+                      <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${othersOpen ? '' : '-rotate-90'}`} />
+                      <span className="text-sm shrink-0">其他域名</span>
+                      <Badge variant="secondary" className="shrink-0">
+                        {others.length}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground truncate">多为页面嵌入的第三方域（统计 / CDN 等），非直接访问的站点</span>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="divide-y border-t">
+                        {others.map((item) => (
+                          <DomainRow key={item.domain} item={item} busy={busy} onLogout={onLogout} onClear={onClearDomain} />
+                        ))}
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
@@ -182,6 +188,59 @@ export function BrowserDataPanel() {
           <HardDrive className="w-3 h-3" />
           agent 内嵌浏览器与「网页 AI」白嫖框共用同一分区，这里的登出/清除对两者同时生效。
         </p>
+      </div>
+    </div>
+  );
+}
+
+function DomainRow({
+  item,
+  busy,
+  onLogout,
+  onClear,
+}: {
+  item: BrowserDataOverview['domains'][number];
+  busy: string | null;
+  onLogout: (domain: string) => void;
+  onClear: (domain: string) => void;
+}) {
+  const cnName = domainCnName(item.domain);
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+      <div className="flex items-center gap-2 min-w-0">
+        {cnName ? (
+          <>
+            <span className="text-sm font-medium truncate">{cnName}</span>
+            <span className="text-xs text-muted-foreground truncate">{item.domain}</span>
+          </>
+        ) : (
+          <span className="text-sm font-medium truncate">{item.domain}</span>
+        )}
+        {item.hasLoginHint && (
+          <Badge variant="outline" className="gap-1 text-green-600 border-green-600/40 shrink-0">
+            <ShieldCheck className="w-3 h-3" />
+            登录态
+          </Badge>
+        )}
+        <Badge variant="secondary" className="shrink-0">
+          {item.cookieCount} Cookie
+        </Badge>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy !== null} onClick={() => onLogout(item.domain)}>
+          {busy === `logout:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+          登出
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs text-destructive hover:text-destructive"
+          disabled={busy !== null}
+          onClick={() => onClear(item.domain)}
+        >
+          {busy === `clear:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+          清除数据
+        </Button>
       </div>
     </div>
   );

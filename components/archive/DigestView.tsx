@@ -58,7 +58,7 @@ export function DigestView({ workspaceId, topic, conversationId }: DigestViewPro
   const session = digest?.sessions.find((s) => s.conversationId === conversationId);
 
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
       <header className="shrink-0 border-b px-4 py-2.5 flex items-center gap-2 min-w-0">
         <h2 className="text-sm font-semibold truncate flex-1 min-w-0" title={getConversationTitle(node.conv)}>
           {getConversationTitle(node.conv)}
