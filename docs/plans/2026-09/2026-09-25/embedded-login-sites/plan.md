@@ -20,3 +20,15 @@
 - navigate/readArticle 的 description 中「小红书等登录态站点禁止本通道」统一改为「受节奏保护的站点自动生效随机延迟与会话预算」语义；不再点名小红书封禁。
 - 主进程改动需 `bun run build:electron` 重新编译后才能在 Electron 里生效。
 - 不写新单测以外的测试基建；`browser-site-tools.test.ts` 既有指针测试需同步。
+
+## 完成总结
+
+三个 step 全部完成（2026-09-25），逐 step 提交：1634d0f5 / 101d55f3 / ef3e1a2c。
+
+- **解禁内嵌**：controlledBrowserBlock 与两处调用删除，navigateGate/policyGate 门控全链路生效，小红书可在内嵌访问（登录墙走等待人工）。
+- **策略可读**：SitePolicy.instructions 必填 + 小红书指引（步骤/节奏 15-45s、30-90s/预算 20 笔记 5 搜索/危险信号熔断/熔断处置）；site_policy 双前缀工具；两通道 navigate 尾部策略指针；测试 65 pass。
+- **文案收尾**：skill 双通道分流重写（内嵌为主/扩展 Plan B）；数据中心「有会话 Cookie」诚实化；Profile 描述模板同步新分流语义并补存量迁移输入（修掉现行旧值不在 LEGACY 集合的真缺口）。
+
+**验收返工补齐两处计划缺口**：①SKILL「预算耗尽可换扩展」属事实性错误（预算按会话计、双通道共用同一 gate），已改为「风控熔断告知用户后可换、预算耗尽不换通道」；②settings 系 Profile 描述仍写「登录态用扩展」，已同步新语义。
+
+**遗留（集成验证项）**：运行时验证需 Electron dev 环境实测——navigate 小红书尾部指针与延迟、site_policy 返回、面板文案、重启后存量 Profile 描述自动刷写；未决问题（诚实 UA vs 标准 UA、扩展自主化）见设计文档，待内嵌实测风控结果后定。
