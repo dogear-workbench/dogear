@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { ChevronDown, ChevronRight, History, Plus, Zap } from 'lucide-react';
+import { ChevronDown, ChevronRight, Globe, History, Plus, Zap } from 'lucide-react';
 import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useSessionStore } from '@/stores/session-store';
 import { useSectionCollapseStore } from '@/stores/section-collapse-store';
 import { ConversationRow } from './ConversationRow';
 import { openPersonalConversation } from './utils';
@@ -14,6 +15,7 @@ import type { Conversation } from '@/components/ConversationList';
 export function PersonalSection() {
   const personalConversations = useConversationStore((s) => s.personalConversations);
   const newPersonalConversation = useConversationStore((s) => s.newPersonalConversation);
+  const openWebAiTab = useSessionStore((s) => s.openWebAiTab);
   const olderExpanded = useSectionCollapseStore((s) => s.personalOlderExpanded);
   const toggleOlder = useSectionCollapseStore((s) => s.togglePersonalOlder);
 
@@ -42,6 +44,13 @@ export function PersonalSection() {
         <Zap className="w-3 h-3 text-sky-500" />
         <span>临时会话</span>
         <span className="ml-auto text-[10px] opacity-70">{personalConversations.length}</span>
+        <button
+          className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
+          title="网页 AI"
+          onClick={openWebAiTab}
+        >
+          <Globe className="w-3.5 h-3.5" />
+        </button>
         <button
           className="flex items-center justify-center w-5 h-5 rounded hover:bg-muted/60 hover:text-foreground transition-colors"
           title="新建临时会话 (Ctrl+Alt+N)"

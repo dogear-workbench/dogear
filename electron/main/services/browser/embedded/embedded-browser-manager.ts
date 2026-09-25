@@ -18,6 +18,9 @@ const IDLE_TAB_TTL_MS = 3 * 60 * 1000;
 /** 滚动/viewport 需要确定尺寸与挂载态；屏外挂载对用户不可见（CDP 鼠标域在本环境不可用，见 actions.ts） */
 const INPUT_OFFSCREEN_BOUNDS: Rectangle = { x: -32000, y: 0, width: 1280, height: 800 };
 
+/** 白嫖框 tab 专用 sentinel workspace：与真实工作区隔离，listTabs 对外隐藏 */
+export const WEBAI_WORKSPACE_ID = '__webai__';
+
 export interface TabTakeoverEntry {
   tabId: string;
   active: boolean;
@@ -214,7 +217,9 @@ export class EmbeddedBrowserManager {
   }
 
   listTabs(): EmbeddedTabSnapshot[] {
-    return [...this.workspaces.values()].flatMap((workspace) => [...workspace.tabs.values()].map(snapshotOf));
+    return [...this.workspaces.values()]
+      .filter((workspace) => workspace.workspaceId !== WEBAI_WORKSPACE_ID)
+      .flatMap((workspace) => [...workspace.tabs.values()].map(snapshotOf));
   }
 
   getAgentTabId(workspaceId: string): string | null {
@@ -300,8 +305,10 @@ export class EmbeddedBrowserManager {
       clearInterval(this.idleTimer);
       this.idleTimer = null;
     }
-    for (const tabId of this.listTabs().map((tab) => tab.tabId)) {
-      this.closeTab(tabId);
+    for (const workspace of [...this.workspaces.values()]) {
+      for (const tabId of [...workspace.tabs.keys()]) {
+        this.closeTab(tabId);
+      }
     }
     this.workspaces.clear();
   }

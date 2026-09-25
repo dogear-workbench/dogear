@@ -18,6 +18,13 @@ import {
   setPresentationBroadcaster,
 } from '../services/browser/embedded/presentation.js';
 import {
+  closeWebAiTab,
+  getWebAiState,
+  openWebAiSite,
+  reportWebAiBounds,
+  setWebAiOverlayHidden,
+} from '../services/browser/embedded/webai.js';
+import {
   listPendingHumanInterventions,
   resolveHumanIntervention,
   setHumanInterventionBroadcaster,
@@ -137,6 +144,32 @@ export const browserRouter = {
       const win = windowFromContext(context.sender);
       if (!win) return;
       setOverlayHidden(win, input.hidden);
+    }),
+
+  getWebAiState: t.procedure.action(async () => getWebAiState()),
+
+  openWebAiSite: t.procedure
+    .input<{ url: string }>()
+    .action(async ({ input, context }) => openWebAiSite(windowFromContext(context.sender), input.url)),
+
+  closeWebAiTab: t.procedure.action(async () => {
+    closeWebAiTab();
+  }),
+
+  reportWebAiBounds: t.procedure
+    .input<{ bounds: Rectangle | null; revision: number }>()
+    .action(async ({ input, context }) => {
+      const win = windowFromContext(context.sender);
+      if (!win) return;
+      reportWebAiBounds(win, input.bounds, input.revision);
+    }),
+
+  reportWebAiOverlay: t.procedure
+    .input<{ hidden: boolean }>()
+    .action(async ({ input, context }) => {
+      const win = windowFromContext(context.sender);
+      if (!win) return;
+      setWebAiOverlayHidden(win, input.hidden);
     }),
 
   /** 地址栏导航/历史操作：只作用于呈现 tab，agent 当前 tab 不受影响 */

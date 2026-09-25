@@ -22,7 +22,10 @@ export const ARCHIVE_TAB_ID = '__archive__';
 /** 「飞书」tab 的哨兵 id（非真实会话，Bot 控制台页面，不落 localStorage） */
 export const FEISHU_TAB_ID = '__feishu__';
 
-const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID]);
+/** 「网页 AI」tab 的哨兵 id（非真实会话，白嫖框内嵌站点，不落 localStorage） */
+export const WEB_AI_TAB_ID = '__webai__';
+
+const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, WEB_AI_TAB_ID]);
 
 /** 是否哨兵 tab（笔记/数据中心等非真实会话 tab） */
 export function isSentinelTabId(id: string): boolean {
@@ -81,6 +84,8 @@ interface SessionState {
   archiveTabOpen: boolean;
   /** 飞书 tab 是否打开（不落盘：点开挂载、关闭卸载） */
   feishuTabOpen: boolean;
+  /** 网页 AI tab 是否打开（不落盘：点开挂载、关闭卸载） */
+  webAiTabOpen: boolean;
   /** 笔记窗口弹出中（广播驱动，不落盘）：弹出期间哨兵 tab 从栏里隐藏，关窗恢复 */
   notesWindowOpen: boolean;
   /** 数据中心窗口弹出中（广播驱动，不落盘） */
@@ -118,6 +123,10 @@ interface SessionState {
   closeArchiveTab: () => void;
   openFeishuTab: () => void;
   closeFeishuTab: () => void;
+  /** 打开网页 AI tab 并切换过去 */
+  openWebAiTab: () => void;
+  /** 关闭网页 AI tab（卸载）；若当前正在看则回退到笔记或最近会话 tab */
+  closeWebAiTab: () => void;
   /** 设置笔记窗口弹出态；弹出时若正停在笔记 tab 则回退到可用 tab */
   setNotesWindowOpen: (open: boolean) => void;
   /** 设置数据中心窗口弹出态；弹出时若正停在数据中心 tab 则回退到可用 tab */
@@ -140,6 +149,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   dataCenterTabOpen: readDataCenterTabOpen(),
   archiveTabOpen: false,
   feishuTabOpen: false,
+  webAiTabOpen: false,
   notesWindowOpen: false,
   dataCenterWindowOpen: false,
 
@@ -308,6 +318,20 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
   },
 
+  openWebAiTab: () => {
+    set({ webAiTabOpen: true, activeTabId: WEB_AI_TAB_ID });
+  },
+
+  closeWebAiTab: () => {
+    set((state) => {
+      let newActive = state.activeTabId;
+      if (state.activeTabId === WEB_AI_TAB_ID) {
+        newActive = pickFallbackTab(state);
+      }
+      return { webAiTabOpen: false, activeTabId: newActive };
+    });
+  },
+
   setNotesWindowOpen: (open) => {
     set((state) => {
       if (open && state.activeTabId === NOTES_TAB_ID) {
@@ -340,6 +364,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     dataCenterTabOpen: readDataCenterTabOpen(),
     archiveTabOpen: false,
     feishuTabOpen: false,
+    webAiTabOpen: false,
     notesWindowOpen: false,
     dataCenterWindowOpen: false,
   }),

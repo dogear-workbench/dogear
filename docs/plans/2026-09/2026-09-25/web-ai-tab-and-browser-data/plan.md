@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 全局单分区重构 + 旧分区 cookie 迁移](./step1-global-partition.md) — profile.ts 固定全局分区，启动时合并旧工作区分区 cookie 并删旧目录
-- [ ] [Step 2: 白嫖框 tab 呈现链路](./step2-webai-tab.md) — 哨兵 tab + WebAiPanel + bounds 上报/attach + 主进程常驻 tab + 临时会话区入口 + 站点切换
+- [x] [Step 2: 白嫖框 tab 呈现链路](./step2-webai-tab.md) — 哨兵 tab + WebAiPanel + bounds 上报/attach + 主进程常驻 tab + 临时会话区入口 + 站点切换
 - [ ] [Step 3: 站点配置管理](./step3-site-config.md) — settings `webAiSites` schema + 设置页增删改编辑 UI，tab 切换器联动
 - [ ] [Step 4: 数据中心浏览器数据面板](./step4-browser-data-panel.md) — cookie 域名聚合查询 + 按域登出/清除 + 清缓存 + 全部清除
 

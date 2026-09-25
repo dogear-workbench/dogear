@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2, Settings, TrendingUp, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Database, PictureInPicture2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { FeishuPanel } from '@/components/feishu/FeishuPanel';
+import { WebAiPanel } from '@/components/webai/WebAiPanel';
 import feishuLogo from '@/assets/feishu-logo.png';
 import { WorkspaceTabBar } from '@/components/WorkspaceTabBar';
 import { WorkspaceSwitcherPopover } from '@/components/WorkspaceSwitcherPopover';
@@ -26,7 +27,7 @@ import { ArticlePreview } from '@/components/ArticlePreview';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useArticleStore } from '@/stores/article-store';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID } from '@/stores/session-store';
+import { useSessionStore, isSentinelTabId, NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, WEB_AI_TAB_ID } from '@/stores/session-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
@@ -120,6 +121,7 @@ export default function Home() {
   const openStockWindow = useWorkspaceStore((s) => s.openStockWindow);
   const openFeishuTab = useSessionStore((s) => s.openFeishuTab);
   const feishuTabOpen = useSessionStore((s) => s.feishuTabOpen);
+  const webAiTabOpen = useSessionStore((s) => s.webAiTabOpen);
 
   // 文章状态（文章 tab 挂载由 selectedArticle 驱动）
   const selectedArticle = useArticleStore((s) => s.selectedArticle);
@@ -380,6 +382,15 @@ export default function Home() {
                 style={{ display: activeTabId === FEISHU_TAB_ID ? 'flex' : 'none' }}
               >
                 <FeishuPanel />
+              </div>
+            )}
+            {/* 网页 AI：可开关 Tab，打开期间常驻挂载，关闭即卸载；隐藏时 bounds 归零触发主进程 detach */}
+            {webAiTabOpen && (
+              <div
+                className="absolute inset-0 flex flex-col"
+                style={{ display: activeTabId === WEB_AI_TAB_ID ? 'flex' : 'none' }}
+              >
+                <WebAiPanel />
               </div>
             )}
             {/* 文章：选中即挂载（切会话 tab 保持挂载不重加载），清空选中即卸载 */}
