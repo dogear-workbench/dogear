@@ -27,16 +27,22 @@ function countTreeConversations(nodes: ConversationTreeNode[]): number {
   return nodes.reduce((total, node) => total + 1 + countTreeConversations(node.children), 0);
 }
 
+function hasAliveInTree(nodes: ConversationTreeNode[], aliveIds: Set<string>): boolean {
+  return nodes.some((node) => aliveIds.has(node.conv.id) || hasAliveInTree(node.children, aliveIds));
+}
+
 export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
   const expandedGroupIds = useGroupStore((s) => s.expandedGroupIds);
   const currentGroupId = useGroupStore((s) => s.currentGroupId);
   const isExpanded = expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
   const runningIds = useConversationStore((s) => s.runningConversationIds);
+  const aliveIds = useConversationStore((s) => s.aliveConversationIds);
   const subExpandedConvIds = useSectionCollapseStore((s) => s.subExpandedConvIds);
   const toggleSubExpand = useSectionCollapseStore((s) => s.toggleSubExpand);
   const isArchived = mode === 'archived';
   const totalCount = useMemo(() => countTreeConversations(tree), [tree]);
+  const hasAlive = useMemo(() => hasAliveInTree(tree, aliveIds), [tree, aliveIds]);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState('');
@@ -137,6 +143,12 @@ export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
             )}
             onClick={handleHeaderClick}
           >
+            {hasAlive && (
+              <span
+                className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-emerald-500"
+                title="话题内有存活会话"
+              />
+            )}
             <span className="flex items-center justify-center w-4 h-4 flex-shrink-0">
               {isExpanded
                 ? <ChevronDown className="w-3 h-3 text-muted-foreground" />
