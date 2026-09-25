@@ -86,6 +86,8 @@ interface SessionState {
   feishuTabOpen: boolean;
   /** 网页 AI tab 是否打开（不落盘：点开挂载、关闭卸载） */
   webAiTabOpen: boolean;
+  /** 网页 AI 当前选中站点 id（内存态不落盘；过期 id 由读取处 resolveSelectedSite 归一化） */
+  webAiSelectedSiteId: string | null;
   /** 笔记窗口弹出中（广播驱动，不落盘）：弹出期间哨兵 tab 从栏里隐藏，关窗恢复 */
   notesWindowOpen: boolean;
   /** 数据中心窗口弹出中（广播驱动，不落盘） */
@@ -127,6 +129,7 @@ interface SessionState {
   openWebAiTab: () => void;
   /** 关闭网页 AI tab（卸载）；若当前正在看则回退到笔记或最近会话 tab */
   closeWebAiTab: () => void;
+  setWebAiSelectedSiteId: (id: string | null) => void;
   /** 设置笔记窗口弹出态；弹出时若正停在笔记 tab 则回退到可用 tab */
   setNotesWindowOpen: (open: boolean) => void;
   /** 设置数据中心窗口弹出态；弹出时若正停在数据中心 tab 则回退到可用 tab */
@@ -150,6 +153,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   archiveTabOpen: false,
   feishuTabOpen: false,
   webAiTabOpen: false,
+  webAiSelectedSiteId: null,
   notesWindowOpen: false,
   dataCenterWindowOpen: false,
 
@@ -332,6 +336,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     });
   },
 
+  setWebAiSelectedSiteId: (id) => set({ webAiSelectedSiteId: id }),
+
   setNotesWindowOpen: (open) => {
     set((state) => {
       if (open && state.activeTabId === NOTES_TAB_ID) {
@@ -365,6 +371,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     archiveTabOpen: false,
     feishuTabOpen: false,
     webAiTabOpen: false,
+    webAiSelectedSiteId: null,
     notesWindowOpen: false,
     dataCenterWindowOpen: false,
   }),

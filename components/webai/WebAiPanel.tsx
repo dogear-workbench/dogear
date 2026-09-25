@@ -1,13 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Globe } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { client } from '@/lib/client';
 import { useSettingsStore } from '@/stores/settings-store';
-import { DEFAULT_WEB_AI_SITES, type WebAiSite } from '@/types/settings';
-
-function resolveSites(webAiSites: WebAiSite[] | undefined): WebAiSite[] {
-  return webAiSites && webAiSites.length > 0 ? webAiSites : DEFAULT_WEB_AI_SITES;
-}
+import { useSessionStore } from '@/stores/session-store';
+import { resolveSelectedSite, resolveWebAiSites } from './WebAiSiteMenu';
 
 let layoutRevision = Date.now() * 1000;
 
@@ -16,39 +11,35 @@ function nextLayoutRevision(): number {
   return layoutRevision;
 }
 
-function matchSiteUrl(url: string, sites: WebAiSite[]): string | null {
-  return sites.find((s) => url === s.url || url.startsWith(s.url))?.url ?? null;
-}
-
 export function WebAiPanel() {
-  const [siteUrl, setSiteUrl] = useState<string | null>(null);
-  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
-  const sites = resolveSites(useSettingsStore((s) => s.settings.webAiSites));
+  const sites = resolveWebAiSites(useSettingsStore((s) => s.settings.webAiSites));
+  const selectedSiteId = useSessionStore((s) => s.webAiSelectedSiteId);
+  const setWebAiSelectedSiteId = useSessionStore((s) => s.setWebAiSelectedSiteId);
 
+  // 挂载恢复：主进程有存量页面则同步选中站点（不重新导航），无则按归一化选中站点打开
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const currentSites = resolveSites(useSettingsStore.getState().settings.webAiSites);
+      const currentSites = resolveWebAiSites(useSettingsStore.getState().settings.webAiSites);
+      const fallback = resolveSelectedSite(currentSites, useSessionStore.getState().webAiSelectedSiteId);
       try {
         const state = await client.getWebAiState();
         if (cancelled) return;
         if (state) {
-          setSiteUrl(matchSiteUrl(state.url, currentSites) ?? state.url);
+          const matched = currentSites.find((s) => state.url === s.url || state.url.startsWith(s.url));
+          if (matched) setWebAiSelectedSiteId(matched.id);
           return;
         }
       } catch (err) {
         console.error('读取网页 AI 状态失败:', err);
         if (cancelled) return;
-        setSiteUrl(currentSites[0].url);
-        setSelectedSiteId(currentSites[0].id);
+        setWebAiSelectedSiteId(fallback.id);
         return;
       }
       if (cancelled) return;
-      setSelectedSiteId(currentSites[0].id);
-      setSiteUrl(currentSites[0].url);
+      setWebAiSelectedSiteId(fallback.id);
       client
-        .openWebAiSite({ url: currentSites[0].url })
-        .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url, currentSites) ?? snapshot.url))
+        .openWebAiSite({ url: fallback.url })
         .catch((err) => console.error('打开网页 AI 失败:', err));
     })();
     return () => {
@@ -56,50 +47,17 @@ export function WebAiPanel() {
     };
   }, []);
 
-  // 当前选中站点被删后兜底切到列表第一项
+  // 当前选中站点被删后兜底切到归一化第一项（挂在组件内 = embedded tab 活着才导航）
   useEffect(() => {
     if (!selectedSiteId || sites.some((s) => s.id === selectedSiteId)) return;
-    const first = sites[0];
-    setSelectedSiteId(first.id);
-    setSiteUrl(first.url);
+    const first = resolveSelectedSite(sites, selectedSiteId);
+    setWebAiSelectedSiteId(first.id);
     client
       .openWebAiSite({ url: first.url })
-      .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url, sites) ?? snapshot.url))
       .catch((err) => console.error('切换网页 AI 站点失败:', err));
   }, [sites, selectedSiteId]);
 
-  const switchSite = (site: WebAiSite) => {
-    setSelectedSiteId(site.id);
-    setSiteUrl(site.url);
-    client
-      .openWebAiSite({ url: site.url })
-      .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url, sites) ?? snapshot.url))
-      .catch((err) => console.error('切换网页 AI 站点失败:', err));
-  };
-
-  return (
-    <div className="flex flex-col h-full min-h-0">
-      <div className="shrink-0 flex items-center gap-1 h-[42px] px-2 border-b bg-muted/30">
-        <Globe className="w-3.5 h-3.5 text-muted-foreground mr-1 shrink-0" />
-        {sites.map((site) => (
-          <button
-            key={site.id}
-            title={site.url}
-            onClick={() => switchSite(site)}
-            className={cn(
-              'h-7 px-2.5 rounded-md text-xs transition-colors cursor-pointer',
-              siteUrl === site.url
-                ? 'bg-background font-medium border shadow-sm'
-                : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground border border-transparent',
-            )}
-          >
-            {site.name}
-          </button>
-        ))}
-      </div>
-      <WebAiSurface />
-    </div>
-  );
+  return <WebAiSurface />;
 }
 
 /**
@@ -193,5 +151,5 @@ function WebAiSurface() {
     };
   }, []);
 
-  return <div ref={ref} className="relative flex-1 min-h-0 bg-background" />;
+  return <div ref={ref} className="relative h-full min-h-0 bg-background" />;
 }

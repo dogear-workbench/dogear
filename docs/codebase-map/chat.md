@@ -50,7 +50,8 @@
 - `EmptyFocusState.tsx` / `StatusPulse.tsx` — 无焦点占位 / 状态脉冲
 - `wechat/` — 微信 Bot UI（认证 Dialog、控制面板、QR 码）；工具栏入口已下线（2026-09，代码保留，后续重做再挂回）
 - `feishu/` — 飞书 Bot UI（FeishuPanel 主窗口哨兵 tab 页：状态卡通栏 + 左对话右命令两栏，未配置时显 SetupGuide 开放平台引导），入口 app/page.tsx 工具栏飞书按钮（官方 logo）；与 wechat/ 平行同构（不抽象通用渠道层），类型 `types/feishu.ts`（前后端共享：凭证/连接态/入站消息）；哨兵 id `FEISHU_TAB_ID`（session-store，不落盘）
-- `webai/WebAiPanel.tsx` — 网页 AI tab 页：站点切换器（订阅 settings.webAiSites 实时联动，当前站点被删兜底切首项）+ 占位容器 bounds/弹层遮挡上报（独立 tipc 通道驱动主进程 attach/detach/隐藏，主进程服务见 browser.md webai.ts）；入口 PersonalSection Globe 按钮 + WorkspaceTabBar 可开关 tab 项（关闭联动 client.closeWebAiTab 销毁主进程 tab）；哨兵 id `WEB_AI_TAB_ID`（session-store，webAiTabOpen 内存态刷新即收起）
+- `webai/WebAiPanel.tsx` — 网页 AI tab 页：挂载恢复（getWebAiState 有存量同步选中站点/null 按归一化选中站点 openWebAiSite）+ 站点被删兜底切首项（选中态在 session-store `webAiSelectedSiteId` 内存态，读取处 resolveSelectedSite 归一化）+ 占位容器 bounds/弹层遮挡上报（独立 tipc 通道驱动主进程 attach/detach/隐藏，主进程服务见 browser.md webai.ts）；入口 PersonalSection Globe 按钮 + WorkspaceTabBar 可开关 tab 项（关闭联动 client.closeWebAiTab 销毁主进程 tab）；哨兵 id `WEB_AI_TAB_ID`（session-store，webAiTabOpen 内存态刷新即收起）
+- `webai/WebAiSiteMenu.tsx` — 网页 AI tab 项内的站点切换器：Globe+当前站点名+箭头弹 shadcn DropdownMenu（Radix 弹层走 WebAiSurface overlay 隐藏链路，零新机制），选中后写 store+openWebAiSite+切到网页 AI tab；导出 resolveWebAiSites/resolveSelectedSite 归一化工具
 - 设置类组件（WorkspaceSwitcherPopover/WelcomeFirstRun/WorkspaceRuleDialog/ModelSelector/MarkdownRenderer）→ 见 settings.md / infra.md
 
 ## Stores（stores/）
@@ -58,10 +59,10 @@
 - `workspace-store.ts` — 工作区文件树状态（选中/CRUD/移动）+ openStockWindow；订阅 workspaceFilesChanged 重拉
 - `conversation-store.ts` — 对话列表/选中/分叉/对话级模型；personalConversations 独立分片（所有工作区视图常显）与 newPersonalConversation/movePersonalConversationToWorkspace/focusConversationFromLink；tab 焦点联动（revealTopic 定位话题、上报全局焦点）；四个运行态 Set 订阅后端事件
 - `group-store.ts` — 会话组状态（groups/currentGroupId/expandedGroupIds；RECENT_THRESHOLD_MS 常量在此）
-- `section-collapse-store.ts` — 列表分区折叠状态（近期/更早/文件夹 reveal/子会话折叠区）
+- `section-collapse-store.ts` — 列表分区折叠状态（近期/更早/子会话折叠区）
 - `reference-store.ts` — 引用状态（文章列表/选中片段/会话引用）+ shunt 气泡（分流附件，closeTab 自动清理）
 - `slash-command-store.ts` — 斜杠命令合并与 capabilities
-- `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE/FEISHU/WEB_AI，不落 localStorage）+ dataCenterTabOpen（localStorage 记忆）/webAiTabOpen（内存态）
+- `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE/FEISHU/WEB_AI，不落 localStorage）+ dataCenterTabOpen（localStorage 记忆）/webAiTabOpen（内存态）/webAiSelectedSiteId（内存态，网页 AI 选中站点）
 - `terminal-store.ts` — 终端前端（terminals Map、followMode/pinned、registerDataSink 收流注册）
 - `git-history-store.ts` — 文件历史面板状态（open/target/gitAvailable + checkGitAvailable 幂等能力检测）
 - `feishu-store.ts` — 飞书 Bot 前端状态（配置信息/连接态/botStatus 绑定会话与候选列表），订阅 feishuConnectionStatus/feishuBotAutoInit/feishuBotBindingChanged 三事件
@@ -77,7 +78,6 @@
 - `services/group-shared-service.ts` — 组共享区文件读写（`.dogear/workspaces/{wsId}/groups/{gid}/shared/`），写后广播 groupDataChanged
 - `services/auto-archive-service.ts` — 组自动归档（真实工作区 30 天/personal 临时会话 7 天；启动+每 24h）
 - `services/topic-digest-service.ts` — 归档话题 digest 构建/落盘（`groups/<gid>/digest.json`：主会话轮次 input+最后文字结论；归档时预计算、浏览时缺失懒构建；注入判定与前端 utils.ts 语义对齐需同步维护）
-- `services/conversation-tree-service.ts` — 手动文件夹树（`.dogear/.../conversation-tree.json`）
 - `services/focused-conversation-service.ts` — 全局焦点会话内存态（值变化才广播，跨窗口共享）
 - `services/workspace-watcher.ts` — 文件树监视（递归 fs.watch 仅 rename，500ms 去抖广播）
 - `services/workspace-fs-service.ts` — 文件树扫描与文件操作（安全路径验证）；create/rename/move/copy/delete 成功后自动触发影子 git 快照（可选尾参 workspaceId，fire-and-forget）
