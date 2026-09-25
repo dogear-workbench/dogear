@@ -96,7 +96,7 @@ export function setWebAiOverlayHidden(win: BrowserWindow, hidden: boolean): void
   if (record.attachedWindow === win && !win.isDestroyed()) record.view.setVisible(true);
 }
 
-/** 关闭白嫖框：销毁 embedded tab 释放内存，分区与登录态保留 */
+/** 关闭网页 AI：销毁 embedded tab 释放内存，分区与登录态保留 */
 export function closeWebAiTab(): void {
   if (!webaiTabId) return;
   const tabId = webaiTabId;

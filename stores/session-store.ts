@@ -22,7 +22,7 @@ export const ARCHIVE_TAB_ID = '__archive__';
 /** 「飞书」tab 的哨兵 id（非真实会话，Bot 控制台页面，不落 localStorage） */
 export const FEISHU_TAB_ID = '__feishu__';
 
-/** 「网页 AI」tab 的哨兵 id（非真实会话，白嫖框内嵌站点，不落 localStorage） */
+/** 「网页 AI」tab 的哨兵 id（非真实会话，内嵌网页 AI 站点，不落 localStorage） */
 export const WEB_AI_TAB_ID = '__webai__';
 
 const SENTINEL_TAB_IDS = new Set([NOTES_TAB_ID, DATA_CENTER_TAB_ID, ARTICLE_TAB_ID, ARCHIVE_TAB_ID, FEISHU_TAB_ID, WEB_AI_TAB_ID]);

@@ -186,7 +186,7 @@ export function BrowserDataPanel() {
 
         <p className="text-xs text-muted-foreground flex items-center gap-1.5">
           <HardDrive className="w-3 h-3" />
-          agent 内嵌浏览器与「网页 AI」白嫖框共用同一分区，这里的登出/清除对两者同时生效。
+          agent 内嵌浏览器与「网页 AI」共用同一分区，这里的登出/清除对两者同时生效。
         </p>
       </div>
     </div>

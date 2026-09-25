@@ -7,7 +7,7 @@
 - `page.tsx` — 设置页（ui-store settingsOpen 驱动的全屏 overlay，非路由；dirty 三按钮 confirm；顶栏保存/取消/保存并重启会话；下划线式 Tabs：基础/能力/模型方案/工作区管理/子会话派遣/快捷键/关于）
 - `ShortcutsTab.tsx` — 快捷键清单 tab（从 hotkey-registry listHotkeys 自动渲染，只读；数据源见 infra.md hotkey-registry）
 - `ExtensionStatusLine.tsx` — 受控浏览器小节的扩展状态行（连接状态/正文预览/授权域名只读 chip；ExtensionStatus 类型源在 browser.md）
-- `WebAiSitesSection.tsx` — 网页 AI 站点列表编辑（增删改、URL 校验、至少保留一条；挂基础设置「浏览器」小节后，保存后白嫖框切换器实时联动）
+- `WebAiSitesSection.tsx` — 网页 AI 站点列表编辑（增删改、URL 校验、至少保留一条；挂基础设置「浏览器」小节后，保存后网页 AI 切换器实时联动）
 - `AbilityTab.tsx` — 能力标签页编排：列表态（工作区 Select+合并规则卡+能力包卡+系统行为卡）/详情态按 selectedKey 路由；包开关联动 enabledSkills+enabledToolPacks
 - `ability/` — 能力页两级结构组件：RulesPackCard/RulesPackDetailPage（工作区+全局规则合并卡与双编辑器）、AbilityPackCard/AbilityPackDetailPage（skill 型包 chips 切换+SKILL.md 渲染+子开关；段型包 SegmentBlock/CoreProfileView）、AbilityPackSidebar（总开关+工具组+挂载情况）、AbilityMountsSection（挂载矩阵行列表：主会话/子会话各 Profile/任务执行会话 + 三条后台任务行——定时自定义任务按 enabledToolPacks 动态计算、话题状态抽取/文章解析恒 false；scheduler 行徽标「后台任务」）、SystemBehaviorDetail、BasicToolsSection
 - `WorkspaceManagementTab.tsx` — 工作区管理（列表/删除/孤儿恢复/环境依赖检查）

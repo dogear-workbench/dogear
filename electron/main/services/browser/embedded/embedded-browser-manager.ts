@@ -18,7 +18,7 @@ const IDLE_TAB_TTL_MS = 3 * 60 * 1000;
 /** 滚动/viewport 需要确定尺寸与挂载态；屏外挂载对用户不可见（CDP 鼠标域在本环境不可用，见 actions.ts） */
 const INPUT_OFFSCREEN_BOUNDS: Rectangle = { x: -32000, y: 0, width: 1280, height: 800 };
 
-/** 白嫖框 tab 专用 sentinel workspace：与真实工作区隔离，listTabs 对外隐藏 */
+/** 网页 AI tab 专用 sentinel workspace：与真实工作区隔离，listTabs 对外隐藏 */
 export const WEBAI_WORKSPACE_ID = '__webai__';
 
 export interface TabTakeoverEntry {

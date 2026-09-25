@@ -45,7 +45,7 @@ export function WebAiSitesSection({ local, setLocal }: WebAiSitesSectionProps) {
     <div className="space-y-3">
       <label className="text-sm font-medium">网页 AI 站点</label>
       <p className="text-xs text-muted-foreground">
-        「网页 AI」标签页顶部切换器的站点列表，至少保留一条；删除当前打开的站点时，白嫖框会自动切到列表第一项。
+        「网页 AI」标签页顶部切换器的站点列表，至少保留一条；删除当前打开的站点时，网页 AI 会自动切到列表第一项。
       </p>
       <div className="space-y-2 rounded-lg border p-4">
         {sites.map((site) => {

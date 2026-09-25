@@ -192,7 +192,7 @@ export interface AppSettings {
   browserSearchEngine: BrowserSearchEngine;
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
-  /** 网页 AI 白嫖框站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
+  /** 网页 AI 站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
   webAiSites?: WebAiSite[];
 }
 
