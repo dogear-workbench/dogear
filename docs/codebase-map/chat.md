@@ -4,7 +4,7 @@
 
 ## 页面
 
-- `app/page.tsx` — 主工作区三栏布局（会话列表+聊天+伴随面板）；常驻挂载 NotesPanel/DataCenterPage/会话 tabs 按 activeTabId 切 display；哨兵 tab 下不渲染 CompanionPanel
+- `app/page.tsx` — 主工作区三栏布局（会话列表+聊天+伴随面板）；常驻挂载 NotesPanel/DataCenterPage/WebAiPanel/会话 tabs 按 activeTabId 切 display；哨兵 tab 下不渲染 CompanionPanel
 - `app/session-window/page.tsx` — 独立会话窗口（文件树+聊天+预览），selectConversation 成功后上报全局焦点
 - `app/workbench-window/page.tsx` — 伴随工作台独立窗口（主进程单例），订阅 focusedConversationChanged 跟随全局焦点，跨工作区整窗切换
 
@@ -50,6 +50,7 @@
 - `EmptyFocusState.tsx` / `StatusPulse.tsx` — 无焦点占位 / 状态脉冲
 - `wechat/` — 微信 Bot UI（认证 Dialog、控制面板、QR 码）；工具栏入口已下线（2026-09，代码保留，后续重做再挂回）
 - `feishu/` — 飞书 Bot UI（FeishuPanel 主窗口哨兵 tab 页：状态卡通栏 + 左对话右命令两栏，未配置时显 SetupGuide 开放平台引导），入口 app/page.tsx 工具栏飞书按钮（官方 logo）；与 wechat/ 平行同构（不抽象通用渠道层），类型 `types/feishu.ts`（前后端共享：凭证/连接态/入站消息）；哨兵 id `FEISHU_TAB_ID`（session-store，不落盘）
+- `webai/WebAiPanel.tsx` — 网页 AI 白嫖框 tab 页：站点切换器（订阅 settings.webAiSites 实时联动，当前站点被删兜底切首项）+ 占位容器 bounds/弹层遮挡上报（独立 tipc 通道驱动主进程 attach/detach/隐藏，主进程服务见 browser.md webai.ts）；入口 PersonalSection Globe 按钮 + WorkspaceTabBar 可开关 tab 项（关闭联动 client.closeWebAiTab 销毁主进程 tab）；哨兵 id `WEB_AI_TAB_ID`（session-store，webAiTabOpen 内存态刷新即收起）
 - 设置类组件（WorkspaceSwitcherPopover/WelcomeFirstRun/WorkspaceRuleDialog/ModelSelector/MarkdownRenderer）→ 见 settings.md / infra.md
 
 ## Stores（stores/）
@@ -60,7 +61,7 @@
 - `section-collapse-store.ts` — 列表分区折叠状态（近期/更早/文件夹 reveal/子会话折叠区）
 - `reference-store.ts` — 引用状态（文章列表/选中片段/会话引用）+ shunt 气泡（分流附件，closeTab 自动清理）
 - `slash-command-store.ts` — 斜杠命令合并与 capabilities
-- `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE）+ dataCenterTabOpen（归档 tab 不落 localStorage）
+- `session-store.ts` — 多会话 tabs+activeTabId+lastFocusedNodeId；哨兵 tab 常量（NOTES/DATA_CENTER/ARTICLE/ARCHIVE/FEISHU/WEB_AI，不落 localStorage）+ dataCenterTabOpen（localStorage 记忆）/webAiTabOpen（内存态）
 - `terminal-store.ts` — 终端前端（terminals Map、followMode/pinned、registerDataSink 收流注册）
 - `git-history-store.ts` — 文件历史面板状态（open/target/gitAvailable + checkGitAvailable 幂等能力检测）
 - `feishu-store.ts` — 飞书 Bot 前端状态（配置信息/连接态/botStatus 绑定会话与候选列表），订阅 feishuConnectionStatus/feishuBotAutoInit/feishuBotBindingChanged 三事件

@@ -10,7 +10,7 @@
 - `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 四类徽章，无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+两节 Tabs
 - `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录 + 逐项运行 loading）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/立即备份 + 备份列表展开与恢复 showConfirm；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（分类元数据与默认值、tipc client 类型推导、格式化）
-- `browser-data-panel.tsx` — 浏览器数据面板：全局分区（persist:dogear-browser）概览（磁盘占用/HTTP 缓存/站点数）+ 域名列表（登录态徽章、cookie 数）+ 每域登出/清除数据 + 面板级清缓存/全部清除；全部 showConfirm 含 agent 风险提示；30s 可见轮询
+- `browser-data-panel.tsx` — 浏览器数据面板：全局分区（persist:dogear-browser）概览（磁盘占用/HTTP 缓存/站点数）+ 域名列表（登录态徽章、cookie 数）+ 每域登出/清除数据 + 面板级清缓存/全部清除；全部 showConfirm 含 agent 风险提示；30s 可见轮询；主进程服务与路由见 browser.md
 - `core-profile-panel.tsx` — 核心画像编辑面板
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
 - `scheduler/` — 定时计划组件：SchedulerPanel（列表/编辑态切换）、TaskEditorPage（二级页：名称/提示词/模型/工作区/工具/触发器）、CustomToolPacksSection（生效集=toolPacksOverride ?? 工作区启用集）、TriggerListEditor/TriggerRow/TriggerControls、utils（describeTrigger 等）

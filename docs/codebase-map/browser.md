@@ -4,15 +4,18 @@
 
 ## 内嵌宿主（services/browser/embedded/）
 
-- `embedded-browser-manager.ts` — 内嵌 tab 单例：openTab/closeTab/retain/release（引用计数+TTL 兜底）、attachToWindow 呈现、agent tab 与用户呈现 tab 分离、PAC 代理+诚实 UA
+- `embedded-browser-manager.ts` — 内嵌 tab 单例：openTab/closeTab/retain/release（引用计数+TTL 兜底）、attachToWindow 呈现、agent tab 与用户呈现 tab 分离、PAC 代理+诚实 UA、白嫖框哨兵 workspace（WEBAI_WORKSPACE_ID，listTabs 对外隐藏）
 - `types.ts` — Tab 模型 + 页面 8 态枚举（loading/ready/login_required/verification_required/awaiting_human/rate_limited/changed_layout/crashed）
 - `tab-events.ts` — 导航事件 → generation 递增 + 基础状态流转
 - `page-state.ts` — resolvePageState 状态机唯一入口（URL 正则+关键词判定登录墙/人机验证/限流）+ pageStateHint
 - `cdp-session.ts` / `ax-tree.ts` / `ax-observe.ts` — 每 tab CDP 会话复用 / 无障碍语义树观察（ref = backendNodeId@generation）
 - `actions.ts` — clickTab/fillTab + guard_password/guard_submit 语义拦截
 - `navigate.ts` / `wait-for.ts` / `press.ts` / `scroll.ts` / `read-state.ts` — 导航/条件轮询等待/按键/滚动/`__INITIAL_STATE__` 读取
-- `profile.ts` / `ua.ts` / `proxy.ts` — 持久分区命名 / 诚实 UA / 按域 PAC 代理（settings.browserProxyServer）
-- `fetch-page.ts` — 抓取原语（loadFetchTab/evalInTab/promoteFetchTab 失败页切给 agent）+ 验证页呈现兑底
+- `profile.ts` — 全局唯一分区常量 `GLOBAL_BROWSER_PARTITION`（persist:dogear-browser，agent 与白嫖框共用登录态）
+- `migrate-legacy-partitions.ts` — 启动早期旧工作区分区 cookie 一次性合并进全局分区（marker 两段式删目录防 Windows 句柄占用，失败不阻塞启动）
+- `webai.ts` — 网页 AI 白嫖框单例 tab：source 'user-connected' + holderId 'webai' 免 TTL 回收，bounds/overlay 上报驱动 attach/detach，close 只销毁 tab 保留分区登录态
+- `ua.ts` / `proxy.ts` — 诚实 UA / 按域 PAC 代理（settings.browserProxyServer）
+- `fetch-page.ts` — 抓取原语（loadFetchTab/evalInTab/promoteFetchTab 失败页切给 agent）+ 验证页呈现兜底
 - `presentation.ts` — 呈现服务：companion 页面视图区 bounds 表、presentTab（工具与渲染层共用后端）、setOverlayHidden 弹层遮挡临时隐藏（只切可见性不动 retain）、followAgentNavigation 智能跟随（agent 开新 tab 时空呈现/旧 agent tab 窗口自动跟过去）
 - `dev-selftest.ts` — `DOGEAR_EMBEDDED_BROWSER_SELFTEST=1` 门控运行时自测
 
@@ -27,6 +30,12 @@
 - `extension-ownership.ts` — 扩展通道会话独占（纯逻辑零 IO：同 owner 续期、空闲 10min 自动释放、busy 不排队直接拒）
 - `site-policy.ts` — 站点策略（内置小红书：随机延迟/单会话预算/风控关键词）+ controlledBrowserBlock 受控通道封禁扩展绑定站点
 - `site-knowledge-service.ts` — 站点档案存储（`.dogear/site-knowledge/{domain}.md` 两区：正式地图+探索发现），normalizeDomain/appendSiteFinding
+
+## 浏览器数据管理（services/browser/）
+
+- `browser-data-service.ts` — 全局分区数据管理：cookie 按注册域聚合（多段后缀归一+登录态启发）+ 分区目录/缓存大小概览 + 按域登出/清数据 + 清缓存/全部清除（clearStorageData 逐 origin 循环）
+- `tipc/browser-data.ts` — 数据中心浏览器数据五路由（list/logout/clear domain/cache/clear all）
+- UI 面板 `app/data-center/browser-data-panel.tsx` → 见 data-center.md
 
 ## 搜索与阅读
 
@@ -66,8 +75,9 @@
 - `nm-protocol` 与 `extension/src/nm-protocol.js` 是语义一致的独立副本，不共享文件；`page-state` 判定规则与 `extension/src/page-state.js` 双侧同步，改一边必改另一边
 - 受控浏览器通道封禁扩展绑定站点（controlledBrowserBlock），双出路文案按有无 extension 工具分流
 - 扩展通道独占 busy 直接拒绝不排队；site_knowledge/site_finding 无页面交互不过策略门控
-- 授权列表 gateway 重连即重置，依赖扩展重推（storage.local 兑底）
+- 授权列表 gateway 重连即重置，依赖扩展重推（storage.local 兜底）
 - read_state 用 CDP `Runtime.evaluate` 直连主世界（隔离世界读不到页面 window 全局）
+- 网页 AI 白嫖框 tab 与 agent 内嵌 tab 共用全局分区（persist:dogear-browser）；数据中心清除浏览器数据会连带 agent 登录态（面板确认框含 agent 风险提示）
 
 ## 数据流
 

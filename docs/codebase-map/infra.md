@@ -16,7 +16,8 @@
 - `windows.ts` — 窗口管理路由：数据中心/伴随工作台单例窗口（BrowserWindow 单例在 electron/main/index.ts）
 - `focus.ts` — 全局焦点会话上报/拉取（写 focused-conversation-service，值变化才广播）
 - `pty.ts` — PTY 路由 + registerPtyBroadcaster（pty-service 事件桥接为 ptyCreated/ptyData/ptyExit 广播）
-- `browser.ts` — 浏览器路由 + 动作流/呈现/等待人工接线（registerBrowserActionBridge）
+- `browser.ts` — 浏览器路由 + 动作流/呈现/等待人工接线（registerBrowserActionBridge）+ 网页 AI 白嫖框五路由（getWebAiState/openWebAiSite/closeWebAiTab/reportWebAiBounds/reportWebAiOverlay）
+- `browser-data.ts` — 浏览器数据管理五路由（详见 browser.md）
 - `agent.ts` — Agent 会话管理路由：setSessionModel（同 profile 换 tier 快速路径/跨 profile needsRestart）、closeQueryBasedSession=release 语义 vs forceClose=强杀、pauseQueryBasedSession=turn 粒度暂停受理；complete 分支挂 failover 钩子；handleSessionNotification 系统提示决策单点（complete/failed/permission 过滤链+提示音）
 - `feishu.ts` — 飞书 Bot 路由：getConfig/saveConfig/clearConfig/testConnection/connect/disconnect/getConnectionStatus/getBotStatus/botUseConversation/openPlatform 十条 + autoConnectFeishu 启动自动重连；与 wechat.ts 同构，registerBotStateGetter 多注册（agent.ts getter 数组）
 - `ai.ts` + `services/ai-service.ts` — 通用 AI 接口占位（chat/summarize）
