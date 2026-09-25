@@ -1,15 +1,15 @@
 ---
 name: browser-exploration
-description: 双通道浏览器调研方法论：公开网页用内嵌浏览器（dogear__browser__*），登录态站点用扩展（dogear__extension__*）。使用浏览器工具做网页调研前先加载本 skill。
+description: 双通道浏览器调研方法论：公开网页与登录态站点均以内嵌浏览器（dogear__browser__*）为主，扩展通道（dogear__extension__*）为风控后备与用户真实浏览器协作。使用浏览器工具做网页调研前先加载本 skill。
 ---
 
 # 浏览器探索 Skill
 
 ## 双通道分流
 
-- 公开网页用内嵌通道（dogear__browser__*）：readArticle 读文章、search 搜索是快档首选；快档失败时返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接转原子工具继续探索，不要重新导航。
-- 登录态站点（如小红书）禁止内嵌通道，调用会被直接拒绝，改走扩展通道（dogear__extension__*）：作用在用户真实浏览器的已连接标签页（仅限已授权域名）。
-- 扩展通道同一时间仅一个会话可用，被占用时会直接报错（不排队）；并行调研请改串行派遣。
+- 公开网页与登录态站点均以内嵌通道（dogear__browser__*）为主：readArticle 读文章、search 搜索是快档首选；快档失败时返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接转原子工具继续探索，不要重新导航。登录墙自动走「等待人工」（见下），完成后登录态持久化，后续会话直接可用。
+- 内嵌触发风控熔断（危险信号累计）时停止操作并告知用户，用户同意后可改用扩展通道（dogear__extension__*，若已挂载）：作用在用户真实浏览器的已连接标签页（仅限已授权域名）。预算耗尽不是换通道的理由（预算按会话计、双通道共用，换通道同样被拒），应停止并如实告知用户。
+- 扩展通道定位 = 用户真实浏览器协作 + 内嵌风控后备（Plan B），同一时间仅一个会话可用，被占用时会直接报错（不排队）；并行调研请改串行派遣。
 
 ## 探索循环
 
@@ -26,6 +26,7 @@ description: 双通道浏览器调研方法论：公开网页用内嵌浏览器�
 ## 站点档案（双通道，按本会话通道取用，勿混用工具名）
 
 - navigate 返回提示本站有站点档案时，先取地图：内嵌通道调 dogear__browser__site_knowledge，扩展通道调 dogear__extension__site_knowledge（档案可能漂移，用时概要验证）。
+- navigate 返回提示本站有访问策略时，先读本通道 site_policy（内嵌 dogear__browser__site_policy，扩展 dogear__extension__site_policy）：节奏与预算约束已自动生效，读指引是为了掌握推荐步骤与危险信号，避免误触熔断。
 - 探索中发现新结构（状态路径 / 直链拼法 / 页面怪癖）用本通道的 site_finding 沉淀到档案：内嵌 dogear__browser__site_finding，扩展 dogear__extension__site_finding，供后续会话复用。
 
 ## 交付与停止

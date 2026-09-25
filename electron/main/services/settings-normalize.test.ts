@@ -283,6 +283,16 @@ test('存量环境实际持有的旧文案（无 user_takeover 句长文 / 手�
   expect(normalizeSettings(s)).toBe(false);
 });
 
+test('现行模板旧文案（网页与文章调研句）也自动迁移', () => {
+  const s = baseSettings();
+  s.subAgent.profiles[1]!.description =
+    '网页与文章调研：公开网页用内嵌浏览器；登录态站点（如小红书）走用户浏览器扩展通道（全局独占，并行串行派遣）；也用于解析工作区文章库的文章。';
+  const changed = normalizeSettings(s);
+  expect(changed).toBe(true);
+  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
+  expect(normalizeSettings(s)).toBe(false);
+});
+
 test('用户自定义 description 不被迁移', () => {
   const s = baseSettings();
   s.subAgent.profiles[0]!.description = '我自己的默认描述';

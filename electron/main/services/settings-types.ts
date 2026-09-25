@@ -303,7 +303,7 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
     id: BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
     name: '浏览器解析',
     description:
-      '网页与文章调研：公开网页用内嵌浏览器；登录态站点（如小红书）走用户浏览器扩展通道（全局独占，并行串行派遣）；也用于解析工作区文章库的文章。',
+      '网页与文章调研：公开网页与登录态站点均以内嵌浏览器为主（登录墙自动等待人工，登录态持久化）；用户浏览器扩展通道（全局独占，并行串行派遣）为风控后备与实时协作；也用于解析工作区文章库的文章。',
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],

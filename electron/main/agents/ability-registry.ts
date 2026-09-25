@@ -152,7 +152,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
   {
     key: 'browser',
     label: '浏览器',
-    description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，登录态站点优先）；子会话 Profile 独立生效，不受此开关约束',
+    description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，风控后备）；子会话 Profile 独立生效，不受此开关约束',
     type: 'skill-packs',
     skills: ['browser-exploration'],
     toolGroups: ['browser', 'dogear-extension'],

@@ -147,12 +147,15 @@ export function BrowserDataPanel() {
                 加载中…
               </div>
             ) : overview.domains.length === 0 ? (
-              <div className="py-8 text-center text-sm text-muted-foreground">暂无站点数据，登录任意网站后出现在这里</div>
+              <div className="py-8 text-center text-sm text-muted-foreground">暂无站点数据，用浏览器访问任意网站后出现在这里</div>
             ) : (
               <>
-                <div className="px-4 py-2 text-xs font-medium text-muted-foreground">已登录站点</div>
+                <div className="px-4 py-2 flex items-baseline gap-2">
+                  <span className="text-xs font-medium text-muted-foreground shrink-0">有会话 Cookie</span>
+                  <span className="text-xs text-muted-foreground/70">按 Cookie 名启发式判定，含未登录的匿名会话</span>
+                </div>
                 {loggedIn.length === 0 ? (
-                  <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">暂无登录态站点</div>
+                  <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">暂无含会话 Cookie 的站点</div>
                 ) : (
                   <div className="divide-y">
                     {loggedIn.map((item) => (
@@ -219,7 +222,7 @@ function DomainRow({
         {item.hasLoginHint && (
           <Badge variant="outline" className="gap-1 text-green-600 border-green-600/40 shrink-0">
             <ShieldCheck className="w-3 h-3" />
-            登录态
+            会话 Cookie
           </Badge>
         )}
         <Badge variant="secondary" className="shrink-0">
