@@ -2,13 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
+import { useSettingsStore } from '@/stores/settings-store';
+import { DEFAULT_WEB_AI_SITES, type WebAiSite } from '@/types/settings';
 
-/** Step 3 接 settings.webAiSites 前的预置站点（主进程 webai.ts 的 DEFAULT_WEB_AI_URL 与第一项保持一致） */
-export const WEB_AI_SITES = [
-  { id: 'deepseek', name: 'DeepSeek', url: 'https://chat.deepseek.com' },
-  { id: 'kimi', name: 'Kimi', url: 'https://kimi.moonshot.cn' },
-  { id: 'doubao', name: '豆包', url: 'https://www.doubao.com/chat' },
-];
+function resolveSites(webAiSites: WebAiSite[] | undefined): WebAiSite[] {
+  return webAiSites && webAiSites.length > 0 ? webAiSites : DEFAULT_WEB_AI_SITES;
+}
 
 let layoutRevision = Date.now() * 1000;
 
@@ -17,39 +16,64 @@ function nextLayoutRevision(): number {
   return layoutRevision;
 }
 
-function matchSiteUrl(url: string): string | null {
-  return WEB_AI_SITES.find((s) => url === s.url || url.startsWith(s.url))?.url ?? null;
+function matchSiteUrl(url: string, sites: WebAiSite[]): string | null {
+  return sites.find((s) => url === s.url || url.startsWith(s.url))?.url ?? null;
 }
 
 export function WebAiPanel() {
   const [siteUrl, setSiteUrl] = useState<string | null>(null);
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
+  const sites = resolveSites(useSettingsStore((s) => s.settings.webAiSites));
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      const currentSites = resolveSites(useSettingsStore.getState().settings.webAiSites);
       try {
         const state = await client.getWebAiState();
         if (cancelled) return;
         if (state) {
-          setSiteUrl(matchSiteUrl(state.url) ?? state.url);
+          setSiteUrl(matchSiteUrl(state.url, currentSites) ?? state.url);
           return;
         }
-        const snapshot = await client.openWebAiSite({ url: WEB_AI_SITES[0].url });
-        if (!cancelled) setSiteUrl(matchSiteUrl(snapshot.url) ?? snapshot.url);
       } catch (err) {
-        console.error('打开网页 AI 失败:', err);
+        console.error('读取网页 AI 状态失败:', err);
+        if (cancelled) return;
+        setSiteUrl(currentSites[0].url);
+        setSelectedSiteId(currentSites[0].id);
+        return;
       }
+      if (cancelled) return;
+      setSelectedSiteId(currentSites[0].id);
+      setSiteUrl(currentSites[0].url);
+      client
+        .openWebAiSite({ url: currentSites[0].url })
+        .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url, currentSites) ?? snapshot.url))
+        .catch((err) => console.error('打开网页 AI 失败:', err));
     })();
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const switchSite = (url: string) => {
-    setSiteUrl(url);
+  // 当前选中站点被删后兜底切到列表第一项
+  useEffect(() => {
+    if (!selectedSiteId || sites.some((s) => s.id === selectedSiteId)) return;
+    const first = sites[0];
+    setSelectedSiteId(first.id);
+    setSiteUrl(first.url);
     client
-      .openWebAiSite({ url })
-      .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url) ?? snapshot.url))
+      .openWebAiSite({ url: first.url })
+      .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url, sites) ?? snapshot.url))
+      .catch((err) => console.error('切换网页 AI 站点失败:', err));
+  }, [sites, selectedSiteId]);
+
+  const switchSite = (site: WebAiSite) => {
+    setSelectedSiteId(site.id);
+    setSiteUrl(site.url);
+    client
+      .openWebAiSite({ url: site.url })
+      .then((snapshot) => setSiteUrl(matchSiteUrl(snapshot.url, sites) ?? snapshot.url))
       .catch((err) => console.error('切换网页 AI 站点失败:', err));
   };
 
@@ -57,11 +81,11 @@ export function WebAiPanel() {
     <div className="flex flex-col h-full min-h-0">
       <div className="shrink-0 flex items-center gap-1 h-[42px] px-2 border-b bg-muted/30">
         <Globe className="w-3.5 h-3.5 text-muted-foreground mr-1 shrink-0" />
-        {WEB_AI_SITES.map((site) => (
+        {sites.map((site) => (
           <button
             key={site.id}
             title={site.url}
-            onClick={() => switchSite(site.url)}
+            onClick={() => switchSite(site)}
             className={cn(
               'h-7 px-2.5 rounded-md text-xs transition-colors cursor-pointer',
               siteUrl === site.url

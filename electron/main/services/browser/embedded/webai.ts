@@ -1,12 +1,21 @@
 import type { BrowserWindow, Rectangle } from 'electron';
+import { loadSettings } from '../../settings-service.js';
+import { DEFAULT_WEB_AI_SITES } from '../../settings-types.js';
 import { getEmbeddedBrowserManager, WEBAI_WORKSPACE_ID } from './embedded-browser-manager.js';
 import type { EmbeddedTabRecord, EmbeddedTabSnapshot } from './types.js';
 
 const WEBAI_HOLDER_ID = 'webai';
-const DEFAULT_WEB_AI_URL = 'https://chat.deepseek.com';
 
 let webaiTabId: string | null = null;
-let webaiUrl = DEFAULT_WEB_AI_URL;
+let webaiUrl = DEFAULT_WEB_AI_SITES[0].url;
+
+// 兜底首项与 settings.webAiSites 对齐；openWebAiSite 每次以实际切换的 url 覆盖
+void loadSettings()
+  .then((s) => {
+    const first = s.webAiSites?.[0]?.url;
+    if (first) webaiUrl = first;
+  })
+  .catch((err) => console.error('[webai] 读取站点配置失败:', err));
 let latestRevision = 0;
 let overlayHidden = false;
 let reportedWin: BrowserWindow | null = null;

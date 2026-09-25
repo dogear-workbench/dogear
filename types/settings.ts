@@ -120,6 +120,18 @@ export interface SubAgentProfile {
   enabledAbilities: SubAgentEnabledAbilities;
 }
 
+export interface WebAiSite {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export const DEFAULT_WEB_AI_SITES: WebAiSite[] = [
+  { id: 'deepseek', name: 'DeepSeek', url: 'https://chat.deepseek.com' },
+  { id: 'kimi', name: 'Kimi', url: 'https://kimi.moonshot.cn' },
+  { id: 'doubao', name: '豆包', url: 'https://www.doubao.com/chat' },
+];
+
 export const BACKUP_CATEGORY_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions'] as const;
 export type BackupCategoryKey = (typeof BACKUP_CATEGORY_KEYS)[number];
 export type BackupFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
@@ -180,6 +192,8 @@ export interface AppSettings {
   browserSearchEngine: BrowserSearchEngine;
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
+  /** 网页 AI 白嫖框站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
+  webAiSites?: WebAiSite[];
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -208,6 +222,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     theme: 'light',
   },
   browserSearchEngine: 'auto',
+  webAiSites: DEFAULT_WEB_AI_SITES,
   profiles: {
     default: {
       id: 'default',

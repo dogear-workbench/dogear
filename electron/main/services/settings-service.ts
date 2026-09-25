@@ -17,6 +17,7 @@ import {
   normalizeFailoverChain,
   normalizeBackupSettings,
   BASIC_TOOL_NAMES,
+  normalizeWebAiSites,
   type AppSettings,
   type PiPermissionMode,
   type BasicToolPermissions,
@@ -368,6 +369,12 @@ export function normalizeSettings(settings: AppSettings): boolean {
     }
   } else {
     obj.subAgent = { profiles: [createDefaultSubAgentProfile(), createBrowserParseSubAgentProfile()] };
+    changed = true;
+  }
+
+  const normalizedSites = normalizeWebAiSites(obj.webAiSites);
+  if (JSON.stringify(normalizedSites) !== JSON.stringify(obj.webAiSites)) {
+    obj.webAiSites = normalizedSites;
     changed = true;
   }
 

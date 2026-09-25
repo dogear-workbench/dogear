@@ -15,6 +15,7 @@ import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
 import { ExtensionStatusLine } from './ExtensionStatusLine';
 import { SubAgentTab } from './SubAgentTab';
+import { WebAiSitesSection } from './WebAiSitesSection';
 import { ShortcutsTab } from './ShortcutsTab';
 import { AboutTab } from './AboutTab';
 import { ModelSelector } from '@/components/ModelSelector';
@@ -571,6 +572,8 @@ export default function SettingsPage() {
                   </div>
                 </div>
               </div>
+
+              <WebAiSitesSection local={local} setLocal={setLocal} />
 
               {/* 联网搜索（GLM MCP） */}
               <div className="space-y-3">

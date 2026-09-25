@@ -90,6 +90,18 @@ export interface SubAgentProfile {
   enabledAbilities: SubAgentEnabledAbilities;
 }
 
+export interface WebAiSite {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export const DEFAULT_WEB_AI_SITES: WebAiSite[] = [
+  { id: 'deepseek', name: 'DeepSeek', url: 'https://chat.deepseek.com' },
+  { id: 'kimi', name: 'Kimi', url: 'https://kimi.moonshot.cn' },
+  { id: 'doubao', name: '豆包', url: 'https://www.doubao.com/chat' },
+];
+
 export const BACKUP_SETTING_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions'] as const;
 export type BackupSettingCategoryKey = (typeof BACKUP_SETTING_KEYS)[number];
 export type BackupSettingFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
@@ -156,6 +168,8 @@ export interface AppSettings {
   };
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
+  /** 网页 AI 白嫖框站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
+  webAiSites?: WebAiSite[];
 }
 
 // ============================================================
@@ -198,6 +212,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     },
   },
   migrated: {},
+  webAiSites: DEFAULT_WEB_AI_SITES,
   backup: {
     categories: {
       'notes-groups': { enabled: true, frequency: 'daily', keep: 10 },
@@ -318,6 +333,25 @@ export function normalizeBackupSettings(raw: unknown): BackupSettings {
     };
   }
   return { categories };
+}
+
+/**
+ * webAiSites 节归一化：非对象/缺 id·name·url 的条目丢弃，清洗后为空回默认三项（切换器与主进程兑底都依赖非空列表）；
+ * url 的 http(s) 合法性由设置页 UI 校验提示，不在 normalize 层拦截，避免与设置页防抖写回互搏
+ */
+export function normalizeWebAiSites(raw: unknown): WebAiSite[] {
+  const sites: WebAiSite[] = [];
+  if (Array.isArray(raw)) {
+    for (const item of raw) {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const s = item as Record<string, unknown>;
+      if (typeof s.id !== 'string' || s.id === '') continue;
+      if (typeof s.name !== 'string' || s.name === '') continue;
+      if (typeof s.url !== 'string' || s.url === '') continue;
+      sites.push({ id: s.id, name: s.name, url: s.url });
+    }
+  }
+  return sites.length > 0 ? sites : structuredClone(DEFAULT_WEB_AI_SITES);
 }
 
 /**
