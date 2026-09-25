@@ -28,7 +28,7 @@
 - `browser-task-meta.ts` — 动作流任务元数据（kind: article|agent）
 - `browser-action-stream.ts` — 浏览器动作事件汇总出口（供伴随面板动作流消费；launched 经 provider 注入保持 node 环境可 smoke）
 - `extension-ownership.ts` — 扩展通道会话独占（纯逻辑零 IO：同 owner 续期、空闲 10min 自动释放、busy 不排队直接拒）
-- `site-policy.ts` — 站点策略（内置小红书：随机延迟/单会话预算/风控关键词）+ controlledBrowserBlock 受控通道封禁扩展绑定站点
+- `site-policy.ts` — 站点策略（内置小红书：随机延迟/单会话预算/风控关键词）+ navigateGate/policyGate 门控入口与风控扫描（内嵌/扩展通道共用）
 - `site-knowledge-service.ts` — 站点档案存储（`.dogear/site-knowledge/{domain}.md` 两区：正式地图+探索发现），normalizeDomain/appendSiteFinding
 
 ## 浏览器数据管理（services/browser/）
@@ -73,7 +73,7 @@
 
 - ExtensionStatus 类型唯一源是 `browser-gateway.ts`，渲染层 import type 自动流转
 - `nm-protocol` 与 `extension/src/nm-protocol.js` 是语义一致的独立副本，不共享文件；`page-state` 判定规则与 `extension/src/page-state.js` 双侧同步，改一边必改另一边
-- 受控浏览器通道封禁扩展绑定站点（controlledBrowserBlock），双出路文案按有无 extension 工具分流
+- 策略站点在内嵌与扩展通道均走统一站点策略门控（风控前置→预算→随机延迟），不再封禁内嵌通道
 - 扩展通道独占 busy 直接拒绝不排队；site_knowledge/site_finding 无页面交互不过策略门控
 - 授权列表 gateway 重连即重置，依赖扩展重推（storage.local 兜底）
 - read_state 用 CDP `Runtime.evaluate` 直连主世界（隔离世界读不到页面 window 全局）

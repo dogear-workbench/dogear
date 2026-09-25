@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 解禁内嵌策略站点](./step1-unblock-embedded.md) — 删 controlledBrowserBlock 与两处调用，工具 description 更新，内嵌门控全链路生效
+- [x] [Step 1: 解禁内嵌策略站点](./step1-unblock-embedded.md) — 删 controlledBrowserBlock 与两处调用，工具 description 更新，内嵌门控全链路生效
 - [ ] [Step 2: 策略可读化](./step2-site-policy-tool.md) — SitePolicy.instructions + site_policy 双前缀工具 + navigate 策略指针
 - [ ] [Step 3: 外围文案收尾](./step3-docs-and-panel.md) — browser-exploration skill 双通道分流重写 + 数据中心登录态文案诚实化
 

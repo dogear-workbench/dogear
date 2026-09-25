@@ -23,7 +23,6 @@ import {
 import {
   checkNoteBudget,
   consumeNote,
-  controlledBrowserBlock,
   navigateGate,
   consumeSearch,
   policyGate,
@@ -65,17 +64,12 @@ export function createBrowserObserveToolDefs(opts?: {
       '浏览器导航到 URL',
       '让内嵌浏览器导航到指定 URL，等待加载就绪后返回最终 URL、标题、正文字数与页面状态（含登录墙/人机验证/限流判定）。' +
         '用于手动探索、页面恢复与直达 URL；单纯读文章请优先 dogear__browser__readArticle。' +
-        '小红书等登录态站点禁止本通道（调用会被直接拒绝）：已挂载 dogear__extension__* 工具则改用扩展通道；未挂载（主会话默认无）则告知用户改派「浏览器解析」子会话调研。受节奏保护的站点导航前会自动等待随机时长。',
+        '受节奏保护的站点导航前会自动等待随机时长，搜索类导航还受单会话搜索预算限制，属正常节奏控制，请耐心等待，不要立即重试。',
       z.object({
         url: z.string().url().describe('目标页面完整 URL（含 http/https）'),
       }),
       async (args) => {
         const taskMeta = meta();
-        const blocked = controlledBrowserBlock(args.url);
-        if (blocked) {
-          emitAction({ source: 'navigate', taskMeta, action: 'navigate', url: args.url, detail: blocked, result: 'site_forbidden' });
-          return isErrorResult(blocked);
-        }
         if (!embeddedWorkspaceId) {
           return isErrorResult('当前会话未关联工作区，内嵌浏览器通道不可用');
         }

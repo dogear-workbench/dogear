@@ -130,16 +130,6 @@ export function riskBlockedMessage(): string {
   return '该站点此前已触发风控信号，本会话已停止对它的自动操作，请人工检查浏览器页面后再决定是否继续';
 }
 
-export function controlledBrowserBlock(url: string): string | null {
-  const policy = getSitePolicy(url);
-  if (!policy) return null;
-  return (
-    `内嵌浏览器禁止访问该站点（${policy.matchOrigins.join('、')}），该站点需登录态，应走扩展通道。` +
-    '(1) 本会话已挂载 dogear__extension__* 工具则改用之；' +
-    '(2) 未挂载（主会话默认无）则告知用户改派「浏览器解析」子会话调研，不要重试本通道'
-  );
-}
-
 export interface PolicyGateContext {
   policy: SitePolicy;
   origin: string | null;

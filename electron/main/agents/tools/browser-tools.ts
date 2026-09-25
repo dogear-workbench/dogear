@@ -13,7 +13,6 @@ import { z } from 'zod';
 import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
 import { readArticleWithBrowser } from '../../services/browser/browser-article-service.js';
 import type { BrowserArticleActionEvent } from '../../services/browser/browser-article-types.js';
-import { controlledBrowserBlock } from '../../services/browser/site-policy.js';
 import { searchWeb } from '../../services/browser/browser-search-service.js';
 import type { SearchActionEvent } from '../../services/browser/browser-search-types.js';
 import { loadSettings } from '../../services/settings-service.js';
@@ -60,7 +59,7 @@ export function createBrowserToolDefs(opts?: {
         '使用纪律：\n' +
         '- 需要读取网页文章内容时优先调用本工具，不要直接从原子工具开始。\n' +
         '- 快档失败（need_login / timeout / parse_empty / browser_crash）时不白跑：返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接用 dogear__browser__observe_page / read_text 继续探索，不要重新导航。\n' +
-        '- 小红书等登录态站点禁止本通道（调用会被直接拒绝）：已挂载 dogear__extension__* 工具则改用扩展通道；未挂载（主会话默认无）则告知用户改派「浏览器解析」子会话调研。\n' +
+        '- 受节奏保护的站点自动生效随机延迟与会话预算：命中策略站点的调用可能明显变慢或因预算耗尽被拒，属正常节奏控制，不要立即重试。\n' +
         '- 返回 need_login 时：页面已保留在内嵌浏览器并呈现在浏览器面板，等待人工状态已产生；必须告知用户「请在浏览器面板完成登录，登录完成后告诉我重试」；用户完成后重新调用本工具即可（登录态已持久化）。\n' +
         '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。',
       z.object({
@@ -68,11 +67,6 @@ export function createBrowserToolDefs(opts?: {
       }),
       async (args) => {
         const taskMeta = meta();
-        const blocked = controlledBrowserBlock(args.url);
-        if (blocked) {
-          emitAction({ source: 'readArticle', taskMeta, action: 'parse', url: args.url, detail: blocked, result: 'site_forbidden' });
-          return isErrorResult(blocked);
-        }
         const result = await readArticleWithBrowser(args.url, {
           taskMeta,
           onAction: forwardArticleAction,
