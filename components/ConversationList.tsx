@@ -6,7 +6,6 @@ import { useConversationStore } from '@/stores/conversation-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 
 import { Toolbar } from './conversation-list/Toolbar';
-import { ManualSection } from './conversation-list/ManualSection';
 import { RecentVirtualGroup } from './conversation-list/RecentVirtualGroup';
 import { ArchiveSection } from './conversation-list/ArchiveSection';
 import { PersonalSection } from './conversation-list/PersonalSection';
@@ -51,7 +50,6 @@ export function ConversationList() {
           </div>
         ) : (
           <>
-            <ManualSection workspaceId={workspaceId} />
             <RecentVirtualGroup />
           </>
         )}

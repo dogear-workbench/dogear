@@ -2,7 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import * as conversationService from './conversation-service.js';
 import * as groupService from './group-service.js';
-import * as treeService from './conversation-tree-service.js';
 import * as workspaceService from './workspace-json-service.js';
 import { conversationRuntimeService } from './conversation-runtime-service.js';
 import { getPiSessionRepository } from '../agents/pi-session/pi-session-repository.js';
@@ -114,7 +113,6 @@ export async function cleanupEmptyTopic(
     const conversations = await conversationService.getByWorkspaceId(workspaceId, { includeArchived: true });
     if (conversations.some((conversation) => conversation.groupId === groupId)) return { ok: true };
 
-    await treeService.removeGroupFromTree(workspaceId, groupId);
     await fs.rm(getGroupDir(workspaceId, groupId), { recursive: true, force: true });
     await groupService.deleteGroup(workspaceId, groupId);
     return { ok: true };
@@ -124,20 +122,14 @@ export async function cleanupEmptyTopic(
 }
 
 async function collectKnownGroupIds(workspaceId: string): Promise<Set<string>> {
-  const [groups, conversations, tree] = await Promise.all([
+  const [groups, conversations] = await Promise.all([
     groupService.listGroups(workspaceId),
     conversationService.getByWorkspaceId(workspaceId, { includeArchived: true }),
-    treeService.getTree(workspaceId),
   ]);
   const groupIds = new Set<string>();
   for (const group of groups) groupIds.add(group.id);
   for (const conversation of conversations) {
     if (conversation.groupId) groupIds.add(conversation.groupId);
-  }
-  for (const childIds of Object.values(tree.children)) {
-    for (const id of childIds) {
-      if (!tree.folders[id]) groupIds.add(id);
-    }
   }
   try {
     const entries = await fs.readdir(getGroupsRootDir(workspaceId), { withFileTypes: true });

@@ -1,7 +1,6 @@
 // electron/main/tipc/conversations.ts
 import { tipc } from '@egoist/tipc/main';
 import * as conversationService from '../services/conversation-service.js';
-import * as treeService from '../services/conversation-tree-service.js';
 import * as groupService from '../services/group-service.js';
 import * as topicLifecycleService from '../services/topic-lifecycle-service.js';
 import { moveConversationToWorkspace } from '../services/conversation-move-service.js';
@@ -10,21 +9,6 @@ import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js'
 import { loadSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
-
-/**
- * 拉取工作区所有 group 的 updatedAt，按倒序重排树。
- * 失败静默：对话本身写入已成功，重排只是 UX 优化。
- */
-async function reorderTreeByUpdatedAt(workspaceId: string): Promise<void> {
-  try {
-    const groups = await groupService.listActiveGroups(workspaceId);
-    const map: Record<string, number> = {};
-    for (const g of groups) map[g.id] = g.updatedAt;
-    await treeService.sortGroupsByUpdatedAt(workspaceId, map);
-  } catch (error) {
-    console.warn('[reorderTree] 重排对话树失败:', error);
-  }
-}
 
 export const conversationsRouter = {
   // ── 对话 CRUD ─────────────────────────────────────────────
@@ -95,8 +79,6 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const conversations = await conversationService.getByWorkspaceId(input.workspaceId);
-        // 顺手把树按 updatedAt 重排一次，让"同层时间倒序"自动收敛
-        await reorderTreeByUpdatedAt(input.workspaceId);
         return { conversations: conversations.map(conversationService.toCompat), error: undefined };
       } catch (error) {
         console.error('获取工作区对话列表失败:', error);
@@ -218,119 +200,6 @@ export const conversationsRouter = {
       } catch (error) {
         console.error('跨工作区查找对话失败:', error);
         return { conversation: null, workspaceId: null };
-      }
-    }),
-
-  // ── 对话树操作 ────────────────────────────────────────────
-
-  getConversationTree: t.procedure
-    .input<{ workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const tree = await treeService.getTree(input.workspaceId);
-        const activeGroupIds = new Set(
-          (await groupService.listActiveGroups(input.workspaceId)).map((group) => group.id),
-        );
-        const filteredChildren: Record<string, string[]> = {};
-        for (const [parentId, childIds] of Object.entries(tree.children)) {
-          filteredChildren[parentId] = childIds.filter((id) => tree.folders[id] || activeGroupIds.has(id));
-        }
-        const filtered = { ...tree, children: filteredChildren };
-        return { tree: filtered, error: undefined };
-      } catch (error) {
-        console.error('获取对话树失败:', error);
-        return { tree: null, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  createConversationFolder: t.procedure
-    .input<{ workspaceId: string; name: string; parentId?: string }>()
-    .action(async ({ input }) => {
-      try {
-        const folderId = await treeService.createFolder(input.workspaceId, input.name, input.parentId);
-        return { folderId, error: undefined };
-      } catch (error) {
-        console.error('创建对话文件夹失败:', error);
-        return { folderId: null, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  renameConversationFolder: t.procedure
-    .input<{ workspaceId: string; folderId: string; name: string }>()
-    .action(async ({ input }) => {
-      try {
-        await treeService.renameFolder(input.workspaceId, input.folderId, input.name);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('重命名对话文件夹失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  deleteConversationFolder: t.procedure
-    .input<{ workspaceId: string; folderId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await treeService.deleteFolder(input.workspaceId, input.folderId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('删除对话文件夹失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  moveConversationItem: t.procedure
-    .input<{ workspaceId: string; itemId: string; targetParentId: string; targetIndex?: number }>()
-    .action(async ({ input }) => {
-      try {
-        await treeService.moveItem(input.workspaceId, input.itemId, input.targetParentId, input.targetIndex);
-        // 移动后按时间倒序重排目标 parent，让对话自动落到顶端
-        await reorderTreeByUpdatedAt(input.workspaceId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('移动对话项目失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  addGroupToFolder: t.procedure
-    .input<{ workspaceId: string; groupId: string; folderId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
-        await treeService.addGroupToFolder(input.workspaceId, input.groupId, input.folderId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('添加组到文件夹失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  removeGroupFromFolder: t.procedure
-    .input<{ workspaceId: string; groupId: string; folderId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
-        await treeService.removeGroupFromFolder(input.workspaceId, input.groupId, input.folderId);
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('从文件夹移除组失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  moveGroupBetweenFolders: t.procedure
-    .input<{ workspaceId: string; groupId: string; fromFolderId: string; toFolderId: string }>()
-    .action(async ({ input }) => {
-      try {
-        await groupService.requireActiveGroup(input.workspaceId, input.groupId);
-        await treeService.moveGroupBetweenFolders(
-          input.workspaceId, input.groupId, input.fromFolderId, input.toFolderId,
-        );
-        return { success: true, error: undefined };
-      } catch (error) {
-        console.error('在文件夹间移动组失败:', error);
-        return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
     }),
 };

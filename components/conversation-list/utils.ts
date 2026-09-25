@@ -39,9 +39,6 @@ export { RECENT_THRESHOLD_MS, OLDER_THRESHOLD_MS };
 export const RECENT_DAYS = RECENT_THRESHOLD_MS / 86400_000;
 export const OLDER_DAYS = OLDER_THRESHOLD_MS / 86400_000;
 
-// 对话树根节点哨兵 id（与后端 ROOT_ID 同步）
-export const CONV_TREE_ROOT = '__root__';
-
 /**
  * 节点高亮状态：
  * - isOpen: conversationId 在 tabs 里（淡色背景，可能多节点）

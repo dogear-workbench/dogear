@@ -788,11 +788,6 @@ export async function migrateFromLegacy(): Promise<void> {
       convMap[conv.id] = conv;
     }
     await saveWorkspaceConversations(wsId, { version: 2, conversations: convMap });
-
-    // 创建初始 conversation-tree.json（Phase 3 后 root 只装 folderId，新装空树即可；
-    // 历史会话由 migrateOrphanConversations 各自创建独立组，组本身存于 group-service）
-    const treeService = await import('./conversation-tree-service.js');
-    await treeService.initializeTree(wsId);
   }
 
   // 备份旧文件

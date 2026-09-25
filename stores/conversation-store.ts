@@ -4,7 +4,6 @@ import { client } from '@/lib/client';
 import { showConfirm } from '@/stores/confirm-store';
 import { useSessionStore } from '@/stores/session-store';
 import type { Conversation } from '@/components/ConversationList';
-import type { ConversationFolder, ConversationTreeData } from '@/types/electron-api';
 import type { ChildStateSnapshot } from '@/types/delegation';
 import type { Group } from '@/types/group';
 import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
@@ -35,19 +34,6 @@ export interface PreAttachedSession {
   sessionState: { running: boolean; pendingAction: boolean; paused: boolean };
 }
 
-/** 对话树的扁平节点（供 @headless-tree/react 使用）。Phase 3：叶子节点装组而非对话。 */
-export interface ConversationFlatNode {
-  id: string;
-  name: string;
-  isFolder: boolean;
-  childrenIds: string[];
-  nodeType: 'group' | 'folder';
-  group?: Group;
-  folder?: ConversationFolder;
-}
-
-export const CONV_TREE_ROOT = '__root__';
-
 /**
  * 单个工作区的对话分片（里程碑 1.5 Phase 2 Step A2.2）
  * 切换工作区时顶层 conversations/selectedConversation/... 从对应分片镜像
@@ -55,8 +41,6 @@ export const CONV_TREE_ROOT = '__root__';
 interface WorkspaceConversationSlice {
   conversations: Conversation[];
   selectedConversation: Conversation | null;
-  treeData: ConversationTreeData | null;
-  nodeMap: Record<string, ConversationFlatNode>;
   loadingConversations: boolean;
 }
 
@@ -71,8 +55,6 @@ function emptySlice(): WorkspaceConversationSlice {
   return {
     conversations: [],
     selectedConversation: null,
-    treeData: null,
-    nodeMap: {},
     loadingConversations: false,
   };
 }
@@ -87,8 +69,6 @@ interface ConversationState {
   conversations: Conversation[];
   selectedConversation: Conversation | null;
   loadingConversations: boolean;
-  treeData: ConversationTreeData | null;
-  nodeMap: Record<string, ConversationFlatNode>;
 
   // --- personal 临时会话（独立于工作区分片，所有工作区视图下常显） ---
   personalConversations: Conversation[];
@@ -148,20 +128,6 @@ interface ConversationState {
   handleTopicStateChange: (groupId: string, closeTabs: boolean, conversationIds?: string[]) => Promise<void>;
   /** 分叉对话（创建独立新对话） */
   forkConversation: (params: { parentConversationId: string; forkMessageSdkUuid: string }) => Promise<void>;
-  /** 创建对话文件夹 */
-  createFolder: (name: string, parentId?: string) => Promise<void>;
-  /** 重命名对话文件夹 */
-  renameFolder: (folderId: string, newName: string) => Promise<void>;
-  /** 删除对话文件夹（子内容上移） */
-  deleteFolder: (folderId: string) => Promise<void>;
-  /** 移动对话或文件夹 */
-  moveItem: (itemId: string, targetParentId: string, targetIndex?: number) => Promise<void>;
-  /** 把组添加到指定文件夹（多引用语义，不动其他文件夹）*/
-  addGroupToFolder: (groupId: string, folderId: string) => Promise<void>;
-  /** 从指定文件夹移除组（不动其他文件夹）*/
-  removeGroupFromFolder: (groupId: string, folderId: string) => Promise<void>;
-  /** 在两个文件夹间移动组（remove + add 原子）*/
-  moveGroupBetweenFolders: (groupId: string, fromFolderId: string, toFolderId: string) => Promise<void>;
   /** 更新对话标题 */
   updateConversationTitle: (conversationId: string, title: string, workspaceId?: string) => Promise<void>;
   /** 更新对话的模型选择（null = 不指定） */
@@ -220,89 +186,6 @@ function expandSubParentIfNeeded(conv: Conversation, conversations: Conversation
 }
 
 /**
- * 对 children 数组进行分区排序：文件夹在前，对话在后
- * 各分区内部保持原始数组顺序（即用户拖拽排定的顺序）
- */
-function sortChildrenFoldersFirst(
-  childIds: string[],
-  folders: Record<string, ConversationFolder>,
-): string[] {
-  const folderIds: string[] = [];
-  const conversationIds: string[] = [];
-  for (const id of childIds) {
-    if (folders[id]) {
-      folderIds.push(id);
-    } else {
-      conversationIds.push(id);
-    }
-  }
-  return [...folderIds, ...conversationIds];
-}
-
-/**
- * 构建对话树的扁平节点映射（Phase 3 组化后）。
- * - __root__ 只装 folderId
- * - 文件夹节点 childrenIds 装 groupId（filtered 到 group-store 已知组）
- * - 叶子节点为 group（每个 group 单独建一个 node）
- */
-function buildNodeMap(
-  groups: Group[],
-  treeData: ConversationTreeData | null,
-): Record<string, ConversationFlatNode> {
-  const nodeMap: Record<string, ConversationFlatNode> = {};
-  const groupById = new Map(groups.map((g) => [g.id, g]));
-
-  // 1) 每个组建一个叶子节点
-  for (const g of groups) {
-    nodeMap[g.id] = {
-      id: g.id,
-      name: g.title || '(未命名话题)',
-      isFolder: false,
-      childrenIds: [],
-      nodeType: 'group',
-      group: g,
-    };
-  }
-
-  if (!treeData) {
-    nodeMap[CONV_TREE_ROOT] = {
-      id: CONV_TREE_ROOT,
-      name: 'root',
-      isFolder: true,
-      childrenIds: [],
-      nodeType: 'folder',
-    };
-    return nodeMap;
-  }
-
-  // 2) 文件夹节点（childrenIds 过滤到现存组 + 嵌套子文件夹）
-  for (const folder of Object.values(treeData.folders)) {
-    const raw = treeData.children[folder.id] || [];
-    const filtered = raw.filter((id) => treeData.folders[id] || groupById.has(id));
-    nodeMap[folder.id] = {
-      id: folder.id,
-      name: folder.name,
-      isFolder: true,
-      childrenIds: sortChildrenFoldersFirst(filtered, treeData.folders),
-      nodeType: 'folder',
-      folder,
-    };
-  }
-
-  // 3) 根节点：只保留 folderId
-  const rootChildren = (treeData.children[CONV_TREE_ROOT] || []).filter((id) => treeData.folders[id]);
-  nodeMap[CONV_TREE_ROOT] = {
-    id: CONV_TREE_ROOT,
-    name: 'root',
-    isFolder: true,
-    childrenIds: rootChildren,
-    nodeType: 'folder',
-  };
-
-  return nodeMap;
-}
-
-/**
  * 工具函数：用 patch 更新指定工作区的分片，同时如果该工作区是当前激活则同步顶层镜像
  */
 function patchSlice(
@@ -330,8 +213,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   conversations: [],
   selectedConversation: null,
   loadingConversations: false,
-  treeData: null,
-  nodeMap: {},
 
   personalConversations: [],
 
@@ -355,8 +236,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         conversations: [],
         selectedConversation: null,
         loadingConversations: false,
-        treeData: null,
-        nodeMap: {},
       });
       return;
     }
@@ -366,8 +245,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       conversations: slice.conversations,
       selectedConversation: slice.selectedConversation,
       loadingConversations: slice.loadingConversations,
-      treeData: slice.treeData,
-      nodeMap: slice.nodeMap,
     });
   },
 
@@ -378,19 +255,16 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
 
     try {
       set((state) => patchSlice(state, wsId, { loadingConversations: true }));
-      // 并行加载对话列表、树、组
-      const [convResult, treeResult, groupsResult] = await Promise.all([
+      // 并行加载对话列表、组
+      const [convResult, groupsResult] = await Promise.all([
         client.getByWorkspaceId({ workspaceId: wsId }),
-        client.getConversationTree({ workspaceId: wsId }),
         client.listGroups({ workspaceId: wsId }),
       ]);
 
       const conversations = convResult.conversations || [];
-      const treeData = treeResult.tree || null;
       const groups = (groupsResult.groups || []) as Group[];
-      const nodeMap = buildNodeMap(groups, treeData);
 
-      set((state) => patchSlice(state, wsId, { conversations, treeData, nodeMap }));
+      set((state) => patchSlice(state, wsId, { conversations }));
 
       // 同步 group-store（避免组件分别拉取造成时序错位）
       void import('./group-store').then(({ useGroupStore }) => {
@@ -742,76 +616,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     }
   },
 
-  createFolder: async (name, parentId) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.createConversationFolder({ workspaceId: workspace.id, name, parentId });
-    } catch (error) {
-      console.error('创建文件夹失败:', error);
-    }
-  },
-
-  renameFolder: async (folderId, newName) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.renameConversationFolder({ workspaceId: workspace.id, folderId, name: newName });
-    } catch (error) {
-      console.error('重命名文件夹失败:', error);
-    }
-  },
-
-  deleteFolder: async (folderId) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.deleteConversationFolder({ workspaceId: workspace.id, folderId });
-    } catch (error) {
-      console.error('删除文件夹失败:', error);
-    }
-  },
-
-  moveItem: async (itemId, targetParentId, targetIndex) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.moveConversationItem({ workspaceId: workspace.id, itemId, targetParentId, targetIndex });
-    } catch (error) {
-      console.error('移动失败:', error);
-    }
-  },
-
-  addGroupToFolder: async (groupId, folderId) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.addGroupToFolder({ workspaceId: workspace.id, groupId, folderId });
-    } catch (error) {
-      console.error('添加组到文件夹失败:', error);
-    }
-  },
-
-  removeGroupFromFolder: async (groupId, folderId) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.removeGroupFromFolder({ workspaceId: workspace.id, groupId, folderId });
-    } catch (error) {
-      console.error('从文件夹移除组失败:', error);
-    }
-  },
-
-  moveGroupBetweenFolders: async (groupId, fromFolderId, toFolderId) => {
-    const workspace = await getWorkspace();
-    if (!workspace) return;
-    try {
-      await client.moveGroupBetweenFolders({ workspaceId: workspace.id, groupId, fromFolderId, toFolderId });
-    } catch (error) {
-      console.error('在文件夹间移动组失败:', error);
-    }
-  },
-
   updateConversationTitle: async (conversationId, title, workspaceIdOverride) => {
     const workspace = await getWorkspace();
     if (!workspace) return;
@@ -826,7 +630,7 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
       // personal 侧分片不存在，列表刷新走广播回环
       if (wsId !== workspace.id) return;
 
-      // 更新分片状态（nodeMap 装组，不需要按 conversationId 改）
+      // 更新分片状态
       set((state) => {
         const slice = state.byWorkspace[wsId] ?? emptySlice();
         const newConvs = slice.conversations.map((c) =>
@@ -985,8 +789,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     conversations: [],
     selectedConversation: null,
     loadingConversations: false,
-    treeData: null,
-    nodeMap: {},
     personalConversations: [],
     sessionRestartTrigger: 0,
     pendingSendAfterRestart: null,

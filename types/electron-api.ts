@@ -176,23 +176,6 @@ export interface Conversation {
   updated_at: number;
 }
 
-/**
- * 对话文件夹
- */
-export interface ConversationFolder {
-  id: string;
-  name: string;
-  createdAt: string;
-}
-
-/**
- * 对话树数据
- */
-export interface ConversationTreeData {
-  folders: Record<string, ConversationFolder>;
-  children: Record<string, string[]>;
-}
-
 // 导出类型,供其他模块使用
 export type { AIMessage } from './ai';
 export type { AgentTask, AgentTaskUpdate, TaskStatus, TaskType, ChatSessionPayload } from './agents';

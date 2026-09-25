@@ -1,5 +1,4 @@
 import { listActiveGroups, archiveGroup } from './group-service.js';
-import { getTree } from './conversation-tree-service.js';
 import { mainLogger } from '../agents/logger.js';
 import { PERSONAL_WORKSPACE_ID } from '../types.js';
 
@@ -7,37 +6,13 @@ const STALE_THRESHOLD_MS = 30 * 86400_000;
 const PERSONAL_STALE_THRESHOLD_MS = 7 * 86400_000;
 const ARCHIVE_INTERVAL_MS = 24 * 3600_000;
 
-async function collectFolderGroupIds(wsId: string): Promise<Set<string>> {
-  const tree = await getTree(wsId);
-  const folderGroupIds = new Set<string>();
-  for (const folderId of Object.keys(tree.folders)) {
-    const children = tree.children[folderId];
-    if (!children) continue;
-    for (const id of children) folderGroupIds.add(id);
-  }
-  return folderGroupIds;
-}
-
 export async function autoArchiveStaleGroups(
   wsId: string,
   thresholdMs: number = STALE_THRESHOLD_MS,
 ): Promise<number> {
   const now = Date.now();
-
-  // personal 无手动文件夹树，跳过树读取，全部组按阈值归档
-  let folderGroupIds = new Set<string>();
-  if (wsId !== PERSONAL_WORKSPACE_ID) {
-    try {
-      folderGroupIds = await collectFolderGroupIds(wsId);
-    } catch (err) {
-      mainLogger.warn('[auto-archive] 读取手动文件夹树失败:', err);
-    }
-  }
-
   const activeGroups = await listActiveGroups(wsId);
-  const stale = activeGroups.filter(
-    (g) => now - g.updatedAt > thresholdMs && !folderGroupIds.has(g.id),
-  );
+  const stale = activeGroups.filter((g) => now - g.updatedAt > thresholdMs);
 
   if (stale.length === 0) return 0;
 

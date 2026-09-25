@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Archive, ArchiveRestore, ChevronDown, ChevronRight, FolderOutput, MoreHorizontal, Plus } from 'lucide-react';
+import { Archive, ArchiveRestore, ChevronDown, ChevronRight, MoreHorizontal, Plus } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
 } from '@/components/ui/context-menu';
@@ -15,14 +15,11 @@ import type { Group } from '@/types/group';
 import type { ConversationTreeNode } from '@/lib/conversation-sort';
 import { ConversationRow } from '@/components/conversation-list/ConversationRow';
 import { openOrFocusConversation } from '@/components/conversation-list/utils';
-import { AddGroupToFolderMenu } from '@/components/conversation-list/AddGroupToFolderMenu';
-import { MoveGroupToFolderMenu } from '@/components/conversation-list/MoveGroupToFolderMenu';
 import { deriveGroupTitle } from './utils';
 
 interface GroupCardProps {
   group: Group;
   tree: ConversationTreeNode[];
-  folderId?: string;
   mode?: 'active' | 'archived';
 }
 
@@ -30,12 +27,11 @@ function countTreeConversations(nodes: ConversationTreeNode[]): number {
   return nodes.reduce((total, node) => total + 1 + countTreeConversations(node.children), 0);
 }
 
-export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardProps) {
+export function GroupCard({ group, tree, mode = 'active' }: GroupCardProps) {
   const expandedGroupIds = useGroupStore((s) => s.expandedGroupIds);
   const currentGroupId = useGroupStore((s) => s.currentGroupId);
   const isExpanded = expandedGroupIds.has(group.id);
   const isSelected = currentGroupId === group.id;
-  const removeGroupFromFolder = useConversationStore((s) => s.removeGroupFromFolder);
   const runningIds = useConversationStore((s) => s.runningConversationIds);
   const subExpandedConvIds = useSectionCollapseStore((s) => s.subExpandedConvIds);
   const toggleSubExpand = useSectionCollapseStore((s) => s.toggleSubExpand);
@@ -224,18 +220,6 @@ export function GroupCard({ group, tree, folderId, mode = 'active' }: GroupCardP
             <>
               <ContextMenuItem onClick={startEditing}>重命名话题</ContextMenuItem>
               <ContextMenuItem onClick={() => void handleNewConversation()}>在话题内新建对话</ContextMenuItem>
-              <ContextMenuSeparator />
-              {folderId ? (
-                <>
-                  <MoveGroupToFolderMenu groupId={group.id} fromFolderId={folderId} />
-                  <ContextMenuItem onClick={() => void removeGroupFromFolder(group.id, folderId)}>
-                    <FolderOutput className="w-3.5 h-3.5 mr-2" />
-                    从文件夹移除话题
-                  </ContextMenuItem>
-                </>
-              ) : (
-                <AddGroupToFolderMenu groupId={group.id} />
-              )}
               <ContextMenuSeparator />
               <ContextMenuItem onClick={() => void handleArchive()}>
                 <Archive className="w-3.5 h-3.5 mr-2" />

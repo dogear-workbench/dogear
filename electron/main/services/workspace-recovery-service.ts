@@ -7,9 +7,7 @@ import path from 'path';
 import electron from 'electron';
 import { safeJsonRead } from './safe-json.js';
 import type { ConversationIndex } from './conversation-service.js';
-import type { ConversationTreeFile } from './conversation-tree-service.js';
 import * as conversationService from './conversation-service.js';
-import * as conversationTreeService from './conversation-tree-service.js';
 
 const { app } = electron;
 
@@ -108,8 +106,7 @@ export async function scanOrphanWorkspaces(): Promise<OrphanWorkspace[]> {
  *
  * 步骤：
  * 1. 读取孤儿 conversations.json，逐条 merge 到目标（保留 ID，更新 workspaceId）
- * 2. 读取孤儿 conversation-tree.json，调用 mergeTree 合并层级结构
- * 3. 可选：导入完成后删除孤儿文件夹
+ * 2. 可选：导入完成后删除孤儿文件夹
  *
  * 返回实际导入的对话数量。
  */
@@ -138,13 +135,6 @@ export async function importOrphanToWorkspace(
     await conversationService.importConversation(targetWorkspaceId, conv);
     importedCount++;
   }
-
-  // 合并 tree 结构
-  const orphanTree = await safeJsonRead<ConversationTreeFile>(
-    path.join(orphanDir, 'conversation-tree.json'),
-    { version: 1, folders: {}, children: {} },
-  );
-  await conversationTreeService.mergeTree(targetWorkspaceId, orphanTree);
 
   // 可选清理孤儿文件夹
   if (deleteAfterImport) {
