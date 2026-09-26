@@ -15,7 +15,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 登录观测器 + 清单存储 + 初始化迁移](./step1-login-observer.md) — 观测登录事件写入清单 JSON，跑一次性初始化
-- [ ] [Step 2: 数据聚合与 tipc 路由改造](./step2-aggregate-routes.md) — listBrowserData 融合登录清单，新增登出/移除路由，登出升级为彻底清除
+- [x] [Step 2: 数据聚合与 tipc 路由改造](./step2-aggregate-routes.md) — listBrowserData 融合登录清单，新增登出/移除路由，登出升级为彻底清除
 - [ ] [Step 3: 数据中心面板视图重组](./step3-panel-rework.md) — 「我的登录」区与「其他站点数据」区，准确性提示与移除入口，收尾同步 codebase-map
 
 ## 全局决策

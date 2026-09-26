@@ -90,6 +90,20 @@ export function recordLoginEvent(domain: string, evidence: LoginEvidence): void 
   }
 }
 
+export async function removeLoginAccountEntry(domain: string): Promise<boolean> {
+  try {
+    const data = await ensureLoaded();
+    const next = data.accounts.filter((a) => a.domain !== domain);
+    if (next.length === data.accounts.length) return false;
+    data.accounts = next;
+    await saveLoginAccounts(data);
+    return true;
+  } catch (err) {
+    console.error('[login-observer] 移除登录条目失败:', err);
+    return false;
+  }
+}
+
 function classifyLoginRequest(method: string, url: string): LoginEvidence | null {
   const u = new URL(url);
   if (u.searchParams.has('code') && CALLBACK_PATH_RE.test(u.pathname)) return 'oauth-callback';

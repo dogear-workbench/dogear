@@ -3,6 +3,7 @@ import type { Dirent } from 'node:fs';
 import path from 'node:path';
 import { app, session, type Cookie } from 'electron';
 import { GLOBAL_BROWSER_PARTITION } from './embedded/profile.js';
+import { loadLoginAccounts, removeLoginAccountEntry, type LoginEvidence } from './login-observer.js';
 
 export interface BrowserDomainData {
   domain: string;
@@ -10,11 +11,19 @@ export interface BrowserDomainData {
   hasLoginHint: boolean;
 }
 
+export interface LoginAccountView {
+  domain: string;
+  firstLoginAt: number;
+  lastLoginAt: number;
+  evidence: LoginEvidence;
+}
+
 export interface BrowserDataOverview {
   cacheSize: number;
   diskUsage: number;
   totalCookies: number;
   domains: BrowserDomainData[];
+  loginAccounts: LoginAccountView[];
 }
 
 const MULTI_PART_SUFFIXES = new Set([
@@ -195,7 +204,18 @@ export async function listBrowserData(): Promise<BrowserDataOverview> {
     byDomain.set(domain, entry);
   }
   const domains = [...byDomain.values()].sort((a, b) => b.cookieCount - a.cookieCount || a.domain.localeCompare(b.domain));
-  return { cacheSize, diskUsage, totalCookies: all.length, domains };
+  const loginAccounts = await listLoginAccounts();
+  return { cacheSize, diskUsage, totalCookies: all.length, domains, loginAccounts };
+}
+
+async function listLoginAccounts(): Promise<LoginAccountView[]> {
+  try {
+    const manifest = await loadLoginAccounts();
+    return [...manifest.accounts].sort((a, b) => b.lastLoginAt - a.lastLoginAt);
+  } catch (err) {
+    console.error('[browser-data] 登录清单读取失败:', err);
+    return [];
+  }
 }
 
 // 当前 Electron 版本 clearStorageData 只收单 origin，不支持 origins 数组
@@ -223,6 +243,16 @@ export async function clearDomainData(domain: string): Promise<{ removedCookies:
   await clearOriginsStorage(origins);
   await removeCookiesOneByOne(cookies);
   return { removedCookies: cookies.length, origins };
+}
+
+export async function logoutLoginAccount(domain: string): Promise<{ removedCookies: number; origins: string[] }> {
+  const result = await clearDomainData(domain);
+  await removeLoginAccountEntry(domain);
+  return result;
+}
+
+export async function removeLoginAccount(domain: string): Promise<boolean> {
+  return removeLoginAccountEntry(domain);
 }
 
 export async function clearBrowserCache(): Promise<{ freedBytes: number }> {
