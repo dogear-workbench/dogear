@@ -4,7 +4,9 @@
 
 ## 设置页（app/settings/）
 
-- `page.tsx` — 设置页（ui-store settingsOpen 驱动的全屏 overlay，非路由；dirty 三按钮 confirm；顶栏保存/取消/保存并重启会话；下划线式 Tabs：基础/能力/模型方案/工作区管理/子会话派遣/快捷键/关于）
+- `page.tsx` — 设置页骨架（ui-store settingsOpen 驱动的全屏 overlay，非路由；dirty 三按钮 confirm；顶栏保存/取消/保存并重启会话）；下划线式 Tabs 七页分别组件化：BehaviorTab（基础设置）/AbilityTab/ProfilesTab/WorkspaceManagementTab/SubAgentTab/ShortcutsTab/AboutTab
+- `BehaviorTab.tsx` — 基础设置 tab（含 WebAiSitesSection/ExtensionStatusLine/FailoverSection 等小节挂载）
+- `ProfilesTab.tsx` — 模型方案 tab（Profile 清单 + pi-model-row + FetchModelsDialog 入口）
 - `ShortcutsTab.tsx` — 快捷键清单 tab（从 hotkey-registry listHotkeys 自动渲染，只读；数据源见 infra.md hotkey-registry）
 - `ExtensionStatusLine.tsx` — 受控浏览器小节的扩展状态行（连接状态/正文预览/授权域名只读 chip；ExtensionStatus 类型源在 browser.md）
 - `WebAiSitesSection.tsx` — 网页 AI 站点列表编辑（增删改、URL 校验、至少保留一条；挂基础设置「浏览器」小节后，保存后网页 AI 切换器实时联动）
@@ -34,7 +36,6 @@
 - `services/settings-service.ts` — 设置 JSON 存储（`.dogear/settings.json`）+ normalizeSettings 幂等迁移（含 failover 链维护、SubAgent 能力域缺键补齐、browser-parse 内置模板按全集补缺失键——存量 Profile 自动并入新增的 web/article、旧描述按 LEGACY 已知值识别迁移、webAiSites 归一（normalizeWebAiSites，空列表回退 DEFAULT_WEB_AI_SITES））
 - `services/workspace-json-service.ts` — 工作区 JSON 存储（`.dogear/workspaces.json`），增删触发 workspace-watcher 起停；getAll 默认过滤保留字 personal（includePersonal 拼合成条目，归档 timer 用）
 - `services/workspace-config-service.ts` — 工作区能力配置（`workspaces/{id}/config.json`）；personal 读取时合并 PERSONAL_DEFAULT_CONFIG 最小能力集（仅联网搜索，stored 可逐包覆盖）
-- `services/workspace-service.ts` — 获取默认工作区（thin wrapper）
 - `types/settings.ts` — AppSettings/ModelProfile/ModelTier/SubAgentProfile/WebAiSite/permissionMode 等与 DEFAULT_SETTINGS（与 electron/main/services/settings-types.ts 主进程镜像双份，共享类型改需两处同步）
 
 ## 注意

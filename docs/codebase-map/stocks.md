@@ -31,7 +31,8 @@
 ## Agent 工具（agents/tools/）
 
 - `stock-tools.ts` — 行情六工具：SearchStock/GetStockQuote/GetKLineData/GetTimeline/GetWatchlist/ModifyWatchlist
-- `stock-analysis-tools.ts` — 分析八工具：CalcIndicators/ScreenStocks/ListIndustries/GetFinancials/CompareIndustry/DetectSignals/EvalFormula/SimpleBacktest
+- `stock-analysis-tools.ts` — 分析十工具，按三域分组：技术指标与信号（CalcIndicators/DetectSignals）、量化分析（ScreenStocks/GetFinancials/CompareIndustry/EvalFormula/SimpleBacktest）、板块与资金（ListIndustries/GetFundFlow/GetNorthboundHolding）；共享格式化助手在 `stock-format.ts`（safe/formatYuan/lastValue 等）
+- `stock-picking-tools.ts` — 长期候选池两工具：PreheatLongTermPool（5 年视角候选池预热）/RankByLongTerm（排序）；配套 `services/stock/` 的 long-term-*（kline-indicators/preheat-service/rank-service/types）与 financials-cache-service
 - `stock-announcement-tools.ts` — 公告两工具：ListAnnouncements/ReadAnnouncement（URL 必须原样从列表结果粘贴）
 
 ## 注意

@@ -5,7 +5,8 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 ## 运行时（electron/main/agents/）
 
 - `agent-manager.ts` — Worker 线程池管理器（任务队列调度，空闲 60s 回收）
-- `agent-worker.ts` — Worker 执行器：CUSTOM_AGENT/STATE_EXTRACT 走 pi `runOnce`；PARSE_ARTICLE 走 Claude SDK（依赖其 plugins skill 发现）
+- `agent-worker.ts` — Worker 执行器：接收任务后按类型分发给 `tasks/` 四模块处理，自身只保留 Worker 生命周期/MessagePort/取消协议；全部任务走 pi `runOnce`
+- `tasks/` — 任务 handler 四模块：task-context（handler 共享上下文类型）/parse-article-task（文章解析，article-parse-tools MCP 工具抓取）/state-extract-task（状态卡抽取）/custom-agent-task（自定义 Agent + SUMMARIZE/READING_ASSIST）
 - `pi/provider.ts` — 按 profileId 解析 `{ model, profile }` + 按 piWireApi 造 anthropic-messages/openai-responses/openai-completions 客户端
 - `pi/model-catalog.ts` — 十厂商上下文窗口查表；渲染层同源副本 `lib/pi-model-catalog.ts`（tsconfig 隔离无法共享）；窗口解析「手填 > 目录 > 200K」
 - `pi/run-once.ts` — pi 一次性任务执行器：不抛出（`{ok:false}` 返回），turn 上限自数 turn_start
@@ -13,7 +14,9 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## pi-session（主会话及子会话运行时门面）
 
-- `pi-session.ts` — PiSession 唯一门面：能力拼装查 resolveAbilities、skill 三源索引（builtin 模板 `resources/skill-templates/`/custom `.dogear/skills/`/user `~/.claude/skills/`）、生命周期/插话/权限/turn 粒度暂停/自动压缩（contextWindow×autoCompactPercent 阈值）
+- `pi-session.ts` — PiSession 唯一门面：生命周期/插话/权限/turn 粒度暂停/自动压缩（contextWindow×autoCompactPercent 阈值）；工具集拼装与 skill 三源索引拆在 tool-assembly.ts
+- `tool-assembly.ts` — 工具集拼装：按能力包/工具包/Profile 过滤组装全部工具组（含 skill 工具与三源扫描目录过滤：builtin/custom/user）
+- `pi-session-config.ts` — PiSessionConfig 会话配置类型（conversationId/modelSelection/工作区路径/enabledToolPacks/groupId/role/executor/parentConversationId）
 - `pi-session-manager.ts` — 单例：引用计数生命周期（retain/release 归零销毁）+ 非 UI 保活计数（acquireHold）、存活集合广播（六触发点 diff）、销毁时通知调度器 handleSessionClose
 - `pi-session-repository.ts` — 按 workspaceId 缓存 JsonlSessionRepo；session 根目录 `<configDir>/workspaces/<id>/sessions/`；relocateSession 跨工作区搬运（header 改写+双倒缓存失效）
 - `pi-harness-adapter.ts` — AgentHarness 构造与事件分发，与 Harness 裸类型之间唯一隔离层
@@ -36,7 +39,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `delegation-idle.ts` / `delegation-terminal.ts` / `delegation-resume.ts` / `delegation-lifecycle.ts` — 调度站纯逻辑层：idle 计时 / 错误分类与通知文案 / 重调决策与续跑提示词 / 完成事件分类
 - `model-failover.ts` — 全局 failover 链：findNextFailover 纯链查找；maybeFailoverMainSession 主会话编排（quota→换血重建→failoverNotice 广播→续跑），子会话只沿链降级不进编排
 - `contract-channel-service.ts`（services/）— 契约通道校验：只认直接派出关系，SendMessage/StopSession 工具层前置
-- `conversation-runtime-service.ts`（services/）— 会话运行时管理：多附件绑定（desktop/wechat-bot/feishu-bot）、release 带 forced 语义（failover/强杀不触发调度器 on_session_close）
+- `conversation-runtime-service.ts`（services/）— 会话运行时管理：多附件绑定（desktop/feishu-bot）、release 带 forced 语义（failover/强杀不触发调度器 on_session_close）
 - `tools/delegation-tools.ts` — 派遣工具：CreateSession(Batch)/SendMessage（delivery 标记、停机自动调起）/ListLinkedSessions/ResumeSession/StopSession；子会话无 Create*/Resume/Stop（不能派孙子）
 
 ## 能力包与 skill
@@ -60,15 +63,15 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## 其他
 
-- `services/memory/session-paths.ts` — 旧 SDK 会话路径 util（服务 PARSE_ARTICLE 与子代理历史查询）
+- `group-context-builder.ts` — 会话组上下文提示词构建（pi-session 与任务执行会话共用）
 - `agent-query-config.ts` — 共享 SDK query() 配置构建器（无 electron 依赖，Worker 内安全）
 - `task-types.ts` — 任务类型与消息定义（SUMMARIZE/READING_ASSIST/PARSE_ARTICLE/CUSTOM_AGENT/STATE_EXTRACT）
-- `types/agents.ts` / `types/delegation.ts` — Agent 任务类型 / 协作契约数据模型
+- `types/delegation.ts` — 协作契约数据模型
 
 ## 注意
 
-- 主会话（及子会话）已完整走 pi-session，agent-worker 只承载后台任务
-- 两套会话存储位置：`memory/session-paths.ts`（旧 SDK 子代理历史）vs `pi-session-repository.ts`（Harness 会话），不可混用
+- 主会话（及子会话）已完整走 pi-session，agent-worker 只承载后台任务（旧 SDK 会话实现已随迁移整体移除）
+- 会话存储唯一入口 pi-session-repository.ts（`workspaces/<id>/sessions/`）；项目根 `conversations/` 旧目录只读归档不再回放
 - session-history-reader 是读 branch 唯一入口，其他模块不得直接解析 JSONL 或触碰 Harness 内部对象
 - 工具 handler 一律 `isError: true` 不抛异常（pi 侧由 tool-adapter 翻转）；自定义工具名带 `dogear__` 前缀
 - Model.id 必须是真实模型 id，不是 profile/tier 组合

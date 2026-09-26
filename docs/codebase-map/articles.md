@@ -23,11 +23,10 @@
 
 ## 数据层（services/）
 
-- `article-service.ts` — 网络文章抓取：平台脚本优先 + Readability 兜底 + AI 失败才介入，微信公众号特殊处理
+- `article-service.ts` — 网络文章服务 facade（保持 tipc 层 import 路径不变）；实现在 `services/article/` 六文件：fetch（平台脚本优先）/parse（Readability+平台预处理，微信公众号短内容从 JS 变量提取）/tree（文章分区树）/crud（分区与条目 CRUD）/order-index（排序索引）/types
 - `article-parser-skills-service.ts` — 文章解析 Skills 与 MCP 工具定义（运行时目录 `.dogear/article-parser/`，首跑迁移旧目录）
 - `notes/notes-store.ts` — 笔记 IO 原语（存 config `workspaces/{id}/notes`，已从项目工作区迁入）：一卡一 md、frontmatter 解析（YAML 兼容子集零依赖）、原子写、index.json 维护、.trash 移动
 - `notes/notes-service.ts` — 笔记 CRUD 唯一写入口（create/get/list/update/软删/恢复/purge/搜索），写后广播 notesChanged
-- `migrate-notes-todos.ts` — 待办实体迁移（启动 fire-and-forget 幂等：todos.json → 笔记正文勾选项）
 
 ## Agent 工具与类型
 
@@ -44,4 +43,4 @@
 
 ## 数据流
 
-- 文章解析后台任务：Renderer → tipc.submitTask（PARSE_ARTICLE）→ agent-worker → Claude SDK query()（MCP 工具抓取）→ agentTaskUpdate 事件回传；文章 tab 选中由 article-store.selectedArticle 驱动挂载
+- 文章解析后台任务：Renderer → tipc.submitTask（PARSE_ARTICLE）→ agent-worker → tasks/parse-article-task（pi runOnce + article-parse-tools 工具抓取）→ agentTaskUpdate 事件回传；文章 tab 选中由 article-store.selectedArticle 驱动挂载

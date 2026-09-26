@@ -12,7 +12,6 @@
 - `actions.ts` — clickTab/fillTab + guard_password/guard_submit 语义拦截
 - `navigate.ts` / `wait-for.ts` / `press.ts` / `scroll.ts` / `read-state.ts` — 导航/条件轮询等待/按键/滚动/`__INITIAL_STATE__` 读取
 - `profile.ts` — 全局唯一分区常量 `GLOBAL_BROWSER_PARTITION`（persist:dogear-browser，agent 与网页 AI 共用登录态）
-- `migrate-legacy-partitions.ts` — 启动早期旧工作区分区 cookie 一次性合并进全局分区（marker 两段式删目录防 Windows 句柄占用，失败不阻塞启动）
 - `webai.ts` — 网页 AI 单例 tab：source 'user-connected' + holderId 'webai' 免 TTL 回收，bounds/overlay 上报驱动 attach/detach，close 只销毁 tab 保留分区登录态
 - `ua.ts` / `proxy.ts` — 诚实 UA / 按域 PAC 代理（settings.browserProxyServer）
 - `fetch-page.ts` — 抓取原语（loadFetchTab/evalInTab/promoteFetchTab 失败页切给 agent）+ 验证页呈现兜底
