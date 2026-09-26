@@ -68,38 +68,6 @@ export interface ConversationIndex {
   };
 }
 
-/** 前端兼容格式（snake_case + camelCase 双格式） */
-export interface ConversationCompat {
-  id: string;
-  title: string;
-  model: string;
-  workspace_id: string;
-  session_id?: string;
-  parent_conversation_id?: string;
-  fork_message_sdk_uuid?: string;
-  fork_pending?: boolean;
-  created_at: number;
-  updated_at: number;
-  workspaceId: string;
-  sessionId: string | null;
-  parentConversationId: string | null;
-  forkMessageSdkUuid: string | null;
-  modelSelection: ModelSelection | null;
-  createdAt: string;
-  updatedAt: string;
-  usageSummary?: {
-    turnCount: number;
-    totalInputTokens: number;
-    totalOutputTokens: number;
-    totalCacheReadTokens: number;
-    lastContextSize?: number;
-    lastContextWindow?: number;
-  };
-  groupId: string;
-  role: 'main' | 'sub';
-  contractMetadata?: ContractMetadata;
-}
-
 /** 每工作区的 conversations.json 文件结构 */
 export interface WorkspaceConversationsFile {
   version: number;
@@ -585,38 +553,6 @@ export async function importConversation(
 // ============================================================
 // 兼容转换
 // ============================================================
-
-/**
- * 将 ConversationIndex 转换为前端兼容格式（snake_case）
- * 前端 Conversation 接口使用 snake_case 字段名和数值时间戳，
- * 此函数同时提供 snake_case 和 camelCase 版本以便渐进迁移。
- */
-export function toCompat(conv: ConversationIndex): ConversationCompat {
-  return {
-    id: conv.id,
-    title: conv.title,
-    model: '',  // 不再存储模型名称
-    workspace_id: conv.workspaceId,
-    session_id: conv.sessionId || undefined,
-    parent_conversation_id: conv.parentConversationId || undefined,
-    fork_message_sdk_uuid: conv.forkMessageSdkUuid || undefined,
-    fork_pending: conv.forkPending || false,
-    created_at: new Date(conv.createdAt).getTime(),
-    updated_at: new Date(conv.updatedAt).getTime(),
-    // 同时提供 camelCase 版本，供新代码使用
-    workspaceId: conv.workspaceId,
-    sessionId: conv.sessionId ?? null,
-    parentConversationId: conv.parentConversationId,
-    forkMessageSdkUuid: conv.forkMessageSdkUuid,
-    modelSelection: conv.modelSelection ?? null,
-    createdAt: conv.createdAt,
-    updatedAt: conv.updatedAt,
-    usageSummary: conv.usageSummary,
-    groupId: conv.groupId ?? '',
-    role: conv.role ?? 'main',
-    contractMetadata: conv.contractMetadata,
-  };
-}
 
 // ============================================================
 // 用量汇总

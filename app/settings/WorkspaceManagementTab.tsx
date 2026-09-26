@@ -251,7 +251,7 @@ export function WorkspaceManagementTab() {
                           当前
                         </span>
                       )}
-                      {ws.is_default === 1 && (
+                      {ws.isDefault && (
                         <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded shrink-0">
                           默认
                         </span>

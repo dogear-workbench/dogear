@@ -1,7 +1,7 @@
 ---
 step: 5
 title: snake_case 双格式迁移
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,3 +25,12 @@ status: pending
 ## 收尾验证
 - [ ] lint + 双侧 tsc + bun test
 - [ ] 启动冒烟：会话列表加载、新建会话、归档视图、个人会话区、用量面板、任务面板全部正常显示（这些是转换层消费方）
+
+## 实施回填（2026-09-26 完成）
+
+- 改动 23 代码文件净 -118 行：conversation-service 删 ConversationCompat+toCompat；tipc/conversations ×3、tipc/group ×1 去转换；workspace-json-service 三接口合一为 camelCase Workspace（删 toWorkspace/toWorkspaceData）；tipc/workspace 同步；types/electron-api Conversation 改 ConversationIndex 镜像（删 model 与 fork_pending 零消费字段）；前端 16 文件消费点全切
+- 前置实锤：磁盘 workspaces.json 与 conversations.json 均已 camelCase，转换层删除安全
+- 行为等价性：时间字段 number→ISO string，所有比较点显式 new Date(...).getTime()；sessionId undefined→null、groupId/role 改 optional，消费点均 falsy/?? 判断不变；is_default 0|1→isDefault boolean 真值判断不变
+- grep 复验：六字段（+additional_paths/is_default）在 app/components/stores/lib/hooks/types 下仅剩 agent-chat/utils.ts:139-140 的 sender 标签协议字面量（数据格式保留）；主进程残留均为合法用途（sender 生成端/cookie 名单/函数名误中）
+- 验证：lint 0 errors、双侧 tsc 通过（tipc 类型直推兑底）、bun test 319 pass/0 fail/1 skip（=基线）、dev 启动冒烟无本次相关报错
+- 遗留：GUI 六项交互冒烟待用户日常留意首屏；相邻未动项：ConversationList.tsx 类型再导出（二.8 纯整洁）、主进程 forkPending/archivedAt @deprecated 字段

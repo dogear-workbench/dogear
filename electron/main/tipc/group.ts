@@ -107,9 +107,7 @@ export const groupRouter = {
         ]);
         const topics = groups.map((group) => ({
           group,
-          conversations: conversations
-            .filter((conversation) => conversation.groupId === group.id)
-            .map(conversationService.toCompat),
+          conversations: conversations.filter((conversation) => conversation.groupId === group.id),
         }));
         return { topics, error: undefined };
       } catch (error) {

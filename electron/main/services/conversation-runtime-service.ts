@@ -102,7 +102,7 @@ class ConversationRuntimeService {
         conversationId,
         modelSelection: conversation.modelSelection ?? null,
         workspacePath: workspace?.path ?? '',
-        additionalPaths: (workspace?.additional_paths ?? []).filter((p) => p.enabled).map((p) => p.path),
+        additionalPaths: (workspace?.additionalPaths ?? []).filter((p) => p.enabled).map((p) => p.path),
         workspaceId,
         harnessSessionId,
         enabledToolPacks: wsConfig.enabledToolPacks,

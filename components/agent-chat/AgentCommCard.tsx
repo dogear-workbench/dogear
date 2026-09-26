@@ -29,11 +29,11 @@ export function CommCollapseBar({ onCollapse }: { onCollapse: () => void }) {
 function usePeerConversation(peerSessionId: string): Conversation | undefined {
   const workspaceId = useWorkspaceId();
   const [conv, setConv] = useState<Conversation | undefined>(() => {
-    return useConversationStore.getState().conversations.find((c) => c.session_id === peerSessionId);
+    return useConversationStore.getState().conversations.find((c) => c.sessionId === peerSessionId);
   });
   useEffect(() => {
     let cancelled = false;
-    const local = useConversationStore.getState().conversations.find((c) => c.session_id === peerSessionId);
+    const local = useConversationStore.getState().conversations.find((c) => c.sessionId === peerSessionId);
     if (local) {
       setConv(local);
       return;
@@ -42,7 +42,7 @@ function usePeerConversation(peerSessionId: string): Conversation | undefined {
     void client.getByWorkspaceId({ workspaceId })
       .then((result) => {
         if (cancelled) return;
-        const found = (result.conversations ?? []).find((c) => c.session_id === peerSessionId);
+        const found = (result.conversations ?? []).find((c) => c.sessionId === peerSessionId);
         if (found) setConv(found);
       })
       .catch(() => {});

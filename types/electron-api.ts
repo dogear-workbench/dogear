@@ -34,9 +34,9 @@ export interface Workspace {
   id: string;
   name: string;
   path: string;
-  additional_paths: AdditionalPathData[];
-  is_default: number;
-  created_at: number;
+  additionalPaths: AdditionalPathData[];
+  isDefault: boolean;
+  createdAt: string;
 }
 
 /**
@@ -149,21 +149,19 @@ export interface ContractMetadata {
 }
 
 /**
- * 对话接口
+ * 对话接口（与主进程 ConversationIndex 镜像）
  */
 export interface Conversation {
   id: string;
-  workspace_id: string;              // 关联的工作区ID
+  workspaceId: string;                   // 关联的工作区ID
   title: string;
-  model: string;
-  session_id?: string;               // Harness 持久化 sessionId（用于恢复/删除/分叉）
-  parent_conversation_id?: string;   // 父对话ID（分叉对话，v4）
-  fork_message_sdk_uuid?: string;    // 分叉点标识（Harness 迁移后是 SessionTreeEntry id）
-  modelSelection: ModelSelection | null;  // 对话级模型；null=未选(发送被门禁拦下)
-  fork_pending?: boolean;            // @deprecated SDK 时代的分叉待定态，Harness fork 已同步创建不再产生
-  groupId: string;                   // 所属会话组 ID
-  role: 'main' | 'sub';             // P1 只产生 'main'
-  contractMetadata?: ContractMetadata; // Agent 派出契约元数据；手动会话为 undefined
+  sessionId: string | null;              // Harness 持久化 sessionId（用于恢复/删除/分叉）
+  parentConversationId: string | null;   // 父对话ID（分叉对话，v4）
+  forkMessageSdkUuid: string | null;     // 分叉点标识（SessionTreeEntry id）
+  modelSelection: ModelSelection | null; // 对话级模型；null=未选(发送被门禁拦下)
+  groupId?: string;                      // 所属会话组 ID；老数据迁移前可能缺失
+  role?: 'main' | 'sub';                 // P1 只产生 'main'
+  contractMetadata?: ContractMetadata;   // Agent 派出契约元数据；手动会话为 undefined
   usageSummary?: {
     turnCount: number;
     totalInputTokens: number;
@@ -172,7 +170,7 @@ export interface Conversation {
     lastContextSize?: number;
     lastContextWindow?: number;
   };
-  created_at: number;
-  updated_at: number;
+  createdAt: string;
+  updatedAt: string;
 }
 

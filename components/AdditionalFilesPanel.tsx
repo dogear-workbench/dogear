@@ -28,7 +28,7 @@ export function AdditionalFilesPanel({ workspaceId: _workspaceId }: AdditionalFi
   const [picking, setPicking] = useState(false);
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
 
-  const additionalPaths = workspace?.additional_paths ?? [];
+  const additionalPaths = workspace?.additionalPaths ?? [];
 
   const handleAddFolder = async () => {
     if (picking) return;

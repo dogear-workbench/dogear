@@ -174,7 +174,7 @@ function revealTopicInList(groupId: string | null | undefined) {
 function expandSubParentIfNeeded(conv: Conversation, conversations: Conversation[]) {
   const meta = conv.contractMetadata;
   if (meta?.createdBy !== 'agent' || !meta.parentSessionId) return;
-  const parent = conversations.find((c) => c.session_id === meta.parentSessionId);
+  const parent = conversations.find((c) => c.sessionId === meta.parentSessionId);
   if (!parent) return;
   void import('./section-collapse-store').then(({ useSectionCollapseStore }) => {
     useSectionCollapseStore.getState().expandSubConv(parent.id);
@@ -581,14 +581,14 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      if (!parentConv.session_id) {
+      if (!parentConv.sessionId) {
         toast.warning('该对话不支持分叉', { description: '尚未创建会话' });
         return;
       }
 
       // 创建分叉对话记录：后端同步完成 Harness fork，返回时新对话已可直接恢复
       const forkResult = await client.createFork({
-        workspaceId: parentConv.workspace_id,
+        workspaceId: parentConv.workspaceId,
         title: `分叉自: ${parentConv.title}`,
         parentConversationId: params.parentConversationId,
         forkMessageSdkUuid: params.forkMessageSdkUuid,

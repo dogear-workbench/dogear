@@ -31,7 +31,7 @@ function ensureWorkspacePaths() {
     for (const w of result.workspaces ?? []) {
       workspacePathsCache.map.set(w.id, [
         w.path,
-        ...(w.additional_paths ?? []).filter((p) => p.enabled && p.path).map((p) => p.path),
+        ...(w.additionalPaths ?? []).filter((p) => p.enabled && p.path).map((p) => p.path),
       ]);
     }
     workspacePathsCache.loaded = true;
@@ -49,7 +49,7 @@ export function useWorkspaceRoots(workspaceId: string | null): string[] | null {
     if (!focused) return null;
     return [
       focused.path,
-      ...(focused.additional_paths ?? []).filter((p) => p.enabled && p.path).map((p) => p.path),
+      ...(focused.additionalPaths ?? []).filter((p) => p.enabled && p.path).map((p) => p.path),
     ];
   }, [focused]);
   const cached = useSyncExternalStore(

@@ -192,7 +192,7 @@ interface TaskCardItemProps {
   onMove: (to: 'backlog' | 'plan') => Promise<void>;
 }
 
-// execSessionId 实为 conversationId（会话稳定主键），按 c.id 反查而非 session_id
+// execSessionId 实为 conversationId（会话稳定主键），按 c.id 反查而非 sessionId
 function ExecSessionLink({ execSessionId }: { execSessionId: string }) {
   const workspaceId = useWorkspaceStore((s) => s.workspace?.id);
   const [resolving, setResolving] = useState(false);

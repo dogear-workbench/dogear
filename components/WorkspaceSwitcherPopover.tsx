@@ -162,7 +162,7 @@ export function WorkspaceSwitcherPopover() {
                             {ws.path}
                           </div>
                         </div>
-                        {ws.is_default === 1 && (
+                        {ws.isDefault && (
                           <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded shrink-0">
                             默认
                           </span>

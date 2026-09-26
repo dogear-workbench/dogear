@@ -3,9 +3,10 @@ import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
 import { client } from '@/lib/client';
 
-export function getRelativeTime(timestamp: number): string {
+export function getRelativeTime(timestamp: string | number): string {
+  const time = new Date(timestamp).getTime();
   const now = Date.now();
-  const diff = now - timestamp;
+  const diff = now - time;
   const minutes = Math.floor(diff / 60000);
   const hours = Math.floor(diff / 3600000);
   const days = Math.floor(diff / 86400000);
@@ -15,7 +16,7 @@ export function getRelativeTime(timestamp: number): string {
   if (hours < 24) return `${hours}小时前`;
   if (days < 7) return `${days}天前`;
 
-  const date = new Date(timestamp);
+  const date = new Date(time);
   return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
 }
 
@@ -23,7 +24,7 @@ export function getConversationTitle(conversation: Conversation): string {
   if (conversation.title && conversation.title !== '新对话') {
     return conversation.title;
   }
-  const date = new Date(conversation.created_at);
+  const date = new Date(conversation.createdAt);
   const now = new Date();
   const isToday = date.toDateString() === now.toDateString();
   if (isToday) {
@@ -69,7 +70,7 @@ export function openOrFocusConversation(conv: Conversation, nodeId?: string): vo
   }
   const { selectConversation } = useConversationStore.getState();
   selectConversation(conv);
-  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspaceId);
 }
 
 /**
@@ -81,6 +82,6 @@ export function openPersonalConversation(conv: Conversation): void {
     client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
     return;
   }
-  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspaceId);
 }
 

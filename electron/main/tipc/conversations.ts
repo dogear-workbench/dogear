@@ -18,7 +18,7 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const conversation = await conversationService.getById(input.workspaceId, input.conversationId);
-        return { conversation: conversation ? conversationService.toCompat(conversation) : null, error: undefined };
+        return { conversation: conversation ?? null, error: undefined };
       } catch (error) {
         console.error('获取对话失败:', error);
         return { conversation: null, error: error instanceof Error ? error.message : String(error) };
@@ -79,7 +79,7 @@ export const conversationsRouter = {
     .action(async ({ input }) => {
       try {
         const conversations = await conversationService.getByWorkspaceId(input.workspaceId);
-        return { conversations: conversations.map(conversationService.toCompat), error: undefined };
+        return { conversations, error: undefined };
       } catch (error) {
         console.error('获取工作区对话列表失败:', error);
         return { conversations: [], error: error instanceof Error ? error.message : String(error) };
@@ -194,7 +194,7 @@ export const conversationsRouter = {
         const result = await conversationService.getByIdGlobal(input.conversationId);
         if (!result) return { conversation: null, workspaceId: null };
         return {
-          conversation: conversationService.toCompat(result.conv),
+          conversation: result.conv,
           workspaceId: result.workspaceId,
         };
       } catch (error) {

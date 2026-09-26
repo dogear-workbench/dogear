@@ -6,16 +6,16 @@ export interface ConversationTreeNode {
 }
 
 /**
- * 组内会话树：手动会话按 updated_at 倒序作为根；agent 派出会话挂在派出者下（created_at 升序）。
+ * 组内会话树：手动会话按 updatedAt 倒序作为根；agent 派出会话挂在派出者下（createdAt 升序）。
  * 派出者不在当前列表（已删除/不在同组）时，该 agent 会话回落到自然时间序位置作为根。
  * 输入不可变，返回新结构。
  */
 export function buildConversationTree(conversations: Conversation[]): ConversationTreeNode[] {
-  const base = [...conversations].sort((a, b) => b.updated_at - a.updated_at);
+  const base = [...conversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 
   const bySessionId = new Map<string, Conversation>();
   for (const c of base) {
-    if (c.session_id) bySessionId.set(c.session_id, c);
+    if (c.sessionId) bySessionId.set(c.sessionId, c);
   }
 
   const parentSessionIdOf = (c: Conversation): string | undefined => {
@@ -37,7 +37,7 @@ export function buildConversationTree(conversations: Conversation[]): Conversati
     childrenBySessionId.set(parentSessionId, list);
   }
   for (const list of childrenBySessionId.values()) {
-    list.sort((a, b) => a.created_at - b.created_at);
+    list.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   }
 
   const nodeByConvId = new Map<string, ConversationTreeNode>();
@@ -46,7 +46,7 @@ export function buildConversationTree(conversations: Conversation[]): Conversati
     if (memo) return memo;
     const node: ConversationTreeNode = { conv: c, children: [] };
     nodeByConvId.set(c.id, node);
-    node.children = ((c.session_id ? childrenBySessionId.get(c.session_id) : undefined) ?? []).map(build);
+    node.children = ((c.sessionId ? childrenBySessionId.get(c.sessionId) : undefined) ?? []).map(build);
     return node;
   };
 

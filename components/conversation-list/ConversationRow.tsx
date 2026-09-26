@@ -63,7 +63,7 @@ export function ConversationRow({
   const [editTitle, setEditTitle] = useState('');
   const editInputRef = useRef<HTMLInputElement>(null);
 
-  const isFork = !!conv.parent_conversation_id;
+  const isFork = !!conv.parentConversationId;
   const isAgentConversation = conv.contractMetadata?.createdBy === 'agent';
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
@@ -170,7 +170,7 @@ export function ConversationRow({
           </div>
         )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
-          <span className="shrink-0">{getRelativeTime(conv.updated_at)}</span>
+          <span className="shrink-0">{getRelativeTime(conv.updatedAt)}</span>
           {status && (
             <span className="flex items-center gap-1 shrink-0">
               <span>·</span>
@@ -235,8 +235,8 @@ export function ConversationRow({
           useReferenceStore.getState().addReferencedConversation({
             conversationId: conv.id,
             title: getConversationTitle(conv),
-            sessionId: conv.session_id || null,
-            workspaceId: conv.workspace_id,
+            sessionId: conv.sessionId || null,
+            workspaceId: conv.workspaceId,
           }, anchorId);
         }}>
           引用到当前对话

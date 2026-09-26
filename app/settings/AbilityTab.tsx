@@ -251,7 +251,7 @@ export function AbilityTab() {
             {workspaces.map((w) => (
               <SelectItem key={w.id} value={w.id}>
                 {w.name}
-                {w.is_default ? '（默认）' : ''}
+                {w.isDefault ? '（默认）' : ''}
               </SelectItem>
             ))}
           </SelectContent>

@@ -21,10 +21,10 @@ export function PersonalSection() {
 
   const { today, older } = useMemo(() => {
     const now = new Date().toDateString();
-    const sorted = [...personalConversations].sort((a, b) => b.updated_at - a.updated_at);
+    const sorted = [...personalConversations].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return {
-      today: sorted.filter((c) => new Date(c.updated_at).toDateString() === now),
-      older: sorted.filter((c) => new Date(c.updated_at).toDateString() !== now),
+      today: sorted.filter((c) => new Date(c.updatedAt).toDateString() === now),
+      older: sorted.filter((c) => new Date(c.updatedAt).toDateString() !== now),
     };
   }, [personalConversations]);
 

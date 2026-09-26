@@ -45,9 +45,9 @@ const PERSONAL_WORKSPACE: Workspace = {
   id: 'personal',
   name: '临时会话',
   path: '',
-  additional_paths: [],
-  is_default: 0,
-  created_at: 0,
+  additionalPaths: [],
+  isDefault: false,
+  createdAt: new Date(0).toISOString(),
 };
 
 interface PeriodStats {
@@ -178,7 +178,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
   const rows = useMemo(() => {
     if (isAllPeriod) {
       return [...conversations]
-        .sort((a, b) => b.updated_at - a.updated_at)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
         .map((conv) => {
           const summary = conv.usageSummary;
           const totalTokens = summary
@@ -194,7 +194,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
             tokens: totalTokens,
             ...tokens,
             cost: totalTokens != null ? rowCost(conv, tokens, settings) : null,
-            lastActive: conv.updated_at,
+            lastActive: new Date(conv.updatedAt).getTime(),
           };
         });
     }
@@ -302,7 +302,7 @@ export function UsagePanel({ workspaces }: UsagePanelProps) {
             const expanded = expandedId === conv.id;
             const selection = conv.modelSelection ?? settings.ai.defaultModelSelection;
             const modelLabel = selection ? resolveModelLabel(settings, selection) : null;
-            const wsName = wsNameById.get(conv.workspace_id);
+            const wsName = wsNameById.get(conv.workspaceId);
 
             return (
               <div

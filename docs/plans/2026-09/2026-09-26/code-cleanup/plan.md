@@ -12,7 +12,7 @@
 - [x] [Step 2: 死代码删除](./step2-dead-code.md) — 未用 shadcn 组件、electron 死文件、遗留 types、临时产物目录
 - [x] [Step 3: 兼容/迁移代码删除与数据清理](./step3-compat-code.md) — 19 项 marker 守卫的一次性迁移 + state-card 旧格式解析 + settings/plans 数据死键
 - [x] [Step 4: 复用收口](./step4-dedup.md) — 广播函数回迁收口模块、逐字重复合并、detectPlatform 收口
-- [ ] [Step 5: snake_case 双格式迁移](./step5-snake-case.md) — 前端 12 文件 32 处改驼峰，删 toCompat 层
+- [x] [Step 5: snake_case 双格式迁移](./step5-snake-case.md) — 前端 12 文件 32 处改驼峰，删 toCompat 层
 - [ ] [Step 6: 低风险拆分](./step6-split-low-risk.md) — article-service / WorkspaceExplorer / settings page / main-app / useTranscriptState
 - [ ] [Step 7: 谨慎拆分](./step7-split-careful.md) — agent-worker / pi-session tool-assembly / stock-analysis-tools
 - [ ] [Step 8: 收尾验证与文档同步](./step8-finalize.md) — 全量 lint/tsc/test、代码地图同步、总结

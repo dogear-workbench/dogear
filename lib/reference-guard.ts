@@ -158,7 +158,7 @@ export async function jumpToSourceConversation(source: { conversationId: string;
   }
 
   const { getConversationTitle } = await import('@/components/conversation-list/utils');
-  // 先 openTab 让 tab 带上 conv.workspace_id，跨工作区焦点联动依赖 tab.workspaceId 判定
-  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspace_id);
+  // 先 openTab 让 tab 带上 conv.workspaceId，跨工作区焦点联动依赖 tab.workspaceId 判定
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspaceId);
   await useConversationStore.getState().selectConversation(conv);
 }

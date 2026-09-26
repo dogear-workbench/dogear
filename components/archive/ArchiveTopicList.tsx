@@ -52,7 +52,7 @@ function ArchiveConversationRow({
           {getConversationTitle(node.conv)}
         </div>
         <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
-          <span className="shrink-0">{getRelativeTime(node.conv.updated_at)}</span>
+          <span className="shrink-0">{getRelativeTime(node.conv.updatedAt)}</span>
           {childTotal > 0 && (
             <span
               className="shrink-0 text-[10px] leading-none px-1 py-0.5 rounded bg-muted text-muted-foreground"

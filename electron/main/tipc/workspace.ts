@@ -18,7 +18,7 @@ import path from 'path';
 const t = tipc.create();
 
 async function hotUpdateAdditionalPaths(workspaceId: string, workspace: Workspace): Promise<void> {
-  const enabledPaths = (workspace.additional_paths ?? [])
+  const enabledPaths = (workspace.additionalPaths ?? [])
     .filter((p) => p.enabled)
     .map((p) => p.path);
   getPiSessionManager().updateWorkspacePaths(workspaceId, enabledPaths);
@@ -61,7 +61,7 @@ export const workspaceRouter = {
 
         if (existing) {
           await workspaceJsonService.setDefault(existing.id);
-          return { workspace: { ...existing, is_default: 1 }, existed: true };
+          return { workspace: { ...existing, isDefault: true }, existed: true };
         }
 
         // 创建新工作区
@@ -69,9 +69,9 @@ export const workspaceRouter = {
           id: uuidv4(),
           name: selectedPath.split(/[/\\]/).filter(Boolean).pop() || '工作区',
           path: selectedPath,
-          additional_paths: [],
-          is_default: 1,
-          created_at: Date.now(),
+          additionalPaths: [],
+          isDefault: true,
+          createdAt: new Date().toISOString(),
         };
         await workspaceJsonService.add(workspace);
 
@@ -165,10 +165,10 @@ export const workspaceRouter = {
       try {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { success: false, error: '工作区不存在' };
-        if (workspace.additional_paths.some((p) => p.path === input.path)) {
+        if (workspace.additionalPaths.some((p) => p.path === input.path)) {
           return { success: false, error: '附加路径已存在' };
         }
-        workspace.additional_paths.push({ path: input.path, enabled: true });
+        workspace.additionalPaths.push({ path: input.path, enabled: true });
         await workspaceJsonService.update(input.workspaceId, workspace);
         await hotUpdateAdditionalPaths(input.workspaceId, workspace);
         return { success: true, workspace };
@@ -184,7 +184,7 @@ export const workspaceRouter = {
       try {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { success: false, error: '工作区不存在' };
-        workspace.additional_paths = workspace.additional_paths.filter((p) => p.path !== input.path);
+        workspace.additionalPaths = workspace.additionalPaths.filter((p) => p.path !== input.path);
         await workspaceJsonService.update(input.workspaceId, workspace);
         await hotUpdateAdditionalPaths(input.workspaceId, workspace);
         return { success: true, workspace };
@@ -200,7 +200,7 @@ export const workspaceRouter = {
       try {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { success: false, error: '工作区不存在' };
-        const target = workspace.additional_paths.find((p) => p.path === input.path);
+        const target = workspace.additionalPaths.find((p) => p.path === input.path);
         if (!target) return { success: false, error: '附加路径不存在' };
         target.enabled = input.enabled;
         await workspaceJsonService.update(input.workspaceId, workspace);

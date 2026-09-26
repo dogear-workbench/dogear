@@ -17,7 +17,7 @@ import { XtermTerminal } from './XtermTerminal';
 /** 与 components/conversation-list/utils.getConversationTitle 同逻辑的兜底命名（companion 可移植纪律：不引 components 依赖链） */
 function conversationTitle(conv: Conversation): string {
   if (conv.title && conv.title !== '新对话') return conv.title;
-  const date = new Date(conv.created_at);
+  const date = new Date(conv.createdAt);
   const isToday = date.toDateString() === new Date().toDateString();
   if (isToday) return `对话 ${date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}`;
   return `对话 ${date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })}`;
