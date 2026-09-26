@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 微信功能整链删除](./step1-remove-wechat.md) — 删 18 个微信专属文件 + 8 处点状引用，保留文章解析的微信公众号平台检测
-- [ ] [Step 2: 死代码删除](./step2-dead-code.md) — 未用 shadcn 组件、electron 死文件、遗留 types、临时产物目录
+- [x] [Step 2: 死代码删除](./step2-dead-code.md) — 未用 shadcn 组件、electron 死文件、遗留 types、临时产物目录
 - [ ] [Step 3: 兼容/迁移代码删除与数据清理](./step3-compat-code.md) — 19 项 marker 守卫的一次性迁移 + state-card 旧格式解析 + settings/plans 数据死键
 - [ ] [Step 4: 复用收口](./step4-dedup.md) — 广播函数回迁收口模块、逐字重复合并、detectPlatform 收口
 - [ ] [Step 5: snake_case 双格式迁移](./step5-snake-case.md) — 前端 12 文件 32 处改驼峰，删 toCompat 层

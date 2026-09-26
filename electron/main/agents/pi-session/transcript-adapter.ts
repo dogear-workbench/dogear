@@ -1,10 +1,9 @@
 /**
- * Harness 版逐字稿清洗（对齐旧 electron/main/services/memory/transcript-cleaner.ts 的语义，
+ * Harness 版逐字稿清洗（语义对齐旧的 SDK JSONL 文本行清洗实现，
  * 但输入源从 SDK JSONL 文本行换成 Harness SessionTreeEntry[]）。
  *
  * 只允许经 session-history-reader.ts 读 Harness session（全局决策：Harness 类型不得泄漏出本目录），
- * 因此 SessionTreeEntry/MessageEntry 相关的解析逻辑只能留在这里，
- * transcript-cleaner.ts 对外只做类型无关的薄转发。
+ * 因此 SessionTreeEntry/MessageEntry 相关的解析逻辑只能留在这里。
  *
  * uuid 策略：直接复用 Harness MessageEntry.id——与 history-adapter.ts 里 sdkUuid 用的是同一个概念，
  * 保证同一条消息在"历史展示"和"组摘要引用"两条链路里 id 一致。
@@ -189,27 +188,4 @@ export async function readCleanTranscript(
     sourceMtime,
     ratio: text.length ? originalBytes / text.length : 0,
   };
-}
-
-/**
- * 批量建「sessionId → 去噪后 uuid 集合」索引，供 source-fidelity.ts 校验组卡引用保真度。
- * 打开失败（session 不存在等）一律映射为 null——PiSessionRepository 对"未找到"只抛通用 Error，
- * 没有类似 fs 的 ENOENT code 可供区分真实 IO 故障，所以此处不像旧版 fs 实现那样区分并重新抛出，
- * 统一按"缺失"处理交给 source-fidelity 的 session_missing 分支兜底。
- */
-export async function buildSessionUuidIndex(
-  workspaceId: string,
-  sessionIds: string[],
-): Promise<Map<string, Set<string> | null>> {
-  const index = new Map<string, Set<string> | null>();
-  await Promise.all(sessionIds.map(async (sid) => {
-    try {
-      const entries = await readSessionBranchEntries(workspaceId, sid);
-      const messages = cleanMessagesFromEntries(entries);
-      index.set(sid, new Set(messages.map((m) => m.uuid).filter(Boolean)));
-    } catch {
-      index.set(sid, null);
-    }
-  }));
-  return index;
 }

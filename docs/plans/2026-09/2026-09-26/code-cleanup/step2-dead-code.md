@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 死代码删除
-status: pending
+status: done
 ---
 
 ## 目标
@@ -41,3 +41,10 @@ status: pending
 ### F. 收尾验证
 - [ ] 每删一类跑 lint + 双侧 tsc，确认无悬空 import
 - [ ] 手动启动冒烟：文章库、会话、设置页正常打开
+
+## 实施回填（2026-09-26 完成）
+
+- 删 11 文件（shadcn 3 + electron 死文件 5 + types 遗留 3）+ 磁盘 4 目录（tmp/reports/data/claude_code_doc_md）+ .gitignore 移除 /data 旧条目；package.json 移除 @radix-ui/react-tooltip + bun install 刷 lockfile
+- 计划外连带：①electron-api.ts 尾部 2 行对 ai/agents 的死 re-export（调研漏检 re-export 模式，tsc TS2307 兑底发现，6 符号零消费）；②source-fidelity 删除后 transcript-adapter 的 buildSessionUuidIndex（26 行）成新死代码一并删，3 处注释指涉改写；③skill-loader「白嫖」实为「复用」口语动词非改名残留，按同意图改正式措辞
+- 验证：lint 0 errors（71 warnings 存量）、双侧 tsc 零错误、bun test 339 pass/0 fail/1 skip（本环境 ipcMain 可导入，基线 8 fail 全过，无新增失败）、build:electron + vite build 通过；dist/main 同步清 5 个旧产物
+- 遗留：GUI 冒烟未做（需用户验证文章库/会话/设置页）

@@ -1,17 +1,17 @@
-export interface HotkeyDef {
+interface HotkeyDef {
   id: string;
   combo: string;
   description: string;
   scope: string;
 }
 
-export interface HotkeyEntry extends HotkeyDef {
+interface HotkeyEntry extends HotkeyDef {
   active: boolean;
 }
 
 type HotkeyHandler = (e: KeyboardEvent) => void;
 
-export const HOTKEY_DEFS: readonly HotkeyDef[] = [
+const HOTKEY_DEFS: readonly HotkeyDef[] = [
   { id: 'chat-search', combo: 'Ctrl+F', description: '会话内搜索', scope: '会话' },
   { id: 'notes-toggle-list', combo: 'Ctrl+\\', description: '显示/隐藏笔记列表', scope: '笔记' },
   { id: 'quick-chat-new', combo: 'Ctrl+Alt+N', description: '新建临时会话', scope: '全局' },

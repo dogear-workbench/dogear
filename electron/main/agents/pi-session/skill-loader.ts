@@ -3,7 +3,7 @@
  *
  * 替换原手写 frontmatter 解析 + 自造索引文本 + 自造 Skill 工具。
  * 对外签名保持不变（loadSkillIndex / formatSkillIndexForPrompt / createSkillTool），
- * 内部白嫖 loadSkills 的递归扫描 / .gitignore / yaml 解析 / name 校验 / 错误诊断聚合。
+ * 内部复用 loadSkills 的递归扫描 / .gitignore / yaml 解析 / name 校验 / 错误诊断聚合。
  */
 import path from 'path';
 import fs from 'fs/promises';

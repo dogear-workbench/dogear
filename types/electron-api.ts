@@ -176,6 +176,3 @@ export interface Conversation {
   updated_at: number;
 }
 
-// 导出类型,供其他模块使用
-export type { AIMessage } from './ai';
-export type { AgentTask, AgentTaskUpdate, TaskStatus, TaskType, ChatSessionPayload } from './agents';
