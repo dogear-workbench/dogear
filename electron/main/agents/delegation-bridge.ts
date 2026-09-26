@@ -7,8 +7,6 @@
  * 见 settleTerminal → resumeChild），耗尽才通知主会话。
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
 import { BrowserWindow } from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 
@@ -16,7 +14,7 @@ import type { PiSession, PiSessionTurnResult } from './pi-session/pi-session.js'
 import type { InjectionTag } from './task-types.js';
 import { classifyChildCompletion } from './delegation-lifecycle.js';
 import { getPiSessionManager } from './pi-session/pi-session-manager.js';
-import { getConfigDir, mainLogger } from './logger.js';
+import { mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
 import type { ConversationIndex } from '../services/conversation-service.js';
 import { requireActiveGroup } from '../services/group-service.js';
@@ -119,18 +117,6 @@ function toSnapshot(c: ChildStateInternal): ChildStateSnapshot {
 
 function isTerminal(status: ChildStatus): boolean {
   return status !== 'running';
-}
-
-/** 旧持久层遗留的 delegation-state.json 一次性清理：存在则删除，失败只记日志（文件不存在静默跳过） */
-export async function cleanupLegacyStateFile(): Promise<void> {
-  try {
-    await fs.promises.unlink(path.join(getConfigDir(), 'delegation-state.json'));
-    logger.info('已清理旧版 delegation-state.json（持久层已移除）');
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.warn('清理旧版 delegation-state.json 失败', err);
-    }
-  }
 }
 
 function clearChildTimers(c: ChildStateInternal): void {

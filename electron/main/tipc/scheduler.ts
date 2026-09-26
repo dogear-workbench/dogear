@@ -1,5 +1,5 @@
 import { tipc } from '@egoist/tipc/main';
-import { isRetiredBuiltinTask, loadTasks, saveTasks } from '../services/scheduler/plan-store.js';
+import { loadTasks, saveTasks } from '../services/scheduler/plan-store.js';
 import { queryHistory } from '../services/scheduler/run-history-store.js';
 import { minNextDueAt } from '../services/scheduler/time-rule-engine.js';
 import { getSchedulerService } from '../services/scheduler/scheduler-service.js';
@@ -18,7 +18,7 @@ export const schedulerRouter = {
   listTasks: t.procedure
     .action(async () => {
       try {
-        const tasks = (await loadTasks()).filter((t) => !isRetiredBuiltinTask(t));
+        const tasks = await loadTasks();
         const now = Date.now();
         return { tasks: tasks.map((task) => ({ ...task, nextRunAt: minNextDueAt(task, now) ?? undefined })) };
       } catch (error) {
@@ -60,7 +60,6 @@ export const schedulerRouter = {
         const tasks = await loadTasks();
         const target = tasks.find((t) => t.id === input.taskId);
         if (!target) return { ok: false, error: '任务不存在' };
-        if (isRetiredBuiltinTask(target)) return { ok: false, error: '内置任务不能删除' };
         await saveTasks(tasks.filter((t) => t.id !== input.taskId));
         return { ok: true };
       } catch (error) {

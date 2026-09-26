@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ConversationList } from '@/components/ConversationList';
-import { AgentChat } from '@/components/AgentChat';
+import { AgentChat } from '@/components/agent-chat';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { playDogearSound } from '@/lib/dogear-sound';

@@ -44,7 +44,6 @@ export interface CustomScheduledTask {
   toolPacksOverride?: string[];
 }
 
-// 内置任务已全量下线；存量磁盘 kind:'builtin' 条目由 isRetiredBuiltinTask 过滤隐藏（数据保留）
 export type ScheduledTask = CustomScheduledTask;
 
 export type ScheduledTaskWithNextRun = ScheduledTask & { nextRunAt?: number };

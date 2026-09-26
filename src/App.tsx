@@ -1,7 +1,6 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router';
 import HomePage from '@/app/page';
 import SettingsPage from '@/app/settings/page';
-import DebugPage from '@/app/debug/page';
 import StockPage from '@/app/stocks/page';
 import DataCenterPage from '@/app/data-center/page';
 import { WorkbenchWindowPage } from '@/app/workbench-window/page';
@@ -21,7 +20,6 @@ export function App() {
       <HashRouter>
         <Routes>
           <Route path="/" element={<ErrorBoundary fallback="page"><HomePage /></ErrorBoundary>} />
-          <Route path="/debug" element={<ErrorBoundary fallback="page"><DebugPage /></ErrorBoundary>} />
           <Route path="/stocks" element={<ErrorBoundary fallback="page"><StockPage /></ErrorBoundary>} />
           <Route path="/session-window/:conversationId" element={<ErrorBoundary fallback="page"><SessionWindowPage /></ErrorBoundary>} />
           <Route path="/data-center" element={(

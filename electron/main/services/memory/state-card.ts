@@ -64,15 +64,6 @@ export interface TopicStateCard {
   entries: Record<TopicCardCategory, TopicCardEntry[]>;
 }
 
-export interface LegacyBackground {
-  groupId: string;
-  updatedAt: string;
-  topic: string;
-  progress: string;
-  keyDecisions: string[];
-  openQuestions: string[];
-}
-
 // ─── 增量 zod schema（Step 2 抽取任务输出结构）───
 
 export const StateIncrementItemSchema = z.object({
@@ -181,55 +172,11 @@ export function serializeTopicStateCard(card: TopicStateCard): string {
   return stringifyFrontmatter(fm, body);
 }
 
-function legacySectionItems(sectionText: string): string[] {
-  if (!sectionText || sectionText === '(无)') return [];
-  return sectionText
-    .split(/\r?\n/)
-    .map((l) => l.replace(/^-\s*/, '').trim())
-    .filter(Boolean);
-}
-
-function parseLegacyBackgroundFields(fm: Frontmatter, body: string, groupId: string): LegacyBackground {
-  const section = (title: string): string => {
-    const m = body.match(new RegExp(`## ${title}\\s*\\n([\\s\\S]*?)(?:\\n## |\\s*$)`));
-    return m ? m[1].trim() : '';
-  };
-  return {
-    groupId,
-    updatedAt: strOf(fm.updatedAt),
-    topic: section('主题') || strOf(fm.topic),
-    progress: section('当前进展') || strOf(fm.progress),
-    keyDecisions: parseJsonArray(fm.keyDecisionsJson, legacySectionItems(section('关键决策'))),
-    openQuestions: parseJsonArray(fm.openQuestionsJson, legacySectionItems(section('待议问题'))),
-  };
-}
-
-export function convertLegacyBackground(bg: LegacyBackground): TopicStateCard {
-  const ts = bg.updatedAt || new Date().toISOString();
-  const card = emptyTopicStateCard(bg.groupId, ts);
-  const topic = normalizeText(bg.topic);
-  if (topic) card.topicHistory.push(makeVersion(topic, 'legacy', ts));
-  card.entries.inProgress.push(
-    ...bg.progress.split(/\r?\n/).map((l) => normalizeText(l)).filter(Boolean).map((l) => makeEntry(l, 'legacy', ts)),
-  );
-  card.entries.decisions.push(
-    ...bg.keyDecisions.map((t) => normalizeText(t)).filter(Boolean).map((t) => makeEntry(t, 'legacy', ts)),
-  );
-  card.entries.openQuestions.push(
-    ...bg.openQuestions.map((t) => normalizeText(t)).filter(Boolean).map((t) => makeEntry(t, 'legacy', ts)),
-  );
-  return card;
-}
-
 export function parseTopicStateCard(raw: string): TopicStateCard | null {
   const { fm, body } = parseFrontmatter(raw);
   const groupId = strOf(fm.groupId);
-  if (!groupId) return null;
-
-  // 旧 4 字段格式（无 sourcesSeenJson）→ 迁移为状态卡
-  if (fm.sourcesSeenJson === undefined) {
-    return convertLegacyBackground(parseLegacyBackgroundFields(fm, body, groupId));
-  }
+  // 无 sourcesSeenJson 的是旧 4 字段格式卡，不再解析（当作无卡，状态重新积累）
+  if (!groupId || fm.sourcesSeenJson === undefined) return null;
 
   const card = emptyTopicStateCard(groupId);
   card.updatedAt = strOf(fm.updatedAt);
@@ -284,22 +231,6 @@ function appendEntryUnique(card: TopicStateCard, category: TopicCardCategory, en
   const bucket = card.entries[category];
   const dup = bucket.some((e) => e.source === entry.source && e.text === entry.text);
   if (!dup) bucket.push(entry);
-}
-
-/** 无来源追溯的条目批量追加（legacy 兼容写入 / 旧格式迁移），同 source 同 text 去重 */
-export function appendPlainEntries(
-  card: TopicStateCard,
-  category: TopicCardCategory,
-  texts: string[],
-  source: string,
-  ts: string,
-): TopicStateCard {
-  for (const t of texts) {
-    const normalized = normalizeText(t);
-    if (!normalized) continue;
-    appendEntryUnique(card, category, makeEntry(normalized, source, ts));
-  }
-  return card;
 }
 
 function cloneCard(card: TopicStateCard): TopicStateCard {

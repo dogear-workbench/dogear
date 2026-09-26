@@ -35,17 +35,15 @@ export function fmtTs(v: string | number): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** 条目来源标注：convId#uuid / user / legacy → 人读短标（ReadGroupBackground 工具输出复用） */
+/** 条目来源标注：convId#uuid / user → 人读短标（ReadGroupBackground 工具输出复用） */
 export function sourceLabel(source: string): string {
   if (source === 'user') return '用户';
-  if (source === 'legacy') return '';
   return `会话 ${source.split('#')[0].slice(-6)}`;
 }
 
 /** topic 生效版本的来源描述（确立来源） */
 export function topicOriginLabel(source: string): string {
   if (source === 'user') return '用户确认';
-  if (source === 'legacy') return '早期记录';
   return `来自${sourceLabel(source)}`;
 }
 

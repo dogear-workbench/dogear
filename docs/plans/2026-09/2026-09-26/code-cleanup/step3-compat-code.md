@@ -1,7 +1,7 @@
 ---
 step: 3
 title: 兼容/迁移代码删除与数据清理
-status: pending
+status: done
 ---
 
 ## 目标
@@ -51,3 +51,10 @@ status: pending
 ### F. 收尾验证
 - [ ] lint + 双侧 tsc + bun test（settings-normalize.test.ts 会受 E 项影响，同步修测试用例）
 - [ ] 启动冒烟：话题状态卡正常显示（新格式卡）、设置页保存正常、调度器列表正常
+
+## 实施回填（2026-09-26 完成）
+
+- 19 项全部处置：A 节删 7 文件（含 migrate-notes-todos.test.ts）；B 节 main-app 11 个迁移调用块全删（登录观测器为运行时功能保留）；C 节 14 项点状删净，session-paths.ts 三导出全失调用方整文件删，agent.ts 连带清 PROJECT_ROOT/fs 导入与 getClaudeConfigDir 再导出；D 节 state-card 旧格式删净，无 sourcesSeenJson 显式返 null（空卡重建，符合拍板）；E 节数据侧 settings -3 键 / plans 5→1（-4 builtin）/ 3 工作区 smart-categories.json 删，isRetiredBuiltinTask 过滤链删净（删前已确认 worker 侧零 builtin handler 引用）
+- 连带：topic-lifecycle 的 workspacePath 死参数/assertSafeSessionId、plan-store 的 copyTriggers、settings-normalize.test.ts 删 14 个失效用例；保留 normalizePiModels、内置 Profile 补缺失能力键、browser/extension/web 非布尔守卫
+- 验证：lint 0 errors（70 warnings 存量）、双侧 tsc 零错误、bun test 319 pass/0 fail/1 skip（基线 339 = 删 6+14 用例，零意外失败）、build + vite build 通过、dist 清 7 旧产物
+- 遗留：①GUI 冒烟待用户（话题卡/设置页/调度器）；②main-app 调试窗口基础设施成死链（createDebugWindow/getDebugWindow 零调用、sendToDebugWindow 被 tipc/agent.ts 调用但前端无接收方 no-op 无害），建议后续评估整链删除；③107 个旧格式话题卡留磁盘不回写（拍板）；④migration marker 全保留

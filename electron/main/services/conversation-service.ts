@@ -5,11 +5,9 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import type { Dirent } from 'fs';
 import electron from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 import { safeJsonWrite, safeJsonRead, withFileLock } from './safe-json.js';
-import { loadSettings, LEGACY_MODEL_TIERS } from './settings-service.js';
 import { mainLogger } from '../agents/logger.js';
 import { readUsage } from './usage/usage-service.js';
 import { getGroup, listActiveGroups, requireActiveGroup, updateGroup } from './group-service.js';
@@ -108,12 +106,6 @@ export interface WorkspaceConversationsFile {
   conversations: Record<string, ConversationIndex>;
 }
 
-/** 旧版全局 conversations.json 文件结构（用于迁移） */
-interface LegacyConversationsFile {
-  version: number;
-  conversations: Record<string, ConversationIndex>;
-}
-
 // ============================================================
 // 路径函数
 // ============================================================
@@ -138,11 +130,6 @@ export function getWorkspaceDataDir(workspaceId: string): string {
 /** 获取工作区 conversations.json 路径 */
 function getWorkspaceConversationsPath(workspaceId: string): string {
   return path.join(getWorkspaceDataDir(workspaceId), 'conversations.json');
-}
-
-/** 获取旧版全局 conversations.json 路径（用于迁移） */
-function getLegacyConversationsPath(): string {
-  return path.join(getConfigDir(), 'conversations.json');
 }
 
 // ============================================================
@@ -556,50 +543,6 @@ export async function updateModelSelection(
 }
 
 /**
- * 存量对话的 modelSelection 残留旧三档 tier（haiku/sonnet/opus）时，
- * 按当前 settings.profiles 的 piModels 子串匹配映射为真实模型 id，
- * 无匹配时置 null 回退默认选择。幂等：已迁移/无残留的 workspace 不写盘。
- * 返回迁移的对话条数。
- */
-export async function migrateLegacyModelSelections(): Promise<number> {
-  const settings = await loadSettings();
-  const workspacesDir = path.join(getConfigDir(), 'workspaces');
-  let entries: Dirent[];
-  try {
-    entries = await fs.readdir(workspacesDir, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-
-  const mapSelection = (sel: ModelSelection): ModelSelection | null => {
-    const models = settings.profiles[sel.profileId]?.piModels ?? [];
-    const matched = models.find(m => m.id.toLowerCase().includes(sel.tier));
-    return matched ? { ...sel, tier: matched.id } : null;
-  };
-
-  let migrated = 0;
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    const wsId = entry.name;
-    const preview = await loadWorkspaceConversations(wsId);
-    const hasLegacy = Object.values(preview.conversations).some(
-      (conv) => conv.modelSelection && LEGACY_MODEL_TIERS.has(conv.modelSelection.tier),
-    );
-    if (!hasLegacy) continue;
-    await withConversationsTxn(wsId, async (file) => {
-      for (const conv of Object.values(file.conversations)) {
-        const sel = conv.modelSelection;
-        if (!sel || !LEGACY_MODEL_TIERS.has(sel.tier)) continue;
-        conv.modelSelection = mapSelection(sel);
-        migrated++;
-      }
-    });
-    broadcastConversationListChanged(wsId, 'debounced');
-  }
-  return migrated;
-}
-
-/**
  * 删除对话（硬删除：从索引中彻底移除）
  * 同时将引用此对话为父对话的子对话的 parentConversationId 设为 null
  *
@@ -749,73 +692,4 @@ export async function recomputeUsageSummaryIfStale(conversationId: string): Prom
     };
   });
   broadcastConversationListChanged(workspaceId, 'debounced');
-}
-
-// ============================================================
-// 数据迁移
-// ============================================================
-
-/**
- * 从旧版全局 conversations.json 迁移到按工作区存储
- * 幂等：仅在旧文件存在时执行，完成后备份旧文件
- */
-export async function migrateFromLegacy(): Promise<void> {
-  const legacyPath = getLegacyConversationsPath();
-
-  try {
-    await fs.access(legacyPath);
-  } catch {
-    return; // 旧文件不存在，无需迁移
-  }
-
-  console.log('[conversation-service] 开始迁移旧版 conversations.json...');
-
-  const raw = await fs.readFile(legacyPath, 'utf-8');
-  const legacyFile = JSON.parse(raw) as LegacyConversationsFile;
-
-  // 按 workspaceId 分组
-  const grouped = new Map<string, ConversationIndex[]>();
-  for (const conv of Object.values(legacyFile.conversations)) {
-    const wsId = conv.workspaceId;
-    if (!grouped.has(wsId)) grouped.set(wsId, []);
-    grouped.get(wsId)!.push(conv);
-  }
-
-  // 写入各工作区文件，并创建初始树
-  for (const [wsId, convs] of grouped) {
-    const convMap: Record<string, ConversationIndex> = {};
-    for (const conv of convs) {
-      convMap[conv.id] = conv;
-    }
-    await saveWorkspaceConversations(wsId, { version: 2, conversations: convMap });
-  }
-
-  // 备份旧文件
-  await fs.rename(legacyPath, legacyPath + '.bak');
-  console.log('[conversation-service] 迁移完成');
-}
-
-/**
- * 给工作区内缺少 groupId 的对话补齐会话组（每条对话对应一个独立组）。
- * 幂等：已有 groupId 的跳过。返回实际迁移条数。
- */
-export async function migrateOrphanConversations(workspaceId: string): Promise<number> {
-  // 延迟导入避免循环依赖（group-service 不依赖 conversation-service）
-  const groupService = await import('./group-service.js');
-  const file = await loadWorkspaceConversations(workspaceId);
-  let count = 0;
-
-  for (const conv of Object.values(file.conversations)) {
-    if (conv.groupId) continue; // 已有 groupId，跳过
-    const group = await groupService.createGroup(workspaceId, { title: conv.title });
-    conv.groupId = group.id;
-    conv.role = 'main';
-    count++;
-  }
-
-  if (count > 0) {
-    await saveWorkspaceConversations(workspaceId, file);
-    broadcastConversationListChanged(workspaceId, 'debounced');
-  }
-  return count;
 }

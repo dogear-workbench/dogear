@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { app } from 'electron';
 import { mainLogger } from '../../agents/logger.js';
 import type { RunHistoryEntry, ScheduledTask, SchedulerActivity, Trigger } from './types.js';
-import { isRetiredBuiltinTask, loadTasks, markOnceFired, touchTriggerFired } from './plan-store.js';
+import { loadTasks, markOnceFired, touchTriggerFired } from './plan-store.js';
 import { appendHistoryEntry, cleanupHistory } from './run-history-store.js';
 import { getRunning } from '../background-activity-service.js';
 import {
@@ -41,10 +41,8 @@ function currentWindowStartTs(start: string, now: number): number {
 }
 
 class SchedulerService {
-  /** 调度可见任务：已下线内置任务的存量磁盘条目不参与触发/补跑/手动运行 */
   private async listSchedulableTasks(): Promise<ScheduledTask[]> {
-    const tasks = await loadTasks();
-    return tasks.filter((t) => !isRetiredBuiltinTask(t));
+    return loadTasks();
   }
 
   private tickTimer: NodeJS.Timeout | null = null;

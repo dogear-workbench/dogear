@@ -51,7 +51,6 @@ function formatTs(v: string): string {
 
 function topicOriginLabel(source: string): string {
   if (source === 'user') return '用户确认';
-  if (source === 'legacy') return '早期记录';
   return '会话提炼';
 }
 

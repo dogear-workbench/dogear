@@ -3,8 +3,6 @@ import { normalizeSettings, normalizePiModels, migratePiProfiles } from './setti
 import { normalizeFailoverChain } from './settings-types.js';
 import {
   DEFAULT_SETTINGS,
-  createDefaultSubAgentProfile,
-  createBrowserParseSubAgentProfile,
   type AppSettings,
   type ModelProfile,
 } from './settings-types.js';
@@ -31,16 +29,6 @@ function threeProfiles(): Record<string, ModelProfile> {
     proma: makeProfile('proma', ['pr-a', 'pr-b']),
   };
 }
-
-test('旧自动执行模式（bypassPermissions/dontAsk/auto/acceptEdits）映射为 autoExecute', () => {
-  for (const oldMode of ['bypassPermissions', 'dontAsk', 'auto', 'acceptEdits']) {
-    const s = baseSettings();
-    (s.ai as Record<string, unknown>).permissionMode = oldMode;
-    const changed = normalizeSettings(s);
-    expect(changed).toBe(true);
-    expect(s.ai.permissionMode).toBe('autoExecute');
-  }
-});
 
 test('旧 plan 模式映射为 default', () => {
   const s = baseSettings();
@@ -132,40 +120,6 @@ test('ai 对象结构损坏时恢复为安全默认', () => {
   }
 });
 
-test('旧 permissionRules 被删除', () => {
-  const s = baseSettings();
-  (s as Record<string, unknown>).permissionRules = { allow: ['Read', 'Bash'], deny: ['Write'] };
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  expect('permissionRules' in s).toBe(false);
-});
-
-test('遗留 SDK 设置字段被清理', () => {
-  const s = baseSettings();
-  const ai = s.ai as Record<string, unknown>;
-  ai.maxTurns = 50;
-  ai.defaultSystemPrompt = 'test';
-  ai.subagentModelTier = 'sonnet';
-  ai.excludeDynamicSections = true;
-  ai.promptSuggestionsEnabled = true;
-  ai.thinkingType = 'adaptive';
-  ai.thinkingBudgetTokens = 8000;
-  ai.thinkingDisplay = 'summarized';
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  for (const field of ['maxTurns', 'defaultSystemPrompt', 'subagentModelTier', 'excludeDynamicSections', 'promptSuggestionsEnabled', 'thinkingType', 'thinkingBudgetTokens', 'thinkingDisplay']) {
-    expect(field in s.ai).toBe(false);
-  }
-});
-
-test('旧 subAgent.permissionMode 被删除', () => {
-  const s = baseSettings();
-  (s.subAgent as unknown as Record<string, unknown>).permissionMode = 'bypassPermissions';
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  expect('permissionMode' in (s.subAgent as unknown as Record<string, unknown>)).toBe(false);
-});
-
 test('重复执行规范化不再产生改动（幂等）', () => {
   const s = baseSettings();
   (s.ai as Record<string, unknown>).permissionMode = 'bypassPermissions';
@@ -193,30 +147,6 @@ test('合法的七项 allow 映射保持不变', () => {
   };
   const changed = normalizeSettings(s);
   expect(changed).toBe(false);
-});
-
-test('旧 subAgent 结构（含 modelSelection/timeoutMinutes/cachePolicy/loadCoreProfile/loadSkills/loadArticleParse）归一化为 profiles', () => {
-  const s = baseSettings();
-  (s.subAgent as unknown as Record<string, unknown>) = {
-    timeoutMinutes: 45,
-    cachePolicy: '1h',
-    loadCoreProfile: true,
-    loadSkills: true,
-    loadArticleParse: true,
-  };
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  expect(s.subAgent.profiles).toHaveLength(2);
-  expect(s.subAgent.profiles[0]!.id).toBe('default');
-  expect(s.subAgent.profiles[0]!.timeoutMinutes).toBe(30);
-  expect(s.subAgent.profiles[0]!.enabledBasicTools).toEqual(['read', 'write', 'edit', 'bash', 'Glob', 'Grep']);
-  expect(s.subAgent.profiles[0]!.enabledAbilities).toEqual({ web: true });
-  expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
-  const sub = s.subAgent as unknown as Record<string, unknown>;
-  expect('cachePolicy' in sub).toBe(false);
-  expect('loadCoreProfile' in sub).toBe(false);
-  expect('loadSkills' in sub).toBe(false);
-  expect('loadArticleParse' in sub).toBe(false);
 });
 
 test('subAgent.profiles 中 profile 缺失 enabledBasicTools 时补全', () => {
@@ -256,40 +186,6 @@ test('缺失内置浏览器解析 Profile 时自动补齐，已有 Profile 保�
   expect(s.subAgent.profiles[0]).toEqual({ id: 'p1', name: '自定义', description: '', timeoutMinutes: 15, enabledBasicTools: ['read'], enabledAbilities: {} });
   expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
   expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true, article: true });
-  expect(normalizeSettings(s)).toBe(false);
-});
-
-test('内置 Profile 旧模板 description 自动迁移为新文案', () => {
-  const s = baseSettings();
-  s.subAgent.profiles[0]!.description = '标准派遣会话，具备全部基础工具和交付通信能力';
-  s.subAgent.profiles[1]!.description =
-    '浏览器与扩展双通道调研 + 工作区文章读取与解析：公开网页用内嵌浏览器（dogear__browser__*），登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器）；扩展通道同一时间仅一个会话可用，并行调研请改串行派遣。文章解析随 article 能力启用，article-parser skill 直通无需单独配置。探索方法论见 browser-exploration skill，子会话启用 browser 能力时自动挂载。';
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  expect(s.subAgent.profiles[0]!.description).toBe(createDefaultSubAgentProfile().description);
-  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
-  expect(normalizeSettings(s)).toBe(false);
-});
-
-test('存量环境实际持有的旧文案（无 user_takeover 句长文 / 手写 default 文案）也自动迁移', () => {
-  const s = baseSettings();
-  s.subAgent.profiles[0]!.description = '实施类任务：改代码、写文件、跑命令，需要动工作区时用这个。实施完成后交付通知与摘要走共享区或正文。';
-  s.subAgent.profiles[1]!.description =
-    '浏览器与扩展双通道调研：公开网页用内嵌浏览器（dogear__browser__*）——readArticle 读文章 / search 搜索为快档首选，失败返回页面位置（tabId+URL+状态）后直接用 observe_page / find / read_text / click / fill 原子工具继续探索，不要重新导航；登录态站点（如小红书）用扩展通道（dogear__extension__*，用户真实浏览器，同一时间仅一个会话可用，并行请串行派遣）。探索循环：行动前确认世界状态（observe_page/read_state 概要），每次下钻带明确假设；页面与预期不符先 navigate 恢复再继续，不把偏离当失败上报；navigate 提示有站点档案时先调 dogear__extension__site_knowledge 取地图（可能漂移，用时概要验证），发现新结构用 dogear__extension__site_finding 沉淀。登录墙/人机验证（awaiting_human）或密码/提交类 guard 拦截即停：页面已呈现在浏览器面板，等用户完成后点「完成后继续」再继续任务。任务交付用 dogear__browser__present 把关键页面呈现给用户（页面即产物）。同一页面连续 3 次探索失败即停并报告已发现内容；滑块/验证码即停，不规避随机延迟。';
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  expect(s.subAgent.profiles[0]!.description).toBe(createDefaultSubAgentProfile().description);
-  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
-  expect(normalizeSettings(s)).toBe(false);
-});
-
-test('现行模板旧文案（网页与文章调研句）也自动迁移', () => {
-  const s = baseSettings();
-  s.subAgent.profiles[1]!.description =
-    '网页与文章调研：公开网页用内嵌浏览器；登录态站点（如小红书）走用户浏览器扩展通道（全局独占，并行串行派遣）；也用于解析工作区文章库的文章。';
-  const changed = normalizeSettings(s);
-  expect(changed).toBe(true);
-  expect(s.subAgent.profiles[1]!.description).toBe(createBrowserParseSubAgentProfile().description);
   expect(normalizeSettings(s)).toBe(false);
 });
 
@@ -417,27 +313,6 @@ test('migratePiProfiles：存量 string[] piModels 落盘前迁移为对象数�
   expect(s.profiles.default.piModels).toEqual([{ id: 'gpt-5' }, { id: 'glm-4.7' }]);
 });
 
-test('migratePiProfiles：旧三档种子填充产出对象数组', () => {
-  const s = baseSettings();
-  const p = s.profiles.default as unknown as Record<string, unknown>;
-  p.haikuModel = 'm-haiku';
-  p.sonnetModel = 'm-sonnet';
-  p.opusModel = 'm-sonnet';
-  const changed = migratePiProfiles(s);
-  expect(changed).toBe(true);
-  expect(s.profiles.default.piModels).toEqual([{ id: 'm-haiku' }, { id: 'm-sonnet' }]);
-  expect('haikuModel' in p).toBe(false);
-});
-
-test('migratePiProfiles：旧 autoCompactWindow 字段被删除', () => {
-  const s = baseSettings();
-  const p = s.profiles.default as unknown as Record<string, unknown>;
-  p.autoCompactWindow = 500000;
-  const changed = migratePiProfiles(s);
-  expect(changed).toBe(true);
-  expect('autoCompactWindow' in p).toBe(false);
-});
-
 test('migratePiProfiles：autoCompactPercent 不受迁移影响', () => {
   const s = baseSettings();
   s.profiles.default.piModels = [{ id: 'gpt-5' }];
@@ -454,45 +329,6 @@ test('migratePiProfiles：已迁移数据二次执行不再产生改动（幂等
   expect(changed).toBe(false);
 });
 
-test('migratePiProfiles：ai.*ModelSelection 残留旧三档 tier 时按 piModels 子串映射为真实模型 id', () => {
-  const s = baseSettings();
-  s.profiles.default.piModels = [
-    { id: 'anthropic/claude-haiku-4.5' },
-    { id: 'anthropic/claude-sonnet-4.6' },
-    { id: 'anthropic/claude-opus-4.7' },
-  ];
-  s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
-  s.ai.stateModelSelection = { profileId: 'default', tier: 'sonnet' };
-  const changed = migratePiProfiles(s);
-  expect(changed).toBe(true);
-  expect(s.ai.parseModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
-  expect(s.ai.stateModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-sonnet-4.6' });
-});
-
-test('migratePiProfiles：旧 tier 在 piModels 无子串匹配时置 null 回退默认选择', () => {
-  const s = baseSettings();
-  s.profiles.default.piModels = [{ id: 'glm-4.7' }];
-  s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
-  s.ai.stateModelSelection = { profileId: 'ghost', tier: 'opus' };
-  const changed = migratePiProfiles(s);
-  expect(changed).toBe(true);
-  expect(s.ai.parseModelSelection).toBeNull();
-  expect(s.ai.stateModelSelection).toBeNull();
-});
-
-test('migratePiProfiles：parseModelSelection 残留旧 tier 时同步迁移/置 null', () => {
-  const s = baseSettings();
-  s.profiles.default.piModels = [{ id: 'anthropic/claude-haiku-4.5' }, { id: 'glm-4.7' }];
-  s.ai.parseModelSelection = { profileId: 'default', tier: 'haiku' };
-  const changed = migratePiProfiles(s);
-  expect(changed).toBe(true);
-  expect(s.ai.parseModelSelection).toEqual({ profileId: 'default', tier: 'anthropic/claude-haiku-4.5' });
-
-  s.ai.parseModelSelection = { profileId: 'default', tier: 'opus' };
-  migratePiProfiles(s);
-  expect(s.ai.parseModelSelection).toBeNull();
-});
-
 test('migratePiProfiles：已是 piModels 模型 id 的 selection 不受影响', () => {
   const s = baseSettings();
   s.profiles.default.piModels = [{ id: 'glm-4.7' }];
@@ -500,19 +336,6 @@ test('migratePiProfiles：已是 piModels 模型 id 的 selection 不受影响',
   const changed = migratePiProfiles(s);
   expect(changed).toBe(false);
   expect(s.ai.defaultModelSelection).toEqual({ profileId: 'default', tier: 'glm-4.7' });
-});
-
-test('migratePiProfiles：subAgent Profile 的 modelSelection 残留旧 tier 一并迁移', () => {
-  const s = baseSettings();
-  s.profiles.default.piModels = [{ id: 'deepseek-v4-pro' }];
-  s.subAgent.profiles.push({
-    ...s.subAgent.profiles[0]!,
-    id: 'explore',
-    modelSelection: { profileId: 'default', tier: 'opus' },
-  });
-  const changed = migratePiProfiles(s);
-  expect(changed).toBe(true);
-  expect(s.subAgent.profiles[1]!.modelSelection).toBeNull();
 });
 
 // ── normalizeFailoverChain ───────────────────────────

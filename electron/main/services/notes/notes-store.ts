@@ -97,10 +97,6 @@ function parseFrontmatterLines(text: string): ParsedFrontmatter {
     if (colonIdx < 0) continue;
     const key = trimmed.slice(0, colonIdx).trim();
     const rawValue = trimmed.slice(colonIdx + 1).trim();
-    if (key === 'todos') {
-      while (i + 1 < lines.length && /^\s+-\s/.test(lines[i + 1])) i++;
-      continue;
-    }
     switch (key) {
       case 'id':
         result.id = parseScalar(rawValue);

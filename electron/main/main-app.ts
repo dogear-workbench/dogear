@@ -643,74 +643,6 @@ app.whenReady().then(async () => {
     console.error('初始化文章解析 Skill 目录失败:', error);
   }
 
-  // 初始化跨会话复盘 Skill 目录
-  try {
-    const { ensureReviewSkillInitialized } = await import('./services/memory/review-skill-service.js');
-    await ensureReviewSkillInitialized();
-  } catch (error) {
-    console.error('初始化复盘 Skill 目录失败:', error);
-  }
-
-  // 执行数据迁移（旧路径 → 新路径）
-  try {
-    const workspaceJsonService = await import('./services/workspace-json-service.js');
-    await workspaceJsonService.migrateFromLegacy();
-    const conversationService = await import('./services/conversation-service.js');
-    await conversationService.migrateFromLegacy();
-  } catch (error) {
-    console.error('数据迁移失败:', error);
-  }
-
-  // 会话组 P1: 给老会话补 groupId
-  try {
-    const workspaceJsonService = await import('./services/workspace-json-service.js');
-    const conversationService = await import('./services/conversation-service.js');
-    const workspaces = await workspaceJsonService.getAll();
-    let total = 0;
-    for (const ws of workspaces) {
-      total += await conversationService.migrateOrphanConversations(ws.id);
-    }
-    if (total > 0) console.log(`[group-migration] ${total} 条会话补齐 groupId`);
-  } catch (error) {
-    console.error('会话组迁移失败:', error);
-  }
-
-  // sessionId 持久化迁移：sdkSessionId 合并到 sessionId + 空壳指针修复 + 空壳 jsonl 清理
-  try {
-    const { runSessionIdMigration } = await import('./services/migration-session-id.js');
-    await runSessionIdMigration();
-  } catch (error) {
-    console.error('[migration-session-id] 失败:', error);
-  }
-
-  // workspace config 迁移：enabledToolPacks + enabledSkills 从旧位置迁移到 workspace config.json
-  try {
-    const { migrateWorkspaceConfig } = await import('./services/migration-workspace-config.js');
-    await migrateWorkspaceConfig();
-  } catch (error) {
-    console.error('[migration-workspace-config] 失败:', error);
-  }
-
-  // 浏览器 playbook 迁移：全局单文件 → 全局记忆主题（幂等，主题存在则跳过）
-  try {
-    const { migrateBrowserPlaybookIntoMemory } = await import(
-      './services/browser/browser-playbook-service.js'
-    );
-    await migrateBrowserPlaybookIntoMemory();
-  } catch (error) {
-    console.error('[browser-playbook-migration] 失败:', error);
-  }
-
-  // 内嵌浏览器旧分区迁移：必须在任何内嵌 tab 创建前跑，否则旧分区 session 被占用后目录删不掉
-  try {
-    const { migrateLegacyBrowserPartitions } = await import(
-      './services/browser/embedded/migrate-legacy-partitions.js'
-    );
-    await migrateLegacyBrowserPartitions();
-  } catch (error) {
-    console.error('[embedded-partition-migration] 失败:', error);
-  }
-
   // 登录观测器：挂全局分区 webRequest 监听 + 首启存量迁移；先 init 再 migrate，两者共享同一份清单内存态
   try {
     const { initLoginObserver, migrateInitialLoginAccounts } = await import(
@@ -720,31 +652,6 @@ app.whenReady().then(async () => {
     void migrateInitialLoginAccounts();
   } catch (error) {
     console.error('[login-observer] 初始化失败:', error);
-  }
-
-  // 存量对话 modelSelection 旧三档 tier（haiku/sonnet/opus）映射为 piModels 真实模型 id
-  try {
-    const { migrateLegacyModelSelections } = await import('./services/conversation-service.js');
-    const migrated = await migrateLegacyModelSelections();
-    if (migrated > 0) console.log(`[migration-model-selection] ${migrated} 条对话的 modelSelection 已迁移`);
-  } catch (error) {
-    console.error('[migration-model-selection] 失败:', error);
-  }
-
-  // 话题生命周期迁移：删除旧归档会话文件（幂等 marker）
-  try {
-    const { runTopicLifecycleMigration } = await import('./services/topic-lifecycle-service.js');
-    const result = await runTopicLifecycleMigration();
-    if (result.errors.length > 0) {
-      console.error('[topic-lifecycle-migration] 失败:', result.errors);
-    } else {
-      console.log(
-        `[topic-lifecycle-migration] 完成: 删除 ${result.conversationsDeleted} 条旧归档会话，` +
-        `处理 ${result.workspacesProcessed} 个工作区，跳过 ${result.workspacesSkipped} 个工作区`,
-      );
-    }
-  } catch (error) {
-    console.error('[topic-lifecycle-migration] 失败:', error);
   }
 
   // 初始化 Agent 管理器
@@ -791,11 +698,6 @@ app.whenReady().then(async () => {
     )
     .catch((err) => console.error('启动备份调度器失败:', err));
 
-  // 一次性清理旧持久层遗留的 delegation-state.json（重启后的历史子会话由 conversation 补集提供）
-  void import('./agents/delegation-bridge.js')
-    .then((m) => m.cleanupLegacyStateFile())
-    .catch((err) => console.error('清理旧版 delegation-state.json 失败:', err));
-
   // 通知中心过期清理：启动时删除已读且超 24h 的条目
   void import('./services/notification-center-service.js')
     .then((m) => m.getNotificationCenterService().pruneExpired())
@@ -805,14 +707,6 @@ app.whenReady().then(async () => {
   void import('./services/session-id-repair.js')
     .then((m) => m.repairNullSessionIdsAcrossWorkspaces())
     .catch((err) => console.error('sessionId 自愈扫描失败:', err));
-
-  // 存量迁移：旧 <workspace>/.dogear/{notes,memory} 搬到 config workspaces/{id}/ 下（幂等，迁完删旧目录）；
-  // 必须先于待办迁移——待办条目的 noteId 指向搬迁后的笔记，目录未搬完时 appendNote 会误建新卡
-  void import('./services/migrate-notes-memory.js')
-    .then((m) => m.migrateNotesMemoryAllWorkspaces())
-    .then(() => import('./services/migrate-notes-todos.js'))
-    .then((m) => m.migrateTodosToNotesAllWorkspaces())
-    .catch((err) => console.error('存量迁移失败:', err));
 
   // 任务队列启动：各工作区遗留 running 任务回 queued 后开跑
   void import('./services/task-queue.js')

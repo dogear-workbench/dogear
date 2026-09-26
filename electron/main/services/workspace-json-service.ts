@@ -77,11 +77,6 @@ function getWorkspacesPath(): string {
   return path.join(getConfigDir(), 'workspaces', 'workspaces.json');
 }
 
-/** 获取旧版 workspaces.json 的路径 */
-function getLegacyWorkspacesPath(): string {
-  return path.join(getConfigDir(), 'workspaces.json');
-}
-
 // ============================================================
 // 转换函数
 // ============================================================
@@ -278,40 +273,4 @@ export async function update(id: string, ws: Workspace): Promise<void> {
   if (idx === -1) return;
   file.workspaces[idx] = toWorkspaceData(ws);
   await saveWorkspacesFile(file);
-}
-
-// ============================================================
-// 迁移
-// ============================================================
-
-/**
- * 从旧版 .dogear/workspaces.json 迁移到 .dogear/workspaces/workspaces.json
- * 幂等：仅在旧文件存在时执行
- */
-export async function migrateFromLegacy(): Promise<void> {
-  const legacyPath = getLegacyWorkspacesPath();
-  const newPath = getWorkspacesPath();
-
-  try {
-    await fs.access(legacyPath);
-  } catch {
-    return; // 旧文件不存在，无需迁移
-  }
-
-  // 检查新文件是否已存在
-  try {
-    await fs.access(newPath);
-    // 新文件已存在，只需备份旧文件
-    await fs.rename(legacyPath, legacyPath + '.bak');
-    console.log('[workspace-json-service] 旧 workspaces.json 已备份');
-    return;
-  } catch {
-    // 新文件不存在，继续迁移
-  }
-
-  // 创建目录并复制文件
-  await fs.mkdir(path.dirname(newPath), { recursive: true });
-  await fs.copyFile(legacyPath, newPath);
-  await fs.rename(legacyPath, legacyPath + '.bak');
-  console.log('[workspace-json-service] workspaces.json 已迁移到 workspaces/ 目录');
 }

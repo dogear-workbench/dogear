@@ -15,19 +15,13 @@ import { mainLogger } from '../agents/logger.js';
 import { maybeFailoverMainSession, clearFailoverTriedBySession } from '../agents/model-failover.js';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import { requireActiveGroup } from '../services/group-service.js';
-import { getClaudeConfigDir, getSdkSessionsDir } from '../services/memory/session-paths.js';
-export { getClaudeConfigDir } from '../services/memory/session-paths.js';
 import path from 'path';
-import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import electron from 'electron';
 
 // 获取当前文件的路径 (ES Module 环境)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// 计算项目根目录（tipc -> main -> electron -> 项目根目录）
-const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 
 // bot 状态 getter（由 feishu.ts 模块加载时注册，避免循环导入）
 type BotStateGetter = () => { activeSessionId: string | null } | null;
@@ -419,38 +413,6 @@ export const agentRouter = {
       } catch (error) {
         console.error('读取对话历史失败:', error);
         return { status: 'error' as const, error: error instanceof Error ? error.message : String(error) };
-      }
-    }),
-
-  getSdkSessions: t.procedure
-    .input<{ projectPath?: string }>()
-    .action(async ({ input }) => {
-      try {
-        // 优先使用前端传入的路径，其次使用默认工作区路径，最后 fallback 到项目根目录
-        let projectRoot = input.projectPath;
-        if (!projectRoot) {
-          const workspaceJsonService = await import('../services/workspace-json-service.js');
-          const defaultWorkspace = await workspaceJsonService.getDefault();
-          projectRoot = defaultWorkspace?.path || PROJECT_ROOT;
-        }
-        const sessionsDir = getSdkSessionsDir(projectRoot);
-        const indexPath = path.join(sessionsDir, 'sessions-index.json');
-
-        console.log('读取 SDK 会话索引:', { projectRoot, sessionsDir, indexPath });
-
-        try {
-          await fs.access(indexPath);
-        } catch {
-          return { sessions: [], error: '会话索引文件不存在' };
-        }
-
-        const content = await fs.readFile(indexPath, 'utf-8');
-        const data = JSON.parse(content);
-        console.log(`找到 ${data.entries?.length || 0} 个会话`);
-        return { sessions: data.entries || [] };
-      } catch (error) {
-        console.error('读取 SDK 会话列表失败:', error);
-        return { sessions: [], error: error instanceof Error ? error.message : String(error) };
       }
     }),
 

@@ -21,7 +21,7 @@ const logger = mainLogger.child('usage-service');
 // ============================================================
 
 function getConfigDir(): string {
-  // 与 session-paths.ts 对齐：优先读 env（worker 线程 / 测试场景无 electron app）
+  // worker 线程 / 测试场景无 electron app，优先读注入的 env
   if (process.env.DOGEAR_CONFIG_DIR) {
     return process.env.DOGEAR_CONFIG_DIR;
   }
