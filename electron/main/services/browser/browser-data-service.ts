@@ -8,7 +8,6 @@ import { loadLoginAccounts, removeLoginAccountEntry, type LoginEvidence } from '
 export interface BrowserDomainData {
   domain: string;
   cookieCount: number;
-  hasLoginHint: boolean;
 }
 
 export interface LoginAccountView {
@@ -114,6 +113,16 @@ export function registeredDomain(rawDomain: string): string {
   return lastTwo;
 }
 
+export async function loginHintDomains(): Promise<string[]> {
+  const all = await getSession().cookies.get({});
+  const domains = new Set<string>();
+  for (const cookie of all) {
+    if (!cookie.domain) continue;
+    if (looksLikeLoginCookie(cookie.name)) domains.add(registeredDomain(cookie.domain));
+  }
+  return [...domains];
+}
+
 function looksLikeLoginCookie(name: string): boolean {
   const n = name.toLowerCase();
   if (LOGIN_HINT_NAMES.has(n)) return true;
@@ -198,9 +207,8 @@ export async function listBrowserData(): Promise<BrowserDataOverview> {
   for (const cookie of all) {
     if (!cookie.domain) continue;
     const domain = registeredDomain(cookie.domain);
-    const entry = byDomain.get(domain) ?? { domain, cookieCount: 0, hasLoginHint: false };
+    const entry = byDomain.get(domain) ?? { domain, cookieCount: 0 };
     entry.cookieCount += 1;
-    if (looksLikeLoginCookie(cookie.name)) entry.hasLoginHint = true;
     byDomain.set(domain, entry);
   }
   const domains = [...byDomain.values()].sort((a, b) => b.cookieCount - a.cookieCount || a.domain.localeCompare(b.domain));
@@ -219,22 +227,11 @@ async function listLoginAccounts(): Promise<LoginAccountView[]> {
 }
 
 // 当前 Electron 版本 clearStorageData 只收单 origin，不支持 origins 数组
-async function clearOriginsStorage(
-  origins: string[],
-  storages?: Electron.ClearStorageDataOptions['storages'],
-): Promise<void> {
+async function clearOriginsStorage(origins: string[]): Promise<void> {
   const ses = getSession();
   for (const origin of origins) {
-    await ses.clearStorageData({ origin, ...(storages ? { storages } : {}) });
+    await ses.clearStorageData({ origin });
   }
-}
-
-export async function logoutDomain(domain: string): Promise<{ removedCookies: number }> {
-  const cookies = await cookiesForRegisteredDomain(domain);
-  const origins = originsOf(cookies);
-  await clearOriginsStorage(origins, ['cookies']);
-  await removeCookiesOneByOne(cookies);
-  return { removedCookies: cookies.length };
 }
 
 export async function clearDomainData(domain: string): Promise<{ removedCookies: number; origins: string[] }> {

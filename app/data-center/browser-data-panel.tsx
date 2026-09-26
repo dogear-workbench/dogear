@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ChevronDown, HardDrive, Loader2, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { ChevronDown, HardDrive, Info, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,25 @@ import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import { showConfirm } from '@/stores/confirm-store';
 import { formatBytes } from './version-backup/backup-meta';
 import { domainCnName } from './browser-domain-names';
+import { formatDateTimeShort, formatRelativePast } from './history-utils';
 
 type BrowserDataOverview = Awaited<ReturnType<typeof client.listBrowserData>>;
+type LoginAccountView = BrowserDataOverview['loginAccounts'][number];
+type DomainData = BrowserDataOverview['domains'][number];
 
 const POLL_MS = 30_000;
 const AGENT_RISK_HINT = '若 agent 正在跑浏览器任务，可能受影响。';
+
+const EVIDENCE_LABEL: Record<LoginAccountView['evidence'], string> = {
+  'oauth-callback': 'OAuth 回调',
+  'login-post': '登录请求',
+  'init-heuristic': 'Cookie 检测',
+  'init-webai-storage': '站点数据检测',
+};
+
+function lastLoginText(ts: number): string {
+  return formatRelativePast(ts) || formatDateTimeShort(ts);
+}
 
 export function BrowserDataPanel() {
   const [overview, setOverview] = useState<BrowserDataOverview | null>(null);
@@ -48,11 +62,14 @@ export function BrowserDataPanel() {
 
   const onLogout = useCallback(
     async (domain: string) => {
-      const ok = await showConfirm(`登出 ${domain}`, `将清除该域名的全部 Cookie（登录态），站点数据保留。${AGENT_RISK_HINT}`);
+      const ok = await showConfirm(
+        `登出 ${domain}`,
+        `将在本地清除该站全部会话数据（Cookie、本地存储、IndexedDB），不通知服务器，站点可能仍认为你在线。${AGENT_RISK_HINT}`,
+      );
       if (!ok) return;
       await runAction(`logout:${domain}`, async () => {
-        const r = await client.logoutBrowserDomain({ domain });
-        toast.success(`已登出 ${domain}`, { description: `清除 Cookie ${r.removedCookies} 条` });
+        const r = await client.logoutLoginAccount({ domain });
+        toast.success(`已登出 ${domain}`, { description: `清除 Cookie ${r.removedCookies} 条 · 涉及 ${r.origins.length} 个源` });
       });
     },
     [runAction],
@@ -68,6 +85,22 @@ export function BrowserDataPanel() {
       await runAction(`clear:${domain}`, async () => {
         const r = await client.clearBrowserDomainData({ domain });
         toast.success(`已清除 ${domain}`, { description: `清除 Cookie ${r.removedCookies} 条 · 涉及 ${r.origins.length} 个源` });
+      });
+    },
+    [runAction],
+  );
+
+  const onRemove = useCallback(
+    async (domain: string) => {
+      const ok = await showConfirm(`移除 ${domain} 的登录记录`, '仅将该站点移出「我的登录」清单，不删除任何站点数据，实际登录态保持不变。');
+      if (!ok) return;
+      await runAction(`remove:${domain}`, async () => {
+        const removed = await client.removeLoginAccount({ domain });
+        if (removed) {
+          toast.success(`已移除 ${domain} 的登录记录`);
+        } else {
+          toast.info('清单中无此条目');
+        }
       });
     },
     [runAction],
@@ -94,17 +127,12 @@ export function BrowserDataPanel() {
     });
   }, [runAction]);
 
-  const sorted = useMemo(() => {
+  const others = useMemo(() => {
     if (!overview) return [];
-    return [...overview.domains].sort(
-      (a, b) =>
-        Number(b.hasLoginHint) - Number(a.hasLoginHint) ||
-        b.cookieCount - a.cookieCount ||
-        a.domain.localeCompare(b.domain),
-    );
+    const loginSet = new Set(overview.loginAccounts.map((a) => a.domain));
+    return overview.domains.filter((d) => !loginSet.has(d.domain));
   }, [overview]);
-  const loggedIn = useMemo(() => sorted.filter((d) => d.hasLoginHint), [sorted]);
-  const others = useMemo(() => sorted.filter((d) => !d.hasLoginHint), [sorted]);
+  const empty = overview !== null && overview.loginAccounts.length === 0 && others.length === 0;
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-6 space-y-6">
@@ -133,11 +161,16 @@ export function BrowserDataPanel() {
             <StatBlock label="分区磁盘占用" value={overview ? formatBytes(overview.diskUsage) : '…'} />
             <StatBlock label="HTTP 缓存" value={overview ? formatBytes(overview.cacheSize) : '…'} />
             <StatBlock
-              label="站点 / Cookie"
-              value={overview ? `${overview.domains.length} 站 · ${overview.totalCookies} 条` : '…'}
+              label="登录站点 / Cookie"
+              value={overview ? `${overview.loginAccounts.length} 站 · ${overview.totalCookies} 条` : '…'}
             />
           </CardContent>
         </Card>
+
+        <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+          <Info className="w-3 h-3 shrink-0" />
+          登录状态由系统自动检测，可能不准确；误报可点条目上的「移除」。
+        </p>
 
         <Card className="py-2">
           <CardContent className="px-2">
@@ -146,20 +179,20 @@ export function BrowserDataPanel() {
                 <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
                 加载中…
               </div>
-            ) : overview.domains.length === 0 ? (
+            ) : empty ? (
               <div className="py-8 text-center text-sm text-muted-foreground">暂无站点数据，用浏览器访问任意网站后出现在这里</div>
             ) : (
               <>
                 <div className="px-4 py-2 flex items-baseline gap-2">
-                  <span className="text-xs font-medium text-muted-foreground shrink-0">有会话 Cookie</span>
-                  <span className="text-xs text-muted-foreground/70">按 Cookie 名启发式判定，含未登录的匿名会话</span>
+                  <span className="text-xs font-medium text-muted-foreground shrink-0">我的登录</span>
+                  <span className="text-xs text-muted-foreground/70">在该浏览器分区中检测到的登录账号</span>
                 </div>
-                {loggedIn.length === 0 ? (
-                  <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">暂无含会话 Cookie 的站点</div>
+                {overview.loginAccounts.length === 0 ? (
+                  <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">暂无检测到的登录，在浏览器或网页 AI 中登录网站后出现在这里</div>
                 ) : (
                   <div className="divide-y">
-                    {loggedIn.map((item) => (
-                      <DomainRow key={item.domain} item={item} busy={busy} onLogout={onLogout} onClear={onClearDomain} />
+                    {overview.loginAccounts.map((item) => (
+                      <LoginRow key={item.domain} item={item} busy={busy} onLogout={onLogout} onClear={onClearDomain} onRemove={onRemove} />
                     ))}
                   </div>
                 )}
@@ -167,16 +200,16 @@ export function BrowserDataPanel() {
                   <Collapsible open={othersOpen} onOpenChange={setOthersOpen}>
                     <CollapsibleTrigger className="w-full flex items-center gap-2 border-t px-4 py-2.5 text-left hover:bg-muted/50">
                       <ChevronDown className={`w-4 h-4 shrink-0 text-muted-foreground transition-transform ${othersOpen ? '' : '-rotate-90'}`} />
-                      <span className="text-sm shrink-0">其他域名</span>
+                      <span className="text-sm shrink-0">其他站点数据</span>
                       <Badge variant="secondary" className="shrink-0">
                         {others.length}
                       </Badge>
-                      <span className="text-xs text-muted-foreground truncate">多为页面嵌入的第三方域（统计 / CDN 等），非直接访问的站点</span>
+                      <span className="text-xs text-muted-foreground truncate">未检测到登录，多为页面嵌入的第三方域（统计 / CDN 等）</span>
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <div className="divide-y border-t">
                         {others.map((item) => (
-                          <DomainRow key={item.domain} item={item} busy={busy} onLogout={onLogout} onClear={onClearDomain} />
+                          <OtherDomainRow key={item.domain} item={item} busy={busy} onClear={onClearDomain} />
                         ))}
                       </div>
                     </CollapsibleContent>
@@ -196,16 +229,18 @@ export function BrowserDataPanel() {
   );
 }
 
-function DomainRow({
+function LoginRow({
   item,
   busy,
   onLogout,
   onClear,
+  onRemove,
 }: {
-  item: BrowserDataOverview['domains'][number];
+  item: LoginAccountView;
   busy: string | null;
   onLogout: (domain: string) => void;
   onClear: (domain: string) => void;
+  onRemove: (domain: string) => void;
 }) {
   const cnName = domainCnName(item.domain);
   return (
@@ -219,15 +254,10 @@ function DomainRow({
         ) : (
           <span className="text-sm font-medium truncate">{item.domain}</span>
         )}
-        {item.hasLoginHint && (
-          <Badge variant="outline" className="gap-1 text-green-600 border-green-600/40 shrink-0">
-            <ShieldCheck className="w-3 h-3" />
-            会话 Cookie
-          </Badge>
-        )}
-        <Badge variant="secondary" className="shrink-0">
-          {item.cookieCount} Cookie
+        <Badge variant="outline" className="shrink-0 text-muted-foreground">
+          {EVIDENCE_LABEL[item.evidence]}
         </Badge>
+        <span className="text-xs text-muted-foreground shrink-0">最近登录 {lastLoginText(item.lastLoginAt)}</span>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy !== null} onClick={() => onLogout(item.domain)}>
@@ -244,7 +274,40 @@ function DomainRow({
           {busy === `clear:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
           清除数据
         </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs text-muted-foreground hover:text-destructive"
+          disabled={busy !== null}
+          onClick={() => onRemove(item.domain)}
+        >
+          {busy === `remove:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+          移除
+        </Button>
       </div>
+    </div>
+  );
+}
+
+function OtherDomainRow({ item, busy, onClear }: { item: DomainData; busy: string | null; onClear: (domain: string) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-sm truncate">{item.domain}</span>
+        <Badge variant="secondary" className="shrink-0">
+          {item.cookieCount} Cookie
+        </Badge>
+      </div>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-7 text-xs text-destructive hover:text-destructive shrink-0"
+        disabled={busy !== null}
+        onClick={() => onClear(item.domain)}
+      >
+        {busy === `clear:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+        清除数据
+      </Button>
     </div>
   );
 }

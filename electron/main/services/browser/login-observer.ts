@@ -3,7 +3,7 @@ import { readdir } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { app, session } from 'electron';
 import { GLOBAL_BROWSER_PARTITION } from './embedded/profile.js';
-import { listBrowserData, registeredDomain } from './browser-data-service.js';
+import { loginHintDomains, registeredDomain } from './browser-data-service.js';
 import { getConfigDir, loadSettings } from '../settings-service.js';
 import { safeJsonRead, safeJsonWrite } from '../safe-json.js';
 
@@ -171,9 +171,8 @@ export async function migrateInitialLoginAccounts(): Promise<void> {
 
     const domains = new Map<string, LoginEvidence>();
     try {
-      const overview = await listBrowserData();
-      for (const d of overview.domains) {
-        if (d.hasLoginHint) domains.set(d.domain, 'init-heuristic');
+      for (const domain of await loginHintDomains()) {
+        domains.set(domain, 'init-heuristic');
       }
     } catch (err) {
       console.error('[login-observer] cookie 启发式扫描失败:', err);

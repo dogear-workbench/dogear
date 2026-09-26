@@ -33,8 +33,9 @@
 
 ## 浏览器数据管理（services/browser/）
 
-- `browser-data-service.ts` — 全局分区数据管理：cookie 按注册域聚合（多段后缀归一+登录态启发）+ 分区目录/缓存大小概览 + 按域登出/清数据 + 清缓存/全部清除（clearStorageData 逐 origin 循环）
-- `tipc/browser-data.ts` — 数据中心浏览器数据五路由（list/logout/clear domain/cache/clear all）
+- `login-observer.ts` — 登录观测器：onBeforeRequest 拦截登录特征请求（OAuth 回调/登录 POST）写登录清单（`getConfigDir()/login-accounts.json`，3s debounce + 60s 去重）；`migrateInitialLoginAccounts` 首启迁移（cookie 启发式 loginHintDomains ∪ webAiSites∩IndexedDB 痕迹，initialized 标记只跑一次）；removeLoginAccountEntry 立即落盘不走 debounce
+- `browser-data-service.ts` — 全局分区数据管理：cookie 按注册域聚合（多段后缀归一）+ 登录清单视图 loginAccounts + 分区目录/缓存大小概览 + 登录账号登出 logoutLoginAccount（清全量站点数据+移清单条目）/removeLoginAccount（仅移清单）/按域清数据 + 清缓存/全部清除（clearStorageData 逐 origin 循环）
+- `tipc/browser-data.ts` — 数据中心浏览器数据路由（list/logoutLoginAccount/removeLoginAccount/clear domain/cache/clear all）
 - UI 面板 `app/data-center/browser-data-panel.tsx` → 见 data-center.md
 
 ## 搜索与阅读
