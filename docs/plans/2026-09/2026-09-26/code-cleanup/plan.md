@@ -14,7 +14,7 @@
 - [x] [Step 4: 复用收口](./step4-dedup.md) — 广播函数回迁收口模块、逐字重复合并、detectPlatform 收口
 - [x] [Step 5: snake_case 双格式迁移](./step5-snake-case.md) — 前端 12 文件 32 处改驼峰，删 toCompat 层
 - [x] [Step 6: 低风险拆分](./step6-split-low-risk.md) — article-service / WorkspaceExplorer / settings page / main-app / useTranscriptState
-- [ ] [Step 7: 谨慎拆分](./step7-split-careful.md) — agent-worker / pi-session tool-assembly / stock-analysis-tools
+- [x] [Step 7: 谨慎拆分](./step7-split-careful.md) — agent-worker / pi-session tool-assembly / stock-analysis-tools
 - [ ] [Step 8: 收尾验证与文档同步](./step8-finalize.md) — 全量 lint/tsc/test、代码地图同步、总结
 
 ## 全局决策

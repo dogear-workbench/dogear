@@ -18,7 +18,7 @@ import { pythonBridge, DataSourceExhaustedError } from '../../services/stock/pyt
 import { readFinancialsCache, writeFinancialsCache } from '../../services/stock/financials-cache-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
-import { safe } from './stock-format.js';
+import { safe, formatYuan, formatIndicatorResult } from './stock-format.js';
 
 
 // ============================================================
@@ -38,15 +38,6 @@ const MAX_KLINE_LIMIT = 500;
 // 辅助函数
 // ============================================================
 
-/** 金额格式化：亿/万，用于资金流向净额（元）展示 */
-function formatYuan(val: number | undefined | null): string {
-  if (val == null || isNaN(val)) return '-';
-  const abs = Math.abs(val);
-  if (abs >= 1e8) return `${(val / 1e8).toFixed(2)}亿`;
-  if (abs >= 1e4) return `${(val / 1e4).toFixed(1)}万`;
-  return val.toFixed(0);
-}
-
 /** 备源降级 banner；_source 为空或本就是主源（eastmoney）时不显示 */
 function formatSourceBanner(source: string | null | undefined): string {
   if (!source || source === 'eastmoney') return '';
@@ -54,107 +45,15 @@ function formatSourceBanner(source: string | null | undefined): string {
     '> 备源字段可能不全（如 PE / 流通市值缺失），本次未按对应条件筛\n\n';
 }
 
-/** 获取数组最后一个非 null 值 */
-function lastValue(arr: (number | null)[]): number | null {
-  for (let i = arr.length - 1; i >= 0; i--) {
-    if (arr[i] !== null && arr[i] !== undefined) return arr[i];
-  }
-  return null;
-}
-
-/** 格式化单个指标结果为可读文本 */
-function formatIndicatorResult(name: string, data: Record<string, (number | null)[]>): string {
-  switch (name) {
-    case 'MACD': {
-      const dif = lastValue(data.DIF);
-      const dea = lastValue(data.DEA);
-      const macd = lastValue(data.MACD);
-      const trend = dif !== null && dea !== null
-        ? (dif > dea ? 'DIF 在 DEA 上方（多头）' : 'DIF 在 DEA 下方（空头）')
-        : '';
-      const zeroAxis = dif !== null
-        ? (dif > 0 ? '，DIF 在零轴上方' : '，DIF 在零轴下方')
-        : '';
-      return `MACD(12,26,9): DIF=${safe(dif, 4)}, DEA=${safe(dea, 4)}, 柱=${safe(macd, 4)} | ${trend}${zeroAxis}`;
-    }
-    case 'KDJ': {
-      const k = lastValue(data.K);
-      const d = lastValue(data.D);
-      const j = lastValue(data.J);
-      let zone = '';
-      if (k !== null) {
-        if (k > 80) zone = '超买区(>80)';
-        else if (k < 20) zone = '超卖区(<20)';
-        else zone = '中性区间';
-      }
-      return `KDJ(9,3,3): K=${safe(k)}, D=${safe(d)}, J=${safe(j)} | ${zone}`;
-    }
-    case 'RSI': {
-      const rsi = lastValue(data.RSI);
-      let zone = '';
-      if (rsi !== null) {
-        if (rsi > 70) zone = '超买区(>70)';
-        else if (rsi < 30) zone = '超卖区(<30)';
-        else if (rsi >= 40 && rsi <= 60) zone = '中性区间(40-60)';
-        else if (rsi > 60) zone = '偏强(60-70)';
-        else zone = '偏弱(30-40)';
-      }
-      return `RSI(14): ${safe(rsi)} | ${zone}`;
-    }
-    case 'BOLL': {
-      const upper = lastValue(data.UPPER);
-      const mid = lastValue(data.MID);
-      const lower = lastValue(data.LOWER);
-      return `BOLL(20,2): 上轨=${safe(upper, 2)}, 中轨=${safe(mid, 2)}, 下轨=${safe(lower, 2)}`;
-    }
-    case 'MA': {
-      const parts: string[] = [];
-      for (const key of Object.keys(data).sort()) {
-        const val = lastValue(data[key]);
-        parts.push(`${key}=${safe(val, 2)}`);
-      }
-      return `均线: ${parts.join(', ')}`;
-    }
-    case 'EMA': {
-      const parts: string[] = [];
-      for (const key of Object.keys(data).sort()) {
-        const val = lastValue(data[key]);
-        parts.push(`${key}=${safe(val, 2)}`);
-      }
-      return `指数均线: ${parts.join(', ')}`;
-    }
-    case 'WR': {
-      const wr = lastValue(data.WR);
-      let zone = '';
-      if (wr !== null) {
-        if (wr > -20) zone = '超买区(>-20)';
-        else if (wr < -80) zone = '超卖区(<-80)';
-        else zone = '中性区间';
-      }
-      return `WR(14): ${safe(wr)} | ${zone}`;
-    }
-    case 'OBV': {
-      const obv = lastValue(data.OBV);
-      return `OBV: ${obv !== null ? obv.toLocaleString() : '-'}`;
-    }
-    case 'ATR': {
-      const atr = lastValue(data.ATR);
-      return `ATR(14): ${safe(atr, 4)}`;
-    }
-    case 'VWAP': {
-      const vwap = lastValue(data.VWAP);
-      return `VWAP: ${safe(vwap, 2)}`;
-    }
-    default:
-      return `${name}: ${JSON.stringify(data)}`;
-  }
-}
-
-// ============================================================
 // 工具创建函数
 // ============================================================
 
-export function createStockAnalysisToolDefs(): ToolDef[] {
+// ============================================================
+// 分域工具创建函数
+// ============================================================
+
+/** 技术指标与信号域：指标计算 + 信号检测（均由 Python 引擎计算） */
+function createIndicatorToolDefs(): ToolDef[] {
   return [
     // ========================================
     // 工具: 计算技术指标
@@ -267,6 +166,93 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       }
     ),
 
+    // ========================================
+    // 工具: 检测技术信号
+    // ========================================
+    defineTool(
+      'dogear__DetectSignals',
+      '检测技术信号',
+      '检测股票近期技术信号。\n' +
+      '内置信号: MACD金叉/死叉, KDJ金叉/超买/超卖, RSI超买/超卖, 布林上轨突破/下轨跌破, 成交量突破, 均线多头排列。\n' +
+      '返回: 触发的信号列表（含信号名称、触发日期、指标数值）。',
+      z.object({
+        market: z.number().describe('市场代码（1=沪市 0=深市）'),
+        code: z.string().describe('股票代码（如"600519"）'),
+        signals: z.array(z.string()).optional()
+          .describe('要检测的信号 ID 列表（不传则检测全部），可选值: macd_golden_cross, macd_death_cross, kdj_golden_cross, kdj_oversold, kdj_overbought, rsi_oversold, rsi_overbought, boll_upper_break, boll_lower_break, volume_breakout, ma_bullish_arrangement'),
+        lookback: z.number().min(1).max(30).default(5)
+          .describe('回看天数（默认5天）'),
+        period: z.enum(['daily', 'weekly', 'monthly']).default('daily')
+          .describe('K线周期（默认日K）'),
+      }),
+      async (args) => {
+        try {
+          const periodMap: Record<string, 101 | 102 | 103> = {
+            daily: 101, weekly: 102, monthly: 103,
+          };
+          const secid = `${args.market}.${args.code}`;
+          const klineData = await stockService.getKLine({
+            secid,
+            period: periodMap[args.period],
+            adjust: 1,
+            limit: Math.max(DEFAULT_KLINE_LIMIT, (args.lookback ?? 5) + 70),
+          });
+
+          if (klineData.length === 0) {
+            return { content: [{ type: 'text' as const, text: '未获取到 K 线数据，无法检测信号。请检查股票代码。' }] };
+          }
+
+          const result = await pythonBridge.call<{
+            detected: Array<{
+              signal_id: string;
+              name: string;
+              description: string;
+              date: string;
+              details: string;
+            }>;
+            lookback_days: number;
+            signals_checked: number;
+            summary: string;
+          }>(
+            'detect_signals',
+            {
+              kline: klineData,
+              signals: args.signals ?? null,
+              lookback: args.lookback ?? 5,
+            },
+            CALC_TIMEOUT_MS,
+          );
+
+          if (result.detected.length === 0) {
+            return {
+              content: [{ type: 'text' as const, text: `${args.code} 近${result.lookback_days}日（共检测 ${result.signals_checked} 种信号）：无信号触发。` }],
+            };
+          }
+
+          const lines = result.detected.map(
+            (s) => `• [${s.date}] ${s.name}: ${s.details}（${s.description}）`
+          );
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `${args.code} ${result.summary}（共检测 ${result.signals_checked} 种信号）：\n${lines.join('\n')}`,
+            }],
+          };
+        } catch (error) {
+          return {
+            content: [{ type: 'text' as const, text: `信号检测失败: ${error}` }],
+            isError: true,
+          };
+        }
+      }
+    ),
+
+  ];
+}
+
+/** 量化分析域：选股筛选 + 基本面 + 公式求值 + 回测 */
+function createQuantToolDefs(): ToolDef[] {
+  return [
     // ========================================
     // 工具: 全市场筛选
     // ========================================
@@ -465,87 +451,6 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
         } catch (error) {
           return {
             content: [{ type: 'text' as const, text: `获取财报失败: ${error}` }],
-            isError: true,
-          };
-        }
-      }
-    ),
-
-    // ========================================
-    // 工具: 检测技术信号
-    // ========================================
-    defineTool(
-      'dogear__DetectSignals',
-      '检测技术信号',
-      '检测股票近期技术信号。\n' +
-      '内置信号: MACD金叉/死叉, KDJ金叉/超买/超卖, RSI超买/超卖, 布林上轨突破/下轨跌破, 成交量突破, 均线多头排列。\n' +
-      '返回: 触发的信号列表（含信号名称、触发日期、指标数值）。',
-      z.object({
-        market: z.number().describe('市场代码（1=沪市 0=深市）'),
-        code: z.string().describe('股票代码（如"600519"）'),
-        signals: z.array(z.string()).optional()
-          .describe('要检测的信号 ID 列表（不传则检测全部），可选值: macd_golden_cross, macd_death_cross, kdj_golden_cross, kdj_oversold, kdj_overbought, rsi_oversold, rsi_overbought, boll_upper_break, boll_lower_break, volume_breakout, ma_bullish_arrangement'),
-        lookback: z.number().min(1).max(30).default(5)
-          .describe('回看天数（默认5天）'),
-        period: z.enum(['daily', 'weekly', 'monthly']).default('daily')
-          .describe('K线周期（默认日K）'),
-      }),
-      async (args) => {
-        try {
-          const periodMap: Record<string, 101 | 102 | 103> = {
-            daily: 101, weekly: 102, monthly: 103,
-          };
-          const secid = `${args.market}.${args.code}`;
-          const klineData = await stockService.getKLine({
-            secid,
-            period: periodMap[args.period],
-            adjust: 1,
-            limit: Math.max(DEFAULT_KLINE_LIMIT, (args.lookback ?? 5) + 70),
-          });
-
-          if (klineData.length === 0) {
-            return { content: [{ type: 'text' as const, text: '未获取到 K 线数据，无法检测信号。请检查股票代码。' }] };
-          }
-
-          const result = await pythonBridge.call<{
-            detected: Array<{
-              signal_id: string;
-              name: string;
-              description: string;
-              date: string;
-              details: string;
-            }>;
-            lookback_days: number;
-            signals_checked: number;
-            summary: string;
-          }>(
-            'detect_signals',
-            {
-              kline: klineData,
-              signals: args.signals ?? null,
-              lookback: args.lookback ?? 5,
-            },
-            CALC_TIMEOUT_MS,
-          );
-
-          if (result.detected.length === 0) {
-            return {
-              content: [{ type: 'text' as const, text: `${args.code} 近${result.lookback_days}日（共检测 ${result.signals_checked} 种信号）：无信号触发。` }],
-            };
-          }
-
-          const lines = result.detected.map(
-            (s) => `• [${s.date}] ${s.name}: ${s.details}（${s.description}）`
-          );
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `${args.code} ${result.summary}（共检测 ${result.signals_checked} 种信号）：\n${lines.join('\n')}`,
-            }],
-          };
-        } catch (error) {
-          return {
-            content: [{ type: 'text' as const, text: `信号检测失败: ${error}` }],
             isError: true,
           };
         }
@@ -773,6 +678,12 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
       }
     ),
 
+  ];
+}
+
+/** 板块与资金域：行业板块 + 资金流向 + 北向持股 */
+function createCapitalFlowToolDefs(): ToolDef[] {
+  return [
     // ========================================
     // 工具: 列出行业板块
     // ========================================
@@ -1128,6 +1039,18 @@ export function createStockAnalysisToolDefs(): ToolDef[] {
         }
       }
     ),
+  ];
+}
+
+// ============================================================
+// 聚合工厂（保持单工厂入口，注册与引用方无感）
+// ============================================================
+
+export function createStockAnalysisToolDefs(): ToolDef[] {
+  return [
+    ...createIndicatorToolDefs(),
+    ...createQuantToolDefs(),
+    ...createCapitalFlowToolDefs(),
   ];
 }
 
