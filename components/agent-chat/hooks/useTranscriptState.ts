@@ -9,7 +9,6 @@ export interface TranscriptEvent {
   role?: 'user' | 'assistant';
   uuid?: string;
   isReplay?: boolean;
-  source?: string;
 }
 
 export type StreamEventSideEffect = () => void;
@@ -146,7 +145,7 @@ export function findHistoryOverlapIndex(history: Message[], turnEntryIds: string
 // 磁盘切掉段（overlap 命中及其后）里运行中 turn 的 user header 捞回：desktop 自发消息在事件流里只有
 // message_id(user) 事件、reducer 不产实体，重放后 live 缺 user。锚点取 user 前面最近一条磁盘 assistant
 // 的末尾 entryId，且需回看完整 history：命中点之前的同 run assistant 留在 stable 侧，但其 entry 仍被
-// 重放产物覆盖，锚点能解析。只捞 turnEntryIds 成员；wechat-bot 等带实体的 user 重放已落 live，按 id 去重。
+// 重放产物覆盖，锚点能解析。只捞 turnEntryIds 成员；带实体的 user 重放已落 live，按 id 去重。
 export function reinsertCutUsers(live: Message[], history: Message[], cutFrom: number, turnEntryIds: string[]): Message[] {
   const turnIds = new Set(turnEntryIds);
   const result = [...live];

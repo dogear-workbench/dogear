@@ -356,9 +356,6 @@ export const MessageItem = memo(function MessageItem({
       {isUser ? (
         // 用户消息: 加粗外框+阴影+完全不透明,遮挡后面滚过的 AI 回答
         <div className="relative border-2 border-muted-foreground/25 rounded-lg px-4 py-2 bg-background shadow-md">
-          {message.source === 'wechat-bot' && (
-            <Bot className="w-3 h-3 text-green-500 dark:text-green-400 absolute top-2 right-2" />
-          )}
           <div className="min-w-0">
             {(
               // SDK 注入的命令已在上方提前 return，此处只处理真实用户输入

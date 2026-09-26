@@ -154,12 +154,12 @@ describe('useTranscriptState core', () => {
     expect(merged.live[1].id).toBe('e-u2');
   });
 
-  test('wechat-bot user 已由重放事件落 live 时捞回按 id 去重跳过', () => {
+  test('注入 user 已由重放事件落 live 时捞回按 id 去重跳过', () => {
     const history: Message[] = [
       { role: 'user', content: 'hi', id: 'e-w', entryIds: ['e-w'] },
     ];
     const snapshot = [
-      event('user', { source: 'wechat-bot', content: 'hi' }),
+      event('user', { content: 'hi', injectedTag: 'task-execution' }),
       event('message_id', { role: 'user', uuid: 'e-w' }),
       event('text', { content: 'reply' }),
     ];
@@ -239,16 +239,15 @@ describe('useTranscriptState core', () => {
     expect(core.live.map((message) => message.id)).toEqual(['u-2']);
   });
 
-  test('wechat-bot user 事件落 live 而非 stable', () => {
+  test('注入 user 事件落 live 而非 stable', () => {
     let core = initialTranscriptCore();
 
-    core = applyEventToCore(core, event('user', { source: 'wechat-bot', content: 'hi' }), true);
+    core = applyEventToCore(core, event('user', { content: 'hi', injectedTag: 'task-execution' }), true);
 
     expect(core.stable).toEqual([]);
     expect(core.live).toHaveLength(1);
     expect(core.live[0].role).toBe('user');
     expect(core.live[0].content).toBe('hi');
-    expect(core.live[0].source).toBe('wechat-bot');
   });
 
   test('权限请求登记、解决和 promote 状态一致', () => {

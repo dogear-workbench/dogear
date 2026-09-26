@@ -3,7 +3,6 @@ import HomePage from '@/app/page';
 import SettingsPage from '@/app/settings/page';
 import DebugPage from '@/app/debug/page';
 import StockPage from '@/app/stocks/page';
-import WechatPage from '@/app/wechat/page';
 import DataCenterPage from '@/app/data-center/page';
 import { WorkbenchWindowPage } from '@/app/workbench-window/page';
 import { NotesWindowPage } from '@/app/notes-window/page';
@@ -24,7 +23,6 @@ export function App() {
           <Route path="/" element={<ErrorBoundary fallback="page"><HomePage /></ErrorBoundary>} />
           <Route path="/debug" element={<ErrorBoundary fallback="page"><DebugPage /></ErrorBoundary>} />
           <Route path="/stocks" element={<ErrorBoundary fallback="page"><StockPage /></ErrorBoundary>} />
-          <Route path="/wechat" element={<ErrorBoundary fallback="page"><WechatPage /></ErrorBoundary>} />
           <Route path="/session-window/:conversationId" element={<ErrorBoundary fallback="page"><SessionWindowPage /></ErrorBoundary>} />
           <Route path="/data-center" element={(
             <div className="h-full flex flex-col">

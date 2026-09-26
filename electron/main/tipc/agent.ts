@@ -29,7 +29,7 @@ const __dirname = path.dirname(__filename);
 // 计算项目根目录（tipc -> main -> electron -> 项目根目录）
 const PROJECT_ROOT = path.resolve(__dirname, '../../../');
 
-// bot 状态 getter（由 wechat.ts / feishu.ts 模块加载时注册，避免循环导入）
+// bot 状态 getter（由 feishu.ts 模块加载时注册，避免循环导入）
 type BotStateGetter = () => { activeSessionId: string | null } | null;
 const _botStateGetters = new Set<BotStateGetter>();
 export function registerBotStateGetter(getter: BotStateGetter): void {

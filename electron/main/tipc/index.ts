@@ -16,7 +16,6 @@ import { claudeConfigRouter } from './claude-config.js';
 import { abilityRouter } from './ability.js';
 import { workspaceConfigRouter } from './workspace-config.js';
 import { stockRouter } from './stock.js';
-import { wechatRouter } from './wechat.js';
 import { feishuRouter } from './feishu.js';
 import { conversationRuntimeRouter } from './conversation-runtime.js';
 import { environmentRouter } from './environment.js';
@@ -52,7 +51,6 @@ export const router = {
   ...abilityRouter,
   ...workspaceConfigRouter,
   ...stockRouter,
-  ...wechatRouter,
   ...feishuRouter,
   ...conversationRuntimeRouter,
   ...environmentRouter,

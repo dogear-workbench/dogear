@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  Bot, ChevronDown, ChevronRight, GitBranch, ListTodo, MessagesSquare, MoreHorizontal, Network,
+  ChevronDown, ChevronRight, GitBranch, ListTodo, MessagesSquare, MoreHorizontal, Network,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
@@ -56,7 +56,6 @@ export function ConversationRow({
   const runningIds = useConversationStore((s) => s.runningConversationIds);
   const pendingIds = useConversationStore((s) => s.pendingActionConversationIds);
   const aliveIds = useConversationStore((s) => s.aliveConversationIds);
-  const botBoundId = useConversationStore((s) => s.botBoundConversationId);
   const childSnapshot = useConversationStore((s) => s.childSnapshotsById[conv.id]);
   const { isOpen, isSelected } = useNodeHighlight(conv.id, nodeId);
 
@@ -69,7 +68,6 @@ export function ConversationRow({
   const isRunning = runningIds.has(conv.id);
   const isPending = pendingIds.has(conv.id);
   const isAlive = aliveIds.has(conv.id);
-  const isBotBound = conv.id === botBoundId;
   const isChildRunning = childSnapshot?.status === 'running';
   const isDisplayRunning = isRunning || isChildRunning;
   const hasChildren = !!expandToggle;
@@ -169,7 +167,6 @@ export function ConversationRow({
             >
               {getConversationTitle(conv)}
             </div>
-            {isBotBound && <Bot className="w-3 h-3 flex-shrink-0 text-green-500" />}
           </div>
         )}
         <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">

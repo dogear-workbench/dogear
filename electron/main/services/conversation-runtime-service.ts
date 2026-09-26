@@ -9,7 +9,7 @@ import { requireActiveGroup } from './group-service.js';
 import { loadSettings } from './settings-service.js';
 import { getWorkspaceConfig } from './workspace-config-service.js';
 
-export type RuntimeHolderType = 'desktop' | 'wechat-bot' | 'feishu-bot';
+export type RuntimeHolderType = 'desktop' | 'feishu-bot';
 
 export interface ConversationRuntimeAttachment {
   attachmentId: string;

@@ -32,8 +32,6 @@ export interface Message {
   isCompactBoundary?: boolean;
   // 压缩元数据
   compactMetadata?: { trigger?: string; preTokens?: number };
-  // 消息来源（'wechat-bot' 表示微信 bot 发送）
-  source?: string;
 }
 
 /**

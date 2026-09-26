@@ -88,8 +88,6 @@ interface ConversationState {
   pausedConversationIds: Set<string>;
   /** 存活会话 ID 集合（主进程 PiSessionManager 内存态派生；全量广播直接替换） */
   aliveConversationIds: Set<string>;
-  /** 微信 Bot 当前绑定的对话 ID（null 表示未绑定） */
-  botBoundConversationId: string | null;
   /** bridge 暴露的子会话快照（按父会话 id 分组）。仅前端展示用，bridge 内存丢失后会被清空 */
   childrenByParent: Record<string, ChildStateSnapshot[]>;
   childSnapshotsById: Record<string, ChildStateSnapshot>;
@@ -146,8 +144,6 @@ interface ConversationState {
   setPausedState: (conversationId: string, isPaused: boolean) => void;
   /** 整体替换存活会话集合 */
   setAliveConversations: (conversationIds: string[]) => void;
-  /** 设置 Bot 绑定的对话 ID */
-  setBotBoundConversation: (conversationId: string | null) => void;
   /** 从 bridge 拉取所有子会话快照（loadConversations 后台调一次） */
   refreshAllChildren: () => Promise<void>;
   /** 把一条 childStatusChanged 事件应用到 childrenByParent */
@@ -224,7 +220,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
   pendingActionConversationIds: new Set<string>(),
   pausedConversationIds: new Set<string>(),
   aliveConversationIds: new Set<string>(),
-  botBoundConversationId: null,
   childrenByParent: {},
   childSnapshotsById: {},
   failoverNoticesByConversation: {},
@@ -720,10 +715,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     set({ aliveConversationIds: new Set(conversationIds) });
   },
 
-  setBotBoundConversation: (conversationId: string | null) => {
-    set({ botBoundConversationId: conversationId });
-  },
-
   refreshAllChildren: async () => {
     try {
       const result = await client.listAllChildren(undefined);
@@ -797,7 +788,6 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
     pendingActionConversationIds: new Set<string>(),
     pausedConversationIds: new Set<string>(),
     aliveConversationIds: new Set<string>(),
-    botBoundConversationId: null,
     childrenByParent: {},
     childSnapshotsById: {},
     failoverNoticesByConversation: {},
@@ -825,11 +815,6 @@ if (typeof window !== 'undefined') {
     // 存活会话集合（全量广播直接替换，无 UI 也活着/正在跑的后台链路）
     rendererEvents.aliveConversationsChanged.listen((data) => {
       useConversationStore.getState().setAliveConversations(data.conversationIds);
-    });
-
-    // 微信 Bot 绑定对话变更
-    rendererEvents.wechatBotBindingChanged.listen((data) => {
-      useConversationStore.getState().setBotBoundConversation(data.conversationId);
     });
 
     // 对话列表变更（bot 创建/删除对话后通知）；personal 侧写点广播带 workspaceId=personal，路由到独立列表
@@ -884,14 +869,8 @@ if (typeof window !== 'undefined') {
     })();
   });
 
-  // 初始化时查询 bot 绑定状态（避免页面刷新后丢失）
+  // 初始化拉取：存活集合、personal 临时会话列表
   import('@/lib/client').then(({ client }) => {
-    client['wechat:getBotStatus'](undefined).then((data) => {
-      if (data?.status?.conversationId) {
-        useConversationStore.getState().setBotBoundConversation(data.status.conversationId);
-      }
-    }).catch(() => { /* bot 未连接时忽略 */ });
-
     // 存活集合初值：窗口冷启动/刷新时主进程不会重播事件，主动拉一次全量
     client.getAliveConversations(undefined).then((data) => {
       useConversationStore.getState().setAliveConversations(data.conversationIds ?? []);

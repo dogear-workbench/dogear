@@ -208,29 +208,6 @@ export function streamReducer(
         updated[i] = { ...updated[i], isQueued: false };
       }
     }
-    // bot 来源的 user 消息需要渲染（desktop 端自己发的已在 useSendMessage 中直接添加）
-    if ((extendedMsg as any).source === 'wechat-bot') {
-      // content 可能是 string 或 Array<{ type: 'text', text: string }>
-      let textContent = '';
-      if (typeof extendedMsg.content === 'string') {
-        textContent = extendedMsg.content;
-      } else if (Array.isArray(extendedMsg.content)) {
-        textContent = extendedMsg.content
-          .filter((b: any) => b?.type === 'text')
-          .map((b: any) => b.text)
-          .join('\n');
-      }
-      if (textContent) {
-        updated.push({
-          role: 'user',
-          content: textContent,
-          timestamp: Date.now(),
-          contentBlocks: [],
-          source: (extendedMsg as any).source,
-        });
-      }
-      return updated;
-    }
     // 主进程广播的注入消息（跨会话交付/终态/恢复、task-execution）：实时 push 渲染。
     // message_id 事件先于本内容事件到达，local id 不会被升级，注入消息不参与分叉定位，无害
     if (extendedMsg.injectedTag && typeof extendedMsg.content === 'string' && extendedMsg.content) {
