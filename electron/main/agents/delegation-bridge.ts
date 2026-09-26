@@ -17,6 +17,7 @@ import { getPiSessionManager } from './pi-session/pi-session-manager.js';
 import { mainLogger } from './logger.js';
 import * as conversationService from '../services/conversation-service.js';
 import type { ConversationIndex } from '../services/conversation-service.js';
+import { broadcastConversationListChanged } from '../services/renderer-broadcast.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import * as groupSharedService from '../services/group-shared-service.js';
 import { loadSettings } from '../services/settings-service.js';
@@ -81,17 +82,6 @@ function broadcastChildStatusChanged(parentConversationId: string, childId: stri
       });
     } catch (err) {
       logger.warn('broadcastChildStatusChanged failed', err);
-    }
-  }
-}
-
-function broadcastConversationListChanged(workspaceId: string): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue;
-    try {
-      getRendererHandlers<RendererHandlers>(win.webContents).conversationListChanged.send({ workspaceId });
-    } catch (err) {
-      logger.warn('broadcastConversationListChanged failed', err);
     }
   }
 }

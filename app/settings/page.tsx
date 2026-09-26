@@ -56,6 +56,7 @@ const THEME_OPTIONS = [
 
 // ═══ 深度比较 ════════════════════════════════════════
 
+// 与 electron/main/services/settings-diff.ts 的 deepEqual 为同源双副本（主/渲染 tsconfig 隔离，不可共享），改动需两侧同步
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a == null || b == null) return false;

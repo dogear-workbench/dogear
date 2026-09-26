@@ -6,6 +6,7 @@
  */
 
 import { isQuotaErrorMessage } from './delegation-terminal.js';
+import { broadcastConversationListChanged } from '../services/renderer-broadcast.js';
 import type { PiSessionTurnResult } from './pi-session/pi-session.js';
 import type { FailoverEntry } from '../services/settings-types.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
@@ -60,21 +61,6 @@ async function broadcastFailoverNotice(conversationId: string, fromLabel: string
   }
 }
 
-async function broadcastConversationListChanged(workspaceId: string): Promise<void> {
-  try {
-    const electron = await import('electron');
-    const { getRendererHandlers } = await import('@egoist/tipc/main');
-    for (const win of electron.BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue;
-      try {
-        getRendererHandlers<RendererHandlers>(win.webContents).conversationListChanged.send({ workspaceId });
-      } catch { /* 窗口已销毁，忽略 */ }
-    }
-  } catch (err) {
-    mainLogger.warn('[model-failover] conversationListChanged 广播失败:', err);
-  }
-}
-
 /**
  * 主会话 quota 失败的自动切换编排。返回 true 表示已切换并发出续跑提示；
  * false 表示不满足条件或链耗尽，调用方保持原有报错渲染。
@@ -114,7 +100,7 @@ export async function maybeFailoverMainSession(sessionId: string, result: PiSess
         profileId: entry.profileId,
         tier: entry.tier,
       });
-      await broadcastConversationListChanged(lookup.workspaceId);
+      broadcastConversationListChanged(lookup.workspaceId);
 
       const { conversationRuntimeService } = await import('../services/conversation-runtime-service.js');
       const { count, webContentsId } = conversationRuntimeService.detachByConversationHolder(conversationId, 'desktop', 'forced');

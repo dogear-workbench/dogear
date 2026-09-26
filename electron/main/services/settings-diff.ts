@@ -36,6 +36,7 @@ export interface SettingsSnapshotDiff {
   subAgentProfileIdsChanged: string[];
 }
 
+// 与 app/settings/page.tsx 的 deepEqual 为同源双副本（主/渲染 tsconfig 隔离，不可共享），改动需两侧同步
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;

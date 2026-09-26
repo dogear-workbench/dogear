@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 复用收口
-status: pending
+status: done
 ---
 
 ## 目标
@@ -23,3 +23,13 @@ status: pending
 ## 收尾验证
 - [ ] lint + 双侧 tsc + bun test
 - [ ] 启动冒烟：话题归档/会话列表刷新（广播路径）、股票工具调用（safe）、工作台文件树时间显示（getRelativeTime）、文章解析微信文章（detectPlatform）
+
+## 实施回填（2026-09-26 完成）
+
+- R2：delegation-bridge / model-failover / feishu-bot-controller 三处本地 broadcastConversationListChanged 删，改 import renderer-broadcast.ts 正源（均主进程链路，未用 lazy 变体）；model-failover 调用点去 await（收口版同步 fire-and-forget，时序一致）；日志差异仅 delegation 版失败 warn → 收口版静默，广播行为零差异
+- R3：新建 tools/stock-format.ts 骨架（仅 safe），两处逐字重复本地实现改 import
+- R4：WorkspaceExplorer 私有 getRelativeTime 删，改 import conversation-list/utils；history-utils 变体按计划保留
+- R5：agent-worker.ts:817 变体实施时发现已是死代码（零调用点）直接删，比计划更干净；article-service.ts:432 内联 includes 改 detectPlatform(url)==='wechat'（hostname 级匹配，query 藏域名的畱形 URL 不再误判，语义修正）
+- R6：两处 deepEqual 各加一行互认注释（本步唯一注释）
+- 验证：lint 0 errors、双侧 tsc 通过、bun test 319 pass/0 fail/1 skip（与基线一致）、build:electron 通过、detectPlatform+safe 运行时冒烟 11 case 全过
+- 遗留：GUI 交互冒烟待用户抽查

@@ -21,6 +21,7 @@ import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
 import { stockDataService } from '../../services/stock/stock-data-service.js';
+import { safe } from './stock-format.js';
 
 // ============================================================
 // 常量
@@ -36,12 +37,6 @@ const MAX_KLINE_LIMIT = 500;
 // ============================================================
 // 辅助函数
 // ============================================================
-
-/** 安全数字格式化（防止 undefined.toFixed 崩溃） */
-function safe(val: number | undefined | null, digits = 2): string {
-  if (val == null || isNaN(val)) return '-';
-  return val.toFixed(digits);
-}
 
 /** 格式化成交额（元 → 万/亿） */
 function formatTurnover(val: number): string {

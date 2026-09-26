@@ -18,6 +18,7 @@ import { pythonBridge, DataSourceExhaustedError } from '../../services/stock/pyt
 import { readFinancialsCache, writeFinancialsCache } from '../../services/stock/financials-cache-service.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
+import { safe } from './stock-format.js';
 
 
 // ============================================================
@@ -36,12 +37,6 @@ const MAX_KLINE_LIMIT = 500;
 // ============================================================
 // 辅助函数
 // ============================================================
-
-/** 安全数字格式化 */
-function safe(val: number | undefined | null, digits = 2): string {
-  if (val == null || isNaN(val)) return '-';
-  return val.toFixed(digits);
-}
 
 /** 金额格式化：亿/万，用于资金流向净额（元）展示 */
 function formatYuan(val: number | undefined | null): string {

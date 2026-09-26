@@ -429,7 +429,7 @@ export function parseArticleDocument(params: {
   const article = reader.parse();
 
   // 微信短内容（随笔）正文不在 DOM 中，嵌在 JS 变量 text_page_info.content 里
-  const isWechat = url.includes('mp.weixin.qq.com');
+  const isWechat = detectPlatform(url) === 'wechat';
   let wechatShortContent: string | null = null;
   let wechatTitle: string | null = null;
   let wechatAuthor: string | null = null;

@@ -21,6 +21,7 @@ import { guardReferenceIntoFocus, requireReferenceAnchorId } from '@/lib/referen
 import type { WorkspaceFileNode } from '@/types/electron-api';
 import type { ArticleMeta } from '@/types/article';
 import { useDragAutoScroll } from '@/lib/use-drag-auto-scroll';
+import { getRelativeTime } from '@/components/conversation-list/utils';
 
 import { useTree } from '@headless-tree/react';
 import {
@@ -35,21 +36,6 @@ import {
 import type { ItemInstance, DragTarget } from '@headless-tree/core';
 
 // ---- 工具函数 ----
-
-/** 将时间戳转换为相对时间描述 */
-function getRelativeTime(timestamp: number): string {
-  const now = Date.now();
-  const diff = now - timestamp;
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-  if (minutes < 1) return '刚刚';
-  if (minutes < 60) return `${minutes}分钟前`;
-  if (hours < 24) return `${hours}小时前`;
-  if (days < 7) return `${days}天前`;
-  const date = new Date(timestamp);
-  return date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
-}
 
 /** 判断路径是否属于文章目录 */
 function isArticlePath(path: string): boolean {

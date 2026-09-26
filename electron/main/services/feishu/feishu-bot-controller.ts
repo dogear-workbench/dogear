@@ -5,6 +5,7 @@ import * as workspaceJsonService from '../../services/workspace-json-service.js'
 import * as conversationService from '../../services/conversation-service.js';
 import { getPiSessionManager } from '../../agents/pi-session/pi-session-manager.js';
 import { conversationRuntimeService } from '../conversation-runtime-service.js';
+import { broadcastConversationListChanged } from '../renderer-broadcast.js';
 import electron from 'electron';
 import { getRendererHandlers } from '@egoist/tipc/main';
 import type { RendererHandlers } from '../../tipc/renderer-handlers.js';
@@ -273,7 +274,7 @@ class FeishuBotController {
     const newConvId = await conversationService.create(this.state.activeWorkspaceId, newGroup.id);
     await this.switchBotSession(newConvId);
 
-    this.broadcastConversationListChanged(this.state.activeWorkspaceId);
+    broadcastConversationListChanged(this.state.activeWorkspaceId);
 
     await this.reply('已创建新对话', ctx);
   }
@@ -356,16 +357,6 @@ class FeishuBotController {
       try {
         const h = getRendererHandlers<RendererHandlers>(win.webContents);
         h.feishuBotBindingChanged.send({ conversationId });
-      } catch { /* ignore */ }
-    }
-  }
-
-  private broadcastConversationListChanged(workspaceId: string): void {
-    for (const win of electron.BrowserWindow.getAllWindows()) {
-      if (win.isDestroyed()) continue;
-      try {
-        const h = getRendererHandlers<RendererHandlers>(win.webContents);
-        h.conversationListChanged.send({ workspaceId });
       } catch { /* ignore */ }
     }
   }

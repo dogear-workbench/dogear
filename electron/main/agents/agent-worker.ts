@@ -810,20 +810,6 @@ class AgentWorker {
 
 // ==================== 文章解析任务辅助函数 ====================
 
-/**
- * 从 URL 提取平台标识
- * 扩展此函数以支持更多平台。
- */
-function detectPlatform(url: string): string | undefined {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname === 'mp.weixin.qq.com') return 'wechat';
-    return undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 interface V2PromptParams {
   articleId: string;
   articleDir: string;
