@@ -711,6 +711,17 @@ app.whenReady().then(async () => {
     console.error('[embedded-partition-migration] 失败:', error);
   }
 
+  // 登录观测器：挂全局分区 webRequest 监听 + 首启存量迁移；先 init 再 migrate，两者共享同一份清单内存态
+  try {
+    const { initLoginObserver, migrateInitialLoginAccounts } = await import(
+      './services/browser/login-observer.js'
+    );
+    initLoginObserver();
+    void migrateInitialLoginAccounts();
+  } catch (error) {
+    console.error('[login-observer] 初始化失败:', error);
+  }
+
   // 存量对话 modelSelection 旧三档 tier（haiku/sonnet/opus）映射为 piModels 真实模型 id
   try {
     const { migrateLegacyModelSelections } = await import('./services/conversation-service.js');

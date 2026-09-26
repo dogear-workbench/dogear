@@ -96,7 +96,7 @@ const LOGIN_HINT_NAMES = new Set([
   'user_id',
 ]);
 
-function registeredDomain(rawDomain: string): string {
+export function registeredDomain(rawDomain: string): string {
   const domain = rawDomain.replace(/^\./, '').toLowerCase();
   const labels = domain.split('.');
   if (labels.length <= 2) return domain;
