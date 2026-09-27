@@ -13,15 +13,26 @@ import {
   PairRequestBodySchema,
   type HandshakeHello,
   type PairRequestBody,
+  type WorkspaceMapEntry,
 } from './protocol.js';
 import { buildManifest, hashEntries, type ManifestOptions } from './manifest.js';
 import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
+import { readSyncState, writeSyncState } from './sync-state.js';
+import {
+  buildWorkspaceMapContext,
+  collectWorkspaceMeta,
+  enabledWorkspaceIdsOf,
+  learnReverseWorkspaceMap,
+  listLocalWorkspaceIds,
+  toLocalView,
+} from './workspace-map.js';
 
 export interface SyncServerOptions {
   port: number;
   dataDir: string;
   getSelfHello(): HandshakeHello;
-  getManifestOptions(): Promise<ManifestOptions>;
+  /** per-peer 清单选项：requesterDeviceId 用于按该对端的映射表过滤 workspaces/ 目录 */
+  getManifestOptions(requesterDeviceId: string): Promise<ManifestOptions>;
   handlePairRequest(hello: HandshakeHello, code: string): Promise<{ accepted: boolean; reason?: string; secret?: string }>;
 }
 
@@ -95,15 +106,22 @@ export async function startSyncServer(opts: SyncServerOptions): Promise<RunningS
   };
 }
 
-async function authorize(req: http.IncomingMessage): Promise<boolean> {
+async function authorize(req: http.IncomingMessage): Promise<{ ok: true; deviceId: string } | { ok: false }> {
   const deviceId = req.headers[AuthHeaders.deviceId];
   const secret = req.headers[AuthHeaders.secret];
-  if (typeof deviceId !== 'string' || typeof secret !== 'string') return false;
+  if (typeof deviceId !== 'string' || typeof secret !== 'string') return { ok: false };
   const { loadSettings } = await import('../settings-service.js');
   const settings = await loadSettings();
   const paired = settings.syncOptions?.pairedDevices.find((d) => d.deviceId === deviceId);
-  if (!paired) return false;
-  return secretsMatch(paired.secret, secret);
+  if (!paired) return { ok: false };
+  return secretsMatch(paired.secret, secret) ? { ok: true, deviceId } : { ok: false };
+}
+
+/** /info、/pair-request 等未授权端点返回的 hello 剥离本机路径 */
+function publicHello(hello: HandshakeHello): HandshakeHello {
+  if (hello.dataDirPath === undefined) return hello;
+  const { dataDirPath: _strip, ...rest } = hello;
+  return rest;
 }
 
 async function handleRequest(
@@ -115,7 +133,8 @@ async function handleRequest(
   const route = `${req.method} ${url.pathname}`;
 
   if (route === `GET /info`) {
-    sendJson(res, 200, opts.getSelfHello());
+    // 未授权端点：剥离 dataDirPath（本机路径不向未配对探测泄露）
+    sendJson(res, 200, publicHello(opts.getSelfHello()));
     return;
   }
 
@@ -124,7 +143,7 @@ async function handleRequest(
     return;
   }
 
-  if (!(await authorize(req))) {
+  if (!(await authorize(req)).ok) {
     sendJson(res, 401, { error: 'unpaired device' });
     return;
   }
@@ -162,10 +181,10 @@ async function handlePairRequest(
   }
   const result = await opts.handlePairRequest(raw.hello, raw.code);
   if (!result.accepted) {
-    sendJson(res, 403, { accepted: false, reason: result.reason ?? 'rejected', hello: opts.getSelfHello() });
+    sendJson(res, 403, { accepted: false, reason: result.reason ?? 'rejected', hello: publicHello(opts.getSelfHello()) });
     return;
   }
-  sendJson(res, 200, { accepted: true, secret: result.secret, hello: opts.getSelfHello() });
+  sendJson(res, 200, { accepted: true, secret: result.secret, hello: publicHello(opts.getSelfHello()) });
 }
 
 async function handleManifest(
@@ -173,6 +192,11 @@ async function handleManifest(
   res: http.ServerResponse,
   opts: SyncServerOptions,
 ): Promise<void> {
+  const auth = await authorize(req);
+  if (!auth.ok) {
+    sendJson(res, 401, { error: 'unpaired device' });
+    return;
+  }
   let body;
   try {
     body = ManifestRequestBodySchema.parse(JSON.parse((await readBody(req, MAX_JSON_BODY)).toString('utf-8')));
@@ -180,11 +204,41 @@ async function handleManifest(
     sendJson(res, 400, { error: `invalid manifest request: ${error instanceof Error ? error.message : String(error)}` });
     return;
   }
-  const manifestOptions = await opts.getManifestOptions();
+  // 按请求者的映射表过滤 workspaces/：未映射（未启用）的本端工作区目录不出现在清单里。
+  // 同时用请求方携带的 workspaceMap 做反向学习（映射只在一端配一次；已存在不覆盖，学到的映射下轮生效）
+  const state = await readSyncState();
+  const peerEntry = state.peers[auth.deviceId] ?? { deviceId: auth.deviceId, lastSyncAt: 0 };
+  state.peers[auth.deviceId] = peerEntry;
+  if (body.workspaceMap) {
+    const learned = learnReverseWorkspaceMap(
+      state,
+      auth.deviceId,
+      body.workspaceMap,
+      await listLocalWorkspaceIds(opts.dataDir),
+    );
+    if (learned > 0) await writeSyncState(state);
+  }
+  const peerMap: Record<string, WorkspaceMapEntry> | undefined = peerEntry.workspaceMap;
+  const manifestOptions = {
+    ...(await opts.getManifestOptions(auth.deviceId)),
+    enabledWorkspaceIds: enabledWorkspaceIdsOf(peerMap),
+  };
   const local = await buildManifest(opts.dataDir, manifestOptions);
   const localMap = new Map(local.map((e) => [e.relPath, e]));
+  // 请求条目是请求方视角路径（请求方已按它自己的映射折算过），需按本端映射折算回本端路径才能匹配：
+  // 双方各自用同一映射对（本端 wsid ↔ 请求方 wsid）的本地视角，同一路径两段名不同。
+  // candidateHashes 仍按本端路径为键（与本端 entries 一致，请求方按对端原路径回查）
+  const bodyCtx = buildWorkspaceMapContext(
+    peerMap,
+    peerEntry.ignoredRemoteWorkspaces,
+    opts.dataDir,
+    body.hello.dataDirPath,
+  );
   const candidates = body.entries
-    .map((e) => localMap.get(e.relPath))
+    .map((e) => {
+      const v = toLocalView(bodyCtx, e.relPath);
+      return localMap.get(v.kind === 'map' ? v.localRelPath : e.relPath);
+    })
     .filter((e): e is NonNullable<typeof e> => !!e);
   const candidateHashes = (await hashEntries(opts.dataDir, candidates)).map((e) => ({
     relPath: e.relPath,
@@ -194,6 +248,8 @@ async function handleManifest(
     hello: opts.getSelfHello(),
     entries: local,
     candidateHashes,
+    workspaceMap: peerMap,
+    workspaceMeta: await collectWorkspaceMeta(opts.dataDir),
   });
 }
 

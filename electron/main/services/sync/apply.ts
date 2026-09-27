@@ -210,6 +210,11 @@ export interface IncomingApplyItem {
   /** 双改冲突且对端胜时为 true：先以本端当前内容落 conflict-<对端短ID> 副本，副本成功才允许覆盖本端文件 */
   saveConflictCopyBeforeOverwrite?: boolean;
   conflictWinnerShortId?: string;
+  /**
+   * 对端原始 relPath（工作区映射折算后 entry.relPath 为本端视角路径）：拉取文件向对端请求时用。
+   * 缺省 = entry.relPath（全局数据无折算）。
+   */
+  remoteRelPath?: string;
 }
 
 export type IncomingSourceFactory = (relPath: string) => Promise<Readable>;
@@ -230,18 +235,19 @@ export async function applyIncoming(
   const report: IncomingApplyReport = { applied: [], skipped: [], mergedFiles: [], mergeFailed: [] };
   for (const item of items) {
     const { entry } = item;
+    const remoteRelPath = item.remoteRelPath ?? entry.relPath;
     try {
       // 条目级合并路径：不整文件覆盖本端、不落冲突副本（合并天然保两侧条目，无丢失风险）。
       // 带 saveConflictCopyBeforeOverwrite 的条目不进合并：它来自用户显式裁决「取对端」
       // （典型为本端文件损坏后的救援），必须整文件覆盖且先落本端副本。
       if (!item.saveConflictCopyBeforeOverwrite && matchMergePattern(entry.relPath)) {
-        await applyMergedIncoming(root, entry, sourceFactory, report);
+        await applyMergedIncoming(root, item, sourceFactory, report);
         continue;
       }
       if (item.saveConflictCopyBeforeOverwrite) {
         await saveLocalConflictCopy(root, entry.relPath, item.conflictWinnerShortId ?? 'unknown');
       }
-      const source = await sourceFactory(entry.relPath);
+      const source = await sourceFactory(remoteRelPath);
       const result = await writeIncomingFile(root, toMeta(entry), source);
       if (!result.ok) {
         report.skipped.push({ relPath: entry.relPath, reason: result.reason });
@@ -265,16 +271,17 @@ export async function applyIncoming(
  */
 async function applyMergedIncoming(
   root: string,
-  entry: FileEntry,
+  item: IncomingApplyItem,
   sourceFactory: IncomingSourceFactory,
   report: IncomingApplyReport,
 ): Promise<void> {
+  const entry = item.entry;
   const absPath = resolveWithinDataDir(root, entry.relPath);
   if (!absPath) {
     report.skipped.push({ relPath: entry.relPath, reason: 'unsafe path' });
     return;
   }
-  const source = await sourceFactory(entry.relPath);
+  const source = await sourceFactory(item.remoteRelPath ?? entry.relPath);
   const remoteRaw = await readGzipText(source);
 
   let remoteParsed: ParsedJson;
@@ -349,26 +356,33 @@ async function applyMergedIncoming(
 
 export type OutgoingPushFn = (meta: FilePushMeta, source: Readable) => Promise<void>;
 
+/** 推送条目：entry 为对端视角路径（折算后），localRelPath 为本端读盘路径（缺省 = entry.relPath，全局数据无折算） */
+export interface OutgoingPushItem {
+  entry: FileEntry;
+  localRelPath?: string;
+}
+
 export interface OutgoingApplyReport {
-  pushed: FileEntry[];
+  pushed: OutgoingPushItem[];
   skipped: SkippedEntry[];
 }
 
 export async function pushOutgoing(
   root: string,
-  entries: FileEntry[],
+  items: OutgoingPushItem[],
   pushFn: OutgoingPushFn,
 ): Promise<OutgoingApplyReport> {
   const report: OutgoingApplyReport = { pushed: [], skipped: [] };
-  for (const entry of entries) {
-    const abs = resolveWithinDataDir(root, entry.relPath);
+  for (const item of items) {
+    const { entry } = item;
+    const abs = resolveWithinDataDir(root, item.localRelPath ?? entry.relPath);
     if (!abs) {
       report.skipped.push({ relPath: entry.relPath, reason: 'unsafe path' });
       continue;
     }
     try {
       await pushFn(toMeta(entry), createReadStream(abs));
-      report.pushed.push(entry);
+      report.pushed.push(item);
     } catch (error) {
       report.skipped.push({
         relPath: entry.relPath,

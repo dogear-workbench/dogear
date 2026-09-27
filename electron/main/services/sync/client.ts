@@ -61,12 +61,13 @@ export async function fetchManifest(
   auth: { deviceId: string; secret: string },
   hello: HandshakeHello,
   entries: { relPath: string; size: number; mtimeMs: number }[],
+  workspaceMap?: Record<string, { remoteWsid?: string; enabled: boolean }>,
   timeoutMs = 120_000,
 ): Promise<ManifestResponseBody> {
   const res = await fetch(peerUrl(peer, '/manifest'), {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders(auth.deviceId, auth.secret) },
-    body: JSON.stringify({ hello, entries }),
+    body: JSON.stringify({ hello, entries, ...(workspaceMap ? { workspaceMap } : {}) }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {

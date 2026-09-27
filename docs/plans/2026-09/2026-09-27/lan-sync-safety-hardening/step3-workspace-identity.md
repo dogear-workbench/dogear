@@ -1,5 +1,7 @@
 # Step 3: 工作区映射与选择性同步
 
+> **状态：已完成（2026-09-27）**。实施确认项结论：① sessions 读取为 flat-cwd 目录定位，两端不兼容 → 折算已覆盖 sessions 子目录名重写（pull 用本端编码可算，push 依赖对端 hello.dataDirPath，旧版对端退化旧行为）；② buildManifest 过滤走 ManifestOptions.enabledWorkspaceIds（undefined=全量兼容/空数组=全关）；③ workspaceMeta 轻量只读注册表+conversations 索引。实施中发现并修复：映射折算后 candidateHashes 失配 → 服务端把请求条目按自己映射折算后匹配（否则分叉收敛大面积退化为待处理冲突）。遗留：真机两端 E2E 未跑（单测+真机编码比对覆盖，建议联调时按验收清单过一遍，重点双端同为本次版本）；workspaces.json 并集会把对端机器路径条目灌进本端注册表（step2 既有语义，建议后续 UI 对 path 不可达工作区提示/隐藏）。
+
 对应设计决策 D5。目标：工作区跨设备身份通过**显式映射表**互通（首次交接、两端分叉均覆盖）；未映射目录不自动同步；已映射工作区可逐个开关；全局数据恒定同步。
 
 ## 3A 映射表与引擎路径折算

@@ -42,6 +42,13 @@ interface SyncStoreState {
   confirmPairRequest: (requestId: string) => Promise<void>;
   rejectPairRequest: (requestId: string) => Promise<void>;
   updateSyncOptions: (patch: Partial<SyncOptions> & { removeDeviceId?: string }) => Promise<void>;
+  /** 工作区同步开关（仅对已建映射的本端工作区有效） */
+  setWorkspaceSync: (peerId: string, localWsid: string, enabled: boolean) => Promise<boolean>;
+  /** 建立映射（new=本端新建工作区条目 / existing=映射到已有）；成功后自动触发一次仅拉取 */
+  mapWorkspace: (peerId: string, input: { remoteWsid: string; mode: 'new' | 'existing'; localWsid?: string; localPath?: string; localName?: string }) => Promise<boolean>;
+  unmapWorkspace: (peerId: string, localWsid: string) => Promise<boolean>;
+  ignoreRemoteWorkspace: (peerId: string, remoteWsid: string) => Promise<boolean>;
+  unignoreRemoteWorkspace: (peerId: string, remoteWsid: string) => Promise<boolean>;
   requestSyncPanelFocus: () => void;
   consumeSyncPanelFocus: () => void;
 }
@@ -211,6 +218,75 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       set({ syncOptions: sync });
     } catch (error) {
       toast.error('保存同步设置失败', { description: String(error) });
+    }
+  },
+
+  setWorkspaceSync: async (peerId, localWsid, enabled) => {
+    try {
+      const r = await client.setWorkspaceSync({ peerId, localWsid, enabled });
+      if (!r.success) {
+        toast.error('更新工作区同步开关失败', { description: r.error });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      toast.error('更新工作区同步开关失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  mapWorkspace: async (peerId, input) => {
+    try {
+      const r = await client.mapWorkspace({ peerId, ...input });
+      if (!r.success) {
+        toast.error('建立映射失败', { description: r.error });
+        return false;
+      }
+      // 建映射后自动仅拉取一次：交接体验顺，无需用户再手点（拉取档对端永不被修改）
+      void get().runSync(peerId, { direction: 'pull' });
+      return true;
+    } catch (error) {
+      toast.error('建立映射失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  unmapWorkspace: async (peerId, localWsid) => {
+    try {
+      const r = await client.unmapWorkspace({ peerId, localWsid });
+      if (!r.success) {
+        toast.error('断开映射失败', { description: r.error });
+        return false;
+      }
+      toast.success('已断开映射', { description: '两侧已有数据不动，重新建映射后靠同步自然收敛' });
+      return true;
+    } catch (error) {
+      toast.error('断开映射失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  ignoreRemoteWorkspace: async (peerId, remoteWsid) => {
+    try {
+      await client.ignoreRemoteWorkspace({ peerId, remoteWsid });
+      return true;
+    } catch (error) {
+      toast.error('操作失败', { description: String(error) });
+      return false;
+    }
+  },
+
+  unignoreRemoteWorkspace: async (peerId, remoteWsid) => {
+    try {
+      const r = await client.unignoreRemoteWorkspace({ peerId, remoteWsid });
+      if (!r.success) {
+        toast.error('操作失败', { description: r.error });
+        return false;
+      }
+      return true;
+    } catch (error) {
+      toast.error('操作失败', { description: String(error) });
+      return false;
     }
   },
 

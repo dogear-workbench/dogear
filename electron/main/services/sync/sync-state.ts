@@ -2,6 +2,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import { safeJsonRead, safeJsonWrite } from '../safe-json.js';
 import type { FileEntry } from './protocol.js';
+import type { WorkspaceMapEntry, WorkspaceMetaItem } from './workspace-map.js';
 
 export interface SyncStatePeer {
   deviceId: string;
@@ -12,6 +13,12 @@ export interface SyncStatePeer {
   lastManifestHash?: string;
   /** 下轮 diff 的基线：上次同步收敛后本端清单快照（带内容 hash）；仅在同步完成时整体替换 */
   lastManifest?: FileEntry[];
+  /** per-peer 工作区映射表：本端 wsid → { 对端 wsid（缺省同 id 直通）, enabled 同步开关 }；未映射的本端工作区不同步 */
+  workspaceMap?: Record<string, WorkspaceMapEntry>;
+  /** 待映射区选过「不同步」的对端 wsid：不同步也不再提示，可在面板解除 */
+  ignoredRemoteWorkspaces?: string[];
+  /** 最近一次握手收到的对端工作区概要（待映射/已映射区展示对端名用） */
+  remoteWorkspaceMeta?: WorkspaceMetaItem[];
 }
 
 export interface SyncState {

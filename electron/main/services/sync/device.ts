@@ -16,12 +16,18 @@ export function resolveDeviceName(settingsDeviceName?: string): string {
   return name && name.length > 0 ? name : os.hostname();
 }
 
-export function buildHello(deviceId: string, deviceName: string, appVersion: string): HandshakeHello {
+export function buildHello(
+  deviceId: string,
+  deviceName: string,
+  appVersion: string,
+  dataDirPath?: string,
+): HandshakeHello {
   return {
     appId: SYNC_APP_ID,
     protocolVersion: SYNC_PROTOCOL_VERSION,
     appVersion,
     deviceId,
     deviceName,
+    ...(dataDirPath ? { dataDirPath } : {}),
   };
 }

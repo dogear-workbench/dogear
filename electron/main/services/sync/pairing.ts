@@ -71,7 +71,8 @@ export function getSelfHello(): HandshakeHello {
 export async function initSelfHello(appVersion: string): Promise<HandshakeHello> {
   const settings = await loadSettings();
   const deviceId = await getOrCreateDeviceId();
-  const hello = buildHello(deviceId, resolveDeviceName(settings.syncOptions?.deviceName), appVersion);
+  const { getDataDir } = await import('./sync-state.js');
+  const hello = buildHello(deviceId, resolveDeviceName(settings.syncOptions?.deviceName), appVersion, getDataDir());
   setSelfHello(hello);
   return hello;
 }

@@ -18,14 +18,34 @@ export const HandshakeHelloSchema = z.object({
   appVersion: z.string().min(1),
   deviceId: z.string().min(1),
   deviceName: z.string().min(1).optional(),
+  /** 本端数据目录绝对路径：对端折算 sessions flat-cwd 目录名用；仅在 /manifest 授权端点携带（/info、/pair-request 剥离防未授权探测） */
+  dataDirPath: z.string().min(1).optional(),
 });
 export type HandshakeHello = z.infer<typeof HandshakeHelloSchema>;
+
+/** 工作区映射条目（对端 local→remote 视角）；remoteWsid 缺省 = 同 id 直通 */
+export const WorkspaceMapEntrySchema = z.object({
+  remoteWsid: z.string().min(1).optional(),
+  enabled: z.boolean(),
+});
+export type WorkspaceMapEntry = z.infer<typeof WorkspaceMapEntrySchema>;
+
+/** 对端工作区概要（待映射区/已映射区展示用，轻量统计） */
+export const WorkspaceMetaSchema = z.object({
+  wsid: z.string().min(1),
+  name: z.string().optional(),
+  conversationCount: z.number().int().nonnegative().optional(),
+  lastUpdated: z.number().nonnegative().optional(),
+});
+export type WorkspaceMetaItem = z.infer<typeof WorkspaceMetaSchema>;
 
 export const ManifestRequestBodySchema = z.object({
   hello: HandshakeHelloSchema,
   entries: z.array(FileEntrySchema),
+  /** 请求方自己的 workspaceMap（供对端反向学习）；旧版无此字段 */
+  workspaceMap: z.record(z.string(), WorkspaceMapEntrySchema).optional(),
 });
-export type ManifestRequestBody = z.infer<typeof ManifestRequestBodySchema>;
+export type ManifestRequestBody = z.infer<typeof ManifestRequestBodySchema>;;
 
 export const CandidateHashSchema = z.object({
   relPath: z.string().min(1),
@@ -37,6 +57,10 @@ export const ManifestResponseBodySchema = z.object({
   hello: HandshakeHelloSchema,
   entries: z.array(FileEntrySchema),
   candidateHashes: z.array(CandidateHashSchema),
+  /** 响应方（对端）针对请求者的 workspaceMap（对端 local→remote 视角）；旧版无此字段 */
+  workspaceMap: z.record(z.string(), WorkspaceMapEntrySchema).optional(),
+  /** 响应方工作区概要（待映射区展示名称/会话数/最后更新） */
+  workspaceMeta: z.array(WorkspaceMetaSchema).optional(),
 });
 export type ManifestResponseBody = z.infer<typeof ManifestResponseBodySchema>;
 

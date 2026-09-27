@@ -176,12 +176,12 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
   return (
     <div className="rounded-md border border-amber-500/50 bg-amber-500/5 p-3 space-y-3">
       <div className="flex items-start gap-2">
-        <AlertTriangle className="w-4 h-4 mt-0.5 text-amber-600 dark:text-amber-400 shrink-0" />
+        <AlertTriangle className="w-4 h-4 mt-1 text-amber-600 dark:text-amber-400 shrink-0" />
         <div className="min-w-0 space-y-1">
-          <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+          <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
             {conflicts.length} 个冲突待处理，本轮已跳过、两端数据都未被改动
           </p>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-xs leading-5 text-muted-foreground">
             这些文件两端都改过，系统不再自动取新者。选择保留哪一侧后点「应用选择并重新同步」生效；
             被覆盖的一侧会先存为同目录 <code className="font-mono">.conflict-设备短ID</code> 副本，选错可从副本手动换回。
             首次交接建议把旧设备数据拉过来后直接「全部取对端」。
@@ -189,18 +189,19 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
         </div>
       </div>
 
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* 批量操作条吸顶：冲突列表长时滚动中始终可及 */}
+      <div className="sticky top-0 z-10 -mx-1 px-1 py-1.5 bg-amber-500/5 backdrop-blur-sm flex items-center gap-2 flex-wrap border-b border-amber-500/30">
         <span className="text-xs text-muted-foreground shrink-0">全部：</span>
-        <Button size="sm" variant="outline" className="h-7" onClick={() => setMany(conflicts, 'remote')}>
+        <Button size="sm" variant="outline" className="h-8" onClick={() => setMany(conflicts, 'remote')}>
           全部取对端
         </Button>
-        <Button size="sm" variant="outline" className="h-7" onClick={() => setMany(conflicts, 'local')}>
+        <Button size="sm" variant="outline" className="h-8" onClick={() => setMany(conflicts, 'local')}>
           全部保留本端
         </Button>
         {chosenCount > 0 && (
           <Button
             size="sm"
-            className="h-7"
+            className="h-8"
             disabled={runningSync !== null}
             onClick={() => void runSync(peerId, { direction: 'both', conflictResolutions: { ...choices } })}
           >
@@ -212,15 +213,15 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
       <div className="space-y-2">
         {groups.map(([group, paths]) => (
           <div key={group} className="rounded-md border bg-background/60">
-            <div className="flex items-center justify-between gap-2 px-2 py-1.5 border-b bg-muted/30 flex-wrap">
-              <span className="text-xs font-medium">
+            <div className="flex items-center justify-between gap-2 px-2.5 py-2 border-b bg-muted/30 flex-wrap">
+              <span className="text-sm font-medium leading-6">
                 {GROUP_LABELS[group] ?? group}（{paths.length}）
               </span>
               <div className="flex items-center gap-1">
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-2 text-xs"
+                  className="h-8 px-2.5 text-xs"
                   onClick={() => setMany(paths, 'remote')}
                 >
                   整组取对端
@@ -228,7 +229,7 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-2 text-xs"
+                  className="h-8 px-2.5 text-xs"
                   onClick={() => setMany(paths, 'local')}
                 >
                   整组保留本端
@@ -239,13 +240,13 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
               {paths.map((relPath) => {
                 const choice = choices[relPath];
                 return (
-                  <li key={relPath} className="px-2 py-1.5 flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[11px] break-all min-w-0 flex-1">{relPath}</span>
+                  <li key={relPath} className="px-2.5 py-2 flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-xs leading-5 break-all min-w-0 flex-1 py-0.5">{relPath}</span>
                     <div className="flex items-center gap-1 shrink-0">
                       <Button
                         size="sm"
                         variant={choice === 'remote' ? 'secondary' : 'ghost'}
-                        className="h-6 px-2 text-xs"
+                        className="h-8 px-2.5 text-xs"
                         onClick={() => setChoices((prev) => ({ ...prev, [relPath]: 'remote' }))}
                       >
                         取对端
@@ -253,7 +254,7 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
                       <Button
                         size="sm"
                         variant={choice === 'local' ? 'secondary' : 'ghost'}
-                        className="h-6 px-2 text-xs"
+                        className="h-8 px-2.5 text-xs"
                         onClick={() => setChoices((prev) => ({ ...prev, [relPath]: 'local' }))}
                       >
                         保留本端
@@ -261,11 +262,11 @@ function ConflictPendingZone({ conflicts, peerId }: { conflicts: string[]; peerI
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="h-6 w-6 p-0"
+                        className="h-8 w-8 p-0"
                         title="打开所在文件夹（.conflict- 副本在同目录）"
                         onClick={() => revealSyncFile(relPath)}
                       >
-                        <FolderOpen className="w-3 h-3" />
+                        <FolderOpen className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </li>
@@ -311,21 +312,21 @@ function FileListCollapsible({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-5 w-5 p-0"
+                    className="h-8 w-8 p-0"
                     title="打开所在文件夹"
                     onClick={() => onReveal(item.text)}
                   >
-                    <FolderOpen className="w-3 h-3" />
+                    <FolderOpen className="w-3.5 h-3.5" />
                   </Button>
                 )}
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-5 w-5 p-0"
+                  className="h-8 w-8 p-0"
                   title="复制路径"
                   onClick={() => copyRelPath(item.text)}
                 >
-                  <Copy className="w-3 h-3" />
+                  <Copy className="w-3.5 h-3.5" />
                 </Button>
               </div>
             </li>

@@ -1,10 +1,11 @@
 import { app } from 'electron';
 import { loadSettings } from '../settings-service.js';
-import { getDataDir } from './sync-state.js';
+import { getDataDir, readSyncState } from './sync-state.js';
 import { handleIncomingPairRequest, initSelfHello } from './pairing.js';
 import { initPeerOnlineNotifications } from './peer-notify.js';
 import { getDiscoveryError, getPeers, onPeersChanged, startDiscovery, stopDiscovery, type PeerInfo } from './discovery.js';
 import { DEFAULT_SYNC_PORT, startSyncServer, type RunningSyncServer } from './server.js';
+import { enabledWorkspaceIdsOf } from './workspace-map.js';
 
 export interface LanSyncStatus {
   running: boolean;
@@ -64,11 +65,14 @@ async function startLanSyncInternal(): Promise<void> {
   const base = {
     dataDir,
     getSelfHello: () => hello,
-    getManifestOptions: async () => {
+    getManifestOptions: async (requesterDeviceId: string) => {
       const current = await loadSettings();
+      // workspaces/ 按请求方的映射表过滤（enabled=true 的本端 wsid）；未建映射 → 全部工作区目录不同步
+      const state = await readSyncState();
       return {
         syncStocksData: current.syncOptions?.syncStocksData === true,
         syncFeishu: current.syncOptions?.syncFeishu === true,
+        enabledWorkspaceIds: enabledWorkspaceIdsOf(state.peers[requesterDeviceId]?.workspaceMap),
       };
     },
     handlePairRequest: handleIncomingPairRequest,

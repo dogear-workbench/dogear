@@ -8,6 +8,7 @@ import { PairRequestCards } from './sync-pair-requests';
 import { SyncPeerCard } from './sync-peer-card';
 import { SyncResultCard } from './sync-result';
 import { SyncSettingsCard } from './sync-settings';
+import { SyncWorkspaceCard } from './sync-workspace-card';
 import { shortDeviceIdText } from './sync-utils';
 
 const CLOCK_TICK_MS = 30_000;
@@ -22,7 +23,8 @@ export function SyncPanel() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-4xl px-6 py-6 space-y-4">
+    // max-w 放宽（4xl → 6xl，step3 3E）：冲突处理区域与工作区同步卡片内容多，1920 宽下无横向滚动
+    <div className="mx-auto max-w-6xl px-6 py-6 space-y-4">
       <SelfStatusCard />
 
       <PairRequestCards now={now} />
@@ -38,7 +40,12 @@ export function SyncPanel() {
             </CardContent>
           </Card>
         ) : (
-          peers.map((peer) => <SyncPeerCard key={peer.deviceId} peer={peer} />)
+          peers.map((peer) => (
+            <div key={peer.deviceId} className="space-y-2">
+              <SyncPeerCard peer={peer} />
+              <SyncWorkspaceCard peer={peer} />
+            </div>
+          ))
         )}
       </section>
 

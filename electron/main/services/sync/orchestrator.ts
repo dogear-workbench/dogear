@@ -13,10 +13,20 @@ import {
   saveStreamToTempFile,
   shortDeviceId,
   type IncomingApplyItem,
+  type OutgoingPushItem,
 } from './apply.js';
 import { fetchManifest, pullFile, pushFile, type PeerEndpoint } from './client.js';
 import { getDataDir, readSyncState, writeSyncState } from './sync-state.js';
 import { ensureSelfHello } from './pairing.js';
+import {
+  buildRemoteManifestView,
+  buildWorkspaceMapContext,
+  enabledWorkspaceIdsOf,
+  learnReverseWorkspaceMap,
+  listLocalWorkspaceIds,
+  toRemoteRelPath,
+  type WorkspaceMetaItem,
+} from './workspace-map.js';
 import { SYNC_PROTOCOL_VERSION, type DiffConflict, type FileEntry, type SkippedEntry } from './protocol.js';
 
 export type SyncReportStatus = 'completed' | 'failed' | 'blocked' | 'in-progress';
@@ -38,6 +48,8 @@ export interface SyncReport {
   /** 本次同步方向（缺省 pull） */
   direction?: SyncDirection;
   skipped: SkippedEntry[];
+  /** 对端有、本端未建映射也未忽略的工作区（待映射清单，面板引导用户三选一）；映射/忽略后不再出现 */
+  unmappedWorkspaces?: WorkspaceMetaItem[];
   warnings: string[];
   /** 非空表示本次同步被拦下等待用户确认（UI 确认后带 confirmVersionMismatch 重调） */
   confirmRequired?: 'protocol-version-mismatch';
@@ -161,13 +173,19 @@ async function runSyncInternal(
     return { ...base, status: 'failed', ok: false, error: '未与该设备配对，无法同步', durationMs: Date.now() - startedAt, finishedAt: Date.now() };
   }
   const auth = { deviceId: selfHello.deviceId, secret: paired.secret };
+  // state 提前读：映射表同时驱动本端 manifest 过滤与双向路径折算（本轮一致快照）
+  const preSyncState = await readSyncState();
+  const peerState = preSyncState.peers[peer.deviceId];
   const manifestOptions: ManifestOptions = {
     syncStocksData: settings.syncOptions?.syncStocksData === true,
     syncFeishu: settings.syncOptions?.syncFeishu === true,
+    // workspaces/ 只收 enabled 映射的本端 wsid；未映射的本端工作区不同步（与对端对等：首次使用即受控）
+    enabledWorkspaceIds: enabledWorkspaceIdsOf(peerState?.workspaceMap),
   };
 
   const local = await buildManifest(dataDir, manifestOptions);
-  const remoteManifest = await fetchManifest(peer, auth, selfHello, local);
+  // 请求体携带本端映射供对端反向学习（映射只在一端配一次）；对端也在响应里带它的映射
+  const remoteManifest = await fetchManifest(peer, auth, selfHello, local, peerState?.workspaceMap);
   const remoteHello = {
     protocolVersion: remoteManifest.hello.protocolVersion,
     appVersion: remoteManifest.hello.appVersion,
@@ -193,15 +211,25 @@ async function runSyncInternal(
     warnings.push(`对端应用版本 (${remoteManifest.hello.appVersion}) 与本端 (${selfHello.appVersion}) 不同`);
   }
 
-  // 对端清单条目合并 candidateHashes（仅同路径 size/mtime 异的候选有 hash）供 diff 判定
-  const candidateHashes = new Map(remoteManifest.candidateHashes.map((c) => [c.relPath, c.hash]));
-  const remoteEntries: FileEntry[] = remoteManifest.entries.map((e) => {
-    const hash = candidateHashes.get(e.relPath);
-    return hash ? { ...e, hash } : e;
+  // 对端清单按映射折算为本端视角（entry.relPath = 本端路径；remoteRelPath = 请求对端时用的原路径），
+  // 无映射的 workspaces/<id>/ 进待映射清单，忽略列表静默跳过。
+  // 反向学习延后到收尾（写入下轮 state）：本轮的清单/折算保持与同一份映射一致，避免学到的映射
+  // 使本端清单遗漏已启用目录 → 未折算路径直写本端绕过冲突检测
+  const mapCtx = buildWorkspaceMapContext(
+    peerState?.workspaceMap,
+    peerState?.ignoredRemoteWorkspaces,
+    dataDir,
+    remoteManifest.hello.dataDirPath,
+  );
+  const remoteView = buildRemoteManifestView(mapCtx, remoteManifest.entries, remoteManifest.workspaceMeta);
+  const remotePathByLocal = new Map(remoteView.views.map((v) => [v.entry.relPath, v.remoteRelPath]));
+  const candidateHashByRemote = new Map(remoteManifest.candidateHashes.map((c) => [c.relPath, c.hash]));
+  const remoteEntries: FileEntry[] = remoteView.views.map((v) => {
+    const hash = candidateHashByRemote.get(v.remoteRelPath);
+    return hash ? { ...v.entry, hash } : v.entry;
   });
 
-  const state = await readSyncState();
-  const baseline = state.peers[peer.deviceId]?.lastManifest;
+  const baseline = peerState?.lastManifest;
   const diff = await diffManifests({ root: dataDir, local, remote: remoteEntries, baseline });
 
   const selfShort = shortDeviceId(selfHello.deviceId);
@@ -213,8 +241,20 @@ async function runSyncInternal(
   const autoResolved: Array<{ relPath: string; winner: 'local' | 'remote' }> = [];
   // relPath -> 传输时刻权威内容 hash（undefined = 传输过但本端无 hash 可记，baseline 构建时重算）
   const transferred = new Map<string, string | undefined>();
-  const pullItems: IncomingApplyItem[] = diff.pull.map((entry) => ({ entry }));
-  const pushEntries: FileEntry[] = [...diff.push];
+  const pullItems: IncomingApplyItem[] = diff.pull.map((entry) => ({
+    entry,
+    remoteRelPath: remotePathByLocal.get(entry.relPath),
+  }));
+  // 推送条目折算为对端视角路径（读盘仍用本端路径）；未映射的本端工作区理论上已被 manifest 过滤，防御性跳过
+  const pushEntries: OutgoingPushItem[] = [];
+  for (const localEntry of diff.push) {
+    const remoteRelPath = toRemoteRelPath(mapCtx, localEntry.relPath);
+    if (remoteRelPath === null) {
+      skipped.push({ relPath: localEntry.relPath, reason: '本端工作区未建映射，推送跳过' });
+      continue;
+    }
+    pushEntries.push({ entry: { ...localEntry, relPath: remoteRelPath }, localRelPath: localEntry.relPath });
+  }
   // 条目级合并成功的记录文件（落盘为合并结果，baseline 必须重算 hash）
   let mergedFiles: string[] = [];
   let pulled = 0;
@@ -232,7 +272,7 @@ async function runSyncInternal(
       if (direction === 'push') {
         skipped.push({ relPath, reason: '仅推送档不改动本端，记录文件冲突本轮跳过' });
       } else {
-        pullItems.push({ entry: conflict.remote });
+        pullItems.push({ entry: conflict.remote, remoteRelPath: remotePathByLocal.get(relPath) });
       }
       continue;
     }
@@ -247,6 +287,7 @@ async function runSyncInternal(
       if (conflict.remote.mtimeMs > conflict.local.mtimeMs) {
         pullItems.push({
           entry: conflict.remote,
+          remoteRelPath: remotePathByLocal.get(relPath),
           saveConflictCopyBeforeOverwrite: true,
           conflictWinnerShortId: peerShort,
         });
@@ -271,15 +312,18 @@ async function runSyncInternal(
       }
       pullItems.push({
         entry: conflict.remote,
+        remoteRelPath: remotePathByLocal.get(relPath),
         saveConflictCopyBeforeOverwrite: true,
         conflictWinnerShortId: peerShort,
       });
       continue;
     }
-    // resolution === 'local'（本端胜）：对端旧内容先推成对端侧副本，副本成功才推本端内容覆盖，绝不静默丢旧数据
-    const copyRelPath = conflictCopyRelPath(conflict.remote.relPath, selfShort);
+    // resolution === 'local'（本端胜）：对端旧内容先推成对端侧副本，副本成功才推本端内容覆盖，绝不静默丢旧数据。
+    // 副本与拉取按对端原始路径（映射折算前）；推本端内容折算为对端视角路径
+    const remoteRelPath = remotePathByLocal.get(relPath) ?? relPath;
+    const copyRelPath = conflictCopyRelPath(remoteRelPath, selfShort);
     try {
-      const stream = await pullFile(peer, auth, conflict.remote.relPath);
+      const stream = await pullFile(peer, auth, remoteRelPath);
       const tmpPath = await saveStreamToTempFile(stream);
       try {
         await pushFile(
@@ -291,7 +335,12 @@ async function runSyncInternal(
       } finally {
         await fsp.unlink(tmpPath).catch(() => {});
       }
-      pushEntries.push(conflict.local);
+      const pushRemotePath = toRemoteRelPath(mapCtx, conflict.local.relPath);
+      if (pushRemotePath === null) {
+        skipped.push({ relPath, reason: '本端工作区未建映射，冲突裁决后的推送跳过' });
+      } else {
+        pushEntries.push({ entry: { ...conflict.local, relPath: pushRemotePath }, localRelPath: conflict.local.relPath });
+      }
     } catch (error) {
       skipped.push({ relPath, reason: `冲突副本写入对端失败，本轮跳过: ${errMessage(error)}` });
     }
@@ -319,9 +368,10 @@ async function runSyncInternal(
 
   if (direction !== 'pull') {
     const pushReport = await pushOutgoing(dataDir, pushEntries, (meta, source) => pushFile(peer, auth, meta, source));
-    for (const entry of pushReport.pushed) {
+    for (const item of pushReport.pushed) {
       pushed += 1;
-      transferred.set(entry.relPath, entry.hash);
+      // baseline/transferred 按本端路径记（baseline 是本端视角快照，对端视角路径仅用于传输）
+      transferred.set(item.localRelPath ?? item.entry.relPath, item.entry.hash);
     }
     skipped.push(...pushReport.skipped);
   }
@@ -340,7 +390,26 @@ async function runSyncInternal(
     lastManifestHash: createHash('sha256').update(JSON.stringify(nextBaseline)).digest('hex'),
     lastManifest: nextBaseline,
   };
+  // 反向映射自动学习（对端已显式配置的映射本端补齐，已存在不覆盖 enabled）+ 对端工作区概要持久化，均下轮生效
+  let learnedCount = 0;
+  if (remoteManifest.workspaceMap) {
+    learnedCount = learnReverseWorkspaceMap(
+      nextState,
+      peer.deviceId,
+      remoteManifest.workspaceMap,
+      await listLocalWorkspaceIds(dataDir),
+    );
+  }
+  if (remoteManifest.workspaceMeta) {
+    nextState.peers[peer.deviceId].remoteWorkspaceMeta = remoteManifest.workspaceMeta;
+  }
   await writeSyncState(nextState);
+  if (learnedCount > 0) {
+    warnings.push(`从对端学到 ${learnedCount} 条工作区映射，下次同步生效`);
+  }
+  if (remoteView.unmappedWorkspaces.length > 0) {
+    warnings.push(`对端有 ${remoteView.unmappedWorkspaces.length} 个未建映射的工作区目录，本轮未同步（见下方待映射清单）`);
+  }
 
   return {
     ...base,
@@ -351,6 +420,7 @@ async function runSyncInternal(
     conflicts,
     autoResolved,
     skipped,
+    unmappedWorkspaces: remoteView.unmappedWorkspaces.length > 0 ? remoteView.unmappedWorkspaces : undefined,
     warnings,
     remoteHello,
     durationMs: Date.now() - startedAt,

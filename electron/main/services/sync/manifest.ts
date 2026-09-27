@@ -7,6 +7,11 @@ import type { DiffResult, FileEntry, HashedFileEntry, SkippedEntry } from './pro
 export interface ManifestOptions {
   syncStocksData?: boolean;
   syncFeishu?: boolean;
+  /**
+   * workspaces/ 下只收这些本端 wsid 目录（映射表中 enabled=true 者，per-peer）。
+   * undefined = 不过滤（全量，向后兼容）；空数组 = 全部工作区目录不同步（首次使用即受控，全局数据恒同步）。
+   */
+  enabledWorkspaceIds?: string[];
 }
 
 const ALWAYS_SYNC_DIRS = ['workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history'] as const;
@@ -24,7 +29,13 @@ export async function buildManifest(root: string, options: ManifestOptions = {})
   const entries: FileEntry[] = [];
   const jobs: Promise<void>[] = [];
   for (const dir of ALWAYS_SYNC_DIRS) {
-    jobs.push(walkDir(root, dir, entries));
+    if (dir === 'workspaces' && options.enabledWorkspaceIds) {
+      // workspaces/ 特殊处理：一级子目录按 per-peer 映射表过滤（workspaces/<wsid>/）。
+      // workspaces/ 下直接落文件（workspaces.json、其冲突副本等）不受过滤，属全局数据恒同步
+      jobs.push(walkWorkspacesDir(root, new Set(options.enabledWorkspaceIds), entries));
+    } else {
+      jobs.push(walkDir(root, dir, entries));
+    }
   }
   for (const name of ALWAYS_SYNC_FILES) {
     jobs.push(statFile(root, name, entries));
@@ -36,6 +47,26 @@ export async function buildManifest(root: string, options: ManifestOptions = {})
   await Promise.all(jobs);
   entries.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
   return entries;
+}
+
+/** walkDir 的 workspaces/ 特化版：一级目录按映射表 wsid 过滤，文件与已启用 wsid 子树照常收 */
+async function walkWorkspacesDir(root: string, enabledIds: Set<string>, out: FileEntry[]): Promise<void> {
+  let dirents;
+  try {
+    dirents = await fsp.readdir(path.join(root, 'workspaces'), { withFileTypes: true });
+  } catch {
+    return;
+  }
+  await Promise.all(dirents.map(async (dirent) => {
+    if (dirent.isDirectory()) {
+      if (IGNORE_DIR_NAMES.has(dirent.name.toLowerCase())) return;
+      if (!enabledIds.has(dirent.name)) return;
+      await walkDir(root, `workspaces/${dirent.name}`, out);
+      return;
+    }
+    if (!dirent.isFile() || dirent.isSymbolicLink()) return;
+    await statFile(root, `workspaces/${dirent.name}`, out);
+  }));
 }
 
 async function walkDir(root: string, relDir: string, out: FileEntry[]): Promise<void> {
