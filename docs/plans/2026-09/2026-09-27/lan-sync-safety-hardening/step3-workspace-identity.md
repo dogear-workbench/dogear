@@ -1,49 +1,63 @@
-# Step 3: 工作区身份传承与完整搬迁
+# Step 3: 工作区映射与选择性同步
 
-对应设计决策 D5。目标：① 首次同步对端空白时工作区以同 wsid 自动出现（传承）；② 同步后检测身份分叉并提示；③ 提供「完整工作区合并搬迁」工具替代旧的仅索引导入。
+对应设计决策 D5。目标：工作区跨设备身份通过**显式映射表**互通（首次交接、两端分叉均覆盖）；未映射目录不自动同步；已映射工作区可逐个开关；全局数据恒定同步。
 
-## 3A 首次同步同 wsid 传承（依赖 step2）
+## 3A 映射表与引擎路径折算
 
-- step2 的 workspaces.json 条目并集 + `workspaces/<wsid>/` 目录 pull 已自动达成传承：对端空白 → 同步后注册条目与目录同 id 出现，`path` 由机器亲和规则保留对端本地路径（条目 path 为本端路径时对端打开前需改指向本地目录——UI 已有的工作区编辑能力承接，不新增）。
-- `sync-peer-card.tsx` 首次同步提示文案追加：「新设备请先同步、不要手动添加同名工作区；同步后工作区自动出现，若路径指向另一台机器的目录，请在工作区管理中改为本地路径」。
+- `sync-state.ts`：`peers[peerId]` 增加：
+  ```ts
+  workspaceMap: Record<localWsid, { remoteWsid?: string; enabled: boolean }>;
+  ignoredRemoteWorkspaces?: string[];   // 待映射区选过「不同步」的对端 wsid
+  ```
+  remoteWsid 缺省 = 同 id 直通；enabled 建映射时默认 true。
+- 折算函数（新 `sync/workspace-map.ts` 或并入 manifest.ts）：
+  - `toLocalRelPath(relPath)`：对端清单 `workspaces/<remote>/...` 前缀按映射换 `<local>`；无映射的 workspaces/ 路径 → 返回 null（进待映射清单）。
+  - `toRemoteRelPath(relPath)`：推送方向反向折算（both/push 档用）。
+- `orchestrator.ts`：
+  - 对端清单 entries 先过 `toLocalRelPath`：null 且前缀为 `workspaces/<id>/` 且 id 不在忽略列表 → 汇入 `SyncReport.unmappedWorkspaces`（含可展示信息：wsid、（若对端清单带）名称/会话数——需在协议 manifest 响应里附带对端工作区元信息，见 3D）；在忽略列表 → 静默跳过。
+  - 本端 manifest：`buildManifest` 增加映射过滤参数——`workspaces/` 目录只收「映射表中 enabled=true」的 wsid（未映射的本端工作区同样不同步，与对端对等：首次使用即受控）。
+  - pull/push 路径折算接入 `applyIncoming` / `pushOutgoing` 的 relPath（拉对端 `<remote>` 存本端 `<local>`；推反之）。
+- baseline：折算后以**本端路径**记（baseline 是本端视角快照，天然一致）。
 
-## 3B 分叉检测
+## 3B 握手交换映射（反向自动学习）
 
-- `runSyncInternal` 收尾新增检查（结果进 warnings）：
-  - 扫 `workspaces/` 目录：存在未注册于本端 workspaces.json 的非空 wsid 目录（孤儿）→ warning「发现 N 个未注册的工作区目录（孤儿），可在工作区管理中合并搬迁」。
-  - workspaces.json 合并结果中 name 相同但 id 不同的条目对 → warning「工作区 <name> 存在两个身份（<idA>/<idB>），疑似两端各自注册，建议用合并搬迁工具统一」。
-- 检查只报告不动数据。
+- `protocol.ts` manifest 响应增加可选字段 `workspaceMap`（对端的 local→remote 视角）与 `workspaceMeta`（对端 workspaces 概要：wsid、name、会话数、lastUpdated，供待映射区展示）。
+- orchestrator 收到后：对端映射条目 `<对端X ↔ 本端A>` → 本端补 `workspaceMap[A] = {remoteWsid: X, enabled: true}`（已存在则不覆盖 enabled）。
+- server 端（对端旧版本无这些字段）：字段可选，旧版对端 → 本端待映射区照常工作，仅反向学习不生效（升级后闭环）。
 
-## 3C 完整工作区合并搬迁（新 service）
+## 3C 同步面板「工作区同步」卡片 + tipc 路由
 
-- 新建 `electron/main/services/workspace-merge-service.ts`：`mergeWorkspaceInto(sourceWorkspaceId, targetWorkspaceId): Promise<MergeReport>`
-  - `conversations.json`：条目逐个并入目标（复用 `importConversation`），并把 `workspaceId` 字段改写为目标 id。
-  - `groups.json`：条目并入目标 groups.json（id 并集，同 id 取 updatedAt 新者；目标不存在该 group 时补条目）。
-  - `groups/`：源 `groups/<groupId>/` 目录整体 move 到目标（目标已存在同名组目录时逐文件并入，冲突文件以 `.merged-from-<sourceShort>` 副本保留源版）。
-  - `notes/`、`memory/`：文件并入（同名冲突保留两份，源版加后缀）。
-  - `sessions/`：jsonl 文件 move 到目标 `sessions/<同一flat-cwd子目录>/`（文件名含 flat-cwd 与 sessionId；**实施前确认读取侧定位方式**——若按 `<flat-cwd>/<ts>_<sessionId>.jsonl` 命名契约扫描则原样搬即可；跨机器产生的 flat-cwd 子目录不同属正常，各自保留）。
-  - 搬迁计数报告：sessions/groups/notes/memory 文件数与条目数，源与目标前后对比。
-- 源目录清理：**搬迁工具本身不删**；搬迁成功后 UI 提供「删除已搬迁的源目录」按钮（确认弹窗列计数对比），删除前再校验源目录 sessions 文件数 == 0。
-- `tipc/workspace.ts`：新增 `mergeWorkspace` 路由（输入 source/target id）。
-- UI：
-  - `WorkspaceManagementTab.tsx` 孤儿面板：合并导入入口改调 `mergeWorkspace`（目标 = 用户选择的当前工作区，补目标选择下拉）；导入文案与成功提示更新。
-  - 同步面板分叉 warning 处可跳转工作区管理（简单 a11y 链接或文案指引即可）。
-- 旧 `importOrphanToWorkspace` 保留但标记 deprecated（tipc 路由保留兼容，前端不再调用）。
+- `tipc/sync.ts` 新增：
+  - `setWorkspaceSync(peerId, localWsid, { enabled })`：开关。
+  - `mapWorkspace(peerId, { remoteWsid, mode: 'new' | 'existing', localWsid?, localPath?, localName? })`：建映射——`new` = 本端建工作区条目（复用 workspace-json-service.add，path 用用户选的本地目录）+ 建映射；`existing` = 直接建映射。
+  - `unmapWorkspace(peerId, localWsid)`：断开（表项删，数据不动）。
+  - `ignoreRemoteWorkspace(peerId, remoteWsid)` / `unignoreRemoteWorkspace`：忽略列表维护。
+- `sync-panel.tsx` 新增卡片（SyncPeerCard 下方或独立 section）：
+  - **已映射区**：每行 `本端名 ↔ 对端名 · 状态（同步中/已暂停）· 开关 · 断开`。
+  - **待映射区**（来自上次报告 `unmappedWorkspaces`）：每项展示名称/会话数/最后更新，三动作按钮：接收为新工作区（弹本地目录选择 → mapWorkspace new）/ 映射到本端已有（下拉本端工作区列表 → mapWorkspace existing）/ 不同步（ignore）。
+  - 底部说明：「全局数据（设置、计划、记忆等）恒定同步，不可关闭」。
+- 建映射后自动触发一次仅拉取（把该工作区数据拉下来），或提示用户点同步——取自动触发，交接体验顺。
+
+## 3D 协议扩展与展示元信息
+
+- `protocol.ts`：manifest 请求/响应加可选 `workspaceMeta: Array<{ wsid, name?, conversationCount?, lastUpdated? }>`（server 端从本端 workspaces.json + 各 conversations.json 汇总，轻量统计）。
+- 版本兼容：字段全部可选，旧版互操作不破坏；SYNC_PROTOCOL_VERSION 是否 bump 视实现（加字段不破坏旧版则不 bump，保持可互通）。
+
+## 3E 冲突处理区域放大（面板内）
+
+- 若 step1 已落地冲突显著区，本步补齐布局层：同步面板 max-w 放宽（4xl → 全宽或 6xl）、字号/行高提升、批量操作条吸顶；1920 宽下无横向滚动、行操作按钮 ≥ 32px 高。
 
 ## 验收
 
-1. 构造孤儿工作区（未注册目录 + 会话/组/笔记/memory 内容）→ 合并搬迁 → 目标工作区会话列表可见、组/笔记/记忆齐全、会话正文可打开；源目录仍在，删除按钮校验通过后可删。
-2. 两端各自注册同名工作区（不同 id）→ 同步 → 出现分叉 warning → 在一端搬迁合并 → 再同步 → warning 消失、两端收敛。
-3. 首次同步（新空白端）→ 工作区同 id 出现、注册表含两端全部条目、isDefault/path 未被覆盖。
-
-## 3D 同步面板放大（D5-4）
-
-- 若 step1 已落地冲突显著区域，本步补齐：数据中心同步面板整体布局加宽（max-w 放宽或全宽）、字号/行高提升，冲突与批量操作区在大屏上更好点。
-- 若用户指的是数据中心**入口**（侧边栏/导航按钮）放大，属独立小改动，单独提交不混入本计划。
-
-验收：1920 宽度下冲突列表与批量按钮无横向滚动、按钮点击区域 ≥ 32px 高。
+1. **首次交接**：新空白端点同步 → 报告列出对端工作区待映射 → 「接收为新工作区」选本地目录 → 映射建立 + 自动拉取 → 本端出现同数据工作区（本端 wsid 为新建 id，映射生效）→ 对端配置不变。
+2. **两端分叉**：两端各自注册同一项目（不同 wsid、各有会话）→ 一端「映射到本端已有」→ 同步 → 两端会话/组/笔记并集收敛，无副本爆炸（记录文件条目合并）。
+3. **开关**：关闭某工作区 → 同步不再传输该目录任何文件（manifest 过滤生效）→ 重新打开 → 增量补齐。
+4. **忽略**：待映射区选「不同步」→ 下次同步不再出现在待映射列表；可解除忽略。
+5. **全局恒同步**：关闭全部工作区后，settings/plans/memory 等仍正常同步。
+6. **反向学习**：一端建映射 → 握手后另一端 sync-state 自动出现反向映射条目，无需手动配置。
 
 ## 实施确认项
 
-- sessions 读取侧定位方式（sessionId 扫描 vs cwd 定位）——决定 3C sessions 搬运是否需要改名；查 `session-history-reader` / `conversation-service` 的 jsonl 查找逻辑。
-- `groups.json` 条目结构与组目录归属字段核对。
+- sessions jsonl 读取侧定位方式（sessionId 扫描 vs flat-cwd 定位）——映射后两端 flat-cwd 子目录并存，需确认读取兼容；查 `session-history-reader` / `conversation-service`。
+- `buildManifest` 过滤参数的注入点（ManifestOptions 扩展 or 调用方预过滤目录列表）。
+- server.ts manifest 响应组装处（加 workspaceMeta 的成本与性能：全量 conversations.json 扫描，900M 首交时统计耗时需实测，必要时只统计条目数）。

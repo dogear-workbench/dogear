@@ -61,32 +61,40 @@
 - **diff 后处理**（orchestrator）：`diff.conflict` 中 relPath 命中 merge 模式的条目移入 pullItems（apply 层合并收敛，合并幂等），**不进** conflictsPending——记录型文件靠合并收敛，不靠人工裁决。
 - baseline：merge 落盘的文件统一重算 hash 后入 baseline（把现有 `settingsMerged` 特判推广为 `mergedFiles: string[]`）。
 
-### D5（P4b + UI 可用性）工作区身份、搬迁与面板放大
-1. **首次/对端空白**：workspaces.json 条目并集（D4）+ `workspaces/<wsid>/` 目录正常 pull → 对端自动以同 wsid 出现该工作区；条目 `path` 保本端（D4 机器亲和）不影响身份。首同步提示文案更新：「新设备请先同步、不要手动添加同名工作区，同步后自动出现」。
-2. **分叉检测**：同步报告新增检查——`workspaces/` 下存在未注册目录（孤儿）或两端 workspaces.json 合并后出现同名不同 id 条目时，在 warnings 提示走搬迁工具处理。
-3. **完整工作区合并搬迁**（新 service `mergeWorkspaceInto`，替代旧 importOrphanToWorkspace 的地位）：
-   - 搬 `conversations.json`（条目 merge + `workspaceId` 改写）、`groups.json`、`groups/`、`notes/`、`memory/`、`sessions/`（jsonl 文件名含 flat-cwd，跨机器目录名不同但 sessionId 在文件名尾部，实施时核对读取侧定位方式——若按 sessionId 索引则直接搬）。
-   - 搬迁完成且条目数校验通过后，才提供「删除源目录」确认操作。
-   - UI 入口：工作区管理的孤儿面板 + 同步面板分叉提示。
-4. **同步面板放大与冲突处理可用性**（用户拍板：数据中心位置放大、好点好操作）：
-   - 有待处理冲突时结果卡片升级为显著区域（顶部醒目横幅 + 冲突列表默认展开），不再是折叠小列表。
-   - 冲突行操作按钮加大；按大类分组的批量操作条置顶；「打开所在文件夹」入口每行可达。
-   - 数据中心入口层面的放大（侧边栏/导航按钮）属全局 UI 调整，若用户指的是入口而非面板内区域，单独小改动处理，不阻塞本计划。
+### D5（P4b + UI）工作区映射：显式映射表 + 向导 + 路径互通
+
+1. **映射模型**：per-peer 工作区同步表存 sync-state：`peers[peerId].workspaceMap: Record<localWsid, { remoteWsid?: string; enabled: boolean }>`（remoteWsid 缺省 = 同 id 直通；enabled = 按工作区同步开关，建映射时默认 on）；同步引擎按映射做路径折算——对端清单 relPath 前缀 `workspaces/<remote>/` → `workspaces/<local>/`，pull/push 同样折算；同 wsid 默认直通（identity 映射，无需配置）。
+2. **同步范围两级**（用户拍板）：全局数据（`workspaces/` 之外：settings.json、plans.json、notifications.json、conversations/、memory/、usage/、article-parser/、site-knowledge/、run-history/ 及 stocks/feishu 可选项）**恒定同步不可关**；工作区目录按映射表逐个可开/关——关掉的工作区 manifest 不收，两端已有数据不动、只是不再互通，随时可重新打开。
+2. **未映射的对端工作区目录不自动同步**：manifest 阶段过滤进「待映射清单」放报告，面板列出等用户选择（用户拍板：映射必须显式建立，不静默灌入）。
+3. **映射向导与面板**（同步面板新增「工作区同步」卡片）：
+   - 已映射区每行：本端工作区名 ↔ 对端工作区名、状态（同步中/已暂停）、同步开关、断开映射。
+   - 待映射区（对端有、本端无映射且未忽略的工作区目录，每项展示名称/会话数/最后更新）三动作：
+     - 接收为新工作区：复用现有添加工作区的本地目录选择器 → 建本端条目 + 建映射（enabled=on）→ 拉取（对端空白端首次交接主路径）。
+     - 映射到本端已有工作区（下拉选）：两端各自注册了同一项目的分叉场景；建映射后数据靠同步自然收敛（记录文件 D4 条目合并 + 文件互通），不强制搬迁合并，历史数据谁都不丢。
+     - 不同步：记入忽略列表，不再重复提示，可在待映射区随时改选。
+   - 卡片底部注明：全局数据（设置/计划/记忆等）恒定同步，不可关闭。
+4. **反向映射自动学习**：fetchManifest 握手响应携带对端 workspaceMap，本端自动补全反向条目——映射只在一端配一次。
+5. workspaces.json 仍走 D4 条目合并（同 id 时 path/isDefault 保本端），映射不依赖但兼容。
+6. **冲突处理区域放大**（用户确认指面板内）：有待处理冲突时结果区升级为显著扩展区（顶部横幅 + 按大类分组列表默认展开 + 批量操作条 + 行操作加大），面板宽度/字号一并放宽。
+7. 原设计中的「完整搬迁工具 mergeWorkspaceInto」移出主线：映射机制下未映射目录不落盘（孤儿不再新增），分叉靠映射收敛；存量孤儿目录处理降级为后续可选工具。
 
 ## 实施步骤（依赖顺序）
 
 - **step1 止血**：D1 + D2 + D3（互不依赖，一次改完）——堵住事故复发口。
 - **step2 记录合并**：D4（apply registry + orchestrator 后处理 + baseline 推广）。
-- **step3 身份与搬迁**：D5（文案 + 检测 + mergeWorkspaceInto + 面板放大）。
+- **step3 工作区映射与选择性同步**：D5（映射表 + 路径折算 + 映射向导/开关 UI + 待映射过滤 + 面板放大）。
 
 ## 已拍板决策（2026-09-27 用户确认）
 
 1. 同步默认方向 = **仅拉取**（在需要数据的那端点同步；对端永不被修改；本端逐文件按新者胜，本端更新的不动）。双向/仅推送保留下拉可选项。
 2. 冲突处理 = 按大类（顶层目录）批量选择 + 全局一键批量；逐文件按钮保留；败方副本 = 回测空间（UI 显性化：位置提示 + 打开文件夹 + 换回指引）；仅拉取档冲突按 mtime 自动取新者 + 副本兑底。
+3. 工作区映射 = 显式建立（接收为新工作区 / 映射到已有 / 不同步），建立后后续同步全按映射折算路径；握手交换映射，另一端自动学到反向映射。
+4. 按工作区选择性同步 = 要；全局数据恒定同步不可关；工作区级开关随映射表存（enabled）。
+5. 冲突处理区域放大 = 面板内同步结果区（非数据中心入口）。
 
 ## 风险与实施确认项
 
 - `conversations.json` 条目 `updatedAt` 由写入侧维护，merge 依赖其单调性——实施时抽查两端真实数据。
-- sessions jsonl 定位：`session-id-repair.ts` 提示按文件名扫 `sessions/<flat-cwd>/<ts>_<sessionId>.jsonl`；确认读取侧是按 sessionId 全量扫描还是按 cwd 定位，决定 step3 搬迁是否需要重命名。
+- sessions jsonl 定位：`session-id-repair.ts` 提示按文件名扫 `sessions/<flat-cwd>/<ts>_<sessionId>.jsonl`；确认读取侧是按 sessionId 全量扫描还是按 cwd 定位——决定映射后两端 flat-cwd 子目录并存是否兼容（不兼容则映射折算需覆盖 sessions 子目录名）。
 - `plans.json` 任务条目字段（id/updatedAt 具体名）实施时核对。
 - 合并幂等性：并集 + 同键新者胜是幂等的，两端各跑一次同步即收敛；若发现合并后仍进 conflict（merged 结果与两端都不同），由 D4 的「conflict 移入 pull」后处理兜住。
