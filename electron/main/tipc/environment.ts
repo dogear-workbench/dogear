@@ -64,6 +64,10 @@ const PYTHON_PACKAGES = [
 ] as const;
 
 export const environmentRouter = {
+  /** 渲染层平台探测（contextIsolation 下无 process.platform，UI 按平台适配如红绿灯让位） */
+  getPlatform: t.procedure
+    .action(async () => process.platform),
+
   /**
    * 检测所有环境依赖
    */

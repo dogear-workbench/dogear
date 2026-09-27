@@ -6,7 +6,11 @@
 import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
 const { app, BrowserWindow, Menu, protocol, net, nativeTheme } = electron;
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { pathToFileURL } from 'url';
+
+const execFileP = promisify(execFile);
 import { getRendererHandlers } from '@egoist/tipc/main';
 import { getAgentManager, shutdownAgentManager } from './agents/agent-manager.js';
 import { registerTipcHandlers } from './tipc/index.js';
@@ -138,6 +142,28 @@ function routeFocusTask(taskId: string, workspaceId: string) {
 
 // ==================== 应用生命周期 ====================
 
+// macOS GUI 启动 PATH 只有系统 4 目录，Homebrew 等工具探测不到；
+// 用登录 shell 的 PATH 前置合并（shell 独有条目优先，原 PATH 条目去重保序）
+async function injectLoginShellPath() {
+  if (process.platform !== 'darwin') return;
+  try {
+    const { stdout } = await execFileP('/bin/zsh', ['-l', '-c', 'echo $PATH'], { timeout: 5000 });
+    const shellEntries = stdout.trim().split(path.delimiter).filter(Boolean);
+    const current = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+    const seen = new Set(current);
+    const prepend: string[] = [];
+    for (const entry of shellEntries) {
+      if (!seen.has(entry)) {
+        seen.add(entry);
+        prepend.push(entry);
+      }
+    }
+    process.env.PATH = [...prepend, ...current].join(path.delimiter);
+  } catch (err) {
+    console.error('[main] 注入登录 shell PATH 失败:', err);
+  }
+}
+
 // 第二个实例启动时，聚焦到已有主窗口
 app.on('second-instance', () => {
   if (mainWindow) {
@@ -155,6 +181,8 @@ const FONT_MIME: Record<string, string> = {
 };
 
 app.whenReady().then(async () => {
+  await injectLoginShellPath();
+
   app.setAppUserModelId('com.dogear.app');
 
   protocol.handle('app', async (request) => {
@@ -172,7 +200,15 @@ app.whenReady().then(async () => {
     return resp;
   });
 
-  Menu.setApplicationMenu(null);
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      { role: 'windowMenu' },
+    ]));
+  } else {
+    Menu.setApplicationMenu(null);
+  }
 
   // 注册所有 IPC 处理器（通过 tipc）
   registerTipcHandlers();
@@ -302,9 +338,13 @@ app.whenReady().then(async () => {
     .catch((err) => console.error('飞书自动连接失败:', err));
 
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
-  // 如果没有其他窗口打开,则创建新窗口
+  // 主窗口存活则唤回（hide 到托盘后 getAllWindows 仍计数，只判窗口数会永远唤不回）
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    } else if (BrowserWindow.getAllWindows().length === 0) {
       void createWindow();
     }
   });

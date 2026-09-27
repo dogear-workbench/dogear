@@ -34,6 +34,14 @@ function currentTitleBarOverlay() {
   return { ...scheme, height: TITLE_BAR_HEIGHT };
 }
 
+// darwin 用 hiddenInset：红绿灯悬浮于内容左上角，titleBarOverlay 的 WCO 按钮是 Windows 专属
+function titleBarOptions(): { titleBarStyle: 'hiddenInset' } | { titleBarStyle: 'hidden'; titleBarOverlay: ReturnType<typeof currentTitleBarOverlay> } {
+  if (process.platform === 'darwin') {
+    return { titleBarStyle: 'hiddenInset' };
+  }
+  return { titleBarStyle: 'hidden', titleBarOverlay: currentTitleBarOverlay() };
+}
+
 export function syncTitleBarOverlay() {
   const overlay = currentTitleBarOverlay();
   for (const win of BrowserWindow.getAllWindows()) {
@@ -87,8 +95,7 @@ export function createStockWindow() {
     width: 1200,
     height: 800,
     title: '自选股行情',
-    titleBarStyle: 'hidden',
-    titleBarOverlay: currentTitleBarOverlay(),
+    ...titleBarOptions(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -125,8 +132,7 @@ export async function createWindowWithBounds(options: {
     x: hasPosition ? saved!.x ?? undefined : undefined,
     y: hasPosition ? saved!.y ?? undefined : undefined,
     title: options.title,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: currentTitleBarOverlay(),
+    ...titleBarOptions(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -299,8 +305,7 @@ export function createSessionWindow(conversationId: string, title: string) {
     width: 1200,
     height: 800,
     title: `会话: ${title}`,
-    titleBarStyle: 'hidden',
-    titleBarOverlay: currentTitleBarOverlay(),
+    ...titleBarOptions(),
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
