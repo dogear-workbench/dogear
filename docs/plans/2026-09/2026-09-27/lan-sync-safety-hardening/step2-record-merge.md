@@ -1,5 +1,7 @@
 # Step 2: 记录型文件条目级合并
 
+> **状态：已完成（2026-09-27）**。实施中核对确认：conversations.json 为 Record 型（设计表未写明）；notifications.json 条目无 updatedAt 仅 createdAt（fallback 链取新者）。主会话验收时修复一处子会话引入的 bug：本端文件缺失分支把已被 readGzipText 消费的流二次传给 writeIncomingFile（Node 实测 Z_BUF_ERROR，单侧新增记录文件主路径拉取必败），改为直接用已解压的 remoteParsed 原子落盘。遗留：真机双端端到端未验；apply 层无测试基建（merge 原语有 9 单测）；settings.json 合并未做 mtime max（走 saveSettings 保原行为，hash 语义无影响）。
+
 对应设计决策 D4。目标：`workspaces.json`、`conversations.json`、`groups.json`、`plans.json`、`notifications.json` 等「两端各自追加条目」的记录文件不再整文件覆盖，改为条目级合并；合并幂等，两端各同步一次即收敛。
 
 ## 2A merge registry（apply.ts）

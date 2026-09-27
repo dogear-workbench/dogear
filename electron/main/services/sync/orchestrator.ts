@@ -7,6 +7,7 @@ import { buildManifest, diffManifests, hashEntries, sha256File, type ManifestOpt
 import {
   applyIncoming,
   conflictCopyRelPath,
+  matchMergePattern,
   pushOutgoing,
   resolveWithinDataDir,
   saveStreamToTempFile,
@@ -16,7 +17,7 @@ import {
 import { fetchManifest, pullFile, pushFile, type PeerEndpoint } from './client.js';
 import { getDataDir, readSyncState, writeSyncState } from './sync-state.js';
 import { ensureSelfHello } from './pairing.js';
-import { SYNC_PROTOCOL_VERSION, type FileEntry, type SkippedEntry } from './protocol.js';
+import { SYNC_PROTOCOL_VERSION, type DiffConflict, type FileEntry, type SkippedEntry } from './protocol.js';
 
 export type SyncReportStatus = 'completed' | 'failed' | 'blocked' | 'in-progress';
 
@@ -214,10 +215,31 @@ async function runSyncInternal(
   const transferred = new Map<string, string | undefined>();
   const pullItems: IncomingApplyItem[] = diff.pull.map((entry) => ({ entry }));
   const pushEntries: FileEntry[] = [...diff.push];
+  // 条目级合并成功的记录文件（落盘为合并结果，baseline 必须重算 hash）
+  let mergedFiles: string[] = [];
   let pulled = 0;
   let pushed = 0;
 
+  // ── 记录型文件 merge 路由（在 conflict 裁决循环之前）──
+  // 命中 merge registry 的记录文件靠条目级合并收敛（幂等），不进 LWW 自动裁决/人工挂起：
+  // conflict 条目移入 pullItems 交 apply 层合并落盘（不带冲突副本，合并天然保两侧条目）。
+  // 用户已显式裁决（conflictResolutions 命中）的条目尊重人工选择，交下方循环处理。
+  // 仅推送档下同样不改动本端：命中 merge 的冲突也跳过。
+  const manualConflicts: DiffConflict[] = [];
   for (const conflict of diff.conflict) {
+    const relPath = conflict.local.relPath;
+    if (resolutions[relPath] === undefined && matchMergePattern(relPath)) {
+      if (direction === 'push') {
+        skipped.push({ relPath, reason: '仅推送档不改动本端，记录文件冲突本轮跳过' });
+      } else {
+        pullItems.push({ entry: conflict.remote });
+      }
+      continue;
+    }
+    manualConflicts.push(conflict);
+  }
+
+  for (const conflict of manualConflicts) {
     const relPath = conflict.local.relPath;
     if (direction === 'pull') {
       // 仅拉取档：按 mtime 新者自动裁决，不挂起不推对端；败方留 .conflict-<胜方短ID> 副本兑底可换回。
@@ -282,13 +304,16 @@ async function runSyncInternal(
       transferred.set(entry.relPath, entry.hash);
     }
     skipped.push(...pullReport.skipped);
-
-    if (pullReport.settingsMerged) {
-      const settingsAbs = resolveWithinDataDir(dataDir, 'settings.json');
-      if (settingsAbs) {
-        // 落盘的是字段级合并版而非对端原样，baseline 必须记合并后真实内容的 hash
-        transferred.set('settings.json', await sha256File(settingsAbs).catch(() => undefined));
-      }
+    mergedFiles = pullReport.mergedFiles;
+    // 合并落盘的是合并结果而非对端原样，baseline 必须记落盘真实内容 hash（原 settingsMerged 特判推广为 mergedFiles）
+    for (const relPath of mergedFiles) {
+      const abs = resolveWithinDataDir(dataDir, relPath);
+      transferred.set(relPath, abs ? await sha256File(abs).catch(() => undefined) : undefined);
+    }
+    // 合并失败（任一侧 JSON 异常）降级：挂起待人工处理，绝不静默整文件覆盖
+    for (const failed of pullReport.mergeFailed) {
+      skipped.push(failed);
+      conflicts.push(failed.relPath);
     }
   }
 
@@ -299,6 +324,10 @@ async function runSyncInternal(
       transferred.set(entry.relPath, entry.hash);
     }
     skipped.push(...pushReport.skipped);
+  }
+
+  if (mergedFiles.length > 0) {
+    warnings.push(`${mergedFiles.length} 个记录文件已条目级合并（${mergedFiles.join('、')}）`);
   }
 
   const nextBaseline = await buildNextBaseline(dataDir, manifestOptions, baseline, transferred);
