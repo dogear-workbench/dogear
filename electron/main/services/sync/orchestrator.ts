@@ -20,6 +20,9 @@ import { SYNC_PROTOCOL_VERSION, type FileEntry, type SkippedEntry } from './prot
 
 export type SyncReportStatus = 'completed' | 'failed' | 'blocked' | 'in-progress';
 
+/** 同步方向：pull=仅拉取（默认，对端永不被修改）；push=仅推送；both=双向 */
+export type SyncDirection = 'both' | 'pull' | 'push';
+
 export interface SyncReport {
   status: SyncReportStatus;
   ok: boolean;
@@ -27,8 +30,12 @@ export interface SyncReport {
   peerName?: string;
   pulled: number;
   pushed: number;
-  /** 双改冲突走 LWW 的文件列表（结果面板展示）；副本名见 conflictCopyRelPath */
+  /** 待用户处理的冲突（本轮已跳过未传输）；下次同步带 conflictResolutions 裁决后执行 */
   conflicts: string[];
+  /** 仅拉取档按 mtime 自动取新者的冲突文件；败方留 .conflict-<胜方短ID> 副本可换回 */
+  autoResolved?: Array<{ relPath: string; winner: 'local' | 'remote' }>;
+  /** 本次同步方向（缺省 pull） */
+  direction?: SyncDirection;
   skipped: SkippedEntry[];
   warnings: string[];
   /** 非空表示本次同步被拦下等待用户确认（UI 确认后带 confirmVersionMismatch 重调） */
@@ -87,6 +94,10 @@ export interface RunSyncPeer extends PeerEndpoint {
 export interface RunSyncOptions {
   /** 握手协议版本不匹配时，用户确认后为 true 放行 */
   confirmVersionMismatch?: boolean;
+  /** 同步方向，缺省 pull（仅拉取） */
+  direction?: SyncDirection;
+  /** 双改冲突裁决表（双向/推送档）：key=relPath，value=胜方。缺条目的冲突本轮挂起（进 conflicts 待处理） */
+  conflictResolutions?: Record<string, 'local' | 'remote'>;
 }
 
 export async function runSync(peer: RunSyncPeer, options: RunSyncOptions = {}): Promise<SyncReport> {
@@ -97,6 +108,8 @@ export async function runSync(peer: RunSyncPeer, options: RunSyncOptions = {}): 
     pulled: 0,
     pushed: 0,
     conflicts: [],
+    autoResolved: [],
+    direction: options.direction ?? 'pull',
     skipped: [],
     warnings: [],
   };
@@ -192,8 +205,11 @@ async function runSyncInternal(
 
   const selfShort = shortDeviceId(selfHello.deviceId);
   const peerShort = shortDeviceId(peer.deviceId);
+  const direction: SyncDirection = options.direction ?? 'pull';
+  const resolutions = options.conflictResolutions ?? {};
   const skipped: SkippedEntry[] = [...diff.skipped];
   const conflicts: string[] = [];
+  const autoResolved: Array<{ relPath: string; winner: 'local' | 'remote' }> = [];
   // relPath -> 传输时刻权威内容 hash（undefined = 传输过但本端无 hash 可记，baseline 构建时重算）
   const transferred = new Map<string, string | undefined>();
   const pullItems: IncomingApplyItem[] = diff.pull.map((entry) => ({ entry }));
@@ -202,17 +218,43 @@ async function runSyncInternal(
   let pushed = 0;
 
   for (const conflict of diff.conflict) {
-    const localWins = conflict.local.mtimeMs >= conflict.remote.mtimeMs;
-    if (!localWins) {
+    const relPath = conflict.local.relPath;
+    if (direction === 'pull') {
+      // 仅拉取档：按 mtime 新者自动裁决，不挂起不推对端；败方留 .conflict-<胜方短ID> 副本兑底可换回。
+      // 即使“哪边新”判错，本端较新内容也不会被对端旧版顶掉（本端新→不动）
+      if (conflict.remote.mtimeMs > conflict.local.mtimeMs) {
+        pullItems.push({
+          entry: conflict.remote,
+          saveConflictCopyBeforeOverwrite: true,
+          conflictWinnerShortId: peerShort,
+        });
+        autoResolved.push({ relPath, winner: 'remote' });
+      } else {
+        autoResolved.push({ relPath, winner: 'local' });
+      }
+      continue;
+    }
+    const resolution = resolutions[relPath];
+    if (resolution === undefined) {
+      // 无裁决 → 本轮挂起：两端都不动，等用户在结果面板选择后带 conflictResolutions 重跑
+      skipped.push({ relPath, reason: '冲突待处理，本轮跳过' });
+      conflicts.push(relPath);
+      continue;
+    }
+    if (resolution === 'remote') {
+      if (direction === 'push') {
+        // 仅推送档不改动本端：对端胜 = 双方都不动
+        skipped.push({ relPath, reason: '仅推送档不改动本端，对端胜冲突本轮跳过' });
+        continue;
+      }
       pullItems.push({
         entry: conflict.remote,
         saveConflictCopyBeforeOverwrite: true,
         conflictWinnerShortId: peerShort,
       });
-      conflicts.push(conflict.remote.relPath);
       continue;
     }
-    // 本端胜：对端旧内容先推成对端侧副本，副本成功才推本端内容覆盖，绝不静默丢旧数据
+    // resolution === 'local'（本端胜）：对端旧内容先推成对端侧副本，副本成功才推本端内容覆盖，绝不静默丢旧数据
     const copyRelPath = conflictCopyRelPath(conflict.remote.relPath, selfShort);
     try {
       const stream = await pullFile(peer, auth, conflict.remote.relPath);
@@ -228,32 +270,35 @@ async function runSyncInternal(
         await fsp.unlink(tmpPath).catch(() => {});
       }
       pushEntries.push(conflict.local);
-      conflicts.push(conflict.local.relPath);
     } catch (error) {
-      skipped.push({ relPath: conflict.local.relPath, reason: `冲突副本写入对端失败，本轮跳过: ${errMessage(error)}` });
+      skipped.push({ relPath, reason: `冲突副本写入对端失败，本轮跳过: ${errMessage(error)}` });
     }
   }
 
-  const pullReport = await applyIncoming(dataDir, pullItems, (relPath) => pullFile(peer, auth, relPath));
-  for (const entry of pullReport.applied) {
-    pulled += 1;
-    transferred.set(entry.relPath, entry.hash);
-  }
-  skipped.push(...pullReport.skipped);
-
-  const pushReport = await pushOutgoing(dataDir, pushEntries, (meta, source) => pushFile(peer, auth, meta, source));
-  for (const entry of pushReport.pushed) {
-    pushed += 1;
-    transferred.set(entry.relPath, entry.hash);
-  }
-  skipped.push(...pushReport.skipped);
-
-  if (pullReport.settingsMerged) {
-    const settingsAbs = resolveWithinDataDir(dataDir, 'settings.json');
-    if (settingsAbs) {
-      // 落盘的是字段级合并版而非对端原样，baseline 必须记合并后真实内容的 hash
-      transferred.set('settings.json', await sha256File(settingsAbs).catch(() => undefined));
+  if (direction !== 'push') {
+    const pullReport = await applyIncoming(dataDir, pullItems, (relPath) => pullFile(peer, auth, relPath));
+    for (const entry of pullReport.applied) {
+      pulled += 1;
+      transferred.set(entry.relPath, entry.hash);
     }
+    skipped.push(...pullReport.skipped);
+
+    if (pullReport.settingsMerged) {
+      const settingsAbs = resolveWithinDataDir(dataDir, 'settings.json');
+      if (settingsAbs) {
+        // 落盘的是字段级合并版而非对端原样，baseline 必须记合并后真实内容的 hash
+        transferred.set('settings.json', await sha256File(settingsAbs).catch(() => undefined));
+      }
+    }
+  }
+
+  if (direction !== 'pull') {
+    const pushReport = await pushOutgoing(dataDir, pushEntries, (meta, source) => pushFile(peer, auth, meta, source));
+    for (const entry of pushReport.pushed) {
+      pushed += 1;
+      transferred.set(entry.relPath, entry.hash);
+    }
+    skipped.push(...pushReport.skipped);
   }
 
   const nextBaseline = await buildNextBaseline(dataDir, manifestOptions, baseline, transferred);
@@ -275,6 +320,7 @@ async function runSyncInternal(
     pulled,
     pushed,
     conflicts,
+    autoResolved,
     skipped,
     warnings,
     remoteHello,

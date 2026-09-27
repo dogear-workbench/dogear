@@ -1,4 +1,10 @@
-import { Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -50,21 +56,55 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
               </span>
             </div>
           </div>
-          <div className="shrink-0">
+          <div className="shrink-0 flex items-center gap-1">
             {paired ? (
-              <Button size="sm" disabled={syncing} onClick={() => void runSync(peer.deviceId)}>
-                {syncing ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    {runningSync?.peerId === peer.deviceId ? '同步中…' : '其他同步进行中'}
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    同步
-                  </>
-                )}
-              </Button>
+              <>
+                {/* 主按钮默认仅拉取（对端不被修改）；换新设备首次灌数据可在菜单选仅推送 */}
+                <Button
+                  size="sm"
+                  disabled={syncing}
+                  onClick={() => void runSync(peer.deviceId, { direction: 'pull' })}
+                >
+                  {syncing ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      {runningSync?.peerId === peer.deviceId ? '同步中…' : '其他同步进行中'}
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      仅拉取同步
+                    </>
+                  )}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button size="sm" variant="outline" className="px-1.5" disabled={syncing} title="选择同步方向">
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => void runSync(peer.deviceId, { direction: 'pull' })}>
+                      <div className="flex flex-col">
+                        <span>仅拉取（默认）</span>
+                        <span className="text-xs text-muted-foreground">把此设备数据拉到本机，对端不被修改</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void runSync(peer.deviceId, { direction: 'push' })}>
+                      <div className="flex flex-col">
+                        <span>仅推送</span>
+                        <span className="text-xs text-muted-foreground">把本机数据灌到此设备，本机不变</span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => void runSync(peer.deviceId, { direction: 'both' })}>
+                      <div className="flex flex-col">
+                        <span>双向</span>
+                        <span className="text-xs text-muted-foreground">两侧互拉，冲突会挂起待选择</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </>
             ) : (
               <Button size="sm" variant="outline" disabled={pairingThis} onClick={() => void requestPair(peer)}>
                 {pairingThis ? '配对中…' : '配对'}
@@ -83,7 +123,8 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
 
         {paired && !lastSyncAt && !pairingThis && (
           <p className="mt-3 text-xs text-muted-foreground">
-            首次同步提示：两端还没有共同基线，同名但内容不同的文件会按冲突保守处理（各自保留 .conflict- 副本，不丢数据），冲突较多属预期。
+            首次同步提示：两端还没有共同基线，同名但内容不同的文件会按冲突处理——默认仅拉取会自动取较新一侧（败方留 .conflict- 副本，选错可换回）；
+            若用双向同步则会列为待处理冲突，可按大类一键选择。首次交接建议在旧设备数据拉过来后核对结果。
           </p>
         )}
       </CardContent>

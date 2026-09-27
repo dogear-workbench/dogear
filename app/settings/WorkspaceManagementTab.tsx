@@ -148,13 +148,16 @@ export function WorkspaceManagementTab() {
     }
     setImportingId(orphan.id);
     try {
+      // 不传 deleteAfterImport：主进程默认不删源目录（导入只合并会话索引，不搬 sessions 正文等）
       const result = (await client.importOrphanWorkspace({
         orphanId: orphan.id,
         targetWorkspaceId: currentWorkspace.id,
-        deleteAfterImport: true,
       })) as { importedCount: number };
       toast.success(
-        `已导入 ${result.importedCount} 个会话到「${currentWorkspace.name}」`,
+        `已合并 ${result.importedCount} 条会话索引到「${currentWorkspace.name}」`,
+        {
+          description: '源目录已保留，请人工确认无遗漏后再清理',
+        },
       );
       setOrphans((prev) => prev.filter((o) => o.id !== orphan.id));
     } catch (err) {

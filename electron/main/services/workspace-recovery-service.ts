@@ -108,6 +108,10 @@ export async function scanOrphanWorkspaces(): Promise<OrphanWorkspace[]> {
  * 1. 读取孤儿 conversations.json，逐条 merge 到目标（保留 ID，更新 workspaceId）
  * 2. 可选：导入完成后删除孤儿文件夹
  *
+ * ⚠️ deleteAfterImport：完整搬迁工具上线前禁止传 true——本函数只 merge conversations.json 索引，
+ * 不搬 sessions 正文、groups、notes、memory 等未迁移内容，删源目录会永久丢失这些数据
+ * （2026-09-27 同步事故的根因之一）。参数保留仅作防御纵深，现无调用方传 true。
+ *
  * 返回实际导入的对话数量。
  */
 export async function importOrphanToWorkspace(

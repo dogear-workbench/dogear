@@ -148,10 +148,12 @@ export const workspaceRouter = {
     .input<{ orphanId: string; targetWorkspaceId: string; deleteAfterImport?: boolean }>()
     .action(async ({ input }) => {
       try {
+        // 默认 false：导入只 merge 会话索引，不搬 sessions 正文等未迁移内容，
+        // 删源目录会永久丢失数据（2026-09-27 事故根因之一）——永不默认删除
         return await importOrphanToWorkspace(
           input.orphanId,
           input.targetWorkspaceId,
-          input.deleteAfterImport ?? true,
+          input.deleteAfterImport ?? false,
         );
       } catch (error) {
         console.error('导入孤儿工作区失败:', error);

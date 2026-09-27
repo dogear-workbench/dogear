@@ -1,4 +1,6 @@
+// electron/main/tipc/sync.ts
 import { tipc } from '@egoist/tipc/main';
+import { shell } from 'electron';
 import { broadcastToWindows } from '../services/renderer-broadcast.js';
 import {
   getLanSyncStatus,
@@ -21,7 +23,8 @@ import {
   runSync,
   type SyncReport,
 } from '../services/sync/orchestrator.js';
-import { readSyncState } from '../services/sync/sync-state.js';
+import { readSyncState, getDataDir } from '../services/sync/sync-state.js';
+import { resolveWithinDataDir } from '../services/sync/apply.js';
 import { loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
 import type { SyncEventPayload } from './renderer-handlers.js';
 
@@ -49,7 +52,14 @@ export const syncRouter = {
     .action(async () => getRunningSync()),
 
   runSync: t.procedure
-    .input<{ peerId: string; confirmVersionMismatch?: boolean }>()
+    .input<{
+      peerId: string;
+      confirmVersionMismatch?: boolean;
+      /** 同步方向：pull=仅拉取（默认）；push=仅推送；both=双向 */
+      direction?: 'both' | 'pull' | 'push';
+      /** 双改冲突裁决表（双向/推送档）：key=relPath；缺条目的冲突本轮挂起 */
+      conflictResolutions?: Record<string, 'local' | 'remote'>;
+    }>()
     .action(async ({ input }): Promise<SyncReport> => {
       const peer = listPeers().find((p) => p.deviceId === input.peerId);
       if (!peer) {
@@ -69,8 +79,22 @@ export const syncRouter = {
       }
       return runSync(
         { deviceId: peer.deviceId, host: peer.host, port: peer.port, deviceName: peer.name },
-        { confirmVersionMismatch: input.confirmVersionMismatch },
+        {
+          confirmVersionMismatch: input.confirmVersionMismatch,
+          direction: input.direction,
+          conflictResolutions: input.conflictResolutions,
+        },
       );
+    }),
+
+  /** 在系统文件管理器中定位数据目录内文件（冲突副本换回用）：relPath 必须落在数据目录内，防路径逃逸 */
+  revealSyncFile: t.procedure
+    .input<{ relPath: string }>()
+    .action(async ({ input }) => {
+      const abs = resolveWithinDataDir(getDataDir(), input.relPath);
+      if (!abs) return { success: false as const, error: 'unsafe path' };
+      shell.showItemInFolder(abs);
+      return { success: true as const };
     }),
 
   /** 发起配对：立即返回本端展示码供比对，结果经 pairing-completed 事件推送（请求挂着等对端确认，不可 await） */

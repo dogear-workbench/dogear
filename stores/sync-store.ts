@@ -3,7 +3,7 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import { showConfirm } from '@/stores/confirm-store';
-import type { SyncReport } from '@/electron/main/services/sync/orchestrator';
+import type { SyncReport, SyncDirection } from '@/electron/main/services/sync/orchestrator';
 import type { PairingRequestInfo } from '@/electron/main/services/sync/pairing';
 import type { LanSyncStatus } from '@/electron/main/services/sync/lan-sync-service';
 import type { PeerInfo } from '@/electron/main/services/sync/discovery';
@@ -28,7 +28,16 @@ interface SyncStoreState {
   /** 数据中心页挂载时调用：拉全量 + 订阅主进程 syncEvent，返回取消订阅 */
   subscribe: () => () => void;
   refresh: () => Promise<void>;
-  runSync: (peerId: string) => Promise<void>;
+  runSync: (
+    peerId: string,
+    opts?: {
+      confirmVersionMismatch?: boolean;
+      /** 缺省 pull=仅拉取 */
+      direction?: SyncDirection;
+      /** 双改冲突裁决表（双向/推送档）：key=relPath */
+      conflictResolutions?: Record<string, 'local' | 'remote'>;
+    },
+  ) => Promise<void>;
   requestPair: (peer: PeerInfo) => Promise<void>;
   confirmPairRequest: (requestId: string) => Promise<void>;
   rejectPairRequest: (requestId: string) => Promise<void>;
@@ -118,24 +127,35 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
     }
   },
 
-  runSync: async (peerId) => {
+  runSync: async (peerId, opts) => {
     try {
-      let report = await client.runSync({ peerId });
+      let report = await client.runSync({
+        peerId,
+        confirmVersionMismatch: opts?.confirmVersionMismatch,
+        direction: opts?.direction,
+        conflictResolutions: opts?.conflictResolutions,
+      });
       if (report.status === 'blocked' && report.confirmRequired === 'protocol-version-mismatch') {
         const ok = await showConfirm(
           '协议版本不一致',
           `${report.warnings[0] ?? '对端协议版本与本端不同'}，同步可能损坏数据。仍要继续吗？`,
         );
         if (!ok) return;
-        report = await client.runSync({ peerId, confirmVersionMismatch: true });
+        report = await client.runSync({
+          peerId,
+          confirmVersionMismatch: true,
+          direction: opts?.direction,
+          conflictResolutions: opts?.conflictResolutions,
+        });
       }
       set({ lastReport: report, runningSync: null });
       if (report.status === 'completed') {
         const extra = [
-          report.conflicts.length > 0 ? `冲突 ${report.conflicts.length}` : null,
+          report.conflicts.length > 0 ? `待处理冲突 ${report.conflicts.length}` : null,
           report.skipped.length > 0 ? `跳过 ${report.skipped.length}` : null,
         ].filter(Boolean);
-        toast.success(`同步完成：拉取 ${report.pulled} · 推送 ${report.pushed}`, {
+        const directionLabel = report.direction === 'push' ? '仅推送' : report.direction === 'both' ? '双向' : '仅拉取';
+        toast.success(`同步完成（${directionLabel}）：拉取 ${report.pulled} · 推送 ${report.pushed}`, {
           description: extra.length > 0 ? extra.join(' · ') : undefined,
         });
       } else if (report.status === 'failed') {

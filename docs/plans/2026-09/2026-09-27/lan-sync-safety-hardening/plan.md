@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 止血——孤儿导入不删目录、冲突挂起待选、同步方向三档](./step1-stopbleed.md)
+- [x] [Step 1: 止血——孤儿导入不删目录、冲突挂起待选、同步方向三档](./step1-stopbleed.md)
 - [ ] [Step 2: 记录型文件条目级合并](./step2-record-merge.md)
 - [ ] [Step 3: 工作区映射与选择性同步](./step3-workspace-identity.md)
 
