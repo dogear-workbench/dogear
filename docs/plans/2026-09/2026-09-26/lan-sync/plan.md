@@ -12,7 +12,7 @@
 - [x] [Step 2: 发现与服务](./step2-server-pairing.md) — mDNS 发现 + HTTP 对等服务 + 6 位码配对 + 设备密钥
 - [x] [Step 3: 传输与应用](./step3-apply-routes.md) — 双向拉推流式传输、原子写入、冲突副本、tipc 路由
 - [x] [Step 4: 前端面板](./step4-ui-panel.md) — 数据中心「设备同步」面板 + 启动检测通知
-- [ ] [Step 5: 双机联调](./step5-two-device-e2e.md) — Windows ↔ Mac 真机端到端（依赖 mac 适配完成后进行）
+- [ ] [Step 5: 双机联调](./step5-two-device-e2e.md) — Windows ↔ Mac 真机端到端（依赖 mac 适配完成后进行；macos-compat step1-5 已完成但 step6 真机验证未做，Mac 端尚未真机运行过；需用户真机配合：双机同局域网 + 人工配对交互 + 防火墙放行）
 
 ## 全局决策
 
