@@ -365,6 +365,11 @@ app.whenReady().then(async () => {
     .then((m) => m.autoConnectFeishu())
     .catch((err) => console.error('飞书自动连接失败:', err));
 
+  // 局域网交接同步：HTTP 对等服务 + mDNS 发现；端口占用/mDNS 不可用时降级，不影响主功能
+  void import('./services/sync/lan-sync-service.js')
+    .then((m) => m.startLanSync())
+    .catch((err) => console.error('局域网同步服务启动失败:', err));
+
   // 当应用被激活时(如在 macOS 上点击 Dock 图标)
   // 主窗口存活则唤回（hide 到托盘后 getAllWindows 仍计数，只判窗口数会永远唤不回）
   app.on('activate', () => {
@@ -401,6 +406,13 @@ app.on('before-quit', async () => {
     stopBackupScheduler();
   } catch (error) {
     console.error('停止备份调度器失败:', error);
+  }
+  // 停止局域网同步服务（mDNS 发 goodbye + 关 HTTP）
+  try {
+    const { stopLanSync } = await import('./services/sync/lan-sync-service.js');
+    await stopLanSync();
+  } catch (error) {
+    console.error('停止局域网同步服务失败:', error);
   }
   // 销毁托盘图标
   destroyTray();

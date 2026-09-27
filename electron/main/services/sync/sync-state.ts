@@ -12,6 +12,8 @@ export interface SyncStatePeer {
 
 export interface SyncState {
   version: 1;
+  /** 本机设备身份，首次生成后持久化；sync-state.json 不在同步白名单，不会自同步 */
+  deviceId?: string;
   peers: Record<string, SyncStatePeer>;
 }
 

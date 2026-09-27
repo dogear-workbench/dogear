@@ -18,6 +18,7 @@ import {
   normalizeBackupSettings,
   BASIC_TOOL_NAMES,
   normalizeWebAiSites,
+  normalizeSyncOptions,
   type AppSettings,
   type PiPermissionMode,
   type BasicToolPermissions,
@@ -295,6 +296,12 @@ export function normalizeSettings(settings: AppSettings): boolean {
     changed = true;
   }
 
+  const newSyncOptions = normalizeSyncOptions(settings.syncOptions);
+  if (JSON.stringify(newSyncOptions) !== JSON.stringify(settings.syncOptions)) {
+    obj.syncOptions = newSyncOptions;
+    changed = true;
+  }
+
   return changed;
 }
 
@@ -304,7 +311,7 @@ export function normalizeSettings(settings: AppSettings): boolean {
  */
 export function applyThemeSource(theme: unknown): void {
   const t = theme === 'light' || theme === 'dark' || theme === 'system' ? theme : 'light';
-  if (nativeTheme.themeSource !== t) nativeTheme.themeSource = t;
+  if (nativeTheme && nativeTheme.themeSource !== t) nativeTheme.themeSource = t;
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {

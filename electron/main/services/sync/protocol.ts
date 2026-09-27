@@ -52,6 +52,26 @@ export const FilePushMetaSchema = z.object({
 });
 export type FilePushMeta = z.infer<typeof FilePushMetaSchema>;
 
+export const PairRequestBodySchema = z.object({
+  hello: HandshakeHelloSchema,
+  code: z.string().regex(/^\d{6}$/),
+});
+export type PairRequestBody = z.infer<typeof PairRequestBodySchema>;
+
+export const PairResponseBodySchema = z.object({
+  accepted: z.boolean(),
+  reason: z.string().optional(),
+  secret: z.string().length(64).optional(),
+  hello: HandshakeHelloSchema,
+});
+export type PairResponseBody = z.infer<typeof PairResponseBodySchema>;
+
+export const AuthHeaders = {
+  deviceId: 'x-dogear-device-id',
+  secret: 'x-dogear-secret',
+  fileMeta: 'x-dogear-file-meta',
+} as const;
+
 export type DiffConflict = { local: FileEntry; remote: FileEntry };
 export type SkippedEntry = { relPath: string; reason: string };
 

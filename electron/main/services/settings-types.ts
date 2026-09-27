@@ -118,6 +118,22 @@ export interface BackupSettings {
   categories: Record<BackupSettingCategoryKey, BackupCategorySetting>;
 }
 
+/** 已配对的同步对端；secret 为两端共享的 hex 密钥，之后请求经 header 校验 */
+export interface PairedDevice {
+  deviceId: string;
+  deviceName?: string;
+  secret: string;
+  pairedAt: number;
+}
+
+/** 局域网交接同步选项；syncStocksData/syncFeishu 默认 false（行情缓存与飞书数据默认不随同步搬运） */
+export interface SyncOptions {
+  deviceName?: string;
+  syncStocksData: boolean;
+  syncFeishu: boolean;
+  pairedDevices: PairedDevice[];
+}
+
 export interface AppSettings {
   ai: {
     /** 推理努力程度。null/undefined = 不传给 SDK，由模型自带默认决定 */
@@ -168,6 +184,8 @@ export interface AppSettings {
   };
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
+  /** 局域网交接同步配置；缺省字段走默认值（可选项全关、无配对设备） */
+  syncOptions?: SyncOptions;
   /** 网页 AI 站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
   webAiSites?: WebAiSite[];
 }
@@ -220,6 +238,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
       tasks: { enabled: true, frequency: 'daily', keep: 10 },
       sessions: { enabled: true, frequency: 'monthly', keep: 10 },
     },
+  },
+  syncOptions: {
+    deviceName: '',
+    syncStocksData: false,
+    syncFeishu: false,
+    pairedDevices: [],
   },
 };
 
@@ -333,6 +357,37 @@ export function normalizeBackupSettings(raw: unknown): BackupSettings {
     };
   }
   return { categories };
+}
+
+/**
+ * syncOptions 节归一化：开关仅接受布尔 true；pairedDevices 校验 deviceId/secret（64 位 hex）并按 deviceId 去重，
+ * secret 统一小写避免两端大小写不一致比对失败；非法条目丢弃，不丢弃其他合法字段
+ */
+export function normalizeSyncOptions(raw: unknown): SyncOptions {
+  const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const devicesRaw = Array.isArray(obj.pairedDevices) ? obj.pairedDevices : [];
+  const pairedDevices: PairedDevice[] = [];
+  const seen = new Set<string>();
+  for (const item of devicesRaw) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const d = item as Record<string, unknown>;
+    if (typeof d.deviceId !== 'string' || d.deviceId === '') continue;
+    if (typeof d.secret !== 'string' || !/^[0-9a-f]{64}$/i.test(d.secret)) continue;
+    if (seen.has(d.deviceId)) continue;
+    seen.add(d.deviceId);
+    pairedDevices.push({
+      deviceId: d.deviceId,
+      ...(typeof d.deviceName === 'string' && d.deviceName !== '' ? { deviceName: d.deviceName } : {}),
+      secret: d.secret.toLowerCase(),
+      pairedAt: typeof d.pairedAt === 'number' && Number.isFinite(d.pairedAt) ? d.pairedAt : Date.now(),
+    });
+  }
+  return {
+    deviceName: typeof obj.deviceName === 'string' ? obj.deviceName : '',
+    syncStocksData: obj.syncStocksData === true,
+    syncFeishu: obj.syncFeishu === true,
+    pairedDevices,
+  };
 }
 
 /**
