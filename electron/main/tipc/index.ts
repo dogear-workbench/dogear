@@ -33,6 +33,7 @@ import { focusRouter } from './focus.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
 import { browserRouter, registerBrowserActionBridge, registerExtensionStatusBridge } from './browser.js';
 import { browserDataRouter } from './browser-data.js';
+import { syncRouter, registerSyncBroadcaster } from './sync.js';
 
 export const router = {
   ...aiRouter,
@@ -68,6 +69,7 @@ export const router = {
   ...ptyRouter,
   ...browserRouter,
   ...browserDataRouter,
+  ...syncRouter,
 };
 
 export type Router = typeof router;
@@ -82,4 +84,6 @@ export function registerTipcHandlers() {
   registerBrowserActionBridge();
   // 浏览器扩展连接状态：gateway → 渲染层广播桥接
   registerExtensionStatusBridge();
+  // 局域网同步：服务层状态/对端/同步进度/配对事件 → 渲染层广播桥接
+  registerSyncBroadcaster();
 }

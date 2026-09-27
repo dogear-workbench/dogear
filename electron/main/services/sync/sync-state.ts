@@ -1,13 +1,17 @@
 import path from 'node:path';
 import { app } from 'electron';
 import { safeJsonRead, safeJsonWrite } from '../safe-json.js';
+import type { FileEntry } from './protocol.js';
 
 export interface SyncStatePeer {
   deviceId: string;
   deviceName?: string;
   appVersion?: string;
   lastSyncAt: number;
+  /** 上次同步结束时刻的快照整体指纹，仅作展示/比对两端是否同源，diff 判定用 lastManifest */
   lastManifestHash?: string;
+  /** 下轮 diff 的基线：上次同步收敛后本端清单快照（带内容 hash）；仅在同步完成时整体替换 */
+  lastManifest?: FileEntry[];
 }
 
 export interface SyncState {

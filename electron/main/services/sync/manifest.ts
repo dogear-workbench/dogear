@@ -84,7 +84,7 @@ export async function hashEntries(root: string, entries: FileEntry[]): Promise<H
   return out;
 }
 
-async function sha256File(absPath: string): Promise<string> {
+export async function sha256File(absPath: string): Promise<string> {
   const hash = createHash('sha256');
   const stream = createReadStream(absPath);
   for await (const chunk of stream) {

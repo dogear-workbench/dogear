@@ -15,7 +15,7 @@ import {
   type PairRequestBody,
 } from './protocol.js';
 import { buildManifest, hashEntries, type ManifestOptions } from './manifest.js';
-import { resolveWithinDataDir, writeIncomingFile } from './apply.js';
+import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
 
 export interface SyncServerOptions {
   port: number;
@@ -259,6 +259,17 @@ async function handleFilePush(
     meta = FilePushMetaSchema.parse(JSON.parse(Buffer.from(metaRaw, 'base64').toString('utf-8')));
   } catch (error) {
     sendJson(res, 400, { error: `invalid file meta: ${error instanceof Error ? error.message : String(error)}` });
+    return;
+  }
+  // settings.json 双端都是字段级合并落盘（拉取端在 applyIncoming，推送端在此），否则配对信息随整文件覆盖互丢
+  if (meta.relPath === 'settings.json') {
+    try {
+      await mergeIncomingSettings(req);
+    } catch (error) {
+      sendJson(res, 400, { error: `merge settings failed: ${error instanceof Error ? error.message : String(error)}` });
+      return;
+    }
+    sendJson(res, 200, { ok: true, merged: true });
     return;
   }
   const result = await writeIncomingFile(opts.dataDir, meta, req);

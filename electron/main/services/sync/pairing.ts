@@ -32,6 +32,7 @@ const pendingIncoming = new Map<string, {
   timer: NodeJS.Timeout;
 }>();
 let selfHello: HandshakeHello | null = null;
+let outgoingPairing: { deviceId: string; code: string } | null = null;
 
 function emitOutcome(outcome: PairingOutcome): void {
   for (const cb of outcomeListeners) {
@@ -75,11 +76,28 @@ export async function initSelfHello(appVersion: string): Promise<HandshakeHello>
   return hello;
 }
 
+/** 门面未启动（如单跑编排验证脚本）时兜底初始化，已初始化则直接复用 */
+export async function ensureSelfHello(appVersion: string): Promise<HandshakeHello> {
+  if (selfHello) return selfHello;
+  return initSelfHello(appVersion);
+}
+
 /** A 端发起配对：生成本端展示码并发起请求，对端用户确认后返回共享密钥 */
-export async function startPairing(
+export function beginPairing(
   target: PeerEndpoint & { deviceId: string; deviceName?: string },
-): Promise<PairingOutcome> {
+): { code: string; result: Promise<PairingOutcome> } {
   const code = generateCode();
+  outgoingPairing = { deviceId: target.deviceId, code };
+  const result = runPairingRequest(target, code).finally(() => {
+    if (outgoingPairing?.deviceId === target.deviceId) outgoingPairing = null;
+  });
+  return { code, result };
+}
+
+async function runPairingRequest(
+  target: PeerEndpoint & { deviceId: string; deviceName?: string },
+  code: string,
+): Promise<PairingOutcome> {
   const hello = getSelfHello();
   try {
     const result = await sendPairRequest(target, hello, code);
@@ -106,6 +124,12 @@ export async function startPairing(
     emitOutcome(outcome);
     return outcome;
   }
+}
+
+export function getOutgoingPairingCode(deviceId?: string): string | null {
+  if (!outgoingPairing) return null;
+  if (deviceId && outgoingPairing.deviceId !== deviceId) return null;
+  return outgoingPairing.code;
 }
 
 /** B 端收到 pair-request 的入口（server 回调）：挂起等待本端用户确认 */

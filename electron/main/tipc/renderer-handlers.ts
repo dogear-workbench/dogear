@@ -9,6 +9,10 @@ import type { BrowserActionEvent } from '../services/browser/browser-action-stre
 import type { EmbeddedTabSnapshot } from '../services/browser/embedded/types.js';
 import type { HumanInterventionRequest } from '../services/browser/human-intervention.js';
 import type { ExtensionStatus } from '../services/browser/browser-gateway.js';
+import type { SyncProgressEvent } from '../services/sync/orchestrator.js';
+import type { LanSyncStatus } from '../services/sync/lan-sync-service.js';
+import type { PeerInfo } from '../services/sync/discovery.js';
+import type { PairingOutcome, PairingRequestInfo } from '../services/sync/pairing.js';
 
 /**
  * 渲染进程事件处理器类型定义
@@ -267,4 +271,14 @@ export type RendererHandlers = {
   // 通知点击定位笔记窗口内任务（笔记窗口打开时主进程直发该窗口，主窗口仍走 focusTask）
   notesTaskFocus: (data: { taskId: string; workspaceId: string }) => void;
 
+  // 局域网同步事件总线（状态/对端/同步进度/配对四路合一，前端 sync store 按 kind 分发）
+  syncEvent: (data: SyncEventPayload) => void;
+
 };
+
+export type SyncEventPayload =
+  | { kind: 'status'; status: LanSyncStatus }
+  | { kind: 'peers'; peers: PeerInfo[] }
+  | { kind: 'sync'; event: SyncProgressEvent }
+  | { kind: 'pair-request'; request: PairingRequestInfo }
+  | { kind: 'pairing-completed'; outcome: PairingOutcome };
