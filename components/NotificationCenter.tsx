@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, ClipboardList, MessageSquare, CheckCheck, Trash2, X } from 'lucide-react';
+import { Bell, ClipboardList, MessageSquare, MonitorSmartphone, CheckCheck, Trash2, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,7 @@ import { openOrFocusConversation } from '@/components/conversation-list/utils';
 import type { Conversation } from '@/components/ConversationList';
 import type { NotificationCenterEntry } from '@/types/notification';
 import { useNotificationStore } from '@/stores/notification-store';
+import { useSyncStore } from '@/stores/sync-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSessionStore, NOTES_TAB_ID } from '@/stores/session-store';
@@ -90,6 +91,11 @@ export function NotificationCenter() {
       }
       return;
     }
+    if (entry.type === 'sync') {
+      useSyncStore.getState().requestSyncPanelFocus();
+      useSessionStore.getState().openDataCenterTab();
+      return;
+    }
     if (entry.type === 'conversation' && entry.owner.kind === 'conversation' && entry.workspaceId) {
       const conv = await findConversationById(entry.workspaceId, entry.owner.conversationId);
       if (!conv) {
@@ -160,6 +166,8 @@ export function NotificationCenter() {
                 <span className="mt-0.5 shrink-0">
                   {entry.type === 'task' ? (
                     <ClipboardList className="w-4 h-4 text-muted-foreground" />
+                  ) : entry.type === 'sync' ? (
+                    <MonitorSmartphone className="w-4 h-4 text-muted-foreground" />
                   ) : (
                     <MessageSquare className="w-4 h-4 text-muted-foreground" />
                   )}

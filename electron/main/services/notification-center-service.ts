@@ -16,7 +16,7 @@ export type NotificationOwner =
 
 export interface NotificationCenterEntry {
   id: string;
-  type: 'task' | 'conversation';
+  type: 'task' | 'conversation' | 'sync';
   /** 同源聚合键（task:{taskId}:{kind} / conversation:{childId}:{kind}），未读同源事件合并为一条 */
   dedupeKey: string;
   title: string;
@@ -35,7 +35,7 @@ export interface NotificationCenterEntry {
 }
 
 export interface AddNotificationInput {
-  type: 'task' | 'conversation';
+  type: 'task' | 'conversation' | 'sync';
   dedupeKey: string;
   title: string;
   summary?: string;

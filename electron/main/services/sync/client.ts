@@ -91,8 +91,8 @@ export async function pullFile(
     const text = res.body ? await res.text().catch(() => '') : '';
     throw new Error(`GET /file HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`);
   }
-  // 线上协议恒为 gzip，解压统一在落盘边界（writeIncomingFile）
-  return Readable.fromWeb(res.body as import('stream/web').ReadableStream);
+  // 线上协议恒为 gzip，解压统一在落盘边界（writeIncomingFile）；DOM 与 stream/web 的 ReadableStream 类型不重叠，经 unknown 中转
+  return Readable.fromWeb(res.body as unknown as import('stream/web').ReadableStream);
 }
 
 export async function pushFile(
@@ -115,7 +115,7 @@ export async function pushFile(
     body: body as unknown as NonNullable<RequestInit['body']>,
     duplex: 'half',
     signal: AbortSignal.timeout(FILE_TIMEOUT_MS),
-  });
+  } as RequestInit);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
     throw new Error(`POST /file HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`);

@@ -2,6 +2,7 @@ import { app } from 'electron';
 import { loadSettings } from '../settings-service.js';
 import { getDataDir } from './sync-state.js';
 import { handleIncomingPairRequest, initSelfHello } from './pairing.js';
+import { initPeerOnlineNotifications } from './peer-notify.js';
 import { getDiscoveryError, getPeers, onPeersChanged, startDiscovery, stopDiscovery, type PeerInfo } from './discovery.js';
 import { DEFAULT_SYNC_PORT, startSyncServer, type RunningSyncServer } from './server.js';
 
@@ -82,6 +83,7 @@ async function startLanSyncInternal(): Promise<void> {
   }
   server = runningServer;
 
+  initPeerOnlineNotifications();
   startDiscovery({
     deviceId: hello.deviceId,
     deviceName: hello.deviceName ?? hello.deviceId,

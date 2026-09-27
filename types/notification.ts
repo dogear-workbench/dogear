@@ -7,7 +7,7 @@ export type NotificationOwner =
 
 export interface NotificationCenterEntry {
   id: string;
-  type: 'task' | 'conversation';
+  type: 'task' | 'conversation' | 'sync';
   dedupeKey: string;
   title: string;
   summary?: string;
