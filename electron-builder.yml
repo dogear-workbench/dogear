@@ -24,16 +24,8 @@ files:
   # 包描述文件
   - package.json
 
-# 额外资源（不打入 app.asar，安装后可直接访问）
+# 额外资源（不打入 app.asar，安装后可直接访问；跨平台条目，Windows 专属见 win.extraResources）
 extraResources:
-  # Git 离线安装包（安装时自动检测并安装）
-  - from: build/installers/
-    to: installers/
-    filter:
-      - "**/*"
-  # 托盘图标（createTray 通过 process.resourcesPath 访问）
-  - from: build/icon.ico
-    to: icon.ico
   # Python 计算分析层脚本（首次运行自动 pip install 依赖）
   - from: python/
     to: python/
@@ -76,6 +68,16 @@ win:
   icon: build/icon.ico
   # 不进行代码签名（无证书时跳过 winCodeSign 下载）
   signtoolOptions: null
+  # Windows 专属资源（顶层 extraResources 与平台段是并集，mac 包不能排除顶层条目，故放这里）
+  extraResources:
+    # Git 离线安装包（安装时自动检测并安装）
+    - from: build/installers/
+      to: installers/
+      filter:
+        - "**/*"
+    # 托盘图标（createTray 通过 process.resourcesPath 访问）
+    - from: build/icon.ico
+      to: icon.ico
 
 # NSIS 安装包配置
 nsis:
@@ -97,3 +99,20 @@ nsis:
   uninstallerIcon: build/icon.ico
   # 安装包语言
   language: 2052
+
+# macOS 打包配置（Apple Silicon）
+mac:
+  # zip 供后续自动更新通道使用，dmg 为分发安装镜像
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+  icon: build/icon.icns
+  # 不做 Developer ID 签名/公证（ad-hoc 签名，构建机可启动）
+  identity: null
+  category: public.app-category.productivity
+  extraResources:
+    # 托盘 template image（tray.ts darwin 分支从 resourcesPath 根加载）
+    - from: build/icon-tray.png
+      to: icon-tray.png
