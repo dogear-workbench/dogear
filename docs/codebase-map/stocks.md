@@ -25,6 +25,7 @@
 - `stock-watchlist-service.ts` — 自选股存储（`.dogear/stocks/watchlist.json`）
 - `stock-data-service.ts` — K线+每日快照 JSONL 增量存储（`.dogear/stocks/kline/` + `.dogear/stocks/daily/`）
 - `python-bridge.ts` — Python 守护进程通信（JSON-RPC over stdin/stdout）
+- `python-venv.ts` — darwin 专用 venv 管理（Homebrew PEP 668 拒绝直装，依赖装 `<userData>/python-venv`；ensureVenv 探测/重建/创建 + Python ≥3.10 解析校验；win32 不走此模块）
 - `formula-service.ts` — 公式 CRUD（`.dogear/stocks/formulas.json`，screener/signal/score）
 - `announcement-service.ts` — 公告服务（巨潮资讯网）：orgId 映射懒抓、PDF 下载解析缓存、共享 rateLimiter
 

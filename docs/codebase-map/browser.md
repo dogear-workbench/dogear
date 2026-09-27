@@ -20,7 +20,8 @@
 
 ## 扩展通道（services/browser/）
 
-- `nm-bridge.ts` — NM host worker 入口：stdio ↔ named pipe 双向桥接（打包产物 `resources/nm-host/nm-bridge-worker.cjs`）
+- `nm-bridge.ts` — NM host worker 入口：stdio ↔ 网关双向桥接（win32 named pipe / darwin unix socket，`--nm-gateway=` argv 寻址；打包产物 `resources/nm-host/nm-bridge-worker.cjs`）
+- `nm-host-register.ts` — darwin 运行时 NM 注册：渲染 nm-host.sh 到 userData + 写 Chrome/Edge NativeMessagingHosts manifest（allowed_origins 单一来源读 build-nm-manifest 产物；设置页注册/注销按钮，win32 走 NSIS 安装器不经此链路）
 - `nm-protocol.ts` — 帧协议（4B LE 长度+JSON、ProtocolVersion 协商、CommandKind/CommandErrorCode）
 - `browser-gateway.ts` — NM pipe server 单例：单连接模型、pending map 命令生命周期、ExtensionStatus 广播、sendExtensionCommand 前置校验链（not_connected→stale_protocol→permission_denied→navigate 目标域）
 - `human-intervention.ts` — awaiting_human 产品化（内存态不持久化）：raise/resolve/自动解除 + 全量广播
