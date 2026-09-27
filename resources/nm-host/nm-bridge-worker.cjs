@@ -1,7 +1,9 @@
 const fs = require('fs');
 const net = require('net');
 
-const PIPE_PATH = '\\\\.\\pipe\\dogear-nm-gateway';
+const ARG_PREFIX = '--nm-gateway=';
+const gwArg = process.argv.find((a) => a.startsWith(ARG_PREFIX));
+const PIPE_PATH = gwArg ? gwArg.slice(ARG_PREFIX.length) : '\\\\.\\pipe\\dogear-nm-gateway';
 const CONNECT_RETRY_INTERVAL_MS = 500;
 const CONNECT_MAX_WAIT_MS = 3000;
 

@@ -8,6 +8,11 @@ const BROWSER_KEYS = ['Google\\Chrome', 'Microsoft\\Edge']
 const root = fileURLToPath(new URL('..', import.meta.url))
 const devDir = `${root}build\\nm-host-dev`
 
+if (process.platform !== 'win32') {
+  console.error('register-nm-dev 仅支持 Windows；macOS 请在 Dogear 设置页 → 基础设置 → 浏览器扩展 点击「注册到浏览器」（dev/prod 通用）')
+  process.exit(1)
+}
+
 function reg(args) {
   return execFileSync('reg', args, { encoding: 'utf8' })
 }

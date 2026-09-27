@@ -216,7 +216,7 @@ app.whenReady().then(async () => {
   // 浏览器扩展网关（pipe server，接收 NM bridge 转发的帧流）
   try {
     const { initBrowserGateway } = await import('./services/browser/browser-gateway.js');
-    initBrowserGateway(app.getVersion());
+    initBrowserGateway(app.getVersion(), app.getPath('userData'));
   } catch (error) {
     console.error('初始化浏览器扩展网关失败:', error);
   }

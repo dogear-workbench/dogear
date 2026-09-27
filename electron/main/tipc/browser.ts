@@ -33,6 +33,10 @@ import {
   getExtensionStatus,
   setExtensionStatusBroadcaster,
 } from '../services/browser/browser-gateway.js';
+import {
+  registerNmHost as registerNmHostService,
+  unregisterNmHost as unregisterNmHostService,
+} from '../services/browser/nm-host-register.js';
 import { setBrowserToolsActionListener, type BrowserToolsActionEvent } from '../agents/tools/browser-tool-shared.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
@@ -102,6 +106,10 @@ function resumeConversation(conversationId: string, message: string): void {
 
 export const browserRouter = {
   getExtensionStatus: t.procedure.action(async () => getExtensionStatus()),
+
+  registerNmHost: t.procedure.action(async () => registerNmHostService()),
+
+  unregisterNmHost: t.procedure.action(async () => unregisterNmHostService()),
 
   getBrowserActions: t.procedure
     .input<{ limit?: number }>()

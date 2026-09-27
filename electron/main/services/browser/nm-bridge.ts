@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as net from 'net';
-import { NM_GATEWAY_PIPE_PATH, encodeNmFrame, makeNmDecoder } from './nm-protocol.js';
+import { nmGatewayAddress, encodeNmFrame, makeNmDecoder } from './nm-protocol.js';
 
 const CONNECT_RETRY_INTERVAL_MS = 500;
 const CONNECT_MAX_WAIT_MS = 3000;
@@ -61,7 +61,7 @@ function connectGatewayPipe(): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const attempt = () => {
-      const socket = net.connect(NM_GATEWAY_PIPE_PATH);
+      const socket = net.connect(resolveGatewayAddress());
       socket.once('connect', () => resolve(socket));
       socket.once('error', (err) => {
         socket.destroy();
@@ -74,6 +74,14 @@ function connectGatewayPipe(): Promise<net.Socket> {
     };
     attempt();
   });
+}
+
+/** bridge 进程不经 main-app 的 dev userData 隔离，darwin socket 路径由拉起方（nm-host.sh 渲染时）经 argv 传入 */
+function resolveGatewayAddress(): string {
+  const prefix = '--nm-gateway=';
+  const arg = process.argv.find((a) => a.startsWith(prefix));
+  if (arg) return arg.slice(prefix.length);
+  return nmGatewayAddress(app.getPath('userData'));
 }
 
 function describeError(err: unknown): string {

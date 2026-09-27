@@ -1,10 +1,13 @@
 /**
  * 设置页「基础设置」Tab
  */
+import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { Button } from '@/components/ui/button';
 import { Volume2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
 import type { AppSettings } from '@/types/settings';
 import { ModelSelector } from '@/components/ModelSelector';
 import { ExtensionStatusLine } from './ExtensionStatusLine';
@@ -45,6 +48,52 @@ interface BehaviorTabProps {
 }
 
 export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    client.getPlatform().then((p) => {
+      if (!cancelled) setIsMac(p === 'darwin');
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleRegisterNmHost = async () => {
+    try {
+      const res = await client.registerNmHost();
+      const failed = res.results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        toast.error('部分浏览器注册失败', {
+          description: failed.map((f) => `${f.browser}：${f.error}`).join('；'),
+        });
+        return;
+      }
+      toast.success(`已注册到 ${res.results.map((r) => r.browser).join('、')}`, {
+        description: '在浏览器扩展管理页重新加载 Dogear 扩展即可连接',
+      });
+    } catch (err) {
+      toast.error('注册失败', { description: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
+  const handleUnregisterNmHost = async () => {
+    try {
+      const res = await client.unregisterNmHost();
+      const failed = res.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        toast.error('部分浏览器注销失败', {
+          description: failed.map((f) => `${f.browser}：${f.error}`).join('；'),
+        });
+        return;
+      }
+      toast.success('已从所有浏览器注销');
+    } catch (err) {
+      toast.error('注销失败', { description: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   const updateAI = (patch: Partial<AppSettings['ai']>) => {
     setLocal(prev => ({ ...prev, ai: { ...prev.ai, ...patch } }));
   };
@@ -345,6 +394,19 @@ export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
                 连接后 Dogear 可读取扩展所在浏览器当前标签页的标题、网址与正文预览。
               </p>
               <ExtensionStatusLine />
+              {isMac && (
+                <div className="flex items-center gap-2 pt-1">
+                  <Button size="sm" variant="outline" onClick={handleRegisterNmHost}>
+                    注册到浏览器
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={handleUnregisterNmHost}>
+                    注销
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    写入 Chrome / Edge 的 NativeMessagingHosts 清单（换目录安装后请重新注册）
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>

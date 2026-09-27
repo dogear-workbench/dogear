@@ -1,9 +1,10 @@
+import { unlinkSync } from 'node:fs';
 import net from 'node:net';
 import { mainLogger } from '../../agents/logger.js';
 import {
   encodeNmFrame,
   makeNmDecoder,
-  NM_GATEWAY_PIPE_PATH,
+  nmGatewayAddress,
   ProtocolVersion,
   type CommandErrorCode,
   type CommandKind,
@@ -74,6 +75,7 @@ let activeSocket: net.Socket | null = null;
 let initialized = false;
 let gatewayAppVersion = '';
 let gatewayServer: net.Server | null = null;
+let gatewaySocketPath: string | null = null;
 let heartbeatTimer: NodeJS.Timeout | null = null;
 
 /** 注册制广播（对齐 browser-action-stream 模式：服务层零 electron 依赖，tipc 层接线） */
@@ -348,28 +350,40 @@ function stopHeartbeat(): void {
   heartbeatTimer = null;
 }
 
-/** app ready 时调用一次；appVersion 由调用方传入保持服务层零 electron 依赖 */
-export function initBrowserGateway(appVersion: string): void {
+function unlinkGatewaySocket(): void {
+  if (!gatewaySocketPath || process.platform === 'win32') return;
+  try {
+    unlinkSync(gatewaySocketPath);
+  } catch {}
+}
+
+/** app ready 时调用一次；appVersion/userDataDir 由调用方传入保持服务层零 electron 依赖 */
+export function initBrowserGateway(appVersion: string, userDataDir: string): void {
   if (initialized) return;
   initialized = true;
   gatewayAppVersion = appVersion;
+  gatewaySocketPath = nmGatewayAddress(userDataDir);
   const server = net.createServer(handleConnection);
   server.on('error', (err) => {
     logger.error('浏览器扩展网关管道启动失败:', err.message);
   });
-  server.listen(NM_GATEWAY_PIPE_PATH, () => {
-    logger.info('浏览器扩展网关已就绪:', NM_GATEWAY_PIPE_PATH);
+  server.on('close', () => unlinkGatewaySocket());
+  unlinkGatewaySocket();
+  server.listen(gatewaySocketPath, () => {
+    logger.info('浏览器扩展网关已就绪:', gatewaySocketPath);
   });
   gatewayServer = server;
   startHeartbeat();
 }
 
-/** 退出前收尾：goodbye 广播 → 管道 end（等 bridge 退出最多 CLOSE_WAIT_MS 后强拆）→ 停止管道监听；幂等可重复调用 */
+/** 退出前收尾：goodbye 广播 → 管道 end（等 bridge 退出最多 CLOSE_WAIT_MS 后强拆）→ 停止管道监听 + darwin socket 文件清理；幂等可重复调用 */
 export function closeBrowserGateway(): Promise<void> {
   stopHeartbeat();
   if (gatewayServer) {
     gatewayServer.close();
     gatewayServer = null;
+  } else {
+    unlinkGatewaySocket();
   }
   const socket = activeSocket;
   if (!socket || socket.destroyed) {

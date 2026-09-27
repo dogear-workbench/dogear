@@ -1,4 +1,12 @@
-export const NM_GATEWAY_PIPE_PATH = '\\\\.\\pipe\\dogear-nm-gateway';
+import { join } from 'path';
+
+export const NM_WIN_PIPE_PATH = '\\\\.\\pipe\\dogear-nm-gateway';
+export const NM_SOCKET_FILE = 'nm-gateway.sock';
+
+/** win32 走 named pipe（路径固定）；darwin 走 userData 下 unix socket，路径由调用方传入 userDataDir */
+export function nmGatewayAddress(userDataDir: string): string {
+  return process.platform === 'win32' ? NM_WIN_PIPE_PATH : join(userDataDir, NM_SOCKET_FILE);
+}
 
 const HEADER_SIZE = 4;
 const MAX_FRAME_BYTES = 64 * 1024 * 1024;
