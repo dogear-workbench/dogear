@@ -19,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
 import fs from 'fs';
 import electron from 'electron';
+import { ensureVenv, shellQuotePath } from './python-venv.js';
 
 const { app } = electron;
 
@@ -357,6 +358,16 @@ class PythonBridge {
     // 如果已缓存，直接返回
     if (this.pythonPath) return this.pythonPath;
 
+    // darwin 必须走 venv：Homebrew Python 的 PEP 668 拒绝 pip 直装系统解释器
+    if (process.platform === 'darwin') {
+      const { pythonPath: venvPython, recreated } = ensureVenv();
+      // venv 重建后第三方依赖已丢失，需重新走安装检测
+      if (recreated) this.depsVerified = false;
+      this.pythonPath = venvPython;
+      console.log(`[PythonBridge] 使用 venv Python: ${venvPython}`);
+      return venvPython;
+    }
+
     const candidates = process.platform === 'win32'
       ? ['python', 'python3', 'py']
       : ['python3', 'python'];
@@ -424,8 +435,11 @@ class PythonBridge {
     // 用 Python 检测核心依赖是否可导入
     const checkScript = 'import pandas,numpy,akshare,lark,bs4,lxml,markdownify';
 
+    // darwin 传入的是含空格的 venv 绝对路径，shell 字符串命令需引号；win 命令名原样
+    const py = process.platform === 'darwin' ? shellQuotePath(pythonCmd) : pythonCmd;
+
     try {
-      execSync(`${pythonCmd} -c "${checkScript}"`, {
+      execSync(`${py} -c "${checkScript}"`, {
         timeout: 15_000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
@@ -439,7 +453,7 @@ class PythonBridge {
     // 执行 pip install
     try {
       execSync(
-        `${pythonCmd} -m pip install -r "${reqFile}" --quiet`,
+        `${py} -m pip install -r "${reqFile}" --quiet`,
         {
           timeout: 300_000, // 5分钟超时（大包如 numpy 可能较慢）
           encoding: 'utf-8',

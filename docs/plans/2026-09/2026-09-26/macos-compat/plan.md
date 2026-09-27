@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 主进程体验适配](./step1-main-adaptations.md) — PATH 注入 + 菜单栏 + activate + 托盘 + 标题栏五处小分支
 - [x] [Step 2: 打包配置与资源](./step2-builder-config.md) — electron-builder mac 段 + icns/png 图标 + extraResources 平台过滤
-- [ ] [Step 3: Python venv 化](./step3-python-venv.md) — darwin 分支走 venv + 版本校验（Windows 不变）
+- [x] [Step 3: Python venv 化](./step3-python-venv.md) — darwin 分支走 venv + 版本校验（Windows 不变）
 - [ ] [Step 4: NM host 跨平台](./step4-nm-host.md) — unix socket + sh 脚本 + plist 注册 + 运行时注册入口
 - [ ] [Step 5: 更新机制 mac 分支](./step5-update-channel.md) — 热更 userData 化 + manifest 平台维度 + release 脚本
 - [ ] [Step 6: 真机验证](./step6-on-device-verification.md) — 待验证清单逐项执行（需用户配合 Mac）

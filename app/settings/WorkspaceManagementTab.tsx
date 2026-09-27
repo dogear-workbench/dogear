@@ -74,6 +74,13 @@ export function WorkspaceManagementTab() {
   const [envChecked, setEnvChecked] = useState(false);
   const [envDeps, setEnvDeps] = useState<DepInfo[]>([]);
   const [installing, setInstalling] = useState(false);
+  const [isMac, setIsMac] = useState(false);
+
+  useEffect(() => {
+    client.getPlatform()
+      .then((platform) => setIsMac(platform === 'darwin'))
+      .catch(() => {});
+  }, []);
 
   const loadWorkspaces = useCallback(async () => {
     setLoading(true);
@@ -465,6 +472,11 @@ export function WorkspaceManagementTab() {
                       </Button>
                     )}
                   </div>
+                  {isMac && !pythonInstalled && (
+                    <p className="px-3 py-2 text-xs text-muted-foreground border-t">
+                      未检测到 Python？终端执行 brew install python3，或安装 Xcode Command Line Tools（xcode-select --install）
+                    </p>
+                  )}
                 </>
               ) : null}
             </div>
