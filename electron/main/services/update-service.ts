@@ -6,47 +6,33 @@ import * as crypto from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import AdmZip from 'adm-zip';
 import { closeBrowserGateway } from './browser/browser-gateway.js';
+import {
+  compareVersions,
+  pickPlatformRelease,
+} from './update-manifest.js';
+import type {
+  CheckResult,
+  ManifestInfo,
+  ReleaseInfo,
+} from './update-manifest.js';
 
-export interface ManifestInfo {
-  version: string;
-  type: 'hotfix' | 'full';
-  pubDate: string;
-  hotfix?: {
-    url: string;
-    size: number;
-    sha256: string;
-  };
-  full?: {
-    url: string;
-    size: number;
-    sha256: string;
-    blockmapUrl?: string;
-  };
-}
-
-export interface CheckResult {
-  hasUpdate: boolean;
-  type?: 'hotfix' | 'full';
-  info?: ManifestInfo;
-  error?: string;
-}
+export {
+  compareVersions,
+  pickPlatformRelease,
+} from './update-manifest.js';
+export type {
+  CheckResult,
+  ManifestInfo,
+  ReleaseInfo,
+} from './update-manifest.js';
 
 export type ProgressCallback = (percent: number, transferred: number, total: number) => void;
 
-export function compareVersions(v1: string, v2: string): number {
-  const parts1 = v1.split('.').map(Number);
-  const parts2 = v2.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    const a = parts1[i] || 0;
-    const b = parts2[i] || 0;
-    if (a > b) return 1;
-    if (a < b) return -1;
-  }
-  return 0;
-}
+const execFileP = promisify(execFile);
 
 export async function checkForUpdates(serverUrl: string): Promise<CheckResult> {
   const url = `${serverUrl.replace(/\/$/, '')}/manifest.json`;
@@ -55,12 +41,16 @@ export async function checkForUpdates(serverUrl: string): Promise<CheckResult> {
     throw new Error(`获取 manifest 失败: ${res.status} ${res.statusText}`);
   }
   const manifest = (await res.json()) as ManifestInfo;
+  const release = pickPlatformRelease(manifest);
+  if (!release) {
+    return { hasUpdate: false };
+  }
   const currentVersion = app.getVersion();
-  const hasUpdate = compareVersions(manifest.version, currentVersion) > 0;
+  const hasUpdate = compareVersions(release.version, currentVersion) > 0;
   return {
     hasUpdate,
-    type: hasUpdate ? manifest.type : undefined,
-    info: hasUpdate ? manifest : undefined,
+    type: hasUpdate ? release.type : undefined,
+    info: hasUpdate ? release : undefined,
   };
 }
 
@@ -139,16 +129,35 @@ export async function applyHotfix(zipPath: string, targetDir: string): Promise<v
   await fs.rm(backupDir, { recursive: true, force: true }).catch(() => {});
 }
 
+function urlExtension(url: string): string {
+  try {
+    return path.extname(new URL(url).pathname);
+  } catch {
+    return '';
+  }
+}
+
 export async function downloadFullUpdate(
   url: string,
   onProgress?: ProgressCallback,
 ): Promise<string> {
-  const tmpPath = path.join(
-    os.tmpdir(),
-    `dogear-update-${Date.now()}${process.platform === 'win32' ? '.exe' : ''}`,
-  );
+  const suffix = process.platform === 'win32' ? '.exe' : urlExtension(url);
+  const tmpPath = path.join(os.tmpdir(), `dogear-update-${Date.now()}${suffix}`);
   await downloadFile(url, tmpPath, onProgress);
   return tmpPath;
+}
+
+// v1 不做自动 .app 替换（权限+签名复杂度）：dmg 直接挂载、zip 解压后开 Finder，引导用户手动拖拽
+async function openDarwinUpdatePackage(pkgPath: string): Promise<void> {
+  if (path.extname(pkgPath).toLowerCase() === '.zip') {
+    const zip = new AdmZip(pkgPath);
+    const extractDir = path.join(os.tmpdir(), `dogear-mac-update-${Date.now()}`);
+    await fs.mkdir(extractDir, { recursive: true });
+    zip.extractAllTo(extractDir, true);
+    await execFileP('open', [extractDir]);
+    return;
+  }
+  await execFileP('open', [pkgPath]);
 }
 
 export async function runInstaller(installerPath: string): Promise<void> {
@@ -156,6 +165,11 @@ export async function runInstaller(installerPath: string): Promise<void> {
     await closeBrowserGateway();
   } catch (error) {
     console.error('[updater] 关闭浏览器扩展网关失败:', error);
+  }
+  if (process.platform === 'darwin') {
+    await openDarwinUpdatePackage(installerPath);
+    app.quit();
+    return;
   }
   spawn(installerPath, [], { detached: true, stdio: 'ignore' }).unref();
   app.quit();

@@ -6,6 +6,7 @@
 import electron, { type BrowserWindow as BrowserWindowType } from 'electron';
 const { app, BrowserWindow, Menu, protocol, net, nativeTheme } = electron;
 import * as path from 'path';
+import * as fs from 'fs';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { pathToFileURL } from 'url';
@@ -185,12 +186,39 @@ app.whenReady().then(async () => {
 
   app.setAppUserModelId('com.dogear.app');
 
+  const resolveWithinDir = (baseDir: string, decodedPath: string): string => {
+    const filePath = path.resolve(baseDir, '.' + decodedPath);
+    return filePath.startsWith(baseDir + path.sep) ? filePath : '';
+  };
+
+  // 热更产物随 userData 持久化，全量替换 .app 后可能落后于主进程版本，仅版本一致才加载
+  const isHotfixCurrent = (hotfixDir: string): boolean => {
+    try {
+      return (
+        fs.readFileSync(path.join(hotfixDir, '.hotfix-version'), 'utf-8').trim() === app.getVersion()
+      );
+    } catch {
+      return false;
+    }
+  };
+
   protocol.handle('app', async (request) => {
     const { pathname } = new URL(request.url);
-    const outDir = path.join(process.resourcesPath, 'out');
-    const filePath = path.resolve(outDir, '.' + decodeURIComponent(pathname));
-    if (!filePath.startsWith(outDir + path.sep)) {
-      return new Response(null, { status: 403 });
+    const decodedPath = decodeURIComponent(pathname);
+    let filePath = '';
+    if (process.platform === 'darwin') {
+      const hotfixDir = path.join(app.getPath('userData'), 'hotfix-out');
+      const candidate = resolveWithinDir(hotfixDir, decodedPath);
+      if (candidate && isHotfixCurrent(hotfixDir) && fs.existsSync(candidate)) {
+        filePath = candidate;
+      }
+    }
+    if (!filePath) {
+      const outDir = path.join(process.resourcesPath, 'out');
+      filePath = resolveWithinDir(outDir, decodedPath);
+      if (!filePath) {
+        return new Response(null, { status: 403 });
+      }
     }
     const resp = await net.fetch(pathToFileURL(filePath).toString());
     const fontMime = FONT_MIME[path.extname(filePath).toLowerCase()];

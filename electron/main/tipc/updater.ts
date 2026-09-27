@@ -46,7 +46,11 @@ export const updaterRouter = {
 
         const zipPath = await downloadHotfix(input.url, input.sha256, sendProgress);
 
-        const targetDir = path.join(process.resourcesPath, 'out');
+        // darwin 写 bundle 内会破坏 ad-hoc 签名 seal，热更产物放 userData
+        const targetDir =
+          process.platform === 'darwin'
+            ? path.join(app.getPath('userData'), 'hotfix-out')
+            : path.join(process.resourcesPath, 'out');
         await applyHotfix(zipPath, targetDir);
 
         return { success: true };

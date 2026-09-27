@@ -14,6 +14,7 @@ const RELEASE_DIR = path.join(ROOT, 'release');
 const UPDATE_SERVER_DIR = path.join(ROOT, 'update-server');
 const STATE_FILE = path.join(ROOT, '.release-state.json');
 const SERVER_URL = 'http://localhost:9527';
+const PLATFORM = process.platform;
 
 function bumpPatch(version) {
   const parts = version.split('.').map(Number);
@@ -55,11 +56,54 @@ async function sha256File(filePath) {
   return crypto.createHash('sha256').update(await fs.readFile(filePath)).digest('hex');
 }
 
-async function zipDir(srcDir, zipPath) {
+async function zipDir(srcDir, zipPath, version) {
   const { default: AdmZip } = await import('adm-zip');
   const zip = new AdmZip();
   zip.addLocalFolder(srcDir);
+  zip.addFile('.hotfix-version', Buffer.from(version));
   zip.writeZip(zipPath);
+}
+
+async function loadExistingManifest() {
+  try {
+    return JSON.parse(await fs.readFile(path.join(UPDATE_SERVER_DIR, 'manifest.json'), 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function toPlatformRelease(entry) {
+  const release = { version: entry.version, type: entry.type, pubDate: entry.pubDate };
+  if (entry.hotfix) release.hotfix = entry.hotfix;
+  if (entry.full) release.full = entry.full;
+  return release;
+}
+
+async function writePlatformManifest(platform, release) {
+  const existing = await loadExistingManifest();
+  const platforms = { ...(existing?.platforms ?? {}) };
+  if (!platforms.win32 && existing && (existing.hotfix || existing.full)) {
+    platforms.win32 = toPlatformRelease(existing);
+  }
+  platforms[platform] = release;
+
+  // 顶层扁平字段固定镜像 win32，旧客户端（只读顶层）拿到的始终是 win 产物
+  const winRelease = platforms.win32;
+  const manifest = {
+    version: winRelease ? winRelease.version : release.version,
+    pubDate: winRelease ? winRelease.pubDate : release.pubDate,
+    platforms,
+  };
+  if (winRelease) {
+    manifest.type = winRelease.type;
+    if (winRelease.hotfix) manifest.hotfix = winRelease.hotfix;
+    if (winRelease.full) manifest.full = winRelease.full;
+  }
+
+  await fs.writeFile(
+    path.join(UPDATE_SERVER_DIR, 'manifest.json'),
+    JSON.stringify(manifest, null, 2),
+  );
 }
 
 async function main() {
@@ -96,14 +140,14 @@ async function main() {
     releaseType = 'hotfix';
     console.log('\n✦ dist/ 未变化 → 热更新路径');
 
-    const zipName = `update-${newVersion}.zip`;
+    const zipName = PLATFORM === 'darwin' ? `update-${newVersion}-mac.zip` : `update-${newVersion}.zip`;
     const zipPath = path.join(UPDATE_SERVER_DIR, zipName);
 
-    await zipDir(OUT_DIR, zipPath);
+    await zipDir(OUT_DIR, zipPath, newVersion);
     const zipSize = (await fs.stat(zipPath)).size;
     const zipHash = await sha256File(zipPath);
 
-    const manifest = {
+    await writePlatformManifest(PLATFORM, {
       version: newVersion,
       type: 'hotfix',
       pubDate: new Date().toISOString(),
@@ -112,11 +156,7 @@ async function main() {
         size: zipSize,
         sha256: zipHash,
       },
-    };
-    await fs.writeFile(
-      path.join(UPDATE_SERVER_DIR, 'manifest.json'),
-      JSON.stringify(manifest, null, 2),
-    );
+    });
     console.log(`  ✓ ${zipName} (${(zipSize / 1024 / 1024).toFixed(2)} MB)`);
   } else {
     releaseType = 'full';
@@ -125,57 +165,90 @@ async function main() {
     await fs.mkdir(RELEASE_DIR, { recursive: true });
     run('bun run dist', '全量打包 (electron-builder)');
 
-    for (const old of await fs.readdir(UPDATE_SERVER_DIR)) {
-      if (old.endsWith('.exe') || old.endsWith('.exe.blockmap') || old === 'latest.yml') {
-        await fs.unlink(path.join(UPDATE_SERVER_DIR, old)).catch(() => {});
+    if (PLATFORM === 'darwin') {
+      for (const old of await fs.readdir(UPDATE_SERVER_DIR)) {
+        if (old.endsWith('.dmg') || old.endsWith('-mac.zip') || old === 'latest-mac.yml') {
+          await fs.unlink(path.join(UPDATE_SERVER_DIR, old)).catch(() => {});
+        }
       }
-    }
 
-    const releaseFiles = await fs.readdir(RELEASE_DIR);
-    const exeFile = releaseFiles.find(
-      f => f.endsWith('.exe') && !f.endsWith('.blockmap') && f.includes(newVersion),
-    );
-    if (!exeFile) throw new Error(`release/ 中未找到 v${newVersion} 的 .exe 文件`);
+      const releaseFiles = await fs.readdir(RELEASE_DIR);
+      const dmgFile = releaseFiles.find(f => f.endsWith('.dmg') && f.includes(newVersion));
+      if (!dmgFile) throw new Error(`release/ 中未找到 v${newVersion} 的 .dmg 文件`);
+      const dmgDst = path.join(UPDATE_SERVER_DIR, dmgFile);
+      await fs.copyFile(path.join(RELEASE_DIR, dmgFile), dmgDst);
+      const dmgSize = (await fs.stat(dmgDst)).size;
+      const dmgHash = await sha256File(dmgDst);
 
-    const exeSrc = path.join(RELEASE_DIR, exeFile);
-    const exeDst = path.join(UPDATE_SERVER_DIR, exeFile);
-    await fs.copyFile(exeSrc, exeDst);
+      const zipFile = releaseFiles.find(f => f.endsWith('-mac.zip') && f.includes(newVersion));
+      if (zipFile) {
+        await fs.copyFile(path.join(RELEASE_DIR, zipFile), path.join(UPDATE_SERVER_DIR, zipFile));
+      }
+      const ymlFile = releaseFiles.find(f => f === 'latest-mac.yml');
+      if (ymlFile) {
+        await fs.copyFile(path.join(RELEASE_DIR, ymlFile), path.join(UPDATE_SERVER_DIR, ymlFile));
+      }
 
-    const exeSize = (await fs.stat(exeDst)).size;
-    const exeHash = await sha256File(exeDst);
+      await writePlatformManifest('darwin', {
+        version: newVersion,
+        type: 'full',
+        pubDate: new Date().toISOString(),
+        full: {
+          url: `${SERVER_URL}/${encodeURIComponent(dmgFile)}`,
+          size: dmgSize,
+          sha256: dmgHash,
+        },
+      });
+      console.log(`  ✓ ${dmgFile} (${(dmgSize / 1024 / 1024).toFixed(2)} MB)`);
+    } else {
+      for (const old of await fs.readdir(UPDATE_SERVER_DIR)) {
+        if (old.endsWith('.exe') || old.endsWith('.exe.blockmap') || old === 'latest.yml') {
+          await fs.unlink(path.join(UPDATE_SERVER_DIR, old)).catch(() => {});
+        }
+      }
 
-    const blockmapFile = releaseFiles.find(
-      f => f.endsWith('.exe.blockmap') && f.includes(newVersion),
-    );
-    if (blockmapFile) {
-      await fs.copyFile(
-        path.join(RELEASE_DIR, blockmapFile),
-        path.join(UPDATE_SERVER_DIR, blockmapFile),
+      const releaseFiles = await fs.readdir(RELEASE_DIR);
+      const exeFile = releaseFiles.find(
+        f => f.endsWith('.exe') && !f.endsWith('.blockmap') && f.includes(newVersion),
       );
-    }
-    const ymlFile = releaseFiles.find(f => f === 'latest.yml');
-    if (ymlFile) {
-      await fs.copyFile(
-        path.join(RELEASE_DIR, ymlFile),
-        path.join(UPDATE_SERVER_DIR, ymlFile),
-      );
-    }
+      if (!exeFile) throw new Error(`release/ 中未找到 v${newVersion} 的 .exe 文件`);
 
-    const manifest = {
-      version: newVersion,
-      type: 'full',
-      pubDate: new Date().toISOString(),
-      full: {
-        url: `${SERVER_URL}/${encodeURIComponent(exeFile)}`,
-        size: exeSize,
-        sha256: exeHash,
-      },
-    };
-    await fs.writeFile(
-      path.join(UPDATE_SERVER_DIR, 'manifest.json'),
-      JSON.stringify(manifest, null, 2),
-    );
-    console.log(`  ✓ ${exeFile} (${(exeSize / 1024 / 1024).toFixed(2)} MB)`);
+      const exeSrc = path.join(RELEASE_DIR, exeFile);
+      const exeDst = path.join(UPDATE_SERVER_DIR, exeFile);
+      await fs.copyFile(exeSrc, exeDst);
+
+      const exeSize = (await fs.stat(exeDst)).size;
+      const exeHash = await sha256File(exeDst);
+
+      const blockmapFile = releaseFiles.find(
+        f => f.endsWith('.exe.blockmap') && f.includes(newVersion),
+      );
+      if (blockmapFile) {
+        await fs.copyFile(
+          path.join(RELEASE_DIR, blockmapFile),
+          path.join(UPDATE_SERVER_DIR, blockmapFile),
+        );
+      }
+      const ymlFile = releaseFiles.find(f => f === 'latest.yml');
+      if (ymlFile) {
+        await fs.copyFile(
+          path.join(RELEASE_DIR, ymlFile),
+          path.join(UPDATE_SERVER_DIR, ymlFile),
+        );
+      }
+
+      await writePlatformManifest('win32', {
+        version: newVersion,
+        type: 'full',
+        pubDate: new Date().toISOString(),
+        full: {
+          url: `${SERVER_URL}/${encodeURIComponent(exeFile)}`,
+          size: exeSize,
+          sha256: exeHash,
+        },
+      });
+      console.log(`  ✓ ${exeFile} (${(exeSize / 1024 / 1024).toFixed(2)} MB)`);
+    }
   }
 
   await fs.writeFile(

@@ -12,6 +12,7 @@ const MIME_TYPES = {
   '.json': 'application/json',
   '.zip': 'application/zip',
   '.exe': 'application/octet-stream',
+  '.dmg': 'application/x-apple-diskimage',
   '.yml': 'text/yaml',
   '.yaml': 'text/yaml',
   '.blockmap': 'application/octet-stream',
