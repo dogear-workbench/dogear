@@ -34,10 +34,11 @@ function currentTitleBarOverlay() {
   return { ...scheme, height: TITLE_BAR_HEIGHT };
 }
 
-// darwin 用 hiddenInset：红绿灯悬浮于内容左上角，titleBarOverlay 的 WCO 按钮是 Windows 专属
-function titleBarOptions(): { titleBarStyle: 'hiddenInset' } | { titleBarStyle: 'hidden'; titleBarOverlay: ReturnType<typeof currentTitleBarOverlay> } {
+// darwin 用系统默认原生标题栏：红绿灯+标题画在原生条里，视口从原生条下方开始，页面布局不受影响；
+// titleBarOverlay 的 WCO 按钮是 Windows 专属（hiddenInset 会让红绿灯压住从 y=0 渲染的页面内容，已弃用）
+function titleBarOptions(): Record<string, never> | { titleBarStyle: 'hidden'; titleBarOverlay: ReturnType<typeof currentTitleBarOverlay> } {
   if (process.platform === 'darwin') {
-    return { titleBarStyle: 'hiddenInset' };
+    return {};
   }
   return { titleBarStyle: 'hidden', titleBarOverlay: currentTitleBarOverlay() };
 }

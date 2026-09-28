@@ -14,7 +14,7 @@ status: pending
 ## 计划改动（验证项，非代码）
 - [ ] dev 基本盘：CLT → `bun install`（node-pty × Electron 39 × darwin-arm64 编译一次过？）→ `bun run dev` 跑通
 - [ ] Step1 验证：PATH 注入后环境检测页 git/python/bun 全绿；Cmd+C/V 可用；红绿灯不压标题；红叉后 Dock 可唤回；托盘图标正常
-- [ ] 标题栏定案：hiddenInset 实际表现——布局崩则启用 step1 预留的 fallback（titleBarOverlay + 前端 padding）
+- [x] 标题栏定案：hiddenInset 真机实测红绿灯压住页面内容（TitleBar 是 fixed 浮层不占布局空间，页面 header/tabs 从 y=0 渲染被直接遮住）且页面无 drag 区域窗口拖不动；step1 预留的 fallback（titleBarOverlay + 前端 padding）不可行（WCO 是 Windows 专属）。定案方案 A：darwin 改用默认原生标题栏，见 2026-09-27/macos-native-titlebar.md，红绿灯遮挡与窗口拖不动随之修复
 - [ ] Step2 验证：mac 上 `bun run dist` 出 dmg+zip，图标正确，安装后可启动（Gatekeeper 本机构建不拦）
 - [ ] Step3 验证：首次打开股票页 → venv 创建 + 依赖安装成功 → 指标/选股跑通；CLT python3 实际版本记录（决定版本门槛文案）
 - [ ] Step4 验证：注册 NM host 后 Chrome/Edge 扩展与 Dogear 连通（unix socket）
@@ -24,8 +24,12 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 标题栏定案（2026-09-27，方案 A，详见 2026-09-27/macos-native-titlebar.md）：
+  - `electron/main/window-factories.ts`：`titleBarOptions()` darwin 分支改返回 `{}`（默认原生标题栏）
+  - `components/TitleBar.tsx`：isMac 时 `return null`（原生标题栏已显示窗口 title）
+  - `src/App.tsx`：设置页 overlay paddingTop darwin 下改 0
+- 与计划差异：无（其余验证项待真机反馈）
+- 改动文件清单：electron/main/window-factories.ts、components/TitleBar.tsx、src/App.tsx
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
