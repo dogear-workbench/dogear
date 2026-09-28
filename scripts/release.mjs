@@ -41,6 +41,15 @@ async function getAllFiles(dirPath) {
   return files;
 }
 
+// electron-builder 的打包输入（图标/安装器脚本/配置）不进 dist/，但变了必须全量——热更 zip 覆盖不到 exe 内嵌资源
+const BUNDLE_INPUTS = [
+  'build/icon.ico',
+  'build/icon.icns',
+  'build/icon-tray.png',
+  'build/installer.nsh',
+  'electron-builder.yml',
+];
+
 async function hashDir(dirPath) {
   const files = await getAllFiles(dirPath);
   files.sort();
@@ -48,6 +57,16 @@ async function hashDir(dirPath) {
   for (const file of files) {
     hash.update(path.relative(dirPath, file).replace(/\\/g, '/'));
     hash.update(await fs.readFile(file));
+  }
+  return hash.digest('hex');
+}
+
+async function hashBundle() {
+  const hash = crypto.createHash('sha256');
+  hash.update(await hashDir(DIST_DIR));
+  for (const rel of BUNDLE_INPUTS) {
+    hash.update(rel);
+    hash.update(await fs.readFile(path.join(ROOT, rel)));
   }
   return hash.digest('hex');
 }
@@ -121,7 +140,7 @@ async function main() {
   run('bun run build:electron', '编译主进程 → dist/');
   run('bun run build:renderer', '构建前端 → out/');
 
-  const distHash = await hashDir(DIST_DIR);
+  const distHash = await hashBundle();
   console.log(`\ndist/ hash: ${distHash.slice(0, 16)}…`);
 
   let prevState = null;
