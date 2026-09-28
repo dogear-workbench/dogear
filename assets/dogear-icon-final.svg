@@ -1,22 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
-  <title id="title">Dogear</title>
-  <desc id="desc">A minimal folded page with an activated cyan corner.</desc>
+  <title id="title">Dogear single dog ear mark</title>
+  <desc id="desc">A single flowing dog ear with a folded inner plane and a cyan context path.</desc>
   <defs>
-    <linearGradient id="surface" x1="44" y1="36" x2="468" y2="478" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#182433"/>
-      <stop offset="1" stop-color="#08111D"/>
-    </linearGradient>
-    <linearGradient id="page" x1="132" y1="90" x2="379" y2="428" gradientUnits="userSpaceOnUse">
+    <linearGradient id="ear" x1="114" y1="82" x2="405" y2="432" gradientUnits="userSpaceOnUse">
       <stop stop-color="#F8FBFF"/>
-      <stop offset="1" stop-color="#DCE9F4"/>
+      <stop offset=".56" stop-color="#D6E7F0"/>
+      <stop offset="1" stop-color="#B9D3E0"/>
     </linearGradient>
+    <linearGradient id="inner" x1="187" y1="136" x2="350" y2="386" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#51E0D3"/>
+      <stop offset="1" stop-color="#168B9B"/>
+    </linearGradient>
+    <filter id="shadow" x="54" y="48" width="407" height="424" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="12" stdDeviation="9" flood-color="#000" flood-opacity=".3"/>
+    </filter>
   </defs>
-  <rect x="40" y="40" width="432" height="432" rx="112" fill="url(#surface)"/>
-  <rect x="41" y="41" width="430" height="430" rx="111" fill="none" stroke="#4A647A" stroke-opacity=".34" stroke-width="2"/>
-  <path d="M155 100h151l82 82v220c0 8-6 14-14 14H155c-8 0-14-6-14-14V114c0-8 6-14 14-14Z" fill="url(#page)"/>
-  <path d="M306 100v68c0 8 6 14 14 14h68l-82-82Z" fill="#51E0D3"/>
-  <path d="M306 100v68c0 8 6 14 14 14h68" fill="none" stroke="#B1FFF6" stroke-width="8" stroke-linejoin="round"/>
-  <path d="M187 254h126M187 300h92M187 346h112" fill="none" stroke="#28485F" stroke-linecap="round" stroke-width="18" opacity=".8"/>
-  <path d="M322 191h50" stroke="#51E0D3" stroke-width="8" stroke-linecap="round"/>
-  <circle cx="398" cy="191" r="8" fill="#51E0D3"/>
+  <g filter="url(#shadow)">
+    <!-- one continuous outer ear silhouette -->
+    <path d="M161 411c-35-45-53-99-53-160 0-101 65-176 166-176 81 0 141 54 141 130 0 58-30 104-83 130-40 20-67 45-81 76-9 20-28 32-49 32h-41Z" fill="url(#ear)" stroke="#07111C" stroke-width="14" stroke-linejoin="round"/>
+    <!-- folded inner plane: the project/context meaning lives inside the ear -->
+    <path d="M202 388c14-46 42-82 86-108 42-25 65-55 65-91 0-38-25-63-65-63-54 0-91 46-91 117 0 54 12 101 35 145l-30 0Z" fill="url(#inner)" stroke="#07111C" stroke-width="11" stroke-linejoin="round"/>
+    <!-- flowing context line, part of the inner fold rather than an added symbol -->
+    <path d="M221 310c26-28 54-49 83-66 23-14 35-31 35-51" fill="none" stroke="#C8FFF8" stroke-width="7" stroke-linecap="round" opacity=".85"/>
+    <circle cx="339" cy="185" r="10" fill="#C8FFF8" stroke="#07111C" stroke-width="6"/>
+  </g>
 </svg>
