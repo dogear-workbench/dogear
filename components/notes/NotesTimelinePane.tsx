@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { toast } from 'sonner';
+import { ChevronRight } from 'lucide-react';
 import { useNotesStore } from '@/stores/notes-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { cn } from '@/lib/utils';
@@ -9,6 +11,40 @@ import { showConfirm } from '@/stores/confirm-store';
 import { referenceNoteIntoFocus } from '@/lib/reference-guard';
 import type { NoteFilter } from '@/components/notes/NotesPanel';
 import type { NoteMeta } from '@/types/note';
+
+/** 「最近编辑」窗口：updated 距今 ≤7 天算近期手记 */
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isRecentlyUpdated(note: NoteMeta): boolean {
+  return Date.now() - new Date(note.updated).getTime() <= SEVEN_DAYS_MS;
+}
+
+interface CollapsibleSectionProps {
+  label: string;
+  count: number;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+/** 折叠分组段（样式参考 TrashView.SectionHeader：sticky 分组头 + 条数） */
+function CollapsibleSection({ label, count, collapsed, onToggle, children }: CollapsibleSectionProps) {
+  return (
+    <div>
+      <button
+        onClick={onToggle}
+        className="sticky top-0 z-10 flex w-full items-center gap-1 bg-muted/40 px-4 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ChevronRight
+          className={cn('h-3 w-3 shrink-0 transition-transform', !collapsed && 'rotate-90')}
+        />
+        {label}
+        <span className="tabular-nums">{count}</span>
+      </button>
+      {!collapsed && <div className="divide-y">{children}</div>}
+    </div>
+  );
+}
 
 interface NotesTimelinePaneProps {
   listHidden: boolean;
@@ -31,6 +67,10 @@ export function NotesTimelinePane({
   const activeNoteId = useNotesStore((s) => s.activeNoteId);
   const setActiveNoteId = useNotesStore((s) => s.setActiveNoteId);
   const deleteNote = useNotesStore((s) => s.deleteNote);
+
+  // 折叠态组件内 useState，不持久化（刷新回默认折叠）
+  const [agentCollapsed, setAgentCollapsed] = useState(true);
+  const [olderCollapsed, setOlderCollapsed] = useState(true);
 
   const handleDelete = async (note: NoteMeta) => {
     if (!workspace) return;
@@ -65,13 +105,43 @@ export function NotesTimelinePane({
 
   const renderTimeline = () => {
     if (filter) {
+      // 搜索/标签过滤：三段合并平铺，统一 created 倒序（服务端按 updated，前端重排）
       if (filterLoading && filterResults.length === 0) return <NoteLoading />;
       if (filterResults.length === 0) return <NoteEmpty text="无匹配结果" />;
-      return <div className="divide-y">{filterResults.map(renderItem)}</div>;
+      const sorted = [...filterResults].sort((a, b) => b.created.localeCompare(a.created));
+      return <div className="divide-y">{sorted.map(renderItem)}</div>;
     }
     if (loading) return <NoteLoading />;
     if (notes.length === 0) return <NoteEmpty text="暂无笔记" />;
-    return <div className="divide-y">{notes.map(renderItem)}</div>;
+    // 非搜索模式：三段分组（notes 已按 created 倒序，filter 保序即各段内 created 倒序）
+    const agentNotes = notes.filter((n) => n.source);
+    const recentMine = notes.filter((n) => !n.source && isRecentlyUpdated(n));
+    const olderMine = notes.filter((n) => !n.source && !isRecentlyUpdated(n));
+    return (
+      <>
+        {recentMine.length > 0 && <div className="divide-y">{recentMine.map(renderItem)}</div>}
+        {agentNotes.length > 0 && (
+          <CollapsibleSection
+            label="Agent 转存"
+            count={agentNotes.length}
+            collapsed={agentCollapsed}
+            onToggle={() => setAgentCollapsed((v) => !v)}
+          >
+            {agentNotes.map(renderItem)}
+          </CollapsibleSection>
+        )}
+        {olderMine.length > 0 && (
+          <CollapsibleSection
+            label="更早的手记"
+            count={olderMine.length}
+            collapsed={olderCollapsed}
+            onToggle={() => setOlderCollapsed((v) => !v)}
+          >
+            {olderMine.map(renderItem)}
+          </CollapsibleSection>
+        )}
+      </>
+    );
   };
 
   if (!workspace) {

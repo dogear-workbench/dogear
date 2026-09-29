@@ -46,6 +46,14 @@ export function NoteCardItem({ note, active, onOpen, onDelete, onReference }: No
         </p>
         <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground min-w-0">
           <span className="shrink-0">{getRelativeTime(new Date(note.created).getTime())}</span>
+          {note.source && (
+            <span
+              className="min-w-0 truncate"
+              title={`来自会话「${note.source.title || '未命名会话'}」`}
+            >
+              {note.source.title || '未命名会话'}
+            </span>
+          )}
           <span className="ml-auto flex items-center gap-0.5 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity shrink-0">
             {onReference && (
               <Button
