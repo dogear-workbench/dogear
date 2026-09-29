@@ -122,6 +122,8 @@ export async function removeNote(workspaceId: string, noteId: string): Promise<b
   const trashDir = getTrashDir(workspaceId);
   await fs.mkdir(trashDir, { recursive: true });
   await moveNoteFile(filePath, path.join(trashDir, path.basename(filePath)));
+  // safeFileWrite 的单代 .bak 不随 rename 走，留在原目录会堆积，一并删掉
+  await fs.unlink(`${filePath}.bak`).catch(() => {});
   await removeIndexEntry(workspaceId, noteId);
   void broadcastNotesChanged(workspaceId);
   return true;
