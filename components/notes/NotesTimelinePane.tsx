@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { useNotesStore } from '@/stores/notes-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { cn } from '@/lib/utils';
@@ -38,8 +39,12 @@ export function NotesTimelinePane({
       `「${note.title || '（无内容）'}」将移入回收站，可从回收站恢复。`,
     );
     if (!ok) return;
-    const success = await deleteNote(workspace.path, note.id);
-    if (success && note.id === activeNoteId) setActiveNoteId(null);
+    const success = await deleteNote(workspace.id, note.id);
+    if (!success) {
+      toast.error('移入回收站失败', { description: `卡片 ${note.id} 未删除，请重试或查看日志` });
+      return;
+    }
+    if (note.id === activeNoteId) setActiveNoteId(null);
   };
 
   const handleReference = (note: NoteMeta) => {
