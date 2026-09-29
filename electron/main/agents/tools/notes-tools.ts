@@ -90,7 +90,7 @@ export function createNotesToolDefs(workspaceId: string, sourceContext?: NotesTo
     defineTool(
       'dogear__GetNote',
       '读取笔记卡片',
-      '读取指定卡片的元数据（frontmatter：标签/引用）和完整正文。',
+      '读取指定卡片的元数据（frontmatter：标签）和完整正文。',
       z.object({
         noteId: z.string().min(1).describe('卡片 ID'),
       }),

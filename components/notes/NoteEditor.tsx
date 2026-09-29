@@ -242,7 +242,7 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
               </button>
               <button
                 onClick={() => setMetaExpanded((v) => !v)}
-                title={tags.length > 0 ? `${tags.length} 个标签，点击展开标签与引用` : '添加标签'}
+                title={tags.length > 0 ? `${tags.length} 个标签，点击展开` : '添加标签'}
                 className={cn('cursor-pointer hover:text-foreground', metaExpanded && 'text-foreground')}
               >
                 #{tags.length}
