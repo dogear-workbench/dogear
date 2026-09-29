@@ -18,9 +18,11 @@ import {
   normalizeBackupSettings,
   BASIC_TOOL_NAMES,
   normalizeWebAiSites,
+  normalizeDisabledSyncItems,
   normalizeSyncOptions,
   type AppSettings,
   type PiPermissionMode,
+  type SyncOptions,
   type BasicToolPermissions,
   type BasicToolPermission,
   type ModelPricing,
@@ -303,6 +305,46 @@ export function normalizeSettings(settings: AppSettings): boolean {
   }
 
   return changed;
+}
+
+/**
+ * disabledSyncItems 集合相等判断：顺序无关（语义是集合，重排不算变化、不 bump rev）
+ */
+function disabledSyncItemsEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sb = new Set(b);
+  return a.every((item) => sb.has(item));
+}
+
+/**
+ * 应用 syncOptions 部分更新并维护 syncOptionsRev（设置写入口统一走这里，tipc setSyncOptions 调用）：
+ * 范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit，即 merge rev 组全集）
+ * 任一相对旧值实际变化 → rev = max(old ?? 0, 0) + 1；仅改 deviceName / pairedDevices / removeDeviceId 不动 rev，
+ * 传了相同值也不动（幂等）。disabledSyncItems 先过白名单清洗再比较，非法 id 不触发 rev。
+ * 返回新对象不落盘，调用方自行 saveSettings。
+ */
+export function applySyncOptionsPatch(
+  current: SyncOptions,
+  patch: Partial<SyncOptions> & { removeDeviceId?: string },
+): SyncOptions {
+  const next: SyncOptions = { ...current };
+  if (patch.deviceName !== undefined) next.deviceName = patch.deviceName;
+  if (patch.syncStocksData !== undefined) next.syncStocksData = patch.syncStocksData === true;
+  if (patch.syncFeishu !== undefined) next.syncFeishu = patch.syncFeishu === true;
+  if (patch.disabledSyncItems !== undefined) next.disabledSyncItems = normalizeDisabledSyncItems(patch.disabledSyncItems);
+  if (patch.syncConflictCopies !== undefined) next.syncConflictCopies = patch.syncConflictCopies === true;
+  if (patch.syncShadowGit !== undefined) next.syncShadowGit = patch.syncShadowGit === true;
+  if (patch.removeDeviceId) next.pairedDevices = next.pairedDevices.filter((d) => d.deviceId !== patch.removeDeviceId);
+
+  const scopeChanged =
+    (patch.syncStocksData !== undefined && next.syncStocksData !== current.syncStocksData) ||
+    (patch.syncFeishu !== undefined && next.syncFeishu !== current.syncFeishu) ||
+    (patch.syncConflictCopies !== undefined && (next.syncConflictCopies === true) !== (current.syncConflictCopies === true)) ||
+    (patch.syncShadowGit !== undefined && (next.syncShadowGit === true) !== (current.syncShadowGit === true)) ||
+    (patch.disabledSyncItems !== undefined &&
+      !disabledSyncItemsEqual(next.disabledSyncItems ?? [], current.disabledSyncItems ?? []));
+  next.syncOptionsRev = (current.syncOptionsRev ?? 0) + (scopeChanged ? 1 : 0);
+  return next;
 }
 
 /**

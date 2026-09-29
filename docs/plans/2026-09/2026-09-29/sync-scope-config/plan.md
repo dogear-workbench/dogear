@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 排除引擎与对称过滤](./step1-exclude-engine.md) — isExcluded 纯函数 + 清单/拉取/应用三处过滤 + 协议版本 bump + 单测
-- [ ] [Step 2: 设置模型与两端统一](./step2-settings-merge.md) — syncOptions 新字段 + syncOptionsRev + settings merge 特判 + orchestrator/lan-sync-service 透传 + 单测
+- [x] [Step 2: 设置模型与两端统一](./step2-settings-merge.md) — syncOptions 新字段 + syncOptionsRev + settings merge 特判 + orchestrator/lan-sync-service 透传 + 单测
 - [ ] [Step 3: tipc 路由与设置 UI](./step3-tipc-ui.md) — setSyncOptions schema 扩展 + 「同步范围」开关列表（settings.json 置灰）+ shadow-git/副本提示文案 + 手动验收
 
 ## 全局决策

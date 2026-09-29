@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import type { DiffResult, FileEntry, HashedFileEntry, SkippedEntry } from './protocol.js';
+import type { SyncOptions } from '../settings-types.js';
 
 /** 同步范围排除项（Step 1 代码级 options，Step 2 接通 settings.syncOptions）；false = 排除该项 */
 export interface ManifestExcludes {
@@ -52,6 +53,20 @@ function isConflictCopyBasename(base: string): boolean {
   if (dot <= 0) return false;
   const ext = base.slice(dot);
   return ext.startsWith('.conflict-') && ext.length > '.conflict-'.length;
+}
+
+/**
+ * settings.syncOptions → ManifestExcludes：语义同向直传（syncConflictCopies/syncShadowGit 与 excludes 的
+ * conflictCopies/shadowGit 都是「true = 同步」，无翻转，别在此接反）；disabledSyncItems 非法输入已在
+ * normalizeSyncOptions 清洗过，这里只防御非数组。主动发起（orchestrator）与被动响应（getManifestOptions）
+ * 共用本函数，保证两端方向上排除语义一致。
+ */
+export function excludesFromSyncOptions(sync?: SyncOptions): ManifestExcludes {
+  return {
+    conflictCopies: sync?.syncConflictCopies === true,
+    shadowGit: sync?.syncShadowGit === true,
+    disabledItems: new Set(Array.isArray(sync?.disabledSyncItems) ? sync!.disabledSyncItems : []),
+  };
 }
 
 /**

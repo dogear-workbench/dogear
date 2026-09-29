@@ -40,8 +40,15 @@ settings.syncOptions 落地三个新字段 + syncOptionsRev 修订号；settings
 
 ## 验收
 
-- 单测全绿。
-- 手动（单机 dev）：改 settings.json 里 disabledSyncItems 加 `usage` → 跑 buildManifest 确认 usage/ 不进清单；syncShadowGit 缺省时 shadow-git 不进清单；再把 syncShadowGit=true → 恢复进清单。
+- [x] 单测全绿（sync-options-merge.test.ts 20 用例；全仓 electron 316 pass / 0 fail）+ tsc 通过。
+- [x] 手动（单机 dev，临时目录脚本未触碰真实 settings.json）：disabledSyncItems 加 'usage' → usage/ 不进清单；syncShadowGit 缺省时 shadow-git 不进清单；syncShadowGit=true → 恢复进清单；conflict 副本开关同验；rev 递增与非法 id 清洗均验。
+
+## 实施记录（2026-09-29）
+
+- 状态：✅ 完成。字段 + SYNC_ITEM_IDS 元数据（12 项中文名/说明）+ normalize 白名单清洗；applySyncOptionsPatch 统一 rev 维护；computeMergedSettings 范围字段整组 rev-LWW；excludesFromSyncOptions 唯一转换点（orchestrator 与 getManifestOptions 两侧共用，语义同向直传）。
+- **拍板：rev 自增触发集 = 五个 rev 组字段（含 syncStocksData/syncFeishu）**，比任务书字面三字段多两项。理由：设计 §3.2 merge 规则「其余 syncOptions 字段整体取 rev 大者」本就含 stocks/feishu，若其变更不 bump rev 则「rev 相同保本端」使其永远无法跨端传播（相比现状取对端是行为退化）。设计文档已同步修正。
+- 附带改进：对端 syncOptions 合并前过 normalizeSyncOptions（原裸 cast）；computeMergedSettings export + 可注入 localSyncOptions 供单测。
+- setSyncOptions（tipc）改走 applySyncOptionsPatch，input 类型 Partial<SyncOptions> 自动兼容新字段，Step 3 UI 可直传。
 
 ## 不做
 

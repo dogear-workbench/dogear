@@ -8,7 +8,8 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FileEntry, FilePushMeta, SkippedEntry } from './protocol.js';
 import { isExcluded, type ManifestExcludes } from './manifest.js';
-import { loadSettings, saveSettings, type AppSettings, type PairedDevice, type SyncOptions } from '../settings-service.js';
+import { loadSettings, saveSettings, type AppSettings, type PairedDevice } from '../settings-service.js';
+import { normalizeSyncOptions, type SyncOptions } from '../settings-types.js';
 import { getOrCreateDeviceId } from './device.js';
 import { safeJsonWrite } from '../safe-json.js';
 import {
@@ -127,28 +128,42 @@ function errText(error: unknown): string {
 
 /**
  * settings.json 字段级合并核心（原 mergeIncomingSettings 逻辑）：对端内容为底，
- * syncOptions 字段级合并——deviceName 保本端、syncStocksData/syncFeishu 取对端、pairedDevices 并集
- * （secret 冲突取本端、剔除自身条目）。本端状态由 loadSettings 提供（含默认值兜底）。
+ * syncOptions 字段级合并——deviceName 保本端、pairedDevices 并集（secret 冲突取本端、剔除自身条目），
+ * 其余范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit）整组原子取
+ * syncOptionsRev 大的一端（两端统一机制，设计 §3.2）：rev 缺省按 0；rev 相同但内容不同（离线各自改的竞态）
+ * 保本端、不落副本、下轮收敛。localSyncOptions 可注入（单测）；缺省走 loadSettings（含默认值兜底）。
  */
-async function computeMergedSettings(incoming: Record<string, unknown>): Promise<AppSettings> {
-  const local = await loadSettings();
+export async function computeMergedSettings(
+  incoming: Record<string, unknown>,
+  localSyncOptions?: SyncOptions,
+): Promise<AppSettings> {
+  const local = localSyncOptions
+    ? ({ ...incoming, syncOptions: localSyncOptions } as unknown as AppSettings)
+    : await loadSettings();
   const merged = { ...incoming } as unknown as AppSettings;
-  const localSync = local.syncOptions ?? { deviceName: '', syncStocksData: false, syncFeishu: false, pairedDevices: [] as PairedDevice[] };
-  const incomingSync = (incoming.syncOptions && typeof incoming.syncOptions === 'object' && !Array.isArray(incoming.syncOptions)
-    ? incoming.syncOptions
-    : {}) as Partial<SyncOptions>;
+  // 本端读盘已过 normalizeSyncOptions；对端是不可信输入，同样归一化（非法值滤除、缺省补齐）
+  const localSync = normalizeSyncOptions(local.syncOptions);
+  const incomingSync = normalizeSyncOptions(incoming.syncOptions);
   const selfDeviceId = await getOrCreateDeviceId();
+  const localRev = localSync.syncOptionsRev ?? 0;
+  const incomingRev = incomingSync.syncOptionsRev ?? 0;
+  const scopeFromIncoming = incomingRev > localRev;
   merged.syncOptions = {
     deviceName: localSync.deviceName,
-    syncStocksData: incomingSync.syncStocksData === true,
-    syncFeishu: incomingSync.syncFeishu === true,
+    syncStocksData: scopeFromIncoming ? incomingSync.syncStocksData : localSync.syncStocksData,
+    syncFeishu: scopeFromIncoming ? incomingSync.syncFeishu : localSync.syncFeishu,
     pairedDevices: mergePairedDevices(localSync.pairedDevices, incomingSync.pairedDevices)
       .filter((d) => d.deviceId !== selfDeviceId),
+    disabledSyncItems: scopeFromIncoming ? incomingSync.disabledSyncItems : localSync.disabledSyncItems,
+    syncConflictCopies: scopeFromIncoming ? incomingSync.syncConflictCopies : localSync.syncConflictCopies,
+    syncShadowGit: scopeFromIncoming ? incomingSync.syncShadowGit : localSync.syncShadowGit,
+    // 保本端时维持本端 rev；采纳对端时采纳对端 rev（下轮不再反复拉扯）
+    syncOptionsRev: Math.max(localRev, incomingRev),
   };
   return merged;
 }
 
-/** settings.json 不整文件覆盖：pairedDevices 并集（secret 冲突取本端、剔除自身条目）、deviceName 保本端，其余按对端内容覆盖。服务端 push 入口（server.ts）与拉取端 registry 共用 */
+/** settings.json 不整文件覆盖：pairedDevices 并集（secret 冲突取本端、剔除自身条目）、deviceName 保本端，范围字段整组取 syncOptionsRev 大的一端。服务端 push 入口（server.ts）与拉取端 registry 共用 */
 export async function mergeIncomingSettings(source: Readable): Promise<void> {
   const raw = await readGzipText(source);
   const incoming = JSON.parse(raw) as Record<string, unknown>;

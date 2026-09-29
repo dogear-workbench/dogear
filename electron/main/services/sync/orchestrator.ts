@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { app } from 'electron';
 import { loadSettings } from '../settings-service.js';
-import { buildManifest, diffManifests, hashEntries, sha256File, type ManifestOptions } from './manifest.js';
+import { buildManifest, diffManifests, excludesFromSyncOptions, hashEntries, sha256File, type ManifestOptions } from './manifest.js';
 import {
   applyIncoming,
   conflictCopyRelPath,
@@ -181,9 +181,9 @@ async function runSyncInternal(
     syncFeishu: settings.syncOptions?.syncFeishu === true,
     // workspaces/ 只收 enabled 映射的本端 wsid；未映射的本端工作区不同步（与对端对等：首次使用即受控）
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerState?.workspaceMap),
-    // 同步范围排除：Step 1 先用设计默认值（shadow-git 与冲突副本不同步、同步项全开），
-    // Step 2 接通 settings.syncOptions（disabledSyncItems / syncConflictCopies / syncShadowGit）
-    excludes: { conflictCopies: false, shadowGit: false, disabledItems: new Set() },
+    // 同步范围排除来自 settings.syncOptions（disabledSyncItems / syncConflictCopies / syncShadowGit），
+    // 与被动响应侧 getManifestOptions 共用同一转换；buildNextBaseline 透传同一 options，基线与新清单口径一致
+    excludes: excludesFromSyncOptions(settings.syncOptions),
   };
 
   const local = await buildManifest(dataDir, manifestOptions);

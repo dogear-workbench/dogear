@@ -26,7 +26,7 @@ import {
 import { readSyncState, writeSyncState, getDataDir } from '../services/sync/sync-state.js';
 import { resolveWithinDataDir } from '../services/sync/apply.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
-import { loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
+import { applySyncOptionsPatch, loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
 import type { SyncEventPayload } from './renderer-handlers.js';
 
 const t = tipc.create();
@@ -251,17 +251,13 @@ export const syncRouter = {
     .input<Partial<SyncOptions> & { removeDeviceId?: string }>()
     .action(async ({ input }): Promise<SyncOptions> => {
       const settings = await loadSettings();
-      const sync = settings.syncOptions!;
-      if (input.deviceName !== undefined) sync.deviceName = input.deviceName;
-      if (input.syncStocksData !== undefined) sync.syncStocksData = input.syncStocksData === true;
-      if (input.syncFeishu !== undefined) sync.syncFeishu = input.syncFeishu === true;
-      if (input.removeDeviceId) {
-        sync.pairedDevices = sync.pairedDevices.filter((d) => d.deviceId !== input.removeDeviceId);
-      }
+      // 范围字段实际变化时 applySyncOptionsPatch 自动 syncOptionsRev++（两端统一靠 rev LWW），
+      // disabledSyncItems 白名单清洗也在此完成
+      settings.syncOptions = applySyncOptionsPatch(settings.syncOptions!, input);
       await saveSettings(settings);
       const { broadcastSettingsChanged } = await import('../main-app.js');
       broadcastSettingsChanged();
-      return sync;
+      return settings.syncOptions;
     }),
 };
 

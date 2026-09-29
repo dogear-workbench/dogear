@@ -45,7 +45,7 @@ syncOptions: {
 
 settings.json 走 merge registry 条目级合并（apply.ts:166-201），现状仅 deviceName 保本端、pairedDevices 并集。新增规则：
 
-- `setSyncOptions` 修改范围字段（disabledSyncItems / syncConflictCopies / syncShadowGit）时 `syncOptionsRev++`（settings-service 写入口维护，单调递增）。
+- `setSyncOptions` 修改范围字段时 `syncOptionsRev++`（settings-service 写入口维护，单调递增）。**触发集 = rev 组全集五字段：disabledSyncItems / syncConflictCopies / syncShadowGit / syncStocksData / syncFeishu**（实施时拍板：merge 已把 stocks/feishu 纳入整组 rev-LWW，若其变更不 bump rev 则「rev 相同保本端」使其永远无法跨端传播；原设计仅列三字段系文档内部不一致，已修正）；仅改 deviceName / pairedDevices 不动 rev。
 - merge 时：deviceName、pairedDevices 按现状；**其余 syncOptions 字段整体取 rev 大的一端**（原子替换，不逐字段混）。
 - rev 相同但内容不同（两端离线各自改的罕见竞态）→ 保本端，不产生副本（该子对象以本端为准，下轮同步收敛）。
 

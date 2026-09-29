@@ -6,6 +6,7 @@ import { initPeerOnlineNotifications } from './peer-notify.js';
 import { getDiscoveryError, getPeers, onPeersChanged, startDiscovery, stopDiscovery, type PeerInfo } from './discovery.js';
 import { DEFAULT_SYNC_PORT, startSyncServer, type RunningSyncServer } from './server.js';
 import { enabledWorkspaceIdsOf } from './workspace-map.js';
+import { excludesFromSyncOptions } from './manifest.js';
 
 export interface LanSyncStatus {
   running: boolean;
@@ -69,10 +70,12 @@ async function startLanSyncInternal(): Promise<void> {
       const current = await loadSettings();
       // workspaces/ 按请求方的映射表过滤（enabled=true 的本端 wsid）；未建映射 → 全部工作区目录不同步
       const state = await readSyncState();
+      // 同步范围排除来自本端 settings.syncOptions，与主动发起侧（orchestrator）共用同一转换
       return {
         syncStocksData: current.syncOptions?.syncStocksData === true,
         syncFeishu: current.syncOptions?.syncFeishu === true,
         enabledWorkspaceIds: enabledWorkspaceIdsOf(state.peers[requesterDeviceId]?.workspaceMap),
+        excludes: excludesFromSyncOptions(current.syncOptions),
       };
     },
     handlePairRequest: handleIncomingPairRequest,

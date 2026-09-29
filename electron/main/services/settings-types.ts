@@ -132,6 +132,14 @@ export interface SyncOptions {
   syncStocksData: boolean;
   syncFeishu: boolean;
   pairedDevices: PairedDevice[];
+  /** 关闭的同步项 id（SyncItemId 白名单）；缺省/[] = 全开。stocks/feishu 由独立布尔键控制，不在此生效 */
+  disabledSyncItems?: string[];
+  /** .conflict-* 冲突留底副本是否跨设备同步；默认 false（副本仅留在产生冲突的设备上） */
+  syncConflictCopies?: boolean;
+  /** shadow-git/ 影子快照仓库是否同步；默认 false（git 内部文件跨端 mtime 裁决覆盖有损坏风险） */
+  syncShadowGit?: boolean;
+  /** 范围字段修订号：本端改范围字段时自增（applySyncOptionsPatch 维护）；merge 取 rev 大的一端整组采纳 */
+  syncOptionsRev?: number;
 }
 
 export interface AppSettings {
@@ -244,6 +252,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     syncStocksData: false,
     syncFeishu: false,
     pairedDevices: [],
+    disabledSyncItems: [],
+    syncConflictCopies: false,
+    syncShadowGit: false,
+    syncOptionsRev: 0,
   },
 };
 
@@ -359,9 +371,74 @@ export function normalizeBackupSettings(raw: unknown): BackupSettings {
   return { categories };
 }
 
+/** 同步范围项 id（目录 7 项 + 文件 3 项 + 可选 2 项；字符串字面量联合，disabledSyncItems 白名单） */
+export type SyncItemId =
+  | 'workspaces'
+  | 'conversations'
+  | 'memory'
+  | 'usage'
+  | 'article-parser'
+  | 'site-knowledge'
+  | 'run-history'
+  | 'settings.json'
+  | 'plans.json'
+  | 'notifications.json'
+  | 'stocks'
+  | 'feishu';
+
+/** 同步范围可配置项元数据（UI 展示 + disabledSyncItems 白名单共用） */
+export interface SyncItemMeta {
+  id: SyncItemId;
+  /** UI 展示名 */
+  name: string;
+  /** UI 说明文案 */
+  description: string;
+  /** 必选项（settings.json）：UI 置灰标注，不可关闭 */
+  required?: boolean;
+}
+
+/**
+ * 同步范围 12 项（设计 §3.1）：目录 7 项 + 文件 3 项 + 可选目录 2 项。
+ * stocks/feishu 的开关联动 syncStocksData/syncFeishu 独立布尔键（避免迁移），不进 disabledSyncItems 生效路径。
+ */
+export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
+  { id: 'workspaces', name: '工作区数据', description: '工作区笔记、文档与会话数据；关闭后所有工作区数据不跨设备' },
+  { id: 'conversations', name: '会话记录', description: 'AI 会话历史' },
+  { id: 'memory', name: '记忆库', description: '跨会话记忆数据' },
+  { id: 'usage', name: '使用统计', description: '模型用量与使用统计' },
+  { id: 'article-parser', name: '文章解析', description: '文章解析结果数据' },
+  { id: 'site-knowledge', name: '站点知识', description: '站点知识库数据' },
+  { id: 'run-history', name: '运行历史', description: '运行记录数据' },
+  { id: 'settings.json', name: '应用设置', description: '全局设置（含同步配置本身，必选）', required: true },
+  { id: 'plans.json', name: '任务数据', description: '定时任务数据；关闭后任务不跨设备' },
+  { id: 'notifications.json', name: '通知记录', description: '通知历史；关闭后通知不跨设备' },
+  { id: 'stocks', name: '行情数据', description: '股票行情缓存（由独立开关控制，即下方「同步行情数据」）' },
+  { id: 'feishu', name: '飞书数据', description: '飞书集成数据（由独立开关控制，即下方「同步飞书数据」）' },
+] as const;
+
+const SYNC_ITEM_ID_SET: ReadonlySet<string> = new Set(SYNC_ITEM_IDS.map((m) => m.id));
+
+/**
+ * disabledSyncItems 清洗：只保留 SYNC_ITEM_IDS 白名单内的字符串 id（防路径穿越/注入），按首现顺序去重。
+ * 非数组输入返回空数组。
+ */
+export function normalizeDisabledSyncItems(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string' || !SYNC_ITEM_ID_SET.has(item) || seen.has(item)) continue;
+    seen.add(item);
+    out.push(item);
+  }
+  return out;
+}
+
 /**
  * syncOptions 节归一化：开关仅接受布尔 true；pairedDevices 校验 deviceId/secret（64 位 hex）并按 deviceId 去重，
- * secret 统一小写避免两端大小写不一致比对失败；非法条目丢弃，不丢弃其他合法字段
+ * secret 统一小写避免两端大小写不一致比对失败；非法条目丢弃，不丢弃其他合法字段。
+ * 范围字段补默认值（disabledSyncItems=[] 全开 / syncConflictCopies=false / syncShadowGit=false / syncOptionsRev=0），
+ * 输出恒含全部键（旧版本 settings.json 首次 load 后即补齐写回）。
  */
 export function normalizeSyncOptions(raw: unknown): SyncOptions {
   const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -387,6 +464,13 @@ export function normalizeSyncOptions(raw: unknown): SyncOptions {
     syncStocksData: obj.syncStocksData === true,
     syncFeishu: obj.syncFeishu === true,
     pairedDevices,
+    disabledSyncItems: normalizeDisabledSyncItems(obj.disabledSyncItems),
+    syncConflictCopies: obj.syncConflictCopies === true,
+    syncShadowGit: obj.syncShadowGit === true,
+    syncOptionsRev:
+      typeof obj.syncOptionsRev === 'number' && Number.isInteger(obj.syncOptionsRev) && obj.syncOptionsRev >= 0
+        ? obj.syncOptionsRev
+        : 0,
   };
 }
 
