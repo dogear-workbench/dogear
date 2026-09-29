@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 排除引擎与对称过滤](./step1-exclude-engine.md) — isExcluded 纯函数 + 清单/拉取/应用三处过滤 + 协议版本 bump + 单测
 - [x] [Step 2: 设置模型与两端统一](./step2-settings-merge.md) — syncOptions 新字段 + syncOptionsRev + settings merge 特判 + orchestrator/lan-sync-service 透传 + 单测
-- [ ] [Step 3: tipc 路由与设置 UI](./step3-tipc-ui.md) — setSyncOptions schema 扩展 + 「同步范围」开关列表（settings.json 置灰）+ shadow-git/副本提示文案 + 手动验收
+- [x] [Step 3: tipc 路由与设置 UI](./step3-tipc-ui.md) — setSyncOptions schema 扩展 + 「同步范围」开关列表（settings.json 置灰）+ shadow-git/副本提示文案 + 手动验收
 
 ## 全局决策
 
@@ -24,4 +24,10 @@
 
 ## 验收（对照设计 §4）
 
-默认行为仅两点变化（shadow-git、副本不再同步）；单测覆盖 isExcluded / manifest 排除 / 对称过滤 / rev 合并；双机手动验收依赖 Mac 真机（同 lan-sync step5 未完成约束，可与该步合并做）。
+默认行为仅两点变化（shadow-git、副本不再同步）✓；单测覆盖 isExcluded / manifest 排除 / 对称过滤 / rev 合并（35 项新增用例全绿）✓；双机手动验收遗留（依赖 Mac 真机，同 lan-sync step5 未完成约束，可与该步合并做）。
+
+## 实施总结（2026-09-29）
+
+- 三步全部完成，分三笔提交：step1 377a9547（排除引擎与对称过滤）、step2 36113ea9（设置模型与 rev-LWW merge）、step3（tipc 防呆 + UI）。
+- 实施中拍板：rev 自增触发集 = 五个 rev 组字段（含 stocks/feishu），理由与回退方式见 step2 实施记录；设计文档 §3.2 已同步修正。
+- 已知遗留：① 双机手动验收（依赖 Mac）；② server.ts writeIncomingFile（对端主动推入口）不在三处对称过滤内，旧版对端推来的排除路径落成不参与同步的死文件，无害；③ SCOPE_SKIP_REASONS 文案复制可后续提纯共享模块。

@@ -27,6 +27,7 @@ import { readSyncState, writeSyncState, getDataDir } from '../services/sync/sync
 import { resolveWithinDataDir } from '../services/sync/apply.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { applySyncOptionsPatch, loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
+import { normalizeDisabledSyncItems } from '../services/settings-types.js';
 import type { SyncEventPayload } from './renderer-handlers.js';
 
 const t = tipc.create();
@@ -250,10 +251,24 @@ export const syncRouter = {
   setSyncOptions: t.procedure
     .input<Partial<SyncOptions> & { removeDeviceId?: string }>()
     .action(async ({ input }): Promise<SyncOptions> => {
+      // 防呆：只放行已知字段且类型正确的输入（渲染层异常/被篡改的调用不至于污染设置），
+      // disabledSyncItems 再过 SyncItemId 白名单清洗；syncOptionsRev 由主进程维护，不接受前端直写
+      const patch: Partial<SyncOptions> & { removeDeviceId?: string } = {};
+      if (typeof input.deviceName === 'string') patch.deviceName = input.deviceName;
+      if (typeof input.syncStocksData === 'boolean') patch.syncStocksData = input.syncStocksData;
+      if (typeof input.syncFeishu === 'boolean') patch.syncFeishu = input.syncFeishu;
+      if (input.disabledSyncItems !== undefined) {
+        patch.disabledSyncItems = normalizeDisabledSyncItems(input.disabledSyncItems);
+      }
+      if (typeof input.syncConflictCopies === 'boolean') patch.syncConflictCopies = input.syncConflictCopies;
+      if (typeof input.syncShadowGit === 'boolean') patch.syncShadowGit = input.syncShadowGit;
+      if (typeof input.removeDeviceId === 'string' && input.removeDeviceId !== '') {
+        patch.removeDeviceId = input.removeDeviceId;
+      }
       const settings = await loadSettings();
       // 范围字段实际变化时 applySyncOptionsPatch 自动 syncOptionsRev++（两端统一靠 rev LWW），
       // disabledSyncItems 白名单清洗也在此完成
-      settings.syncOptions = applySyncOptionsPatch(settings.syncOptions!, input);
+      settings.syncOptions = applySyncOptionsPatch(settings.syncOptions!, patch);
       await saveSettings(settings);
       const { broadcastSettingsChanged } = await import('../main-app.js');
       broadcastSettingsChanged();

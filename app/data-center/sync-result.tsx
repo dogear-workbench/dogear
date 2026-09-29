@@ -33,6 +33,13 @@ function topGroup(relPath: string): string {
   return slash >= 0 ? relPath.slice(0, slash) : relPath;
 }
 
+/**
+ * 本端同步范围排除导致的跳过 reason（固定文案：拉取侧 manifest.ts / 应用侧 apply.ts），
+ * 只汇总计数不逐条列——排除命中可能是整棵目录树（如 shadow-git），逐条展示纯噪音。
+ * 文案改动需与两处源头同步。
+ */
+const SCOPE_SKIP_REASONS = new Set(['excluded by local sync scope', '本端同步范围已排除，丢弃对端推送']);
+
 function revealSyncFile(relPath: string): void {
   void client
     .revealSyncFile({ relPath })
@@ -65,6 +72,9 @@ export function SyncResultCard() {
     lastReport.direction === 'push' ? '仅推送' : lastReport.direction === 'both' ? '双向' : '仅拉取';
   const autoResolved = lastReport.autoResolved ?? [];
   const hasPendingConflicts = lastReport.status === 'completed' && lastReport.conflicts.length > 0;
+  const scopeSkipped = lastReport.skipped.filter((s) => SCOPE_SKIP_REASONS.has(s.reason));
+  const listedSkipped =
+    scopeSkipped.length > 0 ? lastReport.skipped.filter((s) => !SCOPE_SKIP_REASONS.has(s.reason)) : lastReport.skipped;
 
   return (
     <Card className={hasPendingConflicts ? 'border-amber-500/60' : undefined}>
@@ -96,6 +106,11 @@ export function SyncResultCard() {
             </span>
           )}
           <span>跳过 <span className="font-semibold">{lastReport.skipped.length}</span></span>
+          {scopeSkipped.length > 0 && (
+            <span className="text-muted-foreground">
+              已按范围设置跳过 <span className="font-semibold">{scopeSkipped.length}</span>
+            </span>
+          )}
         </div>
 
         {lastReport.error && (
@@ -127,11 +142,11 @@ export function SyncResultCard() {
             onReveal={revealSyncFile}
           />
         )}
-        {lastReport.skipped.length > 0 && (
+        {listedSkipped.length > 0 && (
           <FileListCollapsible
-            title={`跳过文件（${lastReport.skipped.length}）`}
+            title={`跳过文件（${listedSkipped.length}）`}
             hint="本轮未传输；待处理冲突在选择后重新同步即执行，其余下次同步自动补齐"
-            items={lastReport.skipped.map((s) => ({
+            items={listedSkipped.map((s) => ({
               key: `${s.relPath}:${s.reason}`,
               text: s.relPath,
               sub: s.reason,

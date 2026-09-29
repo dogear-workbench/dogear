@@ -28,11 +28,17 @@ setSyncOptions 接受新字段；数据中心「设备同步」设置面板新�
 
 ## 验收
 
-1. UI 全部 12+2 开关可切换并持久化（重启后状态保留）。
-2. settings.json 不可关；关 workspaces 有确认弹窗。
-3. 说明文案完整显示（含 shadow-git 风险提示——用户明确要求「最好有提示」）。
-4. 单机 dev 端到端：关掉 `article-parser` → 手动触发同步 → 本端清单与结果面板均不再出现 article-parser 条目。
-5. 双机验收（依赖 Mac 真机，与 lan-sync step5 同一约束，可合并执行）：A 端改开关 → 同步 → B 端设置收敛一致（rev 语义生效）；两端均为新版本后 shadow-git 不再互传。
+1. [x] UI 全部 12+2 开关可切换并持久化（代码级核对动线 + 真实代码链路脚本；未起 GUI 避免桌面弹窗干扰，可后续 `bun run dev` 人工复验）。
+2. [x] settings.json 不可关（required → Switch 置灰恒开 + 必选徽标 tooltip）；关 workspaces 有确认弹窗。
+3. [x] 说明文案完整显示（12 项 description 来自 SYNC_ITEM_IDS；两个专项开关文案与任务书逐字一致，含 shadow-git 风险提示）。
+4. [x] 单机 dev 端到端（fallback：链路脚本 sanitize→applySyncOptionsPatch→excludesFromSyncOptions→buildManifest 11 断言全 PASS，关 article-parser 后清单无条目；拉取/应用侧对称过滤由 step1 单测覆盖）。
+5. ⏳ 双机验收遗留：依赖 Mac 真机（A 端改开关 → 同步 → B 端 rev-LWW 收敛；两端新版本后 shadow-git 不再互传），与 lan-sync step5 同一约束，可合并执行，不阻塞代码合入。
+
+## 实施记录（2026-09-29）
+
+- 状态：✅ 完成（除双机项）。bun test 373 pass / 0 fail，双 tsc 与 eslint 通过。
+- 实现方式：SYNC_ITEM_IDS 由渲染层直接 import settings-types.ts（纯文件无 electron/node 依赖，文件头自证 + Worker 线程导入先例），未新增 tipc 路由；setSyncOptions 加手动白名单防呆层（项目 tipc 无运行时校验的风格），syncOptionsRev 不接受前端直写；sync-result 范围跳过只汇总「已按范围设置跳过 N」不逐条列。
+- 偏差备注：① stocks/feishu 的 description 原文自引「下方独立开关」迁列表后失真，已更新为原独立开关提示文案；② SCOPE_SKIP_REASONS 在渲染层复制了两处 reason 文案（manifest.ts / apply.ts 含 node 依赖不宜渲染层 import），已注释标注同步义务，后续可提纯共享模块；③ 防呆层错误类型字段静默丢弃（视为未提供），与现状风格一致。
 
 ## 收尾
 

@@ -412,8 +412,8 @@ export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
   { id: 'settings.json', name: '应用设置', description: '全局设置（含同步配置本身，必选）', required: true },
   { id: 'plans.json', name: '任务数据', description: '定时任务数据；关闭后任务不跨设备' },
   { id: 'notifications.json', name: '通知记录', description: '通知历史；关闭后通知不跨设备' },
-  { id: 'stocks', name: '行情数据', description: '股票行情缓存（由独立开关控制，即下方「同步行情数据」）' },
-  { id: 'feishu', name: '飞书数据', description: '飞书集成数据（由独立开关控制，即下方「同步飞书数据」）' },
+  { id: 'stocks', name: '行情数据', description: '行情缓存较大且可重新拉取；自选股配置始终同步' },
+  { id: 'feishu', name: '飞书数据', description: '飞书相关缓存数据' },
 ] as const;
 
 const SYNC_ITEM_ID_SET: ReadonlySet<string> = new Set(SYNC_ITEM_IDS.map((m) => m.id));
