@@ -383,6 +383,19 @@
   outline: none;
 }
 
+/* 正文中的相对路径（NotePathLink 插件 Decoration）：primary 色 + 下划线，观感可点 */
+.notes-editor .ProseMirror .note-path-link {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 55%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.notes-editor .ProseMirror .note-path-link:hover {
+  text-decoration-color: var(--primary);
+}
+
 .notes-editor .ProseMirror p.is-empty:first-child::before {
   content: attr(data-placeholder);
   color: var(--muted-foreground);

@@ -5,10 +5,9 @@ import type { NoteMeta, NoteSource } from '../../services/notes/note-types.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-const LINK_SCHEMA = z
-  .string()
-  .regex(/^(article|stock|plan):.+/)
-  .describe('引用格式：article:<文章id> / stock:<股票代码> / plan:<plan文档路径>');
+/** 引用写法指引：links 结构化字段 UI 已下线，统一在正文写完整相对路径（编辑器内自动渲染可点） */
+const PATH_REF_TIP =
+  '引用 plan/文章/文件时，在正文写完整相对路径（如 docs/plans/2026-09/xx/plan.md），笔记内自动渲染为可点击。';
 
 function errorResult(text: string) {
   return { content: [{ type: 'text' as const, text }], isError: true as const };
@@ -62,11 +61,11 @@ export function createNotesToolDefs(workspaceId: string, sourceContext?: NotesTo
       'dogear__CreateNote',
       '创建笔记卡片',
       '在工作区创建一张新的 Markdown 笔记卡片。\n' +
-        '正文首行会成为卡片标题。',
+        '正文首行会成为卡片标题。\n' +
+        PATH_REF_TIP,
       z.object({
         content: z.string().min(1).describe('卡片正文（Markdown），首行会成为卡片标题'),
         tags: z.array(z.string().min(1)).optional().describe('标签列表'),
-        links: z.array(LINK_SCHEMA).optional().describe('引用列表'),
       }),
       async (args) => {
         try {
@@ -74,7 +73,6 @@ export function createNotesToolDefs(workspaceId: string, sourceContext?: NotesTo
           const note = await notesService.createNote(workspaceId, {
             content: args.content,
             tags: args.tags,
-            links: args.links,
             source,
           });
           return {
@@ -170,21 +168,19 @@ export function createNotesToolDefs(workspaceId: string, sourceContext?: NotesTo
     defineTool(
       'dogear__UpdateNote',
       '更新笔记卡片',
-      '更新卡片的内容、标签或引用。tags/links 都是整体替换。',
+      '更新卡片的内容或标签。tags 是整体替换。\n' + PATH_REF_TIP,
       z.object({
         noteId: z.string().min(1).describe('卡片 ID'),
         patch: z.object({
           content: z.string().optional().describe('整体替换正文（首行会成为新标题）'),
           tags: z.array(z.string().min(1)).optional().describe('整体替换标签列表'),
-          links: z.array(LINK_SCHEMA).optional().describe('整体替换引用列表'),
         }).describe('要更新的字段，未给出的字段保持不变'),
       }),
       async (args) => {
         const { patch } = args;
-        const hasField = patch.content !== undefined || patch.tags !== undefined ||
-          patch.links !== undefined;
+        const hasField = patch.content !== undefined || patch.tags !== undefined;
         if (!hasField) {
-          return errorResult('patch 为空：至少要提供 content / tags / links 之一。');
+          return errorResult('patch 为空：至少要提供 content / tags 之一。');
         }
         try {
           const note = await notesService.updateNote(workspaceId, args.noteId, patch);

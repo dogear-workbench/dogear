@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { NoteMetaSection } from '@/components/notes/NoteMetaSection';
 import { TiptapEditor } from '@/components/notes/TiptapEditor';
 import { useNotesStore, type NotePatch } from '@/stores/notes-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
 import { referenceNoteIntoFocus, jumpToSourceConversation } from '@/lib/reference-guard';
 import type { Note } from '@/types/note';
 
@@ -55,7 +56,6 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
   const [titleDraft, setTitleDraft] = useState('');
   const [editorMarkdown, setEditorMarkdown] = useState('');
   const [tags, setTags] = useState<string[]>([]);
-  const [links, setLinks] = useState<string[]>([]);
   const [metaExpanded, setMetaExpanded] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
 
@@ -71,6 +71,8 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
   const tiptapRef = useRef<Editor | null>(null);
 
   const updateNote = useNotesStore((s) => s.updateNote);
+  // 正文路径点击时拼绝对路径用（openFileInFolder 需要绝对路径）
+  const noteWorkspacePath = useWorkspaceStore((s) => s.workspace?.path) ?? '';
 
   const flush = useCallback(async () => {
     if (timerRef.current !== null) {
@@ -132,7 +134,6 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
         setTitleDraft(heading ?? '');
         setEditorMarkdown(body);
         setTags(loaded.tags);
-        setLinks(loaded.links);
         setNote(loaded);
         if (!loaded.content.trim()) shouldFocusTitleRef.current = true;
       } else {
@@ -174,11 +175,6 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
   const handleTagsChange = (next: string[]) => {
     setTags(next);
     commit({ tags: next }, true);
-  };
-
-  const handleLinksChange = (next: string[]) => {
-    setLinks(next);
-    commit({ links: next }, true);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -276,17 +272,14 @@ export function NoteEditor({ workspaceId, noteId, onClose, onDelete }: NoteEdito
             </div>
 
             {metaExpanded && (
-              <NoteMetaSection
-                tags={tags}
-                links={links}
-                onTagsChange={handleTagsChange}
-                onLinksChange={handleLinksChange}
-              />
+              <NoteMetaSection tags={tags} onTagsChange={handleTagsChange} />
             )}
 
             {/* 间距类只放外层容器，不进编辑器 attributes（Step 4 挂 body 浮层时同理） */}
             <div className="mt-2">
               <TiptapEditor
+                workspaceId={workspaceId}
+                workspacePath={noteWorkspacePath}
                 initialMarkdown={editorMarkdown}
                 onChange={handleEditorChange}
                 onReady={(editor) => {
