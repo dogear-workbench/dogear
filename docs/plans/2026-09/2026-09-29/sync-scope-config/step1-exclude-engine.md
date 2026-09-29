@@ -44,8 +44,14 @@
 
 ## 验收
 
-- `bun test`（或项目现行测试命令）全绿；新测试覆盖上述边界。
-- 手动：用本机真实数据目录跑一次 buildManifest（dev 下 `cwd/.dogear`），确认 shadow-git 与 4 个存量 .conflict-4cc497 不再进清单、其余条目数与改动前一致（可 diff 两份清单）。
+- [x] `bun test` 全绿（353 pass / 1 skip / 0 fail，33 文件）；exclude.test.ts 11 用例 63 断言覆盖上述边界；tsc --noEmit 通过。
+- [x] 手动：本机真实数据目录（dev 下 `cwd/.dogear`）buildManifest 新旧对比 362→362 条目完全一致（本机当前无 shadow-git 与 .conflict-* 存量，故默认排除无行为差异，即验证了「其余条目一致」；有排除路径时的行为由单测覆盖）。
+
+## 实施记录（2026-09-29）
+
+- 状态：✅ 完成。isExcluded 纯函数 + 三处对称过滤（buildManifest walk 四入口 / diffManifests 对端条目 / applyIncoming 入口，均在 merge 路由之前）+ SYNC_PROTOCOL_VERSION 1→2（device/discovery 自动跟随，orchestrator 既有握手警告路径确认无需改）。
+- orchestrator L184 以代码默认 excludes 启用（shadow-git/conflict 副本不同步、项全开），Step 2 接 settings。
+- 偏差备注：① server.ts 的 writeIncomingFile（对端主动推送入口）不在三处过滤范围——旧版本对端推来的排除路径会落成不参与同步的死文件（不进清单/基线，不循环传播），无害；协议版本警告已提示升级，不扩大改动。② bun test 下 apply.ts import 链需 mock.module('electron') + 动态 import（后续测试沿用）。
 
 ## 不做
 

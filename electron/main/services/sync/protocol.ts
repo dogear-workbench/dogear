@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
 export const SYNC_APP_ID = 'dogear';
-export const SYNC_PROTOCOL_VERSION = 1;
+// v2：同步范围可配置化（excludes 对称过滤，shadow-git 与 .conflict-* 默认不再同步）
+export const SYNC_PROTOCOL_VERSION = 2;
 
 export const FileEntrySchema = z.object({
   relPath: z.string().min(1),

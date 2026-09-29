@@ -181,6 +181,9 @@ async function runSyncInternal(
     syncFeishu: settings.syncOptions?.syncFeishu === true,
     // workspaces/ 只收 enabled 映射的本端 wsid；未映射的本端工作区不同步（与对端对等：首次使用即受控）
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerState?.workspaceMap),
+    // 同步范围排除：Step 1 先用设计默认值（shadow-git 与冲突副本不同步、同步项全开），
+    // Step 2 接通 settings.syncOptions（disabledSyncItems / syncConflictCopies / syncShadowGit）
+    excludes: { conflictCopies: false, shadowGit: false, disabledItems: new Set() },
   };
 
   const local = await buildManifest(dataDir, manifestOptions);
@@ -230,7 +233,7 @@ async function runSyncInternal(
   });
 
   const baseline = peerState?.lastManifest;
-  const diff = await diffManifests({ root: dataDir, local, remote: remoteEntries, baseline });
+  const diff = await diffManifests({ root: dataDir, local, remote: remoteEntries, baseline, excludes: manifestOptions.excludes });
 
   const selfShort = shortDeviceId(selfHello.deviceId);
   const peerShort = shortDeviceId(peer.deviceId);
@@ -347,7 +350,7 @@ async function runSyncInternal(
   }
 
   if (direction !== 'push') {
-    const pullReport = await applyIncoming(dataDir, pullItems, (relPath) => pullFile(peer, auth, relPath));
+    const pullReport = await applyIncoming(dataDir, pullItems, (relPath) => pullFile(peer, auth, relPath), manifestOptions.excludes);
     for (const entry of pullReport.applied) {
       pulled += 1;
       transferred.set(entry.relPath, entry.hash);

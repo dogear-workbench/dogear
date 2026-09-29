@@ -7,6 +7,7 @@ import { createGunzip } from 'node:zlib';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FileEntry, FilePushMeta, SkippedEntry } from './protocol.js';
+import { isExcluded, type ManifestExcludes } from './manifest.js';
 import { loadSettings, saveSettings, type AppSettings, type PairedDevice, type SyncOptions } from '../settings-service.js';
 import { getOrCreateDeviceId } from './device.js';
 import { safeJsonWrite } from '../safe-json.js';
@@ -231,10 +232,17 @@ export async function applyIncoming(
   root: string,
   items: IncomingApplyItem[],
   sourceFactory: IncomingSourceFactory,
+  excludes?: ManifestExcludes,
 ): Promise<IncomingApplyReport> {
   const report: IncomingApplyReport = { applied: [], skipped: [], mergedFiles: [], mergeFailed: [] };
   for (const item of items) {
     const { entry } = item;
+    // 应用侧对称过滤：挡住旧版本对端（未按本端范围排除）推来的路径，双保险。
+    // 在 merge 路由之前判断：被排除的记录文件也不进条目级合并
+    if (isExcluded(entry.relPath, excludes)) {
+      report.skipped.push({ relPath: entry.relPath, reason: '本端同步范围已排除，丢弃对端推送' });
+      continue;
+    }
     const remoteRelPath = item.remoteRelPath ?? entry.relPath;
     try {
       // 条目级合并路径：不整文件覆盖本端、不落冲突副本（合并天然保两侧条目，无丢失风险）。

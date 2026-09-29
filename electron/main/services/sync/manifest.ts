@@ -4,6 +4,16 @@ import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import type { DiffResult, FileEntry, HashedFileEntry, SkippedEntry } from './protocol.js';
 
+/** 同步范围排除项（Step 1 代码级 options，Step 2 接通 settings.syncOptions）；false = 排除该项 */
+export interface ManifestExcludes {
+  /** .conflict-<短ID> 冲突副本是否同步（false = 排除） */
+  conflictCopies: boolean;
+  /** 任意层级 shadow-git/ 目录是否同步（false = 排除） */
+  shadowGit: boolean;
+  /** 关闭的同步项 id 集合（目录 7 项 + 文件 3 项；stocks/feishu 走 OPTIONAL_DIR_FLAGS，不在此过滤） */
+  disabledItems: Set<string>;
+}
+
 export interface ManifestOptions {
   syncStocksData?: boolean;
   syncFeishu?: boolean;
@@ -12,6 +22,8 @@ export interface ManifestOptions {
    * undefined = 不过滤（全量，向后兼容）；空数组 = 全部工作区目录不同步（首次使用即受控，全局数据恒同步）。
    */
   enabledWorkspaceIds?: string[];
+  /** 同步范围排除；缺省 = 全放行（现状行为） */
+  excludes?: ManifestExcludes;
 }
 
 const ALWAYS_SYNC_DIRS = ['workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history'] as const;
@@ -25,24 +37,67 @@ const IGNORE_FILE_SUFFIXES = ['.bak', '.lock', '.tmp'];
 const IGNORE_DIR_NAMES = new Set(['__pycache__', 'browser-profile', 'logs', 'backups']);
 const IGNORE_BASENAMES = new Set(['sync-state.json']);
 
+const SHADOW_GIT_DIR = 'shadow-git';
+const EXCLUDABLE_FILE_ITEMS = new Set<string>(ALWAYS_SYNC_FILES);
+const EXCLUDABLE_DIR_ITEMS = new Set<string>(ALWAYS_SYNC_DIRS);
+
+/**
+ * 冲突副本 basename 判定（apply.ts conflictCopyRelPath 生成规则 `<stem><ext>.conflict-<短ID>` 的逆运算）：
+ * 以最后一个点切出 ext，ext 形如 `.conflict-<至少 1 位尾缀>` 才命中。`.conflict-` 出现在 stem 中间
+ * （如 `a.conflict-b.json`，末点切出 ext=`.json`）不命中；dotfile 整体作 stem（`.gitignore.conflict-x`）
+ * 的 lastIndexOf 恰好切在尾段，天然兼容；纯 `.conflict-x`（无 stem，dot<=0）不命中。
+ */
+function isConflictCopyBasename(base: string): boolean {
+  const dot = base.lastIndexOf('.');
+  if (dot <= 0) return false;
+  const ext = base.slice(dot);
+  return ext.startsWith('.conflict-') && ext.length > '.conflict-'.length;
+}
+
+/**
+ * 同步范围排除唯一判定入口（纯函数）：清单生成 / 拉取（diff）/ 应用（apply）三处对称共用。
+ * diff 是集合差语义——只在 buildManifest 单侧排除，对端清单仍会以 remote-only 判拉取，
+ * 因此拉取与应用侧必须用本函数对对端条目再过滤一遍。
+ * excludes 缺省 = 全放行（现状行为）。stocks/feishu 由 OPTIONAL_DIR_FLAGS 控制，不受 disabledItems 影响。
+ */
+export function isExcluded(relPath: string, excludes?: ManifestExcludes): boolean {
+  if (!excludes) return false;
+  const segments = relPath.split('/');
+  if (!excludes.shadowGit && segments.includes(SHADOW_GIT_DIR)) return true;
+  if (!excludes.conflictCopies && isConflictCopyBasename(segments[segments.length - 1])) return true;
+  const items = excludes.disabledItems;
+  if (items.size > 0) {
+    if (items.has(relPath) && (EXCLUDABLE_FILE_ITEMS.has(relPath) || EXCLUDABLE_DIR_ITEMS.has(relPath))) return true;
+    const slash = relPath.indexOf('/');
+    if (slash > 0) {
+      // 目录项 = 第一段命中（前缀带 '/' 比较，workspaces/abc 命中而 workspaces.json 不命中）
+      const first = relPath.slice(0, slash);
+      if (EXCLUDABLE_DIR_ITEMS.has(first) && items.has(first)) return true;
+    }
+  }
+  return false;
+}
+
 export async function buildManifest(root: string, options: ManifestOptions = {}): Promise<FileEntry[]> {
+  const { excludes } = options;
   const entries: FileEntry[] = [];
   const jobs: Promise<void>[] = [];
   for (const dir of ALWAYS_SYNC_DIRS) {
+    if (isExcluded(dir, excludes)) continue;
     if (dir === 'workspaces' && options.enabledWorkspaceIds) {
       // workspaces/ 特殊处理：一级子目录按 per-peer 映射表过滤（workspaces/<wsid>/）。
       // workspaces/ 下直接落文件（workspaces.json、其冲突副本等）不受过滤，属全局数据恒同步
-      jobs.push(walkWorkspacesDir(root, new Set(options.enabledWorkspaceIds), entries));
+      jobs.push(walkWorkspacesDir(root, new Set(options.enabledWorkspaceIds), entries, excludes));
     } else {
-      jobs.push(walkDir(root, dir, entries));
+      jobs.push(walkDir(root, dir, entries, excludes));
     }
   }
   for (const name of ALWAYS_SYNC_FILES) {
-    jobs.push(statFile(root, name, entries));
+    jobs.push(statFile(root, name, entries, excludes));
   }
   for (const [dir, flag] of Object.entries(OPTIONAL_DIR_FLAGS)) {
     if (!options[flag]) continue;
-    jobs.push(walkDir(root, dir, entries));
+    jobs.push(walkDir(root, dir, entries, excludes));
   }
   await Promise.all(jobs);
   entries.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
@@ -50,7 +105,7 @@ export async function buildManifest(root: string, options: ManifestOptions = {})
 }
 
 /** walkDir 的 workspaces/ 特化版：一级目录按映射表 wsid 过滤，文件与已启用 wsid 子树照常收 */
-async function walkWorkspacesDir(root: string, enabledIds: Set<string>, out: FileEntry[]): Promise<void> {
+async function walkWorkspacesDir(root: string, enabledIds: Set<string>, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
   let dirents;
   try {
     dirents = await fsp.readdir(path.join(root, 'workspaces'), { withFileTypes: true });
@@ -58,18 +113,20 @@ async function walkWorkspacesDir(root: string, enabledIds: Set<string>, out: Fil
     return;
   }
   await Promise.all(dirents.map(async (dirent) => {
+    const rel = `workspaces/${dirent.name}`;
     if (dirent.isDirectory()) {
       if (IGNORE_DIR_NAMES.has(dirent.name.toLowerCase())) return;
       if (!enabledIds.has(dirent.name)) return;
-      await walkDir(root, `workspaces/${dirent.name}`, out);
+      if (isExcluded(rel, excludes)) return;
+      await walkDir(root, rel, out, excludes);
       return;
     }
     if (!dirent.isFile() || dirent.isSymbolicLink()) return;
-    await statFile(root, `workspaces/${dirent.name}`, out);
+    await statFile(root, rel, out, excludes);
   }));
 }
 
-async function walkDir(root: string, relDir: string, out: FileEntry[]): Promise<void> {
+async function walkDir(root: string, relDir: string, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
   let dirents;
   try {
     dirents = await fsp.readdir(path.join(root, relDir), { withFileTypes: true });
@@ -78,17 +135,20 @@ async function walkDir(root: string, relDir: string, out: FileEntry[]): Promise<
   }
   await Promise.all(dirents.map(async (dirent) => {
     const name = dirent.name;
+    const childRel = `${relDir}/${name}`;
     if (dirent.isDirectory()) {
       if (IGNORE_DIR_NAMES.has(name.toLowerCase())) return;
-      await walkDir(root, `${relDir}/${name}`, out);
+      if (isExcluded(childRel, excludes)) return; // 目录命中剪枝（如 workspaces/<wsid>/shadow-git/ 整树）
+      await walkDir(root, childRel, out, excludes);
       return;
     }
     if (!dirent.isFile() || dirent.isSymbolicLink()) return;
-    await statFile(root, `${relDir}/${name}`, out);
+    await statFile(root, childRel, out, excludes);
   }));
 }
 
-async function statFile(root: string, relPath: string, out: FileEntry[]): Promise<void> {
+async function statFile(root: string, relPath: string, out: FileEntry[], excludes?: ManifestExcludes): Promise<void> {
+  if (isExcluded(relPath, excludes)) return;
   const lower = relPath.toLowerCase();
   const base = lower.slice(lower.lastIndexOf('/') + 1);
   if (IGNORE_BASENAMES.has(base)) return;
@@ -141,6 +201,8 @@ export interface DiffInput {
   local: FileEntry[];
   remote: FileEntry[];
   baseline?: FileEntry[];
+  /** 本端同步范围排除：对端清单命中者跳过不进 pull/冲突集合（对称过滤，防 remote-only 判定架空排除） */
+  excludes?: ManifestExcludes;
 }
 
 export async function diffManifests(input: DiffInput): Promise<DiffResult> {
@@ -155,6 +217,10 @@ export async function diffManifests(input: DiffInput): Promise<DiffResult> {
   for (const [relPath, remoteEntry] of remoteMap) {
     if (!isSafeRelPath(relPath)) {
       result.skipped.push({ relPath, reason: 'unsafe path' });
+      continue;
+    }
+    if (isExcluded(relPath, input.excludes)) {
+      result.skipped.push({ relPath, reason: 'excluded by local sync scope' });
       continue;
     }
     const localEntry = localMap.get(relPath);
