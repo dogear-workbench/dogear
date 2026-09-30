@@ -1,14 +1,12 @@
-import { cn } from '@/lib/utils';
 import type { AbilityPackView } from '../../../electron/main/tipc/ability';
 import { PACK_TYPE_LABELS } from './pack-meta';
 
 interface AbilityPackCardProps {
   pack: AbilityPackView;
-  enabled: boolean;
   onOpen: () => void;
 }
 
-export function AbilityPackCard({ pack, enabled, onOpen }: AbilityPackCardProps) {
+export function AbilityPackCard({ pack, onOpen }: AbilityPackCardProps) {
   const stats = [
     pack.segments.length > 0 && `段 ${pack.segments.length}`,
     pack.toolGroupMetas.length > 0 && `工具组 ${pack.toolGroupMetas.length}`,
@@ -41,11 +39,6 @@ export function AbilityPackCard({ pack, enabled, onOpen }: AbilityPackCardProps)
             {s}
           </span>
         ))}
-        {!enabled && (
-          <span className={cn('text-xs px-1.5 py-0.5 rounded bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400')}>
-            已关闭
-          </span>
-        )}
       </div>
     </button>
   );

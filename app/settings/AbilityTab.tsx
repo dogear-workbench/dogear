@@ -186,7 +186,6 @@ export function AbilityTab() {
                 <AbilityPackCard
                   key={pack.key}
                   pack={pack}
-                  enabled={packEnabled(pack)}
                   onOpen={() => setSelectedKey(pack.key)}
                 />
               ))}

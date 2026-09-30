@@ -5,9 +5,6 @@ import type { AbilityPackView, AbilityToolGroupMeta } from '../../../electron/ma
 import { AbilityMountsSection } from './AbilityMountsSection';
 import { PACK_TYPE_LABELS } from './pack-meta';
 
-const AGENT_COLLAB_OFF_NOTE =
-  '关闭后主会话不再注册派遣与共享区协作工具（无法创建子会话，已派出的子会话不受影响）；子会话侧协作能力强制生效，会话组上下文由「会话组」包单独控制。';
-
 interface AbilityPackSidebarProps {
   pack: AbilityPackView;
   workspaceId: string | null;
@@ -70,25 +67,10 @@ export function AbilityPackSidebar({
   return (
     <div className="flex-[4] min-w-0 space-y-5 overflow-y-auto border-l p-4">
       <section className="space-y-2">
-        <div className="flex items-center gap-2">
-          <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            {PACK_TYPE_LABELS[pack.type]}
-          </span>
-          <span
-            className={cn(
-              'inline-block text-xs px-1.5 py-0.5 rounded',
-              pack.defaultEnabled
-                ? 'bg-muted text-muted-foreground'
-                : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400',
-            )}
-          >
-            {pack.defaultEnabled ? '默认开启' : '默认关闭'}
-          </span>
-        </div>
+        <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+          {PACK_TYPE_LABELS[pack.type]}
+        </span>
         <p className="text-xs text-muted-foreground leading-relaxed">{pack.description}</p>
-        {pack.key === 'agent-collab' && (
-          <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">{AGENT_COLLAB_OFF_NOTE}</p>
-        )}
       </section>
 
       {pack.toolGroupMetas.length > 0 && (
@@ -112,10 +94,6 @@ export function AbilityPackSidebar({
         <span className="text-xs text-muted-foreground">加载情况</span>
         <AbilityMountsSection packKey={pack.key} workspaceId={workspaceId} refreshKey={refreshKey} />
       </section>
-
-      <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">
-        启停配置在场景页调整；修改后需重启会话生效。
-      </p>
     </div>
   );
 }

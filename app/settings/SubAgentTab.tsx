@@ -33,12 +33,11 @@ const BASIC_TOOLS = [
 const MIN_TIMEOUT = 1;
 const MAX_TIMEOUT = 180;
 
-/** 子会话无独立配置维度的包：主会话专属或按触发条件自动注入，不出块 */
-const NON_PROFILE_PACK_KEYS = new Set(['notes', 'group-context', 'agent-collab']);
+/** 子会话无独立配置维度的包：主会话专属、场景层裁决（memory）或按触发条件自动注入，不出块 */
+const NON_PROFILE_PACK_KEYS = new Set(['notes', 'group-context', 'agent-collab', 'memory']);
 
 /** 单 Switch 块的包 key → enabledAbilities 字段（web-mcp 包字段名是 web） */
-const SINGLE_FIELD_BY_PACK: Partial<Record<string, 'memory' | 'article' | 'web'>> = {
-  memory: 'memory',
+const SINGLE_FIELD_BY_PACK: Partial<Record<string, 'article' | 'web'>> = {
   article: 'article',
   'web-mcp': 'web',
 };
@@ -64,7 +63,6 @@ function resolveModelLabel(local: AppSettings, sel: ModelSelection | null | unde
 
 function countAbilityDomains(ab: SubAgentEnabledAbilities): number {
   let n = 1;
-  if (ab.memory) n++;
   if (ab.stock) n++;
   if (ab.article) n++;
   if (ab.skills?.length) n++;
@@ -160,8 +158,6 @@ function ProfileEditor({
           description={pack.description}
           checked={ab.stock === true}
           onCheckedChange={(v) => updateAbility('stock', v)}
-          detailCount={packDetailCount(pack)}
-          details={skillCheckItems(pack)}
         />
       );
     }
@@ -213,11 +209,7 @@ function ProfileEditor({
         key={pack.key}
         title={pack.label}
         description={
-          pack.key === 'article'
-            ? `${pack.description}；article-parser skill 随开关直通`
-            : pack.key === 'memory'
-              ? `${pack.description}；需工作区记忆包同开才装载`
-              : pack.description
+          pack.key === 'article' ? `${pack.description}；article-parser skill 随开关直通` : pack.description
         }
         checked={ab[field] === true}
         onCheckedChange={(v) => updateAbility(field, v)}
@@ -309,7 +301,7 @@ function ProfileEditor({
       <div className="space-y-1.5">
         <label className="text-xs font-medium">能力域</label>
         <p className="text-xs text-muted-foreground">
-          此处为子会话侧子开关，实际生效 = 此处勾选 ∩ 工作区能力包总开关（设置 → 能力）：工作区关闭某能力包时，Profile 无法单独启用。
+          此处为子会话侧子开关，实际生效 = 此处勾选 ∩ 工作区能力包总开关（设置 → 能力）：工作区关闭某能力包时，Profile 无法单独启用。记忆等固定层能力归场景页「子会话」行配置。
         </p>
         <div className="space-y-2">
           {!packs && (
