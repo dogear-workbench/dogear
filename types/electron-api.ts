@@ -25,6 +25,8 @@ export interface WorkspaceConfig {
   enabledSkills: string[];
   /** 只存显式拨过的能力包开关，缺省走注册表 defaultEnabled；残留下线 key 静默忽略 */
   abilityOverrides?: Record<string, boolean>;
+  /** 场景固定层覆盖（缺失键=跟随工作区总闸），场景包开关三级回退的第一级；残留下线 key 消费侧忽略 */
+  sceneOverrides?: { sub?: Record<string, boolean>; executor?: Record<string, boolean>; scheduler?: Record<string, boolean> };
 }
 
 /**

@@ -212,6 +212,15 @@ export const SUB_AUTONOMOUS_SKILLS: ReadonlySet<string> = new Set(
   ABILITY_PACKS.filter((p) => p.subAutonomous).flatMap((p) => p.skills ?? []),
 );
 
+/** 场景固定层覆盖键（WorkspaceConfig.sceneOverrides 的三个场景维度，与 ability-registry 解析共用） */
+export const SCENE_KEYS = ['sub', 'executor', 'scheduler'] as const;
+export type SceneOverrideKey = (typeof SCENE_KEYS)[number];
+
+/** 场景包开关三级回退：场景覆盖 → 工作区总闸 → 注册表默认；残留下线 key 与缺省键自然回退 */
+export function scenePackEnabled(pack: AbilityPack, config: WorkspaceConfig, scene: SceneOverrideKey): boolean {
+  return config.sceneOverrides?.[scene]?.[pack.key] ?? config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
+}
+
 export interface ResolveAbilitiesOpts {
   role: 'main' | 'sub';
   /**
@@ -222,12 +231,17 @@ export interface ResolveAbilitiesOpts {
   groupId?: string | null;
   hasWorkspace: boolean;
   profile?: SubAgentProfile | null;
+  /** 场景固定层覆盖（sub/executor/scheduler）：传入时包开关改走 scenePackEnabled 三级回退；未传保持裸 abilityOverrides 读取（现状行为） */
+  sceneOverride?: SceneOverrideKey;
 }
 
 /**
- * 解析生效能力包：工作区包开关（abilityOverrides 覆盖 defaultEnabled，残留下线 key 静默忽略）
- * ∩ 触发条件 ∩ 子会话 Profile 过滤。子会话契约段与 Profile 子开关（enabledSkills）不在此处理。
- * subAutonomous 包（browser/web-mcp/stock/article）例外：Profile 子开关是唯一裁决者，跳过工作区闸门；
+ * 解析生效能力包：包开关 ∩ 触发条件 ∩ 子会话 Profile 过滤。
+ * 包开关取值：传 sceneOverride 时走三级回退（sceneOverrides[scene] → abilityOverrides → defaultEnabled），
+ * 未传为 abilityOverrides ?? defaultEnabled；残留下线 key 静默忽略。场景代码条件（mainOnly/hasWorkspace/属组等）
+ * 不受 sceneOverride 影响。
+ * 子会话契约段与 Profile 子开关（enabledSkills）不在此处理；memory 对子会话归场景层裁决（不再查 Profile 闸）。
+ * subAutonomous 包（browser/web-mcp/stock/article）例外：Profile 子开关是唯一裁决者，跳过包开关闸门；
  * profile 缺失则不生效（无授权即无能力）。
  * reference 子开关已退役：ReadGroupBackground 随会话组包、ListSiblingSessions 随协作包，旧配置残留值静默忽略。
  */
@@ -241,13 +255,12 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
       continue;
     }
 
-    const enabled = config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
+    const enabled = opts.sceneOverride
+      ? scenePackEnabled(pack, config, opts.sceneOverride)
+      : config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
     if (!enabled) continue;
 
-    if (pack.key === 'memory') {
-      if (opts.role === 'main' && !opts.hasWorkspace) continue;
-      if (opts.role === 'sub' && opts.profile?.enabledAbilities.memory !== true) continue;
-    }
+    if (pack.key === 'memory' && opts.role === 'main' && !opts.hasWorkspace) continue;
     if (pack.key === 'notes' && (opts.role !== 'main' || !opts.hasWorkspace)) continue;
     if (pack.key === 'workspace-git' && !opts.hasWorkspace) continue;
     if ((pack.key === 'group-context' || pack.key === 'agent-collab') && !opts.groupId) continue;

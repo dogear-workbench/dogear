@@ -4,6 +4,7 @@ import {
   SUB_AUTONOMOUS_SKILLS,
   TOOL_PACK_TO_ABILITY,
   resolveAbilities,
+  scenePackEnabled,
   type AbilityPack,
 } from './ability-registry.js';
 import { createBrowserParseSubAgentProfile, createDefaultSubAgentProfile, type SubAgentProfile } from '../services/settings-types.js';
@@ -20,10 +21,10 @@ function profileWith(ab: SubAgentProfile['enabledAbilities'], extra?: Partial<Su
 }
 
 describe('resolveAbilities 子会话 Profile 过滤', () => {
-  test('memory/stock/article/browser 子开关为 true 才生效；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
-    // 四包总开关在 abilityOverrides 全开，判定纯由子开关决定；
+  test('stock/article/browser 子开关为 true 才生效；memory 归场景层不再受 Profile 闸约束；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
+    // 自治三包总开关在 abilityOverrides 全开，判定纯由子开关决定；
     // code-workflow 的 Profile 过滤在运行时位于 skill 级（filterSkillsForSubAgent 的 ab.skills），不在包级
-    const keys = ['memory', 'stock', 'article', 'browser'] as const;
+    const keys = ['stock', 'article', 'browser'] as const;
     const cases: SubAgentProfile['enabledAbilities'][] = [
       {},
       { memory: true },
@@ -46,6 +47,7 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
       for (const key of keys) {
         expect(active.has(key)).toBe(ab[key] === true);
       }
+      expect(active.has('memory')).toBe(true);
       expect(active.has('code-workflow')).toBe(true);
     }
   });
@@ -58,10 +60,10 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     expect(resolveAbilities(config, { role: 'main', hasWorkspace: true, groupId: null }).has('web-mcp')).toBe(true);
   });
 
-  test('profile 停用不影响包级判定（可见性在派遣侧控制）', () => {
+  test('profile 停用不影响包级判定（可见性在派遣侧控制）；存量 memory 子开关残留被忽略', () => {
     const active = resolveAbilities(
       { enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} },
-      { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ memory: true }, { enabled: false }) },
+      { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ memory: false }, { enabled: false }) },
     );
     expect(active.has('memory')).toBe(true);
   });
@@ -70,6 +72,50 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true } };
     expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createBrowserParseSubAgentProfile() }).has('browser')).toBe(true);
     expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createDefaultSubAgentProfile() }).has('browser')).toBe(false);
+  });
+});
+
+describe('sceneOverrides 场景三级回退', () => {
+  const base: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [] };
+
+  test('sceneOverrides 覆盖优先于 abilityOverrides', () => {
+    const config: WorkspaceConfig = {
+      ...base,
+      abilityOverrides: { memory: false },
+      sceneOverrides: { sub: { memory: true } },
+    };
+    const active = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: null, sceneOverride: 'sub' });
+    expect(active.has('memory')).toBe(true);
+  });
+
+  test('恢复默认：无 sceneOverrides 键（或空对象）回落工作区总闸', () => {
+    const opts = { role: 'sub', hasWorkspace: true, groupId: null, profile: null, sceneOverride: 'sub' } as const;
+    expect(resolveAbilities({ ...base, abilityOverrides: { memory: false } }, opts).has('memory')).toBe(false);
+    expect(resolveAbilities({ ...base, abilityOverrides: { memory: false }, sceneOverrides: {} }, opts).has('memory')).toBe(false);
+  });
+
+  test('scenePackEnabled 三级回退：场景覆盖 → 工作区总闸 → defaultEnabled', () => {
+    const pack = packOf('memory');
+    expect(scenePackEnabled(pack, { ...base, sceneOverrides: { scheduler: { memory: false } } }, 'scheduler')).toBe(false);
+    expect(scenePackEnabled(pack, { ...base, abilityOverrides: { memory: false } }, 'scheduler')).toBe(false);
+    expect(scenePackEnabled(pack, base, 'scheduler')).toBe(true);
+  });
+
+  test('sub 角色 memory 不再受 Profile 闸影响：Profile 无 memory 字段也按场景闸（defaultEnabled=true）生效', () => {
+    const config: WorkspaceConfig = { ...base, abilityOverrides: {} };
+    const active = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({}) });
+    expect(active.has('memory')).toBe(true);
+  });
+
+  test('sceneOverride 不解除场景代码条件：scheduler 场景下 mainOnly/role 条件包仍被排除，prompt-only 包覆盖关闭生效', () => {
+    const config: WorkspaceConfig = {
+      ...base,
+      sceneOverrides: { scheduler: { shunt: true, notes: true, 'workspace-rules': false } },
+    };
+    const active = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: 'g1', profile: null, sceneOverride: 'scheduler' });
+    expect(active.has('shunt')).toBe(false);
+    expect(active.has('notes')).toBe(false);
+    expect(active.has('workspace-rules')).toBe(false);
   });
 });
 
