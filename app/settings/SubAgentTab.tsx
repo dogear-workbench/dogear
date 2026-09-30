@@ -215,7 +215,9 @@ function ProfileEditor({
         description={
           pack.key === 'article'
             ? `${pack.description}；article-parser skill 随开关直通`
-            : pack.description
+            : pack.key === 'memory'
+              ? `${pack.description}；需工作区记忆包同开才装载`
+              : pack.description
         }
         checked={ab[field] === true}
         onCheckedChange={(v) => updateAbility(field, v)}

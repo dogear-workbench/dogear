@@ -1,17 +1,14 @@
 import { cn } from '@/lib/utils';
-import { Switch } from '@/components/ui/switch';
 import type { AbilityPackView } from '../../../electron/main/tipc/ability';
 import { PACK_TYPE_LABELS } from './pack-meta';
 
 interface AbilityPackCardProps {
   pack: AbilityPackView;
   enabled: boolean;
-  disabled?: boolean;
-  onToggle: (enable: boolean) => void;
   onOpen: () => void;
 }
 
-export function AbilityPackCard({ pack, enabled, disabled, onToggle, onOpen }: AbilityPackCardProps) {
+export function AbilityPackCard({ pack, enabled, onOpen }: AbilityPackCardProps) {
   const stats = [
     pack.segments.length > 0 && `段 ${pack.segments.length}`,
     pack.toolGroupMetas.length > 0 && `工具组 ${pack.toolGroupMetas.length}`,
@@ -36,18 +33,6 @@ export function AbilityPackCard({ pack, enabled, disabled, onToggle, onOpen }: A
           <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
             {pack.description}
           </p>
-        </div>
-        <div
-          className="shrink-0"
-          onClick={(e) => e.stopPropagation()}
-          onKeyDown={(e) => e.stopPropagation()}
-        >
-          <Switch
-            checked={enabled}
-            disabled={disabled}
-            onCheckedChange={onToggle}
-            aria-label={`${enabled ? '关闭' : '开启'} ${pack.label}`}
-          />
         </div>
       </div>
       <div className="flex items-center gap-2 flex-wrap">

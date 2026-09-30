@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Switch } from '@/components/ui/switch';
 import type { AbilityPackView, AbilityToolGroupMeta } from '../../../electron/main/tipc/ability';
 import { AbilityMountsSection } from './AbilityMountsSection';
 import { PACK_TYPE_LABELS } from './pack-meta';
@@ -12,9 +11,6 @@ const AGENT_COLLAB_OFF_NOTE =
 interface AbilityPackSidebarProps {
   pack: AbilityPackView;
   workspaceId: string | null;
-  packEnabled: boolean;
-  disabled?: boolean;
-  onTogglePack: (enable: boolean) => void;
   onToolDetail: (tool: { name: string; description: string }) => void;
   refreshKey: number;
 }
@@ -66,9 +62,6 @@ function ToolGroupPanel({
 export function AbilityPackSidebar({
   pack,
   workspaceId,
-  packEnabled,
-  disabled,
-  onTogglePack,
   onToolDetail,
   refreshKey,
 }: AbilityPackSidebarProps) {
@@ -77,28 +70,25 @@ export function AbilityPackSidebar({
   return (
     <div className="flex-[4] min-w-0 space-y-5 overflow-y-auto border-l p-4">
       <section className="space-y-2">
-        <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-          {PACK_TYPE_LABELS[pack.type]}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="inline-block text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+            {PACK_TYPE_LABELS[pack.type]}
+          </span>
+          <span
+            className={cn(
+              'inline-block text-xs px-1.5 py-0.5 rounded',
+              pack.defaultEnabled
+                ? 'bg-muted text-muted-foreground'
+                : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400',
+            )}
+          >
+            {pack.defaultEnabled ? '默认开启' : '默认关闭'}
+          </span>
+        </div>
         <p className="text-xs text-muted-foreground leading-relaxed">{pack.description}</p>
         {pack.key === 'agent-collab' && (
           <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">{AGENT_COLLAB_OFF_NOTE}</p>
         )}
-      </section>
-
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">能力开关</span>
-          <Switch
-            checked={packEnabled}
-            disabled={disabled}
-            onCheckedChange={onTogglePack}
-            aria-label={`${packEnabled ? '关闭' : '开启'} ${pack.label}`}
-          />
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {pack.defaultEnabled ? '默认开启，关闭后本工作区停用该包。' : '默认关闭，开启后本工作区启用该包。'}
-        </p>
       </section>
 
       {pack.toolGroupMetas.length > 0 && (
@@ -124,7 +114,7 @@ export function AbilityPackSidebar({
       </section>
 
       <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">
-        开关即时保存到当前工作区配置；修改后需重启会话生效。
+        启停配置在场景页调整；修改后需重启会话生效。
       </p>
     </div>
   );

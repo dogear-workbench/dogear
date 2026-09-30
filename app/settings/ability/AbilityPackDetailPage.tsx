@@ -2,7 +2,6 @@ import { memo, useEffect, useState } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
 import type { WorkspaceConfig } from '@/types/electron-api';
@@ -71,7 +70,7 @@ const SegmentBlock = memo(function SegmentBlock({ segment }: { segment: AbilityS
   );
 });
 
-// 正文自包含成 memo 组件：头部开关状态变化重渲染时不重拉、不重解析 SKILL.md
+// 正文自包含成 memo 组件：头部状态变化重渲染时不重拉、不重解析 SKILL.md
 const SkillMarkdown = memo(function SkillMarkdown({ name }: { name: string }) {
   const { content, error, loading } = useSkillContent(name);
 
@@ -97,14 +96,10 @@ function SkillContentSection({
   skill,
   enabled,
   packEnabled,
-  disabled,
-  onToggle,
 }: {
   skill: AbilitySkillMeta;
   enabled: boolean;
   packEnabled: boolean;
-  disabled: boolean;
-  onToggle: (enable: boolean) => void;
 }) {
   return (
     <div className="rounded-md border overflow-hidden flex flex-col">
@@ -114,21 +109,22 @@ function SkillContentSection({
           {!skill.description && (
             <span className="text-xs px-1 py-0.5 rounded bg-muted text-muted-foreground shrink-0">文件缺失</span>
           )}
-          <div className="ml-auto flex items-center gap-2 shrink-0">
-            <span className="text-xs text-muted-foreground">{enabled ? '已启用' : '已停用'}</span>
-            <Switch
-              checked={enabled}
-              disabled={disabled || !packEnabled}
-              onCheckedChange={onToggle}
-              aria-label={`${enabled ? '停用' : '启用'} ${skill.name}`}
-            />
-          </div>
+          <span
+            className={cn(
+              'ml-auto shrink-0 text-xs px-1.5 py-0.5 rounded',
+              enabled
+                ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
+                : 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400',
+            )}
+          >
+            {enabled ? '已启用' : '已停用'}
+          </span>
         </div>
         {skill.description && (
           <p className="text-xs text-muted-foreground leading-relaxed">{skill.description}</p>
         )}
         {!packEnabled && (
-          <p className="text-xs text-muted-foreground/70">包开关关闭时包内 Skill 不生效，可先行预配置。</p>
+          <p className="text-xs text-muted-foreground/70">包开关关闭时包内 Skill 不生效，可在场景页开启包。</p>
         )}
       </div>
       <SkillMarkdown name={skill.name} />
@@ -143,8 +139,6 @@ interface AbilityPackDetailPageProps {
   packEnabled: boolean;
   refreshKey: number;
   onBack: () => void;
-  onTogglePack: (enable: boolean) => void;
-  onToggleSkill: (name: string, enable: boolean) => void;
 }
 
 export function AbilityPackDetailPage({
@@ -154,8 +148,6 @@ export function AbilityPackDetailPage({
   packEnabled,
   refreshKey,
   onBack,
-  onTogglePack,
-  onToggleSkill,
 }: AbilityPackDetailPageProps) {
   const [detailTool, setDetailTool] = useState<{ name: string; description: string } | null>(null);
   const [selectedSkillName, setSelectedSkillName] = useState<string | null>(null);
@@ -209,8 +201,6 @@ export function AbilityPackDetailPage({
                 skill={activeSkill}
                 enabled={isSkillEnabled(activeSkill.name)}
                 packEnabled={packEnabled}
-                disabled={!workspaceId}
-                onToggle={(enable) => onToggleSkill(activeSkill.name, enable)}
               />
             )}
 
@@ -238,9 +228,6 @@ export function AbilityPackDetailPage({
         <AbilityPackSidebar
           pack={pack}
           workspaceId={workspaceId}
-          packEnabled={packEnabled}
-          disabled={!workspaceId}
-          onTogglePack={onTogglePack}
           onToolDetail={setDetailTool}
           refreshKey={refreshKey}
         />

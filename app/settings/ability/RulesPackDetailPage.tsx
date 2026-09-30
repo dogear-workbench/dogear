@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { ArrowLeft, ChevronRight, ScrollText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { client } from '@/lib/client';
 import type { Workspace } from '@/types/electron-api';
 import { AbilityMountsSection } from './AbilityMountsSection';
@@ -11,35 +10,8 @@ import { RuleFileEditor } from './RuleFileEditor';
 interface RulesPackDetailPageProps {
   workspace: Workspace | null;
   workspaceId: string | null;
-  workspaceRulesEnabled: boolean;
-  globalRulesEnabled: boolean;
   refreshKey: number;
   onBack: () => void;
-  onTogglePack: (key: string, enable: boolean) => void;
-}
-
-function RuleSwitchSection({
-  label,
-  description,
-  checked,
-  disabled,
-  onToggle,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled: boolean;
-  onToggle: (enable: boolean) => void;
-}) {
-  return (
-    <section className="space-y-2">
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-muted-foreground">{label}</span>
-        <Switch checked={checked} disabled={disabled} onCheckedChange={onToggle} aria-label={`${checked ? '关闭' : '开启'} ${label}`} />
-      </div>
-      <p className="text-xs text-muted-foreground">{description}</p>
-    </section>
-  );
 }
 
 type RuleContext = 'workspace' | 'global';
@@ -73,13 +45,9 @@ function RuleContextBadge({
 export function RulesPackDetailPage({
   workspace,
   workspaceId,
-  workspaceRulesEnabled,
-  globalRulesEnabled,
   refreshKey,
   onBack,
-  onTogglePack,
 }: RulesPackDetailPageProps) {
-  const switchDisabled = !workspaceId;
   const [activeRule, setActiveRule] = useState<RuleContext>('workspace');
 
   return (
@@ -109,7 +77,7 @@ export function RulesPackDetailPage({
             <div className="space-y-1 min-w-0">
               <h3 className="text-base font-semibold">规则</h3>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                工作区与全局 agent.md 注入每个会话，各自独立编辑与开关。
+                工作区与全局 agent.md 注入每个会话，各自独立编辑；启停配置在场景页调整。
               </p>
             </div>
           </div>
@@ -147,21 +115,6 @@ export function RulesPackDetailPage({
         </div>
 
         <div className="w-80 shrink-0 space-y-5 overflow-y-auto border-l p-4">
-          <RuleSwitchSection
-            label="工作区规则"
-            description="默认开启，关闭后当前工作区的会话不注入工作区 agent.md。"
-            checked={workspaceRulesEnabled}
-            disabled={switchDisabled}
-            onToggle={(enable) => onTogglePack('workspace-rules', enable)}
-          />
-          <RuleSwitchSection
-            label="全局规则"
-            description="默认开启，关闭后当前工作区的会话不注入全局 agent.md。"
-            checked={globalRulesEnabled}
-            disabled={switchDisabled}
-            onToggle={(enable) => onTogglePack('global-rules', enable)}
-          />
-
           <section className="space-y-2">
             <span className="text-xs text-muted-foreground">加载情况</span>
             <p className="text-xs font-medium pt-1">工作区规则</p>
@@ -171,7 +124,7 @@ export function RulesPackDetailPage({
           </section>
 
           <p className="text-xs text-muted-foreground/70 leading-relaxed border-t pt-3">
-            开关即时保存到当前工作区配置；修改后需重启会话生效。
+            启停配置在场景页调整；修改后需重启会话生效。
           </p>
         </div>
       </div>

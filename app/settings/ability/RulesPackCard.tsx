@@ -30,7 +30,7 @@ export function RulesPackCard({ workspaceRulesEnabled, globalRulesEnabled, onOpe
             <span className="text-base font-semibold truncate">规则</span>
           </div>
           <p className="text-xs text-muted-foreground leading-relaxed mt-0.5 line-clamp-2">
-            工作区与全局 agent.md 的编辑与开关，注入每个会话
+            工作区与全局 agent.md 的编辑与状态查看，注入每个会话；启停在场景页
           </p>
         </div>
       </div>
