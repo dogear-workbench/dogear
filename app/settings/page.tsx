@@ -12,6 +12,7 @@ import type { AppSettings } from '@/types/settings';
 import { DEFAULT_SETTINGS } from '@/types/settings';
 import { WorkspaceManagementTab } from './WorkspaceManagementTab';
 import { AbilityTab } from './AbilityTab';
+import { SceneTab } from './scene/SceneTab';
 import { SubAgentTab } from './SubAgentTab';
 import { ShortcutsTab } from './ShortcutsTab';
 import { AboutTab } from './AboutTab';
@@ -43,6 +44,8 @@ export default function SettingsPage() {
   const loadSettings = useSettingsStore((s) => s.loadSettings);
   const saveToStore = useSettingsStore((s) => s.saveSettings);
   const closeSettings = useUIStore((s) => s.closeSettings);
+
+  const [activeTab, setActiveTab] = useState('behavior');
 
   // 本地副本（受控输入即时回显），防抖落盘全量设置
   const [local, setLocal] = useState<AppSettings>(DEFAULT_SETTINGS);
@@ -113,10 +116,11 @@ export default function SettingsPage() {
       </header>
 
       {/* ── 主体：顶部下划线 Tabs ── */}
-      <Tabs defaultValue="behavior" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
         <TabsList variant="underline" className="justify-start px-6 flex-shrink-0">
           <TabsTrigger variant="underline" value="behavior">基础设置</TabsTrigger>
           <TabsTrigger variant="underline" value="abilities">能力</TabsTrigger>
+          <TabsTrigger variant="underline" value="scene">场景</TabsTrigger>
           <TabsTrigger variant="underline" value="profiles">模型方案</TabsTrigger>
           <TabsTrigger variant="underline" value="workspace-management">工作区管理</TabsTrigger>
           <TabsTrigger variant="underline" value="sub-agent">子会话派遣</TabsTrigger>
@@ -132,6 +136,11 @@ export default function SettingsPage() {
         {/* ── Tab: 能力 ── */}
         <TabsContent value="abilities" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
           <AbilityTab />
+        </TabsContent>
+
+        {/* ── Tab: 场景 ── */}
+        <TabsContent value="scene" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
+          <SceneTab onGoToSubAgent={() => setActiveTab('sub-agent')} />
         </TabsContent>
 
         {/* ── Tab: 模型方案 ── */}

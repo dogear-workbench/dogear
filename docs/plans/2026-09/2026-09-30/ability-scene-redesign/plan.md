@@ -11,7 +11,7 @@
 - [x] [Step 1: core-profile 整链路删除](./step1-remove-core-profile.md) — 删包定义/装配注入/agent 工具/IPC/数据中心入口/personal 默认键
 - [x] [Step 2: 注册表分类字段 + getSceneOverview 接口](./step2-registry-scene-api.md) — AbilityPack.category、场景总览 IPC、memory 双闸文案
 - [x] [Step 3: 能力页只读化 + 三大类分组](./step3-ability-readonly.md) — 撤开关、分组渲染、开关逻辑提取共享模块
-- [ ] [Step 4: 场景 tab 新增](./step4-scene-tab.md) — 六场景侧栏、总分开关、恢复默认、灰显只读
+- [x] [Step 4: 场景 tab 新增](./step4-scene-tab.md) — 六场景侧栏、总分开关、恢复默认、灰显只读
 - [ ] [Step 5: 文档同步与提交](./step5-docs-commit.md) — codebase-map 三域同步、完成总结、git commit
 
 ## 全局决策
