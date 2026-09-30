@@ -17,7 +17,7 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { jumpToPeerConversation } from '@/components/agent-chat/AgentCommCard';
 import { showConfirm } from '@/stores/confirm-store';
 import { TaskDetail } from '@/components/notes/TaskDetail';
-import { TaskStatusBadge } from '@/components/notes/TaskStatusBadge';
+import { TaskStatusBadge, TaskExecProfileBadge } from '@/components/notes/TaskStatusBadge';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
 import { formatNoteTime } from '@/components/notes/NoteCardItem';
 import type { Task, TaskStatus } from '@/types/task';
@@ -277,6 +277,7 @@ function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, o
     >
       <div className="flex items-center gap-2">
         <p className="flex-1 min-w-0 text-sm font-medium line-clamp-1">{task.title}</p>
+        <TaskExecProfileBadge execProfile={task.execProfile} />
         <TaskStatusBadge status={task.status} />
       </div>
       <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground min-w-0">

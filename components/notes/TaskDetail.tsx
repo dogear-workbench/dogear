@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { Button } from '@/components/ui/button';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
-import { TaskStatusBadge } from '@/components/notes/TaskStatusBadge';
+import { TaskStatusBadge, TaskExecProfileBadge } from '@/components/notes/TaskStatusBadge';
 import { NoteLoading } from '@/components/notes/NoteState';
 import { useTaskStore } from '@/stores/task-store';
 import { jumpToSourceConversation } from '@/lib/reference-guard';
@@ -145,7 +145,10 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
           <div className="mx-auto flex w-full max-w-[760px] flex-col px-8 pt-8 pb-24">
             <div className="flex items-start justify-between gap-4">
               <h2 className="min-w-0 break-words text-2xl font-semibold leading-tight">{detail.title}</h2>
-              <TaskStatusBadge status={detail.status} className="mt-1.5 px-2 py-0.5 text-xs" />
+              <div className="mt-1.5 flex shrink-0 items-center gap-1.5">
+                <TaskExecProfileBadge execProfile={detail.execProfile} className="px-2 py-0.5 text-xs" />
+                <TaskStatusBadge status={detail.status} className="px-2 py-0.5 text-xs" />
+              </div>
             </div>
 
             <div className="mt-1.5 flex items-center gap-3 text-xs text-muted-foreground">

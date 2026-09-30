@@ -10,6 +10,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import * as taskService from '../../services/task-service.js';
 import type { Task } from '../../services/task-service.js';
+import type { ExecProfile } from '../../services/task-execution-prompt.js';
 import { getTaskQueue } from '../../services/task-queue.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
@@ -28,8 +29,14 @@ function textResult(text: string) {
   return { content: [{ type: 'text' as const, text }] };
 }
 
+const EXEC_PROFILE_LABEL: Record<ExecProfile, string> = {
+  default: '默认',
+  'code-impl': '代码实施',
+};
+
 function taskLine(task: Task): string {
   const parts = [`${task.id} [${task.status}] 《${task.title}》`];
+  parts.push(`类型: ${EXEC_PROFILE_LABEL[task.execProfile ?? 'default']}`);
   parts.push(`plan: ${task.planPath ?? '（未挂文档，占位）'}`);
   if (task.result) parts.push(`结果: ${task.result.slice(0, 100)}`);
   return `- ${parts.join(' | ')}`;
@@ -42,11 +49,18 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
       '挂载实施任务',
       '将实施任务挂到计划栏。默认落计划（plan），由用户决定何时推进执行；与用户聊透方案后挂载。\n' +
         'planPath 可省略——方案未定型先占位，后续再次调用（同标题）会自动补上文档路径；传入时要求文件已落盘。\n' +
+        'execProfile 判断标准：plan 为分步实施文档（stepN-*.md）且要动代码时填 code-impl（执行会话按 staged-execution 语境逐 step 派子会话实施）；调研/整理类不填。\n' +
         'autoExecute=true 仅当用户明确要求立即执行：直接转入执行队列（串行执行，完成后待审核并系统通知）。\n' +
         '存入计划栏时告知用户（标题与任务 ID）；占位任务要提醒补 plan 文档。',
       z.object({
         title: z.string().min(1).describe('任务标题，简短概括要实施的内容'),
         planPath: z.string().min(1).optional().describe('plan 文档路径（绝对路径，或相对工作区根的相对路径）；方案未定型可省略先占位，文档落盘后同标题再调一次自动补路径'),
+        execProfile: z
+          .enum(['default', 'code-impl'])
+          .optional()
+          .describe(
+            "执行类型：plan 为分步实施文档（stepN-*.md）且要动代码时填 'code-impl'；调研/整理类不填（默认）",
+          ),
         autoExecute: z.boolean().optional().describe('仅当用户明确要求立即执行时传 true：直接转入执行队列；默认 false 落计划栏'),
       }),
       async (args) => {
@@ -74,20 +88,22 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
           const created = await taskService.createTask(workspacePath, {
             title: args.title,
             ...(planPath ? { planPath } : {}),
+            ...(args.execProfile ? { execProfile: args.execProfile } : {}),
             originSessionId: sourceContext?.conversationId,
             status: 'plan',
           });
+          const profileLine = `\n- 类型: ${EXEC_PROFILE_LABEL[created.execProfile ?? 'default']}`;
           if (autoExecute) {
             const task = await taskService.executeTask(workspacePath, created.id);
             getTaskQueue().kick();
             return textResult(
-              `✅ 任务已排队\n- 任务 ID: ${task.id}\n- 标题: ${task.title}\n- plan: ${task.planPath}\n` +
+              `✅ 任务已排队\n- 任务 ID: ${task.id}\n- 标题: ${task.title}${profileLine}\n- plan: ${task.planPath}\n` +
                 '队列串行执行：轮到后会自动创建执行会话按 plan 实施，完成进入待审核并系统通知。',
             );
           }
           if (isUpdate) {
             return textResult(
-              `✅ 已补文档并更新计划任务\n- 任务 ID: ${created.id}\n- 标题: ${created.title}\n- plan: ${created.planPath}\n` +
+              `✅ 已补文档并更新计划任务\n- 任务 ID: ${created.id}\n- 标题: ${created.title}${profileLine}\n- plan: ${created.planPath}\n` +
                 '计划任务不会自动执行；用户确认后可用 dogear__ExecuteTask 转入队列。',
             );
           }
@@ -96,7 +112,7 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
             ? '计划任务不会自动执行；用户确认后可用 dogear__ExecuteTask 转入队列。'
             : '当前为占位任务（无 plan 文档），不会进入执行队列；plan 文档落盘后再次调用 dogear__CreateTask（同标题 + planPath）自动补路径。';
           return textResult(
-            `✅ 任务已存入计划栏\n- 任务 ID: ${created.id}\n- 标题: ${created.title}\n${planLine}${nextHint}`,
+            `✅ 任务已存入计划栏\n- 任务 ID: ${created.id}\n- 标题: ${created.title}${profileLine}\n${planLine}${nextHint}`,
           );
         } catch (error) {
           return errorResult(`挂载任务失败: ${error}`);

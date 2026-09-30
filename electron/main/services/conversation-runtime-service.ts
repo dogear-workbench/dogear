@@ -48,6 +48,8 @@ type AttachmentMeta = {
 
 type AttachConversationOptions = {
   webContentsId?: number;
+  /** 明确装载的 skill 全集（executor 场景按 execProfile 传入）；undefined = 不覆盖，跟随工作区 enabledSkills */
+  skillsOverride?: string[];
 };
 
 class ConversationRuntimeService {
@@ -106,6 +108,7 @@ class ConversationRuntimeService {
         workspaceId,
         harnessSessionId,
         enabledToolPacks: wsConfig.enabledToolPacks,
+        skillsOverride: options?.skillsOverride,
         groupId: conversation.groupId || undefined,
         role: conversation.role ?? 'main',
         executor: conversation.executor,

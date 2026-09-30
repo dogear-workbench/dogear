@@ -7,12 +7,16 @@
 
 export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected' | 'interrupted';
 
+export type ExecProfile = 'default' | 'code-impl';
+
 export interface Task {
   id: string;
   title: string;
   status: TaskStatus;
   /** 计划文档路径；占位任务尚无文档时缺省 */
   planPath?: string;
+  /** 执行类型；缺省 default（存量任务无字段等价 default），读侧用 ?? 'default' 兼容 */
+  execProfile?: ExecProfile;
   originSessionId?: string;
   execSessionId?: string;
   result?: string;

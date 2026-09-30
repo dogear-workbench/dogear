@@ -33,6 +33,9 @@ const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
 
 const FORCE_RELEASE_DELAY_MS = 60_000;
 
+// code-impl 执行会话权威 skill 清单（走 skillsOverride 绕过工作区 enabledSkills 与包总闸）
+const CODE_IMPL_SKILLS = ['staged-execution'];
+
 // 会话索引存在跨进程并发写窗口（旧快照短暂覆盖/读失败静默返空），origin 瞬时缺失重试可自愈，避免误拒
 const ORIGIN_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
 
@@ -222,7 +225,9 @@ class TaskQueueExecutor {
 
     let attachment: Awaited<ReturnType<typeof conversationRuntimeService.attachConversation>>;
     try {
-      attachment = await conversationRuntimeService.attachConversation(execId, origin.workspaceId, 'desktop', {});
+      attachment = await conversationRuntimeService.attachConversation(execId, origin.workspaceId, 'desktop', {
+        skillsOverride: task.execProfile === 'code-impl' ? CODE_IMPL_SKILLS : undefined,
+      });
     } catch (err) {
       await this.safeInterrupt(ctx, `拉起执行会话失败: ${errorMessage(err)}`);
       return;
@@ -293,7 +298,11 @@ class TaskQueueExecutor {
     session.once('complete', onComplete);
     session.on('message', onMessage);
     try {
-      const sendPromise = session.sendMessage(buildExecutionPrompt({ ...task, planPath }), { injectionTag: 'task-execution' });
+      // 存量任务无 execProfile 字段等价 default；此处必须显式兼容（模板函数缺省是 code-impl）
+      const sendPromise = session.sendMessage(
+        buildExecutionPrompt({ ...task, planPath, execProfile: task.execProfile ?? 'default' }),
+        { injectionTag: 'task-execution' },
+      );
       // 放行胜出后 sendPromise 可能永远不 settle 或迟 reject，提前挂空 catch 防 unhandledRejection
       void sendPromise.catch(() => {});
       const winner = await Promise.race([sendPromise, forcedRelease]);

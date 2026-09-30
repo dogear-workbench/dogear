@@ -8,6 +8,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
+import type { ExecProfile } from './task-execution-prompt.js';
 
 export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected' | 'interrupted';
 
@@ -17,6 +18,8 @@ export interface Task {
   status: TaskStatus;
   /** 计划文档路径；占位任务尚无文档时缺省 */
   planPath?: string;
+  /** 执行类型；缺省 default（存量任务无字段等价 default），读侧用 ?? 'default' 兜底 */
+  execProfile?: ExecProfile;
   originSessionId?: string;
   execSessionId?: string;
   /** 已废弃，读时忽略 */
@@ -32,6 +35,7 @@ export interface CreateTaskInput {
   title: string;
   planPath?: string;
   originSessionId?: string;
+  execProfile?: ExecProfile;
   /** 初始状态；done 仅存量迁移用 */
   status?: 'queued' | 'backlog' | 'plan' | 'done';
   /** 跳过 plan 文件存在性检查（存量迁移时 plan 可能已被清理，仍需保留任务记录） */
@@ -172,6 +176,7 @@ export async function createTask(workspacePath: string, input: CreateTaskInput):
       status: input.status ?? 'queued',
       ...(input.planPath ? { planPath: input.planPath } : {}),
       ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
+      ...(input.execProfile ? { execProfile: input.execProfile } : {}),
       createdAt: now,
       updatedAt: now,
     };

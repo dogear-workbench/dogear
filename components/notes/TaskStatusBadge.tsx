@@ -1,6 +1,6 @@
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { TaskStatus } from '@/types/task';
+import type { ExecProfile, TaskStatus } from '@/types/task';
 
 const STATUS_CONFIG: Record<TaskStatus, { label: string; className: string }> = {
   plan: { label: '计划', className: 'bg-sky-500/15 text-sky-600 dark:text-sky-400' },
@@ -24,6 +24,31 @@ export function TaskStatusBadge({ status, className }: { status: TaskStatus; cla
       )}
     >
       {status === 'running' && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+      {config.label}
+    </span>
+  );
+}
+
+const EXEC_PROFILE_CONFIG: Record<ExecProfile, { label: string; className: string; title: string }> = {
+  default: { label: '默认', className: 'bg-muted text-muted-foreground', title: '默认执行：按场景配置装配能力，直接按计划实施' },
+  'code-impl': {
+    label: '代码实施',
+    className: 'bg-fuchsia-500/15 text-fuchsia-600 dark:text-fuchsia-400',
+    title: '代码实施：挂载 staged-execution，逐 step 派子会话实施',
+  },
+};
+
+export function TaskExecProfileBadge({ execProfile, className }: { execProfile?: ExecProfile; className?: string }) {
+  const config = EXEC_PROFILE_CONFIG[execProfile ?? 'default'];
+  return (
+    <span
+      title={config.title}
+      className={cn(
+        'inline-flex shrink-0 items-center rounded-full px-1.5 py-0 text-[10px] font-medium',
+        config.className,
+        className,
+      )}
+    >
       {config.label}
     </span>
   );

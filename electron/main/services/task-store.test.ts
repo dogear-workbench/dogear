@@ -51,6 +51,17 @@ test('createTask：落盘 queued 并带来源会话', async () => {
   expect(task?.status).toBe('queued');
   expect(task?.originSessionId).toBe('conv-1');
   expect(task?.execSessionId).toBeUndefined();
+  expect(task?.execProfile).toBeUndefined();
+});
+
+test('execProfile：显式传参落盘读回，缺省不落字段（读侧 ?? default 兜底）', async () => {
+  const codeTask = await createTask(workspacePath, { title: '代码实施', planPath, execProfile: 'code-impl' });
+  expect(codeTask.execProfile).toBe('code-impl');
+  expect((await getTask(workspacePath, codeTask.id))?.execProfile).toBe('code-impl');
+
+  const defaultTask = await createTask(workspacePath, { title: '默认执行', planPath });
+  expect(defaultTask.execProfile).toBeUndefined();
+  expect((await listTasks(workspacePath)).find((t) => t.id === defaultTask.id)?.execProfile).toBeUndefined();
 });
 
 test('生命周期：queued → running → review → done', async () => {
