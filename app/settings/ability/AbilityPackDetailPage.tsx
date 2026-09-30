@@ -1,12 +1,10 @@
-import { memo, useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, Database } from 'lucide-react';
+import { memo, useEffect, useState } from 'react';
+import { ArrowLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { client } from '@/lib/client';
-import { useUIStore } from '@/stores/ui-store';
-import { useSessionStore } from '@/stores/session-store';
 import type { WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView, AbilitySegmentMeta, AbilitySkillMeta } from '../../../electron/main/tipc/ability';
 import { AbilityPackSidebar } from './AbilityPackSidebar';
@@ -50,11 +48,6 @@ function useSkillContent(name: string) {
   return { content, error, loading };
 }
 
-function jumpToDataCenter() {
-  useSessionStore.getState().openDataCenterTab();
-  useUIStore.getState().closeSettings();
-}
-
 const SegmentBlock = memo(function SegmentBlock({ segment }: { segment: AbilitySegmentMeta }) {
   return (
     <div className="rounded-md border overflow-hidden flex flex-col">
@@ -72,52 +65,6 @@ const SegmentBlock = memo(function SegmentBlock({ segment }: { segment: AbilityS
           <MarkdownRenderer content={segment.template} className={PROSE_DOWN_CLASS} />
         ) : (
           <p className="text-xs text-muted-foreground py-2">（模板为空）</p>
-        )}
-      </div>
-    </div>
-  );
-});
-
-const CoreProfileView = memo(function CoreProfileView({ workspaceId }: { workspaceId: string }) {
-  const [content, setContent] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await client.getCoreProfile({ workspaceId });
-      setContent('error' in res ? null : res.profile?.content ?? '');
-    } finally {
-      setLoading(false);
-    }
-  }, [workspaceId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  if (loading) return <p className="text-xs text-muted-foreground">核心画像加载中…</p>;
-  if (content === null) return <p className="text-xs text-muted-foreground">核心画像读取失败</p>;
-
-  return (
-    <div className="rounded-md border overflow-hidden flex flex-col">
-      <div className="flex items-center gap-2 px-3 py-2 bg-muted/30 border-b shrink-0">
-        <span className="text-xs font-semibold flex-1">核心画像全文（数据中心维护）</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-6 px-2 text-xs"
-          onClick={jumpToDataCenter}
-        >
-          <Database className="w-3 h-3 mr-1" />
-          到数据中心编辑
-        </Button>
-      </div>
-      <div className="px-3 py-2">
-        {content.trim() ? (
-          <MarkdownRenderer content={content} className={PROSE_DOWN_CLASS} />
-        ) : (
-          <p className="text-xs text-muted-foreground py-2">核心画像为空，到数据中心填写后此处展示全文。</p>
         )}
       </div>
     </div>
@@ -267,13 +214,6 @@ export function AbilityPackDetailPage({
               />
             )}
 
-            {!isSkillPack && pack.key === 'core-profile' &&
-              (workspaceId ? (
-                <CoreProfileView workspaceId={workspaceId} />
-              ) : (
-                <p className="text-xs text-muted-foreground">请先选择工作区。</p>
-              ))}
-
             {!isSkillPack && pack.segments.length > 0 && (
               <div className="space-y-2">
                 <span className="text-xs text-muted-foreground">
@@ -285,7 +225,7 @@ export function AbilityPackDetailPage({
               </div>
             )}
 
-            {!isSkillPack && pack.key !== 'core-profile' && pack.segments.length === 0 && (
+            {!isSkillPack && pack.segments.length === 0 && (
               <div className="rounded-md border bg-muted/10 px-3 py-2">
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   此包不注入提示词段，能力由工具包组成；会话启动时按包开关拼装。

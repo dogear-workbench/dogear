@@ -44,10 +44,3 @@ export interface MemoryIndex {
   updated: string;
   topics: TopicIndexEntry[];
 }
-
-/** 核心档案 */
-export interface CoreProfile {
-  /** markdown 正文（不含 frontmatter） */
-  content: string;
-  updated: string;
-}

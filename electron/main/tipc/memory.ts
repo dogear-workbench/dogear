@@ -1,8 +1,6 @@
 // electron/main/tipc/memory.ts
 import { tipc } from '@egoist/tipc/main';
 import {
-  getCoreProfile,
-  updateCoreProfile,
   listTopics,
   getTopic,
   upsertTopic,
@@ -21,36 +19,6 @@ type TopicInput = Omit<Topic, 'created' | 'updated'> & {
 };
 
 export const memoryRouter = {
-  /**
-   * 读取当前工作区的核心档案（core-profile.md）
-   */
-  getCoreProfile: t.procedure
-    .input<{ workspaceId: string }>()
-    .action(async ({ input }) => {
-      try {
-        const profile = await getCoreProfile(input.workspaceId);
-        return { profile };
-      } catch (error) {
-        console.error('[memory] getCoreProfile 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
-  /**
-   * 更新核心档案
-   */
-  updateCoreProfile: t.procedure
-    .input<{ workspaceId: string; content: string }>()
-    .action(async ({ input }) => {
-      try {
-        await updateCoreProfile(input.workspaceId, input.content);
-        return { success: true };
-      } catch (error) {
-        console.error('[memory] updateCoreProfile 失败:', error);
-        return { error: String(error) };
-      }
-    }),
-
   /**
    * 列出主题（index.json，按 updated 降序）
    */

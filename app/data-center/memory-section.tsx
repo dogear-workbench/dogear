@@ -2,11 +2,9 @@ import { useState } from 'react';
 import { FolderOpen, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { client } from '@/lib/client';
 import { useConfirmStore } from '@/stores/confirm-store';
 import type { Workspace } from '@/types/electron-api';
-import { CoreProfilePanel } from './core-profile-panel';
 import { TopicsPanel } from './topics-panel';
 
 interface Props {
@@ -99,8 +97,8 @@ export function MemorySection({ workspaces }: Props) {
       <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">
-          为「{workspace.name}」维护核心档案与主题记忆。核心档案每次会话启动时注入系统提示词，
-          主题记忆通过 Agent 的 dogear__RecallMemory 工具按关键词检索。
+          为「{workspace.name}」维护主题记忆。主题记忆通过 Agent 的 dogear__RecallMemory
+          工具按关键词检索，跨会话沉淀稳定知识。
         </p>
         <Button variant="outline" size="sm" onClick={handleRebuildIndex} disabled={rebuilding}>
           <RefreshCw className={rebuilding ? 'w-4 h-4 mr-1 animate-spin' : 'w-4 h-4 mr-1'} />
@@ -108,20 +106,7 @@ export function MemorySection({ workspaces }: Props) {
         </Button>
       </div>
 
-      <Tabs defaultValue="core">
-        <TabsList>
-          <TabsTrigger value="core">核心档案</TabsTrigger>
-          <TabsTrigger value="topics">主题记忆</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="core" className="pt-4">
-          <CoreProfilePanel workspaceId={activeWorkspaceId} />
-        </TabsContent>
-
-        <TabsContent value="topics" className="pt-4">
-          <TopicsPanel workspaceId={activeWorkspaceId} />
-        </TabsContent>
-      </Tabs>
+      <TopicsPanel workspaceId={activeWorkspaceId} />
       </div>
     </div>
   );

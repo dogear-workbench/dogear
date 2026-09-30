@@ -220,8 +220,6 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
       case 'workspace-rules':
       case 'global-rules':
         return '注入每个主会话';
-      case 'core-profile':
-        return '注入每个主会话（内容在数据中心维护）';
       case 'group-context':
         return '会话属于组时注入组上下文';
       case 'agent-collab':
@@ -235,8 +233,6 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
     }
   }
   switch (pack.key) {
-    case 'core-profile':
-      return '仅主会话注入，子会话不加载核心画像';
     case 'workspace-rules':
     case 'global-rules':
       return '随包开关注入子会话';
@@ -263,7 +259,6 @@ function personalSceneReason(pack: AbilityPack): string {
     case 'workspace-rules':
       return '机制生效：读 workspaces/personal/agent.md（大概率空，无注入内容）';
     case 'global-rules':
-    case 'core-profile':
       return '包开即注入临时会话';
     case 'memory':
       return '包级不生效（无工作区路径被排除）；记忆工具兜底注册可用，纪律段不注入';
@@ -316,11 +311,10 @@ function schedulerCustomAgentCell(
 ): { loaded: boolean; reason: string } {
   switch (pack.key) {
     case 'memory':
-      return { loaded: true, reason: '定时任务固定装载记忆工具（autonomous 契约），不受包开关约束' };
+      return { loaded: true, reason: '定时任务固定装载记忆工具，不受包开关约束' };
     case 'workspace-rules':
     case 'global-rules':
-    case 'core-profile':
-      return { loaded: false, reason: '后台任务不注入规则与画像段' };
+      return { loaded: false, reason: '后台任务不注入规则段' };
     case 'notes':
       return { loaded: false, reason: '笔记与任务工具为主会话专属' };
     case 'group-context':
@@ -382,8 +376,7 @@ function buildMountRows(
       groupId: MOUNT_GROUP_PLACEHOLDER,
       profile: scene.profile,
     });
-    // core-profile 的子会话排除在拼装侧（pi-session 段注入条件），包级解析不含此规则，矩阵在此对齐
-    const loaded = pack.key === 'core-profile' ? false : active.has(pack.key);
+    const loaded = active.has(pack.key);
     const filterReason = profileFilterReason(pack, scene.profile);
     rows.push({
       kind: scene.kind,

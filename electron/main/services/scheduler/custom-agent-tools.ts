@@ -4,7 +4,7 @@
  * 装配策略（对齐代码库真实开关来源，AppSettings 内没有工具包字段）：
  * - 基础文件工具 Read/Write/Edit + Glob/Grep：恒装，workspace 边界校验；不装 Bash
  * - 常驻能力域工具（与主会话同语义，tool-packs.ts 明确将其排除在可选工具包外）：
- *   dogear-memory（Recall/Save/Forget，autonomous 契约）+ dogear-notes（巡检报告等任务产物落笔记卡片）
+ *   dogear-memory（Recall/Save/Forget）+ dogear-notes（巡检报告等任务产物落笔记卡片）
  * - 可选工具包（article / browser / stock-quote / stock-analysis / stock-announcement / stock-picking）：
  *   按工作区 config.json 的 enabledToolPacks 过滤，与设置页 ToolPacksTab 同源
  */
@@ -39,7 +39,7 @@ export async function buildCustomToolSet(
   const toolDefs: ToolDef[] = [
     ...createWorkspaceFileToolDefs(workspacePath),
     ...createSearchToolDefs([workspacePath]),
-    ...createMemoryToolDefs(workspaceId, { autonomous: true }),
+    ...createMemoryToolDefs(workspaceId),
     ...createNotesToolDefs(workspaceId),
   ];
 

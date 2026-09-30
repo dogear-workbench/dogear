@@ -68,13 +68,6 @@ export const ABILITY_PACKS: AbilityPack[] = [
     defaultEnabled: true,
   },
   {
-    key: 'core-profile',
-    label: '核心画像',
-    description: '核心画像文本注入每个会话，描述用户偏好与工作方式（数据中心维护）',
-    type: 'prompt-only',
-    defaultEnabled: true,
-  },
-  {
     key: 'memory',
     label: '记忆系统',
     description: '记忆工具（召回/保存）+ 记忆写入纪律段，绑定工作区时生效',

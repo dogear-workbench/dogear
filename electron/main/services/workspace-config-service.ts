@@ -34,7 +34,6 @@ const PERSONAL_DEFAULT_CONFIG: WorkspaceConfig = {
   abilityOverrides: {
     'workspace-rules': false,
     'global-rules': false,
-    'core-profile': false,
     'memory': false,
     'notes': false,
     'group-context': false,

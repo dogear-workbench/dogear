@@ -2,15 +2,14 @@
  * 记忆 Service：CRUD 聚合入口（唯一写入入口）
  *
  * - 所有写入走 safe-json 的原子写入 + 文件锁
- * - 每次 upsert / delete / updateCoreProfile 同步触发索引维护
+ * - 每次 upsert / delete 同步触发索引维护
  * - 所有方法第一参数是 workspaceId（数据存 config/workspaces/{id}/memory）
  * - 目录不存在时：查询类方法返回 null / []，写入类方法自动创建
  */
 import fs from 'node:fs/promises';
 import { safeFileWrite } from '../safe-json.js';
-import type { CoreProfile, MemoryScope, ScopedTopicIndexEntry, Topic } from './memory-types.js';
+import type { MemoryScope, ScopedTopicIndexEntry, Topic } from './memory-types.js';
 import {
-  getCoreProfilePath,
   parseFrontmatter,
   resolveTopicPath,
   resolveTopicsDir,
@@ -18,27 +17,6 @@ import {
   type Frontmatter,
 } from './memory-fs.js';
 import { readIndex, removeIndexEntry, updateIndexEntry } from './memory-indexer.js';
-
-// ─── 核心档案 ───
-
-export async function getCoreProfile(workspaceId: string): Promise<CoreProfile | null> {
-  try {
-    const raw = await fs.readFile(getCoreProfilePath(workspaceId), 'utf-8');
-    const { fm, body } = parseFrontmatter(raw);
-    const updated = typeof fm.updated === 'string' ? fm.updated : new Date(0).toISOString();
-    return { content: body, updated };
-  } catch {
-    return null;
-  }
-}
-
-export async function updateCoreProfile(workspaceId: string, content: string): Promise<void> {
-  const now = new Date().toISOString();
-  const fm: Frontmatter = { updated: now };
-  const body = content.startsWith('\n') ? content : `\n${content}`;
-  const raw = stringifyFrontmatter(fm, body);
-  await safeFileWrite(getCoreProfilePath(workspaceId), raw);
-}
 
 // ─── 主题记忆 ───
 

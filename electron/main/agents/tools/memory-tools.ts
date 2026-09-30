@@ -6,14 +6,9 @@
  * （config/memory/，跨工作区共享，准入仅限通用踩坑知识）。全局主题读侧自动合并进 recall/list。
  * SDK 自身的 auto-memory 是全局画像级别，本工具面向的是"主题记忆"，两者正交。
  *
- * autonomous 模式（opts.autonomous=true）：
- * - dogear__SaveMemory 描述改为自动化任务契约（"仅用户明确要求"仅适用于交互式聊天）
- * - 额外注册 dogear__GetCoreProfile / dogear__UpdateCoreProfile 两个工具（维护用户稳定身份画像）
- *
  * 使用边界：
- * - dogear__SaveMemory 默认仅在用户明确要求"记住 XX"时调用，autonomous 模式下改为按调用方提示词判断
+ * - dogear__SaveMemory 默认仅在用户明确要求"记住 XX"时调用，自动化任务场景由调用方提示词约束
  * - dogear__RecallMemory 在讨论具体主题开头主动调用，不要等用户追问
- * - dogear__UpdateCoreProfile 是全量覆盖，调用前必须先 dogear__GetCoreProfile 合并
  */
 
 import { z } from 'zod';
@@ -22,10 +17,7 @@ import * as memoryRecall from '../../services/memory/memory-recall.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef } from '../pi/tool-adapter.js';
 
-export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: boolean }): ToolDef[] {
-  const autonomous = opts?.autonomous === true;
-
-
+export function createMemoryToolDefs(workspaceId: string): ToolDef[] {
   const defs: ToolDef[] = [
     // ========================================
     // 工具 1: 召回主题记忆
@@ -186,95 +178,6 @@ export function createMemoryToolDefs(workspaceId: string, opts?: { autonomous?: 
       },
     ),
   ];
-
-  if (autonomous) {
-    defs.push(
-      // ========================================
-      // 工具 4（仅 autonomous）: 读取核心画像
-      // ========================================
-      defineTool(
-        'dogear__GetCoreProfile',
-        '读取核心画像',
-        '读取本工作区的 core-profile（每个新会话自动注入的稳定身份画像）。\n' +
-        '返回当前正文和 updated 时间戳；文件不存在或为空时返回明确提示。\n' +
-        'dogear__UpdateCoreProfile 是全量覆盖，调用前应先调本工具拿现状再合并。',
-        z.object({}),
-        async () => {
-          try {
-            const profile = await memoryService.getCoreProfile(workspaceId);
-            if (!profile || !profile.content.trim()) {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: '（当前 core-profile 为空，是正常状态；不代表没必要写，只是目前没有足够稳定跨会话的信号）',
-                  },
-                ],
-              };
-            }
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `updated：${profile.updated}\n\n${profile.content}`,
-                },
-              ],
-            };
-          } catch (error) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `读取 core-profile 失败: ${error instanceof Error ? error.message : String(error)}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        },
-      ),
-
-      // ========================================
-      // 工具 5（仅 autonomous）: 更新核心画像
-      // ========================================
-      defineTool(
-        'dogear__UpdateCoreProfile',
-        '更新核心画像',
-        '全量覆盖写入 core-profile。\n' +
-        '⚠️ 是**全量覆盖**：必须先 dogear__GetCoreProfile 拿现有内容，把新增部分与之合并成完整版本再传入，否则会丢失已有内容。\n' +
-        '写入成功后 updated 时间戳自动刷新。',
-        z.object({
-          content: z
-            .string()
-            .min(1)
-            .describe('合并后的完整 core-profile 正文（markdown）；不带 frontmatter，工具会自动加'),
-        }),
-        async (args) => {
-          try {
-            await memoryService.updateCoreProfile(workspaceId, args.content);
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: '已更新 core-profile（全量覆盖）',
-                },
-              ],
-            };
-          } catch (error) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `更新 core-profile 失败: ${error instanceof Error ? error.message : String(error)}`,
-                },
-              ],
-              isError: true,
-            };
-          }
-        },
-      ),
-    );
-  }
 
   return defs;
 }

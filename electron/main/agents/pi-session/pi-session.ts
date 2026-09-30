@@ -33,7 +33,6 @@ import { resolveAbilities, ABILITY_PACKS, SUB_AUTONOMOUS_SKILLS } from '../abili
 import { isBasicToolName, decideToolPermission } from './permission-rules.js';
 import { loadSettings, getConfigDir } from '../../services/settings-service.js';
 import { readBrowserPlaybook } from '../../services/browser/browser-playbook-service.js';
-import { loadCoreProfileForSession } from '../../services/memory/memory-loader.js';
 import { getTemplatesDir } from '../../services/skill-template-service.js';
 import { getWorkspaceConfig } from '../../services/workspace-config-service.js';
 import {
@@ -399,12 +398,6 @@ export class PiSession extends EventEmitter {
       profile: subAgentProfile ?? null,
     });
 
-    // ---- core-profile ----
-    // 主会话始终加载 core-profile；子会话不再加载（loadCoreProfile 字段已移除）
-    const coreProfileText = !isSubAgent && activeAbilities.has('core-profile')
-      ? await loadCoreProfileForSession(this.config.workspaceId)
-      : null;
-
     // ---- group context ----
     // 组上下文归「会话组」包：属组 ∧ 包开才注入（含子会话，不再跟随协作包裁剪）
     const needGroupContext = !!this.config.groupId && activeAbilities.has('group-context');
@@ -469,7 +462,6 @@ export class PiSession extends EventEmitter {
     // ---- 提示词拼装（三分桶供上下文构成估算：agent.md / skill 索引 / 人格纪律） ----
     const agentMdText = [projectClaudeMd, userClaudeMd].filter(Boolean).join('\n\n');
     const personaParts: string[] = [];
-    if (coreProfileText) personaParts.push(coreProfileText);
     if (groupContextText) personaParts.push(groupContextText);
 
     // browser 能力生效即注入（会话创建读一次；子会话 Profile 的 browser 子开关已并入 resolveAbilities，与 browser-exploration skill 同条件）

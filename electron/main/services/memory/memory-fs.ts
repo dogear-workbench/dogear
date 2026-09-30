@@ -18,10 +18,6 @@ export function getMemoryDir(workspaceId: string): string {
   return path.join(getConfigDir(), 'workspaces', workspaceId, 'memory');
 }
 
-export function getCoreProfilePath(workspaceId: string): string {
-  return path.join(getMemoryDir(workspaceId), 'core-profile.md');
-}
-
 export function getTopicsDir(workspaceId: string): string {
   return path.join(getMemoryDir(workspaceId), 'topics');
 }
