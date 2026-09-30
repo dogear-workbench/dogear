@@ -49,7 +49,7 @@ export async function handleStateExtractTask(task: AgentTask, taskLogger: any, c
   const { TOPIC_CARD_CATEGORIES, StateIncrementSchema } = await import('../../services/memory/state-card.js');
   const { readSessionBranchEntries } = await import('../pi-session/session-history-reader.js');
   const { cleanMessagesFromEntries } = await import('../pi-session/transcript-adapter.js');
-  const { loadStateExtractPrompt } = await import('../../services/memory/state-extract-prompt.js');
+  const { loadStateExtractPrompt, STATE_EXTRACT_SYSTEM_PROMPT } = await import('../../services/memory/state-extract-prompt.js');
   const { defineTool } = await import('../pi/tool-adapter.js');
   const { runOnce } = await import('../pi/run-once.js');
 
@@ -57,7 +57,7 @@ export async function handleStateExtractTask(task: AgentTask, taskLogger: any, c
   const { getGroup } = await import('../../services/group-service.js');
   const group = await getGroup(workspaceId, groupId);
   const groupTitle = group?.title?.trim() || '';
-  const systemPrompt = '你是一个后台话题状态抽取 agent。读完输入后调用 emit_state_increment 工具输出增量，完成后直接结束，无需寒暄。';
+  const systemPrompt = STATE_EXTRACT_SYSTEM_PROMPT;
 
   const abortController = new AbortController();
   ctx.setAbortController(abortController);

@@ -11,7 +11,10 @@ import {
   type SystemPromptSegmentKey,
 } from '../agents/session-append-templates.js';
 import { getAllToolGroups, type ToolGroupInfo, type ToolInfo } from '../agents/tools/tool-registry.js';
-import { loadSettings } from '../services/settings-service.js';
+import { loadSettings, getConfigDir } from '../services/settings-service.js';
+import { loadStateExtractPrompt, STATE_EXTRACT_SYSTEM_PROMPT } from '../services/memory/state-extract-prompt.js';
+import { getArticleParserSkillsDir } from '../services/article-parser-skills-service.js';
+import { loadArticleParseSkill, readArticleParseSkillMd } from '../agents/tasks/parse-article-task.js';
 import type { AppSettings } from '../services/settings-types.js';
 import { OPTIONAL_TOOL_PACKS } from '../services/tool-packs.js';
 import { listSkillTemplates } from '../services/skill-template-service.js';
@@ -266,4 +269,30 @@ export const abilityRouter = {
         return { error: String(error) };
       }
     }),
+
+  /** 状态抽取场景提示词（只读）：systemPrompt=固定角色语，template=可编辑模板（缺失自动播种默认值） */
+  getStateExtractPrompt: t.procedure.action(async () => {
+    try {
+      const template = await loadStateExtractPrompt(getConfigDir());
+      return { systemPrompt: STATE_EXTRACT_SYSTEM_PROMPT, template };
+    } catch (error) {
+      console.error('[ability] getStateExtractPrompt 失败:', error);
+      return { error: String(error) };
+    }
+  }),
+
+  /** 文章解析场景提示词（只读）：与解析任务同源同 fallback（loadArticleParseSkill），skillMd 为含 frontmatter 的原始全文 */
+  getParseArticlePrompt: t.procedure.action(async () => {
+    try {
+      const skillsDir = getArticleParserSkillsDir();
+      const [systemPrompt, skillMd] = await Promise.all([
+        loadArticleParseSkill(skillsDir),
+        readArticleParseSkillMd(skillsDir),
+      ]);
+      return { systemPrompt, skillMd: skillMd ?? '' };
+    } catch (error) {
+      console.error('[ability] getParseArticlePrompt 失败:', error);
+      return { error: String(error) };
+    }
+  }),
 };

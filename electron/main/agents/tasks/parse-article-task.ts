@@ -237,9 +237,9 @@ interface V2PromptParams {
 
 /**
  * 从 skillsDir/SKILL.md 读取文章解析 Skill 正文（剥 frontmatter），作为 systemPrompt 注入。
- * 替代旧 SDK 的 plugins skill 发现机制。
+ * 替代旧 SDK 的 plugins skill 发现机制。场景页展示路由与解析任务共用（同源同 fallback）。
  */
-async function loadArticleParseSkill(skillsDir: string): Promise<string> {
+export async function loadArticleParseSkill(skillsDir: string): Promise<string> {
   const fs = await import('fs/promises');
   const skillPath = path.join(skillsDir, 'SKILL.md');
   try {
@@ -248,6 +248,16 @@ async function loadArticleParseSkill(skillsDir: string): Promise<string> {
     return fmMatch ? raw.slice(fmMatch[0].length) : raw;
   } catch {
     return '（SKILL.md 不存在，按通用常识解析文章）';
+  }
+}
+
+/** 读 SKILL.md 原始全文（含 frontmatter 元信息）供场景页展示；缺失返回 null */
+export async function readArticleParseSkillMd(skillsDir: string): Promise<string | null> {
+  const fs = await import('fs/promises');
+  try {
+    return await fs.readFile(path.join(skillsDir, 'SKILL.md'), 'utf-8');
+  } catch {
+    return null;
   }
 }
 

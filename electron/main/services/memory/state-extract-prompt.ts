@@ -2,6 +2,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
+/** 抽取 agent 运行时 systemPrompt（角色语）；与模板（用户可编辑）分离，状态抽取任务与场景页展示共用 */
+export const STATE_EXTRACT_SYSTEM_PROMPT =
+  '你是一个后台话题状态抽取 agent。读完输入后调用 emit_state_increment 工具输出增量，完成后直接结束，无需寒暄。';
+
 export const DEFAULT_STATE_EXTRACT_PROMPT = `你在做会话组的「话题状态增量抽取」：读完本次给你的新增逐字稿后，调用 emit_state_increment 工具一次性输出结构化增量，不要输出散文。
 
 ## 抽取原则
