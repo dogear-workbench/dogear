@@ -44,7 +44,8 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 ## 能力包与 skill
 
-- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 14 包 + resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略）+ TOOL_PACK_TO_ABILITY 反查；会话分流为独立包 shunt（段+dogear-shunt 工具组，主会话+有工作区+属组触发，executor 拼装侧排除）；workspace-git 包（git 工具组+git 历史意识段，有工作区才生效，主/子会话同条件）
+- `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 13 包（core-profile 已整链路删除，职责由全局规则与主题记忆接住）+ AbilityPack.category 三分类（system/context-memory/extension，ABILITY_CATEGORIES 有序常量供能力页/场景页分组）+ resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略）+ TOOL_PACK_TO_ABILITY 反查；会话分流为独立包 shunt（段+dogear-shunt 工具组，主会话+有工作区+属组触发，executor 拼装侧排除）；workspace-git 包（git 工具组+git 历史意识段，有工作区才生效，主/子会话同条件）；memory 包工具组仅剩主题记忆三工具（Recall/Save/ForgetMemory，画像工具随 core-profile 退役）
+- `tipc/ability-scene.ts`（tipc/）— 场景维度能力数据底座：挂载矩阵构建（按包看场景，含系统行为详情 SYSTEM_MOUNTS_PACK_KEY）+ buildSceneOverview 场景总览（六场景×13 包，每格 enabled/loaded/editable/reason/subToggles）；getSceneOverview IPC 载体，tipc/ability.ts re-export 其类型保持前端 import 兼容
 - `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/岔题分流引导/派遣契约/联网调研分工/git 历史意识/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
 - `skill-service.ts`（services/）— listSkills 扫三源目录标注 source+enabled
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置+自定义，IPC 供设置页动态加载）
