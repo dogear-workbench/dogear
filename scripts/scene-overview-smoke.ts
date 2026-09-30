@@ -47,7 +47,7 @@ console.log('\n== main 行（全 switchable） ==');
 const mainRow = byId.get('main')!;
 check('matrix 形态', mainRow.kind === 'matrix');
 check('13 包', mainRow.packs.length === 13, `实际 ${mainRow.packs.length}`);
-check('全 switchable+editable', mainRow.packs.every((c) => c.state === 'switchable' && c.editable));
+check('全 switchable 且无 editable 兼容字段', mainRow.packs.every((c) => c.state === 'switchable' && !('editable' in c)));
 
 console.log('\n== personal 行 ==');
 const personalRow = byId.get('personal')!;
@@ -57,11 +57,11 @@ for (const key of ['memory', 'notes', 'workspace-git', 'group-context', 'agent-c
   const c = cellOf('personal', key)!;
   check(`${key} excluded`, c.state === 'excluded', c.state);
 }
-check('扩展包全 switchable', personalRow.packs.filter((c) => c.category === 'extension').every((c) => c.state === 'switchable' && c.editable));
+check('扩展包全 switchable', personalRow.packs.filter((c) => c.category === 'extension').every((c) => c.state === 'switchable'));
 
 console.log('\n== sub 行（新增） ==');
 const subRow = byId.get('sub')!;
-check('matrix 形态+editable', subRow.kind === 'matrix' && subRow.editable);
+check('matrix 形态', subRow.kind === 'matrix' && !('editable' in subRow));
 const autonomous = ['stock', 'article', 'browser', 'web-mcp'];
 for (const key of autonomous) {
   const c = cellOf('sub', key)!;
@@ -83,7 +83,9 @@ check('notes switchable+段级裁剪文案', cellOf('executor', 'notes')?.reason
 check('memory switchable（有工作区路径）', ws.path ? cellOf('executor', 'memory')?.state === 'switchable' : cellOf('executor', 'memory')?.state === 'excluded');
 check('固定层默认全 enabled', ['workspace-rules', 'global-rules', 'notes', 'workspace-git'].every((k) => cellOf('executor', k)?.enabled === true));
 check('带 extensionNote', !!executorRow.extensionNote && executorRow.extensionNote.includes('staged-execution'));
-check('带执行提示词模板全文', executorRow.prompts?.[0]?.content?.includes('<task-execution>') === true);
+check('两类执行提示词模板（default + code-impl）', executorRow.prompts?.length === 2 && executorRow.prompts.every((p) => p.content?.includes('<task-execution>')), JSON.stringify(executorRow.prompts?.map((p) => p.id)));
+check('code-impl 模板含 staged-execution 引用', executorRow.prompts?.some((p) => p.id === 'executor-code-impl' && p.content?.includes('staged-execution')) === true);
+check('default 模板无 staged-execution 引用', executorRow.prompts?.some((p) => p.id === 'executor-default' && p.content && !p.content.includes('staged-execution')) === true);
 check('模板含占位标题', executorRow.prompts?.[0]?.content?.includes('（任务标题）') === true);
 
 console.log('\n== scheduler-custom 行 ==');
@@ -91,7 +93,7 @@ const schedRow = byId.get('scheduler-custom')!;
 check('首格为基础工具合成格 forced', schedRow.packs[0]?.key === '__scheduler-base__' && schedRow.packs[0].state === 'forced' && schedRow.packs[0].loaded === true);
 for (const key of ['memory', 'notes']) {
   const c = cellOf('scheduler-custom', key)!;
-  check(`${key} switchable+editable`, c.state === 'switchable' && c.editable, JSON.stringify(c));
+  check(`${key} switchable`, c.state === 'switchable', JSON.stringify(c));
   check(`${key} loaded=enabled（buildCustomToolSet 语义）`, c.loaded === c.enabled);
 }
 check('无 subToggles（enabledToolPacks 编辑权已撤）', schedRow.packs.every((c) => !c.subToggles));
@@ -102,8 +104,8 @@ check('code-workflow excluded（后台无 skill 挂载）', cellOf('scheduler-cu
 console.log('\n== summary 行 ==');
 const stateRow = byId.get('scheduler-state')!;
 const parseRow = byId.get('scheduler-parse')!;
-check('state 行 kind=summary packs 空 prompts 有', stateRow.kind === 'summary' && stateRow.packs.length === 0 && (stateRow.prompts?.length ?? 0) === 1 && !stateRow.editable);
-check('parse 行 kind=summary packs 空 prompts 有', parseRow.kind === 'summary' && parseRow.packs.length === 0 && (parseRow.prompts?.length ?? 0) === 1 && !parseRow.editable);
+check('state 行 kind=summary packs 空 prompts 有', stateRow.kind === 'summary' && stateRow.packs.length === 0 && (stateRow.prompts?.length ?? 0) === 1);
+check('parse 行 kind=summary packs 空 prompts 有', parseRow.kind === 'summary' && parseRow.packs.length === 0 && (parseRow.prompts?.length ?? 0) === 1);
 check('state prompt 路由 id', stateRow.prompts?.[0]?.id === 'state-extract');
 check('parse prompt 路由 id', parseRow.prompts?.[0]?.id === 'parse-article');
 

@@ -59,6 +59,27 @@ export function applyPackToggle(
   return { abilityOverrides };
 }
 
+export type SceneOverrideKey = keyof NonNullable<WorkspaceConfig['sceneOverrides']>;
+
+/**
+ * 场景行（sub/executor/scheduler）开关写回：只写 sceneOverrides 单键（整体替换语义下增量合并现值后整传）。
+ * 不联动工作区 enabledSkills/enabledToolPacks：那是主会话扩展细闸共享真源，场景行联动会造成跨场景副作用；
+ * 场景包闸与工作区子开关的双闸语义即现状装配行为，reason 文案已说明。
+ */
+export function applyScenePackToggle(
+  config: WorkspaceConfig,
+  scene: SceneOverrideKey,
+  key: string,
+  enable: boolean,
+): Partial<WorkspaceConfig> {
+  return {
+    sceneOverrides: {
+      ...config.sceneOverrides,
+      [scene]: { ...config.sceneOverrides?.[scene], [key]: enable },
+    },
+  };
+}
+
 // 关 skill 时其独占工具包一并下线，仍被其他启用 skill 引用的保留
 export function applySkillToggles(
   config: WorkspaceConfig,

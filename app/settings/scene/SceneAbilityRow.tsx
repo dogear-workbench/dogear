@@ -6,7 +6,7 @@ import type { PackToggleLinks } from '../ability/config-mutations';
 
 interface SceneAbilityRowProps {
   cell: ScenePackCell;
-  /** 状态徽标文案（父层算好）：可编辑行条件未满足提示 / 只读行装载状态 */
+  /** 状态徽标文案（父层算好）：switchable 未装配提示 / excluded 已装载提示 */
   badge: string | null;
   /** 行开关联动素材；缺省（联动表未就绪）时行开关禁用 */
   links: PackToggleLinks | undefined;
@@ -30,12 +30,12 @@ export function SceneAbilityRow({
   onSkillToggle,
   onToolPackToggle,
 }: SceneAbilityRowProps) {
-  const subToggles = cell.subToggles;
+  const subToggles = cell.state === 'switchable' ? cell.subToggles : undefined;
   const expandable = !!subToggles && (subToggles.skills.length > 0 || subToggles.toolPacks.length > 0);
-  const canToggle = cell.editable && !!links;
+  const canToggle = cell.state === 'switchable' && !!links;
 
   return (
-    <div className={cn('rounded-md border bg-background', !cell.editable && 'opacity-75')}>
+    <div className={cn('rounded-md border bg-background', cell.state === 'excluded' && 'opacity-60')}>
       <div className="flex items-start gap-2.5 px-3 py-2">
         {expandable ? (
           <button
@@ -52,21 +52,36 @@ export function SceneAbilityRow({
         ) : (
           <span className="w-4 shrink-0" />
         )}
-        <Switch
-          className="mt-0.5 shrink-0"
-          checked={cell.enabled}
-          disabled={!canToggle}
-          onCheckedChange={onPackToggle}
-          aria-label={`${cell.enabled ? '关闭' : '开启'} ${cell.label}`}
-        />
+        {cell.state === 'switchable' ? (
+          <Switch
+            className="mt-0.5 shrink-0"
+            checked={cell.enabled}
+            disabled={!canToggle}
+            onCheckedChange={onPackToggle}
+            aria-label={`${cell.enabled ? '关闭' : '开启'} ${cell.label}`}
+          />
+        ) : (
+          <span
+            className={cn(
+              'mt-0.5 shrink-0 rounded px-1.5 py-0.5 text-xs',
+              cell.state === 'forced'
+                ? 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
+                : 'bg-muted text-muted-foreground',
+            )}
+          >
+            {cell.state === 'forced' ? '强制' : '排除'}
+          </span>
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium">{cell.label}</span>
+            <span className={cn('text-sm font-medium', cell.state === 'excluded' && 'text-muted-foreground')}>
+              {cell.label}
+            </span>
             {badge && (
               <span
                 className={cn(
                   'text-xs px-1.5 py-0.5 rounded shrink-0',
-                  badge === '固定装载' || badge === '已装载'
+                  badge === '已装载'
                     ? 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400'
                     : 'bg-muted text-muted-foreground',
                 )}

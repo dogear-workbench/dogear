@@ -16,23 +16,34 @@ import type {
 import {
   EMPTY_CONFIG,
   applyPackToggle,
+  applyScenePackToggle,
   applySkillToggles,
   buildSkillToPacks,
   createConfigPersister,
   packToggleLinksOf,
   type PackToggleLinks,
+  type SceneOverrideKey,
   type SkillToPacks,
 } from '../ability/config-mutations';
-import { CATEGORY_FALLBACK, type AbilityCategoryMeta } from '../ability/pack-meta';
+import { CATEGORY_FALLBACK } from '../ability/pack-meta';
 import { SceneAbilityRow } from './SceneAbilityRow';
+import { ScenePromptsPanel } from './ScenePromptsPanel';
 
 type OverviewResult = Exclude<Awaited<ReturnType<typeof client.getSceneOverview>>, { error: string }>;
-/** 行右侧状态徽标：可编辑行仅在开关开而未装配时提示（灰显行恒显示装载状态） */
-function statusBadge(row: SceneOverviewRow, cell: ScenePackCell): string | null {
-  if (row.editable) return cell.enabled && !cell.loaded ? '未装配' : null;
-  if (cell.loaded) return row.id === 'scheduler-custom' ? '固定装载' : '已装载';
-  return '未装载';
+
+/** 格子右上状态徽标：switchable 行开关开而未装配时提示；excluded 行已装载（如定时行命中工具包）时提示 */
+function statusBadge(cell: ScenePackCell): string | null {
+  if (cell.state === 'forced') return null;
+  if (cell.state === 'excluded') return cell.loaded ? '已装载' : null;
+  return cell.enabled && !cell.loaded ? '未装配' : null;
 }
+
+/** matrix 行 id → sceneOverrides 场景键；main/personal 走各自 config 真源，不在此列 */
+const SCENE_OVERRIDE_BY_ROW: Partial<Record<SceneOverviewId, SceneOverrideKey>> = {
+  sub: 'sub',
+  executor: 'executor',
+  'scheduler-custom': 'scheduler',
+};
 
 interface SceneTabProps {
   onGoToSubAgent: () => void;
@@ -155,14 +166,9 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
   };
 
   const handlePackToggle = async (row: SceneOverviewRow, cell: ScenePackCell, enable: boolean) => {
-    if (row.id === 'scheduler-custom') {
-      const ids = linksByKey.get(cell.key)?.linkedPackIds ?? [];
-      const set = new Set(wsConfig.enabledToolPacks);
-      for (const id of ids) {
-        if (enable) set.add(id);
-        else set.delete(id);
-      }
-      await wsPersister({ enabledToolPacks: Array.from(set) });
+    const scene = SCENE_OVERRIDE_BY_ROW[row.id];
+    if (scene) {
+      await wsPersister(applyScenePackToggle(wsConfig, scene, cell.key, enable));
       return;
     }
     await persisterOf(row.id)(applyPackToggle(configOf(row.id), cell.key, linksByKey.get(cell.key), enable));
@@ -183,13 +189,19 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
     if (row.id === 'main') {
       const ok = await showConfirm('恢复默认', `将清空当前工作区全部包开关覆盖（${row.label}），回落各包注册表默认值。`);
       if (ok) await wsPersister({ abilityOverrides: {} });
-    } else if (row.id === 'personal') {
+      return;
+    }
+    if (row.id === 'personal') {
       const ok = await showConfirm('恢复默认', `将清空${row.label}的全部能力开关，回落最小能力集（仅联网搜索）。`);
       if (ok) await personalPersister({ enabledToolPacks: [], enabledSkills: [], abilityOverrides: {} });
-    } else if (row.id === 'scheduler-custom') {
-      const ok = await showConfirm('恢复默认', `将清空工作区全部工具包开关（${row.label}），定时任务仅装载固定工具。`);
-      if (ok) await wsPersister({ enabledToolPacks: [] });
+      return;
     }
+    const scene = SCENE_OVERRIDE_BY_ROW[row.id];
+    if (!scene) return;
+    const sceneOverrides = { ...(wsConfig.sceneOverrides ?? {}) };
+    delete sceneOverrides[scene];
+    const ok = await showConfirm('恢复默认', `将删除${row.label}行的全部场景覆盖，回到跟随工作区配置（推荐状态）。`);
+    if (ok) await wsPersister({ sceneOverrides });
   };
 
   const activeWorkspace = workspaces.find((w) => w.id === workspaceId) ?? null;
@@ -203,7 +215,7 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
       <SceneAbilityRow
         key={cell.key}
         cell={cell}
-        badge={statusBadge(row, cell)}
+        badge={statusBadge(cell)}
         links={linksByKey.get(cell.key)}
         skillReady={packs.length > 0}
         expanded={expandedKeys.has(expandKey)}
@@ -276,7 +288,7 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
                 )}
               >
                 <span className="flex-1 truncate">{row.label}</span>
-                {!row.editable && (
+                {row.kind === 'summary' && (
                   <span className="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">只读</span>
                 )}
               </button>
@@ -290,36 +302,46 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
                   <div className="min-w-0">
                     <h3 className="text-base font-semibold">{selectedRow.label}</h3>
                     <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">{selectedRow.description}</p>
-                    {selectedRow.id === 'personal' && (
-                      <p className="text-xs text-muted-foreground/80 leading-relaxed mt-0.5">
-                        临时会话无工作区路径，部分能力自动失效；灰显行为代码定死的装配结果。
-                      </p>
-                    )}
                   </div>
-                  {selectedRow.editable && (
+                  {selectedRow.kind === 'matrix' && (
                     <Button variant="outline" size="sm" className="shrink-0" onClick={() => void handleReset(selectedRow)}>
                       恢复默认
                     </Button>
                   )}
                 </div>
 
-                <div className="mt-4 space-y-5">
-                  {categories.map((cat) => {
-                    const cells = selectedRow.packs.filter((p) => p.category === cat.key);
-                    if (cells.length === 0) return null;
-                    return (
-                      <section key={cat.key} className="space-y-2">
-                        <div>
-                          <h4 className="text-sm font-semibold">{cat.label}</h4>
-                          {cat.description && (
-                            <p className="text-xs text-muted-foreground mt-0.5">{cat.description}</p>
-                          )}
-                        </div>
-                        <div className="space-y-1.5">{cells.map((cell) => renderRow(selectedRow, cell))}</div>
-                      </section>
-                    );
-                  })}
-                </div>
+                {selectedRow.kind === 'summary' ? (
+                  <div className="mt-4">
+                    <ScenePromptsPanel prompts={selectedRow.prompts ?? []} />
+                  </div>
+                ) : (
+                  <>
+                    <div className="mt-4 space-y-5">
+                      {categories.map((cat) => {
+                        const cells = selectedRow.packs.filter((p) => p.category === cat.key);
+                        if (cells.length === 0) return null;
+                        return (
+                          <section key={cat.key} className="space-y-2">
+                            <div>
+                              <h4 className="text-sm font-semibold">{cat.label}</h4>
+                              {cat.description && (
+                                <p className="text-xs text-muted-foreground mt-0.5">{cat.description}</p>
+                              )}
+                            </div>
+                            <div className="space-y-1.5">{cells.map((cell) => renderRow(selectedRow, cell))}</div>
+                          </section>
+                        );
+                      })}
+                    </div>
+                    {(selectedRow.prompts?.length || selectedRow.extensionNote) && (
+                      <ScenePromptsPanel
+                        prompts={selectedRow.prompts ?? []}
+                        extensionNote={selectedRow.extensionNote}
+                        className="mt-5"
+                      />
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -328,7 +350,7 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
 
       <footer className="border-t px-6 py-2 shrink-0">
         <p className="text-xs text-muted-foreground flex items-center gap-1">
-          子会话按 Profile 独立配置能力，不在场景页展示
+          子会话固定层能力在「子会话」行配置；扩展授权（股票/文章/浏览器/联网/代码）按 Profile 在派遣页配置
           <button
             type="button"
             onClick={onGoToSubAgent}

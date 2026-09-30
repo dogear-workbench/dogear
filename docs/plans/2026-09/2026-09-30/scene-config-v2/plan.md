@@ -11,7 +11,7 @@
 - [x] [Step 1: per-scene overrides 数据模型与场景化解析](./step1-scene-overrides-model.md) — config schema + resolveSceneAbilities 三级回退 + registry 测试
 - [x] [Step 2: 拼装侧消费](./step2-assembly-wiring.md) — tool-assembly/子会话/执行/定时任务按 sceneOverrides 装配 + skillsOverride 字段
 - [x] [Step 3: 场景总览重构与提示词路由](./step3-scene-overview.md) — buildSceneOverview 三态格子六行重构 + 状态抽取/文章解析提示词只读路由
-- [ ] [Step 4: 场景页前端 v2](./step4-scene-frontend.md) — SceneTab/SceneAbilityRow 六行重构、恢复默认、提示词展示页
+- [x] [Step 4: 场景页前端 v2](./step4-scene-frontend.md) — SceneTab/SceneAbilityRow 六行重构、恢复默认、提示词展示页
 - [ ] [Step 5: 任务类型 execProfile 全链路](./step5-exec-profile.md) — Task 模型/CreateTask 参数/提示词分支/skillsOverride 接线/任务面板徽章
 - [ ] [Step 6: Profile 与能力页瘦身 + 文档同步](./step6-slim-and-docs.md) — SubAgentTab 删 memory/stock 细选、能力页删开关残留+子会话标签、doc-sync
 
