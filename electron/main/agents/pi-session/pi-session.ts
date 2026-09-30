@@ -396,6 +396,7 @@ export class PiSession extends EventEmitter {
       groupId: this.config.groupId ?? null,
       hasWorkspace: !!this.config.workspacePath,
       profile: subAgentProfile ?? null,
+      sceneOverride: this.config.role === 'sub' ? 'sub' : this.config.executor ? 'executor' : undefined,
     });
 
     // ---- group context ----
@@ -440,6 +441,11 @@ export class PiSession extends EventEmitter {
     const passWorkspaceFilter = (e: SkillEntry): boolean =>
       enabledSkillsSet.has(e.name) && !disabledPackSkills.has(e.name);
 
+    // skillsOverride 是权威清单，绕过工作区 enabledSkills 与包总开关两层闸：code-impl 挂 staged-execution 不依赖工作区 code-workflow 开关
+    const skillsOverrideSet = this.config.skillsOverride && !isSubAgent
+      ? new Set(this.config.skillsOverride)
+      : null;
+
     let skillEntries: SkillEntry[];
     let skillIndexText: string;
     if (isSubAgent && subAgentProfile) {
@@ -453,6 +459,9 @@ export class PiSession extends EventEmitter {
           user: userSkillsDir,
         },
       );
+      skillIndexText = formatSkillIndexForPrompt(skillEntries);
+    } else if (skillsOverrideSet) {
+      skillEntries = allSkillEntries.filter((e) => skillsOverrideSet.has(e.name));
       skillIndexText = formatSkillIndexForPrompt(skillEntries);
     } else {
       skillEntries = allSkillEntries.filter(passWorkspaceFilter);

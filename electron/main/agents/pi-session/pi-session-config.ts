@@ -29,6 +29,8 @@ export interface PiSessionConfig {
   };
   /** role='sub' 时传入的 Profile 配置，驱动提示词段/工具/skill 的按需加载 */
   subAgentProfile?: SubAgentProfile;
+  /** 明确装载的 skill 全集（executor 场景按 execProfile 传入）；undefined = 不覆盖，跟随工作区 enabledSkills */
+  skillsOverride?: string[];
   permissionMode: PiPermissionMode;
   basicToolPermissions: BasicToolPermissions;
   /** usage turnIndex 起始值：manager 建会话时从该会话 usage JSONL 尾部 ENTRY 读出（+1），缺省 0（全新会话） */
