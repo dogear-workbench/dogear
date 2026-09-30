@@ -11,10 +11,26 @@ import type { SystemPromptSegmentKey } from './session-append-templates.js';
 
 export type AbilityPackType = 'prompt-only' | 'segment-tools' | 'skill-packs';
 
+export type AbilityCategory = 'system' | 'context-memory' | 'extension';
+
+export interface AbilityCategoryMeta {
+  key: AbilityCategory;
+  label: string;
+  description: string;
+}
+
+/** 能力页/场景页共用的三大类分组头（有序），分组是展示维度不是配置单元，无开关 */
+export const ABILITY_CATEGORIES: readonly AbilityCategoryMeta[] = [
+  { key: 'system', label: '系统功能', description: '核心会话流程的基础能力，建议保持开启' },
+  { key: 'context-memory', label: '上下文与记忆', description: '跨会话的上下文承载与记忆沉淀能力' },
+  { key: 'extension', label: '扩展能力', description: '按需选装的领域扩展，默认关闭' },
+];
+
 export interface AbilityPack {
   key: string;
   label: string;
   description: string;
+  category: AbilityCategory;
   type: AbilityPackType;
   segmentKeys?: SystemPromptSegmentKey[];
   /**
@@ -57,6 +73,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'workspace-rules',
     label: '工作区规则',
     description: '读取工作区 agent.md 注入每个会话，承载项目级约定与偏好',
+    category: 'system',
     type: 'prompt-only',
     defaultEnabled: true,
   },
@@ -64,6 +81,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'global-rules',
     label: '全局规则',
     description: '读取用户级全局规则注入每个会话，跨工作区生效',
+    category: 'system',
     type: 'prompt-only',
     defaultEnabled: true,
   },
@@ -71,6 +89,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'memory',
     label: '记忆系统',
     description: '记忆工具（召回/保存）+ 记忆写入纪律段，绑定工作区时生效',
+    category: 'context-memory',
     type: 'segment-tools',
     segmentKeys: ['memory-guidance'],
     toolGroups: ['dogear-memory'],
@@ -80,6 +99,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'notes',
     label: '笔记卡片',
     description: '笔记卡片 + 任务系统两组工具 + 存卡纪律段，主会话且绑定工作区时生效（任务执行会话派单保底不受开关约束）',
+    category: 'system',
     type: 'segment-tools',
     segmentKeys: ['notes-discipline'],
     toolGroups: ['dogear-notes', 'dogear-tasks'],
@@ -89,6 +109,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'workspace-git',
     label: 'git 版本管理',
     description: '工作区双层 git 工具组（查历史/diff/blame、正式提交、回退、自动快照）+ git 历史意识段，绑定工作区时生效（主/子会话）',
+    category: 'context-memory',
     type: 'segment-tools',
     segmentKeys: ['git-history-guidance'],
     toolGroups: ['dogear-git'],
@@ -98,6 +119,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'group-context',
     label: '会话组',
     description: '组上下文段（组头 + 话题状态）+ 组状态卡工具，会话属于某个组时生效',
+    category: 'context-memory',
     type: 'segment-tools',
     segmentKeys: ['group-context'],
     toolGroups: ['dogear-group-context'],
@@ -107,6 +129,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'agent-collab',
     label: 'Agent 协作',
     description: '派遣子会话、会话组共享区、兄弟会话三组工具 + 主会话协作规范段 + 子会话交付契约段（子会话强制生效）',
+    category: 'system',
     type: 'segment-tools',
     segmentKeys: ['main-agent-delegation', 'sub-agent-contract'],
     toolGroups: ['dogear-delegation', 'dogear-group', 'dogear-sibling'],
@@ -116,6 +139,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'shunt',
     label: '会话分流',
     description: '岔题分流：岔题时输出建议卡，用户确认后平级分出新会话/新话题或记为笔记（note 动作依赖笔记卡片包的建卡工具）',
+    category: 'system',
     type: 'segment-tools',
     segmentKeys: ['shunt-guidance'],
     toolGroups: ['dogear-shunt'],
@@ -126,6 +150,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'stock',
     label: '股票分析',
     description: '股票分析与选股 skill + 行情/分析/公告/候选池四个工具包；子会话 Profile 独立生效，不受此开关约束',
+    category: 'extension',
     type: 'skill-packs',
     skills: ['stock-analysis', 'stock-picking'],
     toolGroups: ['stock-quote', 'stock-analysis', 'stock-announcement', 'stock-picking'],
@@ -136,6 +161,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'article',
     label: '文章解析',
     description: '文章解析 skill + 文章管理工具包（读取/列举工作区文章）；子会话 Profile 独立生效，不受此开关约束',
+    category: 'extension',
     type: 'skill-packs',
     skills: ['article-parser'],
     toolGroups: ['article'],
@@ -146,6 +172,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'browser',
     label: '浏览器',
     description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，风控后备）；子会话 Profile 独立生效，不受此开关约束',
+    category: 'extension',
     type: 'skill-packs',
     skills: ['browser-exploration'],
     toolGroups: ['browser', 'dogear-extension'],
@@ -156,6 +183,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'web-mcp',
     label: '联网搜索',
     description: 'GLM 联网搜索与网页读取工具包（web_search_prime / webReader），API 直出快档，与浏览器工具互补；需在设置页配置 GLM Coding Plan API Key；子会话 Profile 独立生效，不受此开关约束',
+    category: 'extension',
     type: 'skill-packs',
     toolGroups: ['web-mcp'],
     subAutonomous: true,
@@ -165,6 +193,7 @@ export const ABILITY_PACKS: AbilityPack[] = [
     key: 'code-workflow',
     label: '代码工作流',
     description: '规划、实施、调试等开发流程 skill，无工具包',
+    category: 'extension',
     type: 'skill-packs',
     skills: [
       'brainstorming',
