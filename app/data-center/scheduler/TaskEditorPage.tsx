@@ -21,6 +21,7 @@ import type {
   ScheduledTaskWithNextRun,
 } from '@/types/scheduler';
 import { CustomToolPacksSection } from './CustomToolPacksSection';
+import { CustomSkillsSection } from './CustomSkillsSection';
 import { TriggerListEditor } from './TriggerListEditor';
 import { findTriggerOverlaps } from './utils';
 import type { WorkspaceOption } from './utils';
@@ -203,6 +204,10 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
               onChange={(v) => patch({ toolPacksOverride: v })}
             />
           )}
+          <CustomSkillsSection
+            selected={draft.skillsOverride}
+            onChange={(v) => patch({ skillsOverride: v })}
+          />
           <section className="space-y-2">
             <label className="text-xs text-muted-foreground">触发器（任一命中即触发）</label>
             <TriggerListEditor

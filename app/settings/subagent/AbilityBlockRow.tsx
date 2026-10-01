@@ -80,31 +80,3 @@ export function SkillCheckItem({ name, title, description, checked, onToggle }: 
     </label>
   );
 }
-
-interface ChannelSwitchItemProps {
-  label: string;
-  description: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-}
-
-export function ChannelSwitchItem({
-  label,
-  description,
-  checked,
-  onCheckedChange,
-}: ChannelSwitchItemProps) {
-  return (
-    <div className="flex items-center gap-2 p-1 rounded hover:bg-muted/30 transition-colors">
-      <div className="flex-1 min-w-0">
-        <div className="text-sm">{label}</div>
-        <div className="text-xs text-muted-foreground">{description}</div>
-      </div>
-      <Switch
-        checked={checked}
-        onCheckedChange={onCheckedChange}
-        aria-label={`${checked ? '关闭' : '开启'} ${label}`}
-      />
-    </div>
-  );
-}

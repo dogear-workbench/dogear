@@ -6,7 +6,7 @@ import { client } from '@/lib/client';
 import { Switch } from '@/components/ui/switch';
 import { ModelSelector } from '@/components/ModelSelector';
 import type { AbilityPackView } from '../../electron/main/tipc/ability';
-import { AbilityBlockRow, ChannelSwitchItem, SkillCheckItem } from './subagent/AbilityBlockRow';
+import { AbilityBlockRow, SkillCheckItem } from './subagent/AbilityBlockRow';
 import {
   createDefaultSubAgentProfile,
   BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
@@ -119,19 +119,12 @@ function ProfileEditor({
     updateAbility(field, next);
   };
 
-  // 块开：双通道都关时双置 true（已开任一通道则不动）；块关：双清。细项勾选独立保存，重开即恢复
+  // 块开关直写双通道字段：装配侧内嵌浏览器看 browser、扩展通道看 extension，无细选入口，两通道随开关齐开齐关
   const setBrowserBlock = (on: boolean) => {
-    updateDraft((prev) => {
-      const next = { ...prev.enabledAbilities };
-      if (on && !next.browser && !next.extension) {
-        next.browser = true;
-        next.extension = true;
-      } else if (!on) {
-        next.browser = false;
-        next.extension = false;
-      }
-      return { ...prev, enabledAbilities: next };
-    });
+    updateDraft((prev) => ({
+      ...prev,
+      enabledAbilities: { ...prev.enabledAbilities, browser: on, extension: on },
+    }));
   };
 
   const skillCheckItems = (pack: AbilityPackView) =>
@@ -166,26 +159,9 @@ function ProfileEditor({
         <AbilityBlockRow
           key={pack.key}
           title={pack.label}
-          description={pack.description}
+          description={`${pack.description}；内嵌与扩展两个通道随开关一起开或一起关`}
           checked={ab.browser === true || ab.extension === true}
           onCheckedChange={setBrowserBlock}
-          detailCount={`${[ab.browser, ab.extension].filter(Boolean).length}/2`}
-          details={
-            <>
-              <ChannelSwitchItem
-                label="内嵌浏览器"
-                description="dogear-browser 工具组（读文章/搜索/原子探索）"
-                checked={ab.browser === true}
-                onCheckedChange={(v) => updateAbility('browser', v)}
-              />
-              <ChannelSwitchItem
-                label="浏览器扩展"
-                description="dogear-extension 扩展工具组（真实浏览器已连接标签页，仅限已授权域名）"
-                checked={ab.extension === true}
-                onCheckedChange={(v) => updateAbility('extension', v)}
-              />
-            </>
-          }
         />
       );
     }

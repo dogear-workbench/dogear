@@ -42,6 +42,8 @@ export interface CustomScheduledTask {
   modelSelection?: ModelSelection;
   /** undefined = 跟随工作区 enabledToolPacks */
   toolPacksOverride?: string[];
+  /** 任务级 skill 挂载（undefined = 不挂载；空数组经 sanitize 归一为 undefined） */
+  skillsOverride?: string[];
 }
 
 // 内置任务已全量下线；存量磁盘 kind:'builtin' 条目由主进程 isRetiredBuiltinTask 过滤隐藏（数据保留）
