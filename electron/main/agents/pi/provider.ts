@@ -41,7 +41,7 @@ function lookupCatalogModel(wireApi: PiWireApi, modelId: string) {
   };
 }
 
-function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string; contextWindow?: number }): Model<Api> {
+function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string; contextWindow?: number; maxTokens?: number }): Model<Api> {
   const wireApi = resolveWireApi(profile);
   const catalog = lookupCatalogModel(wireApi, entry.id);
   const catalogEntry = lookupCatalogEntry(entry.id);
@@ -57,7 +57,7 @@ function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string
     input: ['text', 'image'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: entry.contextWindow ?? catalogEntry?.contextWindow ?? FALLBACK_CONTEXT_WINDOW,
-    maxTokens: catalogEntry?.maxTokens ?? 8192,
+    maxTokens: entry.maxTokens ?? catalogEntry?.maxTokens ?? 8192,
   };
 }
 

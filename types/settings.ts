@@ -24,7 +24,7 @@ export interface ModelProfile {
   /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
   piWireApi?: PiWireApi;
   /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id；contextWindow 为手填生效窗口，优先于目录查表；pricing 为手填价格（元/百万 tokens），优先于目录默认价 */
-  piModels?: Array<{ id: string; label?: string; contextWindow?: number; pricing?: ModelPricing }>;
+  piModels?: Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing }>;
 }
 
 /**

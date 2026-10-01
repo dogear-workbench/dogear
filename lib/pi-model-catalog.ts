@@ -15,6 +15,7 @@ export const FALLBACK_CONTEXT_WINDOW = 200_000;
 
 /** 渲染层与 electron/main/agents/pi/model-catalog.ts 同源（tsconfig 隔离无法共享一份） */
 const CONTEXT_WINDOWS: Record<string, number> = {};
+const MAX_TOKENS: Record<string, number> = {};
 const CATALOG_SOURCES: Array<Record<string, Model<Api>>> = [
   ANTHROPIC_MODELS,
   OPENAI_MODELS,
@@ -30,8 +31,11 @@ const CATALOG_SOURCES: Array<Record<string, Model<Api>>> = [
 for (const source of CATALOG_SOURCES) {
   for (const [id, model] of Object.entries(source)) {
     CONTEXT_WINDOWS[id] = model.contextWindow;
+    if (model.maxTokens !== undefined) MAX_TOKENS[id] = model.maxTokens;
   }
 }
+
+export const FALLBACK_MAX_TOKENS = 8192;
 
 /** 生效窗口解析链：手填 > 目录查表 > 200K 兜底（与主进程 buildPiModel 保持一致） */
 export function resolveModelWindow(entry: { id: string; contextWindow?: number }): number {
@@ -49,6 +53,10 @@ export function parseContextInput(input: string): number | undefined {
 
 export function lookupContextWindow(modelId: string): number | undefined {
   return CONTEXT_WINDOWS[modelId];
+}
+
+export function lookupMaxTokens(modelId: string): number | undefined {
+  return MAX_TOKENS[modelId];
 }
 
 /** 已知模型默认价（元/百万 tokens）；目录里没有 glm-5.3 系（用户手填 id），DeepSeek 取空闲档价 */

@@ -4,8 +4,10 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   FALLBACK_CONTEXT_WINDOW,
+  FALLBACK_MAX_TOKENS,
   formatContextLabel,
   lookupContextWindow,
+  lookupMaxTokens,
   lookupPricing,
   parseContextInput,
 } from '@/lib/pi-model-catalog';
@@ -15,6 +17,7 @@ export interface PiModelEntry {
   id: string;
   label?: string;
   contextWindow?: number;
+  maxTokens?: number;
   pricing?: ModelPricing;
 }
 
@@ -38,11 +41,13 @@ function buildEntry(
   id: string,
   label: string | undefined,
   contextWindow: number | undefined,
+  maxTokens: number | undefined,
   pricing: ModelPricing | undefined,
 ): PiModelEntry {
   const next: PiModelEntry = { id };
   if (label) next.label = label;
   if (contextWindow !== undefined) next.contextWindow = contextWindow;
+  if (maxTokens !== undefined) next.maxTokens = maxTokens;
   if (pricing !== undefined) next.pricing = pricing;
   return next;
 }
@@ -53,11 +58,15 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
   const [windowDraft, setWindowDraft] = useState('');
   const [windowEditing, setWindowEditing] = useState(false);
   const windowCancelled = useRef(false);
+  const [maxDraft, setMaxDraft] = useState('');
+  const [maxEditing, setMaxEditing] = useState(false);
+  const maxCancelled = useRef(false);
   const [pricingEditing, setPricingEditing] = useState(false);
   const [pricingDraft, setPricingDraft] = useState<Record<PricingField, string>>({ input: '', output: '', cacheRead: '' });
   const pricingCancelled = useRef(false);
 
   const catalogWindow = lookupContextWindow(entry.id);
+  const catalogMax = lookupMaxTokens(entry.id);
   const catalogPricing = lookupPricing(entry.id);
 
   const commitId = () => {
@@ -72,7 +81,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
       window.setTimeout(() => setIdError(false), 1500);
       return;
     }
-    onChange(buildEntry(next, entry.label, entry.contextWindow, entry.pricing));
+    onChange(buildEntry(next, entry.label, entry.contextWindow, entry.maxTokens, entry.pricing));
   };
 
   const startWindowEdit = () => {
@@ -84,14 +93,33 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
   const commitWindow = () => {
     const raw = windowDraft.trim();
     if (raw === '') {
-      if (entry.contextWindow !== undefined) onChange(buildEntry(entry.id, entry.label, undefined, entry.pricing));
+      if (entry.contextWindow !== undefined) onChange(buildEntry(entry.id, entry.label, undefined, entry.maxTokens, entry.pricing));
     } else {
       const parsed = parseContextInput(raw);
       if (parsed !== undefined && parsed !== entry.contextWindow) {
-        onChange(buildEntry(entry.id, entry.label, parsed, entry.pricing));
+        onChange(buildEntry(entry.id, entry.label, parsed, entry.maxTokens, entry.pricing));
       }
     }
     setWindowEditing(false);
+  };
+
+  const startMaxEdit = () => {
+    setMaxDraft(entry.maxTokens !== undefined ? String(entry.maxTokens) : '');
+    maxCancelled.current = false;
+    setMaxEditing(true);
+  };
+
+  const commitMax = () => {
+    const raw = maxDraft.trim();
+    if (raw === '') {
+      if (entry.maxTokens !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, undefined, entry.pricing));
+    } else {
+      const parsed = parseContextInput(raw);
+      if (parsed !== undefined && parsed !== entry.maxTokens) {
+        onChange(buildEntry(entry.id, entry.label, entry.contextWindow, parsed, entry.pricing));
+      }
+    }
+    setMaxEditing(false);
   };
 
   const startPricingEdit = () => {
@@ -108,7 +136,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
     if (pricingCancelled.current) return;
     const raws = Object.fromEntries(PRICING_FIELDS.map(f => [f, pricingDraft[f].trim()])) as Record<PricingField, string>;
     if (PRICING_FIELDS.every(f => raws[f] === '')) {
-      if (entry.pricing !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, undefined));
+      if (entry.pricing !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, undefined));
     } else {
       const merged = {} as Record<PricingField, number>;
       let valid = true;
@@ -126,7 +154,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
       if (valid) {
         const unchanged = entry.pricing !== undefined && PRICING_FIELDS.every(f => entry.pricing![f] === merged[f]);
         if (!unchanged) {
-          onChange(buildEntry(entry.id, entry.label, entry.contextWindow, { input: merged.input, output: merged.output, cacheRead: merged.cacheRead }));
+          onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, { input: merged.input, output: merged.output, cacheRead: merged.cacheRead }));
         }
       }
     }
@@ -202,6 +230,48 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
               : `${formatContextLabel(FALLBACK_CONTEXT_WINDOW)} · 未识别`}
         </button>
       )}
+      {maxEditing ? (
+        <input
+          type="text"
+          autoFocus
+          spellCheck={false}
+          className="h-9 w-24 shrink-0 px-2 text-xs tabular-nums border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
+          value={maxDraft}
+          placeholder="8192 / 32K"
+          onChange={(e) => setMaxDraft(e.target.value)}
+          onBlur={() => {
+            if (!maxCancelled.current) commitMax();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitMax();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              maxCancelled.current = true;
+              setMaxEditing(false);
+            }
+          }}
+        />
+      ) : (
+        <button
+          type="button"
+          title="点击设置单次请求输出上限（thinking 与正文共享额度）；留空回落目录默认 / 8192"
+          className={cn(
+            'shrink-0 text-xs tabular-nums px-2 py-1 rounded border transition-colors',
+            entry.maxTokens !== undefined
+              ? 'text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950'
+              : 'text-muted-foreground hover:bg-muted/50',
+          )}
+          onClick={startMaxEdit}
+        >
+          {entry.maxTokens !== undefined
+            ? `${formatContextLabel(entry.maxTokens)} · 手动`
+            : catalogMax !== undefined
+              ? `≤${formatContextLabel(catalogMax)}`
+              : `≤${formatContextLabel(FALLBACK_MAX_TOKENS)} · 默认`}
+        </button>
+      )}
       {pricingEditing ? (
         <div
           className="flex items-center gap-1 shrink-0"
@@ -260,7 +330,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
         placeholder={entry.id}
         onChange={(e) => {
           const v = e.target.value;
-          onChange(buildEntry(entry.id, v === '' ? undefined : v, entry.contextWindow, entry.pricing));
+          onChange(buildEntry(entry.id, v === '' ? undefined : v, entry.contextWindow, entry.maxTokens, entry.pricing));
         }}
       />
       <Button variant="ghost" size="sm" onClick={onRemove}>

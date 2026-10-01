@@ -84,14 +84,15 @@ export async function loadSettings(): Promise<AppSettings> {
  * 与三字段均为有限非负数的 pricing（整体保留或整体丢弃）；
  * 按 id 去重保首现顺序；非法元素丢弃；非数组输入返回空数组。
  */
-export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number; pricing?: ModelPricing }> {
+export function normalizePiModels(raw: unknown): Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing }> {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<string>();
-  const result: Array<{ id: string; label?: string; contextWindow?: number; pricing?: ModelPricing }> = [];
+  const result: Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing }> = [];
   for (const item of raw) {
     let id: string;
     let label: string | undefined;
     let contextWindow: number | undefined;
+    let maxTokens: number | undefined;
     let pricing: ModelPricing | undefined;
     if (typeof item === 'string') {
       id = item;
@@ -102,6 +103,9 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
       if (typeof obj.label === 'string' && obj.label !== '') label = obj.label;
       if (typeof obj.contextWindow === 'number' && Number.isInteger(obj.contextWindow) && obj.contextWindow > 0) {
         contextWindow = obj.contextWindow;
+      }
+      if (typeof obj.maxTokens === 'number' && Number.isInteger(obj.maxTokens) && obj.maxTokens > 0) {
+        maxTokens = obj.maxTokens;
       }
       if (obj.pricing && typeof obj.pricing === 'object') {
         const p = obj.pricing as Record<string, unknown>;
@@ -116,9 +120,10 @@ export function normalizePiModels(raw: unknown): Array<{ id: string; label?: str
     if (id === '') continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    const entry: { id: string; label?: string; contextWindow?: number; pricing?: ModelPricing } = { id };
+    const entry: { id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing } = { id };
     if (label !== undefined) entry.label = label;
     if (contextWindow !== undefined) entry.contextWindow = contextWindow;
+    if (maxTokens !== undefined) entry.maxTokens = maxTokens;
     if (pricing !== undefined) entry.pricing = pricing;
     result.push(entry);
   }
