@@ -201,6 +201,11 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {row.count} 份 · 最近 {formatTime(row.lastBackupAt)}
                     </div>
+                    {row.lastSkippedAt && (
+                      <div className="text-xs text-muted-foreground mt-0.5">
+                        内容无变化，已跳过（{formatListTime(row.lastSkippedAt)}）
+                      </div>
+                    )}
                     {row.lastError && (
                       <div className="text-xs text-red-600 mt-0.5 truncate" title={row.lastError}>
                         最近备份失败：{row.lastError}

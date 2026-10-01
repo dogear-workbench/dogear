@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 主进程 skip 链路（签名模块 + last-run 扩展 + isDue 改造 + 调度插点）](./step1-skip-pipeline.md) — 备份行为本身成立，测试验证
-- [ ] [Step 2: 前端跳过状态展示](./step2-ui-status.md) — CategoryCard 提示行 + 文档同步
+- [x] [Step 2: 前端跳过状态展示](./step2-ui-status.md) — CategoryCard 提示行 + 文档同步
 
 ## 全局决策
 
@@ -21,3 +21,7 @@
 - last-run.json 是 registry 排除项不跨设备，签名丢失 → 首次必打一份自愈，无需迁移逻辑
 - 签名计算失败按「有变化」处理，走正常备份
 - 不做跳过计数（YAGNI），只展示最近一次跳过时间
+
+## 完成总结
+
+两步均完成并提交（step1: 625c6714，step2: 见 git log）。调度路径下源内容签名（sha1 of 排序 `entryPath|mtimeMs|size`，复用 packSources 同一套遍历，签名集合 = 打包集合）与 last-run 记录一致时跳过打 zip 只记 skipped；isDue 锚点改 max(最新 zip 时间戳, last-run 执行时间) 消除跳过后的空转；手动「立即备份」与恢复预备份不受影响；面板 CategoryCard 展示「内容无变化，已跳过（时间）」浅色提示。超出计划的保守补强：上次执行失败（ok=false）不进 skip，保持失败重试语义。测试 30/30（含 11 个新用例），build/build:electron/lint 全过。真机验证：等一次调度跳过或手改 last-run.json 某 entry 为 skipped:true 后看备份面板。

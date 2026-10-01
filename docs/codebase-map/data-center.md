@@ -9,7 +9,7 @@
 - `history-panel.tsx` — 执行历史一级面板：类型/状态筛选（类型走后端 source 参数）、10s 可见轮询、分钟 tick 刷新；「正在运行」区显示四类后台任务
 - `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 四类徽章，无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+主题记忆面板
-- `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录（打开 backups/ 根目录）+ 逐项运行 loading + 调度级最近失败红字行）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/最近失败红字/立即备份 + 备份列表展开与恢复 showConfirm（快照还原语义：确认文案明示「快照内不存在的新增文件将被删除」，成功 toast 追加删除计数）；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（五分类元数据，默认值从主进程 BACKUP_CATEGORY_DEFAULTS 导入、tipc client 类型推导、格式化）
+- `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录（打开 backups/ 根目录）+ 逐项运行 loading + 调度级最近失败红字行）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/无变化跳过浅色提示/最近失败红字/立即备份 + 备份列表展开与恢复 showConfirm（快照还原语义：确认文案明示「快照内不存在的新增文件将被删除」，成功 toast 追加删除计数）；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（五分类元数据，默认值从主进程 BACKUP_CATEGORY_DEFAULTS 导入、tipc client 类型推导、格式化）
 - `sync-panel.tsx` + `sync-peer-card/sync-pair-requests/sync-settings/sync-workspace-card/sync-result/sync-utils` — 设备同步面板：本机状态卡（启停/端口/设备 ID）、配对请求卡、在线设备卡（立即同步/解除配对）、同步范围设置（同步项开关+冲突副本+stocks/feishu 可选目录+工作区启停）、结果卡（pull/push/skip/conflict 计数与明细，删除计数与删改冲突独立分区展示，冲突可取对端/留本端裁决）；主进程服务见下方设备同步节
 - `browser-data-panel.tsx` — 浏览器数据面板：全局分区（persist:dogear-browser）概览（磁盘占用/HTTP 缓存/登录站点数）+ 常驻准确性提示（误报可移除）+「我的登录」区（login-observer 检测的登录清单：证据徽章/最近登录时间，每条登出=本地清全量数据不通知服务器/清除数据/移除误报）+「其他站点数据」折叠区（仅清除数据）+ 面板级清缓存/全部清除；全部 showConfirm 含 agent 风险提示；30s 可见轮询；主进程服务与路由见 browser.md
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
@@ -36,7 +36,7 @@
 
 - `data-registry.ts` — 应用数据清单唯一事实源：DataItem 23 条全集（含 `{wsid}` 占位与 `__ws-external__` 外部锚点虚拟路径约定）、`backupSourcesFor`/`sensitiveRelPaths`/`toArchiveRelPath`/`resolveArchiveRelPath` 派生；备份分类 scope（BACKUP_CATEGORY_SCOPES）与同步项（registrySyncItems）都从它派生；已下线文件（dashboard.md 等）不收录（测试锁定）
 - `categories.ts` — 五备份分类（notes-groups/memory/tasks/sessions/app-config）；BACKUP_CATEGORIES 由 registry scopes × settings-types BACKUP_CATEGORY_DEFAULTS 派生，仅显示名本地
-- `index.ts` — runBackup（enqueue 队列同 scope+category 串行互斥，成败均记 last-run）/runBackupAll（调度入口只跑到期分类）/restoreBackup（快照还原：空 zip 拒绝、sessions 恢复前检查运行中会话、预备份用用户 keep、写回后删 registry 源边界内 zip 外文件）/getBackupStatus（行级 lastError + scheduler 调度级状态）
+- `index.ts` — runBackup（enqueue 队列同 scope+category 串行互斥，成败均记 last-run）/runBackupAll（调度入口只跑到期分类，onlyDue 无变化跳过打 zip、记 skipped）/restoreBackup（快照还原：空 zip 拒绝、sessions 恢复前检查运行中会话、预备份用用户 keep、写回后删 registry 源边界内 zip 外文件）/getBackupStatus（行级 lastError/lastSkippedAt + scheduler 调度级状态）
 - `zip-pack.ts` — 打包编排：主进程做锚点反解+stat 产出条目 → zip-pack-worker 线程纯打包（60s 超时）→ 失败/超时回退主进程分片 packEntriesSharded；zip 条目用虚拟前缀路径，恢复时反解写回真实位置
 - `snapshot-restore.ts` — 快照删除：registry 源边界内 zip 外文件删除（锚点反解、symlink 不跟随、工作区注销跳过不误删）
 - `last-run.ts` — `backups/last-run.json` 读写（分类级+调度级最近执行结果与错误，writeChain 串行防互踩）
