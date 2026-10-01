@@ -51,12 +51,16 @@ export async function handleCustomAgentTask(task: AgentTask, taskLogger: any, ct
   }
 
   const { buildCustomToolSet } = await import('../../services/scheduler/custom-agent-tools.js');
-  const { buildCustomAgentPrompt, buildMountedSkillsSection } = await import('../../services/scheduler/custom-agent-prompt.js');
+  const { buildCustomAgentPrompt } = await import('../../services/scheduler/custom-agent-prompt.js');
+  const { loadAllSkillEntries, formatSkillIndexForPrompt, createSkillTool } = await import('../../agents/pi-session/skill-loader.js');
   const tools = await buildCustomToolSet(workspaceId, workspacePath, ctx.configDir, payload.toolPacksOverride);
   const { systemPrompt, prompt } = buildCustomAgentPrompt(payload);
-  const mountedSkillsText = await buildMountedSkillsSection(payload.skillsOverride);
-  const fullSystemPrompt = [systemPrompt, mountedSkillsText].filter(Boolean).join('\n\n');
-  taskLogger.info('工具集组装完成:', tools.map((t) => t.name).join(', '), '| 挂载 skill:', payload.skillsOverride?.join(', ') || '无');
+  const overrideSet = payload.skillsOverride?.length ? new Set(payload.skillsOverride) : null;
+  const skillEntries = overrideSet ? (await loadAllSkillEntries()).filter((e) => overrideSet.has(e.name)) : [];
+  const skillIndexText = formatSkillIndexForPrompt(skillEntries);
+  const fullSystemPrompt = [systemPrompt, skillIndexText].filter(Boolean).join('\n\n');
+  if (skillEntries.length) tools.push(createSkillTool(skillEntries));
+  taskLogger.info('工具集组装完成:', tools.map((t) => t.name).join(', '), '| 挂载 skill:', skillEntries.map((e) => e.name).join(', ') || '无');
 
   const { runOnce } = await import('../pi/run-once.js');
   const abortController = new AbortController();
