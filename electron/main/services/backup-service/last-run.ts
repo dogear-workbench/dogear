@@ -10,6 +10,16 @@ export interface LastRunEntry {
   scope: string | null;
   ok: boolean;
   error: string | null;
+  /** 上次成功备份时的源签名；null = 源无内容；undefined = 旧版记录（首次必打一份重建签名） */
+  signature?: string | null;
+  /** 该次执行为无变化跳过（ok 恒 true、signature 保留上次值） */
+  skipped?: boolean;
+}
+
+export interface CategoryRunExtra {
+  /** undefined = 保留记录中已有值（跳过与失败路径均不改签名） */
+  signature?: string | null;
+  skipped?: boolean;
 }
 
 interface LastRunFile {
@@ -64,10 +74,17 @@ export function recordCategoryRun(
   scope: BackupScope,
   ok: boolean,
   error: string | null,
+  extra?: CategoryRunExtra,
 ): Promise<void> {
   return enqueueWrite(async () => {
     const data = await readLastRun();
-    data.runs[runKey(scope, category)] = toEntry(category, scope, ok, error);
+    const key = runKey(scope, category);
+    const prev = data.runs[key];
+    const entry = toEntry(category, scope, ok, error);
+    const signature = extra?.signature !== undefined ? extra.signature : prev?.signature;
+    if (signature !== undefined) entry.signature = signature;
+    if (extra?.skipped) entry.skipped = true;
+    data.runs[key] = entry;
     await writeLastRun(data);
   });
 }

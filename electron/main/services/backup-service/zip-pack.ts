@@ -66,7 +66,7 @@ export function backupZipPath(scope: BackupScope, fileName: string): string {
 
 /** 源清单 → 打包任务条目：外部锚点源（__ws-external__ 虚拟路径，磁盘上不存在）经 registry 反解出真实路径，
  * zip 内条目仍用虚拟路径；不存在的源跳过 */
-async function resolveSourceEntries(sources: string[]): Promise<PackEntry[]> {
+export async function resolveSourceEntries(sources: string[]): Promise<PackEntry[]> {
   const entries: PackEntry[] = [];
   for (const src of sources) {
     const entryPath = toArchiveRelPath(src);

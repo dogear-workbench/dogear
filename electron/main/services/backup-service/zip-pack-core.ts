@@ -1,3 +1,4 @@
+import fs from 'fs/promises';
 import path from 'path';
 import AdmZip from 'adm-zip';
 
@@ -9,6 +10,45 @@ export interface PackEntry {
   isDir: boolean;
 }
 
+export interface PackFileInfo {
+  /** zip 内文件条目路径（posix） */
+  entryPath: string;
+  mtimeMs: number;
+  size: number;
+}
+
+async function walkPackDir(absDir: string, zipPrefix: string, out: PackFileInfo[]): Promise<void> {
+  let dirents;
+  try {
+    dirents = await fs.readdir(absDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const d of dirents) {
+    const abs = path.join(absDir, d.name);
+    const st = await fs.stat(abs).catch(() => null);
+    if (!st) continue;
+    const zipPath = `${zipPrefix}/${d.name}`;
+    if (st.isDirectory()) await walkPackDir(abs, zipPath, out);
+    else if (st.isFile()) out.push({ entryPath: zipPath, mtimeMs: st.mtimeMs, size: st.size });
+  }
+}
+
+/** 文件级收集：与 addLocalFolder 展开目录所得文件集合一致（stat 跟随符号链接，stat 失败跳过） */
+export async function collectPackFiles(entries: PackEntry[]): Promise<PackFileInfo[]> {
+  const files: PackFileInfo[] = [];
+  for (const entry of entries) {
+    if (!entry.isDir) {
+      const st = await fs.stat(entry.readPath).catch(() => null);
+      if (!st?.isFile()) continue;
+      files.push({ entryPath: entry.entryPath, mtimeMs: st.mtimeMs, size: st.size });
+      continue;
+    }
+    await walkPackDir(entry.readPath, entry.entryPath, files);
+  }
+  return files;
+}
+
 function addEntry(zip: AdmZip, entry: PackEntry): void {
   if (entry.isDir) {
     zip.addLocalFolder(entry.readPath, entry.entryPath);
@@ -17,7 +57,7 @@ function addEntry(zip: AdmZip, entry: PackEntry): void {
   }
 }
 
-/** 零依赖纯打包：worker 与主进程回退共用；返回条目数，0 = 无有效内容（不写盘） */
+/** 纯打包原语：worker 与主进程回退共用；返回条目数，0 = 无有效内容（不写盘） */
 export function packEntriesSync(entries: PackEntry[], outZipPath: string): number {
   const zip = new AdmZip();
   for (const entry of entries) addEntry(zip, entry);

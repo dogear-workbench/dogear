@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 主进程 skip 链路（签名模块 + last-run 扩展 + isDue 改造 + 调度插点）](./step1-skip-pipeline.md) — 备份行为本身成立，测试验证
+- [x] [Step 1: 主进程 skip 链路（签名模块 + last-run 扩展 + isDue 改造 + 调度插点）](./step1-skip-pipeline.md) — 备份行为本身成立，测试验证
 - [ ] [Step 2: 前端跳过状态展示](./step2-ui-status.md) — CategoryCard 提示行 + 文档同步
 
 ## 全局决策

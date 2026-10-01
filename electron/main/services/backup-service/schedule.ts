@@ -5,7 +5,7 @@ import {
   type BackupScope,
 } from './categories.js';
 import { listBackupFiles } from './zip-pack.js';
-import { recordSchedulerRun } from './last-run.js';
+import { readCategoryRun, recordSchedulerRun } from './last-run.js';
 
 const TICK_MS = 30 * 60 * 1000;
 
@@ -15,17 +15,19 @@ const FREQ_INTERVAL_MS: Record<Exclude<BackupFrequency, 'manual'>, number> = {
   monthly: 30 * 24 * 60 * 60 * 1000,
 };
 
-/** 到期判断零状态：扫备份目录最新文件名时间戳 vs 频率间隔；manual 永不自动触发 */
+/** 到期锚点 = max(最新 zip 时间戳, last-run 该 key 执行时间)：跳过记录也能推进锚点，避免每 tick 空转重算签名 */
 export async function isDue(
   category: BackupCategoryKey,
   scope: BackupScope,
   frequency: BackupFrequency,
 ): Promise<boolean> {
   if (frequency === 'manual') return false;
-  const files = await listBackupFiles(scope, category);
-  const latest = files.at(-1);
-  if (!latest) return true;
-  return Date.now() - latest.stamp.getTime() >= FREQ_INTERVAL_MS[frequency];
+  const [files, lastRun] = await Promise.all([listBackupFiles(scope, category), readCategoryRun(category, scope)]);
+  const zipTime = files.at(-1)?.stamp.getTime() ?? 0;
+  const runTime = lastRun ? Date.parse(lastRun.time) : NaN;
+  const anchor = Math.max(zipTime, Number.isNaN(runTime) ? 0 : runTime);
+  if (anchor === 0) return true;
+  return Date.now() - anchor >= FREQ_INTERVAL_MS[frequency];
 }
 
 export type BackupConfigProvider = () => Promise<BackupConfig | null> | BackupConfig | null;

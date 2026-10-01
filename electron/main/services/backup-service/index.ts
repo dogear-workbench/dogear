@@ -25,6 +25,7 @@ import {
 } from './zip-pack.js';
 import { isDue, startScheduler, stopScheduler, type BackupConfigProvider } from './schedule.js';
 import { readCategoryRun, readSchedulerRun, recordCategoryRun, recordSchedulerRun, type LastRunEntry } from './last-run.js';
+import { computeSourceSignature } from './source-signature.js';
 import { deleteFilesOutsideSnapshot } from './snapshot-restore.js';
 
 export * from './categories.js';
@@ -70,6 +71,15 @@ export interface RunBackupOptions {
   keep?: number;
 }
 
+async function computeSourceSignatureQuiet(category: BackupCategoryKey, scope: BackupScope): Promise<string | null> {
+  try {
+    return await computeSourceSignature(await backupSourcesFor(category, scope));
+  } catch (err) {
+    console.warn(`[backup] 签名计算失败，按无签名处理: ${errMsg(err)}`);
+    return null;
+  }
+}
+
 export async function runBackup(
   category: BackupCategoryKey,
   scope: BackupScope,
@@ -81,7 +91,7 @@ export async function runBackup(
     inFlight.add(queueKey);
     try {
       const result = await runBackupInner(category, scope, keep);
-      await recordCategoryRun(category, scope, true, null);
+      await recordCategoryRun(category, scope, true, null, { signature: await computeSourceSignatureQuiet(category, scope) });
       return result;
     } catch (err) {
       await recordCategoryRun(category, scope, false, errMsg(err));
@@ -127,6 +137,21 @@ async function runBackupInner(
   return { key: category, scope, fileName, size: st.size, pruned };
 }
 
+/** 仅调度路径调用：源签名与上次成功备份一致则记跳过；签名计算失败按有变化处理；上次执行失败不跳过 */
+async function trySkipUnchanged(category: BackupCategoryKey, scope: BackupScope): Promise<boolean> {
+  let signature: string | null;
+  try {
+    signature = await computeSourceSignature(await backupSourcesFor(category, scope));
+  } catch (err) {
+    console.warn(`[backup] 签名计算失败，按有变化处理: ${errMsg(err)}`);
+    return false;
+  }
+  const lastRun = await readCategoryRun(category, scope);
+  if (!lastRun?.ok || lastRun.signature === undefined || lastRun.signature !== signature) return false;
+  await recordCategoryRun(category, scope, true, null, { skipped: true });
+  return true;
+}
+
 export interface RunAllOptions {
   /** 调度 tick 用：只跑到期分类，且该 scope+key 进行中则跳过 */
   onlyDue?: boolean;
@@ -145,6 +170,7 @@ export async function runBackupAll(config?: BackupConfig | null, opts?: RunAllOp
         if (opts?.onlyDue) {
           if (inFlight.has(scopeQueueKey(def.key, scope))) continue;
           if (!(await isDue(def.key, scope, conf.frequency))) continue;
+          if (await trySkipUnchanged(def.key, scope)) continue;
         }
         try {
           results.push(await runBackup(def.key, scope, { keep: conf.keep }));
@@ -313,6 +339,8 @@ export interface BackupScopeStatus {
   due: boolean;
   /** 最近一次执行失败原因（任何来源，成功执行后清除）；null = 上次执行成功 */
   lastError: string | null;
+  /** 最近一次无变化跳过时间（仅当最近一次执行为跳过时非空） */
+  lastSkippedAt: string | null;
 }
 
 export interface BackupSchedulerStatus {
@@ -346,6 +374,7 @@ export async function getBackupStatus(
           lastBackupAt: last ? last.stamp.toISOString() : null,
           due: conf.enabled && (await isDue(def.key, scope, conf.frequency)),
           lastError: toError(lastRun),
+          lastSkippedAt: lastRun?.skipped ? lastRun.time : null,
         });
       }
     }
