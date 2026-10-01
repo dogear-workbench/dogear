@@ -6,9 +6,11 @@ import {
   HandshakeHelloSchema,
   ManifestResponseBodySchema,
   PairResponseBodySchema,
+  type FileDeleteRequest,
   type FilePushMeta,
   type HandshakeHello,
   type ManifestResponseBody,
+  type Tombstone,
 } from './protocol.js';
 
 export interface PeerEndpoint {
@@ -62,12 +64,18 @@ export async function fetchManifest(
   hello: HandshakeHello,
   entries: { relPath: string; size: number; mtimeMs: number }[],
   workspaceMap?: Record<string, { remoteWsid?: string; enabled: boolean }>,
+  tombstones?: Record<string, Tombstone>,
   timeoutMs = 120_000,
 ): Promise<ManifestResponseBody> {
   const res = await fetch(peerUrl(peer, '/manifest'), {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...authHeaders(auth.deviceId, auth.secret) },
-    body: JSON.stringify({ hello, entries, ...(workspaceMap ? { workspaceMap } : {}) }),
+    body: JSON.stringify({
+      hello,
+      entries,
+      ...(workspaceMap ? { workspaceMap } : {}),
+      ...(tombstones && Object.keys(tombstones).length > 0 ? { tombstones } : {}),
+    }),
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!res.ok) {
@@ -75,6 +83,33 @@ export async function fetchManifest(
     throw new Error(`POST /manifest HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`);
   }
   return ManifestResponseBodySchema.parse(await res.json());
+}
+
+export type DeleteFileResult = { ok: true; alreadyGone?: boolean } | { ok: false; status: number; reason: string };
+
+/**
+ * 删除传播（v3）：请求对端删除文件。expectedHash = 请求方基线中该文件的内容 hash，
+ * 接收端本文件 hash 一致（对端未改）才执行删除，改过则 409 拒绝（请求方记删改冲突）。
+ * 404 视为对端已无此文件（传播目标已达成，alreadyGone）。
+ */
+export async function deletePeerFile(
+  peer: PeerEndpoint,
+  auth: { deviceId: string; secret: string },
+  relPath: string,
+  expectedHash: string,
+): Promise<DeleteFileResult> {
+  const res = await fetch(peerUrl(peer, '/file'), {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json', ...authHeaders(auth.deviceId, auth.secret) },
+    body: JSON.stringify({ relPath, expectedHash } satisfies FileDeleteRequest),
+    signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+  });
+  if (res.status === 404) return { ok: true, alreadyGone: true };
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    return { ok: false, status: res.status, reason: text.slice(0, 200) || `HTTP ${res.status}` };
+  }
+  return { ok: true };
 }
 
 export async function pullFile(

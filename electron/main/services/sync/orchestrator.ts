@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { app } from 'electron';
 import { loadSettings } from '../settings-service.js';
-import { buildManifest, diffManifests, excludesFromSyncOptions, hashEntries, sha256File, type ManifestOptions } from './manifest.js';
+import { buildManifest, diffManifests, excludesFromSyncOptions, hashEntries, sha256File, tombstoneCandidates, type ManifestOptions } from './manifest.js';
 import {
   applyIncoming,
   conflictCopyRelPath,
@@ -16,8 +16,8 @@ import {
   type IncomingApplyItem,
   type OutgoingPushItem,
 } from './apply.js';
-import { fetchManifest, pullFile, pushFile, type PeerEndpoint } from './client.js';
-import { getDataDir, readSyncStateFrom, withSyncStateLock, writeSyncStateTo } from './sync-state.js';
+import { fetchManifest, pullFile, pushFile, deletePeerFile, type PeerEndpoint } from './client.js';
+import { getDataDir, mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
 import { ensureSelfHello } from './pairing.js';
 import {
   buildRemoteManifestView,
@@ -25,10 +25,17 @@ import {
   enabledWorkspaceIdsOf,
   learnReverseWorkspaceMap,
   listLocalWorkspaceIds,
+  toLocalView,
   toRemoteRelPath,
   type WorkspaceMetaItem,
 } from './workspace-map.js';
 import { SYNC_PROTOCOL_VERSION, type DiffConflict, type FileEntry, type SkippedEntry } from './protocol.js';
+import {
+  applyPeerTombstones,
+  propagateLocalDeletes,
+  type DeleteConflict,
+  type PropagationTarget,
+} from './tombstone.js';
 
 export type SyncReportStatus = 'completed' | 'failed' | 'blocked' | 'in-progress';
 
@@ -42,8 +49,12 @@ export interface SyncReport {
   peerName?: string;
   pulled: number;
   pushed: number;
+  /** 删除传播数：本端跟随对端墓碑删除 + 驱动对端删除成功（v3） */
+  deleted?: number;
   /** 待用户处理的冲突（本轮已跳过未传输）；下次同步带 conflictResolutions 裁决后执行 */
   conflicts: string[];
+  /** 删改冲突（v3）：删除与修改同时发生，保守保留文件未执行删除；kind 区分哪侧删除哪侧保留 */
+  deleteConflicts?: DeleteConflict[];
   /** 仅拉取档按 mtime 自动取新者的冲突文件；败方留 .conflict-<胜方短ID> 副本可换回 */
   autoResolved?: Array<{ relPath: string; winner: 'local' | 'remote' }>;
   /** 本次同步方向（缺省 pull） */
@@ -121,7 +132,9 @@ export async function runSync(peer: RunSyncPeer, options: RunSyncOptions = {}): 
     peerName: peer.deviceName,
     pulled: 0,
     pushed: 0,
+    deleted: 0,
     conflicts: [],
+    deleteConflicts: [],
     autoResolved: [],
     direction: options.direction ?? 'pull',
     skipped: [],
@@ -187,8 +200,23 @@ async function runSyncInternal(
   };
 
   const local = await buildManifest(dataDir, manifestOptions);
-  // 请求体携带本端映射供对端反向学习（映射只在一端配一次）；对端也在响应里带它的映射
-  const remoteManifest = await fetchManifest(peer, auth, selfHello, local, peerState?.workspaceMap);
+  // 墓碑准备（v3）：历史墓碑 + 本轮新删除候选（基线有、现清单无；正式落盘在收尾锁内）。
+  // 本轮候选必须同轮参与传播与防复活，不能等下轮墓碑——否则本轮 diff 会把删除判成 remote-only 复活拉回
+  const historyTombstones: TombstoneMap = preSyncState.tombstones ?? {};
+  const freshDeleteRelPaths = tombstoneCandidates(peerState?.lastManifest ?? [], local, {
+    excludes: manifestOptions.excludes,
+    enabledWorkspaceIds: manifestOptions.enabledWorkspaceIds,
+  });
+  const localTombstoneSet = new Set([...Object.keys(historyTombstones), ...freshDeleteRelPaths]);
+  const requestTombstones: TombstoneMap = { ...historyTombstones };
+  if (freshDeleteRelPaths.length > 0) {
+    const now = Date.now();
+    for (const relPath of freshDeleteRelPaths) {
+      requestTombstones[relPath] = { deletedAt: now, deviceId: selfHello.deviceId };
+    }
+  }
+  // 请求体携带本端映射供对端反向学习（映射只在一端配一次）；对端也在响应里带它的映射与墓碑
+  const remoteManifest = await fetchManifest(peer, auth, selfHello, local, peerState?.workspaceMap, requestTombstones);
   const remoteHello = {
     protocolVersion: remoteManifest.hello.protocolVersion,
     appVersion: remoteManifest.hello.appVersion,
@@ -231,9 +259,27 @@ async function runSyncInternal(
     const hash = candidateHashByRemote.get(v.remoteRelPath);
     return hash ? { ...v.entry, hash } : v.entry;
   });
+  // 对端墓碑折算本端视角（key 是对端路径）；旧版对端无 tombstones 字段 → 空集合 = 删除传播整体禁用，
+  // 保持 v2 行为（也避免 DELETE /file 打到无此端点的旧版被 404 误判为「已删」）
+  const peerSupportsDelete = remoteHello.protocolVersion >= 3;
+  const peerTombstoneSet = new Set<string>();
+  if (peerSupportsDelete && remoteManifest.tombstones) {
+    for (const remoteRelPath of Object.keys(remoteManifest.tombstones)) {
+      const view = toLocalView(mapCtx, remoteRelPath);
+      if (view.kind === 'pass' || view.kind === 'map') peerTombstoneSet.add(view.localRelPath);
+    }
+  }
 
   const baseline = peerState?.lastManifest;
-  const diff = await diffManifests({ root: dataDir, local, remote: remoteEntries, baseline, excludes: manifestOptions.excludes });
+  const diff = await diffManifests({
+    root: dataDir,
+    local,
+    remote: remoteEntries,
+    baseline,
+    excludes: manifestOptions.excludes,
+    localTombstones: peerSupportsDelete ? localTombstoneSet : undefined,
+    remoteTombstones: peerSupportsDelete ? peerTombstoneSet : undefined,
+  });
 
   const selfShort = shortDeviceId(selfHello.deviceId);
   const peerShort = shortDeviceId(peer.deviceId);
@@ -262,6 +308,37 @@ async function runSyncInternal(
   let mergedFiles: string[] = [];
   let pulled = 0;
   let pushed = 0;
+  let deleted = 0;
+  const deleteConflicts: DeleteConflict[] = [];
+
+  // ── 删除传播执行（v3；方向性：删除动作始终朝非权威侧走）──
+  // 对端已删、本端仍有（peerDeleted）：pull/both 档本端跟随（未改才删）；push 档对端非权威不跟随
+  if (peerSupportsDelete && direction !== 'push' && diff.peerDeleted.length > 0) {
+    const baselineHashes = new Map((baseline ?? []).map((e) => [e.relPath, e.hash]));
+    const outcome = await applyPeerTombstones(dataDir, diff.peerDeleted, baselineHashes);
+    deleted += outcome.deleted.length;
+    deleteConflicts.push(...outcome.conflicts);
+    skipped.push(...outcome.skipped);
+  }
+  // 本端已删、对端仍有（deletePropagation）：push/both 档驱动对端删；pull 档不碰对端不驱动
+  if (peerSupportsDelete && direction !== 'pull' && diff.deletePropagation.length > 0) {
+    const baselineHashes = new Map((baseline ?? []).map((e) => [e.relPath, e.hash]));
+    const targets: PropagationTarget[] = [];
+    for (const entry of diff.deletePropagation) {
+      const remoteRelPath = remotePathByLocal.get(entry.relPath);
+      if (!remoteRelPath) {
+        skipped.push({ relPath: entry.relPath, reason: '本端工作区未建映射，删除传播跳过' });
+        continue;
+      }
+      targets.push({ entry, remoteRelPath });
+    }
+    const outcome = await propagateLocalDeletes(targets, baselineHashes, (target, expectedHash) =>
+      deletePeerFile(peer, auth, target.remoteRelPath, expectedHash),
+    );
+    deleted += outcome.deletedOnPeer.length;
+    deleteConflicts.push(...outcome.conflicts);
+    skipped.push(...outcome.skipped);
+  }
 
   // ── 记录型文件 merge 路由（在 conflict 裁决循环之前）──
   // 命中 merge registry 的记录文件靠条目级合并收敛（幂等），不进 LWW 自动裁决/人工挂起：
@@ -424,6 +501,18 @@ async function runSyncInternal(
       const settingsOnDisk = await readSettingsRaw(dataDir);
       if (settingsOnDisk) nextState.peers[peer.deviceId].settingsBaseline = settingsOnDisk;
     }
+    // 本轮新删除候选落盘为墓碑（deletedAt 保持 requestTombstones 记录的事实时刻）；
+    // mergeTombstones 内部顺带过期/超限清理
+    if (freshDeleteRelPaths.length > 0) {
+      nextState.tombstones = mergeTombstones(
+        nextState.tombstones,
+        freshDeleteRelPaths.map((relPath) => ({
+          relPath,
+          deviceId: selfHello.deviceId,
+          deletedAt: requestTombstones[relPath].deletedAt,
+        })),
+      );
+    }
     await writeSyncStateTo(dataDir, nextState);
     return learned;
   });
@@ -440,7 +529,9 @@ async function runSyncInternal(
     ok: true,
     pulled,
     pushed,
+    deleted,
     conflicts,
+    deleteConflicts,
     autoResolved,
     skipped,
     unmappedWorkspaces: remoteView.unmappedWorkspaces.length > 0 ? remoteView.unmappedWorkspaces : undefined,

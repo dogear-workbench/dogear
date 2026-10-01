@@ -159,10 +159,12 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       if (report.status === 'completed') {
         const extra = [
           report.conflicts.length > 0 ? `待处理冲突 ${report.conflicts.length}` : null,
+          (report.deleteConflicts?.length ?? 0) > 0 ? `删改冲突 ${report.deleteConflicts!.length}` : null,
           report.skipped.length > 0 ? `跳过 ${report.skipped.length}` : null,
         ].filter(Boolean);
         const directionLabel = report.direction === 'push' ? '仅推送' : report.direction === 'both' ? '双向' : '仅拉取';
-        toast.success(`同步完成（${directionLabel}）：拉取 ${report.pulled} · 推送 ${report.pushed}`, {
+        const counts = report.deleted ? `拉取 ${report.pulled} · 推送 ${report.pushed} · 删除 ${report.deleted}` : `拉取 ${report.pulled} · 推送 ${report.pushed}`;
+        toast.success(`同步完成（${directionLabel}）：${counts}`, {
           description: extra.length > 0 ? extra.join(' · ') : undefined,
         });
       } else if (report.status === 'failed') {

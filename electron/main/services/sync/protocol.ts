@@ -2,7 +2,8 @@ import { z } from 'zod';
 
 export const SYNC_APP_ID = 'dogear';
 // v2：同步范围可配置化（excludes 对称过滤，shadow-git 与 .conflict-* 默认不再同步）
-export const SYNC_PROTOCOL_VERSION = 2;
+// v3：墓碑删除传播（/manifest 双向携墓碑 + DELETE /file 删除端点）
+export const SYNC_PROTOCOL_VERSION = 3;
 
 export const FileEntrySchema = z.object({
   relPath: z.string().min(1),
@@ -40,13 +41,23 @@ export const WorkspaceMetaSchema = z.object({
 });
 export type WorkspaceMetaItem = z.infer<typeof WorkspaceMetaSchema>;
 
+/** 删除墓碑：relPath → { 删除时刻, 执行删除的设备 }；key 为记录端视角路径，接收方负责映射折算 */
+export const TombstoneSchema = z.object({
+  deletedAt: z.number(),
+  deviceId: z.string().min(1),
+});
+export type Tombstone = z.infer<typeof TombstoneSchema>;
+
 export const ManifestRequestBodySchema = z.object({
   hello: HandshakeHelloSchema,
   entries: z.array(FileEntrySchema),
   /** 请求方自己的 workspaceMap（供对端反向学习）；旧版无此字段 */
   workspaceMap: z.record(z.string(), WorkspaceMapEntrySchema).optional(),
+  /** 请求方删除墓碑（v3）；删除由请求方经 DELETE /file 驱动，对端当前不据此执行删除，协议对称预留 */
+  tombstones: z.record(z.string(), TombstoneSchema).optional(),
 });
-export type ManifestRequestBody = z.infer<typeof ManifestRequestBodySchema>;;
+export type ManifestRequestBody = z.infer<typeof ManifestRequestBodySchema>;
+
 
 export const CandidateHashSchema = z.object({
   relPath: z.string().min(1),
@@ -62,8 +73,17 @@ export const ManifestResponseBodySchema = z.object({
   workspaceMap: z.record(z.string(), WorkspaceMapEntrySchema).optional(),
   /** 响应方工作区概要（待映射区展示名称/会话数/最后更新） */
   workspaceMeta: z.array(WorkspaceMetaSchema).optional(),
+  /** 响应方（对端）删除墓碑（v3）；缺省 = 旧版对端，删除传播禁用 */
+  tombstones: z.record(z.string(), TombstoneSchema).optional(),
 });
 export type ManifestResponseBody = z.infer<typeof ManifestResponseBodySchema>;
+
+export const FileDeleteRequestSchema = z.object({
+  relPath: z.string().min(1),
+  /** 请求方基线中该文件的内容 hash：接收端本文件 hash 一致（未改）才允许删除 */
+  expectedHash: z.string().length(64),
+});
+export type FileDeleteRequest = z.infer<typeof FileDeleteRequestSchema>;
 
 export const FilePullRequestSchema = z.object({
   relPath: z.string().min(1),
@@ -106,4 +126,8 @@ export interface DiffResult {
   conflict: DiffConflict[];
   skipped: SkippedEntry[];
   same: number;
+  /** 本端已删（墓碑命中）、对端仍有文件：需驱动对端删除或报删改冲突（对端改过则保守保留对端版本） */
+  deletePropagation: FileEntry[];
+  /** 对端已删（对端墓碑命中）、本端仍有文件：本端未改则跟随删除，改过则保守保留本端版本 */
+  peerDeleted: FileEntry[];
 }

@@ -14,7 +14,7 @@
 - [x] [Step 4: 恢复升级快照还原](./step4-restore-snapshot.md) — 删多余文件、预备份 keep、会话防护、缓存失效
 - [x] [Step 5: 同步堵洞（轻量组）](./step5-sync-fixes.md) — D1 push 校验、D3 副本时间戳、F1 flag 接入、U6
 - [x] [Step 6: settings 字段级三方合并](./step6-settings-merge.md) — D2 修复 + sync-state 加锁（F5）
-- [ ] [Step 7: 墓碑删除传播](./step7-tombstones.md) — 协议 v3、删除指令、删改冲突、UI
+- [x] [Step 7: 墓碑删除传播](./step7-tombstones.md) — 协议 v3、删除指令、删改冲突、UI
 - [ ] [Step 8: 收尾](./step8-wrapup.md) — doc-sync、轻项清理、完成总结
 
 ## 全局决策

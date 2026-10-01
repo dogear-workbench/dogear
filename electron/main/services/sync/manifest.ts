@@ -228,6 +228,36 @@ export interface DiffInput {
   baseline?: FileEntry[];
   /** 本端同步范围排除：对端清单命中者跳过不进 pull/冲突集合（对称过滤，防 remote-only 判定架空排除） */
   excludes?: ManifestExcludes;
+  /** 本端删除墓碑（含本轮新生成候选）：remote-only 且命中 → 不拉取，进 deletePropagation 驱动对端删除 */
+  localTombstones?: Set<string>;
+  /** 对端删除墓碑（已折算本端视角）：local-only 且命中 → 不推送，进 peerDeleted 跟随删除或删改冲突 */
+  remoteTombstones?: Set<string>;
+}
+
+/**
+ * 删除候选（墓碑生成源，纯函数）：上轮基线有、本轮清单无的 relPath。
+ * 排除路径跳过（关闭同步项/可选目录不是删除）；settings.json 永不走墓碑（含配对密钥，误删断配对）；
+ * 已暂停工作区路径跳过（清单不含它是开关状态而非删除事实）。
+ * merge 记录文件的条目级删除天然不命中（文件仍在清单），仅整文件删除会出现在此。
+ */
+export function tombstoneCandidates(
+  prevBaseline: FileEntry[],
+  current: FileEntry[],
+  options?: { excludes?: ManifestExcludes; enabledWorkspaceIds?: string[] },
+): string[] {
+  const currentSet = new Set(current.map((e) => e.relPath));
+  const enabled = options?.enabledWorkspaceIds === undefined ? undefined : new Set(options.enabledWorkspaceIds);
+  const out: string[] = [];
+  for (const entry of prevBaseline) {
+    const relPath = entry.relPath;
+    if (currentSet.has(relPath)) continue;
+    if (relPath === 'settings.json') continue;
+    if (isExcluded(relPath, options?.excludes)) continue;
+    const segs = relPath.split('/');
+    if (enabled !== undefined && segs[0] === 'workspaces' && segs.length >= 3 && !enabled.has(segs[1])) continue;
+    out.push(relPath);
+  }
+  return out;
 }
 
 export async function diffManifests(input: DiffInput): Promise<DiffResult> {
@@ -236,7 +266,7 @@ export async function diffManifests(input: DiffInput): Promise<DiffResult> {
   const localMap = toMap(local);
   const remoteMap = toMap(remote);
 
-  const result: DiffResult = { pull: [], push: [], conflict: [], skipped: [], same: 0 };
+  const result: DiffResult = { pull: [], push: [], conflict: [], skipped: [], same: 0, deletePropagation: [], peerDeleted: [] };
   const candidates: { local: FileEntry; remote: FileEntry }[] = [];
 
   for (const [relPath, remoteEntry] of remoteMap) {
@@ -250,6 +280,10 @@ export async function diffManifests(input: DiffInput): Promise<DiffResult> {
     }
     const localEntry = localMap.get(relPath);
     if (!localEntry) {
+      if (input.localTombstones?.has(relPath)) {
+        result.deletePropagation.push(remoteEntry);
+        continue;
+      }
       result.pull.push(remoteEntry);
       continue;
     }
@@ -285,7 +319,12 @@ export async function diffManifests(input: DiffInput): Promise<DiffResult> {
   }
 
   for (const [relPath, localEntry] of localMap) {
-    if (!remoteMap.has(relPath)) result.push.push(localEntry);
+    if (remoteMap.has(relPath)) continue;
+    if (input.remoteTombstones?.has(relPath)) {
+      result.peerDeleted.push(localEntry);
+      continue;
+    }
+    result.push.push(localEntry);
   }
 
   return result;

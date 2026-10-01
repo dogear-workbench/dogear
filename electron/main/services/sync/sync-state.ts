@@ -28,6 +28,51 @@ export interface SyncState {
   /** 本机设备身份，首次生成后持久化；sync-state.json 不在同步白名单，不会自同步 */
   deviceId?: string;
   peers: Record<string, SyncStatePeer>;
+  /** 本端删除墓碑（全局，不分 peer）：删除事实与「对哪个 peer」无关，per-peer 会让其他 peer 收不到删除传播而复活文件 */
+  tombstones?: TombstoneMap;
+}
+
+/** 墓碑清理周期（设计文档未决项定数）：超过后认为对端已收敛/不再需要防复活，过期剔除 */
+export const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+/** 墓碑上限，超限丢最旧（防长期不同步的端墓碑无限膨胀） */
+export const TOMBSTONE_MAX = 2000;
+
+export interface TombstoneEntry {
+  deletedAt: number;
+  deviceId: string;
+}
+
+export type TombstoneMap = Record<string, TombstoneEntry>;
+
+/** 过期剔除 + 超限按 deletedAt 丢最旧；坏条目（字段缺失/类型错）一并丢弃 */
+export function pruneTombstones(tombstones: TombstoneMap | undefined, now = Date.now()): TombstoneMap {
+  const result: TombstoneMap = {};
+  if (!tombstones) return result;
+  const deadline = now - TOMBSTONE_TTL_MS;
+  const alive: Array<[string, TombstoneEntry]> = [];
+  for (const [relPath, tombstone] of Object.entries(tombstones)) {
+    if (!tombstone || typeof tombstone.deletedAt !== 'number' || typeof tombstone.deviceId !== 'string') continue;
+    if (tombstone.deletedAt < deadline) continue;
+    alive.push([relPath, tombstone]);
+  }
+  alive.sort((a, b) => a[1].deletedAt - b[1].deletedAt);
+  for (const [relPath, tombstone] of alive.slice(Math.max(0, alive.length - TOMBSTONE_MAX))) {
+    result[relPath] = tombstone;
+  }
+  return result;
+}
+
+/** 合并新墓碑（新增/覆盖 deletedAt）并顺带 prune；用于墓碑生成的所有写入点 */
+export function mergeTombstones(
+  base: TombstoneMap | undefined,
+  additions: Array<{ relPath: string; deviceId: string; deletedAt?: number }>,
+): TombstoneMap {
+  const merged: TombstoneMap = { ...(base ?? {}) };
+  const now = Date.now();
+  for (const add of additions) {
+    merged[add.relPath] = { deletedAt: add.deletedAt ?? now, deviceId: add.deviceId };
+  }
+  return pruneTombstones(merged, now);
 }
 
 export function getDataDir(): string {
@@ -45,6 +90,8 @@ export async function readSyncStateFrom(dataDir: string): Promise<SyncState> {
   if (!state || state.version !== 1 || typeof state.peers !== 'object' || state.peers === null) {
     return { version: 1, peers: {} };
   }
+  // 读时机顺带过期清理：写回由后续读改写调用方自然完成，纯读场景不额外落盘
+  if (state.tombstones) state.tombstones = pruneTombstones(state.tombstones);
   return state;
 }
 

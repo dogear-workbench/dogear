@@ -6,6 +6,7 @@ import { timingSafeEqual } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import {
   AuthHeaders,
+  FileDeleteRequestSchema,
   FilePushMetaSchema,
   FilePullRequestSchema,
   HandshakeHelloSchema,
@@ -14,10 +15,10 @@ import {
   type HandshakeHello,
   type PairRequestBody,
 } from './protocol.js';
-import { buildManifest, hashEntries, type ManifestOptions } from './manifest.js';
+import { buildManifest, hashEntries, sha256File, tombstoneCandidates, type ManifestOptions } from './manifest.js';
 import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
 import { checkIncomingPushRelPath } from './push-guard.js';
-import { readSyncStateFrom, withSyncStateLock, writeSyncStateTo } from './sync-state.js';
+import { mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
 import {
   buildWorkspaceMapContext,
   collectWorkspaceMeta,
@@ -163,6 +164,9 @@ async function handleRequest(
     case 'POST /file':
       await handleFilePush(req, res, opts);
       return;
+    case 'DELETE /file':
+      await handleFileDelete(req, res, opts);
+      return;
     default:
       sendJson(res, 404, { error: 'not found' });
   }
@@ -212,26 +216,52 @@ async function handleManifest(
   // 按请求者的映射表过滤 workspaces/：未映射（未启用）的本端工作区目录不出现在清单里。
   // 同时用请求方携带的 workspaceMap 做反向学习（映射只在一端配一次；已存在不覆盖，学到的映射下轮生效）。
   // state 读改写入锁（F5）：与主动同步收尾写、UI 映射写互斥；锁内快照经返回值出锁后使用
-  const { peerMap, ignoredRemoteWorkspaces } = await withSyncStateLock(opts.dataDir, async () => {
-    const state = await readSyncStateFrom(opts.dataDir);
-    const peerEntry = state.peers[auth.deviceId] ?? { deviceId: auth.deviceId, lastSyncAt: 0 };
-    state.peers[auth.deviceId] = peerEntry;
-    if (body.workspaceMap) {
-      const learned = learnReverseWorkspaceMap(
-        state,
-        auth.deviceId,
-        body.workspaceMap,
-        await listLocalWorkspaceIds(opts.dataDir),
-      );
-      if (learned > 0) await writeSyncStateTo(opts.dataDir, state);
-    }
-    return { peerMap: peerEntry.workspaceMap, ignoredRemoteWorkspaces: peerEntry.ignoredRemoteWorkspaces };
-  });
+  const { peerMap, ignoredRemoteWorkspaces, peerLastManifest, historyTombstones, selfDeviceId } =
+    await withSyncStateLock(opts.dataDir, async () => {
+      const state = await readSyncStateFrom(opts.dataDir);
+      const peerEntry = state.peers[auth.deviceId] ?? { deviceId: auth.deviceId, lastSyncAt: 0 };
+      state.peers[auth.deviceId] = peerEntry;
+      if (body.workspaceMap) {
+        const learned = learnReverseWorkspaceMap(
+          state,
+          auth.deviceId,
+          body.workspaceMap,
+          await listLocalWorkspaceIds(opts.dataDir),
+        );
+        if (learned > 0) await writeSyncStateTo(opts.dataDir, state);
+      }
+      return {
+        peerMap: peerEntry.workspaceMap,
+        ignoredRemoteWorkspaces: peerEntry.ignoredRemoteWorkspaces,
+        peerLastManifest: peerEntry.lastManifest,
+        historyTombstones: state.tombstones,
+        selfDeviceId: state.deviceId,
+      };
+    });
   const manifestOptions = {
     ...(await opts.getManifestOptions(auth.deviceId)),
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerMap),
   };
   const local = await buildManifest(opts.dataDir, manifestOptions);
+  // 被动端墓碑生成：本端实时清单 vs 对该请求方的基线——基线有、现无 = 本端（被动期间）发生过删除。
+  // 被动端不跑 orchestrator 收尾，这是删除事实落盘的唯一时机；与历史墓碑合并后随响应携回请求方
+  const freshDeletes = tombstoneCandidates(peerLastManifest ?? [], local, {
+    excludes: manifestOptions.excludes,
+    enabledWorkspaceIds: manifestOptions.enabledWorkspaceIds,
+  });
+  let responseTombstones: TombstoneMap = historyTombstones ?? {};
+  if (freshDeletes.length > 0) {
+    responseTombstones = await withSyncStateLock(opts.dataDir, async () => {
+      const state = await readSyncStateFrom(opts.dataDir);
+      const merged = mergeTombstones(
+        state.tombstones,
+        freshDeletes.map((relPath) => ({ relPath, deviceId: selfDeviceId ?? 'unknown' })),
+      );
+      state.tombstones = merged;
+      await writeSyncStateTo(opts.dataDir, state);
+      return merged;
+    });
+  }
   const localMap = new Map(local.map((e) => [e.relPath, e]));
   // 请求条目是请求方视角路径（请求方已按它自己的映射折算过），需按本端映射折算回本端路径才能匹配：
   // 双方各自用同一映射对（本端 wsid ↔ 请求方 wsid）的本地视角，同一路径两段名不同。
@@ -258,6 +288,7 @@ async function handleManifest(
     candidateHashes,
     workspaceMap: peerMap,
     workspaceMeta: await collectWorkspaceMeta(opts.dataDir),
+    ...(Object.keys(responseTombstones).length > 0 ? { tombstones: responseTombstones } : {}),
   });
 }
 
@@ -362,4 +393,80 @@ async function handleFilePush(
     return;
   }
   sendJson(res, 200, { ok: true, bytesWritten: result.bytesWritten });
+}
+
+/**
+ * 删除传播端点（v3）：请求方已删该文件（墓碑为证），本端文件 hash 与请求方基线一致（本端未改）才执行删除；
+ * 改过 → 409 拒绝（请求方记删改冲突）；不存在 → 404（请求方视传播目标已达成）。
+ * 校验链与 push 接收端对称（push-guard：禁写/敏感/排除/工作区开关）+ hash 二次校验防误删。
+ * 删除后记本端墓碑（删除事实供其他对端传播）并从该请求方基线中移除条目（已收敛）。
+ */
+async function handleFileDelete(
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+  opts: SyncServerOptions,
+): Promise<void> {
+  const auth = await (opts.authorizeRequest ?? authorize)(req);
+  if (!auth.ok) {
+    sendJson(res, 401, { error: 'unpaired device' });
+    return;
+  }
+  let body;
+  try {
+    body = FileDeleteRequestSchema.parse(JSON.parse((await readBody(req, 64 * 1024)).toString('utf-8')));
+  } catch (error) {
+    sendJson(res, 400, { error: `invalid delete request: ${error instanceof Error ? error.message : String(error)}` });
+    return;
+  }
+  const absPath = resolveWithinDataDir(opts.dataDir, body.relPath);
+  if (!absPath) {
+    sendJson(res, 403, { error: 'unsafe path' });
+    return;
+  }
+  const [manifestOptions, state] = await Promise.all([
+    opts.getManifestOptions(auth.deviceId),
+    readSyncStateFrom(opts.dataDir),
+  ]);
+  const verdict = checkIncomingPushRelPath(body.relPath, {
+    excludes: manifestOptions.excludes,
+    workspaceMap: state.peers[auth.deviceId]?.workspaceMap,
+  });
+  if (!verdict.ok) {
+    sendJson(res, verdict.status, { error: verdict.reason });
+    return;
+  }
+  let st;
+  try {
+    st = await fsp.stat(absPath);
+  } catch {
+    sendJson(res, 404, { error: 'file not found' });
+    return;
+  }
+  if (!st.isFile()) {
+    sendJson(res, 400, { error: 'not a regular file' });
+    return;
+  }
+  const actualHash = await sha256File(absPath);
+  if (actualHash !== body.expectedHash) {
+    sendJson(res, 409, { error: 'file modified on this device, delete rejected' });
+    return;
+  }
+  try {
+    await fsp.unlink(absPath);
+  } catch (error) {
+    sendJson(res, 500, { error: `delete failed: ${error instanceof Error ? error.message : String(error)}` });
+    return;
+  }
+  await withSyncStateLock(opts.dataDir, async () => {
+    const next = await readSyncStateFrom(opts.dataDir);
+    next.tombstones = mergeTombstones(next.tombstones, [
+      { relPath: body.relPath, deviceId: next.deviceId ?? 'unknown' },
+    ]);
+    const peer = next.peers[auth.deviceId];
+    if (peer?.lastManifest) {
+      peer.lastManifest = peer.lastManifest.filter((e) => e.relPath !== body.relPath);
+    }
+    await writeSyncStateTo(opts.dataDir, next);
+  });
+  sendJson(res, 200, { ok: true, deleted: true });
 }

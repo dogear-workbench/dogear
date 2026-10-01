@@ -71,6 +71,7 @@ export function SyncResultCard() {
   const directionLabel =
     lastReport.direction === 'push' ? '仅推送' : lastReport.direction === 'both' ? '双向' : '仅拉取';
   const autoResolved = lastReport.autoResolved ?? [];
+  const deleteConflicts = lastReport.deleteConflicts ?? [];
   const hasPendingConflicts = lastReport.status === 'completed' && lastReport.conflicts.length > 0;
   const scopeSkipped = lastReport.skipped.filter((s) => SCOPE_SKIP_REASONS.has(s.reason));
   const listedSkipped =
@@ -97,6 +98,11 @@ export function SyncResultCard() {
         <div className="text-sm flex items-center gap-3 flex-wrap">
           <span>拉取 <span className="font-semibold">{lastReport.pulled}</span></span>
           <span>推送 <span className="font-semibold">{lastReport.pushed}</span></span>
+          {(lastReport.deleted ?? 0) > 0 && (
+            <span>
+              删除 <span className="font-semibold">{lastReport.deleted}</span>
+            </span>
+          )}
           <span className={hasPendingConflicts ? 'text-amber-600 dark:text-amber-400 font-medium' : ''}>
             待处理冲突 <span className="font-semibold">{lastReport.conflicts.length}</span>
           </span>
@@ -122,6 +128,22 @@ export function SyncResultCard() {
             {w}
           </p>
         ))}
+
+        {deleteConflicts.length > 0 && (
+          <FileListCollapsible
+            title={`删改冲突（${deleteConflicts.length}）`}
+            hint="删除与修改同时发生，系统保守保留了现存的那个版本，未执行删除；确认要删可手动删除保留侧文件，下轮同步自动收敛"
+            items={deleteConflicts.map(({ relPath, kind }) => ({
+              key: relPath,
+              text: relPath,
+              sub:
+                kind === 'local-deleted'
+                  ? '本端已删除、对端修改过，已保留对端版本'
+                  : '对端已删除、本端修改过，已保留本端版本',
+            }))}
+            onReveal={revealSyncFile}
+          />
+        )}
 
         {hasPendingConflicts && (
           <ConflictPendingZone conflicts={lastReport.conflicts} peerId={lastReport.peerId} />
