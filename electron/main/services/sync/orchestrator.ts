@@ -177,12 +177,11 @@ async function runSyncInternal(
   const preSyncState = await readSyncState();
   const peerState = preSyncState.peers[peer.deviceId];
   const manifestOptions: ManifestOptions = {
-    syncStocksData: settings.syncOptions?.syncStocksData === true,
-    syncFeishu: settings.syncOptions?.syncFeishu === true,
     // workspaces/ 只收 enabled 映射的本端 wsid；未映射的本端工作区不同步（与对端对等：首次使用即受控）
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerState?.workspaceMap),
-    // 同步范围排除来自 settings.syncOptions（disabledSyncItems / syncConflictCopies / syncShadowGit），
-    // 与被动响应侧 getManifestOptions 共用同一转换；buildNextBaseline 透传同一 options，基线与新清单口径一致
+    // 同步范围排除来自 settings.syncOptions（disabledSyncItems / syncConflictCopies / syncShadowGit /
+    // optionalDirs），与被动响应侧 getManifestOptions 共用同一转换；buildNextBaseline 透传同一 options，
+    // 基线与新清单口径一致
     excludes: excludesFromSyncOptions(settings.syncOptions),
   };
 

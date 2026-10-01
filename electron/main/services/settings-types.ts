@@ -422,9 +422,13 @@ export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
 ] as const;
 
 const SYNC_ITEM_ID_SET: ReadonlySet<string> = new Set(SYNC_ITEM_IDS.map((m) => m.id));
+const REQUIRED_SYNC_ITEM_IDS: ReadonlySet<string> = new Set(
+  SYNC_ITEM_IDS.filter((m) => m.required === true).map((m) => m.id),
+);
 
 /**
  * disabledSyncItems 清洗：只保留 SYNC_ITEM_IDS 白名单内的字符串 id（防路径穿越/注入），按首现顺序去重。
+ * required 必选项（settings.json）不接受关闭——否则 rev 大的对端可经合并剥夺本端必选同步项（U6）。
  * 非数组输入返回空数组。
  */
 export function normalizeDisabledSyncItems(raw: unknown): string[] {
@@ -433,6 +437,7 @@ export function normalizeDisabledSyncItems(raw: unknown): string[] {
   const out: string[] = [];
   for (const item of raw) {
     if (typeof item !== 'string' || !SYNC_ITEM_ID_SET.has(item) || seen.has(item)) continue;
+    if (REQUIRED_SYNC_ITEM_IDS.has(item)) continue;
     seen.add(item);
     out.push(item);
   }

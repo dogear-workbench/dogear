@@ -180,11 +180,14 @@ test('normalizeSyncOptions：范围字段缺省默认值（[]/false/false/0）',
   expect(n.syncOptionsRev).toBe(0);
 });
 
-test('normalizeSyncOptions：非法 id 滤除（含路径穿越形态）+ 去重，合法 id 保留', () => {
+test('normalizeSyncOptions：非法 id 滤除（含路径穿越形态）+ 去重，required 必选项（settings.json）强制滤除（U6）', () => {
   const n = normalizeSyncOptions({
     disabledSyncItems: ['memory', 'memory', '../evil', 'stocks/../x', 42, null, 'usage', 'settings.json'],
   });
-  expect(n.disabledSyncItems).toEqual(['memory', 'usage', 'settings.json']);
+  expect(n.disabledSyncItems).toEqual(['memory', 'usage']);
+  // rev 大的对端不得经 disabledSyncItems 关闭本端必选同步项
+  const onlyRequired = normalizeSyncOptions({ disabledSyncItems: ['settings.json'] });
+  expect(onlyRequired.disabledSyncItems).toEqual([]);
 });
 
 test('normalizeSyncOptions：rev 仅接受非负整数，非法归 0', () => {
@@ -264,19 +267,21 @@ test('rev 缺省（旧数据）从 0 起增', () => {
 
 // ── excludesFromSyncOptions：settings → ManifestExcludes 语义转换 ──
 
-test('excludesFromSyncOptions：true=同步 直传（无翻转），disabledItems 转 Set，缺省=全排除', () => {
+test('excludesFromSyncOptions：true=同步 直传（无翻转），disabledItems 转 Set，optionalDirs 同向，缺省=全排除', () => {
   const ex = excludesFromSyncOptions(
-    syncOpts({ syncConflictCopies: true, syncShadowGit: true, disabledSyncItems: ['usage', 'plans.json'] }),
+    syncOpts({ syncConflictCopies: true, syncShadowGit: true, disabledSyncItems: ['usage', 'plans.json'], syncStocksData: true }),
   );
   expect(ex.conflictCopies).toBe(true);
   expect(ex.shadowGit).toBe(true);
   expect([...ex.disabledItems].sort()).toEqual(['plans.json', 'usage']);
+  expect(ex.optionalDirs).toEqual({ stocks: true, feishu: false });
 
-  // 缺省（两开关 false）：shadow-git 与 .conflict-* 被排除（设计默认不同步）
+  // 缺省（三开关 false）：shadow-git 与 .conflict-* 与 stocks/feishu 均被排除（设计默认不同步）
   const dflt = excludesFromSyncOptions(undefined);
   expect(dflt.conflictCopies).toBe(false);
   expect(dflt.shadowGit).toBe(false);
   expect(dflt.disabledItems.size).toBe(0);
+  expect(dflt.optionalDirs).toEqual({ stocks: false, feishu: false });
 });
 
 // ── SYNC_ITEM_IDS 白名单常量 ──

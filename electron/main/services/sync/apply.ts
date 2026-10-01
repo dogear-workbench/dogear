@@ -1,7 +1,7 @@
 import fsp from 'node:fs/promises';
-import { createWriteStream, createReadStream } from 'node:fs';
+import { createWriteStream, createReadStream, constants as fsConstants } from 'node:fs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { createGunzip } from 'node:zlib';
 import { Readable } from 'node:stream';
@@ -69,7 +69,15 @@ export function shortDeviceId(deviceId: string): string {
   return deviceId.replace(/-/g, '').slice(0, 6);
 }
 
-/** 冲突副本同目录同名：`<name>.<ext>.conflict-<胜方设备短ID>`；dotfile 整体作 stem */
+/** 副本名时间戳段：本地时间 YYYYMMDD-HHmmss，让同一文件多轮冲突的副本不再互相覆盖（D3） */
+function conflictTimestampSegment(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+/** 冲突副本同目录同名：`<name>.<ext>.conflict-<胜方设备短ID>-<YYYYMMDD-HHmmss>-<rand4>`；
+ * 时间戳+随机段防同秒多副本覆盖（D3）；dotfile 整体作 stem */
 export function conflictCopyRelPath(relPath: string, winnerShortId: string): string {
   const slash = relPath.lastIndexOf('/');
   const dir = slash >= 0 ? relPath.slice(0, slash + 1) : '';
@@ -77,7 +85,8 @@ export function conflictCopyRelPath(relPath: string, winnerShortId: string): str
   const dot = base.lastIndexOf('.');
   const stem = dot > 0 ? base.slice(0, dot) : base;
   const ext = dot > 0 ? base.slice(dot) : '';
-  return `${dir}${stem}${ext}.conflict-${winnerShortId}`;
+  const rand = randomBytes(2).toString('hex');
+  return `${dir}${stem}${ext}.conflict-${winnerShortId}-${conflictTimestampSegment()}-${rand}`;
 }
 
 async function saveLocalConflictCopy(root: string, relPath: string, winnerShortId: string): Promise<void> {
@@ -86,7 +95,8 @@ async function saveLocalConflictCopy(root: string, relPath: string, winnerShortI
   const copyAbs = resolveWithinDataDir(root, conflictCopyRelPath(relPath, winnerShortId));
   if (!copyAbs) throw new Error('unsafe conflict copy path');
   await fsp.mkdir(path.dirname(copyAbs), { recursive: true });
-  await fsp.copyFile(abs, copyAbs);
+  // COPYFILE_EXCL：撞名时报错而非覆盖旧副本（调用方降级 skipped，绝不静默丢留底）
+  await fsp.copyFile(abs, copyAbs, fsConstants.COPYFILE_EXCL);
 }
 
 async function readGzipText(source: Readable): Promise<string> {

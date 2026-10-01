@@ -16,12 +16,18 @@ mock.module('electron', () => ({
 }));
 const { applyIncoming } = await import('./apply.js');
 
-const ex = (over: Partial<ManifestExcludes> = {}): ManifestExcludes => ({
-  conflictCopies: false,
-  shadowGit: false,
-  disabledItems: new Set<string>(),
-  ...over,
-});
+const ex = (
+  over: Partial<Omit<ManifestExcludes, 'optionalDirs'>> & { optionalDirs?: Partial<ManifestExcludes['optionalDirs']> } = {},
+): ManifestExcludes => {
+  const { optionalDirs, ...rest } = over;
+  return {
+    conflictCopies: false,
+    shadowGit: false,
+    disabledItems: new Set<string>(),
+    ...rest,
+    optionalDirs: { stocks: false, feishu: false, ...optionalDirs },
+  };
+};
 
 // ── isExcluded：excludes 缺省 → 全放行（现状行为） ──
 
@@ -82,10 +88,21 @@ test('disabledItems：目录项前缀命中、整目录等值命中，workspaces
   expect(isExcluded('conversations/c.json', all)).toBe(false); // 未关闭的项放行
 });
 
-test('disabledItems：stocks/feishu 不在此过滤（即使误传入集合也不排除）', () => {
-  const s = ex({ disabledItems: new Set(['stocks', 'feishu']) });
-  expect(isExcluded('stocks/a.json', s)).toBe(false);
-  expect(isExcluded('feishu/b.json', s)).toBe(false);
+test('stocks/feishu 走 optionalDirs：关=排除（整树前缀），开=放行；disabledItems 误传不生效（F1）', () => {
+  const closed = ex();
+  expect(isExcluded('stocks/a.json', closed)).toBe(true);
+  expect(isExcluded('feishu/b.json', closed)).toBe(true);
+  // 前缀段匹配：相似目录名不受影响
+  expect(isExcluded('stocks2/a.json', closed)).toBe(false);
+  expect(isExcluded('feishu', closed)).toBe(true);
+  // 开启后放行
+  const open = ex({ optionalDirs: { stocks: true, feishu: true } });
+  expect(isExcluded('stocks/a.json', open)).toBe(false);
+  expect(isExcluded('feishu/b.json', open)).toBe(false);
+  // disabledItems 里的 stocks/feishu id 依旧不生效（开关走独立布尔键）
+  const wrongSet = ex({ disabledItems: new Set(['stocks', 'feishu']) });
+  expect(isExcluded('stocks/a.json', wrongSet)).toBe(true);
+  expect(isExcluded('feishu/b.json', ex({ disabledItems: new Set(['stocks', 'feishu']), optionalDirs: { stocks: true, feishu: true } }))).toBe(false);
 });
 
 // ── buildManifest：排除在清单生成侧生效 ──
@@ -213,5 +230,40 @@ test('applyIncoming：被排除的条目直接丢弃进 skipped，不落盘、�
   const r2 = await applyIncoming(root, [items[1]], sourceFactory);
   expect(r2.applied).toHaveLength(1);
   await expect(fsp.stat(path.join(root, 'workspaces/ws1/shadow-git/HEAD'))).resolves.toBeTruthy();
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+// ── F1：stocks/feishu 接入 excludes 体系 ──
+
+test('buildManifest：optionalDirs.stocks=true 时 stocks 进清单，false 时整树排除', async () => {
+  const root = await makeTempData();
+  await fsp.mkdir(path.join(root, 'stocks'), { recursive: true });
+  await fsp.writeFile(path.join(root, 'stocks/quote.json'), 'quote');
+  await fsp.mkdir(path.join(root, 'feishu'), { recursive: true });
+  await fsp.writeFile(path.join(root, 'feishu/doc.json'), 'doc');
+  const on = await buildManifest(root, { enabledWorkspaceIds: ['ws1'], excludes: ex({ optionalDirs: { stocks: true, feishu: true } }) });
+  expect(on.map((e) => e.relPath)).toContain('stocks/quote.json');
+  expect(on.map((e) => e.relPath)).toContain('feishu/doc.json');
+  const off = await buildManifest(root, { enabledWorkspaceIds: ['ws1'], excludes: ex() });
+  expect(off.map((e) => e.relPath)).not.toContain('stocks/quote.json');
+  expect(off.map((e) => e.relPath)).not.toContain('feishu/doc.json');
+  await fsp.rm(root, { recursive: true, force: true });
+});
+
+test('diffManifests：本端关 stocks 时对端清单 stocks 条目进 skipped 不进 pull（消除每轮全量重拉）', async () => {
+  const root = await makeTempData();
+  const local: FileEntry[] = [{ relPath: 'memory/a.md', size: 1, mtimeMs: 1 }];
+  const remote: FileEntry[] = [
+    { relPath: 'stocks/quote.json', size: 2, mtimeMs: 2 },
+    { relPath: 'feishu/doc.json', size: 2, mtimeMs: 2 },
+    { relPath: 'memory/new.md', size: 2, mtimeMs: 2 },
+  ];
+  const r = await diffManifests({ root, local, remote, excludes: ex() });
+  expect(r.pull.map((e) => e.relPath)).toEqual(['memory/new.md']);
+  expect(r.skipped.filter((s) => s.reason === 'excluded by local sync scope').map((s) => s.relPath).sort())
+    .toEqual(['feishu/doc.json', 'stocks/quote.json']);
+  // 开启后照常 pull
+  const r2 = await diffManifests({ root, local, remote, excludes: ex({ optionalDirs: { stocks: true, feishu: true } }) });
+  expect(r2.pull.map((e) => e.relPath).sort()).toEqual(['feishu/doc.json', 'memory/new.md', 'stocks/quote.json']);
   await fsp.rm(root, { recursive: true, force: true });
 });

@@ -178,6 +178,21 @@ export function learnReverseWorkspaceMap(
 }
 
 /**
+ * push 接收端校验（D1）：发送端推来的路径已按它的 localToRemote 折算成接收端视角，
+ * workspaces/<wsid>/ 前缀中 wsid 即接收端本端 wsid，只需查该键在本端 per-peer 映射中 enabled
+ * （未建映射/已暂停都拒绝）；非 workspaces/ 前缀或两段形态（workspaces/workspaces.json 等）
+ * 为全局数据，不走映射（与 toLocalView 的 pass 语义一致）。
+ */
+export function isWorkspacePathSyncEnabled(
+  workspaceMap: Record<string, WorkspaceMapEntry> | undefined,
+  relPath: string,
+): boolean {
+  const segs = relPath.split('/');
+  if (segs[0] !== 'workspaces' || segs.length < 3) return true;
+  return workspaceMap?.[segs[1]]?.enabled === true;
+}
+
+/**
  * 本端工作区概要汇总（server 端 manifest 响应的 workspaceMeta）：轻量只读 workspaces.json
  * 与各 conversations.json 索引（条目数 + max updatedAt），不触碰 sessions 正文。
  */

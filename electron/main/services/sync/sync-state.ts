@@ -34,18 +34,26 @@ export function getDataDir(): string {
   return path.join(process.cwd(), '.dogear');
 }
 
-function getSyncStatePath(): string {
-  return path.join(getDataDir(), 'sync-state.json');
+function getSyncStatePath(dataDir: string): string {
+  return path.join(dataDir, 'sync-state.json');
 }
 
-export async function readSyncState(): Promise<SyncState> {
-  const state = await safeJsonRead<SyncState | null>(getSyncStatePath(), null);
+export async function readSyncStateFrom(dataDir: string): Promise<SyncState> {
+  const state = await safeJsonRead<SyncState | null>(getSyncStatePath(dataDir), null);
   if (!state || state.version !== 1 || typeof state.peers !== 'object' || state.peers === null) {
     return { version: 1, peers: {} };
   }
   return state;
 }
 
+export async function writeSyncStateTo(dataDir: string, state: SyncState): Promise<void> {
+  await safeJsonWrite(getSyncStatePath(dataDir), state);
+}
+
+export async function readSyncState(): Promise<SyncState> {
+  return readSyncStateFrom(getDataDir());
+}
+
 export async function writeSyncState(state: SyncState): Promise<void> {
-  await safeJsonWrite(getSyncStatePath(), state);
+  await writeSyncStateTo(getDataDir(), state);
 }

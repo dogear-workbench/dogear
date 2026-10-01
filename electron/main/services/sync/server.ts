@@ -17,7 +17,8 @@ import {
 } from './protocol.js';
 import { buildManifest, hashEntries, type ManifestOptions } from './manifest.js';
 import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
-import { readSyncState, writeSyncState } from './sync-state.js';
+import { checkIncomingPushRelPath } from './push-guard.js';
+import { readSyncStateFrom, writeSyncStateTo } from './sync-state.js';
 import {
   buildWorkspaceMapContext,
   collectWorkspaceMeta,
@@ -27,6 +28,8 @@ import {
   toLocalView,
 } from './workspace-map.js';
 
+export type AuthCheck = (req: http.IncomingMessage) => Promise<{ ok: true; deviceId: string } | { ok: false }>;
+
 export interface SyncServerOptions {
   port: number;
   dataDir: string;
@@ -34,6 +37,8 @@ export interface SyncServerOptions {
   /** per-peer 清单选项：requesterDeviceId 用于按该对端的映射表过滤 workspaces/ 目录 */
   getManifestOptions(requesterDeviceId: string): Promise<ManifestOptions>;
   handlePairRequest(hello: HandshakeHello, code: string): Promise<{ accepted: boolean; reason?: string; secret?: string }>;
+  /** 配对校验；缺省按 settings.syncOptions.pairedDevices 比对请求头（测试可注入替代实现隔离进程级 env） */
+  authorizeRequest?: AuthCheck;
 }
 
 /** 默认服务端口；占用时由启动方退避随机端口，实际端口以 mDNS 广播为准 */
@@ -101,6 +106,8 @@ export async function startSyncServer(opts: SyncServerOptions): Promise<RunningS
     port: address.port,
     close: () =>
       new Promise<void>((resolve) => {
+        // 先断 keep-alive 空闲连接，否则有客户端连接池持连接时 close 永不完成
+        server.closeIdleConnections?.();
         server.close(() => resolve());
       }),
   };
@@ -116,7 +123,6 @@ async function authorize(req: http.IncomingMessage): Promise<{ ok: true; deviceI
   if (!paired) return { ok: false };
   return secretsMatch(paired.secret, secret) ? { ok: true, deviceId } : { ok: false };
 }
-
 /** /info、/pair-request 等未授权端点返回的 hello 剥离本机路径 */
 function publicHello(hello: HandshakeHello): HandshakeHello {
   if (hello.dataDirPath === undefined) return hello;
@@ -143,7 +149,7 @@ async function handleRequest(
     return;
   }
 
-  if (!(await authorize(req)).ok) {
+  if (!(await (opts.authorizeRequest ?? authorize)(req)).ok) {
     sendJson(res, 401, { error: 'unpaired device' });
     return;
   }
@@ -192,7 +198,7 @@ async function handleManifest(
   res: http.ServerResponse,
   opts: SyncServerOptions,
 ): Promise<void> {
-  const auth = await authorize(req);
+  const auth = await (opts.authorizeRequest ?? authorize)(req);
   if (!auth.ok) {
     sendJson(res, 401, { error: 'unpaired device' });
     return;
@@ -206,7 +212,7 @@ async function handleManifest(
   }
   // 按请求者的映射表过滤 workspaces/：未映射（未启用）的本端工作区目录不出现在清单里。
   // 同时用请求方携带的 workspaceMap 做反向学习（映射只在一端配一次；已存在不覆盖，学到的映射下轮生效）
-  const state = await readSyncState();
+  const state = await readSyncStateFrom(opts.dataDir);
   const peerEntry = state.peers[auth.deviceId] ?? { deviceId: auth.deviceId, lastSyncAt: 0 };
   state.peers[auth.deviceId] = peerEntry;
   if (body.workspaceMap) {
@@ -216,7 +222,7 @@ async function handleManifest(
       body.workspaceMap,
       await listLocalWorkspaceIds(opts.dataDir),
     );
-    if (learned > 0) await writeSyncState(state);
+    if (learned > 0) await writeSyncStateTo(opts.dataDir, state);
   }
   const peerMap: Record<string, WorkspaceMapEntry> | undefined = peerEntry.workspaceMap;
   const manifestOptions = {
@@ -305,6 +311,11 @@ async function handleFilePush(
   res: http.ServerResponse,
   opts: SyncServerOptions,
 ): Promise<void> {
+  const auth = await (opts.authorizeRequest ?? authorize)(req);
+  if (!auth.ok) {
+    sendJson(res, 401, { error: 'unpaired device' });
+    return;
+  }
   const metaRaw = req.headers[AuthHeaders.fileMeta];
   if (typeof metaRaw !== 'string') {
     sendJson(res, 400, { error: 'missing file meta header' });
@@ -315,6 +326,20 @@ async function handleFilePush(
     meta = FilePushMetaSchema.parse(JSON.parse(Buffer.from(metaRaw, 'base64').toString('utf-8')));
   } catch (error) {
     sendJson(res, 400, { error: `invalid file meta: ${error instanceof Error ? error.message : String(error)}` });
+    return;
+  }
+  // 落盘前过与 pull 侧 applyIncoming 对称的校验（D1/S1）：禁写清单 + 本端范围排除 + 工作区映射 enabled，
+  // 挡住对端推入被暂停/未映射工作区、已排除路径与 sync-state 等引擎状态
+  const [manifestOptions, state] = await Promise.all([
+    opts.getManifestOptions(auth.deviceId),
+    readSyncStateFrom(opts.dataDir),
+  ]);
+  const verdict = checkIncomingPushRelPath(meta.relPath, {
+    excludes: manifestOptions.excludes,
+    workspaceMap: state.peers[auth.deviceId]?.workspaceMap,
+  });
+  if (!verdict.ok) {
+    sendJson(res, verdict.status, { error: verdict.reason });
     return;
   }
   // settings.json 双端都是字段级合并落盘（拉取端在 applyIncoming，推送端在此），否则配对信息随整文件覆盖互丢
