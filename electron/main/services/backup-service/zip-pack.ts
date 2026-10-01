@@ -48,9 +48,13 @@ export function isBackupFileName(key: string, fileName: string): boolean {
   return fileName.startsWith(`${key}-`) && parseStamp(fileName) !== null;
 }
 
+export function backupsRootDir(): string {
+  return path.join(getConfigDir(), 'backups');
+}
+
 export function backupDirPath(scope: BackupScope): string {
   assertScope(scope);
-  return path.join(getConfigDir(), 'backups', scope);
+  return path.join(backupsRootDir(), scope);
 }
 
 export function backupZipPath(scope: BackupScope, fileName: string): string {

@@ -15,7 +15,34 @@
 - [x] [Step 5: 同步堵洞（轻量组）](./step5-sync-fixes.md) — D1 push 校验、D3 副本时间戳、F1 flag 接入、U6
 - [x] [Step 6: settings 字段级三方合并](./step6-settings-merge.md) — D2 修复 + sync-state 加锁（F5）
 - [x] [Step 7: 墓碑删除传播](./step7-tombstones.md) — 协议 v3、删除指令、删改冲突、UI
-- [ ] [Step 8: 收尾](./step8-wrapup.md) — doc-sync、轻项清理、完成总结
+- [x] [Step 8: 收尾](./step8-wrapup.md) — doc-sync、轻项清理、完成总结
+
+## 完成总结
+
+**全部 8 步完成**（2026-10-01～03，8 个 commit：b6bed174 / 4a22564b+950efbf7 / 1092a81f / 16a7bb8a / c19670d8 / da12cedc / 08384214 / 本步）。测试 400 → 477 例（+77，0 fail），每步 build:electron + 前端 tsc 均过。
+
+### 实际改动汇总
+- **data-registry**（step1）：23 条数据项唯一事实源 + backupSourcesFor/registrySyncItems/sensitiveRelPaths 派生 + 外部锚点虚拟前缀往返工具，17 例单测锁定审计对照表
+- **备份接 registry**（step2）：分类源全部派生化（I-1 tasks 外部锚点、I-2 notes-groups 补源去 dashboard.md）；新增 app-config 分类；默认配置收敛 BACKUP_CATEGORY_DEFAULTS 唯一源；zip 打包/恢复支持外部锚点
+- **可观测 + worker**（step3）：last-run.json 记录每分类×scope 与调度级成败，getBackupStatus 暴露 lastError/scheduler；zip 压缩移 worker_threads（60s 超时回退主进程分片）；UI 失败红字与徽标
+- **快照还原**（step4）：恢复=时点快照（zip 外文件删除限 registry 边界、空包拒绝）；预备份尊重用户 keep；sessions 恢复前运行中会话防护 + metadataCache 失效
+- **同步堵洞**（step5）：push 接收端五层校验（D1，403+reason）；冲突副本时间戳+随机段（D3）；stocks/feishu 并入 excludes 统一体系（F1，消除每轮全量重拉）；required 禁关（U6）；新增 HTTP 端点级集成测试首例
+- **settings 三方合并**（step6）：顶层字段级三方合并（D2，单侧变取变侧/双变保本端+warning）；基线统一磁盘原文形态防抖动；sync-state 读改写加锁（F5，三写入点全覆盖）
+- **墓碑 v3**（step7）：协议升 v3，墓碑双向交换（全局、90 天/2000 条）；对端删跟随/本端删传播（DELETE /file sha256 二次校验）；删改冲突保守保留独立展示；v2 对端禁用删除传播
+- **收尾**（step8）：doc-sync 补齐备份/同步两节；openBackupDir 开根目录；scope 死分支清理；dashboard.md 残留确认
+
+### 与原计划主要偏差
+1. app-config 备份源 6 文件（计划 4）：追加 workspaces.json（审计漏备点+恢复反解依据）与全局 agent.md（有真实读取链）
+2. 默认配置收敛点在 settings-types.ts（计划 categories.ts）：前端无法 import 带 electron 依赖的 categories，沿用 settings-types 既有模式
+3. worker 分工：主进程反解+stat、worker 纯打包（零服务依赖，无需环境注入）
+4. 墓碑挂全局而非 per-peer（删除事实与 peer 无关，防第三端复活）；删改冲突独立字段 deleteConflicts 不进待裁决 conflicts（防用户误点取对端）
+5. 删除执行拆两方向：对端删+本端未改本地 unlink（不经 HTTP），本端删+对端未改才走 DELETE /file
+6. runSync 全链路未做自动化测试（env flake 既有坑），以单元+真 HTTP 双端串联覆盖同等路径
+
+### 遗留给用户的验证项
+- 真机：大目录备份不冻结窗口（worker 生效）；恢复快照（快照外文件删除、运行中会话防护、删除计数）；同步双端（暂停工作区推 403、离线各改 settings 字段并存/同字段保本端+warning、A 删传播 B、删改冲突保留、暂停开关不误删）
+- 面板人工过一遍：五卡片+app-config、打开目录开 backups/ 根、同步结果卡删改冲突区
+- 已知非缺陷语义：两端都不开冲突副本同步时 push/both 档「取本端」裁决内容推不过去（保守不丢数据）；push 接收端双改 warning 仅 console（无反向通道）；旧 zip（源范围变更前）恢复会按快照语义删除当时未备份的文件（预备份可回退）
 
 ## 全局决策
 

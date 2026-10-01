@@ -5,7 +5,6 @@ import electron from 'electron';
 import { tipc } from '@egoist/tipc/main';
 import * as backupService from '../services/backup-service/index.js';
 import {
-  BACKUP_CATEGORIES,
   GLOBAL_SCOPE,
   getCategoryDef,
   listWorkspaceIds,
@@ -15,7 +14,7 @@ import {
   type BackupRunResult,
   type BackupScope,
 } from '../services/backup-service/index.js';
-import { backupDirPath } from '../services/backup-service/zip-pack.js';
+import { backupsRootDir } from '../services/backup-service/zip-pack.js';
 import { loadSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
@@ -50,7 +49,7 @@ export const backupRouter = {
     ...(await backupService.getBackupStatus(await readBackupConfig())),
   })),
 
-  // category+scope 成对=单项；只给 category=该分类全部适用 scope；只给 scope=该 scope 适用分类；都缺=全量
+  // category+scope 成对=单项；只给 category=该分类全部适用 scope；都缺=全量
   runBackup: t.procedure
     .input<{ category?: BackupCategoryKey; scope?: BackupScope }>()
     .action(async ({ input }): Promise<{ results: BackupRunResult[] } | { error: string }> => {
@@ -66,13 +65,6 @@ export const backupRouter = {
             ...(def.scopes.includes('workspace') ? await listWorkspaceIds() : []),
           ];
           return { results: await runCategoryScopes(category, scopes) };
-        }
-        if (scope) {
-          const scopeType = scope === GLOBAL_SCOPE ? 'global' : 'workspace';
-          const keys = BACKUP_CATEGORIES.filter((d) => d.scopes.includes(scopeType)).map((d) => d.key);
-          const results: BackupRunResult[] = [];
-          for (const key of keys) results.push(...(await runCategoryScopes(key, [scope])));
-          return { results };
         }
         return { results: await backupService.runBackupAll(await readBackupConfig()) };
       } catch (err) {
@@ -104,17 +96,15 @@ export const backupRouter = {
       }
     }),
 
-  openBackupDir: t.procedure
-    .input<{ scope?: BackupScope }>()
-    .action(async ({ input }) => {
-      try {
-        const dir = backupDirPath((input ?? {}).scope ?? GLOBAL_SCOPE);
-        await fs.mkdir(dir, { recursive: true });
-        const errMsg = await shell.openPath(dir);
-        if (errMsg) return { error: errMsg };
-        return { success: true };
-      } catch (err) {
-        return { error: errMessage(err) };
-      }
-    }),
+  openBackupDir: t.procedure.action(async () => {
+    try {
+      const dir = backupsRootDir();
+      await fs.mkdir(dir, { recursive: true });
+      const errMsg = await shell.openPath(dir);
+      if (errMsg) return { error: errMsg };
+      return { success: true };
+    } catch (err) {
+      return { error: errMessage(err) };
+    }
+  }),
 };

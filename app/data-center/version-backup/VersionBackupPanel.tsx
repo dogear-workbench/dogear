@@ -135,7 +135,7 @@ export function VersionBackupPanel({ workspaces }: Props) {
   const openDir = useCallback(async () => {
     setOpeningDir(true);
     try {
-      const r = await client.openBackupDir({});
+      const r = await client.openBackupDir();
       if ('error' in r && r.error) toast.error('打开备份目录失败', { description: r.error });
     } catch (e) {
       toast.error('打开备份目录失败', { description: String(e) });

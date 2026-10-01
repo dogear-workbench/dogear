@@ -28,6 +28,7 @@
 - `conversations.ts` — 对话 CRUD+分叉+移入工作区（moveConversationToWorkspace：索引迁移+session 搬运）
 - `workspace.ts` / `file.ts` / `explorer.ts` / `git.ts` — 工作区管理 / 打开文件位置 / 文件树操作 / git 历史（能力检测+双源时间线+快照恢复+历史版本内容）
 - `stock.ts` / `usage.ts` / `group.ts` / `ability.ts` / `scheduler.ts` — 股票 12+RPC / 用量查询 / 会话组+话题+共享区 / 能力包（getAbilityPacks 四源聚合+getAbilityMounts）/ 定时任务
+- `backup.ts` / `sync.ts` — 应用数据备份路由（状态/手动备份/列表/快照还原/打开 backups/ 根目录）/ 设备同步路由（状态/peers/配对/手动同步/同步状态读写；两域服务见 data-center.md）
 - `renderer-handlers.ts` — main→renderer 事件定义收口（sessionMessage、权限请求、usageEntryAdded、sessionStateChanged/sessionClosed、aliveConversationsChanged、failoverNotice、tasksChanged、notificationsChanged、soundCue、pty 三事件、browserActionAdded、pagePresentationChanged、humanInterventionChanged、feishuConnectionStatus/feishuBotAutoInit/feishuBotBindingChanged 等）
 
 ## lib（src/lib/）
@@ -58,6 +59,8 @@
 - `stores/ui-store.ts` — UI 状态：设置 overlay 开关 + 右侧面板折叠
 - `services/renderer-broadcast.ts` — 主进程→渲染层广播收口（broadcastToWindows 全窗口遍历 + conversationListChanged immediate/500ms 去抖两档 + groupDataChanged + aliveConversations）；renderer-broadcast-lazy.ts 为懒加载包装（避免模块加载期依赖 electron）
 - `services/safe-json.ts` — 安全 JSON 存储（原子写+备份+互斥锁），各存储通用
+- `services/data-registry.ts` — 应用数据清单唯一事实源（数据项全集+备份分类 scope+同步项派生；backup-service/sync/push-guard 均从它取源，详见 data-center.md）
+- `services/backup-service/zip-pack-worker.ts` — zip 打包 worker 线程入口：主进程反解+stat 产条目，worker 纯打包（60s 超时）失败回退主进程分片，保大目录备份不冻结 UI；worker 产物经 electron-builder dist/** 自动打入
 - `services/window-state-service.ts` — 窗口位置记忆（`.dogear/window-state.json`，当前仅伴随工作台用）
 - `agents/logger.ts` — 日志工具（mainLogger/workerLogger/createTaskLogger）
 
@@ -81,6 +84,7 @@
 - `skills/` — 全局 custom skills；`article-parser/` — 文章解析 skills 运行时目录
 - `site-knowledge/{domain}.md` — 站点档案（两区：正式地图+探索发现）
 - `stocks/watchlist.json` / `formulas.json` / `kline/` / `daily/` / `announcements/` / `cninfo-org-map.json` — 自选股/公式/K线/每日快照/公告缓存/巨潮 orgId 映射（结构见 stocks.md）
+- `backups/<scope>/` — 应用数据备份 zip（分类-时间戳命名）；`backups/last-run.json` — 备份执行观测；两者均为 registry 排除项，不参与备份与同步
 - `feishu/config.json` — 飞书 Bot 凭证（appId/appSecret/botName/connectedAt，明文）
 - `window-state.json` — 窗口位置记忆
 
