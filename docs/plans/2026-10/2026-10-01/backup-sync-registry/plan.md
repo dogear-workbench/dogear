@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: data-registry 模块](./step1-registry.md) — 数据项定义表 + 备份/同步派生函数 + 单测
-- [ ] [Step 2: 备份接 registry](./step2-backup-registry.md) — 分类源派生化、修 I-1/I-2、新增 app-config 分类、外部锚点打包
+- [x] [Step 2: 备份接 registry](./step2-backup-registry.md) — 分类源派生化、修 I-1/I-2、新增 app-config 分类、外部锚点打包
 - [ ] [Step 3: 备份可观测 + worker 打包](./step3-backup-observability.md) — lastError 暴露、zip 移 worker 线程、UI 状态
 - [ ] [Step 4: 恢复升级快照还原](./step4-restore-snapshot.md) — 删多余文件、预备份 keep、会话防护、缓存失效
 - [ ] [Step 5: 同步堵洞（轻量组）](./step5-sync-fixes.md) — D1 push 校验、D3 副本时间戳、F1 flag 接入、U6
