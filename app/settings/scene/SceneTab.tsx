@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
 import { ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
@@ -7,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { showConfirm } from '@/stores/confirm-store';
 import { useUIStore } from '@/stores/ui-store';
+import { useSessionStore } from '@/stores/session-store';
 import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import type { Workspace, WorkspaceConfig } from '@/types/electron-api';
 import type { AbilityPackView } from '../../../electron/main/tipc/ability';
@@ -50,7 +50,7 @@ interface SceneTabProps {
 }
 
 export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
-  const navigate = useNavigate();
+  const openDataCenterTab = useSessionStore((s) => s.openDataCenterTab);
   const closeSettings = useUIStore((s) => s.closeSettings);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
@@ -181,7 +181,7 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
   };
 
   const goToScheduler = () => {
-    navigate('/data-center');
+    openDataCenterTab();
     closeSettings();
   };
 
