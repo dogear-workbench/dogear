@@ -48,7 +48,7 @@ const PROFILE_FILTER_LABELS: Record<string, string> = {
 };
 
 const STATE_EXTRACT_REASON = '后台任务不走能力包：固定提示词 + 单工具';
-const PARSE_ARTICLE_REASON = '后台任务不走能力包：SKILL.md 提示词独立装配';
+const PARSE_ARTICLE_REASON = '后台任务不走能力包，提示词单独写死';
 
 export function packEnabledOf(pack: AbilityPack, config: WorkspaceConfig): boolean {
   return config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
@@ -626,10 +626,10 @@ export async function buildSceneOverview(
       id: 'executor',
       label: '任务执行会话',
       kind: 'matrix',
-      description: '固定层预设跟工作区走。代码实施任务自动挂分步实施 skill，其余按默认装配。',
+      description: '固定层预设跟工作区走。代码实施任务自动挂分步实施 skill，其余任务用默认配置。',
       packs: [],
       prompts: EXECUTOR_PROMPTS,
-      extensionNote: '代码实施任务自动挂分步实施 skill（staged-execution），其余任务按默认装配',
+      extensionNote: '代码实施任务自动挂分步实施 skill（staged-execution），其余任务用默认配置',
     },
     {
       id: 'scheduler-custom',

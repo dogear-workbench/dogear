@@ -33,9 +33,9 @@ import { ScenePromptsPanel } from './ScenePromptsPanel';
 
 type OverviewResult = Exclude<Awaited<ReturnType<typeof client.getSceneOverview>>, { error: string }>;
 
-/** 格子右上状态徽标：开关开着但最终没装配时提示 */
+/** 格子右上状态徽标：开关开着但最终没装上时提示 */
 function statusBadge(cell: ScenePackCell): string | null {
-  return cell.state === 'switchable' && cell.enabled && !cell.loaded ? '未装配' : null;
+  return cell.state === 'switchable' && cell.enabled && !cell.loaded ? '没装上' : null;
 }
 
 /** matrix 行 id → sceneOverrides 场景键；main/personal 走各自 config 真源，不在此列 */

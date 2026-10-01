@@ -12,7 +12,7 @@
 - `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录 + 逐项运行 loading）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/立即备份 + 备份列表展开与恢复 showConfirm；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（分类元数据与默认值、tipc client 类型推导、格式化）
 - `browser-data-panel.tsx` — 浏览器数据面板：全局分区（persist:dogear-browser）概览（磁盘占用/HTTP 缓存/登录站点数）+ 常驻准确性提示（误报可移除）+「我的登录」区（login-observer 检测的登录清单：证据徽章/最近登录时间，每条登出=本地清全量数据不通知服务器/清除数据/移除误报）+「其他站点数据」折叠区（仅清除数据）+ 面板级清缓存/全部清除；全部 showConfirm 含 agent 风险提示；30s 可见轮询；主进程服务与路由见 browser.md
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
-- `scheduler/` — 定时计划组件：SchedulerPanel（列表/编辑态切换）、TaskEditorPage（二级页：名称/提示词/模型/工作区/工具/触发器）、CustomToolPacksSection（生效集=toolPacksOverride ?? 工作区启用集）、TriggerListEditor/TriggerRow/TriggerControls、utils（describeTrigger 等）
+- `scheduler/` — 定时计划组件：SchedulerPanel（列表/编辑态切换）、TaskEditorPage（二级页：名称/提示词/模型/工作区/工具/skill/触发器）、CustomToolPacksSection（生效集=toolPacksOverride ?? 工作区启用集）、CustomSkillsSection（skill 挂载多选：listSkills 取数，Checkbox 多选写 draft.skillsOverride，空选归一 undefined+「不挂载」徽标）、TriggerListEditor/TriggerRow/TriggerControls、utils（describeTrigger 等）
 
 ## 用量（services/usage/）
 
@@ -24,12 +24,12 @@
 - `types.ts` — 数据模型（Trigger 九种：daily_at/monthly_at/interval/window/once/on_window_close/on_app_start/on_session_close/on_task_done 任务链）
 - `time-rule-engine.ts` — 时间规则纯函数（validateTrigger/nextDueAt/detectMissed/describeTrigger）
 - `plan-store.ts` — `.dogear/plans.json` 读写（version:2 容器，只认新格式，旧数组格式已不支持）
-- `plan-validate.ts` — 保存校验（on_task_done 目标存在性+环检测、toolPacksOverride 白名单清洗）
+- `plan-validate.ts` — 保存校验（on_task_done 目标存在性+环检测、toolPacksOverride 白名单清洗、sanitizeSkillsOverride 去重过滤非索引内名字，空归一 undefined）
 - `scheduler-service.ts` — 调度核心（分钟级 tick、窗口状态机、handleAppStart/handleSessionClose 入口、错过记 missed 不补跑）
 - `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加+倒序分页+保留 3 个月；source 四类筛选（无 source 旧条目读侧归 scheduler）
-- `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 提示词模板与工具集组装（toolPacksOverride 完全替代语义）
+- `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 提示词模板与工具集组装（toolPacksOverride 完全替代语义）；buildMountedSkillsSection 把挂载 skill 的 SKILL.md 全文按 `<mounted-skill>` 段拼进 systemPrompt（单个缺失/读取失败跳过告警不阻断）
 - `runtime/plan-runner.ts` — 单任务执行器（防重入、断点补记、requestStop 带来源）
-- `runtime/task-executor.ts` — 提交 CUSTOM_AGENT 到 agent-manager Worker 池，用量提取入历史
+- `runtime/task-executor.ts` — 提交 CUSTOM_AGENT 到 agent-manager Worker 池（toolPacksOverride/skillsOverride 透传 payload），用量提取入历史
 
 ## 统一运行注册表（services/）
 

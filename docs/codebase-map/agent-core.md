@@ -6,7 +6,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 - `agent-manager.ts` — Worker 线程池管理器（任务队列调度，空闲 60s 回收）
 - `agent-worker.ts` — Worker 执行器：接收任务后按类型分发给 `tasks/` 四模块处理，自身只保留 Worker 生命周期/MessagePort/取消协议；全部任务走 pi `runOnce`
-- `tasks/` — 任务 handler 四模块：task-context（handler 共享上下文类型）/parse-article-task（文章解析，article-parse-tools MCP 工具抓取）/state-extract-task（状态卡抽取）/custom-agent-task（自定义 Agent + SUMMARIZE/READING_ASSIST）
+- `tasks/` — 任务 handler 四模块：task-context（handler 共享上下文类型）/parse-article-task（文章解析，article-parse-tools MCP 工具抓取）/state-extract-task（状态卡抽取）/custom-agent-task（自定义 Agent + SUMMARIZE/READING_ASSIST；定时任务挂载 skill 以 <mounted-skill> 段拼入 systemPrompt）
 - `pi/provider.ts` — 按 profileId 解析 `{ model, profile }` + 按 piWireApi 造 anthropic-messages/openai-responses/openai-completions 客户端
 - `pi/model-catalog.ts` — 十厂商上下文窗口查表；渲染层同源副本 `lib/pi-model-catalog.ts`（tsconfig 隔离无法共享）；窗口解析「手填 > 目录 > 200K」
 - `pi/run-once.ts` — pi 一次性任务执行器：不抛出（`{ok:false}` 返回），turn 上限自数 turn_start
@@ -25,7 +25,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `transcript-adapter.ts` — 逐字稿去噪+工具骨架化、tail/range/uuid 切片读取、buildSessionUuidIndex
 - `session-history-reader.ts` — 读 session branch 唯一入口（不走 repository.open，fs 逐行解析容错尾行）
 - `permission-mode.ts` / `permission-rules.ts` — 权限类型 / 判定纯函数（autoExecute 放行 → PERMISSION_ASK_TOOLS 逐次确认（浏览器交互三工具+dogear__GitRevert）→ 工具包放行 → 快照映射 → 其余 ask）
-- `skill-loader.ts` — loadSkills 封装：扫目录产 SkillEntry[]、拼 `<available_skills>`、懒加载 Skill 工具
+- `skill-loader.ts` — loadSkills 封装：扫目录产 SkillEntry[]、拼 `<available_skills>`、懒加载 Skill 工具；loadAllSkillEntries 三目录共享索引（builtin/custom/user，会话装配、定时任务 sanitize 与 SKILL.md 拼接共用）
 - `builtin-tools.ts` — Read/Write/Edit + bash 双轨（run_in_background 委托 pty-service）+ read_terminal/kill_terminal
 - `search-tools.ts` — 手写 Glob/Grep（路径边界委托 workspace-boundary；`.dogear` 数据目录默认跳过，需搜其中内容时显式指 path）
 - `workspace-paths.ts` — 会话文件边界唯一计算来源：computeBasePaths = [workspacePath, ...additionalPaths, configDir] 大小写不敏感去重；configDir 顶层禁写清单 buildWriteExcludedPaths（notes/memory/workspaces/usage 等，应用数据走 dogear__* 工具）
@@ -45,7 +45,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 ## 能力包与 skill
 
 - `ability-registry.ts` — 能力包注册表单一真源：ABILITY_PACKS 13 包（core-profile 已整链路删除，职责由全局规则与主题记忆接住）+ AbilityPack.category 三分类（system/context-memory/extension，ABILITY_CATEGORIES 有序常量供能力页/场景页分组）+ resolveAbilities（overrides∩触发条件∩Profile 子开关，残留下线 key 静默忽略；传 sceneOverride 时包开关走 scenePackEnabled 三级回退 sceneOverrides[scene]→abilityOverrides→defaultEnabled，memory 对子会话归场景层不查 Profile 闸）+ TOOL_PACK_TO_ABILITY 反查；会话分流为独立包 shunt（段+dogear-shunt 工具组，主会话+有工作区+属组触发，executor 拼装侧排除）；workspace-git 包（git 工具组+git 历史意识段，有工作区才生效，主/子会话同条件）；memory 包工具组仅剩主题记忆三工具（Recall/Save/ForgetMemory，画像工具随 core-profile 退役）
-- `tipc/ability-scene.ts`（tipc/）— 场景维度能力数据底座：挂载矩阵构建（按包看场景，含系统行为详情 SYSTEM_MOUNTS_PACK_KEY）+ buildSceneOverview 场景总览（两层配置模型七行：五 matrix 行三态格子 switchable/forced/excluded + 两 summary 行提示词展示，executor 行带 default/code-impl 双执行模板；开关真源 main=abilityOverrides、sub/executor/scheduler-custom=sceneOverrides 对应键、personal=personal config）；getSceneOverview IPC 载体，tipc/ability.ts re-export 其类型保持前端 import 兼容
+- `tipc/ability-scene.ts`（tipc/）— 场景维度能力数据底座：挂载矩阵构建（按包看场景，含系统行为详情 SYSTEM_MOUNTS_PACK_KEY）+ buildSceneOverview 场景总览（两层配置模型七行：五 matrix 行三态格子 switchable/forced/excluded + 两 summary 行提示词展示；扩展细则仅 code-workflow 有子开关，personal 行排除格不渲染、sub/scheduler 扩展组撤格子换 groupNotes 一句话+跳转，executor 行单段通用执行模板+extensionNote；开关真源 main=abilityOverrides、sub/executor/scheduler-custom=sceneOverrides 对应键、personal=personal config）；getSceneOverview IPC 载体，tipc/ability.ts re-export 其类型保持前端 import 兼容
 - `session-append-templates.ts` — 系统级 append 段模板集中处（记忆/笔记纪律/岔题分流引导/派遣契约/联网调研分工/git 历史意识/应用数据目录认知等），pi-session 按 activeAbilities 条件注入；应用数据目录段为系统行为、无条件注入（不归能力包）
 - `skill-service.ts`（services/）— listSkills 扫三源目录标注 source+enabled
 - `tools/tool-registry.ts` — 工具注册表（SDK 内置+自定义，IPC 供设置页动态加载）
@@ -60,7 +60,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 - `task-store.ts` — 任务存储（`.dogear/tasks.json`）：八状态机（plan/backlog/queued/running/review/done/rejected/interrupted）、upsert 创建、申报制回写 reportTaskResult；Task.execProfile（default/code-impl，存量无字段=default，default 不落盘）
 - `task-service.ts` — 广播包装层（tasksChanged）；进 review 三通道通知（系统通知+提示音+通知中心）
-- `task-queue.ts` — 串行队列执行器：planPath 预检→origin 会话带退避查询→创建执行会话→申报制结算（review 唯一入口是执行会话申报，队列不判断成功）；按 execProfile 双分支——code-impl 传 skillsOverride=['staged-execution']+分步实施提示词，default 通用无人值守提示词（模板函数缺省 code-impl，调用点必须显式传 `?? 'default'`）；超时 Promise.race 强制放行
+- `task-queue.ts` — 串行队列执行器：planPath 预检→origin 会话带退避查询→创建执行会话→申报制结算（review 唯一入口是执行会话申报，队列不判断成功）；执行提示词统一走 buildExecutionPrompt 通用模板+非空 mountedSkills 挂载行（语境差异由 skill 全文承载），code-impl 传 skillsOverride=['staged-execution']（走 skillsOverride 绕过工作区 enabledSkills 与包总闸）；超时 Promise.race 强制放行
 
 ## 其他
 

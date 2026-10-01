@@ -12,9 +12,9 @@
 - `WebAiSitesSection.tsx` — 网页 AI 站点列表编辑（增删改、URL 校验、至少保留一条；挂基础设置「浏览器」小节后，保存后网页 AI 切换器实时联动）
 - `AbilityTab.tsx` — 能力标签页编排（只读展示，启停配置在场景页）：列表态按三大类分组（分组头数据取 getSceneOverview.categories，CATEGORY_FALLBACK 兜底；规则包卡+能力包卡+系统行为卡）/详情态按 selectedKey 路由
 - `ability/` — 能力页组件（全部只读）：RulesPackCard/RulesPackDetailPage（工作区+全局规则合并卡与双编辑器，编辑器保留）、AbilityPackCard/AbilityPackDetailPage（skill 型包 chips 查看切换+SKILL.md 渲染+skill 明细启用徽标；段型包 SegmentBlock）、AbilityPackSidebar（包类型徽标+配套工具组+加载情况）、AbilityMountsSection（挂载矩阵行列表：主会话/子会话各 Profile/任务执行会话 + 三条后台任务行——定时自定义任务 memory/notes 按 sceneOverrides.scheduler 三级回退、可选包按工作区工具包命中，话题状态抽取/文章解析恒 false；行徽标「后台任务/子会话/系统预设」）、SystemBehaviorDetail、BasicToolsSection、config-mutations.ts（装配开关写回算法共享模块：applyPackToggle/applySkillToggles/applyScenePackToggle 纯函数+createConfigPersister 乐观更新工厂+buildSkillToPacks/packToggleLinksOf/EMPTY_CONFIG，消费方为场景页）、pack-meta.ts（PACK_TYPE_LABELS+CATEGORY_FALLBACK 分组兜底）
-- `scene/` — 场景标签页（全部能力启停唯一入口，两层配置模型 v2）：SceneTab（七行侧栏：主会话/临时会话/子会话/任务执行会话/定时自定义任务五 matrix 行 + 话题状态抽取/文章解析两 summary 行；matrix 行按 ScenePackCell.state 三态渲染——switchable 开关/forced「强制」徽标/excluded 灰显排因，开关写回经 config-mutations 写底层真源：main=abilityOverrides、sub/executor/scheduler-custom=sceneOverrides 对应键（恢复默认=删整键回跟随工作区）、personal=personal config，写后重拉 overview；executor 行附 default/code-impl 双执行提示词模板，summary 行展示固定提示词与单工具说明；底部跳转子会话派遣页）、SceneAbilityRow（三态单格行：开关/强制/排除徽标+reason，仅 main/personal 行可展开子开关区）、ScenePromptsPanel（提示词展示面板：executor 行随行 content 直渲染，state-extract/parse-article 走只读路由拉取）
+- `scene/` — 场景标签页（全部能力启停唯一入口，两层配置模型 v2）：SceneTab（七行侧栏：主会话/临时会话/子会话/任务执行会话/定时自定义任务五 matrix 行 + 话题状态抽取/文章解析两 summary 行；matrix 行按 ScenePackCell.state 三态渲染——switchable 开关/forced「强制」徽标/excluded 灰显排因，开关写回经 config-mutations 写底层真源：main=abilityOverrides、sub/executor/scheduler-custom=sceneOverrides 对应键（恢复默认=删整键回跟随工作区）、personal=personal config，写后重拉 overview；sub/scheduler 扩展组撤格子换 groupNotes 一句话+跳转按钮（派遣页/定时计划），executor 行附单段通用执行提示词模板与挂载说明，summary 行展示固定提示词；底部跳转子会话派遣页）、SceneAbilityRow（三态单格行：开关/强制/排除徽标+reason+右上状态徽标，展开子开关区仅 code-workflow 有）、ScenePromptsPanel（提示词展示面板：正文 MarkdownRenderer 富渲染随页面滚动，executor 行随行 content 直渲染+extensionNote，state-extract/parse-article 走只读路由拉取）
 - `WorkspaceManagementTab.tsx` — 工作区管理（列表/删除/孤儿恢复/环境依赖检查）
-- `SubAgentTab.tsx` + `subagent/AbilityBlockRow.tsx` — 子会话派遣标签页：Profile 列表（非 default 启用 Switch）+ ProfileEditor（名称/模型/超时/基础工具/Skill）；能力域按能力包块化渲染（数据源 `client.getAbilityPacks()`，失败显示错误行+重试）：article/web-mcp 单开关、stock 单开关（直通包内全部 skill 与工具包，无细选）、code-workflow/自定义 skill 块开关+细选 Checkbox Popover、browser 块开关（任一通道即 on）+双通道细选；memory 归场景页「子会话」行（enabledAbilities.memory 字段保留仅数据兼容，UI 与解析均不消费）；写回走 enabledAbilities 原字段（数组只增删包内名，存量混入名保留），交付通信为固定启用行
+- `SubAgentTab.tsx` + `subagent/AbilityBlockRow.tsx` — 子会话派遣标签页：Profile 列表（非 default 启用 Switch）+ ProfileEditor（名称/模型/超时/基础工具/Skill）；能力域按能力包块化渲染（数据源 `client.getAbilityPacks()`，失败显示错误行+重试）：article/web-mcp 单开关、stock 单开关（直通包内全部 skill 与工具包，无细选）、code-workflow/自定义 skill 块开关+细选 Checkbox Popover、browser 单开关（齐开齐关 browser+extension 双字段，与装配语义一致）；memory 归场景页「子会话」行（enabledAbilities.memory 字段保留仅数据兼容，UI 与解析均不消费）；写回走 enabledAbilities 原字段（数组只增删包内名，存量混入名保留），交付通信为固定启用行
 - `pi-model-row.tsx` — 模型清单行：ID 行内编辑、窗口徽标手填（parseContextInput 解析 1M/200K 写法）
 - `FetchModelsDialog.tsx` — 上游模型拉取弹窗（探测兼容端点模型列表，勾选后合并入清单）
 
@@ -41,7 +41,7 @@
 
 ## 注意
 
-- 能力元数据唯一来源 `getAbilityPacks()`（前端零硬编码，residentToolGroups 同接口下传）；场景总览 `getSceneOverview({ workspaceId })` 返回六场景行×13 包矩阵+三大类分组头
+- 能力元数据唯一来源 `getAbilityPacks()`（前端零硬编码，residentToolGroups 同接口下传）；场景总览 `getSceneOverview({ workspaceId })` 返回七场景行（五 matrix+两 summary）+三大类分组头，子会话/定时任务扩展组多为 groupNotes 文字而非包格子
 - 设置保存为主进程按 diff 分层生效：快照域标脏受影响 PiSession，无整体重启链路
 - 包开关联动算法在 `ability/config-mutations.ts`（applySkillToggles 原子双写；有 Skill 的包总开关联动补齐包内 skill 与工具包只补不删，无 Skill 纯工具包开关直接写 enabledToolPacks），能力页只读无写路径，写回入口在场景页
 - 子会话扩展能力实际生效 = Profile 勾选 ∩ 工作区能力包开关（交集语义）；固定层（memory 等）归场景页「子会话」行 sceneOverrides.sub 裁决，不查 Profile；SubAgentProfile.enabled 仅非 default 有意义（停用后系统提示词不列出、startChild 拒绝）
