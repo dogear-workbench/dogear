@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 装配与数据链](./step1-assembly-data.md) — 执行提示词统一为插拔式、定时任务 skillsOverride 字段与 SKILL.md 全文拼接
 - [x] [Step 2: buildSceneOverview 重构](./step2-scene-overview.md) — 六行结构修正（personal 瘦身/sub/scheduler 扩展区撤格子）、subToggles 收敛、徽标死代码清理、全部新文案
-- [ ] [Step 3: 场景页前端](./step3-scene-frontend.md) — SceneTab/SceneAbilityRow 适配新行结构、ScenePromptsPanel 富渲染（MarkdownRenderer 无高度上限）
+- [x] [Step 3: 场景页前端](./step3-scene-frontend.md) — SceneTab/SceneAbilityRow 适配新行结构、ScenePromptsPanel 富渲染（MarkdownRenderer 无高度上限）
 - [ ] [Step 4: 单元层 UI](./step4-unit-ui.md) — SubAgentTab browser 单开关化、定时任务编辑页「扩展能力（Skill）」选择区
 - [ ] [Step 5: 收尾](./step5-wrapup.md) — 全链路目验清单、codebase-map 同步、git 提交
 

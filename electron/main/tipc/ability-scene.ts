@@ -334,12 +334,6 @@ export interface SceneSubToggleSkill {
   enabled: boolean;
 }
 
-export interface SceneSubToggleToolPack {
-  id: string;
-  label: string;
-  enabled: boolean;
-}
-
 /** 格子三态：switchable=预设值+开关可改；forced=强制装载无开关；excluded=条件排除灰显（开关无裁决意义） */
 export type SceneCellState = 'switchable' | 'forced' | 'excluded';
 
@@ -349,9 +343,8 @@ function hasSubToggles(pack: AbilityPack): boolean {
 }
 
 export interface ScenePackSubToggles {
-  /** 只有 code-workflow 会有（全应用唯一的 skill 细则）；toolPacks 恒为空数组（code-workflow 无工具组），字段留作前端类型兼容 */
+  /** 只有 code-workflow 会有（全应用唯一的 skill 细则） */
   skills: SceneSubToggleSkill[];
-  toolPacks: SceneSubToggleToolPack[];
 }
 
 export interface ScenePackCell {
@@ -447,7 +440,7 @@ function mainCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
     loaded: ctx.mainActive.has(pack.key),
     reason: enabled ? sceneReason(pack, 'main', ctx.hasWorkspace) : '开关已关，不装载',
     subToggles: hasSubToggles(pack)
-      ? { skills: skillToggleList(pack, ctx.wsSkills, ctx), toolPacks: [] }
+      ? { skills: skillToggleList(pack, ctx.wsSkills, ctx) }
       : undefined,
   };
 }
@@ -464,7 +457,7 @@ function personalCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell | nul
     loaded: ctx.personalActive.has(pack.key),
     reason: enabled ? personalSceneReason(pack) : '临时会话默认只开联网搜索',
     subToggles: hasSubToggles(pack)
-      ? { skills: skillToggleList(pack, ctx.personalSkills, ctx), toolPacks: [] }
+      ? { skills: skillToggleList(pack, ctx.personalSkills, ctx) }
       : undefined,
   };
 }
