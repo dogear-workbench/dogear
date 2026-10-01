@@ -6,7 +6,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 
 - `agent-manager.ts` — Worker 线程池管理器（任务队列调度，空闲 60s 回收）
 - `agent-worker.ts` — Worker 执行器：接收任务后按类型分发给 `tasks/` 四模块处理，自身只保留 Worker 生命周期/MessagePort/取消协议；全部任务走 pi `runOnce`
-- `tasks/` — 任务 handler 四模块：task-context（handler 共享上下文类型）/parse-article-task（文章解析，article-parse-tools MCP 工具抓取）/state-extract-task（状态卡抽取）/custom-agent-task（自定义 Agent + SUMMARIZE/READING_ASSIST；定时任务挂载 skill 以 <mounted-skill> 段拼入 systemPrompt）
+- `tasks/` — 任务 handler 四模块：task-context（handler 共享上下文类型）/parse-article-task（文章解析，article-parse-tools MCP 工具抓取）/state-extract-task（状态卡抽取）/custom-agent-task（自定义 Agent + SUMMARIZE/READING_ASSIST；定时任务挂载 skill 走正常加载：skillsOverride 过滤三目录索引，<available_skills> 索引进 systemPrompt + Skill 工具懒加载全文）
 - `pi/provider.ts` — 按 profileId 解析 `{ model, profile }` + 按 piWireApi 造 anthropic-messages/openai-responses/openai-completions 客户端
 - `pi/model-catalog.ts` — 十厂商上下文窗口查表；渲染层同源副本 `lib/pi-model-catalog.ts`（tsconfig 隔离无法共享）；窗口解析「手填 > 目录 > 200K」
 - `pi/run-once.ts` — pi 一次性任务执行器：不抛出（`{ok:false}` 返回），turn 上限自数 turn_start
@@ -25,7 +25,7 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 - `transcript-adapter.ts` — 逐字稿去噪+工具骨架化、tail/range/uuid 切片读取、buildSessionUuidIndex
 - `session-history-reader.ts` — 读 session branch 唯一入口（不走 repository.open，fs 逐行解析容错尾行）
 - `permission-mode.ts` / `permission-rules.ts` — 权限类型 / 判定纯函数（autoExecute 放行 → PERMISSION_ASK_TOOLS 逐次确认（浏览器交互三工具+dogear__GitRevert）→ 工具包放行 → 快照映射 → 其余 ask）
-- `skill-loader.ts` — loadSkills 封装：扫目录产 SkillEntry[]、拼 `<available_skills>`、懒加载 Skill 工具；loadAllSkillEntries 三目录共享索引（builtin/custom/user，会话装配、定时任务 sanitize 与 SKILL.md 拼接共用）
+- `skill-loader.ts` — loadSkills 封装：扫目录产 SkillEntry[]、拼 `<available_skills>`、懒加载 Skill 工具；loadAllSkillEntries 三目录共享索引（builtin/custom/user，会话装配、定时任务 sanitize 与挂载装配共用）
 - `builtin-tools.ts` — Read/Write/Edit + bash 双轨（run_in_background 委托 pty-service）+ read_terminal/kill_terminal
 - `search-tools.ts` — 手写 Glob/Grep（路径边界委托 workspace-boundary；`.dogear` 数据目录默认跳过，需搜其中内容时显式指 path）
 - `workspace-paths.ts` — 会话文件边界唯一计算来源：computeBasePaths = [workspacePath, ...additionalPaths, configDir] 大小写不敏感去重；configDir 顶层禁写清单 buildWriteExcludedPaths（notes/memory/workspaces/usage 等，应用数据走 dogear__* 工具）

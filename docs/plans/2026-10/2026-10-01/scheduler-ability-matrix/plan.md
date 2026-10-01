@@ -4,9 +4,9 @@
 
 **步骤**：
 
-- [ ] [Step 1: 装配侧正常加载](./step1-assembly.md) — custom-agent-task 弃全文拼接，改 formatSkillIndexForPrompt 索引 + createSkillTool 工具
-- [ ] [Step 2: 编辑页扩展矩阵](./step2-editor-matrix.md) — 新矩阵组件替换两组件，撤 CustomSkillsSection/CustomToolPacksSection
-- [ ] [Step 3: 收尾](./step3-wrapup.md) — 文案与场景页联动核查、codebase-map 同步、提交
+- [x] [Step 1: 装配侧正常加载](./step1-assembly.md) — custom-agent-task 弃全文拼接，改 formatSkillIndexForPrompt 索引 + createSkillTool 工具
+- [x] [Step 2: 编辑页扩展矩阵](./step2-editor-matrix.md) — 新矩阵组件替换两组件，撤 CustomSkillsSection/CustomToolPacksSection
+- [x] [Step 3: 收尾](./step3-wrapup.md) — 文案与场景页联动核查、codebase-map 同步、提交
 
 ## 全局决策
 
