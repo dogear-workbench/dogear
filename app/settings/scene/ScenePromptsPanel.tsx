@@ -47,19 +47,19 @@ async function fetchSections(id: string): Promise<PromptSection[] | { error: str
   if (id === 'state-extract') {
     const r = await client.getStateExtractPrompt();
     return 'error' in r
-      ? { error: r.error }
+      ? { error: r.error ?? '读取失败' }
       : [
-          { label: 'System Prompt（运行时固定角色语）', text: r.systemPrompt },
-          { label: '抽取模板（<configDir>/state-extract-prompt.md，可编辑）', text: r.template },
+          { label: 'System Prompt（运行时固定角色语）', text: r.systemPrompt ?? '' },
+          { label: '抽取模板（<configDir>/state-extract-prompt.md，可编辑）', text: r.template ?? '' },
         ];
   }
   if (id === 'parse-article') {
     const r = await client.getParseArticlePrompt();
     return 'error' in r
-      ? { error: r.error }
+      ? { error: r.error ?? '读取失败' }
       : [
-          { label: 'System Prompt（SKILL.md 剥 frontmatter 正文，与解析任务同源）', text: r.systemPrompt },
-          { label: 'SKILL.md 原始全文', text: r.skillMd },
+          { label: 'System Prompt（SKILL.md 剥 frontmatter 正文，与解析任务同源）', text: r.systemPrompt ?? '' },
+          { label: 'SKILL.md 原始全文', text: r.skillMd ?? '' },
         ];
   }
   return { error: `未知提示词路由: ${id}` };
