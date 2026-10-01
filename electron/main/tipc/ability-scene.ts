@@ -8,7 +8,6 @@ import {
   type AbilityPack,
 } from '../agents/ability-registry.js';
 import { listSkillTemplates, type SkillTemplateMeta } from '../services/skill-template-service.js';
-import { OPTIONAL_TOOL_PACKS, type ToolPackMeta } from '../services/tool-packs.js';
 import {
   createDefaultSubAgentProfile,
   type AppSettings,
@@ -42,15 +41,14 @@ export const SYSTEM_MOUNTS_PACK_KEY = '__system__';
 const MOUNT_GROUP_PLACEHOLDER = 'mount-matrix-group';
 
 const PROFILE_FILTER_LABELS: Record<string, string> = {
-  memory: '记忆',
   stock: '股票分析',
   article: '文章',
   browser: '浏览器',
   'code-workflow': '代码工作流 Skill',
 };
 
-const STATE_EXTRACT_REASON = '固定提示词 + emit_state_increment 单工具，不挂载能力包';
-const PARSE_ARTICLE_REASON = 'Claude Agent SDK 独立装配（SKILL.md 提示词），不经过能力包体系';
+const STATE_EXTRACT_REASON = '后台任务不走能力包：固定提示词 + 单工具';
+const PARSE_ARTICLE_REASON = '后台任务不走能力包：SKILL.md 提示词独立装配';
 
 export function packEnabledOf(pack: AbilityPack, config: WorkspaceConfig): boolean {
   return config.abilityOverrides?.[pack.key] ?? pack.defaultEnabled;
@@ -60,55 +58,55 @@ export function packEnabledOf(pack: AbilityPack, config: WorkspaceConfig): boole
 function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspace: boolean): string {
   if (kind === 'main' || kind === 'executor') {
     if (kind === 'executor' && pack.key === 'notes') {
-      return '工具组随包开关注册（任务申报组派单保底），存卡纪律段不注入';
+      return '笔记工具组随包注册（申报任务结果要用），存卡纪律段不注入';
     }
     if (kind === 'executor' && pack.key === 'group-context') {
-      return '会话属于组时只注入组头，无人值守不注入话题状态';
+      return '会话属于组时只注入组头，不注入话题状态';
     }
     if (pack.key === 'memory' || pack.key === 'notes') {
       return hasWorkspace
-        ? `主会话绑定工作区即加载${pack.key === 'notes' ? '（含任务申报工具）' : ''}`
-        : '需绑定工作区路径后加载';
+        ? `绑定工作区后生效${pack.key === 'notes' ? '（含任务申报工具）' : ''}`
+        : '没绑定工作区，用不了';
     }
     if (pack.key === 'workspace-git') {
-      return hasWorkspace
-        ? '绑定工作区即注册 git 工具组并注入 git 历史意识段（主/子会话同条件）'
-        : '需绑定工作区路径后加载';
+      return hasWorkspace ? '绑定工作区后生效' : '没绑定工作区，用不了';
     }
     switch (pack.key) {
       case 'workspace-rules':
       case 'global-rules':
-        return '注入每个主会话';
+        return '包开着就注入';
       case 'group-context':
         return '会话属于组时注入组上下文';
       case 'agent-collab':
-        return '会话属于组时注册协作工具并注入协作规范';
+        return '会话属于组时注册协作工具、注入协作规范';
       case 'shunt':
-        return '主会话绑定工作区且属于组时注入分流段并注册 ForkSession 工具（执行会话不注入不注册）';
+        return '会话属于组时注入分流段并注册分流工具';
       case 'web-mcp':
-        return '包开启即挂载联网搜索工具（需在设置页配置 GLM API Key，未配置时调用返回提示）';
+        return '包开着就挂载联网搜索工具，GLM API Key 在设置页配置';
       default:
-        return '包开启；包内 Skill 与工具包受工作区子开关控制';
+        return '包开着就装载，包内 skill 与工具包受子开关控制';
     }
   }
   switch (pack.key) {
     case 'workspace-rules':
     case 'global-rules':
-      return '随包开关注入子会话';
+      return '包开着就注入子会话';
+    case 'memory':
+      return '绑定工作区后生效';
     case 'notes':
-      return '仅主会话加载，子会话不注入';
+      return '子会话不用笔记，产物走交付契约';
     case 'workspace-git':
-      return '绑定工作区即生效（主/子会话同条件），无 Profile 过滤维度';
+      return '绑定工作区后生效';
     case 'shunt':
-      return '仅主会话生效，子会话不加载';
+      return '分流只对主会话的回复有意义';
     case 'group-context':
-      return '会话属于组时生效，无 Profile 过滤维度';
+      return '会话属于组时生效';
     case 'agent-collab':
-      return '交付契约段恒注入（强制）；协作/派遣工具属组恒注册（强制）；包开关仅裁决 sibling 工具组，关闭效果非对称';
+      return '交付契约段恒注入；协作工具属组时注册，开关只管 sibling 工具组';
     case 'web-mcp':
-      return '仅主会话挂载联网搜索工具；子会话本期不挂载';
+      return '子会话不挂载联网搜索工具';
     default:
-      return '包开启；包内 Skill 与工具包受工作区子开关控制';
+      return '包开着就装载，包内 skill 与工具包受子开关控制';
   }
 }
 
@@ -116,21 +114,19 @@ function sceneReason(pack: AbilityPack, kind: AbilityMountSceneKind, hasWorkspac
 function personalSceneReason(pack: AbilityPack): string {
   switch (pack.key) {
     case 'workspace-rules':
-      return '机制生效：读 workspaces/personal/agent.md（大概率空，无注入内容）';
+      return '读 personal 的 agent.md，文件是空的就等于没注入';
     case 'global-rules':
-      return '包开即注入临时会话';
+      return '包开着就注入临时会话';
     case 'memory':
-      return '包级不生效（无工作区路径被排除）；记忆工具兜底注册可用，纪律段不注入';
     case 'notes':
-      return '需绑定工作区路径，临时会话不加载';
     case 'workspace-git':
-      return '需绑定工作区路径，临时会话不加载';
+      return '临时会话没有工作区，用不了';
     case 'group-context':
     case 'agent-collab':
     case 'shunt':
-      return '临时会话无工作区路径且无组，不加载';
+      return '临时会话没有工作区也没有组，用不了';
     default:
-      return '包开即生效；包内 Skill 与工具包受 personal 工作区子开关控制';
+      return '包开着就生效，包内 skill 与工具包受临时会话自己的子开关控制';
   }
 }
 
@@ -141,63 +137,43 @@ function profileFilterReason(pack: AbilityPack, profile: SubAgentProfile): strin
   const ab = profile.enabledAbilities;
   if (pack.key === 'code-workflow') {
     const matched = (pack.skills ?? []).filter((s) => ab.skills?.includes(s));
-    return matched.length > 0 ? `Profile 白名单命中 ${matched.length} 个 Skill` : 'Profile 未勾选包内 Skill';
+    return matched.length > 0 ? `Profile 勾了 ${matched.length} 个 skill` : 'Profile 没勾包内 skill';
   }
-  const on = ab[pack.key as 'memory' | 'stock' | 'article' | 'browser'] === true;
-  if (pack.key === 'memory') {
-    return on ? `Profile 已勾选${label}能力（还需工作区记忆包开启才装载）` : `Profile 未勾选${label}能力`;
-  }
-  return on ? `Profile 已勾选${label}能力` : `Profile 未勾选${label}能力`;
+  const on = ab[pack.key as 'stock' | 'article' | 'browser'] === true;
+  return on ? `Profile 勾了${label}` : `Profile 没勾${label}`;
 }
 
-/** 定时自定义任务装载的 skill-packs 包按 toolGroups ∩ enabledToolPacks 计算，对齐 buildCustomToolSet（残留旧 key 静默忽略） */
-function schedulerPackHitCell(
-  pack: AbilityPack,
-  enabledPacks: Set<string>,
-): { loaded: boolean; reason: string } {
-  if (pack.key === 'browser') {
-    return enabledPacks.has('browser')
-      ? { loaded: true, reason: '已启用工具包：browser；扩展通道不随定时任务装载，skill 方法论文本不注入' }
-      : { loaded: false, reason: '工作区未启用该域任何工具包（扩展通道不随定时任务装载）' };
-  }
-  const hit = (pack.toolGroups ?? []).filter((g) => enabledPacks.has(g));
-  if (hit.length === 0) return { loaded: false, reason: '工作区未启用该域任何工具包' };
-  const skillNote = pack.skills?.length ? '；skill 方法论文本不注入' : '';
-  return { loaded: true, reason: `已启用工具包：${hit.join('、')}${skillNote}` };
-}
-
-/** 定时自定义任务行的 loaded/reason 以 buildCustomToolSet 实际装载为准：memory/notes 按 sceneOverrides.scheduler 三级回退（无键=装载），可选包按工作区工具包命中 */
+/** 定时自定义任务行的 loaded/reason：memory/notes 按 sceneOverrides.scheduler 三级回退（无键=装载），其余不随定时任务场景裁决 */
 function schedulerCustomAgentCell(
   pack: AbilityPack,
-  enabledPacks: Set<string>,
   config: WorkspaceConfig,
 ): { loaded: boolean; reason: string } {
   switch (pack.key) {
     case 'memory': {
       const on = scenePackEnabled(pack, config, 'scheduler');
       return on
-        ? { loaded: true, reason: '定时任务按场景覆盖三级回退装载记忆工具（无覆盖=默认装载）' }
-        : { loaded: false, reason: '场景覆盖已关闭：定时任务不装载记忆工具' };
+        ? { loaded: true, reason: '记忆工具随开关装载，默认开' }
+        : { loaded: false, reason: '开关已关，不装记忆工具' };
     }
     case 'notes': {
       const on = scenePackEnabled(pack, config, 'scheduler');
       return on
-        ? { loaded: true, reason: '定时任务按场景覆盖装载笔记工具组（任务产物落卡）；任务系统工具为主会话专属' }
-        : { loaded: false, reason: '场景覆盖已关闭：定时任务不装载笔记工具组' };
+        ? { loaded: true, reason: '笔记工具组随开关装载（产物落卡片）；任务系统工具不装，那是主会话专属' }
+        : { loaded: false, reason: '开关已关，不装笔记工具组' };
     }
     case 'workspace-rules':
     case 'global-rules':
-      return { loaded: false, reason: '后台任务不注入规则段' };
+      return { loaded: false, reason: '后台任务不读规则段' };
     case 'group-context':
-      return { loaded: false, reason: '后台任务无会话组上下文' };
+      return { loaded: false, reason: '后台任务没有会话组' };
     case 'agent-collab':
-      return { loaded: false, reason: '后台任务无派遣与交付通道' };
+      return { loaded: false, reason: '后台任务没有派遣交付通道' };
     case 'code-workflow':
-      return { loaded: false, reason: '定时任务无 skill 挂载机制' };
+      return { loaded: false, reason: 'skill 挂载在定时任务编辑页按任务配置' };
     default:
       return pack.type === 'skill-packs'
-        ? schedulerPackHitCell(pack, enabledPacks)
-        : { loaded: false, reason: '后台任务不加载该能力包' };
+        ? { loaded: false, reason: '工具包与 skill 在定时任务编辑页按任务配置' }
+        : { loaded: false, reason: '后台任务用不上这个能力包' };
   }
 }
 
@@ -220,7 +196,7 @@ export function buildMountRows(
     label: '主会话',
     system: true,
     loaded: mainActive.has(pack.key),
-    reason: enabled ? sceneReason(pack, 'main', hasWorkspace) : '包开关已关闭',
+    reason: enabled ? sceneReason(pack, 'main', hasWorkspace) : '开关已关，不装载',
   });
 
   const personalActive = resolveAbilities(personalConfig, { role: 'main', hasWorkspace: false, groupId: null });
@@ -231,7 +207,7 @@ export function buildMountRows(
     label: '临时会话',
     system: true,
     loaded: personalActive.has(pack.key),
-    reason: personalEnabled ? personalSceneReason(pack) : 'personal 默认关闭（最小能力集）',
+    reason: personalEnabled ? personalSceneReason(pack) : '临时会话默认只开联网搜索',
   });
 
   const subScenes: Array<{ kind: AbilityMountSceneKind; profile: SubAgentProfile; system: boolean }> = [
@@ -255,7 +231,7 @@ export function buildMountRows(
       label: scene.kind === 'sub-default' ? '子会话·默认' : scene.profile.name,
       system: scene.system,
       loaded,
-      reason: enabled ? (filterReason ?? sceneReason(pack, scene.kind, hasWorkspace)) : '包开关已关闭',
+      reason: enabled ? (filterReason ?? sceneReason(pack, scene.kind, hasWorkspace)) : '开关已关，不装载',
       profileDisabled: scene.profile.enabled === false || undefined,
     });
   }
@@ -266,11 +242,10 @@ export function buildMountRows(
     label: '任务执行会话',
     system: true,
     loaded: mainActive.has(pack.key),
-    reason: enabled ? sceneReason(pack, 'executor', hasWorkspace) : '包开关已关闭',
+    reason: enabled ? sceneReason(pack, 'executor', hasWorkspace) : '开关已关，不装载',
   });
 
-  const enabledPacks = new Set(config.enabledToolPacks);
-  const customAgentCell = schedulerCustomAgentCell(pack, enabledPacks, config);
+  const customAgentCell = schedulerCustomAgentCell(pack, config);
   rows.push({
     kind: 'scheduler',
     id: 'custom-agent',
@@ -301,7 +276,7 @@ export function buildMountRows(
 
 export function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolean): AbilityMountSceneRow[] {
   const profiles = settings.subAgent?.profiles ?? [];
-  const baseReason = hasWorkspace ? '常驻基础设施，绑定工作区即注册，不可关闭' : '当前工作区无路径，跨会话检索组不注册';
+  const baseReason = hasWorkspace ? '常驻基础设施，绑定工作区即注册' : '工作区没绑路径，注册不了';
   return [
     { kind: 'main', id: 'main', label: '主会话', system: true, loaded: hasWorkspace, reason: baseReason },
     {
@@ -310,7 +285,7 @@ export function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolea
       label: '临时会话',
       system: true,
       loaded: true,
-      reason: '基础工具注册（文件边界仅应用数据目录挂载）；dogear-history 只读话题工具放行，辅助归置建议',
+      reason: '基础工具恒注册，文件边界只有应用数据目录',
     },
     {
       kind: 'sub-default',
@@ -318,7 +293,7 @@ export function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolea
       label: '子会话·默认',
       system: true,
       loaded: hasWorkspace,
-      reason: hasWorkspace ? '常驻基础设施不受 Profile 过滤，默认 Profile 子会话同样注册' : baseReason,
+      reason: hasWorkspace ? '常驻基础设施，不受 Profile 过滤' : baseReason,
     },
     ...profiles
       .filter((p) => p.id !== 'default')
@@ -328,7 +303,7 @@ export function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolea
         label: p.name,
         system: false,
         loaded: hasWorkspace,
-        reason: '常驻基础设施不受 Profile 子开关约束',
+        reason: '常驻基础设施，不受 Profile 过滤',
         profileDisabled: p.enabled === false || undefined,
       })),
     {
@@ -337,7 +312,7 @@ export function buildSystemMountRows(settings: AppSettings, hasWorkspace: boolea
       label: '任务执行会话',
       system: true,
       loaded: hasWorkspace,
-      reason: '常驻基础设施，任务执行会话同样注册',
+      reason: '常驻基础设施，执行会话同样注册',
     },
   ];
 }
@@ -368,9 +343,13 @@ export interface SceneSubToggleToolPack {
 /** 格子三态：switchable=预设值+开关可改；forced=强制装载无开关；excluded=条件排除灰显（开关无裁决意义） */
 export type SceneCellState = 'switchable' | 'forced' | 'excluded';
 
+/** 只有 code-workflow 保留 skill 细则（6 skill 细选），其余包单开关整包装载 */
+function hasSubToggles(pack: AbilityPack): boolean {
+  return pack.key === 'code-workflow' && pack.type === 'skill-packs';
+}
 
 export interface ScenePackSubToggles {
-  /** 仅 skill-packs 包存在（总分两级开关：prompt-only / segment-tools 无展开层）；定时任务场景 skills 恒空数组 */
+  /** 只有 code-workflow 会有（全应用唯一的 skill 细则）；toolPacks 恒为空数组（code-workflow 无工具组），字段留作前端类型兼容 */
   skills: SceneSubToggleSkill[];
   toolPacks: SceneSubToggleToolPack[];
 }
@@ -408,17 +387,16 @@ export interface SceneOverviewRow {
   packs: ScenePackCell[];
   /** 行内提示词展示项（summary 行必有；executor 行带执行提示词模板全文） */
   prompts?: SceneSummaryPrompt[];
-  /** 仅 executor 行：扩展层按任务类型装配的说明文字（execProfile 分支见后续任务类型改造） */
+  /** 仅 executor 行：扩展层按任务类型装配的说明文字 */
   extensionNote?: string;
+  /** 分组级说明（category key → 文字）：撤掉包格子的分组在这里给一句指引 */
+  groupNotes?: Partial<Record<AbilityCategoryMeta['key'], string>>;
 }
 
 export interface SceneOverviewResult {
   rows: SceneOverviewRow[];
   categories: readonly AbilityCategoryMeta[];
 }
-
-/** 并入包内的 server 名（非 OPTIONAL_TOOL_PACKS 成员，无独立开关）的展示名 */
-const BUNDLED_GROUP_LABELS: Record<string, string> = { 'dogear-extension': '浏览器扩展' };
 
 interface SceneCellCtx {
   config: WorkspaceConfig;
@@ -428,12 +406,9 @@ interface SceneCellCtx {
   personalActive: Set<string>;
   subActive: Set<string>;
   executorActive: Set<string>;
-  wsToolPacks: Set<string>;
   wsSkills: Set<string>;
-  personalToolPacks: Set<string>;
   personalSkills: Set<string>;
   templateByName: Map<string, SkillTemplateMeta>;
-  optionalPackByName: Map<string, ToolPackMeta>;
 }
 
 function skillToggleList(
@@ -448,15 +423,7 @@ function skillToggleList(
   }));
 }
 
-function toolPackToggleList(pack: AbilityPack, enabledPacks: Set<string>, ctx: SceneCellCtx): SceneSubToggleToolPack[] {
-  return (pack.toolGroups ?? []).map((id) => ({
-    id,
-    label: ctx.optionalPackByName.get(id)?.label ?? BUNDLED_GROUP_LABELS[id] ?? id,
-    enabled: enabledPacks.has(id),
-  }));
-}
-
-/** personal 场景结构性排除的固定层包（无工作区路径/无组 → 代码条件恒排除），灰显展示 */
+/** personal 场景结构性排除的固定层包（无工作区路径/无组 → 代码条件恒排除），场景行不输出格子（说明并入行 description） */
 const PERSONAL_EXCLUDED_KEYS: ReadonlySet<string> = new Set([
   'memory',
   'notes',
@@ -478,66 +445,35 @@ function mainCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
     state: 'switchable',
     enabled,
     loaded: ctx.mainActive.has(pack.key),
-    reason: enabled ? sceneReason(pack, 'main', ctx.hasWorkspace) : '包开关已关闭',
-    subToggles: pack.type === 'skill-packs'
-      ? {
-          skills: skillToggleList(pack, ctx.wsSkills, ctx),
-          toolPacks: toolPackToggleList(pack, ctx.wsToolPacks, ctx),
-        }
+    reason: enabled ? sceneReason(pack, 'main', ctx.hasWorkspace) : '开关已关，不装载',
+    subToggles: hasSubToggles(pack)
+      ? { skills: skillToggleList(pack, ctx.wsSkills, ctx), toolPacks: [] }
       : undefined,
   };
 }
 
-function personalCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
+function personalCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell | null {
+  if (pack.key === 'workspace-rules' || PERSONAL_EXCLUDED_KEYS.has(pack.key)) return null;
   const enabled = packEnabledOf(pack, ctx.personalConfig);
-  const loaded = ctx.personalActive.has(pack.key);
-  const head = { key: pack.key, label: pack.label, category: pack.category, loaded };
-  if (pack.key === 'workspace-rules') {
-    return {
-      ...head,
-      state: 'forced',
-      enabled,
-      reason: '机制级只读：读 workspaces/personal/agent.md（大概率空，无注入内容），场景页不做开关',
-    };
-  }
-  if (PERSONAL_EXCLUDED_KEYS.has(pack.key)) {
-    return {
-      ...head,
-      state: 'excluded',
-      enabled: false,
-      reason: personalSceneReason(pack),
-    };
-  }
   return {
-    ...head,
+    key: pack.key,
+    label: pack.label,
+    category: pack.category,
     state: 'switchable',
     enabled,
-    reason: enabled ? personalSceneReason(pack) : 'personal 默认关闭（最小能力集）',
-    subToggles: pack.type === 'skill-packs'
-      ? {
-          skills: skillToggleList(pack, ctx.personalSkills, ctx),
-          toolPacks: toolPackToggleList(pack, ctx.personalToolPacks, ctx),
-        }
+    loaded: ctx.personalActive.has(pack.key),
+    reason: enabled ? personalSceneReason(pack) : '临时会话默认只开联网搜索',
+    subToggles: hasSubToggles(pack)
+      ? { skills: skillToggleList(pack, ctx.personalSkills, ctx), toolPacks: [] }
       : undefined,
   };
 }
 
-function subCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
+function subCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell | null {
+  if (pack.category === 'extension') return null;
   const enabled = scenePackEnabled(pack, ctx.config, 'sub');
-  const loaded = ctx.subActive.has(pack.key);
-  const reason = pack.key === 'agent-collab'
-    ? '交付契约段恒注入（强制）；协作/派遣工具属组恒注册（强制）；包开关仅裁决 sibling 工具组，关闭效果非对称'
-    : sceneReason(pack, 'sub-default', ctx.hasWorkspace);
-  const head = { key: pack.key, label: pack.label, category: pack.category, loaded };
-  if (pack.subAutonomous) {
-    return {
-      ...head,
-      state: 'excluded',
-      enabled: false,
-      loaded: false,
-      reason: '由 Profile 裁决（子会话派遣页配置扩展授权），场景层不做开关',
-    };
-  }
+  const reason = sceneReason(pack, 'sub-default', ctx.hasWorkspace);
+  const head = { key: pack.key, label: pack.label, category: pack.category, loaded: ctx.subActive.has(pack.key) };
   const conditionExcluded =
     pack.key === 'notes' ||
     pack.key === 'shunt' ||
@@ -556,7 +492,7 @@ function subCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
 function executorCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
   const enabled = scenePackEnabled(pack, ctx.config, 'executor');
   const loaded = ctx.executorActive.has(pack.key);
-  const reason = enabled ? sceneReason(pack, 'executor', ctx.hasWorkspace) : '场景覆盖或工作区包开关已关闭';
+  const reason = enabled ? sceneReason(pack, 'executor', ctx.hasWorkspace) : '场景覆盖或工作区里这个包是关的';
   const head = { key: pack.key, label: pack.label, category: pack.category, loaded };
   if (pack.key === 'shunt') {
     return {
@@ -564,13 +500,13 @@ function executorCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
       state: 'excluded',
       enabled: false,
       loaded: false,
-      reason: '仅主会话生效：执行会话不注入分流段不注册 ForkSession（无人值守无分流场景）',
+      reason: '无人值守没有分流场景，分流只给主会话',
     };
   }
   const conditionExcluded =
     !ctx.hasWorkspace && (pack.key === 'memory' || pack.key === 'notes' || pack.key === 'workspace-git');
   if (conditionExcluded) {
-    return { ...head, state: 'excluded', enabled: false, reason: '需绑定工作区路径后加载' };
+    return { ...head, state: 'excluded', enabled: false, reason: '没绑定工作区，用不了' };
   }
   return {
     ...head,
@@ -588,12 +524,13 @@ function schedulerBaseCell(): ScenePackCell {
     state: 'forced',
     enabled: true,
     loaded: true,
-    reason: '定时任务运行时恒装基础文件与搜索工具，不可关闭（常驻基础设施）',
+    reason: '文件与搜索工具恒装，定时任务干活的基础',
   };
 }
 
-function schedulerCustomCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell {
-  const cell = schedulerCustomAgentCell(pack, ctx.wsToolPacks, ctx.config);
+function schedulerCustomCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCell | null {
+  if (pack.category === 'extension') return null;
+  const cell = schedulerCustomAgentCell(pack, ctx.config);
   const head = { key: pack.key, label: pack.label, category: pack.category, loaded: cell.loaded };
   if (pack.key === 'memory' || pack.key === 'notes') {
     return {
@@ -603,14 +540,7 @@ function schedulerCustomCell(pack: AbilityPack, ctx: SceneCellCtx): ScenePackCel
       reason: cell.reason,
     };
   }
-  return {
-    ...head,
-    state: 'excluded',
-    enabled: false,
-    reason: pack.type === 'skill-packs'
-      ? '由定时任务编辑页按任务配置工具包（toolPacksOverride ?? 工作区工具包），场景页不做开关'
-      : cell.reason,
-  };
+  return { ...head, state: 'excluded', enabled: false, reason: cell.reason };
 }
 
 function fixedSceneCell(pack: AbilityPack, loaded: boolean, reason: string): ScenePackCell {
@@ -627,21 +557,15 @@ function fixedSceneCell(pack: AbilityPack, loaded: boolean, reason: string): Sce
 
 const EXECUTOR_PROMPTS: SceneSummaryPrompt[] = [
   {
-    id: 'executor-default',
-    label: '执行提示词模板（默认）',
-    note: 'execProfile=default：调研/整理类任务入队时按此模板拼接（标题/ID/计划路径填任务实值）',
+    id: 'executor-template',
+    label: '执行提示词模板',
+    note: '任务入队时按此模板拼接（标题/ID/计划路径填任务实值）；代码实施任务会多一行 skill 挂载提示',
     content: buildExecutionPrompt(EXECUTION_PROMPT_PREVIEW),
-  },
-  {
-    id: 'executor-code-impl',
-    label: '执行提示词模板（代码实施）',
-    note: 'execProfile=code-impl：分步实施代码任务入队时按此模板拼接（staged-execution 语境）',
-    content: buildExecutionPrompt({ ...EXECUTION_PROMPT_PREVIEW, mountedSkills: ['staged-execution'] }),
   },
 ];
 
 /**
- * 场景总览：七个场景行（六矩阵行 + 两 summary 行），两层模型三态格子一次遍历产出。
+ * 场景总览：七个场景行（五矩阵行 + 两 summary 行），两层模型三态格子一次遍历产出。
  * matrix 行的开关写回真源：main=abilityOverrides+子开关字段；personal=personal 配置；
  * sub/executor/scheduler-custom=sceneOverrides 对应键（恢复默认=删整键回跟随工作区）。
  */
@@ -677,12 +601,9 @@ export async function buildSceneOverview(
       groupId: MOUNT_GROUP_PLACEHOLDER,
       sceneOverride: 'executor',
     }),
-    wsToolPacks: new Set(config.enabledToolPacks),
     wsSkills: new Set(config.enabledSkills),
-    personalToolPacks: new Set(personalConfig.enabledToolPacks),
     personalSkills: new Set(personalConfig.enabledSkills),
     templateByName: new Map(skillTemplates.map((s) => [s.name, s])),
-    optionalPackByName: new Map(OPTIONAL_TOOL_PACKS.map((p) => [p.name, p])),
   };
 
   const rows: SceneOverviewRow[] = [
@@ -690,61 +611,63 @@ export async function buildSceneOverview(
       id: 'main',
       label: '主会话',
       kind: 'matrix',
-      description: '主会话包开关的直接裁决行：开关写回本工作区配置，影响后续新会话的装配；Skill 与工具包子开关在工作区内生效。恢复默认=清空全部覆盖，回落注册表默认值',
+      description: '控制新开的主会话加载哪些能力。改完对新会话生效，已开的会话不变。',
       packs: [],
     },
     {
       id: 'personal',
       label: '临时会话',
       kind: 'matrix',
-      description: '临时会话固定层按「无工作区路径、无会话组」天然裁剪，灰显格为代码排除不可改；global-rules 与扩展包开关独立于普通工作区，写回 personal 配置',
+      description: '临时会话不带工作区，记忆、笔记、Git、组协作这些能力自动不可用。这里只管全局规则和扩展能力。',
       packs: [],
     },
     {
       id: 'sub',
       label: '子会话',
       kind: 'matrix',
-      description: '固定层开关预设跟随工作区，推荐使用默认；如需微调可覆盖，恢复默认即回到跟随工作区。扩展能力（股票/文章/浏览器/联网/代码）由派遣页 Profile 裁决，场景页不做开关',
+      description: '固定层一般不用动，预设跟工作区走。扩展能力在派遣页按 Profile 勾选。',
       packs: [],
+      groupNotes: { extension: '扩展能力（股票/文章/浏览器/联网/代码 skill）在派遣页按 Profile 勾选' },
     },
     {
       id: 'executor',
       label: '任务执行会话',
       kind: 'matrix',
-      description: '固定层开关预设跟随工作区，推荐使用默认，恢复默认即回到跟随工作区；无人值守执行会话排除分流。扩展能力按任务类型（默认/代码实施）装配，页面不做控件',
+      description: '固定层预设跟工作区走。代码实施任务自动挂分步实施 skill，其余按默认装配。',
       packs: [],
       prompts: EXECUTOR_PROMPTS,
-      extensionNote: '扩展能力按任务类型装配（execProfile，由派单 agent 在 CreateTask 时标注）：代码实施任务挂载 staged-execution skill，其余按默认；页面不做扩展层控件',
+      extensionNote: '代码实施任务自动挂分步实施 skill（staged-execution），其余任务按默认装配',
     },
     {
       id: 'scheduler-custom',
       label: '定时自定义任务',
       kind: 'matrix',
-      description: '基础文件与搜索工具恒装（强制）；记忆/笔记开关预设开启（与现状一致），推荐使用默认，恢复默认即回到跟随工作区；扩展工具包按任务在定时任务编辑页配置',
+      description: '记忆和笔记可开关，基础工具恒装。扩展能力在定时任务编辑页按任务配置。',
       packs: [],
+      groupNotes: { extension: '扩展工具包与 skill 在定时任务编辑页按任务配置' },
     },
     {
       id: 'scheduler-state',
       label: '话题状态抽取',
       kind: 'summary',
-      description: '后台一次性任务：读完会话组新增逐字稿后调用 emit_state_increment 单工具输出结构化增量到话题状态卡，不经能力包体系',
+      description: '后台任务：读完话题新增内容，把要点写进话题状态卡。',
       packs: [],
       prompts: [{
         id: 'state-extract',
         label: '状态抽取提示词',
-        note: 'systemPrompt=运行时固定角色语；template=<configDir>/state-extract-prompt.md（缺失自动播种默认值）',
+        note: '固定角色语 + 可编辑模板（<configDir>/state-extract-prompt.md）',
       }],
     },
     {
       id: 'scheduler-parse',
       label: '文章解析',
       kind: 'summary',
-      description: 'pi runOnce 独立装配（SKILL.md 提示词 + SaveParsedArticle / UpdatePlatformScript 专用工具），不经能力包体系；定位为导入管线的 AI 兜底写侧（导入解析失败时补写产物），与会话读侧的文章能力包（会话中调研已入库文章）分工不同，互不替代',
+      description: '后台任务：文章导入失败时用 AI 补写解析产物。',
       packs: [],
       prompts: [{
         id: 'parse-article',
         label: '文章解析 SKILL.md',
-        note: 'systemPrompt=SKILL.md 剥 frontmatter 正文；skillMd=原始全文（<configDir>/article-parser/SKILL.md）',
+        note: 'systemPrompt 与原始全文都来自 article-parser/SKILL.md',
       }],
     },
   ];
@@ -752,10 +675,13 @@ export async function buildSceneOverview(
 
   for (const pack of ABILITY_PACKS) {
     rowById.get('main')!.packs.push(mainCell(pack, ctx));
-    rowById.get('personal')!.packs.push(personalCell(pack, ctx));
-    rowById.get('sub')!.packs.push(subCell(pack, ctx));
+    const personal = personalCell(pack, ctx);
+    if (personal) rowById.get('personal')!.packs.push(personal);
+    const sub = subCell(pack, ctx);
+    if (sub) rowById.get('sub')!.packs.push(sub);
     rowById.get('executor')!.packs.push(executorCell(pack, ctx));
-    rowById.get('scheduler-custom')!.packs.push(schedulerCustomCell(pack, ctx));
+    const scheduler = schedulerCustomCell(pack, ctx);
+    if (scheduler) rowById.get('scheduler-custom')!.packs.push(scheduler);
   }
   rowById.get('scheduler-custom')!.packs.unshift(schedulerBaseCell());
 
