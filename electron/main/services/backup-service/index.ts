@@ -25,6 +25,7 @@ import {
 } from './zip-pack.js';
 import { isDue, startScheduler, stopScheduler, type BackupConfigProvider } from './schedule.js';
 import { readCategoryRun, readSchedulerRun, recordCategoryRun, recordSchedulerRun, type LastRunEntry } from './last-run.js';
+import { deleteFilesOutsideSnapshot } from './snapshot-restore.js';
 
 export * from './categories.js';
 export { isDue, type BackupConfigProvider } from './schedule.js';
@@ -192,48 +193,86 @@ export async function listBackups(category: BackupCategoryKey, scope: BackupScop
 }
 
 export interface RestoreResult {
-  /** 恢复前自动预备份的文件名（null = 恢复源为空包，未预备份） */
+  /** 恢复前自动预备份的文件名（null = 当前状态无源内容，未产生预备份） */
   preBackupFileName: string | null;
   /** 实际写回的条目（zip 内相对路径） */
   restored: string[];
+  /** 快照还原删除的文件（zip 条目视角路径，仅限 registry 源边界内） */
+  deleted: string[];
+}
+
+export interface RestoreOptions {
+  /** 预备份保留份数；缺省用分类默认 */
+  keep?: number;
 }
 
 /**
- * 恢复到原位：先同分类预备份当前状态（失败即中止），再按 zip 内相对路径反解写回
- * targetRoot 缺省为 configDir；zip 内路径越界（zip slip）直接抛错
+ * 恢复 = 快照还原：先校验目标 zip（I-5 顺序修正），sessions 分类先做运行中会话防护（I-4），
+ * 预备份当前状态（用户 keep）后覆盖解压写回，再删除 registry 源边界内 zip 外文件（I-3）。
+ * targetRoot 缺省为 configDir；zip 内路径越界（zip slip）直接抛错；空包 zip 拒绝恢复
  */
 export async function restoreBackup(
   category: BackupCategoryKey,
   scope: BackupScope,
   fileName: string,
   targetRoot?: string,
+  opts?: RestoreOptions,
 ): Promise<RestoreResult> {
   if (!isBackupFileName(category, fileName)) {
     throw new Error(`非法备份文件名: ${fileName}`);
   }
   const zipPath = backupZipPath(scope, fileName);
+  if (!(await fs.stat(zipPath).then(
+    (st) => st.isFile(),
+    () => false,
+  ))) {
+    throw new Error(`备份文件不存在: ${fileName}`);
+  }
+  const keep = opts?.keep ?? getCategoryDef(category).defaultConfig.keep;
   return enqueue(scopeQueueKey(category, scope), async () => {
+    if (category === 'sessions') await assertNoRunningSessions();
     let preFileName: string | null = null;
     try {
-      const pre = await runBackupInner(category, scope, getCategoryDef(category).defaultConfig.keep);
+      const pre = await runBackupInner(category, scope, keep);
       preFileName = pre.fileName;
     } catch (err) {
       throw new Error(`预备份失败，已中止恢复: ${err instanceof Error ? err.message : String(err)}`);
     }
-    if (!(await fs.stat(zipPath).then(
-      (st) => st.isFile(),
-      () => false,
-    ))) {
-      throw new Error(`备份文件不存在: ${fileName}`);
+    const zip = new AdmZip(zipPath);
+    const entries = zip.getEntries();
+    if (entries.length === 0) {
+      throw new Error(`备份文件为空包，拒绝恢复: ${fileName}`);
     }
-    const restored = await extractZipTo(zipPath, targetRoot ?? getConfigDir());
-    return { preBackupFileName: preFileName, restored };
+    const restored = await extractZipTo(zip, targetRoot ?? getConfigDir());
+    let deleted: string[] = [];
+    try {
+      deleted = await deleteFilesOutsideSnapshot(
+        await backupSourcesFor(category, scope),
+        entries.map((e) => e.entryName),
+      );
+    } catch (err) {
+      throw new Error(`快照清理失败（条目已写回，可用预备份 ${preFileName ?? '无'} 回退）: ${errMsg(err)}`);
+    }
+    if (category === 'sessions') await invalidatePiSessionCache(scope);
+    return { preBackupFileName: preFileName, restored, deleted };
   });
 }
 
-async function extractZipTo(zipPath: string, targetRoot: string): Promise<string[]> {
+async function assertNoRunningSessions(): Promise<void> {
+  const { getPiSessionManager } = await import('../../agents/pi-session/pi-session-manager.js');
+  const running = getPiSessionManager().getRunningConversationIds();
+  if (running.length > 0) {
+    throw new Error(`有 ${running.length} 个会话正在运行，恢复会话备份会损坏其数据文件，请先停止全部运行中的会话`);
+  }
+}
+
+async function invalidatePiSessionCache(workspaceId: string): Promise<void> {
+  const { getPiSessionRepository } = await import('../../agents/pi-session/pi-session-repository.js');
+  getPiSessionRepository().invalidateMetadataCache(workspaceId);
+}
+
+async function extractZipTo(zip: AdmZip, targetRoot: string): Promise<string[]> {
   const root = path.resolve(targetRoot);
-  const zip = new AdmZip(zipPath);
   const restored: string[] = [];
   for (const entry of zip.getEntries()) {
     let target: string;

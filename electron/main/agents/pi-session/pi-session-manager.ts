@@ -272,6 +272,15 @@ export class PiSessionManager extends EventEmitter {
     return alive;
   }
 
+  /** 正在执行 turn 的会话 conversationId 集合（恢复会话备份前的防护查询用） */
+  getRunningConversationIds(): string[] {
+    const running: string[] = [];
+    for (const [convId, sid] of this.conversationSessionMap) {
+      if (this.sessions.get(sid)?.isRunning()) running.push(convId);
+    }
+    return running;
+  }
+
   /** 存活集合变化才广播（全量列表，前端整体替换；失败不影响主链） */
   private broadcastAliveSet(): void {
     const key = this.getAliveConversationIds().sort().join(',');

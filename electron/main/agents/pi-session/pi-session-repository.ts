@@ -152,6 +152,12 @@ export class PiSessionRepository {
     this.metadataCache.delete(workspaceId);
     return { session, info: toSessionInfo(metadata) };
   }
+
+  /** 旁路写盘（如恢复会话备份）后失效缓存；create/delete/fork 等内部路径已自行失效 */
+  invalidateMetadataCache(workspaceId?: string): void {
+    if (workspaceId === undefined) this.metadataCache.clear();
+    else this.metadataCache.delete(workspaceId);
+  }
 }
 
 let repository: PiSessionRepository | null = null;

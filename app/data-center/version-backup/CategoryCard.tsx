@@ -92,7 +92,7 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
   const handleRestore = async (scope: string, entry: BackupEntry) => {
     const ok = await showConfirm(
       '恢复备份',
-      `将「${meta.name}」（${scopeLabel(scope)}）恢复到 ${formatTime(entry.time)} 的备份。\n\n恢复前会自动备份当前状态。确定继续？`,
+      `将「${meta.name}」（${scopeLabel(scope)}）恢复到 ${formatTime(entry.time)} 的备份。\n\n恢复前会自动备份当前状态；快照内不存在的新增文件将被删除。确定继续？`,
     );
     if (!ok) return;
     setRestoring(entry.fileName);
@@ -102,7 +102,11 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
         toast.error('恢复失败', { description: r.error });
         return;
       }
-      toast.success('恢复完成', { description: `恢复前状态已备份为 ${r.preBackupFileName}` });
+      toast.success('恢复完成', {
+        description:
+          `恢复前状态已备份为 ${r.preBackupFileName}` +
+          (r.deleted.length > 0 ? `，已删除 ${r.deleted.length} 个快照外文件` : ''),
+      });
       await loadList(scope);
       onChanged();
     } catch (e) {

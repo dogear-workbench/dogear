@@ -94,7 +94,11 @@ export const backupRouter = {
     .input<{ category: BackupCategoryKey; scope: BackupScope; fileName: string }>()
     .action(async ({ input }) => {
       try {
-        return await backupService.restoreBackup(input.category, input.scope, input.fileName);
+        const config = await readBackupConfig();
+        const conf = resolveCategoryConfig(getCategoryDef(input.category), config ?? undefined);
+        return await backupService.restoreBackup(input.category, input.scope, input.fileName, undefined, {
+          keep: conf.keep,
+        });
       } catch (err) {
         return { error: errMessage(err) };
       }
