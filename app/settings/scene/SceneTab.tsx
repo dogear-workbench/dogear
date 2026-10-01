@@ -375,19 +375,6 @@ export function SceneTab({ onGoToSubAgent }: SceneTabProps) {
         </div>
       )}
 
-      <footer className="border-t px-6 py-2 shrink-0">
-        <p className="text-xs text-muted-foreground flex items-center gap-1">
-          子会话的扩展能力按 Profile 在派遣页配置
-          <button
-            type="button"
-            onClick={onGoToSubAgent}
-            className="inline-flex items-center gap-0.5 text-primary hover:underline"
-          >
-            前往子会话派遣页
-            <ArrowRight className="w-3 h-3" />
-          </button>
-        </p>
-      </footer>
     </div>
   );
 }
