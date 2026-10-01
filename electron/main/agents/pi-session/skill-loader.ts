@@ -6,6 +6,7 @@
  * 内部复用 loadSkills 的递归扫描 / .gitignore / yaml 解析 / name 校验 / 错误诊断聚合。
  */
 import path from 'path';
+import os from 'os';
 import fs from 'fs/promises';
 import { z } from 'zod';
 import {
@@ -18,6 +19,8 @@ import {
 import { NodeExecutionEnv } from '@earendil-works/pi-agent-core/node';
 import { defineTool } from '../pi/tool-adapter.js';
 import { mainLogger } from '../logger.js';
+import { getConfigDir } from '../../services/settings-service.js';
+import { getTemplatesDir } from '../../services/skill-template-service.js';
 
 export interface SkillEntry {
   name: string;
@@ -53,6 +56,15 @@ export async function loadSkillIndex(dirs: string[], env?: ExecutionEnv): Promis
   const { skills, diagnostics } = await loadSkills(executionEnv, dirs);
   logDiagnostics(diagnostics);
   return skills.map(entryFromSkill);
+}
+
+/** 会话装配（pi-session）、定时任务 sanitize 与 SKILL.md 拼接共用的三目录 skill 索引 */
+export async function loadAllSkillEntries(): Promise<SkillEntry[]> {
+  return loadSkillIndex([
+    getTemplatesDir(),
+    path.join(getConfigDir(), 'skills'),
+    path.join(os.homedir(), '.claude', 'skills'),
+  ]);
 }
 
 /** 拼成 <available_skills> 索引文本塞进 systemPrompt；无 skill 时返回空串 */

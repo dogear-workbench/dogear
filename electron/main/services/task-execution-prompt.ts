@@ -5,23 +5,14 @@ export interface ExecutionPromptInput {
   title: string;
   id: string;
   planPath: string;
-  /** 缺省 code-impl 保持现状模板语境；task-queue 按 task.execProfile 显式传参 */
-  execProfile?: ExecProfile;
+  /** 任务挂载的专项 skill 名单；非空时追加提示行，语境差异由 skill 全文承载而非模板分支 */
+  mountedSkills?: string[];
 }
 
 export function buildExecutionPrompt(task: ExecutionPromptInput): string {
-  const modeLines = task.execProfile === 'default'
-    ? [
-        '执行模式：',
-        '- 按计划文档直接实施；需要并行探索或多线实施时可派子会话分工，派出子会话后输出简短收尾语直接结束回合，交付/终态会作为新消息自动唤醒你继续推进',
-        '- 全部子会话交付并验收完毕、整个计划实施完成后才申报结果',
-      ]
-    : [
-        '执行模式：',
-        '- 计划为 stepN 分步结构（stepN-*.md）时，你是 staged-execution skill 语境里的「主会话」：逐 step 派子会话实施、验收、回填 stepN.md、逐 step commit，不等用户确认直接进下一步',
-        '- 单文档小计划直接自己实施',
-        '- 派出子会话后输出简短收尾语直接结束回合，交付/终态会作为新消息自动唤醒你继续推进；全部子会话交付并验收完毕、整个计划实施完成后才申报结果',
-      ];
+  const mountedSkillsLine = task.mountedSkills?.length
+    ? [`本任务已挂载专项 skill：${task.mountedSkills.join('、')}，开工前先读该 skill 并按其纪律执行`]
+    : [];
   return [
     '<task-execution>',
     '你是任务系统自动创建的执行会话，全权负责把下述计划实施完毕。无人值守：用户不在线，不要中途停下等确认，推进到整个计划完成。',
@@ -31,7 +22,10 @@ export function buildExecutionPrompt(task: ExecutionPromptInput): string {
     `任务 ID：${task.id}`,
     `计划文档：${task.planPath}`,
     '',
-    ...modeLines,
+    '执行模式：',
+    '- 按计划文档直接实施；需要并行探索或多线实施时可派子会话分工，派出子会话后输出简短收尾语直接结束回合，交付/终态会作为新消息自动唤醒你继续推进',
+    '- 全部子会话交付并验收完毕、整个计划实施完成后才申报结果',
+    ...mountedSkillsLine,
     '',
     '执行要求：',
     '1. 先读计划文档再实施；计划引用的其他文件按需读取',

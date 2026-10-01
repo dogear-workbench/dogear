@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { CustomScheduledTask, ScheduledTask } from './types.js';
 import { validateTrigger } from './time-rule-engine.js';
+import { loadAllSkillEntries } from '../../agents/pi-session/skill-loader.js';
 
 export const KNOWN_TOOL_PACKS: readonly string[] = [
   'article',
@@ -15,6 +16,16 @@ export const KNOWN_TOOL_PACKS: readonly string[] = [
 export function sanitizeToolPacksOverride(task: CustomScheduledTask): string[] | undefined {
   if (!Array.isArray(task.toolPacksOverride)) return undefined;
   return task.toolPacksOverride.filter((p) => typeof p === 'string' && KNOWN_TOOL_PACKS.includes(p));
+}
+
+/** 过滤 skill 索引外的名字并去重；空/全非法归一为 undefined（= 不挂载） */
+export async function sanitizeSkillsOverride(task: CustomScheduledTask): Promise<string[] | undefined> {
+  if (!Array.isArray(task.skillsOverride)) return undefined;
+  const names = [...new Set(task.skillsOverride.filter((s): s is string => typeof s === 'string' && s.trim() !== ''))];
+  if (names.length === 0) return undefined;
+  const index = new Set((await loadAllSkillEntries()).map((e) => e.name));
+  const valid = names.filter((n) => index.has(n));
+  return valid.length > 0 ? valid : undefined;
 }
 
 export function assignTaskIds(task: ScheduledTask): ScheduledTask {

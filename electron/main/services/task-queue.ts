@@ -298,9 +298,14 @@ class TaskQueueExecutor {
     session.once('complete', onComplete);
     session.on('message', onMessage);
     try {
-      // 存量任务无 execProfile 字段等价 default；此处必须显式兼容（模板函数缺省是 code-impl）
+      // 存量任务无 execProfile 字段等价 default，不挂载专项 skill
       const sendPromise = session.sendMessage(
-        buildExecutionPrompt({ ...task, planPath, execProfile: task.execProfile ?? 'default' }),
+        buildExecutionPrompt({
+          title: task.title,
+          id: task.id,
+          planPath,
+          mountedSkills: task.execProfile === 'code-impl' ? CODE_IMPL_SKILLS : undefined,
+        }),
         { injectionTag: 'task-execution' },
       );
       // 放行胜出后 sendPromise 可能永远不 settle 或迟 reject，提前挂空 catch 防 unhandledRejection

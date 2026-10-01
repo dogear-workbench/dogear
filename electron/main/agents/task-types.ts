@@ -183,6 +183,7 @@ export interface CustomAgentTaskPayload {
   workspaceId: string;          // 工作区 ID（读工作区工具包开关用）
   workspacePath: string;        // 工作区绝对路径（文件工具边界根）
   toolPacksOverride?: string[]; // 任务级工具包覆盖（undefined = 跟随工作区 enabledToolPacks）
+  skillsOverride?: string[];    // 任务级 skill 挂载（undefined = 不挂载；空数组经 sanitize 归一为 undefined）
 }
 
 /**

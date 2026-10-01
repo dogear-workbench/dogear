@@ -630,13 +630,13 @@ const EXECUTOR_PROMPTS: SceneSummaryPrompt[] = [
     id: 'executor-default',
     label: '执行提示词模板（默认）',
     note: 'execProfile=default：调研/整理类任务入队时按此模板拼接（标题/ID/计划路径填任务实值）',
-    content: buildExecutionPrompt({ ...EXECUTION_PROMPT_PREVIEW, execProfile: 'default' }),
+    content: buildExecutionPrompt(EXECUTION_PROMPT_PREVIEW),
   },
   {
     id: 'executor-code-impl',
     label: '执行提示词模板（代码实施）',
     note: 'execProfile=code-impl：分步实施代码任务入队时按此模板拼接（staged-execution 语境）',
-    content: buildExecutionPrompt({ ...EXECUTION_PROMPT_PREVIEW, execProfile: 'code-impl' }),
+    content: buildExecutionPrompt({ ...EXECUTION_PROMPT_PREVIEW, mountedSkills: ['staged-execution'] }),
   },
 ];
 

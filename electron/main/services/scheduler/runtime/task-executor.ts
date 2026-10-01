@@ -70,6 +70,7 @@ async function runCustomTask(task: CustomScheduledTask, hooks?: TaskExecuteHooks
     workspaceId: workspace.id,
     workspacePath: workspace.path,
     toolPacksOverride: task.toolPacksOverride,
+    skillsOverride: task.skillsOverride,
   };
   const agentTask: AgentTask = {
     id: `custom-agent-${task.id}-${Date.now()}`,

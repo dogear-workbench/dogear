@@ -6,6 +6,7 @@ import { getSchedulerService } from '../services/scheduler/scheduler-service.js'
 import {
   assignTaskIds,
   mergeFiredState,
+  sanitizeSkillsOverride,
   sanitizeToolPacksOverride,
   validateTaskForSave,
 } from '../services/scheduler/plan-validate.js';
@@ -33,7 +34,11 @@ export const schedulerRouter = {
       try {
         const existing = await loadTasks();
         let prepared = assignTaskIds(input.task);
-        prepared = { ...prepared, toolPacksOverride: sanitizeToolPacksOverride(prepared) };
+        prepared = {
+          ...prepared,
+          toolPacksOverride: sanitizeToolPacksOverride(prepared),
+          skillsOverride: await sanitizeSkillsOverride(prepared),
+        };
         const isNew = !existing.some((t) => t.id === prepared.id);
         const allTasks = isNew
           ? [...existing, prepared]

@@ -5,7 +5,9 @@
  * user prompt 只放任务名与用户指令本体。summary 从 assistant 最后一段文本截取，
  * 所以要求模型把结果自述放在输出末尾。
  */
+import fs from 'node:fs/promises';
 import type { CustomAgentTaskPayload } from '../../agents/task-types.js';
+import { loadAllSkillEntries } from '../../agents/pi-session/skill-loader.js';
 
 export interface CustomAgentPrompt {
   systemPrompt: string;
@@ -35,4 +37,26 @@ export function buildCustomAgentPrompt(payload: CustomAgentTaskPayload): CustomA
   ].join('\n');
 
   return { systemPrompt, prompt };
+}
+
+/** 选中 skill 的 SKILL.md 全文按 <mounted-skill> 分段；单个缺失/读取失败跳过并告警，不阻断任务 */
+export async function buildMountedSkillsSection(skills?: string[]): Promise<string> {
+  if (!skills?.length) return '';
+  const entries = await loadAllSkillEntries();
+  const byName = new Map(entries.map((e) => [e.name, e]));
+  const sections: string[] = [];
+  for (const name of skills) {
+    const entry = byName.get(name);
+    if (!entry) {
+      console.warn(`[custom-agent] 挂载 skill ${name} 不在 skill 索引中，跳过`);
+      continue;
+    }
+    try {
+      const content = entry.content ?? await fs.readFile(entry.bodyPath, 'utf-8');
+      sections.push(`<mounted-skill name="${name}">\n${content}\n</mounted-skill>`);
+    } catch (err) {
+      console.warn(`[custom-agent] 读取 skill ${name} 的 SKILL.md 失败，跳过:`, err);
+    }
+  }
+  return sections.join('\n\n');
 }

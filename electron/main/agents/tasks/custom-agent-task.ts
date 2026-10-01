@@ -51,10 +51,12 @@ export async function handleCustomAgentTask(task: AgentTask, taskLogger: any, ct
   }
 
   const { buildCustomToolSet } = await import('../../services/scheduler/custom-agent-tools.js');
-  const { buildCustomAgentPrompt } = await import('../../services/scheduler/custom-agent-prompt.js');
+  const { buildCustomAgentPrompt, buildMountedSkillsSection } = await import('../../services/scheduler/custom-agent-prompt.js');
   const tools = await buildCustomToolSet(workspaceId, workspacePath, ctx.configDir, payload.toolPacksOverride);
   const { systemPrompt, prompt } = buildCustomAgentPrompt(payload);
-  taskLogger.info('工具集组装完成:', tools.map((t) => t.name).join(', '));
+  const mountedSkillsText = await buildMountedSkillsSection(payload.skillsOverride);
+  const fullSystemPrompt = [systemPrompt, mountedSkillsText].filter(Boolean).join('\n\n');
+  taskLogger.info('工具集组装完成:', tools.map((t) => t.name).join(', '), '| 挂载 skill:', payload.skillsOverride?.join(', ') || '无');
 
   const { runOnce } = await import('../pi/run-once.js');
   const abortController = new AbortController();
@@ -62,7 +64,7 @@ export async function handleCustomAgentTask(task: AgentTask, taskLogger: any, ct
 
   try {
     const result = await runOnce({
-      systemPrompt,
+      systemPrompt: fullSystemPrompt,
       prompt,
       tools,
       model,
