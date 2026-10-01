@@ -13,12 +13,11 @@ import {
   PairRequestBodySchema,
   type HandshakeHello,
   type PairRequestBody,
-  type WorkspaceMapEntry,
 } from './protocol.js';
 import { buildManifest, hashEntries, type ManifestOptions } from './manifest.js';
 import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
 import { checkIncomingPushRelPath } from './push-guard.js';
-import { readSyncStateFrom, writeSyncStateTo } from './sync-state.js';
+import { readSyncStateFrom, withSyncStateLock, writeSyncStateTo } from './sync-state.js';
 import {
   buildWorkspaceMapContext,
   collectWorkspaceMeta,
@@ -211,20 +210,23 @@ async function handleManifest(
     return;
   }
   // 按请求者的映射表过滤 workspaces/：未映射（未启用）的本端工作区目录不出现在清单里。
-  // 同时用请求方携带的 workspaceMap 做反向学习（映射只在一端配一次；已存在不覆盖，学到的映射下轮生效）
-  const state = await readSyncStateFrom(opts.dataDir);
-  const peerEntry = state.peers[auth.deviceId] ?? { deviceId: auth.deviceId, lastSyncAt: 0 };
-  state.peers[auth.deviceId] = peerEntry;
-  if (body.workspaceMap) {
-    const learned = learnReverseWorkspaceMap(
-      state,
-      auth.deviceId,
-      body.workspaceMap,
-      await listLocalWorkspaceIds(opts.dataDir),
-    );
-    if (learned > 0) await writeSyncStateTo(opts.dataDir, state);
-  }
-  const peerMap: Record<string, WorkspaceMapEntry> | undefined = peerEntry.workspaceMap;
+  // 同时用请求方携带的 workspaceMap 做反向学习（映射只在一端配一次；已存在不覆盖，学到的映射下轮生效）。
+  // state 读改写入锁（F5）：与主动同步收尾写、UI 映射写互斥；锁内快照经返回值出锁后使用
+  const { peerMap, ignoredRemoteWorkspaces } = await withSyncStateLock(opts.dataDir, async () => {
+    const state = await readSyncStateFrom(opts.dataDir);
+    const peerEntry = state.peers[auth.deviceId] ?? { deviceId: auth.deviceId, lastSyncAt: 0 };
+    state.peers[auth.deviceId] = peerEntry;
+    if (body.workspaceMap) {
+      const learned = learnReverseWorkspaceMap(
+        state,
+        auth.deviceId,
+        body.workspaceMap,
+        await listLocalWorkspaceIds(opts.dataDir),
+      );
+      if (learned > 0) await writeSyncStateTo(opts.dataDir, state);
+    }
+    return { peerMap: peerEntry.workspaceMap, ignoredRemoteWorkspaces: peerEntry.ignoredRemoteWorkspaces };
+  });
   const manifestOptions = {
     ...(await opts.getManifestOptions(auth.deviceId)),
     enabledWorkspaceIds: enabledWorkspaceIdsOf(peerMap),
@@ -236,7 +238,7 @@ async function handleManifest(
   // candidateHashes 仍按本端路径为键（与本端 entries 一致，请求方按对端原路径回查）
   const bodyCtx = buildWorkspaceMapContext(
     peerMap,
-    peerEntry.ignoredRemoteWorkspaces,
+    ignoredRemoteWorkspaces,
     opts.dataDir,
     body.hello.dataDirPath,
   );
@@ -342,10 +344,11 @@ async function handleFilePush(
     sendJson(res, verdict.status, { error: verdict.reason });
     return;
   }
-  // settings.json 双端都是字段级合并落盘（拉取端在 applyIncoming，推送端在此），否则配对信息随整文件覆盖互丢
+  // settings.json 双端都是字段级合并落盘（拉取端在 applyIncoming，推送端在此），否则配对信息随整文件覆盖互丢；
+  // push 端基线读/写回在 mergeIncomingSettings 内部锁内完成
   if (meta.relPath === 'settings.json') {
     try {
-      await mergeIncomingSettings(req);
+      await mergeIncomingSettings(req, { dataDir: opts.dataDir, peerDeviceId: auth.deviceId });
     } catch (error) {
       sendJson(res, 400, { error: `merge settings failed: ${error instanceof Error ? error.message : String(error)}` });
       return;

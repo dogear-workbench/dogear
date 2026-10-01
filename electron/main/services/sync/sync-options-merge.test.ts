@@ -46,7 +46,7 @@ function settingsOf(sync: SyncOptions): AppSettings {
 
 /** computeMergedSettings 便捷调用：incoming 用原始 JSON 形态（对端不可信输入），local 注入不走磁盘；返回合并后 syncOptions 节 */
 async function merge(incomingSync: unknown, localSync: SyncOptions): Promise<SyncOptions> {
-  const m = await computeMergedSettings({ syncOptions: incomingSync }, localSync);
+  const m = await computeMergedSettings({ syncOptions: incomingSync }, { localSyncOptions: localSync });
   return m.syncOptions!;
 }
 

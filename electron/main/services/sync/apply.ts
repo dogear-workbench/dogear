@@ -18,6 +18,59 @@ import {
   mergeWorkspacesFile,
   type ParsedJson,
 } from './merge-records.js';
+import { readSyncStateFrom, withSyncStateLock, writeSyncStateTo } from './sync-state.js';
+
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const bb = b as unknown[];
+    return a.length === bb.length && a.every((v, i) => deepEqual(v, bb[i]));
+  }
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false;
+  const aa = a as Record<string, unknown>;
+  const bb = b as Record<string, unknown>;
+  return ka.every((k) => deepEqual(aa[k], bb[k]));
+}
+
+const SETTINGS_MERGE_WARN_MAX = 5;
+
+/**
+ * settings.json 顶层字段级三方合并（D2）：逐字段与基线比——单侧变取变侧，
+ * 双侧都变且不等取本端并记 warning（双侧改成同值不算冲突），两侧同基线保留。
+ * 字段新增/删除同样适用（基线缺该键视为 undefined）。
+ */
+function mergeFieldsThreeWay(
+  local: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+  baseline: Record<string, unknown>,
+  onWarning?: (message: string) => void,
+): Record<string, unknown> {
+  const keys = new Set([...Object.keys(local), ...Object.keys(incoming), ...Object.keys(baseline)]);
+  const merged: Record<string, unknown> = {};
+  const conflicts: string[] = [];
+  for (const key of keys) {
+    const l = local[key];
+    const i = incoming[key];
+    const b = baseline[key];
+    const localChanged = !deepEqual(l, b);
+    const incomingChanged = !deepEqual(i, b);
+    const doubleChanged = localChanged && incomingChanged && !deepEqual(l, i);
+    const chosen = doubleChanged || localChanged ? l : i;
+    // JSON 无 undefined：chosen === undefined 即三方均无此键（含双侧一致删除），不设键
+    if (chosen !== undefined) merged[key] = chosen;
+    if (doubleChanged) conflicts.push(key);
+  }
+  if (conflicts.length > 0 && onWarning) {
+    const shown = conflicts.slice(0, SETTINGS_MERGE_WARN_MAX).join('、');
+    const more = conflicts.length > SETTINGS_MERGE_WARN_MAX ? ` 等 ${conflicts.length} 个字段` : '';
+    onWarning(`settings 字段 ${shown}${more} 两端都修改过，已保留本端版本（对端版本被丢弃）`);
+  }
+  return merged;
+}
 
 const INCOMING_SUFFIX = '.dogear-incoming';
 
@@ -137,20 +190,38 @@ function errText(error: unknown): string {
 }
 
 /**
- * settings.json 字段级合并核心（原 mergeIncomingSettings 逻辑）：对端内容为底，
- * syncOptions 字段级合并——deviceName 保本端、pairedDevices 并集（secret 冲突取本端、剔除自身条目），
+ * settings.json 合并核心：非 syncOptions 顶层字段走三方合并（有基线）或以对端为底（无基线，首次同步）。
+ * syncOptions 节维持 rev-LWW 特判：deviceName 保本端、pairedDevices 并集（secret 冲突取本端、剔除自身条目），
  * 其余范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit）整组原子取
  * syncOptionsRev 大的一端（两端统一机制，设计 §3.2）：rev 缺省按 0；rev 相同但内容不同（离线各自改的竞态）
  * 保本端、不落副本、下轮收敛。localSyncOptions 可注入（单测）；缺省走 loadSettings（含默认值兜底）。
  */
+export interface SettingsMergeOptions {
+  /** 单测注入完整本端 settings（优先于 loadSettings/localSyncOptions）：三方字段测试不走进程级 env 读盘 */
+  localSettings?: AppSettings;
+  /** 单测注入本端 syncOptions；缺省读盘。注入时非 syncOptions 字段的 local 以 incoming 为底（仅测特判用） */
+  localSyncOptions?: SyncOptions;
+  /** per-peer 基线（上次同步收敛后的 settings.json 内容）；缺省/null = 无基线退化行为 */
+  baseline?: Record<string, unknown> | null;
+  /** 双改字段 warning 回调：pull 侧进 report.warnings，push 接收端 console.warn */
+  onWarning?: (message: string) => void;
+}
+
 export async function computeMergedSettings(
   incoming: Record<string, unknown>,
-  localSyncOptions?: SyncOptions,
+  options: SettingsMergeOptions = {},
 ): Promise<AppSettings> {
-  const local = localSyncOptions
-    ? ({ ...incoming, syncOptions: localSyncOptions } as unknown as AppSettings)
-    : await loadSettings();
-  const merged = { ...incoming } as unknown as AppSettings;
+  const local = options.localSettings
+    ? options.localSettings
+    : options.localSyncOptions
+      ? ({ ...incoming, syncOptions: options.localSyncOptions } as unknown as AppSettings)
+      : await loadSettings();
+  const baseline = options.baseline && typeof options.baseline === 'object' && !Array.isArray(options.baseline)
+    ? options.baseline
+    : null;
+  const merged: Record<string, unknown> = baseline
+    ? mergeFieldsThreeWay(local as unknown as Record<string, unknown>, incoming, baseline, options.onWarning)
+    : { ...incoming };
   // 本端读盘已过 normalizeSyncOptions；对端是不可信输入，同样归一化（非法值滤除、缺省补齐）
   const localSync = normalizeSyncOptions(local.syncOptions);
   const incomingSync = normalizeSyncOptions(incoming.syncOptions);
@@ -170,17 +241,63 @@ export async function computeMergedSettings(
     // 保本端时维持本端 rev；采纳对端时采纳对端 rev（下轮不再反复拉扯）
     syncOptionsRev: Math.max(localRev, incomingRev),
   };
-  return merged;
+  return merged as unknown as AppSettings;
 }
 
-/** settings.json 不整文件覆盖：pairedDevices 并集（secret 冲突取本端、剔除自身条目）、deviceName 保本端，范围字段整组取 syncOptionsRev 大的一端。服务端 push 入口（server.ts）与拉取端 registry 共用 */
-export async function mergeIncomingSettings(source: Readable): Promise<void> {
+/** 读 dataDir 下 settings.json 磁盘原文（不 deepMerge 默认值）：合并与基线统一用磁盘形态，与 loadSettings 的默认值填充形态区分，否则缺省字段会被误判为「本端改过」 */
+export async function readSettingsRaw(dataDir: string): Promise<Record<string, unknown> | null> {
+  try {
+    const raw = await fsp.readFile(path.join(dataDir, 'settings.json'), 'utf-8');
+    const parsed = JSON.parse(raw) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface SettingsPushContext {
+  dataDir: string;
+  peerDeviceId: string;
+}
+
+/**
+ * push 接收端 settings.json 合并入口（server.ts handleFilePush 调用；pull 端走 applyIncoming 合并路径）：
+ * 锁内读 per-peer 基线 → 三方合并 → saveSettings 落盘 → 基线更新为落盘结果，整段原子（F5）。
+ * 双改 warning 本端仅 console.warn（无反向通道告知发起端）。
+ */
+export async function mergeIncomingSettings(source: Readable, ctx: SettingsPushContext): Promise<void> {
   const raw = await readGzipText(source);
   const incoming = JSON.parse(raw) as Record<string, unknown>;
-  await saveSettings(await computeMergedSettings(incoming));
+  await withSyncStateLock(ctx.dataDir, async () => {
+    const state = await readSyncStateFrom(ctx.dataDir);
+    const warnings: string[] = [];
+    const merged = await computeMergedSettings(incoming, {
+      localSettings: ((await readSettingsRaw(ctx.dataDir)) ?? undefined) as unknown as AppSettings | undefined,
+      baseline: state.peers[ctx.peerDeviceId]?.settingsBaseline ?? null,
+      onWarning: (message) => warnings.push(message),
+    });
+    await saveSettings(merged);
+    const peer = state.peers[ctx.peerDeviceId] ?? { deviceId: ctx.peerDeviceId, lastSyncAt: 0 };
+    state.peers[ctx.peerDeviceId] = peer;
+    peer.settingsBaseline = merged as unknown as Record<string, unknown>;
+    await writeSyncStateTo(ctx.dataDir, state);
+    for (const message of warnings) console.warn(`[lan-sync] settings 合并: ${message}`);
+  });
 }
 
-type MergeFn = (local: ParsedJson, remote: ParsedJson) => ParsedJson | null | Promise<ParsedJson | null>;
+/** merge 调用上下文：仅 settings.json pattern 消费（per-peer 三方基线与 warning 回调），其余 pattern 忽略 */
+interface MergeCallCtx {
+  settingsBaseline?: Record<string, unknown> | null;
+  onWarning?: (message: string) => void;
+}
+
+type MergeFn = (
+  local: ParsedJson,
+  remote: ParsedJson,
+  ctx?: MergeCallCtx,
+) => ParsedJson | null | Promise<ParsedJson | null>;
 
 interface MergePattern {
   test: (relPath: string) => boolean;
@@ -197,11 +314,21 @@ interface MergePattern {
 const MERGE_PATTERNS: MergePattern[] = [
   {
     test: (relPath) => relPath === 'settings.json',
-    merge: async (_local, remote) => {
+    merge: async (local, remote, ctx) => {
       const incoming = remote !== null && typeof remote === 'object' && !Array.isArray(remote)
         ? (remote as Record<string, unknown>)
         : null;
-      return incoming ? await computeMergedSettings(incoming) : null;
+      if (!incoming) return null;
+      // local = 本端磁盘原文（applyMergedIncoming 读的 root 文件），注入保证 local/基线/对端三态同源；
+      // 本端文件缺失/异常时回落 loadSettings（无本端数据可丢，行为同无基线退化）
+      const localObj = local !== null && typeof local === 'object' && !Array.isArray(local)
+        ? (local as unknown as AppSettings)
+        : undefined;
+      return await computeMergedSettings(incoming, {
+        ...(localObj ? { localSettings: localObj } : {}),
+        baseline: ctx?.settingsBaseline ?? null,
+        onWarning: ctx?.onWarning,
+      });
     },
     // settings 走 saveSettings（默认值合并 + nativeTheme 副作用），与原 mergeIncomingSettings 行为一致
     persist: async (_absPath, merged) => {
@@ -253,11 +380,19 @@ export interface IncomingApplyReport {
   mergeFailed: SkippedEntry[];
 }
 
+export interface IncomingApplyOptions {
+  /** settings.json 三方合并基线（per-peer，来自 sync-state）；缺省 = 无基线退化行为 */
+  settingsBaseline?: Record<string, unknown> | null;
+  /** settings 双改字段 warning 收集（orchestrator 转 report.warnings） */
+  onSettingsMergeWarning?: (message: string) => void;
+}
+
 export async function applyIncoming(
   root: string,
   items: IncomingApplyItem[],
   sourceFactory: IncomingSourceFactory,
   excludes?: ManifestExcludes,
+  options?: IncomingApplyOptions,
 ): Promise<IncomingApplyReport> {
   const report: IncomingApplyReport = { applied: [], skipped: [], mergedFiles: [], mergeFailed: [] };
   for (const item of items) {
@@ -274,7 +409,7 @@ export async function applyIncoming(
       // 带 saveConflictCopyBeforeOverwrite 的条目不进合并：它来自用户显式裁决「取对端」
       // （典型为本端文件损坏后的救援），必须整文件覆盖且先落本端副本。
       if (!item.saveConflictCopyBeforeOverwrite && matchMergePattern(entry.relPath)) {
-        await applyMergedIncoming(root, item, sourceFactory, report);
+        await applyMergedIncoming(root, item, sourceFactory, report, options);
         continue;
       }
       if (item.saveConflictCopyBeforeOverwrite) {
@@ -307,6 +442,7 @@ async function applyMergedIncoming(
   item: IncomingApplyItem,
   sourceFactory: IncomingSourceFactory,
   report: IncomingApplyReport,
+  options?: IncomingApplyOptions,
 ): Promise<void> {
   const entry = item.entry;
   const absPath = resolveWithinDataDir(root, entry.relPath);
@@ -365,7 +501,10 @@ async function applyMergedIncoming(
   }
 
   const pattern = MERGE_PATTERNS.find((p) => p.test(entry.relPath))!;
-  const merged = await pattern.merge(localParsed, remoteParsed);
+  const merged = await pattern.merge(localParsed, remoteParsed, {
+    settingsBaseline: options?.settingsBaseline,
+    onWarning: options?.onSettingsMergeWarning,
+  });
   if (merged === null || merged === undefined) {
     report.mergeFailed.push({ relPath: entry.relPath, reason: '记录文件合并失败（结构不符合预期），待人工处理' });
     return;

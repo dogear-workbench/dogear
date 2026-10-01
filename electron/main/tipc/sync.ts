@@ -23,7 +23,7 @@ import {
   runSync,
   type SyncReport,
 } from '../services/sync/orchestrator.js';
-import { readSyncState, writeSyncState, getDataDir } from '../services/sync/sync-state.js';
+import { readSyncState, writeSyncState, getDataDir, withSyncStateLock } from '../services/sync/sync-state.js';
 import { resolveWithinDataDir } from '../services/sync/apply.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { applySyncOptionsPatch, loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
@@ -105,13 +105,15 @@ export const syncRouter = {
   setWorkspaceSync: t.procedure
     .input<{ peerId: string; localWsid: string; enabled: boolean }>()
     .action(async ({ input }) => {
-      const state = await readSyncState();
-      const peer = state.peers[input.peerId];
-      const entry = peer?.workspaceMap?.[input.localWsid];
-      if (!peer || !entry) return { success: false as const, error: '该工作区尚未建立映射' };
-      entry.enabled = input.enabled;
-      await writeSyncState(state);
-      return { success: true as const };
+      return withSyncStateLock(getDataDir(), async () => {
+        const state = await readSyncState();
+        const peer = state.peers[input.peerId];
+        const entry = peer?.workspaceMap?.[input.localWsid];
+        if (!peer || !entry) return { success: false as const, error: '该工作区尚未建立映射' };
+        entry.enabled = input.enabled;
+        await writeSyncState(state);
+        return { success: true as const };
+      });
     }),
 
   /**
@@ -128,11 +130,6 @@ export const syncRouter = {
       localName?: string;
     }>()
     .action(async ({ input }) => {
-      const state = await readSyncState();
-      const peer = state.peers[input.peerId] ?? { deviceId: input.peerId, lastSyncAt: 0 };
-      state.peers[input.peerId] = peer;
-      peer.workspaceMap ??= {};
-
       let localWsid: string;
       if (input.mode === 'new') {
         if (!input.localPath) return { success: false as const, error: '缺少本地目录' };
@@ -153,46 +150,58 @@ export const syncRouter = {
         localWsid = input.localWsid;
       }
 
-      peer.workspaceMap[localWsid] = { remoteWsid: input.remoteWsid, enabled: true };
-      peer.ignoredRemoteWorkspaces = (peer.ignoredRemoteWorkspaces ?? []).filter((id) => id !== input.remoteWsid);
-      await writeSyncState(state);
-      return { success: true as const, localWsid };
+      return withSyncStateLock(getDataDir(), async () => {
+        const state = await readSyncState();
+        const peer = state.peers[input.peerId] ?? { deviceId: input.peerId, lastSyncAt: 0 };
+        state.peers[input.peerId] = peer;
+        peer.workspaceMap ??= {};
+        peer.workspaceMap[localWsid] = { remoteWsid: input.remoteWsid, enabled: true };
+        peer.ignoredRemoteWorkspaces = (peer.ignoredRemoteWorkspaces ?? []).filter((id) => id !== input.remoteWsid);
+        await writeSyncState(state);
+        return { success: true as const, localWsid };
+      });
     }),
 
   /** 断开映射：仅删表项，两端已有数据不动；重新建映射后靠同步自然收敛 */
   unmapWorkspace: t.procedure
     .input<{ peerId: string; localWsid: string }>()
     .action(async ({ input }) => {
-      const state = await readSyncState();
-      const peer = state.peers[input.peerId];
-      if (!peer?.workspaceMap?.[input.localWsid]) return { success: false as const, error: '该工作区尚未建立映射' };
-      delete peer.workspaceMap[input.localWsid];
-      await writeSyncState(state);
-      return { success: true as const };
+      return withSyncStateLock(getDataDir(), async () => {
+        const state = await readSyncState();
+        const peer = state.peers[input.peerId];
+        if (!peer?.workspaceMap?.[input.localWsid]) return { success: false as const, error: '该工作区尚未建立映射' };
+        delete peer.workspaceMap[input.localWsid];
+        await writeSyncState(state);
+        return { success: true as const };
+      });
     }),
 
   /** 待映射区选「不同步」：不再提示也不再同步，可解除 */
   ignoreRemoteWorkspace: t.procedure
     .input<{ peerId: string; remoteWsid: string }>()
     .action(async ({ input }) => {
-      const state = await readSyncState();
-      const peer = state.peers[input.peerId] ?? { deviceId: input.peerId, lastSyncAt: 0 };
-      state.peers[input.peerId] = peer;
-      const list = peer.ignoredRemoteWorkspaces ?? (peer.ignoredRemoteWorkspaces = []);
-      if (!list.includes(input.remoteWsid)) list.push(input.remoteWsid);
-      await writeSyncState(state);
-      return { success: true as const };
+      return withSyncStateLock(getDataDir(), async () => {
+        const state = await readSyncState();
+        const peer = state.peers[input.peerId] ?? { deviceId: input.peerId, lastSyncAt: 0 };
+        state.peers[input.peerId] = peer;
+        const list = peer.ignoredRemoteWorkspaces ?? (peer.ignoredRemoteWorkspaces = []);
+        if (!list.includes(input.remoteWsid)) list.push(input.remoteWsid);
+        await writeSyncState(state);
+        return { success: true as const };
+      });
     }),
 
   unignoreRemoteWorkspace: t.procedure
     .input<{ peerId: string; remoteWsid: string }>()
     .action(async ({ input }) => {
-      const state = await readSyncState();
-      const peer = state.peers[input.peerId];
-      if (!peer) return { success: false as const, error: '对端不存在' };
-      peer.ignoredRemoteWorkspaces = (peer.ignoredRemoteWorkspaces ?? []).filter((id) => id !== input.remoteWsid);
-      await writeSyncState(state);
-      return { success: true as const };
+      return withSyncStateLock(getDataDir(), async () => {
+        const state = await readSyncState();
+        const peer = state.peers[input.peerId];
+        if (!peer) return { success: false as const, error: '对端不存在' };
+        peer.ignoredRemoteWorkspaces = (peer.ignoredRemoteWorkspaces ?? []).filter((id) => id !== input.remoteWsid);
+        await writeSyncState(state);
+        return { success: true as const };
+      });
     }),
 
   /** 工作区同步面板数据：已映射区（含两端名称）+ 已忽略区（含对端元信息） */

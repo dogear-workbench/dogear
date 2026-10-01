@@ -9,6 +9,7 @@ import {
   conflictCopyRelPath,
   matchMergePattern,
   pushOutgoing,
+  readSettingsRaw,
   resolveWithinDataDir,
   saveStreamToTempFile,
   shortDeviceId,
@@ -16,7 +17,7 @@ import {
   type OutgoingPushItem,
 } from './apply.js';
 import { fetchManifest, pullFile, pushFile, type PeerEndpoint } from './client.js';
-import { getDataDir, readSyncState, writeSyncState } from './sync-state.js';
+import { getDataDir, readSyncStateFrom, withSyncStateLock, writeSyncStateTo } from './sync-state.js';
 import { ensureSelfHello } from './pairing.js';
 import {
   buildRemoteManifestView,
@@ -174,7 +175,7 @@ async function runSyncInternal(
   }
   const auth = { deviceId: selfHello.deviceId, secret: paired.secret };
   // state 提前读：映射表同时驱动本端 manifest 过滤与双向路径折算（本轮一致快照）
-  const preSyncState = await readSyncState();
+  const preSyncState = await readSyncStateFrom(dataDir);
   const peerState = preSyncState.peers[peer.deviceId];
   const manifestOptions: ManifestOptions = {
     // workspaces/ 只收 enabled 映射的本端 wsid；未映射的本端工作区不同步（与对端对等：首次使用即受控）
@@ -348,8 +349,18 @@ async function runSyncInternal(
     }
   }
 
+  const settingsWarnings: string[] = [];
   if (direction !== 'push') {
-    const pullReport = await applyIncoming(dataDir, pullItems, (relPath) => pullFile(peer, auth, relPath), manifestOptions.excludes);
+    const pullReport = await applyIncoming(
+      dataDir,
+      pullItems,
+      (relPath) => pullFile(peer, auth, relPath),
+      manifestOptions.excludes,
+      {
+        settingsBaseline: peerState?.settingsBaseline ?? null,
+        onSettingsMergeWarning: (message) => settingsWarnings.push(message),
+      },
+    );
     for (const entry of pullReport.applied) {
       pulled += 1;
       transferred.set(entry.relPath, entry.hash);
@@ -366,6 +377,7 @@ async function runSyncInternal(
       skipped.push(failed);
       conflicts.push(failed.relPath);
     }
+    warnings.push(...settingsWarnings);
   }
 
   if (direction !== 'pull') {
@@ -383,29 +395,38 @@ async function runSyncInternal(
   }
 
   const nextBaseline = await buildNextBaseline(dataDir, manifestOptions, baseline, transferred);
-  const nextState = await readSyncState();
-  nextState.peers[peer.deviceId] = {
-    deviceId: peer.deviceId,
-    deviceName: remoteHello.deviceName ?? peer.deviceName,
-    appVersion: remoteHello.appVersion,
-    lastSyncAt: Date.now(),
-    lastManifestHash: createHash('sha256').update(JSON.stringify(nextBaseline)).digest('hex'),
-    lastManifest: nextBaseline,
-  };
-  // 反向映射自动学习（对端已显式配置的映射本端补齐，已存在不覆盖 enabled）+ 对端工作区概要持久化，均下轮生效
-  let learnedCount = 0;
-  if (remoteManifest.workspaceMap) {
-    learnedCount = learnReverseWorkspaceMap(
-      nextState,
-      peer.deviceId,
-      remoteManifest.workspaceMap,
-      await listLocalWorkspaceIds(dataDir),
-    );
-  }
-  if (remoteManifest.workspaceMeta) {
-    nextState.peers[peer.deviceId].remoteWorkspaceMeta = remoteManifest.workspaceMeta;
-  }
-  await writeSyncState(nextState);
+  // sync-state 读改写整段入锁（F5）：与被动端学习写、UI 映射写互斥；settings.json 本轮传输/合并过时
+  // 把落盘结果写回 per-peer 基线（D2），下轮 diff 的三方合并才有准确参照
+  const learnedCount = await withSyncStateLock(dataDir, async () => {
+    const nextState = await readSyncStateFrom(dataDir);
+    nextState.peers[peer.deviceId] = {
+      deviceId: peer.deviceId,
+      deviceName: remoteHello.deviceName ?? peer.deviceName,
+      appVersion: remoteHello.appVersion,
+      lastSyncAt: Date.now(),
+      lastManifestHash: createHash('sha256').update(JSON.stringify(nextBaseline)).digest('hex'),
+      lastManifest: nextBaseline,
+    };
+    let learned = 0;
+    // 反向映射自动学习（对端已显式配置的映射本端补齐，已存在不覆盖 enabled）+ 对端工作区概要持久化，均下轮生效
+    if (remoteManifest.workspaceMap) {
+      learned = learnReverseWorkspaceMap(
+        nextState,
+        peer.deviceId,
+        remoteManifest.workspaceMap,
+        await listLocalWorkspaceIds(dataDir),
+      );
+    }
+    if (remoteManifest.workspaceMeta) {
+      nextState.peers[peer.deviceId].remoteWorkspaceMeta = remoteManifest.workspaceMeta;
+    }
+    if (transferred.has('settings.json')) {
+      const settingsOnDisk = await readSettingsRaw(dataDir);
+      if (settingsOnDisk) nextState.peers[peer.deviceId].settingsBaseline = settingsOnDisk;
+    }
+    await writeSyncStateTo(dataDir, nextState);
+    return learned;
+  });
   if (learnedCount > 0) {
     warnings.push(`从对端学到 ${learnedCount} 条工作区映射，下次同步生效`);
   }

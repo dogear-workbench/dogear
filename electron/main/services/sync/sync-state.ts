@@ -19,6 +19,8 @@ export interface SyncStatePeer {
   ignoredRemoteWorkspaces?: string[];
   /** 最近一次握手收到的对端工作区概要（待映射/已映射区展示对端名用） */
   remoteWorkspaceMeta?: WorkspaceMetaItem[];
+  /** per-peer settings.json 三方合并基线：上次与该对端同步收敛后本端落盘的 settings.json 内容（顶层字段级比较用） */
+  settingsBaseline?: Record<string, unknown>;
 }
 
 export interface SyncState {
@@ -56,4 +58,24 @@ export async function readSyncState(): Promise<SyncState> {
 
 export async function writeSyncState(state: SyncState): Promise<void> {
   await writeSyncStateTo(getDataDir(), state);
+}
+
+const syncStateLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * per-dataDir 串行互斥（F5）：fn 内完成「读-改-写」整段，并发调用排队执行，
+ * 后写不再整覆盖先写。锁面 = sync-state.json 的全部读改写点；同进程协作式
+ * （Electron 主进程单线程，F5 场景即同进程内 orchestrator/server/tipc 三写入点互踩），
+ * 跨进程不在此范围。
+ */
+export async function withSyncStateLock<T>(dataDir: string, fn: () => Promise<T>): Promise<T> {
+  const prev = syncStateLocks.get(dataDir) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const guard = run.catch(() => {});
+  syncStateLocks.set(dataDir, guard);
+  try {
+    return await run;
+  } finally {
+    if (syncStateLocks.get(dataDir) === guard) syncStateLocks.delete(dataDir);
+  }
 }
