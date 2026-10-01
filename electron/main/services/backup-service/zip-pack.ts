@@ -1,8 +1,8 @@
-import { statSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { getConfigDir } from '../settings-service.js';
+import { EXTERNAL_ANCHOR_PREFIX, resolveArchiveRelPath, toArchiveRelPath } from '../data-registry.js';
 import { assertScope, type BackupScope } from './categories.js';
 
 const STAMP_RE = /-(\d{8})-(\d{6})\.zip$/;
@@ -55,27 +55,24 @@ export function backupZipPath(scope: BackupScope, fileName: string): string {
   return path.join(backupDirPath(scope), fileName);
 }
 
-/** zip 内条目路径 = 源相对 configDir 的 posix 相对路径，恢复时反解 */
-function toZipEntryPath(absSource: string): string {
-  return path.relative(getConfigDir(), absSource).split(path.sep).join('/');
-}
-
-/** 同步打包（adm-zip 同步 API）；不存在的源跳过；返回打包条目数，0 = 无有效内容 */
-export function packSources(sources: string[], outZipPath: string): number {
+/** 打包（adm-zip 同步 API）；不存在的源跳过；返回打包条目数，0 = 无有效内容。
+ * 外部锚点源（__ws-external__ 虚拟路径，磁盘上不存在）经 registry 反解出真实路径读取，zip 内条目仍用虚拟路径 */
+export async function packSources(sources: string[], outZipPath: string): Promise<number> {
   const zip = new AdmZip();
   for (const src of sources) {
-    const st = (() => {
-      try {
-        return statSync(src);
-      } catch {
-        return null;
-      }
-    })();
+    const entryPath = toArchiveRelPath(src);
+    let readPath = src;
+    if (entryPath.split('/')[0] === EXTERNAL_ANCHOR_PREFIX) {
+      const resolved = await resolveArchiveRelPath(entryPath);
+      if (!resolved) continue;
+      readPath = resolved;
+    }
+    const st = await fs.stat(readPath).catch(() => null);
     if (!st) continue;
     if (st.isDirectory()) {
-      zip.addLocalFolder(src, toZipEntryPath(src));
+      zip.addLocalFolder(readPath, entryPath);
     } else if (st.isFile()) {
-      zip.addLocalFile(src, path.posix.dirname(toZipEntryPath(src)));
+      zip.addLocalFile(readPath, path.posix.dirname(entryPath));
     }
   }
   if (zip.getEntries().length === 0) return 0;

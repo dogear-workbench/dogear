@@ -1,7 +1,14 @@
+import { BACKUP_CATEGORY_DEFAULTS } from '@/electron/main/services/settings-types';
 import { client } from '@/lib/client';
 import type { BackupCategoryKey, BackupCategorySetting } from '@/types/settings';
 
-export const BACKUP_CATEGORY_ORDER: BackupCategoryKey[] = ['notes-groups', 'memory', 'tasks', 'sessions'];
+export const BACKUP_CATEGORY_ORDER: BackupCategoryKey[] = [
+  'notes-groups',
+  'memory',
+  'tasks',
+  'sessions',
+  'app-config',
+];
 
 export const FREQUENCY_LABELS: Record<BackupCategorySetting['frequency'], string> = {
   daily: '每天',
@@ -20,24 +27,29 @@ interface CategoryMeta {
 
 export const CATEGORY_META: Record<BackupCategoryKey, CategoryMeta> = {
   'notes-groups': {
-    name: '笔记与话题组',
-    scopeSummary: '笔记卡片、话题组与仪表盘数据，每个工作区一份',
-    defaultConfig: { enabled: true, frequency: 'daily', keep: 10 },
+    name: '笔记与工作区',
+    scopeSummary: '笔记卡片、话题组与工作区配置，每个工作区一份',
+    defaultConfig: BACKUP_CATEGORY_DEFAULTS['notes-groups'],
   },
   memory: {
     name: '记忆',
     scopeSummary: 'Agent 的长期记忆，工作区与全局各一份',
-    defaultConfig: { enabled: true, frequency: 'daily', keep: 10 },
+    defaultConfig: BACKUP_CATEGORY_DEFAULTS.memory,
   },
   tasks: {
     name: '任务',
-    scopeSummary: '全部工作区的计划任务列表，合并为一份',
-    defaultConfig: { enabled: true, frequency: 'daily', keep: 10 },
+    scopeSummary: '全部工作区的任务数据（存于工作区磁盘），合并为一份',
+    defaultConfig: BACKUP_CATEGORY_DEFAULTS.tasks,
   },
   sessions: {
     name: '会话',
     scopeSummary: '每个工作区的会话记录，体积大、备份耗时较长',
-    defaultConfig: { enabled: true, frequency: 'monthly', keep: 10 },
+    defaultConfig: BACKUP_CATEGORY_DEFAULTS.sessions,
+  },
+  'app-config': {
+    name: '应用配置',
+    scopeSummary: '应用设置、任务计划、通知记录、工作区注册表等全局文件，仅一份',
+    defaultConfig: BACKUP_CATEGORY_DEFAULTS['app-config'],
   },
 };
 

@@ -102,7 +102,8 @@ export const DEFAULT_WEB_AI_SITES: WebAiSite[] = [
   { id: 'doubao', name: '豆包', url: 'https://www.doubao.com/chat' },
 ];
 
-export const BACKUP_SETTING_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions'] as const;
+// 与 data-registry 的 BACKUP_CATEGORY_KEYS 同步；此文件承诺无 electron 依赖（Worker/前端导入），不能 import registry（其依赖 settings-service→electron）
+export const BACKUP_SETTING_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions', 'app-config'] as const;
 export type BackupSettingCategoryKey = (typeof BACKUP_SETTING_KEYS)[number];
 export type BackupSettingFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
 export const BACKUP_SETTING_FREQUENCIES: readonly BackupSettingFrequency[] = ['daily', 'weekly', 'monthly', 'manual'];
@@ -113,6 +114,15 @@ export interface BackupCategorySetting {
   frequency: BackupSettingFrequency;
   keep: number;
 }
+
+/** 备份分类默认配置唯一源：backup-service BACKUP_CATEGORIES 与前端 backup-meta 均从此导入 */
+export const BACKUP_CATEGORY_DEFAULTS: Record<BackupSettingCategoryKey, BackupCategorySetting> = {
+  'notes-groups': { enabled: true, frequency: 'daily', keep: 10 },
+  memory: { enabled: true, frequency: 'daily', keep: 10 },
+  tasks: { enabled: true, frequency: 'daily', keep: 10 },
+  sessions: { enabled: true, frequency: 'monthly', keep: 10 },
+  'app-config': { enabled: true, frequency: 'daily', keep: 10 },
+};
 
 export interface BackupSettings {
   categories: Record<BackupSettingCategoryKey, BackupCategorySetting>;
@@ -190,7 +200,7 @@ export interface AppSettings {
   migrated?: {
     workspaceConfig?: boolean;
   };
-  /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
+  /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks/app-config=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
   /** 局域网交接同步配置；缺省字段走默认值（可选项全关、无配对设备） */
   syncOptions?: SyncOptions;
@@ -240,12 +250,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   migrated: {},
   webAiSites: DEFAULT_WEB_AI_SITES,
   backup: {
-    categories: {
-      'notes-groups': { enabled: true, frequency: 'daily', keep: 10 },
-      memory: { enabled: true, frequency: 'daily', keep: 10 },
-      tasks: { enabled: true, frequency: 'daily', keep: 10 },
-      sessions: { enabled: true, frequency: 'monthly', keep: 10 },
-    },
+    categories: { ...BACKUP_CATEGORY_DEFAULTS },
   },
   syncOptions: {
     deviceName: '',

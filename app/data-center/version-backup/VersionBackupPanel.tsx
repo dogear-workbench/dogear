@@ -56,12 +56,9 @@ export function VersionBackupPanel({ workspaces }: Props) {
       const latest = useSettingsStore.getState().settings;
       const base = latest.backup?.categories;
       const current = base?.[key] ?? CATEGORY_META[key].defaultConfig;
-      const categories: Record<BackupCategoryKey, BackupCategorySetting> = {
-        'notes-groups': base?.['notes-groups'] ?? CATEGORY_META['notes-groups'].defaultConfig,
-        memory: base?.memory ?? CATEGORY_META.memory.defaultConfig,
-        tasks: base?.tasks ?? CATEGORY_META.tasks.defaultConfig,
-        sessions: base?.sessions ?? CATEGORY_META.sessions.defaultConfig,
-      };
+      const categories = Object.fromEntries(
+        BACKUP_CATEGORY_ORDER.map((k) => [k, base?.[k] ?? CATEGORY_META[k].defaultConfig]),
+      ) as Record<BackupCategoryKey, BackupCategorySetting>;
       categories[key] = { ...current, ...patch };
       try {
         await saveSettings({ ...latest, backup: { categories } });

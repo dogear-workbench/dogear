@@ -132,7 +132,7 @@ export const DEFAULT_WEB_AI_SITES: WebAiSite[] = [
   { id: 'doubao', name: '豆包', url: 'https://www.doubao.com/chat' },
 ];
 
-export const BACKUP_CATEGORY_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions'] as const;
+export const BACKUP_CATEGORY_KEYS = ['notes-groups', 'memory', 'tasks', 'sessions', 'app-config'] as const;
 export type BackupCategoryKey = (typeof BACKUP_CATEGORY_KEYS)[number];
 export type BackupFrequency = 'daily' | 'weekly' | 'monthly' | 'manual';
 
@@ -190,7 +190,7 @@ export interface AppSettings {
   webMcpApiKey?: string;
   /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
   browserSearchEngine: BrowserSearchEngine;
-  /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks=daily·10·开，sessions=monthly·10·开） */
+  /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks/app-config=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
   /** 网页 AI 站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
   webAiSites?: WebAiSite[];

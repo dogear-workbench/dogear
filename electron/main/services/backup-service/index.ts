@@ -2,13 +2,13 @@ import fs from 'fs/promises';
 import path from 'path';
 import AdmZip from 'adm-zip';
 import { getConfigDir } from '../settings-service.js';
+import { backupSourcesFor, EXTERNAL_ANCHOR_PREFIX, resolveArchiveRelPath } from '../data-registry.js';
 import {
   BACKUP_CATEGORIES,
   GLOBAL_SCOPE,
   getCategoryDef,
   listWorkspaceIds,
   resolveCategoryConfig,
-  resolveSources,
   type BackupCategoryKey,
   type BackupConfig,
   type BackupFrequency,
@@ -102,11 +102,11 @@ async function runBackupInner(
   scope: BackupScope,
   keep: number,
 ): Promise<BackupRunResult> {
-  const sources = await resolveSources(category, scope);
+  const sources = await backupSourcesFor(category, scope);
   const fileName = await uniqueBackupFileName(category, scope);
   const zipPath = backupZipPath(scope, fileName);
   await fs.mkdir(backupDirPath(scope), { recursive: true });
-  const entries = packSources(sources, zipPath);
+  const entries = await packSources(sources, zipPath);
   if (entries === 0) {
     await fs.rm(zipPath, { force: true });
     return { key: category, scope, fileName: null, size: 0, pruned: [] };
@@ -216,9 +216,19 @@ async function extractZipTo(zipPath: string, targetRoot: string): Promise<string
   const zip = new AdmZip(zipPath);
   const restored: string[] = [];
   for (const entry of zip.getEntries()) {
-    const target = path.resolve(root, entry.entryName);
-    if (target !== root && !target.startsWith(root + path.sep)) {
-      throw new Error(`备份条目路径越界: ${entry.entryName}`);
+    let target: string;
+    if (entry.entryName.split('/')[0] === EXTERNAL_ANCHOR_PREFIX) {
+      const resolved = await resolveArchiveRelPath(entry.entryName);
+      if (!resolved) {
+        console.warn(`[backup] 条目无法反解（工作区已注销或路径非法），跳过: ${entry.entryName}`);
+        continue;
+      }
+      target = path.resolve(resolved);
+    } else {
+      target = path.resolve(root, entry.entryName);
+      if (target !== root && !target.startsWith(root + path.sep)) {
+        throw new Error(`备份条目路径越界: ${entry.entryName}`);
+      }
     }
     if (entry.isDirectory) {
       await fs.mkdir(target, { recursive: true });
