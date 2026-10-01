@@ -185,10 +185,23 @@ export function CategoryCard({ category, rows, nameById, config, runningKeys, on
                           已到期
                         </span>
                       )}
+                      {row.lastError && (
+                        <span
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/15 text-red-600 shrink-0"
+                          title={row.lastError}
+                        >
+                          失败
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {row.count} 份 · 最近 {formatTime(row.lastBackupAt)}
                     </div>
+                    {row.lastError && (
+                      <div className="text-xs text-red-600 mt-0.5 truncate" title={row.lastError}>
+                        最近备份失败：{row.lastError}
+                      </div>
+                    )}
                   </div>
                   <Button
                     variant="outline"

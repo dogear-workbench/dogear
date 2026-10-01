@@ -1,9 +1,14 @@
 import fs from 'fs/promises';
 import path from 'path';
-import AdmZip from 'adm-zip';
+import { dirname, join } from 'path';
+import { Worker } from 'worker_threads';
+import { fileURLToPath } from 'url';
 import { getConfigDir } from '../settings-service.js';
 import { EXTERNAL_ANCHOR_PREFIX, resolveArchiveRelPath, toArchiveRelPath } from '../data-registry.js';
 import { assertScope, type BackupScope } from './categories.js';
+import { packEntriesSharded, type PackEntry } from './zip-pack-core.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const STAMP_RE = /-(\d{8})-(\d{6})\.zip$/;
 
@@ -55,10 +60,10 @@ export function backupZipPath(scope: BackupScope, fileName: string): string {
   return path.join(backupDirPath(scope), fileName);
 }
 
-/** 打包（adm-zip 同步 API）；不存在的源跳过；返回打包条目数，0 = 无有效内容。
- * 外部锚点源（__ws-external__ 虚拟路径，磁盘上不存在）经 registry 反解出真实路径读取，zip 内条目仍用虚拟路径 */
-export async function packSources(sources: string[], outZipPath: string): Promise<number> {
-  const zip = new AdmZip();
+/** 源清单 → 打包任务条目：外部锚点源（__ws-external__ 虚拟路径，磁盘上不存在）经 registry 反解出真实路径，
+ * zip 内条目仍用虚拟路径；不存在的源跳过 */
+async function resolveSourceEntries(sources: string[]): Promise<PackEntry[]> {
+  const entries: PackEntry[] = [];
   for (const src of sources) {
     const entryPath = toArchiveRelPath(src);
     let readPath = src;
@@ -69,15 +74,55 @@ export async function packSources(sources: string[], outZipPath: string): Promis
     }
     const st = await fs.stat(readPath).catch(() => null);
     if (!st) continue;
-    if (st.isDirectory()) {
-      zip.addLocalFolder(readPath, entryPath);
-    } else if (st.isFile()) {
-      zip.addLocalFile(readPath, path.posix.dirname(entryPath));
-    }
+    entries.push({ entryPath, readPath, isDir: st.isDirectory() });
   }
-  if (zip.getEntries().length === 0) return 0;
-  zip.writeZip(outZipPath);
-  return zip.getEntries().length;
+  return entries;
+}
+
+const PACK_WORKER_TIMEOUT_MS = 60_000;
+
+function packInWorker(entries: PackEntry[], outZipPath: string): Promise<number> {
+  return new Promise<number>((resolve, reject) => {
+    let worker: Worker;
+    try {
+      worker = new Worker(join(__dirname, 'zip-pack-worker.js'));
+    } catch (err) {
+      reject(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    const finish = (settle: () => void) => {
+      clearTimeout(timer);
+      worker.removeAllListeners();
+      void worker.terminate();
+      settle();
+    };
+    const timer = setTimeout(
+      () => finish(() => reject(new Error(`打包 worker 超时（${PACK_WORKER_TIMEOUT_MS / 1000}s）`))),
+      PACK_WORKER_TIMEOUT_MS,
+    );
+    worker.once('error', (err) => finish(() => reject(err)));
+    worker.once('message', (msg: { ok: boolean; count?: number; error?: string }) => {
+      finish(() => {
+        if (msg?.ok) resolve(msg.count ?? 0);
+        else reject(new Error(msg?.error ?? '打包 worker 返回未知错误'));
+      });
+    });
+    worker.postMessage({ entries, outZipPath });
+  });
+}
+
+/** 打包：源清单先在主进程反解+stat，CPU 密集的压缩写盘移 worker 线程；
+ * worker 创建失败/出错/超时回退主进程分片打包（保底可用）。
+ * 返回打包条目数，0 = 无有效内容（未写盘） */
+export async function packSources(sources: string[], outZipPath: string): Promise<number> {
+  const entries = await resolveSourceEntries(sources);
+  if (entries.length === 0) return 0;
+  try {
+    return await packInWorker(entries, outZipPath);
+  } catch (err) {
+    console.warn(`[backup] worker 打包不可用，回退主进程分片: ${err instanceof Error ? err.message : String(err)}`);
+    return packEntriesSharded(entries, outZipPath);
+  }
 }
 
 /** 列出某分类×scope 的全部备份（按文件名时间戳升序）；目录不存在返回空 */

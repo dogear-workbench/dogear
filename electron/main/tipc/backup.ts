@@ -47,7 +47,7 @@ async function runCategoryScopes(category: BackupCategoryKey, scopes: BackupScop
 
 export const backupRouter = {
   getBackupStatus: t.procedure.action(async () => ({
-    status: await backupService.getBackupStatus(await readBackupConfig()),
+    ...(await backupService.getBackupStatus(await readBackupConfig())),
   })),
 
   // category+scope 成对=单项；只给 category=该分类全部适用 scope；只给 scope=该 scope 适用分类；都缺=全量

@@ -24,6 +24,7 @@ import {
   pruneOld,
 } from './zip-pack.js';
 import { isDue, startScheduler, stopScheduler, type BackupConfigProvider } from './schedule.js';
+import { readCategoryRun, readSchedulerRun, recordCategoryRun, recordSchedulerRun, type LastRunEntry } from './last-run.js';
 
 export * from './categories.js';
 export { isDue, type BackupConfigProvider } from './schedule.js';
@@ -50,6 +51,10 @@ function scopeQueueKey(category: BackupCategoryKey, scope: BackupScope): string 
   return `${scope}:${category}`;
 }
 
+function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export interface BackupRunResult {
   key: BackupCategoryKey;
   scope: BackupScope;
@@ -74,7 +79,12 @@ export async function runBackup(
   return enqueue(queueKey, async () => {
     inFlight.add(queueKey);
     try {
-      return await runBackupInner(category, scope, keep);
+      const result = await runBackupInner(category, scope, keep);
+      await recordCategoryRun(category, scope, true, null);
+      return result;
+    } catch (err) {
+      await recordCategoryRun(category, scope, false, errMsg(err));
+      throw err;
     } finally {
       inFlight.delete(queueKey);
     }
@@ -144,7 +154,7 @@ export async function runBackupAll(config?: BackupConfig | null, opts?: RunAllOp
             fileName: null,
             size: 0,
             pruned: [],
-            error: err instanceof Error ? err.message : String(err),
+            error: errMsg(err),
           });
         }
       }
@@ -153,9 +163,19 @@ export async function runBackupAll(config?: BackupConfig | null, opts?: RunAllOp
   return results;
 }
 
-/** 调度 tick 入口：只跑启用且到期的分类 */
+/** 调度 tick 入口：只跑启用且到期的分类；结果汇总为调度级 last-run（最近一次自动备份成败） */
 export async function runDueBackups(config?: BackupConfig | null): Promise<BackupRunResult[]> {
-  return runBackupAll(config, { onlyDue: true });
+  const results = await runBackupAll(config, { onlyDue: true });
+  const failed = results.filter((r) => r.error);
+  const summary = failed.length
+    ? failed.map((f) => `${f.scope}:${f.key} ${f.error}`).join('；')
+    : null;
+  try {
+    await recordSchedulerRun(failed.length === 0, summary);
+  } catch (err) {
+    console.error(`[backup] last-run 记录失败: ${errMsg(err)}`);
+  }
+  return results;
 }
 
 export interface BackupEntry {
@@ -252,9 +272,20 @@ export interface BackupScopeStatus {
   lastBackupAt: string | null;
   /** 启用且到期（manual 恒 false） */
   due: boolean;
+  /** 最近一次执行失败原因（任何来源，成功执行后清除）；null = 上次执行成功 */
+  lastError: string | null;
 }
 
-export async function getBackupStatus(config?: BackupConfig | null): Promise<BackupScopeStatus[]> {
+export interface BackupSchedulerStatus {
+  /** 最近一次调度 tick 完成时间（null = 从未运行） */
+  lastRunAt: string | null;
+  ok: boolean;
+  error: string | null;
+}
+
+export async function getBackupStatus(
+  config?: BackupConfig | null,
+): Promise<{ status: BackupScopeStatus[]; scheduler: BackupSchedulerStatus }> {
   const out: BackupScopeStatus[] = [];
   const workspaceIds = await listWorkspaceIds();
   for (const def of BACKUP_CATEGORIES) {
@@ -264,6 +295,7 @@ export async function getBackupStatus(config?: BackupConfig | null): Promise<Bac
       for (const scope of scopes) {
         const files = await listBackupFiles(scope, def.key);
         const last = files.at(-1);
+        const lastRun = await readCategoryRun(def.key, scope);
         out.push({
           key: def.key,
           scope,
@@ -274,11 +306,20 @@ export async function getBackupStatus(config?: BackupConfig | null): Promise<Bac
           count: files.length,
           lastBackupAt: last ? last.stamp.toISOString() : null,
           due: conf.enabled && (await isDue(def.key, scope, conf.frequency)),
+          lastError: toError(lastRun),
         });
       }
     }
   }
-  return out;
+  const scheduler = await readSchedulerRun();
+  return {
+    status: out,
+    scheduler: { lastRunAt: scheduler?.time ?? null, ok: scheduler?.ok ?? true, error: scheduler?.error ?? null },
+  };
+}
+
+function toError(entry: LastRunEntry | null): string | null {
+  return entry && !entry.ok ? entry.error : null;
 }
 
 /** step3 接线 settings 后由主进程启动入口调用 */

@@ -58,6 +58,11 @@ export type BackupScopeStatus = Extract<
   { status: unknown }
 >['status'][number];
 
+export type BackupSchedulerStatus = Extract<
+  Awaited<ReturnType<typeof client.getBackupStatus>>,
+  { status: unknown }
+>['scheduler'];
+
 export type BackupRunItem = Extract<
   Awaited<ReturnType<typeof client.runBackup>>,
   { results: unknown }

@@ -5,6 +5,7 @@ import {
   type BackupScope,
 } from './categories.js';
 import { listBackupFiles } from './zip-pack.js';
+import { recordSchedulerRun } from './last-run.js';
 
 const TICK_MS = 30 * 60 * 1000;
 
@@ -39,8 +40,14 @@ async function tick(): Promise<void> {
   ticking = true;
   try {
     await runDue(await resolveConfig());
-  } catch {
-    // 调度失败静默，下轮 tick 重试
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[backup] 调度 tick 失败: ${msg}`);
+    try {
+      await recordSchedulerRun(false, msg);
+    } catch (recordErr) {
+      console.error(`[backup] last-run 记录失败: ${recordErr instanceof Error ? recordErr.message : String(recordErr)}`);
+    }
   } finally {
     ticking = false;
   }

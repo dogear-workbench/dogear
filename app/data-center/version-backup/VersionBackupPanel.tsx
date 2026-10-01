@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FolderOpen, HardDriveDownload, Loader2 } from 'lucide-react';
+import { CircleAlert, FolderOpen, HardDriveDownload, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { client } from '@/lib/client';
@@ -7,7 +7,14 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import type { Workspace } from '@/types/electron-api';
 import type { BackupCategoryKey, BackupCategorySetting } from '@/types/settings';
-import { BACKUP_CATEGORY_ORDER, CATEGORY_META, formatBytes, type BackupRunItem, type BackupScopeStatus } from './backup-meta';
+import {
+  BACKUP_CATEGORY_ORDER,
+  CATEGORY_META,
+  formatBytes,
+  type BackupRunItem,
+  type BackupSchedulerStatus,
+  type BackupScopeStatus,
+} from './backup-meta';
 import { CategoryCard } from './CategoryCard';
 import { GitSummarySection } from './GitSummarySection';
 
@@ -21,6 +28,7 @@ export function VersionBackupPanel({ workspaces }: Props) {
   const settings = useSettingsStore((s) => s.settings);
   const saveSettings = useSettingsStore((s) => s.saveSettings);
   const [status, setStatus] = useState<BackupScopeStatus[]>([]);
+  const [scheduler, setScheduler] = useState<BackupSchedulerStatus | null>(null);
   const [runningKeys, setRunningKeys] = useState<Set<string>>(new Set());
   const [runningAll, setRunningAll] = useState(false);
   const [openingDir, setOpeningDir] = useState(false);
@@ -29,6 +37,7 @@ export function VersionBackupPanel({ workspaces }: Props) {
     try {
       const r = await client.getBackupStatus();
       setStatus(r.status);
+      setScheduler(r.scheduler);
     } catch {
       // 轮询场景静默失败避免 toast 刷屏；失败时保持上次状态
     }
@@ -158,6 +167,14 @@ export function VersionBackupPanel({ workspaces }: Props) {
           </div>
         </div>
         <div className="space-y-4">
+          {scheduler && !scheduler.ok && scheduler.error && (
+            <div className="flex items-center gap-1.5 text-xs text-red-600">
+              <CircleAlert className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate" title={scheduler.error}>
+                最近自动备份失败：{scheduler.error}
+              </span>
+            </div>
+          )}
           {BACKUP_CATEGORY_ORDER.map((key) => (
             <CategoryCard
               key={key}
