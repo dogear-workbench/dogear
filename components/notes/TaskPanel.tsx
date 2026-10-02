@@ -13,7 +13,7 @@ import { useTaskStore } from '@/stores/task-store';
 import { useTaskFocusStore } from '@/stores/task-focus-store';
 import { showConfirm } from '@/stores/confirm-store';
 import { TaskDetail } from '@/components/notes/TaskDetail';
-import { TaskStatusBadge, TaskExecProfileBadge } from '@/components/notes/TaskStatusBadge';
+import { TaskExecProfileBadge } from '@/components/notes/TaskStatusBadge';
 import { NoteEmpty, NoteLoading } from '@/components/notes/NoteState';
 import { formatNoteTime } from '@/components/notes/NoteCardItem';
 import type { Task, TaskStatus } from '@/types/task';
@@ -232,7 +232,6 @@ function TaskCardItem({ task, active, onOpen, onExecute, onCancel, onComplete, o
       <p className="text-sm font-medium line-clamp-1">{task.title}</p>
       <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground min-w-0">
         <TaskExecProfileBadge execProfile={task.execProfile} />
-        <TaskStatusBadge status={task.status} />
         <span className="shrink-0" title={`更新于 ${formatNoteTime(task.updatedAt)}`}>
           {formatNoteTime(task.updatedAt)}
         </span>
