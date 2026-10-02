@@ -22,10 +22,9 @@ const STATUS_OPTIONS: { value: RunHistoryStatus | 'all'; label: string }[] = [
 
 const SOURCE_OPTIONS: { value: RunHistorySource | 'all'; label: string }[] = [
   { value: 'all', label: '全部类型' },
-  ...(Object.keys(SOURCE_META) as RunHistorySource[]).map((s) => ({
-    value: s,
-    label: SOURCE_META[s].label,
-  })),
+  ...(Object.keys(SOURCE_META) as RunHistorySource[])
+    .filter((s) => s !== 'collab-task')
+    .map((s) => ({ value: s, label: SOURCE_META[s].label })),
 ];
 
 function RunningSection() {

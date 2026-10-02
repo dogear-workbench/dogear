@@ -24,7 +24,6 @@ import { getNotificationCenterService } from './notification-center-service.js';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import * as taskService from './task-service.js';
 import type { Task } from './task-service.js';
-import { reportRunning } from './background-activity-service.js';
 import { buildExecutionPrompt } from './task-execution-prompt.js';
 
 const log = mainLogger.child('task-queue');
@@ -221,7 +220,6 @@ class TaskQueueExecutor {
     }
 
     const running = await taskService.markTaskRunning(workspacePath, task.id, execId);
-    reportRunning(task.id, { source: 'collab-task', name: taskService.collabTaskName(task) });
 
     let attachment: Awaited<ReturnType<typeof conversationRuntimeService.attachConversation>>;
     try {

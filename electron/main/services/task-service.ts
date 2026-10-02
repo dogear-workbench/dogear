@@ -4,51 +4,11 @@
  * - 所有写操作完成后广播 tasksChanged（覆盖 UI / Agent / 队列所有写入方），读操作直接透传
  * - 状态机与存储见 task-store.ts
  */
-import { randomUUID } from 'node:crypto';
 import * as taskStore from './task-store.js';
 import * as workspaceJsonService from './workspace-json-service.js';
 import { getNotificationCenterService } from './notification-center-service.js';
 import { getSessionNotificationService } from './session-notification-service.js';
-import { appendHistoryEntry } from './scheduler/run-history-store.js';
-import { getRunning, reportDone } from './background-activity-service.js';
-import { mainLogger } from '../agents/logger.js';
-import type { RunHistoryEntry, RunHistoryStatus } from './scheduler/types.js';
 import type { RendererHandlers } from '../tipc/renderer-handlers.js';
-
-const log = mainLogger.child('task-service');
-
-export function collabTaskName(task: Pick<Task, 'title'>): string {
-  return `协作任务 · ${task.title}`;
-}
-
-// 先写历史再 reportDone（UI 轮询视角 done 即历史可见）；写历史失败不影响状态迁移
-async function recordCollabRun(task: Task, status: RunHistoryStatus, summary?: string, error?: string): Promise<void> {
-  const now = Date.now();
-  const entry: RunHistoryEntry = {
-    id: randomUUID(),
-    ts: now,
-    planId: task.id,
-    planName: collabTaskName(task),
-    source: 'collab-task',
-    kind: 'task',
-    status,
-    triggerReason: 'condition',
-    startedAt: getRunning().find((r) => r.taskId === task.id)?.startedAt,
-    endedAt: now,
-    summary,
-    error,
-  };
-  try {
-    await appendHistoryEntry(entry);
-  } catch (err) {
-    log.warn(`写协作任务执行历史失败: ${task.title}`, err);
-  }
-  try {
-    reportDone(task.id);
-  } catch (err) {
-    log.warn('清理协作任务运行注册表失败:', err);
-  }
-}
 
 export type TaskStatus = taskStore.TaskStatus;
 export type Task = taskStore.Task;
@@ -103,7 +63,6 @@ export async function markTaskRunning(workspacePath: string, taskId: string, exe
 export async function interruptTask(workspacePath: string, taskId: string, reason: string): Promise<taskStore.Task> {
   const task = await taskStore.interruptTask(workspacePath, taskId, reason);
   broadcastTasksChanged(workspacePath);
-  void recordCollabRun(task, 'interrupted', undefined, task.result);
   return task;
 }
 
@@ -116,7 +75,6 @@ export async function reportTaskResult(
   if (task) {
     broadcastTasksChanged(workspacePath);
     void notifyTaskReview(task, workspacePath);
-    void recordCollabRun(task, 'completed', task.result);
   }
   return task;
 }
@@ -155,7 +113,6 @@ async function notifyTaskReview(task: taskStore.Task, workspacePath: string): Pr
 export async function completeTask(workspacePath: string, taskId: string, result: string): Promise<taskStore.Task> {
   const task = await taskStore.completeTask(workspacePath, taskId, result);
   broadcastTasksChanged(workspacePath);
-  reportDone(taskId);
   return task;
 }
 
@@ -168,7 +125,6 @@ export async function appendResultNote(workspacePath: string, taskId: string, no
 export async function rejectTask(workspacePath: string, taskId: string, reason: string): Promise<taskStore.Task> {
   const task = await taskStore.rejectTask(workspacePath, taskId, reason);
   broadcastTasksChanged(workspacePath);
-  void recordCollabRun(task, 'failed', `被拒绝：${reason}`);
   return task;
 }
 
@@ -187,7 +143,6 @@ export async function completeTaskManually(workspacePath: string, taskId: string
 export async function cancelTask(workspacePath: string, taskId: string): Promise<taskStore.Task> {
   const task = await taskStore.cancelTask(workspacePath, taskId);
   broadcastTasksChanged(workspacePath);
-  reportDone(taskId);
   return task;
 }
 

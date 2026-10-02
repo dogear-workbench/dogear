@@ -6,8 +6,8 @@
 
 - `page.tsx` — 骨架：七 tab 下划线导航（用量/定时计划/执行历史/记忆/版本与备份/浏览器数据/设备同步）；scheduler tab forceMount（编辑草稿切 tab 不丢）；workspaces 由页面加载一次下传
 - `usage-panel.tsx` — 用量面板：时间分页（今日/7天/30天/全部）；'all' 后端聚合+会话列表逐工作区拉取合并
-- `history-panel.tsx` — 执行历史一级面板：类型/状态筛选（类型走后端 source 参数）、10s 可见轮询、分钟 tick 刷新；「正在运行」区显示四类后台任务
-- `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 四类徽章，无 source 旧条目归 scheduler）
+- `history-panel.tsx` — 执行历史一级面板：类型/状态筛选（类型走后端 source 参数，下拉不含协作任务；协作任务状态可见性走任务列表与会话列表）、10s 可见轮询、分钟 tick 刷新；「正在运行」区显示三类后台任务
+- `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 徽章，含 collab-task key 保留作旧数据条目渲染兜底；无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+主题记忆面板
 - `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录（打开 backups/ 根目录）+ 逐项运行 loading + 调度级最近失败红字行）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/无变化跳过浅色提示/最近失败红字/立即备份 + 备份列表展开与恢复 showConfirm（快照还原语义：确认文案明示「快照内不存在的新增文件将被删除」，成功 toast 追加删除计数）；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（五分类元数据，默认值从主进程 BACKUP_CATEGORY_DEFAULTS 导入、tipc client 类型推导、格式化）
 - `sync-panel.tsx` + `sync-peer-card/sync-pair-requests/sync-settings/sync-workspace-card/sync-result/sync-utils` — 设备同步面板：本机状态卡（启停/端口/设备 ID）、配对请求卡、在线设备卡（立即同步/解除配对）、同步范围设置（同步项开关+冲突副本+stocks/feishu 可选目录+工作区启停）、结果卡（pull/push/skip/conflict 计数与明细，删除计数与删改冲突独立分区展示，冲突可取对端/留本端裁决）；主进程服务见下方设备同步节
@@ -27,7 +27,7 @@
 - `plan-store.ts` — `.dogear/plans.json` 读写（version:2 容器，只认新格式，旧数组格式已不支持）
 - `plan-validate.ts` — 保存校验（on_task_done 目标存在性+环检测、toolPacksOverride 白名单清洗、sanitizeSkillsOverride 去重过滤非索引内名字，空归一 undefined）
 - `scheduler-service.ts` — 调度核心（分钟级 tick、窗口状态机、handleAppStart/handleSessionClose 入口、错过记 missed 不补跑）
-- `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加+倒序分页+保留 3 个月；source 四类筛选（无 source 旧条目读侧归 scheduler）
+- `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加+倒序分页+保留 3 个月；source 筛选（无 source 旧条目读侧归 scheduler；存量 collab-task 条目原样保留，不再新增）
 - `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 提示词模板与工具集组装（toolPacksOverride 完全替代语义）；buildMountedSkillsSection 把挂载 skill 的 SKILL.md 全文按 `<mounted-skill>` 段拼进 systemPrompt（单个缺失/读取失败跳过告警不阻断）
 - `runtime/plan-runner.ts` — 单任务执行器（防重入、断点补记、requestStop 带来源）
 - `runtime/task-executor.ts` — 提交 CUSTOM_AGENT 到 agent-manager Worker 池（toolPacksOverride/skillsOverride 透传 payload），用量提取入历史
@@ -61,7 +61,7 @@
 
 ## 统一运行注册表（services/）
 
-- `background-activity-service.ts` — 内存单例：四类后台任务（定时/状态抽取/文章解析/协作）reportRunning/reportDone/getRunning；getSchedulerActivity 与执行历史「正在运行」区数据源；四类终态各自写 run-history（source 区分）
+- `background-activity-service.ts` — 内存单例：三类后台任务（定时/状态抽取/文章解析）reportRunning/reportDone/getRunning；getSchedulerActivity 与执行历史「正在运行」区数据源；各源终态写 run-history（source 区分）；协作任务已退出（执行会话与任务状态机自身即完整记录）
 
 ## 话题状态卡与记忆（services/memory/）
 
@@ -84,7 +84,7 @@
 - 设备同步面板：同步项开关写 settings.syncOptions（disabledSyncItems 经 normalize 强制滤除 required 项，settings.json 不可关）；结果卡里删改冲突是「已保守保留」的既定结果、与可裁决的 conflicts 分开展示
 - getUsage 懒重算 usageSummary 后读 JSONL；'all' 模式逐工作区聚合每行带 workspaceId 归属
 - 状态卡抽取触发与未提炼列表一律排除调用者自身（excludeConversationId 链），自身内容由下一会话开局补抽
-- 四类后台任务接入统一历史时遵守顺序纪律：先写历史再 reportDone（UI 轮询视角 done 即历史可见）；写史 try/catch 失败不影响任务本身；解析历史的 history.jsonl 写入保留作 agent 诊断数据源
+- 后台任务接入统一历史时遵守顺序纪律：先写历史再 reportDone（UI 轮询视角 done 即历史可见）；写史 try/catch 失败不影响任务本身；解析历史的 history.jsonl 写入保留作 agent 诊断数据源
 
 ## 数据流
 
