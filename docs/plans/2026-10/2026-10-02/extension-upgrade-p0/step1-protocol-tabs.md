@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 协议 v4 与扩展侧 tab 管理
-status: pending
+status: in_progress
 ---
 
 ## 目标
@@ -29,9 +29,23 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  - tab 管理三分支拆到新文件 `extension/src/tab-commands.js`（background.js 已约 390 行，内联会严重超 300 行约束）；background.js 仅接入 ctx + 前置分发 + hello v4。
+  - `nav-tracker.js` 导出了原私有的 `waitForTabComplete`（open_tab 等待加载完成需复用，与 navigateTab 同一等待实现），属最小支持改动。
+  - list_tabs 回包为 `data: { tabs: [...] }`（计划只写了数组形状，包一层对象便于后续扩展字段）。
+  - close_tab 焦点回落：组内剩余 tab 按 `lastAccessed` 降序取最近使用者；组空则清空焦点。
+- 改动文件清单：`extension/manifest.json`（0.2.0 + tabs/tabGroups/contextMenus）、`extension/src/nm-protocol.js`（双副本同步注释）、`extension/src/nav-tracker.js`（导出 waitForTabComplete）、`extension/src/tab-commands.js`（新建）、`extension/src/background.js`（ctx+分发+hello v4）、`electron/main/services/browser/nm-protocol.ts`（v4+CommandKind+params 接口）。
+- 验证：`bun run build:electron`（tsc）通过；bun build 对 4 个扩展文件语法/模块解析通过。扩展重装手测待用户在 chrome://extensions 重载后进行。
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - 扩展侧分发入口：`handleTabCommand(msg, ctx) -> Promise<boolean>`（true 表示已处理并已 postResult）；ctx = `{ getFocusedTabId, setFocusedTab(tab), clearFocusedTab, pushSnapshot, fail(msg,code,text), postResult(msg,payload) }`（background.js TAB_COMMAND_CTX）。
+  - open_tab 回包 `data: { tabId, url, title, pageState, focused: true }`（focused 恒 true，指操作焦点已切到新 tab，与前台 active 解耦）；open_tab 会切 SW 焦点（state.tabId）并推 tab_snapshot。
+  - close_tab 回包 `data: { closedTabId, focusedTabId: number|null }`；组外 tab → `permission_denied`「仅能关闭 Dogear 分组内的标签页」。
+  - list_tabs 回包 `data: { tabs: [{ tabId, url, title, focused }] }`，focused 指当前受控焦点。
+  - 未授权域名 open_tab → `navigation_blocked`（与桌面端 validateNavigateTarget 同语义同文案风格）。
+  - Dogear 组身份查询：`chrome.tabGroups.query({ title: 'Dogear' })`（蓝色），不靠内存集合，SW 休眠安全。
+- 下个 step 该从哪里继续：Step 2 gateway 多 tab 状态模型——ExtensionStatus 泛化为焦点 tab + tabs 数组时，直接消费上述回包结构；命令帧带目标 tabId 的语义（三分支目前忽略帧 tabId、用 SW 焦点，gateway 侧需保证帧 tabId 与扩展焦点一致或依赖回包刷新）。
 - 待办或已知限制：
+  - 扩展重载手测未做（无浏览器环境），三分支行为待用户在 chrome://extensions 重载后验证。
+  - nav-tracker 的 generations Map 在 tab 关闭后不清理（现状即如此，量级可忽略）。
+  - SW 重启后 state.tabId 置空（现有行为），需 popup 重连恢复；三分支中 close_tab/list_tabs 此时可用，open_tab 会重设焦点。

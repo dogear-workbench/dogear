@@ -1,4 +1,5 @@
 import { extractTabSnapshot } from './content-extract.js'
+import { handleTabCommand } from './tab-commands.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
 import { observeFn } from './observe-actions.js'
 import { findFn } from './find-actions.js'
@@ -162,8 +163,21 @@ async function resolveLostClickResult(msg) {
   }
 }
 
+const TAB_COMMAND_CTX = {
+  getFocusedTabId: () => state.tabId,
+  setFocusedTab: (tab) => {
+    setStatus({ tabId: tab.id, title: tab.title ?? '', url: tab.url ?? '' })
+    resetGeneration(tab.id, tab.url ?? '')
+  },
+  clearFocusedTab: () => setStatus({ tabId: null, title: '', url: '' }),
+  pushSnapshot: sendTabSnapshot,
+  fail,
+  postResult
+}
+
 async function handleCommand(msg) {
   if (!port) return
+  if (await handleTabCommand(msg, TAB_COMMAND_CTX)) return
   if (state.tabId == null || msg.tabId !== state.tabId) {
     fail(msg, 'stale_tab', '命令指向的标签页与当前受控标签页不一致')
     return
@@ -315,7 +329,7 @@ async function connect() {
   port.postMessage({
     type: 'hello',
     extensionVersion: chrome.runtime.getManifest().version,
-    protocolVersion: 3,
+    protocolVersion: 4,
     tabId: tab.id
   })
   sendPermissionState()

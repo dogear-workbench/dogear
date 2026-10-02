@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Dogear 连接器",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "将当前标签页快照发送给 Dogear 桌面应用",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjnaUysq1uAFFuhFcUJSQAJlD8bZNU0TdFKfJdze9sdY+d6L4z5sJfmV6VMChFSAkplTOkxzxh6OV/GRUK3uxlyIPhRz5WW4ix3Z03mK4MXIgIQS2tdcHhMVukFH8x7vE/GqD8YdzvXz36GHqU1lUY70XZ8NcAk3OTP0ozkGq5D0onsGklfgBxIGZsk4zvLsnvM/KlxWN8Jtc8hg1HeX546YvsOEYwy/xFlBKRonFowNsBC3G9WD0tFnx5F98b7ytM+fxA7kaYC3UdZ1wtAydCXK3GnLxOGYb4/VWjZoXx1zCHFoLEgVH2typ766OTmZL15UuCbsKFdl3thMSMJjyhwIDAQAB",
-  "permissions": ["nativeMessaging", "activeTab", "scripting", "storage"],
+  "permissions": ["nativeMessaging", "activeTab", "scripting", "storage", "tabs", "tabGroups", "contextMenus"],
   "optional_host_permissions": ["<all_urls>"],
   "action": {
     "default_popup": "popup.html",

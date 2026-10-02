@@ -13,9 +13,20 @@ const MAX_FRAME_BYTES = 64 * 1024 * 1024;
 
 export type NmMessage = Record<string, unknown>;
 
-export const ProtocolVersion = 3;
+export const ProtocolVersion = 4;
 
-export type CommandKind = 'observe' | 'find' | 'click' | 'fill' | 'read_text' | 'navigate' | 'read_state' | 'scroll';
+export type CommandKind =
+  | 'observe'
+  | 'find'
+  | 'click'
+  | 'fill'
+  | 'read_text'
+  | 'navigate'
+  | 'read_state'
+  | 'scroll'
+  | 'open_tab'
+  | 'close_tab'
+  | 'list_tabs';
 
 export type CommandErrorCode =
   | 'not_connected'
@@ -59,6 +70,15 @@ export interface NavigateCommandParams {
 
 export interface ReadStateCommandParams {
   path?: string;
+}
+
+export interface OpenTabCommandParams {
+  targetUrl: string;
+  background?: boolean;
+}
+
+export interface CloseTabCommandParams {
+  targetTabId?: number;
 }
 
 export interface TabSnapshotMessage {

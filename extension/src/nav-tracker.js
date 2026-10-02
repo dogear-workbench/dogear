@@ -36,7 +36,7 @@ export function scheduleTrackedSnapshot(sendFn) {
   }, URL_TRACK_DEBOUNCE_MS)
 }
 
-function waitForTabComplete(tabId, timeoutMs) {
+export function waitForTabComplete(tabId, timeoutMs) {
   let finished = false
   let listener
   let timer
