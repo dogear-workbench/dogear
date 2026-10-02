@@ -17,6 +17,9 @@ import {
   Square,
   Type,
   ArrowUpDown,
+  List,
+  SquarePlus,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useBrowserStore } from '@/stores/browser-store';
@@ -32,6 +35,9 @@ import type {
 
 const ACTION_ICONS: Record<BrowserActionType, typeof Activity> = {
   navigate: Navigation,
+  open_tab: SquarePlus,
+  close_tab: X,
+  list_tabs: List,
   wait: Clock,
   click: MousePointerClick,
   observe: Eye,
@@ -49,6 +55,9 @@ const ACTION_ICONS: Record<BrowserActionType, typeof Activity> = {
 
 const ACTION_LABELS: Record<BrowserActionType, string> = {
   navigate: '导航',
+  open_tab: '开页',
+  close_tab: '关页',
+  list_tabs: '列页签',
   wait: '等待',
   click: '点击',
   observe: '观察',
@@ -65,7 +74,7 @@ const ACTION_LABELS: Record<BrowserActionType, string> = {
 };
 
 const BAD_RESULT_RE = /^(error|timeout|need_login|browser_crash|parse_empty|value_mismatch)$/;
-const GOOD_RESULT_RE = /^(ok|clicked|filled|expanded|domcontentloaded)$/;
+const GOOD_RESULT_RE = /^(ok|clicked|filled|opened|closed|listed|expanded|domcontentloaded)$/;
 
 function resultTone(result: string): 'good' | 'bad' | 'neutral' {
   if (BAD_RESULT_RE.test(result)) return 'bad';

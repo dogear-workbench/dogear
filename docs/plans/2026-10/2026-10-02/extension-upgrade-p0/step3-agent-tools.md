@@ -1,7 +1,7 @@
 ---
 step: 3
 title: agent 工具 open_tab/close_tab/list_tabs
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,9 +27,22 @@ agent 获得 tab 管理三工具，探索循环（开页→读→跟链→关）
 
 ### 实际改动
 - 与计划差异：
+  1. 拆分执行了两步（计划建议的 tab 工具拆分 + 派生的共享辅助拆分）：tab 管理三工具拆 `extension-tab-tools.ts`；ERROR_MESSAGES / commandErrorMessage / runCommand / emitAction / SHARED_SCOPE_NOTE 等共用辅助拆 `extension-command-shared.ts`（tab-tools 与主文件共用这些，直接互相 import 会成环）。extension-tools.ts 净减 95 行（734→639）；剩余为 9 个页面工具既有模板，本 step 不扩大化拆分。
+  2. 组空态文案替换落在 runCommand 层（计划未指定位置）：permission_denied 且焦点 tabId===-1 时统一替换为「Dogear 分组已空…」引导 open_tab，observe/click/fill 等所有普通工具自动获得正确文案。
+  3. close_tab 增加缺省+组空前置拦截（不发命令直接报组空文案）：扩展侧此场景报 stale_tab「当前没有受控标签页」，映射文案不贴切。
+  4. SHARED_SCOPE_NOTE 按「Dogear 分组内标签页」改述并含焦点模型引导；BrowserPanel.tsx 补 ACTION_ICONS/ACTION_LABELS 三条目，GOOD_RESULT_RE 补 opened/closed/listed。
 - 改动文件清单：
+  - `electron/main/services/browser/browser-action-stream.ts`（BrowserActionType 加 open_tab/close_tab/list_tabs）
+  - `electron/main/agents/tools/extension-command-shared.ts`（新建，134 行）
+  - `electron/main/agents/tools/extension-tab-tools.ts`（新建，265 行）
+  - `electron/main/agents/tools/extension-tools.ts`（辅助移出、imports 收敛、尾部展开 tab 工具、清残留未用 import，净减 95 行）
+  - `components/companion/BrowserPanel.tsx`（图标/标签/结果色映射）
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `createExtensionTabToolDefs(deps: ExtensionTabToolDeps)`：deps = { conversationId?, acquireGate, isErrorResult, textResult, emitAction(action, extra?), scopeNote }；在 extension-tools.ts 的 createExtensionToolDefs return 数组尾部展开（registerToolGroup 单点注册不变，getRegisteredTools IPC 动态获取自动含三新工具）。
+  - 工具参数：open_tab `{ url, background? }`；close_tab `{ tab_id? }`；list_tabs `{}`。
+  - runCommand 组空替换：所有普通命令 permission_denied + 组空 → EMPTY_GROUP_MESSAGE（shared 导出，可复用）。
+  - close_tab 焦点判定：`wasFocus = (tab_id ?? focusTabId) === focusTabId`；成功文案三分支（回落 / 组空 / 焦点不变）。
+- 下个 step 该从哪里继续：Step 4 右键菜单（不碰本 step 文件）；Step 5 guard_submit 只需改 ERROR_MESSAGES.guard_submit 文案（映射表已集中到 extension-command-shared.ts）。
+- 待办或已知限制：真机手测未做（本会话无浏览器环境）；extension-tools.ts 仍 639 行（既有债务，页面工具模板重复，后续可按同模式再拆）。

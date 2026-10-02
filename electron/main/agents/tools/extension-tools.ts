@@ -1,26 +1,20 @@
 /**
- * 浏览器扩展 MCP Server 工具
+ * 浏览器扩展 MCP Server 工具（页面操作组）
  *
- * 提供 dogear__extension__* 工具组：navigate / observe_page / click / fill / read_text / read_state /
- * site_knowledge / site_finding（后两者在 extension-site-tools.ts）。
- * 作用于用户真实浏览器的已连接标签页（经 NativeMessaging 通道 sendExtensionCommand），
+ * 提供 dogear__extension__* 工具组：navigate / observe_page / find / click / fill / read_text / read_state /
+ * scroll（本文件）+ tab 管理 open_tab / close_tab / list_tabs（extension-tab-tools.ts）+
+ * site_knowledge / site_finding / site_policy（extension-site-tools.ts）。
+ * 作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 仅限已授权域名；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
  * 站点策略命中（如小红书）：操作间随机延迟、单会话搜索/笔记预算、风控信号即停。
- * site_knowledge / site_finding 读写站点档案无页面交互，不过站点策略。
- * 错误一律转中文 isError 文案不抛异常（13 个 errorCode 映射全覆盖）。
+ * 共享辅助（错误文案/命令执行/动作流/作用域说明）在 extension-command-shared.ts。
  */
 
 import { z } from 'zod';
-import {
-  getExtensionStatus,
-  sendExtensionCommand,
-  type CommandError,
-} from '../../services/browser/browser-gateway.js';
-import { recordBrowserAction } from '../../services/browser/browser-action-stream.js';
+import { getExtensionStatus } from '../../services/browser/browser-gateway.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import { acquireChannel, resetChannel } from '../../services/browser/extension-ownership.js';
 import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
-import type { CommandErrorCode, CommandKind } from '../../services/browser/nm-protocol.js';
 import {
   checkNoteBudget,
   checkSearchBudget,
@@ -33,6 +27,18 @@ import {
   type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
 import { createSiteToolDefs, siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
+import { createExtensionTabToolDefs } from './extension-tab-tools.js';
+import {
+  SHARED_SCOPE_NOTE,
+  buildTaskMeta,
+  busyChannelMessage,
+  currentUrl,
+  emitAction,
+  isErrorResult,
+  runCommand,
+  textResult,
+  type ActionExtra,
+} from './extension-command-shared.js';
 import {
   formatObserve,
   formatObserveElement,
@@ -46,113 +52,13 @@ import {
   type ReadTextPayload,
   type ScrollPayload,
 } from './extension-observe-format.js';
-import { pageStateHint } from '../../services/browser/embedded/page-state.js';
-import type { EmbeddedPageState } from '../../services/browser/embedded/types.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
 const READ_MAX_CHARS = 8_000;
 
-const ERROR_MESSAGES: Record<CommandErrorCode, string> = {
-  not_connected: '浏览器扩展未连接，请先在扩展中连接此标签页',
-  stale_protocol: '扩展版本过旧，请在浏览器扩展管理页重载 Dogear 扩展后重试',
-  timeout: '命令执行超时（30s 上限），请重试',
-  disconnected: '扩展连接已断开，请在扩展中重新连接此标签页',
-  stale_tab: '当前受控标签页已切换，请在扩展中重新连接目标标签页',
-  navigated_away: '页面已离开命令发起时的地址，请重新调用 observe_page 后再操作',
-  tab_closed: '标签页已关闭，请在扩展中重新连接目标标签页',
-  permission_denied: '当前标签页域名未授权，请在浏览器扩展 Dogear 弹窗中授权此域名后重试',
-  ref_expired: '页面已变化，请重新调用 observe_page 获取新 ref',
-  value_mismatch: '填写后页面当前值与输入不一致（页面可能改写了内容），请检查后重试',
-  guard_password: '密码类输入本阶段禁止，请手动填写密码',
-  guard_submit: '提交类操作本阶段未开放，请手动完成提交',
-  navigation_blocked: '目标域名未授权，请在扩展弹窗授权后重试',
-};
-
-function commandErrorMessage(err: unknown): string {
-  const e = (err ?? null) as Partial<CommandError> | null;
-  const code = e?.errorCode;
-  const detail = typeof e?.error === 'string' && e.error ? e.error : undefined;
-  const currentUrl = typeof e?.currentUrl === 'string' && e.currentUrl ? e.currentUrl : undefined;
-  if (code === 'navigated_away' || code === 'ref_expired') {
-    const base = ERROR_MESSAGES[code];
-    return currentUrl ? `${base}（当前页面: ${currentUrl}）` : base;
-  }
-  if (code === 'navigation_blocked') {
-    if (!detail || detail.includes('目标域名未授权')) return ERROR_MESSAGES.navigation_blocked;
-    return `无法导航：${detail}`;
-  }
-  if (typeof code === 'string' && code in ERROR_MESSAGES) {
-    return ERROR_MESSAGES[code as CommandErrorCode];
-  }
-  return `浏览器扩展命令执行失败：${detail ?? String(err)}`;
-}
-
-function isErrorResult(message: string): ToolResult {
-  return { content: [{ type: 'text' as const, text: message }], isError: true };
-}
-
-function textResult(text: string): ToolResult {
-  return { content: [{ type: 'text' as const, text }] };
-}
-
-function buildTaskMeta(conversationId: string | undefined): BrowserTaskMeta {
-  return conversationId ? { kind: 'agent', conversationId } : { kind: 'agent' };
-}
-
-function currentUrl(): string | undefined {
-  const status = getExtensionStatus();
-  return status.status === 'connected' ? status.url : undefined;
-}
-
-interface ActionExtra {
-  url?: string;
-  detail?: string;
-  result?: string;
-  urlBefore?: string;
-  urlAfter?: string;
-  errorCode?: string;
-  durationMs?: number;
-}
-
-function emitAction(
-  taskMeta: BrowserTaskMeta,
-  action: BrowserActionType,
-  extra?: ActionExtra,
-): void {
-  recordBrowserAction({
-    source: 'extension',
-    taskMeta,
-    action,
-    ...extra,
-  });
-}
-
 /** read_state 笔记预算按页面 URL 计数（同页多 path 探索不重复计）；与 read_text 的「无 ref 计数」语义互不影响 */
 const readStateCountedUrlByConv = new Map<string, string>();
-
-async function runCommand<T>(
-  kind: CommandKind,
-  params: Record<string, unknown>,
-  extract: (data: unknown) => T,
-): Promise<{ ok: true; value: T } | { ok: false; message: string; errorCode?: string }> {
-  try {
-    const result = await sendExtensionCommand(kind, params);
-    return { ok: true, value: extract(result.data) };
-  } catch (err) {
-    const errorCode = (err as Partial<CommandError> | null)?.errorCode;
-    return {
-      ok: false,
-      message: commandErrorMessage(err),
-      ...(typeof errorCode === 'string' ? { errorCode } : {}),
-    };
-  }
-}
-
-function busyChannelMessage(idleMs: number): string {
-  const minutes = Math.max(1, Math.floor(idleMs / 60_000));
-  return `扩展通道正被另一个会话使用（对方最近活动于 ${minutes} 分钟前），通道空闲 10 分钟后自动释放；若需并行调研，请改串行派遣或使用内嵌浏览器工具`;
-}
 
 function formatClick(ref: string, data: ClickPayload): string {
   if (data.verification === 'lost') {
@@ -176,14 +82,10 @@ function formatClick(ref: string, data: ClickPayload): string {
   return `已点击 ${ref}。验证：${changes.join('；')}`;
 }
 
-const SHARED_SCOPE_NOTE =
-  '作用于用户真实浏览器的已连接标签页，仅限已授权域名；点击/填充自动执行但拦截提交类操作。' +
-  '扩展通道同一时间仅一个会话可用，被其他会话占用时会直接报错（不排队）。' +
-  '用户浏览器已连接且目标站需登录态时优先本工具组，公开网页读取用 dogear__browser__*。';
-
 export function createExtensionToolDefs(opts?: { conversationId?: string }): ToolDef[] {
   const conversationId = opts?.conversationId;
   const meta = () => buildTaskMeta(conversationId);
+  const emit = (action: BrowserActionType, extra?: ActionExtra): void => emitAction(meta(), action, extra);
 
   /** 各 handler 统一前置：断连清零独占 → 有 conversationId 时获取通道（busy 即拒，不排队）；action 为 null 的非页面操作（站点档案读写）busy 不记动作流 */
   function acquireGate(action: BrowserActionType | null, detail: string, url?: string): ToolResult | null {
@@ -716,6 +618,15 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       isErrorResult,
       textResult,
       scopeNote: '扩展通道会话独占；本组工具只读写本地站点档案，不碰页面、不受授权域约束。',
+    }),
+
+    ...createExtensionTabToolDefs({
+      conversationId,
+      acquireGate,
+      isErrorResult,
+      textResult,
+      emitAction: emit,
+      scopeNote: SHARED_SCOPE_NOTE,
     }),
   ];
 }

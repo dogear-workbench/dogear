@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 协议 v4 与扩展侧 tab 管理](./step1-protocol-tabs.md) — manifest 加 tabs/tabGroups/contextMenus 权限，双侧协议加 open_tab/close_tab/list_tabs 命令，SW 实现 Dogear 分组管理
 - [x] [Step 2: gateway 多 tab 状态模型](./step2-gateway-tabs.md) — ExtensionStatus 泛化为焦点 tab + tabs 数组，命令帧带目标 tabId，快照按 tab 更新
-- [ ] [Step 3: agent 工具 open_tab/close_tab/list_tabs](./step3-agent-tools.md) — 三个新工具注册 + 焦点模型文案 + 动作流事件与面板渲染
+- [x] [Step 3: agent 工具 open_tab/close_tab/list_tabs](./step3-agent-tools.md) — 三个新工具注册 + 焦点模型文案 + 动作流事件与面板渲染
 - [ ] [Step 4: 一键移交](./step4-handoff.md) — 右键菜单「发送到 Dogear」打包 URL+选中文本+正文快照，路由到最近活跃会话 + 通知
 - [ ] [Step 5: 提交类动作确认与支付黑名单](./step5-submit-confirm.md) — guard_submit 从硬拦截升级为确认后放行（复用 human-intervention），site-policy 加支付/网银黑名单
 

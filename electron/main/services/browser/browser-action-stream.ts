@@ -4,6 +4,9 @@ export type BrowserActionKind = 'article' | 'agent';
 
 export type BrowserActionType =
   | 'navigate'
+  | 'open_tab'
+  | 'close_tab'
+  | 'list_tabs'
   | 'wait'
   | 'click'
   | 'observe'
