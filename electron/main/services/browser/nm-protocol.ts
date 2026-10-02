@@ -91,6 +91,15 @@ export interface TabSnapshotMessage {
   generation: number;
 }
 
+/** 扩展主动推送的一键移交帧；与 tab_snapshot 同类无 requestId，NmMessage 为宽 Record 故此类型仅作文档 */
+export interface PageHandoffMessage {
+  type: 'page_handoff';
+  url: string;
+  title: string;
+  selectionText?: string;
+  textExcerpt?: string;
+}
+
 export interface NmDecoder {
   onFrame(handler: (message: NmMessage) => void): void;
   push(chunk: Uint8Array): void;

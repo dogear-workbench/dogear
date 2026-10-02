@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 一键移交
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,9 +27,19 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  1. 未连接提示方案：manifest 无 notifications 权限，contextMenus 场景无法弹 UI → 取 action badge「!」闪现 3s；popup 场景在按钮文本直接显示错误文案（计划给的「提示或静默」二选一，取轻提示）。
+  2. 路由逻辑独立成 `services/browser/extension-handoff.ts`（含会话选择 + 通知中心，属服务层职责）；tipc/browser.ts 仅 `registerExtensionHandoffBridge()` 接线 setHandoffHandler（对齐 registerExtensionStatusBridge 模式）。
+  3. 「最近活跃」口径落定：存活 pi 会话（getAliveConversationIds，sendMessage 需内存 session）∩ getByIdGlobal 有索引，按 conv.updatedAt 降序取最新；无候选走通知中心「未找到可接收会话」。
+  4. contextMenus 注册用 removeAll+create 幂等（onInstalled 重装时重复 create 会报 duplicate id）。
+  5. 通知类型对齐前端枚举：到达通知 type 'conversation' + owner conversation（可点击跳会话）；无会话通知 type 'task' + owner system（无 taskId 时点击无动作，安全）。
+- 改动文件清单：extension/src/background.js（contextMenus 注册/分发、sendPageHandoff 打包帧、badge 提示、onMessage 加 dogear_handoff）；extension/popup.html + popup.js（移交按钮 + 反馈）；electron/main/services/browser/nm-protocol.ts（PageHandoffMessage 文档类型）；browser-gateway.ts（setHandoffHandler + handleFrame 分支 + applyHandoff 字段清洗）；services/browser/extension-handoff.ts（新建，路由 + 通知）；tipc/browser.ts + tipc/index.ts（接线）。
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+  - `setHandoffHandler(fn: ((handoff: PageHandoffMessage) => void) | null)`（browser-gateway.ts）
+  - `PageHandoffMessage { type:'page_handoff', url, title, selectionText?, textExcerpt? }`（nm-protocol.ts，仅文档性）
+  - `routeBrowserHandoff(handoff)`（extension-handoff.ts）：注入用户消息文本「来自浏览器一键移交：标题/URL/选中内容/正文快照」
+  - 通知 dedupeKey：到达 `handoff:{conversationId}`；无会话 `handoff:no-session`
+  - 帧字段清洗在 gateway applyHandoff（非 string 丢弃、空串省略）
+- 下个 step 该从哪里继续：Step 5（guard_submit 确认放行）与本 step 无文件交集；extension-command-shared.ts 的 ERROR_MESSAGES.guard_submit 文案改一处即可。
+- 待办或已知限制：真机手测未做（无浏览器环境）：右键发送 → 最近活跃会话收到完整上下文、selectionText 在场、无会话时通知中心出「未找到可接收的会话」；textExcerpt 为 read_text 择优容器全文前 4000 字符；executeScript 失败（未授权域）仅缺 textExcerpt 不阻断移交；目标会话 running 时 sendMessage 入队插话队列，通知即时发；移交页仅支持 http/https。

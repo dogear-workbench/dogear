@@ -31,7 +31,7 @@ import { schedulerRouter } from './scheduler.js';
 import { windowsRouter } from './windows.js';
 import { focusRouter } from './focus.js';
 import { ptyRouter, registerPtyBroadcaster } from './pty.js';
-import { browserRouter, registerBrowserActionBridge, registerExtensionStatusBridge } from './browser.js';
+import { browserRouter, registerBrowserActionBridge, registerExtensionStatusBridge, registerExtensionHandoffBridge } from './browser.js';
 import { browserDataRouter } from './browser-data.js';
 import { syncRouter, registerSyncBroadcaster } from './sync.js';
 
@@ -84,6 +84,8 @@ export function registerTipcHandlers() {
   registerBrowserActionBridge();
   // 浏览器扩展连接状态：gateway → 渲染层广播桥接
   registerExtensionStatusBridge();
+  // 浏览器一键移交：gateway page_handoff 帧 → 最近活跃会话路由 + 通知中心
+  registerExtensionHandoffBridge();
   // 局域网同步：服务层状态/对端/同步进度/配对事件 → 渲染层广播桥接
   registerSyncBroadcaster();
 }

@@ -1,7 +1,27 @@
 const button = document.getElementById('connect')
 const disconnectButton = document.getElementById('disconnect')
+const handoffButton = document.getElementById('handoff')
 const statusEl = document.getElementById('status')
 const permEl = document.getElementById('perm')
+
+let handoffTimer = null
+const HANDOFF_LABEL = '发送当前页到 Dogear'
+
+handoffButton.addEventListener('click', async () => {
+  handoffButton.disabled = true
+  let result
+  try {
+    result = await chrome.runtime.sendMessage({ type: 'dogear_handoff' })
+  } catch {
+    result = { ok: false, error: '后台未就绪' }
+  }
+  handoffButton.textContent = result?.ok ? '已发送 ✓' : result?.error || '发送失败'
+  clearTimeout(handoffTimer)
+  handoffTimer = setTimeout(() => {
+    handoffButton.textContent = HANDOFF_LABEL
+    handoffButton.disabled = false
+  }, 2000)
+})
 
 disconnectButton.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'dogear_disconnect' }).catch(() => {})
@@ -24,6 +44,7 @@ function render(state) {
   }
   button.disabled = state.status === 'connecting'
   disconnectButton.hidden = state.status !== 'connected'
+  handoffButton.hidden = state.status !== 'connected'
 }
 
 button.addEventListener('click', () => {

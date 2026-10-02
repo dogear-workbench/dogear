@@ -39,6 +39,68 @@ async function getActiveTab() {
   return tab ?? null
 }
 
+const HANDOFF_EXCERPT_LIMIT = 4000
+const BADGE_RESET_MS = 3000
+let badgeTimer = null
+
+function flashHandoffError() {
+  chrome.action.setBadgeText({ text: '!' }).catch(() => {})
+  clearTimeout(badgeTimer)
+  badgeTimer = setTimeout(() => {
+    chrome.action.setBadgeText({ text: '' }).catch(() => {})
+  }, BADGE_RESET_MS)
+}
+
+async function extractHandoffExcerpt(tabId) {
+  try {
+    const [injection] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: readTextFn,
+      args: [null]
+    })
+    return String(injection?.result?.text ?? '').slice(0, HANDOFF_EXCERPT_LIMIT)
+  } catch {
+    return ''
+  }
+}
+
+async function sendPageHandoff(tab, selectionText) {
+  if (!port) {
+    flashHandoffError()
+    return { ok: false, error: '请先在扩展弹窗连接 Dogear' }
+  }
+  if (!tab || tab.id == null || !tab.url || !/^https?:/.test(tab.url)) {
+    return { ok: false, error: '当前页面不支持移交' }
+  }
+  const textExcerpt = await extractHandoffExcerpt(tab.id)
+  const payload = {
+    type: 'page_handoff',
+    url: tab.url,
+    title: tab.title ?? '',
+    ...(selectionText ? { selectionText } : {}),
+    ...(textExcerpt ? { textExcerpt } : {})
+  }
+  try {
+    port.postMessage(payload)
+  } catch {
+    flashHandoffError()
+    return { ok: false, error: '发送失败，请重新在扩展弹窗连接' }
+  }
+  return { ok: true }
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.removeAll(() => {
+    chrome.contextMenus.create({ id: 'dogear-handoff-page', contexts: ['page'], title: '发送到 Dogear' })
+    chrome.contextMenus.create({ id: 'dogear-handoff-selection', contexts: ['selection'], title: '发送选中内容到 Dogear' })
+  })
+})
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId !== 'dogear-handoff-page' && info.menuItemId !== 'dogear-handoff-selection') return
+  sendPageHandoff(tab, info.selectionText ?? '').catch(() => {})
+})
+
 function disconnectPort() {
   if (!port) return
   const closing = port
@@ -413,6 +475,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendPermissionState()
     sendResponse({ ok: true })
     return
+  }
+  if (message?.type === 'dogear_handoff') {
+    getActiveTab()
+      .then((tab) => sendPageHandoff(tab, ''))
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ ok: false, error: '发送失败' }))
+    return true
   }
   if (message?.type === 'dogear_get_state') {
     sendResponse({ ...state })

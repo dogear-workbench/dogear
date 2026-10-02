@@ -10,6 +10,7 @@ import {
   type CommandKind,
   type CommandResult,
   type NmMessage,
+  type PageHandoffMessage,
 } from './nm-protocol.js';
 import { resetChannel } from './extension-ownership.js';
 import {
@@ -87,6 +88,15 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 /** 注册制广播（对齐 browser-action-stream 模式：服务层零 electron 依赖，tipc 层接线） */
 export function setExtensionStatusBroadcaster(fn: StatusBroadcaster | null): void {
   broadcaster = fn;
+}
+
+type HandoffHandler = (handoff: PageHandoffMessage) => void;
+
+let handoffHandler: HandoffHandler | null = null;
+
+/** 注册制回调（对齐 setExtensionStatusBroadcaster）：page_handoff 是独立事件流，不进 ExtensionStatus */
+export function setHandoffHandler(fn: HandoffHandler | null): void {
+  handoffHandler = fn;
 }
 
 export function getExtensionStatus(): ExtensionStatus {
@@ -270,6 +280,27 @@ function handleCommandResult(message: NmMessage): void {
   });
 }
 
+function applyHandoff(message: NmMessage): void {
+  const url = typeof message.url === 'string' ? message.url : '';
+  if (url.length === 0) {
+    logger.warn('page_handoff 缺少 url，已忽略');
+    return;
+  }
+  if (!handoffHandler) {
+    logger.warn('page_handoff 无处理器，已忽略:', url);
+    return;
+  }
+  const selectionText = typeof message.selectionText === 'string' ? message.selectionText : '';
+  const textExcerpt = typeof message.textExcerpt === 'string' ? message.textExcerpt : '';
+  handoffHandler({
+    type: 'page_handoff',
+    url,
+    title: typeof message.title === 'string' ? message.title : '',
+    ...(selectionText.length > 0 ? { selectionText } : {}),
+    ...(textExcerpt.length > 0 ? { textExcerpt } : {}),
+  });
+}
+
 function handleFrame(socket: net.Socket, message: NmMessage): void {
   const type = message.type;
   if (type === 'hello') {
@@ -293,6 +324,10 @@ function handleFrame(socket: net.Socket, message: NmMessage): void {
   }
   if (type === 'permission_state') {
     applyPermissionState(message);
+    return;
+  }
+  if (type === 'page_handoff') {
+    applyHandoff(message);
     return;
   }
   if (type === 'protocol_error') {

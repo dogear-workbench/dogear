@@ -32,7 +32,9 @@ import {
 import {
   getExtensionStatus,
   setExtensionStatusBroadcaster,
+  setHandoffHandler,
 } from '../services/browser/browser-gateway.js';
+import { routeBrowserHandoff } from '../services/browser/extension-handoff.js';
 import {
   registerNmHost as registerNmHostService,
   unregisterNmHost as unregisterNmHostService,
@@ -82,6 +84,15 @@ export function registerBrowserActionBridge(): void {
 export function registerExtensionStatusBridge(): void {
   setExtensionStatusBroadcaster((status) => {
     broadcastToWindows((h) => h.extensionStatusChanged.send(status));
+  });
+}
+
+/** 浏览器一键移交接线（registerTipcHandlers 调用一次）：gateway 帧 → 最近活跃会话路由 + 通知中心 */
+export function registerExtensionHandoffBridge(): void {
+  setHandoffHandler((handoff) => {
+    routeBrowserHandoff(handoff).catch((err) => {
+      console.error('[browser] 页面移交路由失败:', err);
+    });
   });
 }
 
