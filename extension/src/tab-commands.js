@@ -48,7 +48,7 @@ async function ensureDogearGroup(tabId) {
   }
 }
 
-async function getDogearTabs() {
+export async function getDogearTabs() {
   const groups = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
   if (!groups.length) return []
   return chrome.tabs.query({ groupId: { in: groups.map((g) => g.id) } })

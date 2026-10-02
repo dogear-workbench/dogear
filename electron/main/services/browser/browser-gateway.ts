@@ -12,22 +12,28 @@ import {
   type NmMessage,
 } from './nm-protocol.js';
 import { resetChannel } from './extension-ownership.js';
+import {
+  adoptFocusedTab,
+  applyTabSnapshot,
+  initialTabFields,
+  removeClosedTab,
+  syncTabsFromList,
+  type GatewayTabEntry,
+  type GatewayTabFields,
+} from './gateway-tab-state.js';
 
 export type ExtensionStatus =
   | { status: 'disconnected' }
-  | {
+  | ({
       status: 'connected';
       extensionVersion: string;
       protocolVersion: number;
-      tabId: number;
-      title: string;
-      url: string;
-      textPreview: string;
-      extractError?: string;
       connectedAt: number;
       authorizedOrigins: string[];
-      generation: number;
-    };
+      extractError?: string;
+    } & GatewayTabFields);
+
+export type { GatewayTabEntry };
 
 export interface CommandError {
   errorCode: CommandErrorCode;
@@ -118,13 +124,9 @@ function takeOver(socket: net.Socket, extensionVersion: string, protocolVersion:
     status: 'connected',
     extensionVersion,
     protocolVersion,
-    tabId,
-    title: '',
-    url: '',
-    textPreview: '',
     connectedAt: Date.now(),
     authorizedOrigins: [],
-    generation: 0,
+    ...initialTabFields(tabId),
   });
   safeWrite(socket, { type: 'welcome', appVersion: gatewayAppVersion });
   logger.info('扩展已连接', `v${extensionVersion}`, `protocol=${protocolVersion}`, `tabId=${tabId}`);
@@ -135,25 +137,23 @@ function applySnapshot(message: NmMessage): void {
     logger.warn('未连接状态下收到 tab_snapshot，已忽略');
     return;
   }
-  const tabId = typeof message.tabId === 'number' ? message.tabId : currentStatus.tabId;
-  const title = typeof message.title === 'string' ? message.title : '';
-  const url = typeof message.url === 'string' ? message.url : '';
-  const textPreview = typeof message.textPreview === 'string' ? message.textPreview : '';
+  const prevTabId = currentStatus.tabId;
+  const snapTabId = typeof message.tabId === 'number' ? message.tabId : prevTabId;
   const extractError =
     typeof message.extractError === 'string' && message.extractError.length > 0
       ? message.extractError
       : undefined;
-  const generation = typeof message.generation === 'number' ? message.generation : currentStatus.generation;
-  setStatus({
-    ...currentStatus,
-    tabId,
-    title,
-    url,
-    textPreview,
-    generation,
-    ...(extractError !== undefined ? { extractError } : {}),
-  });
-  logger.info('标签页快照已更新', url, `tabId=${tabId}`);
+  const fields = applyTabSnapshot(currentStatus, message);
+  const extractErrorPatch =
+    snapTabId === prevTabId
+      ? extractError !== undefined
+        ? { extractError }
+        : { extractError: undefined }
+      : fields.tabId !== prevTabId
+        ? { extractError: undefined }
+        : {};
+  setStatus({ ...currentStatus, ...fields, ...extractErrorPatch });
+  logger.info('标签页快照已更新', fields.url, `tabId=${fields.tabId}`);
 }
 
 function extractOrigin(url: string): string | null {
@@ -208,6 +208,25 @@ function applyNavigateUrl(data: unknown): void {
   setStatus({ ...currentStatus, url });
 }
 
+function applyOpenTabResult(data: unknown): void {
+  if (currentStatus.status !== 'connected') return;
+  const d = (data ?? {}) as { tabId?: unknown; url?: unknown; title?: unknown };
+  if (typeof d.tabId !== 'number') return;
+  setStatus({ ...currentStatus, ...adoptFocusedTab(currentStatus, d.tabId, { url: d.url, title: d.title }) });
+}
+
+function applyCloseTabResult(data: unknown): void {
+  if (currentStatus.status !== 'connected') return;
+  const d = (data ?? {}) as { closedTabId?: unknown; focusedTabId?: unknown };
+  if (typeof d.closedTabId !== 'number') return;
+  setStatus({ ...currentStatus, ...removeClosedTab(currentStatus, d.closedTabId, d.focusedTabId) });
+}
+
+function applyListTabsResult(data: unknown): void {
+  if (currentStatus.status !== 'connected') return;
+  setStatus({ ...currentStatus, ...syncTabsFromList(currentStatus, data) });
+}
+
 function parseErrorCode(value: unknown): CommandErrorCode {
   return typeof value === 'string' && (COMMAND_ERROR_CODES as readonly string[]).includes(value)
     ? (value as CommandErrorCode)
@@ -229,6 +248,9 @@ function handleCommandResult(message: NmMessage): void {
   clearTimeout(pending.timer);
   if (message.ok === true) {
     if (pending.kind === 'navigate') applyNavigateUrl(message.data);
+    else if (pending.kind === 'open_tab') applyOpenTabResult(message.data);
+    else if (pending.kind === 'close_tab') applyCloseTabResult(message.data);
+    else if (pending.kind === 'list_tabs') applyListTabsResult(message.data);
     pending.resolve({
       requestId,
       ok: true,
@@ -289,10 +311,16 @@ function handleDisconnect(socket: net.Socket): void {
   logger.info('扩展连接断开');
 }
 
+export interface SendExtensionCommandOptions {
+  /** 目标 tab；缺省用焦点 tab（协议帧 tabId/url 与扩展侧 navigated_away 检查都依赖它） */
+  tabId?: number;
+}
+
 export function sendExtensionCommand(
   kind: CommandKind,
   params: Record<string, unknown>,
   timeoutMs: number = DEFAULT_COMMAND_TIMEOUT_MS,
+  opts?: SendExtensionCommandOptions,
 ): Promise<CommandResult> {
   const socket = activeSocket;
   if (!socket || socket.destroyed) {
@@ -304,24 +332,32 @@ export function sendExtensionCommand(
       error: '扩展版本过旧，请在浏览器扩展管理页重载 Dogear 扩展',
     } satisfies CommandError);
   }
-  if (kind === 'navigate') {
+  const targetTabId = opts?.tabId ?? currentStatus.tabId;
+  const targetUrl =
+    targetTabId === currentStatus.tabId
+      ? currentStatus.url
+      : currentStatus.tabs.find((t) => t.tabId === targetTabId)?.url ?? '';
+  if (kind === 'navigate' || kind === 'open_tab') {
     const blocked = validateNavigateTarget(params.targetUrl, currentStatus.authorizedOrigins);
     if (blocked) return Promise.reject(blocked);
-  } else if (!isOriginAuthorized(currentStatus.url, currentStatus.authorizedOrigins)) {
+  } else if (
+    kind !== 'close_tab' &&
+    kind !== 'list_tabs' &&
+    !isOriginAuthorized(targetUrl, currentStatus.authorizedOrigins)
+  ) {
     return Promise.reject({
       errorCode: 'permission_denied',
-      error: '当前标签页域名未授权，请在浏览器扩展 Dogear 弹窗中授权此域名后重试',
+      error: '目标标签页域名未授权，请在浏览器扩展 Dogear 弹窗中授权此域名后重试',
     } satisfies CommandError);
   }
   const requestId = `${Date.now()}-${++commandSeq}`;
-  const { tabId, url } = currentStatus;
   return new Promise<CommandResult>((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingCommands.delete(requestId);
       reject({ errorCode: 'timeout', error: '命令执行超时' } satisfies CommandError);
     }, timeoutMs);
     pendingCommands.set(requestId, { kind, resolve, reject, timer });
-    safeWrite(socket, { type: 'command', requestId, tabId, url, kind, params });
+    safeWrite(socket, { type: 'command', requestId, tabId: targetTabId, url: targetUrl, kind, params });
   });
 }
 

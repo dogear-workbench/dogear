@@ -1,5 +1,5 @@
 import { extractTabSnapshot } from './content-extract.js'
-import { handleTabCommand } from './tab-commands.js'
+import { handleTabCommand, getDogearTabs } from './tab-commands.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
 import { observeFn } from './observe-actions.js'
 import { findFn } from './find-actions.js'
@@ -72,6 +72,22 @@ async function sendTabSnapshot() {
     generation: currentGeneration(tabId),
     ...(extractError ? { extractError } : {})
   })
+}
+
+async function pushGroupTabSnapshots() {
+  if (!port) return
+  const tabs = await getDogearTabs()
+  for (const tab of tabs) {
+    if (tab.id == null || tab.id === state.tabId) continue
+    port.postMessage({
+      type: 'tab_snapshot',
+      tabId: tab.id,
+      title: tab.title ?? '',
+      url: tab.url ?? '',
+      textPreview: '',
+      generation: currentGeneration(tab.id)
+    })
+  }
 }
 
 const COMMAND_FUNCS = {
@@ -339,6 +355,7 @@ function onHostMessage(message) {
   if (message?.type === 'welcome') {
     setStatus({ status: 'connected', appVersion: message.appVersion ?? '', error: '' })
     sendTabSnapshot()
+    pushGroupTabSnapshots()
     sendPermissionState()
     return
   }
