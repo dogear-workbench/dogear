@@ -160,7 +160,7 @@ export function TaskEditorPage({ task, workspaces, defaultWorkspaceId, onExit }:
                 placeholder="任务的完整提示词，将交给 AI 执行"
               />
             ) : (
-              <div className="max-h-80 overflow-y-auto rounded-md border p-3">
+              <div className="flex-1 min-h-0 overflow-y-auto rounded-md border p-3">
                 {draft.prompt.trim()
                   ? <MarkdownRenderer content={draft.prompt} />
                   : <p className="text-xs text-muted-foreground">提示词为空，点「编辑」填写</p>}
