@@ -255,7 +255,12 @@ const TAB_COMMAND_CTX = {
 
 async function handleCommand(msg) {
   if (!port) return
-  if (await handleTabCommand(msg, TAB_COMMAND_CTX)) return
+  try {
+    if (await handleTabCommand(msg, TAB_COMMAND_CTX)) return
+  } catch (err) {
+    fail(msg, 'timeout', `tab 命令执行异常：${String(err?.message ?? err)}`)
+    return
+  }
   if (state.tabId == null || msg.tabId !== state.tabId) {
     fail(msg, 'stale_tab', '命令指向的标签页与当前受控标签页不一致')
     return

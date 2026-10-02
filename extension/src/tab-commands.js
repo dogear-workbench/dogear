@@ -57,7 +57,8 @@ async function ensureDogearGroup(tabId) {
 export async function getDogearTabs() {
   const groups = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
   if (!groups.length) return []
-  return chrome.tabs.query({ groupId: { in: groups.map((g) => g.id) } })
+  const lists = await Promise.all(groups.map((g) => chrome.tabs.query({ groupId: g.id })))
+  return lists.flat()
 }
 
 async function isInDogearGroup(tab) {
