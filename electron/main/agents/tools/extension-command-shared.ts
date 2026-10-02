@@ -57,6 +57,10 @@ export function commandErrorMessage(err: unknown): string {
     if (!detail || detail.includes('目标域名未授权')) return ERROR_MESSAGES.navigation_blocked;
     return `无法导航：${detail}`;
   }
+  if (code === 'permission_denied') {
+    if (!detail || detail.includes('域名未授权')) return ERROR_MESSAGES.permission_denied;
+    return detail;
+  }
   if (typeof code === 'string' && code in ERROR_MESSAGES) {
     return ERROR_MESSAGES[code as CommandErrorCode];
   }

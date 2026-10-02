@@ -40,10 +40,13 @@ function isOriginAuthorized(url, origins) {
 
 async function ensureDogearGroup(tabId) {
   try {
-    await chrome.tabGroups.group({
-      tabIds: tabId,
-      createProperties: { title: DOGEAR_GROUP_TITLE, color: GROUP_COLOR }
-    })
+    const existing = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
+    if (existing.length) {
+      await chrome.tabs.group({ tabIds: tabId, groupId: existing[0].id })
+    } else {
+      const groupId = await chrome.tabs.group({ tabIds: tabId })
+      await chrome.tabGroups.update(groupId, { title: DOGEAR_GROUP_TITLE, color: GROUP_COLOR })
+    }
   } catch {
   }
 }
