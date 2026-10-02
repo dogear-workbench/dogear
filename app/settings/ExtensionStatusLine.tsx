@@ -3,6 +3,37 @@ import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
 import type { ExtensionStatus } from '../../electron/main/services/browser/browser-gateway';
 
+type BrowserActionPolicy = Awaited<ReturnType<typeof client.getBrowserActionPolicy>>;
+
+export function ExtensionActionPolicyNote() {
+  const [policy, setPolicy] = useState<BrowserActionPolicy | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    client.getBrowserActionPolicy().then((p) => {
+      if (!cancelled) setPolicy(p);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!policy) return null;
+  return (
+    <div className="space-y-1 rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+      <p className="font-medium text-foreground/80">Agent 操作动作分级</p>
+      <ul className="list-disc space-y-0.5 pl-4">
+        {policy.levels.map((level) => (
+          <li key={level}>{level}</li>
+        ))}
+      </ul>
+      <p className="pt-1">
+        支付与网银黑名单（确认也不放行）：<span className="font-mono">{policy.paymentBlockedHosts.join('、')}</span>
+      </p>
+    </div>
+  );
+}
+
 export function ExtensionStatusLine() {
   const [status, setStatus] = useState<ExtensionStatus | null>(null);
 

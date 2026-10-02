@@ -1,4 +1,4 @@
-// 与 electron/main/services/browser/nm-protocol.ts 双副本同步；v4 CommandKind: observe/find/click/fill/read_text/navigate/read_state/scroll/open_tab/close_tab/list_tabs
+// 与 electron/main/services/browser/nm-protocol.ts 双副本同步；v4 CommandKind: observe/find/click/fill/read_text/navigate/read_state/scroll/open_tab/close_tab/list_tabs；click params: { ref, confirmed? }（confirmed 仅桌面端确认后重发携带，缺省仍拦截）
 const HEADER_SIZE = 4
 const MAX_FRAME_BYTES = 64 * 1024 * 1024
 

@@ -28,7 +28,9 @@ import {
   listPendingHumanInterventions,
   resolveHumanIntervention,
   setHumanInterventionBroadcaster,
+  type InterventionResult,
 } from '../services/browser/human-intervention.js';
+import { ACTION_LEVEL_NOTES, paymentBlockedHosts } from '../services/browser/site-policy.js';
 import {
   getExtensionStatus,
   setExtensionStatusBroadcaster,
@@ -236,6 +238,11 @@ export const browserRouter = {
 
   listHumanInterventions: t.procedure.action(async () => listPendingHumanInterventions()),
 
+  getBrowserActionPolicy: t.procedure.action(async () => ({
+    levels: ACTION_LEVEL_NOTES,
+    paymentBlockedHosts: [...paymentBlockedHosts()],
+  })),
+
   takeOverTab: t.procedure
     .input<{ tabId: string; conversationId?: string }>()
     .action(async ({ input }) => {
@@ -260,18 +267,20 @@ export const browserRouter = {
     }),
 
   resolveHumanIntervention: t.procedure
-    .input<{ id: string }>()
+    .input<{ id: string; result?: InterventionResult }>()
     .action(async ({ input }) => {
-      const resolved = resolveHumanIntervention(input.id, 'user');
+      const resolved = resolveHumanIntervention(input.id, 'user', input.result);
       if (!resolved) return { resolved: false };
-      const conversationId = resolved.taskMeta.conversationId;
-      if (conversationId) {
-        const tab = getEmbeddedBrowserManager().getTab(resolved.request.tabId);
-        const url = tab?.url ?? resolved.request.url ?? '未知';
-        resumeConversation(
-          conversationId,
-          `用户已在浏览器完成人工处理（${resolved.request.reason}，页面当前 URL: ${url}）。请重新观察该 tab 的当前页面状态后继续任务，不要从头重跑，不要重放旧 ref。`,
-        );
+      if (!resolved.waiterConsumed) {
+        const conversationId = resolved.taskMeta.conversationId;
+        if (conversationId) {
+          const tab = getEmbeddedBrowserManager().getTab(resolved.request.tabId);
+          const url = tab?.url ?? resolved.request.url ?? '未知';
+          resumeConversation(
+            conversationId,
+            `用户已在浏览器完成人工处理（${resolved.request.reason}，页面当前 URL: ${url}）。请重新观察该 tab 的当前页面状态后继续任务，不要从头重跑，不要重放旧 ref。`,
+          );
+        }
       }
       return { resolved: true };
     }),

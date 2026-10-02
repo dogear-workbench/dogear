@@ -42,7 +42,7 @@ export async function scrollFn(ref, deltaY, position) {
   return { target: container ? 'container' : 'document', before, after, moved: before.top !== after.top }
 }
 
-export async function clickFn(ref) {
+export async function clickFn(ref, confirmed) {
   if (!/^e\d+(@\d+)?$/.test(String(ref))) {
     return { errorCode: 'ref_expired', error: `ref "${ref}" 不存在或已失效，请重新观察页面后再操作` }
   }
@@ -60,10 +60,19 @@ export async function clickFn(ref) {
     (tag === 'button' && type === 'submit') ||
     (tag === 'input' && (type === 'submit' || type === 'image')) ||
     (tag === 'button' && !type && !!el.closest('form'))
-  if (isSubmit) {
+  if (isSubmit && confirmed !== true) {
+    const rawLabel =
+      (el.innerText || '').trim() ||
+      el.getAttribute('value') ||
+      el.getAttribute('aria-label') ||
+      el.getAttribute('title') ||
+      el.getAttribute('name') ||
+      ''
+    const submitTarget = String(rawLabel).replace(/\s+/g, ' ').trim().slice(0, 60) || '提交按钮'
     return {
       errorCode: 'guard_submit',
-      error: '提交类操作属 L2+，本阶段未开放；请引导用户在浏览器中手动完成提交',
+      error: '提交类操作需用户确认后执行，已发送确认请求等待用户处理',
+      submitTarget,
     }
   }
   const mainTextLength = () => {

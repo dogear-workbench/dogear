@@ -39,6 +39,59 @@ const XIAOHONGSHU_POLICY: SitePolicy = {
 
 const policies: SitePolicy[] = [XIAOHONGSHU_POLICY];
 
+/** hostname 后缀匹配（含自身）；新增域直接追加，P0 不做 per-site 配置 */
+const PAYMENT_BLOCKED_HOSTS = [
+  'alipay.com',
+  'alipay.cn',
+  'tenpay.com',
+  'pay.weixin.qq.com',
+  'pay.qq.com',
+  'pay.google.com',
+  'paypal.com',
+  'stripe.com',
+  'checkout.com',
+  'adyen.com',
+  'icbc.com.cn',
+  'ccb.com',
+  'abchina.com.cn',
+  'boc.cn',
+  'bankofchina.com',
+  'bankcomm.com',
+  'psbc.com',
+  'cmbchina.com',
+  'ecitic.com',
+  'cib.com.cn',
+  'cmbc.com.cn',
+  'cebbank.com',
+  'spdb.com.cn',
+  'cgbchina.com.cn',
+  'hxb.com.cn',
+];
+
+export function isPaymentBlocked(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return PAYMENT_BLOCKED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+  } catch {
+    return false;
+  }
+}
+
+export function paymentBlockedMessage(): string {
+  return '支付与网银类站点已禁用 agent 操作';
+}
+
+export const ACTION_LEVEL_NOTES = [
+  '读取（观察 / 查找 / 读文本 / 读状态）：自动执行',
+  '点击与填表：自动执行（密码类输入始终拦截）',
+  '提交类点击：拦截并弹出确认卡，用户确认后放行、拒绝则不执行',
+  '支付与网银域名：一律拒绝，用户确认也不放行',
+];
+
+export function paymentBlockedHosts(): readonly string[] {
+  return PAYMENT_BLOCKED_HOSTS;
+}
+
 export function registerSitePolicy(policy: SitePolicy): void {
   policies.push(policy);
 }

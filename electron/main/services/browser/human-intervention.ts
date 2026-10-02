@@ -3,6 +3,8 @@ import { recordBrowserAction } from './browser-action-stream.js';
 
 export type HumanInterventionReason = 'login_required' | 'verification_required' | 'guard_password' | 'guard_submit';
 
+export type InterventionResult = 'approved' | 'denied';
+
 export interface HumanInterventionRequest {
   id: string;
   tabId: string;
@@ -10,6 +12,10 @@ export interface HumanInterventionRequest {
   message: string;
   url: string | null;
   createdAt: number;
+  /** true 时前端渲染「确认提交/拒绝」双按钮，resolve 带 result；缺省走「完成后继续」单分支，广播结构向后兼容 */
+  confirmMode?: boolean;
+  /** 用户双分支处理结果（确认/拒绝）；「完成后继续」单按钮与 auto 解除不填 */
+  result?: InterventionResult;
 }
 
 interface PendingIntervention extends HumanInterventionRequest {
@@ -17,9 +23,13 @@ interface PendingIntervention extends HumanInterventionRequest {
 }
 
 type InterventionBroadcaster = (pending: HumanInterventionRequest[]) => void;
+type InterventionWaiter = (outcome: InterventionWaitOutcome) => void;
+
+export type InterventionWaitOutcome = InterventionResult | 'auto' | 'timeout' | 'missing';
 
 const pendingById = new Map<string, PendingIntervention>();
 const pendingIdByTab = new Map<string, string>();
+const waitersById = new Map<string, Set<InterventionWaiter>>();
 let broadcaster: InterventionBroadcaster | null = null;
 
 export function setHumanInterventionBroadcaster(fn: InterventionBroadcaster | null): void {
@@ -35,13 +45,14 @@ function broadcast(): void {
   broadcaster?.(listPendingHumanInterventions());
 }
 
-function record(action: 'raised' | 'resolved', request: PendingIntervention | null): void {
+function record(action: 'raised' | 'resolved', request: PendingIntervention | null, result?: InterventionResult): void {
+  const resultNote = result ? (result === 'approved' ? '已确认' : '已拒绝') : '';
   recordBrowserAction({
     source: 'human_intervention',
     taskMeta: request?.taskMeta ?? { kind: 'agent' },
     action: 'await_human',
     url: request?.url ?? undefined,
-    detail: request ? `${request.reason}：${request.message}` : action,
+    detail: request ? `${request.reason}${resultNote}：${request.message}` : action,
     result: action,
   });
 }
@@ -53,6 +64,7 @@ export function raiseHumanIntervention(input: {
   message: string;
   url?: string | null;
   taskMeta?: BrowserTaskMeta;
+  confirmMode?: boolean;
 }): HumanInterventionRequest {
   const existingId = pendingIdByTab.get(input.tabId);
   const existing = existingId ? pendingById.get(existingId) : undefined;
@@ -61,6 +73,8 @@ export function raiseHumanIntervention(input: {
     existing.message = input.message;
     existing.url = input.url ?? existing.url;
     existing.createdAt = Date.now();
+    if (input.confirmMode !== undefined) existing.confirmMode = input.confirmMode;
+    delete existing.result;
     broadcast();
     return toPublic(existing);
   }
@@ -71,6 +85,7 @@ export function raiseHumanIntervention(input: {
     message: input.message,
     url: input.url ?? null,
     createdAt: Date.now(),
+    ...(input.confirmMode ? { confirmMode: true } : {}),
     taskMeta: input.taskMeta ?? { kind: 'agent' },
   };
   pendingById.set(request.id, request);
@@ -80,23 +95,66 @@ export function raiseHumanIntervention(input: {
   return toPublic(request);
 }
 
-/** 手动解除的完整返回：request 为公开形态（已剥 taskMeta），taskMeta 单独透出供 tipc 层唤醒 glue */
+/** 工具层等待用户处理结果：resolve 时唤醒 waiter（timeout 兜底防永久挂起） */
+export function waitForInterventionResult(id: string, timeoutMs: number): Promise<InterventionWaitOutcome> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (outcome: InterventionWaitOutcome): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const set = waitersById.get(id);
+      if (set) {
+        set.delete(waiter);
+        if (set.size === 0) waitersById.delete(id);
+      }
+      resolve(outcome);
+    };
+    const waiter: InterventionWaiter = settle;
+    const timer = setTimeout(() => settle('timeout'), timeoutMs);
+    if (!pendingById.has(id)) {
+      settle('missing');
+      return;
+    }
+    let set = waitersById.get(id);
+    if (!set) {
+      set = new Set();
+      waitersById.set(id, set);
+    }
+    set.add(waiter);
+  });
+}
+
+function notifyWaiters(id: string, outcome: InterventionWaitOutcome): boolean {
+  const set = waitersById.get(id);
+  if (!set || set.size === 0) return false;
+  waitersById.delete(id);
+  for (const waiter of [...set]) waiter(outcome);
+  return true;
+}
+
+/** 手动解除的完整返回：request 为公开形态（已剥 taskMeta），taskMeta 单独透出供 tipc 层唤醒 glue；waiterConsumed 时工具在等结果，tipc 层不再 resume 会话 */
 export interface ResolvedIntervention {
   request: HumanInterventionRequest;
   taskMeta: BrowserTaskMeta;
+  waiterConsumed: boolean;
 }
 
 export function resolveHumanIntervention(
   id: string,
   resolvedBy: 'user' | 'auto' = 'user',
+  result?: InterventionResult,
 ): ResolvedIntervention | null {
   const request = pendingById.get(id);
   if (!request) return null;
   pendingById.delete(id);
   pendingIdByTab.delete(request.tabId);
-  record('resolved', request);
+  if (result) request.result = result;
+  const outcome = result ?? (resolvedBy === 'auto' ? 'auto' : 'approved');
+  const waiterConsumed = notifyWaiters(id, outcome);
+  record('resolved', request, result);
   broadcast();
-  return { request: toPublic(request), taskMeta: request.taskMeta };
+  return { request: toPublic(request), taskMeta: request.taskMeta, waiterConsumed };
 }
 
 /** 状态恢复路径：wait_for 命中 / navigate 回到正常页面时，自动解除该 tab 的等待 */

@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { getExtensionStatus, validateNavigateTarget } from '../../services/browser/browser-gateway.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import { NO_FOCUS_TAB_ID } from '../../services/browser/gateway-tab-state.js';
-import { consumeSearch, navigateGate } from '../../services/browser/site-policy.js';
+import { consumeSearch, isPaymentBlocked, navigateGate, paymentBlockedMessage } from '../../services/browser/site-policy.js';
 import {
   EMPTY_GROUP_MESSAGE,
   ERROR_MESSAGES,
@@ -106,6 +106,9 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
       async (args) => {
         const busy = acquireGate('open_tab', args.url);
         if (busy) return busy;
+        if (isPaymentBlocked(args.url)) {
+          return isErrorResult(paymentBlockedMessage());
+        }
         const status = getExtensionStatus();
         if (status.status !== 'connected') {
           return isErrorResult(ERROR_MESSAGES.not_connected);

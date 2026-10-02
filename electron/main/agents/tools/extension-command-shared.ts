@@ -30,7 +30,7 @@ export const ERROR_MESSAGES: Record<CommandErrorCode, string> = {
   ref_expired: '页面已变化，请重新调用 observe_page 获取新 ref',
   value_mismatch: '填写后页面当前值与输入不一致（页面可能改写了内容），请检查后重试',
   guard_password: '密码类输入本阶段禁止，请手动填写密码',
-  guard_submit: '提交类操作本阶段未开放，请手动完成提交',
+  guard_submit: '提交类操作需用户确认后执行，请在确认卡上处理（确认后放行 / 拒绝则不执行）',
   navigation_blocked: '目标域名未授权，请在扩展弹窗授权后重试',
 };
 
@@ -40,7 +40,7 @@ export const EMPTY_GROUP_MESSAGE =
 export const SHARED_SCOPE_NOTE =
   '作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道），仅限已授权域名；' +
   'open_tab 开新页即成操作焦点，close_tab 仅能关组内标签页，页面操作只作用于焦点标签页；' +
-  '点击/填充自动执行但拦截提交类操作。' +
+  '点击/填充自动执行，提交类点击需用户在确认卡上确认后才会执行。' +
   '扩展通道同一时间仅一个会话可用，被其他会话占用时会直接报错（不排队）。' +
   '用户浏览器已连接且目标站需登录态时优先本工具组，公开网页读取用 dogear__browser__*。';
 
@@ -117,18 +117,20 @@ export async function runCommand<T>(
   kind: CommandKind,
   params: Record<string, unknown>,
   extract: (data: unknown) => T,
-): Promise<{ ok: true; value: T } | { ok: false; message: string; errorCode?: string }> {
+): Promise<{ ok: true; value: T } | { ok: false; message: string; errorCode?: string; data?: unknown }> {
   try {
     const result = await sendExtensionCommand(kind, params);
     return { ok: true, value: extract(result.data) };
   } catch (err) {
-    const errorCode = (err as Partial<CommandError> | null)?.errorCode;
+    const e = (err ?? null) as Partial<CommandError> | null;
+    const errorCode = e?.errorCode;
     const message =
       errorCode === 'permission_denied' && isEmptyGroup() ? EMPTY_GROUP_MESSAGE : commandErrorMessage(err);
     return {
       ok: false,
       message,
       ...(typeof errorCode === 'string' ? { errorCode } : {}),
+      ...(e?.data !== undefined ? { data: e.data } : {}),
     };
   }
 }

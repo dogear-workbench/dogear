@@ -199,8 +199,8 @@ function postResult(msg, payload) {
   }
 }
 
-function fail(msg, errorCode, error) {
-  postResult(msg, { ok: false, errorCode, error })
+function fail(msg, errorCode, error, data) {
+  postResult(msg, { ok: false, errorCode, error, ...(data !== undefined ? { data } : {}) })
 }
 
 function isPermissionError(text) {
@@ -323,7 +323,7 @@ async function handleCommand(msg) {
       : msg.kind === 'find'
         ? [p.role, p.name, p.exact, p.max_results, currentGeneration(msg.tabId)]
         : msg.kind === 'click'
-          ? [p.ref]
+          ? [p.ref, p.confirmed]
           : msg.kind === 'fill'
             ? [p.ref, p.value]
             : msg.kind === 'read_state'
@@ -365,7 +365,12 @@ async function handleCommand(msg) {
     return
   }
   if (result && result.errorCode) {
-    fail(msg, result.errorCode, result.error || '命令执行失败')
+    fail(
+      msg,
+      result.errorCode,
+      result.error || '命令执行失败',
+      result.submitTarget !== undefined ? { submitTarget: result.submitTarget } : undefined
+    )
     return
   }
   if (msg.kind === 'observe' || msg.kind === 'find') {

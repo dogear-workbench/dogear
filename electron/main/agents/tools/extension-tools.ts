@@ -20,12 +20,15 @@ import {
   checkSearchBudget,
   consumeNote,
   consumeSearch,
+  isPaymentBlocked,
   navigateGate,
+  paymentBlockedMessage,
   policyGate,
   riskSignalMessage,
   scanAndMarkRisk,
   type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
+import { raiseHumanIntervention, waitForInterventionResult } from '../../services/browser/human-intervention.js';
 import { createSiteToolDefs, siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
 import { createExtensionTabToolDefs } from './extension-tab-tools.js';
 import {
@@ -56,6 +59,12 @@ import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
 const READ_MAX_CHARS = 8_000;
+const SUBMIT_CONFIRM_TIMEOUT_MS = 5 * 60_000;
+
+function submitTargetOf(data: unknown): string {
+  const target = (data as { submitTarget?: unknown } | null | undefined)?.submitTarget;
+  return typeof target === 'string' && target ? target : '提交操作';
+}
 
 /** read_state 笔记预算按页面 URL 计数（同页多 path 探索不重复计）；与 read_text 的「无 ref 计数」语义互不影响 */
 const readStateCountedUrlByConv = new Map<string, string>();
@@ -114,6 +123,9 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       async (args) => {
         const busy = acquireGate('navigate', args.url);
         if (busy) return busy;
+        if (isPaymentBlocked(args.url)) {
+          return isErrorResult(paymentBlockedMessage());
+        }
         const taskMeta = meta();
         const gate = await navigateGate(conversationId, args.url);
         if ('blocked' in gate) {
@@ -304,7 +316,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       '点击用户浏览器页面元素',
       `${SHARED_SCOPE_NOTE}\n` +
         '点击 observe_page 返回的 ref 对应元素，点击后自动附带轻量验证（URL 变化 / 元素消失 / 正文字数变化）。' +
-        '提交类按钮会被拦截（guard_submit），需引导用户手动提交。',
+        '提交类按钮会被拦截并弹出确认卡，等待用户确认后自动执行；用户拒绝或超时则返回未执行。',
       z.object({
         ref: z.string().describe('observe_page 返回的元素 ref（如 "e3@2"）'),
       }),
@@ -313,14 +325,64 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         if (busy) return busy;
         const taskMeta = meta();
         const pageUrl = currentUrl();
+        if (pageUrl && isPaymentBlocked(pageUrl)) {
+          emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'risk_blocked' });
+          return isErrorResult(paymentBlockedMessage());
+        }
         const gate = await policyGate(conversationId, pageUrl ?? '');
         if ('blocked' in gate) {
           emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'risk_blocked' });
           return isErrorResult(gate.blocked);
         }
+        const executeClick = (confirmed: boolean) =>
+          runCommand('click', confirmed ? { ref: args.ref, confirmed: true } : { ref: args.ref }, (data) => (data ?? {}) as ClickPayload);
         const startedAt = Date.now();
-        const r = await runCommand('click', { ref: args.ref }, (data) => (data ?? {}) as ClickPayload);
+        const r = await executeClick(false);
         if (!r.ok) {
+          if (r.errorCode === 'guard_submit') {
+            const status = getExtensionStatus();
+            const request = raiseHumanIntervention({
+              tabId: `ext-${status.status === 'connected' ? status.tabId : 'unknown'}`,
+              reason: 'guard_submit',
+              message: `agent 请求提交：「${submitTargetOf(r.data)}」${pageUrl ? `（${pageUrl}）` : ''}`,
+              url: pageUrl,
+              taskMeta,
+              confirmMode: true,
+            });
+            const outcome = await waitForInterventionResult(request.id, SUBMIT_CONFIRM_TIMEOUT_MS);
+            if (outcome === 'denied') {
+              emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'error', errorCode: 'guard_submit' });
+              return isErrorResult('用户已拒绝本次提交，未执行。请引导用户手动完成提交或调整方案');
+            }
+            if (outcome === 'timeout') {
+              emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'error', errorCode: 'guard_submit' });
+              return isErrorResult('等待用户确认超时（5 分钟），提交未执行。可重新触发或引导用户手动提交');
+            }
+            if (outcome !== 'approved') {
+              emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'error', errorCode: 'guard_submit' });
+              return isErrorResult('等待确认期间页面状态已变化，提交未执行。请重新 observe_page 确认页面后再试');
+            }
+            const r2 = await executeClick(true);
+            if (!r2.ok) {
+              emitAction(taskMeta, 'click', {
+                url: pageUrl,
+                detail: args.ref,
+                result: 'error',
+                errorCode: r2.errorCode,
+                durationMs: Date.now() - startedAt,
+              });
+              return isErrorResult(`用户已确认提交，但执行失败：${r2.message}`);
+            }
+            emitAction(taskMeta, 'click', {
+              url: r2.value.urlAfter ?? pageUrl,
+              detail: `${args.ref}（用户已确认提交）`,
+              result: 'clicked',
+              urlBefore: r2.value.urlBefore,
+              ...(r2.value.urlAfter ? { urlAfter: r2.value.urlAfter } : {}),
+              durationMs: Date.now() - startedAt,
+            });
+            return textResult(`用户已确认提交。${formatClick(args.ref, r2.value)}`);
+          }
           emitAction(taskMeta, 'click', {
             url: pageUrl,
             detail: args.ref,
@@ -382,7 +444,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         });
         return textResult(
           `已向 ${args.ref} 填写文本，值已生效。如需提交，请 observe_page 后查看提交按钮；` +
-            `提交类操作会被拦截，请引导用户手动完成提交。`,
+            `提交类点击需用户在确认卡上确认后才会执行。`,
         );
       },
     ),

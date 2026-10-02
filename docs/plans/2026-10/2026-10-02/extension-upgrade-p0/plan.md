@@ -12,7 +12,7 @@
 - [x] [Step 2: gateway 多 tab 状态模型](./step2-gateway-tabs.md) — ExtensionStatus 泛化为焦点 tab + tabs 数组，命令帧带目标 tabId，快照按 tab 更新
 - [x] [Step 3: agent 工具 open_tab/close_tab/list_tabs](./step3-agent-tools.md) — 三个新工具注册 + 焦点模型文案 + 动作流事件与面板渲染
 - [x] [Step 4: 一键移交](./step4-handoff.md) — 右键菜单「发送到 Dogear」打包 URL+选中文本+正文快照，路由到最近活跃会话 + 通知
-- [ ] [Step 5: 提交类动作确认与支付黑名单](./step5-submit-confirm.md) — guard_submit 从硬拦截升级为确认后放行（复用 human-intervention），site-policy 加支付/网银黑名单
+- [x] [Step 5: 提交类动作确认与支付黑名单](./step5-submit-confirm.md) — guard_submit 从硬拦截升级为确认后放行（复用 human-intervention），site-policy 加支付/网银黑名单
 
 ## 全局决策
 
@@ -25,3 +25,17 @@
 - **工具命名**：`dogear__extension__open_tab` / `close_tab` / `list_tabs`；错误一律中文 isError 文案（ERROR_MESSAGES 全覆盖），不抛异常；文件末尾 registerToolGroup 模式不变。
 - **工程约束**：extension/ 不进 tsc/eslint 工程；主进程改动需 `build:electron`；nm-bridge-worker.cjs 是透传桥不动；不写注释、不留 TODO、>300 行拆分。
 - **动作分级落地形态**：读默认放行、点击/填表自动（现状）、提交类「确认后放行」（Step 5 新增，扩展侧默认仍拦截，仅 params.confirmed 放行——安全默认在扩展侧，桌面端确认后重发）；支付/网银黑名单域确认也不放。
+
+## 完成总结
+
+P0 五步全部完成（2026-10-02）：
+
+1. **协议 v4 与扩展侧 tab 管理**（828bd39b）：双侧协议升级 v4，扩展新增 open_tab/close_tab/list_tabs 命令（Dogear 蓝组、组外拒关、焦点按 lastAccessed 回落），manifest 加 tabs/tabGroups/contextMenus 权限。
+2. **gateway 多 tab 状态模型**（9f51d46a）：ExtensionStatus 泛化为焦点 tab + tabs 数组（拆 gateway-tab-state.ts 纯函数模块），命令帧可指定目标 tabId，open/close 回包与快照双链路闭环焦点切换，扩展 welcome 后推送组内 tab 快照。
+3. **agent 三工具**（4f4df762）：open_tab/close_tab/list_tabs 走 acquireGate→策略门控→runCommand 模板，动作流面板渲染开页/关页/列页签卡片，组空态文案统一，共享辅助拆 extension-command-shared.ts。
+4. **一键移交**（6385ea64）：网页右键/popup「发送到 Dogear」打包 URL+标题+选中文本+4000 字正文快照，路由到存活会话中 updatedAt 最新者注入用户消息，通知中心到达通知，无会话时提示。
+5. **提交类确认与支付黑名单**（本次提交）：guard_submit 升级为确认后放行（human-intervention 扩双分支 confirmMode + waiter 5 分钟超时），agent schema 不暴露 confirmed 无法绕过，支付/网银 25 域黑名单 navigate/open_tab/click 一律拒绝，设置页动作分级只读展示。
+
+**待用户真机验证**（各 step 均无浏览器环境未手测）：chrome://extensions 重载扩展后验证 tab 三命令循环、一键移交、提交确认卡、支付黑名单拒绝；步骤级验证点见各 stepN 文档「实施回填」段。
+
+**留 P1**：内嵌通道 guard_submit 同样升级确认放行（基建已就绪）、支付黑名单 settings 动态配置、readArticle/wait_for 工具补齐。

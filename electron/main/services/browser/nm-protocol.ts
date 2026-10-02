@@ -64,6 +64,12 @@ export interface PermissionStateMessage {
   origins: string[];
 }
 
+export interface ClickCommandParams {
+  ref: string;
+  /** 仅桌面端在用户确认提交后重发时携带，扩展侧缺省仍拦截；不暴露给 agent */
+  confirmed?: boolean;
+}
+
 export interface NavigateCommandParams {
   targetUrl: string;
 }

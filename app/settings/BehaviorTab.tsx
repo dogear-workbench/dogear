@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { client } from '@/lib/client';
 import type { AppSettings } from '@/types/settings';
 import { ModelSelector } from '@/components/ModelSelector';
-import { ExtensionStatusLine } from './ExtensionStatusLine';
+import { ExtensionActionPolicyNote, ExtensionStatusLine } from './ExtensionStatusLine';
 import { WebAiSitesSection } from './WebAiSitesSection';
 import { playDogearSound } from '@/lib/dogear-sound';
 
@@ -394,6 +394,7 @@ export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
                 连接后 Dogear 可读取扩展所在浏览器当前标签页的标题、网址与正文预览。
               </p>
               <ExtensionStatusLine />
+              <ExtensionActionPolicyNote />
               {isMac && (
                 <div className="flex items-center gap-2 pt-1">
                   <Button size="sm" variant="outline" onClick={handleRegisterNmHost}>

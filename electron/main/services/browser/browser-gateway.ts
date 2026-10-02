@@ -41,6 +41,8 @@ export interface CommandError {
   error: string;
   /** 扩展侧拒绝时附带的自愈信息：拒绝瞬间的受控页地址（command_result 可选字段透传） */
   currentUrl?: string;
+  /** 扩展侧 guard 拒绝附带的补充数据（如 guard_submit 的 submitTarget） */
+  data?: unknown;
 }
 
 interface PendingCommand {
@@ -277,6 +279,7 @@ function handleCommandResult(message: NmMessage): void {
     ...(typeof message.currentUrl === 'string' && message.currentUrl.length > 0
       ? { currentUrl: message.currentUrl }
       : {}),
+    ...(message.data !== undefined ? { data: message.data } : {}),
   });
 }
 
