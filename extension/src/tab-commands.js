@@ -47,7 +47,10 @@ async function ensureDogearGroup(tabId) {
       const groupId = await chrome.tabs.group({ tabIds: tabId })
       await chrome.tabGroups.update(groupId, { title: DOGEAR_GROUP_TITLE, color: GROUP_COLOR })
     }
-  } catch {
+    return true
+  } catch (err) {
+    console.warn('[dogear] tab 入组失败:', err?.message ?? err)
+    return false
   }
 }
 
@@ -103,7 +106,7 @@ async function openTab(msg, ctx) {
     ctx.fail(msg, 'navigation_blocked', '标签页创建失败')
     return
   }
-  await ensureDogearGroup(created.id)
+  const grouped = await ensureDogearGroup(created.id)
   await waitForTabComplete(created.id, OPEN_TAB_TIMEOUT_MS).promise
   let tab
   try {
@@ -121,7 +124,8 @@ async function openTab(msg, ctx) {
       url: tab.url ?? targetUrl,
       title: tab.title ?? '',
       pageState: resolvePageState(tab.url ?? targetUrl, tab.title ?? '', ''),
-      focused: true
+      focused: true,
+      grouped
     }
   })
 }

@@ -37,6 +37,7 @@ interface OpenTabPayload {
   url?: string;
   title?: string;
   pageState?: string;
+  grouped?: boolean;
 }
 
 interface CloseTabPayload {
@@ -58,6 +59,7 @@ function parseOpenTabPayload(data: unknown): OpenTabPayload {
     url: typeof d.url === 'string' ? d.url : undefined,
     title: typeof d.title === 'string' ? d.title : undefined,
     pageState: typeof d.pageState === 'string' ? d.pageState : undefined,
+    grouped: d.grouped === true,
   };
 }
 
@@ -154,9 +156,13 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
         const titleNote = tab.title ? `\n标题: ${tab.title}` : '';
         const pointer = siteKnowledgePointer(finalUrl);
         const policyTip = sitePolicyPointer(finalUrl);
+        const groupNote =
+          tab.grouped === false
+            ? `\n⚠ 新标签页未能加入 Dogear 分组（原因见扩展 Service Worker console 的 [dogear] 日志），close_tab / list_tabs 将无法管理它。`
+            : '';
         return textResult(
           `已在新标签页打开目标页面（tabId ${tab.tabId ?? '未知'}${redirectNote}）。${titleNote}\n` +
-            `状态: ${tab.pageState ?? 'ready'}${pageStateSuffix(tab.pageState)}\n` +
+            `状态: ${tab.pageState ?? 'ready'}${pageStateSuffix(tab.pageState)}${groupNote}\n` +
             `新标签页已设为操作焦点，observe_page / click / fill 等页面操作将作用于它，请先 observe_page 获取元素。${pointer ?? ''}${policyTip ?? ''}`,
         );
       },
