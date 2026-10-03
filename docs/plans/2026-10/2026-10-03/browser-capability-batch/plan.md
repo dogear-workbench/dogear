@@ -18,7 +18,7 @@
 - [x] [Step 2: click 误报核查](./step2-click-false-positive.md) — hvszlply 议题 + A4 ref_expired 证据排查根因
 - [x] [Step 3: 扩展工具补尾 wait_for / readArticle](./step3-waitfor-readarticle.md) — 协议加命令 + 扩展实现 + 工具注册
 - [x] [Step 4: tab 预算与节奏控制](./step4-tab-budget.md) — site-policy 预算接扩展通道
-- [ ] [Step 5: prompt injection 双侧统一](./step5-injection-unify.md) — 扫描公共层 + 双侧接入
+- [x] [Step 5: prompt injection 双侧统一](./step5-injection-unify.md) — 扫描公共层 + 双侧接入
 - [ ] [Step 6: 扩展通道截图](./step6-extension-screenshot.md) — manifest 权限 + capture 命令 + 工具
 - [ ] [Step 7: 用户上传图片](./step7-image-upload.md) — 输入框附件 + 无视觉主会话路由
 - [ ] [Step 8: 首个策略模板 + doc-sync 收尾](./step8-first-playbook.md) — 小红书调研 SKILL.md + 代码地图同步

@@ -16,6 +16,7 @@ import type { BrowserArticleActionEvent } from '../../services/browser/browser-a
 import { searchWeb } from '../../services/browser/browser-search-service.js';
 import type { SearchActionEvent } from '../../services/browser/browser-search-types.js';
 import { loadSettings } from '../../services/settings-service.js';
+import { injectionWarningPrefix, INJECTION_SCAN_NOTE, scanInjection } from '../../services/browser/injection-scan.js';
 import { saveArticleFromScript } from '../../services/article-service.js';
 import {
   buildTaskMeta,
@@ -61,7 +62,8 @@ export function createBrowserToolDefs(opts?: {
         '- 快档失败（need_login / timeout / parse_empty / browser_crash）时不白跑：返回附页面位置（tabId + URL + 状态），页面保留在标签页中，直接用 dogear__browser__observe_page / read_text 继续探索，不要重新导航。\n' +
         '- 受节奏保护的站点自动生效随机延迟与会话预算：命中策略站点的调用可能明显变慢或因预算耗尽被拒，属正常节奏控制，不要立即重试。\n' +
         '- 返回 need_login 时：页面已保留在内嵌浏览器并呈现在浏览器面板，等待人工状态已产生；必须告知用户「请在浏览器面板完成登录，登录完成后告诉我重试」；用户完成后重新调用本工具即可（登录态已持久化）。\n' +
-        '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。',
+        '- 结果附质量信号：正文可能不完整时会给出提示，可据此建议用户核对原文。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         url: z.string().url().describe('文章页面完整 URL（含 http/https）'),
       }),
@@ -116,7 +118,7 @@ export function createBrowserToolDefs(opts?: {
           `最终 URL: ${article.url}\n` +
           `字数: ${article.wordCount}` +
           (article.qualityHint ? `\n⚠️ 质量提示：${article.qualityHint}` : '');
-        return textResult(`${header}\n\n--- 正文 ---\n\n${article.content}`);
+        return textResult(`${injectionWarningPrefix(scanInjection(article.content))}${header}\n\n--- 正文 ---\n\n${article.content}`);
       },
     ),
 

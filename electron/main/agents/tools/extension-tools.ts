@@ -30,6 +30,7 @@ import {
 } from '../../services/browser/site-policy.js';
 import { raiseHumanIntervention, waitForInterventionResult } from '../../services/browser/human-intervention.js';
 import { parseArticleHtml } from '../../services/article/parse.js';
+import { injectionWarningPrefix, INJECTION_SCAN_NOTE, scanInjection } from '../../services/browser/injection-scan.js';
 import { mainLogger } from '../../agents/logger.js';
 
 const submitLogger = mainLogger.child('extension-submit');
@@ -222,7 +223,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         '列出当前已连接标签页中的可交互元素（DOM+ARIA 语义树），每条含 ref 编号、角色、文本与提示信息，链接带 href。' +
         '可交互元素全列不硬截断（超长页有安全阀）；另附标题结构与其余节点的 role 分级摘要。' +
         '可传 region（视口上/中/下分块）或 text_filter 缩小范围重查；超长列表也可用 find 按 role+name 精确查找。' +
-        '页面导航后 ref 失效，需重新调用本工具。',
+        '页面导航后 ref 失效，需重新调用本工具。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         region: z
           .enum(['top', 'middle', 'bottom'])
@@ -271,7 +273,12 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           }
         }
         emitAction(taskMeta, 'observe', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
-        return textResult(text);
+        const snapshotText = [
+          ...r.value.elements.map((el) => `${el.text ?? ''}\n${el.hint ?? ''}`),
+          ...r.value.headings.map((el) => `${el.text ?? ''}\n${el.hint ?? ''}`),
+          ...r.value.roleSummary.map((item) => item.sample ?? ''),
+        ].join('\n');
+        return textResult(`${injectionWarningPrefix(scanInjection(snapshotText))}${text}`);
       },
     ),
 
@@ -504,7 +511,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       `${SHARED_SCOPE_NOTE}\n` +
         '读取指定 ref 元素的纯文本；不传 ref 则读取正文容器（article/main 等中字数最大者）。' +
         '文本超过 8000 字符时截断并提示，可用 observe_page 定位子元素分次读取（带 ref 的分次读取不计笔记预算）。' +
-        '受节奏保护的站点（如小红书）无 ref 读取计 1 篇笔记，计入会话笔记预算（超限拒绝）。',
+        '受节奏保护的站点（如小红书）无 ref 读取计 1 篇笔记，计入会话笔记预算（超限拒绝）。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         ref: z.string().optional().describe('要读取的元素 ref；不传则读正文容器'),
       }),
@@ -564,7 +572,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
             ? `\n\n（已截断：原文共 ${totalLength} 字符，显示前 ${READ_MAX_CHARS}；可用 observe_page 定位子元素分次读取）`
             : '';
         emitAction(taskMeta, 'read_text', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
-        return textResult(`${text}${truncated}`);
+        return textResult(`${injectionWarningPrefix(scanInjection(text))}${text}${truncated}`);
       },
     ),
 
@@ -575,7 +583,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         '读取当前页面 window.__INITIAL_STATE__（小红书/知乎类 SPA 的数据源），双模式：' +
         '不传 path 返回顶层概要（每个 key 的类型/子项数或长度）；传 path（点分路径，纯数字段为数组下标）返回该子树 JSON（超 8000 字符截断）。' +
         '读内存 JSON 零网络请求，适合避开 feed 页重渲染与元素上限；页面无 __INITIAL_STATE__ 时明确报错。' +
-        '小红书示例：搜索页数据在 __INITIAL_STATE__，先无 path 看顶层概要，再按 key 下钻到卡片数组。',
+        '小红书示例：搜索页数据在 __INITIAL_STATE__，先无 path 看顶层概要，再按 key 下钻到卡片数组。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         path: z
           .string()
@@ -655,16 +664,17 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           readStateCountedUrlByConv.set(conversationId ?? '', pageUrl ?? '');
         }
         emitAction(taskMeta, 'read_state', { url: pageUrl, detail, durationMs: Date.now() - startedAt });
+        const injectionPrefix = injectionWarningPrefix(scanInjection(text));
         if (v.summary !== undefined) {
           return textResult(
-            `页面 __INITIAL_STATE__ 顶层概要：\n${v.summary || '（空对象）'}\n\n传 path（如 "key.subkey.0"）可下钻查看子树，纯数字段为数组下标。`,
+            `${injectionPrefix}页面 __INITIAL_STATE__ 顶层概要：\n${v.summary || '（空对象）'}\n\n传 path（如 "key.subkey.0"）可下钻查看子树，纯数字段为数组下标。`,
           );
         }
         const truncatedNote =
           v.truncated && typeof v.totalLength === 'number'
             ? `\n\n（已截断：原文共 ${v.totalLength} 字符，显示前 8000；可换更深的子路径缩小范围）`
             : '';
-        return textResult(`${text}${truncatedNote}`);
+        return textResult(`${injectionPrefix}${text}${truncatedNote}`);
       },
     ),
 
@@ -819,7 +829,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         '可选 selector 限定正文容器（如 "article" "#js_content"），不传则自动识别。' +
         '读取的是当前页面：先用 navigate/observe 确认页面已加载完成再调用。' +
         '解析失败（非文章页/正文过短）时改用 observe_page / read_text 手动提取。' +
-        '受节奏保护的站点（如小红书）计入会话笔记预算（超限拒绝）。',
+        '受节奏保护的站点（如小红书）计入会话笔记预算（超限拒绝）。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         selector: z.string().optional().describe('正文容器 CSS 选择器；不传自动识别正文'),
       }),
@@ -902,7 +913,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         });
         const header =
           `📄 文章读取成功\n标题: ${parsed.title}\n作者: ${parsed.author || '未知'}\n来源: ${parsed.siteName || '未知'}\n最终 URL: ${articleUrl}\n字数: ${parsed.wordCount}`;
-        return textResult(`${header}\n\n--- 正文 ---\n\n${parsed.content}`);
+        return textResult(`${injectionWarningPrefix(scanInjection(parsed.content))}${header}\n\n--- 正文 ---\n\n${parsed.content}`);
       },
     ),
 

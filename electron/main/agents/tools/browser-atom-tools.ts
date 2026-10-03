@@ -13,6 +13,7 @@ import {
   READ_MAX_CHARS,
 } from '../../services/browser/embedded/ax-observe.js';
 import { pageStateHint, resolvePageState } from '../../services/browser/embedded/page-state.js';
+import { injectionWarningPrefix, INJECTION_SCAN_NOTE, scanInjection } from '../../services/browser/injection-scan.js';
 import { navigateTab } from '../../services/browser/embedded/navigate.js';
 import { waitForTabCondition } from '../../services/browser/embedded/wait-for.js';
 import { getEmbeddedBrowserManager } from '../../services/browser/embedded/embedded-browser-manager.js';
@@ -144,7 +145,8 @@ export function createBrowserObserveToolDefs(opts?: {
       '列出当前页面的可交互元素（CDP 无障碍语义树观察），每条含 ref（格式 节点id@generation）、角色、文本（长文本截断）与提示信息，链接带 href。' +
         '可交互元素默认尽量全列，超 250 个安全上限时截断并附 region 计数与分块重查建议；超长页面另附标题结构与其余节点的 role 分级摘要。' +
         '可传 region（视口上/中/下分块）或 text_filter 缩小范围重查；超长列表也可用 dogear__browser__find 按 role+name 精确查找。' +
-        '页面导航或 SPA 路由变化后 ref 失效，需重新调用本工具。',
+        '页面导航或 SPA 路由变化后 ref 失效，需重新调用本工具。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         region: z.enum(['top', 'middle', 'bottom']).optional().describe('按视口垂直位置过滤：top 上 1/3、middle 中 1/3、bottom 下 1/3'),
         text_filter: z.string().optional().describe('子串过滤：只返回文本或提示信息包含该子串的元素'),
@@ -175,7 +177,7 @@ export function createBrowserObserveToolDefs(opts?: {
             return isErrorResult(riskSignalMessage(hits));
           }
         }
-        return textResult(text);
+        return textResult(`${injectionWarningPrefix(scanInjection(text))}${text}`);
       },
     ),
 
@@ -233,7 +235,8 @@ export function createBrowserObserveToolDefs(opts?: {
       'dogear__browser__read_text',
       '读取页面元素或正文文本',
       '读取指定 ref 元素的纯文本（ref 来自 observe_page/find，格式 节点id@generation）；不传 ref 则读取正文容器（article/main 等中字数最大者）。' +
-        '文本超过 8000 字符时截断并提示，可用 observe_page/find 重新定位后分次读取。',
+        '文本超过 8000 字符时截断并提示，可用 observe_page/find 重新定位后分次读取。' +
+        INJECTION_SCAN_NOTE,
       z.object({
         ref: z.string().optional().describe('要读取的元素 ref（如 "123@5"）；不传则读正文容器'),
       }),
@@ -270,7 +273,7 @@ export function createBrowserObserveToolDefs(opts?: {
           result.totalLength > READ_MAX_CHARS
             ? `\n\n（已截断：原文共 ${result.totalLength} 字符，显示前 ${READ_MAX_CHARS}；可用 observe_page/find 重新定位子元素后分次读取）`
             : '';
-        return textResult(`${result.text}${truncated}`);
+        return textResult(`${injectionWarningPrefix(scanInjection(result.text))}${result.text}${truncated}`);
       },
     ),
 
