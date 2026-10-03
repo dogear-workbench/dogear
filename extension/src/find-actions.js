@@ -107,6 +107,12 @@ export function findFn(roleFilter, nameFilter, exact, maxResults, generation) {
     return raw.length > HREF_LIMIT ? raw.slice(0, HREF_LIMIT) + '…' : raw
   }
 
+  const visibleOf = (el) => {
+    if (el.offsetParent !== null) return true
+    const rect = el.getBoundingClientRect()
+    return rect.width > 0 && rect.height > 0
+  }
+
   const nodes = []
   const collect = (root) => {
     root.querySelectorAll('[data-dogear-ref]').forEach((el) => el.removeAttribute('data-dogear-ref'))
@@ -134,7 +140,8 @@ export function findFn(roleFilter, nameFilter, exact, maxResults, generation) {
       text: elName.slice(0, INTERACTIVE_NAME_LIMIT),
       hint: squashed(el.getAttribute('placeholder') || el.getAttribute('aria-description') || el.getAttribute('title') || '').slice(0, HINT_LIMIT),
       editable: false,
-      interactive: false
+      interactive: false,
+      visible: visibleOf(el)
     }
     el.setAttribute('data-dogear-ref', element.ref)
     const elRole = element.role

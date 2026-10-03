@@ -85,7 +85,16 @@ export async function clickFn(ref, confirmed) {
   }
   const urlBefore = location.href
   const textBefore = mainTextLength()
-  el.click()
+  const rect = el.getBoundingClientRect()
+  const px = rect.left + rect.width / 2
+  const py = rect.top + rect.height / 2
+  const targetHidden = !(el.offsetParent !== null || (rect.width > 0 && rect.height > 0))
+  const baseInit = { bubbles: true, composed: true, clientX: px, clientY: py, button: 0 }
+  el.dispatchEvent(new PointerEvent('pointerdown', { ...baseInit, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 1 }))
+  el.dispatchEvent(new MouseEvent('mousedown', { ...baseInit, buttons: 1 }))
+  el.dispatchEvent(new PointerEvent('pointerup', { ...baseInit, pointerId: 1, pointerType: 'mouse', isPrimary: true, buttons: 0 }))
+  el.dispatchEvent(new MouseEvent('mouseup', { ...baseInit, buttons: 0 }))
+  el.dispatchEvent(new MouseEvent('click', { ...baseInit, buttons: 0 }))
   await new Promise((resolve) => setTimeout(resolve, 400))
   let elementGone = false
   try {
@@ -93,7 +102,14 @@ export async function clickFn(ref, confirmed) {
   } catch {
     elementGone = true
   }
-  return { urlBefore, urlAfter: location.href, elementGone, textBefore, textAfter: mainTextLength() }
+  return {
+    urlBefore,
+    urlAfter: location.href,
+    elementGone,
+    textBefore,
+    textAfter: mainTextLength(),
+    ...(targetHidden ? { targetHidden: true } : {})
+  }
 }
 
 export async function fillFn(ref, value) {

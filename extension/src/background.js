@@ -1,6 +1,7 @@
 import { extractTabSnapshot } from './content-extract.js'
 import { handleTabCommand, getDogearTabs } from './tab-commands.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
+import { snapshotGroupTabIds, detectNewGroupTab } from './click-watch.js'
 import { observeFn } from './observe-actions.js'
 import { findFn } from './find-actions.js'
 import { resolvePageState } from './page-state.js'
@@ -346,6 +347,7 @@ async function handleCommand(msg) {
                 : [p.ref]
   ).map((v) => (v === undefined ? null : v))
   const injectWorld = msg.kind === 'read_state' ? 'MAIN' : undefined
+  const clickBeforeIds = msg.kind === 'click' ? await snapshotGroupTabIds() : null
   let result = null
   let injectTimedOut = false
   try {
@@ -391,6 +393,18 @@ async function handleCommand(msg) {
     delete result.textSample
   } else if (msg.kind === 'scroll') {
     result.pageState = resolvePageState(tab.url || '', tab.title || '', '')
+  }
+  if (msg.kind === 'click') {
+    const newTab = await detectNewGroupTab(clickBeforeIds)
+    if (newTab && newTab.id != null) {
+      try {
+        await chrome.tabs.update(newTab.id, { active: true })
+      } catch {
+      }
+      TAB_COMMAND_CTX.setFocusedTab(newTab)
+      sendTabSnapshot()
+      result.openedTab = { tabId: newTab.id, url: newTab.url ?? '', title: newTab.title ?? '' }
+    }
   }
   result.tabId = msg.tabId
   postResult(msg, { ok: true, data: result })

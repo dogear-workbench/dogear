@@ -11,7 +11,18 @@
 - [x] [Step 1: 自动连接 + 去页面绑定 + popup 改造](./step1-auto-connect.md) — SW 冷启动自动连、断线 30s 重试、connect 不再绑焦点页、popup 按钮/断开语义
 - [x] [Step 2: agent 独立窗口](./step2-agent-window.md) — open_tab 全部开进 Dogear 专属后台窗口（windowId 双源解析 + 自动重建）
 - [x] [Step 3: 移交草稿引用](./step3-handoff-draft.md) — 移交不再直发会话，改前端草稿 store + 输入框引用块 + 待编辑通知
-- [ ] [Step 4: 探索交互增强](./step4-click-enhance.md) — click 新 tab 检测回报、_blank 焦点跟随、完整事件序列、find visible 标注
+- [x] [Step 4: 探索交互增强](./step4-click-enhance.md) — click 新 tab 检测回报、_blank 焦点跟随、完整事件序列、find visible 标注
+
+## 完成总结
+
+P1 四步全部落地（bb664b98 / 76951423 / 5b422fdf / 本步），扩展版本 0.3.0，协议层零新增（无新帧、无新错误码），安全层零改动，桌面端仅移交草稿链路与 click 透传两处。
+
+- 主题一（自动连接）：SW 冷启动自动连、断线/失败 30s alarm 重试、手动断开 storage.session 标记；connect 去页面绑定（hello 传 NO_FOCUS 哨兵 -1）；popup 改「把当前页交给 Dogear」焦点入口
+- 主题一（独立窗口）：open_tab 全部开进 focused:false 后台窗口，windowId 三级解析（storage → 组锚定 → 新建）+ onRemoved 兜底重建
+- 主题二（移交草稿）：handoff 广播 browserHandoffReceived → 前端草稿 store → 输入框引用块（可删/多条累加）→ 发送组装模板文本块；通知「待编辑」语义
+- 主题三（探索增强）：click 前后组内 tab diff 检测新开页（~1.5s 轮询）+ 焦点跟随 + openedTab 回报；完整指针事件序列；find visible/[隐藏] 标注与 click 隐藏提示
+
+遗留：全部需用户真机验证（重载扩展 0.3.0 + 重启应用），完整 11 条清单见共享区 20261003-step4-delivery.md；已知边界（targetHidden 判定口径、click 回包延迟 ~1.5s、通知 dedupeKey 去重）均记录在各 step 交付文档。
 
 ## 全局决策
 

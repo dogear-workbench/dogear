@@ -17,6 +17,7 @@ export interface ObserveElement {
   level?: number;
   editable?: boolean;
   interactive?: boolean;
+  visible?: boolean;
 }
 
 export interface RoleSummaryItem {
@@ -70,6 +71,8 @@ export interface ClickPayload {
   clicked?: boolean;
   navigated?: boolean;
   verification?: string;
+  openedTab?: { tabId?: number; url?: string; title?: string };
+  targetHidden?: boolean;
 }
 
 export interface ReadTextPayload {
@@ -148,7 +151,8 @@ export function formatObserveElement(el: ObserveElement): string {
   const href = el.href ? ` href="${el.href}"` : '';
   const level = el.level !== undefined ? `(level=${el.level})` : '';
   const editable = el.editable ? ' [可输入]' : '';
-  return `[${el.ref}] ${el.role}${level} ${text}${hint}${href}${editable}`;
+  const hidden = el.visible === false ? ' [隐藏]' : '';
+  return `[${el.ref}] ${el.role}${level} ${text}${hint}${href}${editable}${hidden}`;
 }
 
 export function formatObserve(payload: ObservePayload): string {

@@ -73,6 +73,18 @@ function formatClick(ref: string, data: ClickPayload): string {
   if (data.verification === 'lost') {
     return `已点击 ${ref} 并触发导航，当前页面: ${data.urlAfter ?? '未知'}（点击结果验证数据已丢失）。旧元素引用已失效，操作新页面请重新 observe_page。`;
   }
+  if (data.openedTab) {
+    const tab = data.openedTab;
+    const titleNote = tab.title ? `「${tab.title}」` : '';
+    const urlNote = tab.url ? `（${tab.url}）` : '';
+    const hiddenNote = data.targetHidden
+      ? '\n⚠ 目标是隐藏元素，点击结果可能无效，建议改用可见元素重试（find 结果带 [隐藏] 标注，对应 visible 字段）'
+      : '';
+    return (
+      `已点击 ${ref}，已在新标签页打开${titleNote}${urlNote}（tabId ${tab.tabId ?? '未知'}），焦点已切至新标签页。${hiddenNote}\n` +
+      `后续 observe_page / click / fill 等页面操作将作用于新标签页，请先 observe_page 获取新页面元素。`
+    );
+  }
   const changes: string[] = [];
   if (data.urlAfter && data.urlBefore && data.urlAfter !== data.urlBefore) {
     changes.push(
@@ -86,6 +98,9 @@ function formatClick(ref: string, data: ClickPayload): string {
     data.textAfter !== data.textBefore
   ) {
     changes.push(`正文字数 ${data.textBefore} → ${data.textAfter}`);
+  }
+  if (data.targetHidden) {
+    changes.push('⚠ 目标是隐藏元素，点击结果可能无效，建议改用可见元素重试（find 结果带 [隐藏] 标注，对应 visible 字段）');
   }
   if (changes.length === 0) changes.push('页面无明显变化（可能为无效果点击）');
   return `已点击 ${ref}。验证：${changes.join('；')}`;
@@ -245,7 +260,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       `${SHARED_SCOPE_NOTE}\n` +
         '在当前页面的 DOM+ARIA 语义树中按 role（如 link/button/textbox/heading/combobox）与 name（元素文本）重新查找，' +
         '默认子串匹配，exact=true 时精确匹配；不依赖上次 observe_page 的结果，可发现未出现在其输出中的元素。' +
-        '至少提供 role 或 name 之一。返回带可直接使用的 ref。页面导航后需重新查找。',
+        '至少提供 role 或 name 之一。返回带可直接使用的 ref，并标注可见性（[隐藏] 即 visible=false，对它 click 可能无效，优先选可见元素）。页面导航后需重新查找。',
       z.object({
         role: z.string().optional().describe('语义角色，如 link、button、textbox、heading、combobox'),
         name: z.string().optional().describe('元素名称（可见文本）子串'),
@@ -315,7 +330,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       'dogear__extension__click',
       '点击用户浏览器页面元素',
       `${SHARED_SCOPE_NOTE}\n` +
-        '点击 observe_page 返回的 ref 对应元素，点击后自动附带轻量验证（URL 变化 / 元素消失 / 正文字数变化）。' +
+        '点击 observe_page 返回的 ref 对应元素，点击后自动附带轻量验证（URL 变化 / 元素消失 / 正文字数变化）；' +
+        '点击打开新标签页时自动把操作焦点切至新标签页并回报。' +
         '提交类按钮会被拦截并弹出确认卡，等待用户确认后自动执行；用户拒绝或超时则返回未执行。',
       z.object({
         ref: z.string().describe('observe_page 返回的元素 ref（如 "e3@2"）'),
@@ -374,7 +390,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
               return isErrorResult(`用户已确认提交，但执行失败：${r2.message}`);
             }
             emitAction(taskMeta, 'click', {
-              url: r2.value.urlAfter ?? pageUrl,
+              url: r2.value.openedTab?.url ?? r2.value.urlAfter ?? pageUrl,
               detail: `${args.ref}（用户已确认提交）`,
               result: 'clicked',
               urlBefore: r2.value.urlBefore,
@@ -393,7 +409,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           return isErrorResult(`点击失败：${r.message}`);
         }
         emitAction(taskMeta, 'click', {
-          url: r.value.urlAfter ?? pageUrl,
+          url: r.value.openedTab?.url ?? r.value.urlAfter ?? pageUrl,
           detail: args.ref,
           result: 'clicked',
           urlBefore: r.value.urlBefore,
