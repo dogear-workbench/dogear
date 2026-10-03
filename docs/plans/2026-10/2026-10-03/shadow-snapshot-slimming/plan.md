@@ -13,7 +13,7 @@
 - [x] [Step 3: 设置页快照状态卡与配置](./step3-settings-ui.md) — 状态卡（开关/体积/条数/上次时间）+ 配置区 + 恢复默认
 - [x] [Step 4: 历史面板空态可解释 + 备份 personal 过滤](./step4-misc.md) — 空态区分「未编辑」vs「被排除+原因」；listWorkspaceIds 按注册表过滤
 - [x] [Step 5: 存量瘦身](./step5-slim.md) — 设置卡「立即瘦身」按钮：按新规则重写历史 + gc，释放 ~1.2GB
-- [ ] [Step 6: sessions 备份拆分（全局会话单独归类）](./step6-backup-sessions.md) — 全局 conversations/ 备成 global/sessions，工作区 zip 只含自己的会话
+- [x] [Step 6: sessions 备份拆分（全局会话单独归类）](./step6-backup-sessions.md) — 全局 conversations/ 备成 global/sessions，工作区 zip 只含自己的会话
 
 ## 全局决策
 
@@ -24,3 +24,13 @@
 - 历史重写只允许用户手动触发（带确认），代码中不做任何自动重写
 - 快照开关关闭的工作区：文件历史双源合并自然退化为用户 git 单源，无需特判报错
 - 主进程改动需 `build:electron` 重新编译后才能在应用内验证
+
+## 完成总结（2026-10-03）
+
+全部 6 步实施完毕，6 次提交：f2a928f2（step1 规则收窄）→ 8f543246/aabb6c39（step2 保留窗口）→ 7e0a410a（step3 设置 UI）→ 9a69f52a（step4 空态可解释+备份过滤）→ f6117439（step5 存量瘦身）→ 本次（step6 sessions 拆分）。
+
+**核心成果**：影子快照从「无差别全量历史」收窄为「编辑行为回滚安全网」——8MB 单文件阈值 + 9 个排除目录（目录级 pathspec + 暂存区 blob 过滤）+ 7-30 天保留窗口（每日首次快照自动裁剪）+ 按工作区开关；设置页状态卡与配置区可解释可恢复默认；历史面板空态区分「未编辑」与「未受保护+原因」；**真实仓库瘦身 1.307GB → 6.77MB**（释放 ~1.30GB，528 条快照内容字节级可恢复）；备份不再把全局 conversations 并入每个工作区 zip（global/sessions 单独归类，33.5MB vs 之前每工作区 124MB 重复）。
+
+**关键实施发现**：影子仓库 `.git/index` 暂存的全量状态会钉住被剔 blob（gc 剪不掉），瘦身 gc 前必须 `read-tree --empty`。
+
+**待用户操作**：重启应用加载新主进程（旧进程仍按旧逻辑跑，重启前触发快照会把大文件写回）；重启后抽查文件历史恢复；确认无误后可删瘦身前备份 %LOCALAPPDATA%\Temp\shadow-git-backup-1003（1.217GB）。

@@ -1,7 +1,7 @@
 ---
 step: 6
 title: sessions 备份拆分（全局会话单独归类）
-status: pending
+status: done
 ---
 
 ## 目标
@@ -24,10 +24,14 @@ sessions 分类不再把全局 `conversations/` 并入每个工作区的 zip：�
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：恢复链路（restoreBackup/数据中心 UI）零改动——恢复目标由 zip 条目相对路径 + backupSourcesFor 源边界自动满足；真实触发只跑了 sessions×global 单项（未跑全量，避免 keep=1 立即裁掉其他分类旧 zip，违背「旧 zip 保留到期淘汰」过渡决策）
 - 改动文件清单：
+  - electron/main/services/data-registry.ts（BACKUP_CATEGORY_SCOPES.sessions 加 global + backupSourcesFor JSDoc 示例更新）
+  - app/data-center/version-backup/backup-meta.ts（sessions scopeSummary 文案）
+  - electron/main/services/data-registry.test.ts（sessions 双 scope 断言 + 移除 global rejects）
+  - electron/main/services/backup-service/sessions-scope.test.ts（新增集成测试：runBackup zip 内容分布 + last-run key）
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：BACKUP_CATEGORY_SCOPES.sessions = ['workspace','global']；恢复 global/sessions 解压目标即 {configDir}/conversations/（zip 条目相对 configDir）；invalidatePiSessionCache('global') 为无害 no-op（metadataCache 按 workspaceId 缓存，全局会话不经 PiSessionRepository）
+- 下个 step 该从哪里继续：本计划已全部完成；应用重启加载新构建后首次调度 tick 即自动跑 global:sessions（isDue 无记录无 zip → due）
+- 待办或已知限制：旧工作区 sessions zip（含全局 conversations 快照）保留至 keep 裁剪淘汰；用户重启应用前，运行中的旧进程仍按旧逻辑工作（正常部署语义）

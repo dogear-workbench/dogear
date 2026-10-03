@@ -17,7 +17,7 @@ export const BACKUP_CATEGORY_SCOPES: Record<BackupCategoryKey, ReadonlyArray<'wo
   'notes-groups': ['workspace'],
   memory: ['workspace', 'global'],
   tasks: ['global'],
-  sessions: ['workspace'],
+  sessions: ['workspace', 'global'],
   'app-config': ['global'],
 };
 
@@ -104,7 +104,7 @@ async function readRegisteredWorkspaces(): Promise<RegisteredWorkspace[]> {
 
 /**
  * 分类×scope 的备份源绝对路径列表（不存在的路径由打包/恢复侧跳过；不适用的组合抛错）。
- * 全局条目默认只进 global scope；分类没有 global 去处时（如 sessions）全局条目并入每个 workspace zip。
+ * 全局条目默认只进 global scope；分类没有 global 去处时全局条目才并入每个 workspace zip。
  */
 export async function backupSourcesFor(category: BackupCategoryKey, scope: BackupScope): Promise<string[]> {
   const scopes = BACKUP_CATEGORY_SCOPES[category];

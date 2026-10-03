@@ -43,7 +43,7 @@ export const CATEGORY_META: Record<BackupCategoryKey, CategoryMeta> = {
   },
   sessions: {
     name: '会话',
-    scopeSummary: '每个工作区的会话记录，体积大、备份耗时较长',
+    scopeSummary: '各工作区与全局的会话记录，体积大、备份耗时较长',
     defaultConfig: BACKUP_CATEGORY_DEFAULTS.sessions,
   },
   'app-config': {

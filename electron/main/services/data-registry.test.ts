@@ -151,11 +151,11 @@ test('backupSourcesFor memory：ws scope 只含该工作区记忆，global scope
   expect(await backupSourcesFor('memory', 'global')).toEqual([cfgPath('memory')]);
 });
 
-// ── backupSourcesFor：sessions 源追加全局 conversations/ ──
+// ── backupSourcesFor：sessions 双 scope（step6 拆分：全局 conversations 单独归 global）──
 
-test('backupSourcesFor sessions×ws：ws sessions + 全局 conversations/（step2 计划锁定）', async () => {
-  const sources = await backupSourcesFor('sessions', 'ws1');
-  expect(sources).toEqual([cfgPath('workspaces', 'ws1', 'sessions'), cfgPath('conversations')]);
+test('backupSourcesFor sessions：ws scope 只含该工作区会话，global scope 含全局 conversations/', async () => {
+  expect(await backupSourcesFor('sessions', 'ws1')).toEqual([cfgPath('workspaces', 'ws1', 'sessions')]);
+  expect(await backupSourcesFor('sessions', 'global')).toEqual([cfgPath('conversations')]);
 });
 
 // ── backupSourcesFor：app-config 四文件 + 注册表 + agent.md ──
@@ -238,7 +238,6 @@ test('scope 与分类不匹配或非法时抛错', async () => {
   await expect(backupSourcesFor('notes-groups', 'global')).rejects.toThrow();
   await expect(backupSourcesFor('app-config', 'ws1')).rejects.toThrow();
   await expect(backupSourcesFor('tasks', 'ws1')).rejects.toThrow();
-  await expect(backupSourcesFor('sessions', 'global')).rejects.toThrow();
   await expect(backupSourcesFor('memory', '../evil')).rejects.toThrow();
   await expect(backupSourcesFor('no-such-category' as never, 'global')).rejects.toThrow();
 });
