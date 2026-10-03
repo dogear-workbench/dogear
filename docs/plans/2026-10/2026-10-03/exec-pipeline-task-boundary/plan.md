@@ -22,3 +22,14 @@
 - **存量占位任务不自动迁移**：当前有 2 个（mfdelhd2 提交确认 UI 改造、hvszlply click 误报核查），新机制上线后无 planPath 任务无法入队执行，交付时提醒用户处置（补文档或转笔记），不代做决定
 - **折叠默认展开不持久化**：保持组件内 useState，仅改默认值
 - 每步独立 commit；主进程改动需 `build:electron`，前端改动 `build:renderer`
+
+## 完成总结
+
+全部 4 步完成（2026-10-03）：
+
+- **Step 1（b00df0be）**：EXEC_PROFILE_SKILLS 查表恒传，default 基础版零 skill，与工作区/场景配置解耦；场景页文案与 JSDoc 同步
+- **Step 2（b233888d）**：CreateTask 只收完全体（planPath 双层收紧必传），占位机制全删，同标题 plan 态拒绝；存量 2 个无 planPath 任务不迁移待用户处置
+- **Step 3（be7d091b）**：笔记定位为生命周期池（未定型方案/待办/待议/调研底稿 + 状态标签流转），动线与完全体语义对齐
+- **Step 4（cf953ad4）**：updateTaskExecProfile 全链路（store 校验 plan/backlog → service 广播 → tipc → 前端 store）；详情页徽章点击循环切换；笔记折叠组默认展开
+
+验证：每步 build:electron 通过，Step 4 另过 build:renderer；全量 bun test 492 通过（46 文件）。目验（改口徽章交互、笔记栏默认展开）需 Electron 窗口，留用户冒烟。
