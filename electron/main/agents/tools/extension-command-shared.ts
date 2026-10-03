@@ -31,14 +31,14 @@ export const ERROR_MESSAGES: Record<CommandErrorCode, string> = {
   value_mismatch: '填写后页面当前值与输入不一致（页面可能改写了内容），请检查后重试',
   guard_password: '密码类输入本阶段禁止，请手动填写密码',
   guard_submit: '提交类操作需用户确认后执行，请在确认卡上处理（确认后放行 / 拒绝则不执行）',
-  navigation_blocked: '目标域名未授权，请在扩展弹窗授权后重试',
+  navigation_blocked: '无法导航至目标地址',
 };
 
 export const EMPTY_GROUP_MESSAGE =
   'Dogear 分组已空（无标签页），请先调用 dogear__extension__open_tab 打开目标页面';
 
 export const SHARED_SCOPE_NOTE =
-  '作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道），仅限已授权域名；' +
+  '作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道），导航不受域名限制，支付与网银域名一律禁用；' +
   'open_tab 开新页即成操作焦点，close_tab 仅能关组内标签页，页面操作只作用于焦点标签页；' +
   '点击/填充自动执行，提交类点击需用户在确认卡上确认后才会执行。' +
   '扩展通道同一时间仅一个会话可用，被其他会话占用时会直接报错（不排队）。' +
@@ -54,7 +54,7 @@ export function commandErrorMessage(err: unknown): string {
     return currentUrl ? `${base}（当前页面: ${currentUrl}）` : base;
   }
   if (code === 'navigation_blocked') {
-    if (!detail || detail.includes('目标域名未授权')) return ERROR_MESSAGES.navigation_blocked;
+    if (!detail) return ERROR_MESSAGES.navigation_blocked;
     return `无法导航：${detail}`;
   }
   if (code === 'permission_denied') {

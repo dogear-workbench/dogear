@@ -97,7 +97,7 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
       'dogear__extension__open_tab',
       '在用户浏览器新开标签页并设为操作焦点',
       `${scopeNote}\n` +
-        '在用户浏览器新开标签页打开目标 URL（加入 Dogear 分组），需目标域名已在扩展弹窗授权；打开后即成为操作焦点。' +
+        '在用户浏览器新开标签页打开目标 URL（加入 Dogear 分组），导航不受域名限制（支付与网银域名禁用）；打开后即成为操作焦点。' +
         'background=true 时在后台打开（不抢占用户正在看的页面），但仍成为操作焦点。' +
         '受节奏保护的站点（如小红书）打开前会自动等待随机时长，搜索类 URL 另计会话搜索预算（超限拒绝）。' +
         '后续 observe_page / click / fill / read_* 等页面操作都作用于焦点标签页。',
@@ -115,7 +115,7 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
         if (status.status !== 'connected') {
           return isErrorResult(ERROR_MESSAGES.not_connected);
         }
-        const precheck = validateNavigateTarget(args.url, status.authorizedOrigins);
+        const precheck = validateNavigateTarget(args.url);
         if (precheck) {
           return isErrorResult(commandErrorMessage(precheck));
         }

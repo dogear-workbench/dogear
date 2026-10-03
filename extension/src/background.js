@@ -98,6 +98,8 @@ async function sendPageHandoff(tab, selectionText) {
   return { ok: true }
 }
 
+chrome.storage.local.remove('authorizedOrigins').catch(() => {})
+
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: 'dogear-handoff-page', contexts: ['page'], title: '发送到 Dogear' })
@@ -171,35 +173,6 @@ const COMMAND_FUNCS = {
   scroll: scrollFn
 }
 
-function patternToOrigin(pattern) {
-  return pattern.endsWith('/*') ? pattern.slice(0, -2) : pattern
-}
-
-async function sendPermissionState() {
-  if (!port) return
-  let origins = null
-  try {
-    const all = await chrome.permissions.getAll()
-    origins = (Array.isArray(all?.origins) ? all.origins : [])
-      .filter((p) => typeof p === 'string' && (p === '<all_urls>' || p.endsWith('/*')))
-      .map(patternToOrigin)
-    chrome.storage.local.set({ authorizedOrigins: origins }).catch(() => {})
-  } catch {
-    try {
-      const stored = await chrome.storage.local.get('authorizedOrigins')
-      origins = Array.isArray(stored?.authorizedOrigins)
-        ? stored.authorizedOrigins.filter((o) => typeof o === 'string')
-        : []
-    } catch {
-      return
-    }
-  }
-  try {
-    port.postMessage({ type: 'permission_state', origins })
-  } catch {
-  }
-}
-
 function postResult(msg, payload) {
   if (!port) return
   try {
@@ -210,10 +183,6 @@ function postResult(msg, payload) {
 
 function fail(msg, errorCode, error, data) {
   postResult(msg, { ok: false, errorCode, error, ...(data !== undefined ? { data } : {}) })
-}
-
-function isPermissionError(text) {
-  return /cannot access|permission|not allowed/i.test(text)
 }
 
 const INJECT_TIMEOUT_MS = 8000
@@ -357,9 +326,6 @@ async function handleCommand(msg) {
     const text = String(err?.message ?? err)
     if (text === INJECT_TIMEOUT_MSG) {
       injectTimedOut = true
-    } else if (isPermissionError(text)) {
-      fail(msg, 'permission_denied', '当前页面域名未授权，无法在该页面执行命令')
-      return
     } else {
       postResult(
         msg,
@@ -437,7 +403,6 @@ async function connect() {
     protocolVersion: 4,
     tabId: NO_FOCUS_TAB_ID
   })
-  sendPermissionState()
 }
 
 async function handleFocusCurrent() {
@@ -460,7 +425,6 @@ function onHostMessage(message) {
     setStatus({ status: 'connected', appVersion: message.appVersion ?? '', error: '' })
     sendTabSnapshot()
     pushGroupTabSnapshots()
-    sendPermissionState()
     return
   }
   if (message?.type === 'goodbye') {
@@ -494,14 +458,6 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   scheduleTrackedSnapshot(sendTabSnapshot)
 })
 
-chrome.permissions.onAdded.addListener(() => {
-  sendPermissionState()
-})
-
-chrome.permissions.onRemoved.addListener(() => {
-  sendPermissionState()
-})
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'dogear_connect') {
     markManualDisconnect(false).then(() => connect())
@@ -520,11 +476,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .then(sendResponse)
       .catch(() => sendResponse({ ok: false, error: '操作失败' }))
     return true
-  }
-  if (message?.type === 'dogear_permission_changed') {
-    sendPermissionState()
-    sendResponse({ ok: true })
-    return
   }
   if (message?.type === 'dogear_handoff') {
     getActiveTab()

@@ -82,7 +82,7 @@ export function createSiteToolDefs(deps: SiteToolDeps): ToolDef[] {
   const policyScopeNote =
     toolPrefix === 'dogear__browser'
       ? '内嵌浏览器通道；本工具只读站点访问策略，不碰页面。'
-      : '扩展通道；本工具只读站点访问策略，不碰页面、不受授权域约束。';
+      : '扩展通道；本工具只读站点访问策略，不碰页面。';
   const exploreNote =
     toolPrefix === 'dogear__browser'
       ? '可自行探索：observe_page 看可交互元素，find 按 role+name 精确查找；'

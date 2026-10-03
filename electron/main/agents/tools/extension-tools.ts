@@ -5,7 +5,7 @@
  * scroll（本文件）+ tab 管理 open_tab / close_tab / list_tabs（extension-tab-tools.ts）+
  * site_knowledge / site_finding / site_policy（extension-site-tools.ts）。
  * 作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道 sendExtensionCommand），
- * 仅限已授权域名；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
+ * 导航不受域名限制（支付与网银域名禁用）；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
  * 站点策略命中（如小红书）：操作间随机延迟、单会话搜索/笔记预算、风控信号即停。
  * 共享辅助（错误文案/命令执行/动作流/作用域说明）在 extension-command-shared.ts。
  */
@@ -131,7 +131,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       'dogear__extension__navigate',
       '让用户浏览器导航到指定 URL',
       `${SHARED_SCOPE_NOTE}\n` +
-        '让受控标签页导航到目标 URL，需目标域名已在扩展弹窗授权。' +
+        '让受控标签页导航到目标 URL，导航不受域名限制（支付与网银域名禁用）。' +
         '小红书搜索可直达 https://www.xiaohongshu.com/search_result?keyword=关键词。' +
         '受节奏保护的站点（如小红书）导航前会自动等待随机时长，搜索导航另计入会话搜索预算（超限拒绝）。' +
         '导航后旧元素引用失效，需重新 observe_page。',
@@ -705,7 +705,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
       currentUrl,
       isErrorResult,
       textResult,
-      scopeNote: '扩展通道会话独占；本组工具只读写本地站点档案，不碰页面、不受授权域约束。',
+      scopeNote: '扩展通道会话独占；本组工具只读写本地站点档案，不碰页面。',
     }),
 
     ...createExtensionTabToolDefs({

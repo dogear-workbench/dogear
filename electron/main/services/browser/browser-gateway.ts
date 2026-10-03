@@ -30,7 +30,6 @@ export type ExtensionStatus =
       extensionVersion: string;
       protocolVersion: number;
       connectedAt: number;
-      authorizedOrigins: string[];
       extractError?: string;
     } & GatewayTabFields);
 
@@ -137,7 +136,6 @@ function takeOver(socket: net.Socket, extensionVersion: string, protocolVersion:
     extensionVersion,
     protocolVersion,
     connectedAt: Date.now(),
-    authorizedOrigins: [],
     ...initialTabFields(tabId),
   });
   safeWrite(socket, { type: 'welcome', appVersion: gatewayAppVersion });
@@ -171,22 +169,7 @@ function applySnapshot(message: NmMessage): void {
   logger.info('标签页快照已更新', fields.url, `tabId=${fields.tabId}`);
 }
 
-function extractOrigin(url: string): string | null {
-  try {
-    const origin = new URL(url).origin;
-    return origin === 'null' ? null : origin;
-  } catch {
-    return null;
-  }
-}
-
-function isOriginAuthorized(url: string, authorizedOrigins: string[]): boolean {
-  if (authorizedOrigins.includes('<all_urls>')) return true;
-  const origin = extractOrigin(url);
-  return origin !== null && authorizedOrigins.includes(origin);
-}
-
-export function validateNavigateTarget(targetUrl: unknown, authorizedOrigins: string[]): CommandError | null {
+export function validateNavigateTarget(targetUrl: unknown): CommandError | null {
   if (typeof targetUrl !== 'string' || targetUrl.length === 0) {
     return { errorCode: 'navigation_blocked', error: 'navigate 缺少有效的目标地址' };
   }
@@ -199,21 +182,7 @@ export function validateNavigateTarget(targetUrl: unknown, authorizedOrigins: st
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { errorCode: 'navigation_blocked', error: '仅支持 http/https 目标地址' };
   }
-  if (!isOriginAuthorized(parsed.href, authorizedOrigins)) {
-    return { errorCode: 'navigation_blocked', error: '目标域名未授权，请在扩展弹窗授权后重试' };
-  }
   return null;
-}
-
-function applyPermissionState(message: NmMessage): void {
-  if (currentStatus.status !== 'connected') {
-    logger.warn('未连接状态下收到 permission_state，已忽略');
-    return;
-  }
-  const raw = Array.isArray(message.origins) ? message.origins : [];
-  const origins = raw.filter((item): item is string => typeof item === 'string');
-  setStatus({ ...currentStatus, authorizedOrigins: origins });
-  logger.info('授权域名列表已更新:', origins.length > 0 ? origins.join(', ') : '(空)');
 }
 
 function applyNavigateUrl(data: unknown): void {
@@ -341,10 +310,6 @@ function handleFrame(socket: net.Socket, message: NmMessage): void {
     handleCommandResult(message);
     return;
   }
-  if (type === 'permission_state') {
-    applyPermissionState(message);
-    return;
-  }
   if (type === 'page_handoff') {
     applyHandoff(message);
     return;
@@ -392,17 +357,8 @@ export function sendExtensionCommand(
       ? currentStatus.url
       : currentStatus.tabs.find((t) => t.tabId === targetTabId)?.url ?? '';
   if (kind === 'navigate' || kind === 'open_tab') {
-    const blocked = validateNavigateTarget(params.targetUrl, currentStatus.authorizedOrigins);
+    const blocked = validateNavigateTarget(params.targetUrl);
     if (blocked) return Promise.reject(blocked);
-  } else if (
-    kind !== 'close_tab' &&
-    kind !== 'list_tabs' &&
-    !isOriginAuthorized(targetUrl, currentStatus.authorizedOrigins)
-  ) {
-    return Promise.reject({
-      errorCode: 'permission_denied',
-      error: '目标标签页域名未授权，请在浏览器扩展 Dogear 弹窗中授权此域名后重试',
-    } satisfies CommandError);
   }
   const requestId = `${Date.now()}-${++commandSeq}`;
   return new Promise<CommandResult>((resolve, reject) => {

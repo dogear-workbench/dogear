@@ -2,7 +2,6 @@ const button = document.getElementById('connect')
 const disconnectButton = document.getElementById('disconnect')
 const handoffButton = document.getElementById('handoff')
 const statusEl = document.getElementById('status')
-const permEl = document.getElementById('perm')
 
 let handoffTimer = null
 const HANDOFF_LABEL = '发送当前页到 Dogear'
@@ -65,89 +64,8 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === 'dogear_state') render(message)
 })
 
-function originFromUrl(url) {
-  try {
-    const parsed = new URL(url)
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:' && parsed.protocol !== 'ftp:' && parsed.protocol !== 'file:') {
-      return null
-    }
-    const origin = parsed.origin
-    return origin === 'null' ? null : origin
-  } catch {
-    return null
-  }
-}
-
-async function getCurrentOrigin() {
-  try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
-    return tab ? originFromUrl(tab.url) : null
-  } catch {
-    return null
-  }
-}
-
-function isOriginGranted(patterns, origin) {
-  return patterns.includes('<all_urls>') || patterns.includes(origin + '/*')
-}
-
-function renderPermission(origin, granted) {
-  permEl.textContent = ''
-  if (!origin) {
-    permEl.className = 'muted'
-    permEl.textContent = '此页面无法按域名授权'
-    return
-  }
-  permEl.className = ''
-  const originEl = document.createElement('div')
-  originEl.className = granted ? 'perm-origin perm-granted' : 'perm-origin'
-  originEl.textContent = granted ? `已授权 ✓ ${origin}` : origin
-  permEl.appendChild(originEl)
-  const permButton = document.createElement('button')
-  if (granted) {
-    permButton.className = 'secondary'
-    permButton.textContent = '撤销'
-    permButton.addEventListener('click', async () => {
-      permButton.disabled = true
-      try {
-        await chrome.permissions.remove({ origins: [origin + '/*'] })
-      } catch {
-      }
-      chrome.runtime.sendMessage({ type: 'dogear_permission_changed' }).catch(() => {})
-      await refreshPermission()
-    })
-  } else {
-    permButton.textContent = '授权此域名'
-    permButton.addEventListener('click', async () => {
-      permButton.disabled = true
-      try {
-        await chrome.permissions.request({ origins: [origin + '/*'] })
-      } catch {
-      }
-      chrome.runtime.sendMessage({ type: 'dogear_permission_changed' }).catch(() => {})
-      await refreshPermission()
-    })
-  }
-  permEl.appendChild(permButton)
-}
-
-async function refreshPermission() {
-  const origin = await getCurrentOrigin()
-  let granted = false
-  if (origin) {
-    try {
-      const all = await chrome.permissions.getAll()
-      const patterns = Array.isArray(all?.origins) ? all.origins : []
-      granted = isOriginGranted(patterns, origin)
-    } catch {
-    }
-  }
-  renderPermission(origin, granted)
-}
-
-async function refresh() {
+function refresh() {
   chrome.runtime.sendMessage({ type: 'dogear_get_state' }).then(render).catch(() => {})
-  await refreshPermission()
 }
 
 refresh()

@@ -5,39 +5,6 @@ import { resolveAgentWindowId, DOGEAR_GROUP_TITLE } from './agent-window.js'
 const GROUP_COLOR = 'blue'
 const OPEN_TAB_TIMEOUT_MS = 15000
 
-function patternToOrigin(pattern) {
-  return pattern.endsWith('/*') ? pattern.slice(0, -2) : pattern
-}
-
-async function getAuthorizedOrigins() {
-  try {
-    const all = await chrome.permissions.getAll()
-    if (all) {
-      return (Array.isArray(all.origins) ? all.origins : [])
-        .filter((p) => typeof p === 'string' && (p === '<all_urls>' || p.endsWith('/*')))
-        .map(patternToOrigin)
-    }
-  } catch {
-  }
-  try {
-    const stored = await chrome.storage.local.get('authorizedOrigins')
-    return Array.isArray(stored?.authorizedOrigins)
-      ? stored.authorizedOrigins.filter((o) => typeof o === 'string')
-      : []
-  } catch {
-    return []
-  }
-}
-
-function isOriginAuthorized(url, origins) {
-  if (origins.includes('<all_urls>')) return true
-  try {
-    return origins.includes(new URL(url).origin)
-  } catch {
-    return false
-  }
-}
-
 async function ensureDogearGroup(tabId) {
   try {
     const existing = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
@@ -90,10 +57,6 @@ async function openTab(msg, ctx) {
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     ctx.fail(msg, 'navigation_blocked', '仅支持 http/https 目标地址')
-    return
-  }
-  if (!isOriginAuthorized(targetUrl, await getAuthorizedOrigins())) {
-    ctx.fail(msg, 'navigation_blocked', '目标域名未授权，请先在 Dogear 扩展弹窗中授权该域名')
     return
   }
   let windowId
