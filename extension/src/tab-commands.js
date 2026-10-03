@@ -1,7 +1,7 @@
 import { resolvePageState } from './page-state.js'
 import { waitForTabComplete } from './nav-tracker.js'
+import { resolveAgentWindowId, DOGEAR_GROUP_TITLE } from './agent-window.js'
 
-const DOGEAR_GROUP_TITLE = 'Dogear'
 const GROUP_COLOR = 'blue'
 const OPEN_TAB_TIMEOUT_MS = 15000
 
@@ -96,9 +96,16 @@ async function openTab(msg, ctx) {
     ctx.fail(msg, 'navigation_blocked', '目标域名未授权，请先在 Dogear 扩展弹窗中授权该域名')
     return
   }
+  let windowId
+  try {
+    windowId = await resolveAgentWindowId()
+  } catch (err) {
+    ctx.fail(msg, 'navigation_blocked', `agent 窗口创建失败：${String(err?.message ?? err)}`)
+    return
+  }
   let created
   try {
-    created = await chrome.tabs.create({ url: targetUrl, active: params.background !== true })
+    created = await chrome.tabs.create({ url: targetUrl, windowId, active: params.background !== true })
   } catch (err) {
     ctx.fail(msg, 'navigation_blocked', `标签页未能创建：${String(err?.message ?? err)}`)
     return
