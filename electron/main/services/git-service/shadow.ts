@@ -6,8 +6,8 @@
 import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
-import { getConfigDir } from '../settings-service.js';
-import { execGit, execGitCode, hasGit, assertSafeRef, workspaceGitPath, toGitPath, GitServiceError } from './exec.js';
+import { getConfigDir, loadSettings, SNAPSHOT_SETTING_DEFAULTS } from '../settings-service.js';
+import { execGit, execGitCode, execGitInput, hasGit, assertSafeRef, workspaceGitPath, toGitPath, GitServiceError } from './exec.js';
 
 function gitMissingError(): GitServiceError {
   return new GitServiceError('git-missing', '系统未安装 git，快照功能不可用');
@@ -21,8 +21,6 @@ export interface SnapshotEntry {
 
 export const SNAPSHOT_SOURCES = ['agent-write', 'agent-edit', 'ui-delete', 'ui-rename', 'ui-create', 'pre-restore'] as const;
 export type SnapshotSource = (typeof SNAPSHOT_SOURCES)[number];
-
-const SHADOW_EXCLUDE_DIRS = ['node_modules', 'out', 'dist', 'release', 'tmp', '.dogear', '.git'];
 
 const LOG_RECORD_SEP = '\x1e';
 const LOG_FIELD_SEP = '\x1f';
@@ -77,8 +75,8 @@ async function execShadow(gitDir: string, workspacePath: string, args: string[])
   return execGit(workspacePath, shadowArgs(gitDir, workspacePath, args));
 }
 
-function excludePathspecs(): string[] {
-  return SHADOW_EXCLUDE_DIRS.flatMap((dir) => [`:(exclude)${dir}`, `:(exclude)**/${dir}`]);
+function excludePathspecs(excludeDirs: string[]): string[] {
+  return excludeDirs.flatMap((dir) => [`:(exclude)${dir}`, `:(exclude)**/${dir}`]);
 }
 
 async function fileExists(p: string): Promise<boolean> {
@@ -106,6 +104,42 @@ function buildSnapshotMessage(source: SnapshotSource, relPath?: string, conversa
   return parts.join(' ');
 }
 
+/**
+ * add 后从暂存区剔除超阈值 blob：diff --cached --raw 只枚举本轮新增/变更的 A/M 条目（拿 blob hash），
+ * cat-file --batch-check 批量查大小（不读文件内容），超阈值的 reset 出暂存区（pathspec 用 literal 魔法防文件名通配字符）
+ */
+async function unstageOversized(gitDir: string, workspacePath: string, maxBytes: number): Promise<void> {
+  const raw = await execShadow(gitDir, workspacePath, [
+    'diff', '--cached', '--raw', '-z', '--no-renames', '--diff-filter=AM',
+  ]);
+  if (!raw) return;
+  const records = raw.split('\0');
+  const staged: Array<{ path: string; hash: string }> = [];
+  for (let i = 0; i + 1 < records.length; i += 2) {
+    const meta = records[i];
+    const p = records[i + 1];
+    if (!meta || !meta.startsWith(':') || !p) continue;
+    const hash = meta.split(' ')[3];
+    if (hash && /^[0-9a-f]{40}$/.test(hash)) staged.push({ path: p, hash });
+  }
+  if (staged.length === 0) return;
+  const input = [...new Set(staged.map((s) => s.hash))].join('\n') + '\n';
+  const out = await execGitInput(
+    workspacePath,
+    shadowArgs(gitDir, workspacePath, ['cat-file', '--batch-check=%(objectname) %(objecttype) %(objectsize)']),
+    input,
+  );
+  const sizeByHash = new Map<string, number>();
+  for (const line of out.split('\n')) {
+    const [hash, type, size] = line.trim().split(' ');
+    if (hash && type === 'blob' && size && /^\d+$/.test(size)) sizeByHash.set(hash, Number(size));
+  }
+  const oversized = staged.filter((s) => (sizeByHash.get(s.hash) ?? 0) > maxBytes).map((s) => `:(literal)${s.path}`);
+  if (oversized.length > 0) {
+    await execShadow(gitDir, workspacePath, ['reset', '-q', '--', ...oversized]);
+  }
+}
+
 export async function ensureShadowRepo(workspaceId: string, workspacePath: string): Promise<void> {
   const gitDir = shadowGitDir(workspaceId);
   await enqueue(workspaceId, async () => {
@@ -127,10 +161,13 @@ export async function takeSnapshot(
   conversationId?: string,
 ): Promise<void> {
   if (!(await hasGit())) return;
+  const snapshotSettings = (await loadSettings()).snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
+  if (snapshotSettings.disabledWorkspaces?.includes(workspaceId)) return;
   await ensureShadowRepo(workspaceId, workspacePath);
   const gitDir = shadowGitDir(workspaceId);
   await enqueue(workspaceId, async () => {
-    await execShadow(gitDir, workspacePath, ['add', '-A', '-f', '--', '.', ...excludePathspecs()]);
+    await execShadow(gitDir, workspacePath, ['add', '-A', '-f', '--', '.', ...excludePathspecs(snapshotSettings.excludeDirs)]);
+    await unstageOversized(gitDir, workspacePath, snapshotSettings.maxFileSizeBytes);
     if (!(await hasStagedChanges(gitDir, workspacePath))) return;
     await execShadow(gitDir, workspacePath, ['commit', '-m', buildSnapshotMessage(source, relPath, conversationId)]);
   });

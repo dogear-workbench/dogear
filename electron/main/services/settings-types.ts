@@ -128,6 +128,30 @@ export interface BackupSettings {
   categories: Record<BackupSettingCategoryKey, BackupCategorySetting>;
 }
 
+/** 影子快照保留窗口：近 recentDays 天全留 → recentDays+1~totalDays 每天留最后一条 → 超过 totalDays 丢弃 */
+export interface SnapshotRetention {
+  recentDays: number;
+  totalDays: number;
+}
+
+export interface SnapshotSettings {
+  /** 单文件大小阈值（字节），超过不进快照 */
+  maxFileSizeBytes: number;
+  /** 排除目录名（相对工作区根，任意层级生效）；整列表覆盖默认，不与默认并集 */
+  excludeDirs: string[];
+  retention: SnapshotRetention;
+  /** 关闭快照的工作区 id；缺省/空 = 全部开启 */
+  disabledWorkspaces?: string[];
+}
+
+/** 影子快照默认配置唯一源：shadow.ts 与前端设置页均从此导入 */
+export const SNAPSHOT_SETTING_DEFAULTS: SnapshotSettings = {
+  maxFileSizeBytes: 8 * 1024 * 1024,
+  excludeDirs: ['node_modules', 'out', 'dist', 'release', 'release2', 'update-server', 'tmp', '.dogear', '.git'],
+  retention: { recentDays: 7, totalDays: 30 },
+  disabledWorkspaces: [],
+};
+
 /** 已配对的同步对端；secret 为两端共享的 hex 密钥，之后请求经 header 校验 */
 export interface PairedDevice {
   deviceId: string;
@@ -206,6 +230,8 @@ export interface AppSettings {
   };
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks/app-config=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
+  /** 影子快照配置；缺省走 SNAPSHOT_SETTING_DEFAULTS */
+  snapshot?: SnapshotSettings;
   /** 局域网交接同步配置；缺省字段走默认值（可选项全关、无配对设备） */
   syncOptions?: SyncOptions;
   /** 网页 AI 站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
@@ -257,6 +283,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   backup: {
     categories: { ...BACKUP_CATEGORY_DEFAULTS },
   },
+  snapshot: structuredClone(SNAPSHOT_SETTING_DEFAULTS),
   syncOptions: {
     deviceName: '',
     syncStocksData: false,
@@ -379,6 +406,45 @@ export function normalizeBackupSettings(raw: unknown): BackupSettings {
     };
   }
   return { categories };
+}
+
+/**
+ * snapshot 节归一化：非法输入归一为全默认，单字段非法回落默认，不丢弃其他合法字段；
+ * excludeDirs/disabledWorkspaces 清洗非空字符串并按首现顺序去重；retention.totalDays 不低于 recentDays
+ */
+export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
+  const obj = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const def = SNAPSHOT_SETTING_DEFAULTS;
+  const retentionRaw =
+    obj.retention && typeof obj.retention === 'object' && !Array.isArray(obj.retention)
+      ? (obj.retention as Record<string, unknown>)
+      : {};
+  const recentDays =
+    typeof retentionRaw.recentDays === 'number' && Number.isInteger(retentionRaw.recentDays) && retentionRaw.recentDays >= 1
+      ? retentionRaw.recentDays
+      : def.retention.recentDays;
+  const totalDaysRaw =
+    typeof retentionRaw.totalDays === 'number' && Number.isInteger(retentionRaw.totalDays) && retentionRaw.totalDays >= 1
+      ? retentionRaw.totalDays
+      : def.retention.totalDays;
+  const cleanStringList = (value: unknown, fallback: string[]): string[] => {
+    if (!Array.isArray(value)) return fallback;
+    const seen = new Set<string>();
+    for (const item of value) {
+      if (typeof item !== 'string' || item === '' || seen.has(item)) continue;
+      seen.add(item);
+    }
+    return [...seen];
+  };
+  return {
+    maxFileSizeBytes:
+      typeof obj.maxFileSizeBytes === 'number' && Number.isInteger(obj.maxFileSizeBytes) && obj.maxFileSizeBytes >= 1
+        ? obj.maxFileSizeBytes
+        : def.maxFileSizeBytes,
+    excludeDirs: cleanStringList(obj.excludeDirs, [...def.excludeDirs]),
+    retention: { recentDays, totalDays: Math.max(totalDaysRaw, recentDays) },
+    disabledWorkspaces: cleanStringList(obj.disabledWorkspaces, []),
+  };
 }
 
 /** 同步范围项 id（目录 7 项 + 文件 3 项 + 可选 2 项；字符串字面量联合，disabledSyncItems 白名单） */

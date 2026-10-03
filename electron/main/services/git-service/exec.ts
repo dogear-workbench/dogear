@@ -2,7 +2,7 @@
  * git execFile 封装与公共类型
  * 全部参数走数组传递不经 shell；统一 -c core.quotepath=false 保证中文路径输出可读
  */
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import path from 'path';
 import { promisify } from 'util';
 import { resolveAndValidate } from '../workspace-fs-service.js';
@@ -73,6 +73,30 @@ export async function execGit(cwd: string, args: string[]): Promise<string> {
 
 export async function execGitCode(cwd: string, args: string[]): Promise<number> {
   return (await runGit(cwd, args)).code;
+}
+
+/** 带标准输入的 git 调用（cat-file --batch-check 等批处理接口）；流式收 stdout，无 maxBuffer 上限 */
+export async function execGitInput(cwd: string, args: string[], input: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', ['-c', 'core.quotepath=false', ...args], { cwd, windowsHide: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk;
+    });
+    child.on('error', (err: NodeJS.ErrnoException) => {
+      reject(err.code === 'ENOENT' ? new GitServiceError('git-missing', '系统未安装 git 或 git 不在 PATH 中') : err);
+    });
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout);
+      else reject(new GitServiceError('git-failed', `git ${args[0]} 执行失败: ${stderr.trim() || `exit ${code}`}`));
+    });
+    child.stdin.on('error', () => {});
+    child.stdin.end(input);
+  });
 }
 
 export function assertSafeRef(ref: string): void {

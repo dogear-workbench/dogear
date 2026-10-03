@@ -13,6 +13,7 @@ import type { AppSettings, ModelSelection, SubAgentProfile } from './settings-ty
  * | failover.enabled / failover.chain                                 | perCall（maybeFailoverMainSession 每轮读取） |
  * | update.serverUrl / migrated.*                                     | perCall |
  * | ai.parseModelSelection / ai.stateModelSelection                   | perCall（agent-worker 每任务 loadSettings） |
+ * | snapshot.*                                                        | perCall（shadow takeSnapshot 每次快照现读） |
  * | subAgent.profiles[].timeoutMinutes                                | perCall（delegation-bridge 派时读） |
  * | ai.settingSources                                                 | perCall（暂无消费方） |
  * | ai.effort                                                         | snapshot（全部会话；thinkingLevel 在 start() 定型） |

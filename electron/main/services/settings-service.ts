@@ -17,6 +17,7 @@ import {
   BROWSER_PARSE_SUB_AGENT_PROFILE_ID,
   normalizeFailoverChain,
   normalizeBackupSettings,
+  normalizeSnapshotSettings,
   BASIC_TOOL_NAMES,
   normalizeWebAiSites,
   normalizePaymentBlockedHosts,
@@ -307,6 +308,12 @@ export function normalizeSettings(settings: AppSettings): boolean {
   const newBackup = normalizeBackupSettings(obj.backup);
   if (JSON.stringify(newBackup) !== JSON.stringify(settings.backup)) {
     obj.backup = newBackup;
+    changed = true;
+  }
+
+  const newSnapshot = normalizeSnapshotSettings(obj.snapshot);
+  if (JSON.stringify(newSnapshot) !== JSON.stringify(settings.snapshot)) {
+    obj.snapshot = newSnapshot;
     changed = true;
   }
 
