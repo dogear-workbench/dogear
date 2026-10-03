@@ -1,6 +1,6 @@
 import { memo, useMemo, useEffect, useRef, useState, useCallback, type RefObject } from 'react';
 import { toast } from 'sonner';
-import { Shield, ChevronRight, X, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, MessageSquareQuote, Folder, StickyNote, Pause, Hourglass, Split } from 'lucide-react';
+import { Shield, ChevronRight, ChevronDown, X, Globe, ImagePlus, Send, Square, ShieldAlert, FileText, MessageSquare, MessageSquareQuote, Folder, StickyNote, Pause, Hourglass, Split } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { client } from '@/lib/client';
 import { useReferenceStore } from '@/stores/reference-store';
+import { useHandoffDraftStore } from '@/stores/handoff-draft-store';
 import { SHUNT_ACTION_META, type ShuntAction } from './shunt-suggestions';
 import { useInputFocusStore } from '@/stores/input-focus-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -137,6 +138,21 @@ export const ChatInputArea = memo(function ChatInputArea({
   const removeReferencedNote = useReferenceStore((s) => s.removeReferencedNote);
   const shuntBubble = useReferenceStore((s) => (conversationId ? s.shuntBubbles[conversationId] : undefined));
   const removeShuntBubble = useReferenceStore((s) => s.removeShuntBubble);
+  const allHandoffDrafts = useHandoffDraftStore((s) => s.draftsByConversation);
+  const removeHandoffDraft = useHandoffDraftStore((s) => s.removeDraft);
+  const handoffDrafts = useMemo(
+    () => (conversationId ? allHandoffDrafts[conversationId] ?? [] : []),
+    [allHandoffDrafts, conversationId]
+  );
+  const [expandedDraftIds, setExpandedDraftIds] = useState<Set<string>>(new Set());
+  const toggleDraftExpanded = useCallback((id: string) => {
+    setExpandedDraftIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
   const referencedArticles = useMemo(
     () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
     [allReferencedArticles, conversationId]
@@ -226,8 +242,8 @@ export const ChatInputArea = memo(function ChatInputArea({
               PERMISSION_MODE_STYLES[permissionMode]?.border,
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
             )}>
-            {/* 顶部 Addon：分流气泡 + 引用芯片 + 图片预览 */}
-            {(shuntBubble || referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
+            {/* 顶部 Addon：分流气泡 + 移交草稿 + 引用芯片 + 图片预览 */}
+            {(handoffDrafts.length > 0 || shuntBubble || referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (
               <InputGroupAddon align="block-start" className="flex-col items-start gap-2 pt-3 pb-0">
                 {/* 分流操作气泡：建议卡点击后插入，发送时转为 <shunt> 标签，可删除或忽略 */}
                 {shuntBubble && shuntMeta && (
@@ -244,6 +260,53 @@ export const ChatInputArea = memo(function ChatInputArea({
                     >
                       <X className="w-3 h-3" />
                     </Button>
+                  </div>
+                )}
+                {/* 浏览器移交草稿：待编辑引用块，发送时转为「来自浏览器一键移交」文本块拼在用户文本之前 */}
+                {handoffDrafts.length > 0 && (
+                  <div className="flex flex-col gap-1.5 w-full">
+                    {handoffDrafts.map((d) => {
+                      const hasExcerpt = !!(d.selectionText || d.textExcerpt);
+                      const expanded = expandedDraftIds.has(d.id);
+                      return (
+                        <div
+                          key={d.id}
+                          className="w-full px-2.5 py-1.5 bg-cyan-50 border border-cyan-200 rounded-lg text-xs text-cyan-800 dark:bg-cyan-950/40 dark:border-cyan-800/60 dark:text-cyan-200"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Globe size={12} className="flex-shrink-0" />
+                            <span className="flex-shrink-0 font-medium">浏览器移交</span>
+                            <span className="truncate" title={d.title || d.url}>{d.title || d.url}</span>
+                            {hasExcerpt && (
+                              <button
+                                type="button"
+                                onClick={() => toggleDraftExpanded(d.id)}
+                                className="flex-shrink-0 p-0.5 rounded hover:bg-cyan-100 dark:hover:bg-cyan-900/40"
+                                title={expanded ? '收起快照' : '展开快照'}
+                              >
+                                <ChevronDown className={cn('w-3 h-3 transition-transform', expanded && 'rotate-180')} />
+                              </button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => removeHandoffDraft(conversationId!, d.id)}
+                              className="flex-shrink-0 ml-auto h-4 w-4 p-0 rounded-full hover:bg-cyan-100 dark:hover:bg-cyan-900/40"
+                              title="移除该移交草稿"
+                            >
+                              <X className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <div className="truncate text-cyan-600/70 dark:text-cyan-400/70" title={d.url}>{d.url}</div>
+                          {expanded && hasExcerpt && (
+                            <div className="mt-1 max-h-32 overflow-y-auto whitespace-pre-wrap rounded bg-white/60 dark:bg-black/20 p-1.5 text-cyan-900/80 dark:text-cyan-100/80">
+                              {d.selectionText && <div>【选中内容】{d.selectionText}</div>}
+                              {d.textExcerpt && <div>【正文快照】{d.textExcerpt}</div>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
                 {/* 引用芯片 */}
@@ -530,7 +593,7 @@ export const ChatInputArea = memo(function ChatInputArea({
                     <span className="text-xs">{pauseRequested ? '暂停中…' : '暂停'}</span>
                   </InputGroupButton>
                 )}
-                {(input.trim() || pendingImages.length > 0 || shuntBubble) ? (
+                {(input.trim() || pendingImages.length > 0 || shuntBubble || handoffDrafts.length > 0) ? (
                   // 有输入内容/分流气泡 → 始终显示发送按钮（运行中时插话发送，Agent 在下一轮窗口接收）
                   <InputGroupButton
                     variant="default"

@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 自动连接 + 去页面绑定 + popup 改造](./step1-auto-connect.md) — SW 冷启动自动连、断线 30s 重试、connect 不再绑焦点页、popup 按钮/断开语义
 - [x] [Step 2: agent 独立窗口](./step2-agent-window.md) — open_tab 全部开进 Dogear 专属后台窗口（windowId 双源解析 + 自动重建）
-- [ ] [Step 3: 移交草稿引用](./step3-handoff-draft.md) — 移交不再直发会话，改前端草稿 store + 输入框引用块 + 待编辑通知
+- [x] [Step 3: 移交草稿引用](./step3-handoff-draft.md) — 移交不再直发会话，改前端草稿 store + 输入框引用块 + 待编辑通知
 - [ ] [Step 4: 探索交互增强](./step4-click-enhance.md) — click 新 tab 检测回报、_blank 焦点跟随、完整事件序列、find visible 标注
 
 ## 全局决策

@@ -9,6 +9,7 @@ import type { BrowserActionEvent } from '../services/browser/browser-action-stre
 import type { EmbeddedTabSnapshot } from '../services/browser/embedded/types.js';
 import type { HumanInterventionRequest } from '../services/browser/human-intervention.js';
 import type { ExtensionStatus } from '../services/browser/browser-gateway.js';
+import type { HandoffDraftBroadcast } from '../services/browser/extension-handoff.js';
 import type { SyncProgressEvent } from '../services/sync/orchestrator.js';
 import type { LanSyncStatus } from '../services/sync/lan-sync-service.js';
 import type { PeerInfo } from '../services/sync/discovery.js';
@@ -244,6 +245,9 @@ export type RendererHandlers = {
 
   // 浏览器扩展连接状态变化（browser-gateway 广播，设置页状态行渲染；payload 为全量状态快照）
   extensionStatusChanged: (data: ExtensionStatus) => void;
+
+  // 浏览器一键移交草稿（extension-handoff 广播；渲染层挂到 handoff-draft-store，目标会话输入框上方待编辑）
+  browserHandoffReceived: (data: HandoffDraftBroadcast) => void;
 
   // 提示音播放指令（主进程提示决策单点收敛后下发，只发主窗口；渲染层结合设置项决定是否发声）
   soundCue: (data: { kind: 'complete' | 'permission' | 'error'; appFocused: boolean }) => void;

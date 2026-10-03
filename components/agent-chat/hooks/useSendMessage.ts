@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { client } from '@/lib/client';
 import { useConversationStore } from '@/stores/conversation-store';
 import { useReferenceStore } from '@/stores/reference-store';
+import { useHandoffDraftStore } from '@/stores/handoff-draft-store';
 import { useSlashCommandStore } from '@/stores/slash-command-store';
 import { useCompactCollapseStore } from '@/stores/compact-collapse-store';
 import { useSessionStore } from '@/stores/session-store';
@@ -89,6 +90,12 @@ export function useSendMessage(params: UseSendMessageParams) {
   const clearReferencedNotesFor = useReferenceStore((s) => s.clearReferencedNotesFor);
   const shuntBubble = useReferenceStore((s) => (conversationId ? s.shuntBubbles[conversationId] : undefined));
   const removeShuntBubble = useReferenceStore((s) => s.removeShuntBubble);
+  const allHandoffDrafts = useHandoffDraftStore((s) => s.draftsByConversation);
+  const clearHandoffDraftsFor = useHandoffDraftStore((s) => s.clearFor);
+  const handoffDrafts = useMemo(
+    () => (conversationId ? allHandoffDrafts[conversationId] ?? [] : []),
+    [allHandoffDrafts, conversationId]
+  );
   const referencedArticles = useMemo(
     () => allReferencedArticles.filter((a) => a.anchorConversationId === conversationId),
     [allReferencedArticles, conversationId]
@@ -260,7 +267,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     if (readOnly) return;
     const hasText = !!input.trim();
     const hasImages = pendingImages.length > 0;
-    if (!hasText && !hasImages && !shuntBubble) return;
+    if (!hasText && !hasImages && !shuntBubble && handoffDrafts.length === 0) return;
 
     if (!sessionId || !isSessionReady) return;
 
@@ -381,6 +388,19 @@ export function useSendMessage(params: UseSendMessageParams) {
       });
       removeShuntBubble(conversationId!);
     }
+
+    // 浏览器移交草稿：每条独立 block，固定拼在用户文本之前，格式沿用主进程旧直发模板
+    for (const d of handoffDrafts) {
+      const lines = [
+        '来自浏览器一键移交：',
+        `标题：${d.title || '(无标题)'}`,
+        `URL：${d.url}`,
+      ];
+      if (d.selectionText) lines.push(`选中内容：\n${d.selectionText}`);
+      if (d.textExcerpt) lines.push(`正文快照：\n${d.textExcerpt}`);
+      textBlocks.push({ text: lines.join('\n') });
+    }
+    if (handoffDrafts.length > 0) clearHandoffDraftsFor(conversationId!);
 
     // 用户消息作为最后一个 block
     if (userMessage && !shuntBubble) {
@@ -544,7 +564,7 @@ export function useSendMessage(params: UseSendMessageParams) {
     referencedFiles, clearReferencedFilesFor,
     referencedConversations, clearReferencedConversationsFor, referencedSharedFiles,
     clearReferencedSharedFilesFor, referencedNotes, clearReferencedNotesFor, forkConversation,
-    shuntBubble, removeShuntBubble,
+    shuntBubble, removeShuntBubble, handoffDrafts, clearHandoffDraftsFor,
   ]);
 
   // 键盘事件处理：Ctrl+Enter 发送，Enter 换行
