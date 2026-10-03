@@ -91,6 +91,17 @@ export interface ReadStatePayload {
   totalLength?: number;
 }
 
+export interface WaitForPayload extends PageMeta {
+  matched?: boolean;
+}
+
+export interface ReadArticlePayload {
+  html?: string;
+  containerHtml?: string;
+  url?: string;
+  title?: string;
+}
+
 function parsePageMeta(raw: Partial<PageMeta>): PageMeta {
   return {
     ...(typeof raw.tabId === 'number' ? { tabId: raw.tabId } : {}),

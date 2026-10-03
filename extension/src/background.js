@@ -1,6 +1,7 @@
-import { extractTabSnapshot } from './content-extract.js'
+import { extractTabSnapshot, extractArticleHtml } from './content-extract.js'
 import { handleTabCommand, getDogearTabs } from './tab-commands.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
+import { waitFn } from './wait-actions.js'
 import { snapshotGroupTabIds, detectNewGroupTab } from './click-watch.js'
 import { observeFn } from './observe-actions.js'
 import { findFn } from './find-actions.js'
@@ -170,7 +171,9 @@ const COMMAND_FUNCS = {
   fill: fillFn,
   read_text: readTextFn,
   read_state: readStateFn,
-  scroll: scrollFn
+  scroll: scrollFn,
+  wait_for: waitFn,
+  readArticle: extractArticleHtml
 }
 
 function postResult(msg, payload) {
@@ -188,13 +191,14 @@ function fail(msg, errorCode, error, data) {
 const INJECT_TIMEOUT_MS = 8000
 const INJECT_TIMEOUT_MSG = 'dogear_inject_timeout'
 
-// 点击触发导航会销毁注入上下文，executeScript 的 Promise 永不 settle，必须外层加超时竞赛
-function executeScriptWithTimeout(tabId, func, args, world) {
+// 点击触发导航会销毁注入上下文，executeScript 的 Promise 永不 settle，必须外层加超时竞赛；wait_for 轮询长于默认超时，由调用方传入放宽后的上限
+function executeScriptWithTimeout(tabId, func, args, world, timeoutMs) {
+  const limit = typeof timeoutMs === 'number' && timeoutMs > 0 ? timeoutMs : INJECT_TIMEOUT_MS
   let timer
   return Promise.race([
     chrome.scripting.executeScript({ target: { tabId }, func, args, ...(world ? { world } : {}) }),
     new Promise((resolve, reject) => {
-      timer = setTimeout(() => reject(new Error(INJECT_TIMEOUT_MSG)), INJECT_TIMEOUT_MS)
+      timer = setTimeout(() => reject(new Error(INJECT_TIMEOUT_MSG)), limit)
     })
   ]).finally(() => clearTimeout(timer))
 }
@@ -283,7 +287,13 @@ async function handleCommand(msg) {
     fail(msg, 'tab_closed', '标签页已关闭')
     return
   }
-  const readSafe = msg.kind === 'observe' || msg.kind === 'find' || msg.kind === 'read_text' || msg.kind === 'read_state'
+  const readSafe =
+    msg.kind === 'observe' ||
+    msg.kind === 'find' ||
+    msg.kind === 'read_text' ||
+    msg.kind === 'read_state' ||
+    msg.kind === 'wait_for' ||
+    msg.kind === 'readArticle'
   if (!readSafe && msg.url && tab.url && !tab.url.startsWith(msg.url)) {
     bumpGeneration(msg.tabId, tab.url)
     sendTabSnapshot()
@@ -296,7 +306,14 @@ async function handleCommand(msg) {
     return
   }
   const p = msg.params || {}
-  if ((msg.kind === 'click' || msg.kind === 'fill' || msg.kind === 'scroll' || msg.kind === 'read_text') && p.ref) {
+  if (
+    (msg.kind === 'click' ||
+      msg.kind === 'fill' ||
+      msg.kind === 'scroll' ||
+      msg.kind === 'read_text' ||
+      msg.kind === 'wait_for') &&
+    p.ref
+  ) {
     const refGen = parseRefGeneration(p.ref)
     if (refGen !== null && refGen !== currentGeneration(msg.tabId)) {
       fail(msg, 'ref_expired', `ref "${p.ref}" 已过期（页面已导航或更新），请重新观察后再操作`)
@@ -316,14 +333,20 @@ async function handleCommand(msg) {
               ? [p.path]
               : msg.kind === 'scroll'
                 ? [p.ref, p.delta_y, p.position]
-                : [p.ref]
+                : msg.kind === 'wait_for'
+                  ? [p.selector, p.ref, p.condition, p.text, p.timeoutMs]
+                  : msg.kind === 'readArticle'
+                    ? [p.selector]
+                    : [p.ref]
   ).map((v) => (v === undefined ? null : v))
   const injectWorld = msg.kind === 'read_state' ? 'MAIN' : undefined
+  const waitTimeoutMs = msg.kind === 'wait_for' && Number.isFinite(p.timeoutMs) ? Math.min(Math.max(p.timeoutMs, 1000), 30000) : null
+  const injectTimeoutMs = waitTimeoutMs !== null ? waitTimeoutMs + 5000 : INJECT_TIMEOUT_MS
   const clickBeforeIds = msg.kind === 'click' ? await snapshotGroupTabIds() : null
   let result = null
   let injectTimedOut = false
   try {
-    const [injection] = await executeScriptWithTimeout(msg.tabId, func, args, injectWorld)
+    const [injection] = await executeScriptWithTimeout(msg.tabId, func, args, injectWorld, injectTimeoutMs)
     result = injection?.result ?? null
   } catch (err) {
     const text = String(err?.message ?? err)
@@ -353,7 +376,12 @@ async function handleCommand(msg) {
       msg,
       result.errorCode,
       result.error || '命令执行失败',
-      result.submitTarget !== undefined ? { submitTarget: result.submitTarget } : undefined
+      result.submitTarget !== undefined || result.reason !== undefined
+        ? {
+            ...(result.submitTarget !== undefined ? { submitTarget: result.submitTarget } : {}),
+            ...(result.reason !== undefined ? { reason: result.reason } : {}),
+          }
+        : undefined
     )
     return
   }
@@ -362,6 +390,8 @@ async function handleCommand(msg) {
     delete result.textSample
   } else if (msg.kind === 'scroll') {
     result.pageState = resolvePageState(tab.url || '', tab.title || '', '')
+  } else if (msg.kind === 'wait_for') {
+    result.pageState = resolvePageState(result.url || tab.url || '', tab.title || '', '')
   }
   if (msg.kind === 'click') {
     const newTab = await detectNewGroupTab(clickBeforeIds)

@@ -26,7 +26,9 @@ export type CommandKind =
   | 'scroll'
   | 'open_tab'
   | 'close_tab'
-  | 'list_tabs';
+  | 'list_tabs'
+  | 'wait_for'
+  | 'readArticle';
 
 export type CommandErrorCode =
   | 'not_connected'
@@ -85,6 +87,20 @@ export interface OpenTabCommandParams {
 
 export interface CloseTabCommandParams {
   targetTabId?: number;
+}
+
+export type WaitForCondition = 'visible' | 'hidden' | 'text_contains';
+
+export interface WaitForCommandParams {
+  selector?: string;
+  ref?: string;
+  condition: WaitForCondition;
+  text?: string;
+  timeoutMs?: number;
+}
+
+export interface ReadArticleCommandParams {
+  selector?: string;
 }
 
 export interface TabSnapshotMessage {

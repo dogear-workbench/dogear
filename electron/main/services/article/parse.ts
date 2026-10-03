@@ -150,9 +150,18 @@ export function parseArticleDocument(params: {
   };
 }
 
-/** 便捷入口：输入 HTML 字符串，内部用 linkedom 解析后走 parseArticleDocument */
-export function parseArticleHtml(html: string, url: string): ParsedArticleData {
+/** 便捷入口：输入 HTML 字符串，内部用 linkedom 解析后走 parseArticleDocument；containerHtml 提供时（扩展通道 readArticle 的 selector 容器）用它替换 body，让 Readability 聚焦该容器（微信短内容等 rawHtml 特判仍基于完整 html） */
+export function parseArticleHtml(html: string, url: string, containerHtml?: string): ParsedArticleData {
   const { document } = parseHTML(html);
+  if (containerHtml) {
+    const body = document.createElement('body');
+    body.innerHTML = containerHtml;
+    if (document.body) {
+      document.body.replaceWith(body);
+    } else {
+      document.documentElement.appendChild(body);
+    }
+  }
   return parseArticleDocument({ document, rawHtml: html, url });
 }
 

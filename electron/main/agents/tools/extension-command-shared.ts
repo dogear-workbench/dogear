@@ -121,9 +121,10 @@ export async function runCommand<T>(
   kind: CommandKind,
   params: Record<string, unknown>,
   extract: (data: unknown) => T,
+  timeoutMs?: number,
 ): Promise<{ ok: true; value: T } | { ok: false; message: string; errorCode?: string; data?: unknown }> {
   try {
-    const result = await sendExtensionCommand(kind, params);
+    const result = await sendExtensionCommand(kind, params, timeoutMs);
     return { ok: true, value: extract(result.data) };
   } catch (err) {
     const e = (err ?? null) as Partial<CommandError> | null;

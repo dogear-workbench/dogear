@@ -1,4 +1,4 @@
-// 与 electron/main/services/browser/nm-protocol.ts 双副本同步；v4 CommandKind: observe/find/click/fill/read_text/navigate/read_state/scroll/open_tab/close_tab/list_tabs；click params: { ref, confirmed? }（confirmed 仅桌面端确认后重发携带，缺省仍拦截）
+// 与 electron/main/services/browser/nm-protocol.ts 双副本同步；v4 CommandKind: observe/find/click/fill/read_text/navigate/read_state/scroll/open_tab/close_tab/list_tabs/wait_for/readArticle；click params: { ref, confirmed? }（confirmed 仅桌面端确认后重发携带，缺省仍拦截）；wait_for params: { selector?, ref?, condition: visible|hidden|text_contains, text?, timeoutMs? }；readArticle params: { selector? }
 const HEADER_SIZE = 4
 const MAX_FRAME_BYTES = 64 * 1024 * 1024
 

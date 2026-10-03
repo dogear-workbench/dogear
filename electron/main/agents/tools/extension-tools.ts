@@ -2,7 +2,7 @@
  * 浏览器扩展 MCP Server 工具（页面操作组）
  *
  * 提供 dogear__extension__* 工具组：navigate / observe_page / find / click / fill / read_text / read_state /
- * scroll（本文件）+ tab 管理 open_tab / close_tab / list_tabs（extension-tab-tools.ts）+
+ * scroll / wait_for / readArticle（本文件）+ tab 管理 open_tab / close_tab / list_tabs（extension-tab-tools.ts）+
  * site_knowledge / site_finding / site_policy（extension-site-tools.ts）。
  * 作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 导航不受域名限制（支付与网银域名禁用）；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
@@ -29,6 +29,7 @@ import {
   type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
 import { raiseHumanIntervention, waitForInterventionResult } from '../../services/browser/human-intervention.js';
+import { parseArticleHtml } from '../../services/article/parse.js';
 import { mainLogger } from '../../agents/logger.js';
 
 const submitLogger = mainLogger.child('extension-submit');
@@ -54,15 +55,24 @@ import {
   type ClickPayload,
   type FindPayload,
   type ObservePayload,
+  type ReadArticlePayload,
   type ReadStatePayload,
   type ReadTextPayload,
   type ScrollPayload,
+  type WaitForPayload,
 } from './extension-observe-format.js';
 import { registerToolGroup } from './tool-registry.js';
 import { defineTool, type ToolDef, type ToolResult } from '../pi/tool-adapter.js';
 
 const READ_MAX_CHARS = 8_000;
 const SUBMIT_CONFIRM_TIMEOUT_MS = 5 * 60_000;
+/** wait_for 注入侧还要加导航检测缓冲，通道超时预留 10s 才不会被 gateway 先行判死 */
+const WAIT_FOR_CHANNEL_BUFFER_MS = 10_000;
+
+function reasonOf(data: unknown): string | null {
+  const reason = (data as { reason?: unknown } | null | undefined)?.reason;
+  return typeof reason === 'string' && reason ? reason : null;
+}
 
 function submitTargetOf(data: unknown): string {
   const target = (data as { submitTarget?: unknown } | null | undefined)?.submitTarget;
@@ -696,6 +706,187 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           `已滚动${targetLabel}：scrollTop ${s.before.top} → ${s.after.top}${movedNote}。` +
             `内容总高 ${s.after.height}px，可视 ${s.after.clientHeight}px。${pageStateSuffix(s.pageState)}`,
         );
+      },
+    ),
+
+    defineTool(
+      'dogear__extension__wait_for',
+      '等待用户浏览器页面条件满足',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '在超时时间内每 400ms 轮询等待页面满足条件：元素出现（visible）、元素消失（hidden）或文本出现' +
+        '（text_contains，无 selector/ref 时查整页正文，有限定则查该容器）。适用于点击后的跳转/异步加载等待。' +
+        '等待期间页面导航会终止等待并要求重新 observe_page；visible 条件下 ref 对应元素从页面消失时立即报错（标记不会重新出现）。',
+      z.object({
+        selector: z.string().optional().describe('CSS 选择器（如 "#result" ".loading"）'),
+        ref: z.string().optional().describe('observe_page 返回的元素 ref（如 "e3@2"）'),
+        condition: z
+          .enum(['visible', 'hidden', 'text_contains'])
+          .describe('等待条件：visible 元素出现 / hidden 元素消失 / text_contains 文本包含'),
+        text: z.string().optional().describe('condition=text_contains 时要等待出现的文本子串'),
+        timeoutMs: z.number().int().min(1000).max(30000).describe('超时毫秒数（1000-30000，对齐内嵌 wait_for 的 30s 上限）'),
+      }),
+      async (args) => {
+        if ((args.condition === 'visible' || args.condition === 'hidden') && !args.selector && !args.ref) {
+          return isErrorResult('visible/hidden 条件需要 selector 或 ref 定位元素');
+        }
+        if (args.condition === 'text_contains' && (!args.text || args.text.length === 0)) {
+          return isErrorResult('text_contains 条件需要提供 text（要等待出现的文本子串）');
+        }
+        const detail = [args.condition, args.selector ?? args.ref ?? '', args.text ?? ''].filter(Boolean).join(' ');
+        const busy = acquireGate('wait_for', detail, currentUrl());
+        if (busy) return busy;
+        const taskMeta = meta();
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'wait_for', { url: pageUrl, detail, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        const startedAt = Date.now();
+        const r = await runCommand(
+          'wait_for',
+          { selector: args.selector, ref: args.ref, condition: args.condition, text: args.text, timeoutMs: args.timeoutMs },
+          (data) => (data ?? {}) as WaitForPayload,
+          args.timeoutMs + WAIT_FOR_CHANNEL_BUFFER_MS,
+        );
+        if (!r.ok) {
+          emitAction(taskMeta, 'wait_for', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          if (r.errorCode === 'value_mismatch') {
+            return isErrorResult(reasonOf(r.data) ?? r.message);
+          }
+          if (r.errorCode === 'timeout') {
+            return isErrorResult(
+              `等待未能在扩展侧完成（${args.timeoutMs}ms 等待加注入开销超出通道上限），请缩短 timeoutMs 或拆分多次等待`,
+            );
+          }
+          return isErrorResult(`等待失败：${r.message}`);
+        }
+        const w = r.value;
+        if (!w.matched) {
+          const target =
+            args.condition === 'text_contains'
+              ? `文本 "${args.text}" 未出现`
+              : args.condition === 'visible'
+                ? '元素未出现'
+                : '元素未消失';
+          emitAction(taskMeta, 'wait_for', {
+            url: w.url ?? pageUrl,
+            detail,
+            result: 'timeout',
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(
+            `等待超时（${args.timeoutMs}ms）：${target}。当前页面: ${w.url ?? pageUrl ?? ''}${pageStateSuffix(w.pageState)}`,
+          );
+        }
+        emitAction(taskMeta, 'wait_for', {
+          url: w.url ?? pageUrl,
+          detail,
+          result: 'matched',
+          durationMs: Date.now() - startedAt,
+        });
+        return textResult(`条件已满足。当前页面: ${w.url ?? pageUrl ?? ''}${pageStateSuffix(w.pageState)}`);
+      },
+    ),
+
+    defineTool(
+      'dogear__extension__readArticle',
+      '读取用户浏览器当前页面的文章正文（Markdown）',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '把受控标签页当前渲染后的页面交由桌面端解析（Readability + Turndown），返回标题/作者/来源/字数与 Markdown 正文。' +
+        '适合登录态文章站（公众号/知乎专栏等）：页面已在用户浏览器带登录态渲染完成，一键抽正文；' +
+        '可选 selector 限定正文容器（如 "article" "#js_content"），不传则自动识别。' +
+        '读取的是当前页面：先用 navigate/observe 确认页面已加载完成再调用。' +
+        '解析失败（非文章页/正文过短）时改用 observe_page / read_text 手动提取。' +
+        '受节奏保护的站点（如小红书）计入会话笔记预算（超限拒绝）。',
+      z.object({
+        selector: z.string().optional().describe('正文容器 CSS 选择器；不传自动识别正文'),
+      }),
+      async (args) => {
+        const detail = args.selector ?? 'auto';
+        const busy = acquireGate('parse', detail, currentUrl());
+        if (busy) return busy;
+        const taskMeta = meta();
+        const pageUrl = currentUrl();
+        const gate = await policyGate(conversationId, pageUrl ?? '');
+        if ('blocked' in gate) {
+          emitAction(taskMeta, 'parse', { url: pageUrl, detail, result: 'risk_blocked' });
+          return isErrorResult(gate.blocked);
+        }
+        if (gate.ctx) {
+          const budgetMessage = checkNoteBudget(conversationId, gate.ctx.policy);
+          if (budgetMessage) {
+            emitAction(taskMeta, 'parse', { url: pageUrl, detail, result: 'budget_exceeded' });
+            return isErrorResult(budgetMessage);
+          }
+        }
+        const startedAt = Date.now();
+        const r = await runCommand(
+          'readArticle',
+          { selector: args.selector },
+          (data) => (data ?? {}) as ReadArticlePayload,
+        );
+        if (!r.ok) {
+          emitAction(taskMeta, 'parse', {
+            url: pageUrl,
+            detail,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          if (r.errorCode === 'value_mismatch') {
+            return isErrorResult(reasonOf(r.data) ?? r.message);
+          }
+          return isErrorResult(`读取失败：${r.message}`);
+        }
+        const v = r.value;
+        const articleUrl = v.url ?? pageUrl ?? '';
+        if (!v.html) {
+          emitAction(taskMeta, 'parse', { url: articleUrl, detail, result: 'empty_html', durationMs: Date.now() - startedAt });
+          return isErrorResult('未能从页面取得内容（页面可能仍在加载或为空），请确认页面加载完成后重试');
+        }
+        let parsed;
+        try {
+          parsed = parseArticleHtml(v.html, articleUrl, v.containerHtml);
+        } catch (err) {
+          emitAction(taskMeta, 'parse', {
+            url: articleUrl,
+            detail,
+            result: 'parse_empty',
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(
+            `解析失败：${err instanceof Error ? err.message : String(err)}。页面可能不是文章页，可用 observe_page / read_text 手动提取`,
+          );
+        }
+        if (gate.ctx) {
+          const hits = scanAndMarkRisk(conversationId, gate.ctx, parsed.content);
+          if (hits) {
+            emitAction(taskMeta, 'parse', {
+              url: articleUrl,
+              detail,
+              result: 'risk_signal',
+              durationMs: Date.now() - startedAt,
+            });
+            return isErrorResult(riskSignalMessage(hits));
+          }
+          consumeNote(conversationId);
+        }
+        emitAction(taskMeta, 'parse', {
+          url: articleUrl,
+          detail: parsed.title,
+          result: `wordCount=${parsed.wordCount}`,
+          durationMs: Date.now() - startedAt,
+        });
+        const header =
+          `📄 文章读取成功\n标题: ${parsed.title}\n作者: ${parsed.author || '未知'}\n来源: ${parsed.siteName || '未知'}\n最终 URL: ${articleUrl}\n字数: ${parsed.wordCount}`;
+        return textResult(`${header}\n\n--- 正文 ---\n\n${parsed.content}`);
       },
     ),
 
