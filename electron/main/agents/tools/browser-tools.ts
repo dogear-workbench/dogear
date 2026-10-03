@@ -262,6 +262,9 @@ export function createBrowserToolDefs(opts?: {
           const image = await withTimeout(`截图（${SCREENSHOT_TIMEOUT_MS / 1000}s 上限）`, SCREENSHOT_TIMEOUT_MS, () =>
             tab.view.webContents.capturePage(),
           );
+          if (image.isEmpty()) {
+            throw new Error('截图失败：页面尚未渲染完成或不可见，捕获到空图像，请等待页面加载后重试');
+          }
           const dir = path.join(workspacePath, '.dogear', 'tmp');
           await fs.promises.mkdir(dir, { recursive: true });
           const file = path.join(dir, `dogear-browser-${Date.now()}.png`);

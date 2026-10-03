@@ -1,9 +1,10 @@
 import { z } from 'zod';
 import { type AgentTool } from '@earendil-works/pi-agent-core';
+import type { ImageContent, TextContent } from '@earendil-works/pi-ai';
 
 export type ToolResult = {
-  content: Array<{ type: 'text'; text: string }>;
-  isError?: boolean;
+  content: Array<TextContent | ImageContent>;
+  isError?: boolean
 };
 
 /** 中立化工具描述符。schema 统一用 z.object({...})，toPiTools 负责转成 pi AgentTool */
@@ -35,7 +36,7 @@ export function toPiTools(defs: ToolDef[]): AgentTool[] {
     parameters: z.toJSONSchema(def.schema),
     execute: async (_toolCallId: string, params: unknown) => {
       const result = await def.handler(def.schema.parse(params));
-      if (result.isError) throw new Error(result.content.map((c) => c.text).join('\n'));
+      if (result.isError) throw new Error(result.content.map((c) => (c.type === 'text' ? c.text : '[image]')).join('\n'));
       return { content: result.content, details: null };
     },
   })) as AgentTool[];

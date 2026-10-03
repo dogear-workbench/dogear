@@ -15,6 +15,16 @@ import { resolveWithinWorkspace } from '../pi-session/workspace-boundary.js';
 const MAX_LINES = 2000;
 const MAX_LINE_LENGTH = 2000;
 const MAX_OUTPUT_CHARS = 128 * 1024;
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+const IMAGE_MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  bmp: 'image/bmp',
+};
 
 function errText(prefix: string, error: unknown) {
   return {
@@ -27,9 +37,10 @@ export function createWorkspaceFileToolDefs(workspacePath: string): ToolDef[] {
   return [
     defineTool(
       'Read',
-      '读取文本文件内容',
-      '读取工作区内的文本文件，返回带行号的全文（1 起始，格式「行号→内容」）。' +
-      '支持 offset/limit 按行分页；超长行自动截断，超过 2000 行输出整体截断。图片等二进制内容不支持。',
+      '读取文件内容',
+      '读取工作区内的文件。文本文件返回带行号的全文（1 起始，格式「行号→内容」），' +
+      '支持 offset/limit 按行分页；超长行自动截断，超过 2000 行输出整体截断。' +
+      '支持图片（png/jpg/gif/webp/bmp，≤5MB），以图片附件进入上下文，offset/limit 对图片无效。其他二进制内容不支持。',
       z.object({
         file_path: z.string().describe('文件路径（相对工作区根或绝对路径，必须在工作区内）'),
         offset: z.number().int().min(1).optional().describe('起始行号（1 起始）'),
@@ -38,6 +49,15 @@ export function createWorkspaceFileToolDefs(workspacePath: string): ToolDef[] {
       async ({ file_path, offset, limit }) => {
         try {
           const abs = await resolveWithinWorkspace(workspacePath, file_path);
+          const mimeType = IMAGE_MIME_TYPES[path.extname(abs).slice(1).toLowerCase()];
+          if (mimeType) {
+            const stat = await fs.stat(abs);
+            if (stat.size > MAX_IMAGE_BYTES) {
+              return errText('读取失败', new Error(`图片 ${(stat.size / 1024 / 1024).toFixed(1)}MB 超过 5MB 上限，无法读入上下文`));
+            }
+            const buffer = await fs.readFile(abs);
+            return { content: [{ type: 'image', data: buffer.toString('base64'), mimeType }] };
+          }
           const raw = await fs.readFile(abs, 'utf-8');
           const allLines = raw.split('\n');
           const start = (offset ?? 1) - 1;
