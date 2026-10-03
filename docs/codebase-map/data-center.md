@@ -28,7 +28,7 @@
 - `plan-validate.ts` — 保存校验（on_task_done 目标存在性+环检测、toolPacksOverride 白名单清洗、sanitizeSkillsOverride 去重过滤非索引内名字，空归一 undefined）
 - `scheduler-service.ts` — 调度核心（分钟级 tick、窗口状态机、handleAppStart/handleSessionClose 入口、错过记 missed 不补跑）
 - `run-history-store.ts` — `.dogear/run-history/YYYY-MM.jsonl` 按月追加+倒序分页+保留 3 个月；source 筛选（无 source 旧条目读侧归 scheduler；存量 collab-task 条目原样保留，不再新增）
-- `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 提示词模板与工具集组装（toolPacksOverride 完全替代语义）；buildMountedSkillsSection 把挂载 skill 的 SKILL.md 全文按 `<mounted-skill>` 段拼进 systemPrompt（单个缺失/读取失败跳过告警不阻断）
+- `custom-agent-prompt.ts` / `custom-agent-tools.ts` — CUSTOM_AGENT 提示词模板与工具集组装（toolPacksOverride 完全替代语义）；文件读写工具在 agents/tools/workspace-file-tools.ts（Read/Write/Edit，Read 支持图片 png/jpg/gif/webp/bmp ≤5MB 转 ImageContent）；buildMountedSkillsSection 把挂载 skill 的 SKILL.md 全文按 `<mounted-skill>` 段拼进 systemPrompt（单个缺失/读取失败跳过告警不阻断）
 - `runtime/plan-runner.ts` — 单任务执行器（防重入、断点补记、requestStop 带来源）
 - `runtime/task-executor.ts` — 提交 CUSTOM_AGENT 到 agent-manager Worker 池（toolPacksOverride/skillsOverride 透传 payload），用量提取入历史
 

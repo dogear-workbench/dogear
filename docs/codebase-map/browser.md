@@ -49,7 +49,7 @@
 ## Agent 工具（agents/tools/）
 
 - `browser-tools.ts` — dogear__browser__* 组：readArticle/search（可选 site 站内）/present（页面即产物）/save_article/close/screenshot + 原子探索 9 工具（navigate/observe_page/find/click/fill/scroll/read_text/read_state/wait_for）
-- `extension-tools.ts` — dogear__extension__* 组：navigate/observe_page/click/fill/read_text/read_state + 独占 gate + 站点策略门控链（独占→风控前置→预算→随机延迟→命令→风控扫描→计数）
+- `extension-tools.ts` — dogear__extension__* 组：navigate/observe_page/click/fill/read_text/read_state/wait_for/readArticle/screenshot + 独占 gate + 站点策略门控链（独占→风控前置→预算→随机延迟→命令→风控扫描→计数）+ tab 上限与操作节奏（paceActionGate）；tab 管理三工具拆在 `extension-tab-tools.ts`（open_tab 上限检查），公共命令执行/节奏在 `extension-command-shared.ts`（runCommand 支持自定义 timeoutMs）；readArticle 扩展侧只抽渲染后 HTML，解析在主进程 parseArticleHtml（containerHtml 限定容器）
 - `extension-site-tools.ts` — site_knowledge/site_finding/site_policy（前两个只读写本地站点档案、site_policy 只读访问策略，均不过 policyGate）+ siteKnowledgePointer/sitePolicyPointer 返回尾部指针
 - `web-mcp-tools.ts` — bigmodel__webSearch/webReader 快档（能力页「联网搜索」包；fallbackHint 按会话有无 browser 工具三态生成指引）
 
@@ -67,6 +67,8 @@
 - `popup.{html,js}` — 连接/授权 UI（originFromUrl 白名单、授权/撤销在 click 手势内直调）
 - `src/background.js` — SW 命令分发中枢：handleCommand 分发、executeScriptWithTimeout 8s 竞赛兑底（点击导航销毁注入上下文永不 settle）、resolveLostClickResult URL 检测、permission_state 多触发源推送
 - `src/dom-actions.js` — 四 DOM 注入纯函数（observe 打 ref/click guard_submit/fill guard_password+native setter/readText 8000 截断）
+- `src/wait-actions.js` — waitFn 轮询等待（visible/hidden/text_contains 三条件，函数体全内联适配 executeScript 序列化硬约束）
+- `src/content-extract.js` — 页面内容抽取注入：readText + extractArticleHtml（readyState 等待 + selector 限定容器抽 HTML，解析在主进程）
 - `src/nm-protocol.js` — 帧编解码器
 - 授权链路：popup 手势 request → SW getAll 归一化 → permission_state 帧 → gateway authorizedOrigins 纵深防御 → 设置页只读 chip
 

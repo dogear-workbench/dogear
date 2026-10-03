@@ -11,7 +11,7 @@
 ## agent-chat 组件（components/agent-chat/）
 
 - `AgentChat.tsx` — 聊天主组件：组合 hooks+布局+工具轨道+Minimap；从 childrenByParent 派生等待交付展示态；历史加载三态 UI（骨架/错误/空）
-- `ChatInputArea.tsx` — 输入区：引用芯片、分流操作气泡（shunt 气泡，同会话最多一个）、图片预览、工具栏（ModelSelector）、斜杠命令菜单、暂停/恢复按钮、暂停与等待交付状态行
+- `ChatInputArea.tsx` — 输入区：引用芯片、分流操作气泡（shunt 气泡，同会话最多一个）、图片附件（粘贴/拖拽/按钮三入口 + 5MB 上限，预览缩略图，发送转 base64 image 块）、工具栏（ModelSelector）、斜杠命令菜单、暂停/恢复按钮、暂停与等待交付状态行
 - `MessageItem.tsx` — 单条消息渲染：长文本折叠、sticky 冻结、分叉/编辑按钮、跨会话注入消息卡（默认收起）
 - `ContentBlockItem.tsx` — 内容块路由（text/tool_use/thinking/permission/askUser/compact_boundary）
 - `MessageMinimap.tsx` — 消息小地图：轮次聚合、视口指示、跳转、hover 展开/固定

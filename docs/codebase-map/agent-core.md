@@ -15,6 +15,8 @@ Agent 运行时：pi-session 门面、Worker 后台任务、工具注册、skill
 ## pi-session（主会话及子会话运行时门面）
 
 - `pi-session.ts` — PiSession 唯一门面：生命周期/插话/权限/turn 粒度暂停/自动压缩（contextWindow×autoCompactPercent 阈值）；工具集拼装与 skill 三源索引拆在 tool-assembly.ts
+- `vision-shunt.ts` — 识图转派：主会话消息含图且当前模型 supportsVision≠true 时，静默用视觉模型（ai.visionModelSelection 或首个 supportsVision 模型）runOnce 识图，`<image_description>` 描述块注入主会话；模型视觉能力标记在 pi/provider.ts 的 piModels.supportsVision（缺省 false 保守）
+- `content-blocks.ts` — splitContentBlocks 纯函数（Anthropic 形状 base64 image 块 → pi-ai ImageContent）
 - `tool-assembly.ts` — 工具集拼装：按能力包/工具包/Profile 过滤组装全部工具组（含 skill 工具与三源扫描目录过滤：builtin/custom/user）
 - `pi-session-config.ts` — PiSessionConfig 会话配置类型（conversationId/modelSelection/工作区路径/enabledToolPacks/groupId/role/executor/parentConversationId/skillsOverride——executor 场景专用权威 skill 清单，非子会话会话生效时绕过工作区 enabledSkills 与包总闸）
 - `pi-session-manager.ts` — 单例：引用计数生命周期（retain/release 归零销毁）+ 非 UI 保活计数（acquireHold）、存活集合广播（六触发点 diff）、销毁时通知调度器 handleSessionClose

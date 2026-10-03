@@ -1,7 +1,7 @@
 ---
 step: 8
 title: 首个策略模板 + doc-sync 收尾
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,7 +28,14 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
+  - 「两层站点档案」实情澄清：site-knowledge 是单文件单层（getConfigDir()/site-knowledge/），「两层」指档案内「正式地图/探索发现」两区块，模板按实际结构写，与迭代漏斗意图一致
+  - 触发验证：子会话与主会话分别用 pi-agent-core loadSkills（skill-loader 同款解析链）实测索引命中（total 11，xhs hit 1，diagnostics 0）；新开会话自动命中留用户日常验证
+  - doc-sync 由主会话按 doc-sync skill 完成：browser.md（extension-tools 新工具与拆分、site-policy 预算节奏、injection-scan 新行、扩展侧 wait-actions/content-extract）、agent-core.md（vision-shunt/content-blocks）、chat.md（图片附件三入口）、data-center.md（workspace-file-tools 锚点）；故意未记：两处 bug 修复（screenshot 空文件/click 误报）、manifest 版本号
 - 改动文件清单：
+  - 新：`C:\Users\Dreama\AppData\Roaming\dogear\.dogear\skills\xiaohongshu-research\SKILL.md`（config 目录，非工作区 git）
+  - `docs/codebase-map/{browser,agent-core,chat,data-center}.md`
 
 ### 给下一步的接力棒
-- 模板清单与触发验证结果：
+- 模板清单与触发验证结果：xiaohongshu-research 已进 skill 索引（关键词：小红书/xhs/种草/笔记/用户讨论/口碑/测评）；要点式结构：前置必调 site_knowledge → 外层关键词循环（宽→窄→同义，上限=搜索预算5）→ 内层预算自适应采样（read_state 直取优先）→ 节奏预算（工具层强制）→ 异常分支（风控熔断/登录墙/site_finding 沉淀）→ 终止三条件 → 产出格式
+- 后续模板迭代：现场发现走 site_finding 追加档案探索发现区；模板本体人工/主会话维护
+- 子会话实测踩坑记录：NodeExecutionEnv 反斜杠绝对路径会被剥离当相对路径拼 cwd，正斜杠正常（生产三目录索引一直正常，仅脚本验证时注意）
