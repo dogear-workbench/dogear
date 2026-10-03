@@ -44,11 +44,21 @@ function render(state) {
   }
   button.disabled = state.status === 'connecting'
   disconnectButton.hidden = state.status !== 'connected'
-  handoffButton.hidden = state.status !== 'connected'
 }
 
-button.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'dogear_connect' }).catch(() => {})
+button.addEventListener('click', async () => {
+  button.disabled = true
+  let result
+  try {
+    result = await chrome.runtime.sendMessage({ type: 'dogear_focus_current' })
+  } catch {
+    result = { ok: false, error: '后台未就绪' }
+  }
+  if (result && result.ok === false) {
+    statusEl.className = 'err'
+    statusEl.textContent = result.error || '操作失败'
+  }
+  button.disabled = false
 })
 
 chrome.runtime.onMessage.addListener((message) => {

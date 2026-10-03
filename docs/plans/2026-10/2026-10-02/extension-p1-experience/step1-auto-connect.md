@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 自动连接 + 去页面绑定 + popup 改造
-status: pending
+status: done
 ---
 
 ## 目标
@@ -27,9 +27,21 @@ status: pending
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  1. hello 帧 tabId 传 `-1`（NO_FOCUS_TAB_ID 哨兵）而非计划的 `null`：browser-gateway.ts:315 校验 `typeof message.tabId === 'number'`，null 会被忽略（不 takeOver、无 welcome），扩展会永远停在 connecting。传 -1 桌面端零改动，gateway 初始 fields 即 NO_FOCUS 空闲态
+  2. manualDisconnected 用 `chrome.storage.session` 而非计划的 storage.local：session 存储「浏览器重启即清空」天然满足设计意图（重启后恢复自动连接）；storage.local 持久不清除，做不到
+  3. connect() 的 connectNative 同步失败分支也调 scheduleRetry()（计划外补充）：否则 Dogear 未运行时重试链断裂，只能靠事件唤醒
+  4. pushGroupTabSnapshots 加 `state.tabId == null` 早退：NO_FOCUS 态下组内残留 tab 快照会让 gateway 误抢焦点（applyTabSnapshot 在 NO_FOCUS 态宽松匹配首个快照），与扩展侧 null 焦点不一致 → 后续命令 stale_tab
+  5. dogear_focus_current 在「已连接且焦点不同」时走完整重连：gateway 的 applyTabSnapshot 宽松匹配仅在 NO_FOCUS 态生效，已连接态下仅 setFocusedTab + 快照无法让 gateway 感知焦点切换；重连（takeOver 重置 fields）是唯一不新增帧类型的通道
+- 改动文件清单：extension/src/connect-autoretry.js（新）、extension/src/background.js、extension/manifest.json、extension/popup.html、extension/popup.js
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - `initAutoConnect({ connect, isPortAlive })`：顶层接线，注册 onAlarm + 立即 ensureConnected；`scheduleRetry()` 单次 30s alarm（名 dogear-reconnect）；`markManualDisconnect(v)`/`isManualDisconnected()` 走 storage.session；`waitForConnected(isConnected, timeoutMs=10000)` 200ms 轮询
+  - connect() 幂等（先 disconnectPort），hello 帧 `tabId: NO_FOCUS_TAB_ID(-1)`，成功建连后扩展侧 state.tabId 为 null
+  - `dogear_focus_current` 回包 `{ ok, error? }`；handleFocusCurrent 顺序：getActiveTab → 焦点相同早退 → 清手动断开标记 → connect → 等 welcome（10s 超时）→ TAB_COMMAND_CTX.setFocusedTab + sendTabSnapshot
+  - popup connect 按钮现在发 `dogear_focus_current`（不再发 dogear_connect）；handoff 按钮始终可见，port 空时回「等待连接」
+- 下个 step 该从哪里继续：step2（agent 独立窗口）改 tab-commands.js openTab 的 tabs.create 加 windowId + dogearWindowId 存取；焦点已由本 step 与用户页面解耦，agent 窗口内开 tab 后 setFocusedTab 链路不变
 - 待办或已知限制：
+  - 未连接时点击 handoff 只提示不触发连接（计划的「等待连接」文案，连接由 30s alarm 自动恢复）
+  - 手动断开后 popup 状态区仍显示「未连接」，无「已手动断开」区分（计划未要求）
+  - focus_current 重连会取消 agent 进行中的 pending 命令（takeOver rejectAllPending），用户主动夺控语义可接受

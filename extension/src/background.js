@@ -12,8 +12,16 @@ import {
   resetGeneration,
   scheduleTrackedSnapshot
 } from './nav-tracker.js'
+import {
+  initAutoConnect,
+  scheduleRetry,
+  markManualDisconnect,
+  waitForConnected
+} from './connect-autoretry.js'
 
 const NM_HOST_NAME = 'com.dogear.nmhost'
+// gateway 拒绝 tabId 为 null 的 hello；-1 是其 NO_FOCUS 空闲哨兵
+const NO_FOCUS_TAB_ID = -1
 
 let port = null
 let state = {
@@ -67,7 +75,7 @@ async function extractHandoffExcerpt(tabId) {
 async function sendPageHandoff(tab, selectionText) {
   if (!port) {
     flashHandoffError()
-    return { ok: false, error: '请先在扩展弹窗连接 Dogear' }
+    return { ok: false, error: '等待连接' }
   }
   if (!tab || tab.id == null || !tab.url || !/^https?:/.test(tab.url)) {
     return { ok: false, error: '当前页面不支持移交' }
@@ -84,7 +92,7 @@ async function sendPageHandoff(tab, selectionText) {
     port.postMessage(payload)
   } catch {
     flashHandoffError()
-    return { ok: false, error: '发送失败，请重新在扩展弹窗连接' }
+    return { ok: false, error: '发送失败，请稍后重试' }
   }
   return { ok: true }
 }
@@ -137,7 +145,7 @@ async function sendTabSnapshot() {
 }
 
 async function pushGroupTabSnapshots() {
-  if (!port) return
+  if (!port || state.tabId == null) return
   const tabs = await getDogearTabs()
   for (const tab of tabs) {
     if (tab.id == null || tab.id === state.tabId) continue
@@ -391,25 +399,20 @@ async function handleCommand(msg) {
 
 async function connect() {
   disconnectPort()
-  const tab = await getActiveTab()
-  if (!tab || tab.id == null) {
-    setStatus({ status: 'error', error: '未找到活动标签页' })
-    return
-  }
   setStatus({
     status: 'connecting',
-    tabId: tab.id,
-    title: tab.title ?? '',
-    url: tab.url ?? '',
+    tabId: null,
+    title: '',
+    url: '',
     error: '',
     appVersion: ''
   })
-  resetGeneration(tab.id, tab.url ?? '')
   try {
     port = chrome.runtime.connectNative(NM_HOST_NAME)
   } catch {
     port = null
     setStatus({ status: 'error', error: 'Dogear 未运行' })
+    scheduleRetry()
     return
   }
   port.onMessage.addListener(onHostMessage)
@@ -418,10 +421,25 @@ async function connect() {
     type: 'hello',
     extensionVersion: chrome.runtime.getManifest().version,
     protocolVersion: 4,
-    tabId: tab.id
+    tabId: NO_FOCUS_TAB_ID
   })
   sendPermissionState()
 }
+
+async function handleFocusCurrent() {
+  const tab = await getActiveTab()
+  if (!tab || tab.id == null) return { ok: false, error: '未找到活动标签页' }
+  if (state.status === 'connected' && state.tabId === tab.id) return { ok: true }
+  await markManualDisconnect(false)
+  await connect()
+  const connected = await waitForConnected(() => state.status === 'connected')
+  if (!connected) return { ok: false, error: '等待连接超时，请确认 Dogear 已运行' }
+  TAB_COMMAND_CTX.setFocusedTab(tab)
+  sendTabSnapshot()
+  return { ok: true }
+}
+
+initAutoConnect({ connect, isPortAlive: () => port != null })
 
 function onHostMessage(message) {
   if (message?.type === 'welcome') {
@@ -451,6 +469,7 @@ function onHostDisconnect() {
   } else {
     setStatus({ status: 'idle', error: '' })
   }
+  scheduleRetry()
 }
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
@@ -471,15 +490,22 @@ chrome.permissions.onRemoved.addListener(() => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type === 'dogear_connect') {
-    connect()
+    markManualDisconnect(false).then(() => connect())
     sendResponse({ ok: true })
     return
   }
   if (message?.type === 'dogear_disconnect') {
+    markManualDisconnect(true)
     disconnectPort()
     setStatus({ status: 'idle', error: '' })
     sendResponse({ ok: true })
     return
+  }
+  if (message?.type === 'dogear_focus_current') {
+    handleFocusCurrent()
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false, error: '操作失败' }))
+    return true
   }
   if (message?.type === 'dogear_permission_changed') {
     sendPermissionState()
