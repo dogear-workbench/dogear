@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 快照规则收窄（settings 类型 + shadow 接入）](./step1-rules.md) — 阈值过滤、排除目录配置化、按工作区开关
-- [ ] [Step 2: 保留窗口裁剪](./step2-retention.md) — 近 7 天全留 → 7~30 天每日一份 → 30 天外丢弃
+- [x] [Step 2: 保留窗口裁剪](./step2-retention.md) — 近 7 天全留 → 7~30 天每日一份 → 30 天外丢弃
 - [ ] [Step 3: 设置页快照状态卡与配置](./step3-settings-ui.md) — 状态卡（开关/体积/条数/上次时间）+ 配置区 + 恢复默认
 - [ ] [Step 4: 历史面板空态可解释 + 备份 personal 过滤](./step4-misc.md) — 空态区分「未编辑」vs「被排除+原因」；listWorkspaceIds 按注册表过滤
 - [ ] [Step 5: 存量瘦身](./step5-slim.md) — 设置卡「立即瘦身」按钮：按新规则重写历史 + gc，释放 ~1.2GB
