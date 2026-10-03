@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 执行管道对称化](./step1-pipeline-symmetry.md) — EXEC_PROFILE_SKILLS 查表，default 传空清单，场景页文案同步
-- [ ] [Step 2: CreateTask 完全体化](./step2-no-placeholder.md) — planPath 必传、upsert/占位文案删除、同标题拒绝
+- [x] [Step 2: CreateTask 完全体化](./step2-no-placeholder.md) — planPath 必传、upsert/占位文案删除、同标题拒绝
 - [ ] [Step 3: 笔记生命周期纪律](./step3-notes-lifecycle.md) — 提示词模板改写（未定型进笔记状态标签）
 - [ ] [Step 4: 类型手动改口 + 笔记折叠展开](./step4-manual-profile-and-ui.md) — store/tipc/面板切换入口；NotesTimelinePane 默认展开
 

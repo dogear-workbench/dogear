@@ -1,9 +1,9 @@
 /**
  * 任务系统 agent 工具（dogear-tasks 工具组，仅挂主会话）
  *
- * 任务产生唯一入口：会话侧 dogear__CreateTask 挂载落计划栏（planPath 可省略占位）；UI 不做「转任务」按钮。
+ * 任务产生唯一入口：会话侧 dogear__CreateTask 挂载落计划栏（planPath 必传，任务=完全体）；UI 不做「转任务」按钮。
  * originSessionId 由挂载点闭包注入（与 notes source 同款决策），不让 LLM 抄会话 ID。
- * autoExecute 走「先 createTask 落 plan 再 executeTask」两步：createTask 的 status 撞 plan 同标题会命中 upsert 丢失排队语义。
+ * autoExecute 走「先 createTask 落 plan 再 executeTask」两步：同标题 plan 态任务已存在时 createTask 直接拒绝，不会撞车。
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -37,7 +37,7 @@ const EXEC_PROFILE_LABEL: Record<ExecProfile, string> = {
 function taskLine(task: Task): string {
   const parts = [`${task.id} [${task.status}] 《${task.title}》`];
   parts.push(`类型: ${EXEC_PROFILE_LABEL[task.execProfile ?? 'default']}`);
-  parts.push(`plan: ${task.planPath ?? '（未挂文档，占位）'}`);
+  parts.push(`plan: ${task.planPath ?? '（缺失）'}`);
   if (task.result) parts.push(`结果: ${task.result.slice(0, 100)}`);
   return `- ${parts.join(' | ')}`;
 }
@@ -48,13 +48,14 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
       'dogear__CreateTask',
       '挂载实施任务',
       '将实施任务挂到计划栏。默认落计划（plan），由用户决定何时推进执行；与用户聊透方案后挂载。\n' +
-        'planPath 可省略——方案未定型先占位，后续再次调用（同标题）会自动补上文档路径；传入时要求文件已落盘。\n' +
+        '任务须是完全体：planPath 必传且文件须已落盘；方案未定型先记笔记卡片，落盘 plan 文档后再挂载。\n' +
+        '同标题计划（plan 态）任务已存在时拒绝创建，标题勿重复。\n' +
         'execProfile 判断标准：plan 为分步实施文档（stepN-*.md）且要动代码时填 code-impl（执行会话按 staged-execution 语境逐 step 派子会话实施）；调研/整理类不填。\n' +
         'autoExecute=true 仅当用户明确要求立即执行：直接转入执行队列（串行执行，完成后待审核并系统通知）。\n' +
-        '存入计划栏时告知用户（标题与任务 ID）；占位任务要提醒补 plan 文档。',
+        '存入计划栏时告知用户（标题与任务 ID）。',
       z.object({
         title: z.string().min(1).describe('任务标题，简短概括要实施的内容'),
-        planPath: z.string().min(1).optional().describe('plan 文档路径（绝对路径，或相对工作区根的相对路径）；方案未定型可省略先占位，文档落盘后同标题再调一次自动补路径'),
+        planPath: z.string().min(1).describe('plan 文档路径（绝对路径，或相对工作区根的相对路径），必传；文件须已落盘'),
         execProfile: z
           .enum(['default', 'code-impl'])
           .optional()
@@ -64,36 +65,22 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
         autoExecute: z.boolean().optional().describe('仅当用户明确要求立即执行时传 true：直接转入执行队列；默认 false 落计划栏'),
       }),
       async (args) => {
-        const planPath = args.planPath ? path.resolve(workspacePath, args.planPath) : undefined;
-        if (planPath) {
-          try {
-            await fs.access(planPath);
-          } catch {
-            return errorResult(`plan 文件不存在: ${planPath}，请先落盘 plan 文档再挂载，或省略 planPath 先占位。`);
-          }
+        const planPath = path.resolve(workspacePath, args.planPath);
+        try {
+          await fs.access(planPath);
+        } catch {
+          return errorResult(`plan 文件不存在: ${planPath}，请先落盘 plan 文档再挂载（方案未定型先记笔记）。`);
         }
         try {
-          const autoExecute = args.autoExecute === true;
-          if (autoExecute && !planPath) {
-            return errorResult(
-              '该任务还没有 plan 文档，无法立即执行。请先落盘 plan 文档，再调用一次 dogear__CreateTask 传入 planPath（同标题会自动补路径），或落盘后用 dogear__ExecuteTask。',
-            );
-          }
-          let isUpdate = false;
-          if (planPath) {
-            const title = args.title.trim();
-            const tasks = await taskService.listTasks(workspacePath);
-            isUpdate = tasks.some((t) => t.status === 'plan' && t.title === title);
-          }
           const created = await taskService.createTask(workspacePath, {
             title: args.title,
-            ...(planPath ? { planPath } : {}),
+            planPath,
             ...(args.execProfile ? { execProfile: args.execProfile } : {}),
             originSessionId: sourceContext?.conversationId,
             status: 'plan',
           });
           const profileLine = `\n- 类型: ${EXEC_PROFILE_LABEL[created.execProfile ?? 'default']}`;
-          if (autoExecute) {
+          if (args.autoExecute === true) {
             const task = await taskService.executeTask(workspacePath, created.id);
             getTaskQueue().kick();
             return textResult(
@@ -101,18 +88,9 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
                 '队列串行执行：轮到后会自动创建执行会话按 plan 实施，完成进入待审核并系统通知。',
             );
           }
-          if (isUpdate) {
-            return textResult(
-              `✅ 已补文档并更新计划任务\n- 任务 ID: ${created.id}\n- 标题: ${created.title}${profileLine}\n- plan: ${created.planPath}\n` +
-                '计划任务不会自动执行；用户确认后可用 dogear__ExecuteTask 转入队列。',
-            );
-          }
-          const planLine = planPath ? `- plan: ${created.planPath}\n` : '';
-          const nextHint = planPath
-            ? '计划任务不会自动执行；用户确认后可用 dogear__ExecuteTask 转入队列。'
-            : '当前为占位任务（无 plan 文档），不会进入执行队列；plan 文档落盘后再次调用 dogear__CreateTask（同标题 + planPath）自动补路径。';
           return textResult(
-            `✅ 任务已存入计划栏\n- 任务 ID: ${created.id}\n- 标题: ${created.title}${profileLine}\n${planLine}${nextHint}`,
+            `✅ 任务已存入计划栏\n- 任务 ID: ${created.id}\n- 标题: ${created.title}${profileLine}\n- plan: ${created.planPath}\n` +
+              '计划任务不会自动执行；用户确认后可用 dogear__ExecuteTask 转入队列。',
           );
         } catch (error) {
           return errorResult(`挂载任务失败: ${error}`);
@@ -124,7 +102,7 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
       'dogear__ExecuteTask',
       '执行任务',
       '将一个计划（plan）或待办（backlog）任务转入执行队列（queued），轮到后会自动创建执行会话按 plan 实施；对 plan 态任务执行等价于用户确认。\n' +
-        '任务尚无 plan 文档（planPath 缺失）会报错——先落盘 plan 文档并用 dogear__CreateTask 传入 planPath（同标题）补路径。',
+        '任务尚无 plan 文档（planPath 缺失）会报错——先落盘 plan 文档，再用 dogear__CreateTask 重新挂载（planPath 必传）。',
       z.object({
         taskId: z.string().min(1).describe('任务 ID（dogear__ListTasks 查看）'),
       }),
@@ -134,7 +112,7 @@ export function createTaskToolDefs(workspacePath: string, sourceContext?: TaskTo
           if (!existing) return errorResult(`任务 ${args.taskId} 不存在，可用 dogear__ListTasks 查看。`);
           if (!existing.planPath) {
             return errorResult(
-              `任务《${existing.title}》尚无 plan 文档，请先落盘 plan 文档并用 dogear__CreateTask 传入 planPath（同标题）补路径，再执行。`,
+              `任务《${existing.title}》尚无 plan 文档，无法执行；请落盘 plan 文档后用 dogear__CreateTask 重新挂载（planPath 必传）。`,
             );
           }
           const task = await taskService.executeTask(workspacePath, args.taskId);

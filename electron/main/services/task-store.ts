@@ -16,7 +16,7 @@ export interface Task {
   id: string;
   title: string;
   status: TaskStatus;
-  /** 计划文档路径；占位任务尚无文档时缺省 */
+  /** 计划文档路径；新建任务必填，仅存量历史任务可能缺省 */
   planPath?: string;
   /** 执行类型；缺省 default（存量任务无字段等价 default），读侧用 ?? 'default' 兜底 */
   execProfile?: ExecProfile;
@@ -33,7 +33,7 @@ export interface Task {
 
 export interface CreateTaskInput {
   title: string;
-  planPath?: string;
+  planPath: string;
   originSessionId?: string;
   execProfile?: ExecProfile;
   /** 初始状态；done 仅存量迁移用 */
@@ -161,20 +161,17 @@ function requireTitle(title: string): string {
 
 export async function createTask(workspacePath: string, input: CreateTaskInput): Promise<Task> {
   const title = requireTitle(input.title);
-  if (!input.skipPlanCheck && input.planPath) await fs.access(input.planPath);
+  if (!input.planPath) throw new Error('planPath 必传：任务须挂载已落盘的 plan 文档');
+  if (!input.skipPlanCheck) await fs.access(input.planPath);
   const now = new Date().toISOString();
   return mutateTasks(workspacePath, (tasks) => {
     const existing = tasks.find((t) => t.status === 'plan' && !t.deletedAt && t.title === title);
-    if (existing) {
-      if (input.planPath) existing.planPath = input.planPath;
-      existing.updatedAt = now;
-      return { ...existing };
-    }
+    if (existing) throw new Error(`任务《${title}》已存在（ID: ${existing.id}），勿重复挂载`);
     const task: Task = {
       id: generateTaskId(),
       title,
       status: input.status ?? 'queued',
-      ...(input.planPath ? { planPath: input.planPath } : {}),
+      planPath: input.planPath,
       ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
       ...(input.execProfile ? { execProfile: input.execProfile } : {}),
       createdAt: now,

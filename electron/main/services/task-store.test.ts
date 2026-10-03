@@ -256,18 +256,14 @@ test('version 1 存量迁移：backlog 转 plan，其他态不动，写回 versi
   expect(raw2.tasks.find((t) => t.id === 't2')?.status).toBe('done');
 });
 
-test('createTask upsert：plan 态同标题更新 planPath 不新建；其他态同标题仍新建', async () => {
-  const placeholder = await createTask(workspacePath, { title: '同一件事', status: 'plan' });
-  expect(placeholder.planPath).toBeUndefined();
-
-  const again = await createTask(workspacePath, { title: '同一件事', planPath, status: 'plan' });
-  expect(again.id).toBe(placeholder.id);
-  expect(again.planPath).toBe(planPath);
+test('createTask 同标题拒绝：plan 态已存在时抛错不新建；其他态同标题仍新建', async () => {
+  const first = await createTask(workspacePath, { title: '同一件事', planPath, status: 'plan' });
+  expect(first.planPath).toBe(planPath);
   expect(await listTasks(workspacePath)).toHaveLength(1);
 
-  const backlogSameTitle = await createTask(workspacePath, { title: '同一件事', planPath, status: 'backlog' });
-  expect(backlogSameTitle.id).toBe(placeholder.id);
-  expect(backlogSameTitle.status).toBe('plan');
+  await expect(
+    createTask(workspacePath, { title: '同一件事', planPath, status: 'plan' }),
+  ).rejects.toThrow('已存在');
   expect(await listTasks(workspacePath)).toHaveLength(1);
 
   const backlogTask = await createTask(workspacePath, { title: '另一件事', planPath, status: 'backlog' });
@@ -276,10 +272,18 @@ test('createTask upsert：plan 态同标题更新 planPath 不新建；其他态
   expect(await listTasks(workspacePath)).toHaveLength(3);
 });
 
-test('占位任务：无 planPath 可创建，getTaskDetail 无 planError，归入 plan 分组', async () => {
-  const task = await createTask(workspacePath, { title: '占位', status: 'plan' });
-  expect(task.planPath).toBeUndefined();
-  const detail = await getTaskDetail(workspacePath, task.id);
+test('存量任务无 planPath（历史遗留，直写 tasks.json）：getTaskDetail 无 planError，归入 plan 分组', async () => {
+  const tasksPath = path.join(workspacePath, '.dogear', 'tasks.json');
+  await fs.mkdir(path.dirname(tasksPath), { recursive: true });
+  await fs.writeFile(
+    tasksPath,
+    JSON.stringify({
+      version: 2,
+      tasks: [{ id: 'legacy', title: '历史遗留', status: 'plan', createdAt: T0, updatedAt: T0 }],
+    }),
+    'utf-8',
+  );
+  const detail = await getTaskDetail(workspacePath, 'legacy');
   expect(detail?.planContent).toBeNull();
   expect(detail?.planError).toBeUndefined();
   expect((await listTasksGrouped(workspacePath)).plan).toHaveLength(1);
