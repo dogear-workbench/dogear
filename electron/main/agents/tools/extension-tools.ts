@@ -375,6 +375,10 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
               emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'error', errorCode: 'guard_submit' });
               return isErrorResult('用户已拒绝本次提交，未执行。请引导用户手动完成提交或调整方案');
             }
+            if (outcome === 'manual') {
+              emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'manual_submitted' });
+              return textResult('用户已在浏览器手动完成提交。请重新 observe_page 确认当前页面状态后继续任务');
+            }
             if (outcome === 'timeout') {
               emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'error', errorCode: 'guard_submit' });
               return isErrorResult('等待用户确认超时（5 分钟），提交未执行。可重新触发或引导用户手动提交');

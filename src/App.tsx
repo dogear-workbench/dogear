@@ -12,6 +12,7 @@ import { client } from '@/lib/client';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/sonner';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { HumanInterventionDialog } from '@/components/HumanInterventionDialog';
 import { useUIStore } from '@/stores/ui-store';
 import { useSyncStore } from '@/stores/sync-store';
 
@@ -67,6 +68,7 @@ export function App() {
       )}
 
       <ConfirmDialog />
+      <HumanInterventionDialog />
       <Toaster />
     </ErrorBoundary>
   );

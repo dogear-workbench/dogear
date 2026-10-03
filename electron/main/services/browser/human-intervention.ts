@@ -6,7 +6,7 @@ const logger = mainLogger.child('human-intervention');
 
 export type HumanInterventionReason = 'login_required' | 'verification_required' | 'guard_password' | 'guard_submit';
 
-export type InterventionResult = 'approved' | 'denied';
+export type InterventionResult = 'approved' | 'denied' | 'manual';
 
 export interface HumanInterventionRequest {
   id: string;
@@ -15,9 +15,9 @@ export interface HumanInterventionRequest {
   message: string;
   url: string | null;
   createdAt: number;
-  /** true 时前端渲染「确认提交/拒绝」双按钮，resolve 带 result；缺省走「完成后继续」单分支，广播结构向后兼容 */
+  /** true 时前端渲染「确认执行/拒绝/已手动操作」三按钮，resolve 带 result；缺省走「完成后继续」单分支，广播结构向后兼容 */
   confirmMode?: boolean;
-  /** 用户双分支处理结果（确认/拒绝）；「完成后继续」单按钮与 auto 解除不填 */
+  /** 用户处理结果（确认/拒绝/已手动操作）；「完成后继续」单按钮与 auto 解除不填 */
   result?: InterventionResult;
 }
 
@@ -48,8 +48,14 @@ function broadcast(): void {
   broadcaster?.(listPendingHumanInterventions());
 }
 
+const RESULT_NOTES: Record<InterventionResult, string> = {
+  approved: '已确认',
+  denied: '已拒绝',
+  manual: '已手动操作',
+};
+
 function record(action: 'raised' | 'resolved', request: PendingIntervention | null, result?: InterventionResult): void {
-  const resultNote = result ? (result === 'approved' ? '已确认' : '已拒绝') : '';
+  const resultNote = result ? RESULT_NOTES[result] : '';
   recordBrowserAction({
     source: 'human_intervention',
     taskMeta: request?.taskMeta ?? { kind: 'agent' },
@@ -113,6 +119,10 @@ export function waitForInterventionResult(id: string, timeoutMs: number): Promis
         if (set.size === 0) waitersById.delete(id);
       }
       resolve(outcome);
+      // 超时收口：工具侧不再等待但卡片还在时自动解除（广播 → 弹窗收起）；有并发 waiter 时不吞别人的等待
+      if (outcome === 'timeout' && pendingById.has(id) && !waitersById.has(id)) {
+        resolveHumanIntervention(id, 'auto');
+      }
     };
     const waiter: InterventionWaiter = settle;
     const timer = setTimeout(() => settle('timeout'), timeoutMs);

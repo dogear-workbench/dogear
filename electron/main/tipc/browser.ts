@@ -45,6 +45,7 @@ import {
   unregisterNmHost as unregisterNmHostService,
 } from '../services/browser/nm-host-register.js';
 import { setBrowserToolsActionListener, type BrowserToolsActionEvent } from '../agents/tools/browser-tool-shared.js';
+import { getMainWindow } from '../window-factories.js';
 import { getPiSessionManager } from '../agents/pi-session/pi-session-manager.js';
 
 const t = tipc.create();
@@ -69,6 +70,7 @@ export function registerBrowserActionBridge(): void {
   });
   setHumanInterventionBroadcaster((pending) => {
     broadcastToWindows((h) => h.humanInterventionChanged.send({ pending }));
+    focusMainWindowOnNewIntervention(pending);
   });
   getEmbeddedBrowserManager().setTakeoverChangeListener(() => {
     broadcastToWindows((h) => h.tabTakeoverChanged.send({ takeovers: getEmbeddedBrowserManager().listTakeovers() }));
@@ -107,6 +109,24 @@ export function registerExtensionHandoffBridge(): void {
 function windowFromContext(sender: Electron.WebContents): BrowserWindow | null {
   const win = BrowserWindow.fromWebContents(sender);
   return win && !win.isDestroyed() ? win : null;
+}
+
+let lastPendingInterventionIds = new Set<string>();
+
+/** 新人工等待出现时把主窗口置前抢焦点（刷新已有卡片不算新）；置前失败不影响广播链路 */
+function focusMainWindowOnNewIntervention(pending: { id: string }[]): void {
+  const hasNew = pending.some((p) => !lastPendingInterventionIds.has(p.id));
+  lastPendingInterventionIds = new Set(pending.map((p) => p.id));
+  if (!hasNew) return;
+  try {
+    const win = getMainWindow();
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  } catch {
+    // 窗口异常静默降级
+  }
 }
 
 /** 唤醒链路唯一入口：services 层不 import agents，等待人工解除与接管交还都走这里 */

@@ -62,6 +62,10 @@ export function setMainWindow(win: BrowserWindowType | null): void {
   mainWindow = win;
 }
 
+export function getMainWindow(): BrowserWindowType | null {
+  return mainWindow;
+}
+
 // 自选股窗口实例
 let stockWindow: BrowserWindowType | null = null;
 
