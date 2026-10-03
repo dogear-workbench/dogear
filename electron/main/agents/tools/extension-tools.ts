@@ -33,6 +33,7 @@ import { parseArticleHtml } from '../../services/article/parse.js';
 import { mainLogger } from '../../agents/logger.js';
 
 const submitLogger = mainLogger.child('extension-submit');
+const policyLogger = mainLogger.child('extension-policy');
 import { createSiteToolDefs, siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
 import { createExtensionTabToolDefs } from './extension-tab-tools.js';
 import {
@@ -42,6 +43,8 @@ import {
   currentUrl,
   emitAction,
   isErrorResult,
+  markActionDone,
+  paceActionGate,
   runCommand,
   textResult,
   type ActionExtra,
@@ -155,8 +158,12 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           return isErrorResult(paymentBlockedMessage());
         }
         const taskMeta = meta();
+        await paceActionGate(conversationId);
         const gate = await navigateGate(conversationId, args.url);
         if ('blocked' in gate) {
+          if (gate.reason === 'budget') {
+            policyLogger.warn(`navigate 搜索预算拒绝: conv=${conversationId ?? '__adhoc__'} url=${args.url}`);
+          }
           emitAction(taskMeta, 'navigate', {
             url: currentUrl(),
             detail: args.url,
@@ -174,6 +181,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
             pageState: typeof d.pageState === 'string' ? d.pageState : undefined,
           };
         });
+        markActionDone(conversationId);
         if (!r.ok) {
           emitAction(taskMeta, 'navigate', {
             url: urlBefore,
@@ -363,10 +371,12 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'risk_blocked' });
           return isErrorResult(gate.blocked);
         }
+        await paceActionGate(conversationId);
         const executeClick = (confirmed: boolean) =>
           runCommand('click', confirmed ? { ref: args.ref, confirmed: true } : { ref: args.ref }, (data) => (data ?? {}) as ClickPayload);
         const startedAt = Date.now();
         const r = await executeClick(false);
+        markActionDone(conversationId);
         if (!r.ok) {
           if (r.errorCode === 'guard_submit') {
             const status = getExtensionStatus();
@@ -398,6 +408,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
               return isErrorResult('等待确认期间页面状态已变化，提交未执行。请重新 observe_page 确认页面后再试');
             }
             const r2 = await executeClick(true);
+            markActionDone(conversationId);
             submitLogger.warn(`确认后提交执行: ok=${r2.ok} errorCode=${r2.ok ? '-' : r2.errorCode ?? '-'} ref=${args.ref}`);
             if (!r2.ok) {
               emitAction(taskMeta, 'click', {
@@ -460,8 +471,10 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
           emitAction(taskMeta, 'fill', { url: pageUrl, detail: args.ref, result: 'risk_blocked' });
           return isErrorResult(gate.blocked);
         }
+        await paceActionGate(conversationId);
         const startedAt = Date.now();
         const r = await runCommand('fill', { ref: args.ref, value: args.value }, () => undefined);
+        markActionDone(conversationId);
         if (!r.ok) {
           emitAction(taskMeta, 'fill', {
             url: pageUrl,
@@ -514,6 +527,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         if (countAsNote && gate.ctx) {
           const budgetMessage = checkNoteBudget(conversationId, gate.ctx.policy);
           if (budgetMessage) {
+            policyLogger.warn(`read_text 笔记预算拒绝: conv=${conversationId ?? '__adhoc__'} url=${pageUrl ?? ''}`);
             emitAction(taskMeta, 'read_text', { url: pageUrl, detail, result: 'budget_exceeded' });
             return isErrorResult(budgetMessage);
           }
@@ -583,6 +597,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         if (gate.ctx && isNewPageUrl) {
           const budgetMessage = checkNoteBudget(conversationId, gate.ctx.policy);
           if (budgetMessage) {
+            policyLogger.warn(`read_state 笔记预算拒绝: conv=${conversationId ?? '__adhoc__'} url=${pageUrl ?? ''}`);
             emitAction(taskMeta, 'read_state', { url: pageUrl, detail, result: 'budget_exceeded' });
             return isErrorResult(budgetMessage);
           }
@@ -822,6 +837,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         if (gate.ctx) {
           const budgetMessage = checkNoteBudget(conversationId, gate.ctx.policy);
           if (budgetMessage) {
+            policyLogger.warn(`readArticle 笔记预算拒绝: conv=${conversationId ?? '__adhoc__'} url=${pageUrl ?? ''}`);
             emitAction(taskMeta, 'parse', { url: pageUrl, detail, result: 'budget_exceeded' });
             return isErrorResult(budgetMessage);
           }

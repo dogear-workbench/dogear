@@ -11,6 +11,8 @@ import {
   sendExtensionCommand,
   type CommandError,
 } from '../../services/browser/browser-gateway.js';
+import { mainLogger } from '../../agents/logger.js';
+import { MIN_ACTION_INTERVAL_MS, sleep } from '../../services/browser/site-policy.js';
 import { recordBrowserAction } from '../../services/browser/browser-action-stream.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import type { BrowserTaskMeta } from '../../services/browser/browser-task-meta.js';
@@ -41,6 +43,7 @@ export const SHARED_SCOPE_NOTE =
   '作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道），导航不受域名限制，支付与网银域名一律禁用；' +
   'open_tab 开新页即成操作焦点，close_tab 仅能关组内标签页，页面操作只作用于焦点标签页；' +
   '点击/填充自动执行，提交类点击需用户在确认卡上确认后才会执行。' +
+  `navigate/click/fill 之间有节奏保护（最小间隔 ${MIN_ACTION_INTERVAL_MS / 1000} 秒，间隔不足时系统自动等待，回包稍慢属正常，不要重试）；` +
   '扩展通道同一时间仅一个会话可用，被其他会话占用时会直接报错（不排队）。' +
   '用户浏览器已连接且目标站需登录态时优先本工具组，公开网页读取用 dogear__browser__*。';
 
@@ -115,6 +118,29 @@ export function busyChannelMessage(idleMs: number): string {
 function isEmptyGroup(): boolean {
   const status = getExtensionStatus();
   return status.status === 'connected' && status.tabId === NO_FOCUS_TAB_ID;
+}
+
+const paceLogger = mainLogger.child('extension-pace');
+const lastActionAtByConv = new Map<string, number>();
+
+function paceKey(conversationId: string | undefined): string {
+  return conversationId ?? '__adhoc__';
+}
+
+/** 距上次扩展写操作不足最小间隔时补齐等待（对齐策略站点 delayMs 的「自动等待」语义，不报错） */
+export async function paceActionGate(conversationId: string | undefined): Promise<void> {
+  const key = paceKey(conversationId);
+  const last = lastActionAtByConv.get(key);
+  if (last === undefined) return;
+  const elapsed = Date.now() - last;
+  if (elapsed >= MIN_ACTION_INTERVAL_MS) return;
+  const waited = MIN_ACTION_INTERVAL_MS - elapsed;
+  paceLogger.warn(`操作节奏限制: conv=${key} 等待=${waited}ms 间隔下限=${MIN_ACTION_INTERVAL_MS}ms`);
+  await sleep(waited);
+}
+
+export function markActionDone(conversationId: string | undefined): void {
+  lastActionAtByConv.set(paceKey(conversationId), Date.now());
 }
 
 export async function runCommand<T>(

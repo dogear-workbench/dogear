@@ -8,9 +8,17 @@
 
 import { z } from 'zod';
 import { getExtensionStatus, validateNavigateTarget } from '../../services/browser/browser-gateway.js';
+import { mainLogger } from '../../agents/logger.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import { NO_FOCUS_TAB_ID } from '../../services/browser/gateway-tab-state.js';
-import { consumeSearch, isPaymentBlocked, navigateGate, paymentBlockedMessage } from '../../services/browser/site-policy.js';
+import {
+  MAX_TABS_PER_SESSION,
+  consumeSearch,
+  isPaymentBlocked,
+  navigateGate,
+  paymentBlockedMessage,
+  tabLimitReachedMessage,
+} from '../../services/browser/site-policy.js';
 import {
   EMPTY_GROUP_MESSAGE,
   ERROR_MESSAGES,
@@ -91,6 +99,7 @@ function parseListTabsPayload(data: unknown): TabListItem[] {
 export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[] {
   const { conversationId, acquireGate, isErrorResult, textResult, emitAction, scopeNote } = deps;
   const taskMeta = () => buildTaskMeta(conversationId);
+  const logger = mainLogger.child('extension-tab-tools');
 
   return [
     defineTool(
@@ -98,6 +107,7 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
       '在用户浏览器新开标签页并设为操作焦点',
       `${scopeNote}\n` +
         '在用户浏览器新开标签页打开目标 URL（加入 Dogear 分组），导航不受域名限制（支付与网银域名禁用）；打开后即成为操作焦点。' +
+        `单会话最多同时持有 ${MAX_TABS_PER_SESSION} 个标签页，超限时调用会被拒绝，需先 close_tab 释放。` +
         'background=true 时在后台打开（不抢占用户正在看的页面），但仍成为操作焦点。' +
         '受节奏保护的站点（如小红书）打开前会自动等待随机时长，搜索类 URL 另计会话搜索预算（超限拒绝）。' +
         '后续 observe_page / click / fill / read_* 等页面操作都作用于焦点标签页。',
@@ -118,6 +128,12 @@ export function createExtensionTabToolDefs(deps: ExtensionTabToolDeps): ToolDef[
         const precheck = validateNavigateTarget(args.url);
         if (precheck) {
           return isErrorResult(commandErrorMessage(precheck));
+        }
+        const openTabCount = status.tabs.length;
+        if (openTabCount >= MAX_TABS_PER_SESSION) {
+          logger.warn(`open_tab 触发标签页上限: conv=${conversationId ?? '__adhoc__'} 当前=${openTabCount}/${MAX_TABS_PER_SESSION} url=${args.url}`);
+          emitAction('open_tab', { detail: args.url, result: 'tab_limit' });
+          return isErrorResult(tabLimitReachedMessage(openTabCount));
         }
         const gate = await navigateGate(conversationId, args.url);
         if ('blocked' in gate) {
