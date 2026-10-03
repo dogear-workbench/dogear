@@ -24,7 +24,7 @@ import { getNotificationCenterService } from './notification-center-service.js';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import * as taskService from './task-service.js';
 import type { Task } from './task-service.js';
-import { buildExecutionPrompt } from './task-execution-prompt.js';
+import { buildExecutionPrompt, type ExecProfile } from './task-execution-prompt.js';
 
 const log = mainLogger.child('task-queue');
 
@@ -32,8 +32,11 @@ const EXEC_IDLE_TIMEOUT_MS = 2 * 60 * 60_000;
 
 const FORCE_RELEASE_DELAY_MS = 60_000;
 
-// code-impl 执行会话权威 skill 清单（走 skillsOverride 绕过工作区 enabledSkills 与包总闸）
-const CODE_IMPL_SKILLS = ['staged-execution'];
+// 执行会话 skill 按任务类型查表恒传（skillsOverride 绕过工作区 enabledSkills 与包总闸）：default 空清单=基础版，code-impl 挂分步实施
+const EXEC_PROFILE_SKILLS: Record<ExecProfile, readonly string[]> = {
+  'code-impl': ['staged-execution'],
+  default: [],
+};
 
 // 会话索引存在跨进程并发写窗口（旧快照短暂覆盖/读失败静默返空），origin 瞬时缺失重试可自愈，避免误拒
 const ORIGIN_RETRY_DELAYS_MS = [1_000, 5_000, 15_000];
@@ -224,7 +227,7 @@ class TaskQueueExecutor {
     let attachment: Awaited<ReturnType<typeof conversationRuntimeService.attachConversation>>;
     try {
       attachment = await conversationRuntimeService.attachConversation(execId, origin.workspaceId, 'desktop', {
-        skillsOverride: task.execProfile === 'code-impl' ? CODE_IMPL_SKILLS : undefined,
+        skillsOverride: EXEC_PROFILE_SKILLS[task.execProfile ?? 'default'],
       });
     } catch (err) {
       await this.safeInterrupt(ctx, `拉起执行会话失败: ${errorMessage(err)}`);
@@ -296,13 +299,13 @@ class TaskQueueExecutor {
     session.once('complete', onComplete);
     session.on('message', onMessage);
     try {
-      // 存量任务无 execProfile 字段等价 default，不挂载专项 skill
+      // default 基础版：空清单，与工作区/场景 skill 配置解耦（空清单经 mountedSkills?.length 判断自然无挂载行）
       const sendPromise = session.sendMessage(
         buildExecutionPrompt({
           title: task.title,
           id: task.id,
           planPath,
-          mountedSkills: task.execProfile === 'code-impl' ? CODE_IMPL_SKILLS : undefined,
+          mountedSkills: EXEC_PROFILE_SKILLS[task.execProfile ?? 'default'],
         }),
         { injectionTag: 'task-execution' },
       );

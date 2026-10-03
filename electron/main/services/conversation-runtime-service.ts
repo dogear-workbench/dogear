@@ -48,8 +48,8 @@ type AttachmentMeta = {
 
 type AttachConversationOptions = {
   webContentsId?: number;
-  /** 明确装载的 skill 全集（executor 场景按 execProfile 传入）；undefined = 不覆盖，跟随工作区 enabledSkills */
-  skillsOverride?: string[];
+  /** 明确装载的 skill 全集：执行会话按任务类型恒传查表清单（default 空清单=基础版）；undefined = 不覆盖跟随工作区 enabledSkills，保留给非执行场景 */
+  skillsOverride?: readonly string[];
 };
 
 class ConversationRuntimeService {

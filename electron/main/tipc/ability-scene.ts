@@ -626,10 +626,10 @@ export async function buildSceneOverview(
       id: 'executor',
       label: '任务执行会话',
       kind: 'matrix',
-      description: '固定层预设跟工作区走。代码实施任务自动挂分步实施 skill，其余任务用默认配置。',
+      description: '固定层预设跟工作区走。扩展层 skill 与工作区/场景配置解耦：default 任务按基础版执行（不挂 skill），代码实施任务自动挂分步实施 skill。',
       packs: [],
       prompts: EXECUTOR_PROMPTS,
-      extensionNote: '代码实施任务自动挂分步实施 skill（staged-execution），其余任务用默认配置',
+      extensionNote: 'skill 按任务类型查表：default 基础版零 skill，代码实施自动挂分步实施 skill（staged-execution），与工作区/场景 skill 配置解耦',
     },
     {
       id: 'scheduler-custom',

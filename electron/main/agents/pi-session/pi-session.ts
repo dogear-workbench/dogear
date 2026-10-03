@@ -441,7 +441,7 @@ export class PiSession extends EventEmitter {
     const passWorkspaceFilter = (e: SkillEntry): boolean =>
       enabledSkillsSet.has(e.name) && !disabledPackSkills.has(e.name);
 
-    // skillsOverride 是权威清单，绕过工作区 enabledSkills 与包总开关两层闸：code-impl 挂 staged-execution 不依赖工作区 code-workflow 开关
+    // skillsOverride 是权威清单，绕过工作区 enabledSkills 与包总开关两层闸：执行会话按任务类型恒传查表清单（default 空清单=基础版）；undefined=跟随工作区，保留给非执行场景
     const skillsOverrideSet = this.config.skillsOverride && !isSubAgent
       ? new Set(this.config.skillsOverride)
       : null;

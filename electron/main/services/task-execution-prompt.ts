@@ -6,7 +6,7 @@ export interface ExecutionPromptInput {
   id: string;
   planPath: string;
   /** 任务挂载的专项 skill 名单；非空时追加提示行，语境差异由 skill 全文承载而非模板分支 */
-  mountedSkills?: string[];
+  mountedSkills?: readonly string[];
 }
 
 export function buildExecutionPrompt(task: ExecutionPromptInput): string {
