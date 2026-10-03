@@ -10,6 +10,7 @@ import { showConfirm } from '@/stores/confirm-store';
 import { useGitHistoryStore } from '@/stores/git-history-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { FileHistoryEntry } from '@/types/electron-api';
+import type { SnapshotProtectionReason } from '@/electron/main/services/git-service/shadow-protection';
 import { buildHunks, diffLines, type DiffRow, type DiffStats } from '@/lib/line-diff';
 import { HistoryDiffView } from './file-history/HistoryDiffView';
 
@@ -20,6 +21,17 @@ type DiffState =
   | { kind: 'too-large' }
   | { kind: 'error'; message: string }
   | { kind: 'ok'; rows: DiffRow[]; stats: DiffStats };
+
+type EmptyState =
+  | { kind: 'default' }
+  | { kind: 'never-edited' }
+  | { kind: 'unprotected'; reason: string };
+
+const PROTECTION_REASON_TEXT: Record<SnapshotProtectionReason, string> = {
+  size: '文件大小超过快照上限',
+  excluded: '文件位于排除目录，不参与快照',
+  disabled: '该工作区已关闭自动快照',
+};
 
 const SOURCE_BADGES: Record<string, { label: string; className: string }> = {
   'agent-write': { label: 'Agent', className: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
@@ -67,9 +79,22 @@ export function FileHistoryPanel() {
   const [entries, setEntries] = useState<FileHistoryEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emptyState, setEmptyState] = useState<EmptyState>({ kind: 'default' });
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [diff, setDiff] = useState<DiffState>({ kind: 'idle' });
   const [restoring, setRestoring] = useState(false);
+
+  const loadEmptyState = useCallback(async (workspaceId: string, relPath: string): Promise<EmptyState> => {
+    try {
+      const protection = await client.getSnapshotProtection({ workspaceId, relPath });
+      if ('error' in protection) return { kind: 'default' };
+      if (protection.protected) return { kind: 'never-edited' };
+      if (!protection.reason) return { kind: 'default' };
+      return { kind: 'unprotected', reason: PROTECTION_REASON_TEXT[protection.reason] };
+    } catch {
+      return { kind: 'default' };
+    }
+  }, []);
 
   const loadHistory = useCallback(async () => {
     const ws = useWorkspaceStore.getState().workspace;
@@ -77,6 +102,7 @@ export function FileHistoryPanel() {
     if (!ws || !t) return;
     setLoading(true);
     setError(null);
+    setEmptyState({ kind: 'default' });
     try {
       const res = await client.getFileHistory({ workspaceId: ws.id, relPath: t.path });
       if ('error' in res) {
@@ -85,13 +111,14 @@ export function FileHistoryPanel() {
         return;
       }
       setEntries(res.history);
+      setEmptyState(res.history.length === 0 ? await loadEmptyState(ws.id, t.path) : { kind: 'default' });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setEntries([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadEmptyState]);
 
   useEffect(() => {
     if (!open) return;
@@ -206,7 +233,14 @@ export function FileHistoryPanel() {
               )}
               {!loading && !error && entries.length === 0 && (
                 <div className="px-3 py-10 text-center text-sm text-muted-foreground">
-                  暂无历史记录
+                  {emptyState.kind === 'never-edited' && '该文件从未被编辑过'}
+                  {emptyState.kind === 'unprotected' && (
+                    <>
+                      <div>该文件未受快照保护</div>
+                      <div className="mt-1 text-xs text-muted-foreground/70">{emptyState.reason}</div>
+                    </>
+                  )}
+                  {emptyState.kind === 'default' && '暂无历史记录'}
                 </div>
               )}
               {!loading && !error && entries.map((e, idx) => {

@@ -33,6 +33,19 @@ export const gitRouter = {
       }
     }),
 
+  // 文件历史面板空态用：该文件按当前配置是否受快照保护（静态判定，不查 git）
+  getSnapshotProtection: t.procedure
+    .input<{ workspaceId: string; relPath: string }>()
+    .action(async ({ input }): Promise<gitService.SnapshotProtection | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        return await gitService.getSnapshotProtection(workspace.id, workspace.path, input.relPath);
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
   restoreSnapshot: t.procedure
     .input<{ workspaceId: string; ref: string; relPath?: string }>()
     .action(async ({ input }) => {

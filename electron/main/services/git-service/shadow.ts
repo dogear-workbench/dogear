@@ -7,8 +7,12 @@ import fs from 'fs/promises';
 import type { Dirent } from 'fs';
 import path from 'path';
 import { getConfigDir, loadSettings, SNAPSHOT_SETTING_DEFAULTS } from '../settings-service.js';
+import { resolveAndValidate } from '../workspace-fs-service.js';
 import { execGit, execGitCode, execGitInput, hasGit, assertSafeRef, workspaceGitPath, toGitPath, GitServiceError } from './exec.js';
+import { judgeSnapshotProtection, type SnapshotProtection } from './shadow-protection.js';
 import { maybePruneSnapshotHistory, LOG_RECORD_SEP, LOG_FIELD_SEP } from './shadow-prune.js';
+
+export type { SnapshotProtection, SnapshotProtectionReason } from './shadow-protection.js';
 
 function gitMissingError(): GitServiceError {
   return new GitServiceError('git-missing', '系统未安装 git，快照功能不可用');
@@ -69,6 +73,21 @@ export async function getShadowRepoSizeBytes(workspaceId: string): Promise<numbe
   };
   await walk(shadowGitDir(workspaceId));
   return total;
+}
+
+/** 文件历史面板空态用：该文件按当前配置是否受快照保护；文件不存在/非普通文件不算超限（防御，不查 git） */
+export async function getSnapshotProtection(
+  workspaceId: string,
+  workspacePath: string,
+  relPath: string,
+): Promise<SnapshotProtection> {
+  const settings = (await loadSettings()).snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
+  const abs = resolveAndValidate(workspacePath, relPath);
+  const rel = toGitPath(path.relative(workspacePath, abs)) || '.';
+  let fileSizeBytes: number | null = null;
+  const st = await fs.stat(abs).catch(() => null);
+  if (st?.isFile()) fileSizeBytes = st.size;
+  return judgeSnapshotProtection(workspaceId, rel, settings, fileSizeBytes);
 }
 
 /** 设置页快照状态卡用：rev-list --count + log -1 快速取条数与最近时间，不动完整历史 */

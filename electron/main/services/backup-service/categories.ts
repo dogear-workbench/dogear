@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { getConfigDir } from '../settings-service.js';
+import * as workspaceJsonService from '../workspace-json-service.js';
 import {
   assertRegistryScope,
   BACKUP_CATEGORY_KEYS,
@@ -62,11 +63,16 @@ export function isWorkspaceScope(scope: BackupScope): boolean {
   return scope !== GLOBAL_SCOPE;
 }
 
+// 只备份 workspaces.json 注册过的工作区目录（personal 等未注册目录不在备份范围）
 export async function listWorkspaceIds(): Promise<string[]> {
   const dir = path.join(getConfigDir(), 'workspaces');
   try {
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    return entries.filter((e) => e.isDirectory()).map((e) => e.name);
+    const [entries, registered] = await Promise.all([
+      fs.readdir(dir, { withFileTypes: true }),
+      workspaceJsonService.getAll(),
+    ]);
+    const ids = new Set(registered.map((w) => w.id));
+    return entries.filter((e) => e.isDirectory() && ids.has(e.name)).map((e) => e.name);
   } catch {
     return [];
   }
