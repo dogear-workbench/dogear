@@ -200,6 +200,7 @@ function executeScriptWithTimeout(tabId, func, args, world) {
 }
 
 async function resolveLostClickResult(msg) {
+  let lastUrl = ''
   for (let attempt = 0; attempt < 4; attempt++) {
     let tabAfter
     try {
@@ -207,7 +208,8 @@ async function resolveLostClickResult(msg) {
     } catch {
       return { ok: false, errorCode: 'tab_closed', error: '标签页已关闭' }
     }
-    if (msg.url && tabAfter.url && !tabAfter.url.startsWith(msg.url)) {
+    lastUrl = tabAfter.url ?? ''
+    if (msg.url && tabAfter.url && tabAfter.url !== msg.url) {
       return { ok: true, data: { clicked: true, navigated: true, urlAfter: tabAfter.url, verification: 'lost' } }
     }
     await new Promise((resolve) => setTimeout(resolve, 250))
@@ -215,7 +217,8 @@ async function resolveLostClickResult(msg) {
   return {
     ok: false,
     errorCode: 'navigated_away',
-    error: '页面在命令执行期间发生变化，无法完成命令，请重新观察后再操作'
+    error: '点击已发出但页面地址未变化，无法确认点击是否生效，请重新观察后再操作',
+    ...(lastUrl ? { currentUrl: lastUrl } : {})
   }
 }
 

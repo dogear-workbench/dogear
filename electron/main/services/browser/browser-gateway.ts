@@ -46,6 +46,7 @@ export interface CommandError {
 
 interface PendingCommand {
   kind: CommandKind;
+  params: Record<string, unknown>;
   resolve: (result: CommandResult) => void;
   reject: (error: CommandError) => void;
   timer: NodeJS.Timeout;
@@ -238,8 +239,9 @@ function handleCommandResult(message: NmMessage): void {
   pendingCommands.delete(requestId);
   clearTimeout(pending.timer);
   if (pending.kind === 'click') {
+    const confirmed = pending.params.confirmed === true;
     logger.warn(
-      `click 命令结果: ok=${message.ok === true} errorCode=${typeof message.errorCode === 'string' ? message.errorCode : '-'} confirmed=${(message.data as { confirmed?: unknown } | undefined)?.confirmed === true}`,
+      `click 命令结果: ok=${message.ok === true} errorCode=${typeof message.errorCode === 'string' ? message.errorCode : '-'} confirmed=${confirmed}`,
     );
   }
   if (message.ok === true) {
@@ -366,7 +368,7 @@ export function sendExtensionCommand(
       pendingCommands.delete(requestId);
       reject({ errorCode: 'timeout', error: '命令执行超时' } satisfies CommandError);
     }, timeoutMs);
-    pendingCommands.set(requestId, { kind, resolve, reject, timer });
+    pendingCommands.set(requestId, { kind, params, resolve, reject, timer });
     safeWrite(socket, { type: 'command', requestId, tabId: targetTabId, url: targetUrl, kind, params });
   });
 }
