@@ -170,7 +170,7 @@ export function buildMainAgentToolDefs(
 
   // extension 并入 browser 包：注册只看 browser 包总开关，enabledToolPacks 残留 extension 静默忽略
   if (activeAbilities.has('browser')) {
-    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId })));
+    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath })));
   }
 
   if (config.groupId && activeAbilities.has('group-context')) {
@@ -295,7 +295,7 @@ export function buildSubAgentToolDefs(
 
   // extension：并入 browser 包后是双闸——browser 包生效（Profile 子开关已并入 resolveAbilities）+ extension===true
   if (activeAbilities.has('browser') && ab.extension === true) {
-    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId })));
+    toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath })));
   }
 
   // web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）

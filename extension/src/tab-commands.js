@@ -28,7 +28,7 @@ export async function getDogearTabs() {
   return lists.flat()
 }
 
-async function isInDogearGroup(tab) {
+export async function isInDogearGroup(tab) {
   if (tab.groupId == null) return false
   const groups = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
   return groups.some((g) => g.id === tab.groupId)

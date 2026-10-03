@@ -10,6 +10,7 @@ import {
   getExtensionStatus,
   sendExtensionCommand,
   type CommandError,
+  type SendExtensionCommandOptions,
 } from '../../services/browser/browser-gateway.js';
 import { mainLogger } from '../../agents/logger.js';
 import { MIN_ACTION_INTERVAL_MS, sleep } from '../../services/browser/site-policy.js';
@@ -148,9 +149,10 @@ export async function runCommand<T>(
   params: Record<string, unknown>,
   extract: (data: unknown) => T,
   timeoutMs?: number,
+  opts?: SendExtensionCommandOptions,
 ): Promise<{ ok: true; value: T } | { ok: false; message: string; errorCode?: string; data?: unknown }> {
   try {
-    const result = await sendExtensionCommand(kind, params, timeoutMs);
+    const result = await sendExtensionCommand(kind, params, timeoutMs, opts);
     return { ok: true, value: extract(result.data) };
   } catch (err) {
     const e = (err ?? null) as Partial<CommandError> | null;

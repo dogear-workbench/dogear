@@ -2,7 +2,7 @@
  * 浏览器扩展 MCP Server 工具（页面操作组）
  *
  * 提供 dogear__extension__* 工具组：navigate / observe_page / find / click / fill / read_text / read_state /
- * scroll / wait_for / readArticle（本文件）+ tab 管理 open_tab / close_tab / list_tabs（extension-tab-tools.ts）+
+ * scroll / wait_for / readArticle / screenshot（本文件）+ tab 管理 open_tab / close_tab / list_tabs（extension-tab-tools.ts）+
  * site_knowledge / site_finding / site_policy（extension-site-tools.ts）。
  * 作用于用户真实浏览器 Dogear 分组内的标签页（经 NativeMessaging 通道 sendExtensionCommand），
  * 导航不受域名限制（支付与网银域名禁用）；点击/填充自动执行但拦截提交类操作（扩展侧 guard 硬护栏）。
@@ -11,6 +11,8 @@
  */
 
 import { z } from 'zod';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
 import { getExtensionStatus } from '../../services/browser/browser-gateway.js';
 import type { BrowserActionType } from '../../services/browser/browser-action-stream.js';
 import { acquireChannel, resetChannel } from '../../services/browser/extension-ownership.js';
@@ -38,6 +40,8 @@ const policyLogger = mainLogger.child('extension-policy');
 import { createSiteToolDefs, siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
 import { createExtensionTabToolDefs } from './extension-tab-tools.js';
 import {
+  EMPTY_GROUP_MESSAGE,
+  ERROR_MESSAGES,
   SHARED_SCOPE_NOTE,
   buildTaskMeta,
   busyChannelMessage,
@@ -50,6 +54,7 @@ import {
   textResult,
   type ActionExtra,
 } from './extension-command-shared.js';
+import { NO_FOCUS_TAB_ID } from '../../services/browser/gateway-tab-state.js';
 import {
   formatObserve,
   formatObserveElement,
@@ -76,6 +81,16 @@ const WAIT_FOR_CHANNEL_BUFFER_MS = 10_000;
 function reasonOf(data: unknown): string | null {
   const reason = (data as { reason?: unknown } | null | undefined)?.reason;
   return typeof reason === 'string' && reason ? reason : null;
+}
+
+interface CapturePayload {
+  dataUrl?: string;
+  url?: string;
+  title?: string;
+}
+
+function parseCapturePayload(data: unknown): CapturePayload {
+  return (data ?? {}) as CapturePayload;
 }
 
 function submitTargetOf(data: unknown): string {
@@ -123,8 +138,9 @@ function formatClick(ref: string, data: ClickPayload): string {
   return `已点击 ${ref}。验证：${changes.join('；')}`;
 }
 
-export function createExtensionToolDefs(opts?: { conversationId?: string }): ToolDef[] {
+export function createExtensionToolDefs(opts?: { conversationId?: string; workspacePath?: string }): ToolDef[] {
   const conversationId = opts?.conversationId;
+  const workspacePath = opts?.workspacePath;
   const meta = () => buildTaskMeta(conversationId);
   const emit = (action: BrowserActionType, extra?: ActionExtra): void => emitAction(meta(), action, extra);
 
@@ -914,6 +930,98 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
         const header =
           `📄 文章读取成功\n标题: ${parsed.title}\n作者: ${parsed.author || '未知'}\n来源: ${parsed.siteName || '未知'}\n最终 URL: ${articleUrl}\n字数: ${parsed.wordCount}`;
         return textResult(`${injectionWarningPrefix(scanInjection(parsed.content))}${header}\n\n--- 正文 ---\n\n${parsed.content}`);
+      },
+    ),
+
+    defineTool(
+      'dogear__extension__screenshot',
+      '截取用户浏览器页面截图',
+      `${SHARED_SCOPE_NOTE}\n` +
+        '对 Dogear 分组内标签页截取视口截图，保存为 PNG 并返回路径。查看图片：把返回的路径传给 read 工具即可（read 原生支持图片附件）。' +
+        '不传 tab_id 截当前操作焦点标签页；传 tab_id 可截分组内其他标签页（tabId 用 list_tabs 查询）。' +
+        '截取非激活标签页时会瞬时切到该标签页再切回，用户屏幕有短暂闪动，属正常现象不要重试。' +
+        '截图不产生页面网络请求，不计站点策略预算；浏览器内部页（chrome:// 等）无法截取。' +
+        '文件保存在工作区 .dogear/tmp/ 下，确认不再需要时可自行删除。',
+      z.object({
+        tab_id: z.number().int().optional().describe('要截取的标签页 tabId；不传则截当前焦点标签页'),
+      }),
+      async (args) => {
+        const status = getExtensionStatus();
+        if (status.status !== 'connected') {
+          return isErrorResult(ERROR_MESSAGES.not_connected);
+        }
+        if (args.tab_id === undefined && status.tabId === NO_FOCUS_TAB_ID) {
+          return isErrorResult(EMPTY_GROUP_MESSAGE);
+        }
+        let targetTabId = status.tabId;
+        let targetUrl: string | undefined = status.url;
+        if (args.tab_id !== undefined) {
+          const entry = status.tabs.find((t) => t.tabId === args.tab_id);
+          if (!entry) {
+            return isErrorResult(`tabId ${args.tab_id} 不在 Dogear 分组内，请先用 list_tabs 查询可用标签页`);
+          }
+          targetTabId = entry.tabId;
+          targetUrl = entry.url || undefined;
+        }
+        const busy = acquireGate('screenshot', `tabId ${targetTabId}`, targetUrl);
+        if (busy) return busy;
+        const taskMeta = meta();
+        if (!workspacePath) {
+          return isErrorResult('当前会话未关联工作区，无法提供 read 可读的截图路径');
+        }
+        const startedAt = Date.now();
+        const r = await runCommand(
+          'capture',
+          args.tab_id !== undefined ? { tabId: args.tab_id } : {},
+          parseCapturePayload,
+          undefined,
+          { tabId: targetTabId },
+        );
+        if (!r.ok) {
+          emitAction(taskMeta, 'screenshot', {
+            url: targetUrl,
+            detail: `tabId ${targetTabId}`,
+            result: 'error',
+            errorCode: r.errorCode,
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`截图失败：${r.message}`);
+        }
+        const v = r.value;
+        const base64 = v.dataUrl?.includes(',') ? v.dataUrl.slice(v.dataUrl.indexOf(',') + 1) : v.dataUrl;
+        if (!base64) {
+          emitAction(taskMeta, 'screenshot', {
+            url: v.url ?? targetUrl,
+            detail: `tabId ${targetTabId}`,
+            result: 'error',
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult('扩展未返回截图数据，请重试');
+        }
+        try {
+          const dir = path.join(workspacePath, '.dogear', 'tmp');
+          await fs.mkdir(dir, { recursive: true });
+          const file = path.join(dir, `dogear-extension-${Date.now()}.png`);
+          await fs.writeFile(file, Buffer.from(base64, 'base64'));
+          emitAction(taskMeta, 'screenshot', {
+            url: v.url ?? targetUrl,
+            detail: v.title ? `${v.title}（tabId ${targetTabId}）` : `tabId ${targetTabId}`,
+            result: file,
+            durationMs: Date.now() - startedAt,
+          });
+          const titleNote = v.title ? `\n标题: ${v.title}` : '';
+          return textResult(
+            `截图已保存: ${file}\n页面: ${v.url ?? targetUrl ?? ''}${titleNote}\n用 read 工具读取该路径即可查看图片。`,
+          );
+        } catch (err) {
+          emitAction(taskMeta, 'screenshot', {
+            url: v.url ?? targetUrl,
+            detail: `tabId ${targetTabId}`,
+            result: 'error',
+            durationMs: Date.now() - startedAt,
+          });
+          return isErrorResult(`截图保存失败：${err instanceof Error ? err.message : String(err)}`);
+        }
       },
     ),
 

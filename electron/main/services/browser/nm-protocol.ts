@@ -28,7 +28,8 @@ export type CommandKind =
   | 'close_tab'
   | 'list_tabs'
   | 'wait_for'
-  | 'readArticle';
+  | 'readArticle'
+  | 'capture';
 
 export type CommandErrorCode =
   | 'not_connected'
@@ -101,6 +102,11 @@ export interface WaitForCommandParams {
 
 export interface ReadArticleCommandParams {
   selector?: string;
+}
+
+export interface CaptureCommandParams {
+  /** 缺省截帧内 tabId（焦点 tab）；扩展侧只截 Dogear 分组内 tab */
+  tabId?: number;
 }
 
 export interface TabSnapshotMessage {

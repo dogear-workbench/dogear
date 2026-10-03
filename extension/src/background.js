@@ -1,5 +1,5 @@
 import { extractTabSnapshot, extractArticleHtml } from './content-extract.js'
-import { handleTabCommand, getDogearTabs } from './tab-commands.js'
+import { handleTabCommand, getDogearTabs, isInDogearGroup } from './tab-commands.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
 import { waitFn } from './wait-actions.js'
 import { snapshotGroupTabIds, detectNewGroupTab } from './click-watch.js'
@@ -176,6 +176,65 @@ const COMMAND_FUNCS = {
   readArticle: extractArticleHtml
 }
 
+// captureVisibleTab 只能截当前激活 tab；切走再切回后需留出合成器重绘时间，否则截到旧帧
+const CAPTURE_SWITCH_SETTLE_MS = 150
+
+async function captureTabView(tabId) {
+  let tab
+  try {
+    tab = await chrome.tabs.get(tabId)
+  } catch {
+    return { errorCode: 'tab_closed', error: '目标标签页不存在或已关闭' }
+  }
+  if (!/^https?:/.test(tab.url ?? '')) {
+    return { errorCode: 'permission_denied', error: `无法截取浏览器内部页（${tab.url ?? '未知地址'}），仅支持 http/https 页面` }
+  }
+  if (!(await isInDogearGroup(tab))) {
+    return { errorCode: 'permission_denied', error: '仅能截取 Dogear 分组内的标签页（tabId 用 list_tabs 查询）' }
+  }
+  const [prevActive] = await chrome.tabs.query({ active: true, windowId: tab.windowId })
+  const windowBefore = await chrome.windows.get(tab.windowId)
+  const wasActive = prevActive?.id === tabId
+  const wasFocused = windowBefore.focused === true
+  let prevFocusedWindowId = null
+  if (!wasFocused) {
+    const lastFocused = await chrome.windows.getLastFocused()
+    prevFocusedWindowId = typeof lastFocused?.id === 'number' ? lastFocused.id : null
+    await chrome.windows.update(tab.windowId, { focused: true })
+  }
+  try {
+    if (!wasActive) {
+      await chrome.tabs.update(tabId, { active: true })
+      await new Promise((resolve) => setTimeout(resolve, CAPTURE_SWITCH_SETTLE_MS))
+    }
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, { format: 'png' })
+    return { dataUrl, url: tab.url ?? '', title: tab.title ?? '' }
+  } catch (err) {
+    return { errorCode: 'permission_denied', error: `截图失败：${String(err?.message ?? err)}` }
+  } finally {
+    try {
+      if (!wasActive && prevActive?.id != null) await chrome.tabs.update(prevActive.id, { active: true })
+      if (!wasFocused && prevFocusedWindowId != null) await chrome.windows.update(prevFocusedWindowId, { focused: true })
+    } catch {
+    }
+  }
+}
+
+async function handleCapture(msg) {
+  const requested = (msg.params || {}).tabId
+  const targetTabId = typeof requested === 'number' ? requested : msg.tabId
+  if (typeof targetTabId !== 'number' || targetTabId === NO_FOCUS_TAB_ID) {
+    fail(msg, 'stale_tab', '当前没有受控标签页，请先连接或 open_tab')
+    return
+  }
+  const result = await captureTabView(targetTabId)
+  if (result.errorCode) {
+    fail(msg, result.errorCode, result.error)
+    return
+  }
+  postResult(msg, { ok: true, data: result })
+}
+
 function postResult(msg, payload) {
   if (!port) return
   try {
@@ -244,6 +303,10 @@ async function handleCommand(msg) {
     if (await handleTabCommand(msg, TAB_COMMAND_CTX)) return
   } catch (err) {
     fail(msg, 'timeout', `tab 命令执行异常：${String(err?.message ?? err)}`)
+    return
+  }
+  if (msg.kind === 'capture') {
+    await handleCapture(msg)
     return
   }
   if (state.tabId == null || msg.tabId !== state.tabId) {
