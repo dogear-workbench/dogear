@@ -15,7 +15,7 @@
 - [x] [Step 1: 确认弹窗与三按钮 outcome](./step1-confirm-dialog.md) — 模态弹窗 + 主窗口置前 + manual outcome + 超时清 pending
 - [x] [Step 2: 授权机制退役](./step2-auth-teardown.md) — 三处校验退役 + 授权 UI/存储清理 + permission_state 停发 + 扩展 0.4.0
 - [x] [Step 3: 支付黑名单 settings 化](./step3-payment-settings.md) — settings 用户列表与默认并集 + 设置页编辑区
-- [ ] [Step 4: 真机验证](./step4-manual-verify.md) — 弹窗三按钮/超时收口/授权放开/黑名单拦截全清单
+- [x] [Step 4: 真机验证](./step4-manual-verify.md) — 弹窗三按钮/超时收口/授权放开/黑名单拦截全清单（14/15 通过，A6 可选未测、B3 待用户勾选；2026-10-03 验证报告见共享区 reports/）
 
 ## 全局决策
 
