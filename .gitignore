@@ -20,6 +20,7 @@ node_modules/.vite
 # production
 /dist
 /release
+/release2
 
 # build 目录：保留配置文件，忽略离线安装包
 build/installers/
