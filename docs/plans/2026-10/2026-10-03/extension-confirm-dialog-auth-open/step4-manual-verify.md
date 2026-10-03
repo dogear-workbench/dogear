@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 真机验证
-status: pending
+status: in_progress
 ---
 
 ## 目标
@@ -11,7 +11,9 @@ status: pending
 ## 依赖上下文（接力棒输入）
 
 - 前置：step1-3 全部完成并 build；发布链路：`bun run release`（主进程/渲染层改动 → full 全量）+ `bun run serve-updates` + 用户应用内更新；扩展 `chrome://extensions` 重载（版本应显示 0.4.0）
-- 验证纪律（P1 验证教训）：更新后先 `grep -c` 安装版 app.asar 关键标识符确认改动真的送达再开测；agent 侧验证派子会话走扩展通道，用户侧观察弹窗与浏览器
+- **发布链路已就绪（2026-10-03 执行会话完成）**：0.1.172 full 包已产出并分发到 update-server/，serve-updates 已在 9527 端口运行；产物自检通过（asar 含 focusMainWindowOnNewIntervention/已手动操作/setPaymentBlockedHosts/导航不受域名限制，applyPermissionState=0；渲染层含提交需确认弹窗与支付黑名单设置区）
+- **绕锁发布说明**：release/win-unpacked/resources/app.asar 被运行中的 Dogear 主进程锁定（rm/rename 均被拒），electron-builder 改输出到 release2/ 完成0.1.172打包，分发段按 release.mjs 逐行复刻（manifest/latest.yml/blockmap/.release-state.json 均已写）；**用户重启应用后可删除残留的 release/win-unpacked 与 release2/**，之后 `bun run release` 恢复正常
+- 验证纪律（P1 验证教训）：更新后先 `grep -c` 安装版 app.asar 关键标识符确认改动真的送达再开测（本次已在 release2 产物自检完成，更新后可复验安装版）；agent 侧验证派子会话走扩展通道，用户侧观察弹窗与浏览器
 - 审计日志可观测：`人工等待上报` / `确认操作到达主进程` / `人工等待解除` / `click 命令结果` / `焦点页面导航`（logs/dogear-YYYY-MM-DD.log，WARN 级）
 
 ## 验证清单
