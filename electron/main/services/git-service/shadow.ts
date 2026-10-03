@@ -8,6 +8,7 @@ import type { Dirent } from 'fs';
 import path from 'path';
 import { getConfigDir, loadSettings, SNAPSHOT_SETTING_DEFAULTS } from '../settings-service.js';
 import { execGit, execGitCode, execGitInput, hasGit, assertSafeRef, workspaceGitPath, toGitPath, GitServiceError } from './exec.js';
+import { maybePruneSnapshotHistory, LOG_RECORD_SEP, LOG_FIELD_SEP } from './shadow-prune.js';
 
 function gitMissingError(): GitServiceError {
   return new GitServiceError('git-missing', '系统未安装 git，快照功能不可用');
@@ -21,9 +22,6 @@ export interface SnapshotEntry {
 
 export const SNAPSHOT_SOURCES = ['agent-write', 'agent-edit', 'ui-delete', 'ui-rename', 'ui-create', 'pre-restore'] as const;
 export type SnapshotSource = (typeof SNAPSHOT_SOURCES)[number];
-
-const LOG_RECORD_SEP = '\x1e';
-const LOG_FIELD_SEP = '\x1f';
 
 const queues = new Map<string, Promise<void>>();
 
@@ -168,8 +166,10 @@ export async function takeSnapshot(
   await enqueue(workspaceId, async () => {
     await execShadow(gitDir, workspacePath, ['add', '-A', '-f', '--', '.', ...excludePathspecs(snapshotSettings.excludeDirs)]);
     await unstageOversized(gitDir, workspacePath, snapshotSettings.maxFileSizeBytes);
-    if (!(await hasStagedChanges(gitDir, workspacePath))) return;
-    await execShadow(gitDir, workspacePath, ['commit', '-m', buildSnapshotMessage(source, relPath, conversationId)]);
+    if (await hasStagedChanges(gitDir, workspacePath)) {
+      await execShadow(gitDir, workspacePath, ['commit', '-m', buildSnapshotMessage(source, relPath, conversationId)]);
+    }
+    await maybePruneSnapshotHistory(workspaceId, gitDir, workspacePath, snapshotSettings.retention);
   });
 }
 
