@@ -68,9 +68,9 @@ export function NotesTimelinePane({
   const setActiveNoteId = useNotesStore((s) => s.setActiveNoteId);
   const deleteNote = useNotesStore((s) => s.deleteNote);
 
-  // 折叠态组件内 useState，不持久化（刷新回默认折叠）
-  const [agentCollapsed, setAgentCollapsed] = useState(true);
-  const [olderCollapsed, setOlderCollapsed] = useState(true);
+  // 折叠态组件内 useState，不持久化（刷新回默认展开）
+  const [agentCollapsed, setAgentCollapsed] = useState(false);
+  const [olderCollapsed, setOlderCollapsed] = useState(false);
 
   const handleDelete = async (note: NoteMeta) => {
     if (!workspace) return;

@@ -13,7 +13,9 @@ import {
   purgeTask,
   moveTaskToBacklog,
   moveTaskToPlan,
+  updateTaskExecProfile,
   type ReviewAction,
+  type ExecProfile,
 } from '../services/task-service.js';
 import { getTaskQueue, interruptTaskExecSession } from '../services/task-queue.js';
 
@@ -93,6 +95,16 @@ export const tasksRouter = {
             ? await moveTaskToBacklog(input.workspacePath, input.taskId)
             : await moveTaskToPlan(input.workspacePath, input.taskId);
         return { task };
+      } catch (e) {
+        return { error: String(e) };
+      }
+    }),
+
+  updateCollabTaskExecProfile: t.procedure
+    .input<{ workspacePath: string; taskId: string; execProfile: ExecProfile }>()
+    .action(async ({ input }) => {
+      try {
+        return { task: await updateTaskExecProfile(input.workspacePath, input.taskId, input.execProfile) };
       } catch (e) {
         return { error: String(e) };
       }

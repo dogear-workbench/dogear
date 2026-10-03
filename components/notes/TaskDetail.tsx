@@ -10,7 +10,7 @@ import { useTaskStore } from '@/stores/task-store';
 import { jumpToSourceConversation } from '@/lib/reference-guard';
 import { showConfirm } from '@/stores/confirm-store';
 import { formatNoteTime } from '@/components/notes/NoteCardItem';
-import type { ReviewAction, TaskDetail as TaskDetailData } from '@/types/task';
+import type { ExecProfile, ReviewAction, TaskDetail as TaskDetailData } from '@/types/task';
 
 interface TaskDetailProps {
   workspacePath: string;
@@ -29,6 +29,7 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
   const cancelTask = useTaskStore((s) => s.cancelTask);
   const deleteTask = useTaskStore((s) => s.deleteTask);
   const moveTask = useTaskStore((s) => s.moveTask);
+  const updateExecProfile = useTaskStore((s) => s.updateExecProfile);
   const [executing, setExecuting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
 
@@ -111,6 +112,16 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
     [workspacePath, taskId, moveTask],
   );
 
+  const handleToggleExecProfile = useCallback(async () => {
+    const next: ExecProfile = (detail?.execProfile ?? 'default') === 'default' ? 'code-impl' : 'default';
+    const err = await updateExecProfile(workspacePath, taskId, next);
+    if (err) {
+      toast.error('切换执行类型失败', { description: err });
+      return;
+    }
+    setDetail((d) => (d ? { ...d, execProfile: next } : d));
+  }, [workspacePath, taskId, detail, updateExecProfile]);
+
   const handleDelete = useCallback(async () => {
     const ok = await showConfirm('删除任务', `确定删除「${detail?.title ?? '该任务'}」？删除后可在回收站恢复。`);
     if (!ok) return;
@@ -146,7 +157,18 @@ export function TaskDetail({ workspacePath, taskId, onBack }: TaskDetailProps) {
             <div className="flex items-start justify-between gap-4">
               <h2 className="min-w-0 break-words text-2xl font-semibold leading-tight">{detail.title}</h2>
               <div className="mt-1.5 flex shrink-0 items-center gap-1.5">
-                <TaskExecProfileBadge execProfile={detail.execProfile} className="px-2 py-0.5 text-xs" />
+                {detail.status === 'plan' || detail.status === 'backlog' ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleExecProfile()}
+                    title={`执行类型：${detail.execProfile ?? 'default'}，点击切换（排队后不可改）`}
+                    className="cursor-pointer rounded-full outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <TaskExecProfileBadge execProfile={detail.execProfile} className="px-2 py-0.5 text-xs" />
+                  </button>
+                ) : (
+                  <TaskExecProfileBadge execProfile={detail.execProfile} className="px-2 py-0.5 text-xs" />
+                )}
                 <TaskStatusBadge status={detail.status} className="px-2 py-0.5 text-xs" />
               </div>
             </div>

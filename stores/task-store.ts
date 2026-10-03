@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { client } from '@/lib/client';
 import { rendererEvents } from '@/lib/events';
-import type { TaskGroups } from '@/types/task';
+import type { ExecProfile, TaskGroups } from '@/types/task';
 
 interface TaskState {
   groups: TaskGroups | null;
@@ -22,6 +22,8 @@ interface TaskState {
   deleteTask: (workspacePath: string, taskId: string) => Promise<string | null>;
   /** 计划↔待办流转：plan（含 rejected）→ backlog 或 done → plan */
   moveTask: (workspacePath: string, taskId: string, to: 'backlog' | 'plan') => Promise<string | null>
+  /** plan/backlog 任务手动切换执行类型（queued 后不可改） */
+  updateExecProfile: (workspacePath: string, taskId: string, execProfile: ExecProfile) => Promise<string | null>;
   /** 监听主进程 tasksChanged 广播，工作区匹配时重新拉取分组；返回取消订阅函数 */
   subscribeTasksChanged: () => () => void;
   setActiveTaskId: (taskId: string | null) => void;
@@ -120,6 +122,21 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       return result.error;
     } catch (error) {
       console.error('[tasks] moveCollabTask 失败:', error);
+      return String(error);
+    }
+  },
+
+  updateExecProfile: async (workspacePath, taskId, execProfile) => {
+    try {
+      const result = await client.updateCollabTaskExecProfile({ workspacePath, taskId, execProfile });
+      if ('task' in result) {
+        await get().loadTasks(workspacePath);
+        return null;
+      }
+      console.error('[tasks] updateCollabTaskExecProfile 失败:', result.error);
+      return result.error;
+    } catch (error) {
+      console.error('[tasks] updateCollabTaskExecProfile 失败:', error);
       return String(error);
     }
   },

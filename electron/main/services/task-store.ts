@@ -10,6 +10,8 @@ import { randomBytes } from 'node:crypto';
 import { safeJsonRead, withFileLock } from './safe-json.js';
 import type { ExecProfile } from './task-execution-prompt.js';
 
+export type { ExecProfile };
+
 export type TaskStatus = 'plan' | 'backlog' | 'queued' | 'running' | 'review' | 'done' | 'rejected' | 'interrupted';
 
 export interface Task {
@@ -314,6 +316,19 @@ export async function moveTaskToBacklog(workspacePath: string, taskId: string): 
 
 export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<Task> {
   return transition(workspacePath, taskId, ['done', 'rejected', 'interrupted'], 'plan');
+}
+
+export async function updateTaskExecProfile(workspacePath: string, taskId: string, execProfile: ExecProfile): Promise<Task> {
+  return mutateTasks(workspacePath, (tasks) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`任务 ${taskId} 不存在`);
+    if (task.status !== 'plan' && task.status !== 'backlog') {
+      throw new Error(`仅计划/积压任务可切换执行类型（queued 后执行会话已按原类型创建），当前状态为 ${task.status}`);
+    }
+    task.execProfile = execProfile;
+    task.updatedAt = new Date().toISOString();
+    return { ...task };
+  });
 }
 
 export async function cancelTask(workspacePath: string, taskId: string): Promise<Task> {

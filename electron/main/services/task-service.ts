@@ -16,6 +16,7 @@ export type CreateTaskInput = taskStore.CreateTaskInput;
 export type ReviewAction = taskStore.ReviewAction;
 export type TaskDetail = taskStore.TaskDetail;
 export type TaskGroups = taskStore.TaskGroups;
+export type ExecProfile = taskStore.ExecProfile;
 
 async function broadcastTasksChanged(workspacePath: string): Promise<void> {
   try {
@@ -154,6 +155,16 @@ export async function moveTaskToBacklog(workspacePath: string, taskId: string): 
 
 export async function moveTaskToPlan(workspacePath: string, taskId: string): Promise<taskStore.Task> {
   const task = await taskStore.moveTaskToPlan(workspacePath, taskId);
+  broadcastTasksChanged(workspacePath);
+  return task;
+}
+
+export async function updateTaskExecProfile(
+  workspacePath: string,
+  taskId: string,
+  execProfile: taskStore.ExecProfile,
+): Promise<taskStore.Task> {
+  const task = await taskStore.updateTaskExecProfile(workspacePath, taskId, execProfile);
   broadcastTasksChanged(workspacePath);
   return task;
 }
