@@ -11,6 +11,7 @@ import { client } from '@/lib/client';
 import type { AppSettings } from '@/types/settings';
 import { ModelSelector } from '@/components/ModelSelector';
 import { ExtensionActionPolicyNote, ExtensionStatusLine } from './ExtensionStatusLine';
+import { PaymentBlockedHostsSection } from './PaymentBlockedHostsSection';
 import { WebAiSitesSection } from './WebAiSitesSection';
 import { playDogearSound } from '@/lib/dogear-sound';
 
@@ -411,6 +412,8 @@ export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
             </div>
           </div>
         </div>
+
+        <PaymentBlockedHostsSection local={local} setLocal={setLocal} />
 
         <WebAiSitesSection local={local} setLocal={setLocal} />
 

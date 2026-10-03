@@ -7,6 +7,7 @@
 import path from 'path';
 import electron from 'electron';
 import { safeJsonWrite, safeJsonRead } from './safe-json.js';
+import { setPaymentBlockedHosts } from './browser/site-policy.js';
 import {
   DEFAULT_SETTINGS,
   deepMerge,
@@ -18,6 +19,7 @@ import {
   normalizeBackupSettings,
   BASIC_TOOL_NAMES,
   normalizeWebAiSites,
+  normalizePaymentBlockedHosts,
   normalizeDisabledSyncItems,
   normalizeSyncOptions,
   type AppSettings,
@@ -75,6 +77,8 @@ export async function loadSettings(): Promise<AppSettings> {
   if (dirty || piMigrated) {
     await safeJsonWrite(getSettingsPath(), merged);
   }
+  // 支付黑名单注入挂 load/save 两条链，覆盖启动、设置更新与同步合并落盘三条路径（热生效）
+  setPaymentBlockedHosts(merged.paymentBlockedHosts ?? []);
   return merged;
 }
 
@@ -291,6 +295,15 @@ export function normalizeSettings(settings: AppSettings): boolean {
     changed = true;
   }
 
+  if (obj.paymentBlockedHosts !== undefined) {
+    const normalizedHosts = normalizePaymentBlockedHosts(obj.paymentBlockedHosts);
+    if (JSON.stringify(normalizedHosts) !== JSON.stringify(obj.paymentBlockedHosts)) {
+      if (normalizedHosts.length === 0) delete obj.paymentBlockedHosts;
+      else obj.paymentBlockedHosts = normalizedHosts;
+      changed = true;
+    }
+  }
+
   const newBackup = normalizeBackupSettings(obj.backup);
   if (JSON.stringify(newBackup) !== JSON.stringify(settings.backup)) {
     obj.backup = newBackup;
@@ -364,4 +377,5 @@ export function applyThemeSource(theme: unknown): void {
 export async function saveSettings(settings: AppSettings): Promise<void> {
   await safeJsonWrite(getSettingsPath(), settings);
   applyThemeSource(settings.appearance?.theme);
+  setPaymentBlockedHosts(settings.paymentBlockedHosts ?? []);
 }

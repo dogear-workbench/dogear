@@ -190,6 +190,8 @@ export interface AppSettings {
   webMcpApiKey?: string;
   /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
   browserSearchEngine: BrowserSearchEngine;
+  /** 用户追加的支付/网银拦截域名，与内置默认并集生效；缺省视为空 */
+  paymentBlockedHosts?: string[];
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks/app-config=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
   /** 网页 AI 站点列表；缺省视为 DEFAULT_WEB_AI_SITES */

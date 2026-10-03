@@ -196,6 +196,8 @@ export interface AppSettings {
   webMcpApiKey?: string;
   /** 浏览器搜索默认引擎；缺省视为 auto（代理可用时用 Google） */
   browserSearchEngine: BrowserSearchEngine;
+  /** 用户追加的支付/网银拦截域名，与内置默认并集生效；缺省视为空 */
+  paymentBlockedHosts?: string[];
   /** 一次性迁移标记 */
   migrated?: {
     workspaceConfig?: boolean;
@@ -482,6 +484,26 @@ export function normalizeSyncOptions(raw: unknown): SyncOptions {
         ? obj.syncOptionsRev
         : 0,
   };
+}
+
+/**
+ * paymentBlockedHosts 归一化：字符串 trim + 小写，`*.example.com` 归一为 `example.com`（拦截语义本就含自身与子域），
+ * 非法项丢弃、按首现顺序去重；非数组输入返回空数组
+ */
+export function normalizePaymentBlockedHosts(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== 'string') continue;
+    let host = item.trim().toLowerCase();
+    if (host.startsWith('*.')) host = host.slice(2);
+    if (host === '' || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host)) continue;
+    if (seen.has(host)) continue;
+    seen.add(host);
+    out.push(host);
+  }
+  return out;
 }
 
 /**

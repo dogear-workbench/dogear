@@ -1,6 +1,6 @@
 import { test, expect } from 'bun:test';
 import { normalizeSettings, normalizePiModels, migratePiProfiles } from './settings-service.js';
-import { normalizeFailoverChain } from './settings-types.js';
+import { normalizeFailoverChain, normalizePaymentBlockedHosts } from './settings-types.js';
 import {
   DEFAULT_SETTINGS,
   type AppSettings,
@@ -464,4 +464,46 @@ test('normalizeSettings：默认设置（无 piModels 供应商）failover 保�
   const changed = normalizeSettings(s);
   expect(changed).toBe(false);
   expect(s.failover).toEqual({ enabled: false, chain: [] });
+});
+
+// ── normalizePaymentBlockedHosts ───────────────────────
+
+test('normalizePaymentBlockedHosts：trim + 小写 + `*.` 前缀归一，去重保首现顺序', () => {
+  expect(normalizePaymentBlockedHosts([' Example.COM ', '*.pay.example.cn', 'Example.COM', 'pay.example.com']))
+    .toEqual(['example.com', 'pay.example.cn', 'pay.example.com']);
+});
+
+test('normalizePaymentBlockedHosts：非法项丢弃（协议/路径/空串/非字符串），非数组返回空数组', () => {
+  expect(normalizePaymentBlockedHosts([
+    'https://evil.com',
+    'has space.com',
+    '',
+    42,
+    null,
+    'ok-domain.cn',
+  ])).toEqual(['ok-domain.cn']);
+  expect(normalizePaymentBlockedHosts(undefined)).toEqual([]);
+  expect(normalizePaymentBlockedHosts('not-array')).toEqual([]);
+});
+
+test('normalizeSettings：paymentBlockedHosts 缺失时不产生改动（旧文件升级无感）', () => {
+  const s = baseSettings();
+  expect(normalizeSettings(s)).toBe(false);
+  expect(s.paymentBlockedHosts).toBeUndefined();
+});
+
+test('normalizeSettings：paymentBlockedHosts 含非法项时归一化替换，清空后删除字段', () => {
+  const s1 = baseSettings();
+  (s1 as Record<string, unknown>).paymentBlockedHosts = ['Pay.Bank.cn', 'https://x.com', 'pay.bank.cn'];
+  expect(normalizeSettings(s1)).toBe(true);
+  expect(s1.paymentBlockedHosts).toEqual(['pay.bank.cn']);
+
+  const s2 = baseSettings();
+  (s2 as Record<string, unknown>).paymentBlockedHosts = ['https://x.com'];
+  expect(normalizeSettings(s2)).toBe(true);
+  expect(s2.paymentBlockedHosts).toBeUndefined();
+
+  const s3 = baseSettings();
+  (s3 as Record<string, unknown>).paymentBlockedHosts = ['pay.bank.cn'];
+  expect(normalizeSettings(s3)).toBe(false);
 });

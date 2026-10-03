@@ -30,7 +30,7 @@ import {
   setHumanInterventionBroadcaster,
   type InterventionResult,
 } from '../services/browser/human-intervention.js';
-import { ACTION_LEVEL_NOTES, paymentBlockedHosts } from '../services/browser/site-policy.js';
+import { ACTION_LEVEL_NOTES, builtinPaymentBlockedHosts, paymentBlockedHosts } from '../services/browser/site-policy.js';
 import { mainLogger } from '../agents/logger.js';
 
 const interventionLogger = mainLogger.child('intervention-tipc');
@@ -267,6 +267,7 @@ export const browserRouter = {
   getBrowserActionPolicy: t.procedure.action(async () => ({
     levels: ACTION_LEVEL_NOTES,
     paymentBlockedHosts: [...paymentBlockedHosts()],
+    builtinPaymentBlockedHosts: [...builtinPaymentBlockedHosts()],
   })),
 
   takeOverTab: t.procedure

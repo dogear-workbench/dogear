@@ -68,10 +68,23 @@ const PAYMENT_BLOCKED_HOSTS = [
   'hxb.com.cn',
 ];
 
+const BUILTIN_PAYMENT_BLOCKED_SET: ReadonlySet<string> = new Set(PAYMENT_BLOCKED_HOSTS);
+
+const userPaymentBlockedHosts = new Set<string>();
+
+export function setPaymentBlockedHosts(hosts: string[]): void {
+  userPaymentBlockedHosts.clear();
+  for (const raw of hosts) {
+    const host = raw.trim().toLowerCase();
+    if (host !== '') userPaymentBlockedHosts.add(host);
+  }
+}
+
 export function isPaymentBlocked(url: string): boolean {
   try {
     const host = new URL(url).hostname.toLowerCase();
-    return PAYMENT_BLOCKED_HOSTS.some((h) => host === h || host.endsWith(`.${h}`));
+    const matches = (h: string) => host === h || host.endsWith(`.${h}`);
+    return PAYMENT_BLOCKED_HOSTS.some(matches) || [...userPaymentBlockedHosts].some(matches);
   } catch {
     return false;
   }
@@ -88,8 +101,12 @@ export const ACTION_LEVEL_NOTES = [
   '支付与网银域名：一律拒绝，用户确认也不放行',
 ];
 
-export function paymentBlockedHosts(): readonly string[] {
+export function builtinPaymentBlockedHosts(): readonly string[] {
   return PAYMENT_BLOCKED_HOSTS;
+}
+
+export function paymentBlockedHosts(): readonly string[] {
+  return [...PAYMENT_BLOCKED_HOSTS, ...[...userPaymentBlockedHosts].filter((h) => !BUILTIN_PAYMENT_BLOCKED_SET.has(h))];
 }
 
 export function registerSitePolicy(policy: SitePolicy): void {
