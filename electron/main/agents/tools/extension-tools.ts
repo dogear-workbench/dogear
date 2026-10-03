@@ -29,6 +29,9 @@ import {
   type PolicyGateContext,
 } from '../../services/browser/site-policy.js';
 import { raiseHumanIntervention, waitForInterventionResult } from '../../services/browser/human-intervention.js';
+import { mainLogger } from '../../agents/logger.js';
+
+const submitLogger = mainLogger.child('extension-submit');
 import { createSiteToolDefs, siteKnowledgePointer, sitePolicyPointer } from './extension-site-tools.js';
 import { createExtensionTabToolDefs } from './extension-tab-tools.js';
 import {
@@ -366,6 +369,8 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
               confirmMode: true,
             });
             const outcome = await waitForInterventionResult(request.id, SUBMIT_CONFIRM_TIMEOUT_MS);
+            // WARN 级别才会落盘；提交确认链路需事后可审计
+            submitLogger.warn(`提交确认结果: outcome=${outcome} ref=${args.ref} url=${pageUrl ?? ''}`);
             if (outcome === 'denied') {
               emitAction(taskMeta, 'click', { url: pageUrl, detail: args.ref, result: 'error', errorCode: 'guard_submit' });
               return isErrorResult('用户已拒绝本次提交，未执行。请引导用户手动完成提交或调整方案');
@@ -379,6 +384,7 @@ export function createExtensionToolDefs(opts?: { conversationId?: string }): Too
               return isErrorResult('等待确认期间页面状态已变化，提交未执行。请重新 observe_page 确认页面后再试');
             }
             const r2 = await executeClick(true);
+            submitLogger.warn(`确认后提交执行: ok=${r2.ok} errorCode=${r2.ok ? '-' : r2.errorCode ?? '-'} ref=${args.ref}`);
             if (!r2.ok) {
               emitAction(taskMeta, 'click', {
                 url: pageUrl,

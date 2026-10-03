@@ -31,6 +31,9 @@ import {
   type InterventionResult,
 } from '../services/browser/human-intervention.js';
 import { ACTION_LEVEL_NOTES, paymentBlockedHosts } from '../services/browser/site-policy.js';
+import { mainLogger } from '../agents/logger.js';
+
+const interventionLogger = mainLogger.child('intervention-tipc');
 import {
   getExtensionStatus,
   setExtensionStatusBroadcaster,
@@ -272,6 +275,7 @@ export const browserRouter = {
   resolveHumanIntervention: t.procedure
     .input<{ id: string; result?: InterventionResult }>()
     .action(async ({ input }) => {
+      interventionLogger.warn(`确认操作到达主进程: id=${input.id} result=${input.result ?? '(无)'}`);
       const resolved = resolveHumanIntervention(input.id, 'user', input.result);
       if (!resolved) return { resolved: false };
       if (!resolved.waiterConsumed) {

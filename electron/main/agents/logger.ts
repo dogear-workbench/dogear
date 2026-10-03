@@ -31,6 +31,9 @@ export interface LoggerOptions {
 // 缓存配置目录路径，避免重复计算
 let _configDir: string | null = null;
 
+// 全局日志目录：initFileLogging 设置；child() 在模块加载时快照 logDir 会拿到空值，writeToFile 以此兑底
+let sharedLogDir: string | undefined;
+
 /**
  * 获取 .dogear 配置目录
  * 开发阶段：项目根目录/.dogear
@@ -156,9 +159,8 @@ export class Logger {
    * 仅在 logDir 设置时调用，写入失败只打 console.error
    */
   private writeToFile(formattedMessage: string, args: any[]): void {
-    if (!this.logDir) return;
-
-    const logDir = this.logDir;
+    const logDir = this.logDir ?? sharedLogDir;
+    if (!logDir) return;
 
     // 构建完整的日志行内容
     let line = formattedMessage;
@@ -222,7 +224,7 @@ export class Logger {
     }
 
     // WARN/ERROR 级别写入文件
-    if (level >= LogLevel.WARN && this.logDir) {
+    if (level >= LogLevel.WARN && (this.logDir ?? sharedLogDir)) {
       this.writeToFile(formattedMessage, args);
     }
   }
@@ -322,6 +324,7 @@ export async function initFileLogging(): Promise<void> {
   const logDir = getLogDir();
   await initLogDir(logDir);
 
+  sharedLogDir = logDir;
   // 为默认实例设置日志目录
   mainLogger.setLogDir(logDir);
   workerLogger.setLogDir(logDir);

@@ -156,6 +156,9 @@ function applySnapshot(message: NmMessage): void {
       ? message.extractError
       : undefined;
   const fields = applyTabSnapshot(currentStatus, message);
+  if (fields.tabId === prevTabId && fields.url !== currentStatus.url) {
+    logger.warn(`焦点页面导航: tabId=${fields.tabId} ${currentStatus.url} -> ${fields.url}`);
+  }
   const extractErrorPatch =
     snapTabId === prevTabId
       ? extractError !== undefined
@@ -227,6 +230,13 @@ function applyOpenTabResult(data: unknown): void {
   setStatus({ ...currentStatus, ...adoptFocusedTab(currentStatus, d.tabId, { url: d.url, title: d.title }) });
 }
 
+function applyClickResult(data: unknown): void {
+  if (currentStatus.status !== 'connected') return;
+  const d = ((data ?? {}) as { openedTab?: { tabId?: unknown; url?: unknown; title?: unknown } }).openedTab;
+  if (!d || typeof d.tabId !== 'number') return;
+  setStatus({ ...currentStatus, ...adoptFocusedTab(currentStatus, d.tabId, { url: d.url, title: d.title }) });
+}
+
 function applyCloseTabResult(data: unknown): void {
   if (currentStatus.status !== 'connected') return;
   const d = (data ?? {}) as { closedTabId?: unknown; focusedTabId?: unknown };
@@ -258,9 +268,15 @@ function handleCommandResult(message: NmMessage): void {
   }
   pendingCommands.delete(requestId);
   clearTimeout(pending.timer);
+  if (pending.kind === 'click') {
+    logger.warn(
+      `click 命令结果: ok=${message.ok === true} errorCode=${typeof message.errorCode === 'string' ? message.errorCode : '-'} confirmed=${(message.data as { confirmed?: unknown } | undefined)?.confirmed === true}`,
+    );
+  }
   if (message.ok === true) {
     if (pending.kind === 'navigate') applyNavigateUrl(message.data);
     else if (pending.kind === 'open_tab') applyOpenTabResult(message.data);
+    else if (pending.kind === 'click') applyClickResult(message.data);
     else if (pending.kind === 'close_tab') applyCloseTabResult(message.data);
     else if (pending.kind === 'list_tabs') applyListTabsResult(message.data);
     pending.resolve({

@@ -1,5 +1,8 @@
 import type { BrowserTaskMeta } from './browser-task-meta.js';
 import { recordBrowserAction } from './browser-action-stream.js';
+import { mainLogger } from '../../agents/logger.js';
+
+const logger = mainLogger.child('human-intervention');
 
 export type HumanInterventionReason = 'login_required' | 'verification_required' | 'guard_password' | 'guard_submit';
 
@@ -88,6 +91,7 @@ export function raiseHumanIntervention(input: {
     ...(input.confirmMode ? { confirmMode: true } : {}),
     taskMeta: input.taskMeta ?? { kind: 'agent' },
   };
+  logger.warn(`人工等待上报: id=${request.id} tabId=${request.tabId} reason=${request.reason}`);
   pendingById.set(request.id, request);
   pendingIdByTab.set(request.tabId, request.id);
   record('raised', request);
@@ -152,6 +156,8 @@ export function resolveHumanIntervention(
   if (result) request.result = result;
   const outcome = result ?? (resolvedBy === 'auto' ? 'auto' : 'approved');
   const waiterConsumed = notifyWaiters(id, outcome);
+  // WARN 级别才会落盘；人工确认解除是低频安全审计点，需事后可查
+  logger.warn(`人工等待解除: id=${id} outcome=${outcome} waiterConsumed=${waiterConsumed} reason=${request.reason}`);
   record('resolved', request, result);
   broadcast();
   return { request: toPublic(request), taskMeta: request.taskMeta, waiterConsumed };
