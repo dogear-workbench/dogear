@@ -88,6 +88,19 @@ export const gitRouter = {
       }
     }),
 
+  // 设置页「立即瘦身」用：重写全部快照历史释放旧大文件，走串行队列与快照/恢复互斥
+  slimShadowRepo: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }): Promise<gitService.SlimShadowResult | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        return await gitService.slimShadowRepoInQueue(workspace.id, workspace.path);
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
   // 数据中心汇总用：用户 Git 仓库 + 自动快照状态；git 缺失/非仓库/查询失败均降级不报错
   getWorkspaceGitSummary: t.procedure
     .input<{ workspaceId: string }>()

@@ -350,7 +350,13 @@ export function WorkspaceManagementTab({ local, setLocal }: Props) {
       </section>
 
       {/* 自动快照全局配置 */}
-      <SnapshotConfigSection local={local} setLocal={setLocal} />
+      <SnapshotConfigSection
+        local={local}
+        setLocal={setLocal}
+        workspaces={workspaces}
+        summaries={snapshotSummaries}
+        onRefreshSummaries={() => loadSnapshotSummaries(workspaces)}
+      />
 
       {/* 孤儿恢复 */}
       <section className="space-y-3">

@@ -1,8 +1,11 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import { Plus, RotateCcw, X } from 'lucide-react';
+import { Eraser, Loader2, Plus, RotateCcw, X } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { showConfirm } from '@/stores/confirm-store';
+import { client } from '@/lib/client';
+import { formatBytes } from '@/app/data-center/version-backup/backup-meta';
 import { cn } from '@/lib/utils';
 import {
   SNAPSHOT_SETTING_DEFAULTS,
@@ -10,10 +13,15 @@ import {
   type SnapshotSettings,
 } from '@/electron/main/services/settings-types';
 import type { AppSettings } from '@/types/settings';
+import type { Workspace } from '@/types/electron-api';
+import type { ShadowSnapshotSummary } from './SnapshotWorkspaceCell';
 
 interface Props {
   local: AppSettings;
   setLocal: Dispatch<SetStateAction<AppSettings>>;
+  workspaces: Workspace[];
+  summaries: Record<string, ShadowSnapshotSummary>;
+  onRefreshSummaries: () => void;
 }
 
 const MB = 1024 * 1024;
@@ -24,9 +32,10 @@ function parsePositiveInt(raw: string): number | null {
   return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
-export function SnapshotConfigSection({ local, setLocal }: Props) {
+export function SnapshotConfigSection({ local, setLocal, workspaces, summaries, onRefreshSummaries }: Props) {
   const snapshot = local.snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
   const [dirDraft, setDirDraft] = useState('');
+  const [slimming, setSlimming] = useState(false);
 
   const update = (patch: Partial<SnapshotSettings>) => {
     setLocal((prev) => ({
@@ -68,6 +77,49 @@ export function SnapshotConfigSection({ local, setLocal }: Props) {
     );
     if (!ok) return;
     setLocal((prev) => ({ ...prev, snapshot: structuredClone(SNAPSHOT_SETTING_DEFAULTS) }));
+  };
+
+  const slimmable = workspaces.filter((w) => (summaries[w.id]?.snapshotCount ?? 0) > 0);
+  const totalSnapshots = Object.values(summaries).reduce((sum, s) => sum + s.snapshotCount, 0);
+  const totalBytes = Object.values(summaries).reduce((sum, s) => sum + s.sizeBytes, 0);
+
+  const handleSlim = async () => {
+    if (slimmable.length === 0) {
+      toast.info('没有可瘦身的工作区快照');
+      return;
+    }
+    const ok = await showConfirm(
+      '立即瘦身快照库',
+      `将按当前规则（单文件阈值、排除目录、保留窗口）重写 ${slimmable.length} 个工作区的快照历史，释放被旧大文件占用的空间。过程约需数分钟，期间这些工作区的新快照会排队等待。当前共 ${totalSnapshots} 条快照，占用 ${formatBytes(totalBytes)}。`,
+    );
+    if (!ok) return;
+    setSlimming(true);
+    try {
+      const failures: string[] = [];
+      let freedBytes = 0;
+      for (const w of slimmable) {
+        const r = await client.slimShadowRepo({ workspaceId: w.id });
+        if ('error' in r) {
+          failures.push(`${w.name}：${r.error}`);
+          continue;
+        }
+        freedBytes += Math.max(0, r.sizeBytesBefore - r.sizeBytesAfter);
+      }
+      if (failures.length > 0) {
+        toast.error('部分工作区瘦身失败', { description: failures.join('；') });
+      } else if (freedBytes > 0) {
+        toast.success(`瘦身完成，释放 ${formatBytes(freedBytes)}`);
+      } else {
+        toast.success('快照历史已符合当前规则，无需释放空间');
+      }
+      onRefreshSummaries();
+    } catch (err) {
+      toast.error('瘦身失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setSlimming(false);
+    }
   };
 
   return (
@@ -193,6 +245,21 @@ export function SnapshotConfigSection({ local, setLocal }: Props) {
             />
             <span className="text-muted-foreground">天外丢弃</span>
           </div>
+        </div>
+
+        <div className="border-t pt-4 flex items-start gap-3">
+          <div className="flex-1 min-w-0">
+            <label className="text-sm font-medium">存量瘦身</label>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              历史快照中已存在的大文件不会自动消失，需重写快照历史才能释放空间。
+              {totalSnapshots > 0 &&
+                `当前 ${slimmable.length} 个工作区共 ${totalSnapshots} 条快照，占用 ${formatBytes(totalBytes)}。`}
+            </p>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleSlim} disabled={slimming} className="shrink-0">
+            {slimming ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Eraser className="w-3.5 h-3.5 mr-1" />}
+            立即瘦身
+          </Button>
         </div>
       </div>
     </section>

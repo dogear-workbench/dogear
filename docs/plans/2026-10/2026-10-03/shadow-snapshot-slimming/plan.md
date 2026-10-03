@@ -12,7 +12,7 @@
 - [x] [Step 2: 保留窗口裁剪](./step2-retention.md) — 近 7 天全留 → 7~30 天每日一份 → 30 天外丢弃
 - [x] [Step 3: 设置页快照状态卡与配置](./step3-settings-ui.md) — 状态卡（开关/体积/条数/上次时间）+ 配置区 + 恢复默认
 - [x] [Step 4: 历史面板空态可解释 + 备份 personal 过滤](./step4-misc.md) — 空态区分「未编辑」vs「被排除+原因」；listWorkspaceIds 按注册表过滤
-- [ ] [Step 5: 存量瘦身](./step5-slim.md) — 设置卡「立即瘦身」按钮：按新规则重写历史 + gc，释放 ~1.2GB
+- [x] [Step 5: 存量瘦身](./step5-slim.md) — 设置卡「立即瘦身」按钮：按新规则重写历史 + gc，释放 ~1.2GB
 - [ ] [Step 6: sessions 备份拆分（全局会话单独归类）](./step6-backup-sessions.md) — 全局 conversations/ 备成 global/sessions，工作区 zip 只含自己的会话
 
 ## 全局决策

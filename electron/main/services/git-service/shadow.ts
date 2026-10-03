@@ -4,13 +4,13 @@
  * 目录排除规则走 pathspec（不污染用户工作区，info/exclude 挡不住用户 in-tree .gitignore）
  */
 import fs from 'fs/promises';
-import type { Dirent } from 'fs';
 import path from 'path';
 import { getConfigDir, loadSettings, SNAPSHOT_SETTING_DEFAULTS } from '../settings-service.js';
 import { resolveAndValidate } from '../workspace-fs-service.js';
 import { execGit, execGitCode, execGitInput, hasGit, assertSafeRef, workspaceGitPath, toGitPath, GitServiceError } from './exec.js';
 import { judgeSnapshotProtection, type SnapshotProtection } from './shadow-protection.js';
 import { maybePruneSnapshotHistory, LOG_RECORD_SEP, LOG_FIELD_SEP } from './shadow-prune.js';
+import { slimShadowRepo, dirSizeBytes, type SlimShadowResult } from './shadow-slim.js';
 
 export type { SnapshotProtection, SnapshotProtectionReason } from './shadow-protection.js';
 
@@ -54,25 +54,7 @@ export interface ShadowSnapshotSummary {
 
 /** 影子仓库目录磁盘占用（字节，递归求和）；目录不存在返回 0 */
 export async function getShadowRepoSizeBytes(workspaceId: string): Promise<number> {
-  let total = 0;
-  const walk = async (dir: string): Promise<void> => {
-    let entries: Dirent[];
-    try {
-      entries = await fs.readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const p = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await walk(p);
-      } else if (entry.isFile()) {
-        total += await fs.stat(p).then((st) => st.size, () => 0);
-      }
-    }
-  };
-  await walk(shadowGitDir(workspaceId));
-  return total;
+  return dirSizeBytes(shadowGitDir(workspaceId));
 }
 
 /** 文件历史面板空态用：该文件按当前配置是否受快照保护；文件不存在/非普通文件不算超限（防御，不查 git） */
@@ -216,6 +198,14 @@ export async function takeSnapshot(
     }
     await maybePruneSnapshotHistory(workspaceId, gitDir, workspacePath, snapshotSettings.retention);
   });
+}
+
+/** 设置页「立即瘦身」入口：读当前配置后入串行队列执行，与快照/恢复/裁剪互斥 */
+export async function slimShadowRepoInQueue(workspaceId: string, workspacePath: string): Promise<SlimShadowResult> {
+  if (!(await hasGit())) throw gitMissingError();
+  const settings = (await loadSettings()).snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
+  const gitDir = shadowGitDir(workspaceId);
+  return enqueue(workspaceId, () => slimShadowRepo(gitDir, workspacePath, settings));
 }
 
 function parseLogEntries(stdout: string): SnapshotEntry[] {

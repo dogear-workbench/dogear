@@ -53,7 +53,7 @@ export function selectKeptHashes(commits: ShadowCommit[], retention: SnapshotRet
   return keep;
 }
 
-async function listSnapshotChain(gitDir: string, workspacePath: string): Promise<ShadowCommit[]> {
+export async function listSnapshotChain(gitDir: string, workspacePath: string): Promise<ShadowCommit[]> {
   const stdout = await execGit(workspacePath, ['--git-dir', gitDir, 'log', `--pretty=%H%x1f%at%x1f%s${LOG_RECORD_SEP}`]);
   return stdout
     .split(LOG_RECORD_SEP)
