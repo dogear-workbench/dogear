@@ -42,6 +42,12 @@ function shadowGitDir(workspaceId: string): string {
   return path.join(getConfigDir(), 'workspaces', workspaceId, 'shadow-git');
 }
 
+export interface ShadowSnapshotSummary {
+  snapshotCount: number;
+  lastTime: string | null;
+  sizeBytes: number;
+}
+
 /** 影子仓库目录磁盘占用（字节，递归求和）；目录不存在返回 0 */
 export async function getShadowRepoSizeBytes(workspaceId: string): Promise<number> {
   let total = 0;
@@ -63,6 +69,26 @@ export async function getShadowRepoSizeBytes(workspaceId: string): Promise<numbe
   };
   await walk(shadowGitDir(workspaceId));
   return total;
+}
+
+/** 设置页快照状态卡用：rev-list --count + log -1 快速取条数与最近时间，不动完整历史 */
+export async function getShadowSnapshotSummary(
+  workspaceId: string,
+  workspacePath: string,
+): Promise<ShadowSnapshotSummary> {
+  const sizeBytes = await getShadowRepoSizeBytes(workspaceId);
+  const empty: ShadowSnapshotSummary = { snapshotCount: 0, lastTime: null, sizeBytes };
+  const gitDir = shadowGitDir(workspaceId);
+  if (!(await hasGit()) || !(await fileExists(path.join(gitDir, 'HEAD')))) return empty;
+  return enqueue(workspaceId, async () => {
+    if (!(await hasShadowHead(gitDir, workspacePath))) return empty;
+    const [count, last] = await Promise.all([
+      execShadow(gitDir, workspacePath, ['rev-list', '--count', 'HEAD']),
+      execShadow(gitDir, workspacePath, ['log', '-1', '--pretty=%aI']),
+    ]);
+    const n = Number.parseInt(count.trim(), 10);
+    return { snapshotCount: Number.isFinite(n) && n > 0 ? n : 0, lastTime: last.trim() || null, sizeBytes };
+  });
 }
 
 function shadowArgs(gitDir: string, workspacePath: string, args: string[]): string[] {

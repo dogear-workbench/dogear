@@ -62,6 +62,19 @@ export const gitRouter = {
       }
     }),
 
+  // 设置页快照状态卡用：仅影子仓库侧统计，git 缺失/仓库不存在降级为空统计不报错
+  getShadowSnapshotSummary: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }): Promise<gitService.ShadowSnapshotSummary | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        return await gitService.getShadowSnapshotSummary(workspace.id, workspace.path);
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
   // 数据中心汇总用：用户 Git 仓库 + 自动快照状态；git 缺失/非仓库/查询失败均降级不报错
   getWorkspaceGitSummary: t.procedure
     .input<{ workspaceId: string }>()

@@ -35,6 +35,8 @@ export function isProfileComplete(profile: ModelProfile): boolean {
   return (profile.piModels?.length ?? 0) > 0;
 }
 
+import type { SnapshotSettings } from '@/electron/main/services/settings-types';
+
 export type ThemePreference = 'light' | 'dark' | 'system';
 
 export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -196,6 +198,8 @@ export interface AppSettings {
   paymentBlockedHosts?: string[];
   /** 应用数据备份配置；缺省分类走默认值（notes-groups/memory/tasks/app-config=daily·10·开，sessions=monthly·10·开） */
   backup?: BackupSettings;
+  /** 影子快照配置；缺省走 SNAPSHOT_SETTING_DEFAULTS（类型自主进程 settings-types 导入，单一来源不另设镜像） */
+  snapshot?: SnapshotSettings;
   /** 网页 AI 站点列表；缺省视为 DEFAULT_WEB_AI_SITES */
   webAiSites?: WebAiSite[];
 }

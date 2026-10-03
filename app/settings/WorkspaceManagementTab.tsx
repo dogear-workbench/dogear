@@ -11,7 +11,7 @@
  * 顶部 Popover 只管 "选择 / 添加"，这里只管 "管理"。
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -35,7 +35,16 @@ import {
 import { showConfirm } from '@/stores/confirm-store';
 import { client } from '@/lib/client';
 import type { Workspace } from '@/types/electron-api';
+import type { AppSettings } from '@/types/settings';
+import { SNAPSHOT_SETTING_DEFAULTS } from '@/electron/main/services/settings-types';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { SnapshotWorkspaceCell, type ShadowSnapshotSummary } from './SnapshotWorkspaceCell';
+import { SnapshotConfigSection } from './SnapshotConfigSection';
+
+interface Props {
+  local: AppSettings;
+  setLocal: Dispatch<SetStateAction<AppSettings>>;
+}
 
 interface OrphanWorkspace {
   id: string;
@@ -55,12 +64,16 @@ interface DepInfo {
   installable?: boolean;
 }
 
-export function WorkspaceManagementTab() {
+export function WorkspaceManagementTab({ local, setLocal }: Props) {
   const currentWorkspace = useWorkspaceStore((s) => s.workspace);
   const clearWorkspace = useWorkspaceStore((s) => s.clearWorkspace);
 
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // 自动快照状态卡
+  const [snapshotSummaries, setSnapshotSummaries] = useState<Record<string, ShadowSnapshotSummary>>({});
+  const [gitAvailable, setGitAvailable] = useState<boolean | null>(null);
 
   // 孤儿恢复
   const [scanning, setScanning] = useState(false);
@@ -100,6 +113,49 @@ export function WorkspaceManagementTab() {
   useEffect(() => {
     loadWorkspaces();
   }, [loadWorkspaces]);
+
+  const loadSnapshotSummaries = useCallback(async (list: Workspace[]) => {
+    try {
+      const cap = await client.getGitCapability();
+      setGitAvailable(cap.available);
+      if (!cap.available) {
+        setSnapshotSummaries({});
+        return;
+      }
+      const results = await Promise.all(
+        list.map(async (w) => {
+          const r = await client.getShadowSnapshotSummary({ workspaceId: w.id });
+          return [w.id, 'snapshotCount' in r ? r : null] as const;
+        }),
+      );
+      const next: Record<string, ShadowSnapshotSummary> = {};
+      for (const [id, s] of results) {
+        if (s) next[id] = s;
+      }
+      setSnapshotSummaries(next);
+    } catch {
+      // 状态卡加载失败静默降级为「加载中」不再变化，开关仍可用
+    }
+  }, []);
+
+  useEffect(() => {
+    if (workspaces.length > 0) loadSnapshotSummaries(workspaces);
+  }, [workspaces, loadSnapshotSummaries]);
+
+  const disabledWorkspaceIds = local.snapshot?.disabledWorkspaces ?? [];
+
+  const handleToggleSnapshot = (ws: Workspace, enabled: boolean) => {
+    const next = enabled
+      ? disabledWorkspaceIds.filter((id) => id !== ws.id)
+      : [...disabledWorkspaceIds, ws.id];
+    setLocal((prev) => ({
+      ...prev,
+      snapshot: {
+        ...(prev.snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS)),
+        disabledWorkspaces: next,
+      },
+    }));
+  };
 
   const handleDelete = async (ws: Workspace) => {
     const ok = await showConfirm(
@@ -271,6 +327,12 @@ export function WorkspaceManagementTab() {
                       {ws.path}
                     </div>
                   </div>
+                  <SnapshotWorkspaceCell
+                    summary={snapshotSummaries[ws.id] ?? null}
+                    gitAvailable={gitAvailable}
+                    enabled={!disabledWorkspaceIds.includes(ws.id)}
+                    onToggle={(enabled) => handleToggleSnapshot(ws, enabled)}
+                  />
                   <Button
                     variant="ghost"
                     size="icon"
@@ -286,6 +348,9 @@ export function WorkspaceManagementTab() {
           )}
         </div>
       </section>
+
+      {/* 自动快照全局配置 */}
+      <SnapshotConfigSection local={local} setLocal={setLocal} />
 
       {/* 孤儿恢复 */}
       <section className="space-y-3">

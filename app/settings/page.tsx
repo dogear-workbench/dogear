@@ -150,7 +150,7 @@ export default function SettingsPage() {
 
         {/* ── Tab: 工作区管理 ── */}
         <TabsContent value="workspace-management" className="flex-1 overflow-y-auto mt-0 p-0 data-[state=inactive]:hidden">
-          <WorkspaceManagementTab />
+          <WorkspaceManagementTab local={local} setLocal={setLocal} />
         </TabsContent>
 
         {/* ── Tab: 子会话派遣 ── */}
