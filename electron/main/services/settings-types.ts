@@ -32,8 +32,8 @@ export interface ModelProfile {
   autoCompactPercent?: number;
   /** pi 客户端的线协议；缺省视为 'anthropic-messages' */
   piWireApi?: PiWireApi;
-  /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id；contextWindow 为手填生效窗口，优先于目录查表；pricing 为手填价格（元/百万 tokens），优先于目录默认价 */
-  piModels?: Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing }>;
+  /** 可用的模型清单（ModelSelection.tier 取值域）；label 为显示名，缺省显示 id；contextWindow 为手填生效窗口，优先于目录查表；pricing 为手填价格（元/百万 tokens），优先于目录默认价；supportsVision 标记视觉能力（未标记 = 假定无视觉） */
+  piModels?: Array<{ id: string; label?: string; contextWindow?: number; maxTokens?: number; pricing?: ModelPricing; supportsVision?: boolean }>;
 }
 
 export type EffortLevel = 'off' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -163,6 +163,8 @@ export interface AppSettings {
     parseModelSelection: ModelSelection | null;
     /** 话题状态卡增量抽取任务专用模型；null 时回退 defaultModelSelection */
     stateModelSelection: ModelSelection | null;
+    /** 图片识读转派模型；null 时自动取模型清单里第一个标记 supportsVision 的模型 */
+    visionModelSelection?: ModelSelection | null;
   };
   basicToolPermissions: BasicToolPermissions;
   profiles: Record<string, ModelProfile>;
@@ -222,6 +224,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     defaultModelSelection: null,
     parseModelSelection: null,
     stateModelSelection: null,
+    visionModelSelection: null,
   },
   basicToolPermissions: createDefaultBasicToolPermissions(),
   subAgent: {

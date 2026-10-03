@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { toast } from 'sonner';
 
 export interface PendingImage {
   file: File;
@@ -6,6 +7,8 @@ export interface PendingImage {
   base64: string;
   mediaType: string;
 }
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export function useImageAttachment() {
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
@@ -25,11 +28,21 @@ export function useImageAttachment() {
     });
   }, []);
 
-  // 处理图片文件选择
+  // 处理图片文件选择（超过 5MB 上限的跳过并提示，上限与主进程 read 图片分支对齐）
   const handleImageFiles = useCallback(async (files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
-    const newImages = await Promise.all(imageFiles.map(async (file) => ({
+    const accepted: File[] = [];
+    let rejected = 0;
+    for (const file of imageFiles) {
+      if (file.size > MAX_IMAGE_BYTES) rejected++;
+      else accepted.push(file);
+    }
+    if (rejected > 0) {
+      toast.error(`${rejected} 张图片超过 5MB 上限，未添加`);
+    }
+    if (accepted.length === 0) return;
+    const newImages = await Promise.all(accepted.map(async (file) => ({
       file,
       preview: URL.createObjectURL(file),
       base64: await fileToBase64(file),

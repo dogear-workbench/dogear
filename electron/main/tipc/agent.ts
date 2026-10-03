@@ -13,6 +13,8 @@ import * as conversationService from '../services/conversation-service.js';
 import { getSessionNotificationService } from '../services/session-notification-service.js';
 import { mainLogger } from '../agents/logger.js';
 import { maybeFailoverMainSession, clearFailoverTriedBySession } from '../agents/model-failover.js';
+import { routeImageMessage } from '../agents/pi-session/vision-shunt.js';
+import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import { requireActiveGroup } from '../services/group-service.js';
 import path from 'path';
@@ -34,6 +36,8 @@ export function unregisterBotStateGetter(getter: BotStateGetter): void {
 }
 
 const t = tipc.create();
+
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 // 模块加载时注册广播函数：所有 session 的消息统一广播给所有渲染层窗口
 getPiSessionManager().setBroadcaster((sessionId, event, payload) => {
@@ -215,6 +219,12 @@ export const agentRouter = {
         // 有多个 textBlocks 或图像附件时，构建 ContentBlock 数组
         const hasMultiBlocks = (input.textBlocks && input.textBlocks.length > 0) || (input.images && input.images.length > 0);
         if (hasMultiBlocks) {
+          // 图像附件大小上限与 read 图片分支对齐（渲染层已拦，此处防 IPC 直调绕过）
+          for (const img of input.images ?? []) {
+            if (Buffer.byteLength(img.data, 'base64') > MAX_IMAGE_BYTES) {
+              return { error: `图片超过 5MB 上限，无法发送` };
+            }
+          }
           // 使用 any[] 构建块，发送前由 sendMessage 的参数类型校验；
           // SDK 0.2.119 起 ContentBlockParam 类型更严格，但这里的字段（text/image+base64）都符合规范
           const contentBlocks: any[] = [];
@@ -226,8 +236,17 @@ export const agentRouter = {
           } else if (input.content) {
             contentBlocks.push({ type: 'text', text: input.content });
           }
-          // 图像块
-          if (input.images) {
+          // 图像块：主会话当前模型无视觉时由 vision-shunt 静默转派识图，返回替换后的纯文本块
+          if (input.images && input.images.length > 0) {
+            const routed = await routeImageMessage({
+              session: activeSession,
+              textBlocks: contentBlocks as ContentBlockParam[],
+              images: input.images,
+            });
+            if (routed) {
+              await activeSession.sendMessage(routed);
+              return { success: true };
+            }
             for (const img of input.images) {
               contentBlocks.push({
                 type: 'image',

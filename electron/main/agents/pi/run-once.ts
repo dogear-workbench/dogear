@@ -1,5 +1,5 @@
 import { Agent, type AgentEvent, type ThinkingLevel } from '@earendil-works/pi-agent-core';
-import type { Api, AssistantMessage, Model, TextContent } from '@earendil-works/pi-ai';
+import type { Api, AssistantMessage, ImageContent, Model, TextContent } from '@earendil-works/pi-ai';
 import type { ModelProfile } from '../../services/settings-types.js';
 import { type ToolDef, toPiTools } from './tool-adapter.js';
 import { buildPiModels } from './provider.js';
@@ -57,6 +57,7 @@ export interface ReviveOptions {
 export async function runOnce(opts: {
   systemPrompt?: string;
   prompt: string;
+  images?: ImageContent[];
   tools: ToolDef[];
   model: Model<Api>;
   profile: ModelProfile;
@@ -69,7 +70,7 @@ export async function runOnce(opts: {
     { ok: true; lastText?: string; usage?: RunOnceUsage }
     | { ok: false; error: string; cancelled?: boolean }
   > {
-  const { systemPrompt = '', prompt, tools, model, profile, thinkingLevel = 'off', signal, maxTurns = 30, onLog } = opts;
+  const { systemPrompt = '', prompt, images, tools, model, profile, thinkingLevel = 'off', signal, maxTurns = 30, onLog } = opts;
 
   const piModels = buildPiModels(profile);
 
@@ -119,7 +120,7 @@ export async function runOnce(opts: {
   }
 
   try {
-    await agent.prompt(prompt);
+    await agent.prompt(prompt, images);
     let revives = 0;
     while (
       !cancelled && !abortedByLimit && opts.revive

@@ -41,7 +41,7 @@ function lookupCatalogModel(wireApi: PiWireApi, modelId: string) {
   };
 }
 
-function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string; contextWindow?: number; maxTokens?: number }): Model<Api> {
+function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string; contextWindow?: number; maxTokens?: number; supportsVision?: boolean }): Model<Api> {
   const wireApi = resolveWireApi(profile);
   const catalog = lookupCatalogModel(wireApi, entry.id);
   const catalogEntry = lookupCatalogEntry(entry.id);
@@ -54,7 +54,7 @@ function buildPiModel(profile: ModelProfile, entry: { id: string; label?: string
     baseUrl: profile.baseUrl,
     reasoning: catalog?.reasoning ?? false,
     thinkingLevelMap: catalog?.thinkingLevelMap,
-    input: ['text', 'image'],
+    input: entry.supportsVision === true ? ['text', 'image'] : ['text'],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: entry.contextWindow ?? catalogEntry?.contextWindow ?? FALLBACK_CONTEXT_WINDOW,
     maxTokens: entry.maxTokens ?? catalogEntry?.maxTokens ?? 8192,

@@ -266,6 +266,14 @@ export function ContentBlockItem({ block, sessionId, onPermissionResolved, onAsk
         </div>
       );
 
+    case 'status':
+      return block.status ? (
+        <div className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+          <div className="w-1.5 h-1.5 bg-muted-foreground rounded-full"></div>
+          {block.status}
+        </div>
+      ) : null;
+
     case 'error':
       return <ErrorAlertBlock block={block} />;
 

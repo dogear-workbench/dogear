@@ -16,6 +16,7 @@ import type { AgentEvent, AgentHarnessTool, ExecutionEnv, Session, JsonlSessionM
 import type { ContentBlockParam } from '@anthropic-ai/sdk/resources/messages.mjs';
 import type { PiPermissionMode } from './permission-mode.js';
 import type { AssistantMessage, ImageContent } from '@earendil-works/pi-ai';
+import { splitContentBlocks } from './content-blocks.js';
 import { mainLogger } from '../logger.js';
 import { resolvePiModel, buildPiModels } from '../pi/provider.js';
 import { lookupContextWindow } from '../pi/model-catalog.js';
@@ -96,20 +97,7 @@ interface PendingPermissionRequest {
   toolInput: unknown;
 }
 
-/** 把 SDK 风格的 ContentBlockParam[] 拆成 text + pi-ai ImageContent[]（tipc 传来的 Anthropic 形状 base64 image 块在此转换；url 形状与其他非文本块不支持，静默丢弃） */
-function splitContentBlocks(blocks: ContentBlockParam[]): { text: string; images: ImageContent[] } {
-  const texts: string[] = [];
-  const images: ImageContent[] = [];
-  for (const block of blocks) {
-    if (!block || typeof block !== 'object' || !('type' in block)) continue;
-    if (block.type === 'text') {
-      texts.push((block as { text: string }).text);
-    } else if (block.type === 'image' && block.source.type === 'base64') {
-      images.push({ type: 'image', data: block.source.data, mimeType: block.source.media_type });
-    }
-  }
-  return { text: texts.join('\n'), images };
-}
+/** 把 SDK 风格的 ContentBlockParam[] 拆成 text + pi-ai ImageContent[] 的实现与单测见 content-blocks.ts */
 
 /** 口径对齐 pi-agent-core compaction 的 calculateContextTokens：totalTokens 优先，否则 input+output+cacheRead+cacheWrite */
 function extractLastContextTokens(messages: Extract<AgentEvent, { type: 'agent_end' }>['messages']): number | undefined {

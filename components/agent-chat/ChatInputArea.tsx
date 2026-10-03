@@ -197,6 +197,31 @@ export const ChatInputArea = memo(function ChatInputArea({
     if (pendingState !== 'running') setPauseRequested(false);
   }, [pendingState]);
 
+  // 拖拽图片到输入区：dragenter/dragleave 嵌套触发用计数器抵消，避免子元素进出闪烁
+  const [dragActive, setDragActive] = useState(false);
+  const dragDepth = useRef(0);
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!Array.from(e.dataTransfer?.types ?? []).includes('Files')) return;
+    e.preventDefault();
+    dragDepth.current++;
+    setDragActive(true);
+  }, []);
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragActive(false);
+  }, []);
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+  }, []);
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    dragDepth.current = 0;
+    setDragActive(false);
+    if (!isSessionReady || e.dataTransfer?.files?.length === 0) return;
+    handleImageFiles(e.dataTransfer.files);
+  }, [isSessionReady, handleImageFiles]);
+
   const handlePause = useCallback(async () => {
     if (!sessionId) return;
     try {
@@ -237,10 +262,16 @@ export const ChatInputArea = memo(function ChatInputArea({
               onClose={onSlashMenuClose}
             />
           </div>
-          <InputGroup className={cn(
+          <InputGroup
+            onDragEnter={handleDragEnter}
+            onDragLeave={handleDragLeave}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            className={cn(
               "rounded-xl bg-muted/50 h-auto flex-col transition-colors",
               PERMISSION_MODE_STYLES[permissionMode]?.border,
               PERMISSION_MODE_STYLES[permissionMode]?.focusRing,
+              dragActive && "ring-2 ring-primary/40 border-primary",
             )}>
             {/* 顶部 Addon：分流气泡 + 移交草稿 + 引用芯片 + 图片预览 */}
             {(handoffDrafts.length > 0 || shuntBubble || referencedArticles.length > 0 || quotedSnippets.length > 0 || messageSnippets.length > 0 || referencedFiles.length > 0 || referencedConversations.length > 0 || referencedSharedFiles.length > 0 || referencedNotes.length > 0 || pendingImages.length > 0) && (

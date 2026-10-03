@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Eye } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   FALLBACK_CONTEXT_WINDOW,
@@ -19,6 +19,7 @@ export interface PiModelEntry {
   contextWindow?: number;
   maxTokens?: number;
   pricing?: ModelPricing;
+  supportsVision?: boolean;
 }
 
 const PRICING_FIELDS = ['input', 'output', 'cacheRead'] as const;
@@ -43,12 +44,14 @@ function buildEntry(
   contextWindow: number | undefined,
   maxTokens: number | undefined,
   pricing: ModelPricing | undefined,
+  supportsVision: boolean | undefined,
 ): PiModelEntry {
   const next: PiModelEntry = { id };
   if (label) next.label = label;
   if (contextWindow !== undefined) next.contextWindow = contextWindow;
   if (maxTokens !== undefined) next.maxTokens = maxTokens;
   if (pricing !== undefined) next.pricing = pricing;
+  if (supportsVision !== undefined) next.supportsVision = supportsVision;
   return next;
 }
 
@@ -81,7 +84,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
       window.setTimeout(() => setIdError(false), 1500);
       return;
     }
-    onChange(buildEntry(next, entry.label, entry.contextWindow, entry.maxTokens, entry.pricing));
+    onChange(buildEntry(next, entry.label, entry.contextWindow, entry.maxTokens, entry.pricing, entry.supportsVision));
   };
 
   const startWindowEdit = () => {
@@ -93,11 +96,11 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
   const commitWindow = () => {
     const raw = windowDraft.trim();
     if (raw === '') {
-      if (entry.contextWindow !== undefined) onChange(buildEntry(entry.id, entry.label, undefined, entry.maxTokens, entry.pricing));
+      if (entry.contextWindow !== undefined) onChange(buildEntry(entry.id, entry.label, undefined, entry.maxTokens, entry.pricing, entry.supportsVision));
     } else {
       const parsed = parseContextInput(raw);
       if (parsed !== undefined && parsed !== entry.contextWindow) {
-        onChange(buildEntry(entry.id, entry.label, parsed, entry.maxTokens, entry.pricing));
+        onChange(buildEntry(entry.id, entry.label, parsed, entry.maxTokens, entry.pricing, entry.supportsVision));
       }
     }
     setWindowEditing(false);
@@ -112,11 +115,11 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
   const commitMax = () => {
     const raw = maxDraft.trim();
     if (raw === '') {
-      if (entry.maxTokens !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, undefined, entry.pricing));
+      if (entry.maxTokens !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, undefined, entry.pricing, entry.supportsVision));
     } else {
       const parsed = parseContextInput(raw);
       if (parsed !== undefined && parsed !== entry.maxTokens) {
-        onChange(buildEntry(entry.id, entry.label, entry.contextWindow, parsed, entry.pricing));
+        onChange(buildEntry(entry.id, entry.label, entry.contextWindow, parsed, entry.pricing, entry.supportsVision));
       }
     }
     setMaxEditing(false);
@@ -136,7 +139,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
     if (pricingCancelled.current) return;
     const raws = Object.fromEntries(PRICING_FIELDS.map(f => [f, pricingDraft[f].trim()])) as Record<PricingField, string>;
     if (PRICING_FIELDS.every(f => raws[f] === '')) {
-      if (entry.pricing !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, undefined));
+      if (entry.pricing !== undefined) onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, undefined, entry.supportsVision));
     } else {
       const merged = {} as Record<PricingField, number>;
       let valid = true;
@@ -154,7 +157,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
       if (valid) {
         const unchanged = entry.pricing !== undefined && PRICING_FIELDS.every(f => entry.pricing![f] === merged[f]);
         if (!unchanged) {
-          onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, { input: merged.input, output: merged.output, cacheRead: merged.cacheRead }));
+          onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, { input: merged.input, output: merged.output, cacheRead: merged.cacheRead }, entry.supportsVision));
         }
       }
     }
@@ -323,6 +326,20 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
               : '¥ —'}
         </button>
       )}
+      <button
+        type="button"
+        title={entry.supportsVision ? '已标记为视觉模型：用户消息图片可直接进入上下文；点击取消标记' : '标记为视觉模型（可识图）；无标记的模型收到图片时会自动转派识图模型'}
+        className={cn(
+          'shrink-0 flex items-center gap-1 text-xs px-2 py-1 rounded border transition-colors',
+          entry.supportsVision
+            ? 'text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950'
+            : 'text-muted-foreground hover:bg-muted/50',
+        )}
+        onClick={() => onChange(buildEntry(entry.id, entry.label, entry.contextWindow, entry.maxTokens, entry.pricing, entry.supportsVision ? undefined : true))}
+      >
+        <Eye className="w-3 h-3" />
+        {entry.supportsVision ? '视觉' : '无视觉'}
+      </button>
       <input
         type="text"
         className="h-9 w-44 px-3 text-sm border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-ring"
@@ -330,7 +347,7 @@ export function PiModelRow({ entry, others, onChange, onRemove }: PiModelRowProp
         placeholder={entry.id}
         onChange={(e) => {
           const v = e.target.value;
-          onChange(buildEntry(entry.id, v === '' ? undefined : v, entry.contextWindow, entry.maxTokens, entry.pricing));
+          onChange(buildEntry(entry.id, v === '' ? undefined : v, entry.contextWindow, entry.maxTokens, entry.pricing, entry.supportsVision));
         }}
       />
       <Button variant="ghost" size="sm" onClick={onRemove}>

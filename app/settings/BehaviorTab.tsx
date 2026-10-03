@@ -202,6 +202,22 @@ export function BehaviorTab({ local, setLocal }: BehaviorTabProps) {
           />
         </div>
 
+        {/* 识图转派模型 */}
+        <div className="space-y-2">
+          <label className="text-sm font-medium">识图转派模型</label>
+          <p className="text-xs text-muted-foreground">
+            无视觉的主会话模型收到图片时，自动转派此模型识图后把描述注入会话；
+            选「不指定」时自动使用模型清单里第一个勾选「视觉」的模型。
+          </p>
+          <ModelSelector
+            settings={local}
+            value={local.ai.visionModelSelection ?? null}
+            onChange={(v) => updateAI({ visionModelSelection: v })}
+            allowUnset={true}
+            triggerVariant="block"
+          />
+        </div>
+
         {/* 默认权限模式 */}
         <div className="space-y-3">
           <label className="text-sm font-medium">默认权限模式</label>

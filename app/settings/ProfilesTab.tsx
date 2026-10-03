@@ -123,12 +123,13 @@ export function ProfilesTab({ local, setLocal }: ProfilesTabProps) {
     setLocal(prev => {
       const { [profileId]: _removed, ...rest } = prev.profiles;
       const newAi = { ...prev.ai };
-      const clearIfMatch = (key: 'defaultModelSelection' | 'parseModelSelection' | 'stateModelSelection') => {
+      const clearIfMatch = (key: 'defaultModelSelection' | 'parseModelSelection' | 'stateModelSelection' | 'visionModelSelection') => {
         if (newAi[key]?.profileId === profileId) newAi[key] = null;
       };
       clearIfMatch('defaultModelSelection');
       clearIfMatch('parseModelSelection');
       clearIfMatch('stateModelSelection');
+      clearIfMatch('visionModelSelection');
       return { ...prev, profiles: rest, ai: newAi };
     });
     setSelectedProfileTab('default');
