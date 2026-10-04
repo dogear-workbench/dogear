@@ -30,8 +30,8 @@ function authHeaders(deviceId: string, secret: string): Record<string, string> {
   return { [AuthHeaders.deviceId]: deviceId, [AuthHeaders.secret]: secret };
 }
 
-export async function fetchPeerInfo(peer: PeerEndpoint): Promise<HandshakeHello> {
-  const res = await fetch(peerUrl(peer, '/info'), { signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS) });
+export async function fetchPeerInfo(peer: PeerEndpoint, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<HandshakeHello> {
+  const res = await fetch(peerUrl(peer, '/info'), { signal: AbortSignal.timeout(timeoutMs) });
   if (!res.ok) throw new Error(`GET /info HTTP ${res.status}`);
   return HandshakeHelloSchema.parse(await res.json());
 }
