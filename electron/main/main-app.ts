@@ -304,6 +304,11 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('初始化主题失败:', error);
   }
+  // 快照排除目录对照扫描迁移：settings 已就绪，后台执行不阻塞启动，失败仅 log
+  void import('./services/snapshot-exclusion-scan.js')
+    .then((m) => m.migrateSnapshotExclusionsIfNeeded())
+    .catch((err) => console.error('快照排除目录迁移扫描失败:', err));
+
   nativeTheme.on('updated', syncTitleBarOverlay);
 
   void createWindow();

@@ -172,6 +172,10 @@ export async function add(workspace: Omit<Workspace, 'id'> & { id?: string }): P
   file.workspaces.push(newData);
   await saveWorkspacesFile(file);
   void import('./workspace-watcher.js').then((m) => m.syncWorkspaceWatchers()).catch(() => {});
+  // 新工作区注册钩子：对照扫描默认名单目录写入 excludedPaths 条目（同步搬入工作区走同一入口，一并覆盖）
+  void import('./snapshot-exclusion-scan.js')
+    .then((m) => m.scanAndStoreWorkspaceExclusions(id, newData.path))
+    .catch((err) => console.error('[snapshot-exclusion-scan] 新工作区对照扫描失败:', err));
   return id;
 }
 
