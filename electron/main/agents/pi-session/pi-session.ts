@@ -470,7 +470,7 @@ export class PiSession extends EventEmitter {
     if (isSubAgent) {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
       if (activeAbilities.has('workspace-git')) personaParts.push(GIT_HISTORY_GUIDANCE_APPEND);
-      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_SUB_APPEND);
+      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser') || activeAbilities.has('browser-extension')) personaParts.push(WEB_RESEARCH_GUIDANCE_SUB_APPEND);
       if (this.config.subAgent) personaParts.push(subAgentContractFor(this.config.subAgent));
     } else {
       if (activeAbilities.has('memory')) personaParts.push(MEMORY_GUIDANCE_APPEND);
@@ -478,7 +478,7 @@ export class PiSession extends EventEmitter {
       if (activeAbilities.has('notes') && !this.config.executor) personaParts.push(NOTES_DISCIPLINE_APPEND);
       if (activeAbilities.has('workspace-git')) personaParts.push(GIT_HISTORY_GUIDANCE_APPEND);
       if (activeAbilities.has('shunt') && !this.config.executor) personaParts.push(SHUNT_GUIDANCE_APPEND);
-      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser')) personaParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
+      if (activeAbilities.has('web-mcp') || activeAbilities.has('browser') || activeAbilities.has('browser-extension')) personaParts.push(WEB_RESEARCH_GUIDANCE_MAIN_APPEND);
       if (activeAbilities.has('agent-collab')) {
         personaParts.push(MAIN_AGENT_DELEGATION_APPEND);
         personaParts.push(buildSubAgentProfileIndex(appSettings.subAgent?.profiles ?? []));

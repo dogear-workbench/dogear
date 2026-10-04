@@ -1,7 +1,7 @@
 ---
 step: 3
 title: browser-exploration 重写为双通道方法论
-status: pending
+status: done
 ---
 
 ## 目标
@@ -25,10 +25,10 @@ SKILL.md 重写为通道无关的双通道并列方法论：通道选择原则�
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① 原文「何时停与移交」落地为「何时停与交付」（内容实为停止 + 交付）；② 发现并修正旧文案与实现冲突：原「内嵌触发风控熔断可换扩展通道」与 site-policy 实现冲突（熔断按会话+域累计，同会话换通道同样被拒，且 site_policy instructions 明确不换通道规避），新版改为「熔断/预算耗尽即停不换通道规避」；③ WEB_RESEARCH_GUIDANCE 触发条件与内容表述两者都改（只改触发会误导扩展-only 子会话，只改内容会让扩展-only 会话缺快档指引）；④ dev 冒烟以静态检查替代（skill-service 扫描路径与 frontmatter 解析实际验证）；⑤ 主会话验收时顺手修正 step1 漏网的 browser-parse Profile description（settings-types.ts:394 旧叙事对齐前端镜像双通道表述，单行文案）。
+- 改动文件清单：resources/skill-templates/browser-exploration/SKILL.md（全文重写四段：双通道定位与选择 / 通用探索循环 / 站点档案与访问策略 / 何时停与交付）；pi-session.ts（WEB_RESEARCH_GUIDANCE 触发 473/481 行加 browser-extension）；session-append-templates.ts（MAIN/SUB 版通道无关化 + 「浏览器通道独占」精确为「扩展通道全局独占」）；settings-types.ts（browser-parse description 对齐，主会话顺手）。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：SKILL.md 现为双通道并列唯一事实源；WEB_RESEARCH_GUIDANCE 触发条件为三包任一（web-mcp / browser / browser-extension），新增浏览器类包时记得同步。
+- 下个 step 该从哪里继续：step 4/5 tab 生命周期闭环时，「用完关」纪律随 tab 工具 description 落地（open_tab/close_tab 现只有上限与焦点语义）；SKILL.md 只在「定位与选择」层面动，通道行为细节改对应工具 description。
+- 待办或已知限制：无阻塞项；扩展通道描述中「确认卡」与内嵌「等待人工卡片」并存属两侧各自正确，无需改。

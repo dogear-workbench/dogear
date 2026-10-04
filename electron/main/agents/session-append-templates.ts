@@ -108,18 +108,18 @@ export const SHUNT_GUIDANCE_APPEND =
   '- 建议块必须位于回复最末尾，JSON 独占块内正文，块外不加修饰\n' +
   '- 用户消息含 <shunt action="..." summary="...">用户补充</shunt> 标签时（用户已通过操作气泡确认执行），按 action 执行后简短回执（一两句），然后继续当前话题——不等待、不追问分流结果；new-session/new-topic 走 dogear__ForkSession，note 走 dogear__CreateNote（tags 含「分流暂存」）';
 
-/** 主会话联网调研分工（web-mcp 或 browser 包任一生效，仅 role='main' 注入）。 */
+/** 主会话联网调研分工（web-mcp / browser / browser-extension 包任一生效，仅 role='main' 注入）。 */
 export const WEB_RESEARCH_GUIDANCE_MAIN_APPEND =
   '\n## 联网调研分工\n' +
   '- 快档直查：检索与静态文章直接用 bigmodel__webSearch / bigmodel__webReader（API 直出），不派会话\n' +
-  '- 深度浏览（翻页拼接、JS 渲染、页面交互、登录态）派「浏览器解析」子会话（profile: browser-parse），浏览器通道独占、并行调研请串行派遣\n' +
-  '- 纯本地代码/文档调研派普通子会话，不占浏览器独占通道';
+  '- 深度浏览（翻页拼接、JS 渲染、页面交互、登录态）派「浏览器解析」子会话（profile: browser-parse），扩展通道全局独占、并行调研请串行派遣\n' +
+  '- 纯本地代码/文档调研派普通子会话，不占扩展独占通道';
 
 /** 子会话联网调研分工（同触发条件，仅 role='sub' 注入）；子会话不能派单，不出现派遣指引。 */
 export const WEB_RESEARCH_GUIDANCE_SUB_APPEND =
   '\n## 联网调研分工\n' +
   '- 快档优先：检索与静态文章用 bigmodel__webSearch / bigmodel__webReader（API 直出）\n' +
-  '- 需 JS 渲染、页面交互或登录态时用本会话 dogear__browser__* 工具';
+  '- 需 JS 渲染、页面交互或登录态时用本会话浏览器工具（内嵌 dogear__browser__* / 扩展 dogear__extension__*，按会话实际挂载的通道选用）';
 
 /** 应用数据目录认知（系统行为，固定注入每个会话）：定位 + 禁写区 */
 export function buildAppDataGuidance(configDir: string, workspaceId: string): string {
@@ -210,7 +210,7 @@ export function getSystemPromptSegments(): (SystemPromptSegment & { key: SystemP
       label: '联网调研分工',
       category: 'tool-guide',
       template: WEB_RESEARCH_GUIDANCE_MAIN_APPEND,
-      triggerDescription: 'web-mcp 或 browser 包任一生效时按会话角色注入：主会话版含派遣动线（快档直查 → 派「浏览器解析」子会话 → 本地调研派普通子会话）；子会话版精简两行（快档优先 + dogear__browser__* 备选），不出现派单指引。',
+      triggerDescription: 'web-mcp / browser / browser-extension 包任一生效时按会话角色注入：主会话版含派遣动线（快档直查 → 派「浏览器解析」子会话 → 本地调研派普通子会话）；子会话版精简两行（快档优先 + 按会话实际挂载选用浏览器通道工具），不出现派单指引。',
       isDynamic: false,
     },
     {
