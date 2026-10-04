@@ -273,6 +273,12 @@ export function buildRemoteManifestView(
       remoteRelPath: entry.relPath,
     });
   }
+  // 对端清单按请求方映射过滤（未映射工作区不进清单），meta 是唯一恒带的发现渠道——
+  // 没有这条并入，两端全新配对时待映射清单永远为空，第一条映射无从建立（死锁）
+  for (const meta of workspaceMeta ?? []) {
+    if (!meta?.wsid || ctx.remoteToLocal.has(meta.wsid) || ctx.ignoredRemote.has(meta.wsid)) continue;
+    if (!unmapped.has(meta.wsid)) unmapped.set(meta.wsid, meta);
+  }
   return { views, unmappedWorkspaces: [...unmapped.values()].sort((a, b) => a.wsid < b.wsid ? -1 : 1) };
 }
 

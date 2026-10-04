@@ -192,6 +192,20 @@ test('buildRemoteManifestView：无元信息时待映射清单仅有 wsid', () =
   expect(unmappedWorkspaces).toEqual([{ wsid: 'unknown-id' }]);
 });
 
+test('buildRemoteManifestView：清单无工作区条目时，meta 中未映射工作区仍进待映射清单（全新配对死锁解法）', () => {
+  const c = ctx({ 'ws-local': { remoteWsid: 'ws-remote', enabled: true } }, ['ws-nope']);
+  const { unmappedWorkspaces } = buildRemoteManifestView(
+    c,
+    [{ relPath: 'settings.json', size: 1, mtimeMs: 1 }],
+    [
+      { wsid: 'ws-remote', name: '已映射' },
+      { wsid: 'ws-nope', name: '已忽略' },
+      { wsid: 'ws-discovered', name: '仅 meta 可见', conversationCount: 3, lastUpdated: 42 },
+    ],
+  );
+  expect(unmappedWorkspaces).toEqual([{ wsid: 'ws-discovered', name: '仅 meta 可见', conversationCount: 3, lastUpdated: 42 }]);
+});
+
 // ── buildManifest 映射过滤（真实临时目录）──
 
 test('buildManifest enabledWorkspaceIds：只收启用 wsid 子树，workspaces.json 恒收', async () => {
