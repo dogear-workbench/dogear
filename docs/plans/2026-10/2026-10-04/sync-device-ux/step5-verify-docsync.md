@@ -1,7 +1,7 @@
 ---
 step: 5
 title: 全量验证与文档收尾
-status: pending
+status: done
 ---
 
 ## 目标
@@ -20,5 +20,8 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：无；四项验证主会话亲自跑（lint 0 errors / build:electron ✓ / vite build ✓ / bun test 547 tests 0 fail）
 - 改动文件清单：
+  - docs/codebase-map/data-center.md（UI 条目 + lan-sync/discovery/pairing/sync-state/store 条目 + 数据流，新增 discovery.ts 条目）
+  - docs/codebase-map/infra.md（tipc sync 路由条目：getPeersSnapshot/scanPeers/unpair）
+  - plan.md 步骤索引全勾 + 完成总结

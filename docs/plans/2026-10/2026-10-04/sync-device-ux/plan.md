@@ -12,7 +12,26 @@
 - [x] [Step 2: 发现层——scanNow 主动扫描 + 快照含离线已配对](./step2-discovery-scan.md) — mDNS 一轮查询 + 已配对地址探测合并，peers 快照结构扩展
 - [x] [Step 3: tipc 路由与 store 合并数据源](./step3-tipc-store.md) — scanPeers/unpair 路由，store 组装「已配对常驻 ∪ mDNS 未配对」
 - [x] [Step 4: UI——寻找按钮 + 离线常驻卡片 + 解除配对菜单](./step4-ui.md) — 面板按钮与空态、设备卡离线态、下拉菜单解除项（同步中禁用 + confirm）
-- [ ] [Step 5: 全量验证与文档收尾](./step5-verify-docsync.md) — lint/build:electron/vite build/bun test 全绿 + codebase-map 同步
+- [x] [Step 5: 全量验证与文档收尾](./step5-verify-docsync.md) — lint/build:electron/vite build/bun test 全绿 + codebase-map 同步
+
+## 完成总结
+
+**实际改动**（5 笔提交：33586a44 / 500b73e7 / 0df1d2d7 / 965c5e36 / 本笔）：
+- 主进程数据层：SyncStatePeer 加 lastHost/lastPort（仅成功路径更新：配对确认/runSync 收尾/探测成功）；unpairDevice（同步进行中拒绝、幂等删 pairedDevices 条目、sync-state.peers 保留）；删除 peer-notify 上线通知；未配对/401/403 文案追加解除配对引导
+- 发现层：discovery 加 scanNow（并发防抖，mDNS 窗口 ~2s + 已配对地址 fetchPeerInfo 3s 探测）与 getDeviceSnapshot 合并快照（mDNS 在线 ∪ 探测在线 ∪ 离线已配对常驻）；fetchPeerInfo 加可选超时参数
+- tipc/store：peersChanged 广播改推合并快照（合帧防乱序）；新增 scanPeers/unpair 路由；getPeers 改名 getPeersSnapshot 统一数据源；store 加 scanning/scan()/unpair()
+- UI：面板「寻找设备」按钮 + 空态引导；设备卡在线/离线 Badge、地址未知兑底；已配对下拉菜单红字「解除配对」（同步中禁用 + showConfirm）；区标题「在线设备」改「设备」
+- 测试：新增 16 用例（unpair 6 + scan 7 + broadcast 3，*.impl.ts + zz-* 子进程隔离模式）；codebase-map 同步
+
+**与原计划偏差**：
+1. 403 文案额外覆盖 fetchManifest 抛 401/403 路径（对端已解除的真实报错路径）
+2. fetchPeerInfo 加参替代 AbortSignal.timeout（对齐现有参数风格）
+3. peersChanged 快照化落点在 discovery.notifyChanged 而非 lan-sync-service（后者是透传层）
+4. getPeers 改名 getPeersSnapshot（避免 refresh 拉纯 mDNS 列表覆盖事件快照的双数据源矛盾）
+5. incoming 配对不写地址（协议无对端地址，改 server.ts 属计划外；由无地址兑底分支覆盖，扫描/同步成功后自然补记）
+6. UI title 提示放 trigger 按钮而非菜单项（Radix disabled 项 pointer-events-none）
+
+**已知限制**：探测在线但 mDNS 未命中的设备发起同步报「对端不在线」（runSync 仍按纯 mDNS 判可达，设计既定：离线可点、失败有明确报告）；三态渲染与 unpair 全链路需真机实测（Windows 本端 + Mac 对端）
 
 ## 全局决策
 

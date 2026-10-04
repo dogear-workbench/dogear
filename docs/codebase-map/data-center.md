@@ -10,7 +10,7 @@
 - `history-utils.ts` / `HistoryEntryCard.tsx` — 执行历史格式化与条目卡片（SOURCE_META 徽章，含 collab-task key 保留作旧数据条目渲染兜底；无 source 旧条目归 scheduler）
 - `memory-section.tsx` — 记忆 tab 容器：筛选+重建索引按钮+主题记忆面板
 - `version-backup/` — 版本与备份面板：VersionBackupPanel（tab 容器：状态加载 30s 可见轮询 + 分类配置写回 settings + 全部备份/打开目录（打开 backups/ 根目录）+ 逐项运行 loading + 调度级最近失败红字行）、GitSummarySection（用户 Git 仓库/自动快照两卡按工作区聚合只读展示，卡片副标题名词解释，快照统计两行不截断，git 缺失降级「未安装 git」）、CategoryCard（开关/频率/保留份数 + 每 scope 状态行/到期徽标/无变化跳过浅色提示/最近失败红字/立即备份 + 备份列表展开与恢复 showConfirm（快照还原语义：确认文案明示「快照内不存在的新增文件将被删除」，成功 toast 追加删除计数）；scope 名 personal→临时会话区、未注册目录加徽标与 tooltip）、backup-meta（五分类元数据，默认值从主进程 BACKUP_CATEGORY_DEFAULTS 导入、tipc client 类型推导、格式化）
-- `sync-panel.tsx` + `sync-peer-card/sync-pair-requests/sync-settings/sync-workspace-card/sync-result/sync-utils` — 设备同步面板：本机状态卡（启停/端口/设备 ID）、配对请求卡、在线设备卡（立即同步/解除配对）、同步范围设置（同步项开关+冲突副本+stocks/feishu 可选目录+工作区启停）、结果卡（pull/push/skip/conflict 计数与明细，删除计数与删改冲突独立分区展示，冲突可取对端/留本端裁决）；主进程服务见下方设备同步节
+- `sync-panel.tsx` + `sync-peer-card/sync-pair-requests/sync-settings/sync-workspace-card/sync-result/sync-utils` — 设备同步面板：本机状态卡（启停/端口/设备 ID）、配对请求卡、「寻找设备」按钮（scanNow 手动扫描，scanning loading）、设备卡（已配对常驻：在线/离线 Badge、离线也可发起同步、下拉解除配对 confirm）、同步范围设置（同步项开关+冲突副本+stocks/feishu 可选目录+工作区启停）、结果卡（pull/push/skip/conflict 计数与明细，删除计数与删改冲突独立分区展示，冲突可取对端/留本端裁决）；主进程服务见下方设备同步节
 - `browser-data-panel.tsx` — 浏览器数据面板：全局分区（persist:dogear-browser）概览（磁盘占用/HTTP 缓存/登录站点数）+ 常驻准确性提示（误报可移除）+「我的登录」区（login-observer 检测的登录清单：证据徽章/最近登录时间，每条登出=本地清全量数据不通知服务器/清除数据/移除误报）+「其他站点数据」折叠区（仅清除数据）+ 面板级清缓存/全部清除；全部 showConfirm 含 agent 风险提示；30s 可见轮询；主进程服务与路由见 browser.md
 - `topics-panel.tsx` / `topics-list.tsx` / `topic-editor.tsx` / `memory-types.ts` — 主题记忆列表+编辑器（slug 校验/覆盖确认/删除二次确认）
 - `scheduler/` — 定时计划组件：SchedulerPanel（列表/编辑态切换）、TaskEditorPage（二级页：名称/提示词/模型/工作区/扩展能力/触发器）、CustomAbilityMatrix（扩展能力矩阵：五 extension 包，四包整包开关跟随/固化 toolPacksOverride、code-workflow 开关+6 skill 勾选写 skillsOverride；getAbilityPacks+listToolPacks 取数）、TriggerListEditor/TriggerRow/TriggerControls、utils（describeTrigger 等）
@@ -47,14 +47,15 @@
 ## 设备同步（services/sync/）
 
 - `protocol.ts` — 同步协议 v3（SYNC_PROTOCOL_VERSION）：manifest 清单交换 + GET/POST /file + DELETE /file（墓碑删除传播），manifest 请求/响应可携 tombstones
-- `lan-sync-service.ts` — 服务生命周期：mDNS 发现（discovery）+ HTTP server 启停 + 状态/peers 广播
-- `pairing.ts` / `device.ts` — 配对码双端确认流程与设备身份
+- `lan-sync-service.ts` — 服务生命周期：mDNS 发现（discovery）+ HTTP server 启停 + 状态/peers 快照广播
+- `discovery.ts` — mDNS 设备发现（30s requery + 90s 剔除，仅未配对）+ scanNow 手动扫描（mDNS 窗口 ~2s + 已配对设备 lastHost 地址 fetchPeerInfo 3s 探测，并发防抖）+ getDeviceSnapshot 合并快照（mDNS 在线 ∪ 探测在线 ∪ 离线已配对常驻，deviceId 去重 mDNS 优先）；peersChanged 广播携合并快照（合帧防乱序）
+- `pairing.ts` / `device.ts` — 配对码双端确认流程与设备身份；地址记忆（配对确认/runSync 收尾/探测成功写 lastHost·lastPort，仅成功路径）与 unpairDevice 解除配对（同步进行中拒绝，仅删 pairedDevices 条目，sync-state.peers 保留供重新配对续用）
 - `manifest.ts` — 清单构建与 diff：`isExcluded` 唯一排除判定入口（冲突副本/shadowGit/disabledItems/stocks·feishu optionalDirs）；`tombstoneCandidates` 墓碑候选（基线有现无，排除 settings/excludes/暂停工作区）
 - `orchestrator.ts` — 主动同步编排：buildManifest → diff → pull/push/skip 执行 → SyncReport（含 deleted/deleteConflicts）；对端协议 <3 时删除传播整体禁用（退 v2 行为）
 - `server.ts` — 被动端点：/manifest（回清单+被动端墓碑落盘+响应携墓碑）/file pull/POST push（落盘前 push-guard 校验）/DELETE（expectedHash 二次校验防误删）
 - `push-guard.ts` — push 接收端校验链：引擎自身路径/敏感文件（login-accounts.json）/外部锚点/排除项/工作区 enabled → 403+reason
 - `apply.ts` — 文件写回与冲突处理（冲突留底副本 `.conflict-*` 带 rand4，COPYFILE_EXCL 防覆盖）；settings.json 走字段级三方合并
-- `sync-state.ts` — sync-state.json（deviceId/per-peer 基线与选项/全局 tombstones 90 天 TTL 上限 2000），withSyncStateLock 进程锁
+- `sync-state.ts` — sync-state.json（deviceId/per-peer 基线与选项/地址记忆 lastHost·lastPort/全局 tombstones 90 天 TTL 上限 2000），withSyncStateLock 进程锁
 - `tombstone.ts` — 删除传播执行单元：applyPeerTombstones（对端删本端跟随）/propagateLocalDeletes（本端删驱动对端）；删改冲突保守保留修改侧、不参与冲突裁决
 
 不变量：settings.json 永不参与墓碑与覆盖删除（含配对密钥）；墓碑生成两处对称（orchestrator 主动端 + server handleManifest 被动端，共用 tombstoneCandidates）；isExcluded 是清单/diff/apply/push guard 四处唯一排除判定
@@ -73,7 +74,7 @@
 ## Store 与类型
 
 - `stores/scheduler-store.ts` — 定时任务前端（tasks/activity/history + RPC 封装失败 toast）
-- `stores/sync-store.ts` — 设备同步前端（peers/status/运行进度，syncEvent 广播事件驱动 + 完成 toast 含删除/删改冲突计数）
+- `stores/sync-store.ts` — 设备同步前端（peers 恒为合并快照含离线已配对常驻/status/运行进度/scanning 寻找设备态/scan·unpair action，syncEvent 广播事件驱动 + 完成 toast 含删除/删改冲突计数）
 - `types/scheduler.ts` / `types/usage.ts` — 定时任务 / 用量数据模型（主进程镜像在各自 service）
 - `hooks/use-visible-polling.ts` — 数据中心统一轮询钩子（可见才轮询，恢复可见立即拉齐）
 
@@ -89,6 +90,6 @@
 ## 数据流
 
 - 应用数据备份：分类×scope → registry backupSourcesFor 取源 → 主进程锚点反解+stat → worker 线程打包写 `backups/<scope>/` → last-run 记录结果 → 面板红字/徽标可见；恢复反向：预备份 → 解压写回 → 快照外删除
-- 设备同步：discovery 发现 → pairing 配对 → runSync（orchestrator）：buildManifest → diff（含双向墓碑判定）→ pull（对端拉）/push（本端推、对端 push-guard 校验）/删除传播（DELETE /file 或本地 unlink）→ SyncReport 经 syncEvent 广播到结果卡；被动端 server 独立响应 /manifest 与 /file
+- 设备同步：discovery 发现（mDNS ∪ 已配对地址探测，已配对设备常驻在线/离线态）→ pairing 配对（成功即记地址）→ runSync（orchestrator）：buildManifest → diff（含双向墓碑判定）→ pull（对端拉）/push（本端推、对端 push-guard 校验）/删除传播（DELETE /file 或本地 unlink）→ SyncReport 经 syncEvent 广播到结果卡；被动端 server 独立响应 /manifest 与 /file
 - 话题状态卡：会话开启时 state-extract-trigger 检测滞后会话起 STATE_EXTRACT 任务 → agent-worker → tasks/state-extract-task（pi runOnce）→ emit_state_increment 结构化增量 → 纯代码合并落 background.md；读取时 dogear__ReadGroupBackground 经 ensureGroupFresh 现场补齐滞后会话后返回唯一最新卡；跨话题检索动线 ListTopics → ReadGroupBackground → ReadReferenceSession
 - 话题面板 UI（状态卡渲染/共享文件）见 chat.md TopicPanel；会话内用量徽章见 chat.md usage-badge

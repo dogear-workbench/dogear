@@ -28,7 +28,7 @@
 - `conversations.ts` — 对话 CRUD+分叉+移入工作区（moveConversationToWorkspace：索引迁移+session 搬运）
 - `workspace.ts` / `file.ts` / `explorer.ts` / `git.ts` — 工作区管理 / 打开文件位置 / 文件树操作 / git 历史（能力检测+双源时间线+快照恢复+历史版本内容）
 - `stock.ts` / `usage.ts` / `group.ts` / `ability.ts` / `scheduler.ts` — 股票 12+RPC / 用量查询 / 会话组+话题+共享区 / 能力包（getAbilityPacks 四源聚合+getAbilityMounts）/ 定时任务
-- `backup.ts` / `sync.ts` — 应用数据备份路由（状态/手动备份/列表/快照还原/打开 backups/ 根目录）/ 设备同步路由（状态/peers/配对/手动同步/同步状态读写；两域服务见 data-center.md）
+- `backup.ts` / `sync.ts` — 应用数据备份路由（状态/手动备份/列表/快照还原/打开 backups/ 根目录）/ 设备同步路由（状态/getPeersSnapshot 合并快照/scanPeers 寻找设备/配对/unpair 解除配对/手动同步/同步状态读写；两域服务见 data-center.md）
 - `renderer-handlers.ts` — main→renderer 事件定义收口（sessionMessage、权限请求、usageEntryAdded、sessionStateChanged/sessionClosed、aliveConversationsChanged、failoverNotice、tasksChanged、notificationsChanged、soundCue、pty 三事件、browserActionAdded、pagePresentationChanged、humanInterventionChanged、feishuConnectionStatus/feishuBotAutoInit/feishuBotBindingChanged 等）
 
 ## lib（src/lib/）
