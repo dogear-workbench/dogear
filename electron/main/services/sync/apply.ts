@@ -14,6 +14,7 @@ import { normalizeSyncOptions, SETTINGS_SYNC_FIELDS, type SyncOptions } from '..
 import { getOrCreateDeviceId } from './device.js';
 import { safeJsonWrite } from '../safe-json.js';
 import {
+  asRecord,
   mergeArrayFile,
   mergeRecordMapFile,
   mergeWorkspacesFile,
@@ -214,6 +215,60 @@ function mergePairedDevices(local: PairedDevice[], incoming: unknown): PairedDev
 
 function errText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** workspaces/<wsid>/conversations.json 匹配：捕获目录段即宿主 wsid */
+const CONVERSATIONS_RELPATH_RE = /^workspaces\/([^/]+)\/conversations\.json$/;
+
+export function isConversationsRelPath(relPath: string): boolean {
+  return CONVERSATIONS_RELPATH_RE.test(relPath);
+}
+
+/**
+ * conversations.json 落地归一：记录内 workspaceId 是机器本地事实（对端旧版本仍按自己机器写入），
+ * 不赋予跨设备语义——apply 落盘统一重写为宿主 wsid（relPath 目录段），双向安全；仅 push 侧不处理
+ * （对端 apply 时同样归一）。原地改写并入对象，非匹配路径/异常结构原样透传。
+ */
+export function normalizeConversationsWsid(relPath: string, parsed: ParsedJson): ParsedJson {
+  const m = CONVERSATIONS_RELPATH_RE.exec(relPath);
+  if (!m) return parsed;
+  const hostWsid = m[1];
+  const items = asRecord(asRecord(parsed)?.conversations);
+  if (!items) return parsed;
+  for (const raw of Object.values(items)) {
+    const rec = asRecord(raw);
+    if (rec && rec.workspaceId !== hostWsid) rec.workspaceId = hostWsid;
+  }
+  return parsed;
+}
+
+/**
+ * push 接收端 conversations.json 专用落盘：handleFilePush 对非 settings 记录文件是整文件直写
+ * （LWW 语义），但记录内 workspaceId 是发送端机器视角，须与 applyMergedIncoming 同样落地归一为宿主 wsid。
+ * 对端 gzip 解析/JSON 解析失败视为损坏数据拒绝落盘（与 writeIncomingFile 错误结构一致）。
+ */
+export async function writeIncomingConversationsNormalized(
+  dataDir: string,
+  meta: FilePushMeta,
+  source: Readable,
+): Promise<IncomingWriteResult | IncomingWriteError> {
+  const absPath = resolveWithinDataDir(dataDir, meta.relPath);
+  if (!absPath) return { ok: false, reason: 'unsafe path' };
+  let parsed: ParsedJson;
+  try {
+    parsed = normalizeConversationsWsid(meta.relPath, JSON.parse(await readGzipText(source)));
+  } catch (error) {
+    return { ok: false, reason: `conversations 解析失败: ${errText(error)}` };
+  }
+  try {
+    await fsp.mkdir(path.dirname(absPath), { recursive: true });
+    await safeJsonWrite(absPath, parsed);
+    await fsp.utimes(absPath, new Date(meta.mtimeMs), new Date(meta.mtimeMs)).catch(() => {});
+    const st = await fsp.stat(absPath);
+    return { ok: true, absPath, bytesWritten: st.size };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 /**
@@ -519,7 +574,7 @@ async function applyMergedIncoming(
     // 本端无此文件：无本端数据可丢，直接按对端内容落盘。注意 source 已被 readGzipText 消费（流不可重读，
     // 二次 pipeline 会 Z_BUF_ERROR），remoteParsed 即对端解压后内容，直接原子写 + 保持对端 mtime
     const mtimeMs = entry.mtimeMs;
-    await safeJsonWrite(absPath, remoteParsed);
+    await safeJsonWrite(absPath, normalizeConversationsWsid(entry.relPath, remoteParsed));
     try {
       await fsp.utimes(absPath, new Date(mtimeMs), new Date(mtimeMs));
     } catch {
@@ -544,14 +599,15 @@ async function applyMergedIncoming(
   }
 
   const pattern = MERGE_PATTERNS.find((p) => p.test(entry.relPath))!;
-  const merged = await pattern.merge(localParsed, remoteParsed, {
+  const mergedRaw = await pattern.merge(localParsed, remoteParsed, {
     settingsBaseline: options?.settingsBaseline,
     onWarning: options?.onSettingsMergeWarning,
   });
-  if (merged === null || merged === undefined) {
+  if (mergedRaw === null || mergedRaw === undefined) {
     report.mergeFailed.push({ relPath: entry.relPath, reason: '记录文件合并失败（结构不符合预期），待人工处理' });
     return;
   }
+  const merged = normalizeConversationsWsid(entry.relPath, mergedRaw);
 
   if (pattern.persist) {
     await pattern.persist(absPath, merged);

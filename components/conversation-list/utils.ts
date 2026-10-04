@@ -1,6 +1,8 @@
 import type { Conversation } from '@/components/ConversationList';
 import { useSessionStore } from '@/stores/session-store';
 import { useConversationStore } from '@/stores/conversation-store';
+import { useWorkspaceStore } from '@/stores/workspace-store';
+import { PERSONAL_WORKSPACE_ID } from '@/types/workspace';
 import { client } from '@/lib/client';
 
 export function getRelativeTime(timestamp: string | number): string {
@@ -70,7 +72,8 @@ export function openOrFocusConversation(conv: Conversation, nodeId?: string): vo
   }
   const { selectConversation } = useConversationStore.getState();
   selectConversation(conv);
-  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspaceId);
+  // 记录内 workspaceId 是机器本地事实、同步后会跨机失真，开 tab 一律用运行时工作区 id
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), useWorkspaceStore.getState().workspace?.id ?? '');
 }
 
 /**
@@ -82,6 +85,6 @@ export function openPersonalConversation(conv: Conversation): void {
     client.openSessionWindow({ conversationId: conv.id, title: getConversationTitle(conv) });
     return;
   }
-  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), conv.workspaceId);
+  useSessionStore.getState().openTab(conv.id, getConversationTitle(conv), PERSONAL_WORKSPACE_ID);
 }
 

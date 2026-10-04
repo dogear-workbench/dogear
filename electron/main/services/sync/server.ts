@@ -18,7 +18,13 @@ import {
 } from './protocol.js';
 import { buildManifest, hashEntries, sha256File, tombstoneCandidates, type ManifestOptions } from './manifest.js';
 import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
-import { resolveIncomingRelPath, writeIncomingFile, mergeIncomingSettings } from './apply.js';
+import {
+  resolveIncomingRelPath,
+  writeIncomingFile,
+  writeIncomingConversationsNormalized,
+  isConversationsRelPath,
+  mergeIncomingSettings,
+} from './apply.js';
 import { checkIncomingPushRelPath } from './push-guard.js';
 import { mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
 import { externalWorkspaceIndex } from '../data-registry.js';
@@ -400,7 +406,11 @@ async function handleFilePush(
     sendJson(res, 200, { ok: true, merged: true });
     return;
   }
-  const result = await writeIncomingFile(opts.dataDir, meta, req);
+  // conversations.json 直写前落地归一 wsid（与 pull 侧 applyMergedIncoming 同规则）：记录内 workspaceId
+  // 是发送端机器视角，整文件落盘不重写会把本机所有会话绑到对端 wsid（Conversation not found 镜像面）
+  const result = isConversationsRelPath(meta.relPath)
+    ? await writeIncomingConversationsNormalized(opts.dataDir, meta, req)
+    : await writeIncomingFile(opts.dataDir, meta, req);
   if (!result.ok) {
     sendJson(res, 400, { error: result.reason });
     return;

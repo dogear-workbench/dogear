@@ -586,9 +586,9 @@ export const useConversationStore = create<ConversationState>((set, get) => ({
         return;
       }
 
-      // 创建分叉对话记录：后端同步完成 Harness fork，返回时新对话已可直接恢复
+      // 创建分叉对话记录：后端同步完成 Harness fork，返回时新对话已可直接恢复；workspaceId 用运行时上下文而非记录字段（同步后会跨机失真）
       const forkResult = await client.createFork({
-        workspaceId: parentConv.workspaceId,
+        workspaceId: workspace.id,
         title: `分叉自: ${parentConv.title}`,
         parentConversationId: params.parentConversationId,
         forkMessageSdkUuid: params.forkMessageSdkUuid,
