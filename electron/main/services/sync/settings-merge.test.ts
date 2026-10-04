@@ -23,6 +23,12 @@ const { withSyncStateLock, readSyncStateFrom, writeSyncStateTo } = await import(
 const { startSyncServer } = await import('./server.js');
 const { excludesFromSyncOptions } = await import('./manifest.js');
 
+// apply.ts 内部 deepEqual 未导出：收敛断言用同语义浅副本（键序无关）比对实现
+function deepEqualRecord(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  return JSON.stringify(Object.keys(a).sort()) === JSON.stringify(Object.keys(b).sort())
+    && JSON.stringify(Object.keys(a).sort().map((k) => a[k])) === JSON.stringify(Object.keys(a).sort().map((k) => b[k]));
+}
+
 function syncOpts(over: Partial<SyncOptions> = {}): SyncOptions {
   return {
     deviceName: 'local-device',
@@ -87,48 +93,131 @@ test('两侧改成相同值 → 不算冲突，不产生 warning', async () => {
   expect(warnings).toEqual([]);
 });
 
-test('仅一侧改 → 取变侧；两侧同基线 → 保留', async () => {
-  const baseline = { a: 1, b: 2, c: 3 };
-  const local = localSettings({ a: 1, b: 99, c: 3 });
-  const incoming = { a: 1, b: 2, c: 3 };
+test('白名单字段仅一侧改 → 取变侧；两侧同基线 → 保留', async () => {
+  const baseline = { browserSearchEngine: 'auto', update: { serverUrl: 'http://a' }, failover: { enabled: false, chain: [] } };
+  const local = localSettings({ browserSearchEngine: 'bing', update: { serverUrl: 'http://a' }, failover: { enabled: false, chain: [] } });
+  const incoming = { browserSearchEngine: 'auto', update: { serverUrl: 'http://a' }, failover: { enabled: false, chain: [] } };
   const m1 = await computeMergedSettings(incoming, { localSettings: local, baseline });
-  expect(m1.b).toBe(99);
+  expect(m1.browserSearchEngine).toBe('bing');
 
-  const m2 = await computeMergedSettings({ a: 1, b: 2, c: 77 }, { localSettings: localSettings({ a: 1, b: 2, c: 3 }), baseline });
-  expect(m2.c).toBe(77);
+  const m2 = await computeMergedSettings(
+    { browserSearchEngine: 'auto', update: { serverUrl: 'http://b' }, failover: { enabled: false, chain: [] } },
+    { localSettings: localSettings({ browserSearchEngine: 'auto', update: { serverUrl: 'http://a' }, failover: { enabled: false, chain: [] } }), baseline },
+  );
+  expect(m2.update).toEqual({ serverUrl: 'http://b' });
 
-  const m3 = await computeMergedSettings({ a: 1, b: 2, c: 3 }, { localSettings: local, baseline });
-  expect(m3.a).toBe(1);
+  const m3 = await computeMergedSettings(incoming, { localSettings: local, baseline });
+  expect(m3.failover).toEqual({ enabled: false, chain: [] });
 });
 
-test('字段新增/删除同样适用：单侧新增取新增侧，双侧删同字段静默收敛', async () => {
-  const baseline = { legacy: { keep: true } };
-  const local = localSettings({ legacy: { keep: true }, localOnly: 'x' });
-  const incoming = { legacy: { keep: true }, remoteOnly: 'y' };
+test('白名单字段新增/删除同样适用：单侧新增取新增侧，双侧删同字段静默收敛', async () => {
+  const baseline = { paymentBlockedHosts: ['a.com'] };
+  const local = localSettings({ paymentBlockedHosts: ['a.com'] });
+  const incoming = { paymentBlockedHosts: ['a.com'], webAiSites: [{ id: 'x', name: 'X', url: 'https://x' }] };
   const m = await computeMergedSettings(incoming, { localSettings: local, baseline });
-  expect(m.localOnly).toBe('x');
-  expect(m.remoteOnly).toBe('y');
-  expect(m.legacy).toEqual({ keep: true });
+  expect(m.paymentBlockedHosts).toEqual(['a.com']);
+  expect(m.webAiSites).toEqual([{ id: 'x', name: 'X', url: 'https://x' }]);
 
   const bothDeleted = await computeMergedSettings(
     {},
     { localSettings: localSettings({}), baseline },
   );
-  expect('legacy' in bothDeleted).toBe(false);
+  expect('paymentBlockedHosts' in bothDeleted).toBe(false);
 });
 
-test('无基线（首次同步）→ 退化为以对端为底（现有行为）', async () => {
-  const local = localSettings({ keepMe: 'local-value' });
-  const incoming = { fromRemote: 'yes' };
-  const m1 = await computeMergedSettings(incoming, { localSettings: local });
-  expect(m1.fromRemote).toBe('yes');
-  expect(m1.keepMe).toBeUndefined();
+// ── 白名单传播制：白名单外字段保本端 ──
 
-  const m2 = await computeMergedSettings(incoming, { localSettings: local, baseline: null });
-  expect(m2.fromRemote).toBe('yes');
+test('白名单外机器亲和字段单侧变不传播：对端 snapshot/profiles/ui 怎么改都不进合并结果（snapshot 事故回归）', async () => {
+  const baseline = { snapshot: { mac: true }, profiles: { default: { apiKey: 'local-key' } }, appearance: { theme: 'light' } };
+  const local = localSettings({
+    snapshot: { win: true },
+    profiles: { default: { apiKey: 'local-key' } },
+    ui: { fontSize: 'large' },
+    appearance: { theme: 'light' },
+  });
+  const incoming = {
+    snapshot: { mac: false, mac2: true },
+    profiles: { default: { apiKey: 'remote-key' } },
+    ui: { fontSize: 'small' },
+    appearance: { theme: 'light' },
+  };
+  const warnings: string[] = [];
+  const m = await computeMergedSettings(incoming, {
+    localSettings: local,
+    baseline,
+    onWarning: (w) => warnings.push(w),
+  });
+  expect(m.snapshot).toEqual({ win: true });
+  expect(m.profiles).toEqual({ default: { apiKey: 'local-key' } });
+  expect(m.ui).toEqual({ fontSize: 'large' });
+  expect(warnings).toEqual([]);
+});
 
-  const m3 = await computeMergedSettings(incoming, { localSettings: local, baseline: 'corrupted' as unknown as Record<string, unknown> });
-  expect(m3.fromRemote).toBe('yes');
+test('白名单外字段双改（不同值）→ 保本端且不警告（机器亲和字段本端态不算冲突）', async () => {
+  const baseline = { backup: { old: true }, appearance: { theme: 'light' } };
+  const local = localSettings({ backup: { localNew: true }, appearance: { theme: 'light' } });
+  const incoming = { backup: { remoteNew: true }, appearance: { theme: 'light' } };
+  const warnings: string[] = [];
+  const m = await computeMergedSettings(incoming, {
+    localSettings: local,
+    baseline,
+    onWarning: (w) => warnings.push(w),
+  });
+  expect(m.backup).toEqual({ localNew: true });
+  expect(warnings).toEqual([]);
+});
+
+test('未知新字段（双方都有但基线没有）→ 保守保本端，对端值不进来', async () => {
+  const baseline = { appearance: { theme: 'light' } };
+  const local = localSettings({ appearance: { theme: 'light' }, futureField: 'local-v' });
+  const incoming = { appearance: { theme: 'light' }, futureField: 'remote-v' };
+  const m = await computeMergedSettings(incoming, { localSettings: local, baseline });
+  expect(m.futureField).toBe('local-v');
+});
+
+test('基线收敛无振荡：保本端字段两轮后基线与本端读盘一致，下轮三方合并零变化零警告', async () => {
+  const local = localSettings({ snapshot: { win: true }, ui: { fontSize: 'large' }, appearance: { theme: 'light' } });
+  const incoming = { snapshot: { mac: true }, ui: { fontSize: 'small' }, appearance: { theme: 'light' } };
+  // round 1：对端首推（无基线退化路径），snapshot/ui 保本端
+  const m1 = await computeMergedSettings(incoming, { localSettings: local, baseline: null });
+  expect(m1.snapshot).toEqual({ win: true });
+  expect(m1.ui).toEqual({ fontSize: 'large' });
+  // round 2：m1 落盘后同时作为本端读盘与基线（mergeIncomingSettings/orchestrator 语义），对端仍推原样
+  const warnings: string[] = [];
+  const m2 = await computeMergedSettings(incoming, {
+    localSettings: m1,
+    baseline: m1 as unknown as Record<string, unknown>,
+    onWarning: (w) => warnings.push(w),
+  });
+  expect(m2.snapshot).toEqual({ win: true });
+  expect(m2.ui).toEqual({ fontSize: 'large' });
+  expect(deepEqualRecord(m2 as unknown as Record<string, unknown>, m1 as unknown as Record<string, unknown>)).toBe(true);
+  expect(warnings).toEqual([]);
+});
+
+test('无基线（首次同步）→ 白名单字段以对端为底初始化，白名单外（含敏感/未知）保本端不被污染', async () => {
+  const local = localSettings({
+    appearance: { theme: 'dark' },
+    snapshot: { win: true },
+    webMcpApiKey: 'local-key',
+    keepMe: 'local-value',
+  });
+  const incoming = {
+    appearance: { theme: 'light' },
+    browserSearchEngine: 'google',
+    snapshot: { mac: true },
+    webMcpApiKey: 'remote-key',
+    fromRemote: 'yes',
+  };
+  for (const baseline of [undefined, null, 'corrupted' as unknown as Record<string, unknown>]) {
+    const m = await computeMergedSettings(incoming, { localSettings: local, ...(baseline !== undefined ? { baseline } : {}) });
+    expect(m.appearance).toEqual({ theme: 'light' });
+    expect(m.browserSearchEngine).toBe('google');
+    expect(m.snapshot).toEqual({ win: true });
+    expect(m.webMcpApiKey).toBe('local-key');
+    expect(m.keepMe).toBe('local-value');
+    expect('fromRemote' in m).toBe(false);
+  }
 });
 
 test('有基线时 syncOptions 节仍走 rev-LWW 特判，不被三方字段逻辑吞掉', async () => {
@@ -142,17 +231,17 @@ test('有基线时 syncOptions 节仍走 rev-LWW 特判，不被三方字段逻�
   expect(m.appearance).toEqual({ theme: 'light' });
 });
 
-test('基线键序与嵌套结构不影响 deepEqual 比较（对象/数组逐值比）', async () => {
-  const baseline = { cfg: { b: 1, a: [1, { x: 2, y: 3 }] } };
-  const local = localSettings({ cfg: { a: [1, { y: 3, x: 2 }], b: 1 } });
-  const incoming = { cfg: { b: 1, a: [1, { x: 2, y: 3 }] } };
+test('基线键序与嵌套结构不影响 deepEqual 比较（白名单字段对象/数组逐值比）', async () => {
+  const baseline = { webAiSites: [{ name: 'b', id: 'a', url: 'https://x' }], appearance: { theme: 'light' } };
+  const local = localSettings({ webAiSites: [{ id: 'a', name: 'b', url: 'https://x' }], appearance: { theme: 'light' } });
+  const incoming = { webAiSites: [{ name: 'b', id: 'a', url: 'https://x' }], appearance: { theme: 'light' } };
   const warnings: string[] = [];
   const m = await computeMergedSettings(incoming, {
     localSettings: local,
     baseline,
     onWarning: (w) => warnings.push(w),
   });
-  expect(m.cfg).toEqual({ b: 1, a: [1, { x: 2, y: 3 }] });
+  expect(m.webAiSites).toEqual([{ id: 'a', name: 'b', url: 'https://x' }]);
   expect(warnings).toEqual([]);
 });
 

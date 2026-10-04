@@ -319,9 +319,9 @@ test('SYNC_ITEM_IDS：14 项、id 唯一、settings.json 标必选、含 stocks/
   expect(SYNC_ITEM_IDS.find((m) => m.id === 'settings.json')?.required).toBe(true);
 });
 
-// ── SETTINGS_SYNC_FIELDS 传播白名单常量（草案，后续 step 定稿） ──
+// ── SETTINGS_SYNC_FIELDS 传播白名单常量（Step 5 逐字段核对定稿，17 顶层字段全覆盖） ──
 
-test('SETTINGS_SYNC_FIELDS 草案：9 项通用偏好，不含保本端字段', () => {
+test('SETTINGS_SYNC_FIELDS 定稿：9 项通用偏好，不含保本端字段', () => {
   expect([...SETTINGS_SYNC_FIELDS].sort()).toEqual([
     'ai',
     'appearance',

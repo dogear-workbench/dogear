@@ -10,7 +10,7 @@ import type { FileEntry, FilePushMeta, SkippedEntry } from './protocol.js';
 import { isExcluded, type ManifestExcludes } from './manifest.js';
 import { EXTERNAL_ANCHOR_PREFIX, EXTERNAL_TASKS_REL, resolveExternalRelPath } from '../data-registry.js';
 import { loadSettings, saveSettings, type AppSettings, type PairedDevice } from '../settings-service.js';
-import { normalizeSyncOptions, type SyncOptions } from '../settings-types.js';
+import { normalizeSyncOptions, SETTINGS_SYNC_FIELDS, type SyncOptions } from '../settings-types.js';
 import { getOrCreateDeviceId } from './device.js';
 import { safeJsonWrite } from '../safe-json.js';
 import {
@@ -39,10 +39,22 @@ function deepEqual(a: unknown, b: unknown): boolean {
 
 const SETTINGS_MERGE_WARN_MAX = 5;
 
+const SETTINGS_SYNC_FIELD_SET: ReadonlySet<string> = new Set(SETTINGS_SYNC_FIELDS);
+
+/** 白名单外字段（机器亲和/敏感/未知新字段）一律保本端：本端没有的键不凭空造，落盘默认值由 saveSettings/loadSettings 兜底 */
+function takeLocalExceptSyncFields(
+  merged: Record<string, unknown>,
+  local: Record<string, unknown>,
+): void {
+  for (const key of Object.keys(local)) {
+    if (!SETTINGS_SYNC_FIELD_SET.has(key)) merged[key] = local[key];
+  }
+}
+
 /**
- * settings.json 顶层字段级三方合并（D2）：逐字段与基线比——单侧变取变侧，
- * 双侧都变且不等取本端并记 warning（双侧改成同值不算冲突），两侧同基线保留。
- * 字段新增/删除同样适用（基线缺该键视为 undefined）。
+ * settings.json 顶层字段级三方合并（D2 + 白名单传播制）：仅 SETTINGS_SYNC_FIELDS 白名单字段逐字段与基线比——
+ * 单侧变取变侧，双侧都变且不等取本端并记 warning（双侧改成同值不算冲突），两侧同基线保留；
+ * 白名单外字段（含未知新字段）一律保本端、双改不警告。字段新增/删除同样适用（基线缺该键视为 undefined）。
  */
 function mergeFieldsThreeWay(
   local: Record<string, unknown>,
@@ -50,10 +62,9 @@ function mergeFieldsThreeWay(
   baseline: Record<string, unknown>,
   onWarning?: (message: string) => void,
 ): Record<string, unknown> {
-  const keys = new Set([...Object.keys(local), ...Object.keys(incoming), ...Object.keys(baseline)]);
   const merged: Record<string, unknown> = {};
   const conflicts: string[] = [];
-  for (const key of keys) {
+  for (const key of SETTINGS_SYNC_FIELDS) {
     const l = local[key];
     const i = incoming[key];
     const b = baseline[key];
@@ -65,6 +76,7 @@ function mergeFieldsThreeWay(
     if (chosen !== undefined) merged[key] = chosen;
     if (doubleChanged) conflicts.push(key);
   }
+  takeLocalExceptSyncFields(merged, local);
   if (conflicts.length > 0 && onWarning) {
     const shown = conflicts.slice(0, SETTINGS_MERGE_WARN_MAX).join('、');
     const more = conflicts.length > SETTINGS_MERGE_WARN_MAX ? ` 等 ${conflicts.length} 个字段` : '';
@@ -205,7 +217,8 @@ function errText(error: unknown): string {
 }
 
 /**
- * settings.json 合并核心：非 syncOptions 顶层字段走三方合并（有基线）或以对端为底（无基线，首次同步）。
+ * settings.json 合并核心：白名单字段三方合并（有基线）或以对端为底（无基线，首次同步），
+ * 白名单外字段（含未知新字段）两条路径都保本端。
  * syncOptions 节维持 rev-LWW 特判：deviceName 保本端、pairedDevices 并集（secret 冲突取本端、剔除自身条目），
  * 其余范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit）整组原子取
  * syncOptionsRev 大的一端（两端统一机制，设计 §3.2）：rev 缺省按 0；rev 相同但内容不同（离线各自改的竞态）
@@ -234,9 +247,18 @@ export async function computeMergedSettings(
   const baseline = options.baseline && typeof options.baseline === 'object' && !Array.isArray(options.baseline)
     ? options.baseline
     : null;
+  const localRecord = local as unknown as Record<string, unknown>;
   const merged: Record<string, unknown> = baseline
-    ? mergeFieldsThreeWay(local as unknown as Record<string, unknown>, incoming, baseline, options.onWarning)
-    : { ...incoming };
+    ? mergeFieldsThreeWay(localRecord, incoming, baseline, options.onWarning)
+    : (() => {
+        // 无基线（首次同步）退化：白名单字段以对端为底初始化，白名单外仍保本端不被污染
+        const m: Record<string, unknown> = {};
+        for (const key of SETTINGS_SYNC_FIELDS) {
+          if (incoming[key] !== undefined) m[key] = incoming[key];
+        }
+        takeLocalExceptSyncFields(m, localRecord);
+        return m;
+      })();
   // 本端读盘已过 normalizeSyncOptions；对端是不可信输入，同样归一化（非法值滤除、缺省补齐）
   const localSync = normalizeSyncOptions(local.syncOptions);
   const incomingSync = normalizeSyncOptions(incoming.syncOptions);

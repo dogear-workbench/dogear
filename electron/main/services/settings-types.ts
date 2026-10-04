@@ -549,10 +549,11 @@ const REQUIRED_SYNC_ITEM_IDS: ReadonlySet<string> = new Set(
 );
 
 /**
- * settings 顶层字段跨设备传播白名单（A 白名单传播制，草案待后续 step 逐字段核对定稿）：
+ * settings 顶层字段跨设备传播白名单（A 白名单传播制，Step 5 逐字段核对定稿，17 顶层字段全覆盖）：
  * 仅列出的字段三方合并跨设备，其余（含未知新字段）一律保本端；
  * 保本端：snapshot/backup/ui/profiles/browserProxyServer/migrated/webMcpApiKey/syncOptions。
- * 原草案里的 enabledToolPacks 已迁工作区 config（不再属于 settings），不在此列
+ * 原草案里的 enabledToolPacks 已迁工作区 config（不再属于 settings），不在此列；
+ * ai 核对无 API key（key 在 profiles.apiKey 与 webMcpApiKey，均已保本端），模型选择仅为 profileId 引用
  */
 export const SETTINGS_SYNC_FIELDS = [
   'ai',
