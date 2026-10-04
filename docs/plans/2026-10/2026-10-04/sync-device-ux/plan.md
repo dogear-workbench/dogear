@@ -11,7 +11,7 @@
 - [x] [Step 1: 主进程数据层——地址记忆 + 解除配对 + 删通知](./step1-main-data.md) — SyncStatePeer 加 lastHost/lastPort、配对/同步成功时记录、unpairDevice、peer-notify 下线、403 文案加解除提示
 - [x] [Step 2: 发现层——scanNow 主动扫描 + 快照含离线已配对](./step2-discovery-scan.md) — mDNS 一轮查询 + 已配对地址探测合并，peers 快照结构扩展
 - [x] [Step 3: tipc 路由与 store 合并数据源](./step3-tipc-store.md) — scanPeers/unpair 路由，store 组装「已配对常驻 ∪ mDNS 未配对」
-- [ ] [Step 4: UI——寻找按钮 + 离线常驻卡片 + 解除配对菜单](./step4-ui.md) — 面板按钮与空态、设备卡离线态、下拉菜单解除项（同步中禁用 + confirm）
+- [x] [Step 4: UI——寻找按钮 + 离线常驻卡片 + 解除配对菜单](./step4-ui.md) — 面板按钮与空态、设备卡离线态、下拉菜单解除项（同步中禁用 + confirm）
 - [ ] [Step 5: 全量验证与文档收尾](./step5-verify-docsync.md) — lint/build:electron/vite build/bun test 全绿 + codebase-map 同步
 
 ## 全局决策

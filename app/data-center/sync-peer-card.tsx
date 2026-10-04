@@ -1,14 +1,16 @@
-import { ChevronDown, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import { ChevronDown, Loader2, RefreshCw, ShieldCheck, Unlink } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useSyncStore } from '@/stores/sync-store';
+import { showConfirm } from '@/stores/confirm-store';
 import type { PeerInfo } from '@/electron/main/services/sync/discovery';
 import { formatDateTimeShort, formatRelativePast } from './history-utils';
 import { peerDisplayName, shortDeviceIdText } from './sync-utils';
@@ -20,6 +22,7 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
   const outgoingPairing = useSyncStore((s) => s.outgoingPairing);
   const runSync = useSyncStore((s) => s.runSync);
   const requestPair = useSyncStore((s) => s.requestPair);
+  const unpair = useSyncStore((s) => s.unpair);
 
   const paired = syncOptions?.pairedDevices.some((d) => d.deviceId === peer.deviceId) ?? false;
   const peerState = syncState?.peers[peer.deviceId];
@@ -28,6 +31,14 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
   const pairingThis = outgoingPairing?.deviceId === peer.deviceId;
   const name = peerDisplayName(peer.name, peer.deviceId);
 
+  const handleUnpair = async () => {
+    const ok = await showConfirm(
+      '解除配对',
+      `确定解除与「${name}」的配对吗？仅解除信任关系，同步基线与工作区映射会保留，重新配对后可接着同步；对端需在其设备上另行解除配对。`,
+    );
+    if (ok) await unpair(peer.deviceId);
+  };
+
   return (
     <Card>
       <CardContent className="py-4">
@@ -35,9 +46,13 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{name}</span>
-              <Badge variant="subtle" className="shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
-                在线
-              </Badge>
+              {peer.online ? (
+                <Badge variant="subtle" className="shrink-0 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400">
+                  在线
+                </Badge>
+              ) : (
+                <Badge variant="subtle" className="shrink-0">离线</Badge>
+              )}
               {paired && (
                 <Badge variant="subtle" className="shrink-0 gap-1">
                   <ShieldCheck className="w-3 h-3" />
@@ -47,7 +62,7 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
             </div>
             <div className="mt-1 text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
               <span className="font-mono">{shortDeviceIdText(peer.deviceId)}</span>
-              <span>{peer.host}:{peer.port}</span>
+              {peer.host && peer.port ? <span>{peer.host}:{peer.port}</span> : <span>地址未知</span>}
               {peer.appVersion && <span>Dogear {peer.appVersion}</span>}
               <span>
                 {lastSyncAt
@@ -79,7 +94,14 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
                 </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline" className="px-1.5" disabled={syncing} title="选择同步方向">
+                    {/* 菜单打开前拦住：disabled 项 pointer-events-none，title 提示只能放 trigger 上 */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="px-1.5"
+                      disabled={syncing}
+                      title={syncing ? '同步进行中，稍后再解除' : '选择同步方向'}
+                    >
                       <ChevronDown className="w-3.5 h-3.5" />
                     </Button>
                   </DropdownMenuTrigger>
@@ -101,6 +123,15 @@ export function SyncPeerCard({ peer }: { peer: PeerInfo }) {
                         <span>双向</span>
                         <span className="text-xs text-muted-foreground">两侧互拉，冲突会挂起待选择</span>
                       </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      disabled={syncing}
+                      className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                      onClick={() => void handleUnpair()}
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                      解除配对
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

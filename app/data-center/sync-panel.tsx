@@ -30,12 +30,16 @@ export function SyncPanel() {
       <PairRequestCards now={now} />
 
       <section className="space-y-2">
-        <h3 className="text-sm font-semibold text-muted-foreground">在线设备</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-muted-foreground">设备</h3>
+          <FindDevicesButton />
+        </div>
         {peers.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground space-y-2">
               <MonitorSmartphone className="w-6 h-6 mx-auto text-muted-foreground/50" />
               <p>局域网内暂未发现其他设备。</p>
+              <p className="text-xs">点右上「寻找设备」主动扫描；已配对设备会常驻显示，离线也可发起同步。</p>
               <p className="text-xs">请确认另一台设备已打开 Dogear 且与本机在同一网络。首次可能被系统防火墙拦截，放行后重试。</p>
             </CardContent>
           </Card>
@@ -59,6 +63,18 @@ export function SyncPanel() {
         <SyncSettingsCard />
       </section>
     </div>
+  );
+}
+
+function FindDevicesButton() {
+  const scanning = useSyncStore((s) => s.scanning);
+  const scan = useSyncStore((s) => s.scan);
+
+  return (
+    <Button variant="outline" size="sm" className="h-7 text-xs" disabled={scanning} onClick={() => void scan()}>
+      <RefreshCw className={`w-3 h-3${scanning ? ' animate-spin' : ''}`} />
+      {scanning ? '寻找中…' : '寻找设备'}
+    </Button>
   );
 }
 
