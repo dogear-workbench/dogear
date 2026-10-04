@@ -12,6 +12,7 @@ import { showConfirm } from '@/stores/confirm-store';
 import { SYNC_ITEM_IDS, type SyncItemMeta } from '@/electron/main/services/settings-types';
 import { formatDateTimeShort } from './history-utils';
 import { peerDisplayName, shortDeviceIdText } from './sync-utils';
+import { UserSyncPathsSection } from './sync-user-paths';
 
 /** 关闭 workspaces 的二次确认文案：影响面大（全部工作区数据不再跨设备），必须显式确认 */
 async function confirmDisableWorkspaces(): Promise<boolean> {
@@ -48,7 +49,7 @@ export function SyncSettingsCard() {
   };
 
   /**
-   * 12 项统一切换：stocks/feishu 走独立布尔键（底层键不变），其余项增删 disabledSyncItems。
+   * 14 项统一切换：stocks/feishu 走独立布尔键（底层键不变），其余项增删 disabledSyncItems。
    * 修改即调 setSyncOptions，范围字段变化由主进程 syncOptionsRev++ 并随同步两端统一。
    */
   const toggleItem = async (meta: SyncItemMeta, on: boolean) => {
@@ -100,6 +101,8 @@ export function SyncSettingsCard() {
               控制哪些数据参与设备同步，改动即时保存；范围设置随同步跨设备统一（以最近修改的设备为准）。
             </p>
           </div>
+
+          <SyncGroupTitle title="应用数据" hint="应用自己写入与读取的数据，默认开启" />
           <ul className="space-y-0.5">
             {SYNC_ITEM_IDS.map((meta) => (
               <li key={meta.id} className="flex items-center justify-between gap-3 py-1">
@@ -140,6 +143,20 @@ export function SyncSettingsCard() {
               label="同步冲突留底副本（.conflict-*）"
               hint="同步冲突时自动保留的败方完整内容副本，默认仅留在产生冲突的设备上供手动换回，不跨设备传播"
             />
+          </div>
+
+          <SyncGroupTitle title="用户文件" hint="工作区里的代码、文档等你自己的文件，按目录勾选" />
+          <UserSyncPathsSection syncOptions={syncOptions} />
+
+          <SyncGroupTitle title="生成物" hint="构建产物与缓存" />
+          <div className="rounded-md border border-dashed p-3 opacity-60">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-sm text-muted-foreground">dist / node_modules / 构建缓存</div>
+                <div className="text-xs text-muted-foreground">自动识别将在后续版本提供；请在上方用户文件区避免勾选此类目录，同步体积会显著增大</div>
+              </div>
+              <Switch checked={false} disabled />
+            </div>
           </div>
         </div>
 
@@ -183,6 +200,17 @@ export function SyncSettingsCard() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function SyncGroupTitle({ title, hint }: { title: string; hint?: string }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">{title}</span>
+        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+      </div>
+    </div>
   );
 }
 

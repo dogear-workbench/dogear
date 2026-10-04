@@ -23,6 +23,7 @@ import {
   normalizePaymentBlockedHosts,
   normalizeDisabledSyncItems,
   normalizeSyncOptions,
+  normalizeUserSyncPaths,
   type AppSettings,
   type PiPermissionMode,
   type SyncOptions,
@@ -348,11 +349,26 @@ function disabledSyncItemsEqual(a: string[], b: string[]): boolean {
 }
 
 /**
+ * userSyncPaths 相等判断：键序与条目序都无关（语义是 per-workspace 集合），归一后比较
+ */
+function userSyncPathsEqual(
+  a: Record<string, string[]> | undefined,
+  b: Record<string, string[]> | undefined,
+): boolean {
+  const norm = (m: Record<string, string[]> | undefined) =>
+    Object.keys(m ?? {})
+      .sort()
+      .map((k) => `${k}=${[...(m ?? {})[k]].sort().join(',')}`)
+      .join('|');
+  return norm(a) === norm(b);
+}
+
+/**
  * 应用 syncOptions 部分更新并维护 syncOptionsRev（设置写入口统一走这里，tipc setSyncOptions 调用）：
- * 范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit，即 merge rev 组全集）
- * 任一相对旧值实际变化 → rev = max(old ?? 0, 0) + 1；仅改 deviceName / pairedDevices / removeDeviceId 不动 rev，
- * 传了相同值也不动（幂等）。disabledSyncItems 先过白名单清洗再比较，非法 id 不触发 rev。
- * 返回新对象不落盘，调用方自行 saveSettings。
+ * 范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit/userSyncPaths，
+ * 即 merge rev 组全集）任一相对旧值实际变化 → rev = max(old ?? 0, 0) + 1；仅改 deviceName / pairedDevices /
+ * removeDeviceId 不动 rev，传了相同值也不动（幂等）。disabledSyncItems/userSyncPaths 先过归一化清洗再比较，
+ * 非法条目不触发 rev。返回新对象不落盘，调用方自行 saveSettings。
  */
 export function applySyncOptionsPatch(
   current: SyncOptions,
@@ -365,6 +381,7 @@ export function applySyncOptionsPatch(
   if (patch.disabledSyncItems !== undefined) next.disabledSyncItems = normalizeDisabledSyncItems(patch.disabledSyncItems);
   if (patch.syncConflictCopies !== undefined) next.syncConflictCopies = patch.syncConflictCopies === true;
   if (patch.syncShadowGit !== undefined) next.syncShadowGit = patch.syncShadowGit === true;
+  if (patch.userSyncPaths !== undefined) next.userSyncPaths = normalizeUserSyncPaths(patch.userSyncPaths);
   if (patch.removeDeviceId) next.pairedDevices = next.pairedDevices.filter((d) => d.deviceId !== patch.removeDeviceId);
 
   const scopeChanged =
@@ -373,7 +390,8 @@ export function applySyncOptionsPatch(
     (patch.syncConflictCopies !== undefined && (next.syncConflictCopies === true) !== (current.syncConflictCopies === true)) ||
     (patch.syncShadowGit !== undefined && (next.syncShadowGit === true) !== (current.syncShadowGit === true)) ||
     (patch.disabledSyncItems !== undefined &&
-      !disabledSyncItemsEqual(next.disabledSyncItems ?? [], current.disabledSyncItems ?? []));
+      !disabledSyncItemsEqual(next.disabledSyncItems ?? [], current.disabledSyncItems ?? [])) ||
+    (patch.userSyncPaths !== undefined && !userSyncPathsEqual(next.userSyncPaths, current.userSyncPaths));
   next.syncOptionsRev = (current.syncOptionsRev ?? 0) + (scopeChanged ? 1 : 0);
   return next;
 }

@@ -62,6 +62,7 @@ test('对端 rev 大 → 范围字段整组取对端（原子替换，deviceName
     disabledSyncItems: ['memory'],
     syncConflictCopies: true,
     syncShadowGit: true,
+    userSyncPaths: { 'ws-remote': ['docs'] },
     syncOptionsRev: 2,
   });
   const m = await merge(incoming, local);
@@ -70,20 +71,33 @@ test('对端 rev 大 → 范围字段整组取对端（原子替换，deviceName
   expect(m.disabledSyncItems).toEqual(['memory']);
   expect(m.syncConflictCopies).toBe(true);
   expect(m.syncShadowGit).toBe(true);
+  // userSyncPaths 在 rev 组内整组原子采纳（否则两端勾选互相拉扯）
+  expect(m.userSyncPaths).toEqual({ 'ws-remote': ['docs'] });
   expect(m.syncOptionsRev).toBe(2);
   // deviceName 不参与 rev 组：对端 rev 更大也保本端
   expect(m.deviceName).toBe('local-device');
 });
 
 test('本端 rev 大 → 范围字段保本端（对端旧配置不夺权）', async () => {
-  const local = syncOpts({ syncStocksData: true, disabledSyncItems: ['usage'], syncOptionsRev: 5 });
-  const incoming = syncOpts({ syncStocksData: false, disabledSyncItems: ['memory'], syncOptionsRev: 2 });
+  const local = syncOpts({
+    syncStocksData: true,
+    disabledSyncItems: ['usage'],
+    userSyncPaths: { 'ws-local': ['src'] },
+    syncOptionsRev: 5,
+  });
+  const incoming = syncOpts({
+    syncStocksData: false,
+    disabledSyncItems: ['memory'],
+    userSyncPaths: { 'ws-x': ['docs'] },
+    syncOptionsRev: 2,
+  });
   const m = await merge(incoming, local);
   expect(m.syncStocksData).toBe(true);
   expect(m.syncFeishu).toBe(false);
   expect(m.disabledSyncItems).toEqual(['usage']);
   expect(m.syncConflictCopies).toBe(false);
   expect(m.syncShadowGit).toBe(false);
+  expect(m.userSyncPaths).toEqual({ 'ws-local': ['src'] });
   expect(m.syncOptionsRev).toBe(5);
 });
 
@@ -231,7 +245,7 @@ test('normalizeSyncOptions：userSyncPaths 非对象输入返回空对象，合�
 
 // ── applySyncOptionsPatch：rev 自增维护 ──
 
-test('范围字段实际变化 → rev 自增（五个 rev 组字段逐一触发）', () => {
+test('范围字段实际变化 → rev 自增（六个 rev 组字段逐一触发）', () => {
   let cur = syncOpts({ syncOptionsRev: 4 });
   cur = applySyncOptionsPatch(cur, { disabledSyncItems: ['usage'] });
   expect(cur.syncOptionsRev).toBe(5);
@@ -244,6 +258,26 @@ test('范围字段实际变化 → rev 自增（五个 rev 组字段逐一触发
   cur = applySyncOptionsPatch(cur, { syncFeishu: true });
   expect(cur.syncOptionsRev).toBe(9);
   expect(cur.syncFeishu).toBe(true);
+  cur = applySyncOptionsPatch(cur, { userSyncPaths: { 'ws-a': ['docs'] } });
+  expect(cur.syncOptionsRev).toBe(10);
+  expect(cur.userSyncPaths).toEqual({ 'ws-a': ['docs'] });
+});
+
+test('userSyncPaths：内容相同（含键序/条目序不同）→ rev 不动；形态归一后与旧值集合相同 → rev 不动', () => {
+  const cur = syncOpts({ userSyncPaths: { 'ws-a': ['docs', 'notes'] }, syncOptionsRev: 2 });
+  const same = applySyncOptionsPatch(cur, { userSyncPaths: { 'ws-a': ['notes', 'docs'] } });
+  expect(same.syncOptionsRev).toBe(2);
+  // 归一化只做形态清洗（剥 ./ 前缀/首尾斜杠/去重），穿越段防御在 manifest/push-guard 层
+  const normalized = applySyncOptionsPatch(cur, { userSyncPaths: { 'ws-a': ['./docs/', 'notes'] } });
+  expect(normalized.syncOptionsRev).toBe(2);
+  expect(normalized.userSyncPaths).toEqual({ 'ws-a': ['docs', 'notes'] });
+});
+
+test('userSyncPaths：实际增删 → rev 自增，其他键不受影响', () => {
+  const cur = syncOpts({ userSyncPaths: { 'ws-a': ['docs'] }, syncOptionsRev: 2 });
+  const n = applySyncOptionsPatch(cur, { userSyncPaths: { 'ws-a': ['docs', 'src'], 'ws-b': [] } });
+  expect(n.syncOptionsRev).toBe(3);
+  expect(n.userSyncPaths).toEqual({ 'ws-a': ['docs', 'src'], 'ws-b': [] });
 });
 
 test('仅 deviceName / removeDeviceId → rev 不动', () => {

@@ -220,7 +220,7 @@ function errText(error: unknown): string {
  * settings.json 合并核心：白名单字段三方合并（有基线）或以对端为底（无基线，首次同步），
  * 白名单外字段（含未知新字段）两条路径都保本端。
  * syncOptions 节维持 rev-LWW 特判：deviceName 保本端、pairedDevices 并集（secret 冲突取本端、剔除自身条目），
- * 其余范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit）整组原子取
+ * 其余范围字段（syncStocksData/syncFeishu/disabledSyncItems/syncConflictCopies/syncShadowGit/userSyncPaths）整组原子取
  * syncOptionsRev 大的一端（两端统一机制，设计 §3.2）：rev 缺省按 0；rev 相同但内容不同（离线各自改的竞态）
  * 保本端、不落副本、下轮收敛。localSyncOptions 可注入（单测）；缺省走 loadSettings（含默认值兜底）。
  */
@@ -275,6 +275,7 @@ export async function computeMergedSettings(
     disabledSyncItems: scopeFromIncoming ? incomingSync.disabledSyncItems : localSync.disabledSyncItems,
     syncConflictCopies: scopeFromIncoming ? incomingSync.syncConflictCopies : localSync.syncConflictCopies,
     syncShadowGit: scopeFromIncoming ? incomingSync.syncShadowGit : localSync.syncShadowGit,
+    userSyncPaths: scopeFromIncoming ? incomingSync.userSyncPaths : localSync.userSyncPaths,
     // 保本端时维持本端 rev；采纳对端时采纳对端 rev（下轮不再反复拉扯）
     syncOptionsRev: Math.max(localRev, incomingRev),
   };

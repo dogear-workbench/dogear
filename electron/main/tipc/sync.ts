@@ -29,6 +29,7 @@ import { readSyncState, writeSyncState, getDataDir, withSyncStateLock } from '..
 import { resolveWithinDataDir } from '../services/sync/apply.js';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { applySyncOptionsPatch, loadSettings, saveSettings, type SyncOptions } from '../services/settings-service.js';
+import { listWorkspaceDirForSync, statWorkspaceDirForSync, type SyncDirListing, type SyncDirStats } from '../services/sync/ws-tree.js';
 import { normalizeDisabledSyncItems } from '../services/settings-types.js';
 import type { SyncEventPayload } from './renderer-handlers.js';
 
@@ -272,6 +273,32 @@ export const syncRouter = {
     .input<{ requestId: string; reason?: string }>()
     .action(async ({ input }) => ({ ok: await rejectPairRequest(input.requestId, input.reason) })),
 
+  /** 同步范围用户勾选树：单层列目录（懒加载）+ .git 检测；空 path 工作区（临时会话）不可用 */
+  getSyncWorkspaceDir: t.procedure
+    .input<{ workspaceId: string; relPath?: string }>()
+    .action(async ({ input }): Promise<SyncDirListing & { error?: string }> => {
+      const workspace = await workspaceJsonService.getById(input.workspaceId);
+      if (!workspace || workspace.path === '') return { hasGit: false, entries: [], error: '工作区不存在' };
+      try {
+        return await listWorkspaceDirForSync(workspace.path, input.relPath ?? '');
+      } catch (error) {
+        return { hasGit: false, entries: [], error: String(error) };
+      }
+    }),
+
+  /** 勾选目录的子树规模统计（文件数/总字节，超上限截断）：提醒误勾巨型目录 */
+  getSyncWorkspaceDirStats: t.procedure
+    .input<{ workspaceId: string; relPath: string }>()
+    .action(async ({ input }): Promise<SyncDirStats & { error?: string }> => {
+      const workspace = await workspaceJsonService.getById(input.workspaceId);
+      if (!workspace || workspace.path === '') return { fileCount: 0, totalBytes: 0, truncated: false, error: '工作区不存在' };
+      try {
+        return await statWorkspaceDirForSync(workspace.path, input.relPath);
+      } catch (error) {
+        return { fileCount: 0, totalBytes: 0, truncated: false, error: String(error) };
+      }
+    }),
+
   /**
    * 精确更新 syncOptions 节而非整体替换 settings：配对由异步事件回写 pairedDevices，
    * 前端若拿旧快照走 updateSettings 会踩掉刚写入的配对
@@ -290,6 +317,10 @@ export const syncRouter = {
       }
       if (typeof input.syncConflictCopies === 'boolean') patch.syncConflictCopies = input.syncConflictCopies;
       if (typeof input.syncShadowGit === 'boolean') patch.syncShadowGit = input.syncShadowGit;
+      // userSyncPaths 由 applySyncOptionsPatch 内 normalizeUserSyncPaths 清洗（非法形态/穿越段滤除）
+      if (input.userSyncPaths !== undefined && input.userSyncPaths !== null && typeof input.userSyncPaths === 'object') {
+        patch.userSyncPaths = input.userSyncPaths;
+      }
       if (typeof input.removeDeviceId === 'string' && input.removeDeviceId !== '') {
         patch.removeDeviceId = input.removeDeviceId;
       }
