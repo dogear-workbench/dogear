@@ -7,6 +7,11 @@ import {
   logoutLoginAccount,
   removeLoginAccount,
 } from '../services/browser/browser-data-service.js';
+import {
+  deleteSiteKnowledge,
+  listSiteKnowledge,
+  readSiteKnowledge,
+} from '../services/browser/site-knowledge-service.js';
 
 const t = tipc.create();
 
@@ -24,6 +29,16 @@ export const browserDataRouter = {
   removeLoginAccount: t.procedure
     .input<{ domain: string }>()
     .action(async ({ input }) => removeLoginAccount(input.domain)),
+
+  listSiteKnowledge: t.procedure.action(async () => listSiteKnowledge()),
+
+  readSiteKnowledge: t.procedure
+    .input<{ domain: string }>()
+    .action(async ({ input }) => readSiteKnowledge(input.domain)),
+
+  deleteSiteKnowledge: t.procedure
+    .input<{ domain: string }>()
+    .action(async ({ input }) => deleteSiteKnowledge(input.domain)),
 
   clearBrowserCache: t.procedure.action(async () => clearBrowserCache()),
 

@@ -1,10 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { ChevronDown, HardDrive, Info, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { MarkdownRenderer } from '@/components/MarkdownRenderer';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { client } from '@/lib/client';
 import { useVisiblePolling } from '@/hooks/use-visible-polling';
 import { showConfirm } from '@/stores/confirm-store';
@@ -15,6 +17,8 @@ import { formatDateTimeShort, formatRelativePast } from './history-utils';
 type BrowserDataOverview = Awaited<ReturnType<typeof client.listBrowserData>>;
 type LoginAccountView = BrowserDataOverview['loginAccounts'][number];
 type DomainData = BrowserDataOverview['domains'][number];
+type SiteKnowledgeEntry = Awaited<ReturnType<typeof client.listSiteKnowledge>>[number];
+type SiteKnowledgeView = { domain: string; content: string } | null;
 
 const POLL_MS = 30_000;
 const AGENT_RISK_HINT = '若 agent 正在跑浏览器任务，可能受影响。';
@@ -26,18 +30,24 @@ const EVIDENCE_LABEL: Record<LoginAccountView['evidence'], string> = {
   'init-webai-storage': '站点数据检测',
 };
 
-function lastLoginText(ts: number): string {
+function relativeTimeText(ts: number): string {
   return formatRelativePast(ts) || formatDateTimeShort(ts);
 }
 
 export function BrowserDataPanel() {
   const [overview, setOverview] = useState<BrowserDataOverview | null>(null);
+  const [knowledge, setKnowledge] = useState<SiteKnowledgeEntry[] | null>(null);
+  const [viewing, setViewing] = useState<SiteKnowledgeView>(null);
+  const [viewLoading, setViewLoading] = useState(false);
+  const viewTokenRef = useRef(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [othersOpen, setOthersOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setOverview(await client.listBrowserData());
+      const [nextOverview, nextKnowledge] = await Promise.all([client.listBrowserData(), client.listSiteKnowledge()]);
+      setOverview(nextOverview);
+      setKnowledge(nextKnowledge);
     } catch {
       // 轮询场景静默失败避免 toast 刷屏；失败时保持上次状态
     }
@@ -100,6 +110,47 @@ export function BrowserDataPanel() {
           toast.success(`已移除 ${domain} 的登录记录`);
         } else {
           toast.info('清单中无此条目');
+        }
+      });
+    },
+    [runAction],
+  );
+
+  const onViewKnowledge = useCallback(async (domain: string) => {
+    const token = ++viewTokenRef.current;
+    setViewing(null);
+    setViewLoading(true);
+    try {
+      const r = await client.readSiteKnowledge({ domain });
+      if (viewTokenRef.current !== token) return;
+      setViewing({ domain, content: r.exists ? r.content : '' });
+    } catch (e) {
+      if (viewTokenRef.current !== token) return;
+      toast.error('读取站点档案失败', { description: String(e) });
+    } finally {
+      if (viewTokenRef.current === token) setViewLoading(false);
+    }
+  }, []);
+
+  const closeKnowledgeViewer = useCallback(() => {
+    viewTokenRef.current += 1;
+    setViewing(null);
+    setViewLoading(false);
+  }, []);
+
+  const onDeleteKnowledge = useCallback(
+    async (domain: string) => {
+      const ok = await showConfirm(
+        `删除 ${domain} 的站点档案`,
+        '将删除该站点的全部探索沉淀（含正式地图与探索发现），agent 下次探索将重新积累；不影响浏览器登录数据。',
+      );
+      if (!ok) return;
+      await runAction(`kn-del:${domain}`, async () => {
+        const deleted = await client.deleteSiteKnowledge({ domain });
+        if (deleted) {
+          toast.success(`已删除 ${domain} 的站点档案`);
+        } else {
+          toast.info('档案不存在，可能已被删除');
         }
       });
     },
@@ -220,11 +271,59 @@ export function BrowserDataPanel() {
           </CardContent>
         </Card>
 
+        <Card className="py-2">
+          <CardContent className="px-2">
+            <div className="px-4 py-2 flex items-baseline gap-2">
+              <span className="text-xs font-medium text-muted-foreground shrink-0">站点档案</span>
+              <span className="text-xs text-muted-foreground/70">agent 探索网站后沉淀的导航知识，与登录清单相互独立</span>
+            </div>
+            {!knowledge ? (
+              <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                加载中…
+              </div>
+            ) : knowledge.length === 0 ? (
+              <div className="px-4 pb-3 pt-1 text-sm text-muted-foreground">
+                暂无站点档案。agent 探索网站时会自动沉淀站点知识，可让 agent 跑一次站点调研（如小红书、知乎）后再来看。
+              </div>
+            ) : (
+              <div className="divide-y border-t">
+                {knowledge.map((item) => (
+                  <KnowledgeRow key={item.domain} item={item} busy={busy} onView={onViewKnowledge} onDelete={onDeleteKnowledge} />
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
         <p className="text-xs text-muted-foreground flex items-center gap-1.5">
           <HardDrive className="w-3 h-3" />
           agent 内嵌浏览器与「网页 AI」共用同一分区，这里的登出/清除对两者同时生效。
         </p>
       </div>
+
+      <Dialog open={viewing !== null || viewLoading} onOpenChange={(open) => !open && closeKnowledgeViewer()}>
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col gap-0 p-0 overflow-hidden">
+          <DialogHeader className="flex-shrink-0 px-6 pt-6 pb-3 border-b">
+            <DialogTitle className="font-mono">{viewing?.domain ?? '…'}</DialogTitle>
+            <DialogDescription>站点档案全文（正式地图 + 探索发现），agent 导航该站点前会先读它</DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
+            {viewLoading ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                加载中…
+              </div>
+            ) : viewing ? (
+              viewing.content ? (
+                <MarkdownRenderer content={viewing.content} />
+              ) : (
+                <div className="py-8 text-center text-sm text-muted-foreground">档案不存在或已被删除</div>
+              )
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -257,7 +356,7 @@ function LoginRow({
         <Badge variant="outline" className="shrink-0 text-muted-foreground">
           {EVIDENCE_LABEL[item.evidence]}
         </Badge>
-        <span className="text-xs text-muted-foreground shrink-0">最近登录 {lastLoginText(item.lastLoginAt)}</span>
+        <span className="text-xs text-muted-foreground shrink-0">最近登录 {relativeTimeText(item.lastLoginAt)}</span>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <Button variant="outline" size="sm" className="h-7 text-xs" disabled={busy !== null} onClick={() => onLogout(item.domain)}>
@@ -307,6 +406,52 @@ function OtherDomainRow({ item, busy, onClear }: { item: DomainData; busy: strin
       >
         {busy === `clear:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
         清除数据
+      </Button>
+    </div>
+  );
+}
+
+function KnowledgeRow({
+  item,
+  busy,
+  onView,
+  onDelete,
+}: {
+  item: SiteKnowledgeEntry;
+  busy: string | null;
+  onView: (domain: string) => void;
+  onDelete: (domain: string) => void;
+}) {
+  const cnName = domainCnName(item.domain);
+  return (
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+      <button
+        type="button"
+        className="flex items-center gap-2 min-w-0 flex-1 text-left hover:text-foreground"
+        onClick={() => onView(item.domain)}
+      >
+        {cnName ? (
+          <>
+            <span className="text-sm font-medium truncate">{cnName}</span>
+            <span className="text-xs text-muted-foreground truncate">{item.domain}</span>
+          </>
+        ) : (
+          <span className="text-sm font-medium truncate">{item.domain}</span>
+        )}
+        <span className="text-xs text-muted-foreground shrink-0">更新于 {relativeTimeText(item.updatedAt)}</span>
+        <Badge variant="secondary" className="shrink-0">
+          {formatBytes(item.size)}
+        </Badge>
+      </button>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 text-xs text-muted-foreground hover:text-destructive shrink-0"
+        disabled={busy !== null}
+        onClick={() => onDelete(item.domain)}
+      >
+        {busy === `kn-del:${item.domain}` && <Loader2 className="w-3 h-3 mr-1 animate-spin" />}
+        删除
       </Button>
     </div>
   );

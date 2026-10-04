@@ -13,7 +13,7 @@
 - [x] [Step 3: browser-exploration 重写为双通道方法论](./step3-skill-rewrite.md) — SKILL.md 通道并列化，通道细节下沉工具 description
 - [x] [Step 4: 被动 tab 自动入组与上限放宽](./step4-tab-adoption.md) — 扩展侧 tabs.onCreated 收编 + MAX_TABS_PER_SESSION 8→16
 - [x] [Step 5: 会话收尾自动清理](./step5-session-cleanup.md) — 会话结束关闭组内未移交 tab（豁免移交页）
-- [ ] [Step 6: 站点档案展示](./step6-site-knowledge-panel.md) — 数据中心浏览器数据面板加站点档案区块
+- [x] [Step 6: 站点档案展示](./step6-site-knowledge-panel.md) — 数据中心浏览器数据面板加站点档案区块
 
 Step 4/5/6 与 Step 1-3 相互独立，可穿插执行；Step 2/3 依赖 Step 1。
 

@@ -13,6 +13,12 @@ export interface SiteKnowledgeReadResult {
   content: string;
 }
 
+export interface SiteKnowledgeEntry {
+  domain: string;
+  updatedAt: number;
+  size: number;
+}
+
 export interface AppendFindingResult {
   ok: boolean;
   error?: string;
@@ -41,8 +47,12 @@ export function normalizeDomain(input: string): string | null {
   return host;
 }
 
+function knowledgeDir(): string {
+  return path.join(getConfigDir(), 'site-knowledge');
+}
+
 function knowledgeFile(domain: string): string {
-  return path.join(getConfigDir(), 'site-knowledge', `${domain}.md`);
+  return path.join(knowledgeDir(), `${domain}.md`);
 }
 
 function todayStamp(): string {
@@ -84,6 +94,38 @@ export function readSiteKnowledge(domain: string): SiteKnowledgeReadResult {
     exists: true,
     content: `${head}\n\n---\n（站点档案超过 8KB，以上内容已截断，完整内容请查看档案文件）`,
   };
+}
+
+export function listSiteKnowledge(): SiteKnowledgeEntry[] {
+  const dir = knowledgeDir();
+  let dirents: fs.Dirent[];
+  try {
+    dirents = fs.readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const entries: SiteKnowledgeEntry[] = [];
+  for (const d of dirents) {
+    if (!d.isFile() || !d.name.endsWith('.md')) continue;
+    const domain = normalizeDomain(d.name.slice(0, -'.md'.length));
+    if (!domain) continue;
+    try {
+      const st = fs.statSync(path.join(dir, d.name));
+      entries.push({ domain, updatedAt: st.mtimeMs, size: st.size });
+    } catch (err) {
+      console.warn('[site-knowledge] 档案信息读取失败，跳过:', d.name, err);
+    }
+  }
+  return entries.sort((a, b) => a.domain.localeCompare(b.domain));
+}
+
+export function deleteSiteKnowledge(domain: string): boolean {
+  const normalized = normalizeDomain(domain);
+  if (!normalized) return false;
+  const file = knowledgeFile(normalized);
+  if (!fs.existsSync(file)) return false;
+  fs.rmSync(file);
+  return true;
 }
 
 export function hasSiteKnowledge(domain: string): boolean {
