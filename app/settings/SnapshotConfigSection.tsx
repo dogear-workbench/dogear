@@ -1,5 +1,5 @@
 import { useState, type Dispatch, type SetStateAction } from 'react';
-import { Eraser, Loader2, Plus, RotateCcw, X } from 'lucide-react';
+import { Eraser, Loader2, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,7 +34,6 @@ function parsePositiveInt(raw: string): number | null {
 
 export function SnapshotConfigSection({ local, setLocal, workspaces, summaries, onRefreshSummaries }: Props) {
   const snapshot = local.snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
-  const [dirDraft, setDirDraft] = useState('');
   const [slimming, setSlimming] = useState(false);
 
   const update = (patch: Partial<SnapshotSettings>) => {
@@ -59,25 +58,41 @@ export function SnapshotConfigSection({ local, setLocal, workspaces, summaries, 
     update({ maxFileSizeBytes: Math.max(1, Math.round(mb * MB)) });
   };
 
-  const addDir = () => {
-    const name = dirDraft.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    setDirDraft('');
-    if (!name || snapshot.excludeDirs.includes(name)) return;
-    update({ excludeDirs: [...snapshot.excludeDirs, name] });
-  };
-
-  const removeDir = (dir: string) => {
-    update({ excludeDirs: snapshot.excludeDirs.filter((d) => d !== dir) });
+  const removeExcludedPath = async (workspaceId: string, relPath: string) => {
+    const res = await client.removeSnapshotExcludedPath({ workspaceId, relPath });
+    if ('error' in res) {
+      toast.error(res.error);
+      return;
+    }
+    setLocal((prev) => {
+      const base = prev.snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
+      const excludedPaths = { ...base.excludedPaths };
+      if (res.paths.length > 0) {
+        excludedPaths[workspaceId] = res.paths;
+      } else {
+        delete excludedPaths[workspaceId];
+      }
+      return { ...prev, snapshot: { ...base, excludedPaths } };
+    });
   };
 
   const handleResetDefaults = async () => {
     const ok = await showConfirm(
       '恢复默认快照配置',
-      '大小阈值、排除目录、保留窗口将还原为推荐值，所有工作区的快照开关也会重新打开。',
+      '大小阈值、保留窗口还原为推荐值，所有工作区快照开关重新打开，排除目录按当前磁盘状态重新对照生成。',
     );
     if (!ok) return;
-    setLocal((prev) => ({ ...prev, snapshot: structuredClone(SNAPSHOT_SETTING_DEFAULTS) }));
+    const res = await client.restoreSnapshotDefaults();
+    if ('error' in res) {
+      toast.error(res.error);
+      return;
+    }
+    setLocal((prev) => ({ ...prev, snapshot: res.snapshot }));
   };
+
+  const excludedGroups = workspaces
+    .map((ws) => ({ workspace: ws, paths: snapshot.excludedPaths[ws.id] ?? [] }))
+    .filter((g) => g.paths.length > 0);
 
   const slimmable = workspaces.filter((w) => (summaries[w.id]?.snapshotCount ?? 0) > 0);
   const totalSnapshots = Object.values(summaries).reduce((sum, s) => sum + s.snapshotCount, 0);
@@ -170,37 +185,32 @@ export function SnapshotConfigSection({ local, setLocal, workspaces, summaries, 
         <div className="flex items-start gap-3">
           <label className="text-sm w-24 shrink-0 pt-1">排除目录</label>
           <div className="flex-1 min-w-0 space-y-2">
-            <div className="flex flex-wrap gap-1.5">
-              {snapshot.excludeDirs.map((dir) => (
-                <Badge key={dir} variant="secondary" className="gap-1 font-normal">
-                  {dir}
-                  <button
-                    type="button"
-                    onClick={() => removeDir(dir)}
-                    className="hover:text-destructive cursor-pointer"
-                    title={`移除 ${dir}`}
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                className={inputCls}
-                value={dirDraft}
-                placeholder="目录名，如 build；匹配任意层级"
-                onChange={(e) => setDirDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') addDir();
-                }}
-              />
-              <Button variant="outline" size="sm" onClick={addDir} disabled={!dirDraft.trim()} className="shrink-0">
-                <Plus className="w-3.5 h-3.5 mr-1" />
-                添加
-              </Button>
-            </div>
+            {excludedGroups.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                暂无排除目录。在文件树中右键目录，可将其整个排除出自动快照。
+              </p>
+            ) : (
+              excludedGroups.map(({ workspace, paths }) => (
+                <div key={workspace.id} className="space-y-1">
+                  <p className="text-xs text-muted-foreground">{workspace.name}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {paths.map((dir) => (
+                      <Badge key={dir} variant="secondary" className="gap-1 font-normal">
+                        {dir}
+                        <button
+                          type="button"
+                          onClick={() => removeExcludedPath(workspace.id, dir)}
+                          className="hover:text-destructive cursor-pointer"
+                          title={`移除 ${dir}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

@@ -12,7 +12,7 @@
 - [x] [Step 2: 对照扫描与迁移挂载](./step2-migrate-scan.md) — 扫描模块 + 启动迁移 + 新工作区注册钩子
 - [x] [Step 3: 排除操作 IPC](./step3-ipc.md) — 读/增/删/重扫/恢复默认 五条路由
 - [x] [Step 4: 文件树右键与标记](./step4-filetree.md) — 目录右键三分支 + EyeOff + 乐观更新
-- [ ] [Step 5: 设置页展示改造](./step5-settings.md) — 去输入框、按工作区分组展示、恢复默认走复合 IPC
+- [x] [Step 5: 设置页展示改造](./step5-settings.md) — 去输入框、按工作区分组展示、恢复默认走复合 IPC
 
 ## 全局决策
 
@@ -23,3 +23,19 @@
 - 迁移幂等：`SnapshotSettings` 加迁移标记字段，扫描完成落盘一次即不再跑；「恢复默认」与「重新对照」为同一复合 IPC（主进程原子完成重置+重扫）
 - 右键不弹确认（可再右键恢复），toast 反馈；文件无排除菜单项；不做子项递归标记
 - 主进程改动每步 `build:electron` 验证；`shadow-protection.test.ts` 随 step1 同步更新
+
+## 完成总结
+
+全部 5 步实施完成（5 个 commit，每步验收后提交）。
+
+**模型层**：`SnapshotSettings.excludeDirs`（名字级）彻底移除，换 `excludedPaths: Record<workspaceId, string[]>`（路径级，归一形式）；判定改段数组前缀语义（顶层锚定、子树全覆盖，`data2` 不误伤 `data`），judge/slim/pathspec 三消费端单一语义源；pathspec 统一 `./` 前缀锚定。
+
+**迁移层**：`DEFAULT_SNAPSHOT_DIR_NAMES` 降级为对照名单常量（前端零硬编码）；启动迁移（幂等标记+并集合并）、新工作区注册钩子、恢复默认重扫三处生成初始清单；模块级串行写队列防并发覆盖。
+
+**IPC 层**：tipc/git.ts 增/删/查/恢复默认四条路由（主进程读改写，rebuild 按 YAGNI 砍掉）；恢复默认为单次队列任务原子完成重置+重扫+落盘+广播。
+
+**UI 层**：文件树目录右键三分支菜单（排除/恢复/禁用提示）+ EyeOff 标记 + toast 反馈 + 乐观更新；设置页去输入框改按工作区分组纯展示（Badge+X 删除走 IPC），监听 settingsChanged 保持同步。
+
+**验证终态**：build:electron 通过；tsc 全量 0 错误；bun test 541 pass / 0 fail。
+
+**已知限制**（均为低危，恢复默认重扫可清）：目录重命名/删除不联动清理孤儿条目；备份恢复直接覆盖 workspaces.json 引入的工作区不经注册钩子不补扫；设置页删单条不广播（overlay 互斥无并发窗口，关设置页防抖保存即触发广播）。

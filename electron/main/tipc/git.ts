@@ -146,11 +146,15 @@ export const gitRouter = {
       }
     }),
 
-  // 设置页恢复默认：重置+重扫主进程原子完成（前端 local 防抖写与重扫两步写会互相覆盖，必须单点完成）；返回重置后 snapshot 供前端直接刷新
+  // 设置页恢复默认：重置+重扫主进程原子完成（前端 local 防抖写与重扫两步写会互相覆盖，必须单点完成）；返回重置后 snapshot 供前端直接刷新；
+  // 落盘后广播 settingsChanged 让文件树 EyeOff 标记立即感知（本路由是唯一不走 updateSettings 的 settings 写点）
   restoreSnapshotDefaults: t.procedure
     .action(async (): Promise<{ snapshot: SnapshotSettings } | { error: string }> => {
       try {
-        return { snapshot: await snapshotExclusionScan.restoreSnapshotDefaults() };
+        const snapshot = await snapshotExclusionScan.restoreSnapshotDefaults();
+        const { broadcastSettingsChanged } = await import('../main-app.js');
+        broadcastSettingsChanged();
+        return { snapshot };
       } catch (error) {
         return errorResult(error);
       }

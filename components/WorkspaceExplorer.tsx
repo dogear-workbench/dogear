@@ -284,8 +284,8 @@ export function WorkspaceExplorer() {
     void checkGitAvailable();
   }, [checkGitAvailable]);
 
-  // 快照排除清单：右键排除/恢复与设置页「恢复默认」走专用 IPC 仅落盘不广播，
-  // 本地状态只能靠这里的主动拉取保持新鲜；设置页直改清单走 updateSettings 链路有 settingsChanged 广播可跟上
+  // 快照排除清单：右键排除/恢复走专用 IPC 仅落盘不广播，本地状态只能靠这里的主动拉取保持新鲜；
+  // 设置页直改清单与恢复默认（restoreSnapshotDefaults 落盘后广播）经 settingsChanged 可跟上
   const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
 
   const refreshExclusions = useCallback(async () => {
