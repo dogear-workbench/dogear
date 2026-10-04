@@ -10,7 +10,7 @@
 
 - [x] [Step 1: 模型与判定原子改造](./step1-model-judge.md) — 删 excludeDirs 换 excludedPaths，判定改段前缀，pathspec `./` 锚定，编译级原子变更
 - [x] [Step 2: 对照扫描与迁移挂载](./step2-migrate-scan.md) — 扫描模块 + 启动迁移 + 新工作区注册钩子
-- [ ] [Step 3: 排除操作 IPC](./step3-ipc.md) — 读/增/删/重扫/恢复默认 五条路由
+- [x] [Step 3: 排除操作 IPC](./step3-ipc.md) — 读/增/删/重扫/恢复默认 五条路由
 - [ ] [Step 4: 文件树右键与标记](./step4-filetree.md) — 目录右键三分支 + EyeOff + 乐观更新
 - [ ] [Step 5: 设置页展示改造](./step5-settings.md) — 去输入框、按工作区分组展示、恢复默认走复合 IPC
 

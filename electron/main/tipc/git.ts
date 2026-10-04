@@ -3,6 +3,8 @@ import { tipc } from '@egoist/tipc/main';
 import * as workspaceJsonService from '../services/workspace-json-service.js';
 import { GitServiceError } from '../services/git-service/exec.js';
 import * as gitService from '../services/git-service/index.js';
+import * as snapshotExclusionScan from '../services/snapshot-exclusion-scan.js';
+import type { SnapshotSettings } from '../services/settings-service.js';
 
 const t = tipc.create();
 
@@ -96,6 +98,59 @@ export const gitRouter = {
         const workspace = await workspaceJsonService.getById(input.workspaceId);
         if (!workspace) return { error: '工作区不存在' };
         return await gitService.slimShadowRepoInQueue(workspace.id, workspace.path);
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
+  // 文件树右键菜单着色用：该工作区当前排除路径清单
+  getSnapshotExclusions: t.procedure
+    .input<{ workspaceId: string }>()
+    .action(async ({ input }): Promise<{ paths: string[] } | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        return { paths: await snapshotExclusionScan.getWorkspaceExcludedPaths(workspace.id) };
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
+  // 文件树右键排除：主进程读改写 settings 落盘（不走前端 local 链路），返回更新后清单供前端直接刷新
+  addSnapshotExcludedPath: t.procedure
+    .input<{ workspaceId: string; relPath: string }>()
+    .action(async ({ input }): Promise<{ paths: string[] } | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        const paths = await snapshotExclusionScan.addExcludedPath(workspace.id, input.relPath);
+        if (paths === null) return { error: '无效路径：须为相对路径且不含 ..' };
+        return { paths };
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
+  // 文件树右键恢复：删精确匹配条目，返回更新后清单（删空返回空数组）
+  removeSnapshotExcludedPath: t.procedure
+    .input<{ workspaceId: string; relPath: string }>()
+    .action(async ({ input }): Promise<{ paths: string[] } | { error: string }> => {
+      try {
+        const workspace = await workspaceJsonService.getById(input.workspaceId);
+        if (!workspace) return { error: '工作区不存在' };
+        const paths = await snapshotExclusionScan.removeExcludedPath(workspace.id, input.relPath);
+        if (paths === null) return { error: '无效路径：须为相对路径且不含 ..' };
+        return { paths };
+      } catch (error) {
+        return errorResult(error);
+      }
+    }),
+
+  // 设置页恢复默认：重置+重扫主进程原子完成（前端 local 防抖写与重扫两步写会互相覆盖，必须单点完成）；返回重置后 snapshot 供前端直接刷新
+  restoreSnapshotDefaults: t.procedure
+    .action(async (): Promise<{ snapshot: SnapshotSettings } | { error: string }> => {
+      try {
+        return { snapshot: await snapshotExclusionScan.restoreSnapshotDefaults() };
       } catch (error) {
         return errorResult(error);
       }

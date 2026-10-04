@@ -1,6 +1,7 @@
 /**
- * 快照排除目录对照扫描：默认名单 × 磁盘实际目录 → 路径级排除清单。
- * 三消费方：启动迁移（存量工作区补条目）/ 新工作区注册钩子 / 恢复默认重扫（step3 复合 IPC）。
+ * 快照排除目录对照扫描与排除清单读写：默认名单 × 磁盘实际目录 → 路径级排除清单。
+ * 扫描三消费方：启动迁移（存量工作区补条目）/ 新工作区注册钩子 / 恢复默认重扫（复合 IPC）；
+ * 增删查与恢复默认是文件树右键及设置页专用 IPC（tipc/git.ts）的服务层落点，与扫描共用同一条串行写队列。
  * 产出的路径恒为归一形式（正斜杠、无 ./ 前缀、无首尾斜杠、去重、排序），与 normalizeSnapshotSettings 清洗规则一致。
  */
 import fs from 'fs/promises';
@@ -19,7 +20,7 @@ const EXCLUSION_NAME_SET = new Set<string>(DEFAULT_SNAPSHOT_DIR_NAMES);
 // 设置读改写的多处调用共用一条串行队列：迁移与注册钩子并发时后写者基于前写者落盘结果合并，防整落盘互相覆盖丢条目
 let writeChain: Promise<void> = Promise.resolve();
 
-function enqueueSettingsWrite(task: () => Promise<void>): Promise<void> {
+function enqueueSettingsWrite<T>(task: () => Promise<T>): Promise<T> {
   const run = writeChain.then(task, task);
   writeChain = run.then(
     () => undefined,
@@ -30,6 +31,20 @@ function enqueueSettingsWrite(task: () => Promise<void>): Promise<void> {
 
 function mergePaths(existing: string[] | undefined, found: string[]): string[] {
   return [...new Set([...(existing ?? []), ...found])].sort((a, b) => a.localeCompare(b));
+}
+
+/** IPC 外部输入的路径清洗：normalizeSnapshotSettings 同款规则（反斜杠转斜杠、剥 ./ 前缀、去首尾斜杠）+ 折叠连续斜杠；
+ *  另拒绝绝对路径与 .. 段（防 pathspec 逃逸工作区根），非法返回 null */
+function normalizeRelPathInput(relPath: unknown): string | null {
+  if (typeof relPath !== 'string') return null;
+  if (/^[/\\]|^[a-zA-Z]:[/\\]/.test(relPath)) return null;
+  const p = relPath
+    .replace(/\\/g, '/')
+    .replace(/^(\.\/)+/, '')
+    .replace(/\/{2,}/g, '/')
+    .replace(/^\/+|\/+$/g, '');
+  if (p === '' || p.split('/').includes('..')) return null;
+  return p;
 }
 
 async function readDirSafe(dir: string): Promise<Dirent[]> {
@@ -104,5 +119,61 @@ export async function rescanAllWorkspaceExclusions(): Promise<void> {
       excludedPaths[ws.id] = await scanWorkspaceExcludedPaths(ws.path);
     }
     await saveSettings({ ...settings, snapshot: { ...snapshot, excludedPaths, exclusionScanDone: true } });
+  });
+}
+
+/** 读单工作区排除清单（快照保护面板空态/文件树右键菜单着色用）；未列工作区返回空数组 */
+export async function getWorkspaceExcludedPaths(workspaceId: string): Promise<string[]> {
+  const settings = await loadSettings();
+  return settings.snapshot?.excludedPaths[workspaceId] ?? [];
+}
+
+/** 右键排除：清洗校验后并入该工作区清单（已存在幂等返回，不落盘）；非法输入返回 null */
+export async function addExcludedPath(workspaceId: string, relPath: string): Promise<string[] | null> {
+  const normalized = normalizeRelPathInput(relPath);
+  if (normalized === null) return null;
+  return enqueueSettingsWrite(async () => {
+    const settings = await loadSettings();
+    const snapshot = settings.snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
+    const current = snapshot.excludedPaths[workspaceId] ?? [];
+    if (current.includes(normalized)) return current;
+    const updated = [...current, normalized].sort((a, b) => a.localeCompare(b));
+    snapshot.excludedPaths[workspaceId] = updated;
+    await saveSettings({ ...settings, snapshot });
+    return updated;
+  });
+}
+
+/** 右键恢复：删清洗后的精确匹配条目（不存在幂等）；清单删空即移除该工作区键，防设置页遍历出空分组 */
+export async function removeExcludedPath(workspaceId: string, relPath: string): Promise<string[] | null> {
+  const normalized = normalizeRelPathInput(relPath);
+  if (normalized === null) return null;
+  return enqueueSettingsWrite(async () => {
+    const settings = await loadSettings();
+    const snapshot = settings.snapshot ?? structuredClone(SNAPSHOT_SETTING_DEFAULTS);
+    const updated = (snapshot.excludedPaths[workspaceId] ?? []).filter((p) => p !== normalized);
+    if (updated.length > 0) snapshot.excludedPaths[workspaceId] = updated;
+    else delete snapshot.excludedPaths[workspaceId];
+    await saveSettings({ ...settings, snapshot });
+    return updated;
+  });
+}
+
+/** 恢复默认复合动作：阈值/窗口回推荐值、disabledWorkspaces 清空、排除清单按磁盘重建，单次队列任务一次落盘 */
+export async function restoreSnapshotDefaults(): Promise<SnapshotSettings> {
+  return enqueueSettingsWrite(async () => {
+    const settings = await loadSettings();
+    const excludedPaths: Record<string, string[]> = {};
+    for (const ws of await workspaceJsonService.getAll()) {
+      if (!ws.path) continue;
+      excludedPaths[ws.id] = await scanWorkspaceExcludedPaths(ws.path);
+    }
+    const snapshot: SnapshotSettings = {
+      ...structuredClone(SNAPSHOT_SETTING_DEFAULTS),
+      excludedPaths,
+      exclusionScanDone: true,
+    };
+    await saveSettings({ ...settings, snapshot });
+    return snapshot;
   });
 }
