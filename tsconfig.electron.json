@@ -28,5 +28,5 @@
   // 包含 electron 目录下的所有 TypeScript 文件
   "include": ["electron/**/*"],
   // 排除以下目录，避免编译不必要的文件
-  "exclude": ["node_modules", "app", "components", "lib", "public", "**/*.test.ts", "electron/main/agents/delegation-test-mocks.ts", "electron/main/services/sync/pairing-unpair.impl.ts", "electron/main/services/sync/discovery-scan.impl.ts"]
+  "exclude": ["node_modules", "app", "components", "lib", "public", "**/*.test.ts", "electron/main/agents/delegation-test-mocks.ts", "electron/main/services/sync/pairing-unpair.impl.ts", "electron/main/services/sync/discovery-scan.impl.ts", "electron/main/services/sync/discovery-broadcast.impl.ts"]
 }

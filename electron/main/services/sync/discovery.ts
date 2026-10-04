@@ -48,7 +48,7 @@ let publishedService: ReturnType<Bonjour['publish']> | null = null;
 const peers = new Map<string, PeerInfo>();
 /** 最近一次扫描探测成功的已配对设备（内存在线态，探测失败时移除）；不进 peers Map（那是 mDNS 在线态） */
 const probeOnline = new Map<string, PeerInfo>();
-const peersChangedListeners = new Set<(peers: PeerInfo[]) => void>();
+const peersChangedListeners = new Set<(snapshot: DeviceSnapshot) => void>();
 let discoveryError: string | null = null;
 
 function pickHost(addresses: string[] | undefined, fallback?: string): string {
@@ -82,15 +82,36 @@ function upsertFromService(svc: Service): boolean {
   return true;
 }
 
+// 快照要异步读 settings/sync-state（IO），广播改异步；in-flight 期间只记脏标记，完成后补发一帧防后发先至
+let snapshotBroadcastInFlight = false;
+let snapshotBroadcastQueued = false;
+
 function notifyChanged(): void {
-  const snapshot = getPeers();
-  for (const cb of peersChangedListeners) {
-    try {
-      cb(snapshot);
-    } catch (error) {
-      console.error('[lan-sync] peersChanged 回调失败:', error);
-    }
+  if (snapshotBroadcastInFlight) {
+    snapshotBroadcastQueued = true;
+    return;
   }
+  snapshotBroadcastInFlight = true;
+  void getDeviceSnapshot()
+    .then((snapshot) => {
+      for (const cb of peersChangedListeners) {
+        try {
+          cb(snapshot);
+        } catch (error) {
+          console.error('[lan-sync] peersChanged 回调失败:', error);
+        }
+      }
+    })
+    .catch((error) => {
+      console.error('[lan-sync] peers 快照广播失败:', error);
+    })
+    .finally(() => {
+      snapshotBroadcastInFlight = false;
+      if (snapshotBroadcastQueued) {
+        snapshotBroadcastQueued = false;
+        notifyChanged();
+      }
+    });
 }
 
 export function startDiscovery(opts: DiscoveryOptions): void {
@@ -152,11 +173,11 @@ export function stopDiscovery(): void {
     clearInterval(requeryTimer);
     requeryTimer = null;
   }
-  if (peers.size > 0) {
+  if (peers.size > 0 || probeOnline.size > 0) {
     peers.clear();
+    probeOnline.clear();
     notifyChanged();
   }
-  probeOnline.clear();
   try {
     bonjour?.unpublishAll(() => bonjour?.destroy());
   } catch {
@@ -175,9 +196,14 @@ export function getDiscoveryError(): string | null {
   return discoveryError;
 }
 
-export function onPeersChanged(cb: (peers: PeerInfo[]) => void): () => void {
+export function onPeersChanged(cb: (snapshot: DeviceSnapshot) => void): () => void {
   peersChangedListeners.add(cb);
   return () => peersChangedListeners.delete(cb);
+}
+
+/** 主动触发一次快照广播（解除配对后让各窗口刷新设备列表） */
+export function broadcastPeersSnapshot(): void {
+  notifyChanged();
 }
 
 /**

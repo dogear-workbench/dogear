@@ -16,6 +16,8 @@ export const PAIR_REQUEST_TTL_MS = 150_000;
 interface SyncStoreState {
   status: LanSyncStatus | null;
   peers: PeerInfo[];
+  /** 「寻找设备」扫描进行中（主进程一轮约 2~3s） */
+  scanning: boolean;
   syncOptions: SyncOptions | null;
   syncState: SyncState | null;
   runningSync: { peerId: string; startedAt: number } | null;
@@ -28,6 +30,10 @@ interface SyncStoreState {
   /** 数据中心页挂载时调用：拉全量 + 订阅主进程 syncEvent，返回取消订阅 */
   subscribe: () => () => void;
   refresh: () => Promise<void>;
+  /** 手动寻找设备：主进程 mDNS 一轮 + 已配对设备地址探测，结果为合并快照（含离线已配对） */
+  scan: () => Promise<void>;
+  /** 解除配对：仅删本端 pairedDevices 条目，同步基线/映射保留 */
+  unpair: (deviceId: string) => Promise<void>;
   runSync: (
     peerId: string,
     opts?: {
@@ -56,6 +62,7 @@ interface SyncStoreState {
 export const useSyncStore = create<SyncStoreState>((set, get) => ({
   status: null,
   peers: [],
+  scanning: false,
   syncOptions: null,
   syncState: null,
   runningSync: null,
@@ -113,9 +120,9 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
 
   refresh: async () => {
     try {
-      const [status, peers, syncState, running, requests, settingsResult] = await Promise.all([
+      const [status, snapshot, syncState, running, requests, settingsResult] = await Promise.all([
         client.getSyncStatus({}),
-        client.getPeers({}),
+        client.getPeersSnapshot({}),
         client.getSyncState({}),
         client.getRunningSync({}),
         client.getPendingPairRequests({}),
@@ -123,7 +130,7 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       ]);
       set({
         status,
-        peers: peers ?? [],
+        peers: snapshot?.peers ?? [],
         syncState,
         runningSync: running ?? null,
         pendingPairRequests: requests ?? [],
@@ -174,6 +181,29 @@ export const useSyncStore = create<SyncStoreState>((set, get) => ({
       }
     } catch (error) {
       toast.error('同步失败', { description: String(error) });
+    }
+  },
+
+  scan: async () => {
+    if (get().scanning) return;
+    set({ scanning: true });
+    try {
+      const snapshot = await client.scanPeers({});
+      set({ peers: snapshot?.peers ?? [] });
+    } catch (error) {
+      toast.error('寻找设备失败', { description: String(error) });
+    } finally {
+      set({ scanning: false });
+    }
+  },
+
+  unpair: async (deviceId) => {
+    try {
+      await client.unpair({ deviceId });
+      toast.success('已解除配对', { description: '同步基线与工作区映射已保留，重新配对后接着同步' });
+      await get().refresh();
+    } catch (error) {
+      toast.error('解除配对失败', { description: String(error) });
     }
   },
 

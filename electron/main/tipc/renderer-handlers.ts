@@ -282,7 +282,7 @@ export type RendererHandlers = {
 
 export type SyncEventPayload =
   | { kind: 'status'; status: LanSyncStatus }
-  | { kind: 'peers'; peers: PeerInfo[] }
+  | { kind: 'peers'; peers: PeerInfo[] }  // 合并快照（mDNS 在线 ∪ 探测在线 ∪ 离线已配对常驻），非纯 mDNS 列表
   | { kind: 'sync'; event: SyncProgressEvent }
   | { kind: 'pair-request'; request: PairingRequestInfo }
   | { kind: 'pairing-completed'; outcome: PairingOutcome };

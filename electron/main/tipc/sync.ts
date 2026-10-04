@@ -8,6 +8,7 @@ import {
   onLanSyncStatusChanged,
   onPeersChanged,
 } from '../services/sync/lan-sync-service.js';
+import { broadcastPeersSnapshot, getDeviceSnapshot, scanNow } from '../services/sync/discovery.js';
 import {
   beginPairing,
   confirmPairRequest,
@@ -16,6 +17,7 @@ import {
   onPairRequest,
   onPairingCompleted,
   rejectPairRequest,
+  unpairDevice,
 } from '../services/sync/pairing.js';
 import {
   getRunningSync,
@@ -41,9 +43,26 @@ export const syncRouter = {
     .input<Record<string, never>>()
     .action(async () => getLanSyncStatus()),
 
-  getPeers: t.procedure
+  /** 设备总览快照（含离线已配对常驻条目）；拉取与事件推送同一数据源，store 不自己拼装 */
+  getPeersSnapshot: t.procedure
     .input<Record<string, never>>()
-    .action(async () => listPeers()),
+    .action(async () => getDeviceSnapshot()),
+
+  /** 手动寻找设备：mDNS 一轮 + 已配对设备地址探测，耗时约 2~3s（UI 需 loading 态）；完成后快照经 peersChanged 事件另行广播 */
+  scanPeers: t.procedure
+    .input<Record<string, never>>()
+    .action(async () => scanNow()),
+
+  /** 解除配对：仅删本端 pairedDevices（sync-state 基线/映射保留）；同步进行中拒绝 */
+  unpair: t.procedure
+    .input<{ deviceId: string }>()
+    .action(async ({ input }) => {
+      await unpairDevice(input.deviceId);
+      const { broadcastSettingsChanged } = await import('../main-app.js');
+      broadcastSettingsChanged();
+      broadcastPeersSnapshot();
+      return { ok: true as const };
+    }),
 
   getSyncState: t.procedure
     .input<Record<string, never>>()
@@ -288,7 +307,7 @@ export const syncRouter = {
 /** 服务层事件 → 渲染层广播接线（registerTipcHandlers 调用一次） */
 export function registerSyncBroadcaster(): void {
   onLanSyncStatusChanged((status) => emitSyncEvent({ kind: 'status', status }));
-  onPeersChanged((peers) => emitSyncEvent({ kind: 'peers', peers }));
+  onPeersChanged((snapshot) => emitSyncEvent({ kind: 'peers', peers: snapshot.peers }));
   onSyncProgress((event) => emitSyncEvent({ kind: 'sync', event }));
   onPairRequest((request) => emitSyncEvent({ kind: 'pair-request', request }));
   onPairingCompleted((outcome) => emitSyncEvent({ kind: 'pairing-completed', outcome }));
