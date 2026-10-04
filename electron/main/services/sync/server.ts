@@ -18,9 +18,10 @@ import {
 } from './protocol.js';
 import { buildManifest, hashEntries, sha256File, tombstoneCandidates, type ManifestOptions } from './manifest.js';
 import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
-import { resolveWithinDataDir, writeIncomingFile, mergeIncomingSettings } from './apply.js';
+import { resolveIncomingRelPath, writeIncomingFile, mergeIncomingSettings } from './apply.js';
 import { checkIncomingPushRelPath } from './push-guard.js';
 import { mergeTombstones, readSyncStateFrom, withSyncStateLock, writeSyncStateTo, type TombstoneMap } from './sync-state.js';
+import { externalWorkspaceIndex } from '../data-registry.js';
 import {
   buildWorkspaceMapContext,
   collectWorkspaceMeta,
@@ -108,8 +109,9 @@ export async function startSyncServer(opts: SyncServerOptions): Promise<RunningS
     port: address.port,
     close: () =>
       new Promise<void>((resolve) => {
-        // 先断 keep-alive 空闲连接，否则有客户端连接池持连接时 close 永不完成
+        // 先断 keep-alive 连接再 close（Bun 下 closeIdleConnections 不生效，客户端连接池持连接时 close 永不完成）
         server.closeIdleConnections?.();
+        server.closeAllConnections?.();
         server.close(() => resolve());
       }),
   };
@@ -310,7 +312,7 @@ async function handleFilePull(
     sendJson(res, 400, { error: 'invalid path' });
     return;
   }
-  const absPath = resolveWithinDataDir(opts.dataDir, parsed.data.relPath);
+  const absPath = await resolveIncomingRelPath(opts.dataDir, parsed.data.relPath);
   if (!absPath) {
     sendJson(res, 403, { error: 'unsafe path' });
     return;
@@ -371,13 +373,16 @@ async function handleFilePush(
   }
   // 落盘前过与 pull 侧 applyIncoming 对称的校验（D1/S1）：禁写清单 + 本端范围排除 + 工作区映射 enabled，
   // 挡住对端推入被暂停/未映射工作区、已排除路径与 sync-state 等引擎状态
-  const [manifestOptions, state] = await Promise.all([
+  const [manifestOptions, state, registeredIds] = await Promise.all([
     opts.getManifestOptions(auth.deviceId),
     readSyncStateFrom(opts.dataDir),
+    externalWorkspaceIndex(opts.dataDir).then((m) => new Set(m.keys())),
   ]);
   const verdict = checkIncomingPushRelPath(meta.relPath, {
     excludes: manifestOptions.excludes,
     workspaceMap: state.peers[auth.deviceId]?.workspaceMap,
+    registeredWorkspaceIds: registeredIds,
+    userSyncPaths: manifestOptions.userSyncPaths,
   });
   if (!verdict.ok) {
     sendJson(res, verdict.status, { error: verdict.reason });
@@ -426,18 +431,21 @@ async function handleFileDelete(
     sendJson(res, 400, { error: `invalid delete request: ${error instanceof Error ? error.message : String(error)}` });
     return;
   }
-  const absPath = resolveWithinDataDir(opts.dataDir, body.relPath);
+  const absPath = await resolveIncomingRelPath(opts.dataDir, body.relPath);
   if (!absPath) {
     sendJson(res, 403, { error: 'unsafe path' });
     return;
   }
-  const [manifestOptions, state] = await Promise.all([
+  const [manifestOptions, state, registeredIds] = await Promise.all([
     opts.getManifestOptions(auth.deviceId),
     readSyncStateFrom(opts.dataDir),
+    externalWorkspaceIndex(opts.dataDir).then((m) => new Set(m.keys())),
   ]);
   const verdict = checkIncomingPushRelPath(body.relPath, {
     excludes: manifestOptions.excludes,
     workspaceMap: state.peers[auth.deviceId]?.workspaceMap,
+    registeredWorkspaceIds: registeredIds,
+    userSyncPaths: manifestOptions.userSyncPaths,
   });
   if (!verdict.ok) {
     sendJson(res, verdict.status, { error: verdict.reason });

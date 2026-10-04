@@ -6,7 +6,9 @@ import {
   EXTERNAL_ANCHOR_PREFIX,
   EXTERNAL_ARTICLES_REL,
   EXTERNAL_TASKS_REL,
+  externalWorkspaceIndex,
   readRegisteredWorkspaces,
+  resolveExternalRelPath,
   type RegisteredWorkspace,
 } from '../data-registry.js';
 import type { DiffResult, FileEntry, HashedFileEntry, SkippedEntry } from './protocol.js';
@@ -259,10 +261,19 @@ async function statAbs(absPath: string, relPath: string, out: FileEntry[], exclu
 }
 
 export async function hashEntries(root: string, entries: FileEntry[]): Promise<HashedFileEntry[]> {
+  // 虚拟条目本端不在 configDir 下，反解到工作区真实路径再 hash；注册表预读一次供多条目复用
+  const virtualPrefix = `${EXTERNAL_ANCHOR_PREFIX}/`;
+  const index = entries.some((e) => e.relPath.startsWith(virtualPrefix))
+    ? await externalWorkspaceIndex(root)
+    : undefined;
   const out: HashedFileEntry[] = [];
   for (const entry of entries) {
+    const abs = entry.relPath.startsWith(virtualPrefix)
+      ? await resolveExternalRelPath(root, entry.relPath, index)
+      : path.join(root, entry.relPath);
+    if (!abs) continue;
     try {
-      const hash = await sha256File(path.join(root, entry.relPath));
+      const hash = await sha256File(abs);
       out.push({ ...entry, hash });
     } catch {
       // 读失败（占用/消失）让调用方在 diff 的 skipped 里看到

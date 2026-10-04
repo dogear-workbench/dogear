@@ -14,7 +14,8 @@ const guard = (
   relPath: string,
   over: Parameters<typeof excludesFromSyncOptions>[0] = undefined,
   workspaceMap?: Record<string, { remoteWsid?: string; enabled: boolean }>,
-) => checkIncomingPushRelPath(relPath, { excludes: excludesFromSyncOptions(over), workspaceMap });
+  extra: { registeredWorkspaceIds?: ReadonlySet<string>; userSyncPaths?: Record<string, string[]> } = {},
+) => checkIncomingPushRelPath(relPath, { excludes: excludesFromSyncOptions(over), workspaceMap, ...extra });
 
 // ── 禁写清单：sync/backup 引擎自身状态 + registry 敏感路径 + 外部锚点 ──
 
@@ -33,6 +34,50 @@ test('registry 敏感路径（sensitiveRelPaths → login-accounts.json）禁止
 test('registry 外部锚点前缀（__ws-external__）禁止推送：虚拟路径不落数据目录', () => {
   expect(guard('__ws-external__/ws1/.dogear/tasks.json').ok).toBe(false);
   expect(guard('__ws-external__').ok).toBe(false);
+});
+
+// ── 虚拟路径白名单：注册工作区 × registry 声明/userSyncPaths 勾选子树 ──
+
+const registered = new Set(['ws-a']);
+const openMap = { 'ws-a': { enabled: true } };
+
+function vguard(
+  relPath: string,
+  opts: { userSyncPaths?: Record<string, string[]>; map?: typeof openMap; disabled?: string[] } = {},
+) {
+  return guard(relPath, opts.disabled ? { disabledSyncItems: opts.disabled } : undefined, opts.map ?? openMap, {
+    registeredWorkspaceIds: registered,
+    userSyncPaths: opts.userSyncPaths,
+  });
+}
+
+test('白名单放行：注册工作区的 tasks.json/其冲突副本/articles 子树/勾选子树', () => {
+  expect(vguard('__ws-external__/ws-a/.dogear/tasks.json').ok).toBe(true);
+  // 冲突副本形态白名单放行，但默认仍被 syncConflictCopies=false 排除，开启后可推
+  const copyRel = '__ws-external__/ws-a/.dogear/tasks.json.conflict-abcdef-20261004-120000-ab12';
+  expect(vguard(copyRel).ok).toBe(false);
+  expect(guard(copyRel, { syncConflictCopies: true }, openMap, { registeredWorkspaceIds: registered }).ok).toBe(true);
+  expect(vguard('__ws-external__/ws-a/.dogear/articles/uuid/meta.json').ok).toBe(true);
+  expect(vguard('__ws-external__/ws-a/docs/deep/p.md', { userSyncPaths: { 'ws-a': ['docs'] } }).ok).toBe(true);
+});
+
+test('白名单拒绝：未注册 wsid、未启用映射、树外路径、.dogear 其他文件、穿越段、畸形形态', () => {
+  const v = vguard('__ws-external__/ghost-ws/.dogear/tasks.json');
+  expect(v.ok).toBe(false);
+  if (!v.ok) expect(v.reason).toContain('未在本端注册工作区');
+  expect(vguard('__ws-external__/ws-a/.dogear/tasks.json', { map: {} }).ok).toBe(false);
+  expect(vguard('__ws-external__/ws-a/secret.txt').ok).toBe(false);
+  expect(vguard('__ws-external__/ws-a/.dogear/other.json').ok).toBe(false);
+  expect(vguard('__ws-external__/ws-a/.dogear/../../evil.txt').ok).toBe(false);
+  expect(vguard('__ws-external__/ws-a').ok).toBe(false);
+  // 未传注册表（缺省）一律拒绝
+  expect(guard('__ws-external__/ws-a/.dogear/tasks.json', undefined, openMap).ok).toBe(false);
+});
+
+test('白名单放行后仍受同步范围排除约束：disabledSyncItems 关 tasks/articles 拒收', () => {
+  expect(vguard('__ws-external__/ws-a/.dogear/tasks.json', { disabled: ['tasks'] }).ok).toBe(false);
+  expect(vguard('__ws-external__/ws-a/.dogear/articles/u/m.json', { disabled: ['articles'] }).ok).toBe(false);
+  expect(vguard('__ws-external__/ws-a/docs/p.md', { userSyncPaths: { 'ws-a': ['docs'] }, disabled: ['tasks'] }).ok).toBe(true);
 });
 
 // ── 本端同步范围排除（isExcluded 对称过滤，含 F1 optionalDirs） ──

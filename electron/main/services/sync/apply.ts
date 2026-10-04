@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { FileEntry, FilePushMeta, SkippedEntry } from './protocol.js';
 import { isExcluded, type ManifestExcludes } from './manifest.js';
-import { EXTERNAL_ANCHOR_PREFIX } from '../data-registry.js';
+import { EXTERNAL_ANCHOR_PREFIX, EXTERNAL_TASKS_REL, resolveExternalRelPath } from '../data-registry.js';
 import { loadSettings, saveSettings, type AppSettings, type PairedDevice } from '../settings-service.js';
 import { normalizeSyncOptions, type SyncOptions } from '../settings-types.js';
 import { getOrCreateDeviceId } from './device.js';
@@ -83,6 +83,19 @@ export function resolveWithinDataDir(dataDir: string, relPath: string): string |
   return abs.startsWith(base + path.sep) ? abs : null;
 }
 
+const VIRTUAL_PREFIX = `${EXTERNAL_ANCHOR_PREFIX}/`;
+
+/** 同步条目落盘/读盘统一解析：虚拟路径反解到工作区真实路径，其余限 configDir 内 */
+export async function resolveIncomingRelPath(root: string, relPath: string): Promise<string | null> {
+  return relPath.startsWith(VIRTUAL_PREFIX) ? resolveExternalRelPath(root, relPath) : resolveWithinDataDir(root, relPath);
+}
+
+function unsafeReason(relPath: string): string {
+  return relPath.startsWith(VIRTUAL_PREFIX)
+    ? `虚拟路径反解失败（工作区未注册或路径不安全）: ${relPath}`
+    : 'unsafe path';
+}
+
 export interface IncomingWriteResult {
   ok: true;
   absPath: string;
@@ -99,8 +112,8 @@ export async function writeIncomingFile(
   meta: FilePushMeta,
   source: Readable,
 ): Promise<IncomingWriteResult | IncomingWriteError> {
-  const absPath = resolveWithinDataDir(dataDir, meta.relPath);
-  if (!absPath) return { ok: false, reason: 'unsafe path' };
+  const absPath = await resolveIncomingRelPath(dataDir, meta.relPath);
+  if (!absPath) return { ok: false, reason: unsafeReason(meta.relPath) };
   const tmpPath = `${absPath}.${Date.now().toString(36)}${INCOMING_SUFFIX}`;
   try {
     await fsp.mkdir(path.dirname(absPath), { recursive: true });
@@ -144,10 +157,11 @@ export function conflictCopyRelPath(relPath: string, winnerShortId: string): str
 }
 
 async function saveLocalConflictCopy(root: string, relPath: string, winnerShortId: string): Promise<void> {
-  const abs = resolveWithinDataDir(root, relPath);
-  if (!abs) throw new Error('unsafe path');
-  const copyAbs = resolveWithinDataDir(root, conflictCopyRelPath(relPath, winnerShortId));
-  if (!copyAbs) throw new Error('unsafe conflict copy path');
+  const abs = await resolveIncomingRelPath(root, relPath);
+  if (!abs) throw new Error(unsafeReason(relPath));
+  const copyRel = conflictCopyRelPath(relPath, winnerShortId);
+  const copyAbs = await resolveIncomingRelPath(root, copyRel);
+  if (!copyAbs) throw new Error(unsafeReason(copyRel));
   await fsp.mkdir(path.dirname(copyAbs), { recursive: true });
   // COPYFILE_EXCL：撞名时报错而非覆盖旧副本（调用方降级 skipped，绝不静默丢留底）
   await fsp.copyFile(abs, copyAbs, fsConstants.COPYFILE_EXCL);
@@ -348,8 +362,13 @@ const MERGE_PATTERNS: MergePattern[] = [
     test: (relPath) => /^workspaces\/[^/]+\/groups\.json$/.test(relPath),
     merge: (local, remote) => mergeArrayFile(local, remote, 'groups', 'id'),
   },
-  // task id 并集；同 id updatedAt（ISO 字符串）新者胜（结构 {version:2,tasks:[]}，已核对 task-store.ts）
+  // task id 并集；同 id updatedAt（ISO 字符串）新者胜（结构 {version:2,tasks:[]}，已核对 task-store.ts）；
+  // 工作区任务虚拟条目同构（version 3），合并后 version 取较大者
   { test: (relPath) => relPath === 'plans.json', merge: (local, remote) => mergeArrayFile(local, remote, 'tasks', 'id') },
+  {
+    test: (relPath) => relPath.startsWith(VIRTUAL_PREFIX) && relPath.endsWith(`/${EXTERNAL_TASKS_REL}`),
+    merge: (local, remote) => mergeArrayFile(local, remote, 'tasks', 'id'),
+  },
   // 通知 id 并集；同 id 新者胜（条目无 updatedAt，按 createdAt 比较）
   { test: (relPath) => relPath === 'notifications.json', merge: (local, remote) => mergeArrayFile(local, remote, 'entries', 'id') },
 ];
@@ -404,12 +423,6 @@ export async function applyIncoming(
       report.skipped.push({ relPath: entry.relPath, reason: '本端同步范围已排除，丢弃对端推送' });
       continue;
     }
-    // 虚拟路径条目应用侧尚未支持反解落盘（Step 4 接管，替换为工作区真实路径写入），
-    // 先行拒绝防 resolveWithinDataDir 把它落成 configDir 下的垃圾目录
-    if (entry.relPath.startsWith(`${EXTERNAL_ANCHOR_PREFIX}/`)) {
-      report.skipped.push({ relPath: entry.relPath, reason: '虚拟路径条目应用侧未支持，丢弃' });
-      continue;
-    }
     const remoteRelPath = item.remoteRelPath ?? entry.relPath;
     try {
       // 条目级合并路径：不整文件覆盖本端、不落冲突副本（合并天然保两侧条目，无丢失风险）。
@@ -452,9 +465,9 @@ async function applyMergedIncoming(
   options?: IncomingApplyOptions,
 ): Promise<void> {
   const entry = item.entry;
-  const absPath = resolveWithinDataDir(root, entry.relPath);
+  const absPath = await resolveIncomingRelPath(root, entry.relPath);
   if (!absPath) {
-    report.skipped.push({ relPath: entry.relPath, reason: 'unsafe path' });
+    report.skipped.push({ relPath: entry.relPath, reason: unsafeReason(entry.relPath) });
     return;
   }
   const source = await sourceFactory(item.remoteRelPath ?? entry.relPath);
@@ -554,9 +567,10 @@ export async function pushOutgoing(
   const report: OutgoingApplyReport = { pushed: [], skipped: [] };
   for (const item of items) {
     const { entry } = item;
-    const abs = resolveWithinDataDir(root, item.localRelPath ?? entry.relPath);
+    const readRel = item.localRelPath ?? entry.relPath;
+    const abs = await resolveIncomingRelPath(root, readRel);
     if (!abs) {
-      report.skipped.push({ relPath: entry.relPath, reason: 'unsafe path' });
+      report.skipped.push({ relPath: entry.relPath, reason: unsafeReason(readRel) });
       continue;
     }
     try {

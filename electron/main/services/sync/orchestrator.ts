@@ -10,7 +10,7 @@ import {
   matchMergePattern,
   pushOutgoing,
   readSettingsRaw,
-  resolveWithinDataDir,
+  resolveIncomingRelPath,
   saveStreamToTempFile,
   shortDeviceId,
   type IncomingApplyItem,
@@ -468,7 +468,7 @@ async function runSyncInternal(
     mergedFiles = pullReport.mergedFiles;
     // 合并落盘的是合并结果而非对端原样，baseline 必须记落盘真实内容 hash（原 settingsMerged 特判推广为 mergedFiles）
     for (const relPath of mergedFiles) {
-      const abs = resolveWithinDataDir(dataDir, relPath);
+      const abs = await resolveIncomingRelPath(dataDir, relPath);
       transferred.set(relPath, abs ? await sha256File(abs).catch(() => undefined) : undefined);
     }
     // 合并失败（任一侧 JSON 异常）降级：挂起待人工处理，绝不静默整文件覆盖

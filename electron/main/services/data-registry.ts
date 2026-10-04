@@ -141,6 +141,31 @@ export async function backupSourcesFor(category: BackupCategoryKey, scope: Backu
   return out;
 }
 
+/** 注册工作区快照：wsid → 工作区磁盘绝对路径（多条虚拟路径反解时避免重复读注册表） */
+export async function externalWorkspaceIndex(configDir: string): Promise<Map<string, string>> {
+  return new Map((await readRegisteredWorkspaces(configDir)).map((w) => [w.id, w.path]));
+}
+
+/**
+ * 同步虚拟路径反解：`__ws-external__/{wsid}/rest` → 注册工作区真实绝对路径。
+ * 段安全校验（空段/./..//反斜杠拒绝）+ resolve 后必须仍在工作区根下（防穿越）。
+ * wsid 未注册（对端清单含本端没有的工作区）→ null，调用方 skipped + 警告。
+ */
+export async function resolveExternalRelPath(
+  configDir: string,
+  relPath: string,
+  index?: ReadonlyMap<string, string>,
+): Promise<string | null> {
+  const segs = relPath.split('/');
+  if (segs[0] !== EXTERNAL_ANCHOR_PREFIX || segs.length < 3) return null;
+  if (segs.some((s) => s === '' || s === '.' || s === '..' || s.includes('\\'))) return null;
+  const wsPath = (index ?? (await externalWorkspaceIndex(configDir))).get(segs[1]);
+  if (!wsPath) return null;
+  const base = path.resolve(wsPath);
+  const abs = path.resolve(base, ...segs.slice(2));
+  return abs.startsWith(base + path.sep) ? abs : null;
+}
+
 /** 同步范围条目（每项 syncItemId 即同步项 id），settings-types / sync manifest 由此派生 */
 export function registrySyncItems(): readonly DataItem[] {
   return DATA_ITEMS.filter((item) => item.syncItemId !== undefined);

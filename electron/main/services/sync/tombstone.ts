@@ -1,7 +1,7 @@
 import fsp from 'node:fs/promises';
 import type { FileEntry, SkippedEntry } from './protocol.js';
 import { sha256File } from './manifest.js';
-import { resolveWithinDataDir } from './apply.js';
+import { resolveIncomingRelPath } from './apply.js';
 
 export type DeleteConflictKind = 'local-deleted' | 'remote-deleted';
 
@@ -38,7 +38,7 @@ export async function applyPeerTombstones(
   for (const entry of entries) {
     const relPath = entry.relPath;
     if (relPath === SETTINGS_REL) continue;
-    const abs = resolveWithinDataDir(root, relPath);
+    const abs = await resolveIncomingRelPath(root, relPath);
     if (!abs) {
       outcome.skipped.push({ relPath, reason: 'unsafe path，忽略对端删除墓碑' });
       continue;
