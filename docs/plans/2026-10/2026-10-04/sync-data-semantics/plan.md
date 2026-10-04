@@ -9,7 +9,7 @@
 ## 步骤索引
 
 - [x] [Step 1: 数据层地基（registry 补录 + settings 模型）](./step1-registry-settings-model.md) — registry 补 ws-tasks/ws-articles 同步项，syncOptions 加 userSyncPaths，立传播白名单常量
-- [ ] [Step 2: task-store planPath 相对化](./step2-planpath-relative.md) — 存相对路径 + version 2→3 存量迁移，读写两侧 resolve
+- [x] [Step 2: task-store planPath 相对化](./step2-planpath-relative.md) — 存相对路径 + version 2→3 存量迁移，读写两侧 resolve
 - [ ] [Step 3: 虚拟路径进清单与映射](./step3-manifest-virtual-paths.md) — 协议版本 +1，buildManifest 收虚拟条目，wsid 翻译，旧版本 gating
 - [ ] [Step 4: 虚拟路径落盘与守卫 + tasks 条目合并](./step4-apply-guard-merge.md) — apply 反解落盘、push-guard 放行、MERGE_PATTERNS 加 tasks.json、orchestrator 流转
 - [ ] [Step 5: settings 白名单传播制](./step5-settings-propagation.md) — 逐字段核对定稿分类表，mergeFieldsThreeWay 改白名单合并

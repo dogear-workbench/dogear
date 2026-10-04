@@ -2,7 +2,8 @@
  * 任务存储原语层：Task CRUD + 状态机 + .dogear/tasks.json 读写（零 Electron 依赖）
  *
  * - 状态机 plan → backlog/queued → running → review → done/rejected；done/rejected 可回 plan（移回计划）或 backlog/done（手动处置打回任务）；interrupted = 执行中意外中断（重启/卡死），交用户手动处置；rejected = 执行前确定性拒绝，两者均可被申报回写（→ review）
- * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）；读写前 ensureMigrated 做 version 1 → 2 存量迁移（backlog → plan）
+ * - planPath 存工作区相对路径（posix 分隔符，跨设备可移植）；写侧 toStoredPlanPath 归一化，读侧 resolvePlanPath 还原绝对路径
+ * - 写操作统一走 mutateTasks（withFileLock 串行化 + 原子落盘）；读写前 ensureMigrated 链式做 version 1→2（backlog → plan）、2→3（planPath 相对化，工作区外路径保持绝对）存量迁移
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -18,7 +19,7 @@ export interface Task {
   id: string;
   title: string;
   status: TaskStatus;
-  /** 计划文档路径；新建任务必填，仅存量历史任务可能缺省 */
+  /** 计划文档路径（存工作区相对 posix 路径，读侧 resolvePlanPath 还原）；新建任务必填，仅存量历史任务可能缺省或绝对 */
   planPath?: string;
   /** 执行类型；缺省 default（存量任务无字段等价 default），读侧用 ?? 'default' 兜底 */
   execProfile?: ExecProfile;
@@ -63,11 +64,26 @@ export interface TaskGroups {
 }
 
 interface TasksFile {
-  version: 2;
+  version: 2 | 3;
   tasks: Task[];
 }
 
 const TASKS_FILE = 'tasks.json';
+const TASKS_FILE_VERSION = 3;
+
+/** 读侧还原：存量为绝对路径（迁移保留的工作区外条目）原样；相对条目按工作区根 join */
+export function resolvePlanPath(workspacePath: string, planPath: string): string {
+  if (path.isAbsolute(planPath)) return path.resolve(planPath);
+  return path.join(workspacePath, ...planPath.split('/'));
+}
+
+/** 写侧归一化：工作区根下的路径转 posix 分隔符相对路径；工作区外（跨盘/上级目录）保持绝对不迁移 */
+function toStoredPlanPath(workspacePath: string, planPath: string): string {
+  const abs = resolvePlanPath(workspacePath, planPath);
+  const rel = path.relative(workspacePath, abs);
+  if (!rel || rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) return abs;
+  return rel.split(path.sep).join('/');
+}
 
 const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
   plan: ['backlog', 'queued', 'done'],
@@ -82,7 +98,7 @@ const ALLOWED_TRANSITIONS: Record<TaskStatus, TaskStatus[]> = {
 
 // 缺省值每次新建而非共享常量：mutateTasks 会原地 push，共享常量会被首次读污染并跨工作区泄漏
 function emptyTasksFile(): TasksFile {
-  return { version: 2, tasks: [] };
+  return { version: TASKS_FILE_VERSION, tasks: [] };
 }
 
 function getTasksFilePath(workspacePath: string): string {
@@ -109,14 +125,23 @@ async function ensureMigrated(workspacePath: string): Promise<void> {
     const filePath = getTasksFilePath(workspacePath);
     await withFileLock(filePath, async () => {
       const file = await readTasksFile(workspacePath);
-      if (file.version >= 2) return;
-      const now = new Date().toISOString();
-      for (const task of file.tasks) {
-        if (task.status !== 'backlog') continue;
-        task.status = 'plan';
-        task.updatedAt = now;
+      if (file.version >= TASKS_FILE_VERSION) return;
+      if (file.version < 2) {
+        const now = new Date().toISOString();
+        for (const task of file.tasks) {
+          if (task.status !== 'backlog') continue;
+          task.status = 'plan';
+          task.updatedAt = now;
+        }
+        file.version = 2;
       }
-      file.version = 2;
+      if (file.version < 3) {
+        for (const task of file.tasks) {
+          if (!task.planPath || !path.isAbsolute(task.planPath)) continue;
+          task.planPath = toStoredPlanPath(workspacePath, task.planPath);
+        }
+        file.version = 3;
+      }
       await writeTasksFileLocked(filePath, file);
     });
   })().catch((err) => {
@@ -164,7 +189,7 @@ function requireTitle(title: string): string {
 export async function createTask(workspacePath: string, input: CreateTaskInput): Promise<Task> {
   const title = requireTitle(input.title);
   if (!input.planPath) throw new Error('planPath 必传：任务须挂载已落盘的 plan 文档');
-  if (!input.skipPlanCheck) await fs.access(input.planPath);
+  if (!input.skipPlanCheck) await fs.access(resolvePlanPath(workspacePath, input.planPath));
   const now = new Date().toISOString();
   return mutateTasks(workspacePath, (tasks) => {
     const existing = tasks.find((t) => t.status === 'plan' && !t.deletedAt && t.title === title);
@@ -173,7 +198,7 @@ export async function createTask(workspacePath: string, input: CreateTaskInput):
       id: generateTaskId(),
       title,
       status: input.status ?? 'queued',
-      planPath: input.planPath,
+      planPath: toStoredPlanPath(workspacePath, input.planPath),
       ...(input.originSessionId ? { originSessionId: input.originSessionId } : {}),
       ...(input.execProfile ? { execProfile: input.execProfile } : {}),
       createdAt: now,
@@ -219,9 +244,10 @@ export async function getTaskDetail(workspacePath: string, taskId: string): Prom
   const task = await getTask(workspacePath, taskId);
   if (!task) return null;
   if (!task.planPath) return { ...task, planContent: null };
+  const planPath = resolvePlanPath(workspacePath, task.planPath);
   try {
-    const planContent = await fs.readFile(task.planPath, 'utf-8');
-    return { ...task, planContent };
+    const planContent = await fs.readFile(planPath, 'utf-8');
+    return { ...task, planPath, planContent };
   } catch (err) {
     return { ...task, planContent: null, planError: `plan 文件读取失败: ${err instanceof Error ? err.message : String(err)}` };
   }

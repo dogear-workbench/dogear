@@ -234,11 +234,13 @@ async function seedTasksFileV1(): Promise<string> {
   return tasksPath;
 }
 
-async function readTasksFileRaw(tasksPath: string): Promise<{ version: number; tasks: Array<{ id: string; status: string }> }> {
+async function readTasksFileRaw(
+  tasksPath: string,
+): Promise<{ version: number; tasks: Array<{ id: string; status: string; planPath?: string }> }> {
   return JSON.parse(await fs.readFile(tasksPath, 'utf-8'));
 }
 
-test('version 1 存量迁移：backlog 转 plan，其他态不动，写回 version 2 且幂等', async () => {
+test('version 1 存量迁移：backlog 转 plan，planPath 相对化，写回 version 3 且幂等', async () => {
   const tasksPath = await seedTasksFileV1();
 
   const groups = await listTasksGrouped(workspacePath);
@@ -246,19 +248,89 @@ test('version 1 存量迁移：backlog 转 plan，其他态不动，写回 versi
   expect(groups.done.map((t) => t.id)).toEqual(['t2']);
 
   const raw = await readTasksFileRaw(tasksPath);
-  expect(raw.version).toBe(2);
+  expect(raw.version).toBe(3);
   expect(raw.tasks.find((t) => t.id === 't1')?.status).toBe('plan');
   expect(raw.tasks.find((t) => t.id === 't2')?.status).toBe('done');
+  expect(raw.tasks.find((t) => t.id === 't1')?.planPath).toBe('docs/plan.md');
 
   await listTasksGrouped(workspacePath);
   const raw2 = await readTasksFileRaw(tasksPath);
-  expect(raw2.version).toBe(2);
+  expect(raw2.version).toBe(3);
   expect(raw2.tasks.find((t) => t.id === 't2')?.status).toBe('done');
+});
+
+test('version 2→3 迁移：工作区内绝对 planPath 转相对 posix，工作区外保持绝对，幂等', async () => {
+  const outsideDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dogear-outside-plan-'));
+  const outsidePlanPath = path.join(outsideDir, 'plan.md');
+  await fs.writeFile(outsidePlanPath, '# 外部计划', 'utf-8');
+  const tasksPath = path.join(workspacePath, '.dogear', 'tasks.json');
+  await fs.mkdir(path.dirname(tasksPath), { recursive: true });
+  await fs.writeFile(
+    tasksPath,
+    JSON.stringify({
+      version: 2,
+      tasks: [
+        { id: 'in', title: '工作区内', status: 'queued', planPath, createdAt: T0, updatedAt: T0 },
+        { id: 'out', title: '工作区外', status: 'queued', planPath: outsidePlanPath, createdAt: T0, updatedAt: T0 },
+      ],
+    }),
+    'utf-8',
+  );
+
+  await listTasks(workspacePath);
+
+  const raw = await readTasksFileRaw(tasksPath);
+  expect(raw.version).toBe(3);
+  expect(raw.tasks.find((t) => t.id === 'in')?.planPath).toBe('docs/plan.md');
+  expect(raw.tasks.find((t) => t.id === 'out')?.planPath).toBe(outsidePlanPath);
+
+  await listTasks(workspacePath);
+  const raw2 = await readTasksFileRaw(tasksPath);
+  expect(raw2.version).toBe(3);
+  expect(raw2.tasks.find((t) => t.id === 'in')?.planPath).toBe('docs/plan.md');
+  expect(raw2.tasks.find((t) => t.id === 'out')?.planPath).toBe(outsidePlanPath);
+});
+
+test('planPath round-trip：createTask 落盘存相对，读侧还原绝对且内容可读', async () => {
+  const created = await createTask(workspacePath, { title: '往返', planPath });
+  expect(created.planPath).toBe('docs/plan.md');
+
+  const raw = await readTasksFileRaw(path.join(workspacePath, '.dogear', 'tasks.json'));
+  expect(raw.version).toBe(3);
+  expect(raw.tasks[0]?.planPath).toBe('docs/plan.md');
+
+  expect((await getTask(workspacePath, created.id))?.planPath).toBe('docs/plan.md');
+  const detail = await getTaskDetail(workspacePath, created.id);
+  expect(detail?.planPath).toBe(planPath);
+  expect(detail?.planContent).toBe('# 测试计划\n按计划实施');
+});
+
+test('version 3 直写绝对 planPath（迁移保留/历史手写形态）读取不回归', async () => {
+  const tasksPath = path.join(workspacePath, '.dogear', 'tasks.json');
+  await fs.mkdir(path.dirname(tasksPath), { recursive: true });
+  await fs.writeFile(
+    tasksPath,
+    JSON.stringify({
+      version: 3,
+      tasks: [{ id: 'abs', title: '绝对遗留', status: 'plan', planPath, createdAt: T0, updatedAt: T0 }],
+    }),
+    'utf-8',
+  );
+  const detail = await getTaskDetail(workspacePath, 'abs');
+  expect(detail?.planPath).toBe(planPath);
+  expect(detail?.planContent).toBe('# 测试计划\n按计划实施');
+});
+
+test('createTask 接受工作区相对 planPath 入参，落盘归一化后读侧可读', async () => {
+  const task = await createTask(workspacePath, { title: '相对入参', planPath: 'docs/plan.md' });
+  expect(task.planPath).toBe('docs/plan.md');
+  const detail = await getTaskDetail(workspacePath, task.id);
+  expect(detail?.planContent).toBe('# 测试计划\n按计划实施');
 });
 
 test('createTask 同标题拒绝：plan 态已存在时抛错不新建；其他态同标题仍新建', async () => {
   const first = await createTask(workspacePath, { title: '同一件事', planPath, status: 'plan' });
-  expect(first.planPath).toBe(planPath);
+  expect(first.planPath).toBe('docs/plan.md');
   expect(await listTasks(workspacePath)).toHaveLength(1);
 
   await expect(

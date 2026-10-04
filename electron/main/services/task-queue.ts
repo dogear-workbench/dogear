@@ -23,6 +23,7 @@ import { getSessionNotificationService } from './session-notification-service.js
 import { getNotificationCenterService } from './notification-center-service.js';
 import { getChildrenByParent } from '../agents/delegation-bridge.js';
 import * as taskService from './task-service.js';
+import { resolvePlanPath } from './task-store.js';
 import type { Task } from './task-service.js';
 import { buildExecutionPrompt, type ExecProfile } from './task-execution-prompt.js';
 
@@ -184,7 +185,7 @@ class TaskQueueExecutor {
       await this.safeReject(ctx, '任务尚无 plan 文档，请先补文档再执行');
       return;
     }
-    const planPath: string = task.planPath;
+    const planPath = resolvePlanPath(workspacePath, task.planPath);
     try {
       await fs.access(planPath);
     } catch {
