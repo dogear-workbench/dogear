@@ -1,7 +1,7 @@
 ---
 step: 2
 title: 前端开关与展示跟进
-status: pending
+status: done
 ---
 
 ## 目标
@@ -28,10 +28,12 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
+- 与计划差异：场景页/能力页零代码改动（buildSceneOverview 遍历 ABILITY_PACKS 数据驱动，三行/三卡自动出，前端无包 key 硬编码）；派遣页拆分照计划落地；超计划顺手闭环 step1 遗留的 schedulerCustomAgentCell reason 失实；browser-methodology 未加场景页 skill 细选展开（单 skill 开包即自动勾，与 stock/article 同待遇）。
 - 改动文件清单：
+  - `app/settings/SubAgentTab.tsx`：`SINGLE_FIELD_BY_PACK` 增 browser/browser-extension 映射，双开关独立写 `ab.browser`/`ab.extension`，删 `setBrowserBlock`；`SKILL_BLOCK_PACK_KEYS = {code-workflow, browser-methodology}` 泛化 skill 细选块（块开关批量勾 `ab.skills`）；能力域顶部说明改写为准确语义（subAutonomous 包 Profile 独立裁决，skill 型包还需工作区包闸）
+  - `electron/main/tipc/ability-scene.ts`：`schedulerCustomAgentCell` 增 browser-extension（'定时任务不挂扩展通道工具'）与 browser-methodology（并入 code-workflow 按任务配置文案）两 case
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：派遣页块顺序 = 注册表顺序（stock→article→browser→browser-extension→browser-methodology→web-mcp→code-workflow，浏览器三块连排）；`SKILL_BLOCK_PACK_KEYS` 在 SubAgentTab.tsx 顶部，与主进程 `SKILL_FILTER_PACK_KEYS`（ability-scene.ts）语义对齐；前端已无 browser/extension 能力域硬编码残留（全工作区 grep 确认）
+- 下个 step 该从哪里继续：step 3 通道表述统一——WEB_RESEARCH_GUIDANCE 触发条件仍 `web-mcp \|\| browser`（pi-session.ts，扩展-only 会话不注入）；pi-session.ts:465 browserPlaybook 闸已随方法论包无需再动；场景页子会话行 groupNote「扩展能力（股票/文章/浏览器/联网/代码 skill）…」仍概括成立，如需逐包点名可顺带润色
+- 待办或已知限制：存量 enabledSkills 缺 browser-exploration 的工作区子会话丢方法论 skill（派遣页勾补即可）；挂载矩阵 skill 型包行 loaded 只反映包级闸（code-workflow 既有行为非本次引入）；能力域块描述尾缀「子会话 Profile 独立生效，不受此开关约束」的「此开关」指工作区包总闸，编辑器语境有轻微歧义（stock/article/web-mcp 同样存在，属注册表描述全局措辞，顶部新说明已消歧）

@@ -36,11 +36,16 @@ const MAX_TIMEOUT = 180;
 /** 子会话无独立配置维度的包：主会话专属、场景层裁决（memory）或按触发条件自动注入，不出块 */
 const NON_PROFILE_PACK_KEYS = new Set(['notes', 'group-context', 'agent-collab', 'memory']);
 
-/** 单 Switch 块的包 key → enabledAbilities 字段（web-mcp 包字段名是 web） */
-const SINGLE_FIELD_BY_PACK: Partial<Record<string, 'article' | 'web'>> = {
+/** 单 Switch 块的包 key → enabledAbilities 字段（web-mcp 包字段名是 web，浏览器扩展沿用 extension 字段） */
+const SINGLE_FIELD_BY_PACK: Partial<Record<string, 'article' | 'web' | 'browser' | 'extension'>> = {
   article: 'article',
   'web-mcp': 'web',
+  browser: 'browser',
+  'browser-extension': 'extension',
 };
+
+/** skill 细选块的包 key：块开关批量勾/取消包内全部 skill，细项在 Popover 单选 */
+const SKILL_BLOCK_PACK_KEYS = new Set(['code-workflow', 'browser-methodology']);
 
 interface SkillTemplateMeta { name: string; description: string; }
 interface SkillEntry {
@@ -119,14 +124,6 @@ function ProfileEditor({
     updateAbility(field, next);
   };
 
-  // 块开关直写双通道字段：装配侧内嵌浏览器看 browser、扩展通道看 extension，无细选入口，两通道随开关齐开齐关
-  const setBrowserBlock = (on: boolean) => {
-    updateDraft((prev) => ({
-      ...prev,
-      enabledAbilities: { ...prev.enabledAbilities, browser: on, extension: on },
-    }));
-  };
-
   const skillCheckItems = (pack: AbilityPackView) =>
     pack.skillMetas.map((meta) => (
       <SkillCheckItem
@@ -154,18 +151,7 @@ function ProfileEditor({
         />
       );
     }
-    if (pack.key === 'browser') {
-      return (
-        <AbilityBlockRow
-          key={pack.key}
-          title={pack.label}
-          description={`${pack.description}；内嵌与扩展两个通道随开关一起开或一起关`}
-          checked={ab.browser === true || ab.extension === true}
-          onCheckedChange={setBrowserBlock}
-        />
-      );
-    }
-    if (pack.key === 'code-workflow') {
+    if (SKILL_BLOCK_PACK_KEYS.has(pack.key)) {
       return (
         <AbilityBlockRow
           key={pack.key}
@@ -277,7 +263,7 @@ function ProfileEditor({
       <div className="space-y-1.5">
         <label className="text-xs font-medium">能力域</label>
         <p className="text-xs text-muted-foreground">
-          此处为子会话侧子开关，实际生效 = 此处勾选 ∩ 工作区能力包总开关（设置 → 能力）：工作区关闭某能力包时，Profile 无法单独启用。记忆等固定层能力归场景页「子会话」行配置。
+          此处为子会话侧子开关。股票、文章、联网与浏览器双通道由这里独立裁决，工作区能力包总开关（设置 → 能力）不约束子会话；代码工作流与浏览器方法论还需工作区对应包开启且勾选 skill。记忆等固定层能力归场景页「子会话」行配置。
         </p>
         <div className="space-y-2">
           {!packs && (

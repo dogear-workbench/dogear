@@ -184,7 +184,10 @@ function schedulerCustomAgentCell(
     case 'agent-collab':
       return { loaded: false, reason: '后台任务没有派遣交付通道' };
     case 'code-workflow':
+    case 'browser-methodology':
       return { loaded: false, reason: 'skill 挂载在定时任务编辑页按任务配置' };
+    case 'browser-extension':
+      return { loaded: false, reason: '定时任务不挂扩展通道工具' };
     default:
       return pack.type === 'skill-packs'
         ? { loaded: false, reason: '工具包与 skill 在定时任务编辑页按任务配置' }
