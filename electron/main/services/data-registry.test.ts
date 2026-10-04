@@ -58,7 +58,8 @@ test('审计对照表：每个数据行都有对应条目且路径正确', () =>
     'ws-agent-md': { paths: ['workspaces/{wsid}/agent.md'], sync: 'workspaces', category: 'notes-groups' },
     'ws-memory': { paths: ['workspaces/{wsid}/memory'], sync: 'workspaces', category: 'memory' },
     'ws-sessions': { paths: ['workspaces/{wsid}/sessions'], sync: 'workspaces', category: 'sessions' },
-    'ws-tasks': { paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/.dogear/tasks.json`], category: 'tasks' },
+    'ws-tasks': { paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/.dogear/tasks.json`], sync: 'tasks', category: 'tasks' },
+    'ws-articles': { paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/.dogear/articles`], sync: 'articles' },
     memory: { paths: ['memory'], sync: 'memory', category: 'memory' },
     conversations: { paths: ['conversations'], sync: 'conversations', category: 'sessions' },
     'workspaces-registry': { paths: ['workspaces/workspaces.json'], sync: 'workspaces', category: 'app-config' },
@@ -83,12 +84,18 @@ test('审计对照表：每个数据行都有对应条目且路径正确', () =>
   }
 });
 
-test('审计修洞锁定：groups.json 归 notes-groups（I-2）、tasks 走外部锚点（I-1）、app-config 含四文件', () => {
+test('审计修洞锁定：groups.json 归 notes-groups（I-2）、tasks 走外部锚点并挂同步项（I-1）、app-config 含四文件', () => {
   const byId = new Map(DATA_ITEMS.map((i) => [i.id, i]));
   expect(byId.get('ws-groups-index')!.backupCategory).toBe('notes-groups');
   const tasks = byId.get('ws-tasks')!;
   expect(tasks.external).toBe('workspace-tasks');
-  expect(tasks.syncItemId).toBeUndefined();
+  expect(tasks.syncItemId).toBe('tasks');
+  const articles = byId.get('ws-articles')!;
+  expect(articles.external).toBe('workspace-articles');
+  expect(articles.syncItemId).toBe('articles');
+  expect(articles.mergePolicy).toBe('file');
+  // articles 是用户内容产物，备份覆盖是另一话题，本步只挂同步项：backupCategory 留空
+  expect(articles.backupCategory).toBeUndefined();
   const appConfigItems = DATA_ITEMS.filter((i) => i.backupCategory === 'app-config');
   const appConfigPaths = appConfigItems.flatMap((i) => i.paths);
   for (const f of ['settings.json', 'plans.json', 'notifications.json', 'login-accounts.json']) {
@@ -103,11 +110,13 @@ test('已下线遗留文件不进 registry：dashboard.md 无条目', () => {
 
 // ── 同步项派生：与 settings-types SYNC_ITEM_IDS 现状一致 ──
 
-test('registrySyncItems 派生的同步项 id 集合 == SYNC_ITEM_IDS 的 12 项', () => {
+test('registrySyncItems 派生的同步项 id 集合 == SYNC_ITEM_IDS 的 14 项', () => {
   const registryIds = [...new Set(registrySyncItems().map((i) => i.syncItemId!))].sort();
   const legacyIds = SYNC_ITEM_IDS.map((m) => m.id).sort();
   expect(registryIds).toEqual(legacyIds);
-  expect(registryIds).toHaveLength(12);
+  expect(registryIds).toHaveLength(14);
+  expect(registryIds).toContain('tasks');
+  expect(registryIds).toContain('articles');
 });
 
 // ── mergePolicy 锁定（对照 sync/apply.ts merge registry 现状）──

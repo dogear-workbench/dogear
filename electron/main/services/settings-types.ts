@@ -187,6 +187,8 @@ export interface SyncOptions {
   syncConflictCopies?: boolean;
   /** shadow-git/ 影子快照仓库是否同步；默认 false（git 内部文件跨端 mtime 裁决覆盖有损坏风险） */
   syncShadowGit?: boolean;
+  /** 用户勾选跨设备同步的工作区文件（键为工作区 id，值为相对该工作区根的路径列表）；缺省/{} = 无勾选；随本节走 rev-LWW，两端必须一致 */
+  userSyncPaths?: Record<string, string[]>;
   /** 范围字段修订号：本端改范围字段时自增（applySyncOptionsPatch 维护）；merge 取 rev 大的一端整组采纳 */
   syncOptionsRev?: number;
 }
@@ -307,6 +309,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     disabledSyncItems: [],
     syncConflictCopies: false,
     syncShadowGit: false,
+    userSyncPaths: {},
     syncOptionsRev: 0,
   },
 };
@@ -424,6 +427,22 @@ export function normalizeBackupSettings(raw: unknown): BackupSettings {
 }
 
 /**
+ * 相对路径列表条目归一化：反斜杠转斜杠、剥 ./ 前缀、去首尾斜杠、空串丢弃、按首现顺序去重；非数组输入返回空数组。
+ * snapshot excludedPaths 与 syncOptions userSyncPaths 共用同一清洗规则，两处分叉即为 bug
+ */
+function cleanRelPathList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const p = item.replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/^\/+|\/+$/g, '');
+    if (p === '' || seen.has(p)) continue;
+    seen.add(p);
+  }
+  return [...seen];
+}
+
+/**
  * snapshot 节归一化：非法输入归一为全默认，单字段非法回落默认，不丢弃其他合法字段；
  * excludedPaths 按工作区归一：值非数组的键回落空数组（不丢弃其他键），条目反斜杠转斜杠、剥 ./ 前缀、
  * 去首尾斜杠、去重，否则段前缀判定与 pathspec 拼接会静默失效；
@@ -461,16 +480,7 @@ export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
   const excludedPaths: Record<string, string[]> = {};
   for (const [wsId, value] of Object.entries(pathsRaw)) {
     if (wsId === '') continue;
-    const seen = new Set<string>();
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        if (typeof item !== 'string') continue;
-        const p = item.replace(/\\/g, '/').replace(/^(\.\/)+/, '').replace(/^\/+|\/+$/g, '');
-        if (p === '' || seen.has(p)) continue;
-        seen.add(p);
-      }
-    }
-    excludedPaths[wsId] = [...seen];
+    excludedPaths[wsId] = cleanRelPathList(value);
   }
   return {
     maxFileSizeBytes:
@@ -484,7 +494,7 @@ export function normalizeSnapshotSettings(raw: unknown): SnapshotSettings {
   };
 }
 
-/** 同步范围项 id（目录 7 项 + 文件 3 项 + 可选 2 项；字符串字面量联合，disabledSyncItems 白名单） */
+/** 同步范围项 id（目录 7 项 + 工作区外部数据 2 项 + 文件 3 项 + 可选 2 项；字符串字面量联合，disabledSyncItems 白名单） */
 export type SyncItemId =
   | 'workspaces'
   | 'conversations'
@@ -493,6 +503,8 @@ export type SyncItemId =
   | 'article-parser'
   | 'site-knowledge'
   | 'run-history'
+  | 'tasks'
+  | 'articles'
   | 'settings.json'
   | 'plans.json'
   | 'notifications.json'
@@ -511,7 +523,7 @@ export interface SyncItemMeta {
 }
 
 /**
- * 同步范围 12 项（设计 §3.1）：目录 7 项 + 文件 3 项 + 可选目录 2 项。
+ * 同步范围 14 项：目录 7 项 + 工作区外部数据 2 项（tasks/articles，虚拟路径 __ws-external__/{wsid}/）+ 文件 3 项 + 可选目录 2 项。
  * stocks/feishu 的开关联动 syncStocksData/syncFeishu 独立布尔键（避免迁移），不进 disabledSyncItems 生效路径。
  */
 export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
@@ -522,6 +534,8 @@ export const SYNC_ITEM_IDS: readonly SyncItemMeta[] = [
   { id: 'article-parser', name: '文章解析', description: '文章解析结果数据' },
   { id: 'site-knowledge', name: '站点知识', description: '站点知识库数据' },
   { id: 'run-history', name: '运行历史', description: '运行记录数据' },
+  { id: 'tasks', name: '任务', description: '工作区计划栏任务数据；关闭后任务不跨设备' },
+  { id: 'articles', name: '文章库', description: '工作区文章实体库（原文与元数据）；关闭后文章不跨设备' },
   { id: 'settings.json', name: '应用设置', description: '全局设置（含同步配置本身，必选）', required: true },
   { id: 'plans.json', name: '任务数据', description: '定时任务数据；关闭后任务不跨设备' },
   { id: 'notifications.json', name: '通知记录', description: '通知历史；关闭后通知不跨设备' },
@@ -533,6 +547,26 @@ const SYNC_ITEM_ID_SET: ReadonlySet<string> = new Set(SYNC_ITEM_IDS.map((m) => m
 const REQUIRED_SYNC_ITEM_IDS: ReadonlySet<string> = new Set(
   SYNC_ITEM_IDS.filter((m) => m.required === true).map((m) => m.id),
 );
+
+/**
+ * settings 顶层字段跨设备传播白名单（A 白名单传播制，草案待后续 step 逐字段核对定稿）：
+ * 仅列出的字段三方合并跨设备，其余（含未知新字段）一律保本端；
+ * 保本端：snapshot/backup/ui/profiles/browserProxyServer/migrated/webMcpApiKey/syncOptions。
+ * 原草案里的 enabledToolPacks 已迁工作区 config（不再属于 settings），不在此列
+ */
+export const SETTINGS_SYNC_FIELDS = [
+  'ai',
+  'basicToolPermissions',
+  'subAgent',
+  'failover',
+  'update',
+  'appearance',
+  'browserSearchEngine',
+  'webAiSites',
+  'paymentBlockedHosts',
+] as const satisfies readonly (keyof AppSettings)[];
+
+export type SettingsSyncField = (typeof SETTINGS_SYNC_FIELDS)[number];
 
 /**
  * disabledSyncItems 清洗：只保留 SYNC_ITEM_IDS 白名单内的字符串 id（防路径穿越/注入），按首现顺序去重。
@@ -553,9 +587,24 @@ export function normalizeDisabledSyncItems(raw: unknown): string[] {
 }
 
 /**
+ * userSyncPaths 归一化：键（工作区 id）非空字符串，值必须为数组否则整键丢弃（形态非法）；
+ * 条目清洗同 snapshot excludedPaths（cleanRelPathList）；清洗后为空数组的键保留（= 该工作区无勾选）
+ */
+export function normalizeUserSyncPaths(raw: unknown): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+  for (const [wsId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (wsId === '' || !Array.isArray(value)) continue;
+    out[wsId] = cleanRelPathList(value);
+  }
+  return out;
+}
+
+/**
  * syncOptions 节归一化：开关仅接受布尔 true；pairedDevices 校验 deviceId/secret（64 位 hex）并按 deviceId 去重，
  * secret 统一小写避免两端大小写不一致比对失败；非法条目丢弃，不丢弃其他合法字段。
- * 范围字段补默认值（disabledSyncItems=[] 全开 / syncConflictCopies=false / syncShadowGit=false / syncOptionsRev=0），
+ * 范围字段补默认值（disabledSyncItems=[] 全开 / syncConflictCopies=false / syncShadowGit=false /
+ * userSyncPaths={} 无勾选 / syncOptionsRev=0），
  * 输出恒含全部键（旧版本 settings.json 首次 load 后即补齐写回）。
  */
 export function normalizeSyncOptions(raw: unknown): SyncOptions {
@@ -585,6 +634,7 @@ export function normalizeSyncOptions(raw: unknown): SyncOptions {
     disabledSyncItems: normalizeDisabledSyncItems(obj.disabledSyncItems),
     syncConflictCopies: obj.syncConflictCopies === true,
     syncShadowGit: obj.syncShadowGit === true,
+    userSyncPaths: normalizeUserSyncPaths(obj.userSyncPaths),
     syncOptionsRev:
       typeof obj.syncOptionsRev === 'number' && Number.isInteger(obj.syncOptionsRev) && obj.syncOptionsRev >= 0
         ? obj.syncOptionsRev

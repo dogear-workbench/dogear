@@ -29,7 +29,7 @@ export interface DataItem {
    */
   paths: string[];
   /** 声明 configDir 外文件，派生时按 workspaces.json 动态展开 */
-  external?: 'workspace-tasks';
+  external?: 'workspace-tasks' | 'workspace-articles';
   /** 含凭据/密钥，同步范围与导出场景须排除或特殊处理 */
   sensitive?: boolean;
   mergePolicy: MergePolicy;
@@ -43,6 +43,7 @@ const WSID_TOKEN = '{wsid}';
 export const EXTERNAL_ANCHOR_PREFIX = '__ws-external__';
 
 const EXTERNAL_TASKS_REL = '.dogear/tasks.json';
+const EXTERNAL_ARTICLES_REL = '.dogear/articles';
 
 export const DATA_ITEMS: readonly DataItem[] = [
   { id: 'ws-notes', paths: ['workspaces/{wsid}/notes'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
@@ -53,7 +54,8 @@ export const DATA_ITEMS: readonly DataItem[] = [
   { id: 'ws-agent-md', paths: ['workspaces/{wsid}/agent.md'], mergePolicy: 'file', backupCategory: 'notes-groups', syncItemId: 'workspaces' },
   { id: 'ws-memory', paths: ['workspaces/{wsid}/memory'], mergePolicy: 'file', backupCategory: 'memory', syncItemId: 'workspaces' },
   { id: 'ws-sessions', paths: ['workspaces/{wsid}/sessions'], mergePolicy: 'file', backupCategory: 'sessions', syncItemId: 'workspaces' },
-  { id: 'ws-tasks', paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/${EXTERNAL_TASKS_REL}`], external: 'workspace-tasks', mergePolicy: 'file', backupCategory: 'tasks' },
+  { id: 'ws-tasks', paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/${EXTERNAL_TASKS_REL}`], external: 'workspace-tasks', mergePolicy: 'file', backupCategory: 'tasks', syncItemId: 'tasks' },
+  { id: 'ws-articles', paths: [`${EXTERNAL_ANCHOR_PREFIX}/{wsid}/${EXTERNAL_ARTICLES_REL}`], external: 'workspace-articles', mergePolicy: 'file', syncItemId: 'articles' },
   { id: 'memory', paths: ['memory'], mergePolicy: 'file', backupCategory: 'memory', syncItemId: 'memory' },
   { id: 'conversations', paths: ['conversations'], mergePolicy: 'file', backupCategory: 'sessions', syncItemId: 'conversations' },
   { id: 'workspaces-registry', paths: ['workspaces/workspaces.json'], mergePolicy: 'records', backupCategory: 'app-config', syncItemId: 'workspaces' },

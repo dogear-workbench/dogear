@@ -23,6 +23,7 @@ const {
   normalizeSyncOptions,
   normalizeDisabledSyncItems,
   SYNC_ITEM_IDS,
+  SETTINGS_SYNC_FIELDS,
   DEFAULT_SETTINGS,
 } = await import('../settings-types.js');
 
@@ -168,7 +169,7 @@ test('pairedDevices：secret 冲突取本端、剔除自身条目（现状行为
 
 // ── normalizeSyncOptions / normalizeDisabledSyncItems ──
 
-test('normalizeSyncOptions：范围字段缺省默认值（[]/false/false/0）', () => {
+test('normalizeSyncOptions：范围字段缺省默认值（[]/false/false/{}/0）', () => {
   const n = normalizeSyncOptions({});
   expect(n.deviceName).toBe('');
   expect(n.syncStocksData).toBe(false);
@@ -177,6 +178,7 @@ test('normalizeSyncOptions：范围字段缺省默认值（[]/false/false/0）',
   expect(n.disabledSyncItems).toEqual([]);
   expect(n.syncConflictCopies).toBe(false);
   expect(n.syncShadowGit).toBe(false);
+  expect(n.userSyncPaths).toEqual({});
   expect(n.syncOptionsRev).toBe(0);
 });
 
@@ -207,6 +209,24 @@ test('normalizeSyncOptions：非对象输入 / syncOptions 非对象 → 全默�
 test('normalizeDisabledSyncItems：非数组输入返回空数组', () => {
   expect(normalizeDisabledSyncItems('memory')).toEqual([]);
   expect(normalizeDisabledSyncItems({ 0: 'memory' })).toEqual([]);
+});
+
+test('normalizeSyncOptions：userSyncPaths 值非数组的键丢弃，条目反斜杠/./ 前缀/首尾斜杠归一、去重、空串丢弃', () => {
+  const n = normalizeSyncOptions({
+    userSyncPaths: {
+      'ws-a': ['docs\\plans', './notes/', 'docs/plans', 'docs/plans/', '', 42, null, 'src'],
+      'ws-b': 'not-an-array',
+      '': ['x'],
+    },
+  });
+  expect(n.userSyncPaths).toEqual({ 'ws-a': ['docs/plans', 'notes', 'src'] });
+});
+
+test('normalizeSyncOptions：userSyncPaths 非对象输入返回空对象，合法空数组键保留', () => {
+  expect(normalizeSyncOptions(null).userSyncPaths).toEqual({});
+  expect(normalizeSyncOptions('x').userSyncPaths).toEqual({});
+  expect(normalizeSyncOptions([]).userSyncPaths).toEqual({});
+  expect(normalizeSyncOptions({ userSyncPaths: { 'ws-a': [] } }).userSyncPaths).toEqual({ 'ws-a': [] });
 });
 
 // ── applySyncOptionsPatch：rev 自增维护 ──
@@ -286,15 +306,34 @@ test('excludesFromSyncOptions：true=同步 直传（无翻转），disabledItem
 
 // ── SYNC_ITEM_IDS 白名单常量 ──
 
-test('SYNC_ITEM_IDS：12 项、id 唯一、settings.json 标必选、含 stocks/feishu', () => {
-  expect(SYNC_ITEM_IDS).toHaveLength(12);
+test('SYNC_ITEM_IDS：14 项、id 唯一、settings.json 标必选、含 stocks/feishu/tasks/articles', () => {
+  expect(SYNC_ITEM_IDS).toHaveLength(14);
   const ids = SYNC_ITEM_IDS.map((m) => m.id);
-  expect(new Set(ids).size).toBe(12);
+  expect(new Set(ids).size).toBe(14);
   for (const expected of [
     'workspaces', 'conversations', 'memory', 'usage', 'article-parser', 'site-knowledge', 'run-history',
-    'settings.json', 'plans.json', 'notifications.json', 'stocks', 'feishu',
+    'tasks', 'articles', 'settings.json', 'plans.json', 'notifications.json', 'stocks', 'feishu',
   ]) {
     expect(ids).toContain(expected);
   }
   expect(SYNC_ITEM_IDS.find((m) => m.id === 'settings.json')?.required).toBe(true);
+});
+
+// ── SETTINGS_SYNC_FIELDS 传播白名单常量（草案，后续 step 定稿） ──
+
+test('SETTINGS_SYNC_FIELDS 草案：9 项通用偏好，不含保本端字段', () => {
+  expect([...SETTINGS_SYNC_FIELDS].sort()).toEqual([
+    'ai',
+    'appearance',
+    'basicToolPermissions',
+    'browserSearchEngine',
+    'failover',
+    'paymentBlockedHosts',
+    'subAgent',
+    'update',
+    'webAiSites',
+  ]);
+  for (const localOnly of ['snapshot', 'backup', 'ui', 'profiles', 'browserProxyServer', 'webMcpApiKey', 'migrated', 'syncOptions']) {
+    expect(SETTINGS_SYNC_FIELDS).not.toContain(localOnly);
+  }
 });
