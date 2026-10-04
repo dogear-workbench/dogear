@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+import { SessionError } from '@earendil-works/pi-agent-core';
 import { getPiSessionManager, type SessionCloseSource } from '../agents/pi-session/pi-session-manager.js';
 import type { ExtendedSessionMessage } from '../agents/task-types.js';
 import type { PiPermissionMode } from '../agents/pi-session/permission-mode.js';
@@ -130,7 +131,8 @@ class ConversationRuntimeService {
         await session.start();
       } catch (error) {
         piSessionManager.closeSession(session.getSessionId());
-        if (isRestore) {
+        // 仅历史文件真缺失/损坏时才用该文案，避免其他异常（如模型配置问题）被误标
+        if (isRestore && error instanceof SessionError && (error.code === 'not_found' || error.code === 'invalid_session')) {
           throw new Error('会话历史文件缺失或损坏，无法恢复会话');
         }
         throw error;

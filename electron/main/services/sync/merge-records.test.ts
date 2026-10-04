@@ -90,27 +90,30 @@ test('无效时间值视为最旧；结构异常返回 null（降级信号）', 
   expect(mergeRecordMapFile({ conversations: {} }, [1, 2], 'conversations')).toBeNull();
 });
 
-// ── 验收点 3：workspaces.json 并集 + 机器亲和字段 ──
+// ── 验收点 3：workspaces.json 同 id 合并 + 机器亲和字段；注册表机器自持 ──
 
-test('workspaces.json：本端注册新工作区、对端注册另一工作区 → 两端条目并集', () => {
+test('workspaces.json：远端独有 id 不并入（对端路径是幽灵工作区），本端独有保留', () => {
   const local = {
     version: 1,
     workspaces: [
-      { id: 'ws-local', name: '本端项目', path: 'C:\\dogear', additionalPaths: [], isDefault: true, createdAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'ws-local', name: '本端项目', path: '/Users/mac/dogear', additionalPaths: [], isDefault: true, createdAt: '2026-09-01T00:00:00.000Z' },
     ],
   };
   const remote = {
     version: 1,
     workspaces: [
-      { id: 'ws-remote', name: '对端项目', path: '/Users/mac/dogear', additionalPaths: [], isDefault: true, createdAt: '2026-09-02T00:00:00.000Z' },
+      { id: 'ws-remote', name: '对端项目', path: 'C:\\dogear', additionalPaths: [], isDefault: true, createdAt: '2026-09-02T00:00:00.000Z' },
+      // 同 id 条目仍正常合并（对端铺底新字段）
+      { id: 'ws-local', name: '本端项目', path: 'C:\\dogear\\mirror', additionalPaths: [], isDefault: false, createdAt: '2026-09-01T00:00:00.000Z', newField: 1 },
     ],
   };
-  const merged = mergeWorkspacesFile(local, remote) as { workspaces: Array<{ id: string; path: string; isDefault: boolean }> };
-  expect(merged.workspaces.map((w) => w.id).sort()).toEqual(['ws-local', 'ws-remote']);
-  // 各自 path/isDefault 不被对端覆盖（并集下互不冲突，均保留原值）
-  const byId = new Map(merged.workspaces.map((w) => [w.id, w]));
-  expect(byId.get('ws-local').path).toBe('C:\\dogear');
-  expect(byId.get('ws-remote').path).toBe('/Users/mac/dogear');
+  const merged = mergeWorkspacesFile(local, remote) as { workspaces: Array<Record<string, unknown>> };
+  // 注册表机器自持：远端独有条目（带 C:\ 路径）不并入，否则本机 watcher/task-queue 随之 ENOENT；
+  // 发现对端工作区走 manifest workspaceMeta 待映射清单
+  expect(merged.workspaces.map((w) => w.id)).toEqual(['ws-local']);
+  const ws = merged.workspaces[0];
+  expect(ws.path).toBe('/Users/mac/dogear'); // 机器亲和：同 id 保本端
+  expect(ws.newField).toBe(1); // 对端铺底：本端缺失的新字段可补上
 });
 
 test('workspaces.json 同 id：path/additionalPaths/isDefault 保本端，name/createdAt 取更早一侧', () => {

@@ -334,6 +334,8 @@ export class PiSession extends EventEmitter {
     this.logger.info('=== 启动 pi 会话 ===', { sessionId: this.sessionId });
 
     const repository = getPiSessionRepository();
+    // start() 入口时点判断：有 harnessSessionId = 恢复已有会话；create 分支会在下面同步回填
+    const isRestore = Boolean(this.config.harnessSessionId);
     const rawSession = this.config.harnessSessionId
       ? await repository.open(this.config.workspaceId, this.config.harnessSessionId)
       : await (async () => {
@@ -355,14 +357,28 @@ export class PiSession extends EventEmitter {
     });
 
     const appSettings = await loadSettings();
-    const { model, profile, tier, thinkingLevel } = resolvePiModel(
-      appSettings,
-      this.config.modelSelection,
-      null,
-      appSettings.ai.defaultModelSelection,
-    );
+    // 恢复场景的 modelSelection 可能引用本机不存在的 profile/tier（同步/迁移带入），回退默认模型；新建会话维持抛错
+    let modelResult: ReturnType<typeof resolvePiModel>;
+    let effectiveSelection: ModelSelection | null = this.config.modelSelection ?? appSettings.ai.defaultModelSelection;
+    try {
+      modelResult = resolvePiModel(
+        appSettings,
+        this.config.modelSelection,
+        null,
+        appSettings.ai.defaultModelSelection,
+      );
+    } catch (error) {
+      if (!isRestore || !this.config.modelSelection) throw error;
+      this.logger.warn(
+        `恢复会话：记录内模型配置失效（${JSON.stringify(this.config.modelSelection)}），回退默认模型:`,
+        error instanceof Error ? error.message : String(error),
+      );
+      modelResult = resolvePiModel(appSettings, null, null, appSettings.ai.defaultModelSelection);
+      effectiveSelection = appSettings.ai.defaultModelSelection;
+    }
+    const { model, profile, tier, thinkingLevel } = modelResult;
 
-    this.currentModelSelection = this.config.modelSelection ?? appSettings.ai.defaultModelSelection;
+    this.currentModelSelection = effectiveSelection;
     this.currentModelId = model.id;
     this.currentContextWindow = model.contextWindow;
     this.currentAutoCompactPercent = profile.autoCompactPercent ?? 80;

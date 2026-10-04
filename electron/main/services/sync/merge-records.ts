@@ -113,8 +113,10 @@ export function mergeArrayFile(
 }
 
 /**
- * workspaces/workspaces.json：workspace id 并集。
- * 同 id：`path`/`additionalPaths`/`isDefault` 取本端（机器亲和——跨机路径灌入对端会打不开）；
+ * workspaces/workspaces.json 合并。
+ * 注册表机器自持：远端独有 id 不并入（对端路径如 C:\dogear 在本机无意义，灌入只会让 watcher/task-queue
+ * ENOENT）；发现对端工作区的正道是 manifest 的 workspaceMeta 待映射清单。同 id 才合并：
+ * `path`/`additionalPaths`/`isDefault` 取本端（机器亲和——跨机路径灌入对端会打不开）；
  * `name`/`createdAt` 跟随 createdAt 更早一侧（稳定字段，两端收敛一致）；其余字段本端优先。
  */
 export function mergeWorkspacesFile(local: ParsedJson, remote: ParsedJson): ParsedJson | null {
@@ -135,10 +137,7 @@ export function mergeWorkspacesFile(local: ParsedJson, remote: ParsedJson): Pars
     const id = recordId(rec, 'id');
     if (!rec || !id) continue;
     const prev = byId.get(id);
-    if (!prev) {
-      byId.set(id, rec);
-      continue;
-    }
+    if (!prev) continue;
     const earlier = timeOf(prev.createdAt) <= timeOf(rec.createdAt) ? prev : rec;
     byId.set(id, {
       ...rec, // 对端铺底：本端缺失的新字段可从对端补上

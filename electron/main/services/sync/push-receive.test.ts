@@ -84,6 +84,32 @@ test('enabled 映射的工作区推送正常落盘', async () => {
   await expect(fsp.readFile(path.join(dataDir, 'workspaces/ws-open/notes/a.md'), 'utf-8')).resolves.toBe('content');
 });
 
+test('conversations.json 推送 → 落盘重写记录内 wsid 为本机（宿主）wsid', async () => {
+  const relPath = 'workspaces/ws-open/conversations.json';
+  const body = JSON.stringify({
+    version: 2,
+    conversations: {
+      c1: { id: 'c1', workspaceId: 'ws-peer-machine', updatedAt: '2026-10-04T10:00:00.000Z' },
+    },
+  });
+  const meta = Buffer.from(JSON.stringify({ relPath, size: body.length, mtimeMs: 123 })).toString('base64');
+  const res = await fetch(`${base}/file`, {
+    method: 'POST',
+    headers: {
+      'x-dogear-device-id': PEER_ID,
+      'x-dogear-secret': SECRET,
+      'x-dogear-file-meta': meta,
+      'content-type': 'application/octet-stream',
+    },
+    body: gzipSync(Buffer.from(body)),
+  });
+  expect(res.status).toBe(200);
+  const parsed = JSON.parse(await fsp.readFile(path.join(dataDir, relPath), 'utf-8')) as {
+    conversations: Record<string, { workspaceId?: string }>;
+  };
+  expect(parsed.conversations.c1.workspaceId).toBe('ws-open');
+});
+
 test('全局数据推送正常落盘', async () => {
   const res = await push('plans.json');
   expect(res.status).toBe(200);
