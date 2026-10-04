@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Dogear macOS menu bar icon">
+  <!-- macOS template image: transparent interior, system-controlled foreground color. -->
+  <path
+    d="M161 411c-35-45-53-99-53-160 0-101 65-176 166-176 81 0 141 54 141 130 0 58-30 104-83 130-40 20-67 45-81 76-9 20-28 32-49 32h-41Z"
+    fill="none"
+    stroke="#000"
+    stroke-width="42"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- The context/signal stroke keeps the tray mark connected to the full brand icon. -->
+  <path
+    d="M221 310c26-28 54-49 83-66 23-14 35-31 35-51"
+    fill="none"
+    stroke="#000"
+    stroke-width="28"
+    stroke-linecap="round"
+  />
+  <circle cx="339" cy="185" r="13" fill="#000" />
+</svg>

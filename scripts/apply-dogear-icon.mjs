@@ -4,6 +4,7 @@ import sharp from 'sharp';
 
 const root = process.cwd();
 const source = path.join(root, 'assets', 'dogear-icon-final.svg');
+const traySource = path.join(root, 'assets', 'dogear-tray-template.svg');
 const build = path.join(root, 'build');
 const app = path.join(root, 'app');
 const pngSource = path.join(build, 'dogear-icon-source.png');
@@ -58,16 +59,6 @@ function buildIcns(pngBySize) {
   return Buffer.concat([header, ...chunks]);
 }
 
-function silhouette(rgba) {
-  const result = Buffer.from(rgba);
-  for (let i = 0; i < result.length; i += 4) {
-    result[i] = 0;
-    result[i + 1] = 0;
-    result[i + 2] = 0;
-  }
-  return result;
-}
-
 const sourceSvg = fs.readFileSync(source);
 const rendered = await sharp(sourceSvg).resize(1024, 1024).png().ensureAlpha().raw().toBuffer({ resolveWithObject: true });
 const rgba = rendered.data;
@@ -87,8 +78,12 @@ const pngBySize = new Map();
 for (const size of icnsSizes) pngBySize.set(size, await renderPng(size));
 fs.writeFileSync(path.join(build, 'icon.icns'), buildIcns(pngBySize));
 
-const trayRaw = silhouette(rgba);
-const tray = await sharp(trayRaw, { raw: { width: 1024, height: 1024, channels: 4 } }).resize(32, 32, { fit: 'fill' }).png().toBuffer();
+const traySvg = fs.readFileSync(traySource);
+const tray = await sharp(traySvg)
+  // Keep this a real template image: transparent background and black alpha mask.
+  .resize(32, 32, { fit: 'contain' })
+  .png()
+  .toBuffer();
 fs.writeFileSync(path.join(build, 'icon-tray.png'), tray);
 
 console.log('Generated: build/icon.ico, app/favicon.ico, build/icon.icns, build/icon-tray.png');

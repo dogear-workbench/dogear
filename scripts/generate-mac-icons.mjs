@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import sharp from 'sharp';
 import { PNG } from 'pngjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,21 +17,15 @@ function extractLargestPngFrame(icoPath) {
     const size = buf.readUInt32LE(o + 8);
     const off = buf.readUInt32LE(o + 12);
     const isPng = buf[off] === 0x89 && buf[off + 1] === 0x50;
-    if (isPng && (!best || w > best.w)) {
-      best = { w, png: buf.subarray(off, off + size) };
-    }
+    if (isPng && (!best || w > best.w)) best = { w, png: buf.subarray(off, off + size) };
   }
-  if (!best) {
-    throw new Error(`no embedded PNG frame in ${icoPath}`);
-  }
+  if (!best) throw new Error(`no embedded PNG frame in ${icoPath}`);
   return best.png;
 }
 
 function decodePng(pngBuf) {
   const png = PNG.sync.read(pngBuf);
-  if (png.data.length !== png.width * png.height * 4) {
-    throw new Error('unexpected non-RGBA png data');
-  }
+  if (png.data.length !== png.width * png.height * 4) throw new Error('unexpected non-RGBA png data');
   return { rgba: png.data, width: png.width, height: png.height };
 }
 
@@ -66,24 +61,8 @@ function encodePng(rgba, width, height) {
   return PNG.sync.write(png);
 }
 
-function toSilhouette(rgba, width, height) {
-  const dst = Buffer.alloc(rgba.length);
-  for (let i = 0; i < width * height; i++) {
-    dst[i * 4 + 3] = rgba[i * 4 + 3];
-  }
-  return dst;
-}
-
 function buildIcns(pngBySize) {
-  const entries = [
-    ['ic07', 128],
-    ['ic08', 256],
-    ['ic09', 512],
-    ['ic11', 32],
-    ['ic12', 64],
-    ['ic13', 256],
-    ['ic14', 512],
-  ];
+  const entries = [['ic07', 128], ['ic08', 256], ['ic09', 512], ['ic11', 32], ['ic12', 64], ['ic13', 256], ['ic14', 512]];
   const chunks = [];
   let total = 8;
   for (const [type, size] of entries) {
@@ -98,10 +77,9 @@ function buildIcns(pngBySize) {
 }
 
 const icoPath = path.join(ROOT, 'build', 'icon.ico');
+const traySource = path.join(ROOT, 'assets', 'dogear-tray-template.svg');
 const { rgba, width, height } = decodePng(extractLargestPngFrame(icoPath));
-if (width !== 256 || height !== 256) {
-  throw new Error(`expected 256x256 source frame, got ${width}x${height}`);
-}
+if (width !== 256 || height !== 256) throw new Error(`expected 256x256 source frame, got ${width}x${height}`);
 
 const pngBySize = new Map();
 for (const size of [16, 32, 64, 128, 256, 512]) {
@@ -112,9 +90,9 @@ for (const size of [16, 32, 64, 128, 256, 512]) {
 const icnsPath = path.join(ROOT, 'build', 'icon.icns');
 writeFileSync(icnsPath, buildIcns(pngBySize));
 
-const tray = resizeBilinear(toSilhouette(rgba, width, height), width, height, 32, 32);
+const tray = await sharp(readFileSync(traySource)).resize(32, 32, { fit: 'contain' }).png().toBuffer();
 const trayPath = path.join(ROOT, 'build', 'icon-tray.png');
-writeFileSync(trayPath, encodePng(tray, 32, 32));
+writeFileSync(trayPath, tray);
 
 console.log(`  ✓ ${path.relative(ROOT, icnsPath)}（128/256/512 + @2x 32/64/512）`);
-console.log(`  ✓ ${path.relative(ROOT, trayPath)}（32x32 单色 alpha，template image）`);
+console.log(`  ✓ ${path.relative(ROOT, trayPath)}（透明背景线稿，template image）`);
