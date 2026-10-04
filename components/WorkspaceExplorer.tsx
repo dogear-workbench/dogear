@@ -1,9 +1,12 @@
 /**
  * 工作区文件树主组件（拖放 / 快捷键 / 数据加载编排）
  */
-import React, { useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useCallback, useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
+import { client } from '@/lib/client';
+import { rendererEvents } from '@/lib/events';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMarkdownPreviewStore } from '@/stores/markdown-preview-store';
@@ -39,6 +42,7 @@ import { TreeItemRow } from './workspace-explorer/TreeItemRow';
 export function WorkspaceExplorer() {
   // Store 状态
   const files = useWorkspaceStore(s => s.files);
+  const workspaceId = useWorkspaceStore(s => s.workspace?.id);
   const loadWorkspaceFiles = useWorkspaceStore(s => s.loadWorkspaceFiles);
   const createFolder = useWorkspaceStore(s => s.createFolder);
   const renameItem = useWorkspaceStore(s => s.renameItem);
@@ -280,6 +284,56 @@ export function WorkspaceExplorer() {
     void checkGitAvailable();
   }, [checkGitAvailable]);
 
+  // 快照排除清单：右键排除/恢复与设置页「恢复默认」走专用 IPC 仅落盘不广播，
+  // 本地状态只能靠这里的主动拉取保持新鲜；设置页直改清单走 updateSettings 链路有 settingsChanged 广播可跟上
+  const [excludedPaths, setExcludedPaths] = useState<Set<string>>(new Set());
+
+  const refreshExclusions = useCallback(async () => {
+    const ws = useWorkspaceStore.getState().workspace;
+    if (!ws) {
+      setExcludedPaths(new Set());
+      return;
+    }
+    const res = await client.getSnapshotExclusions({ workspaceId: ws.id });
+    if ('paths' in res) setExcludedPaths(new Set(res.paths));
+  }, []);
+
+  useEffect(() => {
+    void refreshExclusions();
+  }, [workspaceId, refreshExclusions]);
+
+  useEffect(() => {
+    const unsub = rendererEvents.settingsChanged.listen(() => {
+      void refreshExclusions();
+    });
+    return unsub;
+  }, [refreshExclusions]);
+
+  // 右键排除/恢复：用 IPC 返回的更新后清单直接替换本地状态，不重拉
+  const handleExcludeFolder = useCallback(async (path: string, name: string) => {
+    const ws = useWorkspaceStore.getState().workspace;
+    if (!ws) return;
+    const res = await client.addSnapshotExcludedPath({ workspaceId: ws.id, relPath: path });
+    if ('error' in res) {
+      toast.error(res.error);
+      return;
+    }
+    setExcludedPaths(new Set(res.paths));
+    toast.success(`已排除 ${name}，不再进入自动快照`);
+  }, []);
+
+  const handleRestoreFolder = useCallback(async (path: string, name: string) => {
+    const ws = useWorkspaceStore.getState().workspace;
+    if (!ws) return;
+    const res = await client.removeSnapshotExcludedPath({ workspaceId: ws.id, relPath: path });
+    if ('error' in res) {
+      toast.error(res.error);
+      return;
+    }
+    setExcludedPaths(new Set(res.paths));
+    toast.success(`已恢复 ${name} 的快照保护`);
+  }, []);
+
   // 当 files 变化时重建树
   useLayoutEffect(() => {
     pendingScrollTop.current = getViewport()?.scrollTop ?? 0;
@@ -416,6 +470,9 @@ export function WorkspaceExplorer() {
                 articleCount={articleCount}
                 fileCount={fileCount}
                 onSetCreatingFolder={handleSetCreatingFolder}
+                excludedPaths={excludedPaths}
+                onExcludeFolder={handleExcludeFolder}
+                onRestoreFolder={handleRestoreFolder}
               />
               {/* 在正确位置插入新建文件夹输入框 */}
               {newFolderInsertInfo && index === newFolderInsertInfo.insertAfterIndex && (

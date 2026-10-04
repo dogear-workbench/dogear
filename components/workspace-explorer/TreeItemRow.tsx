@@ -5,7 +5,7 @@ import React from 'react';
 import {
   Globe, Folder, FolderOpen, File,
   ChevronRight, ChevronDown, FolderPlus,
-  Quote, Trash2, Pencil, ExternalLink, Lock, History,
+  Quote, Trash2, Pencil, ExternalLink, Lock, History, EyeOff, Eye,
 } from 'lucide-react';
 import {
   ContextMenu, ContextMenuTrigger,
@@ -20,7 +20,7 @@ import { useGitHistoryStore } from '@/stores/git-history-store';
 import { guardReferenceIntoFocus, requireReferenceAnchorId } from '@/lib/reference-guard';
 import { getRelativeTime } from '@/components/conversation-list/utils';
 import type { ItemInstance } from '@headless-tree/core';
-import { buildArticleMeta, isArticlePath } from './tree-model';
+import { buildArticleMeta, isArticlePath, findExclusionEntry } from './tree-model';
 import { ARTICLES_SECTION_ID } from './tree-model';
 import type { FlatNode } from './tree-model';
 
@@ -29,6 +29,9 @@ interface TreeItemRowProps {
   articleCount: number;
   fileCount: number;
   onSetCreatingFolder: (parentPath: string | null) => void;
+  excludedPaths: ReadonlySet<string>;
+  onExcludeFolder: (path: string, name: string) => void;
+  onRestoreFolder: (path: string, name: string) => void;
 }
 
 export function TreeItemRow({
@@ -36,6 +39,9 @@ export function TreeItemRow({
   articleCount,
   fileCount,
   onSetCreatingFolder,
+  excludedPaths,
+  onExcludeFolder,
+  onRestoreFolder,
 }: TreeItemRowProps) {
   const data = item.getItemData();
   const meta = item.getItemMeta();
@@ -159,6 +165,11 @@ export function TreeItemRow({
     openHistory({ name: originalNode.name, path: originalNode.path, isFolder: data.nodeType === 'directory' });
   };
 
+  // 三分支判定：null 未命中 → 可排除；精确命中 → 可恢复；前缀覆盖 → 只读提示
+  const exclusionEntry = data.nodeType === 'directory' && gitAvailable
+    ? findExclusionEntry(originalNode.path, excludedPaths)
+    : null;
+
   // 构建右键菜单
   const renderContextMenuContent = () => {
     // 文章节点
@@ -238,6 +249,24 @@ export function TreeItemRow({
             历史
           </ContextMenuItem>
         )}
+        {data.nodeType === 'directory' && gitAvailable && (
+          exclusionEntry === null ? (
+            <ContextMenuItem onClick={() => onExcludeFolder(originalNode.path, originalNode.name)}>
+              <EyeOff className="w-4 h-4" />
+              从快照排除
+            </ContextMenuItem>
+          ) : exclusionEntry === originalNode.path ? (
+            <ContextMenuItem onClick={() => onRestoreFolder(originalNode.path, originalNode.name)}>
+              <Eye className="w-4 h-4" />
+              恢复快照保护
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem disabled>
+              <EyeOff className="w-4 h-4" />
+              已被 {exclusionEntry} 排除
+            </ContextMenuItem>
+          )
+        )}
         <ContextMenuSeparator />
         <ContextMenuItem onClick={handleOpenInExplorer}>
           <ExternalLink className="w-4 h-4" />
@@ -285,7 +314,14 @@ export function TreeItemRow({
           />
         ) : (
           <div className="flex-1 min-w-0 ml-1">
-            <div className="text-sm truncate">{data.name}</div>
+            <div className="text-sm truncate flex items-center gap-1">
+              <span className="truncate">{data.name}</span>
+              {data.nodeType === 'directory' && excludedPaths.has(originalNode.path) && (
+                <span title="该目录已排除出自动快照" className="inline-flex shrink-0 text-muted-foreground">
+                  <EyeOff className="w-3 h-3" />
+                </span>
+              )}
+            </div>
             {/* 文章显示站点名和相对时间 */}
             {data.nodeType === 'article' && originalNode.articleMeta && (
               <div className="text-xs text-muted-foreground truncate">

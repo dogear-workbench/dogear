@@ -9,6 +9,20 @@ export function isArticlePath(path: string): boolean {
   return path.startsWith('.dogear/articles');
 }
 
+/** 查找命中 relPath 的排除条目：与主进程 isExcludedRelPath 同语义（段数组前缀覆盖整子树），精确命中优先，无命中返回 null */
+export function findExclusionEntry(relPath: string, excludedPaths: ReadonlySet<string>): string | null {
+  const segments = relPath.split('/').filter(Boolean);
+  let coveredBy: string | null = null;
+  for (const entry of excludedPaths) {
+    const entrySegs = entry.split('/').filter(Boolean);
+    if (entrySegs.length === 0 || entrySegs.length > segments.length) continue;
+    if (!entrySegs.every((s, i) => segments[i] === s)) continue;
+    if (entrySegs.length === segments.length) return entry;
+    coveredBy = coveredBy ?? entry;
+  }
+  return coveredBy;
+}
+
 /** 从 WorkspaceFileNode 构建 ArticleMeta 对象 */
 export function buildArticleMeta(node: WorkspaceFileNode): ArticleMeta | null {
   if (node.type !== 'article' || !node.articleMeta) return null;
