@@ -9,6 +9,9 @@ export interface SyncStatePeer {
   deviceName?: string;
   appVersion?: string;
   lastSyncAt: number;
+  /** 最近一次成功连接的对端地址（配对确认/同步成功/探测成功时更新，失败不删旧值），供扫描探测与离线展示兜底 */
+  lastHost?: string;
+  lastPort?: number;
   /** 上次同步结束时刻的快照整体指纹，仅作展示/比对两端是否同源，diff 判定用 lastManifest */
   lastManifestHash?: string;
   /** 下轮 diff 的基线：上次同步收敛后本端清单快照（带内容 hash）；仅在同步完成时整体替换 */

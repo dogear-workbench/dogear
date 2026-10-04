@@ -29,7 +29,7 @@ import {
   toRemoteRelPath,
   type WorkspaceMetaItem,
 } from './workspace-map.js';
-import { SYNC_PROTOCOL_VERSION, type DiffConflict, type FileEntry, type SkippedEntry } from './protocol.js';
+import { SYNC_PROTOCOL_VERSION, type DiffConflict, type FileEntry, type ManifestResponseBody, type SkippedEntry } from './protocol.js';
 import {
   applyPeerTombstones,
   propagateLocalDeletes,
@@ -184,7 +184,7 @@ async function runSyncInternal(
   const settings = await loadSettings();
   const paired = settings.syncOptions?.pairedDevices.find((d) => d.deviceId === peer.deviceId);
   if (!paired) {
-    return { ...base, status: 'failed', ok: false, error: '未与该设备配对，无法同步', durationMs: Date.now() - startedAt, finishedAt: Date.now() };
+    return { ...base, status: 'failed', ok: false, error: '未与该设备配对，无法同步。对端可能已解除配对；若确已解除，请在本端解除配对后重新配对', durationMs: Date.now() - startedAt, finishedAt: Date.now() };
   }
   const auth = { deviceId: selfHello.deviceId, secret: paired.secret };
   // state 提前读：映射表同时驱动本端 manifest 过滤与双向路径折算（本轮一致快照）
@@ -215,8 +215,17 @@ async function runSyncInternal(
       requestTombstones[relPath] = { deletedAt: now, deviceId: selfHello.deviceId };
     }
   }
-  // 请求体携带本端映射供对端反向学习（映射只在一端配一次）；对端也在响应里带它的映射与墓碑
-  const remoteManifest = await fetchManifest(peer, auth, selfHello, local, peerState?.workspaceMap, requestTombstones);
+  // 请求体携带本端映射供对端反向学习（映射只在一端配一次）；对端也在响应里带它的映射与墓碑。
+  // 401/403 = 对端不再认这段配对（已被解除或重配），追加引导文案帮助用户自愈
+  let remoteManifest: ManifestResponseBody;
+  try {
+    remoteManifest = await fetchManifest(peer, auth, selfHello, local, peerState?.workspaceMap, requestTombstones);
+  } catch (error) {
+    if (/HTTP (401|403)\b/.test(errMessage(error))) {
+      throw new Error(`${errMessage(error)}。对端可能已解除配对；若确已解除，请在本端解除配对后重新配对`);
+    }
+    throw error;
+  }
   const remoteHello = {
     protocolVersion: remoteManifest.hello.protocolVersion,
     appVersion: remoteManifest.hello.appVersion,
@@ -481,6 +490,8 @@ async function runSyncInternal(
       deviceName: remoteHello.deviceName ?? peer.deviceName,
       appVersion: remoteHello.appVersion,
       lastSyncAt: Date.now(),
+      lastHost: peer.host,
+      lastPort: peer.port,
       lastManifestHash: createHash('sha256').update(JSON.stringify(nextBaseline)).digest('hex'),
       lastManifest: nextBaseline,
     };

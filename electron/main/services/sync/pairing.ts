@@ -3,6 +3,7 @@ import { loadSettings, saveSettings } from '../settings-service.js';
 import type { HandshakeHello } from './protocol.js';
 import { buildHello, getOrCreateDeviceId, resolveDeviceName } from './device.js';
 import { sendPairRequest, type PeerEndpoint } from './client.js';
+import { getDataDir, readSyncStateFrom, withSyncStateLock, writeSyncStateTo } from './sync-state.js';
 
 export interface PairingRequestInfo {
   requestId: string;
@@ -58,6 +59,30 @@ async function addPairedDevice(entry: { deviceId: string; deviceName?: string; s
   await saveSettings(settings);
 }
 
+/** 地址记忆只在成功路径写入（配对确认/同步成功/探测成功）；后续同步或探测成功会覆盖为最新地址 */
+async function recordPeerAddress(deviceId: string, host: string, port: number): Promise<void> {
+  const dataDir = getDataDir();
+  await withSyncStateLock(dataDir, async () => {
+    const state = await readSyncStateFrom(dataDir);
+    const peer = state.peers[deviceId] ?? { deviceId, lastSyncAt: 0 };
+    peer.lastHost = host;
+    peer.lastPort = port;
+    state.peers[deviceId] = peer;
+    await writeSyncStateTo(dataDir, state);
+  });
+}
+
+/** 解除配对：仅删本端 pairedDevices 条目；sync-state.peers 整条保留，重新配对后无缝续用基线/映射/地址 */
+export async function unpairDevice(deviceId: string): Promise<void> {
+  const { getRunningSync } = await import('./orchestrator.js');
+  if (getRunningSync()) throw new Error('同步进行中，稍后再解除');
+  const settings = await loadSettings();
+  const syncOptions = settings.syncOptions!;
+  if (!syncOptions.pairedDevices.some((d) => d.deviceId === deviceId)) return;
+  syncOptions.pairedDevices = syncOptions.pairedDevices.filter((d) => d.deviceId !== deviceId);
+  await saveSettings(settings);
+}
+
 /** 门面启动时注入本机握手信息，后续所有出站请求复用 */
 export function setSelfHello(hello: HandshakeHello): void {
   selfHello = hello;
@@ -71,7 +96,6 @@ export function getSelfHello(): HandshakeHello {
 export async function initSelfHello(appVersion: string): Promise<HandshakeHello> {
   const settings = await loadSettings();
   const deviceId = await getOrCreateDeviceId();
-  const { getDataDir } = await import('./sync-state.js');
   const hello = buildHello(deviceId, resolveDeviceName(settings.syncOptions?.deviceName), appVersion, getDataDir());
   setSelfHello(hello);
   return hello;
@@ -111,6 +135,7 @@ async function runPairingRequest(
       return outcome;
     }
     await addPairedDevice({ deviceId: target.deviceId, deviceName: target.deviceName ?? result.peerHello?.deviceName, secret: result.secret });
+    await recordPeerAddress(target.deviceId, target.host, target.port);
     const outcome: PairingOutcome = { ok: true, deviceId: target.deviceId, deviceName: target.deviceName, direction: 'outgoing' };
     emitOutcome(outcome);
     return outcome;
