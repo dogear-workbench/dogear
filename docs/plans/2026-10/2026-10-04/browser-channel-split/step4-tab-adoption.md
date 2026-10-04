@@ -1,7 +1,7 @@
 ---
 step: 4
 title: 被动 tab 自动入组与上限放宽
-status: pending
+status: done
 ---
 
 ## 目标
@@ -30,10 +30,10 @@ status: pending
 ## 实施回填（做完后填）
 
 ### 实际改动
-- 与计划差异：
-- 改动文件清单：
+- 与计划差异：① extension-tab-tools.ts 无需改：open_tab description 已是 `${MAX_TABS_PER_SESSION}` 模板引用，常量改后自动同步；② 被动入组不做 16 上限拒绝（拒收会游离失控不可管，与收尾清理矛盾；上限层由 open_tab 工具层执行，被动 tab 收编后计入额度）；③ 焦点状态机核对结论：不跟随（零改动）——若跟随会导致 agent 下一条命令 stale_tab 拒绝（正是要避免的旧 ref 错位），executeScript 按 tabId 寻址不要求激活；④ 真机验证以静态审查替代（收编三道闸/快照幂等/上限路径/manifest 权限逐项核对）。
+- 改动文件清单：extension/src/tab-commands.js（新增 adoptPassiveTab：opener 缺失/已关/不在组内不收编，组内 opener → ensureDogearGroup）；extension/src/background.js（顶层 tabs.onCreated 监听 → 收编成功 pushGroupTabSnapshots，catch 兜底）；electron/main/services/browser/site-policy.ts（MAX_TABS_PER_SESSION 8→16）。
 
 ### 给下一步的接力棒
-- 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
-- 待办或已知限制：
+- 关键签名 / 数据结构：`adoptPassiveTab(tab): Promise<boolean>`（tab-commands.js 导出）；gateway applyTabSnapshot 的 isFocus 判断保证被动快照只 upsert tabs 数组不切焦点。
+- 下个 step 该从哪里继续：会话收尾自动清理——Dogear 组内 tab 遍历 + 「未移交」豁免判定（design.md 未决问题 1/2，倾向简单版：组内全关 + 显式豁免清单）+ 挂载点定位（extension-ownership / PiSession close / gateway 断连）。
+- 待办或已知限制：① chrome://extensions 手动重载扩展（SW 变更）；② 重启 Dogear 应用（主进程常量变更）；③ 真机验证三步（target=_blank 入组/非组不入组/第 17 次 open_tab 拒绝）待用户执行；④ 弹窗轰炸实测留待使用观察。

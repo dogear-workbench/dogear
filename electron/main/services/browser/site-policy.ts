@@ -8,7 +8,7 @@ export interface SitePolicy {
   instructions: string;
 }
 
-export const MAX_TABS_PER_SESSION = 8;
+export const MAX_TABS_PER_SESSION = 16;
 export const MIN_ACTION_INTERVAL_MS = 2_000;
 
 export function tabLimitReachedMessage(current: number): string {

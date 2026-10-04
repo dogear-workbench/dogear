@@ -21,6 +21,18 @@ async function ensureDogearGroup(tabId) {
   }
 }
 
+export async function adoptPassiveTab(tab) {
+  if (tab?.id == null || tab.openerTabId == null) return false
+  let opener
+  try {
+    opener = await chrome.tabs.get(tab.openerTabId)
+  } catch {
+    return false
+  }
+  if (!(await isInDogearGroup(opener))) return false
+  return ensureDogearGroup(tab.id)
+}
+
 export async function getDogearTabs() {
   const groups = await chrome.tabGroups.query({ title: DOGEAR_GROUP_TITLE })
   if (!groups.length) return []

@@ -1,5 +1,5 @@
 import { extractTabSnapshot, extractArticleHtml } from './content-extract.js'
-import { handleTabCommand, getDogearTabs, isInDogearGroup } from './tab-commands.js'
+import { handleTabCommand, getDogearTabs, isInDogearGroup, adoptPassiveTab } from './tab-commands.js'
 import { clickFn, fillFn, scrollFn, readTextFn, readStateFn } from './dom-actions.js'
 import { waitFn } from './wait-actions.js'
 import { snapshotGroupTabIds, detectNewGroupTab } from './click-watch.js'
@@ -545,6 +545,14 @@ function onHostDisconnect() {
   }
   scheduleRetry()
 }
+
+chrome.tabs.onCreated.addListener((tab) => {
+  adoptPassiveTab(tab)
+    .then((adopted) => {
+      if (adopted) pushGroupTabSnapshots()
+    })
+    .catch(() => {})
+})
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (!port || state.tabId == null || tabId !== state.tabId) return
