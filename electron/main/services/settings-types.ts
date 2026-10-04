@@ -395,7 +395,7 @@ export function createBrowserParseSubAgentProfile(): SubAgentProfile {
     modelSelection: null,
     timeoutMinutes: 30,
     enabledBasicTools: ['read', 'write', 'edit', 'Glob', 'Grep'],
-    enabledAbilities: { web: true, browser: true, extension: true, article: true },
+    enabledAbilities: { web: true, browser: true, extension: true, article: true, skills: ['browser-exploration'] },
   };
 }
 

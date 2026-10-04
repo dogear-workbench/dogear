@@ -251,6 +251,12 @@ export function normalizeSettings(settings: AppSettings): boolean {
             delete ab.web;
             changed = true;
           }
+          // 拆包迁移：存量 browser 生效的 Profile 把 browser-exploration 补进 skills 细选（方法论包与通道解耦后走通用细选）；
+          // 只在 skills 键整体缺失时写入，清理过数组视为显式意愿不回填
+          if (ab.browser === true && !('skills' in ab)) {
+            ab.skills = ['browser-exploration'];
+            changed = true;
+          }
           // 内置 Profile 升级新增能力键时，旧数据只补缺失键；显式 false 是用户关闭，不覆盖
           if (p.id === BROWSER_PARSE_SUB_AGENT_PROFILE_ID) {
             const builtinAb = createBrowserParseSubAgentProfile().enabledAbilities as Record<string, unknown>;

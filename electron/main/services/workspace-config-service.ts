@@ -63,14 +63,42 @@ const PERSONAL_DEFAULT_CONFIG: WorkspaceConfig = {
     'stock': false,
     'article': false,
     'browser': false,
+    'browser-extension': false,
+    'browser-methodology': false,
     'web-mcp': true,
     'code-workflow': false,
   },
 };
 
+/** 拆包迁移：browser 开启的开关层把扩展/方法论两包补齐为开启（缺键才写，显式 false 不覆盖），内存态生效，UI 下次写回自然落盘 */
+function migrateBrowserPackSplit(overrides: Record<string, boolean> | undefined): Record<string, boolean> | undefined {
+  if (!overrides || overrides.browser !== true) return overrides;
+  if ('browser-extension' in overrides && 'browser-methodology' in overrides) return overrides;
+  return {
+    ...overrides,
+    'browser-extension': overrides['browser-extension'] ?? true,
+    'browser-methodology': overrides['browser-methodology'] ?? true,
+  };
+}
+
+function migrateWorkspaceConfig(stored: WorkspaceConfig): WorkspaceConfig {
+  const abilityOverrides = migrateBrowserPackSplit(stored.abilityOverrides);
+  const scene = stored.sceneOverrides;
+  const sceneOverrides = scene
+    ? {
+        sub: migrateBrowserPackSplit(scene.sub),
+        executor: migrateBrowserPackSplit(scene.executor),
+        scheduler: migrateBrowserPackSplit(scene.scheduler),
+      }
+    : undefined;
+  if (abilityOverrides === stored.abilityOverrides && sceneOverrides === stored.sceneOverrides) return stored;
+  return { ...stored, abilityOverrides, sceneOverrides };
+}
+
 export async function getWorkspaceConfig(workspaceId: string): Promise<WorkspaceConfig> {
   const filePath = getWorkspaceConfigPath(workspaceId);
-  const stored = await safeJsonRead<WorkspaceConfig>(filePath, getDefaultWorkspaceConfig());
+  const raw = await safeJsonRead<WorkspaceConfig>(filePath, getDefaultWorkspaceConfig());
+  const stored = migrateWorkspaceConfig(raw);
   const sceneOverrides = normalizeSceneOverrides(stored.sceneOverrides);
   if (workspaceId !== PERSONAL_WORKSPACE_ID) {
     return sceneOverrides ? { ...stored, sceneOverrides } : stored;

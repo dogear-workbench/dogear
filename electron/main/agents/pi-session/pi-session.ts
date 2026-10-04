@@ -461,8 +461,8 @@ export class PiSession extends EventEmitter {
     const personaParts: string[] = [];
     if (groupContextText) personaParts.push(groupContextText);
 
-    // browser 能力生效即注入（会话创建读一次；子会话 Profile 的 browser 子开关已并入 resolveAbilities，与 browser-exploration skill 同条件）
-    const browserPlaybook = activeAbilities.has('browser') ? readBrowserPlaybook() : null;
+    // 方法论包生效即注入（会话创建读一次；与 browser-exploration skill 同条件，双通道通用，不随通道包开关）
+    const browserPlaybook = activeAbilities.has('browser-methodology') ? readBrowserPlaybook() : null;
     if (browserPlaybook?.exists) personaParts.push(`## 浏览器调研通用技巧\n\n${browserPlaybook.content}`);
 
     personaParts.push(buildAppDataGuidance(getConfigDir(), this.config.workspaceId));

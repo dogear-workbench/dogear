@@ -21,21 +21,27 @@ function profileWith(ab: SubAgentProfile['enabledAbilities'], extra?: Partial<Su
 }
 
 describe('resolveAbilities 子会话 Profile 过滤', () => {
-  test('stock/article/browser 子开关为 true 才生效；memory 归场景层不再受 Profile 闸约束；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
-    // 自治三包总开关在 abilityOverrides 全开，判定纯由子开关决定；
+  test('stock/article/browser/browser-extension 子开关为 true 才生效（双字段独立）；memory 归场景层不再受 Profile 闸约束；code-workflow 包级不过滤（skill 级运行时过滤）', () => {
+    // 自治四包总开关在 abilityOverrides 全开，判定纯由子开关决定；
     // code-workflow 的 Profile 过滤在运行时位于 skill 级（filterSkillsForSubAgent 的 ab.skills），不在包级
-    const keys = ['stock', 'article', 'browser'] as const;
+    const keys = [
+      ['stock', 'stock'],
+      ['article', 'article'],
+      ['browser', 'browser'],
+      ['browser-extension', 'extension'],
+    ] as const;
     const cases: SubAgentProfile['enabledAbilities'][] = [
       {},
       { memory: true },
       { stock: true, article: true },
       { browser: true, skills: ['brainstorming', 'staged-impl'] },
-      { memory: true, stock: true, article: true, browser: true, skills: ['doc-sync'] },
+      { extension: true },
+      { memory: true, stock: true, article: true, browser: true, extension: true, skills: ['doc-sync'] },
     ];
     const config: WorkspaceConfig = {
       enabledToolPacks: [],
       enabledSkills: [],
-      abilityOverrides: { memory: true, stock: true, article: true, browser: true, 'code-workflow': true },
+      abilityOverrides: { memory: true, stock: true, article: true, browser: true, 'browser-extension': true, 'code-workflow': true },
     };
     for (const ab of cases) {
       const active = resolveAbilities(config, {
@@ -44,8 +50,8 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
         groupId: null,
         profile: profileWith(ab),
       });
-      for (const key of keys) {
-        expect(active.has(key)).toBe(ab[key] === true);
+      for (const [packKey, field] of keys) {
+        expect(active.has(packKey)).toBe(ab[field] === true);
       }
       expect(active.has('memory')).toBe(true);
       expect(active.has('code-workflow')).toBe(true);
@@ -68,10 +74,14 @@ describe('resolveAbilities 子会话 Profile 过滤', () => {
     expect(active.has('memory')).toBe(true);
   });
 
-  test('内置浏览器解析 Profile 默认 browser 生效、默认 Profile 不生效', () => {
-    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true } };
-    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createBrowserParseSubAgentProfile() }).has('browser')).toBe(true);
-    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createDefaultSubAgentProfile() }).has('browser')).toBe(false);
+  test('内置浏览器解析 Profile 默认 browser/extension 生效、默认 Profile 不生效', () => {
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { browser: true, 'browser-extension': true } };
+    const parseActive = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createBrowserParseSubAgentProfile() });
+    expect(parseActive.has('browser')).toBe(true);
+    expect(parseActive.has('browser-extension')).toBe(true);
+    const defaultActive = resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: createDefaultSubAgentProfile() });
+    expect(defaultActive.has('browser')).toBe(false);
+    expect(defaultActive.has('browser-extension')).toBe(false);
   });
 });
 
@@ -120,13 +130,13 @@ describe('sceneOverrides 场景三级回退', () => {
 });
 
 describe('自治包四象限（main/sub × 工作区开关/Profile 子开关）', () => {
-  const AUTONOMOUS_KEYS = ['stock', 'article', 'browser', 'web-mcp'] as const;
+  const AUTONOMOUS_KEYS = ['stock', 'article', 'browser', 'browser-extension', 'web-mcp'] as const;
   const wsOverrides = (on: boolean) => ({
     enabledToolPacks: [],
     enabledSkills: [],
     abilityOverrides: Object.fromEntries(AUTONOMOUS_KEYS.map((key) => [key, on])),
   });
-  const profileAllOn = profileWith({ stock: true, article: true, browser: true, web: true });
+  const profileAllOn = profileWith({ stock: true, article: true, browser: true, extension: true, web: true });
 
   test('工作区关 + Profile 开：sub 生效（Profile 独裁），main 不生效（纯主会话开关）', () => {
     const config: WorkspaceConfig = wsOverrides(false);
@@ -152,10 +162,10 @@ describe('自治包四象限（main/sub × 工作区开关/Profile 子开关）'
     }
   });
 
-  test('自治标记与 skill 全集：四包置位且 SUB_AUTONOMOUS_SKILLS 恰含五 skill', () => {
+  test('自治标记与 skill 全集：五包置位且 SUB_AUTONOMOUS_SKILLS 恰含三 skill（方法论不随通道包自治）', () => {
     expect(ABILITY_PACKS.filter((p) => p.subAutonomous).map((p) => p.key)).toEqual([...AUTONOMOUS_KEYS]);
     expect([...SUB_AUTONOMOUS_SKILLS].sort()).toEqual(
-      ['article-parser', 'browser-exploration', 'stock-analysis', 'stock-picking'].sort(),
+      ['article-parser', 'stock-analysis', 'stock-picking'].sort(),
     );
   });
 });
@@ -180,10 +190,25 @@ describe('TOOL_PACK_TO_ABILITY 挂载反查', () => {
   });
 });
 
-describe('工具归属修正（extension 并包 / reference 拆组 / 系统行为收缩）', () => {
-  test('browser 包 toolGroups 含内嵌浏览器与扩展通道两个组，扩展通道反查回 browser', () => {
-    expect(packOf('browser').toolGroups).toEqual(['browser', 'dogear-extension']);
-    expect(TOOL_PACK_TO_ABILITY.get('dogear-extension')).toBe('browser');
+describe('工具归属修正（双通道拆包 / reference 拆组 / 系统行为收缩）', () => {
+  test('双通道拆包归属：browser 收窄内嵌、扩展通道反查 browser-extension、方法论为纯 skill 包', () => {
+    expect(packOf('browser').toolGroups).toEqual(['browser']);
+    expect(packOf('browser').skills).toBeUndefined();
+    expect(packOf('browser-extension').toolGroups).toEqual(['dogear-extension']);
+    expect(packOf('browser-extension').skills).toBeUndefined();
+    expect(TOOL_PACK_TO_ABILITY.get('dogear-extension')).toBe('browser-extension');
+    expect(TOOL_PACK_TO_ABILITY.get('browser')).toBe('browser');
+    expect(packOf('browser-methodology').skills).toEqual(['browser-exploration']);
+    expect(packOf('browser-methodology').toolGroups).toBeUndefined();
+    expect(TOOL_PACK_TO_ABILITY.has('browser-methodology')).toBe(false);
+  });
+
+  test('方法论包不随通道闸：工作区闸决定包开关，Profile 通道子开关不影响', () => {
+    const wsOn: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [], abilityOverrides: { 'browser-methodology': true } };
+    expect(resolveAbilities(wsOn, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({}) }).has('browser-methodology')).toBe(true);
+    expect(resolveAbilities(wsOn, { role: 'main', hasWorkspace: true, groupId: null }).has('browser-methodology')).toBe(true);
+    const config: WorkspaceConfig = { enabledToolPacks: [], enabledSkills: [] };
+    expect(resolveAbilities(config, { role: 'sub', hasWorkspace: true, groupId: null, profile: profileWith({ browser: true, extension: true }) }).has('browser-methodology')).toBe(false);
   });
 
   test('SYSTEM_BEHAVIORS 已退役（组上下文归会话组包、契约段归协作包展示）', () => {

@@ -10,6 +10,7 @@ const eslintConfig = defineConfig([
     "node_modules/**",
     "electron/**",
     "release/**",
+    "release2/**",
     ".worktrees/**",
     "python/**",
     "extension/**",

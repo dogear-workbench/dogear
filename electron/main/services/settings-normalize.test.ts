@@ -185,7 +185,7 @@ test('缺失内置浏览器解析 Profile 时自动补齐，已有 Profile 保�
   expect(s.subAgent.profiles).toHaveLength(2);
   expect(s.subAgent.profiles[0]).toEqual({ id: 'p1', name: '自定义', description: '', timeoutMinutes: 15, enabledBasicTools: ['read'], enabledAbilities: {} });
   expect(s.subAgent.profiles[1]!.id).toBe('browser-parse');
-  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true, article: true });
+  expect(s.subAgent.profiles[1]!.enabledAbilities).toEqual({ web: true, browser: true, extension: true, article: true, skills: ['browser-exploration'] });
   expect(normalizeSettings(s)).toBe(false);
 });
 
@@ -198,7 +198,7 @@ test('用户自定义 description 不被迁移', () => {
   expect(s.subAgent.profiles[1]!.description).toBe('我自己的浏览器解析描述');
 });
 
-test('enabledAbilities.browser 非布尔值被清洗，布尔值保留', () => {
+test('enabledAbilities.browser 清洗与拆包迁移：布尔值保留，缺失 skills 键补 browser-exploration，已有数组与显式关闭不动', () => {
   const s = baseSettings();
   s.subAgent.profiles[0]!.enabledAbilities = { browser: 'yes' as unknown as boolean };
   const changed = normalizeSettings(s);
@@ -209,7 +209,18 @@ test('enabledAbilities.browser 非布尔值被清洗，布尔值保留', () => {
   s2.subAgent.profiles[0]!.enabledAbilities = { browser: true };
   const changed2 = normalizeSettings(s2);
   expect(changed2).toBe(true);
-  expect(s2.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true, web: true });
+  expect(s2.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true, web: true, skills: ['browser-exploration'] });
+  expect(normalizeSettings(s2)).toBe(false);
+
+  const s3 = baseSettings();
+  s3.subAgent.profiles[0]!.enabledAbilities = { browser: true, skills: ['brainstorming'] };
+  normalizeSettings(s3);
+  expect(s3.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: true, web: true, skills: ['brainstorming'] });
+
+  const s4 = baseSettings();
+  s4.subAgent.profiles[0]!.enabledAbilities = { browser: false };
+  normalizeSettings(s4);
+  expect(s4.subAgent.profiles[0]!.enabledAbilities).toEqual({ browser: false, web: true });
 });
 
 test('normalizePiModels：存量 string[] 迁移为 { id } 对象数组', () => {

@@ -27,8 +27,8 @@ import { createGroupContextToolDefs, createSiblingToolDefs, createHistorySearchT
 
 /**
  * 子会话按 Profile 过滤 skill entries。
- * builtin 段：article-parser 仅当 article===true，browser-exploration 仅当 browser===true，
- * stock-analysis/stock-picking 仅当 stock===true，其余按 skills[] 匹配；
+ * builtin 段：article-parser 仅当 article===true，stock-analysis/stock-picking 仅当 stock===true，
+ * 其余按 skills[] 匹配（browser-exploration 归方法论包，与通道解耦，走通用 skills 细选）；
  * custom 段：仅保留 skills[] 中列出的；
  * user 段：仅保留 customSkills[] 中列出的。
  */
@@ -46,7 +46,6 @@ export function filterSkillsForSubAgent(
     const fp = entry.bodyPath;
     if (isUnder(fp, scanDirs.builtin)) {
       if (entry.name === 'article-parser') return ab.article === true;
-      if (entry.name === 'browser-exploration') return ab.browser === true;
       if (entry.name === 'stock-analysis' || entry.name === 'stock-picking') return ab.stock === true;
       return ab.skills?.includes(entry.name) ?? false;
     }
@@ -106,7 +105,7 @@ export function registerPack(toolPackMap: Map<string, string>, packName: string,
 /**
  * 主会话工具构建：
  * Skill 工具 + Grep/Glob + dogear-memory（包开关或无工作区现状兜底） + 按 enabledToolPacks 挂载可选工具包（skill 型包需包总开关生效）
- * + extension（并入 browser 包：只受 browser 包总开关 gate，enabledToolPacks 残留 extension 静默忽略）
+ * + extension（随 browser-extension 包总闸：enabledToolPacks 残留 extension 静默忽略）
  * + 组状态卡组（dogear-group-context，属组且会话组包生效）
  * + 协作三组（dogear-group/delegation/sibling，属组且 agent-collab 包生效）
  * + dogear-notes（工作区且 notes 包生效）
@@ -168,8 +167,8 @@ export function buildMainAgentToolDefs(
     }
   }
 
-  // extension 并入 browser 包：注册只看 browser 包总开关，enabledToolPacks 残留 extension 静默忽略
-  if (activeAbilities.has('browser')) {
+  // extension：只看 browser-extension 包总闸，enabledToolPacks 残留 extension 静默忽略
+  if (activeAbilities.has('browser-extension')) {
     toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath })));
   }
 
@@ -242,8 +241,8 @@ export function buildMainAgentToolDefs(
  * - 基础工具（read/write/edit/bash/Glob/Grep）：始终全部创建，activeToolNames 控制可见性
  * - Skill 工具：有 ≥1 skill 勾选时创建
  * - dogear-memory：memory 包生效（含 Profile 的 memory===true 子开关，由 resolveAbilities 并集）
- * - stock/article/browser 工具包：对应能力包生效（Profile 子开关并入包解析）
- * - extension 工具组：browser 包生效且 Profile extension===true 双闸
+ * - stock/article/browser/browser-extension 工具包：对应能力包生效（Profile 子开关并入包解析）
+ * - extension 工具组：browser-extension 包生效且 Profile extension===true 双闸
  * - web-mcp 工具包：web 包生效（Profile 子开关已并入 resolveAbilities）
  * - dogear-history 跨会话检索组：工作区即注册（不查 Profile 子开关——通用检索是基础设施）
  * - dogear-git：workspace-git 包生效即注册（无 Profile 子开关，子会话查历史/落提交与主会话同能力）
@@ -293,8 +292,8 @@ export function buildSubAgentToolDefs(
     toolDefs.push(...registerPack(toolPackMap, 'browser', createBrowserToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath, workspaceId: config.workspaceId })));
   }
 
-  // extension：并入 browser 包后是双闸——browser 包生效（Profile 子开关已并入 resolveAbilities）+ extension===true
-  if (activeAbilities.has('browser') && ab.extension === true) {
+  // extension：双闸——browser-extension 包生效（Profile 子开关已并入 resolveAbilities）+ extension===true
+  if (activeAbilities.has('browser-extension') && ab.extension === true) {
     toolDefs.push(...registerPack(toolPackMap, 'extension', createExtensionToolDefs({ conversationId: config.conversationId, workspacePath: config.workspacePath })));
   }
 

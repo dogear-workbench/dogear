@@ -31,10 +31,10 @@ const ALL_OFF: WorkspaceConfig = {
   abilityOverrides: Object.fromEntries(ABILITY_PACKS.map((p) => [p.key, false])),
 };
 
-function configWithBrowser(): WorkspaceConfig {
+function configWithBrowser(extra: Record<string, boolean> = {}): WorkspaceConfig {
   return {
     ...ALL_OFF,
-    abilityOverrides: { ...ALL_OFF.abilityOverrides, browser: true },
+    abilityOverrides: { ...ALL_OFF.abilityOverrides, browser: true, ...extra },
   };
 }
 
@@ -117,23 +117,34 @@ describe('冒烟：notes 包 gate dogear-tasks 与 executor 派单保底', () =>
   });
 });
 
-describe('冒烟：browser 包总开关 gate 主会话 extension', () => {
-  test('browser 关 + enabledToolPacks 残留 extension → 静默忽略不注册', () => {
+describe('冒烟：扩展通道随 browser-extension 包闸注册', () => {
+  test('browser-extension 关 + enabledToolPacks 残留 extension → 静默忽略不注册', () => {
     const active = resolveAbilities(ALL_OFF, { role: 'main', hasWorkspace: true, groupId: null });
+    expect(active.has('browser-extension')).toBe(false);
     expect(mainGroups(['extension'], active).has('extension')).toBe(false);
   });
 
-  test('browser 开 + enabledToolPacks 不含 browser → extension 注册、内嵌 browser 不注册', () => {
+  test('内嵌开（enabledToolPacks 含 browser）+ 扩展包关 → 只注册内嵌', () => {
     const active = resolveAbilities(configWithBrowser(), { role: 'main', hasWorkspace: true, groupId: null });
     expect(active.has('browser')).toBe(true);
+    expect(active.has('browser-extension')).toBe(false);
+
+    const groups = mainGroups(['browser'], active);
+    expect(groups.has('browser')).toBe(true);
+    expect(groups.has('extension')).toBe(false);
+  });
+
+  test('扩展包开（enabledToolPacks 不含 browser）→ 只注册扩展、内嵌不注册', () => {
+    const active = resolveAbilities(configWithBrowser({ 'browser-extension': true }), { role: 'main', hasWorkspace: true, groupId: null });
+    expect(active.has('browser-extension')).toBe(true);
 
     const groups = mainGroups([], active);
     expect(groups.has('extension')).toBe(true);
     expect(groups.has('browser')).toBe(false);
   });
 
-  test('browser 开 + enabledToolPacks 含 browser → 内嵌与扩展两通道都注册', () => {
-    const active = resolveAbilities(configWithBrowser(), { role: 'main', hasWorkspace: true, groupId: null });
+  test('双包全开 + enabledToolPacks 含 browser → 内嵌与扩展两通道都注册', () => {
+    const active = resolveAbilities(configWithBrowser({ 'browser-extension': true }), { role: 'main', hasWorkspace: true, groupId: null });
     const groups = mainGroups(['browser'], active);
     expect(groups.has('browser')).toBe(true);
     expect(groups.has('extension')).toBe(true);
@@ -193,7 +204,7 @@ describe('冒烟：web-mcp 包双闸与 mainOnly', () => {
 });
 
 describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
-  test('browser 包开 + Profile extension=true → extension 注册', () => {
+  test('browser 包开 + Profile extension=true → 两通道都注册', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
       enabledAbilities: { browser: true, extension: true },
@@ -205,12 +216,14 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
       profile,
     });
     expect(active.has('browser')).toBe(true);
+    expect(active.has('browser-extension')).toBe(true);
 
     const { groups } = subGroups(profile, active);
     expect(groups.has('extension')).toBe(true);
+    expect(groups.has('browser')).toBe(true);
   });
 
-  test('browser 包开 + Profile extension 未勾 → 不注册（双闸第二道）', () => {
+  test('browser 包开 + Profile extension 未勾 → extension 不注册（双闸：包闸与字段闸都看 extension）', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
       enabledAbilities: { browser: true },
@@ -222,6 +235,7 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
       profile,
     });
     expect(active.has('browser')).toBe(true);
+    expect(active.has('browser-extension')).toBe(false);
 
     const { groups } = subGroups(profile, active);
     expect(groups.has('extension')).toBe(false);
@@ -239,13 +253,14 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
       profile,
     });
     expect(active.has('browser')).toBe(true);
+    expect(active.has('browser-extension')).toBe(true);
 
     const { groups } = subGroups(profile, active);
     expect(groups.has('extension')).toBe(true);
     expect(groups.has('browser')).toBe(true);
   });
 
-  test('browser 总开关关 + Profile extension=true 但 browser 未勾 → 均不注册（子开关独裁）', () => {
+  test('browser 总开关关 + Profile extension=true 但 browser 未勾 → 只注册扩展（双字段独立，互不连带）', () => {
     const profile: SubAgentProfile = {
       ...createDefaultSubAgentProfile(),
       enabledAbilities: { extension: true },
@@ -256,10 +271,12 @@ describe('冒烟：子会话 extension 双闸与归属重划拆组', () => {
       groupId: GROUP_ID,
       profile,
     });
+    expect(active.has('browser-extension')).toBe(true);
     expect(active.has('browser')).toBe(false);
 
     const { groups } = subGroups(profile, active);
-    expect(groups.has('extension')).toBe(false);
+    expect(groups.has('extension')).toBe(true);
+    expect(groups.has('browser')).toBe(false);
   });
 
   test('子会话：会话组包与协作包开 → 组状态卡与兄弟会话各随其包注册', () => {

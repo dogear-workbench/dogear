@@ -37,7 +37,7 @@ export interface AbilityPack {
    * 工具组标识，混合存两类 ID（集合不相交）：
    * - 常驻组存 MCP server 名（dogear-memory 等，不在 OPTIONAL_TOOL_PACKS）
    * - 可选包存工具包 name（stock-quote 等，可经 OPTIONAL_TOOL_PACKS 查 mcpServerName）；
-   *   例外：browser 包的 'dogear-extension' 是 server 名（扩展通道并入包内展示，无独立开关）
+   *   例外：browser-extension 包的 'dogear-extension' 是 server 名（扩展通道工具组无可选包条目）
    */
   toolGroups?: string[];
   skills?: string[];
@@ -57,14 +57,14 @@ export const SKILL_PACK_MAP: Record<string, string[]> = {
   'stock-analysis': ['stock-quote', 'stock-analysis', 'stock-announcement'],
   'stock-picking': ['stock-picking'],
   'article-parser': ['article'],
-  'browser-exploration': ['browser'],
 };
 
-/** 自治包 key → Profile enabledAbilities 子开关字段（subAutonomous 包的裁决入口） */
-const SUB_AUTONOMOUS_SWITCH: Record<string, 'stock' | 'article' | 'browser' | 'web'> = {
+/** 自治包 key → Profile enabledAbilities 子开关字段（subAutonomous 包的裁决入口）；扩展包沿用 extension 字段 */
+const SUB_AUTONOMOUS_SWITCH: Record<string, 'stock' | 'article' | 'browser' | 'extension' | 'web'> = {
   stock: 'stock',
   article: 'article',
   browser: 'browser',
+  'browser-extension': 'extension',
   'web-mcp': 'web',
 };
 
@@ -170,13 +170,31 @@ export const ABILITY_PACKS: AbilityPack[] = [
   },
   {
     key: 'browser',
-    label: '浏览器',
-    description: '浏览器调研方法论 skill + 双通道工具组：内嵌浏览器（读文章/搜索/原子探索）+ 浏览器扩展通道（用户真实浏览器标签页操作，风控后备）；子会话 Profile 独立生效，不受此开关约束',
+    label: '内嵌浏览器',
+    description: '内嵌浏览器单通道（WebContentsView，无人值守 + 隔离环境）：读文章/搜索/原子探索 + present 页面交付；子会话 Profile 独立生效，不受此开关约束',
+    category: 'extension',
+    type: 'skill-packs',
+    toolGroups: ['browser'],
+    subAutonomous: true,
+    defaultEnabled: false,
+  },
+  {
+    key: 'browser-extension',
+    label: '浏览器扩展',
+    description: '浏览器扩展通道（用户真实浏览器，登录态 + 在场协作 + tab group 定位）：标签页操作/读文章/截图/一键移交；子会话 Profile 独立生效，不受此开关约束',
+    category: 'extension',
+    type: 'skill-packs',
+    toolGroups: ['dogear-extension'],
+    subAutonomous: true,
+    defaultEnabled: false,
+  },
+  {
+    key: 'browser-methodology',
+    label: '浏览器方法论',
+    description: '浏览器调研方法论 skill（browser-exploration，双通道通用，与通道解耦）；主会话随工作区开关与 skill 细闸生效，子会话 skill 细选在派遣页 Profile',
     category: 'extension',
     type: 'skill-packs',
     skills: ['browser-exploration'],
-    toolGroups: ['browser', 'dogear-extension'],
-    subAutonomous: true,
     defaultEnabled: false,
   },
   {
@@ -273,7 +291,7 @@ export function resolveAbilities(config: WorkspaceConfig, opts: ResolveAbilities
   return result;
 }
 
-/** 工具组标识 → 所属 skill 型能力包 key，供拼装侧与挂载反查共用；键含可选包 name 与并入包内的 server 名（dogear-extension）。 */
+/** 工具组标识 → 所属 skill 型能力包 key，供拼装侧与挂载反查共用；键含可选包 name 与扩展通道 server 名（dogear-extension）。 */
 export const TOOL_PACK_TO_ABILITY = new Map<string, string>(
   ABILITY_PACKS
     .filter((p) => p.type === 'skill-packs')

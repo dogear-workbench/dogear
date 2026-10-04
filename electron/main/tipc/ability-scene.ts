@@ -43,9 +43,22 @@ const MOUNT_GROUP_PLACEHOLDER = 'mount-matrix-group';
 const PROFILE_FILTER_LABELS: Record<string, string> = {
   stock: '股票分析',
   article: '文章',
-  browser: '浏览器',
+  browser: '内嵌浏览器',
+  'browser-extension': '浏览器扩展',
+  'browser-methodology': '浏览器方法论',
   'code-workflow': '代码工作流 Skill',
 };
+
+/** Profile 布尔字段过滤的包 key → enabledAbilities 字段名（browser-extension 沿用 extension 字段） */
+const PROFILE_FILTER_FIELDS: Record<string, 'stock' | 'article' | 'browser' | 'extension'> = {
+  stock: 'stock',
+  article: 'article',
+  browser: 'browser',
+  'browser-extension': 'extension',
+};
+
+/** skill 细选过滤的包：Profile 勾选决定，方法论包与通道解耦后同 code-workflow 模式 */
+const SKILL_FILTER_PACK_KEYS: ReadonlySet<string> = new Set(['code-workflow', 'browser-methodology']);
 
 const STATE_EXTRACT_REASON = '后台任务不走能力包：固定提示词 + 单工具';
 const PARSE_ARTICLE_REASON = '后台任务不走能力包，提示词单独写死';
@@ -135,11 +148,13 @@ function profileFilterReason(pack: AbilityPack, profile: SubAgentProfile): strin
   const label = PROFILE_FILTER_LABELS[pack.key];
   if (!label) return null;
   const ab = profile.enabledAbilities;
-  if (pack.key === 'code-workflow') {
+  if (SKILL_FILTER_PACK_KEYS.has(pack.key)) {
     const matched = (pack.skills ?? []).filter((s) => ab.skills?.includes(s));
     return matched.length > 0 ? `Profile 勾了 ${matched.length} 个 skill` : 'Profile 没勾包内 skill';
   }
-  const on = ab[pack.key as 'stock' | 'article' | 'browser'] === true;
+  const field = PROFILE_FILTER_FIELDS[pack.key];
+  if (!field) return null;
+  const on = ab[field] === true;
   return on ? `Profile 勾了${label}` : `Profile 没勾${label}`;
 }
 

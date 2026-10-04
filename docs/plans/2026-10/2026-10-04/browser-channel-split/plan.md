@@ -8,7 +8,7 @@
 
 ## 步骤索引
 
-- [ ] [Step 1: 后端能力包拆分与迁移](./step1-pack-split.md) — ABILITY_PACKS 拆三包 + 注册闸切换 + 存量迁移 + 测试同步
+- [x] [Step 1: 后端能力包拆分与迁移](./step1-pack-split.md) — ABILITY_PACKS 拆三包 + 注册闸切换 + 存量迁移 + 测试同步
 - [ ] [Step 2: 前端开关与展示跟进](./step2-frontend-toggles.md) — 场景页三行 / 派遣页双开关 / 能力页三卡
 - [ ] [Step 3: browser-exploration 重写为双通道方法论](./step3-skill-rewrite.md) — SKILL.md 通道并列化，通道细节下沉工具 description
 - [ ] [Step 4: 被动 tab 自动入组与上限放宽](./step4-tab-adoption.md) — 扩展侧 tabs.onCreated 收编 + MAX_TABS_PER_SESSION 8→16

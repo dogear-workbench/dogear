@@ -1,7 +1,7 @@
 ---
 step: 1
 title: 后端能力包拆分与迁移
-status: pending
+status: done
 ---
 
 ## 目标
@@ -33,9 +33,22 @@ ABILITY_PACKS 拆三包（browser 收窄 / browser-extension / browser-methodolo
 
 ### 实际改动
 - 与计划差异：
-- 改动文件清单：
+  1. 迁移落点改在 `workspace-config-service.ts`（读时归一，内存态生效，UI 下次写回自然落盘，参照 personal 默认合并先例）：abilityOverrides/sceneOverrides 真身在 workspace config 不在 settings.json，计划写的 settings-service 归因不准；settings-service 只承担 Profile 侧迁移（browser:true 且 skills 键整体缺失 → 补 skills:['browser-exploration']）。
+  2. browser-methodology 不设 subAutonomous（无对应 Profile 字段），沿 code-workflow 先例：包级随工作区闸，子会话 skill 级走 filterSkillsForSubAgent 通用 `ab.skills` 细选——浏览器解析/存量 browser:true Profile 由 normalize 补 skills 键兜底；用户清理过 skills 数组的视为显式意愿不回填（幂等）。
+  3. `pi-session.ts` browserPlaybook 注入闸同步改 `browser-methodology`（原注释承诺与 browser-exploration skill 同条件，拆包后随方法论包）；WEB_RESEARCH_GUIDANCE 触发条件保持 `web-mcp || browser` 不动（内容提到 dogear__browser__* 与 browser-parse，扩展-only 会话注入反而误导，通道表述归 step 3）。
+  4. `ability-scene.ts` PROFILE_FILTER 扩展字段映射与 skill 细选标签（挂载矩阵 reason 文案与新包归属对齐，loaded 值本身数据驱动无需改）。
+  5. `eslint.config.mjs` 补 `release2/**` 忽略：存量问题——release2 构建产物不在 ignore 列表导致 `bun run lint` 报 5535 错，与本步改动无关，不修无法过验证门。
+  6. 迁移不动 workspace enabledSkills：无法区分「从未勾过」与「显式取消」（数组无缺键态），且老版本主会话本就以 enabledSkills 为准——存量 browser 开且 UI 开过包的用户 enabledSkills 已含 browser-exploration（能力页开包联动写入），行为无损；其余场景子会话丢方法论 skill 可在派遣页重勾（step 2 加开关）。
+- 改动文件清单：ability-registry.ts（拆三包 + SUB_AUTONOMOUS_SWITCH + SKILL_PACK_MAP 去 browser-exploration）、tool-assembly.ts（主/子会话 extension 闸 + filterSkillsForSubAgent 通用化）、pi-session.ts（playbook 闸）、tool-packs.ts（头注释 + browser 条目改内嵌浏览器）、settings-service.ts（Profile skills 迁移）、settings-types.ts（browser-parse 工厂补 skills）、workspace-config-service.ts（读时拆包迁移 + personal 默认补两键）、ability-scene.ts（Profile 过滤标签映射）、eslint.config.mjs、types/settings.ts（前端镜像工厂同步）、三个测试文件断言同步。
 
 ### 给下一步的接力棒
 - 关键签名 / 数据结构：
-- 下个 step 该从哪里继续：
+  - 包 key：`browser`（subAutonomous→ab.browser）/ `browser-extension`（subAutonomous→ab.extension）/ `browser-methodology`（非自治，工作区闸 + enabledSkills 细闸，子会话另加 Profile ab.skills 细选）
+  - TOOL_PACK_TO_ABILITY：`browser→browser`、`dogear-extension→browser-extension`；browser-methodology 无 toolGroups 不进反查表
+  - 迁移语义：`migrateBrowserPackSplit(overrides)`——browser===true 且新包键缺失才写 true；读时内存态生效，updateWorkspaceConfig 写回自然落盘
+  - filterSkillsForSubAgent：browser-exploration 无特判，走 builtin 通用 `ab.skills?.includes`
+- 下个 step（step 2 前端）从哪里继续：场景页三行数据已自动出（getSceneOverview 遍历 ABILITY_PACKS，extension 类包自动排除出 sub 行）；派遣页 SubAgentTab renderPackBlock 对 browser-extension/browser-methodology 目前 return null（SINGLE_FIELD_BY_PACK 无映射），需按本回填第 2 条的闸语义加双开关 + 方法论 skill 细选（写 ab.skills）；能力页三卡自动出，纯 skill 包详情空态需检查；PROFILE_FILTER 文案已就绪。
 - 待办或已知限制：
+  - 存量 enabledSkills 缺 browser-exploration 的工作区：子会话丢方法论 skill（主会话本来就无，非回归）；等 step 2 派遣页开关后用户可自行勾补
+  - 调度任务（buildCustomToolSet）自读 config.json 不走 getWorkspaceConfig，但不消费新包键，无影响
+  - schedulerCustomAgentCell 对 browser-extension 的 reason 文案（『工具包与 skill 在定时任务编辑页按任务配置』）与实际（定时任务不装扩展工具）不符，属展示细节待后续步顺带修

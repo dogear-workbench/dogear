@@ -13,7 +13,7 @@
  *
  * 常驻工具（如 memory、article-parse）不在此表，由 conversation-runtime-service 直接注册。
  *
- * extension 工具组不在本表：已并入 browser 能力包（见 ability-registry），注册只受 browser 包总开关 gate，
+ * extension 工具组不在本表：由 browser-extension 能力包总闸 gate（见 ability-registry），
  * enabledToolPacks 残留 'extension' 一律静默忽略。
  *
  * 详见 docs/plans/2026-05/2026-05-09/skill-tool-search-migration.md
@@ -84,8 +84,8 @@ export const OPTIONAL_TOOL_PACKS: ToolPackMeta[] = [
   },
   {
     name: 'browser',
-    label: '浏览器',
-    description: '内嵌浏览器读取网页：一键读文章（readArticle，含展开与登录墙引导）+ 导航/观察/点击/填表等原子探索工具 + present 页面交付',
+    label: '内嵌浏览器',
+    description: '内嵌浏览器读取网页（无人值守 + 隔离环境）：一键读文章（readArticle，含展开与登录墙引导）+ 导航/观察/点击/填表等原子探索工具 + present 页面交付',
     mcpServerName: 'dogear-browser',
     toolCount: 15,
     requiresWorkspace: false,
