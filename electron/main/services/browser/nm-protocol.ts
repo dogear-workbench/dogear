@@ -26,6 +26,7 @@ export type CommandKind =
   | 'scroll'
   | 'open_tab'
   | 'close_tab'
+  | 'close_group_tabs'
   | 'list_tabs'
   | 'wait_for'
   | 'readArticle'
@@ -90,6 +91,11 @@ export interface CloseTabCommandParams {
   targetTabId?: number;
 }
 
+export interface CloseGroupTabsCommandParams {
+  /** 收尾清理豁免的 tabId（一键移交过、保留给用户的 tab） */
+  exemptTabIds?: number[];
+}
+
 export type WaitForCondition = 'visible' | 'hidden' | 'text_contains';
 
 export interface WaitForCommandParams {
@@ -122,6 +128,8 @@ export interface TabSnapshotMessage {
 /** 扩展主动推送的一键移交帧；与 tab_snapshot 同类无 requestId，NmMessage 为宽 Record 故此类型仅作文档 */
 export interface PageHandoffMessage {
   type: 'page_handoff';
+  /** 移交源标签页；gateway 据此记入收尾清理豁免集合，缺省（旧版扩展）不豁免 */
+  tabId?: number;
   url: string;
   title: string;
   selectionText?: string;

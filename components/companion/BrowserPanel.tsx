@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Clock,
   Database,
+  Eraser,
   ExternalLink,
   Eye,
   FileText,
@@ -51,6 +52,7 @@ const ACTION_ICONS: Record<BrowserActionType, typeof Activity> = {
   close: Square,
   present: ExternalLink,
   await_human: Hourglass,
+  cleanup: Eraser,
 };
 
 const ACTION_LABELS: Record<BrowserActionType, string> = {
@@ -71,6 +73,7 @@ const ACTION_LABELS: Record<BrowserActionType, string> = {
   close: '结束',
   present: '呈现',
   await_human: '等待人工',
+  cleanup: '清理',
 };
 
 const BAD_RESULT_RE = /^(error|timeout|need_login|browser_crash|parse_empty|value_mismatch)$/;

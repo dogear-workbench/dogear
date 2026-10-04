@@ -85,6 +85,7 @@ async function sendPageHandoff(tab, selectionText) {
   const textExcerpt = await extractHandoffExcerpt(tab.id)
   const payload = {
     type: 'page_handoff',
+    tabId: tab.id,
     url: tab.url,
     title: tab.title ?? '',
     ...(selectionText ? { selectionText } : {}),

@@ -25,6 +25,10 @@ export function acquireChannel(conversationId: string, now: number): AcquireResu
   return { ok: true };
 }
 
+export function getChannelOwner(): string | null {
+  return currentOwner;
+}
+
 export function releaseChannel(conversationId: string): void {
   if (currentOwner !== conversationId) return;
   currentOwner = null;

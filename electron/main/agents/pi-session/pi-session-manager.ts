@@ -337,6 +337,17 @@ export class PiSessionManager extends EventEmitter {
           });
       }
     }
+
+    // 会话收尾清理扩展通道组内 tab；动态 import 对齐调度器模式，closeAll（应用退出）不走本方法天然豁免
+    if (conversationIds.length > 0) {
+      for (const conversationId of conversationIds) {
+        void import('../../services/browser/session-tab-cleanup.js')
+          .then((m) => m.cleanupSessionTabs(conversationId))
+          .catch((error: unknown) => {
+            this.logger.warn(`会话收尾清理失败（已忽略）: ${conversationId}`, error);
+          });
+      }
+    }
   }
 
   /**

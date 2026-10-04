@@ -19,7 +19,8 @@ export type BrowserActionType =
   | 'screenshot'
   | 'close'
   | 'present'
-  | 'await_human';
+  | 'await_human'
+  | 'cleanup';
 
 export interface BrowserActionEvent {
   taskId: string;

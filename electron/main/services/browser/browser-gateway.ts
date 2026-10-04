@@ -17,6 +17,7 @@ import {
   adoptFocusedTab,
   applyTabSnapshot,
   initialTabFields,
+  NO_FOCUS_TAB_ID,
   removeClosedTab,
   syncTabsFromList,
   type GatewayTabEntry,
@@ -90,6 +91,23 @@ let heartbeatTimer: NodeJS.Timeout | null = null;
 /** 注册制广播（对齐 browser-action-stream 模式：服务层零 electron 依赖，tipc 层接线） */
 export function setExtensionStatusBroadcaster(fn: StatusBroadcaster | null): void {
   broadcaster = fn;
+}
+
+/** 一键移交过的 tabId 豁免集合：会话收尾清理时保留不关，随 gateway 生命周期（跨扩展重连），FIFO 限容 */
+const HANDOFF_EXEMPT_MAX = 100;
+const handoffExemptTabIds = new Set<number>();
+
+function recordHandoffExemptTab(tabId: number): void {
+  handoffExemptTabIds.delete(tabId);
+  handoffExemptTabIds.add(tabId);
+  if (handoffExemptTabIds.size > HANDOFF_EXEMPT_MAX) {
+    const oldest = handoffExemptTabIds.values().next().value;
+    if (oldest !== undefined) handoffExemptTabIds.delete(oldest);
+  }
+}
+
+export function getHandoffExemptTabIds(): number[] {
+  return [...handoffExemptTabIds];
 }
 
 type HandoffHandler = (handoff: PageHandoffMessage) => void;
@@ -214,6 +232,30 @@ function applyCloseTabResult(data: unknown): void {
   setStatus({ ...currentStatus, ...removeClosedTab(currentStatus, d.closedTabId, d.focusedTabId) });
 }
 
+/** 收尾清理回包：剔除已关 tab；焦点 tab 被清则重置为无焦点态（剩余豁免 tab 仍在 tabs 数组，等待下次 list_tabs 同步） */
+function applyCloseGroupTabsResult(data: unknown): void {
+  if (currentStatus.status !== 'connected') return;
+  const d = (data ?? {}) as { closedTabIds?: unknown };
+  if (!Array.isArray(d.closedTabIds)) return;
+  const closed = new Set(d.closedTabIds.filter((v): v is number => typeof v === 'number'));
+  if (closed.size === 0) return;
+  const tabs = currentStatus.tabs.filter((t) => !closed.has(t.tabId));
+  if (!closed.has(currentStatus.tabId)) {
+    setStatus({ ...currentStatus, tabs });
+    return;
+  }
+  setStatus({
+    ...currentStatus,
+    tabId: NO_FOCUS_TAB_ID,
+    title: '',
+    url: '',
+    textPreview: '',
+    generation: 0,
+    tabs,
+    ...(currentStatus.extractError !== undefined ? { extractError: undefined } : {}),
+  });
+}
+
 function applyListTabsResult(data: unknown): void {
   if (currentStatus.status !== 'connected') return;
   setStatus({ ...currentStatus, ...syncTabsFromList(currentStatus, data) });
@@ -249,6 +291,7 @@ function handleCommandResult(message: NmMessage): void {
     else if (pending.kind === 'open_tab') applyOpenTabResult(message.data);
     else if (pending.kind === 'click') applyClickResult(message.data);
     else if (pending.kind === 'close_tab') applyCloseTabResult(message.data);
+    else if (pending.kind === 'close_group_tabs') applyCloseGroupTabsResult(message.data);
     else if (pending.kind === 'list_tabs') applyListTabsResult(message.data);
     pending.resolve({
       requestId,
@@ -276,6 +319,7 @@ function applyHandoff(message: NmMessage): void {
     logger.warn('page_handoff 缺少 url，已忽略');
     return;
   }
+  if (typeof message.tabId === 'number') recordHandoffExemptTab(message.tabId);
   if (!handoffHandler) {
     logger.warn('page_handoff 无处理器，已忽略:', url);
     return;

@@ -166,6 +166,24 @@ async function listTabs(msg, ctx) {
   ctx.postResult(msg, { ok: true, data: { tabs: items } })
 }
 
+async function closeGroupTabs(msg, ctx) {
+  const raw = (msg.params || {}).exemptTabIds
+  const exempt = new Set(Array.isArray(raw) ? raw.filter((v) => typeof v === 'number' && Number.isFinite(v)) : [])
+  const tabs = await getDogearTabs()
+  const targets = tabs.filter((t) => t.id != null && !exempt.has(t.id)).map((t) => t.id)
+  if (targets.length) {
+    try {
+      await chrome.tabs.remove(targets)
+    } catch {
+    }
+  }
+  const remaining = new Set((await getDogearTabs()).map((t) => t.id))
+  const closedTabIds = targets.filter((id) => !remaining.has(id))
+  const focusedTabId = ctx.getFocusedTabId()
+  if (focusedTabId == null || closedTabIds.includes(focusedTabId)) ctx.clearFocusedTab()
+  ctx.postResult(msg, { ok: true, data: { closedTabIds } })
+}
+
 export async function handleTabCommand(msg, ctx) {
   if (msg.kind === 'open_tab') {
     await openTab(msg, ctx)
@@ -173,6 +191,10 @@ export async function handleTabCommand(msg, ctx) {
   }
   if (msg.kind === 'close_tab') {
     await closeTab(msg, ctx)
+    return true
+  }
+  if (msg.kind === 'close_group_tabs') {
+    await closeGroupTabs(msg, ctx)
     return true
   }
   if (msg.kind === 'list_tabs') {
