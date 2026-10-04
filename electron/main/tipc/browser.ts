@@ -1,4 +1,6 @@
-import { BrowserWindow, type Rectangle } from 'electron';
+import { app, BrowserWindow, type Rectangle } from 'electron';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { tipc } from '@egoist/tipc/main';
 import { broadcastToWindows } from '../services/renderer-broadcast.js';
 import {
@@ -106,6 +108,13 @@ export function registerExtensionHandoffBridge(): void {
   });
 }
 
+/** 扩展目录定位：prod = extraResources 打包产物，dev = 项目根源码目录；供设置页安装引导展示 */
+function extensionDirPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'extension')
+    : join(app.getAppPath(), 'extension');
+}
+
 function windowFromContext(sender: Electron.WebContents): BrowserWindow | null {
   const win = BrowserWindow.fromWebContents(sender);
   return win && !win.isDestroyed() ? win : null;
@@ -145,6 +154,12 @@ function resumeConversation(conversationId: string, message: string): void {
 
 export const browserRouter = {
   getExtensionStatus: t.procedure.action(async () => getExtensionStatus()),
+
+  /** 目录缺失（打包遗漏/安装损坏）返回 null，前端显示占位而非幽灵路径 */
+  getExtensionDirPath: t.procedure.action(async () => {
+    const dir = extensionDirPath();
+    return { path: existsSync(dir) ? dir : null };
+  }),
 
   registerNmHost: t.procedure.action(async () => registerNmHostService()),
 

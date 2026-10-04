@@ -8,7 +8,7 @@
 - `BehaviorTab.tsx` — 基础设置 tab（含 WebAiSitesSection/ExtensionStatusLine/FailoverSection 等小节挂载）
 - `ProfilesTab.tsx` — 模型方案 tab（Profile 清单 + pi-model-row + FetchModelsDialog 入口）
 - `ShortcutsTab.tsx` — 快捷键清单 tab（从 hotkey-registry listHotkeys 自动渲染，只读；数据源见 infra.md hotkey-registry）
-- `ExtensionStatusLine.tsx` — 受控浏览器小节的扩展状态行（连接状态/正文预览/授权域名只读 chip；ExtensionStatus 类型源在 browser.md）
+- `ExtensionStatusLine.tsx` — 受控浏览器小节的扩展状态行（未连接时安装引导卡：三步指引+目录路径复制/打开；已连接显示连接状态/正文预览/授权域名只读 chip；ExtensionStatus 类型源在 browser.md）
 - `WebAiSitesSection.tsx` — 网页 AI 站点列表编辑（增删改、URL 校验、至少保留一条；挂基础设置「浏览器」小节后，保存后网页 AI 切换器实时联动）
 - `AbilityTab.tsx` — 能力标签页编排（只读展示，启停配置在场景页）：列表态按三大类分组（分组头数据取 getSceneOverview.categories，CATEGORY_FALLBACK 兜底；规则包卡+能力包卡+系统行为卡）/详情态按 selectedKey 路由
 - `ability/` — 能力页组件（全部只读）：RulesPackCard/RulesPackDetailPage（工作区+全局规则合并卡与双编辑器，编辑器保留）、AbilityPackCard/AbilityPackDetailPage（skill 型包 chips 查看切换+SKILL.md 渲染+skill 明细启用徽标；段型包 SegmentBlock）、AbilityPackSidebar（包类型徽标+配套工具组+加载情况）、AbilityMountsSection（挂载矩阵行列表：主会话/子会话各 Profile/任务执行会话 + 三条后台任务行——定时自定义任务 memory/notes 按 sceneOverrides.scheduler 三级回退、可选包按工作区工具包命中，话题状态抽取/文章解析恒 false；行徽标「后台任务/子会话/系统预设」）、SystemBehaviorDetail、BasicToolsSection、config-mutations.ts（装配开关写回算法共享模块：applyPackToggle/applySkillToggles/applyScenePackToggle 纯函数+createConfigPersister 乐观更新工厂+buildSkillToPacks/packToggleLinksOf/EMPTY_CONFIG，消费方为场景页）、pack-meta.ts（PACK_TYPE_LABELS+CATEGORY_FALLBACK 分组兜底）

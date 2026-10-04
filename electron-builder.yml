@@ -48,6 +48,11 @@ extraResources:
     to: nm-host/
     filter:
       - "**/*"
+  # 浏览器扩展本体（设置页安装引导指向此目录，用户以「加载已解压的扩展程序」方式安装）
+  - from: extension/
+    to: extension/
+    filter:
+      - "**/*"
   # 前端构建产物（移出 asar，支持热更新覆盖）
   - from: out/
     to: out/

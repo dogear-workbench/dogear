@@ -59,9 +59,11 @@
 - `components/companion/BrowserPanel.tsx` — 浏览器 tab 容器：状态行+等待人工卡片区+页面视图区+动作流分组卡片流
 - `components/companion/BrowserPageView.tsx` — 页面视图区：地址栏常驻（无呈现时回车走 presentEmbeddedTab url 分支直开）+ 占位容器 bounds 上报（卸载上报 null 触发 detach）+ MutationObserver 检测 Radix 弹层遮挡上报隐藏
 - `components/companion/BrowserInterventions.tsx` — 等待人工卡片（resolveHumanIntervention）
-- `app/settings/ExtensionStatusLine.tsx` — 设置页扩展状态行（条目见 settings.md，ExtensionStatus 类型源在本域 gateway）
+- `app/settings/ExtensionStatusLine.tsx` — 设置页扩展状态行（未连接时渲染安装引导卡：三步指引 + 目录路径复制/打开，路径源 getExtensionDirPath IPC；已连接显示状态与正文预览；ExtensionStatus 类型源在本域 gateway）
 
-## 浏览器扩展（extension/，独立交付物，不进 tsc/eslint 工程）
+## 浏览器扩展（extension/，随应用打包进 extraResources resources/extension，独立交付物不进 tsc/eslint 工程）
+
+- 打包分发：electron-builder.yml extraResources `extension/ → extension/`；设置页安装引导经 `tipc/browser.ts getExtensionDirPath` 定位（prod=process.resourcesPath/extension，dev=项目根源码目录），用户在浏览器以「加载已解压的扩展程序」安装
 
 - `manifest.json` — MV3：无静态 host_permissions，optional_host_permissions+popup 手势按 origin 授权；key 固定扩展 ID
 - `popup.{html,js}` — 连接/授权 UI（originFromUrl 白名单、授权/撤销在 click 手势内直调）
